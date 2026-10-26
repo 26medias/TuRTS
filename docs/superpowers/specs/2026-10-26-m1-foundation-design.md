@@ -2,7 +2,7 @@
 
 Date: 2026-10-26. Status: revision 3. Gate 1: rigour and mod-builder failed revision 1; all five
 lenses passed revision 2 with changes; revision 3 applies those changes. Gate 1 changes are
-marked `(G1)`, re-gate changes `(G1b)`.
+marked `(G1)`, re-gate changes `(G1b)`, gate 2 changes `(G2)`.
 Spec: `RTS-Engine-Project-Specifications.md` v0.7, section 14 row M1: "Browser client,
 authoritative headless server, one mod-defined unit. Acceptance: browser joins a match and
 presents server results; secondary executable interoperability follows its selected packaging
@@ -87,6 +87,7 @@ Workspace at the repository root. Crates under `crates/`. Packages under `mods/`
 | `turts_net_protocol` | Wire messages (section 5), `NET_PROTOCOL_VERSION`. Transport-free. | `turts_mod_api`, serde. No `bevy*`. |
 | `turts_sim` | Authoritative world: fixed ticks, flat map, unit spawning from `MapDef`, movement integrator, command validation. Implements `UnitRegistry`. | `turts_mod_api`, `bevy_app`, `bevy_ecs`, `bevy_time`, `bevy_math` with default features (none of them pulls a renderer; `default-features = false` breaks glam's math backend). (G1b) |
 | `turts_mod_runtime` | Archive read, manifest and lockfile parse, hash, validation, diagnostics. Returns validated definitions; registers nothing itself. Also the `turts-pack` binary. | `turts_mod_api`, serde, ron, serde_json, sha2, semver, tar. No `bevy*`. |
+| `turts_net_lightyear` | The shared lightyear `ProtocolPlugin`: message and channel registration in one fixed order for both ends. Features `server`, `client`. (G2: lightyear assigns ids by registration order, so both ends must share one registration.) | `turts_net_protocol`, lightyear, `bevy_*` sub-crates without a renderer. |
 | `turts_server` (bin, native) | `MinimalPlugins` + `ScheduleRunnerPlugin`; HTTP endpoints for advertisement, lockfile, and package bytes; lightyear server over WebSocket; snapshot and delta sending. | `turts_sim`, `turts_mod_runtime`, `turts_net_protocol`, `bevy` (`default-features = false`), lightyear (server). |
 | `turts_client` (lib + native bin; `turts_client_web` is the wasm32 cdylib entry) | `DefaultPlugins`; advertisement and lockfile fetch; package download and hash check; join; `ReplicaState`; interpolation; presentation; input. | `turts_net_protocol`, `turts_mod_api`, `turts_mod_runtime`, `bevy`, lightyear (client). Never `turts_sim`. |
 
@@ -137,6 +138,12 @@ message codec is postcard; M1 uses it.
 Transport: WebSocket (MDN: widely available since July 2015). WebTransport is a later probe.
 Accepted risk: lightyear 0.31 depends on `aeronet_io 0.22.0-rc.1`; pinned. Netcode `Manual`
 authentication keeps the key in the client and is marked an M1 placeholder; real identity is M10.
+Client timeout: 10 s at M1, so a client stalled for 5 s stays connected (P7) and a briefly hidden
+browser tab survives. A longer hide disconnects; reconnect is M10. (G2)
+
+**Spike gate (G2).** After the spike, the orchestrator reviews `m1-network-spike.md` before any
+task builds on the networking choice. A failed P item stops the plan: Tasks that depend on the
+transport are re-planned and re-gated.
 
 ### 4.4 Packages (studio)
 
@@ -199,7 +206,10 @@ package with `turts_mod_runtime`, then calls `register_unit_type` for each unit 
 `MapDef` to `turts_sim`. There is no other path. (G1)
 
 **Server configuration** (`server.ron`): `game_package: "<path to archive>"`,
-`listen: "0.0.0.0:<port>"`, `tick_hz: 20`. The server binary has no default package. (G1)
+`http_listen: "0.0.0.0:<port>"`, `ws_listen: "0.0.0.0:<port>"`, `public_url: "http://<host>:<port>"`,
+`tick_hz: 20`. HTTP and WebSocket use two listeners. The advertisement and lockfile URLs use
+`public_url`. The client takes the WebSocket address as a separate option at M1. The server
+binary has no default package. (G1, G2)
 
 ### 4.5 Browser build (studio; from the web-platform report, probes in scratchpad `m1/webprobe`)
 
@@ -256,7 +266,8 @@ types, no Bevy entity ids.
   Sent after `Welcome` and when a client requests resync. (G1)
 - **UnitDeltas** (server, sequenced unreliable, every tick, empty when nothing changed):
   `{tick, base_tick, changes: [{unit_id, pos}]}`. `base_tick` is the previous tick. A unit absent
-  from `changes` is unchanged at `tick`. When `base_tick` differs from the last tick it applied,
+  from `changes` is unchanged at `tick`. The client enters resync state at `Welcome`, before any
+  request, so deltas that overtake the first `Snapshot` are buffered, not lost. (G2) When `base_tick` differs from the last tick it applied,
   the client sends one `ResyncRequest` and enters resync. During resync it sends no further
   request and buffers incoming deltas. When the `Snapshot` (tick S) arrives, it applies it, drops
   buffered deltas with `tick` at or below S, and replays the rest in order while their

@@ -47,5 +47,18 @@ lightyear_replication; lightyear_messages stays.
 CI (.github/workflows/ci.yml:27) runs `cargo check --workspace --target
 wasm32-unknown-unknown`; a native-only server crate needs `--exclude`.
 
+Gate-2 probes 2026-10-26 (scratchpad m1-gate2/td/ws, plan Task 1 Cargo lines):
+the plan's workspace and member lines resolve (853 packages) and `cargo check`
+passes native and wasm32 (`--exclude turts_server`). lightyear features
+`replication`, `interpolation`, `deterministic` all pull `bevy_replicon`
+(lightyear_replication and lightyear_deterministic_replication depend on it),
+so a T1 `bevy_replicon` rule catches all three. lightyear_messages 0.31
+`register_message<M: Send+Sync+'static + Serialize + DeserializeOwned>`: no Bevy
+bound on message types. `cargo build -p A -p B` unifies features like
+`--workspace`. `cargo tree` inside `cargo test` runs (no lock deadlock). A crate
+outside the workspace (own `[workspace]`) with a path dep on a member that uses
+`workspace = true` builds. `cargo tree -p <wrong name>` exits 101 with empty
+stdout: a script that drops stderr and greps the output passes silently.
+
 **Why:** Gate reviews on the first workspace will cite these names and this CI line.
 **How to apply:** Re-check docs.rs before citing if Bevy moves past 0.20.

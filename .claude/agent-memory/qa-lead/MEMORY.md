@@ -1,1 +1,2 @@
 - [Skill review 2026-10-26](skill-review-2026-10-26.md) — bevy-testing pins 0.19; CodSpeed needs SaaS login; use `gh api` for tree lookups
+- [M1 plan gate 2](m1-plan-gate2-2026-10-26.md) — T5 plant stays green; T8 drop after arrival; T2d flip misses manifest; CI threads parallel
