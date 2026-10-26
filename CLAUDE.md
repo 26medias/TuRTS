@@ -4,16 +4,18 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository state
 
-This repository holds the M1 Cargo workspace (crate and module skeletons first) and the
-specification. `RTS-Engine-Project-Specifications.md` (version 0.7, 2026-10-26) is the
-source of record for all design decisions. Read it before you start any implementation work.
+This repository holds the M1 Cargo workspace and the specification.
+`RTS-Engine-Project-Specifications.md` (version 0.7, 2026-10-26) is the source of record for
+all design decisions. Read it before you start any implementation work. The M1 numbers
+(bytes per tick, tick time, frame time, memory, download size) are in
+`docs/measurements/m1.md`. They are recorded, not judged; the budgets stay open (spec 15).
 
 Toolchain: `rust-toolchain.toml` pins stable with the
 `wasm32-unknown-unknown` target. `scripts/setup-dev.sh` installs the user-level tools (trunk,
 wasm-bindgen-cli, wasm-opt, flamegraph, cargo-llvm-lines, cargo-bloat). `scripts/setup-sudo.sh`
 installs perf, heaptrack, and valgrind and needs root. CI is `.github/workflows/ci.yml`: fmt,
-clippy, wasm32 check, native tests, and the agent roster checks. The build and test commands
-are in "Build and test commands" below.
+clippy, wasm32 check, native tests, the acceptance run, the T7 browser job, and the agent
+roster checks. The build and test commands are in "Build and test commands" below.
 
 Bevy version: **0.20** (orchestrator call, 2026-10-26; stable at that date). Ten installed Bevy
 skills pin 0.19; read the `bevy-ecs` skill's 0.20 pitfalls before you use any 0.19 snippet.
@@ -80,6 +82,17 @@ boundaries, not a fixed crate layout. The M1 crate layout is in "Crate layout" b
   release, one at a time.
 - `cargo check --workspace --exclude turts_server --target wasm32-unknown-unknown`: wasm32 check.
 - `trunk build --release` in `crates/turts_client_web`: the browser build.
+- `bash scripts/t7.sh`: T7, the browser join in headless Chrome. It needs trunk, brotli, node
+  with `npm ci` done in `tests/browser`, and Chrome.
+- `turts_server <server.ron> [--tick-log P] [--stats P] [--synthetic-units N] [--run-ticks N]`:
+  the headless host. `--stats` rewrites one JSON line each second.
+- `turts_client --server URL --ws URL [--headless] [--move X,Y] [--run-secs S] [--out P]
+  [--frame-log P]`: the native client. The other test hooks are in
+  `turts_client::options::parse_cli`.
+- `python3 tests/net/relay.py <listen port> <target port> --out P`: a TCP relay that counts the
+  bytes in each direction.
+- `node tests/browser/measure.js <page url> <label> [chrome flags]` in `tests/browser`: the
+  browser figures. The exact commands for every M1 figure are in `docs/measurements/m1.md`.
 - Build each binary with its own `cargo build -p <crate>`. A workspace-wide build unifies the
   client's `bevy` features into the server.
 
@@ -95,12 +108,14 @@ under `crates/`. Packages are under `mods/`.
 | `turts_sim` | Authoritative headless world: fixed ticks, flat map, movement, command validation. | `bevy_render`, `bevy_winit`, `bevy_pbr`, `turts_mod_runtime`. |
 | `turts_mod_runtime` | Archive read, manifest and lockfile parse, hash, validation. Also the `turts-pack` binary. | Any `bevy*` crate. |
 | `turts_net_lightyear` | The shared lightyear `ProtocolPlugin`: one registration order for both ends. | `turts_sim`, `turts_mod_runtime`. |
-| `turts_server` (binary) | Headless host: HTTP endpoints, lightyear server, snapshots and deltas. | `bevy_render`, `bevy_winit`, `bevy_pbr`. |
+| `turts_server` (binary) | Headless host: HTTP endpoints, lightyear server, snapshots and deltas, tick log, `--stats`, `--synthetic-units`. | `bevy_render`, `bevy_winit`, `bevy_pbr`. |
 | `turts_client` (library and binary) | All client logic: fetch, acquisition, join, replica, interpolation, presentation, input. | `turts_sim`. |
-| `turts_client_web` (cdylib) | Thin wasm32 entry for the browser client. | None of its own. |
+| `turts_client_web` (cdylib) | Thin wasm32 entry for the browser client. Sets `window.turts_debug`, `turts_move`, and `turts_memory_bytes`. | None of its own. |
 | `turts_checks` | Test-only: T1 boundary test and the no-content scan. | Not a dependency of any crate. |
 
-Workspace-wide: no `lightyear_prediction`, no `bevy_replicon`. The fixture crate
+Workspace-wide: no `lightyear_prediction`, no `bevy_replicon`. `vendor/aeronet_websocket` is a
+copy of the crate with TCP no-delay on the server socket (`vendor/aeronet_websocket/VENDORED.md`).
+It is not a member; `[patch.crates-io]` in `Cargo.toml` uses it. The fixture crate
 `tests/boundary-fixture/` is not a member. It depends on `bevy_render` on purpose, so the
 boundary check can prove it goes red.
 

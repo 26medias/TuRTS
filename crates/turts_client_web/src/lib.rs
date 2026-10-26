@@ -1,12 +1,15 @@
 //! Thin wasm32 entry for the browser client.
 //!
 //! All client logic lives in `turts_client`. This crate reads the page query, builds the app,
-//! and installs two test hooks on `window`:
+//! and installs three test hooks on `window`:
 //!
 //! - `window.turts_debug()` returns the debug JSON of `turts_client::debug::debug_json`. It
 //!   returns an empty string until the first frame has run.
 //! - `window.turts_move(x, y)` queues a move order for the units of this player. The order is
 //!   sent only when the client is joined.
+//! - `window.turts_memory_bytes()` returns the size of the wasm linear memory in bytes. Wasm
+//!   memory never shrinks, so the last value that a run reads is its high-water mark
+//!   (`tests/browser/measure.js`, design 4.5).
 //!
 //! The page query is `?server=<http url>&ws=<ws url>`. When it is wrong, the page gets the
 //! message in `window.turts_error` and the app does not start.
@@ -46,6 +49,9 @@ pub fn start() {
     let move_to = Closure::<dyn Fn(f32, f32)>::new(|x, y| MOVES.lock().unwrap().push((x, y)));
     set_global(&window, "turts_move", move_to.as_ref());
     move_to.forget();
+    let memory = Closure::<dyn Fn() -> f64>::new(memory_bytes);
+    set_global(&window, "turts_memory_bytes", memory.as_ref());
+    memory.forget();
 
     let mut app = build_app(options);
     app.add_systems(Update, drain_moves)
@@ -56,6 +62,19 @@ pub fn start() {
 fn set_global(window: &web_sys::Window, name: &str, value: &JsValue) {
     // `Reflect::set` on a window object does not fail. A failure would only lose a test hook.
     let _ = js_sys::Reflect::set(window, &JsValue::from_str(name), value);
+}
+
+/// The size of the wasm linear memory now: `memory_size(0) * 65536` (one page is 64 KiB).
+#[cfg(target_family = "wasm")]
+fn memory_bytes() -> f64 {
+    core::arch::wasm32::memory_size::<0>() as f64 * 65_536.0
+}
+
+/// A native build has no wasm memory, and `start` never runs there. The function keeps the
+/// native `cargo clippy --workspace --all-targets` build whole.
+#[cfg(not(target_family = "wasm"))]
+fn memory_bytes() -> f64 {
+    0.0
 }
 
 /// `Update`: move the targets of `window.turts_move` into the input queue.
