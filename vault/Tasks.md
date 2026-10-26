@@ -15,7 +15,7 @@ The task board. Move items between sections; keep owner and evidence link on eac
 
 ## In progress
 
-- [ ] **M2 design approval, then implementation plan.** Owner: Codex orchestrator. Economy design revision 2 passed gate 1 after repairs; proposed scope/payment rules await approval. Design: `docs/superpowers/specs/2026-10-26-m2-economy-design.md`; companion: `2026-10-26-m2-authoring-example.md`; evidence: `docs/research/m2/design-reviews.md`. No M2 product code yet.
+- [ ] **M2 implementation plan and gate 2.** Owner: Codex orchestrator (plan revision 2 passed gate 2; awaiting user plan review). The user approved design revision 2 after gate 1. Plan: `docs/superpowers/plans/2026-10-26-m2-economy.md` (16 tasks). Design: `docs/superpowers/specs/2026-10-26-m2-economy-design.md`; companion: `2026-10-26-m2-authoring-example.md`; gate 1 evidence: `docs/research/m2/design-reviews.md`. Gate 2 passed after six focused reviews and repairs; no findings remain unresolved. Initial network, simulation, and producer turns hit usage limits before final votes; those turns are recorded as preliminary, not verdicts. Repairs cover independent expected-command/result accounting and boundary audits, mid-trace loss arm/reset, raw ReliableChannel receipt witnesses, and same-update arm timing. Next: user plan review, then superpowers:executing-plans/SDD implementation. No M2 product implementation or runtime behavior yet. See `docs/research/m2/plan-reviews.md` for evidence.
 
 ## Backlog (M1)
 
@@ -29,6 +29,8 @@ The task board. Move items between sections; keep owner and evidence link on eac
 - [ ] Acceptance tests T1 to T6 (producer's list), each shown red first.
 
 ## Done
+
+- [x] 2026-10-26: User approved M2 economy design revision 2 and its economy-only/no-script scope. Decision: [[Decisions/2026-10-26 M2 scope and no script layer]].
 
 - [x] 2026-10-26: Codex handoff; sixteen roles and shared skills verified. M2 design and complete authoring example written; six-seat gate 1 passed after consumer/simulation repairs and re-reviews. Evidence: `docs/research/m2/design-reviews.md`.
 

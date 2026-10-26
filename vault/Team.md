@@ -38,9 +38,9 @@ The studio roster, who decides what, the model tiers, and the review process.
 | player | plays the result; plain language |
 | spec-rigour-reviewer | contradictions, status drift, untestable claims; STE reader |
 
-**Model tiers** (CEO rule, 2026-10-26): Fable 5.1 for complex problems, specs, plans, and deep gate reviews. Opus 5.5 for hard but less complex problems. Sonnet 5.5 or Haiku 5.5 at xhigh effort for code that is already specified.
+**Model routing** (user rule, 2026-10-26): use Sol for reasoning, planning, and reviews; use Luna for execution (edits, implementation, and commands). Keep dispatch scopes and context short, and reuse completed evidence to conserve tokens. This replaces the initial all-Sol routing notes going forward.
 
-**Codex handoff:** the Claude model names above record the original routing rule. They are not available in this Codex session. The orchestrator uses the available Codex models and states both model and reasoning effort on each dispatch. Initial design and QA assignments use `gpt-6.1-sol` at `high` effort. This is a platform adaptation, not a change to the team's responsibilities or review gates.
+**Codex handoff:** historical Claude routing was superseded by the user's Sol/Luna rule above. The orchestrator uses the available Codex models and states both model and reasoning effort on each dispatch, following that rule. This is a platform adaptation, not a change to the team's responsibilities or review gates.
 
 Codex does not automatically register `.claude/agents/` as native roles. Each dispatch tells the agent to read its role file, standing rules, relevant project notes, and source documents. Claude-specific frontmatter tool names are mapped to the tools available in the session. Role memory remains in `.claude/agent-memory/`; shared skills are available under `~/.agents/skills/`. There are four concurrent slots including the orchestrator, so larger gates run in batches.
 

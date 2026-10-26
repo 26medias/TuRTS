@@ -98,6 +98,6 @@ The original architecture pass remains applicable: repairs change no forbidden c
 authority ownership. The API review's independent parser also checks the revised public boundary.
 
 **Gate 1 passed after repairs.** All reported findings are resolved and no High finding remains.
-New scope/gameplay/payment proposals still require design approval before the implementation
-plan. This is not M2 acceptance or runtime/browser verification. Scratch evidence is under
+The user approved revision 2 and its M2 scope/gameplay/payment choices on 2026-10-26;
+implementation planning is now authorized. This is not M2 acceptance or runtime/browser verification. Scratch evidence is under
 `/tmp/turts-m2/{simulation,network,mod-api,mod-builder,authoring-example,architecture}/`.

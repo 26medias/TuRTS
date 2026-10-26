@@ -1,7 +1,7 @@
-# M2 data package authoring example — proposed API 0.2
+# M2 data package authoring example — API 0.2 design
 
-Status: **Proposed**, companion to [M2 economy design](2026-10-26-m2-economy-design.md).
-This is a complete example for the proposed schema, not a package supported by today's M1
+Status: **Approved design, not implemented**, companion to [M2 economy design](2026-10-26-m2-economy-design.md).
+This is a complete example for the approved M2 schema, not a package supported by today's M1
 loader. No files below are scripts or executable plugins. Values are correctness fixtures,
 not game balance or capacity budgets. All nine manifest fields retain their M1 names.
 

@@ -1,12 +1,13 @@
-# M2 economy — design proposal
+# M2 economy — approved design
 
-Date: 2026-10-26. Revision 2. Status: **Gate 1 passed after repairs; Proposed policies awaiting design approval.**
+Date: 2026-10-26. Revision 2. Status: **Gate 1 passed after repairs; approved by the user on 2026-10-26.**
 Author: technical-director, build mode. Scope: one economy slice, no script layer.
 
 Six independent gate lenses reviewed this design. The consumer and simulation blockers and
 the API/network/rigour corrections are resolved; affected seats re-reviewed the repairs.
 See [review record](../../research/m2/design-reviews.md). Gate passage establishes design
-readiness, not implemented M2 behavior or approval of new gameplay policies.
+readiness, not implemented M2 behavior. The user subsequently approved this economy-only
+slice and its M2 policies; the implementation plan is next.
 
 ## 1. Contract and status
 
@@ -24,11 +25,12 @@ full default-game roster and rules. See spec:24-84, 149-165, 177-209, 315-332, 7
 simulation, replication and visuals; 6.1 fixed ticks; 6.9/13.7 authorized selective replication;
 7.2 atomic accounting; section 12 invariants 1, 2, 5, 10, 11, 12 and 13.
 
-**New studio proposals in this document:** economy-only scope; no runtime in M2; two payment
+**Approved M2 choices (user approval, 2026-10-26):** economy-only scope; no runtime in M2; two payment
 policies; owner-only private economy replication; map-boot initialization; integer accounting;
-refund failure behavior; gather fallback and output blockage rules. Every new schema and rule
-below is a proposal, not a retroactive claim of user approval. The vault decision
-`vault/Decisions/2026-10-26 M2 scope and no script layer.md:9` is also **proposed**.
+refund failure behavior; gather fallback and output blockage rules. The user approved the
+revision 2 design after gate 1. The schema and rules below are the M2 implementation contract;
+they do not settle the retained long-term open decisions. The approval is also recorded in
+`vault/Decisions/2026-10-26 M2 scope and no script layer.md`.
 
 **Open and retained:** scripting language/sandbox/budgets (D34, 5.3, 15), consume-over-time
 production, general factories/research/logistics, mod sharing/visibility rules, final tick rate,
@@ -586,11 +588,12 @@ third package; bevy-rendering-engineer/web-platform-engineer client; qa-lead ref
 The next artifact is the gated implementation plan, including tests before mechanisms and
 browser validation. This document changes no product code.
 
-No unanswered product question blocks planning this economy slice **if these proposals are
-approved**. Explicit calls to review: map boot initialization; owner-only replication; integer
+No unanswered product question blocks planning this approved economy slice.
+Approved calls: map boot initialization; owner-only replication; integer
 rate/duration units; queued reservation/charge-at-start; reject cancellation when refund cannot
 fit; retain cargo/retry full receivers; FIFO blocked output and ordered tie-breaks; API/protocol
-breaking migration; no scripts. These are studio proposals, not settled spec decisions.
+breaking migration; no scripts. These are approved M2 choices, not changes to the source
+specification's long-term open decisions.
 
 Full section 16.2 playable scheduling remains an open CEO/product call: construction, power,
 combat, engineer repair and victory still need a validation home and their own policies. The
