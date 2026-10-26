@@ -256,9 +256,11 @@ types, no Bevy entity ids.
   Sent after `Welcome` and when a client requests resync. (G1)
 - **UnitDeltas** (server, sequenced unreliable, every tick, empty when nothing changed):
   `{tick, base_tick, changes: [{unit_id, pos}]}`. `base_tick` is the previous tick. A unit absent
-  from `changes` is unchanged at `tick`. The client discards deltas with `tick` at or below its
-  snapshot tick, and sends `ResyncRequest` when `base_tick` differs from the last tick it
-  applied. (G1, G1b)
+  from `changes` is unchanged at `tick`. When `base_tick` differs from the last tick it applied,
+  the client sends one `ResyncRequest` and enters resync. During resync it sends no further
+  request and buffers incoming deltas. When the `Snapshot` (tick S) arrives, it applies it, drops
+  buffered deltas with `tick` at or below S, and replays the rest in order while their
+  `base_tick` chain holds. A break in the chain starts one new resync. (G1, G1b, G1c)
 - **MoveTo** (client, reliable): `{seq, unit_ids, target: {x, y}}`.
 - **CommandAck** (server, at once): `{seq, tick}`. Means received, not accepted (6.2). (G1)
 - **CommandRejected** (server): `{seq, reason}` when validation fails (sender does not own the
@@ -293,7 +295,7 @@ gameplay entity. Slot records are not gameplay entities.
 | T5 convergence (native, localhost) | headless native client at a fixed 60 frames per second joins and sends one `MoveTo`; server logs (tick, wall time, pos); client logs (frame wall time, bracket ticks, fraction, presented pos) | every presented position lies on the segment between the server-log positions at consecutive ticks k and k+1, fraction in [0, 1]; lag p99 ≤ 2 ticks, maximum recorded; arrival equals the server's final position | a client that extrapolates, invents positions, interpolates across a gap, or stalls |
 | T6 second viewer | two headless clients | the second client's presented path satisfies T5's oracle against the same server log | replication to one client only |
 | T6b late join | a client joins after the unit has arrived | within 3 ticks of `Welcome` the client presents the unit at the final position | a design without catch-up; an empty presentation log |
-| T8 lost delta | a client that drops one `UnitDeltas` during the move and one at the stop | the client sends `ResyncRequest`, receives a `Snapshot`, and presents the final position | a client that never detects a missing delta |
+| T8 lost delta | a client that drops one `UnitDeltas` during the move and one at the stop; a second case that also holds each `Snapshot` back by 3 ticks | exactly one `ResyncRequest` per loss; the client presents the final position in both cases | a client that never detects a missing delta; a resync storm; a loop when the `Snapshot` arrives late |
 | T7 browser join | trunk-built client in headless Chromium against the real server; reads `window.turts_debug` | reaches `Welcome`; presents one unit; T5's segment oracle holds; lag recorded, not judged | a wasm build or transport that fails in the browser |
 | M1 measurements | T5 run; synthetic run with 1,000 units moving | bytes per tick to one client at WebSocket frame level; server tick p99; browser frame p99; wasm memory high-water | recorded in `docs/measurements/m1.md`, not judged |
 
