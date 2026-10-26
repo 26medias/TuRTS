@@ -199,10 +199,11 @@ fn duplicate_keys_and_cross_kind_ids_reject() {
 #[test]
 fn all_definitions_are_validated() {
     let bad_unused = resource("unused", ResourceKind::Item);
+    let wood = resource("wood", ResourceKind::Item);
     let worker = valid_worker();
     let result = validate(
         vec![worker],
-        vec![bad_unused],
+        vec![wood, bad_unused],
         vec![source(
             "nodes/grove.ron",
             NodeDef {
@@ -214,7 +215,9 @@ fn all_definitions_are_validated() {
         )],
         vec![],
     );
-    assert!(result.is_err());
+    let error = result.unwrap_err();
+    assert_eq!(error.field_path, "item");
+    assert_eq!(error.file.as_deref(), Some("nodes/grove.ron"));
 }
 
 #[test]
@@ -281,6 +284,43 @@ fn capability_and_recipe_matrix() {
         },
     );
     assert!(validate(vec![bad_radius], vec![], vec![], vec![]).is_err());
+    let radius_at_bound = source(
+        "units/worker.ron",
+        UnitDef {
+            footprint: Footprint::Circle { radius: 50.0 },
+            ..static_unit.value.clone()
+        },
+    );
+    assert!(validate(vec![radius_at_bound], vec![], vec![], vec![]).is_ok());
+    let radius_above_bound = source(
+        "units/worker.ron",
+        UnitDef {
+            footprint: Footprint::Circle { radius: 50.01 },
+            ..static_unit.value.clone()
+        },
+    );
+    let error = validate(vec![radius_above_bound], vec![], vec![], vec![]).unwrap_err();
+    assert_eq!(error.field_path, "footprint.radius");
+    assert_eq!(error.file.as_deref(), Some("units/worker.ron"));
+
+    let speed_at_bound = source(
+        "units/worker.ron",
+        UnitDef {
+            movement: Some(MovementDef { speed: 100.0 }),
+            ..static_unit.value.clone()
+        },
+    );
+    assert!(validate(vec![speed_at_bound], vec![], vec![], vec![]).is_ok());
+    let speed_above_bound = source(
+        "units/worker.ron",
+        UnitDef {
+            movement: Some(MovementDef { speed: 100.01 }),
+            ..static_unit.value.clone()
+        },
+    );
+    let error = validate(vec![speed_above_bound], vec![], vec![], vec![]).unwrap_err();
+    assert_eq!(error.field_path, "movement.speed");
+    assert_eq!(error.file.as_deref(), Some("units/worker.ron"));
     let bad_node = source(
         "nodes/tree.ron",
         NodeDef {
@@ -306,7 +346,15 @@ fn capability_and_recipe_matrix() {
         queue_capacity: 1,
         spawn_offsets: vec![turts_mod_api::schema::WorldPos { x: 0.0, y: 1.0 }],
     });
-    assert!(validate(vec![mobile_producer], vec![], vec![], vec![]).is_err());
+    let error = validate(
+        vec![mobile_producer],
+        vec![resource("wood", ResourceKind::Item)],
+        vec![],
+        vec![],
+    )
+    .unwrap_err();
+    assert_eq!(error.field_path, "producer");
+    assert_eq!(error.file.as_deref(), Some("units/worker.ron"));
 
     let producer = UnitDef {
         id: "yard".into(),
@@ -413,15 +461,15 @@ fn capability_and_recipe_matrix() {
         drop_off: None,
         producer: None,
     };
-    assert!(
-        validate(
-            vec![source("units/worker.ron", static_worker)],
-            vec![],
-            vec![],
-            vec![source("production/hire.ron", make_recipe(vec![]))],
-        )
-        .is_err()
-    );
+    let error = validate(
+        vec![source("units/worker.ron", static_worker)],
+        vec![],
+        vec![],
+        vec![source("production/hire.ron", make_recipe(vec![]))],
+    )
+    .unwrap_err();
+    assert_eq!(error.field_path, "output_unit");
+    assert_eq!(error.file.as_deref(), Some("production/hire.ron"));
     let bad_refunds = make_recipe(vec![Cost {
         resource: "cedar:wood".into(),
         amount: 1,
@@ -441,4 +489,102 @@ fn capability_and_recipe_matrix() {
         )
         .is_err()
     );
+}
+
+#[test]
+fn late_producer_cost_errors_keep_definition_file_and_both_indexes() {
+    let yard = UnitDef {
+        id: "yard".into(),
+        name: "Yard".into(),
+        footprint: Footprint::Circle { radius: 1.0 },
+        movement: None,
+        inventory: Some(InventoryDef {
+            capacity: 10,
+            accepts: vec!["cedar:wood".into()],
+        }),
+        gatherer: None,
+        drop_off: None,
+        producer: Some(ProducerDef {
+            recipes: vec!["cedar:free".into(), "cedar:hire".into()],
+            queue_capacity: 2,
+            spawn_offsets: vec![turts_mod_api::schema::WorldPos { x: 0.0, y: 1.0 }],
+        }),
+    };
+    let worker = UnitDef {
+        id: "worker".into(),
+        name: "Worker".into(),
+        footprint: Footprint::Circle { radius: 1.0 },
+        movement: Some(MovementDef { speed: 1.0 }),
+        inventory: None,
+        gatherer: None,
+        drop_off: None,
+        producer: None,
+    };
+    let no_costs = |id: &str| ProductionDef {
+        id: id.into(),
+        name: id.into(),
+        output_unit: "cedar:worker".into(),
+        duration_ms: 1,
+        costs: vec![],
+        payment: PaymentPolicy::ChargeOnQueue,
+        cancel_refunds: CancelRefunds {
+            queued: RefundRatio {
+                numerator: 1,
+                denominator: 1,
+            },
+            running: RefundRatio {
+                numerator: 1,
+                denominator: 1,
+            },
+            output_blocked: RefundRatio {
+                numerator: 1,
+                denominator: 1,
+            },
+        },
+    };
+    let mut bad_cost_recipe = no_costs("hire");
+    bad_cost_recipe.costs.push(Cost {
+        resource: "cedar:stone".into(),
+        amount: 1,
+        source: CostSource::ProducerInventory,
+    });
+    let error = validate(
+        vec![
+            source("units/yard-real.ron", yard.clone()),
+            source("units/worker-real.ron", worker.clone()),
+        ],
+        vec![
+            resource("wood", ResourceKind::Item),
+            resource("stone", ResourceKind::Item),
+        ],
+        vec![],
+        vec![
+            source("production/free-real.ron", no_costs("free")),
+            source("production/hire-real.ron", bad_cost_recipe.clone()),
+        ],
+    )
+    .unwrap_err();
+    assert_eq!(error.field_path, "producer.recipes[1].costs[0]");
+    assert_eq!(error.file.as_deref(), Some("units/yard-real.ron"));
+
+    let mut no_inventory_yard = yard;
+    no_inventory_yard.inventory = None;
+    let error = validate(
+        vec![
+            source("units/yard-real.ron", no_inventory_yard),
+            source("units/worker-real.ron", worker),
+        ],
+        vec![
+            resource("wood", ResourceKind::Item),
+            resource("stone", ResourceKind::Item),
+        ],
+        vec![],
+        vec![
+            source("production/free-real.ron", no_costs("free")),
+            source("production/hire-real.ron", bad_cost_recipe),
+        ],
+    )
+    .unwrap_err();
+    assert_eq!(error.field_path, "producer.recipes[1].costs[0]");
+    assert_eq!(error.file.as_deref(), Some("units/yard-real.ron"));
 }

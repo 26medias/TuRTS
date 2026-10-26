@@ -103,6 +103,7 @@ pub struct GathererDef {
     pub interaction_range: f32,
 }
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub enum DropOffEffect {
     Store,
     Convert { balance: ContentRef, per_item: u64 },
@@ -241,8 +242,30 @@ pub struct MapDef {
     pub size: MapSize,
     pub placements: Vec<Placement>,
     pub nodes: Vec<NodePlacement>,
+    #[serde(deserialize_with = "unique_slot_economy")]
     pub slot_economy: Vec<SlotEconomyInit>,
 }
+
+fn unique_slot_economy<'de, D>(deserializer: D) -> Result<Vec<SlotEconomyInit>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let entries = Vec::<SlotEconomyInit>::deserialize(deserializer)?;
+    let mut slots = std::collections::BTreeSet::new();
+    let mut balances = std::collections::BTreeSet::new();
+    for entry in &entries {
+        if !slots.insert(entry.slot) {
+            return Err(serde::de::Error::custom("duplicate slot economy entry"));
+        }
+        for balance in &entry.balances {
+            if !balances.insert((entry.slot, balance.balance.as_str())) {
+                return Err(serde::de::Error::custom("duplicate balance seed for slot"));
+            }
+        }
+    }
+    Ok(entries)
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum VisualTarget {
     Unit(ContentRef),

@@ -10,6 +10,9 @@ pub use turts_mod_api::content::{
 use turts_mod_api::schema_v02::*;
 use turts_mod_api::{ContentId, ModError, PackageId};
 
+const MAX_MOVEMENT_SPEED: f32 = 100.0;
+const MAX_FOOTPRINT_RADIUS: f32 = 50.0;
+
 pub fn checked_content_ref(
     origin: &PackageId,
     file: &str,
@@ -63,6 +66,25 @@ fn check_finite_positive(
     Ok(())
 }
 
+fn check_finite_positive_at_most(
+    origin: &PackageId,
+    file: &str,
+    field: &str,
+    value: f32,
+    maximum: f32,
+) -> Result<(), ModError> {
+    check_finite_positive(origin, file, field, value, false)?;
+    if value > maximum {
+        return Err(error(
+            origin,
+            file,
+            field,
+            format!("must be finite, > 0 and <= {maximum}"),
+        ));
+    }
+    Ok(())
+}
+
 pub fn validate_content(
     origin: &PackageId,
     resources: Vec<SourceDef<ResourceDef>>,
@@ -86,14 +108,24 @@ pub fn validate_content(
     let unit_sources = units;
     let node_sources = nodes;
     let production_sources = production;
+    let mut unit_files = BTreeMap::new();
     for src in &unit_sources {
         insert_id(origin, &src.file, &src.value.id, &mut all_ids)?;
+        unit_files.insert(
+            local_id(origin, &src.file, &src.value.id)?,
+            src.file.clone(),
+        );
     }
     for src in &node_sources {
         insert_id(origin, &src.file, &src.value.id, &mut all_ids)?;
     }
+    let mut production_files = BTreeMap::new();
     for src in &production_sources {
         insert_id(origin, &src.file, &src.value.id, &mut all_ids)?;
+        production_files.insert(
+            local_id(origin, &src.file, &src.value.id)?,
+            src.file.clone(),
+        );
     }
 
     for src in unit_sources {
@@ -101,12 +133,22 @@ pub fn validate_content(
         let file = src.file;
         let id = local_id(origin, &file, &value.id)?;
         match value.footprint {
-            Footprint::Circle { radius } => {
-                check_finite_positive(origin, &file, "footprint.radius", radius, false)?
-            }
+            Footprint::Circle { radius } => check_finite_positive_at_most(
+                origin,
+                &file,
+                "footprint.radius",
+                radius,
+                MAX_FOOTPRINT_RADIUS,
+            )?,
         }
         if let Some(m) = &value.movement {
-            check_finite_positive(origin, &file, "movement.speed", m.speed, false)?;
+            check_finite_positive_at_most(
+                origin,
+                &file,
+                "movement.speed",
+                m.speed,
+                MAX_MOVEMENT_SPEED,
+            )?;
         }
         let inventory = value
             .inventory
@@ -441,13 +483,14 @@ pub fn validate_content(
             },
         );
     }
-    for unit in catalog.units.values() {
+    for (unit_id, unit) in &catalog.units {
+        let file = unit_source_file(origin, unit_id, &unit_files)?;
         if let Some(producer) = &unit.producer {
             for (i, recipe) in producer.recipes.iter().enumerate() {
                 if !catalog.production.contains_key(recipe) {
                     return Err(unknown_ref(
                         origin,
-                        "units",
+                        file,
                         &format!("producer.recipes[{i}]"),
                         recipe,
                         catalog.production.keys(),
@@ -456,11 +499,12 @@ pub fn validate_content(
             }
         }
     }
-    for recipe in catalog.production.values() {
+    for (recipe_id, recipe) in &catalog.production {
+        let file = definition_source_file(origin, recipe_id, &production_files)?;
         let output = catalog.units.get(&recipe.output_unit).ok_or_else(|| {
             error(
                 origin,
-                "production",
+                file,
                 "output_unit",
                 format!("unknown unit `{}`", recipe.output_unit),
             )
@@ -468,40 +512,42 @@ pub fn validate_content(
         if output.movement.is_none() || output.producer.is_some() {
             return Err(error(
                 origin,
-                "production",
+                file,
                 "output_unit",
                 "output must be mobile and cannot be a producer",
             ));
         }
-        for cost in &recipe.costs {
-            if cost.source == CostSource::ProducerInventory {
-                // The producer capability is checked for every producer that enables the recipe below.
-            }
-        }
     }
-    for unit in catalog.units.values() {
+    for (unit_id, unit) in &catalog.units {
+        let file = unit_source_file(origin, unit_id, &unit_files)?;
         if let Some(producer) = &unit.producer {
-            for recipe in &producer.recipes {
-                let def = &catalog.production[recipe];
-                for (i, cost) in def
-                    .costs
-                    .iter()
-                    .enumerate()
-                    .filter(|(_, c)| c.source == CostSource::ProducerInventory)
-                {
+            for (recipe_index, recipe) in producer.recipes.iter().enumerate() {
+                let Some(def) = catalog.production.get(recipe) else {
+                    return Err(unknown_ref(
+                        origin,
+                        file,
+                        &format!("producer.recipes[{recipe_index}]"),
+                        recipe,
+                        catalog.production.keys(),
+                    ));
+                };
+                for (cost_index, cost) in def.costs.iter().enumerate() {
+                    if cost.source != CostSource::ProducerInventory {
+                        continue;
+                    }
                     let inventory = unit.inventory.as_ref().ok_or_else(|| {
                         error(
                             origin,
-                            "units",
-                            "producer.recipes",
+                            file,
+                            &format!("producer.recipes[{recipe_index}].costs[{cost_index}]"),
                             "ProducerInventory cost requires producer inventory",
                         )
                     })?;
                     if !inventory.accepts.contains(&cost.resource) {
                         return Err(error(
                             origin,
-                            "units",
-                            &format!("producer.recipes[{i}]"),
+                            file,
+                            &format!("producer.recipes[{recipe_index}].costs[{cost_index}]"),
                             "ProducerInventory cost resource is not accepted by producer inventory",
                         ));
                     }
@@ -510,6 +556,29 @@ pub fn validate_content(
         }
     }
     Ok(catalog)
+}
+
+fn unit_source_file<'a>(
+    origin: &PackageId,
+    id: &ContentId,
+    files: &'a BTreeMap<ContentId, String>,
+) -> Result<&'a str, ModError> {
+    definition_source_file(origin, id, files)
+}
+
+fn definition_source_file<'a>(
+    origin: &PackageId,
+    id: &ContentId,
+    files: &'a BTreeMap<ContentId, String>,
+) -> Result<&'a str, ModError> {
+    files.get(id).map(String::as_str).ok_or_else(|| {
+        error(
+            origin,
+            "content",
+            "source",
+            format!("source file for `{id}` was not retained"),
+        )
+    })
 }
 
 fn insert_id(
