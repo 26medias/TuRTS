@@ -15,7 +15,7 @@ The studio roster, who decides what, the model tiers, and the review process.
 
 **CEO:** the user. Sets high-level goals and breaks ties. Does not need to be in the loop for the studio to progress. Reads [[Home]] and the daily report in `Reports/`.
 
-**Orchestrator:** the main Claude Code session (Fable 5.1). Picks lenses per gate, makes studio calls, writes specs and plans, keeps this vault.
+**Orchestrator:** the main Codex session, taking over from Claude Code on 2026-10-26. Picks lenses per gate, makes studio calls, writes specs and plans, keeps this vault.
 
 **Sixteen seats** in `.claude/agents/` (design: `docs/superpowers/specs/2026-10-25-studio-agent-team-design.md`):
 
@@ -39,6 +39,10 @@ The studio roster, who decides what, the model tiers, and the review process.
 | spec-rigour-reviewer | contradictions, status drift, untestable claims; STE reader |
 
 **Model tiers** (CEO rule, 2026-10-26): Fable 5.1 for complex problems, specs, plans, and deep gate reviews. Opus 5.5 for hard but less complex problems. Sonnet 5.5 or Haiku 5.5 at xhigh effort for code that is already specified.
+
+**Codex handoff:** the Claude model names above record the original routing rule. They are not available in this Codex session. The orchestrator uses the available Codex models and states both model and reasoning effort on each dispatch. Initial design and QA assignments use `gpt-6.1-sol` at `high` effort. This is a platform adaptation, not a change to the team's responsibilities or review gates.
+
+Codex does not automatically register `.claude/agents/` as native roles. Each dispatch tells the agent to read its role file, standing rules, relevant project notes, and source documents. Claude-specific frontmatter tool names are mapped to the tools available in the session. Role memory remains in `.claude/agent-memory/`; shared skills are available under `~/.agents/skills/`. There are four concurrent slots including the orchestrator, so larger gates run in batches.
 
 **Process:** the Anvil, sized to the task. Brainstorm, spec, gate 1 (four lenses), plan, gate 2, execute, verify. Reviewers run things and cite `path:line`. No Anvil on trivial work.
 

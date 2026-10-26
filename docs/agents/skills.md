@@ -29,9 +29,10 @@ Install form: `npx skills add <package> -g -y`. Update all: `npx skills update`.
 | linux-perf | mohitmishra786/low-level-dev-skills@linux-perf | performance | Cache-miss counters for the 4-vCPU server (D58). |
 | rust-performance | full-stack-skills/rust-skills@rust-performance | performance | p50/p95/p99 contract; no commands of its own. |
 
-Bevy version: no `Cargo.toml` exists. crates.io stable was 0.20.0 on 2026-10-26. Ten skills pin
-0.19. When the workspace pins a version, re-check the pinned skills, and read the `bevy-ecs`
-pitfalls before any 0.19 snippet.
+Bevy version: the workspace `Cargo.toml` pins 0.20.0. Ten skills pin 0.19. Check their examples
+against the pinned workspace version, and read the `bevy-ecs` 0.20 pitfalls before using any
+0.19 snippet. The original pre-workspace installation review does not establish compatibility
+of every skill example with the current engine.
 
 ## Deferred, with the decision that unblocks each
 

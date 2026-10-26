@@ -15,7 +15,7 @@ The task board. Move items between sections; keep owner and evidence link on eac
 
 ## In progress
 
-- [ ] **PAUSED by the CEO (2026-10-26) to save tokens.** Resume point: write the M2 design from `docs/research/m2/` (three reports) and the studio calls in [[Decisions/2026-10-26 M2 scope and no script layer]], then gate 1.
+- [ ] **M2 design approval, then implementation plan.** Owner: Codex orchestrator. Economy design revision 2 passed gate 1 after repairs; proposed scope/payment rules await approval. Design: `docs/superpowers/specs/2026-10-26-m2-economy-design.md`; companion: `2026-10-26-m2-authoring-example.md`; evidence: `docs/research/m2/design-reviews.md`. No M2 product code yet.
 
 ## Backlog (M1)
 
@@ -29,6 +29,8 @@ The task board. Move items between sections; keep owner and evidence link on eac
 - [ ] Acceptance tests T1 to T6 (producer's list), each shown red first.
 
 ## Done
+
+- [x] 2026-10-26: Codex handoff; sixteen roles and shared skills verified. M2 design and complete authoring example written; six-seat gate 1 passed after consumer/simulation repairs and re-reviews. Evidence: `docs/research/m2/design-reviews.md`.
 
 - [x] 2026-10-26: M2 research by producer, game-designer, mod-runtime-engineer.
 

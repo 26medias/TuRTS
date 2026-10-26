@@ -17,7 +17,7 @@ Dashboard for the TuRTS studio. Read this first, then [[Tasks]] and the latest n
 
 **Current milestone:** M1 done. Next: M2, mod API proven by the default mod plus an alternative economy mod.
 
-**Phase:** M1 closed on 2026-10-26. M2 research done; M2 is **paused** by the CEO to save tokens. Resume point in [[Tasks]]. Latest report: [[Reports/2026-10-26]].
+**Phase:** M1 closed on 2026-10-26. M2 resumed after the Codex handoff: economy design revision 2 passed gate 1 after repairs. Design approval is next, then the implementation plan. See [[Tasks]] and [[Team]]. Latest report: [[Reports/2026-10-26]].
 
 **Repository:** https://github.com/26medias/TuRTS (public). CI green.
 
