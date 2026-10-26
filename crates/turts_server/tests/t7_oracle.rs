@@ -7,8 +7,9 @@
 //!
 //! `frames.jsonl` has one line per distinct debug string that `window.turts_debug()` returned:
 //! `{"at_ms": <page clock, ms since the epoch>, "last_frame": {..}, "units": [{..}],
-//! "scene": [{..}]}`. `scene` is what `window.turts_scene()` returned in the same poll; t7.js
-//! checks it and counts the passes in `result.json` (`scene_checked`). The
+//! "scene": {"cameras_3d": 1, "units": [{..}]}}`. `scene` is what `window.turts_scene()`
+//! returned in the same poll; t7.js checks it (one active 3D camera, one unit entity at the
+//! presented position) and counts the passes in `result.json` (`scene_checked`). The
 //! page clock reads `performance.timeOrigin + performance.now()` at the poll. The poll is
 //! later than the frame, so the lag that the oracle works out is an upper bound. The lag is
 //! recorded and not judged: the browser clock is not the server clock.

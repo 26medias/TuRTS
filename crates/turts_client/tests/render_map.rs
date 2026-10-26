@@ -6,9 +6,11 @@ use bevy::asset::AssetPlugin;
 use bevy::prelude::*;
 use turts_client::acquire::Acquired;
 use turts_client::input::ground_point;
-use turts_client::join::AcquiredPackages;
+use turts_client::join::{AcquiredPackages, Phase};
 use turts_client::present::{Presented, PresentedUnit as PresentedRecord};
-use turts_client::render::{PresentedUnit, mesh_for, mesh_lift, sync_units, world_to_scene};
+use turts_client::render::{
+    PresentedUnit, mesh_for, mesh_lift, setup_scene, sync_units, world_to_scene,
+};
 use turts_mod_api::Shape;
 use turts_net_protocol::Pos;
 
@@ -178,4 +180,54 @@ fn sync_units_skips_a_unit_without_a_visual() {
     app.world_mut().resource_mut::<Presented>().units = vec![other];
     app.update();
     assert_eq!(shown(&mut app), Vec::new());
+}
+
+/// An app with only `setup_scene`, the asset stores it needs, and the given phase.
+fn setup_app(phase: Phase) -> App {
+    let mut app = App::new();
+    app.add_plugins((MinimalPlugins, AssetPlugin::default()))
+        .init_asset::<Mesh>()
+        .init_asset::<StandardMaterial>()
+        .insert_resource(phase)
+        .insert_resource(AcquiredPackages(Acquired {
+            lockfile_hash: String::new(),
+            visuals: HashMap::new(),
+            map_size: (48.0, 32.0),
+            unit_names: HashMap::new(),
+        }))
+        .add_systems(Update, setup_scene);
+    app
+}
+
+/// The number of 3D cameras that are on, as the browser hook counts them.
+fn active_cameras_3d(app: &mut App) -> usize {
+    let mut query = app.world_mut().query_filtered::<&Camera, With<Camera3d>>();
+    query
+        .iter(app.world())
+        .filter(|camera| camera.is_active)
+        .count()
+}
+
+#[test]
+fn setup_scene_spawns_exactly_one_active_camera_3d() {
+    // M1 verify: a scene with no `Camera3d` has meshes that nothing can see. `window.turts_scene`
+    // lists entities, so the camera needs its own check. A `setup_scene` that spawns no camera
+    // goes red here, and so does one that spawns a second camera.
+    let mut app = setup_app(Phase::Joined { slot: 0 });
+    app.update();
+    assert_eq!(active_cameras_3d(&mut app), 1);
+    // The system runs once. Later frames add no camera.
+    app.update();
+    app.update();
+    assert_eq!(active_cameras_3d(&mut app), 1);
+}
+
+#[test]
+fn setup_scene_waits_for_the_join() {
+    let mut app = setup_app(Phase::Joining);
+    app.update();
+    assert_eq!(active_cameras_3d(&mut app), 0);
+    *app.world_mut().resource_mut::<Phase>() = Phase::Joined { slot: 0 };
+    app.update();
+    assert_eq!(active_cameras_3d(&mut app), 1);
 }

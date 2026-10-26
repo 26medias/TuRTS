@@ -10,12 +10,14 @@
 //! - `window.turts_memory_bytes()` returns the size of the wasm linear memory in bytes. Wasm
 //!   memory never shrinks, so the last value that a run reads is its high-water mark
 //!   (`tests/browser/measure.js`, design 4.5).
-//! - `window.turts_scene()` returns the rendered scene as JSON: one entry for each entity that
-//!   has a mesh and a unit id (`turts_client::render::PresentedUnit`), with its world
-//!   translation, `[{"unit_id": 1, "translation": [x, y, z]}]`, ascending by unit id. A map
-//!   `(x, y)` is the scene point `(x, lift, y)`. It returns an empty string until the first
-//!   frame has run. T7 reads it (M1 verify): the browser "presents" a unit only when the scene
-//!   holds it.
+//! - `window.turts_scene()` returns the rendered scene as JSON:
+//!   `{"cameras_3d": 1, "units": [{"unit_id": 1, "translation": [x, y, z]}]}`. `cameras_3d` is
+//!   the number of active 3D cameras (M1 verify): a scene with meshes and no camera shows
+//!   nothing. `units` has one entry for each entity that has a mesh and a unit id
+//!   (`turts_client::render::PresentedUnit`), with its world translation, ascending by unit id.
+//!   A map `(x, y)` is the scene point `(x, lift, y)`. It returns an empty string until the
+//!   first frame has run. T7 reads it (M1 verify): the browser "presents" a unit only when the
+//!   scene holds it and a camera can see it.
 //!
 //! The page query is `?server=<http url>&ws=<ws url>`. When it is wrong, the page gets the
 //! message in `window.turts_error` and the app does not start.
@@ -106,20 +108,24 @@ fn publish_debug(state: Res<DebugState>) {
     DEBUG.lock().unwrap().clone_from(&state.0);
 }
 
-/// `Last`: list the rendered units for the page. `GlobalTransform` is up to date here: the
-/// transform propagation runs in `PostUpdate`.
-fn publish_scene(units: Query<(&SceneUnit, &GlobalTransform), With<Mesh3d>>) {
+/// `Last`: list the rendered units and count the active 3D cameras for the page.
+/// `GlobalTransform` is up to date here: the transform propagation runs in `PostUpdate`.
+fn publish_scene(
+    units: Query<(&SceneUnit, &GlobalTransform), With<Mesh3d>>,
+    cameras: Query<&Camera, With<Camera3d>>,
+) {
     let mut entries: Vec<(u32, Vec3)> = units
         .iter()
         .map(|(unit, transform)| (unit.0, transform.translation()))
         .collect();
     entries.sort_unstable_by_key(|(unit_id, _)| *unit_id);
-    *SCENE.lock().unwrap() = scene_json(&entries);
+    let active_cameras = cameras.iter().filter(|camera| camera.is_active).count();
+    *SCENE.lock().unwrap() = scene_json(active_cameras, &entries);
 }
 
 /// The JSON of `window.turts_scene`. A non-finite coordinate is written as `null`, so the page
 /// can always parse the text and the check fails on the value.
-fn scene_json(entries: &[(u32, Vec3)]) -> String {
+fn scene_json(cameras_3d: usize, entries: &[(u32, Vec3)]) -> String {
     let number = |value: f32| {
         if value.is_finite() {
             value.to_string()
@@ -138,7 +144,10 @@ fn scene_json(entries: &[(u32, Vec3)]) -> String {
             )
         })
         .collect();
-    format!("[{}]", items.join(","))
+    format!(
+        "{{\"cameras_3d\":{cameras_3d},\"units\":[{}]}}",
+        items.join(",")
+    )
 }
 
 #[cfg(test)]
@@ -147,13 +156,26 @@ mod tests {
 
     #[test]
     fn scene_json_lists_units_with_their_translation() {
-        assert_eq!(scene_json(&[]), "[]");
+        assert_eq!(scene_json(0, &[]), r#"{"cameras_3d":0,"units":[]}"#);
         assert_eq!(
-            scene_json(&[
-                (1, Vec3::new(20.0, 0.9, 8.5)),
-                (2, Vec3::new(f32::NAN, 0.0, 1.0))
-            ]),
-            r#"[{"unit_id":1,"translation":[20,0.9,8.5]},{"unit_id":2,"translation":[null,0,1]}]"#
+            scene_json(
+                1,
+                &[
+                    (1, Vec3::new(20.0, 0.9, 8.5)),
+                    (2, Vec3::new(f32::NAN, 0.0, 1.0))
+                ]
+            ),
+            concat!(
+                r#"{"cameras_3d":1,"units":["#,
+                r#"{"unit_id":1,"translation":[20,0.9,8.5]},"#,
+                r#"{"unit_id":2,"translation":[null,0,1]}]}"#
+            )
         );
+    }
+
+    #[test]
+    fn scene_json_reports_the_camera_count() {
+        // M1 verify: T7 asserts exactly one active 3D camera, so the count must reach the page.
+        assert!(scene_json(2, &[]).starts_with(r#"{"cameras_3d":2,"#));
     }
 }

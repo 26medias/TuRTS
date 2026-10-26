@@ -14,12 +14,15 @@
 //   2. calls window.turts_move(20, 8) 1 s after the join, and keeps polling for 6 s more.
 //   3. writes <out dir>/frames.jsonl: one line per distinct debug string, with the page time of
 //      the poll in milliseconds since the epoch (performance.timeOrigin + performance.now()),
-//      the "last_frame" object, the "units" array and the "scene" array. The poll time is later
+//      the "last_frame" object, the "units" array and the "scene" object. The poll time is later
 //      than the frame time, so the lag that the oracle works out from it is an upper bound.
-//      The same poll reads window.turts_scene() (M1 verify): the entities of the rendered scene
-//      that have a mesh and a unit id, with their world translation. Every recorded poll must
-//      hold exactly one such entity, with the unit id of the presented unit, at the presented
-//      map position (x, y) mapped to the scene (x -> x, y -> z), within 0.01.
+//      The same poll reads window.turts_scene() (M1 verify):
+//      {"cameras_3d": <number of active 3D cameras>, "units": [<the entities of the rendered
+//      scene that have a mesh and a unit id, with their world translation>]}. Every recorded
+//      poll must hold exactly one active 3D camera, because a scene that no camera shows is not
+//      presented. It must also hold exactly one unit entity, with the unit id of the presented
+//      unit, at the presented map position (x, y) mapped to the scene (x -> x, y -> z), within
+//      0.01.
 //   4. checks the last poll: one unit, the expected content id, and a position within 1e-3 of
 //      --expect-final.
 //   5. writes <out dir>/result.json. "scene_checked" is the number of polls whose scene passed
@@ -143,14 +146,17 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
     // The rendered scene of one poll against the presented units of the same poll. Returns
     // null when it passes, or the reason.
     const sceneProblem = (debug, scene) => {
-        if (!Array.isArray(scene)) {
+        if (scene === null || typeof scene !== "object" || !Array.isArray(scene.units)) {
             return `window.turts_scene() gave ${JSON.stringify(scene)}`;
         }
-        if (scene.length !== 1) {
-            return `expected 1 scene entity with a mesh and a unit id, saw ${scene.length}`;
+        if (scene.cameras_3d !== 1) {
+            return `expected exactly 1 active 3D camera, saw ${JSON.stringify(scene.cameras_3d)}`;
+        }
+        if (scene.units.length !== 1) {
+            return `expected 1 scene entity with a mesh and a unit id, saw ${scene.units.length}`;
         }
         const unit = debug.units[0];
-        const entity = scene[0];
+        const entity = scene.units[0];
         if (entity.unit_id !== unit.unit_id) {
             return `scene unit_id ${entity.unit_id} != presented unit_id ${unit.unit_id}`;
         }

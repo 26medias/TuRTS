@@ -12,6 +12,11 @@ const ORIGIN: &str = "fixture_pkg";
 
 /// Two units owned by slot 0 at (8, 8) and (20, 20), on a 64 by 64 map.
 fn app_with_two_units() -> bevy_app::App {
+    app_with_two_units_on(MapSize { x: 64.0, y: 64.0 })
+}
+
+/// The same two units on a map of the given size.
+fn app_with_two_units_on(size: MapSize) -> bevy_app::App {
     let mut app = headless_app(20);
     let origin = PackageId(ORIGIN.to_string());
     let def = UnitDef {
@@ -31,7 +36,7 @@ fn app_with_two_units() -> bevy_app::App {
     };
     let map = MapDef {
         id: "field".to_string(),
-        size: MapSize { x: 64.0, y: 64.0 },
+        size,
         placements: vec![place(8.0, 8.0), place(20.0, 20.0)],
     };
     load_map(app.world_mut(), &origin, &map).unwrap();
@@ -211,6 +216,30 @@ fn move_to_nan_and_outside_map_rejected() {
             Err(RejectReason::TargetOutsideMap),
             Ok(()),
             Ok(()),
+        ]
+    );
+}
+
+#[test]
+fn move_to_bounds_use_the_axis_of_each_coordinate_on_a_non_square_map() {
+    // M1 verify: the map is 48 wide and 32 deep. A check that compares `y` with `size.x` (48)
+    // accepts (40, 40) and goes red here. A check that compares `x` with `size.y` (32) rejects
+    // (40, 20) and goes red here. Every shipped map is square, so only this map tells them apart.
+    let mut app = app_with_two_units_on(MapSize { x: 48.0, y: 32.0 });
+    send(&mut app, 0, 1, vec![1], Vec2::new(40.0, 40.0));
+    send(&mut app, 0, 2, vec![1], Vec2::new(40.0, 20.0));
+    send(&mut app, 0, 3, vec![1], Vec2::new(49.0, 20.0));
+    send(&mut app, 0, 4, vec![1], Vec2::new(48.0, 32.0));
+    app.update();
+    let got: Vec<(u32, Result<(), RejectReason>)> =
+        results(&app).iter().map(|r| (r.seq, r.outcome)).collect();
+    assert_eq!(
+        got,
+        vec![
+            (1, Err(RejectReason::TargetOutsideMap)),
+            (2, Ok(())),
+            (3, Err(RejectReason::TargetOutsideMap)),
+            (4, Ok(())),
         ]
     );
 }
