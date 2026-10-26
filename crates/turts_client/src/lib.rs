@@ -25,12 +25,14 @@ use turts_net_protocol::Pos;
 use crate::debug::{DebugState, exit_when_done, rebuild_debug_state};
 use crate::framelog::{FrameLog, write_frame_log};
 use crate::ingest::{CommandResults, IngestCounters, IngestHooks, ReplicaState, ingest_messages};
+use crate::input::ClickInputPlugin;
 use crate::join::{
     Acquisition, JoinState, Phase, auto_move, drive_acquisition, on_connected, on_disconnected,
     receive_rejection, start_connection, update_phase,
 };
 use crate::options::{ClientOptions, random_player_id};
 use crate::present::{Presented, update_presented};
+use crate::render::UnitRenderPlugin;
 
 /// The tick rate of the lightyear link (not of the simulation: `Welcome` carries that).
 const LINK_TICK_HZ: u16 = 20; // prototype constant: measure at M1
@@ -89,21 +91,40 @@ impl Plugin for ClientPlugin {
     }
 }
 
-/// Builds the client app. Headless: `MinimalPlugins` at 60 Hz. Otherwise `DefaultPlugins`
-/// (Task 10 sets up the window). `--run-secs` ends the run with `AppExit`.
+/// The window of the presentation path. On wasm32 it binds to the page canvas `#turts` and
+/// fits it to the parent; on native, `canvas` has no effect.
+fn window_plugin() -> WindowPlugin {
+    WindowPlugin {
+        primary_window: Some(Window {
+            title: "TuRTS".to_string(),
+            canvas: Some("#turts".to_string()),
+            fit_canvas_to_parent: true,
+            prevent_default_event_handling: true,
+            ..default()
+        }),
+        ..default()
+    }
+}
+
+/// Builds the client app. Headless: `MinimalPlugins` at 60 Hz. Otherwise `DefaultPlugins` with
+/// the window, the scene and the click input. `--run-secs` ends the run with `AppExit`.
 pub fn build_app(opts: ClientOptions) -> App {
     let mut app = App::new();
-    if opts.headless {
+    let headless = opts.headless;
+    if headless {
         app.add_plugins(MinimalPlugins.set(ScheduleRunnerPlugin::run_loop(
             Duration::from_secs_f64(1.0 / 60.0),
         )));
     } else {
-        app.add_plugins(DefaultPlugins);
+        app.add_plugins(DefaultPlugins.set(window_plugin()));
     }
     app.add_plugins(ClientPlugins {
         tick_duration: tick_duration(LINK_TICK_HZ),
     });
     app.add_plugins(ProtocolPlugin);
     app.add_plugins(ClientPlugin(opts));
+    if !headless {
+        app.add_plugins((UnitRenderPlugin, ClickInputPlugin));
+    }
     app
 }
