@@ -1,0 +1,30 @@
+# Network spike P8 (Task 6b): the wasm client joins the spike server through headless Chrome.
+# Not a workspace member; it has its own lockfile.
+[package]
+name = "spike_web"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+turts_net_lightyear = { path = "../../crates/turts_net_lightyear", features = ["client"] }
+turts_net_protocol = { path = "../../crates/turts_net_protocol" }
+lightyear = { version = "=0.31.0", default-features = false, features = ["std", "websocket", "netcode", "client"] }
+bevy = { version = "=0.20.0", default-features = false }
+wasm-bindgen = "=0.2.129"
+js-sys = "=0.3.106"
+web-sys = { version = "=0.3.106", features = ["Window", "Location"] }
+
+# Copied from the workspace profile (design 4.5).
+[profile.wasm-release]
+inherits = "release"
+opt-level = "z"
+lto = "fat"
+codegen-units = 1
+strip = "debuginfo"
+panic = "abort"
+
+[workspace]

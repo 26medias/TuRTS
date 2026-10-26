@@ -1,7 +1,7 @@
-# M1 networking spike: P1 to P7
+# M1 networking spike: P1 to P8
 
-Task 6a of `docs/superpowers/plans/2026-10-26-m1-foundation.md`. Pass list: design section 8.
-Task 6b adds P8.
+Task 6a (P1 to P7) and Task 6b (P8) of `docs/superpowers/plans/2026-10-26-m1-foundation.md`.
+Pass list: design section 8.
 
 **Stack under test:** lightyear 0.31.0, messages only, WebSocket, netcode `Manual` tokens
 (`default-features = false`, features `std`, `websocket`, `netcode`, plus `client` and `server`).
@@ -34,6 +34,7 @@ Final run: `test result: ok. 7 passed; 0 failed`, 209.81 s. The raw JSON of each
 | P5 60 s of `UnitDeltas` in order | pass in the final run; **1 lost delta in 1 of 3 runs** (see "Delta loss") | see the P5 table |
 | P6 killed client, tick p99 | pass | baseline p99 405 us (max 444, 341 samples); after the kill p99 127 us (max 250, 160 samples); bound 1,000 us |
 | P7 stalled reader for 5 s | pass | see the P7 table |
+| P8 wasm client in headless Chrome joins the same server | pass | `window.spike_state` is `"welcomed"` 265 to 294 ms after `goto`, in 4 of 4 runs; see the P8 section |
 
 ### P5: bytes per tick (final run, 60 s client run, through the relay without `--rcvbuf`)
 
@@ -188,3 +189,62 @@ the plant goes red on "no back-pressure". The final P7 run is on the repaired te
   `listening` on `Linked`.
 - `App::run` hands the world to the runner. Write any exit report before `AppExit`.
 - With `--rcvbuf 4096` and no pause, Send-Q stays at or below 10,368 bytes.
+
+## P8: wasm client in headless Chrome (Task 6b)
+
+**Code:** the commit that adds this section. Spike code: `tests/spike-web/` (cdylib, not a
+workspace member, own `Cargo.lock`), `tests/browser/spike_p8.js`, `tests/browser/package.json`
+and `package-lock.json` (`playwright-core` 1.64.1). The page reads `?ws=<host:port>`, connects
+with the Task 6a client shape (wasm `ClientConfig::default()`), sends `Hello` with
+`sha256:spike`, and sets `window.spike_state` to `"connecting"`, `"welcomed"` or `"rejected"`.
+
+**Browser:** `/usr/bin/google-chrome` 156.0.8078.47, launched by `playwright-core` with
+`headless: true` and no extra flags (default software rendering). Node v24.10.0.
+
+**Build:** trunk 0.22.0, wasm-bindgen 0.2.129, wasm-opt version 116, profile `wasm-release`
+(copied from the workspace), `data-wasm-opt="z"`. The `getrandom` backend flag was not
+necessary: the build passed without `tests/spike-web/.cargo/config.toml`. wasm 4,809,047 bytes
+(904,302 bytes with `brotli -q 11`).
+
+**Commands:**
+
+```
+cd tests/spike-web && trunk build --release
+python3 -m http.server <http port> --bind 127.0.0.1 --directory dist
+target/release/spike_server --ws 127.0.0.1:<ws port>
+node tests/browser/spike_p8.js http://127.0.0.1:<http port>/ 127.0.0.1:<ws port>
+```
+
+The runs used `CARGO_TARGET_DIR` and `trunk build --dist` in the session scratchpad, so no
+build output is in the tree. `spike_server` is the Task 6a binary
+(`cargo build --release -p turts_net_lightyear --features spike --bin spike_server`).
+
+| Run | `spike_p8.js` output | Exit |
+| --- | --- | --- |
+| 1 | `"state":"welcomed","ms":265` | 0 |
+| 2 | `"state":"welcomed","ms":276` | 0 |
+| 3 | `"state":"welcomed","ms":266` | 0 |
+| 4 (final code: runs 1 to 3 plus one `#[allow]` line) | `"state":"welcomed","ms":294`; server: `spike_server welcomed player 6532193036831189` | 0 |
+
+`ms` is the time from the start of `page.goto` to the poll that saw the state (poll each
+100 ms).
+
+**Plant.** The page sends `sha256:other` (the `HASH` constant in `tests/spike-web/src/lib.rs`).
+Result: red. Server: `spike_server rejected player 6737732976078358`; `spike_p8.js`:
+`"state":"rejected","ms":278`, the console logs, exit 1. Reverted; runs 1 to 4 are on the
+reverted code.
+
+The plan's plant (`spike_server --hash sha256:other`) cannot go red: `spike_server` has no
+`--hash` option and ignores unknown arguments. Run as written: `"state":"welcomed"`, exit 0.
+The plant moved to the page, which is a Task 6b file.
+
+**Facts found:**
+- `URL.searchParams` encodes `:` as `%3A`. The page decodes the `ws` value with
+  `decodeURIComponent` before it parses the socket address. The first run, without the decode,
+  stayed at `"connecting"` with `pageerror: invalid socket address syntax`.
+- `lightyear` and `turts_net_protocol` are direct dependencies of the spike crate, because
+  `turts_net_lightyear` does not re-export them. Pinned to the workspace versions.
+- `lightyear` with `client` and `websocket` on wasm32 pulls `lightyear_web`, which pulls
+  `bevy_winit`. This does not touch the server (P2).
+- The spike `Cargo.lock` has the same version as the workspace `Cargo.lock` for each of its
+  686 shared packages.
