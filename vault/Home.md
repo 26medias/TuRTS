@@ -15,9 +15,9 @@ Dashboard for the TuRTS studio. Read this first, then [[Tasks]] and the latest n
 
 **Product:** mod-first RTS engine in Rust and Bevy. Browser WebAssembly client first, authoritative headless server, the official game is a default mod on the public API. Spec: `RTS-Engine-Project-Specifications.md` (v0.7, 2026-10-26).
 
-**Current milestone:** M1. Browser client, authoritative headless server, one mod-defined unit. Browser joins a match and presents server results.
+**Current milestone:** M1 done. Next: M2, mod API proven by the default mod plus an alternative economy mod.
 
-**Phase:** M1 build. Design and plan gated; 13 of 18 tasks done; spike gate passed (lightyear kept). Latest report: [[Reports/2026-10-26]].
+**Phase:** M1 closed on 2026-10-26 (browser part; desktop executable waits for D02). Next: M2. Latest report: [[Reports/2026-10-26]].
 
 **Repository:** https://github.com/26medias/TuRTS (public). CI green.
 
