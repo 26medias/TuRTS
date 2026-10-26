@@ -29,3 +29,21 @@ A few type declarations and module ownership edits move between early commits; r
 
 - Sol execution preflight: `docs/superpowers/plans/2026-10-26-m2-economy.md` anchors P:87, P:135, P:250 and design D:197–219.
 - Full 16-task and 92-pair scan: `.superpowers/sdd/2026-10-26-m2-economy/progress.md` under “Execution preflight artifact”.
+
+
+## Ruling R2
+
+Ruling: Task 2 additionally owns `crates/turts_pack/Cargo.toml` for a dev-only workspace bevy_app dependency — planned `common::scenario(tick_hz)->App` helper needs direct type dependency; avoid artificial turts_sim reexport — cost if wrong one devdependency/pathlist rework, no runtime/gameplay policy change.
+
+**Why:** The planned `common::scenario(tick_hz) -> App` helper requires a direct type dependency in `turts_pack` tests. A dev-only workspace `bevy_app` dependency provides it directly and avoids an artificial `turts_sim` re-export.
+
+**Cost if wrong:** One dev-dependency and path-list rework; no runtime or gameplay policy change.
+
+**Execution status:** Task 2 owns this manifest path; `/root/m2_task_2` was informed the dependency is allowed.
+
+
+## Ruling R3 (before Task 2 fix round 1)
+
+Ruling: bootstrap balance initialization and owner/seed validation follow actual Slots resource count; host default and M2 fixtures remain two slots — honours every configured slot and prevents ghost/missing accounts — cost if wrong small count/getter/test rework; no new supported-capacity promise.
+
+**Resolution of the slot-scope review item:** This ruling resolves the scope question by making the actual `Slots` resource authoritative. It is a scope decision, not a claim that a test passed. The host default and M2 fixtures remain two slots; this creates no capacity promise.

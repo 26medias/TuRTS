@@ -15,7 +15,7 @@ The task board. Move items between sections; keep owner and evidence link on eac
 
 ## In progress
 
-- [ ] **M2 implementation (16 tasks).** Owner: Codex orchestrator; Sol for reasoning/planning/reviews, Luna for execution. The user approved execution on 2026-10-26. Plan: `docs/superpowers/plans/2026-10-26-m2-economy.md`; active managed worktree: `/home/julien/.codex/worktrees/ee40/TuRTS`; SDD ledger: `/home/julien/.codex/worktrees/ee40/TuRTS/.superpowers/sdd/2026-10-26-m2-economy/progress.md`. Task 1 is complete after fix round 1 review (commits `ddd9c64..2015cec`); Task 2 is ready next. Sol re-review `/root/m2_task_1_rereview_1` approved with no new breakage. Task 1 report: `.superpowers/sdd/2026-10-26-m2-economy/task-1-report.md`. Baseline workspace tests passed (211 passed, 0 failed, 12 ignored).
+- [ ] **M2 implementation (16 tasks).** Owner: Codex orchestrator; Sol for reasoning/planning/reviews, Luna for execution. The user approved execution on 2026-10-26. Plan: `docs/superpowers/plans/2026-10-26-m2-economy.md`; active managed worktree: `/home/julien/.codex/worktrees/ee40/TuRTS`; SDD ledger: `/home/julien/.codex/worktrees/ee40/TuRTS/.superpowers/sdd/2026-10-26-m2-economy/progress.md`. Tasks 1 and 2 of 16 are complete. Task 2 commits `119773d..41ff3db` passed Sol re-review with all four Important findings addressed and no new Critical/Important breakage. Task 3 is ready next; its working baseline will be the documentation checkpoint. Minor AuditState bounds/catalog/compiled-duration/resource-presence coverage is deferred to Task 8/final review. R1/R2/R3 ownership notes remain at `vault/Decisions/2026-10-26 M2 execution type ownership.md`.
 
 ## Backlog (M1)
 
