@@ -125,6 +125,9 @@ session is the orchestrator. It picks the lenses per gate with these rules.
 - **Git.** Never `git add -A` while an agent runs. Stage explicit paths. Memory files under
   `.claude/agent-memory/` are staged on purpose, not by accident.
 
+Third-party skills, their caveats, and the deferred and rejected ones are listed in
+`docs/agents/skills.md`. Ten Bevy skills pin 0.19; re-check them when `Cargo.toml` pins a version.
+
 Roster check: `bash docs/agents/check.sh` (format, budget, standing-rules identity) and
 `bash docs/agents/check_fixtures.sh` (proves the check can go red). Run both before you commit
 an agent file. A session that started without `.claude/agents/` does not load the directory;
