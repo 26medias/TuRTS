@@ -15,8 +15,9 @@ The task board. Move items between sections; keep owner and evidence link on eac
 
 ## In progress
 
-- [ ] M1 Tasks 7c (server stats, Sonnet) and 10 (presentation, Sonnet): running.
-- [ ] Then 9 (acceptance runs), 11 (browser crate), 12 (T7 in CI), 13 (measurements). QA review at the end.
+- [ ] M1 Task 11 browser crate (Sonnet): running.
+- [ ] T5 delivery latency investigation (network-engineer, Opus): running.
+- [ ] Then 12 (T7 in CI), 13 (measurements), QA review of M1.
 
 ## Backlog (M1)
 
@@ -30,6 +31,8 @@ The task board. Move items between sections; keep owner and evidence link on eac
 - [ ] Acceptance tests T1 to T6 (producer's list), each shown red first.
 
 ## Done
+
+- [x] 2026-10-26: M1 Tasks 7c, 9, 10 done; all eight acceptance tests pass (35e44b3).
 
 - [x] 2026-10-26: M1 Tasks 6b, 7a, 7b, 8a-1, 8a-2 done; duplicate-player transport bug fixed (09d72bc). CI green.
 
