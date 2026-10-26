@@ -56,6 +56,9 @@ impl UnitRegistry for UnitTypes {
         def: UnitDef,
     ) -> Result<UnitTypeId, ModError> {
         let error = |field: &str, message: String| ModError::new(&origin.0, field, message);
+        if def.id.is_empty() {
+            return Err(error("id", "local id must not be empty".to_string()));
+        }
         if def.id.contains(':') {
             return Err(error(
                 "id",

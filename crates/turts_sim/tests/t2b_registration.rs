@@ -205,6 +205,18 @@ fn t2b_local_id_with_colon_rejected() {
 }
 
 #[test]
+fn t2b_empty_local_id_rejected() {
+    for origin in NAMESPACES {
+        let mut app = headless_app(20);
+        let package = pkg(origin);
+        let err = register(&mut app, &package, unit_def("", 3.0, 0.5)).unwrap_err();
+        assert_eq!(err.field_path, "id");
+        assert!(err.message.contains("must not be empty"));
+        assert_clean(&err, origin);
+    }
+}
+
+#[test]
 fn t2b_speed_out_of_range_rejected() {
     for origin in NAMESPACES {
         for err in run(case_speed_out_of_range, origin) {

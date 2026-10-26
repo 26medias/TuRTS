@@ -917,7 +917,7 @@ impl Replica {
 }
 ```
 
-Rules (section 5 with the G2 amendment; the gate 2 model `m1-gate2/net/t8model.py` encodes them):
+Rules (section 5 with the G2 amendment; the gate 2 model `m1-gate2/net/t8model2.py` encodes them):
 
 - `apply_delta`: in resync → push to the buffer, `Buffered`. `d.tick <= snapshot_tick` → `Discarded`. `d.base_tick != last_applied_tick` → start resync (`resync = Some(vec![d.clone()])`), `ResyncRequested`. A change names an unknown `unit_id` → same as a chain break. Else for every unit: push `(d.tick, new pos)` when in `changes`, else `(d.tick, last pos)`; `last_applied_tick = d.tick`; `latest_receipt = now`; prune samples with tick `< d.tick.saturating_sub(16)` (G2); `Applied`.
 - `apply_snapshot`: replace `units` with one sample `(S, pos)` each; `snapshot_tick = last_applied_tick = Some(S)`; `latest_receipt = now`. Then take the buffer (if any), drop entries with `tick <= S`, replay in order: an entry whose `base_tick == last_applied_tick` is applied; the first entry that breaks the chain starts one new resync holding it and the rest → `ResyncRequested { replayed }`; else `Applied { replayed }`.
@@ -948,7 +948,7 @@ Rules (section 5 with the G2 amendment; the gate 2 model `m1-gate2/net/t8model.p
 #[test] fn t8_broken_chain_during_replay_starts_one_new_resync()
 // buffer 14,15,16,18 (17 lost); Snapshot 15 -> ResyncRequested { replayed: 1 }; resync buffer holds [18]
 #[test] fn t8_model_scenarios_match_python_model()
-// (G2) replay the four scenarios of m1-gate2/net/t8model.py with the initial snapshot never held: welcome tick 100, losses at 110 and 190,
+// (G2) replay the four scenarios of m1-gate2/net/t8model2.py with the initial snapshot never held: welcome tick 100, losses at 110 and 190,
 // snapshot answers one tick after each request, resync-answer snapshots held 0 or 3 ticks: requests == 2 in both cases, last_applied == 299
 #[test] fn delta_with_unknown_unit_requests_resync()           // snapshot with unit 1; delta changes unit 9 -> ResyncRequested
 ```
@@ -1425,7 +1425,7 @@ pub fn final_position(ticks: &[TickRecord], unit_id: u32) -> (f32, f32);
 // (G2) case 1: client --drop-delta-ticks 10 --drop-arrival-delta --move 20,8 --run-secs 8: summary.deltas_dropped.len() == 2,
 //   deltas_dropped[1] == arrival_tick(tick log) (the drop hit the delta that carried the arrival), summary.resync_requests_sent == 2,
 //   stats.resync_requests == 2, final pos (20,8), check_segments Ok on its frame log;
-// case 2: the same with --hold-resync-snapshots 3: the same assertions (2 requests per net/t8model.py with the Welcome snapshot not held; the model's 3 came from holding it)
+// case 2: the same with --hold-resync-snapshots 3: the same assertions (2 requests per net/t8model2.py with the Welcome snapshot not held; the model's 3 came from holding it)
 ```
 
 - [ ] **Step 2: Run them and see them fail**
