@@ -15,7 +15,7 @@ The task board. Move items between sections; keep owner and evidence link on eac
 
 ## In progress
 
-- [ ] M1 verify: qa-lead (Fable) re-runs every gate with its own plants; mod-builder (Opus) builds a third package from the docs alone. Running.
+- [ ] M1 hardening Part A (instruments, Opus) and Part B (modder polish, Sonnet): running. Then qa-lead re-runs its five green plants; then M1 closes.
 
 ## Backlog (M1)
 
@@ -29,6 +29,8 @@ The task board. Move items between sections; keep owner and evidence link on eac
 - [ ] Acceptance tests T1 to T6 (producer's list), each shown red first.
 
 ## Done
+
+- [x] 2026-10-26: M1 verify run. Third-party package works end to end; 5 of 18 QA plants stayed green (now being fixed).
 
 - [x] 2026-10-26: all 18 M1 tasks done (bcbc5cd). T7 browser join passes in CI. Server TCP no-delay fix (021c522): T5 lag p99 about 1.34 ticks, limit tightened to 1.5.
 
