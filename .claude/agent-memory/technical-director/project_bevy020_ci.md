@@ -31,6 +31,19 @@ absent from the whole lockfile; a grep -c over stderr counts that line.
 tar 0.4.46 (default-features = false) checks on wasm32-unknown-unknown.
 bevy_asset 0.20.0 depends on ron ^0.12 (crates.io API).
 
+Probes 2026-10-26 (scratchpad m1-gate1/bevyprobe, simprobe, wsprobe):
+`bevy = { default-features = false }` on 0.20.0 still compiles `MinimalPlugins`,
+`ScheduleRunnerPlugin`, `Time<Fixed>`, `TimeUpdateStrategy`. With
+`FixedTimesteps(1)` the first `app.update()` runs zero fixed ticks (3 updates
+= 2 ticks); tests need one warm-up update. bevy_math with
+`default-features = false` fails: glam needs `std`, `libm`, or `nostd-libm`.
+Feature unification: in a workspace where one member uses `bevy` default
+features, `cargo tree --workspace -i bevy_render` reaches the no-default member
+too; `cargo tree -p <member>` alone says absent. A headless-server edge claim
+holds only for `-p turts_server` builds. lightyear 0.31 with std, websocket,
+netcode (no replication) pulls no lightyear_prediction, bevy_replicon, or
+lightyear_replication; lightyear_messages stays.
+
 CI (.github/workflows/ci.yml:27) runs `cargo check --workspace --target
 wasm32-unknown-unknown`; a native-only server crate needs `--exclude`.
 
