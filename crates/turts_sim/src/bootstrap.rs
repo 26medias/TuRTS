@@ -14,8 +14,9 @@ use crate::{
         production::ProductionQueues,
     },
     ids::IdAllocators,
+    map::{check_circle_bounds, check_overlap},
     registry::UnitTypes,
-    slots::SlotId,
+    slots::{SlotId, Slots},
     world::{MapBounds, Owner, Position, UnitId, UnitType},
 };
 
@@ -61,6 +62,7 @@ pub fn stage_package(
     if world.get_resource::<SimClock>().is_none()
         || world.get_resource::<UnitTypes>().is_none()
         || world.get_resource::<IdAllocators>().is_none()
+        || world.get_resource::<Slots>().is_none()
     {
         return Err(error(
             "world",
@@ -89,6 +91,7 @@ pub fn stage_package(
         ));
     }
     let existing = world.resource::<UnitTypes>();
+    let slots = world.resource::<Slots>();
     let types = UnitTypes::from_catalog(&catalog, existing).map_err(|mut e| {
         e.file.get_or_insert(source_map.file.clone());
         e
@@ -104,7 +107,7 @@ pub fn stage_package(
     // Every balance resource exists for each player slot, even when its seed is zero.
     for (id, resource) in &catalog.resources {
         if resource.kind == ResourceKind::Balance {
-            for slot in 0..2 {
+            for slot in 0..slots.count() {
                 economy
                     .balances
                     .insert((slot, id.clone()), Account::default());
@@ -112,10 +115,10 @@ pub fn stage_package(
         }
     }
     for (slot_index, seed) in map.slot_economy.iter().enumerate() {
-        if seed.slot >= 2 {
+        if !slots.contains(SlotId(seed.slot)) {
             return Err(error(
                 &format!("slot_economy[{slot_index}].slot"),
-                format!("slot must be below 2, got {}", seed.slot),
+                format!("slot must be below {}, got {}", slots.count(), seed.slot),
             ));
         }
         for (balance_index, amount) in seed.balances.iter().enumerate() {
@@ -151,10 +154,14 @@ pub fn stage_package(
         let def = unit_by_id
             .get(&id)
             .ok_or_else(|| error(&field("unit"), format!("unknown unit `{id}`")))?;
-        if placement.owner_slot >= 2 {
+        if !slots.contains(SlotId(placement.owner_slot)) {
             return Err(error(
                 &field("owner_slot"),
-                format!("owner slot must be below 2, got {}", placement.owner_slot),
+                format!(
+                    "owner slot must be below {}, got {}",
+                    slots.count(),
+                    placement.owner_slot
+                ),
             ));
         }
         let pos = Vec2::new(placement.pos.x, placement.pos.y);
@@ -174,6 +181,7 @@ pub fn stage_package(
                 items: BTreeMap::new(),
             };
             let mut used: u128 = 0;
+            let mut item_amounts = BTreeMap::<ContentId, u128>::new();
             for (item_index, stack) in placement.contents.iter().enumerate() {
                 let item = ContentId::parse(&stack.item).map_err(|m| {
                     error(
@@ -206,11 +214,21 @@ pub fn stage_package(
                 used = used
                     .checked_add(u128::from(stack.amount))
                     .ok_or_else(|| error(&field("contents"), "inventory amount overflow".into()))?;
-                let account = inventory.items.entry(item).or_default();
-                account.on_hand = account
-                    .on_hand
-                    .checked_add(stack.amount)
-                    .ok_or_else(|| error(&field("contents"), "inventory stack overflow".into()))?;
+                let amount = item_amounts.entry(item).or_default();
+                *amount = amount
+                    .checked_add(u128::from(stack.amount))
+                    .ok_or_else(|| {
+                        error(&field("contents"), "inventory item amount overflow".into())
+                    })?;
+            }
+            for (item, amount) in item_amounts {
+                let amount = u64::try_from(amount).map_err(|_| {
+                    error(
+                        &field("contents"),
+                        format!("inventory item `{item}` amount exceeds u64"),
+                    )
+                })?;
+                inventory.items.entry(item).or_default().on_hand = amount;
             }
             if used > u128::from(inventory.capacity) {
                 return Err(error(
@@ -328,26 +346,4 @@ pub fn install_package(world: &mut World, staged: StagedPackage) {
             Position(position),
         ));
     }
-}
-
-fn check_circle_bounds(pos: Vec2, radius: f32, width: f32, height: f32) -> Result<(), String> {
-    if !pos.x.is_finite()
-        || !pos.y.is_finite()
-        || pos.x - radius < 0.0
-        || pos.y - radius < 0.0
-        || pos.x + radius > width
-        || pos.y + radius > height
-    {
-        return Err(format!("circle of radius {radius} must fit inside the map"));
-    }
-    Ok(())
-}
-fn check_overlap(pos: Vec2, radius: f32, other: &[(Vec2, f32, String)]) -> Result<(), String> {
-    for (other_pos, other_radius, id) in other {
-        let required = radius + other_radius;
-        if pos.distance_squared(*other_pos) < required * required {
-            return Err(format!("circle overlaps `{id}`"));
-        }
-    }
-    Ok(())
 }

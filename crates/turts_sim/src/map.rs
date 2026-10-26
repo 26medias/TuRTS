@@ -1,9 +1,11 @@
 //! Legacy map staging for direct simulation callers.
 
 use crate::{
+    bootstrap::InstalledCatalog,
+    economy::SurfaceNodes,
     ids::IdAllocators,
     registry::UnitTypes,
-    slots::{SLOT_COUNT, SlotId},
+    slots::{SlotId, Slots},
     world::{MapBounds, Owner, Position, UnitId, UnitType},
 };
 use bevy_ecs::prelude::*;
@@ -31,10 +33,58 @@ pub fn load_map(world: &mut World, origin: &PackageId, map: &MapDef) -> Result<(
         ));
     }
 
+    let slots = world
+        .get_resource::<Slots>()
+        .ok_or_else(|| error("world", "simulation slots are not initialized".into()))?;
     let types = world.resource::<UnitTypes>();
     let mut allocator = *world.resource::<IdAllocators>();
     let mut staged = Vec::with_capacity(map.placements.len());
-    let mut circles: Vec<(Vec2, f32)> = Vec::new();
+    let mut circles: Vec<(Vec2, f32, String)> = Vec::new();
+    for entity in world.iter_entities() {
+        let Some(id) = entity.get::<UnitId>() else {
+            continue;
+        };
+        let unit_type = entity.get::<UnitType>().ok_or_else(|| {
+            error(
+                "world",
+                format!("unit {} has no registered unit type component", id.0),
+            )
+        })?;
+        let position = entity
+            .get::<Position>()
+            .ok_or_else(|| error("world", format!("unit {} has no position component", id.0)))?;
+        let entry = types
+            .get(unit_type.0)
+            .ok_or_else(|| error("world", format!("unit {} references an unknown type", id.0)))?;
+        circles.push((
+            position.0,
+            entry.radius,
+            format!("unit {} ({})", id.0, entry.content_id),
+        ));
+    }
+    if let Some(nodes) = world.get_resource::<SurfaceNodes>()
+        && nodes.0.iter().any(|node| node.remaining > 0)
+    {
+        let catalog = world
+            .get_resource::<InstalledCatalog>()
+            .ok_or_else(|| error("world", "live nodes have no installed catalog".into()))?;
+        for node in nodes.0.iter().filter(|node| node.remaining > 0) {
+            let definition = catalog.0.nodes.get(&node.content_id).ok_or_else(|| {
+                error(
+                    "world",
+                    format!(
+                        "live node `{}` has no installed definition",
+                        node.content_id
+                    ),
+                )
+            })?;
+            circles.push((
+                node.position.0,
+                definition.radius,
+                format!("node {} ({})", node.id.0, node.content_id),
+            ));
+        }
+    }
     for (index, placement) in map.placements.iter().enumerate() {
         let field = |name: &str| format!("placements[{index}].{name}");
         let id = ContentId::parse(&placement.unit).map_err(|m| error(&field("unit"), m))?;
@@ -50,11 +100,12 @@ pub fn load_map(world: &mut World, origin: &PackageId, map: &MapDef) -> Result<(
                 format!("unknown unit type `{}`", placement.unit),
             )
         })?;
-        if placement.owner_slot >= SLOT_COUNT {
+        if !slots.contains(SlotId(placement.owner_slot)) {
             return Err(error(
                 &field("owner_slot"),
                 format!(
-                    "owner slot must be below {SLOT_COUNT}, got {}",
+                    "owner slot must be below {}, got {}",
+                    slots.count(),
                     placement.owner_slot
                 ),
             ));
@@ -66,17 +117,11 @@ pub fn load_map(world: &mut World, origin: &PackageId, map: &MapDef) -> Result<(
             ));
         }
         let pos = Vec2::new(placement.pos.x, placement.pos.y);
-        let radius = types.get(unit_type).map_or(0.0, |entry| entry.radius);
-        check_circle(pos, radius, map.size.x, map.size.y).map_err(|m| error(&field("pos"), m))?;
-        if circles.iter().any(|(other, other_radius)| {
-            pos.distance_squared(*other) < (radius + other_radius).powi(2)
-        }) {
-            return Err(error(
-                &field("pos"),
-                "placement circle overlaps another placement".into(),
-            ));
-        }
-        circles.push((pos, radius));
+        let radius = types.get(unit_type).expect("unit type was resolved").radius;
+        check_circle_bounds(pos, radius, map.size.x, map.size.y)
+            .map_err(|m| error(&field("pos"), m))?;
+        check_overlap(pos, radius, &circles).map_err(|m| error(&field("pos"), m))?;
+        circles.push((pos, radius, placement.unit.clone()));
         let unit_id = allocator
             .allocate_unit()
             .map_err(|message| error(&field("unit"), message))?;
@@ -114,7 +159,12 @@ pub fn load_map(world: &mut World, origin: &PackageId, map: &MapDef) -> Result<(
     Ok(())
 }
 
-fn check_circle(pos: Vec2, radius: f32, width: f32, height: f32) -> Result<(), String> {
+pub(crate) fn check_circle_bounds(
+    pos: Vec2,
+    radius: f32,
+    width: f32,
+    height: f32,
+) -> Result<(), String> {
     if !pos.x.is_finite()
         || !pos.y.is_finite()
         || pos.x - radius < 0.0
@@ -123,6 +173,20 @@ fn check_circle(pos: Vec2, radius: f32, width: f32, height: f32) -> Result<(), S
         || pos.y + radius > height
     {
         return Err(format!("circle of radius {radius} must fit inside the map"));
+    }
+    Ok(())
+}
+
+pub(crate) fn check_overlap(
+    pos: Vec2,
+    radius: f32,
+    other: &[(Vec2, f32, String)],
+) -> Result<(), String> {
+    for (other_pos, other_radius, id) in other {
+        let required = radius + other_radius;
+        if pos.distance_squared(*other_pos) < required * required {
+            return Err(format!("placement circle overlaps `{id}`"));
+        }
     }
     Ok(())
 }

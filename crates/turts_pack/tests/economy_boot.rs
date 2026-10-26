@@ -1,8 +1,24 @@
 mod common;
 
 use common::{AuditLookup, archive_from_files, economy_archive, economy_files, scenario};
+use turts_mod_api::{MapDef, MapSize, PackageId, Placement, WorldPos};
 use turts_pack::load_package;
-use turts_sim::{IdAllocators, Slots, UnitTypes, audit_state, world_view};
+use turts_sim::{IdAllocators, MapBounds, Slots, UnitTypes, audit_state, load_map, world_view};
+
+fn direct_map(unit: &str, x: f32, y: f32) -> MapDef {
+    MapDef {
+        id: "append".into(),
+        size: MapSize { x: 64.0, y: 64.0 },
+        placements: vec![Placement {
+            unit: unit.into(),
+            owner_slot: 0,
+            pos: WorldPos { x, y },
+            contents: Vec::new(),
+        }],
+        nodes: Vec::new(),
+        slot_economy: Vec::new(),
+    }
+}
 
 #[test]
 fn failed_late_definition_and_bad_map_leave_world_and_allocators_unchanged() {
@@ -70,9 +86,195 @@ fn static_and_mobile_capabilities_are_explicit() {
             .is_some()
     );
     let view = world_view(app.world_mut());
-    assert_eq!(view.inventories.len(), 6);
+    assert_eq!(view.inventories.len(), 5);
     assert_eq!(view.orders.len(), 2);
     assert_eq!(view.queues.len(), 2);
+    let state = audit_state(app.world_mut());
+    let mut positions: Vec<_> = state
+        .units
+        .iter()
+        .map(|unit| {
+            (
+                unit.content_id.as_str(),
+                unit.owner_slot,
+                unit.pos.x,
+                unit.pos.y,
+            )
+        })
+        .collect();
+    positions.sort_by(|a, b| a.0.cmp(b.0).then(a.1.cmp(&b.1)));
+    assert_eq!(
+        positions,
+        [
+            ("probe:exchange", 0, 8.0, 20.0),
+            ("probe:worker", 0, 12.0, 8.0),
+            ("probe:worker", 1, 52.0, 8.0),
+            ("probe:yard", 0, 8.0, 8.0),
+            ("probe:yard", 1, 56.0, 8.0),
+        ]
+    );
+    assert_eq!(
+        view.nodes
+            .iter()
+            .map(|node| (node.pos.x, node.pos.y))
+            .collect::<Vec<_>>(),
+        [(24.0, 8.0), (40.0, 8.0)]
+    );
+}
+
+#[test]
+fn package_boot_uses_configured_slots_for_balances_owners_and_seeds() {
+    let mut files = economy_files();
+    let map = String::from_utf8(files["maps/test.ron"].clone()).unwrap();
+    assert!(map.contains("unit: \"probe:worker\", owner_slot: 1"));
+    assert!(map.contains("(slot: 1, balances: [])"));
+    let map = map
+        .replacen(
+            "unit: \"probe:worker\", owner_slot: 1, pos: (x: 52.0, y: 8.0)",
+            "unit: \"probe:worker\", owner_slot: 2, pos: (x: 52.0, y: 8.0)",
+            1,
+        )
+        .replace(
+            "(slot: 1, balances: [])",
+            "(slot: 1, balances: []), (slot: 2, balances: [(balance: \"probe:token\", amount: 0)])",
+        );
+    files.insert("maps/test.ron".into(), map.into_bytes());
+    let mut app = scenario(20);
+    app.world_mut().insert_resource(Slots::new(3));
+    load_package(app.world_mut(), &archive_from_files(files)).unwrap();
+    let state = audit_state(app.world_mut());
+    assert_eq!(state.balance(0, "probe:token").on_hand, 200);
+    assert_eq!(state.balance(1, "probe:token").on_hand, 0);
+    assert_eq!(state.balance(2, "probe:token").on_hand, 0);
+    assert!(state.units.iter().any(|unit| unit.owner_slot == 2));
+    assert_eq!(state.economy.balances.len(), 3);
+}
+
+#[test]
+fn one_configured_slot_has_no_ghost_balance_and_rejects_owner_one() {
+    let mut files = economy_files();
+    let map = String::from_utf8(files["maps/test.ron"].clone()).unwrap();
+    assert!(map.contains("(slot: 1, balances: [])"));
+    let one_slot_map = map
+        .replace("owner_slot: 1", "owner_slot: 0")
+        .replace(", (slot: 1, balances: [])", "");
+    files.insert("maps/test.ron".into(), one_slot_map.into_bytes());
+    let mut app = scenario(20);
+    app.world_mut().insert_resource(Slots::new(1));
+    load_package(app.world_mut(), &archive_from_files(files.clone())).unwrap();
+    let state = audit_state(app.world_mut());
+    assert_eq!(state.economy.balances.len(), 1);
+    assert_eq!(state.balance(0, "probe:token").on_hand, 200);
+    assert!(
+        !state
+            .economy
+            .balances
+            .iter()
+            .any(|balance| balance.slot == 1)
+    );
+
+    let map = String::from_utf8(files["maps/test.ron"].clone()).unwrap();
+    let invalid = map.replacen("owner_slot: 0", "owner_slot: 1", 1);
+    files.insert("maps/test.ron".into(), invalid.into_bytes());
+    let mut app = scenario(20);
+    app.world_mut().insert_resource(Slots::new(1));
+    let before = audit_state(app.world_mut());
+    let error = load_package(app.world_mut(), &archive_from_files(files)).unwrap_err();
+    assert_eq!(error.field_path, "placements[0].owner_slot");
+    assert_eq!(audit_state(app.world_mut()), before);
+}
+
+#[test]
+fn direct_map_append_rejects_existing_package_node_without_mutation() {
+    let mut app = scenario(20);
+    load_package(app.world_mut(), &economy_archive()).unwrap();
+    let before = audit_state(app.world_mut());
+    let bounds = *app.world().resource::<MapBounds>();
+    let error = load_map(
+        app.world_mut(),
+        &PackageId("probe".into()),
+        &direct_map("probe:worker", 24.0, 8.0),
+    )
+    .unwrap_err();
+    assert_eq!(error.field_path, "placements[0].pos");
+    assert!(error.message.contains("overlaps"));
+    assert_eq!(audit_state(app.world_mut()), before);
+    assert_eq!(*app.world().resource::<MapBounds>(), bounds);
+}
+
+#[test]
+fn direct_map_append_rejects_existing_unit_without_mutation() {
+    let mut app = scenario(20);
+    load_package(app.world_mut(), &economy_archive()).unwrap();
+    let before = audit_state(app.world_mut());
+    let bounds = *app.world().resource::<MapBounds>();
+    let error = load_map(
+        app.world_mut(),
+        &PackageId("probe".into()),
+        &direct_map("probe:worker", 8.0, 8.0),
+    )
+    .unwrap_err();
+    assert_eq!(error.field_path, "placements[0].pos");
+    assert!(error.message.contains("overlaps"));
+    assert_eq!(audit_state(app.world_mut()), before);
+    assert_eq!(*app.world().resource::<MapBounds>(), bounds);
+}
+
+#[test]
+fn nonoverlapping_direct_map_append_preserves_allocator_continuity() {
+    let mut app = scenario(20);
+    let origin = PackageId("probe".into());
+    load_package(app.world_mut(), &economy_archive()).unwrap();
+    load_map(
+        app.world_mut(),
+        &origin,
+        &direct_map("probe:worker", 20.0, 20.0),
+    )
+    .unwrap();
+    let mut ids: Vec<_> = audit_state(app.world_mut())
+        .units
+        .into_iter()
+        .map(|unit| unit.unit_id)
+        .collect();
+    ids.sort_unstable();
+    assert_eq!(ids.len(), 6);
+    assert_eq!(ids[5], ids[0] + 5);
+}
+
+#[test]
+fn inventory_stack_uses_u128_intermediate_and_checks_u64_boundary() {
+    let mut boundary = economy_files();
+    let yard = String::from_utf8(boundary["units/yard.ron"].clone()).unwrap();
+    assert!(yard.contains("capacity: 2000"));
+    boundary.insert(
+        "units/yard.ron".into(),
+        yard.replace("capacity: 2000", "capacity: 18446744073709551615")
+            .into_bytes(),
+    );
+    let map = String::from_utf8(boundary["maps/test.ron"].clone()).unwrap();
+    let map = map.replacen("amount: 100", "amount: 18446744073709551615", 1);
+    boundary.insert("maps/test.ron".into(), map.into_bytes());
+    let mut app = scenario(20);
+    load_package(app.world_mut(), &archive_from_files(boundary.clone())).unwrap();
+    let state = audit_state(app.world_mut());
+    assert_eq!(state.economy.inventories[0].items[0].on_hand, u64::MAX);
+
+    let map = String::from_utf8(boundary["maps/test.ron"].clone()).unwrap();
+    let map = map.replacen(
+        "amount: 18446744073709551615)]",
+        "amount: 18446744073709551615), (item: \"probe:timber\", amount: 1)]",
+        1,
+    );
+    assert_ne!(
+        map,
+        String::from_utf8(boundary["maps/test.ron"].clone()).unwrap()
+    );
+    boundary.insert("maps/test.ron".into(), map.into_bytes());
+    let mut app = scenario(20);
+    let before = audit_state(app.world_mut());
+    let error = load_package(app.world_mut(), &archive_from_files(boundary)).unwrap_err();
+    assert_eq!(error.field_path, "placements[0].contents");
+    assert_eq!(audit_state(app.world_mut()), before);
 }
 
 #[test]

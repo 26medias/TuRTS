@@ -10,8 +10,10 @@ turts_mod_api = { path = "../turts_mod_api" }
 turts_mod_runtime = { path = "../turts_mod_runtime" }
 turts_sim = { path = "../turts_sim" }
 bevy_ecs = { workspace = true }
-bevy_app = { workspace = true }
 
 [[bin]]
 name = "turts-pack"
 path = "src/main.rs"
+
+[dev-dependencies]
+bevy_app = { workspace = true }

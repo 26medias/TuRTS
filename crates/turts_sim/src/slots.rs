@@ -2,7 +2,7 @@
 
 use bevy_ecs::prelude::Resource;
 
-/// Number of player slots in a match (design 6).
+/// Default player-slot count in a match (design 6).
 pub(crate) const SLOT_COUNT: u8 = 2;
 
 /// Index of a player slot. A claimed slot belongs to its player for the whole match (D25).
@@ -28,6 +28,16 @@ impl Slots {
         Self {
             owners: vec![None; count as usize],
         }
+    }
+
+    /// Number of configured player slots.
+    pub fn count(&self) -> u8 {
+        self.owners.len() as u8
+    }
+
+    /// Whether `slot` names a configured slot, whether or not it has an owner.
+    pub fn contains(&self, slot: SlotId) -> bool {
+        (slot.0 as usize) < self.owners.len()
     }
 
     /// Give the first open slot to `player_id`. A player that already holds a slot gets
