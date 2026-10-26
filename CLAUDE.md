@@ -140,7 +140,7 @@ Third-party skills, their caveats, and the deferred and rejected ones are listed
 `docs/agents/skills.md`. Ten Bevy skills pin 0.19; re-check them when `Cargo.toml` pins a version.
 
 The studio keeps its work log, decisions, task board, knowledge, and the daily CEO report in a
-dedicated private Obsidian vault outside this repository (path in the orchestrator's memory).
+dedicated Obsidian vault at `vault/` in this repository (committed; public; no secrets).
 Log every decision and every day of work there; write the daily report at the end of each
 working session.
 
