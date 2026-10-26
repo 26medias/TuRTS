@@ -4,7 +4,7 @@
 set -u
 HERE="$(cd "$(dirname "$0")" && pwd)"
 SRC="$HERE/standing-rules.md"
-SCRATCH="${SCRATCH:-/tmp/claude-1000/-home-julien-Projects-TuRTS/9b770ab5-f8ef-4e4e-b47b-449c4f660eb4/scratchpad}"
+SCRATCH="${SCRATCH:-${TMPDIR:-/tmp}/turts-agent-fixtures}"
 FX="$SCRATCH/fixtures"
 rm -rf "$FX"
 mkdir -p "$FX"

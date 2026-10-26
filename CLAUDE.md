@@ -18,8 +18,8 @@ the build and test commands here.
 Bevy version: **0.20** (orchestrator call, 2026-10-26; stable at that date). Ten installed Bevy
 skills pin 0.19; read the `bevy-ecs` skill's 0.20 pitfalls before you use any 0.19 snippet.
 
-GCP for benchmarks, testing, and dev (D57 to D59): gcloud configuration `default`, project
-`qs-trading`, account `julien@leap-forward.ca`, region `us-east1`, zone `us-east1-b`. Record
+GCP for benchmarks, testing, and dev (D57 to D59): use the operator's `default` gcloud
+configuration (project, account, region, and zone are set there, not in this file). Record
 machine type and image with every benchmark result. Delete test VMs when a run ends.
 
 ## What the project is
