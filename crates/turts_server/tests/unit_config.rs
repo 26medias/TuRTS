@@ -68,3 +68,43 @@ fn from_ron_reads_the_fields_and_refuses_bad_ones() {
             .contains("http_listen")
     );
 }
+
+/// The text of the design document. Appendix A is the page that a modder reads first.
+const DESIGN: &str =
+    include_str!("../../../docs/superpowers/specs/2026-10-26-m1-foundation-design.md");
+
+/// The part of Appendix A after `heading` (a line of the appendix): the first fenced `ron`
+/// block that follows it.
+fn appendix_ron_block(heading: &str) -> String {
+    let appendix = DESIGN
+        .split("## Appendix A")
+        .nth(1)
+        .expect("the design has an Appendix A");
+    let after = appendix
+        .split_once(heading)
+        .unwrap_or_else(|| panic!("Appendix A has no `{heading}`"))
+        .1;
+    let block = after
+        .split_once("```ron\n")
+        .unwrap_or_else(|| panic!("no ron block after `{heading}`"))
+        .1;
+    block
+        .split_once("```")
+        .expect("the block ends")
+        .0
+        .to_string()
+}
+
+/// M1 verify, B6: Appendix A holds a full `server.ron` that the server reads, with every
+/// field of `HostConfig`, and it names the three HTTP endpoints.
+#[test]
+fn appendix_a_server_ron_is_read_by_the_server() {
+    let text = appendix_ron_block("`server.ron`");
+    let config = HostConfig::from_ron(&text).expect("the Appendix A server.ron is valid");
+    assert_eq!(config.game_package, "acme.tar");
+    assert!(config.static_dir.is_some(), "the example shows static_dir");
+    let appendix = DESIGN.split("## Appendix A").nth(1).unwrap();
+    for path in ["/advertisement.json", "/lockfile.json", "/packages/"] {
+        assert!(appendix.contains(path), "Appendix A lacks the path {path}");
+    }
+}

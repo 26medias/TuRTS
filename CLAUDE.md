@@ -76,7 +76,10 @@ boundaries, not a fixed crate layout. The M1 crate layout is in "Crate layout" b
 
 ## Build and test commands
 
-- `cargo test --workspace`: all tests. No test spawns a process; process tests are `#[ignore]`.
+- `cargo test --workspace`: all tests. A test that needs a running server is `#[ignore]`; run
+  it with `scripts/acceptance.sh`. A test that starts one binary on its own runs by default:
+  `turts-pack`, the `--help` texts, and the headless client against a small fake HTTP server
+  (`crates/turts_client/tests/rejected_exit.rs`).
 - `bash scripts/boundary.sh`: the T1 forbidden-edge checks (design 4.1). The fixture must be red.
 - `bash scripts/acceptance.sh`: builds both binaries and runs the ignored process tests in
   release, one at a time.
@@ -84,11 +87,40 @@ boundaries, not a fixed crate layout. The M1 crate layout is in "Crate layout" b
 - `trunk build --release` in `crates/turts_client_web`: the browser build.
 - `bash scripts/t7.sh`: T7, the browser join in headless Chrome. It needs trunk, brotli, node
   with `npm ci` done in `tests/browser`, and Chrome.
-- `turts_server <server.ron> [--tick-log P] [--stats P] [--synthetic-units N] [--run-ticks N]`:
-  the headless host. `--stats` rewrites one JSON line each second.
-- `turts_client --server URL --ws URL [--headless] [--move X,Y] [--run-secs S] [--out P]
-  [--frame-log P]`: the native client. The other test hooks are in
-  `turts_client::options::parse_cli`.
+- `cargo run -p turts_pack -- <dir>` (the `turts-pack` binary): check the package directory
+  `<dir>` on the server path and the client path, then write `<dir>.tar` next to it and print
+  `<archive path> <sha256 hash>`. On a problem it prints the `ModError` (package, file,
+  field) on stderr, writes no archive, and exits with 2. `turts-pack --help` lists the checks.
+- `turts_server <server.ron> [options]`: the headless host. `turts_server --help` lists the
+  options, the `server.ron` fields, and the HTTP endpoints. A full `server.ron` and the
+  endpoint paths are in design Appendix A. The options:
+  - `--tick-log P`: test hook. One line `tick,wall_ns,unit_id,x,y` for each unit and tick.
+    Off when `--synthetic-units` is above 0.
+  - `--stats P`: test hook. Rewrites one JSON line of statistics each second and at exit.
+  - `--synthetic-units N`: add N units of the first unit type; each gets a new move target
+    every 40 ticks. For load runs.
+  - `--run-ticks N`: exit with 0 after N ticks.
+- `turts_client --server URL --ws URL [options]`: the native client. `turts_client --help`
+  lists everything below. `--server` and `--ws` are required.
+  - `--headless`: no window, no rendering. `--player-id N`: a fixed player id (default: random).
+  - `--run-secs S`: test hook. Stop after S seconds. Without it, a joined client runs until
+    it is killed.
+  - `--out P`: test hook. At the end, write the report as JSON to P: `welcomed`,
+    `rejected_reason`, `slot`, `disconnected_after_connect`, `command_results`,
+    `final_positions`, the resync counters, and the debug state.
+  - `--frame-log P`: test hook. One record for each presented frame.
+  - `--move X,Y`: test hook. Send one `MoveTo` to X,Y. It moves all the units that the slot of
+    this client owns; `--move-unit ID` moves only that unit (it may belong to another slot, so
+    the server rejects it). `--move-after-ticks N` sets the wait after `Welcome` (default 5).
+  - `--hello-hash H`, `--protocol-version N`: test hooks. Send H as the lockfile hash, or N as
+    the wire protocol version, in `Hello`. The server rejects a wrong value.
+  - `--drop-delta-ticks a,b,c`, `--drop-arrival-delta`, `--hold-resync-snapshots N`: test hooks
+    for the lost-delta case (T8). They ignore the `UnitDeltas` at the tick offsets a, b, c from
+    `Welcome`; ignore the first `UnitDeltas` that puts a unit at the `--move` target; and
+    hold each resync `Snapshot` back by N ticks.
+  - Exit codes: 0 ended well; 1 the client rejected the advertisement, a package, or the join
+    (`turts_client: <ModError>` on stderr, the same text as `rejected_reason`; a client with a
+    window exits with 1 only at `--run-secs`); 2 the command line is wrong.
 - `python3 tests/net/relay.py <listen port> <target port> --out P`: a TCP relay that counts the
   bytes in each direction.
 - `node tests/browser/measure.js <page url> <label> [chrome flags]` in `tests/browser`: the
@@ -106,7 +138,8 @@ under `crates/`. Packages are under `mods/`.
 | `turts_mod_api` | Content ids, package schema types, `UnitRegistry`, `ENGINE_API_VERSION`, `ModError`. | Any `bevy*` crate. |
 | `turts_net_protocol` | Wire messages, `NET_PROTOCOL_VERSION`. No transport. | Any `bevy*` crate. |
 | `turts_sim` | Authoritative headless world: fixed ticks, flat map, movement, command validation. | `bevy_render`, `bevy_winit`, `bevy_pbr`, `turts_mod_runtime`. |
-| `turts_mod_runtime` | Archive read, manifest and lockfile parse, hash, validation. Also the `turts-pack` binary. | Any `bevy*` crate. |
+| `turts_mod_runtime` | Archive read, manifest and lockfile parse, hash, validation, `pack_dir`, and the client path check `visuals_by_unit`. | Any `bevy*` crate. |
+| `turts_pack` (library and binary) | `load_package`, the one path from a package to the world, called by the server and by the packer; the `turts-pack` binary. It needs `turts_sim`, so it cannot live in `turts_mod_runtime`. | Not a dependency of `turts_client`. |
 | `turts_net_lightyear` | The shared lightyear `ProtocolPlugin`: one registration order for both ends. | `turts_sim`, `turts_mod_runtime`. |
 | `turts_server` (binary) | Headless host: HTTP endpoints, lightyear server, snapshots and deltas, tick log, `--stats`, `--synthetic-units`. | `bevy_render`, `bevy_winit`, `bevy_pbr`. |
 | `turts_client` (library and binary) | All client logic: fetch, acquisition, join, replica, interpolation, presentation, input. | `turts_sim`. |

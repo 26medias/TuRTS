@@ -2,7 +2,8 @@
 
 Date: 2026-10-26. Status: revision 3. Gate 1: rigour and mod-builder failed revision 1; all five
 lenses passed revision 2 with changes; revision 3 applies those changes. Gate 1 changes are
-marked `(G1)`, re-gate changes `(G1b)`, gate 2 changes `(G2)`.
+marked `(G1)`, re-gate changes `(G1b)`, gate 2 changes `(G2)`. Changes after the M1 verify
+(a third-party modder built a package from this document) are marked `(M1 verify)`.
 Spec: `RTS-Engine-Project-Specifications.md` v0.7, section 14 row M1: "Browser client,
 authoritative headless server, one mod-defined unit. Acceptance: browser joins a match and
 presents server results; secondary executable interoperability follows its selected packaging
@@ -86,9 +87,10 @@ Workspace at the repository root. Crates under `crates/`. Packages under `mods/`
 | `turts_mod_api` | Content ids, package schema types (`Manifest`, `UnitDef`, `MapDef`, `VisualDef`), the `UnitRegistry` trait, `ENGINE_API_VERSION`, structured `ModError`. | serde. No `bevy*`. |
 | `turts_net_protocol` | Wire messages (section 5), `NET_PROTOCOL_VERSION`. Transport-free. | `turts_mod_api`, serde. No `bevy*`. |
 | `turts_sim` | Authoritative world: fixed ticks, flat map, unit spawning from `MapDef`, movement integrator, command validation. Implements `UnitRegistry`. | `turts_mod_api`, `bevy_app`, `bevy_ecs`, `bevy_time`, `bevy_math` with default features (none of them pulls a renderer; `default-features = false` breaks glam's math backend). (G1b) |
-| `turts_mod_runtime` | Archive read, manifest and lockfile parse, hash, validation, diagnostics. Returns validated definitions; registers nothing itself. Also the `turts-pack` binary. | `turts_mod_api`, serde, ron, serde_json, sha2, semver, tar. No `bevy*`. |
+| `turts_mod_runtime` | Archive read, manifest and lockfile parse, hash, validation, diagnostics. Returns validated definitions; registers nothing itself. Also `pack_dir` and the client path check `visuals_by_unit` (visuals and units match one to one). (M1 verify) | `turts_mod_api`, serde, ron, serde_json, sha2, semver, tar. No `bevy*`. |
+| `turts_pack` (lib + bin) | `load_package`: the one path from a package to the world (unit types, then the map), called by the server at boot and by the packer. The `turts-pack` binary packs a directory, but only after the package passes the server path and the client path. It lives apart from `turts_mod_runtime` because the server rules are in `turts_sim`, which `turts_mod_runtime` and the client must not depend on. (M1 verify) | `turts_mod_api`, `turts_mod_runtime`, `turts_sim`, `bevy_ecs`. Never a dependency of `turts_client`. |
 | `turts_net_lightyear` | The shared lightyear `ProtocolPlugin`: message and channel registration in one fixed order for both ends. Features `server`, `client`. (G2: lightyear assigns ids by registration order, so both ends must share one registration.) | `turts_net_protocol`, lightyear, `bevy_*` sub-crates without a renderer. |
-| `turts_server` (bin, native) | `MinimalPlugins` + `ScheduleRunnerPlugin`; HTTP endpoints for advertisement, lockfile, and package bytes; lightyear server over WebSocket; snapshot and delta sending. | `turts_sim`, `turts_mod_runtime`, `turts_net_protocol`, `turts_net_lightyear` (server), `bevy` (`default-features = false`), lightyear (server). (G2) |
+| `turts_server` (bin, native) | `MinimalPlugins` + `ScheduleRunnerPlugin`; HTTP endpoints for advertisement, lockfile, and package bytes; lightyear server over WebSocket; snapshot and delta sending. | `turts_sim`, `turts_mod_runtime`, `turts_pack`, `turts_net_protocol`, `turts_net_lightyear` (server), `bevy` (`default-features = false`), lightyear (server). (G2) |
 | `turts_client` (lib + native bin; `turts_client_web` is the wasm32 cdylib entry) | `DefaultPlugins`; advertisement and lockfile fetch; package download and hash check; join; `ReplicaState`; interpolation; presentation; input. | `turts_net_protocol`, `turts_net_lightyear` (client), `turts_mod_api`, `turts_mod_runtime`, `bevy`, lightyear (client). Never `turts_sim`. (G2) |
 
 lightyear dependency: `default-features = false`, features `std`, `websocket`, `netcode`, and
@@ -149,7 +151,13 @@ transport are re-planned and re-gated.
 
 Format: RON for package files (bevy_asset 0.20 already depends on ron 0.12). JSON for the
 lockfile and the advertisement. Archive: reproducible ustar, read in memory. `turts-pack <dir>`
-writes the archive and prints its hash. (G1)
+checks the package, writes the archive, and prints its hash. (G1)
+
+The check runs both paths before the archive is written: the server path (`load_package`, the
+call that the server makes at boot: manifest, unit rules, map rules) and the client path (the
+visuals). On the first problem `turts-pack` prints the `ModError` on stderr, writes no archive,
+and exits with 2. So a modder sees a bad package when packing, not when a server or a client
+starts. (M1 verify)
 
 **Package layout.**
 ```
@@ -188,7 +196,9 @@ corner, `x` right, `y` forward; presentation uses `y` up. (G1b)
 **VisualDef** (`visuals/rifleman.ron`): `unit: "base:rifleman"`, `shape: Capsule(radius: 0.3,
 height: 1.8)`. M1 shape variants, named fields only: `Capsule(radius:, height:)`,
 `Cuboid(x:, y:, z:)`. Every unit has exactly one visual; the client rejects a package that
-lacks one. The server never deserializes visuals. (G1, G1b)
+lacks one. Every visual names a unit that a unit file of the package defines; the client
+rejects a visual for an unknown unit (the visual file, field `unit`). `turts-pack` runs the same
+check. The server never deserializes visuals. (G1, G1b, M1 verify)
 
 `ENGINE_API_VERSION` is `"0.1.0"`. A complete example package is in Appendix A. (G1b)
 
@@ -197,13 +207,21 @@ allowed: Option<Vec<String>> }`. `turts_mod_runtime` fills `file`; `register_uni
 it `None` and the loader fills it on return. No Rust type name appears in `message`; the loader
 rewrites ron errors. (G1, G1b)
 
+A `ModError` prints as `<package>/<file>: <field path>: <message>`, then `(allowed: a, b)` when
+`allowed` is set (an unknown field or variant lists the names that the file accepts). The field
+path is left out when it is the file itself (a parse error), so the file appears once. The
+package and its slash are left out when the package is empty (the manifest is parsed before
+the package id is known). The client prints a rejection on stderr as `turts_client: <error>`
+and exits with 1; the `--out` report holds the same text as `rejected_reason`. (M1 verify)
+
 **Registration.** `turts_mod_api` defines
 `trait UnitRegistry { fn register_unit_type(&mut self, origin: &PackageId, def: UnitDef) ->
 Result<UnitTypeId, ModError>; }`. `turts_sim` implements it. Inside the call: the local id has
 no `:`; `origin:id` is unique; speed and radius are in range. `turts_sim` validates `MapDef` the
 same way through `load_map(origin, map)`. (G1b) The server loads a
 package with `turts_mod_runtime`, then calls `register_unit_type` for each unit and hands each
-`MapDef` to `turts_sim`. There is no other path. (G1)
+`MapDef` to `turts_sim`. Both calls are in `turts_pack::load_package`, which is the only path
+from a package to the world; `turts-pack` calls it too. (G1, M1 verify)
 
 **Server configuration** (`server.ron`): `game_package: "<path to archive>"`,
 `http_listen: "0.0.0.0:<port>"`, `ws_listen: "0.0.0.0:<port>"`, `public_url: "http://<host>:<port>"`,
@@ -396,5 +414,46 @@ acme/
 (unit: "acme:scout", shape: Cuboid(x: 1.0, y: 0.8, z: 1.4))
 ```
 
-Pack: `cargo run -p turts_mod_runtime --bin turts-pack -- acme/` writes `acme.tar` and prints
-its `sha256:` hash. Run: `server.ron` with `game_package: "acme.tar"`.
+**Pack.** `cargo run -p turts_pack -- acme/` checks the package (the checks are listed by
+`turts-pack --help`), writes `acme.tar` next to the directory, and prints the archive path and
+its `sha256:` hash on one line. On a problem it prints the package, the file, and the field on
+stderr, writes no archive, and exits with 2. (M1 verify)
+
+**Server configuration.** `server.ron` is one RON record. Every field is required except
+`static_dir`. (M1 verify)
+
+`server.ron`
+```ron
+(
+    // Path of the archive that turts-pack wrote.
+    game_package: "acme.tar",
+    // Two listeners: HTTP for the three endpoints, WebSocket for the match.
+    http_listen: "127.0.0.1:7000",
+    ws_listen: "127.0.0.1:7001",
+    // The HTTP address that clients use. The lockfile and the advertisement build URLs from it.
+    public_url: "http://127.0.0.1:7000",
+    // Simulation ticks per second, above 0.
+    tick_hz: 20,
+    // Optional. A folder that the HTTP listener also serves, for the browser page.
+    static_dir: "crates/turts_client_web/dist",
+)
+```
+
+**Run the server.** `cargo run -p turts_server -- server.ron` loads the package, prints the
+package and the lockfile hash, and prints `LISTENING http=<addr> ws=<addr>` when both listeners
+are up. `turts_server --help` lists the options and the exit codes. A bad package ends the start
+with exit code 1 and the `ModError` on stderr. (M1 verify)
+
+**HTTP endpoints** (GET, on `http_listen`):
+
+| Path | Answer |
+| --- | --- |
+| `/advertisement.json` | `{mod_id, mod_version, engine_version, protocol_version, lockfile_url, lockfile_hash}` |
+| `/lockfile.json` | one entry per package: id, version, hash, size, `urls`, context, engine API |
+| `/packages/<id>-<version>.tar` | the archive; here `/packages/acme-0.1.0.tar`. The `urls` of the lockfile hold the exact address. |
+| any other path | a file of `static_dir`, when it is set; otherwise 404 |
+
+**Run the native client.** `cargo run -p turts_client -- --headless --server http://127.0.0.1:7000
+--ws ws://127.0.0.1:7001 --run-secs 4 --out client.json` joins, presents for 4 seconds, and
+writes the report. If it rejects a package or the join, it prints `turts_client: <error>` on
+stderr and exits with 1. `turts_client --help` lists every option and test hook. (M1 verify)
