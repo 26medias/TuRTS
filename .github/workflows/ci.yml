@@ -13,6 +13,8 @@ jobs:
           targets: wasm32-unknown-unknown
           components: clippy, rustfmt
       - uses: Swatinem/rust-cache@v2
+      - name: Bevy system libraries
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends pkg-config libx11-dev libasound2-dev libudev-dev libxkbcommon-x11-0 libwayland-dev libxkbcommon-dev
       - name: Format
         run: cargo fmt --all --check
       - name: Clippy (native)
