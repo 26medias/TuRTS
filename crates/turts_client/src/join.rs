@@ -227,14 +227,13 @@ pub fn start_connection(
     mut commands: Commands,
     mut phase: ResMut<Phase>,
     opts: Res<ClientOpts>,
-    player: Res<PlayerId>,
     mut started: Local<bool>,
 ) {
     if *started || *phase != Phase::Connecting {
         return;
     }
     *started = true;
-    if let Err(error) = spawn_client(&mut commands, &opts.0.ws_url, player.0) {
+    if let Err(error) = spawn_client(&mut commands, &opts.0.ws_url) {
         *phase = Phase::Failed(error);
     }
 }
@@ -251,12 +250,15 @@ fn websocket_config() -> ClientConfig {
     ClientConfig::builder().with_no_encryption()
 }
 
-fn spawn_client(commands: &mut Commands, ws: &str, player_id: u64) -> Result<(), String> {
+fn spawn_client(commands: &mut Commands, ws: &str) -> Result<(), String> {
     let server_addr = ws_socket_addr(ws)?;
     let netcode = NetcodeClient::new(
         Authentication::Manual {
             server_addr,
-            client_id: player_id,
+            // Each connection gets its own netcode id; the player id travels in Hello.
+            // Reusing the player id here made the transport refuse a duplicate player
+            // before the server could answer with JoinRejected (design section 5).
+            client_id: crate::options::random_player_id(),
             private_key: [0u8; 32], // M1 placeholder; format open (spec 15)
             protocol_id: NET_PROTOCOL_VERSION as u64,
         },
