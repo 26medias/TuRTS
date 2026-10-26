@@ -92,3 +92,40 @@ a 4-vCPU, 8-GB server. Measure, do not promise capacity.
 ## Code style
 
 Use 4 spaces per indentation level, including in Rust. Write clean, DRY code (section 4.2).
+
+## Agent team
+
+Sixteen project subagents live in `.claude/agents/`. Their design is
+`docs/superpowers/specs/2026-10-25-studio-agent-team-design.md`. Section 4 of that design
+holds the ownership table: which seat is Primary and Second for each spec section. The main
+session is the orchestrator. It picks the lenses per gate with these rules.
+
+- **Lens mapping.** Rigour: `spec-rigour-reviewer`. Engine/domain: the Primary of the section
+  the artefact touches, from the ownership table. Boundary/sequencing: `technical-director`
+  for architecture, `producer` for plans. Consumer: `mod-builder` when the artefact touches
+  4.3, 5, or 6.5; `player` when it touches 3, 6.6, 16.2, or 17; otherwise the Second of the
+  section.
+- **Selection rule.** Four lenses per gate. When an artefact spans several subsystems, add one
+  domain seat per extra subsystem and say so. Six agents is the cap for one gate; above six,
+  ask the user. When a default lens has no claim to test in the artefact, drop it and say why.
+- **Milestone artefacts.** For a spec or plan on a milestone (spec section 14), the engine
+  lens is the Primary of the first subsystem in the Demonstration column, and each further
+  subsystem adds its Primary. For M1: `web-platform-engineer`, `network-engineer`,
+  `mod-runtime-engineer`.
+- **Heavy review.** `performance-architect` joins any gate where cost, scale, or a numeric
+  budget is at stake (spec 6.2, 6.9, 13, M7, M12). It is an allowed fifth lens.
+- **Minimum prompt.** Artefact path, scope, the lens question, the review-mode rule, and the
+  scratchpad path. The agent body carries the rest.
+- **Reading reports.** Record line 1 (`VERDICT=...`) and the High findings of each report in
+  your working notes. The rest stays in the report.
+- **Fan-out reading.** `Explore` (built-in) for raw search. Domain seats for conclusions.
+- **Independent refutation.** `performance-architect` or `qa-lead` to try to break a claim.
+- **Build.** Domain builder for the crate. `qa-lead` writes or reviews the test instrument.
+- **Verify.** `qa-lead` runs. `player` and `mod-builder` judge.
+- **Git.** Never `git add -A` while an agent runs. Stage explicit paths. Memory files under
+  `.claude/agent-memory/` are staged on purpose, not by accident.
+
+Roster check: `bash docs/agents/check.sh` (format, budget, standing-rules identity) and
+`bash docs/agents/check_fixtures.sh` (proves the check can go red). Run both before you commit
+an agent file. A session that started without `.claude/agents/` does not load the directory;
+restart the session after the roster is first created.
