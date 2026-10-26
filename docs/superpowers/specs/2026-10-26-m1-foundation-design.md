@@ -264,7 +264,7 @@ types, no Bevy entity ids.
   a disconnect.
 - **Snapshot** (server, reliable): `{tick, units: [{unit_id, content_id, owner_slot, pos}]}`.
   Sent after `Welcome` and when a client requests resync. (G1)
-- **UnitDeltas** (server, sequenced unreliable, every tick, empty when nothing changed):
+- **UnitDeltas** (server, unordered unreliable, every tick, empty when nothing changed; spike gate: lightyear's sequenced mode keeps only the newest unread message and dropped deltas in bursts):
   `{tick, base_tick, changes: [{unit_id, pos}]}`. `base_tick` is the previous tick. A unit absent
   from `changes` is unchanged at `tick`. The client enters resync state at `Welcome`, before any
   request, so deltas that overtake the first `Snapshot` are buffered, not lost. (G2) When `base_tick` differs from the last tick it applied,

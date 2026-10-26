@@ -65,7 +65,7 @@ pub struct UnitDelta {
     pub pos: Pos,
 }
 
-/// Server to client, sequenced unreliable. The units that changed at `tick`.
+/// Server to client, unordered unreliable. The units that changed at `tick`.
 /// `base_tick` is the previous tick.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct UnitDeltas {
