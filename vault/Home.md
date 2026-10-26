@@ -17,7 +17,7 @@ Dashboard for the TuRTS studio. Read this first, then [[Tasks]] and the latest n
 
 **Current milestone:** M1. Browser client, authoritative headless server, one mod-defined unit. Browser joins a match and presents server results.
 
-**Phase:** M1 brainstorm. Five seats researched the open choices (network, web platform, crates, mod package, scope). The M1 design doc is next, then gate 1.
+**Phase:** M1 build. Design and plan gated; 13 of 18 tasks done; spike gate passed (lightyear kept). Latest report: [[Reports/2026-10-26]].
 
 **Repository:** https://github.com/26medias/TuRTS (public). CI green.
 

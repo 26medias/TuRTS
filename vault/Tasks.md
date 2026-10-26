@@ -15,8 +15,8 @@ The task board. Move items between sections; keep owner and evidence link on eac
 
 ## In progress
 
-- [ ] M1 Tasks 6b (browser join, Opus), 7a (server boot, Sonnet), 8a-1 (client acquisition, Sonnet): running.
-- [ ] Then 7b + 8a-2, 7c + 10, 9, 11, 12, 13.
+- [ ] M1 Tasks 7c (server stats, Sonnet) and 10 (presentation, Sonnet): running.
+- [ ] Then 9 (acceptance runs), 11 (browser crate), 12 (T7 in CI), 13 (measurements). QA review at the end.
 
 ## Backlog (M1)
 
@@ -30,6 +30,8 @@ The task board. Move items between sections; keep owner and evidence link on eac
 - [ ] Acceptance tests T1 to T6 (producer's list), each shown red first.
 
 ## Done
+
+- [x] 2026-10-26: M1 Tasks 6b, 7a, 7b, 8a-1, 8a-2 done; duplicate-player transport bug fixed (09d72bc). CI green.
 
 - [x] 2026-10-26: networking spike passed; spike gate kept lightyear (df47cb0, ba8af70).
 
