@@ -15,7 +15,7 @@ The task board. Move items between sections; keep owner and evidence link on eac
 
 ## In progress
 
-- [ ] **M2 implementation plan and gate 2.** Owner: Codex orchestrator (plan revision 2 passed gate 2; awaiting user plan review). The user approved design revision 2 after gate 1. Plan: `docs/superpowers/plans/2026-10-26-m2-economy.md` (16 tasks). Design: `docs/superpowers/specs/2026-10-26-m2-economy-design.md`; companion: `2026-10-26-m2-authoring-example.md`; gate 1 evidence: `docs/research/m2/design-reviews.md`. Gate 2 passed after six focused reviews and repairs; no findings remain unresolved. Initial network, simulation, and producer turns hit usage limits before final votes; those turns are recorded as preliminary, not verdicts. Repairs cover independent expected-command/result accounting and boundary audits, mid-trace loss arm/reset, raw ReliableChannel receipt witnesses, and same-update arm timing. Next: user plan review, then superpowers:executing-plans/SDD implementation. No M2 product implementation or runtime behavior yet. See `docs/research/m2/plan-reviews.md` for evidence.
+- [ ] **M2 implementation (16 tasks).** Owner: Codex orchestrator; Sol for reasoning/planning/reviews, Luna for execution. The user approved execution on 2026-10-26. Plan: `docs/superpowers/plans/2026-10-26-m2-economy.md`; active managed worktree: `/home/julien/.codex/worktrees/ee40/TuRTS`; SDD ledger: `/home/julien/.codex/worktrees/ee40/TuRTS/.superpowers/sdd/2026-10-26-m2-economy/progress.md`. Task 1 setup is complete and pending dispatch. Baseline workspace tests passed (211 passed, 0 failed, 12 ignored). QA preflight is being prepared separately and is not marked complete. Plan Gate 2 evidence: `docs/research/m2/plan-reviews.md`.
 
 ## Backlog (M1)
 
