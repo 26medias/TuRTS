@@ -1,0 +1,1 @@
+- [Skill review 2026-10-26](skill-review-2026-10-26.md) — bevy-testing pins 0.19; CodSpeed needs SaaS login; use `gh api` for tree lookups
