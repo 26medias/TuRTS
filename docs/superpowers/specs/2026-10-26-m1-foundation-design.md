@@ -88,8 +88,8 @@ Workspace at the repository root. Crates under `crates/`. Packages under `mods/`
 | `turts_sim` | Authoritative world: fixed ticks, flat map, unit spawning from `MapDef`, movement integrator, command validation. Implements `UnitRegistry`. | `turts_mod_api`, `bevy_app`, `bevy_ecs`, `bevy_time`, `bevy_math` with default features (none of them pulls a renderer; `default-features = false` breaks glam's math backend). (G1b) |
 | `turts_mod_runtime` | Archive read, manifest and lockfile parse, hash, validation, diagnostics. Returns validated definitions; registers nothing itself. Also the `turts-pack` binary. | `turts_mod_api`, serde, ron, serde_json, sha2, semver, tar. No `bevy*`. |
 | `turts_net_lightyear` | The shared lightyear `ProtocolPlugin`: message and channel registration in one fixed order for both ends. Features `server`, `client`. (G2: lightyear assigns ids by registration order, so both ends must share one registration.) | `turts_net_protocol`, lightyear, `bevy_*` sub-crates without a renderer. |
-| `turts_server` (bin, native) | `MinimalPlugins` + `ScheduleRunnerPlugin`; HTTP endpoints for advertisement, lockfile, and package bytes; lightyear server over WebSocket; snapshot and delta sending. | `turts_sim`, `turts_mod_runtime`, `turts_net_protocol`, `bevy` (`default-features = false`), lightyear (server). |
-| `turts_client` (lib + native bin; `turts_client_web` is the wasm32 cdylib entry) | `DefaultPlugins`; advertisement and lockfile fetch; package download and hash check; join; `ReplicaState`; interpolation; presentation; input. | `turts_net_protocol`, `turts_mod_api`, `turts_mod_runtime`, `bevy`, lightyear (client). Never `turts_sim`. |
+| `turts_server` (bin, native) | `MinimalPlugins` + `ScheduleRunnerPlugin`; HTTP endpoints for advertisement, lockfile, and package bytes; lightyear server over WebSocket; snapshot and delta sending. | `turts_sim`, `turts_mod_runtime`, `turts_net_protocol`, `turts_net_lightyear` (server), `bevy` (`default-features = false`), lightyear (server). (G2) |
+| `turts_client` (lib + native bin; `turts_client_web` is the wasm32 cdylib entry) | `DefaultPlugins`; advertisement and lockfile fetch; package download and hash check; join; `ReplicaState`; interpolation; presentation; input. | `turts_net_protocol`, `turts_net_lightyear` (client), `turts_mod_api`, `turts_mod_runtime`, `bevy`, lightyear (client). Never `turts_sim`. (G2) |
 
 lightyear dependency: `default-features = false`, features `std`, `websocket`, `netcode`, and
 `client` or `server`. No `replication`, `prediction`, `interpolation`, or `deterministic`. (G1)
@@ -138,7 +138,7 @@ message codec is postcard; M1 uses it.
 Transport: WebSocket (MDN: widely available since July 2015). WebTransport is a later probe.
 Accepted risk: lightyear 0.31 depends on `aeronet_io 0.22.0-rc.1`; pinned. Netcode `Manual`
 authentication keeps the key in the client and is marked an M1 placeholder; real identity is M10.
-Client timeout: 10 s at M1, so a client stalled for 5 s stays connected (P7) and a briefly hidden
+Client timeout: 10 s at M1, set in the client's connect token (with `Manual` tokens the server uses the token's value), so a client stalled for 5 s stays connected (P7) and a briefly hidden
 browser tab survives. A longer hide disconnects; reconnect is M10. (G2)
 
 **Spike gate (G2).** After the spike, the orchestrator reviews `m1-network-spike.md` before any
@@ -306,7 +306,7 @@ gameplay entity. Slot records are not gameplay entities.
 | T5 convergence (native, localhost) | headless native client at a fixed 60 frames per second joins and sends one `MoveTo`; server logs (tick, wall time, pos); client logs (frame wall time, bracket ticks, fraction, presented pos) | every presented position lies on the segment between the server-log positions at consecutive ticks k and k+1, fraction in [0, 1]; lag p99 ≤ 2 ticks, maximum recorded; arrival equals the server's final position | a client that extrapolates, invents positions, interpolates across a gap, or stalls |
 | T6 second viewer | two headless clients | the second client's presented path satisfies T5's oracle against the same server log | replication to one client only |
 | T6b late join | a client joins after the unit has arrived | within 3 ticks of `Welcome` the client presents the unit at the final position | a design without catch-up; an empty presentation log |
-| T8 lost delta | a client that drops one `UnitDeltas` during the move and one at the stop; a second case that also holds each `Snapshot` back by 3 ticks | exactly one `ResyncRequest` per loss; the client presents the final position in both cases | a client that never detects a missing delta; a resync storm; a loop when the `Snapshot` arrives late |
+| T8 lost delta | a client that drops one `UnitDeltas` during the move and one at the stop; a second case that holds each `Snapshot` that answers a `ResyncRequest` back by 3 ticks (G2) | exactly one `ResyncRequest` per loss; the client presents the final position in both cases | a client that never detects a missing delta; a resync storm; a loop when the `Snapshot` arrives late |
 | T7 browser join | trunk-built client in headless Chromium against the real server; reads `window.turts_debug` | reaches `Welcome`; presents one unit; T5's segment oracle holds; lag recorded, not judged | a wasm build or transport that fails in the browser |
 | M1 measurements | T5 run; synthetic run with 1,000 units moving | bytes per tick to one client at WebSocket frame level; server tick p99; browser frame p99; wasm memory high-water | recorded in `docs/measurements/m1.md`, not judged |
 
