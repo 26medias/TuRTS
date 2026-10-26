@@ -236,3 +236,22 @@ fn t2c_export_paths_must_stay_inside_the_archive() {
         refused(&bytes, field);
     }
 }
+
+#[test]
+fn t2c_malformed_ron_names_no_type() {
+    let cases = [
+        "[1]",
+        "(",
+        "Circle(radius: 0.4)",
+        "(id: \"scout\", name: \"Scout\", speed: 6.0, footprint: 3)",
+    ];
+    for text in cases {
+        let error = turts_mod_runtime::parse::parse_ron::<turts_mod_api::UnitDef>(
+            "pkg",
+            "units/one.ron",
+            text,
+        )
+        .expect_err("malformed text must be refused");
+        assert_no_type_names(&error);
+    }
+}
