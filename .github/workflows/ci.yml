@@ -26,12 +26,54 @@ jobs:
       - name: Acceptance (process tests, release, serial)
         if: ${{ hashFiles('crates/turts_server/tests/acceptance.rs') != '' }}
         run: bash scripts/acceptance.sh
+  # T7 (design section 7) runs here and not under `cargo test --workspace`: it needs a wasm
+  # build, a server process and Chrome. ubuntu-latest has /usr/bin/google-chrome.
   browser:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: T7 stub
-        run: echo "T7 added in Task 12"
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      # `cache-bin: false` leaves ~/.cargo/bin to the trunk cache below.
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-bin: false
+      - name: Cache trunk
+        id: trunk-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/trunk
+          key: trunk-0.22.0-${{ runner.os }}
+      - name: Install trunk 0.22.0
+        if: steps.trunk-cache.outputs.cache-hit != 'true'
+        run: cargo install --locked trunk --version 0.22.0
+      # Trunk downloads wasm-bindgen and wasm-opt at the versions that Trunk.toml pins.
+      - name: Cache the tools that trunk downloads
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/trunk
+          key: trunk-tools-${{ runner.os }}-${{ hashFiles('crates/turts_client_web/Trunk.toml') }}
+      - name: Install brotli
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends brotli
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install playwright-core
+        run: npm ci
+        working-directory: tests/browser
+      - name: T7 browser join
+        run: bash scripts/t7.sh
+      - name: T7 logs
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: t7
+          path: |
+            target/t7/*.log
+            target/t7/frames.jsonl
+            target/t7/result.json
+          if-no-files-found: ignore
   agents:
     runs-on: ubuntu-latest
     steps:
