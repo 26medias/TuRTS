@@ -1,0 +1,1 @@
+//! Flat map from MapDef.

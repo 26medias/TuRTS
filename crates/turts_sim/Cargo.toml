@@ -1,0 +1,13 @@
+[package]
+name = "turts_sim"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+turts_mod_api = { path = "../turts_mod_api" }
+bevy_app = { workspace = true }
+bevy_ecs = { workspace = true }
+bevy_time = { workspace = true }
+bevy_math = { workspace = true }

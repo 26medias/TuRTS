@@ -13,21 +13,22 @@ jobs:
           targets: wasm32-unknown-unknown
           components: clippy, rustfmt
       - uses: Swatinem/rust-cache@v2
-      - name: No workspace yet
-        if: ${{ hashFiles('Cargo.toml') == '' }}
-        run: echo "No Cargo.toml; nothing to build yet."
       - name: Format
-        if: ${{ hashFiles('Cargo.toml') != '' }}
         run: cargo fmt --all --check
       - name: Clippy (native)
-        if: ${{ hashFiles('Cargo.toml') != '' }}
         run: cargo clippy --workspace --all-targets -- -D warnings
       - name: Check (wasm32)
-        if: ${{ hashFiles('Cargo.toml') != '' }}
-        run: cargo check --workspace --target wasm32-unknown-unknown
+        run: cargo check --workspace --exclude turts_server --target wasm32-unknown-unknown
       - name: Test (native, headless)
-        if: ${{ hashFiles('Cargo.toml') != '' }}
         run: cargo test --workspace
+      - name: Acceptance (process tests, release, serial)
+        run: bash scripts/acceptance.sh
+  browser:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: T7 stub
+        run: echo "T7 added in Task 12"
   agents:
     runs-on: ubuntu-latest
     steps:

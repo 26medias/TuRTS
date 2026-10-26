@@ -1,0 +1,19 @@
+[package]
+name = "turts_mod_runtime"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+turts_mod_api = { path = "../turts_mod_api" }
+serde = { workspace = true }
+ron = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+semver = { workspace = true }
+tar = { workspace = true }
+
+[[bin]]
+name = "turts-pack"
+path = "src/bin/turts-pack.rs"

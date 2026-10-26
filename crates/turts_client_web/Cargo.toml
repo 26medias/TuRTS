@@ -1,0 +1,19 @@
+[package]
+name = "turts_client_web"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+turts_client = { path = "../turts_client" }
+bevy = { workspace = true, features = ["3d"] }
+wasm-bindgen = { workspace = true }
+js-sys = { workspace = true }
+web-sys = { workspace = true, features = ["Window", "Location"] }
+
+[dev-dependencies]
+wasm-bindgen-test = { workspace = true }

@@ -1,0 +1,1 @@
+//! Message and channel registration.

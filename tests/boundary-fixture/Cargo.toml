@@ -1,0 +1,9 @@
+[package]
+name = "turts_boundary_fixture"
+version = "0.0.0"
+edition = "2024"
+
+[workspace]
+
+[dependencies]
+bevy_render = "=0.20.0"

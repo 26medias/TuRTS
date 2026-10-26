@@ -1,0 +1,1 @@
+//! Lockfile entry types.

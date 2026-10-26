@@ -4,16 +4,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository state
 
-This repository holds no code yet. It contains one document:
-`RTS-Engine-Project-Specifications.md` (version 0.7, 2026-10-26). That document is the
+This repository holds the M1 Cargo workspace (crate and module skeletons first) and the
+specification. `RTS-Engine-Project-Specifications.md` (version 0.7, 2026-10-26) is the
 source of record for all design decisions. Read it before you start any implementation work.
 
-There is no Cargo workspace yet. Toolchain: `rust-toolchain.toml` pins stable with the
+Toolchain: `rust-toolchain.toml` pins stable with the
 `wasm32-unknown-unknown` target. `scripts/setup-dev.sh` installs the user-level tools (trunk,
 wasm-bindgen-cli, wasm-opt, flamegraph, cargo-llvm-lines, cargo-bloat). `scripts/setup-sudo.sh`
 installs perf, heaptrack, and valgrind and needs root. CI is `.github/workflows/ci.yml`: fmt,
-clippy, wasm32 check, native tests, and the agent roster checks. When the workspace exists, add
-the build and test commands here.
+clippy, wasm32 check, native tests, and the agent roster checks. The build and test commands
+are in "Build and test commands" below.
 
 Bevy version: **0.20** (orchestrator call, 2026-10-26; stable at that date). Ten installed Bevy
 skills pin 0.19; read the `bevy-ecs` skill's 0.20 pitfalls before you use any 0.19 snippet.
@@ -70,8 +70,39 @@ These rules come from the spec and apply to every crate:
 
 Simulation core, presentation, mod runtime and API, multiplayer, terrain and geology,
 production and logistics, utility networks, headless host. These are responsibility
-boundaries, not a fixed crate layout. Choose the crate layout when you create the workspace
-and record it here.
+boundaries, not a fixed crate layout. The M1 crate layout is in "Crate layout" below.
+
+## Build and test commands
+
+- `cargo test --workspace`: all tests. No test spawns a process; process tests are `#[ignore]`.
+- `bash scripts/boundary.sh`: the T1 forbidden-edge checks (design 4.1). The fixture must be red.
+- `bash scripts/acceptance.sh`: builds both binaries and runs the ignored process tests in
+  release, one at a time.
+- `cargo check --workspace --exclude turts_server --target wasm32-unknown-unknown`: wasm32 check.
+- `trunk build --release` in `crates/turts_client_web`: the browser build.
+- Build each binary with its own `cargo build -p <crate>`. A workspace-wide build unifies the
+  client's `bevy` features into the server.
+
+## Crate layout
+
+Source: `docs/superpowers/specs/2026-10-26-m1-foundation-design.md` section 4.1. Crates are
+under `crates/`. Packages are under `mods/`.
+
+| Crate | Responsibility | Forbidden dependencies |
+| --- | --- | --- |
+| `turts_mod_api` | Content ids, package schema types, `UnitRegistry`, `ENGINE_API_VERSION`, `ModError`. | Any `bevy*` crate. |
+| `turts_net_protocol` | Wire messages, `NET_PROTOCOL_VERSION`. No transport. | Any `bevy*` crate. |
+| `turts_sim` | Authoritative headless world: fixed ticks, flat map, movement, command validation. | `bevy_render`, `bevy_winit`, `bevy_pbr`, `turts_mod_runtime`. |
+| `turts_mod_runtime` | Archive read, manifest and lockfile parse, hash, validation. Also the `turts-pack` binary. | Any `bevy*` crate. |
+| `turts_net_lightyear` | The shared lightyear `ProtocolPlugin`: one registration order for both ends. | `turts_sim`, `turts_mod_runtime`. |
+| `turts_server` (binary) | Headless host: HTTP endpoints, lightyear server, snapshots and deltas. | `bevy_render`, `bevy_winit`, `bevy_pbr`. |
+| `turts_client` (library and binary) | All client logic: fetch, acquisition, join, replica, interpolation, presentation, input. | `turts_sim`. |
+| `turts_client_web` (cdylib) | Thin wasm32 entry for the browser client. | None of its own. |
+| `turts_checks` | Test-only: T1 boundary test and the no-content scan. | Not a dependency of any crate. |
+
+Workspace-wide: no `lightyear_prediction`, no `bevy_replicon`. The fixture crate
+`tests/boundary-fixture/` is not a member. It depends on `bevy_render` on purpose, so the
+boundary check can prove it goes red.
 
 ## Decisions that are still open
 

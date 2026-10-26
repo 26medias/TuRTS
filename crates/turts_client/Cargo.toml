@@ -1,0 +1,28 @@
+[package]
+name = "turts_client"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+turts_net_protocol = { path = "../turts_net_protocol" }
+turts_mod_api = { path = "../turts_mod_api" }
+turts_mod_runtime = { path = "../turts_mod_runtime" }
+turts_net_lightyear = { path = "../turts_net_lightyear", features = ["client"] }
+bevy = { workspace = true, features = ["3d"] }
+lightyear = { workspace = true, features = ["client"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+[target.'cfg(not(target_family = "wasm"))'.dependencies]
+ureq = { workspace = true }
+
+[target.'cfg(target_family = "wasm")'.dependencies]
+gloo-net = { workspace = true }
+wasm-bindgen-futures = { workspace = true }
+js-sys = { workspace = true }
+
+[[bin]]
+name = "turts_client"
+path = "src/main.rs"
