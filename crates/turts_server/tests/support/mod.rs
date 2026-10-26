@@ -1,8 +1,12 @@
 //! Test harness: pack a package, start the server binary, run the client binary.
 //!
-//! Task 9 adds `pub mod oracle; pub mod logs;` here and the two files next to this one.
-//! Not every test file uses every function.
+//! `logs` reads the server tick log, the client frame log and the stats file. `oracle` checks
+//! a frame log against the tick log (design section 7, T5). Not every test file uses every
+//! function.
 #![allow(dead_code)]
+
+pub mod logs;
+pub mod oracle;
 
 use std::fs;
 use std::net::{SocketAddr, TcpListener};
