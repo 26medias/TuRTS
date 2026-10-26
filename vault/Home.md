@@ -17,7 +17,7 @@ Dashboard for the TuRTS studio. Read this first, then [[Tasks]] and the latest n
 
 **Current milestone:** M1 done. Next: M2, mod API proven by the default mod plus an alternative economy mod.
 
-**Phase:** M1 closed on 2026-10-26. M2 economy design revision 2 passed gate 1 and was approved by the user. The 16-task plan passed gate 2 after six focused reviews and repairs; the user approved execution on 2026-10-26. Implementation is underway in the managed worktree; Task 1 setup is complete and dispatch is pending. Sol handles reasoning, planning, and reviews; Luna handles execution. See [[Tasks]], [[Team]], and the detailed [plan review record](../docs/research/m2/plan-reviews.md). Latest report: [[Reports/2026-10-26]].
+**Phase:** M1 closed on 2026-10-26. M2 economy design revision 2 passed gate 1 and was approved by the user. The 16-task plan passed gate 2 after six focused reviews and repairs; the user approved execution on 2026-10-26. Implementation is underway in the managed worktree; Task 1 is complete after review and Task 2 is next. Luna handles implementation; Sol handles review. See [[Tasks]], [[Team]], and the detailed [plan review record](../docs/research/m2/plan-reviews.md). Latest report: [[Reports/2026-10-26]].
 
 **Repository:** https://github.com/26medias/TuRTS (public). CI green.
 
