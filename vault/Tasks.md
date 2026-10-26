@@ -15,7 +15,7 @@ The task board. Move items between sections; keep owner and evidence link on eac
 
 ## In progress
 
-- [ ] **M2 implementation (16 tasks).** Owner: Codex orchestrator; Sol for reasoning/planning/reviews, Luna for execution. The user approved execution on 2026-10-26. Plan: `docs/superpowers/plans/2026-10-26-m2-economy.md`; active managed worktree: `/home/julien/.codex/worktrees/ee40/TuRTS`; SDD ledger: `/home/julien/.codex/worktrees/ee40/TuRTS/.superpowers/sdd/2026-10-26-m2-economy/progress.md`. Task 1 setup is complete and pending dispatch. Baseline workspace tests passed (211 passed, 0 failed, 12 ignored). QA preflight is being prepared separately and is not marked complete. Plan Gate 2 evidence: `docs/research/m2/plan-reviews.md`.
+- [ ] **M2 implementation (16 tasks).** Owner: Codex orchestrator; Sol for reasoning/planning/reviews, Luna for execution. The user approved execution on 2026-10-26. Plan: `docs/superpowers/plans/2026-10-26-m2-economy.md`; active managed worktree: `/home/julien/.codex/worktrees/ee40/TuRTS`; SDD ledger: `/home/julien/.codex/worktrees/ee40/TuRTS/.superpowers/sdd/2026-10-26-m2-economy/progress.md`. Task 1 setup is complete and ready for dispatch. Baseline workspace tests passed (211 passed, 0 failed, 12 ignored). QA preflight is being prepared separately and is not marked complete. Plan Gate 2 evidence: `docs/research/m2/plan-reviews.md`.
 
 ## Backlog (M1)
 
