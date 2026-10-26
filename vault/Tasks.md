@@ -15,9 +15,7 @@ The task board. Move items between sections; keep owner and evidence link on eac
 
 ## In progress
 
-- [ ] M1 Task 11 browser crate (Sonnet): running.
-- [ ] T5 delivery latency investigation (network-engineer, Opus): running.
-- [ ] Then 12 (T7 in CI), 13 (measurements), QA review of M1.
+- [ ] M1 verify: qa-lead (Fable) re-runs every gate with its own plants; mod-builder (Opus) builds a third package from the docs alone. Running.
 
 ## Backlog (M1)
 
@@ -31,6 +29,8 @@ The task board. Move items between sections; keep owner and evidence link on eac
 - [ ] Acceptance tests T1 to T6 (producer's list), each shown red first.
 
 ## Done
+
+- [x] 2026-10-26: all 18 M1 tasks done (bcbc5cd). T7 browser join passes in CI. Server TCP no-delay fix (021c522): T5 lag p99 about 1.34 ticks, limit tightened to 1.5.
 
 - [x] 2026-10-26: M1 Tasks 7c, 9, 10 done; all eight acceptance tests pass (35e44b3).
 
