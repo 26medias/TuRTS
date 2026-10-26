@@ -822,7 +822,7 @@ Facts from the probe (G2):
 #[test] #[ignore] fn p7_stalled_reader_keeps_tick_p99_and_bounded_memory()
 // (G2b studio call) server --units 1000 behind the relay started with --rcvbuf 4096 --pause-after 10 --pause-secs 5; client stays connected
 // (disconnected_after_connect == false; deltas resume: last_tick grows after the pause); stall evidence: at the middle of the pause
-// `ss -tni` on the server's WebSocket port shows Send-Q > 0 (else fail "no back-pressure"); server tick p99 during the pause within the P6 bound;
+// `ss -tni` on the server's WebSocket port shows Send-Q >= 256 KiB (else fail "no back-pressure"; G2c: a run with no stall showed up to 9,208 bytes, a stalled run 398,444 to 719,880); server tick p99 during the pause within the P6 bound;
 // server RSS rise during the pause (resident_peak_bytes - resident_bytes before) <= 16 MiB; record Send-Q peak (sampled each 500 ms), RSS before,
 // peak and after, delta_payload_bytes_total produced during the pause, and lost deltas (recorded, not judged)
 ```
@@ -840,7 +840,7 @@ Expected: P3 red on `welcomed == false` (the binaries are empty `main`s) (G2).
 
 - [ ] **Step 3: Run the spike until P1 to P7 pass**
 
-Then plant one defect per instrument and see red (G2): (P3) send `Welcome` for any hash → the wrong-hash case fails; (P4) skip every second `CommandAck` → `acks == 500`; (P5) stop sending deltas after 10 s → `deltas < 1140`; (P6) `std::thread::sleep(2 ms)` in `FixedUpdate` when no client is connected → p99 outside the bound; (P7, G2b) two plants: drop `--rcvbuf` from the relay call → Send-Q stays 0 at mid-pause → "no back-pressure"; and in `spike_server` keep a `Vec<u8>` of 24 MiB alive from the first tick at which a send is pending (simulating an unbounded send queue) → RSS rise > 16 MiB → red on the memory bound. Revert every plant.
+Then plant one defect per instrument and see red (G2): (P3) send `Welcome` for any hash → the wrong-hash case fails; (P4) skip every second `CommandAck` → `acks == 500`; (P5) stop sending deltas after 10 s → `deltas < 1140`; (P6) `std::thread::sleep(2 ms)` in `FixedUpdate` when no client is connected → p99 outside the bound; (P7, G2b) two plants: run the relay with `--pause-secs 0` → Send-Q stays under 256 KiB at mid-pause → "no back-pressure" (G2c: removing `--rcvbuf` alone does not go red); and in `spike_server` keep a `Vec<u8>` of 24 MiB filled with non-zero bytes (a zero-filled vector adds no resident memory, G2c) alive from the first tick at which a send is pending (simulating an unbounded send queue) → RSS rise > 16 MiB → red on the memory bound. Revert every plant.
 
 - [ ] **Step 4: Write the result**
 

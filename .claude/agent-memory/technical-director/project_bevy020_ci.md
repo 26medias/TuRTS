@@ -60,5 +60,10 @@ outside the workspace (own `[workspace]`) with a path dep on a member that uses
 `workspace = true` builds. `cargo tree -p <wrong name>` exits 101 with empty
 stdout: a script that drops stderr and greps the output passes silently.
 
+Re-gate 2026-10-26: parallel `cargo tree` runs print "Blocking waiting for file
+lock on package cache" on stderr. A script that merges stderr into the tree
+output and checks line 1 went false-red in 8 of 8 parallel runs (3 rounds);
+with stderr kept apart, 8 of 8 passed. `cargo test` runs tests in parallel.
+
 **Why:** Gate reviews on the first workspace will cite these names and this CI line.
 **How to apply:** Re-check docs.rs before citing if Bevy moves past 0.20.

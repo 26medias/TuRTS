@@ -22,6 +22,7 @@ jobs:
       - name: Test (native, headless)
         run: cargo test --workspace
       - name: Acceptance (process tests, release, serial)
+        if: ${{ hashFiles('crates/turts_server/tests/acceptance.rs') != '' }}
         run: bash scripts/acceptance.sh
   browser:
     runs-on: ubuntu-latest
