@@ -143,7 +143,7 @@ under `crates/`. Packages are under `mods/`.
 | `turts_net_lightyear` | The shared lightyear `ProtocolPlugin`: one registration order for both ends. | `turts_sim`, `turts_mod_runtime`. |
 | `turts_server` (binary) | Headless host: HTTP endpoints, lightyear server, snapshots and deltas, tick log, `--stats`, `--synthetic-units`. | `bevy_render`, `bevy_winit`, `bevy_pbr`. |
 | `turts_client` (library and binary) | All client logic: fetch, acquisition, join, replica, interpolation, presentation, input. | `turts_sim`. |
-| `turts_client_web` (cdylib) | Thin wasm32 entry for the browser client. Sets `window.turts_debug`, `turts_move`, and `turts_memory_bytes`. | None of its own. |
+| `turts_client_web` (cdylib) | Thin wasm32 entry for the browser client. Sets `window.turts_debug`, `turts_move`, `turts_memory_bytes`, and `turts_scene` (scene entities with a mesh and a unit id, for T7). | Never `turts_sim` (host and wasm32; checked by `scripts/boundary.sh`). |
 | `turts_checks` | Test-only: T1 boundary test and the no-content scan. | Not a dependency of any crate. |
 
 Workspace-wide: no `lightyear_prediction`, no `bevy_replicon`. `vendor/aeronet_websocket` is a
