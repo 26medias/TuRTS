@@ -1,3 +1,3 @@
 - [Skill review 2026-10-26](skill-review-2026-10-26.md) — bevy-testing pins 0.19; CodSpeed needs SaaS login; use `gh api` for tree lookups
 - [M1 plan gate 2](m1-plan-gate2-2026-10-26.md) — rev 1 defects; rev 2 re-gate: T5/T8 fixed, P7 floor, hello.rs not in CI
-- [M1 verify 2026-10-26](m1-verify-2026-10-26.md) — gate green on 548e7ed; T1 web-crate and T3 UnitId-only plants stayed green; T5 lag p99 1.345-1.350
+- [M1 verify 2026-10-26](m1-verify-2026-10-26.md) — gate green on 548e7ed; five plants green then red after 9cc0972; still green: square-map axis swap, no-camera scene
