@@ -129,7 +129,9 @@ impl Replica {
     /// unknown unit is a chain break, so the replica never invents a unit.
     fn extends_chain(&self, d: &UnitDeltas) -> bool {
         Some(d.base_tick) == self.last_applied_tick
-            && d.changes.iter().all(|c| self.units.contains_key(&c.unit_id.0))
+            && d.changes
+                .iter()
+                .all(|c| self.units.contains_key(&c.unit_id.0))
     }
 
     /// Applies a delta that `extends_chain` accepted: every unit gets a sample at `d.tick`.
@@ -139,7 +141,11 @@ impl Replica {
         for (id, unit) in self.units.iter_mut() {
             let pos = match changes.get(id) {
                 Some(&p) => p,
-                None => unit.samples.back().map(|&(_, p)| p).expect("a unit has at least one sample"),
+                None => unit
+                    .samples
+                    .back()
+                    .map(|&(_, p)| p)
+                    .expect("a unit has at least one sample"),
             };
             unit.samples.push_back((d.tick, pos));
             while unit.samples.front().is_some_and(|&(t, _)| t < keep_from) {
@@ -166,10 +172,20 @@ impl Replica {
         let &(last, last_pos) = samples.back()?;
         let floor = t.floor();
         if floor.is_nan() || floor < f64::from(first) {
-            return Some(Presented { pos: first_pos, lo_tick: first, hi_tick: first, fraction: 0.0 });
+            return Some(Presented {
+                pos: first_pos,
+                lo_tick: first,
+                hi_tick: first,
+                fraction: 0.0,
+            });
         }
         if floor >= f64::from(last) {
-            return Some(Presented { pos: last_pos, lo_tick: last, hi_tick: last, fraction: 0.0 });
+            return Some(Presented {
+                pos: last_pos,
+                lo_tick: last,
+                hi_tick: last,
+                fraction: 0.0,
+            });
         }
         let lo = floor as u32;
         let hi = lo + 1;
@@ -177,8 +193,18 @@ impl Replica {
         let a = samples[(lo - first) as usize].1;
         let b = samples[(hi - first) as usize].1;
         if fraction == 0.0 {
-            return Some(Presented { pos: a, lo_tick: lo, hi_tick: lo, fraction: 0.0 });
+            return Some(Presented {
+                pos: a,
+                lo_tick: lo,
+                hi_tick: lo,
+                fraction: 0.0,
+            });
         }
-        Some(Presented { pos: interp::lerp(a, b, fraction), lo_tick: lo, hi_tick: hi, fraction })
+        Some(Presented {
+            pos: interp::lerp(a, b, fraction),
+            lo_tick: lo,
+            hi_tick: hi,
+            fraction,
+        })
     }
 }

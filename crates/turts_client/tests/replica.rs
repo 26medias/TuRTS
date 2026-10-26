@@ -29,7 +29,10 @@ fn delta(tick: u32, base_tick: u32, changes: &[(u32, Pos)]) -> UnitDeltas {
         base_tick,
         changes: changes
             .iter()
-            .map(|&(id, p)| UnitDelta { unit_id: UnitId(id), pos: p })
+            .map(|&(id, p)| UnitDelta {
+                unit_id: UnitId(id),
+                pos: p,
+            })
             .collect(),
     }
 }
@@ -44,7 +47,10 @@ fn new_replica_is_in_resync_and_buffers_deltas() {
     let mut r = Replica::new(20);
     assert!(r.in_resync());
     assert_eq!(r.presentation_time(now), None);
-    assert_eq!(r.apply_delta(&delta(11, 10, &[(1, pos(1.0, 0.0))]), now), DeltaOutcome::Buffered);
+    assert_eq!(
+        r.apply_delta(&delta(11, 10, &[(1, pos(1.0, 0.0))]), now),
+        DeltaOutcome::Buffered
+    );
     assert_eq!(
         r.apply_snapshot(&snapshot(10, &[(1, pos(0.0, 0.0))]), now),
         SnapshotOutcome::Applied { replayed: 1 }
@@ -59,8 +65,14 @@ fn delta_at_or_below_snapshot_tick_is_discarded() {
     let now = Instant::now();
     let mut r = Replica::new(20);
     r.apply_snapshot(&snapshot(10, &[(1, pos(0.0, 0.0))]), now);
-    assert_eq!(r.apply_delta(&delta(10, 9, &[]), now), DeltaOutcome::Discarded);
-    assert_eq!(r.apply_delta(&delta(11, 10, &[]), now), DeltaOutcome::Applied);
+    assert_eq!(
+        r.apply_delta(&delta(10, 9, &[]), now),
+        DeltaOutcome::Discarded
+    );
+    assert_eq!(
+        r.apply_delta(&delta(11, 10, &[]), now),
+        DeltaOutcome::Applied
+    );
     assert_eq!(r.last_applied_tick, Some(11));
 }
 
@@ -68,8 +80,14 @@ fn delta_at_or_below_snapshot_tick_is_discarded() {
 fn unchanged_unit_gets_a_sample_each_tick() {
     let now = Instant::now();
     let mut r = Replica::new(20);
-    r.apply_snapshot(&snapshot(10, &[(1, pos(0.0, 0.0)), (2, pos(5.0, 5.0))]), now);
-    assert_eq!(r.apply_delta(&delta(11, 10, &[(1, pos(1.0, 0.0))]), now), DeltaOutcome::Applied);
+    r.apply_snapshot(
+        &snapshot(10, &[(1, pos(0.0, 0.0)), (2, pos(5.0, 5.0))]),
+        now,
+    );
+    assert_eq!(
+        r.apply_delta(&delta(11, 10, &[(1, pos(1.0, 0.0))]), now),
+        DeltaOutcome::Applied
+    );
     assert_eq!(r.units[&1].samples.back(), Some(&(11, pos(1.0, 0.0))));
     assert_eq!(r.units[&2].samples.back(), Some(&(11, pos(5.0, 5.0))));
     assert_eq!(ticks(&r, 2), vec![10, 11]);
@@ -120,14 +138,26 @@ fn samples_are_pruned() {
     let now = Instant::now();
     let mut r = Replica::new(20);
     r.apply_snapshot(&snapshot(1, &[(1, pos(0.0, 0.0))]), now);
-    assert_eq!(r.apply_delta(&delta(2, 1, &[(1, pos(1.0, 0.0))]), now), DeltaOutcome::Applied);
-    assert_eq!(r.apply_delta(&delta(3, 2, &[(1, pos(2.0, 0.0))]), now), DeltaOutcome::Applied);
+    assert_eq!(
+        r.apply_delta(&delta(2, 1, &[(1, pos(1.0, 0.0))]), now),
+        DeltaOutcome::Applied
+    );
+    assert_eq!(
+        r.apply_delta(&delta(3, 2, &[(1, pos(2.0, 0.0))]), now),
+        DeltaOutcome::Applied
+    );
     for k in 4..=41 {
-        assert_eq!(r.apply_delta(&delta(k, k - 1, &[(1, pos(k as f32, 0.0))]), now), DeltaOutcome::Applied);
+        assert_eq!(
+            r.apply_delta(&delta(k, k - 1, &[(1, pos(k as f32, 0.0))]), now),
+            DeltaOutcome::Applied
+        );
     }
     assert_eq!(r.last_applied_tick, Some(41));
     let held = ticks(&r, 1);
     assert!(held.len() <= 18, "unit holds {} samples", held.len());
     assert_eq!(*held.last().unwrap(), 41);
-    assert!(held.windows(2).all(|w| w[1] == w[0] + 1), "samples not consecutive: {held:?}");
+    assert!(
+        held.windows(2).all(|w| w[1] == w[0] + 1),
+        "samples not consecutive: {held:?}"
+    );
 }
