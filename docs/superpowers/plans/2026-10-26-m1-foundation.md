@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-Revision 2 after gate 2 (qa-lead fail; rigour, technical-director, producer, network-engineer pass-with-changes). Changes are marked `(G2)`. The reviewers' probes live in the scratchpad under `m1-gate2/` (`net/duo` for the lightyear behaviour, `net/t8model.py` for the resync counts, `qa/oracle_model.py` for the T5 oracle).
+Revision 2 after gate 2 (qa-lead fail; rigour, technical-director, producer, network-engineer pass-with-changes). Changes are marked `(G2)`. Revision 2b after the re-gate (all five pass-with-changes); those changes are marked `(G2b)`. The reviewers' probes live in the scratchpad under `m1-gate2/` (`net/duo` for the lightyear behaviour and the P5/P7 logs, `net/t8model2.py` for the resync counts, `qa/oracle_model.py` for the T5 oracle, `td/boundary_fixed.sh` for the boundary script).
 
 **Goal:** One authoritative headless server, one browser client, and one mod-defined unit that move together, with every acceptance test of the design able to go red.
 
@@ -24,7 +24,7 @@ Revision 2 after gate 2 (qa-lead fail; rigour, technical-director, producer, net
 - No `bevy*` type and no Bevy entity id in `turts_mod_api`, `turts_net_protocol`, or on the wire.
 - Claiming a slot creates no entity with a `UnitId` component (T3).
 - `DEFAULT_TICK_HZ = 20` and `INTERP_DELAY_TICKS = 1.0` carry the comment `// prototype constant: measure at M1`.
-- Netcode `client_timeout_secs = 10` on client and server (section 4.3, G2).
+- Netcode timeout 10 s, set in the client's connect token: `NetcodeConfig { client_timeout_secs: 10, .. }` on the client. With `Manual` tokens the server's `client_timeout_secs` has no effect, so the server keeps the default (section 4.3, G2, G2b).
 - Placeholders (section 3) are marked `// M1 placeholder; format open (spec 15)` in code: identifier format, version scheme, package kind values, capability names, hash prefix `sha256:`, archive format ustar, netcode `Manual` key.
 - Hash string format: `sha256:` plus 64 lowercase hex characters, over the exact archive bytes.
 - `ENGINE_API_VERSION = "0.1.0"`, `NET_PROTOCOL_VERSION: u32 = 1`.
@@ -86,7 +86,7 @@ vault/Decisions/2026-10-26 M1 networking stack.md
 - R2. `server.ron` fields `game_package`, `http_listen`, `ws_listen`, `public_url`, `tick_hz` (design 4.4), plus the plan's optional `static_dir` for the browser page.
 - R3. Test hooks (`--drop-delta-ticks`, `--drop-arrival-delta`, `--hold-resync-snapshots`, `--frame-log`, `--hello-hash`, `--move-unit`) compile into the native client binary without a feature flag, so `scripts/acceptance.sh` tests the shipped binary. The web crate has none of them.
 - R4. Command results travel from `turts_sim` in a `CommandResults` resource, not a Bevy message, so the sim exposes no schedule detail.
-- R5 (G2). Task 1 creates every crate's module skeleton (`pub mod` lines and empty files) and every `[[bin]]` target with an empty `main`, so parallel tasks fill files and never edit `lib.rs`, `main.rs`, or `Cargo.toml`.
+- R5 (G2, G2b). Task 1 creates every crate's module skeleton (`pub mod` lines and empty files) and every `[[bin]]` target with an empty `main`. Tasks that run in the same step fill disjoint module files and never edit `lib.rs`, `main.rs`, or `Cargo.toml`. A `lib.rs` or `main.rs` is replaced only by a task that runs alone in its crate for that step (7a, 7b, 8a-2, 10).
 
 ## Execution order, parallel groups and models (G2)
 
@@ -107,6 +107,8 @@ vault/Decisions/2026-10-26 M1 networking stack.md
 Models: `sonnet` for 1, 2, 3, 4, 5, 7a, 7b, 7c, 8a-1, 8a-2, 9, 10, 11, 12, 13. `opus` for 6a, 6b (spike) and 8b (replica, resync, interpolation). `haiku` for no task.
 
 Tasks in one step touch disjoint files (producer `file_overlap.txt`): 3 and 4 and 6a and 8b write only under their own crate directories; 7a and 8a-1 likewise; 7b and 8a-2 likewise; 7c writes `turts_server/src/{ticklog,stats,synthetic}.rs` while 10 writes `turts_client/src/{render,input,main}.rs`.
+
+Two scheduling rules (G2b): Task 6a's measured runs (P5, P6, P7) start after Tasks 3, 4 and 8b have finished, so no parallel build competes for CPU (its code and P1 to P4 may run earlier). At the end of step 6, after the 7b commit, the orchestrator runs `cargo build --release -p turts_server` once; Task 10's manual run and Task 9 use that binary, so nothing builds the server while 7c fills its modules.
 
 ---
 
@@ -186,7 +188,7 @@ Per crate (`[package]` takes `version.workspace`, `edition.workspace`, `license.
 | `turts_sim` | `turts_mod_api`, `bevy_app`, `bevy_ecs`, `bevy_time`, `bevy_math` | default features (section 4.1 G1b) |
 | `turts_mod_runtime` | `turts_mod_api`, `serde`, `ron`, `serde_json`, `sha2`, `semver`, `tar` | `[[bin]] name = "turts-pack"`, `path = "src/bin/turts-pack.rs"` |
 | `turts_net_lightyear` | `turts_net_protocol`, `serde`, `bevy_app`, `bevy_ecs`, `lightyear`; optional `bevy`, `serde_json`, `bevy_time` | `[features] client = ["lightyear/client"]`, `server = ["lightyear/server"]`, `spike = ["client", "server", "dep:bevy", "dep:serde_json", "dep:bevy_time"]`; dev: `bevy_time`; two `[[bin]]` (`spike_server`, `spike_client`) with `required-features = ["spike"]` |
-| `turts_server` | `turts_sim`, `turts_mod_runtime`, `turts_mod_api`, `turts_net_protocol`, `turts_net_lightyear` (features `server`), `bevy`, `lightyear` (features `server`), `serde`, `serde_json`, `ron`, `axum`, `tokio`, `tower-http` | bin only (`src/main.rs`); dev: `ureq`, `serde_json` |
+| `turts_server` | `turts_sim`, `turts_mod_runtime`, `turts_mod_api`, `turts_net_protocol`, `turts_net_lightyear` (features `server`), `bevy`, `lightyear` (features `server`), `serde`, `serde_json`, `ron`, `axum`, `tokio`, `tower-http`, `postcard` (G2b: payload size in `outbound.rs`) | bin only (`src/main.rs`); dev: `ureq`, `serde_json` |
 | `turts_client` | `turts_net_protocol`, `turts_mod_api`, `turts_mod_runtime`, `turts_net_lightyear` (features `client`), `bevy` (features `["3d"]`), `lightyear` (features `client`), `serde`, `serde_json` | lib + `[[bin]] name = "turts_client"`; `[target.'cfg(not(target_family = "wasm"))'.dependencies] ureq`; `[target.'cfg(target_family = "wasm")'.dependencies] gloo-net, wasm-bindgen-futures, js-sys` |
 | `turts_client_web` | `turts_client`, `bevy` (features `["3d"]`), `wasm-bindgen`, `js-sys`, `web-sys` (features `["Window", "Location"]`) | `[lib] crate-type = ["cdylib"]` only; dev: `wasm-bindgen-test` |
 
@@ -196,7 +198,7 @@ Random numbers (G2): no `rand` or `getrandom` dependency anywhere. `turts_server
 
 - [ ] **Step 3: Write the module skeletons** (G2, R5)
 
-`turts_client/src/lib.rs`: `pub mod options; pub mod fetch; pub mod acquire; pub mod join; pub mod replica; pub mod interp; pub mod ingest; pub mod present; pub mod framelog; pub mod render; pub mod input; pub mod debug;` and `pub struct ClientPlugin(pub options::ClientOptions);` is added in Task 8a-2, not here. `turts_server/src/main.rs`: `mod config; mod boot; mod http; mod net; mod session; mod outbound; mod ticklog; mod stats; mod synthetic; fn main() {}`. Same pattern for `turts_sim`, `turts_mod_api`, `turts_mod_runtime`, `turts_net_protocol`, `turts_net_lightyear`. Each module file holds only `//! <one line>`. `cargo build --workspace` must pass with the skeleton.
+`turts_client/src/lib.rs`: `pub mod options; pub mod fetch; pub mod acquire; pub mod join; pub mod replica; pub mod interp; pub mod ingest; pub mod present; pub mod framelog; pub mod render; pub mod input; pub mod debug;` and `pub struct ClientPlugin(pub options::ClientOptions);` is added in Task 8a-2, not here. `turts_server/src/main.rs`: `mod config; mod boot; mod http; mod net; mod session; mod outbound; mod ticklog; mod stats; mod synthetic; fn main() {}`. Same pattern for `turts_sim`, `turts_mod_api`, `turts_mod_runtime`, `turts_net_protocol`, `turts_net_lightyear`. Each module file holds only `//! <one line>`. `cargo check --workspace` must pass with the skeleton (G2b).
 
 - [ ] **Step 4: Write `.cargo/config.toml`**
 
@@ -214,14 +216,16 @@ runner = "wasm-bindgen-test-runner"
 `crates/turts_checks/tests/boundary.rs`; every test runs `bash scripts/boundary.sh ...` from the repository root and reads exit code, stdout and stderr:
 
 ```rust
+// (G2b) every red test asserts the exact stderr line the script prints, so a crash or a lock message cannot pass as "red"
 #[test] fn t1_boundary_script_passes()                 // no args -> exit 0, stdout ends with "boundary ok"
-#[test] fn t1_script_fails_when_fixture_is_green()      // env BOUNDARY_FIXTURE_MANIFEST=crates/turts_checks/Cargo.toml BOUNDARY_FIXTURE_PACKAGE=turts_checks -> exit 1, stderr contains "fixture not red"
-#[test] fn t1_rule_forbid_is_red_on_fixture()           // --rule forbid --crate turts_boundary_fixture --manifest tests/boundary-fixture/Cargo.toml --names bevy_render -> exit 1, stderr "forbidden edge: turts_boundary_fixture -> bevy_render"
-#[test] fn t1_rule_no_bevy_prefix_is_red_on_fixture()   // --rule no-bevy-prefix --crate turts_boundary_fixture --manifest ... -> exit 1, stderr contains "bevy_render"
-#[test] fn t1_rule_client_sim_is_red_on_server()        // --rule forbid --crate turts_server --names turts_sim -> exit 1 (turts_server has that edge)
-#[test] fn t1_rule_workspace_is_red_on_present_crate()  // --rule workspace --names bevy_app -> exit 1, stderr "forbidden edge: workspace -> bevy_app"
-#[test] fn t1_script_fails_on_unknown_crate()           // --rule forbid --crate turts_nope --names x -> exit 1, stderr contains "cargo tree failed"
-#[test] fn t1_script_fails_on_wrong_target()            // --rule forbid --crate turts_sim --target nope-unknown-none --names x -> exit 1, stderr contains "cargo tree failed"
+#[test] fn t1_script_fails_when_fixture_is_green()      // env BOUNDARY_FIXTURE_MANIFEST=crates/turts_checks/Cargo.toml BOUNDARY_FIXTURE_PACKAGE=turts_checks (no bevy_render) -> exit 1, stderr == "fixture not red\n"
+#[test] fn t1_rule_forbid_is_red_on_fixture()           // --rule forbid --crate turts_boundary_fixture --manifest tests/boundary-fixture/Cargo.toml --names bevy_render -> exit 1, stderr == "forbidden edge: turts_boundary_fixture -> bevy_render\n"
+#[test] fn t1_rule_no_bevy_prefix_is_red_on_fixture()   // --rule no-bevy-prefix --crate turts_boundary_fixture --manifest ... -> exit 1, stderr starts with "forbidden edge: turts_boundary_fixture -> bevy" (G2b: the first sorted match is bevy_app, not bevy_render)
+#[test] fn t1_rule_client_sim_is_red_on_server()        // --rule forbid --crate turts_server --names turts_sim -> exit 1, stderr == "forbidden edge: turts_server -> turts_sim\n"
+#[test] fn t1_rule_workspace_is_red_on_present_crate()  // --rule workspace --names bevy_app -> exit 1, stderr == "forbidden edge: workspace -> bevy_app\n"
+#[test] fn t1_script_fails_on_unknown_crate()           // --rule forbid --crate turts_nope --names x -> exit 1, stderr starts with "cargo tree failed for turts_nope:"
+#[test] fn t1_script_fails_on_wrong_target()            // --rule forbid --crate turts_sim --target nope-unknown-none --names x -> exit 1, stderr starts with "cargo tree failed for turts_sim:"
+#[test] fn t1_script_is_green_under_parallel_cargo()    // (G2b) four threads each run `--rule forbid --crate turts_sim --names bevy_render` while a fifth holds the cargo lock with `cargo tree -p turts_checks`; all four exit 0 with stdout "rule ok" (td probe: 24/24 green in parallel with the stderr fix)
 ```
 
 - [ ] **Step 7: Run them and see them fail**
@@ -234,7 +238,7 @@ Expected: FAIL, `scripts/boundary.sh: No such file`.
 Bash, `set -euo pipefail`, run from the repository root. Two modes: no arguments runs the full rule set; `--rule <forbid|no-bevy-prefix|workspace> [--crate C] [--target T] [--manifest M] --names a,b,c` runs one rule and exits with its result.
 
 1. `HOST=$(rustc -vV | sed -n 's/^host: //p')`.
-2. `tree <crate> <target> [manifest]`: runs `cargo tree -p "$crate" -e normal --prefix none --target "$target" ${manifest:+--manifest-path "$manifest"}` with stderr captured into the same variable. A non-zero exit prints `cargo tree failed for <crate>: <output>` to stderr and exits 1. The first output line must start with `<crate> v`; otherwise print `cargo tree output does not start with <crate>` and exit 1. Prints the sorted unique first column.
+2. `tree <crate> <target> [manifest]`: runs `cargo tree -p "$crate" -e normal --prefix none --target "$target" ${manifest:+--manifest-path "$manifest"}` with stdout in a variable and stderr in a temp file (`2>"$TMPERR"`), never merged (G2b: cargo prints "Blocking waiting for file lock", "Locking" and "Downloading" lines on stderr during parallel runs, and a merged stream made correct trees red). A non-zero exit prints `cargo tree failed for <crate>: <stderr contents>` to stderr and exits 1. The first stdout line must start with `<crate> v`; otherwise print `cargo tree output does not start with <crate>` and exit 1. Prints the sorted unique first column. The proven script is `m1-gate2/td/boundary_fixed.sh`; copy it.
 3. `names_has <list> <name>`: `grep -qx` with its exit code captured (`rc=0; grep -qx "$name" <<<"$list" || rc=$?`); `rc` 2 prints `grep failed` and exits 1; returns 0 only on `rc` 0.
 4. Rules:
    - `forbid <crate> <target> <names...>`: fail with `forbidden edge: <crate> -> <name>` for the first name present.
@@ -277,11 +281,13 @@ Expected: 10 passed. Then plant: add `bevy_render = "=0.20.0"` to `crates/turts_
 set -euo pipefail
 cargo build --release -p turts_server
 cargo build --release -p turts_client
+cargo test --release -p turts_server --test unit_boot -- --ignored --test-threads=1
+cargo test --release -p turts_server --test hello -- --ignored --test-threads=1
 cargo test --release -p turts_server --test acceptance -- --ignored --test-threads=1 "$@"
 cargo test --release -p turts_server --test acceptance -- --ignored --test-threads=1 --exact t5_convergence
 ```
 
-The last line runs T5 a second time (gate 2 studio call: lag p99 is judged only in this serial release run).
+The script runs every ignored process test (G2b: `unit_boot`'s HTTP test and `hello.rs` too). The last line runs T5 a second time (gate 2 studio call: lag p99 is judged only in this serial release run).
 
 - [ ] **Step 13: Record commands and layout in `CLAUDE.md`**
 
@@ -764,7 +770,7 @@ let entity = commands.spawn((
         protocol_id: NET_PROTOCOL_VERSION as u64,
         private_key: [0u8; 32],               // M1 placeholder; real identity is M10
         server_addr_check: false,             // the client's token names 127.0.0.1, the bind address is 0.0.0.0
-        client_timeout_secs: 10,              // design 4.3 (G2)
+        // no client_timeout_secs here: with Manual tokens the server uses the token's value (G2b)
         ..Default::default()
     }),
     WebSocketEndpoint { config: ServerConfig::builder().with_bind_address(ws_addr).with_no_encryption() },
@@ -785,11 +791,13 @@ commands.trigger(Connect { entity });
 
 Facts from the probe (G2):
 - Sending: `Query<&mut MessageSender<M>>` then `sender.send::<ReliableChannel>(m)`; senders are required components after `add_direction`. Receiving: `Query<(Entity, &mut MessageReceiver<M>), With<ClientOf>>` on the server, `Query<&mut MessageReceiver<M>>` on the client, in `PreUpdate` `.after(MessageSystems::Receive)`; receivers appear on first receipt.
-- The server kicks a client with `commands.trigger(Unlink { entity, reason: UnlinkReason::UserRequested(None) })`. `Disconnect { entity }` on a `ClientOf` does nothing (`srv-disconnect.log`: no `Disconnected` until the 7 s timeout).
+- The server kicks a client with `commands.trigger(Unlink { entity, reason: UnlinkReason::UserRequested(None) })`. `Disconnect { entity }` on a `ClientOf` does nothing (`srv-disconnect.log`: no `Disconnected` until the client process exited at 8 s) (G2b).
 - A kick right after `JoinRejected` loses the message. Delay the kick by time, not frames: `PendingKick { at: Instant }` with `at = now + 300 ms` (`c.log`: rejected at 0.159 s, kicked at 0.376 s, message delivered).
 - lightyear inserts `Disconnected` on the client entity at spawn, before `Connected` (`cf.log` line 1). A client counts a disconnect only after it has seen `Connected`.
 - `LocalAddr` on `Started` reports the configured address, port 0 stays 0 (`s0.log`). The harness picks a free port and passes it; the server never reads the bound port back.
-- With a 3 s client timeout a 5 s stall disconnects (`cp.log`); with 10 s it stays connected (design 4.3).
+- The timeout lives in the client's connect token: with a 3 s token a 5 s stall disconnects (`cp.log`); with a 10 s token it stays connected and deltas resume (`p7c.log`, design 4.3). The server's `client_timeout_secs` has no effect with `Manual` tokens (G2b).
+- Through the relay with `--rcvbuf 4096`, deltas are lost around the pause (`p7c.log`: `deltas_total` 135 at `last_tick` 169, then 142 at 278). Cause NOT TRACED; recorded, not judged (G2b).
+- Server RSS stayed at 22.9 MiB through a 5 s stall with 1,000 units (`p7s.log`); the relay saw 0 bytes server-to-client during the pause (`p7r.log`) (G2b).
 - lightyear's `TimelinePlugin` overwrites `Time<Fixed>` from `tick_duration`; pass `tick_duration(20)`.
 
 - [ ] **Step 1: Write `tests/spike.rs`** (one `#[test]` per item, all `#[ignore]`, `--test-threads=1`, binaries via `env!("CARGO_BIN_EXE_spike_server")` and `env!("CARGO_BIN_EXE_spike_client")`, which compile because Task 1 declared the targets (G2); the relay is `python3 tests/net/relay.py`)
@@ -807,13 +815,16 @@ Facts from the probe (G2):
 // client --hash sha256:spike -> welcomed == true; client --hash sha256:wrong -> rejected_reason == "lockfile hash mismatch" && disconnected_after_connect == true within 2 s
 #[test] #[ignore] fn p4_thousand_moves_get_one_ack_each()      // --moves 1000: acks == 1000 && ack_seqs_unique == 1000
 #[test] #[ignore] fn p5_sixty_seconds_of_deltas_in_order()
-// (G2) server --units 1 through the relay for 60 s: deltas_in_order && deltas >= 1140 (95 % of 60 s * 20) && deltas == last_tick - first_tick + 1;
-// bytes_per_tick = to_client_bytes / deltas; payload = delta_payload_bytes_total / ticks from stats; write target/spike/p5.json; repeat with --units 1000
+// (G2) server --units 1 through the relay (no --rcvbuf) for 60 s: deltas_in_order && deltas >= 1140 (95 % of 60 s * 20) && deltas == last_tick - first_tick + 1
+// (p5c-1.log and p5c-1000.log show no gap without a small buffer); bytes_per_tick = to_client_bytes / deltas; payload = delta_payload_bytes_total / ticks
+// from stats; record lost = last_tick - first_tick + 1 - deltas (G2b: recorded, 0 expected here); write target/spike/p5.json; repeat with --units 1000
 #[test] #[ignore] fn p6_killed_client_keeps_tick_p99()         // baseline 20 s stats; then a client killed at 10 s: p99 within max(10 %, 1 ms) of baseline
 #[test] #[ignore] fn p7_stalled_reader_keeps_tick_p99_and_bounded_memory()
-// (G2 studio call) server --units 1000 behind the relay started with --rcvbuf 4096 --pause-after 10 --pause-secs 5; client stays connected
-// (disconnected_after_connect == false, deltas resume after the pause); server tick p99 during the pause within the P6 bound;
-// resident_bytes 3 s after the pause <= resident_bytes before + (delta_payload_bytes_total during the pause); record resident_peak_bytes
+// (G2b studio call) server --units 1000 behind the relay started with --rcvbuf 4096 --pause-after 10 --pause-secs 5; client stays connected
+// (disconnected_after_connect == false; deltas resume: last_tick grows after the pause); stall evidence: at the middle of the pause
+// `ss -tni` on the server's WebSocket port shows Send-Q > 0 (else fail "no back-pressure"); server tick p99 during the pause within the P6 bound;
+// server RSS rise during the pause (resident_peak_bytes - resident_bytes before) <= 16 MiB; record Send-Q peak (sampled each 500 ms), RSS before,
+// peak and after, delta_payload_bytes_total produced during the pause, and lost deltas (recorded, not judged)
 ```
 
 Run: `cargo test --release -p turts_net_lightyear --features spike --test spike -- --ignored --test-threads=1 --nocapture`
@@ -829,7 +840,7 @@ Expected: P3 red on `welcomed == false` (the binaries are empty `main`s) (G2).
 
 - [ ] **Step 3: Run the spike until P1 to P7 pass**
 
-Then plant one defect per instrument and see red (G2): (P3) send `Welcome` for any hash → the wrong-hash case fails; (P4) skip every second `CommandAck` → `acks == 500`; (P5) stop sending deltas after 10 s → `deltas < 1140`; (P6) `std::thread::sleep(2 ms)` in `FixedUpdate` when no client is connected → p99 outside the bound; (P7) drop `--rcvbuf` from the relay call → the pause produces no back-pressure; the test must still pass, which proves nothing, so the instrument check is: with `--rcvbuf 4096` and the server sending `UnitDeltas` of 1,000 units, `to_client_bytes` during the pause is 0 and `resident_bytes` rises by at least 1 MiB during the pause (assert both in P7; if the rise is below 1 MiB the instrument did not create back-pressure and P7 fails with "no back-pressure"). Revert every plant.
+Then plant one defect per instrument and see red (G2): (P3) send `Welcome` for any hash → the wrong-hash case fails; (P4) skip every second `CommandAck` → `acks == 500`; (P5) stop sending deltas after 10 s → `deltas < 1140`; (P6) `std::thread::sleep(2 ms)` in `FixedUpdate` when no client is connected → p99 outside the bound; (P7, G2b) two plants: drop `--rcvbuf` from the relay call → Send-Q stays 0 at mid-pause → "no back-pressure"; and in `spike_server` keep a `Vec<u8>` of 24 MiB alive from the first tick at which a send is pending (simulating an unbounded send queue) → RSS rise > 16 MiB → red on the memory bound. Revert every plant.
 
 - [ ] **Step 4: Write the result**
 
@@ -1124,7 +1135,7 @@ git commit -m "turts_client: options with test hooks, fetch, acquisition with ha
 - Produces:
 
 ```rust
-// net.rs: spawn_lightyear_server(commands, ws_addr) per the Task 6a shape (client_timeout_secs 10, server_addr_check false); Start trigger;
+// net.rs: spawn_lightyear_server(commands, ws_addr) per the Task 6a shape (server_addr_check false; no timeout field: the client token carries 10 s, G2b); Start trigger;
 //   prints "LISTENING http=<addr> ws=<addr>" once Started is added
 // session.rs
 #[derive(Component)] pub struct Session { pub slot: SlotId, pub player_id: u64 }
@@ -1195,9 +1206,11 @@ pub fn build_app(opts: options::ClientOptions) -> bevy::app::App;
 
 #[derive(Resource)] pub enum Phase { FetchAdvertisement, FetchLockfile, FetchPackages { left: usize }, Connecting, Joining, Joined { slot: u8 }, Failed(String) }
 
-// join.rs: on Phase::Connecting spawn the client entity (Task 6a shape, client_timeout_secs 10, player_id from options or random_player_id());
+// join.rs: on Phase::Connecting spawn the client entity (Task 6a shape, token client_timeout_secs 10, player_id from options or random_player_id());
 //   on Add<Connected> send Hello { player_id, protocol_version: options.protocol_version.unwrap_or(NET_PROTOCOL_VERSION), lockfile_hash: options.hello_hash or acquired hash };
-//   Welcome -> Phase::Joined, Replica::new(tick_hz), welcome_tick; JoinRejected -> Phase::Failed(reason).
+//   JoinRejected -> Phase::Failed(reason). (G2b) Welcome is NOT handled here: Welcome and Snapshot arrive in the same frame (duo `cf.log`,
+//   `p7c.log`: "frame 10 Welcome ... frame 10 Snapshot"), and a Snapshot read before Replica::new is lost, so ingest.rs reads Welcome first
+//   in the same system; join.rs sets Phase::Joined from the replica's welcome_tick.
 //   (G2) `connected_seen: bool`; a Disconnected added before Connected is ignored; after Connected it sets `disconnected_after_connect`.
 //   `--protocol-version N` is one more hook in options (add the field `protocol_version: Option<u32>` in options.rs; Task 8a-1's file, edited here by agreement: 8a-1 is complete before 8a-2 starts).
 
@@ -1206,12 +1219,16 @@ pub fn build_app(opts: options::ClientOptions) -> bevy::app::App;
     pub hold_resync_snapshots: u32, pub held: Vec<(Snapshot, u32 /* release at tick */)>, pub outstanding_request: bool }
 #[derive(Resource, Default)] pub struct IngestCounters { pub deltas_received: u32, pub deltas_dropped: Vec<u32> /* ticks */, pub resync_requests_sent: u32, pub snapshots_applied: u32 }
 pub fn ingest_messages(...)
-// Order each frame (G2): 1. release held snapshots whose release tick <= highest delta tick received; 2. Snapshots: one that arrives while
+// Order each frame (G2, G2b): 0. Welcome: Replica::new(tick_hz), welcome_tick, drop_ticks = welcome_tick + offsets, Phase::Joined;
+//   then, in the same system run: 1. release held snapshots whose release tick <= highest delta tick received; 2. Snapshots: one that arrives while
 //   outstanding_request is true is an answer: if hold_resync_snapshots > 0 push to held with release = S + hold, else apply; a Snapshot with no
 //   outstanding request (the one after Welcome) is applied at once; 3. UnitDeltas: dropped when tick is in drop_ticks, or when
 //   drop_arrival_delta is set and the delta is the first whose change for the auto-move unit equals the auto-move target (record its tick in
 //   deltas_dropped and clear the flag); else Replica::apply_delta. Any ResyncRequested outcome -> send one ResyncRequest, outstanding_request = true,
 //   count; applying an answer snapshot clears outstanding_request (a ResyncRequested from the replay sets it again and sends one request).
+//   (G2b, studio call N = 10) Idle resync: when the replica is in resync, no request is outstanding, and the buffered deltas span 10 or more ticks
+//   (highest buffered tick - lowest buffered tick >= 10), send one ResyncRequest and set outstanding_request; this covers a lost or late Welcome
+//   Snapshot, so the client never hangs in the initial resync state.
 
 // present.rs (Update): Presented { frame_ns, t, latest_tick, units: Vec<PresentedUnit { unit_id, content_id, pos, lo_tick, hi_tick, fraction }> }
 //   from Replica::presentation_time + sample; frame_ns = SystemTime::now() UNIX epoch ns on native (the server tick log's clock; G2),
@@ -1233,15 +1250,18 @@ pub fn ingest_messages(...)
 #[test] fn held_snapshot_releases_after_n_delta_ticks()       // hold 3: answer snapshot 112 held; deltas 113,114 buffered; delta 115 releases it; replay applies 113..115; resync_requests_sent == 1
 #[test] fn welcome_snapshot_is_never_held()                   // hold 3, no outstanding request: the first snapshot applies at once
 #[test] fn disconnect_before_connect_is_ignored()             // join state machine: Disconnected then Connected -> disconnected_after_connect == false
+#[test] fn welcome_and_snapshot_in_one_frame_apply_both()     // (G2b) Incoming::Welcome then Incoming::Snapshot in one call batch -> replica.snapshot_tick == Some(S), snapshots_applied == 1, Phase::Joined; the reverse order (Snapshot then Welcome, impossible on an ordered channel) is not required
+#[test] fn idle_resync_sends_one_request_after_10_ticks()     // (G2b) Welcome with no Snapshot; deltas W+1..=W+9 -> no Outgoing; delta W+11 (span >= 10) -> exactly one Outgoing::ResyncRequest; deltas W+12..=W+30 -> none more
+// (G2b, qa N4) every test asserts on the `Vec<Outgoing>` the function returns (`Outgoing::ResyncRequest` count), not on IngestCounters.resync_requests_sent
 ```
 
 - [ ] **Step 2: Run them and see them fail** — `cargo test -p turts_client --test ingest` — Expected: compile errors.
 
 - [ ] **Step 3: Implement the modules, `lib.rs` additions and `main.rs`**
 
-- [ ] **Step 4: Run the tests and see them pass; verify by hand**
+- [ ] **Step 4: Run the tests and see them pass; then plant**
 
-`cargo test -p turts_client`; `cargo build --release -p turts_client`; against the Task 7b server: `turts_client --server http://127.0.0.1:<http> --ws 127.0.0.1:<ws> --headless --move 20,8 --frame-log /tmp/f.log --run-secs 8` writes frames and the summary line. Plant (G2): `ingest_messages` never sends `ResyncRequest` → `drop_offsets_resolve_against_welcome_tick` fails on `resync_requests_sent`. Revert.
+`cargo test -p turts_client`; `cargo build --release -p turts_client`. No run against a server here (G2b: Task 7b builds in the same step; the first end-to-end run is Task 9 step 2). Plants: `ingest_one` never returns `Outgoing::ResyncRequest` → `drop_offsets_resolve_against_welcome_tick` and `idle_resync_sends_one_request_after_10_ticks` fail on the returned list; `ingest_one` reads Snapshots before Welcome → `welcome_and_snapshot_in_one_frame_apply_both` fails on `snapshot_tick == None`. Revert both.
 
 - [ ] **Step 5: Commit**
 
@@ -1264,7 +1284,8 @@ git commit -m "turts_client: join, ingest with resync hooks, presentation record
 - Produces:
 
 ```rust
-// ticklog.rs  --tick-log: one line per unit per tick "tick,wall_ns,unit_id,x,y" (wall_ns = SystemTime UNIX epoch ns), BufWriter, flushed each tick;
+// ticklog.rs  --tick-log: one line per entity matched by `Query<(&UnitId, &Position)>` per tick, "tick,wall_ns,unit_id,x,y" (wall_ns = SystemTime UNIX
+//   epoch ns), BufWriter, flushed each tick (G2b: the query is the instrument of the process-level T3: an entity spawned on claim appears here);
 //   disabled when --synthetic-units > 0
 // stats.rs   --stats: every second and at exit, JSON { "ticks", "tick_p50_us", "tick_p99_us", "tick_max_us", "delta_payload_bytes_total",
 //   "resync_requests", "hellos", "resident_bytes", "resident_peak_bytes" }; tick duration measured from FixedFirst to FixedLast
@@ -1337,7 +1358,7 @@ Window path: `DefaultPlugins.set(WindowPlugin { primary_window: Some(Window { ca
 
 - [ ] **Step 4: Run the tests and see them pass; run the client against a server by hand**
 
-`turts_server` with `mods/base`; `turts_client --server http://127.0.0.1:<http> --ws 127.0.0.1:<ws>`. Click the ground; the unit moves; a second window shows the same movement. Record one line in `vault/Work Log/`.
+Use `target/release/turts_server` built by the orchestrator at the end of step 6 (G2b: do not run `cargo build -p turts_server` here, Task 7c is filling that crate) with `mods/base`; `turts_client --server http://127.0.0.1:<http> --ws 127.0.0.1:<ws>`. Click the ground; the unit moves; a second window shows the same movement. Record one line in `vault/Work Log/`.
 
 - [ ] **Step 5: Commit**
 
@@ -1388,7 +1409,7 @@ pub fn final_position(ticks: &[TickRecord], unit_id: u32) -> (f32, f32);
 //   spawn_server(pkg); headless client --out --run-secs 3; out.final_positions has exactly one unit at expected_pos;
 //   out.debug.units[0].content_id == expected_id and shape variant == expected_shape
 #[test] #[ignore] fn t2d_bad_hello_hash_is_rejected()   // client --hello-hash sha256:wrong -> out.rejected_reason == "lockfile hash mismatch" && disconnected_after_connect == true; (the two client-side cases are Task 8a-1's unit tests)
-#[test] #[ignore] fn t3_process_claims_create_nothing()  // (G2) two clients join (slot 0 and 1), no move, 2 s; the tick log's distinct unit_id count == 1 for every tick
+#[test] #[ignore] fn t3_process_claims_create_nothing()  // (G2) two clients join (slot 0 and 1), no move, 2 s; the tick log (one line per `Query<(&UnitId, &Position)>` match, G2b) has distinct unit_id count == 1 for every tick after both Welcomes
 #[test] #[ignore] fn t4_command_validation()
 // three cases: a second client (slot 1) sends --move 10,8 --move-unit 1; a client sends --move NaN,8; a client sends --move 99,8:
 // each out.command_results == [{"seq":1,"ack_tick":k},{"seq":1,"rejected":"not_owner" | "target_not_finite" | "target_outside_map"}] in that order;
@@ -1409,7 +1430,7 @@ pub fn final_position(ticks: &[TickRecord], unit_id: u32) -> (f32, f32);
 
 - [ ] **Step 2: Run them and see them fail**
 
-Run: `bash scripts/acceptance.sh` — Expected: FAIL (support functions missing; then, with stubs, assertions on empty logs). Also run `hello.rs`: `cargo test --release -p turts_server --test hello -- --ignored --test-threads=1` — Expected: 2 passed (Task 7b and 8a-2 are complete).
+Run: `bash scripts/acceptance.sh` — Expected: FAIL (support functions missing; then, with stubs, assertions on empty logs). The script's `hello.rs` run is the first end-to-end run of the client against the server (G2b, moved here from Task 8a-2): Expected 2 passed, and a manual `turts_client --headless --move 20,8 --frame-log /tmp/f.log --run-secs 8` against the step-6 release server writes frames and the summary line.
 
 - [ ] **Step 3: Implement `support/{logs,oracle}.rs`**
 
@@ -1423,7 +1444,7 @@ Run: `bash scripts/acceptance.sh` — Expected: 8 passed, T5 twice. Planted defe
 - T4: `drain_commands` skips the owner check → `not_owner` case.
 - T5 plant 1 (invented position): `present.rs` adds `0.01` to `pos.x` → "off segment".
 - T5 plant 2 (extrapolation): set `INTERP_DELAY_TICKS` to `0.0`, remove the clamp in `interp::presentation_time`, and make `sample` continue the last segment past the latest sample (with on-time deltas and the one-tick delay, `t` never passes `latest`, so a plant that keeps the delay stays green: `m1-gate2/plan-rev2` model). With `hi = lo` labels → "off segment" (`pos != P(lo)`); with `hi = lo + 1` labels → "hi above latest_tick".
-- T5 plant 3 (stalled presentation): `present.rs` reuses the previous frame's `t` → lag grows → "lag_p99 > 2.0".
+- T5 plant 3 (stalled presentation): `present.rs` reuses the previous frame's `t` → red on the bracket rule "hi == lo only at latest_tick" (`lo` stays below the growing `latest_tick`; the `m1-gate2/plan-rev2` model shows `RED bracket lo=0 hi=0 latest=1`), and on lag p99 later in the run (G2b).
 - T6: `send_deltas` sends only to the first `Session` → second client's frame log never reaches (20,8).
 - T6b: skip the `Snapshot` after `Welcome` → empty first record.
 - T8: `ingest.rs` never sends `ResyncRequest` → `resync_requests_sent == 0`; `receive_resync` does not count → `stats.resync_requests == 0`.
@@ -1572,4 +1593,6 @@ git commit -m "M1 measurements recorded; CLAUDE.md crate layout and commands"
 
 **Type consistency.** `SlotId` and `UnitId` exist in `turts_sim` and `turts_net_protocol`; the server converts with `.0`. `Pos` (protocol) versus `Vec2` (sim) and `WorldPos` (schema): the server converts in `outbound.rs`. `RejectReason::as_str` strings equal the `CommandRejected.reason` strings asserted in T4. `ClientConfig` and `ServerConfig` name the aeronet types; the server's own config is `HostConfig`. Hook names are the same in `options.rs`, `ingest.rs`, Task 9 and R3: `--drop-delta-ticks` (offsets), `--drop-arrival-delta`, `--hold-resync-snapshots`, `--hello-hash`, `--move-unit`, `--protocol-version`.
 
-**Unresolved.** The T8 case 2 expected count (2) differs from `net/t8model.py`'s 3 for `hold=3`; the model holds the Welcome snapshot, which the hook now never does. Task 8b's `t8_model_scenarios_match_python_model` pins the plan's reading; if the orchestrator wants 3, the hook must hold every snapshot and the design's "exactly one per loss" row needs a note.
+**Re-gate findings → plan lines (G2b).** H1: Task 8a-2 step 4 runs no server; the first end-to-end run is Task 9 step 2. H2: boundary script step 2 keeps stderr in a temp file (`td/boundary_fixed.sh`), every red T1 test asserts its exact stderr line, plus `t1_script_is_green_under_parallel_cargo`. H3: Welcome handled in `ingest_messages` before Snapshots (`cf.log`, `p7c.log`), test `welcome_and_snapshot_in_one_frame_apply_both`; idle resync after 10 buffered ticks, test `idle_resync_sends_one_request_after_10_ticks`. H4/studio: P7 asserts Send-Q > 0 at mid-pause, RSS rise <= 16 MiB, tick p99 as P6; records Send-Q peak, RSS before/peak/after, bytes produced, lost deltas; two plants. Timeout lives in the client token (Global Constraints, Task 6a shape and facts, 7b, 8a-2). Delta loss recorded in P5 and P7 (and Task 13's figures inherit the P5 method). Medium/low: step-6 release server for Task 10; `postcard` in Task 1's table; R5 text; `-> bevy` in the prefix test; `cargo check` for the skeleton; `acceptance.sh` runs `unit_boot` and `hello`; ingest tests assert on `Outgoing`; the tick-log query named in 7c and T3; plant 3 names the bracket rule. The T8 count of 2 per case now matches the reviewer's `net/t8model2.py` (resync from Welcome, answers only held): no open item remains there.
+
+**Unresolved.** None. The cause of delta loss through the small-buffer relay is NOT TRACED and stays recorded, not judged, until M7.
