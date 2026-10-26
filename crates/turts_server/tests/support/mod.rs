@@ -15,7 +15,9 @@ use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::{Duration, Instant};
 
-use turts_mod_runtime::pack::pack_dir;
+use std::collections::BTreeMap;
+
+use turts_mod_runtime::pack::{pack_dir, pack_files};
 
 /// How long `spawn_server` waits for the HTTP endpoint.
 const READY_TIMEOUT: Duration = Duration::from_secs(10);
@@ -73,6 +75,42 @@ pub fn pack(mods_dir_name: &str, into: &Path) -> PathBuf {
     let tar = into.join(format!("{mods_dir_name}.tar"));
     fs::write(&tar, bytes).expect("the archive is written");
     tar
+}
+
+/// Pack `mods/<mods_dir_name>` with the file at `relative` replaced by `text`, into
+/// `<into>/<mods_dir_name>.tar`, and return that path. `mods/` is not changed.
+pub fn pack_with(mods_dir_name: &str, relative: &str, text: &str, into: &Path) -> PathBuf {
+    let root = mods_dir().join(mods_dir_name);
+    let mut files = BTreeMap::new();
+    collect_files(&root, &root, &mut files);
+    assert!(
+        files.contains_key(relative),
+        "mods/{mods_dir_name} has no {relative}"
+    );
+    files.insert(relative.to_string(), text.as_bytes().to_vec());
+    let bytes = pack_files(&files).expect("the package packs");
+    fs::create_dir_all(into).expect("the target directory is created");
+    let tar = into.join(format!("{mods_dir_name}.tar"));
+    fs::write(&tar, bytes).expect("the archive is written");
+    tar
+}
+
+/// Every file under `dir`, by its path relative to `root` with `/` separators.
+fn collect_files(root: &Path, dir: &Path, files: &mut BTreeMap<String, Vec<u8>>) {
+    for entry in fs::read_dir(dir).expect("the package directory is read") {
+        let path = entry.expect("a directory entry").path();
+        if path.is_dir() {
+            collect_files(root, &path, files);
+        } else {
+            let relative = path.strip_prefix(root).expect("under the root");
+            let key = relative
+                .components()
+                .map(|part| part.as_os_str().to_string_lossy().into_owned())
+                .collect::<Vec<_>>()
+                .join("/");
+            files.insert(key, fs::read(&path).expect("a package file is read"));
+        }
+    }
 }
 
 /// Start `turts_server` on two free ports with `package_tar` as the game package. The call

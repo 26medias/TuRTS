@@ -21,10 +21,12 @@ use support::logs::{
     read_tick_log_past, wait_for_arrival,
 };
 use support::oracle::{OracleReport, check_segments, final_position};
-use support::{ServerProc, pack, run_client, spawn_server, test_dir, wait_json};
+use support::{ServerProc, pack, pack_with, run_client, spawn_server, test_dir, wait_json};
 
 /// The unit that the map of `base` places, for slot 0.
 const UNIT: u32 = 1;
+/// The number of placements in the map of `base`.
+const BASE_PLACEMENTS: u64 = 1;
 /// Where the map of `base` places the unit.
 const HOME: (f32, f32) = (8.0, 8.0);
 /// The `move` target: 12 units at 3.0 per second is 80 ticks at 20 Hz.
@@ -150,11 +152,16 @@ fn pos_at(ticks: &[TickRecord], unit_id: u32, tick: u32) -> (f32, f32) {
 }
 
 /// The stats file as the server wrote it after `after_ms` (UNIX milliseconds). The server
-/// rewrites the file each second, so this waits for at most 5 s.
+/// writes the file first 1 s after its start and then rewrites it each second, so this waits
+/// for at most 5 s, also for the first write.
 fn stats_after(path: &Path, after_ms: u64) -> Value {
     let started = Instant::now();
     loop {
-        let stats = read_stats(path);
+        let stats = if path.exists() {
+            read_stats(path)
+        } else {
+            Value::Null
+        };
         if stats["unix_ms"]
             .as_u64()
             .is_some_and(|written| written > after_ms)
@@ -265,13 +272,20 @@ fn t2d_bad_hello_hash_is_rejected() {
     assert_eq!(report["disconnected_after_connect"], true, "{report}");
 }
 
-/// T3 (process): two claims create no gameplay entity. The tick log has one line for each
-/// `Query<(&UnitId, &Position)>` match, so it counts gameplay entities.
+/// T3 (process): two claims create no gameplay entity. The `--stats` file counts every entity
+/// with a `UnitId` (`gameplay_entity_count`), so an entity without a `Position` counts too
+/// (M1 verify). The tick log has one line for each `Query<(&UnitId, &Position)>` match.
 #[test]
 #[ignore]
 fn t3_process_claims_create_nothing() {
     let dir = test_dir("t3_claims");
     let server = spawn_server(&pack("base", &dir), &[]);
+    let before = stats_after(&server.stats, now_ms());
+    assert_eq!(before["hellos"], 0, "no claim yet: {before}");
+    assert_eq!(
+        before["gameplay_entity_count"], BASE_PLACEMENTS,
+        "gameplay entities before the claims: {before}"
+    );
     let first = start_client(&server, &dir, "first", 3, &[]);
     std::thread::sleep(Duration::from_millis(300));
     let second = start_client(&server, &dir, "second", 3, &[]);
@@ -279,6 +293,13 @@ fn t3_process_claims_create_nothing() {
     let second = second.finish();
     assert_eq!(first.report["slot"], 0, "{}", first.report);
     assert_eq!(second.report["slot"], 1, "{}", second.report);
+    // Both clients have exited, so this line was written after both Welcomes.
+    let after_both = stats_after(&server.stats, now_ms());
+    assert_eq!(after_both["hellos"], 2, "both claims: {after_both}");
+    assert_eq!(
+        after_both["gameplay_entity_count"], BASE_PLACEMENTS,
+        "gameplay entities after both Welcomes: {after_both}"
+    );
 
     let after = first
         .frame_log()
@@ -303,22 +324,104 @@ fn t3_process_claims_create_nothing() {
     }
 }
 
-/// T4: three invalid `MoveTo` commands. Each gets `CommandAck`, then `CommandRejected` with its
-/// reason, and the unit never moves.
+/// The map of `base` with a second rifleman that slot 1 owns (M1 verify, owner slot).
+const TWO_OWNERS_MAP: &str = r#"(
+    id: "flat",
+    size: (x: 64.0, y: 64.0),
+    placements: [
+        (unit: "base:rifleman", owner_slot: 0, pos: (x: 8.0, y: 8.0)),
+        (unit: "base:rifleman", owner_slot: 1, pos: (x: 40.0, y: 40.0)),
+    ],
+)
+"#;
+
+/// The package of one T4 case.
+enum T4Package {
+    /// `mods/<name>` as it is.
+    Mods(&'static str),
+    /// `base` with `TWO_OWNERS_MAP`.
+    TwoOwners,
+}
+
+/// One T4 case: `label` names the test directory, `reason` is the expected rejection, and
+/// `homes` lists every unit of the map with the place it must never leave.
+struct T4Case {
+    label: &'static str,
+    reason: &'static str,
+    package: T4Package,
+    needs_holder: bool,
+    args: &'static [&'static str],
+    homes: &'static [(u32, (f32, f32))],
+}
+
+/// T4: invalid `MoveTo` commands. Each gets `CommandAck`, then `CommandRejected` with its
+/// reason, and no unit ever moves.
+///
+/// M1 verify added two cases. `outside_acme` sends a target with x in (48, 64) on the 48 by 48
+/// map of `acme`, so a bound that ignores the map size goes red. `not_owner_by_map` uses a map
+/// placement with `owner_slot: 1`: the sender alone takes slot 0 and orders unit 2, which slot
+/// 1 owns, so a `load_map` that ignores `owner_slot` goes red.
 #[test]
 #[ignore]
 fn t4_command_validation() {
-    for (reason, needs_holder, args) in [
-        (
-            "not_owner",
-            true,
-            ["--move", "10,8", "--move-unit", "1"].as_slice(),
-        ),
-        ("target_not_finite", false, ["--move", "NaN,8"].as_slice()),
-        ("target_outside_map", false, ["--move", "99,8"].as_slice()),
-    ] {
-        let dir = test_dir(&format!("t4_{reason}"));
-        let server = spawn_server(&pack("base", &dir), &[]);
+    const BASE_HOME: &[(u32, (f32, f32))] = &[(UNIT, HOME)];
+    let cases = [
+        T4Case {
+            label: "not_owner",
+            reason: "not_owner",
+            package: T4Package::Mods("base"),
+            needs_holder: true,
+            args: &["--move", "10,8", "--move-unit", "1"],
+            homes: BASE_HOME,
+        },
+        T4Case {
+            label: "target_not_finite",
+            reason: "target_not_finite",
+            package: T4Package::Mods("base"),
+            needs_holder: false,
+            args: &["--move", "NaN,8"],
+            homes: BASE_HOME,
+        },
+        T4Case {
+            label: "target_outside_map",
+            reason: "target_outside_map",
+            package: T4Package::Mods("base"),
+            needs_holder: false,
+            args: &["--move", "99,8"],
+            homes: BASE_HOME,
+        },
+        T4Case {
+            label: "outside_acme",
+            reason: "target_outside_map",
+            package: T4Package::Mods("acme"),
+            needs_holder: false,
+            args: &["--move", "56,4"],
+            homes: &[(UNIT, (4.0, 4.0))],
+        },
+        T4Case {
+            label: "not_owner_by_map",
+            reason: "not_owner",
+            package: T4Package::TwoOwners,
+            needs_holder: false,
+            args: &["--move", "10,8", "--move-unit", "2"],
+            homes: &[(UNIT, HOME), (2, (40.0, 40.0))],
+        },
+    ];
+    for T4Case {
+        label,
+        reason,
+        package,
+        needs_holder,
+        args,
+        homes,
+    } in cases
+    {
+        let dir = test_dir(&format!("t4_{label}"));
+        let tar = match package {
+            T4Package::Mods(name) => pack(name, &dir),
+            T4Package::TwoOwners => pack_with("base", "maps/flat.ron", TWO_OWNERS_MAP, &dir),
+        };
+        let server = spawn_server(&tar, &[]);
         // The holder takes slot 0, so the sender gets slot 1 and owns no unit.
         let holder = needs_holder.then(|| start_client(&server, &dir, "holder", 4, &[]));
         if holder.is_some() {
@@ -328,32 +431,42 @@ fn t4_command_validation() {
         let report = &sender.report;
         if let Some(holder) = holder {
             let holder = holder.finish();
-            assert_eq!(holder.report["slot"], 0, "{reason}: {}", holder.report);
-            assert_eq!(report["slot"], 1, "{reason}: {report}");
+            assert_eq!(holder.report["slot"], 0, "{label}: {}", holder.report);
+            assert_eq!(report["slot"], 1, "{label}: {report}");
+        } else {
+            assert_eq!(report["slot"], 0, "{label}: {report}");
         }
 
         let results = report["command_results"]
             .as_array()
-            .unwrap_or_else(|| panic!("{reason}: no command_results: {report}"));
-        assert_eq!(results.len(), 2, "{reason}: {report}");
-        assert_eq!(results[0]["seq"], 1, "{reason}: {report}");
+            .unwrap_or_else(|| panic!("{label}: no command_results: {report}"));
+        assert_eq!(results.len(), 2, "{label}: {report}");
+        assert_eq!(results[0]["seq"], 1, "{label}: {report}");
         assert!(
             results[0]["ack_tick"].is_u64(),
-            "{reason}: the first result is the ack: {report}"
+            "{label}: the first result is the ack: {report}"
         );
         assert_eq!(
             results[1],
             json!({ "seq": 1, "rejected": reason }),
-            "{reason}: {report}"
+            "{label}: {report}"
         );
 
         let ticks = read_tick_log(&server.tick_log);
-        assert!(!ticks.is_empty(), "{reason}: empty tick log");
+        assert!(!ticks.is_empty(), "{label}: empty tick log");
+        for (tick, records) in by_tick(&ticks) {
+            assert_eq!(records.len(), homes.len(), "{label}: units at tick {tick}");
+        }
         for record in &ticks {
-            assert_eq!(record.unit_id, UNIT, "{reason}");
+            let home = homes
+                .iter()
+                .find(|(unit, _)| *unit == record.unit_id)
+                .map(|(_, home)| *home)
+                .unwrap_or_else(|| panic!("{label}: unexpected unit {}", record.unit_id));
             assert!(
-                near(record.pos, HOME),
-                "{reason}: unit {UNIT} at {:?} at tick {}",
+                near(record.pos, home),
+                "{label}: unit {} at {:?} at tick {}, home {home:?}",
+                record.unit_id,
                 record.pos,
                 record.tick
             );

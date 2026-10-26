@@ -1,5 +1,11 @@
 #!/usr/bin/env bash
 # T1 boundary checks: forbidden edges per crate (design 4.1). Run from the repository root.
+# The full run prints one "checked:" line on stdout for each rule that passed, then "boundary ok".
+#
+# Limit (M1 verify): this script checks dependency edges only. The no-content check is the grep
+# in crates/turts_checks/tests/no_content.rs, and it names only `base`, `acme`, `rifleman` and
+# `mods/`. Content of a new package (for example a new unit name) passes that grep. T2a (each
+# package spawns only what its own map places) is the backstop for such content.
 set -euo pipefail
 TMPERR=$(mktemp)
 trap 'rm -f "$TMPERR"' EXIT
@@ -12,11 +18,13 @@ tree() {
     sed 's/ .*//' <<<"$out" | sort -u
 }
 names_has() { local rc=0; grep -qx "$2" <<<"$1" || rc=$?; if [ "$rc" -eq 2 ]; then echo "grep failed" >&2; exit 1; fi; return $rc; }
-forbid() { local c=$1 t=$2 m=$3; shift 3; local l; l=$(tree "$c" "$t" "$m"); for n in "$@"; do if names_has "$l" "$n"; then echo "forbidden edge: $c -> $n" >&2; exit 1; fi; done; }
-nobevy() { local l b; l=$(tree "$1" "$2" "$3"); b=$(grep -m1 '^bevy' <<<"$l" || true); if [ -n "$b" ]; then echo "forbidden edge: $1 -> $b" >&2; exit 1; fi; }
-workspace() { local out rc=0 l; out=$(cargo tree --workspace -e normal --prefix none 2>"$TMPERR") || { rc=$?; out=$(cat "$TMPERR"); }; if [ "$rc" -ne 0 ]; then echo "cargo tree failed for workspace: $out" >&2; exit 1; fi; l=$(sed 's/ .*//' <<<"$out" | sort -u); for n in "$@"; do if names_has "$l" "$n"; then echo "forbidden edge: workspace -> $n" >&2; exit 1; fi; done; }
+forbid() { local c=$1 t=$2 m=$3; shift 3; local l; l=$(tree "$c" "$t" "$m"); for n in "$@"; do if names_has "$l" "$n"; then echo "forbidden edge: $c -> $n" >&2; exit 1; fi; done; checked "$c $t: no $*"; }
+checked() { if [ -z "$RULE_MODE" ]; then echo "checked: $1"; fi; }
+nobevy() { local l b; l=$(tree "$1" "$2" "$3"); b=$(grep -m1 '^bevy' <<<"$l" || true); if [ -n "$b" ]; then echo "forbidden edge: $1 -> $b" >&2; exit 1; fi; checked "$1 $2: no bevy*"; }
+workspace() { local out rc=0 l; out=$(cargo tree --workspace -e normal --prefix none 2>"$TMPERR") || { rc=$?; out=$(cat "$TMPERR"); }; if [ "$rc" -ne 0 ]; then echo "cargo tree failed for workspace: $out" >&2; exit 1; fi; l=$(sed 's/ .*//' <<<"$out" | sort -u); for n in "$@"; do if names_has "$l" "$n"; then echo "forbidden edge: workspace -> $n" >&2; exit 1; fi; done; checked "workspace: no $*"; }
+RULE_MODE=
 if [ $# -gt 0 ]; then
-    RULE= C= T=$HOST M= N=
+    RULE_MODE=1 RULE= C= T=$HOST M= N=
     while [ $# -gt 0 ]; do case $1 in --rule) RULE=$2;; --crate) C=$2;; --target) T=$2;; --manifest) M=$2;; --names) N=$2;; esac; shift 2; done
     IFS=, read -ra NA <<<"$N"
     case $RULE in forbid) forbid "$C" "$T" "$M" "${NA[@]}";; no-bevy-prefix) nobevy "$C" "$T" "$M";; workspace) workspace "${NA[@]}";; esac
@@ -28,6 +36,9 @@ nobevy turts_mod_api $HOST ""
 nobevy turts_net_protocol $HOST ""
 forbid turts_client $HOST "" turts_sim
 forbid turts_client wasm32-unknown-unknown "" turts_sim
+# The browser entry must not reach the server simulation either (M1 verify).
+forbid turts_client_web $HOST "" turts_sim
+forbid turts_client_web wasm32-unknown-unknown "" turts_sim
 forbid turts_net_lightyear $HOST "" turts_sim turts_mod_runtime
 workspace lightyear_prediction bevy_replicon
 FIX=${BOUNDARY_FIXTURE_MANIFEST:-tests/boundary-fixture/Cargo.toml}

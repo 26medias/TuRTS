@@ -6,7 +6,9 @@
 //! (`target/t7`). The folder holds `server-tick.log`, `frames.jsonl` and `result.json`.
 //!
 //! `frames.jsonl` has one line per distinct debug string that `window.turts_debug()` returned:
-//! `{"at_ms": <page clock, ms since the epoch>, "last_frame": {..}, "units": [{..}]}`. The
+//! `{"at_ms": <page clock, ms since the epoch>, "last_frame": {..}, "units": [{..}],
+//! "scene": [{..}]}`. `scene` is what `window.turts_scene()` returned in the same poll; t7.js
+//! checks it and counts the passes in `result.json` (`scene_checked`). The
 //! page clock reads `performance.timeOrigin + performance.now()` at the poll. The poll is
 //! later than the frame, so the lag that the oracle works out is an upper bound. The lag is
 //! recorded and not judged: the browser clock is not the server clock.
@@ -115,6 +117,13 @@ fn t7_browser_frames_satisfy_the_segment_oracle() {
         frames.len() >= MIN_FRAMES,
         "only {} frames in frames.jsonl",
         frames.len()
+    );
+    // M1 verify: t7.js checked the rendered scene (`window.turts_scene`) on every recorded
+    // poll. A run that skipped that check proves only the debug record, not the scene.
+    assert_eq!(
+        result["scene_checked"].as_u64(),
+        Some(frames.len() as u64),
+        "t7.js checked the scene on fewer polls than it recorded: {result}"
     );
     let unit = frames[0].unit_id;
     assert!(

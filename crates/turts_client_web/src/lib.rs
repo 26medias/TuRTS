@@ -10,6 +10,12 @@
 //! - `window.turts_memory_bytes()` returns the size of the wasm linear memory in bytes. Wasm
 //!   memory never shrinks, so the last value that a run reads is its high-water mark
 //!   (`tests/browser/measure.js`, design 4.5).
+//! - `window.turts_scene()` returns the rendered scene as JSON: one entry for each entity that
+//!   has a mesh and a unit id (`turts_client::render::PresentedUnit`), with its world
+//!   translation, `[{"unit_id": 1, "translation": [x, y, z]}]`, ascending by unit id. A map
+//!   `(x, y)` is the scene point `(x, lift, y)`. It returns an empty string until the first
+//!   frame has run. T7 reads it (M1 verify): the browser "presents" a unit only when the scene
+//!   holds it.
 //!
 //! The page query is `?server=<http url>&ws=<ws url>`. When it is wrong, the page gets the
 //! message in `window.turts_error` and the app does not start.
@@ -21,11 +27,15 @@ use turts_client::build_app;
 use turts_client::debug::{DebugState, rebuild_debug_state};
 use turts_client::input::PendingMoves;
 use turts_client::options::options_from_query;
+use turts_client::render::PresentedUnit as SceneUnit;
 use turts_net_protocol::Pos;
 use wasm_bindgen::prelude::*;
 
 /// The last debug JSON. The `window.turts_debug` closure reads it.
 static DEBUG: Mutex<String> = Mutex::new(String::new());
+
+/// The last scene JSON. The `window.turts_scene` closure reads it.
+static SCENE: Mutex<String> = Mutex::new(String::new());
 
 /// The targets from `window.turts_move` that no frame has taken yet.
 static MOVES: Mutex<Vec<(f32, f32)>> = Mutex::new(Vec::new());
@@ -49,13 +59,18 @@ pub fn start() {
     let move_to = Closure::<dyn Fn(f32, f32)>::new(|x, y| MOVES.lock().unwrap().push((x, y)));
     set_global(&window, "turts_move", move_to.as_ref());
     move_to.forget();
+    let scene = Closure::<dyn Fn() -> String>::new(|| SCENE.lock().unwrap().clone());
+    set_global(&window, "turts_scene", scene.as_ref());
+    scene.forget();
     let memory = Closure::<dyn Fn() -> f64>::new(memory_bytes);
     set_global(&window, "turts_memory_bytes", memory.as_ref());
     memory.forget();
 
     let mut app = build_app(options);
-    app.add_systems(Update, drain_moves)
-        .add_systems(Last, publish_debug.after(rebuild_debug_state));
+    app.add_systems(Update, drain_moves).add_systems(
+        Last,
+        (publish_debug.after(rebuild_debug_state), publish_scene),
+    );
     app.run();
 }
 
@@ -89,4 +104,56 @@ fn drain_moves(mut pending: ResMut<PendingMoves>) {
 /// `Last`: copy the debug JSON, which `rebuild_debug_state` made this frame, for the page.
 fn publish_debug(state: Res<DebugState>) {
     DEBUG.lock().unwrap().clone_from(&state.0);
+}
+
+/// `Last`: list the rendered units for the page. `GlobalTransform` is up to date here: the
+/// transform propagation runs in `PostUpdate`.
+fn publish_scene(units: Query<(&SceneUnit, &GlobalTransform), With<Mesh3d>>) {
+    let mut entries: Vec<(u32, Vec3)> = units
+        .iter()
+        .map(|(unit, transform)| (unit.0, transform.translation()))
+        .collect();
+    entries.sort_unstable_by_key(|(unit_id, _)| *unit_id);
+    *SCENE.lock().unwrap() = scene_json(&entries);
+}
+
+/// The JSON of `window.turts_scene`. A non-finite coordinate is written as `null`, so the page
+/// can always parse the text and the check fails on the value.
+fn scene_json(entries: &[(u32, Vec3)]) -> String {
+    let number = |value: f32| {
+        if value.is_finite() {
+            value.to_string()
+        } else {
+            "null".to_string()
+        }
+    };
+    let items: Vec<String> = entries
+        .iter()
+        .map(|(unit_id, at)| {
+            format!(
+                "{{\"unit_id\":{unit_id},\"translation\":[{},{},{}]}}",
+                number(at.x),
+                number(at.y),
+                number(at.z)
+            )
+        })
+        .collect();
+    format!("[{}]", items.join(","))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn scene_json_lists_units_with_their_translation() {
+        assert_eq!(scene_json(&[]), "[]");
+        assert_eq!(
+            scene_json(&[
+                (1, Vec3::new(20.0, 0.9, 8.5)),
+                (2, Vec3::new(f32::NAN, 0.0, 1.0))
+            ]),
+            r#"[{"unit_id":1,"translation":[20,0.9,8.5]},{"unit_id":2,"translation":[null,0,1]}]"#
+        );
+    }
 }

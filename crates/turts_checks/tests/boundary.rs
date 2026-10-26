@@ -25,6 +25,19 @@ fn run(args: &[&str]) -> Output {
     run_with_env(args, &[])
 }
 
+/// The host target triple, as `rustc -vV` prints it.
+fn host_triple() -> String {
+    let output = Command::new("rustc")
+        .arg("-vV")
+        .output()
+        .expect("rustc starts");
+    String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .find_map(|line| line.strip_prefix("host: "))
+        .expect("rustc -vV prints the host")
+        .to_string()
+}
+
 fn out_of(output: &Output) -> String {
     String::from_utf8_lossy(&output.stdout).into_owned()
 }
@@ -73,6 +86,38 @@ fn t1_boundary_script_passes() {
         out_of(&output).trim_end().ends_with("boundary ok"),
         "stdout: {:?}",
         out_of(&output)
+    );
+    // M1 verify: the browser entry is checked for `turts_sim` on both targets.
+    let host = host_triple();
+    for line in [
+        format!("checked: turts_client_web {host}: no turts_sim"),
+        "checked: turts_client_web wasm32-unknown-unknown: no turts_sim".to_string(),
+    ] {
+        assert!(
+            out_of(&output).lines().any(|got| got == line),
+            "missing {line:?} in stdout: {:?}",
+            out_of(&output)
+        );
+    }
+}
+
+#[test]
+fn t1_rule_client_web_is_red_on_a_present_crate() {
+    // turts_client_web reaches turts_mod_api through turts_client on wasm32, so the rule that
+    // the full run applies to turts_client_web resolves the wasm32 tree and can go red.
+    let output = run(&[
+        "--rule",
+        "forbid",
+        "--crate",
+        "turts_client_web",
+        "--target",
+        "wasm32-unknown-unknown",
+        "--names",
+        "turts_mod_api",
+    ]);
+    assert_red(
+        &output,
+        "forbidden edge: turts_client_web -> turts_mod_api\n",
     );
 }
 

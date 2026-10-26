@@ -14,11 +14,16 @@
 //   2. calls window.turts_move(20, 8) 1 s after the join, and keeps polling for 6 s more.
 //   3. writes <out dir>/frames.jsonl: one line per distinct debug string, with the page time of
 //      the poll in milliseconds since the epoch (performance.timeOrigin + performance.now()),
-//      the "last_frame" object and the "units" array. The poll time is later than the frame
-//      time, so the lag that the oracle works out from it is an upper bound.
+//      the "last_frame" object, the "units" array and the "scene" array. The poll time is later
+//      than the frame time, so the lag that the oracle works out from it is an upper bound.
+//      The same poll reads window.turts_scene() (M1 verify): the entities of the rendered scene
+//      that have a mesh and a unit id, with their world translation. Every recorded poll must
+//      hold exactly one such entity, with the unit id of the presented unit, at the presented
+//      map position (x, y) mapped to the scene (x -> x, y -> z), within 0.01.
 //   4. checks the last poll: one unit, the expected content id, and a position within 1e-3 of
 //      --expect-final.
-//   5. writes <out dir>/result.json.
+//   5. writes <out dir>/result.json. "scene_checked" is the number of polls whose scene passed
+//      the check of step 3.
 //
 // Exit 0 when every check passes. Exit 1 on a failed check (the console log of the page is
 // printed first). Exit 2 on a usage error.
@@ -32,6 +37,7 @@ const MOVE_AFTER_JOIN_MS = 1000;
 const RECORD_AFTER_MOVE_MS = 6000;
 const MOVE_TARGET = [20, 8];
 const POS_TOLERANCE = 1e-3;
+const SCENE_TOLERANCE = 0.01;
 
 function usage(message) {
     console.error(message);
@@ -97,6 +103,7 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
         final_pos: null,
         frames: 0,
         phase: null,
+        scene_checked: 0,
         chrome: browser.version(),
         errors: [],
     };
@@ -120,6 +127,7 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
         const raw = await page.evaluate(() => ({
             at_ms: performance.timeOrigin + performance.now(),
             text: typeof window.turts_debug === "function" ? window.turts_debug() : null,
+            scene: typeof window.turts_scene === "function" ? window.turts_scene() : null,
             error: window.turts_error || null,
         }));
         if (raw.error) {
@@ -129,8 +137,31 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
         if (!raw.text) {
             return null;
         }
-        return { at_ms: raw.at_ms, text: raw.text, debug: JSON.parse(raw.text) };
+        return { at_ms: raw.at_ms, text: raw.text, debug: JSON.parse(raw.text), scene: raw.scene ? JSON.parse(raw.scene) : null };
     };
+
+    // The rendered scene of one poll against the presented units of the same poll. Returns
+    // null when it passes, or the reason.
+    const sceneProblem = (debug, scene) => {
+        if (!Array.isArray(scene)) {
+            return `window.turts_scene() gave ${JSON.stringify(scene)}`;
+        }
+        if (scene.length !== 1) {
+            return `expected 1 scene entity with a mesh and a unit id, saw ${scene.length}`;
+        }
+        const unit = debug.units[0];
+        const entity = scene[0];
+        if (entity.unit_id !== unit.unit_id) {
+            return `scene unit_id ${entity.unit_id} != presented unit_id ${unit.unit_id}`;
+        }
+        const [x, , z] = entity.translation;
+        const off = [Math.abs(x - unit.pos[0]), Math.abs(z - unit.pos[1])];
+        if (off.some((d) => !(d <= SCENE_TOLERANCE))) {
+            return `scene translation ${JSON.stringify(entity.translation)} is not within ${SCENE_TOLERANCE} of presented pos ${JSON.stringify(unit.pos)} (x -> x, y -> z)`;
+        }
+        return null;
+    };
+    let sceneFailure = null;
 
     await page.goto(url.toString());
 
@@ -182,8 +213,16 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
             last = seen.debug;
             // A frame that the page has already shown to an earlier poll is not recorded twice.
             if (seen.text !== previousText && last.last_frame && last.units.length > 0) {
-                frames.push(JSON.stringify({ at_ms: seen.at_ms, last_frame: last.last_frame, units: last.units }));
+                frames.push(
+                    JSON.stringify({ at_ms: seen.at_ms, last_frame: last.last_frame, units: last.units, scene: seen.scene })
+                );
                 previousText = seen.text;
+                const problem = sceneProblem(last, seen.scene);
+                if (problem === null) {
+                    result.scene_checked++;
+                } else if (sceneFailure === null) {
+                    sceneFailure = `poll ${frames.length}: ${problem}`;
+                }
             }
         }
         await sleep(POLL_MS);
@@ -215,6 +254,11 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
     }
     if (frames.length === 0) {
         result.errors.push("no frame was recorded");
+    }
+    if (sceneFailure !== null) {
+        result.errors.push(
+            `scene: ${sceneFailure} (${frames.length - result.scene_checked} of ${frames.length} polls failed)`
+        );
     }
     console.log(JSON.stringify({ ...result, errors: undefined }));
     await finish(result.errors.length === 0 ? 0 : 1);

@@ -125,6 +125,63 @@ fn move_to_for_unowned_unit_is_not_owner() {
 }
 
 #[test]
+fn map_owner_slot_decides_who_may_move_a_unit() {
+    // M1 verify: unit 1 is placed for slot 0 and unit 2 for slot 1. A `load_map` that ignores
+    // `owner_slot` gives both units to slot 0, and this test goes red.
+    let mut app = headless_app(20);
+    let origin = PackageId(ORIGIN.to_string());
+    let def = UnitDef {
+        id: "walker".to_string(),
+        name: "Walker".to_string(),
+        speed: 3.0,
+        footprint: Footprint::Circle { radius: 0.5 },
+    };
+    app.world_mut()
+        .resource_mut::<UnitTypes>()
+        .register_unit_type(&origin, def)
+        .unwrap();
+    let place = |owner_slot: u8, x: f32, y: f32| Placement {
+        unit: format!("{ORIGIN}:walker"),
+        owner_slot,
+        pos: WorldPos { x, y },
+    };
+    let map = MapDef {
+        id: "field".to_string(),
+        size: MapSize { x: 64.0, y: 64.0 },
+        placements: vec![place(0, 8.0, 8.0), place(1, 20.0, 20.0)],
+    };
+    load_map(app.world_mut(), &origin, &map).unwrap();
+    let owners: Vec<(u32, u8)> = snapshot(app.world_mut())
+        .iter()
+        .map(|unit| (unit.unit_id, unit.owner_slot))
+        .collect();
+    assert_eq!(owners, vec![(1, 0), (2, 1)]);
+
+    send(&mut app, 0, 1, vec![2], Vec2::new(30.0, 30.0));
+    send(&mut app, 1, 1, vec![1], Vec2::new(30.0, 30.0));
+    app.update();
+    let got: Vec<(SlotId, Result<(), RejectReason>)> =
+        results(&app).iter().map(|r| (r.slot, r.outcome)).collect();
+    assert_eq!(
+        got,
+        vec![
+            (SlotId(0), Err(RejectReason::NotOwner)),
+            (SlotId(1), Err(RejectReason::NotOwner)),
+        ]
+    );
+    assert_eq!(moving_count(&mut app), 0);
+
+    send(&mut app, 1, 2, vec![2], Vec2::new(30.0, 30.0));
+    app.update();
+    assert_eq!(
+        results(&app)[0].outcome,
+        Ok(()),
+        "slot 1 moves its own unit"
+    );
+    assert_eq!(moving_count(&mut app), 1);
+}
+
+#[test]
 fn mixed_ownership_in_one_command_is_not_owner_and_moves_nothing() {
     // Unit 1 and unit 2 are both owned by slot 0. Slot 1 lists both.
     let mut app = app_with_two_units();

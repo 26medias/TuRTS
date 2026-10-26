@@ -4,7 +4,8 @@
 //! the server also times every tick and keeps PATH up to date: one JSON object on one line,
 //! written every second and when the app exits. The file is replaced as a whole (a temporary
 //! file, then a rename), so a reader never sees half a line. A kill without warning leaves the
-//! file as it was after the last write.
+//! file as it was after the last write. The object also holds `gameplay_entity_count`, the
+//! number of entities with a `UnitId` (T3 reads it, M1 verify).
 //!
 //! A tick is timed from `FixedFirst` to the end of `FixedLast`: the simulation, the change
 //! collection and the sending of the deltas. The time between two ticks does not count. The
@@ -17,7 +18,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use bevy::app::{AppExit, FixedFirst, FixedLast, Last};
 use bevy::prelude::*;
-use turts_sim::Tick;
+use turts_sim::{Tick, UnitId};
 
 use crate::config::Cli;
 use crate::outbound::{send_command_results, send_deltas};
@@ -110,13 +111,14 @@ fn write_when_due(
     mut exit: MessageReader<AppExit>,
     stats: Res<Stats>,
     tick: Res<Tick>,
+    units: Query<(), With<UnitId>>,
 ) {
     let exiting = exit.read().count() > 0;
     if !exiting && timer.last_write.elapsed() < timer.every {
         return;
     }
     timer.last_write = Instant::now();
-    let text = format!("{}\n", render(&timer, &stats, tick.0));
+    let text = format!("{}\n", render(&timer, &stats, tick.0, units.iter().count()));
     if let Err(error) = replace_file(&timer.path, &text) {
         eprintln!(
             "turts_server: cannot write --stats `{}`: {error}",
@@ -126,8 +128,14 @@ fn write_when_due(
 }
 
 /// The JSON object of one write. The percentiles cover the newest `SAMPLE_WINDOW` ticks;
-/// `ticks` and the counters count from the start of the process.
-fn render(timer: &TickTimer, stats: &Stats, ticks: u32) -> serde_json::Value {
+/// `ticks` and the counters count from the start of the process. `gameplay_entity_count` is
+/// the number of entities with a `UnitId` at the time of the write (design section 7, T3).
+fn render(
+    timer: &TickTimer,
+    stats: &Stats,
+    ticks: u32,
+    gameplay_entities: usize,
+) -> serde_json::Value {
     let mut sorted: Vec<u32> = timer.samples.iter().copied().collect();
     sorted.sort_unstable();
     let resident = resident_bytes();
@@ -142,6 +150,7 @@ fn render(timer: &TickTimer, stats: &Stats, ticks: u32) -> serde_json::Value {
         "delta_payload_bytes_total": stats.delta_payload_bytes_total,
         "resync_requests": stats.resync_requests,
         "hellos": stats.hellos,
+        "gameplay_entity_count": gameplay_entities,
         "resident_bytes": resident,
         "resident_peak_bytes": resident_peak_bytes().max(resident),
     })
@@ -262,6 +271,10 @@ mod tests {
             stats.resync_requests = 2;
             stats.delta_payload_bytes_total = 12_345;
         }
+        // Two gameplay entities, and one entity without a `UnitId` that must not count.
+        app.world_mut().spawn(UnitId(1));
+        app.world_mut().spawn(UnitId(2));
+        app.world_mut().spawn(Name::new("not a unit"));
         for _ in 0..5 {
             app.update();
             // Time between the ticks does not belong to a tick.
@@ -281,6 +294,7 @@ mod tests {
         assert_eq!(json["hellos"], 3);
         assert_eq!(json["resync_requests"], 2);
         assert_eq!(json["delta_payload_bytes_total"], 12_345);
+        assert_eq!(json["gameplay_entity_count"], 2);
         let (p50, p99, max) = (
             json["tick_p50_us"].as_u64().unwrap(),
             json["tick_p99_us"].as_u64().unwrap(),
