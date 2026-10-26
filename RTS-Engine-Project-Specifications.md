@@ -1,6 +1,6 @@
 # Mod-First RTS Engine — Project Specifications
 
-Version: 0.5 • Date: October 21, 2026 • Status: architectural baseline
+Version: 0.6 • Date: October 26, 2026 • Status: architectural baseline
 
 ## 1. Purpose and interpretation
 
@@ -122,6 +122,8 @@ Bridges with traversable space underneath would introduce multiple ground surfac
 | Utility networks | Nodes, edges, ports, topology, selected utility simulation models |
 | Headless host | Executable reusing simulation without graphics |
 
+**Baseline:** client-side package acquisition (Section 6.5) is split. Multiplayer owns the join handshake that fetches the server advertisement and lockfile. Mod runtime and API owns the package cache, hash verification, and loading; this is the host side of the module, not the script sandbox. Both run inside the trusted client shell (Section 6.13), not inside any mod.
+
 These are responsibility boundaries, not a finalized crate layout. The simulation may use ECS internally, but must be runnable without a window or rendering plugins. Presentation consumes simulation state; visual meshes must not become the authoritative terrain representation.
 
 ### 4.2 Entity composition
@@ -179,7 +181,7 @@ The scripting language is **open**; Rhai remains a prototype candidate. The acce
 
 Native Rust dynamic libraries are not the baseline public mod format because they do not meet browser parity requirements. Content packages and portable scripts are the preferred direction.
 
-**Decided:** servers advertise the required mod and version and provide a URL for automatic download/setup. **Baseline manifest design:** mod identifier, version, supported engine/protocol version, exact dependencies, content namespace, entry points, package sizes, download URLs, and content hashes. Dependency resolution and loading follow Section 5.5. Archive format, publisher trust, registry protocol, override semantics, and cache implementation remain open; save migration is secondary. See Section 6.5 for the joining workflow.
+**Decided:** servers advertise the required mod and version and provide a URL for automatic download/setup. **Baseline package documents:** two documents exist. The *package manifest* is written by the package author; Section 5.5 owns its one field list. The *server lockfile* is produced by the server's resolver; Section 5.5 defines its entries. A package manifest states dependency version constraints and never holds its own hash, size, or download URL. Exact versions, content hashes, package sizes, and download URLs live once, in the server lockfile. The server advertisement (Section 6.4) names the game mod, its version, the required engine and network protocol versions, the lockfile URL, and the lockfile hash. Dependency resolution and loading follow Section 5.5. Archive format, publisher trust, registry protocol, override semantics, and cache implementation remain open; save migration is secondary. See Section 6.5 for the joining workflow.
 
 ### 5.4 Execution controls
 
@@ -191,7 +193,7 @@ Multiplayer sessions must verify compatible gameplay mods and versions. Cosmetic
 
 **Decided:** libraries are first-class publishable/loadable packages using the same package system and script runtime as mods. A game mod selects content and composes optional libraries; both can depend transitively on other libraries. Libraries export functions, definitions, and explicitly registered behavior. Importing a library must not silently activate gameplay; the consumer registers or instantiates its behavior. Mutable state is isolated per match even when immutable code/assets are cached.
 
-Manifests declare namespaced identity, version, package kind, engine API compatibility, dependency version constraints, exports/entry points, execution context (server, client, shared), requested capabilities, and license metadata. Resolve before a match starts, reject missing/incompatible dependencies and cycles with actionable diagnostics, then produce an immutable lockfile of exact versions and hashes. Clients acquire the server's locked set rather than independently selecting newer compatible releases. Start with one version per library per configuration; caches and separate server configurations may retain several versions. Dependency order does not substitute for explicit simulation scheduling constraints. The concrete resolver, registry/publishing API, packaging format, and optional-dependency semantics remain implementation choices.
+**Baseline:** a package manifest declares nine fields. They are: namespaced identity, version, package kind, engine API compatibility, dependency version constraints, exports/entry points, execution context (server, client, shared), requested capabilities, and license metadata. Resolve before a match starts. Reject missing/incompatible dependencies and cycles with actionable diagnostics. Then produce an immutable server lockfile. The lockfile lists every package, the root game mod included. Each entry holds seven fields. They are: package identity, exact version, content hash over the exact downloaded package bytes, package size, download URLs in preference order, execution context, and engine API compatibility. The client fetches the lockfile from the URL in the server advertisement and verifies it against the advertised hash. The lockfile entry is authoritative; a package whose manifest disagrees with its entry is a load error. Clients acquire the server's locked set rather than independently selecting newer compatible releases. Start with one version per library per configuration; caches and separate server configurations may retain several versions. Dependency order does not substitute for explicit simulation scheduling constraints. The concrete resolver, registry/publishing API, packaging format, and optional-dependency semantics remain implementation choices.
 
 ### 5.6 Seeded generation libraries
 
@@ -225,24 +227,24 @@ WebSockets remain a straightforward prototype option; WebTransport and WebRTC ar
 
 The chosen model must cover unit orders and outcomes, inventory and balance changes, production, research, terrain edits, geological depletion, utility topology and operating state, and mod-generated events. Discovery information must be scoped to the appropriate player or team.
 
-**Decided:** saves are server-side; there is no standalone solo mode or local game-save product. Server-hosted matches against bots are compatible with this scope. **Baseline save contract:** preserve authoritative state, slot ownership, and exact mod/dependency manifest. Reconnection restores a player to their claimed slot; late joining can claim an eligible unclaimed slot only when permitted by the mod. Those behaviors are decided; snapshot/catch-up and crash recovery remain implementation work. Replay storage/offering is optional server functionality and secondary. Initially load exact mod versions rather than requiring migration; archive availability and engine-version compatibility still need handling. Browser package caches are not local game saves.
+**Decided:** saves are server-side; there is no standalone solo mode or local game-save product. Server-hosted matches against bots are compatible with this scope. **Baseline save contract:** preserve authoritative state, slot ownership, and the exact server lockfile. Reconnection restores a player to their claimed slot; late joining can claim an eligible unclaimed slot only when permitted by the mod. Those behaviors are decided; snapshot/catch-up and crash recovery remain implementation work. Replay storage/offering is optional server functionality and secondary. Initially load exact mod versions rather than requiring migration; archive availability and engine-version compatibility still need handling. Browser package caches are not local game saves.
 
 ### 6.4 Discovery and hosting topology
 
 **Decided:** the client connects to a configurable index that lists servers. Ship a default index operated by the project, but allow users to change its URL and communities to operate their own compatible index.
 
-A server is dedicated to a game mod; it hosts multiple rooms rather than a single match. The working refinement is one exact mod/dependency set per server, with room-specific settings. Hosting unrelated game mods within one server has not been requested.
+A server is dedicated to a game mod; it hosts multiple rooms rather than a single match. The working refinement is one exact mod/dependency set per server, with room-specific settings. **Baseline:** the server advertisement is the document a server publishes. It names the game mod, its version, the required engine and network protocol versions, the server lockfile URL, and the lockfile hash. The server lockfile is frozen for the server's lifetime unless an explicit versioned mechanism replaces it. Hosting unrelated game mods within one server has not been requested.
 
 | Layer | Responsibility |
 | --- | --- |
 | Index | Discover servers and advertise compatible game offerings |
-| Server | Publish manifest, list rooms, authorize room creation, supervise matches |
+| Server | Publish the server advertisement, list rooms, authorize room creation, supervise matches |
 | Room | Own configuration, creator/admin identity, access settings, slots, lifecycle |
 | Match instance | Run isolated simulation for that room |
 | Package host | Deliver mod/map packages; may be separate static hosting or CDN |
 | Spectator distribution | Buffer and distribute permitted match state independently of player admission |
 
-**Baseline operational design:** registration with expiring heartbeats, direct connection, and saved servers independent of index availability. An index outage must not terminate established matches. Listing metadata can include endpoint, mod/version, engine compatibility, region, occupancy, and spectator availability. Revalidate against the actual server manifest on connection; the listing can be stale.
+**Baseline operational design:** registration with expiring heartbeats, direct connection, and saved servers independent of index availability. An index outage must not terminate established matches. Listing metadata can include endpoint, mod/version, engine compatibility, region, occupancy, and spectator availability. Revalidate against the actual server advertisement on connection; the listing can be stale.
 
 A room may exist before simulation and persist afterward for results or rematches. Room management and simulation need separate lifecycles. Separate worker processes per active match are a **recommendation**, not a selected deployment requirement. The aim is fault and resource isolation. World sharding across machines is not selected.
 
@@ -250,13 +252,13 @@ A room may exist before simulation and persist afterward for results or rematche
 
 **Decided user experience:** selecting a server/room should download and set up missing required mods without manual download or installation steps. The server supplies the content URLs; it need not serve package bytes itself.
 
-**Baseline workflow:** fetch authoritative manifest → verify engine compatibility → resolve cached and missing dependencies → download/verify packages → load an isolated session profile → complete admission/loading → obtain initial state and catch up if the match is running.
+**Baseline workflow:** fetch the server advertisement and lockfile → verify the advertised engine and network protocol versions against the client (the server's resolver has already proved each locked package's engine API compatibility) → compare the local cache against the locked hashes and list the missing packages whose execution context is client or shared → download each missing package and verify its hash before extraction → load an isolated session profile → complete admission/loading → obtain initial state and catch up if the match is running. The client never resolves versions itself; it takes the server's locked set (Section 5.5, D35). The client does not download server-only packages.
 
-Use exact package hashes in addition to version strings. Permit side-by-side versions so joining one server does not break another. Packages must use the supported portable mod runtime, not arbitrary native installation scripts. Hash verification proves identity/integrity, not publisher trust. Sandbox downloaded scripts, constrain extraction and execution, and apply capability limits. Player identity and separate publisher keys are settled in Sections 6.13 and 5.7; detailed signature verification and publisher trust policy remain implementation work.
+Use exact package hashes in addition to version strings. Permit side-by-side versions in the cache so joining one server does not break another; one version per library per configuration (D35). Packages must use the supported portable mod runtime, not arbitrary native installation scripts. Hash verification proves identity/integrity, not publisher trust. Sandbox downloaded scripts, constrain extraction and execution, and apply capability limits. Player identity and separate publisher keys are settled in Sections 6.13 and 5.7; detailed signature verification and publisher trust policy remain implementation work.
 
 For browser clients, setup uses browser-managed storage; content delivery must support HTTPS and appropriate cross-origin access. Storage eviction and download failures require recoverable behavior. Incompatible engine requirements must yield a clear error; mod setup does not silently replace the client executable.
 
-**Baseline:** freeze each room's gameplay manifest/configuration for the running match unless an explicit versioned mechanism supports changing it. Download/setup and slot admission are separate phases; temporary reservations, loading timeouts, and the exact claim boundary require design so content preparation does not accidentally consume permanent slots.
+**Baseline:** the server lockfile is frozen at server level (Section 6.4); freeze each room's rule configuration for the running match unless an explicit versioned mechanism supports changing it. Download/setup and slot admission are separate phases; temporary reservations, loading timeouts, and the exact claim boundary require design so content preparation does not accidentally consume permanent slots.
 
 ### 6.6 Rooms, creators, and configuration
 
@@ -596,7 +598,7 @@ Additional proposed validation: locked transitive libraries and conflict diagnos
 | Scripts | Runtime, sandbox, budgets, native/WASM consistency | Defines mod ergonomics and safety/performance boundaries |
 | Terrain grid | Horizontal resolution, vertical steps, chunk size, slope rules | Determines edit precision, navigation, memory, visuals |
 | Production API | Express mod-selected reservations, payment, refunds and blocked outputs; do not impose one universal policy | Preserves accounting and mod freedom |
-| Mod packaging | Concrete format/resolver, registry API and namespaces, overrides, trust, cache; registry topology and dependency locks settled | Required for a usable ecosystem |
+| Mod packaging | Concrete format/resolver, registry API and namespaces, overrides, trust, cache; registry topology and dependency locks settled. Open formats: content hash algorithm, identifier format, version scheme and constraint syntax, package kind values (including a cosmetic-only kind, Section 5.4), initial capability names | Required for a usable ecosystem |
 | Utility scope | Initial network types and simulation models | Prevents a generic graph from hiding unresolved simulation work |
 | Persistence | Server saves settled; serialization, recovery and reconnect implementation open; replay/migration secondary | Determines restoration contracts |
 | Tools | Agent-first workflow settled; create tools iteratively from observed authoring/debug needs | Enables verifiable autonomous development |
@@ -692,6 +694,8 @@ Reference designs: [Blizzard's original StarCraft AI documentation](https://clas
 
 - **0.5:** portable identity and user-key recovery; one controller per claimed slot; registries and separate publisher keys; desktop-first device scope; validated default-mod rules; room administration; initial small/medium/stress benchmarks and 4-vCPU/8-GB allocation; planned user-provided GCP service account for VM setup/monitoring.
 
+- **0.6:** two package documents named: the package manifest (field list owned by 5.5) and the server lockfile (one entry per package, hashes live there only). The 6.5 workflow takes the server's lockfile instead of resolving versions; it checks execution context and verifies hashes before extraction. Side-by-side versions named as a cache property (D35). Client-side acquisition split between multiplayer and mod runtime (4.1). Open manifest formats listed in Section 15. The studio agents found the original defects in the first gate review of 6.5.
+
 ---
 
-Source of record: the visible project conversation through validation of identity/recovery, publishing, platforms, default-game rules, room administration, hosting benchmarks, and planned GCP service-account access. Version 0.5 preserves prior decisions except where explicitly superseded. Test budgets are not measured guarantees; cloud access and resources have not been provisioned by this update.
+Source of record: the visible project conversation through validation of identity/recovery, publishing, platforms, default-game rules, room administration, hosting benchmarks, and planned GCP service-account access. Version 0.6 preserves prior decisions except where explicitly superseded. Test budgets are not measured guarantees; cloud access and resources have not been provisioned by this update.
