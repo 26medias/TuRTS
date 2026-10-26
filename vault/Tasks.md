@@ -15,7 +15,8 @@ The task board. Move items between sections; keep owner and evidence link on eac
 
 ## In progress
 
-- [ ] M1 Task 1: workspace, skeletons, CI, T1 boundary test (Sonnet xhigh). Running.
+- [ ] M1 Task 6a networking spike (Opus): P1-P4 pass; P5-P7 measured runs in progress. Then 6b (browser join), then the spike gate.
+- [ ] Next: 7a server config/boot/HTTP and 8a-1 client acquisition, after the spike gate.
 
 ## Backlog (M1)
 
@@ -29,6 +30,8 @@ The task board. Move items between sections; keep owner and evidence link on eac
 - [ ] Acceptance tests T1 to T6 (producer's list), each shown red first.
 
 ## Done
+
+- [x] 2026-10-26: M1 Tasks 1, 2, 3, 4, 5, 8b done and verified (commits cc48dee to 6db7445).
 
 - [x] 2026-10-26: M1 plan approved after gate 2 and re-gate (revision 2b, commit b890c3e). 18 tasks.
 
