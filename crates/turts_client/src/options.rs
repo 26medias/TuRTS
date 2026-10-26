@@ -30,8 +30,11 @@ pub struct ClientOptions {
     pub drop_delta_offsets: Vec<u32>,
     /// Test hook: ignore the first `UnitDeltas` that arrives.
     pub drop_arrival_delta: bool,
-    /// Test hook: hold this many `Snapshot` messages back after a resync request.
+    /// Test hook: hold each `Snapshot` that answers a resync request back by this many ticks
+    /// of `UnitDeltas`.
     pub hold_resync_snapshots: u32,
+    /// Test hook: send this wire protocol version in `Hello` instead of `NET_PROTOCOL_VERSION`.
+    pub protocol_version: Option<u32>,
 }
 
 impl Default for ClientOptions {
@@ -51,6 +54,7 @@ impl Default for ClientOptions {
             drop_delta_offsets: Vec::new(),
             drop_arrival_delta: false,
             hold_resync_snapshots: 0,
+            protocol_version: None,
         }
     }
 }
@@ -59,7 +63,8 @@ impl Default for ClientOptions {
 ///
 /// `--server URL --ws URL [--headless] [--player-id N] [--frame-log P] [--out P] [--move X,Y]
 /// [--move-after-ticks N] [--move-unit ID] [--hello-hash H] [--run-secs S]
-/// [--drop-delta-ticks a,b,c] [--drop-arrival-delta] [--hold-resync-snapshots N]`
+/// [--drop-delta-ticks a,b,c] [--drop-arrival-delta] [--hold-resync-snapshots N]
+/// [--protocol-version N]`
 ///
 /// `--server` and `--ws` are required. The `--drop-delta-ticks` values are offsets from the
 /// `Welcome` tick. An unknown flag, a missing value, or a value that does not parse is an error
@@ -93,6 +98,7 @@ pub fn parse_cli(args: &[String]) -> Result<ClientOptions, String> {
             }
             "--drop-arrival-delta" => options.drop_arrival_delta = true,
             "--hold-resync-snapshots" => options.hold_resync_snapshots = number(flag, value()?)?,
+            "--protocol-version" => options.protocol_version = Some(number(flag, value()?)?),
             other => return Err(format!("unknown argument {other}")),
         }
     }
