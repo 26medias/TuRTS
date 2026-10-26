@@ -15,7 +15,7 @@ The task board. Move items between sections; keep owner and evidence link on eac
 
 ## In progress
 
-- [ ] Next milestone: M2 (mod API: default mod plus an alternative economy mod). Not started; see the report.
+- [ ] M2 research (started 2026-10-26): mod-runtime-engineer (Fable) on the scripting runtime with native and wasm32 probes; producer (Opus) on scope and acceptance; game-designer (Opus) on the two economy loops. Then the M2 design and gate 1.
 
 ## Backlog (M1)
 
