@@ -15,7 +15,7 @@ The task board. Move items between sections; keep owner and evidence link on eac
 
 ## In progress
 
-- [ ] M2 research (started 2026-10-26): mod-runtime-engineer (Fable) on the scripting runtime with native and wasm32 probes; producer (Opus) on scope and acceptance; game-designer (Opus) on the two economy loops. Then the M2 design and gate 1.
+- [ ] M2 design (Fable writer, from the three research reports). Then gate 1.
 
 ## Backlog (M1)
 
@@ -29,6 +29,8 @@ The task board. Move items between sections; keep owner and evidence link on eac
 - [ ] Acceptance tests T1 to T6 (producer's list), each shown red first.
 
 ## Done
+
+- [x] 2026-10-26: M2 research by producer, game-designer, mod-runtime-engineer.
 
 - [x] 2026-10-26: **M1 closed** (3dbbe16). See [[Decisions/2026-10-26 M1 closed]].
 
