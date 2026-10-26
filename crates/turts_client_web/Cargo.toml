@@ -10,6 +10,7 @@ crate-type = ["cdylib"]
 
 [dependencies]
 turts_client = { path = "../turts_client" }
+turts_net_protocol = { path = "../turts_net_protocol" }
 bevy = { workspace = true, features = ["3d"] }
 wasm-bindgen = { workspace = true }
 js-sys = { workspace = true }
