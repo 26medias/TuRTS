@@ -15,7 +15,7 @@ The task board. Move items between sections; keep owner and evidence link on eac
 
 ## In progress
 
-- [ ] M2 design (Fable writer, from the three research reports). Then gate 1.
+- [ ] **PAUSED by the CEO (2026-10-26) to save tokens.** Resume point: write the M2 design from `docs/research/m2/` (three reports) and the studio calls in [[Decisions/2026-10-26 M2 scope and no script layer]], then gate 1.
 
 ## Backlog (M1)
 

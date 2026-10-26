@@ -1,0 +1,82 @@
+# M2 scripting probes, 2026-10-26, rustc 1.99.1, node v24.10.0, wasm-release profile + wasm-opt -Oz
+## sizes (bytes after wasm-bindgen; after wasm-opt -Oz)
+host_base bindgen=76865 opt=53072
+probe_rhai bindgen=2524606 opt=1081590
+probe_piccolo bindgen=828203 opt=425236
+probe_wasmi bindgen=2652202 opt=1043144
+## native
+runtime=none (Rust behaviour)
+calls=100000
+elapsed_ms=0.205
+ns_per_call=2.0
+balance_after=1000000
+expected_balance=1000000
+budget_outcome=n/a
+budget_stop_ms=0.000
+runtime=rhai 1.27.0
+calls=100000
+elapsed_ms=23.750
+ns_per_call=237.5
+balance_after=1000000
+expected_balance=1000000
+budget_outcome=stopped: Too many operations
+budget_stop_ms=0.166
+runtime=piccolo 0.3.3
+calls=100000
+elapsed_ms=36.138
+ns_per_call=361.4
+balance_after=1000000
+expected_balance=1000000
+budget_outcome=stopped: budget of 10000 fuel units exhausted; remaining=-64
+budget_stop_ms=0.039
+runtime=wasmi 2.0.0 (wasm-in-wasm)
+calls=100000
+elapsed_ms=6.185
+ns_per_call=61.9
+balance_after=1000000
+expected_balance=1000000
+budget_outcome=stopped: all fuel consumed by WebAssembly
+budget_stop_ms=0.008
+## node
+runtime=none (Rust behaviour)
+calls=100000
+elapsed_ms=1.000
+ns_per_call=10.0
+balance_after=1000000
+expected_balance=1000000
+budget_outcome=n/a
+budget_stop_ms=0.000
+runtime=rhai 1.27.0
+calls=100000
+elapsed_ms=81.000
+ns_per_call=810.0
+balance_after=1000000
+expected_balance=1000000
+budget_outcome=stopped: Too many operations
+budget_stop_ms=0.000
+runtime=piccolo 0.3.3
+calls=100000
+elapsed_ms=68.000
+ns_per_call=680.0
+balance_after=1000000
+expected_balance=1000000
+budget_outcome=stopped: budget of 10000 fuel units exhausted; remaining=-64
+budget_stop_ms=1.000
+runtime=wasmi 2.0.0 (wasm-in-wasm)
+calls=100000
+elapsed_ms=20.000
+ns_per_call=200.0
+balance_after=1000000
+expected_balance=1000000
+budget_outcome=stopped: all fuel consumed by WebAssembly
+budget_stop_ms=1.000
+## red (budget off, timeout 5 s)
+probe_rhai exit=124
+probe_piccolo exit=124
+probe_wasmi exit=124
+## mlua wasm32
+1 matches in 1F:
+
+[file] /.../mlua_check/build.log (1):
+    39: don't know how to build Lua for wasm32-unknown-unknown
+
