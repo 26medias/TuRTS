@@ -1,0 +1,1 @@
+- [Gaps in mod manifest and 6.5](gaps-mod-manifest-6-5.md) — 5.3 vs 5.5 field lists differ; identifier/hash/capability formats undefined (2026-10-26)

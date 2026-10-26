@@ -1,0 +1,2 @@
+- [rtk diff false identical](feedback_rtk_diff.md) — use `rtk proxy diff`/`grep` for runs that decide a finding
+- [Spec register layout](project_spec_layout.md) — verified line anchors in the spec v0.5 (register, 4.1, 6.5, invariants, 15)
