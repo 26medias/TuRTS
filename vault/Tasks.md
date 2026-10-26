@@ -15,7 +15,7 @@ The task board. Move items between sections; keep owner and evidence link on eac
 
 ## In progress
 
-- [ ] M1 design doc (orchestrator, Fable). Inputs: five research reports in the scratchpad, condensed into the doc. Next: gate 1 with spec-rigour-reviewer, technical-director, web-platform-engineer, network-engineer, mod-runtime-engineer, mod-builder.
+- [ ] M1 gate 1 (started 2026-10-26 night): spec-rigour-reviewer and technical-director on Fable; network-engineer, mod-runtime-engineer, mod-builder on Opus. web-platform-engineer joins when its browser build report lands. performance-architect sits out: M1 judges no budget.
 - [ ] M1 research: browser build (web-platform-engineer). Running.
 
 ## Backlog (M1)
@@ -31,6 +31,9 @@ The task board. Move items between sections; keep owner and evidence link on eac
 - [ ] Acceptance tests T1 to T6 (producer's list), each shown red first.
 
 ## Done
+
+- [x] 2026-10-26: M1 design drafted (`docs/superpowers/specs/2026-10-26-m1-foundation-design.md`), orchestrator.
+- [x] 2026-10-26: spec 0.7 merged from the CEO's upload (commit b317d9e).
 
 - [x] 2026-10-25: CLAUDE.md for the repository (orchestrator).
 - [x] 2026-10-25: studio agent team designed, gated, built, dry-run tested (orchestrator + 3 implementer agents + 4 reviewers). Commits 38a947c to 10feb7f.

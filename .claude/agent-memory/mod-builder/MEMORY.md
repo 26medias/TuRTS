@@ -1,1 +1,2 @@
 - [Gaps in mod manifest and 6.5](gaps-mod-manifest-6-5.md) — 5.3 vs 5.5 field lists differ; identifier/hash/capability formats undefined (2026-10-26)
+- [M1 design gate 1](m1-design-gate1.md) — map hard-codes default unit; client embeds base archive; T2 cannot catch either (2026-10-26)
