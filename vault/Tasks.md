@@ -15,12 +15,11 @@ The task board. Move items between sections; keep owner and evidence link on eac
 
 ## In progress
 
-- [ ] M1 gate 1 (started 2026-10-26 night): spec-rigour-reviewer and technical-director on Fable; network-engineer, mod-runtime-engineer, mod-builder on Opus. web-platform-engineer joins when its browser build report lands. performance-architect sits out: M1 judges no budget.
-- [ ] M1 research: browser build (web-platform-engineer). Running.
+- [ ] M1 plan (Fable planner, writing-plans skill). Then gate 2.
+- [ ] Network seat confirms the lost-delta fix in design revision 3.
 
 ## Backlog (M1)
 
-- [ ] Gate 1 on the M1 design.
 - [ ] M1 plan (writing-plans), gate 2.
 - [ ] Cargo workspace and first crates (per the plan).
 - [ ] Networking prototype: lightyear over WebSocket; fallback bevy_replicon + renet2.
@@ -31,6 +30,8 @@ The task board. Move items between sections; keep owner and evidence link on eac
 - [ ] Acceptance tests T1 to T6 (producer's list), each shown red first.
 
 ## Done
+
+- [x] 2026-10-26: M1 gate 1 passed after two repair passes; design revision 3 (commit fb6e1e4). Reviewers: spec-rigour-reviewer, technical-director (Fable); network-engineer, mod-runtime-engineer, mod-builder (Opus); web-platform-engineer research.
 
 - [x] 2026-10-26: M1 design drafted (`docs/superpowers/specs/2026-10-26-m1-foundation-design.md`), orchestrator.
 - [x] 2026-10-26: spec 0.7 merged from the CEO's upload (commit b317d9e).
