@@ -247,7 +247,7 @@ fn websocket_config() -> ClientConfig {
 
 #[cfg(not(target_family = "wasm"))]
 fn websocket_config() -> ClientConfig {
-    ClientConfig::builder().with_no_encryption()
+    ClientConfig::builder().with_no_encryption().disable_nagle()
 }
 
 fn spawn_client(commands: &mut Commands, ws: &str) -> Result<(), String> {

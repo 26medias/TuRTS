@@ -1,7 +1,7 @@
 [workspace]
 resolver = "3"
 members = ["crates/*"]
-exclude = ["tests/boundary-fixture", "tests/spike-web"]
+exclude = ["tests/boundary-fixture", "tests/spike-web", "vendor/aeronet_websocket"]
 
 [workspace.package]
 version = "0.1.0"
@@ -41,3 +41,7 @@ lto = "fat"
 codegen-units = 1
 strip = "debuginfo"
 panic = "abort"
+
+# Server TCP no-delay (vendor/aeronet_websocket/VENDORED.md).
+[patch.crates-io]
+aeronet_websocket = { path = "vendor/aeronet_websocket" }

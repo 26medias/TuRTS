@@ -395,7 +395,8 @@ fn p1_lockfile_pinned_and_licences_recorded() {
     assert!(ok, "cargo tree failed:\n{text}");
     let lines: BTreeSet<String> = text
         .lines()
-        .filter(|l| !l.contains(" (/"))
+        // Skip workspace crates (path packages), but keep vendored crates: they are third-party code.
+        .filter(|l| !l.contains(" (/") || l.contains("/vendor/"))
         .map(|l| l.trim_end_matches(" (*)").to_string())
         .collect();
     let path = spike_dir().join("licences.txt");

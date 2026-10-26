@@ -33,8 +33,9 @@ const TARGET: (f32, f32) = (20.0, 8.0);
 const POS_TOLERANCE: f32 = 1e-3;
 /// The time a client may take after its `--run-secs` to write its files and exit.
 const EXIT_MARGIN: Duration = Duration::from_secs(15);
-/// Lag p99 limit of T5, in ticks (design section 7).
-const LAG_P99_LIMIT: f64 = 2.0;
+/// Lag p99 limit of T5, in ticks. Design section 7 says 2; the studio decision "Server TCP
+/// no-delay and tighter T5 bound" sets 1.5, so that a Nagle delay on the server goes red.
+const LAG_P99_LIMIT: f64 = 1.5;
 
 fn path_text(path: &Path) -> &str {
     path.to_str().expect("the test paths are UTF-8")
@@ -361,7 +362,7 @@ fn t4_command_validation() {
 }
 
 /// T5 convergence: every presented position lies on the server's segment, lag p99 is at most
-/// 2 ticks, and the client ends where the server ends.
+/// `LAG_P99_LIMIT` ticks, and the client ends where the server ends.
 #[test]
 #[ignore]
 fn t5_convergence() {

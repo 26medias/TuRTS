@@ -160,8 +160,6 @@ dependencies = [
 [[package]]
 name = "aeronet_websocket"
 version = "0.22.0-rc.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f0353f8c73cf65587a74056be1961f1ebb36607430dc3356b7e4e2038a4014a1"
 dependencies = [
  "aeronet_io",
  "aeronet_tokio_runtime",
