@@ -192,14 +192,6 @@ impl Replica {
         let fraction = (t - floor) as f32;
         let a = samples[(lo - first) as usize].1;
         let b = samples[(hi - first) as usize].1;
-        if fraction == 0.0 {
-            return Some(Presented {
-                pos: a,
-                lo_tick: lo,
-                hi_tick: lo,
-                fraction: 0.0,
-            });
-        }
         Some(Presented {
             pos: interp::lerp(a, b, fraction),
             lo_tick: lo,

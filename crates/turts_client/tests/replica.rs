@@ -106,6 +106,20 @@ fn sample_interpolates_between_consecutive_ticks() {
 }
 
 #[test]
+fn sample_at_an_integer_time_below_latest_brackets_the_next_tick() {
+    // Design section 5: the bracket is floor(t) and floor(t) + 1 whenever a sample
+    // exists at floor(t) + 1. The browser often samples at an integer t (T7 found it).
+    let now = Instant::now();
+    let mut r = Replica::new(20);
+    r.apply_snapshot(&snapshot(10, &[(1, pos(0.0, 0.0))]), now);
+    r.apply_delta(&delta(11, 10, &[(1, pos(2.0, 0.0))]), now);
+    let p = r.sample(1, 10.0).unwrap();
+    assert_eq!(p.pos, pos(0.0, 0.0));
+    assert_eq!((p.lo_tick, p.hi_tick), (10, 11));
+    assert_eq!(p.fraction, 0.0);
+}
+
+#[test]
 fn sample_with_one_sample_is_that_sample() {
     let now = Instant::now();
     let mut r = Replica::new(20);
