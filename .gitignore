@@ -4,3 +4,7 @@
 .DS_Store
 # Agent memory is committed on purpose; scratch output is not.
 /.claude/agent-memory-local/
+/tests/browser/node_modules/
+/tests/spike-web/target/
+/tests/spike-web/dist/
+/crates/turts_client_web/dist/
