@@ -1,0 +1,6 @@
+/target
+/dist
+*.wasm.map
+.DS_Store
+# Agent memory is committed on purpose; scratch output is not.
+/.claude/agent-memory-local/

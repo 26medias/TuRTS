@@ -5,11 +5,22 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Repository state
 
 This repository holds no code yet. It contains one document:
-`RTS-Engine-Project-Specifications.md` (version 0.5, 2026-10-21). That document is the
+`RTS-Engine-Project-Specifications.md` (version 0.6, 2026-10-26). That document is the
 source of record for all design decisions. Read it before you start any implementation work.
 
-There is no build, lint, or test command yet. When the first Cargo workspace exists, add the
-commands to this file.
+There is no Cargo workspace yet. Toolchain: `rust-toolchain.toml` pins stable with the
+`wasm32-unknown-unknown` target. `scripts/setup-dev.sh` installs the user-level tools (trunk,
+wasm-bindgen-cli, wasm-opt, flamegraph, cargo-llvm-lines, cargo-bloat). `scripts/setup-sudo.sh`
+installs perf, heaptrack, and valgrind and needs root. CI is `.github/workflows/ci.yml`: fmt,
+clippy, wasm32 check, native tests, and the agent roster checks. When the workspace exists, add
+the build and test commands here.
+
+Bevy version: **0.20** (orchestrator call, 2026-10-26; stable at that date). Ten installed Bevy
+skills pin 0.19; read the `bevy-ecs` skill's 0.20 pitfalls before you use any 0.19 snippet.
+
+GCP for benchmarks, testing, and dev (D57 to D59): gcloud configuration `default`, project
+`qs-trading`, account `julien@leap-forward.ca`, region `us-east1`, zone `us-east1-b`. Record
+machine type and image with every benchmark result. Delete test VMs when a run ends.
 
 ## What the project is
 

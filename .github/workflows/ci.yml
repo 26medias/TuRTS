@@ -1,0 +1,36 @@
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+      - name: No workspace yet
+        if: ${{ hashFiles('Cargo.toml') == '' }}
+        run: echo "No Cargo.toml; nothing to build yet."
+      - name: Format
+        if: ${{ hashFiles('Cargo.toml') != '' }}
+        run: cargo fmt --all --check
+      - name: Clippy (native)
+        if: ${{ hashFiles('Cargo.toml') != '' }}
+        run: cargo clippy --workspace --all-targets -- -D warnings
+      - name: Check (wasm32)
+        if: ${{ hashFiles('Cargo.toml') != '' }}
+        run: cargo check --workspace --target wasm32-unknown-unknown
+      - name: Test (native, headless)
+        if: ${{ hashFiles('Cargo.toml') != '' }}
+        run: cargo test --workspace
+  agents:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Agent roster checks (no claude CLI on CI)
+        run: SKIP_VALIDATE=1 bash docs/agents/check.sh && SKIP_VALIDATE=1 bash docs/agents/check_fixtures.sh && bash docs/agents/check_claude_md.sh
