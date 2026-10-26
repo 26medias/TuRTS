@@ -5,6 +5,7 @@
 //! `window.turts_debug` (Task 11). The `--out` report embeds it.
 
 use std::collections::BTreeMap;
+use std::num::NonZeroU8;
 
 use bevy::prelude::*;
 use serde_json::{Value, json};
@@ -106,13 +107,40 @@ pub fn report_json(world: &World) -> Value {
     })
 }
 
-/// `Last`: after `--run-secs`, write the `--out` report and the frame log summary, then exit.
+/// The reason of a failed join or acquisition, when the phase is `Failed`.
+fn failure_reason(world: &World) -> Option<String> {
+    match world.resource::<Phase>() {
+        Phase::Failed(reason) => Some(reason.clone()),
+        _ => None,
+    }
+}
+
+/// Whether a headless client has nothing more to wait for after a failure. A failure before
+/// the connection (the advertisement, the lockfile or a package) is final at once. A failure
+/// after the connection (`JoinRejected`) is final when the server has disconnected, so the
+/// report holds `disconnected_after_connect` (design section 7, T2d).
+fn failure_is_final(world: &World) -> bool {
+    let join = world.resource::<JoinState>();
+    !join.connected_seen || join.disconnected_after_connect
+}
+
+/// `Last`: end a native run, write the `--out` report and the frame log summary, then exit.
 /// `App::run` hands the world to the runner, so the files are written before the exit message.
+///
+/// The run ends when `--run-secs` has passed, or when a headless client has failed (a rejected
+/// package or join) and has nothing more to wait for. A failed run prints the reason on stderr
+/// and exits with code 1 (M1 verify, B3); any other end is a success. The browser has no
+/// `--run-secs`, so a failure there only shows in the debug state.
 pub fn exit_when_done(world: &mut World) {
-    let Some(limit) = world.resource::<ClientOpts>().0.run_secs else {
-        return;
+    let (run_secs, headless) = {
+        let opts = &world.resource::<ClientOpts>().0;
+        (opts.run_secs, opts.headless)
     };
-    if world.resource::<Time<Real>>().elapsed_secs() < limit {
+    let failure = failure_reason(world);
+    let timed_out =
+        run_secs.is_some_and(|limit| world.resource::<Time<Real>>().elapsed_secs() >= limit);
+    let failed_for_good = headless && failure.is_some() && failure_is_final(world);
+    if !(timed_out || failed_for_good) {
         return;
     }
     if let Some(path) = world.resource::<ClientOpts>().0.out.clone()
@@ -134,5 +162,13 @@ pub fn exit_when_done(world: &mut World) {
         )
     };
     world.resource_mut::<FrameLog>().finish(&summary);
-    world.write_message(AppExit::Success);
+    match failure {
+        Some(reason) => {
+            eprintln!("turts_client: {reason}");
+            world.write_message(AppExit::Error(NonZeroU8::MIN));
+        }
+        None => {
+            world.write_message(AppExit::Success);
+        }
+    }
 }

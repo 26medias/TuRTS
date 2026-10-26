@@ -59,12 +59,60 @@ impl Default for ClientOptions {
     }
 }
 
-/// Read the command line, without the program name:
-///
-/// `--server URL --ws URL [--headless] [--player-id N] [--frame-log P] [--out P] [--move X,Y]
-/// [--move-after-ticks N] [--move-unit ID] [--hello-hash H] [--run-secs S]
-/// [--drop-delta-ticks a,b,c] [--drop-arrival-delta] [--hold-resync-snapshots N]
-/// [--protocol-version N]`
+/// The text of `turts_client --help`: every option and test hook, and the exit codes. A test
+/// reads the `parse_cli` source and checks that each flag appears here.
+pub const USAGE: &str = "\
+usage: turts_client --server URL --ws URL [options]
+       turts_client --help
+
+Join the match of a server and present it. This is the native client. The browser client
+reads ?server=URL&ws=URL from the page address instead.
+
+Required:
+  --server URL    Base URL of the server HTTP endpoints, for example http://127.0.0.1:7000.
+  --ws URL        WebSocket address of the server, for example ws://127.0.0.1:7001.
+
+Options:
+  --headless      Run with no window and no rendering.
+  --player-id N   Use N as the player id. The default is a random id for each run.
+  --help, -h      Print this text and exit with 0.
+
+Test hooks:
+  --run-secs S    Stop after S seconds. Without it, a joined client runs until it is killed.
+  --out PATH      When the run ends, write the final report to PATH as JSON. The report
+                  holds the join result, the command results and the final positions.
+  --frame-log PATH
+                  Write one record for each presented frame to PATH.
+  --move X,Y      Send one MoveTo to the point X,Y. It moves all the units that the slot of
+                  this client owns. Add --move-unit to move one unit instead.
+  --move-unit ID  Move only the unit with this unit id. The unit does not have to be yours:
+                  the server rejects the command for a unit of another slot.
+  --move-after-ticks N
+                  Wait N ticks after Welcome before the move. The default is 5.
+  --hello-hash H  Send H as the lockfile hash in Hello. The server rejects a wrong hash.
+  --protocol-version N
+                  Send N as the wire protocol version in Hello.
+  --drop-delta-ticks a,b,c
+                  Ignore the UnitDeltas of the ticks a, b and c. The numbers are offsets
+                  from the Welcome tick.
+  --drop-arrival-delta
+                  Ignore the first UnitDeltas that puts a unit at the --move target.
+  --hold-resync-snapshots N
+                  Hold each Snapshot that answers a resync request back by N ticks.
+
+Exit codes:
+  0  The run ended well: --run-secs passed, or the window closed.
+  1  The client rejected the advertisement, a package, or the join. The reason is on
+     stderr and in the --out report. A client with a window exits with 1 only when
+     --run-secs ends.
+  2  The command line is wrong.";
+
+/// Whether the command line asks for the usage text.
+pub fn wants_help(args: &[String]) -> bool {
+    args.iter().any(|arg| arg == "--help" || arg == "-h")
+}
+
+/// Read the command line, without the program name. [`USAGE`] lists the options.
 ///
 /// `--server` and `--ws` are required. The `--drop-delta-ticks` values are offsets from the
 /// `Welcome` tick. An unknown flag, a missing value, or a value that does not parse is an error

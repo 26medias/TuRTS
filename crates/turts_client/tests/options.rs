@@ -112,3 +112,33 @@ fn parse_cli_defaults_and_errors() {
 fn random_player_ids_differ() {
     assert_ne!(random_player_id(), random_player_id());
 }
+
+/// B5, the other direction: every flag that the usage text lists is a flag that `parse_cli`
+/// knows. A switch parses on its own; an option with a value asks for the value.
+#[test]
+fn every_flag_in_the_usage_is_known_to_parse_cli() {
+    let flags: Vec<&str> = turts_client::options::USAGE
+        .lines()
+        .filter(|line| line.starts_with("  --"))
+        .flat_map(|line| line.split_whitespace().take(1))
+        .map(|flag| flag.trim_end_matches(','))
+        .filter(|flag| *flag != "--help")
+        .collect();
+    assert!(flags.len() >= 15, "the scan found too few flags: {flags:?}");
+    for flag in flags {
+        let list = args(&["--server", "http://h:7000", "--ws", "ws://h:7001", flag]);
+        let Err(error) = parse_cli(&list) else {
+            continue;
+        };
+        assert!(!error.contains("unknown argument"), "{flag}: {error}");
+        assert!(error.contains(flag), "{flag}: {error}");
+    }
+}
+
+#[test]
+fn wants_help_finds_both_spellings() {
+    use turts_client::options::wants_help;
+    assert!(wants_help(&args(&["--help"])));
+    assert!(wants_help(&args(&["--server", "x", "-h"])));
+    assert!(!wants_help(&args(&["--server", "x"])));
+}

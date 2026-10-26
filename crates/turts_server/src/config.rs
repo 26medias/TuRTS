@@ -5,8 +5,57 @@ use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
 
-const USAGE: &str = "usage: turts_server <server.ron> [--tick-log PATH] [--stats PATH] \
-                     [--synthetic-units N] [--run-ticks N]";
+/// The last line of every command line error.
+const USAGE: &str = "usage: turts_server <server.ron> [options]. Run `turts_server --help` for \
+                     the options.";
+
+/// The text of `turts_server --help`. A test reads this file and checks that every option and
+/// every `HostConfig` field appears here.
+pub const HELP: &str = "\
+usage: turts_server <server.ron> [options]
+       turts_server --help
+
+Run the headless authoritative server. It loads the game package that server.ron names,
+serves the package to clients over HTTP, and runs the match over WebSocket.
+
+server.ron is one RON record. Every field is required, except static_dir:
+  game_package  Path of the package archive that turts-pack wrote.
+  http_listen   Address of the HTTP listener, for example \"127.0.0.1:7000\".
+  ws_listen     Address of the WebSocket listener, for example \"127.0.0.1:7001\".
+  public_url    The HTTP address that clients use, for example \"http://127.0.0.1:7000\".
+                The lockfile and the advertisement build their URLs from it.
+  tick_hz       Simulation ticks per second. It must be above 0.
+  static_dir    A folder that the HTTP listener also serves, for the browser page.
+
+HTTP endpoints (GET):
+  /advertisement.json            The package name and version, the engine and protocol
+                                 versions, and the URL and hash of the lockfile.
+  /lockfile.json                 The packages that the match uses, with their hashes and URLs.
+  /packages/<id>-<version>.tar   The package archive. The hash in the lockfile is its hash.
+  Any other path comes from static_dir, when it is set.
+
+Options:
+  --tick-log PATH
+                  Write one line for each unit and tick to PATH: tick,wall_ns,unit_id,x,y.
+                  This option is a test hook. It is off when --synthetic-units is above 0.
+  --stats PATH    Rewrite PATH with one line of JSON statistics every second and at exit.
+                  This option is a test hook.
+  --synthetic-units N
+                  Add N units of the first unit type of the package. A system gives each
+                  one a new move target every 40 ticks. Use it for load runs.
+  --run-ticks N   Exit with code 0 after N simulation ticks. The server may run a few ticks
+                  past N.
+  --help, -h      Print this text and exit with 0.
+
+Exit codes:
+  0  The server ended well (--run-ticks reached).
+  1  The server could not start, or it stopped on an error. The reason is on stderr. An
+     error in the package names the package, the file, and the field.";
+
+/// Whether the command line asks for the help text.
+pub fn wants_help(args: &[String]) -> bool {
+    args.iter().any(|arg| arg == "--help" || arg == "-h")
+}
 
 /// The fields of `server.ron` (design 4.4). `static_dir` is the plan's optional extra: the
 /// folder that the HTTP server serves for the browser page.

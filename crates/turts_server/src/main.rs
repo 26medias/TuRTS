@@ -38,6 +38,10 @@ struct RunTicks(u32);
 /// Boot the package, serve HTTP and the WebSocket, and run until the process ends.
 fn run() -> Result<(), String> {
     let args: Vec<String> = std::env::args().skip(1).collect();
+    if config::wants_help(&args) {
+        println!("{}", config::HELP);
+        return Ok(());
+    }
     let cli = config::parse_cli(&args)?;
     let cfg = config::read_config(&cli.config)?;
     let bytes = std::fs::read(&cfg.game_package)
