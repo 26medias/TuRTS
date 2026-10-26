@@ -47,3 +47,12 @@ Ruling: Task 2 additionally owns `crates/turts_pack/Cargo.toml` for a dev-only w
 Ruling: bootstrap balance initialization and owner/seed validation follow actual Slots resource count; host default and M2 fixtures remain two slots — honours every configured slot and prevents ghost/missing accounts — cost if wrong small count/getter/test rework; no new supported-capacity promise.
 
 **Resolution of the slot-scope review item:** This ruling resolves the scope question by making the actual `Slots` resource authoritative. It is a scope decision, not a claim that a test passed. The host default and M2 fixtures remain two slots; this creates no capacity promise.
+
+
+## Ruling R4 — user-authorized parallel execution
+
+The user authorized isolated dependency-based worktrees for the remaining M2 plan. Lane ownership and frozen interfaces are in `docs/superpowers/plans/2026-10-26-m2-parallel-execution.md`. Canonical integration remains `/home/julien/.codex/worktrees/ee40/TuRTS`; review precedes integration. Preparation does not mark the original plan tasks complete.
+
+**Reason:** Parallel lanes can reduce time after the Task 1–2 foundations are complete.
+
+**Cost if wrong:** Integration conflicts may require reconciliation and revalidation.
