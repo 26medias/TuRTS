@@ -13,7 +13,7 @@ Dashboard for the TuRTS studio. Read this first, then [[Tasks]] and the latest n
 
 # TuRTS studio
 
-**Product:** mod-first RTS engine in Rust and Bevy. Browser WebAssembly client first, authoritative headless server, the official game is a default mod on the public API. Spec: `RTS-Engine-Project-Specifications.md` (v0.6, 2026-10-26).
+**Product:** mod-first RTS engine in Rust and Bevy. Browser WebAssembly client first, authoritative headless server, the official game is a default mod on the public API. Spec: `RTS-Engine-Project-Specifications.md` (v0.7, 2026-10-26).
 
 **Current milestone:** M1. Browser client, authoritative headless server, one mod-defined unit. Browser joins a match and presents server results.
 
@@ -32,6 +32,5 @@ Dashboard for the TuRTS studio. Read this first, then [[Tasks]] and the latest n
 
 ## Standing CEO items
 
-- The ChatGPT v0.6 spec file (asset pipeline, rendering at scale, navigation, replication) is not in the repository. Please add it; the studio merges it as 0.7. See [[Knowledge/Missing spec v0.6]].
 - License: TBD (CEO's words). No LICENSE file until chosen.
 - Desktop delivery (D02, native or Tauri wrapper): the M1 acceptance row names a secondary executable. The studio proposes to accept the browser part of M1 now and block the executable part on this decision.

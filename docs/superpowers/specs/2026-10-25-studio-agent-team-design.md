@@ -133,8 +133,10 @@ second lens for it. (G1: the boundary reviewer built this table from the spec he
 | 4, 4.1, 4.2 Architecture, modules, entities | technical-director | simulation-core-engineer |
 | 4.1 Presentation module; 4.3 Interface row; 3.1 rendering and camera paragraph | bevy-rendering-engineer | technical-director |
 | 4.3 Engine mechanisms versus mod policy | mod-runtime-engineer | technical-director |
+| 4.4 Separate simulation, replication, presentation representations | technical-director | network-engineer |
 | 5 (5.1–5.5, 5.7) Mod system | mod-runtime-engineer | technical-director |
 | 5.6 Seeded generation libraries | world-engineer | mod-runtime-engineer |
+| 5.8 Compiled 3D asset pipeline | bevy-rendering-engineer | mod-runtime-engineer |
 | 6.1 Shared simulation principles | simulation-core-engineer | technical-director |
 | 6.2 Authoritative server simulation | network-engineer | performance-architect |
 | 6.3 State requiring synchronization | network-engineer | backend-engineer (save contract) |
@@ -149,7 +151,12 @@ second lens for it. (G1: the boundary reviewer built this table from the spec he
 | 7, 8 Resources, production, logistics, research | simulation-core-engineer | game-designer |
 | 9, 10, 11 Terrain, geology, underground | world-engineer | simulation-core-engineer |
 | 12 Cross-system invariants | technical-director | spec-rigour-reviewer |
-| 13 Performance strategy | performance-architect | qa-lead (13.2 benchmark instrument) |
+| 13, 13.1, 13.3, 13.9 Performance strategy, research status, prototype gates | performance-architect | qa-lead (13.2 benchmark instrument) |
+| 13.4 Large-scale rendering and animation | bevy-rendering-engineer | performance-architect |
+| 13.5 Simulation work reduction and visibility | simulation-core-engineer | performance-architect |
+| 13.6 Navigation, steering, terrain changes | world-engineer | simulation-core-engineer |
+| 13.7 Compact replication and large-world residency | network-engineer | performance-architect |
+| 13.8 Benchmark expansion and acceptance evidence | qa-lead | performance-architect |
 | 14 Validation milestones | producer | qa-lead (acceptance evidence); performance-architect for M7, M12 |
 | 15, 18 Open decisions, next step | producer | technical-director |
 | 16.1 Development workflow | qa-lead | producer |

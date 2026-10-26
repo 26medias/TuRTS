@@ -5,7 +5,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Repository state
 
 This repository holds no code yet. It contains one document:
-`RTS-Engine-Project-Specifications.md` (version 0.6, 2026-10-26). That document is the
+`RTS-Engine-Project-Specifications.md` (version 0.7, 2026-10-26). That document is the
 source of record for all design decisions. Read it before you start any implementation work.
 
 There is no Cargo workspace yet. Toolchain: `rust-toolchain.toml` pins stable with the

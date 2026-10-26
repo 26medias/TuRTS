@@ -1,6 +1,6 @@
 # Mod-First RTS Engine — Project Specifications
 
-Version: 0.6 • Date: October 26, 2026 • Status: architectural baseline
+Version: 0.7 • Date: October 26, 2026 • Status: architectural baseline with research-backed implementation direction
 
 ## 1. Purpose and interpretation
 
@@ -80,6 +80,11 @@ Examples illustrate what mods could do. They do not require every game to enable
 | D57 | Initial hosting benchmarks: 4 players/1,000 units/1 map; 8 players/5,000 units/2 maps; tens-of-thousands-unit stress scenarios. | Decided benchmark scope |
 | D58 | Test small/medium matches on an initial 4-vCPU, 8-GB-RAM server allocation; measure performance and cost, not promise capacity. | Decided benchmark budget |
 | D59 | User plans to grant a GCP service account so the implementation agent can provision and monitor VM tests. | Decided plan; access pending |
+| D60 | Separate authoritative simulation, replicated state, and visual representations; detailed models/skeletons are not server simulation objects. | Baseline |
+| D61 | Compile and validate mod assets before distribution; share resources and support rendering/animation detail levels. | Baseline; formats and tooling to validate |
+| D62 | Evaluate instanced baked skeletal animation for mass infantry, rigid-part animation for vehicles, and individual animation where needed. | Baseline; implementation selected by measurement |
+| D63 | Combine reusable high-level navigation with bounded local steering and localized terrain invalidation. | Baseline; navigation components remain candidates |
+| D64 | Expand benchmarks to isolate rendering, animation, movement, replication, streaming, and their combined worst cases. | Baseline validation plan; thresholds open |
 
 The earlier suggestion of chunked voxel terrain is superseded by D09–D10. Underground utility placement does not reopen the voxel or underground-navigation scope.
 
@@ -159,6 +164,14 @@ Rust structs, traits, and implementation blocks provide encapsulation where appr
 | Interface | UI primitives and controlled state access | Resource displays, command panels, tooltips, screens |
 | AI | Queries and command submission | Build orders, economic priorities, army behavior |
 
+### 4.4 Separate simulation, replication, and presentation representations
+
+**Baseline:** a gameplay entity has a compact authoritative representation, a selective network representation, and a client visual representation. These need not have one-to-one component or object layouts. The server must run without visual meshes, skeleton hierarchies, animation controllers, or cosmetic particle systems. It may load compact gameplay geometry and metadata derived from assets where rules require them.
+
+For example, a tank can be represented by footprint, position, heading, turret angle, orders, and combat state on the server; permitted properties and events on the wire; and detailed meshes, attachments, tracks, recoil, and effects on the client. Animation does not determine authoritative hit timing or damage. Gameplay-relevant aim or timing must have explicit simulation data; cosmetic playback interpolates or follows that data.
+
+Changing animation/detail levels, hiding an offscreen object, or switching the viewed map must not change gameplay outcomes. The mod API describes presentation capabilities without exposing Bevy render internals. Research and validation details are in Sections 13.3–13.9.
+
 ## 5. Mod system
 
 ### 5.1 Three extension layers
@@ -206,6 +219,16 @@ Record seed, parameters, generator/dependency versions, and relevant engine comp
 **Decided:** operate a default package registry, support independently hosted compatible registries, and allow direct package URLs. Registries provide discovery, metadata, and version listings; package bytes may be delivered by separate static hosting/CDNs. Players joining a server receive its exact locked package set automatically without manually configuring the originating registries.
 
 Publisher signing keys are distinct from player identity keys. Automated publishing must not require a developer's player private key. Package signatures and hashes do not by themselves guarantee trustworthy behavior; the runtime sandbox remains required. Registry API, namespace ownership/conflict handling, signature formats, publisher enrollment/rotation, and trust UX remain implementation choices.
+
+### 5.8 Compiled 3D asset pipeline
+
+**Baseline:** mods provide standard model/animation sources plus metadata describing clips/states, material slots, attachment points, bounds, and separate gameplay footprints. glTF is the preferred interchange candidate; exact supported features and compiled formats remain open. Package publishing/build tools produce validated runtime assets rather than depending on expensive ad hoc optimization during a match.
+
+The pipeline should support mesh optimization, levels of detail, texture compression, animation preparation, shared-resource deduplication, and machine-readable diagnostics. Preserve named turret pivots, weapon sockets, and other referenced nodes through optimization. Validate the compiled output against the pinned client importer, not only against the source format. An extension accepted by a glTF validator is not automatically supported by the chosen Bevy version.
+
+Record compiler/version/settings and source-content hashes so compiled assets can be cached and associated with exact locked packages. Keep gameplay data independent of cosmetic quality variants. Tooling should report mesh/material counts, skeleton sizes, clip counts, texture memory estimates, and unsupported features; numeric budgets and warning/rejection policies remain to be measured. Agents should receive actionable structured errors and create representative test scenes through the same public workflow as third-party mods.
+
+Candidate tools: [gltfpack](https://meshoptimizer.org/gltf/) for mesh/animation optimization and [Khronos glTF Validator](https://github.com/KhronosGroup/glTF-Validator) for format validation. Neither supplies the complete engine-specific asset pipeline.
 
 ## 6. Simulation and multiplayer
 
@@ -564,6 +587,86 @@ For small and medium matches use an initial allocation of **4 vCPUs and 8 GB RAM
 
 **Decided plan:** the user will grant a GCP service account so the implementing agent can set up and monitor VM tests. Credentials/access have not yet been supplied or verified in this discussion; no VM has been provisioned by this specification update. The implementation should use the granted project and permissions for reproducible deployment, load generation, telemetry, result collection, and test-resource cleanup. Record machine configuration and workload/package versions with results. Concrete cloud cost limits, VM lifetime, and provisioning parameters remain to be set when access is provided.
 
+### 13.3 Research status and evidence boundary
+
+The research recorded in this revision inspected published primary-source engineering articles, Bevy animation/instancing example code, Detour crowd header structures, and candidate-library documentation. No project benchmark, integration prototype, or full dependency audit was executed as part of this research. Published demonstrations establish techniques and reference implementations, not this engine's supported unit count or browser performance. Candidate repositories must be evaluated at pinned, mutually compatible versions before adoption.
+
+### 13.4 Large-scale rendering and animation
+
+**Baseline:** reuse meshes/materials, batch compatible objects, spatially organize render instances, and choose visual detail by projected size and visibility. A mod-controlled camera makes fixed-distance assumptions insufficient. Keep separate budgets for geometry, animation, shadows, transparent effects, and resource uploads.
+
+| Content | Recommended path to evaluate |
+| --- | --- |
+| Buildings | Shared static meshes, with animated moving parts where required |
+| Tanks and harvesters | Instanced geometry, independent turret/part transforms, suitable track/wheel material animation |
+| Mass infantry | Instancing with baked skeletal clips/bone palettes evaluated on the GPU |
+| Close-up or complex units | Flexible individual animation when required and affordable |
+| Distant units | Simplified meshes, reduced animation detail, optional mod-appropriate strategic icons |
+
+GPU skinning does not remove CPU animation-controller or transform-hierarchy work. [Bevy's Many Foxes example](https://bevy.org/examples/stress-tests/many-foxes/) shares model/animation assets while setting up individual animation players and transitions. It is a baseline to profile, not proof of mass-battle performance.
+
+For the mass-animation path, evaluate precomputed clip bone transforms stored in GPU-readable data, with per-instance clip/time/speed/blend state. [NVIDIA's animated-crowd implementation](https://developer.nvidia.com/gpugems/gpugems3/part-i-geometry/chapter-2-animated-crowd-rendering) documents animation textures, instancing, variation, and LOD. Its historical native benchmark numbers must not become browser promises. Bone-palette baking is distinct from baking every vertex of every frame; compare memory, blending, attachments, and procedural pose needs before choosing a format. Do not force all units onto one animation path.
+
+[Bevy's custom-instancing example](https://bevy.org/examples/shaders/custom-shader-instancing/) recommends built-in batching first and disables standard frustum culling because instance transforms are not represented by the base mesh bounds. A production implementation therefore needs correct spatial batch/per-instance bounds and visibility handling. Validate shadows, picking, attachments, animated bounds, and detail transitions alongside draw throughput. Copying a demonstration shader is not a complete crowd renderer.
+
+Effects must have bounded emission, lifetime, distance/detail, and simultaneous-instance costs. Cosmetic effects may be reduced under load without changing combat. [Hanabi](https://github.com/djeedai/bevy_hanabi) is a GPU-particle candidate whose documented WASM path requires WebGPU. WebGPU as a requirement versus an additional WebGL fallback remains **open**; a fallback would need a compatible effects path and its own testing. No minimum browser/GPU capability is selected by this revision.
+
+### 13.5 Simulation work reduction and visibility
+
+**Baseline:** optimize frequently accessed data layout and reduce unnecessary work before relying on threading. Use spatial indexes for bounded local queries; sleep inactive production systems with explicit wake-up conditions; schedule strategic decisions and other suitable work independently of the rendering cadence. Gameplay accounting and temporal semantics must remain correct when systems sleep or use different update rates. Prevent per-unit/per-item script callbacks from becoming the default high-volume execution model.
+
+[Factorio's optimization report](https://www.factorio.com/blog/post/fff-421) describes idle roboport wakeups and incrementally maintained radar coverage. These support evaluating event-driven inactivity and incremental visibility updates. Simple coverage counters do not by themselves implement terrain occlusion, stealth, or arbitrary mod sight rules; dirty-region invalidation must respect the actual visibility model.
+
+[Factorio's transport-group parallelization](https://www.factorio.com/blog/post/fff-364) demonstrates both independent-group opportunities and shared-state/wakeup complications. Parallel tasks must have explicit ownership and synchronization boundaries. Rendering visibility cannot decide whether authoritative factories, combat, or movement run.
+
+### 13.6 Navigation, steering, and terrain changes
+
+**Baseline:** separate long-range routing from local motion. Evaluate hierarchical region/portal routes, cached/shared paths or flow fields for appropriate group destinations, and bounded-neighbour local avoidance. Flow fields share route guidance; they do not solve formations, congestion, deadlocks, or unique orders automatically. Avoid all-pairs nearby-unit queries.
+
+[bevy_flowfield_tiles_plugin](https://github.com/BlondeBurrito/bevy_flowfield_tiles_plugin) is a Rust candidate with tiled cost/integration/flow fields, caching, and asynchronous route requests. Its documentation explicitly leaves steering to the game. Assess sparse residency, actor-radius classes, mutable terrain, cache growth, task integration, and compatibility before adoption; do not assume its full-world initialization strategy fits extremely large maps.
+
+[Recast/Detour](https://github.com/recastnavigation/recastnavigation) is an implementation reference and possible component, not a selected backend. The inspected [Detour crowd header](https://recastnav.com/DetourCrowd_8h_source.html) separates path corridors, proximity queries, local boundaries, neighbour lists, and steering parameters. Bounded local data structures are useful patterns, not evidence that its crowd controller handles our stress workload unchanged. Dynamic obstacle support must not be confused with arbitrary terrain deformation support.
+
+Queue path requests and cap per-tick work with explicit pending states. Version affected navigation regions after terrain edits; asynchronous results must be checked for staleness before use. Rebuild/invalidate locally, with defined temporary movement behavior while updates are pending. Bound route caches and invalidation work. These details must preserve valid movement rather than allowing units to traverse stale blocked terrain. Test shared destinations, unique destinations, repeated order changes, chokepoints, mixed footprints, and edits during movement.
+
+### 13.7 Compact replication and large-world residency
+
+**Baseline:** transmit permitted gameplay properties and meaningful state changes, not skeleton poses or individual cosmetic particles. Interpolate visual movement between snapshots; suppress unchanged data and prioritize updates within bandwidth budgets. Apply authorization/fog-of-war filtering before distance/detail filtering. Preserve offscreen owned-unit status, alerts, and other required information. Large battles visible to everyone remain the critical case where spatial interest offers little relief.
+
+[Planetary Annihilation's published architecture](https://www.forrestthewoods.com/blog/tech_of_planetary_annihilation_chrono_cam/) is a reference for authoritative multi-planet state and changed-property curves. [Lightyear's examined README](https://github.com/cBournhonesque/lightyear/blob/main/README.md) documents Replicon-based world replication, browser transport support, interpolation, customizable serialization, and bandwidth priorities. These facilities do not supply our mod schemas or visibility policy. Do not assume whole-world client prediction/rollback is needed for a large authoritative RTS.
+
+Illustrative bandwidth arithmetic, not a measured wire format: 5,000 units × 16 payload bytes × 10 updates/s = 800,000 bytes/s per receiving client before overhead. Measure actual encoded payloads, initial snapshots, resynchronization, and multi-client fan-out.
+
+Treat coordinate precision, storage residency, navigation residency, and simulation scheduling as separate problems. Use explicit map/chunk identifiers, chunked data, streamed presentation assets, and independently tracked active simulation work. Rendering one map need not retain all other maps' visual resources. Unviewed maps continue gameplay where required.
+
+[big_space](https://github.com/aevyrie/big_space) is a candidate for integer-grid/local-coordinate floating-origin rendering. It addresses large-coordinate precision, not automatic world streaming or economical simulation. Exact coordinate representation, chunk dimensions, streaming budgets, and loading behavior remain open. Avoid full-world allocation merely because coordinate ranges permit a huge world.
+
+### 13.8 Benchmark expansion and acceptance evidence
+
+Retain the agreed hosting workloads and allocation in Section 13.2. Add the following prototype scenarios; these are validation cases, not maximum mod limits or performance promises.
+
+| Scenario | Required evidence |
+| --- | --- |
+| 1,000 / 5,000 / 10,000 animated units, then larger stress cases | Separate animation/controller CPU, render preparation, GPU frame time, memory and draw counts |
+| Concentrated battle with shadows and effects | Worst-case visible cost, transparent overdraw and effect-budget behavior |
+| Mixed models/materials/animations from several packages | Batching and memory behavior with representative mod diversity |
+| Shared versus unique destinations; repeated commands; chokepoints | Path request latency, queue depth, movement/congestion outcomes and CPU cost |
+| Terrain edits while units move | Local rebuild cost, stale-result rejection and correct movement |
+| Idle and active factories/belts; multiple active maps | Wake-up correctness and simulation cost independent of the camera |
+| Eight clients viewing a large battle; joins/reconnects | Per-client/aggregate bandwidth, serialization/fan-out cost and snapshot spikes |
+| Map switching and distant coordinates | Streaming peaks, visual precision, bounded resident assets and continued offscreen gameplay |
+| Combined combat, industry, edits, scripts and networking | Interaction costs and correctness beyond isolated subsystem results |
+
+Use representative meshes, skeletons, textures, materials, effects, and camera views; a cube-only scene is insufficient. Record content hashes, dependency versions, browser/graphics backend, client CPU/GPU, server machine configuration, tick/update rates, and scenario parameters. Test a documented modest desktop/laptop client as well as a stronger GPU; exact hardware and frame-rate targets remain open.
+
+Measure server tick distribution including p95/p99 and spikes, client CPU/GPU frame times, memory peaks, download/streaming sizes, bandwidth, and hosting cost. Set concrete pass/fail thresholds before claiming supported capacity. A headless GCP run cannot validate browser rendering; browser crowd throughput cannot validate server simulation. No benchmark was run for this document update.
+
+### 13.9 Reuse and prototype selection gates
+
+Start from stock Bevy shared assets/batching and representative animated scenes, profile the CPU and GPU separately, then compare the baked/instanced path where it addresses demonstrated costs. Keep room for an RTS-specific renderer without committing to unnecessary custom infrastructure. Navigation, particles, floating-origin support, and replication candidates remain replaceable behind engine-owned interfaces.
+
+Before selecting dependencies, pin a mutually compatible stack; inspect required licenses/notices; verify WASM and headless applicability; and test the required behavior with our scenarios. Final animation format, crowd renderer, navigation backend, WebGPU/fallback policy, update cadence, numeric budgets, and client minimums remain engineering decisions. Sources above document techniques or inspected candidate behavior, not a complete code audit or an endorsement of untested capacity.
+
 ## 14. Proposed validation milestones
 
 These milestones organize implementation risk; they are not a committed delivery schedule.
@@ -582,6 +685,9 @@ These milestones organize implementation risk; they are not a committed delivery
 | M10 — Slots without spawn assumptions | Start with empty slots, late claim, block/reopen/close, disconnect/reconnect | Atomic ownership; no recycling; a test mod claims slots without spawning entities |
 | M11 — Spectator isolation | Many simulated viewers, late viewer, slow/failing relay | Checkpoint catch-up works; player-slot counts unchanged; simulation cost stays within export budget |
 | M12 — AI and worst-case scale | Tens of thousands of units, concentrated battles, high-rate AI commands | Measured CPU/memory/bandwidth; bounded work and fair technical admission under stress |
+| M13 — Compiled assets and animated crowds | Representative default/mod assets through validation, compilation, shared rendering and animation detail paths | Browser CPU/GPU timings, correct culling/shadows/attachments/picking, bounded effects, and reproducible assets; compare stock and specialized paths |
+
+Run the early rendering/navigation probes from Section 13.8 alongside foundation work; their position in this table does not defer performance validation until all other milestones are complete.
 
 Representative combined scenario: workers excavate an ore-bearing ridge; belts carry ore to a factory; inserters supply a turret; a lab unlocks a detector; an army uses the opened passage; underground power or water serves the production site. Excavation over a buried line triggers the selected exposure policy.
 
@@ -592,8 +698,9 @@ Additional proposed validation: locked transitive libraries and conflict diagnos
 | Topic | What must be decided | Why it matters |
 | --- | --- | --- |
 | Game scale | Initial workloads and 4-vCPU/8-GB test budget settled; acceptance thresholds, detailed scenario mixes, map dimensions and ultimate capacity remain open | Determines measurable performance claims |
-| Presentation | 3D and mod control are settled; finalize exposed camera/lighting API, terrain appearance and asset conventions | Determines asset pipeline and readability |
-| Platform matrix | Desktop browsers/keyboard/mouse first; mobile later settled. Exact browsers, minimum client hardware and secondary executable OS targets remain open | Defines compatibility and validation requirements |
+| Presentation | 3D/mod control and compiled-asset direction settled; select importer features, animation formats, crowd path, camera/lighting API and terrain appearance | Determines asset compatibility, readability and rendering cost |
+| Platform matrix | Desktop browsers/keyboard/mouse first; mobile later settled. WebGPU requirement versus WebGL fallback, exact browsers, minimum client hardware and executable OS targets remain open | Defines graphics capabilities and validation requirements |
+| Navigation and residency | Select routing/steering components, region invalidation, coordinate representation, sparse storage and streaming budgets | Large coordinate ranges alone do not establish scalable worlds |
 | Networking | Authoritative server is settled; select library, transport, schemas, update policies and dependency versions | Drives bandwidth, secrecy, hosting and reconnect implementation |
 | Scripts | Runtime, sandbox, budgets, native/WASM consistency | Defines mod ergonomics and safety/performance boundaries |
 | Terrain grid | Horizontal resolution, vertical steps, chunk size, slope rules | Determines edit precision, navigation, memory, visuals |
@@ -680,7 +787,7 @@ Creators may assign mod-provided bots to unclaimed lobby slots. Bot controller i
 
 ## 18. Next design step
 
-The core product decisions are sufficient to begin prototypes: identity/recovery, registry topology, desktop-first delivery, initial mod rules, administration defaults, bot architecture, and hosting benchmarks are settled. Select scripting and networking components through browser-first prototypes; specify benchmark acceptance thresholds and detailed workloads; implement and test public APIs against the first mod. GCP VM setup/monitoring can proceed when the promised service-account access and concrete test configuration are available. Terrain precision, serialization, scheduling, and budgets remain engineering selections to validate, not universal gameplay policies.
+The core product decisions are sufficient to begin prototypes: identity/recovery, registry topology, desktop-first delivery, initial mod rules, administration defaults, bot architecture, and hosting benchmarks are settled. The research-backed baseline now separates simulation/network/render data, introduces compiled assets, and specifies scalable animation, navigation, work reduction, and residency directions (Sections 4.4, 5.8 and 13.3–13.9). Build early browser crowd and navigation probes with representative content, compare stock and specialized paths, and test the combined workload. Select scripting/networking components and the browser graphics baseline through these prototypes; define measurable acceptance thresholds and implement the public APIs against the first mod. GCP VM setup/monitoring can proceed when the promised service-account access and concrete test configuration are available. Terrain precision, serialization, scheduling, dependency selection, and numeric budgets remain engineering selections to validate, not universal gameplay policies.
 
 Reference designs: [Blizzard's original StarCraft AI documentation](https://classic.battle.net/scc/faq/aiscripts.shtml), [StarCraft II authored build options](https://news.blizzard.com/en-gb/article/10053042/patch-2-0-4-now-live), and [OpenRA bot module documentation](https://docs.openra.net/en/release/traits/). OpenRA's modular approach is an architectural reference, not a decision to import its code or require its engine. The original C&C team/trigger approach informs squad missions; it is not assumed to describe every C&C title. Code reuse requires separate dependency/license evaluation.
 
@@ -693,9 +800,10 @@ Reference designs: [Blizzard's original StarCraft AI documentation](https://clas
 - **0.4:** accepted modular conventional opponent architecture, authored openings and reactive recovery, game knowledge supplied by mods, shared resource/unit coordination, and tactical state machines. Retained identity, profiles, knowledge APIs, difficulty, and other integration specifics as open or baseline proposals.
 
 - **0.5:** portable identity and user-key recovery; one controller per claimed slot; registries and separate publisher keys; desktop-first device scope; validated default-mod rules; room administration; initial small/medium/stress benchmarks and 4-vCPU/8-GB allocation; planned user-provided GCP service account for VM setup/monitoring.
+- **0.6:** incorporated researched asset compilation, scalable rendering/animation, simulation work reduction, hierarchical/shared navigation plus local steering, compact replication, coordinate/residency separation, candidate components and primary-source links. Expanded browser/server and combined-workload benchmarks; retained unselected libraries, graphics fallback policy and numeric targets as open. No prototype or benchmark results are claimed.
 
-- **0.6:** two package documents named: the package manifest (field list owned by 5.5) and the server lockfile (one entry per package, hashes live there only). The 6.5 workflow takes the server's lockfile instead of resolving versions; it checks execution context and verifies hashes before extraction. Side-by-side versions named as a cache property (D35). Client-side acquisition split between multiplayer and mod runtime (4.1). Open manifest formats listed in Section 15. The studio agents found the original defects in the first gate review of 6.5.
+- **0.7:** merge of the studio's 2026-10-26 revision onto 0.6: two package documents named, the package manifest (field list owned by 5.5) and the server lockfile (one entry per package, hashes live there only); the 6.5 workflow takes the server's lockfile instead of resolving versions, checks execution context, and verifies hashes before extraction; side-by-side versions named as a cache property (D35); client-side acquisition split between multiplayer and mod runtime (4.1); open manifest formats listed in Section 15; 6.4 names the server advertisement. The studio agents found the original defects in the first gate review of 6.5.
 
 ---
 
-Source of record: the visible project conversation through validation of identity/recovery, publishing, platforms, default-game rules, room administration, hosting benchmarks, and planned GCP service-account access. Version 0.6 preserves prior decisions except where explicitly superseded. Test budgets are not measured guarantees; cloud access and resources have not been provisioned by this update.
+Source of record: the project conversation and the user's request to incorporate the subsequent large-scale 3D/RTS research. Version 0.7 preserves prior decisions and records the research recommendations as a working baseline, with unresolved choices explicitly identified. Linked primary sources support techniques and candidate behavior; they do not establish this project's capacity. Test budgets are not measured guarantees; no benchmarks, cloud access verification, or resource provisioning were performed by this update.
