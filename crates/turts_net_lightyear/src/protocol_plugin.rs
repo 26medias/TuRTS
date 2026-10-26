@@ -23,8 +23,11 @@ impl Plugin for ProtocolPlugin {
             ..Default::default()
         })
         .add_direction(NetworkDirection::Bidirectional);
+        // Unordered, not sequenced: lightyear 0.31 sequenced channels keep only the newest
+        // unread message, so a burst of deltas loses all but one inside the library. The
+        // client's `base_tick` chain and resync guard against real loss (design 5).
         app.add_channel::<StateChannel>(ChannelSettings {
-            mode: ChannelMode::SequencedUnreliable,
+            mode: ChannelMode::UnorderedUnreliable,
             send_frequency: Duration::default(),
             ..Default::default()
         })

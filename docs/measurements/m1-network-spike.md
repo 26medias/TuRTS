@@ -103,7 +103,50 @@ Observed:
 This replaces the plan's "Cause NOT TRACED" for the P7 loss. Consequence for the design: a
 client that receives deltas in bursts loses deltas without network loss, and each loss is a
 chain break (design section 5). The resync path handles it, but the count of `ResyncRequest`
-grows with bursts. The spike gate must judge P5 with this cause known.
+grows with bursts. The spike gate changed the channel because of this (next section).
+
+## Spike gate change: `UnitDeltas` on an unordered unreliable channel
+
+Spike gate review (studio call): lightyear is kept. The `UnitDeltas` channel must not drop
+messages inside the library.
+
+Source check, `lightyear_transport-0.31.0/src/channel/receive.rs`, receive side of each mode:
+
+| Mode | Receive state | Drops inside the library |
+| --- | --- | --- |
+| `UnorderedUnreliable`, `UnorderedUnreliableWithAcks` | `UnreliableUnordered { ready: VecDeque }`; `prepare_receive` accepts every message; `read_message` pops in arrival order | no |
+| `SequencedUnreliable`, `SequencedReliable` | one `ready: Option`; a newer id replaces an unread older one; an older id is refused | yes |
+| `UnorderedReliable`, `OrderedReliable` | queue or map; retransmits | no, but reliable (not wanted for deltas) |
+
+Both unordered unreliable modes discard an incomplete fragment set 3 s after its last fragment
+arrived (`DISCARD_AFTER`, `receive.rs:51` and `:147`). A complete message is never dropped.
+
+Change: `ProtocolPlugin` registers `StateChannel` with `ChannelMode::UnorderedUnreliable`
+(`crates/turts_net_lightyear/src/protocol_plugin.rs`). `WithAcks` is not used, because nothing
+needs per-message acks. The client replica keeps its `base_tick` chain and resync (design 5)
+as the guard against real loss. Over WebSocket (TCP) the order is kept, and `deltas_in_order`
+stayed true in every run. `cargo test -p turts_net_lightyear --features client,server --test
+registers`: 2 passed.
+
+Runs after the change (idle machine, same commands):
+
+| Run | Units 1: deltas, lost, bytes per tick, overhead | Units 1,000: deltas, lost, bytes per tick, overhead |
+| --- | --- | --- |
+| P5 run 1 | 1197, 0, 126.4, 112.7 | 1197, 0, 10,388.7, 535.2 |
+| P5 run 2 | 1197, 0, 127.0, 113.3 | 1197, 0, 10,397.4, 543.9 |
+| P5 run 3 | 1197, 0, 127.0, 113.3 | 1197, 0, 10,388.1, 534.6 |
+
+Payload per tick is unchanged: 13.8 bytes (1 unit) and 9,853.5 bytes (1,000 units).
+
+P7 after the change: pass. Client stayed connected; deltas 395, first tick 4, last tick 399,
+so **1 lost delta** (113 before the change). Send-Q at mid-pause 552,867 bytes, peak 998,749
+bytes. Tick p99 362 us before the pause, 407 us in the pause (max 476 us), bound 1,000 us.
+RSS before 11,939,840, peak in the pause 11,939,840, after 11,956,224 bytes; rise 0. Delta
+payload produced in the pause 1,185,360 bytes. Relay bytes to client 4,122,871, to server
+36,181. Cause of the 1 lost delta: NOT TRACED. Candidate: a fragment set (a 1,000-unit delta
+is fragmented) that the pause cut in two, discarded after 3 s by `DISCARD_AFTER`.
+
+The P1 to P7 tables above this section are from the sequenced channel.
 
 ## Plants (each one reverted; the final run above is on the clean code)
 

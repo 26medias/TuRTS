@@ -6,5 +6,6 @@
 /// `Snapshot`, `MoveTo`, `CommandAck`, `CommandRejected` and `ResyncRequest`.
 pub struct ReliableChannel;
 
-/// Sequenced and unreliable, server to client. Carries `UnitDeltas`.
+/// Unordered and unreliable, server to client. Carries `UnitDeltas`. Every delta that arrives
+/// reaches the application; the client detects a gap with the `base_tick` chain.
 pub struct StateChannel;
