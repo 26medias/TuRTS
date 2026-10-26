@@ -139,6 +139,11 @@ session is the orchestrator. It picks the lenses per gate with these rules.
 Third-party skills, their caveats, and the deferred and rejected ones are listed in
 `docs/agents/skills.md`. Ten Bevy skills pin 0.19; re-check them when `Cargo.toml` pins a version.
 
+The studio keeps its work log, decisions, task board, knowledge, and the daily CEO report in a
+dedicated private Obsidian vault outside this repository (path in the orchestrator's memory).
+Log every decision and every day of work there; write the daily report at the end of each
+working session.
+
 Roster check: `bash docs/agents/check.sh` (format, budget, standing-rules identity) and
 `bash docs/agents/check_fixtures.sh` (proves the check can go red). Run both before you commit
 an agent file. A session that started without `.claude/agents/` does not load the directory;

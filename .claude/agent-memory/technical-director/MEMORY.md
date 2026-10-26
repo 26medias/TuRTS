@@ -1,2 +1,3 @@
 - [rtk diff false identical](feedback_rtk_diff.md) — use `rtk proxy diff`/`grep` for runs that decide a finding
 - [Spec register layout](project_spec_layout.md) — verified line anchors in the spec v0.5 (register, 4.1, 6.5, invariants, 15)
+- [Bevy 0.20 and CI facts](project_bevy020_ci.md) — verified 0.20 schedule names; ci.yml:27 wasm32 check needs --exclude for the server crate
