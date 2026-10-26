@@ -1,0 +1,189 @@
+//! Command validation (design 7, T4 core; Review Focus 4).
+
+use turts_mod_api::{
+    Footprint, MapDef, MapSize, PackageId, Placement, UnitDef, UnitRegistry, WorldPos,
+};
+use turts_sim::{
+    Command, CommandKind, CommandQueue, CommandResult, CommandResults, MoveTarget, RejectReason,
+    SlotId, UnitTypes, Vec2, headless_app, load_map, snapshot,
+};
+
+const ORIGIN: &str = "fixture_pkg";
+
+/// Two units owned by slot 0 at (8, 8) and (20, 20), on a 64 by 64 map.
+fn app_with_two_units() -> bevy_app::App {
+    let mut app = headless_app(20);
+    let origin = PackageId(ORIGIN.to_string());
+    let def = UnitDef {
+        id: "walker".to_string(),
+        name: "Walker".to_string(),
+        speed: 3.0,
+        footprint: Footprint::Circle { radius: 0.5 },
+    };
+    app.world_mut()
+        .resource_mut::<UnitTypes>()
+        .register_unit_type(&origin, def)
+        .unwrap();
+    let place = |x: f32, y: f32| Placement {
+        unit: format!("{ORIGIN}:walker"),
+        owner_slot: 0,
+        pos: WorldPos { x, y },
+    };
+    let map = MapDef {
+        id: "field".to_string(),
+        size: MapSize { x: 64.0, y: 64.0 },
+        placements: vec![place(8.0, 8.0), place(20.0, 20.0)],
+    };
+    load_map(app.world_mut(), &origin, &map).unwrap();
+    app
+}
+
+fn send(app: &mut bevy_app::App, slot: u8, seq: u32, unit_ids: Vec<u32>, target: Vec2) {
+    app.world_mut()
+        .resource_mut::<CommandQueue>()
+        .0
+        .push_back(Command {
+            slot: SlotId(slot),
+            seq,
+            kind: CommandKind::MoveTo { unit_ids, target },
+        });
+}
+
+fn results(app: &bevy_app::App) -> Vec<CommandResult> {
+    app.world().resource::<CommandResults>().0.clone()
+}
+
+fn moving_count(app: &mut bevy_app::App) -> usize {
+    app.world_mut()
+        .query::<&MoveTarget>()
+        .iter(app.world())
+        .count()
+}
+
+#[test]
+fn validate_move_to_rejects_malformed_lists() {
+    let mut app = app_with_two_units();
+    let target = Vec2::new(30.0, 30.0);
+    send(&mut app, 0, 1, vec![], target);
+    send(&mut app, 0, 2, (1..=257).collect(), target);
+    send(&mut app, 0, 3, vec![1, 1], target);
+    send(&mut app, 0, 4, vec![1, 99], target);
+    app.update();
+    let got: Vec<(u32, Result<(), RejectReason>)> =
+        results(&app).iter().map(|r| (r.seq, r.outcome)).collect();
+    assert_eq!(
+        got,
+        vec![
+            (1, Err(RejectReason::EmptyCommand)),
+            (2, Err(RejectReason::TooManyUnits)),
+            (3, Err(RejectReason::DuplicateUnit)),
+            (4, Err(RejectReason::UnknownUnit)),
+        ]
+    );
+    // A rejected command changes nothing.
+    assert_eq!(moving_count(&mut app), 0);
+    let before = snapshot(app.world_mut());
+    app.update();
+    assert_eq!(snapshot(app.world_mut()), before);
+}
+
+#[test]
+fn exactly_256_units_is_not_too_many() {
+    let mut app = app_with_two_units();
+    // 256 ids pass the length check; the first unknown id then fails the existence check.
+    send(&mut app, 0, 1, (1..=256).collect(), Vec2::new(30.0, 30.0));
+    app.update();
+    assert_eq!(results(&app)[0].outcome, Err(RejectReason::UnknownUnit));
+}
+
+#[test]
+fn valid_move_to_sets_targets_on_every_listed_unit() {
+    let mut app = app_with_two_units();
+    send(&mut app, 0, 7, vec![2, 1], Vec2::new(30.0, 30.0));
+    app.update();
+    let r = results(&app);
+    assert_eq!(r.len(), 1);
+    assert_eq!((r[0].slot, r[0].seq, r[0].outcome), (SlotId(0), 7, Ok(())));
+    assert_eq!(moving_count(&mut app), 2);
+}
+
+#[test]
+fn move_to_for_unowned_unit_is_not_owner() {
+    let mut app = app_with_two_units();
+    let before = snapshot(app.world_mut());
+    send(&mut app, 1, 1, vec![1], Vec2::new(30.0, 30.0));
+    for _ in 0..3 {
+        app.update();
+    }
+    // The result is only kept for the tick that drained it, so read it after one update.
+    let mut app2 = app_with_two_units();
+    send(&mut app2, 1, 1, vec![1], Vec2::new(30.0, 30.0));
+    app2.update();
+    assert_eq!(results(&app2)[0].outcome, Err(RejectReason::NotOwner));
+    assert_eq!(snapshot(app.world_mut()), before, "position is unchanged");
+    assert_eq!(moving_count(&mut app), 0);
+}
+
+#[test]
+fn mixed_ownership_in_one_command_is_not_owner_and_moves_nothing() {
+    // Unit 1 and unit 2 are both owned by slot 0. Slot 1 lists both.
+    let mut app = app_with_two_units();
+    send(&mut app, 1, 1, vec![1, 2], Vec2::new(30.0, 30.0));
+    app.update();
+    assert_eq!(results(&app)[0].outcome, Err(RejectReason::NotOwner));
+    assert_eq!(moving_count(&mut app), 0);
+}
+
+#[test]
+fn move_to_nan_and_outside_map_rejected() {
+    let mut app = app_with_two_units();
+    send(&mut app, 0, 1, vec![1], Vec2::new(f32::NAN, 8.0));
+    send(&mut app, 0, 2, vec![1], Vec2::new(8.0, f32::INFINITY));
+    send(&mut app, 0, 3, vec![1], Vec2::new(65.0, 8.0));
+    send(&mut app, 0, 4, vec![1], Vec2::new(-0.5, 8.0));
+    send(&mut app, 0, 5, vec![1], Vec2::new(64.0, 64.0));
+    send(&mut app, 0, 6, vec![1], Vec2::new(0.0, 0.0));
+    app.update();
+    let got: Vec<Result<(), RejectReason>> = results(&app).iter().map(|r| r.outcome).collect();
+    assert_eq!(
+        got,
+        vec![
+            Err(RejectReason::TargetNotFinite),
+            Err(RejectReason::TargetNotFinite),
+            Err(RejectReason::TargetOutsideMap),
+            Err(RejectReason::TargetOutsideMap),
+            Ok(()),
+            Ok(()),
+        ]
+    );
+}
+
+#[test]
+fn results_cleared_each_tick() {
+    let mut app = app_with_two_units();
+    send(&mut app, 0, 1, vec![1], Vec2::new(30.0, 30.0));
+    app.update();
+    assert_eq!(results(&app).len(), 1);
+    app.update();
+    assert_eq!(
+        results(&app).len(),
+        0,
+        "the next tick drains nothing and clears"
+    );
+}
+
+#[test]
+fn reject_reason_strings_match_the_wire_names() {
+    let all = [
+        (RejectReason::EmptyCommand, "empty_command"),
+        (RejectReason::TooManyUnits, "too_many_units"),
+        (RejectReason::DuplicateUnit, "duplicate_unit"),
+        (RejectReason::UnknownUnit, "unknown_unit"),
+        (RejectReason::NotOwner, "not_owner"),
+        (RejectReason::TargetNotFinite, "target_not_finite"),
+        (RejectReason::TargetOutsideMap, "target_outside_map"),
+    ];
+    for (reason, text) in all {
+        assert_eq!(reason.as_str(), text);
+    }
+}
