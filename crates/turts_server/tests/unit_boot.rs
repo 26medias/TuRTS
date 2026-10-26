@@ -10,9 +10,13 @@ mod config;
 #[path = "../src/boot.rs"]
 mod boot;
 
-use std::collections::BTreeMap;
+#[allow(dead_code)]
+#[path = "../src/synthetic.rs"]
+mod synthetic;
+
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use bevy::app::App;
@@ -22,7 +26,9 @@ use turts_mod_runtime::hash::sha256_hex;
 use turts_mod_runtime::lock::read_lockfile;
 use turts_mod_runtime::pack::pack_files;
 use turts_net_protocol::{Advertisement, NET_PROTOCOL_VERSION};
-use turts_sim::{UnitTypes, Vec2, gameplay_entity_count, headless_app, snapshot};
+use turts_sim::{
+    MapBounds, MoveTarget, UnitId, UnitTypes, Vec2, gameplay_entity_count, headless_app, snapshot,
+};
 
 const PUBLIC_URL: &str = "http://127.0.0.1:7000";
 
@@ -129,6 +135,137 @@ fn boot_fills_file_on_registration_error() {
     assert_eq!(error.file.as_deref(), Some("units/scout.ron"));
     assert_eq!(error.field_path, "speed");
     assert_eq!(error.package, "acme");
+}
+
+/// The options of a run with `count` synthetic units and nothing else.
+fn synthetic_cli(count: u32) -> config::Cli {
+    config::Cli {
+        config: PathBuf::from("server.ron"),
+        tick_log: None,
+        stats: None,
+        synthetic_units: count,
+        run_ticks: None,
+    }
+}
+
+/// The `MoveTarget` of every unit that has one, by unit id.
+fn move_targets(app: &mut App) -> BTreeMap<u32, Vec2> {
+    let mut query = app.world_mut().query::<(&UnitId, &MoveTarget)>();
+    query
+        .iter(app.world())
+        .map(|(id, target)| (id.0, target.0))
+        .collect()
+}
+
+#[test]
+fn synthetic_units_use_the_registered_type() {
+    let (mut app, _, _) = boot_package("synthetic_registered_type", "acme");
+    synthetic::spawn(app.world_mut(), 50).unwrap();
+    assert_eq!(gameplay_entity_count(app.world_mut()), 51);
+    let size = app.world().resource::<MapBounds>().size;
+    let units = snapshot(app.world_mut());
+    assert_eq!(units.len(), 51);
+    for unit in &units {
+        assert_eq!(unit.content_id, "acme:scout", "unit {}", unit.unit_id);
+        assert_eq!(unit.owner_slot, 0, "unit {}", unit.unit_id);
+        assert!(
+            (0.0..=size.x).contains(&unit.pos.x) && (0.0..=size.y).contains(&unit.pos.y),
+            "unit {} at {:?} is outside the map {size:?}",
+            unit.unit_id,
+            unit.pos
+        );
+    }
+    let ids: BTreeSet<u32> = units.iter().map(|unit| unit.unit_id).collect();
+    assert_eq!(ids.len(), 51, "unit ids continue after the map's unit");
+    // The map's own unit keeps its place and gets no target; each synthetic unit has one.
+    assert_eq!(units[0].pos, Vec2::new(4.0, 4.0));
+    let targets = move_targets(&mut app);
+    assert_eq!(targets.len(), 50);
+    assert!(!targets.contains_key(&units[0].unit_id));
+}
+
+#[test]
+fn synthetic_units_get_a_new_target_every_40_ticks() {
+    let (mut app, _, _) = boot_package("synthetic_retarget", "acme");
+    synthetic::install(&mut app, &synthetic_cli(50));
+    assert_eq!(gameplay_entity_count(app.world_mut()), 51);
+    let size = app.world().resource::<MapBounds>().size;
+    // The model: a unit takes the point of `target_point(tick - 1, id)` in tick `tick` when
+    // `(tick - 1 + id) % 40 == 0`, and keeps its target otherwise. A unit that arrives loses its
+    // target, so a unit may lack one; a unit never has a target that the model does not give.
+    let mut expected = move_targets(&mut app);
+    assert_eq!(
+        expected.len(),
+        50,
+        "each synthetic unit starts with a target"
+    );
+    let before = snapshot(app.world_mut());
+    let mut retargets: BTreeMap<u32, u32> = BTreeMap::new();
+    for tick in 1..=82u32 {
+        app.update();
+        for (&id, target) in expected.iter_mut() {
+            if (u64::from(tick - 1) + u64::from(id)) % 40 == 0 {
+                *target = synthetic::target_point(tick - 1, id, size);
+                *retargets.entry(id).or_default() += 1;
+            }
+        }
+        let actual = move_targets(&mut app);
+        for (id, target) in &actual {
+            assert_eq!(*target, expected[id], "tick {tick}: unit {id}");
+        }
+        for id in expected.keys() {
+            if (u64::from(tick - 1) + u64::from(*id)) % 40 == 0 {
+                assert!(
+                    actual.contains_key(id),
+                    "tick {tick}: unit {id} has no new target"
+                );
+            }
+        }
+    }
+    assert_eq!(retargets.len(), 50, "every unit was retargeted");
+    assert!(retargets.values().all(|&times| times >= 2), "{retargets:?}");
+    let after = snapshot(app.world_mut());
+    assert_eq!(
+        after[0].pos, before[0].pos,
+        "the map's own unit stands still"
+    );
+    assert!(!move_targets(&mut app).contains_key(&after[0].unit_id));
+    let moved = before
+        .iter()
+        .zip(&after)
+        .filter(|(from, to)| from.pos != to.pos)
+        .count();
+    assert_eq!(moved, 50, "every synthetic unit moved");
+}
+
+#[test]
+fn synthetic_spawn_refuses_a_world_without_unit_types() {
+    let mut app = headless_app(20);
+    let error = synthetic::spawn(app.world_mut(), 5).unwrap_err();
+    assert!(error.contains("unit type"), "{error}");
+    assert_eq!(gameplay_entity_count(app.world_mut()), 0);
+}
+
+#[test]
+fn synthetic_targets_depend_on_tick_and_unit_and_stay_inside_the_map() {
+    let size = Vec2::new(48.0, 32.0);
+    let mut seen = BTreeSet::new();
+    for tick in 0..200 {
+        for unit_id in 1..200 {
+            let point = synthetic::target_point(tick, unit_id, size);
+            assert!(
+                (0.0..=size.x).contains(&point.x) && (0.0..=size.y).contains(&point.y),
+                "tick {tick} unit {unit_id}: {point:?}"
+            );
+            assert_eq!(point, synthetic::target_point(tick, unit_id, size));
+            seen.insert((point.x.to_bits(), point.y.to_bits()));
+        }
+    }
+    assert_eq!(
+        seen.len(),
+        200 * 199,
+        "every (tick, unit) pair has its own point"
+    );
 }
 
 #[test]
