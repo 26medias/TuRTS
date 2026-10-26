@@ -6,3 +6,4 @@ pub mod lock;
 pub mod manifest;
 pub mod pack;
 pub mod parse;
+pub mod visuals;

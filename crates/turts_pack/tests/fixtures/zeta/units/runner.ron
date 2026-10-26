@@ -1,0 +1,1 @@
+(id: "runner", name: "Runner", speed: 8.0, footprint: Circle(radius: 0.3))

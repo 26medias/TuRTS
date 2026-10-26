@@ -1,0 +1,15 @@
+(
+    id: "zeta",
+    version: "0.1.0",
+    kind: Game,
+    engine_api: "^0.1",
+    dependencies: {},
+    exports: (
+        units: ["units/runner.ron", "units/crawler.ron"],
+        maps: ["maps/arena.ron"],
+        visuals: ["visuals/runner.ron", "visuals/crawler.ron"],
+    ),
+    context: Shared,
+    capabilities: [],
+    license: "LicenseRef-TBD",
+)

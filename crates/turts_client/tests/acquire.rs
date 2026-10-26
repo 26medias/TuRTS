@@ -136,7 +136,11 @@ fn build_acquired_requires_exactly_one_visual_per_unit() {
     // The visual file is not exported: the unit has no visual.
     let no_visual = acme_with_manifest_edit(r#"visuals: ["visuals/scout.ron"]"#, "visuals: []");
     let error = build_acquired(&[parse(&no_visual)], lockfile_hash.clone()).unwrap_err();
-    assert!(error.contains("unit `acme:scout` has 0 visuals"), "{error}");
+    assert!(error.contains("unit `acme:scout` has no visual"), "{error}");
+    assert!(
+        error.starts_with("acme/manifest.ron: exports.visuals: "),
+        "{error}"
+    );
 
     // A second visual file for the same unit: the unit has two visuals.
     let mut two_visuals = acme_with_manifest_edit(
@@ -146,7 +150,48 @@ fn build_acquired_requires_exactly_one_visual_per_unit() {
     let first = two_visuals["visuals/scout.ron"].clone();
     two_visuals.insert("visuals/scout_again.ron".to_string(), first);
     let error = build_acquired(&[parse(&two_visuals)], lockfile_hash).unwrap_err();
-    assert!(error.contains("unit `acme:scout` has 2 visuals"), "{error}");
+    assert!(
+        error.starts_with("acme/visuals/scout_again.ron: unit: "),
+        "{error}"
+    );
+    assert!(error.contains("`acme:scout`"), "{error}");
+}
+
+#[test]
+fn build_acquired_refuses_a_visual_of_an_unknown_unit() {
+    let lockfile_hash = sha256_hex(b"lockfile");
+    // A second visual file whose unit no unit file defines. The real unit keeps its visual.
+    let mut orphan = acme_with_manifest_edit(
+        r#"visuals: ["visuals/scout.ron"]"#,
+        r#"visuals: ["visuals/scout.ron", "visuals/ghost.ron"]"#,
+    );
+    orphan.insert(
+        "visuals/ghost.ron".to_string(),
+        b"(unit: \"acme:ghost\", shape: Capsule(radius: 0.3, height: 1.0))".to_vec(),
+    );
+    let error = build_acquired(&[parse(&orphan)], lockfile_hash.clone()).unwrap_err();
+    assert!(
+        error.starts_with("acme/visuals/ghost.ron: unit: "),
+        "{error}"
+    );
+    assert!(error.contains("`acme:ghost`"), "{error}");
+    // The message lists the unit that the package does define.
+    assert!(error.contains("(allowed: acme:scout)"), "{error}");
+
+    // A typo in the unit of the only visual: the visual is an orphan, and the message says so.
+    let mut typo = read_files(&acme_dir());
+    let text = String::from_utf8(typo["visuals/scout.ron"].clone()).unwrap();
+    assert!(text.contains("acme:scout"));
+    typo.insert(
+        "visuals/scout.ron".to_string(),
+        text.replace("acme:scout", "acme:scoot").into_bytes(),
+    );
+    let error = build_acquired(&[parse(&typo)], lockfile_hash).unwrap_err();
+    assert!(
+        error.starts_with("acme/visuals/scout.ron: unit: "),
+        "{error}"
+    );
+    assert!(error.contains("`acme:scoot`"), "{error}");
 }
 
 #[test]

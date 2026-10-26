@@ -1,9 +1,8 @@
-//! Reproducible packing and the `turts-pack` binary.
+//! Reproducible packing. The `turts-pack` binary is tested in the `turts_pack` crate.
 
 mod common;
 
 use std::fs;
-use std::process::Command;
 
 use common::{copy_dir, fresh_dir, package_dir, read_files};
 use turts_mod_runtime::archive::PackageArchive;
@@ -68,39 +67,4 @@ fn pack_dir_reports_a_missing_directory() {
     let dir = fresh_dir("pack_missing").join("nope");
     let error = pack_dir(&dir).unwrap_err();
     assert_eq!(error.field_path, "pack");
-}
-
-#[test]
-fn pack_cli_prints_hash() {
-    let work = fresh_dir("pack_cli_prints_hash");
-    let dir = work.join("acme");
-    copy_dir(&package_dir("acme"), &dir);
-    let output = Command::new(env!("CARGO_BIN_EXE_turts-pack"))
-        .arg(&dir)
-        .output()
-        .unwrap();
-    assert_eq!(output.status.code(), Some(0), "{output:?}");
-    let stdout = String::from_utf8(output.stdout).unwrap();
-    let tokens: Vec<&str> = stdout.split_whitespace().collect();
-    assert_eq!(tokens.len(), 2, "{stdout:?}");
-    let hash = tokens[1];
-    assert!(hash.starts_with("sha256:"), "{hash}");
-    assert_eq!(hash.len(), 71, "{hash}");
-    // The printed file is `<dir name>.tar` next to the directory, and the hash is its hash.
-    let tar = work.join("acme.tar");
-    assert_eq!(std::path::Path::new(tokens[0]), tar.as_path());
-    assert_eq!(sha256_hex(&fs::read(&tar).unwrap()), hash);
-}
-
-#[test]
-fn pack_cli_exits_2_with_the_error_on_stderr() {
-    let missing = fresh_dir("pack_cli_error").join("nope");
-    let output = Command::new(env!("CARGO_BIN_EXE_turts-pack"))
-        .arg(&missing)
-        .output()
-        .unwrap();
-    assert_eq!(output.status.code(), Some(2), "{output:?}");
-    assert!(output.stdout.is_empty());
-    let stderr = String::from_utf8(output.stderr).unwrap();
-    assert!(stderr.contains("pack"), "{stderr:?}");
 }

@@ -9,6 +9,7 @@ publish.workspace = true
 turts_sim = { path = "../turts_sim" }
 turts_mod_runtime = { path = "../turts_mod_runtime" }
 turts_mod_api = { path = "../turts_mod_api" }
+turts_pack = { path = "../turts_pack" }
 turts_net_protocol = { path = "../turts_net_protocol" }
 turts_net_lightyear = { path = "../turts_net_lightyear", features = ["server"] }
 bevy = { workspace = true }

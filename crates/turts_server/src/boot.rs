@@ -1,15 +1,16 @@
 //! Boot: load the package, build the world.
 //!
-//! The server reads a package only through `turts_mod_runtime` and registers it only through
-//! `UnitRegistry` and `load_map`. The server never reads the visuals of a package.
+//! The server reads a package only through `turts_mod_runtime` and loads it only through
+//! `turts_pack::load_package` (`UnitRegistry` and `load_map` inside). `turts-pack` runs the
+//! same call, so a package that it packs is a package that boots. The server never reads the
+//! visuals of a package.
 
 use bevy::ecs::world::World;
-use turts_mod_api::{ENGINE_API_VERSION, Lockfile, ModError, UnitRegistry};
-use turts_mod_runtime::archive::{MANIFEST_PATH, PackageArchive};
+use turts_mod_api::{ENGINE_API_VERSION, Lockfile, ModError};
+use turts_mod_runtime::archive::PackageArchive;
 use turts_mod_runtime::hash::sha256_hex;
 use turts_mod_runtime::lock::write_lockfile;
 use turts_net_protocol::{Advertisement, NET_PROTOCOL_VERSION};
-use turts_sim::{UnitTypes, load_map};
 
 use crate::config::HostConfig;
 
@@ -34,26 +35,7 @@ pub struct Booted {
 /// advertisement. An error in a file of the package carries that file in `ModError::file`.
 pub fn boot(world: &mut World, cfg: &HostConfig, archive_bytes: &[u8]) -> Result<Booted, ModError> {
     let archive = PackageArchive::parse(archive_bytes)?;
-    let id = archive.id();
-    for (file, def) in archive.units()? {
-        world
-            .resource_mut::<UnitTypes>()
-            .register_unit_type(&id, def)
-            .map_err(|error| error.with_file(&file))?;
-    }
-    let maps = archive.maps()?;
-    let [(file, map)] = maps.as_slice() else {
-        return Err(ModError::new(
-            &id.0,
-            "exports.maps",
-            format!(
-                "a package exports exactly one map at M1, found {}",
-                maps.len()
-            ),
-        )
-        .with_file(MANIFEST_PATH));
-    };
-    load_map(world, &id, map).map_err(|error| error.with_file(file))?;
+    turts_pack::load_package(world, &archive)?;
 
     let public_url = cfg.public_url.trim_end_matches('/');
     // M1 placeholder; format open (spec 15): the archive is a ustar file named <id>-<version>.tar.

@@ -10,6 +10,7 @@ use turts_mod_api::{ContentId, ENGINE_API_VERSION, ExecutionContext, LockEntry, 
 use turts_mod_runtime::archive::PackageArchive;
 use turts_mod_runtime::hash::verify_hash;
 use turts_mod_runtime::lock::read_lockfile;
+use turts_mod_runtime::visuals::visuals_by_unit;
 use turts_net_protocol::{Advertisement, NET_PROTOCOL_VERSION};
 
 /// What the client keeps after it has accepted the server's packages.
@@ -77,36 +78,24 @@ pub fn accept_package(bytes: &[u8], entry: &LockEntry) -> Result<PackageArchive,
 }
 
 /// Build what the client keeps from the accepted packages. Every unit has exactly one visual,
-/// else this is an error (design 4.4). The map is the first map of the first package that has
-/// one.
+/// and every visual names a defined unit, else this is an error that names the file and the
+/// field (design 4.4; `turts_mod_runtime::visuals::visuals_by_unit`). The map is the first map
+/// of the first package that has one.
 pub fn build_acquired(
     archives: &[PackageArchive],
     lockfile_hash: String,
 ) -> Result<Acquired, String> {
+    let visuals = visuals_by_unit(archives).map_err(|error| error.to_string())?;
     let mut unit_names = HashMap::new();
-    let mut visual_counts: HashMap<String, u32> = HashMap::new();
-    let mut visuals = HashMap::new();
     let mut map_size = None;
     for archive in archives {
         let package = archive.id();
         for (_, unit) in archive.units().map_err(|error| error.to_string())? {
             unit_names.insert(ContentId::new(&package, &unit.id).to_string(), unit.name);
         }
-        for (_, visual) in archive.visuals().map_err(|error| error.to_string())? {
-            *visual_counts.entry(visual.unit.clone()).or_default() += 1;
-            visuals.insert(visual.unit, visual.shape);
-        }
         if map_size.is_none() {
             let maps = archive.maps().map_err(|error| error.to_string())?;
             map_size = maps.first().map(|(_, map)| (map.size.x, map.size.y));
-        }
-    }
-    let mut ids: Vec<&String> = unit_names.keys().collect();
-    ids.sort();
-    for id in ids {
-        let count = visual_counts.get(id).copied().unwrap_or(0);
-        if count != 1 {
-            return Err(format!("unit `{id}` has {count} visuals"));
         }
     }
     let map_size = map_size.ok_or_else(|| "the packages have no map".to_string())?;

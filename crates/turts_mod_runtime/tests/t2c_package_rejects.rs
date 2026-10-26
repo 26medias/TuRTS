@@ -255,3 +255,46 @@ fn t2c_malformed_ron_names_no_type() {
         assert_no_type_names(&error);
     }
 }
+
+/// What a modder reads: an unknown field and an unknown variant both list the names that the
+/// file accepts, and the file name appears once (M1 verify, B4).
+#[test]
+fn t2c_unknown_names_print_the_allowed_names_and_the_file_once() {
+    let archive = PackageArchive::parse(&acme_archive_with(
+        "units/scout.ron",
+        "speed: 6.0",
+        "sped: 6.0",
+    ))
+    .unwrap();
+    let text = archive.units().unwrap_err().to_string();
+    assert_eq!(
+        text,
+        "acme/units/scout.ron: unknown field `sped` at line 1 column 30 \
+         (allowed: id, name, speed, footprint)"
+    );
+    assert_eq!(text.matches("units/scout.ron").count(), 1, "{text}");
+
+    let archive = PackageArchive::parse(&acme_archive_with(
+        "units/scout.ron",
+        "Circle(radius: 0.6)",
+        "Square(side: 0.6)",
+    ))
+    .unwrap();
+    let text = archive.units().unwrap_err().to_string();
+    assert!(text.contains("unknown variant `Square`"), "{text}");
+    assert!(text.ends_with("(allowed: Circle)"), "{text}");
+
+    // The manifest is parsed before the package id is known: no empty package, one file.
+    let error = PackageArchive::parse(&acme_archive_with(
+        "manifest.ron",
+        "    id: \"acme\",",
+        "    hash: \"sha256:00\",\n    id: \"acme\",",
+    ))
+    .unwrap_err()
+    .to_string();
+    assert!(
+        error.starts_with("manifest.ron: unknown field `hash`"),
+        "{error}"
+    );
+    assert!(error.contains("(allowed: id, version, "), "{error}");
+}

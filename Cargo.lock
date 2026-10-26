@@ -8647,6 +8647,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "turts_pack"
+version = "0.1.0"
+dependencies = [
+ "bevy_ecs",
+ "turts_mod_api",
+ "turts_mod_runtime",
+ "turts_sim",
+]
+
+[[package]]
 name = "turts_server"
 version = "0.1.0"
 dependencies = [
@@ -8663,6 +8673,7 @@ dependencies = [
  "turts_mod_runtime",
  "turts_net_lightyear",
  "turts_net_protocol",
+ "turts_pack",
  "turts_sim",
  "ureq",
 ]

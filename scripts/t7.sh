@@ -27,7 +27,7 @@ rm -rf "$OUT"
 mkdir -p "$OUT/pack"
 # `turts-pack` writes `<dir>.tar` next to the directory, so pack a copy: `mods/` stays clean.
 cp -r mods/base "$OUT/pack/base"
-cargo run --release --quiet -p turts_mod_runtime --bin turts-pack -- "$OUT/pack/base"
+cargo run --release --quiet -p turts_pack --bin turts-pack -- "$OUT/pack/base"
 
 read -r HTTP_PORT WS_PORT < <(python3 - <<'EOF'
 import socket
