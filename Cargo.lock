@@ -8567,11 +8567,11 @@ dependencies = [
 
 [[package]]
 name = "turts_checks"
-version = "0.1.0"
+version = "0.2.0"
 
 [[package]]
 name = "turts_client"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "bevy",
  "gloo-net",
@@ -8589,7 +8589,7 @@ dependencies = [
 
 [[package]]
 name = "turts_client_web"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "bevy",
  "js-sys",
@@ -8602,7 +8602,7 @@ dependencies = [
 
 [[package]]
 name = "turts_mod_api"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "ron",
  "serde",
@@ -8611,7 +8611,7 @@ dependencies = [
 
 [[package]]
 name = "turts_mod_runtime"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "ron",
  "semver",
@@ -8624,7 +8624,7 @@ dependencies = [
 
 [[package]]
 name = "turts_net_lightyear"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "bevy",
  "bevy_app",
@@ -8638,7 +8638,7 @@ dependencies = [
 
 [[package]]
 name = "turts_net_protocol"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "postcard",
  "serde",
@@ -8648,8 +8648,9 @@ dependencies = [
 
 [[package]]
 name = "turts_pack"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
+ "bevy_app",
  "bevy_ecs",
  "turts_mod_api",
  "turts_mod_runtime",
@@ -8658,7 +8659,7 @@ dependencies = [
 
 [[package]]
 name = "turts_server"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "axum",
  "bevy",
@@ -8680,12 +8681,13 @@ dependencies = [
 
 [[package]]
 name = "turts_sim"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "bevy_app",
  "bevy_ecs",
  "bevy_math",
  "bevy_time",
+ "serde",
  "turts_mod_api",
 ]
 

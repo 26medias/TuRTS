@@ -4,7 +4,7 @@ members = ["crates/*"]
 exclude = ["tests/boundary-fixture", "tests/spike-web", "vendor/aeronet_websocket"]
 
 [workspace.package]
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 license = "LicenseRef-TBD"
 publish = false

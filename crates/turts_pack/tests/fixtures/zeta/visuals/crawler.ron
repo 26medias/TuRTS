@@ -1,1 +1,1 @@
-(unit: "zeta:crawler", shape: Cuboid(x: 4.0, y: 1.5, z: 4.0))
+(target: Unit("zeta:crawler"), shape: Cuboid(x: 4.0, y: 1.5, z: 4.0))

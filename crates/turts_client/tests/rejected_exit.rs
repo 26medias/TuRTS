@@ -256,7 +256,7 @@ fn a_package_with_a_bad_visual_ends_the_client_with_the_file_and_the_field() {
     files.insert("manifest.ron".to_string(), edited.into_bytes());
     files.insert(
         "visuals/ghost.ron".to_string(),
-        b"(unit: \"acme:ghost\", shape: Capsule(radius: 0.3, height: 1.0))".to_vec(),
+        b"(target: Unit(\"acme:ghost\"), shape: Capsule(radius: 0.3, height: 1.0))".to_vec(),
     );
     let server = serve_case(Case {
         files,
@@ -266,7 +266,7 @@ fn a_package_with_a_bad_visual_ends_the_client_with_the_file_and_the_field() {
     let run = run_client("reject_package_contents", &server, Some(RUN_SECS));
     assert_rejected(
         &run,
-        "acme/visuals/ghost.ron: unit: ",
+        "acme/visuals/ghost.ron: target: ",
         &["`acme:ghost`", "(allowed: acme:scout)"],
     );
 }
@@ -288,7 +288,7 @@ fn a_rejecting_client_exits_without_run_secs() {
     let mut files = acme_files();
     files.insert(
         "visuals/scout.ron".to_string(),
-        b"(unit: \"acme:scoot\", shape: Cuboid(x: 1.0, y: 0.8, z: 1.4))".to_vec(),
+        b"(target: Unit(\"acme:scoot\"), shape: Cuboid(x: 1.0, y: 0.8, z: 1.4))".to_vec(),
     );
     let server = serve_case(Case {
         files,
@@ -298,7 +298,7 @@ fn a_rejecting_client_exits_without_run_secs() {
     let run = run_client("reject_without_run_secs", &server, None);
     assert_eq!(run.code, Some(1), "stderr: {:?}", run.stderr);
     assert!(
-        run.stderr.contains("acme/visuals/scout.ron: unit: "),
+        run.stderr.contains("acme/visuals/scout.ron: target: "),
         "{:?}",
         run.stderr
     );

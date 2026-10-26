@@ -49,6 +49,10 @@ impl Slots {
         self.owners.get(slot.0 as usize).copied().flatten()
     }
 
+    pub fn owners(&self) -> Vec<Option<u64>> {
+        self.owners.clone()
+    }
+
     pub fn slot_of(&self, player_id: u64) -> Option<SlotId> {
         self.owners
             .iter()

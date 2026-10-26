@@ -1,57 +1,27 @@
-//! Flat map from MapDef.
+//! Legacy map staging for direct simulation callers.
 
+use crate::{
+    ids::IdAllocators,
+    registry::UnitTypes,
+    slots::{SLOT_COUNT, SlotId},
+    world::{MapBounds, Owner, Position, UnitId, UnitType},
+};
 use bevy_ecs::prelude::*;
 use bevy_math::Vec2;
 use turts_mod_api::{ContentId, MapDef, ModError, PackageId, UnitTypeId};
 
-use crate::registry::UnitTypes;
-use crate::slots::{SLOT_COUNT, SlotId};
-use crate::world::{MapBounds, Owner, Position, UnitId, UnitType};
-
-/// The next unit id to hand out. Ids start at 1 and never repeat, so a second `load_map`
-/// call (synthetic units) continues after the first.
-#[derive(Resource, Debug)]
-struct NextUnitId(u32);
-
-impl Default for NextUnitId {
-    fn default() -> Self {
-        Self(1)
-    }
-}
-
-/// One placement that passed every check.
 struct Spawn {
+    id: u32,
     unit_type: UnitTypeId,
     owner_slot: u8,
     pos: Vec2,
 }
 
-/// Load `map` of package `origin`. The call checks every field first and spawns nothing on
-/// error. On success it inserts `MapBounds` and spawns one unit per placement, with unit ids
-/// in placement order.
+/// Load a map for direct simulation use. Package boot should use `turts_pack::load_package`.
 pub fn load_map(world: &mut World, origin: &PackageId, map: &MapDef) -> Result<(), ModError> {
-    let spawns = validate(world, origin, map)?;
-    world.insert_resource(MapBounds {
-        size: Vec2::new(map.size.x, map.size.y),
-    });
-    let mut next_id = world.get_resource_or_insert_with(NextUnitId::default);
-    let first_id = next_id.0;
-    next_id.0 += spawns.len() as u32;
-    for (offset, spawn) in spawns.into_iter().enumerate() {
-        world.spawn((
-            UnitId(first_id + offset as u32),
-            UnitType(spawn.unit_type),
-            Owner(SlotId(spawn.owner_slot)),
-            Position(spawn.pos),
-        ));
-    }
-    Ok(())
-}
-
-fn validate(world: &World, origin: &PackageId, map: &MapDef) -> Result<Vec<Spawn>, ModError> {
     let error = |field: &str, message: String| ModError::new(&origin.0, field, message);
-    let size_ok = |v: f32| v.is_finite() && v > 0.0;
-    if !(size_ok(map.size.x) && size_ok(map.size.y)) {
+    if !map.size.x.is_finite() || map.size.x <= 0.0 || !map.size.y.is_finite() || map.size.y <= 0.0
+    {
         return Err(error(
             "size",
             format!(
@@ -60,12 +30,14 @@ fn validate(world: &World, origin: &PackageId, map: &MapDef) -> Result<Vec<Spawn
             ),
         ));
     }
+
     let types = world.resource::<UnitTypes>();
-    let mut spawns = Vec::with_capacity(map.placements.len());
+    let mut allocator = *world.resource::<IdAllocators>();
+    let mut staged = Vec::with_capacity(map.placements.len());
+    let mut circles: Vec<(Vec2, f32)> = Vec::new();
     for (index, placement) in map.placements.iter().enumerate() {
         let field = |name: &str| format!("placements[{index}].{name}");
-        let id =
-            ContentId::parse(&placement.unit).map_err(|message| error(&field("unit"), message))?;
+        let id = ContentId::parse(&placement.unit).map_err(|m| error(&field("unit"), m))?;
         if id.package != *origin {
             return Err(error(
                 &field("unit"),
@@ -87,25 +59,70 @@ fn validate(world: &World, origin: &PackageId, map: &MapDef) -> Result<Vec<Spawn
                 ),
             ));
         }
-        let (x, y) = (placement.pos.x, placement.pos.y);
-        let inside = x.is_finite()
-            && y.is_finite()
-            && (0.0..=map.size.x).contains(&x)
-            && (0.0..=map.size.y).contains(&y);
-        if !inside {
+        if !placement.contents.is_empty() {
             return Err(error(
-                &field("pos"),
-                format!(
-                    "position must be inside the map (0 to {} by 0 to {}), got ({x}, {y})",
-                    map.size.x, map.size.y
-                ),
+                &field("contents"),
+                "direct map loading cannot initialize inventory contents".into(),
             ));
         }
-        spawns.push(Spawn {
+        let pos = Vec2::new(placement.pos.x, placement.pos.y);
+        let radius = types.get(unit_type).map_or(0.0, |entry| entry.radius);
+        check_circle(pos, radius, map.size.x, map.size.y).map_err(|m| error(&field("pos"), m))?;
+        if circles.iter().any(|(other, other_radius)| {
+            pos.distance_squared(*other) < (radius + other_radius).powi(2)
+        }) {
+            return Err(error(
+                &field("pos"),
+                "placement circle overlaps another placement".into(),
+            ));
+        }
+        circles.push((pos, radius));
+        let unit_id = allocator
+            .allocate_unit()
+            .map_err(|message| error(&field("unit"), message))?;
+        staged.push(Spawn {
+            id: unit_id,
             unit_type,
             owner_slot: placement.owner_slot,
-            pos: Vec2::new(x, y),
+            pos,
         });
     }
-    Ok(spawns)
+    if !map.nodes.is_empty() {
+        return Err(error(
+            "nodes",
+            "direct map loading requires package catalog staging".into(),
+        ));
+    }
+    if !map.slot_economy.is_empty() {
+        return Err(error(
+            "slot_economy",
+            "direct map loading requires package catalog staging".into(),
+        ));
+    }
+    world.insert_resource(allocator);
+    world.insert_resource(MapBounds {
+        size: Vec2::new(map.size.x, map.size.y),
+    });
+    for spawn in staged {
+        world.spawn((
+            UnitId(spawn.id),
+            UnitType(spawn.unit_type),
+            Owner(SlotId(spawn.owner_slot)),
+            Position(spawn.pos),
+        ));
+    }
+    Ok(())
+}
+
+fn check_circle(pos: Vec2, radius: f32, width: f32, height: f32) -> Result<(), String> {
+    if !pos.x.is_finite()
+        || !pos.y.is_finite()
+        || pos.x - radius < 0.0
+        || pos.y - radius < 0.0
+        || pos.x + radius > width
+        || pos.y + radius > height
+    {
+        return Err(format!("circle of radius {radius} must fit inside the map"));
+    }
+    Ok(())
 }

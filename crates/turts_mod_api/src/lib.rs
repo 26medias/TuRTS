@@ -6,16 +6,23 @@ pub mod ids;
 pub mod lock;
 pub mod registry;
 pub mod schema;
-pub mod schema_v02;
 
+pub use content::{
+    ContentCatalog, ContentRef, ResolvedCost, ResolvedDropOff, ResolvedDropOffEffect,
+    ResolvedDropOffRule, ResolvedGatherer, ResolvedInventory, ResolvedNode, ResolvedProducer,
+    ResolvedProduction, ResolvedUnit, SourceDef,
+};
 pub use error::ModError;
 pub use ids::{ContentId, PackageId, UnitTypeId};
 pub use lock::{LockEntry, Lockfile};
 pub use registry::UnitRegistry;
 pub use schema::{
-    ExecutionContext, Exports, Footprint, Manifest, MapDef, MapSize, PackageKind, Placement, Shape,
-    UnitDef, VisualDef, WorldPos,
+    BalanceAmount, CancelRefunds, Cost, CostSource, DropOffDef, DropOffEffect, DropOffRule,
+    ExecutionContext, Exports, Footprint, GathererDef, InventoryDef, ItemStack, Manifest, MapDef,
+    MapSize, MovementDef, NodeDef, NodePlacement, PackageKind, PaymentPolicy, Placement,
+    ProducerDef, ProductionDef, RefundRatio, ResourceDef, ResourceKind, Shape, SlotEconomyInit,
+    UniqueMap, UnitDef, VisualDef, VisualTarget, WorldPos,
 };
 
 /// Version of the engine API that this crate defines.
-pub const ENGINE_API_VERSION: &str = "0.1.0";
+pub const ENGINE_API_VERSION: &str = "0.2.0";

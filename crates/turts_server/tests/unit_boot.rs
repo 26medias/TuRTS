@@ -133,7 +133,7 @@ fn boot_fills_file_on_registration_error() {
     let mut app = headless_app(20);
     let error = boot::boot(app.world_mut(), &config(Path::new("unused.tar")), &bytes).unwrap_err();
     assert_eq!(error.file.as_deref(), Some("units/scout.ron"));
-    assert_eq!(error.field_path, "speed");
+    assert_eq!(error.field_path, "movement.speed");
     assert_eq!(error.package, "acme");
 }
 

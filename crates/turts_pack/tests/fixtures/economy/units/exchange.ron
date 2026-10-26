@@ -1,0 +1,1 @@
+(id: "exchange", name: "Exchange", footprint: Circle(radius: 2.0), movement: None, inventory: Some((capacity: 2000, accepts: ["probe:timber"])), gatherer: None, drop_off: Some((rules: [(item: "probe:timber", effect: Convert(balance: "probe:token", per_item: 2))])), producer: None)

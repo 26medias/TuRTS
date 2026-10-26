@@ -1,4 +1,4 @@
-use turts_mod_api::{PackageId, schema_v02::*};
+use turts_mod_api::{PackageId, schema::*};
 use turts_mod_runtime::content::{
     ContentCatalog, SourceDef, checked_content_ref, validate_content,
 };
@@ -74,7 +74,7 @@ fn cedar_companion_records_parse_against_staged_schema() {
     let visual_worker =
         r#"(target: Unit("cedar:worker"), shape: Capsule(radius: 0.3, height: 1.6))"#;
     let visual_grove = r#"(target: Node("cedar:grove"), shape: Cuboid(x: 1.4, y: 1.4, z: 0.7))"#;
-    ron::from_str::<ManifestV02>(manifest).unwrap();
+    ron::from_str::<Manifest>(manifest).unwrap();
     let resources = vec![source(
         "resources/wood.ron",
         ron::from_str::<ResourceDef>(wood).unwrap(),
@@ -172,7 +172,7 @@ fn references_are_qualified_strings_and_kind_checked() {
 #[test]
 fn duplicate_keys_and_cross_kind_ids_reject() {
     let duplicate_manifest_dependencies = r#"(id: "cedar", version: "0.2.0", kind: Game, engine_api: "^0.2", dependencies: {"alpha": "1", "alpha": "2"}, exports: (units: [], maps: [], visuals: [], resources: [], nodes: [], production: []), context: Shared, capabilities: [], license: "x")"#;
-    assert!(ron::from_str::<ManifestV02>(duplicate_manifest_dependencies).is_err());
+    assert!(ron::from_str::<Manifest>(duplicate_manifest_dependencies).is_err());
     let duplicate_costs = r#"[(resource: "cedar:credits", amount: 1, source: SlotBalance), (resource: "cedar:credits", amount: 2, source: SlotBalance)]"#;
     assert!(ron::from_str::<Vec<Cost>>(duplicate_costs).is_ok());
     let bad = validate(

@@ -5,6 +5,7 @@ use std::collections::HashMap;
 use bevy::asset::AssetPlugin;
 use bevy::prelude::*;
 use turts_client::acquire::Acquired;
+use turts_client::content::ClientContent;
 use turts_client::input::ground_point;
 use turts_client::join::{AcquiredPackages, Phase};
 use turts_client::present::{Presented, PresentedUnit as PresentedRecord};
@@ -134,6 +135,16 @@ fn sync_app() -> App {
             )]),
             map_size: (64.0, 64.0),
             unit_names: HashMap::new(),
+            content: ClientContent {
+                catalog: ClientContent::default().catalog,
+                shapes: HashMap::from([(
+                    "pkg:man".to_string(),
+                    Shape::Capsule {
+                        radius: 0.3,
+                        height: 1.8,
+                    },
+                )]),
+            },
         }))
         .add_systems(Update, sync_units);
     app
@@ -194,6 +205,7 @@ fn setup_app(phase: Phase) -> App {
             visuals: HashMap::new(),
             map_size: (48.0, 32.0),
             unit_names: HashMap::new(),
+            content: ClientContent::default(),
         }))
         .add_systems(Update, setup_scene);
     app

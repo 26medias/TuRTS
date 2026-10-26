@@ -7,7 +7,7 @@ pub use turts_mod_api::content::{
     ResolvedGatherer, ResolvedInventory, ResolvedNode, ResolvedProducer, ResolvedProduction,
     ResolvedUnit, SourceDef,
 };
-use turts_mod_api::schema_v02::*;
+use turts_mod_api::schema::*;
 use turts_mod_api::{ContentId, ModError, PackageId};
 
 const MAX_MOVEMENT_SPEED: f32 = 100.0;

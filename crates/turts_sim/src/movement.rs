@@ -19,7 +19,11 @@ pub(crate) fn integrate_movement(
         let Some(entry) = types.get(unit_type.0) else {
             continue;
         };
-        let step = entry.speed * delta;
+        let Some(movement) = &entry.movement else {
+            commands.entity(entity).remove::<MoveTarget>();
+            continue;
+        };
+        let step = movement.speed * delta;
         let offset = target.0 - position.0;
         let distance = offset.length();
         let next = if distance <= step {

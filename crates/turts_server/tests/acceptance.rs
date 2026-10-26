@@ -329,9 +329,11 @@ const TWO_OWNERS_MAP: &str = r#"(
     id: "flat",
     size: (x: 64.0, y: 64.0),
     placements: [
-        (unit: "base:rifleman", owner_slot: 0, pos: (x: 8.0, y: 8.0)),
-        (unit: "base:rifleman", owner_slot: 1, pos: (x: 40.0, y: 40.0)),
+        (unit: "base:rifleman", owner_slot: 0, pos: (x: 8.0, y: 8.0), contents: []),
+        (unit: "base:rifleman", owner_slot: 1, pos: (x: 40.0, y: 40.0), contents: []),
     ],
+    nodes: [],
+    slot_economy: [],
 )
 "#;
 

@@ -1,6 +1,6 @@
 //! Rendering.
 //!
-//! The scene is built from the [`Presented`] record and the downloaded visuals. It reads the
+//! The scene is built from the [`Presented`] record and the ClientContent shapes. It reads the
 //! `Presented` resource and nothing else about the world: the mesh of a unit is never the
 //! authority for its position (design 4.2, spec 4.1). The window path only: the headless client
 //! has no `Assets<Mesh>`, so `build_app` adds [`UnitRenderPlugin`] in the window branch.
@@ -122,7 +122,7 @@ pub fn sync_units(
             }
             continue;
         }
-        let Some(shape) = acquired.0.visuals.get(&unit.content_id) else {
+        let Some(shape) = acquired.0.content.shapes.get(&unit.content_id) else {
             continue;
         };
         let (mesh, lift) = assets

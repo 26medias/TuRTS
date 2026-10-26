@@ -2,7 +2,7 @@
 
 use std::collections::BTreeMap;
 
-use crate::{ContentId, schema_v02::*};
+use crate::{ContentId, schema::*};
 
 /// A qualified reference as authored in RON. Runtime validation resolves this into `ContentId`.
 pub type ContentRef = String;

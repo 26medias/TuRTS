@@ -1,1 +1,1 @@
-(id: "runner", name: "Runner", speed: 8.0, footprint: Circle(radius: 0.3))
+(id: "runner", name: "Runner", footprint: Circle(radius: 0.3), movement: Some((speed: 8.0)), inventory: None, gatherer: None, drop_off: None, producer: None)

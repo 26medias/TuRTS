@@ -1,0 +1,1 @@
+(id: "yard", name: "Yard", footprint: Circle(radius: 2.0), movement: None, inventory: Some((capacity: 2000, accepts: ["probe:timber"])), gatherer: None, drop_off: Some((rules: [(item: "probe:timber", effect: Store)])), producer: Some((recipes: ["probe:hire", "probe:train"], queue_capacity: 5, spawn_offsets: [(x: 0.0, y: 4.0), (x: 0.0, y: -4.0)])))

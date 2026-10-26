@@ -6,11 +6,11 @@
 
 use std::collections::HashMap;
 
+use crate::content::ClientContent;
 use turts_mod_api::{ContentId, ENGINE_API_VERSION, ExecutionContext, LockEntry, Lockfile, Shape};
 use turts_mod_runtime::archive::PackageArchive;
 use turts_mod_runtime::hash::verify_hash;
 use turts_mod_runtime::lock::read_lockfile;
-use turts_mod_runtime::visuals::visuals_by_unit;
 use turts_net_protocol::{Advertisement, NET_PROTOCOL_VERSION};
 
 /// What the client keeps after it has accepted the server's packages.
@@ -24,6 +24,7 @@ pub struct Acquired {
     pub map_size: (f32, f32),
     /// The display name of each unit, by full content id.
     pub unit_names: HashMap<String, String>,
+    pub content: ClientContent,
 }
 
 /// Read the advertisement and check that the client can talk to this server: the same wire
@@ -79,13 +80,14 @@ pub fn accept_package(bytes: &[u8], entry: &LockEntry) -> Result<PackageArchive,
 
 /// Build what the client keeps from the accepted packages. Every unit has exactly one visual,
 /// and every visual names a defined unit, else this is an error that names the file and the
-/// field (design 4.4; `turts_mod_runtime::visuals::visuals_by_unit`). The map is the first map
+/// field (design 4.4; `turts_mod_runtime::visuals::visuals_by_content`). The map is the first map
 /// of the first package that has one.
 pub fn build_acquired(
     archives: &[PackageArchive],
     lockfile_hash: String,
 ) -> Result<Acquired, String> {
-    let visuals = visuals_by_unit(archives).map_err(|error| error.to_string())?;
+    let content = ClientContent::from_archives(archives).map_err(|error| error.to_string())?;
+    let visuals = content.shapes.clone();
     let mut unit_names = HashMap::new();
     let mut map_size = None;
     for archive in archives {
@@ -104,5 +106,6 @@ pub fn build_acquired(
         visuals,
         map_size,
         unit_names,
+        content,
     })
 }

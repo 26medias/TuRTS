@@ -1,1 +1,1 @@
-(unit: "acme:scout", shape: Cuboid(x: 1.0, y: 0.8, z: 1.4))
+(target: Unit("acme:scout"), shape: Cuboid(x: 1.0, y: 0.8, z: 1.4))

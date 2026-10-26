@@ -22,7 +22,11 @@ fn unit_def(id: &str, speed: f32, radius: f32) -> UnitDef {
     UnitDef {
         id: id.to_string(),
         name: "Test unit".to_string(),
-        speed,
+        movement: Some(turts_mod_api::MovementDef { speed }),
+        inventory: None,
+        gatherer: None,
+        drop_off: None,
+        producer: None,
         footprint: Footprint::Circle { radius },
     }
 }
@@ -32,6 +36,7 @@ fn placement(unit: &str, owner_slot: u8, x: f32, y: f32) -> Placement {
         unit: unit.to_string(),
         owner_slot,
         pos: WorldPos { x, y },
+        contents: Vec::new(),
     }
 }
 
@@ -40,6 +45,8 @@ fn map_def(size: f32, placements: Vec<Placement>) -> MapDef {
         id: "field".to_string(),
         size: MapSize { x: size, y: size },
         placements,
+        nodes: Vec::new(),
+        slot_economy: Vec::new(),
     }
 }
 
@@ -158,7 +165,7 @@ fn case_map_unknown_unit(origin: &str, _other: &str) -> Vec<ModError> {
 fn cases() -> Vec<(&'static str, Vec<&'static str>, Case)> {
     vec![
         ("local id with colon", vec!["id"], case_local_id_with_colon),
-        ("speed", vec!["speed"; 5], case_speed_out_of_range),
+        ("speed", vec!["movement.speed"; 5], case_speed_out_of_range),
         (
             "radius",
             vec!["footprint.radius"; 4],
@@ -220,7 +227,7 @@ fn t2b_empty_local_id_rejected() {
 fn t2b_speed_out_of_range_rejected() {
     for origin in NAMESPACES {
         for err in run(case_speed_out_of_range, origin) {
-            assert_eq!(err.field_path, "speed");
+            assert_eq!(err.field_path, "movement.speed");
             assert_clean(&err, origin);
         }
         // The upper bound itself is accepted.

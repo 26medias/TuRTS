@@ -5,7 +5,9 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use bevy_ecs::prelude::*;
 use bevy_math::Vec2;
 
+use crate::registry::UnitTypes;
 use crate::slots::SlotId;
+use crate::world::UnitType;
 use crate::world::{MapBounds, MoveTarget, Owner, UnitId};
 
 /// The most units one command may list.
@@ -47,6 +49,7 @@ pub enum RejectReason {
     DuplicateUnit,
     UnknownUnit,
     NotOwner,
+    NotMobile,
     TargetNotFinite,
     TargetOutsideMap,
 }
@@ -60,6 +63,7 @@ impl RejectReason {
             Self::DuplicateUnit => "duplicate_unit",
             Self::UnknownUnit => "unknown_unit",
             Self::NotOwner => "not_owner",
+            Self::NotMobile => "not_mobile",
             Self::TargetNotFinite => "target_not_finite",
             Self::TargetOutsideMap => "target_outside_map",
         }
@@ -72,16 +76,28 @@ pub(crate) fn drain_commands(
     mut queue: ResMut<CommandQueue>,
     mut results: ResMut<CommandResults>,
     bounds: Option<Res<MapBounds>>,
-    units: Query<(Entity, &UnitId, &Owner)>,
+    units: Query<(Entity, &UnitId, &Owner, &UnitType)>,
+    types: Res<UnitTypes>,
     mut commands: Commands,
 ) {
     results.0.clear();
     if queue.0.is_empty() {
         return;
     }
-    let index: HashMap<u32, (Entity, SlotId)> = units
+    let index: HashMap<u32, (Entity, SlotId, bool)> = units
         .iter()
-        .map(|(entity, id, owner)| (id.0, (entity, owner.0)))
+        .map(|(entity, id, owner, unit_type)| {
+            (
+                id.0,
+                (
+                    entity,
+                    owner.0,
+                    types
+                        .get(unit_type.0)
+                        .is_some_and(|entry| entry.movement.is_some()),
+                ),
+            )
+        })
         .collect();
     while let Some(command) = queue.0.pop_front() {
         let outcome = match &command.kind {
@@ -109,7 +125,7 @@ fn validate_move_to(
     slot: SlotId,
     unit_ids: &[u32],
     target: Vec2,
-    index: &HashMap<u32, (Entity, SlotId)>,
+    index: &HashMap<u32, (Entity, SlotId, bool)>,
     bounds: Option<&MapBounds>,
 ) -> Result<Vec<Entity>, RejectReason> {
     if unit_ids.is_empty() {
@@ -122,12 +138,15 @@ fn validate_move_to(
     if !unit_ids.iter().all(|id| seen.insert(*id)) {
         return Err(RejectReason::DuplicateUnit);
     }
-    let found: Vec<(Entity, SlotId)> = unit_ids
+    let found: Vec<(Entity, SlotId, bool)> = unit_ids
         .iter()
         .map(|id| index.get(id).copied().ok_or(RejectReason::UnknownUnit))
         .collect::<Result<_, _>>()?;
-    if found.iter().any(|(_, owner)| *owner != slot) {
+    if found.iter().any(|(_, owner, _)| *owner != slot) {
         return Err(RejectReason::NotOwner);
+    }
+    if found.iter().any(|(_, _, mobile)| !mobile) {
+        return Err(RejectReason::NotMobile);
     }
     if !target.is_finite() {
         return Err(RejectReason::TargetNotFinite);
@@ -138,5 +157,5 @@ fn validate_move_to(
     if !inside {
         return Err(RejectReason::TargetOutsideMap);
     }
-    Ok(found.into_iter().map(|(entity, _)| entity).collect())
+    Ok(found.into_iter().map(|(entity, _, _)| entity).collect())
 }

@@ -8,6 +8,7 @@ use std::collections::HashMap;
 use bevy::platform::time::Instant;
 use bevy::prelude::*;
 use turts_client::acquire::Acquired;
+use turts_client::content::ClientContent;
 use turts_client::debug::debug_json;
 use turts_client::framelog::{frame_line, summary_line};
 use turts_client::ingest::{
@@ -356,6 +357,7 @@ fn world_with_one_unit() -> World {
         )]),
         map_size: (32.0, 32.0),
         unit_names: HashMap::new(),
+        content: ClientContent::default(),
     }));
     world.insert_resource(Presented {
         frame_ns: 5,
