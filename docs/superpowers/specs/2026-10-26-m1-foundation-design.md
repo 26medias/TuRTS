@@ -66,6 +66,14 @@ prototype. Every open numeric budget in section 15 needs a running system to mea
 
 ## 4. Architecture
 
+Spec 0.7 alignment: section 4.4 (Baseline) requires three representations, authoritative,
+replicated, and visual, and a server with no meshes or animation. The crate split in 4.1 below
+is that rule made structural. Section 13.7 sets the replication shape M1's protocol follows
+(permitted properties and changes, interpolation, unchanged-state suppression). Section 13.9
+sets the selection gate the networking spike must pass before lightyear is kept: a pinned
+mutually compatible stack, licences and notices inspected, wasm and headless verified, and the
+behaviour tested with our scenario.
+
 ### 4.1 Crates (studio)
 
 Workspace at the repository root, crates under `crates/`, the default mod under `mods/base/`.
