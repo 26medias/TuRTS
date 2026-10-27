@@ -1,0 +1,93 @@
+[
+  {
+    "file": "youtube-banner-2560x1440.jpg",
+    "width": 2560,
+    "height": 1440,
+    "bytes": 1781195,
+    "use": "YouTube channel banner; branding centered for mobile crop"
+  },
+  {
+    "file": "youtube-safe-area-preview.jpg",
+    "width": 2560,
+    "height": 1440,
+    "bytes": 1801120,
+    "use": "Reference only; do not upload"
+  },
+  {
+    "file": "avatar-1024.png",
+    "width": 1024,
+    "height": 1024,
+    "bytes": 1419673,
+    "use": "Shared profile image, original T isolated for circular crops"
+  },
+  {
+    "file": "youtube-avatar-800.png",
+    "width": 800,
+    "height": 800,
+    "bytes": 954206,
+    "use": "YouTube profile picture"
+  },
+  {
+    "file": "x-avatar-400.png",
+    "width": 400,
+    "height": 400,
+    "bytes": 263028,
+    "use": "X profile picture"
+  },
+  {
+    "file": "youtube-watermark-150.png",
+    "width": 150,
+    "height": 150,
+    "bytes": 16870,
+    "use": "Transparent video watermark"
+  },
+  {
+    "file": "x-header-1500x500.jpg",
+    "width": 1500,
+    "height": 500,
+    "bytes": 544419,
+    "use": "X header"
+  },
+  {
+    "file": "youtube-thumbnail-1280x720.jpg",
+    "width": 1280,
+    "height": 720,
+    "bytes": 676359,
+    "use": "Branded concept-art thumbnail"
+  },
+  {
+    "file": "social-landscape-1200x675.jpg",
+    "width": 1200,
+    "height": 675,
+    "bytes": 610809,
+    "use": "Landscape teaser post"
+  },
+  {
+    "file": "social-square-1080x1080.jpg",
+    "width": 1080,
+    "height": 1080,
+    "bytes": 719345,
+    "use": "Square feed teaser"
+  },
+  {
+    "file": "instagram-portrait-1080x1350.jpg",
+    "width": 1080,
+    "height": 1350,
+    "bytes": 792757,
+    "use": "Portrait feed teaser"
+  },
+  {
+    "file": "story-1080x1920.jpg",
+    "width": 1080,
+    "height": 1920,
+    "bytes": 907122,
+    "use": "Vertical artwork for Stories, Reels and TikTok"
+  },
+  {
+    "file": "discord-banner-960x540.jpg",
+    "width": 960,
+    "height": 540,
+    "bytes": 410546,
+    "use": "Optional Discord server banner where available"
+  }
+]
