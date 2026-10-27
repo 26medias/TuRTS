@@ -32,12 +32,6 @@ fn economy_fixture_app() -> bevy_app::App {
         .join("../turts_pack/tests/fixtures/economy");
     let mut files = std::collections::BTreeMap::new();
     package_files(&root, &root, &mut files);
-    let map = files.get_mut("maps/test.ron").unwrap();
-    let map_text = String::from_utf8(std::mem::take(map)).unwrap();
-    assert_eq!(map_text.matches("pos: (x: 12.0, y: 8.0)").count(), 1);
-    *map = map_text
-        .replace("pos: (x: 12.0, y: 8.0)", "pos: (x: 22.0, y: 8.0)")
-        .into_bytes();
     let package = turts_mod_runtime::pack::pack_files(&files).unwrap();
     let archive = turts_mod_runtime::archive::PackageArchive::parse(&package).unwrap();
     let mut app = turts_sim::headless_app(5);
@@ -53,7 +47,7 @@ fn advanced_clock(state: &turts_sim::AuditState, tick: u32) -> turts_sim::AuditS
 }
 
 #[test]
-fn decoded_mixed_tick_replays_frozen_gather_command_and_automatic_effect() {
+fn decoded_moving_gatherer_replays_frozen_command_and_automatic_effect() {
     use std::io::Cursor;
     use turts_sim::{
         AuditTrail, Command, CommandKind, CommandQueue, SlotId, economy::views::audit_state,
@@ -82,9 +76,9 @@ fn decoded_mixed_tick_replays_frozen_gather_command_and_automatic_effect() {
         writer.write_initial(&trail, initial.clone()).unwrap();
     }
 
-    // Capture the actual fixed-tick ordering: clock advance, command admission,
-    // gather operations, publication. Tick one arms the worker; tick two extracts.
-    for tick_number in 1..=2 {
+    // Capture clock advance, command admission, movement, gather operations, and
+    // publication. The stock worker starts outside range and must travel before mining.
+    for tick_number in 1..=24 {
         if tick_number == 1 {
             app.world_mut()
                 .resource_mut::<CommandQueue>()
@@ -134,9 +128,9 @@ fn decoded_mixed_tick_replays_frozen_gather_command_and_automatic_effect() {
 
     let mut tick_start = decoded_initial;
     let mut modeled_extraction = 0;
-    for tick_number in 1..=2 {
-        // R14 anchors TickAudit.before at t-1 while the first command/operation
-        // boundary is at t. Derive this one clock step from the prior model.
+    for tick_number in 1..=24 {
+        // R14 anchors TickAudit.before at t-1 while command/operation.before is at t.
+        // This predicted start comes only from the previous modeled tick state.
         let modeled_start = if tick_number == 1 {
             advanced_clock(&tick_start, tick_number)
         } else {
@@ -177,6 +171,24 @@ fn decoded_mixed_tick_replays_frozen_gather_command_and_automatic_effect() {
                     .get(automatic_index)
                     .expect("fixture automatic subject list");
                 automatic_index += 1;
+                if tick_number == 2 && gatherer == 3 {
+                    let before = tick_start
+                        .raw_units
+                        .iter()
+                        .find(|unit| unit.unit_id == 3)
+                        .unwrap();
+                    let moved = operation
+                        .before
+                        .raw_units
+                        .iter()
+                        .find(|unit| unit.unit_id == 3)
+                        .unwrap();
+                    assert_ne!(
+                        before.pos.x.to_bits(),
+                        moved.pos.x.to_bits(),
+                        "the worker actually advances toward its node before gather capture"
+                    );
+                }
                 oracle
                     .observe(
                         &accounting::ExpectedOperation::Automatic {
@@ -234,7 +246,7 @@ fn decoded_mixed_tick_replays_frozen_gather_command_and_automatic_effect() {
     let tick_record = bad_tick_state
         .iter_mut()
         .find_map(|record| match record {
-            economylog::EconomyLogRecord::Tick { state, tick, .. } if *tick == 2 => Some(state),
+            economylog::EconomyLogRecord::Tick { state, tick, .. } if *tick == 24 => Some(state),
             _ => None,
         })
         .unwrap();
@@ -245,7 +257,7 @@ fn decoded_mixed_tick_replays_frozen_gather_command_and_automatic_effect() {
     let worker_inventory = bad_economy_state
         .iter_mut()
         .find_map(|record| match record {
-            economylog::EconomyLogRecord::Tick { state, tick, .. } if *tick == 2 => state
+            economylog::EconomyLogRecord::Tick { state, tick, .. } if *tick == 24 => state
                 .economy
                 .inventories
                 .iter_mut()
@@ -260,7 +272,7 @@ fn decoded_mixed_tick_replays_frozen_gather_command_and_automatic_effect() {
     let tick_record = missing_event
         .iter_mut()
         .find_map(|record| match record {
-            economylog::EconomyLogRecord::Tick { events, tick, .. } if *tick == 2 => Some(events),
+            economylog::EconomyLogRecord::Tick { events, tick, .. } if *tick == 24 => Some(events),
             _ => None,
         })
         .unwrap();

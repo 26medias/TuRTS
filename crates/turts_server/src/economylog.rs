@@ -152,6 +152,8 @@ pub(crate) fn validate_records(records: &[EconomyLogRecord]) -> Result<(), Strin
     let mut last_operation: Option<u64> = None;
     let mut last_tick = initial.economy.tick;
     let mut tick_events = initial.pending_events.clone();
+    // Movement runs once after command admission and before the automatic systems.
+    let mut movement_pending = true;
 
     for record in records.iter().skip(1) {
         match record {
@@ -192,7 +194,13 @@ pub(crate) fn validate_records(records: &[EconomyLogRecord]) -> Result<(), Strin
                         operation.operation_id
                     ));
                 }
-                validate_clock_continuity(&cursor, &operation.before, "operation")?;
+                let is_command = commands.contains_key(&operation.operation_id);
+                if is_command {
+                    validate_clock_continuity(&cursor, &operation.before, "command operation")?;
+                } else {
+                    validate_operation_continuity(&cursor, &operation.before, movement_pending)?;
+                    movement_pending = false;
+                }
                 if operation
                     .events
                     .iter()
@@ -268,11 +276,12 @@ pub(crate) fn validate_records(records: &[EconomyLogRecord]) -> Result<(), Strin
                         "tick {tick} did not drain and reset pending events"
                     ));
                 }
-                validate_tick_state(&cursor, state, *tick)?;
+                validate_tick_state(&cursor, state, *tick, movement_pending)?;
                 cursor = state.clone();
                 tick_start = state.clone();
                 tick_events.clear();
                 last_tick = *tick;
+                movement_pending = true;
             }
         }
     }
@@ -306,57 +315,161 @@ fn validate_clock_continuity(
     }
 }
 
-/// A completed tick may move units between recorded operations. Ignore only the
-/// movement-facing coordinates/targets; all economy, ownership, order, event, and id
-/// state must still follow from the preceding typed record.
-fn validate_tick_state(previous: &AuditState, state: &AuditState, tick: u32) -> Result<(), String> {
-    let mut expected = previous.clone();
-    expected.economy.tick = tick;
-    expected.pending_events.clear();
-    expected.next_event_ordinal = Some(0);
+fn validate_operation_continuity(
+    previous: &AuditState,
+    current: &AuditState,
+    movement_pending: bool,
+) -> Result<(), String> {
+    if movement_pending {
+        return validate_movement_transition(previous, current);
+    }
+    validate_clock_continuity(previous, current, "operation")
+}
 
+fn same_pos(a: &turts_mod_api::WorldPos, b: &turts_mod_api::WorldPos) -> bool {
+    a.x.to_bits() == b.x.to_bits() && a.y.to_bits() == b.y.to_bits()
+}
+
+fn same_optional_pos(
+    a: &Option<turts_mod_api::WorldPos>,
+    b: &Option<turts_mod_api::WorldPos>,
+) -> bool {
+    match (a, b) {
+        (Some(a), Some(b)) => same_pos(a, b),
+        (None, None) => true,
+        _ => false,
+    }
+}
+
+/// Validate exactly one fixed movement phase. Identity, ownership, economy,
+/// orders, and events stay exact; positions and targets must follow prior targets,
+/// catalog speed, and tick rate.
+fn validate_movement_transition(previous: &AuditState, current: &AuditState) -> Result<(), String> {
+    let previous_tick = previous.economy.tick;
+    if current.economy.tick != previous_tick
+        && previous_tick.checked_add(1) != Some(current.economy.tick)
+    {
+        return Err("movement transition skips or repeats a simulation tick".into());
+    }
+    let tick_hz = previous
+        .tick_hz
+        .filter(|hz| *hz > 0)
+        .ok_or("movement transition has no valid tick rate")?;
+    if current.tick_hz != previous.tick_hz || current.catalog != previous.catalog {
+        return Err("movement transition changed clock or catalog".into());
+    }
+
+    let mut expected = previous.clone();
+    expected.economy.tick = current.economy.tick;
     for expected_unit in &mut expected.raw_units {
-        let Some(actual) = state
+        let actual = current
             .raw_units
             .iter()
             .find(|unit| unit.unit_id == expected_unit.unit_id)
-        else {
+            .ok_or_else(|| format!("movement removed raw unit {}", expected_unit.unit_id))?;
+        let position = bevy::math::Vec2::new(expected_unit.pos.x, expected_unit.pos.y);
+        let (next, next_target) = match expected_unit.move_target.as_ref() {
+            Some(target) => {
+                let speed = expected
+                    .unit_types
+                    .iter()
+                    .find(|kind| kind.type_id == expected_unit.unit_type)
+                    .and_then(|kind| kind.movement_speed);
+                match speed {
+                    None => (position, None),
+                    Some(speed) => {
+                        let target_vec = bevy::math::Vec2::new(target.x, target.y);
+                        let offset = target_vec - position;
+                        let distance = offset.length();
+                        let step = speed / f32::from(tick_hz);
+                        if distance <= step {
+                            (target_vec, None)
+                        } else {
+                            (position + offset * (step / distance), Some(target.clone()))
+                        }
+                    }
+                }
+            }
+            None => (position, None),
+        };
+        let next_pos = turts_mod_api::WorldPos {
+            x: next.x,
+            y: next.y,
+        };
+        let next_move_target = next_target;
+        if !same_pos(&actual.pos, &next_pos)
+            || !same_optional_pos(&actual.move_target, &next_move_target)
+        {
             return Err(format!(
-                "tick {tick} removes raw unit {}",
+                "unit {} movement differs from its prior target and speed",
                 expected_unit.unit_id
             ));
-        };
+        }
         expected_unit.pos = actual.pos.clone();
         expected_unit.move_target = actual.move_target.clone();
     }
     for expected_unit in &mut expected.units {
-        let Some(actual) = state
+        let actual = current
             .units
             .iter()
             .find(|unit| unit.unit_id == expected_unit.unit_id)
-        else {
+            .ok_or_else(|| format!("movement removed unit {}", expected_unit.unit_id))?;
+        let raw = current
+            .raw_units
+            .iter()
+            .find(|unit| unit.unit_id == actual.unit_id)
+            .ok_or_else(|| format!("movement has no raw unit {}", actual.unit_id))?;
+        if !same_pos(&actual.pos, &raw.pos) {
             return Err(format!(
-                "tick {tick} removes unit {}",
-                expected_unit.unit_id
+                "unit {} snapshots disagree after movement",
+                actual.unit_id
             ));
-        };
+        }
         expected_unit.pos = actual.pos.clone();
     }
     for expected_unit in &mut expected.economy.units {
-        let Some(actual) = state
+        let actual = current
             .economy
             .units
             .iter()
             .find(|unit| unit.unit_id == expected_unit.unit_id)
-        else {
+            .ok_or_else(|| format!("movement removed world unit {}", expected_unit.unit_id))?;
+        let raw = current
+            .raw_units
+            .iter()
+            .find(|unit| unit.unit_id == actual.unit_id)
+            .ok_or_else(|| format!("movement has no raw unit {}", actual.unit_id))?;
+        if actual.pos.x.to_bits() != raw.pos.x.to_bits()
+            || actual.pos.y.to_bits() != raw.pos.y.to_bits()
+        {
             return Err(format!(
-                "tick {tick} removes world unit {}",
-                expected_unit.unit_id
+                "world unit {} snapshots disagree after movement",
+                actual.unit_id
             ));
-        };
+        }
         expected_unit.pos = actual.pos.clone();
     }
-    if expected != *state {
+    if expected != *current {
+        return Err("movement transition changed nonmovement state".into());
+    }
+    Ok(())
+}
+
+/// A completed tick may move units if no automatic operation captured the
+/// movement phase. Economy, ownership, order, event, and id state must remain exact.
+fn validate_tick_state(
+    previous: &AuditState,
+    state: &AuditState,
+    tick: u32,
+    movement_pending: bool,
+) -> Result<(), String> {
+    let mut expected = previous.clone();
+    expected.economy.tick = tick;
+    expected.pending_events.clear();
+    expected.next_event_ordinal = Some(0);
+    if movement_pending {
+        validate_movement_transition(&expected, state)?;
+    } else if expected != *state {
         return Err(format!(
             "tick {tick} after snapshot differs from the prior operation state"
         ));
