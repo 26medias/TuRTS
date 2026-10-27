@@ -23,8 +23,21 @@ struct WriteSet {
     claims: BTreeMap<JobId, ReservationClaim>,
     queues: Option<ProductionQueues>,
     next_job_id: Option<u64>,
+    next_unit_id: Option<u32>,
+    spawned: Vec<SpawnWrite>,
     events: Vec<(u8, EconomyEventKind)>,
     next_event_ordinal: Option<u64>,
+}
+
+pub(crate) struct SpawnWrite {
+    pub id: u32,
+    pub unit_type: turts_mod_api::UnitTypeId,
+    pub owner_slot: u8,
+    pub position: bevy_math::Vec2,
+    pub state: crate::world::UnitState,
+    pub inventory: Option<Inventory>,
+    pub gatherer: bool,
+    pub producer: bool,
 }
 
 pub(crate) struct Transaction<'w> {
@@ -46,6 +59,24 @@ pub(crate) fn transact<R>(
 }
 
 impl Transaction<'_> {
+    pub(crate) fn allocate_unit_id(&mut self) -> Result<u32, RejectReason> {
+        let id = self.writes.next_unit_id.unwrap_or_else(|| {
+            self.world
+                .get_resource::<IdAllocators>()
+                .map_or(1, |ids| ids.next_unit)
+        });
+        self.writes.next_unit_id = Some(id.checked_add(1).ok_or(RejectReason::IdExhausted)?);
+        Ok(id)
+    }
+    pub(crate) fn stage_spawn(&mut self, spawn: SpawnWrite) {
+        self.writes.spawned.push(spawn);
+    }
+    pub(crate) fn catalog(&self) -> Result<&crate::bootstrap::InstalledCatalog, RejectReason> {
+        self.world
+            .get_resource::<crate::bootstrap::InstalledCatalog>()
+            .ok_or(RejectReason::UnknownRecipe)
+    }
+
     pub(crate) fn queues(&self) -> ProductionQueues {
         self.writes.queues.clone().unwrap_or_else(|| {
             self.world
@@ -209,6 +240,46 @@ impl Transaction<'_> {
         }
         if let Some(next_job_id) = writes.next_job_id {
             world.resource_mut::<IdAllocators>().next_job = next_job_id;
+        }
+        if let Some(next_unit_id) = writes.next_unit_id {
+            world.resource_mut::<IdAllocators>().next_unit = next_unit_id;
+        }
+        for spawn in writes.spawned {
+            world.spawn((
+                UnitId(spawn.id),
+                crate::world::UnitType(spawn.unit_type),
+                Owner(SlotId(spawn.owner_slot)),
+                crate::world::Position(spawn.position),
+            ));
+            if let Some(inventory) = spawn.inventory {
+                world
+                    .resource_mut::<EconomyLedger>()
+                    .inventories
+                    .insert(spawn.id, inventory);
+            }
+            if spawn.gatherer {
+                world
+                    .resource_mut::<crate::economy::EconomyOrders>()
+                    .0
+                    .insert(
+                        spawn.id,
+                        crate::economy::GatherOrder {
+                            node: None,
+                            receiver: None,
+                            stage: "Idle".into(),
+                        },
+                    );
+            }
+            if spawn.producer {
+                world
+                    .resource_mut::<ProductionQueues>()
+                    .0
+                    .insert(spawn.id, Vec::new());
+            }
+            world
+                .resource_mut::<crate::economy::events::SpawnedThisTick>()
+                .0
+                .push(spawn.state);
         }
         if let Some(next_event_ordinal) = writes.next_event_ordinal {
             let tick = world.resource::<crate::world::Tick>().0;

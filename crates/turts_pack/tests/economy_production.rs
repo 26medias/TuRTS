@@ -25,6 +25,15 @@ fn fixture_with_amounts(timber: u64, token: u64, tick_hz: u16) -> bevy_app::App 
     map = map.replace("amount: 100)", &format!("amount: {timber})"));
     map = map.replace("amount: 200)", &format!("amount: {token})"));
     files.insert("maps/test.ron".into(), map.into_bytes());
+    let yard = String::from_utf8(files["units/yard.ron"].clone()).unwrap();
+    files.insert(
+        "units/yard.ron".into(),
+        yard.replace(
+            "(x: 0.0, y: 4.0), (x: 0.0, y: -4.0)",
+            "(x: 100.0, y: 100.0), (x: -100.0, y: -100.0)",
+        )
+        .into_bytes(),
+    );
     let mut app = scenario(tick_hz);
     load_package(app.world_mut(), &archive_from_files(files)).unwrap();
     app
@@ -697,6 +706,10 @@ fn queue_capacity_includes_output_blocked_head() {
     files.insert(
         "units/yard.ron".into(),
         yard.replace("queue_capacity: 5", "queue_capacity: 1")
+            .replace(
+                "(x: 0.0, y: 4.0), (x: 0.0, y: -4.0)",
+                "(x: 100.0, y: 100.0), (x: -100.0, y: -100.0)",
+            )
             .into_bytes(),
     );
     let mut app = scenario(10);

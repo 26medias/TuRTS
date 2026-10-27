@@ -5,7 +5,10 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use bevy_ecs::prelude::*;
 use bevy_math::Vec2;
 
-use crate::economy::{EconomyOrders, production::queue_production};
+use crate::economy::{
+    EconomyOrders,
+    production::{cancel_production, queue_production},
+};
 use crate::registry::UnitTypes;
 use crate::slots::SlotId;
 use crate::world::UnitType;
@@ -145,7 +148,11 @@ pub fn apply_command(world: &mut World, command: &Command) -> CommandResult {
                 job_id: Some(job_id),
             }
         }),
-        CommandKind::CancelProduction { .. } => Err(RejectReason::UnknownJob),
+        CommandKind::CancelProduction {
+            producer_id,
+            job_id,
+        } => cancel_production(world, command.slot, *producer_id, *job_id)
+            .map(|()| Applied { job_id: None }),
     };
     CommandResult {
         slot: command.slot,
