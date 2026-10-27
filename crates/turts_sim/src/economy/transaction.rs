@@ -463,6 +463,7 @@ mod tests {
     pub(super) fn seeded_world() -> World {
         let mut world = World::new();
         world.insert_resource(Slots::new(1));
+        world.insert_resource(crate::registry::UnitTypes::default());
         let mut ledger = EconomyLedger::default();
         ledger.balances.insert(
             (0, ContentId::parse("probe:ore").unwrap()),
