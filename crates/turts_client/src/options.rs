@@ -10,6 +10,8 @@ pub struct ClientOptions {
     /// WebSocket address of the server.
     pub ws_url: String,
     pub headless: bool,
+    /// Maximum retained delta batches while waiting for resync.
+    pub resync_buffer_batches: usize,
     /// A fixed player id. `None` means a random id for the session.
     pub player_id: Option<u64>,
     /// Test hook: write one record per frame to this path.
@@ -43,6 +45,7 @@ impl Default for ClientOptions {
             server_url: String::new(),
             ws_url: String::new(),
             headless: false,
+            resync_buffer_batches: 256,
             player_id: None,
             frame_log: None,
             out: None,
@@ -74,6 +77,8 @@ Required:
 
 Options:
   --headless      Run with no window and no rendering.
+  --resync-buffer-batches N
+                  Maximum retained delta batches during recovery (default 256; must be positive).
   --player-id N   Use N as the player id. The default is a random id for each run.
   --help, -h      Print this text and exit with 0.
 
@@ -130,6 +135,9 @@ pub fn parse_cli(args: &[String]) -> Result<ClientOptions, String> {
             "--server" => options.server_url = value()?.to_string(),
             "--ws" => options.ws_url = value()?.to_string(),
             "--headless" => options.headless = true,
+            "--resync-buffer-batches" => {
+                options.resync_buffer_batches = positive_bound(flag, value()?)?;
+            }
             "--player-id" => options.player_id = Some(number(flag, value()?)?),
             "--frame-log" => options.frame_log = Some(PathBuf::from(value()?)),
             "--out" => options.out = Some(PathBuf::from(value()?)),
@@ -169,6 +177,11 @@ pub fn options_from_query(query: &str) -> Result<ClientOptions, String> {
         match key {
             "server" => options.server_url = percent_decode(value)?,
             "ws" => options.ws_url = percent_decode(value)?,
+            "resync_buffer_batches" => {
+                let decoded = percent_decode(value)?;
+                options.resync_buffer_batches =
+                    positive_bound("--resync-buffer-batches", &decoded)?;
+            }
             _ => {}
         }
     }
@@ -197,6 +210,14 @@ pub fn random_player_id() -> u64 {
         let half = || (js_sys::Math::random() * 4_294_967_296.0) as u64;
         (half() << 32) | half()
     }
+}
+
+fn positive_bound(flag: &str, text: &str) -> Result<usize, String> {
+    let bound = number(flag, text)?;
+    if bound == 0 {
+        return Err(format!("{flag} must be positive"));
+    }
+    Ok(bound)
 }
 
 fn number<T: std::str::FromStr>(flag: &str, text: &str) -> Result<T, String> {

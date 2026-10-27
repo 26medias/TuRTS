@@ -18,7 +18,8 @@ use turts_net_protocol::{
     Welcome, WorldDelta,
 };
 
-use crate::replica::{DeltaOutcome, Replica, SnapshotOutcome};
+use crate::replica::{DeltaOutcome, Replica, ReplicaConfig, ReplicaContext, SnapshotOutcome};
+use crate::{ClientOpts, content::ClientContent, join::AcquiredPackages};
 use std::collections::{BTreeMap, BTreeSet};
 
 /// The buffered deltas of a replica that waits for a `Snapshot` and span this many ticks or more
@@ -65,6 +66,9 @@ pub struct WelcomeInfo {
 pub struct ReplicaState {
     pub replica: Option<Replica>,
     pub welcome: Option<WelcomeInfo>,
+    /// Cloned once from accepted packages before the first Welcome is processed.
+    pub content: Option<ClientContent>,
+    pub config: ReplicaConfig,
 }
 
 /// The test hooks and the resync bookkeeping of ingest.
@@ -97,6 +101,10 @@ pub struct IngestCounters {
     pub deltas_dropped: Vec<u32>,
     pub resync_requests_sent: u32,
     pub snapshots_applied: u32,
+    pub max_buffered_batches: usize,
+    pub max_outstanding_requests: usize,
+    pub buffer_overflows: u32,
+    pub successor_requests: u32,
 }
 
 /// What the server said about each command, in arrival order.
@@ -246,7 +254,11 @@ fn on_welcome(hooks: &mut IngestHooks, state: &mut ReplicaState, welcome: &Welco
     if state.welcome.is_some() {
         return;
     }
-    state.replica = Some(Replica::new(welcome.tick_hz));
+    let mut replica = Replica::with_config(welcome.tick_hz, state.config);
+    if let Some(content) = state.content.clone() {
+        replica.set_context(ReplicaContext::new(content, welcome.slot_id.0));
+    }
+    state.replica = Some(replica);
     state.welcome = Some(WelcomeInfo {
         slot: welcome.slot_id.0,
         tick: welcome.tick,
@@ -271,8 +283,10 @@ fn on_snapshot(
     };
     // Only an answer to a request is held. The `Snapshot` after `Welcome` applies at once.
     if hooks.outstanding_request && hooks.hold_resync_snapshots > 0 {
-        let release_tick = snapshot.tick + hooks.hold_resync_snapshots;
-        hooks.held.push((snapshot, release_tick));
+        if hooks.held.is_empty() {
+            let release_tick = snapshot.tick + hooks.hold_resync_snapshots;
+            hooks.held.push((snapshot, release_tick));
+        }
         return release_held(hooks, counters, replica, now);
     }
     apply_snapshot(hooks, counters, replica, &snapshot, now)
@@ -297,8 +311,17 @@ fn on_deltas(
     let mut out = Vec::new();
     if should_drop(hooks, &deltas) {
         counters.deltas_dropped.push(deltas.tick);
-    } else if replica.apply_delta(&deltas, now) == DeltaOutcome::ResyncRequested {
-        out.extend(request_resync(hooks, counters));
+    } else {
+        let before_overflows = replica.buffer_overflows;
+        if replica.apply_delta(&deltas, now) == DeltaOutcome::ResyncRequested {
+            out.extend(request_resync(hooks, counters));
+        }
+        counters.max_buffered_batches = counters
+            .max_buffered_batches
+            .max(replica.buffered_batches());
+        counters.buffer_overflows = counters
+            .buffer_overflows
+            .saturating_add(replica.buffer_overflows.saturating_sub(before_overflows));
     }
     out.extend(release_held(hooks, counters, replica, now));
     out.extend(idle_resync(hooks, counters, replica));
@@ -330,12 +353,38 @@ fn apply_snapshot(
     snapshot: &Snapshot,
     now: Instant,
 ) -> Vec<Outgoing> {
-    let outcome = replica.apply_snapshot(snapshot, now);
-    counters.snapshots_applied += 1;
+    let was_outstanding = hooks.outstanding_request;
     hooks.outstanding_request = false;
+    let outcome = replica.apply_snapshot(snapshot, now);
+    counters.max_buffered_batches = counters
+        .max_buffered_batches
+        .max(replica.buffered_batches());
     match outcome {
-        SnapshotOutcome::Applied { .. } => Vec::new(),
+        SnapshotOutcome::Applied { .. } => {
+            counters.snapshots_applied += 1;
+            Vec::new()
+        }
+        SnapshotOutcome::IgnoredStale => {
+            if replica.in_resync() {
+                if was_outstanding {
+                    counters.successor_requests = counters.successor_requests.saturating_add(1);
+                }
+                request_resync(hooks, counters).into_iter().collect()
+            } else {
+                Vec::new()
+            }
+        }
         SnapshotOutcome::ResyncRequested { .. } => {
+            counters.snapshots_applied = counters.snapshots_applied.saturating_add(1);
+            if was_outstanding {
+                counters.successor_requests = counters.successor_requests.saturating_add(1);
+            }
+            request_resync(hooks, counters).into_iter().collect()
+        }
+        SnapshotOutcome::Invalid => {
+            if was_outstanding {
+                counters.successor_requests = counters.successor_requests.saturating_add(1);
+            }
             request_resync(hooks, counters).into_iter().collect()
         }
     }
@@ -371,16 +420,13 @@ fn idle_resync(
     if hooks.outstanding_request {
         return Vec::new();
     }
-    let Some(buffer) = replica.resync.as_ref() else {
-        return Vec::new();
-    };
-    let lowest = buffer.iter().map(|delta| delta.tick).min();
-    let highest = buffer.iter().map(|delta| delta.tick).max();
-    match (lowest, highest) {
-        (Some(low), Some(high)) if high - low >= IDLE_RESYNC_SPAN_TICKS => {
-            request_resync(hooks, counters).into_iter().collect()
-        }
-        _ => Vec::new(),
+    if replica
+        .resync_span_ticks()
+        .is_some_and(|span| span >= IDLE_RESYNC_SPAN_TICKS)
+    {
+        request_resync(hooks, counters).into_iter().collect()
+    } else {
+        Vec::new()
     }
 }
 
@@ -390,7 +436,8 @@ fn request_resync(hooks: &mut IngestHooks, counters: &mut IngestCounters) -> Opt
         return None;
     }
     hooks.outstanding_request = true;
-    counters.resync_requests_sent += 1;
+    counters.resync_requests_sent = counters.resync_requests_sent.saturating_add(1);
+    counters.max_outstanding_requests = counters.max_outstanding_requests.max(1);
     Some(Outgoing::ResyncRequest)
 }
 
@@ -410,7 +457,16 @@ pub fn ingest_messages(
     mut state: ResMut<ReplicaState>,
     mut results: ResMut<CommandResults>,
     mut witnesses: ResMut<ReceiptWitnesses>,
+    acquired: Option<Res<AcquiredPackages>>,
+    options: Res<ClientOpts>,
 ) {
+    state.config.max_buffered_batches = options.0.resync_buffer_batches.max(1);
+    if state.content.is_none()
+        && state.replica.is_none()
+        && let Some(acquired) = acquired
+    {
+        state.content = Some(acquired.0.content.clone());
+    }
     let mut messages = Vec::new();
     for (entity, mut receiver) in &mut welcomes {
         let epoch = witnesses.epoch_for(entity.to_bits());
@@ -537,6 +593,20 @@ mod receipt_tests {
             message_id: Some(message_id),
             remote_tick: 10,
         }
+    }
+
+    #[test]
+    fn request_guard_coalesces_while_one_response_is_outstanding() {
+        let mut hooks = IngestHooks::default();
+        let mut counters = IngestCounters::default();
+        assert_eq!(
+            request_resync(&mut hooks, &mut counters),
+            Some(Outgoing::ResyncRequest)
+        );
+        assert_eq!(request_resync(&mut hooks, &mut counters), None);
+        assert!(hooks.outstanding_request);
+        assert_eq!(counters.resync_requests_sent, 1);
+        assert_eq!(counters.max_outstanding_requests, 1);
     }
 
     #[test]

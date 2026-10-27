@@ -30,6 +30,47 @@ fn options_from_query_reads_server_and_ws() {
 }
 
 #[test]
+fn resync_buffer_bound_is_shared_by_native_and_browser_options() {
+    let native = parse_cli(&args(&[
+        "--server",
+        "http://h:7000",
+        "--ws",
+        "ws://h:7001",
+        "--resync-buffer-batches",
+        "17",
+    ]))
+    .unwrap();
+    assert_eq!(native.resync_buffer_batches, 17);
+
+    let browser =
+        options_from_query("?server=http://h:7000&ws=ws://h:7001&resync_buffer_batches=17")
+            .unwrap();
+    assert_eq!(browser.resync_buffer_batches, 17);
+
+    let default = ClientOptions::default();
+    assert_eq!(default.resync_buffer_batches, 256);
+    assert_eq!(
+        options_from_query("?server=http://h:7000&ws=ws://h:7001")
+            .unwrap()
+            .resync_buffer_batches,
+        256
+    );
+    let error = parse_cli(&args(&[
+        "--server",
+        "http://h:7000",
+        "--ws",
+        "ws://h:7001",
+        "--resync-buffer-batches",
+        "0",
+    ]))
+    .unwrap_err();
+    assert!(error.contains("positive"), "{error}");
+    let error = options_from_query("?server=http://h:7000&ws=ws://h:7001&resync_buffer_batches=0")
+        .unwrap_err();
+    assert!(error.contains("positive"), "{error}");
+}
+
+#[test]
 fn parse_cli_reads_hooks() {
     let options = parse_cli(&args(&[
         "--server",

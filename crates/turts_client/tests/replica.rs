@@ -1,7 +1,12 @@
 //! Task 8b: replica rules and sampling.
 
+use std::{path::PathBuf, sync::OnceLock};
+
 use bevy::platform::time::Instant;
+use turts_client::content::ClientContent;
+use turts_client::replica::ReplicaContext;
 use turts_client::replica::{DeltaOutcome, Replica, SnapshotOutcome};
+use turts_mod_runtime::{archive::PackageArchive, pack::pack_dir};
 use turts_net_protocol::{Pos, SlotId, Snapshot, UnitDelta, UnitId, UnitSnapshot, WorldDelta};
 
 fn pos(x: f32, y: f32) -> Pos {
@@ -22,7 +27,7 @@ fn snapshot(tick: u32, units: &[(u32, Pos)]) -> Snapshot {
             .iter()
             .map(|&(id, p)| UnitSnapshot {
                 unit_id: UnitId(id),
-                content_id: "unit".to_string(),
+                content_id: "base:command_center".to_string(),
                 owner_slot: SlotId(0),
                 pos: p,
             })
@@ -53,6 +58,21 @@ fn delta(tick: u32, base_tick: u32, positions: &[(u32, Pos)]) -> WorldDelta {
     }
 }
 
+fn replica() -> Replica {
+    static CONTENT: OnceLock<ClientContent> = OnceLock::new();
+    let content = CONTENT
+        .get_or_init(|| {
+            let base = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../mods/base");
+            let archive =
+                PackageArchive::parse(&pack_dir(&base).expect("pack base")).expect("parse base");
+            ClientContent::from_archives(&[archive]).expect("resolve base")
+        })
+        .clone();
+    let mut replica = Replica::new(20);
+    replica.set_context(ReplicaContext::new(content, 0));
+    replica
+}
+
 fn ticks(r: &Replica, unit: u32) -> Vec<u32> {
     r.units[&unit].samples.iter().map(|&(t, _)| t).collect()
 }
@@ -60,7 +80,7 @@ fn ticks(r: &Replica, unit: u32) -> Vec<u32> {
 #[test]
 fn new_replica_is_in_resync_and_buffers_deltas() {
     let now = Instant::now();
-    let mut r = Replica::new(20);
+    let mut r = replica();
     assert!(r.in_resync());
     assert_eq!(r.presentation_time(now), None);
     assert_eq!(
@@ -79,7 +99,7 @@ fn new_replica_is_in_resync_and_buffers_deltas() {
 #[test]
 fn delta_at_or_below_snapshot_tick_is_discarded() {
     let now = Instant::now();
-    let mut r = Replica::new(20);
+    let mut r = replica();
     r.apply_snapshot(&snapshot(10, &[(1, pos(0.0, 0.0))]), now);
     assert_eq!(
         r.apply_delta(&delta(10, 9, &[]), now),
@@ -95,7 +115,7 @@ fn delta_at_or_below_snapshot_tick_is_discarded() {
 #[test]
 fn unchanged_unit_gets_a_sample_each_tick() {
     let now = Instant::now();
-    let mut r = Replica::new(20);
+    let mut r = replica();
     r.apply_snapshot(
         &snapshot(10, &[(1, pos(0.0, 0.0)), (2, pos(5.0, 5.0))]),
         now,
@@ -112,7 +132,7 @@ fn unchanged_unit_gets_a_sample_each_tick() {
 #[test]
 fn sample_interpolates_between_consecutive_ticks() {
     let now = Instant::now();
-    let mut r = Replica::new(20);
+    let mut r = replica();
     r.apply_snapshot(&snapshot(10, &[(1, pos(0.0, 0.0))]), now);
     r.apply_delta(&delta(11, 10, &[(1, pos(2.0, 0.0))]), now);
     let p = r.sample(1, 10.25).unwrap();
@@ -126,7 +146,7 @@ fn sample_at_an_integer_time_below_latest_brackets_the_next_tick() {
     // Design section 5: the bracket is floor(t) and floor(t) + 1 whenever a sample
     // exists at floor(t) + 1. The browser often samples at an integer t (T7 found it).
     let now = Instant::now();
-    let mut r = Replica::new(20);
+    let mut r = replica();
     r.apply_snapshot(&snapshot(10, &[(1, pos(0.0, 0.0))]), now);
     r.apply_delta(&delta(11, 10, &[(1, pos(2.0, 0.0))]), now);
     let p = r.sample(1, 10.0).unwrap();
@@ -138,7 +158,7 @@ fn sample_at_an_integer_time_below_latest_brackets_the_next_tick() {
 #[test]
 fn sample_with_one_sample_is_that_sample() {
     let now = Instant::now();
-    let mut r = Replica::new(20);
+    let mut r = replica();
     r.apply_snapshot(&snapshot(10, &[(1, pos(3.0, 4.0))]), now);
     for t in [8.5, 9.0, 9.99, 10.0] {
         let p = r.sample(1, t).unwrap();
@@ -151,7 +171,7 @@ fn sample_with_one_sample_is_that_sample() {
 #[test]
 fn sample_never_extrapolates_past_latest() {
     let now = Instant::now();
-    let mut r = Replica::new(20);
+    let mut r = replica();
     r.apply_snapshot(&snapshot(10, &[(1, pos(0.0, 0.0))]), now);
     r.apply_delta(&delta(11, 10, &[(1, pos(2.0, 0.0))]), now);
     let p = r.sample(1, 11.0).unwrap();
@@ -166,7 +186,7 @@ fn sample_never_extrapolates_past_latest() {
 #[test]
 fn samples_are_pruned() {
     let now = Instant::now();
-    let mut r = Replica::new(20);
+    let mut r = replica();
     r.apply_snapshot(&snapshot(1, &[(1, pos(0.0, 0.0))]), now);
     assert_eq!(
         r.apply_delta(&delta(2, 1, &[(1, pos(1.0, 0.0))]), now),

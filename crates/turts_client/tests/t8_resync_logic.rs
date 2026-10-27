@@ -1,9 +1,11 @@
 //! Task 8b: T8 resync logic (design section 5, G2: resync starts at Welcome).
 
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, path::PathBuf, sync::OnceLock};
 
 use bevy::platform::time::Instant;
-use turts_client::replica::{DeltaOutcome, Replica, SnapshotOutcome};
+use turts_client::content::ClientContent;
+use turts_client::replica::{DeltaOutcome, Replica, ReplicaContext, SnapshotOutcome};
+use turts_mod_runtime::{archive::PackageArchive, pack::pack_dir};
 use turts_net_protocol::{Pos, SlotId, Snapshot, UnitDelta, UnitId, UnitSnapshot, WorldDelta};
 
 /// Unit 1 is at x = tick on every tick, so a position shows the tick it came from.
@@ -19,7 +21,7 @@ fn snapshot(tick: u32) -> Snapshot {
         },
         units: vec![UnitSnapshot {
             unit_id: UnitId(1),
-            content_id: "unit".to_string(),
+            content_id: "base:command_center".to_string(),
             owner_slot: SlotId(0),
             pos: Pos {
                 x: tick as f32,
@@ -52,6 +54,21 @@ fn delta(tick: u32, base_tick: u32) -> WorldDelta {
     }
 }
 
+fn replica() -> Replica {
+    static CONTENT: OnceLock<ClientContent> = OnceLock::new();
+    let content = CONTENT
+        .get_or_init(|| {
+            let base = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../mods/base");
+            let archive =
+                PackageArchive::parse(&pack_dir(&base).expect("pack base")).expect("parse base");
+            ClientContent::from_archives(&[archive]).expect("resolve base")
+        })
+        .clone();
+    let mut replica = Replica::new(20);
+    replica.set_context(ReplicaContext::new(content, 0));
+    replica
+}
+
 fn buffered_ticks(r: &Replica) -> Vec<u32> {
     r.resync
         .as_ref()
@@ -63,7 +80,7 @@ fn buffered_ticks(r: &Replica) -> Vec<u32> {
 
 /// Snapshot 10, deltas 11 and 12 applied, 13 lost, 14 requests resync, 15 is buffered.
 fn replica_after_loss_of_13(now: Instant) -> Replica {
-    let mut r = Replica::new(20);
+    let mut r = replica();
     assert_eq!(
         r.apply_snapshot(&snapshot(10), now),
         SnapshotOutcome::Applied { replayed: 0 }
@@ -124,13 +141,14 @@ fn t8_broken_chain_during_replay_starts_one_new_resync() {
     let mut r = replica_after_loss_of_13(now);
     assert_eq!(r.apply_delta(&delta(16, 15), now), DeltaOutcome::Buffered);
     assert_eq!(r.apply_delta(&delta(18, 17), now), DeltaOutcome::Buffered);
-    assert_eq!(buffered_ticks(&r), vec![14, 15, 16, 18]);
+    // A disconnected component keeps only its newer tail; the missing coverage remains known.
+    assert_eq!(buffered_ticks(&r), vec![18]);
     assert_eq!(
         r.apply_snapshot(&snapshot(15), now),
-        SnapshotOutcome::ResyncRequested { replayed: 1 }
+        SnapshotOutcome::ResyncRequested { replayed: 0 }
     );
     assert!(r.in_resync());
-    assert_eq!(r.last_applied_tick, Some(16));
+    assert_eq!(r.last_applied_tick, Some(15));
     assert_eq!(buffered_ticks(&r), vec![18]);
 }
 
@@ -144,7 +162,7 @@ fn run_model(hold: u32, welcome_lag: u32) -> (u32, Replica) {
     const RTT: u32 = 1;
     let drops = [110, 190];
     let now = Instant::now();
-    let mut r = Replica::new(20);
+    let mut r = replica();
     let mut held: Vec<(u32, u32)> = Vec::new();
     let mut requests = 0;
     let mut snaps: BTreeMap<u32, (u32, bool)> = BTreeMap::new();
@@ -197,7 +215,7 @@ fn t8_model_scenarios_match_python_model() {
 #[test]
 fn delta_with_unknown_unit_requests_resync() {
     let now = Instant::now();
-    let mut r = Replica::new(20);
+    let mut r = replica();
     assert_eq!(
         r.apply_snapshot(&snapshot(10), now),
         SnapshotOutcome::Applied { replayed: 0 }
