@@ -4,8 +4,8 @@
 //!
 //! - `Hello` with `lockfile_hash == "sha256:spike"` gets `Welcome`. Any other hash gets
 //!   `JoinRejected { reason: "lockfile hash mismatch" }` and an `Unlink` 300 ms later.
-//! - Each `MoveTo` gets one `CommandAck` at once.
-//! - Each fixed tick sends `UnitDeltas` with `--units` synthetic units to every welcomed client.
+//! - Each `PlayerCommand` gets one `CommandAck` at once.
+//! - Each fixed tick sends `WorldDelta` with `--units` synthetic units to every welcomed client.
 //! - Each second, `--stats` gets one JSON line (see `write_stats`).
 //!
 //! Prints `spike_server listening <addr>` when the WebSocket port is bound.
@@ -22,6 +22,7 @@ use lightyear::netcode::NetcodeServer;
 use lightyear::prelude::server::*;
 use lightyear::prelude::*;
 use turts_net_lightyear::{ProtocolPlugin, ReliableChannel, StateChannel, tick_duration};
+use turts_net_protocol::EconomyChanges;
 use turts_net_protocol::NET_PROTOCOL_VERSION;
 use turts_net_protocol::messages::*;
 
@@ -36,7 +37,7 @@ struct Cfg {
     stats: Option<PathBuf>,
 }
 
-/// The simulation tick. The first tick is 1; `UnitDeltas.base_tick` is the tick before.
+/// The simulation tick. The first tick is 1; `WorldDelta.base_tick` is the tick before.
 #[derive(Resource, Default)]
 struct SimTick(u32);
 
@@ -175,12 +176,13 @@ fn receive_hello(
 }
 
 fn receive_moves(
-    mut moves: Query<(Entity, &mut MessageReceiver<MoveTo>), With<ClientOf>>,
+    mut moves: Query<(Entity, &mut MessageReceiver<PlayerCommand>), With<ClientOf>>,
     mut acks: Query<&mut MessageSender<CommandAck>>,
     tick: Res<SimTick>,
 ) {
     for (entity, mut receiver) in moves.iter_mut() {
-        for command in receiver.receive() {
+        for envelope in receiver.receive() {
+            let command = envelope;
             if let Ok(mut sender) = acks.get_mut(entity) {
                 sender.send::<ReliableChannel>(CommandAck {
                     seq: command.seq,
@@ -206,7 +208,7 @@ fn kick(mut commands: Commands, pending: Query<(Entity, &PendingKick)>) {
 
 fn send_deltas(
     mut tick: ResMut<SimTick>,
-    mut senders: Query<&mut MessageSender<UnitDeltas>, With<Welcomed>>,
+    mut senders: Query<&mut MessageSender<WorldDelta>, With<Welcomed>>,
     mut stats: ResMut<Stats>,
     cfg: Res<Cfg>,
 ) {
@@ -221,10 +223,19 @@ fn send_deltas(
             },
         })
         .collect();
-    let deltas = UnitDeltas {
+    let deltas = WorldDelta {
         tick: tick.0,
         base_tick: tick.0 - 1,
-        changes,
+        spawned: vec![],
+        removed: vec![],
+        positions: changes,
+        nodes: vec![],
+        economy: EconomyChanges {
+            balances: vec![],
+            inventories: vec![],
+            orders: vec![],
+            queues: vec![],
+        },
     };
     let payload = postcard_len(&deltas) as u64;
     for mut sender in senders.iter_mut() {
@@ -233,14 +244,14 @@ fn send_deltas(
     }
 }
 
-/// The postcard size of `UnitDeltas`: varint `tick`, varint `base_tick`, varint length, then
+/// The postcard size of `WorldDelta`: varint `tick`, varint `base_tick`, varint length, then
 /// per change a varint `unit_id` and two `f32` of 4 bytes.
-fn postcard_len(deltas: &UnitDeltas) -> usize {
+fn postcard_len(deltas: &WorldDelta) -> usize {
     varint_len(deltas.tick as u64)
         + varint_len(deltas.base_tick as u64)
-        + varint_len(deltas.changes.len() as u64)
+        + varint_len(deltas.positions.len() as u64)
         + deltas
-            .changes
+            .positions
             .iter()
             .map(|c| varint_len(c.unit_id.0 as u64) + 8)
             .sum::<usize>()

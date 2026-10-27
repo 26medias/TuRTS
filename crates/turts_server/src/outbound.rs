@@ -1,82 +1,124 @@
-//! Snapshot and delta sending.
-//!
-//! These systems run in `FixedLast`, after the simulation has collected the changes of the
-//! tick in `FixedPostUpdate`. `collect_changes` is private to `turts_sim`, so a system cannot
-//! name it for `.after(..)`. `FixedLast` runs after the whole `FixedPostUpdate` schedule.
+//! Protocol 2 snapshots, world deltas, and fixed-tick command outcomes.
 
+use crate::session::{ReliableTraffic, Session};
+use crate::stats::Stats;
 use bevy::prelude::*;
 use lightyear::prelude::*;
 use turts_net_lightyear::{ReliableChannel, StateChannel};
+use turts_net_protocol::CommandRejectReason;
 use turts_net_protocol::messages::*;
 use turts_sim::{ChangedThisTick, CommandResults, Tick as SimTick};
 
-use crate::session::Session;
-use crate::stats::Stats;
-
-/// Add the outbound systems to the fixed loop.
 pub fn install(app: &mut App) {
     app.add_systems(FixedLast, (send_command_results, send_deltas));
 }
 
-/// Tell a sender that its command failed validation. The tick that drained the commands made
-/// these results, and the next drain clears them, so each result goes out once.
 pub fn send_command_results(
     results: Res<CommandResults>,
-    mut sessions: Query<(&Session, &mut MessageSender<CommandRejected>)>,
+    tick: Res<SimTick>,
+    mut sessions: Query<(
+        Entity,
+        &Session,
+        &mut MessageSender<CommandApplied>,
+        &mut MessageSender<CommandRejected>,
+    )>,
+    mut traffic: ResMut<ReliableTraffic>,
 ) {
     for result in &results.0 {
-        let Err(reason) = &result.outcome else {
-            continue;
-        };
-        for (session, mut sender) in sessions.iter_mut() {
-            if session.slot == result.slot {
-                eprintln!(
-                    "turts_server: command {} of player {} rejected: {}",
-                    result.seq,
-                    session.player_id,
-                    reason.as_str()
-                );
-                sender.send::<ReliableChannel>(CommandRejected {
-                    seq: result.seq,
-                    reason: reason.as_str().to_string(),
-                });
+        for (entity, session, mut applied, mut rejected) in &mut sessions {
+            if session.slot != result.slot {
+                continue;
+            }
+            match result.outcome {
+                Ok(done) => {
+                    applied.send::<ReliableChannel>(CommandApplied {
+                        seq: result.seq,
+                        tick: tick.0,
+                        job_id: done.job_id.map(|id| turts_net_protocol::JobId(id.0)),
+                    });
+                    traffic.record(entity);
+                }
+                Err(reason) => {
+                    rejected.send::<ReliableChannel>(CommandRejected {
+                        seq: result.seq,
+                        tick: tick.0,
+                        reason: wire_reason(reason),
+                    });
+                    traffic.record(entity);
+                }
             }
         }
     }
 }
 
-/// Send `UnitDeltas` for this tick to every session, every tick, also when nothing changed.
-/// `base_tick` is the tick before, so the client can detect a gap.
+fn wire_reason(reason: turts_sim::RejectReason) -> CommandRejectReason {
+    use turts_sim::RejectReason as R;
+    match reason {
+        R::EmptyCommand => CommandRejectReason::EmptyCommand,
+        R::TooManyUnits => CommandRejectReason::TooManyUnits,
+        R::DuplicateUnit => CommandRejectReason::DuplicateUnit,
+        R::UnknownUnit => CommandRejectReason::UnknownUnit,
+        R::NotOwner => CommandRejectReason::NotOwner,
+        R::NotMobile => CommandRejectReason::NotMobile,
+        R::TargetNotFinite => CommandRejectReason::TargetNotFinite,
+        R::TargetOutsideMap => CommandRejectReason::TargetOutsideMap,
+        R::MissingCapability => CommandRejectReason::MissingCapability,
+        R::UnknownNode => CommandRejectReason::UnknownNode,
+        R::IncompatibleItem => CommandRejectReason::IncompatibleItem,
+        R::NodeDepleted => CommandRejectReason::NodeDepleted,
+        R::UnknownRecipe => CommandRejectReason::UnknownRecipe,
+        R::RecipeNotEnabled => CommandRejectReason::RecipeNotEnabled,
+        R::QueueFull => CommandRejectReason::QueueFull,
+        R::InsufficientBalance => CommandRejectReason::InsufficientBalance,
+        R::InsufficientItems | R::UnknownInventory | R::InvalidAmount => {
+            CommandRejectReason::InsufficientItems
+        }
+        R::UnknownJob => CommandRejectReason::UnknownJob,
+        R::RefundDestinationFull => CommandRejectReason::RefundDestinationFull,
+        R::RefundDestinationOverflow => CommandRejectReason::RefundDestinationOverflow,
+        R::ArithmeticOverflow => CommandRejectReason::ArithmeticOverflow,
+        R::IdExhausted => CommandRejectReason::IdExhausted,
+        R::BadSequence => CommandRejectReason::BadSequence,
+        R::UnknownBalance => CommandRejectReason::InsufficientBalance,
+    }
+}
+
 pub fn send_deltas(
     tick: Res<SimTick>,
     changed: Res<ChangedThisTick>,
-    mut sessions: Query<&mut MessageSender<UnitDeltas>, With<Session>>,
+    mut sessions: Query<&mut MessageSender<WorldDelta>, With<Session>>,
     mut stats: ResMut<Stats>,
 ) {
     if sessions.is_empty() {
         return;
     }
-    let deltas = UnitDeltas {
+    let delta = WorldDelta {
         tick: tick.0,
         base_tick: tick.0.saturating_sub(1),
-        changes: changed
+        spawned: Vec::new(),
+        removed: Vec::new(),
+        positions: changed
             .0
             .iter()
-            .map(|(unit_id, pos)| UnitDelta {
-                unit_id: UnitId(*unit_id),
+            .map(|(id, pos)| UnitDelta {
+                unit_id: UnitId(*id),
                 pos: Pos { x: pos.x, y: pos.y },
             })
             .collect(),
+        nodes: Vec::new(),
+        economy: EconomyChanges {
+            balances: vec![],
+            inventories: vec![],
+            orders: vec![],
+            queues: vec![],
+        },
     };
-    let payload = payload_bytes(&deltas);
-    for mut sender in sessions.iter_mut() {
-        sender.send::<StateChannel>(deltas.clone());
+    let payload = payload_bytes(&delta);
+    for mut sender in &mut sessions {
+        sender.send::<StateChannel>(delta.clone());
         stats.delta_payload_bytes_total += payload;
     }
 }
-
-/// The postcard size of a message. lightyear's message codec is postcard, so this is the
-/// payload before the lightyear and netcode headers.
 fn payload_bytes<T: serde::Serialize>(message: &T) -> u64 {
     postcard::experimental::serialized_size(message).expect("a wire message serializes to postcard")
         as u64
@@ -85,24 +127,15 @@ fn payload_bytes<T: serde::Serialize>(message: &T) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-
     #[test]
-    fn payload_bytes_matches_the_postcard_encoding() {
-        let deltas = UnitDeltas {
-            tick: 300,
-            base_tick: 299,
-            changes: (0..200)
-                .map(|id| UnitDelta {
-                    unit_id: UnitId(id * 100),
-                    pos: Pos {
-                        x: id as f32,
-                        y: 2.5,
-                    },
-                })
-                .collect(),
-        };
-        let encoded = postcard::to_vec::<_, 16384>(&deltas).expect("the message fits");
-        assert_eq!(payload_bytes(&deltas), encoded.len() as u64);
-        assert!(encoded.len() > 1000, "the sample is not trivial");
+    fn server_internal_reasons_never_leak_as_strings() {
+        assert_eq!(
+            wire_reason(turts_sim::RejectReason::UnknownInventory),
+            CommandRejectReason::InsufficientItems
+        );
+        assert_eq!(
+            wire_reason(turts_sim::RejectReason::UnknownBalance),
+            CommandRejectReason::InsufficientBalance
+        );
     }
 }

@@ -2,7 +2,7 @@
 
 use bevy::platform::time::Instant;
 use turts_client::replica::{DeltaOutcome, Replica, SnapshotOutcome};
-use turts_net_protocol::{Pos, SlotId, Snapshot, UnitDelta, UnitDeltas, UnitId, UnitSnapshot};
+use turts_net_protocol::{Pos, SlotId, Snapshot, UnitDelta, UnitId, UnitSnapshot, WorldDelta};
 
 fn pos(x: f32, y: f32) -> Pos {
     Pos { x, y }
@@ -11,6 +11,13 @@ fn pos(x: f32, y: f32) -> Pos {
 fn snapshot(tick: u32, units: &[(u32, Pos)]) -> Snapshot {
     Snapshot {
         tick,
+        nodes: vec![],
+        economy: turts_net_protocol::EconomyState {
+            balances: vec![],
+            inventories: vec![],
+            orders: vec![],
+            queues: vec![],
+        },
         units: units
             .iter()
             .map(|&(id, p)| UnitSnapshot {
@@ -23,11 +30,20 @@ fn snapshot(tick: u32, units: &[(u32, Pos)]) -> Snapshot {
     }
 }
 
-fn delta(tick: u32, base_tick: u32, changes: &[(u32, Pos)]) -> UnitDeltas {
-    UnitDeltas {
+fn delta(tick: u32, base_tick: u32, positions: &[(u32, Pos)]) -> WorldDelta {
+    WorldDelta {
         tick,
         base_tick,
-        changes: changes
+        spawned: vec![],
+        removed: vec![],
+        nodes: vec![],
+        economy: turts_net_protocol::EconomyChanges {
+            balances: vec![],
+            inventories: vec![],
+            orders: vec![],
+            queues: vec![],
+        },
+        positions: positions
             .iter()
             .map(|&(id, p)| UnitDelta {
                 unit_id: UnitId(id),

@@ -11,8 +11,11 @@ use bevy::prelude::*;
 use serde_json::{Value, json};
 
 use crate::ClientOpts;
+use crate::commands::CommandSendStatus;
 use crate::framelog::{FrameLog, summary_line};
-use crate::ingest::{CommandResult, CommandResults, IngestCounters, ReplicaState};
+use crate::ingest::{
+    CommandResult, CommandResults, IngestCounters, ReceiptKind, ReceiptWitnesses, ReplicaState,
+};
 use crate::join::{AcquiredPackages, JoinState, Phase};
 use crate::present::Presented;
 
@@ -58,7 +61,7 @@ pub fn debug_json(world: &World) -> String {
             })
         })
         .unwrap_or(Value::Null);
-    json!({ "phase": phase, "units": units, "last_frame": last_frame }).to_string()
+    json!({ "phase": phase, "units": units, "last_frame": last_frame, "reconnect_required": world.get_resource::<CommandSendStatus>().is_some_and(|status| status.reconnect_required) }).to_string()
 }
 
 /// `Last`: rebuild [`DebugState`].
@@ -85,12 +88,27 @@ pub fn report_json(world: &World) -> Value {
             Some((id, [pos.x, pos.y]))
         })
         .collect();
+    let receipts = world.get_resource::<ReceiptWitnesses>();
+    let receipt_records: Vec<Value> = receipts.into_iter().flat_map(|r| r.records.iter()).map(|w| json!({
+        "connection_epoch": w.connection_epoch, "seq": w.seq,
+        "kind": match w.kind { ReceiptKind::Ack => "ack", ReceiptKind::Applied => "applied", ReceiptKind::Rejected => "rejected" },
+        "reliable": w.reliable, "message_id": w.message_id, "remote_tick": w.remote_tick,
+    })).collect();
+    let receipt_proofs: Vec<Value> = receipts.into_iter().flat_map(|r| r.records.iter()).filter(|w| w.kind == ReceiptKind::Ack).filter_map(|ack| {
+        let ordered = receipts?.ordered_for(ack.seq, ack.connection_epoch)?;
+        Some(json!({ "seq": ack.seq, "connection_epoch": ack.connection_epoch, "ack_precedes_rejection": ordered }))
+    }).collect();
     let command_results: Vec<Value> = results
         .0
         .iter()
         .map(|result| match result {
             CommandResult::Acked { seq, tick } => json!({ "seq": seq, "ack_tick": tick }),
-            CommandResult::Rejected { seq, reason } => json!({ "seq": seq, "rejected": reason }),
+            CommandResult::Applied { seq, tick, job_id } => {
+                json!({ "seq": seq, "applied_tick": tick, "job_id": job_id.map(|job| job.0) })
+            }
+            CommandResult::Rejected { seq, tick, reason } => {
+                json!({ "seq": seq, "rejected_tick": tick, "rejected": reason.as_str() })
+            }
         })
         .collect();
     let debug = serde_json::from_str(&debug_json(world)).unwrap_or(Value::Null);
@@ -102,6 +120,9 @@ pub fn report_json(world: &World) -> Value {
         "resync_requests_sent": counters.resync_requests_sent,
         "deltas_dropped": counters.deltas_dropped,
         "command_results": command_results,
+        "receipt_witnesses": receipt_records,
+        "receipt_order_proofs": receipt_proofs,
+        "reconnect_required": world.get_resource::<CommandSendStatus>().is_some_and(|status| status.reconnect_required),
         "final_positions": final_positions,
         "debug": debug,
     })

@@ -19,7 +19,7 @@ use turts_client::options::parse_cli;
 use turts_client::present::{Presented, PresentedUnit};
 use turts_mod_api::Shape;
 use turts_net_protocol::{
-    Pos, SlotId, Snapshot, UnitDelta, UnitDeltas, UnitId, UnitSnapshot, Welcome,
+    Pos, SlotId, Snapshot, UnitDelta, UnitId, UnitSnapshot, Welcome, WorldDelta,
 };
 
 /// The parts that the ingest system owns, with one clock.
@@ -73,6 +73,13 @@ fn welcome(tick: u32) -> Incoming {
 fn snapshot_at(tick: u32, x: f32, y: f32) -> Incoming {
     Incoming::Snapshot(Snapshot {
         tick,
+        nodes: vec![],
+        economy: turts_net_protocol::EconomyState {
+            balances: vec![],
+            inventories: vec![],
+            orders: vec![],
+            queues: vec![],
+        },
         units: vec![UnitSnapshot {
             unit_id: UnitId(1),
             content_id: "unit".to_string(),
@@ -88,10 +95,19 @@ fn snapshot(tick: u32) -> Incoming {
 }
 
 fn delta_at(tick: u32, base_tick: u32, x: f32, y: f32) -> Incoming {
-    Incoming::Deltas(UnitDeltas {
+    Incoming::Deltas(WorldDelta {
         tick,
         base_tick,
-        changes: vec![UnitDelta {
+        spawned: vec![],
+        removed: vec![],
+        nodes: vec![],
+        economy: turts_net_protocol::EconomyChanges {
+            balances: vec![],
+            inventories: vec![],
+            orders: vec![],
+            queues: vec![],
+        },
+        positions: vec![UnitDelta {
             unit_id: UnitId(1),
             pos: Pos { x, y },
         }],
@@ -104,10 +120,19 @@ fn delta(tick: u32, base_tick: u32) -> Incoming {
 
 /// A delta with no change: the unit is unchanged at `tick`.
 fn empty_delta(tick: u32, base_tick: u32) -> Incoming {
-    Incoming::Deltas(UnitDeltas {
+    Incoming::Deltas(WorldDelta {
         tick,
         base_tick,
-        changes: Vec::new(),
+        spawned: vec![],
+        removed: vec![],
+        nodes: vec![],
+        economy: turts_net_protocol::EconomyChanges {
+            balances: vec![],
+            inventories: vec![],
+            orders: vec![],
+            queues: vec![],
+        },
+        positions: Vec::new(),
     })
 }
 
@@ -336,6 +361,13 @@ fn world_with_one_unit() -> World {
     rig.feed(welcome(100));
     rig.feed(Incoming::Snapshot(Snapshot {
         tick: 100,
+        nodes: vec![],
+        economy: turts_net_protocol::EconomyState {
+            balances: vec![],
+            inventories: vec![],
+            orders: vec![],
+            queues: vec![],
+        },
         units: vec![UnitSnapshot {
             unit_id: UnitId(1),
             content_id: "acme:scout".to_string(),

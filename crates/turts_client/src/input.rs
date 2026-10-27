@@ -1,27 +1,20 @@
 //! Input.
 //!
 //! A left click on the ground becomes a move order. `click_to_move` runs in `Update` and only
-//! queues the target in [`PendingMoves`]. `send_moves` runs in `PostUpdate` and sends the orders
+//! queues a `PlayerCommandKind` in the shared `PendingCommands` FIFO. `send_commands` assigns its sequence and sends it
 //! (design 4.2: input in `Update`, command send in `PostUpdate`). Input reads the replica to
 //! find the units of this player and never writes it.
 
+use crate::commands::{CommandSendStatus, PendingCommands, submit};
 use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
-use lightyear::prelude::*;
-use turts_net_lightyear::ReliableChannel;
-use turts_net_protocol::messages::MoveTo;
-use turts_net_protocol::{Pos, UnitId};
+use turts_net_protocol::{PlayerCommandKind, Pos, UnitId};
 
 use crate::ingest::ReplicaState;
 use crate::join::Phase;
 
 /// The `seq` of the first order from a click. The `--move` test hook of `join::auto_move` uses
 /// `seq` 1.
-const FIRST_CLICK_SEQ: u32 = 2;
-
-/// Targets that the player has chosen and that `send_moves` has not sent.
-#[derive(Resource, Default)]
-pub struct PendingMoves(pub Vec<Pos>);
 
 /// The map position where a ray meets the ground plane, or `None` when it does not meet it in
 /// front of the origin. Map `x` is scene `x`, map `y` is scene `z` (design 4.4).
@@ -56,9 +49,13 @@ pub fn click_to_move(
     phase: Res<Phase>,
     windows: Query<&Window, With<PrimaryWindow>>,
     cameras: Query<(&Camera, &GlobalTransform)>,
-    mut pending: ResMut<PendingMoves>,
+    mut pending: ResMut<PendingCommands>,
+    status: Res<CommandSendStatus>,
 ) {
-    if !buttons.just_pressed(MouseButton::Left) || !matches!(*phase, Phase::Joined { .. }) {
+    if status.reconnect_required
+        || !buttons.just_pressed(MouseButton::Left)
+        || !matches!(*phase, Phase::Joined { .. })
+    {
         return;
     }
     let Some(cursor) = windows.iter().find_map(Window::cursor_position) else {
@@ -71,35 +68,13 @@ pub fn click_to_move(
         return;
     };
     if let Some(target) = ground_point(ray) {
-        pending.0.push(target);
-    }
-}
-
-/// `PostUpdate`: send each queued target as a `MoveTo` for all units of this player. The
-/// server validates it; a rejected order comes back as `CommandRejected`.
-pub fn send_moves(
-    mut pending: ResMut<PendingMoves>,
-    state: Res<ReplicaState>,
-    mut sender: Query<&mut MessageSender<MoveTo>>,
-    mut next_seq: Local<u32>,
-) {
-    if pending.0.is_empty() {
-        return;
-    }
-    let unit_ids = owned_unit_ids(&state);
-    for target in pending.0.drain(..) {
-        if unit_ids.is_empty() {
-            continue;
-        }
-        let seq = FIRST_CLICK_SEQ + *next_seq;
-        *next_seq += 1;
-        for mut sender in sender.iter_mut() {
-            sender.send::<ReliableChannel>(MoveTo {
-                seq,
-                unit_ids: unit_ids.clone(),
+        submit(
+            &mut pending,
+            PlayerCommandKind::MoveTo {
+                unit_ids: Vec::new(),
                 target,
-            });
-        }
+            },
+        );
     }
 }
 
@@ -108,8 +83,6 @@ pub struct ClickInputPlugin;
 
 impl Plugin for ClickInputPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<PendingMoves>()
-            .add_systems(Update, click_to_move)
-            .add_systems(PostUpdate, send_moves.before(MessageSystems::Send));
+        app.add_systems(Update, click_to_move);
     }
 }

@@ -1,6 +1,6 @@
 //! ReplicaState.
 //!
-//! The client copy of the units, built from `Snapshot` and `UnitDeltas` (design section 5).
+//! The client copy of the units, built from `Snapshot` and `WorldDelta` (design section 5).
 //! The replica starts in resync, because the client enters resync at `Welcome` (G2). While in
 //! resync it buffers deltas. A `Snapshot` ends the resync: the replica drops buffered deltas at
 //! or below the snapshot tick and replays the rest while their `base_tick` chain holds.
@@ -8,7 +8,7 @@
 use std::collections::{HashMap, VecDeque};
 
 use bevy::platform::time::Instant;
-use turts_net_protocol::{Pos, Snapshot, UnitDeltas};
+use turts_net_protocol::{Pos, Snapshot, WorldDelta};
 
 use crate::interp;
 
@@ -55,7 +55,7 @@ pub struct Replica {
     pub last_applied_tick: Option<u32>,
     pub latest_receipt: Option<Instant>,
     /// `Some` while in resync. It holds the buffered deltas in arrival order.
-    pub resync: Option<Vec<UnitDeltas>>,
+    pub resync: Option<Vec<WorldDelta>>,
 }
 
 impl Replica {
@@ -109,7 +109,7 @@ impl Replica {
         SnapshotOutcome::Applied { replayed }
     }
 
-    pub fn apply_delta(&mut self, d: &UnitDeltas, now: Instant) -> DeltaOutcome {
+    pub fn apply_delta(&mut self, d: &WorldDelta, now: Instant) -> DeltaOutcome {
         if let Some(buffer) = self.resync.as_mut() {
             buffer.push(d.clone());
             return DeltaOutcome::Buffered;
@@ -127,16 +127,16 @@ impl Replica {
 
     /// True when `d` follows the last applied tick and names only known units. A change for an
     /// unknown unit is a chain break, so the replica never invents a unit.
-    fn extends_chain(&self, d: &UnitDeltas) -> bool {
+    fn extends_chain(&self, d: &WorldDelta) -> bool {
         Some(d.base_tick) == self.last_applied_tick
-            && d.changes
+            && d.positions
                 .iter()
                 .all(|c| self.units.contains_key(&c.unit_id.0))
     }
 
     /// Applies a delta that `extends_chain` accepted: every unit gets a sample at `d.tick`.
-    fn apply_in_chain(&mut self, d: &UnitDeltas, now: Instant) {
-        let changes: HashMap<u32, Pos> = d.changes.iter().map(|c| (c.unit_id.0, c.pos)).collect();
+    fn apply_in_chain(&mut self, d: &WorldDelta, now: Instant) {
+        let changes: HashMap<u32, Pos> = d.positions.iter().map(|c| (c.unit_id.0, c.pos)).collect();
         let keep_from = d.tick.saturating_sub(PRUNE_TICKS);
         for (id, unit) in self.units.iter_mut() {
             let pos = match changes.get(id) {

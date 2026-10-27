@@ -1,6 +1,6 @@
 //! Message ingest.
 //!
-//! The ingest system reads `Welcome`, `Snapshot` and `UnitDeltas` in `PreUpdate`, after
+//! The ingest system reads `Welcome`, `Snapshot` and `WorldDelta` in `PreUpdate`, after
 //! `MessageSystems::Receive`, and feeds them to the `Replica` (design section 5). The logic is
 //! in pure functions: [`ingest_one`] handles one message, [`ingest_batch`] orders the messages of
 //! one frame. The functions return the messages to send, so a test needs no network.
@@ -11,12 +11,15 @@
 use bevy::platform::time::Instant;
 use bevy::prelude::*;
 use lightyear::prelude::*;
+use lightyear::transport::channel::ChannelKind;
 use turts_net_lightyear::ReliableChannel;
 use turts_net_protocol::{
-    CommandAck, CommandRejected, Pos, ResyncRequest, Snapshot, UnitDeltas, Welcome,
+    CommandAck, CommandApplied, CommandRejectReason, CommandRejected, Pos, ResyncRequest, Snapshot,
+    Welcome, WorldDelta,
 };
 
 use crate::replica::{DeltaOutcome, Replica, SnapshotOutcome};
+use std::collections::{BTreeMap, BTreeSet};
 
 /// The buffered deltas of a replica that waits for a `Snapshot` and span this many ticks or more
 /// make the client ask for one. This covers a lost or late `Welcome` `Snapshot`, so the client
@@ -28,7 +31,7 @@ pub const IDLE_RESYNC_SPAN_TICKS: u32 = 10;
 pub enum Incoming {
     Welcome(Welcome),
     Snapshot(Snapshot),
-    Deltas(UnitDeltas),
+    Deltas(WorldDelta),
 }
 
 impl Incoming {
@@ -102,11 +105,100 @@ pub struct CommandResults(pub Vec<CommandResult>);
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum CommandResult {
-    Acked { seq: u32, tick: u32 },
-    Rejected { seq: u32, reason: String },
+    Acked {
+        seq: u32,
+        tick: u32,
+    },
+    Applied {
+        seq: u32,
+        tick: u32,
+        job_id: Option<turts_net_protocol::JobId>,
+    },
+    Rejected {
+        seq: u32,
+        tick: u32,
+        reason: CommandRejectReason,
+    },
 }
 
-/// Handles the messages of one frame. `Welcome` goes first, then `Snapshot`, then `UnitDeltas`;
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReceiptKind {
+    Ack,
+    Applied,
+    Rejected,
+}
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ReceiptWitness {
+    pub connection_epoch: u64,
+    pub seq: u32,
+    pub kind: ReceiptKind,
+    pub reliable: bool,
+    pub message_id: Option<u16>,
+    pub remote_tick: u32,
+}
+#[derive(Resource, Debug, Default, Clone)]
+pub struct ReceiptWitnesses {
+    pub records: Vec<ReceiptWitness>,
+    pub reliable_counts: BTreeMap<u64, u32>,
+    pub invalid_epochs: BTreeSet<u64>,
+    pub epochs: BTreeMap<u64, u64>,
+    pub next_epoch: u64,
+}
+impl ReceiptWitnesses {
+    pub fn start_epoch(&mut self, entity: u64) -> u64 {
+        self.next_epoch = self.next_epoch.saturating_add(1);
+        self.epochs.insert(entity, self.next_epoch);
+        self.next_epoch
+    }
+    pub fn epoch_for(&self, entity: u64) -> u64 {
+        *self.epochs.get(&entity).unwrap_or(&entity)
+    }
+    pub fn record_message(&mut self, epoch: u64, reliable: bool) {
+        if !reliable {
+            return;
+        }
+        let count = self.reliable_counts.entry(epoch).or_default();
+        *count = count.saturating_add(1);
+        if *count >= 32768 {
+            self.invalid_epochs.insert(epoch);
+        }
+    }
+    fn record_receipt(&mut self, witness: ReceiptWitness) {
+        self.records.push(witness);
+    }
+    pub fn ordered_for(&self, seq: u32, epoch: u64) -> Option<bool> {
+        let ack =
+            self.records.iter().copied().find(|w| {
+                w.connection_epoch == epoch && w.seq == seq && w.kind == ReceiptKind::Ack
+            })?;
+        let rejected = self.records.iter().copied().find(|w| {
+            w.connection_epoch == epoch && w.seq == seq && w.kind == ReceiptKind::Rejected
+        })?;
+        let count = self
+            .reliable_counts
+            .get(&epoch)
+            .copied()
+            .unwrap_or(u32::MAX);
+        Some(!self.invalid_epochs.contains(&epoch) && receipt_ordered(ack, rejected, count))
+    }
+}
+pub fn receipt_ordered(ack: ReceiptWitness, rejected: ReceiptWitness, epoch_count: u32) -> bool {
+    if epoch_count >= 32768
+        || ack.connection_epoch != rejected.connection_epoch
+        || ack.seq != rejected.seq
+        || !ack.reliable
+        || !rejected.reliable
+    {
+        return false;
+    }
+    let (Some(a), Some(r)) = (ack.message_id, rejected.message_id) else {
+        return false;
+    };
+    let distance = r.wrapping_sub(a);
+    (1..32768).contains(&distance)
+}
+
+/// Handles the messages of one frame. `Welcome` goes first, then `Snapshot`, then `WorldDelta`;
 /// inside one kind the arrival order stays.
 pub fn ingest_batch(
     hooks: &mut IngestHooks,
@@ -182,7 +274,7 @@ fn on_deltas(
     hooks: &mut IngestHooks,
     counters: &mut IngestCounters,
     state: &mut ReplicaState,
-    deltas: UnitDeltas,
+    deltas: WorldDelta,
     now: Instant,
 ) -> Vec<Outgoing> {
     counters.deltas_received += 1;
@@ -206,10 +298,10 @@ fn on_deltas(
 }
 
 /// True when a test hook says to ignore this delta. The arrival hook fires once.
-fn should_drop(hooks: &mut IngestHooks, deltas: &UnitDeltas) -> bool {
+fn should_drop(hooks: &mut IngestHooks, deltas: &WorldDelta) -> bool {
     let is_arrival = hooks.drop_arrival_delta
         && hooks.arrival_target.is_some_and(|target| {
-            deltas.changes.iter().any(|change| {
+            deltas.positions.iter().any(|change| {
                 hooks
                     .arrival_unit
                     .is_none_or(|unit| change.unit_id.0 == unit)
@@ -298,43 +390,108 @@ fn request_resync(hooks: &mut IngestHooks, counters: &mut IngestCounters) -> Opt
 /// run as the `Snapshot` (G2b): they arrive in one frame.
 #[allow(clippy::too_many_arguments)]
 pub fn ingest_messages(
-    mut welcomes: Query<&mut MessageReceiver<Welcome>>,
-    mut snapshots: Query<&mut MessageReceiver<Snapshot>>,
-    mut deltas: Query<&mut MessageReceiver<UnitDeltas>>,
-    mut acks: Query<&mut MessageReceiver<CommandAck>>,
-    mut rejections: Query<&mut MessageReceiver<CommandRejected>>,
-    mut requests: Query<&mut MessageSender<ResyncRequest>>,
+    mut welcomes: Query<(Entity, &mut MessageReceiver<Welcome>)>,
+    mut snapshots: Query<(Entity, &mut MessageReceiver<Snapshot>)>,
+    mut deltas: Query<&mut MessageReceiver<WorldDelta>>,
+    mut acks: Query<(Entity, &mut MessageReceiver<CommandAck>)>,
+    mut applied: Query<(Entity, &mut MessageReceiver<CommandApplied>)>,
+    mut rejections: Query<(Entity, &mut MessageReceiver<CommandRejected>)>,
+    mut requests: Query<(Entity, &mut MessageSender<ResyncRequest>)>,
     mut hooks: ResMut<IngestHooks>,
     mut counters: ResMut<IngestCounters>,
     mut state: ResMut<ReplicaState>,
     mut results: ResMut<CommandResults>,
+    mut witnesses: ResMut<ReceiptWitnesses>,
 ) {
     let mut messages = Vec::new();
-    for mut receiver in welcomes.iter_mut() {
-        messages.extend(receiver.receive().map(Incoming::Welcome));
+    for (entity, mut receiver) in &mut welcomes {
+        let epoch = witnesses.epoch_for(entity.to_bits());
+        for received in receiver.receive_with_tick() {
+            witnesses.record_message(
+                epoch,
+                received.channel_kind == ChannelKind::of::<ReliableChannel>(),
+            );
+            messages.push(Incoming::Welcome(received.data));
+        }
     }
-    for mut receiver in snapshots.iter_mut() {
-        messages.extend(receiver.receive().map(Incoming::Snapshot));
+    for (entity, mut receiver) in &mut snapshots {
+        let epoch = witnesses.epoch_for(entity.to_bits());
+        for received in receiver.receive_with_tick() {
+            witnesses.record_message(
+                epoch,
+                received.channel_kind == ChannelKind::of::<ReliableChannel>(),
+            );
+            messages.push(Incoming::Snapshot(received.data));
+        }
     }
     for mut receiver in deltas.iter_mut() {
         messages.extend(receiver.receive().map(Incoming::Deltas));
     }
     // Acks before rejections: the server sends the ack at once.
-    for mut receiver in acks.iter_mut() {
-        results
-            .0
-            .extend(receiver.receive().map(|ack| CommandResult::Acked {
-                seq: ack.seq,
-                tick: ack.tick,
-            }));
+    for (entity, mut receiver) in &mut acks {
+        let epoch = witnesses.epoch_for(entity.to_bits());
+        for received in receiver.receive_with_tick() {
+            witnesses.record_message(
+                epoch,
+                received.channel_kind == ChannelKind::of::<ReliableChannel>(),
+            );
+            witnesses.record_receipt(ReceiptWitness {
+                connection_epoch: epoch,
+                seq: received.data.seq,
+                kind: ReceiptKind::Ack,
+                reliable: received.channel_kind == ChannelKind::of::<ReliableChannel>(),
+                message_id: received.message_id.map(|id| id.0),
+                remote_tick: received.remote_tick.0,
+            });
+            results.0.push(CommandResult::Acked {
+                seq: received.data.seq,
+                tick: received.data.tick,
+            });
+        }
     }
-    for mut receiver in rejections.iter_mut() {
-        results
-            .0
-            .extend(receiver.receive().map(|rejected| CommandResult::Rejected {
-                seq: rejected.seq,
-                reason: rejected.reason,
-            }));
+    for (entity, mut receiver) in &mut applied {
+        let epoch = witnesses.epoch_for(entity.to_bits());
+        for received in receiver.receive_with_tick() {
+            witnesses.record_message(
+                epoch,
+                received.channel_kind == ChannelKind::of::<ReliableChannel>(),
+            );
+            witnesses.record_receipt(ReceiptWitness {
+                connection_epoch: epoch,
+                seq: received.data.seq,
+                kind: ReceiptKind::Applied,
+                reliable: received.channel_kind == ChannelKind::of::<ReliableChannel>(),
+                message_id: received.message_id.map(|id| id.0),
+                remote_tick: received.remote_tick.0,
+            });
+            results.0.push(CommandResult::Applied {
+                seq: received.data.seq,
+                tick: received.data.tick,
+                job_id: received.data.job_id,
+            });
+        }
+    }
+    for (entity, mut receiver) in &mut rejections {
+        let epoch = witnesses.epoch_for(entity.to_bits());
+        for received in receiver.receive_with_tick() {
+            witnesses.record_message(
+                epoch,
+                received.channel_kind == ChannelKind::of::<ReliableChannel>(),
+            );
+            witnesses.record_receipt(ReceiptWitness {
+                connection_epoch: epoch,
+                seq: received.data.seq,
+                kind: ReceiptKind::Rejected,
+                reliable: received.channel_kind == ChannelKind::of::<ReliableChannel>(),
+                message_id: received.message_id.map(|id| id.0),
+                remote_tick: received.remote_tick.0,
+            });
+            results.0.push(CommandResult::Rejected {
+                seq: received.data.seq,
+                tick: received.data.tick,
+                reason: received.data.reason,
+            });
+        }
     }
     if messages.is_empty() {
         return;
@@ -349,8 +506,10 @@ pub fn ingest_messages(
     for message in outgoing {
         match message {
             Outgoing::ResyncRequest => {
-                for mut sender in requests.iter_mut() {
+                for (entity, mut sender) in &mut requests {
                     sender.send::<ReliableChannel>(ResyncRequest);
+                    let epoch = witnesses.epoch_for(entity.to_bits());
+                    witnesses.record_message(epoch, true);
                 }
             }
         }

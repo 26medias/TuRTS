@@ -28,6 +28,7 @@ use crate::{
 
 #[derive(SystemSet, Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum SimSet {
+    Advance,
     Commands,
     Movement,
     Gather,
@@ -65,7 +66,7 @@ impl Plugin for SimPlugin {
             .insert_resource(SimClock {
                 tick_hz: self.tick_hz,
             })
-            .configure_sets(FixedPreUpdate, SimSet::Commands)
+            .configure_sets(FixedPreUpdate, (SimSet::Advance, SimSet::Commands).chain())
             .configure_sets(
                 FixedUpdate,
                 (SimSet::Movement, SimSet::Gather, SimSet::Production).chain(),
@@ -73,9 +74,11 @@ impl Plugin for SimPlugin {
             .configure_sets(FixedPostUpdate, SimSet::Collect)
             .add_systems(
                 FixedPreUpdate,
-                crate::economy::transaction::begin_tick_audit.before(advance_tick),
+                crate::economy::transaction::begin_tick_audit
+                    .in_set(SimSet::Advance)
+                    .before(advance_tick),
             )
-            .add_systems(FixedPreUpdate, advance_tick.in_set(SimSet::Commands))
+            .add_systems(FixedPreUpdate, advance_tick.in_set(SimSet::Advance))
             .add_systems(
                 FixedPreUpdate,
                 drain_commands.in_set(SimSet::Commands).after(advance_tick),

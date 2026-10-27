@@ -489,9 +489,11 @@ fn t4_command_validation() {
             results[0]["ack_tick"].is_u64(),
             "{label}: the first result is the ack: {report}"
         );
+        assert_eq!(results[1]["seq"], 1, "{label}: {report}");
+        assert_eq!(results[1]["rejected"], reason, "{label}: {report}");
+        assert!(results[1]["rejected_tick"].is_u64(), "{label}: {report}");
         assert_eq!(
-            results[1],
-            json!({ "seq": 1, "rejected": reason }),
+            report["receipt_order_proofs"][0]["ack_precedes_rejection"], true,
             "{label}: {report}"
         );
 
@@ -539,7 +541,7 @@ fn t5_convergence() {
     let report =
         check_segments(&ticks, &frames, UNIT).unwrap_or_else(|error| panic!("T5 oracle: {error}"));
     record("t5_convergence", &report);
-    // Bytes per tick for the record: the postcard payload of the `UnitDeltas`, not the
+    // Bytes per tick for the record: the postcard payload of the `WorldDelta`, not the
     // WebSocket frame size (Task 13 measures that).
     let stats = stats_after(&server.stats, exit_ms);
     let ticks_with_session =

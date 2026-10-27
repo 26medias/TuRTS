@@ -1,21 +1,24 @@
 //! Sessions and slot claims.
 //!
 //! One `ClientOf` entity is one connection. A `Hello` turns it into a session (a `Session`
-//! component) or gets it a `JoinRejected` and a delayed kick. A session sends `MoveTo` and
+//! component) or gets it a `JoinRejected` and a delayed kick. A session sends `PlayerCommand` and
 //! `ResyncRequest`. The server never creates a gameplay entity for a session.
 
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::time::{Duration, Instant};
 
 use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
 use lightyear::prelude::server::*;
 use lightyear::prelude::*;
+use turts_mod_api::{ContentId, PackageId};
 use turts_net_lightyear::ReliableChannel;
 use turts_net_protocol::NET_PROTOCOL_VERSION;
 use turts_net_protocol::messages::*;
+use turts_net_protocol::{CommandRejectReason, PlayerCommand, PlayerCommandKind};
 use turts_sim::{
-    ClaimError, Command as SimCommand, CommandKind, CommandQueue, Slots, Tick as SimTick, Vec2,
-    snapshot,
+    ClaimError, Command as SimCommand, CommandKind, CommandQueue, Owner, SimSet, Slots,
+    Tick as SimTick, UnitId as SimUnitId, UnitType, UnitTypes, Vec2, snapshot,
 };
 
 use crate::stats::Stats;
@@ -32,6 +35,8 @@ const REASON_NO_OPEN_SLOT: &str = "no open slot";
 /// A connection that sent an accepted `Hello`.
 #[derive(Component)]
 pub struct Session {
+    /// Last newer sequence consumed at the fixed-tick admission boundary.
+    pub last_seq: Option<u32>,
     /// The slot of the player. It is permanent for the match (D25).
     pub slot: turts_sim::SlotId,
     pub player_id: u64,
@@ -58,11 +63,20 @@ pub struct SnapshotDue;
 /// Add the session systems. They run in `PreUpdate`, after lightyear has received messages.
 pub fn install(app: &mut App, advertised: Advertised) {
     app.insert_resource(advertised);
+    app.init_resource::<StagedPlayerCommands>()
+        .init_resource::<CommandAdmissionDiagnostics>()
+        .init_resource::<ReliableTraffic>();
+    app.add_systems(
+        FixedPreUpdate,
+        admit_player_commands
+            .after(SimSet::Advance)
+            .before(SimSet::Commands),
+    );
     app.add_systems(
         PreUpdate,
         (
             receive_hello,
-            receive_move_to,
+            receive_player_commands,
             receive_resync,
             send_snapshots,
         )
@@ -122,10 +136,12 @@ pub fn receive_hello(
     mut stats: ResMut<Stats>,
     tick: Res<SimTick>,
     advertised: Res<Advertised>,
+    mut traffic: ResMut<ReliableTraffic>,
 ) {
     for (entity, mut receiver, has_session, pending_kick) in clients.iter_mut() {
         let mut decided = has_session || pending_kick;
         for hello in receiver.receive() {
+            traffic.record(entity);
             if decided {
                 continue;
             }
@@ -139,6 +155,7 @@ pub fn receive_hello(
                     );
                     commands.entity(entity).insert((
                         Session {
+                            last_seq: None,
                             slot,
                             player_id: hello.player_id,
                         },
@@ -150,6 +167,7 @@ pub fn receive_hello(
                             tick: tick.0,
                             tick_hz: advertised.tick_hz,
                         });
+                        traffic.record(entity);
                     }
                 }
                 Err(reason) => {
@@ -158,6 +176,7 @@ pub fn receive_hello(
                         sender.send::<ReliableChannel>(JoinRejected {
                             reason: reason.to_string(),
                         });
+                        traffic.record(entity);
                     }
                     commands.entity(entity).insert(PendingKick {
                         at: Instant::now() + KICK_DELAY,
@@ -168,47 +187,256 @@ pub fn receive_hello(
     }
 }
 
-/// The connections that may send a `MoveTo`.
-type MoveClients<'w, 's> = Query<
-    'w,
-    's,
-    (
-        Entity,
-        &'static mut MessageReceiver<MoveTo>,
-        Option<&'static Session>,
-    ),
-    With<ClientOf>,
->;
+/// A received envelope retained until a fixed simulation tick is admitted.
+#[derive(Debug, Clone)]
+pub struct StagedPlayerCommand {
+    pub connection: Entity,
+    pub slot: turts_sim::SlotId,
+    pub envelope: PlayerCommand,
+}
+#[derive(Resource, Debug, Default)]
+pub struct StagedPlayerCommands(pub VecDeque<StagedPlayerCommand>);
+#[derive(Debug, Clone, PartialEq)]
+pub struct AdmissionRecord {
+    pub envelope: PlayerCommand,
+    pub seq: u32,
+    pub slot: u8,
+    pub player_id: u64,
+    pub tick: u32,
+    pub reason: CommandRejectReason,
+}
+#[derive(Resource, Debug, Default)]
+pub struct CommandAdmissionDiagnostics(pub Vec<AdmissionRecord>);
+#[derive(Resource, Debug, Default)]
+pub struct ReliableTraffic {
+    pub counts: BTreeMap<u64, u32>,
+    pub invalid_epochs: BTreeSet<u64>,
+}
+impl ReliableTraffic {
+    pub fn record(&mut self, entity: Entity) {
+        let epoch = entity.to_bits();
+        let count = self.counts.entry(epoch).or_default();
+        *count = count.saturating_add(1);
+        if *count >= 32768 {
+            self.invalid_epochs.insert(epoch);
+        }
+    }
+}
 
-/// Acknowledge each `MoveTo` of a session at once, and queue it for the next tick. The ack
-/// means received, not accepted: the simulation validates the command later (spec 6.2). A
-/// `MoveTo` from a connection without a session is dropped.
-pub fn receive_move_to(
-    mut clients: MoveClients,
+/// Read client envelopes before Lightyear clears the frame receivers. Ack means receipt only.
+pub fn receive_player_commands(
+    mut clients: Query<
+        (
+            Entity,
+            &mut MessageReceiver<PlayerCommand>,
+            Option<&Session>,
+        ),
+        With<ClientOf>,
+    >,
     mut acks: Query<&mut MessageSender<CommandAck>>,
-    mut queue: ResMut<CommandQueue>,
     tick: Res<SimTick>,
+    mut staged: ResMut<StagedPlayerCommands>,
+    mut traffic: ResMut<ReliableTraffic>,
 ) {
-    for (entity, mut receiver, session) in clients.iter_mut() {
-        for command in receiver.receive() {
-            let Some(session) = session else {
-                continue;
-            };
+    for (entity, mut receiver, session) in &mut clients {
+        let Some(session) = session else {
+            receiver.receive().for_each(drop);
+            continue;
+        };
+        for received in receiver.receive_with_tick() {
+            let envelope = received.data;
+            traffic.record(entity);
             if let Ok(mut sender) = acks.get_mut(entity) {
                 sender.send::<ReliableChannel>(CommandAck {
-                    seq: command.seq,
+                    seq: envelope.seq,
                     tick: tick.0,
                 });
+                traffic.record(entity);
             }
-            queue.0.push_back(SimCommand {
+            staged.0.push_back(StagedPlayerCommand {
+                connection: entity,
                 slot: session.slot,
-                seq: command.seq,
-                kind: CommandKind::MoveTo {
-                    unit_ids: command.unit_ids.iter().map(|id| id.0).collect(),
-                    target: Vec2::new(command.target.x, command.target.y),
-                },
+                envelope,
             });
         }
+    }
+}
+
+/// Admit the staged batch for the advanced tick before the domain command drain.
+pub fn admit_player_commands(world: &mut World) {
+    let batch = std::mem::take(&mut world.resource_mut::<StagedPlayerCommands>().0);
+    let tick = world.resource::<SimTick>().0;
+    for staged in batch {
+        if world.contains_resource::<turts_sim::economy::events::MatchStopped>() {
+            continue;
+        }
+        let newer = if let Some(mut session) = world.get_mut::<Session>(staged.connection) {
+            if session.slot != staged.slot
+                || session
+                    .last_seq
+                    .is_some_and(|last| staged.envelope.seq <= last)
+            {
+                false
+            } else {
+                session.last_seq = Some(staged.envelope.seq);
+                true
+            }
+        } else {
+            false
+        };
+        if !newer {
+            record_admission_rejection(world, staged, tick, CommandRejectReason::BadSequence);
+            continue;
+        }
+        let Some(kind) = admit_kind(world, &staged, tick) else {
+            continue;
+        };
+        world
+            .resource_mut::<CommandQueue>()
+            .0
+            .push_back(SimCommand {
+                slot: staged.slot,
+                seq: staged.envelope.seq,
+                kind,
+            });
+    }
+}
+
+fn owns_unit(world: &mut World, unit_id: u32, slot: turts_sim::SlotId) -> Option<bool> {
+    let mut query = world.query::<(&SimUnitId, &Owner)>();
+    query
+        .iter(world)
+        .find(|(id, _)| id.0 == unit_id)
+        .map(|(_, owner)| owner.0 == slot)
+}
+
+fn has_producer_capability(world: &World, unit_id: u32) -> Option<bool> {
+    let unit_type = world.iter_entities().find_map(|entity| {
+        let id = entity.get::<SimUnitId>()?;
+        (id.0 == unit_id)
+            .then(|| entity.get::<UnitType>().copied())
+            .flatten()
+    })?;
+    let types = world.get_resource::<UnitTypes>()?;
+    let entry = types.get(unit_type.0)?;
+    let content_id = ContentId::parse(&entry.content_id).ok()?;
+    let catalog = world.get_resource::<turts_sim::bootstrap::InstalledCatalog>()?;
+    Some(
+        catalog
+            .0
+            .units
+            .get(&content_id)
+            .is_some_and(|unit| unit.producer.is_some()),
+    )
+}
+
+fn admit_kind(world: &mut World, staged: &StagedPlayerCommand, tick: u32) -> Option<CommandKind> {
+    let kind = match &staged.envelope.kind {
+        PlayerCommandKind::MoveTo { unit_ids, target } => CommandKind::MoveTo {
+            unit_ids: unit_ids.iter().map(|id| id.0).collect(),
+            target: Vec2::new(target.x, target.y),
+        },
+        PlayerCommandKind::Gather { unit_id, node_id } => CommandKind::Gather {
+            unit_id: unit_id.0,
+            node_id: turts_sim::ids::NodeId(node_id.0),
+        },
+        PlayerCommandKind::Produce {
+            producer_id,
+            recipe_id,
+        } => {
+            // Check ownership, then producer capability, before parsing client text. The
+            // simulation still validates the enabled recipe and queue semantics.
+            match owns_unit(world, producer_id.0, staged.slot) {
+                Some(false) => {
+                    record_admission_rejection(
+                        world,
+                        staged.clone(),
+                        tick,
+                        CommandRejectReason::NotOwner,
+                    );
+                    return None;
+                }
+                None => {
+                    record_admission_rejection(
+                        world,
+                        staged.clone(),
+                        tick,
+                        CommandRejectReason::UnknownUnit,
+                    );
+                    return None;
+                }
+                Some(true) => {}
+            }
+            if has_producer_capability(world, producer_id.0) != Some(true) {
+                record_admission_rejection(
+                    world,
+                    staged.clone(),
+                    tick,
+                    CommandRejectReason::MissingCapability,
+                );
+                return None;
+            }
+            let parsed = ContentId::parse(recipe_id).and_then(|id| {
+                PackageId::parse(&id.package.0).map(|package| ContentId {
+                    package,
+                    local: id.local,
+                })
+            });
+            let Ok(recipe_id) = parsed else {
+                record_admission_rejection(
+                    world,
+                    staged.clone(),
+                    tick,
+                    CommandRejectReason::UnknownRecipe,
+                );
+                return None;
+            };
+            CommandKind::Produce {
+                producer_id: producer_id.0,
+                recipe_id,
+            }
+        }
+        PlayerCommandKind::CancelProduction {
+            producer_id,
+            job_id,
+        } => CommandKind::CancelProduction {
+            producer_id: producer_id.0,
+            job_id: turts_sim::ids::JobId(job_id.0),
+        },
+    };
+    Some(kind)
+}
+
+fn record_admission_rejection(
+    world: &mut World,
+    staged: StagedPlayerCommand,
+    tick: u32,
+    reason: CommandRejectReason,
+) {
+    let player_id = world
+        .get::<Session>(staged.connection)
+        .map_or(0, |session| session.player_id);
+    world
+        .resource_mut::<CommandAdmissionDiagnostics>()
+        .0
+        .push(AdmissionRecord {
+            envelope: staged.envelope.clone(),
+            seq: staged.envelope.seq,
+            slot: staged.slot.0,
+            player_id,
+            tick,
+            reason,
+        });
+    if let Some(mut sender) = world.get_mut::<MessageSender<CommandRejected>>(staged.connection) {
+        sender.send::<ReliableChannel>(CommandRejected {
+            seq: staged.envelope.seq,
+            tick,
+            reason,
+        });
+        drop(sender);
+        world
+            .resource_mut::<ReliableTraffic>()
+            .record(staged.connection);
     }
 }
 
@@ -230,9 +458,11 @@ pub fn receive_resync(
     mut commands: Commands,
     mut clients: ResyncClients,
     mut stats: ResMut<Stats>,
+    mut traffic: ResMut<ReliableTraffic>,
 ) {
     for (entity, mut receiver, has_session) in clients.iter_mut() {
         for _request in receiver.receive() {
+            traffic.record(entity);
             if has_session {
                 stats.resync_requests += 1;
                 commands.entity(entity).insert(SnapshotDue);
@@ -253,6 +483,8 @@ pub fn send_snapshots(world: &mut World, mut due: Local<QueryState<Entity, With<
     for entity in entities {
         if let Some(mut sender) = world.get_mut::<MessageSender<Snapshot>>(entity) {
             sender.send::<ReliableChannel>(message.clone());
+            drop(sender);
+            world.resource_mut::<ReliableTraffic>().record(entity);
         }
         world.entity_mut(entity).remove::<SnapshotDue>();
     }
@@ -273,7 +505,17 @@ fn snapshot_message(world: &mut World) -> Snapshot {
             },
         })
         .collect();
-    Snapshot { tick, units }
+    Snapshot {
+        tick,
+        units,
+        nodes: vec![],
+        economy: turts_net_protocol::EconomyState {
+            balances: vec![],
+            inventories: vec![],
+            orders: vec![],
+            queues: vec![],
+        },
+    }
 }
 
 /// Unlink each refused connection when its delay has passed. `Disconnect` on a `ClientOf` does
@@ -332,7 +574,7 @@ mod tests {
     #[test]
     fn judge_checks_protocol_before_hash_and_claims_nothing_on_refusal() {
         let mut slots = Slots::new(2);
-        let both_wrong = hello(7, NET_PROTOCOL_VERSION + 1, "sha256:other");
+        let both_wrong = hello(7, 1, "sha256:other");
         assert_eq!(
             judge_hello(&both_wrong, &advertised(), &mut slots),
             Err("protocol version mismatch")
@@ -369,5 +611,217 @@ mod tests {
             judge_hello(&good(3), &advertised(), &mut slots),
             Err("no open slot")
         );
+    }
+}
+
+#[cfg(test)]
+mod admission_tests {
+    use super::*;
+    use bevy::time::TimePlugin;
+    use std::collections::BTreeMap;
+    use turts_mod_api::content::{ResolvedProducer, ResolvedUnit};
+    use turts_mod_api::{
+        ContentCatalog, ContentId, Footprint, PackageId, ProducerDef, UnitDef, UnitRegistry,
+    };
+    use turts_sim::{CommandResults, Tick, UnitType};
+
+    fn app() -> (App, Entity) {
+        let mut app = App::new();
+        app.add_plugins(TimePlugin)
+            .add_plugins(turts_sim::SimPlugin { tick_hz: 20 });
+        app.init_resource::<StagedPlayerCommands>()
+            .init_resource::<CommandAdmissionDiagnostics>()
+            .init_resource::<ReliableTraffic>();
+        let package = PackageId::parse("test").unwrap();
+        let mut types = UnitTypes::default();
+        let type_id = types
+            .register_unit_type(
+                &package,
+                UnitDef {
+                    id: "producer".into(),
+                    name: "Producer".into(),
+                    footprint: Footprint::Circle { radius: 1.0 },
+                    movement: None,
+                    inventory: None,
+                    gatherer: None,
+                    drop_off: None,
+                    producer: Some(ProducerDef {
+                        recipes: vec![],
+                        queue_capacity: 1,
+                        spawn_offsets: vec![],
+                    }),
+                },
+            )
+            .unwrap();
+        let id = ContentId::new(&package, "producer");
+        let mut catalog = ContentCatalog {
+            resources: BTreeMap::new(),
+            units: BTreeMap::new(),
+            nodes: BTreeMap::new(),
+            production: BTreeMap::new(),
+        };
+        catalog.units.insert(
+            id.clone(),
+            ResolvedUnit {
+                id,
+                name: "Producer".into(),
+                footprint: Footprint::Circle { radius: 1.0 },
+                movement: None,
+                inventory: None,
+                gatherer: None,
+                drop_off: None,
+                producer: Some(ResolvedProducer {
+                    recipes: vec![],
+                    queue_capacity: 1,
+                    spawn_offsets: vec![],
+                }),
+            },
+        );
+        app.world_mut().insert_resource(types);
+        app.world_mut()
+            .insert_resource(turts_sim::bootstrap::InstalledCatalog(catalog));
+        let connection = app
+            .world_mut()
+            .spawn(Session {
+                slot: turts_sim::SlotId(0),
+                player_id: 1,
+                last_seq: None,
+            })
+            .id();
+        app.world_mut()
+            .spawn((SimUnitId(1), Owner(turts_sim::SlotId(0)), UnitType(type_id)));
+        (app, connection)
+    }
+    fn staged(connection: Entity, seq: u32, kind: PlayerCommandKind) -> StagedPlayerCommand {
+        StagedPlayerCommand {
+            connection,
+            slot: turts_sim::SlotId(0),
+            envelope: PlayerCommand { seq, kind },
+        }
+    }
+    fn move_kind() -> PlayerCommandKind {
+        PlayerCommandKind::MoveTo {
+            unit_ids: vec![UnitId(1)],
+            target: Pos { x: 4.0, y: 5.0 },
+        }
+    }
+
+    #[test]
+    fn repeated_sequence_rejects_without_second_domain_command_or_audit() {
+        let (mut app, connection) = app();
+        app.world_mut().resource_mut::<Tick>().0 = 7;
+        let before_audit = {
+            let audit = app.world().resource::<turts_sim::AuditTrail>();
+            (
+                audit.commands.len(),
+                audit.operations.len(),
+                audit.ticks.len(),
+            )
+        };
+        app.world_mut()
+            .resource_mut::<StagedPlayerCommands>()
+            .0
+            .extend([
+                staged(connection, 9, move_kind()),
+                staged(connection, 9, move_kind()),
+            ]);
+        admit_player_commands(app.world_mut());
+        assert_eq!(app.world().resource::<CommandQueue>().0.len(), 1);
+        assert_eq!(
+            app.world().resource::<CommandAdmissionDiagnostics>().0[0].reason,
+            CommandRejectReason::BadSequence
+        );
+        assert_eq!(
+            app.world().resource::<CommandAdmissionDiagnostics>().0[0].tick,
+            7
+        );
+        assert_eq!(
+            app.world().get::<Session>(connection).unwrap().last_seq,
+            Some(9)
+        );
+        assert!(app.world().resource::<CommandResults>().0.is_empty());
+        let audit = app.world().resource::<turts_sim::AuditTrail>();
+        assert_eq!(
+            (
+                audit.commands.len(),
+                audit.operations.len(),
+                audit.ticks.len()
+            ),
+            before_audit
+        );
+    }
+
+    #[test]
+    fn unknown_reference_is_rejected_without_foreign_details() {
+        let (mut app, connection) = app();
+        let envelope = staged(
+            connection,
+            3,
+            PlayerCommandKind::Produce {
+                producer_id: UnitId(1),
+                recipe_id: "FOREIGN:bad:recipe".into(),
+            },
+        );
+        app.world_mut()
+            .resource_mut::<StagedPlayerCommands>()
+            .0
+            .push_back(envelope.clone());
+        app.world_mut().resource_mut::<Tick>().0 = 11;
+        admit_player_commands(app.world_mut());
+        let records = &app.world().resource::<CommandAdmissionDiagnostics>().0;
+        assert_eq!(records[0].reason, CommandRejectReason::UnknownRecipe);
+        assert_eq!(records[0].seq, envelope.envelope.seq);
+        assert_eq!(records[0].reason.as_str(), "unknown_recipe");
+        assert!(!records[0].reason.as_str().contains("FOREIGN"));
+        assert_eq!(records[0].envelope.kind, envelope.envelope.kind);
+        assert_eq!(records[0].tick, 11);
+        assert!(app.world().resource::<CommandQueue>().0.is_empty());
+        assert_eq!(
+            app.world().get::<Session>(connection).unwrap().last_seq,
+            Some(3)
+        );
+    }
+
+    #[test]
+    fn ownership_precedes_malformed_recipe_details() {
+        let (mut app, connection) = app();
+        let producer_type = app
+            .world()
+            .iter_entities()
+            .find_map(|entity| entity.get::<UnitType>().copied())
+            .unwrap();
+        app.world_mut()
+            .spawn((SimUnitId(2), Owner(turts_sim::SlotId(1)), producer_type));
+        app.world_mut()
+            .resource_mut::<StagedPlayerCommands>()
+            .0
+            .push_back(staged(
+                connection,
+                4,
+                PlayerCommandKind::Produce {
+                    producer_id: UnitId(2),
+                    recipe_id: "BAD:??".into(),
+                },
+            ));
+        admit_player_commands(app.world_mut());
+        assert_eq!(
+            app.world().resource::<CommandAdmissionDiagnostics>().0[0].reason,
+            CommandRejectReason::NotOwner
+        );
+        assert!(app.world().resource::<CommandQueue>().0.is_empty());
+    }
+
+    #[test]
+    fn staged_envelopes_survive_a_frame_without_fixed_admission() {
+        let (mut app, connection) = app();
+        app.world_mut()
+            .resource_mut::<StagedPlayerCommands>()
+            .0
+            .push_back(staged(connection, 1, move_kind()));
+        // A render frame with zero fixed ticks does not touch the server-owned staging FIFO.
+        assert_eq!(app.world().resource::<StagedPlayerCommands>().0.len(), 1);
+        app.world_mut().resource_mut::<Tick>().0 = 2;
+        admit_player_commands(app.world_mut());
+        assert_eq!(app.world().resource::<CommandQueue>().0.len(), 1);
     }
 }

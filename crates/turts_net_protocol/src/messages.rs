@@ -1,48 +1,36 @@
 //! Wire messages.
 //!
-//! The server and the client exchange these types as postcard bytes. No type here holds a
-//! Bevy type or a Bevy entity id.
+//! This crate holds only serde types. It has no Bevy types or Bevy entity ids.
 
 use serde::{Deserialize, Serialize};
 
-/// The identifier of a unit on the wire.
+pub use crate::economy::*;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct UnitId(pub u32);
-
-/// The identifier of a player slot.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct SlotId(pub u8);
-
-/// A position on the flat map.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct Pos {
     pub x: f32,
     pub y: f32,
 }
-
-/// Client to server, reliable. First message of a session.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Hello {
     pub player_id: u64,
     pub protocol_version: u32,
     pub lockfile_hash: String,
 }
-
-/// Server to client. The server accepted the `Hello` and assigned a slot.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Welcome {
     pub slot_id: SlotId,
     pub tick: u32,
     pub tick_hz: u16,
 }
-
-/// Server to client. The server refused the `Hello`. A disconnect follows.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct JoinRejected {
     pub reason: String,
 }
-
-/// The full state of one unit.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct UnitSnapshot {
     pub unit_id: UnitId,
@@ -50,52 +38,149 @@ pub struct UnitSnapshot {
     pub owner_slot: SlotId,
     pub pos: Pos,
 }
-
-/// Server to client, reliable. The full state at `tick`.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct Snapshot {
-    pub tick: u32,
-    pub units: Vec<UnitSnapshot>,
-}
-
-/// The new position of one unit.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct UnitDelta {
     pub unit_id: UnitId,
     pub pos: Pos,
 }
-
-/// Server to client, unordered unreliable. The units that changed at `tick`.
-/// `base_tick` is the previous tick.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct UnitDeltas {
-    pub tick: u32,
-    pub base_tick: u32,
-    pub changes: Vec<UnitDelta>,
-}
-
-/// Client to server, reliable. Order the listed units to move to `target`.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct MoveTo {
+pub struct PlayerCommand {
     pub seq: u32,
-    pub unit_ids: Vec<UnitId>,
-    pub target: Pos,
+    pub kind: PlayerCommandKind,
 }
-
-/// Server to client. The server received command `seq`. This does not mean it accepted it.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum PlayerCommandKind {
+    MoveTo {
+        unit_ids: Vec<UnitId>,
+        target: Pos,
+    },
+    Gather {
+        unit_id: UnitId,
+        node_id: NodeId,
+    },
+    Produce {
+        producer_id: UnitId,
+        recipe_id: String,
+    },
+    CancelProduction {
+        producer_id: UnitId,
+        job_id: JobId,
+    },
+}
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CommandAck {
     pub seq: u32,
     pub tick: u32,
 }
-
-/// Server to client. Validation of command `seq` failed.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CommandApplied {
+    pub seq: u32,
+    pub tick: u32,
+    pub job_id: Option<JobId>,
+}
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CommandRejectReason {
+    EmptyCommand,
+    TooManyUnits,
+    DuplicateUnit,
+    UnknownUnit,
+    NotOwner,
+    NotMobile,
+    TargetNotFinite,
+    TargetOutsideMap,
+    MissingCapability,
+    UnknownNode,
+    IncompatibleItem,
+    NodeDepleted,
+    UnknownRecipe,
+    RecipeNotEnabled,
+    QueueFull,
+    InsufficientBalance,
+    InsufficientItems,
+    UnknownJob,
+    RefundDestinationFull,
+    RefundDestinationOverflow,
+    ArithmeticOverflow,
+    IdExhausted,
+    BadSequence,
+}
+impl CommandRejectReason {
+    pub const ALL: &'static [Self] = &[
+        Self::EmptyCommand,
+        Self::TooManyUnits,
+        Self::DuplicateUnit,
+        Self::UnknownUnit,
+        Self::NotOwner,
+        Self::NotMobile,
+        Self::TargetNotFinite,
+        Self::TargetOutsideMap,
+        Self::MissingCapability,
+        Self::UnknownNode,
+        Self::IncompatibleItem,
+        Self::NodeDepleted,
+        Self::UnknownRecipe,
+        Self::RecipeNotEnabled,
+        Self::QueueFull,
+        Self::InsufficientBalance,
+        Self::InsufficientItems,
+        Self::UnknownJob,
+        Self::RefundDestinationFull,
+        Self::RefundDestinationOverflow,
+        Self::ArithmeticOverflow,
+        Self::IdExhausted,
+        Self::BadSequence,
+    ];
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::EmptyCommand => "empty_command",
+            Self::TooManyUnits => "too_many_units",
+            Self::DuplicateUnit => "duplicate_unit",
+            Self::UnknownUnit => "unknown_unit",
+            Self::NotOwner => "not_owner",
+            Self::NotMobile => "not_mobile",
+            Self::TargetNotFinite => "target_not_finite",
+            Self::TargetOutsideMap => "target_outside_map",
+            Self::MissingCapability => "missing_capability",
+            Self::UnknownNode => "unknown_node",
+            Self::IncompatibleItem => "incompatible_item",
+            Self::NodeDepleted => "node_depleted",
+            Self::UnknownRecipe => "unknown_recipe",
+            Self::RecipeNotEnabled => "recipe_not_enabled",
+            Self::QueueFull => "queue_full",
+            Self::InsufficientBalance => "insufficient_balance",
+            Self::InsufficientItems => "insufficient_items",
+            Self::UnknownJob => "unknown_job",
+            Self::RefundDestinationFull => "refund_destination_full",
+            Self::RefundDestinationOverflow => "refund_destination_overflow",
+            Self::ArithmeticOverflow => "arithmetic_overflow",
+            Self::IdExhausted => "id_exhausted",
+            Self::BadSequence => "bad_sequence",
+        }
+    }
+}
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CommandRejected {
     pub seq: u32,
-    pub reason: String,
+    pub tick: u32,
+    pub reason: CommandRejectReason,
 }
-
-/// Client to server. The server answers with a `Snapshot`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Snapshot {
+    pub tick: u32,
+    pub units: Vec<UnitSnapshot>,
+    pub nodes: Vec<NodeState>,
+    pub economy: EconomyState,
+}
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct WorldDelta {
+    pub tick: u32,
+    pub base_tick: u32,
+    pub spawned: Vec<UnitSnapshot>,
+    pub removed: Vec<UnitId>,
+    pub positions: Vec<UnitDelta>,
+    pub nodes: Vec<NodeState>,
+    pub economy: EconomyChanges,
+}
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ResyncRequest;

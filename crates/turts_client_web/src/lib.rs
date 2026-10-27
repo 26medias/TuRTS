@@ -26,10 +26,11 @@ use std::sync::Mutex;
 
 use bevy::prelude::*;
 use turts_client::build_app;
+use turts_client::commands::{CommandSendStatus, PendingCommands, submit};
 use turts_client::debug::{DebugState, rebuild_debug_state};
-use turts_client::input::PendingMoves;
 use turts_client::options::options_from_query;
 use turts_client::render::PresentedUnit as SceneUnit;
+use turts_net_protocol::PlayerCommandKind;
 use turts_net_protocol::Pos;
 use wasm_bindgen::prelude::*;
 
@@ -95,12 +96,24 @@ fn memory_bytes() -> f64 {
 }
 
 /// `Update`: move the targets of `window.turts_move` into the input queue.
-fn drain_moves(mut pending: ResMut<PendingMoves>) {
+fn drain_moves(mut pending: ResMut<PendingCommands>, status: Res<CommandSendStatus>) {
+    if status.reconnect_required {
+        MOVES.lock().unwrap().clear();
+        return;
+    }
     let mut moves = MOVES.lock().unwrap();
     if moves.is_empty() {
         return;
     }
-    pending.0.extend(moves.drain(..).map(|(x, y)| Pos { x, y }));
+    for (x, y) in moves.drain(..) {
+        submit(
+            &mut pending,
+            PlayerCommandKind::MoveTo {
+                unit_ids: Vec::new(),
+                target: Pos { x, y },
+            },
+        );
+    }
 }
 
 /// `Last`: copy the debug JSON, which `rebuild_debug_state` made this frame, for the page.

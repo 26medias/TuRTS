@@ -4,12 +4,19 @@ use std::collections::BTreeMap;
 
 use bevy::platform::time::Instant;
 use turts_client::replica::{DeltaOutcome, Replica, SnapshotOutcome};
-use turts_net_protocol::{Pos, SlotId, Snapshot, UnitDelta, UnitDeltas, UnitId, UnitSnapshot};
+use turts_net_protocol::{Pos, SlotId, Snapshot, UnitDelta, UnitId, UnitSnapshot, WorldDelta};
 
 /// Unit 1 is at x = tick on every tick, so a position shows the tick it came from.
 fn snapshot(tick: u32) -> Snapshot {
     Snapshot {
         tick,
+        nodes: vec![],
+        economy: turts_net_protocol::EconomyState {
+            balances: vec![],
+            inventories: vec![],
+            orders: vec![],
+            queues: vec![],
+        },
         units: vec![UnitSnapshot {
             unit_id: UnitId(1),
             content_id: "unit".to_string(),
@@ -22,11 +29,20 @@ fn snapshot(tick: u32) -> Snapshot {
     }
 }
 
-fn delta(tick: u32, base_tick: u32) -> UnitDeltas {
-    UnitDeltas {
+fn delta(tick: u32, base_tick: u32) -> WorldDelta {
+    WorldDelta {
         tick,
         base_tick,
-        changes: vec![UnitDelta {
+        spawned: vec![],
+        removed: vec![],
+        nodes: vec![],
+        economy: turts_net_protocol::EconomyChanges {
+            balances: vec![],
+            inventories: vec![],
+            orders: vec![],
+            queues: vec![],
+        },
+        positions: vec![UnitDelta {
             unit_id: UnitId(1),
             pos: Pos {
                 x: tick as f32,
@@ -186,10 +202,19 @@ fn delta_with_unknown_unit_requests_resync() {
         r.apply_snapshot(&snapshot(10), now),
         SnapshotOutcome::Applied { replayed: 0 }
     );
-    let unknown = UnitDeltas {
+    let unknown = WorldDelta {
         tick: 11,
         base_tick: 10,
-        changes: vec![UnitDelta {
+        spawned: vec![],
+        removed: vec![],
+        nodes: vec![],
+        economy: turts_net_protocol::EconomyChanges {
+            balances: vec![],
+            inventories: vec![],
+            orders: vec![],
+            queues: vec![],
+        },
+        positions: vec![UnitDelta {
             unit_id: UnitId(9),
             pos: Pos { x: 1.0, y: 1.0 },
         }],

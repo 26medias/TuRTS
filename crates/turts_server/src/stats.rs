@@ -41,7 +41,7 @@ pub struct Stats {
     pub hellos: u64,
     /// `ResyncRequest` messages from sessions.
     pub resync_requests: u64,
-    /// The postcard size of every `UnitDeltas` sent, summed over the sessions.
+    /// The postcard size of every `WorldDelta` sent, summed over the sessions.
     pub delta_payload_bytes_total: u64,
 }
 

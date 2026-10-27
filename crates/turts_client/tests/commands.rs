@@ -1,5 +1,5 @@
 use turts_client::commands::{CommandSequence, PendingCommands, SequenceExhausted, submit};
-use turts_net_protocol::staged_v2::{JobId, NodeId, PlayerCommandKind};
+use turts_net_protocol::{JobId, NodeId, PlayerCommandKind};
 use turts_net_protocol::{Pos, UnitId};
 
 #[test]
@@ -79,4 +79,72 @@ fn max_sequence_is_allocated_once_then_remains_exhausted() {
 fn fresh_sequence_starts_at_one() {
     let mut sequence = CommandSequence::default();
     assert_eq!(sequence.allocate(), Ok(1));
+}
+
+#[test]
+fn ack_precedes_rejection_and_applied_is_distinct() {
+    use turts_client::ingest::{CommandResult, ReceiptKind, ReceiptWitness, receipt_ordered};
+    use turts_net_protocol::JobId;
+    let ack = ReceiptWitness {
+        connection_epoch: 7,
+        seq: 12,
+        kind: ReceiptKind::Ack,
+        reliable: true,
+        message_id: Some(8),
+        remote_tick: 10,
+    };
+    let rejected = ReceiptWitness {
+        connection_epoch: 7,
+        seq: 12,
+        kind: ReceiptKind::Rejected,
+        reliable: true,
+        message_id: Some(9),
+        remote_tick: 10,
+    };
+    assert!(receipt_ordered(ack, rejected, 2));
+    let applied = CommandResult::Applied {
+        seq: 12,
+        tick: 11,
+        job_id: Some(JobId(5)),
+    };
+    assert_eq!(
+        applied,
+        CommandResult::Applied {
+            seq: 12,
+            tick: 11,
+            job_id: Some(JobId(5))
+        }
+    );
+}
+
+#[test]
+fn send_reversal_plant_fails_witness_even_when_typed_drain_is_ack_first() {
+    use turts_client::ingest::{CommandResult, ReceiptKind, ReceiptWitness, receipt_ordered};
+    let typed_drain = [
+        CommandResult::Acked { seq: 4, tick: 1 },
+        CommandResult::Rejected {
+            seq: 4,
+            tick: 1,
+            reason: turts_net_protocol::CommandRejectReason::BadSequence,
+        },
+    ];
+    assert!(matches!(typed_drain[0], CommandResult::Acked { .. }));
+    let ack_received = ReceiptWitness {
+        connection_epoch: 3,
+        seq: 4,
+        kind: ReceiptKind::Ack,
+        reliable: true,
+        message_id: Some(42),
+        remote_tick: 1,
+    };
+    let rejected_received = ReceiptWitness {
+        connection_epoch: 3,
+        seq: 4,
+        kind: ReceiptKind::Rejected,
+        reliable: true,
+        message_id: Some(41),
+        remote_tick: 1,
+    };
+    assert!(!receipt_ordered(ack_received, rejected_received, 2));
+    assert!(!receipt_ordered(ack_received, rejected_received, 32768));
 }

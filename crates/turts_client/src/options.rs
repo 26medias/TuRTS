@@ -26,12 +26,12 @@ pub struct ClientOptions {
     pub hello_hash: Option<String>,
     /// Test hook: stop after this many seconds.
     pub run_secs: Option<f32>,
-    /// Test hook: ignore the `UnitDeltas` at these tick offsets from the `Welcome` tick.
+    /// Test hook: ignore the `WorldDelta` at these tick offsets from the `Welcome` tick.
     pub drop_delta_offsets: Vec<u32>,
-    /// Test hook: ignore the first `UnitDeltas` that arrives.
+    /// Test hook: ignore the first `WorldDelta` that arrives.
     pub drop_arrival_delta: bool,
     /// Test hook: hold each `Snapshot` that answers a resync request back by this many ticks
-    /// of `UnitDeltas`.
+    /// of `WorldDelta`.
     pub hold_resync_snapshots: u32,
     /// Test hook: send this wire protocol version in `Hello` instead of `NET_PROTOCOL_VERSION`.
     pub protocol_version: Option<u32>,
@@ -93,10 +93,10 @@ Test hooks:
   --protocol-version N
                   Send N as the wire protocol version in Hello.
   --drop-delta-ticks a,b,c
-                  Ignore the UnitDeltas of the ticks a, b and c. The numbers are offsets
+                  Ignore the WorldDelta of the ticks a, b and c. The numbers are offsets
                   from the Welcome tick.
   --drop-arrival-delta
-                  Ignore the first UnitDeltas that puts a unit at the --move target.
+                  Ignore the first WorldDelta that puts a unit at the --move target.
   --hold-resync-snapshots N
                   Hold each Snapshot that answers a resync request back by N ticks.
 

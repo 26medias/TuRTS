@@ -4,7 +4,7 @@
 //!
 //! Connects, sends `Hello`, counts what the server sends, and writes `--out` JSON at exit:
 //! `{ welcomed, rejected_reason, disconnected_after_connect, acks, ack_seqs_unique, deltas,
-//! deltas_in_order, first_tick, last_tick }`. With `--moves N` it sends N `MoveTo` after
+//! deltas_in_order, first_tick, last_tick }`. With `--moves N` it sends N `PlayerCommand` after
 //! `Welcome`, one per frame, and exits 1 s after the N-th ack (or at `--run-secs`).
 
 use std::collections::HashSet;
@@ -19,6 +19,7 @@ use lightyear::prelude::client::*;
 use lightyear::prelude::*;
 use turts_net_lightyear::{ProtocolPlugin, ReliableChannel, tick_duration};
 use turts_net_protocol::NET_PROTOCOL_VERSION;
+use turts_net_protocol::PlayerCommandKind;
 use turts_net_protocol::messages::*;
 
 #[derive(Resource)]
@@ -164,7 +165,7 @@ fn receive(
     mut welcome: Query<&mut MessageReceiver<Welcome>>,
     mut rejected: Query<&mut MessageReceiver<JoinRejected>>,
     mut acks: Query<&mut MessageReceiver<CommandAck>>,
-    mut deltas: Query<&mut MessageReceiver<UnitDeltas>>,
+    mut deltas: Query<&mut MessageReceiver<WorldDelta>>,
 ) {
     for mut receiver in welcome.iter_mut() {
         if receiver.receive().next().is_some() {
@@ -198,17 +199,19 @@ fn receive(
 
 fn send_moves(
     mut state: ResMut<State>,
-    mut sender: Query<&mut MessageSender<MoveTo>>,
+    mut sender: Query<&mut MessageSender<PlayerCommand>>,
     cfg: Res<Cfg>,
 ) {
     if !state.welcomed || state.next_seq >= cfg.moves {
         return;
     }
     if let Ok(mut sender) = sender.single_mut() {
-        sender.send::<ReliableChannel>(MoveTo {
+        sender.send::<ReliableChannel>(PlayerCommand {
             seq: state.next_seq,
-            unit_ids: vec![UnitId(0)],
-            target: Pos { x: 10.0, y: 10.0 },
+            kind: PlayerCommandKind::MoveTo {
+                unit_ids: vec![UnitId(0)],
+                target: Pos { x: 10.0, y: 10.0 },
+            },
         });
         state.next_seq += 1;
     }

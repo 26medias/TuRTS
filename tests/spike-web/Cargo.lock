@@ -7274,14 +7274,14 @@ dependencies = [
 
 [[package]]
 name = "turts_mod_api"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "serde",
 ]
 
 [[package]]
 name = "turts_net_lightyear"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "bevy_app",
  "bevy_ecs",
@@ -7292,7 +7292,7 @@ dependencies = [
 
 [[package]]
 name = "turts_net_protocol"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "serde",
  "turts_mod_api",
