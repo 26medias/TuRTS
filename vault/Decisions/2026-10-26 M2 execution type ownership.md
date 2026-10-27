@@ -75,3 +75,14 @@ Task 6 completes the private `WriteSet` across queue changes, checked `JobId` al
 **Reason:** production payment and queue lifecycle must commit consistently with checked allocation, emitted events, and their true endpoint sources.
 
 **Cost if wrong:** small view/constructor and shared-commit migrations; the later Task 10 exporter will use the actual source.
+
+
+## Ruling R9 — Task 8 accounting instrumentation declarations
+
+R9 freezes the Task 8 declaration proposal in canonical .superpowers/sdd/2026-10-26-m2-economy/task-8-context.md: test-only AutomaticPhase/AutomaticSubject and TickBoundary; full TickAudit; crate-private capture helpers; complete raw diagnostic serialization including units and SimClock.tick_hz; and movement verification by an independent tick model. Add test-only AuditTrail/records as scoped there. Keep public runtime API unchanged. Task 8 owns the previously deferred AuditState Minor: bounds, catalog, compiled durations and resource-presence metadata, plus necessary raw order/inventory/event-cursor snapshots.
+
+**Reason:** the accounting oracle must observe complete operation/tick boundaries and independently derive movement, rate and duration expectations without trusting production events or post-state.
+
+**Cost if wrong:** narrow extra ownership in economy views, gather/production boundaries, plugin tick capture, and serialization of complete snapshots; no gameplay policy or public API change.
+
+**Execution status:** approved by root on 2026-10-27. Task 8 worktree /home/julien/.codex/worktrees/4f65/TuRTS (codex/m2-accounting) starts at reviewed product base 1ec683a841f3aff3062e0b6b4725a678872b6063.
