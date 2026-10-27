@@ -91,6 +91,10 @@ impl<W: Write> EconomyLogWriter<W> {
     pub(crate) fn flush(&mut self) -> Result<(), std::io::Error> {
         self.output.flush()
     }
+
+    pub(crate) fn into_inner(self) -> W {
+        self.output
+    }
 }
 
 fn ensure_valid(trail: &turts_sim::AuditTrail) -> Result<(), std::io::Error> {
@@ -127,12 +131,12 @@ pub(crate) fn read_jsonl_file(
     read_jsonl(BufReader::new(file))
 }
 
-/// Check record shape and exact command-to-operation association. Expected operations
-/// are deliberately supplied by the trace driver/oracle, never inferred from this log.
+/// Check record shape, R14 clock transitions, command-operation association, and
+/// the published tick boundary. Operation expectations remain external to this log.
 pub(crate) fn validate_records(records: &[EconomyLogRecord]) -> Result<(), String> {
-    if !matches!(records.first(), Some(EconomyLogRecord::Initial(_))) {
+    let Some(EconomyLogRecord::Initial(initial)) = records.first() else {
         return Err("first economy log record must be Initial".into());
-    }
+    };
     if records
         .iter()
         .skip(1)
@@ -141,15 +145,26 @@ pub(crate) fn validate_records(records: &[EconomyLogRecord]) -> Result<(), Strin
         return Err("economy log contains more than one Initial record".into());
     }
 
+    let mut cursor = initial.clone();
+    let mut tick_start = initial.clone();
     let mut commands = BTreeMap::new();
     let mut operations = BTreeSet::new();
-    let mut operation_records = BTreeMap::new();
     let mut last_operation: Option<u64> = None;
-    let mut last_tick: Option<u32> = None;
+    let mut last_tick = initial.economy.tick;
+    let mut tick_events = initial.pending_events.clone();
+
     for record in records.iter().skip(1) {
         match record {
             EconomyLogRecord::Initial(_) => unreachable!("initial count checked above"),
             EconomyLogRecord::CommandBoundary(command) => {
+                if command.result.slot != command.input.slot
+                    || command.result.seq != command.input.seq
+                {
+                    return Err(format!(
+                        "command result identity differs from input for operation {}",
+                        command.operation_id
+                    ));
+                }
                 if commands.insert(command.operation_id, command).is_some() {
                     return Err(format!(
                         "duplicate command operation id {}",
@@ -170,7 +185,50 @@ pub(crate) fn validate_records(records: &[EconomyLogRecord]) -> Result<(), Strin
                     ));
                 }
                 last_operation = Some(operation.operation_id);
-                operation_records.insert(operation.operation_id, operation);
+
+                if operation.before.economy.tick != operation.after.economy.tick {
+                    return Err(format!(
+                        "operation {} changes the simulation clock",
+                        operation.operation_id
+                    ));
+                }
+                validate_clock_continuity(&cursor, &operation.before, "operation")?;
+                if operation
+                    .events
+                    .iter()
+                    .any(|event| event.tick != operation.before.economy.tick)
+                {
+                    return Err(format!(
+                        "operation {} contains an event from another tick",
+                        operation.operation_id
+                    ));
+                }
+                let mut expected_pending = operation.before.pending_events.clone();
+                expected_pending.extend(operation.events.iter().cloned());
+                if operation.after.pending_events != expected_pending {
+                    return Err(format!(
+                        "operation {} event contribution differs from its after state",
+                        operation.operation_id
+                    ));
+                }
+                if let Some(command) = commands.remove(&operation.operation_id) {
+                    if command.before != operation.before
+                        || command.after != operation.after
+                        || validate_clock_continuity(
+                            &cursor,
+                            &operation.before,
+                            "command operation",
+                        )
+                        .is_err()
+                    {
+                        return Err(format!(
+                            "command/operation state mismatch for id {}",
+                            operation.operation_id
+                        ));
+                    }
+                }
+                cursor = operation.after.clone();
+                tick_events.extend(operation.events.iter().cloned());
             }
             EconomyLogRecord::Tick {
                 tick,
@@ -178,28 +236,130 @@ pub(crate) fn validate_records(records: &[EconomyLogRecord]) -> Result<(), Strin
                 state,
                 events,
             } => {
-                if last_tick.is_some_and(|previous| previous.checked_add(1) != Some(*tick)) {
+                if last_tick.checked_add(1) != Some(*tick) {
                     return Err(format!("tick {tick} is out of order or discontinuous"));
                 }
-                if events.iter().any(|event| event.tick != *tick) {
-                    return Err(format!("tick {tick} contains an event from another tick"));
+                if before != &tick_start {
+                    return Err(format!(
+                        "tick {tick} before snapshot differs from prior tick state"
+                    ));
                 }
-                let _ = (before, state);
-                last_tick = Some(*tick);
+                if before.economy.tick.checked_add(1) != Some(*tick) || state.economy.tick != *tick
+                {
+                    return Err(format!("tick {tick} state clock is inconsistent"));
+                }
+                tick_events.sort_by_key(|event| event.ordinal);
+                if events != &tick_events {
+                    return Err(format!(
+                        "tick {tick} published events differ from operation contributions"
+                    ));
+                }
+                if !events
+                    .windows(2)
+                    .all(|pair| pair[0].ordinal < pair[1].ordinal)
+                    || events.iter().any(|event| event.tick != *tick)
+                {
+                    return Err(format!(
+                        "tick {tick} events are misordered or from another tick"
+                    ));
+                }
+                if !state.pending_events.is_empty() || state.next_event_ordinal != Some(0) {
+                    return Err(format!(
+                        "tick {tick} did not drain and reset pending events"
+                    ));
+                }
+                validate_tick_state(&cursor, state, *tick)?;
+                cursor = state.clone();
+                tick_start = state.clone();
+                tick_events.clear();
+                last_tick = *tick;
             }
         }
     }
-    for (operation_id, command) in &commands {
-        let Some(operation) = operation_records.get(operation_id) else {
+    if let Some(operation_id) = commands.keys().next() {
+        return Err(format!(
+            "command operation id {operation_id} has no matching operation"
+        ));
+    }
+    Ok(())
+}
+
+fn validate_clock_continuity(
+    previous: &AuditState,
+    current: &AuditState,
+    label: &str,
+) -> Result<(), String> {
+    if previous == current {
+        return Ok(());
+    }
+    let Some(next_tick) = previous.economy.tick.checked_add(1) else {
+        return Err(format!("{label} clock overflow"));
+    };
+    let mut advanced = previous.clone();
+    advanced.economy.tick = next_tick;
+    if &advanced == current {
+        Ok(())
+    } else {
+        Err(format!(
+            "{label} before snapshot is discontinuous from the prior modeled state"
+        ))
+    }
+}
+
+/// A completed tick may move units between recorded operations. Ignore only the
+/// movement-facing coordinates/targets; all economy, ownership, order, event, and id
+/// state must still follow from the preceding typed record.
+fn validate_tick_state(previous: &AuditState, state: &AuditState, tick: u32) -> Result<(), String> {
+    let mut expected = previous.clone();
+    expected.economy.tick = tick;
+    expected.pending_events.clear();
+    expected.next_event_ordinal = Some(0);
+
+    for expected_unit in &mut expected.raw_units {
+        let Some(actual) = state
+            .raw_units
+            .iter()
+            .find(|unit| unit.unit_id == expected_unit.unit_id)
+        else {
             return Err(format!(
-                "command operation id {operation_id} has no matching operation"
+                "tick {tick} removes raw unit {}",
+                expected_unit.unit_id
             ));
         };
-        if command.before != operation.before || command.after != operation.after {
+        expected_unit.pos = actual.pos.clone();
+        expected_unit.move_target = actual.move_target.clone();
+    }
+    for expected_unit in &mut expected.units {
+        let Some(actual) = state
+            .units
+            .iter()
+            .find(|unit| unit.unit_id == expected_unit.unit_id)
+        else {
             return Err(format!(
-                "command/operation state mismatch for id {operation_id}"
+                "tick {tick} removes unit {}",
+                expected_unit.unit_id
             ));
-        }
+        };
+        expected_unit.pos = actual.pos.clone();
+    }
+    for expected_unit in &mut expected.economy.units {
+        let Some(actual) = state
+            .economy
+            .units
+            .iter()
+            .find(|unit| unit.unit_id == expected_unit.unit_id)
+        else {
+            return Err(format!(
+                "tick {tick} removes world unit {}",
+                expected_unit.unit_id
+            ));
+        };
+        expected_unit.pos = actual.pos.clone();
+    }
+    if expected != *state {
+        return Err(format!(
+            "tick {tick} after snapshot differs from the prior operation state"
+        ));
     }
     Ok(())
 }
