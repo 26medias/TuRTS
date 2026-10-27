@@ -83,6 +83,7 @@ pub struct UnitView {
 }
 #[derive(Debug, Clone, PartialEq)]
 pub struct AuditState {
+    pub ledger_claims: Vec<(u64, bool)>,
     pub unit_types: Vec<UnitTypeView>,
     pub units: Vec<UnitView>,
     pub nodes: Vec<NodeView>,
@@ -254,7 +255,22 @@ pub fn audit_state(world: &mut World) -> AuditState {
     let claims = world
         .get_resource::<Slots>()
         .map_or_else(Vec::new, Slots::owners);
+    let ledger_claims = world
+        .get_resource::<EconomyLedger>()
+        .map_or_else(Vec::new, |ledger| {
+            ledger
+                .reservation_claims
+                .iter()
+                .map(|(id, claim)| {
+                    (
+                        id.0,
+                        matches!(claim, crate::economy::ledger::ReservationClaim::Active(_)),
+                    )
+                })
+                .collect()
+        });
     AuditState {
+        ledger_claims,
         unit_types,
         units,
         nodes,
@@ -262,4 +278,132 @@ pub fn audit_state(world: &mut World) -> AuditState {
         allocators,
         claims,
     }
+}
+
+/// Return an owned balance snapshot. The shared World borrow cannot expose writable ledger state.
+pub fn balance_view(
+    world: &World,
+    slot: crate::SlotId,
+    resource: &ContentId,
+) -> Result<BalanceView, crate::RejectReason> {
+    let ledger = world
+        .get_resource::<EconomyLedger>()
+        .ok_or(crate::RejectReason::UnknownBalance)?;
+    let account = ledger
+        .balances
+        .get(&(slot.0, resource.clone()))
+        .ok_or(crate::RejectReason::UnknownBalance)?;
+    Ok(BalanceView {
+        slot: slot.0,
+        resource: resource.clone(),
+        on_hand: account.on_hand,
+        reserved: account.reserved,
+    })
+}
+
+/// Return an owned inventory snapshot after checking the owner's slot first.
+pub fn inventory_view(
+    world: &World,
+    slot: crate::SlotId,
+    unit_id: u32,
+) -> Result<InventoryView, crate::RejectReason> {
+    let owner = world
+        .iter_entities()
+        .find_map(|entity| {
+            (entity.get::<UnitId>().is_some_and(|unit| unit.0 == unit_id))
+                .then(|| entity.get::<Owner>().map(|owner| owner.0))?
+        })
+        .ok_or(crate::RejectReason::UnknownInventory)?;
+    if owner != slot {
+        return Err(crate::RejectReason::NotOwner);
+    }
+    let inventory = world
+        .get_resource::<EconomyLedger>()
+        .and_then(|ledger| ledger.inventories.get(&unit_id))
+        .ok_or(crate::RejectReason::UnknownInventory)?;
+    Ok(InventoryView {
+        unit: unit_id,
+        owner_slot: owner.0,
+        capacity: inventory.capacity,
+        items: inventory
+            .items
+            .iter()
+            .map(|(resource, account)| ItemView {
+                resource: resource.clone(),
+                on_hand: account.on_hand,
+                reserved: account.reserved,
+            })
+            .collect(),
+    })
+}
+
+/// Return an owned surface node snapshot.
+pub fn node_view(world: &World, id: NodeId) -> Result<NodeView, crate::RejectReason> {
+    world
+        .get_resource::<SurfaceNodes>()
+        .and_then(|nodes| nodes.0.iter().find(|node| node.id == id))
+        .map(|node| NodeView {
+            id: node.id,
+            content_id: node.content_id.clone(),
+            pos: WorldPos {
+                x: node.position.0.x,
+                y: node.position.0.y,
+            },
+            remaining: node.remaining,
+        })
+        .ok_or(crate::RejectReason::UnknownNode)
+}
+
+/// Return a producer queue snapshot after checking the producer's owner.
+pub fn queue_view(
+    world: &World,
+    slot: crate::SlotId,
+    unit_id: u32,
+) -> Result<QueueView, crate::RejectReason> {
+    let owner = unit_owner(world, unit_id)?;
+    if owner != slot {
+        return Err(crate::RejectReason::NotOwner);
+    }
+    let jobs = world
+        .get_resource::<ProductionQueues>()
+        .and_then(|queues| queues.0.get(&unit_id))
+        .ok_or(crate::RejectReason::UnknownUnit)?;
+    Ok(QueueView {
+        producer: unit_id,
+        owner_slot: owner.0,
+        jobs: jobs.iter().cloned().map(job_view).collect(),
+    })
+}
+
+/// Return an order snapshot after checking the unit's owner.
+pub fn order_view(
+    world: &World,
+    slot: crate::SlotId,
+    unit_id: u32,
+) -> Result<OrderView, crate::RejectReason> {
+    let owner = unit_owner(world, unit_id)?;
+    if owner != slot {
+        return Err(crate::RejectReason::NotOwner);
+    }
+    let order = world
+        .get_resource::<EconomyOrders>()
+        .and_then(|orders| orders.0.get(&unit_id))
+        .ok_or(crate::RejectReason::UnknownUnit)?;
+    Ok(OrderView {
+        unit: unit_id,
+        owner_slot: owner.0,
+        node: order.node,
+        receiver: order.receiver,
+        stage: order.stage.clone(),
+    })
+}
+
+fn unit_owner(world: &World, unit_id: u32) -> Result<crate::SlotId, crate::RejectReason> {
+    world
+        .iter_entities()
+        .find_map(|entity| {
+            (entity.get::<UnitId>().is_some_and(|unit| unit.0 == unit_id))
+                .then(|| entity.get::<Owner>().map(|owner| owner.0))?
+        })
+        .ok_or(crate::RejectReason::UnknownUnit)
 }

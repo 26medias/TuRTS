@@ -1,5 +1,6 @@
 pub mod ledger;
 pub mod production;
+pub mod transaction;
 pub mod views;
 
 use crate::ids::NodeId;

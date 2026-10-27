@@ -178,6 +178,7 @@ pub fn stage_package(
         if let Some(inventory_def) = &def.inventory {
             let mut inventory = Inventory {
                 capacity: inventory_def.capacity,
+                accepted_items: inventory_def.accepts.iter().cloned().collect(),
                 items: BTreeMap::new(),
             };
             let mut used: u128 = 0;
