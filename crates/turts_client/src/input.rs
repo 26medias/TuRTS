@@ -2,7 +2,7 @@
 
 use crate::{
     commands::{CommandSendStatus, PendingCommands, submit},
-    economy_ui::{Selection, UiPanelRoot, hit_test_node, hit_test_unit},
+    economy_ui::{Selection, UiPanelRoot, cursor_in_ui_viewport, hit_test_node, hit_test_unit},
     ingest::ReplicaState,
     join::{AcquiredPackages, Phase},
 };
@@ -25,9 +25,14 @@ pub fn world_pointer_commands(
     buttons: Res<ButtonInput<MouseButton>>,
     phase: Res<Phase>,
     windows: Query<&Window, With<PrimaryWindow>>,
-    cameras: Query<(&Camera, &GlobalTransform)>,
+    cameras: Query<(Entity, &Camera, &GlobalTransform)>,
     panel_roots: Query<
-        (&ComputedNode, &UiGlobalTransform, &InheritedVisibility),
+        (
+            &ComputedNode,
+            &UiGlobalTransform,
+            &InheritedVisibility,
+            &ComputedUiTargetCamera,
+        ),
         With<UiPanelRoot>,
     >,
     state: Res<ReplicaState>,
@@ -44,18 +49,32 @@ pub fn world_pointer_commands(
     let Some(cursor) = windows.iter().find_map(Window::cursor_position) else {
         return;
     };
-    if panel_roots
-        .iter()
-        .any(|(node, transform, visible)| visible.get() && node.contains_point(*transform, cursor))
-    {
-        return;
+    for (node, transform, visible, target_camera) in &panel_roots {
+        if !visible.get() {
+            continue;
+        }
+        let Some(camera_id) = target_camera.get() else {
+            return;
+        };
+        let Some((_, camera, _)) = cameras.iter().find(|(entity, _, _)| *entity == camera_id)
+        else {
+            return;
+        };
+        let Some(ui_cursor) = cursor_in_ui_viewport(cursor, camera) else {
+            continue;
+        };
+        // On the first frame, layout may not have run yet. Consume the gesture
+        // conservatively instead of letting a panel click fall through to the map.
+        if node.size().min_element() <= 0.0 || node.contains_point(*transform, ui_cursor) {
+            return;
+        }
     }
     let (Some(welcome), Some(replica), Some(acquired)) =
         (state.welcome, state.replica.as_ref(), acquired.as_ref())
     else {
         return;
     };
-    let Some((camera, transform)) = cameras.iter().next() else {
+    let Some((_, camera, transform)) = cameras.iter().next() else {
         return;
     };
     let Ok(ray) = camera.viewport_to_world(transform, cursor) else {

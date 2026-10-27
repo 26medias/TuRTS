@@ -3,8 +3,11 @@
 use bevy::camera::visibility::InheritedVisibility;
 use bevy::{
     prelude::*,
-    ui::{ComputedNode, InteractionDisabled, UiGlobalTransform},
-    ui_widgets::{Activate, Button, observe},
+    ui::{
+        CalculatedClip, ComputedNode, ComputedUiTargetCamera, InteractionDisabled,
+        UiGlobalTransform,
+    },
+    ui_widgets::{Activate, Button, ScrollArea, observe},
 };
 use turts_mod_api::{ContentId, CostSource, Footprint, ResourceKind};
 use turts_net_protocol::{
@@ -22,7 +25,7 @@ use crate::{
 #[derive(Resource, Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct Selection(pub Option<u32>);
 
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum UiAction {
     Produce { producer: u32, recipe: String },
@@ -40,6 +43,16 @@ pub struct UiPanelRoot;
 
 #[derive(Component)]
 pub struct UiSnapshotText;
+
+#[derive(Component, Debug, Clone, Copy)]
+struct UiActionOwner(Entity);
+
+#[derive(Resource, Default)]
+struct PanelEntities {
+    root: Option<Entity>,
+    lines: Vec<Entity>,
+    controls: std::collections::HashMap<UiAction, (Entity, Entity)>,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UiControl {
@@ -399,67 +412,123 @@ fn activate_action(
     );
 }
 
-/// Rebuild the real Bevy panel when its model changes.
-#[allow(clippy::too_many_arguments)]
-pub fn sync_panel(
-    mut commands: Commands,
-    phase: Res<Phase>,
-    state: Res<ReplicaState>,
-    acquired: Option<Res<AcquiredPackages>>,
-    selection: Res<Selection>,
-    results: Res<CommandResults>,
-    mut current: Local<Option<PanelModel>>,
-    roots: Query<Entity, With<UiPanelRoot>>,
-) {
-    if !matches!(*phase, Phase::Joined { .. }) {
+/// Keep the panel widgets alive across replica progress updates so Bevy's pointer
+/// press/release state remains attached to the same action entity.
+pub fn sync_panel(world: &mut World) {
+    let joined = matches!(*world.resource::<Phase>(), Phase::Joined { .. });
+    if !joined {
         return;
     }
-    let (Some(replica), Some(content)) = (
-        state.replica.as_ref(),
-        acquired.as_ref().map(|a| &a.0.content),
-    ) else {
+    let state = world.resource::<ReplicaState>();
+    let acquired = world.get_resource::<AcquiredPackages>();
+    let (Some(replica), Some(content)) = (state.replica.as_ref(), acquired.map(|a| &a.0.content))
+    else {
         return;
     };
-    let model = panel_model(replica, content, &selection, &results);
-    if current.as_ref() == Some(&model) {
-        return;
+    let model = panel_model(
+        replica,
+        content,
+        world.resource::<Selection>(),
+        world.resource::<CommandResults>(),
+    );
+    if world.resource::<PanelEntities>().root.is_none() {
+        let root = world
+            .spawn((
+                UiPanelRoot,
+                ScrollArea,
+                Node {
+                    position_type: PositionType::Absolute,
+                    left: px(12),
+                    top: px(12),
+                    width: px(390),
+                    max_height: percent(94),
+                    flex_direction: FlexDirection::Column,
+                    row_gap: px(5),
+                    padding: UiRect::all(px(12)),
+                    overflow: Overflow::scroll_y(),
+                    border_radius: BorderRadius::all(px(6)),
+                    ..default()
+                },
+                BackgroundColor(Color::srgba(0.045, 0.075, 0.09, 0.92)),
+            ))
+            .id();
+        world.resource_mut::<PanelEntities>().root = Some(root);
     }
-    for root in &roots {
-        commands.entity(root).despawn();
+    let root = world
+        .resource::<PanelEntities>()
+        .root
+        .expect("panel root created");
+
+    while world.resource::<PanelEntities>().lines.len() < model.lines.len() {
+        let entity = world
+            .spawn((
+                Text::default(),
+                TextFont {
+                    font_size: FontSize::Px(15.0),
+                    ..default()
+                },
+                TextColor(Color::srgb(0.9, 0.93, 0.91)),
+                UiSnapshotText,
+                ChildOf(root),
+            ))
+            .id();
+        world.resource_mut::<PanelEntities>().lines.push(entity);
     }
-    current.replace(model.clone());
-    commands
-        .spawn((
-            UiPanelRoot,
-            Node {
-                position_type: PositionType::Absolute,
-                left: px(12),
-                top: px(12),
-                width: px(390),
-                max_height: percent(94),
-                flex_direction: FlexDirection::Column,
-                row_gap: px(5),
-                padding: UiRect::all(px(12)),
-                overflow: Overflow::clip(),
-                border_radius: BorderRadius::all(px(6)),
-                ..default()
-            },
-            BackgroundColor(Color::srgba(0.045, 0.075, 0.09, 0.92)),
-        ))
-        .with_children(|root| {
-            for line in &model.lines {
-                root.spawn((
-                    Text::new(line.clone()),
-                    TextFont {
-                        font_size: FontSize::Px(15.0),
-                        ..default()
-                    },
-                    TextColor(Color::srgb(0.9, 0.93, 0.91)),
-                    UiSnapshotText,
-                ));
+    let line_entities = world.resource::<PanelEntities>().lines.clone();
+    for (index, entity) in line_entities.into_iter().enumerate() {
+        if let Some(mut text) = world.get_mut::<Text>(entity)
+            && let Some(line) = model.lines.get(index)
+        {
+            text.0.clone_from(line);
+        }
+        if let Some(mut node) = world.get_mut::<Node>(entity) {
+            node.display = if index < model.lines.len() {
+                Display::Flex
+            } else {
+                Display::None
+            };
+        }
+    }
+
+    let actions: std::collections::HashSet<_> =
+        model.controls.iter().map(|c| c.action.clone()).collect();
+    let stale: Vec<_> = world
+        .resource::<PanelEntities>()
+        .controls
+        .keys()
+        .filter(|action| !actions.contains(*action))
+        .cloned()
+        .collect();
+    for action in stale {
+        if let Some((button, label)) = world
+            .resource::<PanelEntities>()
+            .controls
+            .get(&action)
+            .copied()
+        {
+            if let Some(mut node) = world.get_mut::<Node>(button) {
+                node.display = Display::None;
             }
-            for control in &model.controls {
-                let mut button = root.spawn((
+            if let Some(mut node) = world.get_mut::<Node>(label) {
+                node.display = Display::None;
+            }
+            if let Some(mut disabled) = world.get_mut::<UiControlEnabled>(button) {
+                disabled.0 = false;
+            }
+            world.entity_mut(button).insert(InteractionDisabled);
+        }
+    }
+    for control in &model.controls {
+        let (button, label) = if let Some(pair) = world
+            .resource::<PanelEntities>()
+            .controls
+            .get(&control.action)
+            .copied()
+        {
+            pair
+        } else {
+            let button = world
+                .spawn((
                     Button,
                     UiActionTarget(control.action.clone()),
                     UiControlEnabled(control.enabled),
@@ -469,31 +538,65 @@ pub fn sync_panel(
                         align_items: AlignItems::Center,
                         ..default()
                     },
-                    BackgroundColor(if control.enabled {
-                        Color::srgb(0.16, 0.29, 0.31)
-                    } else {
-                        Color::srgb(0.18, 0.19, 0.19)
-                    }),
+                    BackgroundColor(Color::srgb(0.16, 0.29, 0.31)),
                     observe(activate_action),
-                ));
-                if !control.enabled {
-                    button.insert(InteractionDisabled);
-                }
-                button.with_children(|button| {
-                    button.spawn((
-                        Text::new(control.label.clone()),
-                        TextFont {
-                            font_size: FontSize::Px(14.0),
-                            ..default()
-                        },
-                        TextColor(Color::srgb(0.92, 0.95, 0.92)),
-                        UiSnapshotText,
-                        UiActionTarget(control.action.clone()),
-                        UiControlEnabled(control.enabled),
-                    ));
-                });
-            }
-        });
+                    ChildOf(root),
+                ))
+                .id();
+            let label = world
+                .spawn((
+                    Text::new(control.label.clone()),
+                    TextFont {
+                        font_size: FontSize::Px(14.0),
+                        ..default()
+                    },
+                    TextColor(Color::srgb(0.92, 0.95, 0.92)),
+                    UiSnapshotText,
+                    UiActionTarget(control.action.clone()),
+                    UiActionOwner(button),
+                    UiControlEnabled(control.enabled),
+                    ChildOf(button),
+                ))
+                .id();
+            world
+                .resource_mut::<PanelEntities>()
+                .controls
+                .insert(control.action.clone(), (button, label));
+            (button, label)
+        };
+        if let Some(mut text) = world.get_mut::<Text>(label) {
+            text.0.clone_from(&control.label);
+        }
+        if let Some(mut node) = world.get_mut::<Node>(button) {
+            node.display = Display::Flex;
+        }
+        if let Some(mut node) = world.get_mut::<Node>(label) {
+            node.display = Display::Flex;
+        }
+        if let Some(mut enabled) = world.get_mut::<UiControlEnabled>(button) {
+            enabled.0 = control.enabled;
+        }
+        if let Some(mut enabled) = world.get_mut::<UiControlEnabled>(label) {
+            enabled.0 = control.enabled;
+        }
+        if control.enabled {
+            world.entity_mut(button).remove::<InteractionDisabled>();
+            world
+                .entity_mut(button)
+                .insert(BackgroundColor(Color::srgb(0.16, 0.29, 0.31)));
+        } else {
+            world.entity_mut(button).insert((
+                InteractionDisabled,
+                BackgroundColor(Color::srgb(0.18, 0.19, 0.19)),
+            ));
+        }
+        if let Some(mut action) = world.get_mut::<UiActionTarget>(button) {
+            action.0.clone_from(&control.action);
+        }
+        if let Some(mut action) = world.get_mut::<UiActionTarget>(label) {
+            action.0.clone_from(&control.action);
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
@@ -505,35 +608,52 @@ pub struct RenderedUiNode {
     pub action: Option<UiAction>,
 }
 
-/// Read actual Bevy Text and post-layout geometry for the native/browser oracle.
+/// Read actual Bevy text and post-layout geometry for the native/browser oracle.
 pub fn rendered_ui_snapshot(world: &World) -> Vec<RenderedUiNode> {
     let mut rows = Vec::new();
     for entity in world.iter_entities() {
         if entity.get::<UiSnapshotText>().is_none() {
             continue;
         }
-        let (Some(text), Some(node), Some(transform)) = (
-            entity.get::<Text>(),
-            entity.get::<ComputedNode>(),
-            entity.get::<UiGlobalTransform>(),
-        ) else {
-            continue;
+        let text = entity.get::<Text>();
+        let node = entity.get::<ComputedNode>();
+        let transform = entity.get::<UiGlobalTransform>();
+        let visible = text.is_some()
+            && node.zip(transform).is_some_and(|(node, transform)| {
+                actual_layout_visible(world, entity.id(), node, transform)
+            });
+        let action = entity.get::<UiActionTarget>().map(|value| value.0.clone());
+        let enabled = action.as_ref().is_none_or(|_| {
+            entity
+                .get::<UiActionOwner>()
+                .and_then(|owner| world.get_entity(owner.0).ok())
+                .is_some_and(|button| {
+                    button.contains::<Button>() && !button.contains::<InteractionDisabled>()
+                })
+        });
+        let (rect, text_value) = match (text, node, transform) {
+            (Some(text), Some(node), Some(transform)) => {
+                let center = transform.to_scale_angle_translation().2;
+                let size = node.size();
+                (
+                    [
+                        center.x - size.x / 2.0,
+                        center.y - size.y / 2.0,
+                        size.x,
+                        size.y,
+                    ],
+                    text.0.clone(),
+                )
+            }
+            (Some(text), _, _) => ([0.0; 4], text.0.clone()),
+            _ => continue,
         };
-        let center = transform.to_scale_angle_translation().2;
-        let size = node.size();
         rows.push(RenderedUiNode {
-            text: text.0.clone(),
-            rect: [
-                center.x - size.x / 2.0,
-                center.y - size.y / 2.0,
-                size.x,
-                size.y,
-            ],
-            visible: entity
-                .get::<InheritedVisibility>()
-                .is_none_or(|value| value.get()),
-            enabled: entity.get::<UiControlEnabled>().is_none_or(|value| value.0),
-            action: entity.get::<UiActionTarget>().map(|value| value.0.clone()),
+            text: text_value,
+            rect,
+            visible,
+            enabled,
+            action,
         });
     }
     rows.sort_by(|a, b| {
@@ -544,13 +664,73 @@ pub fn rendered_ui_snapshot(world: &World) -> Vec<RenderedUiNode> {
     rows
 }
 
-pub fn cursor_over_panel(
-    cursor: Vec2,
-    roots: &Query<(&ComputedNode, &UiGlobalTransform, &InheritedVisibility), With<UiPanelRoot>>,
+fn actual_layout_visible(
+    world: &World,
+    entity: Entity,
+    node: &ComputedNode,
+    transform: &UiGlobalTransform,
 ) -> bool {
-    roots
-        .iter()
-        .any(|(node, transform, visible)| visible.get() && node.contains_point(*transform, cursor))
+    let Some(visibility) = world.get::<InheritedVisibility>(entity) else {
+        return false;
+    };
+    if !visibility.get() || node.size().min_element() <= 0.0 {
+        return false;
+    }
+    let Some(camera_id) = world
+        .get::<ComputedUiTargetCamera>(entity)
+        .and_then(ComputedUiTargetCamera::get)
+    else {
+        return false;
+    };
+    let Some(camera) = world
+        .get::<Camera>(camera_id)
+        .filter(|camera| camera.is_active)
+    else {
+        return false;
+    };
+    let Some(viewport) = camera.physical_viewport_rect() else {
+        return false;
+    };
+    let center = transform.to_scale_angle_translation().2;
+    let half = node.size() * 0.5;
+    let min = center - half;
+    let max = center + half;
+    let viewport = Rect::from_corners(Vec2::ZERO, viewport.size().as_vec2());
+    let Some(clip) = world.get::<CalculatedClip>(entity) else {
+        return false;
+    };
+    if clip.is_fully_clipped() {
+        return false;
+    }
+    // UI picking tests the same computed clip chain. Sampling the rendered text
+    // bounds catches fully clipped/off-viewport labels while allowing partial
+    // visibility at panel edges.
+    [
+        Vec2::ZERO,
+        Vec2::new(0.5, 0.0),
+        Vec2::new(1.0, 0.0),
+        Vec2::new(0.0, 0.5),
+        Vec2::splat(0.5),
+        Vec2::new(1.0, 0.5),
+        Vec2::new(0.0, 1.0),
+        Vec2::new(0.5, 1.0),
+        Vec2::ONE,
+    ]
+    .into_iter()
+    .map(|fraction| min + (max - min) * fraction)
+    .any(|point| viewport.contains(point) && clip.contains_point(point))
+}
+
+/// Convert a logical window cursor into UI camera viewport pixels.
+pub fn cursor_in_ui_viewport(cursor: Vec2, camera: &Camera) -> Option<Vec2> {
+    let viewport = camera.physical_viewport_rect()?;
+    let physical = cursor * camera.target_scaling_factor()?;
+    let min = viewport.min.as_vec2();
+    let max = viewport.max.as_vec2();
+    if physical.x < min.x || physical.y < min.y || physical.x >= max.x || physical.y >= max.y {
+        return None;
+    }
+    Some(physical - min)
 }
 
 fn validate_selection(mut selection: ResMut<Selection>, state: Res<ReplicaState>) {
@@ -572,12 +752,14 @@ fn validate_selection(mut selection: ResMut<Selection>, state: Res<ReplicaState>
 pub struct EconomyUiPlugin;
 impl Plugin for EconomyUiPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<Selection>().add_systems(
-            Update,
-            (validate_selection, sync_panel)
-                .chain()
-                .after(crate::present::update_presented),
-        );
+        app.init_resource::<Selection>()
+            .init_resource::<PanelEntities>()
+            .add_systems(
+                Update,
+                (validate_selection, sync_panel)
+                    .chain()
+                    .after(crate::present::update_presented),
+            );
     }
 }
 
