@@ -369,6 +369,11 @@ fn overflow_discards_trigger_coalesces_request_and_converges_on_successor() {
     // A later heartbeat starts a fresh tail. Consuming the delayed, incomplete response allows
     // exactly one successor request; the request marker remains set while that response waits.
     assert_eq!(rig.feed(delta(106, 105)), vec![Outgoing::ResyncRequest]);
+    assert_eq!(
+        rig.state.replica.as_ref().unwrap().last_applied_tick,
+        Some(100)
+    );
+    assert_eq!(rig.counters.snapshots_applied, 1);
     assert_eq!(rig.counters.successor_requests, 1);
     assert!(rig.hooks.outstanding_request);
     assert_eq!(rig.counters.resync_requests_sent, 2);
@@ -387,6 +392,7 @@ fn overflow_discards_trigger_coalesces_request_and_converges_on_successor() {
     assert_eq!(rig.counters.max_outstanding_requests, 1);
     assert_eq!(rig.counters.buffer_overflows, 1);
     assert_eq!(rig.counters.successor_requests, 1);
+    assert_eq!(rig.counters.snapshots_applied, 2);
     assert_eq!(rig.counters.resync_requests_sent, 2);
 }
 

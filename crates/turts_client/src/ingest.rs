@@ -375,7 +375,6 @@ fn apply_snapshot(
             }
         }
         SnapshotOutcome::ResyncRequested { .. } => {
-            counters.snapshots_applied = counters.snapshots_applied.saturating_add(1);
             if was_outstanding {
                 counters.successor_requests = counters.successor_requests.saturating_add(1);
             }
