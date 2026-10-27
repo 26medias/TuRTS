@@ -128,13 +128,85 @@ class VariantCliTests(unittest.TestCase):
         self.assertTrue((self.root / "relative-out" / "mapping.json").is_file())
         self.assertFalse((ROOT / "relative-out").exists())
 
-    def test_both_unsupported_modes_fail_before_writes(self):
+    def test_unknown_mode_fails_before_writes(self):
+        out = self.root / "unknown-mode"
+        result = self.invoke(out=out, mode="unknown")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("invalid choice", result.stderr)
+        self.assertFalse(out.exists())
+
+    def test_role_mode_matrix_publishes_typed_transforms_and_policy(self):
+        for package in ("base", "haul", "cedar"):
+            for mode in ("balance", "physical"):
+                for payment in ("charge", "reserve"):
+                    with self.subTest(package=package, mode=mode, payment=payment):
+                        source = self.root / f"{package}-{mode}-{payment}-source"
+                        self.copy_package(package, source)
+                        out = self.root / f"{package}-{mode}-{payment}-out"
+                        result = self.invoke(source=source, out=out, mode=mode, payment=payment)
+                        self.assertEqual(result.returncode, 0, result.stderr)
+                        mapping = json.loads((out / "mapping.json").read_text())
+                        self.assertEqual((mapping["mode"], mapping["payment"]), (mode, payment))
+                        self.assertIn("semantic_changes", mapping)
+
+    def test_acme_role_mode_is_explicit_noop(self):
         for mode in ("balance", "physical"):
-            out = self.root / mode
-            result = self.invoke(out=out, mode=mode)
-            self.assertNotEqual(result.returncode, 0)
-            self.assertIn("only rename", result.stderr)
-            self.assertFalse(out.exists())
+            with self.subTest(mode=mode):
+                source = self.root / f"acme-{mode}-source"
+                self.copy_package("acme", source)
+                out = self.root / f"acme-{mode}-out"
+                result = self.invoke(source=source, out=out, mode=mode, payment="charge")
+                self.assertEqual(result.returncode, 0, result.stderr)
+                mapping = json.loads((out / "mapping.json").read_text())
+                self.assertEqual(len(mapping["semantic_changes"]), 1)
+                self.assertEqual(mapping["semantic_changes"][0]["field"], "role_transform_noop")
+
+    def test_role_transform_rejects_mixed_cost_shape_without_output(self):
+        self.copy_package("cedar")
+        recipe = self.source / "production/hire.ron"
+        original = recipe.read_text()
+        cost = '(resource: "cedar:wood", amount: 50, source: ProducerInventory)'
+        self.assertIn(cost, original)
+        recipe.write_text(original.replace(f"[{cost}]", f"[{cost}, {cost}]"))
+        result = self.invoke(mode="balance", payment="charge")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("exactly one cost", result.stderr)
+        self.assertFalse(self.out.exists())
+
+    def test_role_transform_rejects_capacity_overflow_without_output(self):
+        self.copy_package("cedar")
+        map_path = self.source / "maps/clearing.ron"
+        original = map_path.read_text()
+        self.assertEqual(original.count("remaining: 1000"), 2)
+        map_path.write_text(original.replace("remaining: 1000", "remaining: 18446744073709551615"))
+        result = self.invoke(mode="physical", payment="charge")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("node capacity overflow", result.stderr)
+        self.assertFalse(self.out.exists())
+
+    def test_balance_role_provenance_is_deterministic(self):
+        source = self.root / "cedar-balance-source"
+        self.copy_package("cedar", source)
+        first = self.invoke(source=source, mode="balance", payment="charge")
+        self.assertEqual(first.returncode, 0, first.stderr)
+        second_out = self.root / "cedar-balance-second"
+        second = self.invoke(source=source, out=second_out, mode="balance", payment="charge")
+        self.assertEqual(second.returncode, 0, second.stderr)
+        self.assertEqual(self.snapshot(self.out), self.snapshot(second_out))
+        mapping = json.loads((self.out / "mapping.json").read_text())
+        self.assertTrue(any(row["field"] == "added_definition" for row in mapping["semantic_changes"]))
+
+    def test_reserve_role_transform_requires_exactly_one_to_one_queued_refund(self):
+        self.copy_package("cedar")
+        recipe = self.source / "production/hire.ron"
+        recipe.write_text(recipe.read_text().replace(
+            "queued: (numerator: 1, denominator: 1)",
+            "queued: (numerator: 2, denominator: 2)",
+        ))
+        result = self.invoke(mode="physical", payment="reserve")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("queued refund", result.stderr)
+        self.assertFalse(self.out.exists())
 
     def test_payment_mismatch_fails_without_writes(self):
         result = self.invoke(payment="charge")

@@ -6,9 +6,9 @@ use std::{
     process::ExitCode,
 };
 use turts_mod_api::{
-    BalanceAmount, ContentId, Cost, DropOffEffect, GathererDef, InventoryDef, ItemStack, Manifest,
-    MapDef, NodeDef, NodePlacement, PaymentPolicy, Placement, ProducerDef, ProductionDef,
-    ResourceDef, UnitDef, VisualDef, VisualTarget,
+    BalanceAmount, ContentId, Cost, CostSource, DropOffEffect, GathererDef, InventoryDef,
+    ItemStack, Manifest, MapDef, NodeDef, NodePlacement, PaymentPolicy, Placement, ProducerDef,
+    ProductionDef, ResourceDef, ResourceKind, SlotEconomyInit, UnitDef, VisualDef, VisualTarget,
 };
 use turts_mod_runtime::{archive::PackageArchive, pack::pack_dir, visuals::visuals_by_content};
 
@@ -33,6 +33,15 @@ struct Mapping {
     names: Vec<NameRecord>,
     paths: Vec<PathRecord>,
     unchanged_assets: Vec<AssetRecord>,
+    semantic_changes: Vec<SemanticRecord>,
+}
+#[derive(Serialize)]
+struct SemanticRecord {
+    package: String,
+    definition_path: String,
+    field: String,
+    before: serde_json::Value,
+    after: serde_json::Value,
 }
 #[derive(Serialize)]
 struct PackageRecord {
@@ -105,11 +114,8 @@ fn main() -> ExitCode {
 }
 fn run(raw: Vec<String>) -> Result<(), String> {
     let a = args(&raw)?;
-    if a.mode != "rename" {
-        return Err(format!(
-            "unsupported mode `{}`; only rename is supported",
-            a.mode
-        ));
+    if !matches!(a.mode.as_str(), "rename" | "balance" | "physical") {
+        return Err(format!("unsupported mode `{}`", a.mode));
     }
     let policy = match a.payment.as_str() {
         "charge" => PaymentPolicy::ChargeOnQueue,
@@ -156,7 +162,7 @@ fn run(raw: Vec<String>) -> Result<(), String> {
     if stage.exists() {
         return Err("staging path already exists".into());
     }
-    let r = build(&source, &stage, a.seed, policy, &a.payment);
+    let r = build(&source, &stage, a.seed, policy, &a.payment, &a.mode);
     if r.is_err() {
         let _ = fs::remove_dir_all(&stage);
     }
@@ -252,10 +258,15 @@ fn build(
     seed: i64,
     policy: PaymentPolicy,
     payment: &str,
+    mode: &str,
 ) -> Result<(), String> {
-    let inputs = discover(source)?;
+    let mut inputs = discover(source)?;
     if inputs.is_empty() {
         return Err("empty package source".into());
+    }
+    let mut semantic_changes = vec![];
+    if mode != "rename" {
+        apply_role_transform(&mut inputs, mode, seed, policy, &mut semantic_changes)?;
     }
     let mut pkgset = BTreeSet::new();
     for x in &inputs {
@@ -278,7 +289,7 @@ fn build(
         x.archive.resources().map_err(|e| e.to_string())?;
         x.archive.nodes().map_err(|e| e.to_string())?;
         for (_, p) in x.archive.production().map_err(|e| e.to_string())? {
-            if p.payment != policy {
+            if mode == "rename" && p.payment != policy {
                 return Err(format!(
                     "{} recipe {} payment policy mismatches requested {payment}",
                     m.id, p.id
@@ -403,22 +414,619 @@ fn build(
     });
     paths.sort_by(|a, b| (&a.package, &a.old_export_path).cmp(&(&b.package, &b.old_export_path)));
     assets.sort_by(|a, b| (&a.package, &a.old_path).cmp(&(&b.package, &b.old_path)));
+    semantic_changes.sort_by(|a, b| {
+        (&a.package, &a.definition_path, &a.field).cmp(&(&b.package, &b.definition_path, &b.field))
+    });
     let map = Mapping {
-        version: 1,
+        version: if mode == "rename" { 1 } else { 2 },
         seed,
-        mode: "rename".into(),
+        mode: mode.into(),
         payment: payment.into(),
         packages: pkgs,
         definitions: defs,
         names,
         paths,
         unchanged_assets: assets,
+        semantic_changes,
     };
     let mut json = serde_json::to_vec_pretty(&map).map_err(|e| e.to_string())?;
     json.push(b'\n');
     fs::write(stage.join("mapping.json"), json).map_err(|e| e.to_string())?;
     Ok(())
 }
+fn semantic_record<T: serde::Serialize, U: serde::Serialize>(
+    package: &str,
+    path: &str,
+    field: &str,
+    before: &T,
+    after: &U,
+) -> SemanticRecord {
+    SemanticRecord {
+        package: package.into(),
+        definition_path: path.into(),
+        field: field.into(),
+        before: serde_json::to_value(before).unwrap_or(serde_json::Value::Null),
+        after: serde_json::to_value(after).unwrap_or(serde_json::Value::Null),
+    }
+}
+fn write_def<T: serde::Serialize>(
+    files: &mut BTreeMap<String, Vec<u8>>,
+    path: &str,
+    value: &T,
+) -> Result<(), String> {
+    files.insert(path.into(), ronbytes(value)?);
+    Ok(())
+}
+fn apply_role_transform(
+    inputs: &mut [Input],
+    mode: &str,
+    seed: i64,
+    payment: PaymentPolicy,
+    changes: &mut Vec<SemanticRecord>,
+) -> Result<(), String> {
+    for input in inputs {
+        let package = input.archive.manifest.id.clone();
+        let resources = input.archive.resources().map_err(|e| e.to_string())?;
+        let recipes = input.archive.production().map_err(|e| e.to_string())?;
+        if recipes.is_empty()
+            && resources.is_empty()
+            && input.archive.nodes().map_err(|e| e.to_string())?.is_empty()
+        {
+            changes.push(SemanticRecord {
+                package: package.clone(),
+                definition_path: "<package>".into(),
+                field: "role_transform_noop".into(),
+                before: serde_json::json!("structurally_empty_economy"),
+                after: serde_json::json!(mode),
+            });
+            continue;
+        }
+        if recipes.is_empty() {
+            return Err(format!("{package}: unsupported economy without recipes"));
+        }
+        if resources
+            .iter()
+            .filter(|(_, r)| r.kind == ResourceKind::Item)
+            .count()
+            != 1
+            || resources.len() > 2
+            || resources
+                .iter()
+                .filter(|(_, r)| r.kind == ResourceKind::Balance)
+                .count()
+                > 1
+        {
+            return Err(format!("{package}: unsupported resource endpoints"));
+        }
+        let (item_path, item_def) = resources
+            .iter()
+            .find(|(_, r)| r.kind == ResourceKind::Item)
+            .ok_or("missing Item endpoint")?;
+        let item = format!("{package}:{}", item_def.id);
+        let balance_pair = resources
+            .iter()
+            .find(|(_, r)| r.kind == ResourceKind::Balance);
+        let balance = balance_pair.map(|(_, r)| format!("{package}:{}", r.id));
+        let balance_path = balance_pair.map(|(p, _)| p.clone());
+        let all_units = input.archive.units().map_err(|e| e.to_string())?;
+        let receivers = all_units
+            .iter()
+            .filter(|(_, u)| u.producer.is_some())
+            .collect::<Vec<_>>();
+        if receivers.len() != 1 {
+            return Err(format!(
+                "{package}: expected exactly one producer definition"
+            ));
+        }
+        let receiver_path = receivers[0].0.clone();
+        let receiver_id = format!("{package}:{}", receivers[0].1.id);
+        let mut gatherers = all_units
+            .iter()
+            .filter(|(_, u)| u.gatherer.is_some())
+            .collect::<Vec<_>>();
+        if gatherers.len() != 1 {
+            return Err(format!(
+                "{package}: expected exactly one gathering definition"
+            ));
+        }
+        let (_, gatherer) = gatherers
+            .pop()
+            .ok_or_else(|| format!("{package}: missing gathering definition"))?;
+        if gatherer.gatherer.as_ref().unwrap().items != vec![item.clone()]
+            || !gatherer
+                .inventory
+                .as_ref()
+                .is_some_and(|i| i.accepts == vec![item.clone()])
+            || all_units
+                .iter()
+                .any(|(path, u)| path != &receiver_path && u.drop_off.is_some())
+        {
+            return Err(format!(
+                "{package}: unsupported gathering item/filter shape"
+            ));
+        }
+        let node_defs = input.archive.nodes().map_err(|e| e.to_string())?;
+        if node_defs.is_empty() || node_defs.iter().any(|(_, n)| n.item != item) {
+            return Err(format!("{package}: unsupported node Item endpoints"));
+        }
+        let receiver = &receivers[0].1;
+        let drop = receiver
+            .drop_off
+            .as_ref()
+            .ok_or_else(|| format!("{package}: producer has no receiver rule"))?;
+        if drop.rules.len() != 1 || drop.rules[0].item != item {
+            return Err(format!("{package}: unsupported receiver rules"));
+        }
+        let (source_resource, source_kind) = {
+            let mut shape = None;
+            for (_, recipe) in &recipes {
+                if recipe.costs.len() != 1 {
+                    return Err(format!("{package}: each recipe must have exactly one cost"));
+                }
+                let cost = &recipe.costs[0];
+                let kind = match cost.source {
+                    CostSource::ProducerInventory if cost.resource == item => "item",
+                    CostSource::SlotBalance => {
+                        let b = balance.as_deref().ok_or_else(|| {
+                            format!("{package}: SlotBalance cost has no Balance definition")
+                        })?;
+                        if cost.resource != b {
+                            return Err(format!("{package}: unsupported cost endpoint"));
+                        }
+                        "balance"
+                    }
+                    _ => return Err(format!("{package}: unsupported cost source/resource shape")),
+                };
+                if shape
+                    .as_ref()
+                    .is_some_and(|(resource, prior_kind): &(String, &str)| {
+                        resource != &cost.resource || *prior_kind != kind
+                    })
+                {
+                    return Err(format!("{package}: mixed recipe cost endpoints"));
+                }
+                shape = Some((cost.resource.clone(), kind));
+            }
+            shape.ok_or_else(|| format!("{package}: no recipes to transform"))?
+        };
+        let source_is_balance = source_kind == "balance";
+        if (source_is_balance && source_resource != balance.as_deref().unwrap_or_default())
+            || (!source_is_balance && source_resource != item)
+        {
+            return Err(format!(
+                "{package}: cost endpoint does not match inferred economic role"
+            ));
+        }
+        let producer = receiver
+            .producer
+            .as_ref()
+            .ok_or_else(|| format!("{package}: producer definition disappeared"))?;
+        let enabled = producer.recipes.iter().cloned().collect::<BTreeSet<_>>();
+        let recipe_ids = recipes
+            .iter()
+            .map(|(_, r)| format!("{package}:{}", r.id))
+            .collect::<BTreeSet<_>>();
+        if enabled != recipe_ids {
+            return Err(format!(
+                "{package}: producer recipe set does not exactly enable the package recipes"
+            ));
+        }
+        match &drop.rules[0].effect {
+            DropOffEffect::Store if !source_is_balance => {}
+            DropOffEffect::Convert {
+                balance: rule_balance,
+                per_item: 1,
+            } if source_is_balance && Some(rule_balance) == balance.as_ref() => {}
+            _ => {
+                return Err(format!(
+                    "{package}: unsupported receiver effect for cost endpoint"
+                ))
+            }
+        }
+        if payment == PaymentPolicy::ReserveThenCharge
+            && recipes.iter().any(|(_, r)| {
+                r.cancel_refunds.queued.numerator != 1 || r.cancel_refunds.queued.denominator != 1
+            })
+        {
+            return Err(format!(
+                "{package}: reserve requires queued refund exactly 1/1"
+            ));
+        }
+        let mut maps = input.archive.maps().map_err(|e| e.to_string())?;
+        if maps.is_empty() {
+            return Err(format!(
+                "{package}: role transform requires at least one map"
+            ));
+        }
+        let mut map_seeds: BTreeMap<String, BTreeMap<u8, u64>> = BTreeMap::new();
+        let mut capacity = 0u64;
+        for (map_path, map) in &maps {
+            let owners = map
+                .placements
+                .iter()
+                .map(|p| p.owner_slot)
+                .collect::<BTreeSet<_>>();
+            if map.slot_economy.iter().any(|e| !owners.contains(&e.slot)) {
+                return Err(format!(
+                    "{package}/{map_path}: slot economy has no represented owner"
+                ));
+            }
+            let mut owner_seeds = BTreeMap::new();
+            for owner in owners {
+                let owner_producers = map
+                    .placements
+                    .iter()
+                    .filter(|p| p.owner_slot == owner && p.unit == receiver_id)
+                    .collect::<Vec<_>>();
+                if owner_producers.len() != 1 {
+                    return Err(format!("{package}/{map_path}: expected exactly one producer placement for owner {owner}"));
+                }
+                let endpoint = owner_producers[0];
+                for placed in map
+                    .placements
+                    .iter()
+                    .filter(|p| p.owner_slot == owner && p.unit != receiver_id)
+                {
+                    if !placed.contents.is_empty() {
+                        return Err(format!(
+                            "{package}/{map_path}: stock outside producer endpoint"
+                        ));
+                    }
+                }
+                if endpoint.contents.len() > 1 || endpoint.contents.iter().any(|s| s.item != item) {
+                    return Err(format!(
+                        "{package}/{map_path}: unsupported producer inventory stock"
+                    ));
+                }
+                let item_seed = endpoint.contents.first().map_or(0, |s| s.amount);
+                let slot = map.slot_economy.iter().find(|e| e.slot == owner);
+                let balance_seed = if let Some(slot) = slot {
+                    if slot
+                        .balances
+                        .iter()
+                        .any(|b| Some(&b.balance) != balance.as_ref())
+                    {
+                        return Err(format!(
+                            "{package}/{map_path}: stock outside declared Balance endpoint"
+                        ));
+                    }
+                    if slot.balances.len() > 1 {
+                        return Err(format!("{package}/{map_path}: ambiguous Balance stock"));
+                    }
+                    slot.balances.first().map_or(0, |b| b.amount)
+                } else {
+                    0
+                };
+                if (source_is_balance && item_seed > 0) || (!source_is_balance && balance_seed > 0)
+                {
+                    return Err(format!(
+                        "{package}/{map_path}: stock outside the selected economic endpoint"
+                    ));
+                }
+                let source_seed = if source_is_balance {
+                    balance_seed
+                } else {
+                    item_seed
+                };
+                owner_seeds.insert(owner, source_seed);
+                if mode == "physical" {
+                    let node_total = map
+                        .nodes
+                        .iter()
+                        .try_fold(0u64, |sum, n| sum.checked_add(n.remaining).ok_or(()))
+                        .map_err(|_| format!("{package}/{map_path}: node capacity overflow"))?;
+                    let required = source_seed.checked_add(node_total).ok_or_else(|| {
+                        format!("{package}/{map_path}: inventory capacity overflow")
+                    })?;
+                    capacity = capacity.max(required);
+                }
+            }
+            map_seeds.insert(map_path.clone(), owner_seeds);
+        }
+        if mode == "physical" && capacity == 0 {
+            return Err(format!("{package}: derived physical capacity is zero"));
+        }
+        let mut target_balance = balance.clone();
+        let mut target_balance_path = balance_path.clone();
+        let mut added_resource = None;
+        if mode == "balance" && target_balance.is_none() {
+            let local = format!(
+                "balance_{}",
+                hash(seed, &package, "role", item_path, "balance")
+            );
+            if resources.iter().any(|(_, r)| r.id == local) {
+                return Err(format!("{package}: generated Balance identity collision"));
+            }
+            target_balance = Some(format!("{package}:{local}"));
+            target_balance_path = Some(format!("resources/{local}.ron"));
+            added_resource = Some(ResourceDef {
+                id: local,
+                name: format!(
+                    "Balance {}",
+                    hash(seed, &package, "role", item_path, "name")
+                ),
+                unit_name: format!("unit {}", hash(seed, &package, "role", item_path, "unit")),
+                kind: ResourceKind::Balance,
+            });
+        }
+        let target_balance = target_balance;
+        let target_balance_path = target_balance_path;
+        if let Some(def) = added_resource {
+            let path = target_balance_path
+                .as_ref()
+                .ok_or_else(|| format!("{package}: missing generated Balance path"))?;
+            let before = serde_json::Value::Null;
+            write_def(&mut input.files, path, &def)?;
+            let mut manifest = input.archive.manifest.clone();
+            manifest.exports.resources.push(path.clone());
+            manifest.exports.resources.sort();
+            write_def(
+                &mut input.files,
+                "manifest.ron",
+                &ManifestOutput::from(&manifest),
+            )?;
+            changes.push(SemanticRecord {
+                package: package.clone(),
+                definition_path: path.clone(),
+                field: "added_definition".into(),
+                before,
+                after: serde_json::to_value(&def).map_err(|error| error.to_string())?,
+            });
+            changes.push(semantic_record(
+                &package,
+                "manifest.ron",
+                "exports.resources",
+                &input.archive.manifest.exports.resources,
+                &manifest.exports.resources,
+            ));
+        }
+        let target_item_source = if mode == "physical" {
+            CostSource::ProducerInventory
+        } else {
+            CostSource::SlotBalance
+        };
+        let mut after_units = all_units.clone();
+        for (path, unit) in &mut after_units {
+            let before = unit.clone();
+            if path == &receiver_path {
+                if mode == "physical" {
+                    let max_seed = map_seeds
+                        .values()
+                        .flat_map(|m| m.values())
+                        .copied()
+                        .max()
+                        .unwrap_or(0);
+                    let inv = unit.inventory.get_or_insert(InventoryDef {
+                        capacity,
+                        accepts: vec![item.clone()],
+                    });
+                    if inv.accepts != vec![item.clone()] || inv.capacity < max_seed {
+                        inv.accepts = vec![item.clone()];
+                        inv.capacity = capacity;
+                    }
+                }
+                if let Some(drop) = &mut unit.drop_off {
+                    drop.rules[0].effect = if mode == "physical" {
+                        DropOffEffect::Store
+                    } else {
+                        DropOffEffect::Convert {
+                            balance: target_balance
+                                .clone()
+                                .ok_or_else(|| format!("{package}: missing target Balance"))?,
+                            per_item: 1,
+                        }
+                    };
+                }
+            }
+            if mode == "physical" && path == &receiver_path {
+                if let Some(inv) = &mut unit.inventory {
+                    if inv.accepts != vec![item.clone()] {
+                        inv.accepts = vec![item.clone()];
+                        inv.capacity = capacity;
+                    }
+                }
+            }
+            if unit.inventory != before.inventory {
+                changes.push(semantic_record(
+                    &package,
+                    path,
+                    "inventory",
+                    &before.inventory,
+                    &unit.inventory,
+                ));
+            }
+            if unit.drop_off != before.drop_off {
+                changes.push(semantic_record(
+                    &package,
+                    path,
+                    "drop_off",
+                    &before.drop_off,
+                    &unit.drop_off,
+                ));
+            }
+            if *unit != before {
+                write_def(&mut input.files, path, unit)?;
+            }
+        }
+        let mut after_recipes = recipes.clone();
+        for (path, recipe) in &mut after_recipes {
+            let before = recipe.clone();
+            let cost = &mut recipe.costs[0];
+            cost.resource = if mode == "physical" {
+                item.clone()
+            } else {
+                target_balance.clone().ok_or("missing target Balance")?
+            };
+            cost.source = target_item_source;
+            recipe.payment = payment;
+            if recipe.costs != before.costs {
+                changes.push(semantic_record(
+                    &package,
+                    path,
+                    "costs",
+                    &before.costs,
+                    &recipe.costs,
+                ));
+            }
+            if recipe.payment != before.payment {
+                changes.push(semantic_record(
+                    &package,
+                    path,
+                    "payment",
+                    &before.payment,
+                    &recipe.payment,
+                ));
+            }
+            if *recipe != before {
+                write_def(&mut input.files, path, recipe)?;
+            }
+        }
+        for (map_path, map) in &mut maps {
+            let before = map.clone();
+            let owner_values = map_seeds
+                .get(map_path)
+                .ok_or_else(|| format!("{package}/{map_path}: missing derived seed map"))?;
+            for placement in &mut map.placements {
+                if placement.unit != receiver_id {
+                    continue;
+                }
+                let seed_amount = owner_values
+                    .get(&placement.owner_slot)
+                    .copied()
+                    .unwrap_or(0);
+                if mode == "balance" && !source_is_balance {
+                    placement.contents.clear();
+                }
+                if mode == "physical" && source_is_balance {
+                    placement.contents = if seed_amount == 0 {
+                        vec![]
+                    } else {
+                        vec![ItemStack {
+                            item: item.clone(),
+                            amount: seed_amount,
+                        }]
+                    };
+                }
+            }
+            for owner in owner_values.keys().copied() {
+                if mode == "physical" && balance.is_none() {
+                    continue;
+                }
+                if (mode == "balance" && !source_is_balance)
+                    || (mode == "physical" && source_is_balance)
+                {
+                    let amount = *owner_values
+                        .get(&owner)
+                        .ok_or_else(|| format!("{package}/{map_path}: missing owner seed"))?;
+                    changes.push(semantic_record(
+                        &package,
+                        map_path,
+                        &format!("seed_transfer.owner_{owner}"),
+                        &serde_json::json!({
+                            "endpoint": if source_is_balance { "slot_balance" } else { "producer_inventory" },
+                            "amount": amount,
+                        }),
+                        &serde_json::json!({
+                            "endpoint": if mode == "balance" { "slot_balance" } else { "producer_inventory" },
+                            "amount": amount,
+                        }),
+                    ));
+                }
+                let entry =
+                    if let Some(index) = map.slot_economy.iter().position(|e| e.slot == owner) {
+                        &mut map.slot_economy[index]
+                    } else {
+                        map.slot_economy.push(SlotEconomyInit {
+                            slot: owner,
+                            balances: vec![],
+                        });
+                        map.slot_economy.last_mut().ok_or_else(|| {
+                            format!("{package}/{map_path}: failed to add slot economy")
+                        })?
+                    };
+                if mode == "physical" {
+                    if let Some(b) = balance.as_ref() {
+                        entry.balances.retain(|x| &x.balance != b);
+                        entry.balances.push(BalanceAmount {
+                            balance: b.clone(),
+                            amount: 0,
+                        });
+                    }
+                } else if let Some(b) = target_balance.as_ref() {
+                    let amount = *owner_values
+                        .get(&owner)
+                        .ok_or_else(|| format!("{package}/{map_path}: missing owner seed"))?;
+                    if let Some(found) = entry.balances.iter_mut().find(|x| &x.balance == b) {
+                        found.amount = amount;
+                    } else {
+                        entry.balances.push(BalanceAmount {
+                            balance: b.clone(),
+                            amount,
+                        });
+                    }
+                }
+            }
+            if map.placements != before.placements {
+                changes.push(semantic_record(
+                    &package,
+                    map_path,
+                    "placements",
+                    &before.placements,
+                    &map.placements,
+                ));
+            }
+            if map.slot_economy != before.slot_economy {
+                changes.push(semantic_record(
+                    &package,
+                    map_path,
+                    "slot_economy",
+                    &before.slot_economy,
+                    &map.slot_economy,
+                ));
+            }
+            if *map != before {
+                write_def(&mut input.files, map_path, map)?;
+            }
+        }
+        if mode == "physical" {
+            for (path, unit) in &after_units {
+                if path == &receiver_path {
+                    continue;
+                }
+                if unit.inventory.as_ref().is_some_and(|i| {
+                    i.accepts.iter().any(|x| x == &item) && unit.gatherer.is_some()
+                }) {
+                    changes.push(semantic_record(
+                        &package,
+                        path,
+                        "gathering_items_preserved",
+                        &unit.inventory,
+                        &unit.inventory,
+                    ));
+                }
+            }
+            changes.push(semantic_record(
+                &package,
+                &receiver_path,
+                "inventory.capacity_requirement",
+                &serde_json::Value::Null,
+                &serde_json::json!({"derived_maximum": capacity, "method": "owner_seed_plus_all_map_node_remaining"}),
+            ));
+        }
+        for (map_path, map) in maps {
+            if input.files.contains_key(&map_path) {
+                write_def(&mut input.files, &map_path, &map)?;
+            }
+        }
+        let packed =
+            turts_mod_runtime::pack::pack_files(&input.files).map_err(|e| e.to_string())?;
+        input.archive = PackageArchive::parse(&packed)
+            .map_err(|e| format!("role transform staged parse: {e}"))?;
+        let _ = balance_path;
+    }
+    Ok(())
+}
+
 fn discover(s: &Path) -> Result<Vec<Input>, String> {
     let dirs = if s.join("manifest.ron").is_file() {
         vec![s.to_owned()]
@@ -1077,6 +1685,196 @@ mod tests {
     use super::*;
 
     #[test]
+    fn role_modes_conserve_seed_derive_capacity_and_validate_added_balance_references() {
+        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../mods");
+        let mut physical = discover(&root.join("base")).unwrap();
+        let mut physical_changes = vec![];
+        apply_role_transform(
+            &mut physical,
+            "physical",
+            17,
+            PaymentPolicy::ChargeOnQueue,
+            &mut physical_changes,
+        )
+        .unwrap();
+        let archive = &physical[0].archive;
+        let receiver = archive
+            .units()
+            .unwrap()
+            .into_iter()
+            .find(|(_, u)| u.producer.is_some())
+            .unwrap()
+            .1;
+        assert_eq!(receiver.inventory.unwrap().capacity, 2500);
+        assert_eq!(
+            receiver.drop_off.unwrap().rules[0].effect,
+            DropOffEffect::Store
+        );
+        let recipes = archive.production().unwrap();
+        assert!(recipes
+            .iter()
+            .all(|(_, r)| r.costs[0].source == CostSource::ProducerInventory
+                && r.costs[0].resource.ends_with(":ore")));
+        let map = archive.maps().unwrap().remove(0).1;
+        assert_eq!(
+            map.placements
+                .iter()
+                .filter(|p| p.unit.ends_with(":command_center"))
+                .map(|p| p.contents.iter().map(|x| x.amount).sum::<u64>())
+                .sum::<u64>(),
+            1000
+        );
+        assert!(map
+            .slot_economy
+            .iter()
+            .all(|e| e.balances.len() == 1 && e.balances[0].amount == 0));
+        assert!(visuals_by_content(std::slice::from_ref(archive)).is_ok());
+
+        let mut item_only = discover(&root.join("cedar")).unwrap();
+        let mut physical_changes = vec![];
+        apply_role_transform(
+            &mut item_only,
+            "physical",
+            19,
+            PaymentPolicy::ChargeOnQueue,
+            &mut physical_changes,
+        )
+        .unwrap();
+        let item_only_archive = &item_only[0].archive;
+        assert!(!item_only_archive
+            .resources()
+            .unwrap()
+            .iter()
+            .any(|(_, r)| r.kind == ResourceKind::Balance));
+        assert!(item_only_archive
+            .maps()
+            .unwrap()
+            .iter()
+            .all(|(_, map)| map.slot_economy.is_empty()));
+
+        let mut balance = discover(&root.join("cedar")).unwrap();
+        let mut changes = vec![];
+        apply_role_transform(
+            &mut balance,
+            "balance",
+            18,
+            PaymentPolicy::ReserveThenCharge,
+            &mut changes,
+        )
+        .unwrap();
+        let archive = &balance[0].archive;
+        assert_eq!(
+            archive
+                .resources()
+                .unwrap()
+                .iter()
+                .filter(|(_, r)| r.kind == ResourceKind::Balance)
+                .count(),
+            1
+        );
+        assert!(archive
+            .production()
+            .unwrap()
+            .iter()
+            .all(|(_, r)| r.costs[0].source == CostSource::SlotBalance
+                && r.payment == PaymentPolicy::ReserveThenCharge));
+        let map = archive.maps().unwrap().remove(0).1;
+        assert!(map
+            .placements
+            .iter()
+            .filter(|p| p.unit.ends_with(":depot"))
+            .all(|p| p.contents.is_empty()));
+        assert!(map
+            .slot_economy
+            .iter()
+            .all(|e| e.balances.len() == 1 && e.balances[0].amount == 100));
+        assert!(visuals_by_content(std::slice::from_ref(archive)).is_ok());
+
+        let added = archive
+            .manifest
+            .exports
+            .resources
+            .iter()
+            .find(|p| p.contains("balance_"))
+            .unwrap()
+            .clone();
+        let mut manifest = archive.manifest.clone();
+        manifest.exports.resources.retain(|p| p != &added);
+        write_def(
+            &mut balance[0].files,
+            "manifest.ron",
+            &ManifestOutput::from(&manifest),
+        )
+        .unwrap();
+        let packed = turts_mod_runtime::pack::pack_files(&balance[0].files).unwrap();
+        let missing_export = PackageArchive::parse(&packed).unwrap();
+        assert!(
+            validate(&missing_export).is_err(),
+            "public reference validation must reject a missing generated Balance export"
+        );
+    }
+
+    #[test]
+    fn physical_mode_retains_unused_balance_definition_and_zero_accounts() {
+        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../mods/cedar");
+        let mut inputs = discover(&root).unwrap();
+        let mut manifest = inputs[0].archive.manifest.clone();
+        manifest
+            .exports
+            .resources
+            .push("resources/reserve.ron".into());
+        manifest.exports.resources.sort();
+        write_def(
+            &mut inputs[0].files,
+            "resources/reserve.ron",
+            &ResourceDef {
+                id: "reserve".into(),
+                name: "Reserve".into(),
+                unit_name: "unit".into(),
+                kind: ResourceKind::Balance,
+            },
+        )
+        .unwrap();
+        write_def(
+            &mut inputs[0].files,
+            "manifest.ron",
+            &ManifestOutput::from(&manifest),
+        )
+        .unwrap();
+        inputs[0].archive =
+            PackageArchive::parse(&turts_mod_runtime::pack::pack_files(&inputs[0].files).unwrap())
+                .unwrap();
+        let mut changes = vec![];
+        apply_role_transform(
+            &mut inputs,
+            "physical",
+            31,
+            PaymentPolicy::ChargeOnQueue,
+            &mut changes,
+        )
+        .unwrap();
+        let archive = &inputs[0].archive;
+        assert!(archive
+            .resources()
+            .unwrap()
+            .iter()
+            .any(|(_, r)| r.id == "reserve" && r.kind == ResourceKind::Balance));
+        let map = archive.maps().unwrap().remove(0).1;
+        assert!(map.slot_economy.iter().all(|slot| slot.balances
+            == vec![BalanceAmount {
+                balance: "cedar:reserve".into(),
+                amount: 0
+            }]));
+        assert!(archive
+            .production()
+            .unwrap()
+            .iter()
+            .all(|(_, recipe)| recipe.costs[0].resource.ends_with(":wood")
+                && recipe.costs[0].source == CostSource::ProducerInventory));
+        assert!(validate(archive).is_ok());
+    }
+
+    #[test]
     fn deterministic_name_hash_changes_with_seed() {
         assert_ne!(
             hash(7, "a", "units", "u", "name"),
@@ -1160,6 +1958,58 @@ mod tests {
     }
 
     #[test]
+    fn inverse_rename_restores_role_transformed_intermediate() {
+        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../mods/cedar");
+        let mut inputs = discover(&root).unwrap();
+        let mut changes = vec![];
+        apply_role_transform(
+            &mut inputs,
+            "balance",
+            123,
+            PaymentPolicy::ChargeOnQueue,
+            &mut changes,
+        )
+        .unwrap();
+        let intermediate = inputs[0].archive.clone();
+        let forward = make_plan(&inputs, 123).unwrap();
+        let mut defs = vec![];
+        let mut names = vec![];
+        let renamed_files = transformed_files(&inputs[0], &forward, &mut defs, &mut names).unwrap();
+        let renamed =
+            PackageArchive::parse(&turts_mod_runtime::pack::pack_files(&renamed_files).unwrap())
+                .unwrap();
+        let reverse = inverse_plan(&forward).unwrap();
+        let renamed_input = Input {
+            archive: renamed,
+            files: renamed_files,
+        };
+        let mut reverse_defs = vec![];
+        let mut reverse_names = vec![];
+        let restored_files = transformed_files(
+            &renamed_input,
+            &reverse,
+            &mut reverse_defs,
+            &mut reverse_names,
+        )
+        .unwrap();
+        let restored =
+            PackageArchive::parse(&turts_mod_runtime::pack::pack_files(&restored_files).unwrap())
+                .unwrap();
+        assert_eq!(restored.manifest, intermediate.manifest);
+        assert_eq!(restored.units().unwrap(), intermediate.units().unwrap());
+        assert_eq!(
+            restored.resources().unwrap(),
+            intermediate.resources().unwrap()
+        );
+        assert_eq!(
+            restored.production().unwrap(),
+            intermediate.production().unwrap()
+        );
+        assert_eq!(restored.maps().unwrap(), intermediate.maps().unwrap());
+        assert_eq!(restored.content().unwrap(), intermediate.content().unwrap());
+    }
+
+    #[test]
     fn all_six_typed_exports_restore_after_inverse_rename() {
         let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../mods/cedar");
         let temp = env::temp_dir().join(format!("m2-variant-roundtrip-{}", std::process::id()));
@@ -1172,6 +2022,7 @@ mod tests {
             123,
             PaymentPolicy::ReserveThenCharge,
             "reserve",
+            "rename",
         )
         .unwrap();
         let original = PackageArchive::parse(&pack_dir(&root).unwrap()).unwrap();

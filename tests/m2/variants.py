@@ -15,9 +15,6 @@ def main(argv=None):
     parser.add_argument("--mode", required=True, choices=("rename", "balance", "physical"))
     parser.add_argument("--payment", required=True, choices=("charge", "reserve"))
     args = parser.parse_args(argv)
-    if args.mode != "rename":
-        print(f"unsupported mode {args.mode}; only rename is supported", file=sys.stderr)
-        return 2
     caller_dir = Path.cwd()
     source = args.source if args.source.is_absolute() else caller_dir / args.source
     output = args.out if args.out.is_absolute() else caller_dir / args.out
