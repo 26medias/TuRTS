@@ -12,3 +12,6 @@ turts_mod_api = { path = "../turts_mod_api" }
 turts_mod_runtime = { path = "../turts_mod_runtime" }
 syn = { version = "=2.0.119", features = ["full", "visit", "parsing"] }
 proc-macro2 = { version = "=1.0.107", features = ["span-locations"] }
+serde = { workspace = true }
+ron = { workspace = true }
+serde_json = { workspace = true }
