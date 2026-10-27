@@ -421,10 +421,37 @@ fn delta_filters_before_projection_keeps_public_lifecycle_and_empty_replacements
             pos: Pos { x: 7., y: 8. }
         }]
     );
-    assert_eq!(d.economy.inventories[0].items, vec![]);
-    assert_eq!(d.economy.orders[0].stage, wire::GatherStage::Idle);
-    assert_eq!(d.economy.queues[0].jobs, vec![]);
-    assert!(!format!("{decoded:?}").contains("secret:crystal"));
+    assert_eq!(
+        decoded
+            .economy
+            .inventories
+            .iter()
+            .map(|i| i.unit)
+            .collect::<Vec<_>>(),
+        vec![UnitId(1)]
+    );
+    assert_eq!(decoded.economy.inventories[0].items, vec![]);
+    assert_eq!(
+        decoded
+            .economy
+            .orders
+            .iter()
+            .map(|o| o.unit)
+            .collect::<Vec<_>>(),
+        vec![UnitId(1)]
+    );
+    assert_eq!(decoded.economy.orders[0].stage, wire::GatherStage::Idle);
+    assert_eq!(
+        decoded
+            .economy
+            .queues
+            .iter()
+            .map(|q| q.producer)
+            .collect::<Vec<_>>(),
+        vec![UnitId(4)]
+    );
+    assert_eq!(decoded.economy.queues[0].jobs, vec![]);
+    assert!(!format!("{:?}", decoded.economy).contains("secret:crystal"));
     assert_eq!(decoded.nodes.len(), 1);
 
     let other = export::delta_for(&batch, SlotId(1));
@@ -433,6 +460,42 @@ fn delta_filters_before_projection_keeps_public_lifecycle_and_empty_replacements
     let other_decoded: wire::WorldDelta = postcard::from_bytes(other_bytes).unwrap();
     assert_eq!(other_decoded, other);
     assert_eq!(other.economy.balances[0].resource, "secret:crystal");
+    assert_eq!(
+        other_decoded
+            .economy
+            .inventories
+            .iter()
+            .map(|i| i.unit)
+            .collect::<Vec<_>>(),
+        vec![UnitId(2)]
+    );
+    assert_eq!(
+        other_decoded
+            .economy
+            .orders
+            .iter()
+            .map(|o| o.unit)
+            .collect::<Vec<_>>(),
+        vec![UnitId(2)]
+    );
+    assert_eq!(
+        other_decoded
+            .economy
+            .queues
+            .iter()
+            .map(|q| q.producer)
+            .collect::<Vec<_>>(),
+        vec![UnitId(5)]
+    );
+    assert_eq!(
+        other_decoded
+            .economy
+            .queues
+            .iter()
+            .flat_map(|q| q.jobs.iter().map(|j| j.id))
+            .collect::<Vec<_>>(),
+        vec![wire::JobId(99)]
+    );
     assert_eq!(other.economy.queues[0].jobs[0].id, wire::JobId(99));
     assert!(!format!("{:?}", other.economy).contains("acme:ore"));
 }
