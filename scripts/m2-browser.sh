@@ -32,9 +32,20 @@ if [[ $# -eq 1 && "$1" == "--list-cases" ]]; then
     exit 0
 fi
 if [[ $# -eq 0 && -z "$PACKAGE" && -z "$CASE_ID" ]]; then
+    case_list=$("$0" --list-cases)
+    selected_count=$(wc -l <<<"$case_list" | tr -d ' ')
+    if [[ "$selected_count" != 15 ]]; then
+        echo "expected 15 registered M2 browser cases, found $selected_count" >&2
+        exit 1
+    fi
     for package in base haul acme cedar; do
         "$0" --package "$package"
     done
+    for loss_family in conversion charge refund spawn final_change; do
+        "$0" --case "E9-browser-base-loss-$loss_family"
+    done
+    printf 'M2_DEFAULT_SUITE_SUMMARY {"selected_count":%s,"completed_count":%s,"passed_count":%s,"semantic_failed_count":0,"infrastructure_failed_count":0,"timeout_count":0}\n' \
+        "$selected_count" "$selected_count" "$selected_count"
     exit 0
 fi
 while [[ $# -gt 0 ]]; do

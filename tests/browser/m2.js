@@ -1284,9 +1284,12 @@ async function runBaseUiSmoke(argv) {
         assert(commandCenter && commandCenterMesh, "owner-0 Command Center is absent from actual received/rendered state");
         result.stages.selection_target = { unit_id: commandCenter.unit_id, world_pos: commandCenter.pos };
         await clickRenderedEntity(page, joined.scene, commandCenterMesh);
-        const selected = await waitForSnapshot(page, (snapshot) =>
-            snapshot.debug?.selection === commandCenter.unit_id,
-        5000, "actual Command Center selection state", diagnostic);
+        const selected = await waitForSnapshot(page, (snapshot) => {
+            const texts = visibleTexts(snapshot);
+            return snapshot.debug?.selection === commandCenter.unit_id &&
+                texts.some((text) => /^Credits:/.test(text)) &&
+                !texts.includes("Select a unit or producer");
+        }, 5000, "Command Center selection and rebuilt owner economy panel", diagnostic);
         let selectedArtifact;
         let producerId;
         let visibleProduceAction;
@@ -1324,7 +1327,10 @@ async function runBaseUiSmoke(argv) {
                 Math.abs(candidate.translation[0] - 24) < 1e-3 && Math.abs(candidate.translation[2] - 8) < 1e-3);
             assert(harvester && mesh && node, "base recovery fixture lacks its owner-0 Harvester or ore node");
             await clickRenderedEntity(page, joinedArtifact.scene, mesh);
-            await waitForSnapshot(page, (snapshot) => snapshot.debug?.selection === harvester.unit_id, 5000, "recovery Harvester selection");
+            await waitForSnapshot(page, (snapshot) =>
+                snapshot.debug?.selection === harvester.unit_id &&
+                visibleTexts(snapshot).some((text) => text.startsWith("Gather:")),
+            5000, "recovery Harvester selection and rebuilt Gather row");
             const workerSelection = await captureStage(page, outDir, "02-recovery-harvester-selected", logs);
             const selectedHarvester = workerSelection.debug.replicated_world.units.find((unit) => unit.unit_id === harvester.unit_id);
             const recoveryArtifact = await runBrowserCase("E9-browser-base-recovery", () => runBaseRecoveryProof(
@@ -1405,9 +1411,10 @@ async function runBaseUiSmoke(argv) {
         const harvesterMesh = harvester && cancelledArtifact.scene.units.find((unit) => unit.unit_id === harvester.unit_id);
         assert(harvester && harvesterMesh, "owner-0 Harvester is absent from actual received/rendered state");
         await clickRenderedEntity(page, cancelledArtifact.scene, harvesterMesh);
-        const selectedHarvester = await waitForSnapshot(page, (snapshot) =>
-            visibleTexts(snapshot).some((text) => text.startsWith(`Selected: Harvester · ${harvester.unit_id}`)),
-        5000, "real selected Harvester text");
+        await waitForSnapshot(page, (snapshot) =>
+            snapshot.debug?.selection === harvester.unit_id &&
+            visibleTexts(snapshot).some((text) => text.startsWith("Gather:")),
+        5000, "Harvester selection and rebuilt Gather row");
         const selectedHarvesterArtifact = await captureStage(page, outDir, "07-selected-harvester", logs);
         assert(visibleTexts(selectedHarvesterArtifact).includes(`Selected: Harvester · ${harvester.unit_id}`));
         assert.equal(
