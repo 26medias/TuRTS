@@ -17,7 +17,7 @@ Dashboard for the TuRTS studio. Read this first, then [[Tasks]] and the latest n
 
 **Current milestone:** M1 done. Next: M2, mod API proven by the default mod plus an alternative economy mod.
 
-**Phase:** M1 is closed. M2 Tasks 1–9 are complete after review and canonical integration; original plan progress is 9/16. Task 9 final canonical gates passed: 390 workspace tests passed, 0 failed, 12 ignored across 68 groups; fmt/check/strict Clippy/boundary/locked wasm passed. Process acceptance and Chrome T7 passed (52/52 frames, `acme:scout`, final `[20,8]`). Task 10 is next; protocol 1 remains selected pending the atomic protocol switch. Current board, report and ledger are in the managed worktree at `/home/julien/.codex/worktrees/ee40/TuRTS`.** https://github.com/26medias/TuRTS (public). CI green.
+**Phase:** M1 is closed. M2 Tasks 1–9 and 14 are complete after review and canonical integration; original plan progress is 10/16. Task 14's 49 Rust tests, six scanner/public-loader checks, and 26 Python tests passed; fmt and strict Clippy passed. The 25 mutation cases comprise 18 previously verified cases and seven new actual-product cases with semantic RED/restored GREEN evidence. Tasks 10–13 and 15–16 remain in progress/backlog as tracked on the board. Task 10 canonical integration and global gates are underway. Protocol 1 remains selected until Task 10's atomic switch passes all gates. Current board, report and ledger are in the managed worktree at `/home/julien/.codex/worktrees/ee40/TuRTS`.** https://github.com/26medias/TuRTS (public). CI green.
 
 ## Where to look
 

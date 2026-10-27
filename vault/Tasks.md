@@ -15,7 +15,7 @@ The task board. Move items between sections; keep owner and evidence link on eac
 
 ## In progress
 
-- [ ] **M2 implementation (16 tasks).** Owner: Codex orchestrator; Sol reasoning/review, Luna execution. Tasks 1–9 complete after review and canonical integration; original progress 9/16. Task 9 canonical gate: 390 workspace tests passed, 0 failed, 12 ignored across 68 groups; fmt/check/strict Clippy/boundary/locked wasm passed; acceptance and T7 browser passed. Canonical product checkpoint `1f004e6ad363a5f94f47cb52e4bf98ce5c95aa08` in `/home/julien/.codex/worktrees/ee40/TuRTS`. Task 10 protocol switch and Task 14 public proof have prepared isolated worktrees; both await root dispatch. Protocol 1 remains selected.
+- [ ] **M2 implementation (16 tasks).** Owner: Codex orchestrator; Sol reasoning/review, Luna execution. Tasks 1–9 and 14 complete after review and canonical integration; original plan progress is 10/16. Task 9 canonical gate: 390 workspace tests passed, 0 failed, 12 ignored across 68 groups; fmt/check/strict Clippy/boundary/locked wasm passed; acceptance and T7 browser passed. Task 14 is integrated at canonical HEAD `74e2c1068841552e15edb15166081929740c3756`; scoped gates passed (49 Rust tests, 6 scanner/public-loader checks, 26 Python tests, fmt, strict Clippy). Task 10 source is Sol-approved and its four reviewed commits are being integrated and gated in this canonical worktree. Protocol 1 remains selected until the atomic switch passes all Task 10 gates.
 
 ## Backlog (M1)
 
@@ -75,3 +75,6 @@ The task board. Move items between sections; keep owner and evidence link on eac
 
 
 [2026-10-27 Task 9 closeout] Original M2 progress is 9/16. Canonical product checkpoint `1f004e6ad363a5f94f47cb52e4bf98ce5c95aa08`; Task 9 canonical data/loop commit `51ff356`, scanner and fixture corrections `a712a12`, `49c445f`, `019d80e`, strict-Clippy cleanup `1f004e6`. Final gate results: workspace 390 passed/0 failed/12 ignored across 68 groups; fmt, locked check, strict Clippy, boundary and wasm passed; process acceptance 1 + 2 + 8 + repeated convergence 1; T7 Chrome 156, acme:scout, 52/52 frames, final [20,8], oracle 1/1. Task 10 is next; Task 14 prep is isolated and held. Protocol 1 remains selected.
+
+
+- [x] **2026-10-27: Task 14 — public authoring and public proof.** Canonical commits `45d8c85`, `7f128d1`, `8bf0bda`, lint cleanup `74e2c10`; final Task 14 review accepted. Scoped gates: 42 accounting + 7 variant + 2 public-path + 4 no-content tests passed; Python variants 26/26 passed; formatting and strict Clippy passed. Mutation evidence aggregates 18 previously verified cases and seven new actual-product cases, each with semantic RED and restored GREEN; source hashes and restoration were verified. E8/E9 remain deferred to Tasks 15/16. Evidence: `.superpowers/sdd/2026-10-26-m2-economy/progress.md`, `docs/measurements/m2-public-api.md`, `/tmp/task-14-report.md`, `/tmp/task-14-public-proof-final-review.md`.
