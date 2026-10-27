@@ -4,6 +4,7 @@
 
 pub mod advertisement;
 pub mod messages;
+pub mod staged_v2;
 
 pub use advertisement::Advertisement;
 pub use messages::*;
