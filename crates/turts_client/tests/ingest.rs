@@ -304,6 +304,33 @@ fn welcome_and_snapshot_in_one_frame_apply_both() {
 }
 
 #[test]
+fn valid_snapshot_covers_invalid_initial_snapshot_without_successor() {
+    let mut rig = Rig::new();
+    assert!(rig.feed(welcome(100)).is_empty());
+    let mut invalid = match snapshot(100) {
+        Incoming::Snapshot(snapshot) => snapshot,
+        _ => unreachable!(),
+    };
+    invalid.units[0].content_id = "unknown:unit".to_string();
+    assert_eq!(
+        rig.feed(Incoming::Snapshot(invalid)),
+        vec![Outgoing::ResyncRequest]
+    );
+    assert_eq!(rig.counters.resync_requests_sent, 1);
+    assert!(rig.hooks.outstanding_request);
+
+    assert!(rig.feed(snapshot(101)).is_empty());
+    assert!(!rig.hooks.outstanding_request);
+    assert_eq!(rig.counters.resync_requests_sent, 1);
+    assert_eq!(rig.counters.successor_requests, 0);
+    assert_eq!(
+        rig.state.replica.as_ref().unwrap().last_applied_tick,
+        Some(101)
+    );
+    assert!(!rig.state.replica.as_ref().unwrap().in_resync());
+}
+
+#[test]
 fn idle_resync_sends_one_request_after_10_ticks() {
     let mut rig = Rig::new();
     assert!(rig.feed(welcome(100)).is_empty());

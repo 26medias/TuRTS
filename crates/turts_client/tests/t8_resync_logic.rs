@@ -148,7 +148,8 @@ fn t8_broken_chain_during_replay_starts_one_new_resync() {
         SnapshotOutcome::ResyncRequested { replayed: 0 }
     );
     assert!(r.in_resync());
-    assert_eq!(r.last_applied_tick, Some(15));
+    // An incomplete retained tail keeps the previously coherent display frozen.
+    assert_eq!(r.last_applied_tick, Some(12));
     assert_eq!(buffered_ticks(&r), vec![18]);
 }
 

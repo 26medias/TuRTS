@@ -172,46 +172,52 @@ impl Replica {
             return SnapshotOutcome::Invalid;
         };
 
-        let mut retained = self.resync.take().unwrap_or_default();
+        let mut retained = self.resync.clone().unwrap_or_default();
         retained.sort_by_key(|d| (d.tick, d.base_tick));
         retained.dedup_by_key(|d| d.tick);
+        let original_retained = retained.clone();
         let mut replayed = 0;
         let mut remaining = Vec::new();
+        let mut replay_failed = false;
         for delta in retained {
             if delta.tick <= candidate.tick {
                 continue;
             }
             if !self.chain_extends(candidate.tick, &delta) {
+                replay_failed = true;
                 remaining.push(delta);
                 continue;
             }
             let Some(next) = self.stage_delta(&candidate, &delta) else {
                 self.mark_gap(delta.tick);
+                replay_failed = true;
                 remaining.push(delta);
                 continue;
             };
             candidate = next;
             replayed += 1;
         }
+
+        // A recovery response is published only if its entire proposed tail is coherent. In
+        // particular, do not expose a valid prefix while a later retained batch is invalid or
+        // disconnected. Keep the pre-recovery display and all retained evidence for the next
+        // reliable response.
+        let uncovered_high_water = self
+            .highest_observed_tick
+            .is_some_and(|high| candidate.tick < high);
+        let unresolved_gap = self.gap_seen && uncovered_high_water;
+        if replay_failed || !remaining.is_empty() || unresolved_gap {
+            self.resync = Some(original_retained);
+            self.gap_seen = true;
+            return SnapshotOutcome::ResyncRequested { replayed: 0 };
+        }
+
         self.commit(candidate, now);
         self.snapshot_tick = Some(snapshot.tick);
-
-        if !remaining.is_empty() {
-            for delta in remaining {
-                self.buffer_delta(delta);
-            }
-            self.resync.get_or_insert_with(Vec::new);
-            self.gap_seen = true;
-        }
-        if self.needs_recovery() {
-            self.resync.get_or_insert_with(Vec::new);
-            SnapshotOutcome::ResyncRequested { replayed }
-        } else {
-            self.resync = None;
-            self.gap_anchor = None;
-            self.gap_seen = false;
-            SnapshotOutcome::Applied { replayed }
-        }
+        self.resync = None;
+        self.gap_anchor = None;
+        self.gap_seen = false;
+        SnapshotOutcome::Applied { replayed }
     }
 
     pub fn apply_delta(&mut self, delta: &WorldDelta, now: Instant) -> DeltaOutcome {
@@ -263,17 +269,6 @@ impl Replica {
                 .or(Some(observed_tick.saturating_sub(1)));
         }
         self.gap_seen = true;
-    }
-
-    fn needs_recovery(&self) -> bool {
-        if !self.gap_seen {
-            return false;
-        }
-        match (self.last_applied_tick, self.highest_observed_tick) {
-            (Some(applied), Some(high)) => applied < high,
-            (_, Some(high)) => self.gap_anchor.is_some_and(|anchor| anchor < high),
-            _ => true,
-        }
     }
 
     fn buffer_delta(&mut self, delta: WorldDelta) {
@@ -411,7 +406,8 @@ impl Replica {
 
         let mut positions = HashMap::new();
         for position in &delta.positions {
-            if positions.insert(position.unit_id.0, position.pos).is_some()
+            if !finite_pos(position.pos)
+                || positions.insert(position.unit_id.0, position.pos).is_some()
                 || !next.units.contains_key(&position.unit_id.0)
                 || removed.contains(&position.unit_id.0)
             {
@@ -539,11 +535,20 @@ fn parse_id(text: &str) -> Option<ContentId> {
     ContentId::parse(text).ok()
 }
 
+fn finite_pos(pos: Pos) -> bool {
+    pos.x.is_finite() && pos.y.is_finite()
+}
+
 fn valid_unit(context: &ReplicaContext, unit: &UnitSnapshot) -> bool {
-    parse_id(&unit.content_id).is_some_and(|id| context.content.catalog.units.contains_key(&id))
+    finite_pos(unit.pos)
+        && parse_id(&unit.content_id)
+            .is_some_and(|id| context.content.catalog.units.contains_key(&id))
 }
 
 fn valid_node(context: &ReplicaContext, node: &NodeState) -> bool {
+    if !finite_pos(node.pos) {
+        return false;
+    }
     let Some(id) = parse_id(&node.content_id) else {
         return false;
     };
@@ -726,45 +731,51 @@ fn valid_economy(
             if !job_ids.insert(job.id) || !producer_def.recipes.contains(&recipe_id) {
                 return false;
             }
-            for cost in job.charged.iter().chain(job.reserved.iter()) {
-                let Some(resource_id) = parse_id(&cost.resource) else {
-                    return false;
-                };
-                let expected_kind = match cost.source {
-                    CostSource::SlotBalance => ResourceKind::Balance,
-                    CostSource::ProducerInventory => ResourceKind::Item,
-                };
-                if context
-                    .content
-                    .catalog
-                    .resources
-                    .get(&resource_id)
-                    .is_none_or(|resource| resource.kind != expected_kind)
-                    || !recipe.costs.iter().any(|expected| {
-                        expected.source == cost.source
-                            && expected.resource == resource_id
-                            && cost.amount <= expected.amount
-                    })
-                {
-                    return false;
-                }
-                if cost.source == CostSource::ProducerInventory {
-                    let Some(inventory_def) = context
-                        .content
-                        .catalog
-                        .units
-                        .get(&producer_type)
-                        .and_then(|u| u.inventory.as_ref())
-                    else {
+            for costs in [&job.charged, &job.reserved] {
+                let mut endpoints = HashSet::new();
+                for cost in costs {
+                    let Some(resource_id) = parse_id(&cost.resource) else {
                         return false;
                     };
-                    if !inventory_def.accepts.contains(&resource_id)
-                        || !economy
-                            .inventories
-                            .iter()
-                            .any(|inventory| inventory.unit == queue.producer)
+                    if !endpoints.insert((cost.source as u8, resource_id.clone())) {
+                        return false;
+                    }
+                    let expected_kind = match cost.source {
+                        CostSource::SlotBalance => ResourceKind::Balance,
+                        CostSource::ProducerInventory => ResourceKind::Item,
+                    };
+                    if context
+                        .content
+                        .catalog
+                        .resources
+                        .get(&resource_id)
+                        .is_none_or(|resource| resource.kind != expected_kind)
+                        || !recipe.costs.iter().any(|expected| {
+                            expected.source == cost.source
+                                && expected.resource == resource_id
+                                && cost.amount <= expected.amount
+                        })
                     {
                         return false;
+                    }
+                    if cost.source == CostSource::ProducerInventory {
+                        let Some(inventory_def) = context
+                            .content
+                            .catalog
+                            .units
+                            .get(&producer_type)
+                            .and_then(|u| u.inventory.as_ref())
+                        else {
+                            return false;
+                        };
+                        if !inventory_def.accepts.contains(&resource_id)
+                            || !economy
+                                .inventories
+                                .iter()
+                                .any(|inventory| inventory.unit == queue.producer)
+                        {
+                            return false;
+                        }
                     }
                 }
             }

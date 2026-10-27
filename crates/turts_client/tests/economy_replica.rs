@@ -79,6 +79,147 @@ fn delta(tick: u32, base_tick: u32) -> WorldDelta {
 }
 
 #[test]
+fn non_finite_geometry_rejects_snapshot_and_delta_atomically() {
+    let now = Instant::now();
+    let mut world = replica(8);
+    let mut invalid_snapshot = snapshot(10);
+    invalid_snapshot.units[0].pos.x = f32::NAN;
+    assert_eq!(
+        world.apply_snapshot(&invalid_snapshot, now),
+        SnapshotOutcome::Invalid
+    );
+    assert_eq!(world.last_applied_tick, None);
+
+    world.apply_snapshot(&snapshot(10), now);
+    let before = world.clone();
+    let mut invalid_delta = delta(11, 10);
+    invalid_delta.positions.push(UnitDelta {
+        unit_id: UnitId(1),
+        pos: Pos {
+            x: f32::INFINITY,
+            y: 2.0,
+        },
+    });
+    invalid_delta.economy.balances.push(BalanceState {
+        resource: "base:credits".into(),
+        on_hand: 900,
+        reserved: 0,
+    });
+    assert_eq!(
+        world.apply_delta(&invalid_delta, now),
+        DeltaOutcome::ResyncRequested
+    );
+    assert_eq!(world.last_applied_tick, before.last_applied_tick);
+    assert_eq!(world.units, before.units);
+    assert_eq!(world.economy, before.economy);
+
+    let mut invalid_node = snapshot(12);
+    invalid_node.nodes[0].pos.y = f32::NEG_INFINITY;
+    assert_eq!(
+        world.apply_snapshot(&invalid_node, now),
+        SnapshotOutcome::Invalid
+    );
+    let mut spawn_replica = replica(8);
+    spawn_replica.apply_snapshot(&snapshot(10), now);
+    let mut invalid_spawn = delta(11, 10);
+    invalid_spawn.spawned.push(UnitSnapshot {
+        unit_id: UnitId(2),
+        content_id: "base:rifleman".into(),
+        owner_slot: SlotId(0),
+        pos: Pos {
+            x: 1.0,
+            y: f32::NAN,
+        },
+    });
+    assert_eq!(
+        spawn_replica.apply_delta(&invalid_spawn, now),
+        DeltaOutcome::ResyncRequested
+    );
+}
+
+#[test]
+fn failed_retained_suffix_never_publishes_a_replay_prefix() {
+    let now = Instant::now();
+    let mut replica = replica(8);
+    replica.apply_snapshot(&snapshot(10), now);
+    let mut prefix = delta(12, 11);
+    prefix.economy.balances.push(BalanceState {
+        resource: "base:credits".into(),
+        on_hand: 700,
+        reserved: 0,
+    });
+    replica.apply_delta(&prefix, now);
+    let mut invalid_suffix = delta(13, 12);
+    invalid_suffix.economy.inventories.push(InventoryState {
+        unit: UnitId(99),
+        items: vec![],
+    });
+    replica.apply_delta(&invalid_suffix, now);
+    let before_units = replica.units.clone();
+    let before_economy = replica.economy.clone();
+    let mut covering = snapshot(11);
+    covering.economy.balances[0].on_hand = 600;
+    assert_eq!(
+        replica.apply_snapshot(&covering, now),
+        SnapshotOutcome::ResyncRequested { replayed: 0 }
+    );
+    assert_eq!(replica.last_applied_tick, Some(10));
+    assert_eq!(replica.units, before_units);
+    assert_eq!(replica.economy, before_economy);
+}
+
+#[test]
+fn duplicate_job_cost_endpoints_reject_snapshot_and_delta() {
+    let now = Instant::now();
+    let mut replica = replica(8);
+    let mut invalid = rich_snapshot(10);
+    let duplicate = invalid.economy.queues[0].jobs[0].charged[0].clone();
+    invalid.economy.queues[0].jobs[0].charged.push(duplicate);
+    assert_eq!(
+        replica.apply_snapshot(&invalid, now),
+        SnapshotOutcome::Invalid
+    );
+    assert_eq!(replica.last_applied_tick, None);
+
+    replica.apply_snapshot(&rich_snapshot(10), now);
+    let mut change = delta(11, 10);
+    let mut queue = rich_snapshot(10).economy.queues[0].clone();
+    queue.jobs[0].reserved = vec![
+        Cost {
+            resource: "base:credits".into(),
+            amount: 100,
+            source: CostSource::SlotBalance
+        };
+        2
+    ];
+    change.economy.queues.push(queue);
+    assert_eq!(
+        replica.apply_delta(&change, now),
+        DeltaOutcome::ResyncRequested
+    );
+    assert_eq!(replica.last_applied_tick, Some(10));
+}
+
+#[test]
+fn valid_snapshot_discharges_invalid_initial_snapshot_gap() {
+    let now = Instant::now();
+    let mut replica = replica(8);
+    let mut invalid = snapshot(10);
+    invalid.units[0].content_id = "unknown:unit".into();
+    assert_eq!(
+        replica.apply_snapshot(&invalid, now),
+        SnapshotOutcome::Invalid
+    );
+    assert_eq!(replica.highest_observed_tick, None);
+    assert_eq!(
+        replica.apply_snapshot(&snapshot(11), now),
+        SnapshotOutcome::Applied { replayed: 0 }
+    );
+    assert!(!replica.in_resync());
+    assert_eq!(replica.last_applied_tick, Some(11));
+}
+
+#[test]
 fn invalid_node_and_position_changes_freeze_the_whole_batch() {
     let now = Instant::now();
     let mut replica = replica(3);
