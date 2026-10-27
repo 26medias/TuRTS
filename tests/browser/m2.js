@@ -661,7 +661,8 @@ async function runParameterLossProof(page, caseId, kind, outDir, logs, result, c
         const current = await liveSnapshot(page);
         assert.equal(current.debug.ingest.resync_requests_sent, requestsDuringHold,
             `${kind} must not issue another resync request while the actual response is held`);
-        assert.equal(current.debug.ingest.max_outstanding_requests, 1);
+        assert.equal(current.debug.ingest.max_outstanding_requests, 1,
+            "only one actual resync request may be outstanding at a time");
         await sleep(50);
     }
 
@@ -783,22 +784,25 @@ async function runBaseRecoveryProof(page, scene, worker, node, outDir, logs, res
         snapshot.debug?.ingest?.held_snapshots > 0 && snapshot.debug.ingest.outstanding_request === true,
     15000, "actual held resync Snapshot with one outstanding request");
     const overflowed = await waitForSnapshot(page, (snapshot) =>
-        snapshot.debug?.ingest?.held_snapshots === 1 && snapshot.debug.ingest.outstanding_request === true &&
+        snapshot.debug?.ingest?.held_snapshots > 0 && snapshot.debug.ingest.outstanding_request === true &&
         snapshot.debug.ingest.buffer_overflows > 0,
     10000, "real extraction-loss tail to overflow the live cap while the response remains held");
     const heldArtifact = await captureStage(page, outDir, "08-recovery-held-response", logs);
     assert(heldArtifact.debug.ingest.buffer_overflows > 0, "real cap=3 loss did not produce an observed buffer overflow");
     assert(heldArtifact.debug.ingest.buffered_batches <= 3, "retained real delta tail exceeded configured cap=3");
-    assert.equal(heldArtifact.debug.ingest.max_buffered_batches, 3);
+    assert.equal(heldArtifact.debug.ingest.max_outstanding_requests, 1,
+        "only one actual resync request may be outstanding at a time");
+    assert.equal(heldArtifact.debug.ingest.held_snapshots, 1,
+        "only one actual resync response may remain held for one outstanding request");
+    assert.equal(heldArtifact.debug.ingest.max_buffered_batches, 3,
+        "the real retained delta tail never exceeds the configured cap");
     assert.equal(heldArtifact.debug.ingest.outstanding_request, true);
-    assert.equal(heldArtifact.debug.ingest.held_snapshots, 1);
-    assert.equal(heldArtifact.debug.ingest.max_outstanding_requests, 1);
     const requestsDuringHold = heldArtifact.debug.ingest.resync_requests_sent;
     const holdDeadline = Date.now() + 200;
     while (Date.now() < holdDeadline) {
         const current = await liveSnapshot(page);
         assert.equal(current.debug.ingest.resync_requests_sent, requestsDuringHold,
-            "a second real ResyncRequest was sent while the first answer remained held");
+            "only one actual resync request may be outstanding at a time");
         assert.equal(current.debug.ingest.max_outstanding_requests, 1);
         await sleep(50);
     }
@@ -847,6 +851,8 @@ async function runBaseRecoveryProof(page, scene, worker, node, outDir, logs, res
         "released full Snapshot did not converge the actual node depletion");
 
     const rearmTick = releaseConfig.ingestConfigStatus.arm_tick;
+    assert.equal(releaseConfig.debug.ingest.armed_drop_world_changes?.arm_tick, rearmTick,
+        "same-kind re-arm must install a fresh matcher at its applied authoritative tick");
     const redropped = await waitForSnapshot(page, (snapshot) =>
         snapshot.debug?.dropped_world_changes?.filter((record) => record.kind === "extraction" && record.arm_tick === rearmTick).length === 1,
     20000, "same-kind re-arm while the first response was held drops one later real extraction batch");

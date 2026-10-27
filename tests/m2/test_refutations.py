@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Focused tests for the M2 semantic refutation runner."""
 import importlib.util
+import json
 from pathlib import Path
 import tempfile
 import unittest
@@ -52,22 +53,52 @@ class RefutationRunnerTests(unittest.TestCase):
         baseline = "\n".join([
             "M2_CASE_START E16-browser-case",
             "M2_CASE_PASS E16-browser-case",
-            'M2_CASE_SUMMARY {"selected_count":1,"completed_count":1,"passed_count":1,"semantic_failed_count":0}',
+            'M2_CASE_SUMMARY {"selected_count":1,"completed_count":1,"passed_count":1,"semantic_failed_count":0,"infrastructure_failed_count":0,"timeout_count":0}',
         ])
         self.assertEqual(refutations.require_phase_result(case, "baseline.green", type("R", (), {"stdout":baseline,"returncode":0})()), None)
         red = "\n".join([
             "M2_CASE_START E16-browser-case",
             'M2_CASE_SEMANTIC_FAIL E16-browser-case "private balance leaked"',
-            'M2_CASE_SUMMARY {"selected_count":1,"completed_count":1,"passed_count":0,"semantic_failed_count":1}',
+            'M2_CASE_SUMMARY {"selected_count":1,"completed_count":1,"passed_count":0,"semantic_failed_count":1,"infrastructure_failed_count":0,"timeout_count":0}',
         ])
         self.assertEqual(refutations.require_phase_result(case, "plant.red", type("R", (), {"stdout":red,"returncode":1})()), "private balance leaked")
         for invalid in (
             baseline.replace("M2_CASE_SUMMARY", "M2_CASE_TIMEOUT E16-browser-case \"late\"\nM2_CASE_SUMMARY"),
             baseline.replace('"completed_count":1', '"completed_count":0'),
+            baseline.replace(',"timeout_count":0', ''),
+            baseline.replace('"infrastructure_failed_count":0', '"infrastructure_failed_count":1'),
             baseline.replace("M2_CASE_PASS", "M2_CASE_SEMANTIC_FAIL"),
         ):
             with self.subTest(invalid=invalid), self.assertRaises(ValueError):
                 refutations.browser_summary(invalid, case)
+
+
+    def test_browser_registry_anchors_are_unique_and_install_playwright_in_scratch(self):
+        registry = json.loads((refutations.ROOT / "tests/m2/refutations.json").read_text())
+        browser_cases = [case for case in registry if case.get("runtime") == "browser"]
+        self.assertEqual(
+            [case["id"] for case in browser_cases],
+            [
+                "E2-browser-hardcoded-label",
+                "E9-browser-missing-button",
+                "E9-browser-debug-only-ui",
+                "E9-browser-missing-output-mesh",
+                "E9-browser-position-only-snapshot",
+                "E9-browser-unbounded-buffer",
+                "E9-browser-duplicate-outstanding",
+                "E9-browser-ignore-midtrace-rearm",
+            ],
+        )
+        for case in browser_cases:
+            self.assertEqual(case["expected_selected"], len(case["browser_case_ids"]))
+            self.assertEqual(len(case["browser_case_ids"]), 1)
+            self.assertIn(["npm", "ci", "--offline", "--prefix", "tests/browser"], case["pre_commands"])
+            path = refutations.ROOT / case["plant_path"]
+            source = path.read_text()
+            replacements = case.get("replacements") or [{"anchor": case["anchor"], "replacement": case["replacement"]}]
+            for item in replacements:
+                self.assertEqual(source.count(item["anchor"]), 1, case["id"])
+                source = source.replace(item["anchor"], item["replacement"], 1)
 
     def test_runtime_selectors_are_explicit_and_nonempty(self):
         cases = [

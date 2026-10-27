@@ -907,5 +907,245 @@
     ],
     "expected_failure": "duplicate-free retained replay completes without a successor response",
     "runtime": "rust"
+  },
+  {
+    "id": "E2-browser-hardcoded-label",
+    "kind": "browser",
+    "runtime": "browser",
+    "plant_path": "crates/turts_client/src/economy_ui.rs",
+    "anchor": "let name = def.map_or_else(|| unit.content_id.clone(), |d| d.name.clone());",
+    "replacement": "let name = unit.content_id.clone();",
+    "command": [
+      "/bin/bash",
+      "-c",
+      "M2_CARGO_TARGET_DIR=\"$CARGO_TARGET_DIR\" bash scripts/m2-browser.sh --case E9-browser-cedar-economy"
+    ],
+    "browser_case_ids": [
+      "E9-browser-cedar-economy"
+    ],
+    "expected_selected": 1,
+    "expected_failure": "actual rendered unit selection was not visible",
+    "restore_check": "planted source hash is restored and the same Chrome case returns PASS",
+    "pre_commands": [
+      [
+        "npm",
+        "ci",
+        "--offline",
+        "--prefix",
+        "tests/browser"
+      ]
+    ]
+  },
+  {
+    "id": "E9-browser-missing-button",
+    "kind": "browser",
+    "runtime": "browser",
+    "plant_path": "crates/turts_client/src/economy_ui.rs",
+    "anchor": "for recipe in &producer.recipes {",
+    "replacement": "for recipe in producer.recipes.iter().take(0) {",
+    "command": [
+      "/bin/bash",
+      "-c",
+      "M2_CARGO_TARGET_DIR=\"$CARGO_TARGET_DIR\" bash scripts/m2-browser.sh --case E9-browser-base-economy"
+    ],
+    "browser_case_ids": [
+      "E9-browser-base-economy"
+    ],
+    "expected_selected": 1,
+    "expected_failure": "no visible enabled rendered Produce control for the selected producer",
+    "restore_check": "planted source hash is restored and the same Chrome case returns PASS",
+    "pre_commands": [
+      [
+        "npm",
+        "ci",
+        "--offline",
+        "--prefix",
+        "tests/browser"
+      ]
+    ]
+  },
+  {
+    "id": "E9-browser-debug-only-ui",
+    "kind": "browser",
+    "runtime": "browser",
+    "plant_path": "crates/turts_client/src/economy_ui.rs",
+    "anchor": "model.lines.push(format!(\"Selected: {name} \u00b7 {selected}\"));",
+    "replacement": "let _selected_text_debug_only = format!(\"Selected: {name} \u00b7 {selected}\");",
+    "command": [
+      "/bin/bash",
+      "-c",
+      "M2_CARGO_TARGET_DIR=\"$CARGO_TARGET_DIR\" bash scripts/m2-browser.sh --case E9-browser-base-selection"
+    ],
+    "browser_case_ids": [
+      "E9-browser-base-selection"
+    ],
+    "expected_selected": 1,
+    "expected_failure": "selection must appear in actual visible Bevy Text",
+    "restore_check": "planted source hash is restored and the same Chrome case returns PASS",
+    "pre_commands": [
+      [
+        "npm",
+        "ci",
+        "--offline",
+        "--prefix",
+        "tests/browser"
+      ]
+    ]
+  },
+  {
+    "id": "E9-browser-missing-output-mesh",
+    "kind": "browser",
+    "runtime": "browser",
+    "plant_path": "crates/turts_client/src/render.rs",
+    "anchor": "for unit in &presented.units {\n        kept.insert(unit.unit_id);",
+    "replacement": "for unit in &presented.units {\n        if unit.content_id == \"base:rifleman\" { continue; }\n        kept.insert(unit.unit_id);",
+    "command": [
+      "/bin/bash",
+      "-c",
+      "M2_CARGO_TARGET_DIR=\"$CARGO_TARGET_DIR\" bash scripts/m2-browser.sh --case E9-browser-base-economy"
+    ],
+    "browser_case_ids": [
+      "E9-browser-base-economy"
+    ],
+    "expected_selected": 1,
+    "expected_failure": "completed output must have exactly one rendered mesh",
+    "restore_check": "planted source hash is restored and the same Chrome case returns PASS",
+    "pre_commands": [
+      [
+        "npm",
+        "ci",
+        "--offline",
+        "--prefix",
+        "tests/browser"
+      ]
+    ]
+  },
+  {
+    "id": "E9-browser-position-only-snapshot",
+    "kind": "browser",
+    "runtime": "browser",
+    "plant_path": "crates/turts_client/src/replica.rs",
+    "anchor": "            economy: snapshot.economy.clone(),",
+    "replacement": "            economy: if self.last_applied_tick.is_some() {\n                self.economy.clone()\n            } else {\n                snapshot.economy.clone()\n            },",
+    "command": [
+      "/bin/bash",
+      "-c",
+      "M2_CARGO_TARGET_DIR=\"$CARGO_TARGET_DIR\" bash scripts/m2-browser.sh --case E9-browser-base-loss-final_change"
+    ],
+    "browser_case_ids": [
+      "E9-browser-base-loss-final_change"
+    ],
+    "expected_selected": 1,
+    "expected_failure": "owner replica mismatch at authoritative completed audit tick",
+    "restore_check": "planted source hash is restored and the same Chrome case returns PASS",
+    "pre_commands": [
+      [
+        "npm",
+        "ci",
+        "--offline",
+        "--prefix",
+        "tests/browser"
+      ]
+    ]
+  },
+  {
+    "id": "E9-browser-unbounded-buffer",
+    "kind": "browser",
+    "runtime": "browser",
+    "plant_path": "crates/turts_client/src/replica.rs",
+    "command": [
+      "/bin/bash",
+      "-c",
+      "M2_CARGO_TARGET_DIR=\"$CARGO_TARGET_DIR\" bash scripts/m2-browser.sh --case E9-browser-base-recovery"
+    ],
+    "browser_case_ids": [
+      "E9-browser-base-recovery"
+    ],
+    "expected_selected": 1,
+    "expected_failure": "retained real delta tail exceeded configured cap=3",
+    "restore_check": "planted source hash is restored and the same Chrome case returns PASS",
+    "pre_commands": [
+      [
+        "npm",
+        "ci",
+        "--offline",
+        "--prefix",
+        "tests/browser"
+      ]
+    ],
+    "anchor": "        if buffer.len() >= limit {\n            buffer.clear();\n            self.buffer_overflows = self.buffer_overflows.saturating_add(1);\n            self.gap_seen = true;\n            if self.gap_anchor.is_none() {\n                self.gap_anchor = self.last_applied_tick.or(Some(delta.base_tick));\n            }\n            // Task 12 policy: discard the triggering batch as well as the old tail.\n            return;\n        }",
+    "replacement": "        if buffer.len() > limit {\n            self.buffer_overflows = self.buffer_overflows.saturating_add(1);\n            self.gap_seen = true;\n            if self.gap_anchor.is_none() {\n                self.gap_anchor = self.last_applied_tick.or(Some(delta.base_tick));\n            }\n            // Task 12 policy: discard the triggering batch as well as the old tail.\n            return;\n        }"
+  },
+  {
+    "id": "E9-browser-duplicate-outstanding",
+    "kind": "browser",
+    "runtime": "browser",
+    "plant_path": "crates/turts_client/src/ingest.rs",
+    "replacements": [
+      {
+        "anchor": "    if hooks.outstanding_request {\n        return Vec::new();\n    }\n    if replica\n        .resync_span_ticks()",
+        "replacement": "    if hooks.outstanding_request && counters.resync_requests_sent > 1 {\n        return Vec::new();\n    }\n    if replica\n        .resync_span_ticks()"
+      },
+      {
+        "anchor": "    if hooks.outstanding_request {\n        return None;\n    }\n    hooks.outstanding_request = true;",
+        "replacement": "    if hooks.outstanding_request && counters.resync_requests_sent > 1 {\n        return None;\n    }\n    hooks.outstanding_request = true;"
+      },
+      {
+        "anchor": "    counters.max_outstanding_requests = counters.max_outstanding_requests.max(1);",
+        "replacement": "    counters.max_outstanding_requests = counters.max_outstanding_requests.max(counters.resync_requests_sent as usize);"
+      }
+    ],
+    "command": [
+      "/bin/bash",
+      "-c",
+      "M2_CARGO_TARGET_DIR=\"$CARGO_TARGET_DIR\" bash scripts/m2-browser.sh --case E9-browser-base-recovery"
+    ],
+    "browser_case_ids": [
+      "E9-browser-base-recovery"
+    ],
+    "expected_selected": 1,
+    "expected_failure": "only one actual resync request may be outstanding at a time",
+    "restore_check": "planted source hash is restored and the same Chrome case returns PASS",
+    "pre_commands": [
+      [
+        "npm",
+        "ci",
+        "--offline",
+        "--prefix",
+        "tests/browser"
+      ]
+    ]
+  },
+  {
+    "id": "E9-browser-ignore-midtrace-rearm",
+    "kind": "browser",
+    "runtime": "browser",
+    "plant_path": "crates/turts_client/src/ingest.rs",
+    "replacements": [
+      {
+        "anchor": "        arm_drop_world_changes(hooks, config.drop_world_changes, replica.clone(), arm_tick);",
+        "replacement": "        if !hooks.dropped_world_changes.iter().any(|record| config.drop_world_changes.contains(&record.kind)) {\n            arm_drop_world_changes(hooks, config.drop_world_changes, replica.clone(), arm_tick);\n        }"
+      }
+    ],
+    "command": [
+      "/bin/bash",
+      "-c",
+      "M2_CARGO_TARGET_DIR=\"$CARGO_TARGET_DIR\" bash scripts/m2-browser.sh --case E9-browser-base-recovery"
+    ],
+    "browser_case_ids": [
+      "E9-browser-base-recovery"
+    ],
+    "expected_selected": 1,
+    "expected_failure": "same-kind re-arm must install a fresh matcher at its applied authoritative tick",
+    "restore_check": "planted source hash is restored and the same Chrome case returns PASS",
+    "pre_commands": [
+      [
+        "npm",
+        "ci",
+        "--offline",
+        "--prefix",
+        "tests/browser"
+      ]
+    ]
   }
 ]

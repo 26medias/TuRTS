@@ -108,6 +108,8 @@ def browser_summary(output, case):
         "completed_count": expected_count,
         "passed_count": passed,
         "semantic_failed_count": failed,
+        "infrastructure_failed_count": 0,
+        "timeout_count": 0,
     }:
         raise ValueError(f'{case["id"]}: browser summary counts disagree with markers')
     return expected_count, passed, failed, failures
