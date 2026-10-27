@@ -2,7 +2,7 @@
 
 const assert = require("node:assert/strict");
 const { test } = require("node:test");
-const { projectGroundPoint, projectRenderedEntity } = require("./m2.js");
+const { projectGroundPoint, projectRenderedEntity, uiActionWindowPoint } = require("./m2.js");
 
 const identityScene = {
     coordinate_space: "window-logical-pixels-top-left",
@@ -38,4 +38,14 @@ test("rejects projection without camera metadata or outside the near and far pla
     assert.equal(projectGroundPoint({ ...identityScene, clip_from_world: null }, [0, 0.5]), null);
     assert.equal(projectGroundPoint(identityScene, [0, -0.1]), null);
     assert.equal(projectGroundPoint(identityScene, [0, 1.1]), null);
+});
+
+test("maps fully visible UI action rectangles to window-logical pointer coordinates", () => {
+    const scene = {
+        viewport_physical_rect: [200, 100, 1280, 720],
+        scale_factor: 2,
+    };
+    assert.deepEqual(uiActionWindowPoint(scene, [24, 24, 100, 20]), [137, 67]);
+    assert.equal(uiActionWindowPoint(scene, [-1, 24, 100, 20]), null);
+    assert.equal(uiActionWindowPoint(scene, [24, 24, 1300, 20]), null);
 });

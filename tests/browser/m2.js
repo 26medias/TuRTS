@@ -87,31 +87,36 @@ async function clickRenderedEntity(page, scene, entry) {
     await clickWindowLogicalPoint(page, scene, point);
 }
 
+function uiActionWindowPoint(scene, rect) {
+    const [x, y, width, height] = rect ?? [];
+    const [viewportX, viewportY, viewportWidth, viewportHeight] = scene?.viewport_physical_rect ?? [];
+    const scale = scene?.scale_factor;
+    if (
+        ![x, y, width, height, viewportX, viewportY, viewportWidth, viewportHeight, scale].every(Number.isFinite) ||
+        width <= 0 || height <= 0 || scale <= 0 || x < 0 || y < 0 ||
+        x + width > viewportWidth || y + height > viewportHeight
+    ) {
+        return null;
+    }
+    return [
+        (viewportX + x + width / 2) / scale,
+        (viewportY + y + height / 2) / scale,
+    ];
+}
+
 async function clickRenderedUiAction(page, scene, actionPredicate) {
     const rows = await readBridge(page, "turts_ui");
     const control = rows.find((row) =>
         row.visible && row.enabled && row.action && actionPredicate(row.action, row.text)
     );
     assert(control, "no visible enabled rendered Text node matches the requested UI action");
-    const [x, y, width, height] = control.rect;
-    const [viewportX, viewportY, viewportWidth, viewportHeight] = scene.viewport_physical_rect ?? [];
-    const scale = scene.scale_factor;
-    assert(
-        [x, y, width, height, viewportX, viewportY, viewportWidth, viewportHeight, scale].every(Number.isFinite) &&
-        width > 0 && height > 0 && scale > 0,
-        "rendered UI action lacks finite visible bounds or viewport metadata",
-    );
-    const centerX = x + width / 2;
-    const centerY = y + height / 2;
-    const intersectsViewport =
-        x < viewportWidth && y < viewportHeight && x + width > 0 && y + height > 0;
-    assert(intersectsViewport, `UI action text is outside the camera viewport: ${JSON.stringify(control)}`);
-
+    const point = uiActionWindowPoint(scene, control.rect);
+    assert(point, `rendered UI action text is partially clipped or lacks projection metadata: ${JSON.stringify(control)}`);
     const [windowWidth, windowHeight] = scene.window_logical_size;
     const box = await canvasBox(page);
     await page.mouse.click(
-        box.x + (viewportX + centerX) / scale * box.width / windowWidth,
-        box.y + (viewportY + centerY) / scale * box.height / windowHeight,
+        box.x + point[0] * box.width / windowWidth,
+        box.y + point[1] * box.height / windowHeight,
     );
     return control;
 }
@@ -119,6 +124,7 @@ async function clickRenderedUiAction(page, scene, actionPredicate) {
 module.exports = {
     projectGroundPoint,
     projectRenderedEntity,
+    uiActionWindowPoint,
     readBridge,
     canvasBox,
     clickWindowLogicalPoint,
