@@ -79,7 +79,7 @@ Task 6 completes the private `WriteSet` across queue changes, checked `JobId` al
 
 ## Ruling R9 — Task 8 accounting instrumentation declarations
 
-R9 freezes the Task 8 declaration proposal in canonical .superpowers/sdd/2026-10-26-m2-economy/task-8-context.md: test-only AutomaticPhase/AutomaticSubject and TickBoundary; full TickAudit; crate-private capture helpers; complete raw diagnostic serialization including units and SimClock.tick_hz; and movement verification by an independent tick model. Add test-only AuditTrail/records as scoped there. Keep public runtime API unchanged. Task 8 owns the previously deferred AuditState Minor: bounds, catalog, compiled durations and resource-presence metadata, plus necessary raw order/inventory/event-cursor snapshots.
+R9 freezes the Task 8 declaration proposal in canonical .superpowers/sdd/2026-10-26-m2-economy/task-8-context.md: test-only AutomaticPhase/AutomaticSubject and TickBoundary; full TickAudit; crate-private capture helpers; complete raw diagnostic serialization including units and SimClock.tick_hz; and movement verification by an independent tick model. Expose the planned AuditTrail/owned records as trusted Rust diagnostics for external tests and Task 15; keep capture helpers private and add no player-facing API. Task 8 owns the previously deferred AuditState Minor: bounds, catalog, compiled durations and resource-presence metadata, plus necessary raw order/inventory/event-cursor snapshots.
 
 **Reason:** the accounting oracle must observe complete operation/tick boundaries and independently derive movement, rate and duration expectations without trusting production events or post-state.
 
@@ -96,3 +96,13 @@ For the approved role-transform preparation, a structural rename keeps exactly o
 **Cost if wrong:** package mapping and fixture adjustments.
 
 **Execution status:** approved for B-lane role preparation; package preparation remains held from canonical integration.
+
+## Ruling R11 — minimal diagnostic serialization support
+
+Task 8 may enable the pinned Bevy Math 0.20 serialize feature in the simulation manifest and make only the matching Cargo.lock feature-edge change; the feature adds serde and glam/serde without renderer dependencies or version upgrades. Add narrow serde derives and private economy/audit.rs support as needed. Test-only existing serde_json in the pack manifest is allowed only if compilation requires it. The planned AuditTrail and owned records are public trusted Rust diagnostics for external tests and Task 15; capture helpers stay private, and this adds no player-facing API.
+
+**Reason:** complete raw accounting snapshots need stable serialization of engine Vec2 and owned diagnostic records.
+
+**Cost if wrong:** a small dependency-feature and lockfile/derive adjustment; no runtime renderer or protocol change.
+
+**Execution status:** approved by root on 2026-10-27 for Task 8 only.
