@@ -1,0 +1,7 @@
+(
+    id: "command_center", name: "Command Center", footprint: Circle(radius: 2.0),
+    movement: None, inventory: None, gatherer: None,
+    drop_off: Some((rules: [(item: "base:ore", effect: Convert(balance: "base:credits", per_item: 1))])),
+    producer: Some((recipes: ["base:train_rifleman", "base:build_harvester"], queue_capacity: 5,
+        spawn_offsets: [(x: 0.0, y: 4.0), (x: 0.0, y: -4.0)])),
+)

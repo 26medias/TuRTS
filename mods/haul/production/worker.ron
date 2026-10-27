@@ -1,0 +1,11 @@
+(
+    id: "train_worker", name: "Train Worker", output_unit: "haul:worker",
+    duration_ms: 6000,
+    costs: [(resource: "haul:ore", amount: 50, source: ProducerInventory)],
+    payment: ReserveThenCharge,
+    cancel_refunds: (
+        queued: (numerator: 1, denominator: 1),
+        running: (numerator: 1, denominator: 1),
+        output_blocked: (numerator: 1, denominator: 1),
+    ),
+)

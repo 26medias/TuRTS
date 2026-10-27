@@ -1,5 +1,18 @@
 (
     id: "flat",
     size: (x: 64.0, y: 64.0),
-    placements: [(unit: "base:rifleman", owner_slot: 0, pos: (x: 8.0, y: 8.0), contents: [])], nodes: [], slot_economy: [],
+    placements: [
+        (unit: "base:command_center", owner_slot: 0, pos: (x: 8.0, y: 8.0), contents: []),
+        (unit: "base:harvester", owner_slot: 0, pos: (x: 12.0, y: 8.0), contents: []),
+        (unit: "base:command_center", owner_slot: 1, pos: (x: 56.0, y: 8.0), contents: []),
+        (unit: "base:harvester", owner_slot: 1, pos: (x: 52.0, y: 8.0), contents: []),
+    ],
+    nodes: [
+        (node: "base:ore_deposit", pos: (x: 24.0, y: 8.0), remaining: 1000),
+        (node: "base:ore_deposit", pos: (x: 40.0, y: 8.0), remaining: 1000),
+    ],
+    slot_economy: [
+        (slot: 0, balances: [(balance: "base:credits", amount: 500)]),
+        (slot: 1, balances: [(balance: "base:credits", amount: 500)]),
+    ],
 )

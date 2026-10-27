@@ -1,0 +1,6 @@
+(
+    id: "train_rifleman", name: "Train Rifleman", output_unit: "base:rifleman",
+    duration_ms: 5000, costs: [(resource: "base:credits", amount: 100, source: SlotBalance)],
+    payment: ChargeOnQueue,
+    cancel_refunds: (queued: (numerator: 1, denominator: 1), running: (numerator: 1, denominator: 2), output_blocked: (numerator: 1, denominator: 1)),
+)
