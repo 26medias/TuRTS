@@ -81,7 +81,15 @@ def main():
     parser.add_argument("--case", required=True)
     args = parser.parse_args()
     cases = json.loads(REGISTRY.read_text())
-    selected_cases = cases if args.case == "all" else [c for c in cases if c["id"] == args.case]
+    if args.case == "all":
+        selected_cases = cases
+    elif args.case == "product":
+        selected_cases = [c for c in cases if c.get("kind") == "product"]
+    elif "," in args.case:
+        wanted = set(args.case.split(","))
+        selected_cases = [c for c in cases if c["id"] in wanted]
+    else:
+        selected_cases = [c for c in cases if c["id"] == args.case]
     if not selected_cases:
         raise SystemExit(f"unknown refutation case: {args.case}")
     if SCRATCH.exists():

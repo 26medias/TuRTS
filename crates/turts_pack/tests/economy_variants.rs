@@ -3,7 +3,7 @@ mod common;
 use bevy_app::App;
 use common::{
     accounting::{AccountingOracle, ExpectedOperation, advance_accounted_tick, trail},
-    archive_from_files, scenario,
+    scenario,
 };
 use serde_json::{Value, json};
 use std::{
@@ -15,7 +15,7 @@ use std::{
 use turts_mod_api::{
     ContentCatalog, CostSource, PaymentPolicy, ResolvedDropOffEffect, ResourceKind,
 };
-use turts_mod_runtime::archive::PackageArchive;
+use turts_mod_runtime::{archive::PackageArchive, pack::pack_dir};
 use turts_pack::{load_package, pack_checked};
 use turts_sim::{
     Applied, Command, CommandKind, NodeId, SlotId, apply_command, audit_state,
@@ -318,6 +318,18 @@ fn prove_local_store(package_dir: &Path, payment: PaymentPolicy) {
     let after = audit_state(app.world_mut());
     let records = trail(&mut app).drain_operations();
     assert_eq!(records.len(), 1);
+    assert_eq!(
+        records[0].before, before,
+        "transfer capture has the live pre-state"
+    );
+    assert_eq!(
+        records[0].after, after,
+        "transfer capture has the live post-state"
+    );
+    assert!(
+        trail(&mut app).valid,
+        "audit capture remains valid at transfer boundary"
+    );
     oracle
         .observe(
             &ExpectedOperation::InventoryTransfer {
@@ -430,6 +442,21 @@ fn valid_policy_role_swaps_follow_data() {
                 validate(&app.world().resource::<InstalledCatalog>().0, policy, mode);
                 let state = audit_state(app.world_mut());
                 assert!(state.resources.allocators);
+                for account in &state.economy.balances {
+                    let resource = app
+                        .world()
+                        .resource::<InstalledCatalog>()
+                        .0
+                        .resources
+                        .get(&account.resource)
+                        .expect("balance row references an installed resource");
+                    assert_eq!(
+                        resource.kind,
+                        ResourceKind::Balance,
+                        "item resource must never be installed as a slot balance account: {}",
+                        account.resource
+                    );
+                }
                 if mode == "physical" {
                     assert!(
                         state
@@ -503,6 +530,56 @@ fn independent_cedar_packs_and_conserves() {
 }
 
 #[test]
+fn declared_conversion_coefficient_is_used_by_public_trace() {
+    let scratch = PathBuf::from(env!("CARGO_TARGET_TMPDIR"))
+        .join(format!("m2-conversion-coefficient-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&scratch);
+    fs::create_dir_all(&scratch).unwrap();
+    let output = scratch.join("base-balance-charge");
+    let mapping = generate(&root().join("mods/base"), &output, "balance", "charge");
+    let package = package_dir(&output, &mapping);
+    let mut conversions = Vec::new();
+    for (path, bytes) in read_tree(&package) {
+        let mut text = String::from_utf8(bytes).unwrap();
+        if text.contains("effect: Convert") {
+            assert_eq!(
+                text.matches("per_item: 1").count(),
+                1,
+                "one authored conversion coefficient in {path}"
+            );
+            text = text.replace("per_item: 1", "per_item: 2");
+            fs::write(package.join(&path), text).unwrap();
+            conversions.push(path);
+        }
+    }
+    assert_eq!(
+        conversions.len(),
+        1,
+        "one public conversion fixture was transformed"
+    );
+    let (_, app) = load(&package);
+    let catalog = &app.world().resource::<InstalledCatalog>().0;
+    assert!(
+        catalog
+            .units
+            .values()
+            .filter_map(|u| u.drop_off.as_ref())
+            .flat_map(|d| &d.rules)
+            .any(|r| matches!(r.effect, ResolvedDropOffEffect::Convert { per_item: 2, .. }))
+    );
+    let progress = run_package_trace(&package).1;
+    assert!(
+        progress.0 > 0
+            && progress.1 > 0
+            && progress.2 > 0
+            && progress.3 > 0
+            && progress.4 > 0
+            && progress.5 > 0,
+        "the modified coefficient package extracts, delivers, pays, cancels/refunds, and completes: {progress:?}"
+    );
+}
+
+#[test]
 fn public_loading_path_has_no_native_hooks() {
     let repo = root();
     let mut pending = vec![repo.join("mods")];
@@ -523,20 +600,48 @@ fn public_loading_path_has_no_native_hooks() {
     assert!(!api.contains("World::spawn"));
 }
 
+fn write_package_tree(dir: &Path, files: &BTreeMap<String, Vec<u8>>) {
+    for (relative, bytes) in files {
+        let path = dir.join(relative);
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(path, bytes).unwrap();
+    }
+}
+
+fn assert_cedar_missing_ref(error: &turts_mod_api::ModError) {
+    assert_eq!(error.package, "cedar");
+    assert_eq!(error.file.as_deref(), Some("units/worker.ron"));
+    assert_eq!(error.field_path, "inventory.accepts[0]");
+    assert!(error.message.contains("cedar:missing"), "{}", error.message);
+    assert_eq!(error.allowed, Some(vec!["cedar:wood".to_owned()]));
+}
+
 #[test]
 fn cedar_broken_reference_reports_public_package_file_and_field() {
     let mut files = read_tree(&root().join("mods/cedar"));
     let worker = files.get_mut("units/worker.ron").unwrap();
-    *worker = String::from_utf8(worker.clone())
-        .unwrap()
-        .replace("cedar:wood", "cedar:missing")
-        .into_bytes();
-    let archive = archive_from_files(files);
+    let original = String::from_utf8(worker.clone()).unwrap();
+    assert!(original.matches("cedar:wood").count() >= 1);
+    *worker = original.replace("cedar:wood", "cedar:missing").into_bytes();
+    let scratch = PathBuf::from(env!("CARGO_TARGET_TMPDIR"))
+        .join(format!("cedar-broken-public-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&scratch);
+    write_package_tree(&scratch, &files);
+
+    let checked = pack_checked(&scratch).expect_err("public checked packer rejects broken ref");
+    assert_cedar_missing_ref(&checked);
+
+    let bytes = pack_dir(&scratch).expect("raw public packer serializes authored files");
+    let archive = PackageArchive::parse(&bytes).unwrap();
     let mut app = scenario(20);
-    let error = load_package(app.world_mut(), &archive).expect_err("broken ref rejected");
-    let text = error.to_string();
-    assert!(text.contains("units/worker.ron"), "{text}");
-    assert!(text.contains("inventory.accepts[0]"), "{text}");
+    let loaded =
+        load_package(app.world_mut(), &archive).expect_err("public loader rejects broken ref");
+    assert_cedar_missing_ref(&loaded);
+    assert_eq!(
+        checked, loaded,
+        "checked packing and package loading report the same provenance"
+    );
+    fs::remove_dir_all(&scratch).unwrap();
 }
 
 fn apply_trace_command(
@@ -555,6 +660,28 @@ fn apply_trace_command(
     let after = audit_state(app.world_mut());
     let records = trail(app).drain_operations();
     assert_eq!(records.len(), 1, "one captured operation per command");
+    assert_eq!(
+        records[0].before, before,
+        "operation capture has the live command pre-state"
+    );
+    assert_eq!(
+        records[0].after, after,
+        "operation capture has the live command post-state"
+    );
+    let capture = trail(app);
+    assert!(
+        capture.valid,
+        "audit capture remains valid at every command boundary"
+    );
+    let command_record = capture
+        .commands
+        .iter()
+        .find(|r| r.operation_id == records[0].operation_id)
+        .expect("command audit is associated with its logical operation");
+    assert_eq!(command_record.input, command);
+    assert_eq!(command_record.result, result);
+    assert_eq!(command_record.before, before);
+    assert_eq!(command_record.after, after);
     oracle
         .observe(
             &ExpectedOperation::Command(command.clone()),
@@ -654,9 +781,36 @@ fn run_package_trace(dir: &Path) -> (Vec<Value>, (u128, u128, u128, u128, u64, u
         oracle.extraction > 0 && oracle.delivery > 0,
         "gather extracts and delivers before equality"
     );
-    let first = Command {
+    let queued = Command {
         slot: SlotId(0),
         seq: 2,
+        kind: CommandKind::Produce {
+            producer_id: producer,
+            recipe_id: recipe.clone(),
+        },
+    };
+    let queued_result = apply_trace_command(&mut app, &mut oracle, queued, &mut trace);
+    let Ok(Applied {
+        job_id: Some(queued_job),
+    }) = queued_result.outcome
+    else {
+        panic!("queued recipe applied: {queued_result:?}")
+    };
+    let queued_cancel = Command {
+        slot: SlotId(0),
+        seq: 3,
+        kind: CommandKind::CancelProduction {
+            producer_id: producer,
+            job_id: queued_job,
+        },
+    };
+    assert_eq!(
+        apply_trace_command(&mut app, &mut oracle, queued_cancel, &mut trace).outcome,
+        Ok(Applied { job_id: None })
+    );
+    let first = Command {
+        slot: SlotId(0),
+        seq: 4,
         kind: CommandKind::Produce {
             producer_id: producer,
             recipe_id: recipe.clone(),
@@ -671,7 +825,7 @@ fn run_package_trace(dir: &Path) -> (Vec<Value>, (u128, u128, u128, u128, u64, u
     trace.push(json!({"operations":ops,"tick":record}));
     let cancel = Command {
         slot: SlotId(0),
-        seq: 3,
+        seq: 5,
         kind: CommandKind::CancelProduction {
             producer_id: producer,
             job_id: job,
@@ -683,7 +837,7 @@ fn run_package_trace(dir: &Path) -> (Vec<Value>, (u128, u128, u128, u128, u64, u
     );
     let next = Command {
         slot: SlotId(0),
-        seq: 4,
+        seq: 6,
         kind: CommandKind::Produce {
             producer_id: producer,
             recipe_id: recipe,
@@ -707,6 +861,10 @@ fn run_package_trace(dir: &Path) -> (Vec<Value>, (u128, u128, u128, u128, u64, u
         .assert_command_records(&trail(&mut app).commands)
         .unwrap();
     oracle.assert_positive_progress().unwrap();
+    assert!(
+        trail(&mut app).valid,
+        "audit capture remains valid after the complete trace"
+    );
     (
         trace,
         (

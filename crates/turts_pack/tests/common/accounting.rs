@@ -27,6 +27,10 @@ pub fn advance_accounted_tick(
     tick: u32,
 ) -> (Vec<turts_sim::OperationAudit>, turts_sim::TickAudit) {
     app.update();
+    assert!(
+        trail(app).valid,
+        "audit capture remains valid after each simulation tick"
+    );
     let operations = trail(app).drain_operations();
     let mut cursor = 0usize;
     let starting = oracle.modeled_state().clone();

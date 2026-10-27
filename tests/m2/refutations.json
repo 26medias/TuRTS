@@ -45,7 +45,8 @@
       "turts_checks",
       "--example",
       "m2_variants"
-    ]
+    ],
+    "kind": "instrument-self-test"
   },
   {
     "id": "E3-policy-binding",
@@ -73,7 +74,8 @@
       "turts_checks",
       "--example",
       "m2_variants"
-    ]
+    ],
+    "kind": "fixture-generator-self-test"
   },
   {
     "id": "E4-local-capacity",
@@ -93,7 +95,8 @@
       "--nocapture"
     ],
     "expected_failure": "result.is_err()",
-    "restore_check": "sha256(source)==baseline and selected test is green"
+    "restore_check": "sha256(source)==baseline and selected test is green",
+    "kind": "duplicate-E6-accounting-self-test"
   },
   {
     "id": "E5-conversion-cargo-separation",
@@ -113,7 +116,8 @@
       "--nocapture"
     ],
     "expected_failure": "gather state differs from the independent full transition projection",
-    "restore_check": "sha256(source)==baseline and selected test is green"
+    "restore_check": "sha256(source)==baseline and selected test is green",
+    "kind": "duplicate-E6-accounting-self-test"
   },
   {
     "id": "E6-reservation-omission",
@@ -373,6 +377,202 @@
       "--nocapture"
     ],
     "expected_failure": "cedar/-: inventory.accepts[0]",
+    "restore_check": "sha256(source)==baseline and selected test is green",
+    "kind": "diagnostic-self-test"
+  },
+  {
+    "id": "E2-E3-package-bound-payment-policy",
+    "kind": "product",
+    "plant_path": "crates/turts_sim/src/economy/production.rs",
+    "anchor": "let policy = recipe.payment;",
+    "replacement": "let policy = if recipe_id.to_string().starts_with(\"base:\") { PaymentPolicy::ChargeOnQueue } else { PaymentPolicy::ReserveThenCharge };",
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_pack",
+      "--test",
+      "economy_variants",
+      "renamed_base_and_physical_clone_have_positive_equal_traces",
+      "--",
+      "--exact",
+      "--nocapture"
+    ],
+    "expected_failure": "accepted Produce differs from exact requested recipe, ledger and unrelated-state model",
+    "restore_check": "sha256(source)==baseline and selected test is green",
+    "pre_command": [
+      "cargo",
+      "build",
+      "-p",
+      "turts_checks",
+      "--example",
+      "m2_variants"
+    ]
+  },
+  {
+    "id": "E2-fixed-balance-resource-id",
+    "kind": "product",
+    "plant_path": "crates/turts_sim/src/economy/production.rs",
+    "anchor": "            resource: cost.resource,",
+    "replacement": "            resource: if cost.source == CostSource::SlotBalance { ContentId::parse(\"base:credits\").unwrap() } else { cost.resource },",
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_pack",
+      "--test",
+      "economy_variants",
+      "renamed_base_and_physical_clone_have_positive_equal_traces",
+      "--",
+      "--exact",
+      "--nocapture"
+    ],
+    "expected_failure": "command acceptance differs from independent prior-state and catalog validation",
+    "restore_check": "sha256(source)==baseline and selected test is green",
+    "pre_command": [
+      "cargo",
+      "build",
+      "-p",
+      "turts_checks",
+      "--example",
+      "m2_variants"
+    ]
+  },
+  {
+    "id": "E3-declared-running-refund-ratio",
+    "kind": "product",
+    "plant_path": "crates/turts_sim/src/economy/production.rs",
+    "anchor": "JobStage::Running => (recipe.cancel_refunds.running, None, current.charged.clone()),",
+    "replacement": "JobStage::Running => (recipe.cancel_refunds.queued, None, current.charged.clone()),",
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_pack",
+      "--test",
+      "economy_variants",
+      "renamed_base_and_physical_clone_have_positive_equal_traces",
+      "--",
+      "--exact",
+      "--nocapture"
+    ],
+    "expected_failure": "cancel event differs from requested frozen job and catalog refund ratio",
+    "restore_check": "sha256(source)==baseline and selected test is green",
+    "pre_command": [
+      "cargo",
+      "build",
+      "-p",
+      "turts_checks",
+      "--example",
+      "m2_variants"
+    ]
+  },
+  {
+    "id": "E3-declared-conversion-coefficient",
+    "kind": "product",
+    "plant_path": "crates/turts_sim/src/economy/gather.rs",
+    "anchor": "let credit = amount\n            .checked_mul(per_item)\n            .ok_or(RejectReason::RefundDestinationOverflow)?;",
+    "replacement": "let credit = amount\n            .checked_mul(1)\n            .ok_or(RejectReason::RefundDestinationOverflow)?;",
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_pack",
+      "--test",
+      "economy_variants",
+      "declared_conversion_coefficient_is_used_by_public_trace",
+      "--",
+      "--exact",
+      "--nocapture"
+    ],
+    "expected_failure": "gather state differs from the independent full transition projection",
+    "restore_check": "sha256(source)==baseline and selected test is green",
+    "pre_command": [
+      "cargo",
+      "build",
+      "-p",
+      "turts_checks",
+      "--example",
+      "m2_variants"
+    ]
+  },
+  {
+    "id": "E4-pooled-owned-inventory-charge",
+    "kind": "product",
+    "plant_path": "crates/turts_sim/src/economy/production.rs",
+    "anchor": "CostSource::ProducerInventory => Endpoint::Inventory(producer),",
+    "replacement": "CostSource::ProducerInventory => { let ledger = world.resource::<crate::economy::ledger::EconomyLedger>(); let pooled = ledger.inventories.iter().filter_map(|(candidate, inventory)| { let owned = world.iter_entities().any(|entity| entity.get::<UnitId>().is_some_and(|id| id.0 == *candidate) && entity.get::<Owner>().is_some_and(|owner| owner.0 == slot)); let available = inventory.items.get(&cost.resource).map_or(0, |account| account.on_hand.saturating_sub(account.reserved)); (owned && available >= cost.amount).then_some(*candidate) }).min().unwrap_or(producer); Endpoint::Inventory(pooled) },",
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_pack",
+      "--test",
+      "economy_variants",
+      "valid_policy_role_swaps_follow_data",
+      "--",
+      "--exact",
+      "--nocapture"
+    ],
+    "expected_failure": "command acceptance differs from independent prior-state and catalog validation",
+    "restore_check": "sha256(source)==baseline and selected test is green",
+    "pre_command": [
+      "cargo",
+      "build",
+      "-p",
+      "turts_checks",
+      "--example",
+      "m2_variants"
+    ]
+  },
+  {
+    "id": "E5-item-resource-as-balance-account",
+    "kind": "product",
+    "plant_path": "crates/turts_sim/src/bootstrap.rs",
+    "anchor": "if resource.kind == ResourceKind::Balance {",
+    "replacement": "if true {",
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_pack",
+      "--test",
+      "economy_variants",
+      "valid_policy_role_swaps_follow_data",
+      "--",
+      "--exact",
+      "--nocapture"
+    ],
+    "expected_failure": "item resource must never be installed as a slot balance account",
+    "restore_check": "sha256(source)==baseline and selected test is green",
+    "pre_command": [
+      "cargo",
+      "build",
+      "-p",
+      "turts_checks",
+      "--example",
+      "m2_variants"
+    ]
+  },
+  {
+    "id": "E10-server-public-loader-bypass",
+    "kind": "product",
+    "plant_path": "crates/turts_server/src/boot.rs",
+    "anchor": "    turts_pack::load_package(world, &archive)?;",
+    "replacement": "    let _ = archive.content()?;",
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_checks",
+      "--test",
+      "m2_public_path",
+      "public_loading_path_has_no_native_hooks",
+      "--",
+      "--exact",
+      "--nocapture"
+    ],
+    "expected_failure": "server boot must call the public turts_pack::load_package path",
     "restore_check": "sha256(source)==baseline and selected test is green"
   }
 ]
