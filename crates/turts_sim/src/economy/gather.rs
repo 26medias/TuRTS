@@ -71,13 +71,13 @@ impl RateCarry {
         if tick_hz == 0 {
             return Err(RejectReason::InvalidAmount);
         }
-        let numerator = per_second
-            .checked_add(u64::from(self.0))
+        let numerator = u128::from(per_second)
+            .checked_add(u128::from(self.0))
             .ok_or(RejectReason::ArithmeticOverflow)?;
-        let hz = u64::from(tick_hz);
+        let hz = u128::from(tick_hz);
         let budget = numerator / hz;
         self.0 = u16::try_from(numerator % hz).map_err(|_| RejectReason::ArithmeticOverflow)?;
-        Ok(budget)
+        u64::try_from(budget).map_err(|_| RejectReason::ArithmeticOverflow)
     }
 }
 
@@ -132,18 +132,29 @@ pub fn assign_gather(
     if !gatherer.items.contains(&node_item) {
         return Err(RejectReason::IncompatibleItem);
     }
-    if !world
+    let Some(_existing) = world
         .get_resource::<EconomyOrders>()
-        .is_some_and(|orders| orders.0.contains_key(&unit))
-    {
+        .and_then(|orders| orders.0.get(&unit))
+    else {
         return Err(RejectReason::MissingCapability);
-    }
-    if !world
-        .get_resource::<EconomyOrders>()
-        .is_some_and(|orders| orders.0.contains_key(&unit))
-    {
-        return Err(RejectReason::MissingCapability);
-    }
+    };
+    let inventory = world
+        .resource::<crate::EconomyLedger>()
+        .inventories
+        .get(&unit)
+        .ok_or(RejectReason::MissingCapability)?;
+    let has_other_item = inventory
+        .items
+        .iter()
+        .any(|(item, account)| account.on_hand > account.reserved && item != &node_item);
+    let used = inventory
+        .items
+        .values()
+        .try_fold(0u128, |sum, account| {
+            sum.checked_add(u128::from(account.on_hand))
+        })
+        .ok_or(RejectReason::ArithmeticOverflow)?;
+    let must_deliver = used >= u128::from(inventory.capacity) || has_other_item;
     world.entity_mut(entity).remove::<MoveTarget>();
     let mut orders = world.resource_mut::<EconomyOrders>();
     let order = orders
@@ -153,7 +164,11 @@ pub fn assign_gather(
     order.node = Some(node);
     order.deposit = Some(node);
     order.receiver = None;
-    order.stage = GatherStage::MovingToNode;
+    order.stage = if must_deliver {
+        GatherStage::MovingToReceiver
+    } else {
+        GatherStage::MovingToNode
+    };
     order.carry = RateCarry::default();
     Ok(())
 }
@@ -162,6 +177,9 @@ pub fn interrupt_order(world: &mut World, slot: SlotId, unit: u32) -> Result<(),
     let entity = find_unit(world, unit).ok_or(RejectReason::UnknownUnit)?;
     if world.get::<Owner>(entity).map(|owner| owner.0) != Some(slot) {
         return Err(RejectReason::NotOwner);
+    }
+    if !world.resource::<EconomyOrders>().0.contains_key(&unit) {
+        return Err(RejectReason::MissingCapability);
     }
     world.entity_mut(entity).remove::<MoveTarget>();
     let mut orders = world.resource_mut::<EconomyOrders>();
@@ -259,21 +277,59 @@ fn process_gatherer(world: &mut World, unit: u32, catalog: &turts_mod_api::Conte
         }
         GatherStage::Waiting {
             reason: WaitReason::NoDeposit,
-        } => move_or_arrive_node(
-            world,
-            unit,
-            position,
-            type_entry.radius,
-            gatherer,
-            node_id,
-            catalog,
-        ),
+        } => {}
         GatherStage::Unloading => {
             unload_one_tick(world, unit, owner, position, node_id, gatherer, catalog)
         }
         GatherStage::MovingToReceiver | GatherStage::Waiting { .. } => {
-            set_stage(world, unit, GatherStage::MovingToNode, None)
+            resume_after_delivery(world, unit, position, node_id, gatherer, catalog);
         }
+    }
+}
+
+fn resume_after_delivery(
+    world: &mut World,
+    unit: u32,
+    position: Vec2,
+    current_deposit: NodeId,
+    gatherer: &turts_mod_api::ResolvedGatherer,
+    catalog: &turts_mod_api::ContentCatalog,
+) {
+    let original = world
+        .resource::<EconomyOrders>()
+        .0
+        .get(&unit)
+        .and_then(|order| order.node);
+    let original_live = original.filter(|id| {
+        world
+            .resource::<SurfaceNodes>()
+            .0
+            .iter()
+            .any(|node| node.id == *id && node.remaining > 0)
+    });
+    let item = world
+        .resource::<SurfaceNodes>()
+        .0
+        .iter()
+        .find(|node| node.id == current_deposit)
+        .and_then(|node| catalog.nodes.get(&node.content_id))
+        .map(|node| &node.item);
+    let next = original_live.or_else(|| {
+        item.and_then(|item| closest_deposit(world, position, item, gatherer, catalog))
+            .map(|node| node.id)
+    });
+    if let Some(next) = next {
+        set_deposit(world, unit, next);
+        set_stage(world, unit, GatherStage::MovingToNode, None);
+    } else {
+        set_stage(
+            world,
+            unit,
+            GatherStage::Waiting {
+                reason: WaitReason::NoDeposit,
+            },
+            None,
+        );
     }
 }
 
@@ -333,6 +389,10 @@ fn move_or_arrive_node(
         return;
     };
     if node.remaining == 0 {
+        if cargo_amount(world, unit) > 0 {
+            set_stage(world, unit, GatherStage::MovingToReceiver, None);
+            return;
+        }
         let Some(item) = catalog
             .nodes
             .get(&node.content_id)
@@ -513,8 +573,23 @@ fn gather_one_tick(
             amount,
         },
     );
+    let depleted = world
+        .resource::<SurfaceNodes>()
+        .0
+        .iter()
+        .find(|record| record.id == node_id)
+        .is_some_and(|record| record.remaining == 0);
+    let capacity = world
+        .resource::<crate::EconomyLedger>()
+        .inventories
+        .get(&unit)
+        .map_or(0, |inventory| inventory.capacity);
+    if depleted || cargo_amount(world, unit) >= capacity {
+        set_stage(world, unit, GatherStage::MovingToReceiver, None);
+    }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn move_or_arrive_receiver(
     world: &mut World,
     unit: u32,
@@ -526,7 +601,7 @@ fn move_or_arrive_receiver(
     catalog: &turts_mod_api::ContentCatalog,
 ) {
     let Some(item) = lowest_cargo(world, unit) else {
-        set_stage(world, unit, GatherStage::MovingToNode, None);
+        resume_after_delivery(world, unit, position, node_id, gatherer, catalog);
         return;
     };
     let selected = choose_receiver(world, unit, owner, position, &item, catalog);
@@ -549,7 +624,7 @@ fn move_or_arrive_receiver(
         set_stage(world, unit, GatherStage::MovingToReceiver, Some(receiver));
         return;
     }
-    let receiver_range = unit_radius + receiver_radius;
+    let receiver_range = unit_radius + receiver_radius + gatherer.interaction_range;
     if gatherer_pos.distance(receiver_pos) <= receiver_range + 1.0e-4 {
         if let Some(entity) = find_unit(world, unit) {
             world.entity_mut(entity).remove::<MoveTarget>();
@@ -579,7 +654,7 @@ fn unload_one_tick(
     catalog: &turts_mod_api::ContentCatalog,
 ) {
     let Some(item) = lowest_cargo(world, unit) else {
-        set_stage(world, unit, GatherStage::MovingToNode, None);
+        resume_after_delivery(world, unit, position, node_id, gatherer, catalog);
         return;
     };
     let Some((receiver, receiver_pos, receiver_radius)) =
@@ -607,7 +682,9 @@ fn unload_one_tick(
         .resource::<UnitTypes>()
         .get(unit_type)
         .map_or(0.0, |entry| entry.radius);
-    if position.distance(receiver_pos) > radius + receiver_radius + 1.0e-4 {
+    if position.distance(receiver_pos)
+        > radius + receiver_radius + gatherer.interaction_range + 1.0e-4
+    {
         set_stage(world, unit, GatherStage::MovingToReceiver, Some(receiver));
         return;
     }
@@ -798,6 +875,7 @@ fn store(
     })
 }
 
+#[allow(clippy::too_many_arguments)]
 fn convert(
     world: &mut World,
     owner: SlotId,
@@ -875,13 +953,13 @@ fn choose_receiver(
     positions
         .iter()
         .filter_map(|(&id, &(pos, unit_type))| {
-            if id == unit {
-                return None;
-            }
             let entry = types.get(unit_type)?;
             let content = ContentId::parse(&entry.content_id).ok()?;
             catalog.units.get(&content)?.drop_off.as_ref()?;
-            let (_, available) = receiver_rule(world, id, owner, item, catalog)?;
+            let (effect, available) = receiver_rule(world, id, owner, item, catalog)?;
+            if id == unit && matches!(effect, ResolvedDropOffEffect::Store) {
+                return None;
+            }
             if available == 0 {
                 return None;
             }
@@ -1120,10 +1198,10 @@ fn set_stage(world: &mut World, unit: u32, stage: GatherStage, receiver: Option<
         }
         changed
     };
-    if changed || matches!(stage, GatherStage::Waiting { .. } | GatherStage::Idle) {
-        if let Some(entity) = find_unit(world, unit) {
-            world.entity_mut(entity).remove::<MoveTarget>();
-        }
+    if (changed || matches!(stage, GatherStage::Waiting { .. } | GatherStage::Idle))
+        && let Some(entity) = find_unit(world, unit)
+    {
+        world.entity_mut(entity).remove::<MoveTarget>();
     }
 }
 fn set_deposit(world: &mut World, unit: u32, deposit: NodeId) {
@@ -1216,9 +1294,10 @@ mod tests {
         let mut carry = RateCarry::default();
         assert_eq!(carry.take_budget(1, 0), Err(RejectReason::InvalidAmount));
         assert_eq!(carry.take_budget(1, 2), Ok(0));
-        assert_eq!(
-            carry.take_budget(u64::MAX, 2),
-            Err(RejectReason::ArithmeticOverflow)
-        );
+        assert_eq!(carry.take_budget(u64::MAX, 2), Ok(1u64 << 63));
+        assert_eq!(carry, RateCarry::default());
+        let mut carry = RateCarry::default();
+        assert_eq!(carry.take_budget(u64::MAX, 2), Ok(u64::MAX / 2));
+        assert_eq!(carry.take_budget(u64::MAX, 2), Ok(1u64 << 63));
     }
 }

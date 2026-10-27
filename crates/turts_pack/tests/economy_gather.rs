@@ -126,7 +126,7 @@ fn self_store_is_skipped_for_a_valid_depot() {
     for _ in 0..300 {
         app.update();
         let order = order_view(app.world(), SlotId(0), 3).unwrap();
-        if order.stage == turts_sim::GatherStage::MovingToReceiver {
+        if order.stage == turts_sim::GatherStage::MovingToReceiver && order.receiver.is_some() {
             selected_store = order.receiver;
             break;
         }
@@ -362,7 +362,6 @@ fn lower_content_id_cargo_is_delivered_first_and_receiver_ties_use_id() {
         .replace("rules: [(item: \"probe:timber\", effect: Store)]", "rules: [(item: \"probe:timber\", effect: Store), (item: \"probe:stone\", effect: Store)]");
     let exchange = files.get_mut("units/exchange.ron").unwrap();
     *exchange = exchange
-        .replace("capacity: 2000", "capacity: 2000")
         .replace("accepts: [\"probe:timber\"]", "accepts: [\"probe:timber\", \"probe:stone\"]")
         .replace("Convert(balance: \"probe:token\", per_item: 2)", "Store")
         .replace("rules: [(item: \"probe:timber\", effect: Store)]", "rules: [(item: \"probe:timber\", effect: Store), (item: \"probe:stone\", effect: Store)]");
@@ -497,4 +496,199 @@ fn nearest_receiver_wins_before_id_tie_break() {
         }
     }
     assert_eq!(first, Some(2));
+}
+
+#[test]
+fn depleted_partial_load_delivers_before_extracting_from_next_node() {
+    let mut files = fixture();
+    let map = files.get_mut("maps/test.ron").unwrap();
+    *map = map.replacen("remaining: 1000", "remaining: 1", 1);
+    let mut app = scenario_with(files, 20);
+    gather(&mut app, 1);
+    let mut stored_tick = None;
+    let mut second_extract_tick = None;
+    for tick in 0..1200 {
+        app.update();
+        for event in &committed_tick(app.world()).events {
+            if matches!(
+                event.kind,
+                EconomyEventKind::Stored {
+                    from: 3,
+                    amount: 1..,
+                    ..
+                }
+            ) {
+                stored_tick.get_or_insert(tick);
+            }
+            if matches!(
+                event.kind,
+                EconomyEventKind::Extracted {
+                    node: 2,
+                    amount: 1..,
+                    ..
+                }
+            ) {
+                second_extract_tick.get_or_insert(tick);
+            }
+        }
+    }
+    assert!(stored_tick.is_some());
+    assert!(second_extract_tick.is_none_or(|extracted| stored_tick.unwrap() < extracted));
+}
+
+#[test]
+fn self_convert_is_a_valid_receiver() {
+    let mut files = fixture();
+    let worker = files.get_mut("units/worker.ron").unwrap();
+    *worker = worker.replace("drop_off: None", "drop_off: Some((rules: [(item: \"probe:timber\", effect: Convert(balance: \"probe:token\", per_item: 2))]))");
+    let map = files.get_mut("maps/test.ron").unwrap();
+    *map = map.replacen("remaining: 1000", "remaining: 1", 1);
+    let mut app = scenario_with(files, 20);
+    gather(&mut app, 1);
+    let mut converted = false;
+    for _ in 0..400 {
+        app.update();
+        converted |= committed_tick(app.world()).events.iter().any(|event| {
+            matches!(
+                event.kind,
+                EconomyEventKind::Converted {
+                    from: 3,
+                    to: 3,
+                    amount: 1..,
+                    ..
+                }
+            )
+        });
+    }
+    assert!(converted);
+}
+
+#[test]
+fn new_order_routes_full_cargo_to_receiver_before_node_work() {
+    let mut files = fixture();
+    let map = files.get_mut("maps/test.ron").unwrap();
+    *map = map.replace(
+        "contents: []",
+        "contents: [(item: \"probe:timber\", amount: 10)]",
+    );
+    let mut app = scenario_with(files, 20);
+    gather(&mut app, 1);
+    assert_eq!(
+        order_view(app.world(), SlotId(0), 3).unwrap().stage,
+        turts_sim::GatherStage::MovingToReceiver
+    );
+    advance(&mut app, 1);
+    assert_eq!(
+        turts_sim::economy::views::node_view(app.world(), turts_sim::NodeId(1))
+            .unwrap()
+            .remaining,
+        1000
+    );
+}
+
+#[test]
+fn rejected_interrupt_preserves_existing_move_target() {
+    let mut app = scenario_with(fixture(), 20);
+    let entity = app
+        .world()
+        .iter_entities()
+        .find(|entity| {
+            entity
+                .get::<turts_sim::UnitId>()
+                .is_some_and(|id| id.0 == 1)
+        })
+        .unwrap()
+        .id();
+    let target = turts_sim::Vec2::new(30.0, 30.0);
+    app.world_mut()
+        .entity_mut(entity)
+        .insert(turts_sim::world::MoveTarget(target));
+    assert_eq!(
+        turts_sim::economy::gather::interrupt_order(app.world_mut(), SlotId(0), 1),
+        Err(turts_sim::RejectReason::MissingCapability)
+    );
+    assert_eq!(
+        app.world()
+            .get::<turts_sim::world::MoveTarget>(entity)
+            .unwrap()
+            .0,
+        target
+    );
+}
+
+#[test]
+fn receiver_interaction_range_counts_for_arrival_and_work() {
+    let mut files = fixture();
+    let worker = files.get_mut("units/worker.ron").unwrap();
+    *worker = worker.replace("interaction_range: 0.5", "interaction_range: 5.0");
+    let map = files.get_mut("maps/test.ron").unwrap();
+    *map = map.replace(
+        "pos: (x: 12.0, y: 8.0), contents: []",
+        "pos: (x: 8.0, y: 14.0), contents: [(item: \"probe:timber\", amount: 10)]",
+    );
+    let mut app = scenario_with(files, 20);
+    gather(&mut app, 1);
+    app.update();
+    app.update();
+    assert_eq!(
+        order_view(app.world(), SlotId(0), 3).unwrap().stage,
+        turts_sim::GatherStage::Unloading
+    );
+    app.update();
+    app.update();
+    assert!(
+        committed_tick(app.world())
+            .events
+            .iter()
+            .any(|event| matches!(
+                event.kind,
+                EconomyEventKind::Stored {
+                    from: 3,
+                    to: 1,
+                    amount: 1..,
+                    ..
+                }
+            ))
+    );
+}
+
+#[test]
+fn depleted_original_reselects_nearest_node_after_delivery() {
+    let mut files = fixture();
+    let map = files.get_mut("maps/test.ron").unwrap();
+    *map = map.replacen("remaining: 1000", "remaining: 1", 1).replace(
+        "(node: \"probe:stand\", pos: (x: 40.0, y: 8.0), remaining: 1000)",
+        "(node: \"probe:stand\", pos: (x: 28.0, y: 8.0), remaining: 1000), (node: \"probe:stand\", pos: (x: 16.0, y: 24.0), remaining: 1000)",
+    );
+    let yard = files.get_mut("units/yard.ron").unwrap();
+    *yard = yard.replace(
+        "drop_off: Some((rules: [(item: \"probe:timber\", effect: Store)]))",
+        "drop_off: None",
+    );
+    let mut app = scenario_with(files, 20);
+    gather(&mut app, 1);
+    let mut node2 = false;
+    let mut node3 = false;
+    for _ in 0..1000 {
+        app.update();
+        for event in &committed_tick(app.world()).events {
+            if matches!(event.kind, EconomyEventKind::Extracted { node: 2, .. }) {
+                node2 = true;
+            }
+            if matches!(event.kind, EconomyEventKind::Extracted { node: 3, .. }) {
+                node3 = true;
+            }
+        }
+        if node2 || node3 {
+            break;
+        }
+    }
+    assert!(
+        !node2,
+        "farther fallback node should not be selected after delivery"
+    );
+    assert!(
+        node3,
+        "nearest compatible node should be selected from receiver position"
+    );
 }

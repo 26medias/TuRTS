@@ -531,7 +531,7 @@ pub fn order_view(
         owner_slot: owner.0,
         node: order.node,
         receiver: order.receiver,
-        stage: order.stage.clone(),
+        stage: order.stage,
     })
 }
 
