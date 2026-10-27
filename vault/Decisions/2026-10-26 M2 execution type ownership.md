@@ -58,3 +58,20 @@ The user authorized isolated dependency-based worktrees for the remaining M2 pla
 **Cost if wrong:** Integration conflicts may require reconciliation and revalidation.
 
 Ruling R5: Task 3 additionally owns `crates/turts_sim/src/economy/bootstrap.rs` to add a validated `accepted_items` set to the Inventory ledger and bootstrap constructor, preserving inventory filter checks. No lane conflict; cost if wrong is small constructor/test rework. No gameplay policy change.
+
+
+## Ruling R7 — Task 5 typed gather-stage completion
+
+Task 5 replaces the current placeholder `String` in `OrderView.stage` and `GatherOrder.stage` with the approved typed `GatherStage`, including `Waiting { reason: WaitReason }`, matching design §§5/7 and immutable structured export. Allow the narrow bootstrap Idle constructor and command/test literal migration; read capabilities through `InstalledCatalog`. Gathering-specific staging operations are allowed. No transaction refactor. Task 7 adopts typed Idle after union integration.
+
+**Reason:** the current string is a placeholder that loses the approved typed shape and structured waiting reason. This completes the already approved Task 5 interface without changing gameplay policy.
+
+**Cost if wrong:** small constructor/view-pattern migrations.
+
+## Ruling R8 — Task 6 queue/job/event atomicity and CostSource
+
+Task 6 completes the private `WriteSet` across queue changes, checked `JobId` allocation, and event effects so payment, queue, id and event changes commit atomically. No new public API or transaction-architecture refactor. `CostView` gains schema `CostSource` because the current placeholder drops the endpoint source required by design §7. The coordinator composes shared gather/production hunks during integration.
+
+**Reason:** production payment and queue lifecycle must commit consistently with checked allocation, emitted events, and their true endpoint sources.
+
+**Cost if wrong:** small view/constructor and shared-commit migrations; the later Task 10 exporter will use the actual source.
