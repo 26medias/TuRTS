@@ -221,6 +221,47 @@ pub fn world_view(world: &mut World) -> WorldView {
     view.nodes = node_views(world);
     view
 }
+
+/// Return absolute records that differ from the previous completed economy snapshot.
+pub(crate) fn economy_changes(
+    previous: &EconomyStateView,
+    current: &EconomyStateView,
+) -> EconomyChangesView {
+    fn replacements<T: Clone + PartialEq, K: Ord>(
+        previous: &[T],
+        current: &[T],
+        key: impl Fn(&T) -> K,
+    ) -> Vec<T> {
+        let previous: std::collections::BTreeMap<_, _> = previous
+            .iter()
+            .map(|record| (key(record), record))
+            .collect();
+        current
+            .iter()
+            .filter(|record| match previous.get(&key(record)) {
+                Some(old) => *old != *record,
+                None => true,
+            })
+            .cloned()
+            .collect()
+    }
+
+    let mut changes = EconomyChangesView {
+        balances: replacements(&previous.balances, &current.balances, |v| {
+            (v.slot, v.resource.clone())
+        }),
+        inventories: replacements(&previous.inventories, &current.inventories, |v| v.unit),
+        orders: replacements(&previous.orders, &current.orders, |v| v.unit),
+        queues: replacements(&previous.queues, &current.queues, |v| v.producer),
+    };
+    changes
+        .balances
+        .sort_by_key(|record| (record.slot, record.resource.clone()));
+    changes.inventories.sort_by_key(|record| record.unit);
+    changes.orders.sort_by_key(|record| record.unit);
+    changes.queues.sort_by_key(|record| record.producer);
+    changes
+}
 fn job_view(job: ProductionJob) -> JobView {
     JobView {
         id: job.id.0,

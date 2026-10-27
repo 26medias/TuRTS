@@ -148,6 +148,8 @@ pub fn apply_command(world: &mut World, command: &Command) -> CommandResult {
 /// Freeze the admitted batch, then apply commands in its original order.
 pub fn drain_commands(world: &mut World) {
     if world.contains_resource::<crate::economy::events::MatchStopped>() {
+        world.resource_mut::<CommandQueue>().0.clear();
+        world.resource_mut::<CommandResults>().0.clear();
         return;
     }
     let batch = std::mem::take(&mut world.resource_mut::<CommandQueue>().0);
@@ -189,7 +191,11 @@ fn apply_move_to(
     }
     if let Some(mut orders) = world.get_resource_mut::<EconomyOrders>() {
         for id in unit_ids {
-            orders.0.remove(id);
+            if let Some(order) = orders.0.get_mut(id) {
+                order.node = None;
+                order.receiver = None;
+                order.stage = "Idle".into();
+            }
         }
     }
     Ok(())

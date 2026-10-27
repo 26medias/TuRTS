@@ -7,7 +7,7 @@ use bevy_time::{Fixed, Time};
 use crate::SimClock;
 use crate::command::{CommandQueue, CommandResults, drain_commands};
 use crate::economy::events::{EconomyEvent, MatchStopped, StopReason};
-use crate::economy::views::{EconomyChangesView, world_view};
+use crate::economy::views::{economy_changes, world_view};
 use crate::movement::integrate_movement;
 use crate::registry::UnitTypes;
 use crate::slots::{SLOT_COUNT, Slots};
@@ -120,6 +120,10 @@ fn publish_completed_tick(world: &mut World) {
     completed.tick = tick;
     completed.units = snapshot(world);
     let nodes = completed.nodes.clone();
+    let economy_changes = economy_changes(
+        &world.resource::<CompletedWorld>().0.economy,
+        &completed.economy,
+    );
     let mut events = std::mem::take(&mut world.resource_mut::<PendingEconomyEvents>().0);
     events.sort_by_key(|event: &EconomyEvent| event.ordinal);
     let batch = CommittedTick {
@@ -128,7 +132,7 @@ fn publish_completed_tick(world: &mut World) {
         removed: Vec::new(),
         positions: changed,
         nodes,
-        economy: EconomyChangesView::default(),
+        economy: economy_changes,
         events,
     };
     world.insert_resource(batch);

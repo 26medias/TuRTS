@@ -1,6 +1,8 @@
 use bevy_app::FixedUpdate;
 use bevy_ecs::prelude::World;
 use bevy_ecs::schedule::IntoScheduleConfigs;
+mod common;
+use common::{cid, economy_archive, scenario};
 use turts_mod_api::{
     Footprint, MapDef, MapSize, PackageId, Placement, UnitDef, UnitRegistry, WorldPos,
 };
@@ -283,5 +285,143 @@ fn collected_batch_is_completed_tick_only() {
             .events
             .iter()
             .any(|e| matches!(e.kind, EconomyEventKind::Extracted { .. }))
+    );
+}
+
+#[test]
+fn committed_batch_contains_absolute_economy_replacements() {
+    let mut app = scenario(20);
+    turts_pack::load_package(app.world_mut(), &economy_archive()).unwrap();
+    app.update();
+    let before = completed_world(app.world()).economy.clone();
+    turts_sim::economy::transaction::inventory_transfer(
+        app.world_mut(),
+        SlotId(0),
+        1,
+        3,
+        cid("probe:timber"),
+        1,
+    )
+    .unwrap();
+    app.update();
+
+    let batch = committed_tick(app.world());
+    assert_eq!(batch.tick, completed_world(app.world()).tick);
+    let replacements = &batch.economy.inventories;
+    assert_eq!(
+        replacements
+            .iter()
+            .map(|record| record.unit)
+            .collect::<Vec<_>>(),
+        vec![1, 3]
+    );
+    let current = &completed_world(app.world()).economy.inventories;
+    assert_eq!(
+        replacements,
+        &current
+            .iter()
+            .filter(|record| record.unit == 1 || record.unit == 3)
+            .cloned()
+            .collect::<Vec<_>>()
+    );
+    assert_eq!(replacements[0].owner_slot, 0);
+    assert_eq!(replacements[1].owner_slot, 0);
+    assert_eq!(
+        replacements[0]
+            .items
+            .iter()
+            .find(|item| item.resource == cid("probe:timber"))
+            .unwrap()
+            .on_hand,
+        99,
+    );
+    assert_eq!(
+        replacements[1]
+            .items
+            .iter()
+            .find(|item| item.resource == cid("probe:timber"))
+            .unwrap()
+            .on_hand,
+        1,
+    );
+    assert_eq!(
+        before
+            .inventories
+            .iter()
+            .find(|record| record.unit == 3)
+            .unwrap()
+            .items
+            .iter()
+            .find(|item| item.resource == cid("probe:timber"))
+            .map_or(0, |item| item.on_hand),
+        0,
+    );
+}
+
+#[test]
+fn move_interrupt_keeps_gatherer_order_and_cargo_inspectable() {
+    let mut app = scenario(20);
+    turts_pack::load_package(app.world_mut(), &economy_archive()).unwrap();
+    let order_before = turts_sim::economy::views::order_view(app.world(), SlotId(0), 3).unwrap();
+    assert_eq!(order_before.stage, "Idle");
+    turts_sim::economy::transaction::inventory_transfer(
+        app.world_mut(),
+        SlotId(0),
+        1,
+        3,
+        cid("probe:timber"),
+        1,
+    )
+    .unwrap();
+    let cargo_before =
+        turts_sim::economy::views::inventory_view(app.world(), SlotId(0), 3).unwrap();
+    let result = apply_command(
+        app.world_mut(),
+        &command(
+            1,
+            CommandKind::MoveTo {
+                unit_ids: vec![3],
+                target: Vec2::new(30.0, 30.0),
+            },
+        ),
+    );
+    assert_eq!(result.outcome, Ok(turts_sim::Applied { job_id: None }));
+    let order_after = turts_sim::economy::views::order_view(app.world(), SlotId(0), 3).unwrap();
+    let cargo_after = turts_sim::economy::views::inventory_view(app.world(), SlotId(0), 3).unwrap();
+    assert_eq!(order_after.stage, "Idle");
+    assert_eq!(order_after.node, None);
+    assert_eq!(order_after.receiver, None);
+    assert_eq!(cargo_after, cargo_before);
+}
+
+#[test]
+fn stopped_iteration_clears_last_legal_tick_rejection_results() {
+    let mut app = scenario(20);
+    turts_pack::load_package(app.world_mut(), &economy_archive()).unwrap();
+    app.world_mut().resource_mut::<Tick>().0 = u32::MAX - 1;
+    app.world_mut()
+        .resource_mut::<CommandQueue>()
+        .0
+        .push_back(command(
+            9,
+            CommandKind::MoveTo {
+                unit_ids: Vec::new(),
+                target: Vec2::new(8.0, 8.0),
+            },
+        ));
+    app.update();
+    assert_eq!(
+        app.world().resource::<turts_sim::CommandResults>().0[0].outcome,
+        Err(RejectReason::EmptyCommand)
+    );
+    assert_eq!(committed_tick(app.world()).tick, u32::MAX);
+    app.update();
+    assert!(app.world().contains_resource::<MatchStopped>());
+    assert_eq!(committed_tick(app.world()).tick, u32::MAX);
+    assert!(
+        app.world()
+            .resource::<turts_sim::CommandResults>()
+            .0
+            .is_empty()
     );
 }
