@@ -617,8 +617,9 @@ mod tests {
 #[cfg(test)]
 mod admission_tests {
     use super::*;
-    use bevy::time::TimePlugin;
+    use bevy::time::{TimePlugin, TimeUpdateStrategy};
     use std::collections::BTreeMap;
+    use std::time::Duration;
     use turts_mod_api::content::{ResolvedProducer, ResolvedUnit};
     use turts_mod_api::{
         ContentCatalog, ContentId, Footprint, PackageId, ProducerDef, UnitDef, UnitRegistry,
@@ -628,7 +629,13 @@ mod admission_tests {
     fn app() -> (App, Entity) {
         let mut app = App::new();
         app.add_plugins(TimePlugin)
-            .add_plugins(turts_sim::SimPlugin { tick_hz: 20 });
+            .add_plugins(turts_sim::SimPlugin { tick_hz: 20 })
+            .add_systems(
+                FixedPreUpdate,
+                admit_player_commands
+                    .after(SimSet::Advance)
+                    .before(SimSet::Commands),
+            );
         app.init_resource::<StagedPlayerCommands>()
             .init_resource::<CommandAdmissionDiagnostics>()
             .init_resource::<ReliableTraffic>();
@@ -709,7 +716,7 @@ mod admission_tests {
     #[test]
     fn repeated_sequence_rejects_without_second_domain_command_or_audit() {
         let (mut app, connection) = app();
-        app.world_mut().resource_mut::<Tick>().0 = 7;
+        app.world_mut().resource_mut::<Tick>().0 = 6;
         let before_audit = {
             let audit = app.world().resource::<turts_sim::AuditTrail>();
             (
@@ -725,8 +732,15 @@ mod admission_tests {
                 staged(connection, 9, move_kind()),
                 staged(connection, 9, move_kind()),
             ]);
-        admit_player_commands(app.world_mut());
-        assert_eq!(app.world().resource::<CommandQueue>().0.len(), 1);
+        app.insert_resource(TimeUpdateStrategy::ManualDuration(Duration::ZERO));
+        app.update();
+        app.insert_resource(TimeUpdateStrategy::ManualDuration(Duration::from_millis(
+            50,
+        )));
+        app.update();
+        assert_eq!(app.world().resource::<Tick>().0, 7);
+        assert!(app.world().resource::<CommandQueue>().0.is_empty());
+        assert_eq!(app.world().resource::<CommandResults>().0.len(), 1);
         assert_eq!(
             app.world().resource::<CommandAdmissionDiagnostics>().0[0].reason,
             CommandRejectReason::BadSequence
@@ -739,7 +753,6 @@ mod admission_tests {
             app.world().get::<Session>(connection).unwrap().last_seq,
             Some(9)
         );
-        assert!(app.world().resource::<CommandResults>().0.is_empty());
         let audit = app.world().resource::<turts_sim::AuditTrail>();
         assert_eq!(
             (
@@ -747,7 +760,8 @@ mod admission_tests {
                 audit.operations.len(),
                 audit.ticks.len()
             ),
-            before_audit
+            before_audit,
+            "the rejected replay added no simulation audit"
         );
     }
 
@@ -766,8 +780,13 @@ mod admission_tests {
             .resource_mut::<StagedPlayerCommands>()
             .0
             .push_back(envelope.clone());
-        app.world_mut().resource_mut::<Tick>().0 = 11;
-        admit_player_commands(app.world_mut());
+        app.world_mut().resource_mut::<Tick>().0 = 10;
+        app.insert_resource(TimeUpdateStrategy::ManualDuration(Duration::ZERO));
+        app.update();
+        app.insert_resource(TimeUpdateStrategy::ManualDuration(Duration::from_millis(
+            50,
+        )));
+        app.update();
         let records = &app.world().resource::<CommandAdmissionDiagnostics>().0;
         assert_eq!(records[0].reason, CommandRejectReason::UnknownRecipe);
         assert_eq!(records[0].seq, envelope.envelope.seq);
@@ -803,12 +822,67 @@ mod admission_tests {
                     recipe_id: "BAD:??".into(),
                 },
             ));
-        admit_player_commands(app.world_mut());
+        app.insert_resource(TimeUpdateStrategy::ManualDuration(Duration::ZERO));
+        app.update();
+        app.insert_resource(TimeUpdateStrategy::ManualDuration(Duration::from_millis(
+            50,
+        )));
+        app.update();
         assert_eq!(
             app.world().resource::<CommandAdmissionDiagnostics>().0[0].reason,
             CommandRejectReason::NotOwner
         );
         assert!(app.world().resource::<CommandQueue>().0.is_empty());
+        assert!(app.world().resource::<CommandResults>().0.is_empty());
+    }
+
+    #[test]
+    fn scheduled_admission_uses_advanced_tick_and_rejects_before_domain_audit() {
+        let (mut app, connection) = app();
+        app.world_mut().resource_mut::<Tick>().0 = 40;
+        let before = {
+            let audit = app.world().resource::<turts_sim::AuditTrail>();
+            (
+                audit.commands.len(),
+                audit.operations.len(),
+                audit.ticks.len(),
+            )
+        };
+        app.world_mut()
+            .resource_mut::<StagedPlayerCommands>()
+            .0
+            .push_back(staged(
+                connection,
+                1,
+                PlayerCommandKind::Produce {
+                    producer_id: UnitId(1),
+                    recipe_id: "BAD:??".into(),
+                },
+            ));
+        app.insert_resource(TimeUpdateStrategy::ManualDuration(Duration::ZERO));
+        app.update();
+        assert_eq!(app.world().resource::<StagedPlayerCommands>().0.len(), 1);
+        app.insert_resource(TimeUpdateStrategy::ManualDuration(Duration::from_millis(
+            50,
+        )));
+        app.update();
+
+        assert_eq!(app.world().resource::<Tick>().0, 41);
+        let records = &app.world().resource::<CommandAdmissionDiagnostics>().0;
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].tick, 41);
+        assert_eq!(records[0].reason, CommandRejectReason::UnknownRecipe);
+        assert!(app.world().resource::<CommandQueue>().0.is_empty());
+        assert_eq!(app.world().resource::<CommandResults>().0.len(), 0);
+        let audit = app.world().resource::<turts_sim::AuditTrail>();
+        assert_eq!(
+            (
+                audit.commands.len(),
+                audit.operations.len(),
+                audit.ticks.len()
+            ),
+            before
+        );
     }
 
     #[test]
@@ -819,9 +893,18 @@ mod admission_tests {
             .0
             .push_back(staged(connection, 1, move_kind()));
         // A render frame with zero fixed ticks does not touch the server-owned staging FIFO.
+        app.insert_resource(TimeUpdateStrategy::ManualDuration(Duration::ZERO));
+        app.update();
         assert_eq!(app.world().resource::<StagedPlayerCommands>().0.len(), 1);
-        app.world_mut().resource_mut::<Tick>().0 = 2;
-        admit_player_commands(app.world_mut());
-        assert_eq!(app.world().resource::<CommandQueue>().0.len(), 1);
+        app.insert_resource(TimeUpdateStrategy::ManualDuration(Duration::from_millis(
+            50,
+        )));
+        app.update();
+        assert_eq!(app.world().resource::<StagedPlayerCommands>().0.len(), 0);
+        assert_eq!(
+            app.world().get::<Session>(connection).unwrap().last_seq,
+            Some(1)
+        );
+        assert_eq!(app.world().resource::<CommandResults>().0.len(), 1);
     }
 }

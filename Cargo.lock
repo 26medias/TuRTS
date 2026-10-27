@@ -8640,6 +8640,7 @@ dependencies = [
  "bevy_ecs",
  "bevy_time",
  "lightyear",
+ "postcard",
  "serde",
  "serde_json",
  "turts_net_protocol",

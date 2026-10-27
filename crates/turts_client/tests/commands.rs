@@ -148,3 +148,50 @@ fn send_reversal_plant_fails_witness_even_when_typed_drain_is_ack_first() {
     assert!(!receipt_ordered(ack_received, rejected_received, 2));
     assert!(!receipt_ordered(ack_received, rejected_received, 32768));
 }
+
+#[test]
+fn disconnected_sender_preserves_fifo_and_sequence_until_connected() {
+    use bevy::prelude::*;
+    use lightyear::prelude::*;
+    use turts_client::commands::{CommandSendStatus, send_commands};
+    use turts_client::ingest::{ReceiptWitnesses, ReplicaState};
+    use turts_client::join::Phase;
+    use turts_net_protocol::PlayerCommand;
+
+    let mut app = App::new();
+    app.insert_resource(PendingCommands::default())
+        .insert_resource(CommandSequence::default())
+        .insert_resource(CommandSendStatus::default())
+        .insert_resource(Phase::Joined { slot: 0 })
+        .insert_resource(ReplicaState::default())
+        .insert_resource(ReceiptWitnesses::default())
+        .add_systems(Update, send_commands);
+    let disconnected = app
+        .world_mut()
+        .spawn(MessageSender::<PlayerCommand>::default())
+        .id();
+    let command = PlayerCommandKind::Gather {
+        unit_id: UnitId(1),
+        node_id: NodeId(2),
+    };
+    submit(
+        &mut app.world_mut().resource_mut::<PendingCommands>(),
+        command.clone(),
+    );
+
+    app.update();
+    assert_eq!(
+        app.world().resource::<PendingCommands>().0.front(),
+        Some(&command)
+    );
+    assert_eq!(app.world().resource::<CommandSequence>().next, Some(1));
+
+    app.world_mut()
+        .entity_mut(disconnected)
+        .insert((RemoteId(PeerId::Netcode(5)), Connected));
+    app.update();
+    assert!(app.world().resource::<PendingCommands>().0.is_empty());
+    assert_eq!(app.world().resource::<CommandSequence>().next, Some(2));
+    app.update();
+    assert_eq!(app.world().resource::<CommandSequence>().next, Some(2));
+}

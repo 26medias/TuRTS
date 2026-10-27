@@ -17,6 +17,7 @@ use bevy::prelude::*;
 use lightyear::netcode::client_plugin::NetcodeConfig;
 use lightyear::prelude::client::*;
 use lightyear::prelude::*;
+use lightyear::transport::channel::ChannelKind;
 use turts_net_lightyear::{ProtocolPlugin, ReliableChannel, tick_duration};
 use turts_net_protocol::NET_PROTOCOL_VERSION;
 use turts_net_protocol::PlayerCommandKind;
@@ -41,6 +42,9 @@ struct State {
     disconnected_after_connect: bool,
     acks: u32,
     ack_seqs: HashSet<u32>,
+    ack_message_ids: Vec<u16>,
+    rejection_message_ids: Vec<u16>,
+    typed_command_results: Vec<&'static str>,
     all_acked_at: Option<Instant>,
     next_seq: u32,
     deltas: u64,
@@ -70,6 +74,9 @@ fn main() {
         disconnected_after_connect: false,
         acks: 0,
         ack_seqs: HashSet::new(),
+        ack_message_ids: Vec::new(),
+        rejection_message_ids: Vec::new(),
+        typed_command_results: Vec::new(),
         all_acked_at: None,
         next_seq: 0,
         deltas: 0,
@@ -165,6 +172,7 @@ fn receive(
     mut welcome: Query<&mut MessageReceiver<Welcome>>,
     mut rejected: Query<&mut MessageReceiver<JoinRejected>>,
     mut acks: Query<&mut MessageReceiver<CommandAck>>,
+    mut rejected_commands: Query<&mut MessageReceiver<CommandRejected>>,
     mut deltas: Query<&mut MessageReceiver<WorldDelta>>,
 ) {
     for mut receiver in welcome.iter_mut() {
@@ -178,9 +186,25 @@ fn receive(
         }
     }
     for mut receiver in acks.iter_mut() {
-        for ack in receiver.receive() {
+        for received in receiver.receive_with_tick() {
             state.acks += 1;
-            state.ack_seqs.insert(ack.seq);
+            state.ack_seqs.insert(received.data.seq);
+            if received.channel_kind == ChannelKind::of::<ReliableChannel>() {
+                if let Some(id) = received.message_id {
+                    state.ack_message_ids.push(id.0);
+                }
+            }
+            state.typed_command_results.push("ack");
+        }
+    }
+    for mut receiver in rejected_commands.iter_mut() {
+        for received in receiver.receive_with_tick() {
+            if received.channel_kind == ChannelKind::of::<ReliableChannel>() {
+                if let Some(id) = received.message_id {
+                    state.rejection_message_ids.push(id.0);
+                }
+            }
+            state.typed_command_results.push("rejected");
         }
     }
     for mut receiver in deltas.iter_mut() {
@@ -238,6 +262,9 @@ fn write_out(cfg: &Cfg, state: &State) {
         "disconnected_after_connect": state.disconnected_after_connect,
         "acks": state.acks,
         "ack_seqs_unique": state.ack_seqs.len(),
+        "ack_message_ids": state.ack_message_ids,
+        "rejection_message_ids": state.rejection_message_ids,
+        "typed_command_results": state.typed_command_results,
         "deltas": state.deltas,
         "deltas_in_order": state.deltas_in_order,
         "first_tick": state.first_tick,

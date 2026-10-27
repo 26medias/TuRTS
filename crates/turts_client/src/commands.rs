@@ -45,7 +45,7 @@ pub fn send_commands(
     mut status: ResMut<CommandSendStatus>,
     phase: Res<Phase>,
     state: Res<ReplicaState>,
-    mut senders: Query<(Entity, &mut MessageSender<PlayerCommand>)>,
+    mut senders: Query<(Entity, &mut MessageSender<PlayerCommand>), With<Connected>>,
     mut witnesses: ResMut<ReceiptWitnesses>,
 ) {
     if !matches!(*phase, Phase::Joined { .. }) || senders.is_empty() || status.reconnect_required {

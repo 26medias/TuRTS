@@ -195,6 +195,20 @@ fn start_server(port: u16, units: u32, stats: Option<&Path>) -> Proc {
     server
 }
 
+fn start_reversed_server(port: u16) -> Proc {
+    let mut cmd = Command::new(SERVER_BIN);
+    cmd.args([
+        "--ws",
+        &format!("127.0.0.1:{port}"),
+        "--units",
+        "1",
+        "--reverse-command-results",
+    ]);
+    let mut server = Proc::spawn("server-reversed", &mut cmd);
+    server.wait_line("spike_server listening", Duration::from_secs(10));
+    server
+}
+
 fn start_relay(listen: u16, target: u16, extra: &[&str], out: &Path) -> Proc {
     let _ = fs::remove_file(out);
     let script = workspace_root().join("tests/net/relay.py");
@@ -497,6 +511,34 @@ fn p4_thousand_moves_get_one_ack_each() {
     eprintln!("[p4] {r}");
     assert_eq!(r["acks"], json!(1000), "acks != 1000");
     assert_eq!(r["ack_seqs_unique"], json!(1000), "ack_seqs_unique != 1000");
+}
+
+#[test]
+#[ignore]
+fn p4b_real_transport_reversal_is_visible_in_message_ids() {
+    let port = free_port();
+    let _server = start_reversed_server(port);
+    let out = spike_dir().join("p4b_reversal.json");
+    let mut client = start_client(port, &["--moves", "1", "--run-secs", "8"], &out);
+    assert!(
+        client.wait_exit(Duration::from_secs(15)),
+        "reversal client did not exit"
+    );
+    let result = read_json(&out);
+    eprintln!("[p4b reversal] {result}");
+    assert_eq!(result["acks"], json!(1));
+    assert_eq!(result["typed_command_results"], json!(["ack", "rejected"]));
+    let ack = result["ack_message_ids"][0]
+        .as_u64()
+        .expect("real ack MessageId") as u16;
+    let rejection = result["rejection_message_ids"][0]
+        .as_u64()
+        .expect("real rejection MessageId") as u16;
+    let distance = ack.wrapping_sub(rejection);
+    assert!(
+        (1..32768).contains(&distance),
+        "server rejection should have a lower reliable MessageId: ack={ack}, rejected={rejection}"
+    );
 }
 
 // ---------------------------------------------------------------------------------------------

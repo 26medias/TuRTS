@@ -167,13 +167,21 @@ impl ReceiptWitnesses {
         self.records.push(witness);
     }
     pub fn ordered_for(&self, seq: u32, epoch: u64) -> Option<bool> {
-        let ack =
-            self.records.iter().copied().find(|w| {
-                w.connection_epoch == epoch && w.seq == seq && w.kind == ReceiptKind::Ack
-            })?;
-        let rejected = self.records.iter().copied().find(|w| {
-            w.connection_epoch == epoch && w.seq == seq && w.kind == ReceiptKind::Rejected
-        })?;
+        let matching: Vec<_> = self
+            .records
+            .iter()
+            .copied()
+            .filter(|w| w.connection_epoch == epoch && w.seq == seq)
+            .collect();
+        let mut acks = matching.iter().filter(|w| w.kind == ReceiptKind::Ack);
+        let mut rejections = matching.iter().filter(|w| w.kind == ReceiptKind::Rejected);
+        let ack = *acks.next()?;
+        let rejected = *rejections.next()?;
+        // Repeated envelopes with the same sequence cannot be paired safely without another
+        // wire correlation field. Refuse to claim ordering when either receipt is ambiguous.
+        if acks.next().is_some() || rejections.next().is_some() {
+            return None;
+        }
         let count = self
             .reliable_counts
             .get(&epoch)
@@ -513,5 +521,45 @@ pub fn ingest_messages(
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod receipt_tests {
+    use super::*;
+
+    fn witness(kind: ReceiptKind, message_id: u16) -> ReceiptWitness {
+        ReceiptWitness {
+            connection_epoch: 7,
+            seq: 12,
+            kind,
+            reliable: true,
+            message_id: Some(message_id),
+            remote_tick: 10,
+        }
+    }
+
+    #[test]
+    fn replayed_sequence_invalidates_receipt_ordering_proof() {
+        let mut receipts = ReceiptWitnesses::default();
+        receipts.records.extend([
+            witness(ReceiptKind::Ack, 10),
+            witness(ReceiptKind::Applied, 11),
+            witness(ReceiptKind::Rejected, 12),
+            witness(ReceiptKind::Ack, 13),
+        ]);
+        receipts.reliable_counts.insert(7, 4);
+        assert_eq!(receipts.ordered_for(12, 7), None);
+    }
+
+    #[test]
+    fn unique_ack_and_rejection_prove_ordering() {
+        let mut receipts = ReceiptWitnesses::default();
+        receipts.records.extend([
+            witness(ReceiptKind::Ack, 10),
+            witness(ReceiptKind::Rejected, 11),
+        ]);
+        receipts.reliable_counts.insert(7, 2);
+        assert_eq!(receipts.ordered_for(12, 7), Some(true));
     }
 }
