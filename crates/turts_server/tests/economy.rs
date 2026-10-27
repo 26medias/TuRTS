@@ -27,14 +27,14 @@ fn package_files(
     }
 }
 
-fn economy_fixture_app() -> bevy_app::App {
+fn economy_fixture_app_at(tick_hz: u16) -> bevy_app::App {
     let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../turts_pack/tests/fixtures/economy");
     let mut files = std::collections::BTreeMap::new();
     package_files(&root, &root, &mut files);
     let package = turts_mod_runtime::pack::pack_files(&files).unwrap();
     let archive = turts_mod_runtime::archive::PackageArchive::parse(&package).unwrap();
-    let mut app = turts_sim::headless_app(5);
+    let mut app = turts_sim::headless_app(tick_hz);
     turts_pack::load_package(app.world_mut(), &archive).unwrap();
     app
 }
@@ -53,7 +53,7 @@ fn decoded_moving_gatherer_replays_frozen_command_and_automatic_effect() {
         AuditTrail, Command, CommandKind, CommandQueue, SlotId, economy::views::audit_state,
     };
 
-    let mut app = economy_fixture_app();
+    let mut app = economy_fixture_app_at(5);
     app.world_mut().resource_mut::<AuditTrail>().enable();
     let initial = audit_state(app.world_mut());
     let catalog = app
@@ -292,4 +292,85 @@ fn initial_snapshot_round_trip_detects_a_lost_field() {
         serde_json::from_value::<turts_sim::AuditState>(encoded).unwrap(),
         state
     );
+}
+
+#[test]
+fn decoded_fractional_movement_uses_captured_fixed_timestep() {
+    use bevy_math::Vec2;
+    use std::io::Cursor;
+    use turts_sim::{
+        AuditTrail, Command, CommandKind, CommandQueue, Position, SlotId, UnitId,
+        economy::views::audit_state,
+    };
+
+    let mut app = economy_fixture_app_at(30);
+    let worker_entity = app
+        .world()
+        .iter_entities()
+        .find(|entity| entity.get::<UnitId>().is_some_and(|id| id.0 == 3))
+        .expect("stock fixture worker")
+        .id();
+    app.world_mut()
+        .entity_mut(worker_entity)
+        .insert(Position(Vec2::new(0.01, 1.0)));
+    app.world_mut().resource_mut::<AuditTrail>().enable();
+    let initial = audit_state(app.world_mut());
+    let command = Command {
+        slot: SlotId(0),
+        seq: 72,
+        kind: CommandKind::MoveTo {
+            unit_ids: vec![3],
+            target: Vec2::new(24.0, 1.0),
+        },
+    };
+    app.world_mut()
+        .resource_mut::<CommandQueue>()
+        .0
+        .push_back(command);
+    app.update();
+
+    let mut trail = app.world_mut().resource_mut::<AuditTrail>();
+    assert!(trail.valid);
+    let commands = trail.drain_commands();
+    let operations = trail.drain_operations();
+    let tick = trail.drain_ticks().pop().expect("captured fixed tick");
+    assert_eq!(commands.len(), 1);
+    assert_eq!(operations.len(), 3);
+    assert_eq!(tick.tick, 1);
+    let mut writer = economylog::EconomyLogWriter::new(Vec::new());
+    writer.write_initial(&trail, initial).unwrap();
+    writer.write_command(&trail, commands[0].clone()).unwrap();
+    for operation in operations {
+        writer.write_operation(&trail, operation).unwrap();
+    }
+    writer.write_tick(&trail, tick).unwrap();
+    writer.flush().unwrap();
+
+    let decoded = economylog::read_jsonl(Cursor::new(writer.into_inner())).unwrap();
+    let movement = decoded
+        .iter()
+        .find_map(|record| match record {
+            economylog::EconomyLogRecord::Tick { state, .. } => state
+                .raw_units
+                .iter()
+                .find(|unit| unit.unit_id == 3)
+                .map(|unit| unit.pos.x),
+            _ => None,
+        })
+        .expect("decoded worker movement");
+    let fixed_delta = std::time::Duration::from_secs_f64(1.0 / 30.0).as_secs_f32();
+    assert_eq!(movement.to_bits(), (0.01_f32 + 3.0 * fixed_delta).to_bits());
+
+    let mut corrupted = decoded;
+    let moved = corrupted
+        .iter_mut()
+        .find_map(|record| match record {
+            economylog::EconomyLogRecord::Tick { state, .. } => {
+                state.raw_units.iter_mut().find(|unit| unit.unit_id == 3)
+            }
+            _ => None,
+        })
+        .unwrap();
+    moved.pos.x = f32::from_bits(moved.pos.x.to_bits() + 1);
+    assert!(economylog::validate_records(&corrupted).is_err());
 }

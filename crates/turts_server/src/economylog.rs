@@ -381,7 +381,11 @@ fn validate_movement_transition(previous: &AuditState, current: &AuditState) -> 
                         let target_vec = bevy::math::Vec2::new(target.x, target.y);
                         let offset = target_vec - position;
                         let distance = offset.length();
-                        let step = speed / f32::from(tick_hz);
+                        // Match Bevy Fixed::from_hz: Duration stores the reciprocal in f64,
+                        // then Time<Fixed>::delta_secs exposes that duration as f32.
+                        let delta = std::time::Duration::from_secs_f64(1.0 / f64::from(tick_hz))
+                            .as_secs_f32();
+                        let step = speed * delta;
                         if distance <= step {
                             (target_vec, None)
                         } else {
