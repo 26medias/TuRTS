@@ -1,6 +1,7 @@
 //! Client logic: fetch, acquisition, join, replica, interpolation, presentation, input.
 
 pub mod acquire;
+pub mod commands;
 pub mod content;
 pub mod debug;
 pub mod fetch;
