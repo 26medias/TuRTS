@@ -8,7 +8,7 @@ The default-off `AuditTrail` records owned command, operation, and tick snapshot
 
 ## Verification
 
-Focused Task 8 target: `cargo test -p turts_pack --test economy_accounting --locked` — 28 passed, 0 failed. Strict lint: `cargo clippy -p turts_sim -p turts_pack --tests --locked -- -D warnings` — passed.
+Historical checkpoint (28-test oracle): `cargo test -p turts_pack --test economy_accounting --locked` — 28 passed, 0 failed. Its hashes and mutation evidence below are historical only, not final corrected-model proof. Strict lint at that checkpoint: `cargo clippy -p turts_sim -p turts_pack --tests --locked -- -D warnings` — passed.
 
 Earlier economy pack targets run sequentially in the Task 8 target directory:
 
@@ -167,9 +167,46 @@ restored_hashes=crates/turts_sim/src/economy/transaction.rs:9a7d097a05230db6b491
 
 This final evidence supersedes the earlier 28-test and pre-redraft fault-plant checkpoint above. It uses integrated raw queue capture commit `bdd89fb145d92019b6553bdcce3ca30fe2200373`, final oracle hashes `crates/turts_pack/tests/common/accounting.rs` SHA256 `f28b275bf1e3625939eaf3173036fc23d29e5b79442b80166667eced35ee8b7e` and `crates/turts_pack/tests/economy_accounting.rs` SHA256 `9b8f86e6a771edb14bb0bd0d2d713251f18fdb8daf79c79df6f6913be4a25fdf`. The corrected `economy_accounting` target passed 40 tests; the eight economy integration targets passed 124 tests total and the raw audit capture target passed 5 tests. Strict Clippy passed.
 
-The final isolated scratch baseline at `/tmp/task8-mutation/src` passed all 40 accounting tests using `/tmp/task8-mut-target`. The ten required semantic product faults were each tested against this final oracle: reservation availability omitted, first mixed-cost debit persisted after later rejection, depleted node replenished, cancellation refund arithmetic wrapped at `u64::MAX`, MoveTo interruption discarded carried items, duplicate conversion credit, duplicate cancellation refund, duplicate output spawn, transfer destination capacity bypass, and self-Store receiver allowed. Each named test failed on the fault and passed after exact source restoration. The corrected reservation mutation removes both reserve and charge availability checks; an earlier ineffective single-check attempt is excluded. The broader final fault record is at `/tmp/task8-mutation/final-evidence.txt`; exact final proofs for the mixed-cost partial commit, arithmetic overflow, and carried-item loss are at `/tmp/task8-mutation/final-three-exact.txt`.
+The final isolated scratch baseline at `/tmp/task8-mutation/src` passed all 40 accounting tests using `/tmp/task8-mut-target`. The ten required semantic product faults are evidenced across two baselines: seven retained families on the corrected 39-test baseline, then three exact families on the refreshed 40-test baseline. Each selected exactly one test, failed semantically (`0 passed; 1 failed`), and passed after exact source restoration (`1 passed; 0 failed`). The corrected reservation mutation removes both reserve and charge availability checks; an earlier ineffective single-check attempt is excluded. The former refund-capacity and Store-debit substitutes are EXTRA evidence, not required families. The broader final fault record is at `/tmp/task8-mutation/final-evidence.txt`; exact final proofs for the mixed-cost partial commit, arithmetic overflow, and carried-item loss are at `/tmp/task8-mutation/final-three-exact.txt`.
 
-Additional oracle-model mutants for rejecting legal self-Convert and miscomputing partial conversion headroom were each detected and restored GREEN. A raw queue projection mutant that adopted observed after-state was also detected. Final oracle model and test hashes are listed above so review can distinguish this proof from the older checkpoint. The five capture tests include active raw queue/reservation serialization roundtrips.
+Additional oracle-model mutants for rejecting legal self-Convert and miscomputing partial conversion headroom were each detected and restored GREEN. A raw queue projection mutant that adopted observed after-state was also detected. Final oracle model and test hashes are listed above so review can distinguish this proof from the older checkpoint. The five sim capture tests cover boundary fidelity and resource presence; pack accounting tests roundtrip active raw queue/reservation snapshots and operation payloads.
+
+### Durable final required-family evidence
+
+These are evidence-baseline hashes for the retained mutation runs, not claims about files changed by ongoing work after those runs. Restored engine source hashes recorded in the final logs are: transaction.rs `0a2ea70eb6d6f62541ad649a5ad216eb32a3838976c136346d047eafe98c5c61`; command.rs `82816bc71257d9d680d1b1d9b7ec8ae90df1bef66ebb3c57389681001c2b163d`; production.rs `2f6188e51826cbdd3a596e6a958fed6630713a6b5895b4f8ad822cbd6e22f8ee`; gather.rs `50607582f93b334421b2e1d5b29f8694895a555418c4d56535925cb79d5e9160`. The corrected helper SHA was `f28b275bf1e3625939eaf3173036fc23d29e5b79442b80166667eced35ee8b7e` for both groups.
+
+Seven retained families ran on the corrected 39-test source baseline `1b2b1b78a028d6dce6eb02ea3e6fe91c4aa90f48593b71dd89e5e4ddbe0b9de8`. The three exact families ran on the refreshed 40-test source baseline `9b8f86e6a771edb14bb0bd0d2d713251f18fdb8daf79c79df6f6913be4a25fdf` (scratch test SHA `05ae3d9bd9ea1a19b6205419e9c1d995ec2f406f1c0c12b89e9baf1bad906192`; reviewed scratch-to-HEAD difference was formatting only). The helper was unchanged between these baselines.
+
+| Required family | Evidence baseline and retained logs |
+| --- | --- |
+| Omit reservation availability | Earlier seven; `reservation_final_RED.log` / `reservation_final_GREEN.log` |
+| Replenish depleted node | Earlier seven; `depleted_node_replenished_RED.log` / `depleted_node_replenished_GREEN.log` |
+| Duplicate conversion credit | Earlier seven; `conversion_credited_twice_RED.log` / `conversion_credited_twice_GREEN.log` |
+| Duplicate cancellation refund | Earlier seven; `cancellation_refund_credited_twice_RED.log` / `cancellation_refund_credited_twice_GREEN.log` |
+| Repeat output spawn | Earlier seven; `output_job_retained_and_spawned_again_RED.log` / `output_job_retained_and_spawned_again_GREEN.log` |
+| Ignore transfer capacity | Earlier seven; `transfer_destination_capacity_bypassed_RED.log` / `transfer_destination_capacity_bypassed_GREEN.log` |
+| Allow self-Store | Earlier seven; `self_Store_receiver_allowed_RED.log` / `self_Store_receiver_allowed_GREEN.log` |
+| Mixed-cost partial commit | Exact three; `final-three-exact.txt:3-13` |
+| Refund arithmetic overflow | Exact three; `final-three-exact.txt:15-25` |
+| Discard carried items | Exact three; `final-three-exact.txt:27-37` |
+
+The genuine reservation RED excerpt is `/tmp/task8-mutation/reservation_final_RED.log:6-18`:
+
+```text
+assertion failed: second_result.outcome.is_err()
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 38 filtered out
+```
+
+Its restored GREEN is `/tmp/task8-mutation/reservation_final_GREEN.log:6-9`:
+
+```text
+test e6_charge_and_reserve_policies_compete_for_the_same_last_stock ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 38 filtered out
+```
+
+The former excerpt at `/tmp/task8-mutation/final-evidence.txt:12-33` was an ineffective single-check run that passed and is not RED evidence.
+
+Full family logs are under `/tmp/task8-mutation/` using the stems above. Source-hash mapping and the baseline distinction are documented in `.superpowers/sdd/2026-10-26-m2-economy/task-8-capture-evidence-rereview-1.md`.
 
 ## Exact semantic family closures from final review
 
