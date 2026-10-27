@@ -17,7 +17,7 @@ Dashboard for the TuRTS studio. Read this first, then [[Tasks]] and the latest n
 
 **Current milestone:** M1 done. Next: M2, mod API proven by the default mod plus an alternative economy mod.
 
-**Phase:** M1 closed on 2026-10-26. M2 design revision 2 and the 16-task plan were approved. Tasks 1–7 are complete after review and canonical integration. The combined gate passed: 325 workspace tests passed, 0 failed, 12 ignored across 63 groups; fmt, locked workspace check, strict Clippy, boundary and locked wasm passed. Task 8 is ready in /home/julien/.codex/worktrees/4f65/TuRTS on codex/m2-accounting from 1ec683a. R9 freezes its test-only diagnostic declarations and the deferred Task 2 AuditState Minor. Task 9 and client-queue preparation are approved but held; protocol 1 remains selected and no B integration occurred.
+**Phase:** M1 closed on 2026-10-26. M2 design revision 2 and the 16-task plan were approved. Tasks 1–7 are complete after review and canonical integration. The combined gate passed: 325 workspace tests passed, 0 failed, 12 ignored across 63 groups; fmt, locked workspace check, strict Clippy, boundary and locked wasm passed. Task 8 is ready in /home/julien/.codex/worktrees/4f65/TuRTS on codex/m2-accounting from 1ec683a. The approved client queue preparation is integrated in canonical commit 1726c4f (source 422d1fa); 4/4 named tests and client wasm check passed); it only adds local staging and does not activate it. R9 freezes Task 8 diagnostic declarations; R10 scopes B role-transform preparation. Task 9 and B role-transform prep remain held; protocol 1 remains selected and no B integration occurred.
 
 **Repository:** https://github.com/26medias/TuRTS (public). CI green.
 

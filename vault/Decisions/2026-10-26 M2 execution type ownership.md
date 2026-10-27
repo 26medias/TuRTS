@@ -86,3 +86,13 @@ R9 freezes the Task 8 declaration proposal in canonical .superpowers/sdd/2026-10
 **Cost if wrong:** narrow extra ownership in economy views, gather/production boundaries, plugin tick capture, and serialization of complete snapshots; no gameplay policy or public API change.
 
 **Execution status:** approved by root on 2026-10-27. Task 8 worktree /home/julien/.codex/worktrees/4f65/TuRTS (codex/m2-accounting) starts at reviewed product base 1ec683a841f3aff3062e0b6b4725a678872b6063.
+
+## Ruling R10 — role-transform package preparation
+
+For the approved role-transform preparation, a structural rename keeps exactly one producer per owner/map. Derived physical inventory receives synthesized capacity (base 2500); each slot retains a zero-valued declared Balance account, rather than omitting the account. Acme’s zero-economy transform is a no-op. No engine changes are allowed, and this preparation does not claim E3 behavior before the accounting oracle exists.
+
+**Reason:** preserve declared ownership, synthesized runtime capacity, and zero-valued account invariants while preparing packages without changing engine behavior.
+
+**Cost if wrong:** package mapping and fixture adjustments.
+
+**Execution status:** approved for B-lane role preparation; package preparation remains held from canonical integration.
