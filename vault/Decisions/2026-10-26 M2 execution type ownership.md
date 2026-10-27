@@ -56,3 +56,5 @@ The user authorized isolated dependency-based worktrees for the remaining M2 pla
 **Reason:** Parallel lanes can reduce time after the Task 1–2 foundations are complete.
 
 **Cost if wrong:** Integration conflicts may require reconciliation and revalidation.
+
+Ruling R5: Task 3 additionally owns `crates/turts_sim/src/economy/bootstrap.rs` to add a validated `accepted_items` set to the Inventory ledger and bootstrap constructor, preserving inventory filter checks. No lane conflict; cost if wrong is small constructor/test rework. No gameplay policy change.
