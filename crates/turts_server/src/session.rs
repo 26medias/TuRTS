@@ -714,6 +714,325 @@ mod admission_tests {
     }
 
     #[test]
+    fn production_receive_survives_lightyear_last_without_a_fixed_tick() {
+        use lightyear::link::recv_payload_from_bytes;
+        use lightyear::prelude::server::ServerPlugins;
+
+        let mut app = App::new();
+        app.add_plugins(ServerPlugins {
+            tick_duration: Duration::from_millis(50),
+        });
+        app.add_plugins(turts_net_lightyear::ProtocolPlugin);
+        app.add_plugins(turts_sim::SimPlugin { tick_hz: 20 });
+        app.init_resource::<crate::stats::Stats>();
+        install(
+            &mut app,
+            Advertised {
+                lockfile_hash: "sha256:advertised".into(),
+                tick_hz: 20,
+            },
+        );
+
+        let package = PackageId::parse("test").unwrap();
+        let mut types = UnitTypes::default();
+        let type_id = types
+            .register_unit_type(
+                &package,
+                UnitDef {
+                    id: "producer".into(),
+                    name: "Producer".into(),
+                    footprint: Footprint::Circle { radius: 1.0 },
+                    movement: None,
+                    inventory: None,
+                    gatherer: None,
+                    drop_off: None,
+                    producer: Some(ProducerDef {
+                        recipes: vec![],
+                        queue_capacity: 1,
+                        spawn_offsets: vec![],
+                    }),
+                },
+            )
+            .unwrap();
+        let id = ContentId::new(&package, "producer");
+        let mut catalog = ContentCatalog {
+            resources: BTreeMap::new(),
+            units: BTreeMap::new(),
+            nodes: BTreeMap::new(),
+            production: BTreeMap::new(),
+        };
+        catalog.units.insert(
+            id.clone(),
+            ResolvedUnit {
+                id,
+                name: "Producer".into(),
+                footprint: Footprint::Circle { radius: 1.0 },
+                movement: None,
+                inventory: None,
+                gatherer: None,
+                drop_off: None,
+                producer: Some(ResolvedProducer {
+                    recipes: vec![],
+                    queue_capacity: 1,
+                    spawn_offsets: vec![],
+                }),
+            },
+        );
+        app.world_mut().insert_resource(types);
+        app.world_mut()
+            .insert_resource(turts_sim::bootstrap::InstalledCatalog(catalog));
+        let connection = app
+            .world_mut()
+            .spawn(Session {
+                slot: turts_sim::SlotId(0),
+                player_id: 1,
+                last_seq: None,
+            })
+            .id();
+        app.world_mut()
+            .spawn((SimUnitId(1), Owner(turts_sim::SlotId(0)), UnitType(type_id)));
+
+        app.finish();
+        app.cleanup();
+        app.insert_resource(TimeUpdateStrategy::ManualDuration(Duration::ZERO));
+        app.update(); // initialize Bevy time with a real zero-fixed frame
+
+        let registry = app.world().resource::<ChannelRegistry>();
+        let mut source_transport = Transport::default();
+        source_transport.add_channel_send_from_registry::<ReliableChannel>(registry);
+        source_transport.add_channel_receive_from_registry::<ReliableChannel>(registry);
+        let source = app
+            .world_mut()
+            .spawn((
+                Client,
+                Link::default(),
+                source_transport,
+                MessageSender::<PlayerCommand>::default(),
+                RemoteId(PeerId::Server),
+                Linked,
+                Connected,
+            ))
+            .id();
+        app.world_mut().entity_mut(connection).insert((
+            ClientOf,
+            Link::default(),
+            Transport::default(),
+            RemoteId(PeerId::Local(1)),
+            Linked,
+            Connected,
+        ));
+        let no_session = app
+            .world_mut()
+            .spawn((
+                ClientOf,
+                Link::default(),
+                Transport::default(),
+                RemoteId(PeerId::Local(2)),
+                Linked,
+                Connected,
+            ))
+            .id();
+
+        let commands = [
+            PlayerCommand {
+                seq: 1,
+                kind: move_kind(),
+            },
+            PlayerCommand {
+                seq: 2,
+                kind: PlayerCommandKind::Produce {
+                    producer_id: UnitId(1),
+                    recipe_id: "BAD:??".into(),
+                },
+            },
+            PlayerCommand {
+                seq: 2,
+                kind: move_kind(),
+            },
+        ];
+        {
+            let mut sender = app
+                .world_mut()
+                .get_mut::<MessageSender<PlayerCommand>>(source)
+                .unwrap();
+            for command in commands.clone() {
+                sender.send::<ReliableChannel>(command);
+            }
+        }
+        app.update(); // serialize through real MessageSystems::Send
+        let packets = {
+            let mut source_entity = app.world_mut().entity_mut(source);
+            let mut link = source_entity.get_mut::<Link>().unwrap();
+            let mut packets = Vec::new();
+            while let Some(packet) = link.send.pop() {
+                packets.push(packet);
+            }
+            packets
+        };
+        assert!(
+            !packets.is_empty(),
+            "the public Link send path produced no packet"
+        );
+        for packet in packets {
+            app.world_mut()
+                .entity_mut(connection)
+                .get_mut::<Link>()
+                .unwrap()
+                .recv
+                .push_raw(recv_payload_from_bytes(packet.clone()));
+            app.world_mut()
+                .entity_mut(no_session)
+                .get_mut::<Link>()
+                .unwrap()
+                .recv
+                .push_raw(recv_payload_from_bytes(packet));
+        }
+        app.update(); // production PreUpdate receive, real Lightyear Last cleanup, zero fixed ticks
+
+        let staged = &app.world().resource::<StagedPlayerCommands>().0;
+        assert_eq!(
+            staged
+                .iter()
+                .map(|item| item.envelope.seq)
+                .collect::<Vec<_>>(),
+            [1, 2, 2]
+        );
+        assert!(staged.iter().all(|item| item.slot == turts_sim::SlotId(0)));
+        assert!(
+            !app.world()
+                .get::<MessageReceiver<PlayerCommand>>(connection)
+                .unwrap()
+                .has_messages(),
+            "Last cleared the actual receiver"
+        );
+        assert_eq!(
+            app.world().get::<Session>(connection).unwrap().last_seq,
+            None
+        );
+        assert_eq!(app.world().resource::<Tick>().0, 0);
+        assert!(
+            !app.world()
+                .get::<MessageReceiver<PlayerCommand>>(no_session)
+                .unwrap()
+                .has_messages()
+        );
+        assert!(
+            !app.world()
+                .resource::<StagedPlayerCommands>()
+                .0
+                .iter()
+                .any(|item| item.connection == no_session)
+        );
+        assert!(
+            !app.world()
+                .resource::<ReliableTraffic>()
+                .counts
+                .contains_key(&no_session.to_bits())
+        );
+        assert!(
+            app.world()
+                .resource::<CommandAdmissionDiagnostics>()
+                .0
+                .is_empty()
+        );
+        assert!(app.world().resource::<CommandResults>().0.is_empty());
+        assert!(app.world().resource::<CommandQueue>().0.is_empty());
+        assert_eq!(
+            app.world()
+                .resource::<ReliableTraffic>()
+                .counts
+                .get(&connection.to_bits()),
+            Some(&6)
+        );
+        let ack_payloads = {
+            let mut destination_entity = app.world_mut().entity_mut(connection);
+            let mut link = destination_entity.get_mut::<Link>().unwrap();
+            let mut count = 0;
+            while link.send.pop().is_some() {
+                count += 1;
+            }
+            count
+        };
+        assert!(
+            ack_payloads > 0,
+            "production receipt Acks were not serialized to Link.send"
+        );
+
+        app.update(); // second zero-fixed frame: no duplicate receipt or admission
+        assert_eq!(app.world().resource::<StagedPlayerCommands>().0.len(), 3);
+        assert_eq!(
+            app.world()
+                .resource::<ReliableTraffic>()
+                .counts
+                .get(&connection.to_bits()),
+            Some(&6)
+        );
+        let before_audit = {
+            let audit = app.world().resource::<turts_sim::AuditTrail>();
+            (
+                audit.commands.len(),
+                audit.operations.len(),
+                audit.ticks.len(),
+            )
+        };
+        app.insert_resource(TimeUpdateStrategy::ManualDuration(Duration::from_millis(
+            50,
+        )));
+        app.update();
+        assert_eq!(app.world().resource::<Tick>().0, 1);
+        assert!(app.world().resource::<StagedPlayerCommands>().0.is_empty());
+        assert_eq!(
+            app.world().get::<Session>(connection).unwrap().last_seq,
+            Some(2)
+        );
+        let diagnostics = &app.world().resource::<CommandAdmissionDiagnostics>().0;
+        assert_eq!(diagnostics.len(), 2);
+        assert_eq!(
+            (
+                diagnostics[0].seq,
+                diagnostics[0].tick,
+                diagnostics[0].reason
+            ),
+            (2, 1, CommandRejectReason::UnknownRecipe)
+        );
+        assert_eq!(
+            (
+                diagnostics[1].seq,
+                diagnostics[1].tick,
+                diagnostics[1].reason
+            ),
+            (2, 1, CommandRejectReason::BadSequence)
+        );
+        let results = &app.world().resource::<CommandResults>().0;
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].seq, 1);
+        assert!(matches!(
+            results[0].outcome,
+            Err(turts_sim::RejectReason::NotMobile)
+        ));
+        assert!(app.world().resource::<CommandQueue>().0.is_empty());
+        let audit = app.world().resource::<turts_sim::AuditTrail>();
+        assert_eq!(
+            (
+                audit.commands.len(),
+                audit.operations.len(),
+                audit.ticks.len()
+            ),
+            before_audit
+        );
+        app.insert_resource(TimeUpdateStrategy::ManualDuration(Duration::ZERO));
+        app.update();
+        assert_eq!(
+            app.world()
+                .resource::<CommandAdmissionDiagnostics>()
+                .0
+                .len(),
+            2
+        );
+        assert_eq!(app.world().resource::<CommandResults>().0.len(), 1);
+    }
+
+    #[test]
     fn repeated_sequence_rejects_without_second_domain_command_or_audit() {
         let (mut app, connection) = app();
         app.world_mut().resource_mut::<Tick>().0 = 6;

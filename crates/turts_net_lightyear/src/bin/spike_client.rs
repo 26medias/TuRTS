@@ -18,6 +18,7 @@ use lightyear::netcode::client_plugin::NetcodeConfig;
 use lightyear::prelude::client::*;
 use lightyear::prelude::*;
 use lightyear::transport::channel::ChannelKind;
+use lightyear::transport::packet::message::MessageId;
 use turts_net_lightyear::{ProtocolPlugin, ReliableChannel, tick_duration};
 use turts_net_protocol::NET_PROTOCOL_VERSION;
 use turts_net_protocol::PlayerCommandKind;
@@ -30,7 +31,17 @@ struct Cfg {
     moves: u32,
     run_secs: f64,
     out: Option<PathBuf>,
+    run_id: Option<String>,
     player_id: u64,
+}
+
+struct CapturedReceipt {
+    connection_epoch: u64,
+    seq: u32,
+    kind: &'static str,
+    reliable: bool,
+    message_id: Option<u16>,
+    remote_tick: u32,
 }
 
 #[derive(Resource)]
@@ -42,6 +53,9 @@ struct State {
     disconnected_after_connect: bool,
     acks: u32,
     ack_seqs: HashSet<u32>,
+    receipt_epoch: Option<u64>,
+    receipt_witnesses: Vec<CapturedReceipt>,
+    reliable_message_count: u32,
     ack_message_ids: Vec<u16>,
     rejection_message_ids: Vec<u16>,
     typed_command_results: Vec<&'static str>,
@@ -74,6 +88,9 @@ fn main() {
         disconnected_after_connect: false,
         acks: 0,
         ack_seqs: HashSet::new(),
+        receipt_epoch: None,
+        receipt_witnesses: Vec::new(),
+        reliable_message_count: 0,
         ack_message_ids: Vec::new(),
         rejection_message_ids: Vec::new(),
         typed_command_results: Vec::new(),
@@ -110,6 +127,7 @@ fn parse_args() -> Cfg {
         moves: value("--moves").map_or(0, |v| v.parse().expect("--moves: integer")),
         run_secs: value("--run-secs").map_or(10.0, |v| v.parse().expect("--run-secs: number")),
         out: value("--out").map(PathBuf::from),
+        run_id: value("--run-id"),
         // Placeholder identity per process (design 5: random per session).
         player_id: std::process::id() as u64,
     }
@@ -151,6 +169,7 @@ fn on_connected(
     cfg: Res<Cfg>,
 ) {
     state.connected_seen = true;
+    state.receipt_epoch = Some(trigger.entity.to_bits());
     if let Ok(mut sender) = hello.get_mut(trigger.entity) {
         sender.send::<ReliableChannel>(Hello {
             player_id: cfg.player_id,
@@ -175,34 +194,51 @@ fn receive(
     mut rejected_commands: Query<&mut MessageReceiver<CommandRejected>>,
     mut deltas: Query<&mut MessageReceiver<WorldDelta>>,
 ) {
+    let epoch = state.receipt_epoch.unwrap_or_default();
     for mut receiver in welcome.iter_mut() {
-        if receiver.receive().next().is_some() {
+        for received in receiver.receive_with_tick() {
+            record_reliable_message(&mut state, received.channel_kind);
             state.welcomed = true;
         }
     }
     for mut receiver in rejected.iter_mut() {
-        for message in receiver.receive() {
-            state.rejected_reason = Some(message.reason);
+        for received in receiver.receive_with_tick() {
+            record_reliable_message(&mut state, received.channel_kind);
+            state.rejected_reason = Some(received.data.reason);
         }
     }
     for mut receiver in acks.iter_mut() {
         for received in receiver.receive_with_tick() {
             state.acks += 1;
             state.ack_seqs.insert(received.data.seq);
-            if received.channel_kind == ChannelKind::of::<ReliableChannel>() {
-                if let Some(id) = received.message_id {
-                    state.ack_message_ids.push(id.0);
-                }
+            capture_receipt(
+                &mut state,
+                epoch,
+                received.data.seq,
+                "ack",
+                received.channel_kind,
+                received.message_id,
+                received.remote_tick.0,
+            );
+            if let Some(id) = received.message_id {
+                state.ack_message_ids.push(id.0);
             }
             state.typed_command_results.push("ack");
         }
     }
     for mut receiver in rejected_commands.iter_mut() {
         for received in receiver.receive_with_tick() {
-            if received.channel_kind == ChannelKind::of::<ReliableChannel>() {
-                if let Some(id) = received.message_id {
-                    state.rejection_message_ids.push(id.0);
-                }
+            capture_receipt(
+                &mut state,
+                epoch,
+                received.data.seq,
+                "rejected",
+                received.channel_kind,
+                received.message_id,
+                received.remote_tick.0,
+            );
+            if let Some(id) = received.message_id {
+                state.rejection_message_ids.push(id.0);
             }
             state.typed_command_results.push("rejected");
         }
@@ -218,6 +254,33 @@ fn receive(
             state.first_tick.get_or_insert(delta.tick);
             state.last_tick = Some(delta.tick);
         }
+    }
+}
+
+fn capture_receipt(
+    state: &mut State,
+    epoch: u64,
+    seq: u32,
+    kind: &'static str,
+    channel_kind: ChannelKind,
+    message_id: Option<MessageId>,
+    remote_tick: u32,
+) {
+    let reliable = channel_kind == ChannelKind::of::<ReliableChannel>();
+    record_reliable_message(state, channel_kind);
+    state.receipt_witnesses.push(CapturedReceipt {
+        connection_epoch: epoch,
+        seq,
+        kind,
+        reliable,
+        message_id: message_id.map(|id| id.0),
+        remote_tick,
+    });
+}
+
+fn record_reliable_message(state: &mut State, channel_kind: ChannelKind) {
+    if channel_kind == ChannelKind::of::<ReliableChannel>() {
+        state.reliable_message_count = state.reliable_message_count.saturating_add(1);
     }
 }
 
@@ -257,11 +320,22 @@ fn exit_when_done(mut state: ResMut<State>, cfg: Res<Cfg>, mut exit: MessageWrit
 
 fn write_out(cfg: &Cfg, state: &State) {
     let out = serde_json::json!({
+        "run_id": cfg.run_id,
         "welcomed": state.welcomed,
         "rejected_reason": state.rejected_reason,
         "disconnected_after_connect": state.disconnected_after_connect,
         "acks": state.acks,
         "ack_seqs_unique": state.ack_seqs.len(),
+        "connection_epoch": state.receipt_epoch,
+        "reliable_message_count": state.reliable_message_count,
+        "receipt_witnesses": state.receipt_witnesses.iter().map(|w| serde_json::json!({
+            "connection_epoch": w.connection_epoch,
+            "seq": w.seq,
+            "kind": w.kind,
+            "reliable": w.reliable,
+            "message_id": w.message_id,
+            "remote_tick": w.remote_tick,
+        })).collect::<Vec<_>>(),
         "ack_message_ids": state.ack_message_ids,
         "rejection_message_ids": state.rejection_message_ids,
         "typed_command_results": state.typed_command_results,

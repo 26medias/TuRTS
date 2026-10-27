@@ -195,3 +195,90 @@ fn disconnected_sender_preserves_fifo_and_sequence_until_connected() {
     app.update();
     assert_eq!(app.world().resource::<CommandSequence>().next, Some(2));
 }
+
+#[test]
+#[ignore = "requires a fresh actual p4b artifact via TURTS_RECEIPT_WITNESS_REPORT and run ID"]
+fn captured_transport_reversal_fails_product_receipt_ordering_helper() {
+    use std::fs;
+    use turts_client::ingest::{ReceiptKind, ReceiptWitness, ReceiptWitnesses, receipt_ordered};
+
+    let path = std::env::var("TURTS_RECEIPT_WITNESS_REPORT")
+        .expect("run p4b first and set TURTS_RECEIPT_WITNESS_REPORT to its fresh JSON output");
+    let expected_run_id = std::env::var("TURTS_RECEIPT_WITNESS_RUN_ID")
+        .expect("set TURTS_RECEIPT_WITNESS_RUN_ID to the producer run id");
+    let report: serde_json::Value =
+        serde_json::from_slice(&fs::read(&path).expect("read captured transport report"))
+            .expect("captured report is JSON");
+    assert_eq!(report["run_id"], expected_run_id);
+    assert_eq!(
+        report["typed_command_results"],
+        serde_json::json!(["ack", "rejected"])
+    );
+
+    let epoch = report["connection_epoch"]
+        .as_u64()
+        .expect("captured connection epoch");
+    let reliable_count = report["reliable_message_count"]
+        .as_u64()
+        .expect("captured reliable count") as u32;
+    assert!((2..32768).contains(&reliable_count));
+    let records = report["receipt_witnesses"]
+        .as_array()
+        .expect("captured receipt witness array");
+    let mut receipts = ReceiptWitnesses::default();
+    for record in records {
+        let kind = match record["kind"].as_str().expect("captured kind") {
+            "ack" => ReceiptKind::Ack,
+            "applied" => ReceiptKind::Applied,
+            "rejected" => ReceiptKind::Rejected,
+            _ => continue,
+        };
+        assert_eq!(record["connection_epoch"].as_u64(), Some(epoch));
+        assert!(
+            record["reliable"]
+                .as_bool()
+                .expect("captured reliable flag")
+        );
+        assert!(
+            record["message_id"].as_u64().is_some(),
+            "captured reliable MessageId required"
+        );
+        assert!(
+            record["remote_tick"].as_u64().is_some(),
+            "captured remote tick required"
+        );
+        receipts.records.push(ReceiptWitness {
+            connection_epoch: epoch,
+            seq: record["seq"].as_u64().expect("captured sequence") as u32,
+            kind,
+            reliable: true,
+            message_id: record["message_id"].as_u64().map(|id| id as u16),
+            remote_tick: record["remote_tick"]
+                .as_u64()
+                .expect("captured remote tick") as u32,
+        });
+    }
+    receipts.reliable_counts.insert(epoch, reliable_count);
+    let ack = receipts
+        .records
+        .iter()
+        .find(|record| record.kind == ReceiptKind::Ack)
+        .copied()
+        .expect("captured Ack");
+    let rejected = receipts
+        .records
+        .iter()
+        .find(|record| record.kind == ReceiptKind::Rejected)
+        .copied()
+        .expect("captured Rejected");
+    assert_eq!(
+        ack.seq, rejected.seq,
+        "captured results correspond to one command sequence"
+    );
+    assert_eq!(
+        receipt_ordered(ack, rejected, reliable_count),
+        false,
+        "product receipt helper must reject actual server-send reversal metadata"
+    );
+    assert_eq!(receipts.ordered_for(ack.seq, epoch), Some(false));
+}

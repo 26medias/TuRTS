@@ -518,14 +518,27 @@ fn p4_thousand_moves_get_one_ack_each() {
 fn p4b_real_transport_reversal_is_visible_in_message_ids() {
     let port = free_port();
     let _server = start_reversed_server(port);
-    let out = spike_dir().join("p4b_reversal.json");
-    let mut client = start_client(port, &["--moves", "1", "--run-secs", "8"], &out);
+    let out = std::env::var_os("TURTS_RECEIPT_WITNESS_OUTPUT")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| spike_dir().join("p4b_reversal.json"));
+    let run_id = std::env::var("TURTS_RECEIPT_WITNESS_RUN_ID")
+        .unwrap_or_else(|_| format!("task10-p4b-{}", unix_ms()));
+    let args = [
+        "--moves",
+        "1",
+        "--run-secs",
+        "8",
+        "--run-id",
+        run_id.as_str(),
+    ];
+    let mut client = start_client(port, &args, &out);
     assert!(
         client.wait_exit(Duration::from_secs(15)),
         "reversal client did not exit"
     );
     let result = read_json(&out);
     eprintln!("[p4b reversal] {result}");
+    assert_eq!(result["run_id"], json!(run_id));
     assert_eq!(result["acks"], json!(1));
     assert_eq!(result["typed_command_results"], json!(["ack", "rejected"]));
     let ack = result["ack_message_ids"][0]
