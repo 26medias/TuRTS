@@ -272,7 +272,7 @@ fn e6_noop_log_spoof_and_hidden_partial_write_are_detected() {
     assert!(
         oracle
             .observe(
-                &ExpectedOperation::Command(command),
+                &ExpectedOperation::Command(command.clone()),
                 &before,
                 &before,
                 std::slice::from_ref(&fake),
@@ -594,23 +594,32 @@ fn rejected_command_missing_boundary_or_hidden_write() {
 }
 
 #[test]
-fn e7_claim_at_paused_boundary_is_neutral() {
+fn e7_claim_of_each_initialized_or_empty_slot_is_accounting_neutral() {
     let mut app = scenario(20);
     load_package(app.world_mut(), &economy_archive()).unwrap();
     let before = audit_state(app.world_mut());
-    app.world_mut()
-        .resource_mut::<turts_sim::slots::Slots>()
-        .claim(777)
-        .unwrap();
-    let after = audit_state(app.world_mut());
-    assert_eq!(before.economy, after.economy);
-    assert_eq!(before.units, after.units);
-    assert_eq!(before.nodes, after.nodes);
-    assert_eq!(before.allocators, after.allocators);
-    assert_eq!(before.claims.len(), after.claims.len());
-    assert_eq!(
-        before.claims.iter().filter(|v| v.is_some()).count() + 1,
-        after.claims.iter().filter(|v| v.is_some()).count()
+    let mut expected_claims = before.claims.clone();
+    for player in [777, 778] {
+        let claimed = app
+            .world_mut()
+            .resource_mut::<turts_sim::slots::Slots>()
+            .claim(player)
+            .unwrap();
+        expected_claims[usize::from(claimed.0)] = Some(player);
+        let after = audit_state(app.world_mut());
+        let mut normalized = after.clone();
+        normalized.claims = before.claims.clone();
+        assert_eq!(
+            normalized, before,
+            "slot claim {claimed:?} changes only claim ownership, never the complete accounting snapshot"
+        );
+        assert_eq!(after.claims, expected_claims);
+    }
+    assert!(
+        app.world_mut()
+            .resource_mut::<turts_sim::slots::Slots>()
+            .claim(779)
+            .is_err()
     );
 }
 
@@ -1364,6 +1373,37 @@ fn e6_reserve_then_charge_tracks_claim_start_and_output() {
             Some(&result),
         )
         .unwrap();
+    let raw_queue_json = serde_json::to_vec(&after).unwrap();
+    let raw_queue_roundtrip: AuditState = serde_json::from_slice(&raw_queue_json).unwrap();
+    assert_eq!(
+        raw_queue_roundtrip, after,
+        "raw reservation endpoints and active queue survive AuditState JSON roundtrip"
+    );
+    let queued = after
+        .raw_queues
+        .iter()
+        .find(|q| q.producer == 1)
+        .unwrap()
+        .jobs
+        .first()
+        .unwrap();
+    assert_eq!(
+        queued.id,
+        result.outcome.as_ref().unwrap().job_id.unwrap().0
+    );
+    assert!(
+        queued
+            .reservation
+            .as_ref()
+            .is_some_and(|r| r.job_id == queued.id && !r.lines.is_empty())
+    );
+    let operation_json = serde_json::to_vec(&op).unwrap();
+    let operation_roundtrip: turts_sim::OperationAudit =
+        serde_json::from_slice(&operation_json).unwrap();
+    assert_eq!(
+        operation_roundtrip, op,
+        "logical operation JSONL payload retains active raw reservation lines"
+    );
     assert!(
         after
             .ledger_claims
@@ -1724,6 +1764,7 @@ fn e6_running_cancel_refund_rejects_when_inventory_endpoint_is_full() {
 fn e6_cancel_refund_matrix_covers_both_policies_and_all_stages() {
     for (recipe, ticks, blocked) in [
         ("probe:train", 0, false),
+        ("probe:train", 1, false),
         ("probe:hire", 0, false),
         ("probe:hire", 1, false),
         ("probe:train", 101, true),
@@ -2001,5 +2042,876 @@ fn e6_charge_and_reserve_policies_compete_for_the_same_last_stock() {
             balance.reserved,
             if first == "probe:hire" { 100 } else { 0 }
         );
+    }
+}
+
+#[test]
+fn review_oracle_rejects_forged_gather_receiver_and_target() {
+    let mut files = economy_files()
+        .into_iter()
+        .map(|(p, b)| (p, String::from_utf8(b).unwrap()))
+        .collect::<std::collections::BTreeMap<_, _>>();
+    let map = files.get_mut("maps/test.ron").unwrap();
+    *map = map.replace(
+        "(unit: \"probe:worker\", owner_slot: 0, pos: (x: 12.0, y: 8.0), contents: [])",
+        "(unit: \"probe:worker\", owner_slot: 0, pos: (x: 12.0, y: 8.0), contents: [(item: \"probe:timber\", amount: 10)])",
+    );
+    let mut app = scenario_with(files, 20);
+    let initial = audit_state(app.world_mut());
+    let catalog = app
+        .world()
+        .resource::<turts_sim::bootstrap::InstalledCatalog>()
+        .0
+        .clone();
+    trail(&mut app).enable();
+    let mut modeled = AccountingOracle::new(&initial, &catalog);
+    let command = Command {
+        slot: SlotId(0),
+        seq: 1,
+        kind: CommandKind::Gather {
+            unit_id: 3,
+            node_id: turts_sim::NodeId(1),
+        },
+    };
+    let result = apply_command(app.world_mut(), &command);
+    let after = audit_state(app.world_mut());
+    let op = trail(&mut app).drain_operations().pop().unwrap();
+    modeled
+        .observe(
+            &ExpectedOperation::Command(command.clone()),
+            &op.before,
+            &op.after,
+            &op.events,
+            Some(&result),
+        )
+        .unwrap();
+    app.update();
+    let op = trail(&mut app).drain_operations().remove(0);
+    let expected = ExpectedOperation::Automatic {
+        tick: 1,
+        phase: AutomaticPhase::Gather,
+        subject: AutomaticSubject::Gatherer(3),
+    };
+    let mut forged = op.after.clone();
+    let raw_order = forged.raw_orders.iter_mut().find(|o| o.unit == 3).unwrap();
+    raw_order.receiver = Some(2);
+    raw_order.stage = turts_sim::GatherStage::Unloading;
+    let view = forged
+        .economy
+        .orders
+        .iter_mut()
+        .find(|o| o.unit == 3)
+        .unwrap();
+    view.receiver = Some(2);
+    view.stage = turts_sim::GatherStage::Unloading;
+    forged
+        .raw_units
+        .iter_mut()
+        .find(|u| u.unit_id == 3)
+        .unwrap()
+        .move_target = Some(turts_mod_api::WorldPos { x: 60.0, y: 60.0 });
+    let mut fraud_oracle = AccountingOracle::new(&initial, &catalog);
+    fraud_oracle
+        .observe(
+            &ExpectedOperation::Command(command),
+            &initial,
+            &after,
+            &op.events,
+            Some(&result),
+        )
+        .unwrap();
+    assert!(
+        fraud_oracle
+            .observe(&expected, &op.before, &forged, &op.events, None)
+            .is_err(),
+        "receiver/stage/target must be derived independently"
+    );
+}
+
+#[test]
+fn review_raw_queue_fields_and_allocator_presence_are_frozen_from_prior_model() {
+    let mut app = scenario(20);
+    load_package(app.world_mut(), &economy_archive()).unwrap();
+    trail(&mut app).enable();
+    let initial = audit_state(app.world_mut());
+    let catalog = app
+        .world()
+        .resource::<turts_sim::bootstrap::InstalledCatalog>()
+        .0
+        .clone();
+    let command = produce(881, "probe:hire");
+    let result = apply_command(app.world_mut(), &command);
+    let mut after = audit_state(app.world_mut());
+    let op = trail(&mut app).drain_operations().pop().unwrap();
+    let mut oracle = AccountingOracle::new(&initial, &catalog);
+    let raw_job = &mut after
+        .raw_queues
+        .iter_mut()
+        .find(|q| q.producer == 1)
+        .unwrap()
+        .jobs[0];
+    raw_job.duration_ticks += 999;
+    assert!(
+        oracle
+            .observe(
+                &ExpectedOperation::Command(command),
+                &op.before,
+                &after,
+                &op.events,
+                Some(&result)
+            )
+            .is_err(),
+        "raw duration is derived from frozen recipe duration"
+    );
+
+    let mut app = scenario(20);
+    load_package(app.world_mut(), &economy_archive()).unwrap();
+    trail(&mut app).enable();
+    let initial = audit_state(app.world_mut());
+    let catalog = app
+        .world()
+        .resource::<turts_sim::bootstrap::InstalledCatalog>()
+        .0
+        .clone();
+    let command = produce(883, "probe:train");
+    let result = apply_command(app.world_mut(), &command);
+    let mut after = audit_state(app.world_mut());
+    let op = trail(&mut app).drain_operations().pop().unwrap();
+    let mut oracle = AccountingOracle::new(&initial, &catalog);
+    after.resources.allocators = false;
+    assert!(
+        oracle
+            .observe(
+                &ExpectedOperation::Command(command),
+                &op.before,
+                &after,
+                &op.events,
+                Some(&result)
+            )
+            .is_err(),
+        "resource-presence bits are immutable evidence"
+    );
+}
+
+#[test]
+fn review_oracle_rejects_hidden_cross_owner_inventory_write_during_gather() {
+    let files = economy_files()
+        .into_iter()
+        .map(|(p, b)| (p, String::from_utf8(b).unwrap()))
+        .collect::<std::collections::BTreeMap<_, _>>();
+    let mut app = scenario_with(files, 20);
+    trail(&mut app).enable();
+    let initial = audit_state(app.world_mut());
+    let catalog = app
+        .world()
+        .resource::<turts_sim::bootstrap::InstalledCatalog>()
+        .0
+        .clone();
+    let command = Command {
+        slot: SlotId(0),
+        seq: 2,
+        kind: CommandKind::Gather {
+            unit_id: 3,
+            node_id: turts_sim::NodeId(1),
+        },
+    };
+    let result = apply_command(app.world_mut(), &command);
+    let op = trail(&mut app).drain_operations().pop().unwrap();
+    let mut oracle = AccountingOracle::new(&initial, &catalog);
+    oracle
+        .observe(
+            &ExpectedOperation::Command(command),
+            &op.before,
+            &op.after,
+            &op.events,
+            Some(&result),
+        )
+        .unwrap();
+    let mut found = false;
+    for tick in 1..=100 {
+        app.update();
+        let operations = trail(&mut app).drain_operations();
+        for op in operations {
+            if !op
+                .events
+                .iter()
+                .any(|e| matches!(e.kind, EconomyEventKind::Extracted { .. }))
+            {
+                continue;
+            }
+            let mut forged = op.after.clone();
+            let owner_zero = forged
+                .economy
+                .inventories
+                .iter_mut()
+                .find(|i| i.unit == 1)
+                .unwrap();
+            owner_zero
+                .items
+                .iter_mut()
+                .find(|i| i.resource == common::cid("probe:timber"))
+                .unwrap()
+                .on_hand -= 1;
+            forged
+                .economy
+                .inventories
+                .iter_mut()
+                .find(|i| i.unit == 5)
+                .unwrap()
+                .items
+                .push(turts_sim::ItemView {
+                    resource: common::cid("probe:timber"),
+                    on_hand: 1,
+                    reserved: 0,
+                });
+            let mut isolated = AccountingOracle::new(&op.before, &catalog);
+            let got = isolated.observe(
+                &ExpectedOperation::Automatic {
+                    tick,
+                    phase: AutomaticPhase::Gather,
+                    subject: AutomaticSubject::Gatherer(3),
+                },
+                &op.before,
+                &forged,
+                &op.events,
+                None,
+            );
+            assert!(
+                got.is_err(),
+                "truthful extraction must reject unrelated cross-owner stock movement"
+            );
+            found = true;
+            break;
+        }
+        if found {
+            break;
+        }
+    }
+    assert!(found, "fixture reaches a gather extraction");
+}
+
+#[test]
+fn review_oracle_requires_valid_production_output_even_when_event_is_missing() {
+    let mut app = scenario(20);
+    load_package(app.world_mut(), &economy_archive()).unwrap();
+    let initial = audit_state(app.world_mut());
+    let catalog = app
+        .world()
+        .resource::<turts_sim::bootstrap::InstalledCatalog>()
+        .0
+        .clone();
+    trail(&mut app).enable();
+    let mut oracle = AccountingOracle::new(&initial, &catalog);
+    let command = produce(78, "probe:train");
+    let result = apply_command(app.world_mut(), &command);
+    let op = trail(&mut app).drain_operations().pop().unwrap();
+    let job = result.outcome.as_ref().unwrap().job_id.unwrap().0;
+    oracle
+        .observe(
+            &ExpectedOperation::Command(command),
+            &op.before,
+            &op.after,
+            &op.events,
+            Some(&result),
+        )
+        .unwrap();
+    for tick in 1..=100 {
+        advance_accounted_tick(&mut app, &mut oracle, tick);
+    }
+    app.update();
+    let operations = trail(&mut app).drain_operations();
+    assert_eq!(operations.len(), 4);
+    for (index, unit) in [3, 5].into_iter().enumerate() {
+        let op = &operations[index];
+        oracle
+            .observe(
+                &ExpectedOperation::Automatic {
+                    tick: 101,
+                    phase: AutomaticPhase::Gather,
+                    subject: AutomaticSubject::Gatherer(unit),
+                },
+                &op.before,
+                &op.after,
+                &op.events,
+                None,
+            )
+            .unwrap();
+    }
+    let advance = &operations[2];
+    oracle
+        .observe(
+            &ExpectedOperation::Automatic {
+                tick: 101,
+                phase: AutomaticPhase::ProductionAdvance,
+                subject: AutomaticSubject::HeadJob { producer: 1, job },
+            },
+            &advance.before,
+            &advance.after,
+            &advance.events,
+            None,
+        )
+        .unwrap();
+    let op = &operations[3];
+    assert!(
+        op.events
+            .iter()
+            .any(|e| matches!(e.kind, EconomyEventKind::ProductionCompleted { .. }))
+    );
+    let got = oracle.observe(
+        &ExpectedOperation::Automatic {
+            tick: 101,
+            phase: AutomaticPhase::OutputAttempt,
+            subject: AutomaticSubject::HeadJob { producer: 1, job },
+        },
+        &op.before,
+        &op.before,
+        &[],
+        None,
+    );
+    assert!(
+        got.is_err(),
+        "valid output must not be reclassified as blocked from event absence"
+    );
+}
+
+#[test]
+fn review_oracle_rejects_forged_event_owner() {
+    let mut app = scenario(20);
+    load_package(app.world_mut(), &economy_archive()).unwrap();
+    let initial = audit_state(app.world_mut());
+    let catalog = app
+        .world()
+        .resource::<turts_sim::bootstrap::InstalledCatalog>()
+        .0
+        .clone();
+    trail(&mut app).enable();
+    let command = produce(79, "probe:train");
+    let result = apply_command(app.world_mut(), &command);
+    let op = trail(&mut app).drain_operations().pop().unwrap();
+    let mut forged = op.after.clone();
+    let mut events = op.events.clone();
+    events[0].owner_slot = 1;
+    forged.pending_events.last_mut().unwrap().owner_slot = 1;
+    let mut oracle = AccountingOracle::new(&initial, &catalog);
+    assert!(
+        oracle
+            .observe(
+                &ExpectedOperation::Command(command),
+                &op.before,
+                &forged,
+                &events,
+                Some(&result)
+            )
+            .is_err(),
+        "command event owner must come from submitted slot"
+    );
+}
+
+#[test]
+fn review_oracle_accepts_local_transfer_into_empty_inventory_row() {
+    let mut app = scenario(20);
+    load_package(app.world_mut(), &economy_archive()).unwrap();
+    trail(&mut app).enable();
+    let initial = audit_state(app.world_mut());
+    let catalog = app
+        .world()
+        .resource::<turts_sim::bootstrap::InstalledCatalog>()
+        .0
+        .clone();
+    let mut oracle = AccountingOracle::new(&initial, &catalog);
+    let result = turts_sim::economy::transaction::inventory_transfer(
+        app.world_mut(),
+        SlotId(0),
+        1,
+        3,
+        common::cid("probe:timber"),
+        1,
+    );
+    assert!(result.is_ok());
+    let op = trail(&mut app).drain_operations().pop().unwrap();
+    oracle
+        .observe(
+            &ExpectedOperation::InventoryTransfer {
+                slot: 0,
+                from: 1,
+                to: 3,
+                item: common::cid("probe:timber"),
+                amount: 1,
+            },
+            &op.before,
+            &op.after,
+            &op.events,
+            None,
+        )
+        .unwrap();
+    for amount in [1, 1] {
+        let before = oracle.modeled_state().clone();
+        let result = turts_sim::economy::transaction::inventory_transfer(
+            app.world_mut(),
+            SlotId(0),
+            3,
+            1,
+            common::cid("probe:timber"),
+            amount,
+        );
+        if amount == 1
+            && before
+                .economy
+                .inventories
+                .iter()
+                .find(|i| i.unit == 3)
+                .unwrap()
+                .items
+                .iter()
+                .any(|i| i.on_hand > 0)
+        {
+            assert!(result.is_ok());
+        } else {
+            assert!(
+                result.is_err(),
+                "empty source inventory cannot create stock"
+            );
+        }
+        let after = audit_state(app.world_mut());
+        let op = trail(&mut app).drain_operations().pop().unwrap();
+        oracle
+            .observe(
+                &ExpectedOperation::InventoryTransfer {
+                    slot: 0,
+                    from: 3,
+                    to: 1,
+                    item: common::cid("probe:timber"),
+                    amount,
+                },
+                &before,
+                &after,
+                &op.events,
+                None,
+            )
+            .unwrap();
+    }
+    advance_accounted_tick(&mut app, &mut oracle, 1);
+    let command = produce(882, "probe:train");
+    let before = oracle.modeled_state().clone();
+    let result = apply_command(app.world_mut(), &command);
+    let after = audit_state(app.world_mut());
+    let op = trail(&mut app).drain_operations().pop().unwrap();
+    oracle
+        .observe(
+            &ExpectedOperation::Command(command),
+            &before,
+            &after,
+            &op.events,
+            Some(&result),
+        )
+        .unwrap();
+}
+
+#[test]
+fn review_oracle_matches_rejected_nan_command_bits() {
+    let mut app = scenario(20);
+    load_package(app.world_mut(), &economy_archive()).unwrap();
+    trail(&mut app).enable();
+    let initial = audit_state(app.world_mut());
+    let catalog = app
+        .world()
+        .resource::<turts_sim::bootstrap::InstalledCatalog>()
+        .0
+        .clone();
+    let command = Command {
+        slot: SlotId(0),
+        seq: 80,
+        kind: CommandKind::MoveTo {
+            unit_ids: vec![3],
+            target: turts_sim::Vec2::new(f32::from_bits(0x7fc0_0001), 1.0),
+        },
+    };
+    let result = apply_command(app.world_mut(), &command);
+    let op = trail(&mut app).drain_operations().pop().unwrap();
+    let mut oracle = AccountingOracle::new(&initial, &catalog);
+    oracle
+        .observe(
+            &ExpectedOperation::Command(command),
+            &op.before,
+            &op.after,
+            &op.events,
+            Some(&result),
+        )
+        .unwrap();
+    oracle
+        .assert_command_records(&trail(&mut app).commands)
+        .unwrap();
+}
+
+#[test]
+fn review_self_convert_and_partial_ratio_headroom_are_accounted() {
+    // Self Convert is legal and should win nearest-receiver selection over a farther exchange.
+    let mut files = economy_files()
+        .into_iter()
+        .map(|(p, b)| (p, String::from_utf8(b).unwrap()))
+        .collect::<std::collections::BTreeMap<_, _>>();
+    let worker = files.get_mut("units/worker.ron").unwrap();
+    *worker = worker.replace("drop_off: None", "drop_off: Some((rules: [(item: \"probe:timber\", effect: Convert(balance: \"probe:token\", per_item: 2))]))");
+    let map = files.get_mut("maps/test.ron").unwrap();
+    *map = map.replace(
+        "pos: (x: 12.0, y: 8.0), contents: []",
+        "pos: (x: 12.0, y: 8.0), contents: [(item: \"probe:timber\", amount: 10)]",
+    );
+    let mut app = scenario_with(files, 20);
+    trail(&mut app).enable();
+    let initial = audit_state(app.world_mut());
+    let catalog = app
+        .world()
+        .resource::<turts_sim::bootstrap::InstalledCatalog>()
+        .0
+        .clone();
+    let mut oracle = AccountingOracle::new(&initial, &catalog);
+    let cmd = Command {
+        slot: SlotId(0),
+        seq: 831,
+        kind: CommandKind::Gather {
+            unit_id: 3,
+            node_id: turts_sim::NodeId(1),
+        },
+    };
+    let result = apply_command(app.world_mut(), &cmd);
+    let op = trail(&mut app).drain_operations().pop().unwrap();
+    oracle
+        .observe(
+            &ExpectedOperation::Command(cmd),
+            &op.before,
+            &op.after,
+            &op.events,
+            Some(&result),
+        )
+        .unwrap();
+    for tick in 1..=300 {
+        advance_accounted_tick(&mut app, &mut oracle, tick);
+        if oracle.conversion > 0 {
+            break;
+        }
+    }
+    assert!(
+        oracle.conversion > 0,
+        "worker's self Convert rule produces positive accounted conversion"
+    );
+    assert!(oracle.delivery > 0);
+
+    // A ratio-two receiver with four balance units of headroom can accept exactly two items.
+    let mut files = economy_files()
+        .into_iter()
+        .map(|(p, b)| (p, String::from_utf8(b).unwrap()))
+        .collect::<std::collections::BTreeMap<_, _>>();
+    let yard = files.get_mut("units/yard.ron").unwrap();
+    *yard = yard.replace(
+        "drop_off: Some((rules: [(item: \"probe:timber\", effect: Store)]))",
+        "drop_off: None",
+    );
+    let worker = files.get_mut("units/worker.ron").unwrap();
+    *worker = worker.replace("unload_per_second: 10", "unload_per_second: 1000");
+    let map = files.get_mut("maps/test.ron").unwrap();
+    *map = map
+        .replace(
+            "pos: (x: 12.0, y: 8.0), contents: []",
+            "pos: (x: 12.0, y: 20.0), contents: [(item: \"probe:timber\", amount: 10)]",
+        )
+        .replace(
+            "balance: \"probe:token\", amount: 200)]",
+            "balance: \"probe:token\", amount: 18446744073709551611)]",
+        );
+    let mut app = scenario_with(files, 20);
+    trail(&mut app).enable();
+    let initial = audit_state(app.world_mut());
+    let catalog = app
+        .world()
+        .resource::<turts_sim::bootstrap::InstalledCatalog>()
+        .0
+        .clone();
+    let mut oracle = AccountingOracle::new(&initial, &catalog);
+    let cmd = Command {
+        slot: SlotId(0),
+        seq: 832,
+        kind: CommandKind::Gather {
+            unit_id: 3,
+            node_id: turts_sim::NodeId(1),
+        },
+    };
+    let result = apply_command(app.world_mut(), &cmd);
+    let op = trail(&mut app).drain_operations().pop().unwrap();
+    oracle
+        .observe(
+            &ExpectedOperation::Command(cmd),
+            &op.before,
+            &op.after,
+            &op.events,
+            Some(&result),
+        )
+        .unwrap();
+    let mut converted = false;
+    for tick in 1..=40 {
+        let before_delivery = oracle.delivery;
+        let before_conversion = oracle.conversion;
+        advance_accounted_tick(&mut app, &mut oracle, tick);
+        if oracle.delivery > before_delivery {
+            assert_eq!(
+                oracle.delivery - before_delivery,
+                2,
+                "headroom of four with ratio two permits exactly two items"
+            );
+            assert_eq!(oracle.conversion - before_conversion, 4);
+            converted = true;
+            break;
+        }
+    }
+    assert!(converted, "positive partial ratio headroom is usable");
+}
+
+#[test]
+fn review_automatic_production_event_owner_is_derived_from_producer() {
+    let mut app = scenario(20);
+    load_package(app.world_mut(), &economy_archive()).unwrap();
+    trail(&mut app).enable();
+    let initial = audit_state(app.world_mut());
+    let catalog = app
+        .world()
+        .resource::<turts_sim::bootstrap::InstalledCatalog>()
+        .0
+        .clone();
+    let command = produce(833, "probe:train");
+    let result = apply_command(app.world_mut(), &command);
+    let op = trail(&mut app).drain_operations().pop().unwrap();
+    let mut oracle = AccountingOracle::new(&initial, &catalog);
+    oracle
+        .observe(
+            &ExpectedOperation::Command(command.clone()),
+            &op.before,
+            &op.after,
+            &op.events,
+            Some(&result),
+        )
+        .unwrap();
+    let job = result.outcome.unwrap().job_id.unwrap().0;
+    app.update();
+    let ops = trail(&mut app).drain_operations();
+    oracle
+        .observe(
+            &ExpectedOperation::Automatic {
+                tick: 1,
+                phase: AutomaticPhase::Gather,
+                subject: AutomaticSubject::Gatherer(3),
+            },
+            &ops[0].before,
+            &ops[0].after,
+            &ops[0].events,
+            None,
+        )
+        .unwrap();
+    oracle
+        .observe(
+            &ExpectedOperation::Automatic {
+                tick: 1,
+                phase: AutomaticPhase::Gather,
+                subject: AutomaticSubject::Gatherer(5),
+            },
+            &ops[1].before,
+            &ops[1].after,
+            &ops[1].events,
+            None,
+        )
+        .unwrap();
+    assert!(matches!(
+        ops[2].events[0].kind,
+        EconomyEventKind::ProductionStarted { .. }
+    ));
+    let mut forged = ops[2].clone();
+    forged.events[0].owner_slot = 1;
+    forged.after.pending_events.last_mut().unwrap().owner_slot = 1;
+    assert!(
+        oracle
+            .observe(
+                &ExpectedOperation::Automatic {
+                    tick: 1,
+                    phase: AutomaticPhase::ProductionAdvance,
+                    subject: AutomaticSubject::HeadJob { producer: 1, job }
+                },
+                &forged.before,
+                &forged.after,
+                &forged.events,
+                None
+            )
+            .is_err()
+    );
+}
+
+#[test]
+fn e8_authority_and_validation_rejections_match_active_gather_and_production_control() {
+    let mut rejected = scenario(20);
+    load_package(rejected.world_mut(), &economy_archive()).unwrap();
+    let mut control = scenario(20);
+    load_package(control.world_mut(), &economy_archive()).unwrap();
+    trail(&mut rejected).enable();
+    let initial = audit_state(rejected.world_mut());
+    let catalog = rejected
+        .world()
+        .resource::<turts_sim::bootstrap::InstalledCatalog>()
+        .0
+        .clone();
+    let mut oracle = AccountingOracle::new(&initial, &catalog);
+    for (command, expected_result) in [
+        (
+            Command {
+                slot: SlotId(0),
+                seq: 840,
+                kind: CommandKind::Gather {
+                    unit_id: 3,
+                    node_id: turts_sim::NodeId(1),
+                },
+            },
+            true,
+        ),
+        (produce(841, "probe:train"), true),
+        (
+            Command {
+                slot: SlotId(1),
+                seq: 842,
+                kind: CommandKind::MoveTo {
+                    unit_ids: vec![3],
+                    target: turts_sim::Vec2::new(4.0, 4.0),
+                },
+            },
+            false,
+        ),
+        (
+            Command {
+                slot: SlotId(0),
+                seq: 843,
+                kind: CommandKind::MoveTo {
+                    unit_ids: vec![u32::MAX],
+                    target: turts_sim::Vec2::new(4.0, 4.0),
+                },
+            },
+            false,
+        ),
+    ] {
+        let before = oracle.modeled_state().clone();
+        let result = apply_command(rejected.world_mut(), &command);
+        if expected_result {
+            let control_result = apply_command(control.world_mut(), &command);
+            assert_eq!(control_result, result);
+        }
+        assert_eq!(result.outcome.is_ok(), expected_result);
+        let after = audit_state(rejected.world_mut());
+        let op = trail(&mut rejected).drain_operations().pop().unwrap();
+        oracle
+            .observe(
+                &ExpectedOperation::Command(command),
+                &before,
+                &after,
+                &op.events,
+                Some(&result),
+            )
+            .unwrap();
+    }
+    for tick in 1..=120 {
+        advance_accounted_tick(&mut rejected, &mut oracle, tick);
+        control.update();
+    }
+    assert!(
+        oracle.extraction > 0,
+        "gathering progresses during both rejected-command controls"
+    );
+    assert!(
+        oracle.operations > 100,
+        "production and gather operations remain active through the comparison"
+    );
+    assert_eq!(
+        audit_state(rejected.world_mut()),
+        audit_state(control.world_mut()),
+        "owner and unknown-unit rejections match the active-work no-command control"
+    );
+}
+
+#[test]
+fn e6_gather_carry_and_refund_rounding_are_accounted_at_10_20_30_hz() {
+    for hz in [10, 20, 30] {
+        let mut files = economy_files()
+            .into_iter()
+            .map(|(p, b)| (p, String::from_utf8(b).unwrap()))
+            .collect::<std::collections::BTreeMap<_, _>>();
+        let train = files.get_mut("production/train.ron").unwrap();
+        *train = train.replace(
+            "queued: (numerator: 1, denominator: 1)",
+            "queued: (numerator: 1, denominator: 3)",
+        );
+        let mut app = scenario_with(files, hz);
+        trail(&mut app).enable();
+        let initial = audit_state(app.world_mut());
+        let catalog = app
+            .world()
+            .resource::<turts_sim::bootstrap::InstalledCatalog>()
+            .0
+            .clone();
+        let mut oracle = AccountingOracle::new(&initial, &catalog);
+        let gather = Command {
+            slot: SlotId(0),
+            seq: 850,
+            kind: CommandKind::Gather {
+                unit_id: 3,
+                node_id: turts_sim::NodeId(1),
+            },
+        };
+        let result = apply_command(app.world_mut(), &gather);
+        let after = audit_state(app.world_mut());
+        let op = trail(&mut app).drain_operations().pop().unwrap();
+        oracle
+            .observe(
+                &ExpectedOperation::Command(gather),
+                &op.before,
+                &after,
+                &op.events,
+                Some(&result),
+            )
+            .unwrap();
+        for tick in 1..=200u32 {
+            advance_accounted_tick(&mut app, &mut oracle, tick);
+        }
+        assert!(oracle.extraction > 0, "gather rate advances under {hz} Hz");
+        let cmd = produce(851, "probe:train");
+        let before = oracle.modeled_state().clone();
+        let result = apply_command(app.world_mut(), &cmd);
+        let after = audit_state(app.world_mut());
+        let op = trail(&mut app).drain_operations().pop().unwrap();
+        oracle
+            .observe(
+                &ExpectedOperation::Command(cmd),
+                &before,
+                &after,
+                &op.events,
+                Some(&result),
+            )
+            .unwrap();
+        let job = result.outcome.unwrap().job_id.unwrap();
+        let cancel = Command {
+            slot: SlotId(0),
+            seq: 852,
+            kind: CommandKind::CancelProduction {
+                producer_id: 1,
+                job_id: job,
+            },
+        };
+        let before = oracle.modeled_state().clone();
+        let result = apply_command(app.world_mut(), &cancel);
+        let after = audit_state(app.world_mut());
+        let op = trail(&mut app).drain_operations().pop().unwrap();
+        oracle
+            .observe(
+                &ExpectedOperation::Command(cancel),
+                &before,
+                &after,
+                &op.events,
+                Some(&result),
+            )
+            .unwrap();
+        assert!(op.events.iter().any(|e| matches!(&e.kind, EconomyEventKind::ProductionCancelled { refunded, .. } if refunded.iter().any(|x| x.amount == 33))), "catalog refund ratio rounds 100 tokens to 33 at {hz} Hz");
     }
 }

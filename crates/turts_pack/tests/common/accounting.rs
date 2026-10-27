@@ -226,6 +226,7 @@ impl AccountingOracle {
                     let mut expected = before.clone();
                     change_inventory_amount(&mut expected, *from, item, -i128::from(*amount))?;
                     change_inventory_amount(&mut expected, *to, item, i128::from(*amount))?;
+                    project_raw_queues(&mut expected)?;
                     if expected != *after {
                         return Err("transfer changed state outside the two submitted filtered inventory endpoints".into());
                     }
@@ -261,6 +262,9 @@ impl AccountingOracle {
         self.append_events(before, after, events)?;
         self.check_conservation(after)?;
         self.operations += 1;
+        if matches!(expected, ExpectedOperation::InventoryTransfer { .. }) {
+            self.tick_start_state = after.clone();
+        }
         self.last = after.clone();
         Ok(())
     }
@@ -454,6 +458,9 @@ impl AccountingOracle {
         result: Option<&CommandResult>,
     ) -> Result<(), String> {
         let r = result.ok_or("submitted command has no result")?;
+        if events.iter().any(|event| event.owner_slot != c.slot.0) {
+            return Err("command event owner differs from submitted slot".into());
+        }
         if r.slot != c.slot || r.seq != c.seq {
             return Err("command result identity differs from submitted input".into());
         }
@@ -613,6 +620,7 @@ impl AccountingOracle {
                         turts_sim::ReservationClaimView::Closed { map_job_id } => *map_job_id,
                     });
                 append_modeled_events(&mut expected_state, b, events)?;
+                project_raw_queues(&mut expected_state)?;
                 if expected_state != *a {
                     return Err("accepted Produce differs from exact requested recipe, ledger and unrelated-state model".into());
                 }
@@ -917,6 +925,7 @@ impl AccountingOracle {
                     )?;
                 }
                 append_modeled_events(&mut expected_state, b, events)?;
+                project_raw_queues(&mut expected_state)?;
                 if expected_state != *a {
                     return Err("Cancel changed state outside the requested job, catalog-derived refund, reservation release and claim close".into());
                 }
@@ -1143,6 +1152,7 @@ impl AccountingOracle {
                 order.stage = turts_sim::GatherStage::Idle;
             }
         }
+        project_raw_queues(&mut expected)?;
         if expected != *a {
             return Err(
                 "MoveTo changed state outside submitted targets and gather interruption".into(),
@@ -1215,6 +1225,7 @@ impl AccountingOracle {
             view.receiver = None;
             view.stage = order.stage;
         }
+        project_raw_queues(&mut expected)?;
         if expected != *a {
             return Err(
                 "Gather command changed state outside the independently predicted order assignment"
@@ -1231,384 +1242,787 @@ impl AccountingOracle {
         a: &AuditState,
         events: &[EconomyEvent],
     ) -> Result<(), String> {
-        self.gather_inner(unit, b, a, events)?;
-        if b.raw_inventories != a.raw_inventories
-            || b.unit_types != a.unit_types
-            || b.resources != a.resources
-            || b.catalog != a.catalog
-            || b.bounds != a.bounds
-            || b.tick_hz != a.tick_hz
-            || b.allocators != a.allocators
-            || b.claims != a.claims
-            || b.ledger_claims != a.ledger_claims
-            || b.economy.queues != a.economy.queues
-        {
-            return Err("gather operation changed immutable filters, capabilities, claims, allocators, clock, or jobs".into());
+        let mut expected = b.clone();
+        let mut expected_events = Vec::new();
+        let mut extracted = 0u64;
+        let mut delivered = 0u64;
+        let mut converted = None::<(ContentId, ContentId, u64)>;
+        self.predict_gather(
+            unit,
+            &mut expected,
+            &mut expected_events,
+            &mut extracted,
+            &mut delivered,
+            &mut converted,
+        )?;
+        append_modeled_events(&mut expected, b, &expected_events)?;
+        if expected_events != events {
+            return Err("gather events differ from the independently predicted owner, endpoints, item, and amount".into());
         }
-        for order in &b.raw_orders {
-            if order.unit != unit
-                && a.raw_orders.iter().find(|x| x.unit == order.unit) != Some(order)
-            {
-                return Err("gather operation changed an unrelated raw order".into());
-            }
+        project_raw_queues(&mut expected)?;
+        if expected != *a {
+            return Err(
+                "gather state differs from the independent full transition projection".into(),
+            );
         }
-        for unit_state in &b.raw_units {
-            if unit_state.unit_id != unit
-                && a.raw_units.iter().find(|x| x.unit_id == unit_state.unit_id) != Some(unit_state)
-            {
-                return Err(
-                    "gather operation changed another unit's raw target or position".into(),
-                );
-            }
-        }
-        for unit_state in &b.units {
-            if unit_state.unit_id != unit
-                && a.units.iter().find(|x| x.unit_id == unit_state.unit_id) != Some(unit_state)
-            {
-                return Err("gather operation changed another unit projection".into());
-            }
-        }
-        Ok(())
-    }
-    fn gather_inner(
-        &mut self,
-        unit: u32,
-        b: &AuditState,
-        a: &AuditState,
-        events: &[EconomyEvent],
-    ) -> Result<(), String> {
-        let order = b
-            .raw_orders
-            .iter()
-            .find(|o| o.unit == unit)
-            .ok_or("expected gatherer is not modeled")?;
-        if order.stage == turts_sim::GatherStage::Idle {
-            if b != a || !events.is_empty() {
-                return Err("idle gatherer operation changed state".into());
-            }
-            return Ok(());
-        }
-        if order.stage == turts_sim::GatherStage::Unloading {
-            return self.unload(unit, b, a, events);
-        }
-        let node_id = order.deposit.ok_or("gatherer has no frozen deposit")?;
-        let node = b
-            .nodes
-            .iter()
-            .find(|n| n.id == node_id)
-            .ok_or("frozen deposit absent")?;
-        let def = self
-            .catalog
-            .nodes
-            .get(&node.content_id)
-            .ok_or("node definition absent")?;
-        let unit_content = b
-            .units
-            .iter()
-            .find(|u| u.unit_id == unit)
-            .ok_or("gatherer unit missing")?
-            .content_id
-            .clone();
-        let unit_id = ContentId::parse(&unit_content).map_err(|_| "unit content id invalid")?;
-        let unit_def = b
-            .catalog
-            .as_ref()
-            .and_then(|c| c.units.iter().find(|u| u.id == unit_id))
-            .ok_or("unit catalog entry absent")?;
-        let gather = unit_def
-            .gatherer
-            .as_ref()
-            .ok_or("expected gatherer lacks gather definition")?;
-        let hz = u128::from(b.tick_hz.ok_or("clock missing")?);
-        let numerator = u128::from(gather.gather_per_second) + u128::from(order.rate_carry);
-        let budget = if order.stage == turts_sim::GatherStage::Gathering {
-            u64::try_from(numerator / hz).map_err(|_| "gather budget overflow")?
-        } else {
-            0
-        };
-        let inventory = b
-            .economy
-            .inventories
-            .iter()
-            .find(|i| i.unit == unit)
-            .ok_or("gather inventory absent")?;
-        let used: u128 = inventory.items.iter().map(|i| u128::from(i.on_hand)).sum();
-        let headroom =
-            u64::try_from(u128::from(inventory.capacity).saturating_sub(used)).unwrap_or(u64::MAX);
-        let expected = budget.min(node.remaining).min(headroom);
-        let extracted: Vec<_> = events
-            .iter()
-            .filter_map(|e| {
-                if let EconomyEventKind::Extracted {
-                    node,
-                    cargo,
-                    item,
-                    amount,
-                } = &e.kind
-                {
-                    Some((*node, *cargo, item, *amount))
-                } else {
-                    None
-                }
-            })
-            .collect();
-        if extracted.len() > 1 {
-            return Err("one gatherer operation extracted more than once".into());
-        }
-        if expected == 0 {
-            if !extracted.is_empty() {
-                return Err("gather operation extracted without modeled budget or headroom".into());
-            }
-        } else {
-            if extracted.len() != 1 {
-                return Err("modeled gather budget was not extracted".into());
-            }
-            let (n, c, item, amount) = extracted[0];
-            if n != node.id.0 || c != unit || item != &def.item || amount != expected {
-                return Err("extraction differs from prior node, catalog item, rate carry or inventory headroom".into());
-            }
-            let node_after = a
-                .nodes
-                .iter()
-                .find(|x| x.id == node_id)
-                .ok_or("node disappeared")?;
-            if node_after.remaining != node.remaining - expected
-                || inventory_item(a, unit, &def.item).0
-                    != inventory_item(b, unit, &def.item).0 + expected
-            {
-                return Err(
-                    "node/cargo deltas disagree with independently derived extraction".into(),
-                );
-            }
-            self.extraction += u128::from(expected);
-        }
-        if expected == 0 {
-            self.assert_gather_no_resource_delta(unit, b, a)?;
-        }
-        let hz_u16 = b.tick_hz.ok_or("clock missing")?;
-        if order.stage == turts_sim::GatherStage::Gathering {
-            let carry = if headroom == 0 || node.remaining == 0 {
-                order.rate_carry
-            } else {
-                u16::try_from(numerator % u128::from(hz_u16))
-                    .map_err(|_| "rate remainder overflow")?
-            };
-            if a.raw_orders
-                .iter()
-                .find(|o| o.unit == unit)
-                .map(|o| o.rate_carry)
-                != Some(carry)
-            {
-                return Err("gather carry differs from independent rate remainder".into());
-            }
-        }
-        for e in events {
-            if !matches!(
-                e.kind,
-                EconomyEventKind::Extracted { .. }
-                    | EconomyEventKind::Stored { .. }
-                    | EconomyEventKind::Converted { .. }
-            ) {
-                return Err("gather phase emitted unrelated event".into());
-            }
-        }
-        Ok(())
-    }
-
-    fn assert_gather_no_resource_delta(
-        &self,
-        _unit: u32,
-        b: &AuditState,
-        a: &AuditState,
-    ) -> Result<(), String> {
-        if b.nodes != a.nodes
-            || b.economy.balances != a.economy.balances
-            || b.economy.queues != a.economy.queues
-            || b.economy.inventories != a.economy.inventories
-        {
-            return Err("gather phase changed unrelated stock, nodes, balances or jobs".into());
-        }
-        Ok(())
-    }
-
-    fn unload(
-        &mut self,
-        unit: u32,
-        b: &AuditState,
-        a: &AuditState,
-        events: &[EconomyEvent],
-    ) -> Result<(), String> {
-        let order = b
-            .raw_orders
-            .iter()
-            .find(|o| o.unit == unit)
-            .ok_or("unloading order missing")?;
-        let owner = b
-            .units
-            .iter()
-            .find(|u| u.unit_id == unit)
-            .map(|u| u.owner_slot)
-            .ok_or("unloading unit missing")?;
-        let Some(item) = b
-            .economy
-            .inventories
-            .iter()
-            .find(|i| i.unit == unit)
-            .and_then(|i| i.items.iter().find(|x| x.on_hand > x.reserved))
-            .map(|x| x.resource.clone())
-        else {
-            if !events.is_empty() {
-                return Err("empty unload emitted a transfer event".into());
-            }
-            self.assert_gather_no_resource_delta(unit, b, a)?;
-            return Ok(());
-        };
-        let receiver = order.receiver.ok_or("unloading receiver is not frozen")?;
-        if receiver == unit {
-            return Err("self-Store receiver was selected".into());
-        }
-        let receiver_unit = b
-            .units
-            .iter()
-            .find(|u| u.unit_id == receiver)
-            .ok_or("receiver unit missing")?;
-        if receiver_unit.owner_slot != owner {
-            return Err("foreign receiver selected".into());
-        }
-        let receiver_id =
-            ContentId::parse(&receiver_unit.content_id).map_err(|_| "receiver id invalid")?;
-        let receiver_def = b
-            .catalog
-            .as_ref()
-            .and_then(|c| c.units.iter().find(|u| u.id == receiver_id))
-            .ok_or("receiver catalog entry missing")?;
-        let effect = receiver_def
-            .drop_off
-            .iter()
-            .find(|r| r.item == item)
-            .ok_or("receiver has no matching drop-off rule")?;
-        let hz = u128::from(b.tick_hz.ok_or("clock missing")?);
-        let gatherer = self.unit_catalog(b, unit)?;
-        let g = gatherer
-            .gatherer
-            .as_ref()
-            .ok_or("gatherer definition missing")?;
-        let numerator = u128::from(g.unload_per_second) + u128::from(order.rate_carry);
-        let budget = u64::try_from(numerator / hz).map_err(|_| "unload budget overflow")?;
-        let cargo = inventory_item(b, unit, &item);
-        let available_cargo = cargo.0 - cargo.1;
-        let available_destination = match &effect.effect {
-            turts_sim::economy::views::CatalogDropOffEffectAudit::Store => {
-                let inv = b
-                    .economy
-                    .inventories
-                    .iter()
-                    .find(|i| i.unit == receiver)
-                    .ok_or("store inventory missing")?;
-                let used = inv
-                    .items
-                    .iter()
-                    .map(|x| u128::from(x.on_hand))
-                    .sum::<u128>();
-                u64::try_from(u128::from(inv.capacity).saturating_sub(used)).unwrap_or(u64::MAX)
-            }
-            turts_sim::economy::views::CatalogDropOffEffectAudit::Convert { balance, .. } => {
-                u64::MAX
-                    - b.economy
-                        .balances
+        self.extraction += u128::from(extracted);
+        self.delivery += u128::from(delivered);
+        if let Some((item, balance, credit)) = converted {
+            self.conversion += u128::from(credit);
+            *self.conversion_sinks.entry(item).or_default() += u128::from(delivered);
+            *self
+                .balance_conversions
+                .entry((
+                    b.units
                         .iter()
-                        .find(|x| x.slot == owner && &x.resource == balance)
-                        .ok_or("conversion balance missing")?
-                        .on_hand
-            }
-        };
-        let amount = budget.min(available_cargo).min(available_destination);
-        let expected_carry = u16::try_from(numerator % hz).map_err(|_| "unload carry overflow")?;
-        if a.raw_orders
-            .iter()
-            .find(|o| o.unit == unit)
-            .map(|o| o.rate_carry)
-            != Some(expected_carry)
-        {
-            return Err("unload carry differs from independent rate remainder".into());
+                        .find(|u| u.unit_id == unit)
+                        .unwrap()
+                        .owner_slot,
+                    balance,
+                ))
+                .or_default() += u128::from(credit);
         }
-        if amount == 0 {
-            if !events.is_empty() {
-                return Err("zero-budget or full-destination unload emitted an event".into());
-            }
-            self.assert_gather_no_resource_delta(unit, b, a)?;
-            return Ok(());
-        }
-        if events.len() != 1 {
-            return Err("unload must emit one event for positive modeled amount".into());
-        }
-        if inventory_item(a, unit, &item).0 != cargo.0 - amount {
-            return Err("unload cargo debit differs from rate, cargo and endpoint capacity".into());
-        }
-        match &effect.effect {
-            turts_sim::economy::views::CatalogDropOffEffectAudit::Store => {
-                let ev = &events[0];
-                if ev.kind
-                    != (EconomyEventKind::Stored {
-                        from: unit,
-                        to: receiver,
-                        item: item.clone(),
-                        amount,
-                    })
-                {
-                    return Err("Store event differs from independent endpoints and amount".into());
-                }
-                if inventory_item(a, receiver, &item).0
-                    != inventory_item(b, receiver, &item).0 + amount
-                {
-                    return Err("Store receiver credit is not conserved".into());
-                }
-            }
-            turts_sim::economy::views::CatalogDropOffEffectAudit::Convert { balance, per_item } => {
-                let credited = amount
-                    .checked_mul(*per_item)
-                    .ok_or("conversion multiplication overflow")?;
-                let ev = &events[0];
-                if ev.kind
-                    != (EconomyEventKind::Converted {
-                        from: unit,
-                        to: receiver,
-                        item: item.clone(),
-                        amount,
-                        balance: balance.clone(),
-                        credited,
-                    })
-                {
-                    return Err("conversion event differs from catalog ratio or endpoints".into());
-                }
-                let old = b
-                    .economy
-                    .balances
-                    .iter()
-                    .find(|x| x.slot == owner && &x.resource == balance)
-                    .ok_or("conversion balance absent")?
-                    .on_hand;
-                let new = a
-                    .economy
-                    .balances
-                    .iter()
-                    .find(|x| x.slot == owner && &x.resource == balance)
-                    .ok_or("conversion balance absent")?
-                    .on_hand;
-                if old.checked_add(credited) != Some(new) {
-                    return Err("converted balance does not equal catalog multiplier".into());
-                }
-                self.conversion += u128::from(credited);
-                *self.conversion_sinks.entry(item.clone()).or_default() += u128::from(amount);
-                *self
-                    .balance_conversions
-                    .entry((owner, balance.clone()))
-                    .or_default() += u128::from(credited);
-            }
-        }
-        self.delivery += u128::from(amount);
         Ok(())
     }
+
+    fn predict_gather(
+        &self,
+        unit: u32,
+        s: &mut AuditState,
+        emitted: &mut Vec<EconomyEvent>,
+        extracted: &mut u64,
+        delivered: &mut u64,
+        converted: &mut Option<(ContentId, ContentId, u64)>,
+    ) -> Result<(), String> {
+        let old = s
+            .raw_orders
+            .iter()
+            .find(|o| o.unit == unit)
+            .cloned()
+            .ok_or("gather subject absent from prior model")?;
+        if old.stage == turts_sim::GatherStage::Idle {
+            return Ok(());
+        }
+        let unit_view = s
+            .units
+            .iter()
+            .find(|u| u.unit_id == unit)
+            .cloned()
+            .ok_or("gather unit absent")?;
+        let unit_def = self.unit_catalog(s, unit)?;
+        let g = unit_def
+            .gatherer
+            .as_ref()
+            .ok_or("gather capability absent")?;
+        let pos = s
+            .raw_units
+            .iter()
+            .find(|u| u.unit_id == unit)
+            .ok_or("gather position absent")?
+            .pos
+            .clone();
+        let hz = u128::from(s.tick_hz.ok_or("gather clock absent")?);
+        let node_id = old.deposit;
+        let mut stage = old.stage;
+        let mut receiver = old.receiver;
+        let mut deposit = old.deposit.map(|n| n.0);
+        let mut target = s
+            .raw_units
+            .iter()
+            .find(|u| u.unit_id == unit)
+            .unwrap()
+            .move_target
+            .clone();
+        let mut carry = old.rate_carry;
+        let event_tick = s.economy.tick;
+        let event_ordinal = s.next_event_ordinal;
+        let mut add_event = |owner_slot, kind: EconomyEventKind| -> Result<(), String> {
+            let ordinal = event_ordinal.ok_or("gather event cursor exhausted")?;
+            emitted.push(EconomyEvent {
+                tick: event_tick,
+                ordinal,
+                owner_slot,
+                kind,
+            });
+            Ok(())
+        };
+        let inventory_used = |state: &AuditState, id: u32| -> u128 {
+            state
+                .economy
+                .inventories
+                .iter()
+                .find(|x| x.unit == id)
+                .map_or(0, |i| i.items.iter().map(|x| u128::from(x.on_hand)).sum())
+        };
+        let cargo_items = |state: &AuditState, id: u32| -> Vec<ContentId> {
+            let mut items = state
+                .economy
+                .inventories
+                .iter()
+                .find(|x| x.unit == id)
+                .map(|i| {
+                    i.items
+                        .iter()
+                        .filter(|x| x.on_hand > x.reserved)
+                        .map(|x| x.resource.clone())
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_default();
+            items.sort();
+            items
+        };
+        let set_stage = |stage: turts_sim::GatherStage,
+                         next_receiver: Option<u32>,
+                         stage_ref: &mut turts_sim::GatherStage,
+                         receiver_ref: &mut Option<u32>,
+                         carry_ref: &mut u16,
+                         target_ref: &mut Option<turts_mod_api::WorldPos>| {
+            let changed = *stage_ref != stage;
+            if changed {
+                *stage_ref = stage;
+                *carry_ref = 0;
+            }
+            if let Some(id) = next_receiver {
+                *receiver_ref = Some(id);
+            } else if !matches!(
+                stage,
+                turts_sim::GatherStage::MovingToReceiver | turts_sim::GatherStage::Unloading
+            ) {
+                *receiver_ref = None;
+            }
+            if changed
+                || matches!(
+                    stage,
+                    turts_sim::GatherStage::Waiting { .. } | turts_sim::GatherStage::Idle
+                )
+            {
+                *target_ref = None;
+            }
+        };
+        let node_for =
+            |state: &AuditState, id: u32| state.nodes.iter().find(|n| n.id.0 == id).cloned();
+        let item_of_node =
+            |state: &AuditState, node: &turts_sim::NodeView| -> Result<ContentId, String> {
+                state
+                    .catalog
+                    .as_ref()
+                    .and_then(|c| c.nodes.iter().find(|d| d.id == node.content_id))
+                    .map(|d| d.item.clone())
+                    .ok_or_else(|| "gather node item missing from frozen catalog".into())
+            };
+        let nearest_node =
+            |state: &AuditState, from: &turts_mod_api::WorldPos, item: &ContentId| -> Option<u32> {
+                state
+                    .nodes
+                    .iter()
+                    .filter(|n| {
+                        n.remaining > 0
+                            && item_of_node(state, n).as_ref() == Ok(item)
+                            && g.items.contains(item)
+                    })
+                    .min_by(|a, b| {
+                        let da = (from.x - a.pos.x).powi(2) + (from.y - a.pos.y).powi(2);
+                        let db = (from.x - b.pos.x).powi(2) + (from.y - b.pos.y).powi(2);
+                        da.total_cmp(&db).then(a.id.cmp(&b.id))
+                    })
+                    .map(|n| n.id.0)
+            };
+        let approach = |from: &turts_mod_api::WorldPos,
+                        center: &turts_mod_api::WorldPos,
+                        reach: f32,
+                        radius: f32,
+                        bounds: Option<&turts_mod_api::WorldPos>| {
+            let mut dx = from.x - center.x;
+            let mut dy = from.y - center.y;
+            let d2 = dx * dx + dy * dy;
+            if d2 <= f32::EPSILON {
+                dx = 1.0;
+                dy = 0.0;
+            } else {
+                let inv = d2.sqrt().recip();
+                dx *= inv;
+                dy *= inv;
+            }
+            let mut p = turts_mod_api::WorldPos {
+                x: center.x + dx * reach,
+                y: center.y + dy * reach,
+            };
+            if let Some(b) = bounds {
+                p.x = p.x.clamp(radius, (b.x - radius).max(radius));
+                p.y = p.y.clamp(radius, (b.y - radius).max(radius));
+            }
+            p
+        };
+        let find_receiver = |state: &AuditState,
+                             item: &ContentId,
+                             owner: u8|
+         -> Option<(
+            u32,
+            turts_mod_api::WorldPos,
+            f32,
+            turts_sim::economy::views::CatalogDropOffEffectAudit,
+            u64,
+        )> {
+            let mut candidates = Vec::new();
+            for unit_view in &state.units {
+                if unit_view.owner_slot != owner {
+                    continue;
+                }
+                let Ok(id) = ContentId::parse(&unit_view.content_id) else {
+                    continue;
+                };
+                let Some(def) = state
+                    .catalog
+                    .as_ref()
+                    .and_then(|c| c.units.iter().find(|u| u.id == id))
+                else {
+                    continue;
+                };
+                let Some(rule) = def.drop_off.iter().find(|r| &r.item == item) else {
+                    continue;
+                };
+                let available = match &rule.effect {
+                    turts_sim::economy::views::CatalogDropOffEffectAudit::Store => {
+                        let raw = state
+                            .raw_inventories
+                            .iter()
+                            .find(|i| i.unit == unit_view.unit_id)?;
+                        if !raw.accepted_items.contains(item) {
+                            continue;
+                        }
+                        u64::try_from(
+                            u128::from(raw.capacity)
+                                .saturating_sub(inventory_used(state, unit_view.unit_id)),
+                        )
+                        .unwrap_or(u64::MAX)
+                    }
+                    turts_sim::economy::views::CatalogDropOffEffectAudit::Convert {
+                        balance,
+                        per_item,
+                    } => {
+                        let current = state
+                            .economy
+                            .balances
+                            .iter()
+                            .find(|b| b.slot == owner && &b.resource == balance)?
+                            .on_hand;
+                        match per_item {
+                            0 => u64::MAX,
+                            ratio => (u64::MAX - current).checked_div(*ratio).unwrap_or(0),
+                        }
+                    }
+                };
+                if available == 0
+                    || (unit_view.unit_id == unit
+                        && matches!(
+                            rule.effect,
+                            turts_sim::economy::views::CatalogDropOffEffectAudit::Store
+                        ))
+                {
+                    continue;
+                }
+                let d2 = (pos.x - unit_view.pos.x).powi(2) + (pos.y - unit_view.pos.y).powi(2);
+                candidates.push((
+                    d2,
+                    unit_view.unit_id,
+                    unit_view.pos.clone(),
+                    def.radius,
+                    rule.effect.clone(),
+                    available,
+                ));
+            }
+            candidates.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)));
+            candidates
+                .into_iter()
+                .next()
+                .map(|(_, id, p, r, e, a)| (id, p, r, e, a))
+        };
+        let wait_reason =
+            |state: &AuditState, item: &ContentId, owner: u8| {
+                let mut full = false;
+                let mut overflow = false;
+                for u in &state.units {
+                    if u.owner_slot != owner {
+                        continue;
+                    }
+                    let Ok(id) = ContentId::parse(&u.content_id) else {
+                        continue;
+                    };
+                    let Some(def) = state
+                        .catalog
+                        .as_ref()
+                        .and_then(|c| c.units.iter().find(|x| x.id == id))
+                    else {
+                        continue;
+                    };
+                    for rule in def.drop_off.iter().filter(|r| &r.item == item) {
+                        match &rule.effect {
+                            turts_sim::economy::views::CatalogDropOffEffectAudit::Store
+                                if u.unit_id != unit =>
+                            {
+                                if let Some(raw) = state.raw_inventories.iter().find(|i| {
+                                    i.unit == u.unit_id && i.accepted_items.contains(item)
+                                }) {
+                                    full |= inventory_used(state, u.unit_id)
+                                        >= u128::from(raw.capacity);
+                                }
+                            }
+                            turts_sim::economy::views::CatalogDropOffEffectAudit::Convert {
+                                balance,
+                                per_item,
+                            } if *per_item > 0 => {
+                                if let Some(v) = state
+                                    .economy
+                                    .balances
+                                    .iter()
+                                    .find(|b| b.slot == owner && &b.resource == balance)
+                                {
+                                    overflow |= (u64::MAX - v.on_hand) / *per_item == 0;
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+                if full {
+                    turts_sim::WaitReason::DestinationFull
+                } else if overflow {
+                    turts_sim::WaitReason::DestinationOverflow
+                } else {
+                    turts_sim::WaitReason::NoReceiver
+                }
+            };
+        let set_new = |state: &mut AuditState,
+                       deposit: Option<u32>,
+                       stage: turts_sim::GatherStage,
+                       receiver: Option<u32>,
+                       carry: u16,
+                       target: Option<turts_mod_api::WorldPos>| {
+            let raw = state
+                .raw_orders
+                .iter_mut()
+                .find(|o| o.unit == unit)
+                .unwrap();
+            raw.deposit = deposit.map(turts_sim::NodeId);
+            raw.stage = stage;
+            raw.receiver = receiver;
+            raw.rate_carry = carry;
+            let view = state
+                .economy
+                .orders
+                .iter_mut()
+                .find(|o| o.unit == unit)
+                .unwrap();
+            view.node = old.node;
+            view.stage = stage;
+            view.receiver = receiver;
+            state
+                .raw_units
+                .iter_mut()
+                .find(|u| u.unit_id == unit)
+                .unwrap()
+                .move_target = target;
+        };
+        let original = node_id.ok_or("active gather order lacks deposit")?;
+        let node = node_for(s, original.0);
+        match stage {
+            turts_sim::GatherStage::MovingToNode => {
+                let Some(n) = node else {
+                    set_stage(
+                        turts_sim::GatherStage::Waiting {
+                            reason: turts_sim::WaitReason::NoDeposit,
+                        },
+                        None,
+                        &mut stage,
+                        &mut receiver,
+                        &mut carry,
+                        &mut target,
+                    );
+                    set_new(s, deposit, stage, receiver, carry, target);
+                    return Ok(());
+                };
+                if n.remaining == 0 {
+                    if cargo_items(s, unit).iter().any(|_| true) {
+                        set_stage(
+                            turts_sim::GatherStage::MovingToReceiver,
+                            None,
+                            &mut stage,
+                            &mut receiver,
+                            &mut carry,
+                            &mut target,
+                        );
+                    } else {
+                        let item = item_of_node(s, &n)?;
+                        if let Some(next) = nearest_node(s, &pos, &item) {
+                            if deposit != Some(next) {
+                                target = None;
+                            }
+                            deposit = Some(next);
+                            set_stage(
+                                turts_sim::GatherStage::MovingToNode,
+                                None,
+                                &mut stage,
+                                &mut receiver,
+                                &mut carry,
+                                &mut target,
+                            );
+                        } else {
+                            set_stage(
+                                turts_sim::GatherStage::Waiting {
+                                    reason: turts_sim::WaitReason::NoDeposit,
+                                },
+                                None,
+                                &mut stage,
+                                &mut receiver,
+                                &mut carry,
+                                &mut target,
+                            );
+                        }
+                    }
+                } else {
+                    let item = item_of_node(s, &n)?;
+                    let nd = s
+                        .catalog
+                        .as_ref()
+                        .and_then(|c| c.nodes.iter().find(|d| d.id == n.content_id))
+                        .ok_or("node definition missing")?;
+                    let reach = unit_def.radius + nd.radius + g.interaction_range;
+                    let dx = pos.x - n.pos.x;
+                    let dy = pos.y - n.pos.y;
+                    let d = (dx * dx + dy * dy).sqrt();
+                    if d <= reach + 1.0e-4 {
+                        target = None;
+                        set_stage(
+                            turts_sim::GatherStage::Gathering,
+                            None,
+                            &mut stage,
+                            &mut receiver,
+                            &mut carry,
+                            &mut target,
+                        );
+                    } else {
+                        target = Some(approach(
+                            &pos,
+                            &n.pos,
+                            unit_def.radius + nd.radius + g.interaction_range,
+                            unit_def.radius,
+                            s.bounds.as_ref(),
+                        ));
+                    }
+                    let _ = item;
+                }
+            }
+            turts_sim::GatherStage::Gathering => {
+                let Some(n) = node else {
+                    set_stage(
+                        turts_sim::GatherStage::Waiting {
+                            reason: turts_sim::WaitReason::NoDeposit,
+                        },
+                        None,
+                        &mut stage,
+                        &mut receiver,
+                        &mut carry,
+                        &mut target,
+                    );
+                    set_new(s, deposit, stage, receiver, carry, target);
+                    return Ok(());
+                };
+                let item = item_of_node(s, &n)?;
+                if n.remaining == 0 {
+                    if !cargo_items(s, unit).is_empty() {
+                        set_stage(
+                            turts_sim::GatherStage::MovingToReceiver,
+                            None,
+                            &mut stage,
+                            &mut receiver,
+                            &mut carry,
+                            &mut target,
+                        );
+                    } else if let Some(next) = nearest_node(s, &pos, &item) {
+                        if deposit != Some(next) {
+                            target = None;
+                        }
+                        deposit = Some(next);
+                        set_stage(
+                            turts_sim::GatherStage::MovingToNode,
+                            None,
+                            &mut stage,
+                            &mut receiver,
+                            &mut carry,
+                            &mut target,
+                        );
+                    } else {
+                        set_stage(
+                            turts_sim::GatherStage::Waiting {
+                                reason: turts_sim::WaitReason::NoDeposit,
+                            },
+                            None,
+                            &mut stage,
+                            &mut receiver,
+                            &mut carry,
+                            &mut target,
+                        );
+                    }
+                } else if !g.items.contains(&item) {
+                    set_stage(
+                        turts_sim::GatherStage::Waiting {
+                            reason: turts_sim::WaitReason::NoDeposit,
+                        },
+                        None,
+                        &mut stage,
+                        &mut receiver,
+                        &mut carry,
+                        &mut target,
+                    );
+                } else {
+                    let capacity = s
+                        .economy
+                        .inventories
+                        .iter()
+                        .find(|i| i.unit == unit)
+                        .ok_or("gather inventory missing")?
+                        .capacity;
+                    let headroom =
+                        u64::try_from(u128::from(capacity).saturating_sub(inventory_used(s, unit)))
+                            .unwrap_or(u64::MAX);
+                    if headroom == 0 {
+                        set_stage(
+                            turts_sim::GatherStage::Waiting {
+                                reason: turts_sim::WaitReason::DestinationFull,
+                            },
+                            None,
+                            &mut stage,
+                            &mut receiver,
+                            &mut carry,
+                            &mut target,
+                        );
+                    } else if s.next_event_ordinal.is_some() {
+                        let num = u128::from(g.gather_per_second) + u128::from(carry);
+                        let budget =
+                            u64::try_from(num / hz).map_err(|_| "gather budget overflow")?;
+                        carry = u16::try_from(num % hz).map_err(|_| "gather carry overflow")?;
+                        let amount = budget.min(n.remaining).min(headroom);
+                        if amount > 0 {
+                            let nmut = s.nodes.iter_mut().find(|x| x.id == n.id).unwrap();
+                            nmut.remaining -= amount;
+                            change_inventory_amount(s, unit, &item, amount as i128)?;
+                            add_event(
+                                unit_view.owner_slot,
+                                EconomyEventKind::Extracted {
+                                    node: n.id.0,
+                                    cargo: unit,
+                                    item: item.clone(),
+                                    amount,
+                                },
+                            )?;
+                            *extracted = amount;
+                            let after_used = inventory_used(s, unit);
+                            if n.remaining == amount || after_used >= u128::from(capacity) {
+                                set_stage(
+                                    turts_sim::GatherStage::MovingToReceiver,
+                                    None,
+                                    &mut stage,
+                                    &mut receiver,
+                                    &mut carry,
+                                    &mut target,
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+            turts_sim::GatherStage::MovingToReceiver
+            | turts_sim::GatherStage::Waiting {
+                reason:
+                    turts_sim::WaitReason::NoReceiver
+                    | turts_sim::WaitReason::DestinationFull
+                    | turts_sim::WaitReason::DestinationOverflow,
+            } if !cargo_items(s, unit).is_empty() => {
+                let item = cargo_items(s, unit)[0].clone();
+                let Some((to, to_pos, to_radius, _, _)) =
+                    find_receiver(s, &item, unit_view.owner_slot)
+                else {
+                    let reason = wait_reason(s, &item, unit_view.owner_slot);
+                    set_stage(
+                        turts_sim::GatherStage::Waiting { reason },
+                        None,
+                        &mut stage,
+                        &mut receiver,
+                        &mut carry,
+                        &mut target,
+                    );
+                    set_new(s, deposit, stage, receiver, carry, target);
+                    return Ok(());
+                };
+                if Some(to) != receiver {
+                    set_stage(
+                        turts_sim::GatherStage::MovingToReceiver,
+                        Some(to),
+                        &mut stage,
+                        &mut receiver,
+                        &mut carry,
+                        &mut target,
+                    );
+                } else {
+                    let reach = unit_def.radius + to_radius + g.interaction_range;
+                    let dx = pos.x - to_pos.x;
+                    let dy = pos.y - to_pos.y;
+                    let d = (dx * dx + dy * dy).sqrt();
+                    if d <= reach + 1.0e-4 {
+                        target = None;
+                        set_stage(
+                            turts_sim::GatherStage::Unloading,
+                            Some(to),
+                            &mut stage,
+                            &mut receiver,
+                            &mut carry,
+                            &mut target,
+                        );
+                    } else {
+                        target = Some(approach(
+                            &pos,
+                            &to_pos,
+                            reach,
+                            unit_def.radius,
+                            s.bounds.as_ref(),
+                        ));
+                    }
+                }
+            }
+            turts_sim::GatherStage::Waiting {
+                reason: turts_sim::WaitReason::NoDeposit,
+            } => {}
+            turts_sim::GatherStage::Unloading => {
+                let items = cargo_items(s, unit);
+                if items.is_empty() {
+                    let original_live = old
+                        .node
+                        .and_then(|id| node_for(s, id.0))
+                        .filter(|n| n.remaining > 0);
+                    let current_item = node.as_ref().map(|n| item_of_node(s, n)).transpose()?;
+                    if let Some(original) = original_live {
+                        deposit = Some(original.id.0);
+                        if old.deposit.map(|node| node.0) != deposit {
+                            target = None;
+                        }
+                        set_stage(
+                            turts_sim::GatherStage::MovingToNode,
+                            None,
+                            &mut stage,
+                            &mut receiver,
+                            &mut carry,
+                            &mut target,
+                        );
+                    } else if let Some(next) = current_item
+                        .as_ref()
+                        .and_then(|item| nearest_node(s, &pos, item))
+                    {
+                        if deposit != Some(next) {
+                            target = None;
+                        }
+                        deposit = Some(next);
+                        set_stage(
+                            turts_sim::GatherStage::MovingToNode,
+                            None,
+                            &mut stage,
+                            &mut receiver,
+                            &mut carry,
+                            &mut target,
+                        );
+                    } else {
+                        set_stage(
+                            turts_sim::GatherStage::Waiting {
+                                reason: turts_sim::WaitReason::NoDeposit,
+                            },
+                            None,
+                            &mut stage,
+                            &mut receiver,
+                            &mut carry,
+                            &mut target,
+                        );
+                    }
+                } else {
+                    let item = items[0].clone();
+                    let Some((to, to_pos, to_radius, effect, available)) =
+                        find_receiver(s, &item, unit_view.owner_slot)
+                    else {
+                        let reason = wait_reason(s, &item, unit_view.owner_slot);
+                        set_stage(
+                            turts_sim::GatherStage::Waiting { reason },
+                            None,
+                            &mut stage,
+                            &mut receiver,
+                            &mut carry,
+                            &mut target,
+                        );
+                        set_new(s, deposit, stage, receiver, carry, target);
+                        return Ok(());
+                    };
+                    if Some(to) != receiver {
+                        set_stage(
+                            turts_sim::GatherStage::MovingToReceiver,
+                            Some(to),
+                            &mut stage,
+                            &mut receiver,
+                            &mut carry,
+                            &mut target,
+                        );
+                    } else {
+                        let reach = unit_def.radius + to_radius + g.interaction_range;
+                        let dx = pos.x - to_pos.x;
+                        let dy = pos.y - to_pos.y;
+                        let d = (dx * dx + dy * dy).sqrt();
+                        if d > reach + 1.0e-4 {
+                            set_stage(
+                                turts_sim::GatherStage::MovingToReceiver,
+                                Some(to),
+                                &mut stage,
+                                &mut receiver,
+                                &mut carry,
+                                &mut target,
+                            );
+                        } else if s.next_event_ordinal.is_some() {
+                            let num = u128::from(g.unload_per_second) + u128::from(carry);
+                            let budget =
+                                u64::try_from(num / hz).map_err(|_| "unload budget overflow")?;
+                            carry = u16::try_from(num % hz).map_err(|_| "unload carry overflow")?;
+                            if budget > 0 {
+                                let amount = budget
+                                    .min(
+                                        inventory_item(s, unit, &item)
+                                            .0
+                                            .saturating_sub(inventory_item(s, unit, &item).1),
+                                    )
+                                    .min(available);
+                                if amount == 0 {
+                                    let reason = wait_reason(s, &item, unit_view.owner_slot);
+                                    set_stage(
+                                        turts_sim::GatherStage::Waiting { reason },
+                                        None,
+                                        &mut stage,
+                                        &mut receiver,
+                                        &mut carry,
+                                        &mut target,
+                                    );
+                                } else {
+                                    match effect {
+                                    turts_sim::economy::views::CatalogDropOffEffectAudit::Store => { change_inventory_amount(s,unit,&item,-(amount as i128))?; change_inventory_amount(s,to,&item,amount as i128)?; add_event(unit_view.owner_slot,EconomyEventKind::Stored{from:unit,to,item:item.clone(),amount})?; },
+                                    turts_sim::economy::views::CatalogDropOffEffectAudit::Convert{balance,per_item} => { let credit=amount.checked_mul(per_item).ok_or("convert overflows")?; let bal=s.economy.balances.iter_mut().find(|b|b.slot==unit_view.owner_slot&&b.resource==balance).ok_or("conversion endpoint absent")?; bal.on_hand=bal.on_hand.checked_add(credit).ok_or("conversion endpoint overflows")?; change_inventory_amount(s,unit,&item,-(amount as i128))?; add_event(unit_view.owner_slot,EconomyEventKind::Converted{from:unit,to,item:item.clone(),amount,balance:balance.clone(),credited:credit})?; *converted=Some((item.clone(),balance,credit)); },
+                                }
+                                    *delivered = amount;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            _ => return Err("unsupported modeled gather stage".into()),
+        }
+        s.economy.nodes = s.nodes.clone();
+        set_new(s, deposit, stage, receiver, carry, target);
+        Ok(())
+    }
+
     fn unit_catalog<'a>(
         &self,
         s: &'a AuditState,
@@ -1647,6 +2061,16 @@ impl AccountingOracle {
                 "production before-job differs from frozen requested recipe, costs, and duration"
                     .into(),
             );
+        }
+        let owner = b
+            .economy
+            .queues
+            .iter()
+            .find(|q| q.producer == producer)
+            .map(|q| q.owner_slot)
+            .ok_or("producer queue owner missing")?;
+        if events.iter().any(|event| event.owner_slot != owner) {
+            return Err("production event owner differs from frozen producer owner".into());
         }
         let mut next = frozen.clone();
         let mut expected = b.clone();
@@ -1746,6 +2170,7 @@ impl AccountingOracle {
             .ok_or("frozen job disappeared")?;
         *slot = next.view(job_id);
         append_modeled_events(&mut expected, b, events)?;
+        project_raw_queues(&mut expected)?;
         if expected != *a {
             return Err("production advance differs from exact frozen job, ledger, claims, and unrelated-state model".into());
         }
@@ -1786,18 +2211,6 @@ impl AccountingOracle {
                 }
             })
             .collect::<Vec<_>>();
-        if complete.len() > 1 || events.len() != complete.len() {
-            return Err("output attempt event count is not zero or one matching completion".into());
-        }
-        if complete.is_empty() {
-            if b != a {
-                return Err(
-                    "blocked output attempt changed state despite no valid spawn location".into(),
-                );
-            }
-            return Ok(());
-        }
-        let id = complete[0];
         let recipe = self
             .catalog
             .production
@@ -1844,7 +2257,7 @@ impl AccountingOracle {
                         let dy = p.y - u.pos.y;
                         dx * dx + dy * dy >= (radius + d.radius) * (radius + d.radius)
                     })
-                    && b.nodes.iter().all(|n| {
+                    && b.nodes.iter().filter(|n| n.remaining > 0).all(|n| {
                         let nr = b
                             .catalog
                             .as_ref()
@@ -1854,8 +2267,25 @@ impl AccountingOracle {
                         let dy = p.y - n.pos.y;
                         dx * dx + dy * dy >= (radius + nr) * (radius + nr)
                     })
-            })
-            .ok_or("completion event occurred without a catalog-valid spawn candidate")?;
+            });
+        let can_commit = candidate.is_some()
+            && b.allocators.next_values().0.checked_add(1).is_some()
+            && b.next_event_ordinal.is_some();
+        if !can_commit {
+            if !events.is_empty() || b != a {
+                return Err(
+                    "blocked or exhausted output attempt changed state or emitted an event".into(),
+                );
+            }
+            return Ok(());
+        }
+        if complete.len() != 1 || events.len() != 1 {
+            return Err(
+                "independently available output spawn is missing its completion event".into(),
+            );
+        }
+        let id = complete[0];
+        let candidate = candidate.expect("can_commit requires a candidate");
         let owner = b
             .units
             .iter()
@@ -1965,12 +2395,14 @@ impl AccountingOracle {
             expected.economy.economy.queues.sort_by_key(|x| x.producer);
         }
         append_modeled_events(&mut expected, b, events)?;
-        if events[0].kind
-            != (EconomyEventKind::ProductionCompleted {
-                producer,
-                job: job_id,
-                output_unit_id: id,
-            })
+        project_raw_queues(&mut expected)?;
+        if events[0].owner_slot != owner
+            || events[0].kind
+                != (EconomyEventKind::ProductionCompleted {
+                    producer,
+                    job: job_id,
+                    output_unit_id: id,
+                })
             || expected != *a
         {
             return Err("completion differs from exact frozen recipe, catalog spawn candidate, allocator, and whole-state model".into());
@@ -1985,7 +2417,8 @@ impl AccountingOracle {
         if a.economy.tick != expected_tick {
             return Err("movement transition did not cross exactly one tick".into());
         }
-        let modeled = self.predicted_movement(b, expected_tick)?;
+        let mut modeled = self.predicted_movement(b, expected_tick)?;
+        project_raw_queues(&mut modeled)?;
         if modeled != *a {
             return Err("movement boundary differs from independently predicted fixed-step transition or changes unrelated state".into());
         }
@@ -2162,11 +2595,10 @@ impl AccountingOracle {
         }
         let mut unmatched = self.expected_commands.clone();
         for record in records {
-            let Some(i) = unmatched.iter().position(|c| {
-                c.slot == record.input.slot
-                    && c.seq == record.input.seq
-                    && c.kind == record.input.kind
-            }) else {
+            let Some(i) = unmatched
+                .iter()
+                .position(|c| command_identity_eq(c, &record.input))
+            else {
                 return Err(
                     "command audit is missing, duplicated, or differs from submitted input".into(),
                 );
@@ -2177,6 +2609,120 @@ impl AccountingOracle {
             return Err("submitted command lacks exactly one audit record".into());
         }
         Ok(())
+    }
+}
+
+fn project_raw_queues(state: &mut AuditState) -> Result<(), String> {
+    use turts_sim::economy::views::{
+        RawJobAudit, RawQueueAudit, RawReservationAudit, ReservationEndpointView,
+        ReservationLineView,
+    };
+    let mut queues = Vec::with_capacity(state.economy.queues.len());
+    for queue in &state.economy.queues {
+        let mut jobs = Vec::with_capacity(queue.jobs.len());
+        for job in &queue.jobs {
+            let line = |cost: &turts_sim::CostView| ReservationLineView {
+                endpoint: match cost.source {
+                    CostSource::SlotBalance => ReservationEndpointView::Slot(queue.owner_slot),
+                    CostSource::ProducerInventory => {
+                        ReservationEndpointView::Inventory(queue.producer)
+                    }
+                },
+                resource: cost.resource.clone(),
+                amount: cost.amount,
+            };
+            let charged = job.charged.iter().map(line).collect::<Vec<_>>();
+            let reserved = job.reserved.iter().map(line).collect::<Vec<_>>();
+            let reservation = if reserved.is_empty() {
+                None
+            } else {
+                let claim = state
+                    .ledger_claims
+                    .iter()
+                    .find_map(|claim| match claim {
+                        turts_sim::ReservationClaimView::Active {
+                            map_job_id,
+                            token_job_id,
+                            lines,
+                        } if *map_job_id == job.id => Some((*token_job_id, lines)),
+                        _ => None,
+                    })
+                    .ok_or("frozen reserved job lacks active token claim")?;
+                if claim.1 != &reserved {
+                    return Err(
+                        "raw reservation lines differ from independently frozen queue costs".into(),
+                    );
+                }
+                Some(RawReservationAudit {
+                    job_id: claim.0,
+                    lines: reserved,
+                })
+            };
+            jobs.push(RawJobAudit {
+                id: job.id,
+                recipe: job.recipe.clone(),
+                stage: job.stage,
+                elapsed_ticks: job.elapsed_ticks,
+                duration_ticks: job.duration_ticks,
+                charged,
+                reservation,
+            });
+        }
+        queues.push(RawQueueAudit {
+            producer: queue.producer,
+            jobs,
+        });
+    }
+    state.raw_queues = queues;
+    Ok(())
+}
+
+fn command_identity_eq(expected: &Command, actual: &Command) -> bool {
+    if expected.slot != actual.slot || expected.seq != actual.seq {
+        return false;
+    }
+    match (&expected.kind, &actual.kind) {
+        (
+            CommandKind::MoveTo {
+                unit_ids: a,
+                target: x,
+            },
+            CommandKind::MoveTo {
+                unit_ids: b,
+                target: y,
+            },
+        ) => a == b && x.x.to_bits() == y.x.to_bits() && x.y.to_bits() == y.y.to_bits(),
+        (
+            CommandKind::Gather {
+                unit_id: a,
+                node_id: x,
+            },
+            CommandKind::Gather {
+                unit_id: b,
+                node_id: y,
+            },
+        ) => a == b && x == y,
+        (
+            CommandKind::Produce {
+                producer_id: a,
+                recipe_id: x,
+            },
+            CommandKind::Produce {
+                producer_id: b,
+                recipe_id: y,
+            },
+        ) => a == b && x == y,
+        (
+            CommandKind::CancelProduction {
+                producer_id: a,
+                job_id: x,
+            },
+            CommandKind::CancelProduction {
+                producer_id: b,
+                job_id: y,
+            },
+        ) => a == b && x == y,
+        _ => false,
     }
 }
 
@@ -2192,13 +2738,19 @@ fn change_inventory_amount(
         .iter_mut()
         .find(|x| x.unit == unit)
         .ok_or("transfer inventory absent")?;
-    let line = inv
-        .items
-        .iter_mut()
-        .find(|x| &x.resource == item)
-        .ok_or("transfer inventory item row absent")?;
-    line.on_hand = u64::try_from(i128::from(line.on_hand) + delta)
-        .map_err(|_| "transfer expected item overflow")?;
+    if let Some(line) = inv.items.iter_mut().find(|x| &x.resource == item) {
+        line.on_hand = u64::try_from(i128::from(line.on_hand) + delta)
+            .map_err(|_| "transfer expected item overflow")?;
+    } else if delta >= 0 {
+        inv.items.push(turts_sim::ItemView {
+            resource: item.clone(),
+            on_hand: u64::try_from(delta).map_err(|_| "transfer expected item overflow")?,
+            reserved: 0,
+        });
+        inv.items.sort_by(|a, b| a.resource.cmp(&b.resource));
+    } else {
+        return Err("transfer inventory item row absent for debit".into());
+    }
     Ok(())
 }
 
