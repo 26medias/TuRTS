@@ -81,9 +81,34 @@ pub struct UnitView {
     pub owner_slot: u8,
     pub pos: WorldPos,
 }
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ReservationEndpointView {
+    Slot(u8),
+    Inventory(u32),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReservationLineView {
+    pub endpoint: ReservationEndpointView,
+    pub resource: ContentId,
+    pub amount: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ReservationClaimView {
+    Active {
+        map_job_id: u64,
+        token_job_id: u64,
+        lines: Vec<ReservationLineView>,
+    },
+    Closed {
+        map_job_id: u64,
+    },
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct AuditState {
-    pub ledger_claims: Vec<(u64, bool)>,
+    pub ledger_claims: Vec<ReservationClaimView>,
     pub unit_types: Vec<UnitTypeView>,
     pub units: Vec<UnitView>,
     pub nodes: Vec<NodeView>,
@@ -261,11 +286,34 @@ pub fn audit_state(world: &mut World) -> AuditState {
             ledger
                 .reservation_claims
                 .iter()
-                .map(|(id, claim)| {
-                    (
-                        id.0,
-                        matches!(claim, crate::economy::ledger::ReservationClaim::Active(_)),
-                    )
+                .map(|(map_job_id, claim)| match claim {
+                    crate::economy::ledger::ReservationClaim::Active(token) => {
+                        ReservationClaimView::Active {
+                            map_job_id: map_job_id.0,
+                            token_job_id: token.job_id.0,
+                            lines: token
+                                .lines
+                                .iter()
+                                .map(|line| ReservationLineView {
+                                    endpoint: match line.endpoint {
+                                        crate::economy::ledger::Endpoint::Slot(slot) => {
+                                            ReservationEndpointView::Slot(slot)
+                                        }
+                                        crate::economy::ledger::Endpoint::Inventory(unit) => {
+                                            ReservationEndpointView::Inventory(unit)
+                                        }
+                                    },
+                                    resource: line.resource.clone(),
+                                    amount: line.amount,
+                                })
+                                .collect(),
+                        }
+                    }
+                    crate::economy::ledger::ReservationClaim::Closed => {
+                        ReservationClaimView::Closed {
+                            map_job_id: map_job_id.0,
+                        }
+                    }
                 })
                 .collect()
         });

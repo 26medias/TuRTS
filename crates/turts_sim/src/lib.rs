@@ -29,8 +29,9 @@ pub use economy::ledger::EconomyLedger;
 pub use economy::production::JobStage;
 pub use economy::views::{
     AuditState, BalanceView, CostView, InventoryView, ItemView, JobView, NodeView, OrderView,
-    QueueView, UnitTypeView, UnitView, WorldView, audit_state, balance_view, inventory_view,
-    node_view, order_view, queue_view, world_view,
+    QueueView, ReservationClaimView, ReservationEndpointView, ReservationLineView, UnitTypeView,
+    UnitView, WorldView, audit_state, balance_view, inventory_view, node_view, order_view,
+    queue_view, world_view,
 };
 pub use economy::{EconomyOrders, SurfaceNodes};
 pub use harness::headless_app;

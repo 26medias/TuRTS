@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use bevy_ecs::world::World;
 use turts_mod_api::ContentId;
@@ -68,20 +68,26 @@ impl Transaction<'_> {
 
     fn inventory_used(&self, unit: u32) -> Result<u128, RejectReason> {
         let inventory = self.inventory(unit)?;
-        inventory
+        let resources = inventory
             .items
-            .iter()
-            .try_fold(0_u128, |total, (resource, account)| {
-                let staged = self
-                    .writes
+            .keys()
+            .cloned()
+            .chain(
+                self.writes
                     .accounts
-                    .get(&(Endpoint::Inventory(unit), resource.clone()))
-                    .copied()
-                    .unwrap_or(*account);
-                total
-                    .checked_add(u128::from(staged.on_hand))
-                    .ok_or(RejectReason::ArithmeticOverflow)
-            })
+                    .keys()
+                    .filter_map(|(endpoint, resource)| {
+                        (*endpoint == Endpoint::Inventory(unit)).then(|| resource.clone())
+                    }),
+            )
+            .collect::<BTreeSet<_>>();
+        resources.into_iter().try_fold(0_u128, |total, resource| {
+            total
+                .checked_add(u128::from(
+                    self.account(Endpoint::Inventory(unit), &resource).on_hand,
+                ))
+                .ok_or(RejectReason::ArithmeticOverflow)
+        })
     }
 
     fn validate_endpoint(
@@ -634,6 +640,55 @@ mod tests {
     }
 
     #[test]
+    fn audit_distinguishes_reservation_claim_payloads() {
+        let mut world = seeded_world();
+        let token = transact(&mut world, |tx| {
+            reserve_costs(tx, JobId(7), &[line("probe:ore", 3)])
+        })
+        .unwrap();
+        let before = crate::economy::views::audit_state(&mut world);
+        assert_eq!(
+            before.ledger_claims,
+            vec![crate::economy::views::ReservationClaimView::Active {
+                map_job_id: 7,
+                token_job_id: 7,
+                lines: vec![crate::economy::views::ReservationLineView {
+                    endpoint: crate::economy::views::ReservationEndpointView::Slot(0),
+                    resource: ContentId::parse("probe:ore").unwrap(),
+                    amount: 3,
+                }],
+            }],
+        );
+        let mut changed = token;
+        changed.lines[0].amount = 2;
+        world
+            .resource_mut::<EconomyLedger>()
+            .reservation_claims
+            .insert(JobId(7), ReservationClaim::Active(changed));
+        let after = crate::economy::views::audit_state(&mut world);
+        assert_ne!(
+            after, before,
+            "audit must include authoritative reservation lines"
+        );
+    }
+
+    #[test]
+    fn failed_outer_transaction_preserves_complete_claim_audit() {
+        let mut world = seeded_world();
+        transact(&mut world, |tx| {
+            reserve_costs(tx, JobId(7), &[line("probe:ore", 3)])
+        })
+        .unwrap();
+        let before = crate::economy::views::audit_state(&mut world);
+        let result: Result<(), RejectReason> = transact(&mut world, |tx| {
+            reserve_costs(tx, JobId(8), &[line("probe:wood", 1)])?;
+            Err(RejectReason::UnknownJob)
+        });
+        assert_eq!(result, Err(RejectReason::UnknownJob));
+        assert_eq!(crate::economy::views::audit_state(&mut world), before);
+    }
+
+    #[test]
     fn refund_uses_checked_u128_and_leaves_overflow_unchanged() {
         let mut world = seeded_world();
         world.resource_mut::<EconomyLedger>().balances.insert(
@@ -697,6 +752,15 @@ mod inventory_tests {
     #[test]
     fn transfer_cannot_spend_reserved_inventory_stock() {
         let mut world = inventory_world();
+        let same_endpoint = inventory_transfer(
+            &mut world,
+            SlotId(0),
+            1,
+            1,
+            ContentId::parse("probe:timber").unwrap(),
+            1,
+        );
+        assert_eq!(same_endpoint, Err(RejectReason::InvalidAmount));
         let before = world.resource::<EconomyLedger>().clone();
         assert_eq!(
             inventory_transfer(
@@ -816,5 +880,66 @@ mod refund_tests {
             Err(RejectReason::RefundDestinationFull)
         );
         assert_eq!(*world.resource::<EconomyLedger>(), before);
+    }
+}
+
+#[cfg(test)]
+mod staged_refund_tests {
+    use super::inventory_tests::inventory_world;
+    use super::*;
+
+    fn prepare_empty_tight_inventory(world: &mut World) {
+        let wood = ContentId::parse("probe:wood").unwrap();
+        let mut ledger = world.resource_mut::<EconomyLedger>();
+        let destination = ledger.inventories.get_mut(&2).unwrap();
+        destination.capacity = 5;
+        destination.accepted_items.insert(wood);
+    }
+
+    #[test]
+    fn second_refund_to_new_same_resource_rejects_and_outer_transaction_rolls_back() {
+        let mut world = inventory_world();
+        prepare_empty_tight_inventory(&mut world);
+        let before = world.resource::<EconomyLedger>().clone();
+        let line = ReservationLine {
+            endpoint: Endpoint::Inventory(2),
+            resource: ContentId::parse("probe:timber").unwrap(),
+            amount: 4,
+        };
+        let result = transact(&mut world, |tx| {
+            refund_charged(tx, std::slice::from_ref(&line), 1, 1)?;
+            refund_charged(tx, std::slice::from_ref(&line), 1, 1)?;
+            Ok(())
+        });
+        assert_eq!(result, Err(RejectReason::RefundDestinationFull));
+        assert_eq!(*world.resource::<EconomyLedger>(), before);
+    }
+
+    #[test]
+    fn second_refund_to_different_new_resource_rejects_but_first_can_commit() {
+        let mut world = inventory_world();
+        prepare_empty_tight_inventory(&mut world);
+        let timber = ReservationLine {
+            endpoint: Endpoint::Inventory(2),
+            resource: ContentId::parse("probe:timber").unwrap(),
+            amount: 4,
+        };
+        let wood = ReservationLine {
+            endpoint: Endpoint::Inventory(2),
+            resource: ContentId::parse("probe:wood").unwrap(),
+            amount: 4,
+        };
+        transact(&mut world, |tx| {
+            refund_charged(tx, std::slice::from_ref(&timber), 1, 1)?;
+            assert_eq!(
+                refund_charged(tx, std::slice::from_ref(&wood), 1, 1),
+                Err(RejectReason::RefundDestinationFull)
+            );
+            Ok(())
+        })
+        .unwrap();
+        let inventory = &world.resource::<EconomyLedger>().inventories[&2];
+        assert_eq!(inventory.items[&timber.resource].on_hand, 4);
+        assert!(!inventory.items.contains_key(&wood.resource));
     }
 }
