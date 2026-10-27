@@ -10,7 +10,8 @@ use turts_client::input::ground_point;
 use turts_client::join::{AcquiredPackages, Phase};
 use turts_client::present::{Presented, PresentedUnit as PresentedRecord};
 use turts_client::render::{
-    PresentedUnit, mesh_for, mesh_lift, setup_scene, sync_units, world_to_scene,
+    PresentedUnit, declared_node_pick_radius, declared_unit_pick_radius, mesh_for, mesh_lift,
+    projected_ground_center, setup_scene, sync_units, world_to_scene,
 };
 use turts_mod_api::Shape;
 use turts_net_protocol::Pos;
@@ -35,6 +36,66 @@ fn world_to_scene_maps_y_forward_to_scene_z() {
         world_to_scene(Pos { x: 8.0, y: 3.0 }),
         Vec3::new(8.0, 0.0, 3.0)
     );
+}
+
+#[test]
+fn projected_ground_center_uses_camera_viewport_and_rejects_offscreen_points() {
+    let mut camera = Camera::default();
+    camera.computed.target_info = Some(bevy::camera::RenderTargetInfo {
+        physical_size: UVec2::new(1280, 720),
+        scale_factor: 2.0,
+    });
+    camera.computed.clip_from_view = Mat4::IDENTITY;
+    let camera_transform = GlobalTransform::IDENTITY;
+
+    let center = projected_ground_center(&camera, &camera_transform, Pos { x: 0.0, y: 0.5 })
+        .expect("visible point projects into the camera viewport");
+    assert_eq!(center, Vec2::new(320.0, 180.0));
+    assert_eq!(
+        projected_ground_center(&camera, &camera_transform, Pos { x: 2.0, y: 0.5 },),
+        None,
+        "a point outside the camera viewport has no clickable center"
+    );
+    assert_eq!(
+        projected_ground_center(&camera, &camera_transform, Pos { x: 0.0, y: -0.1 }),
+        None,
+        "a ground point beyond the far plane is not clickable"
+    );
+    assert_eq!(
+        projected_ground_center(&camera, &camera_transform, Pos { x: 0.0, y: 1.1 }),
+        None,
+        "a ground point beyond the near plane is not clickable"
+    );
+    camera.is_active = false;
+    assert_eq!(
+        projected_ground_center(&camera, &camera_transform, Pos { x: 0.0, y: 0.5 }),
+        None,
+        "an inactive camera cannot publish a clickable center"
+    );
+}
+
+#[test]
+fn declared_pick_radii_follow_the_accepted_package_catalog() {
+    use std::path::PathBuf;
+    use turts_client::content::ClientContent;
+    use turts_mod_runtime::{archive::PackageArchive, pack::pack_dir};
+
+    let base = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../mods/base");
+    let archive = PackageArchive::parse(&pack_dir(&base).unwrap()).unwrap();
+    let content = ClientContent::from_archives(&[archive]).unwrap();
+    let (unit_id, unit) = content.catalog.units.iter().next().unwrap();
+    let turts_mod_api::Footprint::Circle { radius } = &unit.footprint;
+    assert_eq!(
+        declared_unit_pick_radius(&content, &unit_id.to_string()),
+        Some(*radius)
+    );
+    let (node_id, node) = content.catalog.nodes.iter().next().unwrap();
+    assert_eq!(
+        declared_node_pick_radius(&content, &node_id.to_string()),
+        Some(node.radius)
+    );
+    assert_eq!(declared_unit_pick_radius(&content, "malformed"), None);
+    assert_eq!(declared_node_pick_radius(&content, "malformed"), None);
 }
 
 #[test]

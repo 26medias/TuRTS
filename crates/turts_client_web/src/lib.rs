@@ -10,28 +10,33 @@
 //! - `window.turts_memory_bytes()` returns the size of the wasm linear memory in bytes. Wasm
 //!   memory never shrinks, so the last value that a run reads is its high-water mark
 //!   (`tests/browser/measure.js`, design 4.5).
-//! - `window.turts_scene()` returns the rendered scene as JSON:
-//!   `{"cameras_3d": 1, "units": [{"unit_id": 1, "translation": [x, y, z]}]}`. `cameras_3d` is
-//!   the number of active 3D cameras (M1 verify): a scene with meshes and no camera shows
-//!   nothing. `units` has one entry for each entity that has a mesh and a unit id
-//!   (`turts_client::render::PresentedUnit`), with its world translation, ascending by unit id.
-//!   A map `(x, y)` is the scene point `(x, lift, y)`. It returns an empty string until the
-//!   first frame has run. T7 reads it (M1 verify): the browser "presents" a unit only when the
-//!   scene holds it and a camera can see it.
+//! - `window.turts_scene()` returns actual mesh entities and camera projection metadata. Unit
+//!   and node entries keep their stable ids and world translations, and add a projected ground
+//!   center plus the declared pick radius when both are available. The top-level target size,
+//!   viewport, scale factor and `clip_from_world` matrix come from the active Bevy camera/window;
+//!   they let pointer tests project arbitrary ground targets without duplicating camera settings.
+//!   Coordinates use a top-left origin in window-logical pixels. UI snapshot rectangles separately
+//!   use physical pixels local to the camera viewport. No scene or private world values are
+//!   injected by the bridge.
 //!
 //! The page query is `?server=<http url>&ws=<ws url>`. When it is wrong, the page gets the
 //! message in `window.turts_error` and the app does not start.
 
 use std::sync::Mutex;
 
+use bevy::camera::RenderTarget;
 use bevy::prelude::*;
+use bevy::window::{PrimaryWindow, WindowRef};
 use turts_client::build_app;
 use turts_client::commands::{CommandSendStatus, PendingCommands, owned_mobile_ids, submit};
 use turts_client::debug::{DebugState, rebuild_debug_state};
 use turts_client::economy_ui::rendered_ui_snapshot;
 use turts_client::ingest::ReplicaState;
 use turts_client::options::options_from_query;
-use turts_client::render::{PresentedNode as SceneNode, PresentedUnit as SceneUnit};
+use turts_client::render::{
+    PresentedNode as SceneNode, PresentedUnit as SceneUnit, declared_node_pick_radius,
+    declared_unit_pick_radius, projected_ground_center,
+};
 use turts_net_protocol::PlayerCommandKind;
 use turts_net_protocol::Pos;
 use wasm_bindgen::prelude::*;
@@ -165,20 +170,108 @@ fn publish_debug(state: Res<DebugState>) {
 fn publish_scene(
     units: Query<(&SceneUnit, &GlobalTransform), With<Mesh3d>>,
     nodes: Query<(&SceneNode, &GlobalTransform), With<Mesh3d>>,
-    cameras: Query<&Camera, With<Camera3d>>,
+    cameras: Query<(&Camera, &GlobalTransform, &RenderTarget), With<Camera3d>>,
+    windows: Query<(Entity, &Window), With<PrimaryWindow>>,
+    state: Res<ReplicaState>,
 ) {
-    let mut entries: Vec<(u32, Vec3)> = units
+    let active: Vec<_> = cameras
         .iter()
-        .map(|(unit, transform)| (unit.0, transform.translation()))
+        .filter(|(camera, _, _)| camera.is_active)
         .collect();
-    entries.sort_unstable_by_key(|(unit_id, _)| *unit_id);
-    let mut node_entries: Vec<(u32, Vec3)> = nodes
+    let primary_window = windows.iter().next();
+    let primary_entity = primary_window.map(|(entity, _)| entity);
+    let primary_active: Vec<_> = active
         .iter()
-        .map(|(node, transform)| (node.0, transform.translation()))
+        .filter(|(_, _, target)| match target {
+            RenderTarget::Window(WindowRef::Primary) => primary_entity.is_some(),
+            RenderTarget::Window(WindowRef::Entity(entity)) => {
+                primary_entity.as_ref() == Some(entity)
+            }
+            RenderTarget::Image(_) | RenderTarget::TextureView(_) | RenderTarget::None { .. } => {
+                false
+            }
+        })
         .collect();
-    node_entries.sort_unstable_by_key(|(id, _)| *id);
-    let active_cameras = cameras.iter().filter(|camera| camera.is_active).count();
-    *SCENE.lock().unwrap() = scene_json(active_cameras, &entries, &node_entries);
+    let camera_metadata = if primary_active.len() == 1 {
+        primary_window.and_then(|(_, window)| {
+            let (camera, transform, _) = *primary_active[0];
+            Some(SceneCamera {
+                window_logical_size: Vec2::new(window.width(), window.height()),
+                viewport_logical_rect: camera.logical_viewport_rect()?,
+                viewport_physical_rect: camera.physical_viewport_rect()?,
+                scale_factor: window.scale_factor(),
+                clip_from_world: camera.clip_from_view() * transform.to_matrix().inverse(),
+            })
+        })
+    } else {
+        None
+    };
+    let projection_camera = primary_active
+        .first()
+        .filter(|_| primary_active.len() == 1)
+        .map(|(camera, transform, _)| (*camera, *transform));
+
+    let mut entries: Vec<SceneEntry> = units
+        .iter()
+        .map(|(unit, transform)| {
+            let translation = transform.translation();
+            let pick_radius = state
+                .replica
+                .as_ref()
+                .and_then(|replica| replica.units.get(&unit.0))
+                .and_then(|unit| {
+                    declared_unit_pick_radius(state.content.as_ref()?, &unit.content_id)
+                });
+            let screen_center = projection_camera.and_then(|(camera, camera_transform)| {
+                projected_ground_center(
+                    camera,
+                    camera_transform,
+                    Pos {
+                        x: translation.x,
+                        y: translation.z,
+                    },
+                )
+            });
+            SceneEntry {
+                id: unit.0,
+                translation,
+                screen_center,
+                pick_radius,
+            }
+        })
+        .collect();
+    entries.sort_unstable_by_key(|entry| entry.id);
+    let mut node_entries: Vec<SceneEntry> = nodes
+        .iter()
+        .map(|(node, transform)| {
+            let translation = transform.translation();
+            let pick_radius = state
+                .replica
+                .as_ref()
+                .and_then(|replica| replica.nodes.values().find(|value| value.id.0 == node.0))
+                .and_then(|value| {
+                    declared_node_pick_radius(state.content.as_ref()?, &value.content_id)
+                });
+            let screen_center = projection_camera.and_then(|(camera, camera_transform)| {
+                projected_ground_center(
+                    camera,
+                    camera_transform,
+                    Pos {
+                        x: translation.x,
+                        y: translation.z,
+                    },
+                )
+            });
+            SceneEntry {
+                id: node.0,
+                translation,
+                screen_center,
+                pick_radius,
+            }
+        })
+        .collect();
+    node_entries.sort_unstable_by_key(|entry| entry.id);
+    *SCENE.lock().unwrap() = scene_json(active.len(), camera_metadata, &entries, &node_entries);
 }
 
 fn publish_ui(world: &mut World) {
@@ -186,43 +279,115 @@ fn publish_ui(world: &mut World) {
     *UI.lock().unwrap() = serde_json::to_string(&snapshot).unwrap_or_default();
 }
 
-/// The JSON of `window.turts_scene`. A non-finite coordinate is written as `null`, so the page
-/// can always parse the text and the check fails on the value.
-fn scene_json(cameras_3d: usize, entries: &[(u32, Vec3)], nodes: &[(u32, Vec3)]) -> String {
-    let number = |value: f32| {
-        if value.is_finite() {
-            value.to_string()
-        } else {
-            "null".to_string()
-        }
-    };
-    let items: Vec<String> = entries
-        .iter()
-        .map(|(unit_id, at)| {
-            format!(
-                "{{\"unit_id\":{unit_id},\"translation\":[{},{},{}]}}",
-                number(at.x),
-                number(at.y),
-                number(at.z)
+/// Actual camera data needed to project world points without duplicating camera constants.
+#[derive(Clone, Copy)]
+struct SceneCamera {
+    window_logical_size: Vec2,
+    viewport_logical_rect: Rect,
+    viewport_physical_rect: URect,
+    scale_factor: f32,
+    clip_from_world: Mat4,
+}
+
+#[derive(Clone, Copy)]
+struct SceneEntry {
+    id: u32,
+    translation: Vec3,
+    screen_center: Option<Vec2>,
+    pick_radius: Option<f32>,
+}
+
+fn number(value: f32) -> serde_json::Value {
+    serde_json::Number::from_f64(value as f64)
+        .map(serde_json::Value::Number)
+        .unwrap_or(serde_json::Value::Null)
+}
+
+fn pair(value: Vec2) -> serde_json::Value {
+    serde_json::Value::Array(vec![number(value.x), number(value.y)])
+}
+
+fn rect(value: Rect) -> serde_json::Value {
+    serde_json::Value::Array(vec![
+        number(value.min.x),
+        number(value.min.y),
+        number(value.width()),
+        number(value.height()),
+    ])
+}
+
+fn scene_entry(entry: SceneEntry, identity_key: &str) -> serde_json::Value {
+    let center = entry.screen_center.filter(|value| value.is_finite());
+    let mut value = serde_json::json!({
+        "translation": [number(entry.translation.x), number(entry.translation.y), number(entry.translation.z)],
+        "ground_screen_center": center.map(pair).unwrap_or(serde_json::Value::Null),
+        "pick_radius": entry.pick_radius.filter(|value| value.is_finite()).map(number).unwrap_or(serde_json::Value::Null),
+    });
+    value
+        .as_object_mut()
+        .unwrap()
+        .insert(identity_key.into(), entry.id.into());
+    value
+}
+
+/// `window.turts_scene` includes only entities with meshes. Camera coordinates and the pick
+/// circles are read-only metadata from the actual camera and accepted package catalog.
+fn scene_json(
+    cameras_3d: usize,
+    camera: Option<SceneCamera>,
+    entries: &[SceneEntry],
+    nodes: &[SceneEntry],
+) -> String {
+    let (window_size, viewport, physical_viewport, scale_factor, clip_from_world) = camera.map_or(
+        (
+            serde_json::Value::Null,
+            serde_json::Value::Null,
+            serde_json::Value::Null,
+            serde_json::Value::Null,
+            serde_json::Value::Null,
+        ),
+        |camera| {
+            let matrix = serde_json::Value::Array(
+                camera
+                    .clip_from_world
+                    .to_cols_array()
+                    .into_iter()
+                    .map(number)
+                    .collect(),
+            );
+            (
+                pair(camera.window_logical_size),
+                rect(camera.viewport_logical_rect),
+                serde_json::Value::Array(vec![
+                    number(camera.viewport_physical_rect.min.x as f32),
+                    number(camera.viewport_physical_rect.min.y as f32),
+                    number(
+                        (camera.viewport_physical_rect.max.x - camera.viewport_physical_rect.min.x)
+                            as f32,
+                    ),
+                    number(
+                        (camera.viewport_physical_rect.max.y - camera.viewport_physical_rect.min.y)
+                            as f32,
+                    ),
+                ]),
+                number(camera.scale_factor),
+                matrix,
             )
-        })
-        .collect();
-    let node_items: Vec<String> = nodes
-        .iter()
-        .map(|(node_id, at)| {
-            format!(
-                "{{\"node_id\":{node_id},\"translation\":[{},{},{}]}}",
-                number(at.x),
-                number(at.y),
-                number(at.z)
-            )
-        })
-        .collect();
-    format!(
-        "{{\"cameras_3d\":{cameras_3d},\"units\":[{}],\"nodes\":[{}]}}",
-        items.join(","),
-        node_items.join(",")
-    )
+        },
+    );
+    serde_json::json!({
+        "cameras_3d": cameras_3d,
+        "coordinate_space": "window-logical-pixels-top-left",
+        "window_logical_size": window_size,
+        "viewport_logical_rect": viewport,
+        "viewport_physical_rect": physical_viewport,
+        "ui_rect_coordinate_space": "camera-viewport-physical-pixels-top-left",
+        "scale_factor": scale_factor,
+        "clip_from_world": clip_from_world,
+        "units": entries.iter().copied().map(|entry| scene_entry(entry, "unit_id")).collect::<Vec<_>>(),
+        "nodes": nodes.iter().copied().map(|entry| scene_entry(entry, "node_id")).collect::<Vec<_>>(),
+    })
+    .to_string()
 }
 
 #[cfg(test)]
@@ -230,33 +395,84 @@ mod tests {
     use super::*;
 
     #[test]
-    fn scene_json_lists_units_with_their_translation() {
+    fn scene_json_lists_rendered_entities_with_camera_projection_and_pick_metadata() {
+        let camera = SceneCamera {
+            window_logical_size: Vec2::new(1280.0, 720.0),
+            viewport_logical_rect: Rect::from_corners(Vec2::ZERO, Vec2::new(1280.0, 720.0)),
+            viewport_physical_rect: URect::from_corners(UVec2::ZERO, UVec2::new(1280, 720)),
+            scale_factor: 1.0,
+            clip_from_world: Mat4::IDENTITY,
+        };
+        let json: serde_json::Value = serde_json::from_str(&scene_json(
+            1,
+            Some(camera),
+            &[
+                SceneEntry {
+                    id: 1,
+                    translation: Vec3::new(20.0, 0.9, 8.5),
+                    screen_center: Some(Vec2::new(640.0, 360.0)),
+                    pick_radius: Some(0.5),
+                },
+                SceneEntry {
+                    id: 2,
+                    translation: Vec3::new(f32::NAN, 0.0, 1.0),
+                    screen_center: None,
+                    pick_radius: None,
+                },
+            ],
+            &[SceneEntry {
+                id: 7,
+                translation: Vec3::new(24.0, 0.4, 8.0),
+                screen_center: Some(Vec2::new(700.0, 355.0)),
+                pick_radius: Some(1.0),
+            }],
+        ))
+        .unwrap();
+        assert_eq!(json["cameras_3d"], 1);
+        assert_eq!(json["coordinate_space"], "window-logical-pixels-top-left");
         assert_eq!(
-            scene_json(0, &[], &[]),
-            r#"{"cameras_3d":0,"units":[],"nodes":[]}"#
+            json["window_logical_size"],
+            serde_json::json!([1280.0, 720.0])
         );
         assert_eq!(
-            scene_json(
-                1,
-                &[
-                    (1, Vec3::new(20.0, 0.9, 8.5)),
-                    (2, Vec3::new(f32::NAN, 0.0, 1.0))
-                ],
-                &[(7, Vec3::new(24.0, 0.4, 8.0))]
-            ),
-            concat!(
-                r#"{"cameras_3d":1,"units":["#,
-                r#"{"unit_id":1,"translation":[20,0.9,8.5]},"#,
-                r#"{"unit_id":2,"translation":[null,0,1]}],"nodes":["#,
-                r#"{"node_id":7,"translation":[24,0.4,8]}]}"#
-            )
+            json["viewport_logical_rect"],
+            serde_json::json!([0.0, 0.0, 1280.0, 720.0])
         );
+        assert_eq!(
+            json["viewport_physical_rect"],
+            serde_json::json!([0.0, 0.0, 1280.0, 720.0])
+        );
+        assert_eq!(
+            json["ui_rect_coordinate_space"],
+            "camera-viewport-physical-pixels-top-left"
+        );
+        assert_eq!(json["scale_factor"], 1.0);
+        assert_eq!(json["clip_from_world"].as_array().unwrap().len(), 16);
+        assert_eq!(json["units"][0]["unit_id"], 1);
+        assert_eq!(json["units"][0]["translation"][0], 20.0);
+        assert!((json["units"][0]["translation"][1].as_f64().unwrap() - 0.9).abs() < 1e-6);
+        assert_eq!(json["units"][0]["translation"][2], 8.5);
+        assert_eq!(
+            json["units"][0]["ground_screen_center"],
+            serde_json::json!([640.0, 360.0])
+        );
+        assert_eq!(json["units"][0]["pick_radius"], 0.5);
+        assert_eq!(json["units"][1]["translation"][0], serde_json::Value::Null);
+        assert_eq!(
+            json["units"][1]["ground_screen_center"],
+            serde_json::Value::Null
+        );
+        assert_eq!(json["nodes"][0]["node_id"], 7);
+        assert_eq!(json["nodes"][0]["pick_radius"], 1.0);
     }
 
     #[test]
-    fn scene_json_reports_the_camera_count() {
-        // M1 verify: T7 asserts exactly one active 3D camera, so the count must reach the page.
-        assert!(scene_json(2, &[], &[]).starts_with(r#"{"cameras_3d":2,"#));
+    fn scene_json_keeps_camera_count_and_null_projection_when_unavailable() {
+        let json: serde_json::Value = serde_json::from_str(&scene_json(0, None, &[], &[])).unwrap();
+        assert_eq!(json["cameras_3d"], 0);
+        assert_eq!(json["clip_from_world"], serde_json::Value::Null);
+        assert_eq!(json["units"], serde_json::json!([]));
+        assert_eq!(json["nodes"], serde_json::json!([]));
     }
 
     #[test]

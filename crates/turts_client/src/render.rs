@@ -11,7 +11,7 @@
 use std::collections::{HashMap, HashSet};
 
 use bevy::prelude::*;
-use turts_mod_api::Shape;
+use turts_mod_api::{ContentId, Footprint, Shape};
 use turts_net_protocol::Pos;
 
 use crate::ingest::ReplicaState;
@@ -26,6 +26,48 @@ const CAMERA_BACK: f32 = 30.0;
 /// The scene point of a map position, on the ground.
 pub fn world_to_scene(pos: Pos) -> Vec3 {
     Vec3::new(pos.x, 0.0, pos.y)
+}
+
+/// Project a map-ground point into the active camera's logical viewport coordinates.
+///
+/// The returned coordinate uses a top-left origin in the camera target's logical pixel space.
+/// Points outside the camera frustum or viewport have no selectable screen center.
+pub fn projected_ground_center(
+    camera: &Camera,
+    camera_transform: &GlobalTransform,
+    pos: Pos,
+) -> Option<Vec2> {
+    if !camera.is_active {
+        return None;
+    }
+    let center = camera
+        .world_to_viewport(camera_transform, world_to_scene(pos))
+        .ok()?;
+    let viewport = camera.logical_viewport_rect()?;
+    (center.is_finite() && viewport.contains(center)).then_some(center)
+}
+
+/// Declared unit pick radius from the accepted package catalog.
+pub fn declared_unit_pick_radius(
+    content: &crate::content::ClientContent,
+    content_id: &str,
+) -> Option<f32> {
+    let id = ContentId::parse(content_id).ok()?;
+    let definition = content.catalog.units.get(&id)?;
+    match &definition.footprint {
+        Footprint::Circle { radius } if radius.is_finite() && *radius > 0.0 => Some(*radius),
+        _ => None,
+    }
+}
+
+/// Declared node pick radius from the accepted package catalog.
+pub fn declared_node_pick_radius(
+    content: &crate::content::ClientContent,
+    content_id: &str,
+) -> Option<f32> {
+    let id = ContentId::parse(content_id).ok()?;
+    let radius = content.catalog.nodes.get(&id)?.radius;
+    (radius.is_finite() && radius > 0.0).then_some(radius)
 }
 
 /// The mesh of a visual shape. The mesh is centred on its own origin.
