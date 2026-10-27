@@ -31,3 +31,10 @@ All 16 tasks, source reviews, and final gates must finish before the already-aut
 - New evidence is persistent beneath the lane-specific `target/task15-evidence`, `target/task16-evidence`, and `target/task16-native-evidence` directories. Temporary incomplete live JSONL records are retried only at an unterminated final line; malformed completed records remain errors.
 
 Progress remains 14/16 accepted. Final canonical integration, all-refutations/whole-branch gates, README/main merge/push remain outstanding.
+
+
+## Canonical Task15 strict-reader recovery results
+
+The Sol-approved live audit reader commits `422c0b662411cf3854a3422542e0c12b88fc63cc` and `3ab651b0e9ec748fa57e11747a7b8cdae7863e93` are integrated in order as canonical `3d7562c` and `3d45738`. The focused reader passed 1/1 and the refutation runner passed 12/12. Separate release build commands passed. The compiled integration harness resolves the server executable at `/home/julien/.codex/worktrees/ee40/TuRTS/target/release/turts_server`; its SHA-256 is `ac19436f8e45517551b97ef8abd2627da43f112e7ca924b2f6ed9c4e92c1324c`, with client SHA-256 `8db1f28f695d71992fe9ac62c4b7fb95adcafbcb14db3ade5997b811d6642a30`. The recovered exact release cases all pass twice: E9 two-owner 1/1, E9 loss/small-buffer 1/1, E10 Cedar 1/1, repeated T5 1/1. The direct compiled-harness rerun resolved and froze server/client/economy-test hashes before and after selectors; its fresh artifacts are in `recovery/direct-target-tmp-snapshot/`. Durable logs, hashes, binaries, and fresh target/tmp snapshot are under `target/task15-canonical-process/20261027T210332Z/recovery/`; the earlier failed attempt remains preserved.
+
+Status remains 14/16 and PREPARATION_ONLY. Task15 mutation gates, final browser WebGPU proof, native private-Xvfb proof on the completed browser union, and whole-branch gates remain pending. The original main checkpoint `d194fc2` and its Social Media Assets commit remain untouched; README/main merge/push are deferred until all gates pass.
