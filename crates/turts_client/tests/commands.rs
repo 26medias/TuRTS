@@ -275,9 +275,8 @@ fn captured_transport_reversal_fails_product_receipt_ordering_helper() {
         ack.seq, rejected.seq,
         "captured results correspond to one command sequence"
     );
-    assert_eq!(
-        receipt_ordered(ack, rejected, reliable_count),
-        false,
+    assert!(
+        !receipt_ordered(ack, rejected, reliable_count),
         "product receipt helper must reject actual server-send reversal metadata"
     );
     assert_eq!(receipts.ordered_for(ack.seq, epoch), Some(false));

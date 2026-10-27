@@ -128,6 +128,7 @@ pub struct HelloReplies<'w, 's> {
 
 /// Read the `Hello` of each connection. The first `Hello` decides. A connection that already
 /// has a session, or waits for its kick, gets no second decision.
+#[allow(clippy::too_many_arguments)]
 pub fn receive_hello(
     mut commands: Commands,
     mut clients: HelloClients,
@@ -224,6 +225,7 @@ impl ReliableTraffic {
 }
 
 /// Read client envelopes before Lightyear clears the frame receivers. Ack means receipt only.
+#[allow(clippy::type_complexity)]
 pub fn receive_player_commands(
     mut clients: Query<
         (
@@ -433,7 +435,6 @@ fn record_admission_rejection(
             tick,
             reason,
         });
-        drop(sender);
         world
             .resource_mut::<ReliableTraffic>()
             .record(staged.connection);
@@ -483,7 +484,6 @@ pub fn send_snapshots(world: &mut World, mut due: Local<QueryState<Entity, With<
     for entity in entities {
         if let Some(mut sender) = world.get_mut::<MessageSender<Snapshot>>(entity) {
             sender.send::<ReliableChannel>(message.clone());
-            drop(sender);
             world.resource_mut::<ReliableTraffic>().record(entity);
         }
         world.entity_mut(entity).remove::<SnapshotDue>();

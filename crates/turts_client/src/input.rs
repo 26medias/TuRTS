@@ -13,9 +13,6 @@ use turts_net_protocol::{PlayerCommandKind, Pos, UnitId};
 use crate::ingest::ReplicaState;
 use crate::join::Phase;
 
-/// The `seq` of the first order from a click. The `--move` test hook of `join::auto_move` uses
-/// `seq` 1.
-
 /// The map position where a ray meets the ground plane, or `None` when it does not meet it in
 /// front of the origin. Map `x` is scene `x`, map `y` is scene `z` (design 4.4).
 pub fn ground_point(ray: Ray3d) -> Option<Pos> {

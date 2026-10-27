@@ -54,23 +54,23 @@ pub fn send_commands(
     for (entity, mut sender) in &mut senders {
         let epoch = witnesses.epoch_for(entity.to_bits());
         while let Some(mut kind) = pending.0.pop_front() {
-            if let PlayerCommandKind::MoveTo { unit_ids, .. } = &mut kind {
+            if let PlayerCommandKind::MoveTo { unit_ids, .. } = &mut kind
+                && unit_ids.is_empty()
+            {
+                let Some(welcome) = state.welcome else {
+                    continue;
+                };
+                if let Some(replica) = &state.replica {
+                    *unit_ids = replica
+                        .units
+                        .iter()
+                        .filter(|(_, unit)| unit.owner_slot == welcome.slot)
+                        .map(|(&id, _)| UnitId(id))
+                        .collect();
+                    unit_ids.sort_by_key(|id| id.0);
+                }
                 if unit_ids.is_empty() {
-                    let Some(welcome) = state.welcome else {
-                        continue;
-                    };
-                    if let Some(replica) = &state.replica {
-                        *unit_ids = replica
-                            .units
-                            .iter()
-                            .filter(|(_, unit)| unit.owner_slot == welcome.slot)
-                            .map(|(&id, _)| UnitId(id))
-                            .collect();
-                        unit_ids.sort_by_key(|id| id.0);
-                    }
-                    if unit_ids.is_empty() {
-                        continue;
-                    }
+                    continue;
                 }
             }
             match sequence.allocate() {

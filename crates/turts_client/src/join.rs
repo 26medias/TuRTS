@@ -286,6 +286,7 @@ fn spawn_client(commands: &mut Commands, ws: &str) -> Result<(), String> {
 }
 
 /// On `Connected`: send `Hello`. `--hello-hash` and `--protocol-version` replace the real values.
+#[allow(clippy::too_many_arguments)]
 pub fn on_connected(
     trigger: On<Add<Connected>>,
     mut hello: Query<&mut MessageSender<Hello>>,
