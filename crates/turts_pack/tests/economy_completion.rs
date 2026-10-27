@@ -33,6 +33,10 @@ fn completion_spawns_once_after_exact_duration() {
     app.update();
     let after = audit_state(app.world_mut());
     assert_eq!(after.units.len(), 6);
+    assert_eq!(
+        committed_tick(app.world()).spawned[0].pos,
+        bevy_math::Vec2::new(8.0, 12.0)
+    );
     assert!(
         after
             .units
@@ -504,6 +508,18 @@ fn full_refund_destination_rejects_atomically_then_retry_succeeds() {
             .0,
         ordinal_before
     );
+    app.update();
+    let progressed = audit_state(app.world_mut());
+    let progressed_job = &progressed.economy.queues[0].jobs[0];
+    assert_eq!(progressed_job.stage, turts_sim::JobStage::Running);
+    assert_eq!(
+        progressed_job.elapsed_ticks,
+        before_reject.economy.queues[0].jobs[0].elapsed_ticks + 1
+    );
+    assert_eq!(
+        progressed_job.charged,
+        before_reject.economy.queues[0].jobs[0].charged
+    );
     turts_sim::economy::transaction::inventory_transfer(
         app.world_mut(),
         SlotId(0),
@@ -768,4 +784,215 @@ fn non_head_and_same_batch_reserve_then_charge_cancellations_release_only_target
         .find(|i| i.resource == cid("probe:timber"))
         .unwrap();
     assert_eq!((timber.on_hand, timber.reserved), (100, 0));
+}
+
+#[test]
+fn odd_floor_and_queued_nonhead_charge_on_queue() {
+    let mut files = economy_files();
+    let train = String::from_utf8(files["production/train.ron"].clone()).unwrap();
+    files.insert(
+        "production/train.ron".into(),
+        train
+            .replace("amount: 100", "amount: 3")
+            .replace(
+                "queued: (numerator: 1, denominator: 1)",
+                "queued: (numerator: 1, denominator: 2)",
+            )
+            .into_bytes(),
+    );
+    let mut app = scenario(20);
+    load_package(app.world_mut(), &archive_from_files(files)).unwrap();
+    let first = apply_command(app.world_mut(), &command(1, 1, "probe:train"))
+        .outcome
+        .unwrap()
+        .job_id
+        .unwrap();
+    let second = apply_command(app.world_mut(), &command(2, 1, "probe:train"))
+        .outcome
+        .unwrap()
+        .job_id
+        .unwrap();
+    let result = apply_command(
+        app.world_mut(),
+        &Command {
+            slot: SlotId(0),
+            seq: 3,
+            kind: CommandKind::CancelProduction {
+                producer_id: 1,
+                job_id: second,
+            },
+        },
+    );
+    assert!(result.outcome.is_ok());
+    let state = audit_state(app.world_mut());
+    assert_eq!(state.balance(0, "probe:token").on_hand, 195);
+    assert_eq!(state.economy.queues[0].jobs[0].id, first.0);
+    let event = app
+        .world()
+        .resource::<turts_sim::economy::events::PendingEconomyEvents>()
+        .0
+        .last()
+        .unwrap();
+    match &event.kind {
+        EconomyEventKind::ProductionCancelled {
+            released, refunded, ..
+        } => {
+            assert!(released.is_empty());
+            assert_eq!(
+                (refunded[0].source, refunded[0].amount),
+                (turts_sim::EventSource::Slot(0), 1)
+            );
+        }
+        _ => panic!("expected cancellation event"),
+    }
+}
+
+#[test]
+fn cancel_just_before_completion_prevents_spawn() {
+    let mut app = scenario(20);
+    load_package(app.world_mut(), &economy_archive()).unwrap();
+    let job = apply_command(app.world_mut(), &command(1, 1, "probe:hire"))
+        .outcome
+        .unwrap()
+        .job_id
+        .unwrap();
+    advance(&mut app, 120);
+    app.world_mut()
+        .resource_mut::<CommandQueue>()
+        .0
+        .push_back(Command {
+            slot: SlotId(0),
+            seq: 2,
+            kind: CommandKind::CancelProduction {
+                producer_id: 1,
+                job_id: job,
+            },
+        });
+    app.update();
+    assert_eq!(audit_state(app.world_mut()).units.len(), 5);
+    assert!(committed_tick(app.world()).spawned.is_empty());
+    assert!(committed_tick(app.world()).events.iter().any(|event| matches!(event.kind, EconomyEventKind::ProductionCancelled { job: id, .. } if id == job.0)));
+}
+
+#[test]
+fn earlier_producer_spawn_blocks_shared_candidate() {
+    let mut files = economy_files();
+    let map = String::from_utf8(files["maps/test.ron"].clone()).unwrap();
+    files.insert(
+        "maps/test.ron".into(),
+        map.replace("pos: (x: 56.0, y: 8.0)", "pos: (x: 8.0, y: 16.0)")
+            .replace(
+                "(slot: 1, balances: [])",
+                "(slot: 1, balances: [(balance: \"probe:token\", amount: 100)])",
+            )
+            .into_bytes(),
+    );
+    let mut app = scenario(20);
+    load_package(app.world_mut(), &archive_from_files(files)).unwrap();
+    apply_command(app.world_mut(), &command(1, 1, "probe:train"))
+        .outcome
+        .unwrap();
+    apply_command(
+        app.world_mut(),
+        &Command {
+            slot: SlotId(1),
+            seq: 1,
+            kind: CommandKind::Produce {
+                producer_id: 4,
+                recipe_id: cid("probe:train"),
+            },
+        },
+    )
+    .outcome
+    .unwrap();
+    advance(&mut app, 101);
+    assert_eq!(committed_tick(app.world()).spawned.len(), 1);
+    assert_eq!(
+        committed_tick(app.world()).spawned[0].pos,
+        bevy_math::Vec2::new(8.0, 12.0)
+    );
+    let state = audit_state(app.world_mut());
+    assert_eq!(
+        state
+            .economy
+            .queues
+            .iter()
+            .find(|q| q.producer == 4)
+            .unwrap()
+            .jobs[0]
+            .stage,
+        turts_sim::JobStage::OutputBlocked
+    );
+}
+
+#[test]
+fn full_circle_crossing_boundary_blocks_first_offset() {
+    let mut files = economy_files();
+    let yard = String::from_utf8(files["units/yard.ron"].clone()).unwrap();
+    files.insert(
+        "units/yard.ron".into(),
+        yard.replace(
+            "(x: 0.0, y: 4.0), (x: 0.0, y: -4.0)",
+            "(x: -7.75, y: 0.0), (x: 0.0, y: -4.0)",
+        )
+        .into_bytes(),
+    );
+    let mut app = scenario(20);
+    load_package(app.world_mut(), &archive_from_files(files)).unwrap();
+    apply_command(app.world_mut(), &command(1, 1, "probe:train"))
+        .outcome
+        .unwrap();
+    advance(&mut app, 101);
+    assert_eq!(
+        committed_tick(app.world()).spawned[0].pos,
+        bevy_math::Vec2::new(8.0, 4.0)
+    );
+}
+
+#[test]
+fn event_staging_failure_restores_queued_cancel_claims_and_stock() {
+    for recipe in ["probe:hire", "probe:train"] {
+        let mut app = scenario(20);
+        load_package(app.world_mut(), &economy_archive()).unwrap();
+        let job = apply_command(app.world_mut(), &command(1, 1, recipe))
+            .outcome
+            .unwrap()
+            .job_id
+            .unwrap();
+        app.world_mut()
+            .resource_mut::<turts_sim::economy::events::NextEventOrdinal>()
+            .0 = Some(u64::MAX);
+        let before = audit_state(app.world_mut());
+        let pending = app
+            .world()
+            .resource::<turts_sim::economy::events::PendingEconomyEvents>()
+            .clone();
+        assert_eq!(
+            apply_command(
+                app.world_mut(),
+                &Command {
+                    slot: SlotId(0),
+                    seq: 2,
+                    kind: CommandKind::CancelProduction {
+                        producer_id: 1,
+                        job_id: job
+                    }
+                }
+            )
+            .outcome,
+            Err(turts_sim::RejectReason::ArithmeticOverflow)
+        );
+        assert_eq!(audit_state(app.world_mut()), before);
+        assert_eq!(
+            *app.world()
+                .resource::<turts_sim::economy::events::PendingEconomyEvents>(),
+            pending
+        );
+        assert_eq!(
+            app.world()
+                .resource::<turts_sim::economy::events::NextEventOrdinal>()
+                .0,
+            Some(u64::MAX)
+        );
+    }
 }
