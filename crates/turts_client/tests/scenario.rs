@@ -245,7 +245,7 @@ fn cancel_rejects_a_reference_that_is_not_an_earlier_required_produce() {
 }
 
 #[test]
-fn repeat_reuses_the_actual_last_envelope_and_waits_for_a_new_result() {
+fn repeat_waits_for_the_original_terminal_then_requires_a_new_terminal() {
     let steps = vec![
         trace_step(0, TraceCommand::Submit(move_kind()), false),
         trace_step(0, TraceCommand::RepeatLastEnvelope, true),
@@ -261,7 +261,13 @@ fn repeat_reuses_the_actual_last_envelope_and_waits_for_a_new_result() {
         kind: move_kind(),
     };
     driver.record_sent(0, actual.clone(), 0).unwrap();
-    let repeated = driver.update(3, &[]).unwrap();
+    assert!(driver.update(3, &[]).unwrap().is_empty());
+    let original_applied = vec![CommandResult::Applied {
+        seq: 77,
+        tick: 3,
+        job_id: None,
+    }];
+    let repeated = driver.update(3, &original_applied).unwrap();
     assert!(matches!(
         repeated.as_slice(),
         [TraceAction::RepeatLastEnvelope {
@@ -289,6 +295,47 @@ fn repeat_reuses_the_actual_last_envelope_and_waits_for_a_new_result() {
         reason: CommandRejectReason::BadSequence,
     });
     assert!(driver.update(4, &new_results).unwrap().is_empty());
+    assert!(driver.is_complete());
+}
+
+#[test]
+fn repeat_can_be_scheduled_in_the_original_result_update() {
+    let steps = vec![
+        trace_step(0, TraceCommand::Submit(move_kind()), true),
+        trace_step(0, TraceCommand::RepeatLastEnvelope, true),
+    ];
+    let mut driver = TraceDriver::new(steps, 3).unwrap();
+    driver.update(3, &[]).unwrap();
+    let actual = PlayerCommand {
+        seq: 78,
+        kind: move_kind(),
+    };
+    driver.record_sent(0, actual.clone(), 0).unwrap();
+    let original_applied = vec![CommandResult::Applied {
+        seq: 78,
+        tick: 3,
+        job_id: None,
+    }];
+    let repeated = driver.update(3, &original_applied).unwrap();
+    assert!(matches!(
+        repeated.as_slice(),
+        [TraceAction::RepeatLastEnvelope {
+            step_index: 1,
+            envelope,
+        }] if envelope == &actual
+    ));
+    driver
+        .record_sent(1, actual.clone(), original_applied.len())
+        .unwrap();
+    assert!(driver.update(3, &original_applied).unwrap().is_empty());
+    assert!(!driver.is_complete());
+    let mut results = original_applied;
+    results.push(CommandResult::Rejected {
+        seq: 78,
+        tick: 4,
+        reason: CommandRejectReason::BadSequence,
+    });
+    driver.update(4, &results).unwrap();
     assert!(driver.is_complete());
 }
 

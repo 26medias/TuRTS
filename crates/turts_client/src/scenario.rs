@@ -76,6 +76,12 @@ enum StepOutcome {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+struct SentEnvelope {
+    envelope: PlayerCommand,
+    result_cursor: usize,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 enum IssuedAction {
     Submit {
         step_index: usize,
@@ -94,7 +100,8 @@ pub(crate) struct TraceDriver {
     base_tick: u32,
     issued: Option<IssuedAction>,
     awaiting_result: Option<(usize, u32, usize)>,
-    last_sent: Option<PlayerCommand>,
+    last_sent: Option<SentEnvelope>,
+    last_sent_terminal: bool,
     outcomes: BTreeMap<usize, StepOutcome>,
     result_cursor: usize,
 }
@@ -115,6 +122,7 @@ impl TraceDriver {
             issued: None,
             awaiting_result: None,
             last_sent: None,
+            last_sent_terminal: false,
             outcomes: BTreeMap::new(),
             result_cursor: 0,
         })
@@ -138,22 +146,29 @@ impl TraceDriver {
             self.result_cursor
         };
         let mut matching_result = None;
-        if let Some((step_index, expected_seq, after_send_cursor)) = self.awaiting_result {
-            let result_start = cursor.max(after_send_cursor).min(results.len());
-            for result in &results[result_start..] {
-                match result {
-                    CommandResult::Applied { seq, tick, job_id } if *seq == expected_seq => {
-                        matching_result = Some((step_index, *tick, Some(*job_id)));
-                        break;
-                    }
-                    CommandResult::Rejected { seq, tick, .. } if *seq == expected_seq => {
-                        matching_result = Some((step_index, *tick, None));
-                        break;
-                    }
-                    CommandResult::Acked { .. }
-                    | CommandResult::Applied { .. }
-                    | CommandResult::Rejected { .. } => {}
-                }
+        let start = cursor.min(results.len());
+        for (result_index, result) in results.iter().enumerate().skip(start) {
+            let terminal = match result {
+                CommandResult::Applied { seq, tick, job_id } => Some((*seq, *tick, Some(*job_id))),
+                CommandResult::Rejected { seq, tick, .. } => Some((*seq, *tick, None)),
+                CommandResult::Acked { .. } => None,
+            };
+            let Some((seq, result_tick, job_id)) = terminal else {
+                continue;
+            };
+            if self
+                .last_sent
+                .as_ref()
+                .is_some_and(|sent| sent.envelope.seq == seq && result_index >= sent.result_cursor)
+            {
+                self.last_sent_terminal = true;
+            }
+            if let Some((step_index, expected_seq, after_send_cursor)) = self.awaiting_result
+                && seq == expected_seq
+                && result_index >= after_send_cursor
+            {
+                matching_result = Some((step_index, result_tick, job_id));
+                break;
             }
         }
         self.result_cursor = results.len();
@@ -261,9 +276,15 @@ impl TraceDriver {
                     return Ok(actions);
                 }
                 TraceCommand::RepeatLastEnvelope => {
-                    let envelope = self.last_sent.clone().ok_or_else(|| {
-                        format!("trace step {index} repeats before any actual envelope was sent")
-                    })?;
+                    let Some(sent) = self.last_sent.as_ref() else {
+                        return Err(format!(
+                            "trace step {index} repeats before any actual envelope was sent"
+                        ));
+                    };
+                    if !self.last_sent_terminal {
+                        return Ok(actions);
+                    }
+                    let envelope = sent.envelope.clone();
                     actions.push(TraceAction::RepeatLastEnvelope {
                         step_index: index,
                         envelope: envelope.clone(),
@@ -321,9 +342,11 @@ impl TraceDriver {
                 "trace sender step {step_index} does not match pending step {expected_step}"
             ));
         }
-        if matches!(issued, IssuedAction::Submit { .. }) {
-            self.last_sent = Some(envelope.clone());
-        }
+        self.last_sent = Some(SentEnvelope {
+            envelope: envelope.clone(),
+            result_cursor: result_cursor_after_send,
+        });
+        self.last_sent_terminal = false;
         if require_result {
             self.awaiting_result = Some((step_index, envelope.seq, result_cursor_after_send));
         } else {
