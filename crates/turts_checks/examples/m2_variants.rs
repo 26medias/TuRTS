@@ -464,6 +464,14 @@ fn apply_role_transform(
     payment: PaymentPolicy,
     changes: &mut Vec<SemanticRecord>,
 ) -> Result<(), String> {
+    for input in inputs.iter() {
+        let manifest = &input.archive.manifest;
+        if input.files.keys().any(|path| {
+            path.ends_with(".ron") && path != "manifest.ron" && !exported(manifest, path)
+        }) {
+            return Err(format!("{} has unexported RON", manifest.id));
+        }
+    }
     for input in inputs {
         let package = input.archive.manifest.id.clone();
         let resources = input.archive.resources().map_err(|e| e.to_string())?;
@@ -755,8 +763,13 @@ fn apply_role_transform(
             let path = target_balance_path
                 .as_ref()
                 .ok_or_else(|| format!("{package}: missing generated Balance path"))?;
+            if input.files.contains_key(path) {
+                return Err(format!(
+                    "{package}: generated Balance path already exists `{path}`"
+                ));
+            }
             let before = serde_json::Value::Null;
-            write_def(&mut input.files, path, &def)?;
+            input.files.insert(path.clone(), ronbytes(&def)?);
             let mut manifest = input.archive.manifest.clone();
             manifest.exports.resources.push(path.clone());
             manifest.exports.resources.sort();

@@ -184,6 +184,18 @@ class VariantCliTests(unittest.TestCase):
         self.assertIn("node capacity overflow", result.stderr)
         self.assertFalse(self.out.exists())
 
+    def test_generated_balance_path_collision_fails_without_overwriting_source(self):
+        source = self.root / "collision-source"
+        self.copy_package("cedar", source)
+        sentinel_path = source / "resources/balance_144c0fe94af963e9.ron"
+        sentinel = b"authored unexported RON sentinel\n"
+        sentinel_path.write_bytes(sentinel)
+        result = self.invoke(source=source, mode="balance", payment="charge", seed=123)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(self.out.exists())
+        self.assertEqual(sentinel_path.read_bytes(), sentinel)
+        self.assertEqual(list(self.root.glob(f".{self.out.name}.m2-stage-*")), [])
+
     def test_balance_role_provenance_is_deterministic(self):
         source = self.root / "cedar-balance-source"
         self.copy_package("cedar", source)
