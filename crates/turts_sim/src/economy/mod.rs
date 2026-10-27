@@ -1,3 +1,4 @@
+pub mod events;
 pub mod ledger;
 pub mod production;
 pub mod transaction;

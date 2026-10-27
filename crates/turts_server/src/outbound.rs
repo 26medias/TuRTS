@@ -25,7 +25,7 @@ pub fn send_command_results(
     mut sessions: Query<(&Session, &mut MessageSender<CommandRejected>)>,
 ) {
     for result in &results.0 {
-        let Err(reason) = result.outcome else {
+        let Err(reason) = &result.outcome else {
             continue;
         };
         for (session, mut sender) in sessions.iter_mut() {

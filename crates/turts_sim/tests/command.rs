@@ -81,7 +81,7 @@ fn validate_move_to_rejects_malformed_lists() {
     send(&mut app, 0, 3, vec![1, 1], target);
     send(&mut app, 0, 4, vec![1, 99], target);
     app.update();
-    let got: Vec<(u32, Result<(), RejectReason>)> =
+    let got: Vec<(u32, Result<turts_sim::Applied, RejectReason>)> =
         results(&app).iter().map(|r| (r.seq, r.outcome)).collect();
     assert_eq!(
         got,
@@ -115,7 +115,10 @@ fn valid_move_to_sets_targets_on_every_listed_unit() {
     app.update();
     let r = results(&app);
     assert_eq!(r.len(), 1);
-    assert_eq!((r[0].slot, r[0].seq, r[0].outcome), (SlotId(0), 7, Ok(())));
+    assert_eq!(
+        (r[0].slot, r[0].seq, r[0].outcome),
+        (SlotId(0), 7, Ok(turts_sim::Applied { job_id: None }))
+    );
     assert_eq!(moving_count(&mut app), 2);
 }
 
@@ -179,7 +182,7 @@ fn map_owner_slot_decides_who_may_move_a_unit() {
     send(&mut app, 0, 1, vec![2], Vec2::new(30.0, 30.0));
     send(&mut app, 1, 1, vec![1], Vec2::new(30.0, 30.0));
     app.update();
-    let got: Vec<(SlotId, Result<(), RejectReason>)> =
+    let got: Vec<(SlotId, Result<turts_sim::Applied, RejectReason>)> =
         results(&app).iter().map(|r| (r.slot, r.outcome)).collect();
     assert_eq!(
         got,
@@ -194,7 +197,7 @@ fn map_owner_slot_decides_who_may_move_a_unit() {
     app.update();
     assert_eq!(
         results(&app)[0].outcome,
-        Ok(()),
+        Ok(turts_sim::Applied { job_id: None }),
         "slot 1 moves its own unit"
     );
     assert_eq!(moving_count(&mut app), 1);
@@ -220,7 +223,8 @@ fn move_to_nan_and_outside_map_rejected() {
     send(&mut app, 0, 5, vec![1], Vec2::new(64.0, 64.0));
     send(&mut app, 0, 6, vec![1], Vec2::new(0.0, 0.0));
     app.update();
-    let got: Vec<Result<(), RejectReason>> = results(&app).iter().map(|r| r.outcome).collect();
+    let got: Vec<Result<turts_sim::Applied, RejectReason>> =
+        results(&app).iter().map(|r| r.outcome).collect();
     assert_eq!(
         got,
         vec![
@@ -228,8 +232,8 @@ fn move_to_nan_and_outside_map_rejected() {
             Err(RejectReason::TargetNotFinite),
             Err(RejectReason::TargetOutsideMap),
             Err(RejectReason::TargetOutsideMap),
-            Ok(()),
-            Ok(()),
+            Ok(turts_sim::Applied { job_id: None }),
+            Ok(turts_sim::Applied { job_id: None }),
         ]
     );
 }
@@ -245,15 +249,15 @@ fn move_to_bounds_use_the_axis_of_each_coordinate_on_a_non_square_map() {
     send(&mut app, 0, 3, vec![1], Vec2::new(49.0, 20.0));
     send(&mut app, 0, 4, vec![1], Vec2::new(48.0, 32.0));
     app.update();
-    let got: Vec<(u32, Result<(), RejectReason>)> =
+    let got: Vec<(u32, Result<turts_sim::Applied, RejectReason>)> =
         results(&app).iter().map(|r| (r.seq, r.outcome)).collect();
     assert_eq!(
         got,
         vec![
             (1, Err(RejectReason::TargetOutsideMap)),
-            (2, Ok(())),
+            (2, Ok(turts_sim::Applied { job_id: None })),
             (3, Err(RejectReason::TargetOutsideMap)),
-            (4, Ok(())),
+            (4, Ok(turts_sim::Applied { job_id: None })),
         ]
     );
 }

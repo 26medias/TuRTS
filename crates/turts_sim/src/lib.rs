@@ -23,21 +23,28 @@ pub const DEFAULT_TICK_HZ: u16 = 20; // prototype constant: measure at M1
 pub use bevy_math::Vec2;
 pub use bootstrap::{StagedPackage, install_package, stage_package};
 pub use command::{
-    Command, CommandKind, CommandQueue, CommandResult, CommandResults, RejectReason,
+    Applied, Command, CommandKind, CommandQueue, CommandResult, CommandResults, RejectReason,
+    apply_command, drain_commands,
+};
+pub use economy::events::{
+    CommittedTick, CompletedWorld, CostLine, EconomyEvent, EconomyEventKind, EventSource,
+    MatchStopped, NextEventOrdinal, StopReason, committed_tick, completed_world,
+    record_committed_event,
 };
 pub use economy::ledger::EconomyLedger;
 pub use economy::production::JobStage;
 pub use economy::views::{
-    AuditState, BalanceView, CostView, InventoryView, ItemView, JobView, NodeView, OrderView,
-    QueueView, ReservationClaimView, ReservationEndpointView, ReservationLineView, UnitTypeView,
-    UnitView, WorldView, audit_state, balance_view, inventory_view, node_view, order_view,
-    queue_view, world_view,
+    AuditState, BalanceView, CostView, EconomyChangesView, EconomyStateView, InventoryView,
+    ItemView, JobView, NodeView, OrderView, QueueView, ReservationClaimView,
+    ReservationEndpointView, ReservationLineView, UnitTypeView, UnitView, WorldView, audit_state,
+    balance_view, inventory_view, node_view, order_view, queue_view, world_view,
 };
 pub use economy::{EconomyOrders, SurfaceNodes};
 pub use harness::headless_app;
 pub use ids::{IdAllocators, JobId, NodeId};
 pub use map::load_map;
 pub use plugin::SimPlugin;
+pub use plugin::SimSet;
 pub use registry::{UnitTypeEntry, UnitTypes};
 pub use slots::{ClaimError, SlotId, Slots};
 pub use world::{

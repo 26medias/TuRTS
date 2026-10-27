@@ -5,6 +5,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use bevy_ecs::prelude::*;
 use bevy_math::Vec2;
 
+use crate::economy::EconomyOrders;
 use crate::registry::UnitTypes;
 use crate::slots::SlotId;
 use crate::world::UnitType;
@@ -23,7 +24,22 @@ pub struct Command {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum CommandKind {
-    MoveTo { unit_ids: Vec<u32>, target: Vec2 },
+    MoveTo {
+        unit_ids: Vec<u32>,
+        target: Vec2,
+    },
+    Gather {
+        unit_id: u32,
+        node_id: crate::ids::NodeId,
+    },
+    Produce {
+        producer_id: u32,
+        recipe_id: turts_mod_api::ContentId,
+    },
+    CancelProduction {
+        producer_id: u32,
+        job_id: crate::ids::JobId,
+    },
 }
 
 /// Commands that wait for the next tick.
@@ -35,7 +51,12 @@ pub struct CommandQueue(pub VecDeque<Command>);
 pub struct CommandResult {
     pub slot: SlotId,
     pub seq: u32,
-    pub outcome: Result<(), RejectReason>,
+    pub outcome: Result<Applied, RejectReason>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Applied {
+    pub job_id: Option<crate::ids::JobId>,
 }
 
 /// The results of the commands that the last tick drained. The next drain clears them.
@@ -106,53 +127,72 @@ impl RejectReason {
     }
 }
 
-/// FixedPreUpdate: validate every queued command, in order. A command that passes puts a
-/// `MoveTarget` on each listed unit. A command that fails changes nothing.
-pub(crate) fn drain_commands(
-    mut queue: ResMut<CommandQueue>,
-    mut results: ResMut<CommandResults>,
-    bounds: Option<Res<MapBounds>>,
-    units: Query<(Entity, &UnitId, &Owner, &UnitType)>,
-    types: Res<UnitTypes>,
-    mut commands: Commands,
-) {
-    results.0.clear();
-    if queue.0.is_empty() {
+/// Apply one admitted command synchronously. Automatic simulation phases do not run here.
+pub fn apply_command(world: &mut World, command: &Command) -> CommandResult {
+    let outcome = match &command.kind {
+        CommandKind::MoveTo { unit_ids, target } => {
+            apply_move_to(world, command.slot, unit_ids, *target)
+        }
+        // These dispatch branches are deliberately rejected until their owning phase exists.
+        CommandKind::Gather { .. } => Err(RejectReason::MissingCapability),
+        CommandKind::Produce { .. } => Err(RejectReason::UnknownRecipe),
+        CommandKind::CancelProduction { .. } => Err(RejectReason::UnknownJob),
+    };
+    CommandResult {
+        slot: command.slot,
+        seq: command.seq,
+        outcome: outcome.map(|()| Applied { job_id: None }),
+    }
+}
+
+/// Freeze the admitted batch, then apply commands in its original order.
+pub fn drain_commands(world: &mut World) {
+    if world.contains_resource::<crate::economy::events::MatchStopped>() {
         return;
     }
-    let index: HashMap<u32, (Entity, SlotId, bool)> = units
-        .iter()
-        .map(|(entity, id, owner, unit_type)| {
-            (
+    let batch = std::mem::take(&mut world.resource_mut::<CommandQueue>().0);
+    world.resource_mut::<CommandResults>().0.clear();
+    for command in batch {
+        let result = apply_command(world, &command);
+        world.resource_mut::<CommandResults>().0.push(result);
+    }
+}
+
+fn apply_move_to(
+    world: &mut World,
+    slot: SlotId,
+    unit_ids: &[u32],
+    target: Vec2,
+) -> Result<(), RejectReason> {
+    let bounds = world.get_resource::<MapBounds>().copied();
+    let types = world.resource::<UnitTypes>();
+    let index: HashMap<u32, (Entity, SlotId, bool)> = world
+        .iter_entities()
+        .filter_map(|entity| {
+            let id = entity.get::<UnitId>()?;
+            let owner = entity.get::<Owner>()?;
+            let unit_type = entity.get::<UnitType>()?;
+            Some((
                 id.0,
                 (
-                    entity,
+                    entity.id(),
                     owner.0,
-                    types
-                        .get(unit_type.0)
-                        .is_some_and(|entry| entry.movement.is_some()),
+                    types.get(unit_type.0).is_some_and(|t| t.movement.is_some()),
                 ),
-            )
+            ))
         })
         .collect();
-    while let Some(command) = queue.0.pop_front() {
-        let outcome = match &command.kind {
-            CommandKind::MoveTo { unit_ids, target } => {
-                validate_move_to(command.slot, unit_ids, *target, &index, bounds.as_deref()).map(
-                    |entities| {
-                        for entity in entities {
-                            commands.entity(entity).insert(MoveTarget(*target));
-                        }
-                    },
-                )
-            }
-        };
-        results.0.push(CommandResult {
-            slot: command.slot,
-            seq: command.seq,
-            outcome,
-        });
+    let entities = validate_move_to(slot, unit_ids, target, &index, bounds.as_ref())?;
+    for entity in entities {
+        let mut entity = world.entity_mut(entity);
+        entity.insert(MoveTarget(target));
     }
+    if let Some(mut orders) = world.get_resource_mut::<EconomyOrders>() {
+        for id in unit_ids {
+            orders.0.remove(id);
+        }
+    }
+    Ok(())
 }
 
 /// Check order: list empty; more than 256; duplicate id; every id exists; every unit owned by

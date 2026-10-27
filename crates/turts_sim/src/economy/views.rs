@@ -117,12 +117,41 @@ pub struct AuditState {
     pub claims: Vec<Option<u64>>,
 }
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-pub struct WorldView {
+pub struct EconomyStateView {
     pub balances: Vec<BalanceView>,
     pub inventories: Vec<InventoryView>,
     pub orders: Vec<OrderView>,
     pub queues: Vec<QueueView>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct EconomyChangesView {
+    pub balances: Vec<BalanceView>,
+    pub inventories: Vec<InventoryView>,
+    pub orders: Vec<OrderView>,
+    pub queues: Vec<QueueView>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct WorldView {
+    pub tick: u32,
+    #[serde(skip)]
+    pub units: Vec<crate::world::UnitState>,
     pub nodes: Vec<NodeView>,
+    pub economy: EconomyStateView,
+}
+
+impl std::ops::Deref for WorldView {
+    type Target = EconomyStateView;
+    fn deref(&self) -> &Self::Target {
+        &self.economy
+    }
+}
+
+impl std::ops::DerefMut for WorldView {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.economy
+    }
 }
 
 pub fn world_view(world: &mut World) -> WorldView {
@@ -139,7 +168,15 @@ pub fn world_view(world: &mut World) -> WorldView {
         .cloned()
         .unwrap_or_default();
     let owners = owner_map(world);
-    let mut view = WorldView::default();
+    let tick = world
+        .get_resource::<crate::world::Tick>()
+        .map_or(0, |tick| tick.0);
+    let units = crate::world::snapshot(world);
+    let mut view = WorldView {
+        tick,
+        units,
+        ..WorldView::default()
+    };
     for ((slot, resource), account) in economy.balances {
         view.balances.push(BalanceView {
             slot,
