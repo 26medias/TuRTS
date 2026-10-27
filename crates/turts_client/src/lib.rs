@@ -61,6 +61,7 @@ pub struct ClientPlugin(pub ClientOptions);
 impl Plugin for ClientPlugin {
     fn build(&self, app: &mut App) {
         let opts = self.0.clone();
+        #[cfg(not(target_family = "wasm"))]
         let publish_live_view = !opts.headless && opts.out.is_some();
         app.insert_resource(PlayerId(opts.player_id.unwrap_or_else(random_player_id)))
             .insert_resource(Phase::FetchAdvertisement)
