@@ -915,10 +915,11 @@ fn wait_for_owner_rifle_output(path: &std::path::Path) -> (u32, u32) {
             let EconomyLogRecord::Tick { tick, state, .. } = record else {
                 continue;
             };
-            if let Some(unit) =
-                state.economy.units.iter().find(|unit| {
-                    unit.content_id.to_string() == "base:rifleman" && unit.owner_slot == 0
-                })
+            if let Some(unit) = state
+                .economy
+                .units
+                .iter()
+                .find(|unit| unit.content_id == "base:rifleman" && unit.owner_slot == 0)
             {
                 return (*tick, unit.unit_id);
             }
