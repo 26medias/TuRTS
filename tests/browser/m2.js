@@ -851,7 +851,13 @@ async function runBaseRecoveryProof(page, scene, worker, node, outDir, logs, res
         "released full Snapshot did not converge the actual node depletion");
 
     const rearmTick = releaseConfig.ingestConfigStatus.arm_tick;
-    assert.equal(releaseConfig.debug.ingest.armed_drop_world_changes?.arm_tick, rearmTick,
+    assert.equal(rearmTick, heldAppliedTick,
+        "same-kind re-arm must anchor to the applied authoritative tick");
+    const activeRearmMatcher = releaseConfig.debug.ingest.armed_drop_world_changes?.arm_tick === rearmTick;
+    const consumedRearmMatcher = releaseConfig.debug.dropped_world_changes?.some((record) =>
+        record.kind === "extraction" && record.arm_tick === rearmTick && record.dropped_tick > rearmTick,
+    ) === true;
+    assert(activeRearmMatcher || consumedRearmMatcher,
         "same-kind re-arm must install a fresh matcher at its applied authoritative tick");
     const redropped = await waitForSnapshot(page, (snapshot) =>
         snapshot.debug?.dropped_world_changes?.filter((record) => record.kind === "extraction" && record.arm_tick === rearmTick).length === 1,
@@ -1421,13 +1427,20 @@ async function runBaseUiSmoke(argv) {
         assert(node, "fixture ore node is absent from actual rendered scene meshes");
         let recoveryArtifact;
         if (targetCaseId === "E9-browser-base-economy") {
-            const harvesterMesh = selectedHarvesterArtifact.scene.units.find((unit) => unit.unit_id === harvester.unit_id);
-            await clickRenderedEntity(page, selectedHarvesterArtifact.scene, harvesterMesh);
-            await waitForSnapshot(page, (snapshot) => snapshot.debug?.selection === harvester.unit_id, 5000, "Harvester selected for economy proof");
-            const afterSelect = await liveSnapshot(page);
-            await clickRenderedEntity(page, afterSelect.scene, node, { button: "right" });
-            await waitForSnapshot(page, (snapshot) => visibleTexts(snapshot).some((text) => text.startsWith("Gather:")),
-                5000, "normal Gather command for economy proof");
+            const beforeGather = await liveSnapshot(page);
+            assert.equal(beforeGather.debug?.selection, harvester.unit_id,
+                "selected Harvester must remain selected before the economy Gather command");
+            const freshNode = beforeGather.scene.nodes.find((candidate) => candidate.node_id === node.node_id);
+            assert(freshNode, "fixture ore node is absent from the fresh rendered scene");
+            const sequenceBeforeGather = lastAppliedSequence(beforeGather);
+            assert(Number.isInteger(sequenceBeforeGather), "economy Gather requires a known applied command sequence");
+            const gatherStarted = await pressRenderedEntityUntil(page, beforeGather.scene, freshNode, (snapshot) => {
+                const gatherStatus = visibleTexts(snapshot).find((text) => text.startsWith("Gather:"));
+                return lastAppliedSequence(snapshot) === sequenceBeforeGather + 1 &&
+                    gatherStatus !== undefined && !/^Gather:\s*idle\b/i.test(gatherStatus);
+            }, 5000, "one applied Gather command with a non-idle rendered order", { button: "right" });
+            assert.equal(lastAppliedSequence(gatherStarted), sequenceBeforeGather + 1,
+                "the economy Gather click must apply exactly one fresh command");
         } else {
             recoveryArtifact = await runBrowserCase("E9-browser-base-recovery", () => runBaseRecoveryProof(
                 page, selectedHarvesterArtifact.scene, harvester, node, outDir, logs, result, captureStage,
