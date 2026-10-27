@@ -93,8 +93,12 @@ jobs:
         run: npm ci
         working-directory: tests/browser
       - name: Browser projection and audit helper tests
-        run: node --test tests/browser/m2-projection.test.js tests/browser/m2-audit.test.js
+        run: node --test tests/browser/m2-projection.test.js tests/browser/m2-audit.test.js tests/browser/t7-launch-options.test.js
       - name: T7 browser join
+        env:
+          M2_HEADLESS: "false"
+          M2_CHROME_ARGS_JSON: '["--enable-gpu","--use-angle=vulkan","--enable-features=Vulkan","--enable-unsafe-webgpu"]'
+          M2_IGNORE_DEFAULT_ARGS_JSON: '["--enable-unsafe-swiftshader"]'
         run: bash scripts/t7.sh
       - name: M2 browser proof (base, haul, acme, cedar)
         run: bash scripts/m2-browser.sh

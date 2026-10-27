@@ -9,8 +9,8 @@ mod accounting;
 #[path = "../src/economylog.rs"]
 mod economylog;
 
-// Preparation tests exercise only the standalone typed JSONL layer. Process acceptance
-// tests are intentionally deferred until the driver and live server wiring exist.
+// Unit tests cover typed JSONL replay; ignored process tests below exercise the live
+// server sink and the public Task 15 acceptance scenarios.
 fn package_files(
     root: &std::path::Path,
     dir: &std::path::Path,

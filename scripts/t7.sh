@@ -65,8 +65,17 @@ for _ in $(seq 1 100); do
     sleep 0.1
 done
 
-node tests/browser/t7.js "http://127.0.0.1:$HTTP_PORT/" "$OUT" \
-    --ws "ws://127.0.0.1:$WS_PORT" --expect-content-id acme:scout --expect-final 20,8
+T7_COMMAND=(node tests/browser/t7.js "http://127.0.0.1:$HTTP_PORT/" "$OUT"
+    --ws "ws://127.0.0.1:$WS_PORT" --expect-content-id acme:scout --expect-final 20,8)
+if [[ "${M2_HEADLESS:-true}" == "false" ]]; then
+    if ! command -v xvfb-run >/dev/null 2>&1; then
+        echo "xvfb-run is required when M2_HEADLESS=false" >&2
+        exit 1
+    fi
+    xvfb-run --auto-servernum --server-args='-screen 0 1280x720x24' "${T7_COMMAND[@]}"
+else
+    "${T7_COMMAND[@]}"
+fi
 
 # The oracle reads the two logs while the server still runs: it needs a tick after the last
 # frame. T7_DIR names the folder of the logs.

@@ -1,7 +1,8 @@
 //! Task-local trusted JSONL encoding and typed replay checks for economy audits.
 //!
-//! This module is intentionally not included from `main.rs`: it is preparation
-//! for a later wiring task and does not create a runtime diagnostic interface.
+//! The optional runtime sink is enabled by `main.rs` only when `--economy-log`
+//! is supplied. The Task 15 acceptance harness also includes this module for
+//! typed replay and process-level evidence checks.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::{BufRead, BufReader, BufWriter, Write};
