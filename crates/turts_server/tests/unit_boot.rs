@@ -68,7 +68,9 @@ fn read_tree(root: &Path, dir: &Path, files: &mut BTreeMap<String, Vec<u8>>) {
 
 #[test]
 fn boot_registers_units_and_places_map_from_any_package() {
-    let cases: [(&str, &[(u32, &str, u8, Vec2)]); 2] = [
+    type ExpectedUnit = (u32, &'static str, u8, Vec2);
+    type PackageCase<'a> = (&'static str, &'a [ExpectedUnit]);
+    let cases: [PackageCase<'_>; 2] = [
         (
             "base",
             &[

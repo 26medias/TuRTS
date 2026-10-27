@@ -244,7 +244,9 @@ fn record(label: &str, report: &OracleReport) {
 #[test]
 #[ignore]
 fn t2a_package_parity() {
-    let cases: [(&str, &[(u32, &str, (f32, f32))]); 2] = [
+    type ExpectedUnit = (u32, &'static str, (f32, f32));
+    type PackageCase<'a> = (&'static str, &'a [ExpectedUnit]);
+    let cases: [PackageCase<'_>; 2] = [
         (
             "base",
             &[

@@ -61,7 +61,7 @@ fn derived_scan_rejects_all_plants_and_accepts_generic_field() {
     for i in 0..plants.len() {
         assert!(
             hits.iter()
-                .any(|hit| hit.source.ends_with(&format!("plant_{i}.rs"))),
+                .any(|hit| hit.source.ends_with(format!("plant_{i}.rs"))),
             "plant {i} escaped: {hits:#?}"
         );
     }

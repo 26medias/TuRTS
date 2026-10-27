@@ -833,13 +833,13 @@ fn apply_role_transform(
                     };
                 }
             }
-            if mode == "physical" && path == &receiver_path {
-                if let Some(inv) = &mut unit.inventory {
-                    if inv.accepts != vec![item.clone()] {
-                        inv.accepts = vec![item.clone()];
-                        inv.capacity = capacity;
-                    }
-                }
+            if mode == "physical"
+                && path == &receiver_path
+                && let Some(inv) = &mut unit.inventory
+                && inv.accepts != vec![item.clone()]
+            {
+                inv.accepts = vec![item.clone()];
+                inv.capacity = capacity;
             }
             if unit.inventory != before.inventory {
                 changes.push(semantic_record(
@@ -1297,6 +1297,7 @@ fn make_plan(xs: &[Input], seed: i64) -> Result<Plan, String> {
     }
     Ok(z)
 }
+#[allow(clippy::too_many_arguments)]
 fn put_name(
     z: &mut Plan,
     seen: &mut BTreeSet<String>,

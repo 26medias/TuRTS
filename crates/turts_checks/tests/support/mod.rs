@@ -498,10 +498,10 @@ impl Scanner<'_> {
     fn literal(&mut self, l: &Literal) {
         if let Ok(s) = syn::parse_str::<syn::LitStr>(&l.to_string()) {
             self.check(&s.value(), l.span())
-        } else if let Ok(s) = syn::parse_str::<syn::LitByteStr>(&l.to_string()) {
-            if let Ok(x) = std::str::from_utf8(&s.value()) {
-                self.check(x, l.span())
-            }
+        } else if let Ok(s) = syn::parse_str::<syn::LitByteStr>(&l.to_string())
+            && let Ok(x) = std::str::from_utf8(&s.value())
+        {
+            self.check(x, l.span())
         }
     }
 }
