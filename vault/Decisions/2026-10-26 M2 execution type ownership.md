@@ -95,7 +95,7 @@ For the approved role-transform preparation, a structural rename keeps exactly o
 
 **Cost if wrong:** package mapping and fixture adjustments.
 
-**Execution status:** approved for B-lane role preparation; package preparation remains held from canonical integration.
+**Execution status:** role tool `409cc7a80d7dcab232594c5ec4f2edb2d5011df8` and collision fix `6c75eff218ebc30ee4af77a33cf279865bd7d45b` approved by Sol in /home/julien/.codex/worktrees/b8a3/TuRTS/.superpowers/sdd/2026-10-26-m2-economy/lane-role-variants-rereview-1.md. Original role suite: 25 Python + 6 Rust green; collision proof: RED/restored plus role/rename 2 and Rust 5 regression tests green. This remains structural preparation only; package integration is held and full E3 proof waits for Tasks 8/14.
 
 ## Ruling R11 — minimal diagnostic serialization support
 
