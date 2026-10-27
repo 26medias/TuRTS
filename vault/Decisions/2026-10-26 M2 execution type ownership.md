@@ -85,7 +85,7 @@ R9 freezes the Task 8 declaration proposal in canonical .superpowers/sdd/2026-10
 
 **Cost if wrong:** narrow extra ownership in economy views, gather/production boundaries, plugin tick capture, and serialization of complete snapshots; no gameplay policy or public API change.
 
-**Execution status:** approved by root on 2026-10-27. Task 8 worktree /home/julien/.codex/worktrees/4f65/TuRTS (codex/m2-accounting) starts at reviewed product base 1ec683a841f3aff3062e0b6b4725a678872b6063.
+**Execution status:** approved by root on 2026-10-27; Task 8 is complete after oracle rereview-2 and capture-evidence rereview passed. Source tip 7532c6715272a1d02b763d21a05b0abacf65b9d0 is integrated canonically through 333070c44ab7de4cf062822488768775db389d36. Post-integration verification: workspace 376 passed/0 failed/12 ignored, economy_accounting 42/42, fmt/check/Clippy/boundary/wasm passed.
 
 ## Ruling R10 — role-transform package preparation
 
