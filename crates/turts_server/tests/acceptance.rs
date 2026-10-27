@@ -3,8 +3,8 @@
 //! only through `scripts/acceptance.sh`, in release and one at a time. Each test packs its
 //! package into its own directory and starts its own server.
 //!
-//! The tests at the end of the file feed made-up logs to the segment oracle. They start no
-//! process, so `cargo test --workspace` runs them: they show that the oracle can go red.
+//! The tests at the end of the file feed made-up logs to the segment oracle and check visual
+//! shape discrimination. They start no process, so the workspace test run exercises them.
 
 mod support;
 
@@ -22,6 +22,7 @@ use support::logs::{
 };
 use support::oracle::{OracleReport, check_segments, final_position};
 use support::{ServerProc, pack, run_client, spawn_server, test_dir, wait_json};
+use turts_mod_api::Shape;
 
 /// The first mobile unit in the real `base` map (the slot-0 harvester).
 const UNIT: u32 = 2;
@@ -43,6 +44,53 @@ fn path_text(path: &Path) -> &str {
 
 fn near(a: (f32, f32), b: (f32, f32)) -> bool {
     (a.0 - b.0).abs() <= POS_TOLERANCE && (a.1 - b.1).abs() <= POS_TOLERANCE
+}
+
+fn expected_t2a_shape(content_id: &str) -> Shape {
+    match content_id {
+        "base:command_center" => Shape::Cuboid {
+            x: 3.0,
+            y: 3.0,
+            z: 2.0,
+        },
+        "base:harvester" => Shape::Cuboid {
+            x: 1.4,
+            y: 1.4,
+            z: 1.2,
+        },
+        "acme:scout" => Shape::Cuboid {
+            x: 1.0,
+            y: 0.8,
+            z: 1.4,
+        },
+        other => panic!("no T2a shape expectation for {other}"),
+    }
+}
+
+fn debug_shape_matches(value: &Value, expected: &Shape) -> bool {
+    serde_json::from_value::<Shape>(value.clone()).is_ok_and(|actual| &actual == expected)
+}
+
+#[test]
+fn t2a_shape_match_rejects_swapped_or_uniform_cuboids() {
+    let command_center = expected_t2a_shape("base:command_center");
+    let harvester = expected_t2a_shape("base:harvester");
+    let scout = expected_t2a_shape("acme:scout");
+
+    assert!(debug_shape_matches(
+        &json!(&command_center),
+        &command_center
+    ));
+    assert!(debug_shape_matches(&json!(&harvester), &harvester));
+    assert!(debug_shape_matches(&json!(&scout), &scout));
+    assert!(!debug_shape_matches(&json!(&command_center), &harvester));
+    assert!(!debug_shape_matches(&json!(&harvester), &command_center));
+    let uniform = Shape::Cuboid {
+        x: 3.0,
+        y: 3.0,
+        z: 3.0,
+    };
+    assert!(!debug_shape_matches(&json!(&uniform), &command_center));
 }
 
 fn now_ms() -> u64 {
@@ -196,17 +244,17 @@ fn record(label: &str, report: &OracleReport) {
 #[test]
 #[ignore]
 fn t2a_package_parity() {
-    let cases: [(&str, &[(u32, &str, &str, (f32, f32))]); 2] = [
+    let cases: [(&str, &[(u32, &str, (f32, f32))]); 2] = [
         (
             "base",
             &[
-                (1, "base:command_center", "Cuboid", (8.0, 8.0)),
-                (2, "base:harvester", "Cuboid", (12.0, 8.0)),
-                (3, "base:command_center", "Cuboid", (56.0, 8.0)),
-                (4, "base:harvester", "Cuboid", (52.0, 8.0)),
+                (1, "base:command_center", (8.0, 8.0)),
+                (2, "base:harvester", (12.0, 8.0)),
+                (3, "base:command_center", (56.0, 8.0)),
+                (4, "base:harvester", (52.0, 8.0)),
             ],
         ),
-        ("acme", &[(1, "acme:scout", "Cuboid", (4.0, 4.0))]),
+        ("acme", &[(1, "acme:scout", (4.0, 4.0))]),
     ];
     for (package, expected_units) in cases {
         let dir = test_dir(&format!("t2a_{package}"));
@@ -222,7 +270,7 @@ fn t2a_package_parity() {
             .as_array()
             .unwrap_or_else(|| panic!("{package}: no debug.units: {report}"));
         assert_eq!(units.len(), expected_units.len(), "{package}: {report}");
-        for (unit_id, content_id, expected_shape, expected_pos) in expected_units {
+        for (unit_id, content_id, expected_pos) in expected_units {
             let unit = units
                 .iter()
                 .find(|unit| {
@@ -242,13 +290,11 @@ fn t2a_package_parity() {
                 .unwrap_or_else(|| {
                     panic!("{package}: missing {content_id} at {expected_pos:?}: {report}")
                 });
-            let shape = unit["shape"]
-                .as_object()
-                .and_then(|shape| shape.keys().next().cloned());
-            assert_eq!(
-                shape.as_deref(),
-                Some(*expected_shape),
-                "{package}: {report}"
+            let expected_shape = expected_t2a_shape(content_id);
+            assert!(
+                debug_shape_matches(&unit["shape"], &expected_shape),
+                "{package}: {content_id} shape {:?}, expected {expected_shape:?}: {report}",
+                unit["shape"]
             );
             let final_pos = finals.get(&unit_id.to_string()).unwrap_or_else(|| {
                 panic!("{package}: no final position for {content_id}: {report}")
@@ -275,12 +321,10 @@ fn t2a_package_parity() {
             for record in records {
                 let expected = expected_units
                     .iter()
-                    .find(|(unit_id, _, _, pos)| {
-                        record.unit_id == *unit_id && near(record.pos, *pos)
-                    })
+                    .find(|(unit_id, _, pos)| record.unit_id == *unit_id && near(record.pos, *pos))
                     .unwrap_or_else(|| panic!("{package}: unexpected tick record {record:?}"));
                 assert!(
-                    near(record.pos, expected.3),
+                    near(record.pos, expected.2),
                     "{package}: tick {tick}: {record:?}"
                 );
             }
