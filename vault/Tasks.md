@@ -15,7 +15,7 @@ The task board. Move items between sections; keep owner and evidence link on eac
 
 ## In progress
 
-- [ ] **M2 implementation (16 tasks).** Owner: Codex orchestrator; Sol reasoning/review, Luna execution. Tasks 1–14 are accepted after review and canonical integration; original plan progress is 14/16. Task 13 product checkpoint `435f74011f0aa577566f132791f596fa1a96dd19` passed the combined canonical gates: workspace 445/0/13 across 70 groups; fmt, locked workspace check, strict Clippy, boundary, workspace and excluded spike-web wasm, Trunk release build; process acceptance 1 + 2 + 8 + repeated T5 1; Chrome T7 52/52 scene checks, oracle 1/1. T7 verifies the existing scene path, not economy UI controls. Task 15 native process validation is ongoing and incomplete. Task 16 actual native-window controls and browser UI text/click acceptance remains; a preview screenshot is preliminary only.
+No M2 tasks remain in progress; all 16 were accepted on 2026-10-27.
 
 ## Backlog (M1)
 
@@ -29,6 +29,8 @@ The task board. Move items between sections; keep owner and evidence link on eac
 - [ ] Acceptance tests T1 to T6 (producer's list), each shown red first.
 
 ## Done
+
+- [x] **2026-10-27: M2 implementation (Tasks 1–16) accepted.** Final canonical source: `601e71286e56bd2cbed0ecf9f0240ebcecd63047`; task closeout follows all 41 native/browser semantic refutations, six Task16 source/consumer review lenses, the final guarded release acceptance, tracked T7, and all 15 default M2 browser positives. Global workspace validation: 497 passed, 0 failed, 17 ignored across 72 groups; fmt, strict Clippy, wasm and boundary gates passed. Browser mutation audit: 8/8 semantic RED/restored GREEN; native: 33/33; final no-argument M2 browser suite: 15/15. Evidence and hashes: `docs/measurements/m2.md` and `target/task16-canonical-union/final-601e712/`. GitHub Actions was not run; CI-host measurements and performance budgets remain open. The prototype is a multiplayer graybox; gameplay systems beyond the accepted economy slice remain future work.
 
 - [x] 2026-10-26: User approved M2 economy design revision 2 and its economy-only/no-script scope. Decision: [[Decisions/2026-10-26 M2 scope and no script layer]].
 
