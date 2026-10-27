@@ -21,7 +21,11 @@ fn canonical_operations_jsonl(operations: &[turts_sim::OperationAudit]) -> Strin
     out
 }
 
-pub fn advance_accounted_tick(app: &mut App, oracle: &mut AccountingOracle, tick: u32) {
+pub fn advance_accounted_tick(
+    app: &mut App,
+    oracle: &mut AccountingOracle,
+    tick: u32,
+) -> (Vec<turts_sim::OperationAudit>, turts_sim::TickAudit) {
     app.update();
     let operations = trail(app).drain_operations();
     let mut cursor = 0usize;
@@ -176,6 +180,7 @@ pub fn advance_accounted_tick(app: &mut App, oracle: &mut AccountingOracle, tick
             None,
         )
         .unwrap_or_else(|e| panic!("tick {tick}: {e}"));
+    (operations, tick_record)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

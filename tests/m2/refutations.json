@@ -1,0 +1,378 @@
+[
+  {
+    "id": "E1-derived-scan",
+    "plant_path": "crates/turts_checks/tests/support/mod.rs",
+    "anchor": "    Ok(hits)\n}",
+    "replacement": "    Ok(Vec::new())\n}",
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_checks",
+      "--test",
+      "no_content",
+      "derived_scan_rejects_all_plants_and_accepts_generic_field",
+      "--",
+      "--exact",
+      "--nocapture"
+    ],
+    "expected_failure": "inline comment must not hide code",
+    "restore_check": "sha256(source)==baseline and selected test is green"
+  },
+  {
+    "id": "E2-rename-canonicalizer",
+    "plant_path": "crates/turts_pack/tests/economy_variants.rs",
+    "anchor": "let canonical = m.2.get(content).unwrap_or(&content.to_owned()).clone();",
+    "replacement": "let canonical = content.to_owned();",
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_pack",
+      "--test",
+      "economy_variants",
+      "renamed_base_and_physical_clone_have_positive_equal_traces",
+      "--",
+      "--exact",
+      "--nocapture"
+    ],
+    "expected_failure": "base pure rename canonicalizes",
+    "restore_check": "sha256(source)==baseline and selected test is green",
+    "pre_command": [
+      "cargo",
+      "build",
+      "-p",
+      "turts_checks",
+      "--example",
+      "m2_variants"
+    ]
+  },
+  {
+    "id": "E3-policy-binding",
+    "plant_path": "crates/turts_checks/examples/m2_variants.rs",
+    "anchor": "            recipe.payment = payment;",
+    "replacement": "            recipe.payment = PaymentPolicy::ChargeOnQueue;",
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_pack",
+      "--test",
+      "economy_variants",
+      "valid_policy_role_swaps_follow_data",
+      "--",
+      "--exact",
+      "--nocapture"
+    ],
+    "expected_failure": "left: ChargeOnQueue",
+    "restore_check": "sha256(source)==baseline and selected test is green",
+    "pre_command": [
+      "cargo",
+      "build",
+      "-p",
+      "turts_checks",
+      "--example",
+      "m2_variants"
+    ]
+  },
+  {
+    "id": "E4-local-capacity",
+    "plant_path": "crates/turts_sim/src/economy/transaction.rs",
+    "anchor": "        if new_used > u128::from(tx.inventory(to)?.capacity) {",
+    "replacement": "        if false {",
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_pack",
+      "--test",
+      "economy_accounting",
+      "e6_transfer_rejections_cover_filter_capacity_and_access",
+      "--",
+      "--exact",
+      "--nocapture"
+    ],
+    "expected_failure": "result.is_err()",
+    "restore_check": "sha256(source)==baseline and selected test is green"
+  },
+  {
+    "id": "E5-conversion-cargo-separation",
+    "plant_path": "crates/turts_sim/src/economy/gather.rs",
+    "anchor": "            .checked_add(credit)\n            .ok_or(RejectReason::RefundDestinationOverflow)?;",
+    "replacement": "            .checked_add(credit).and_then(|value| value.checked_add(credit))\n            .ok_or(RejectReason::RefundDestinationOverflow)?;",
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_pack",
+      "--test",
+      "economy_accounting",
+      "e6_gather_conversion_and_interruptions_conserve_through_delivery",
+      "--",
+      "--exact",
+      "--nocapture"
+    ],
+    "expected_failure": "gather state differs from the independent full transition projection",
+    "restore_check": "sha256(source)==baseline and selected test is green"
+  },
+  {
+    "id": "E6-reservation-omission",
+    "plant_path": "crates/turts_sim/src/economy/production.rs",
+    "anchor": "                let reservation = transaction::reserve_costs(tx, job_id, &lines)?;",
+    "replacement": "                let reservation = transaction::reserve_costs(tx, job_id, &[])?;",
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_pack",
+      "--test",
+      "economy_accounting",
+      "e6_reserve_then_charge_tracks_claim_start_and_output",
+      "--",
+      "--exact",
+      "--nocapture"
+    ],
+    "expected_failure": "accepted Produce differs from exact requested recipe",
+    "restore_check": "sha256(source)==baseline and selected test is green"
+  },
+  {
+    "id": "E6-mixed-cost-partial-commit",
+    "plant_path": "crates/turts_sim/src/economy/transaction.rs",
+    "anchor": "        updates.insert(\n            (line.endpoint, line.resource),\n            Account {\n                on_hand: old\n                    .on_hand\n                    .checked_sub(line.amount)\n                    .ok_or(RejectReason::ArithmeticOverflow)?,\n                ..old\n            },\n        );",
+    "replacement": "        let charged = Account { on_hand: old.on_hand.checked_sub(line.amount).ok_or(RejectReason::ArithmeticOverflow)?, ..old };\n        if let Endpoint::Slot(slot) = line.endpoint { tx.world.resource_mut::<EconomyLedger>().balances.insert((slot, line.resource.clone()), charged); }\n        updates.insert((line.endpoint, line.resource), charged);",
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_pack",
+      "--test",
+      "economy_accounting",
+      "e6_mixed_cost_rejection_keeps_every_endpoint_unchanged",
+      "--",
+      "--exact",
+      "--nocapture"
+    ],
+    "expected_failure": "rejected mixed-cost command must roll back its first SlotBalance debit",
+    "restore_check": "sha256(source)==baseline and selected test is green"
+  },
+  {
+    "id": "E6-node-replenishment",
+    "plant_path": "crates/turts_sim/src/economy/gather.rs",
+    "anchor": "record.remaining = record.remaining.saturating_sub(amount);",
+    "replacement": "record.remaining = record.remaining.saturating_add(amount);",
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_pack",
+      "--test",
+      "economy_accounting",
+      "e6_partial_store_unloads_and_exhausts_the_seeded_node",
+      "--",
+      "--exact",
+      "--nocapture"
+    ],
+    "expected_failure": "gather state differs from the independent full transition projection",
+    "restore_check": "sha256(source)==baseline and selected test is green"
+  },
+  {
+    "id": "E6-arithmetic-overflow",
+    "plant_path": "crates/turts_sim/src/economy/transaction.rs",
+    "anchor": ".checked_add(refund)\n            .ok_or(RejectReason::RefundDestinationOverflow)?;",
+    "replacement": ".checked_add(refund).or(Some(u64::MAX))\n            .ok_or(RejectReason::RefundDestinationOverflow)?;",
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_pack",
+      "--test",
+      "economy_accounting",
+      "e6_running_cancel_refund_rejects_on_balance_u64_overflow",
+      "--",
+      "--exact",
+      "--nocapture"
+    ],
+    "expected_failure": "RefundDestinationOverflow",
+    "restore_check": "sha256(source)==baseline and selected test is green"
+  },
+  {
+    "id": "E6-carried-item-loss",
+    "plant_path": "crates/turts_sim/src/command.rs",
+    "anchor": "    if let Some(mut orders) = world.get_resource_mut::<EconomyOrders>() {",
+    "replacement": "    for id in unit_ids { if let Some(inventory) = world.resource_mut::<crate::EconomyLedger>().inventories.get_mut(id) { inventory.items.clear(); } }\n    if let Some(mut orders) = world.get_resource_mut::<EconomyOrders>() {",
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_pack",
+      "--test",
+      "economy_accounting",
+      "e6_gather_conversion_and_interruptions_conserve_through_delivery",
+      "--",
+      "--exact",
+      "--nocapture"
+    ],
+    "expected_failure": "MoveTo interruption keeps physical cargo",
+    "restore_check": "sha256(source)==baseline and selected test is green"
+  },
+  {
+    "id": "E6-duplicate-conversion",
+    "plant_path": "crates/turts_sim/src/economy/gather.rs",
+    "anchor": "            .checked_add(credit)\n            .ok_or(RejectReason::RefundDestinationOverflow)?;",
+    "replacement": "            .checked_add(credit).and_then(|value| value.checked_add(credit))\n            .ok_or(RejectReason::RefundDestinationOverflow)?;",
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_pack",
+      "--test",
+      "economy_accounting",
+      "e6_gather_conversion_and_interruptions_conserve_through_delivery",
+      "--",
+      "--exact",
+      "--nocapture"
+    ],
+    "expected_failure": "gather state differs from the independent full transition projection",
+    "restore_check": "sha256(source)==baseline and selected test is green"
+  },
+  {
+    "id": "E6-duplicate-refund",
+    "plant_path": "crates/turts_sim/src/economy/transaction.rs",
+    "anchor": "        let on_hand = old\n            .on_hand\n            .checked_add(refund)\n            .ok_or(RejectReason::RefundDestinationOverflow)?;",
+    "replacement": "        let on_hand = old.on_hand.checked_add(refund).and_then(|value| value.checked_add(refund)).ok_or(RejectReason::RefundDestinationOverflow)?;",
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_pack",
+      "--test",
+      "economy_accounting",
+      "e6_cancel_refund_matrix_covers_both_policies_and_all_stages",
+      "--",
+      "--exact",
+      "--nocapture"
+    ],
+    "expected_failure": "refund destination delta differs from independent charged lines",
+    "restore_check": "sha256(source)==baseline and selected test is green"
+  },
+  {
+    "id": "E6-repeated-spawn",
+    "plant_path": "crates/turts_sim/src/economy/transaction.rs",
+    "anchor": "            world.spawn((\n                UnitId(spawn.id),\n                crate::world::UnitType(spawn.unit_type),\n                Owner(SlotId(spawn.owner_slot)),\n                crate::world::Position(spawn.position),\n            ));",
+    "replacement": "            world.spawn((UnitId(spawn.id), crate::world::UnitType(spawn.unit_type), Owner(SlotId(spawn.owner_slot)), crate::world::Position(spawn.position)));\n            world.spawn((\n                UnitId(spawn.id),\n                crate::world::UnitType(spawn.unit_type),\n                Owner(SlotId(spawn.owner_slot)),\n                crate::world::Position(spawn.position),\n            ));",
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_pack",
+      "--test",
+      "economy_accounting",
+      "e6_every_committed_operation_and_tick_conserves",
+      "--",
+      "--exact",
+      "--nocapture"
+    ],
+    "expected_failure": "completion differs from exact frozen recipe",
+    "restore_check": "sha256(source)==baseline and selected test is green"
+  },
+  {
+    "id": "E6-capacity-bypass",
+    "plant_path": "crates/turts_sim/src/economy/transaction.rs",
+    "anchor": "        if new_used > u128::from(tx.inventory(to)?.capacity) {",
+    "replacement": "        if false {",
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_pack",
+      "--test",
+      "economy_accounting",
+      "e6_transfer_rejections_cover_filter_capacity_and_access",
+      "--",
+      "--exact",
+      "--nocapture"
+    ],
+    "expected_failure": "result.is_err()",
+    "restore_check": "sha256(source)==baseline and selected test is green"
+  },
+  {
+    "id": "E6-self-store",
+    "plant_path": "crates/turts_sim/src/economy/gather.rs",
+    "anchor": "            if id == unit && matches!(effect, ResolvedDropOffEffect::Store) {\n                return None;\n            }",
+    "replacement": "            if false {\n                return None;\n            }",
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_pack",
+      "--test",
+      "economy_accounting",
+      "e6_self_store_is_never_selected_as_its_own_receiver",
+      "--",
+      "--exact",
+      "--nocapture"
+    ],
+    "expected_failure": "gather state differs from the independent full transition projection",
+    "restore_check": "sha256(source)==baseline and selected test is green"
+  },
+  {
+    "id": "E6-no-op-economy",
+    "plant_path": "crates/turts_sim/src/economy/gather.rs",
+    "anchor": "    let amount = budget.min(node.remaining).min(headroom);",
+    "replacement": "    let amount = 0;",
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_pack",
+      "--test",
+      "economy_variants",
+      "independent_cedar_packs_and_conserves",
+      "--",
+      "--exact",
+      "--nocapture"
+    ],
+    "expected_failure": "gather events differ from the independently predicted owner",
+    "restore_check": "sha256(source)==baseline and selected test is green"
+  },
+  {
+    "id": "E6-event-only-spawn",
+    "plant_path": "crates/turts_sim/src/economy/transaction.rs",
+    "anchor": "            world.spawn((\n                UnitId(spawn.id),\n                crate::world::UnitType(spawn.unit_type),\n                Owner(SlotId(spawn.owner_slot)),\n                crate::world::Position(spawn.position),\n            ));",
+    "replacement": "            let _entity_without_gameplay_identity = world.spawn_empty();",
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_pack",
+      "--test",
+      "economy_accounting",
+      "e6_every_committed_operation_and_tick_conserves",
+      "--",
+      "--exact",
+      "--nocapture"
+    ],
+    "expected_failure": "completion differs from exact frozen recipe",
+    "restore_check": "sha256(source)==baseline and selected test is green"
+  },
+  {
+    "id": "E10-public-error-provenance",
+    "plant_path": "crates/turts_mod_runtime/src/content.rs",
+    "anchor": "    ModError::new(&origin.0, field, message).with_file(file)",
+    "replacement": "    ModError::new(&origin.0, field, message)",
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_pack",
+      "--test",
+      "economy_variants",
+      "cedar_broken_reference_reports_public_package_file_and_field",
+      "--",
+      "--exact",
+      "--nocapture"
+    ],
+    "expected_failure": "cedar/-: inventory.accepts[0]",
+    "restore_check": "sha256(source)==baseline and selected test is green"
+  }
+]
