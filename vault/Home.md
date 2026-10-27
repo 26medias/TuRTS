@@ -17,9 +17,7 @@ Dashboard for the TuRTS studio. Read this first, then [[Tasks]] and the latest n
 
 **Current milestone:** M1 done. Next: M2, mod API proven by the default mod plus an alternative economy mod.
 
-**Phase:** M1 is closed. M2 Tasks 1–8 are complete after review and canonical integration; original plan progress is 8/16. The post-Task 8 locked workspace suite passed 376 tests, 0 failed, 12 ignored across 65 groups; fmt, locked check, strict Clippy, boundary, locked wasm and the named economy_accounting target (42/42) passed. Task 9 has a reviewed isolated preview (M1/package process and Chrome T7 passed), but remains incomplete pending canonical data integration, positive base/haul economy loops, and Task 8 oracle validation. Handoff and exact base-to-preview diff are in canonical private SDD. Client queue prep is integrated without protocol activation; protocol 1 remains selected.
-
-**Repository:** https://github.com/26medias/TuRTS (public). CI green.
+**Phase:** M1 is closed. M2 Tasks 1–9 are complete after review and canonical integration; original plan progress is 9/16. Task 9 final canonical gates passed: 390 workspace tests passed, 0 failed, 12 ignored across 68 groups; fmt/check/strict Clippy/boundary/locked wasm passed. Process acceptance and Chrome T7 passed (52/52 frames, `acme:scout`, final `[20,8]`). Task 10 is next; protocol 1 remains selected pending the atomic protocol switch. Current board, report and ledger are in the managed worktree at `/home/julien/.codex/worktrees/ee40/TuRTS`.** https://github.com/26medias/TuRTS (public). CI green.
 
 ## Where to look
 
