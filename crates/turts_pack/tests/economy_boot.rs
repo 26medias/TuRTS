@@ -321,32 +321,39 @@ fn server_boot_ignores_visual_bytes_while_client_validation_rejects_them() {
 }
 
 #[test]
-fn package_without_balance_resources_creates_no_accounts() {
-    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../mods/base");
-    let mut files = std::collections::BTreeMap::new();
-    for entry in std::fs::read_dir(&root).unwrap() {
-        let path = entry.unwrap().path();
-        if path.is_file() {
-            files.insert(
-                path.file_name().unwrap().to_string_lossy().into_owned(),
-                std::fs::read(path).unwrap(),
-            );
-        } else {
-            for child in std::fs::read_dir(&path).unwrap() {
-                let child = child.unwrap().path();
-                let key = format!(
-                    "{}/{}",
-                    path.file_name().unwrap().to_string_lossy(),
-                    child.file_name().unwrap().to_string_lossy()
+fn packages_without_balance_resources_create_no_accounts() {
+    let mods_root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../mods");
+    for package in ["acme", "haul"] {
+        let root = mods_root.join(package);
+        let mut files = std::collections::BTreeMap::new();
+        for entry in std::fs::read_dir(&root).unwrap() {
+            let path = entry.unwrap().path();
+            if path.is_file() {
+                files.insert(
+                    path.file_name().unwrap().to_string_lossy().into_owned(),
+                    std::fs::read(path).unwrap(),
                 );
-                files.insert(key, std::fs::read(child).unwrap());
+            } else {
+                for child in std::fs::read_dir(&path).unwrap() {
+                    let child = child.unwrap().path();
+                    let key = format!(
+                        "{}/{}",
+                        path.file_name().unwrap().to_string_lossy(),
+                        child.file_name().unwrap().to_string_lossy()
+                    );
+                    files.insert(key, std::fs::read(child).unwrap());
+                }
             }
         }
+        let archive = archive_from_files(files);
+        let mut app = scenario(20);
+        load_package(app.world_mut(), &archive)
+            .unwrap_or_else(|error| panic!("{package} package should load: {error}"));
+        assert!(
+            world_view(app.world_mut()).balances.is_empty(),
+            "{package} has no Balance resources and must not create accounts"
+        );
     }
-    let archive = archive_from_files(files);
-    let mut app = scenario(20);
-    load_package(app.world_mut(), &archive).unwrap();
-    assert!(world_view(app.world_mut()).balances.is_empty());
 }
 
 #[test]
