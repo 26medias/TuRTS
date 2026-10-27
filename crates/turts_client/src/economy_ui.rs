@@ -802,9 +802,12 @@ mod activation_tests {
         assert_eq!(pending.len(), 1);
         assert_eq!(
             pending[0],
-            PlayerCommandKind::Produce {
-                producer_id: UnitId(8),
-                recipe_id: "custom:worker".into(),
+            crate::commands::PendingCommand::Submit {
+                kind: PlayerCommandKind::Produce {
+                    producer_id: UnitId(8),
+                    recipe_id: "custom:worker".into(),
+                },
+                trace_step: None,
             }
         );
     }

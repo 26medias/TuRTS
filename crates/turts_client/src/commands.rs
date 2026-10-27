@@ -94,7 +94,10 @@ pub fn owned_mobile_ids(state: &crate::ingest::ReplicaState) -> Vec<turts_net_pr
             }
             let content_id = turts_mod_api::ContentId::parse(&unit.content_id).ok()?;
             let definition = content.catalog.units.get(&content_id)?;
-            definition.movement.as_ref().map(|_| UnitId(id))
+            definition
+                .movement
+                .as_ref()
+                .map(|_| turts_net_protocol::UnitId(id))
         })
         .collect();
     ids.sort_by_key(|id| id.0);
@@ -113,6 +116,7 @@ pub(crate) fn send_commands_traced(
     mut witnesses: ResMut<ReceiptWitnesses>,
     mut scenario: ResMut<ScenarioState>,
     results: Res<CommandResults>,
+    #[cfg(test)] mut sent_capture: Option<ResMut<SentCommandCapture>>,
 ) {
     if !matches!(*phase, Phase::Joined { .. }) || senders.is_empty() || status.reconnect_required {
         return;
@@ -139,6 +143,10 @@ pub(crate) fn send_commands_traced(
                 } => (envelope, Some(trace_step)),
             };
             sender.send::<ReliableChannel>(envelope.clone());
+            #[cfg(test)]
+            if let Some(capture) = sent_capture.as_deref_mut() {
+                capture.0.push(envelope.clone());
+            }
             witnesses.record_message(epoch, true);
             if let Some(step) = trace_step
                 && let Err(error) = scenario.record_sent(step, envelope, results.0.len())
@@ -146,5 +154,134 @@ pub(crate) fn send_commands_traced(
                 scenario.error = Some(error);
             }
         }
+    }
+}
+
+#[cfg(test)]
+#[derive(Resource, Default)]
+pub(crate) struct SentCommandCapture(Vec<PlayerCommand>);
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::scenario::{ScenarioState, TraceAction};
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[test]
+    fn trace_sender_preserves_empty_static_and_foreign_move_bodies() {
+        let temp_name = format!(
+            "turts-command-literal-{}-{}.json",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("clock after epoch")
+                .as_nanos()
+        );
+        let path = std::env::temp_dir().join(temp_name);
+        std::fs::write(
+            &path,
+            r#"[
+                {"after_ticks":0,"command":{"command":"submit","data":{"MoveTo":{"unit_ids":[],"target":{"x":1.0,"y":2.0}}}},"require_result":false},
+                {"after_ticks":0,"command":{"command":"submit","data":{"MoveTo":{"unit_ids":[3,99],"target":{"x":4.0,"y":5.0}}}},"require_result":false}
+            ]"#,
+        )
+        .expect("write temporary trace");
+        let scenario = ScenarioState::from_path(Some(&path));
+        std::fs::remove_file(path).expect("remove temporary trace");
+
+        let mut app = App::new();
+        app.insert_resource(PendingCommands::default())
+            .insert_resource(CommandSequence::default())
+            .insert_resource(CommandSendStatus::default())
+            .insert_resource(Phase::Joined { slot: 0 })
+            .insert_resource(ReceiptWitnesses::default())
+            .insert_resource(CommandResults::default())
+            .insert_resource(scenario)
+            .insert_resource(SentCommandCapture::default());
+        app.add_systems(Update, send_commands_traced);
+        app.world_mut().spawn((
+            MessageSender::<PlayerCommand>::default(),
+            RemoteId(PeerId::Netcode(5)),
+            Connected,
+        ));
+
+        for step_index in 0..2 {
+            let actions = app
+                .world_mut()
+                .resource_mut::<ScenarioState>()
+                .drive(0, 0, &[])
+                .expect("trace action");
+            let [
+                TraceAction::Submit {
+                    step_index: actual_step,
+                    kind,
+                },
+            ] = actions.as_slice()
+            else {
+                panic!("expected one literal MoveTo action, got {actions:?}");
+            };
+            assert_eq!(*actual_step, step_index);
+            let kind = kind.clone();
+            app.world_mut()
+                .resource_mut::<ScenarioState>()
+                .record_trace_action(step_index);
+            submit_trace(
+                &mut app.world_mut().resource_mut::<PendingCommands>(),
+                kind.clone(),
+                step_index,
+            );
+            app.update();
+            let scenario = app.world().resource::<ScenarioState>();
+            assert_eq!(
+                scenario.bindings[step_index]
+                    .envelope
+                    .as_ref()
+                    .unwrap()
+                    .kind,
+                kind
+            );
+        }
+        let ordinary_kinds = [
+            PlayerCommandKind::MoveTo {
+                unit_ids: Vec::new(),
+                target: turts_net_protocol::Pos { x: 6.0, y: 7.0 },
+            },
+            PlayerCommandKind::MoveTo {
+                unit_ids: vec![
+                    turts_net_protocol::UnitId(3),
+                    turts_net_protocol::UnitId(99),
+                ],
+                target: turts_net_protocol::Pos { x: 8.0, y: 9.0 },
+            },
+        ];
+        for kind in ordinary_kinds.iter().cloned() {
+            submit(&mut app.world_mut().resource_mut::<PendingCommands>(), kind);
+        }
+        app.update();
+
+        let sent = &app.world().resource::<SentCommandCapture>().0;
+        let expected_kinds = [
+            PlayerCommandKind::MoveTo {
+                unit_ids: Vec::new(),
+                target: turts_net_protocol::Pos { x: 1.0, y: 2.0 },
+            },
+            PlayerCommandKind::MoveTo {
+                unit_ids: vec![
+                    turts_net_protocol::UnitId(3),
+                    turts_net_protocol::UnitId(99),
+                ],
+                target: turts_net_protocol::Pos { x: 4.0, y: 5.0 },
+            },
+            ordinary_kinds[0].clone(),
+            ordinary_kinds[1].clone(),
+        ];
+        assert_eq!(sent.len(), expected_kinds.len());
+        for (index, (command, kind)) in sent.iter().zip(expected_kinds).enumerate() {
+            assert_eq!(command.seq, index as u32 + 1);
+            assert_eq!(command.kind, kind);
+        }
+        assert_eq!(app.world().resource::<CommandSequence>().next, Some(5));
+        assert!(app.world().resource::<PendingCommands>().0.is_empty());
+        assert!(app.world().resource::<ScenarioState>().error.is_none());
     }
 }

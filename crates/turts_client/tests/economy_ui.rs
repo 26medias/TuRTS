@@ -496,7 +496,7 @@ fn dpi_two_panel_border_blocks_world_order_and_outside_click_still_orders() {
         "an outside click reaches the real world-order path"
     );
     assert!(
-        matches!(app.world().resource::<PendingCommands>().0.front(), Some(turts_net_protocol::PlayerCommandKind::MoveTo { unit_ids, .. }) if unit_ids == &vec![UnitId(mobile)])
+        matches!(app.world().resource::<PendingCommands>().0.front(), Some(turts_client::commands::PendingCommand::Submit { kind: turts_net_protocol::PlayerCommandKind::MoveTo { unit_ids, .. }, trace_step: None }) if unit_ids == &vec![UnitId(mobile)])
     );
     assert_ne!(producer, mobile);
 }
@@ -1299,12 +1299,15 @@ fn real_pointer_press_survives_replica_progress_update_and_never_reaches_world()
             .iter()
             .cloned()
             .collect::<Vec<_>>(),
-        vec![turts_net_protocol::PlayerCommandKind::Produce {
-            producer_id: UnitId(producer),
-            recipe_id: match action {
-                UiAction::Produce { recipe, .. } => recipe,
-                _ => unreachable!(),
+        vec![turts_client::commands::PendingCommand::Submit {
+            kind: turts_net_protocol::PlayerCommandKind::Produce {
+                producer_id: UnitId(producer),
+                recipe_id: match action {
+                    UiAction::Produce { recipe, .. } => recipe,
+                    _ => unreachable!(),
+                },
             },
+            trace_step: None,
         }]
     );
     assert_eq!(app.world().resource::<Selection>().0, Some(producer));
@@ -1422,9 +1425,12 @@ fn real_scroll_reaches_the_fifth_exact_cancel_action_at_dpi_two() {
             .iter()
             .cloned()
             .collect::<Vec<_>>(),
-        vec![turts_net_protocol::PlayerCommandKind::CancelProduction {
-            producer_id: UnitId(producer),
-            job_id: JobId(95)
+        vec![turts_client::commands::PendingCommand::Submit {
+            kind: turts_net_protocol::PlayerCommandKind::CancelProduction {
+                producer_id: UnitId(producer),
+                job_id: JobId(95),
+            },
+            trace_step: None,
         }],
         "scrolling and activating the displayed control preserves its exact job ID"
     );

@@ -86,11 +86,17 @@ pub fn debug_json(world: &World) -> String {
     let drops = world
         .get_resource::<crate::ingest::IngestHooks>()
         .map(|hooks| {
-            hooks.dropped_world_changes.iter().map(|record| json!({
-                "kind": record.kind,
-                "arm_tick": record.arm_tick,
-                "dropped_tick": record.dropped_tick,
-            })).collect::<Vec<_>>()
+            hooks
+                .dropped_world_changes
+                .iter()
+                .map(|record| {
+                    json!({
+                        "kind": record.kind,
+                        "arm_tick": record.arm_tick,
+                        "dropped_tick": record.dropped_tick,
+                    })
+                })
+                .collect::<Vec<_>>()
         })
         .unwrap_or_default();
     json!({
@@ -103,6 +109,18 @@ pub fn debug_json(world: &World) -> String {
         "selection": selection,
         "rendered_ui_nodes": rendered_ui_nodes,
     }).to_string()
+}
+
+fn command_result_json(result: &CommandResult) -> Value {
+    match result {
+        CommandResult::Acked { seq, tick } => json!({ "seq": seq, "ack_tick": tick }),
+        CommandResult::Applied { seq, tick, job_id } => {
+            json!({ "seq": seq, "applied_tick": tick, "job_id": job_id.map(|id| id.0) })
+        }
+        CommandResult::Rejected { seq, tick, reason } => {
+            json!({ "seq": seq, "rejected_tick": tick, "rejected": reason.as_str() })
+        }
+    }
 }
 
 /// `Last`: rebuild [`DebugState`].

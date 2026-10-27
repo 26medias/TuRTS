@@ -166,21 +166,26 @@ fn send_reversal_plant_fails_witness_even_when_typed_drain_is_ack_first() {
 
 #[test]
 fn disconnected_sender_preserves_fifo_and_sequence_until_connected() {
-    use bevy::prelude::*;
     use lightyear::prelude::*;
-    use turts_client::commands::{CommandSendStatus, send_commands};
-    use turts_client::ingest::{ReceiptWitnesses, ReplicaState};
-    use turts_client::join::Phase;
+    use turts_client::acquire::Acquired;
+    use turts_client::build_app;
+    use turts_client::commands::{CommandSequence, PendingCommand, PendingCommands, submit};
+    use turts_client::content::ClientContent;
+    use turts_client::join::{AcquiredPackages, Phase};
+    use turts_client::options::ClientOptions;
     use turts_net_protocol::PlayerCommand;
 
-    let mut app = App::new();
-    app.insert_resource(PendingCommands::default())
-        .insert_resource(CommandSequence::default())
-        .insert_resource(CommandSendStatus::default())
-        .insert_resource(Phase::Joined { slot: 0 })
-        .insert_resource(ReplicaState::default())
-        .insert_resource(ReceiptWitnesses::default())
-        .add_systems(Update, send_commands);
+    let mut options = ClientOptions::default();
+    options.headless = true;
+    let mut app = build_app(options);
+    app.insert_resource(AcquiredPackages(Acquired {
+        lockfile_hash: String::new(),
+        visuals: Default::default(),
+        map_size: (1.0, 1.0),
+        unit_names: Default::default(),
+        content: ClientContent::default(),
+    }));
+    *app.world_mut().resource_mut::<Phase>() = Phase::Joined { slot: 0 };
     let disconnected = app
         .world_mut()
         .spawn(MessageSender::<PlayerCommand>::default())
