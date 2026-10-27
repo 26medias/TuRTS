@@ -94,8 +94,10 @@ fi
 mkdir -p "$ARTIFACT_ROOT"
 RUN_STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 ARTIFACT_DIR="$(mktemp -d "$ARTIFACT_ROOT/run-${RUN_STAMP}-XXXXXX")"
-BUILD_SOURCE_COMMIT="$(git -C "$ROOT" rev-parse HEAD)"
-BUILD_SOURCE_DIFF_SHA256="$(git -C "$ROOT" diff --binary HEAD | sha256sum | cut -d ' ' -f 1)"
+BUILD_SOURCE_COMMIT="${M2_SOURCE_COMMIT:-$(git -C "$ROOT" rev-parse HEAD)}"
+BUILD_SOURCE_BRANCH="${M2_SOURCE_BRANCH:-$(git -C "$ROOT" branch --show-current)}"
+BUILD_SOURCE_DIFF_SHA256="${M2_SOURCE_DIFF_SHA256:-$(git -C "$ROOT" diff --binary HEAD | sha256sum | cut -d ' ' -f 1)}"
+BUILD_SOURCE_STATUS="${M2_SOURCE_STATUS:-$(git -C "$ROOT" status --porcelain=v1)}"
 WORKSPACE_VERSION="$(sed -n '/^version = /s/^version = "\(.*\)"/\1/p' "$ROOT/Cargo.toml" | head -1)"
 STATIC_PID=""
 SERVER_PID=""
@@ -132,9 +134,9 @@ EOF_CLEANUP
 trap cleanup EXIT
 
 printf '{"scope":"Task16 browser package run","package":"%s","case_id":"%s","branch":"%s","source_commit":"%s","started_utc":"%s","artifact_dir":"%s"}\n' \
-    "$PACKAGE" "$CASE_ID" "$(git -C "$ROOT" branch --show-current)" "$BUILD_SOURCE_COMMIT" "$RUN_STAMP" "$ARTIFACT_DIR" > "$ARTIFACT_DIR/run.json"
+    "$PACKAGE" "$CASE_ID" "$BUILD_SOURCE_BRANCH" "$BUILD_SOURCE_COMMIT" "$RUN_STAMP" "$ARTIFACT_DIR" > "$ARTIFACT_DIR/run.json"
 printf '%s\n' "$BUILD_SOURCE_DIFF_SHA256" > "$ARTIFACT_DIR/source-diff.sha256"
-printf '%s\n' "$(git -C "$ROOT" status --porcelain=v1)" > "$ARTIFACT_DIR/source-status.txt"
+printf '%s\n' "$BUILD_SOURCE_STATUS" > "$ARTIFACT_DIR/source-status.txt"
 
 # All build outputs and compiler caches stay in the caller-selected target directory.
 env CARGO_TARGET_DIR="$EXPECTED_TARGET" CARGO_BUILD_JOBS="$BUILD_JOBS" CARGO_NET_OFFLINE=true \
@@ -241,7 +243,7 @@ cat > "$ARTIFACT_DIR/provenance.json" <<EOF_PROVENANCE
   "scope": "Task 16 real browser package proof; not final acceptance until all registered cases pass",
   "package": "$PACKAGE",
   "case_id": "$CASE_ID",
-  "branch": "$(git -C "$ROOT" branch --show-current)",
+  "branch": "$BUILD_SOURCE_BRANCH",
   "source_commit": "$BUILD_SOURCE_COMMIT",
   "source_diff_sha256": "$BUILD_SOURCE_DIFF_SHA256",
   "source_package_version": "$WORKSPACE_VERSION",

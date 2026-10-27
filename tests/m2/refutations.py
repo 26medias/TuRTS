@@ -29,6 +29,23 @@ def run(command, cwd, build_dir):
     env["CARGO_TARGET_DIR"] = str(build_dir)
     env["CARGO_BUILD_JOBS"] = "2"
     env["RUST_BACKTRACE"] = "0"
+    env["M2_SOURCE_COMMIT"] = subprocess.run(
+        ["git", "-C", str(ROOT), "rev-parse", "HEAD"], check=True, text=True,
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+    ).stdout.strip()
+    env["M2_SOURCE_BRANCH"] = subprocess.run(
+        ["git", "-C", str(ROOT), "branch", "--show-current"], check=True, text=True,
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+    ).stdout.strip()
+    source_diff = subprocess.run(
+        ["git", "-C", str(ROOT), "diff", "--binary", "HEAD"], check=True,
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+    ).stdout
+    env["M2_SOURCE_DIFF_SHA256"] = hashlib.sha256(source_diff).hexdigest()
+    env["M2_SOURCE_STATUS"] = subprocess.run(
+        ["git", "-C", str(ROOT), "status", "--porcelain=v1"], check=True, text=True,
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+    ).stdout
     return subprocess.run(
         command,
         cwd=cwd,
