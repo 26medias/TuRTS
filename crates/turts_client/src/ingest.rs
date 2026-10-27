@@ -19,7 +19,7 @@ use turts_net_protocol::{
 };
 
 use crate::replica::{DeltaOutcome, Replica, ReplicaConfig, ReplicaContext, SnapshotOutcome};
-use crate::scenario::DropWorldChange;
+use crate::scenario::{DropWorldChange, parse_drop_world_changes};
 use crate::{ClientOpts, content::ClientContent, join::AcquiredPackages};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::io::Write;
@@ -72,6 +72,94 @@ pub struct ReplicaState {
     /// Cloned once from accepted packages before the first Welcome is processed.
     pub content: Option<ClientContent>,
     pub config: ReplicaConfig,
+}
+
+/// A strictly validated browser-only ingest control. It changes the existing replica hooks;
+/// it does not create a second recovery path or issue a player command.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BrowserIngestConfig {
+    drop_world_changes: Vec<DropWorldChange>,
+    pub hold_resync_snapshots: u32,
+    pub max_buffered_batches: usize,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct BrowserIngestConfigJson {
+    drop_world_changes: Vec<String>,
+    hold_resync_snapshots: u32,
+    max_buffered_batches: usize,
+}
+
+impl BrowserIngestConfig {
+    /// Parse all three required controls atomically, rejecting unknown or malformed fields.
+    pub fn parse_json(json: &str) -> Result<Self, String> {
+        let raw: BrowserIngestConfigJson = serde_json::from_str(json)
+            .map_err(|error| format!("invalid ingest configuration: {error}"))?;
+        if raw.max_buffered_batches == 0 {
+            return Err("max_buffered_batches must be a positive integer".into());
+        }
+        let mut drop_world_changes = Vec::with_capacity(raw.drop_world_changes.len());
+        for name in raw.drop_world_changes {
+            let mut parsed = parse_drop_world_changes(&name)?;
+            if parsed.len() != 1 {
+                return Err(format!(
+                    "drop_world_changes entries must be single names: `{name}`"
+                ));
+            }
+            let kind = parsed.remove(0);
+            if drop_world_changes.contains(&kind) {
+                return Err(format!("duplicate WorldDelta change kind `{name}`"));
+            }
+            drop_world_changes.push(kind);
+        }
+        Ok(Self {
+            drop_world_changes,
+            hold_resync_snapshots: raw.hold_resync_snapshots,
+            max_buffered_batches: raw.max_buffered_batches,
+        })
+    }
+}
+
+/// Apply browser controls to a joined coherent replica, preserving the world, held response and
+/// outstanding request. The caller queues this operation onto Bevy's main thread.
+pub fn apply_browser_ingest_config(
+    config: BrowserIngestConfig,
+    hooks: &mut IngestHooks,
+    counters: &mut IngestCounters,
+    state: &mut ReplicaState,
+    options: &mut crate::ClientOpts,
+) -> Result<u32, String> {
+    let replica = state
+        .replica
+        .as_mut()
+        .ok_or_else(|| "ingest configuration is waiting for a joined replica".to_string())?;
+    let arm_tick = replica
+        .last_applied_tick
+        .ok_or_else(|| "ingest configuration is waiting for a coherent snapshot".to_string())?;
+
+    let previous_overflows = replica.buffer_overflows;
+    replica.set_max_buffered_batches(config.max_buffered_batches);
+    counters.buffer_overflows = counters
+        .buffer_overflows
+        .saturating_add(replica.buffer_overflows.saturating_sub(previous_overflows));
+    state.config.max_buffered_batches = config.max_buffered_batches;
+    options.0.resync_buffer_batches = config.max_buffered_batches;
+    hooks.initial_drop_world_changes.clear();
+    hooks.hold_resync_snapshots = config.hold_resync_snapshots;
+    hooks.hold_resync_snapshots_remaining = None;
+    if hooks.hold_resync_snapshots == 0 {
+        let eligible_tick = hooks.highest_delta_tick.unwrap_or(0);
+        for (_, release_tick) in &mut hooks.held {
+            *release_tick = eligible_tick;
+        }
+    }
+    if config.drop_world_changes.is_empty() {
+        hooks.armed_drop_world_changes = None;
+    } else {
+        arm_drop_world_changes(hooks, config.drop_world_changes, replica.clone(), arm_tick);
+    }
+    Ok(arm_tick)
 }
 
 /// The test hooks and the resync bookkeeping of ingest.
@@ -1211,6 +1299,166 @@ mod world_change_tests {
         assert_eq!(hooks.dropped_world_changes.len(), 3);
         assert_eq!(hooks.dropped_world_changes[2].arm_tick, 20);
         assert_eq!(hooks.dropped_world_changes[2].dropped_tick, 21);
+    }
+}
+
+#[cfg(test)]
+mod browser_config_tests {
+    use super::*;
+    use crate::options::ClientOptions;
+
+    #[test]
+    fn browser_config_requires_exact_valid_fields_and_unique_single_names() {
+        let valid = r#"{"drop_world_changes":["extraction","refund"],"hold_resync_snapshots":3,"max_buffered_batches":4}"#;
+        let parsed = BrowserIngestConfig::parse_json(valid).unwrap();
+        assert_eq!(parsed.drop_world_changes.len(), 2);
+        assert_eq!(parsed.hold_resync_snapshots, 3);
+        assert_eq!(parsed.max_buffered_batches, 4);
+        for invalid in [
+            r#"{"drop_world_changes":[],"hold_resync_snapshots":0,"max_buffered_batches":1,"extra":true}"#,
+            r#"{"drop_world_changes":[],"hold_resync_snapshots":0,"max_buffered_batches":0}"#,
+            r#"{"drop_world_changes":["extraction","extraction"],"hold_resync_snapshots":0,"max_buffered_batches":1}"#,
+            r#"{"drop_world_changes":["extraction,refund"],"hold_resync_snapshots":0,"max_buffered_batches":1}"#,
+            r#"{"drop_world_changes":[],"hold_resync_snapshots":-1,"max_buffered_batches":1}"#,
+            r#"{"drop_world_changes":[],"hold_resync_snapshots":0}"#,
+        ] {
+            assert!(
+                BrowserIngestConfig::parse_json(invalid).is_err(),
+                "accepted {invalid}"
+            );
+        }
+    }
+
+    #[test]
+    fn browser_config_updates_live_replica_and_releases_existing_hold_normally() {
+        let mut replica = Replica::new(20);
+        replica.last_applied_tick = Some(10);
+        replica.resync = Some(Vec::new());
+        let mut state = ReplicaState {
+            replica: Some(replica),
+            ..Default::default()
+        };
+        let mut hooks = IngestHooks {
+            outstanding_request: true,
+            highest_delta_tick: Some(11),
+            held: vec![(
+                Snapshot {
+                    tick: 12,
+                    units: Vec::new(),
+                    nodes: Vec::new(),
+                    economy: EconomyState {
+                        balances: Vec::new(),
+                        inventories: Vec::new(),
+                        orders: Vec::new(),
+                        queues: Vec::new(),
+                    },
+                },
+                99,
+            )],
+            ..Default::default()
+        };
+        let mut options = crate::ClientOpts(ClientOptions::default());
+        let mut counters = IngestCounters::default();
+        let config = BrowserIngestConfig::parse_json(
+            r#"{"drop_world_changes":["charge"],"hold_resync_snapshots":0,"max_buffered_batches":3}"#,
+        ).unwrap();
+        assert_eq!(
+            apply_browser_ingest_config(
+                config,
+                &mut hooks,
+                &mut counters,
+                &mut state,
+                &mut options
+            ),
+            Ok(10)
+        );
+        let replica = state.replica.as_ref().unwrap();
+        assert_eq!(replica.last_applied_tick, Some(10));
+        assert_eq!(replica.max_buffered_batches(), 3);
+        assert_eq!(state.config.max_buffered_batches, 3);
+        assert_eq!(options.0.resync_buffer_batches, 3);
+        assert_eq!(counters.buffer_overflows, 0);
+        assert!(hooks.outstanding_request);
+        assert_eq!(hooks.held.len(), 1);
+        assert_eq!(hooks.held[0].1, 11);
+        assert_eq!(hooks.hold_resync_snapshots, 0);
+        assert!(hooks.armed_drop_world_changes.is_some());
+    }
+
+    #[test]
+    fn shrinking_live_buffer_bound_reports_the_existing_overflow_once() {
+        let mut replica = Replica::new(20);
+        replica.last_applied_tick = Some(10);
+        replica.highest_observed_tick = Some(13);
+        replica.resync = Some(vec![
+            WorldDelta {
+                tick: 11,
+                base_tick: 10,
+                spawned: vec![],
+                removed: vec![],
+                positions: vec![],
+                nodes: vec![],
+                economy: EconomyChanges {
+                    balances: vec![],
+                    inventories: vec![],
+                    orders: vec![],
+                    queues: vec![],
+                },
+            },
+            WorldDelta {
+                tick: 12,
+                base_tick: 11,
+                spawned: vec![],
+                removed: vec![],
+                positions: vec![],
+                nodes: vec![],
+                economy: EconomyChanges {
+                    balances: vec![],
+                    inventories: vec![],
+                    orders: vec![],
+                    queues: vec![],
+                },
+            },
+            WorldDelta {
+                tick: 13,
+                base_tick: 12,
+                spawned: vec![],
+                removed: vec![],
+                positions: vec![],
+                nodes: vec![],
+                economy: EconomyChanges {
+                    balances: vec![],
+                    inventories: vec![],
+                    orders: vec![],
+                    queues: vec![],
+                },
+            },
+        ]);
+        let mut state = ReplicaState {
+            replica: Some(replica),
+            ..Default::default()
+        };
+        let mut hooks = IngestHooks {
+            outstanding_request: true,
+            ..Default::default()
+        };
+        let mut counters = IngestCounters::default();
+        let mut options = crate::ClientOpts(ClientOptions::default());
+        let config = BrowserIngestConfig::parse_json(
+            r#"{"drop_world_changes":[],"hold_resync_snapshots":0,"max_buffered_batches":2}"#,
+        )
+        .unwrap();
+
+        apply_browser_ingest_config(config, &mut hooks, &mut counters, &mut state, &mut options)
+            .unwrap();
+
+        let replica = state.replica.as_ref().unwrap();
+        assert_eq!(replica.max_buffered_batches(), 2);
+        assert_eq!(replica.buffered_batches(), 0);
+        assert_eq!(replica.buffer_overflows, 1);
+        assert_eq!(counters.buffer_overflows, 1);
+        assert_eq!(replica.last_applied_tick, Some(10));
+        assert!(hooks.outstanding_request);
     }
 }
 

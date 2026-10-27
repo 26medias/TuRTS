@@ -1,0 +1,131 @@
+{
+  "provenance": "Sanitized typed audit WorldView from a persisted Task15 E9 charge fixture, completed tick 81. Public units/nodes retained; owner-0 economy only; no raw wire DTOs or foreign economy.",
+  "state": {
+    "economy": {
+      "tick": 81,
+      "units": [
+        {
+          "unit_id": 1,
+          "content_id": "base:command_center",
+          "owner_slot": 0,
+          "pos": [
+            1090519040,
+            1090519040
+          ]
+        },
+        {
+          "unit_id": 2,
+          "content_id": "base:harvester",
+          "owner_slot": 0,
+          "pos": [
+            1094713344,
+            1090519040
+          ]
+        },
+        {
+          "unit_id": 3,
+          "content_id": "base:command_center",
+          "owner_slot": 1,
+          "pos": [
+            1113587712,
+            1090519040
+          ]
+        },
+        {
+          "unit_id": 4,
+          "content_id": "base:harvester",
+          "owner_slot": 1,
+          "pos": [
+            1112539136,
+            1090519040
+          ]
+        }
+      ],
+      "nodes": [
+        {
+          "id": 1,
+          "content_id": {
+            "package": "base",
+            "local": "ore_deposit"
+          },
+          "pos": [
+            1103101952,
+            1090519040
+          ],
+          "remaining": 1000
+        },
+        {
+          "id": 2,
+          "content_id": {
+            "package": "base",
+            "local": "ore_deposit"
+          },
+          "pos": [
+            1109393408,
+            1090519040
+          ],
+          "remaining": 1000
+        }
+      ],
+      "economy": {
+        "balances": [
+          {
+            "slot": 0,
+            "resource": {
+              "package": "base",
+              "local": "credits"
+            },
+            "on_hand": 400,
+            "reserved": 0
+          }
+        ],
+        "inventories": [
+          {
+            "unit": 2,
+            "owner_slot": 0,
+            "capacity": 100,
+            "items": []
+          }
+        ],
+        "orders": [
+          {
+            "unit": 2,
+            "owner_slot": 0,
+            "node": null,
+            "receiver": null,
+            "stage": "Idle"
+          }
+        ],
+        "queues": [
+          {
+            "producer": 1,
+            "owner_slot": 0,
+            "jobs": [
+              {
+                "id": 1,
+                "recipe": {
+                  "package": "base",
+                  "local": "train_rifleman"
+                },
+                "stage": "Running",
+                "elapsed_ticks": 75,
+                "duration_ticks": 100,
+                "charged": [
+                  {
+                    "source": "SlotBalance",
+                    "resource": {
+                      "package": "base",
+                      "local": "credits"
+                    },
+                    "amount": 100
+                  }
+                ],
+                "reserved": []
+              }
+            ]
+          }
+        ]
+      }
+    }
+  }
+}

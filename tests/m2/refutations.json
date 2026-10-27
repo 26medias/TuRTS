@@ -775,7 +775,10 @@
       "--nocapture"
     ],
     "expected_failure": "raw Snapshot DTO equals independent owner projection",
-    "runtime": "rust"
+    "runtime": "rust",
+    "provenance_paths": [
+      "crates/turts_server/tests/economy.rs"
+    ]
   },
   {
     "id": "E9-output-in-snapshot-and-delta",
@@ -821,8 +824,11 @@
       "--exact",
       "--nocapture"
     ],
-    "expected_failure": "raw Snapshot DTO equals independent owner projection",
-    "runtime": "rust"
+    "expected_failure": "late join sees each output exactly once",
+    "runtime": "rust",
+    "provenance_paths": [
+      "crates/turts_server/tests/economy.rs"
+    ]
   },
   {
     "id": "E9-midtrace-rearm-ignored",

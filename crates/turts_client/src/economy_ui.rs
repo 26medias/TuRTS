@@ -6,7 +6,7 @@ use bevy::camera::visibility::InheritedVisibility;
 use bevy::{
     prelude::*,
     ui::{
-        CalculatedClip, ComputedNode, ComputedUiTargetCamera, InteractionDisabled,
+        CalculatedClip, ComputedNode, ComputedUiTargetCamera, InteractionDisabled, Pressed,
         UiGlobalTransform,
     },
     ui_widgets::{Activate, Button, ScrollArea, observe},
@@ -619,11 +619,13 @@ pub fn sync_panel(world: &mut World) {
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
 pub struct RenderedUiNode {
+    pub kind: String,
     pub text: String,
     pub rect: [f32; 4],
     pub visible: bool,
     pub enabled: bool,
     pub action: Option<UiAction>,
+    pub button_pressed: Option<bool>,
 }
 
 /// Read actual Bevy text and post-layout geometry for the native/browser oracle.
@@ -641,14 +643,17 @@ pub fn rendered_ui_snapshot(world: &World) -> Vec<RenderedUiNode> {
                 actual_layout_visible(world, entity.id(), node, transform)
             });
         let action = entity.get::<UiActionTarget>().map(|value| value.0.clone());
+        let action_owner = entity
+            .get::<UiActionOwner>()
+            .and_then(|owner| world.get_entity(owner.0).ok());
         let enabled = action.as_ref().is_none_or(|_| {
-            entity
-                .get::<UiActionOwner>()
-                .and_then(|owner| world.get_entity(owner.0).ok())
-                .is_some_and(|button| {
-                    button.contains::<Button>() && !button.contains::<InteractionDisabled>()
-                })
+            action_owner.is_some_and(|button| {
+                button.contains::<Button>() && !button.contains::<InteractionDisabled>()
+            })
         });
+        let button_pressed = action
+            .as_ref()
+            .map(|_| action_owner.is_some_and(|button| button.contains::<Pressed>()));
         let (rect, text_value) = match (text, node, transform) {
             (Some(text), Some(node), Some(transform)) => {
                 let center = transform.to_scale_angle_translation().2;
@@ -667,11 +672,40 @@ pub fn rendered_ui_snapshot(world: &World) -> Vec<RenderedUiNode> {
             _ => continue,
         };
         rows.push(RenderedUiNode {
+            kind: "text".into(),
             text: text_value,
             rect,
             visible,
             enabled,
             action,
+            button_pressed,
+        });
+    }
+    for entity in world.iter_entities() {
+        if !entity.contains::<UiPanelRoot>() {
+            continue;
+        }
+        let Some(node) = entity.get::<ComputedNode>() else {
+            continue;
+        };
+        let Some(transform) = entity.get::<UiGlobalTransform>() else {
+            continue;
+        };
+        let center = transform.to_scale_angle_translation().2;
+        let size = node.size();
+        rows.push(RenderedUiNode {
+            kind: "panel".into(),
+            text: String::new(),
+            rect: [
+                center.x - size.x / 2.0,
+                center.y - size.y / 2.0,
+                size.x,
+                size.y,
+            ],
+            visible: actual_layout_visible(world, entity.id(), node, transform),
+            enabled: true,
+            action: None,
+            button_pressed: None,
         });
     }
     rows.sort_by(|a, b| {
@@ -714,10 +748,8 @@ fn actual_layout_visible(
     let min = center - half;
     let max = center + half;
     let viewport = Rect::from_corners(Vec2::ZERO, viewport.size().as_vec2());
-    let Some(clip) = world.get::<CalculatedClip>(entity) else {
-        return false;
-    };
-    if clip.is_fully_clipped() {
+    let clip = world.get::<CalculatedClip>(entity);
+    if clip.is_some_and(CalculatedClip::is_fully_clipped) {
         return false;
     }
     // UI picking tests the same computed clip chain. Sampling the rendered text
@@ -736,7 +768,7 @@ fn actual_layout_visible(
     ]
     .into_iter()
     .map(|fraction| min + (max - min) * fraction)
-    .any(|point| viewport.contains(point) && clip.contains_point(point))
+    .any(|point| viewport.contains(point) && clip.is_none_or(|clip| clip.contains_point(point)))
 }
 
 /// Convert a logical window cursor into UI camera viewport pixels.

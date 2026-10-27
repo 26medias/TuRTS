@@ -22,16 +22,21 @@
 //! The page query is `?server=<http url>&ws=<ws url>`. When it is wrong, the page gets the
 //! message in `window.turts_error` and the app does not start.
 
-use std::sync::Mutex;
+use std::sync::{LazyLock, Mutex};
 
 use bevy::camera::RenderTarget;
 use bevy::prelude::*;
+use bevy::render::renderer::RenderAdapterInfo;
 use bevy::window::{PrimaryWindow, WindowRef};
+use turts_client::ClientOpts;
 use turts_client::build_app;
 use turts_client::commands::{CommandSendStatus, PendingCommands, owned_mobile_ids, submit};
 use turts_client::debug::{DebugState, rebuild_debug_state};
 use turts_client::economy_ui::rendered_ui_snapshot;
-use turts_client::ingest::ReplicaState;
+use turts_client::ingest::{
+    BrowserIngestConfig, IngestCounters, IngestHooks, ReplicaState, apply_browser_ingest_config,
+    ingest_messages,
+};
 use turts_client::options::options_from_query;
 use turts_client::render::{
     PresentedNode as SceneNode, PresentedUnit as SceneUnit, declared_node_pick_radius,
@@ -50,6 +55,9 @@ static UI: Mutex<String> = Mutex::new(String::new());
 
 /// The targets from `window.turts_move` that no frame has taken yet.
 static MOVES: Mutex<Vec<(f32, f32)>> = Mutex::new(Vec::new());
+static INGEST_CONFIG: Mutex<Option<BrowserIngestConfig>> = Mutex::new(None);
+static INGEST_CONFIG_STATUS: LazyLock<Mutex<String>> =
+    LazyLock::new(|| Mutex::new("{\"state\":\"idle\"}".to_string()));
 
 #[wasm_bindgen(start)]
 pub fn start() {
@@ -76,20 +84,85 @@ pub fn start() {
     let ui = Closure::<dyn Fn() -> String>::new(|| UI.lock().unwrap().clone());
     set_global(&window, "turts_ui", ui.as_ref());
     ui.forget();
+    let configure_ingest = Closure::<dyn Fn(JsValue) -> Result<(), JsValue>>::new(|value| {
+        let json = js_sys::JSON::stringify(&value)?;
+        let json = json
+            .as_string()
+            .ok_or_else(|| JsValue::from_str("configuration must be an object"))?;
+        let config =
+            BrowserIngestConfig::parse_json(&json).map_err(|error| JsValue::from_str(&error))?;
+        let mut pending = INGEST_CONFIG.lock().unwrap();
+        if pending.is_some() {
+            return Err(JsValue::from_str(
+                "an ingest configuration is already queued",
+            ));
+        }
+        *pending = Some(config);
+        *INGEST_CONFIG_STATUS.lock().unwrap() = "{\"state\":\"queued\"}".to_string();
+        Ok(())
+    });
+    set_global(&window, "turts_configure_ingest", configure_ingest.as_ref());
+    configure_ingest.forget();
+    let ingest_status =
+        Closure::<dyn Fn() -> String>::new(|| INGEST_CONFIG_STATUS.lock().unwrap().clone());
+    set_global(
+        &window,
+        "turts_ingest_config_status",
+        ingest_status.as_ref(),
+    );
+    ingest_status.forget();
     let memory = Closure::<dyn Fn() -> f64>::new(memory_bytes);
     set_global(&window, "turts_memory_bytes", memory.as_ref());
     memory.forget();
 
     let mut app = build_app(options);
-    app.add_systems(Update, drain_moves).add_systems(
-        Last,
-        (
-            publish_debug.after(rebuild_debug_state),
-            publish_scene,
-            publish_ui,
-        ),
-    );
+    app.add_systems(Update, drain_moves)
+        .add_systems(
+            PreUpdate,
+            apply_queued_ingest_config.before(ingest_messages),
+        )
+        .add_systems(
+            Last,
+            (
+                publish_debug.after(rebuild_debug_state),
+                publish_scene,
+                publish_ui,
+            ),
+        );
     app.run();
+}
+
+fn apply_queued_ingest_config(
+    mut hooks: ResMut<IngestHooks>,
+    mut counters: ResMut<IngestCounters>,
+    mut state: ResMut<ReplicaState>,
+    mut options: ResMut<ClientOpts>,
+) {
+    let Some(config) = INGEST_CONFIG.lock().unwrap().take() else {
+        return;
+    };
+    if state
+        .replica
+        .as_ref()
+        .is_none_or(|replica| replica.last_applied_tick.is_none())
+    {
+        *INGEST_CONFIG.lock().unwrap() = Some(config);
+        *INGEST_CONFIG_STATUS.lock().unwrap() =
+            "{\"state\":\"waiting_for_coherent_snapshot\"}".to_string();
+        return;
+    }
+    match apply_browser_ingest_config(config, &mut hooks, &mut counters, &mut state, &mut options) {
+        Ok(tick) => {
+            *INGEST_CONFIG_STATUS.lock().unwrap() =
+                format!("{{\"state\":\"applied\",\"arm_tick\":{tick}}}");
+        }
+        Err(error) => {
+            let error =
+                serde_json::to_string(&error).unwrap_or_else(|_| "\"configuration failed\"".into());
+            *INGEST_CONFIG_STATUS.lock().unwrap() =
+                format!("{{\"state\":\"rejected\",\"error\":{error}}}");
+        }
+    }
 }
 
 fn set_global(window: &web_sys::Window, name: &str, value: &JsValue) {
@@ -173,6 +246,7 @@ fn publish_scene(
     cameras: Query<(&Camera, &GlobalTransform, &RenderTarget), With<Camera3d>>,
     windows: Query<(Entity, &Window), With<PrimaryWindow>>,
     state: Res<ReplicaState>,
+    adapter_info: Option<Res<RenderAdapterInfo>>,
 ) {
     let active: Vec<_> = cameras
         .iter()
@@ -271,7 +345,18 @@ fn publish_scene(
         })
         .collect();
     node_entries.sort_unstable_by_key(|entry| entry.id);
-    *SCENE.lock().unwrap() = scene_json(active.len(), camera_metadata, &entries, &node_entries);
+    let adapter = adapter_info.map(|info| SceneAdapter {
+        backend: format!("{:?}", info.backend),
+        name: info.name.clone(),
+        device_type: format!("{:?}", info.device_type),
+    });
+    *SCENE.lock().unwrap() = scene_json(
+        active.len(),
+        camera_metadata,
+        adapter,
+        &entries,
+        &node_entries,
+    );
 }
 
 fn publish_ui(world: &mut World) {
@@ -287,6 +372,13 @@ struct SceneCamera {
     viewport_physical_rect: URect,
     scale_factor: f32,
     clip_from_world: Mat4,
+}
+
+#[derive(Clone)]
+struct SceneAdapter {
+    backend: String,
+    name: String,
+    device_type: String,
 }
 
 #[derive(Clone, Copy)]
@@ -335,6 +427,7 @@ fn scene_entry(entry: SceneEntry, identity_key: &str) -> serde_json::Value {
 fn scene_json(
     cameras_3d: usize,
     camera: Option<SceneCamera>,
+    adapter: Option<SceneAdapter>,
     entries: &[SceneEntry],
     nodes: &[SceneEntry],
 ) -> String {
@@ -384,6 +477,11 @@ fn scene_json(
         "ui_rect_coordinate_space": "camera-viewport-physical-pixels-top-left",
         "scale_factor": scale_factor,
         "clip_from_world": clip_from_world,
+        "render_adapter": adapter.map(|adapter| serde_json::json!({
+            "backend": adapter.backend,
+            "name": adapter.name,
+            "device_type": adapter.device_type,
+        })),
         "units": entries.iter().copied().map(|entry| scene_entry(entry, "unit_id")).collect::<Vec<_>>(),
         "nodes": nodes.iter().copied().map(|entry| scene_entry(entry, "node_id")).collect::<Vec<_>>(),
     })
@@ -406,6 +504,11 @@ mod tests {
         let json: serde_json::Value = serde_json::from_str(&scene_json(
             1,
             Some(camera),
+            Some(SceneAdapter {
+                backend: "BrowserWebGpu".into(),
+                name: "SwiftShader Device (Subzero)".into(),
+                device_type: "Cpu".into(),
+            }),
             &[
                 SceneEntry {
                     id: 1,
@@ -448,6 +551,12 @@ mod tests {
         );
         assert_eq!(json["scale_factor"], 1.0);
         assert_eq!(json["clip_from_world"].as_array().unwrap().len(), 16);
+        assert_eq!(json["render_adapter"]["backend"], "BrowserWebGpu");
+        assert_eq!(
+            json["render_adapter"]["name"],
+            "SwiftShader Device (Subzero)"
+        );
+        assert_eq!(json["render_adapter"]["device_type"], "Cpu");
         assert_eq!(json["units"][0]["unit_id"], 1);
         assert_eq!(json["units"][0]["translation"][0], 20.0);
         assert!((json["units"][0]["translation"][1].as_f64().unwrap() - 0.9).abs() < 1e-6);
@@ -468,7 +577,8 @@ mod tests {
 
     #[test]
     fn scene_json_keeps_camera_count_and_null_projection_when_unavailable() {
-        let json: serde_json::Value = serde_json::from_str(&scene_json(0, None, &[], &[])).unwrap();
+        let json: serde_json::Value =
+            serde_json::from_str(&scene_json(0, None, None, &[], &[])).unwrap();
         assert_eq!(json["cameras_3d"], 0);
         assert_eq!(json["clip_from_world"], serde_json::Value::Null);
         assert_eq!(json["units"], serde_json::json!([]));

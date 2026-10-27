@@ -92,6 +92,8 @@ jobs:
       - name: Install pinned browser test dependencies
         run: npm ci
         working-directory: tests/browser
+      - name: Browser projection and audit helper tests
+        run: node --test tests/browser/m2-projection.test.js tests/browser/m2-audit.test.js
       - name: T7 browser join
         run: bash scripts/t7.sh
       - name: M2 browser proof (base, haul, acme, cedar)

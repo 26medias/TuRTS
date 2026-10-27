@@ -704,3 +704,18 @@ fn overflow_discards_old_tail_and_trigger_but_keeps_gap_for_a_covering_snapshot(
     assert_eq!(replica.last_applied_tick, Some(16));
     assert!(!replica.in_resync());
 }
+
+#[test]
+fn lowering_live_buffer_cap_clears_oversized_tail_and_records_a_gap() {
+    let mut replica = replica(5);
+    replica.last_applied_tick = Some(10);
+    replica.highest_observed_tick = Some(14);
+    replica.resync = Some(vec![delta(12, 11), delta(13, 12), delta(14, 13)]);
+
+    replica.set_max_buffered_batches(2);
+
+    assert_eq!(replica.max_buffered_batches(), 2);
+    assert_eq!(replica.buffered_batches(), 0);
+    assert_eq!(replica.buffer_overflows, 1);
+    assert_eq!(replica.resync_span_ticks(), Some(4));
+}

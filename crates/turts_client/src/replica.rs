@@ -141,6 +141,26 @@ impl Replica {
         self.config.max_buffered_batches
     }
 
+    /// Change the retained-tail bound without replacing the replica or its coherent world.
+    /// If the existing recovery tail is larger than the new bound, apply the same overflow
+    /// policy as `buffer_delta`: discard the tail and retain a gap anchor.
+    pub fn set_max_buffered_batches(&mut self, max_buffered_batches: usize) {
+        let max_buffered_batches = max_buffered_batches.max(1);
+        self.config.max_buffered_batches = max_buffered_batches;
+        let Some(buffer) = self.resync.as_mut() else {
+            return;
+        };
+        if buffer.len() > max_buffered_batches {
+            let anchor = buffer.first().map(|delta| delta.base_tick);
+            buffer.clear();
+            self.buffer_overflows = self.buffer_overflows.saturating_add(1);
+            self.gap_seen = true;
+            if self.gap_anchor.is_none() {
+                self.gap_anchor = self.last_applied_tick.or(anchor);
+            }
+        }
+    }
+
     pub fn buffered_batches(&self) -> usize {
         self.resync.as_ref().map_or(0, Vec::len)
     }

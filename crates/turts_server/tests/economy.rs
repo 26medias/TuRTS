@@ -1217,6 +1217,94 @@ fn assert_delayed_first_snapshot_then_successor(raw_path: &std::path::Path, hold
     );
 }
 
+fn parse_complete_raw_dto_prefix(bytes: &[u8]) -> Result<Vec<serde_json::Value>, String> {
+    let Some(last_newline) = bytes.iter().rposition(|byte| *byte == b'\n') else {
+        return Ok(Vec::new());
+    };
+    let complete = std::str::from_utf8(&bytes[..=last_newline])
+        .map_err(|error| format!("complete raw DTO prefix is not UTF-8: {error}"))?;
+    complete
+        .lines()
+        .enumerate()
+        .map(|(index, line)| {
+            if line.is_empty() {
+                return Err(format!("raw DTO JSONL line {} is empty", index + 1));
+            }
+            serde_json::from_str(line).map_err(|error| {
+                format!("decode complete raw DTO JSONL line {}: {error}", index + 1)
+            })
+        })
+        .collect()
+}
+
+#[test]
+fn raw_dto_prefix_rejects_empty_completed_lines_and_ignores_only_unterminated_tail() {
+    let complete = br#"{"kind":"snapshot","dto":{"tick":0}}"#;
+    let mut bytes = complete.to_vec();
+    bytes.push(b'\n');
+    bytes.extend_from_slice(br#"{"kind":"world_delta""#);
+    let records = parse_complete_raw_dto_prefix(&bytes).unwrap();
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0]["dto"]["tick"], 0);
+
+    let mut blank_complete_line = complete.to_vec();
+    blank_complete_line.extend_from_slice(b"\n\n");
+    assert!(
+        parse_complete_raw_dto_prefix(&blank_complete_line)
+            .unwrap_err()
+            .contains("raw DTO JSONL line 2 is empty")
+    );
+}
+
+fn assert_first_raw_snapshot_matches_owner(
+    log_path: &std::path::Path,
+    raw_path: &std::path::Path,
+    slot: u8,
+) {
+    use economylog::EconomyLogRecord;
+    use std::time::{Duration, Instant};
+
+    let started = Instant::now();
+    loop {
+        let bytes = match std::fs::read(raw_path) {
+            Ok(bytes) => bytes,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Vec::new(),
+            Err(error) => panic!("read raw DTO evidence: {error}"),
+        };
+        let records = parse_complete_raw_dto_prefix(&bytes)
+            .unwrap_or_else(|error| panic!("decode complete raw DTO prefix: {error}"));
+        if let Some(record) = records.iter().find(|record| record["kind"] == "snapshot") {
+            let dto = &record["dto"];
+            let tick = dto["tick"].as_u64().expect("raw Snapshot tick") as u32;
+            let audit = read_live_complete_tick_prefix(log_path)
+                .unwrap_or_else(|error| panic!("decode complete live audit prefix: {error}"));
+            if let Some(state) = audit.iter().find_map(|record| match record {
+                EconomyLogRecord::Initial(state) if tick == 0 && state.economy.tick == 0 => {
+                    Some(state)
+                }
+                EconomyLogRecord::Tick {
+                    tick: found, state, ..
+                } if *found == tick => Some(state),
+                _ => None,
+            }) {
+                let actual: turts_net_protocol::Snapshot = serde_json::from_value(dto.clone())
+                    .expect("received Snapshot JSON decodes to its original typed DTO");
+                let expected = owner_snapshot_from_audit(state, slot);
+                assert_eq!(
+                    actual, expected,
+                    "raw Snapshot DTO equals independent owner projection at tick {tick}"
+                );
+                return;
+            }
+        }
+        assert!(
+            started.elapsed() < Duration::from_secs(10),
+            "first raw Snapshot has a completed authoritative audit tick"
+        );
+        std::thread::sleep(Duration::from_millis(25));
+    }
+}
+
 fn assert_raw_wire_owner_records(
     log_path: &std::path::Path,
     raw_path: &std::path::Path,
@@ -2549,6 +2637,7 @@ fn e9_two_owners_late_join_and_output_lifecycle() {
         "--raw-world-log",
         raw0.to_str().unwrap(),
     ]);
+    assert_first_raw_snapshot_matches_owner(economy_log_path(&server), &raw0, 0);
     let (owner0_output_tick, owner0_output_id) =
         wait_for_owner_rifle_output(economy_log_path(&server));
     let out1 = server.dir.join("client-20-002.json");

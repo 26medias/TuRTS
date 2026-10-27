@@ -1,0 +1,182 @@
+{
+  "dropped_world_changes": [],
+  "ingest": {
+    "armed_drop_world_changes": null,
+    "buffered_batches": 0,
+    "held_snapshots": 0,
+    "highest_delta_tick": 29,
+    "hold_resync_snapshots": 0,
+    "max_buffered_batches": 256,
+    "outstanding_request": false
+  },
+  "last_frame": {
+    "fraction": 0.006000000052154064,
+    "hi_tick": 29,
+    "latest_tick": 29,
+    "lo_tick": 28,
+    "t": 28.006
+  },
+  "phase": "Joined { slot: 0 }",
+  "reconnect_required": false,
+  "rendered_ui_nodes": 5,
+  "replicated_world": {
+    "nodes": [
+      {
+        "content_id": "base:ore_deposit",
+        "id": 1,
+        "pos": {
+          "x": 24.0,
+          "y": 8.0
+        },
+        "remaining": 1000
+      },
+      {
+        "content_id": "base:ore_deposit",
+        "id": 2,
+        "pos": {
+          "x": 40.0,
+          "y": 8.0
+        },
+        "remaining": 1000
+      }
+    ],
+    "tick": 29,
+    "units": [
+      {
+        "content_id": "base:command_center",
+        "owner_slot": 0,
+        "pos": [
+          8.0,
+          8.0
+        ],
+        "unit_id": 1
+      },
+      {
+        "content_id": "base:harvester",
+        "owner_slot": 0,
+        "pos": [
+          12.0,
+          8.0
+        ],
+        "unit_id": 2
+      },
+      {
+        "content_id": "base:command_center",
+        "owner_slot": 1,
+        "pos": [
+          56.0,
+          8.0
+        ],
+        "unit_id": 3
+      },
+      {
+        "content_id": "base:harvester",
+        "owner_slot": 1,
+        "pos": [
+          52.0,
+          8.0
+        ],
+        "unit_id": 4
+      }
+    ],
+    "economy": {
+      "balances": [
+        {
+          "resource": "base:credits",
+          "on_hand": 500,
+          "reserved": 0
+        }
+      ],
+      "inventories": [
+        {
+          "unit": 2,
+          "items": [
+            {
+              "resource": "base:ore",
+              "on_hand": 0,
+              "reserved": 0
+            }
+          ]
+        }
+      ],
+      "orders": [
+        {
+          "unit": 2,
+          "node": 1,
+          "receiver": 1,
+          "stage": "Gathering"
+        }
+      ],
+      "queues": []
+    }
+  },
+  "selection": null,
+  "trace": {
+    "bindings": [],
+    "complete": true,
+    "enabled": false,
+    "error": null
+  },
+  "units": [
+    {
+      "content_id": "base:command_center",
+      "pos": [
+        8.0,
+        8.0
+      ],
+      "shape": {
+        "Cuboid": {
+          "x": 3.0,
+          "y": 3.0,
+          "z": 2.0
+        }
+      },
+      "unit_id": 1
+    },
+    {
+      "content_id": "base:harvester",
+      "pos": [
+        12.0,
+        8.0
+      ],
+      "shape": {
+        "Cuboid": {
+          "x": 1.399999976158142,
+          "y": 1.399999976158142,
+          "z": 1.2000000476837158
+        }
+      },
+      "unit_id": 2
+    },
+    {
+      "content_id": "base:command_center",
+      "pos": [
+        56.0,
+        8.0
+      ],
+      "shape": {
+        "Cuboid": {
+          "x": 3.0,
+          "y": 3.0,
+          "z": 2.0
+        }
+      },
+      "unit_id": 3
+    },
+    {
+      "content_id": "base:harvester",
+      "pos": [
+        52.0,
+        8.0
+      ],
+      "shape": {
+        "Cuboid": {
+          "x": 1.399999976158142,
+          "y": 1.399999976158142,
+          "z": 1.2000000476837158
+        }
+      },
+      "unit_id": 4
+    }
+  ]
+}

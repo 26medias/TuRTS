@@ -65,7 +65,55 @@ pub fn debug_json(world: &World) -> String {
     let selection = world
         .get_resource::<crate::economy_ui::Selection>()
         .and_then(|selection| selection.0);
+    let replicated_world = world
+        .get_resource::<ReplicaState>()
+        .and_then(|state| state.replica.as_ref())
+        .map(|replica| {
+            let mut units: Vec<_> = replica
+                .units
+                .iter()
+                .map(|(&unit_id, unit)| {
+                    json!({
+                        "unit_id": unit_id,
+                        "content_id": unit.content_id,
+                        "owner_slot": unit.owner_slot,
+                        "pos": unit.samples.back().map(|(_, pos)| [pos.x, pos.y]),
+                    })
+                })
+                .collect();
+            units.sort_by_key(|unit| unit["unit_id"].as_u64().unwrap_or_default());
+            let mut nodes: Vec<_> = replica.nodes.values().map(|node| json!(node)).collect();
+            nodes.sort_by_key(|node| node["id"].as_u64().unwrap_or_default());
+            json!({
+                "tick": replica.last_applied_tick,
+                "units": units,
+                "nodes": nodes,
+                "economy": replica.economy,
+            })
+        })
+        .unwrap_or(Value::Null);
     let rendered_ui_nodes = crate::economy_ui::rendered_ui_snapshot(world).len();
+    let ingest = world.get_resource::<crate::ingest::IngestHooks>().map(|hooks| {
+        let replica = world.get_resource::<ReplicaState>().and_then(|state| state.replica.as_ref());
+        json!({
+            "max_buffered_batches": replica.map(|replica| replica.max_buffered_batches()),
+            "buffered_batches": replica.map(|replica| replica.buffered_batches()),
+            "resync_active": replica.map(|replica| replica.in_resync()),
+            "buffer_overflows": world.get_resource::<IngestCounters>().map(|counters| counters.buffer_overflows),
+            "resync_requests_sent": world.get_resource::<IngestCounters>().map(|counters| counters.resync_requests_sent),
+            "successor_requests": world.get_resource::<IngestCounters>().map(|counters| counters.successor_requests),
+            "max_outstanding_requests": world.get_resource::<IngestCounters>().map(|counters| counters.max_outstanding_requests),
+            "hold_resync_snapshots": hooks.hold_resync_snapshots,
+            "held_snapshots": hooks.held.len(),
+            "outstanding_request": hooks.outstanding_request,
+            "highest_delta_tick": hooks.highest_delta_tick,
+            "armed_drop_world_changes": hooks.armed_drop_world_changes.as_ref().map(|armed| json!({
+                "kinds": armed.requested,
+                "arm_tick": armed.arm_tick,
+                "baseline_tick": armed.baseline_tick,
+            })),
+        })
+    }).unwrap_or(Value::Null);
     let scenario = world.get_resource::<ScenarioState>();
     let trace = scenario
         .map(|scenario| {
@@ -108,6 +156,8 @@ pub fn debug_json(world: &World) -> String {
         "reconnect_required": world.get_resource::<CommandSendStatus>().is_some_and(|status| status.reconnect_required),
         "selection": selection,
         "rendered_ui_nodes": rendered_ui_nodes,
+        "ingest": ingest,
+        "replicated_world": replicated_world,
     }).to_string()
 }
 

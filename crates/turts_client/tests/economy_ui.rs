@@ -286,6 +286,83 @@ fn snapshot_rejects_text_without_camera_and_real_button_owner() {
 }
 
 #[test]
+fn rendered_ui_snapshot_matches_optional_clip_and_real_button_pressed_state() {
+    let (mut app, _, _, _) = cpu_ui_app(1.0, 1);
+    let root = app
+        .world()
+        .iter_entities()
+        .find(|entity| entity.contains::<turts_client::economy_ui::UiPanelRoot>())
+        .unwrap()
+        .id();
+    assert!(app.world().get::<CalculatedClip>(root).is_none());
+
+    let snapshot = rendered_ui_snapshot(app.world());
+    let panel = snapshot.iter().find(|row| row.kind == "panel").unwrap();
+    assert!(
+        panel.visible,
+        "unclipped panel root is rendered without CalculatedClip"
+    );
+
+    let action = snapshot
+        .iter()
+        .find(|row| row.action.is_some())
+        .unwrap()
+        .action
+        .clone()
+        .unwrap();
+    let action_row = snapshot
+        .iter()
+        .find(|row| row.action.as_ref() == Some(&action))
+        .unwrap();
+    assert_eq!(action_row.button_pressed, Some(false));
+    let button = app
+        .world()
+        .iter_entities()
+        .find(|entity| {
+            entity.contains::<Button>()
+                && entity
+                    .get::<UiActionTarget>()
+                    .is_some_and(|target| target.0 == action)
+        })
+        .unwrap()
+        .id();
+    app.world_mut().entity_mut(button).insert(bevy::ui::Pressed);
+    let pressed = rendered_ui_snapshot(app.world());
+    assert_eq!(
+        pressed
+            .iter()
+            .find(|row| row.action.as_ref() == Some(&action))
+            .unwrap()
+            .button_pressed,
+        Some(true),
+        "pressed witness comes from the real Button owner",
+    );
+
+    app.world_mut().entity_mut(root).insert(Visibility::Hidden);
+    app.update();
+    assert!(
+        !rendered_ui_snapshot(app.world())
+            .iter()
+            .find(|row| row.kind == "panel")
+            .unwrap()
+            .visible,
+        "hidden inherited visibility must still hide the root",
+    );
+    app.world_mut().entity_mut(root).insert(Visibility::Visible);
+    app.world_mut()
+        .entity_mut(root)
+        .insert(CalculatedClip::FullyClipped);
+    assert!(
+        !rendered_ui_snapshot(app.world())
+            .iter()
+            .find(|row| row.kind == "panel")
+            .unwrap()
+            .visible,
+        "fully clipped roots remain excluded",
+    );
+}
+
+#[test]
 fn disabled_producer_button_ignores_real_pointer_activation() {
     let (mut app, window, _, producer) = cpu_ui_app(1.0, 1);
     {

@@ -12,7 +12,7 @@ crate-type = ["cdylib"]
 turts_client = { path = "../turts_client" }
 serde_json = { workspace = true }
 turts_net_protocol = { path = "../turts_net_protocol" }
-bevy = { workspace = true, features = ["3d"] }
+bevy = { workspace = true, features = ["3d", "webgpu"] }
 wasm-bindgen = { workspace = true }
 js-sys = { workspace = true }
 web-sys = { workspace = true, features = ["Window", "Location"] }
