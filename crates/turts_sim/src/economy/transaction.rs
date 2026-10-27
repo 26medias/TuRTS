@@ -90,7 +90,7 @@ impl Transaction<'_> {
         self.writes.events.push((owner_slot, kind));
         Ok(())
     }
-    fn account(&self, endpoint: Endpoint, resource: &ContentId) -> Account {
+    pub(crate) fn account(&self, endpoint: Endpoint, resource: &ContentId) -> Account {
         if let Some(account) = self.writes.accounts.get(&(endpoint, resource.clone())) {
             return *account;
         }
@@ -112,14 +112,14 @@ impl Transaction<'_> {
         }
     }
 
-    fn inventory(&self, unit: u32) -> Result<&Inventory, RejectReason> {
+    pub(crate) fn inventory(&self, unit: u32) -> Result<&Inventory, RejectReason> {
         self.world
             .get_resource::<EconomyLedger>()
             .and_then(|ledger| ledger.inventories.get(&unit))
             .ok_or(RejectReason::UnknownInventory)
     }
 
-    fn inventory_used(&self, unit: u32) -> Result<u128, RejectReason> {
+    pub(crate) fn inventory_used(&self, unit: u32) -> Result<u128, RejectReason> {
         let inventory = self.inventory(unit)?;
         let resources = inventory
             .items
@@ -142,7 +142,7 @@ impl Transaction<'_> {
         })
     }
 
-    fn validate_endpoint(
+    pub(crate) fn validate_endpoint(
         &self,
         endpoint: Endpoint,
         resource: &ContentId,
@@ -174,7 +174,12 @@ impl Transaction<'_> {
         Ok(())
     }
 
-    fn stage_account(&mut self, endpoint: Endpoint, resource: ContentId, account: Account) {
+    pub(crate) fn stage_account(
+        &mut self,
+        endpoint: Endpoint,
+        resource: ContentId,
+        account: Account,
+    ) {
         self.writes.accounts.insert((endpoint, resource), account);
     }
 

@@ -83,6 +83,12 @@ impl Plugin for SimPlugin {
             )
             .add_systems(
                 FixedUpdate,
+                crate::economy::gather::run_gather
+                    .in_set(SimSet::Gather)
+                    .run_if(not_stopped),
+            )
+            .add_systems(
+                FixedUpdate,
                 run_production
                     .in_set(SimSet::Production)
                     .run_if(not_stopped),

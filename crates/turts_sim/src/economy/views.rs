@@ -38,7 +38,7 @@ pub struct OrderView {
     pub owner_slot: u8,
     pub node: Option<NodeId>,
     pub receiver: Option<u32>,
-    pub stage: String,
+    pub stage: super::gather::GatherStage,
 }
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CostView {

@@ -10,6 +10,7 @@ use crate::{
     SimClock,
     economy::{
         EconomyOrders, GatherOrder, NodeRecord, SurfaceNodes,
+        gather::{GatherStage, RateCarry},
         ledger::{Account, EconomyLedger, Inventory},
         production::ProductionQueues,
     },
@@ -244,8 +245,10 @@ pub fn stage_package(
                 allocators.next_unit,
                 GatherOrder {
                     node: None,
+                    deposit: None,
                     receiver: None,
-                    stage: "Idle".into(),
+                    stage: GatherStage::Idle,
+                    carry: RateCarry::default(),
                 },
             );
         }

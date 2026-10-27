@@ -31,6 +31,7 @@ pub use economy::events::{
     MatchStopped, NextEventOrdinal, StopReason, committed_tick, completed_world,
     record_committed_event,
 };
+pub use economy::gather::{GatherStage, RateCarry, WaitReason, assign_gather, interrupt_order};
 pub use economy::ledger::EconomyLedger;
 pub use economy::production::JobStage;
 pub use economy::views::{

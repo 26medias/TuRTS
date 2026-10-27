@@ -8,6 +8,17 @@ pub fn scenario(tick_hz: u16) -> App {
     headless_app(tick_hz)
 }
 
+pub fn scenario_with(files: std::collections::BTreeMap<String, String>, tick_hz: u16) -> App {
+    let files = files
+        .into_iter()
+        .map(|(path, text)| (path, text.into_bytes()))
+        .collect();
+    let mut app = scenario(tick_hz);
+    turts_pack::load_package(app.world_mut(), &archive_from_files(files))
+        .expect("load configured economy fixture");
+    app
+}
+
 pub fn advance(app: &mut App, ticks: u32) {
     for _ in 0..ticks {
         app.update();

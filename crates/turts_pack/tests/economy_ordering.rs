@@ -363,7 +363,7 @@ fn move_interrupt_keeps_gatherer_order_and_cargo_inspectable() {
     let mut app = scenario(20);
     turts_pack::load_package(app.world_mut(), &economy_archive()).unwrap();
     let order_before = turts_sim::economy::views::order_view(app.world(), SlotId(0), 3).unwrap();
-    assert_eq!(order_before.stage, "Idle");
+    assert_eq!(order_before.stage, turts_sim::GatherStage::Idle);
     turts_sim::economy::transaction::inventory_transfer(
         app.world_mut(),
         SlotId(0),
@@ -388,7 +388,7 @@ fn move_interrupt_keeps_gatherer_order_and_cargo_inspectable() {
     assert_eq!(result.outcome, Ok(turts_sim::Applied { job_id: None }));
     let order_after = turts_sim::economy::views::order_view(app.world(), SlotId(0), 3).unwrap();
     let cargo_after = turts_sim::economy::views::inventory_view(app.world(), SlotId(0), 3).unwrap();
-    assert_eq!(order_after.stage, "Idle");
+    assert_eq!(order_after.stage, turts_sim::GatherStage::Idle);
     assert_eq!(order_after.node, None);
     assert_eq!(order_after.receiver, None);
     assert_eq!(cargo_after, cargo_before);

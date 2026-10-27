@@ -133,7 +133,9 @@ pub fn apply_command(world: &mut World, command: &Command) -> CommandResult {
         CommandKind::MoveTo { unit_ids, target } => {
             apply_move_to(world, command.slot, unit_ids, *target).map(|()| Applied { job_id: None })
         }
-        CommandKind::Gather { .. } => Err(RejectReason::MissingCapability),
+        CommandKind::Gather { unit_id, node_id } => {
+            crate::economy::gather::assign_gather(world, command.slot, *unit_id, *node_id)
+        }
         CommandKind::Produce {
             producer_id,
             recipe_id,
@@ -199,8 +201,10 @@ fn apply_move_to(
         for id in unit_ids {
             if let Some(order) = orders.0.get_mut(id) {
                 order.node = None;
+                order.deposit = None;
                 order.receiver = None;
-                order.stage = "Idle".into();
+                order.stage = crate::economy::gather::GatherStage::Idle;
+                order.carry = crate::economy::gather::RateCarry::default();
             }
         }
     }
