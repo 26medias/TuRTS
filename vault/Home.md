@@ -17,7 +17,7 @@ Dashboard for the TuRTS studio. Read this first, then [[Tasks]] and the latest n
 
 **Current milestone:** M1 done. Next: M2, mod API proven by the default mod plus an alternative economy mod.
 
-**Phase:** M1 closed on 2026-10-26. M2 economy design revision 2 passed gate 1 and was approved by the user. The 16-task plan passed gate 2 after six focused reviews and repairs. It awaits the user's plan review before implementation; no M2 runtime implementation has started. See [[Tasks]], [[Team]], and the detailed [plan review record](../docs/research/m2/plan-reviews.md). Latest report: [[Reports/2026-10-26]].
+**Phase:** M1 closed on 2026-10-26. M2 implementation is active in the managed worktree; use the Active M2 execution links below for the current task board.
 
 **Repository:** https://github.com/26medias/TuRTS (public). CI green.
 
@@ -34,3 +34,5 @@ Dashboard for the TuRTS studio. Read this first, then [[Tasks]] and the latest n
 
 - License: TBD (CEO's words). No LICENSE file until chosen.
 - Desktop delivery (D02, native or Tauri wrapper): the M1 acceptance row names a secondary executable. The studio proposes to accept the browser part of M1 now and block the executable part on this decision.
+
+**Active M2 execution:** The approved plan is running in the managed worktree. Track current status at [worktree vault Home](/home/julien/.codex/worktrees/ee40/TuRTS/vault/Home.md) and [worktree task board](/home/julien/.codex/worktrees/ee40/TuRTS/vault/Tasks.md).

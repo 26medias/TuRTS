@@ -65,3 +65,5 @@ The task board. Move items between sections; keep owner and evidence link on eac
 - [x] 2026-10-26: spec 0.6, two defects fixed, gated and re-gated (commit 4188d82).
 - [x] 2026-10-26: toolchain, CI, scripts, public GitHub repository, CI green.
 - [x] 2026-10-26: M1 research by network-engineer, producer, technical-director, mod-runtime-engineer (decisions logged; reports in scratchpad `m1/`).
+
+**Active M2 execution:** This original planning board is historical. Current execution is canonical in the managed worktree; do not redispatch from this board. See [current task board](/home/julien/.codex/worktrees/ee40/TuRTS/vault/Tasks.md), [current report](/home/julien/.codex/worktrees/ee40/TuRTS/vault/Reports/2026-10-26.md), and [current work log](/home/julien/.codex/worktrees/ee40/TuRTS/vault/Work%20Log/2026-10-26.md).

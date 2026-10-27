@@ -1,5 +1,9 @@
 # TuRTS
 
+![TuRTS — The Ultimate RTS concept cover](docs/assets/turts-cover.png)
+
+[Concept art](docs/assets/turts-concept-art.png) · [Transparent title](docs/assets/turts-title.png)
+
 A mod-first real-time strategy engine in Rust and Bevy. The browser WebAssembly client is the
 primary target; an authoritative headless server runs the simulation. The official game is a
 default mod that uses only the public mod API.
