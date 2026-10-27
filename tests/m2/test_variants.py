@@ -32,12 +32,12 @@ class VariantCliTests(unittest.TestCase):
         shutil.copytree(ROOT / "mods" / package, destination)
         return destination
 
-    def invoke(self, source=None, out=None, seed=123, mode="rename", payment="reserve"):
+    def invoke(self, source=None, out=None, seed=123, mode="rename", payment="reserve", cwd=ROOT):
         return subprocess.run(
             ["python3", str(SCRIPT), "--source", str(source or self.source),
              "--out", str(out or self.out), "--seed", str(seed), "--mode", mode,
              "--payment", payment],
-            cwd=ROOT, env=self.env, text=True, capture_output=True, check=False,
+            cwd=cwd, env=self.env, text=True, capture_output=True, check=False,
         )
 
     def test_physical_cedar_rewrites_typed_package_and_records_complete_mapping(self):
@@ -113,6 +113,20 @@ class VariantCliTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("no visual", result.stderr)
         self.assertFalse(self.out.exists())
+
+    def test_source_root_symlink_is_rejected(self):
+        linked = self.root / "linked-source"
+        linked.symlink_to(self.source, target_is_directory=True)
+        result = self.invoke(source=linked)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("symlink", result.stderr.lower())
+        self.assertFalse(self.out.exists())
+
+    def test_relative_paths_are_resolved_from_wrapper_caller_directory(self):
+        result = self.invoke(source=Path("source"), out=Path("relative-out"), cwd=self.root)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue((self.root / "relative-out" / "mapping.json").is_file())
+        self.assertFalse((ROOT / "relative-out").exists())
 
     def test_both_unsupported_modes_fail_before_writes(self):
         for mode in ("balance", "physical"):

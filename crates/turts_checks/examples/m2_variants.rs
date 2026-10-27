@@ -116,8 +116,13 @@ fn run(raw: Vec<String>) -> Result<(), String> {
         "reserve" => PaymentPolicy::ReserveThenCharge,
         _ => return Err("payment must be charge or reserve".into()),
     };
-    let source = a
-        .source
+    let source_argument = abs_lex(&a.source)?;
+    let source_metadata =
+        fs::symlink_metadata(&source_argument).map_err(|e| format!("source: {e}"))?;
+    if source_metadata.file_type().is_symlink() {
+        return Err("symlink source root is unsupported".into());
+    }
+    let source = source_argument
         .canonicalize()
         .map_err(|e| format!("source: {e}"))?;
     if !source.is_dir() {
@@ -156,10 +161,38 @@ fn run(raw: Vec<String>) -> Result<(), String> {
         let _ = fs::remove_dir_all(&stage);
     }
     r?;
-    fs::rename(&stage, &out).map_err(|e| {
+    if let Err(error) = publish_without_replace(&stage, &out) {
         let _ = fs::remove_dir_all(&stage);
-        format!("publish output: {e}")
-    })
+        return Err(error);
+    }
+    Ok(())
+}
+
+// `create_dir` atomically claims the final path and fails if another actor created it.
+// The stage is already fully validated; its entries move into the claimed directory.
+// This prevents replacement but does not provide crash-atomic visibility of the whole tree.
+fn publish_without_replace(stage: &Path, output: &Path) -> Result<(), String> {
+    fs::create_dir(output).map_err(|error| {
+        if error.kind() == std::io::ErrorKind::AlreadyExists {
+            format!("output {} already exists", output.display())
+        } else {
+            format!("cannot claim output {}: {error}", output.display())
+        }
+    })?;
+    let result = (|| {
+        for entry in fs::read_dir(stage).map_err(|e| format!("cannot read validated stage: {e}"))? {
+            let entry = entry.map_err(|e| format!("cannot read validated stage entry: {e}"))?;
+            let destination = output.join(entry.file_name());
+            fs::rename(entry.path(), &destination)
+                .map_err(|e| format!("cannot publish {}: {e}", destination.display()))?;
+        }
+        fs::remove_dir(stage).map_err(|e| format!("cannot remove empty stage: {e}"))?;
+        Ok(())
+    })();
+    if result.is_err() {
+        let _ = fs::remove_dir_all(output);
+    }
+    result
 }
 fn args(xs: &[String]) -> Result<Args, String> {
     let mut m = BTreeMap::new();
@@ -1053,6 +1086,77 @@ mod tests {
             hash(7, "a", "units", "u", "name"),
             hash(7, "a", "units", "u", "name")
         );
+    }
+
+    #[test]
+    fn concurrent_empty_output_is_not_replaced_during_publication() {
+        use std::os::unix::fs::MetadataExt;
+        use std::time::{Duration, Instant};
+
+        let temp = env::temp_dir().join(format!("m2-variant-publish-race-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&temp);
+        fs::create_dir_all(&temp).unwrap();
+        let source = temp.join("source");
+        copy_tree(
+            &PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../mods/cedar"),
+            &source,
+        );
+        fs::create_dir_all(source.join("assets")).unwrap();
+        fs::write(
+            source.join("assets/large.bin"),
+            vec![0x5a; 32 * 1024 * 1024],
+        )
+        .unwrap();
+        let output = temp.join("out");
+        let stage = temp.join(format!(".out.m2-stage-{}", std::process::id()));
+        let args = vec![
+            "--source".into(),
+            source.to_string_lossy().into_owned(),
+            "--out".into(),
+            output.to_string_lossy().into_owned(),
+            "--seed".into(),
+            "17".into(),
+            "--mode".into(),
+            "rename".into(),
+            "--payment".into(),
+            "reserve".into(),
+        ];
+        let worker = std::thread::spawn(move || run(args));
+        let deadline = Instant::now() + Duration::from_secs(30);
+        while !stage.exists() && Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        assert!(
+            stage.exists(),
+            "generator did not reach its staging directory"
+        );
+        fs::create_dir(&output).unwrap();
+        let original_inode = fs::metadata(&output).unwrap().ino();
+        let result = worker.join().unwrap();
+        let final_inode = fs::metadata(&output).unwrap().ino();
+        assert_eq!(
+            final_inode, original_inode,
+            "publication replaced the concurrently created output directory"
+        );
+        assert!(
+            result.is_err(),
+            "publication must reject the concurrently created output"
+        );
+        assert_eq!(fs::read_dir(&output).unwrap().count(), 0);
+        fs::remove_dir_all(temp).unwrap();
+    }
+
+    fn copy_tree(source: &Path, destination: &Path) {
+        fs::create_dir_all(destination).unwrap();
+        for entry in fs::read_dir(source).unwrap() {
+            let entry = entry.unwrap();
+            let target = destination.join(entry.file_name());
+            if entry.file_type().unwrap().is_dir() {
+                copy_tree(&entry.path(), &target);
+            } else {
+                fs::copy(entry.path(), target).unwrap();
+            }
+        }
     }
 
     #[test]

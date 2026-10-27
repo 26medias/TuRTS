@@ -18,7 +18,10 @@ def main(argv=None):
     if args.mode != "rename":
         print(f"unsupported mode {args.mode}; only rename is supported", file=sys.stderr)
         return 2
-    command = ["cargo", "run", "--quiet", "--manifest-path", str(ROOT / "crates/turts_checks/Cargo.toml"), "--example", "m2_variants", "--", "--source", str(args.source), "--out", str(args.out), "--seed", str(args.seed), "--mode", args.mode, "--payment", args.payment]
+    caller_dir = Path.cwd()
+    source = args.source if args.source.is_absolute() else caller_dir / args.source
+    output = args.out if args.out.is_absolute() else caller_dir / args.out
+    command = ["cargo", "run", "--quiet", "--manifest-path", str(ROOT / "crates/turts_checks/Cargo.toml"), "--example", "m2_variants", "--", "--source", str(source.absolute()), "--out", str(output.absolute()), "--seed", str(args.seed), "--mode", args.mode, "--payment", args.payment]
     return subprocess.run(command, cwd=ROOT, check=False).returncode
 
 if __name__ == "__main__":
