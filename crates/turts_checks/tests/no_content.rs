@@ -19,6 +19,10 @@ fn derived_scan_rejects_all_plants_and_accepts_generic_field() {
         "const D: &str = \"cedar.tar\";",
         "const E: &str = \"mods/haul/units/worker.ron\";",
         "const F: &str = \"haul/units/worker.ron\";",
+        "const G: &str = \"acme:field\";",
+        "fn r#rifleman() {}",
+        "fn macro_path() { rifleman!(); }",
+        "const H: &[u8] = b\"base:rifleman\";",
     ];
     for (i, plant) in plants.iter().enumerate() {
         std::fs::write(src.join(format!("plant_{i}.rs")), plant).unwrap();
@@ -44,6 +48,11 @@ fn derived_scan_rejects_all_plants_and_accepts_generic_field() {
     )
     .unwrap();
 
+    std::fs::write(
+        src.join("production_cfg.rs"),
+        "#[cfg(not(test))] const A: &str = \"base:rifleman\";\n#[cfg(any(test, feature = \"live\"))] const B: &str = \"base:rifleman\";\n#[cfg(not(not(feature = \"live\")))] const C: &str = \"base:rifleman\";\n#[cfg(not(not(test)))] const D: &str = \"base:rifleman\";\n#[cfg(all(test, feature = \"unit\"))] const E: &str = \"base:rifleman\";",
+    )
+    .unwrap();
     let hits = scan_rust(&[src], &catalog).expect("fixture sources parse");
     assert!(
         hits.iter().any(|hit| hit.source.ends_with("inline.rs")),
@@ -69,6 +78,20 @@ fn derived_scan_rejects_all_plants_and_accepts_generic_field() {
             .iter()
             .any(|hit| hit.source.ends_with("nested_tests.rs")),
         "nested cfg(test) subtree is excluded: {hits:#?}"
+    );
+    let cfg_hits = hits
+        .iter()
+        .filter(|hit| hit.source.ends_with("production_cfg.rs"))
+        .collect::<Vec<_>>();
+    for production_line in [1, 2, 3] {
+        assert!(
+            cfg_hits.iter().any(|hit| hit.line == production_line),
+            "production cfg line {production_line} must be scanned: {cfg_hits:#?}"
+        );
+    }
+    assert!(
+        !cfg_hits.iter().any(|hit| hit.line >= 4),
+        "cfg expressions impossible with test=false must be excluded: {cfg_hits:#?}"
     );
 }
 
@@ -131,6 +154,28 @@ fn derivation_tracks_modified_package_and_fails_closed() {
     assert!(
         derive_tokens(&stray).is_err(),
         "unexported RON definition must fail closed"
+    );
+    let dangling_map = scratch.join("dangling_map");
+    copy_tree(&mods, &dangling_map);
+    let map_path = dangling_map.join("acme/maps/field.ron");
+    let map_text = std::fs::read_to_string(&map_path).unwrap();
+    std::fs::write(&map_path, map_text.replace("acme:scout", "acme:missing")).unwrap();
+    assert!(
+        derive_tokens(&dangling_map).is_err(),
+        "dangling map unit reference must fail closed"
+    );
+    let dangling_visual = scratch.join("dangling_visual");
+    copy_tree(&mods, &dangling_visual);
+    let visual_path = dangling_visual.join("acme/visuals/scout.ron");
+    let visual_text = std::fs::read_to_string(&visual_path).unwrap();
+    std::fs::write(
+        &visual_path,
+        visual_text.replace("acme:scout", "acme:missing"),
+    )
+    .unwrap();
+    assert!(
+        derive_tokens(&dangling_visual).is_err(),
+        "dangling visual target must fail closed"
     );
     let empty = scratch.join("empty");
     std::fs::create_dir_all(&empty).unwrap();
