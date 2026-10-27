@@ -21,15 +21,13 @@ use support::logs::{
     read_tick_log_past, wait_for_arrival,
 };
 use support::oracle::{OracleReport, check_segments, final_position};
-use support::{ServerProc, pack, pack_with, run_client, spawn_server, test_dir, wait_json};
+use support::{ServerProc, pack, run_client, spawn_server, test_dir, wait_json};
 
-/// The unit that the map of `base` places, for slot 0.
-const UNIT: u32 = 1;
-/// The number of placements in the map of `base`.
-const BASE_PLACEMENTS: u64 = 1;
-/// Where the map of `base` places the unit.
-const HOME: (f32, f32) = (8.0, 8.0);
-/// The `move` target: 12 units at 3.0 per second is 80 ticks at 20 Hz.
+/// The first mobile unit in the real `base` map (the slot-0 harvester).
+const UNIT: u32 = 2;
+/// The static and mobile placements for both slots in the real `base` map.
+const BASE_PLACEMENTS: u64 = 4;
+/// The `move` target: 8 units at 2.0 per second is 80 ticks at 20 Hz.
 const TARGET: (f32, f32) = (20.0, 8.0);
 /// The tolerance of a position compare.
 const POS_TOLERANCE: f32 = 1e-3;
@@ -198,10 +196,19 @@ fn record(label: &str, report: &OracleReport) {
 #[test]
 #[ignore]
 fn t2a_package_parity() {
-    for (package, expected_id, expected_shape, expected_pos) in [
-        ("base", "base:rifleman", "Capsule", (8.0, 8.0)),
-        ("acme", "acme:scout", "Cuboid", (4.0, 4.0)),
-    ] {
+    let cases: [(&str, &[(u32, &str, &str, (f32, f32))]); 2] = [
+        (
+            "base",
+            &[
+                (1, "base:command_center", "Cuboid", (8.0, 8.0)),
+                (2, "base:harvester", "Cuboid", (12.0, 8.0)),
+                (3, "base:command_center", "Cuboid", (56.0, 8.0)),
+                (4, "base:harvester", "Cuboid", (52.0, 8.0)),
+            ],
+        ),
+        ("acme", &[(1, "acme:scout", "Cuboid", (4.0, 4.0))]),
+    ];
+    for (package, expected_units) in cases {
         let dir = test_dir(&format!("t2a_{package}"));
         let server = spawn_server(&pack(package, &dir), &[]);
         let run = start_client(&server, &dir, "client", 3, &[]).finish();
@@ -210,41 +217,73 @@ fn t2a_package_parity() {
         let finals = report["final_positions"]
             .as_object()
             .unwrap_or_else(|| panic!("{package}: no final_positions: {report}"));
-        assert_eq!(finals.len(), 1, "{package}: one unit: {report}");
-        let (_, pos) = finals.iter().next().expect("one entry");
-        let pos = (
-            pos[0].as_f64().expect("x") as f32,
-            pos[1].as_f64().expect("y") as f32,
-        );
-        assert!(
-            near(pos, expected_pos),
-            "{package}: expected_pos {expected_pos:?}, client has {pos:?}"
-        );
-
+        assert_eq!(finals.len(), expected_units.len(), "{package}: {report}");
         let units = report["debug"]["units"]
             .as_array()
             .unwrap_or_else(|| panic!("{package}: no debug.units: {report}"));
-        assert_eq!(units.len(), 1, "{package}: one presented unit: {report}");
-        assert_eq!(units[0]["content_id"], expected_id, "{package}: {report}");
-        let shape = units[0]["shape"]
-            .as_object()
-            .and_then(|shape| shape.keys().next().cloned());
-        assert_eq!(
-            shape.as_deref(),
-            Some(expected_shape),
-            "{package}: expected_shape: {report}"
-        );
+        assert_eq!(units.len(), expected_units.len(), "{package}: {report}");
+        for (unit_id, content_id, expected_shape, expected_pos) in expected_units {
+            let unit = units
+                .iter()
+                .find(|unit| {
+                    unit["unit_id"] == *unit_id && unit["content_id"] == *content_id && {
+                        let pos = unit["pos"].as_array();
+                        pos.is_some_and(|pos| {
+                            near(
+                                (
+                                    pos[0].as_f64().unwrap() as f32,
+                                    pos[1].as_f64().unwrap() as f32,
+                                ),
+                                *expected_pos,
+                            )
+                        })
+                    }
+                })
+                .unwrap_or_else(|| {
+                    panic!("{package}: missing {content_id} at {expected_pos:?}: {report}")
+                });
+            let shape = unit["shape"]
+                .as_object()
+                .and_then(|shape| shape.keys().next().cloned());
+            assert_eq!(
+                shape.as_deref(),
+                Some(*expected_shape),
+                "{package}: {report}"
+            );
+            let final_pos = finals.get(&unit_id.to_string()).unwrap_or_else(|| {
+                panic!("{package}: no final position for {content_id}: {report}")
+            });
+            let final_pos = (
+                final_pos[0].as_f64().expect("x") as f32,
+                final_pos[1].as_f64().expect("y") as f32,
+            );
+            assert!(
+                near(final_pos, *expected_pos),
+                "{package}: {content_id} at {final_pos:?}"
+            );
+        }
 
-        // The server half, from the tick log: every tick holds exactly one unit, at its place.
+        // The server half, from the tick log: every tick holds the exact package placements.
         let ticks = read_tick_log(&server.tick_log);
         assert!(!ticks.is_empty(), "{package}: empty tick log");
         for (tick, records) in by_tick(&ticks) {
-            assert_eq!(records.len(), 1, "{package}: tick {tick} holds one unit");
-            assert!(
-                near(records[0].pos, expected_pos),
-                "{package}: tick {tick} has the unit at {:?}",
-                records[0].pos
+            assert_eq!(
+                records.len(),
+                expected_units.len(),
+                "{package}: tick {tick}"
             );
+            for record in records {
+                let expected = expected_units
+                    .iter()
+                    .find(|(unit_id, _, _, pos)| {
+                        record.unit_id == *unit_id && near(record.pos, *pos)
+                    })
+                    .unwrap_or_else(|| panic!("{package}: unexpected tick record {record:?}"));
+                assert!(
+                    near(record.pos, expected.3),
+                    "{package}: tick {tick}: {record:?}"
+                );
+            }
         }
     }
 }
@@ -315,34 +354,10 @@ fn t3_process_claims_create_nothing() {
     );
     for (tick, records) in grouped {
         let mut ids: Vec<u32> = records.iter().map(|record| record.unit_id).collect();
+        ids.sort_unstable();
         ids.dedup();
-        assert_eq!(
-            ids.len(),
-            1,
-            "distinct unit_id count at tick {tick} (both Welcomes by {after}): {ids:?}"
-        );
+        assert_eq!(ids, vec![1, 2, 3, 4], "tick {tick} placements: {ids:?}");
     }
-}
-
-/// The map of `base` with a second rifleman that slot 1 owns (M1 verify, owner slot).
-const TWO_OWNERS_MAP: &str = r#"(
-    id: "flat",
-    size: (x: 64.0, y: 64.0),
-    placements: [
-        (unit: "base:rifleman", owner_slot: 0, pos: (x: 8.0, y: 8.0), contents: []),
-        (unit: "base:rifleman", owner_slot: 1, pos: (x: 40.0, y: 40.0), contents: []),
-    ],
-    nodes: [],
-    slot_economy: [],
-)
-"#;
-
-/// The package of one T4 case.
-enum T4Package {
-    /// `mods/<name>` as it is.
-    Mods(&'static str),
-    /// `base` with `TWO_OWNERS_MAP`.
-    TwoOwners,
 }
 
 /// One T4 case: `label` names the test directory, `reason` is the expected rejection, and
@@ -350,94 +365,74 @@ enum T4Package {
 struct T4Case {
     label: &'static str,
     reason: &'static str,
-    package: T4Package,
-    needs_holder: bool,
+    package: &'static str,
     args: &'static [&'static str],
     homes: &'static [(u32, (f32, f32))],
 }
 
 /// T4: invalid `MoveTo` commands. Each gets `CommandAck`, then `CommandRejected` with its
-/// reason, and no unit ever moves.
-///
-/// M1 verify added two cases. `outside_acme` sends a target with x in (48, 64) on the 48 by 48
-/// map of `acme`, so a bound that ignores the map size goes red. `not_owner_by_map` uses a map
-/// placement with `owner_slot: 1`: the sender alone takes slot 0 and orders unit 2, which slot
-/// 1 owns, so a `load_map` that ignores `owner_slot` goes red.
+/// reason, and no unit ever moves. The real base map checks static rejection and slot-1 ownership
+/// while movement targets its slot-owned mobile harvester. Acme retains the map-bound check.
 #[test]
 #[ignore]
 fn t4_command_validation() {
-    const BASE_HOME: &[(u32, (f32, f32))] = &[(UNIT, HOME)];
+    const BASE_HOME: &[(u32, (f32, f32))] = &[
+        (1, (8.0, 8.0)),
+        (2, (12.0, 8.0)),
+        (3, (56.0, 8.0)),
+        (4, (52.0, 8.0)),
+    ];
     let cases = [
         T4Case {
-            label: "not_owner",
-            reason: "not_owner",
-            package: T4Package::Mods("base"),
-            needs_holder: true,
+            label: "static_not_mobile",
+            reason: "not_mobile",
+            package: "base",
             args: &["--move", "10,8", "--move-unit", "1"],
             homes: BASE_HOME,
         },
         T4Case {
             label: "target_not_finite",
             reason: "target_not_finite",
-            package: T4Package::Mods("base"),
-            needs_holder: false,
-            args: &["--move", "NaN,8"],
+            package: "base",
+            args: &["--move", "NaN,8", "--move-unit", "2"],
             homes: BASE_HOME,
         },
         T4Case {
             label: "target_outside_map",
             reason: "target_outside_map",
-            package: T4Package::Mods("base"),
-            needs_holder: false,
-            args: &["--move", "99,8"],
+            package: "base",
+            args: &["--move", "99,8", "--move-unit", "2"],
             homes: BASE_HOME,
         },
         T4Case {
             label: "outside_acme",
             reason: "target_outside_map",
-            package: T4Package::Mods("acme"),
-            needs_holder: false,
-            args: &["--move", "56,4"],
-            homes: &[(UNIT, (4.0, 4.0))],
+            package: "acme",
+            args: &["--move", "56,4", "--move-unit", "1"],
+            homes: &[(1, (4.0, 4.0))],
         },
         T4Case {
             label: "not_owner_by_map",
             reason: "not_owner",
-            package: T4Package::TwoOwners,
-            needs_holder: false,
-            args: &["--move", "10,8", "--move-unit", "2"],
-            homes: &[(UNIT, HOME), (2, (40.0, 40.0))],
+            package: "base",
+            args: &["--move", "10,8", "--move-unit", "4"],
+            homes: BASE_HOME,
         },
     ];
     for T4Case {
         label,
         reason,
         package,
-        needs_holder,
         args,
         homes,
     } in cases
     {
         let dir = test_dir(&format!("t4_{label}"));
-        let tar = match package {
-            T4Package::Mods(name) => pack(name, &dir),
-            T4Package::TwoOwners => pack_with("base", "maps/flat.ron", TWO_OWNERS_MAP, &dir),
-        };
+        let tar = pack(package, &dir);
         let server = spawn_server(&tar, &[]);
-        // The holder takes slot 0, so the sender gets slot 1 and owns no unit.
-        let holder = needs_holder.then(|| start_client(&server, &dir, "holder", 4, &[]));
-        if holder.is_some() {
-            std::thread::sleep(Duration::from_millis(500));
-        }
         let sender = start_client(&server, &dir, "sender", 3, args).finish();
         let report = &sender.report;
-        if let Some(holder) = holder {
-            let holder = holder.finish();
-            assert_eq!(holder.report["slot"], 0, "{label}: {}", holder.report);
-            assert_eq!(report["slot"], 1, "{label}: {report}");
-        } else {
-            assert_eq!(report["slot"], 0, "{label}: {report}");
-        }
+        assert_eq!(report["slot"], 0, "{label}: {report}");
 
         let results = report["command_results"]
             .as_array()
@@ -483,7 +478,14 @@ fn t4_command_validation() {
 fn t5_convergence() {
     let dir = test_dir("t5_convergence");
     let server = spawn_server(&pack("base", &dir), &[]);
-    let run = start_client(&server, &dir, "client", 8, &["--move", "20,8"]).finish();
+    let run = start_client(
+        &server,
+        &dir,
+        "client",
+        8,
+        &["--move", "20,8", "--move-unit", "2"],
+    )
+    .finish();
     let exit_ms = now_ms();
     let (frames, summary) = run.frame_log();
     let ticks = ticks_for(&server, &frames);
@@ -528,7 +530,13 @@ fn t5_convergence() {
 fn t6_second_viewer() {
     let dir = test_dir("t6_second_viewer");
     let server = spawn_server(&pack("base", &dir), &[]);
-    let mover = start_client(&server, &dir, "mover", 8, &["--move", "20,8"]);
+    let mover = start_client(
+        &server,
+        &dir,
+        "mover",
+        8,
+        &["--move", "20,8", "--move-unit", "2"],
+    );
     std::thread::sleep(Duration::from_millis(300));
     let viewer = start_client(&server, &dir, "viewer", 8, &[]);
     let mover = mover.finish();
@@ -559,7 +567,13 @@ fn t6_second_viewer() {
 fn t6b_late_join() {
     let dir = test_dir("t6b_late_join");
     let server = spawn_server(&pack("base", &dir), &[]);
-    let mover = start_client(&server, &dir, "mover", 8, &["--move", "20,8"]);
+    let mover = start_client(
+        &server,
+        &dir,
+        "mover",
+        8,
+        &["--move", "20,8", "--move-unit", "2"],
+    );
     let arrival = wait_for_arrival(&server.tick_log, UNIT, TARGET, Duration::from_secs(20));
     let late = start_client(&server, &dir, "late", 2, &[]).finish();
     mover.finish();
@@ -591,6 +605,8 @@ fn t8_case(name: &str, extra: &[&str]) {
     let mut args = vec![
         "--move",
         "20,8",
+        "--move-unit",
+        "2",
         "--drop-delta-ticks",
         "10",
         "--drop-arrival-delta",

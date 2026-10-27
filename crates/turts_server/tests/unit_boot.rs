@@ -68,17 +68,39 @@ fn read_tree(root: &Path, dir: &Path, files: &mut BTreeMap<String, Vec<u8>>) {
 
 #[test]
 fn boot_registers_units_and_places_map_from_any_package() {
-    let cases = [
-        ("base", "base:rifleman", Vec2::new(8.0, 8.0)),
-        ("acme", "acme:scout", Vec2::new(4.0, 4.0)),
+    let cases: [(&str, &[(u32, &str, u8, Vec2)]); 2] = [
+        (
+            "base",
+            &[
+                (1, "base:command_center", 0, Vec2::new(8.0, 8.0)),
+                (2, "base:harvester", 0, Vec2::new(12.0, 8.0)),
+                (3, "base:command_center", 1, Vec2::new(56.0, 8.0)),
+                (4, "base:harvester", 1, Vec2::new(52.0, 8.0)),
+            ],
+        ),
+        ("acme", &[(1, "acme:scout", 0, Vec2::new(4.0, 4.0))]),
     ];
-    for (package, content_id, pos) in cases {
+    for (package, expected) in cases {
         let (mut app, _, _) = boot_package(&format!("boot_registers_{package}"), package);
-        assert_eq!(app.world().resource::<UnitTypes>().len(), 1, "{package}");
-        assert_eq!(gameplay_entity_count(app.world_mut()), 1, "{package}");
+        let expected_type_count = if package == "base" { 3 } else { 1 };
+        assert_eq!(
+            app.world().resource::<UnitTypes>().len(),
+            expected_type_count,
+            "{package}"
+        );
+        assert_eq!(
+            gameplay_entity_count(app.world_mut()),
+            expected.len(),
+            "{package}"
+        );
         let units = snapshot(app.world_mut());
-        assert_eq!(units[0].content_id, content_id);
-        assert_eq!(units[0].pos, pos, "{package}");
+        assert_eq!(units.len(), expected.len(), "{package}");
+        for (unit, (id, content_id, owner, pos)) in units.iter().zip(expected) {
+            assert_eq!(unit.unit_id, *id, "{package}");
+            assert_eq!(unit.content_id, *content_id, "{package} unit {id}");
+            assert_eq!(unit.owner_slot, *owner, "{package} unit {id}");
+            assert_eq!(unit.pos, *pos, "{package} unit {id}");
+        }
     }
 }
 
@@ -92,15 +114,15 @@ fn boot_lockfile_entry_matches_archive() {
     assert_eq!(entry.hash, sha256_hex(&bytes));
     assert_eq!(entry.size, bytes.len() as u64);
     assert!(
-        entry.urls[0].ends_with("/packages/acme-0.1.0.tar"),
+        entry.urls[0].ends_with("/packages/acme-0.2.0.tar"),
         "{:?}",
         entry.urls
     );
     assert_eq!(
         entry.urls,
-        vec![format!("{PUBLIC_URL}/packages/acme-0.1.0.tar")]
+        vec![format!("{PUBLIC_URL}/packages/acme-0.2.0.tar")]
     );
-    assert_eq!(booted.package_file_name, "acme-0.1.0.tar");
+    assert_eq!(booted.package_file_name, "acme-0.2.0.tar");
     assert_eq!(booted.package_bytes, bytes);
 }
 
@@ -115,7 +137,7 @@ fn boot_advertisement_hash_matches_lockfile_bytes() {
         format!("{PUBLIC_URL}/lockfile.json")
     );
     assert_eq!(advertisement.mod_id, "acme");
-    assert_eq!(advertisement.mod_version, "0.1.0");
+    assert_eq!(advertisement.mod_version, "0.2.0");
     assert_eq!(advertisement.engine_version, ENGINE_API_VERSION);
     assert_eq!(advertisement.protocol_version, NET_PROTOCOL_VERSION);
 }

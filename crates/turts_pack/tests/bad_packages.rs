@@ -37,6 +37,14 @@ fn pack_edited(test: &str, edits: &[Edit]) -> (PathBuf, Output) {
     let _ = fs::remove_dir_all(&work);
     let dir = work.join("zeta");
     copy_dir(&fixture(), &dir);
+    let manifest = dir.join("manifest.ron");
+    let manifest_text = fs::read_to_string(&manifest).expect("read fixture manifest");
+    assert!(manifest_text.contains("version: \"0.1.0\""));
+    fs::write(
+        &manifest,
+        manifest_text.replace("version: \"0.1.0\"", "version: \"0.2.0\""),
+    )
+    .expect("migrate fixture package version");
     for (file, from, to) in edits {
         let path = dir.join(file);
         if from.is_empty() {

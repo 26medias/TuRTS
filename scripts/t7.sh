@@ -26,8 +26,8 @@ done
 rm -rf "$OUT"
 mkdir -p "$OUT/pack"
 # `turts-pack` writes `<dir>.tar` next to the directory, so pack a copy: `mods/` stays clean.
-cp -r mods/base "$OUT/pack/base"
-cargo run --release --quiet -p turts_pack --bin turts-pack -- "$OUT/pack/base"
+cp -r mods/acme "$OUT/pack/acme"
+cargo run --release --quiet -p turts_pack --bin turts-pack -- "$OUT/pack/acme"
 
 read -r HTTP_PORT WS_PORT < <(python3 - <<'EOF'
 import socket
@@ -39,7 +39,7 @@ EOF
 )
 cat > "$OUT/server.ron" <<EOF
 (
-    game_package: "$OUT/pack/base.tar",
+    game_package: "$OUT/pack/acme.tar",
     http_listen: "127.0.0.1:$HTTP_PORT",
     ws_listen: "127.0.0.1:$WS_PORT",
     public_url: "http://127.0.0.1:$HTTP_PORT",
@@ -66,7 +66,7 @@ for _ in $(seq 1 100); do
 done
 
 node tests/browser/t7.js "http://127.0.0.1:$HTTP_PORT/" "$OUT" \
-    --ws "ws://127.0.0.1:$WS_PORT" --expect-content-id base:rifleman --expect-final 20,8
+    --ws "ws://127.0.0.1:$WS_PORT" --expect-content-id acme:scout --expect-final 20,8
 
 # The oracle reads the two logs while the server still runs: it needs a tick after the last
 # frame. T7_DIR names the folder of the logs.
