@@ -151,7 +151,85 @@ fn live_audit_reader_ignores_only_unterminated_tail_and_waits_for_tick() {
             .contains("decode complete JSONL line"),
         "malformed newline-terminated records remain fatal even after a valid tick"
     );
+    let last_state = decoded
+        .iter()
+        .rev()
+        .find_map(|record| match record {
+            EconomyLogRecord::Tick { state, .. } => Some(state.clone()),
+            _ => None,
+        })
+        .unwrap();
+    let input = turts_sim::Command {
+        slot: turts_sim::SlotId(0),
+        seq: 77,
+        kind: turts_sim::CommandKind::MoveTo {
+            unit_ids: vec![1],
+            target: bevy_math::Vec2::new(2.0, 2.0),
+        },
+    };
+    let open_boundary = EconomyLogRecord::CommandBoundary(turts_sim::CommandAudit {
+        operation_id: 900,
+        result: turts_sim::CommandResult {
+            slot: input.slot,
+            seq: input.seq,
+            outcome: Err(turts_sim::RejectReason::EmptyCommand),
+        },
+        input,
+        before: last_state.clone(),
+        after: last_state,
+    });
+    let invalid_claim = EconomyLogRecord::Claim {
+        tick: 999,
+        player_id: 99,
+        slot: 0,
+    };
+    let semantic_path = path.with_file_name(format!("turts-live-audit-semantic-{nonce}.jsonl"));
+    let mut file = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&semantic_path)
+        .unwrap();
+    file.write_all(second).unwrap();
+    for record in [&invalid_claim, &open_boundary] {
+        serde_json::to_writer(&mut file, record).unwrap();
+        file.write_all(b"\n").unwrap();
+    }
+    file.flush().unwrap();
+    assert!(
+        read_live_complete_tick_prefix(&semantic_path)
+            .unwrap_err()
+            .contains("discontinuous tick"),
+        "an invalid complete Claim is not hidden by a later open command"
+    );
+    drop(file);
+
+    let initial_only_path =
+        path.with_file_name(format!("turts-live-audit-initial-only-{nonce}.jsonl"));
+    let initial_line = complete
+        .split_inclusive(|byte| *byte == b'\n')
+        .next()
+        .unwrap();
+    let mut file = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&initial_only_path)
+        .unwrap();
+    file.write_all(initial_line).unwrap();
+    serde_json::to_writer(&mut file, &invalid_claim).unwrap();
+    file.write_all(b"\n").unwrap();
+    serde_json::to_writer(&mut file, &open_boundary).unwrap();
+    file.write_all(b"\n").unwrap();
+    file.flush().unwrap();
+    assert!(
+        read_live_complete_tick_prefix(&initial_only_path)
+            .unwrap_err()
+            .contains("discontinuous tick"),
+        "a complete invalid record before the first Tick is not hidden"
+    );
+
     std::fs::remove_file(path).unwrap();
+    std::fs::remove_file(semantic_path).unwrap();
+    std::fs::remove_file(initial_only_path).unwrap();
 }
 
 #[test]
@@ -1253,31 +1331,53 @@ fn read_live_complete_tick_prefix(
     let last_tick = records
         .iter()
         .rposition(|record| matches!(record, EconomyLogRecord::Tick { .. }));
-    let Some(last_tick) = last_tick else {
-        return Ok(Vec::new());
-    };
-    if economylog::validate_records(&records).is_ok() {
+    let full_validation = economylog::validate_records(&records);
+    if full_validation.is_ok() {
         return Ok(records);
     }
+    let full_error = full_validation.unwrap_err();
 
-    let completed_operations = records[last_tick + 1..]
+    let suffix_start = last_tick.map_or(0, |index| index + 1);
+    let completed_operations = records[suffix_start..]
         .iter()
         .filter_map(|record| match record {
             EconomyLogRecord::Operation(operation) => Some(operation.operation_id),
             _ => None,
         })
         .collect::<std::collections::BTreeSet<_>>();
-    let has_open_command = records[last_tick + 1..].iter().any(|record| match record {
-        EconomyLogRecord::CommandBoundary(command) => {
-            !completed_operations.contains(&command.operation_id)
-        }
-        _ => false,
-    });
-    if !has_open_command {
-        return economylog::validate_records(&records).map(|()| records);
+    let open_commands = records[suffix_start..]
+        .iter()
+        .filter_map(|record| match record {
+            EconomyLogRecord::CommandBoundary(command)
+                if !completed_operations.contains(&command.operation_id) =>
+            {
+                Some(command.operation_id)
+            }
+            _ => None,
+        })
+        .collect::<std::collections::BTreeSet<_>>();
+    let Some(open_operation_id) = open_commands.first().copied() else {
+        return Err(full_error);
+    };
+    if full_error != format!("command operation id {open_operation_id} has no matching operation") {
+        return Err(full_error);
     }
 
-    records.truncate(last_tick + 1);
+    let stable_end = if let Some(last_tick) = last_tick {
+        last_tick + 1
+    } else {
+        records
+            .iter()
+            .position(|record| {
+                matches!(
+                    record,
+                    EconomyLogRecord::CommandBoundary(command)
+                        if command.operation_id == open_operation_id
+                )
+            })
+            .expect("open command id has a boundary record")
+    };
+    records.truncate(stable_end);
     economylog::validate_records(&records)?;
     Ok(records)
 }
