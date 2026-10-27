@@ -396,6 +396,10 @@ enum FrozenKind {
     CancelFirstJob {
         producer: u32,
     },
+    Cancel {
+        producer: u32,
+        job: u64,
+    },
 }
 
 #[derive(Clone)]
@@ -408,15 +412,22 @@ struct FrozenCommand {
 fn independent_public_model(
     package_name: &str,
 ) -> (turts_sim::AuditState, turts_mod_api::ContentCatalog) {
-    use turts_sim::economy::views::audit_state;
     let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../../mods")
         .join(package_name);
     let mut files = std::collections::BTreeMap::new();
     package_files(&root, &root, &mut files);
     let archive_bytes = turts_mod_runtime::pack::pack_files(&files).unwrap();
-    let archive = turts_mod_runtime::archive::PackageArchive::parse(&archive_bytes).unwrap();
-    let mut app = turts_sim::headless_app(20);
+    independent_public_model_from_archive(&archive_bytes, 20)
+}
+
+fn independent_public_model_from_archive(
+    archive_bytes: &[u8],
+    tick_hz: u16,
+) -> (turts_sim::AuditState, turts_mod_api::ContentCatalog) {
+    use turts_sim::economy::views::audit_state;
+    let archive = turts_mod_runtime::archive::PackageArchive::parse(archive_bytes).unwrap();
+    let mut app = turts_sim::headless_app(tick_hz);
     turts_pack::load_package(app.world_mut(), &archive).unwrap();
     let initial = audit_state(app.world_mut());
     let catalog = app
@@ -425,6 +436,83 @@ fn independent_public_model(
         .0
         .clone();
     (initial, catalog)
+}
+
+fn pack_e8_validation_variant(into: &std::path::Path) -> std::path::PathBuf {
+    let root = support::mods_dir().join("base");
+    let mut files = std::collections::BTreeMap::new();
+    package_files(&root, &root, &mut files);
+
+    let manifest = String::from_utf8(files.get("manifest.ron").unwrap().clone()).unwrap();
+    let manifest = manifest
+        .replace(
+            "visuals: [\"visuals/command_center.ron\", \"visuals/harvester.ron\", \"visuals/rifleman.ron\", \"visuals/ore.ron\"],",
+            "visuals: [\"visuals/command_center.ron\", \"visuals/harvester.ron\", \"visuals/rifleman.ron\", \"visuals/ore.ron\", \"visuals/timber.ron\"],",
+        )
+        .replace(
+            "resources: [\"resources/ore.ron\", \"resources/credits.ron\"],",
+            "resources: [\"resources/ore.ron\", \"resources/credits.ron\", \"resources/tokens.ron\", \"resources/timber.ron\"],",
+        )
+        .replace(
+            "nodes: [\"nodes/ore.ron\"],",
+            "nodes: [\"nodes/ore.ron\", \"nodes/timber.ron\"],",
+        );
+    files.insert("manifest.ron".into(), manifest.into_bytes());
+
+    let center = String::from_utf8(files.get("units/command_center.ron").unwrap().clone()).unwrap();
+    assert!(center.contains("recipes: [\"base:train_rifleman\", \"base:build_harvester\"]"));
+    files.insert(
+        "units/command_center.ron".into(),
+        center
+            .replace(
+                "recipes: [\"base:train_rifleman\", \"base:build_harvester\"]",
+                "recipes: [\"base:build_harvester\"]",
+            )
+            .into_bytes(),
+    );
+
+    files.insert(
+        "resources/tokens.ron".into(),
+        b"(id: \"tokens\", name: \"Tokens\", unit_name: \"token\", kind: Balance)".to_vec(),
+    );
+    files.insert(
+        "resources/timber.ron".into(),
+        b"(id: \"timber\", name: \"Timber\", unit_name: \"timber\", kind: Item)".to_vec(),
+    );
+    files.insert(
+        "nodes/timber.ron".into(),
+        b"(id: \"timber_deposit\", name: \"Timber Deposit\", item: \"base:timber\", radius: 1.0)"
+            .to_vec(),
+    );
+    files.insert(
+        "visuals/timber.ron".into(),
+        b"(target: Node(\"base:timber_deposit\"), shape: Cuboid(x: 2.0, y: 1.0, z: 2.0))".to_vec(),
+    );
+
+    let map = String::from_utf8(files.get("maps/flat.ron").unwrap().clone()).unwrap();
+    let map = map
+        .replace(
+            "(balance: \"base:credits\", amount: 500)",
+            "(balance: \"base:credits\", amount: 500), (balance: \"base:tokens\", amount: 0)",
+        )
+        .replace(
+            "    ],\n    slot_economy:",
+            "        (node: \"base:timber_deposit\", pos: (x: 32.0, y: 32.0), remaining: 100),\n    ],\n    slot_economy:",
+        );
+    files.insert("maps/flat.ron".into(), map.into_bytes());
+
+    files.insert(
+        "production/harvester.ron".into(),
+        b"(id: \"build_harvester\", name: \"Build Harvester\", output_unit: \"base:harvester\", duration_ms: 15000, costs: [(resource: \"base:credits\", amount: 100, source: SlotBalance), (resource: \"base:tokens\", amount: 1, source: SlotBalance)], payment: ChargeOnQueue, cancel_refunds: (queued: (numerator: 1, denominator: 1), running: (numerator: 1, denominator: 2), output_blocked: (numerator: 1, denominator: 1)))".to_vec(),
+    );
+
+    let bytes = turts_mod_runtime::pack::pack_files(&files).unwrap();
+    turts_mod_runtime::archive::PackageArchive::parse(&bytes)
+        .expect("the E8 multi-cost/incompatible-node public package is valid");
+    std::fs::create_dir_all(into).unwrap();
+    let path = into.join("base-e8-variant.tar");
+    std::fs::write(&path, bytes).unwrap();
+    path
 }
 
 fn sim_command(input: &FrozenCommand, state: &turts_sim::AuditState) -> turts_sim::Command {
@@ -458,6 +546,10 @@ fn sim_command(input: &FrozenCommand, state: &turts_sim::AuditState) -> turts_si
                 job_id: turts_sim::ids::JobId(job.id),
             }
         }
+        FrozenKind::Cancel { producer, job } => CommandKind::CancelProduction {
+            producer_id: *producer,
+            job_id: turts_sim::ids::JobId(*job),
+        },
     };
     Command {
         slot: SlotId(input.slot),
@@ -538,6 +630,10 @@ fn protocol_command(input: &FrozenCommand) -> turts_net_protocol::PlayerCommand 
             unit_id: UnitId(*unit),
             node_id: turts_net_protocol::NodeId(*node),
         },
+        FrozenKind::Cancel { producer, job } => PlayerCommandKind::CancelProduction {
+            producer_id: UnitId(*producer),
+            job_id: turts_net_protocol::JobId(*job),
+        },
         FrozenKind::CancelFirstJob { .. } => {
             panic!("trace-only dynamic cancellation is not a static wire fixture")
         }
@@ -560,6 +656,33 @@ fn unit_id_for_owner_and_content(
         .find(|unit| unit.owner_slot == slot && unit.content_id == content_id)
         .map(|unit| unit.unit_id)
         .expect("frozen public boot world has the requested owner/content unit")
+}
+
+fn assert_ack_before_every_rejection(report: &wire_sender::Report) {
+    for attempt in &report.attempts {
+        let end = attempt
+            .terminal_cursor
+            .expect("attempt has terminal result");
+        let terminal = &report.receipts[end];
+        if terminal.kind != "rejected" {
+            continue;
+        }
+        let ack = report.receipts[attempt.start_cursor..end]
+            .iter()
+            .find(|receipt| receipt.seq == attempt.seq && receipt.kind == "ack")
+            .expect("each admitted rejected envelope has its receipt Ack");
+        assert!(ack.reliable && terminal.reliable);
+        assert!(
+            (1..32_768).contains(
+                &terminal
+                    .message_id
+                    .unwrap()
+                    .wrapping_sub(ack.message_id.unwrap())
+            ),
+            "actual ReliableChannel MessageIds put Ack before rejection for seq {}",
+            attempt.seq
+        );
+    }
 }
 
 fn command_attempt_receipt<'a>(
@@ -1026,6 +1149,18 @@ fn replay_public_log(
     player_claims: &[(u8, u64)],
     frozen: &[FrozenCommand],
 ) -> ReplaySummary {
+    let (public_initial, catalog) = independent_public_model(package_name);
+    replay_public_log_with_model(path, public_initial, catalog, player_claims, frozen, true)
+}
+
+fn replay_public_log_with_model(
+    path: &std::path::Path,
+    public_initial: turts_sim::AuditState,
+    catalog: turts_mod_api::ContentCatalog,
+    player_claims: &[(u8, u64)],
+    frozen: &[FrozenCommand],
+    require_positive: bool,
+) -> ReplaySummary {
     use economylog::EconomyLogRecord;
     use std::collections::BTreeMap;
     let records = read_complete_economy_log(path).unwrap();
@@ -1034,7 +1169,6 @@ fn replay_public_log(
         EconomyLogRecord::Initial(state) => state.clone(),
         _ => unreachable!(),
     };
-    let (public_initial, catalog) = independent_public_model(package_name);
     assert_eq!(
         decoded_initial, public_initial,
         "process boot matches the frozen public package"
@@ -1290,17 +1424,19 @@ fn replay_public_log(
         outputs: oracle.outputs,
         cancellations: oracle.cancellations,
     };
-    assert!(
-        totals.extraction
-            + totals.delivery
-            + totals.conversion
-            + totals.charge
-            + totals.refunds
-            + u128::from(totals.outputs)
-            + u128::from(totals.cancellations)
-            > 0,
-        "the process replay measured a concrete positive economic effect: {totals:?}"
-    );
+    if require_positive {
+        assert!(
+            totals.extraction
+                + totals.delivery
+                + totals.conversion
+                + totals.charge
+                + totals.refunds
+                + u128::from(totals.outputs)
+                + u128::from(totals.cancellations)
+                > 0,
+            "the process replay measured a concrete positive economic effect: {totals:?}"
+        );
+    }
     totals
 }
 
@@ -1375,7 +1511,7 @@ fn e8_commands_are_authoritative_and_acked() {
 
     let trace_center =
         unit_id_for_owner_and_content(&public_initial, trace_slot, "base:command_center");
-    let trace = trace_file(&server, "base-trace.json");
+    let trace = trace_file(&server, "base-trace-live-job.json");
     let trace_client = run_trace_client(&server, 10_001, &trace, 2, &[]);
     assert!(trace_client["welcomed"].as_bool().unwrap_or(false));
     assert_eq!(trace_client["trace"]["complete"], true);
@@ -1395,7 +1531,22 @@ fn e8_commands_are_authoritative_and_acked() {
                 producer: trace_center,
             },
         },
+        FrozenCommand {
+            slot: trace_slot,
+            seq: 3,
+            kind: FrozenKind::Produce {
+                producer: trace_center,
+                recipe: "base:train_rifleman",
+            },
+        },
     ];
+    let live_foreign_job = trace_client["trace"]["bindings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|binding| binding["step"].as_u64() == Some(2))
+        .and_then(|binding| binding["result"]["job_id"].as_u64())
+        .expect("foreign cancellation uses the actual Applied JobId from the trace");
 
     // Freeze wire actors, catalog affordances, costs, and queue capacity from the public
     // package before sending any raw envelope. The Welcome slot is predicted from the
@@ -1411,6 +1562,25 @@ fn e8_commands_are_authoritative_and_acked() {
         .expect("public boot has a foreign harvester");
     let owner_center =
         unit_id_for_owner_and_content(&public_initial, wire_slot, "base:command_center");
+    let foreign_center =
+        unit_id_for_owner_and_content(&public_initial, trace_slot, "base:command_center");
+    let ore_node = public_initial
+        .economy
+        .nodes
+        .iter()
+        .find(|node| node.content_id == ContentId::parse("base:ore_deposit").unwrap())
+        .expect("public fixture has an ore node")
+        .id
+        .0;
+    let unknown_node = public_initial
+        .economy
+        .nodes
+        .iter()
+        .map(|node| node.id.0)
+        .max()
+        .unwrap()
+        .checked_add(1)
+        .unwrap();
     let position = |unit_id| {
         public_initial
             .economy
@@ -1480,6 +1650,16 @@ fn e8_commands_are_authoritative_and_acked() {
         slot: wire_slot,
         seq,
         kind: FrozenKind::Produce { producer, recipe },
+    };
+    let gather_fixture = |seq, unit, node| FrozenCommand {
+        slot: wire_slot,
+        seq,
+        kind: FrozenKind::Gather { unit, node },
+    };
+    let cancel_fixture = |seq, producer, job| FrozenCommand {
+        slot: wire_slot,
+        seq,
+        kind: FrozenKind::Cancel { producer, job },
     };
     let mut wire_cases: Vec<(FrozenCommand, bool)> = vec![
         (
@@ -1553,6 +1733,30 @@ fn e8_commands_are_authoritative_and_acked() {
     let queue_full_seq = queue_start + capacity as u32;
     wire_cases.push((
         produce_fixture(queue_full_seq, owner_center, "base:train_rifleman"),
+        true,
+    ));
+    wire_cases.push((
+        gather_fixture(queue_full_seq + 1, owner_harvester, ore_node),
+        true,
+    ));
+    wire_cases.push((
+        gather_fixture(queue_full_seq + 2, foreign_harvester, ore_node),
+        true,
+    ));
+    wire_cases.push((
+        gather_fixture(queue_full_seq + 3, owner_harvester, unknown_node),
+        true,
+    ));
+    wire_cases.push((
+        produce_fixture(queue_full_seq + 4, foreign_center, "base:train_rifleman"),
+        false,
+    ));
+    wire_cases.push((
+        cancel_fixture(queue_full_seq + 5, foreign_center, live_foreign_job),
+        true,
+    ));
+    wire_cases.push((
+        cancel_fixture(queue_full_seq + 6, owner_center, u64::MAX),
         true,
     ));
     let commands: Vec<PlayerCommand> = wire_cases
@@ -1633,6 +1837,17 @@ fn e8_commands_are_authoritative_and_acked() {
         );
     }
     assert_rejection(12 + capacity, CommandRejectReason::QueueFull);
+    let gather_start = 13 + capacity;
+    assert_eq!(
+        command_attempt_receipt(&wire, gather_start, "applied").kind,
+        "applied"
+    );
+    assert_rejection(gather_start + 1, CommandRejectReason::NotOwner);
+    assert_rejection(gather_start + 2, CommandRejectReason::UnknownNode);
+    assert_rejection(gather_start + 3, CommandRejectReason::NotOwner);
+    assert_rejection(gather_start + 4, CommandRejectReason::NotOwner);
+    assert_rejection(gather_start + 5, CommandRejectReason::UnknownJob);
+    assert_ack_before_every_rejection(&wire);
 
     let decoded = read_complete_economy_log(economy_log_path(&server)).unwrap();
     let admissions = decoded
@@ -1665,6 +1880,10 @@ fn e8_commands_are_authoritative_and_acked() {
     assert_eq!(admission(1).0, &CommandRejectReason::BadSequence);
     assert_eq!(admission(6).0, &CommandRejectReason::MissingCapability);
     assert_eq!(admission(8).0, &CommandRejectReason::UnknownRecipe);
+    assert_eq!(
+        admission(queue_full_seq + 4).0,
+        &CommandRejectReason::NotOwner
+    );
     assert!(matches!(
         &admission(8).1.kind,
         PlayerCommandKind::Produce { producer_id, recipe_id }
@@ -1717,6 +1936,50 @@ fn e8_commands_are_authoritative_and_acked() {
         economylog::EconomyLogRecord::CommandBoundary(audit)
             if audit.input.slot.0 == wire_slot && audit.input.seq == 8
     )));
+    for (index, (fixture, reaches_domain)) in wire_cases.iter().enumerate() {
+        if !reaches_domain
+            || wire.receipts[wire.attempts[index].terminal_cursor.unwrap()].kind != "rejected"
+        {
+            continue;
+        }
+        let command = decoded
+            .iter()
+            .find_map(|record| match record {
+                economylog::EconomyLogRecord::CommandBoundary(command)
+                    if command.input.slot.0 == fixture.slot && command.input.seq == fixture.seq =>
+                {
+                    Some(command)
+                }
+                _ => None,
+            })
+            .expect("domain rejection has a direct logged command boundary");
+        assert_eq!(
+            command.before, command.after,
+            "rejected seq {} is write neutral",
+            fixture.seq
+        );
+        let operation = decoded
+            .iter()
+            .find_map(|record| match record {
+                economylog::EconomyLogRecord::Operation(operation)
+                    if operation.operation_id == command.operation_id =>
+                {
+                    Some(operation)
+                }
+                _ => None,
+            })
+            .expect("rejected command boundary correlates to one operation");
+        assert_eq!(
+            operation.before, operation.after,
+            "rejected seq {} has no hidden partial write",
+            fixture.seq
+        );
+        assert!(
+            operation.events.is_empty(),
+            "rejected seq {} emits no event",
+            fixture.seq
+        );
+    }
 
     // Reconstruct every domain command from the frozen public fixture, while malformed,
     // duplicate-sequence, and missing-capability envelopes remain admission-only.
@@ -1795,6 +2058,182 @@ fn e8_commands_are_authoritative_and_acked() {
         )),
         "stale-API lockfile Hello is rejected before slot claim"
     );
+
+    run_e8_public_variant_process();
+}
+
+fn run_e8_public_variant_process() {
+    use turts_net_protocol::{CommandRejectReason, PlayerCommand};
+
+    let package_dir = support::test_dir("e8-public-validation-variant");
+    let package = pack_e8_validation_variant(&package_dir);
+    let package_bytes = std::fs::read(&package).unwrap();
+    let (initial, catalog) = independent_public_model_from_archive(&package_bytes, 20);
+    let server = start_economy_server(&package, &package_dir);
+    let slot = 0_u8;
+    let player_id = 10_005_u64;
+    let harvester = unit_id_for_owner_and_content(&initial, slot, "base:harvester");
+    let center = unit_id_for_owner_and_content(&initial, slot, "base:command_center");
+    let ore_node = initial
+        .economy
+        .nodes
+        .iter()
+        .find(|node| node.content_id.to_string() == "base:ore_deposit")
+        .unwrap()
+        .id
+        .0;
+    let timber_node = initial
+        .economy
+        .nodes
+        .iter()
+        .find(|node| node.content_id.to_string() == "base:timber_deposit")
+        .expect("variant adds a public timber node")
+        .id
+        .0;
+    let unknown_node = initial
+        .economy
+        .nodes
+        .iter()
+        .map(|node| node.id.0)
+        .max()
+        .unwrap()
+        .checked_add(1)
+        .unwrap();
+    let producer = catalog
+        .units
+        .get(&turts_mod_api::ContentId::parse("base:command_center").unwrap())
+        .unwrap()
+        .producer
+        .as_ref()
+        .unwrap();
+    assert!(
+        !producer
+            .recipes
+            .contains(&turts_mod_api::ContentId::parse("base:train_rifleman").unwrap())
+    );
+    assert_eq!(
+        catalog.production[&turts_mod_api::ContentId::parse("base:build_harvester").unwrap()]
+            .costs
+            .len(),
+        2,
+        "frozen public variant has two independently charged balance lines"
+    );
+
+    let frozen = vec![
+        FrozenCommand {
+            slot,
+            seq: 1,
+            kind: FrozenKind::Gather {
+                unit: harvester,
+                node: ore_node,
+            },
+        },
+        FrozenCommand {
+            slot,
+            seq: 2,
+            kind: FrozenKind::Gather {
+                unit: harvester,
+                node: timber_node,
+            },
+        },
+        FrozenCommand {
+            slot,
+            seq: 3,
+            kind: FrozenKind::Gather {
+                unit: harvester,
+                node: unknown_node,
+            },
+        },
+        FrozenCommand {
+            slot,
+            seq: 4,
+            kind: FrozenKind::Produce {
+                producer: center,
+                recipe: "base:train_rifleman",
+            },
+        },
+        FrozenCommand {
+            slot,
+            seq: 5,
+            kind: FrozenKind::Produce {
+                producer: center,
+                recipe: "base:build_harvester",
+            },
+        },
+        FrozenCommand {
+            slot,
+            seq: 6,
+            kind: FrozenKind::Cancel {
+                producer: center,
+                job: u64::MAX,
+            },
+        },
+    ];
+    let commands: Vec<PlayerCommand> = frozen.iter().map(protocol_command).collect();
+    let wire = wire_sender::send_commands(&server.http_url, &server.ws_addr, player_id, commands);
+    assert!(
+        wire.welcomed && !wire.timed_out,
+        "variant sender completed: {wire:?}"
+    );
+    assert_eq!(wire.welcome_slot, Some(slot));
+    assert_ack_before_every_rejection(&wire);
+    let expected = [
+        None,
+        Some(CommandRejectReason::IncompatibleItem),
+        Some(CommandRejectReason::UnknownNode),
+        Some(CommandRejectReason::RecipeNotEnabled),
+        Some(CommandRejectReason::InsufficientBalance),
+        Some(CommandRejectReason::UnknownJob),
+    ];
+    for (index, expected) in expected.iter().enumerate() {
+        let attempt = &wire.attempts[index];
+        let terminal = &wire.receipts[attempt.terminal_cursor.unwrap()];
+        if let Some(reason) = expected {
+            assert_eq!(terminal.kind, "rejected");
+            assert_eq!(terminal.reason, Some(*reason));
+        } else {
+            assert_eq!(terminal.kind, "applied");
+        }
+    }
+
+    let log = economy_log_path(&server);
+    let records = read_complete_economy_log(log).unwrap();
+    for frozen_command in frozen.iter().skip(1) {
+        let audit = records
+            .iter()
+            .find_map(|record| match record {
+                economylog::EconomyLogRecord::CommandBoundary(audit)
+                    if audit.input.slot.0 == slot && audit.input.seq == frozen_command.seq =>
+                {
+                    Some(audit)
+                }
+                _ => None,
+            })
+            .expect("rejected fixture command is captured at its direct domain boundary");
+        assert_eq!(
+            audit.before, audit.after,
+            "rejected seq {} is write neutral",
+            audit.input.seq
+        );
+        let operation = records
+            .iter()
+            .find_map(|record| match record {
+                economylog::EconomyLogRecord::Operation(operation)
+                    if operation.operation_id == audit.operation_id =>
+                {
+                    Some(operation)
+                }
+                _ => None,
+            })
+            .expect("rejected fixture command has one correlated operation");
+        assert_eq!(
+            operation.before, operation.after,
+            "rejected seq {} has no partial write",
+            audit.input.seq
+        );
+        assert!(operation.events.is_empty());
+    }
+    replay_public_log_with_model(log, initial, catalog, &[(slot, player_id)], &frozen, false);
 }
 
 #[test]
