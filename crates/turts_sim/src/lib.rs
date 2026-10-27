@@ -12,6 +12,11 @@ pub mod registry;
 pub mod slots;
 pub mod world;
 
+use economy::GatherOrder;
+use economy::ledger::Inventory;
+use economy::production::ProductionQueues;
+use std::collections::{BTreeMap, BTreeSet};
+
 #[derive(bevy_ecs::prelude::Resource, Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SimClock {
     pub tick_hz: u16,
@@ -72,6 +77,15 @@ pub fn spawn_synthetic_units(
     for _ in positions {
         ids.push(alloc.allocate_unit()?);
     }
+    let content_id = turts_mod_api::ContentId::parse(&entry.content_id)
+        .map_err(|_| "synthetic unit type has an invalid content id")?;
+    let definition = world
+        .resource::<bootstrap::InstalledCatalog>()
+        .0
+        .units
+        .get(&content_id)
+        .cloned()
+        .ok_or("synthetic unit type is absent from the installed catalog")?;
     for (id, pos) in ids.iter().zip(positions) {
         world.spawn((
             UnitId(*id),
@@ -79,7 +93,44 @@ pub fn spawn_synthetic_units(
             world::Owner(crate::SlotId(0)),
             world::Position(*pos),
         ));
+        if let Some(inventory) = &definition.inventory {
+            world
+                .resource_mut::<economy::ledger::EconomyLedger>()
+                .inventories
+                .insert(
+                    *id,
+                    Inventory {
+                        capacity: inventory.capacity,
+                        accepted_items: inventory.accepts.iter().cloned().collect::<BTreeSet<_>>(),
+                        items: BTreeMap::new(),
+                    },
+                );
+        }
+        if definition.gatherer.is_some() {
+            world.resource_mut::<economy::EconomyOrders>().0.insert(
+                *id,
+                GatherOrder {
+                    node: None,
+                    deposit: None,
+                    receiver: None,
+                    stage: GatherStage::Idle,
+                    carry: RateCarry::default(),
+                },
+            );
+        }
+        if definition.producer.is_some() {
+            world
+                .resource_mut::<ProductionQueues>()
+                .0
+                .insert(*id, Vec::new());
+        }
     }
     world.insert_resource(alloc);
     Ok(ids)
+}
+
+/// Publish the installed boot state as the first completed world without advancing a tick.
+pub fn initialize_completed_world(world: &mut bevy_ecs::world::World) {
+    let initial = world_view(world);
+    world.insert_resource(CompletedWorld(initial));
 }

@@ -17,11 +17,11 @@ use turts_net_protocol::NET_PROTOCOL_VERSION;
 use turts_net_protocol::messages::*;
 use turts_net_protocol::{CommandRejectReason, PlayerCommand, PlayerCommandKind};
 use turts_sim::{
-    ClaimError, Command as SimCommand, CommandKind, CommandQueue, Owner, SimSet, Slots,
-    Tick as SimTick, UnitId as SimUnitId, UnitType, UnitTypes, Vec2, snapshot,
+    ClaimError, Command as SimCommand, CommandKind, CommandQueue, CompletedWorld, Owner, SimSet,
+    Slots, Tick as SimTick, UnitId as SimUnitId, UnitType, UnitTypes, Vec2,
 };
 
-use crate::stats::Stats;
+use crate::{export, stats::Stats};
 
 /// How long a refused connection stays open after `JoinRejected`. A kick in the same frame
 /// loses the message, so the kick waits by time and not by frames (spike fact, plan 6a).
@@ -472,49 +472,30 @@ pub fn receive_resync(
     }
 }
 
-/// Send one `Snapshot` of the current tick to each session that waits for one. This system
-/// takes the world: `turts_sim::snapshot` needs it. It follows `receive_hello` in the same
-/// frame, so `Welcome` and `Snapshot` leave in this order on the ordered reliable channel.
+/// Send one owner-specific `Snapshot` from the latest completed world to each session that waits
+/// for one. Welcome and Snapshot leave in this order on the ordered reliable channel.
 pub fn send_snapshots(world: &mut World, mut due: Local<QueryState<Entity, With<SnapshotDue>>>) {
     let entities: Vec<Entity> = due.iter(world).collect();
     if entities.is_empty() {
         return;
     }
-    let message = snapshot_message(world);
-    for entity in entities {
-        if let Some(mut sender) = world.get_mut::<MessageSender<Snapshot>>(entity) {
-            sender.send::<ReliableChannel>(message.clone());
-            world.resource_mut::<ReliableTraffic>().record(entity);
-        }
-        world.entity_mut(entity).remove::<SnapshotDue>();
-    }
-}
-
-/// The full state of the current tick as a wire message.
-fn snapshot_message(world: &mut World) -> Snapshot {
-    let tick = world.resource::<SimTick>().0;
-    let units = snapshot(world)
+    let payloads: Vec<_> = entities
         .into_iter()
-        .map(|state| UnitSnapshot {
-            unit_id: UnitId(state.unit_id),
-            content_id: state.content_id,
-            owner_slot: SlotId(state.owner_slot),
-            pos: Pos {
-                x: state.pos.x,
-                y: state.pos.y,
-            },
+        .filter_map(|entity| {
+            let slot = world.get::<Session>(entity).map(|session| session.slot);
+            let payload = slot.map(|slot| {
+                let message = export::snapshot_for(&world.resource::<CompletedWorld>().0, slot);
+                (entity, message)
+            });
+            world.entity_mut(entity).remove::<SnapshotDue>();
+            payload
         })
         .collect();
-    Snapshot {
-        tick,
-        units,
-        nodes: vec![],
-        economy: turts_net_protocol::EconomyState {
-            balances: vec![],
-            inventories: vec![],
-            orders: vec![],
-            queues: vec![],
-        },
+    for (entity, message) in payloads {
+        if let Some(mut sender) = world.get_mut::<MessageSender<Snapshot>>(entity) {
+            sender.send::<ReliableChannel>(message);
+            world.resource_mut::<ReliableTraffic>().record(entity);
+        }
     }
 }
 

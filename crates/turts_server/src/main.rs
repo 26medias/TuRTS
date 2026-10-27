@@ -3,6 +3,7 @@
 
 mod boot;
 mod config;
+mod export;
 mod http;
 mod net;
 mod outbound;
@@ -23,6 +24,7 @@ use turts_net_lightyear::{ProtocolPlugin, tick_duration};
 use turts_sim::{SimPlugin, Tick as SimTick};
 
 use crate::session::Advertised;
+use turts_sim::initialize_completed_world;
 
 fn main() {
     if let Err(message) = run() {
@@ -85,6 +87,7 @@ fn run() -> Result<(), String> {
     ticklog::install(&mut app, &cli);
     stats::install(&mut app, &cli);
     synthetic::install(&mut app, &cli);
+    initialize_completed_world(app.world_mut());
     if let Some(ticks) = cli.run_ticks {
         app.insert_resource(RunTicks(ticks));
         app.add_systems(FixedLast, exit_after_ticks);

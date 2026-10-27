@@ -1,5 +1,6 @@
 //! Protocol 2 snapshots, world deltas, and fixed-tick command outcomes.
 
+use crate::export;
 use crate::session::{ReliableTraffic, Session};
 use crate::stats::Stats;
 use bevy::prelude::*;
@@ -7,10 +8,10 @@ use lightyear::prelude::*;
 use turts_net_lightyear::{ReliableChannel, StateChannel};
 use turts_net_protocol::CommandRejectReason;
 use turts_net_protocol::messages::*;
-use turts_sim::{ChangedThisTick, CommandResults, Tick as SimTick};
+use turts_sim::{CommandResults, Tick as SimTick, committed_tick};
 
 pub fn install(app: &mut App) {
-    app.add_systems(FixedLast, (send_command_results, send_deltas));
+    app.add_systems(FixedLast, (send_command_results, send_deltas).chain());
 }
 
 pub fn send_command_results(
@@ -83,42 +84,40 @@ fn wire_reason(reason: turts_sim::RejectReason) -> CommandRejectReason {
     }
 }
 
-pub fn send_deltas(
-    tick: Res<SimTick>,
-    changed: Res<ChangedThisTick>,
-    mut sessions: Query<&mut MessageSender<WorldDelta>, With<Session>>,
-    mut stats: ResMut<Stats>,
-) {
-    if sessions.is_empty() {
+pub fn send_deltas(world: &mut World) {
+    if committed_tick(world).tick == 0 {
         return;
     }
-    let delta = WorldDelta {
-        tick: tick.0,
-        base_tick: tick.0.saturating_sub(1),
-        spawned: Vec::new(),
-        removed: Vec::new(),
-        positions: changed
-            .0
-            .iter()
-            .map(|(id, pos)| UnitDelta {
-                unit_id: UnitId(*id),
-                pos: Pos { x: pos.x, y: pos.y },
+    let recipients: Vec<(Entity, turts_sim::SlotId)> = world
+        .iter_entities()
+        .filter_map(|entity| {
+            entity
+                .get::<Session>()
+                .map(|session| (entity.id(), session.slot))
+        })
+        .collect();
+    if recipients.is_empty() {
+        return;
+    }
+    let payloads: Vec<_> = {
+        let batch = committed_tick(world);
+        recipients
+            .into_iter()
+            .map(|(entity, slot)| {
+                let delta = export::delta_for(batch, slot);
+                let bytes = payload_bytes(&delta);
+                (entity, delta, bytes)
             })
-            .collect(),
-        nodes: Vec::new(),
-        economy: EconomyChanges {
-            balances: vec![],
-            inventories: vec![],
-            orders: vec![],
-            queues: vec![],
-        },
+            .collect()
     };
-    let payload = payload_bytes(&delta);
-    for mut sender in &mut sessions {
-        sender.send::<StateChannel>(delta.clone());
-        stats.delta_payload_bytes_total += payload;
+    for (entity, delta, bytes) in payloads {
+        if let Some(mut sender) = world.get_mut::<MessageSender<WorldDelta>>(entity) {
+            sender.send::<StateChannel>(delta);
+            world.resource_mut::<Stats>().delta_payload_bytes_total += bytes;
+        }
     }
 }
+
 fn payload_bytes<T: serde::Serialize>(message: &T) -> u64 {
     postcard::experimental::serialized_size(message).expect("a wire message serializes to postcard")
         as u64

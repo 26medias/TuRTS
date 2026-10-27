@@ -10,6 +10,9 @@ mod config;
 #[path = "../src/boot.rs"]
 mod boot;
 
+#[path = "../src/export.rs"]
+mod export;
+
 #[allow(dead_code)]
 #[path = "../src/synthetic.rs"]
 mod synthetic;
@@ -25,9 +28,11 @@ use turts_mod_api::{ENGINE_API_VERSION, Lockfile};
 use turts_mod_runtime::hash::sha256_hex;
 use turts_mod_runtime::lock::read_lockfile;
 use turts_mod_runtime::pack::pack_files;
-use turts_net_protocol::{Advertisement, NET_PROTOCOL_VERSION};
+use turts_net_protocol::{Advertisement, NET_PROTOCOL_VERSION, messages};
 use turts_sim::{
-    MapBounds, MoveTarget, UnitId, UnitTypes, Vec2, gameplay_entity_count, headless_app, snapshot,
+    Command, CommandKind, MapBounds, MoveTarget, SlotId, UnitId, UnitTypes, Vec2, committed_tick,
+    completed_world, gameplay_entity_count, headless_app, initialize_completed_world, snapshot,
+    world_view,
 };
 
 const PUBLIC_URL: &str = "http://127.0.0.1:7000";
@@ -185,6 +190,10 @@ fn move_targets(app: &mut App) -> BTreeMap<u32, Vec2> {
 fn synthetic_units_use_the_registered_type() {
     let (mut app, _, _) = boot_package("synthetic_registered_type", "acme");
     synthetic::spawn(app.world_mut(), 50).unwrap();
+    let synthetic_view = world_view(app.world_mut());
+    assert!(synthetic_view.economy.inventories.is_empty());
+    assert!(synthetic_view.economy.orders.is_empty());
+    assert!(synthetic_view.economy.queues.is_empty());
     assert_eq!(gameplay_entity_count(app.world_mut()), 51);
     let size = app.world().resource::<MapBounds>().size;
     let units = snapshot(app.world_mut());
@@ -206,6 +215,153 @@ fn synthetic_units_use_the_registered_type() {
     let targets = move_targets(&mut app);
     assert_eq!(targets.len(), 50);
     assert!(!targets.contains_key(&units[0].unit_id));
+}
+
+#[test]
+fn synthetic_base_harvesters_have_empty_capabilities_in_the_initial_completed_view() {
+    let (mut app, _, _) = boot_package("synthetic_base_capabilities", "base");
+    let original_ids: BTreeSet<u32> = snapshot(app.world_mut())
+        .into_iter()
+        .map(|unit| unit.unit_id)
+        .collect();
+    synthetic::spawn(app.world_mut(), 2).unwrap();
+
+    let view = world_view(app.world_mut());
+    let synthetic_ids: Vec<u32> = view
+        .units
+        .iter()
+        .filter(|unit| !original_ids.contains(&unit.unit_id))
+        .map(|unit| unit.unit_id)
+        .collect();
+    assert_eq!(synthetic_ids.len(), 2);
+    for id in &synthetic_ids {
+        assert!(
+            view.economy.inventories.iter().any(|inventory| {
+                inventory.unit == *id && inventory.owner_slot == 0 && inventory.items.is_empty()
+            }),
+            "synthetic harvester {id} has an explicit empty inventory"
+        );
+        assert!(
+            view.economy.orders.iter().any(|order| {
+                order.unit == *id
+                    && order.owner_slot == 0
+                    && order.stage == turts_sim::GatherStage::Idle
+            }),
+            "synthetic harvester {id} has an explicit Idle order"
+        );
+        assert!(
+            view.economy
+                .queues
+                .iter()
+                .all(|queue| queue.producer != *id)
+        );
+    }
+
+    assert_eq!(app.world().resource::<turts_sim::Tick>().0, 0);
+    assert_eq!(committed_tick(app.world()).tick, 0);
+    assert!(committed_tick(app.world()).spawned.is_empty());
+    initialize_completed_world(app.world_mut());
+    let completed = completed_world(app.world());
+    for id in synthetic_ids {
+        assert!(
+            completed
+                .economy
+                .inventories
+                .iter()
+                .any(|inventory| inventory.unit == id)
+        );
+        assert!(
+            completed
+                .economy
+                .orders
+                .iter()
+                .any(|order| { order.unit == id && order.owner_slot == SlotId(0).0 })
+        );
+    }
+}
+
+#[test]
+fn completed_output_is_in_same_delta_and_late_join_snapshot_while_cancel_spawns_nothing() {
+    let (mut app, _, _) = boot_package("export_actual_output", "base");
+    initialize_completed_world(app.world_mut());
+    let started = turts_sim::apply_command(
+        app.world_mut(),
+        &Command {
+            slot: SlotId(0),
+            seq: 1,
+            kind: CommandKind::Produce {
+                producer_id: 1,
+                recipe_id: turts_mod_api::ContentId::parse("base:train_rifleman").unwrap(),
+            },
+        },
+    );
+    let job_id = started.outcome.unwrap().job_id.unwrap();
+    for _ in 0..101 {
+        app.update();
+    }
+
+    let batch = committed_tick(app.world());
+    let completed = completed_world(app.world());
+    let delta = export::delta_for(batch, SlotId(0));
+    let late_join = export::snapshot_for(completed, SlotId(0));
+    assert_eq!(delta.tick, late_join.tick);
+    assert_eq!(delta.tick, 101);
+    assert_eq!(delta.spawned.len(), 1);
+    let output = &delta.spawned[0];
+    assert_eq!(output.unit_id, messages::UnitId(5));
+    assert_eq!(output.content_id, "base:rifleman");
+    assert_eq!(output.owner_slot, messages::SlotId(0));
+    assert_eq!(
+        late_join
+            .units
+            .iter()
+            .find(|unit| unit.unit_id == output.unit_id),
+        Some(output)
+    );
+    assert!(batch.events.iter().any(|event| matches!(
+        event.kind,
+        turts_sim::EconomyEventKind::ProductionCompleted {
+            producer: 1,
+            job,
+            output_unit_id: 5,
+        } if job == job_id.0
+    )));
+    let mut encoded = [0u8; 4096];
+    let encoded = postcard::to_slice(&delta, &mut encoded).unwrap();
+    let decoded: messages::WorldDelta = postcard::from_bytes(encoded).unwrap();
+    assert_eq!(decoded.spawned[0], *output);
+
+    let cancelled = turts_sim::apply_command(
+        app.world_mut(),
+        &Command {
+            slot: SlotId(0),
+            seq: 2,
+            kind: CommandKind::Produce {
+                producer_id: 1,
+                recipe_id: turts_mod_api::ContentId::parse("base:train_rifleman").unwrap(),
+            },
+        },
+    );
+    let queued_job = cancelled.outcome.unwrap().job_id.unwrap();
+    let result = turts_sim::apply_command(
+        app.world_mut(),
+        &Command {
+            slot: SlotId(0),
+            seq: 3,
+            kind: CommandKind::CancelProduction {
+                producer_id: 1,
+                job_id: queued_job,
+            },
+        },
+    );
+    assert!(result.outcome.is_ok());
+    app.update();
+    assert!(committed_tick(app.world()).spawned.is_empty());
+    assert!(
+        export::delta_for(committed_tick(app.world()), SlotId(0))
+            .spawned
+            .is_empty()
+    );
 }
 
 #[test]

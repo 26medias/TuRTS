@@ -3,7 +3,8 @@
 //! Private economy records are filtered by owner before any wire values are built.
 
 use turts_mod_api::Cost;
-use turts_net_protocol::{messages, staged_v2 as wire};
+use turts_net_protocol::messages as wire;
+use turts_net_protocol::messages;
 use turts_sim::{
     CommittedTick, SlotId, WorldView,
     economy::{

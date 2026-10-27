@@ -4,8 +4,8 @@ mod export;
 use bevy::math::Vec2;
 use turts_mod_api::{ContentId, CostSource, WorldPos};
 use turts_net_protocol::{
+    messages as wire,
     messages::{Pos, UnitId, UnitSnapshot},
-    staged_v2 as wire,
 };
 use turts_sim::{
     CommittedTick, SlotId, Vec2 as SimVec2, WorldView,
