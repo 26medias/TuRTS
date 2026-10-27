@@ -5,6 +5,7 @@
 
 pub mod channels;
 pub mod protocol_plugin;
+pub mod staged_v2;
 
 use core::time::Duration;
 
