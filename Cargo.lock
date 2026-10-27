@@ -8568,6 +8568,15 @@ dependencies = [
 [[package]]
 name = "turts_checks"
 version = "0.2.0"
+dependencies = [
+ "proc-macro2",
+ "ron",
+ "serde",
+ "serde_json",
+ "syn 2.0.119",
+ "turts_mod_api",
+ "turts_mod_runtime",
+]
 
 [[package]]
 name = "turts_client"
