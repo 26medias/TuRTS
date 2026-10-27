@@ -65,7 +65,7 @@ fn completion_spawns_once_after_exact_duration() {
         .iter()
         .find(|order| order.unit == spawned_id)
         .unwrap();
-    assert_eq!(spawned_order.stage, "Idle");
+    assert_eq!(spawned_order.stage, turts_sim::GatherStage::Idle);
     assert!(committed_tick(app.world()).events.iter().any(|e| matches!(e.kind, EconomyEventKind::ProductionCompleted { producer: 1, job: id, .. } if id == job.0)));
     app.update();
     assert_eq!(audit_state(app.world_mut()).units.len(), 6);
@@ -995,4 +995,341 @@ fn event_staging_failure_restores_queued_cancel_claims_and_stock() {
             Some(u64::MAX)
         );
     }
+}
+
+#[test]
+fn converted_income_can_overflow_charge_on_queue_refund_without_partial_writes() {
+    let mut files = economy_files();
+    let worker = String::from_utf8(files["units/worker.ron"].clone()).unwrap();
+    files.insert(
+        "units/worker.ron".into(),
+        worker
+            .replace("capacity: 10", "capacity: 1")
+            .replace("unload_per_second: 10", "unload_per_second: 20")
+            .into_bytes(),
+    );
+    let exchange = String::from_utf8(files["units/exchange.ron"].clone()).unwrap();
+    files.insert(
+        "units/exchange.ron".into(),
+        exchange.replace("per_item: 2", "per_item: 4").into_bytes(),
+    );
+    let map = String::from_utf8(files["maps/test.ron"].clone()).unwrap();
+    files.insert(
+        "maps/test.ron".into(),
+        map.replace(
+            "unit: \"probe:worker\", owner_slot: 0, pos: (x: 12.0, y: 8.0), contents: []",
+            "unit: \"probe:worker\", owner_slot: 0, pos: (x: 8.0, y: 17.0), contents: [(item: \"probe:timber\", amount: 1)]",
+        )
+        .replace(
+            "balance: \"probe:token\", amount: 200",
+            &format!("balance: \"probe:token\", amount: {}", u64::MAX - 2),
+        )
+        .into_bytes(),
+    );
+    let recipe = String::from_utf8(files["production/train.ron"].clone()).unwrap();
+    files.insert(
+        "production/train.ron".into(),
+        recipe
+            .replace(
+                "resource: \"probe:token\", amount: 100, source: SlotBalance",
+                "resource: \"probe:token\", amount: 2, source: SlotBalance",
+            )
+            .into_bytes(),
+    );
+    let mut app = scenario(20);
+    load_package(app.world_mut(), &archive_from_files(files)).unwrap();
+    assert!(
+        apply_command(
+            app.world_mut(),
+            &Command {
+                slot: SlotId(0),
+                seq: 1,
+                kind: CommandKind::Gather {
+                    unit_id: 3,
+                    node_id: turts_sim::NodeId(1),
+                },
+            },
+        )
+        .outcome
+        .is_ok()
+    );
+    app.world_mut()
+        .resource_mut::<CommandQueue>()
+        .0
+        .push_back(command(2, 1, "probe:train"));
+    app.update();
+    let first_job = app.world().resource::<turts_sim::CommandResults>().0[0]
+        .outcome
+        .unwrap()
+        .job_id
+        .unwrap();
+    assert!(committed_tick(app.world()).events.iter().any(
+        |event| matches!(event.kind, EconomyEventKind::ProductionStarted { job, .. } if job == first_job.0)
+    ));
+    advance(&mut app, 2);
+    assert!(
+        committed_tick(app.world())
+            .events
+            .iter()
+            .any(|event| matches!(
+                event.kind,
+                EconomyEventKind::Converted {
+                    amount: 1,
+                    credited: 4,
+                    ..
+                }
+            ))
+    );
+    assert_eq!(
+        audit_state(app.world_mut())
+            .balance(0, "probe:token")
+            .on_hand,
+        u64::MAX
+    );
+
+    let before = audit_state(app.world_mut());
+    let pending_before = app
+        .world()
+        .resource::<turts_sim::economy::events::PendingEconomyEvents>()
+        .0
+        .clone();
+    let ordinal_before = app
+        .world()
+        .resource::<turts_sim::economy::events::NextEventOrdinal>()
+        .0;
+    let job_id_before = app
+        .world()
+        .resource::<turts_sim::IdAllocators>()
+        .next_values()
+        .2;
+    let rejected = apply_command(
+        app.world_mut(),
+        &Command {
+            slot: SlotId(0),
+            seq: 3,
+            kind: CommandKind::CancelProduction {
+                producer_id: 1,
+                job_id: first_job,
+            },
+        },
+    );
+    assert_eq!(
+        rejected.outcome,
+        Err(turts_sim::RejectReason::RefundDestinationOverflow)
+    );
+    assert_eq!(audit_state(app.world_mut()), before);
+    assert_eq!(
+        app.world()
+            .resource::<turts_sim::economy::events::PendingEconomyEvents>()
+            .0,
+        pending_before
+    );
+    assert_eq!(
+        app.world()
+            .resource::<turts_sim::economy::events::NextEventOrdinal>()
+            .0,
+        ordinal_before
+    );
+    assert_eq!(
+        app.world()
+            .resource::<turts_sim::IdAllocators>()
+            .next_values()
+            .2,
+        job_id_before
+    );
+
+    let second = apply_command(app.world_mut(), &command(4, 1, "probe:train"));
+    let second_job = second.outcome.unwrap().job_id.unwrap();
+    assert_ne!(first_job, second_job);
+    assert_eq!(
+        audit_state(app.world_mut())
+            .balance(0, "probe:token")
+            .on_hand,
+        u64::MAX - 2
+    );
+    assert!(
+        apply_command(
+            app.world_mut(),
+            &Command {
+                slot: SlotId(0),
+                seq: 5,
+                kind: CommandKind::CancelProduction {
+                    producer_id: 1,
+                    job_id: first_job,
+                },
+            },
+        )
+        .outcome
+        .is_ok()
+    );
+    let after_retry = audit_state(app.world_mut());
+    assert_eq!(after_retry.balance(0, "probe:token").on_hand, u64::MAX);
+    let remaining_jobs = &after_retry
+        .economy
+        .queues
+        .iter()
+        .find(|queue| queue.producer == 1)
+        .unwrap()
+        .jobs;
+    assert_eq!(remaining_jobs.len(), 1);
+    assert_eq!(remaining_jobs[0].id, second_job.0);
+}
+
+#[test]
+fn gathering_depletion_unlocks_one_blocked_output_with_empty_typed_capabilities() {
+    let mut files = economy_files();
+    let yard = String::from_utf8(files["units/yard.ron"].clone()).unwrap();
+    files.insert(
+        "units/yard.ron".into(),
+        yard.replace("(x: 0.0, y: 4.0), (x: 0.0, y: -4.0)", "(x: 16.0, y: 0.0)")
+            .into_bytes(),
+    );
+    let map = String::from_utf8(files["maps/test.ron"].clone()).unwrap();
+    files.insert(
+        "maps/test.ron".into(),
+        map.replacen("remaining: 1000", "remaining: 2", 1)
+            .replace(
+                "unit: \"probe:worker\", owner_slot: 0, pos: (x: 12.0, y: 8.0), contents: []",
+                "unit: \"probe:worker\", owner_slot: 0, pos: (x: 22.0, y: 8.0), contents: []",
+            )
+            .into_bytes(),
+    );
+    let worker = String::from_utf8(files["units/worker.ron"].clone()).unwrap();
+    files.insert(
+        "units/worker.ron".into(),
+        worker
+            .replace("gather_per_second: 5", "gather_per_second: 20")
+            .into_bytes(),
+    );
+    let recipe = String::from_utf8(files["production/hire.ron"].clone()).unwrap();
+    files.insert(
+        "production/hire.ron".into(),
+        recipe
+            .replace("duration_ms: 6000", "duration_ms: 50")
+            .into_bytes(),
+    );
+    let mut app = scenario(20);
+    load_package(app.world_mut(), &archive_from_files(files)).unwrap();
+    assert!(
+        apply_command(
+            app.world_mut(),
+            &Command {
+                slot: SlotId(0),
+                seq: 1,
+                kind: CommandKind::Gather {
+                    unit_id: 3,
+                    node_id: turts_sim::NodeId(1),
+                },
+            },
+        )
+        .outcome
+        .is_ok()
+    );
+    let initial_next_unit = app
+        .world()
+        .resource::<turts_sim::IdAllocators>()
+        .next_values()
+        .0;
+    let job = apply_command(app.world_mut(), &command(2, 1, "probe:hire"))
+        .outcome
+        .unwrap()
+        .job_id
+        .unwrap();
+
+    app.update();
+    assert_eq!(
+        audit_state(app.world_mut()).economy.queues[0].jobs[0].duration_ticks,
+        1
+    );
+    app.update();
+    let blocked = audit_state(app.world_mut());
+    assert_eq!(
+        blocked
+            .nodes
+            .iter()
+            .find(|node| node.id.0 == 1)
+            .unwrap()
+            .remaining,
+        1
+    );
+    assert_eq!(
+        blocked.economy.queues[0].jobs[0].stage,
+        turts_sim::JobStage::OutputBlocked
+    );
+    assert_eq!(
+        app.world()
+            .resource::<turts_sim::IdAllocators>()
+            .next_values()
+            .0,
+        initial_next_unit
+    );
+    assert_eq!(
+        blocked
+            .economy
+            .inventories
+            .iter()
+            .find(|inventory| inventory.unit == 1)
+            .unwrap()
+            .items[0]
+            .on_hand,
+        50
+    );
+    assert!(!committed_tick(app.world()).events.iter().any(|event| matches!(event.kind, EconomyEventKind::ProductionCompleted { job: id, .. } if id == job.0)));
+
+    app.update();
+
+    let completed = audit_state(app.world_mut());
+    assert_eq!(
+        completed
+            .nodes
+            .iter()
+            .find(|node| node.id.0 == 1)
+            .unwrap()
+            .remaining,
+        0
+    );
+    assert_eq!(completed.units.len(), 6);
+    assert_eq!(
+        app.world()
+            .resource::<turts_sim::IdAllocators>()
+            .next_values()
+            .0,
+        initial_next_unit + 1
+    );
+    assert_eq!(
+        completed
+            .economy
+            .inventories
+            .iter()
+            .find(|inventory| inventory.unit == initial_next_unit)
+            .unwrap()
+            .items,
+        Vec::<turts_sim::ItemView>::new()
+    );
+    let order = completed
+        .economy
+        .orders
+        .iter()
+        .find(|order| order.unit == initial_next_unit)
+        .unwrap();
+    assert_eq!(order.stage, turts_sim::GatherStage::Idle);
+    assert_eq!((order.node, order.receiver), (None, None));
+    assert_eq!(completed.economy.queues[0].jobs.len(), 0);
+    assert_eq!(
+        completed
+            .economy
+            .inventories
+            .iter()
+            .find(|inventory| inventory.unit == 1)
+            .unwrap()
+            .items[0]
+            .on_hand,
+        50
+    );
+    assert_eq!(committed_tick(app.world()).spawned.len(), 1);
+    assert_eq!(
+        committed_tick(app.world()).spawned[0].unit_id,
+        initial_next_unit
+    );
+    assert_eq!(committed_tick(app.world()).events.iter().filter(|event| matches!(event.kind, EconomyEventKind::ProductionCompleted { job: id, .. } if id == job.0)).count(), 1);
 }

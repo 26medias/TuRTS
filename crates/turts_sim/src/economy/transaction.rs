@@ -265,8 +265,10 @@ impl Transaction<'_> {
                         spawn.id,
                         crate::economy::GatherOrder {
                             node: None,
+                            deposit: None,
                             receiver: None,
-                            stage: "Idle".into(),
+                            stage: crate::economy::gather::GatherStage::Idle,
+                            carry: crate::economy::gather::RateCarry::default(),
                         },
                     );
             }

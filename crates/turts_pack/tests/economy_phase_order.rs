@@ -58,7 +58,11 @@ fn produce_command(seq: u32) -> Command {
 #[test]
 fn gather_conversion_precedes_reserved_production_start_in_same_tick() {
     let mut app = fixture(2);
-    assert!(apply_command(app.world_mut(), &gather_command()).outcome.is_ok());
+    assert!(
+        apply_command(app.world_mut(), &gather_command())
+            .outcome
+            .is_ok()
+    );
     app.update();
     app.update();
     app.world_mut()
@@ -71,11 +75,25 @@ fn gather_conversion_precedes_reserved_production_start_in_same_tick() {
     let events = &committed_tick(app.world()).events;
     let converted = events
         .iter()
-        .find(|event| matches!(event.kind, EconomyEventKind::Converted { amount: 1, credited: 2, .. }))
+        .find(|event| {
+            matches!(
+                event.kind,
+                EconomyEventKind::Converted {
+                    amount: 1,
+                    credited: 2,
+                    ..
+                }
+            )
+        })
         .expect("the loaded worker converts one timber on the witness tick");
     let started = events
         .iter()
-        .find(|event| matches!(event.kind, EconomyEventKind::ProductionStarted { producer: 1, .. }))
+        .find(|event| {
+            matches!(
+                event.kind,
+                EconomyEventKind::ProductionStarted { producer: 1, .. }
+            )
+        })
         .expect("the pre-reserved job starts in the production phase");
     assert!(converted.ordinal < started.ordinal);
     let EconomyEventKind::ProductionStarted { charged, .. } = &started.kind else {
@@ -92,13 +110,27 @@ fn gather_conversion_precedes_reserved_production_start_in_same_tick() {
     let job = &state.economy.queues[0].jobs[0];
     assert_eq!(job.stage, turts_sim::JobStage::Running);
     assert_eq!((job.elapsed_ticks, job.duration_ticks), (0, 120));
-    assert_eq!(state.economy.inventories.iter().find(|inv| inv.unit == 3).unwrap().items[0].on_hand, 0);
+    assert_eq!(
+        state
+            .economy
+            .inventories
+            .iter()
+            .find(|inv| inv.unit == 3)
+            .unwrap()
+            .items[0]
+            .on_hand,
+        0
+    );
 }
 
 #[test]
 fn tick_start_produce_cannot_spend_income_until_the_next_tick() {
     let mut app = fixture(0);
-    assert!(apply_command(app.world_mut(), &gather_command()).outcome.is_ok());
+    assert!(
+        apply_command(app.world_mut(), &gather_command())
+            .outcome
+            .is_ok()
+    );
     app.update();
     app.update();
     app.world_mut()
@@ -112,16 +144,30 @@ fn tick_start_produce_cannot_spend_income_until_the_next_tick() {
         app.world().resource::<CommandResults>().0[0].outcome,
         Err(RejectReason::InsufficientBalance)
     );
-    assert!(committed_tick(app.world())
-        .events
-        .iter()
-        .any(|event| matches!(event.kind, EconomyEventKind::Converted { credited: 2, .. })));
+    assert!(
+        committed_tick(app.world())
+            .events
+            .iter()
+            .any(|event| matches!(event.kind, EconomyEventKind::Converted { credited: 2, .. }))
+    );
     assert_eq!(
-        (balance_view(app.world(), SlotId(0), &cid("probe:token")).unwrap().on_hand,
-         balance_view(app.world(), SlotId(0), &cid("probe:token")).unwrap().reserved),
+        (
+            balance_view(app.world(), SlotId(0), &cid("probe:token"))
+                .unwrap()
+                .on_hand,
+            balance_view(app.world(), SlotId(0), &cid("probe:token"))
+                .unwrap()
+                .reserved
+        ),
         (2, 0)
     );
-    assert!(audit_state(app.world_mut()).economy.queues.iter().all(|queue| queue.jobs.is_empty()));
+    assert!(
+        audit_state(app.world_mut())
+            .economy
+            .queues
+            .iter()
+            .all(|queue| queue.jobs.is_empty())
+    );
 
     app.world_mut()
         .resource_mut::<CommandQueue>()
@@ -129,11 +175,20 @@ fn tick_start_produce_cannot_spend_income_until_the_next_tick() {
         .push_back(produce_command(3));
     app.update();
 
-    assert!(app.world().resource::<CommandResults>().0[0].outcome.is_ok());
-    assert!(committed_tick(app.world())
-        .events
-        .iter()
-        .any(|event| matches!(event.kind, EconomyEventKind::ProductionStarted { producer: 1, .. })));
+    assert!(
+        app.world().resource::<CommandResults>().0[0]
+            .outcome
+            .is_ok()
+    );
+    assert!(
+        committed_tick(app.world())
+            .events
+            .iter()
+            .any(|event| matches!(
+                event.kind,
+                EconomyEventKind::ProductionStarted { producer: 1, .. }
+            ))
+    );
     let balance = balance_view(app.world(), SlotId(0), &cid("probe:token")).unwrap();
     assert_eq!((balance.on_hand, balance.reserved), (0, 0));
 }
