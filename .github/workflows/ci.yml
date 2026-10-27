@@ -6,6 +6,9 @@ on:
 jobs:
   check:
     runs-on: ubuntu-latest
+    env:
+      CARGO_BUILD_JOBS: 2
+      M2_REFUTATION_ROOT: ${{ github.workspace }}/target/m2-refutations
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -17,19 +20,39 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends pkg-config libx11-dev libasound2-dev libudev-dev libxkbcommon-x11-0 libwayland-dev libxkbcommon-dev
       - name: Format
         run: cargo fmt --all --check
-      - name: Clippy (native)
-        run: cargo clippy --workspace --all-targets -- -D warnings
+      - name: Clippy (native, strict)
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - name: Check (wasm32)
-        run: cargo check --workspace --exclude turts_server --target wasm32-unknown-unknown
+        run: cargo check --workspace --exclude turts_server --target wasm32-unknown-unknown --locked
       - name: Test (native, headless)
-        run: cargo test --workspace
+        run: cargo test --workspace --locked
+      - name: T1 dependency boundary
+        run: bash scripts/boundary.sh
+      - name: M2 native-only semantic refutations
+        run: bash scripts/m2-refutations.sh --case ci-native
       - name: Acceptance (process tests, release, serial)
-        if: ${{ hashFiles('crates/turts_server/tests/acceptance.rs') != '' }}
         run: bash scripts/acceptance.sh
-  # T7 (design section 7) runs here and not under `cargo test --workspace`: it needs a wasm
-  # build, a server process and Chrome. ubuntu-latest has /usr/bin/google-chrome.
+      - name: Upload native and acceptance diagnostics
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: m2-native-and-acceptance-${{ github.run_id }}
+          if-no-files-found: ignore
+          retention-days: 14
+          path: |
+            target/m2-refutations/**
+            target/acceptance/**
+            target/task15-evidence/**
+            target/m2-public-proof/**
+            target/tmp/acceptance-oracle.log
+  # T7 and M2 browser proof need a real browser process, Trunk, wasm and a
+  # software Vulkan implementation; hosted CI does not require an NVIDIA GPU.
   browser:
     runs-on: ubuntu-latest
+    env:
+      CARGO_BUILD_JOBS: 2
+      M2_ARTIFACT_ROOT: ${{ github.workspace }}/target/m2-browser/runs
+      M2_REFUTATION_ROOT: ${{ github.workspace }}/target/m2-refutations
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -48,32 +71,38 @@ jobs:
       - name: Install trunk 0.22.0
         if: steps.trunk-cache.outputs.cache-hit != 'true'
         run: cargo install --locked trunk --version 0.22.0
-      # Trunk downloads wasm-bindgen and wasm-opt at the versions that Trunk.toml pins.
+      # Trunk downloads wasm-bindgen and wasm-opt at versions pinned by Trunk.toml.
       - name: Cache the tools that trunk downloads
         uses: actions/cache@v4
         with:
           path: ~/.cache/trunk
           key: trunk-tools-${{ runner.os }}-${{ hashFiles('crates/turts_client_web/Trunk.toml') }}
-      - name: Install brotli
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends brotli
+      - name: Install browser and Bevy system libraries
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends pkg-config libx11-dev libasound2-dev libudev-dev libxkbcommon-x11-0 libwayland-dev libxkbcommon-dev brotli xvfb mesa-vulkan-drivers libvulkan1
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-      - name: Install playwright-core
+      - name: Install pinned browser test dependencies
         run: npm ci
         working-directory: tests/browser
       - name: T7 browser join
         run: bash scripts/t7.sh
-      - name: T7 logs
+      - name: M2 browser proof (base, haul, acme, cedar)
+        run: bash scripts/m2-browser.sh
+      - name: M2 browser-only semantic refutations
+        run: bash scripts/m2-refutations.sh --case ci-browser
+      - name: Upload browser, T7, and refutation diagnostics
         if: ${{ always() }}
         uses: actions/upload-artifact@v4
         with:
-          name: t7
-          path: |
-            target/t7/*.log
-            target/t7/frames.jsonl
-            target/t7/result.json
+          name: m2-browser-and-refutations-${{ github.run_id }}
           if-no-files-found: ignore
+          retention-days: 14
+          path: |
+            target/m2-browser/runs/**
+            target/m2-refutations/**
+            target/t7/**
+            target/task16-evidence/**
   agents:
     runs-on: ubuntu-latest
     steps:
