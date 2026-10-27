@@ -574,5 +574,332 @@
     ],
     "expected_failure": "server boot must call the public turts_pack::load_package path",
     "restore_check": "sha256(source)==baseline and selected test is green"
+  },
+  {
+    "id": "E7-refused-hello-claims-slot",
+    "kind": "product",
+    "plant_path": "crates/turts_server/src/session.rs",
+    "anchor": "    if hello.protocol_version != NET_PROTOCOL_VERSION {",
+    "replacement": "    if hello.protocol_version != NET_PROTOCOL_VERSION {\n        slots.claim(hello.player_id).unwrap();",
+    "command": [
+      "cargo",
+      "test",
+      "--release",
+      "-p",
+      "turts_server",
+      "--bin",
+      "turts_server",
+      "session::tests::judge_checks_protocol_before_hash_and_claims_nothing_on_refusal",
+      "--",
+      "--exact",
+      "--nocapture"
+    ],
+    "expected_failure": "a refused Hello takes no slot",
+    "runtime": "rust"
+  },
+  {
+    "id": "E8-foreign-gather-owner-check",
+    "kind": "process",
+    "plant_path": "crates/turts_sim/src/economy/gather.rs",
+    "anchor": "pub fn assign_gather(\n    world: &mut World,\n    slot: SlotId,\n    unit: u32,\n    node: NodeId,\n) -> Result<(), RejectReason> {\n    let entity = find_unit(world, unit).ok_or(RejectReason::UnknownUnit)?;\n    if world.get::<Owner>(entity).map(|owner| owner.0) != Some(slot) {",
+    "replacement": "pub fn assign_gather(\n    world: &mut World,\n    slot: SlotId,\n    unit: u32,\n    node: NodeId,\n) -> Result<(), RejectReason> {\n    let entity = find_unit(world, unit).ok_or(RejectReason::UnknownUnit)?;\n    if false && world.get::<Owner>(entity).map(|owner| owner.0) != Some(slot) {",
+    "pre_commands": [
+      [
+        "cargo",
+        "build",
+        "--release",
+        "-p",
+        "turts_server"
+      ],
+      [
+        "cargo",
+        "build",
+        "--release",
+        "-p",
+        "turts_client"
+      ]
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "--release",
+      "-p",
+      "turts_server",
+      "--test",
+      "economy",
+      "e8_commands_are_authoritative_and_acked",
+      "--",
+      "--ignored",
+      "--exact",
+      "--nocapture"
+    ],
+    "expected_failure": "wire command seq",
+    "runtime": "rust"
+  },
+  {
+    "id": "E8-rejection-ack-send-reversal",
+    "kind": "process",
+    "plant_path": "crates/turts_server/src/session.rs",
+    "replacements": [
+      {
+        "anchor": "            if let Ok(mut sender) = acks.get_mut(entity) {\n                sender.send::<ReliableChannel>(CommandAck {\n                    seq: envelope.seq,\n                    tick: tick.0,\n                });\n                traffic.record(entity);\n            }",
+        "replacement": "            let duplicate_seq = session.last_seq.is_some_and(|last| envelope.seq <= last);\n            if !duplicate_seq {\n                if let Ok(mut sender) = acks.get_mut(entity) {\n                    sender.send::<ReliableChannel>(CommandAck {\n                        seq: envelope.seq,\n                        tick: tick.0,\n                    });\n                    traffic.record(entity);\n                }\n            }"
+      },
+      {
+        "anchor": "pub fn install(app: &mut App, advertised: Advertised) {\n    app.insert_resource(advertised);\n    app.init_resource::<StagedPlayerCommands>()\n        .init_resource::<CommandAdmissionDiagnostics>()\n        .init_resource::<ReliableTraffic>();",
+        "replacement": "pub fn install(app: &mut App, advertised: Advertised) {\n    app.insert_resource(advertised);\n    app.init_resource::<StagedPlayerCommands>()\n        .init_resource::<CommandAdmissionDiagnostics>()\n        .init_resource::<ReliableTraffic>()\n        .init_resource::<DelayedCommandAcks>();\n    app.add_systems(\n        PreUpdate,\n        send_delayed_command_acks.after(MessageSystems::Receive),\n    );"
+      },
+      {
+        "anchor": "fn record_admission_rejection(\n",
+        "replacement": "#[derive(Resource, Debug, Default)]\nstruct DelayedCommandAcks(VecDeque<(Entity, CommandAck)>);\n\nfn send_delayed_command_acks(\n    mut pending: ResMut<DelayedCommandAcks>,\n    mut senders: Query<&mut MessageSender<CommandAck>>,\n    mut traffic: ResMut<ReliableTraffic>,\n) {\n    for (entity, ack) in std::mem::take(&mut pending.0) {\n        if let Ok(mut sender) = senders.get_mut(entity) {\n            sender.send::<ReliableChannel>(ack);\n            traffic.record(entity);\n        }\n    }\n}\n\nfn record_admission_rejection(\n"
+      },
+      {
+        "anchor": "    if let Some((before, raw)) = admission_evidence {",
+        "replacement": "    if reason == CommandRejectReason::BadSequence {\n        world\n            .resource_mut::<DelayedCommandAcks>()\n            .0\n            .push_back((\n                staged.connection,\n                CommandAck {\n                    seq: staged.envelope.seq,\n                    tick,\n                },\n            ));\n    }\n    if let Some((before, raw)) = admission_evidence {"
+      }
+    ],
+    "pre_commands": [
+      [
+        "cargo",
+        "build",
+        "--release",
+        "-p",
+        "turts_server"
+      ],
+      [
+        "cargo",
+        "build",
+        "--release",
+        "-p",
+        "turts_client"
+      ]
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "--release",
+      "-p",
+      "turts_server",
+      "--test",
+      "economy",
+      "e8_commands_are_authoritative_and_acked",
+      "--",
+      "--ignored",
+      "--exact",
+      "--nocapture"
+    ],
+    "expected_failure": "actual ReliableChannel MessageIds put Ack before rejection for seq",
+    "runtime": "rust",
+    "provenance_paths": [
+      "crates/turts_server/tests/economy.rs",
+      "crates/turts_server/tests/support/wire_sender.rs"
+    ]
+  },
+  {
+    "id": "E8-mixed-cost-partial-commit",
+    "kind": "process",
+    "plant_path": "crates/turts_sim/src/economy/transaction.rs",
+    "replacements": [
+      {
+        "anchor": "        updates.insert(\n            (line.endpoint, line.resource),\n            Account {\n                on_hand: old\n                    .on_hand\n                    .checked_sub(line.amount)\n                    .ok_or(RejectReason::ArithmeticOverflow)?,\n                ..old\n            },\n        );",
+        "replacement": "        let charged = Account { on_hand: old.on_hand.checked_sub(line.amount).ok_or(RejectReason::ArithmeticOverflow)?, ..old };\n        if let Endpoint::Slot(slot) = line.endpoint { tx.world.resource_mut::<EconomyLedger>().balances.insert((slot, line.resource.clone()), charged); }\n        updates.insert((line.endpoint, line.resource), charged);"
+      }
+    ],
+    "pre_commands": [
+      [
+        "cargo",
+        "build",
+        "--release",
+        "-p",
+        "turts_server"
+      ],
+      [
+        "cargo",
+        "build",
+        "--release",
+        "-p",
+        "turts_client"
+      ]
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "--release",
+      "-p",
+      "turts_server",
+      "--test",
+      "economy",
+      "e8_commands_are_authoritative_and_acked",
+      "--",
+      "--ignored",
+      "--exact",
+      "--nocapture"
+    ],
+    "expected_failure": "rejected seq 5 is write neutral",
+    "runtime": "rust"
+  },
+  {
+    "id": "E9-owner-private-raw-dto",
+    "kind": "process",
+    "plant_path": "crates/turts_server/src/export.rs",
+    "anchor": "    record.slot == slot.0",
+    "replacement": "    true",
+    "pre_commands": [
+      [
+        "cargo",
+        "build",
+        "--release",
+        "-p",
+        "turts_server"
+      ],
+      [
+        "cargo",
+        "build",
+        "--release",
+        "-p",
+        "turts_client"
+      ]
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "--release",
+      "-p",
+      "turts_server",
+      "--test",
+      "economy",
+      "e9_two_owners_late_join_and_output_lifecycle",
+      "--",
+      "--ignored",
+      "--exact",
+      "--nocapture"
+    ],
+    "expected_failure": "raw Snapshot DTO equals independent owner projection",
+    "runtime": "rust"
+  },
+  {
+    "id": "E9-output-in-snapshot-and-delta",
+    "kind": "process",
+    "plant_path": "crates/turts_server/src/export.rs",
+    "replacements": [
+      {
+        "anchor": "        units: view.units.iter().map(unit_snapshot).collect(),",
+        "replacement": "        units: view.units.iter().filter(|unit| unit.content_id != \"base:rifleman\").map(unit_snapshot).collect(),"
+      },
+      {
+        "anchor": "        spawned: batch.spawned.iter().map(unit_snapshot).collect(),",
+        "replacement": "        spawned: batch.spawned.iter().filter(|unit| unit.content_id != \"base:rifleman\").map(unit_snapshot).collect(),"
+      }
+    ],
+    "pre_commands": [
+      [
+        "cargo",
+        "build",
+        "--release",
+        "-p",
+        "turts_server"
+      ],
+      [
+        "cargo",
+        "build",
+        "--release",
+        "-p",
+        "turts_client"
+      ]
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "--release",
+      "-p",
+      "turts_server",
+      "--test",
+      "economy",
+      "e9_two_owners_late_join_and_output_lifecycle",
+      "--",
+      "--ignored",
+      "--exact",
+      "--nocapture"
+    ],
+    "expected_failure": "raw Snapshot DTO equals independent owner projection",
+    "runtime": "rust"
+  },
+  {
+    "id": "E9-midtrace-rearm-ignored",
+    "kind": "process",
+    "plant_path": "crates/turts_client/src/ingest.rs",
+    "anchor": "        arm_tick,\n    });",
+    "replacement": "        arm_tick: if hooks.dropped_world_changes.is_empty() { arm_tick } else { return; },\n    });",
+    "pre_commands": [
+      [
+        "cargo",
+        "build",
+        "--release",
+        "-p",
+        "turts_server"
+      ],
+      [
+        "cargo",
+        "build",
+        "--release",
+        "-p",
+        "turts_client"
+      ]
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "--release",
+      "-p",
+      "turts_server",
+      "--test",
+      "economy",
+      "e9_loss_and_small_buffer_converge",
+      "--",
+      "--ignored",
+      "--exact",
+      "--nocapture"
+    ],
+    "expected_failure": "initial arm and live midtrace rearm each fired once",
+    "runtime": "rust"
+  },
+  {
+    "id": "E9-duplicate-spawn-tail-replay",
+    "kind": "process",
+    "plant_path": "crates/turts_client/src/replica.rs",
+    "anchor": "            candidate = next;\n            replayed += 1;",
+    "replacement": "            let Some(double_applied) = self.stage_delta(&next, &delta) else {\n                self.mark_gap(delta.tick);\n                replay_failed = true;\n                remaining.push(delta);\n                continue;\n            };\n            candidate = double_applied;\n            replayed += 1;",
+    "pre_commands": [
+      [
+        "cargo",
+        "build",
+        "--release",
+        "-p",
+        "turts_server"
+      ],
+      [
+        "cargo",
+        "build",
+        "--release",
+        "-p",
+        "turts_client"
+      ]
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "--release",
+      "-p",
+      "turts_server",
+      "--test",
+      "economy",
+      "e9_loss_and_small_buffer_converge",
+      "--",
+      "--ignored",
+      "--exact",
+      "--nocapture"
+    ],
+    "expected_failure": "duplicate-free retained replay completes without a successor response",
+    "runtime": "rust"
   }
 ]

@@ -47,6 +47,45 @@ class RefutationRunnerTests(unittest.TestCase):
             self.assertTrue((first / "scratch").is_dir())
             self.assertTrue((second / "build").is_dir())
 
+    def test_browser_markers_require_exact_complete_semantic_phases(self):
+        case = {"id": "E16-browser-case", "runtime": "browser", "expected_failure": "private balance"}
+        baseline = "\n".join([
+            "M2_CASE_START E16-browser-case",
+            "M2_CASE_PASS E16-browser-case",
+            'M2_CASE_SUMMARY {"selected_count":1,"completed_count":1,"passed_count":1,"semantic_failed_count":0}',
+        ])
+        self.assertEqual(refutations.require_phase_result(case, "baseline.green", type("R", (), {"stdout":baseline,"returncode":0})()), None)
+        red = "\n".join([
+            "M2_CASE_START E16-browser-case",
+            'M2_CASE_SEMANTIC_FAIL E16-browser-case "private balance leaked"',
+            'M2_CASE_SUMMARY {"selected_count":1,"completed_count":1,"passed_count":0,"semantic_failed_count":1}',
+        ])
+        self.assertEqual(refutations.require_phase_result(case, "plant.red", type("R", (), {"stdout":red,"returncode":1})()), "private balance leaked")
+        for invalid in (
+            baseline.replace("M2_CASE_SUMMARY", "M2_CASE_TIMEOUT E16-browser-case \"late\"\nM2_CASE_SUMMARY"),
+            baseline.replace('"completed_count":1', '"completed_count":0'),
+            baseline.replace("M2_CASE_PASS", "M2_CASE_SEMANTIC_FAIL"),
+        ):
+            with self.subTest(invalid=invalid), self.assertRaises(ValueError):
+                refutations.browser_summary(invalid, case)
+
+    def test_runtime_selectors_are_explicit_and_nonempty(self):
+        cases = [
+            {"id": "E8-native", "kind": "process", "runtime": "rust"},
+            {"id": "E16-browser", "kind": "process", "runtime": "browser"},
+            {"id": "E14-legacy", "kind": "process"},
+        ]
+        self.assertEqual(
+            [case["id"] for case in refutations.select_cases(cases, "ci-native")],
+            ["E8-native", "E14-legacy"],
+        )
+        self.assertEqual(
+            [case["id"] for case in refutations.select_cases(cases, "ci-browser")],
+            ["E16-browser"],
+        )
+        with self.assertRaisesRegex(ValueError, "no refutation cases selected"):
+            refutations.select_cases([cases[0]], "ci-browser")
+
     def test_source_copy_skips_node_modules_and_dist(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp) / "root"
@@ -71,6 +110,22 @@ class RefutationRunnerTests(unittest.TestCase):
         self.assertEqual(
             refutations.pre_commands({"pre_command": ["cargo", "build"]}),
             [["cargo", "build"]],
+        )
+
+    def test_multi_anchor_plant_is_atomic_and_legacy_case_still_works(self):
+        case = {
+            "id": "E8-two-anchor",
+            "replacements": [
+                {"anchor": "first", "replacement": "FIRST"},
+                {"anchor": "second", "replacement": "SECOND"},
+            ],
+        }
+        self.assertEqual(refutations.apply_plant("first + second", case), "FIRST + SECOND")
+        with self.assertRaisesRegex(RuntimeError, "anchor occurs 0 times"):
+            refutations.apply_plant("first + absent", case)
+        self.assertEqual(
+            refutations.apply_plant("old", {"id": "E7-one", "anchor": "old", "replacement": "new"}),
+            "new",
         )
 
     def test_selected_test_count_is_exact_and_nonzero(self):
@@ -121,6 +176,54 @@ class RefutationRunnerTests(unittest.TestCase):
             self.assertEqual(manifest["status"], "passed")
             self.assertEqual(manifest["baseline_sha256"], manifest["restored_sha256"])
             self.assertNotEqual(manifest["baseline_sha256"], manifest["planted_sha256"])
+
+    def test_failed_plant_restores_shared_source_before_next_case(self):
+        import sys
+
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            scratch = root / "scratch"
+            scratch.mkdir()
+            source = scratch / "sample.rs"
+            source.write_text("let gate = true;\n")
+            build = root / "build"
+            build.mkdir()
+            failed_evidence = root / "failed"
+            failed_script = (
+                "from pathlib import Path; import sys; print('running 1 test'); "
+                "broken = 'false' in Path('sample.rs').read_text(); "
+                "print('error[E0001]: simulated compile failure' if broken else 'test result: ok'); "
+                "sys.exit(1 if broken else 0)"
+            )
+            failed = {
+                "id": "E8-failing-plant",
+                "plant_path": "sample.rs",
+                "anchor": "let gate = true;",
+                "replacement": "let gate = false;",
+                "command": [sys.executable, "-c", failed_script],
+                "expected_failure": "unreached",
+            }
+            with self.assertRaisesRegex(RuntimeError, "plant caused a compile failure"):
+                refutations.run_case(failed, scratch, build, failed_evidence)
+            self.assertEqual(source.read_text(), "let gate = true;\n")
+
+            next_evidence = root / "next"
+            next_script = (
+                "from pathlib import Path; import sys; print('running 1 test'); "
+                "broken = 'false' in Path('sample.rs').read_text(); "
+                "print('semantic invariant violated' if broken else 'test result: ok'); "
+                "sys.exit(1 if broken else 0)"
+            )
+            next_case = {
+                "id": "E9-after-failure",
+                "plant_path": "sample.rs",
+                "anchor": "let gate = true;",
+                "replacement": "let gate = false;",
+                "command": [sys.executable, "-c", next_script],
+                "expected_failure": "semantic invariant violated",
+            }
+            refutations.run_case(next_case, scratch, build, next_evidence)
+            self.assertEqual(source.read_text(), "let gate = true;\n")
 
     def test_case_evidence_writes_full_phase_logs_and_hashes(self):
         with tempfile.TemporaryDirectory() as temp:

@@ -51,6 +51,110 @@ fn advanced_clock(state: &turts_sim::AuditState, tick: u32) -> turts_sim::AuditS
 }
 
 #[test]
+fn live_audit_reader_ignores_only_unterminated_tail_and_waits_for_tick() {
+    use economylog::{EconomyLogRecord, EconomyLogWriter};
+    use std::io::Write;
+    use std::time::{Duration, SystemTime, UNIX_EPOCH};
+    use turts_sim::{AuditTrail, economy::views::audit_state};
+
+    let mut app = economy_fixture_app_at(5);
+    app.world_mut().resource_mut::<AuditTrail>().enable();
+    let mut writer = EconomyLogWriter::new(Vec::new());
+    let initial = audit_state(app.world_mut());
+    writer
+        .write_initial(app.world().resource::<AuditTrail>(), initial)
+        .unwrap();
+    for _ in 0..3 {
+        app.update();
+        let mut trail = app.world_mut().resource_mut::<AuditTrail>();
+        for command in trail.drain_commands() {
+            writer.write_command(&trail, command).unwrap();
+        }
+        for operation in trail.drain_operations() {
+            writer.write_operation(&trail, operation).unwrap();
+        }
+        let tick = trail.drain_ticks().pop().expect("one completed test tick");
+        writer.write_tick(&trail, tick).unwrap();
+    }
+    writer.flush().unwrap();
+    let complete = writer.into_inner();
+
+    let mut prefixes = Vec::new();
+    let mut prefix = Vec::new();
+    for line in complete.split_inclusive(|byte| *byte == b'\n') {
+        prefix.extend_from_slice(line);
+        let value: serde_json::Value = serde_json::from_slice(line).unwrap();
+        if value["record"] == "tick" {
+            prefixes.push(prefix.clone());
+        }
+    }
+    assert!(prefixes.len() >= 2, "test log has multiple completed ticks");
+    let first = &prefixes[0];
+    let second = &prefixes[1];
+    let second_segment = &second[first.len()..];
+    let nonce = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let path = std::env::temp_dir().join(format!(
+        "turts-live-audit-{}-{nonce}.jsonl",
+        std::process::id()
+    ));
+
+    std::fs::write(&path, first).unwrap();
+    let half = second_segment.len() / 2;
+    let mut file = std::fs::OpenOptions::new()
+        .append(true)
+        .open(&path)
+        .unwrap();
+    file.write_all(&second_segment[..half]).unwrap();
+    file.flush().unwrap();
+    let decoded = read_live_complete_tick_prefix(&path).unwrap();
+    assert_eq!(
+        decoded
+            .iter()
+            .filter(|record| matches!(record, EconomyLogRecord::Tick { .. }))
+            .count(),
+        1,
+        "unterminated JSON tail is excluded"
+    );
+    drop(file);
+
+    let path_for_writer = path.clone();
+    let completion = second_segment[half..].to_vec();
+    let append = std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_millis(60));
+        let mut file = std::fs::OpenOptions::new()
+            .append(true)
+            .open(path_for_writer)
+            .unwrap();
+        file.write_all(&completion).unwrap();
+        file.flush().unwrap();
+    });
+    let decoded = wait_for_audit_tick(&path, 2);
+    append.join().unwrap();
+    assert!(
+        decoded
+            .iter()
+            .any(|record| matches!(record, EconomyLogRecord::Tick { tick: 2, .. }))
+    );
+
+    let mut file = std::fs::OpenOptions::new()
+        .append(true)
+        .open(&path)
+        .unwrap();
+    file.write_all(b"{malformed complete record}\n").unwrap();
+    file.flush().unwrap();
+    assert!(
+        read_live_complete_tick_prefix(&path)
+            .unwrap_err()
+            .contains("decode complete JSONL line"),
+        "malformed newline-terminated records remain fatal even after a valid tick"
+    );
+    std::fs::remove_file(path).unwrap();
+}
+
+#[test]
 fn decoded_moving_gatherer_replays_frozen_command_and_automatic_effect() {
     use std::io::Cursor;
     use turts_sim::{
@@ -667,9 +771,14 @@ fn assert_ack_before_every_rejection(report: &wire_sender::Report) {
         if terminal.kind != "rejected" {
             continue;
         }
-        let ack = report.receipts[attempt.start_cursor..end]
-            .iter()
-            .find(|receipt| receipt.seq == attempt.seq && receipt.kind == "ack")
+        let ack = report
+            .receipts
+            .get(
+                attempt
+                    .ack_cursor
+                    .expect("attempt captured its actual Ack cursor"),
+            )
+            .filter(|receipt| receipt.seq == attempt.seq && receipt.kind == "ack")
             .expect("each admitted rejected envelope has its receipt Ack");
         assert!(ack.reliable && terminal.reliable);
         assert!(
@@ -694,11 +803,12 @@ fn command_attempt_receipt<'a>(
         .attempts
         .get(attempt_index)
         .expect("configured command has one actual send interval");
-    let terminal = attempt
-        .terminal_cursor
-        .expect("sender waits for a terminal response per attempt");
-    assert!(terminal >= attempt.start_cursor);
-    report.receipts[attempt.start_cursor..=terminal]
+    let end = report
+        .attempts
+        .get(attempt_index + 1)
+        .map_or(report.receipts.len(), |next| next.start_cursor);
+    assert!(end >= attempt.start_cursor);
+    report.receipts[attempt.start_cursor..end]
         .iter()
         .find(|receipt| receipt.seq == attempt.seq && receipt.kind == kind)
         .expect("receipt belongs to this command's fresh send interval")
@@ -716,27 +826,23 @@ struct ReplaySummary {
 }
 
 fn wait_for_owner_rifle_output(path: &std::path::Path) -> (u32, u32) {
+    use economylog::EconomyLogRecord;
     use std::time::{Duration, Instant};
+
     let started = Instant::now();
     loop {
-        let text = std::fs::read_to_string(path).unwrap_or_default();
-        for line in text.lines() {
-            let Ok(record) = serde_json::from_str::<serde_json::Value>(line) else {
+        let records = read_live_complete_tick_prefix(path)
+            .unwrap_or_else(|error| panic!("decode complete live audit prefix: {error}"));
+        for record in &records {
+            let EconomyLogRecord::Tick { tick, state, .. } = record else {
                 continue;
             };
-            if record["record"] != "tick" {
-                continue;
-            }
-            let tick = record["data"]["tick"].as_u64().unwrap_or_default() as u32;
-            if let Some(unit) = record["data"]["state"]["economy"]["units"]
-                .as_array()
-                .into_iter()
-                .flatten()
-                .find(|unit| {
-                    unit["content_id"] == "base:rifleman" && unit["owner_slot"].as_u64() == Some(0)
+            if let Some(unit) =
+                state.economy.units.iter().find(|unit| {
+                    unit.content_id.to_string() == "base:rifleman" && unit.owner_slot == 0
                 })
             {
-                return (tick, unit["unit_id"].as_u64().unwrap() as u32);
+                return (*tick, unit.unit_id);
             }
         }
         assert!(
@@ -749,7 +855,7 @@ fn wait_for_owner_rifle_output(path: &std::path::Path) -> (u32, u32) {
 
 fn audit_state_at(path: &std::path::Path, tick: u32) -> turts_sim::AuditState {
     use economylog::EconomyLogRecord;
-    let records = read_complete_economy_log(path).expect("decode complete economy audit log");
+    let records = wait_for_audit_tick(path, tick);
     let matching: Vec<_> = records
         .iter()
         .filter_map(|record| match record {
@@ -1119,27 +1225,95 @@ fn economy_log_path(server: &support::ServerProc) -> &std::path::Path {
         .expect("server launched with economy logging")
 }
 
+fn read_live_complete_tick_prefix(
+    path: &std::path::Path,
+) -> Result<Vec<economylog::EconomyLogRecord>, String> {
+    use economylog::EconomyLogRecord;
+
+    let bytes = std::fs::read(path).map_err(|error| format!("read {}: {error}", path.display()))?;
+    let Some(last_newline) = bytes.iter().rposition(|byte| *byte == b'\n') else {
+        return Ok(Vec::new());
+    };
+    let complete_bytes = &bytes[..=last_newline];
+    let mut records = Vec::new();
+    for (index, line) in complete_bytes.split(|byte| *byte == b'\n').enumerate() {
+        if line.is_empty() {
+            if index + 1 == complete_bytes.split(|byte| *byte == b'\n').count() {
+                continue;
+            }
+            return Err(format!("JSONL line {} is empty", index + 1));
+        }
+        let line = std::str::from_utf8(line)
+            .map_err(|error| format!("decode JSONL line {} as UTF-8: {error}", index + 1))?;
+        let record = serde_json::from_str::<EconomyLogRecord>(line)
+            .map_err(|error| format!("decode complete JSONL line {}: {error}", index + 1))?;
+        records.push(record);
+    }
+
+    let last_tick = records
+        .iter()
+        .rposition(|record| matches!(record, EconomyLogRecord::Tick { .. }));
+    let Some(last_tick) = last_tick else {
+        return Ok(Vec::new());
+    };
+    if economylog::validate_records(&records).is_ok() {
+        return Ok(records);
+    }
+
+    let completed_operations = records[last_tick + 1..]
+        .iter()
+        .filter_map(|record| match record {
+            EconomyLogRecord::Operation(operation) => Some(operation.operation_id),
+            _ => None,
+        })
+        .collect::<std::collections::BTreeSet<_>>();
+    let has_open_command = records[last_tick + 1..].iter().any(|record| match record {
+        EconomyLogRecord::CommandBoundary(command) => {
+            !completed_operations.contains(&command.operation_id)
+        }
+        _ => false,
+    });
+    if !has_open_command {
+        return economylog::validate_records(&records).map(|()| records);
+    }
+
+    records.truncate(last_tick + 1);
+    economylog::validate_records(&records)?;
+    Ok(records)
+}
+
 fn read_complete_economy_log(
     path: &std::path::Path,
 ) -> Result<Vec<economylog::EconomyLogRecord>, String> {
+    read_live_complete_tick_prefix(path)
+}
+
+fn wait_for_audit_tick(
+    path: &std::path::Path,
+    required_tick: u32,
+) -> Vec<economylog::EconomyLogRecord> {
+    use economylog::EconomyLogRecord;
     use std::time::{Duration, Instant};
 
     let started = Instant::now();
     loop {
-        match economylog::read_jsonl_file(path) {
-            Ok(records) => return Ok(records),
-            Err(error) => {
-                let bytes = std::fs::read(path)
-                    .map_err(|read_error| format!("read {}: {read_error}", path.display()))?;
-                let may_be_torn_tail = error.starts_with("decode JSONL line ")
-                    && !bytes.ends_with(b"\n")
-                    && started.elapsed() < Duration::from_secs(2);
-                if !may_be_torn_tail {
-                    return Err(error);
-                }
-                std::thread::sleep(Duration::from_millis(5));
-            }
+        let records = read_live_complete_tick_prefix(path)
+            .unwrap_or_else(|error| panic!("decode complete live audit prefix: {error}"));
+        let latest_tick = records
+            .iter()
+            .filter_map(|record| match record {
+                EconomyLogRecord::Tick { tick, .. } => Some(*tick),
+                _ => None,
+            })
+            .max();
+        if latest_tick.is_some_and(|tick| tick >= required_tick) {
+            return records;
         }
+        assert!(
+            started.elapsed() < Duration::from_secs(20),
+            "completed audit tick reaches requested client tick {required_tick}; latest is {latest_tick:?}"
+        );
+        std::thread::sleep(Duration::from_millis(10));
     }
 }
 
@@ -1802,9 +1976,18 @@ fn e8_commands_are_authoritative_and_acked() {
         let terminal_cursor = attempt.terminal_cursor.unwrap();
         let terminal = &wire.receipts[terminal_cursor];
         assert_eq!(terminal.seq, attempt.seq);
-        assert_eq!(terminal.kind, "rejected");
+        assert_eq!(
+            terminal.kind, "rejected",
+            "wire command seq {} must be rejected",
+            attempt.seq
+        );
         assert!(terminal.reliable);
-        assert_eq!(terminal.reason, Some(expected));
+        assert_eq!(
+            terminal.reason,
+            Some(expected),
+            "wire command seq {} rejection reason",
+            attempt.seq
+        );
     };
     let seq2_ack = command_attempt_receipt(&wire, 1, "ack");
     let seq2_rejection = command_attempt_receipt(&wire, 1, "rejected");
@@ -2374,6 +2557,159 @@ fn e9_two_owners_late_join_and_output_lifecycle() {
     assert_raw_wire_owner_records(log, &raw1, 1, Some((owner0_output_tick, owner0_output_id)));
 }
 
+fn run_replay_spawn_window_subcase() {
+    use turts_net_protocol::UnitSnapshot;
+
+    let package_dir = support::test_dir("e9-replay-spawn-window");
+    let production_path = support::mods_dir().join("base/production/rifleman.ron");
+    let original = std::fs::read_to_string(&production_path).unwrap();
+    let short_recipe = original.replace("duration_ms: 5000", "duration_ms: 200");
+    assert_ne!(
+        short_recipe, original,
+        "fixture shortens only public recipe time"
+    );
+    let package = support::pack_with(
+        "base",
+        "production/rifleman.ron",
+        &short_recipe,
+        &package_dir,
+    );
+    let archive_bytes = std::fs::read(&package).unwrap();
+    let (initial, catalog) = independent_public_model_from_archive(&archive_bytes, 20);
+    let server = start_economy_server(&package, &package_dir);
+    let trace = trace_file(&server, "base-replay-spawn-trace.json");
+    let player_id = 36_001;
+    let raw_path = server.dir.join("client-36-001-wire.jsonl");
+    let raw_arg = raw_path.to_str().unwrap();
+    let report = run_trace_client(
+        &server,
+        player_id,
+        &trace,
+        4,
+        &[
+            "--raw-world-log",
+            raw_arg,
+            "--resync-buffer-batches",
+            "32",
+            "--hold-resync-snapshots",
+            "12",
+            "--hold-resync-snapshot-count",
+            "1",
+            "--drop-world-changes",
+            "charge",
+        ],
+    );
+    assert!(report["welcomed"].as_bool().unwrap_or(false));
+    assert!(report["trace"]["complete"].as_bool().unwrap_or(false));
+    assert_eq!(
+        report["successor_requests"].as_u64(),
+        Some(0),
+        "duplicate-free retained replay completes without a successor response"
+    );
+    assert_eq!(report["snapshots_applied"].as_u64(), Some(2));
+    assert_eq!(report["max_outstanding_requests"].as_u64(), Some(1));
+    assert_eq!(report["buffer_overflows"].as_u64(), Some(0));
+    assert!(report["max_buffered_batches"].as_u64().unwrap_or(u64::MAX) <= 32);
+    let dropped = report["dropped_world_changes"].as_array().unwrap();
+    assert_eq!(dropped.len(), 1);
+    assert_eq!(dropped[0]["kind"], "charge");
+
+    let log = economy_log_path(&server);
+    let (output_tick, output_id) = wait_for_owner_rifle_output(log);
+    let report_tick = assert_report_matches_own_audit_tick(log, &report);
+    assert!(report_tick >= output_tick);
+    let oracle = replay_public_log_with_model(
+        log,
+        initial,
+        catalog,
+        &[(0, player_id)],
+        &[FrozenCommand {
+            slot: 0,
+            seq: 1,
+            kind: FrozenKind::Produce {
+                producer: 1,
+                recipe: "base:train_rifleman",
+            },
+        }],
+        true,
+    );
+    assert_eq!(
+        oracle.outputs, 1,
+        "independent replay observes one spawned output"
+    );
+
+    let text = std::fs::read_to_string(&raw_path).unwrap();
+    let records: Vec<serde_json::Value> = text
+        .lines()
+        .map(|line| serde_json::from_str(line).expect("raw received DTO is valid JSON"))
+        .collect();
+    let snapshots: Vec<_> = records
+        .iter()
+        .enumerate()
+        .filter(|(_, item)| item["kind"] == "snapshot")
+        .collect();
+    assert_eq!(snapshots.len(), 2, "initial Snapshot and one held response");
+    let (response_index, response) = snapshots[1];
+    let response_tick = response["dto"]["tick"].as_u64().unwrap() as u32;
+    assert!(
+        response_tick < output_tick,
+        "response Snapshot predates the output"
+    );
+    let audit_output = audit_state_at(log, output_tick)
+        .economy
+        .units
+        .into_iter()
+        .find(|unit| unit.unit_id == output_id)
+        .expect("audited output unit exists at its committed tick");
+    let spawn_deltas: Vec<_> = records
+        .iter()
+        .enumerate()
+        .filter(|(index, item)| {
+            *index > response_index
+                && item["kind"] == "world_delta"
+                && item["dto"]["spawned"].as_array().is_some_and(|spawned| {
+                    spawned
+                        .iter()
+                        .any(|unit| unit["unit_id"].as_u64() == Some(output_id.into()))
+                })
+        })
+        .collect();
+    assert_eq!(
+        spawn_deltas.len(),
+        1,
+        "one received WorldDelta carries the output"
+    );
+    let (spawn_index, spawn_record) = spawn_deltas[0];
+    let spawn_tick = spawn_record["dto"]["tick"].as_u64().unwrap() as u32;
+    assert_eq!(spawn_tick, output_tick);
+    assert!(
+        spawn_tick <= response_tick + 12,
+        "spawn arrives during the delayed response window"
+    );
+    assert!(
+        records[response_index + 1..].iter().any(|item| {
+            item["kind"] == "world_delta"
+                && item["dto"]["tick"]
+                    .as_u64()
+                    .is_some_and(|tick| tick >= u64::from(response_tick + 12))
+        }),
+        "WorldDeltas arrive through the full 12-tick held-response window"
+    );
+    let spawned = spawn_record["dto"]["spawned"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|unit| unit["unit_id"].as_u64() == Some(output_id.into()))
+        .unwrap();
+    let typed: UnitSnapshot = serde_json::from_value(spawned.clone()).unwrap();
+    assert_eq!(typed.content_id, audit_output.content_id);
+    assert_eq!(typed.owner_slot.0, audit_output.owner_slot);
+    assert_eq!(typed.pos.x.to_bits(), audit_output.pos.x.to_bits());
+    assert_eq!(typed.pos.y.to_bits(), audit_output.pos.y.to_bits());
+    assert!(spawn_index > response_index);
+    assert_raw_wire_owner_records(log, &raw_path, 0, None);
+}
+
 fn run_world_change_subcase(
     kind: &str,
     package_name: &str,
@@ -2579,6 +2915,7 @@ fn e9_loss_and_small_buffer_converge() {
         4,
         &produce,
     );
+    run_replay_spawn_window_subcase();
 }
 
 #[test]

@@ -51,6 +51,107 @@ def require_selected_count(output, expected):
     return actual
 
 
+def browser_summary(output, case):
+    expected_ids = case.get("browser_case_ids", [case["id"]])
+    expected_count = case.get("expected_selected", len(expected_ids))
+    if expected_count <= 0 or len(expected_ids) != expected_count or len(set(expected_ids)) != expected_count:
+        raise ValueError(f'{case["id"]}: browser expected IDs/count are not a nonempty exact set')
+    starts = []
+    terminals = []
+    failures = []
+    summaries = []
+    for line in output.splitlines():
+        if line.startswith("M2_CASE_START "):
+            starts.append(line[len("M2_CASE_START "):].strip())
+        elif line.startswith("M2_CASE_PASS "):
+            terminals.append((line[len("M2_CASE_PASS "):].strip(), "pass", None))
+        elif line.startswith("M2_CASE_SEMANTIC_FAIL "):
+            remainder = line[len("M2_CASE_SEMANTIC_FAIL "):]
+            case_id, separator, encoded = remainder.partition(" ")
+            if not separator:
+                raise ValueError(f'{case["id"]}: malformed semantic-failure marker')
+            try:
+                message = json.loads(encoded)
+            except json.JSONDecodeError as error:
+                raise ValueError(f'{case["id"]}: semantic-failure marker message is not JSON') from error
+            if not isinstance(message, str):
+                raise ValueError(f'{case["id"]}: semantic-failure marker message must be JSON text')
+            terminals.append((case_id, "semantic_fail", message))
+            failures.append((case_id, message))
+        elif line.startswith("M2_CASE_INFRA_FAIL ") or line.startswith("M2_CASE_TIMEOUT "):
+            marker, remainder = line.split(" ", 1)
+            case_id, separator, encoded = remainder.partition(" ")
+            if not separator:
+                raise ValueError(f'{case["id"]}: malformed {marker} marker')
+            try:
+                message = json.loads(encoded)
+            except json.JSONDecodeError as error:
+                raise ValueError(f'{case["id"]}: {marker} message is not JSON') from error
+            raise ValueError(f'{case["id"]}: invalid browser {marker} for {case_id}: {message}')
+        elif line.startswith("M2_CASE_SUMMARY "):
+            try:
+                summaries.append(json.loads(line[len("M2_CASE_SUMMARY "):]))
+            except json.JSONDecodeError as error:
+                raise ValueError(f'{case["id"]}: browser summary is not JSON') from error
+    if starts != expected_ids or len(starts) != len(set(starts)):
+        raise ValueError(f'{case["id"]}: browser start markers do not exactly match expected IDs')
+    terminal_ids = [item[0] for item in terminals]
+    if len(terminal_ids) != expected_count or set(terminal_ids) != set(expected_ids) or len(set(terminal_ids)) != len(terminal_ids):
+        raise ValueError(f'{case["id"]}: browser terminal markers do not exactly match starts')
+    if len(summaries) != 1:
+        raise ValueError(f'{case["id"]}: expected exactly one browser summary')
+    summary = summaries[0]
+    passed = sum(item[1] == "pass" for item in terminals)
+    failed = sum(item[1] == "semantic_fail" for item in terminals)
+    if summary != {
+        "selected_count": expected_count,
+        "completed_count": expected_count,
+        "passed_count": passed,
+        "semantic_failed_count": failed,
+    }:
+        raise ValueError(f'{case["id"]}: browser summary counts disagree with markers')
+    return expected_count, passed, failed, failures
+
+
+def require_phase_result(case, phase, result):
+    if case.get("runtime", "rust") == "rust":
+        require_selected_count(result.stdout, case.get("expected_selected", 1))
+        if phase in {"baseline.green", "restored.green"}:
+            if result.returncode != 0 or "test result: ok" not in result.stdout:
+                raise RuntimeError(f'{case["id"]}: {phase} is not green\n{result.stdout[-5000:]}')
+            return
+        if "could not compile" in result.stdout or re.search(r"error\[E\d+\]", result.stdout):
+            raise RuntimeError(f'{case["id"]}: plant caused a compile failure\n{result.stdout[-5000:]}')
+        if result.returncode == 0:
+            raise RuntimeError(f'{case["id"]}: planted test remained green\n{result.stdout[-5000:]}')
+        semantic_lines = [
+            line.strip()
+            for line in result.stdout.splitlines()
+            if case["expected_failure"] in line
+            and not line.lstrip().startswith("thread '")
+            and not line.lstrip().startswith("failures:")
+            and not line.lstrip().startswith("test ")
+        ]
+        if not semantic_lines:
+            raise RuntimeError(
+                f'{case["id"]}: red lacked semantic failure {case["expected_failure"]!r}\n{result.stdout[-5000:]}'
+            )
+        return semantic_lines[0]
+
+    selected, passed, failed, failures = browser_summary(result.stdout, case)
+    if phase in {"baseline.green", "restored.green"}:
+        if result.returncode != 0 or passed != selected or failed != 0:
+            raise RuntimeError(f'{case["id"]}: {phase} browser cases are not all green\n{result.stdout[-5000:]}')
+        return
+    if result.returncode == 0 or failed == 0:
+        raise RuntimeError(f'{case["id"]}: planted browser case lacked a semantic red\n{result.stdout[-5000:]}')
+    semantic = [message for _, message in failures if case["expected_failure"] in message]
+    if not semantic:
+        raise RuntimeError(
+            f'{case["id"]}: browser red lacked semantic failure {case["expected_failure"]!r}\n{result.stdout[-5000:]}'
+        )
+    return semantic[0]
+
 def select_cases(cases, requested):
     by_id = {case["id"]: case for case in cases}
     if len(by_id) != len(cases):
@@ -62,6 +163,9 @@ def select_cases(cases, requested):
     elif requested in {"E7", "E8", "E9"}:
         selected = [case for case in cases if case["id"].startswith(requested + "-")]
         require_case_prefix(selected, requested)
+    elif requested in {"ci-native", "ci-browser"}:
+        runtime = "rust" if requested == "ci-native" else "browser"
+        selected = [case for case in cases if case.get("runtime", "rust") == runtime]
     elif "," in requested:
         wanted = [item.strip() for item in requested.split(",")]
         if not all(wanted) or len(wanted) != len(set(wanted)):
@@ -118,7 +222,10 @@ def pre_commands(case):
     return commands
 
 
-def write_case_evidence(evidence_dir, case_id, baseline_hash, restored_hash, logs, status="passed", planted_hash=None, detail=None):
+def write_case_evidence(
+    evidence_dir, case_id, baseline_hash, restored_hash, logs,
+    status="passed", planted_hash=None, detail=None, source_hashes=None,
+):
     evidence_dir = Path(evidence_dir)
     evidence_dir.mkdir(parents=True, exist_ok=True)
     for name, output in logs.items():
@@ -129,11 +236,26 @@ def write_case_evidence(evidence_dir, case_id, baseline_hash, restored_hash, log
         "baseline_sha256": baseline_hash,
         "planted_sha256": planted_hash,
         "restored_sha256": restored_hash,
+        "source_sha256": source_hashes or {},
         "detail": detail,
         "logs": sorted(logs),
     }
     (evidence_dir / "case.json").write_text(json.dumps(manifest, indent=2) + "\n")
     return manifest
+
+
+def apply_plant(original, case):
+    replacements = case.get("replacements")
+    if replacements is None:
+        replacements = [{"anchor": case["anchor"], "replacement": case["replacement"]}]
+    planted = original
+    for item in replacements:
+        anchor = item["anchor"]
+        count = planted.count(anchor)
+        if count != 1:
+            raise RuntimeError(f'{case["id"]}: anchor occurs {count} times, expected exactly one')
+        planted = planted.replace(anchor, item["replacement"], 1)
+    return planted
 
 
 def run_case(case, scratch, build_dir, evidence_dir):
@@ -143,7 +265,7 @@ def run_case(case, scratch, build_dir, evidence_dir):
             logs[f"{phase}.precommand-{index}.log"] = result.stdout
             write_case_evidence(
                 evidence_dir, case["id"], baseline_hash, restored_hash, logs,
-                "running", planted_hash, f"{phase} prerequisite {index}",
+                "running", planted_hash, f"{phase} prerequisite {index}", source_hashes,
             )
             if result.returncode != 0:
                 raise RuntimeError(
@@ -153,70 +275,56 @@ def run_case(case, scratch, build_dir, evidence_dir):
         logs[f"{phase}.log"] = result.stdout
         write_case_evidence(
             evidence_dir, case["id"], baseline_hash, restored_hash, logs,
-            "running", planted_hash, phase,
+            "running", planted_hash, phase, source_hashes,
         )
         return result
 
     path = scratch / case["plant_path"]
     original = path.read_text()
-    anchor = case["anchor"]
-    if original.count(anchor) != 1:
-        raise RuntimeError(f'{case["id"]}: anchor occurs {original.count(anchor)} times, expected exactly one')
     baseline_hash = digest(path)
+    planted = apply_plant(original, case)
     planted_hash = None
     restored_hash = None
     logs = {}
     detail = None
+    source_hashes = {case["plant_path"]: baseline_hash}
+    for relative in case.get("provenance_paths", []):
+        provenance_path = Path(relative)
+        if provenance_path.is_absolute() or ".." in provenance_path.parts:
+            raise ValueError(f'{case["id"]}: provenance path must stay inside source tree')
+        source_hashes[relative] = digest(scratch / provenance_path)
     try:
         green = execute("baseline.green", logs)
-        require_selected_count(green.stdout, case.get("expected_selected", 1))
-        if green.returncode != 0 or "test result: ok" not in green.stdout:
-            raise RuntimeError(f'{case["id"]}: baseline is not green\n{green.stdout[-5000:]}')
+        require_phase_result(case, "baseline.green", green)
 
-        planted = original.replace(anchor, case["replacement"], 1)
         path.write_text(planted)
         planted_hash = digest(path)
         red = execute("plant.red", logs)
-        require_selected_count(red.stdout, case.get("expected_selected", 1))
-        if "could not compile" in red.stdout or re.search(r"error\[E\d+\]", red.stdout):
-            raise RuntimeError(f'{case["id"]}: plant caused a compile failure\n{red.stdout[-5000:]}')
-        if red.returncode == 0:
-            raise RuntimeError(f'{case["id"]}: planted test remained green\n{red.stdout[-5000:]}')
-        semantic_lines = [
-            line.strip()
-            for line in red.stdout.splitlines()
-            if case["expected_failure"] in line
-            and not line.lstrip().startswith("thread '")
-            and not line.lstrip().startswith("failures:")
-            and not line.lstrip().startswith("test ")
-        ]
-        if not semantic_lines:
-            raise RuntimeError(
-                f'{case["id"]}: red lacked semantic failure {case["expected_failure"]!r}\n{red.stdout[-5000:]}'
-            )
-        detail = f"semantic assertion: {semantic_lines[0]}"
-        print(f'{case["id"]}: RED selected={selected_count(red.stdout)} assertion={semantic_lines[0]!r}')
+        semantic = require_phase_result(case, "plant.red", red)
+        detail = f"semantic assertion: {semantic}"
+        print(f'{case["id"]}: RED assertion={semantic!r}')
 
         path.write_text(original)
         restored_hash = digest(path)
         if restored_hash != baseline_hash:
             raise RuntimeError(f'{case["id"]}: source restore hash differs: {baseline_hash} != {restored_hash}')
         restored = execute("restored.green", logs)
-        require_selected_count(restored.stdout, case.get("expected_selected", 1))
-        if restored.returncode != 0 or "test result: ok" not in restored.stdout:
-            raise RuntimeError(f'{case["id"]}: restored source is not green\n{restored.stdout[-5000:]}')
+        require_phase_result(case, "restored.green", restored)
     except Exception as exc:
         path.write_text(original)
         restored_hash = digest(path)
         write_case_evidence(
             evidence_dir, case["id"], baseline_hash, restored_hash, logs,
-            "failed", planted_hash, str(exc),
+            "failed", planted_hash, str(exc), source_hashes,
         )
         raise
     else:
+        for relative, expected_hash in source_hashes.items():
+            if digest(scratch / relative) != expected_hash:
+                raise RuntimeError(f'{case["id"]}: provenance source changed during case: {relative}')
         write_case_evidence(
             evidence_dir, case["id"], baseline_hash, restored_hash, logs,
-            "passed", planted_hash, detail,
+            "passed", planted_hash, detail, source_hashes,
         )
         print(f'{case["id"]}: RESTORED GREEN source_sha256={restored_hash}')
 
@@ -239,13 +347,13 @@ def main():
     run_root = create_run_workspace(args.evidence_root, args.build_root)
     build_root = Path((run_root / "build-root.txt").read_text().strip())
     (run_root / "selection.json").write_text(json.dumps([case["id"] for case in cases], indent=2) + "\n")
+    scratch = run_root / "scratch" / "source"
+    build_dir = build_root / "cargo-target"
+    copy_source_tree(ROOT, scratch)
+    build_dir.mkdir(parents=True, exist_ok=False)
     for case in cases:
         case_id = re.sub(r"[^A-Za-z0-9_.-]", "_", case["id"])
-        scratch = run_root / "scratch" / case_id
-        build_dir = build_root / case_id
         evidence_dir = run_root / "cases" / case_id
-        copy_source_tree(ROOT, scratch)
-        build_dir.mkdir(parents=True, exist_ok=False)
         evidence_dir.mkdir(parents=True, exist_ok=False)
         run_case(case, scratch, build_dir, evidence_dir)
     print(f"evidence: {run_root}")

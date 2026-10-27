@@ -34,6 +34,8 @@ pub struct AttemptInterval {
     pub start_cursor: usize,
     /// Absolute receipt cursor of the terminal Applied/Rejected response.
     pub terminal_cursor: Option<usize>,
+    /// Absolute receipt cursor of the receipt Ack, even if it follows the terminal.
+    pub ack_cursor: Option<usize>,
 }
 
 #[derive(Debug, Clone, Default, serde::Serialize)]
@@ -63,11 +65,20 @@ fn terminal_cursor_after(receipts: &[Receipt], seq: u32, start: usize) -> Option
         .map(|(cursor, _)| cursor)
 }
 
+fn ack_cursor_after(receipts: &[Receipt], seq: u32, start: usize) -> Option<usize> {
+    receipts
+        .iter()
+        .enumerate()
+        .skip(start)
+        .find(|(_, receipt)| receipt.seq == seq && receipt.kind == "ack")
+        .map(|(cursor, _)| cursor)
+}
+
 fn all_attempts_terminal(attempts: &[AttemptInterval], expected: usize) -> bool {
     attempts.len() == expected
         && attempts
             .iter()
-            .all(|attempt| attempt.terminal_cursor.is_some())
+            .all(|attempt| attempt.terminal_cursor.is_some() && attempt.ack_cursor.is_some())
 }
 
 #[derive(Resource)]
@@ -326,14 +337,18 @@ fn send_after_welcome(
     }
     let report_arc = state.report.clone();
     if let Some(pending) = state.pending {
-        let terminal = {
+        let completed = {
             let report = report_arc.lock().expect("wire sender report lock");
-            terminal_cursor_after(&report.receipts, pending.seq, pending.start_cursor)
+            (
+                terminal_cursor_after(&report.receipts, pending.seq, pending.start_cursor),
+                ack_cursor_after(&report.receipts, pending.seq, pending.start_cursor),
+            )
         };
-        if let Some(terminal_cursor) = terminal {
+        if let (Some(terminal_cursor), Some(ack_cursor)) = completed {
             let mut report = report_arc.lock().expect("wire sender report lock");
             if let Some(attempt) = report.attempts.get_mut(pending.index) {
                 attempt.terminal_cursor = Some(terminal_cursor);
+                attempt.ack_cursor = Some(ack_cursor);
             }
             state.pending = None;
             state.next_command = pending.index + 1;
@@ -356,6 +371,7 @@ fn send_after_welcome(
         seq: command.seq,
         start_cursor,
         terminal_cursor: None,
+        ack_cursor: None,
     });
     state.pending = Some(PendingAttempt {
         index,
@@ -392,7 +408,9 @@ fn exit_when_done(state: Res<State>, config: Res<Config>, mut exit: MessageWrite
 
 #[cfg(test)]
 mod tests {
-    use super::{AttemptInterval, Receipt, all_attempts_terminal, terminal_cursor_after};
+    use super::{
+        AttemptInterval, Receipt, ack_cursor_after, all_attempts_terminal, terminal_cursor_after,
+    };
 
     fn receipt(seq: u32, kind: &'static str) -> Receipt {
         Receipt {
@@ -409,13 +427,16 @@ mod tests {
     fn acknowledgements_and_partial_submissions_are_not_terminal() {
         let receipts = [receipt(1, "ack"), receipt(1, "applied")];
         assert_eq!(terminal_cursor_after(&receipts[..1], 1, 0), None);
-        let attempts = [AttemptInterval {
+        assert_eq!(ack_cursor_after(&receipts[..1], 1, 0), Some(0));
+        let mut attempts = [AttemptInterval {
             index: 0,
             seq: 1,
             start_cursor: 0,
             terminal_cursor: Some(1),
+            ack_cursor: None,
         }];
-        assert!(!all_attempts_terminal(&attempts, 2));
+        assert!(!all_attempts_terminal(&attempts, 1));
+        attempts[0].ack_cursor = Some(0);
         assert!(all_attempts_terminal(&attempts, 1));
     }
 
@@ -428,5 +449,6 @@ mod tests {
         after_repeat.push(receipt(1, "ack"));
         after_repeat.push(receipt(1, "rejected"));
         assert_eq!(terminal_cursor_after(&after_repeat, 1, 2), Some(3));
+        assert_eq!(ack_cursor_after(&after_repeat, 1, 2), Some(2));
     }
 }
