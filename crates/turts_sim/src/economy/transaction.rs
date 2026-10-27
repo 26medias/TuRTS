@@ -76,9 +76,8 @@ impl Transaction<'_> {
                 self.writes
                     .accounts
                     .keys()
-                    .filter_map(|(endpoint, resource)| {
-                        (*endpoint == Endpoint::Inventory(unit)).then(|| resource.clone())
-                    }),
+                    .filter(|(endpoint, _)| *endpoint == Endpoint::Inventory(unit))
+                    .map(|(_, resource)| resource.clone()),
             )
             .collect::<BTreeSet<_>>();
         resources.into_iter().try_fold(0_u128, |total, resource| {
