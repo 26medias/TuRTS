@@ -184,6 +184,10 @@ pub struct AuditResourcePresence {
     pub unit_types: bool,
     pub slots: bool,
     pub clock: bool,
+    pub allocators: bool,
+    pub tick: bool,
+    pub pending_events: bool,
+    pub event_ordinal: bool,
 }
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct RawUnitAudit {
@@ -210,6 +214,27 @@ pub struct RawOrderAudit {
     pub stage: super::gather::GatherStage,
     pub rate_carry: u16,
 }
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RawReservationAudit {
+    pub job_id: u64,
+    pub lines: Vec<ReservationLineView>,
+}
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RawJobAudit {
+    pub id: u64,
+    pub recipe: ContentId,
+    pub stage: crate::economy::production::JobStage,
+    pub elapsed_ticks: u64,
+    pub duration_ticks: u64,
+    pub charged: Vec<ReservationLineView>,
+    pub reservation: Option<RawReservationAudit>,
+}
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RawQueueAudit {
+    pub producer: u32,
+    pub jobs: Vec<RawJobAudit>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DurationAudit {
     pub recipe: ContentId,
@@ -275,6 +300,7 @@ pub struct AuditState {
     pub raw_units: Vec<RawUnitAudit>,
     pub raw_inventories: Vec<RawInventoryAudit>,
     pub raw_orders: Vec<RawOrderAudit>,
+    pub raw_queues: Vec<RawQueueAudit>,
     pub compiled_durations: Vec<DurationAudit>,
     pub next_event_ordinal: Option<u64>,
     pub pending_events: Vec<super::events::EconomyEvent>,
@@ -495,6 +521,44 @@ fn node_views(world: &World) -> Vec<NodeView> {
                 .collect()
         })
 }
+fn reservation_line_view(line: crate::economy::ledger::ReservationLine) -> ReservationLineView {
+    ReservationLineView {
+        endpoint: match line.endpoint {
+            crate::economy::ledger::Endpoint::Slot(slot) => ReservationEndpointView::Slot(slot),
+            crate::economy::ledger::Endpoint::Inventory(unit) => {
+                ReservationEndpointView::Inventory(unit)
+            }
+        },
+        resource: line.resource,
+        amount: line.amount,
+    }
+}
+
+fn raw_queue_view((producer, jobs): (u32, Vec<ProductionJob>)) -> RawQueueAudit {
+    RawQueueAudit {
+        producer,
+        jobs: jobs
+            .into_iter()
+            .map(|job| RawJobAudit {
+                id: job.id.0,
+                recipe: job.recipe,
+                stage: job.stage,
+                elapsed_ticks: job.elapsed_ticks,
+                duration_ticks: job.duration_ticks,
+                charged: job.charged.into_iter().map(reservation_line_view).collect(),
+                reservation: job.reservation.map(|reservation| RawReservationAudit {
+                    job_id: reservation.job_id.0,
+                    lines: reservation
+                        .lines
+                        .into_iter()
+                        .map(reservation_line_view)
+                        .collect(),
+                }),
+            })
+            .collect(),
+    }
+}
+
 pub fn audit_state(world: &mut World) -> AuditState {
     let mut q = world.query::<(&UnitId, &UnitType, &Owner, &Position)>();
     let types = world.get_resource::<crate::UnitTypes>();
@@ -731,6 +795,10 @@ pub fn audit_state(world: &mut World) -> AuditState {
         unit_types: world.contains_resource::<crate::registry::UnitTypes>(),
         slots: world.contains_resource::<Slots>(),
         clock: world.contains_resource::<crate::SimClock>(),
+        allocators: world.contains_resource::<IdAllocators>(),
+        tick: world.contains_resource::<crate::world::Tick>(),
+        pending_events: world.contains_resource::<super::events::PendingEconomyEvents>(),
+        event_ordinal: world.contains_resource::<super::events::NextEventOrdinal>(),
     };
     AuditState {
         tick_hz: world.get_resource::<crate::SimClock>().map(|c| c.tick_hz),
@@ -748,6 +816,15 @@ pub fn audit_state(world: &mut World) -> AuditState {
         raw_units,
         raw_inventories,
         raw_orders,
+        raw_queues: world
+            .get_resource::<ProductionQueues>()
+            .map_or_else(Vec::new, |queues| {
+                queues
+                    .0
+                    .iter()
+                    .map(|(producer, jobs)| raw_queue_view((*producer, jobs.clone())))
+                    .collect()
+            }),
         compiled_durations,
         catalog,
         ledger_claims,

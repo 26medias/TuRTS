@@ -1353,3 +1353,194 @@ mod audit_capture_tests {
         assert!(trail.operations.is_empty());
     }
 }
+
+#[cfg(test)]
+mod raw_audit_capture_tests {
+    use super::*;
+    use crate::{
+        economy::{
+            events::{NextEventOrdinal, PendingEconomyEvents},
+            ledger::{Endpoint, Reservation, ReservationLine},
+            production::{JobStage, ProductionJob, ProductionQueues},
+            views::{ReservationEndpointView, ReservationLineView, audit_state},
+        },
+        world::Tick,
+    };
+    use bevy_ecs::world::World;
+
+    fn line(endpoint: Endpoint, resource: &str, amount: u64) -> ReservationLine {
+        ReservationLine {
+            endpoint,
+            resource: ContentId::parse(resource).unwrap(),
+            amount,
+        }
+    }
+
+    #[test]
+    fn raw_queue_capture_preserves_keys_fifo_job_fields_and_tokens() {
+        let mut queues = ProductionQueues::default();
+        queues.0.insert(
+            7,
+            vec![
+                ProductionJob {
+                    id: JobId(11),
+                    recipe: ContentId::parse("probe:unit").unwrap(),
+                    stage: JobStage::Running,
+                    elapsed_ticks: 4,
+                    duration_ticks: 19,
+                    charged: vec![line(Endpoint::Slot(3), "probe:ore", 7)],
+                    reservation: Some(Reservation {
+                        job_id: JobId(99),
+                        lines: vec![line(Endpoint::Inventory(42), "probe:wood", 5)],
+                    }),
+                },
+                ProductionJob {
+                    id: JobId(12),
+                    recipe: ContentId::parse("probe:other").unwrap(),
+                    stage: JobStage::OutputBlocked,
+                    elapsed_ticks: 19,
+                    duration_ticks: 19,
+                    charged: vec![],
+                    reservation: Some(Reservation {
+                        job_id: JobId(12),
+                        lines: vec![],
+                    }),
+                },
+            ],
+        );
+        queues.0.insert(8, vec![]);
+        queues.0.insert(
+            900,
+            vec![ProductionJob {
+                id: JobId(13),
+                recipe: ContentId::parse("probe:orphan").unwrap(),
+                stage: JobStage::Queued,
+                elapsed_ticks: 0,
+                duration_ticks: 3,
+                charged: vec![],
+                reservation: None,
+            }],
+        );
+        let mut world = World::new();
+        world.insert_resource(crate::registry::UnitTypes::default());
+        world.insert_resource(queues);
+        let captured = audit_state(&mut world);
+        assert_eq!(
+            captured
+                .raw_queues
+                .iter()
+                .map(|q| q.producer)
+                .collect::<Vec<_>>(),
+            [7, 8, 900]
+        );
+        assert!(captured.raw_queues[1].jobs.is_empty());
+        let jobs = &captured.raw_queues[0].jobs;
+        assert_eq!(jobs.iter().map(|j| j.id).collect::<Vec<_>>(), [11, 12]);
+        assert_eq!(jobs[0].recipe, ContentId::parse("probe:unit").unwrap());
+        assert_eq!(jobs[0].stage, JobStage::Running);
+        assert_eq!((jobs[0].elapsed_ticks, jobs[0].duration_ticks), (4, 19));
+        assert_eq!(
+            jobs[0].charged,
+            vec![ReservationLineView {
+                endpoint: ReservationEndpointView::Slot(3),
+                resource: ContentId::parse("probe:ore").unwrap(),
+                amount: 7
+            }]
+        );
+        assert_eq!(jobs[0].reservation.as_ref().unwrap().job_id, 99);
+        assert_eq!(
+            jobs[0].reservation.as_ref().unwrap().lines,
+            vec![ReservationLineView {
+                endpoint: ReservationEndpointView::Inventory(42),
+                resource: ContentId::parse("probe:wood").unwrap(),
+                amount: 5
+            }]
+        );
+        assert_eq!(jobs[1].reservation.as_ref().unwrap().job_id, 12);
+        assert!(jobs[1].reservation.as_ref().unwrap().lines.is_empty());
+    }
+
+    #[test]
+    fn rejected_capture_detects_hidden_queue_endpoint_and_token_mutation() {
+        let mut queues = ProductionQueues::default();
+        queues.0.insert(
+            7,
+            vec![ProductionJob {
+                id: JobId(1),
+                recipe: ContentId::parse("probe:unit").unwrap(),
+                stage: JobStage::Queued,
+                elapsed_ticks: 0,
+                duration_ticks: 5,
+                charged: vec![line(Endpoint::Slot(0), "probe:ore", 2)],
+                reservation: Some(Reservation {
+                    job_id: JobId(1),
+                    lines: vec![line(Endpoint::Slot(0), "probe:ore", 3)],
+                }),
+            }],
+        );
+        let mut world = World::new();
+        world.insert_resource(crate::registry::UnitTypes::default());
+        world.insert_resource(queues);
+        world.insert_resource(AuditTrail::default());
+        world.resource_mut::<AuditTrail>().enable();
+        let input = crate::command::Command {
+            slot: SlotId(0),
+            seq: 1,
+            kind: crate::command::CommandKind::Produce {
+                producer_id: 7,
+                recipe_id: ContentId::parse("probe:unit").unwrap(),
+            },
+        };
+        let result = capture_command(&mut world, &input, |world| {
+            let mut queues = world.resource_mut::<ProductionQueues>();
+            let job = &mut queues.0.get_mut(&7).unwrap()[0];
+            job.charged[0].endpoint = Endpoint::Slot(1);
+            let reservation = job.reservation.as_mut().unwrap();
+            reservation.job_id = JobId(99);
+            reservation.lines[0].endpoint = Endpoint::Slot(1);
+            crate::command::CommandResult {
+                slot: input.slot,
+                seq: input.seq,
+                outcome: Err(RejectReason::UnknownRecipe),
+            }
+        });
+        assert_eq!(result.outcome, Err(RejectReason::UnknownRecipe));
+        let boundary = &world.resource::<AuditTrail>().commands[0];
+        assert_eq!(boundary.result, result);
+        assert_ne!(boundary.before, boundary.after);
+    }
+
+    #[test]
+    fn resource_presence_distinguishes_absent_defaults_and_exhausted_cursor() {
+        let mut world = World::new();
+        world.insert_resource(crate::registry::UnitTypes::default());
+        world.insert_resource(IdAllocators::default());
+        world.insert_resource(Tick(0));
+        world.insert_resource(PendingEconomyEvents::default());
+        world.insert_resource(NextEventOrdinal(None));
+        let present = audit_state(&mut world);
+        assert!(present.resources.allocators && present.resources.tick);
+        assert!(present.resources.pending_events && present.resources.event_ordinal);
+        assert_eq!(present.next_event_ordinal, None);
+        world.remove_resource::<IdAllocators>();
+        let missing = audit_state(&mut world);
+        assert_ne!(present, missing);
+        assert!(!missing.resources.allocators);
+        world.insert_resource(IdAllocators::default());
+        world.remove_resource::<Tick>();
+        let missing = audit_state(&mut world);
+        assert_ne!(present, missing);
+        assert!(!missing.resources.tick);
+        world.insert_resource(Tick(0));
+        world.remove_resource::<PendingEconomyEvents>();
+        let missing = audit_state(&mut world);
+        assert_ne!(present, missing);
+        assert!(!missing.resources.pending_events);
+        world.insert_resource(PendingEconomyEvents::default());
+        world.remove_resource::<NextEventOrdinal>();
+        let missing = audit_state(&mut world);
+        assert_ne!(present, missing);
+        assert!(!missing.resources.event_ordinal);
+        assert_eq!(missing.next_event_ordinal, None);
+    }
+}
