@@ -29,6 +29,7 @@ pub struct GenericException {
     pub category: String,
     pub reason: String,
     pub definition_provenance: String,
+    pub identifiers_only: bool,
 }
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Hit {
@@ -188,11 +189,12 @@ pub fn derive_tokens(root: &Path) -> Result<TokenCatalog, ScanError> {
         return Err(pkgerr(root, "empty package discovery or token catalog"));
     }
     // Keep only known generic spellings that occur in the parsed data. Full ids and paths are never exempt.
-    for (word, reason) in [
-        ("field", "map id is an ordinary source identifier"),
-        ("Item", "resource kind is a common Rust type word"),
-        ("Balance", "resource kind is a common Rust type word"),
-        ("log", "resource unit name is a common source identifier"),
+    for (word, reason, identifiers_only) in [
+        ("field", "map id is an ordinary source identifier", false),
+        ("Item", "resource kind is a common Rust type word", false),
+        ("Balance", "resource kind is a common Rust type word", false),
+        ("log", "resource unit name is a common source identifier", false),
+        ("credit", "resource unit name is a generic accounting term", true),
     ] {
         if let Some(records) = c.records.get(word) {
             let r = &records[0];
@@ -205,6 +207,7 @@ pub fn derive_tokens(root: &Path) -> Result<TokenCatalog, ScanError> {
                         "{}:{}:{}:{}",
                         r.package, r.definition_path, r.field, r.token
                     ),
+                    identifiers_only,
                 },
             );
         }
@@ -445,7 +448,12 @@ struct Scanner<'a> {
 }
 impl Scanner<'_> {
     fn check(&mut self, t: &str, s: proc_macro2::Span) {
-        if self.catalog.exceptions.contains_key(t) {
+        if self
+            .catalog
+            .exceptions
+            .get(t)
+            .is_some_and(|exception| !exception.identifiers_only)
+        {
             return;
         }
         if let Some(rs) = self.catalog.records.get(t) {
@@ -464,10 +472,15 @@ impl Scanner<'_> {
             }
         }
     }
+    fn check_ident(&mut self, t: &str, s: proc_macro2::Span) {
+        if !self.catalog.exceptions.contains_key(t) {
+            self.check(t, s);
+        }
+    }
     fn stream(&mut self, s: proc_macro2::TokenStream) {
         for t in s {
             match t {
-                TokenTree::Ident(i) => self.check(normalize_ident(&i).as_str(), i.span()),
+                TokenTree::Ident(i) => self.check_ident(normalize_ident(&i).as_str(), i.span()),
                 TokenTree::Literal(l) => self.literal(&l),
                 TokenTree::Group(g) => self.stream(g.stream()),
                 TokenTree::Punct(_) => (),
@@ -507,7 +520,7 @@ impl<'a> Visit<'a> for Scanner<'_> {
         }
     }
     fn visit_ident(&mut self, i: &'a syn::Ident) {
-        self.check(normalize_ident(i).as_str(), i.span())
+        self.check_ident(normalize_ident(i).as_str(), i.span())
     }
     fn visit_lit(&mut self, l: &'a Lit) {
         match l {

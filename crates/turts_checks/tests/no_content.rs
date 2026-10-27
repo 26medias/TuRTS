@@ -96,6 +96,64 @@ fn derived_scan_rejects_all_plants_and_accepts_generic_field() {
 }
 
 #[test]
+fn credit_exemption_applies_only_to_identifiers() {
+    let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let catalog = derive_tokens(&repo.join("mods")).expect("all mod packages derive");
+    let root = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("credit_identifier_only");
+    let src = root.join("src");
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(&src).unwrap();
+    std::fs::write(
+        src.join("identifier.rs"),
+        "fn ledger() { let credit = 1; { let r#credit = 2; } }",
+    )
+    .unwrap();
+    std::fs::write(
+        src.join("literals.rs"),
+        "const A: &str = \"credit\"; const B: &[u8] = b\"credit\"; const C: &str = \"base:credits\"; const D: &str = \"resources/credits.ron\";",
+    )
+    .unwrap();
+    std::fs::write(
+        src.join("generic_literals.rs"),
+        "const A: &str = \"field\"; const B: &str = \"Item\"; const C: &str = \"Balance\"; const D: &str = \"log\";",
+    )
+    .unwrap();
+
+    let hits = scan_rust(&[src], &catalog).expect("fixture sources parse");
+    assert!(
+        !hits.iter().any(|hit| hit.source.ends_with("identifier.rs")),
+        "generic and raw identifiers should be exempt: {hits:#?}"
+    );
+    assert!(
+        !hits
+            .iter()
+            .any(|hit| hit.source.ends_with("generic_literals.rs")),
+        "existing generic-word literal exceptions must retain their prior behavior: {hits:#?}"
+    );
+    for (token, category) in [
+        ("credit", "unit-name"),
+        ("base:credits", "resource-ref"),
+        ("resources/credits.ron", "resource-export"),
+    ] {
+        assert!(
+            hits.iter().any(|hit| {
+                hit.source.ends_with("literals.rs")
+                    && hit.token == token
+                    && hit.category == category
+            }),
+            "literal {token:?} ({category}) must remain a hit: {hits:#?}"
+        );
+    }
+    assert_eq!(
+        hits.iter()
+            .filter(|hit| hit.source.ends_with("literals.rs") && hit.token == "credit")
+            .count(),
+        2,
+        "both string and byte-string literals must remain visible"
+    );
+}
+
+#[test]
 fn real_source_scan_is_clean() {
     let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let catalog = derive_tokens(&repo.join("mods")).expect("all mod packages derive");
