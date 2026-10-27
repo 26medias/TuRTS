@@ -695,7 +695,18 @@ fn apply_trace_command(
     result
 }
 
-fn run_package_trace(dir: &Path) -> (Vec<Value>, (u128, u128, u128, u128, u64, u64)) {
+type TraceTotals = (u128, u128, u128, u128, u64, u64);
+type PackageTrace = (Vec<Value>, TraceTotals);
+type CanonicalMap = BTreeMap<String, String>;
+type CanonicalMaps = (
+    CanonicalMap,
+    CanonicalMap,
+    CanonicalMap,
+    CanonicalMap,
+    CanonicalMap,
+);
+
+fn run_package_trace(dir: &Path) -> PackageTrace {
     let (_, mut app) = load(dir);
     let initial = audit_state(app.world_mut());
     let catalog = app.world().resource::<InstalledCatalog>().0.clone();
@@ -878,15 +889,7 @@ fn run_package_trace(dir: &Path) -> (Vec<Value>, (u128, u128, u128, u128, u64, u
     )
 }
 
-fn inverses(
-    mapping: &Value,
-) -> (
-    BTreeMap<String, String>,
-    BTreeMap<String, String>,
-    BTreeMap<String, String>,
-    BTreeMap<String, String>,
-    BTreeMap<String, String>,
-) {
+fn inverses(mapping: &Value) -> CanonicalMaps {
     fn put(m: &mut BTreeMap<String, String>, new: &str, old: &str) {
         if let Some(prior) = m.insert(new.to_owned(), old.to_owned()) {
             assert_eq!(prior, old, "ambiguous canonical mapping for {new}");
@@ -941,17 +944,7 @@ fn inverses(
     (packages, locals, full, names, paths)
 }
 
-fn normalize(
-    value: &mut Value,
-    m: &(
-        BTreeMap<String, String>,
-        BTreeMap<String, String>,
-        BTreeMap<String, String>,
-        BTreeMap<String, String>,
-        BTreeMap<String, String>,
-    ),
-    inherited: &BTreeMap<u64, String>,
-) {
+fn normalize(value: &mut Value, m: &CanonicalMaps, inherited: &BTreeMap<u64, String>) {
     if let Value::Object(o) = value {
         let mut types = inherited.clone();
         if let Some(table) = o.get("unit_types").and_then(Value::as_array) {
@@ -985,18 +978,17 @@ fn normalize(
             } else {
                 normalize(child, m, &types);
             }
-            if key == "unit_types" {
-                if let Value::Array(items) = child {
-                    items.sort_by_key(|item| item["content_id"].to_string());
-                }
+            if key == "unit_types"
+                && let Value::Array(items) = child
+            {
+                items.sort_by_key(|item| item["content_id"].to_string());
             }
             if matches!(
                 key.as_str(),
                 "compiled_durations" | "balances" | "inventories" | "orders" | "queues"
-            ) {
-                if let Value::Array(items) = child {
-                    items.sort_by_key(Value::to_string);
-                }
+            ) && let Value::Array(items) = child
+            {
+                items.sort_by_key(Value::to_string);
             }
             if key == "catalog" {
                 sort_catalog(child);
