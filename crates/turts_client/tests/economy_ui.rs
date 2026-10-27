@@ -17,6 +17,7 @@ use bevy::{
     ui_widgets::{Button, ButtonPlugin, ScrollAreaPlugin},
     window::{PrimaryWindow, WindowPlugin, WindowRef, WindowResolution},
 };
+use turts_client::acquire::build_acquired;
 use turts_client::{
     acquire::Acquired,
     content::ClientContent,
@@ -28,6 +29,9 @@ use turts_client::{
     ingest::{CommandResult, CommandResults, ReplicaState, WelcomeInfo},
     join::Phase,
     present::update_presented,
+    render::{
+        fit_camera_transform, free_scene_rect, max_declared_pick_radius, projected_ground_center,
+    },
     replica::{Replica, UnitReplica},
 };
 use turts_mod_api::{ContentId, Cost};
@@ -42,6 +46,13 @@ fn base_content() -> ClientContent {
     let archive =
         PackageArchive::parse(&pack_dir(&base).expect("pack base")).expect("parse base archive");
     ClientContent::from_archives(&[archive]).expect("resolve base definitions")
+}
+
+fn acquired_package(name: &str) -> Acquired {
+    let package = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(format!("../../mods/{name}"));
+    let archive = PackageArchive::parse(&pack_dir(&package).expect("pack fixture package"))
+        .expect("parse fixture package");
+    build_acquired(&[archive], String::new()).expect("build fixture acquisition")
 }
 
 fn producer_fixture() -> (ClientContent, Replica, u32, ContentId, ContentId) {
@@ -405,9 +416,9 @@ fn dpi_two_panel_border_blocks_world_order_and_outside_click_still_orders() {
     let root_node = *root.get::<ComputedNode>().unwrap();
     let root_transform = *root.get::<UiGlobalTransform>().unwrap();
 
-    // Logical cursor (63, 70) maps to physical (126, 140), then subtracts
-    // the viewport origin (100, 80) to hit the panel's local physical border.
-    let border = Vec2::new(63.0, 70.0);
+    let viewport_origin = Vec2::new(100.0, 80.0);
+    let panel_center = root_transform.to_scale_angle_translation().2;
+    let border = (panel_center + viewport_origin) / scale;
     let ui_border = cursor_in_ui_viewport(border, &camera).unwrap();
     assert!(root_node.contains_point(root_transform, ui_border));
     let camera_transform = *app.world().get::<GlobalTransform>(camera_id).unwrap();
@@ -453,13 +464,14 @@ fn dpi_two_panel_border_blocks_world_order_and_outside_click_still_orders() {
     );
     assert_eq!(app.world().resource::<Selection>().0, Some(mobile));
 
-    // Screen x=455 is just beyond the panel after scale and viewport offset:
-    // (455*2 - 100)=810, beyond its local 804px edge. The old unscaled
-    // comparison incorrectly treated logical x=455 as inside.
-    let outside = Vec2::new(455.0, 70.0);
+    let panel_half = root_node.size() * 0.5;
+    let panel_bounds = Rect::from_center_half_size(panel_center, panel_half);
+    let outside_physical = Vec2::new(panel_center.x, panel_bounds.min.y - 24.0) + viewport_origin;
+    let outside = outside_physical / scale;
     assert!(
         cursor_in_ui_viewport(outside, &camera)
-            .is_some_and(|cursor| !root_node.contains_point(root_transform, cursor))
+            .is_some_and(|cursor| !root_node.contains_point(root_transform, cursor)),
+        "point above the measured bottom panel must reach the world"
     );
     let ray = camera
         .viewport_to_world(&camera_transform, outside)
@@ -742,6 +754,10 @@ fn known_insufficient_replica_source_disables_production() {
 }
 
 fn cpu_ui_app(scale: f32, jobs: usize) -> (App, Entity, Entity, u32) {
+    cpu_ui_app_at(scale, jobs, 1280, 720)
+}
+
+fn cpu_ui_app_at(scale: f32, jobs: usize, width: u32, height: u32) -> (App, Entity, Entity, u32) {
     use bevy::prelude::{AssetPlugin, Camera3d, IsDefaultUiCamera, TransformPlugin};
     use bevy::window::WindowRef;
     use turts_client::{
@@ -819,7 +835,7 @@ fn cpu_ui_app(scale: f32, jobs: usize) -> (App, Entity, Entity, u32) {
         .world_mut()
         .spawn((
             Window {
-                resolution: WindowResolution::new(1280, 720).with_scale_factor_override(scale),
+                resolution: WindowResolution::new(width, height).with_scale_factor_override(scale),
                 ..default()
             },
             PrimaryWindow,
@@ -832,13 +848,13 @@ fn cpu_ui_app(scale: f32, jobs: usize) -> (App, Entity, Entity, u32) {
             Camera {
                 computed: ComputedCameraValues {
                     target_info: Some(RenderTargetInfo {
-                        physical_size: UVec2::new(1280, 720),
+                        physical_size: UVec2::new(width, height),
                         scale_factor: scale,
                     }),
                     ..default()
                 },
                 viewport: Some(Viewport {
-                    physical_size: UVec2::new(1280, 720),
+                    physical_size: UVec2::new(width, height),
                     ..default()
                 }),
                 ..default()
@@ -855,6 +871,204 @@ fn cpu_ui_app(scale: f32, jobs: usize) -> (App, Entity, Entity, u32) {
         app.update();
     }
     (app, window, camera, producer)
+}
+
+#[test]
+fn narrow_window_docks_actual_scroll_panel_below_the_scene() {
+    let (app, window, _, _) = cpu_ui_app_at(1.0, 1, 800, 720);
+    let root = app
+        .world()
+        .iter_entities()
+        .find(|entity| entity.contains::<turts_client::economy_ui::UiPanelRoot>())
+        .expect("actual economy panel exists");
+    let node = root
+        .get::<ComputedNode>()
+        .expect("panel completed Bevy layout");
+    let transform = root
+        .get::<UiGlobalTransform>()
+        .expect("panel has its computed UI transform");
+    let center = transform.to_scale_angle_translation().2;
+    let half = node.size() * 0.5;
+    let panel = Rect::from_center_half_size(center, half);
+    let viewport = app.world().get::<Window>(window).unwrap().physical_width() as f32;
+    let height = app.world().get::<Window>(window).unwrap().physical_height() as f32;
+
+    assert!(
+        panel.min.y > height * 0.5,
+        "narrow panel should dock below the vertical midpoint: {panel:?}"
+    );
+    assert!(
+        node.size().x >= viewport - 24.0,
+        "narrow panel should span nearly the available width: {:?} of {viewport}px",
+        node.size()
+    );
+    assert!(
+        node.size().y <= height * 0.4,
+        "narrow panel height must remain capped and scrollable: {:?}",
+        node.size()
+    );
+    assert_eq!(root.get::<Node>().unwrap().overflow.y, OverflowAxis::Scroll);
+}
+
+#[test]
+fn actual_panel_redocks_on_resize_in_both_directions() {
+    let (mut app, window, camera_entity, _) = cpu_ui_app_at(1.0, 1, 1280, 720);
+    let panel_bounds = |app: &App| {
+        let panel = app
+            .world()
+            .iter_entities()
+            .find(|entity| entity.contains::<turts_client::economy_ui::UiPanelRoot>())
+            .unwrap();
+        let node = panel.get::<ComputedNode>().unwrap();
+        let center = panel
+            .get::<UiGlobalTransform>()
+            .unwrap()
+            .to_scale_angle_translation()
+            .2;
+        Rect::from_center_half_size(center, node.size() * 0.5)
+    };
+    assert!(
+        panel_bounds(&app).min.x < 20.0,
+        "wide panel starts at the left edge"
+    );
+
+    app.world_mut()
+        .get_mut::<Window>(window)
+        .unwrap()
+        .resolution
+        .set_physical_resolution(800, 720);
+    {
+        let mut camera = app.world_mut().get_mut::<Camera>(camera_entity).unwrap();
+        camera.computed.target_info = Some(RenderTargetInfo {
+            physical_size: UVec2::new(800, 720),
+            scale_factor: 1.0,
+        });
+        camera.viewport = Some(Viewport {
+            physical_size: UVec2::new(800, 720),
+            ..default()
+        });
+    }
+    app.update();
+    app.update();
+    assert!(
+        panel_bounds(&app).min.y > 360.0,
+        "narrow panel docks at the bottom"
+    );
+
+    app.world_mut()
+        .get_mut::<Window>(window)
+        .unwrap()
+        .resolution
+        .set_physical_resolution(1280, 720);
+    {
+        let mut camera = app.world_mut().get_mut::<Camera>(camera_entity).unwrap();
+        camera.computed.target_info = Some(RenderTargetInfo {
+            physical_size: UVec2::new(1280, 720),
+            scale_factor: 1.0,
+        });
+        camera.viewport = Some(Viewport {
+            physical_size: UVec2::new(1280, 720),
+            ..default()
+        });
+    }
+    app.update();
+    app.update();
+    assert!(
+        panel_bounds(&app).min.x < 20.0,
+        "wide panel returns to the left"
+    );
+}
+
+#[test]
+fn catalog_pick_bounds_fit_the_actual_computed_panel_at_normal_narrow_and_dpi_two() {
+    use bevy::camera::{CameraProjection, PerspectiveProjection};
+
+    let packages: Vec<_> = ["base", "haul", "acme", "cedar"]
+        .into_iter()
+        .map(|name| (name, acquired_package(name)))
+        .collect();
+    let screen_cases = [
+        (1.0, 1280, 720),
+        (1.0, 800, 720),
+        (1.0, 600, 720),
+        (2.0, 1280, 720),
+    ];
+
+    for (scale_factor, width, height) in screen_cases {
+        let (app, window, camera_entity, _) = cpu_ui_app_at(scale_factor, 1, width, height);
+        let window = app.world().get::<Window>(window).unwrap();
+        let viewport_size = Vec2::new(
+            window.physical_width() as f32,
+            window.physical_height() as f32,
+        );
+        let panel = app
+            .world()
+            .iter_entities()
+            .find(|entity| entity.contains::<turts_client::economy_ui::UiPanelRoot>())
+            .expect("actual economy panel exists");
+        let node = panel.get::<ComputedNode>().expect("panel completed layout");
+        let center = panel
+            .get::<UiGlobalTransform>()
+            .expect("panel has computed transform")
+            .to_scale_angle_translation()
+            .2;
+        let panel_rect = Rect::from_center_half_size(center, node.size() * 0.5);
+        let margin = 12.0 / node.inverse_scale_factor;
+        let free = free_scene_rect(viewport_size, Some(panel_rect), margin)
+            .expect("panel leaves a nonempty scene viewport");
+
+        let mut perspective = PerspectiveProjection::default();
+        perspective.update(viewport_size.x, viewport_size.y);
+        let mut camera = app.world().get::<Camera>(camera_entity).unwrap().clone();
+        camera.computed.target_info = Some(RenderTargetInfo {
+            physical_size: UVec2::new(viewport_size.x as u32, viewport_size.y as u32),
+            scale_factor,
+        });
+        camera.computed.clip_from_view = perspective.get_clip_from_view();
+
+        for (package_name, acquired) in &packages {
+            let radius = max_declared_pick_radius(&acquired.content);
+            let transform = fit_camera_transform(
+                acquired.map_size,
+                radius,
+                viewport_size,
+                free,
+                perspective.fov,
+                perspective.near,
+            )
+            .unwrap_or_else(|| {
+                panic!("{package_name} should fit at {width}x{height} scale {scale_factor}")
+            });
+            let global = GlobalTransform::from(transform);
+            let (map_width, map_depth) = acquired.map_size;
+            for point in [
+                Pos {
+                    x: -radius,
+                    y: -radius,
+                },
+                Pos {
+                    x: map_width + radius,
+                    y: -radius,
+                },
+                Pos {
+                    x: -radius,
+                    y: map_depth + radius,
+                },
+                Pos {
+                    x: map_width + radius,
+                    y: map_depth + radius,
+                },
+            ] {
+                let screen = projected_ground_center(&camera, &global, point)
+                    .unwrap_or_else(|| panic!("{package_name} padded map corner {point:?} is outside the actual camera"));
+                let physical = screen * scale_factor;
+                assert!(
+                    free.contains(physical),
+                    "{package_name} corner {point:?} projects to {physical:?} outside {free:?} at {width}x{height} scale {scale_factor}"
+                );
+            }
+        }
+    }
 }
 
 fn pointer_event(app: &mut App, window: Entity, position: Vec2, action: PointerAction) {
@@ -1099,7 +1313,7 @@ fn real_pointer_press_survives_replica_progress_update_and_never_reaches_world()
 #[test]
 fn real_scroll_reaches_the_fifth_exact_cancel_action_at_dpi_two() {
     let scale = 2.0;
-    let (mut app, window, camera_entity, producer) = cpu_ui_app(scale, 5);
+    let (mut app, window, _camera_entity, producer) = cpu_ui_app_at(scale, 5, 800, 480);
     let root = app
         .world_mut()
         .query_filtered::<Entity, With<turts_client::economy_ui::UiPanelRoot>>()
@@ -1119,23 +1333,6 @@ fn real_scroll_reaches_the_fifth_exact_cancel_action_at_dpi_two() {
             .any(|row| row.action.as_ref() == Some(&last) && row.visible)
     );
 
-    app.world_mut()
-        .get_mut::<Window>(window)
-        .unwrap()
-        .resolution
-        .set_physical_resolution(800, 480);
-    {
-        let mut camera = app.world_mut().get_mut::<Camera>(camera_entity).unwrap();
-        camera.computed.target_info = Some(RenderTargetInfo {
-            physical_size: UVec2::new(800, 480),
-            scale_factor: scale,
-        });
-        camera.viewport = Some(Viewport {
-            physical_size: UVec2::new(800, 480),
-            ..default()
-        });
-    }
-    app.update();
     let root_transform = app.world().get::<UiGlobalTransform>(root).unwrap();
     let point = root_transform.to_scale_angle_translation().2 / scale;
     let target = WindowRef::Entity(window).normalize(Some(window)).unwrap();
@@ -1157,7 +1354,7 @@ fn real_scroll_reaches_the_fifth_exact_cancel_action_at_dpi_two() {
             reachable.insert(job);
         }
     }
-    for _ in 0..12 {
+    for _ in 0..280 {
         app.world_mut().write_message(PointerInput::new(
             PointerId::Mouse,
             Location {
@@ -1169,12 +1366,13 @@ fn real_scroll_reaches_the_fifth_exact_cancel_action_at_dpi_two() {
             PointerAction::Scroll {
                 unit: bevy::input::mouse::MouseScrollUnit::Line,
                 x: 0.0,
-                y: -80.0,
+                y: -0.25,
                 phase: bevy::input::touch::TouchPhase::Moved,
             },
         ));
         app.update();
-        for row in rendered_ui_snapshot(app.world()) {
+        let visible_now = rendered_ui_snapshot(app.world());
+        for row in visible_now.iter().cloned() {
             if row.visible
                 && let Some(UiAction::Cancel { job, .. }) = row.action
             {

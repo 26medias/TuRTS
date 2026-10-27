@@ -1,5 +1,7 @@
 //! Shared native/wasm M2 economy panel backed by the validated replica and downloaded catalog.
 
+const PANEL_WIDE_WIDTH: f32 = 390.0;
+
 use bevy::camera::visibility::InheritedVisibility;
 use bevy::{
     prelude::*,
@@ -50,6 +52,7 @@ struct UiActionOwner(Entity);
 #[derive(Resource, Default)]
 struct PanelEntities {
     root: Option<Entity>,
+    docked_bottom: Option<bool>,
     lines: Vec<Entity>,
     controls: std::collections::HashMap<UiAction, (Entity, Entity)>,
 }
@@ -431,6 +434,13 @@ pub fn sync_panel(world: &mut World) {
         world.resource::<Selection>(),
         world.resource::<CommandResults>(),
     );
+    let viewport_width = world
+        .iter_entities()
+        .find(|entity| entity.contains::<bevy::window::PrimaryWindow>())
+        .and_then(|entity| entity.get::<Window>())
+        .map(Window::width)
+        .unwrap_or(f32::INFINITY);
+    let dock_bottom = PANEL_WIDE_WIDTH / viewport_width > 1.0 / 3.0;
     if world.resource::<PanelEntities>().root.is_none() {
         let root = world
             .spawn((
@@ -440,7 +450,7 @@ pub fn sync_panel(world: &mut World) {
                     position_type: PositionType::Absolute,
                     left: px(12),
                     top: px(12),
-                    width: px(390),
+                    width: px(PANEL_WIDE_WIDTH),
                     max_height: percent(94),
                     flex_direction: FlexDirection::Column,
                     row_gap: px(5),
@@ -458,6 +468,21 @@ pub fn sync_panel(world: &mut World) {
         .resource::<PanelEntities>()
         .root
         .expect("panel root created");
+    if world.resource::<PanelEntities>().docked_bottom != Some(dock_bottom) {
+        if let Some(mut node) = world.get_mut::<Node>(root) {
+            node.left = px(12);
+            node.top = if dock_bottom { Val::Auto } else { px(12) };
+            node.right = if dock_bottom { px(12) } else { Val::Auto };
+            node.bottom = if dock_bottom { px(12) } else { Val::Auto };
+            node.width = if dock_bottom {
+                Val::Auto
+            } else {
+                px(PANEL_WIDE_WIDTH)
+            };
+            node.max_height = percent(if dock_bottom { 35 } else { 94 });
+        }
+        world.resource_mut::<PanelEntities>().docked_bottom = Some(dock_bottom);
+    }
 
     while world.resource::<PanelEntities>().lines.len() < model.lines.len() {
         let entity = world

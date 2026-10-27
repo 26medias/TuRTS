@@ -264,7 +264,7 @@ fn setup_app(phase: Phase) -> App {
         .insert_resource(AcquiredPackages(Acquired {
             lockfile_hash: String::new(),
             visuals: HashMap::new(),
-            map_size: (48.0, 32.0),
+            map_size: (64.0, 64.0),
             unit_names: HashMap::new(),
             content: ClientContent::default(),
         }))
