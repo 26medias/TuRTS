@@ -368,6 +368,20 @@ fn e6_gather_conversion_and_interruptions_conserve_through_delivery() {
             let result = apply_command(app.world_mut(), &interrupt);
             let after = audit_state(app.world_mut());
             let op = trail(&mut app).drain_operations().pop().unwrap();
+            let cargo_after = after
+                .economy
+                .inventories
+                .iter()
+                .find(|i| i.unit == 3)
+                .unwrap()
+                .items
+                .iter()
+                .map(|x| x.on_hand)
+                .sum::<u64>();
+            assert_eq!(
+                cargo_after, cargo_before,
+                "MoveTo interruption keeps physical cargo"
+            );
             oracle
                 .observe(
                     &ExpectedOperation::Command(interrupt.clone()),
@@ -377,20 +391,6 @@ fn e6_gather_conversion_and_interruptions_conserve_through_delivery() {
                     Some(&result),
                 )
                 .unwrap();
-            assert_eq!(
-                after
-                    .economy
-                    .inventories
-                    .iter()
-                    .find(|i| i.unit == 3)
-                    .unwrap()
-                    .items
-                    .iter()
-                    .map(|x| x.on_hand)
-                    .sum::<u64>(),
-                cargo_before,
-                "interruption keeps physical cargo"
-            );
             let resume = Command {
                 slot: SlotId(0),
                 seq: 12,
@@ -1445,6 +1445,24 @@ fn e6_mixed_cost_rejection_keeps_every_endpoint_unchanged() {
     let after = audit_state(app.world_mut());
     let op = trail(&mut app).drain_operations().pop().unwrap();
     assert!(result.outcome.is_err());
+    let token_balance = |state: &AuditState| {
+        state
+            .economy
+            .balances
+            .iter()
+            .find(|balance| balance.slot == 0 && balance.resource == common::cid("probe:token"))
+            .unwrap()
+            .on_hand
+    };
+    assert_eq!(
+        token_balance(&after),
+        token_balance(&before),
+        "rejected mixed-cost command must roll back its first SlotBalance debit"
+    );
+    assert_eq!(
+        before, after,
+        "rejected mixed costs leave the full state unchanged"
+    );
     let mut oracle = AccountingOracle::new(&before, &catalog);
     oracle
         .observe(
@@ -1455,10 +1473,6 @@ fn e6_mixed_cost_rejection_keeps_every_endpoint_unchanged() {
             Some(&result),
         )
         .unwrap();
-    assert_eq!(
-        before, after,
-        "failed second cost leaves the first endpoint untouched"
-    );
 }
 
 #[test]
@@ -1751,6 +1765,139 @@ fn e6_running_cancel_refund_rejects_when_inventory_endpoint_is_full() {
     oracle
         .observe(
             &ExpectedOperation::Command(cancel),
+            &before,
+            &after,
+            &op.events,
+            Some(&result),
+        )
+        .unwrap();
+    assert_eq!(before, after);
+}
+
+#[test]
+fn e6_running_cancel_refund_rejects_on_balance_u64_overflow() {
+    let mut files = economy_files()
+        .into_iter()
+        .map(|(p, b)| (p, String::from_utf8(b).unwrap()))
+        .collect::<std::collections::BTreeMap<_, _>>();
+    let map = files.get_mut("maps/test.ron").unwrap();
+    *map = map.replace(
+        "(balance: \"probe:token\", amount: 200)",
+        "(balance: \"probe:token\", amount: 18446744073709551615)",
+    );
+    let yard = files.get_mut("units/yard.ron").unwrap();
+    *yard = yard.replace(
+        "drop_off: Some((rules: [(item: \"probe:timber\", effect: Store)]))",
+        "drop_off: None",
+    );
+    let worker = files.get_mut("units/worker.ron").unwrap();
+    *worker = worker
+        .replace("capacity: 10", "capacity: 100")
+        .replace("gather_per_second: 5", "gather_per_second: 100")
+        .replace("unload_per_second: 10", "unload_per_second: 1000");
+    let train = files.get_mut("production/train.ron").unwrap();
+    *train = train.replace("duration_ms: 5000", "duration_ms: 600000");
+
+    let mut app = scenario_with(files, 20);
+    trail(&mut app).enable();
+    let initial = audit_state(app.world_mut());
+    let catalog = app
+        .world()
+        .resource::<turts_sim::bootstrap::InstalledCatalog>()
+        .0
+        .clone();
+    let mut oracle = AccountingOracle::new(&initial, &catalog);
+
+    let command = produce(995, "probe:train");
+    let result = apply_command(app.world_mut(), &command);
+    let after = audit_state(app.world_mut());
+    let op = trail(&mut app).drain_operations().pop().unwrap();
+    oracle
+        .observe(
+            &ExpectedOperation::Command(command),
+            &initial,
+            &after,
+            &op.events,
+            Some(&result),
+        )
+        .unwrap();
+    let job = result.outcome.unwrap().job_id.unwrap();
+
+    let gather = Command {
+        slot: SlotId(0),
+        seq: 996,
+        kind: CommandKind::Gather {
+            unit_id: 3,
+            node_id: turts_sim::NodeId(1),
+        },
+    };
+    let before = oracle.modeled_state().clone();
+    let result = apply_command(app.world_mut(), &gather);
+    let after = audit_state(app.world_mut());
+    let op = trail(&mut app).drain_operations().pop().unwrap();
+    oracle
+        .observe(
+            &ExpectedOperation::Command(gather),
+            &before,
+            &after,
+            &op.events,
+            Some(&result),
+        )
+        .unwrap();
+
+    let mut reached_max = false;
+    for tick in 1..=500 {
+        advance_accounted_tick(&mut app, &mut oracle, tick);
+        let state = audit_state(app.world_mut());
+        if state.economy.balances.iter().any(|balance| {
+            balance.slot == 0
+                && balance.resource == common::cid("probe:token")
+                && balance.on_hand == u64::MAX
+        }) {
+            reached_max = true;
+            break;
+        }
+    }
+    assert!(reached_max, "Convert fills the balance to u64::MAX");
+    let before = oracle.modeled_state().clone();
+    assert!(
+        before
+            .economy
+            .queues
+            .iter()
+            .flat_map(|queue| &queue.jobs)
+            .any(|queued| queued.id == job.0 && queued.stage == turts_sim::JobStage::Running)
+    );
+    let command = Command {
+        slot: SlotId(0),
+        seq: 997,
+        kind: CommandKind::CancelProduction {
+            producer_id: 1,
+            job_id: job,
+        },
+    };
+    let result = apply_command(app.world_mut(), &command);
+    let after = audit_state(app.world_mut());
+    let balance_of = |state: &AuditState| {
+        state
+            .economy
+            .balances
+            .iter()
+            .find(|balance| balance.slot == 0 && balance.resource == common::cid("probe:token"))
+            .unwrap()
+            .on_hand
+    };
+    assert_eq!(
+        result.outcome,
+        Err(turts_sim::RejectReason::RefundDestinationOverflow),
+        "refund at balance {} must reject without wrapping (observed after {})",
+        balance_of(&before),
+        balance_of(&after),
+    );
+    let op = trail(&mut app).drain_operations().pop().unwrap();
+    oracle
+        .observe(
+            &ExpectedOperation::Command(command),
             &before,
             &after,
             &op.events,
