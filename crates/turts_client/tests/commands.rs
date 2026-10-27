@@ -1,4 +1,6 @@
-use turts_client::commands::{CommandSequence, PendingCommands, SequenceExhausted, submit};
+use turts_client::commands::{
+    CommandSequence, PendingCommand, PendingCommands, SequenceExhausted, submit,
+};
 use turts_net_protocol::{JobId, NodeId, PlayerCommandKind};
 use turts_net_protocol::{Pos, UnitId};
 
@@ -62,7 +64,20 @@ fn pending_commands_preserve_fifo_order() {
     for command in commands.clone() {
         submit(&mut pending, command);
     }
-    assert_eq!(pending.0.into_iter().collect::<Vec<_>>(), commands);
+    assert_eq!(
+        pending
+            .0
+            .into_iter()
+            .map(|command| match command {
+                PendingCommand::Submit {
+                    kind,
+                    trace_step: None,
+                } => kind,
+                other => panic!("unexpected pending command {other:?}"),
+            })
+            .collect::<Vec<_>>(),
+        commands
+    );
 }
 
 #[test]
@@ -182,7 +197,10 @@ fn disconnected_sender_preserves_fifo_and_sequence_until_connected() {
     app.update();
     assert_eq!(
         app.world().resource::<PendingCommands>().0.front(),
-        Some(&command)
+        Some(&PendingCommand::Submit {
+            kind: command.clone(),
+            trace_step: None,
+        })
     );
     assert_eq!(app.world().resource::<CommandSequence>().next, Some(1));
 

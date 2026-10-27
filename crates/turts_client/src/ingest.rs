@@ -19,8 +19,11 @@ use turts_net_protocol::{
 };
 
 use crate::replica::{DeltaOutcome, Replica, ReplicaConfig, ReplicaContext, SnapshotOutcome};
+use crate::scenario::DropWorldChange;
 use crate::{ClientOpts, content::ClientContent, join::AcquiredPackages};
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::io::Write;
+use turts_net_protocol::{EconomyChanges, EconomyState, NodeId, NodeState};
 
 /// The buffered deltas of a replica that waits for a `Snapshot` and span this many ticks or more
 /// make the client ask for one. This covers a lost or late `Welcome` `Snapshot`, so the client
@@ -86,12 +89,48 @@ pub struct IngestHooks {
     pub arrival_unit: Option<u32>,
     /// Hold each `Snapshot` that answers a request back by this many ticks.
     pub hold_resync_snapshots: u32,
+    /// Remaining resync Snapshot answers allowed to receive the delay; None means unlimited.
+    pub hold_resync_snapshots_remaining: Option<u32>,
     /// Held answers: the `Snapshot` and the delta tick at which it is released.
     pub held: Vec<(Snapshot, u32)>,
     /// True from the moment a `ResyncRequest` is sent until its answer is applied.
     pub outstanding_request: bool,
     /// The highest delta tick received, dropped deltas included. It is the clock of the hold.
     pub highest_delta_tick: Option<u32>,
+    pub(crate) initial_drop_world_changes: Vec<DropWorldChange>,
+    pub(crate) armed_drop_world_changes: Option<ArmedDropWorldChanges>,
+    pub(crate) dropped_world_changes: Vec<DroppedWorldChange>,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct ArmedDropWorldChanges {
+    pub(crate) requested: BTreeSet<DropWorldChange>,
+    pub(crate) baseline_nodes: HashMap<NodeId, NodeState>,
+    pub(crate) baseline_economy: EconomyState,
+    pub(crate) baseline_tick: u32,
+    pub(crate) arm_tick: u32,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct DroppedWorldChange {
+    pub(crate) kind: DropWorldChange,
+    pub(crate) arm_tick: u32,
+    pub(crate) dropped_tick: u32,
+}
+
+pub(crate) fn arm_drop_world_changes(
+    hooks: &mut IngestHooks,
+    kinds: Vec<DropWorldChange>,
+    replica: Replica,
+    arm_tick: u32,
+) {
+    hooks.armed_drop_world_changes = Some(ArmedDropWorldChanges {
+        requested: kinds.into_iter().collect(),
+        baseline_nodes: replica.nodes,
+        baseline_economy: replica.economy,
+        baseline_tick: replica.last_applied_tick.unwrap_or(arm_tick),
+        arm_tick,
+    });
 }
 
 #[derive(Resource, Default, Debug)]
@@ -282,10 +321,16 @@ fn on_snapshot(
         return Vec::new();
     };
     // Only an answer to a request is held. The `Snapshot` after `Welcome` applies at once.
-    if hooks.outstanding_request && hooks.hold_resync_snapshots > 0 {
+    if hooks.outstanding_request
+        && hooks.hold_resync_snapshots > 0
+        && hooks.hold_resync_snapshots_remaining != Some(0)
+    {
         if hooks.held.is_empty() {
             let release_tick = snapshot.tick + hooks.hold_resync_snapshots;
             hooks.held.push((snapshot, release_tick));
+            if let Some(remaining) = &mut hooks.hold_resync_snapshots_remaining {
+                *remaining = remaining.saturating_sub(1);
+            }
         }
         return release_held(hooks, counters, replica, now);
     }
@@ -309,7 +354,9 @@ fn on_deltas(
         return Vec::new();
     };
     let mut out = Vec::new();
-    if should_drop(hooks, &deltas) {
+    let ordinary_drop = should_drop(hooks, &deltas);
+    let matched_loss = !ordinary_drop && should_drop_world_change(hooks, replica, &deltas);
+    if ordinary_drop || matched_loss {
         counters.deltas_dropped.push(deltas.tick);
     } else {
         let before_overflows = replica.buffer_overflows;
@@ -326,6 +373,285 @@ fn on_deltas(
     out.extend(release_held(hooks, counters, replica, now));
     out.extend(idle_resync(hooks, counters, replica));
     out
+}
+
+fn should_drop_world_change(
+    hooks: &mut IngestHooks,
+    replica: &Replica,
+    deltas: &WorldDelta,
+) -> bool {
+    let Some(mut armed) = hooks.armed_drop_world_changes.take() else {
+        return false;
+    };
+    if deltas.base_tick != armed.baseline_tick
+        || armed.baseline_tick.checked_add(1) != Some(deltas.tick)
+        || replica.last_applied_tick != Some(armed.baseline_tick)
+    {
+        hooks.armed_drop_world_changes = Some(armed);
+        return false;
+    }
+    let matches = matching_world_changes(&armed, deltas);
+    let fired: Vec<_> = armed
+        .requested
+        .iter()
+        .filter(|kind| matches.contains(kind))
+        .copied()
+        .collect();
+    if !fired.is_empty() {
+        for kind in fired {
+            armed.requested.remove(&kind);
+            hooks.dropped_world_changes.push(DroppedWorldChange {
+                kind,
+                arm_tick: armed.arm_tick,
+                dropped_tick: deltas.tick,
+            });
+        }
+        hooks.armed_drop_world_changes = (!armed.requested.is_empty()).then_some(armed);
+        return true;
+    }
+    for node in &deltas.nodes {
+        armed.baseline_nodes.insert(node.id, node.clone());
+    }
+    merge_economy_baseline(&mut armed.baseline_economy, &deltas.economy);
+    armed.baseline_tick = deltas.tick;
+    hooks.armed_drop_world_changes = Some(armed);
+    false
+}
+
+fn merge_economy_baseline(state: &mut EconomyState, changes: &EconomyChanges) {
+    for change in &changes.balances {
+        if let Some(current) = state
+            .balances
+            .iter_mut()
+            .find(|item| item.resource == change.resource)
+        {
+            *current = change.clone();
+        } else {
+            state.balances.push(change.clone());
+        }
+    }
+    for change in &changes.inventories {
+        if let Some(current) = state
+            .inventories
+            .iter_mut()
+            .find(|item| item.unit == change.unit)
+        {
+            *current = change.clone();
+        } else {
+            state.inventories.push(change.clone());
+        }
+    }
+    for change in &changes.orders {
+        if let Some(current) = state
+            .orders
+            .iter_mut()
+            .find(|item| item.unit == change.unit)
+        {
+            *current = change.clone();
+        } else {
+            state.orders.push(change.clone());
+        }
+    }
+    for change in &changes.queues {
+        if let Some(current) = state
+            .queues
+            .iter_mut()
+            .find(|item| item.producer == change.producer)
+        {
+            *current = change.clone();
+        } else {
+            state.queues.push(change.clone());
+        }
+    }
+}
+
+fn matching_world_changes(
+    armed: &ArmedDropWorldChanges,
+    delta: &WorldDelta,
+) -> BTreeSet<DropWorldChange> {
+    let mut found = BTreeSet::new();
+    let changes = &delta.economy;
+    if !changes.balances.is_empty()
+        || !changes.inventories.is_empty()
+        || !changes.orders.is_empty()
+        || !changes.queues.is_empty()
+    {
+        found.insert(DropWorldChange::FinalChange);
+    }
+    if !delta.spawned.is_empty() {
+        found.insert(DropWorldChange::Spawn);
+    }
+
+    let increased = economy_increased(&armed.baseline_economy, changes);
+    let decreased_inventory = changes.inventories.iter().any(|inventory| {
+        let old = armed
+            .baseline_economy
+            .inventories
+            .iter()
+            .find(|item| item.unit == inventory.unit);
+        inventory.items.iter().any(|item| {
+            old.and_then(|old| {
+                old.items
+                    .iter()
+                    .find(|previous| previous.resource == item.resource)
+            })
+            .is_some_and(|previous| item.on_hand < previous.on_hand)
+        })
+    });
+    let decreased_balance = changes.balances.iter().any(|balance| {
+        armed
+            .baseline_economy
+            .balances
+            .iter()
+            .find(|old| old.resource == balance.resource)
+            .is_some_and(|old| balance.on_hand < old.on_hand)
+    });
+    let increased_balance = changes.balances.iter().any(|balance| {
+        armed
+            .baseline_economy
+            .balances
+            .iter()
+            .find(|old| old.resource == balance.resource)
+            .is_some_and(|old| balance.on_hand > old.on_hand)
+    });
+    if decreased_inventory && increased_balance {
+        found.insert(DropWorldChange::Conversion);
+    }
+    if has_charged_line_transition(&armed.baseline_economy, changes)
+        && (decreased_inventory || decreased_balance)
+    {
+        found.insert(DropWorldChange::Charge);
+    }
+
+    let extracted = delta.nodes.iter().any(|node| {
+        armed
+            .baseline_nodes
+            .get(&node.id)
+            .is_some_and(|old| node.remaining < old.remaining)
+    }) && changes.inventories.iter().any(|inventory| {
+        let old = armed
+            .baseline_economy
+            .inventories
+            .iter()
+            .find(|item| item.unit == inventory.unit);
+        inventory.items.iter().any(|item| {
+            old.and_then(|old| {
+                old.items
+                    .iter()
+                    .find(|previous| previous.resource == item.resource)
+            })
+            .is_some_and(|previous| item.on_hand > previous.on_hand)
+        })
+    });
+    if extracted {
+        found.insert(DropWorldChange::Extraction);
+    }
+
+    let refunded = changes.queues.iter().any(|queue| {
+        let old = armed
+            .baseline_economy
+            .queues
+            .iter()
+            .find(|item| item.producer == queue.producer);
+        old.is_some_and(|old| queue.jobs.len() < old.jobs.len())
+    }) && increased;
+    if refunded {
+        found.insert(DropWorldChange::Refund);
+    }
+    found
+}
+
+fn has_charged_line_transition(previous: &EconomyState, changes: &EconomyChanges) -> bool {
+    use turts_mod_api::CostSource;
+
+    changes.queues.iter().any(|queue| {
+        let old_queue = previous
+            .queues
+            .iter()
+            .find(|old| old.producer == queue.producer);
+        queue.jobs.iter().any(|job| {
+            let old_job =
+                old_queue.and_then(|old| old.jobs.iter().find(|candidate| candidate.id == job.id));
+            job.charged.iter().any(|line| {
+                let already_charged = old_job
+                    .and_then(|old| {
+                        old.charged.iter().find(|old_line| {
+                            old_line.source == line.source && old_line.resource == line.resource
+                        })
+                    })
+                    .map_or(0, |old_line| old_line.amount);
+                let newly_charged = line.amount.saturating_sub(already_charged);
+                if newly_charged == 0 {
+                    return false;
+                }
+                match line.source {
+                    CostSource::SlotBalance => {
+                        let old = previous
+                            .balances
+                            .iter()
+                            .find(|account| account.resource == line.resource);
+                        let new = changes
+                            .balances
+                            .iter()
+                            .find(|account| account.resource == line.resource);
+                        old.zip(new).is_some_and(|(old, new)| {
+                            old.on_hand.saturating_sub(new.on_hand) >= newly_charged
+                        })
+                    }
+                    CostSource::ProducerInventory => {
+                        let old_inventory = previous
+                            .inventories
+                            .iter()
+                            .find(|inventory| inventory.unit.0 == queue.producer.0);
+                        let new_inventory = changes
+                            .inventories
+                            .iter()
+                            .find(|inventory| inventory.unit.0 == queue.producer.0);
+                        let old = old_inventory.and_then(|inventory| {
+                            inventory
+                                .items
+                                .iter()
+                                .find(|item| item.resource == line.resource)
+                        });
+                        let new = new_inventory.and_then(|inventory| {
+                            inventory
+                                .items
+                                .iter()
+                                .find(|item| item.resource == line.resource)
+                        });
+                        old.zip(new).is_some_and(|(old, new)| {
+                            old.on_hand.saturating_sub(new.on_hand) >= newly_charged
+                        })
+                    }
+                }
+            })
+        })
+    })
+}
+
+fn economy_increased(previous: &EconomyState, changes: &EconomyChanges) -> bool {
+    let balance_increase = changes.balances.iter().any(|balance| {
+        previous
+            .balances
+            .iter()
+            .find(|old| old.resource == balance.resource)
+            .is_some_and(|old| balance.on_hand > old.on_hand)
+    });
+    let inventory_increase = changes.inventories.iter().any(|inventory| {
+        let old = previous
+            .inventories
+            .iter()
+            .find(|item| item.unit == inventory.unit);
+        inventory.items.iter().any(|item| {
+            old.and_then(|old| {
+                old.items
+                    .iter()
+                    .find(|previous| previous.resource == item.resource)
+            })
+            .is_some_and(|previous| item.on_hand > previous.on_hand)
+        })
+    });
+    balance_increase || inventory_increase
 }
 
 /// True when a test hook says to ignore this delta. The arrival hook fires once.
@@ -362,6 +688,21 @@ fn apply_snapshot(
     match outcome {
         SnapshotOutcome::Applied { .. } => {
             counters.snapshots_applied += 1;
+            if !hooks.initial_drop_world_changes.is_empty()
+                && hooks.armed_drop_world_changes.is_none()
+            {
+                let initial_kinds = std::mem::take(&mut hooks.initial_drop_world_changes);
+                arm_drop_world_changes(
+                    hooks,
+                    initial_kinds,
+                    replica.clone(),
+                    replica.last_applied_tick.unwrap_or(snapshot.tick),
+                );
+            } else if hooks.armed_drop_world_changes.is_some() {
+                // A reliable coherent answer closes the gap caused by a dropped batch. Preserve
+                // unspent predicates and rebase them; stale pre-gap ticks can never match again.
+                rebase_armed_world_changes(hooks, replica, snapshot.tick);
+            }
             Vec::new()
         }
         SnapshotOutcome::IgnoredStale => {
@@ -386,6 +727,14 @@ fn apply_snapshot(
             }
             request_resync(hooks, counters).into_iter().collect()
         }
+    }
+}
+
+fn rebase_armed_world_changes(hooks: &mut IngestHooks, replica: &Replica, fallback_tick: u32) {
+    if let Some(armed) = hooks.armed_drop_world_changes.as_mut() {
+        armed.baseline_nodes.clone_from(&replica.nodes);
+        armed.baseline_economy.clone_from(&replica.economy);
+        armed.baseline_tick = replica.last_applied_tick.unwrap_or(fallback_tick);
     }
 }
 
@@ -480,6 +829,11 @@ pub fn ingest_messages(
     for (entity, mut receiver) in &mut snapshots {
         let epoch = witnesses.epoch_for(entity.to_bits());
         for received in receiver.receive_with_tick() {
+            append_raw_world_dto(
+                options.0.raw_world_log.as_deref(),
+                "snapshot",
+                &received.data,
+            );
             witnesses.record_message(
                 epoch,
                 received.channel_kind == ChannelKind::of::<ReliableChannel>(),
@@ -488,7 +842,10 @@ pub fn ingest_messages(
         }
     }
     for mut receiver in deltas.iter_mut() {
-        messages.extend(receiver.receive().map(Incoming::Deltas));
+        for delta in receiver.receive() {
+            append_raw_world_dto(options.0.raw_world_log.as_deref(), "world_delta", &delta);
+            messages.push(Incoming::Deltas(delta));
+        }
     }
     // Acks before rejections: the server sends the ack at once.
     for (entity, mut receiver) in &mut acks {
@@ -576,6 +933,284 @@ pub fn ingest_messages(
                 }
             }
         }
+    }
+}
+
+/// Append the decoded wire DTO before any replica validation, drop, hold, or owner projection.
+/// This opt-in native test hook is deliberately separate from normal debug/report state.
+fn append_raw_world_dto<T: serde::Serialize>(path: Option<&std::path::Path>, kind: &str, dto: &T) {
+    let Some(path) = path else { return };
+    let mut file = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+        .unwrap_or_else(|error| panic!("open raw world DTO log {}: {error}", path.display()));
+    serde_json::to_writer(&mut file, &serde_json::json!({ "kind": kind, "dto": dto }))
+        .unwrap_or_else(|error| panic!("write raw world DTO to {}: {error}", path.display()));
+    file.write_all(b"\n").unwrap_or_else(|error| {
+        panic!("terminate raw world DTO record {}: {error}", path.display())
+    });
+}
+
+#[cfg(test)]
+mod world_change_tests {
+    use super::*;
+    use crate::scenario::DropWorldChange;
+    use turts_mod_api::{Cost, CostSource};
+    use turts_net_protocol::{
+        BalanceState, EconomyChanges, InventoryState, JobId, JobStage, JobState, QueueState, UnitId,
+    };
+
+    fn balance(resource: &str, on_hand: u64) -> BalanceState {
+        BalanceState {
+            resource: resource.to_owned(),
+            on_hand,
+            reserved: 0,
+        }
+    }
+
+    fn inventory(unit: u32, ore: u64) -> InventoryState {
+        InventoryState {
+            unit: UnitId(unit),
+            items: vec![balance("base:ore", ore)],
+        }
+    }
+
+    fn delta(tick: u32, economy: EconomyChanges) -> WorldDelta {
+        WorldDelta {
+            tick,
+            base_tick: tick - 1,
+            spawned: Vec::new(),
+            removed: Vec::new(),
+            positions: Vec::new(),
+            nodes: Vec::new(),
+            economy,
+        }
+    }
+
+    fn make_replica(tick: u32, economy: EconomyState) -> Replica {
+        let mut replica = Replica::new(20);
+        replica.resync = None;
+        replica.last_applied_tick = Some(tick);
+        replica.economy = economy;
+        replica
+    }
+
+    fn charge_economy() -> EconomyState {
+        EconomyState {
+            balances: vec![balance("base:credits", 400)],
+            inventories: vec![inventory(2, 5), inventory(4, 5)],
+            orders: Vec::new(),
+            queues: vec![QueueState {
+                producer: UnitId(1),
+                jobs: Vec::new(),
+            }],
+        }
+    }
+
+    #[test]
+    fn store_and_conversion_do_not_match_charge_but_real_queue_debit_does() {
+        let baseline = EconomyState {
+            balances: vec![balance("base:credits", 400)],
+            inventories: vec![inventory(2, 10), inventory(4, 0)],
+            orders: Vec::new(),
+            queues: vec![QueueState {
+                producer: UnitId(1),
+                jobs: Vec::new(),
+            }],
+        };
+        let store = delta(
+            11,
+            EconomyChanges {
+                balances: Vec::new(),
+                inventories: vec![inventory(2, 5), inventory(4, 5)],
+                orders: Vec::new(),
+                queues: Vec::new(),
+            },
+        );
+        let store_matches = matching_world_changes(
+            &ArmedDropWorldChanges {
+                requested: BTreeSet::new(),
+                baseline_nodes: HashMap::new(),
+                baseline_economy: baseline.clone(),
+                baseline_tick: 10,
+                arm_tick: 10,
+            },
+            &store,
+        );
+        assert!(!store_matches.contains(&DropWorldChange::Conversion));
+        assert!(!store_matches.contains(&DropWorldChange::Charge));
+
+        let conversion = delta(
+            11,
+            EconomyChanges {
+                balances: vec![balance("base:credits", 410)],
+                inventories: vec![inventory(2, 5)],
+                orders: Vec::new(),
+                queues: Vec::new(),
+            },
+        );
+        let conversion_matches = matching_world_changes(
+            &ArmedDropWorldChanges {
+                requested: BTreeSet::new(),
+                baseline_nodes: HashMap::new(),
+                baseline_economy: baseline.clone(),
+                baseline_tick: 10,
+                arm_tick: 10,
+            },
+            &conversion,
+        );
+        assert!(conversion_matches.contains(&DropWorldChange::Conversion));
+        assert!(!conversion_matches.contains(&DropWorldChange::Charge));
+
+        let charged_job = JobState {
+            id: JobId(7),
+            recipe: "base:train_rifleman".to_owned(),
+            stage: JobStage::Queued,
+            elapsed_ticks: 0,
+            duration_ticks: 100,
+            charged: vec![Cost {
+                resource: "base:credits".to_owned(),
+                amount: 50,
+                source: CostSource::SlotBalance,
+            }],
+            reserved: Vec::new(),
+        };
+        let charge = delta(
+            11,
+            EconomyChanges {
+                balances: vec![balance("base:credits", 350)],
+                inventories: Vec::new(),
+                orders: Vec::new(),
+                queues: vec![QueueState {
+                    producer: UnitId(1),
+                    jobs: vec![charged_job],
+                }],
+            },
+        );
+        let charge_matches = matching_world_changes(
+            &ArmedDropWorldChanges {
+                requested: BTreeSet::new(),
+                baseline_nodes: HashMap::new(),
+                baseline_economy: baseline,
+                baseline_tick: 10,
+                arm_tick: 10,
+            },
+            &charge,
+        );
+        assert!(charge_matches.contains(&DropWorldChange::Charge));
+        assert!(!charge_matches.contains(&DropWorldChange::Conversion));
+    }
+
+    #[test]
+    fn multiple_kinds_survive_recovery_and_midtrace_rearm_resets_the_baseline() {
+        let initial = EconomyState {
+            balances: vec![balance("base:credits", 400)],
+            inventories: vec![inventory(2, 10), inventory(4, 0)],
+            orders: Vec::new(),
+            queues: vec![QueueState {
+                producer: UnitId(1),
+                jobs: Vec::new(),
+            }],
+        };
+        let mut replica = make_replica(10, initial.clone());
+        let mut hooks = IngestHooks::default();
+        arm_drop_world_changes(
+            &mut hooks,
+            vec![DropWorldChange::Conversion, DropWorldChange::Charge],
+            replica.clone(),
+            10,
+        );
+
+        let store = delta(
+            11,
+            EconomyChanges {
+                balances: Vec::new(),
+                inventories: vec![inventory(2, 5), inventory(4, 5)],
+                orders: Vec::new(),
+                queues: Vec::new(),
+            },
+        );
+        assert!(!should_drop_world_change(&mut hooks, &replica, &store));
+        replica.economy.inventories = vec![inventory(2, 5), inventory(4, 5)];
+        replica.last_applied_tick = Some(11);
+
+        let conversion = delta(
+            12,
+            EconomyChanges {
+                balances: vec![balance("base:credits", 410)],
+                inventories: vec![inventory(2, 0)],
+                orders: Vec::new(),
+                queues: Vec::new(),
+            },
+        );
+        assert!(should_drop_world_change(&mut hooks, &replica, &conversion));
+        assert_eq!(hooks.dropped_world_changes.len(), 1);
+        assert_eq!(
+            hooks.dropped_world_changes[0].kind,
+            DropWorldChange::Conversion
+        );
+        assert_eq!(hooks.dropped_world_changes[0].arm_tick, 10);
+        assert_eq!(
+            hooks.armed_drop_world_changes.as_ref().unwrap().requested,
+            BTreeSet::from([DropWorldChange::Charge])
+        );
+
+        // A coherent response is the only baseline allowed to bridge the intentionally dropped
+        // batch. Remaining predicates use this snapshot tick and state.
+        replica = make_replica(20, charge_economy());
+        rebase_armed_world_changes(&mut hooks, &replica, 20);
+        let charged_job = JobState {
+            id: JobId(8),
+            recipe: "base:train_rifleman".to_owned(),
+            stage: JobStage::Queued,
+            elapsed_ticks: 0,
+            duration_ticks: 100,
+            charged: vec![Cost {
+                resource: "base:credits".to_owned(),
+                amount: 50,
+                source: CostSource::SlotBalance,
+            }],
+            reserved: Vec::new(),
+        };
+        let charge = delta(
+            21,
+            EconomyChanges {
+                balances: vec![balance("base:credits", 350)],
+                inventories: Vec::new(),
+                orders: Vec::new(),
+                queues: vec![QueueState {
+                    producer: UnitId(1),
+                    jobs: vec![charged_job],
+                }],
+            },
+        );
+        assert!(should_drop_world_change(&mut hooks, &replica, &charge));
+        assert_eq!(hooks.dropped_world_changes.len(), 2);
+        assert_eq!(hooks.dropped_world_changes[1].kind, DropWorldChange::Charge);
+        assert_eq!(hooks.dropped_world_changes[1].arm_tick, 10);
+        assert!(hooks.armed_drop_world_changes.is_none());
+
+        // A later trace arm clears matching baselines/fired flags but keeps historical witnesses.
+        arm_drop_world_changes(
+            &mut hooks,
+            vec![DropWorldChange::Conversion],
+            replica.clone(),
+            20,
+        );
+        let rearmed = delta(
+            21,
+            EconomyChanges {
+                balances: vec![balance("base:credits", 410)],
+                inventories: vec![inventory(2, 0)],
+                orders: Vec::new(),
+                queues: Vec::new(),
+            },
+        );
+        assert!(should_drop_world_change(&mut hooks, &replica, &rearmed));
+        assert_eq!(hooks.dropped_world_changes.len(), 3);
+        assert_eq!(hooks.dropped_world_changes[2].arm_tick, 20);
+        assert_eq!(hooks.dropped_world_changes[2].dropped_tick, 21);
     }
 }
 

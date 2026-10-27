@@ -215,6 +215,7 @@ mod tests {
             config: PathBuf::from("server.ron"),
             tick_log: None,
             stats: stats.map(Path::to_path_buf),
+            economy_log: None,
             synthetic_units: 0,
             run_ticks: None,
         }

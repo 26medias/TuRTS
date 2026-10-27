@@ -263,6 +263,7 @@ pub struct AccountingOracle {
     pub cancellations: u64,
     pub operations: u64,
     movement_checked_this_tick: bool,
+    command_tick_advanced: bool,
     expected_commands: Vec<Command>,
     frozen_jobs: BTreeMap<(u32, u64), FrozenJob>,
 }
@@ -288,9 +289,53 @@ impl AccountingOracle {
             cancellations: 0,
             operations: 0,
             movement_checked_this_tick: false,
+            command_tick_advanced: false,
             expected_commands: Vec::new(),
             frozen_jobs: BTreeMap::new(),
         }
+    }
+
+    /// Apply an accepted Hello as a separately frozen slot-claim transition. The
+    /// prior model must identify the first open slot; an observed claim never seeds state.
+    pub fn apply_frozen_hello_claim(
+        &mut self,
+        tick: u32,
+        slot: u8,
+        player_id: u64,
+    ) -> Result<(), String> {
+        if self.last.economy.tick != tick || self.tick_start_state.economy.tick != tick {
+            return Err("Hello claim is not at the current modeled tick boundary".into());
+        }
+        if self.last.claims.contains(&Some(player_id)) {
+            return Err("frozen player identity already claimed a slot".into());
+        }
+        let expected_slot = self.last.claims.iter().position(Option::is_none);
+        if expected_slot != Some(usize::from(slot)) {
+            return Err("frozen Hello did not claim the first modeled open slot".into());
+        }
+        let index = usize::from(slot);
+        let Some(last_claim) = self.last.claims.get_mut(index) else {
+            return Err("frozen Hello slot is outside the modeled match".into());
+        };
+        *last_claim = Some(player_id);
+        let Some(tick_claim) = self.tick_start_state.claims.get_mut(index) else {
+            return Err("frozen Hello slot is outside the tick baseline".into());
+        };
+        *tick_claim = Some(player_id);
+        Ok(())
+    }
+
+    /// Move only the current operation clock into a newly advanced command tick. Keep
+    /// the previous TickAudit baseline and all frozen job provenance intact.
+    pub fn advance_clock_for_command_tick(&mut self, tick: u32) -> Result<(), String> {
+        if self.last.economy.tick.checked_add(1) != Some(tick)
+            || self.tick_start_state.economy.tick.checked_add(1) != Some(tick)
+        {
+            return Err("command tick does not follow the prior modeled TickAudit".into());
+        }
+        self.last.economy.tick = tick;
+        self.command_tick_advanced = true;
+        Ok(())
     }
 
     pub fn observe(
@@ -307,13 +352,33 @@ impl AccountingOracle {
             self.last = after.clone();
             return Ok(());
         }
-        if *before != self.last {
-            if matches!(expected, ExpectedOperation::Automatic { .. }) {
-                if self.movement_checked_this_tick {
+        if matches!(expected, ExpectedOperation::Automatic { .. }) {
+            if self.movement_checked_this_tick {
+                if *before != self.last {
                     return Err(
                         "second movement discontinuity occurred within one modeled tick".into(),
                     );
                 }
+            } else if self.command_tick_advanced {
+                // In trace-managed updates, command admission and Movement precede all
+                // automatic captures. Predict Movement even when the observed state is
+                // unchanged, so a missing step with an active target cannot pass.
+                if self.last.economy.tick != before.economy.tick {
+                    return Err(
+                        "trace-managed movement changed the clock before automatic capture".into(),
+                    );
+                }
+                let mut modeled = self.predicted_movement(&self.last, before.economy.tick)?;
+                project_raw_queues(&mut modeled)?;
+                if modeled != *before {
+                    return Err(
+                        "same-tick movement after commands differs from the predicted fixed step"
+                            .into(),
+                    );
+                }
+                self.last = before.clone();
+                self.movement_checked_this_tick = true;
+            } else if *before != self.last {
                 if self.last.economy.tick.checked_add(1) != Some(before.economy.tick) {
                     return Err(
                         "automatic before snapshot skipped or repeated a tick boundary".into(),
@@ -322,9 +387,9 @@ impl AccountingOracle {
                 self.movement_transition(&self.last, before)?;
                 self.movement_checked_this_tick = true;
                 self.last = before.clone();
-            } else {
-                return Err("operation boundary is discontinuous from prior modeled state".into());
             }
+        } else if *before != self.last {
+            return Err("operation boundary is discontinuous from prior modeled state".into());
         }
         if before.tick_hz != after.tick_hz
             || before.catalog != after.catalog
@@ -624,6 +689,7 @@ impl AccountingOracle {
             return Err("completed TickAudit state differs from operations, one predicted movement transition, and event drain".into());
         }
         self.movement_checked_this_tick = false;
+        self.command_tick_advanced = false;
         self.tick_start_state = after.clone();
         Ok(())
     }
@@ -659,7 +725,9 @@ impl AccountingOracle {
                 return Err("rejected command changed state or emitted events".into());
             }
             self.expected_commands.push(c.clone());
-            self.tick_start_state = a.clone();
+            if !self.command_tick_advanced {
+                self.tick_start_state = a.clone();
+            }
             return Ok(());
         }
         match &c.kind {
@@ -1123,7 +1191,9 @@ impl AccountingOracle {
             }
         }
         self.expected_commands.push(c.clone());
-        self.tick_start_state = a.clone();
+        if !self.command_tick_advanced {
+            self.tick_start_state = a.clone();
+        }
         Ok(())
     }
 

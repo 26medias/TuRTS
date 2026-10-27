@@ -106,6 +106,7 @@ mod tests {
             config: PathBuf::from("server.ron"),
             tick_log: Some(tick_log.to_path_buf()),
             stats: None,
+            economy_log: None,
             synthetic_units,
             run_ticks: None,
         }

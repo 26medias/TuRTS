@@ -84,6 +84,8 @@ fn parse_cli_reads_hooks() {
         "frames.jsonl",
         "--out",
         "out.json",
+        "--raw-world-log",
+        "wire.jsonl",
         "--move",
         "20.5,30",
         "--move-after-ticks",
@@ -99,6 +101,12 @@ fn parse_cli_reads_hooks() {
         "--drop-arrival-delta",
         "--hold-resync-snapshots",
         "3",
+        "--hold-resync-snapshot-count",
+        "1",
+        "--command-trace",
+        "trace.json",
+        "--drop-world-changes",
+        "extraction,refund",
     ]))
     .unwrap();
     assert_eq!(options.server_url, "http://h:7000");
@@ -107,6 +115,7 @@ fn parse_cli_reads_hooks() {
     assert_eq!(options.player_id, Some(42));
     assert_eq!(options.frame_log, Some(PathBuf::from("frames.jsonl")));
     assert_eq!(options.out, Some(PathBuf::from("out.json")));
+    assert_eq!(options.raw_world_log, Some(PathBuf::from("wire.jsonl")));
     assert_eq!(options.auto_move, Some((20.5, 30.0)));
     assert_eq!(options.auto_move_after_ticks, 9);
     assert_eq!(options.move_unit, Some(1));
@@ -115,6 +124,7 @@ fn parse_cli_reads_hooks() {
     assert_eq!(options.drop_delta_offsets, vec![10, 90]);
     assert!(options.drop_arrival_delta);
     assert_eq!(options.hold_resync_snapshots, 3);
+    assert_eq!(options.hold_resync_snapshot_count, Some(1));
 }
 
 #[test]
@@ -147,6 +157,23 @@ fn parse_cli_defaults_and_errors() {
     assert!(error.contains("--move"), "{error}");
     let error = parse_cli(&with(&["--drop-delta-ticks", "1,x"])).unwrap_err();
     assert!(error.contains("--drop-delta-ticks"), "{error}");
+    let error = parse_cli(&with(&["--drop-world-changes", "extraction,unknown"])).unwrap_err();
+    assert!(error.contains("--drop-world-changes"), "{error}");
+    let error = parse_cli(&with(&["--drop-world-changes", "charge,charge"])).unwrap_err();
+    assert!(error.contains("duplicate"), "{error}");
+    let error = parse_cli(&with(&["--hold-resync-snapshot-count", "1"])).unwrap_err();
+    assert!(
+        error.contains("requires --hold-resync-snapshots"),
+        "{error}"
+    );
+    let error = parse_cli(&with(&[
+        "--hold-resync-snapshots",
+        "4",
+        "--hold-resync-snapshot-count",
+        "0",
+    ]))
+    .unwrap_err();
+    assert!(error.contains("positive"), "{error}");
 }
 
 #[test]

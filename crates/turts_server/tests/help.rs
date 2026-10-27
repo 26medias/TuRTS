@@ -14,7 +14,7 @@ fn flags_in_parse_cli() -> Vec<String> {
         .filter(|line| line.starts_with("\"--") && line.contains("\" =>"))
         .map(|line| line[1..line.find("\" =>").unwrap()].to_string())
         .collect();
-    assert_eq!(flags.len(), 4, "the scan found {flags:?}");
+    assert_eq!(flags.len(), 5, "the scan found {flags:?}");
     flags
 }
 

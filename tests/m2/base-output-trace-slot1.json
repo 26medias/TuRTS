@@ -1,0 +1,15 @@
+[
+  {
+    "after_ticks": 0,
+    "command": {
+      "command": "submit",
+      "data": {
+        "Produce": {
+          "producer_id": 3,
+          "recipe_id": "base:train_rifleman"
+        }
+      }
+    },
+    "require_result": true
+  }
+]

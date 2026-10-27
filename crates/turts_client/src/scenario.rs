@@ -5,7 +5,9 @@
 //! central sender has actually allocated and sent them.
 
 use std::collections::BTreeMap;
+use std::path::Path;
 
+use bevy::prelude::Resource;
 use serde::{Deserialize, Serialize};
 use turts_net_protocol::{JobId, PlayerCommand, PlayerCommandKind, UnitId};
 
@@ -49,6 +51,186 @@ pub(crate) enum DropWorldChange {
     Refund,
     Spawn,
     FinalChange,
+}
+
+pub(crate) fn parse_drop_world_changes(text: &str) -> Result<Vec<DropWorldChange>, String> {
+    let mut kinds = Vec::new();
+    for name in text.split(',') {
+        let kind = match name {
+            "extraction" => DropWorldChange::Extraction,
+            "conversion" => DropWorldChange::Conversion,
+            "charge" => DropWorldChange::Charge,
+            "refund" => DropWorldChange::Refund,
+            "spawn" => DropWorldChange::Spawn,
+            "final_change" => DropWorldChange::FinalChange,
+            _ => return Err(format!("unknown WorldDelta change kind `{name}`")),
+        };
+        if kinds.contains(&kind) {
+            return Err(format!("duplicate WorldDelta change kind `{name}`"));
+        }
+        kinds.push(kind);
+    }
+    if kinds.is_empty() {
+        return Err("at least one WorldDelta change kind is required".into());
+    }
+    Ok(kinds)
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct TraceBinding {
+    pub(crate) step_index: usize,
+    pub(crate) action: TraceCommand,
+    pub(crate) envelope: Option<PlayerCommand>,
+    pub(crate) result_cursor: Option<usize>,
+    pub(crate) result: Option<CommandResult>,
+    pub(crate) arm_tick: Option<u32>,
+}
+
+#[derive(Resource, Debug, Default)]
+pub(crate) struct ScenarioState {
+    steps: Vec<TraceStep>,
+    driver: Option<TraceDriver>,
+    pub(crate) enabled: bool,
+    pub(crate) error: Option<String>,
+    pub(crate) bindings: Vec<TraceBinding>,
+}
+
+impl ScenarioState {
+    pub(crate) fn from_path(path: Option<&Path>) -> Self {
+        let Some(path) = path else {
+            return Self::default();
+        };
+        let json = match std::fs::read_to_string(path) {
+            Ok(json) => json,
+            Err(error) => {
+                return Self {
+                    enabled: true,
+                    error: Some(format!(
+                        "cannot read command trace {}: {error}",
+                        path.display()
+                    )),
+                    ..Self::default()
+                };
+            }
+        };
+        match parse_trace(&json) {
+            Ok(steps) => Self {
+                steps,
+                enabled: true,
+                ..Self::default()
+            },
+            Err(error) => Self {
+                enabled: true,
+                error: Some(format!("invalid command trace {}: {error}", path.display())),
+                ..Self::default()
+            },
+        }
+    }
+
+    pub(crate) fn record_action(&mut self, step_index: usize, action: TraceCommand) {
+        if self
+            .bindings
+            .iter()
+            .any(|binding| binding.step_index == step_index)
+        {
+            return;
+        }
+        self.bindings.push(TraceBinding {
+            step_index,
+            action,
+            envelope: None,
+            result_cursor: None,
+            result: None,
+            arm_tick: None,
+        });
+    }
+
+    pub(crate) fn record_trace_action(&mut self, step_index: usize) {
+        if let Some(step) = self.steps.get(step_index) {
+            self.record_action(step_index, step.command.clone());
+        }
+    }
+
+    pub(crate) fn record_arm(&mut self, step_index: usize, action: TraceCommand, tick: u32) {
+        self.record_action(step_index, action);
+        if let Some(binding) = self
+            .bindings
+            .iter_mut()
+            .find(|b| b.step_index == step_index)
+        {
+            binding.arm_tick = Some(tick);
+        }
+    }
+
+    pub(crate) fn record_sent(
+        &mut self,
+        step_index: usize,
+        envelope: PlayerCommand,
+        result_cursor: usize,
+    ) -> Result<(), String> {
+        let Some(binding) = self
+            .bindings
+            .iter_mut()
+            .find(|b| b.step_index == step_index)
+        else {
+            return Err(format!("trace step {step_index} has no report binding"));
+        };
+        let envelope_for_driver = envelope.clone();
+        binding.envelope = Some(envelope);
+        binding.result_cursor = Some(result_cursor);
+        self.driver
+            .as_mut()
+            .ok_or_else(|| {
+                "trace sender reported an envelope before the driver started".to_owned()
+            })?
+            .record_sent(step_index, envelope_for_driver, result_cursor)?;
+        Ok(())
+    }
+
+    pub(crate) fn observe_results(&mut self, results: &[CommandResult]) {
+        for binding in &mut self.bindings {
+            if binding.result.is_some() {
+                continue;
+            }
+            let (Some(envelope), Some(cursor)) = (&binding.envelope, binding.result_cursor) else {
+                continue;
+            };
+            binding.result = results
+                .iter()
+                .enumerate()
+                .skip(cursor.min(results.len()))
+                .find_map(|(_, result)| match result {
+                    CommandResult::Applied { seq, .. } | CommandResult::Rejected { seq, .. }
+                        if *seq == envelope.seq =>
+                    {
+                        Some(result.clone())
+                    }
+                    CommandResult::Acked { .. }
+                    | CommandResult::Applied { .. }
+                    | CommandResult::Rejected { .. } => None,
+                });
+        }
+    }
+
+    pub(crate) fn is_complete(&self) -> bool {
+        !self.enabled || self.driver.as_ref().is_some_and(TraceDriver::is_complete)
+    }
+
+    pub(crate) fn drive(
+        &mut self,
+        tick: u32,
+        welcome_tick: u32,
+        results: &[CommandResult],
+    ) -> Result<Vec<TraceAction>, String> {
+        if !self.enabled || self.error.is_some() {
+            return Ok(Vec::new());
+        }
+        let driver = self.driver.get_or_insert_with(|| {
+            TraceDriver::new(self.steps.clone(), welcome_tick)
+                .expect("trace validated during option loading")
+        });
+        driver.update(tick, results)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]

@@ -172,6 +172,7 @@ fn synthetic_cli(count: u32) -> config::Cli {
         config: PathBuf::from("server.ron"),
         tick_log: None,
         stats: None,
+        economy_log: None,
         synthetic_units: count,
         run_ticks: None,
     }

@@ -4,10 +4,14 @@
 //! for a later wiring task and does not create a runtime diagnostic interface.
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::io::{BufRead, BufReader, Write};
+use std::io::{BufRead, BufReader, BufWriter, Write};
+use std::path::Path;
+
+use bevy::prelude::Resource;
 
 use serde::{Deserialize, Serialize};
-use turts_sim::{AuditState, CommandAudit, EconomyEvent, OperationAudit, TickAudit};
+use turts_net_protocol::CommandRejectReason;
+use turts_sim::{AuditState, AuditTrail, CommandAudit, EconomyEvent, OperationAudit, TickAudit};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "record", content = "data", rename_all = "snake_case")]
@@ -20,6 +24,26 @@ pub(crate) enum EconomyLogRecord {
         before: AuditState,
         state: AuditState,
         events: Vec<EconomyEvent>,
+    },
+    /// An accepted Hello claim, independently applied to the prior model's slot vector.
+    Claim {
+        tick: u32,
+        player_id: u64,
+        slot: u8,
+    },
+    /// A wire-only refusal; this is deliberately not represented as a typed command audit.
+    Admission {
+        ordinal: u64,
+        connection: u64,
+        player_id: u64,
+        slot: u8,
+        seq: u32,
+        tick: u32,
+        reason: CommandRejectReason,
+        wire_format: String,
+        raw_envelope: Vec<u8>,
+        before: AuditState,
+        after: AuditState,
     },
 }
 
@@ -92,9 +116,154 @@ impl<W: Write> EconomyLogWriter<W> {
         self.output.flush()
     }
 
+    #[allow(dead_code)] // Used by the standalone JSONL tests to inspect captured bytes.
     pub(crate) fn into_inner(self) -> W {
         self.output
     }
+}
+
+/// Process-local file sink. It is created only when `--economy-log` is present.
+#[derive(Resource)]
+#[allow(dead_code)] // Standalone logger tests include this module without the server process sink.
+pub(crate) struct EconomyLogSink {
+    writer: EconomyLogWriter<BufWriter<std::fs::File>>,
+    pub(crate) error: Option<String>,
+}
+
+#[allow(dead_code)] // Process-only sink methods are intentionally absent from standalone logger tests.
+impl EconomyLogSink {
+    pub(crate) fn create(
+        path: impl AsRef<Path>,
+        trail: &AuditTrail,
+        initial: AuditState,
+    ) -> Result<Self, std::io::Error> {
+        ensure_valid(trail)?;
+        let file = std::fs::File::create(path)?;
+        let mut sink = Self {
+            writer: EconomyLogWriter::new(BufWriter::new(file)),
+            error: None,
+        };
+        sink.writer.write_initial(trail, initial)?;
+        sink.writer.flush()?;
+        Ok(sink)
+    }
+
+    pub(crate) fn write_claim(&mut self, tick: u32, player_id: u64, slot: u8) {
+        self.write_record(EconomyLogRecord::Claim {
+            tick,
+            player_id,
+            slot,
+        });
+    }
+
+    #[allow(clippy::too_many_arguments)] // Preserve the explicit fields of the trusted admission record.
+    pub(crate) fn write_admission(
+        &mut self,
+        ordinal: u64,
+        connection: u64,
+        player_id: u64,
+        slot: u8,
+        seq: u32,
+        tick: u32,
+        reason: CommandRejectReason,
+        raw_envelope: Vec<u8>,
+        before: AuditState,
+        after: AuditState,
+    ) {
+        self.write_record(EconomyLogRecord::Admission {
+            ordinal,
+            connection,
+            player_id,
+            slot,
+            seq,
+            tick,
+            reason,
+            wire_format: "postcard".to_owned(),
+            raw_envelope,
+            before,
+            after,
+        });
+    }
+
+    pub(crate) fn capture_completed_tick(&mut self, world: &mut bevy::prelude::World) {
+        if self.error.is_some() {
+            return;
+        }
+        let (enabled, valid, commands, operations, ticks) = {
+            let Some(mut trail) = world.get_resource_mut::<AuditTrail>() else {
+                self.fail("economy audit trail is missing".to_owned());
+                return;
+            };
+            let enabled = trail.enabled;
+            let valid = trail.valid;
+            if !enabled || !valid {
+                self.fail("economy audit capture became disabled or invalid".to_owned());
+                return;
+            }
+            (
+                enabled,
+                valid,
+                trail.drain_commands(),
+                trail.drain_operations(),
+                trail.drain_ticks(),
+            )
+        };
+        if !enabled || !valid {
+            self.fail("economy audit capture became disabled or invalid".to_owned());
+            return;
+        }
+        for command in commands {
+            if let Err(error) = self
+                .writer
+                .write(&EconomyLogRecord::CommandBoundary(command))
+            {
+                self.fail(format!("write command audit: {error}"));
+                return;
+            }
+        }
+        for operation in operations {
+            if let Err(error) = self.writer.write(&EconomyLogRecord::Operation(operation)) {
+                self.fail(format!("write operation audit: {error}"));
+                return;
+            }
+        }
+        for tick in ticks {
+            if let Err(error) = self.writer.write(&EconomyLogRecord::from_tick(tick)) {
+                self.fail(format!("write tick audit: {error}"));
+                return;
+            }
+        }
+        if let Err(error) = self.writer.flush() {
+            self.fail(format!("flush economy log: {error}"));
+        }
+    }
+
+    fn write_record(&mut self, record: EconomyLogRecord) {
+        if self.error.is_some() {
+            return;
+        }
+        if let Err(error) = self
+            .writer
+            .write(&record)
+            .and_then(|()| self.writer.flush())
+        {
+            self.fail(format!("write economy log: {error}"));
+        }
+    }
+
+    fn fail(&mut self, message: String) {
+        eprintln!("turts_server: economy log evidence failed: {message}");
+        self.error = Some(message);
+    }
+}
+
+#[allow(dead_code)] // The standalone reader tests include, but do not run, the server process sink.
+pub(crate) fn capture_completed_tick(world: &mut bevy::prelude::World) {
+    let Some(mut sink) = world.remove_resource::<EconomyLogSink>() else {
+        return;
+    };
+    sink.capture_completed_tick(world);
+    world.insert_resource(sink);
 }
 
 fn ensure_valid(trail: &turts_sim::AuditTrail) -> Result<(), std::io::Error> {
@@ -219,24 +388,86 @@ pub(crate) fn validate_records(records: &[EconomyLogRecord]) -> Result<(), Strin
                         operation.operation_id
                     ));
                 }
-                if let Some(command) = commands.remove(&operation.operation_id) {
-                    if command.before != operation.before
+                if let Some(command) = commands.remove(&operation.operation_id)
+                    && (command.before != operation.before
                         || command.after != operation.after
                         || validate_clock_continuity(
                             &cursor,
                             &operation.before,
                             "command operation",
                         )
-                        .is_err()
-                    {
-                        return Err(format!(
-                            "command/operation state mismatch for id {}",
-                            operation.operation_id
-                        ));
-                    }
+                        .is_err())
+                {
+                    return Err(format!(
+                        "command/operation state mismatch for id {}",
+                        operation.operation_id
+                    ));
                 }
                 cursor = operation.after.clone();
                 tick_events.extend(operation.events.iter().cloned());
+            }
+            EconomyLogRecord::Claim {
+                tick,
+                player_id,
+                slot,
+            } => {
+                if *tick != cursor.economy.tick {
+                    return Err(format!(
+                        "claim for player {player_id} has a discontinuous tick"
+                    ));
+                }
+                if cursor.claims.contains(&Some(*player_id)) {
+                    return Err(format!("player {player_id} claimed more than one slot"));
+                }
+                let expected_slot = cursor.claims.iter().position(Option::is_none);
+                if expected_slot != Some(usize::from(*slot)) {
+                    return Err(format!(
+                        "player {player_id} claim is not the first open slot"
+                    ));
+                }
+                let Some(claim) = cursor.claims.get_mut(usize::from(*slot)) else {
+                    return Err(format!(
+                        "player {player_id} claimed out-of-range slot {slot}"
+                    ));
+                };
+                *claim = Some(*player_id);
+                let Some(tick_claim) = tick_start.claims.get_mut(usize::from(*slot)) else {
+                    return Err(format!(
+                        "tick baseline has no slot {slot} for player {player_id}"
+                    ));
+                };
+                *tick_claim = Some(*player_id);
+            }
+            EconomyLogRecord::Admission {
+                ordinal,
+                connection: _,
+                player_id,
+                slot,
+                seq: _,
+                tick,
+                reason: _,
+                wire_format,
+                raw_envelope,
+                before,
+                after,
+            } => {
+                if *ordinal == 0 || wire_format != "postcard" || raw_envelope.is_empty() {
+                    return Err(
+                        "admission evidence is missing its ordinal or raw wire bytes".into(),
+                    );
+                }
+                if before != after {
+                    return Err(format!(
+                        "wire-only rejection for player {player_id}, slot {slot}, tick {tick} changed audited state"
+                    ));
+                }
+                validate_clock_continuity(&cursor, before, "wire admission")?;
+                if before.economy.tick != *tick {
+                    return Err(format!(
+                        "wire admission tick {tick} differs from its snapshot"
+                    ));
+                }
+                cursor = after.clone();
             }
             EconomyLogRecord::Tick {
                 tick,
@@ -451,7 +682,7 @@ fn validate_movement_transition(previous: &AuditState, current: &AuditState) -> 
                 actual.unit_id
             ));
         }
-        expected_unit.pos = actual.pos.clone();
+        expected_unit.pos = actual.pos;
     }
     if expected != *current {
         return Err("movement transition changed nonmovement state".into());
@@ -579,6 +810,72 @@ mod tests {
         let target = raw.move_target.as_ref().unwrap();
         assert_eq!(target.x.to_bits(), y);
         assert_eq!(target.y.to_bits(), x);
+    }
+
+    #[test]
+    fn claims_are_modeled_from_initial_slot_state() {
+        let state = initial();
+        assert_eq!(state.claims, vec![None, None]);
+        let mut writer = EconomyLogWriter::new(Vec::new());
+        let mut trail = AuditTrail::default();
+        trail.enable();
+        writer.write_initial(&trail, state).unwrap();
+        writer
+            .write(&EconomyLogRecord::Claim {
+                tick: 0,
+                player_id: 902,
+                slot: 0,
+            })
+            .unwrap();
+        let decoded = read_jsonl(Cursor::new(writer.into_inner())).unwrap();
+        assert!(matches!(
+            decoded[1],
+            EconomyLogRecord::Claim {
+                slot: 0,
+                player_id: 902,
+                ..
+            }
+        ));
+
+        let mut wrong_slot = decoded;
+        let EconomyLogRecord::Claim { slot, .. } = &mut wrong_slot[1] else {
+            panic!("claim record")
+        };
+        *slot = 1;
+        assert!(validate_records(&wrong_slot).is_err());
+    }
+
+    #[test]
+    fn wire_admission_requires_lossless_neutral_evidence() {
+        let state = initial();
+        let mut writer = EconomyLogWriter::new(Vec::new());
+        let mut trail = AuditTrail::default();
+        trail.enable();
+        writer.write_initial(&trail, state.clone()).unwrap();
+        writer
+            .write(&EconomyLogRecord::Admission {
+                ordinal: 1,
+                connection: 44,
+                player_id: 902,
+                slot: 0,
+                seq: 7,
+                tick: 0,
+                reason: turts_net_protocol::CommandRejectReason::BadSequence,
+                wire_format: "postcard".to_owned(),
+                raw_envelope: vec![1, 2, 3],
+                before: state.clone(),
+                after: state.clone(),
+            })
+            .unwrap();
+        let decoded = read_jsonl(Cursor::new(writer.into_inner())).unwrap();
+        assert!(matches!(decoded[1], EconomyLogRecord::Admission { .. }));
+
+        let mut changed = decoded;
+        let EconomyLogRecord::Admission { after, .. } = &mut changed[1] else {
+            panic!("admission record")
+        };
+        after.economy.tick = 1;
+        assert!(validate_records(&changed).is_err());
     }
 
     #[test]

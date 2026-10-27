@@ -2,10 +2,14 @@ mod ingest {
     pub use turts_client::ingest::CommandResult;
 }
 
+#[allow(dead_code)] // The integration test exercises the parser and pure driver in isolation.
 #[path = "../src/scenario.rs"]
 mod scenario;
 
-use scenario::{DropWorldChange, TraceAction, TraceCommand, TraceDriver, TraceStep, parse_trace};
+use scenario::{
+    DropWorldChange, TraceAction, TraceCommand, TraceDriver, TraceStep, parse_drop_world_changes,
+    parse_trace,
+};
 use turts_client::ingest::CommandResult;
 use turts_net_protocol::{
     CommandRejectReason, JobId, NodeId, PlayerCommand, PlayerCommandKind, Pos, UnitId,
@@ -387,4 +391,22 @@ fn arm_requires_no_result_and_zero_offset_following_action() {
         trace_step(1, TraceCommand::Submit(move_kind()), true),
     ];
     assert!(TraceDriver::new(invalid_followup, 0).is_err());
+}
+
+#[test]
+fn drop_world_change_parser_accepts_only_unique_known_classes() {
+    assert_eq!(
+        parse_drop_world_changes("extraction,conversion,charge,refund,spawn,final_change").unwrap(),
+        vec![
+            DropWorldChange::Extraction,
+            DropWorldChange::Conversion,
+            DropWorldChange::Charge,
+            DropWorldChange::Refund,
+            DropWorldChange::Spawn,
+            DropWorldChange::FinalChange,
+        ]
+    );
+    assert!(parse_drop_world_changes("").is_err());
+    assert!(parse_drop_world_changes("charge,charge").is_err());
+    assert!(parse_drop_world_changes("teleport").is_err());
 }

@@ -40,6 +40,9 @@ Options:
                   This option is a test hook. It is off when --synthetic-units is above 0.
   --stats PATH    Rewrite PATH with one line of JSON statistics every second and at exit.
                   This option is a test hook.
+  --economy-log PATH
+                  Write trusted economy audit JSONL to PATH. The file contains private data
+                  for all players and is intended only for local test evidence.
   --synthetic-units N
                   Add N units of the first unit type of the package. A system gives each
                   one a new move target every 40 ticks. Use it for load runs.
@@ -110,7 +113,7 @@ pub fn read_config(path: &Path) -> Result<HostConfig, String> {
 }
 
 /// The command line: `turts_server <server.ron> [--tick-log P] [--stats P]
-/// [--synthetic-units N] [--run-ticks N]`.
+/// [--synthetic-units N] [--run-ticks N] [--economy-log PATH]`.
 #[allow(dead_code)] // Tasks 7b and 7c read the options that Task 7a does not.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Cli {
@@ -119,6 +122,7 @@ pub struct Cli {
     pub stats: Option<PathBuf>,
     pub synthetic_units: u32,
     pub run_ticks: Option<u32>,
+    pub economy_log: Option<PathBuf>,
 }
 
 /// Parse the arguments after the program name.
@@ -130,6 +134,7 @@ pub fn parse_cli(args: &[String]) -> Result<Cli, String> {
         stats: None,
         synthetic_units: 0,
         run_ticks: None,
+        economy_log: None,
     };
     let mut args = args.iter();
     while let Some(arg) = args.next() {
@@ -142,6 +147,7 @@ pub fn parse_cli(args: &[String]) -> Result<Cli, String> {
             "--stats" => cli.stats = Some(PathBuf::from(value(arg)?)),
             "--synthetic-units" => cli.synthetic_units = number(arg, value(arg)?)?,
             "--run-ticks" => cli.run_ticks = Some(number(arg, value(arg)?)?),
+            "--economy-log" => cli.economy_log = Some(PathBuf::from(value(arg)?)),
             option if option.starts_with("--") => {
                 return Err(format!("unknown option `{option}`\n{USAGE}"));
             }

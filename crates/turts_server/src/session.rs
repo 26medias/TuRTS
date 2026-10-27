@@ -21,7 +21,7 @@ use turts_sim::{
     Slots, Tick as SimTick, UnitId as SimUnitId, UnitType, UnitTypes, Vec2,
 };
 
-use crate::{export, stats::Stats};
+use crate::{economylog::EconomyLogSink, export, stats::Stats};
 
 /// How long a refused connection stays open after `JoinRejected`. A kick in the same frame
 /// loses the message, so the kick waits by time and not by frames (spike fact, plan 6a).
@@ -138,6 +138,7 @@ pub fn receive_hello(
     tick: Res<SimTick>,
     advertised: Res<Advertised>,
     mut traffic: ResMut<ReliableTraffic>,
+    mut economy_log: Option<ResMut<EconomyLogSink>>,
 ) {
     for (entity, mut receiver, has_session, pending_kick) in clients.iter_mut() {
         let mut decided = has_session || pending_kick;
@@ -150,6 +151,9 @@ pub fn receive_hello(
             stats.hellos += 1;
             match judge_hello(&hello, &advertised, &mut slots) {
                 Ok(slot) => {
+                    if let Some(log) = economy_log.as_mut() {
+                        log.write_claim(tick.0, hello.player_id, slot.0);
+                    }
                     eprintln!(
                         "turts_server: player {} took slot {}",
                         hello.player_id, slot.0
@@ -409,6 +413,19 @@ fn admit_kind(world: &mut World, staged: &StagedPlayerCommand, tick: u32) -> Opt
     Some(kind)
 }
 
+fn postcard_wire_bytes(envelope: &PlayerCommand) -> Option<Vec<u8>> {
+    let mut buffer = vec![0; 256];
+    loop {
+        match postcard::to_slice(envelope, &mut buffer) {
+            Ok(encoded) => return Some(encoded.to_vec()),
+            Err(postcard::Error::SerializeBufferFull) => {
+                buffer.resize(buffer.len().checked_mul(2)?, 0);
+            }
+            Err(_) => return None,
+        }
+    }
+}
+
 fn record_admission_rejection(
     world: &mut World,
     staged: StagedPlayerCommand,
@@ -418,6 +435,36 @@ fn record_admission_rejection(
     let player_id = world
         .get::<Session>(staged.connection)
         .map_or(0, |session| session.player_id);
+    let admission_evidence = if world.contains_resource::<EconomyLogSink>() {
+        let valid_capture = world
+            .get_resource::<turts_sim::AuditTrail>()
+            .is_some_and(|trail| trail.enabled && trail.valid);
+        if !valid_capture {
+            if let Some(mut sink) = world.get_resource_mut::<EconomyLogSink>() {
+                sink.error = Some("wire admission had no valid economy audit capture".into());
+            }
+            None
+        } else {
+            let before = turts_sim::audit_state(world);
+            match postcard_wire_bytes(&staged.envelope) {
+                Some(raw) => Some((before, raw)),
+                None => {
+                    if let Some(mut sink) = world.get_resource_mut::<EconomyLogSink>() {
+                        sink.error =
+                            Some("could not postcard-encode rejected command envelope".into());
+                    }
+                    None
+                }
+            }
+        }
+    } else {
+        None
+    };
+    let ordinal = world
+        .resource::<CommandAdmissionDiagnostics>()
+        .0
+        .len()
+        .saturating_add(1) as u64;
     world
         .resource_mut::<CommandAdmissionDiagnostics>()
         .0
@@ -438,6 +485,23 @@ fn record_admission_rejection(
         world
             .resource_mut::<ReliableTraffic>()
             .record(staged.connection);
+    }
+    if let Some((before, raw)) = admission_evidence {
+        let after = turts_sim::audit_state(world);
+        if let Some(mut sink) = world.get_resource_mut::<EconomyLogSink>() {
+            sink.write_admission(
+                ordinal,
+                staged.connection.to_bits(),
+                player_id,
+                staged.slot.0,
+                staged.envelope.seq,
+                tick,
+                reason,
+                raw,
+                before,
+                after,
+            );
+        }
     }
 }
 

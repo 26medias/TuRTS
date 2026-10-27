@@ -1,0 +1,40 @@
+[
+  {
+    "after_ticks": 0,
+    "command": {
+      "command": "submit",
+      "data": {
+        "Gather": {
+          "unit_id": 2,
+          "node_id": 1
+        }
+      }
+    },
+    "require_result": true
+  },
+  {
+    "after_ticks": 80,
+    "command": {
+      "command": "arm_drop_world_changes",
+      "data": {
+        "kinds": [
+          "extraction"
+        ]
+      }
+    },
+    "require_result": false
+  },
+  {
+    "after_ticks": 0,
+    "command": {
+      "command": "submit",
+      "data": {
+        "Gather": {
+          "unit_id": 2,
+          "node_id": 1
+        }
+      }
+    },
+    "require_result": true
+  }
+]

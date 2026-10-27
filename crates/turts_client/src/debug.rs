@@ -18,6 +18,7 @@ use crate::ingest::{
 };
 use crate::join::{AcquiredPackages, JoinState, Phase};
 use crate::present::Presented;
+use crate::scenario::ScenarioState;
 
 /// The debug JSON, rebuilt each frame.
 #[derive(Resource, Default)]
@@ -65,10 +66,39 @@ pub fn debug_json(world: &World) -> String {
         .get_resource::<crate::economy_ui::Selection>()
         .and_then(|selection| selection.0);
     let rendered_ui_nodes = crate::economy_ui::rendered_ui_snapshot(world).len();
+    let scenario = world.get_resource::<ScenarioState>();
+    let trace = scenario
+        .map(|scenario| {
+            json!({
+                "enabled": scenario.enabled,
+                "complete": scenario.is_complete(),
+                "error": scenario.error.as_deref(),
+                "bindings": scenario.bindings.iter().map(|binding| json!({
+                    "step": binding.step_index,
+                    "action": &binding.action,
+                    "envelope": &binding.envelope,
+                    "result": binding.result.as_ref().map(command_result_json),
+                    "arm_tick": binding.arm_tick,
+                })).collect::<Vec<_>>(),
+            })
+        })
+        .unwrap_or(Value::Null);
+    let drops = world
+        .get_resource::<crate::ingest::IngestHooks>()
+        .map(|hooks| {
+            hooks.dropped_world_changes.iter().map(|record| json!({
+                "kind": record.kind,
+                "arm_tick": record.arm_tick,
+                "dropped_tick": record.dropped_tick,
+            })).collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
     json!({
         "phase": phase,
         "units": units,
         "last_frame": last_frame,
+        "trace": trace,
+        "dropped_world_changes": drops,
         "reconnect_required": world.get_resource::<CommandSendStatus>().is_some_and(|status| status.reconnect_required),
         "selection": selection,
         "rendered_ui_nodes": rendered_ui_nodes,
@@ -99,6 +129,18 @@ pub fn report_json(world: &World) -> Value {
             Some((id, [pos.x, pos.y]))
         })
         .collect();
+    let replicated_world = state.replica.as_ref().map(|replica| {
+        let units = replica.units.iter().map(|(&id, unit)| {
+            let pos = unit.samples.back().map(|(_, pos)| [pos.x, pos.y]);
+            json!({ "unit_id": id, "content_id": unit.content_id, "owner_slot": unit.owner_slot, "pos": pos })
+        }).collect::<Vec<_>>();
+        json!({
+            "tick": replica.last_applied_tick,
+            "units": units,
+            "nodes": replica.nodes.values().collect::<Vec<_>>(),
+            "economy": replica.economy,
+        })
+    }).unwrap_or(Value::Null);
     let receipts = world.get_resource::<ReceiptWitnesses>();
     let receipt_records: Vec<Value> = receipts.into_iter().flat_map(|r| r.records.iter()).map(|w| json!({
         "connection_epoch": w.connection_epoch, "seq": w.seq,
@@ -136,10 +178,30 @@ pub fn report_json(world: &World) -> Value {
         "successor_requests": counters.successor_requests,
         "deltas_dropped": counters.deltas_dropped,
         "command_results": command_results,
+        "trace": world.get_resource::<ScenarioState>().map(|scenario| json!({
+            "enabled": scenario.enabled,
+            "complete": scenario.is_complete(),
+            "error": scenario.error.as_deref(),
+            "bindings": scenario.bindings.iter().map(|binding| json!({
+                "step": binding.step_index,
+                "action": &binding.action,
+                "envelope": &binding.envelope,
+                "result": binding.result.as_ref().map(command_result_json),
+                "arm_tick": binding.arm_tick,
+            })).collect::<Vec<_>>(),
+        })).unwrap_or(Value::Null),
+        "dropped_world_changes": world.get_resource::<crate::ingest::IngestHooks>()
+            .map(|hooks| hooks.dropped_world_changes.iter().map(|record| json!({
+                "kind": record.kind, "arm_tick": record.arm_tick, "dropped_tick": record.dropped_tick,
+            })).collect::<Vec<_>>()).unwrap_or_default(),
         "receipt_witnesses": receipt_records,
         "receipt_order_proofs": receipt_proofs,
         "reconnect_required": world.get_resource::<CommandSendStatus>().is_some_and(|status| status.reconnect_required),
         "final_positions": final_positions,
+        "replicated_world": replicated_world,
+        "snapshots_applied": counters.snapshots_applied,
+        "deltas_received": counters.deltas_received,
+        "held_snapshots": world.get_resource::<crate::ingest::IngestHooks>().map_or(0, |hooks| hooks.held.len()),
         "debug": debug,
     })
 }

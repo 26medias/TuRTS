@@ -1,16 +1,28 @@
 //! Client-side player command FIFO and one checked sequence per fresh connection.
 
-use crate::ingest::{ReceiptWitnesses, ReplicaState};
+use crate::ingest::{CommandResults, ReceiptWitnesses};
 use crate::join::Phase;
+use crate::scenario::ScenarioState;
 use bevy::prelude::*;
 use lightyear::prelude::*;
 use std::collections::VecDeque;
 use turts_net_lightyear::ReliableChannel;
-use turts_net_protocol::UnitId;
 use turts_net_protocol::{PlayerCommand, PlayerCommandKind};
 
+#[derive(Debug, Clone, PartialEq)]
+pub enum PendingCommand {
+    Submit {
+        kind: PlayerCommandKind,
+        trace_step: Option<usize>,
+    },
+    Repeat {
+        envelope: PlayerCommand,
+        trace_step: usize,
+    },
+}
+
 #[derive(Debug, Default, Resource)]
-pub struct PendingCommands(pub VecDeque<PlayerCommandKind>);
+pub struct PendingCommands(pub VecDeque<PendingCommand>);
 
 #[derive(Debug, Resource)]
 pub struct CommandSequence {
@@ -35,12 +47,37 @@ pub struct CommandSendStatus {
     pub reconnect_required: bool,
 }
 pub fn submit(pending: &mut PendingCommands, kind: PlayerCommandKind) {
-    pending.0.push_back(kind);
+    pending.0.push_back(PendingCommand::Submit {
+        kind,
+        trace_step: None,
+    });
+}
+
+pub(crate) fn submit_trace(
+    pending: &mut PendingCommands,
+    kind: PlayerCommandKind,
+    trace_step: usize,
+) {
+    pending.0.push_back(PendingCommand::Submit {
+        kind,
+        trace_step: Some(trace_step),
+    });
+}
+
+pub(crate) fn repeat_trace(
+    pending: &mut PendingCommands,
+    envelope: PlayerCommand,
+    trace_step: usize,
+) {
+    pending.0.push_back(PendingCommand::Repeat {
+        envelope,
+        trace_step,
+    });
 }
 
 /// Owned mobile ids, ascending, for convenience adapters that expand an implicit all-units move
 /// before it enters the shared FIFO. Explicit command bodies must remain literal.
-pub fn owned_mobile_ids(state: &ReplicaState) -> Vec<UnitId> {
+pub fn owned_mobile_ids(state: &crate::ingest::ReplicaState) -> Vec<turts_net_protocol::UnitId> {
     let (Some(welcome), Some(replica), Some(content)) = (
         state.welcome,
         state.replica.as_ref(),
@@ -64,31 +101,49 @@ pub fn owned_mobile_ids(state: &ReplicaState) -> Vec<UnitId> {
     ids
 }
 
-/// Send queued commands in FIFO order only after a fresh session has joined.
-pub fn send_commands(
+/// Send the single shared FIFO only after a fresh session has joined. Ordinary adapters must
+/// provide their intended literal bodies before enqueueing; trace steps use the same path.
+#[allow(clippy::too_many_arguments)] // Bevy system resources stay explicit at this boundary.
+pub(crate) fn send_commands_traced(
     mut pending: ResMut<PendingCommands>,
     mut sequence: ResMut<CommandSequence>,
     mut status: ResMut<CommandSendStatus>,
     phase: Res<Phase>,
     mut senders: Query<(Entity, &mut MessageSender<PlayerCommand>), With<Connected>>,
     mut witnesses: ResMut<ReceiptWitnesses>,
+    mut scenario: ResMut<ScenarioState>,
+    results: Res<CommandResults>,
 ) {
     if !matches!(*phase, Phase::Joined { .. }) || senders.is_empty() || status.reconnect_required {
         return;
     }
     for (entity, mut sender) in &mut senders {
         let epoch = witnesses.epoch_for(entity.to_bits());
-        while let Some(kind) = pending.0.pop_front() {
-            match sequence.allocate() {
-                Ok(seq) => {
-                    sender.send::<ReliableChannel>(PlayerCommand { seq, kind });
-                    witnesses.record_message(epoch, true);
+        while let Some(command) = pending.0.pop_front() {
+            let (envelope, trace_step) = match command {
+                PendingCommand::Submit { kind, trace_step } => {
+                    let seq = match sequence.allocate() {
+                        Ok(seq) => seq,
+                        Err(_) => {
+                            status.reconnect_required = true;
+                            pending.0.clear();
+                            scenario.error = Some("command sequence exhausted".into());
+                            break;
+                        }
+                    };
+                    (PlayerCommand { seq, kind }, trace_step)
                 }
-                Err(_) => {
-                    status.reconnect_required = true;
-                    pending.0.clear();
-                    break;
-                }
+                PendingCommand::Repeat {
+                    envelope,
+                    trace_step,
+                } => (envelope, Some(trace_step)),
+            };
+            sender.send::<ReliableChannel>(envelope.clone());
+            witnesses.record_message(epoch, true);
+            if let Some(step) = trace_step
+                && let Err(error) = scenario.record_sent(step, envelope, results.0.len())
+            {
+                scenario.error = Some(error);
             }
         }
     }
