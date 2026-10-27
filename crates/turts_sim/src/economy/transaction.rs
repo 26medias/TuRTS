@@ -1,10 +1,12 @@
+use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 
-use bevy_ecs::world::World;
+use bevy_ecs::{prelude::Resource, world::World};
 use turts_mod_api::ContentId;
 
 use crate::{
     Owner, RejectReason, SlotId, UnitId,
+    economy::views::AuditState,
     economy::{
         events::{EconomyEvent, EconomyEventKind, NextEventOrdinal, PendingEconomyEvents},
         ledger::{
@@ -16,6 +18,190 @@ use crate::{
     ids::{IdAllocators, JobId},
     slots::Slots,
 };
+
+#[derive(Resource, Debug, Default)]
+pub struct AuditTrail {
+    pub enabled: bool,
+    pub valid: bool,
+    pub commands: Vec<CommandAudit>,
+    pub operations: Vec<OperationAudit>,
+    pub ticks: Vec<TickAudit>,
+    next_operation_id: u64,
+    capture_depth: u32,
+    tick_before: Option<AuditState>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CommandAudit {
+    pub operation_id: u64,
+    pub input: crate::command::Command,
+    pub result: crate::command::CommandResult,
+    pub before: AuditState,
+    pub after: AuditState,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct OperationAudit {
+    pub operation_id: u64,
+    pub before: AuditState,
+    pub after: AuditState,
+    pub events: Vec<EconomyEvent>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TickAudit {
+    pub tick: u32,
+    pub before: AuditState,
+    pub after: AuditState,
+    pub events: Vec<EconomyEvent>,
+}
+
+impl AuditTrail {
+    pub fn enable(&mut self) {
+        self.enabled = true;
+        self.valid = true;
+    }
+    pub fn disable(&mut self) {
+        self.enabled = false;
+    }
+    pub fn drain_commands(&mut self) -> Vec<CommandAudit> {
+        std::mem::take(&mut self.commands)
+    }
+    pub fn drain_operations(&mut self) -> Vec<OperationAudit> {
+        std::mem::take(&mut self.operations)
+    }
+    pub fn drain_ticks(&mut self) -> Vec<TickAudit> {
+        std::mem::take(&mut self.ticks)
+    }
+}
+
+pub(crate) fn capture_operation<R>(world: &mut World, run: impl FnOnce(&mut World) -> R) -> R {
+    let enabled = world
+        .get_resource::<AuditTrail>()
+        .is_some_and(|trail| trail.enabled);
+    if !enabled || world.resource::<AuditTrail>().capture_depth != 0 {
+        return run(world);
+    }
+    let Some(id) = world
+        .resource::<AuditTrail>()
+        .next_operation_id
+        .checked_add(1)
+    else {
+        world.resource_mut::<AuditTrail>().valid = false;
+        return run(world);
+    };
+    let before = crate::economy::views::audit_state(world);
+    let event_start = world
+        .get_resource::<PendingEconomyEvents>()
+        .map_or(0, |events| events.0.len());
+    {
+        let mut trail = world.resource_mut::<AuditTrail>();
+        trail.next_operation_id = id;
+        trail.capture_depth = 1;
+    }
+    let result = run(world);
+    let after = crate::economy::views::audit_state(world);
+    let events = world
+        .get_resource::<PendingEconomyEvents>()
+        .map_or_else(Vec::new, |events| {
+            events.0.iter().skip(event_start).cloned().collect()
+        });
+    let mut trail = world.resource_mut::<AuditTrail>();
+    trail.capture_depth = 0;
+    trail.operations.push(OperationAudit {
+        operation_id: id,
+        before,
+        after,
+        events,
+    });
+    result
+}
+
+pub(crate) fn capture_command(
+    world: &mut World,
+    input: &crate::command::Command,
+    run: impl FnOnce(&mut World) -> crate::command::CommandResult,
+) -> crate::command::CommandResult {
+    let enabled = world
+        .get_resource::<AuditTrail>()
+        .is_some_and(|trail| trail.enabled);
+    if !enabled || world.resource::<AuditTrail>().capture_depth != 0 {
+        return run(world);
+    }
+    let Some(id) = world
+        .resource::<AuditTrail>()
+        .next_operation_id
+        .checked_add(1)
+    else {
+        world.resource_mut::<AuditTrail>().valid = false;
+        return run(world);
+    };
+    let before = crate::economy::views::audit_state(world);
+    let event_start = world
+        .get_resource::<PendingEconomyEvents>()
+        .map_or(0, |events| events.0.len());
+    {
+        let mut trail = world.resource_mut::<AuditTrail>();
+        trail.next_operation_id = id;
+        trail.capture_depth = 1;
+    }
+    let result = run(world);
+    let after = crate::economy::views::audit_state(world);
+    let events = world
+        .get_resource::<PendingEconomyEvents>()
+        .map_or_else(Vec::new, |events| {
+            events.0.iter().skip(event_start).cloned().collect()
+        });
+    let mut trail = world.resource_mut::<AuditTrail>();
+    trail.capture_depth = 0;
+    trail.commands.push(CommandAudit {
+        operation_id: id,
+        input: input.clone(),
+        result: result.clone(),
+        before: before.clone(),
+        after: after.clone(),
+    });
+    trail.operations.push(OperationAudit {
+        operation_id: id,
+        before,
+        after,
+        events,
+    });
+    result
+}
+
+pub(crate) fn begin_tick_audit(world: &mut World) {
+    if world
+        .get_resource::<AuditTrail>()
+        .is_some_and(|trail| trail.enabled)
+    {
+        let before = crate::economy::views::audit_state(world);
+        world.resource_mut::<AuditTrail>().tick_before = Some(before);
+    }
+}
+
+pub(crate) fn finish_tick_audit(world: &mut World) {
+    if !world
+        .get_resource::<AuditTrail>()
+        .is_some_and(|trail| trail.enabled)
+    {
+        return;
+    }
+    let Some(before) = world.resource_mut::<AuditTrail>().tick_before.take() else {
+        return;
+    };
+    let after = crate::economy::views::audit_state(world);
+    let tick = after.economy.tick;
+    let events = world
+        .get_resource::<crate::economy::events::CommittedTick>()
+        .map_or_else(Vec::new, |batch| batch.events.clone());
+    world.resource_mut::<AuditTrail>().ticks.push(TickAudit {
+        tick,
+        before,
+        after,
+        events,
+    });
+}
 
 #[derive(Default)]
 struct WriteSet {
@@ -46,6 +232,13 @@ pub(crate) struct Transaction<'w> {
 }
 
 pub(crate) fn transact<R>(
+    world: &mut World,
+    run: impl FnOnce(&mut Transaction<'_>) -> Result<R, RejectReason>,
+) -> Result<R, RejectReason> {
+    capture_operation(world, |world| transact_inner(world, run))
+}
+
+fn transact_inner<R>(
     world: &mut World,
     run: impl FnOnce(&mut Transaction<'_>) -> Result<R, RejectReason>,
 ) -> Result<R, RejectReason> {
@@ -307,6 +500,19 @@ impl Transaction<'_> {
 
 /// Transfer items between inventories owned by the caller after checking filters and capacity.
 pub fn inventory_transfer(
+    world: &mut World,
+    slot: SlotId,
+    from: u32,
+    to: u32,
+    item: ContentId,
+    amount: u64,
+) -> Result<(), RejectReason> {
+    capture_operation(world, |world| {
+        inventory_transfer_inner(world, slot, from, to, item, amount)
+    })
+}
+
+fn inventory_transfer_inner(
     world: &mut World,
     slot: SlotId,
     from: u32,
@@ -1100,5 +1306,50 @@ mod staged_refund_tests {
         let inventory = &world.resource::<EconomyLedger>().inventories[&2];
         assert_eq!(inventory.items[&timber.resource].on_hand, 4);
         assert!(!inventory.items.contains_key(&wood.resource));
+    }
+}
+
+#[cfg(test)]
+mod audit_capture_tests {
+    use super::{AuditTrail, capture_operation};
+    use bevy_ecs::prelude::{Resource, World};
+
+    #[derive(Resource)]
+    struct Marker(u32);
+
+    #[test]
+    fn disabled_capture_runs_directly_without_creating_audit_records() {
+        let mut world = World::new();
+        world.insert_resource(AuditTrail::default());
+        let result = capture_operation(&mut world, |world| {
+            world.insert_resource(Marker(7));
+            11
+        });
+        assert_eq!(result, 11);
+        assert_eq!(world.resource::<Marker>().0, 7);
+        let trail = world.resource::<AuditTrail>();
+        assert!(!trail.enabled);
+        assert!(trail.operations.is_empty());
+        assert!(trail.commands.is_empty());
+    }
+
+    #[test]
+    fn diagnostic_id_exhaustion_invalidates_evidence_without_changing_gameplay() {
+        let mut world = World::new();
+        world.insert_resource(AuditTrail::default());
+        {
+            let mut trail = world.resource_mut::<AuditTrail>();
+            trail.enable();
+            trail.next_operation_id = u64::MAX;
+        }
+        let result = capture_operation(&mut world, |world| {
+            world.insert_resource(Marker(19));
+            23
+        });
+        assert_eq!(result, 23);
+        assert_eq!(world.resource::<Marker>().0, 19);
+        let trail = world.resource::<AuditTrail>();
+        assert!(!trail.valid);
+        assert!(trail.operations.is_empty());
     }
 }

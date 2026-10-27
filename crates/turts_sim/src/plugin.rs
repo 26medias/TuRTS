@@ -54,6 +54,7 @@ impl Plugin for SimPlugin {
             .init_resource::<ProductionQueues>()
             .init_resource::<CommandQueue>()
             .init_resource::<CommandResults>()
+            .init_resource::<crate::economy::transaction::AuditTrail>()
             .init_resource::<ChangedThisTick>()
             .init_resource::<CommittedTick>()
             .init_resource::<CompletedWorld>()
@@ -70,6 +71,10 @@ impl Plugin for SimPlugin {
                 (SimSet::Movement, SimSet::Gather, SimSet::Production).chain(),
             )
             .configure_sets(FixedPostUpdate, SimSet::Collect)
+            .add_systems(
+                FixedPreUpdate,
+                crate::economy::transaction::begin_tick_audit.before(advance_tick),
+            )
             .add_systems(FixedPreUpdate, advance_tick.in_set(SimSet::Commands))
             .add_systems(
                 FixedPreUpdate,
@@ -95,7 +100,11 @@ impl Plugin for SimPlugin {
             )
             .add_systems(
                 FixedPostUpdate,
-                (collect_changes, publish_completed_tick)
+                (
+                    collect_changes,
+                    publish_completed_tick,
+                    crate::economy::transaction::finish_tick_audit,
+                )
                     .chain()
                     .in_set(SimSet::Collect)
                     .run_if(not_stopped),

@@ -2,6 +2,7 @@
 
 use bevy_ecs::prelude::*;
 use bevy_math::Vec2;
+use serde::{Deserialize, Serialize};
 use turts_mod_api::UnitTypeId;
 
 use crate::registry::UnitTypes;
@@ -42,11 +43,12 @@ pub struct MapBounds {
 pub struct ChangedThisTick(pub Vec<(u32, Vec2)>);
 
 /// One unit as the server presents it.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct UnitState {
     pub unit_id: u32,
     pub content_id: String,
     pub owner_slot: u8,
+    #[serde(with = "vec2_bits")]
     pub pos: Vec2,
 }
 
@@ -96,4 +98,16 @@ pub(crate) fn collect_changes(
             .map(|(id, position)| (id.0, position.0)),
     );
     changed.0.sort_unstable_by_key(|(id, _)| *id);
+}
+
+mod vec2_bits {
+    use bevy_math::Vec2;
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+    pub fn serialize<S: Serializer>(value: &Vec2, serializer: S) -> Result<S::Ok, S::Error> {
+        [value.x.to_bits(), value.y.to_bits()].serialize(serializer)
+    }
+    pub fn deserialize<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Vec2, D::Error> {
+        let [x, y] = <[u32; 2]>::deserialize(deserializer)?;
+        Ok(Vec2::new(f32::from_bits(x), f32::from_bits(y)))
+    }
 }

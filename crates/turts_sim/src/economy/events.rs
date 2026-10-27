@@ -1,6 +1,7 @@
 //! Committed domain events and immutable tick exports.
 
 use bevy_ecs::prelude::Resource;
+use serde::{Deserialize, Serialize};
 use turts_mod_api::ContentId;
 
 use crate::{
@@ -8,7 +9,7 @@ use crate::{
     world::UnitState,
 };
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct EconomyEvent {
     pub tick: u32,
     pub ordinal: u64,
@@ -16,7 +17,7 @@ pub struct EconomyEvent {
     pub kind: EconomyEventKind,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum EconomyEventKind {
     Extracted {
         node: u32,
@@ -61,14 +62,14 @@ pub enum EconomyEventKind {
     },
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CostLine {
     pub source: EventSource,
     pub resource: ContentId,
     pub amount: u64,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum EventSource {
     Slot(u8),
     Inventory(u32),

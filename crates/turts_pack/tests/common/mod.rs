@@ -4,6 +4,8 @@ use bevy_app::App;
 use turts_mod_api::ContentId;
 use turts_sim::headless_app;
 
+pub mod accounting;
+
 pub fn scenario(tick_hz: u16) -> App {
     headless_app(tick_hz)
 }

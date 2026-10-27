@@ -97,7 +97,9 @@ fn command(seq: u32, kind: CommandKind) -> Command {
 #[test]
 fn same_batch_observes_prior_commit_and_rejection_changes_no_write_set() {
     let mut app = app_with_units();
-    let before = audit_state(app.world_mut());
+    app.world_mut()
+        .resource_mut::<turts_sim::AuditTrail>()
+        .enable();
     {
         let mut queue = app.world_mut().resource_mut::<CommandQueue>();
         queue.0.push_back(command(
@@ -138,7 +140,47 @@ fn same_batch_observes_prior_commit_and_rejection_changes_no_write_set() {
         target_before_rejection,
         Some(MoveTarget(Vec2::new(40.0, 40.0)))
     );
-    assert_eq!(audit_state(app.world_mut()), before);
+    let audits = app
+        .world()
+        .resource::<turts_sim::AuditTrail>()
+        .commands
+        .clone();
+    assert_eq!(audits.len(), 3);
+    assert_eq!(
+        audits[0]
+            .after
+            .raw_units
+            .iter()
+            .find(|u| u.unit_id == 1)
+            .unwrap()
+            .move_target,
+        Some(turts_mod_api::WorldPos { x: 30.0, y: 30.0 })
+    );
+    assert_eq!(
+        audits[1]
+            .before
+            .raw_units
+            .iter()
+            .find(|u| u.unit_id == 1)
+            .unwrap()
+            .move_target,
+        Some(turts_mod_api::WorldPos { x: 30.0, y: 30.0 })
+    );
+    assert_eq!(
+        audits[1]
+            .after
+            .raw_units
+            .iter()
+            .find(|u| u.unit_id == 1)
+            .unwrap()
+            .move_target,
+        Some(turts_mod_api::WorldPos { x: 40.0, y: 40.0 })
+    );
+    assert_eq!(
+        audits[2].before, audits[2].after,
+        "third rejected command preserves the exact state after the first two accepted commands"
+    );
+    assert_eq!(audit_state(app.world_mut()), audits[2].after);
     let target_after_rejection = app
         .world_mut()
         .iter_entities()

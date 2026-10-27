@@ -6,11 +6,73 @@ use crate::{
     },
     ids::{IdAllocators, NodeId},
     slots::Slots,
-    world::{Owner, Position, UnitId, UnitType},
+    world::{MapBounds, MoveTarget, Owner, Position, UnitId, UnitType},
 };
 use bevy_ecs::prelude::*;
 use serde::{Deserialize, Serialize};
-use turts_mod_api::{ContentId, CostSource, WorldPos};
+use turts_mod_api::{ContentId, CostSource, PaymentPolicy, ResourceKind, WorldPos};
+
+mod world_pos_bits {
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+    use turts_mod_api::WorldPos;
+    pub fn serialize<S: Serializer>(p: &WorldPos, s: S) -> Result<S::Ok, S::Error> {
+        [p.x.to_bits(), p.y.to_bits()].serialize(s)
+    }
+    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<WorldPos, D::Error> {
+        let [x, y] = <[u32; 2]>::deserialize(d)?;
+        Ok(WorldPos {
+            x: f32::from_bits(x),
+            y: f32::from_bits(y),
+        })
+    }
+}
+mod optional_world_pos_bits {
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+    use turts_mod_api::WorldPos;
+    pub fn serialize<S: Serializer>(p: &Option<WorldPos>, s: S) -> Result<S::Ok, S::Error> {
+        p.as_ref()
+            .map(|p| [p.x.to_bits(), p.y.to_bits()])
+            .serialize(s)
+    }
+    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<Option<WorldPos>, D::Error> {
+        Ok(Option::<[u32; 2]>::deserialize(d)?.map(|[x, y]| WorldPos {
+            x: f32::from_bits(x),
+            y: f32::from_bits(y),
+        }))
+    }
+}
+mod optional_producer_bits {
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+    use turts_mod_api::{ContentId, WorldPos};
+    type ProducerBits = Option<(Vec<ContentId>, u16, Vec<[u32; 2]>)>;
+    type ProducerValue = Option<(Vec<ContentId>, u16, Vec<WorldPos>)>;
+    pub fn serialize<S: Serializer>(v: &ProducerValue, s: S) -> Result<S::Ok, S::Error> {
+        let bits = v.as_ref().map(|(a, b, c)| {
+            (
+                a,
+                b,
+                c.iter()
+                    .map(|p| [p.x.to_bits(), p.y.to_bits()])
+                    .collect::<Vec<_>>(),
+            )
+        });
+        bits.serialize(s)
+    }
+    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<ProducerValue, D::Error> {
+        Ok(ProducerBits::deserialize(d)?.map(|(a, b, c)| {
+            (
+                a,
+                b,
+                c.into_iter()
+                    .map(|[x, y]| WorldPos {
+                        x: f32::from_bits(x),
+                        y: f32::from_bits(y),
+                    })
+                    .collect(),
+            )
+        }))
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BalanceView {
@@ -66,36 +128,39 @@ pub struct QueueView {
 pub struct NodeView {
     pub id: NodeId,
     pub content_id: ContentId,
+    #[serde(with = "world_pos_bits")]
     pub pos: WorldPos,
     pub remaining: u64,
 }
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct UnitTypeView {
+    pub type_id: u32,
     pub content_id: String,
     pub movement_speed: Option<f32>,
     pub radius: f32,
 }
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct UnitView {
     pub unit_id: u32,
     pub content_id: String,
     pub owner_slot: u8,
+    #[serde(with = "world_pos_bits")]
     pub pos: WorldPos,
 }
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ReservationEndpointView {
     Slot(u8),
     Inventory(u32),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ReservationLineView {
     pub endpoint: ReservationEndpointView,
     pub resource: ContentId,
     pub amount: u64,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ReservationClaimView {
     Active {
         map_job_id: u64,
@@ -107,8 +172,113 @@ pub enum ReservationClaimView {
     },
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AuditResourcePresence {
+    pub bounds: bool,
+    pub catalog: bool,
+    pub durations: bool,
+    pub ledger: bool,
+    pub nodes: bool,
+    pub orders: bool,
+    pub queues: bool,
+    pub unit_types: bool,
+    pub slots: bool,
+    pub clock: bool,
+}
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RawUnitAudit {
+    pub unit_id: u32,
+    pub unit_type: u32,
+    pub owner_slot: u8,
+    #[serde(with = "world_pos_bits")]
+    pub pos: WorldPos,
+    #[serde(with = "optional_world_pos_bits")]
+    pub move_target: Option<WorldPos>,
+}
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RawInventoryAudit {
+    pub unit: u32,
+    pub capacity: u64,
+    pub accepted_items: Vec<ContentId>,
+}
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RawOrderAudit {
+    pub unit: u32,
+    pub node: Option<NodeId>,
+    pub deposit: Option<NodeId>,
+    pub receiver: Option<u32>,
+    pub stage: super::gather::GatherStage,
+    pub rate_carry: u16,
+}
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DurationAudit {
+    pub recipe: ContentId,
+    pub ticks: u64,
+}
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CatalogAudit {
+    pub resource_kinds: Vec<(ContentId, ResourceKind)>,
+    pub nodes: Vec<CatalogNodeAudit>,
+    pub units: Vec<CatalogUnitAudit>,
+    pub recipes: Vec<CatalogRecipeAudit>,
+}
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CatalogNodeAudit {
+    pub id: ContentId,
+    pub item: ContentId,
+    pub radius: f32,
+}
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CatalogUnitAudit {
+    pub id: ContentId,
+    pub radius: f32,
+    pub movement_speed: Option<f32>,
+    pub inventory: Option<(u64, Vec<ContentId>)>,
+    pub gatherer: Option<CatalogGathererAudit>,
+    pub drop_off: Vec<CatalogDropOffAudit>,
+    #[serde(with = "optional_producer_bits")]
+    pub producer: Option<(Vec<ContentId>, u16, Vec<WorldPos>)>,
+}
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CatalogGathererAudit {
+    pub items: Vec<ContentId>,
+    pub gather_per_second: u64,
+    pub unload_per_second: u64,
+    pub interaction_range: f32,
+}
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CatalogDropOffAudit {
+    pub item: ContentId,
+    pub effect: CatalogDropOffEffectAudit,
+}
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum CatalogDropOffEffectAudit {
+    Store,
+    Convert { balance: ContentId, per_item: u64 },
+}
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CatalogRecipeAudit {
+    pub id: ContentId,
+    pub output_unit: ContentId,
+    pub duration_ms: u64,
+    pub costs: Vec<CostView>,
+    pub payment: PaymentPolicy,
+    pub refunds: turts_mod_api::CancelRefunds,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct AuditState {
+    pub tick_hz: Option<u16>,
+    #[serde(with = "optional_world_pos_bits")]
+    pub bounds: Option<WorldPos>,
+    pub resources: AuditResourcePresence,
+    pub raw_units: Vec<RawUnitAudit>,
+    pub raw_inventories: Vec<RawInventoryAudit>,
+    pub raw_orders: Vec<RawOrderAudit>,
+    pub compiled_durations: Vec<DurationAudit>,
+    pub next_event_ordinal: Option<u64>,
+    pub pending_events: Vec<super::events::EconomyEvent>,
+    pub catalog: Option<CatalogAudit>,
     pub ledger_claims: Vec<ReservationClaimView>,
     pub unit_types: Vec<UnitTypeView>,
     pub units: Vec<UnitView>,
@@ -136,7 +306,6 @@ pub struct EconomyChangesView {
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct WorldView {
     pub tick: u32,
-    #[serde(skip)]
     pub units: Vec<crate::world::UnitState>,
     pub nodes: Vec<NodeView>,
     pub economy: EconomyStateView,
@@ -351,7 +520,9 @@ pub fn audit_state(world: &mut World) -> AuditState {
             types
                 .entries()
                 .iter()
-                .map(|entry| UnitTypeView {
+                .enumerate()
+                .map(|(type_id, entry)| UnitTypeView {
+                    type_id: type_id as u32,
                     content_id: entry.content_id.clone(),
                     movement_speed: entry.movement.as_ref().map(|movement| movement.speed),
                     radius: entry.radius,
@@ -406,7 +577,179 @@ pub fn audit_state(world: &mut World) -> AuditState {
                 })
                 .collect()
         });
+    let catalog_present = world.contains_resource::<crate::bootstrap::InstalledCatalog>();
+    let catalog = world
+        .get_resource::<crate::bootstrap::InstalledCatalog>()
+        .map(|installed| {
+            let c = &installed.0;
+            CatalogAudit {
+                resource_kinds: c
+                    .resources
+                    .iter()
+                    .map(|(id, d)| (id.clone(), d.kind))
+                    .collect(),
+                nodes: c
+                    .nodes
+                    .iter()
+                    .map(|(id, d)| CatalogNodeAudit {
+                        id: id.clone(),
+                        item: d.item.clone(),
+                        radius: d.radius,
+                    })
+                    .collect(),
+                units: c
+                    .units
+                    .iter()
+                    .map(|(id, d)| CatalogUnitAudit {
+                        id: id.clone(),
+                        radius: match d.footprint {
+                            turts_mod_api::Footprint::Circle { radius } => radius,
+                        },
+                        movement_speed: d.movement.as_ref().map(|m| m.speed),
+                        inventory: d
+                            .inventory
+                            .as_ref()
+                            .map(|i| (i.capacity, i.accepts.clone())),
+                        gatherer: d.gatherer.as_ref().map(|g| CatalogGathererAudit {
+                            items: g.items.clone(),
+                            gather_per_second: g.gather_per_second,
+                            unload_per_second: g.unload_per_second,
+                            interaction_range: g.interaction_range,
+                        }),
+                        drop_off: d.drop_off.as_ref().map_or_else(Vec::new, |d| {
+                            d.rules
+                                .iter()
+                                .map(|r| CatalogDropOffAudit {
+                                    item: r.item.clone(),
+                                    effect: match &r.effect {
+                                        turts_mod_api::ResolvedDropOffEffect::Store => {
+                                            CatalogDropOffEffectAudit::Store
+                                        }
+                                        turts_mod_api::ResolvedDropOffEffect::Convert {
+                                            balance,
+                                            per_item,
+                                        } => CatalogDropOffEffectAudit::Convert {
+                                            balance: balance.clone(),
+                                            per_item: *per_item,
+                                        },
+                                    },
+                                })
+                                .collect()
+                        }),
+                        producer: d.producer.as_ref().map(|p| {
+                            (p.recipes.clone(), p.queue_capacity, p.spawn_offsets.clone())
+                        }),
+                    })
+                    .collect(),
+                recipes: c
+                    .production
+                    .iter()
+                    .map(|(id, r)| CatalogRecipeAudit {
+                        id: id.clone(),
+                        output_unit: r.output_unit.clone(),
+                        duration_ms: r.duration_ms,
+                        costs: r
+                            .costs
+                            .iter()
+                            .map(|c| CostView {
+                                source: c.source,
+                                resource: c.resource.clone(),
+                                amount: c.amount,
+                            })
+                            .collect(),
+                        payment: r.payment,
+                        refunds: r.cancel_refunds,
+                    })
+                    .collect(),
+            }
+        });
+    let mut raw_units = Vec::new();
+    let mut raw_query =
+        world.query::<(&UnitId, &UnitType, &Owner, &Position, Option<&MoveTarget>)>();
+    raw_units.extend(
+        raw_query
+            .iter(world)
+            .map(|(id, kind, owner, pos, target)| RawUnitAudit {
+                unit_id: id.0,
+                unit_type: kind.0.0,
+                owner_slot: owner.0.0,
+                pos: WorldPos {
+                    x: pos.0.x,
+                    y: pos.0.y,
+                },
+                move_target: target.map(|t| WorldPos { x: t.0.x, y: t.0.y }),
+            }),
+    );
+    raw_units.sort_by_key(|u| u.unit_id);
+    let raw_inventories = world
+        .get_resource::<EconomyLedger>()
+        .map_or_else(Vec::new, |ledger| {
+            ledger
+                .inventories
+                .iter()
+                .map(|(unit, inv)| RawInventoryAudit {
+                    unit: *unit,
+                    capacity: inv.capacity,
+                    accepted_items: inv.accepted_items.iter().cloned().collect(),
+                })
+                .collect()
+        });
+    let raw_orders = world
+        .get_resource::<EconomyOrders>()
+        .map_or_else(Vec::new, |orders| {
+            orders
+                .0
+                .iter()
+                .map(|(unit, o)| RawOrderAudit {
+                    unit: *unit,
+                    node: o.node,
+                    deposit: o.deposit,
+                    receiver: o.receiver,
+                    stage: o.stage,
+                    rate_carry: o.carry.remainder(),
+                })
+                .collect()
+        });
+    let compiled_durations = world
+        .get_resource::<crate::bootstrap::ProductionDurations>()
+        .map_or_else(Vec::new, |d| {
+            d.0.iter()
+                .map(|(recipe, ticks)| DurationAudit {
+                    recipe: recipe.clone(),
+                    ticks: *ticks,
+                })
+                .collect()
+        });
+    let resources = AuditResourcePresence {
+        bounds: world.contains_resource::<MapBounds>(),
+        catalog: catalog_present,
+        durations: world.contains_resource::<crate::bootstrap::ProductionDurations>(),
+        ledger: world.contains_resource::<EconomyLedger>(),
+        nodes: world.contains_resource::<SurfaceNodes>(),
+        orders: world.contains_resource::<EconomyOrders>(),
+        queues: world.contains_resource::<ProductionQueues>(),
+        unit_types: world.contains_resource::<crate::registry::UnitTypes>(),
+        slots: world.contains_resource::<Slots>(),
+        clock: world.contains_resource::<crate::SimClock>(),
+    };
     AuditState {
+        tick_hz: world.get_resource::<crate::SimClock>().map(|c| c.tick_hz),
+        next_event_ordinal: world
+            .get_resource::<super::events::NextEventOrdinal>()
+            .and_then(|n| n.0),
+        pending_events: world
+            .get_resource::<super::events::PendingEconomyEvents>()
+            .map_or_else(Vec::new, |e| e.0.clone()),
+        bounds: world.get_resource::<MapBounds>().map(|b| WorldPos {
+            x: b.size.x,
+            y: b.size.y,
+        }),
+        resources,
+        raw_units,
+        raw_inventories,
+        raw_orders,
+        compiled_durations,
+        catalog,
         ledger_claims,
         unit_types,
         units,

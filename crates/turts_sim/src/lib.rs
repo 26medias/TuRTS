@@ -34,6 +34,7 @@ pub use economy::events::{
 pub use economy::gather::{GatherStage, RateCarry, WaitReason, assign_gather, interrupt_order};
 pub use economy::ledger::EconomyLedger;
 pub use economy::production::JobStage;
+pub use economy::transaction::{AuditTrail, CommandAudit, OperationAudit, TickAudit};
 pub use economy::views::{
     AuditState, BalanceView, CostView, EconomyChangesView, EconomyStateView, InventoryView,
     ItemView, JobView, NodeView, OrderView, QueueView, ReservationClaimView,

@@ -4,6 +4,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 
 use bevy_ecs::prelude::*;
 use bevy_math::Vec2;
+use serde::{Deserialize, Serialize};
 
 use crate::economy::{
     EconomyOrders,
@@ -18,17 +19,18 @@ use crate::world::{MapBounds, MoveTarget, Owner, UnitId};
 const MAX_UNITS_PER_COMMAND: usize = 256;
 
 /// A request from one slot. `seq` is the sender's number for the request.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Command {
     pub slot: SlotId,
     pub seq: u32,
     pub kind: CommandKind,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum CommandKind {
     MoveTo {
         unit_ids: Vec<u32>,
+        #[serde(with = "vec2_bits")]
         target: Vec2,
     },
     Gather {
@@ -50,14 +52,14 @@ pub enum CommandKind {
 pub struct CommandQueue(pub VecDeque<Command>);
 
 /// The outcome of one command.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CommandResult {
     pub slot: SlotId,
     pub seq: u32,
     pub outcome: Result<Applied, RejectReason>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Applied {
     pub job_id: Option<crate::ids::JobId>,
 }
@@ -66,7 +68,7 @@ pub struct Applied {
 #[derive(Resource, Default, Debug)]
 pub struct CommandResults(pub Vec<CommandResult>);
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum RejectReason {
     EmptyCommand,
     TooManyUnits,
@@ -132,6 +134,12 @@ impl RejectReason {
 
 /// Apply one admitted command synchronously. Automatic simulation phases do not run here.
 pub fn apply_command(world: &mut World, command: &Command) -> CommandResult {
+    crate::economy::transaction::capture_command(world, command, |world| {
+        apply_command_inner(world, command)
+    })
+}
+
+fn apply_command_inner(world: &mut World, command: &Command) -> CommandResult {
     let outcome = match &command.kind {
         CommandKind::MoveTo { unit_ids, target } => {
             apply_move_to(world, command.slot, unit_ids, *target).map(|()| Applied { job_id: None })
@@ -258,4 +266,16 @@ fn validate_move_to(
         return Err(RejectReason::TargetOutsideMap);
     }
     Ok(found.into_iter().map(|(entity, _, _)| entity).collect())
+}
+
+mod vec2_bits {
+    use bevy_math::Vec2;
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+    pub fn serialize<S: Serializer>(value: &Vec2, serializer: S) -> Result<S::Ok, S::Error> {
+        [value.x.to_bits(), value.y.to_bits()].serialize(serializer)
+    }
+    pub fn deserialize<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Vec2, D::Error> {
+        let [x, y] = <[u32; 2]>::deserialize(deserializer)?;
+        Ok(Vec2::new(f32::from_bits(x), f32::from_bits(y)))
+    }
 }

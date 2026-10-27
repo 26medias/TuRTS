@@ -237,74 +237,85 @@ pub(crate) fn run_production(world: &mut World) {
         .map(|queues| queues.0.keys().copied().collect::<Vec<_>>())
         .unwrap_or_default();
     for producer in producers {
+        let head_stage = world
+            .get_resource::<ProductionQueues>()
+            .and_then(|queues| queues.0.get(&producer))
+            .and_then(|queue| queue.first())
+            .map(|job| job.stage);
+        if head_stage.is_none() {
+            continue;
+        }
         let Some(owner_slot) = world.iter_entities().find_map(|entity| {
             (entity.get::<UnitId>().is_some_and(|id| id.0 == producer))
                 .then(|| entity.get::<Owner>().map(|owner| owner.0.0))?
         }) else {
             continue;
         };
-        let _ = transaction::transact(world, |tx| {
-            let mut queues = tx.queues();
-            let mut changed = false;
-            let started = {
-                let Some(job) = queues
-                    .0
-                    .get_mut(&producer)
-                    .and_then(|queue| queue.first_mut())
-                else {
-                    return Ok(());
-                };
-                match job.stage {
-                    JobStage::Queued => {
-                        let charged = if let Some(reservation) = job.reservation.take() {
-                            transaction::consume_reservation(tx, &reservation)?;
-                            reservation.lines
-                        } else {
-                            job.charged.clone()
-                        };
-                        job.charged = charged.clone();
-                        job.stage = JobStage::Running;
-                        changed = true;
-                        Some((job.id.0, charged))
-                    }
-                    JobStage::Running => {
-                        let elapsed = job
-                            .elapsed_ticks
-                            .checked_add(1)
-                            .ok_or(RejectReason::ArithmeticOverflow)?;
-                        job.elapsed_ticks = elapsed.min(job.duration_ticks);
-                        if job.elapsed_ticks >= job.duration_ticks {
-                            // Task 7 supplies output allocation; until then a completed head blocks FIFO.
-                            job.stage = JobStage::OutputBlocked;
+        if head_stage != Some(JobStage::OutputBlocked) {
+            let _ = transaction::transact(world, |tx| {
+                let mut queues = tx.queues();
+                let mut changed = false;
+                let started = {
+                    let Some(job) = queues
+                        .0
+                        .get_mut(&producer)
+                        .and_then(|queue| queue.first_mut())
+                    else {
+                        return Ok(());
+                    };
+                    match job.stage {
+                        JobStage::Queued => {
+                            let charged = if let Some(reservation) = job.reservation.take() {
+                                transaction::consume_reservation(tx, &reservation)?;
+                                reservation.lines
+                            } else {
+                                job.charged.clone()
+                            };
+                            job.charged = charged.clone();
+                            job.stage = JobStage::Running;
+                            changed = true;
+                            Some((job.id.0, charged))
                         }
-                        changed = true;
-                        None
+                        JobStage::Running => {
+                            let elapsed = job
+                                .elapsed_ticks
+                                .checked_add(1)
+                                .ok_or(RejectReason::ArithmeticOverflow)?;
+                            job.elapsed_ticks = elapsed.min(job.duration_ticks);
+                            if job.elapsed_ticks >= job.duration_ticks {
+                                // Task 7 supplies output allocation; until then a completed head blocks FIFO.
+                                job.stage = JobStage::OutputBlocked;
+                            }
+                            changed = true;
+                            None
+                        }
+                        JobStage::OutputBlocked => None,
                     }
-                    JobStage::OutputBlocked => None,
+                };
+                if changed {
+                    tx.stage_queues(queues);
                 }
-            };
-            if changed {
-                tx.stage_queues(queues);
-            }
-            if let Some((job, charged)) = started {
-                tx.stage_event(
-                    owner_slot,
-                    EconomyEventKind::ProductionStarted {
-                        producer,
-                        job,
-                        charged: charged.iter().map(event_cost_line).collect(),
-                    },
-                )?;
-            }
-            Ok(())
-        });
+                if let Some((job, charged)) = started {
+                    tx.stage_event(
+                        owner_slot,
+                        EconomyEventKind::ProductionStarted {
+                            producer,
+                            job,
+                            charged: charged.iter().map(event_cost_line).collect(),
+                        },
+                    )?;
+                }
+                Ok(())
+            });
+        }
         let head = world
             .get_resource::<ProductionQueues>()
             .and_then(|q| q.0.get(&producer))
             .and_then(|q| q.first())
             .cloned();
         if let Some(job) = head.filter(|job| job.stage == JobStage::OutputBlocked) {
-            let _ = try_output(world, producer, job.id);
+            let _ =
+                transaction::capture_operation(world, |world| try_output(world, producer, job.id));
         }
     }
 }

@@ -1,12 +1,13 @@
 //! Player slots.
 
 use bevy_ecs::prelude::Resource;
+use serde::{Deserialize, Serialize};
 
 /// Default player-slot count in a match (design 6).
 pub(crate) const SLOT_COUNT: u8 = 2;
 
 /// Index of a player slot. A claimed slot belongs to its player for the whole match (D25).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct SlotId(pub u8);
 
 /// Why a claim failed.

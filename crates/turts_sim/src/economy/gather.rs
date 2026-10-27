@@ -67,6 +67,10 @@ impl GatherStage {
 pub struct RateCarry(u16);
 
 impl RateCarry {
+    pub(crate) fn remainder(self) -> u16 {
+        self.0
+    }
+
     pub fn take_budget(&mut self, per_second: u64, tick_hz: u16) -> Result<u64, RejectReason> {
         if tick_hz == 0 {
             return Err(RejectReason::InvalidAmount);
@@ -200,18 +204,30 @@ pub(crate) fn run_gather(world: &mut World) {
     {
         return;
     }
-    world.resource_scope(|world, catalog: Mut<InstalledCatalog>| {
-        let mut units: Vec<_> = world
-            .resource::<EconomyOrders>()
-            .0
-            .keys()
-            .copied()
-            .collect();
-        units.sort_unstable();
-        for unit in units {
-            process_gatherer(world, unit, &catalog.0);
-        }
-    });
+    let mut units: Vec<_> = world
+        .resource::<EconomyOrders>()
+        .0
+        .keys()
+        .copied()
+        .collect();
+    units.sort_unstable();
+    let auditing = world
+        .get_resource::<super::transaction::AuditTrail>()
+        .is_some_and(|t| t.enabled);
+    if !auditing {
+        world.resource_scope(|world, catalog: Mut<InstalledCatalog>| {
+            for unit in units {
+                process_gatherer(world, unit, &catalog.0);
+            }
+        });
+        return;
+    }
+    for unit in units {
+        super::transaction::capture_operation(world, |world| {
+            let catalog = world.resource::<InstalledCatalog>().0.clone();
+            process_gatherer(world, unit, &catalog);
+        });
+    }
 }
 
 fn process_gatherer(world: &mut World, unit: u32, catalog: &turts_mod_api::ContentCatalog) {
