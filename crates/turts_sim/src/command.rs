@@ -135,6 +135,7 @@ pub fn apply_command(world: &mut World, command: &Command) -> CommandResult {
         }
         CommandKind::Gather { unit_id, node_id } => {
             crate::economy::gather::assign_gather(world, command.slot, *unit_id, *node_id)
+                .map(|()| Applied { job_id: None })
         }
         CommandKind::Produce {
             producer_id,
