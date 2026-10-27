@@ -1,0 +1,9 @@
+(
+    id: "depot", name: "Depot", footprint: Circle(radius: 2.0),
+    movement: None,
+    inventory: Some((capacity: 2000, accepts: ["haul:ore"])),
+    gatherer: None,
+    drop_off: Some((rules: [(item: "haul:ore", effect: Store)])),
+    producer: Some((recipes: ["haul:train_worker"], queue_capacity: 5,
+        spawn_offsets: [(x: 0.0, y: 4.0), (x: 0.0, y: -4.0)])),
+)

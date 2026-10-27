@@ -22,7 +22,11 @@ fn app_with_two_units_on(size: MapSize) -> bevy_app::App {
     let def = UnitDef {
         id: "walker".to_string(),
         name: "Walker".to_string(),
-        speed: 3.0,
+        movement: Some(turts_mod_api::MovementDef { speed: 3.0 }),
+        inventory: None,
+        gatherer: None,
+        drop_off: None,
+        producer: None,
         footprint: Footprint::Circle { radius: 0.5 },
     };
     app.world_mut()
@@ -33,11 +37,14 @@ fn app_with_two_units_on(size: MapSize) -> bevy_app::App {
         unit: format!("{ORIGIN}:walker"),
         owner_slot: 0,
         pos: WorldPos { x, y },
+        contents: Vec::new(),
     };
     let map = MapDef {
         id: "field".to_string(),
         size,
         placements: vec![place(8.0, 8.0), place(20.0, 20.0)],
+        nodes: Vec::new(),
+        slot_economy: Vec::new(),
     };
     load_map(app.world_mut(), &origin, &map).unwrap();
     app
@@ -74,7 +81,7 @@ fn validate_move_to_rejects_malformed_lists() {
     send(&mut app, 0, 3, vec![1, 1], target);
     send(&mut app, 0, 4, vec![1, 99], target);
     app.update();
-    let got: Vec<(u32, Result<(), RejectReason>)> =
+    let got: Vec<(u32, Result<turts_sim::Applied, RejectReason>)> =
         results(&app).iter().map(|r| (r.seq, r.outcome)).collect();
     assert_eq!(
         got,
@@ -108,7 +115,10 @@ fn valid_move_to_sets_targets_on_every_listed_unit() {
     app.update();
     let r = results(&app);
     assert_eq!(r.len(), 1);
-    assert_eq!((r[0].slot, r[0].seq, r[0].outcome), (SlotId(0), 7, Ok(())));
+    assert_eq!(
+        (r[0].slot, r[0].seq, r[0].outcome),
+        (SlotId(0), 7, Ok(turts_sim::Applied { job_id: None }))
+    );
     assert_eq!(moving_count(&mut app), 2);
 }
 
@@ -138,7 +148,11 @@ fn map_owner_slot_decides_who_may_move_a_unit() {
     let def = UnitDef {
         id: "walker".to_string(),
         name: "Walker".to_string(),
-        speed: 3.0,
+        movement: Some(turts_mod_api::MovementDef { speed: 3.0 }),
+        inventory: None,
+        gatherer: None,
+        drop_off: None,
+        producer: None,
         footprint: Footprint::Circle { radius: 0.5 },
     };
     app.world_mut()
@@ -149,11 +163,14 @@ fn map_owner_slot_decides_who_may_move_a_unit() {
         unit: format!("{ORIGIN}:walker"),
         owner_slot,
         pos: WorldPos { x, y },
+        contents: Vec::new(),
     };
     let map = MapDef {
         id: "field".to_string(),
         size: MapSize { x: 64.0, y: 64.0 },
         placements: vec![place(0, 8.0, 8.0), place(1, 20.0, 20.0)],
+        nodes: Vec::new(),
+        slot_economy: Vec::new(),
     };
     load_map(app.world_mut(), &origin, &map).unwrap();
     let owners: Vec<(u32, u8)> = snapshot(app.world_mut())
@@ -165,7 +182,7 @@ fn map_owner_slot_decides_who_may_move_a_unit() {
     send(&mut app, 0, 1, vec![2], Vec2::new(30.0, 30.0));
     send(&mut app, 1, 1, vec![1], Vec2::new(30.0, 30.0));
     app.update();
-    let got: Vec<(SlotId, Result<(), RejectReason>)> =
+    let got: Vec<(SlotId, Result<turts_sim::Applied, RejectReason>)> =
         results(&app).iter().map(|r| (r.slot, r.outcome)).collect();
     assert_eq!(
         got,
@@ -180,7 +197,7 @@ fn map_owner_slot_decides_who_may_move_a_unit() {
     app.update();
     assert_eq!(
         results(&app)[0].outcome,
-        Ok(()),
+        Ok(turts_sim::Applied { job_id: None }),
         "slot 1 moves its own unit"
     );
     assert_eq!(moving_count(&mut app), 1);
@@ -206,7 +223,8 @@ fn move_to_nan_and_outside_map_rejected() {
     send(&mut app, 0, 5, vec![1], Vec2::new(64.0, 64.0));
     send(&mut app, 0, 6, vec![1], Vec2::new(0.0, 0.0));
     app.update();
-    let got: Vec<Result<(), RejectReason>> = results(&app).iter().map(|r| r.outcome).collect();
+    let got: Vec<Result<turts_sim::Applied, RejectReason>> =
+        results(&app).iter().map(|r| r.outcome).collect();
     assert_eq!(
         got,
         vec![
@@ -214,8 +232,8 @@ fn move_to_nan_and_outside_map_rejected() {
             Err(RejectReason::TargetNotFinite),
             Err(RejectReason::TargetOutsideMap),
             Err(RejectReason::TargetOutsideMap),
-            Ok(()),
-            Ok(()),
+            Ok(turts_sim::Applied { job_id: None }),
+            Ok(turts_sim::Applied { job_id: None }),
         ]
     );
 }
@@ -231,15 +249,15 @@ fn move_to_bounds_use_the_axis_of_each_coordinate_on_a_non_square_map() {
     send(&mut app, 0, 3, vec![1], Vec2::new(49.0, 20.0));
     send(&mut app, 0, 4, vec![1], Vec2::new(48.0, 32.0));
     app.update();
-    let got: Vec<(u32, Result<(), RejectReason>)> =
+    let got: Vec<(u32, Result<turts_sim::Applied, RejectReason>)> =
         results(&app).iter().map(|r| (r.seq, r.outcome)).collect();
     assert_eq!(
         got,
         vec![
             (1, Err(RejectReason::TargetOutsideMap)),
-            (2, Ok(())),
+            (2, Ok(turts_sim::Applied { job_id: None })),
             (3, Err(RejectReason::TargetOutsideMap)),
-            (4, Ok(())),
+            (4, Ok(turts_sim::Applied { job_id: None })),
         ]
     );
 }
@@ -272,4 +290,58 @@ fn reject_reason_strings_match_the_wire_names() {
     for (reason, text) in all {
         assert_eq!(reason.as_str(), text);
     }
+}
+
+#[test]
+fn move_to_mixed_mobile_and_static_units_is_atomic() {
+    let mut app = headless_app(20);
+    let origin = PackageId(ORIGIN.to_string());
+    let mobile = UnitDef {
+        id: "walker".into(),
+        name: "Walker".into(),
+        footprint: Footprint::Circle { radius: 0.5 },
+        movement: Some(turts_mod_api::MovementDef { speed: 3.0 }),
+        inventory: None,
+        gatherer: None,
+        drop_off: None,
+        producer: None,
+    };
+    let static_def = UnitDef {
+        id: "yard".into(),
+        name: "Yard".into(),
+        footprint: Footprint::Circle { radius: 2.0 },
+        movement: None,
+        inventory: None,
+        gatherer: None,
+        drop_off: None,
+        producer: None,
+    };
+    let mut types = app.world_mut().resource_mut::<UnitTypes>();
+    types.register_unit_type(&origin, mobile).unwrap();
+    types.register_unit_type(&origin, static_def).unwrap();
+    let map = MapDef {
+        id: "field".into(),
+        size: MapSize { x: 64.0, y: 64.0 },
+        placements: vec![
+            Placement {
+                unit: format!("{ORIGIN}:walker"),
+                owner_slot: 0,
+                pos: WorldPos { x: 8.0, y: 8.0 },
+                contents: vec![],
+            },
+            Placement {
+                unit: format!("{ORIGIN}:yard"),
+                owner_slot: 0,
+                pos: WorldPos { x: 20.0, y: 20.0 },
+                contents: vec![],
+            },
+        ],
+        nodes: vec![],
+        slot_economy: vec![],
+    };
+    load_map(app.world_mut(), &origin, &map).unwrap();
+    send(&mut app, 0, 1, vec![1, 2], Vec2::new(30.0, 30.0));
+    app.update();
+    assert_eq!(results(&app)[0].outcome, Err(RejectReason::NotMobile));
+    assert_eq!(moving_count(&mut app), 0);
 }

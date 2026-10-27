@@ -2,6 +2,8 @@
 
 use std::path::PathBuf;
 
+use crate::scenario::DropWorldChange;
+
 /// What a client run needs and the test hooks of the native binary (plan R3).
 #[derive(Clone, Debug)]
 pub struct ClientOptions {
@@ -10,12 +12,17 @@ pub struct ClientOptions {
     /// WebSocket address of the server.
     pub ws_url: String,
     pub headless: bool,
+    /// Maximum retained delta batches while waiting for resync.
+    pub resync_buffer_batches: usize,
     /// A fixed player id. `None` means a random id for the session.
     pub player_id: Option<u64>,
     /// Test hook: write one record per frame to this path.
     pub frame_log: Option<PathBuf>,
     /// Test hook: write the final report to this path.
     pub out: Option<PathBuf>,
+    /// Test-only trusted diagnostic: write the actual received Snapshot/WorldDelta DTOs to JSONL.
+    /// These records contain private owner economy fields and must not be distributed.
+    pub raw_world_log: Option<PathBuf>,
     /// Test hook: send a `MoveTo` to this target.
     pub auto_move: Option<(f32, f32)>,
     /// Test hook: ticks after `Welcome` before the automatic move.
@@ -26,15 +33,19 @@ pub struct ClientOptions {
     pub hello_hash: Option<String>,
     /// Test hook: stop after this many seconds.
     pub run_secs: Option<f32>,
-    /// Test hook: ignore the `UnitDeltas` at these tick offsets from the `Welcome` tick.
+    /// Test hook: ignore the `WorldDelta` at these tick offsets from the `Welcome` tick.
     pub drop_delta_offsets: Vec<u32>,
-    /// Test hook: ignore the first `UnitDeltas` that arrives.
+    /// Test hook: ignore the first `WorldDelta` that arrives.
     pub drop_arrival_delta: bool,
     /// Test hook: hold each `Snapshot` that answers a resync request back by this many ticks
-    /// of `UnitDeltas`.
+    /// of `WorldDelta`.
     pub hold_resync_snapshots: u32,
+    /// Test hook: limit how many resync responses receive the hold delay. None holds all.
+    pub hold_resync_snapshot_count: Option<u32>,
     /// Test hook: send this wire protocol version in `Hello` instead of `NET_PROTOCOL_VERSION`.
     pub protocol_version: Option<u32>,
+    pub(crate) command_trace: Option<PathBuf>,
+    pub(crate) drop_world_changes: Vec<DropWorldChange>,
 }
 
 impl Default for ClientOptions {
@@ -43,9 +54,11 @@ impl Default for ClientOptions {
             server_url: String::new(),
             ws_url: String::new(),
             headless: false,
+            resync_buffer_batches: 256,
             player_id: None,
             frame_log: None,
             out: None,
+            raw_world_log: None,
             auto_move: None,
             auto_move_after_ticks: 5,
             move_unit: None,
@@ -54,7 +67,10 @@ impl Default for ClientOptions {
             drop_delta_offsets: Vec::new(),
             drop_arrival_delta: false,
             hold_resync_snapshots: 0,
+            hold_resync_snapshot_count: None,
             protocol_version: None,
+            command_trace: None,
+            drop_world_changes: Vec::new(),
         }
     }
 }
@@ -74,6 +90,8 @@ Required:
 
 Options:
   --headless      Run with no window and no rendering.
+  --resync-buffer-batches N
+                  Maximum retained delta batches during recovery (default 256; must be positive).
   --player-id N   Use N as the player id. The default is a random id for each run.
   --help, -h      Print this text and exit with 0.
 
@@ -81,6 +99,9 @@ Test hooks:
   --run-secs S    Stop after S seconds. Without it, a joined client runs until it is killed.
   --out PATH      When the run ends, write the final report to PATH as JSON. The report
                   holds the join result, the command results and the final positions.
+  --raw-world-log PATH
+                  Test-only trusted diagnostic of received Snapshot/WorldDelta DTOs before
+                  client validation. It can contain private owner economy fields; keep it local.
   --frame-log PATH
                   Write one record for each presented frame to PATH.
   --move X,Y      Send one MoveTo to the point X,Y. It moves all the units that the slot of
@@ -92,13 +113,19 @@ Test hooks:
   --hello-hash H  Send H as the lockfile hash in Hello. The server rejects a wrong hash.
   --protocol-version N
                   Send N as the wire protocol version in Hello.
+  --command-trace PATH
+                  Run a JSON command trace after Welcome and report its actual sent envelopes.
+  --drop-world-changes LIST
+                  Ignore the first matching batch: extraction,conversion,charge,refund,spawn,final_change.
   --drop-delta-ticks a,b,c
-                  Ignore the UnitDeltas of the ticks a, b and c. The numbers are offsets
+                  Ignore the WorldDelta of the ticks a, b and c. The numbers are offsets
                   from the Welcome tick.
   --drop-arrival-delta
-                  Ignore the first UnitDeltas that puts a unit at the --move target.
+                  Ignore the first WorldDelta that puts a unit at the --move target.
   --hold-resync-snapshots N
-                  Hold each Snapshot that answers a resync request back by N ticks.
+                  Hold Snapshot answers to resync requests back by N WorldDelta ticks.
+  --hold-resync-snapshot-count N
+                  With --hold-resync-snapshots, delay only the first N answers (positive).
 
 Exit codes:
   0  The run ended well: --run-secs passed, or the window closed.
@@ -130,9 +157,13 @@ pub fn parse_cli(args: &[String]) -> Result<ClientOptions, String> {
             "--server" => options.server_url = value()?.to_string(),
             "--ws" => options.ws_url = value()?.to_string(),
             "--headless" => options.headless = true,
+            "--resync-buffer-batches" => {
+                options.resync_buffer_batches = positive_bound(flag, value()?)?;
+            }
             "--player-id" => options.player_id = Some(number(flag, value()?)?),
             "--frame-log" => options.frame_log = Some(PathBuf::from(value()?)),
             "--out" => options.out = Some(PathBuf::from(value()?)),
+            "--raw-world-log" => options.raw_world_log = Some(PathBuf::from(value()?)),
             "--move" => options.auto_move = Some(point(flag, value()?)?),
             "--move-after-ticks" => options.auto_move_after_ticks = number(flag, value()?)?,
             "--move-unit" => options.move_unit = Some(number(flag, value()?)?),
@@ -146,9 +177,26 @@ pub fn parse_cli(args: &[String]) -> Result<ClientOptions, String> {
             }
             "--drop-arrival-delta" => options.drop_arrival_delta = true,
             "--hold-resync-snapshots" => options.hold_resync_snapshots = number(flag, value()?)?,
+            "--hold-resync-snapshot-count" => {
+                let count: u32 = number(flag, value()?)?;
+                if count == 0 {
+                    return Err(format!("{flag} must be positive"));
+                }
+                options.hold_resync_snapshot_count = Some(count);
+            }
             "--protocol-version" => options.protocol_version = Some(number(flag, value()?)?),
+            "--command-trace" => options.command_trace = Some(PathBuf::from(value()?)),
+            "--drop-world-changes" => {
+                options.drop_world_changes = crate::scenario::parse_drop_world_changes(value()?)
+                    .map_err(|error| format!("{flag}: {error}"))?;
+            }
             other => return Err(format!("unknown argument {other}")),
         }
+    }
+    if options.hold_resync_snapshot_count.is_some() && options.hold_resync_snapshots == 0 {
+        return Err(
+            "--hold-resync-snapshot-count requires --hold-resync-snapshots above zero".into(),
+        );
     }
     if options.server_url.is_empty() {
         return Err("--server is required".to_string());
@@ -169,6 +217,11 @@ pub fn options_from_query(query: &str) -> Result<ClientOptions, String> {
         match key {
             "server" => options.server_url = percent_decode(value)?,
             "ws" => options.ws_url = percent_decode(value)?,
+            "resync_buffer_batches" => {
+                let decoded = percent_decode(value)?;
+                options.resync_buffer_batches =
+                    positive_bound("--resync-buffer-batches", &decoded)?;
+            }
             _ => {}
         }
     }
@@ -197,6 +250,14 @@ pub fn random_player_id() -> u64 {
         let half = || (js_sys::Math::random() * 4_294_967_296.0) as u64;
         (half() << 32) | half()
     }
+}
+
+fn positive_bound(flag: &str, text: &str) -> Result<usize, String> {
+    let bound = number(flag, text)?;
+    if bound == 0 {
+        return Err(format!("{flag} must be positive"));
+    }
+    Ok(bound)
 }
 
 fn number<T: std::str::FromStr>(flag: &str, text: &str) -> Result<T, String> {

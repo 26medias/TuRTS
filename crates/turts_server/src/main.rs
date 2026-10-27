@@ -3,6 +3,8 @@
 
 mod boot;
 mod config;
+mod economylog;
+mod export;
 mod http;
 mod net;
 mod outbound;
@@ -17,12 +19,14 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use bevy::app::{App, AppExit, FixedLast, PluginGroup, ScheduleRunnerPlugin};
+use bevy::ecs::schedule::IntoScheduleConfigs;
 use bevy::prelude::{MessageWriter, MinimalPlugins, Res, Resource};
 use lightyear::prelude::server::ServerPlugins;
 use turts_net_lightyear::{ProtocolPlugin, tick_duration};
-use turts_sim::{SimPlugin, Tick as SimTick};
+use turts_sim::{AuditTrail, SimPlugin, Tick as SimTick, audit_state};
 
 use crate::session::Advertised;
+use turts_sim::initialize_completed_world;
 
 fn main() {
     if let Err(message) = run() {
@@ -85,15 +89,37 @@ fn run() -> Result<(), String> {
     ticklog::install(&mut app, &cli);
     stats::install(&mut app, &cli);
     synthetic::install(&mut app, &cli);
+    initialize_completed_world(app.world_mut());
+    if let Some(path) = cli.economy_log.as_ref() {
+        app.world_mut().resource_mut::<AuditTrail>().enable();
+        let initial = audit_state(app.world_mut());
+        let trail = app.world().resource::<AuditTrail>();
+        let sink = economylog::EconomyLogSink::create(path, trail, initial)
+            .map_err(|error| format!("cannot start economy log {}: {error}", path.display()))?;
+        app.insert_resource(sink);
+    }
     if let Some(ticks) = cli.run_ticks {
         app.insert_resource(RunTicks(ticks));
-        app.add_systems(FixedLast, exit_after_ticks);
+        app.add_systems(
+            FixedLast,
+            (economylog::capture_completed_tick, exit_after_ticks).chain(),
+        );
+    } else {
+        app.add_systems(FixedLast, economylog::capture_completed_tick);
     }
 
-    match app.run() {
+    let result = match app.run() {
         AppExit::Success => Ok(()),
         AppExit::Error(code) => Err(format!("the app stopped with exit code {code}")),
+    };
+    if let Some(error) = app
+        .world()
+        .get_resource::<economylog::EconomyLogSink>()
+        .and_then(|sink| sink.error.as_ref())
+    {
+        return Err(format!("economy log evidence failed: {error}"));
     }
+    result
 }
 
 /// `--run-ticks N`: ask the app to exit once the simulation has run N ticks. The app finishes

@@ -1,0 +1,7 @@
+(
+    id: "worker", name: "Worker", footprint: Circle(radius: 0.5),
+    movement: Some((speed: 3.0)),
+    inventory: Some((capacity: 10, accepts: ["haul:ore"])),
+    gatherer: Some((items: ["haul:ore"], gather_per_second: 5, unload_per_second: 10, interaction_range: 0.5)),
+    drop_off: None, producer: None,
+)

@@ -4,8 +4,12 @@ use std::collections::BTreeMap;
 use std::io::Read;
 
 use serde::de::DeserializeOwned;
-use turts_mod_api::{LockEntry, Manifest, MapDef, ModError, PackageId, UnitDef, VisualDef};
+use turts_mod_api::{
+    ContentCatalog, LockEntry, Manifest, MapDef, ModError, NodeDef, PackageId, ProductionDef,
+    ResourceDef, UnitDef, VisualDef, content::SourceDef,
+};
 
+use crate::content::validate_content;
 use crate::hash::sha256_hex;
 use crate::manifest::validate_manifest;
 use crate::parse::parse_ron;
@@ -56,6 +60,47 @@ impl PackageArchive {
     /// The exported unit definitions as `(archive path, definition)`.
     pub fn units(&self) -> Result<Vec<(String, UnitDef)>, ModError> {
         self.parse_exports("exports.units", &self.manifest.exports.units)
+    }
+
+    /// Exported resource definitions as `(archive path, definition)`.
+    pub fn resources(&self) -> Result<Vec<(String, ResourceDef)>, ModError> {
+        self.parse_exports("exports.resources", &self.manifest.exports.resources)
+    }
+
+    /// Exported node definitions as `(archive path, definition)`.
+    pub fn nodes(&self) -> Result<Vec<(String, NodeDef)>, ModError> {
+        self.parse_exports("exports.nodes", &self.manifest.exports.nodes)
+    }
+
+    /// Exported production definitions as `(archive path, definition)`.
+    pub fn production(&self) -> Result<Vec<(String, ProductionDef)>, ModError> {
+        self.parse_exports("exports.production", &self.manifest.exports.production)
+    }
+
+    /// Parse and resolve all gameplay content. Presentation files are never read here.
+    pub fn content(&self) -> Result<ContentCatalog, ModError> {
+        let origin = self.id();
+        let resources = self
+            .resources()?
+            .into_iter()
+            .map(|(file, value)| SourceDef { file, value })
+            .collect();
+        let units = self
+            .units()?
+            .into_iter()
+            .map(|(file, value)| SourceDef { file, value })
+            .collect();
+        let nodes = self
+            .nodes()?
+            .into_iter()
+            .map(|(file, value)| SourceDef { file, value })
+            .collect();
+        let production = self
+            .production()?
+            .into_iter()
+            .map(|(file, value)| SourceDef { file, value })
+            .collect();
+        validate_content(&origin, resources, units, nodes, production)
     }
 
     /// The exported map definitions as `(archive path, definition)`.

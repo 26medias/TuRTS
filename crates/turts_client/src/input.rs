@@ -1,30 +1,16 @@
-//! Input.
-//!
-//! A left click on the ground becomes a move order. `click_to_move` runs in `Update` and only
-//! queues the target in [`PendingMoves`]. `send_moves` runs in `PostUpdate` and sends the orders
-//! (design 4.2: input in `Update`, command send in `PostUpdate`). Input reads the replica to
-//! find the units of this player and never writes it.
+//! Shared world input: left selects owned units, right orders the current selected mobile.
 
+use crate::{
+    commands::{CommandSendStatus, PendingCommands, submit},
+    economy_ui::{Selection, UiPanelRoot, cursor_in_ui_viewport, hit_test_node, hit_test_unit},
+    ingest::ReplicaState,
+    join::{AcquiredPackages, Phase},
+};
 use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
-use lightyear::prelude::*;
-use turts_net_lightyear::ReliableChannel;
-use turts_net_protocol::messages::MoveTo;
-use turts_net_protocol::{Pos, UnitId};
+use turts_net_protocol::{PlayerCommandKind, Pos, UnitId};
 
-use crate::ingest::ReplicaState;
-use crate::join::Phase;
-
-/// The `seq` of the first order from a click. The `--move` test hook of `join::auto_move` uses
-/// `seq` 1.
-const FIRST_CLICK_SEQ: u32 = 2;
-
-/// Targets that the player has chosen and that `send_moves` has not sent.
-#[derive(Resource, Default)]
-pub struct PendingMoves(pub Vec<Pos>);
-
-/// The map position where a ray meets the ground plane, or `None` when it does not meet it in
-/// front of the origin. Map `x` is scene `x`, map `y` is scene `z` (design 4.4).
+/// Map ground-plane ray intersection: scene x/z map to protocol x/y.
 pub fn ground_point(ray: Ray3d) -> Option<Pos> {
     let distance = ray.intersect_plane(Vec3::ZERO, InfinitePlane3d::new(Dir3::Y))?;
     let point = ray.get_point(distance);
@@ -34,82 +20,133 @@ pub fn ground_point(ray: Ray3d) -> Option<Pos> {
     })
 }
 
-/// The ids of the units that this player owns, ascending.
-pub fn owned_unit_ids(state: &ReplicaState) -> Vec<UnitId> {
-    let (Some(welcome), Some(replica)) = (state.welcome, state.replica.as_ref()) else {
-        return Vec::new();
-    };
-    let mut ids: Vec<UnitId> = replica
-        .units
-        .iter()
-        .filter(|(_, unit)| unit.owner_slot == welcome.slot)
-        .map(|(&id, _)| UnitId(id))
-        .collect();
-    ids.sort_by_key(|id| id.0);
-    ids
-}
-
-/// `Update`: on a left click in `Phase::Joined`, find the ground point under the cursor and queue
-/// it as a target.
-pub fn click_to_move(
+#[allow(clippy::too_many_arguments)]
+pub fn world_pointer_commands(
     buttons: Res<ButtonInput<MouseButton>>,
     phase: Res<Phase>,
     windows: Query<&Window, With<PrimaryWindow>>,
-    cameras: Query<(&Camera, &GlobalTransform)>,
-    mut pending: ResMut<PendingMoves>,
+    cameras: Query<(Entity, &Camera, &GlobalTransform)>,
+    panel_roots: Query<
+        (
+            &ComputedNode,
+            &UiGlobalTransform,
+            &InheritedVisibility,
+            &ComputedUiTargetCamera,
+        ),
+        With<UiPanelRoot>,
+    >,
+    state: Res<ReplicaState>,
+    acquired: Option<Res<AcquiredPackages>>,
+    mut selection: ResMut<Selection>,
+    mut pending: ResMut<PendingCommands>,
+    status: Res<CommandSendStatus>,
 ) {
-    if !buttons.just_pressed(MouseButton::Left) || !matches!(*phase, Phase::Joined { .. }) {
+    let left = buttons.just_pressed(MouseButton::Left);
+    let right = buttons.just_pressed(MouseButton::Right);
+    if status.reconnect_required || (!left && !right) || !matches!(*phase, Phase::Joined { .. }) {
         return;
     }
     let Some(cursor) = windows.iter().find_map(Window::cursor_position) else {
         return;
     };
-    let Some((camera, transform)) = cameras.iter().next() else {
+    for (node, transform, visible, target_camera) in &panel_roots {
+        if !visible.get() {
+            continue;
+        }
+        let Some(camera_id) = target_camera.get() else {
+            return;
+        };
+        let Some((_, camera, _)) = cameras.iter().find(|(entity, _, _)| *entity == camera_id)
+        else {
+            return;
+        };
+        let Some(ui_cursor) = cursor_in_ui_viewport(cursor, camera) else {
+            continue;
+        };
+        // On the first frame, layout may not have run yet. Consume the gesture
+        // conservatively instead of letting a panel click fall through to the map.
+        if node.size().min_element() <= 0.0 || node.contains_point(*transform, ui_cursor) {
+            return;
+        }
+    }
+    let (Some(welcome), Some(replica), Some(acquired)) =
+        (state.welcome, state.replica.as_ref(), acquired.as_ref())
+    else {
+        return;
+    };
+    let Some((_, camera, transform)) = cameras.iter().next() else {
         return;
     };
     let Ok(ray) = camera.viewport_to_world(transform, cursor) else {
         return;
     };
-    if let Some(target) = ground_point(ray) {
-        pending.0.push(target);
-    }
-}
+    let Some(point) = ground_point(ray) else {
+        return;
+    };
 
-/// `PostUpdate`: send each queued target as a `MoveTo` for all units of this player. The
-/// server validates it; a rejected order comes back as `CommandRejected`.
-pub fn send_moves(
-    mut pending: ResMut<PendingMoves>,
-    state: Res<ReplicaState>,
-    mut sender: Query<&mut MessageSender<MoveTo>>,
-    mut next_seq: Local<u32>,
-) {
-    if pending.0.is_empty() {
+    if left {
+        selection.0 = hit_test_unit(replica, &acquired.0.content, point, welcome.slot);
         return;
     }
-    let unit_ids = owned_unit_ids(&state);
-    for target in pending.0.drain(..) {
-        if unit_ids.is_empty() {
-            continue;
+    let Some(selected) = selection.0 else {
+        return;
+    };
+    let Some(unit) = replica
+        .units
+        .get(&selected)
+        .filter(|u| u.owner_slot == welcome.slot)
+    else {
+        selection.0 = None;
+        return;
+    };
+    let Some(unit_def) = turts_mod_api::ContentId::parse(&unit.content_id)
+        .ok()
+        .and_then(|id| acquired.0.content.catalog.units.get(&id))
+    else {
+        return;
+    };
+
+    if let Some(node_id) = hit_test_node(replica, &acquired.0.content, point) {
+        let Some(gatherer) = unit_def.gatherer.as_ref() else {
+            return;
+        };
+        let Some(node) = replica.nodes.get(&node_id) else {
+            return;
+        };
+        let Some(node_def) = turts_mod_api::ContentId::parse(&node.content_id)
+            .ok()
+            .and_then(|id| acquired.0.content.catalog.nodes.get(&id))
+        else {
+            return;
+        };
+        if gatherer.items.contains(&node_def.item) {
+            submit(
+                &mut pending,
+                PlayerCommandKind::Gather {
+                    unit_id: UnitId(selected),
+                    node_id,
+                },
+            );
         }
-        let seq = FIRST_CLICK_SEQ + *next_seq;
-        *next_seq += 1;
-        for mut sender in sender.iter_mut() {
-            sender.send::<ReliableChannel>(MoveTo {
-                seq,
-                unit_ids: unit_ids.clone(),
-                target,
-            });
-        }
+        return;
+    }
+    if unit_def.movement.is_some() {
+        submit(
+            &mut pending,
+            PlayerCommandKind::MoveTo {
+                unit_ids: vec![UnitId(selected)],
+                target: point,
+            },
+        );
     }
 }
 
-/// The window path of input: clicks become orders.
 pub struct ClickInputPlugin;
-
 impl Plugin for ClickInputPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<PendingMoves>()
-            .add_systems(Update, click_to_move)
-            .add_systems(PostUpdate, send_moves.before(MessageSystems::Send));
+        app.add_systems(
+            Update,
+            world_pointer_commands.after(crate::economy_ui::sync_panel),
+        );
     }
 }

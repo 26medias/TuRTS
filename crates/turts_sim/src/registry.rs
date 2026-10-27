@@ -1,7 +1,9 @@
 //! UnitRegistry implementation.
 
 use bevy_ecs::prelude::Resource;
-use turts_mod_api::{ContentId, Footprint, ModError, PackageId, UnitDef, UnitRegistry, UnitTypeId};
+use turts_mod_api::{
+    ContentId, Footprint, ModError, MovementDef, PackageId, UnitDef, UnitRegistry, UnitTypeId,
+};
 
 /// Upper bound of a unit speed, in world units per second.
 const MAX_SPEED: f32 = 100.0;
@@ -13,17 +15,39 @@ const MAX_RADIUS: f32 = 50.0;
 pub struct UnitTypeEntry {
     /// Full content id: `<package>:<local>`.
     pub content_id: String,
-    pub speed: f32,
+    pub movement: Option<MovementDef>,
     pub radius: f32,
 }
 
 /// All registered unit types. A `UnitTypeId` is the index of an entry.
-#[derive(Resource, Default, Debug)]
+#[derive(Resource, Default, Debug, Clone, PartialEq)]
 pub struct UnitTypes {
     entries: Vec<UnitTypeEntry>,
 }
 
 impl UnitTypes {
+    pub(crate) fn from_catalog(
+        catalog: &turts_mod_api::ContentCatalog,
+        existing: &Self,
+    ) -> Result<Self, ModError> {
+        let mut candidate = existing.clone();
+        for unit in catalog.units.values() {
+            let def = UnitDef {
+                id: unit.id.local.clone(),
+                name: unit.name.clone(),
+                footprint: unit.footprint.clone(),
+                movement: unit.movement.clone(),
+                inventory: None,
+                gatherer: None,
+                drop_off: None,
+                producer: None,
+            };
+            let origin = unit.id.package.clone();
+            candidate.register_unit_type(&origin, def)?;
+        }
+        Ok(candidate)
+    }
+
     pub fn get(&self, id: UnitTypeId) -> Option<&UnitTypeEntry> {
         self.entries.get(id.0 as usize)
     }
@@ -33,6 +57,10 @@ impl UnitTypes {
             .iter()
             .position(|entry| entry.content_id == content_id)
             .map(|index| UnitTypeId(index as u32))
+    }
+
+    pub fn entries(&self) -> &[UnitTypeEntry] {
+        &self.entries
     }
 
     pub fn len(&self) -> usize {
@@ -65,12 +93,14 @@ impl UnitRegistry for UnitTypes {
                 format!("local id `{}` must not contain `:`", def.id),
             ));
         }
-        if !in_range(def.speed, MAX_SPEED) {
+        if let Some(movement) = &def.movement
+            && !in_range(movement.speed, MAX_SPEED)
+        {
             return Err(error(
-                "speed",
+                "movement.speed",
                 format!(
                     "speed must be finite, above 0 and at most {MAX_SPEED}, got {}",
-                    def.speed
+                    movement.speed
                 ),
             ));
         }
@@ -91,7 +121,7 @@ impl UnitRegistry for UnitTypes {
         let id = UnitTypeId(self.entries.len() as u32);
         self.entries.push(UnitTypeEntry {
             content_id,
-            speed: def.speed,
+            movement: def.movement,
             radius,
         });
         Ok(id)

@@ -3,8 +3,9 @@
 // Usage:
 //   node t7.js <page url> <out dir> --ws <ws url> --expect-content-id <id> --expect-final <x,y>
 //
-// Opens <page url> in headless Chrome (CHROME_BIN, default /usr/bin/google-chrome, default
-// flags, so software rendering) at 1280x720. The page query is
+// Opens <page url> in Chrome (CHROME_BIN, default /usr/bin/google-chrome) at 1280x720.
+// M2_HEADLESS, M2_CHROME_ARGS_JSON, and M2_IGNORE_DEFAULT_ARGS_JSON configure the launch;
+// without them it keeps the original headless/default-flag behavior. The page query is
 // `?server=<origin of the page url>&ws=<ws url>`. The page url is the server's own HTTP
 // address: the server serves the trunk build from its `static_dir`.
 //
@@ -33,6 +34,7 @@
 const fs = require("fs");
 const path = require("path");
 const { chromium } = require("playwright-core");
+const browserLaunchOptions = require("./t7-launch-options");
 
 const JOIN_TIMEOUT_MS = 30000;
 const POLL_MS = 50;
@@ -91,7 +93,7 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
     url.searchParams.set("ws", args.ws);
 
     const executablePath = process.env.CHROME_BIN || "/usr/bin/google-chrome";
-    const browser = await chromium.launch({ executablePath, headless: true });
+    const browser = await chromium.launch({ executablePath, ...browserLaunchOptions(process.env) });
     const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
     const logs = [];
     page.on("console", (m) => logs.push(m.type() + ": " + m.text()));

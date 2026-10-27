@@ -8,14 +8,20 @@
 
 use std::net::SocketAddr;
 
+use crate::commands::{
+    CommandSendStatus, CommandSequence, PendingCommands, owned_mobile_ids, submit,
+};
+use crate::ingest::ReceiptWitnesses;
 use bevy::prelude::*;
 use lightyear::netcode::client_plugin::NetcodeConfig;
 use lightyear::prelude::client::{ClientConfig, NetcodeClient, WebSocketClientIo};
 use lightyear::prelude::*;
+use lightyear::transport::channel::ChannelKind;
 use turts_mod_api::LockEntry;
 use turts_mod_runtime::archive::PackageArchive;
 use turts_net_lightyear::ReliableChannel;
-use turts_net_protocol::messages::{Hello, JoinRejected, MoveTo};
+use turts_net_protocol::PlayerCommandKind;
+use turts_net_protocol::messages::{Hello, JoinRejected};
 use turts_net_protocol::{Advertisement, NET_PROTOCOL_VERSION, Pos, UnitId};
 
 use crate::acquire::{
@@ -282,6 +288,7 @@ fn spawn_client(commands: &mut Commands, ws: &str) -> Result<(), String> {
 }
 
 /// On `Connected`: send `Hello`. `--hello-hash` and `--protocol-version` replace the real values.
+#[allow(clippy::too_many_arguments)]
 pub fn on_connected(
     trigger: On<Add<Connected>>,
     mut hello: Query<&mut MessageSender<Hello>>,
@@ -290,8 +297,15 @@ pub fn on_connected(
     player: Res<PlayerId>,
     opts: Res<ClientOpts>,
     acquired: Res<AcquiredPackages>,
+    mut sequence: ResMut<CommandSequence>,
+    mut send_status: ResMut<CommandSendStatus>,
+    mut witnesses: ResMut<ReceiptWitnesses>,
 ) {
     join.on_connected();
+    sequence.next = Some(1);
+    send_status.reconnect_required = false;
+    let epoch = witnesses.start_epoch(trigger.entity.to_bits());
+    witnesses.reliable_counts.insert(epoch, 0);
     if let Ok(mut sender) = hello.get_mut(trigger.entity) {
         sender.send::<ReliableChannel>(Hello {
             player_id: player.0,
@@ -302,6 +316,7 @@ pub fn on_connected(
                 .clone()
                 .unwrap_or_else(|| acquired.0.lockfile_hash.clone()),
         });
+        witnesses.record_message(epoch, true);
     }
     if *phase == Phase::Connecting {
         *phase = Phase::Joining;
@@ -314,13 +329,19 @@ pub fn on_disconnected(_trigger: On<Add<Disconnected>>, mut join: ResMut<JoinSta
 
 /// `PreUpdate`: `JoinRejected` ends the join with the server's reason.
 pub fn receive_rejection(
-    mut rejected: Query<&mut MessageReceiver<JoinRejected>>,
+    mut rejected: Query<(Entity, &mut MessageReceiver<JoinRejected>)>,
     mut phase: ResMut<Phase>,
+    mut witnesses: ResMut<ReceiptWitnesses>,
 ) {
-    for mut receiver in rejected.iter_mut() {
-        for message in receiver.receive() {
+    for (entity, mut receiver) in &mut rejected {
+        let epoch = witnesses.epoch_for(entity.to_bits());
+        for received in receiver.receive_with_tick() {
+            witnesses.record_message(
+                epoch,
+                received.channel_kind == ChannelKind::of::<ReliableChannel>(),
+            );
             if !matches!(*phase, Phase::Failed(_)) {
-                *phase = Phase::Failed(message.reason);
+                *phase = Phase::Failed(received.data.reason);
             }
         }
     }
@@ -332,9 +353,13 @@ pub fn auto_move(
     opts: Res<ClientOpts>,
     state: Res<ReplicaState>,
     hooks: Res<IngestHooks>,
-    mut sender: Query<&mut MessageSender<MoveTo>>,
+    mut pending: ResMut<PendingCommands>,
     mut sent: Local<bool>,
+    status: Res<CommandSendStatus>,
 ) {
+    if status.reconnect_required {
+        return;
+    }
     let Some((x, y)) = opts.0.auto_move else {
         return;
     };
@@ -353,23 +378,18 @@ pub fn auto_move(
     }
     let mut unit_ids: Vec<UnitId> = match opts.0.move_unit {
         Some(id) => vec![UnitId(id)],
-        None => replica
-            .units
-            .iter()
-            .filter(|(_, unit)| unit.owner_slot == welcome.slot)
-            .map(|(&id, _)| UnitId(id))
-            .collect(),
+        None => owned_mobile_ids(&state),
     };
     if unit_ids.is_empty() {
         return;
     }
     unit_ids.sort_by_key(|id| id.0);
-    for mut sender in sender.iter_mut() {
-        sender.send::<ReliableChannel>(MoveTo {
-            seq: 1,
-            unit_ids: unit_ids.clone(),
+    submit(
+        &mut pending,
+        PlayerCommandKind::MoveTo {
+            unit_ids,
             target: Pos { x, y },
-        });
-    }
+        },
+    );
     *sent = true;
 }

@@ -1,0 +1,1151 @@
+[
+  {
+    "id": "E1-derived-scan",
+    "plant_path": "crates/turts_checks/tests/support/mod.rs",
+    "anchor": "    Ok(hits)\n}",
+    "replacement": "    Ok(Vec::new())\n}",
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_checks",
+      "--test",
+      "no_content",
+      "derived_scan_rejects_all_plants_and_accepts_generic_field",
+      "--",
+      "--exact",
+      "--nocapture"
+    ],
+    "expected_failure": "inline comment must not hide code",
+    "restore_check": "sha256(source)==baseline and selected test is green"
+  },
+  {
+    "id": "E2-rename-canonicalizer",
+    "plant_path": "crates/turts_pack/tests/economy_variants.rs",
+    "anchor": "let canonical = m.2.get(content).unwrap_or(&content.to_owned()).clone();",
+    "replacement": "let canonical = content.to_owned();",
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_pack",
+      "--test",
+      "economy_variants",
+      "renamed_base_and_physical_clone_have_positive_equal_traces",
+      "--",
+      "--exact",
+      "--nocapture"
+    ],
+    "expected_failure": "base pure rename canonicalizes",
+    "restore_check": "sha256(source)==baseline and selected test is green",
+    "pre_command": [
+      "cargo",
+      "build",
+      "-p",
+      "turts_checks",
+      "--example",
+      "m2_variants"
+    ],
+    "kind": "instrument-self-test"
+  },
+  {
+    "id": "E3-policy-binding",
+    "plant_path": "crates/turts_checks/examples/m2_variants.rs",
+    "anchor": "            recipe.payment = payment;",
+    "replacement": "            recipe.payment = PaymentPolicy::ChargeOnQueue;",
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_pack",
+      "--test",
+      "economy_variants",
+      "valid_policy_role_swaps_follow_data",
+      "--",
+      "--exact",
+      "--nocapture"
+    ],
+    "expected_failure": "left: ChargeOnQueue",
+    "restore_check": "sha256(source)==baseline and selected test is green",
+    "pre_command": [
+      "cargo",
+      "build",
+      "-p",
+      "turts_checks",
+      "--example",
+      "m2_variants"
+    ],
+    "kind": "fixture-generator-self-test"
+  },
+  {
+    "id": "E4-local-capacity",
+    "plant_path": "crates/turts_sim/src/economy/transaction.rs",
+    "anchor": "        if new_used > u128::from(tx.inventory(to)?.capacity) {",
+    "replacement": "        if false {",
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_pack",
+      "--test",
+      "economy_accounting",
+      "e6_transfer_rejections_cover_filter_capacity_and_access",
+      "--",
+      "--exact",
+      "--nocapture"
+    ],
+    "expected_failure": "result.is_err()",
+    "restore_check": "sha256(source)==baseline and selected test is green",
+    "kind": "duplicate-E6-accounting-self-test"
+  },
+  {
+    "id": "E5-conversion-cargo-separation",
+    "plant_path": "crates/turts_sim/src/economy/gather.rs",
+    "anchor": "            .checked_add(credit)\n            .ok_or(RejectReason::RefundDestinationOverflow)?;",
+    "replacement": "            .checked_add(credit).and_then(|value| value.checked_add(credit))\n            .ok_or(RejectReason::RefundDestinationOverflow)?;",
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_pack",
+      "--test",
+      "economy_accounting",
+      "e6_gather_conversion_and_interruptions_conserve_through_delivery",
+      "--",
+      "--exact",
+      "--nocapture"
+    ],
+    "expected_failure": "gather state differs from the independent full transition projection",
+    "restore_check": "sha256(source)==baseline and selected test is green",
+    "kind": "duplicate-E6-accounting-self-test"
+  },
+  {
+    "id": "E6-reservation-omission",
+    "plant_path": "crates/turts_sim/src/economy/production.rs",
+    "anchor": "                let reservation = transaction::reserve_costs(tx, job_id, &lines)?;",
+    "replacement": "                let reservation = transaction::reserve_costs(tx, job_id, &[])?;",
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_pack",
+      "--test",
+      "economy_accounting",
+      "e6_reserve_then_charge_tracks_claim_start_and_output",
+      "--",
+      "--exact",
+      "--nocapture"
+    ],
+    "expected_failure": "accepted Produce differs from exact requested recipe",
+    "restore_check": "sha256(source)==baseline and selected test is green"
+  },
+  {
+    "id": "E6-mixed-cost-partial-commit",
+    "plant_path": "crates/turts_sim/src/economy/transaction.rs",
+    "anchor": "        updates.insert(\n            (line.endpoint, line.resource),\n            Account {\n                on_hand: old\n                    .on_hand\n                    .checked_sub(line.amount)\n                    .ok_or(RejectReason::ArithmeticOverflow)?,\n                ..old\n            },\n        );",
+    "replacement": "        let charged = Account { on_hand: old.on_hand.checked_sub(line.amount).ok_or(RejectReason::ArithmeticOverflow)?, ..old };\n        if let Endpoint::Slot(slot) = line.endpoint { tx.world.resource_mut::<EconomyLedger>().balances.insert((slot, line.resource.clone()), charged); }\n        updates.insert((line.endpoint, line.resource), charged);",
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_pack",
+      "--test",
+      "economy_accounting",
+      "e6_mixed_cost_rejection_keeps_every_endpoint_unchanged",
+      "--",
+      "--exact",
+      "--nocapture"
+    ],
+    "expected_failure": "rejected mixed-cost command must roll back its first SlotBalance debit",
+    "restore_check": "sha256(source)==baseline and selected test is green"
+  },
+  {
+    "id": "E6-node-replenishment",
+    "plant_path": "crates/turts_sim/src/economy/gather.rs",
+    "anchor": "record.remaining = record.remaining.saturating_sub(amount);",
+    "replacement": "record.remaining = record.remaining.saturating_add(amount);",
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_pack",
+      "--test",
+      "economy_accounting",
+      "e6_partial_store_unloads_and_exhausts_the_seeded_node",
+      "--",
+      "--exact",
+      "--nocapture"
+    ],
+    "expected_failure": "gather state differs from the independent full transition projection",
+    "restore_check": "sha256(source)==baseline and selected test is green"
+  },
+  {
+    "id": "E6-arithmetic-overflow",
+    "plant_path": "crates/turts_sim/src/economy/transaction.rs",
+    "anchor": ".checked_add(refund)\n            .ok_or(RejectReason::RefundDestinationOverflow)?;",
+    "replacement": ".checked_add(refund).or(Some(u64::MAX))\n            .ok_or(RejectReason::RefundDestinationOverflow)?;",
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_pack",
+      "--test",
+      "economy_accounting",
+      "e6_running_cancel_refund_rejects_on_balance_u64_overflow",
+      "--",
+      "--exact",
+      "--nocapture"
+    ],
+    "expected_failure": "RefundDestinationOverflow",
+    "restore_check": "sha256(source)==baseline and selected test is green"
+  },
+  {
+    "id": "E6-carried-item-loss",
+    "plant_path": "crates/turts_sim/src/command.rs",
+    "anchor": "    if let Some(mut orders) = world.get_resource_mut::<EconomyOrders>() {",
+    "replacement": "    for id in unit_ids { if let Some(inventory) = world.resource_mut::<crate::EconomyLedger>().inventories.get_mut(id) { inventory.items.clear(); } }\n    if let Some(mut orders) = world.get_resource_mut::<EconomyOrders>() {",
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_pack",
+      "--test",
+      "economy_accounting",
+      "e6_gather_conversion_and_interruptions_conserve_through_delivery",
+      "--",
+      "--exact",
+      "--nocapture"
+    ],
+    "expected_failure": "MoveTo interruption keeps physical cargo",
+    "restore_check": "sha256(source)==baseline and selected test is green"
+  },
+  {
+    "id": "E6-duplicate-conversion",
+    "plant_path": "crates/turts_sim/src/economy/gather.rs",
+    "anchor": "            .checked_add(credit)\n            .ok_or(RejectReason::RefundDestinationOverflow)?;",
+    "replacement": "            .checked_add(credit).and_then(|value| value.checked_add(credit))\n            .ok_or(RejectReason::RefundDestinationOverflow)?;",
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_pack",
+      "--test",
+      "economy_accounting",
+      "e6_gather_conversion_and_interruptions_conserve_through_delivery",
+      "--",
+      "--exact",
+      "--nocapture"
+    ],
+    "expected_failure": "gather state differs from the independent full transition projection",
+    "restore_check": "sha256(source)==baseline and selected test is green"
+  },
+  {
+    "id": "E6-duplicate-refund",
+    "plant_path": "crates/turts_sim/src/economy/transaction.rs",
+    "anchor": "        let on_hand = old\n            .on_hand\n            .checked_add(refund)\n            .ok_or(RejectReason::RefundDestinationOverflow)?;",
+    "replacement": "        let on_hand = old.on_hand.checked_add(refund).and_then(|value| value.checked_add(refund)).ok_or(RejectReason::RefundDestinationOverflow)?;",
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_pack",
+      "--test",
+      "economy_accounting",
+      "e6_cancel_refund_matrix_covers_both_policies_and_all_stages",
+      "--",
+      "--exact",
+      "--nocapture"
+    ],
+    "expected_failure": "refund destination delta differs from independent charged lines",
+    "restore_check": "sha256(source)==baseline and selected test is green"
+  },
+  {
+    "id": "E6-repeated-spawn",
+    "plant_path": "crates/turts_sim/src/economy/transaction.rs",
+    "anchor": "            world.spawn((\n                UnitId(spawn.id),\n                crate::world::UnitType(spawn.unit_type),\n                Owner(SlotId(spawn.owner_slot)),\n                crate::world::Position(spawn.position),\n            ));",
+    "replacement": "            world.spawn((UnitId(spawn.id), crate::world::UnitType(spawn.unit_type), Owner(SlotId(spawn.owner_slot)), crate::world::Position(spawn.position)));\n            world.spawn((\n                UnitId(spawn.id),\n                crate::world::UnitType(spawn.unit_type),\n                Owner(SlotId(spawn.owner_slot)),\n                crate::world::Position(spawn.position),\n            ));",
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_pack",
+      "--test",
+      "economy_accounting",
+      "e6_every_committed_operation_and_tick_conserves",
+      "--",
+      "--exact",
+      "--nocapture"
+    ],
+    "expected_failure": "completion differs from exact frozen recipe",
+    "restore_check": "sha256(source)==baseline and selected test is green"
+  },
+  {
+    "id": "E6-capacity-bypass",
+    "plant_path": "crates/turts_sim/src/economy/transaction.rs",
+    "anchor": "        if new_used > u128::from(tx.inventory(to)?.capacity) {",
+    "replacement": "        if false {",
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_pack",
+      "--test",
+      "economy_accounting",
+      "e6_transfer_rejections_cover_filter_capacity_and_access",
+      "--",
+      "--exact",
+      "--nocapture"
+    ],
+    "expected_failure": "result.is_err()",
+    "restore_check": "sha256(source)==baseline and selected test is green"
+  },
+  {
+    "id": "E6-self-store",
+    "plant_path": "crates/turts_sim/src/economy/gather.rs",
+    "anchor": "            if id == unit && matches!(effect, ResolvedDropOffEffect::Store) {\n                return None;\n            }",
+    "replacement": "            if false {\n                return None;\n            }",
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_pack",
+      "--test",
+      "economy_accounting",
+      "e6_self_store_is_never_selected_as_its_own_receiver",
+      "--",
+      "--exact",
+      "--nocapture"
+    ],
+    "expected_failure": "gather state differs from the independent full transition projection",
+    "restore_check": "sha256(source)==baseline and selected test is green"
+  },
+  {
+    "id": "E6-no-op-economy",
+    "plant_path": "crates/turts_sim/src/economy/gather.rs",
+    "anchor": "    let amount = budget.min(node.remaining).min(headroom);",
+    "replacement": "    let amount = 0;",
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_pack",
+      "--test",
+      "economy_variants",
+      "independent_cedar_packs_and_conserves",
+      "--",
+      "--exact",
+      "--nocapture"
+    ],
+    "expected_failure": "gather events differ from the independently predicted owner",
+    "restore_check": "sha256(source)==baseline and selected test is green"
+  },
+  {
+    "id": "E6-event-only-spawn",
+    "plant_path": "crates/turts_sim/src/economy/transaction.rs",
+    "anchor": "            world.spawn((\n                UnitId(spawn.id),\n                crate::world::UnitType(spawn.unit_type),\n                Owner(SlotId(spawn.owner_slot)),\n                crate::world::Position(spawn.position),\n            ));",
+    "replacement": "            let _entity_without_gameplay_identity = world.spawn_empty();",
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_pack",
+      "--test",
+      "economy_accounting",
+      "e6_every_committed_operation_and_tick_conserves",
+      "--",
+      "--exact",
+      "--nocapture"
+    ],
+    "expected_failure": "completion differs from exact frozen recipe",
+    "restore_check": "sha256(source)==baseline and selected test is green"
+  },
+  {
+    "id": "E10-public-error-provenance",
+    "plant_path": "crates/turts_mod_runtime/src/content.rs",
+    "anchor": "    ModError::new(&origin.0, field, message).with_file(file)",
+    "replacement": "    ModError::new(&origin.0, field, message)",
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_pack",
+      "--test",
+      "economy_variants",
+      "cedar_broken_reference_reports_public_package_file_and_field",
+      "--",
+      "--exact",
+      "--nocapture"
+    ],
+    "expected_failure": "right: Some(\"units/worker.ron\")",
+    "restore_check": "sha256(source)==baseline and selected test is green",
+    "kind": "diagnostic-self-test"
+  },
+  {
+    "id": "E2-E3-package-bound-payment-policy",
+    "kind": "product",
+    "plant_path": "crates/turts_sim/src/economy/production.rs",
+    "anchor": "let policy = recipe.payment;",
+    "replacement": "let policy = if recipe_id.to_string().starts_with(\"base:\") { PaymentPolicy::ChargeOnQueue } else { PaymentPolicy::ReserveThenCharge };",
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_pack",
+      "--test",
+      "economy_variants",
+      "renamed_base_and_physical_clone_have_positive_equal_traces",
+      "--",
+      "--exact",
+      "--nocapture"
+    ],
+    "expected_failure": "accepted Produce differs from exact requested recipe, ledger and unrelated-state model",
+    "restore_check": "sha256(source)==baseline and selected test is green",
+    "pre_command": [
+      "cargo",
+      "build",
+      "-p",
+      "turts_checks",
+      "--example",
+      "m2_variants"
+    ]
+  },
+  {
+    "id": "E2-fixed-balance-resource-id",
+    "kind": "product",
+    "plant_path": "crates/turts_sim/src/economy/production.rs",
+    "anchor": "            resource: cost.resource,",
+    "replacement": "            resource: if cost.source == CostSource::SlotBalance { ContentId::parse(\"base:credits\").unwrap() } else { cost.resource },",
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_pack",
+      "--test",
+      "economy_variants",
+      "renamed_base_and_physical_clone_have_positive_equal_traces",
+      "--",
+      "--exact",
+      "--nocapture"
+    ],
+    "expected_failure": "command acceptance differs from independent prior-state and catalog validation",
+    "restore_check": "sha256(source)==baseline and selected test is green",
+    "pre_command": [
+      "cargo",
+      "build",
+      "-p",
+      "turts_checks",
+      "--example",
+      "m2_variants"
+    ]
+  },
+  {
+    "id": "E3-declared-running-refund-ratio",
+    "kind": "product",
+    "plant_path": "crates/turts_sim/src/economy/production.rs",
+    "anchor": "JobStage::Running => (recipe.cancel_refunds.running, None, current.charged.clone()),",
+    "replacement": "JobStage::Running => (recipe.cancel_refunds.queued, None, current.charged.clone()),",
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_pack",
+      "--test",
+      "economy_variants",
+      "renamed_base_and_physical_clone_have_positive_equal_traces",
+      "--",
+      "--exact",
+      "--nocapture"
+    ],
+    "expected_failure": "cancel event differs from requested frozen job and catalog refund ratio",
+    "restore_check": "sha256(source)==baseline and selected test is green",
+    "pre_command": [
+      "cargo",
+      "build",
+      "-p",
+      "turts_checks",
+      "--example",
+      "m2_variants"
+    ]
+  },
+  {
+    "id": "E3-declared-conversion-coefficient",
+    "kind": "product",
+    "plant_path": "crates/turts_sim/src/economy/gather.rs",
+    "anchor": "let credit = amount\n            .checked_mul(per_item)\n            .ok_or(RejectReason::RefundDestinationOverflow)?;",
+    "replacement": "let credit = amount\n            .checked_mul(1)\n            .ok_or(RejectReason::RefundDestinationOverflow)?;",
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_pack",
+      "--test",
+      "economy_variants",
+      "declared_conversion_coefficient_is_used_by_public_trace",
+      "--",
+      "--exact",
+      "--nocapture"
+    ],
+    "expected_failure": "gather state differs from the independent full transition projection",
+    "restore_check": "sha256(source)==baseline and selected test is green",
+    "pre_command": [
+      "cargo",
+      "build",
+      "-p",
+      "turts_checks",
+      "--example",
+      "m2_variants"
+    ]
+  },
+  {
+    "id": "E4-pooled-owned-inventory-charge",
+    "kind": "product",
+    "plant_path": "crates/turts_sim/src/economy/production.rs",
+    "anchor": "CostSource::ProducerInventory => Endpoint::Inventory(producer),",
+    "replacement": "CostSource::ProducerInventory => { let ledger = world.resource::<crate::economy::ledger::EconomyLedger>(); let pooled = ledger.inventories.iter().filter_map(|(candidate, inventory)| { let owned = world.iter_entities().any(|entity| entity.get::<UnitId>().is_some_and(|id| id.0 == *candidate) && entity.get::<Owner>().is_some_and(|owner| owner.0 == slot)); let available = inventory.items.get(&cost.resource).map_or(0, |account| account.on_hand.saturating_sub(account.reserved)); (owned && available >= cost.amount).then_some(*candidate) }).min().unwrap_or(producer); Endpoint::Inventory(pooled) },",
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_pack",
+      "--test",
+      "economy_variants",
+      "valid_policy_role_swaps_follow_data",
+      "--",
+      "--exact",
+      "--nocapture"
+    ],
+    "expected_failure": "command acceptance differs from independent prior-state and catalog validation",
+    "restore_check": "sha256(source)==baseline and selected test is green",
+    "pre_command": [
+      "cargo",
+      "build",
+      "-p",
+      "turts_checks",
+      "--example",
+      "m2_variants"
+    ]
+  },
+  {
+    "id": "E5-item-resource-as-balance-account",
+    "kind": "product",
+    "plant_path": "crates/turts_sim/src/bootstrap.rs",
+    "anchor": "if resource.kind == ResourceKind::Balance {",
+    "replacement": "if true {",
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_pack",
+      "--test",
+      "economy_variants",
+      "valid_policy_role_swaps_follow_data",
+      "--",
+      "--exact",
+      "--nocapture"
+    ],
+    "expected_failure": "item resource must never be installed as a slot balance account",
+    "restore_check": "sha256(source)==baseline and selected test is green",
+    "pre_command": [
+      "cargo",
+      "build",
+      "-p",
+      "turts_checks",
+      "--example",
+      "m2_variants"
+    ]
+  },
+  {
+    "id": "E10-server-public-loader-bypass",
+    "kind": "product",
+    "plant_path": "crates/turts_server/src/boot.rs",
+    "anchor": "    turts_pack::load_package(world, &archive)?;",
+    "replacement": "    let _ = archive.content()?;",
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_checks",
+      "--test",
+      "m2_public_path",
+      "public_loading_path_has_no_native_hooks",
+      "--",
+      "--exact",
+      "--nocapture"
+    ],
+    "expected_failure": "server boot must call the public turts_pack::load_package path",
+    "restore_check": "sha256(source)==baseline and selected test is green"
+  },
+  {
+    "id": "E7-refused-hello-claims-slot",
+    "kind": "product",
+    "plant_path": "crates/turts_server/src/session.rs",
+    "anchor": "    if hello.protocol_version != NET_PROTOCOL_VERSION {",
+    "replacement": "    if hello.protocol_version != NET_PROTOCOL_VERSION {\n        slots.claim(hello.player_id).unwrap();",
+    "command": [
+      "cargo",
+      "test",
+      "--release",
+      "-p",
+      "turts_server",
+      "--bin",
+      "turts_server",
+      "session::tests::judge_checks_protocol_before_hash_and_claims_nothing_on_refusal",
+      "--",
+      "--exact",
+      "--nocapture"
+    ],
+    "expected_failure": "a refused Hello takes no slot",
+    "runtime": "rust"
+  },
+  {
+    "id": "E8-foreign-gather-owner-check",
+    "kind": "process",
+    "plant_path": "crates/turts_sim/src/economy/gather.rs",
+    "anchor": "pub fn assign_gather(\n    world: &mut World,\n    slot: SlotId,\n    unit: u32,\n    node: NodeId,\n) -> Result<(), RejectReason> {\n    let entity = find_unit(world, unit).ok_or(RejectReason::UnknownUnit)?;\n    if world.get::<Owner>(entity).map(|owner| owner.0) != Some(slot) {",
+    "replacement": "pub fn assign_gather(\n    world: &mut World,\n    slot: SlotId,\n    unit: u32,\n    node: NodeId,\n) -> Result<(), RejectReason> {\n    let entity = find_unit(world, unit).ok_or(RejectReason::UnknownUnit)?;\n    if false && world.get::<Owner>(entity).map(|owner| owner.0) != Some(slot) {",
+    "pre_commands": [
+      [
+        "cargo",
+        "build",
+        "--release",
+        "-p",
+        "turts_server"
+      ],
+      [
+        "cargo",
+        "build",
+        "--release",
+        "-p",
+        "turts_client"
+      ]
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "--release",
+      "-p",
+      "turts_server",
+      "--test",
+      "economy",
+      "e8_commands_are_authoritative_and_acked",
+      "--",
+      "--ignored",
+      "--exact",
+      "--nocapture"
+    ],
+    "expected_failure": "wire command seq",
+    "runtime": "rust"
+  },
+  {
+    "id": "E8-rejection-ack-send-reversal",
+    "kind": "process",
+    "plant_path": "crates/turts_server/src/session.rs",
+    "replacements": [
+      {
+        "anchor": "            if let Ok(mut sender) = acks.get_mut(entity) {\n                sender.send::<ReliableChannel>(CommandAck {\n                    seq: envelope.seq,\n                    tick: tick.0,\n                });\n                traffic.record(entity);\n            }",
+        "replacement": "            let duplicate_seq = session.last_seq.is_some_and(|last| envelope.seq <= last);\n            if !duplicate_seq {\n                if let Ok(mut sender) = acks.get_mut(entity) {\n                    sender.send::<ReliableChannel>(CommandAck {\n                        seq: envelope.seq,\n                        tick: tick.0,\n                    });\n                    traffic.record(entity);\n                }\n            }"
+      },
+      {
+        "anchor": "pub fn install(app: &mut App, advertised: Advertised) {\n    app.insert_resource(advertised);\n    app.init_resource::<StagedPlayerCommands>()\n        .init_resource::<CommandAdmissionDiagnostics>()\n        .init_resource::<ReliableTraffic>();",
+        "replacement": "pub fn install(app: &mut App, advertised: Advertised) {\n    app.insert_resource(advertised);\n    app.init_resource::<StagedPlayerCommands>()\n        .init_resource::<CommandAdmissionDiagnostics>()\n        .init_resource::<ReliableTraffic>()\n        .init_resource::<DelayedCommandAcks>();\n    app.add_systems(\n        PreUpdate,\n        send_delayed_command_acks.after(MessageSystems::Receive),\n    );"
+      },
+      {
+        "anchor": "fn record_admission_rejection(\n",
+        "replacement": "#[derive(Resource, Debug, Default)]\nstruct DelayedCommandAcks(VecDeque<(Entity, CommandAck)>);\n\nfn send_delayed_command_acks(\n    mut pending: ResMut<DelayedCommandAcks>,\n    mut senders: Query<&mut MessageSender<CommandAck>>,\n    mut traffic: ResMut<ReliableTraffic>,\n) {\n    for (entity, ack) in std::mem::take(&mut pending.0) {\n        if let Ok(mut sender) = senders.get_mut(entity) {\n            sender.send::<ReliableChannel>(ack);\n            traffic.record(entity);\n        }\n    }\n}\n\nfn record_admission_rejection(\n"
+      },
+      {
+        "anchor": "    if let Some((before, raw)) = admission_evidence {",
+        "replacement": "    if reason == CommandRejectReason::BadSequence {\n        world\n            .resource_mut::<DelayedCommandAcks>()\n            .0\n            .push_back((\n                staged.connection,\n                CommandAck {\n                    seq: staged.envelope.seq,\n                    tick,\n                },\n            ));\n    }\n    if let Some((before, raw)) = admission_evidence {"
+      }
+    ],
+    "pre_commands": [
+      [
+        "cargo",
+        "build",
+        "--release",
+        "-p",
+        "turts_server"
+      ],
+      [
+        "cargo",
+        "build",
+        "--release",
+        "-p",
+        "turts_client"
+      ]
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "--release",
+      "-p",
+      "turts_server",
+      "--test",
+      "economy",
+      "e8_commands_are_authoritative_and_acked",
+      "--",
+      "--ignored",
+      "--exact",
+      "--nocapture"
+    ],
+    "expected_failure": "actual ReliableChannel MessageIds put Ack before rejection for seq",
+    "runtime": "rust",
+    "provenance_paths": [
+      "crates/turts_server/tests/economy.rs",
+      "crates/turts_server/tests/support/wire_sender.rs"
+    ]
+  },
+  {
+    "id": "E8-mixed-cost-partial-commit",
+    "kind": "process",
+    "plant_path": "crates/turts_sim/src/economy/transaction.rs",
+    "replacements": [
+      {
+        "anchor": "        updates.insert(\n            (line.endpoint, line.resource),\n            Account {\n                on_hand: old\n                    .on_hand\n                    .checked_sub(line.amount)\n                    .ok_or(RejectReason::ArithmeticOverflow)?,\n                ..old\n            },\n        );",
+        "replacement": "        let charged = Account { on_hand: old.on_hand.checked_sub(line.amount).ok_or(RejectReason::ArithmeticOverflow)?, ..old };\n        if let Endpoint::Slot(slot) = line.endpoint { tx.world.resource_mut::<EconomyLedger>().balances.insert((slot, line.resource.clone()), charged); }\n        updates.insert((line.endpoint, line.resource), charged);"
+      }
+    ],
+    "pre_commands": [
+      [
+        "cargo",
+        "build",
+        "--release",
+        "-p",
+        "turts_server"
+      ],
+      [
+        "cargo",
+        "build",
+        "--release",
+        "-p",
+        "turts_client"
+      ]
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "--release",
+      "-p",
+      "turts_server",
+      "--test",
+      "economy",
+      "e8_commands_are_authoritative_and_acked",
+      "--",
+      "--ignored",
+      "--exact",
+      "--nocapture"
+    ],
+    "expected_failure": "rejected seq 5 is write neutral",
+    "runtime": "rust"
+  },
+  {
+    "id": "E9-owner-private-raw-dto",
+    "kind": "process",
+    "plant_path": "crates/turts_server/src/export.rs",
+    "anchor": "    record.slot == slot.0",
+    "replacement": "    true",
+    "pre_commands": [
+      [
+        "cargo",
+        "build",
+        "--release",
+        "-p",
+        "turts_server"
+      ],
+      [
+        "cargo",
+        "build",
+        "--release",
+        "-p",
+        "turts_client"
+      ]
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "--release",
+      "-p",
+      "turts_server",
+      "--test",
+      "economy",
+      "e9_two_owners_late_join_and_output_lifecycle",
+      "--",
+      "--ignored",
+      "--exact",
+      "--nocapture"
+    ],
+    "expected_failure": "raw Snapshot DTO equals independent owner projection",
+    "runtime": "rust",
+    "provenance_paths": [
+      "crates/turts_server/tests/economy.rs"
+    ]
+  },
+  {
+    "id": "E9-output-in-snapshot-and-delta",
+    "kind": "process",
+    "plant_path": "crates/turts_server/src/export.rs",
+    "replacements": [
+      {
+        "anchor": "        units: view.units.iter().map(unit_snapshot).collect(),",
+        "replacement": "        units: view.units.iter().filter(|unit| unit.content_id != \"base:rifleman\").map(unit_snapshot).collect(),"
+      },
+      {
+        "anchor": "        spawned: batch.spawned.iter().map(unit_snapshot).collect(),",
+        "replacement": "        spawned: batch.spawned.iter().filter(|unit| unit.content_id != \"base:rifleman\").map(unit_snapshot).collect(),"
+      }
+    ],
+    "pre_commands": [
+      [
+        "cargo",
+        "build",
+        "--release",
+        "-p",
+        "turts_server"
+      ],
+      [
+        "cargo",
+        "build",
+        "--release",
+        "-p",
+        "turts_client"
+      ]
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "--release",
+      "-p",
+      "turts_server",
+      "--test",
+      "economy",
+      "e9_two_owners_late_join_and_output_lifecycle",
+      "--",
+      "--ignored",
+      "--exact",
+      "--nocapture"
+    ],
+    "expected_failure": "late join sees each output exactly once",
+    "runtime": "rust",
+    "provenance_paths": [
+      "crates/turts_server/tests/economy.rs"
+    ]
+  },
+  {
+    "id": "E9-midtrace-rearm-ignored",
+    "kind": "process",
+    "plant_path": "crates/turts_client/src/ingest.rs",
+    "anchor": "        arm_tick,\n    });",
+    "replacement": "        arm_tick: if hooks.dropped_world_changes.is_empty() { arm_tick } else { return; },\n    });",
+    "pre_commands": [
+      [
+        "cargo",
+        "build",
+        "--release",
+        "-p",
+        "turts_server"
+      ],
+      [
+        "cargo",
+        "build",
+        "--release",
+        "-p",
+        "turts_client"
+      ]
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "--release",
+      "-p",
+      "turts_server",
+      "--test",
+      "economy",
+      "e9_loss_and_small_buffer_converge",
+      "--",
+      "--ignored",
+      "--exact",
+      "--nocapture"
+    ],
+    "expected_failure": "initial arm and live midtrace rearm each fired once",
+    "runtime": "rust"
+  },
+  {
+    "id": "E9-duplicate-spawn-tail-replay",
+    "kind": "process",
+    "plant_path": "crates/turts_client/src/replica.rs",
+    "anchor": "            candidate = next;\n            replayed += 1;",
+    "replacement": "            let Some(double_applied) = self.stage_delta(&next, &delta) else {\n                self.mark_gap(delta.tick);\n                replay_failed = true;\n                remaining.push(delta);\n                continue;\n            };\n            candidate = double_applied;\n            replayed += 1;",
+    "pre_commands": [
+      [
+        "cargo",
+        "build",
+        "--release",
+        "-p",
+        "turts_server"
+      ],
+      [
+        "cargo",
+        "build",
+        "--release",
+        "-p",
+        "turts_client"
+      ]
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "--release",
+      "-p",
+      "turts_server",
+      "--test",
+      "economy",
+      "e9_loss_and_small_buffer_converge",
+      "--",
+      "--ignored",
+      "--exact",
+      "--nocapture"
+    ],
+    "expected_failure": "duplicate-free retained replay completes without a successor response",
+    "runtime": "rust"
+  },
+  {
+    "id": "E2-browser-hardcoded-label",
+    "kind": "browser",
+    "runtime": "browser",
+    "plant_path": "crates/turts_client/src/economy_ui.rs",
+    "anchor": "let name = def.map_or_else(|| unit.content_id.clone(), |d| d.name.clone());",
+    "replacement": "let name = unit.content_id.clone();",
+    "command": [
+      "/bin/bash",
+      "-c",
+      "M2_CARGO_TARGET_DIR=\"$CARGO_TARGET_DIR\" bash scripts/m2-browser.sh --case E9-browser-cedar-economy"
+    ],
+    "browser_case_ids": [
+      "E9-browser-cedar-economy"
+    ],
+    "expected_selected": 1,
+    "expected_failure": "actual rendered unit selection was not visible",
+    "restore_check": "planted source hash is restored and the same Chrome case returns PASS",
+    "pre_commands": [
+      [
+        "npm",
+        "ci",
+        "--offline",
+        "--prefix",
+        "tests/browser"
+      ]
+    ]
+  },
+  {
+    "id": "E9-browser-missing-button",
+    "kind": "browser",
+    "runtime": "browser",
+    "plant_path": "crates/turts_client/src/economy_ui.rs",
+    "anchor": "for recipe in &producer.recipes {",
+    "replacement": "for recipe in producer.recipes.iter().take(0) {",
+    "command": [
+      "/bin/bash",
+      "-c",
+      "M2_CARGO_TARGET_DIR=\"$CARGO_TARGET_DIR\" bash scripts/m2-browser.sh --case E9-browser-base-economy"
+    ],
+    "browser_case_ids": [
+      "E9-browser-base-economy"
+    ],
+    "expected_selected": 1,
+    "expected_failure": "no visible enabled rendered Produce control for the selected producer",
+    "restore_check": "planted source hash is restored and the same Chrome case returns PASS",
+    "pre_commands": [
+      [
+        "npm",
+        "ci",
+        "--offline",
+        "--prefix",
+        "tests/browser"
+      ]
+    ]
+  },
+  {
+    "id": "E9-browser-debug-only-ui",
+    "kind": "browser",
+    "runtime": "browser",
+    "plant_path": "crates/turts_client/src/economy_ui.rs",
+    "anchor": "model.lines.push(format!(\"Selected: {name} \u00b7 {selected}\"));",
+    "replacement": "let _selected_text_debug_only = format!(\"Selected: {name} \u00b7 {selected}\");",
+    "command": [
+      "/bin/bash",
+      "-c",
+      "M2_CARGO_TARGET_DIR=\"$CARGO_TARGET_DIR\" bash scripts/m2-browser.sh --case E9-browser-base-selection"
+    ],
+    "browser_case_ids": [
+      "E9-browser-base-selection"
+    ],
+    "expected_selected": 1,
+    "expected_failure": "selection must appear in actual visible Bevy Text",
+    "restore_check": "planted source hash is restored and the same Chrome case returns PASS",
+    "pre_commands": [
+      [
+        "npm",
+        "ci",
+        "--offline",
+        "--prefix",
+        "tests/browser"
+      ]
+    ]
+  },
+  {
+    "id": "E9-browser-missing-output-mesh",
+    "kind": "browser",
+    "runtime": "browser",
+    "plant_path": "crates/turts_client/src/render.rs",
+    "anchor": "for unit in &presented.units {\n        kept.insert(unit.unit_id);",
+    "replacement": "for unit in &presented.units {\n        if unit.content_id == \"base:rifleman\" { continue; }\n        kept.insert(unit.unit_id);",
+    "command": [
+      "/bin/bash",
+      "-c",
+      "M2_CARGO_TARGET_DIR=\"$CARGO_TARGET_DIR\" bash scripts/m2-browser.sh --case E9-browser-base-economy"
+    ],
+    "browser_case_ids": [
+      "E9-browser-base-economy"
+    ],
+    "expected_selected": 1,
+    "expected_failure": "completed output must have exactly one rendered mesh",
+    "restore_check": "planted source hash is restored and the same Chrome case returns PASS",
+    "pre_commands": [
+      [
+        "npm",
+        "ci",
+        "--offline",
+        "--prefix",
+        "tests/browser"
+      ]
+    ]
+  },
+  {
+    "id": "E9-browser-position-only-snapshot",
+    "kind": "browser",
+    "runtime": "browser",
+    "plant_path": "crates/turts_client/src/replica.rs",
+    "anchor": "            economy: snapshot.economy.clone(),",
+    "replacement": "            economy: if self.last_applied_tick.is_some() {\n                self.economy.clone()\n            } else {\n                snapshot.economy.clone()\n            },",
+    "command": [
+      "/bin/bash",
+      "-c",
+      "M2_CARGO_TARGET_DIR=\"$CARGO_TARGET_DIR\" bash scripts/m2-browser.sh --case E9-browser-base-loss-final_change"
+    ],
+    "browser_case_ids": [
+      "E9-browser-base-loss-final_change"
+    ],
+    "expected_selected": 1,
+    "expected_failure": "owner replica mismatch at authoritative completed audit tick",
+    "restore_check": "planted source hash is restored and the same Chrome case returns PASS",
+    "pre_commands": [
+      [
+        "npm",
+        "ci",
+        "--offline",
+        "--prefix",
+        "tests/browser"
+      ]
+    ]
+  },
+  {
+    "id": "E9-browser-unbounded-buffer",
+    "kind": "browser",
+    "runtime": "browser",
+    "plant_path": "crates/turts_client/src/replica.rs",
+    "command": [
+      "/bin/bash",
+      "-c",
+      "M2_CARGO_TARGET_DIR=\"$CARGO_TARGET_DIR\" bash scripts/m2-browser.sh --case E9-browser-base-recovery"
+    ],
+    "browser_case_ids": [
+      "E9-browser-base-recovery"
+    ],
+    "expected_selected": 1,
+    "expected_failure": "retained real delta tail exceeded configured cap=3",
+    "restore_check": "planted source hash is restored and the same Chrome case returns PASS",
+    "pre_commands": [
+      [
+        "npm",
+        "ci",
+        "--offline",
+        "--prefix",
+        "tests/browser"
+      ]
+    ],
+    "anchor": "        if buffer.len() >= limit {\n            buffer.clear();\n            self.buffer_overflows = self.buffer_overflows.saturating_add(1);\n            self.gap_seen = true;\n            if self.gap_anchor.is_none() {\n                self.gap_anchor = self.last_applied_tick.or(Some(delta.base_tick));\n            }\n            // Task 12 policy: discard the triggering batch as well as the old tail.\n            return;\n        }",
+    "replacement": "        if buffer.len() > limit {\n            self.buffer_overflows = self.buffer_overflows.saturating_add(1);\n            self.gap_seen = true;\n            if self.gap_anchor.is_none() {\n                self.gap_anchor = self.last_applied_tick.or(Some(delta.base_tick));\n            }\n            // Task 12 policy: discard the triggering batch as well as the old tail.\n            return;\n        }"
+  },
+  {
+    "id": "E9-browser-duplicate-outstanding",
+    "kind": "browser",
+    "runtime": "browser",
+    "plant_path": "crates/turts_client/src/ingest.rs",
+    "replacements": [
+      {
+        "anchor": "    if hooks.outstanding_request {\n        return Vec::new();\n    }\n    if replica\n        .resync_span_ticks()",
+        "replacement": "    if hooks.outstanding_request && counters.resync_requests_sent > 1 {\n        return Vec::new();\n    }\n    if replica\n        .resync_span_ticks()"
+      },
+      {
+        "anchor": "    if hooks.outstanding_request {\n        return None;\n    }\n    hooks.outstanding_request = true;",
+        "replacement": "    if hooks.outstanding_request && counters.resync_requests_sent > 1 {\n        return None;\n    }\n    hooks.outstanding_request = true;"
+      },
+      {
+        "anchor": "    counters.max_outstanding_requests = counters.max_outstanding_requests.max(1);",
+        "replacement": "    counters.max_outstanding_requests = counters.max_outstanding_requests.max(counters.resync_requests_sent as usize);"
+      }
+    ],
+    "command": [
+      "/bin/bash",
+      "-c",
+      "M2_CARGO_TARGET_DIR=\"$CARGO_TARGET_DIR\" bash scripts/m2-browser.sh --case E9-browser-base-recovery"
+    ],
+    "browser_case_ids": [
+      "E9-browser-base-recovery"
+    ],
+    "expected_selected": 1,
+    "expected_failure": "only one actual resync request may be outstanding at a time",
+    "restore_check": "planted source hash is restored and the same Chrome case returns PASS",
+    "pre_commands": [
+      [
+        "npm",
+        "ci",
+        "--offline",
+        "--prefix",
+        "tests/browser"
+      ]
+    ]
+  },
+  {
+    "id": "E9-browser-ignore-midtrace-rearm",
+    "kind": "browser",
+    "runtime": "browser",
+    "plant_path": "crates/turts_client/src/ingest.rs",
+    "replacements": [
+      {
+        "anchor": "        arm_drop_world_changes(hooks, config.drop_world_changes, replica.clone(), arm_tick);",
+        "replacement": "        if !hooks.dropped_world_changes.iter().any(|record| config.drop_world_changes.contains(&record.kind)) {\n            arm_drop_world_changes(hooks, config.drop_world_changes, replica.clone(), arm_tick);\n        }"
+      }
+    ],
+    "command": [
+      "/bin/bash",
+      "-c",
+      "M2_CARGO_TARGET_DIR=\"$CARGO_TARGET_DIR\" bash scripts/m2-browser.sh --case E9-browser-base-recovery"
+    ],
+    "browser_case_ids": [
+      "E9-browser-base-recovery"
+    ],
+    "expected_selected": 1,
+    "expected_failure": "same-kind re-arm must install a fresh matcher at its applied authoritative tick",
+    "restore_check": "planted source hash is restored and the same Chrome case returns PASS",
+    "pre_commands": [
+      [
+        "npm",
+        "ci",
+        "--offline",
+        "--prefix",
+        "tests/browser"
+      ]
+    ]
+  }
+]

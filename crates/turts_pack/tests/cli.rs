@@ -42,8 +42,8 @@ fn turts_pack(args: &[&Path]) -> Output {
 
 #[test]
 fn pack_cli_prints_hash() {
-    // Both packages that the repository ships pass the checks.
-    for name in ["acme", "base"] {
+    // All public packages that the repository ships pass the checks.
+    for name in ["acme", "base", "haul"] {
         let work = fresh_dir(&format!("pack_cli_prints_hash_{name}"));
         let dir = work.join(name);
         copy_dir(&package_dir(name), &dir);

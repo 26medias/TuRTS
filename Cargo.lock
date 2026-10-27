@@ -1374,6 +1374,7 @@ dependencies = [
  "bevy_render",
  "bevy_shader",
  "bevy_shape",
+ "bevy_sprite_render",
  "bevy_transform",
  "bevy_utils",
  "bytemuck",
@@ -1548,6 +1549,8 @@ dependencies = [
  "bevy_time",
  "bevy_transform",
  "bevy_ui",
+ "bevy_ui_render",
+ "bevy_ui_widgets",
  "bevy_utils",
  "bevy_window",
  "bevy_winit",
@@ -2770,6 +2773,8 @@ version = "0.13.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "af491d569909a7e4dee0ad7db7f5341fef5c614d5b8ec8cf765732aba3cff681"
 dependencies = [
+ "serde",
+ "termcolor",
  "unicode-width",
 ]
 
@@ -8105,6 +8110,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "termcolor"
+version = "1.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "06794f8f6c5c898b3275aebefa6b8a1cb24cd2c6c79397ab15774837a0bc5755"
+dependencies = [
+ "winapi-util",
+]
+
+[[package]]
 name = "thiserror"
 version = "1.0.69"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -8567,11 +8581,20 @@ dependencies = [
 
 [[package]]
 name = "turts_checks"
-version = "0.1.0"
+version = "0.2.0"
+dependencies = [
+ "proc-macro2",
+ "ron",
+ "serde",
+ "serde_json",
+ "syn 2.0.119",
+ "turts_mod_api",
+ "turts_mod_runtime",
+]
 
 [[package]]
 name = "turts_client"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "bevy",
  "gloo-net",
@@ -8589,11 +8612,13 @@ dependencies = [
 
 [[package]]
 name = "turts_client_web"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "bevy",
  "js-sys",
+ "serde_json",
  "turts_client",
+ "turts_mod_runtime",
  "turts_net_protocol",
  "wasm-bindgen",
  "wasm-bindgen-test",
@@ -8602,7 +8627,7 @@ dependencies = [
 
 [[package]]
 name = "turts_mod_api"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "ron",
  "serde",
@@ -8611,7 +8636,7 @@ dependencies = [
 
 [[package]]
 name = "turts_mod_runtime"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "ron",
  "semver",
@@ -8624,13 +8649,14 @@ dependencies = [
 
 [[package]]
 name = "turts_net_lightyear"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "bevy",
  "bevy_app",
  "bevy_ecs",
  "bevy_time",
  "lightyear",
+ "postcard",
  "serde",
  "serde_json",
  "turts_net_protocol",
@@ -8638,7 +8664,7 @@ dependencies = [
 
 [[package]]
 name = "turts_net_protocol"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "postcard",
  "serde",
@@ -8648,9 +8674,12 @@ dependencies = [
 
 [[package]]
 name = "turts_pack"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
+ "bevy_app",
  "bevy_ecs",
+ "bevy_math",
+ "serde_json",
  "turts_mod_api",
  "turts_mod_runtime",
  "turts_sim",
@@ -8658,10 +8687,12 @@ dependencies = [
 
 [[package]]
 name = "turts_server"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "axum",
  "bevy",
+ "bevy_app",
+ "bevy_math",
  "lightyear",
  "postcard",
  "ron",
@@ -8680,12 +8711,13 @@ dependencies = [
 
 [[package]]
 name = "turts_sim"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "bevy_app",
  "bevy_ecs",
  "bevy_math",
  "bevy_time",
+ "serde",
  "turts_mod_api",
 ]
 
@@ -9251,12 +9283,14 @@ dependencies = [
  "hashbrown 0.17.1",
  "js-sys",
  "log",
+ "naga",
  "portable-atomic",
  "profiling",
  "raw-window-handle",
  "smallvec",
  "static_assertions",
  "wasm-bindgen",
+ "wasm-bindgen-futures",
  "web-sys",
  "wgpu-core",
  "wgpu-hal",

@@ -1,7 +1,10 @@
 //! Client logic: fetch, acquisition, join, replica, interpolation, presentation, input.
 
 pub mod acquire;
+pub mod commands;
+pub mod content;
 pub mod debug;
+pub mod economy_ui;
 pub mod fetch;
 pub mod framelog;
 pub mod ingest;
@@ -12,6 +15,10 @@ pub mod options;
 pub mod present;
 pub mod render;
 pub mod replica;
+mod scenario;
+
+#[cfg(not(target_family = "wasm"))]
+mod live_view;
 
 use std::time::Duration;
 
@@ -22,9 +29,17 @@ use lightyear::prelude::client::ClientPlugins;
 use turts_net_lightyear::{ProtocolPlugin, tick_duration};
 use turts_net_protocol::Pos;
 
+use crate::commands::{
+    CommandSendStatus, CommandSequence, PendingCommands, repeat_trace, send_commands_traced,
+    submit_trace,
+};
 use crate::debug::{DebugState, exit_when_done, rebuild_debug_state};
+use crate::economy_ui::EconomyUiPlugin;
 use crate::framelog::{FrameLog, write_frame_log};
-use crate::ingest::{CommandResults, IngestCounters, IngestHooks, ReplicaState, ingest_messages};
+use crate::ingest::{
+    CommandResults, IngestCounters, IngestHooks, ReceiptWitnesses, ReplicaState,
+    arm_drop_world_changes, ingest_messages,
+};
 use crate::input::ClickInputPlugin;
 use crate::join::{
     Acquisition, JoinState, Phase, auto_move, drive_acquisition, on_connected, on_disconnected,
@@ -33,6 +48,7 @@ use crate::join::{
 use crate::options::{ClientOptions, random_player_id};
 use crate::present::{Presented, update_presented};
 use crate::render::UnitRenderPlugin;
+use crate::scenario::{ScenarioState, TraceAction, TraceCommand};
 
 /// The tick rate of the lightyear link (not of the simulation: `Welcome` carries that).
 const LINK_TICK_HZ: u16 = 20; // prototype constant: measure at M1
@@ -51,6 +67,8 @@ pub struct ClientPlugin(pub ClientOptions);
 impl Plugin for ClientPlugin {
     fn build(&self, app: &mut App) {
         let opts = self.0.clone();
+        #[cfg(not(target_family = "wasm"))]
+        let publish_live_view = !opts.headless && opts.out.is_some();
         app.insert_resource(PlayerId(opts.player_id.unwrap_or_else(random_player_id)))
             .insert_resource(Phase::FetchAdvertisement)
             .insert_resource(IngestHooks {
@@ -59,9 +77,12 @@ impl Plugin for ClientPlugin {
                 arrival_target: opts.auto_move.map(|(x, y)| Pos { x, y }),
                 arrival_unit: opts.move_unit,
                 hold_resync_snapshots: opts.hold_resync_snapshots,
+                hold_resync_snapshots_remaining: opts.hold_resync_snapshot_count,
+                initial_drop_world_changes: opts.drop_world_changes.clone(),
                 ..Default::default()
             })
             .insert_resource(FrameLog::open(opts.frame_log.as_deref()))
+            .insert_resource(ScenarioState::from_path(opts.command_trace.as_deref()))
             .insert_resource(ClientOpts(opts))
             .init_resource::<IngestCounters>()
             .init_resource::<ReplicaState>()
@@ -69,7 +90,11 @@ impl Plugin for ClientPlugin {
             .init_resource::<JoinState>()
             .init_resource::<Acquisition>()
             .init_resource::<Presented>()
-            .init_resource::<DebugState>();
+            .init_resource::<DebugState>()
+            .init_resource::<PendingCommands>()
+            .init_resource::<CommandSequence>()
+            .init_resource::<CommandSendStatus>()
+            .init_resource::<ReceiptWitnesses>();
         app.add_observer(on_connected).add_observer(on_disconnected);
         app.add_systems(
             PreUpdate,
@@ -86,8 +111,83 @@ impl Plugin for ClientPlugin {
             )
                 .chain(),
         );
-        app.add_systems(PostUpdate, auto_move);
+        app.add_systems(
+            PostUpdate,
+            (auto_move, drive_scenario, send_commands_traced)
+                .chain()
+                .before(MessageSystems::Send),
+        );
         app.add_systems(Last, (rebuild_debug_state, exit_when_done).chain());
+        #[cfg(not(target_family = "wasm"))]
+        if publish_live_view {
+            app.add_systems(Last, live_view::publish_live_view.before(exit_when_done));
+        }
+    }
+}
+
+/// Drive one due trace action from the latest coherent server tick, after ingest and before send.
+fn drive_scenario(
+    mut scenario: ResMut<ScenarioState>,
+    mut phase: ResMut<Phase>,
+    state: Res<ReplicaState>,
+    results: Res<CommandResults>,
+    mut pending: ResMut<PendingCommands>,
+    mut hooks: ResMut<IngestHooks>,
+) {
+    if !scenario.enabled {
+        return;
+    }
+    if let Some(error) = scenario.error.clone() {
+        *phase = Phase::Failed(error);
+        return;
+    }
+    let Some(welcome) = state.welcome else { return };
+    let Some(tick) = state
+        .replica
+        .as_ref()
+        .and_then(|replica| replica.last_applied_tick)
+    else {
+        return;
+    };
+    scenario.observe_results(&results.0);
+    let actions = match scenario.drive(tick, welcome.tick, &results.0) {
+        Ok(actions) => actions,
+        Err(error) => {
+            scenario.error = Some(error.clone());
+            *phase = Phase::Failed(error);
+            return;
+        }
+    };
+    for action in actions {
+        match action {
+            TraceAction::Submit { step_index, kind } => {
+                scenario.record_trace_action(step_index);
+                submit_trace(&mut pending, kind, step_index);
+            }
+            TraceAction::RepeatLastEnvelope {
+                step_index,
+                envelope,
+            } => {
+                scenario.record_trace_action(step_index);
+                repeat_trace(&mut pending, envelope, step_index);
+            }
+            TraceAction::ArmDropWorldChanges {
+                step_index,
+                arm_tick,
+                kinds,
+            } => {
+                scenario.record_arm(
+                    step_index,
+                    TraceCommand::ArmDropWorldChanges {
+                        kinds: kinds.clone(),
+                    },
+                    arm_tick,
+                );
+                if let Some(replica) = state.replica.as_ref() {
+                    arm_drop_world_changes(&mut hooks, kinds, replica.clone(), arm_tick);
+                }
+            }
+        }
     }
 }
 
@@ -124,7 +224,7 @@ pub fn build_app(opts: ClientOptions) -> App {
     app.add_plugins(ProtocolPlugin);
     app.add_plugins(ClientPlugin(opts));
     if !headless {
-        app.add_plugins((UnitRenderPlugin, ClickInputPlugin));
+        app.add_plugins((UnitRenderPlugin, EconomyUiPlugin, ClickInputPlugin));
     }
     app
 }

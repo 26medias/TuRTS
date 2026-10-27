@@ -37,6 +37,14 @@ fn pack_edited(test: &str, edits: &[Edit]) -> (PathBuf, Output) {
     let _ = fs::remove_dir_all(&work);
     let dir = work.join("zeta");
     copy_dir(&fixture(), &dir);
+    let manifest = dir.join("manifest.ron");
+    let manifest_text = fs::read_to_string(&manifest).expect("read fixture manifest");
+    assert!(manifest_text.contains("version: \"0.1.0\""));
+    fs::write(
+        &manifest,
+        manifest_text.replace("version: \"0.1.0\"", "version: \"0.2.0\""),
+    )
+    .expect("migrate fixture package version");
     for (file, from, to) in edits {
         let path = dir.join(file);
         if from.is_empty() {
@@ -79,9 +87,13 @@ fn the_control_package_is_packed() {
 fn a_field_typo_is_refused() {
     assert_refused(
         "bad_typo",
-        &[("units/runner.ron", "speed: 8.0", "sped: 8.0")],
-        "zeta/units/runner.ron: unknown field `sped` at line 1 column 32 \
-         (allowed: id, name, speed, footprint)",
+        &[(
+            "units/runner.ron",
+            "movement: Some((speed: 8.0))",
+            "movenment: Some((speed: 8.0))",
+        )],
+        "zeta/units/runner.ron: unknown field `movenment` at line 1 column 64 \
+         (allowed: id, name, footprint, movement, inventory, gatherer, drop_off, producer)",
     );
 }
 
@@ -94,7 +106,7 @@ fn an_unknown_variant_is_refused() {
             "Circle(radius: 2.5)",
             "Square(side: 2.5)",
         )],
-        "zeta/units/crawler.ron: unknown variant `Square` at line 1 column 57 (allowed: Circle)",
+        "zeta/units/crawler.ron: unknown variant `Square` at line 1 column 45 (allowed: Circle)",
     );
 }
 
@@ -103,7 +115,7 @@ fn a_speed_of_zero_is_refused() {
     assert_refused(
         "bad_speed",
         &[("units/crawler.ron", "speed: 1.5", "speed: 0.0")],
-        "zeta/units/crawler.ron: speed: speed must be finite, above 0 and at most 100, got 0",
+        "zeta/units/crawler.ron: movement.speed: must be finite and > 0",
     );
 }
 
@@ -135,11 +147,10 @@ fn a_visual_of_a_unit_the_package_does_not_define_is_refused() {
             (
                 "visuals/ghost.ron",
                 "",
-                "(unit: \"zeta:ghost\", shape: Capsule(radius: 0.3, height: 1.0))",
+                "(target: Unit(\"zeta:ghost\"), shape: Capsule(radius: 0.3, height: 1.0))",
             ),
         ],
-        "zeta/visuals/ghost.ron: unit: the visual is for unit `zeta:ghost`, which no unit file \
-         of the package defines (allowed: zeta:crawler, zeta:runner)",
+        "zeta/visuals/ghost.ron: target: visual target `zeta:ghost` is not defined as a unit by the archives (allowed: zeta:crawler, zeta:runner)",
     );
 }
 
@@ -148,7 +159,6 @@ fn a_typo_in_the_unit_of_a_visual_is_refused() {
     assert_refused(
         "bad_orphan_typo",
         &[("visuals/runner.ron", "zeta:runner", "zeta:runer")],
-        "zeta/visuals/runner.ron: unit: the visual is for unit `zeta:runer`, which no unit file \
-         of the package defines (allowed: zeta:crawler, zeta:runner)",
+        "zeta/visuals/runner.ron: target: visual target `zeta:runer` is not defined as a unit by the archives (allowed: zeta:crawler, zeta:runner)",
     );
 }

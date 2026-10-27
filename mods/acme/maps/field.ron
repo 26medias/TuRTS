@@ -1,5 +1,5 @@
 (
     id: "field",
     size: (x: 48.0, y: 48.0),
-    placements: [(unit: "acme:scout", owner_slot: 0, pos: (x: 4.0, y: 4.0))],
+    placements: [(unit: "acme:scout", owner_slot: 0, pos: (x: 4.0, y: 4.0), contents: [])], nodes: [], slot_economy: [],
 )

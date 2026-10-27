@@ -17,7 +17,11 @@ fn app_with_units(positions: &[(f32, f32)]) -> bevy_app::App {
     let def = UnitDef {
         id: "walker".to_string(),
         name: "Walker".to_string(),
-        speed: 3.0,
+        movement: Some(turts_mod_api::MovementDef { speed: 3.0 }),
+        inventory: None,
+        gatherer: None,
+        drop_off: None,
+        producer: None,
         footprint: Footprint::Circle { radius: 0.5 },
     };
     app.world_mut()
@@ -33,8 +37,11 @@ fn app_with_units(positions: &[(f32, f32)]) -> bevy_app::App {
                 unit: format!("{ORIGIN}:walker"),
                 owner_slot: 0,
                 pos: WorldPos { x, y },
+                contents: Vec::new(),
             })
             .collect(),
+        nodes: Vec::new(),
+        slot_economy: Vec::new(),
     };
     load_map(app.world_mut(), &origin, &map).unwrap();
     app
@@ -140,7 +147,10 @@ fn second_load_map_continues_unit_ids() {
             unit: format!("{ORIGIN}:walker"),
             owner_slot: 1,
             pos: WorldPos { x: 30.0, y: 30.0 },
+            contents: Vec::new(),
         }],
+        nodes: Vec::new(),
+        slot_economy: Vec::new(),
     };
     load_map(app.world_mut(), &origin, &map).unwrap();
     let ids: Vec<u32> = snapshot(app.world_mut())

@@ -1,0 +1,18 @@
+(
+    id: "clearing", size: (x: 64.0, y: 64.0),
+    placements: [
+        (unit: "cedar:depot", owner_slot: 0, pos: (x: 8.0, y: 8.0),
+            contents: [(item: "cedar:wood", amount: 100)]),
+        (unit: "cedar:worker", owner_slot: 0, pos: (x: 12.0, y: 8.0), contents: []),
+        (unit: "cedar:worker", owner_slot: 0, pos: (x: 12.0, y: 12.0), contents: []),
+        (unit: "cedar:depot", owner_slot: 1, pos: (x: 56.0, y: 8.0),
+            contents: [(item: "cedar:wood", amount: 100)]),
+        (unit: "cedar:worker", owner_slot: 1, pos: (x: 52.0, y: 8.0), contents: []),
+        (unit: "cedar:worker", owner_slot: 1, pos: (x: 52.0, y: 12.0), contents: []),
+    ],
+    nodes: [
+        (node: "cedar:grove", pos: (x: 24.0, y: 8.0), remaining: 1000),
+        (node: "cedar:grove", pos: (x: 40.0, y: 8.0), remaining: 1000),
+    ],
+    slot_economy: [],
+)

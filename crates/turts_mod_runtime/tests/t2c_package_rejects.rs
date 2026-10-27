@@ -49,19 +49,19 @@ fn t2c_control_unmodified_package_is_accepted() {
 fn t2c_engine_api_mismatch() {
     let bytes = acme_archive_with(
         "manifest.ron",
-        "engine_api: \"^0.1\"",
         "engine_api: \"^0.2\"",
+        "engine_api: \"^0.1\"",
     );
     let error = refused(&bytes, "engine_api");
-    assert!(error.message.contains("`^0.2`"), "{error}");
-    assert!(error.message.contains("`0.1.0`"), "{error}");
+    assert!(error.message.contains("`^0.1`"), "{error}");
+    assert!(error.message.contains("0.2.0"), "{error}");
 }
 
 #[test]
 fn t2c_engine_api_that_is_not_a_requirement() {
     let bytes = acme_archive_with(
         "manifest.ron",
-        "engine_api: \"^0.1\"",
+        "engine_api: \"^0.2\"",
         "engine_api: \"soon\"",
     );
     refused(&bytes, "engine_api");
@@ -92,7 +92,7 @@ fn t2c_unknown_manifest_field() {
 
 #[test]
 fn t2c_bad_version_and_bad_id() {
-    let bytes = acme_archive_with("manifest.ron", "version: \"0.1.0\"", "version: \"one\"");
+    let bytes = acme_archive_with("manifest.ron", "version: \"0.2.0\"", "version: \"one\"");
     refused(&bytes, "version");
     let bytes = acme_archive_with("manifest.ron", "id: \"acme\"", "id: \"Acme\"");
     refused(&bytes, "id");
@@ -147,7 +147,7 @@ fn t2c_manifest_disagrees_with_lock() {
         "lock.context"
     );
     let mut engine_api = entry;
-    engine_api.engine_api = "^0.2".to_string();
+    engine_api.engine_api = "^0.1".to_string();
     assert_eq!(
         archive
             .check_against_lock(&engine_api)
@@ -243,7 +243,7 @@ fn t2c_malformed_ron_names_no_type() {
         "[1]",
         "(",
         "Circle(radius: 0.4)",
-        "(id: \"scout\", name: \"Scout\", speed: 6.0, footprint: 3)",
+        "(id: \"scout\", name: \"Scout\", footprint: 3, movement: None, inventory: None, gatherer: None, drop_off: None, producer: None)",
     ];
     for text in cases {
         let error = turts_mod_runtime::parse::parse_ron::<turts_mod_api::UnitDef>(
@@ -262,15 +262,15 @@ fn t2c_malformed_ron_names_no_type() {
 fn t2c_unknown_names_print_the_allowed_names_and_the_file_once() {
     let archive = PackageArchive::parse(&acme_archive_with(
         "units/scout.ron",
-        "speed: 6.0",
-        "sped: 6.0",
+        "movement: Some((speed: 6.0))",
+        "movenment: Some((speed: 6.0))",
     ))
     .unwrap();
     let text = archive.units().unwrap_err().to_string();
     assert_eq!(
         text,
-        "acme/units/scout.ron: unknown field `sped` at line 1 column 30 \
-         (allowed: id, name, speed, footprint)"
+        "acme/units/scout.ron: unknown field `movenment` at line 1 column 62 \
+         (allowed: id, name, footprint, movement, inventory, gatherer, drop_off, producer)"
     );
     assert_eq!(text.matches("units/scout.ron").count(), 1, "{text}");
 

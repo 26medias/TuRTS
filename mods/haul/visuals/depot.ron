@@ -1,0 +1,1 @@
+(target: Unit("haul:depot"), shape: Cuboid(x: 3.0, y: 3.0, z: 2.0))

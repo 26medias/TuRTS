@@ -1,0 +1,6 @@
+(
+    id: "build_harvester", name: "Build Harvester", output_unit: "base:harvester",
+    duration_ms: 15000, costs: [(resource: "base:credits", amount: 600, source: SlotBalance)],
+    payment: ChargeOnQueue,
+    cancel_refunds: (queued: (numerator: 1, denominator: 1), running: (numerator: 1, denominator: 2), output_blocked: (numerator: 1, denominator: 1)),
+)

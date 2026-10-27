@@ -66,7 +66,7 @@ fn lock_entry(id: &str, context: ExecutionContext) -> LockEntry {
         size: 1,
         urls: vec![format!("http://h/{id}.tar")],
         context,
-        engine_api: "^0.1".to_string(),
+        engine_api: "^0.2".to_string(),
     }
 }
 
@@ -131,6 +131,13 @@ fn build_acquired_requires_exactly_one_visual_per_unit() {
     assert_eq!(acquired.visuals.len(), 1);
     assert_eq!(acquired.map_size, (48.0, 48.0));
     assert_eq!(acquired.unit_names["acme:scout"], "Scout");
+    assert!(
+        acquired
+            .content
+            .catalog
+            .units
+            .contains_key(&turts_mod_api::ContentId::parse("acme:scout").unwrap())
+    );
     assert_eq!(acquired.lockfile_hash, lockfile_hash);
 
     // The visual file is not exported: the unit has no visual.
@@ -151,7 +158,7 @@ fn build_acquired_requires_exactly_one_visual_per_unit() {
     two_visuals.insert("visuals/scout_again.ron".to_string(), first);
     let error = build_acquired(&[parse(&two_visuals)], lockfile_hash).unwrap_err();
     assert!(
-        error.starts_with("acme/visuals/scout_again.ron: unit: "),
+        error.starts_with("acme/visuals/scout_again.ron: target: "),
         "{error}"
     );
     assert!(error.contains("`acme:scout`"), "{error}");
@@ -167,11 +174,11 @@ fn build_acquired_refuses_a_visual_of_an_unknown_unit() {
     );
     orphan.insert(
         "visuals/ghost.ron".to_string(),
-        b"(unit: \"acme:ghost\", shape: Capsule(radius: 0.3, height: 1.0))".to_vec(),
+        b"(target: Unit(\"acme:ghost\"), shape: Capsule(radius: 0.3, height: 1.0))".to_vec(),
     );
     let error = build_acquired(&[parse(&orphan)], lockfile_hash.clone()).unwrap_err();
     assert!(
-        error.starts_with("acme/visuals/ghost.ron: unit: "),
+        error.starts_with("acme/visuals/ghost.ron: target: "),
         "{error}"
     );
     assert!(error.contains("`acme:ghost`"), "{error}");
@@ -188,7 +195,7 @@ fn build_acquired_refuses_a_visual_of_an_unknown_unit() {
     );
     let error = build_acquired(&[parse(&typo)], lockfile_hash).unwrap_err();
     assert!(
-        error.starts_with("acme/visuals/scout.ron: unit: "),
+        error.starts_with("acme/visuals/scout.ron: target: "),
         "{error}"
     );
     assert!(error.contains("`acme:scoot`"), "{error}");
@@ -216,7 +223,7 @@ fn check_advertisement_refuses_other_protocol() {
     assert!(error.contains("protocol"), "{error}");
 
     let other_engine = Advertisement {
-        engine_version: "0.2.0".to_string(),
+        engine_version: "0.1.0".to_string(),
         ..good.clone()
     };
     let error = check_advertisement(&json(&other_engine)).unwrap_err();

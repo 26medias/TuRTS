@@ -1,0 +1,7 @@
+(
+    id: "harvester", name: "Harvester", footprint: Circle(radius: 0.8),
+    movement: Some((speed: 2.0)),
+    inventory: Some((capacity: 100, accepts: ["base:ore"])),
+    gatherer: Some((items: ["base:ore"], gather_per_second: 20, unload_per_second: 50, interaction_range: 0.5)),
+    drop_off: None, producer: None,
+)

@@ -33,6 +33,7 @@ pub struct ServerProc {
     pub dir: PathBuf,
     pub tick_log: PathBuf,
     pub stats: PathBuf,
+    pub economy_log: Option<PathBuf>,
 }
 
 impl Drop for ServerProc {
@@ -117,6 +118,32 @@ fn collect_files(root: &Path, dir: &Path, files: &mut BTreeMap<String, Vec<u8>>)
 /// writes `server.ron` into a new directory, passes `--tick-log` and `--stats`, then adds
 /// `extra`. It returns when `GET /advertisement.json` answers; it panics after 10 seconds, or
 /// at once when the process exits early. The process stops when the value drops.
+pub fn expect_server_boot_failure(package_tar: &Path) -> String {
+    let dir = test_dir("expected-server-boot-failure");
+    let [http_port, ws_port] = free_ports::<2>();
+    let http_listen = SocketAddr::from(([127, 0, 0, 1], http_port));
+    let ws_listen = SocketAddr::from(([127, 0, 0, 1], ws_port));
+    let public_url = format!("http://{http_listen}");
+    let config = dir.join("server.ron");
+    fs::write(
+        &config,
+        format!(
+            "(\n    game_package: {:?},\n    http_listen: \"{http_listen}\",\n    ws_listen: \"{ws_listen}\",\n    public_url: \"{public_url}\",\n    tick_hz: 20,\n)\n",
+            package_tar.display().to_string()
+        ),
+    )
+    .expect("server.ron is written");
+    let output = Command::new(env!("CARGO_BIN_EXE_turts_server"))
+        .arg(&config)
+        .output()
+        .expect("turts_server process starts");
+    assert!(
+        !output.status.success(),
+        "invalid package boot unexpectedly succeeded"
+    );
+    String::from_utf8_lossy(&output.stderr).into_owned()
+}
+
 pub fn spawn_server(package_tar: &Path, extra: &[&str]) -> ServerProc {
     static COUNTER: AtomicU32 = AtomicU32::new(0);
     let id = COUNTER.fetch_add(1, Ordering::SeqCst);
@@ -149,6 +176,10 @@ pub fn spawn_server(package_tar: &Path, extra: &[&str]) -> ServerProc {
         .stderr(Stdio::from(log))
         .spawn()
         .expect("turts_server starts");
+    let economy_log = extra
+        .windows(2)
+        .find(|pair| pair[0] == "--economy-log")
+        .map(|pair| PathBuf::from(pair[1]));
     let mut server = ServerProc {
         child,
         http_url,
@@ -156,6 +187,7 @@ pub fn spawn_server(package_tar: &Path, extra: &[&str]) -> ServerProc {
         dir,
         tick_log,
         stats,
+        economy_log,
     };
     server.wait_until_ready();
     server

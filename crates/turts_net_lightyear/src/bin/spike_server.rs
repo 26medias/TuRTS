@@ -4,8 +4,8 @@
 //!
 //! - `Hello` with `lockfile_hash == "sha256:spike"` gets `Welcome`. Any other hash gets
 //!   `JoinRejected { reason: "lockfile hash mismatch" }` and an `Unlink` 300 ms later.
-//! - Each `MoveTo` gets one `CommandAck` at once.
-//! - Each fixed tick sends `UnitDeltas` with `--units` synthetic units to every welcomed client.
+//! - Each `PlayerCommand` gets one `CommandAck` at once.
+//! - Each fixed tick sends `WorldDelta` with `--units` synthetic units to every welcomed client.
 //! - Each second, `--stats` gets one JSON line (see `write_stats`).
 //!
 //! Prints `spike_server listening <addr>` when the WebSocket port is bound.
@@ -22,6 +22,7 @@ use lightyear::netcode::NetcodeServer;
 use lightyear::prelude::server::*;
 use lightyear::prelude::*;
 use turts_net_lightyear::{ProtocolPlugin, ReliableChannel, StateChannel, tick_duration};
+use turts_net_protocol::EconomyChanges;
 use turts_net_protocol::NET_PROTOCOL_VERSION;
 use turts_net_protocol::messages::*;
 
@@ -34,11 +35,15 @@ struct Cfg {
     ws: SocketAddr,
     units: u32,
     stats: Option<PathBuf>,
+    reverse_command_results: bool,
 }
 
-/// The simulation tick. The first tick is 1; `UnitDeltas.base_tick` is the tick before.
+/// The simulation tick. The first tick is 1; `WorldDelta.base_tick` is the tick before.
 #[derive(Resource, Default)]
 struct SimTick(u32);
+
+#[derive(Resource, Default)]
+struct DelayedCommandAcks(Vec<(Entity, u32)>);
 
 #[derive(Component)]
 struct Welcomed;
@@ -70,6 +75,7 @@ fn main() {
     app.add_plugins(ProtocolPlugin);
     app.insert_resource(cfg);
     app.init_resource::<SimTick>();
+    app.init_resource::<DelayedCommandAcks>();
     app.insert_resource(Stats {
         frame_start: Instant::now(),
         ticked: false,
@@ -83,7 +89,9 @@ fn main() {
     app.add_systems(First, frame_start);
     app.add_systems(
         PreUpdate,
-        (receive_hello, receive_moves).after(MessageSystems::Receive),
+        (send_delayed_command_acks, receive_hello, receive_moves)
+            .chain()
+            .after(MessageSystems::Receive),
     );
     app.add_systems(Update, kick);
     app.add_systems(FixedPostUpdate, send_deltas);
@@ -107,6 +115,7 @@ fn parse_args() -> Cfg {
             .expect("--ws: socket address"),
         units: value("--units").map_or(1, |v| v.parse().expect("--units: integer")),
         stats: value("--stats").map(PathBuf::from),
+        reverse_command_results: args.iter().any(|arg| arg == "--reverse-command-results"),
     }
 }
 
@@ -175,18 +184,45 @@ fn receive_hello(
 }
 
 fn receive_moves(
-    mut moves: Query<(Entity, &mut MessageReceiver<MoveTo>), With<ClientOf>>,
+    mut moves: Query<(Entity, &mut MessageReceiver<PlayerCommand>), With<ClientOf>>,
     mut acks: Query<&mut MessageSender<CommandAck>>,
+    mut rejections: Query<&mut MessageSender<CommandRejected>>,
+    mut delayed_acks: ResMut<DelayedCommandAcks>,
+    cfg: Res<Cfg>,
     tick: Res<SimTick>,
 ) {
     for (entity, mut receiver) in moves.iter_mut() {
-        for command in receiver.receive() {
+        for envelope in receiver.receive() {
+            let command = envelope;
+            if cfg.reverse_command_results {
+                if let Ok(mut sender) = rejections.get_mut(entity) {
+                    sender.send::<ReliableChannel>(CommandRejected {
+                        seq: command.seq,
+                        tick: tick.0,
+                        reason: turts_net_protocol::CommandRejectReason::BadSequence,
+                    });
+                }
+                delayed_acks.0.push((entity, command.seq));
+                continue;
+            }
             if let Ok(mut sender) = acks.get_mut(entity) {
                 sender.send::<ReliableChannel>(CommandAck {
                     seq: command.seq,
                     tick: tick.0,
                 });
             }
+        }
+    }
+}
+
+fn send_delayed_command_acks(
+    mut delayed: ResMut<DelayedCommandAcks>,
+    mut acks: Query<&mut MessageSender<CommandAck>>,
+    tick: Res<SimTick>,
+) {
+    for (entity, seq) in std::mem::take(&mut delayed.0) {
+        if let Ok(mut sender) = acks.get_mut(entity) {
+            sender.send::<ReliableChannel>(CommandAck { seq, tick: tick.0 });
         }
     }
 }
@@ -206,7 +242,7 @@ fn kick(mut commands: Commands, pending: Query<(Entity, &PendingKick)>) {
 
 fn send_deltas(
     mut tick: ResMut<SimTick>,
-    mut senders: Query<&mut MessageSender<UnitDeltas>, With<Welcomed>>,
+    mut senders: Query<&mut MessageSender<WorldDelta>, With<Welcomed>>,
     mut stats: ResMut<Stats>,
     cfg: Res<Cfg>,
 ) {
@@ -221,10 +257,19 @@ fn send_deltas(
             },
         })
         .collect();
-    let deltas = UnitDeltas {
+    let deltas = WorldDelta {
         tick: tick.0,
         base_tick: tick.0 - 1,
-        changes,
+        spawned: vec![],
+        removed: vec![],
+        positions: changes,
+        nodes: vec![],
+        economy: EconomyChanges {
+            balances: vec![],
+            inventories: vec![],
+            orders: vec![],
+            queues: vec![],
+        },
     };
     let payload = postcard_len(&deltas) as u64;
     for mut sender in senders.iter_mut() {
@@ -233,26 +278,75 @@ fn send_deltas(
     }
 }
 
-/// The postcard size of `UnitDeltas`: varint `tick`, varint `base_tick`, varint length, then
-/// per change a varint `unit_id` and two `f32` of 4 bytes.
-fn postcard_len(deltas: &UnitDeltas) -> usize {
-    varint_len(deltas.tick as u64)
-        + varint_len(deltas.base_tick as u64)
-        + varint_len(deltas.changes.len() as u64)
-        + deltas
-            .changes
-            .iter()
-            .map(|c| varint_len(c.unit_id.0 as u64) + 8)
-            .sum::<usize>()
+fn postcard_len(deltas: &WorldDelta) -> usize {
+    postcard::experimental::serialized_size(deltas)
+        .expect("a protocol 2 WorldDelta serializes to postcard")
 }
 
-fn varint_len(mut value: u64) -> usize {
-    let mut len = 1;
-    while value >= 0x80 {
-        value >>= 7;
-        len += 1;
+#[cfg(test)]
+mod payload_tests {
+    use super::*;
+    use turts_net_protocol::{
+        BalanceState, EconomyChanges, InventoryState, JobId, NodeId, NodeState, OrderState,
+        QueueState,
+    };
+
+    #[test]
+    fn protocol_two_delta_size_matches_encoded_nonempty_fixture() {
+        let delta = WorldDelta {
+            tick: 300,
+            base_tick: 299,
+            spawned: vec![UnitSnapshot {
+                unit_id: UnitId(9),
+                content_id: "base:worker".into(),
+                owner_slot: turts_net_protocol::SlotId(1),
+                pos: Pos { x: 1.0, y: -2.0 },
+            }],
+            removed: vec![UnitId(4)],
+            positions: vec![UnitDelta {
+                unit_id: UnitId(8),
+                pos: Pos { x: 3.0, y: 4.0 },
+            }],
+            nodes: vec![NodeState {
+                id: NodeId(2),
+                content_id: "base:ore".into(),
+                pos: Pos { x: 1.0, y: -2.0 },
+                remaining: 900,
+            }],
+            economy: EconomyChanges {
+                balances: vec![BalanceState {
+                    resource: "base:ore".into(),
+                    on_hand: 11,
+                    reserved: 2,
+                }],
+                inventories: vec![InventoryState {
+                    unit: UnitId(8),
+                    items: vec![],
+                }],
+                orders: vec![OrderState {
+                    unit: UnitId(8),
+                    node: Some(NodeId(2)),
+                    receiver: None,
+                    stage: turts_net_protocol::GatherStage::Gathering,
+                }],
+                queues: vec![QueueState {
+                    producer: UnitId(8),
+                    jobs: vec![turts_net_protocol::JobState {
+                        id: JobId(7),
+                        recipe: "base:hire".into(),
+                        stage: turts_net_protocol::JobStage::Running,
+                        elapsed_ticks: 1,
+                        duration_ticks: 8,
+                        charged: vec![],
+                        reserved: vec![],
+                    }],
+                }],
+            },
+        };
+        let mut buffer = [0; 4096];
+        let encoded = postcard::to_slice(&delta, &mut buffer).unwrap();
+        assert_eq!(postcard_len(&delta), encoded.len());
     }
-    len
 }
 
 fn frame_start(mut stats: ResMut<Stats>) {

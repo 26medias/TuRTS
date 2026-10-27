@@ -57,7 +57,15 @@ fn pack_then_parse_round_trips() {
     let bytes = pack_dir(&package_dir("acme")).unwrap();
     let archive = PackageArchive::parse(&bytes).unwrap();
     assert_eq!(archive.manifest.id, "acme");
-    assert_eq!(archive.units().unwrap()[0].1.speed, 6.0);
+    assert_eq!(
+        archive.units().unwrap()[0]
+            .1
+            .movement
+            .as_ref()
+            .unwrap()
+            .speed,
+        6.0
+    );
     assert_eq!(archive.hash, sha256_hex(&bytes));
     assert_eq!(archive.size, bytes.len() as u64);
 }

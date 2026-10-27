@@ -14,3 +14,12 @@ bevy_ecs = { workspace = true }
 [[bin]]
 name = "turts-pack"
 path = "src/main.rs"
+
+[dev-dependencies]
+serde_json = { workspace = true }
+bevy_app = { workspace = true }
+bevy_math = { workspace = true }
+
+[[test]]
+name = "economy_accounting"
+path = "tests/economy_accounting.rs"

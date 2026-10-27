@@ -41,7 +41,7 @@ pub struct Stats {
     pub hellos: u64,
     /// `ResyncRequest` messages from sessions.
     pub resync_requests: u64,
-    /// The postcard size of every `UnitDeltas` sent, summed over the sessions.
+    /// The postcard size of every `WorldDelta` sent, summed over the sessions.
     pub delta_payload_bytes_total: u64,
 }
 
@@ -215,6 +215,7 @@ mod tests {
             config: PathBuf::from("server.ron"),
             tick_log: None,
             stats: stats.map(Path::to_path_buf),
+            economy_log: None,
             synthetic_units: 0,
             run_ticks: None,
         }

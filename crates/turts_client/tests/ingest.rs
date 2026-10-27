@@ -3,11 +3,12 @@
 //! The ingest tests run in process with a `Replica` and `IngestHooks`: no network. Each test
 //! asserts on the `Vec<Outgoing>` that the ingest function returns, not on the counters.
 
-use std::collections::HashMap;
+use std::{collections::HashMap, path::PathBuf, sync::OnceLock};
 
 use bevy::platform::time::Instant;
 use bevy::prelude::*;
 use turts_client::acquire::Acquired;
+use turts_client::content::ClientContent;
 use turts_client::debug::debug_json;
 use turts_client::framelog::{frame_line, summary_line};
 use turts_client::ingest::{
@@ -17,11 +18,24 @@ use turts_client::join::{AcquiredPackages, JoinState, Phase, advance_phase, ws_s
 use turts_client::options::parse_cli;
 use turts_client::present::{Presented, PresentedUnit};
 use turts_mod_api::Shape;
+use turts_mod_runtime::{archive::PackageArchive, pack::pack_dir};
 use turts_net_protocol::{
-    Pos, SlotId, Snapshot, UnitDelta, UnitDeltas, UnitId, UnitSnapshot, Welcome,
+    Pos, SlotId, Snapshot, UnitDelta, UnitId, UnitSnapshot, Welcome, WorldDelta,
 };
 
 /// The parts that the ingest system owns, with one clock.
+fn base_content() -> ClientContent {
+    static CONTENT: OnceLock<ClientContent> = OnceLock::new();
+    CONTENT
+        .get_or_init(|| {
+            let base = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../mods/base");
+            let archive =
+                PackageArchive::parse(&pack_dir(&base).expect("pack base")).expect("parse base");
+            ClientContent::from_archives(&[archive]).expect("resolve base")
+        })
+        .clone()
+}
+
 struct Rig {
     hooks: IngestHooks,
     counters: IngestCounters,
@@ -31,10 +45,14 @@ struct Rig {
 
 impl Rig {
     fn new() -> Self {
+        let state = ReplicaState {
+            content: Some(base_content()),
+            ..ReplicaState::default()
+        };
         Self {
             hooks: IngestHooks::default(),
             counters: IngestCounters::default(),
-            state: ReplicaState::default(),
+            state,
             now: Instant::now(),
         }
     }
@@ -72,9 +90,16 @@ fn welcome(tick: u32) -> Incoming {
 fn snapshot_at(tick: u32, x: f32, y: f32) -> Incoming {
     Incoming::Snapshot(Snapshot {
         tick,
+        nodes: vec![],
+        economy: turts_net_protocol::EconomyState {
+            balances: vec![],
+            inventories: vec![],
+            orders: vec![],
+            queues: vec![],
+        },
         units: vec![UnitSnapshot {
             unit_id: UnitId(1),
-            content_id: "unit".to_string(),
+            content_id: "base:command_center".to_string(),
             owner_slot: SlotId(0),
             pos: Pos { x, y },
         }],
@@ -87,10 +112,19 @@ fn snapshot(tick: u32) -> Incoming {
 }
 
 fn delta_at(tick: u32, base_tick: u32, x: f32, y: f32) -> Incoming {
-    Incoming::Deltas(UnitDeltas {
+    Incoming::Deltas(WorldDelta {
         tick,
         base_tick,
-        changes: vec![UnitDelta {
+        spawned: vec![],
+        removed: vec![],
+        nodes: vec![],
+        economy: turts_net_protocol::EconomyChanges {
+            balances: vec![],
+            inventories: vec![],
+            orders: vec![],
+            queues: vec![],
+        },
+        positions: vec![UnitDelta {
             unit_id: UnitId(1),
             pos: Pos { x, y },
         }],
@@ -103,10 +137,19 @@ fn delta(tick: u32, base_tick: u32) -> Incoming {
 
 /// A delta with no change: the unit is unchanged at `tick`.
 fn empty_delta(tick: u32, base_tick: u32) -> Incoming {
-    Incoming::Deltas(UnitDeltas {
+    Incoming::Deltas(WorldDelta {
         tick,
         base_tick,
-        changes: Vec::new(),
+        spawned: vec![],
+        removed: vec![],
+        nodes: vec![],
+        economy: turts_net_protocol::EconomyChanges {
+            balances: vec![],
+            inventories: vec![],
+            orders: vec![],
+            queues: vec![],
+        },
+        positions: Vec::new(),
     })
 }
 
@@ -261,6 +304,33 @@ fn welcome_and_snapshot_in_one_frame_apply_both() {
 }
 
 #[test]
+fn valid_snapshot_covers_invalid_initial_snapshot_without_successor() {
+    let mut rig = Rig::new();
+    assert!(rig.feed(welcome(100)).is_empty());
+    let mut invalid = match snapshot(100) {
+        Incoming::Snapshot(snapshot) => snapshot,
+        _ => unreachable!(),
+    };
+    invalid.units[0].content_id = "unknown:unit".to_string();
+    assert_eq!(
+        rig.feed(Incoming::Snapshot(invalid)),
+        vec![Outgoing::ResyncRequest]
+    );
+    assert_eq!(rig.counters.resync_requests_sent, 1);
+    assert!(rig.hooks.outstanding_request);
+
+    assert!(rig.feed(snapshot(101)).is_empty());
+    assert!(!rig.hooks.outstanding_request);
+    assert_eq!(rig.counters.resync_requests_sent, 1);
+    assert_eq!(rig.counters.successor_requests, 0);
+    assert_eq!(
+        rig.state.replica.as_ref().unwrap().last_applied_tick,
+        Some(101)
+    );
+    assert!(!rig.state.replica.as_ref().unwrap().in_resync());
+}
+
+#[test]
 fn idle_resync_sends_one_request_after_10_ticks() {
     let mut rig = Rig::new();
     assert!(rig.feed(welcome(100)).is_empty());
@@ -276,6 +346,78 @@ fn idle_resync_sends_one_request_after_10_ticks() {
         let out = rig.feed(delta(tick, tick - 1));
         assert!(out.is_empty(), "delta {tick} returned {out:?}");
     }
+}
+
+#[test]
+fn overflow_discards_trigger_coalesces_request_and_converges_on_successor() {
+    let mut rig = Rig::new();
+    rig.state.config.max_buffered_batches = 3;
+    rig.hooks.hold_resync_snapshots = 4;
+    assert!(rig.feed(welcome(100)).is_empty());
+    assert!(rig.feed(snapshot(100)).is_empty());
+
+    assert_eq!(rig.feed(delta(102, 101)), vec![Outgoing::ResyncRequest]);
+    assert!(rig.feed(snapshot(102)).is_empty());
+    assert_eq!(rig.hooks.held.len(), 1);
+    assert!(rig.feed(delta(103, 102)).is_empty());
+    assert!(rig.feed(delta(104, 103)).is_empty());
+    assert!(rig.feed(delta(105, 104)).is_empty());
+    assert_eq!(rig.counters.buffer_overflows, 1);
+    assert_eq!(rig.state.replica.as_ref().unwrap().buffered_batches(), 0);
+    assert!(rig.hooks.outstanding_request);
+
+    // A later heartbeat starts a fresh tail. Consuming the delayed, incomplete response allows
+    // exactly one successor request; the request marker remains set while that response waits.
+    assert_eq!(rig.feed(delta(106, 105)), vec![Outgoing::ResyncRequest]);
+    assert_eq!(
+        rig.state.replica.as_ref().unwrap().last_applied_tick,
+        Some(100)
+    );
+    assert_eq!(rig.counters.snapshots_applied, 1);
+    assert_eq!(rig.counters.successor_requests, 1);
+    assert!(rig.hooks.outstanding_request);
+    assert_eq!(rig.counters.resync_requests_sent, 2);
+    rig.hooks.hold_resync_snapshots = 2;
+    assert!(rig.feed(snapshot(106)).is_empty());
+    assert!(rig.hooks.outstanding_request);
+    assert!(rig.feed(delta(107, 106)).is_empty());
+    assert!(rig.feed(delta(108, 107)).is_empty());
+
+    let replica = rig.state.replica.as_ref().unwrap();
+    assert_eq!(replica.last_applied_tick, Some(108));
+    assert!(!replica.in_resync());
+    assert!(rig.hooks.held.is_empty());
+    assert!(!rig.hooks.outstanding_request);
+    assert_eq!(rig.counters.max_buffered_batches, 3);
+    assert_eq!(rig.counters.max_outstanding_requests, 1);
+    assert_eq!(rig.counters.buffer_overflows, 1);
+    assert_eq!(rig.counters.successor_requests, 1);
+    assert_eq!(rig.counters.snapshots_applied, 2);
+    assert_eq!(rig.counters.resync_requests_sent, 2);
+}
+
+#[test]
+fn held_stale_response_does_not_rollback_and_requests_one_successor() {
+    let mut rig = Rig::new();
+    assert!(rig.feed(welcome(100)).is_empty());
+    assert!(rig.feed(snapshot(100)).is_empty());
+    assert!(rig.feed(delta(101, 100)).is_empty());
+    assert_eq!(rig.feed(delta(103, 102)), vec![Outgoing::ResyncRequest]);
+
+    rig.hooks.hold_resync_snapshots = 5;
+    assert!(rig.feed(snapshot(100)).is_empty());
+    assert_eq!(rig.hooks.held.len(), 1);
+    assert!(rig.feed(delta(104, 103)).is_empty());
+    assert_eq!(rig.feed(delta(105, 104)), vec![Outgoing::ResyncRequest]);
+
+    let replica = rig.state.replica.as_ref().unwrap();
+    assert_eq!(replica.last_applied_tick, Some(101));
+    assert_eq!(replica.sample(1, 101.0).unwrap().pos.x, 101.0);
+    assert!(rig.hooks.outstanding_request);
+    assert_eq!(rig.counters.snapshots_applied, 1);
+    assert_eq!(rig.counters.successor_requests, 1);
+    assert_eq!(rig.counters.max_outstanding_requests, 1);
+    assert_eq!(rig.counters.resync_requests_sent, 2);
 }
 
 #[test]
@@ -335,6 +477,13 @@ fn world_with_one_unit() -> World {
     rig.feed(welcome(100));
     rig.feed(Incoming::Snapshot(Snapshot {
         tick: 100,
+        nodes: vec![],
+        economy: turts_net_protocol::EconomyState {
+            balances: vec![],
+            inventories: vec![],
+            orders: vec![],
+            queues: vec![],
+        },
         units: vec![UnitSnapshot {
             unit_id: UnitId(1),
             content_id: "acme:scout".to_string(),
@@ -356,6 +505,7 @@ fn world_with_one_unit() -> World {
         )]),
         map_size: (32.0, 32.0),
         unit_names: HashMap::new(),
+        content: ClientContent::default(),
     }));
     world.insert_resource(Presented {
         frame_ns: 5,
@@ -412,7 +562,7 @@ fn debug_json_without_units_has_null_last_frame() {
 fn frame_log_lines_match_the_format() {
     let unit = PresentedUnit {
         unit_id: 1,
-        content_id: "unit".to_string(),
+        content_id: "base:command_center".to_string(),
         pos: Pos { x: 12.5, y: 8.0 },
         lo_tick: 140,
         hi_tick: 141,

@@ -1,0 +1,1 @@
+(target: Unit("haul:worker"), shape: Capsule(radius: 0.3, height: 1.6))

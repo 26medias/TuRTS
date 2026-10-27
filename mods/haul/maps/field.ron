@@ -1,0 +1,16 @@
+(
+    id: "field", size: (x: 48.0, y: 48.0),
+    placements: [
+        (unit: "haul:depot", owner_slot: 0, pos: (x: 8.0, y: 8.0), contents: [(item: "haul:ore", amount: 100)]),
+        (unit: "haul:worker", owner_slot: 0, pos: (x: 12.0, y: 8.0), contents: []),
+        (unit: "haul:worker", owner_slot: 0, pos: (x: 12.0, y: 10.0), contents: []),
+        (unit: "haul:depot", owner_slot: 1, pos: (x: 40.0, y: 8.0), contents: [(item: "haul:ore", amount: 100)]),
+        (unit: "haul:worker", owner_slot: 1, pos: (x: 36.0, y: 8.0), contents: []),
+        (unit: "haul:worker", owner_slot: 1, pos: (x: 36.0, y: 10.0), contents: []),
+    ],
+    nodes: [
+        (node: "haul:ore_deposit", pos: (x: 20.0, y: 8.0), remaining: 1000),
+        (node: "haul:ore_deposit", pos: (x: 28.0, y: 8.0), remaining: 1000),
+    ],
+    slot_economy: [],
+)

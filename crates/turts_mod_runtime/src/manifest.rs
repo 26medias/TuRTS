@@ -41,7 +41,7 @@ pub fn validate_manifest(m: &Manifest) -> Result<(), ModError> {
         ));
     }
 
-    if !m.dependencies.is_empty() {
+    if !m.dependencies.0.is_empty() {
         return Err(fail(
             "dependencies",
             "dependencies are not supported at M1".to_string(),
@@ -62,6 +62,9 @@ pub fn validate_manifest(m: &Manifest) -> Result<(), ModError> {
         ("exports.units", &m.exports.units),
         ("exports.maps", &m.exports.maps),
         ("exports.visuals", &m.exports.visuals),
+        ("exports.resources", &m.exports.resources),
+        ("exports.nodes", &m.exports.nodes),
+        ("exports.production", &m.exports.production),
     ];
     for (field, paths) in exports {
         for path in paths {

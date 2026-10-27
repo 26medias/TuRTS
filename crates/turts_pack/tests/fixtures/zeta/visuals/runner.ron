@@ -1,1 +1,1 @@
-(unit: "zeta:runner", shape: Capsule(radius: 0.25, height: 1.6))
+(target: Unit("zeta:runner"), shape: Capsule(radius: 0.25, height: 1.6))

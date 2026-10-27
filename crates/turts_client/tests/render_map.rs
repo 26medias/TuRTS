@@ -5,11 +5,13 @@ use std::collections::HashMap;
 use bevy::asset::AssetPlugin;
 use bevy::prelude::*;
 use turts_client::acquire::Acquired;
+use turts_client::content::ClientContent;
 use turts_client::input::ground_point;
 use turts_client::join::{AcquiredPackages, Phase};
 use turts_client::present::{Presented, PresentedUnit as PresentedRecord};
 use turts_client::render::{
-    PresentedUnit, mesh_for, mesh_lift, setup_scene, sync_units, world_to_scene,
+    PresentedUnit, declared_node_pick_radius, declared_unit_pick_radius, mesh_for, mesh_lift,
+    projected_ground_center, setup_scene, sync_units, world_to_scene,
 };
 use turts_mod_api::Shape;
 use turts_net_protocol::Pos;
@@ -34,6 +36,66 @@ fn world_to_scene_maps_y_forward_to_scene_z() {
         world_to_scene(Pos { x: 8.0, y: 3.0 }),
         Vec3::new(8.0, 0.0, 3.0)
     );
+}
+
+#[test]
+fn projected_ground_center_uses_camera_viewport_and_rejects_offscreen_points() {
+    let mut camera = Camera::default();
+    camera.computed.target_info = Some(bevy::camera::RenderTargetInfo {
+        physical_size: UVec2::new(1280, 720),
+        scale_factor: 2.0,
+    });
+    camera.computed.clip_from_view = Mat4::IDENTITY;
+    let camera_transform = GlobalTransform::IDENTITY;
+
+    let center = projected_ground_center(&camera, &camera_transform, Pos { x: 0.0, y: 0.5 })
+        .expect("visible point projects into the camera viewport");
+    assert_eq!(center, Vec2::new(320.0, 180.0));
+    assert_eq!(
+        projected_ground_center(&camera, &camera_transform, Pos { x: 2.0, y: 0.5 },),
+        None,
+        "a point outside the camera viewport has no clickable center"
+    );
+    assert_eq!(
+        projected_ground_center(&camera, &camera_transform, Pos { x: 0.0, y: -0.1 }),
+        None,
+        "a ground point beyond the far plane is not clickable"
+    );
+    assert_eq!(
+        projected_ground_center(&camera, &camera_transform, Pos { x: 0.0, y: 1.1 }),
+        None,
+        "a ground point beyond the near plane is not clickable"
+    );
+    camera.is_active = false;
+    assert_eq!(
+        projected_ground_center(&camera, &camera_transform, Pos { x: 0.0, y: 0.5 }),
+        None,
+        "an inactive camera cannot publish a clickable center"
+    );
+}
+
+#[test]
+fn declared_pick_radii_follow_the_accepted_package_catalog() {
+    use std::path::PathBuf;
+    use turts_client::content::ClientContent;
+    use turts_mod_runtime::{archive::PackageArchive, pack::pack_dir};
+
+    let base = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../mods/base");
+    let archive = PackageArchive::parse(&pack_dir(&base).unwrap()).unwrap();
+    let content = ClientContent::from_archives(&[archive]).unwrap();
+    let (unit_id, unit) = content.catalog.units.iter().next().unwrap();
+    let turts_mod_api::Footprint::Circle { radius } = &unit.footprint;
+    assert_eq!(
+        declared_unit_pick_radius(&content, &unit_id.to_string()),
+        Some(*radius)
+    );
+    let (node_id, node) = content.catalog.nodes.iter().next().unwrap();
+    assert_eq!(
+        declared_node_pick_radius(&content, &node_id.to_string()),
+        Some(node.radius)
+    );
+    assert_eq!(declared_unit_pick_radius(&content, "malformed"), None);
+    assert_eq!(declared_node_pick_radius(&content, "malformed"), None);
 }
 
 #[test]
@@ -134,6 +196,16 @@ fn sync_app() -> App {
             )]),
             map_size: (64.0, 64.0),
             unit_names: HashMap::new(),
+            content: ClientContent {
+                catalog: ClientContent::default().catalog,
+                shapes: HashMap::from([(
+                    "pkg:man".to_string(),
+                    Shape::Capsule {
+                        radius: 0.3,
+                        height: 1.8,
+                    },
+                )]),
+            },
         }))
         .add_systems(Update, sync_units);
     app
@@ -192,8 +264,9 @@ fn setup_app(phase: Phase) -> App {
         .insert_resource(AcquiredPackages(Acquired {
             lockfile_hash: String::new(),
             visuals: HashMap::new(),
-            map_size: (48.0, 32.0),
+            map_size: (64.0, 64.0),
             unit_names: HashMap::new(),
+            content: ClientContent::default(),
         }))
         .add_systems(Update, setup_scene);
     app
@@ -230,4 +303,88 @@ fn setup_scene_waits_for_the_join() {
     *app.world_mut().resource_mut::<Phase>() = Phase::Joined { slot: 0 };
     app.update();
     assert_eq!(active_cameras_3d(&mut app), 1);
+}
+
+#[test]
+fn sync_nodes_uses_downloaded_shapes_and_stable_ids() {
+    use turts_client::{
+        ingest::ReplicaState,
+        render::{PresentedNode, sync_nodes},
+        replica::Replica,
+    };
+    use turts_net_protocol::{NodeId, NodeState};
+
+    let shape = Shape::Cuboid {
+        x: 1.0,
+        y: 2.0,
+        z: 1.4,
+    };
+    let mut content = ClientContent::default();
+    content.shapes.insert("pkg:ore".into(), shape);
+    let mut state = ReplicaState::default();
+    let mut replica = Replica::new(20);
+    replica.nodes.insert(
+        NodeId(9),
+        NodeState {
+            id: NodeId(9),
+            content_id: "pkg:ore".into(),
+            pos: Pos { x: 12.0, y: 7.0 },
+            remaining: 0,
+        },
+    );
+    state.replica = Some(replica);
+
+    let mut app = App::new();
+    app.add_plugins((MinimalPlugins, AssetPlugin::default()))
+        .init_asset::<Mesh>()
+        .init_asset::<StandardMaterial>()
+        .insert_resource(state)
+        .insert_resource(AcquiredPackages(Acquired {
+            lockfile_hash: String::new(),
+            visuals: HashMap::new(),
+            map_size: (64.0, 64.0),
+            unit_names: HashMap::new(),
+            content,
+        }))
+        .add_systems(Update, sync_nodes);
+    app.update();
+
+    let mut query = app
+        .world_mut()
+        .query::<(Entity, &PresentedNode, &Transform)>();
+    let found: Vec<_> = query
+        .iter(app.world())
+        .map(|(entity, node, transform)| (entity, node.0, transform.translation))
+        .collect();
+    assert_eq!(found.len(), 1);
+    assert_eq!(found[0].1, 9);
+    assert_eq!(found[0].2, Vec3::new(12.0, 0.7, 7.0));
+
+    app.world_mut()
+        .resource_mut::<ReplicaState>()
+        .replica
+        .as_mut()
+        .unwrap()
+        .nodes
+        .get_mut(&NodeId(9))
+        .unwrap()
+        .pos = Pos { x: 15.0, y: 8.0 };
+    app.update();
+    let moved: Vec<_> = query
+        .iter(app.world())
+        .map(|(entity, node, transform)| (entity, node.0, transform.translation))
+        .collect();
+    assert_eq!(moved.len(), 1);
+    assert_eq!(moved[0].0, found[0].0);
+    assert_eq!(moved[0].2, Vec3::new(15.0, 0.7, 8.0));
+
+    app.world_mut()
+        .resource_mut::<ReplicaState>()
+        .replica
+        .as_mut()
+        .unwrap()
+        .nodes
+        .clear();
+    app.update();
+    assert_eq!(query.iter(app.world()).count(), 0);
 }

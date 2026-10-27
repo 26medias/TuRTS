@@ -115,11 +115,11 @@ fn archive_lock_entry_carries_the_manifest_and_the_hash() {
     let archive = PackageArchive::parse(&bytes).unwrap();
     let entry = archive.lock_entry(vec!["http://h/p.tar".to_string()]);
     assert_eq!(entry.id, "acme");
-    assert_eq!(entry.version, "0.1.0");
+    assert_eq!(entry.version, "0.2.0");
     assert_eq!(entry.hash, sha256_hex(&bytes));
     assert_eq!(entry.size, bytes.len() as u64);
     assert_eq!(entry.urls, vec!["http://h/p.tar".to_string()]);
-    assert_eq!(entry.engine_api, "^0.1");
+    assert_eq!(entry.engine_api, "^0.2");
     assert_eq!(archive.check_against_lock(&entry), Ok(()));
 }
 
@@ -147,8 +147,12 @@ fn parse_ron_rewrites_errors_without_type_names() {
         Some(vec![
             "id".to_string(),
             "name".to_string(),
-            "speed".to_string(),
-            "footprint".to_string()
+            "footprint".to_string(),
+            "movement".to_string(),
+            "inventory".to_string(),
+            "gatherer".to_string(),
+            "drop_off".to_string(),
+            "producer".to_string()
         ])
     );
     assert!(!error.message.contains("UnitDef"), "{}", error.message);
@@ -161,11 +165,11 @@ fn parse_ron_rewrites_errors_without_type_names() {
 #[test]
 fn parse_ron_names_a_missing_field() {
     let text = acme_text("units/scout.ron");
-    let cut = text.replacen("speed: 6.0, ", "", 1);
+    let cut = text.replacen("movement: Some((speed: 6.0)), ", "", 1);
     assert_ne!(cut, text);
     let error = parse_ron::<UnitDef>("acme", "units/scout.ron", &cut).unwrap_err();
     assert!(
-        error.message.starts_with("missing field `speed`"),
+        error.message.starts_with("missing field `movement`"),
         "{}",
         error.message
     );

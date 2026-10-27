@@ -6,9 +6,10 @@
 //! `MoveTarget` every 40 ticks.
 
 use bevy::app::FixedFirst;
+use bevy::math::Vec2;
 use bevy::prelude::*;
-use turts_mod_api::{ContentId, MapDef, MapSize, Placement, UnitTypeId, WorldPos};
-use turts_sim::{MapBounds, MoveTarget, Tick, UnitId, UnitTypes, load_map};
+use turts_mod_api::UnitTypeId;
+use turts_sim::{MapBounds, MoveTarget, Tick, UnitId, UnitTypes, spawn_synthetic_units};
 
 use crate::config::Cli;
 
@@ -39,54 +40,30 @@ pub fn install(app: &mut App, cli: &Cli) {
 /// `MapBounds`, owned by slot 0. Each unit starts with a `MoveTarget`. The map keeps its own
 /// units: this call adds units and removes none.
 pub fn spawn(world: &mut World, count: u32) -> Result<(), String> {
-    let content_id = world
-        .resource::<UnitTypes>()
-        .get(UnitTypeId(0))
-        .ok_or("--synthetic-units needs a unit type, and the package registered none")?
-        .content_id
-        .clone();
-    let origin = ContentId::parse(&content_id)?.package;
+    let unit_type = (0..world.resource::<UnitTypes>().len())
+        .filter_map(|i| {
+            let id = UnitTypeId(i as u32);
+            world
+                .resource::<UnitTypes>()
+                .get(id)
+                .filter(|entry| entry.movement.is_some())
+                .map(|_| id)
+        })
+        .next()
+        .ok_or("--synthetic-units needs a mobile unit type")?;
     let size = world
         .get_resource::<MapBounds>()
         .ok_or("--synthetic-units needs a loaded map")?
         .size;
     let tick = world.resource::<Tick>().0;
-    // `load_map` continues the unit ids, so the new units are the ones above the highest id now.
-    let last_old_id = world
-        .query::<&UnitId>()
-        .iter(world)
-        .map(|id| id.0)
-        .max()
-        .unwrap_or(0);
-
-    // The placement index is the key of the start point. A unit id is above its index, so a
-    // unit never starts on its own first target (a target is keyed by the unit id).
-    let map = MapDef {
-        id: "synthetic".to_string(),
-        size: MapSize {
-            x: size.x,
-            y: size.y,
-        },
-        placements: (0..count)
-            .map(|index| {
-                let point = target_point(tick, index, size);
-                Placement {
-                    unit: content_id.clone(),
-                    owner_slot: 0,
-                    pos: WorldPos {
-                        x: point.x,
-                        y: point.y,
-                    },
-                }
-            })
-            .collect(),
-    };
-    load_map(world, &origin, &map).map_err(|error| error.to_string())?;
-
+    let positions: Vec<Vec2> = (0..count)
+        .map(|index| target_point(tick, index, size))
+        .collect();
+    let ids = spawn_synthetic_units(world, unit_type, &positions)?;
     let new_units: Vec<(Entity, u32)> = world
         .query::<(Entity, &UnitId)>()
         .iter(world)
-        .filter(|(_, id)| id.0 > last_old_id)
+        .filter(|(_, id)| ids.contains(&id.0))
         .map(|(entity, id)| (entity, id.0))
         .collect();
     for (entity, id) in new_units {

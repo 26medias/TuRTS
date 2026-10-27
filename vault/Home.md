@@ -15,11 +15,9 @@ Dashboard for the TuRTS studio. Read this first, then [[Tasks]] and the latest n
 
 **Product:** mod-first RTS engine in Rust and Bevy. Browser WebAssembly client first, authoritative headless server, the official game is a default mod on the public API. Spec: `RTS-Engine-Project-Specifications.md` (v0.7, 2026-10-26).
 
-**Current milestone:** M1 done. Next: M2, mod API proven by the default mod plus an alternative economy mod.
+**Current milestone:** M2 accepted, 16/16 tasks complete. The public mod API is exercised by the default and alternative economy packages; see `docs/measurements/m2.md` for accepted evidence.
 
-**Phase:** M1 closed on 2026-10-26. M2 implementation is active in the managed worktree; use the Active M2 execution links below for the current task board.
-
-**Repository:** https://github.com/26medias/TuRTS (public). CI green.
+**Phase:** M1 closed; M2 Tasks 1–16 accepted at canonical source `601e71286e56bd2cbed0ecf9f0240ebcecd63047`. The multiplayer graybox proves the public package path, two-owner server-authoritative economy interactions, browser/native rendered controls, and recovery. Final process acceptance, T7, 15 browser positives, 33 native mutation plants, and 8 browser mutation plants passed. Global workspace tests: 497 passed, 0 failed, 17 ignored across 72 groups. Exact artifacts and hashes are in `docs/measurements/m2.md`. Remote GitHub Actions was not run for this closeout; performance budgets remain open.
 
 ## Where to look
 
@@ -34,5 +32,3 @@ Dashboard for the TuRTS studio. Read this first, then [[Tasks]] and the latest n
 
 - License: TBD (CEO's words). No LICENSE file until chosen.
 - Desktop delivery (D02, native or Tauri wrapper): the M1 acceptance row names a secondary executable. The studio proposes to accept the browser part of M1 now and block the executable part on this decision.
-
-**Active M2 execution:** The approved plan is running in the managed worktree. Track current status at [worktree vault Home](/home/julien/.codex/worktrees/ee40/TuRTS/vault/Home.md) and [worktree task board](/home/julien/.codex/worktrees/ee40/TuRTS/vault/Tasks.md).

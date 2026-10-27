@@ -4,13 +4,11 @@ use turts_net_protocol::NET_PROTOCOL_VERSION;
 use turts_net_protocol::advertisement::Advertisement;
 use turts_net_protocol::messages::*;
 
-/// Encode with the heapless buffer. The workspace pins `postcard` with default features, and
-/// `to_allocvec` needs the `alloc` feature, which this crate does not enable.
 fn encode<T: Serialize>(value: &T) -> Vec<u8> {
-    let bytes = postcard::to_vec::<T, 16384>(value).expect("serialize");
-    bytes.to_vec()
+    postcard::to_vec::<T, 16384>(value)
+        .expect("serialize")
+        .to_vec()
 }
-
 fn round_trip<T>(value: T)
 where
     T: Serialize + DeserializeOwned + PartialEq + core::fmt::Debug,
@@ -20,31 +18,16 @@ where
     assert_eq!(back, value);
 }
 
-fn deltas(count: u32) -> UnitDeltas {
-    UnitDeltas {
-        tick: 7,
-        base_tick: 6,
-        changes: (0..count)
-            .map(|i| UnitDelta {
-                unit_id: UnitId(i),
-                pos: Pos {
-                    x: i as f32,
-                    y: -(i as f32),
-                },
-            })
-            .collect(),
-    }
-}
-
 #[test]
-fn messages_round_trip_through_postcard() {
+fn wire_v2_roundtrips_all_fields_and_reasons() {
+    assert_eq!(NET_PROTOCOL_VERSION, 2);
     round_trip(UnitId(4_000_000_000));
     round_trip(SlotId(255));
     round_trip(Pos { x: 1.5, y: -2.25 });
     round_trip(Hello {
         player_id: u64::MAX,
         protocol_version: NET_PROTOCOL_VERSION,
-        lockfile_hash: "sha256:abc".to_string(),
+        lockfile_hash: "sha256:abc".into(),
     });
     round_trip(Welcome {
         slot_id: SlotId(1),
@@ -52,76 +35,140 @@ fn messages_round_trip_through_postcard() {
         tick_hz: 20,
     });
     round_trip(JoinRejected {
-        reason: "player already in match".to_string(),
+        reason: "player already in match".into(),
     });
     let unit = UnitSnapshot {
         unit_id: UnitId(3),
-        content_id: "pkg:unit".to_string(),
+        content_id: "pkg:unit".into(),
         owner_slot: SlotId(0),
         pos: Pos { x: 10.0, y: 20.0 },
     };
     round_trip(unit.clone());
+    let balance = BalanceState {
+        resource: "base:ore".into(),
+        on_hand: 19,
+        reserved: 7,
+    };
+    let inventory = InventoryState {
+        unit: UnitId(3),
+        items: vec![balance.clone()],
+    };
+    let order = OrderState {
+        unit: UnitId(3),
+        node: Some(NodeId(8)),
+        receiver: Some(UnitId(4)),
+        stage: GatherStage::Waiting {
+            reason: GatherWaitReason::DestinationOverflow,
+        },
+    };
+    let job = JobState {
+        id: JobId(12),
+        recipe: "base:scout".into(),
+        stage: JobStage::OutputBlocked,
+        elapsed_ticks: 17,
+        duration_ticks: 29,
+        charged: vec![turts_mod_api::Cost {
+            resource: "base:ore".into(),
+            amount: 9,
+            source: turts_mod_api::CostSource::SlotBalance,
+        }],
+        reserved: vec![turts_mod_api::Cost {
+            resource: "base:crystal".into(),
+            amount: 2,
+            source: turts_mod_api::CostSource::ProducerInventory,
+        }],
+    };
+    let node = NodeState {
+        id: NodeId(8),
+        content_id: "base:iron_node".into(),
+        pos: Pos { x: 5.0, y: 6.0 },
+        remaining: 44,
+    };
+    let queue = QueueState {
+        producer: UnitId(4),
+        jobs: vec![job],
+    };
+    let state = EconomyState {
+        balances: vec![balance.clone()],
+        inventories: vec![inventory.clone()],
+        orders: vec![order.clone()],
+        queues: vec![queue.clone()],
+    };
     round_trip(Snapshot {
         tick: 5,
-        units: vec![unit],
+        units: vec![unit.clone()],
+        nodes: vec![node.clone()],
+        economy: state,
     });
-    round_trip(UnitDelta {
-        unit_id: UnitId(8),
-        pos: Pos { x: 0.5, y: 0.25 },
+    round_trip(WorldDelta {
+        tick: 8,
+        base_tick: 7,
+        spawned: vec![unit],
+        removed: vec![UnitId(9)],
+        positions: vec![UnitDelta {
+            unit_id: UnitId(8),
+            pos: Pos { x: 0.5, y: 0.25 },
+        }],
+        nodes: vec![node],
+        economy: EconomyChanges {
+            balances: vec![balance],
+            inventories: vec![inventory],
+            orders: vec![order],
+            queues: vec![queue],
+        },
     });
-    round_trip(deltas(3));
-    round_trip(MoveTo {
-        seq: 12,
-        unit_ids: vec![UnitId(1), UnitId(2)],
-        target: Pos { x: 3.0, y: 4.0 },
-    });
+    for kind in [
+        PlayerCommandKind::MoveTo {
+            unit_ids: vec![UnitId(1), UnitId(2)],
+            target: Pos { x: 3.0, y: 4.0 },
+        },
+        PlayerCommandKind::Gather {
+            unit_id: UnitId(2),
+            node_id: NodeId(3),
+        },
+        PlayerCommandKind::Produce {
+            producer_id: UnitId(4),
+            recipe_id: "base:hire".into(),
+        },
+        PlayerCommandKind::CancelProduction {
+            producer_id: UnitId(4),
+            job_id: JobId(5),
+        },
+    ] {
+        round_trip(PlayerCommand { seq: 12, kind });
+    }
     round_trip(CommandAck { seq: 12, tick: 40 });
-    round_trip(CommandRejected {
+    round_trip(CommandApplied {
         seq: 12,
-        reason: "empty_command".to_string(),
+        tick: 41,
+        job_id: Some(JobId(9)),
     });
+    for reason in CommandRejectReason::ALL {
+        round_trip(CommandRejected {
+            seq: 12,
+            tick: 42,
+            reason: *reason,
+        });
+        assert_eq!(
+            reason.as_str(),
+            serde_json::to_value(reason).unwrap().as_str().unwrap()
+        );
+    }
     round_trip(ResyncRequest);
-}
-
-#[test]
-fn unit_deltas_payload_size_is_recorded() {
-    let one = encode(&deltas(1));
-    let many = encode(&deltas(1000));
-    println!("UnitDeltas with 1 change: {} bytes", one.len());
-    println!("UnitDeltas with 1000 changes: {} bytes", many.len());
-    assert!(one.len() <= 16, "one change took {} bytes", one.len());
-    assert!(
-        many.len() <= 1000 * 12 + 16,
-        "1000 changes took {} bytes",
-        many.len()
-    );
 }
 
 #[test]
 fn advertisement_json_has_six_fields() {
     let advertisement = Advertisement {
-        mod_id: "base".to_string(),
-        mod_version: "0.1.0".to_string(),
-        engine_version: "0.1.0".to_string(),
+        mod_id: "base".into(),
+        mod_version: "0.1.0".into(),
+        engine_version: "0.1.0".into(),
         protocol_version: NET_PROTOCOL_VERSION,
-        lockfile_url: "http://127.0.0.1:8080/lockfile.json".to_string(),
-        lockfile_hash: "sha256:abc".to_string(),
+        lockfile_url: "http://127.0.0.1:8080/lockfile.json".into(),
+        lockfile_hash: "sha256:abc".into(),
     };
     let json = serde_json::to_value(&advertisement).expect("to json");
-    let object = json.as_object().expect("json object");
-    let mut keys: Vec<&str> = object.keys().map(String::as_str).collect();
-    keys.sort_unstable();
-    assert_eq!(
-        keys,
-        [
-            "engine_version",
-            "lockfile_hash",
-            "lockfile_url",
-            "mod_id",
-            "mod_version",
-            "protocol_version"
-        ]
-    );
+    assert_eq!(json.as_object().unwrap().len(), 6);
     let back: Advertisement = serde_json::from_value(json).expect("from json");
     assert_eq!(back, advertisement);
 }

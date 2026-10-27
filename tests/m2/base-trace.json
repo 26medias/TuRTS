@@ -1,0 +1,26 @@
+[
+  {
+    "after_ticks": 0,
+    "command": {
+      "command": "submit",
+      "data": {
+        "Produce": {
+          "producer_id": 1,
+          "recipe_id": "base:train_rifleman"
+        }
+      }
+    },
+    "require_result": true
+  },
+  {
+    "after_ticks": 0,
+    "command": {
+      "command": "cancel_applied_job",
+      "data": {
+        "producer_id": 1,
+        "produced_by_step": 0
+      }
+    },
+    "require_result": true
+  }
+]

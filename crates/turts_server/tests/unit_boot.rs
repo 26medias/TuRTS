@@ -10,6 +10,9 @@ mod config;
 #[path = "../src/boot.rs"]
 mod boot;
 
+#[path = "../src/export.rs"]
+mod export;
+
 #[allow(dead_code)]
 #[path = "../src/synthetic.rs"]
 mod synthetic;
@@ -25,9 +28,11 @@ use turts_mod_api::{ENGINE_API_VERSION, Lockfile};
 use turts_mod_runtime::hash::sha256_hex;
 use turts_mod_runtime::lock::read_lockfile;
 use turts_mod_runtime::pack::pack_files;
-use turts_net_protocol::{Advertisement, NET_PROTOCOL_VERSION};
+use turts_net_protocol::{Advertisement, NET_PROTOCOL_VERSION, messages};
 use turts_sim::{
-    MapBounds, MoveTarget, UnitId, UnitTypes, Vec2, gameplay_entity_count, headless_app, snapshot,
+    Command, CommandKind, MapBounds, MoveTarget, SlotId, UnitId, UnitTypes, Vec2, committed_tick,
+    completed_world, gameplay_entity_count, headless_app, initialize_completed_world, snapshot,
+    world_view,
 };
 
 const PUBLIC_URL: &str = "http://127.0.0.1:7000";
@@ -68,17 +73,41 @@ fn read_tree(root: &Path, dir: &Path, files: &mut BTreeMap<String, Vec<u8>>) {
 
 #[test]
 fn boot_registers_units_and_places_map_from_any_package() {
-    let cases = [
-        ("base", "base:rifleman", Vec2::new(8.0, 8.0)),
-        ("acme", "acme:scout", Vec2::new(4.0, 4.0)),
+    type ExpectedUnit = (u32, &'static str, u8, Vec2);
+    type PackageCase<'a> = (&'static str, &'a [ExpectedUnit]);
+    let cases: [PackageCase<'_>; 2] = [
+        (
+            "base",
+            &[
+                (1, "base:command_center", 0, Vec2::new(8.0, 8.0)),
+                (2, "base:harvester", 0, Vec2::new(12.0, 8.0)),
+                (3, "base:command_center", 1, Vec2::new(56.0, 8.0)),
+                (4, "base:harvester", 1, Vec2::new(52.0, 8.0)),
+            ],
+        ),
+        ("acme", &[(1, "acme:scout", 0, Vec2::new(4.0, 4.0))]),
     ];
-    for (package, content_id, pos) in cases {
+    for (package, expected) in cases {
         let (mut app, _, _) = boot_package(&format!("boot_registers_{package}"), package);
-        assert_eq!(app.world().resource::<UnitTypes>().len(), 1, "{package}");
-        assert_eq!(gameplay_entity_count(app.world_mut()), 1, "{package}");
+        let expected_type_count = if package == "base" { 3 } else { 1 };
+        assert_eq!(
+            app.world().resource::<UnitTypes>().len(),
+            expected_type_count,
+            "{package}"
+        );
+        assert_eq!(
+            gameplay_entity_count(app.world_mut()),
+            expected.len(),
+            "{package}"
+        );
         let units = snapshot(app.world_mut());
-        assert_eq!(units[0].content_id, content_id);
-        assert_eq!(units[0].pos, pos, "{package}");
+        assert_eq!(units.len(), expected.len(), "{package}");
+        for (unit, (id, content_id, owner, pos)) in units.iter().zip(expected) {
+            assert_eq!(unit.unit_id, *id, "{package}");
+            assert_eq!(unit.content_id, *content_id, "{package} unit {id}");
+            assert_eq!(unit.owner_slot, *owner, "{package} unit {id}");
+            assert_eq!(unit.pos, *pos, "{package} unit {id}");
+        }
     }
 }
 
@@ -92,15 +121,15 @@ fn boot_lockfile_entry_matches_archive() {
     assert_eq!(entry.hash, sha256_hex(&bytes));
     assert_eq!(entry.size, bytes.len() as u64);
     assert!(
-        entry.urls[0].ends_with("/packages/acme-0.1.0.tar"),
+        entry.urls[0].ends_with("/packages/acme-0.2.0.tar"),
         "{:?}",
         entry.urls
     );
     assert_eq!(
         entry.urls,
-        vec![format!("{PUBLIC_URL}/packages/acme-0.1.0.tar")]
+        vec![format!("{PUBLIC_URL}/packages/acme-0.2.0.tar")]
     );
-    assert_eq!(booted.package_file_name, "acme-0.1.0.tar");
+    assert_eq!(booted.package_file_name, "acme-0.2.0.tar");
     assert_eq!(booted.package_bytes, bytes);
 }
 
@@ -115,7 +144,7 @@ fn boot_advertisement_hash_matches_lockfile_bytes() {
         format!("{PUBLIC_URL}/lockfile.json")
     );
     assert_eq!(advertisement.mod_id, "acme");
-    assert_eq!(advertisement.mod_version, "0.1.0");
+    assert_eq!(advertisement.mod_version, "0.2.0");
     assert_eq!(advertisement.engine_version, ENGINE_API_VERSION);
     assert_eq!(advertisement.protocol_version, NET_PROTOCOL_VERSION);
 }
@@ -133,7 +162,7 @@ fn boot_fills_file_on_registration_error() {
     let mut app = headless_app(20);
     let error = boot::boot(app.world_mut(), &config(Path::new("unused.tar")), &bytes).unwrap_err();
     assert_eq!(error.file.as_deref(), Some("units/scout.ron"));
-    assert_eq!(error.field_path, "speed");
+    assert_eq!(error.field_path, "movement.speed");
     assert_eq!(error.package, "acme");
 }
 
@@ -143,6 +172,7 @@ fn synthetic_cli(count: u32) -> config::Cli {
         config: PathBuf::from("server.ron"),
         tick_log: None,
         stats: None,
+        economy_log: None,
         synthetic_units: count,
         run_ticks: None,
     }
@@ -161,6 +191,10 @@ fn move_targets(app: &mut App) -> BTreeMap<u32, Vec2> {
 fn synthetic_units_use_the_registered_type() {
     let (mut app, _, _) = boot_package("synthetic_registered_type", "acme");
     synthetic::spawn(app.world_mut(), 50).unwrap();
+    let synthetic_view = world_view(app.world_mut());
+    assert!(synthetic_view.economy.inventories.is_empty());
+    assert!(synthetic_view.economy.orders.is_empty());
+    assert!(synthetic_view.economy.queues.is_empty());
     assert_eq!(gameplay_entity_count(app.world_mut()), 51);
     let size = app.world().resource::<MapBounds>().size;
     let units = snapshot(app.world_mut());
@@ -182,6 +216,153 @@ fn synthetic_units_use_the_registered_type() {
     let targets = move_targets(&mut app);
     assert_eq!(targets.len(), 50);
     assert!(!targets.contains_key(&units[0].unit_id));
+}
+
+#[test]
+fn synthetic_base_harvesters_have_empty_capabilities_in_the_initial_completed_view() {
+    let (mut app, _, _) = boot_package("synthetic_base_capabilities", "base");
+    let original_ids: BTreeSet<u32> = snapshot(app.world_mut())
+        .into_iter()
+        .map(|unit| unit.unit_id)
+        .collect();
+    synthetic::spawn(app.world_mut(), 2).unwrap();
+
+    let view = world_view(app.world_mut());
+    let synthetic_ids: Vec<u32> = view
+        .units
+        .iter()
+        .filter(|unit| !original_ids.contains(&unit.unit_id))
+        .map(|unit| unit.unit_id)
+        .collect();
+    assert_eq!(synthetic_ids.len(), 2);
+    for id in &synthetic_ids {
+        assert!(
+            view.economy.inventories.iter().any(|inventory| {
+                inventory.unit == *id && inventory.owner_slot == 0 && inventory.items.is_empty()
+            }),
+            "synthetic harvester {id} has an explicit empty inventory"
+        );
+        assert!(
+            view.economy.orders.iter().any(|order| {
+                order.unit == *id
+                    && order.owner_slot == 0
+                    && order.stage == turts_sim::GatherStage::Idle
+            }),
+            "synthetic harvester {id} has an explicit Idle order"
+        );
+        assert!(
+            view.economy
+                .queues
+                .iter()
+                .all(|queue| queue.producer != *id)
+        );
+    }
+
+    assert_eq!(app.world().resource::<turts_sim::Tick>().0, 0);
+    assert_eq!(committed_tick(app.world()).tick, 0);
+    assert!(committed_tick(app.world()).spawned.is_empty());
+    initialize_completed_world(app.world_mut());
+    let completed = completed_world(app.world());
+    for id in synthetic_ids {
+        assert!(
+            completed
+                .economy
+                .inventories
+                .iter()
+                .any(|inventory| inventory.unit == id)
+        );
+        assert!(
+            completed
+                .economy
+                .orders
+                .iter()
+                .any(|order| { order.unit == id && order.owner_slot == SlotId(0).0 })
+        );
+    }
+}
+
+#[test]
+fn completed_output_is_in_same_delta_and_late_join_snapshot_while_cancel_spawns_nothing() {
+    let (mut app, _, _) = boot_package("export_actual_output", "base");
+    initialize_completed_world(app.world_mut());
+    let started = turts_sim::apply_command(
+        app.world_mut(),
+        &Command {
+            slot: SlotId(0),
+            seq: 1,
+            kind: CommandKind::Produce {
+                producer_id: 1,
+                recipe_id: turts_mod_api::ContentId::parse("base:train_rifleman").unwrap(),
+            },
+        },
+    );
+    let job_id = started.outcome.unwrap().job_id.unwrap();
+    for _ in 0..101 {
+        app.update();
+    }
+
+    let batch = committed_tick(app.world());
+    let completed = completed_world(app.world());
+    let delta = export::delta_for(batch, SlotId(0));
+    let late_join = export::snapshot_for(completed, SlotId(0));
+    assert_eq!(delta.tick, late_join.tick);
+    assert_eq!(delta.tick, 101);
+    assert_eq!(delta.spawned.len(), 1);
+    let output = &delta.spawned[0];
+    assert_eq!(output.unit_id, messages::UnitId(5));
+    assert_eq!(output.content_id, "base:rifleman");
+    assert_eq!(output.owner_slot, messages::SlotId(0));
+    assert_eq!(
+        late_join
+            .units
+            .iter()
+            .find(|unit| unit.unit_id == output.unit_id),
+        Some(output)
+    );
+    assert!(batch.events.iter().any(|event| matches!(
+        event.kind,
+        turts_sim::EconomyEventKind::ProductionCompleted {
+            producer: 1,
+            job,
+            output_unit_id: 5,
+        } if job == job_id.0
+    )));
+    let mut encoded = [0u8; 4096];
+    let encoded = postcard::to_slice(&delta, &mut encoded).unwrap();
+    let decoded: messages::WorldDelta = postcard::from_bytes(encoded).unwrap();
+    assert_eq!(decoded.spawned[0], *output);
+
+    let cancelled = turts_sim::apply_command(
+        app.world_mut(),
+        &Command {
+            slot: SlotId(0),
+            seq: 2,
+            kind: CommandKind::Produce {
+                producer_id: 1,
+                recipe_id: turts_mod_api::ContentId::parse("base:train_rifleman").unwrap(),
+            },
+        },
+    );
+    let queued_job = cancelled.outcome.unwrap().job_id.unwrap();
+    let result = turts_sim::apply_command(
+        app.world_mut(),
+        &Command {
+            slot: SlotId(0),
+            seq: 3,
+            kind: CommandKind::CancelProduction {
+                producer_id: 1,
+                job_id: queued_job,
+            },
+        },
+    );
+    assert!(result.outcome.is_ok());
+    app.update();
+    assert!(committed_tick(app.world()).spawned.is_empty());
+    assert!(
+        export::delta_for(committed_tick(app.world()), SlotId(0))
+            .spawned
+            .is_empty()
+    );
 }
 
 #[test]

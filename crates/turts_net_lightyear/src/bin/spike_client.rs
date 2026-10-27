@@ -4,7 +4,7 @@
 //!
 //! Connects, sends `Hello`, counts what the server sends, and writes `--out` JSON at exit:
 //! `{ welcomed, rejected_reason, disconnected_after_connect, acks, ack_seqs_unique, deltas,
-//! deltas_in_order, first_tick, last_tick }`. With `--moves N` it sends N `MoveTo` after
+//! deltas_in_order, first_tick, last_tick }`. With `--moves N` it sends N `PlayerCommand` after
 //! `Welcome`, one per frame, and exits 1 s after the N-th ack (or at `--run-secs`).
 
 use std::collections::HashSet;
@@ -17,8 +17,11 @@ use bevy::prelude::*;
 use lightyear::netcode::client_plugin::NetcodeConfig;
 use lightyear::prelude::client::*;
 use lightyear::prelude::*;
+use lightyear::transport::channel::ChannelKind;
+use lightyear::transport::packet::message::MessageId;
 use turts_net_lightyear::{ProtocolPlugin, ReliableChannel, tick_duration};
 use turts_net_protocol::NET_PROTOCOL_VERSION;
+use turts_net_protocol::PlayerCommandKind;
 use turts_net_protocol::messages::*;
 
 #[derive(Resource)]
@@ -28,7 +31,17 @@ struct Cfg {
     moves: u32,
     run_secs: f64,
     out: Option<PathBuf>,
+    run_id: Option<String>,
     player_id: u64,
+}
+
+struct CapturedReceipt {
+    connection_epoch: u64,
+    seq: u32,
+    kind: &'static str,
+    reliable: bool,
+    message_id: Option<u16>,
+    remote_tick: u32,
 }
 
 #[derive(Resource)]
@@ -40,6 +53,12 @@ struct State {
     disconnected_after_connect: bool,
     acks: u32,
     ack_seqs: HashSet<u32>,
+    receipt_epoch: Option<u64>,
+    receipt_witnesses: Vec<CapturedReceipt>,
+    reliable_message_count: u32,
+    ack_message_ids: Vec<u16>,
+    rejection_message_ids: Vec<u16>,
+    typed_command_results: Vec<&'static str>,
     all_acked_at: Option<Instant>,
     next_seq: u32,
     deltas: u64,
@@ -69,6 +88,12 @@ fn main() {
         disconnected_after_connect: false,
         acks: 0,
         ack_seqs: HashSet::new(),
+        receipt_epoch: None,
+        receipt_witnesses: Vec::new(),
+        reliable_message_count: 0,
+        ack_message_ids: Vec::new(),
+        rejection_message_ids: Vec::new(),
+        typed_command_results: Vec::new(),
         all_acked_at: None,
         next_seq: 0,
         deltas: 0,
@@ -102,6 +127,7 @@ fn parse_args() -> Cfg {
         moves: value("--moves").map_or(0, |v| v.parse().expect("--moves: integer")),
         run_secs: value("--run-secs").map_or(10.0, |v| v.parse().expect("--run-secs: number")),
         out: value("--out").map(PathBuf::from),
+        run_id: value("--run-id"),
         // Placeholder identity per process (design 5: random per session).
         player_id: std::process::id() as u64,
     }
@@ -143,12 +169,15 @@ fn on_connected(
     cfg: Res<Cfg>,
 ) {
     state.connected_seen = true;
+    state.receipt_epoch = Some(trigger.entity.to_bits());
+    state.reliable_message_count = 0;
     if let Ok(mut sender) = hello.get_mut(trigger.entity) {
         sender.send::<ReliableChannel>(Hello {
             player_id: cfg.player_id,
             protocol_version: NET_PROTOCOL_VERSION,
             lockfile_hash: cfg.hash.clone(),
         });
+        record_reliable_message(&mut state, ChannelKind::of::<ReliableChannel>());
     }
 }
 
@@ -164,22 +193,56 @@ fn receive(
     mut welcome: Query<&mut MessageReceiver<Welcome>>,
     mut rejected: Query<&mut MessageReceiver<JoinRejected>>,
     mut acks: Query<&mut MessageReceiver<CommandAck>>,
-    mut deltas: Query<&mut MessageReceiver<UnitDeltas>>,
+    mut rejected_commands: Query<&mut MessageReceiver<CommandRejected>>,
+    mut deltas: Query<&mut MessageReceiver<WorldDelta>>,
 ) {
+    let epoch = state.receipt_epoch.unwrap_or_default();
     for mut receiver in welcome.iter_mut() {
-        if receiver.receive().next().is_some() {
+        for received in receiver.receive_with_tick() {
+            record_reliable_message(&mut state, received.channel_kind);
             state.welcomed = true;
         }
     }
     for mut receiver in rejected.iter_mut() {
-        for message in receiver.receive() {
-            state.rejected_reason = Some(message.reason);
+        for received in receiver.receive_with_tick() {
+            record_reliable_message(&mut state, received.channel_kind);
+            state.rejected_reason = Some(received.data.reason);
         }
     }
     for mut receiver in acks.iter_mut() {
-        for ack in receiver.receive() {
+        for received in receiver.receive_with_tick() {
             state.acks += 1;
-            state.ack_seqs.insert(ack.seq);
+            state.ack_seqs.insert(received.data.seq);
+            capture_receipt(
+                &mut state,
+                epoch,
+                received.data.seq,
+                "ack",
+                received.channel_kind,
+                received.message_id,
+                received.remote_tick.0,
+            );
+            if let Some(id) = received.message_id {
+                state.ack_message_ids.push(id.0);
+            }
+            state.typed_command_results.push("ack");
+        }
+    }
+    for mut receiver in rejected_commands.iter_mut() {
+        for received in receiver.receive_with_tick() {
+            capture_receipt(
+                &mut state,
+                epoch,
+                received.data.seq,
+                "rejected",
+                received.channel_kind,
+                received.message_id,
+                received.remote_tick.0,
+            );
+            if let Some(id) = received.message_id {
+                state.rejection_message_ids.push(id.0);
+            }
+            state.typed_command_results.push("rejected");
         }
     }
     for mut receiver in deltas.iter_mut() {
@@ -196,20 +259,50 @@ fn receive(
     }
 }
 
+fn capture_receipt(
+    state: &mut State,
+    epoch: u64,
+    seq: u32,
+    kind: &'static str,
+    channel_kind: ChannelKind,
+    message_id: Option<MessageId>,
+    remote_tick: u32,
+) {
+    let reliable = channel_kind == ChannelKind::of::<ReliableChannel>();
+    record_reliable_message(state, channel_kind);
+    state.receipt_witnesses.push(CapturedReceipt {
+        connection_epoch: epoch,
+        seq,
+        kind,
+        reliable,
+        message_id: message_id.map(|id| id.0),
+        remote_tick,
+    });
+}
+
+fn record_reliable_message(state: &mut State, channel_kind: ChannelKind) {
+    if channel_kind == ChannelKind::of::<ReliableChannel>() {
+        state.reliable_message_count = state.reliable_message_count.saturating_add(1);
+    }
+}
+
 fn send_moves(
     mut state: ResMut<State>,
-    mut sender: Query<&mut MessageSender<MoveTo>>,
+    mut sender: Query<&mut MessageSender<PlayerCommand>>,
     cfg: Res<Cfg>,
 ) {
     if !state.welcomed || state.next_seq >= cfg.moves {
         return;
     }
     if let Ok(mut sender) = sender.single_mut() {
-        sender.send::<ReliableChannel>(MoveTo {
+        sender.send::<ReliableChannel>(PlayerCommand {
             seq: state.next_seq,
-            unit_ids: vec![UnitId(0)],
-            target: Pos { x: 10.0, y: 10.0 },
+            kind: PlayerCommandKind::MoveTo {
+                unit_ids: vec![UnitId(0)],
+                target: Pos { x: 10.0, y: 10.0 },
+            },
         });
+        record_reliable_message(&mut state, ChannelKind::of::<ReliableChannel>());
         state.next_seq += 1;
     }
 }
@@ -230,11 +323,25 @@ fn exit_when_done(mut state: ResMut<State>, cfg: Res<Cfg>, mut exit: MessageWrit
 
 fn write_out(cfg: &Cfg, state: &State) {
     let out = serde_json::json!({
+        "run_id": cfg.run_id,
         "welcomed": state.welcomed,
         "rejected_reason": state.rejected_reason,
         "disconnected_after_connect": state.disconnected_after_connect,
         "acks": state.acks,
         "ack_seqs_unique": state.ack_seqs.len(),
+        "connection_epoch": state.receipt_epoch,
+        "reliable_message_count": state.reliable_message_count,
+        "receipt_witnesses": state.receipt_witnesses.iter().map(|w| serde_json::json!({
+            "connection_epoch": w.connection_epoch,
+            "seq": w.seq,
+            "kind": w.kind,
+            "reliable": w.reliable,
+            "message_id": w.message_id,
+            "remote_tick": w.remote_tick,
+        })).collect::<Vec<_>>(),
+        "ack_message_ids": state.ack_message_ids,
+        "rejection_message_ids": state.rejection_message_ids,
+        "typed_command_results": state.typed_command_results,
         "deltas": state.deltas,
         "deltas_in_order": state.deltas_in_order,
         "first_tick": state.first_tick,
