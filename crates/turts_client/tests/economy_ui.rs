@@ -896,6 +896,105 @@ fn widget_center(app: &App, action: &UiAction, scale: f32) -> (Entity, Vec2) {
 }
 
 #[test]
+fn retired_job_controls_do_not_accumulate_and_current_controls_keep_identity() {
+    let (mut app, _window, _camera, producer) = cpu_ui_app(1.0, 1);
+    let produce_action = app
+        .world()
+        .iter_entities()
+        .find_map(|entity| {
+            entity
+                .get::<UiActionTarget>()
+                .filter(|_| entity.contains::<Button>())
+                .map(|target| target.0.clone())
+        })
+        .expect("producer action exists");
+    let stable_button = app
+        .world()
+        .iter_entities()
+        .find(|entity| {
+            entity.contains::<Button>()
+                && entity
+                    .get::<UiActionTarget>()
+                    .is_some_and(|target| target.0 == produce_action)
+        })
+        .unwrap()
+        .id();
+
+    let stable_button_count = app
+        .world()
+        .iter_entities()
+        .filter(|entity| entity.contains::<Button>())
+        .count();
+    let mut current_job = JobId(91);
+    for job_id in 100..140 {
+        let old_cancel = UiAction::Cancel {
+            producer,
+            job: current_job,
+        };
+        let old_entities: Vec<_> = app
+            .world()
+            .iter_entities()
+            .filter(|entity| {
+                entity
+                    .get::<UiActionTarget>()
+                    .is_some_and(|target| target.0 == old_cancel)
+            })
+            .map(|entity| entity.id())
+            .collect();
+
+        {
+            let mut state = app.world_mut().resource_mut::<ReplicaState>();
+            let queue = state
+                .replica
+                .as_mut()
+                .unwrap()
+                .economy
+                .queues
+                .iter_mut()
+                .find(|queue| queue.producer.0 == producer)
+                .unwrap();
+            let mut job = queue.jobs[0].clone();
+            job.id = JobId(job_id);
+            job.elapsed_ticks += 1;
+            queue.jobs = vec![job];
+        }
+        app.update();
+        current_job = JobId(job_id);
+
+        for entity in old_entities {
+            assert!(
+                app.world().get_entity(entity).is_err(),
+                "retired job action descendants are despawned"
+            );
+        }
+        let buttons: Vec<_> = app
+            .world()
+            .iter_entities()
+            .filter(|entity| entity.contains::<Button>())
+            .collect();
+        assert_eq!(
+            buttons.len(),
+            stable_button_count,
+            "control count stays bounded to the current model"
+        );
+        assert_eq!(
+            app.world()
+                .iter_entities()
+                .find(|entity| {
+                    entity.contains::<Button>()
+                        && entity
+                            .get::<UiActionTarget>()
+                            .is_some_and(|target| target.0 == produce_action)
+                })
+                .unwrap()
+                .id(),
+            stable_button,
+            "a still-current control keeps its entity identity"
+        );
+    }
+}
+
+#[test]
 fn real_pointer_press_survives_replica_progress_update_and_never_reaches_world() {
     let scale = 1.0;
     use turts_client::{commands::PendingCommands, join::AcquiredPackages};

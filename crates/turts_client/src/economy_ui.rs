@@ -500,22 +500,15 @@ pub fn sync_panel(world: &mut World) {
         .cloned()
         .collect();
     for action in stale {
-        if let Some((button, label)) = world
-            .resource::<PanelEntities>()
+        if let Some((button, _label)) = world
+            .resource_mut::<PanelEntities>()
             .controls
-            .get(&action)
-            .copied()
+            .remove(&action)
         {
-            if let Some(mut node) = world.get_mut::<Node>(button) {
-                node.display = Display::None;
-            }
-            if let Some(mut node) = world.get_mut::<Node>(label) {
-                node.display = Display::None;
-            }
-            if let Some(mut disabled) = world.get_mut::<UiControlEnabled>(button) {
-                disabled.0 = false;
-            }
-            world.entity_mut(button).insert(InteractionDisabled);
+            // ChildOf uses linked spawning, so despawning the button also retires
+            // its label. Actions still present in `model.controls` retain their
+            // entity identity (and Bevy's pointer state) across this sync.
+            world.despawn(button);
         }
     }
     for control in &model.controls {
