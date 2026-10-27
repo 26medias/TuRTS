@@ -16,6 +16,9 @@ pub mod present;
 pub mod render;
 pub mod replica;
 
+#[cfg(not(target_family = "wasm"))]
+mod live_view;
+
 use std::time::Duration;
 
 use bevy::app::{App, Plugin, ScheduleRunnerPlugin};
@@ -58,6 +61,7 @@ pub struct ClientPlugin(pub ClientOptions);
 impl Plugin for ClientPlugin {
     fn build(&self, app: &mut App) {
         let opts = self.0.clone();
+        let publish_live_view = !opts.headless && opts.out.is_some();
         app.insert_resource(PlayerId(opts.player_id.unwrap_or_else(random_player_id)))
             .insert_resource(Phase::FetchAdvertisement)
             .insert_resource(IngestHooks {
@@ -104,6 +108,10 @@ impl Plugin for ClientPlugin {
                 .before(MessageSystems::Send),
         );
         app.add_systems(Last, (rebuild_debug_state, exit_when_done).chain());
+        #[cfg(not(target_family = "wasm"))]
+        if publish_live_view {
+            app.add_systems(Last, live_view::publish_live_view.before(exit_when_done));
+        }
     }
 }
 
