@@ -65,3 +65,5 @@ The task board. Move items between sections; keep owner and evidence link on eac
 - [x] 2026-10-26: spec 0.6, two defects fixed, gated and re-gated (commit 4188d82).
 - [x] 2026-10-26: toolchain, CI, scripts, public GitHub repository, CI green.
 - [x] 2026-10-26: M1 research by network-engineer, producer, technical-director, mod-runtime-engineer (decisions logged; reports in scratchpad `m1/`).
+
+- [ ] Task 8 — Accounting oracle / audit — in progress in `/home/julien/.codex/worktrees/4f65/TuRTS` from `1ec683a`. Original plan remains 7/16. Twelve trace/detector/serialization tests pass, but early Sol foundation review confirmed six false passes in the unfinished oracle: poisoned charged refund, recipe substitution after queue, stationary before-state reset, unrelated job deletion, and hidden inventory filters (six confirmed failure modes/findings). Worker fixes foundations before bulk E6 matrix/mutations. No completion or engine-runtime defect claim. Immutable snapshot/probes: `/home/julien/.codex/worktrees/4f65/TuRTS/.superpowers/sdd/2026-10-26-m2-economy/task-8-foundation-review.md`.
