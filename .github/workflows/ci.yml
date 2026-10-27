@@ -8,7 +8,8 @@ jobs:
     runs-on: ubuntu-latest
     env:
       CARGO_BUILD_JOBS: 2
-      M2_REFUTATION_ROOT: ${{ github.workspace }}/target/m2-refutations
+      TURTS_REFUTATION_EVIDENCE_DIR: ${{ github.workspace }}/target/m2-refutations/native
+      TURTS_REFUTATION_BUILD_ROOT: ${{ github.workspace }}/target/m2-refutations/native-build
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -37,14 +38,14 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: m2-native-and-acceptance-${{ github.run_id }}
-          if-no-files-found: ignore
+          if-no-files-found: warn
           retention-days: 14
           path: |
             target/m2-refutations/**
             target/acceptance/**
             target/task15-evidence/**
             target/m2-public-proof/**
-            target/tmp/acceptance-oracle.log
+            target/tmp/**
   # T7 and M2 browser proof need a real browser process, Trunk, wasm and a
   # software Vulkan implementation; hosted CI does not require an NVIDIA GPU.
   browser:
@@ -52,7 +53,13 @@ jobs:
     env:
       CARGO_BUILD_JOBS: 2
       M2_ARTIFACT_ROOT: ${{ github.workspace }}/target/m2-browser/runs
-      M2_REFUTATION_ROOT: ${{ github.workspace }}/target/m2-refutations
+      M2_CARGO_TARGET_DIR: ${{ github.workspace }}/target
+      M2_BUILD_JOBS: "2"
+      M2_HEADLESS: "false"
+      M2_CHROME_ARGS_JSON: '["--enable-gpu","--use-angle=vulkan","--enable-features=Vulkan","--enable-unsafe-webgpu"]'
+      M2_IGNORE_DEFAULT_ARGS_JSON: '["--enable-unsafe-swiftshader"]'
+      TURTS_REFUTATION_EVIDENCE_DIR: ${{ github.workspace }}/target/m2-refutations/browser
+      TURTS_REFUTATION_BUILD_ROOT: ${{ github.workspace }}/target/m2-refutations/browser-build
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -96,13 +103,14 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: m2-browser-and-refutations-${{ github.run_id }}
-          if-no-files-found: ignore
+          if-no-files-found: warn
           retention-days: 14
           path: |
             target/m2-browser/runs/**
             target/m2-refutations/**
             target/t7/**
             target/task16-evidence/**
+            target/tmp/**
   agents:
     runs-on: ubuntu-latest
     steps:
