@@ -376,7 +376,7 @@
       "--exact",
       "--nocapture"
     ],
-    "expected_failure": "cedar/-: inventory.accepts[0]",
+    "expected_failure": "right: Some(\"units/worker.ron\")",
     "restore_check": "sha256(source)==baseline and selected test is green",
     "kind": "diagnostic-self-test"
   },

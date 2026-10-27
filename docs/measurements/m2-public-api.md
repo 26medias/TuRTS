@@ -46,6 +46,8 @@ The harness copies the repository to `/home/julien/Projects/TuRTS/target/m2-publ
 | E6-event-only-spawn | exact frozen recipe and whole-state completion | `0a2ea70eb6d6f62541ad649a5ad216eb32a3838976c136346d047eafe98c5c61` |
 | E10-public-error-provenance | Cedar package/file/field diagnostic | `b294f64e4a82bc85135fa260fd2492ae0430790c6e33d4ba2daea932bdca711d` |
 
+After the Cedar test began asserting structured `ModError.file`, the E10 provenance plant's semantic matcher was updated from the former formatted display string to the actual failing assertion line `right: Some("units/worker.ron")`. Targeted command `bash scripts/m2-refutations.sh --case E10-public-error-provenance` selected one test, produced that RED, restored source SHA-256 `b294f64e4a82bc85135fa260fd2492ae0430790c6e33d4ba2daea932bdca711d`, and passed the restored GREEN. Log: `/tmp/task14-e10-provenance-final.log`.
+
 
 ## Product defect mutations
 
