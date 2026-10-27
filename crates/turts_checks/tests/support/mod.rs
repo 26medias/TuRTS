@@ -193,8 +193,16 @@ pub fn derive_tokens(root: &Path) -> Result<TokenCatalog, ScanError> {
         ("field", "map id is an ordinary source identifier", false),
         ("Item", "resource kind is a common Rust type word", false),
         ("Balance", "resource kind is a common Rust type word", false),
-        ("log", "resource unit name is a common source identifier", false),
-        ("credit", "resource unit name is a generic accounting term", true),
+        (
+            "log",
+            "resource unit name is a common source identifier",
+            false,
+        ),
+        (
+            "credit",
+            "resource unit name is a generic accounting term",
+            true,
+        ),
     ] {
         if let Some(records) = c.records.get(word) {
             let r = &records[0];
