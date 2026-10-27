@@ -1,11 +1,23 @@
 mod common;
 
+use bevy_ecs::world::World;
 use common::{AuditLookup, archive_from_files, cid, economy_files, scenario};
 use turts_pack::load_package;
 use turts_sim::{
-    Command, CommandKind, EconomyEventKind, RejectReason, SlotId, apply_command, audit_state,
-    committed_tick,
+    Command, CommandKind, CostLine, EconomyEvent, EconomyEventKind, EventSource, RejectReason,
+    ReservationClaimView, SlotId, apply_command, audit_state, committed_tick,
 };
+
+fn pending_economy_events(world: &World) -> Vec<EconomyEvent> {
+    world
+        .resource::<turts_sim::economy::events::PendingEconomyEvents>()
+        .0
+        .clone()
+}
+
+fn next_event_ordinal(world: &World) -> Option<u64> {
+    world.resource::<turts_sim::NextEventOrdinal>().0
+}
 
 fn fixture_with_amounts(timber: u64, token: u64, tick_hz: u16) -> bevy_app::App {
     let mut files = economy_files();
@@ -59,7 +71,118 @@ fn reserve_last_stock_accepts_exactly_one_before_start() {
         queued.reserved[0].source,
         turts_mod_api::CostSource::ProducerInventory
     );
-    assert_eq!(queued.charged.len(), 0);
+    assert_eq!(queued.reserved[0].resource, cid("probe:timber"));
+    assert_eq!(queued.reserved[0].amount, 50);
+    assert!(queued.charged.is_empty());
+}
+
+#[test]
+fn reserved_start_consumes_only_head_reservation_once() {
+    let mut app = fixture_with_amounts(100, 200, 20);
+    let first = apply_command(app.world_mut(), &produce(0, 1, 1, "probe:hire"))
+        .outcome
+        .unwrap()
+        .job_id
+        .unwrap();
+    let second = apply_command(app.world_mut(), &produce(0, 2, 1, "probe:hire"))
+        .outcome
+        .unwrap()
+        .job_id
+        .unwrap();
+    let before_start = audit_state(app.world_mut());
+    let timber = before_start
+        .economy
+        .inventories
+        .iter()
+        .find(|i| i.unit == 1)
+        .unwrap()
+        .items
+        .iter()
+        .find(|i| i.resource == cid("probe:timber"))
+        .unwrap();
+    assert_eq!((timber.on_hand, timber.reserved), (100, 100));
+    app.update();
+
+    let started = audit_state(app.world_mut());
+    let timber = started
+        .economy
+        .inventories
+        .iter()
+        .find(|i| i.unit == 1)
+        .unwrap()
+        .items
+        .iter()
+        .find(|i| i.resource == cid("probe:timber"))
+        .unwrap();
+    assert_eq!((timber.on_hand, timber.reserved), (50, 50));
+    let jobs = &started
+        .economy
+        .queues
+        .iter()
+        .find(|q| q.producer == 1)
+        .unwrap()
+        .jobs;
+    assert_eq!(jobs[0].id, first.0);
+    assert_eq!(jobs[0].stage, turts_sim::JobStage::Running);
+    assert_eq!(jobs[0].elapsed_ticks, 0);
+    assert!(jobs[0].reserved.is_empty());
+    assert_eq!(jobs[0].charged.len(), 1);
+    assert_eq!(
+        jobs[0].charged[0].source,
+        turts_mod_api::CostSource::ProducerInventory
+    );
+    assert_eq!(jobs[0].charged[0].resource, cid("probe:timber"));
+    assert_eq!(jobs[0].charged[0].amount, 50);
+    assert_eq!(jobs[1].id, second.0);
+    assert_eq!(jobs[1].stage, turts_sim::JobStage::Queued);
+    assert_eq!(jobs[1].reserved[0].amount, 50);
+    assert!(started.ledger_claims.iter().any(|claim| matches!(
+        claim, ReservationClaimView::Closed { map_job_id } if *map_job_id == first.0
+    )));
+    assert!(started.ledger_claims.iter().any(|claim| matches!(
+        claim, ReservationClaimView::Active { map_job_id, token_job_id, .. }
+            if *map_job_id == second.0 && *token_job_id == second.0
+    )));
+    let started_event = committed_tick(app.world()).events.iter().find(|event| matches!(
+        event.kind, EconomyEventKind::ProductionStarted { producer: 1, job, .. } if job == first.0
+    )).unwrap();
+    let EconomyEventKind::ProductionStarted { charged, .. } = &started_event.kind else {
+        unreachable!()
+    };
+    assert_eq!(
+        charged,
+        &vec![CostLine {
+            source: EventSource::Inventory(1),
+            resource: cid("probe:timber"),
+            amount: 50,
+        }]
+    );
+
+    app.update();
+    let advanced = audit_state(app.world_mut());
+    let timber = advanced
+        .economy
+        .inventories
+        .iter()
+        .find(|i| i.unit == 1)
+        .unwrap()
+        .items
+        .iter()
+        .find(|i| i.resource == cid("probe:timber"))
+        .unwrap();
+    assert_eq!((timber.on_hand, timber.reserved), (50, 50));
+    let jobs = &advanced
+        .economy
+        .queues
+        .iter()
+        .find(|q| q.producer == 1)
+        .unwrap()
+        .jobs;
+    assert_eq!(
+        (jobs[0].elapsed_ticks, jobs[0].stage),
+        (1, turts_sim::JobStage::Running)
+    );
+    assert_eq!(jobs[1].stage, turts_sim::JobStage::Queued);
 }
 
 #[test]
@@ -83,13 +206,69 @@ fn charge_last_stock_accepts_exactly_one_without_reservations() {
         queued.charged[0].source,
         turts_mod_api::CostSource::SlotBalance
     );
+    assert_eq!(queued.charged[0].resource, cid("probe:token"));
+    assert_eq!(queued.charged[0].amount, 100);
     assert_eq!(queued.reserved.len(), 0);
+
+    let mut app = fixture_with_amounts(100, 300, 20);
+    let job = apply_command(app.world_mut(), &produce(0, 1, 1, "probe:train"))
+        .outcome
+        .unwrap()
+        .job_id
+        .unwrap();
+    assert_eq!(
+        audit_state(app.world_mut())
+            .balance(0, "probe:token")
+            .on_hand,
+        200
+    );
+    app.update();
+    let after_start = audit_state(app.world_mut());
+    assert_eq!(after_start.balance(0, "probe:token").on_hand, 200);
+    let started_job = &after_start
+        .economy
+        .queues
+        .iter()
+        .find(|q| q.producer == 1)
+        .unwrap()
+        .jobs[0];
+    assert_eq!(
+        (started_job.id, started_job.stage, started_job.elapsed_ticks),
+        (job.0, turts_sim::JobStage::Running, 0)
+    );
+    let event = committed_tick(app.world())
+        .events
+        .iter()
+        .find(|event| {
+            matches!(
+                event.kind, EconomyEventKind::ProductionStarted { job: id, .. } if id == job.0
+            )
+        })
+        .unwrap();
+    let EconomyEventKind::ProductionStarted { charged, .. } = &event.kind else {
+        unreachable!()
+    };
+    assert_eq!(
+        charged,
+        &vec![CostLine {
+            source: EventSource::Slot(0),
+            resource: cid("probe:token"),
+            amount: 100,
+        }]
+    );
+    app.update();
+    assert_eq!(
+        audit_state(app.world_mut())
+            .balance(0, "probe:token")
+            .on_hand,
+        200
+    );
 }
 
 #[test]
 fn mixed_cost_failure_is_atomic_and_local() {
-    // Both cost sources use the same slot endpoint for different resources. The balance cost
-    // succeeds in isolation, while the item cost fails; neither source may be partially changed.
+    // The slot balance debit would succeed before the producer-local inventory cost fails;
+    // neither endpoint may be partially changed.
     let mut files = economy_files();
     files.insert(
         "production/hire.ron".into(),
@@ -97,11 +276,20 @@ fn mixed_cost_failure_is_atomic_and_local() {
     );
     let mut app = scenario(20);
     load_package(app.world_mut(), &archive_from_files(files)).unwrap();
+    assert!(
+        apply_command(app.world_mut(), &produce(0, 1, 1, "probe:train"))
+            .outcome
+            .is_ok()
+    );
     let before = audit_state(app.world_mut());
-    let result = apply_command(app.world_mut(), &produce(0, 1, 1, "probe:hire"));
+    let pending_before = pending_economy_events(app.world());
+    let ordinal_before = next_event_ordinal(app.world());
+    assert_eq!(pending_before.len(), 1);
+    let result = apply_command(app.world_mut(), &produce(0, 2, 1, "probe:hire"));
     assert_eq!(result.outcome, Err(RejectReason::InsufficientItems));
     assert_eq!(audit_state(app.world_mut()), before);
-    assert!(committed_tick(app.world()).events.is_empty());
+    assert_eq!(pending_economy_events(app.world()), pending_before);
+    assert_eq!(next_event_ordinal(app.world()), ordinal_before);
 }
 
 #[test]
@@ -226,20 +414,60 @@ fn two_producers_cannot_spend_the_same_balance() {
 }
 
 #[test]
+fn two_producers_cannot_reserve_the_same_balance() {
+    let mut files = economy_files();
+    let mut map = String::from_utf8(files["maps/test.ron"].clone()).unwrap();
+    map = map.replace(
+        ")], nodes:",
+        "), (unit: \"probe:yard\", owner_slot: 0, pos: (x: 24.0, y: 24.0), contents: [])], nodes:",
+    );
+    map = map.replace("amount: 200)", "amount: 50)");
+    files.insert("maps/test.ron".into(), map.into_bytes());
+    let mut hire = String::from_utf8(files["production/hire.ron"].clone()).unwrap();
+    hire = hire.replace(
+        "resource: \"probe:timber\", amount: 50, source: ProducerInventory",
+        "resource: \"probe:token\", amount: 50, source: SlotBalance",
+    );
+    files.insert("production/hire.ron".into(), hire.into_bytes());
+    let mut app = scenario(20);
+    load_package(app.world_mut(), &archive_from_files(files)).unwrap();
+    let first = apply_command(app.world_mut(), &produce(0, 1, 1, "probe:hire"));
+    let second = apply_command(app.world_mut(), &produce(0, 2, 6, "probe:hire"));
+    assert!(first.outcome.is_ok());
+    assert_eq!(second.outcome, Err(RejectReason::InsufficientBalance));
+    let state = audit_state(app.world_mut());
+    assert_eq!(
+        (
+            state.balance(0, "probe:token").on_hand,
+            state.balance(0, "probe:token").reserved
+        ),
+        (50, 50)
+    );
+    assert_eq!(
+        state
+            .economy
+            .queues
+            .iter()
+            .map(|q| q.jobs.len())
+            .sum::<usize>(),
+        1
+    );
+}
+
+#[test]
 fn failed_enqueue_does_not_allocate_job_or_consume_event_ordinal() {
     let mut app = fixture_with_amounts(50, 200, 20);
     app.world_mut()
         .resource_mut::<turts_sim::IdAllocators>()
         .set_next_values(6, 3, u64::MAX);
     let before = audit_state(app.world_mut());
-    let event_ordinal = app.world().resource::<turts_sim::NextEventOrdinal>().0;
+    let event_ordinal = next_event_ordinal(app.world());
+    let pending_before = pending_economy_events(app.world());
     let result = apply_command(app.world_mut(), &produce(0, 1, 1, "probe:hire"));
     assert_eq!(result.outcome, Err(RejectReason::IdExhausted));
     assert_eq!(audit_state(app.world_mut()), before);
-    assert_eq!(
-        app.world().resource::<turts_sim::NextEventOrdinal>().0,
-        event_ordinal
-    );
+    assert_eq!(next_event_ordinal(app.world()), event_ordinal);
+    assert_eq!(pending_economy_events(app.world()), pending_before);
 
     app.world_mut()
         .resource_mut::<turts_sim::IdAllocators>()
@@ -248,9 +476,13 @@ fn failed_enqueue_does_not_allocate_job_or_consume_event_ordinal() {
         .resource_mut::<turts_sim::NextEventOrdinal>()
         .0 = None;
     let before = audit_state(app.world_mut());
+    let pending_before = pending_economy_events(app.world());
+    let ordinal_before = next_event_ordinal(app.world());
     let result = apply_command(app.world_mut(), &produce(0, 2, 1, "probe:hire"));
     assert_eq!(result.outcome, Err(RejectReason::ArithmeticOverflow));
     assert_eq!(audit_state(app.world_mut()), before);
+    assert_eq!(pending_economy_events(app.world()), pending_before);
+    assert_eq!(next_event_ordinal(app.world()), ordinal_before);
     assert_eq!(
         app.world()
             .resource::<turts_sim::IdAllocators>()
@@ -258,6 +490,49 @@ fn failed_enqueue_does_not_allocate_job_or_consume_event_ordinal() {
             .2,
         1
     );
+}
+
+#[test]
+fn exhausted_started_event_rolls_back_reserved_start() {
+    let mut app = fixture_with_amounts(50, 200, 20);
+    let job = apply_command(app.world_mut(), &produce(0, 1, 1, "probe:hire"))
+        .outcome
+        .unwrap()
+        .job_id
+        .unwrap();
+    app.world_mut()
+        .resource_mut::<turts_sim::NextEventOrdinal>()
+        .0 = None;
+    let before = audit_state(app.world_mut());
+    let pending_before = pending_economy_events(app.world());
+    app.update();
+    let after = audit_state(app.world_mut());
+    assert_eq!(after.ledger_claims, before.ledger_claims);
+    assert_eq!(after.economy.balances, before.economy.balances);
+    assert_eq!(after.economy.inventories, before.economy.inventories);
+    assert_eq!(after.economy.queues, before.economy.queues);
+    assert_eq!(after.allocators, before.allocators);
+    assert_eq!(pending_before.len(), 1);
+    assert_eq!(after.economy.queues[0].jobs[0].id, job.0);
+    assert_eq!(
+        after.economy.queues[0].jobs[0].stage,
+        turts_sim::JobStage::Queued
+    );
+    assert_eq!(after.economy.queues[0].jobs[0].reserved[0].amount, 50);
+    assert_eq!(
+        after
+            .economy
+            .inventories
+            .iter()
+            .find(|i| i.unit == 1)
+            .unwrap()
+            .items[0]
+            .reserved,
+        50
+    );
+    assert_eq!(committed_tick(app.world()).events.len(), 1);
+    assert!(matches!(committed_tick(app.world()).events[0].kind,
+        EconomyEventKind::ProductionQueued { job: id, .. } if id == job.0));
 }
 
 #[test]
