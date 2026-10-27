@@ -7,7 +7,7 @@
     exports: (
         units: ["units/command_center.ron", "units/harvester.ron", "units/rifleman.ron"],
         maps: ["maps/flat.ron"],
-        visuals: ["visuals/command_center.ron", "visuals/harvester.ron", "visuals/rifleman.ron"],
+        visuals: ["visuals/command_center.ron", "visuals/harvester.ron", "visuals/rifleman.ron", "visuals/ore.ron"],
         resources: ["resources/ore.ron", "resources/credits.ron"],
         nodes: ["nodes/ore.ron"],
         production: ["production/rifleman.ron", "production/harvester.ron"],

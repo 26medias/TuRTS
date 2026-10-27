@@ -4,7 +4,7 @@
     exports: (
         units: ["units/depot.ron", "units/worker.ron"],
         maps: ["maps/field.ron"],
-        visuals: ["visuals/depot.ron", "visuals/worker.ron"],
+        visuals: ["visuals/depot.ron", "visuals/worker.ron", "visuals/ore.ron"],
         resources: ["resources/ore.ron"], nodes: ["nodes/ore.ron"],
         production: ["production/worker.ron"],
     ),

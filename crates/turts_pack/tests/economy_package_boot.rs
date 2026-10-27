@@ -7,7 +7,7 @@ use turts_mod_api::{
     ProductionDef, RefundRatio, ResolvedDropOffEffect, ResourceDef, ResourceKind, Shape, UniqueMap,
     UnitDef, VisualDef, VisualTarget, WorldPos,
 };
-use turts_mod_runtime::{archive::PackageArchive, pack::pack_dir};
+use turts_mod_runtime::{archive::PackageArchive, pack::pack_dir, visuals::visuals_by_content};
 use turts_pack::load_package;
 use turts_sim::{AuditState, UnitView, audit_state, headless_app};
 
@@ -20,10 +20,23 @@ fn package_dir(id: &str) -> PathBuf {
 fn boot(id: &str) -> (PackageArchive, AuditState) {
     let bytes = pack_dir(&package_dir(id)).unwrap_or_else(|error| panic!("pack {id}: {error}"));
     let archive = PackageArchive::parse(&bytes).unwrap();
+    visuals_by_content(std::slice::from_ref(&archive))
+        .unwrap_or_else(|error| panic!("visuals {id}: {error}"));
     let mut app = headless_app(20);
     load_package(app.world_mut(), &archive).unwrap_or_else(|error| panic!("boot {id}: {error}"));
     let state = audit_state(app.world_mut());
     (archive, state)
+}
+
+#[test]
+fn all_four_source_packages_pass_public_visual_validation() {
+    for id in ["acme", "base", "cedar", "haul"] {
+        let bytes = pack_dir(&package_dir(id)).unwrap_or_else(|error| panic!("pack {id}: {error}"));
+        let archive =
+            PackageArchive::parse(&bytes).unwrap_or_else(|error| panic!("parse {id}: {error}"));
+        visuals_by_content(std::slice::from_ref(&archive))
+            .unwrap_or_else(|error| panic!("visuals {id}: {error}"));
+    }
 }
 
 fn cid(id: &str) -> ContentId {
