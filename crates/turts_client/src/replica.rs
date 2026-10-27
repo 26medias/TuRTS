@@ -642,10 +642,10 @@ fn valid_economy(
         if !orders.insert(order.unit.0) {
             return false;
         }
-        let Some(worker) = units.get(&order.unit.0).filter(|u| u.owner_slot == slot) else {
+        let Some(unit_state) = units.get(&order.unit.0).filter(|u| u.owner_slot == slot) else {
             return false;
         };
-        let Some(worker_type) = parse_id(&worker.content_id) else {
+        let Some(worker_type) = parse_id(&unit_state.content_id) else {
             return false;
         };
         let Some(worker_def) = context.content.catalog.units.get(&worker_type) else {
