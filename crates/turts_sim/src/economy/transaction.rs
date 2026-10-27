@@ -5,10 +5,15 @@ use turts_mod_api::ContentId;
 
 use crate::{
     Owner, RejectReason, SlotId, UnitId,
-    economy::ledger::{
-        Account, EconomyLedger, Endpoint, Inventory, Reservation, ReservationClaim, ReservationLine,
+    economy::{
+        events::{EconomyEvent, EconomyEventKind, NextEventOrdinal, PendingEconomyEvents},
+        ledger::{
+            Account, EconomyLedger, Endpoint, Inventory, Reservation, ReservationClaim,
+            ReservationLine,
+        },
+        production::ProductionQueues,
     },
-    ids::JobId,
+    ids::{IdAllocators, JobId},
     slots::Slots,
 };
 
@@ -16,6 +21,10 @@ use crate::{
 struct WriteSet {
     accounts: BTreeMap<(Endpoint, ContentId), Account>,
     claims: BTreeMap<JobId, ReservationClaim>,
+    queues: Option<ProductionQueues>,
+    next_job_id: Option<u64>,
+    events: Vec<(u8, EconomyEventKind)>,
+    next_event_ordinal: Option<u64>,
 }
 
 pub(crate) struct Transaction<'w> {
@@ -37,6 +46,50 @@ pub(crate) fn transact<R>(
 }
 
 impl Transaction<'_> {
+    pub(crate) fn queues(&self) -> ProductionQueues {
+        self.writes.queues.clone().unwrap_or_else(|| {
+            self.world
+                .get_resource::<ProductionQueues>()
+                .cloned()
+                .unwrap_or_default()
+        })
+    }
+
+    pub(crate) fn stage_queues(&mut self, queues: ProductionQueues) {
+        self.writes.queues = Some(queues);
+    }
+
+    pub(crate) fn allocate_job_id(&mut self) -> Result<JobId, RejectReason> {
+        let next = self.writes.next_job_id.unwrap_or_else(|| {
+            self.world
+                .get_resource::<IdAllocators>()
+                .map_or(1, |ids| ids.next_job)
+        });
+        self.writes.next_job_id = Some(next.checked_add(1).ok_or(RejectReason::IdExhausted)?);
+        Ok(JobId(next))
+    }
+
+    pub(crate) fn stage_event(
+        &mut self,
+        owner_slot: u8,
+        kind: EconomyEventKind,
+    ) -> Result<(), RejectReason> {
+        let ordinal = match self.writes.next_event_ordinal {
+            Some(value) => value,
+            None => self
+                .world
+                .get_resource::<NextEventOrdinal>()
+                .and_then(|next| next.0)
+                .ok_or(RejectReason::ArithmeticOverflow)?,
+        };
+        self.writes.next_event_ordinal = Some(
+            ordinal
+                .checked_add(1)
+                .ok_or(RejectReason::ArithmeticOverflow)?,
+        );
+        self.writes.events.push((owner_slot, kind));
+        Ok(())
+    }
     fn account(&self, endpoint: Endpoint, resource: &ContentId) -> Account {
         if let Some(account) = self.writes.accounts.get(&(endpoint, resource.clone())) {
             return *account;
@@ -126,23 +179,51 @@ impl Transaction<'_> {
     }
 
     fn commit(self) {
-        if self.world.get_resource::<EconomyLedger>().is_none() {
-            self.world.insert_resource(EconomyLedger::default());
+        let Transaction { world, writes } = self;
+        if world.get_resource::<EconomyLedger>().is_none() {
+            world.insert_resource(EconomyLedger::default());
         }
-        let mut ledger = self.world.resource_mut::<EconomyLedger>();
-        for ((endpoint, resource), account) in self.writes.accounts {
-            match endpoint {
-                Endpoint::Slot(slot) => {
-                    ledger.balances.insert((slot, resource), account);
-                }
-                Endpoint::Inventory(unit) => {
-                    if let Some(inventory) = ledger.inventories.get_mut(&unit) {
-                        inventory.items.insert(resource, account);
+        {
+            let mut ledger = world.resource_mut::<EconomyLedger>();
+            for ((endpoint, resource), account) in writes.accounts {
+                match endpoint {
+                    Endpoint::Slot(slot) => {
+                        ledger.balances.insert((slot, resource), account);
+                    }
+                    Endpoint::Inventory(unit) => {
+                        if let Some(inventory) = ledger.inventories.get_mut(&unit) {
+                            inventory.items.insert(resource, account);
+                        }
                     }
                 }
             }
+            ledger.reservation_claims.extend(writes.claims);
         }
-        ledger.reservation_claims.extend(self.writes.claims);
+        if let Some(queues) = writes.queues {
+            world.insert_resource(queues);
+        }
+        if let Some(next_job_id) = writes.next_job_id {
+            world.resource_mut::<IdAllocators>().next_job = next_job_id;
+        }
+        if let Some(next_event_ordinal) = writes.next_event_ordinal {
+            let tick = world.resource::<crate::world::Tick>().0;
+            let first = world
+                .resource::<NextEventOrdinal>()
+                .0
+                .expect("event ordinal was preflighted before transaction commit");
+            {
+                let mut pending = world.resource_mut::<PendingEconomyEvents>();
+                for (offset, (owner_slot, kind)) in writes.events.into_iter().enumerate() {
+                    pending.0.push(EconomyEvent {
+                        tick,
+                        ordinal: first + offset as u64,
+                        owner_slot,
+                        kind,
+                    });
+                }
+            }
+            world.resource_mut::<NextEventOrdinal>().0 = Some(next_event_ordinal);
+        }
     }
 }
 

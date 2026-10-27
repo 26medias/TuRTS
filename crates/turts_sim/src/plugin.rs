@@ -21,7 +21,7 @@ use crate::{
             StopDiagnostic,
         },
         ledger::EconomyLedger,
-        production::ProductionQueues,
+        production::{ProductionQueues, run_production},
     },
     ids::IdAllocators,
 };
@@ -79,6 +79,12 @@ impl Plugin for SimPlugin {
                 FixedUpdate,
                 integrate_movement
                     .in_set(SimSet::Movement)
+                    .run_if(not_stopped),
+            )
+            .add_systems(
+                FixedUpdate,
+                run_production
+                    .in_set(SimSet::Production)
                     .run_if(not_stopped),
             )
             .add_systems(

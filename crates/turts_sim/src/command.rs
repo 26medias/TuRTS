@@ -5,7 +5,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use bevy_ecs::prelude::*;
 use bevy_math::Vec2;
 
-use crate::economy::EconomyOrders;
+use crate::economy::{EconomyOrders, production::queue_production};
 use crate::registry::UnitTypes;
 use crate::slots::SlotId;
 use crate::world::UnitType;
@@ -131,17 +131,23 @@ impl RejectReason {
 pub fn apply_command(world: &mut World, command: &Command) -> CommandResult {
     let outcome = match &command.kind {
         CommandKind::MoveTo { unit_ids, target } => {
-            apply_move_to(world, command.slot, unit_ids, *target)
+            apply_move_to(world, command.slot, unit_ids, *target).map(|()| Applied { job_id: None })
         }
-        // These dispatch branches are deliberately rejected until their owning phase exists.
         CommandKind::Gather { .. } => Err(RejectReason::MissingCapability),
-        CommandKind::Produce { .. } => Err(RejectReason::UnknownRecipe),
+        CommandKind::Produce {
+            producer_id,
+            recipe_id,
+        } => queue_production(world, command.slot, *producer_id, recipe_id.clone()).map(|job_id| {
+            Applied {
+                job_id: Some(job_id),
+            }
+        }),
         CommandKind::CancelProduction { .. } => Err(RejectReason::UnknownJob),
     };
     CommandResult {
         slot: command.slot,
         seq: command.seq,
-        outcome: outcome.map(|()| Applied { job_id: None }),
+        outcome,
     }
 }
 

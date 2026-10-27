@@ -10,7 +10,7 @@ use crate::{
 };
 use bevy_ecs::prelude::*;
 use serde::{Deserialize, Serialize};
-use turts_mod_api::{ContentId, WorldPos};
+use turts_mod_api::{ContentId, CostSource, WorldPos};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BalanceView {
@@ -42,6 +42,7 @@ pub struct OrderView {
 }
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CostView {
+    pub source: CostSource,
     pub resource: ContentId,
     pub amount: u64,
 }
@@ -273,6 +274,10 @@ fn job_view(job: ProductionJob) -> JobView {
             .charged
             .into_iter()
             .map(|line| CostView {
+                source: match line.endpoint {
+                    crate::economy::ledger::Endpoint::Slot(_) => CostSource::SlotBalance,
+                    crate::economy::ledger::Endpoint::Inventory(_) => CostSource::ProducerInventory,
+                },
                 resource: line.resource,
                 amount: line.amount,
             })
@@ -281,6 +286,12 @@ fn job_view(job: ProductionJob) -> JobView {
             r.lines
                 .into_iter()
                 .map(|line| CostView {
+                    source: match line.endpoint {
+                        crate::economy::ledger::Endpoint::Slot(_) => CostSource::SlotBalance,
+                        crate::economy::ledger::Endpoint::Inventory(_) => {
+                            CostSource::ProducerInventory
+                        }
+                    },
                     resource: line.resource,
                     amount: line.amount,
                 })
