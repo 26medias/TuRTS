@@ -692,3 +692,93 @@ fn depleted_original_reselects_nearest_node_after_delivery() {
         "nearest compatible node should be selected from receiver position"
     );
 }
+
+#[test]
+fn peer_depletion_routes_existing_partial_cargo_to_delivery() {
+    let mut files = fixture();
+    let map = files.get_mut("maps/test.ron").unwrap();
+    *map = map
+        .replacen("remaining: 1000", "remaining: 3", 1)
+        .replace(
+            "unit: \"probe:worker\", owner_slot: 0, pos: (x: 12.0, y: 8.0)",
+            "unit: \"probe:worker\", owner_slot: 0, pos: (x: 22.25, y: 8.0)",
+        )
+        .replace(
+            "unit: \"probe:worker\", owner_slot: 1, pos: (x: 52.0, y: 8.0)",
+            "unit: \"probe:worker\", owner_slot: 0, pos: (x: 25.75, y: 8.0)",
+        );
+    let mut app = scenario_with(files, 20);
+    for unit in [3, 5] {
+        let result = apply_command(
+            app.world_mut(),
+            &command(
+                unit,
+                CommandKind::Gather {
+                    unit_id: unit,
+                    node_id: turts_sim::NodeId(1),
+                },
+            ),
+        );
+        assert_eq!(result.outcome, Ok(turts_sim::Applied { job_id: None }));
+    }
+    let mut witnessed = false;
+    for _ in 0..100 {
+        app.update();
+        if turts_sim::economy::views::node_view(app.world(), turts_sim::NodeId(1))
+            .unwrap()
+            .remaining
+            == 0
+        {
+            let worker = order_view(app.world(), SlotId(0), 5).unwrap();
+            let cargo = turts_sim::economy::views::inventory_view(app.world(), SlotId(0), 5)
+                .unwrap()
+                .items
+                .iter()
+                .any(|item| item.on_hand > item.reserved);
+            assert!(cargo, "peer-depleted gatherer retains a partial load");
+            assert_eq!(worker.stage, turts_sim::GatherStage::MovingToReceiver);
+            witnessed = true;
+            break;
+        }
+    }
+    assert!(
+        witnessed,
+        "the shared node should be depleted by the two workers"
+    );
+}
+
+#[test]
+fn saturated_self_convert_reports_destination_overflow() {
+    let mut files = fixture();
+    let worker = files.get_mut("units/worker.ron").unwrap();
+    *worker = worker.replace(
+        "drop_off: None",
+        "drop_off: Some((rules: [(item: \"probe:timber\", effect: Convert(balance: \"probe:token\", per_item: 2))]))",
+    );
+    for unit in ["units/yard.ron", "units/exchange.ron"] {
+        let definition = files.get_mut(unit).unwrap();
+        *definition = definition
+            .replace("drop_off: Some((rules: [(item: \"probe:timber\", effect: Store)]))", "drop_off: None")
+            .replace("drop_off: Some((rules: [(item: \"probe:timber\", effect: Convert(balance: \"probe:token\", per_item: 2))]))", "drop_off: None");
+    }
+    let map = files.get_mut("maps/test.ron").unwrap();
+    *map = map
+        .replacen("remaining: 1000", "remaining: 1", 1)
+        .replace("amount: 200", "amount: 18446744073709551615");
+    let mut app = scenario_with(files, 20);
+    gather(&mut app, 1);
+    advance(&mut app, 400);
+    assert_eq!(
+        order_view(app.world(), SlotId(0), 3).unwrap().stage,
+        turts_sim::GatherStage::Waiting {
+            reason: turts_sim::WaitReason::DestinationOverflow
+        }
+    );
+    assert!(
+        turts_sim::economy::views::inventory_view(app.world(), SlotId(0), 3)
+            .unwrap()
+            .items
+            .iter()
+            .any(|item| item.on_hand > item.reserved)
+    );
+}

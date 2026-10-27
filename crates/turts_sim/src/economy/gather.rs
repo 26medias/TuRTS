@@ -463,6 +463,10 @@ fn gather_one_tick(
         return;
     };
     if node.remaining == 0 {
+        if cargo_amount(world, unit) > 0 {
+            set_stage(world, unit, GatherStage::MovingToReceiver, None);
+            return;
+        }
         let Some(item) = catalog
             .nodes
             .get(&node.content_id)
@@ -1030,9 +1034,7 @@ fn receiver_wait_reason(
     let mut saw_full = false;
     let types = world.get_resource::<UnitTypes>();
     for entity in world.iter_entities() {
-        if entity.get::<UnitId>().is_none_or(|id| id.0 == unit)
-            || entity.get::<Owner>().is_none_or(|slot| slot.0 != owner)
-        {
+        if entity.get::<Owner>().is_none_or(|slot| slot.0 != owner) {
             continue;
         }
         let Some(kind) = entity
@@ -1055,6 +1057,9 @@ fn receiver_wait_reason(
         match &rule.effect {
             ResolvedDropOffEffect::Store => {
                 let receiver = entity.get::<UnitId>().map_or(u32::MAX, |id| id.0);
+                if receiver == unit {
+                    continue;
+                }
                 if let Some(inventory) = world
                     .resource::<crate::EconomyLedger>()
                     .inventories
