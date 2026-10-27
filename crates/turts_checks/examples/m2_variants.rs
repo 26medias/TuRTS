@@ -628,7 +628,7 @@ fn apply_role_transform(
             _ => {
                 return Err(format!(
                     "{package}: unsupported receiver effect for cost endpoint"
-                ))
+                ));
             }
         }
         if payment == PaymentPolicy::ReserveThenCharge
@@ -667,7 +667,9 @@ fn apply_role_transform(
                     .filter(|p| p.owner_slot == owner && p.unit == receiver_id)
                     .collect::<Vec<_>>();
                 if owner_producers.len() != 1 {
-                    return Err(format!("{package}/{map_path}: expected exactly one producer placement for owner {owner}"));
+                    return Err(format!(
+                        "{package}/{map_path}: expected exactly one producer placement for owner {owner}"
+                    ));
                 }
                 let endpoint = owner_producers[0];
                 for placed in map
@@ -1724,10 +1726,12 @@ mod tests {
             DropOffEffect::Store
         );
         let recipes = archive.production().unwrap();
-        assert!(recipes
-            .iter()
-            .all(|(_, r)| r.costs[0].source == CostSource::ProducerInventory
-                && r.costs[0].resource.ends_with(":ore")));
+        assert!(
+            recipes
+                .iter()
+                .all(|(_, r)| r.costs[0].source == CostSource::ProducerInventory
+                    && r.costs[0].resource.ends_with(":ore"))
+        );
         let map = archive.maps().unwrap().remove(0).1;
         assert_eq!(
             map.placements
@@ -1737,10 +1741,11 @@ mod tests {
                 .sum::<u64>(),
             1000
         );
-        assert!(map
-            .slot_economy
-            .iter()
-            .all(|e| e.balances.len() == 1 && e.balances[0].amount == 0));
+        assert!(
+            map.slot_economy
+                .iter()
+                .all(|e| e.balances.len() == 1 && e.balances[0].amount == 0)
+        );
         assert!(visuals_by_content(std::slice::from_ref(archive)).is_ok());
 
         let mut item_only = discover(&root.join("cedar")).unwrap();
@@ -1754,16 +1759,20 @@ mod tests {
         )
         .unwrap();
         let item_only_archive = &item_only[0].archive;
-        assert!(!item_only_archive
-            .resources()
-            .unwrap()
-            .iter()
-            .any(|(_, r)| r.kind == ResourceKind::Balance));
-        assert!(item_only_archive
-            .maps()
-            .unwrap()
-            .iter()
-            .all(|(_, map)| map.slot_economy.is_empty()));
+        assert!(
+            !item_only_archive
+                .resources()
+                .unwrap()
+                .iter()
+                .any(|(_, r)| r.kind == ResourceKind::Balance)
+        );
+        assert!(
+            item_only_archive
+                .maps()
+                .unwrap()
+                .iter()
+                .all(|(_, map)| map.slot_economy.is_empty())
+        );
 
         let mut balance = discover(&root.join("cedar")).unwrap();
         let mut changes = vec![];
@@ -1785,22 +1794,26 @@ mod tests {
                 .count(),
             1
         );
-        assert!(archive
-            .production()
-            .unwrap()
-            .iter()
-            .all(|(_, r)| r.costs[0].source == CostSource::SlotBalance
-                && r.payment == PaymentPolicy::ReserveThenCharge));
+        assert!(
+            archive
+                .production()
+                .unwrap()
+                .iter()
+                .all(|(_, r)| r.costs[0].source == CostSource::SlotBalance
+                    && r.payment == PaymentPolicy::ReserveThenCharge)
+        );
         let map = archive.maps().unwrap().remove(0).1;
-        assert!(map
-            .placements
-            .iter()
-            .filter(|p| p.unit.ends_with(":depot"))
-            .all(|p| p.contents.is_empty()));
-        assert!(map
-            .slot_economy
-            .iter()
-            .all(|e| e.balances.len() == 1 && e.balances[0].amount == 100));
+        assert!(
+            map.placements
+                .iter()
+                .filter(|p| p.unit.ends_with(":depot"))
+                .all(|p| p.contents.is_empty())
+        );
+        assert!(
+            map.slot_economy
+                .iter()
+                .all(|e| e.balances.len() == 1 && e.balances[0].amount == 100)
+        );
         assert!(visuals_by_content(std::slice::from_ref(archive)).is_ok());
 
         let added = archive
@@ -1867,23 +1880,27 @@ mod tests {
         )
         .unwrap();
         let archive = &inputs[0].archive;
-        assert!(archive
-            .resources()
-            .unwrap()
-            .iter()
-            .any(|(_, r)| r.id == "reserve" && r.kind == ResourceKind::Balance));
+        assert!(
+            archive
+                .resources()
+                .unwrap()
+                .iter()
+                .any(|(_, r)| r.id == "reserve" && r.kind == ResourceKind::Balance)
+        );
         let map = archive.maps().unwrap().remove(0).1;
         assert!(map.slot_economy.iter().all(|slot| slot.balances
             == vec![BalanceAmount {
                 balance: "cedar:reserve".into(),
                 amount: 0
             }]));
-        assert!(archive
-            .production()
-            .unwrap()
-            .iter()
-            .all(|(_, recipe)| recipe.costs[0].resource.ends_with(":wood")
-                && recipe.costs[0].source == CostSource::ProducerInventory));
+        assert!(
+            archive
+                .production()
+                .unwrap()
+                .iter()
+                .all(|(_, recipe)| recipe.costs[0].resource.ends_with(":wood")
+                    && recipe.costs[0].source == CostSource::ProducerInventory)
+        );
         assert!(validate(archive).is_ok());
     }
 
