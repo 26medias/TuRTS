@@ -8652,6 +8652,7 @@ version = "0.2.0"
 dependencies = [
  "bevy_app",
  "bevy_ecs",
+ "bevy_math",
  "turts_mod_api",
  "turts_mod_runtime",
  "turts_sim",

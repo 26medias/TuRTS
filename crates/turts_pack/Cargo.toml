@@ -17,3 +17,4 @@ path = "src/main.rs"
 
 [dev-dependencies]
 bevy_app = { workspace = true }
+bevy_math = { workspace = true }
