@@ -170,12 +170,14 @@ fn on_connected(
 ) {
     state.connected_seen = true;
     state.receipt_epoch = Some(trigger.entity.to_bits());
+    state.reliable_message_count = 0;
     if let Ok(mut sender) = hello.get_mut(trigger.entity) {
         sender.send::<ReliableChannel>(Hello {
             player_id: cfg.player_id,
             protocol_version: NET_PROTOCOL_VERSION,
             lockfile_hash: cfg.hash.clone(),
         });
+        record_reliable_message(&mut state, ChannelKind::of::<ReliableChannel>());
     }
 }
 
@@ -300,6 +302,7 @@ fn send_moves(
                 target: Pos { x: 10.0, y: 10.0 },
             },
         });
+        record_reliable_message(&mut state, ChannelKind::of::<ReliableChannel>());
         state.next_seq += 1;
     }
 }
