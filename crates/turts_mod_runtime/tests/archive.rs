@@ -115,7 +115,7 @@ fn archive_lock_entry_carries_the_manifest_and_the_hash() {
     let archive = PackageArchive::parse(&bytes).unwrap();
     let entry = archive.lock_entry(vec!["http://h/p.tar".to_string()]);
     assert_eq!(entry.id, "acme");
-    assert_eq!(entry.version, "0.1.0");
+    assert_eq!(entry.version, "0.2.0");
     assert_eq!(entry.hash, sha256_hex(&bytes));
     assert_eq!(entry.size, bytes.len() as u64);
     assert_eq!(entry.urls, vec!["http://h/p.tar".to_string()]);

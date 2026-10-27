@@ -92,7 +92,7 @@ fn t2c_unknown_manifest_field() {
 
 #[test]
 fn t2c_bad_version_and_bad_id() {
-    let bytes = acme_archive_with("manifest.ron", "version: \"0.1.0\"", "version: \"one\"");
+    let bytes = acme_archive_with("manifest.ron", "version: \"0.2.0\"", "version: \"one\"");
     refused(&bytes, "version");
     let bytes = acme_archive_with("manifest.ron", "id: \"acme\"", "id: \"Acme\"");
     refused(&bytes, "id");
