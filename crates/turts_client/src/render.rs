@@ -14,6 +14,7 @@ use bevy::prelude::*;
 use turts_mod_api::Shape;
 use turts_net_protocol::Pos;
 
+use crate::ingest::ReplicaState;
 use crate::join::{AcquiredPackages, Phase};
 use crate::present::{Presented, update_presented};
 
@@ -51,6 +52,10 @@ pub fn mesh_lift(shape: &Shape) -> f32 {
 /// Marks the entity that shows one unit.
 #[derive(Component)]
 pub struct PresentedUnit(pub u32);
+
+/// Public surface resource node mesh, keyed by its stable protocol id.
+#[derive(Component)]
+pub struct PresentedNode(pub u32);
 
 /// The mesh and lift of each shown shape, by content id, and the one material of all units.
 #[derive(Default)]
@@ -155,7 +160,75 @@ impl Plugin for UnitRenderPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(
             Update,
-            (setup_scene, sync_units).chain().after(update_presented),
+            (setup_scene, sync_units, sync_nodes)
+                .chain()
+                .after(update_presented),
         );
+    }
+}
+
+#[derive(Default)]
+pub struct NodeAssets {
+    meshes: HashMap<String, (Handle<Mesh>, f32)>,
+    material: Option<Handle<StandardMaterial>>,
+}
+
+/// Public nodes are rendered from the coherent replica and downloaded shape catalog.
+pub fn sync_nodes(
+    mut commands: Commands,
+    state: Res<ReplicaState>,
+    acquired: Option<Res<AcquiredPackages>>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+    mut shown: Query<(Entity, &PresentedNode, &mut Transform)>,
+    mut assets: Local<NodeAssets>,
+) {
+    let Some(replica) = state.replica.as_ref() else {
+        return;
+    };
+    let Some(acquired) = acquired else {
+        return;
+    };
+    let mut entities = HashMap::new();
+    for (entity, node, _) in &shown {
+        entities.insert(node.0, entity);
+    }
+    let mut kept = HashSet::new();
+    for node in replica.nodes.values() {
+        kept.insert(node.id.0);
+        let pos = world_to_scene(node.pos);
+        if let Some(&entity) = entities.get(&node.id.0) {
+            if let Ok((_, _, mut transform)) = shown.get_mut(entity) {
+                let lift = assets
+                    .meshes
+                    .get(&node.content_id)
+                    .map_or(0.0, |(_, lift)| *lift);
+                transform.translation = pos + Vec3::Y * lift;
+            }
+            continue;
+        }
+        let Some(shape) = acquired.0.content.shapes.get(&node.content_id) else {
+            continue;
+        };
+        let (mesh, lift) = assets
+            .meshes
+            .entry(node.content_id.clone())
+            .or_insert_with(|| (meshes.add(mesh_for(shape)), mesh_lift(shape)))
+            .clone();
+        let material = assets
+            .material
+            .get_or_insert_with(|| materials.add(Color::srgb(0.72, 0.62, 0.31)))
+            .clone();
+        commands.spawn((
+            Mesh3d(mesh),
+            MeshMaterial3d(material),
+            Transform::from_translation(pos + Vec3::Y * lift),
+            PresentedNode(node.id.0),
+        ));
+    }
+    for (id, entity) in entities {
+        if !kept.contains(&id) {
+            commands.entity(entity).despawn();
+        }
     }
 }

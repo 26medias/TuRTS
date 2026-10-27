@@ -10,7 +10,7 @@ turts_net_protocol = { path = "../turts_net_protocol" }
 turts_mod_api = { path = "../turts_mod_api" }
 turts_mod_runtime = { path = "../turts_mod_runtime" }
 turts_net_lightyear = { path = "../turts_net_lightyear", features = ["client"] }
-bevy = { workspace = true, features = ["3d"] }
+bevy = { workspace = true, features = ["3d", "ui", "default_font"] }
 lightyear = { workspace = true, features = ["client"] }
 serde = { workspace = true }
 serde_json = { workspace = true }

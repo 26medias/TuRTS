@@ -4,6 +4,7 @@ pub mod acquire;
 pub mod commands;
 pub mod content;
 pub mod debug;
+pub mod economy_ui;
 pub mod fetch;
 pub mod framelog;
 pub mod ingest;
@@ -26,6 +27,7 @@ use turts_net_protocol::Pos;
 
 use crate::commands::{CommandSendStatus, CommandSequence, PendingCommands, send_commands};
 use crate::debug::{DebugState, exit_when_done, rebuild_debug_state};
+use crate::economy_ui::EconomyUiPlugin;
 use crate::framelog::{FrameLog, write_frame_log};
 use crate::ingest::{
     CommandResults, IngestCounters, IngestHooks, ReceiptWitnesses, ReplicaState, ingest_messages,
@@ -138,7 +140,7 @@ pub fn build_app(opts: ClientOptions) -> App {
     app.add_plugins(ProtocolPlugin);
     app.add_plugins(ClientPlugin(opts));
     if !headless {
-        app.add_plugins((UnitRenderPlugin, ClickInputPlugin));
+        app.add_plugins((UnitRenderPlugin, EconomyUiPlugin, ClickInputPlugin));
     }
     app
 }

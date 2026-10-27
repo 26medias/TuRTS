@@ -38,13 +38,38 @@ pub fn submit(pending: &mut PendingCommands, kind: PlayerCommandKind) {
     pending.0.push_back(kind);
 }
 
+/// Owned mobile ids, ascending, for convenience adapters that expand an implicit all-units move
+/// before it enters the shared FIFO. Explicit command bodies must remain literal.
+pub fn owned_mobile_ids(state: &ReplicaState) -> Vec<UnitId> {
+    let (Some(welcome), Some(replica), Some(content)) = (
+        state.welcome,
+        state.replica.as_ref(),
+        state.content.as_ref(),
+    ) else {
+        return Vec::new();
+    };
+    let mut ids: Vec<_> = replica
+        .units
+        .iter()
+        .filter_map(|(&id, unit)| {
+            if unit.owner_slot != welcome.slot {
+                return None;
+            }
+            let content_id = turts_mod_api::ContentId::parse(&unit.content_id).ok()?;
+            let definition = content.catalog.units.get(&content_id)?;
+            definition.movement.as_ref().map(|_| UnitId(id))
+        })
+        .collect();
+    ids.sort_by_key(|id| id.0);
+    ids
+}
+
 /// Send queued commands in FIFO order only after a fresh session has joined.
 pub fn send_commands(
     mut pending: ResMut<PendingCommands>,
     mut sequence: ResMut<CommandSequence>,
     mut status: ResMut<CommandSendStatus>,
     phase: Res<Phase>,
-    state: Res<ReplicaState>,
     mut senders: Query<(Entity, &mut MessageSender<PlayerCommand>), With<Connected>>,
     mut witnesses: ResMut<ReceiptWitnesses>,
 ) {
@@ -53,26 +78,7 @@ pub fn send_commands(
     }
     for (entity, mut sender) in &mut senders {
         let epoch = witnesses.epoch_for(entity.to_bits());
-        while let Some(mut kind) = pending.0.pop_front() {
-            if let PlayerCommandKind::MoveTo { unit_ids, .. } = &mut kind
-                && unit_ids.is_empty()
-            {
-                let Some(welcome) = state.welcome else {
-                    continue;
-                };
-                if let Some(replica) = &state.replica {
-                    *unit_ids = replica
-                        .units
-                        .iter()
-                        .filter(|(_, unit)| unit.owner_slot == welcome.slot)
-                        .map(|(&id, _)| UnitId(id))
-                        .collect();
-                    unit_ids.sort_by_key(|id| id.0);
-                }
-                if unit_ids.is_empty() {
-                    continue;
-                }
-            }
+        while let Some(kind) = pending.0.pop_front() {
             match sequence.allocate() {
                 Ok(seq) => {
                     sender.send::<ReliableChannel>(PlayerCommand { seq, kind });

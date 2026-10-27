@@ -243,3 +243,87 @@ fn setup_scene_waits_for_the_join() {
     app.update();
     assert_eq!(active_cameras_3d(&mut app), 1);
 }
+
+#[test]
+fn sync_nodes_uses_downloaded_shapes_and_stable_ids() {
+    use turts_client::{
+        ingest::ReplicaState,
+        render::{PresentedNode, sync_nodes},
+        replica::Replica,
+    };
+    use turts_net_protocol::{NodeId, NodeState};
+
+    let shape = Shape::Cuboid {
+        x: 1.0,
+        y: 2.0,
+        z: 1.4,
+    };
+    let mut content = ClientContent::default();
+    content.shapes.insert("pkg:ore".into(), shape);
+    let mut state = ReplicaState::default();
+    let mut replica = Replica::new(20);
+    replica.nodes.insert(
+        NodeId(9),
+        NodeState {
+            id: NodeId(9),
+            content_id: "pkg:ore".into(),
+            pos: Pos { x: 12.0, y: 7.0 },
+            remaining: 0,
+        },
+    );
+    state.replica = Some(replica);
+
+    let mut app = App::new();
+    app.add_plugins((MinimalPlugins, AssetPlugin::default()))
+        .init_asset::<Mesh>()
+        .init_asset::<StandardMaterial>()
+        .insert_resource(state)
+        .insert_resource(AcquiredPackages(Acquired {
+            lockfile_hash: String::new(),
+            visuals: HashMap::new(),
+            map_size: (64.0, 64.0),
+            unit_names: HashMap::new(),
+            content,
+        }))
+        .add_systems(Update, sync_nodes);
+    app.update();
+
+    let mut query = app
+        .world_mut()
+        .query::<(Entity, &PresentedNode, &Transform)>();
+    let found: Vec<_> = query
+        .iter(app.world())
+        .map(|(entity, node, transform)| (entity, node.0, transform.translation))
+        .collect();
+    assert_eq!(found.len(), 1);
+    assert_eq!(found[0].1, 9);
+    assert_eq!(found[0].2, Vec3::new(12.0, 0.7, 7.0));
+
+    app.world_mut()
+        .resource_mut::<ReplicaState>()
+        .replica
+        .as_mut()
+        .unwrap()
+        .nodes
+        .get_mut(&NodeId(9))
+        .unwrap()
+        .pos = Pos { x: 15.0, y: 8.0 };
+    app.update();
+    let moved: Vec<_> = query
+        .iter(app.world())
+        .map(|(entity, node, transform)| (entity, node.0, transform.translation))
+        .collect();
+    assert_eq!(moved.len(), 1);
+    assert_eq!(moved[0].0, found[0].0);
+    assert_eq!(moved[0].2, Vec3::new(15.0, 0.7, 8.0));
+
+    app.world_mut()
+        .resource_mut::<ReplicaState>()
+        .replica
+        .as_mut()
+        .unwrap()
+        .nodes
+        .clear();
+    app.update();
+    assert_eq!(query.iter(app.world()).count(), 0);
+}

@@ -8,7 +8,9 @@
 
 use std::net::SocketAddr;
 
-use crate::commands::{CommandSendStatus, CommandSequence, PendingCommands, submit};
+use crate::commands::{
+    CommandSendStatus, CommandSequence, PendingCommands, owned_mobile_ids, submit,
+};
 use crate::ingest::ReceiptWitnesses;
 use bevy::prelude::*;
 use lightyear::netcode::client_plugin::NetcodeConfig;
@@ -376,12 +378,7 @@ pub fn auto_move(
     }
     let mut unit_ids: Vec<UnitId> = match opts.0.move_unit {
         Some(id) => vec![UnitId(id)],
-        None => replica
-            .units
-            .iter()
-            .filter(|(_, unit)| unit.owner_slot == welcome.slot)
-            .map(|(&id, _)| UnitId(id))
-            .collect(),
+        None => owned_mobile_ids(&state),
     };
     if unit_ids.is_empty() {
         return;

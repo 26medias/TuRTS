@@ -61,7 +61,18 @@ pub fn debug_json(world: &World) -> String {
             })
         })
         .unwrap_or(Value::Null);
-    json!({ "phase": phase, "units": units, "last_frame": last_frame, "reconnect_required": world.get_resource::<CommandSendStatus>().is_some_and(|status| status.reconnect_required) }).to_string()
+    let selection = world
+        .get_resource::<crate::economy_ui::Selection>()
+        .and_then(|selection| selection.0);
+    let rendered_ui_nodes = crate::economy_ui::rendered_ui_snapshot(world).len();
+    json!({
+        "phase": phase,
+        "units": units,
+        "last_frame": last_frame,
+        "reconnect_required": world.get_resource::<CommandSendStatus>().is_some_and(|status| status.reconnect_required),
+        "selection": selection,
+        "rendered_ui_nodes": rendered_ui_nodes,
+    }).to_string()
 }
 
 /// `Last`: rebuild [`DebugState`].
