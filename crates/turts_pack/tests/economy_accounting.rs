@@ -2555,6 +2555,229 @@ fn review_oracle_rejects_forged_event_owner() {
 }
 
 #[test]
+fn review_empty_receiver_stage_resumes_after_transfer_removes_cargo() {
+    let mut files = economy_files()
+        .into_iter()
+        .map(|(p, b)| (p, String::from_utf8(b).unwrap()))
+        .collect::<std::collections::BTreeMap<_, _>>();
+    let map = files.get_mut("maps/test.ron").unwrap();
+    *map = map.replace(
+        "(unit: \"probe:worker\", owner_slot: 0, pos: (x: 12.0, y: 8.0), contents: [])",
+        "(unit: \"probe:worker\", owner_slot: 0, pos: (x: 12.0, y: 8.0), contents: [(item: \"probe:timber\", amount: 10)])",
+    );
+    let mut app = scenario_with(files, 20);
+    trail(&mut app).enable();
+    let initial = audit_state(app.world_mut());
+    let catalog = app
+        .world()
+        .resource::<turts_sim::bootstrap::InstalledCatalog>()
+        .0
+        .clone();
+    let mut oracle = AccountingOracle::new(&initial, &catalog);
+    let gather = Command {
+        slot: SlotId(0),
+        seq: 201,
+        kind: CommandKind::Gather {
+            unit_id: 3,
+            node_id: turts_sim::NodeId(1),
+        },
+    };
+    let result = apply_command(app.world_mut(), &gather);
+    let after = audit_state(app.world_mut());
+    let op = trail(&mut app).drain_operations().pop().unwrap();
+    oracle
+        .observe(
+            &ExpectedOperation::Command(gather),
+            &initial,
+            &after,
+            &op.events,
+            Some(&result),
+        )
+        .unwrap();
+    let before_transfer = oracle.modeled_state().clone();
+    let result = turts_sim::economy::transaction::inventory_transfer(
+        app.world_mut(),
+        SlotId(0),
+        3,
+        1,
+        common::cid("probe:timber"),
+        10,
+    );
+    assert!(result.is_ok());
+    let after_transfer = audit_state(app.world_mut());
+    let op = trail(&mut app).drain_operations().pop().unwrap();
+    oracle
+        .observe(
+            &ExpectedOperation::InventoryTransfer {
+                slot: 0,
+                from: 3,
+                to: 1,
+                item: common::cid("probe:timber"),
+                amount: 10,
+            },
+            &before_transfer,
+            &after_transfer,
+            &op.events,
+            None,
+        )
+        .unwrap();
+
+    app.update();
+    let operations = trail(&mut app).drain_operations();
+    let op = operations
+        .iter()
+        .find(|op| op.before.raw_orders.iter().any(|order| order.unit == 3))
+        .unwrap();
+    let expected = ExpectedOperation::Automatic {
+        tick: 1,
+        phase: AutomaticPhase::Gather,
+        subject: AutomaticSubject::Gatherer(3),
+    };
+    assert_eq!(
+        op.after
+            .raw_orders
+            .iter()
+            .find(|order| order.unit == 3)
+            .unwrap()
+            .stage,
+        turts_sim::GatherStage::MovingToNode,
+        "empty receiver phase resumes the live deposit"
+    );
+    let truthful = oracle.observe(&expected, &op.before, &op.after, &op.events, None);
+    let mut suppressed = AccountingOracle::new(&op.before, &catalog);
+    let no_op = suppressed.observe(&expected, &op.before, &op.before, &[], None);
+    assert!(
+        truthful.is_ok() && no_op.is_err(),
+        "truthful empty-cargo resume must pass and suppressed transition must fail: truthful={truthful:?}, suppressed={no_op:?}"
+    );
+}
+
+#[test]
+fn review_stocked_no_deposit_wait_selects_receiver_after_transfer() {
+    let mut files = economy_files()
+        .into_iter()
+        .map(|(p, b)| (p, String::from_utf8(b).unwrap()))
+        .collect::<std::collections::BTreeMap<_, _>>();
+    let map = files.get_mut("maps/test.ron").unwrap();
+    *map = map.replace("remaining: 1000", "remaining: 1");
+    let mut app = scenario_with(files, 20);
+    trail(&mut app).enable();
+    let initial = audit_state(app.world_mut());
+    let catalog = app
+        .world()
+        .resource::<turts_sim::bootstrap::InstalledCatalog>()
+        .0
+        .clone();
+    let mut oracle = AccountingOracle::new(&initial, &catalog);
+    let gather = Command {
+        slot: SlotId(0),
+        seq: 202,
+        kind: CommandKind::Gather {
+            unit_id: 3,
+            node_id: turts_sim::NodeId(1),
+        },
+    };
+    let result = apply_command(app.world_mut(), &gather);
+    let after = audit_state(app.world_mut());
+    let op = trail(&mut app).drain_operations().pop().unwrap();
+    oracle
+        .observe(
+            &ExpectedOperation::Command(gather),
+            &initial,
+            &after,
+            &op.events,
+            Some(&result),
+        )
+        .unwrap();
+
+    let mut waiting_tick = None;
+    for tick in 1..=1200 {
+        advance_accounted_tick(&mut app, &mut oracle, tick);
+        if oracle
+            .modeled_state()
+            .raw_orders
+            .iter()
+            .find(|order| order.unit == 3)
+            .is_some_and(|order| {
+                order.stage
+                    == (turts_sim::GatherStage::Waiting {
+                        reason: turts_sim::WaitReason::NoDeposit,
+                    })
+            })
+        {
+            waiting_tick = Some(tick);
+            break;
+        }
+    }
+    let waiting_tick = waiting_tick.expect("finite nodes reach an empty NoDeposit wait");
+    let before_transfer = oracle.modeled_state().clone();
+    let result = turts_sim::economy::transaction::inventory_transfer(
+        app.world_mut(),
+        SlotId(0),
+        1,
+        3,
+        common::cid("probe:timber"),
+        1,
+    );
+    assert!(result.is_ok());
+    let after_transfer = audit_state(app.world_mut());
+    let op = trail(&mut app).drain_operations().pop().unwrap();
+    oracle
+        .observe(
+            &ExpectedOperation::InventoryTransfer {
+                slot: 0,
+                from: 1,
+                to: 3,
+                item: common::cid("probe:timber"),
+                amount: 1,
+            },
+            &before_transfer,
+            &after_transfer,
+            &op.events,
+            None,
+        )
+        .unwrap();
+
+    app.update();
+    let operations = trail(&mut app).drain_operations();
+    let op = operations
+        .iter()
+        .find(|op| op.before.raw_orders.iter().any(|order| order.unit == 3))
+        .unwrap();
+    let expected = ExpectedOperation::Automatic {
+        tick: waiting_tick + 1,
+        phase: AutomaticPhase::Gather,
+        subject: AutomaticSubject::Gatherer(3),
+    };
+    assert_eq!(
+        op.after
+            .raw_orders
+            .iter()
+            .find(|order| order.unit == 3)
+            .unwrap()
+            .stage,
+        turts_sim::GatherStage::MovingToReceiver,
+        "new cargo wakes the NoDeposit order and selects its Store receiver"
+    );
+    assert_eq!(
+        op.after
+            .raw_orders
+            .iter()
+            .find(|order| order.unit == 3)
+            .unwrap()
+            .receiver,
+        Some(1),
+    );
+    let truthful = oracle.observe(&expected, &op.before, &op.after, &op.events, None);
+    let mut suppressed = AccountingOracle::new(&op.before, &catalog);
+    let no_op = suppressed.observe(&expected, &op.before, &op.before, &[], None);
+    assert!(
+        truthful.is_ok() && no_op.is_err(),
+        "stocked NoDeposit must wake for receiver selection and reject a no-op: truthful={truthful:?}, suppressed={no_op:?}"
+    );
+}
+
+#[test]
 fn review_oracle_accepts_local_transfer_into_empty_inventory_row() {
     let mut app = scenario(20);
     load_package(app.world_mut(), &economy_archive()).unwrap();

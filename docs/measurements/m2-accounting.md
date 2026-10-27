@@ -219,3 +219,18 @@ The three labels that previously stood in for related faults now have exact, sep
 | MoveTo interruption loses carried items | `e6_gather_conversion_and_interruptions_conserve_through_delivery` | Mutant clears the carrier inventory while applying MoveTo. Assertion shows cargo `8 → 0`; restored test passes. This is separate from a Store debit fault. | Semantic RED / restored GREEN |
 
 Per-plant mutated and restored hashes, exit codes, and assertion outputs are in `/tmp/task8-mutation/final-three-exact.txt`. The prior capacity and Store debit mutations remain additional evidence and are not counted as substitutes for these exact families.
+
+## Fix 2: gather wakeups after trusted transfers
+
+Sol's `task-8-oracle-rereview-1.md` isolated one remaining stage×cargo dispatch defect. The predictor now dispatches all positive available cargo from `MovingToReceiver` and any `Waiting` reason through receiver selection; empty `NoDeposit` remains terminal; empty `MovingToReceiver` and nonterminal waiting states use the independent deposit-resume path shared with empty `Unloading`.
+
+Two loader-backed regressions cover accepted transfer plus truthful automatic transition and the suppressed no-op counterpart:
+
+| Test | Accounted setup and expected wakeup | Previous oracle RED | Fixed oracle GREEN |
+| --- | --- | --- | --- |
+| `review_empty_receiver_stage_resumes_after_transfer_removes_cargo` | Full worker cargo, accepted Gather, transfer all 10 cargo from worker 3 to yard 1; next Gather resumes the live deposit with `MovingToNode`. | Truthful result rejected as `unsupported modeled gather stage`; suppressed control is also rejected. | Both controls pass their expectations. |
+| `review_stocked_no_deposit_wait_selects_receiver_after_transfer` | Deplete finite nodes to empty `Waiting(NoDeposit)`, transfer 1 timber from yard 1 to worker 3; next Gather selects receiver 1 and enters `MovingToReceiver`. | Truthful result rejected; suppressed unchanged/empty-event operation accepted (`truthful=Err`, `suppressed=Ok`). | Truthful transition passes and suppressed wakeup rejects. |
+
+The exact old-oracle RED and fixed-oracle GREEN logs are preserved under `/tmp/task8-mutation/{empty_receiver_old_oracle_RED,stocked_nodeposit_old_oracle_RED,empty_receiver_fixed_GREEN,stocked_nodeposit_fixed_GREEN}.log`. Final fix2 hashes: accounting helper SHA256 `7a4404b37cfe1f99ed47f22d19f25e1f74cbb8b18a7f6eb68df8aed05099ef66`; accounting tests SHA256 `3fe443deb0902a3af7f4e930123333c44665cc85576806f09a0bd2b596145c40`.
+
+Fix2 verification: `economy_accounting` 42 passed; `economy_gather` 21 passed; `economy_transactions` 5 passed; strict Clippy, formatting, and diff checks passed. Since the stage projection can affect depletion/cargo paths, the depleted-node replenishment and MoveTo cargo-loss plants were rerun: each produced semantic RED and restored GREEN. No other required fault plants were repeated.

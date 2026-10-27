@@ -1831,13 +1831,9 @@ impl AccountingOracle {
                     }
                 }
             }
-            turts_sim::GatherStage::MovingToReceiver
-            | turts_sim::GatherStage::Waiting {
-                reason:
-                    turts_sim::WaitReason::NoReceiver
-                    | turts_sim::WaitReason::DestinationFull
-                    | turts_sim::WaitReason::DestinationOverflow,
-            } if !cargo_items(s, unit).is_empty() => {
+            turts_sim::GatherStage::MovingToReceiver | turts_sim::GatherStage::Waiting { .. }
+                if !cargo_items(s, unit).is_empty() =>
+            {
                 let item = cargo_items(s, unit)[0].clone();
                 let Some((to, to_pos, to_radius, _, _)) =
                     find_receiver(s, &item, unit_view.owner_slot)
@@ -1891,8 +1887,15 @@ impl AccountingOracle {
             }
             turts_sim::GatherStage::Waiting {
                 reason: turts_sim::WaitReason::NoDeposit,
-            } => {}
-            turts_sim::GatherStage::Unloading => {
+            } if cargo_items(s, unit).is_empty() => {}
+            turts_sim::GatherStage::MovingToReceiver
+            | turts_sim::GatherStage::Waiting {
+                reason:
+                    turts_sim::WaitReason::NoReceiver
+                    | turts_sim::WaitReason::DestinationFull
+                    | turts_sim::WaitReason::DestinationOverflow,
+            }
+            | turts_sim::GatherStage::Unloading => {
                 let items = cargo_items(s, unit);
                 if items.is_empty() {
                     let original_live = old
