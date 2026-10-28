@@ -59,9 +59,9 @@ pub struct Exports {
     pub resources: Vec<String>,
     pub nodes: Vec<String>,
     pub production: Vec<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub recipes: Vec<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub technologies: Vec<String>,
 }
 
@@ -338,23 +338,23 @@ pub struct UnitDef {
     pub drop_off: Option<DropOffDef>,
     #[serde(deserialize_with = "required_option")]
     pub producer: Option<ProducerDef>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub output_inventory: Option<InventoryDef>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub extractor: Option<ExtractorDef>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub conveyor: Option<ConveyorDef>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub inserter: Option<InserterDef>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub machine: Option<MachineDef>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub research: Option<ResearchStationDef>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub health: Option<HealthDef>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub weapon: Option<WeaponDef>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub removal: Option<RemovalDef>,
 }
 
@@ -434,7 +434,7 @@ pub struct Placement {
     pub owner_slot: u8,
     pub pos: WorldPos,
     pub contents: Vec<ItemStack>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub facing: Option<Facing>,
 }
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -459,7 +459,7 @@ pub struct MapDef {
     pub nodes: Vec<NodePlacement>,
     #[serde(deserialize_with = "unique_slot_economy")]
     pub slot_economy: Vec<SlotEconomyInit>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub belts: Vec<BeltLinePlacement>,
 }
 
