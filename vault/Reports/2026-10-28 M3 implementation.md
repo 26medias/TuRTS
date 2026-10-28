@@ -6,9 +6,9 @@ tags: [turts, m3, report]
 
 # M3 implementation
 
-Fifteen of20 task entries are accepted: T0, T1, T2, T3a, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12 and T13a. Public Forge boot and shared spawn-row installation pass review; independent checkpoint C1 passed. Extraction, transport, inserters, machines, research and combat passed; Remove/SetEnabled commands passed; views/audit is under repair after independent review, before C2. Exact status: [[M3 Execution Board]]; evidence: [[Work Log/2026-10-28]].
+Sixteen of20 task entries are accepted: T0, T1, T2, T3a, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13a and T13b. Public Forge boot and shared spawn-row installation pass review; independent checkpoint C1 passed. Extraction, transport, inserters, machines, research and combat passed; Remove/SetEnabled commands passed; views/audit is under repair after independent review, before C2. Exact status: [[M3 Execution Board]]; evidence: [[Work Log/2026-10-28]].
 
-Last canonical gates: 685 passed, 0 failed, 17 ignored; fmt, strict Clippy, workspace check, wasm, boundary and frozen M2 stream passed. The complete industrial chain and forge demonstration are still pending.
+Last canonical gates: 700 passed, 0 failed, 17 ignored; fmt, strict Clippy, workspace check, wasm, boundary and frozen M2 stream passed. The complete industrial chain and forge demonstration are still pending.
 
 Research stays private under the user's approved F11 coordinator design. No push or main merge has occurred.
 
@@ -21,3 +21,5 @@ T13a R1 repair: public scheduled Forge regression reproduced phantom enabled=tru
 T13a accepted at integration80fe968 after same-reviewer recheck: real scheduled removal regression red before fix, green after; genuine enable changes still publish and following tick quiet. Canonical685/0/17 with fmt, strictClippy, check, boundary, frozen stream and wasm all pass. C2 starts on the following frozen documentation commit. Five implementation entries remain after this acceptance.
 
 C2 accepted on frozenb87c111: allgates685/0/17,98 new function semanticrefutations+1 externalpublictype compilecontract,14/14 priorplants replayed,482 tracked hashes match. Rootacceptance and precise limits: target/m3-evidence/c2/root-acceptance.md. ParallelT13b candidate696/0/17 under scopedrepair for per-piece beltprivacy; T14 focused29tests and7oraclebypasses green, fullgatespending. Budget52 actualexecutionruns.
+
+T13b accepted source2779670, merge78d0ae74dcd21b6833f8b75c30b84ecca648d9e9 after sameSolreviewer proves oldprivacyprobesred/newgreen2/2 and export13/13; authoritative per-piece ownerlookup failsclosed. Canonical700/0/17 allgates+wasm/frozenstreamgreen. Wirechecked-damage result contract adopted beforeconsumer. T14source0cb1621 builder714/0/17 underindependentR1; T15astarts perW11 overlap. Budget55 including both starts/rechecks.

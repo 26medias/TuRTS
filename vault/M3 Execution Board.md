@@ -144,7 +144,7 @@ Critical path: T0 → T1 → T3a → T3 → T4 → T7 → T8 → T12 → T13a �
 
 Estimate: 20 Luna builder runs plus at most one fix round each for 8 of them (about 28), 12 Sol R1 reviews, 4 `qa-lead` checkpoints, 3 milestone judges. About 47 agent runs. This is a proposal under the budget rule ([[Team]], memory "token budget"). If actuals pass 1.3 times the estimate, stop and ask the user. Mitigations: R0 on mechanical tasks; one reviewer per R1; re-checks by short message to the same reviewer; reports capped at 400 words; no probe done twice.
 
-Running count: builders 26 (including scoped T13a/T13b repairs), reviews 17, checkpoints 2 (7 execution runs), judges 0. Additional orchestration executor runs: 2. Total agent runs: 52. C1 used three private lanes plus scoped repair proofs; no extra review lens.
+Running count: builders 27 (including T15a start and scoped repairs), reviews 19, checkpoints 2 (7 execution runs), judges 0. Additional orchestration executor runs: 2. Total agent runs: 55. C1 used three private lanes plus scoped repair proofs; no extra review lens.
 
 ## 9. Cut line (from the spec 16.2)
 
@@ -169,9 +169,9 @@ In order, only if the milestone proves too large: (1) `SetEnabled`; (2) drone B 
 | T11 | complete | `codex/m3-t11` | `target/m3-worktrees/t11` | `63f2f5a` → `b35365b` | R1 QA PASS, 0 findings | V0 PASS: 663/0/17 | Atomic shots/removal, references, research timing and receiver conservation. |
 | T12 | complete | `codex/m3-t12` | `target/m3-worktrees/t12` | `01416ed` → `5848355` | R0 PASS | V0 PASS: 673/0/17; wasm | Ownership/no-op, atomic enable/reset, producer freeze, wire/admission. |
 | T13a | complete | `codex/m3-t13a` | `target/m3-worktrees/t13a` | `0ea4ab1`, `db677d7` → `80fe968` | R1 PASS after removal delta fix | V0 PASS:685/0/17; wasm; C2 starts | Raw audit fidelity, facing retained, killed health0, removed disabled unit has no phantom enable. |
-| T13b | R1 repair | `codex/m3-t13b` | `target/m3-worktrees/t13b` | `df96a84` candidate | R1 one High belt privacy gap | builder696/0/17; wasm | Fix authoritative per-piece ownership in snapshot/delta; same reviewer rechecks. |
-| T14 | building/gating | `codex/m3-t14` | `target/m3-worktrees/t14` | pending | R1 simcore pending | focused29/0 | Independent RON oracle,17cases, timing/fixed point/rename;7 instrument refutations. |
-| T15a | not started | | | | | | |
+| T13b | complete | `codex/m3-t13b` | `target/m3-worktrees/t13b` | `df96a84`,`2779670` → `78d0ae7` | same R1 PASS after beltprivacy repair | V0 PASS700/0/17; wasm | Protocol3; authoritative per-piece ownership; private research, ports, facing, health0/removal. |
+| T14 | R1 review | `codex/m3-t14` | `target/m3-worktrees/t14` | `0cb1621` candidate | simcore running | builder714/0/17; focused29/0 | Independent RON oracle,17cases, timing/fixed point/rename;7 instrument refutations. |
+| T15a | starting | `codex/m3-t15a` | `target/m3-worktrees/t15a` | next docs base | R0 root | pending | Client keyed-record merge, removal cleanup and health trace; overlaps T14 per W11. |
 | T15b | not started | | | | | | |
 | T16 | not started | | | | | | |
 
