@@ -170,11 +170,11 @@ T1 implementation notes: M3 resolution lives in `turts_mod_runtime/src/content_m
 - Consumes: Tasks 3a, 3, 5.
 - Produces: `fn install_capability_rows(...)` used by package staging, synthetic units and spawn commit; boot expands `BeltLinePlacement` (ids after all `placements`, upstream to downstream); inserter endpoint resolution (SPEC 5.1); extractor binding (SPEC 7); populate the `ItemTable` introduced in T3; `fn ms_to_ticks(ms: u64, tick_hz: u32) -> u64` (ceil); new `SimSet::{Extract, Transport, Inserters, Combat}` in the chain, with empty systems.
 
-- [ ] **Step 1:** Write `forge_map_boots_with_expected_ids` (through `turts_pack::load_package`; unit and belt piece ids as in SPEC 13.2 order), `turts_pack_binary_accepts_forge` (`cargo run -p turts_pack -- mods/forge` exits 0), `inserter_endpoints_resolve_as_table` (A: belt piece 5 → press input; B and C: press output → turret / lab; D: drill → belt piece 0), `ambiguous_endpoint_rejects_with_moderror_on_facing`, `drill_binds_to_nearest_node_and_no_node_rejects`, `overlapping_footprint_rejects`, `ms_to_ticks_ceils_at_10_20_30_hz`. Also run `cargo test -p turts_pack --test m3_m2_stream` (Task 0): it must stay green.
-- [ ] **Step 2:** Run: expect FAIL.
-- [ ] **Step 3:** Implement. Empty phases capture no operation.
-- [ ] **Step 4:** Run `cargo test -p turts_sim -p turts_pack` and `cargo check --workspace`. Expected: PASS.
-- [ ] **Step 5:** Commit explicit paths.
+- [x] **Step 1:** Write `forge_map_boots_with_expected_ids` (through `turts_pack::load_package`; unit and belt piece ids as in SPEC 13.2 order), `turts_pack_binary_accepts_forge` (`cargo run -p turts_pack -- mods/forge` exits 0), `inserter_endpoints_resolve_as_table` (A: belt piece 5 → press input; B and C: press output → turret / lab; D: drill → belt piece 0), `ambiguous_endpoint_rejects_with_moderror_on_facing`, `drill_binds_to_nearest_node_and_no_node_rejects`, `overlapping_footprint_rejects`, `ms_to_ticks_ceils_at_10_20_30_hz`. Also run `cargo test -p turts_pack --test m3_m2_stream` (Task 0): it must stay green.
+- [x] **Step 2:** Run: expect FAIL.
+- [x] **Step 3:** Implement. Empty phases capture no operation.
+- [x] **Step 4:** Run `cargo test -p turts_sim -p turts_pack` and `cargo check --workspace`. Expected: PASS.
+- [x] **Step 5:** Commit explicit paths.
 
 ### Task 6: Extract phase
 
