@@ -816,9 +816,9 @@ fn extract(
 ) -> Result<(), RejectReason> {
     transact(world, |tx| {
         let endpoint = Endpoint::Inventory(unit);
-        tx.validate_endpoint(endpoint, item)?;
-        let inventory = tx.inventory(unit)?;
-        let used = tx.inventory_used(unit)?;
+        tx.validate_endpoint_legacy(endpoint, item)?;
+        let inventory = tx.inventory_legacy(unit)?;
+        let used = tx.inventory_used_legacy(unit)?;
         if used
             .checked_add(u128::from(amount))
             .ok_or(RejectReason::ArithmeticOverflow)?
@@ -853,8 +853,8 @@ fn store(
     transact(world, |tx| {
         let src = Endpoint::Inventory(from);
         let dst = Endpoint::Inventory(to);
-        tx.validate_endpoint(src, item)?;
-        tx.validate_endpoint(dst, item)?;
+        tx.validate_endpoint_legacy(src, item)?;
+        tx.validate_endpoint_legacy(dst, item)?;
         let source = tx.account(src, item);
         let destination = tx.account(dst, item);
         let available = source
@@ -864,11 +864,11 @@ fn store(
         if available < amount {
             return Err(RejectReason::InsufficientItems);
         }
-        let used = tx.inventory_used(to)?;
+        let used = tx.inventory_used_legacy(to)?;
         if used
             .checked_add(u128::from(amount))
             .ok_or(RejectReason::ArithmeticOverflow)?
-            > u128::from(tx.inventory(to)?.capacity)
+            > u128::from(tx.inventory_legacy(to)?.capacity)
         {
             return Err(RejectReason::RefundDestinationFull);
         }

@@ -60,7 +60,36 @@ pub enum EconomyEventKind {
         released: Vec<CostLine>,
         refunded: Vec<CostLine>,
     },
+    Destroyed {
+        unit: u32,
+        cause: RemoveCause,
+        items: Vec<DestroyedLine>,
+    },
 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum RemoveCause {
+    Removed,
+    Killed { by: u32 },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+pub enum DestroyedLocation {
+    Inventory(u32),
+    Output(u32),
+    BeltPiece(u32),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DestroyedLine {
+    pub location: DestroyedLocation,
+    pub item: ContentId,
+    pub amount: u64,
+}
+
+/// Unit ids removed by the current tick; publication drains this into `CommittedTick`.
+#[derive(Resource, Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct RemovedThisTick(pub(crate) Vec<u32>);
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CostLine {

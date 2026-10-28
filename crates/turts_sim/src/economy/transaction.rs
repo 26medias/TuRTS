@@ -1,14 +1,26 @@
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 
-use bevy_ecs::{prelude::Resource, world::World};
+use bevy_ecs::{entity::Entity, prelude::Resource, world::World};
 use turts_mod_api::ContentId;
+
+#[path = "transaction_m3.rs"]
+mod transaction_m3;
+#[allow(unused_imports)] // Later M3 tasks use these stable internal entry points.
+pub(crate) use transaction_m3::{extract_from_node, remove_unit, split_line};
 
 use crate::{
     Owner, RejectReason, SlotId, UnitId,
     economy::views::AuditState,
     economy::{
-        events::{EconomyEvent, EconomyEventKind, NextEventOrdinal, PendingEconomyEvents},
+        EconomyOrders, NodeRecord,
+        combat::WeaponState,
+        conveyor::BeltLine,
+        events::{
+            EconomyEvent, EconomyEventKind, NextEventOrdinal, PendingEconomyEvents, RemovedThisTick,
+        },
+        extractor::ExtractorState,
+        inserter::InserterState,
         ledger::{
             Account, EconomyLedger, Endpoint, Inventory, Reservation, ReservationClaim,
             ReservationLine,
@@ -208,11 +220,28 @@ struct WriteSet {
     accounts: BTreeMap<(Endpoint, ContentId), Account>,
     claims: BTreeMap<JobId, ReservationClaim>,
     queues: Option<ProductionQueues>,
+    nodes: BTreeMap<crate::ids::NodeId, Option<NodeRecord>>,
+    conveyor_lines: BTreeMap<u32, Option<BeltLine>>,
+    piece_line: BTreeMap<u32, Option<(u32, u16)>>,
+    inserters: BTreeMap<u32, Option<InserterState>>,
+    extractors: BTreeMap<u32, Option<ExtractorState>>,
+    weapons: BTreeMap<u32, Option<WeaponState>>,
+    healths: BTreeMap<u32, Option<u64>>,
+    orders: BTreeMap<u32, Option<crate::economy::GatherOrder>>,
+    research: BTreeMap<(u8, ContentId), Option<()>>,
+    disabled: BTreeMap<u32, Option<()>>,
     next_job_id: Option<u64>,
     next_unit_id: Option<u32>,
     spawned: Vec<SpawnWrite>,
+    removed: Vec<RemoveWrite>,
     events: Vec<(u8, EconomyEventKind)>,
     next_event_ordinal: Option<u64>,
+    strict_m3: bool,
+}
+
+struct RemoveWrite {
+    unit: u32,
+    entity: Entity,
 }
 
 pub(crate) struct SpawnWrite {
@@ -247,7 +276,7 @@ fn transact_inner<R>(
         writes: WriteSet::default(),
     };
     let result = run(&mut tx)?;
-    tx.commit();
+    tx.commit()?;
     Ok(result)
 }
 
@@ -342,15 +371,67 @@ impl Transaction<'_> {
         }
     }
 
-    pub(crate) fn inventory(&self, unit: u32) -> Result<&Inventory, RejectReason> {
-        self.world
+    pub(crate) fn inventory(&self, endpoint: Endpoint) -> Result<&Inventory, RejectReason> {
+        let ledger = self
+            .world
             .get_resource::<EconomyLedger>()
-            .and_then(|ledger| ledger.inventories.get(&unit))
-            .ok_or(RejectReason::UnknownInventory)
+            .ok_or(RejectReason::IntegrityViolation)?;
+        match endpoint {
+            Endpoint::Slot(_) => Err(RejectReason::UnknownInventory),
+            Endpoint::Inventory(unit) => ledger
+                .inventories
+                .get(&unit)
+                .ok_or(RejectReason::IntegrityViolation),
+            Endpoint::Output(unit) => ledger
+                .output_inventories
+                .get(&unit)
+                .ok_or(RejectReason::IntegrityViolation),
+        }
     }
 
-    pub(crate) fn inventory_used(&self, unit: u32) -> Result<u128, RejectReason> {
-        let inventory = self.inventory(unit)?;
+    pub(crate) fn inventory_legacy(&self, unit: u32) -> Result<&Inventory, RejectReason> {
+        self.inventory_endpoint_legacy(Endpoint::Inventory(unit))
+    }
+
+    fn inventory_endpoint_legacy(&self, endpoint: Endpoint) -> Result<&Inventory, RejectReason> {
+        let ledger = self
+            .world
+            .get_resource::<EconomyLedger>()
+            .ok_or(match endpoint {
+                Endpoint::Output(_) => RejectReason::IntegrityViolation,
+                _ => RejectReason::UnknownInventory,
+            })?;
+        match endpoint {
+            Endpoint::Slot(_) => Err(RejectReason::UnknownInventory),
+            Endpoint::Inventory(unit) => ledger
+                .inventories
+                .get(&unit)
+                .ok_or(RejectReason::UnknownInventory),
+            Endpoint::Output(unit) => ledger
+                .output_inventories
+                .get(&unit)
+                .ok_or(RejectReason::IntegrityViolation),
+        }
+    }
+
+    pub(crate) fn inventory_used(&self, endpoint: Endpoint) -> Result<u128, RejectReason> {
+        self.inventory_used_with(endpoint, false)
+    }
+
+    pub(crate) fn inventory_used_legacy(&self, unit: u32) -> Result<u128, RejectReason> {
+        self.inventory_used_endpoint_legacy(Endpoint::Inventory(unit))
+    }
+
+    fn inventory_used_endpoint_legacy(&self, endpoint: Endpoint) -> Result<u128, RejectReason> {
+        self.inventory_used_with(endpoint, true)
+    }
+
+    fn inventory_used_with(&self, endpoint: Endpoint, legacy: bool) -> Result<u128, RejectReason> {
+        let inventory = if legacy {
+            self.inventory_endpoint_legacy(endpoint)?
+        } else {
+            self.inventory(endpoint)?
+        };
         let resources = inventory
             .items
             .keys()
@@ -359,15 +440,13 @@ impl Transaction<'_> {
                 self.writes
                     .accounts
                     .keys()
-                    .filter(|(endpoint, _)| *endpoint == Endpoint::Inventory(unit))
+                    .filter(|(candidate, _)| *candidate == endpoint)
                     .map(|(_, resource)| resource.clone()),
             )
             .collect::<BTreeSet<_>>();
         resources.into_iter().try_fold(0_u128, |total, resource| {
             total
-                .checked_add(u128::from(
-                    self.account(Endpoint::Inventory(unit), &resource).on_hand,
-                ))
+                .checked_add(u128::from(self.account(endpoint, &resource).on_hand))
                 .ok_or(RejectReason::ArithmeticOverflow)
         })
     }
@@ -376,6 +455,23 @@ impl Transaction<'_> {
         &self,
         endpoint: Endpoint,
         resource: &ContentId,
+    ) -> Result<(), RejectReason> {
+        self.validate_endpoint_with(endpoint, resource, false)
+    }
+
+    pub(crate) fn validate_endpoint_legacy(
+        &self,
+        endpoint: Endpoint,
+        resource: &ContentId,
+    ) -> Result<(), RejectReason> {
+        self.validate_endpoint_with(endpoint, resource, true)
+    }
+
+    fn validate_endpoint_with(
+        &self,
+        endpoint: Endpoint,
+        resource: &ContentId,
+        legacy: bool,
     ) -> Result<(), RejectReason> {
         match endpoint {
             Endpoint::Slot(slot) => {
@@ -395,17 +491,21 @@ impl Transaction<'_> {
                 }
             }
             Endpoint::Inventory(unit) => {
-                let inventory = self.inventory(unit)?;
+                let inventory = if legacy {
+                    self.inventory_endpoint_legacy(Endpoint::Inventory(unit))?
+                } else {
+                    self.inventory(Endpoint::Inventory(unit))?
+                };
                 if !inventory.accepted_items.contains(resource) {
                     return Err(RejectReason::IncompatibleItem);
                 }
             }
             Endpoint::Output(unit) => {
-                let inventory = self
-                    .world
-                    .get_resource::<EconomyLedger>()
-                    .and_then(|ledger| ledger.output_inventories.get(&unit))
-                    .ok_or(RejectReason::UnknownInventory)?;
+                let inventory = if legacy {
+                    self.inventory_endpoint_legacy(Endpoint::Output(unit))?
+                } else {
+                    self.inventory(Endpoint::Output(unit))?
+                };
                 if !inventory.accepted_items.contains(resource) {
                     return Err(RejectReason::IncompatibleItem);
                 }
@@ -423,11 +523,13 @@ impl Transaction<'_> {
         self.writes.accounts.insert((endpoint, resource), account);
     }
 
-    fn commit(self) {
-        let Transaction { world, writes } = self;
+    fn commit(self) -> Result<(), RejectReason> {
+        self.preflight()?;
+        let Transaction { world, mut writes } = self;
         if world.get_resource::<EconomyLedger>().is_none() {
             world.insert_resource(EconomyLedger::default());
         }
+        transaction_m3::apply_overlays(world, &mut writes);
         {
             let mut ledger = world.resource_mut::<EconomyLedger>();
             for ((endpoint, resource), account) in writes.accounts {
@@ -441,13 +543,20 @@ impl Transaction<'_> {
                         }
                     }
                     Endpoint::Output(unit) => {
-                        if let Some(inventory) = ledger.output_inventories.get_mut(&unit) {
-                            inventory.items.insert(resource, account);
-                        }
+                        ledger
+                            .output_inventories
+                            .get_mut(&unit)
+                            .expect("preflighted output inventory")
+                            .items
+                            .insert(resource, account);
                     }
                 }
             }
             ledger.reservation_claims.extend(writes.claims);
+            for removal in &writes.removed {
+                ledger.inventories.remove(&removal.unit);
+                ledger.output_inventories.remove(&removal.unit);
+            }
         }
         if let Some(queues) = writes.queues {
             world.insert_resource(queues);
@@ -472,19 +581,16 @@ impl Transaction<'_> {
                     .insert(spawn.id, inventory);
             }
             if spawn.gatherer {
-                world
-                    .resource_mut::<crate::economy::EconomyOrders>()
-                    .0
-                    .insert(
-                        spawn.id,
-                        crate::economy::GatherOrder {
-                            node: None,
-                            deposit: None,
-                            receiver: None,
-                            stage: crate::economy::gather::GatherStage::Idle,
-                            carry: crate::economy::gather::RateCarry::default(),
-                        },
-                    );
+                world.resource_mut::<EconomyOrders>().0.insert(
+                    spawn.id,
+                    crate::economy::GatherOrder {
+                        node: None,
+                        deposit: None,
+                        receiver: None,
+                        stage: crate::economy::gather::GatherStage::Idle,
+                        carry: crate::economy::gather::RateCarry::default(),
+                    },
+                );
             }
             if spawn.producer {
                 world
@@ -496,6 +602,19 @@ impl Transaction<'_> {
                 .resource_mut::<crate::economy::events::SpawnedThisTick>()
                 .0
                 .push(spawn.state);
+        }
+        for removal in writes.removed {
+            if let Some(mut queues) = world.get_resource_mut::<ProductionQueues>() {
+                queues.0.remove(&removal.unit);
+            }
+            if let Some(mut orders) = world.get_resource_mut::<EconomyOrders>() {
+                orders.0.remove(&removal.unit);
+            }
+            assert!(
+                world.despawn(removal.entity),
+                "unit entity was preflighted before commit"
+            );
+            world.resource_mut::<RemovedThisTick>().0.push(removal.unit);
         }
         if let Some(next_event_ordinal) = writes.next_event_ordinal {
             let tick = world.resource::<crate::world::Tick>().0;
@@ -516,6 +635,7 @@ impl Transaction<'_> {
             }
             world.resource_mut::<NextEventOrdinal>().0 = Some(next_event_ordinal);
         }
+        Ok(())
     }
 }
 
@@ -556,8 +676,8 @@ fn inventory_transfer_inner(
         return Err(RejectReason::InvalidAmount);
     }
     transact(world, |tx| {
-        tx.validate_endpoint(Endpoint::Inventory(from), &item)?;
-        tx.validate_endpoint(Endpoint::Inventory(to), &item)?;
+        tx.validate_endpoint_legacy(Endpoint::Inventory(from), &item)?;
+        tx.validate_endpoint_legacy(Endpoint::Inventory(to), &item)?;
         let source = tx.account(Endpoint::Inventory(from), &item);
         let available = source
             .on_hand
@@ -567,11 +687,11 @@ fn inventory_transfer_inner(
             return Err(RejectReason::InsufficientItems);
         }
         let destination = tx.account(Endpoint::Inventory(to), &item);
-        let used = tx.inventory_used(to)?;
+        let used = tx.inventory_used_legacy(to)?;
         let new_used = used
             .checked_add(u128::from(amount))
             .ok_or(RejectReason::ArithmeticOverflow)?;
-        if new_used > u128::from(tx.inventory(to)?.capacity) {
+        if new_used > u128::from(tx.inventory_legacy(to)?.capacity) {
             return Err(RejectReason::RefundDestinationFull);
         }
         let new_source = source
@@ -631,7 +751,7 @@ pub(crate) fn reserve_costs(
     }
     let mut updates = BTreeMap::new();
     for line in &canonical {
-        tx.validate_endpoint(line.endpoint, &line.resource)?;
+        tx.validate_endpoint_legacy(line.endpoint, &line.resource)?;
         let key = (line.endpoint, line.resource.clone());
         let old = tx.account(line.endpoint, &line.resource);
         if old
@@ -677,7 +797,7 @@ pub(crate) fn charge_costs(
     let canonical = validate_lines(lines)?;
     let mut updates = BTreeMap::new();
     for line in canonical {
-        tx.validate_endpoint(line.endpoint, &line.resource)?;
+        tx.validate_endpoint_legacy(line.endpoint, &line.resource)?;
         let old = tx.account(line.endpoint, &line.resource);
         if old
             .on_hand
@@ -789,9 +909,9 @@ pub(crate) fn refund_charged(
     }
     let canonical = validate_lines(lines)?;
     let mut updates = BTreeMap::new();
-    let mut inventory_credits = BTreeMap::<u32, u128>::new();
+    let mut inventory_credits = BTreeMap::<Endpoint, u128>::new();
     for line in canonical {
-        tx.validate_endpoint(line.endpoint, &line.resource)?;
+        tx.validate_endpoint_legacy(line.endpoint, &line.resource)?;
         let refund = u64::try_from(
             u128::from(line.amount)
                 .checked_mul(u128::from(numerator))
@@ -804,20 +924,20 @@ pub(crate) fn refund_charged(
             .on_hand
             .checked_add(refund)
             .ok_or(RejectReason::RefundDestinationOverflow)?;
-        if let Endpoint::Inventory(unit) = line.endpoint {
-            let total = inventory_credits.entry(unit).or_default();
+        if matches!(line.endpoint, Endpoint::Inventory(_) | Endpoint::Output(_)) {
+            let total = inventory_credits.entry(line.endpoint).or_default();
             *total = total
                 .checked_add(u128::from(refund))
                 .ok_or(RejectReason::ArithmeticOverflow)?;
         }
         updates.insert((line.endpoint, line.resource), Account { on_hand, ..old });
     }
-    for (unit, credit) in inventory_credits {
-        let used = tx.inventory_used(unit)?;
+    for (endpoint, credit) in inventory_credits {
+        let used = tx.inventory_used_endpoint_legacy(endpoint)?;
         if used
             .checked_add(credit)
             .ok_or(RejectReason::ArithmeticOverflow)?
-            > u128::from(tx.inventory(unit)?.capacity)
+            > u128::from(tx.inventory_endpoint_legacy(endpoint)?.capacity)
         {
             return Err(RejectReason::RefundDestinationFull);
         }
@@ -1105,7 +1225,7 @@ mod inventory_tests {
     use super::tests::{line, seeded_world};
     use super::*;
     use crate::{Owner, UnitId, economy::ledger::Inventory, slots::Slots};
-    use std::collections::{BTreeMap, BTreeSet};
+    use std::collections::BTreeMap;
 
     pub(super) fn inventory_world() -> World {
         let timber = ContentId::parse("probe:timber").unwrap();
@@ -1565,5 +1685,637 @@ mod raw_audit_capture_tests {
         assert_ne!(present, missing);
         assert!(!missing.resources.event_ordinal);
         assert_eq!(missing.next_event_ordinal, None);
+    }
+}
+
+#[cfg(test)]
+mod m3_transaction_red_tests {
+    use super::*;
+
+    fn belt_line(pieces: Vec<u32>) -> crate::economy::conveyor::BeltLine {
+        let mut carry = crate::economy::gather::RateCarry::default();
+        carry.take_budget(1, 20).unwrap();
+        crate::economy::conveyor::BeltLine {
+            def: ContentId::parse("probe:belt").unwrap(),
+            owner: 0,
+            slots: (1..=(pieces.len() * 2) as u16).collect(),
+            slots_per_piece: 2,
+            pieces,
+            slots_per_second: 1,
+            carry,
+        }
+    }
+
+    #[test]
+    fn split_line_first_middle_last_and_only_piece() {
+        let line = belt_line(vec![10, 11, 12, 13]);
+
+        let (first_left, first_right) = split_line(&line, 0);
+        assert!(first_left.is_none());
+        let first_right = first_right.unwrap();
+        assert_eq!(first_right.pieces, vec![11, 12, 13]);
+        assert_eq!(first_right.slots, vec![3, 4, 5, 6, 7, 8]);
+        assert_eq!(first_right.carry, line.carry);
+
+        let (middle_left, middle_right) = split_line(&line, 1);
+        let middle_left = middle_left.unwrap();
+        let middle_right = middle_right.unwrap();
+        assert_eq!(middle_left.pieces, vec![10]);
+        assert_eq!(middle_left.slots, vec![1, 2]);
+        assert_eq!(middle_right.pieces, vec![12, 13]);
+        assert_eq!(middle_right.slots, vec![5, 6, 7, 8]);
+        assert_eq!(middle_left.carry, line.carry);
+        assert_eq!(middle_right.carry, line.carry);
+
+        let (last_left, last_right) = split_line(&line, 3);
+        let last_left = last_left.unwrap();
+        assert_eq!(last_left.pieces, vec![10, 11, 12]);
+        assert_eq!(last_left.slots, vec![1, 2, 3, 4, 5, 6]);
+        assert_eq!(last_left.carry, line.carry);
+        assert!(last_right.is_none());
+
+        let (only_left, only_right) = split_line(&belt_line(vec![99]), 0);
+        assert!(only_left.is_none());
+        assert!(only_right.is_none());
+    }
+
+    #[test]
+    fn write_to_missing_output_endpoint_is_integrity_violation() {
+        let mut world = World::new();
+        world.insert_resource(EconomyLedger::default());
+        let item = ContentId::parse("probe:item").unwrap();
+        assert_eq!(
+            transact(&mut world, |tx| tx
+                .validate_endpoint(Endpoint::Output(404), &item)),
+            Err(RejectReason::IntegrityViolation),
+        );
+    }
+}
+
+#[cfg(test)]
+mod m3_transaction_contract_tests {
+    use super::*;
+    use crate::{
+        economy::{
+            EconomyOrders, SurfaceNodes,
+            combat::{Healths, Weapons},
+            conveyor::{BeltLine, Conveyors, ItemTable},
+            events::{
+                CommittedTick, DestroyedLine, DestroyedLocation, RemoveCause, RemovedThisTick,
+            },
+            extractor::Extractors,
+            gather::{GatherStage, RateCarry},
+            inserter::{InserterState, Inserters},
+            ledger::Inventory,
+            production::ProductionQueues,
+            research::{Disabled, ResearchState},
+        },
+        ids::NodeId,
+        world::{Position, Tick},
+    };
+    use bevy_ecs::prelude::World;
+    use bevy_math::Vec2;
+    use std::collections::BTreeMap;
+
+    fn content(value: &str) -> ContentId {
+        ContentId::parse(value).unwrap()
+    }
+
+    fn inventory(capacity: u64, accepted: &[ContentId]) -> Inventory {
+        Inventory {
+            capacity,
+            accepted_items: accepted.iter().cloned().collect(),
+            items: BTreeMap::new(),
+        }
+    }
+
+    fn install_extraction_node(world: &mut World, item: &ContentId, remaining: u64) {
+        let node_id = content("probe:deposit");
+        let mut catalog = turts_mod_api::ContentCatalog {
+            resources: BTreeMap::new(),
+            units: BTreeMap::new(),
+            nodes: BTreeMap::new(),
+            production: BTreeMap::new(),
+            recipes: BTreeMap::new(),
+            technologies: BTreeMap::new(),
+            source_files: BTreeMap::new(),
+        };
+        catalog.nodes.insert(
+            node_id.clone(),
+            turts_mod_api::ResolvedNode {
+                id: node_id.clone(),
+                name: "Deposit".to_string(),
+                item: item.clone(),
+                radius: 1.0,
+            },
+        );
+        world.insert_resource(crate::bootstrap::InstalledCatalog(catalog));
+        world.insert_resource(SurfaceNodes(vec![crate::economy::NodeRecord {
+            id: NodeId(1),
+            content_id: node_id,
+            position: Position(Vec2::ZERO),
+            remaining,
+        }]));
+    }
+
+    fn removal_world() -> World {
+        let unit = 7;
+        let ore = content("probe:ore");
+        let parts = content("probe:parts");
+        let held = content("probe:held");
+        let belt_item = content("probe:belt_item");
+        let mut world = World::new();
+        world.insert_resource(crate::slots::Slots::new(1));
+        world.insert_resource(crate::ids::IdAllocators::default());
+        world.insert_resource(Tick::default());
+        world.insert_resource(ProductionQueues::default());
+        world.insert_resource(EconomyOrders::default());
+        let mut nodes = SurfaceNodes::default();
+        nodes.0.push(crate::economy::NodeRecord {
+            id: NodeId(1),
+            content_id: ore.clone(),
+            position: Position(Vec2::ZERO),
+            remaining: 4,
+        });
+        world.insert_resource(nodes);
+        world.insert_resource(RemovedThisTick::default());
+        world.insert_resource(PendingEconomyEvents::default());
+        world.insert_resource(NextEventOrdinal::default());
+
+        let mut ledger = EconomyLedger::default();
+        let mut main = inventory(10, &[ore.clone(), held.clone()]);
+        main.items.insert(
+            ore,
+            Account {
+                on_hand: 2,
+                reserved: 0,
+            },
+        );
+        main.items.insert(
+            held,
+            Account {
+                on_hand: 4,
+                reserved: 0,
+            },
+        );
+        ledger.inventories.insert(unit, main);
+        let mut output = inventory(10, std::slice::from_ref(&parts));
+        output.items.insert(
+            parts,
+            Account {
+                on_hand: 3,
+                reserved: 0,
+            },
+        );
+        ledger.output_inventories.insert(unit, output);
+        world.insert_resource(ledger);
+
+        let mut carry = RateCarry::default();
+        carry.take_budget(1, 20).unwrap();
+        let mut conveyors = Conveyors::default();
+        conveyors.lines.insert(
+            70,
+            BeltLine {
+                def: content("probe:belt"),
+                owner: 0,
+                pieces: vec![70, 7, 90],
+                slots: vec![1, 0, 1, 1, 1, 0],
+                slots_per_piece: 2,
+                slots_per_second: 2,
+                carry,
+            },
+        );
+        conveyors
+            .piece_line
+            .extend([(70, (70, 0)), (7, (70, 1)), (90, (70, 2))]);
+        world.insert_resource(conveyors);
+        world.insert_resource(ItemTable(vec![belt_item.clone()]));
+        let mut inserters = Inserters::default();
+        inserters.0.insert(7, InserterState::default());
+        inserters.0.insert(
+            10,
+            InserterState {
+                source: Some(7),
+                destination: Some(9),
+                ..Default::default()
+            },
+        );
+        world.insert_resource(inserters);
+        world.insert_resource(Extractors::default());
+        world.insert_resource(Weapons::default());
+        world.insert_resource(Healths::default());
+        world.insert_resource(ResearchState::default());
+        world.insert_resource(Disabled::default());
+        world.spawn((UnitId(unit), Owner(SlotId(0)), Position(Vec2::ZERO)));
+        world.resource_mut::<EconomyOrders>().0.insert(
+            unit,
+            crate::economy::GatherOrder {
+                node: Some(NodeId(1)),
+                deposit: Some(NodeId(1)),
+                receiver: Some(8),
+                stage: GatherStage::Idle,
+                carry: RateCarry::default(),
+            },
+        );
+        world
+            .resource_mut::<Extractors>()
+            .0
+            .insert(unit, crate::economy::extractor::ExtractorState::default());
+        world
+            .resource_mut::<Weapons>()
+            .0
+            .insert(unit, crate::economy::combat::WeaponState::default());
+        world.resource_mut::<Healths>().0.insert(unit, 5);
+        world.resource_mut::<Disabled>().0.insert(unit);
+        world
+    }
+
+    #[test]
+    fn output_inventory_is_its_own_inventory() {
+        let mut world = removal_world();
+        {
+            let mut ledger = world.resource_mut::<EconomyLedger>();
+            ledger.inventories.get_mut(&7).unwrap().capacity = 10;
+            ledger.output_inventories.get_mut(&7).unwrap().capacity = 5;
+        }
+        let result = transact(&mut world, |tx| {
+            assert_eq!(tx.inventory(Endpoint::Output(7))?.capacity, 5);
+            assert_eq!(tx.inventory_used(Endpoint::Output(7))?, 3);
+            assert_eq!(tx.inventory_used_legacy(7)?, 6);
+            Ok(())
+        });
+        assert_eq!(result, Ok(()));
+    }
+
+    #[test]
+    fn remove_unit_destroys_and_lists_inventory_output_hand_and_belt_contents() {
+        let mut world = removal_world();
+        let belt_item = content("probe:belt_item");
+        let mut conveyors = Conveyors::default();
+        let belt = BeltLine {
+            def: content("probe:belt"),
+            owner: 0,
+            pieces: vec![70, 7, 90],
+            slots: vec![1, 0, 1, 1, 1, 0],
+            slots_per_piece: 2,
+            slots_per_second: 2,
+            carry: RateCarry::default(),
+        };
+        conveyors
+            .piece_line
+            .extend([(70, (70, 0)), (7, (70, 1)), (90, (70, 2))]);
+        conveyors.lines.insert(70, belt);
+        world.insert_resource(conveyors);
+        world.resource_mut::<ItemTable>().0 = vec![belt_item.clone()];
+        let mut inserters = Inserters::default();
+        inserters.0.insert(7, InserterState::default());
+        inserters.0.insert(
+            10,
+            InserterState {
+                source: Some(7),
+                destination: Some(9),
+                ..Default::default()
+            },
+        );
+        world.insert_resource(inserters);
+
+        transact(&mut world, |tx| remove_unit(tx, 7, RemoveCause::Removed)).unwrap();
+
+        assert!(
+            world
+                .iter_entities()
+                .all(|entity| entity.get::<UnitId>().map(|id| id.0) != Some(7))
+        );
+        assert!(
+            !world
+                .resource::<EconomyLedger>()
+                .inventories
+                .contains_key(&7)
+        );
+        assert!(
+            !world
+                .resource::<EconomyLedger>()
+                .output_inventories
+                .contains_key(&7)
+        );
+        assert!(!world.resource::<EconomyOrders>().0.contains_key(&7));
+        assert!(!world.resource::<Extractors>().0.contains_key(&7));
+        assert!(!world.resource::<Weapons>().0.contains_key(&7));
+        assert!(!world.resource::<Healths>().0.contains_key(&7));
+        assert!(!world.resource::<Disabled>().0.contains(&7));
+        assert_eq!(world.resource::<Inserters>().0[&10].source, None);
+        assert_eq!(world.resource::<Inserters>().0[&10].destination, Some(9));
+        let expected = vec![
+            DestroyedLine {
+                location: DestroyedLocation::Inventory(7),
+                item: content("probe:held"),
+                amount: 4,
+            },
+            DestroyedLine {
+                location: DestroyedLocation::Inventory(7),
+                item: content("probe:ore"),
+                amount: 2,
+            },
+            DestroyedLine {
+                location: DestroyedLocation::Output(7),
+                item: content("probe:parts"),
+                amount: 3,
+            },
+            DestroyedLine {
+                location: DestroyedLocation::BeltPiece(7),
+                item: belt_item,
+                amount: 2,
+            },
+        ];
+        assert_eq!(
+            world
+                .resource::<PendingEconomyEvents>()
+                .0
+                .last()
+                .unwrap()
+                .kind,
+            EconomyEventKind::Destroyed {
+                unit: 7,
+                cause: RemoveCause::Removed,
+                items: expected
+            },
+        );
+        assert_eq!(world.resource::<RemovedThisTick>().0, vec![7]);
+        let lines = &world.resource::<Conveyors>().lines;
+        assert_eq!(lines[&70].pieces, vec![70]);
+        assert_eq!(lines[&70].slots, vec![1, 0]);
+        assert_eq!(lines[&90].pieces, vec![90]);
+        assert_eq!(lines[&90].slots, vec![1, 0]);
+    }
+
+    #[test]
+    fn remove_unit_with_reserved_stock_rejects_integrity_violation() {
+        let mut world = removal_world();
+        world
+            .resource_mut::<EconomyLedger>()
+            .inventories
+            .get_mut(&7)
+            .unwrap()
+            .items
+            .get_mut(&content("probe:ore"))
+            .unwrap()
+            .reserved = 1;
+        let before_ledger = world.resource::<EconomyLedger>().clone();
+        let before_events = world.resource::<PendingEconomyEvents>().clone();
+        let result = transact(&mut world, |tx| remove_unit(tx, 7, RemoveCause::Removed));
+        assert_eq!(result, Err(RejectReason::IntegrityViolation));
+        assert_eq!(*world.resource::<EconomyLedger>(), before_ledger);
+        assert_eq!(*world.resource::<PendingEconomyEvents>(), before_events);
+        assert!(
+            world
+                .iter_entities()
+                .any(|entity| entity.get::<UnitId>().map(|id| id.0) == Some(7))
+        );
+    }
+
+    #[test]
+    fn failed_write_leaves_all_internal_state_equal() {
+        let mut world = removal_world();
+        world.resource_mut::<EconomyLedger>().balances.insert(
+            (0, content("probe:credits")),
+            Account {
+                on_hand: 2,
+                reserved: 0,
+            },
+        );
+        let ledger = world.resource::<EconomyLedger>().clone();
+        let nodes = world.resource::<SurfaceNodes>().clone();
+        let orders = world.resource::<EconomyOrders>().clone();
+        let conveyors = world.resource::<Conveyors>().clone();
+        let inserters = world.resource::<Inserters>().clone();
+        let extractors = world.resource::<Extractors>().clone();
+        let weapons = world.resource::<Weapons>().clone();
+        let healths = world.resource::<Healths>().clone();
+        let research = world.resource::<ResearchState>().clone();
+        let disabled = world.resource::<Disabled>().clone();
+        let queues = world.resource::<ProductionQueues>().clone();
+        let allocators = *world.resource::<crate::ids::IdAllocators>();
+        let events = world.resource::<PendingEconomyEvents>().clone();
+        let next_event = *world.resource::<NextEventOrdinal>();
+        let removed = world.resource::<RemovedThisTick>().clone();
+        let unit_count = crate::world::gameplay_entity_count(&mut world);
+
+        let result = transact(&mut world, |tx| {
+            reserve_costs(
+                tx,
+                JobId(50),
+                &[ReservationLine {
+                    endpoint: Endpoint::Slot(0),
+                    resource: content("probe:credits"),
+                    amount: 1,
+                }],
+            )?;
+            tx.allocate_unit_id()?;
+            tx.stage_event(
+                0,
+                EconomyEventKind::Destroyed {
+                    unit: 999,
+                    cause: RemoveCause::Removed,
+                    items: Vec::new(),
+                },
+            )?;
+            remove_unit(tx, 7, RemoveCause::Removed)?;
+            tx.stage_account(
+                Endpoint::Output(404),
+                content("probe:missing"),
+                Account {
+                    on_hand: 1,
+                    reserved: 0,
+                },
+            );
+            Ok(())
+        });
+        assert_eq!(result, Err(RejectReason::IntegrityViolation));
+        assert_eq!(*world.resource::<EconomyLedger>(), ledger);
+        assert_eq!(*world.resource::<SurfaceNodes>(), nodes);
+        assert_eq!(*world.resource::<EconomyOrders>(), orders);
+        assert_eq!(*world.resource::<Conveyors>(), conveyors);
+        assert_eq!(*world.resource::<Inserters>(), inserters);
+        assert_eq!(*world.resource::<Extractors>(), extractors);
+        assert_eq!(*world.resource::<Weapons>(), weapons);
+        assert_eq!(*world.resource::<Healths>(), healths);
+        assert_eq!(*world.resource::<ResearchState>(), research);
+        assert_eq!(*world.resource::<Disabled>(), disabled);
+        assert_eq!(*world.resource::<ProductionQueues>(), queues);
+        assert_eq!(*world.resource::<crate::ids::IdAllocators>(), allocators);
+        assert_eq!(*world.resource::<PendingEconomyEvents>(), events);
+        assert_eq!(*world.resource::<NextEventOrdinal>(), next_event);
+        assert_eq!(*world.resource::<RemovedThisTick>(), removed);
+        assert_eq!(crate::world::gameplay_entity_count(&mut world), unit_count);
+    }
+
+    #[test]
+    fn extract_from_node_is_atomic() {
+        let mut world = removal_world();
+        let item = content("probe:ore");
+        install_extraction_node(&mut world, &item, 2);
+        let mut output = inventory(0, std::slice::from_ref(&item));
+        output.capacity = 0;
+        world
+            .resource_mut::<EconomyLedger>()
+            .output_inventories
+            .insert(20, output);
+        let before_nodes = world.resource::<SurfaceNodes>().clone();
+        let before_ledger = world.resource::<EconomyLedger>().clone();
+
+        assert_eq!(
+            transact(&mut world, |tx| extract_from_node(
+                tx,
+                NodeId(1),
+                Endpoint::Output(20),
+                item,
+                1
+            )),
+            Err(RejectReason::RefundDestinationFull),
+        );
+        assert_eq!(*world.resource::<SurfaceNodes>(), before_nodes);
+        assert_eq!(*world.resource::<EconomyLedger>(), before_ledger);
+    }
+
+    #[test]
+    fn extract_from_node_credits_output_and_records_extracted_event() {
+        let mut world = removal_world();
+        let item = content("probe:ore");
+        install_extraction_node(&mut world, &item, 2);
+        world
+            .resource_mut::<EconomyLedger>()
+            .output_inventories
+            .insert(20, inventory(1, std::slice::from_ref(&item)));
+        world.spawn((UnitId(20), Owner(SlotId(0)), Position(Vec2::ZERO)));
+
+        transact(&mut world, |tx| {
+            extract_from_node(tx, NodeId(1), Endpoint::Output(20), item.clone(), 1)
+        })
+        .unwrap();
+
+        assert_eq!(world.resource::<SurfaceNodes>().0[0].remaining, 1);
+        assert_eq!(
+            world.resource::<EconomyLedger>().output_inventories[&20].items[&item].on_hand,
+            1,
+        );
+        assert!(matches!(
+            &world.resource::<PendingEconomyEvents>().0[0].kind,
+            EconomyEventKind::Extracted { node: 1, cargo: 20, item: actual, amount: 1 } if actual == &item,
+        ));
+    }
+
+    #[test]
+    fn removed_this_tick_reaches_committed_tick() {
+        let mut app = crate::headless_app(20);
+        app.world_mut().resource_mut::<RemovedThisTick>().0.push(42);
+        app.update();
+        assert_eq!(app.world().resource::<CommittedTick>().removed, vec![42]);
+        assert!(app.world().resource::<RemovedThisTick>().0.is_empty());
+    }
+
+    #[test]
+    fn missing_belt_item_index_rejects_removal_without_changes() {
+        let mut world = removal_world();
+        world.resource_mut::<ItemTable>().0.clear();
+        let ledger = world.resource::<EconomyLedger>().clone();
+        let conveyors = world.resource::<Conveyors>().clone();
+        let inserters = world.resource::<Inserters>().clone();
+        let removed = world.resource::<RemovedThisTick>().clone();
+        let unit_count = crate::world::gameplay_entity_count(&mut world);
+
+        assert_eq!(
+            transact(&mut world, |tx| remove_unit(tx, 7, RemoveCause::Removed)),
+            Err(RejectReason::IntegrityViolation),
+        );
+        assert_eq!(*world.resource::<EconomyLedger>(), ledger);
+        assert_eq!(*world.resource::<Conveyors>(), conveyors);
+        assert_eq!(*world.resource::<Inserters>(), inserters);
+        assert_eq!(*world.resource::<RemovedThisTick>(), removed);
+        assert_eq!(crate::world::gameplay_entity_count(&mut world), unit_count);
+    }
+
+    #[test]
+    fn m3_extract_to_missing_main_inventory_is_integrity_violation() {
+        let mut world = removal_world();
+        let item = content("probe:ore");
+        install_extraction_node(&mut world, &item, 2);
+        let before_nodes = world.resource::<SurfaceNodes>().clone();
+        let before_ledger = world.resource::<EconomyLedger>().clone();
+
+        assert_eq!(
+            transact(&mut world, |tx| extract_from_node(
+                tx,
+                NodeId(1),
+                Endpoint::Inventory(404),
+                item,
+                1,
+            )),
+            Err(RejectReason::IntegrityViolation),
+        );
+        assert_eq!(*world.resource::<SurfaceNodes>(), before_nodes);
+        assert_eq!(*world.resource::<EconomyLedger>(), before_ledger);
+    }
+
+    #[test]
+    fn legacy_main_inventory_write_to_missing_row_keeps_skip_behavior() {
+        let mut world = World::new();
+        world.insert_resource(EconomyLedger::default());
+        let item = content("probe:legacy");
+
+        let result = transact(&mut world, |tx| {
+            tx.stage_account(
+                Endpoint::Inventory(404),
+                item.clone(),
+                Account {
+                    on_hand: 3,
+                    reserved: 0,
+                },
+            );
+            Ok(())
+        });
+
+        assert_eq!(result, Ok(()));
+        assert!(
+            !world
+                .resource::<EconomyLedger>()
+                .inventories
+                .contains_key(&404)
+        );
+    }
+
+    #[test]
+    fn removing_a_unit_spawned_earlier_this_tick_is_rejected() {
+        let mut world = removal_world();
+        world.insert_resource(crate::economy::events::SpawnedThisTick(vec![
+            crate::world::UnitState {
+                unit_id: 7,
+                content_id: "probe:unit".to_string(),
+                owner_slot: 0,
+                pos: Vec2::ZERO,
+            },
+        ]));
+        let ledger = world.resource::<EconomyLedger>().clone();
+        let conveyors = world.resource::<Conveyors>().clone();
+        let inserters = world.resource::<Inserters>().clone();
+
+        assert_eq!(
+            transact(&mut world, |tx| remove_unit(tx, 7, RemoveCause::Removed)),
+            Err(RejectReason::IntegrityViolation),
+        );
+        assert_eq!(*world.resource::<EconomyLedger>(), ledger);
+        assert_eq!(*world.resource::<Conveyors>(), conveyors);
+        assert_eq!(*world.resource::<Inserters>(), inserters);
+        assert_eq!(
+            world
+                .resource::<crate::economy::events::SpawnedThisTick>()
+                .0[0]
+                .unit_id,
+            7
+        );
+        assert!(
+            world
+                .iter_entities()
+                .any(|entity| entity.get::<UnitId>().map(|id| id.0) == Some(7))
+        );
     }
 }
