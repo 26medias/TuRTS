@@ -188,6 +188,11 @@ module.exports = {
     findVisibleUiAction,
     findPressedUiAction,
     findVisibleUiText,
+    visibleTexts,
+    lastAppliedSequence,
+    lastCommand,
+    waitForSnapshot,
+    captureStage,
     uiActionWindowPoint,
     publicProjection,
     assertPublicProjectionSchema,
@@ -356,16 +361,16 @@ function selectedUnitText(rows, unit) {
 function assertPublicProjectionSchema(snapshot) {
     const view = snapshot.debug?.replicated_world;
     assert(view && Number.isInteger(view.tick), "the coherent public replicated-world view is missing");
-    assert.deepEqual(Object.keys(view).sort(), ["economy", "nodes", "tick", "units"],
-        "browser replicated-world debug must contain permitted public state only");
+    assert.deepEqual(Object.keys(view).sort(), ["belts", "economy", "extractors", "health_trace", "healths", "inserters", "nodes", "research", "tick", "units", "weapons"],
+        "browser replicated-world debug must contain the permitted M2/M3 client state only");
     assert.deepEqual(Object.keys(view.economy).sort(), ["balances", "inventories", "orders", "queues"],
         "browser economy debug must expose the complete permitted owner projection");
     for (const balance of view.economy.balances) assert.deepEqual(Object.keys(balance).sort(), ["on_hand", "reserved", "resource"]);
-    for (const inventory of view.economy.inventories) assert.deepEqual(Object.keys(inventory).sort(), ["items", "unit"]);
+    for (const inventory of view.economy.inventories) assert.deepEqual(Object.keys(inventory).sort(), ["items", "port", "unit"]);
     for (const order of view.economy.orders) assert.deepEqual(Object.keys(order).sort(), ["node", "receiver", "stage", "unit"]);
-    for (const queue of view.economy.queues) assert.deepEqual(Object.keys(queue).sort(), ["jobs", "producer"]);
+    for (const queue of view.economy.queues) assert.deepEqual(Object.keys(queue).sort(), ["enabled", "jobs", "producer"]);
     for (const unit of view.units) {
-        assert.deepEqual(Object.keys(unit).sort(), ["content_id", "owner_slot", "pos", "unit_id"]);
+        assert.deepEqual(Object.keys(unit).sort(), ["content_id", "facing", "owner_slot", "pos", "unit_id"]);
     }
     for (const node of view.nodes) {
         assert.deepEqual(Object.keys(node).sort(), ["content_id", "id", "pos", "remaining"]);
@@ -911,7 +916,7 @@ async function runAdditionalPackageSmoke(page, pageAddress, packageName, joined,
     const beforeSequence = lastAppliedSequence(joined);
     await clickRenderedEntity(page, joined.scene, owner0Mesh);
     const selected = await waitForSnapshot(page, (snapshot) =>
-        snapshot.debug?.selection === owner0Unit.unit_id,
+        snapshot.debug?.selection === owner0Unit.unit_id && selectedUnitText(snapshot.ui, owner0Unit),
     5000, `${packageName} actual selected unit Text`);
     const selectedArtifact = await captureStage(page, outDir, "02-owner0-selection", logs);
     const selectedText = selectedUnitText(selectedArtifact.ui, owner0Unit);

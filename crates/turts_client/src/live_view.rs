@@ -18,6 +18,7 @@ use serde_json::{Value, json};
 
 use crate::ClientOpts;
 use crate::commands::CommandSendStatus;
+use crate::debug::report_json;
 use crate::economy_ui::{Selection, UiAction, UiActionTarget, rendered_ui_snapshot};
 use crate::ingest::{CommandResult, CommandResults, ReplicaState};
 use crate::join::Phase;
@@ -28,6 +29,42 @@ use crate::render::{
 };
 
 static NEXT_TEMP_ID: AtomicU64 = AtomicU64::new(0);
+
+#[derive(Resource, Default)]
+pub(crate) struct LiveReportCursor {
+    tick: Option<u32>,
+    phase: Option<String>,
+}
+
+/// Publish a complete owner-permitted report when its coherent tick changes.
+pub(crate) fn publish_live_report(world: &mut World) {
+    let path = world.resource::<ClientOpts>().0.live_report.clone();
+    let Some(path) = path else { return };
+    let tick = world
+        .get_resource::<ReplicaState>()
+        .and_then(|state| state.replica.as_ref())
+        .and_then(|replica| replica.last_applied_tick);
+    let phase = world
+        .get_resource::<Phase>()
+        .map(|phase| format!("{phase:?}"));
+    let terminal = phase
+        .as_deref()
+        .is_some_and(|phase| phase.starts_with("Failed"));
+    {
+        let mut cursor = world.resource_mut::<LiveReportCursor>();
+        if (tick.is_none() && !terminal) || (tick == cursor.tick && phase == cursor.phase) {
+            return;
+        }
+        cursor.tick = tick;
+        cursor.phase = phase;
+    }
+    if let Err(error) = write_json_atomic(&path, &report_json(world)) {
+        eprintln!(
+            "turts_client: cannot write live report {}: {error}",
+            path.display()
+        );
+    }
+}
 
 /// The live view is a sibling of `--out PATH`, with no additional CLI option.
 pub fn view_path(headless: bool, out: Option<&Path>) -> Option<PathBuf> {

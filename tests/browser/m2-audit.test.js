@@ -70,20 +70,27 @@ test("projects a complete owner-only audit world into the browser snapshot schem
     assert.deepEqual(actual, {
         tick: 4,
         units: [
-            { unit_id: 1, content_id: "base:command_center", owner_slot: 0, pos: [8, 8] },
-            { unit_id: 2, content_id: "base:harvester", owner_slot: 0, pos: [12, 8] },
-            { unit_id: 3, content_id: "base:command_center", owner_slot: 1, pos: [56, 8] },
+            { unit_id: 1, content_id: "base:command_center", owner_slot: 0, facing: null, pos: [8, 8] },
+            { unit_id: 2, content_id: "base:harvester", owner_slot: 0, facing: null, pos: [12, 8] },
+            { unit_id: 3, content_id: "base:command_center", owner_slot: 1, facing: null, pos: [56, 8] },
         ],
         nodes: [{ id: 1, content_id: "base:ore_deposit", pos: { x: 24, y: 8 }, remaining: 1000 }],
         economy: {
             balances: [{ resource: "base:credits", on_hand: 500, reserved: 0 }],
-            inventories: [{ unit: 2, items: [{ resource: "base:ore", on_hand: 0, reserved: 0 }] }],
+            inventories: [{ unit: 2, port: "main", items: [{ resource: "base:ore", on_hand: 0, reserved: 0 }] }],
             orders: [{ unit: 2, node: 1, receiver: 1, stage: "Gathering" }],
-            queues: [{ producer: 1, jobs: [{
+            queues: [{ producer: 1, enabled: true, jobs: [{
                 id: 1, recipe: "base:train_rifleman", stage: "running", elapsed_ticks: 1, duration_ticks: 100,
                 charged: [{ source: "SlotBalance", resource: "base:credits", amount: 100 }], reserved: [],
             }] }],
         },
+        belts: [],
+        extractors: [],
+        health_trace: [],
+        healths: [],
+        inserters: [],
+        research: [],
+        weapons: [],
     });
     assert.equal(actual.units.some((unit) => unit.owner_slot === 1), true, "public world units from both owners remain visible");
     assert.equal(actual.economy.balances.some((balance) => balance.slot === 1), false, "foreign owner economy must be excluded");

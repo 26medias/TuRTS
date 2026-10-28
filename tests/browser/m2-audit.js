@@ -71,6 +71,7 @@ function projectAuditOwnerWorld(state, slot) {
         unit_id: unit.unit_id,
         content_id: String(unit.content_id),
         owner_slot: unit.owner_slot,
+        facing: unit.facing ?? null,
         pos: unit.pos.map(floatFromBits),
     }));
     const nodes = world.nodes.map((node) => ({
@@ -84,6 +85,7 @@ function projectAuditOwnerWorld(state, slot) {
     }));
     const inventories = economy.inventories.filter((item) => item.owner_slot === slot).map((inventory) => ({
         unit: inventory.unit,
+        port: String(inventory.port ?? "main").toLowerCase(),
         items: inventory.items.map(({ resource, on_hand, reserved }) => ({ resource: contentId(resource), on_hand, reserved })),
     }));
     const orders = economy.orders.filter((item) => item.owner_slot === slot).map((order) => ({
@@ -94,6 +96,7 @@ function projectAuditOwnerWorld(state, slot) {
     }));
     const queues = economy.queues.filter((item) => item.owner_slot === slot).map((queue) => ({
         producer: queue.producer,
+        enabled: queue.enabled ?? true,
         // Job FIFO is meaningful and must remain in the source order.
         jobs: queue.jobs.map((job) => ({
             id: job.id,
@@ -115,6 +118,13 @@ function projectAuditOwnerWorld(state, slot) {
             orders: sortBy(orders, (item) => String(item.unit).padStart(12, "0")),
             queues: sortBy(queues, (item) => String(item.producer).padStart(12, "0")),
         },
+        belts: world.belts ?? [],
+        extractors: world.extractors ?? [],
+        health_trace: world.health_trace ?? [],
+        healths: world.healths ?? [],
+        inserters: world.inserters ?? [],
+        research: world.research ?? [],
+        weapons: world.weapons ?? [],
     };
 }
 

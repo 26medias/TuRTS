@@ -100,6 +100,16 @@ pub fn debug_json(world: &World) -> String {
             })
         })
         .unwrap_or(Value::Null);
+    let command_results = world
+        .get_resource::<CommandResults>()
+        .map(|results| {
+            results
+                .0
+                .iter()
+                .map(command_result_json)
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
     let rendered_ui_nodes = crate::economy_ui::rendered_ui_snapshot(world).len();
     let ingest = world.get_resource::<crate::ingest::IngestHooks>().map(|hooks| {
         let replica = world.get_resource::<ReplicaState>().and_then(|state| state.replica.as_ref());
@@ -162,6 +172,8 @@ pub fn debug_json(world: &World) -> String {
         "trace": trace,
         "dropped_world_changes": drops,
         "reconnect_required": world.get_resource::<CommandSendStatus>().is_some_and(|status| status.reconnect_required),
+        "command_results": command_results,
+        "research_completed_tick": world.get_resource::<crate::scenario::ProduceHook>().and_then(|hook| hook.research_completed_tick),
         "selection": selection,
         "rendered_ui_nodes": rendered_ui_nodes,
         "ingest": ingest,
@@ -291,6 +303,7 @@ pub fn report_json(world: &World) -> Value {
         "reconnect_required": world.get_resource::<CommandSendStatus>().is_some_and(|status| status.reconnect_required),
         "final_positions": final_positions,
         "health_trace": state.replica.as_ref().map(|replica| health_trace_json(&replica.health_trace)).unwrap_or_default(),
+        "research_completed_tick": world.get_resource::<crate::scenario::ProduceHook>().and_then(|hook| hook.research_completed_tick),
         "replicated_world": replicated_world,
         "snapshots_applied": counters.snapshots_applied,
         "deltas_received": counters.deltas_received,

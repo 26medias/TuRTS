@@ -27,11 +27,16 @@ use crate::{
 #[derive(Resource, Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct Selection(pub Option<u32>);
 
+#[derive(Resource, Debug, Default)]
+struct UiActionNotice(Option<String>);
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum UiAction {
     Produce { producer: u32, recipe: String },
     Cancel { producer: u32, job: JobId },
+    SetEnabled { unit: u32, enabled: bool },
+    Remove { unit: u32 },
 }
 
 #[derive(Component, Debug, Clone, PartialEq, Eq)]
@@ -95,6 +100,7 @@ pub fn panel_model(
     append_balances(&mut model, &replica.economy, content);
     append_inventory(&mut model, &replica.economy, content, selected, def);
     append_order(&mut model, &replica.economy, selected);
+    append_m3_records(&mut model, replica, selected, def);
     append_nodes(&mut model, replica, content);
 
     let queue = replica
@@ -166,8 +172,227 @@ pub fn panel_model(
             }
         }
     }
+    if let Some(station) = def.and_then(|unit| unit.research.as_ref()) {
+        let queue_len = queue.map_or(0, |queue| queue.jobs.len());
+        for technology in &station.technologies {
+            let completed = replica.research.iter().any(|record| {
+                record
+                    .completed
+                    .iter()
+                    .any(|id| id == &technology.to_string())
+            });
+            if completed {
+                let name = content.catalog.technologies.get(technology).map_or_else(
+                    || technology.to_string(),
+                    |technology| technology.name.clone(),
+                );
+                model.lines.push(format!("Research complete: {name}"));
+                continue;
+            }
+            let definition = content.catalog.technologies.get(technology);
+            let name = definition.map_or_else(
+                || technology.to_string(),
+                |technology| technology.name.clone(),
+            );
+            let affordable = definition
+                .is_some_and(|technology| recipe_affordable(replica, selected, &technology.costs));
+            model.controls.push(UiControl {
+                label: format!("Research {name}"),
+                action: UiAction::Produce {
+                    producer: selected,
+                    recipe: technology.to_string(),
+                },
+                enabled: queue_len < usize::from(station.queue_capacity) && affordable,
+            });
+        }
+    }
+    if let Some(definition) = def {
+        let toggleable = definition.extractor.is_some()
+            || definition.inserter.is_some()
+            || definition.machine.is_some()
+            || definition.research.is_some()
+            || definition.producer.is_some()
+            || definition.weapon.is_some();
+        if let Some(enabled) = unit_enabled(replica, selected).filter(|_| toggleable) {
+            model.lines.push(format!("Enabled: {enabled}"));
+            model.controls.push(UiControl {
+                label: if enabled {
+                    "Disable unit"
+                } else {
+                    "Enable unit"
+                }
+                .into(),
+                action: UiAction::SetEnabled {
+                    unit: selected,
+                    enabled: !enabled,
+                },
+                enabled: true,
+            });
+        }
+        if definition
+            .removal
+            .as_ref()
+            .is_some_and(|policy| policy.by_command)
+        {
+            model.controls.push(UiControl {
+                label: "Remove unit".into(),
+                action: UiAction::Remove { unit: selected },
+                enabled: true,
+            });
+        }
+    }
     append_last_result(&mut model, results);
     model
+}
+
+fn append_m3_records(
+    model: &mut PanelModel,
+    replica: &Replica,
+    selected: u32,
+    definition: Option<&turts_mod_api::ResolvedUnit>,
+) {
+    let Some(definition) = definition else { return };
+    if definition.conveyor.is_some() {
+        match replica
+            .belts
+            .iter()
+            .find(|record| record.piece.0 == selected)
+        {
+            Some(record) => model.lines.push(format!(
+                "Belt: {} / {} items",
+                record.slots.iter().flatten().count(),
+                record.slots.len()
+            )),
+            None => model.lines.push("Belt: unavailable".into()),
+        }
+    }
+    if definition.machine.is_some() {
+        match replica
+            .economy
+            .queues
+            .iter()
+            .find(|record| record.producer.0 == selected)
+        {
+            Some(record) => {
+                let stage = record
+                    .jobs
+                    .first()
+                    .map(|job| format!("{:?}", job.stage))
+                    .unwrap_or_else(|| "idle".into());
+                model.lines.push(format!(
+                    "Machine: {stage} · {}",
+                    if record.enabled {
+                        "enabled"
+                    } else {
+                        "disabled"
+                    }
+                ));
+            }
+            None => model.lines.push("Machine: unavailable".into()),
+        }
+    }
+    if definition.inserter.is_some() {
+        match replica
+            .inserters
+            .iter()
+            .find(|record| record.unit.0 == selected)
+        {
+            Some(record) => model.lines.push(format!(
+                "Inserter: {:?} · {}",
+                record.stage,
+                if record.enabled {
+                    "enabled"
+                } else {
+                    "disabled"
+                }
+            )),
+            None => model.lines.push("Inserter: unavailable".into()),
+        }
+    }
+    if definition.extractor.is_some() {
+        match replica
+            .extractors
+            .iter()
+            .find(|record| record.unit.0 == selected)
+        {
+            Some(record) => model.lines.push(format!(
+                "Extractor: {:?} · {}",
+                record.status,
+                if record.enabled {
+                    "enabled"
+                } else {
+                    "disabled"
+                }
+            )),
+            None => model.lines.push("Extractor: unavailable".into()),
+        }
+    }
+    if definition.weapon.is_some() {
+        match replica
+            .weapons
+            .iter()
+            .find(|record| record.unit.0 == selected)
+        {
+            Some(record) => {
+                model.lines.push(format!(
+                    "Weapon: {:?} · {}",
+                    record.status,
+                    if record.enabled {
+                        "enabled"
+                    } else {
+                        "disabled"
+                    }
+                ));
+                match record.damage {
+                    Ok(damage) => model.lines.push(format!("Damage: {damage}")),
+                    Err(reason) => model
+                        .lines
+                        .push(format!("Damage: unavailable · {}", reason.as_str())),
+                }
+            }
+            None => model.lines.push("Weapon: unavailable".into()),
+        }
+    }
+    if definition.health.is_some() {
+        match replica
+            .healths
+            .iter()
+            .find(|record| record.unit.0 == selected)
+        {
+            Some(record) => model.lines.push(format!("Health: {}", record.current)),
+            None => model.lines.push("Health: unavailable".into()),
+        }
+    }
+}
+
+fn unit_enabled(replica: &Replica, unit: u32) -> Option<bool> {
+    replica
+        .economy
+        .queues
+        .iter()
+        .find(|record| record.producer.0 == unit)
+        .map(|record| record.enabled)
+        .or_else(|| {
+            replica
+                .inserters
+                .iter()
+                .find(|record| record.unit.0 == unit)
+                .map(|record| record.enabled)
+        })
+        .or_else(|| {
+            replica
+                .extractors
+                .iter()
+                .find(|record| record.unit.0 == unit)
+                .map(|record| record.enabled)
+        })
+        .or_else(|| {
+            replica
+                .weapons
+                .iter()
+                .find(|record| record.unit.0 == unit)
+                .map(|record| record.enabled)
+        })
 }
 
 fn recipe_affordable(
@@ -395,11 +620,21 @@ pub fn hit_test_node(replica: &Replica, content: &ClientContent, point: Pos) -> 
 fn activate_action(
     trigger: On<Activate>,
     actions: Query<&UiActionTarget>,
+    state: Res<ReplicaState>,
+    acquired: Option<Res<AcquiredPackages>>,
+    mut notice: ResMut<UiActionNotice>,
     mut pending: ResMut<PendingCommands>,
 ) {
     let Ok(action) = actions.get(trigger.entity) else {
         return;
     };
+    if let Err(reason) =
+        validate_action_owner_and_capability(&state, acquired.as_deref(), &action.0)
+    {
+        notice.0 = Some(reason.into());
+        return;
+    }
+    notice.0 = None;
     submit(
         &mut pending,
         match &action.0 {
@@ -411,8 +646,63 @@ fn activate_action(
                 producer_id: UnitId(*producer),
                 job_id: *job,
             },
+            UiAction::SetEnabled { unit, enabled } => PlayerCommandKind::SetEnabled {
+                unit_id: UnitId(*unit),
+                enabled: *enabled,
+            },
+            UiAction::Remove { unit } => PlayerCommandKind::Remove {
+                unit_id: UnitId(*unit),
+            },
         },
     );
+}
+
+fn validate_action_owner_and_capability(
+    state: &ReplicaState,
+    acquired: Option<&AcquiredPackages>,
+    action: &UiAction,
+) -> Result<(), &'static str> {
+    let welcome = state.welcome.ok_or("not_owner")?;
+    let replica = state.replica.as_ref().ok_or("not_owner")?;
+    let unit_id = match action {
+        UiAction::Produce { producer, .. } | UiAction::Cancel { producer, .. } => *producer,
+        UiAction::SetEnabled { unit, .. } | UiAction::Remove { unit } => *unit,
+    };
+    let unit = replica.units.get(&unit_id).ok_or("not_owner")?;
+    if unit.owner_slot != welcome.slot {
+        return Err("not_owner");
+    }
+    let def = acquired
+        .and_then(|acquired| {
+            ContentId::parse(&unit.content_id)
+                .ok()
+                .and_then(|id| acquired.0.content.catalog.units.get(&id))
+        })
+        .ok_or("unit_capability_unavailable")?;
+    match action {
+        UiAction::Remove { .. }
+            if !def.removal.as_ref().is_some_and(|policy| policy.by_command) =>
+        {
+            Err("not_removable")
+        }
+        UiAction::SetEnabled { .. }
+            if !(def.extractor.is_some()
+                || def.inserter.is_some()
+                || def.machine.is_some()
+                || def.research.is_some()
+                || def.producer.is_some()
+                || def.weapon.is_some()) =>
+        {
+            Err("not_toggleable")
+        }
+        UiAction::Produce { .. } if def.producer.is_none() && def.research.is_none() => {
+            Err("not_producer")
+        }
+        UiAction::Cancel { .. } if def.producer.is_none() && def.research.is_none() => {
+            Err("not_producer")
+        }
+        _ => Ok(()),
+    }
 }
 
 /// Keep the panel widgets alive across replica progress updates so Bevy's pointer
@@ -434,6 +724,23 @@ pub fn sync_panel(world: &mut World) {
         world.resource::<Selection>(),
         world.resource::<CommandResults>(),
     );
+    let owner_slot = state.welcome.map(|welcome| welcome.slot);
+    let mut model = model;
+    model.controls.retain(|control| {
+        let unit = match control.action {
+            UiAction::Produce { producer, .. } | UiAction::Cancel { producer, .. } => producer,
+            UiAction::SetEnabled { unit, .. } | UiAction::Remove { unit } => unit,
+        };
+        owner_slot.is_some_and(|slot| {
+            replica
+                .units
+                .get(&unit)
+                .is_some_and(|unit| unit.owner_slot == slot)
+        })
+    });
+    if let Some(message) = world.resource::<UiActionNotice>().0.as_deref() {
+        model.lines.push(format!("Action denied: {message}"));
+    }
     let viewport_width = world
         .iter_entities()
         .find(|entity| entity.contains::<bevy::window::PrimaryWindow>())
@@ -804,6 +1111,7 @@ impl Plugin for EconomyUiPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<Selection>()
             .init_resource::<PanelEntities>()
+            .init_resource::<UiActionNotice>()
             .add_systems(
                 Update,
                 (validate_selection, sync_panel)
@@ -816,31 +1124,92 @@ impl Plugin for EconomyUiPlugin {
 #[cfg(test)]
 mod activation_tests {
     use super::*;
-    use crate::commands::PendingCommands;
+    use crate::{
+        acquire::build_acquired,
+        commands::PendingCommands,
+        ingest::{ReplicaState, WelcomeInfo},
+        join::AcquiredPackages,
+        replica::{Replica, UnitReplica},
+    };
+    use std::{collections::VecDeque, path::PathBuf};
+    use turts_mod_runtime::{archive::PackageArchive, pack::pack_dir};
 
     #[test]
     fn one_activate_event_submits_one_exact_produce_or_cancel_command() {
         let mut world = World::new();
         world.init_resource::<PendingCommands>();
-        let action = UiAction::Produce {
-            producer: 8,
-            recipe: "custom:worker".into(),
-        };
-        let entity = world
-            .spawn((UiActionTarget(action), observe(activate_action)))
-            .id();
-        world.trigger(Activate { entity });
-        let pending = &world.resource::<PendingCommands>().0;
-        assert_eq!(pending.len(), 1);
-        assert_eq!(
-            pending[0],
-            crate::commands::PendingCommand::Submit {
-                kind: PlayerCommandKind::Produce {
-                    producer_id: UnitId(8),
-                    recipe_id: "custom:worker".into(),
-                },
-                trace_step: None,
-            }
+        world.init_resource::<UiActionNotice>();
+        let base = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../mods/base");
+        let archive = PackageArchive::parse(&pack_dir(&base).expect("pack base"))
+            .expect("parse base archive");
+        let acquired = build_acquired(&[archive], String::new()).expect("acquire base package");
+        let (producer_id, producer) = acquired
+            .content
+            .catalog
+            .units
+            .iter()
+            .find(|(_, unit)| unit.producer.is_some())
+            .expect("base has a producer");
+        let recipe_id = producer.producer.as_ref().unwrap().recipes[0].to_string();
+        let producer_id = producer_id.to_string();
+        let mut replica = Replica::new(20);
+        replica.units.insert(
+            8,
+            UnitReplica {
+                content_id: producer_id,
+                owner_slot: 0,
+                facing: None,
+                samples: VecDeque::new(),
+            },
         );
+        let state = ReplicaState {
+            welcome: Some(WelcomeInfo {
+                slot: 0,
+                tick: 0,
+                tick_hz: 20,
+            }),
+            replica: Some(replica),
+            ..ReplicaState::default()
+        };
+        world.insert_resource(state);
+        world.insert_resource(AcquiredPackages(acquired));
+
+        let actions = [
+            (
+                UiAction::Produce {
+                    producer: 8,
+                    recipe: recipe_id.clone(),
+                },
+                PlayerCommandKind::Produce {
+                    producer_id: UnitId(8),
+                    recipe_id,
+                },
+            ),
+            (
+                UiAction::Cancel {
+                    producer: 8,
+                    job: JobId(91),
+                },
+                PlayerCommandKind::CancelProduction {
+                    producer_id: UnitId(8),
+                    job_id: JobId(91),
+                },
+            ),
+        ];
+        for (index, (action, kind)) in actions.into_iter().enumerate() {
+            let entity = world
+                .spawn((UiActionTarget(action), observe(activate_action)))
+                .id();
+            world.trigger(Activate { entity });
+            let pending = &world.resource::<PendingCommands>().0;
+            assert_eq!(pending.len(), index + 1);
+            assert_eq!(
+                pending.back(),
+                Some(&crate::commands::PendingCommand::Submit {
+                    kind,
+                    trace_step: None,
+                })
+            );
+        }
     }
 }
