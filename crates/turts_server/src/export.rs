@@ -68,8 +68,7 @@ pub fn snapshot_for(view: &WorldView, slot: SlotId) -> wire::Snapshot {
             .m3
             .raw_belts
             .iter()
-            .filter(|record| record.owner_slot == slot.0)
-            .flat_map(belt_records)
+            .flat_map(|record| belt_records(record, view, slot))
             .collect(),
         inserters: view
             .m3
@@ -152,8 +151,7 @@ pub fn delta_for(batch: &CommittedTick, view: &WorldView, slot: SlotId) -> wire:
         belts: batch
             .belts
             .iter()
-            .filter(|record| record.owner_slot == slot.0)
-            .flat_map(belt_records)
+            .flat_map(|record| belt_records(record, view, slot))
             .collect(),
         inserters: batch
             .inserters
@@ -354,15 +352,22 @@ fn output_inventory_state(
     }
 }
 
-fn belt_records(row: &RawBeltAudit) -> impl Iterator<Item = wire::BeltPieceRecord> + '_ {
-    row.pieces.iter().map(|piece| wire::BeltPieceRecord {
-        piece: messages::UnitId(piece.unit),
-        slots: piece
-            .slots
-            .iter()
-            .map(|slot| slot.item.as_ref().map(ToString::to_string))
-            .collect(),
-    })
+fn belt_records<'a>(
+    row: &'a RawBeltAudit,
+    view: &'a WorldView,
+    slot: SlotId,
+) -> impl Iterator<Item = wire::BeltPieceRecord> + 'a {
+    row.pieces
+        .iter()
+        .filter(move |piece| owner_of(view, piece.unit) == Some(slot.0))
+        .map(|piece| wire::BeltPieceRecord {
+            piece: messages::UnitId(piece.unit),
+            slots: piece
+                .slots
+                .iter()
+                .map(|slot| slot.item.as_ref().map(ToString::to_string))
+                .collect(),
+        })
 }
 
 fn inserter_state(row: &RawInserterAudit) -> wire::InserterRecord {

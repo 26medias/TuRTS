@@ -32,13 +32,22 @@ fn forge_app() -> bevy_app::App {
 fn mixed_owner_view() -> turts_sim::WorldView {
     let app = forge_app();
     let mut view = completed_world(app.world()).clone();
-    view.units.push(UnitState {
-        unit_id: 90,
-        content_id: "forge:arm_loader".into(),
-        owner_slot: 1,
-        facing: None,
-        pos: Vec2::new(25.0, 8.0),
-    });
+    view.units.extend([
+        UnitState {
+            unit_id: 80,
+            content_id: "forge:belt".into(),
+            owner_slot: 1,
+            facing: None,
+            pos: Vec2::new(23.0, 8.0),
+        },
+        UnitState {
+            unit_id: 90,
+            content_id: "forge:arm_loader".into(),
+            owner_slot: 1,
+            facing: None,
+            pos: Vec2::new(25.0, 8.0),
+        },
+    ]);
     view.m3.raw_belts.push(RawBeltAudit {
         first_piece: 80,
         definition: turts_mod_api::ContentId::parse("forge:belt").unwrap(),
@@ -362,4 +371,117 @@ fn output_inventory_delta_retains_owner_and_output_port() {
     );
     let opponent = export::delta_for(&batch, &view, SlotId(1));
     assert!(opponent.economy.inventories.is_empty());
+}
+
+#[test]
+fn snapshot_omits_belt_pieces_without_authoritative_owner() {
+    let mut view = mixed_owner_view();
+    view.units.retain(|unit| unit.unit_id != 80);
+    let snapshot = export::snapshot_for(&view, SlotId(1));
+    assert!(
+        snapshot
+            .belts
+            .iter()
+            .all(|row| row.piece != wire::UnitId(80))
+    );
+}
+
+#[test]
+fn snapshot_omits_foreign_piece_even_when_raw_belt_owner_matches_receiver() {
+    let mut view = mixed_owner_view();
+    let belt = view
+        .m3
+        .raw_belts
+        .iter_mut()
+        .find(|row| row.first_piece == 80)
+        .unwrap();
+    belt.owner_slot = 0;
+    belt.pieces[0].slots[0].item = Some(turts_mod_api::ContentId::parse("forge:shell").unwrap());
+    let snapshot = export::snapshot_for(&view, SlotId(0));
+    assert!(
+        snapshot
+            .belts
+            .iter()
+            .all(|row| row.piece != wire::UnitId(80))
+    );
+}
+
+#[test]
+fn split_owner_belt_exports_only_authoritatively_owned_pieces() {
+    let mut view = mixed_owner_view();
+    view.units.push(UnitState {
+        unit_id: 81,
+        content_id: "forge:belt".into(),
+        owner_slot: 0,
+        facing: None,
+        pos: Vec2::new(24.0, 8.0),
+    });
+    let belt = &mut view.m3.raw_belts[0];
+    belt.owner_slot = 0;
+    belt.pieces.push(RawBeltPieceAudit {
+        unit: 81,
+        slots: vec![RawBeltSlotAudit {
+            item_index: 0,
+            item: Some(turts_mod_api::ContentId::parse("forge:coal").unwrap()),
+        }],
+    });
+
+    let slot0 = export::snapshot_for(&view, SlotId(0));
+    assert!(slot0.belts.iter().any(|row| row.piece == wire::UnitId(81)));
+    assert!(slot0.belts.iter().all(|row| row.piece != wire::UnitId(80)));
+    let slot1 = export::snapshot_for(&view, SlotId(1));
+    assert_eq!(
+        slot1.belts.iter().map(|row| row.piece).collect::<Vec<_>>(),
+        vec![wire::UnitId(80)]
+    );
+}
+
+#[test]
+fn delta_filters_belt_pieces_by_authoritative_owner() {
+    let mut view = mixed_owner_view();
+    view.units.push(UnitState {
+        unit_id: 81,
+        content_id: "forge:belt".into(),
+        owner_slot: 0,
+        facing: None,
+        pos: Vec2::new(24.0, 8.0),
+    });
+    let mut belt = view
+        .m3
+        .raw_belts
+        .iter()
+        .find(|belt| belt.pieces.iter().any(|piece| piece.unit == 80))
+        .unwrap()
+        .clone();
+    belt.owner_slot = 0;
+    belt.pieces.push(RawBeltPieceAudit {
+        unit: 81,
+        slots: vec![RawBeltSlotAudit {
+            item_index: 0,
+            item: Some(turts_mod_api::ContentId::parse("forge:coal").unwrap()),
+        }],
+    });
+    belt.pieces.push(RawBeltPieceAudit {
+        unit: 82,
+        slots: vec![RawBeltSlotAudit {
+            item_index: 0,
+            item: Some(turts_mod_api::ContentId::parse("forge:shell").unwrap()),
+        }],
+    });
+    let mut batch = test_batch(view.tick);
+    batch.belts.push(belt);
+
+    let slot0 = export::delta_for(&batch, &view, SlotId(0));
+    assert!(slot0.belts.iter().any(|row| row.piece == wire::UnitId(81)));
+    assert!(
+        slot0
+            .belts
+            .iter()
+            .all(|row| row.piece != wire::UnitId(80) && row.piece != wire::UnitId(82))
+    );
+    let slot1 = export::delta_for(&batch, &view, SlotId(1));
+    assert_eq!(
+        slot1.belts.iter().map(|row| row.piece).collect::<Vec<_>>(),
+        vec![wire::UnitId(80)]
+    );
 }
