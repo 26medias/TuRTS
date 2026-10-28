@@ -137,11 +137,11 @@ T1 implementation notes: M3 resolution lives in `turts_mod_runtime/src/content_m
 - Consumes: Task 3a types.
 - Produces: `Transaction::inventory(Endpoint)`, `inventory_used(Endpoint)`, `validate_endpoint`, `account`, `commit` generalized to `Endpoint` (the `u32` forms stay as wrappers); `WriteSet` overlays `BTreeMap<K, Option<V>>` for nodes, conveyor lines, inserters, extractors, weapons, healths, research, disabled; `fn extract_from_node(tx: &mut Transaction, node: NodeId, to: Endpoint, item: ContentId, n: u64) -> Result<(), RejectReason>`; `fn remove_unit(tx: &mut Transaction, unit: u32, cause: RemoveCause) -> Result<(), RejectReason>`; `RemoveCause::{Removed, Killed { by: u32 }}`; `RemovedThisTick` resource drained by `publish_completed_tick` into `CommittedTick.removed`; event `Destroyed { unit, cause, items: Vec<DestroyedLine> }`; `fn split_line(line: &BeltLine, piece_index: usize) -> (Option<BeltLine>, Option<BeltLine>)`.
 
-- [ ] **Step 1:** Write tests: `remove_unit_destroys_and_lists_contents` (inventory, output inventory, hand), `remove_unit_with_reserved_stock_rejects_integrity_violation`, `remove_unit_clears_inserter_endpoints`, `failed_write_leaves_state_equal`, `write_to_missing_endpoint_is_integrity_violation` (M3 paths only; M2 behavior unchanged), `extract_from_node_is_atomic`, `removed_this_tick_reaches_committed_tick`, `split_line_first_middle_last_and_only_piece`.
-- [ ] **Step 2:** Run: expect FAIL.
-- [ ] **Step 3:** Implement. Use per-key overlays; do not clone whole tables. `split_line` follows SPEC 4.3.
-- [ ] **Step 4:** Run `cargo test -p turts_sim` and `cargo check --workspace`. Expected: PASS with all M2 tests.
-- [ ] **Step 5:** Commit explicit paths.
+- [x] **Step 1:** Write tests: `remove_unit_destroys_and_lists_contents` (inventory, output inventory, hand), `remove_unit_with_reserved_stock_rejects_integrity_violation`, `remove_unit_clears_inserter_endpoints`, `failed_write_leaves_state_equal`, `write_to_missing_endpoint_is_integrity_violation` (M3 paths only; M2 behavior unchanged), `extract_from_node_is_atomic`, `removed_this_tick_reaches_committed_tick`, `split_line_first_middle_last_and_only_piece`.
+- [x] **Step 2:** Run: expect FAIL.
+- [x] **Step 3:** Implement. Use per-key overlays; do not clone whole tables. `split_line` follows SPEC 4.3.
+- [x] **Step 4:** Run `cargo test -p turts_sim` and `cargo check --workspace`. Expected: PASS with all M2 tests.
+- [x] **Step 5:** Commit explicit paths.
 
 ### Task 5: Package `forge` and the E1 scanner
 
@@ -168,7 +168,7 @@ T1 implementation notes: M3 resolution lives in `turts_mod_runtime/src/content_m
 
 **Interfaces:**
 - Consumes: Tasks 3a, 3, 5.
-- Produces: `fn install_capability_rows(...)` used by package staging, synthetic units and spawn commit; boot expands `BeltLinePlacement` (ids after all `placements`, upstream to downstream); inserter endpoint resolution (SPEC 5.1); extractor binding (SPEC 7); `ItemTable`; `fn ms_to_ticks(ms: u64, tick_hz: u32) -> u64` (ceil); new `SimSet::{Extract, Transport, Inserters, Combat}` in the chain, with empty systems.
+- Produces: `fn install_capability_rows(...)` used by package staging, synthetic units and spawn commit; boot expands `BeltLinePlacement` (ids after all `placements`, upstream to downstream); inserter endpoint resolution (SPEC 5.1); extractor binding (SPEC 7); populate the `ItemTable` introduced in T3; `fn ms_to_ticks(ms: u64, tick_hz: u32) -> u64` (ceil); new `SimSet::{Extract, Transport, Inserters, Combat}` in the chain, with empty systems.
 
 - [ ] **Step 1:** Write `forge_map_boots_with_expected_ids` (through `turts_pack::load_package`; unit and belt piece ids as in SPEC 13.2 order), `turts_pack_binary_accepts_forge` (`cargo run -p turts_pack -- mods/forge` exits 0), `inserter_endpoints_resolve_as_table` (A: belt piece 5 → press input; B and C: press output → turret / lab; D: drill → belt piece 0), `ambiguous_endpoint_rejects_with_moderror_on_facing`, `drill_binds_to_nearest_node_and_no_node_rejects`, `overlapping_footprint_rejects`, `ms_to_ticks_ceils_at_10_20_30_hz`. Also run `cargo test -p turts_pack --test m3_m2_stream` (Task 0): it must stay green.
 - [ ] **Step 2:** Run: expect FAIL.

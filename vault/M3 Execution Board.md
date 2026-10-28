@@ -87,7 +87,8 @@ One task owns each file at a time. If two tasks need it in the same wave, the or
 
 | File | Touched by (in order) |
 | --- | --- |
-| `economy/transaction.rs` | T3a (match arms), T3, T9, T10, T11 (small hooks) |
+| `economy/transaction.rs` | T3a (match arms), T3, T4 (spawn-row hook), T9, T10, T11 (small hooks) |
+| `economy/transaction_m3.rs` | T3 infrastructure; root composes later narrow phase accessors/hooks, one owner at a time |
 | `plugin.rs` | T3, T4, T13a |
 | `economy/production.rs` | T9, then T10 |
 | `economy/views.rs` | T3a (match arms), T13a |
@@ -143,7 +144,7 @@ Critical path: T0 → T1 → T3a → T3 → T4 → T7 → T8 → T12 → T13a �
 
 Estimate: 20 Luna builder runs plus at most one fix round each for 8 of them (about 28), 12 Sol R1 reviews, 4 `qa-lead` checkpoints, 3 milestone judges. About 47 agent runs. This is a proposal under the budget rule ([[Team]], memory "token budget"). If actuals pass 1.3 times the estimate, stop and ask the user. Mitigations: R0 on mechanical tasks; one reviewer per R1; re-checks by short message to the same reviewer; reports capped at 400 words; no probe done twice.
 
-Running count: builders 8, reviews 6, checkpoints 0, judges 0. Additional orchestration executor runs: 2 (V0 and cache cleanup). Total agent runs: 16.
+Running count: builders 9, reviews 6, checkpoints 0, judges 0. Additional orchestration executor runs: 2 (V0 and cache cleanup). Total agent runs: 17.
 
 ## 9. Cut line (from the spec 16.2)
 
@@ -158,8 +159,8 @@ In order, only if the milestone proves too large: (1) `SetEnabled`; (2) drone B 
 | T2 | complete | `codex/m3-t2` | `target/m3-worktrees/t2` | `c49b79b` → `76eef7e` | R0 PASS after repairs | V0 PASS: 539/0/17; wasm | 30 cases, exact diagnostics, syntax-presence version guard, corrected work-capability plant. |
 | T3a | complete | `codex/m3-t3a` | `target/m3-worktrees/t3a` | `f3e844d` → `45e43af` | R0 PASS | V0 PASS: 509/0/17; wasm | Resource tables, output endpoint, reason tags; no systems or protocol bump. |
 | T5 | complete | `codex/m3-t5` | `target/m3-worktrees/t5` | `dc3095a` → `0e29245` | R0 PASS after hand fix | V0 PASS: 548/0/17; C1 pending | Forge/locked fixture, names, three E1 plants; no sim boot yet. |
-| T3 | R1 passed; integration pending | `codex/m3-t3` | `target/m3-worktrees/t3` | pending | R1 pending | pending | Atomic overlays, removal and split infrastructure. |
-| T4 | not started | | | | | | |
+| T3 | complete | `codex/m3-t3` | `target/m3-worktrees/t3` | `89be093` → `c9a8834` | R1 PASS, 0 open | V0 PASS: 563/0/17 | Strict M3/legacy split, catalog-correct extraction, all-store rollback plant. |
+| T4 | starting | `codex/m3-t4` | `target/m3-worktrees/t4` | pending | R1 pending | C1 pending | Public forge boot, ids, bindings and shared capability-row installation. |
 | T6 | not started | | | | | | |
 | T7 | not started | | | | | | |
 | T9 | not started | | | | | | |
