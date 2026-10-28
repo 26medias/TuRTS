@@ -31,7 +31,7 @@ use turts_net_protocol::Pos;
 
 use crate::commands::{
     CommandSendStatus, CommandSequence, PendingCommands, repeat_trace, send_commands_traced,
-    submit_trace,
+    submit, submit_trace,
 };
 use crate::debug::{DebugState, exit_when_done, rebuild_debug_state};
 use crate::economy_ui::EconomyUiPlugin;
@@ -48,7 +48,9 @@ use crate::join::{
 use crate::options::{ClientOptions, random_player_id};
 use crate::present::{Presented, update_presented};
 use crate::render::UnitRenderPlugin;
-use crate::scenario::{ScenarioState, TraceAction, TraceCommand};
+use crate::scenario::{
+    ProduceHook, ScenarioState, TraceAction, TraceCommand, produce_command_if_ready,
+};
 
 /// The tick rate of the lightyear link (not of the simulation: `Welcome` carries that).
 const LINK_TICK_HZ: u16 = 20; // prototype constant: measure at M1
@@ -69,6 +71,8 @@ impl Plugin for ClientPlugin {
         let opts = self.0.clone();
         #[cfg(not(target_family = "wasm"))]
         let publish_live_view = !opts.headless && opts.out.is_some();
+        #[cfg(not(target_family = "wasm"))]
+        let publish_live_report = opts.live_report.is_some();
         app.insert_resource(PlayerId(opts.player_id.unwrap_or_else(random_player_id)))
             .insert_resource(Phase::FetchAdvertisement)
             .insert_resource(IngestHooks {
@@ -83,6 +87,7 @@ impl Plugin for ClientPlugin {
             })
             .insert_resource(FrameLog::open(opts.frame_log.as_deref()))
             .insert_resource(ScenarioState::from_path(opts.command_trace.as_deref()))
+            .insert_resource(ProduceHook::from_options(&opts))
             .insert_resource(ClientOpts(opts))
             .init_resource::<IngestCounters>()
             .init_resource::<ReplicaState>()
@@ -113,7 +118,12 @@ impl Plugin for ClientPlugin {
         );
         app.add_systems(
             PostUpdate,
-            (auto_move, drive_scenario, send_commands_traced)
+            (
+                auto_move,
+                drive_scenario,
+                drive_produce_hook,
+                send_commands_traced,
+            )
                 .chain()
                 .before(MessageSystems::Send),
         );
@@ -122,7 +132,49 @@ impl Plugin for ClientPlugin {
         if publish_live_view {
             app.add_systems(Last, live_view::publish_live_view.before(exit_when_done));
         }
+        #[cfg(not(target_family = "wasm"))]
+        if publish_live_report {
+            app.init_resource::<live_view::LiveReportCursor>()
+                .add_systems(Last, live_view::publish_live_report.before(exit_when_done));
+        }
     }
+}
+
+/// Send the optional one-shot Produce only after the coherent owner replica proves its gate.
+fn drive_produce_hook(
+    mut hook: ResMut<ProduceHook>,
+    state: Res<ReplicaState>,
+    mut pending: ResMut<PendingCommands>,
+    status: Res<CommandSendStatus>,
+) {
+    if status.reconnect_required {
+        return;
+    }
+    let (Some(request), Some(welcome), Some(replica)) =
+        (hook.request.clone(), state.welcome, state.replica.as_ref())
+    else {
+        return;
+    };
+    let tick = replica.last_applied_tick;
+    let completed = replica.research.iter().any(|record| {
+        record.slot.0 == welcome.slot && record.completed.iter().any(|tech| tech == &request.1)
+    });
+    if completed && hook.research_completed_tick.is_none() {
+        hook.research_completed_tick = tick;
+    }
+    if hook.sent {
+        return;
+    }
+    let Some(command) = produce_command_if_ready(
+        replica,
+        welcome.slot,
+        &request,
+        hook.inventory_gate.as_ref(),
+    ) else {
+        return;
+    };
+    submit(&mut pending, command);
+    hook.sent = true;
 }
 
 /// Drive one due trace action from the latest coherent server tick, after ingest and before send.
@@ -227,4 +279,92 @@ pub fn build_app(opts: ClientOptions) -> App {
         app.add_plugins((UnitRenderPlugin, EconomyUiPlugin, ClickInputPlugin));
     }
     app
+}
+
+#[cfg(test)]
+mod produce_hook_observation_tests {
+    use super::drive_produce_hook;
+    use crate::{
+        commands::{CommandSendStatus, PendingCommands},
+        ingest::{ReplicaState, WelcomeInfo},
+        replica::{Replica, UnitReplica},
+        scenario::ProduceHook,
+    };
+    use bevy::prelude::{Schedule, World};
+    use std::collections::VecDeque;
+    use turts_net_protocol::{PlayerCommandKind, Pos, ResearchRecord, SlotId, UnitId};
+
+    #[test]
+    fn sent_produce_still_observes_first_later_owner_completion_once() {
+        let mut replica = Replica::new(20);
+        replica.last_applied_tick = Some(10);
+        replica.units.insert(
+            7,
+            UnitReplica {
+                content_id: "forge:lab".into(),
+                owner_slot: 0,
+                facing: None,
+                samples: VecDeque::from([(10, Pos { x: 8.0, y: 8.0 })]),
+            },
+        );
+        let mut replica_state = ReplicaState {
+            replica: Some(replica),
+            welcome: Some(WelcomeInfo {
+                slot: 0,
+                tick: 10,
+                tick_hz: 20,
+            }),
+            ..Default::default()
+        };
+        let mut world = World::new();
+        world.insert_resource(ProduceHook {
+            request: Some((7, "forge:hardened_shells".into())),
+            sent: false,
+            ..Default::default()
+        });
+        world.insert_resource(replica_state);
+        world.insert_resource(PendingCommands::default());
+        world.insert_resource(CommandSendStatus::default());
+        let mut schedule = Schedule::default();
+        schedule.add_systems(drive_produce_hook);
+
+        schedule.run(&mut world);
+        assert!(world.resource::<ProduceHook>().sent);
+        assert_eq!(world.resource::<PendingCommands>().0.len(), 1);
+
+        replica_state = world.remove_resource::<ReplicaState>().unwrap();
+        let replica = replica_state.replica.as_mut().unwrap();
+        replica.last_applied_tick = Some(90);
+        replica.research.push(ResearchRecord {
+            slot: SlotId(0),
+            completed: vec!["forge:hardened_shells".into()],
+        });
+        world.insert_resource(replica_state);
+        schedule.run(&mut world);
+        assert_eq!(
+            world.resource::<ProduceHook>().research_completed_tick,
+            Some(90)
+        );
+        assert_eq!(world.resource::<PendingCommands>().0.len(), 1);
+
+        let mut replica_state = world.remove_resource::<ReplicaState>().unwrap();
+        replica_state.replica.as_mut().unwrap().last_applied_tick = Some(91);
+        world.insert_resource(replica_state);
+        schedule.run(&mut world);
+        assert_eq!(
+            world.resource::<ProduceHook>().research_completed_tick,
+            Some(90)
+        );
+        assert_eq!(world.resource::<PendingCommands>().0.len(), 1);
+        assert!(matches!(
+            world.resource::<PendingCommands>().0.front(),
+            Some(crate::commands::PendingCommand::Submit {
+                kind: PlayerCommandKind::Produce {
+                    producer_id: UnitId(7),
+                    ..
+                },
+                ..
+            })
+        ));
+    }
 }

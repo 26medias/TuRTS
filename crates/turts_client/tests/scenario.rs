@@ -1,6 +1,12 @@
 mod ingest {
     pub use turts_client::ingest::CommandResult;
 }
+mod options {
+    pub use turts_client::options::ClientOptions;
+}
+mod replica {
+    pub use turts_client::replica::{Replica, UnitReplica};
+}
 
 #[allow(dead_code)] // The integration test exercises the parser and pure driver in isolation.
 #[path = "../src/scenario.rs"]

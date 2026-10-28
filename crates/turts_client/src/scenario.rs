@@ -13,6 +13,78 @@ use turts_net_protocol::{JobId, PlayerCommand, PlayerCommandKind, UnitId};
 
 use crate::ingest::CommandResult;
 
+/// State-triggered single Produce test hook. The coordinator may observe the watermark
+/// in the native live report, while the opponent receives only its own replica.
+#[derive(Resource, Debug, Default)]
+pub(crate) struct ProduceHook {
+    pub(crate) request: Option<(u32, String)>,
+    pub(crate) inventory_gate: Option<(u32, String, u64)>,
+    pub(crate) sent: bool,
+    pub(crate) research_completed_tick: Option<u32>,
+}
+
+impl ProduceHook {
+    pub(crate) fn from_options(options: &crate::options::ClientOptions) -> Self {
+        Self {
+            request: options.produce.clone(),
+            inventory_gate: options.produce_when_inventory.clone(),
+            ..Default::default()
+        }
+    }
+}
+
+/// Return the one command only after a coherent owner replica proves its precondition.
+pub(crate) fn produce_command_if_ready(
+    replica: &crate::replica::Replica,
+    owner_slot: u8,
+    request: &(u32, String),
+    inventory_gate: Option<&(u32, String, u64)>,
+) -> Option<PlayerCommandKind> {
+    replica.last_applied_tick?;
+    let (producer, technology) = request;
+    if replica.units.get(producer)?.owner_slot != owner_slot {
+        return None;
+    }
+    if let Some((gate_unit, item, required)) = inventory_gate {
+        if gate_unit != producer {
+            return None;
+        }
+        let available = replica
+            .economy
+            .inventories
+            .iter()
+            .find(|inventory| {
+                inventory.unit.0 == *gate_unit
+                    && inventory.port == turts_net_protocol::InventoryPort::Main
+            })?
+            .items
+            .iter()
+            .find(|balance| balance.resource == *item)?
+            .on_hand
+            .checked_sub(
+                replica
+                    .economy
+                    .inventories
+                    .iter()
+                    .find(|inventory| {
+                        inventory.unit.0 == *gate_unit
+                            && inventory.port == turts_net_protocol::InventoryPort::Main
+                    })?
+                    .items
+                    .iter()
+                    .find(|balance| balance.resource == *item)?
+                    .reserved,
+            )?;
+        if available < *required {
+            return None;
+        }
+    }
+    Some(PlayerCommandKind::Produce {
+        producer_id: turts_net_protocol::UnitId(*producer),
+        recipe_id: technology.clone(),
+    })
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct TraceStep {
@@ -597,4 +669,55 @@ fn validate_steps(steps: &[TraceStep]) -> Result<(), String> {
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod produce_hook_tests {
+    use std::collections::VecDeque;
+
+    use super::produce_command_if_ready;
+    use crate::replica::{Replica, UnitReplica};
+    use turts_net_protocol::{
+        BalanceState, EconomyState, InventoryPort, InventoryState, PlayerCommandKind, UnitId,
+    };
+
+    #[test]
+    fn scenario_waits_for_replica_state() {
+        let request = (7, "forge:hardened_shells".to_owned());
+        let gate = (7, "forge:shell".to_owned(), 10);
+        let mut replica = Replica::new(20);
+        replica.units.insert(
+            7,
+            UnitReplica {
+                content_id: "forge:proving_lab".into(),
+                owner_slot: 0,
+                facing: None,
+                samples: VecDeque::new(),
+            },
+        );
+        replica.economy = EconomyState {
+            balances: vec![],
+            inventories: vec![InventoryState {
+                unit: UnitId(7),
+                port: InventoryPort::Main,
+                items: vec![BalanceState {
+                    resource: "forge:shell".into(),
+                    on_hand: 10,
+                    reserved: 0,
+                }],
+            }],
+            orders: vec![],
+            queues: vec![],
+        };
+        assert!(produce_command_if_ready(&replica, 0, &request, Some(&gate)).is_none());
+        replica.last_applied_tick = Some(41);
+        assert_eq!(
+            produce_command_if_ready(&replica, 0, &request, Some(&gate)),
+            Some(PlayerCommandKind::Produce {
+                producer_id: UnitId(7),
+                recipe_id: "forge:hardened_shells".into()
+            })
+        );
+        assert!(produce_command_if_ready(&replica, 1, &request, Some(&gate)).is_none());
+    }
 }

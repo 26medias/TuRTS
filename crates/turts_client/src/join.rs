@@ -373,6 +373,11 @@ pub fn auto_move(
     if *sent
         || replica.snapshot_tick.is_none()
         || high < welcome.tick + opts.0.auto_move_after_ticks
+        || opts
+            .0
+            .move_release_file
+            .as_ref()
+            .is_some_and(|path| !move_release_ready(path))
     {
         return;
     }
@@ -392,4 +397,14 @@ pub fn auto_move(
         },
     );
     *sent = true;
+}
+
+#[cfg(not(target_family = "wasm"))]
+fn move_release_ready(path: &std::path::Path) -> bool {
+    path.is_file()
+}
+
+#[cfg(target_family = "wasm")]
+fn move_release_ready(_path: &std::path::Path) -> bool {
+    true
 }

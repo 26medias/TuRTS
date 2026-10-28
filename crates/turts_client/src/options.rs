@@ -29,6 +29,14 @@ pub struct ClientOptions {
     pub auto_move_after_ticks: u32,
     /// Test hook: the unit id for the automatic move.
     pub move_unit: Option<u32>,
+    /// Test hook: request one technology from a producer after optional replica inventory gating.
+    pub produce: Option<(u32, String)>,
+    /// Test hook: require this unreserved producer inventory before the one-shot produce request.
+    pub produce_when_inventory: Option<(u32, String, u64)>,
+    /// Native test hook: atomically publish the current permitted client report.
+    pub live_report: Option<PathBuf>,
+    /// Native test hook: withhold the one-shot move until this local file exists.
+    pub move_release_file: Option<PathBuf>,
     /// Test hook: send this lockfile hash in `Hello` instead of the real one.
     pub hello_hash: Option<String>,
     /// Test hook: stop after this many seconds.
@@ -62,6 +70,10 @@ impl Default for ClientOptions {
             auto_move: None,
             auto_move_after_ticks: 5,
             move_unit: None,
+            produce: None,
+            produce_when_inventory: None,
+            live_report: None,
+            move_release_file: None,
             hello_hash: None,
             run_secs: None,
             drop_delta_offsets: Vec::new(),
@@ -110,6 +122,14 @@ Test hooks:
                   the server rejects the command for a unit of another slot.
   --move-after-ticks N
                   Wait N ticks after Welcome before the move. The default is 5.
+  --move-release-file PATH
+                  With --move and --move-unit, wait until this local coordinator signal exists.
+  --produce UNIT,TECH
+                  Send one Produce command for this unit and technology after joining.
+  --produce-when-inventory UNIT,ITEM,N
+                  With --produce, wait for this unit's coherent unreserved item count to reach N.
+  --live-report PATH
+                  Atomically publish the current owner-permitted report when a coherent tick changes.
   --hello-hash H  Send H as the lockfile hash in Hello. The server rejects a wrong hash.
   --protocol-version N
                   Send N as the wire protocol version in Hello.
@@ -167,6 +187,12 @@ pub fn parse_cli(args: &[String]) -> Result<ClientOptions, String> {
             "--move" => options.auto_move = Some(point(flag, value()?)?),
             "--move-after-ticks" => options.auto_move_after_ticks = number(flag, value()?)?,
             "--move-unit" => options.move_unit = Some(number(flag, value()?)?),
+            "--produce" => options.produce = Some(parse_produce(flag, value()?)?),
+            "--produce-when-inventory" => {
+                options.produce_when_inventory = Some(parse_inventory_gate(flag, value()?)?);
+            }
+            "--live-report" => options.live_report = Some(PathBuf::from(value()?)),
+            "--move-release-file" => options.move_release_file = Some(PathBuf::from(value()?)),
             "--hello-hash" => options.hello_hash = Some(value()?.to_string()),
             "--run-secs" => options.run_secs = Some(number(flag, value()?)?),
             "--drop-delta-ticks" => {
@@ -192,6 +218,19 @@ pub fn parse_cli(args: &[String]) -> Result<ClientOptions, String> {
             }
             other => return Err(format!("unknown argument {other}")),
         }
+    }
+    if let Some((producer, _, _)) = options.produce_when_inventory
+        && options.produce.as_ref().map(|(unit, _)| *unit) != Some(producer)
+    {
+        return Err("--produce-when-inventory must name the --produce unit".into());
+    }
+    if options.produce_when_inventory.is_some() && options.produce.is_none() {
+        return Err("--produce-when-inventory requires --produce".into());
+    }
+    if options.move_release_file.is_some()
+        && (options.auto_move.is_none() || options.move_unit.is_none())
+    {
+        return Err("--move-release-file requires --move and --move-unit".into());
     }
     if options.hold_resync_snapshot_count.is_some() && options.hold_resync_snapshots == 0 {
         return Err(
@@ -264,6 +303,33 @@ fn number<T: std::str::FromStr>(flag: &str, text: &str) -> Result<T, String> {
     text.trim()
         .parse()
         .map_err(|_| format!("{flag}: `{text}` is not a valid number"))
+}
+
+fn parse_produce(flag: &str, text: &str) -> Result<(u32, String), String> {
+    let (unit, technology) = text
+        .split_once(',')
+        .ok_or_else(|| format!("{flag}: `{text}` must be UNIT,TECH"))?;
+    let unit = number(flag, unit)?;
+    turts_mod_api::ContentId::parse(technology)
+        .map_err(|_| format!("{flag}: `{technology}` is not a valid content reference"))?;
+    Ok((unit, technology.to_owned()))
+}
+
+fn parse_inventory_gate(flag: &str, text: &str) -> Result<(u32, String, u64), String> {
+    let mut fields = text.split(',');
+    let unit = fields.next().unwrap_or_default();
+    let item = fields.next().unwrap_or_default();
+    let amount = fields.next().unwrap_or_default();
+    if fields.next().is_some() || unit.is_empty() || item.is_empty() || amount.is_empty() {
+        return Err(format!("{flag}: `{text}` must be UNIT,ITEM,N"));
+    }
+    turts_mod_api::ContentId::parse(item)
+        .map_err(|_| format!("{flag}: `{item}` is not a valid content reference"))?;
+    Ok((
+        number(flag, unit)?,
+        item.to_owned(),
+        positive_bound(flag, amount)? as u64,
+    ))
 }
 
 fn point(flag: &str, text: &str) -> Result<(f32, f32), String> {
