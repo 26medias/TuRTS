@@ -36,6 +36,7 @@ struct UiActionNotice(Option<String>);
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum UiAction {
+    Select { unit: u32 },
     Produce { producer: u32, recipe: String },
     Cancel { producer: u32, job: JobId },
     SetEnabled { unit: u32, enabled: bool },
@@ -86,8 +87,48 @@ pub fn panel_model(
     results: &CommandResults,
 ) -> PanelModel {
     let mut model = PanelModel::default();
+    let industrial = content
+        .catalog
+        .units
+        .values()
+        .any(|def| def.research.is_some() || def.machine.is_some() || def.extractor.is_some());
+    // Names and capabilities come from the downloaded package, not a Forge ID list.
+    for (&id, unit) in &replica.units {
+        let Some(def) = ContentId::parse(&unit.content_id)
+            .ok()
+            .and_then(|id| content.catalog.units.get(&id))
+        else {
+            continue;
+        };
+        if industrial
+            && (def.research.is_some()
+                || def.movement.is_some()
+                || def.machine.is_some()
+                || def.weapon.is_some()
+                || def.extractor.is_some()
+                || def.producer.is_some())
+        {
+            model.controls.push(UiControl {
+                label: format!("Select {}", def.name),
+                action: UiAction::Select { unit: id },
+                enabled: true,
+            });
+        }
+    }
     let Some(selected) = selection.0 else {
-        model.lines.push("Select a unit or producer".into());
+        if industrial {
+            model
+                .lines
+                .push("Your units: select a named button below.".into());
+            model.lines.push(
+                "Factory: Select a lab to start research. Machines run automatically.".into(),
+            );
+            model
+                .lines
+                .push("Mobile units: select one, then right-click the ground to move.".into());
+        } else {
+            model.lines.push("Select a unit or producer".into());
+        }
         append_last_result(&mut model, results);
         append_nodes(&mut model, replica, content);
         return model;
@@ -100,6 +141,22 @@ pub fn panel_model(
     let def = parsed.as_ref().and_then(|id| content.catalog.units.get(id));
     let name = def.map_or_else(|| unit.content_id.clone(), |d| d.name.clone());
     model.lines.push(format!("Selected: {name} · {selected}"));
+    if industrial && let Some(def) = def {
+        model.lines.push(if def.movement.is_some() {
+            "Mobile: right-click the ground to move.".into()
+        } else {
+            "This unit is stationary; it cannot move.".into()
+        });
+        if def.extractor.is_some()
+            || def.machine.is_some()
+            || def.inserter.is_some()
+            || def.weapon.is_some()
+        {
+            model
+                .lines
+                .push("Runs automatically. Disable pauses it; Remove destroys it.".into());
+        }
+    }
     append_balances(&mut model, &replica.economy, content);
     append_inventory(&mut model, &replica.economy, content, selected, def);
     append_order(&mut model, &replica.economy, selected);
@@ -199,6 +256,35 @@ pub fn panel_model(
             );
             let affordable = definition
                 .is_some_and(|technology| recipe_affordable(replica, selected, &technology.costs));
+            if let Some(definition) = definition {
+                append_costs(
+                    &mut model.lines,
+                    "Research cost",
+                    &definition
+                        .costs
+                        .iter()
+                        .map(|cost| turts_mod_api::Cost {
+                            resource: cost.resource.to_string(),
+                            amount: cost.amount,
+                            source: cost.source,
+                        })
+                        .collect::<Vec<_>>(),
+                    content,
+                );
+            }
+            if queue_len > 0 {
+                model
+                    .lines
+                    .push("Research in progress; wait for completion.".into());
+            } else if !affordable {
+                model.lines.push(
+                    "Waiting for required items in the lab inventory or slot balance.".into(),
+                );
+            } else {
+                model
+                    .lines
+                    .push("Ready: use the Research button below.".into());
+            }
             model.controls.push(UiControl {
                 label: format!("Research {name}"),
                 action: UiAction::Produce {
@@ -207,6 +293,16 @@ pub fn panel_model(
                 },
                 enabled: queue_len < usize::from(station.queue_capacity) && affordable,
             });
+        }
+    }
+    if def.is_some_and(|unit| unit.research.is_some())
+        && let Some(queue) = queue
+    {
+        for job in &queue.jobs {
+            model.lines.push(format!(
+                "Research progress: {}/{} ticks",
+                job.elapsed_ticks, job.duration_ticks
+            ));
         }
     }
     if let Some(definition) = def {
@@ -679,6 +775,7 @@ fn activate_action(
     acquired: Option<Res<AcquiredPackages>>,
     mut notice: ResMut<UiActionNotice>,
     mut pending: ResMut<PendingCommands>,
+    mut selection: ResMut<Selection>,
 ) {
     let Ok(action) = actions.get(trigger.entity) else {
         return;
@@ -690,9 +787,14 @@ fn activate_action(
         return;
     }
     notice.0 = None;
+    if let UiAction::Select { unit } = action.0 {
+        selection.0 = Some(unit);
+        return;
+    }
     submit(
         &mut pending,
         match &action.0 {
+            UiAction::Select { .. } => return,
             UiAction::Produce { producer, recipe } => PlayerCommandKind::Produce {
                 producer_id: UnitId(*producer),
                 recipe_id: recipe.clone(),
@@ -721,7 +823,9 @@ fn validate_action_owner_and_capability(
     let replica = state.replica.as_ref().ok_or("not_owner")?;
     let unit_id = match action {
         UiAction::Produce { producer, .. } | UiAction::Cancel { producer, .. } => *producer,
-        UiAction::SetEnabled { unit, .. } | UiAction::Remove { unit } => *unit,
+        UiAction::Select { unit }
+        | UiAction::SetEnabled { unit, .. }
+        | UiAction::Remove { unit } => *unit,
     };
     let unit = replica.units.get(&unit_id).ok_or("not_owner")?;
     if unit.owner_slot != welcome.slot {
@@ -784,7 +888,9 @@ pub fn sync_panel(world: &mut World) {
     model.controls.retain(|control| {
         let unit = match control.action {
             UiAction::Produce { producer, .. } | UiAction::Cancel { producer, .. } => producer,
-            UiAction::SetEnabled { unit, .. } | UiAction::Remove { unit } => unit,
+            UiAction::Select { unit }
+            | UiAction::SetEnabled { unit, .. }
+            | UiAction::Remove { unit } => unit,
         };
         owner_slot.is_some_and(|slot| {
             replica
@@ -793,6 +899,9 @@ pub fn sync_panel(world: &mut World) {
                 .is_some_and(|unit| unit.owner_slot == slot)
         })
     });
+    model
+        .controls
+        .sort_by_key(|control| matches!(control.action, UiAction::Select { .. }));
     if let Some(message) = world.resource::<UiActionNotice>().0.as_deref() {
         model.lines.push(format!("Action denied: {message}"));
     }
@@ -976,6 +1085,21 @@ pub fn sync_panel(world: &mut World) {
         if let Some(mut action) = world.get_mut::<UiActionTarget>(label) {
             action.0.clone_from(&control.action);
         }
+    }
+    if model
+        .controls
+        .iter()
+        .any(|control| matches!(control.action, UiAction::Select { .. }))
+    {
+        let entities = world.resource::<PanelEntities>();
+        let mut ordered = entities.lines.clone();
+        ordered.extend(
+            model
+                .controls
+                .iter()
+                .filter_map(|c| entities.controls.get(&c.action).map(|pair| pair.0)),
+        );
+        world.entity_mut(root).replace_children(&ordered);
     }
 }
 
@@ -1194,6 +1318,7 @@ mod activation_tests {
         let mut world = World::new();
         world.init_resource::<PendingCommands>();
         world.init_resource::<UiActionNotice>();
+        world.init_resource::<Selection>();
         let base = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../mods/base");
         let archive = PackageArchive::parse(&pack_dir(&base).expect("pack base"))
             .expect("parse base archive");
@@ -1266,5 +1391,35 @@ mod activation_tests {
                 })
             );
         }
+        let selector = world
+            .spawn((
+                UiActionTarget(UiAction::Select { unit: 8 }),
+                observe(activate_action),
+            ))
+            .id();
+        world.trigger(Activate { entity: selector });
+        assert_eq!(world.resource::<Selection>().0, Some(8));
+        assert_eq!(
+            world.resource::<PendingCommands>().0.len(),
+            2,
+            "selection is local, never a server command"
+        );
+        world.resource_mut::<Selection>().0 = None;
+        world
+            .resource_mut::<ReplicaState>()
+            .replica
+            .as_mut()
+            .unwrap()
+            .units
+            .get_mut(&8)
+            .unwrap()
+            .owner_slot = 1;
+        world.trigger(Activate { entity: selector });
+        assert_eq!(
+            world.resource::<Selection>().0,
+            None,
+            "foreign unit selection is rejected"
+        );
+        assert_eq!(world.resource::<PendingCommands>().0.len(), 2);
     }
 }

@@ -447,7 +447,7 @@ impl Plugin for UnitRenderPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(
             Update,
-            (setup_scene, sync_units, sync_nodes)
+            (setup_scene, sync_units, sync_nodes, sync_world_names)
                 .chain()
                 .after(update_presented),
         );
@@ -523,5 +523,99 @@ pub fn sync_nodes(
         if !kept.contains(&id) {
             commands.entity(entity).despawn();
         }
+    }
+}
+
+/// Read-only names for principal machines, mobile units and resource nodes.
+/// Tiny transport pieces are named when selected to avoid overlapping belt labels.
+#[derive(Component)]
+struct WorldName(String);
+
+#[allow(clippy::too_many_arguments)]
+fn sync_world_names(
+    mut commands: Commands,
+    presented: Res<Presented>,
+    state: Res<ReplicaState>,
+    acquired: Option<Res<AcquiredPackages>>,
+    selection: Res<crate::economy_ui::Selection>,
+    cameras: Query<(&Camera, &GlobalTransform), With<Camera3d>>,
+    mut labels: Query<(Entity, &WorldName, &mut Node, &mut Text)>,
+) {
+    let (Some(acquired), Some(replica), Some((camera, transform))) =
+        (acquired, state.replica.as_ref(), cameras.iter().next())
+    else {
+        return;
+    };
+    let mut desired = HashMap::new();
+    for unit in &presented.units {
+        let Some(def) = ContentId::parse(&unit.content_id)
+            .ok()
+            .and_then(|id| acquired.0.content.catalog.units.get(&id))
+        else {
+            continue;
+        };
+        if def.research.is_none()
+            && def.movement.is_none()
+            && def.machine.is_none()
+            && def.weapon.is_none()
+            && def.extractor.is_none()
+            && def.producer.is_none()
+            && selection.0 != Some(unit.unit_id)
+        {
+            continue;
+        }
+        let lift = acquired
+            .0
+            .content
+            .shapes
+            .get(&unit.content_id)
+            .map_or(1.0, mesh_lift);
+        if let Ok(point) =
+            camera.world_to_viewport(transform, world_to_scene(unit.pos) + Vec3::Y * (lift + 1.8))
+        {
+            desired.insert(format!("unit:{}", unit.unit_id), (def.name.clone(), point));
+        }
+    }
+    for node in replica.nodes.values() {
+        let Some(def) = ContentId::parse(&node.content_id)
+            .ok()
+            .and_then(|id| acquired.0.content.catalog.nodes.get(&id))
+        else {
+            continue;
+        };
+        if let Ok(point) =
+            camera.world_to_viewport(transform, world_to_scene(node.pos) + Vec3::Y * 1.5)
+        {
+            desired.insert(format!("node:{}", node.id.0), (def.name.clone(), point));
+        }
+    }
+    for (entity, name, mut node, mut text) in &mut labels {
+        if let Some((label, point)) = desired.remove(&name.0) {
+            node.left = px(point.x - 45.0);
+            node.top = px(point.y - 14.0);
+            text.0 = label;
+        } else {
+            commands.entity(entity).despawn();
+        }
+    }
+    for (key, (label, point)) in desired {
+        commands.spawn((
+            WorldName(key),
+            Text::new(label),
+            TextFont {
+                font_size: FontSize::Px(13.0),
+                ..default()
+            },
+            TextColor(Color::WHITE),
+            BackgroundColor(Color::srgba(0.03, 0.05, 0.07, 0.9)),
+            Node {
+                position_type: PositionType::Absolute,
+                left: px(point.x - 45.0),
+                top: px(point.y - 14.0),
+                padding: UiRect::axes(px(4), px(2)),
+                ..default()
+            },
+            bevy::picking::Pickable::IGNORE,
+        ));
     }
 }

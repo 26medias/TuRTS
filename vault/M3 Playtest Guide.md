@@ -6,11 +6,11 @@ Forge is an industrial demonstration with a prebuilt factory. There is no constr
 
 ## First client: the factory
 
-The first client to join owns the factory. Left-click an owned unit to select it and inspect its status and inventory. Small pieces are easiest to select near their bases. The Bore Drill, Chain Belts, Arm Loaders and Shell Press run automatically; no Gather command is needed to start them.
+The first client to join owns the factory. Use the named **Select** buttons in the left panel for principal units, or left-click an owned unit to inspect it. Principal machines, drones and ore have persistent world labels; small transport pieces are labelled when selected. The Bore Drill, Chain Belts, Arm Loaders and Shell Press run automatically; no Gather command is needed to start them.
 
 Follow the chain from the Ore Vein on the left through the drill and belts to the press. Inspect the Shell Press's separate Main and Output inventories. Its shells feed the Shell Turret below the press and the Proving Lab above it.
 
-Select the Proving Lab and wait until its Main inventory has ten available shells. Use **Research Hardened Shells**. The lab has no visible queue or progress line. Watch **Last command** for `Applied`, then wait for completed research; the turret's damage rises from 10 to 20 after completion. Research is private to the factory owner.
+Select the Proving Lab and wait until its Main inventory has ten available shells. Use **Research Hardened Shells**. The panel shows research costs, a missing-stock explanation, and running progress in ticks. Watch **Last command** for `Applied`, then **Research progress** and completed research; the turret's damage rises from 10 to 20 after completion. Research is private to the factory owner.
 
 Use **Disable/Enable** on eligible units to observe pauses and backpressure. **Remove** is available only on eligible units and destroys their contents. Start a fresh match after experimenting with removal if the factory can no longer supply itself.
 
@@ -31,3 +31,5 @@ Useful feedback includes: what you clicked, what you expected, what happened, wh
 ## Linux browser startup
 
 On this host ordinary Chrome can expose WebGPU but return no adapter, causing `No available adapters` and a renderer panic. The tested Vulkan/WebGPU launch configuration works; a separate configured desktop window is open for testing. See [[Reports/2026-10-28 M3 browser adapter startup]] for reproduction, evidence and limitations. This does not require changing the server or your existing browser profile.
+
+The configured desktop preview opens two named tabs: **TuRTS — Factory** and **TuRTS — Drones**. Factory opens with the lab selected; research becomes available as ten shells arrive (roughly one minute after a fresh start). Drones opens with the distant movable drone selected; right-click the ground to move it. These are the two permanent match slots. The factory machines cannot move.

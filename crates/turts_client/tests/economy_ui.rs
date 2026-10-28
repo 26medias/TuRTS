@@ -1765,3 +1765,50 @@ fn machine_panel_shows_main_and_output_inventory_with_each_capacity() {
         "Output capacity is wrong: {text}"
     );
 }
+
+#[test]
+fn unselected_factory_names_the_lab_and_offers_selection() {
+    let (content, replica, _) = forge_lab_replica(0, 0);
+    let model = panel_model(
+        &replica,
+        &content,
+        &Selection(None),
+        &CommandResults::default(),
+    );
+    assert!(
+        model
+            .controls
+            .iter()
+            .any(|c| c.label == "Select Proving Lab")
+    );
+    assert!(
+        model
+            .lines
+            .iter()
+            .any(|line| line.contains("research") && line.contains("Select"))
+    );
+}
+
+#[test]
+fn research_panel_explains_cost_and_missing_stock() {
+    let (content, replica, lab) = forge_lab_replica(0, 0);
+    let model = panel_model(
+        &replica,
+        &content,
+        &Selection(Some(lab)),
+        &CommandResults::default(),
+    );
+    assert!(
+        model
+            .lines
+            .iter()
+            .any(|line| line.contains("cost") && line.contains("10"))
+    );
+    assert!(
+        model
+            .lines
+            .iter()
+            .any(|line| line.contains("Waiting") && line.contains("inventory"))
+    );
+    assert!(model.lines.iter().any(|line| line.contains("stationary")));
+}

@@ -37,3 +37,5 @@ Dashboard for the TuRTS studio. Read this first, then [[Tasks]] and the latest n
 
 - License: TBD (CEO's words). No LICENSE file until chosen.
 - Desktop delivery (D02, native or Tauri wrapper): the M1 acceptance row names a secondary executable. The studio proposes to accept the browser part of M1 now and block the executable part on this decision.
+
+Human-playtest follow-up: prior usability verdict superseded by user feedback. Named selection/world labels, role guidance and research feedback repaired; fresh workspace765/0/18 and human research/mobile/existing7 browser flows pass. [[Reports/2026-10-28 M3 human playtest repair]].

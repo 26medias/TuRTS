@@ -29,3 +29,5 @@ Earlier wrong-branch, substituted C6/C10/C11, compiler-error, zero-selection, ab
 ## Final repair acceptance
 
 Current code07936e8:763 passed,0 failed,18 ignored across90 result groups; fmt, strict Clippy, wasm, boundaries and frozen M2 stream pass. Fresh formal17, public packer19, optimized Forge browser7 and direct-bootstrap guard causal proof pass. Final scoped Sol review reports PASS, zero findings. Evidence: `target/m3-evidence/final/fix/report.md`, `proof-index.json`, `source-manifest.json`; review: `target/m3-evidence/final/technical/recheck.md`. Root confirmed acceptance server/static/Xvfb PIDs are gone; only the intentional playtest remains. See [[Reports/2026-10-28 M3 ready to test]].
+
+Human-playtest follow-up: prior usability verdict superseded by user feedback. Named selection/world labels, role guidance and research feedback repaired; fresh workspace765/0/18 and human research/mobile/existing7 browser flows pass. [[Reports/2026-10-28 M3 human playtest repair]].
