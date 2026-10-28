@@ -147,7 +147,7 @@ fn drive_produce_hook(
     mut pending: ResMut<PendingCommands>,
     status: Res<CommandSendStatus>,
 ) {
-    if hook.sent || status.reconnect_required {
+    if status.reconnect_required {
         return;
     }
     let (Some(request), Some(welcome), Some(replica)) =
@@ -161,6 +161,9 @@ fn drive_produce_hook(
     });
     if completed && hook.research_completed_tick.is_none() {
         hook.research_completed_tick = tick;
+    }
+    if hook.sent {
+        return;
     }
     let Some(command) = produce_command_if_ready(
         replica,
@@ -276,4 +279,92 @@ pub fn build_app(opts: ClientOptions) -> App {
         app.add_plugins((UnitRenderPlugin, EconomyUiPlugin, ClickInputPlugin));
     }
     app
+}
+
+#[cfg(test)]
+mod produce_hook_observation_tests {
+    use super::drive_produce_hook;
+    use crate::{
+        commands::{CommandSendStatus, PendingCommands},
+        ingest::{ReplicaState, WelcomeInfo},
+        replica::{Replica, UnitReplica},
+        scenario::ProduceHook,
+    };
+    use bevy::prelude::{Schedule, World};
+    use std::collections::VecDeque;
+    use turts_net_protocol::{PlayerCommandKind, Pos, ResearchRecord, SlotId, UnitId};
+
+    #[test]
+    fn sent_produce_still_observes_first_later_owner_completion_once() {
+        let mut replica = Replica::new(20);
+        replica.last_applied_tick = Some(10);
+        replica.units.insert(
+            7,
+            UnitReplica {
+                content_id: "forge:lab".into(),
+                owner_slot: 0,
+                facing: None,
+                samples: VecDeque::from([(10, Pos { x: 8.0, y: 8.0 })]),
+            },
+        );
+        let mut replica_state = ReplicaState {
+            replica: Some(replica),
+            welcome: Some(WelcomeInfo {
+                slot: 0,
+                tick: 10,
+                tick_hz: 20,
+            }),
+            ..Default::default()
+        };
+        let mut world = World::new();
+        world.insert_resource(ProduceHook {
+            request: Some((7, "forge:hardened_shells".into())),
+            sent: false,
+            ..Default::default()
+        });
+        world.insert_resource(replica_state);
+        world.insert_resource(PendingCommands::default());
+        world.insert_resource(CommandSendStatus::default());
+        let mut schedule = Schedule::default();
+        schedule.add_systems(drive_produce_hook);
+
+        schedule.run(&mut world);
+        assert!(world.resource::<ProduceHook>().sent);
+        assert_eq!(world.resource::<PendingCommands>().0.len(), 1);
+
+        replica_state = world.remove_resource::<ReplicaState>().unwrap();
+        let replica = replica_state.replica.as_mut().unwrap();
+        replica.last_applied_tick = Some(90);
+        replica.research.push(ResearchRecord {
+            slot: SlotId(0),
+            completed: vec!["forge:hardened_shells".into()],
+        });
+        world.insert_resource(replica_state);
+        schedule.run(&mut world);
+        assert_eq!(
+            world.resource::<ProduceHook>().research_completed_tick,
+            Some(90)
+        );
+        assert_eq!(world.resource::<PendingCommands>().0.len(), 1);
+
+        let mut replica_state = world.remove_resource::<ReplicaState>().unwrap();
+        replica_state.replica.as_mut().unwrap().last_applied_tick = Some(91);
+        world.insert_resource(replica_state);
+        schedule.run(&mut world);
+        assert_eq!(
+            world.resource::<ProduceHook>().research_completed_tick,
+            Some(90)
+        );
+        assert_eq!(world.resource::<PendingCommands>().0.len(), 1);
+        assert!(matches!(
+            world.resource::<PendingCommands>().0.front(),
+            Some(crate::commands::PendingCommand::Submit {
+                kind: PlayerCommandKind::Produce {
+                    producer_id: UnitId(7),
+                    ..
+                },
+                ..
+            })
+        ));
+    }
 }
