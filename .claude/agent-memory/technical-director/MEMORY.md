@@ -1,3 +1,3 @@
 - [rtk diff false identical](feedback_rtk_diff.md) — use `rtk proxy diff`/`grep` for runs that decide a finding
-- [Spec register layout](project_spec_layout.md) — verified line anchors in the spec v0.5 (register, 4.1, 6.5, invariants, 15)
+- [Spec register layout](project_spec_layout.md) — verified anchors in spec v0.7 (register D01-D64, 4.x, 7, 8, invariants, 14, 15) + API version code + plan-review compile traps
 - [Bevy 0.20 and CI facts](project_bevy020_ci.md) — 0.20 schedule names; FixedTimesteps driver; lightyear 0.31 trees; gate-2 skeleton probe; cargo tree silent-pass trap
