@@ -1,6 +1,6 @@
 # M3 playtest guide
 
-Status: final acceptance is still running. Use [[M3 Execution Board]] for the readiness verdict. The repository README will contain launch instructions at milestone close.
+Status: ready for local playtesting. All20 implementation entries, C1–C4 and final review repairs are accepted. See [[Reports/2026-10-28 M3 ready to test]] for the running preview and reset instructions. README contains general launch instructions.
 
 Forge is an industrial demonstration with a prebuilt factory. There is no construction, AI opponent or victory screen in this milestone. The visuals use simple shapes and text panels.
 

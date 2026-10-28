@@ -144,7 +144,7 @@ Critical path: T0 → T1 → T3a → T3 → T4 → T7 → T8 → T12 → T13a �
 
 Estimate: 20 Luna builder runs plus at most one fix round each for 8 of them (about 28), 12 Sol R1 reviews, 4 `qa-lead` checkpoints, 3 milestone judges. About 47 agent runs. This is a proposal under the budget rule ([[Team]], memory "token budget"). If actuals pass 1.3 times the estimate, stop and ask the user. Mitigations: R0 on mechanical tasks; one reviewer per R1; re-checks by short message to the same reviewer; reports capped at 400 words; no probe done twice.
 
-Running count: builders 33, reviews 25, checkpoints 4 (10 execution runs), judges 3, additional orchestration executors 2. Total 73 actual agent runs. User-approved allowance: 75. C3 refresh and UI R1 are accepted; Task16 and C4 are accepted; the three final milestone judges are active.
+Running count: builders34, reviews26, checkpoints4 (10 execution runs), judges3, additional orchestration executors2. Total75 actual agent runs; allowance75. All20 entries, C1–C4 and final judgments/repair are accepted. No further agent runs are authorized. Local playtest ready; hosted CI/push/main merge pending approval.
 
 ## 9. Cut line (from the spec 16.2)
 
@@ -173,7 +173,7 @@ In order, only if the milestone proves too large: (1) `SetEnabled`; (2) drone B 
 | T14 | complete | `codex/m3-t14` | `target/m3-worktrees/t14` | `dcddac0` → `0e28855` | Scoped R1 PASS, 0 findings | V0 PASS: 742/0/17; wasm | C1 retries, parsed resource balance, dangling state, full renamed industrial trace. |
 | T15a | complete; queue follow-up accepted | `codex/m3-t15a` | `target/m3-worktrees/t15a` | `1eafa68` → `31c05d8` | R0 PASS | V0 PASS750/0/17 after queue follow-up; wasm | Atomic records, port keys, finalhealth0/removal, movingkill overlap, sharedmerge/debugtrace. |
 | T15b | complete | `codex/m3-t15b` | `target/m3-worktrees/t15b` | `0ee47fd` → `e4c591f` | Same Sol R1 PASS after four repairs | V0 PASS: 758/0/17; wasm | Owner completion hook, aggregate/Main costs, both inventory ports, seven-stage actual browser proof. |
-| T16 | complete | `codex/m3-t16` | `target/m3-worktrees/t16` | code `f3940ce`; docs `6a30933`; tested union `dae6739` | Same Sol R1 PASS, zero findings | C4 PASS:760/0/18, native33/formal17/browser8/browser15/processF11/Forge7/T7 | All20 implementation entries accepted; final three milestone judges active. |
+| T16 | complete | `codex/m3-t16` | `target/m3-worktrees/t16` | code `f3940ce`; docs `6a30933`; tested union `dae6739` | Same Sol R1 PASS, zero findings | C4 PASS:760/0/18, native33/formal17/browser8/browser15/processF11/Forge7/T7 | All20 accepted; final judgments and repair accepted. Ready for local playtest. |
 
 
 ## 11. Checkpoint ledger

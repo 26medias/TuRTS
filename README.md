@@ -9,7 +9,7 @@
 
 TuRTS is a mod-first real-time strategy engine built with Rust and Bevy. It has a browser WebAssembly client, a native client, and an authoritative headless server. Game content is delivered as packages through the public mod API.
 
-**Project stage: multiplayer industrial graybox prototype. M3 features are implemented; final milestone acceptance is in progress.** The engine supports package loading, two-player sessions, gathering, unit production and cancellation, extraction, conveyors, inserters, item recipes, research, ammunition-based combat and destruction. Clients recover through snapshots and deltas. The interface and visuals remain functional prototypes.
+**Project stage: multiplayer industrial graybox prototype. M3 is locally validated and ready for Forge playtesting; hosted CI and integration approvals remain pending.** The engine supports package loading, two-player sessions, gathering, unit production and cancellation, extraction, conveyors, inserters, item recipes, research, ammunition-based combat and destruction. Clients recover through snapshots and deltas. The interface and visuals remain functional prototypes.
 
 The prototype scope includes selecting owned units with the left mouse button, issuing movement or Gather orders with the right mouse button, and using visible producer controls to Produce or Cancel jobs. Browser and native-window proofs covered these interactions against the real server and package fixtures. The demo match has two permanent player slots; a browser tab and native client count toward the same two slots. Closing a client does not release or reconnect its slot. Restart the server to begin a fresh match.
 

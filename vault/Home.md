@@ -9,6 +9,8 @@ source: mcp
 ---
 
 ## For future Claude
+
+**Latest closeout:** All20 implementation entries, checkpoints C1–C4 and final technical/player/mod-author reviews are accepted after the final repair. Ready for local Forge playtesting. Hosted CI, push and merge to main remain pending approval. Current code07936e8:763/0/18;75/75 approved agent runs used. [[Reports/2026-10-28 M3 ready to test]] supersedes historical status entries below.
 Dashboard for the TuRTS studio. Read this first, then [[Tasks]] and the latest note in Reports.
 
 # TuRTS studio

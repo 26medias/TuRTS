@@ -6,6 +6,8 @@ tags: [turts, m3, report]
 
 # M3 implementation
 
+**Latest closeout:** All20 implementation entries, checkpoints C1–C4 and final technical/player/mod-author reviews are accepted after the final repair. Ready for local Forge playtesting. Hosted CI, push and merge to main remain pending approval. Current code07936e8:763/0/18;75/75 approved agent runs used. [[Reports/2026-10-28 M3 ready to test]] supersedes historical status entries below.
+
 **Latest:** All20 implementation entries and independent C4 accepted. Fresh C4 source `dae6739` is clean and all574 hashes match;760/0/18, native33/formal17/browser8/positive15, real F11 and Forge7/T7 pass. The three final judges are active (runs71–73); actual73/75 approved runs. No performance budget, hosted CI or main merge is claimed. Detailed evidence: [[M3 Acceptance Evidence]]. Earlier entries below are chronological history.
 
 **Current status: 19/20 task entries accepted.** C1–C3 and client presentation are accepted. Latest canonical product gates are758 passed,0 failed,17 ignored plus WebAssembly, boundaries and the unchanged M2 stream. Task16 has real private-research/combat F11 proof, M2 browsers15/15, Forge browser7/7, M3 faults17/17 and native M2 faults33/33. Runner interruption/hash repairs and final gates are in progress before Task16 review, C4 and three milestone judgments. No user input is currently needed;67/75 approved agent runs used.

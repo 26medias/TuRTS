@@ -1,8 +1,8 @@
 # M3 acceptance evidence
 
-All20 implementation entries and independent checkpoint C4 are accepted. Final technical, player and mod-author judgments are in progress. Hosted CI and push/main merge approvals remain pending. Evidence paths are relative to the original repository root.
+All20 implementation entries, checkpoints C1–C4 and final technical/player/mod-author reviews are accepted after the final repair. Ready for local Forge playtesting. Hosted CI, push and merge to main remain pending approval. Evidence paths are relative to the original repository root.
 
-C4 tested exact source `dae673986a84277dc8eb33417881066f1e71b0f4`; all574 tracked SHA256 values match and its worktree is clean. Subsequent integration changes are documentation only. The authoritative requirement/evidence map is `target/m3-evidence/c4/proof-index.json`; verdict is `report.md` beside it.
+C4 tested exact source `dae673986a84277dc8eb33417881066f1e71b0f4`; all574 tracked SHA256 values match and its worktree is clean. Final repair07936e8 additionally rejects invalid negative/nonfinite geometric scalars at package loading and direct bootstrap, and corrects documentation. Gameplay, wire, UI and valid authored fixture behavior are unchanged. Historical C4 evidence is qualified reuse, not a claim of fresh execution on07936e8. The authoritative requirement/evidence map is `target/m3-evidence/c4/proof-index.json`; verdict is `report.md` beside it.
 
 | Requirement | Accepted local evidence |
 | --- | --- |
@@ -25,3 +25,7 @@ Browser proof reuse is explicit: first5 mutations ran on35355 with the older run
 Positive browser15 ran onf3940ce across9 invocations (base4, haul2, acme2, cedar2, five loss families). C4 independently audited raw source, receipts, screenshots, complete-state comparisons and cleanup as the joint F2 gate, rather than rerunning identical cases. Source/UI/runner bytes match the frozen C4 source. Root index: `target/m3-evidence/t16-root-browser-positive15-index.json`; independent audit: `target/m3-evidence/c4/m2-positive-independent-audit.json`.
 
 Earlier wrong-branch, substituted C6/C10/C11, compiler-error, zero-selection, aborted and infrastructure attempts remain excluded. Initial Task16 R1 findings were repaired and independently closed (`target/m3-evidence/t16-review/recheck.md`). Decisions and costs are in [[M3 Orchestrator Rulings]]. Historical checkpoint records remain in `target/m3-evidence/{c1,c2,c3}/root-acceptance.md`.
+
+## Final repair acceptance
+
+Current code07936e8:763 passed,0 failed,18 ignored across90 result groups; fmt, strict Clippy, wasm, boundaries and frozen M2 stream pass. Fresh formal17, public packer19, optimized Forge browser7 and direct-bootstrap guard causal proof pass. Final scoped Sol review reports PASS, zero findings. Evidence: `target/m3-evidence/final/fix/report.md`, `proof-index.json`, `source-manifest.json`; review: `target/m3-evidence/final/technical/recheck.md`. Root confirmed acceptance server/static/Xvfb PIDs are gone; only the intentional playtest remains. See [[Reports/2026-10-28 M3 ready to test]].
