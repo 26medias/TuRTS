@@ -143,7 +143,7 @@ Critical path: T0 → T1 → T3a → T3 → T4 → T7 → T8 → T12 → T13a �
 
 Estimate: 20 Luna builder runs plus at most one fix round each for 8 of them (about 28), 12 Sol R1 reviews, 4 `qa-lead` checkpoints, 3 milestone judges. About 47 agent runs. This is a proposal under the budget rule ([[Team]], memory "token budget"). If actuals pass 1.3 times the estimate, stop and ask the user. Mitigations: R0 on mechanical tasks; one reviewer per R1; re-checks by short message to the same reviewer; reports capped at 400 words; no probe done twice.
 
-Running count: builders 6, reviews 5, checkpoints 0, judges 0. Additional orchestration executor runs: 2 (V0 and cache cleanup). Total agent runs: 13.
+Running count: builders 7, reviews 5, checkpoints 0, judges 0. Additional orchestration executor runs: 2 (V0 and cache cleanup). Total agent runs: 14.
 
 ## 9. Cut line (from the spec 16.2)
 
@@ -155,9 +155,9 @@ In order, only if the milestone proves too large: (1) `SetEnabled`; (2) drone B 
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | T0 | complete | `codex/m3-t0` | `target/m3-worktrees/t0` | `e0e215f` → `fe6765f` | PASS, 0 findings | V0 PASS at `fe6765f`: 498/0/17 | Four 400-tick streams; extra-empty-op plant semantic RED, restored GREEN; independent comparison 1/1. |
 | T1 | complete | `codex/m3-t1` | `target/m3-worktrees/t1` | `e534a03`, `87ef1f6` → `8cec0b9` | PASS after serialization fix | V0 PASS: 504/0/17; wasm | API 0.2.1 frozen; source provenance; old-reader round trip preserved. |
-| T2 | starting | `codex/m3-t2` | `target/m3-worktrees/t2` | pending | R0 root | pending | Portable validation; extends T1 content_m3.rs. |
+| T2 | complete | `codex/m3-t2` | `target/m3-worktrees/t2` | `c49b79b` → `76eef7e` | R0 PASS after repairs | V0 PASS: 539/0/17; wasm | 30 cases, exact diagnostics, syntax-presence version guard, corrected work-capability plant. |
 | T3a | complete | `codex/m3-t3a` | `target/m3-worktrees/t3a` | `f3e844d` → `45e43af` | R0 PASS | V0 PASS: 509/0/17; wasm | Resource tables, output endpoint, reason tags; no systems or protocol bump. |
-| T5 | not started | | | | | | |
+| T5 | starting | `codex/m3-t5` | `target/m3-worktrees/t5` | pending | R0 root | C1 pending | Forge package, locked fixture, E1 scanner and three plants. |
 | T3 | starting | `codex/m3-t3` | `target/m3-worktrees/t3` | pending | R1 pending | pending | Atomic overlays, removal and split infrastructure. |
 | T4 | not started | | | | | | |
 | T6 | not started | | | | | | |

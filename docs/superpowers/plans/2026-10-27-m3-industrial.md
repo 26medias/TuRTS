@@ -105,11 +105,11 @@ T1 implementation notes: M3 resolution lives in `turts_mod_runtime/src/content_m
 - Consumes: Task 1 types.
 - Produces: `pub(crate) fn validate_m3(manifest: &Manifest, catalog: &ContentCatalog) -> Result<(), ModError>`, called from the place where `validate_content` (`content.rs:88`) is called, after the manifest and the content are both parsed. Do not change a public signature; if `validate_content` needs the manifest's `engine_api`, add a new function and keep the old one as a wrapper.
 
-- [ ] **Step 1:** Write one reject test per rule of SPEC 3.1, each asserting package, file and field in the `ModError`: `machine_needs_matching_inventories`, `machine_inputs_exceed_input_capacity`, `machine_outputs_exceed_output_capacity`, `machine_must_be_static`, `health_requires_removal`, `weapon_must_be_static`, `weapon_ammo_item_not_accepted`, `modifier_unit_without_weapon`, `prerequisite_cycle`, `duplicate_id_across_recipe_and_unit`, `two_work_capabilities_on_one_unit`, `removal_on_unit_with_queue`, `item_count_over_u16`, `m3_field_with_caret_0_2_rejected` (a package that declares `^0.2` and uses `weapon`), plus `forge_style_package_accepted` and `map_and_visual_ids_stay_separate`.
-- [ ] **Step 2:** Run: expect FAIL.
-- [ ] **Step 3:** Implement `validate_m3` with a depth-first cycle check; add the version-honesty rule in `validate_m3` (a package that uses an M3 field must declare an `engine_api` requirement that excludes 0.2.0). `validate_manifest` runs before the content is read, so it cannot hold this rule.
-- [ ] **Step 4:** Run `cargo test -p turts_mod_runtime`. Expected: PASS.
-- [ ] **Step 5:** Commit explicit paths.
+- [x] **Step 1:** Write one reject test per rule of SPEC 3.1, each asserting package, file and field in the `ModError`: `machine_needs_matching_inventories`, `machine_inputs_exceed_input_capacity`, `machine_outputs_exceed_output_capacity`, `machine_must_be_static`, `health_requires_removal`, `weapon_must_be_static`, `weapon_ammo_item_not_accepted`, `modifier_unit_without_weapon`, `prerequisite_cycle`, `duplicate_id_across_recipe_and_unit`, `two_work_capabilities_on_one_unit`, `removal_on_unit_with_queue`, `item_count_over_u16`, `m3_field_with_caret_0_2_rejected` (a package that declares `^0.2` and uses `weapon`), plus `forge_style_package_accepted` and `map_and_visual_ids_stay_separate`.
+- [x] **Step 2:** Run: expect FAIL.
+- [x] **Step 3:** Implement `validate_m3` with a depth-first cycle check; add the version-honesty rule in `validate_m3` (a package that uses an M3 field must declare an `engine_api` requirement that excludes 0.2.0). `validate_manifest` runs before the content is read, so it cannot hold this rule.
+- [x] **Step 4:** Run `cargo test -p turts_mod_runtime`. Expected: PASS.
+- [x] **Step 5:** Commit explicit paths.
 
 ### Task 3a: State types, ledger shape and reject reasons
 
