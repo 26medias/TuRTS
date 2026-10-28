@@ -72,6 +72,25 @@ fn forge_style_package_accepted() {
         .unwrap();
 }
 #[test]
+fn inserter_requires_hand_inventory() {
+    let unit = UNIT
+        .replace("machine: Some((recipe: \"forge:ammo\"))", "machine: None")
+        .replace(
+            "output_inventory: Some((capacity: 10, accepts: [\"forge:shell\"]))",
+            "output_inventory: None",
+        )
+        .replace(
+            "inventory: Some((capacity: 20, accepts: [\"forge:shell\"]))",
+            "inventory: None",
+        )
+        .replace(
+            "inserter: None",
+            "inserter: Some((reach: 1.0, swing_ms: 250, return_ms: 250))",
+        );
+    rejected(&unit, RECIPE, TECH, "inserter.inventory");
+}
+
+#[test]
 fn machine_needs_matching_inventories() {
     rejected(
         &UNIT.replace(

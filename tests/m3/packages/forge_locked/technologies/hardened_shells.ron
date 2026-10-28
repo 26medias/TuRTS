@@ -1,0 +1,14 @@
+(
+    id: "hardened_shells",
+    name: "Hardened Shells",
+    prerequisites: [],
+    duration_ms: 10000,
+    costs: [(resource: "forge_locked:shell", amount: 10, source: ProducerInventory)],
+    payment: ReserveThenCharge,
+    cancel_refunds: (
+        queued: (numerator: 1, denominator: 1),
+        running: (numerator: 1, denominator: 2),
+        output_blocked: (numerator: 1, denominator: 2),
+    ),
+    effects: [WeaponModifier(unit: "forge_locked:turret", stat: Damage, add: 10)],
+)

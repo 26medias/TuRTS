@@ -1,0 +1,1 @@
+(target: Node("forge_locked:ore_vein"), shape: Cuboid(x: 2.0, y: 2.0, z: 0.5))

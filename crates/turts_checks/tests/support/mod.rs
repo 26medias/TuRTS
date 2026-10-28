@@ -91,6 +91,8 @@ pub fn derive_tokens(root: &Path) -> Result<TokenCatalog, ScanError> {
             ("resource-export", &a.manifest.exports.resources),
             ("node-export", &a.manifest.exports.nodes),
             ("production-export", &a.manifest.exports.production),
+            ("recipe-export", &a.manifest.exports.recipes),
+            ("technology-export", &a.manifest.exports.technologies),
         ] {
             for path in xs {
                 exports.insert(path.clone());
@@ -176,6 +178,44 @@ pub fn derive_tokens(root: &Path) -> Result<TokenCatalog, ScanError> {
                     &x.resource,
                     "resource-ref",
                 );
+            }
+        }
+        for (path, d) in a.recipes().map_err(|e| pkgerr(&dir, e))? {
+            add_id(&mut c, &p, &path, "id", &d.id, "recipe");
+            add(&mut c, &p, "recipe-name", &path, "name", &d.name);
+            for stack in d.inputs.iter().chain(&d.outputs) {
+                add_id(&mut c, &p, &path, "item", &stack.item, "item-ref");
+            }
+        }
+        for (path, d) in a.technologies().map_err(|e| pkgerr(&dir, e))? {
+            add_id(&mut c, &p, &path, "id", &d.id, "technology");
+            add(&mut c, &p, "technology-name", &path, "name", &d.name);
+            for prerequisite in &d.prerequisites {
+                add_id(
+                    &mut c,
+                    &p,
+                    &path,
+                    "prerequisites",
+                    prerequisite,
+                    "technology-ref",
+                );
+            }
+            for cost in &d.costs {
+                add_id(
+                    &mut c,
+                    &p,
+                    &path,
+                    "cost.resource",
+                    &cost.resource,
+                    "resource-ref",
+                );
+            }
+            for effect in &d.effects {
+                match effect {
+                    turts_mod_api::EffectDef::WeaponModifier { unit, .. } => {
+                        add_id(&mut c, &p, &path, "effects.unit", unit, "unit-ref");
+                    }
+                }
             }
         }
         for (path, d) in a.maps().map_err(|e| pkgerr(&dir, e))? {

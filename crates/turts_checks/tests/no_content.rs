@@ -255,3 +255,91 @@ fn copy_tree(from: &std::path::Path, to: &std::path::Path) {
         }
     }
 }
+
+#[test]
+fn e1_scans_forge_tokens_and_stray_ron_rules() {
+    let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let mods = repo.join("mods");
+    let catalog = derive_tokens(&mods).expect("all exported definitions derive");
+    let probe = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("forge_token_probe.rs");
+    std::fs::write(
+        &probe,
+        "const A: &str = \"forge:make_shells\"; const B: &str = \"forge:hardened_shells\"; const C: &str = \"forge:drill\";",
+    ).unwrap();
+    let hits = scan_rust(std::slice::from_ref(&probe), &catalog).expect("token probe parses");
+    for (token, category) in [
+        ("forge:make_shells", "recipe"),
+        ("forge:hardened_shells", "technology"),
+        ("forge:drill", "unit"),
+    ] {
+        assert!(
+            hits.iter()
+                .any(|hit| hit.token == token && hit.category == category),
+            "E1 did not scan forge definition token {token}: {hits:#?}"
+        );
+    }
+    let _ = std::fs::remove_file(probe);
+
+    let scratch = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("forge_stray_ron");
+    for (kind, path) in [
+        ("recipes", "recipes/stray.ron"),
+        ("technologies", "technologies/stray.ron"),
+    ] {
+        let _ = std::fs::remove_dir_all(&scratch);
+        copy_tree(&mods, &scratch);
+        std::fs::write(scratch.join("forge").join(path), "()").unwrap();
+        assert!(
+            derive_tokens(&scratch).is_err(),
+            "unexported {kind} RON must be rejected"
+        );
+    }
+    let _ = std::fs::remove_dir_all(&scratch);
+}
+
+fn assert_forge_plant_is_found(name: &str, source: &str, token: &str, category: &str) {
+    let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let catalog = derive_tokens(&repo.join("mods")).expect("all exported definitions derive");
+    let root = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join(format!("forge_plant_{name}"));
+    let _ = std::fs::remove_dir_all(&root);
+    let src = root.join("src");
+    std::fs::create_dir_all(&src).unwrap();
+    let plant = src.join(format!("{name}.rs"));
+    std::fs::write(&plant, source).unwrap();
+    let hits = scan_rust(&[src], &catalog).expect("production Rust plant parses");
+    assert!(
+        hits.iter()
+            .any(|hit| { hit.token == token && hit.category == category && hit.source == plant }),
+        "production Rust plant escaped E1: {hits:#?}"
+    );
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+fn e1_rejects_production_recipe_reference_plant() {
+    assert_forge_plant_is_found(
+        "recipe",
+        "const RECIPE: &str = \"forge:make_shells\";",
+        "forge:make_shells",
+        "recipe",
+    );
+}
+
+#[test]
+fn e1_rejects_production_technology_reference_plant() {
+    assert_forge_plant_is_found(
+        "technology",
+        "const TECHNOLOGY: &str = \"forge:hardened_shells\";",
+        "forge:hardened_shells",
+        "technology",
+    );
+}
+
+#[test]
+fn e1_rejects_production_unit_reference_plant() {
+    assert_forge_plant_is_found(
+        "unit",
+        "const UNIT: &str = \"forge:drill\";",
+        "forge:drill",
+        "unit",
+    );
+}

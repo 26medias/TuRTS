@@ -1,0 +1,1 @@
+(target: Unit("forge_locked:arm_loader"), shape: Capsule(radius: 0.4, height: 1.0))

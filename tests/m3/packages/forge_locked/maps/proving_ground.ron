@@ -1,0 +1,23 @@
+(
+    id: "proving_ground",
+    size: (x: 32.0, y: 16.0),
+    placements: [
+        (unit: "forge_locked:drill", owner_slot: 0, pos: (x: 6.0, y: 8.0), contents: []),
+        (unit: "forge_locked:arm_loader", owner_slot: 0, pos: (x: 8.0, y: 8.0), contents: [], facing: Some(PosX)),
+        (unit: "forge_locked:arm_loader", owner_slot: 0, pos: (x: 15.0, y: 8.0), contents: [], facing: Some(PosX)),
+        (unit: "forge_locked:press", owner_slot: 0, pos: (x: 17.0, y: 8.0), contents: []),
+        (unit: "forge_locked:arm_loader", owner_slot: 0, pos: (x: 17.0, y: 10.0), contents: [], facing: Some(PosY)),
+        (unit: "forge_locked:arm_loader", owner_slot: 0, pos: (x: 17.0, y: 6.0), contents: [], facing: Some(NegY)),
+        (unit: "forge_locked:turret", owner_slot: 0, pos: (x: 17.0, y: 12.0), contents: []),
+        (unit: "forge_locked:lab", owner_slot: 0, pos: (x: 17.0, y: 4.0), contents: []),
+        (unit: "forge_locked:drone", owner_slot: 1, pos: (x: 24.0, y: 12.0), contents: []),
+        (unit: "forge_locked:drone", owner_slot: 1, pos: (x: 30.0, y: 4.0), contents: []),
+    ],
+    nodes: [
+        (node: "forge_locked:ore_vein", pos: (x: 3.5, y: 8.0), remaining: 300),
+    ],
+    slot_economy: [],
+    belts: [
+        (conveyor: "forge_locked:belt", owner_slot: 0, start: (x: 9.0, y: 8.0), facing: PosX, pieces: 6),
+    ],
+)

@@ -1,0 +1,17 @@
+(
+    id: "turret",
+    name: "Shell Turret",
+    footprint: Circle(radius: 1.2),
+    movement: None,
+    inventory: Some((capacity: 5, accepts: ["forge_locked:shell"])),
+    gatherer: None,
+    drop_off: None,
+    producer: None,
+    weapon: Some((
+        range: 8.0,
+        cooldown_ms: 1000,
+        damage: 10,
+        ammo: Some((item: "forge_locked:shell", per_shot: 1)),
+        targets: (slots: Other),
+    )),
+)
