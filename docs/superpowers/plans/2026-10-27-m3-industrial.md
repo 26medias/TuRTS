@@ -154,11 +154,11 @@ T1 implementation notes: M3 resolution lives in `turts_mod_runtime/src/content_m
 - Consumes: Tasks 1, 2.
 - Produces: package `forge` per SPEC 13 (content table, map table, removal flags), local ids that pass E1 (renamed as needed; final names in `NAMES.md`); fixture package `forge_locked` (forge plus a second technology that has the first as prerequisite).
 
-- [ ] **Step 1:** Write `forge_packs_and_validates` (uses `turts_mod_runtime::pack_dir` and content validation only; it does **not** boot the sim, because `turts_pack::load_package` boots it and Task 4 does not exist yet), `forge_archive_hash_is_stable_across_two_packs`, `e1_scans_forge_tokens` and three E1 plant tests: a production file holding a forge recipe id, a technology id, a unit id must each turn E1 red (use the existing plant pattern in `no_content.rs`).
-- [ ] **Step 2:** Run: expect FAIL.
-- [ ] **Step 3:** Author the package from SPEC 13.1 and 13.2 including the removal flags. Run E1 first; rename any local id that equals an engine identifier. Extend the scanner for the `recipes` and `technologies` kinds.
-- [ ] **Step 4:** Run `cargo test -p turts_mod_runtime --test forge_package` and `cargo test -p turts_checks`. Expected: PASS.
-- [ ] **Step 5:** Commit explicit paths.
+- [x] **Step 1:** Write `forge_packs_and_validates` (uses `turts_mod_runtime::pack_dir` and content validation only; it does **not** boot the sim, because `turts_pack::load_package` boots it and Task 4 does not exist yet), `forge_archive_hash_is_stable_across_two_packs`, `e1_scans_forge_tokens` and three E1 plant tests: a production file holding a forge recipe id, a technology id, a unit id must each turn E1 red (use the existing plant pattern in `no_content.rs`).
+- [x] **Step 2:** Run: expect FAIL.
+- [x] **Step 3:** Author the package from SPEC 13.1 and 13.2 including the removal flags. Run E1 first; rename any local id that equals an engine identifier. Extend the scanner for the `recipes` and `technologies` kinds.
+- [x] **Step 4:** Run `cargo test -p turts_mod_runtime --test forge_package` and `cargo test -p turts_checks`. Expected: PASS.
+- [x] **Step 5:** Commit explicit paths.
 
 ### Task 4: Boot
 
