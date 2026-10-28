@@ -1,31 +1,27 @@
 # M3 acceptance evidence
 
-This index tracks the original F1–F11 requirements. A green task or unit test does not imply final milestone acceptance. The final process/browser run, registered mutation sweep, C4 checkpoint and milestone judges remain required. Evidence paths below are relative to the original repository root.
+All20 implementation entries and independent checkpoint C4 are accepted. Final technical, player and mod-author judgments are in progress. Hosted CI and push/main merge approvals remain pending. Evidence paths are relative to the original repository root.
 
-| Requirement | Current evidence | Remaining proof |
-| --- | --- | --- |
-| F1: content independence | Final workspace no-content tests and M2 E1/E2 native mutation cases; evidence under `target/m3-evidence/t16-builder` | R1 PASS; C4 and milestone judgments remain |
-| F2: unchanged M2 behavior | Frozen stream SHA `bcbf72c2206251f635a7c7f5b6c8f573d69a5fc05a5bd77716e98ebfb08e370b`; final native process acceptance passes | Final 15-case M2 browser refresh after the exact-selection harness repair |
-| F3: portable package and boot | `acceptance.sh`: Forge/Cedar public package boot, T5 and F11 passed before the final Clippy-only formatting adjustment; retained at `target/m3-evidence/t16-builder/acceptance/r1-final-current`. The exact-checkpoint refresh also passed at `acceptance/r1-checkpoint-current`. | R1 PASS; C4 and milestone judgments remain |
-| F4: literal timing | Workspace timing/fixed-point suites: 760/0/18 over89 suites, explicit exit0 in `target/m3-evidence/t16-builder/gates/r1-final/workspace-test.log` before the Clippy-only formatting adjustment; focused process regressions and all lint/format gates pass on the checkpoint source. | R1 PASS; C4 and milestone judgments remain |
-| F5: C1–C17 conservation | All 17 scenario tests and current C1–C17 baseline/red/restore sweep pass; `target/m3-evidence/t16-builder/refutations/r1-final-native/20261028T204536.096501Z-2406518-7a15ad98` | R1 PASS; C4 and milestone judgments remain |
-| F6: fixed point | Final workspace fixed-point suite passes, including ten versus five shots | R1 PASS; C4 and milestone judgments remain |
-| F7: research changes ten shots to five | F11 audit records ten 10-point shots on A and five 20-point shots on B; retained in `target/m3-evidence/t16-builder/acceptance/r1-final-current/f11-evidence` | R1 PASS; C4 and milestone judgments remain |
-| F8: wire privacy and lifecycle | Current F11 predicate rejects owner research in any opponent slot; negative slot0 fixture passes, and M2 two-owner lifecycle acceptance passes | R1 PASS; C4 and milestone judgments remain |
-| F9: 17 registered faults | M3 C1–C17 all pass baseline green, causal semantic red, exact restore green; native M2 33/33 also passes. Browser E2 timeout attempt is retained and uncredited; repaired browser sweep is running. | Complete the remaining three M2 browser mutations, all15 positives and C4 |
-| F10: real browser panels and commands | Seven-stage actual browser run: Produce tick1169, SetEnabled1177, Remove1194; evidence `target/m3-evidence/t16-builder/browser/run-20261028T185908Z-mVY7sY` | R1 PASS; C4 and milestone judgments remain |
-| F11: two clients driven by replica state | F11 passed before the Clippy-only formatting adjustment: server research tick1361, opponent MoveTo applied tick1363, both initial health100 and complete health traces; identified server directory and log retained at `target/m3-evidence/t16-builder/acceptance/r1-final-current/f11-evidence`. Exact-checkpoint process acceptance refresh passed. | R1 PASS; C4 and milestone judgments remain |
+C4 tested exact source `dae673986a84277dc8eb33417881066f1e71b0f4`; all574 tracked SHA256 values match and its worktree is clean. Subsequent integration changes are documentation only. The authoritative requirement/evidence map is `target/m3-evidence/c4/proof-index.json`; verdict is `report.md` beside it.
 
-Canonical T14 V0 source: `0e288550863a7180479571fd372c9cd868afbd47`. T14 review: `target/m3-evidence/t14-review/recovery-report.md`. Accepted T15a union gates: `target/m3-evidence/t15a-v0/summary.json`. Live board: [[M3 Execution Board]].
+| Requirement | Accepted local evidence |
+| --- | --- |
+| F1 content independence | Clean source scan, three recipe/technology/unit negative fixtures, renamed industrial trace, native E1/E2 mutation proofs. |
+| F2 unchanged M2 behavior | Immutable stream SHA `bcbf72c2206251f635a7c7f5b6c8f573d69a5fc05a5bd77716e98ebfb08e370b`; native33, browser15 and process regression suites. |
+| F3 public package and boot | Forge/Cedar public package validation, pack smoke and serial boot/process acceptance. |
+| F4 authored timing | Literal10/20/30Hz timing and phase suites in the exact-source760/0/18 workspace run. |
+| F5 conservation | C1–C17 scenarios and all17 exact formal fault baselines, named semantic reds and exact restored greens. |
+| F6 fixed point | Source-driven industrial fixed-point scenarios and restored fault checks. |
+| F7 research combat effect | Real F11 audit and both client traces: A100→0 in10×10; B100→0 in5×20. |
+| F8 privacy/lifecycle | Owner-only research, raw owner projections, public health/removal; leaked slot0/1/2 research fixture is rejected. |
+| F9 registered faults | Independent C4 native M2 33/33 and M3 17/17; all8 browser faults independently audited with exact source/reuse limits below. |
+| F10 real browser controls | Fresh C4 seven-stage Forge: Produce applied1170, Disable1179, Remove1197; both press ports, screenshots and real receipts. Fresh T7:135 frames, final(20,8), oracle PASS. |
+| F11 state-triggered two-client path | C4 owner0 research private; opponent1 moves1364 after research1361. Early release causes actual Move16 before research1771 and semantic rejection; exact restore passes. |
 
-C1 uses the observable three-layer capacity fault defined in [[Decisions/2026-10-28 M3 C1 observable capacity fault]]. A single inner-guard deletion stays green because other defenses remain; it is not credited as a successful red. Health trace research ordering follows [[Decisions/2026-10-28 M3 coordinator signal contract]].
+`target/m3-evidence/c4/report.md`, `final-source-guard.json`, `causal-probe-index.json`, and `artifact-provenance.json` retain detailed scope, source and binary identity, raw logs and process cleanup. The783-function inventory adds10 versus C3 and3 versus accepted UI; all three new F11 functions have causal proofs. No performance budget is claimed.
 
-Industrial queue correction accepted on `88d5a3a`: canonical 750/0/17, all eight gates green. Evidence: `target/m3-evidence/t15a-queues/root-acceptance.md`. The preceding 742-test T14 run remains historical evidence.
+Browser proof reuse is explicit: first5 mutations ran on35355 with the older runner and unchanged case routes; last3 ran onf3940ce with the reviewed recovery helper. All have baselineGREEN, named semanticRED and byte-restoredGREEN. They do not imply the older five exercised final cleanup code. Current Python15, fresh C4 native33 and dedicated interruption/mtime probes cover that contract. Root aggregate: `target/m3-evidence/t16-root-browser-eight-index.json`; C4 audit: `browser-eight-independent-audit.json`.
 
-C3 accepted on `2dcdf49`, including source-form correction and precise red-proof reconciliation. T15b accepted on merged `e4c591f`: canonical758/0/17, all eight gates; M2 browsers15/15 and seven-stage Forge rendered control proof. Task16 has passing F11, browser and mutation proofs, but final runner/source gates and review remain outstanding. See root acceptance files under `target/m3-evidence`.
+Positive browser15 ran onf3940ce across9 invocations (base4, haul2, acme2, cedar2, five loss families). C4 independently audited raw source, receipts, screenshots, complete-state comparisons and cleanup as the joint F2 gate, rather than rerunning identical cases. Source/UI/runner bytes match the frozen C4 source. Root index: `target/m3-evidence/t16-root-browser-positive15-index.json`; independent audit: `target/m3-evidence/c4/m2-positive-independent-audit.json`.
 
-Task16 current proof locations: `target/m3-evidence/t16-builder/f11/run-20261028-fde2d92/f11-summary.json`, `target/m3-evidence/t16-root-f11-preflight.json`, `target/m3-evidence/t16-builder/browser/run-20261028T185908Z-mVY7sY`, `target/m3-evidence/t16-root-m2-native-preflight.json`. Native33 manifests are retained in `target/m3-worktrees/t16/target/m2-refutations/20261028T190611.193595Z-2170093-ea4f701a`. These are builder/root-preflight results, not completed C4 acceptance.
-
-Task16 R1 on frozen `35355c7` found three medium acceptance blockers (privacy predicate, three formal fault definitions, server-log retention) and one low issue (unnecessary finalizer writes trigger recompilation). Actual opponent report contains no private research. All are assigned in one repair wave; no formal case or gate is waived. Report: `target/m3-evidence/t16-review/report.md`.
-
-Reviewed preview `f3940ce` passed scoped Sol R1 with zero findings (`target/m3-evidence/t16-review/recheck.md`). All four initial findings are closed. Five M2 browser mutations retain their exact35355/old-runner provenance on unchanged case routes; the remaining three use the reviewed recovery-observation correction from ruling29. Final acceptance remains pending those three, all15 positive browser cases, independent C4 and milestone judgments. The reviewed preview may be integrated for frozen native C4 validation; no push or main merge is implied.
+Earlier wrong-branch, substituted C6/C10/C11, compiler-error, zero-selection, aborted and infrastructure attempts remain excluded. Initial Task16 R1 findings were repaired and independently closed (`target/m3-evidence/t16-review/recheck.md`). Decisions and costs are in [[M3 Orchestrator Rulings]]. Historical checkpoint records remain in `target/m3-evidence/{c1,c2,c3}/root-acceptance.md`.
