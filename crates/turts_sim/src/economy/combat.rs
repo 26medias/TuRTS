@@ -33,3 +33,6 @@ pub(crate) struct Weapons(pub(crate) BTreeMap<u32, WeaponState>);
 #[allow(dead_code)] // used from Task 11
 #[derive(Resource, Debug, Clone, Default, PartialEq, Eq)]
 pub(crate) struct Healths(pub(crate) BTreeMap<u32, u64>);
+
+/// Install the Combat phase systems. Task 11 adds the phase behavior.
+pub(crate) fn install(_app: &mut bevy_app::App) {}

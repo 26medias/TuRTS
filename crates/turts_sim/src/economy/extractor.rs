@@ -29,3 +29,6 @@ pub(crate) struct ExtractorState {
 #[allow(dead_code)] // used from Task 6
 #[derive(Resource, Debug, Clone, Default, PartialEq, Eq)]
 pub(crate) struct Extractors(pub(crate) BTreeMap<u32, ExtractorState>);
+
+/// Install the Extract phase systems. Task 6 adds the phase behavior.
+pub(crate) fn install(_app: &mut bevy_app::App) {}

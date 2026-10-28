@@ -4,6 +4,7 @@ use turts_mod_runtime::{archive::PackageArchive, pack::pack_files};
 const MANIFEST: &str = r#"(id: "forge", version: "0.1.0", kind: Game, engine_api: "^0.2.1", dependencies: {}, exports: (units: ["units/turret.ron"], maps: ["maps/map.ron"], visuals: [], resources: ["resources/shell.ron"], nodes: [], production: [], recipes: ["recipes/ammo.ron"], technologies: ["technologies/guns.ron"]), context: Shared, capabilities: [], license: "MIT")"#;
 const UNIT: &str = r#"(id: "turret", name: "Turret", footprint: Circle(radius: 1.0), movement: None, inventory: Some((capacity: 20, accepts: ["forge:shell"])), gatherer: None, drop_off: None, producer: None, output_inventory: Some((capacity: 10, accepts: ["forge:shell"])), extractor: None, conveyor: None, inserter: None, machine: Some((recipe: "forge:ammo")), research: None, health: None, weapon: None, removal: None)"#;
 const RECIPE: &str = r#"(id: "ammo", name: "Ammo", inputs: [(item: "forge:shell", amount: 1)], outputs: [(item: "forge:shell", amount: 1)], duration_ms: 1000, cancel_refunds: (running: (numerator: 1, denominator: 1), output_blocked: (numerator: 1, denominator: 1)))"#;
+const PRODUCTION: &str = r#"(id: "recruit", name: "Recruit", output_unit: "forge:turret", duration_ms: 1000, costs: [], payment: ChargeOnQueue, cancel_refunds: (queued: (numerator: 1, denominator: 1), running: (numerator: 1, denominator: 1), output_blocked: (numerator: 1, denominator: 1)))"#;
 const TECH: &str = r#"(id: "guns", name: "Guns", prerequisites: [], duration_ms: 1000, costs: [], payment: ChargeOnQueue, cancel_refunds: (queued: (numerator: 1, denominator: 1), running: (numerator: 1, denominator: 1), output_blocked: (numerator: 1, denominator: 1)), effects: [])"#;
 const ITEM: &str = r#"(id: "shell", name: "Shell", unit_name: "shell", kind: Item)"#;
 const LEGACY_MANIFEST: &str = r#"(id: "forge", version: "0.1.0", kind: Game, engine_api: "^0.2", dependencies: {}, exports: (units: ["units/turret.ron"], maps: ["maps/map.ron"], visuals: [], resources: ["resources/shell.ron"], nodes: [], production: []), context: Shared, capabilities: [], license: "weapon: None")"#;
@@ -29,6 +30,12 @@ fn archive(
     if extra.iter().any(|(path, _)| *path == "visuals/turret.ron") {
         manifest = manifest.replace("visuals: []", "visuals: [\"visuals/turret.ron\"]");
     }
+    if extra
+        .iter()
+        .any(|(path, _)| *path == "production/recruit.ron")
+    {
+        manifest = manifest.replace("production: []", "production: [\"production/recruit.ron\"]");
+    }
     let mut files = BTreeMap::from([
         ("manifest.ron".into(), manifest.into_bytes()),
         ("units/turret.ron".into(), unit.into()),
@@ -53,6 +60,8 @@ fn rejected_with_extra(unit: &str, recipe: &str, tech: &str, field: &str, extra:
     assert_eq!(err.package, "forge");
     let expected_file = if field == "id" {
         "recipes/ammo.ron"
+    } else if field == "output_unit" {
+        "production/recruit.ron"
     } else if field.starts_with("effects[") || field.starts_with("prerequisites") {
         "technologies/guns.ron"
     } else {
@@ -135,6 +144,79 @@ fn machine_must_be_static() {
         "machine",
     );
 }
+#[test]
+fn extractor_requires_main_inventory() {
+    let unit = UNIT
+        .replace("machine: Some((recipe: \"forge:ammo\"))", "machine: None")
+        .replace(
+            "output_inventory: Some((capacity: 10, accepts: [\"forge:shell\"]))",
+            "output_inventory: None",
+        )
+        .replace(
+            "inventory: Some((capacity: 20, accepts: [\"forge:shell\"]))",
+            "inventory: None",
+        )
+        .replace(
+            "extractor: None",
+            "extractor: Some((per_second: 2, interaction_range: 0.5))",
+        );
+    rejected(&unit, RECIPE, TECH, "extractor.inventory");
+}
+
+#[test]
+fn extractor_must_be_static() {
+    let unit = UNIT
+        .replace("machine: Some((recipe: \"forge:ammo\"))", "machine: None")
+        .replace(
+            "output_inventory: Some((capacity: 10, accepts: [\"forge:shell\"]))",
+            "output_inventory: None",
+        )
+        .replace("movement: None", "movement: Some((speed: 1.0))")
+        .replace(
+            "extractor: None",
+            "extractor: Some((per_second: 2, interaction_range: 0.5))",
+        );
+    rejected(&unit, RECIPE, TECH, "extractor");
+}
+
+#[test]
+fn conveyor_must_be_static() {
+    let unit = UNIT
+        .replace("machine: Some((recipe: \"forge:ammo\"))", "machine: None")
+        .replace(
+            "output_inventory: Some((capacity: 10, accepts: [\"forge:shell\"]))",
+            "output_inventory: None",
+        )
+        .replace("movement: None", "movement: Some((speed: 1.0))")
+        .replace(
+            "conveyor: None",
+            "conveyor: Some((slots_per_piece: 1, slots_per_second: 1, accepts: [\"forge:shell\"]))",
+        );
+    rejected(&unit, RECIPE, TECH, "conveyor");
+}
+
+#[test]
+fn production_output_inserter_without_facing_is_rejected() {
+    let unit = UNIT
+        .replace("machine: Some((recipe: \"forge:ammo\"))", "machine: None")
+        .replace(
+            "output_inventory: Some((capacity: 10, accepts: [\"forge:shell\"]))",
+            "output_inventory: None",
+        )
+        .replace("movement: None", "movement: Some((speed: 1.0))")
+        .replace(
+            "inserter: None",
+            "inserter: Some((reach: 1.0, swing_ms: 250, return_ms: 250))",
+        );
+    rejected_with_extra(
+        &unit,
+        RECIPE,
+        TECH,
+        "output_unit",
+        &[("production/recruit.ron", PRODUCTION)],
+    );
+}
+
 #[test]
 fn health_requires_removal() {
     rejected(

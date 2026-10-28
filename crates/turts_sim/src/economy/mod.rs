@@ -37,28 +37,36 @@ pub(crate) struct GatherOrder {
 
 #[cfg(test)]
 mod m3_resource_tests {
-    use bevy_ecs::world::World;
-
     use super::{
         combat::{Healths, Weapons},
-        conveyor::Conveyors,
+        conveyor::{Conveyors, ItemTable},
         extractor::Extractors,
         inserter::Inserters,
         research::{Disabled, ResearchState},
     };
 
     #[test]
-    fn m3_side_tables_are_empty_world_resources_by_default() {
-        let mut world = World::new();
-        world.insert_resource(Conveyors::default());
-        world.insert_resource(Inserters::default());
-        world.insert_resource(Extractors::default());
-        world.insert_resource(Weapons::default());
-        world.insert_resource(Healths::default());
-        world.insert_resource(ResearchState::default());
-        world.insert_resource(Disabled::default());
+    fn empty_m3_phase_installs_capture_no_operations() {
+        let mut app = crate::headless_app(20);
+        app.world_mut()
+            .resource_mut::<crate::economy::transaction::AuditTrail>()
+            .enable();
+        app.update();
+        assert!(
+            app.world()
+                .resource::<crate::economy::transaction::AuditTrail>()
+                .operations
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn m3_side_tables_are_initialized_empty_by_sim_plugin() {
+        let app = crate::headless_app(20);
+        let world = app.world();
 
         assert!(world.resource::<Conveyors>().lines.is_empty());
+        assert!(world.resource::<ItemTable>().0.is_empty());
         assert!(world.resource::<Inserters>().0.is_empty());
         assert!(world.resource::<Extractors>().0.is_empty());
         assert!(world.resource::<Weapons>().0.is_empty());

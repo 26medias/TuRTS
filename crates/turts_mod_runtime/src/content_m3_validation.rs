@@ -216,6 +216,15 @@ pub(crate) fn validate_m3(manifest: &Manifest, catalog: &ContentCatalog) -> Resu
                 "inserter requires a hand inventory",
             ));
         }
+        if unit.extractor.is_some() && unit.inventory.is_none() {
+            return Err(fail(
+                "extractor.inventory",
+                "extractor requires a main inventory",
+            ));
+        }
+        if unit.extractor.is_some() && unit.movement.is_some() {
+            return Err(fail("extractor", "extractors must be static"));
+        }
         if let Some(output) = &unit.output_inventory {
             if output.capacity == 0 {
                 return Err(fail("output_inventory.capacity", "must be positive"));
@@ -239,6 +248,9 @@ pub(crate) fn validate_m3(manifest: &Manifest, catalog: &ContentCatalog) -> Resu
             }
         }
         if let Some(conveyor) = &unit.conveyor {
+            if unit.movement.is_some() {
+                return Err(fail("conveyor", "conveyor pieces must be static"));
+            }
             if !(1..=16).contains(&conveyor.slots_per_piece) {
                 return Err(fail("conveyor.slots_per_piece", "must be between 1 and 16"));
             }
@@ -383,6 +395,34 @@ pub(crate) fn validate_m3(manifest: &Manifest, catalog: &ContentCatalog) -> Resu
             && (unit.producer.is_some() || unit.machine.is_some() || unit.research.is_some())
         {
             return Err(fail("removal", "a unit with a queue cannot be removed"));
+        }
+    }
+    for production in catalog.production.values() {
+        let output = catalog.units.get(&production.output_unit).ok_or_else(|| {
+            let file = catalog
+                .source_files
+                .get(&production.id)
+                .map(String::as_str)
+                .unwrap_or("content");
+            error(
+                &origin,
+                file,
+                "output_unit",
+                "production output unit does not exist",
+            )
+        })?;
+        if output.inserter.is_some() {
+            let file = catalog
+                .source_files
+                .get(&production.id)
+                .map(String::as_str)
+                .unwrap_or("content");
+            return Err(error(
+                &origin,
+                file,
+                "output_unit",
+                "production output cannot declare an inserter because it has no facing field",
+            ));
         }
     }
     for tech in catalog.technologies.values() {

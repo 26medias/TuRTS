@@ -33,7 +33,11 @@ pub enum SimSet {
     Commands,
     Movement,
     Gather,
+    Extract,
+    Transport,
+    Inserters,
     Production,
+    Combat,
     Collect,
 }
 
@@ -46,11 +50,23 @@ pub struct SimPlugin {
 impl Plugin for SimPlugin {
     fn build(&self, app: &mut App) {
         assert!(self.tick_hz > 0, "tick_hz must be above 0");
+        crate::economy::extractor::install(app);
+        crate::economy::conveyor::install(app);
+        crate::economy::inserter::install(app);
+        crate::economy::combat::install(app);
         app.insert_resource(Time::<Fixed>::from_hz(f64::from(self.tick_hz)))
             .init_resource::<Tick>()
             .init_resource::<UnitTypes>()
             .init_resource::<IdAllocators>()
             .init_resource::<EconomyLedger>()
+            .init_resource::<crate::economy::conveyor::Conveyors>()
+            .init_resource::<crate::economy::conveyor::ItemTable>()
+            .init_resource::<crate::economy::inserter::Inserters>()
+            .init_resource::<crate::economy::extractor::Extractors>()
+            .init_resource::<crate::economy::combat::Weapons>()
+            .init_resource::<crate::economy::combat::Healths>()
+            .init_resource::<crate::economy::research::ResearchState>()
+            .init_resource::<crate::economy::research::Disabled>()
             .init_resource::<SurfaceNodes>()
             .init_resource::<EconomyOrders>()
             .init_resource::<ProductionQueues>()
@@ -71,7 +87,16 @@ impl Plugin for SimPlugin {
             .configure_sets(FixedPreUpdate, (SimSet::Advance, SimSet::Commands).chain())
             .configure_sets(
                 FixedUpdate,
-                (SimSet::Movement, SimSet::Gather, SimSet::Production).chain(),
+                (
+                    SimSet::Movement,
+                    SimSet::Gather,
+                    SimSet::Extract,
+                    SimSet::Transport,
+                    SimSet::Inserters,
+                    SimSet::Production,
+                    SimSet::Combat,
+                )
+                    .chain(),
             )
             .configure_sets(FixedPostUpdate, SimSet::Collect)
             .add_systems(

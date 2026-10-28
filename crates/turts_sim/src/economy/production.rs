@@ -438,6 +438,9 @@ fn try_output(
             accepted_items: i.accepts.iter().cloned().collect(),
             items: BTreeMap::new(),
         });
+    let binding =
+        crate::boot_m3::resolve_spawn_capability_binding(world, output, point, owner.0, None)?;
+    let capability_rows = crate::boot_m3::install_capability_rows(output, binding);
     transaction::transact(world, |tx| {
         let mut queues = tx.queues();
         let queue = queues
@@ -467,6 +470,7 @@ fn try_output(
             inventory,
             gatherer: output.gatherer.is_some(),
             producer: output.producer.is_some(),
+            capability_rows,
         });
         tx.stage_event(
             owner.0,

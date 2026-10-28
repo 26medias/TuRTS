@@ -8,6 +8,7 @@ use turts_mod_api::{
 
 use crate::{
     SimClock,
+    boot_m3::{self, PreparedMapRows},
     economy::{
         EconomyOrders, GatherOrder, NodeRecord, SurfaceNodes,
         gather::{GatherStage, RateCarry},
@@ -38,6 +39,7 @@ pub struct StagedPackage {
     queues: ProductionQueues,
     catalog: InstalledCatalog,
     durations: ProductionDurations,
+    m3: PreparedMapRows,
 }
 
 /// Validate and own a complete package install without changing `world`.
@@ -155,6 +157,12 @@ pub fn stage_package(
         let def = unit_by_id
             .get(&id)
             .ok_or_else(|| error(&field("unit"), format!("unknown unit `{id}`")))?;
+        if def.conveyor.is_some() {
+            return Err(error(
+                &field("unit"),
+                "conveyor pieces must be declared in map.belts".into(),
+            ));
+        }
         if !slots.contains(SlotId(placement.owner_slot)) {
             return Err(error(
                 &field("owner_slot"),
@@ -289,19 +297,49 @@ pub fn stage_package(
             remaining: placement.remaining,
         });
     }
+    for (line_index, line_def) in map.belts.iter().enumerate() {
+        if !slots.contains(SlotId(line_def.owner_slot)) {
+            return Err(error(
+                &format!("belts[{line_index}].owner_slot"),
+                format!(
+                    "owner slot must be below {}, got {}",
+                    slots.count(),
+                    line_def.owner_slot
+                ),
+            ));
+        }
+    }
+    let m3 = boot_m3::stage_m3_map(
+        &catalog,
+        map,
+        &source_map.file,
+        &units,
+        boot_m3::MapStageContext {
+            nodes: &nodes,
+            types: &types,
+            allocators: &mut allocators,
+            existing_spatial: &mut spatial,
+        },
+    )?;
     let mut durations = BTreeMap::new();
-    for (id, recipe) in &catalog.production {
-        let ticks = u128::from(recipe.duration_ms)
-            .checked_mul(u128::from(tick_hz))
-            .and_then(|value| value.checked_add(999))
-            .ok_or_else(|| {
-                error(
-                    "production.duration_ms",
-                    format!("duration for `{id}` overflows"),
-                )
-            })?
-            / 1000;
-        let ticks = u64::try_from(ticks).map_err(|_| {
+    for (id, duration_ms) in catalog
+        .production
+        .iter()
+        .map(|(id, recipe)| (id, recipe.duration_ms))
+        .chain(
+            catalog
+                .recipes
+                .iter()
+                .map(|(id, recipe)| (id, recipe.duration_ms)),
+        )
+        .chain(
+            catalog
+                .technologies
+                .iter()
+                .map(|(id, technology)| (id, technology.duration_ms)),
+        )
+    {
+        let ticks = boot_m3::try_ms_to_ticks(duration_ms, u32::from(tick_hz)).ok_or_else(|| {
             error(
                 "production.duration_ms",
                 format!("duration for `{id}` exceeds tick range"),
@@ -328,11 +366,13 @@ pub fn stage_package(
         queues,
         catalog: InstalledCatalog(catalog),
         durations: ProductionDurations(durations),
+        m3,
     })
 }
 
 /// Commit a fully validated package. This operation has no fallible steps.
 pub fn install_package(world: &mut World, staged: StagedPackage) {
+    boot_m3::initialize_m3_resources(world);
     world.insert_resource(staged.types);
     world.insert_resource(staged.bounds);
     world.insert_resource(staged.allocators);
@@ -342,6 +382,8 @@ pub fn install_package(world: &mut World, staged: StagedPackage) {
     world.insert_resource(staged.queues);
     world.insert_resource(staged.catalog);
     world.insert_resource(staged.durations);
+    world.insert_resource(staged.m3.conveyors);
+    world.insert_resource(staged.m3.item_table);
     for (id, kind, owner, position) in staged.units {
         world.spawn((
             UnitId(id),
@@ -349,5 +391,11 @@ pub fn install_package(world: &mut World, staged: StagedPackage) {
             Owner(SlotId(owner)),
             Position(position),
         ));
+    }
+    for (id, kind, owner, position) in staged.m3.extra_units {
+        world.spawn((UnitId(id), kind, Owner(SlotId(owner)), Position(position)));
+    }
+    for (id, rows) in staged.m3.capability_rows {
+        boot_m3::apply_capability_rows(world, id, rows);
     }
 }

@@ -45,3 +45,6 @@ pub(crate) struct InserterState {
 #[allow(dead_code)] // used from Task 8
 #[derive(Resource, Debug, Clone, Default, PartialEq, Eq)]
 pub(crate) struct Inserters(pub(crate) BTreeMap<u32, InserterState>);
+
+/// Install the Inserters phase systems. Task 8 adds the phase behavior.
+pub(crate) fn install(_app: &mut bevy_app::App) {}
