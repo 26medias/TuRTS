@@ -264,7 +264,7 @@ Orchestrator ruling (2026-10-28): the private modifier helper returns a checked 
 **Files:** `crates/turts_net_protocol/src/{lib,messages}.rs`, `crates/turts_server/src/{export,outbound}.rs`
 **Test:** `crates/turts_server/tests/export_m3.rs`, `crates/turts_net_protocol/tests/protocol3.rs`
 
-**Interfaces:** Produces wire records from SPEC 12.2 (`HealthRecord`, `BeltPieceRecord`, `InserterRecord`, `ExtractorRecord`, `WeaponRecord`, `ResearchRecord`, `QueueState.enabled`, `InventoryState.port`, `UnitSnapshot.facing`); `NET_PROTOCOL_VERSION = 3`; the export filter keeps owner-only records off other slots.
+**Interfaces:** Produces wire records from SPEC 12.2 (`HealthRecord`, `BeltPieceRecord`, `InserterRecord`, `ExtractorRecord`, `WeaponRecord`, `ResearchRecord`, `QueueState.enabled`, `InventoryState.port`, `UnitSnapshot.facing`); `WeaponRecord.damage: Result<u64, CommandRejectReason>` preserves checked arithmetic failures; `NET_PROTOCOL_VERSION = 3`; `delta_for` receives the immutable completed `WorldView` from the same tick for authoritative owner lookup; owner-only records stay off other slots.
 
 - [ ] **Step 1:** Write `snapshot_for_slot1_has_no_owner_only_records`, `delta_for_slot1_has_healths_and_removed_only`, `late_join_snapshot_has_belts_hands_healths` (Review Focus 3), `killed_unit_delta_has_final_health_zero_and_removed`, `protocol_version_is_3_and_old_hello_rejected`, `postcard_roundtrip_every_new_record`.
 - [ ] **Step 2-4:** Run to fail; implement; PASS. Run the wasm check and `cargo test -p turts_pack --test m3_m2_stream`.

@@ -41,6 +41,7 @@ fn snapshot(tick: u32) -> Snapshot {
             content_id: "base:command_center".to_string(),
             owner_slot: SlotId(0),
             pos: Pos { x: 8.0, y: 8.0 },
+            facing: None,
         }],
         nodes: vec![NodeState {
             id: NodeId(7),
@@ -58,6 +59,12 @@ fn snapshot(tick: u32) -> Snapshot {
             orders: vec![],
             queues: vec![],
         },
+        belts: vec![],
+        inserters: vec![],
+        extractors: vec![],
+        weapons: vec![],
+        healths: vec![],
+        research: vec![],
     }
 }
 
@@ -75,6 +82,12 @@ fn delta(tick: u32, base_tick: u32) -> WorldDelta {
             orders: vec![],
             queues: vec![],
         },
+        belts: vec![],
+        inserters: vec![],
+        extractors: vec![],
+        weapons: vec![],
+        healths: vec![],
+        research: vec![],
     }
 }
 
@@ -130,6 +143,8 @@ fn non_finite_geometry_rejects_snapshot_and_delta_atomically() {
             x: 1.0,
             y: f32::NAN,
         },
+
+        facing: None,
     });
     assert_eq!(
         spawn_replica.apply_delta(&invalid_spawn, now),
@@ -153,6 +168,7 @@ fn failed_retained_suffix_never_publishes_a_replay_prefix() {
     invalid_suffix.economy.inventories.push(InventoryState {
         unit: UnitId(99),
         items: vec![],
+        port: turts_net_protocol::InventoryPort::Main,
     });
     replica.apply_delta(&invalid_suffix, now);
     let before_units = replica.units.clone();
@@ -297,6 +313,7 @@ fn rich_snapshot(tick: u32) -> Snapshot {
         content_id: "base:harvester".to_string(),
         owner_slot: SlotId(0),
         pos: Pos { x: 12.0, y: 8.0 },
+        facing: None,
     });
     state.economy.inventories.push(InventoryState {
         unit: UnitId(2),
@@ -305,6 +322,7 @@ fn rich_snapshot(tick: u32) -> Snapshot {
             on_hand: 10,
             reserved: 0,
         }],
+        port: turts_net_protocol::InventoryPort::Main,
     });
     state.economy.orders.push(OrderState {
         unit: UnitId(2),
@@ -327,6 +345,7 @@ fn rich_snapshot(tick: u32) -> Snapshot {
             }],
             reserved: vec![],
         }],
+        enabled: true,
     });
     state
 }
@@ -343,6 +362,7 @@ fn spawn_position_and_private_records_apply_atomically() {
         content_id: "base:harvester".to_string(),
         owner_slot: SlotId(0),
         pos: Pos { x: 12.0, y: 8.0 },
+        facing: None,
     });
     spawn.economy.inventories.push(InventoryState {
         unit: UnitId(2),
@@ -351,6 +371,7 @@ fn spawn_position_and_private_records_apply_atomically() {
             on_hand: 20,
             reserved: 0,
         }],
+        port: turts_net_protocol::InventoryPort::Main,
     });
     spawn.positions.push(UnitDelta {
         unit_id: UnitId(2),
@@ -377,6 +398,7 @@ fn spawn_position_and_private_records_apply_atomically() {
         content_id: "base:rifleman".to_string(),
         owner_slot: SlotId(0),
         pos: Pos { x: 9.0, y: 8.0 },
+        facing: None,
     });
     malformed.positions.push(UnitDelta {
         unit_id: UnitId(1),
@@ -390,6 +412,7 @@ fn spawn_position_and_private_records_apply_atomically() {
     malformed.economy.inventories.push(InventoryState {
         unit: UnitId(99),
         items: vec![],
+        port: turts_net_protocol::InventoryPort::Main,
     });
     assert_eq!(
         replica.apply_delta(&malformed, now),
@@ -567,6 +590,7 @@ fn lost_extraction_conversion_charge_refund_and_spawn_converge_from_snapshot() {
         content_id: "base:rifleman".to_string(),
         owner_slot: SlotId(0),
         pos: Pos { x: 8.0, y: 12.0 },
+        facing: None,
     });
     spawn.economy.queues[0].jobs.clear();
     let mut spawned = delta(11, 10);

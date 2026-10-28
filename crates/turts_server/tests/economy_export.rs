@@ -168,13 +168,15 @@ fn two_slots_receive_only_own_economy_snapshot_and_delta_and_every_field_roundtr
                 unit_id: UnitId(1),
                 content_id: "acme:harvester".into(),
                 owner_slot: turts_net_protocol::messages::SlotId(0),
-                pos: Pos { x: 3., y: 4. }
+                pos: Pos { x: 3., y: 4. },
+                facing: None,
             },
             UnitSnapshot {
                 unit_id: UnitId(2),
                 content_id: "acme:private".into(),
                 owner_slot: turts_net_protocol::messages::SlotId(1),
-                pos: Pos { x: 900., y: 901. }
+                pos: Pos { x: 900., y: 901. },
+                facing: None,
             }
         ]
     );
@@ -203,7 +205,8 @@ fn two_slots_receive_only_own_economy_snapshot_and_delta_and_every_field_roundtr
                 resource: "acme:ore".into(),
                 on_hand: 0,
                 reserved: 0
-            }]
+            }],
+            port: wire::InventoryPort::Main,
         }
     );
     assert_eq!(
@@ -408,7 +411,7 @@ fn delta_filters_before_projection_keeps_public_lifecycle_and_empty_replacements
         events: vec![],
     };
     let before = batch.clone();
-    let d = export::delta_for(&batch, SlotId(0));
+    let d = export::delta_for(&batch, &fixture(), SlotId(0));
     let mut buffer = [0u8; 4096];
     let bytes = postcard::to_slice(&d, &mut buffer).unwrap();
     let decoded: wire::WorldDelta = postcard::from_bytes(bytes).unwrap();
@@ -464,7 +467,7 @@ fn delta_filters_before_projection_keeps_public_lifecycle_and_empty_replacements
     assert!(!format!("{:?}", decoded.economy).contains("secret:crystal"));
     assert_eq!(decoded.nodes.len(), 1);
 
-    let other = export::delta_for(&batch, SlotId(1));
+    let other = export::delta_for(&batch, &fixture(), SlotId(1));
     let mut other_buffer = [0u8; 4096];
     let other_bytes = postcard::to_slice(&other, &mut other_buffer).unwrap();
     let other_decoded: wire::WorldDelta = postcard::from_bytes(other_bytes).unwrap();
@@ -579,7 +582,7 @@ fn empty_batch_is_an_empty_heartbeat_with_consecutive_ticks() {
         tick: 1,
         ..Default::default()
     };
-    let d = export::delta_for(&batch, SlotId(0));
+    let d = export::delta_for(&batch, &fixture(), SlotId(0));
     assert_eq!((d.tick, d.base_tick), (1, 0));
     assert!(d.spawned.is_empty() && d.removed.is_empty() && d.positions.is_empty());
     assert!(d.economy.balances.is_empty() && d.economy.inventories.is_empty());

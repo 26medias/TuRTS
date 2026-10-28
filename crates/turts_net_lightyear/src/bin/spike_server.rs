@@ -270,6 +270,13 @@ fn send_deltas(
             orders: vec![],
             queues: vec![],
         },
+
+        belts: vec![],
+        inserters: vec![],
+        extractors: vec![],
+        weapons: vec![],
+        healths: vec![],
+        research: vec![],
     };
     let payload = postcard_len(&deltas) as u64;
     for mut sender in senders.iter_mut() {
@@ -280,7 +287,7 @@ fn send_deltas(
 
 fn postcard_len(deltas: &WorldDelta) -> usize {
     postcard::experimental::serialized_size(deltas)
-        .expect("a protocol 2 WorldDelta serializes to postcard")
+        .expect("a protocol 3 WorldDelta serializes to postcard")
 }
 
 #[cfg(test)]
@@ -301,6 +308,15 @@ mod payload_tests {
                 content_id: "base:worker".into(),
                 owner_slot: turts_net_protocol::SlotId(1),
                 pos: Pos { x: 1.0, y: -2.0 },
+
+                facing: None,
+
+                belts: vec![],
+                inserters: vec![],
+                extractors: vec![],
+                weapons: vec![],
+                healths: vec![],
+                research: vec![],
             }],
             removed: vec![UnitId(4)],
             positions: vec![UnitDelta {
@@ -322,6 +338,8 @@ mod payload_tests {
                 inventories: vec![InventoryState {
                     unit: UnitId(8),
                     items: vec![],
+
+                    port: InventoryPort::Main,
                 }],
                 orders: vec![OrderState {
                     unit: UnitId(8),
@@ -340,6 +358,8 @@ mod payload_tests {
                         charged: vec![],
                         reserved: vec![],
                     }],
+
+                    enabled: true,
                 }],
             },
         };

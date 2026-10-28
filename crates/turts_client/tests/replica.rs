@@ -30,8 +30,16 @@ fn snapshot(tick: u32, units: &[(u32, Pos)]) -> Snapshot {
                 content_id: "base:command_center".to_string(),
                 owner_slot: SlotId(0),
                 pos: p,
+
+                facing: None,
             })
             .collect(),
+        belts: vec![],
+        inserters: vec![],
+        extractors: vec![],
+        weapons: vec![],
+        healths: vec![],
+        research: vec![],
     }
 }
 
@@ -55,6 +63,12 @@ fn delta(tick: u32, base_tick: u32, positions: &[(u32, Pos)]) -> WorldDelta {
                 pos: p,
             })
             .collect(),
+        belts: vec![],
+        inserters: vec![],
+        extractors: vec![],
+        weapons: vec![],
+        healths: vec![],
+        research: vec![],
     }
 }
 

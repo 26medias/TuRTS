@@ -19,8 +19,8 @@ where
 }
 
 #[test]
-fn wire_v2_roundtrips_all_fields_and_reasons() {
-    assert_eq!(NET_PROTOCOL_VERSION, 2);
+fn wire_v3_roundtrips_original_fields_and_reasons() {
+    assert_eq!(NET_PROTOCOL_VERSION, 3);
     round_trip(UnitId(4_000_000_000));
     round_trip(SlotId(255));
     round_trip(Pos { x: 1.5, y: -2.25 });
@@ -42,6 +42,7 @@ fn wire_v2_roundtrips_all_fields_and_reasons() {
         content_id: "pkg:unit".into(),
         owner_slot: SlotId(0),
         pos: Pos { x: 10.0, y: 20.0 },
+        facing: None,
     };
     round_trip(unit.clone());
     let balance = BalanceState {
@@ -52,6 +53,8 @@ fn wire_v2_roundtrips_all_fields_and_reasons() {
     let inventory = InventoryState {
         unit: UnitId(3),
         items: vec![balance.clone()],
+
+        port: InventoryPort::Main,
     };
     let order = OrderState {
         unit: UnitId(3),
@@ -87,6 +90,8 @@ fn wire_v2_roundtrips_all_fields_and_reasons() {
     let queue = QueueState {
         producer: UnitId(4),
         jobs: vec![job],
+
+        enabled: true,
     };
     let state = EconomyState {
         balances: vec![balance.clone()],
@@ -99,6 +104,13 @@ fn wire_v2_roundtrips_all_fields_and_reasons() {
         units: vec![unit.clone()],
         nodes: vec![node.clone()],
         economy: state,
+
+        belts: vec![],
+        inserters: vec![],
+        extractors: vec![],
+        weapons: vec![],
+        healths: vec![],
+        research: vec![],
     });
     round_trip(WorldDelta {
         tick: 8,
@@ -116,6 +128,13 @@ fn wire_v2_roundtrips_all_fields_and_reasons() {
             orders: vec![order],
             queues: vec![queue],
         },
+
+        belts: vec![],
+        inserters: vec![],
+        extractors: vec![],
+        weapons: vec![],
+        healths: vec![],
+        research: vec![],
     });
     for kind in [
         PlayerCommandKind::MoveTo {

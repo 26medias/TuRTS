@@ -1,4 +1,4 @@
-//! Protocol 2 economy and stable identifier records.
+//! Protocol 3 economy and stable identifier records.
 
 use crate::messages::{Pos, UnitId};
 use serde::{Deserialize, Serialize};
@@ -36,7 +36,16 @@ pub struct BalanceState {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct InventoryState {
     pub unit: UnitId,
+    pub port: InventoryPort,
     pub items: Vec<BalanceState>,
+}
+
+/// The source inventory represented by one absolute inventory record.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum InventoryPort {
+    Main,
+    Output,
 }
 
 /// A gather order and its current stage.
@@ -52,6 +61,7 @@ pub struct OrderState {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct QueueState {
     pub producer: UnitId,
+    pub enabled: bool,
     pub jobs: Vec<JobState>,
 }
 

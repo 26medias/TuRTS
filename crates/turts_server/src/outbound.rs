@@ -1,4 +1,4 @@
-//! Protocol 2 snapshots, world deltas, and fixed-tick command outcomes.
+//! Protocol 3 snapshots, world deltas, and fixed-tick command outcomes.
 
 use crate::export;
 use crate::session::{ReliableTraffic, Session};
@@ -8,7 +8,7 @@ use lightyear::prelude::*;
 use turts_net_lightyear::{ReliableChannel, StateChannel};
 use turts_net_protocol::CommandRejectReason;
 use turts_net_protocol::messages::*;
-use turts_sim::{CommandResults, Tick as SimTick, committed_tick};
+use turts_sim::{CommandResults, Tick as SimTick, committed_tick, completed_world};
 
 pub fn install(app: &mut App) {
     app.add_systems(FixedLast, (send_command_results, send_deltas).chain());
@@ -107,10 +107,12 @@ pub fn send_deltas(world: &mut World) {
     }
     let payloads: Vec<_> = {
         let batch = committed_tick(world);
+        let view = completed_world(world);
+        debug_assert_eq!(batch.tick, view.tick);
         recipients
             .into_iter()
             .map(|(entity, slot)| {
-                let delta = export::delta_for(batch, slot);
+                let delta = export::delta_for(batch, view, slot);
                 let bytes = payload_bytes(&delta);
                 (entity, delta, bytes)
             })

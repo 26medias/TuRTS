@@ -473,7 +473,7 @@ technologies.
 | `belts: Vec<BeltPieceRecord { piece, slots: Vec<Option<ContentRef>> }>` | one record per piece | owner-only |
 | `inserters: Vec<InserterRecord { unit, enabled, stage, elapsed, source, destination }>` | | owner-only |
 | `extractors: Vec<ExtractorRecord { unit, enabled, node, status }>` | | owner-only |
-| `weapons: Vec<WeaponRecord { unit, enabled, cooldown, damage, status, last_target }>` | `damage` = effective value | owner-only |
+| `weapons: Vec<WeaponRecord { unit, enabled, cooldown, damage: Result<u64, CommandRejectReason>, status, last_target }>` | `Ok(value)` is the checked effective value; a failed checked addition is `Err(ArithmeticOverflow)`, with no fabricated numeric fallback | owner-only |
 | `QueueState.enabled: bool` | added field | owner-only |
 | `research: Vec<ResearchRecord { slot, completed }>` | per slot | owner-only |
 | `InventoryState.port: Main \| Output` | added field | owner-only |

@@ -624,7 +624,7 @@ mod tests {
     #[test]
     fn judge_checks_protocol_before_hash_and_claims_nothing_on_refusal() {
         let mut slots = Slots::new(2);
-        let both_wrong = hello(7, 1, "sha256:other");
+        let both_wrong = hello(7, 2, "sha256:other");
         assert_eq!(
             judge_hello(&both_wrong, &advertised(), &mut slots),
             Err("protocol version mismatch")

@@ -1061,6 +1061,7 @@ mod world_change_tests {
         InventoryState {
             unit: UnitId(unit),
             items: vec![balance("base:ore", ore)],
+            port: turts_net_protocol::InventoryPort::Main,
         }
     }
 
@@ -1073,6 +1074,12 @@ mod world_change_tests {
             positions: Vec::new(),
             nodes: Vec::new(),
             economy,
+            belts: vec![],
+            inserters: vec![],
+            extractors: vec![],
+            weapons: vec![],
+            healths: vec![],
+            research: vec![],
         }
     }
 
@@ -1092,6 +1099,7 @@ mod world_change_tests {
             queues: vec![QueueState {
                 producer: UnitId(1),
                 jobs: Vec::new(),
+                enabled: true,
             }],
         }
     }
@@ -1105,6 +1113,7 @@ mod world_change_tests {
             queues: vec![QueueState {
                 producer: UnitId(1),
                 jobs: Vec::new(),
+                enabled: true,
             }],
         };
         let store = delta(
@@ -1173,6 +1182,7 @@ mod world_change_tests {
                 queues: vec![QueueState {
                     producer: UnitId(1),
                     jobs: vec![charged_job],
+                    enabled: true,
                 }],
             },
         );
@@ -1199,6 +1209,7 @@ mod world_change_tests {
             queues: vec![QueueState {
                 producer: UnitId(1),
                 jobs: Vec::new(),
+                enabled: true,
             }],
         };
         let mut replica = make_replica(10, initial.clone());
@@ -1270,6 +1281,7 @@ mod world_change_tests {
                 queues: vec![QueueState {
                     producer: UnitId(1),
                     jobs: vec![charged_job],
+                    enabled: true,
                 }],
             },
         );
@@ -1352,6 +1364,12 @@ mod browser_config_tests {
                         orders: Vec::new(),
                         queues: Vec::new(),
                     },
+                    belts: vec![],
+                    inserters: vec![],
+                    extractors: vec![],
+                    weapons: vec![],
+                    healths: vec![],
+                    research: vec![],
                 },
                 99,
             )],
@@ -1404,6 +1422,12 @@ mod browser_config_tests {
                     orders: vec![],
                     queues: vec![],
                 },
+                belts: vec![],
+                inserters: vec![],
+                extractors: vec![],
+                weapons: vec![],
+                healths: vec![],
+                research: vec![],
             },
             WorldDelta {
                 tick: 12,
@@ -1418,6 +1442,12 @@ mod browser_config_tests {
                     orders: vec![],
                     queues: vec![],
                 },
+                belts: vec![],
+                inserters: vec![],
+                extractors: vec![],
+                weapons: vec![],
+                healths: vec![],
+                research: vec![],
             },
             WorldDelta {
                 tick: 13,
@@ -1432,6 +1462,12 @@ mod browser_config_tests {
                     orders: vec![],
                     queues: vec![],
                 },
+                belts: vec![],
+                inserters: vec![],
+                extractors: vec![],
+                weapons: vec![],
+                healths: vec![],
+                research: vec![],
             },
         ]);
         let mut state = ReplicaState {

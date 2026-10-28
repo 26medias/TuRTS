@@ -1,4 +1,4 @@
-//! Pure projection of immutable simulation views into protocol 2 public state.
+//! Pure projection of immutable simulation views into protocol 3 public state.
 //!
 //! Private economy records are filtered by owner before any wire values are built.
 
@@ -12,6 +12,10 @@ use turts_sim::{
         production::JobStage,
         views::{
             BalanceView, CostView, InventoryView, ItemView, JobView, NodeView, OrderView, QueueView,
+        },
+        views_m3::{
+            RawBeltAudit, RawExtractorAudit, RawHealthAudit, RawInserterAudit, RawResearchAudit,
+            RawWeaponAudit,
         },
     },
     world::UnitState,
@@ -36,7 +40,14 @@ pub fn snapshot_for(view: &WorldView, slot: SlotId) -> wire::Snapshot {
                 .inventories
                 .iter()
                 .filter(|record| record.owner_slot == slot.0)
-                .map(inventory_state)
+                .map(|record| inventory_state(record, wire::InventoryPort::Main))
+                .chain(
+                    view.m3
+                        .raw_output_inventories
+                        .iter()
+                        .filter(|record| owner_of(view, record.unit) == Some(slot.0))
+                        .map(output_inventory_state),
+                )
                 .collect(),
             orders: view
                 .economy
@@ -50,14 +61,43 @@ pub fn snapshot_for(view: &WorldView, slot: SlotId) -> wire::Snapshot {
                 .queues
                 .iter()
                 .filter(|record| record.owner_slot == slot.0)
-                .map(queue_state)
+                .map(|record| queue_state(record, is_enabled(view, record.producer)))
                 .collect(),
         },
+        belts: view
+            .m3
+            .raw_belts
+            .iter()
+            .flat_map(|record| belt_records(record, view, slot))
+            .collect(),
+        inserters: view
+            .m3
+            .raw_inserters
+            .iter()
+            .filter(|record| owner_of(view, record.unit) == Some(slot.0))
+            .map(inserter_state)
+            .collect(),
+        extractors: view
+            .m3
+            .raw_extractors
+            .iter()
+            .filter(|record| owner_of(view, record.unit) == Some(slot.0))
+            .map(extractor_state)
+            .collect(),
+        weapons: view
+            .m3
+            .raw_weapons
+            .iter()
+            .filter(|record| owner_of(view, record.unit) == Some(slot.0))
+            .map(weapon_state)
+            .collect(),
+        healths: view.m3.raw_healths.iter().map(health_state).collect(),
+        research: research_records(&view.m3.research, Some(slot)),
     }
 }
 
 /// Build the owner-specific absolute replacements for one committed simulation tick.
-pub fn delta_for(batch: &CommittedTick, slot: SlotId) -> wire::WorldDelta {
+pub fn delta_for(batch: &CommittedTick, view: &WorldView, slot: SlotId) -> wire::WorldDelta {
     wire::WorldDelta {
         tick: batch.tick,
         base_tick: batch.tick.saturating_sub(1),
@@ -90,7 +130,14 @@ pub fn delta_for(batch: &CommittedTick, slot: SlotId) -> wire::WorldDelta {
                 .inventories
                 .iter()
                 .filter(|record| record.owner_slot == slot.0)
-                .map(inventory_state)
+                .map(|record| inventory_state(record, wire::InventoryPort::Main))
+                .chain(
+                    batch
+                        .output_inventories
+                        .iter()
+                        .filter(|record| owner_of(view, record.unit) == Some(slot.0))
+                        .map(output_inventory_state),
+                )
                 .collect(),
             orders: batch
                 .economy
@@ -99,14 +146,41 @@ pub fn delta_for(batch: &CommittedTick, slot: SlotId) -> wire::WorldDelta {
                 .filter(|record| record.owner_slot == slot.0)
                 .map(order_state)
                 .collect(),
-            queues: batch
-                .economy
-                .queues
-                .iter()
-                .filter(|record| record.owner_slot == slot.0)
-                .map(queue_state)
-                .collect(),
+            queues: queue_replacements(batch, view, slot),
         },
+        belts: batch
+            .belts
+            .iter()
+            .flat_map(|record| belt_records(record, view, slot))
+            .collect(),
+        inserters: batch
+            .inserters
+            .iter()
+            .filter(|record| owner_of(view, record.unit) == Some(slot.0))
+            .map(inserter_state)
+            .collect(),
+        extractors: batch
+            .extractors
+            .iter()
+            .filter(|record| owner_of(view, record.unit) == Some(slot.0))
+            .map(extractor_state)
+            .collect(),
+        weapons: batch
+            .weapons
+            .iter()
+            .filter(|record| owner_of(view, record.unit) == Some(slot.0))
+            .map(weapon_state)
+            .collect(),
+        healths: batch.healths.iter().map(health_state).collect(),
+        research: research_records(&view.m3.research, Some(slot))
+            .into_iter()
+            .filter(|record| {
+                batch
+                    .research
+                    .iter()
+                    .any(|changed| changed.slot == record.slot.0)
+            })
+            .collect(),
     }
 }
 
@@ -119,6 +193,7 @@ fn unit_snapshot(unit: &UnitState) -> messages::UnitSnapshot {
         unit_id: messages::UnitId(unit.unit_id),
         content_id: unit.content_id.clone(),
         owner_slot: messages::SlotId(unit.owner_slot),
+        facing: unit.facing,
         pos: messages::Pos {
             x: unit.pos.x,
             y: unit.pos.y,
@@ -154,9 +229,10 @@ fn item_state(item: &ItemView) -> wire::BalanceState {
     }
 }
 
-fn inventory_state(inventory: &InventoryView) -> wire::InventoryState {
+fn inventory_state(inventory: &InventoryView, port: wire::InventoryPort) -> wire::InventoryState {
     wire::InventoryState {
         unit: messages::UnitId(inventory.unit),
+        port,
         items: inventory.items.iter().map(item_state).collect(),
     }
 }
@@ -184,9 +260,10 @@ fn order_state(order: &OrderView) -> wire::OrderState {
     }
 }
 
-fn queue_state(queue: &QueueView) -> wire::QueueState {
+fn queue_state(queue: &QueueView, enabled: bool) -> wire::QueueState {
     wire::QueueState {
         producer: messages::UnitId(queue.producer),
+        enabled,
         jobs: queue.jobs.iter().map(job_state).collect(),
     }
 }
@@ -205,6 +282,215 @@ fn job_state(job: &JobView) -> wire::JobState {
         charged: job.charged.iter().map(cost).collect(),
         reserved: job.reserved.iter().map(cost).collect(),
     }
+}
+
+fn owner_of(view: &WorldView, unit: u32) -> Option<u8> {
+    view.units
+        .iter()
+        .find(|row| row.unit_id == unit)
+        .map(|row| row.owner_slot)
+}
+
+fn is_enabled(view: &WorldView, unit: u32) -> bool {
+    view.m3.disabled.binary_search(&unit).is_err()
+}
+
+fn queue_replacements(
+    batch: &CommittedTick,
+    view: &WorldView,
+    slot: SlotId,
+) -> Vec<wire::QueueState> {
+    let mut producers: std::collections::BTreeSet<u32> = batch
+        .economy
+        .queues
+        .iter()
+        .filter(|row| row.owner_slot == slot.0)
+        .map(|row| row.producer)
+        .collect();
+    producers.extend(
+        batch
+            .enabled
+            .iter()
+            .filter(|row| owner_of(view, row.unit) == Some(slot.0))
+            .map(|row| row.unit),
+    );
+    producers
+        .into_iter()
+        .filter_map(|producer| {
+            let changed = batch
+                .economy
+                .queues
+                .iter()
+                .find(|row| row.producer == producer && row.owner_slot == slot.0);
+            changed
+                .or_else(|| {
+                    view.economy
+                        .queues
+                        .iter()
+                        .find(|row| row.producer == producer && row.owner_slot == slot.0)
+                })
+                .map(|row| queue_state(row, is_enabled(view, producer)))
+        })
+        .collect()
+}
+
+fn output_inventory_state(
+    row: &turts_sim::economy::views_m3::RawOutputInventoryAudit,
+) -> wire::InventoryState {
+    wire::InventoryState {
+        unit: messages::UnitId(row.unit),
+        port: wire::InventoryPort::Output,
+        items: row
+            .items
+            .iter()
+            .map(|(resource, account)| wire::BalanceState {
+                resource: resource.to_string(),
+                on_hand: account.on_hand,
+                reserved: account.reserved,
+            })
+            .collect(),
+    }
+}
+
+fn belt_records<'a>(
+    row: &'a RawBeltAudit,
+    view: &'a WorldView,
+    slot: SlotId,
+) -> impl Iterator<Item = wire::BeltPieceRecord> + 'a {
+    row.pieces
+        .iter()
+        .filter(move |piece| owner_of(view, piece.unit) == Some(slot.0))
+        .map(|piece| wire::BeltPieceRecord {
+            piece: messages::UnitId(piece.unit),
+            slots: piece
+                .slots
+                .iter()
+                .map(|slot| slot.item.as_ref().map(ToString::to_string))
+                .collect(),
+        })
+}
+
+fn inserter_state(row: &RawInserterAudit) -> wire::InserterRecord {
+    use turts_sim::economy::views_m3::{RawInserterStageAudit as S, RawInserterWaitAudit as W};
+    let wait = |reason| match reason {
+        W::NoSource => wire::InserterWaitReason::NoSource,
+        W::NoDestination => wire::InserterWaitReason::NoDestination,
+        W::SourceEmpty => wire::InserterWaitReason::SourceEmpty,
+        W::DestinationFull => wire::InserterWaitReason::DestinationFull,
+    };
+    wire::InserterRecord {
+        unit: messages::UnitId(row.unit),
+        enabled: row.enabled,
+        stage: match row.stage {
+            S::AtSource(reason) => wire::InserterStage::AtSource(reason.map(wait)),
+            S::ToDestination => wire::InserterStage::ToDestination,
+            S::AtDestination(reason) => wire::InserterStage::AtDestination(wait(reason)),
+            S::Returning => wire::InserterStage::Returning,
+        },
+        elapsed: row.elapsed,
+        source: row.source.map(messages::UnitId),
+        destination: row.destination.map(messages::UnitId),
+    }
+}
+
+fn extractor_state(row: &RawExtractorAudit) -> wire::ExtractorRecord {
+    use turts_sim::economy::views_m3::RawExtractorStatusAudit as S;
+    wire::ExtractorRecord {
+        unit: messages::UnitId(row.unit),
+        enabled: row.enabled,
+        node: row.node.map(wire::NodeId),
+        status: match row.status {
+            S::Extracting => wire::ExtractorStatus::Extracting,
+            S::Full => wire::ExtractorStatus::Full,
+            S::Depleted => wire::ExtractorStatus::Depleted,
+        },
+    }
+}
+
+fn weapon_state(row: &RawWeaponAudit) -> wire::WeaponRecord {
+    use turts_sim::economy::views_m3::RawWeaponStatusAudit as S;
+    wire::WeaponRecord {
+        unit: messages::UnitId(row.unit),
+        enabled: row.enabled,
+        cooldown: row.cooldown,
+        damage: row.effective_damage.map_err(command_reject_reason),
+        status: match row.status {
+            S::Ready => wire::WeaponStatus::Ready,
+            S::Cooling => wire::WeaponStatus::Cooling,
+            S::NoTarget => wire::WeaponStatus::NoTarget,
+            S::OutOfAmmo => wire::WeaponStatus::OutOfAmmo,
+        },
+        last_target: row.last_target.map(messages::UnitId),
+    }
+}
+
+fn command_reject_reason(reason: turts_sim::RejectReason) -> wire::CommandRejectReason {
+    use turts_sim::RejectReason as R;
+    match reason {
+        R::EmptyCommand => wire::CommandRejectReason::EmptyCommand,
+        R::TooManyUnits => wire::CommandRejectReason::TooManyUnits,
+        R::DuplicateUnit => wire::CommandRejectReason::DuplicateUnit,
+        R::UnknownUnit => wire::CommandRejectReason::UnknownUnit,
+        R::NotOwner => wire::CommandRejectReason::NotOwner,
+        R::NotMobile => wire::CommandRejectReason::NotMobile,
+        R::TargetNotFinite => wire::CommandRejectReason::TargetNotFinite,
+        R::TargetOutsideMap => wire::CommandRejectReason::TargetOutsideMap,
+        R::MissingCapability => wire::CommandRejectReason::MissingCapability,
+        R::UnknownNode => wire::CommandRejectReason::UnknownNode,
+        R::IncompatibleItem => wire::CommandRejectReason::IncompatibleItem,
+        R::NodeDepleted => wire::CommandRejectReason::NodeDepleted,
+        R::UnknownRecipe => wire::CommandRejectReason::UnknownRecipe,
+        R::RecipeNotEnabled => wire::CommandRejectReason::RecipeNotEnabled,
+        R::QueueFull => wire::CommandRejectReason::QueueFull,
+        R::InsufficientBalance | R::UnknownBalance => {
+            wire::CommandRejectReason::InsufficientBalance
+        }
+        R::InsufficientItems | R::UnknownInventory | R::InvalidAmount => {
+            wire::CommandRejectReason::InsufficientItems
+        }
+        R::UnknownJob => wire::CommandRejectReason::UnknownJob,
+        R::RefundDestinationFull => wire::CommandRejectReason::RefundDestinationFull,
+        R::RefundDestinationOverflow => wire::CommandRejectReason::RefundDestinationOverflow,
+        R::ArithmeticOverflow => wire::CommandRejectReason::ArithmeticOverflow,
+        R::IdExhausted => wire::CommandRejectReason::IdExhausted,
+        R::BadSequence => wire::CommandRejectReason::BadSequence,
+        R::NotRemovable => wire::CommandRejectReason::NotRemovable,
+        R::NotToggleable => wire::CommandRejectReason::NotToggleable,
+        R::PrerequisitesMissing => wire::CommandRejectReason::PrerequisitesMissing,
+        R::AlreadyResearched => wire::CommandRejectReason::AlreadyResearched,
+        R::ResearchInProgress => wire::CommandRejectReason::ResearchInProgress,
+        R::IntegrityViolation => wire::CommandRejectReason::Internal,
+    }
+}
+
+fn health_state(row: &RawHealthAudit) -> wire::HealthRecord {
+    wire::HealthRecord {
+        unit: messages::UnitId(row.unit),
+        current: row.current,
+    }
+}
+
+fn research_records(
+    rows: &[RawResearchAudit],
+    only_slot: Option<SlotId>,
+) -> Vec<wire::ResearchRecord> {
+    let mut by_slot = std::collections::BTreeMap::<u8, Vec<String>>::new();
+    for row in rows
+        .iter()
+        .filter(|row| only_slot.is_none_or(|slot| row.slot == slot.0))
+    {
+        by_slot
+            .entry(row.slot)
+            .or_default()
+            .push(row.technology.to_string());
+    }
+    by_slot
+        .into_iter()
+        .map(|(slot, completed)| wire::ResearchRecord {
+            slot: messages::SlotId(slot),
+            completed,
+        })
+        .collect()
 }
 
 fn cost(line: &CostView) -> Cost {
