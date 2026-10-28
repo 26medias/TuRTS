@@ -6,10 +6,10 @@ use std::io::Read;
 use serde::de::DeserializeOwned;
 use turts_mod_api::{
     ContentCatalog, LockEntry, Manifest, MapDef, ModError, NodeDef, PackageId, ProductionDef,
-    ResourceDef, UnitDef, VisualDef, content::SourceDef,
+    RecipeDef, ResourceDef, TechnologyDef, UnitDef, VisualDef, content::SourceDef,
 };
 
-use crate::content::validate_content;
+use crate::content::validate_content_with_m3;
 use crate::hash::sha256_hex;
 use crate::manifest::validate_manifest;
 use crate::parse::parse_ron;
@@ -77,6 +77,16 @@ impl PackageArchive {
         self.parse_exports("exports.production", &self.manifest.exports.production)
     }
 
+    /// Exported recipe definitions as `(archive path, definition)`.
+    pub fn recipes(&self) -> Result<Vec<(String, RecipeDef)>, ModError> {
+        self.parse_exports("exports.recipes", &self.manifest.exports.recipes)
+    }
+
+    /// Exported technology definitions as `(archive path, definition)`.
+    pub fn technologies(&self) -> Result<Vec<(String, TechnologyDef)>, ModError> {
+        self.parse_exports("exports.technologies", &self.manifest.exports.technologies)
+    }
+
     /// Parse and resolve all gameplay content. Presentation files are never read here.
     pub fn content(&self) -> Result<ContentCatalog, ModError> {
         let origin = self.id();
@@ -100,7 +110,25 @@ impl PackageArchive {
             .into_iter()
             .map(|(file, value)| SourceDef { file, value })
             .collect();
-        validate_content(&origin, resources, units, nodes, production)
+        let recipes = self
+            .recipes()?
+            .into_iter()
+            .map(|(file, value)| SourceDef { file, value })
+            .collect();
+        let technologies = self
+            .technologies()?
+            .into_iter()
+            .map(|(file, value)| SourceDef { file, value })
+            .collect();
+        validate_content_with_m3(
+            &origin,
+            resources,
+            units,
+            nodes,
+            production,
+            recipes,
+            technologies,
+        )
     }
 
     /// The exported map definitions as `(archive path, definition)`.

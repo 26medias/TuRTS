@@ -41,6 +41,15 @@ impl UnitTypes {
                 gatherer: None,
                 drop_off: None,
                 producer: None,
+                output_inventory: None,
+                extractor: None,
+                conveyor: None,
+                inserter: None,
+                machine: None,
+                research: None,
+                health: None,
+                weapon: None,
+                removal: None,
             };
             let origin = unit.id.package.clone();
             candidate.register_unit_type(&origin, def)?;

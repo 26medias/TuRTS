@@ -19,6 +19,15 @@ fn app_with_one_unit() -> bevy_app::App {
         drop_off: None,
         producer: None,
         footprint: Footprint::Circle { radius: 0.5 },
+        output_inventory: None,
+        extractor: None,
+        conveyor: None,
+        inserter: None,
+        machine: None,
+        research: None,
+        health: None,
+        weapon: None,
+        removal: None,
     };
     app.world_mut()
         .resource_mut::<UnitTypes>()
@@ -32,9 +41,13 @@ fn app_with_one_unit() -> bevy_app::App {
             owner_slot: 0,
             pos: WorldPos { x: 8.0, y: 8.0 },
             contents: Vec::new(),
+
+            facing: None,
         }],
         nodes: Vec::new(),
         slot_economy: Vec::new(),
+
+        belts: Vec::new(),
     };
     load_map(app.world_mut(), &origin, &map).unwrap();
     app

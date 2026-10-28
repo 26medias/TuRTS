@@ -702,6 +702,15 @@ mod admission_tests {
                         queue_capacity: 1,
                         spawn_offsets: vec![],
                     }),
+                    output_inventory: None,
+                    extractor: None,
+                    conveyor: None,
+                    inserter: None,
+                    machine: None,
+                    research: None,
+                    health: None,
+                    weapon: None,
+                    removal: None,
                 },
             )
             .unwrap();
@@ -711,6 +720,9 @@ mod admission_tests {
             units: BTreeMap::new(),
             nodes: BTreeMap::new(),
             production: BTreeMap::new(),
+            recipes: BTreeMap::new(),
+            technologies: BTreeMap::new(),
+            source_files: BTreeMap::new(),
         };
         catalog.units.insert(
             id.clone(),
@@ -727,6 +739,15 @@ mod admission_tests {
                     queue_capacity: 1,
                     spawn_offsets: vec![],
                 }),
+                output_inventory: None,
+                extractor: None,
+                conveyor: None,
+                inserter: None,
+                machine: None,
+                research: None,
+                health: None,
+                weapon: None,
+                removal: None,
             },
         );
         app.world_mut().insert_resource(types);
@@ -796,6 +817,15 @@ mod admission_tests {
                         queue_capacity: 1,
                         spawn_offsets: vec![],
                     }),
+                    output_inventory: None,
+                    extractor: None,
+                    conveyor: None,
+                    inserter: None,
+                    machine: None,
+                    research: None,
+                    health: None,
+                    weapon: None,
+                    removal: None,
                 },
             )
             .unwrap();
@@ -805,6 +835,9 @@ mod admission_tests {
             units: BTreeMap::new(),
             nodes: BTreeMap::new(),
             production: BTreeMap::new(),
+            recipes: BTreeMap::new(),
+            technologies: BTreeMap::new(),
+            source_files: BTreeMap::new(),
         };
         catalog.units.insert(
             id.clone(),
@@ -821,6 +854,15 @@ mod admission_tests {
                     queue_capacity: 1,
                     spawn_offsets: vec![],
                 }),
+                output_inventory: None,
+                extractor: None,
+                conveyor: None,
+                inserter: None,
+                machine: None,
+                research: None,
+                health: None,
+                weapon: None,
+                removal: None,
             },
         );
         app.world_mut().insert_resource(types);

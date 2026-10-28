@@ -23,6 +23,15 @@ fn app_with_units(positions: &[(f32, f32)]) -> bevy_app::App {
         drop_off: None,
         producer: None,
         footprint: Footprint::Circle { radius: 0.5 },
+        output_inventory: None,
+        extractor: None,
+        conveyor: None,
+        inserter: None,
+        machine: None,
+        research: None,
+        health: None,
+        weapon: None,
+        removal: None,
     };
     app.world_mut()
         .resource_mut::<UnitTypes>()
@@ -38,10 +47,14 @@ fn app_with_units(positions: &[(f32, f32)]) -> bevy_app::App {
                 owner_slot: 0,
                 pos: WorldPos { x, y },
                 contents: Vec::new(),
+
+                facing: None,
             })
             .collect(),
         nodes: Vec::new(),
         slot_economy: Vec::new(),
+
+        belts: Vec::new(),
     };
     load_map(app.world_mut(), &origin, &map).unwrap();
     app
@@ -148,9 +161,13 @@ fn second_load_map_continues_unit_ids() {
             owner_slot: 1,
             pos: WorldPos { x: 30.0, y: 30.0 },
             contents: Vec::new(),
+
+            facing: None,
         }],
         nodes: Vec::new(),
         slot_economy: Vec::new(),
+
+        belts: Vec::new(),
     };
     load_map(app.world_mut(), &origin, &map).unwrap();
     let ids: Vec<u32> = snapshot(app.world_mut())

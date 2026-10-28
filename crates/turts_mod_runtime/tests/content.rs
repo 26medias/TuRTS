@@ -1,4 +1,4 @@
-use turts_mod_api::{PackageId, schema::*};
+use turts_mod_api::{ContentId, PackageId, schema::*};
 use turts_mod_runtime::content::{
     ContentCatalog, SourceDef, checked_content_ref, validate_content,
 };
@@ -42,6 +42,15 @@ fn valid_worker() -> SourceDef<UnitDef> {
             }),
             drop_off: None,
             producer: None,
+            output_inventory: None,
+            extractor: None,
+            conveyor: None,
+            inserter: None,
+            machine: None,
+            research: None,
+            health: None,
+            weapon: None,
+            removal: None,
         },
     )
 }
@@ -98,15 +107,101 @@ fn cedar_companion_records_parse_against_staged_schema() {
     ron::from_str::<VisualDef>(visual_depot).unwrap();
     ron::from_str::<VisualDef>(visual_worker).unwrap();
     ron::from_str::<VisualDef>(visual_grove).unwrap();
-    assert!(
-        validate_content(
-            &PackageId::parse("cedar").unwrap(),
-            resources,
-            units,
-            nodes,
-            recipes
-        )
-        .is_ok()
+    let catalog = validate_content(
+        &PackageId::parse("cedar").unwrap(),
+        resources,
+        units,
+        nodes,
+        recipes,
+    )
+    .unwrap();
+    assert_eq!(
+        catalog.source_files[&ContentId::parse("cedar:wood").unwrap()],
+        "resources/wood.ron"
+    );
+    assert_eq!(
+        catalog.source_files[&ContentId::parse("cedar:worker").unwrap()],
+        "units/worker.ron"
+    );
+    assert_eq!(
+        catalog.source_files[&ContentId::parse("cedar:grove").unwrap()],
+        "nodes/grove.ron"
+    );
+    assert_eq!(
+        catalog.source_files[&ContentId::parse("cedar:hire").unwrap()],
+        "production/hire.ron"
+    );
+}
+
+#[test]
+fn public_validate_content_preserves_m3_unit_capabilities() {
+    let turret = source(
+        "units/turret.ron",
+        UnitDef {
+            id: "turret".into(),
+            name: "Turret".into(),
+            footprint: Footprint::Circle { radius: 1.0 },
+            movement: None,
+            inventory: Some(InventoryDef {
+                capacity: 5,
+                accepts: vec!["cedar:shell".into()],
+            }),
+            gatherer: None,
+            drop_off: None,
+            producer: None,
+            output_inventory: Some(InventoryDef {
+                capacity: 2,
+                accepts: vec!["cedar:shell".into()],
+            }),
+            extractor: None,
+            conveyor: None,
+            inserter: None,
+            machine: None,
+            research: None,
+            health: Some(HealthDef { max: 100 }),
+            weapon: Some(WeaponDef {
+                range: 8.0,
+                cooldown_ms: 1000,
+                damage: 10,
+                ammo: Some(AmmoDef {
+                    item: "cedar:shell".into(),
+                    per_shot: 1,
+                }),
+                targets: TargetFilter {
+                    slots: SlotRelation::Other,
+                },
+            }),
+            removal: Some(RemovalDef {
+                by_command: false,
+                contents: ContentsPolicy::Destroy,
+            }),
+        },
+    );
+    let catalog = validate_content(
+        &PackageId::parse("cedar").unwrap(),
+        vec![resource("shell", ResourceKind::Item)],
+        vec![turret],
+        vec![],
+        vec![],
+    )
+    .unwrap();
+
+    let turret = catalog
+        .units
+        .get(&ContentId::parse("cedar:turret").unwrap())
+        .unwrap();
+    assert_eq!(turret.output_inventory.as_ref().unwrap().capacity, 2);
+    assert_eq!(
+        turret.weapon.as_ref().unwrap().ammo.as_ref().unwrap().item,
+        ContentId::parse("cedar:shell").unwrap()
+    );
+    assert_eq!(turret.health, Some(HealthDef { max: 100 }));
+    assert_eq!(
+        turret.removal,
+        Some(RemovalDef {
+            by_command: false,
+            contents: ContentsPolicy::Destroy,
+        })
     );
 }
 
@@ -187,6 +282,15 @@ fn duplicate_keys_and_cross_kind_ids_reject() {
                 gatherer: None,
                 drop_off: None,
                 producer: None,
+                output_inventory: None,
+                extractor: None,
+                conveyor: None,
+                inserter: None,
+                machine: None,
+                research: None,
+                health: None,
+                weapon: None,
+                removal: None,
             },
         )],
         vec![resource("wood", ResourceKind::Item)],
@@ -260,6 +364,15 @@ fn capability_and_recipe_matrix() {
             gatherer: None,
             drop_off: None,
             producer: None,
+            output_inventory: None,
+            extractor: None,
+            conveyor: None,
+            inserter: None,
+            machine: None,
+            research: None,
+            health: None,
+            weapon: None,
+            removal: None,
         },
     );
     assert!(validate(vec![static_unit.clone()], vec![spaced], vec![], vec![]).is_ok());
@@ -372,6 +485,15 @@ fn capability_and_recipe_matrix() {
             queue_capacity: 1,
             spawn_offsets: vec![turts_mod_api::schema::WorldPos { x: 0.0, y: 1.0 }],
         }),
+        output_inventory: None,
+        extractor: None,
+        conveyor: None,
+        inserter: None,
+        machine: None,
+        research: None,
+        health: None,
+        weapon: None,
+        removal: None,
     };
     let worker = UnitDef {
         movement: Some(MovementDef { speed: 1.0 }),
@@ -460,6 +582,15 @@ fn capability_and_recipe_matrix() {
         gatherer: None,
         drop_off: None,
         producer: None,
+        output_inventory: None,
+        extractor: None,
+        conveyor: None,
+        inserter: None,
+        machine: None,
+        research: None,
+        health: None,
+        weapon: None,
+        removal: None,
     };
     let error = validate(
         vec![source("units/worker.ron", static_worker)],
@@ -509,6 +640,15 @@ fn late_producer_cost_errors_keep_definition_file_and_both_indexes() {
             queue_capacity: 2,
             spawn_offsets: vec![turts_mod_api::schema::WorldPos { x: 0.0, y: 1.0 }],
         }),
+        output_inventory: None,
+        extractor: None,
+        conveyor: None,
+        inserter: None,
+        machine: None,
+        research: None,
+        health: None,
+        weapon: None,
+        removal: None,
     };
     let worker = UnitDef {
         id: "worker".into(),
@@ -519,6 +659,15 @@ fn late_producer_cost_errors_keep_definition_file_and_both_indexes() {
         gatherer: None,
         drop_off: None,
         producer: None,
+        output_inventory: None,
+        extractor: None,
+        conveyor: None,
+        inserter: None,
+        machine: None,
+        research: None,
+        health: None,
+        weapon: None,
+        removal: None,
     };
     let no_costs = |id: &str| ProductionDef {
         id: id.into(),

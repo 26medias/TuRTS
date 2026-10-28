@@ -93,7 +93,7 @@ fn a_field_typo_is_refused() {
             "movenment: Some((speed: 8.0))",
         )],
         "zeta/units/runner.ron: unknown field `movenment` at line 1 column 64 \
-         (allowed: id, name, footprint, movement, inventory, gatherer, drop_off, producer)",
+         (allowed: id, name, footprint, movement, inventory, gatherer, drop_off, producer, output_inventory, extractor, conveyor, inserter, machine, research, health, weapon, removal)",
     );
 }
 

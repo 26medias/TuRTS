@@ -28,6 +28,15 @@ fn app_with_two_units_on(size: MapSize) -> bevy_app::App {
         drop_off: None,
         producer: None,
         footprint: Footprint::Circle { radius: 0.5 },
+        output_inventory: None,
+        extractor: None,
+        conveyor: None,
+        inserter: None,
+        machine: None,
+        research: None,
+        health: None,
+        weapon: None,
+        removal: None,
     };
     app.world_mut()
         .resource_mut::<UnitTypes>()
@@ -38,6 +47,8 @@ fn app_with_two_units_on(size: MapSize) -> bevy_app::App {
         owner_slot: 0,
         pos: WorldPos { x, y },
         contents: Vec::new(),
+
+        facing: None,
     };
     let map = MapDef {
         id: "field".to_string(),
@@ -45,6 +56,8 @@ fn app_with_two_units_on(size: MapSize) -> bevy_app::App {
         placements: vec![place(8.0, 8.0), place(20.0, 20.0)],
         nodes: Vec::new(),
         slot_economy: Vec::new(),
+
+        belts: Vec::new(),
     };
     load_map(app.world_mut(), &origin, &map).unwrap();
     app
@@ -154,6 +167,15 @@ fn map_owner_slot_decides_who_may_move_a_unit() {
         drop_off: None,
         producer: None,
         footprint: Footprint::Circle { radius: 0.5 },
+        output_inventory: None,
+        extractor: None,
+        conveyor: None,
+        inserter: None,
+        machine: None,
+        research: None,
+        health: None,
+        weapon: None,
+        removal: None,
     };
     app.world_mut()
         .resource_mut::<UnitTypes>()
@@ -164,6 +186,8 @@ fn map_owner_slot_decides_who_may_move_a_unit() {
         owner_slot,
         pos: WorldPos { x, y },
         contents: Vec::new(),
+
+        facing: None,
     };
     let map = MapDef {
         id: "field".to_string(),
@@ -171,6 +195,8 @@ fn map_owner_slot_decides_who_may_move_a_unit() {
         placements: vec![place(0, 8.0, 8.0), place(1, 20.0, 20.0)],
         nodes: Vec::new(),
         slot_economy: Vec::new(),
+
+        belts: Vec::new(),
     };
     load_map(app.world_mut(), &origin, &map).unwrap();
     let owners: Vec<(u32, u8)> = snapshot(app.world_mut())
@@ -305,6 +331,15 @@ fn move_to_mixed_mobile_and_static_units_is_atomic() {
         gatherer: None,
         drop_off: None,
         producer: None,
+        output_inventory: None,
+        extractor: None,
+        conveyor: None,
+        inserter: None,
+        machine: None,
+        research: None,
+        health: None,
+        weapon: None,
+        removal: None,
     };
     let static_def = UnitDef {
         id: "yard".into(),
@@ -315,6 +350,15 @@ fn move_to_mixed_mobile_and_static_units_is_atomic() {
         gatherer: None,
         drop_off: None,
         producer: None,
+        output_inventory: None,
+        extractor: None,
+        conveyor: None,
+        inserter: None,
+        machine: None,
+        research: None,
+        health: None,
+        weapon: None,
+        removal: None,
     };
     let mut types = app.world_mut().resource_mut::<UnitTypes>();
     types.register_unit_type(&origin, mobile).unwrap();
@@ -328,16 +372,22 @@ fn move_to_mixed_mobile_and_static_units_is_atomic() {
                 owner_slot: 0,
                 pos: WorldPos { x: 8.0, y: 8.0 },
                 contents: vec![],
+
+                facing: None,
             },
             Placement {
                 unit: format!("{ORIGIN}:yard"),
                 owner_slot: 0,
                 pos: WorldPos { x: 20.0, y: 20.0 },
                 contents: vec![],
+
+                facing: None,
             },
         ],
         nodes: vec![],
         slot_economy: vec![],
+
+        belts: Vec::new(),
     };
     load_map(app.world_mut(), &origin, &map).unwrap();
     send(&mut app, 0, 1, vec![1, 2], Vec2::new(30.0, 30.0));

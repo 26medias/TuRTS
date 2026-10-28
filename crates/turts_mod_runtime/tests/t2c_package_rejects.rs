@@ -54,7 +54,7 @@ fn t2c_engine_api_mismatch() {
     );
     let error = refused(&bytes, "engine_api");
     assert!(error.message.contains("`^0.1`"), "{error}");
-    assert!(error.message.contains("0.2.0"), "{error}");
+    assert!(error.message.contains("0.2.1"), "{error}");
 }
 
 #[test]
@@ -270,7 +270,7 @@ fn t2c_unknown_names_print_the_allowed_names_and_the_file_once() {
     assert_eq!(
         text,
         "acme/units/scout.ron: unknown field `movenment` at line 1 column 62 \
-         (allowed: id, name, footprint, movement, inventory, gatherer, drop_off, producer)"
+         (allowed: id, name, footprint, movement, inventory, gatherer, drop_off, producer, output_inventory, extractor, conveyor, inserter, machine, research, health, weapon, removal)"
     );
     assert_eq!(text.matches("units/scout.ron").count(), 1, "{text}");
 
