@@ -923,10 +923,10 @@ fn valid_economy(
                             return false;
                         };
                         if !inventory_def.accepts.contains(&resource_id)
-                            || !economy
-                                .inventories
-                                .iter()
-                                .any(|inventory| inventory.unit == queue.producer)
+                            || !economy.inventories.iter().any(|inventory| {
+                                inventory.unit == queue.producer
+                                    && inventory.port == InventoryPort::Main
+                            })
                         {
                             return false;
                         }
