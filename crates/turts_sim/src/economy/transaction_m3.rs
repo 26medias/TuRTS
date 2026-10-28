@@ -15,7 +15,7 @@ use crate::{
             DestroyedLine, DestroyedLocation, EconomyEventKind, NextEventOrdinal,
             PendingEconomyEvents, RemoveCause, RemovedThisTick, SpawnedThisTick,
         },
-        extractor::Extractors,
+        extractor::{ExtractorState, Extractors},
         inserter::Inserters,
         ledger::{Account, EconomyLedger, Endpoint, ReservationClaim},
         production::ProductionQueues,
@@ -30,7 +30,7 @@ impl Transaction<'_> {
         self.writes.strict_m3 = true;
     }
 
-    fn node(&self, id: crate::ids::NodeId) -> Result<NodeRecord, RejectReason> {
+    pub(crate) fn node(&self, id: crate::ids::NodeId) -> Result<NodeRecord, RejectReason> {
         if let Some(staged) = self.writes.nodes.get(&id) {
             return staged.clone().ok_or(RejectReason::UnknownNode);
         }
@@ -604,5 +604,24 @@ impl Transaction<'_> {
     pub(crate) fn stage_conveyor_line(&mut self, id: u32, line: BeltLine) {
         self.mark_m3();
         self.writes.conveyor_lines.insert(id, Some(line));
+    }
+}
+
+// Extractor phase accessors retain the per-key overlay boundary.
+impl Transaction<'_> {
+    pub(crate) fn extractor_state(&self, unit: u32) -> Result<ExtractorState, RejectReason> {
+        if let Some(staged) = self.writes.extractors.get(&unit) {
+            return staged.clone().ok_or(RejectReason::MissingCapability);
+        }
+        self.world
+            .get_resource::<Extractors>()
+            .and_then(|states| states.0.get(&unit))
+            .cloned()
+            .ok_or(RejectReason::MissingCapability)
+    }
+
+    pub(crate) fn stage_extractor(&mut self, unit: u32, state: ExtractorState) {
+        self.mark_m3();
+        self.writes.extractors.insert(unit, Some(state));
     }
 }
