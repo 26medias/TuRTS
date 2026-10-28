@@ -415,7 +415,26 @@ fn c1_belt_full_drill_stops() {
         },
         "C1 extractor Full",
     );
+    let mut extractor_retry_operations = 0;
+    for _ in 0..100 {
+        let ops = step(&mut app, &oracle, &mut history);
+        extractor_retry_operations += ops
+            .iter()
+            .filter(|op| {
+                let before = op.before.raw_extractors.iter().find(|e| e.unit == 1);
+                let after = op.after.raw_extractors.iter().find(|e| e.unit == 1);
+                before != after
+            })
+            .count();
+    }
     let s = audit_state(app.world_mut());
+    assert_eq!(
+        extractor_retry_operations, 100,
+        "the full extractor must execute its capacity retry once on every bounded tick"
+    );
+    assert!(s.raw_extractors.iter().any(|e| {
+        e.unit == 1 && e.status == turts_sim::economy::views_m3::RawExtractorStatusAudit::Full
+    }));
     assert!(
         s.raw_belts
             .iter()
