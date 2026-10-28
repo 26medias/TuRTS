@@ -28,6 +28,15 @@ fn unit_def(id: &str, speed: f32, radius: f32) -> UnitDef {
         drop_off: None,
         producer: None,
         footprint: Footprint::Circle { radius },
+        output_inventory: None,
+        extractor: None,
+        conveyor: None,
+        inserter: None,
+        machine: None,
+        research: None,
+        health: None,
+        weapon: None,
+        removal: None,
     }
 }
 
@@ -37,6 +46,7 @@ fn placement(unit: &str, owner_slot: u8, x: f32, y: f32) -> Placement {
         owner_slot,
         pos: WorldPos { x, y },
         contents: Vec::new(),
+        facing: None,
     }
 }
 
@@ -47,6 +57,7 @@ fn map_def(size: f32, placements: Vec<Placement>) -> MapDef {
         placements,
         nodes: Vec::new(),
         slot_economy: Vec::new(),
+        belts: Vec::new(),
     }
 }
 

@@ -458,6 +458,9 @@ fn cedar_matches_the_public_ten_file_authoring_example() {
         resources: vec!["resources/wood.ron".into()],
         nodes: vec!["nodes/grove.ron".into()],
         production: vec!["production/hire.ron".into()],
+
+        recipes: Vec::new(),
+        technologies: Vec::new(),
     };
     assert_eq!(archive.manifest.exports, expected_exports);
     assert_eq!(
@@ -503,6 +506,15 @@ fn cedar_matches_the_public_ten_file_authoring_example() {
                     queue_capacity: 5,
                     spawn_offsets: vec![WorldPos { x: 0.0, y: 4.0 }, WorldPos { x: 0.0, y: -4.0 },],
                 }),
+                output_inventory: None,
+                extractor: None,
+                conveyor: None,
+                inserter: None,
+                machine: None,
+                research: None,
+                health: None,
+                weapon: None,
+                removal: None,
             },
             UnitDef {
                 id: "worker".into(),
@@ -521,6 +533,15 @@ fn cedar_matches_the_public_ten_file_authoring_example() {
                 }),
                 drop_off: None,
                 producer: None,
+                output_inventory: None,
+                extractor: None,
+                conveyor: None,
+                inserter: None,
+                machine: None,
+                research: None,
+                health: None,
+                weapon: None,
+                removal: None,
             },
         ]
     );
@@ -619,18 +640,24 @@ fn cedar_matches_the_public_ten_file_authoring_example() {
                         item: "cedar:wood".into(),
                         amount: 100
                     }],
+
+                    facing: None,
                 },
                 Placement {
                     unit: "cedar:worker".into(),
                     owner_slot: 0,
                     pos: WorldPos { x: 12.0, y: 8.0 },
                     contents: vec![],
+
+                    facing: None,
                 },
                 Placement {
                     unit: "cedar:worker".into(),
                     owner_slot: 0,
                     pos: WorldPos { x: 12.0, y: 12.0 },
                     contents: vec![],
+
+                    facing: None,
                 },
                 Placement {
                     unit: "cedar:depot".into(),
@@ -640,18 +667,24 @@ fn cedar_matches_the_public_ten_file_authoring_example() {
                         item: "cedar:wood".into(),
                         amount: 100
                     }],
+
+                    facing: None,
                 },
                 Placement {
                     unit: "cedar:worker".into(),
                     owner_slot: 1,
                     pos: WorldPos { x: 52.0, y: 8.0 },
                     contents: vec![],
+
+                    facing: None,
                 },
                 Placement {
                     unit: "cedar:worker".into(),
                     owner_slot: 1,
                     pos: WorldPos { x: 52.0, y: 12.0 },
                     contents: vec![],
+
+                    facing: None,
                 },
             ],
             nodes: vec![
@@ -667,6 +700,8 @@ fn cedar_matches_the_public_ten_file_authoring_example() {
                 },
             ],
             slot_economy: vec![],
+
+            belts: Vec::new(),
         }
     );
     let production = archive.production().unwrap();

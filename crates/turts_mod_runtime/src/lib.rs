@@ -2,6 +2,7 @@
 
 pub mod archive;
 pub mod content;
+pub mod content_m3;
 pub mod hash;
 pub mod lock;
 pub mod manifest;

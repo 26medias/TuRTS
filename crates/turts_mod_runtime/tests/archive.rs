@@ -110,6 +110,32 @@ fn archive_reports_a_missing_exported_file() {
 }
 
 #[test]
+fn archive_reads_recipe_and_technology_exports_into_catalog() {
+    let manifest = r#"(id: "acme", version: "0.2.0", kind: Game, engine_api: "^0.2.1", dependencies: {}, exports: (units: [], maps: ["maps/test.ron"], visuals: [], resources: [], nodes: [], production: [], recipes: ["recipes/production-line.ron"], technologies: ["technologies/field-note.ron"]), context: Shared, capabilities: [], license: "x")"#;
+    let recipe = r#"(id: "shells", name: "Shells", inputs: [(item: "acme:ore", amount: 2)], outputs: [(item: "acme:shell", amount: 1)], duration_ms: 2000, cancel_refunds: (running: (numerator: 1, denominator: 1), output_blocked: (numerator: 1, denominator: 1)))"#;
+    let technology = r#"(id: "hardened", name: "Hardened", prerequisites: [], duration_ms: 10000, costs: [(resource: "acme:shell", amount: 10, source: ProducerInventory)], payment: ReserveThenCharge, cancel_refunds: (queued: (numerator: 1, denominator: 1), running: (numerator: 1, denominator: 2), output_blocked: (numerator: 1, denominator: 1)), effects: [])"#;
+    let bytes = raw_tar(&[
+        ("manifest.ron", manifest.as_bytes()),
+        ("recipes/production-line.ron", recipe.as_bytes()),
+        ("technologies/field-note.ron", technology.as_bytes()),
+    ]);
+    let archive = PackageArchive::parse(&bytes).unwrap();
+    assert_eq!(archive.recipes().unwrap().len(), 1);
+    assert_eq!(archive.technologies().unwrap().len(), 1);
+    let catalog = archive.content().unwrap();
+    assert_eq!(catalog.recipes.len(), 1);
+    assert_eq!(catalog.technologies.len(), 1);
+    assert_eq!(
+        catalog.source_files[&turts_mod_api::ContentId::parse("acme:shells").unwrap()],
+        "recipes/production-line.ron"
+    );
+    assert_eq!(
+        catalog.source_files[&turts_mod_api::ContentId::parse("acme:hardened").unwrap()],
+        "technologies/field-note.ron"
+    );
+}
+
+#[test]
 fn archive_lock_entry_carries_the_manifest_and_the_hash() {
     let bytes = acme_archive();
     let archive = PackageArchive::parse(&bytes).unwrap();
@@ -152,7 +178,16 @@ fn parse_ron_rewrites_errors_without_type_names() {
             "inventory".to_string(),
             "gatherer".to_string(),
             "drop_off".to_string(),
-            "producer".to_string()
+            "producer".to_string(),
+            "output_inventory".to_string(),
+            "extractor".to_string(),
+            "conveyor".to_string(),
+            "inserter".to_string(),
+            "machine".to_string(),
+            "research".to_string(),
+            "health".to_string(),
+            "weapon".to_string(),
+            "removal".to_string()
         ])
     );
     assert!(!error.message.contains("UnitDef"), "{}", error.message);

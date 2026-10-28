@@ -15,6 +15,9 @@ impl Default for ClientContent {
                 units: Default::default(),
                 nodes: Default::default(),
                 production: Default::default(),
+                recipes: Default::default(),
+                technologies: Default::default(),
+                source_files: Default::default(),
             },
             shapes: HashMap::new(),
         }
@@ -28,6 +31,9 @@ impl ClientContent {
             units: Default::default(),
             nodes: Default::default(),
             production: Default::default(),
+            recipes: Default::default(),
+            technologies: Default::default(),
+            source_files: Default::default(),
         };
         for archive in archives {
             let part = archive.content()?;
@@ -60,6 +66,33 @@ impl ClientContent {
             }
             for (id, value) in part.production {
                 if catalog.production.insert(id.clone(), value).is_some() {
+                    return Err(ModError::new(
+                        &id.package.0,
+                        "id",
+                        format!("duplicate content id `{id}`"),
+                    ));
+                }
+            }
+            for (id, value) in part.recipes {
+                if catalog.recipes.insert(id.clone(), value).is_some() {
+                    return Err(ModError::new(
+                        &id.package.0,
+                        "id",
+                        format!("duplicate content id `{id}`"),
+                    ));
+                }
+            }
+            for (id, value) in part.technologies {
+                if catalog.technologies.insert(id.clone(), value).is_some() {
+                    return Err(ModError::new(
+                        &id.package.0,
+                        "id",
+                        format!("duplicate content id `{id}`"),
+                    ));
+                }
+            }
+            for (id, file) in part.source_files {
+                if catalog.source_files.insert(id.clone(), file).is_some() {
                     return Err(ModError::new(
                         &id.package.0,
                         "id",

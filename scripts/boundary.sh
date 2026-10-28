@@ -33,6 +33,7 @@ fi
 forbid turts_sim $HOST "" bevy_render bevy_winit bevy_pbr turts_mod_runtime
 forbid turts_server $HOST "" bevy_render bevy_winit bevy_pbr
 nobevy turts_mod_api $HOST ""
+nobevy turts_mod_runtime $HOST ""
 nobevy turts_net_protocol $HOST ""
 forbid turts_client $HOST "" turts_sim
 forbid turts_client wasm32-unknown-unknown "" turts_sim

@@ -14,9 +14,11 @@ fn direct_map(unit: &str, x: f32, y: f32) -> MapDef {
             owner_slot: 0,
             pos: WorldPos { x, y },
             contents: Vec::new(),
+            facing: None,
         }],
         nodes: Vec::new(),
         slot_economy: Vec::new(),
+        belts: Vec::new(),
     }
 }
 

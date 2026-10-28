@@ -3,9 +3,11 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 pub use turts_mod_api::content::{
-    ContentCatalog, ResolvedCost, ResolvedDropOff, ResolvedDropOffEffect, ResolvedDropOffRule,
-    ResolvedGatherer, ResolvedInventory, ResolvedNode, ResolvedProducer, ResolvedProduction,
-    ResolvedUnit, SourceDef,
+    ContentCatalog, ResolvedAmmo, ResolvedConveyor, ResolvedCost, ResolvedDropOff,
+    ResolvedDropOffEffect, ResolvedDropOffRule, ResolvedEffect, ResolvedGatherer,
+    ResolvedInventory, ResolvedItemStack, ResolvedMachine, ResolvedNode, ResolvedProducer,
+    ResolvedProduction, ResolvedRecipe, ResolvedResearchStation, ResolvedTechnology, ResolvedUnit,
+    ResolvedWeapon, SourceDef,
 };
 use turts_mod_api::schema::*;
 use turts_mod_api::{ContentId, ModError, PackageId};
@@ -24,10 +26,15 @@ pub fn checked_content_ref(
     Ok(parsed)
 }
 
-fn error(origin: &PackageId, file: &str, field: &str, message: impl Into<String>) -> ModError {
+pub(crate) fn error(
+    origin: &PackageId,
+    file: &str,
+    field: &str,
+    message: impl Into<String>,
+) -> ModError {
     ModError::new(&origin.0, field, message).with_file(file)
 }
-fn local_id(origin: &PackageId, file: &str, id: &str) -> Result<ContentId, ModError> {
+pub(crate) fn local_id(origin: &PackageId, file: &str, id: &str) -> Result<ContentId, ModError> {
     if id.is_empty() || id.contains(':') {
         return Err(error(
             origin,
@@ -92,16 +99,38 @@ pub fn validate_content(
     nodes: Vec<SourceDef<NodeDef>>,
     production: Vec<SourceDef<ProductionDef>>,
 ) -> Result<ContentCatalog, ModError> {
+    validate_content_with_m3(
+        origin,
+        resources,
+        units,
+        nodes,
+        production,
+        Vec::new(),
+        Vec::new(),
+    )
+}
+
+fn validate_content_m2(
+    origin: &PackageId,
+    resources: Vec<SourceDef<ResourceDef>>,
+    units: Vec<SourceDef<UnitDef>>,
+    nodes: Vec<SourceDef<NodeDef>>,
+    production: Vec<SourceDef<ProductionDef>>,
+) -> Result<ContentCatalog, ModError> {
     let mut all_ids = BTreeSet::new();
     let mut catalog = ContentCatalog {
         resources: BTreeMap::new(),
         units: BTreeMap::new(),
         nodes: BTreeMap::new(),
         production: BTreeMap::new(),
+        recipes: BTreeMap::new(),
+        technologies: BTreeMap::new(),
+        source_files: BTreeMap::new(),
     };
     for src in resources {
         let id = local_id(origin, &src.file, &src.value.id)?;
         insert_id(origin, &src.file, &src.value.id, &mut all_ids)?;
+        catalog.source_files.insert(id.clone(), src.file.clone());
         catalog.resources.insert(id, src.value);
     }
     // Preserve every source definition before resolving. This permits forward references.
@@ -111,21 +140,21 @@ pub fn validate_content(
     let mut unit_files = BTreeMap::new();
     for src in &unit_sources {
         insert_id(origin, &src.file, &src.value.id, &mut all_ids)?;
-        unit_files.insert(
-            local_id(origin, &src.file, &src.value.id)?,
-            src.file.clone(),
-        );
+        let id = local_id(origin, &src.file, &src.value.id)?;
+        unit_files.insert(id.clone(), src.file.clone());
+        catalog.source_files.insert(id, src.file.clone());
     }
     for src in &node_sources {
         insert_id(origin, &src.file, &src.value.id, &mut all_ids)?;
+        let id = local_id(origin, &src.file, &src.value.id)?;
+        catalog.source_files.insert(id, src.file.clone());
     }
     let mut production_files = BTreeMap::new();
     for src in &production_sources {
         insert_id(origin, &src.file, &src.value.id, &mut all_ids)?;
-        production_files.insert(
-            local_id(origin, &src.file, &src.value.id)?,
-            src.file.clone(),
-        );
+        let id = local_id(origin, &src.file, &src.value.id)?;
+        production_files.insert(id.clone(), src.file.clone());
+        catalog.source_files.insert(id, src.file.clone());
     }
 
     for src in unit_sources {
@@ -357,6 +386,15 @@ pub fn validate_content(
                 gatherer,
                 drop_off,
                 producer,
+                output_inventory: None,
+                extractor: None,
+                conveyor: None,
+                inserter: None,
+                machine: None,
+                research: None,
+                health: None,
+                weapon: None,
+                removal: None,
             },
         );
     }
@@ -558,6 +596,20 @@ pub fn validate_content(
     Ok(catalog)
 }
 
+pub(crate) fn validate_content_with_m3(
+    origin: &PackageId,
+    resources: Vec<SourceDef<ResourceDef>>,
+    units: Vec<SourceDef<UnitDef>>,
+    nodes: Vec<SourceDef<NodeDef>>,
+    production: Vec<SourceDef<ProductionDef>>,
+    recipes: Vec<SourceDef<RecipeDef>>,
+    technologies: Vec<SourceDef<TechnologyDef>>,
+) -> Result<ContentCatalog, ModError> {
+    let mut catalog = validate_content_m2(origin, resources, units.clone(), nodes, production)?;
+    crate::content_m3::resolve_content_m3(origin, &mut catalog, &units, recipes, technologies)?;
+    Ok(catalog)
+}
+
 fn unit_source_file<'a>(
     origin: &PackageId,
     id: &ContentId,
@@ -598,7 +650,7 @@ fn insert_id(
     }
     Ok(())
 }
-fn resolve_one(
+pub(crate) fn resolve_one(
     origin: &PackageId,
     file: &str,
     field: &str,

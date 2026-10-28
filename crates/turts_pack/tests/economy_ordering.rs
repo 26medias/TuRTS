@@ -44,6 +44,15 @@ fn app_with_units() -> bevy_app::App {
         drop_off: None,
         producer: None,
         footprint: Footprint::Circle { radius: 0.5 },
+        output_inventory: None,
+        extractor: None,
+        conveyor: None,
+        inserter: None,
+        machine: None,
+        research: None,
+        health: None,
+        weapon: None,
+        removal: None,
     };
     app.world_mut()
         .resource_mut::<UnitTypes>()
@@ -62,6 +71,15 @@ fn app_with_units() -> bevy_app::App {
                 drop_off: None,
                 producer: None,
                 footprint: Footprint::Circle { radius: 0.5 },
+                output_inventory: None,
+                extractor: None,
+                conveyor: None,
+                inserter: None,
+                machine: None,
+                research: None,
+                health: None,
+                weapon: None,
+                removal: None,
             },
         )
         .unwrap();
@@ -70,6 +88,8 @@ fn app_with_units() -> bevy_app::App {
         owner_slot: 0,
         pos: WorldPos { x, y },
         contents: Vec::new(),
+
+        facing: None,
     };
     load_map(
         app.world_mut(),
@@ -80,6 +100,8 @@ fn app_with_units() -> bevy_app::App {
             placements: vec![place("walker", 8.0, 8.0), place("building", 20.0, 20.0)],
             nodes: vec![],
             slot_economy: vec![],
+
+            belts: Vec::new(),
         },
     )
     .unwrap();
