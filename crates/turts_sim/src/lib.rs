@@ -1,5 +1,6 @@
 //! Authoritative headless world: fixed ticks, flat map, unit spawning, movement, command validation.
 
+pub(crate) mod boot_m3;
 pub mod bootstrap;
 pub mod command;
 pub mod economy;
@@ -86,7 +87,22 @@ pub fn spawn_synthetic_units(
         .get(&content_id)
         .cloned()
         .ok_or("synthetic unit type is absent from the installed catalog")?;
-    for (id, pos) in ids.iter().zip(positions) {
+    let capability_rows = positions
+        .iter()
+        .map(|position| {
+            let binding = boot_m3::resolve_spawn_capability_binding(
+                world,
+                &definition,
+                *position,
+                0,
+                None,
+            )
+            .map_err(|reason| format!("cannot bind synthetic unit capabilities: {reason:?}"))?;
+            Ok(boot_m3::install_capability_rows(&definition, binding))
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+    boot_m3::initialize_m3_resources(world);
+    for ((id, pos), rows) in ids.iter().zip(positions).zip(capability_rows) {
         world.spawn((
             UnitId(*id),
             world::UnitType(unit_type),
@@ -124,6 +140,7 @@ pub fn spawn_synthetic_units(
                 .0
                 .insert(*id, Vec::new());
         }
+        boot_m3::apply_capability_rows(world, *id, rows);
     }
     world.insert_resource(alloc);
     Ok(ids)

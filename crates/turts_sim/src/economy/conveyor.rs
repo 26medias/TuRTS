@@ -84,3 +84,6 @@ impl ItemTable {
         ItemIx::try_from(position.checked_add(1)?).ok()
     }
 }
+
+/// Install the Transport phase systems. Task 7 adds the phase behavior.
+pub(crate) fn install(_app: &mut bevy_app::App) {}

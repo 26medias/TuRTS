@@ -144,6 +144,12 @@ pub fn load_map(world: &mut World, origin: &PackageId, map: &MapDef) -> Result<(
             "direct map loading requires package catalog staging".into(),
         ));
     }
+    if !map.belts.is_empty() {
+        return Err(error(
+            "belts",
+            "direct map loading requires package catalog staging".into(),
+        ));
+    }
     world.insert_resource(allocator);
     world.insert_resource(MapBounds {
         size: Vec2::new(map.size.x, map.size.y),

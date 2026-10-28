@@ -253,6 +253,7 @@ pub(crate) struct SpawnWrite {
     pub inventory: Option<Inventory>,
     pub gatherer: bool,
     pub producer: bool,
+    pub capability_rows: crate::boot_m3::PreparedCapabilityRows,
 }
 
 pub(crate) struct Transaction<'w> {
@@ -598,6 +599,7 @@ impl Transaction<'_> {
                     .0
                     .insert(spawn.id, Vec::new());
             }
+            crate::boot_m3::apply_capability_rows(world, spawn.id, spawn.capability_rows);
             world
                 .resource_mut::<crate::economy::events::SpawnedThisTick>()
                 .0
