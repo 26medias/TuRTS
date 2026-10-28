@@ -9,8 +9,10 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-${ROOT}/target/m3-t16}"
+export CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0
 cd "$ROOT"
-OUT="$ROOT/target/t7"
+OUT="${M3_T7_OUT:-${ROOT}/target/m3-evidence/t16-builder/t7/run-$(date -u +%Y%m%dT%H%M%SZ)-$$}"
 DIST="$ROOT/crates/turts_client_web/dist"
 
 cargo build --release -p turts_server
@@ -23,7 +25,6 @@ for file in "$DIST"/*.wasm "$DIST"/*.js; do
     fi
 done
 
-rm -rf "$OUT"
 mkdir -p "$OUT/pack"
 # `turts-pack` writes `<dir>.tar` next to the directory, so pack a copy: `mods/` stays clean.
 cp -r mods/acme "$OUT/pack/acme"
@@ -48,10 +49,23 @@ cat > "$OUT/server.ron" <<EOF
 )
 EOF
 
-"$ROOT/target/release/turts_server" "$OUT/server.ron" --tick-log "$OUT/server-tick.log" \
+"$CARGO_TARGET_DIR/release/turts_server" "$OUT/server.ron" --tick-log "$OUT/server-tick.log" \
     > "$OUT/server.log" 2>&1 &
 SERVER_PID=$!
-trap 'kill "$SERVER_PID" 2>/dev/null || true' EXIT
+cleanup() {
+    local status=$?
+    trap - EXIT INT TERM
+    if [[ -n "${SERVER_PID:-}" ]] && kill -0 "$SERVER_PID" 2>/dev/null; then
+        kill "$SERVER_PID" 2>/dev/null || true
+    fi
+    if [[ -n "${SERVER_PID:-}" ]]; then
+        wait "$SERVER_PID" 2>/dev/null || true
+    fi
+    exit "$status"
+}
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 for _ in $(seq 1 100); do
     if curl -fsS "http://127.0.0.1:$HTTP_PORT/advertisement.json" > /dev/null 2>&1; then

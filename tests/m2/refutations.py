@@ -28,6 +28,9 @@ def run(command, cwd, build_dir):
     env = os.environ.copy()
     env["CARGO_TARGET_DIR"] = str(build_dir)
     env["CARGO_BUILD_JOBS"] = "2"
+    env["CARGO_PROFILE_DEV_DEBUG"] = "0"
+    env["CARGO_PROFILE_TEST_DEBUG"] = "0"
+    env["CARGO_INCREMENTAL"] = "0"
     env["RUST_BACKTRACE"] = "0"
     env["M2_SOURCE_COMMIT"] = subprocess.run(
         ["git", "-C", str(ROOT), "rev-parse", "HEAD"], check=True, text=True,
@@ -243,7 +246,7 @@ def pre_commands(case):
 
 def write_case_evidence(
     evidence_dir, case_id, baseline_hash, restored_hash, logs,
-    status="passed", planted_hash=None, detail=None, source_hashes=None,
+    status="passed", planted_hash=None, detail=None, source_hashes=None, plant_note=None,
 ):
     evidence_dir = Path(evidence_dir)
     evidence_dir.mkdir(parents=True, exist_ok=True)
@@ -258,6 +261,7 @@ def write_case_evidence(
         "source_sha256": source_hashes or {},
         "detail": detail,
         "logs": sorted(logs),
+        "plant_note": plant_note,
     }
     (evidence_dir / "case.json").write_text(json.dumps(manifest, indent=2) + "\n")
     return manifest
@@ -277,6 +281,20 @@ def apply_plant(original, case):
     return planted
 
 
+def source_set_hash(hashes):
+    """Keep the legacy direct-file digest; use a canonical map digest for grouped plants."""
+    if len(hashes) == 1:
+        return next(iter(hashes.values()))
+    return hashlib.sha256(json.dumps(hashes, sort_keys=True).encode()).hexdigest()
+
+
+def restore_sources_if_changed(scratch, originals):
+    for relative, original in originals.items():
+        path = Path(scratch) / relative
+        if not path.is_file() or path.read_bytes() != original:
+            path.write_bytes(original)
+
+
 def run_case(case, scratch, build_dir, evidence_dir):
     def execute(phase, logs):
         for index, command in enumerate(pre_commands(case), 1):
@@ -284,7 +302,7 @@ def run_case(case, scratch, build_dir, evidence_dir):
             logs[f"{phase}.precommand-{index}.log"] = result.stdout
             write_case_evidence(
                 evidence_dir, case["id"], baseline_hash, restored_hash, logs,
-                "running", planted_hash, f"{phase} prerequisite {index}", source_hashes,
+                "running", planted_hash, f"{phase} prerequisite {index}", source_hashes, case.get("plant_note"),
             )
             if result.returncode != 0:
                 raise RuntimeError(
@@ -294,19 +312,34 @@ def run_case(case, scratch, build_dir, evidence_dir):
         logs[f"{phase}.log"] = result.stdout
         write_case_evidence(
             evidence_dir, case["id"], baseline_hash, restored_hash, logs,
-            "running", planted_hash, phase, source_hashes,
+            "running", planted_hash, phase, source_hashes, case.get("plant_note"),
         )
         return result
 
-    path = scratch / case["plant_path"]
-    original = path.read_text()
-    baseline_hash = digest(path)
-    planted = apply_plant(original, case)
+    plants = case.get("plants") or [{
+        "path": case["plant_path"],
+        "anchor": case.get("anchor"),
+        "replacement": case.get("replacement"),
+        "replacements": case.get("replacements"),
+    }]
+    originals = {}
+    baseline_hashes = {}
+    for plant in plants:
+        relative = Path(plant["path"])
+        if relative.is_absolute() or ".." in relative.parts:
+            raise ValueError(f'{case["id"]}: plant path must stay inside source tree')
+        key = relative.as_posix()
+        if key in originals:
+            raise ValueError(f'{case["id"]}: source file listed more than once: {key}')
+        path = scratch / relative
+        originals[key] = path.read_bytes()
+        baseline_hashes[key] = digest(path)
+    baseline_hash = source_set_hash(baseline_hashes)
     planted_hash = None
     restored_hash = None
     logs = {}
-    detail = None
-    source_hashes = {case["plant_path"]: baseline_hash}
+    detail = case.get("plant_note")
+    source_hashes = dict(baseline_hashes)
     for relative in case.get("provenance_paths", []):
         provenance_path = Path(relative)
         if provenance_path.is_absolute() or ".." in provenance_path.parts:
@@ -316,25 +349,31 @@ def run_case(case, scratch, build_dir, evidence_dir):
         green = execute("baseline.green", logs)
         require_phase_result(case, "baseline.green", green)
 
-        path.write_text(planted)
-        planted_hash = digest(path)
+        for plant in plants:
+            relative = Path(plant["path"]).as_posix()
+            identified_plant = {**plant, "id": case["id"]}
+            (scratch / relative).write_text(apply_plant(originals[relative].decode("utf-8"), identified_plant))
+        planted_hashes = {relative: digest(scratch / relative) for relative in originals}
+        planted_hash = source_set_hash(planted_hashes)
         red = execute("plant.red", logs)
         semantic = require_phase_result(case, "plant.red", red)
         detail = f"semantic assertion: {semantic}"
         print(f'{case["id"]}: RED assertion={semantic!r}')
 
-        path.write_text(original)
-        restored_hash = digest(path)
+        restore_sources_if_changed(scratch, originals)
+        restored_hashes = {relative: digest(scratch / relative) for relative in originals}
+        restored_hash = source_set_hash(restored_hashes)
         if restored_hash != baseline_hash:
             raise RuntimeError(f'{case["id"]}: source restore hash differs: {baseline_hash} != {restored_hash}')
         restored = execute("restored.green", logs)
         require_phase_result(case, "restored.green", restored)
-    except Exception as exc:
-        path.write_text(original)
-        restored_hash = digest(path)
+    except BaseException as exc:
+        restore_sources_if_changed(scratch, originals)
+        restored_hashes = {relative: digest(scratch / relative) for relative in originals}
+        restored_hash = source_set_hash(restored_hashes)
         write_case_evidence(
             evidence_dir, case["id"], baseline_hash, restored_hash, logs,
-            "failed", planted_hash, str(exc), source_hashes,
+            "failed", planted_hash, str(exc), source_hashes, case.get("plant_note"),
         )
         raise
     else:
@@ -343,9 +382,11 @@ def run_case(case, scratch, build_dir, evidence_dir):
                 raise RuntimeError(f'{case["id"]}: provenance source changed during case: {relative}')
         write_case_evidence(
             evidence_dir, case["id"], baseline_hash, restored_hash, logs,
-            "passed", planted_hash, detail, source_hashes,
+            "passed", planted_hash, detail, source_hashes, case.get("plant_note"),
         )
         print(f'{case["id"]}: RESTORED GREEN source_sha256={restored_hash}')
+    finally:
+        restore_sources_if_changed(scratch, originals)
 
 
 def main():

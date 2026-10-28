@@ -9,6 +9,7 @@ pub mod logs;
 pub mod oracle;
 
 use std::fs;
+use std::io;
 use std::net::{SocketAddr, TcpListener};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
@@ -34,13 +35,37 @@ pub struct ServerProc {
     pub tick_log: PathBuf,
     pub stats: PathBuf,
     pub economy_log: Option<PathBuf>,
+    evidence_dir: Option<PathBuf>,
 }
 
 impl Drop for ServerProc {
     fn drop(&mut self) {
         let _ = self.child.kill();
         let _ = self.child.wait();
+        if let Some(evidence_dir) = &self.evidence_dir
+            && let Err(error) = copy_server_directory(&self.dir, evidence_dir)
+        {
+            eprintln!(
+                "failed to retain spawned server directory {}: {error}",
+                self.dir.display()
+            );
+        }
     }
+}
+
+fn copy_server_directory(source: &Path, destination: &Path) -> io::Result<()> {
+    fs::create_dir_all(destination)?;
+    for entry in fs::read_dir(source)? {
+        let entry = entry?;
+        let source_path = entry.path();
+        let destination_path = destination.join(entry.file_name());
+        if entry.file_type()?.is_dir() {
+            copy_server_directory(&source_path, &destination_path)?;
+        } else {
+            fs::copy(source_path, destination_path)?;
+        }
+    }
+    Ok(())
 }
 
 /// A free local TCP port: bind port 0, read the port, drop the socket.
@@ -145,9 +170,26 @@ pub fn expect_server_boot_failure(package_tar: &Path) -> String {
 }
 
 pub fn spawn_server(package_tar: &Path, extra: &[&str]) -> ServerProc {
+    let evidence_dir = std::env::var_os("TURTS_SERVER_EVIDENCE_DIR").map(PathBuf::from);
+    spawn_server_with_evidence(package_tar, extra, evidence_dir)
+}
+
+pub fn spawn_server_with_evidence(
+    package_tar: &Path,
+    extra: &[&str],
+    evidence_dir: Option<PathBuf>,
+) -> ServerProc {
     static COUNTER: AtomicU32 = AtomicU32::new(0);
     let id = COUNTER.fetch_add(1, Ordering::SeqCst);
     let dir = test_dir(&format!("server_{}_{id}", std::process::id()));
+    if let Some(evidence_dir) = &evidence_dir {
+        fs::create_dir_all(evidence_dir).expect("server evidence directory is created");
+        fs::write(
+            evidence_dir.join("server-source-directory.txt"),
+            format!("{}\n", dir.display()),
+        )
+        .expect("the spawned server source directory is recorded");
+    }
     let [http_port, ws_port] = free_ports::<2>();
     let http_listen = SocketAddr::from(([127, 0, 0, 1], http_port));
     let ws_listen = SocketAddr::from(([127, 0, 0, 1], ws_port));
@@ -188,6 +230,7 @@ pub fn spawn_server(package_tar: &Path, extra: &[&str]) -> ServerProc {
         tick_log,
         stats,
         economy_log,
+        evidence_dir,
     };
     server.wait_until_ready();
     server

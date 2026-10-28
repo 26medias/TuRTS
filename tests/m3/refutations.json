@@ -1,0 +1,401 @@
+[
+  {
+    "id": "C1-capacity-compound-bypass",
+    "kind": "product",
+    "plants": [
+      {
+        "path": "crates/turts_sim/src/economy/extractor.rs",
+        "anchor": "            let amount = budget\n                .min(node.remaining)\n                .min(u64::try_from(free).unwrap_or(u64::MAX));",
+        "replacement": "            let amount = budget.min(node.remaining);"
+      },
+      {
+        "path": "crates/turts_sim/src/economy/transaction_m3.rs",
+        "replacements": [
+          {
+            "anchor": "    if used\n        .checked_add(u128::from(amount))\n        .ok_or(RejectReason::ArithmeticOverflow)?\n        > u128::from(destination.capacity)\n    {\n        return Err(RejectReason::RefundDestinationFull);\n    }",
+            "replacement": "    if false {\n        return Err(RejectReason::RefundDestinationFull);\n    }"
+          },
+          {
+            "anchor": "            if self.inventory_used(endpoint)? > u128::from(inventory.capacity) {",
+            "replacement": "            if false {"
+          }
+        ]
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_pack",
+      "--test",
+      "forge_cases",
+      "c1_belt_full_drill_stops",
+      "--",
+      "--exact",
+      "--nocapture"
+    ],
+    "expected_selected": 1,
+    "expected_failure": "RES:"
+  },
+  {
+    "id": "C2-blocked-output-capacity",
+    "kind": "product",
+    "plant_path": "crates/turts_sim/src/economy/machine.rs",
+    "anchor": "            if job.stage == JobStage::OutputBlocked {\n                if credit_outputs(tx, machine, &recipe_id)? {",
+    "replacement": "            if job.stage == JobStage::OutputBlocked {\n                transaction::charge_costs(tx, &job.charged)?;\n                if credit_outputs(tx, machine, &recipe_id)? {",
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_pack",
+      "--test",
+      "forge_cases",
+      "c2_press_output_blocked_holds_charge_until_one_output_fits",
+      "--",
+      "--exact",
+      "--nocapture"
+    ],
+    "expected_selected": 1,
+    "expected_failure": "BAL-ore"
+  },
+  {
+    "id": "C3-belt-overwrite",
+    "kind": "product",
+    "plant_path": "crates/turts_sim/src/economy/conveyor.rs",
+    "anchor": "            if line.slots[index] != 0 && line.slots[index + 1] == 0 {\n                line.slots.swap(index, index + 1);\n            }",
+    "replacement": "            if line.slots[index] != 0 {\n                line.slots[index + 1] = line.slots[index];\n                line.slots[index] = 0;\n            }",
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_pack",
+      "--test",
+      "forge_cases",
+      "c3_backpressure_chain_stops_in_order",
+      "--",
+      "--exact",
+      "--nocapture"
+    ],
+    "expected_selected": 1,
+    "expected_failure": "BAL-ore"
+  },
+  {
+    "id": "C4-duplicate-refund",
+    "kind": "product",
+    "plant_path": "crates/turts_sim/src/economy/machine.rs",
+    "anchor": "        transaction::refund_charged(\n            tx,\n            &job.charged,\n            u64::from(ratio.numerator),\n            u64::from(ratio.denominator),\n        )?;",
+    "replacement": "        transaction::refund_charged(\n            tx,\n            &job.charged,\n            u64::from(ratio.numerator),\n            u64::from(ratio.denominator),\n        )?;\n        transaction::refund_charged(\n            tx,\n            &job.charged,\n            u64::from(ratio.numerator),\n            u64::from(ratio.denominator),\n        )?;",
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_pack",
+      "--test",
+      "forge_cases",
+      "c4_cancel_running_press_job_refunds_once",
+      "--",
+      "--exact",
+      "--nocapture"
+    ],
+    "expected_selected": 1,
+    "expected_failure": "BAL-ore"
+  },
+  {
+    "id": "C5-outputblocked-refund",
+    "kind": "product",
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_pack",
+      "--test",
+      "forge_cases",
+      "c5_cancel_output_blocked_no_output_credit",
+      "--",
+      "--exact",
+      "--nocapture"
+    ],
+    "expected_selected": 1,
+    "expected_failure": "BAL-shell",
+    "plants": [
+      {
+        "path": "crates/turts_sim/src/economy/machine.rs",
+        "replacements": [
+          {
+            "anchor": "        let ratio = match job.stage {\n            JobStage::Running => recipe.cancel_refunds.running,\n            JobStage::OutputBlocked => recipe.cancel_refunds.output_blocked,\n            JobStage::Queued => return Err(RejectReason::IntegrityViolation),\n        };",
+            "replacement": "        let ratio = match job.stage {\n            JobStage::Running => recipe.cancel_refunds.running,\n            JobStage::OutputBlocked => recipe.cancel_refunds.output_blocked,\n            JobStage::Queued => return Err(RejectReason::IntegrityViolation),\n        };\n        let recipe = recipe.clone();\n        if job.stage == JobStage::OutputBlocked {\n            let endpoint = Endpoint::Output(machine);\n            for output in &recipe.outputs {\n                let account = tx.account(endpoint, &output.item);\n                tx.stage_account(endpoint, output.item.clone(), Account {\n                    on_hand: account.on_hand.checked_add(output.amount).ok_or(RejectReason::ArithmeticOverflow)?,\n                    ..account\n                });\n            }\n        }"
+          }
+        ]
+      },
+      {
+        "path": "crates/turts_sim/src/economy/transaction_m3.rs",
+        "anchor": "            if self.inventory_used(endpoint)? > u128::from(inventory.capacity) {",
+        "replacement": "            if false {"
+      }
+    ],
+    "plant_note": "The forge output inventory is full in this C5 scenario. A direct wrong credit is rejected by normal transaction capacity preflight before the balance oracle can inspect it. This throwaway semantic plant therefore adds the recipe output directly and bypasses only that preflight guard; the independent source-RON oracle then reports BAL-shell. Both source files are restored byte-for-byte after the red run. The production capacity guards remain unchanged."
+  },
+  {
+    "id": "C6-research-running-refund",
+    "kind": "product",
+    "plant_path": "crates/turts_sim/src/bootstrap.rs",
+    "anchor": "        catalog: InstalledCatalog(catalog),",
+    "replacement": "        catalog: InstalledCatalog({\n            let mut catalog = catalog;\n            for technology in catalog.technologies.values_mut() {\n                technology.cancel_refunds.running = turts_mod_api::schema::RefundRatio {\n                    numerator: 1,\n                    denominator: 1,\n                };\n            }\n            catalog\n        }),",
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_pack",
+      "--test",
+      "forge_cases",
+      "c6_cancel_running_research_uses_source_ratio",
+      "--",
+      "--exact",
+      "--nocapture"
+    ],
+    "expected_selected": 1,
+    "expected_failure": "REFUND",
+    "plant_note": "SPEC 15.3 bootstrap fault: install every technology running refund as 1/1 in the staged sim catalog. The C6 source RON remains 1/2 and the independent refund oracle reads that authored ratio."
+  },
+  {
+    "id": "C7-reservation-leak",
+    "kind": "product",
+    "plant_path": "crates/turts_sim/src/economy/research.rs",
+    "anchor": "            transaction::release_reservation(tx, reservation)?;",
+    "replacement": "            // refutation: reservation is intentionally leaked",
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_pack",
+      "--test",
+      "forge_cases",
+      "c7_cancel_queued_releases_reservation",
+      "--",
+      "--exact",
+      "--nocapture"
+    ],
+    "expected_selected": 1,
+    "expected_failure": "RES"
+  },
+  {
+    "id": "C8-disabled-inserter",
+    "kind": "product",
+    "plant_path": "crates/turts_sim/src/economy/inserter.rs",
+    "anchor": "if world.resource::<Disabled>().0.contains(&unit) {",
+    "replacement": "if false {",
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_pack",
+      "--test",
+      "forge_cases",
+      "c8_pause_and_resume_freezes_capability_progress",
+      "--",
+      "--exact",
+      "--nocapture"
+    ],
+    "expected_selected": 1,
+    "expected_failure": "assertion `left == right` failed"
+  },
+  {
+    "id": "C9-destroyed-belt-content-omitted",
+    "kind": "product",
+    "plant_path": "crates/turts_sim/src/economy/transaction_m3.rs",
+    "anchor": "        items.extend(destroyed.into_iter().map(|(item, amount)| DestroyedLine {\n            location: DestroyedLocation::BeltPiece(unit),\n            item,\n            amount,\n        }));",
+    "replacement": "        let _unreported_destroyed = destroyed;",
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_pack",
+      "--test",
+      "forge_cases",
+      "c9_remove_piece_thirteen_lists_its_contents_as_destroyed",
+      "--",
+      "--exact",
+      "--nocapture"
+    ],
+    "expected_selected": 1,
+    "expected_failure": "BAL-ore"
+  },
+  {
+    "id": "C10-inserter-state-survives-despawn",
+    "kind": "product",
+    "plant_path": "crates/turts_sim/src/economy/transaction.rs",
+    "anchor": "                ledger.inventories.remove(&removal.unit);",
+    "replacement": "                // refutation: retain the hand INVENTORY row after despawn",
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_pack",
+      "--test",
+      "forge_cases",
+      "c10_remove_inserter_mid_swing_destroys_hand_and_clears_endpoint",
+      "--",
+      "--exact",
+      "--nocapture"
+    ],
+    "expected_selected": 1,
+    "expected_failure": "DANGLING",
+    "plant_note": "SPEC 15.3 hand-row fault: retain the removed inserter main INVENTORY ledger row. The C10 scenario carries one item in that hand at despawn; the raw report exporter includes the orphan row so DANGLING observes it."
+  },
+  {
+    "id": "C11-node-replenished-after-extract",
+    "kind": "product",
+    "plant_path": "crates/turts_sim/src/economy/transaction_m3.rs",
+    "anchor": "    node.remaining = node\n        .remaining\n        .checked_sub(amount)\n        .ok_or(RejectReason::NodeDepleted)?;\n    tx.stage_node(node);",
+    "replacement": "    node.remaining = node\n        .remaining\n        .checked_sub(amount)\n        .ok_or(RejectReason::NodeDepleted)?;\n    if node.remaining == 0 {\n        node.remaining = 21;\n    }\n    tx.stage_node(node);",
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_pack",
+      "--test",
+      "forge_cases",
+      "c11_node_depletion_stops_at_zero_and_keeps_one_ore",
+      "--",
+      "--exact",
+      "--nocapture"
+    ],
+    "expected_selected": 1,
+    "expected_failure": "BAL-ore",
+    "plant_note": "SPEC 15.3 depletion-only fault: the C11 authored map starts with 21 ore, and the plant restores that map value only when remaining reaches zero. It does not refill after each extraction."
+  },
+  {
+    "id": "C12-inserter-order-reversed",
+    "kind": "product",
+    "plant_path": "crates/turts_sim/src/economy/inserter.rs",
+    "anchor": "    units.sort_unstable();",
+    "replacement": "    units.sort_unstable_by(|a, b| b.cmp(a));",
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_pack",
+      "--test",
+      "forge_cases",
+      "c12_shared_source_lowest_unit_id_wins",
+      "--",
+      "--exact",
+      "--nocapture"
+    ],
+    "expected_selected": 1,
+    "expected_failure": "lowest unit id 5 must take"
+  },
+  {
+    "id": "C13-ammo-debit-saturates",
+    "kind": "product",
+    "plant_path": "crates/turts_sim/src/economy/combat.rs",
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_pack",
+      "--test",
+      "forge_cases",
+      "c13_turret_out_of_ammo_never_fires",
+      "--",
+      "--exact",
+      "--nocapture"
+    ],
+    "expected_selected": 1,
+    "expected_failure": "SHOT",
+    "replacements": [
+      {
+        "anchor": "        if available < *per_shot {\n            state.status = WeaponStatus::OutOfAmmo;\n            tx.stage_weapon(weapon, state.clone());\n            return Ok(());\n        }",
+        "replacement": "        if false {\n            state.status = WeaponStatus::OutOfAmmo;\n            tx.stage_weapon(weapon, state.clone());\n            return Ok(());\n        }"
+      },
+      {
+        "anchor": "        account.on_hand = account\n            .on_hand\n            .checked_sub(*per_shot)\n            .ok_or(RejectReason::IntegrityViolation)?;",
+        "replacement": "        account.on_hand = account.on_hand.saturating_sub(*per_shot);"
+      }
+    ]
+  },
+  {
+    "id": "C14-health-zero-does-not-destroy",
+    "kind": "product",
+    "plant_path": "crates/turts_sim/src/economy/combat.rs",
+    "anchor": "    if remaining == 0 {",
+    "replacement": "    if false && remaining == 0 {",
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_pack",
+      "--test",
+      "forge_cases",
+      "c14_overkill_destroys_once_and_retargets",
+      "--",
+      "--exact",
+      "--nocapture"
+    ],
+    "expected_selected": 1,
+    "expected_failure": "DMG"
+  },
+  {
+    "id": "C15-combat-before-production",
+    "kind": "product",
+    "plant_path": "crates/turts_sim/src/plugin.rs",
+    "anchor": "                    SimSet::Production,\n                    SimSet::Combat,",
+    "replacement": "                    SimSet::Combat,\n                    SimSet::Production,",
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_pack",
+      "--test",
+      "forge_cases",
+      "c15_research_completion_tick_shot_uses_new_damage",
+      "--",
+      "--exact",
+      "--nocapture"
+    ],
+    "expected_selected": 1,
+    "expected_failure": "DMG"
+  },
+  {
+    "id": "C16-double-range",
+    "kind": "product",
+    "plant_path": "crates/turts_sim/src/economy/combat.rs",
+    "anchor": "(distance_squared <= range_squared).then_some((distance_squared, id))",
+    "replacement": "(distance_squared <= 4.0 * range_squared).then_some((distance_squared, id))",
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_pack",
+      "--test",
+      "forge_cases",
+      "c16_target_at_twelve_stays_out_of_range_and_keeps_ammo",
+      "--",
+      "--exact",
+      "--nocapture"
+    ],
+    "expected_selected": 1,
+    "expected_failure": "assertion failed"
+  },
+  {
+    "id": "C17-ownership-bypass",
+    "kind": "product",
+    "plant_path": "crates/turts_sim/src/command_m3.rs",
+    "anchor": "    if owner != slot {",
+    "replacement": "    if false {",
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_pack",
+      "--test",
+      "forge_cases",
+      "c17_ownership_and_policy_rejections_are_exact",
+      "--",
+      "--exact",
+      "--nocapture"
+    ],
+    "expected_selected": 1,
+    "expected_failure": "called `Result::unwrap_err()` on an `Ok` value"
+  }
+]

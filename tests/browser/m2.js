@@ -827,31 +827,30 @@ async function runBaseRecoveryProof(page, scene, worker, node, outDir, logs, res
         "same-kind re-arm while the first response is held must anchor to the current coherent applied tick");
     assert.equal(lastAppliedSequence(releaseConfig), lastAppliedSequence(heldArtifact),
         "reconfiguration and held Snapshot application must not allocate a command sequence");
-    const released = releaseConfig.debug.ingest.held_snapshots === 0 && !releaseConfig.debug.ingest.outstanding_request
+    const recoveryObserved = releaseConfig.debug.ingest.held_snapshots === 0 && !releaseConfig.debug.ingest.outstanding_request
         ? releaseConfig
         : await waitForSnapshot(page, (snapshot) =>
             snapshot.debug?.ingest?.held_snapshots === 0 && snapshot.debug.ingest.outstanding_request === false &&
             snapshot.debug.replicated_world?.tick > heldAppliedTick,
-        5000, "normal release and apply of the pre-existing held Snapshot and its successor");
-    assert.equal(released.debug.ingest.resync_requests_sent, requestsDuringHold + 1,
-        "exactly one successor ResyncRequest may follow the released outstanding response");
-    assert.equal(released.debug.ingest.successor_requests, 1,
+        5000, "recovered replica after releasing the pre-existing held Snapshot");
+    assert.equal(recoveryObserved.debug.ingest.successor_requests, 1,
         "one successor request must be observed only after the prior held response was released");
-    assert.equal(released.debug.ingest.max_outstanding_requests, 1,
+    assert.equal(recoveryObserved.debug.ingest.max_outstanding_requests, 1,
         "the real browser Replica must never have more than one outstanding request");
-    const firstDropCount = released.debug.dropped_world_changes.filter((record) => record.kind === "extraction").length;
-    assert(firstDropCount >= 1);
-    assert.equal(released.debug.ingest.resync_active, false, "coherent held response must close recovery");
-    const firstAuditRecords = await waitForAuditTick(auditPath, released.debug.replicated_world.tick);
-    const firstAuditComparison = compareBrowserSnapshotToAudit(released, firstAuditRecords, 0, "extraction-first-recovery");
-    const releasedWorker = released.debug.replicated_world.units.find((unit) => unit.unit_id === worker.unit_id);
+    const firstDropCount = recoveryObserved.debug.dropped_world_changes.filter((record) =>
+        record.kind === "extraction" && record.arm_tick === originalArm.arm_tick).length;
+    assert.equal(firstDropCount, 1, "the first configured extraction loss must occur exactly once");
+    assert.equal(recoveryObserved.debug.ingest.resync_active, false, "coherent held response must close recovery");
+    const recoveryAuditRecords = await waitForAuditTick(auditPath, recoveryObserved.debug.replicated_world.tick);
+    const recoveryObservationAudit = compareBrowserSnapshotToAudit(recoveryObserved, recoveryAuditRecords, 0, "extraction-recovery-observation");
+    const releasedWorker = recoveryObserved.debug.replicated_world.units.find((unit) => unit.unit_id === worker.unit_id);
     assert(releasedWorker, "released full Snapshot omitted the active Harvester");
     assert(Math.hypot(releasedWorker.pos[0] - initialUnit.pos[0], releasedWorker.pos[1] - initialUnit.pos[1]) > 0.25,
         "released Snapshot did not converge the Harvester's moved position");
-    const releasedTexts = visibleTexts(released);
+    const releasedTexts = visibleTexts(recoveryObserved);
     assert(releasedTexts.some((text) => /^Ore: [1-9]\d* on hand/.test(text)),
         "released full Snapshot did not converge the Harvester inventory");
-    const releasedNode = released.debug.replicated_world.nodes.find((item) => item.id === node.node_id);
+    const releasedNode = recoveryObserved.debug.replicated_world.nodes.find((item) => item.id === node.node_id);
     assert(releasedNode && releasedNode.remaining < initialNode.remaining,
         "released full Snapshot did not converge the actual node depletion");
 
@@ -870,10 +869,20 @@ async function runBaseRecoveryProof(page, scene, worker, node, outDir, logs, res
     const redrop = redropped.debug.dropped_world_changes.find((record) => record.kind === "extraction" && record.arm_tick === rearmTick);
     assert(redrop && redrop.dropped_tick > redrop.arm_tick, "re-armed extraction must drop a later tick exactly once");
     const secondLossAudit = await assertLossAtAuditTick("extraction", redrop, auditPath, 0);
+    assert.notEqual(rearmTick, originalArm.arm_tick, "the re-armed extraction must use a distinct arm tick");
     const rearmRecovered = await waitForSnapshot(page, (snapshot) => snapshot.debug?.ingest?.resync_active === false &&
         snapshot.debug.ingest.held_snapshots === 0 && snapshot.debug.ingest.outstanding_request === false &&
         snapshot.debug.replicated_world.tick > redrop.dropped_tick,
     10000, "re-armed extraction loss recovers through its own successor Snapshot");
+    const extractionDrops = rearmRecovered.debug.dropped_world_changes.filter((record) => record.kind === "extraction");
+    assert.equal(extractionDrops.length, 2, "the scenario must observe exactly the original and re-armed extraction loss");
+    assert.deepEqual(extractionDrops.map((record) => record.arm_tick), [originalArm.arm_tick, rearmTick]);
+    assert.equal(rearmRecovered.debug.ingest.resync_requests_sent, requestsDuringHold + 2,
+        "the held response successor and the later re-armed loss must each issue exactly one request");
+    assert.equal(rearmRecovered.debug.ingest.successor_requests, 1,
+        "the first held response must cause exactly one successor request");
+    assert.equal(rearmRecovered.debug.ingest.max_outstanding_requests, 1,
+        "the real browser Replica must never have more than one outstanding request");
     const secondAuditRecords = await waitForAuditTick(auditPath, rearmRecovered.debug.replicated_world.tick);
     const secondAuditComparison = compareBrowserSnapshotToAudit(rearmRecovered, secondAuditRecords, 0, "extraction-rearm-recovery");
     result.stages.recovery = {
@@ -884,15 +893,16 @@ async function runBaseRecoveryProof(page, scene, worker, node, outDir, logs, res
         observed_overflows: heldArtifact.debug.ingest.buffer_overflows,
         outstanding_request_during_hold: heldArtifact.debug.ingest.outstanding_request,
         requests_during_hold: requestsDuringHold,
-        requests_after_first_response: released.debug.ingest.resync_requests_sent,
-        successor_requests: released.debug.ingest.successor_requests,
-        max_outstanding_requests: released.debug.ingest.max_outstanding_requests,
-        released_snapshot_tick: released.debug.replicated_world.tick,
+        requests_at_recovery_observation: recoveryObserved.debug.ingest.resync_requests_sent,
+        requests_after_both_recoveries: rearmRecovered.debug.ingest.resync_requests_sent,
+        successor_requests: rearmRecovered.debug.ingest.successor_requests,
+        max_outstanding_requests: rearmRecovered.debug.ingest.max_outstanding_requests,
+        recovery_observation_tick: recoveryObserved.debug.replicated_world.tick,
         rearm_tick: rearmTick,
         rearmed_drop: redrop,
         first_loss_audit_tick: firstLossAudit.after.economy.tick,
         rearm_loss_audit_tick: secondLossAudit.after.economy.tick,
-        first_audit_comparison: firstAuditComparison,
+        recovery_observation_audit_comparison: recoveryObservationAudit,
         rearm_audit_comparison: secondAuditComparison,
         audit_log_scope: "private server-side all-slot audit; browser retained only permitted public units/nodes and owner-0 economy",
         raw_dto_privacy_evidence: {
@@ -916,8 +926,8 @@ async function runAdditionalPackageSmoke(page, pageAddress, packageName, joined,
     const beforeSequence = lastAppliedSequence(joined);
     await clickRenderedEntity(page, joined.scene, owner0Mesh);
     const selected = await waitForSnapshot(page, (snapshot) =>
-        snapshot.debug?.selection === owner0Unit.unit_id && selectedUnitText(snapshot.ui, owner0Unit),
-    5000, `${packageName} actual selected unit Text`);
+        snapshot.debug?.selection === owner0Unit.unit_id,
+    5000, `${packageName} actual selected unit`);
     const selectedArtifact = await captureStage(page, outDir, "02-owner0-selection", logs);
     const selectedText = selectedUnitText(selectedArtifact.ui, owner0Unit);
     assert(selectedText, "actual rendered unit selection was not visible");

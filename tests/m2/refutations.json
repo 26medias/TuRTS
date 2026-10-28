@@ -79,9 +79,6 @@
   },
   {
     "id": "E4-local-capacity",
-    "plant_path": "crates/turts_sim/src/economy/transaction.rs",
-    "anchor": "        if new_used > u128::from(tx.inventory(to)?.capacity) {",
-    "replacement": "        if false {",
     "command": [
       "cargo",
       "test",
@@ -96,7 +93,20 @@
     ],
     "expected_failure": "result.is_err()",
     "restore_check": "sha256(source)==baseline and selected test is green",
-    "kind": "duplicate-E6-accounting-self-test"
+    "kind": "duplicate-E6-accounting-self-test",
+    "plants": [
+      {
+        "path": "crates/turts_sim/src/economy/transaction.rs",
+        "anchor": "        if new_used > u128::from(tx.inventory_legacy(to)?.capacity) {",
+        "replacement": "        if false {"
+      },
+      {
+        "path": "crates/turts_sim/src/economy/transaction_m3.rs",
+        "anchor": "            if self.inventory_used(endpoint)? > u128::from(inventory.capacity) {",
+        "replacement": "            if false {"
+      }
+    ],
+    "plant_note": "Compound isolated capacity-loss plant: bypass the legacy transfer guard and the generic commit preflight capacity guard together. Each is independently redundant; both correct production guards remain unchanged. The E4 single-guard RED attempt stayed GREEN because commit preflight correctly rejected the staged over-capacity transfer."
   },
   {
     "id": "E5-conversion-cargo-separation",
@@ -281,9 +291,6 @@
   },
   {
     "id": "E6-capacity-bypass",
-    "plant_path": "crates/turts_sim/src/economy/transaction.rs",
-    "anchor": "        if new_used > u128::from(tx.inventory(to)?.capacity) {",
-    "replacement": "        if false {",
     "command": [
       "cargo",
       "test",
@@ -297,7 +304,20 @@
       "--nocapture"
     ],
     "expected_failure": "result.is_err()",
-    "restore_check": "sha256(source)==baseline and selected test is green"
+    "restore_check": "sha256(source)==baseline and selected test is green",
+    "plants": [
+      {
+        "path": "crates/turts_sim/src/economy/transaction.rs",
+        "anchor": "        if new_used > u128::from(tx.inventory_legacy(to)?.capacity) {",
+        "replacement": "        if false {"
+      },
+      {
+        "path": "crates/turts_sim/src/economy/transaction_m3.rs",
+        "anchor": "            if self.inventory_used(endpoint)? > u128::from(inventory.capacity) {",
+        "replacement": "            if false {"
+      }
+    ],
+    "plant_note": "Compound isolated capacity-loss plant: bypass the legacy transfer guard and the generic commit preflight capacity guard together. Each is independently redundant; both correct production guards remain unchanged. The E4 single-guard RED attempt stayed GREEN because commit preflight correctly rejected the staged over-capacity transfer."
   },
   {
     "id": "E6-self-store",

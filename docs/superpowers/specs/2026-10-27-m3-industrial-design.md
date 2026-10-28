@@ -690,6 +690,13 @@ missing inventory (`transaction.rs:419-423`). In M3 code paths, a write to a mis
 | C16 | compare distance to `2 * range` |
 | C17 | skip the ownership check in `Remove` and `SetEnabled` |
 
+C5 observability note: the scenario's OutputBlocked press has a full output inventory. A simple
+call to the normal output-credit helper is rejected by capacity preflight before the independent
+oracle can observe the bad output. The registered throwaway C5 plant therefore adds the recipe
+output during cancellation and bypasses only that preflight guard. The oracle reports `BAL-shell`
+for the unaccounted stock increase. The runner restores both source files byte-for-byte. The
+production capacity guards remain unchanged.
+
 Register all plants in `tests/m3/refutations.json` with the M2 runner pattern
 (`tests/m2/refutations.py`). Each entry carries the semantic failure text of its red check. A
 plant that the sweep cannot turn red is a defect in the instrument, not a reason to drop the plant.

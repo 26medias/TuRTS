@@ -8,8 +8,12 @@ jobs:
     runs-on: ubuntu-latest
     env:
       CARGO_BUILD_JOBS: 2
-      TURTS_REFUTATION_EVIDENCE_DIR: ${{ github.workspace }}/target/m2-refutations/native
-      TURTS_REFUTATION_BUILD_ROOT: ${{ github.workspace }}/target/m2-refutations/native-build
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target/m3-t16
+      CARGO_PROFILE_DEV_DEBUG: 0
+      CARGO_PROFILE_TEST_DEBUG: 0
+      CARGO_INCREMENTAL: 0
+      TURTS_REFUTATION_EVIDENCE_DIR: ${{ github.workspace }}/target/m3-evidence/t16-builder/refutations/native
+      TURTS_REFUTATION_BUILD_ROOT: ${{ github.workspace }}/target/m3-t16/refutations/native-build
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -29,9 +33,13 @@ jobs:
         run: cargo test --workspace --locked
       - name: T1 dependency boundary
         run: bash scripts/boundary.sh
+      - name: Python refutation harness tests
+        run: python3 tests/m2/test_refutations.py
       - name: M2 native-only semantic refutations
         run: bash scripts/m2-refutations.sh --case ci-native
-      - name: Acceptance (process tests, release, serial)
+      - name: M3 semantic refutations (all 17 plants)
+        run: bash scripts/m3-refutations.sh --case all
+      - name: Acceptance (M2 and M3 process tests, release, serial)
         run: bash scripts/acceptance.sh
       - name: Upload native and acceptance diagnostics
         if: ${{ always() }}
@@ -45,21 +53,25 @@ jobs:
             target/acceptance/**
             target/task15-evidence/**
             target/m2-public-proof/**
-            target/tmp/**
+            target/m3-evidence/t16-builder/**
   # T7 and M2 browser proof need a real browser process, Trunk, wasm and a
   # software Vulkan implementation; hosted CI does not require an NVIDIA GPU.
   browser:
     runs-on: ubuntu-latest
     env:
       CARGO_BUILD_JOBS: 2
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target/m3-t16
+      CARGO_PROFILE_DEV_DEBUG: 0
+      CARGO_PROFILE_TEST_DEBUG: 0
+      CARGO_INCREMENTAL: 0
       M2_ARTIFACT_ROOT: ${{ github.workspace }}/target/m2-browser/runs
-      M2_CARGO_TARGET_DIR: ${{ github.workspace }}/target
+      M2_CARGO_TARGET_DIR: ${{ github.workspace }}/target/m3-t16
       M2_BUILD_JOBS: "2"
       M2_HEADLESS: "false"
       M2_CHROME_ARGS_JSON: '["--enable-gpu","--use-angle=vulkan","--enable-features=Vulkan","--enable-unsafe-webgpu"]'
       M2_IGNORE_DEFAULT_ARGS_JSON: '["--enable-unsafe-swiftshader"]'
-      TURTS_REFUTATION_EVIDENCE_DIR: ${{ github.workspace }}/target/m2-refutations/browser
-      TURTS_REFUTATION_BUILD_ROOT: ${{ github.workspace }}/target/m2-refutations/browser-build
+      TURTS_REFUTATION_EVIDENCE_DIR: ${{ github.workspace }}/target/m3-evidence/t16-builder/refutations/browser
+      TURTS_REFUTATION_BUILD_ROOT: ${{ github.workspace }}/target/m3-t16/refutations/browser-build
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -102,6 +114,12 @@ jobs:
         run: bash scripts/t7.sh
       - name: M2 browser proof (base, haul, acme, cedar)
         run: bash scripts/m2-browser.sh
+      - name: M3 browser controls (F10, private Xvfb/Vulkan)
+        env:
+          M2_HEADLESS: "false"
+          M2_CHROME_ARGS_JSON: '["--enable-gpu","--use-angle=vulkan","--enable-features=Vulkan","--enable-unsafe-webgpu"]'
+          M2_IGNORE_DEFAULT_ARGS_JSON: '["--enable-unsafe-swiftshader"]'
+        run: bash scripts/m3-browser.sh
       - name: M2 browser-only semantic refutations
         run: bash scripts/m2-refutations.sh --case ci-browser
       - name: Upload browser, T7, and refutation diagnostics
@@ -116,7 +134,7 @@ jobs:
             target/m2-refutations/**
             target/t7/**
             target/task16-evidence/**
-            target/tmp/**
+            target/m3-evidence/t16-builder/**
   agents:
     runs-on: ubuntu-latest
     steps:

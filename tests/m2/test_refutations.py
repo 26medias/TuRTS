@@ -2,15 +2,40 @@
 """Focused tests for the M2 semantic refutation runner."""
 import importlib.util
 import json
+import os
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
+import subprocess
 
 MODULE_PATH = Path(__file__).with_name("refutations.py")
 spec = importlib.util.spec_from_file_location("m2_refutations", MODULE_PATH)
 refutations = importlib.util.module_from_spec(spec)
 assert spec.loader is not None
 spec.loader.exec_module(refutations)
+M3_MODULE_PATH = Path(__file__).parents[1] / "m3" / "refutations.py"
+m3_spec = importlib.util.spec_from_file_location("m3_refutations", M3_MODULE_PATH)
+m3_refutations = importlib.util.module_from_spec(m3_spec)
+assert m3_spec.loader is not None
+m3_spec.loader.exec_module(m3_refutations)
+
+
+def browser_result(prefix, case_id):
+    summary = {
+        "selected_count": 1,
+        "completed_count": 1,
+        "passed_count": 1,
+        "semantic_failed_count": 0,
+        "infrastructure_failed_count": 0,
+        "timeout_count": 0,
+    }
+    output = "\n".join([
+        f"{prefix}_CASE_START {case_id}",
+        f"{prefix}_CASE_PASS {case_id}",
+        f"{prefix}_CASE_SUMMARY {json.dumps(summary, separators=(",", ":"))}",
+    ]) + "\n"
+    return subprocess.CompletedProcess(["fake"], 0, stdout=output, stderr="")
 
 
 class RefutationRunnerTests(unittest.TestCase):
@@ -205,6 +230,7 @@ class RefutationRunnerTests(unittest.TestCase):
             )
             manifest = refutations.json.loads((evidence / "case.json").read_text())
             self.assertEqual(manifest["status"], "passed")
+            self.assertEqual(manifest["baseline_sha256"], refutations.digest(source))
             self.assertEqual(manifest["baseline_sha256"], manifest["restored_sha256"])
             self.assertNotEqual(manifest["baseline_sha256"], manifest["planted_sha256"])
 
@@ -276,6 +302,85 @@ class RefutationRunnerTests(unittest.TestCase):
             self.assertEqual(manifest["baseline_sha256"], "a" * 64)
             self.assertEqual(manifest["restored_sha256"], "b" * 64)
             self.assertEqual(manifest["id"], "E7-one")
+
+    def test_grouped_plants_restore_on_failure_and_keyboard_interrupt_for_both_runners(self):
+        for runner, prefix in ((refutations, "M2"), (m3_refutations, "M3")):
+            for injected, exception in ((KeyboardInterrupt("interrupt"), KeyboardInterrupt), (
+                browser_result(prefix, "E16-browser-case"), RuntimeError
+            )):
+                with self.subTest(runner=prefix, exception=exception.__name__), tempfile.TemporaryDirectory() as temp:
+                    root = Path(temp)
+                    scratch = root / "scratch"
+                    scratch.mkdir()
+                    (scratch / "a.rs").write_text("gate_a = true\n")
+                    (scratch / "b.rs").write_text("gate_b = true\n")
+                    evidence = root / "evidence"
+                    case_id = "E16-browser-case"
+                    case = {
+                        "id": case_id,
+                        "runtime": "browser",
+                        "browser_case_ids": [case_id],
+                        "expected_selected": 1,
+                        "expected_failure": "the planted browser case",
+                        "command": ["fake-browser"],
+                        "plants": [
+                            {"path": "a.rs", "anchor": "gate_a = true", "replacement": "gate_a = false"},
+                            {"path": "b.rs", "anchor": "gate_b = true", "replacement": "gate_b = false"},
+                        ],
+                    }
+                    with patch.object(runner, "run", side_effect=[browser_result(prefix, case_id), injected]):
+                        with self.assertRaises(exception):
+                            runner.run_case(case, scratch, root / "build", evidence)
+                    self.assertEqual((scratch / "a.rs").read_text(), "gate_a = true\n")
+                    self.assertEqual((scratch / "b.rs").read_text(), "gate_b = true\n")
+                    manifest = json.loads((evidence / "case.json").read_text())
+                    self.assertEqual(manifest["status"], "failed")
+                    self.assertEqual(manifest["baseline_sha256"], manifest["restored_sha256"])
+
+
+    def test_successful_restore_finalizer_preserves_source_mtime_for_both_runners(self):
+        for runner, prefix in ((refutations, "M2"), (m3_refutations, "M3")):
+            with self.subTest(runner=prefix), tempfile.TemporaryDirectory() as temp:
+                root = Path(temp)
+                scratch = root / "scratch"
+                scratch.mkdir()
+                source = scratch / "sample.rs"
+                original = "let gate = true;\n"
+                source.write_text(original)
+                build = root / "build"
+                build.mkdir()
+                evidence = root / "evidence"
+                calls = 0
+                restored_mtime = 1_600_000_000_123_456_789
+
+                def fake_run(_command, _cwd, _build_dir):
+                    nonlocal calls
+                    calls += 1
+                    current = source.read_text()
+                    if calls == 1:
+                        self.assertEqual(current, original)
+                        return subprocess.CompletedProcess(["fake"], 0, "running 1 test\ntest result: ok. 1 passed; 0 failed\n", "")
+                    if calls == 2:
+                        self.assertEqual(current, "let gate = false;\n")
+                        return subprocess.CompletedProcess(["fake"], 1, "running 1 test\nsemantic invariant violated\n", "")
+                    self.assertEqual(calls, 3)
+                    self.assertEqual(current, original)
+                    os.utime(source, ns=(restored_mtime, restored_mtime))
+                    return subprocess.CompletedProcess(["fake"], 0, "running 1 test\ntest result: ok. 1 passed; 0 failed\n", "")
+
+                case = {
+                    "id": "E9-mtime-restore",
+                    "plant_path": "sample.rs",
+                    "anchor": "let gate = true;",
+                    "replacement": "let gate = false;",
+                    "command": ["fake"],
+                    "expected_failure": "semantic invariant violated",
+                }
+                with patch.object(runner, "run", side_effect=fake_run):
+                    runner.run_case(case, scratch, build, evidence)
+
+                self.assertEqual(source.read_text(), original)
+                self.assertEqual(source.stat().st_mtime_ns, restored_mtime)
 
 
 if __name__ == "__main__":

@@ -1129,10 +1129,20 @@ fn owner_report_projection_from_audit(
             "unit_id": unit.unit_id.0,
             "content_id": unit.content_id,
             "owner_slot": unit.owner_slot.0,
+            "facing": unit.facing,
             "pos": [unit.pos.x, unit.pos.y],
         })).collect::<Vec<_>>(),
         "nodes": snapshot.nodes,
         "economy": snapshot.economy,
+        // M2 has no M3 factory/combat state; retain explicit empty wire families so later
+        // nonempty additions still diverge from this independently audit-derived projection.
+        "belts": snapshot.belts,
+        "inserters": snapshot.inserters,
+        "extractors": snapshot.extractors,
+        "weapons": snapshot.weapons,
+        "healths": snapshot.healths,
+        "research": snapshot.research,
+        "health_trace": [],
     })
 }
 
