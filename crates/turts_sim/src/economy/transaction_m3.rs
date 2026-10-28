@@ -587,3 +587,22 @@ fn find_unit_entity(world: &World, unit: u32) -> Option<Entity> {
             .then_some(entity.id())
     })
 }
+
+// Transport phases stage only the affected line, never the whole conveyor resource.
+impl Transaction<'_> {
+    pub(crate) fn conveyor_line(&self, id: u32) -> Result<BeltLine, RejectReason> {
+        if let Some(staged) = self.writes.conveyor_lines.get(&id) {
+            return staged.clone().ok_or(RejectReason::IntegrityViolation);
+        }
+        self.world
+            .get_resource::<Conveyors>()
+            .and_then(|conveyors| conveyors.lines.get(&id))
+            .cloned()
+            .ok_or(RejectReason::IntegrityViolation)
+    }
+
+    pub(crate) fn stage_conveyor_line(&mut self, id: u32, line: BeltLine) {
+        self.mark_m3();
+        self.writes.conveyor_lines.insert(id, Some(line));
+    }
+}
