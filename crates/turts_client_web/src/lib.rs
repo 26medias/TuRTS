@@ -626,6 +626,7 @@ mod tests {
             UnitReplica {
                 content_id: static_id,
                 owner_slot: 0,
+                facing: None,
                 samples: VecDeque::new(),
             },
         );
@@ -634,6 +635,7 @@ mod tests {
             UnitReplica {
                 content_id: mobile_id,
                 owner_slot: 0,
+                facing: None,
                 samples: VecDeque::new(),
             },
         );
@@ -642,6 +644,7 @@ mod tests {
             UnitReplica {
                 content_id: replica.units[&2].content_id.clone(),
                 owner_slot: 1,
+                facing: None,
                 samples: VecDeque::new(),
             },
         );
@@ -650,6 +653,7 @@ mod tests {
             UnitReplica {
                 content_id: replica.units[&2].content_id.clone(),
                 owner_slot: 0,
+                facing: None,
                 samples: VecDeque::new(),
             },
         );

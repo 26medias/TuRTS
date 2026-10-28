@@ -77,6 +77,7 @@ pub fn debug_json(world: &World) -> String {
                         "unit_id": unit_id,
                         "content_id": unit.content_id,
                         "owner_slot": unit.owner_slot,
+                        "facing": unit.facing,
                         "pos": unit.samples.back().map(|(_, pos)| [pos.x, pos.y]),
                     })
                 })
@@ -89,6 +90,13 @@ pub fn debug_json(world: &World) -> String {
                 "units": units,
                 "nodes": nodes,
                 "economy": replica.economy,
+                "belts": replica.belts,
+                "inserters": replica.inserters,
+                "extractors": replica.extractors,
+                "weapons": replica.weapons,
+                "healths": replica.healths,
+                "research": replica.research,
+                "health_trace": health_trace_json(&replica.health_trace),
             })
         })
         .unwrap_or(Value::Null);
@@ -161,6 +169,15 @@ pub fn debug_json(world: &World) -> String {
     }).to_string()
 }
 
+fn health_trace_json(
+    trace: &std::collections::BTreeMap<u32, Vec<crate::replica::HealthTraceEntry>>,
+) -> Vec<Value> {
+    trace.iter().map(|(&unit_id, entries)| json!({
+        "unit_id": unit_id,
+        "entries": entries.iter().map(|entry| json!({ "tick": entry.tick, "current": entry.current })).collect::<Vec<_>>(),
+    })).collect()
+}
+
 fn command_result_json(result: &CommandResult) -> Value {
     match result {
         CommandResult::Acked { seq, tick } => json!({ "seq": seq, "ack_tick": tick }),
@@ -200,13 +217,20 @@ pub fn report_json(world: &World) -> Value {
     let replicated_world = state.replica.as_ref().map(|replica| {
         let units = replica.units.iter().map(|(&id, unit)| {
             let pos = unit.samples.back().map(|(_, pos)| [pos.x, pos.y]);
-            json!({ "unit_id": id, "content_id": unit.content_id, "owner_slot": unit.owner_slot, "pos": pos })
+            json!({ "unit_id": id, "content_id": unit.content_id, "owner_slot": unit.owner_slot, "facing": unit.facing, "pos": pos })
         }).collect::<Vec<_>>();
         json!({
             "tick": replica.last_applied_tick,
             "units": units,
             "nodes": replica.nodes.values().collect::<Vec<_>>(),
             "economy": replica.economy,
+            "belts": replica.belts,
+            "inserters": replica.inserters,
+            "extractors": replica.extractors,
+            "weapons": replica.weapons,
+            "healths": replica.healths,
+            "research": replica.research,
+            "health_trace": health_trace_json(&replica.health_trace),
         })
     }).unwrap_or(Value::Null);
     let receipts = world.get_resource::<ReceiptWitnesses>();
@@ -266,6 +290,7 @@ pub fn report_json(world: &World) -> Value {
         "receipt_order_proofs": receipt_proofs,
         "reconnect_required": world.get_resource::<CommandSendStatus>().is_some_and(|status| status.reconnect_required),
         "final_positions": final_positions,
+        "health_trace": state.replica.as_ref().map(|replica| health_trace_json(&replica.health_trace)).unwrap_or_default(),
         "replicated_world": replicated_world,
         "snapshots_applied": counters.snapshots_applied,
         "deltas_received": counters.deltas_received,

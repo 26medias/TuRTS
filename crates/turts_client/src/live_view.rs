@@ -378,6 +378,7 @@ mod tests {
             UnitReplica {
                 content_id: "test:builder".into(),
                 owner_slot: 0,
+                facing: None,
                 samples: VecDeque::from([(9, Pos { x: 12.0, y: 8.0 })]),
             },
         );

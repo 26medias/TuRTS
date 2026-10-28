@@ -72,6 +72,7 @@ fn producer_fixture() -> (ClientContent, Replica, u32, ContentId, ContentId) {
         UnitReplica {
             content_id: producer_id.to_string(),
             owner_slot: 0,
+            facing: None,
             samples: VecDeque::from([(1, Pos { x: 8.0, y: 8.0 })]),
         },
     );
@@ -469,6 +470,7 @@ fn dpi_two_panel_border_blocks_world_order_and_outside_click_still_orders() {
             UnitReplica {
                 content_id: mobile_id,
                 owner_slot: 0,
+                facing: None,
                 samples: VecDeque::from([(1, Pos { x: 44.0, y: 44.0 })]),
             },
         );
@@ -672,6 +674,7 @@ fn owned_move_expansion_uses_only_mobile_records_after_ready_context() {
         UnitReplica {
             content_id: static_id,
             owner_slot: 0,
+            facing: None,
             samples: VecDeque::new(),
         },
     );
@@ -680,6 +683,7 @@ fn owned_move_expansion_uses_only_mobile_records_after_ready_context() {
         UnitReplica {
             content_id: mobile_id.clone(),
             owner_slot: 1,
+            facing: None,
             samples: VecDeque::new(),
         },
     );
@@ -688,6 +692,7 @@ fn owned_move_expansion_uses_only_mobile_records_after_ready_context() {
         UnitReplica {
             content_id: mobile_id,
             owner_slot: 0,
+            facing: None,
             samples: VecDeque::new(),
         },
     );
@@ -720,6 +725,7 @@ fn selected_inventory_and_gather_wait_reason_are_catalog_derived() {
         UnitReplica {
             content_id: unit_id.to_string(),
             owner_slot: 0,
+            facing: None,
             samples: VecDeque::from([(1, Pos { x: 12.0, y: 8.0 })]),
         },
     );
@@ -782,6 +788,7 @@ fn selection_is_cleared_when_a_coherent_replacement_removes_or_foreigns_it() {
         UnitReplica {
             content_id: "base:command_center".into(),
             owner_slot: 0,
+            facing: None,
             samples: VecDeque::from([(1, Pos { x: 8.0, y: 8.0 })]),
         },
     );

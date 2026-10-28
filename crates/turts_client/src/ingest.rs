@@ -18,7 +18,9 @@ use turts_net_protocol::{
     Welcome, WorldDelta,
 };
 
-use crate::replica::{DeltaOutcome, Replica, ReplicaConfig, ReplicaContext, SnapshotOutcome};
+use crate::replica::{
+    DeltaOutcome, Replica, ReplicaConfig, ReplicaContext, SnapshotOutcome, replace_keyed,
+};
 use crate::scenario::{DropWorldChange, parse_drop_world_changes};
 use crate::{ClientOpts, content::ClientContent, join::AcquiredPackages};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
@@ -500,57 +502,36 @@ fn should_drop_world_change(
     for node in &deltas.nodes {
         armed.baseline_nodes.insert(node.id, node.clone());
     }
-    merge_economy_baseline(&mut armed.baseline_economy, &deltas.economy);
+    if !merge_economy_baseline(&mut armed.baseline_economy, &deltas.economy) {
+        hooks.armed_drop_world_changes = Some(armed);
+        return false;
+    }
     armed.baseline_tick = deltas.tick;
     hooks.armed_drop_world_changes = Some(armed);
     false
 }
 
-fn merge_economy_baseline(state: &mut EconomyState, changes: &EconomyChanges) {
-    for change in &changes.balances {
-        if let Some(current) = state
-            .balances
-            .iter_mut()
-            .find(|item| item.resource == change.resource)
-        {
-            *current = change.clone();
-        } else {
-            state.balances.push(change.clone());
-        }
+fn merge_economy_baseline(state: &mut EconomyState, changes: &EconomyChanges) -> bool {
+    let mut staged = state.clone();
+    if !replace_keyed(&mut staged.balances, &changes.balances, |record| {
+        record.resource.clone()
+    }) || !replace_keyed(&mut staged.inventories, &changes.inventories, |record| {
+        (
+            record.unit.0,
+            match record.port {
+                turts_net_protocol::InventoryPort::Main => 0u8,
+                turts_net_protocol::InventoryPort::Output => 1u8,
+            },
+        )
+    }) || !replace_keyed(&mut staged.orders, &changes.orders, |record| record.unit.0)
+        || !replace_keyed(&mut staged.queues, &changes.queues, |record| {
+            record.producer.0
+        })
+    {
+        return false;
     }
-    for change in &changes.inventories {
-        if let Some(current) = state
-            .inventories
-            .iter_mut()
-            .find(|item| item.unit == change.unit)
-        {
-            *current = change.clone();
-        } else {
-            state.inventories.push(change.clone());
-        }
-    }
-    for change in &changes.orders {
-        if let Some(current) = state
-            .orders
-            .iter_mut()
-            .find(|item| item.unit == change.unit)
-        {
-            *current = change.clone();
-        } else {
-            state.orders.push(change.clone());
-        }
-    }
-    for change in &changes.queues {
-        if let Some(current) = state
-            .queues
-            .iter_mut()
-            .find(|item| item.producer == change.producer)
-        {
-            *current = change.clone();
-        } else {
-            state.queues.push(change.clone());
-        }
-    }
+    *state = staged;
+    true
 }
 
 fn matching_world_changes(
@@ -576,7 +557,7 @@ fn matching_world_changes(
             .baseline_economy
             .inventories
             .iter()
-            .find(|item| item.unit == inventory.unit);
+            .find(|item| item.unit == inventory.unit && item.port == inventory.port);
         inventory.items.iter().any(|item| {
             old.and_then(|old| {
                 old.items
@@ -621,7 +602,7 @@ fn matching_world_changes(
             .baseline_economy
             .inventories
             .iter()
-            .find(|item| item.unit == inventory.unit);
+            .find(|item| item.unit == inventory.unit && item.port == inventory.port);
         inventory.items.iter().any(|item| {
             old.and_then(|old| {
                 old.items
@@ -687,14 +668,14 @@ fn has_charged_line_transition(previous: &EconomyState, changes: &EconomyChanges
                         })
                     }
                     CostSource::ProducerInventory => {
-                        let old_inventory = previous
-                            .inventories
-                            .iter()
-                            .find(|inventory| inventory.unit.0 == queue.producer.0);
-                        let new_inventory = changes
-                            .inventories
-                            .iter()
-                            .find(|inventory| inventory.unit.0 == queue.producer.0);
+                        let old_inventory = previous.inventories.iter().find(|inventory| {
+                            inventory.unit.0 == queue.producer.0
+                                && inventory.port == turts_net_protocol::InventoryPort::Main
+                        });
+                        let new_inventory = changes.inventories.iter().find(|inventory| {
+                            inventory.unit.0 == queue.producer.0
+                                && inventory.port == turts_net_protocol::InventoryPort::Main
+                        });
                         let old = old_inventory.and_then(|inventory| {
                             inventory
                                 .items
@@ -729,7 +710,7 @@ fn economy_increased(previous: &EconomyState, changes: &EconomyChanges) -> bool 
         let old = previous
             .inventories
             .iter()
-            .find(|item| item.unit == inventory.unit);
+            .find(|item| item.unit == inventory.unit && item.port == inventory.port);
         inventory.items.iter().any(|item| {
             old.and_then(|old| {
                 old.items
