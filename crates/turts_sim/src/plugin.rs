@@ -176,7 +176,7 @@ fn publish_completed_tick(world: &mut World) {
         &world.resource::<CompletedWorld>().0.economy,
         &completed.economy,
     );
-    let m3_changes = crate::economy::views_m3::m3_changes(
+    let mut m3_changes = crate::economy::views_m3::m3_changes(
         &world.resource::<CompletedWorld>().0.m3,
         &completed.m3,
     );
@@ -213,6 +213,9 @@ fn publish_completed_tick(world: &mut World) {
     spawned.retain(|state| !overlap.contains(&state.unit_id));
     removed.retain(|unit| !overlap.contains(unit));
     removed.sort_unstable();
+    m3_changes
+        .enabled
+        .retain(|change| !removed.contains(&change.unit));
     let batch = CommittedTick {
         tick,
         spawned,

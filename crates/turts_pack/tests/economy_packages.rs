@@ -9,8 +9,8 @@ use turts_mod_api::{
 use turts_mod_runtime::archive::PackageArchive;
 use turts_pack::{load_package, pack_checked};
 use turts_sim::{
-    Applied, AuditState, Command, CommandKind, RejectReason, SlotId, UnitState, Vec2,
-    apply_command, audit_state, headless_app, snapshot,
+    Applied, AuditState, Command, CommandKind, CommandQueue, CommittedTick, RejectReason, SlotId,
+    UnitState, Vec2, apply_command, audit_state, headless_app, snapshot,
 };
 
 fn cid(id: &str) -> ContentId {
@@ -117,6 +117,91 @@ fn public_forge_boot_and_remove_retain_authored_facing_and_m2_omission() {
     assert!(
         legacy_json.get("facing").is_none(),
         "M2 JSON omits absent facing"
+    );
+}
+
+#[test]
+fn scheduled_removal_does_not_publish_phantom_enable_and_keeps_real_enable_delta() {
+    let (_, mut app) = load_disk_package("forge");
+    let boot = snapshot(app.world_mut());
+    let disabled_then_removed = boot
+        .iter()
+        .find(|unit| unit.content_id == "forge:arm_loader" && unit.pos == Vec2::new(17.0, 10.0))
+        .expect("removal target exists")
+        .unit_id;
+    let surviving = boot
+        .iter()
+        .find(|unit| unit.content_id == "forge:arm_loader" && unit.pos == Vec2::new(17.0, 6.0))
+        .expect("live toggle target exists")
+        .unit_id;
+
+    {
+        let mut queue = app.world_mut().resource_mut::<CommandQueue>();
+        queue.0.push_back(command(
+            1,
+            CommandKind::SetEnabled {
+                unit_id: disabled_then_removed,
+                enabled: false,
+            },
+        ));
+        queue.0.push_back(command(
+            2,
+            CommandKind::SetEnabled {
+                unit_id: surviving,
+                enabled: false,
+            },
+        ));
+    }
+    app.update();
+    let disabled_tick = app.world().resource::<CommittedTick>();
+    assert_eq!(disabled_tick.enabled.len(), 2);
+    assert!(disabled_tick.enabled.iter().all(|change| !change.enabled));
+
+    app.world_mut()
+        .resource_mut::<CommandQueue>()
+        .0
+        .push_back(command(
+            3,
+            CommandKind::Remove {
+                unit_id: disabled_then_removed,
+            },
+        ));
+    app.update();
+    let removed_tick = app.world().resource::<CommittedTick>();
+    assert!(removed_tick.removed.contains(&disabled_then_removed));
+    assert!(
+        !removed_tick
+            .enabled
+            .iter()
+            .any(|change| change.unit == disabled_then_removed),
+        "a removed disabled unit must not publish a phantom enable"
+    );
+
+    app.world_mut()
+        .resource_mut::<CommandQueue>()
+        .0
+        .push_back(command(
+            4,
+            CommandKind::SetEnabled {
+                unit_id: surviving,
+                enabled: true,
+            },
+        ));
+    app.update();
+    let enabled_tick = app.world().resource::<CommittedTick>();
+    assert_eq!(
+        enabled_tick.enabled,
+        [turts_sim::economy::views_m3::RawEnabledAudit {
+            unit: surviving,
+            enabled: true,
+        }]
+    );
+
+    app.update();
+    let quiet_tick = app.world().resource::<CommittedTick>();
+    assert!(
+        quiet_tick.enabled.is_empty(),
+        "removed unit emits no later phantom delta"
     );
 }
 
