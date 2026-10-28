@@ -188,3 +188,5 @@ In order, only if the milestone proves too large: (1) `SetEnabled`; (2) drone B 
 Execution refinement: independent T13b/T14 worktrees started alongside frozen C2; their merges remained gated on C2 acceptance. No checkpoint source was changed. This overlap avoids idle slots; a checkpoint repair would require dependent rebase.
 
 W11 refinement: T15a integrated after T13b acceptance while T14 repairs its instrument, as the board permits. C3 will validate the larger union including client ingest after T14 merges. T15b builds in isolation; its merge stays gated on C3.
+
+Human usability amendment1354e33: catalog-derived principal labels/named local selection, stationary/mobile guidance and research cost/progress. Fresh workspace765/0/18, strict checks and wasm/boundaries pass; real-pointer research completion+damage20, second-client movement and existing Forge7 pass. Historical C4/fault evidence remains qualified unchanged-engine reuse. See vault report “2026-10-28 M3 human playtest repair”; no additional agents dispatched, hosted CI/push/main pending.

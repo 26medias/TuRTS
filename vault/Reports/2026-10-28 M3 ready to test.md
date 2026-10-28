@@ -23,3 +23,5 @@ C4 executed on frozen dae6739: native33, formal17, M2 browser8, joint positive15
 ## Remaining integration
 
 README/vault closeout prepared. Board section7 requires user approval before pushing `codex/m3-integration`, then hosted CI green and a separate approval before merging main. Neither push nor merge has occurred. Private orchestration workspace and evidence retained pending integration; no broad cache deletion performed at handoff. All33 decisions and their costs are retained in [[M3 Orchestrator Rulings]].
+
+Superseded desktop preview: human feedback required a UI amendment. Active run is target/m3-playtest/20261028-1354e33/ with named Factory/Drones tabs, object labels and research feedback. Use [[Reports/2026-10-28 M3 human playtest repair]] for current765/0/18 evidence and reset helper; earlier07936e8 paths above are historical.
