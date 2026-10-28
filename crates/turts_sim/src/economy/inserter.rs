@@ -12,8 +12,8 @@ use super::{
     transaction::{Transaction, transact},
 };
 use crate::{
-    RejectReason, SimClock, UnitId, boot_m3::try_ms_to_ticks, bootstrap::InstalledCatalog,
-    registry::UnitTypes, world::UnitType,
+    RejectReason, SimClock, UnitId, bootstrap::InstalledCatalog, registry::UnitTypes,
+    world::UnitType,
 };
 
 /// Current arm phase.
@@ -176,8 +176,8 @@ fn arm_parameters(
     let content = ContentId::parse(&type_entry.content_id).ok()?;
     let definition = world.resource::<InstalledCatalog>().0.units.get(&content)?;
     let inserter = definition.inserter.as_ref()?;
-    let swing = u32::try_from(try_ms_to_ticks(inserter.swing_ms, tick_hz)?).ok()?;
-    let returning = u32::try_from(try_ms_to_ticks(inserter.return_ms, tick_hz)?).ok()?;
+    let swing = crate::boot_m3::try_inserter_duration_ticks(inserter.swing_ms, tick_hz)?;
+    let returning = crate::boot_m3::try_inserter_duration_ticks(inserter.return_ms, tick_hz)?;
     let hand = definition.inventory.as_ref()?;
     Some((swing, returning, hand.accepts.iter().cloned().collect()))
 }

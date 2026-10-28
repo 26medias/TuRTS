@@ -3,9 +3,10 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use turts_mod_api::{ContentId, SourceDef};
 use turts_mod_runtime::{archive::PackageArchive, pack::pack_dir};
 use turts_pack::load_package;
-use turts_sim::{audit_state, headless_app};
+use turts_sim::{audit_state, headless_app, stage_package};
 
 fn forge_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../mods/forge")
@@ -46,6 +47,22 @@ fn forge_archive_with_map_edits(tag: &str, edits: &[(&str, &str)]) -> PackageArc
 
 fn forge_archive_with_map_change(tag: &str, from: &str, to: &str) -> PackageArchive {
     forge_archive_with_map_edits(tag, &[(from, to)])
+}
+
+fn forge_archive_with_arm_durations(tag: &str, swing_ms: u64, return_ms: u64) -> PackageArchive {
+    let package =
+        std::env::temp_dir().join(format!("turts-forge-arm-{tag}-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&package);
+    copy_tree(&forge_dir(), &package);
+    let arm_path = package.join("units/arm_loader.ron");
+    let arm = fs::read_to_string(&arm_path).unwrap();
+    let arm = arm.replace("swing_ms: 250", &format!("swing_ms: {swing_ms}"));
+    let arm = arm.replace("return_ms: 250", &format!("return_ms: {return_ms}"));
+    fs::write(&arm_path, arm).unwrap();
+    let archive =
+        PackageArchive::parse(&pack_dir(&package).expect("pack modified Forge arm")).unwrap();
+    fs::remove_dir_all(package).unwrap();
+    archive
 }
 
 #[test]
@@ -154,6 +171,67 @@ fn drill_without_node_rejects() {
     let error = load_package(app.world_mut(), &archive).expect_err("unbound extractor rejects");
     assert_eq!(error.file.as_deref(), Some("maps/proving_ground.ron"));
     assert_eq!(error.field_path, "placements[0].unit");
+}
+
+#[test]
+fn direct_catalog_rejects_zero_inserter_duration_with_unit_source() {
+    let archive = forge_archive();
+    let mut catalog = archive.content().unwrap();
+    let arm_id = ContentId::parse("forge:arm_loader").unwrap();
+    catalog
+        .units
+        .get_mut(&arm_id)
+        .unwrap()
+        .inserter
+        .as_mut()
+        .unwrap()
+        .swing_ms = 0;
+    let (map_file, map) = archive.maps().unwrap().into_iter().next().unwrap();
+    let app = headless_app(20);
+    let error = stage_package(
+        app.world(),
+        catalog,
+        SourceDef {
+            file: map_file,
+            value: map,
+        },
+        20,
+    )
+    .expect_err("direct catalog boot must reject zero swing duration");
+    assert_eq!(error.package, "forge");
+    assert_eq!(error.file.as_deref(), Some("units/arm_loader.ron"));
+    assert_eq!(error.field_path, "inserter.swing_ms");
+}
+
+#[test]
+fn inserter_duration_bounds_follow_configured_tick_rate() {
+    for hz in [10_u16, 20, 30] {
+        let highest_ms = (u64::from(u32::MAX) * 1000) / u64::from(hz);
+        let first_over_ms = highest_ms + 1;
+
+        let valid =
+            forge_archive_with_arm_durations(&format!("{hz}-valid"), highest_ms, highest_ms);
+        let mut app = headless_app(hz);
+        load_package(app.world_mut(), &valid).expect("u32::MAX tick duration is representable");
+
+        let over_swing =
+            forge_archive_with_arm_durations(&format!("{hz}-swing-over"), first_over_ms, 250);
+        let mut app = headless_app(hz);
+        let error = load_package(app.world_mut(), &over_swing)
+            .expect_err("swing duration above u32 elapsed range must reject");
+        assert_eq!(error.package, "forge");
+        assert_eq!(error.file.as_deref(), Some("units/arm_loader.ron"));
+        assert_eq!(error.field_path, "inserter.swing_ms");
+
+        let over_return =
+            forge_archive_with_arm_durations(&format!("{hz}-return-over"), 250, first_over_ms);
+        let mut app = headless_app(hz);
+        let error = load_package(app.world_mut(), &over_return)
+            .expect_err("return duration above u32 elapsed range must reject");
+        assert_eq!(error.package, "forge");
+        assert_eq!(error.file.as_deref(), Some("units/arm_loader.ron"));
+        assert_eq!(error.field_path, "inserter.return_ms");
+    }
 }
 
 #[test]
