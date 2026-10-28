@@ -144,7 +144,7 @@ Critical path: T0 → T1 → T3a → T3 → T4 → T7 → T8 → T12 → T13a �
 
 Estimate: 20 Luna builder runs plus at most one fix round each for 8 of them (about 28), 12 Sol R1 reviews, 4 `qa-lead` checkpoints, 3 milestone judges. About 47 agent runs. This is a proposal under the budget rule ([[Team]], memory "token budget"). If actuals pass 1.3 times the estimate, stop and ask the user. Mitigations: R0 on mechanical tasks; one reviewer per R1; re-checks by short message to the same reviewer; reports capped at 400 words; no probe done twice.
 
-Running count after interruption recovery: builders 31, reviews 21, checkpoints 2 (7 execution runs), judges 0. Additional orchestration executor runs: 2. Total agent runs: 61. Two interrupted workers were replaced; their saved source and evidence are retained. Approval requested before any further run beyond the 61.1 threshold. C1 used three private lanes plus scoped repair proofs; no extra review lens.
+Running count after interruption recovery: builders 31, reviews 21, checkpoints 2 (7 execution runs), judges 0. Additional orchestration executor runs: 2. Total agent runs: 61. Two interrupted workers were replaced; their saved source and evidence are retained. The user explicitly approved an allowance of 75 runs on 2026-10-28. Further planned validation and reviews may proceed within that allowance. C1 used three private lanes plus scoped repair proofs; no extra review lens.
 
 ## 9. Cut line (from the spec 16.2)
 
@@ -172,7 +172,7 @@ In order, only if the milestone proves too large: (1) `SetEnabled`; (2) drone B 
 | T13b | complete | `codex/m3-t13b` | `target/m3-worktrees/t13b` | `df96a84`,`2779670` → `78d0ae7` | same R1 PASS after beltprivacy repair | V0 PASS700/0/17; wasm | Protocol3; authoritative per-piece ownership; private research, ports, facing, health0/removal. |
 | T14 | complete | `codex/m3-t14` | `target/m3-worktrees/t14` | `dcddac0` → `0e28855` | Scoped R1 PASS, 0 findings | V0 PASS: 742/0/17; wasm | C1 retries, parsed resource balance, dangling state, full renamed industrial trace. |
 | T15a | complete; queue follow-up accepted | `codex/m3-t15a` | `target/m3-worktrees/t15a` | `1eafa68` → `31c05d8` | R0 PASS | V0 PASS750/0/17 after queue follow-up; wasm | Atomic records, port keys, finalhealth0/removal, movingkill overlap, sharedmerge/debugtrace. |
-| T15b | implementation and gates | `codex/m3-t15b` | `target/m3-worktrees/t15b` | next docs base | R1 web pending | pending | Presentation/actions/browser; coordinator interface frozen beforeconsumer. |
+| T15b | gated candidate; R1 starting | `codex/m3-t15b` | `target/m3-worktrees/t15b` | next docs base | R1 web pending | pending | Presentation/actions/browser; coordinator interface frozen beforeconsumer. |
 | T16 | not started | | | | | | |
 
 
@@ -182,7 +182,7 @@ In order, only if the milestone proves too large: (1) `SetEnabled`; (2) drone B 
 | --- | --- | --- | --- |
 | C1 | PASS | `f3b11e7` + test-only repair `32d1495` | `target/m3-evidence/c1/root-acceptance.md`; fresh gates `c1-final-v0/`; all88 tests refuted |
 | C2 | PASS | `b87c111` | `target/m3-evidence/c2/root-acceptance.md`;685/0/17;99 new functions mapped;14 prior plants replayed |
-| C3 | ready; run allowance approval pending | repaired docs freeze follows | Queue correction accepted; canonical 750/0/17 and all eight gates green |
+| C3 | starting | next docs freeze | User approved allowance75; repaired union has canonical750/0/17 and all eight gates green |
 | C4 | not started | | |
 
 Execution refinement: independent T13b/T14 worktrees started alongside frozen C2; their merges remained gated on C2 acceptance. No checkpoint source was changed. This overlap avoids idle slots; a checkpoint repair would require dependent rebase.
