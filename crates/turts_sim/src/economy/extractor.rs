@@ -294,7 +294,7 @@ mod tests {
 
     #[test]
     fn extractor_stops_when_full() {
-        let mut app = fixture(20, 2, 100, 2);
+        let mut app = fixture(20, 420, 100, 2);
         let ore = ContentId::parse("fixture:ore").unwrap();
         app.world_mut()
             .resource_mut::<EconomyLedger>()
@@ -328,8 +328,20 @@ mod tests {
     }
 
     #[test]
+    fn extractor_clamps_budget_to_free_capacity() {
+        let mut app = fixture(20, 420, 100, 2);
+        step(&mut app);
+        assert_eq!(ore_count(&app), 2);
+        assert_eq!(app.world().resource::<SurfaceNodes>().0[0].remaining, 98);
+        assert_eq!(
+            app.world().resource::<Extractors>().0[&DRILL].status,
+            ExtractorStatus::Full
+        );
+    }
+
+    #[test]
     fn extractor_depletes() {
-        let mut app = fixture(20, 420, 21, 50);
+        let mut app = fixture(20, 440, 21, 50);
         step(&mut app);
         assert_eq!(ore_count(&app), 21);
         assert_eq!(app.world().resource::<SurfaceNodes>().0[0].remaining, 0);
