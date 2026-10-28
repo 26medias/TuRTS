@@ -111,11 +111,19 @@ fn archive_reports_a_missing_exported_file() {
 
 #[test]
 fn archive_reads_recipe_and_technology_exports_into_catalog() {
-    let manifest = r#"(id: "acme", version: "0.2.0", kind: Game, engine_api: "^0.2.1", dependencies: {}, exports: (units: [], maps: ["maps/test.ron"], visuals: [], resources: [], nodes: [], production: [], recipes: ["recipes/production-line.ron"], technologies: ["technologies/field-note.ron"]), context: Shared, capabilities: [], license: "x")"#;
+    let manifest = r#"(id: "acme", version: "0.2.0", kind: Game, engine_api: "^0.2.1", dependencies: {}, exports: (units: [], maps: ["maps/test.ron"], visuals: [], resources: ["resources/ore.ron", "resources/shell.ron"], nodes: [], production: [], recipes: ["recipes/production-line.ron"], technologies: ["technologies/field-note.ron"]), context: Shared, capabilities: [], license: "x")"#;
     let recipe = r#"(id: "shells", name: "Shells", inputs: [(item: "acme:ore", amount: 2)], outputs: [(item: "acme:shell", amount: 1)], duration_ms: 2000, cancel_refunds: (running: (numerator: 1, denominator: 1), output_blocked: (numerator: 1, denominator: 1)))"#;
     let technology = r#"(id: "hardened", name: "Hardened", prerequisites: [], duration_ms: 10000, costs: [(resource: "acme:shell", amount: 10, source: ProducerInventory)], payment: ReserveThenCharge, cancel_refunds: (queued: (numerator: 1, denominator: 1), running: (numerator: 1, denominator: 2), output_blocked: (numerator: 1, denominator: 1)), effects: [])"#;
     let bytes = raw_tar(&[
         ("manifest.ron", manifest.as_bytes()),
+        (
+            "resources/ore.ron",
+            r#"(id: "ore", name: "Ore", unit_name: "ore", kind: Item)"#.as_bytes(),
+        ),
+        (
+            "resources/shell.ron",
+            r#"(id: "shell", name: "Shell", unit_name: "shell", kind: Item)"#.as_bytes(),
+        ),
         ("recipes/production-line.ron", recipe.as_bytes()),
         ("technologies/field-note.ron", technology.as_bytes()),
     ]);

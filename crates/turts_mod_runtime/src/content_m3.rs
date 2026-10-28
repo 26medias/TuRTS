@@ -12,6 +12,10 @@ use turts_mod_api::{ContentId, ModError, PackageId};
 
 use crate::content::{error, local_id, resolve_one};
 
+#[path = "content_m3_validation.rs"]
+mod validation;
+pub(crate) use validation::{validate_m3, validate_m3_presence};
+
 pub(crate) fn resolve_content_m3(
     origin: &PackageId,
     catalog: &mut ContentCatalog,
