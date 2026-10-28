@@ -120,7 +120,7 @@ impl PackageArchive {
             .into_iter()
             .map(|(file, value)| SourceDef { file, value })
             .collect();
-        validate_content_with_m3(
+        let catalog = validate_content_with_m3(
             &origin,
             resources,
             units,
@@ -128,7 +128,10 @@ impl PackageArchive {
             production,
             recipes,
             technologies,
-        )
+        )?;
+        crate::content_m3::validate_m3_presence(&self.manifest, &self.files)?;
+        crate::content_m3::validate_m3(&self.manifest, &catalog)?;
+        Ok(catalog)
     }
 
     /// The exported map definitions as `(archive path, definition)`.
