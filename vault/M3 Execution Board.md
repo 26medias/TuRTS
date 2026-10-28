@@ -144,7 +144,7 @@ Critical path: T0 → T1 → T3a → T3 → T4 → T7 → T8 → T12 → T13a �
 
 Estimate: 20 Luna builder runs plus at most one fix round each for 8 of them (about 28), 12 Sol R1 reviews, 4 `qa-lead` checkpoints, 3 milestone judges. About 47 agent runs. This is a proposal under the budget rule ([[Team]], memory "token budget"). If actuals pass 1.3 times the estimate, stop and ask the user. Mitigations: R0 on mechanical tasks; one reviewer per R1; re-checks by short message to the same reviewer; reports capped at 400 words; no probe done twice.
 
-Running count: builders 33, reviews 24, checkpoints 3 (9 execution runs), judges 0, additional orchestration executors 2. Total 68 actual agent runs. User-approved allowance: 75. C3 refresh and UI R1 are accepted; Task16 is active; its frozen WIP is under parallel Sol R1 while legacy browser validation runs.
+Running count: builders 33, reviews 25, checkpoints 3 (9 execution runs), judges 0, additional orchestration executors 2. Total 69 actual agent runs. User-approved allowance: 75. C3 refresh and UI R1 are accepted; Task16 is active; its frozen WIP is under parallel Sol R1 while legacy browser validation runs.
 
 ## 9. Cut line (from the spec 16.2)
 
