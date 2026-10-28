@@ -2,6 +2,8 @@
 
 const PANEL_WIDE_WIDTH: f32 = 390.0;
 
+use std::collections::BTreeMap;
+
 use bevy::camera::visibility::InheritedVisibility;
 use bevy::{
     prelude::*,
@@ -13,7 +15,8 @@ use bevy::{
 };
 use turts_mod_api::{ContentId, CostSource, Footprint, ResourceKind};
 use turts_net_protocol::{
-    EconomyState, GatherStage, JobId, JobStage, NodeId, PlayerCommandKind, Pos, UnitId,
+    EconomyState, GatherStage, InventoryPort, JobId, JobStage, NodeId, PlayerCommandKind, Pos,
+    UnitId,
 };
 
 use crate::{
@@ -400,12 +403,26 @@ fn recipe_affordable(
     producer: u32,
     costs: &[turts_mod_api::ResolvedCost],
 ) -> bool {
-    costs.iter().all(|cost| {
-        if cost.amount == 0 {
+    let mut totals = BTreeMap::<(CostSource, ContentId), u128>::new();
+    for cost in costs {
+        let total = totals
+            .entry((cost.source, cost.resource.clone()))
+            .or_default();
+        let Some(sum) = total.checked_add(u128::from(cost.amount)) else {
+            return false;
+        };
+        *total = sum;
+    }
+
+    totals.into_iter().all(|((source, resource), total)| {
+        let Ok(required) = u64::try_from(total) else {
+            return false;
+        };
+        if required == 0 {
             return true;
         }
-        let resource = cost.resource.to_string();
-        let available = match cost.source {
+        let resource = resource.to_string();
+        let available = match source {
             CostSource::SlotBalance => replica
                 .economy
                 .balances
@@ -416,7 +433,9 @@ fn recipe_affordable(
                 .economy
                 .inventories
                 .iter()
-                .find(|inventory| inventory.unit.0 == producer)
+                .find(|inventory| {
+                    inventory.unit.0 == producer && inventory.port == InventoryPort::Main
+                })
                 .and_then(|inventory| {
                     inventory
                         .items
@@ -425,7 +444,7 @@ fn recipe_affordable(
                 })
                 .and_then(|item| item.on_hand.checked_sub(item.reserved)),
         };
-        available.is_some_and(|available| available >= cost.amount)
+        available.is_some_and(|available| available >= required)
     })
 }
 
@@ -464,16 +483,54 @@ fn append_inventory(
     selected: u32,
     def: Option<&turts_mod_api::ResolvedUnit>,
 ) {
-    let Some(inventory_def) = def.and_then(|d| d.inventory.as_ref()) else {
+    let Some(unit_def) = def else { return };
+    let main = unit_def.inventory.as_ref();
+    let output = unit_def.output_inventory.as_ref();
+
+    // Keep the established M2 copy and spacing for units with one Main inventory.
+    if let (Some(main_def), None) = (main, output) {
+        let Some(inventory) = economy.inventories.iter().find(|inventory| {
+            inventory.unit.0 == selected && inventory.port == InventoryPort::Main
+        }) else {
+            model
+                .lines
+                .push("Inventory · this unit · unavailable".into());
+            return;
+        };
+        model.lines.push("Inventory · this unit".into());
+        append_inventory_contents(model, inventory, content, main_def.capacity);
         return;
-    };
-    let Some(inventory) = economy.inventories.iter().find(|i| i.unit.0 == selected) else {
-        model
-            .lines
-            .push("Inventory · this unit · unavailable".into());
-        return;
-    };
-    model.lines.push("Inventory · this unit".into());
+    }
+
+    for (port, label, inventory_def) in [
+        (InventoryPort::Main, "Main", main),
+        (InventoryPort::Output, "Output", output),
+    ] {
+        let Some(inventory_def) = inventory_def else {
+            continue;
+        };
+        model.lines.push(format!("Inventory · {label}"));
+        let Some(inventory) = economy
+            .inventories
+            .iter()
+            .find(|inventory| inventory.unit.0 == selected && inventory.port == port)
+        else {
+            model.lines.push("Stock: unavailable".into());
+            model
+                .lines
+                .push(format!("Capacity: unavailable/{}", inventory_def.capacity));
+            continue;
+        };
+        append_inventory_contents(model, inventory, content, inventory_def.capacity);
+    }
+}
+
+fn append_inventory_contents(
+    model: &mut PanelModel,
+    inventory: &turts_net_protocol::InventoryState,
+    content: &ClientContent,
+    capacity: u64,
+) {
     let mut total = Some(0u64);
     for item in &inventory.items {
         total = total.and_then(|value| value.checked_add(item.on_hand));
@@ -487,12 +544,10 @@ fn append_inventory(
         ));
     }
     match total {
-        Some(on_hand) => model
-            .lines
-            .push(format!("Capacity: {on_hand}/{}", inventory_def.capacity)),
+        Some(on_hand) => model.lines.push(format!("Capacity: {on_hand}/{capacity}")),
         None => model
             .lines
-            .push(format!("Capacity: unavailable/{}", inventory_def.capacity)),
+            .push(format!("Capacity: unavailable/{capacity}")),
     }
 }
 

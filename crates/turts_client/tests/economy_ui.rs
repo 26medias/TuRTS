@@ -34,7 +34,7 @@ use turts_client::{
     },
     replica::{Replica, UnitReplica},
 };
-use turts_mod_api::{ContentId, Cost};
+use turts_mod_api::{ContentId, Cost, CostSource, ResolvedCost, ResolvedInventory};
 use turts_mod_runtime::{archive::PackageArchive, pack::pack_dir};
 use turts_net_protocol::{
     BalanceState, GatherStage, GatherWaitReason, InventoryState, JobId, JobStage, NodeId,
@@ -1539,5 +1539,229 @@ fn real_scroll_reaches_the_fifth_exact_cancel_action_at_dpi_two() {
             trace_step: None,
         }],
         "scrolling and activating the displayed control preserves its exact job ID"
+    );
+}
+
+fn forge_ui_content() -> ClientContent {
+    let forge = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../mods/forge");
+    let archive = PackageArchive::parse(&pack_dir(&forge).expect("pack forge UI fixture"))
+        .expect("parse forge UI archive");
+    ClientContent::from_archives(&[archive]).expect("resolve forge UI definitions")
+}
+
+fn forge_lab_replica(main_shells: u64, output_shells: u64) -> (ClientContent, Replica, u32) {
+    let mut content = forge_ui_content();
+    let lab_id = ContentId::parse("forge:lab").unwrap();
+    let shell_id = ContentId::parse("forge:shell").unwrap();
+    let lab = content.catalog.units.get_mut(&lab_id).unwrap();
+    // The owner catalog in this regression declares both ports, so both rows are valid.
+    lab.output_inventory = Some(ResolvedInventory {
+        capacity: 10,
+        accepts: vec![shell_id.clone()],
+    });
+
+    let selected = 71;
+    let mut replica = Replica::new(20);
+    replica.units.insert(
+        selected,
+        UnitReplica {
+            content_id: lab_id.to_string(),
+            owner_slot: 0,
+            facing: None,
+            samples: VecDeque::from([(1, Pos { x: 8.0, y: 8.0 })]),
+        },
+    );
+    replica.economy.inventories = vec![
+        InventoryState {
+            unit: UnitId(selected),
+            port: turts_net_protocol::InventoryPort::Main,
+            items: vec![BalanceState {
+                resource: shell_id.to_string(),
+                on_hand: main_shells,
+                reserved: 0,
+            }],
+        },
+        InventoryState {
+            unit: UnitId(selected),
+            port: turts_net_protocol::InventoryPort::Output,
+            items: vec![BalanceState {
+                resource: shell_id.to_string(),
+                on_hand: output_shells,
+                reserved: 0,
+            }],
+        },
+    ];
+    (content, replica, selected)
+}
+
+fn research_enabled(content: &ClientContent, replica: &Replica, selected: u32) -> bool {
+    panel_model(
+        replica,
+        content,
+        &Selection(Some(selected)),
+        &CommandResults::default(),
+    )
+    .controls
+    .into_iter()
+    .find(|control| {
+        matches!(
+            &control.action,
+            UiAction::Produce { recipe, .. } if recipe == "forge:hardened_shells"
+        )
+    })
+    .expect("Forge research action")
+    .enabled
+}
+
+#[test]
+fn research_affordability_aggregates_duplicate_costs_and_fails_closed() {
+    let (mut content, replica, selected) = forge_lab_replica(475, 0);
+    content
+        .catalog
+        .technologies
+        .get_mut(&ContentId::parse("forge:hardened_shells").unwrap())
+        .unwrap()
+        .costs = vec![
+        ResolvedCost {
+            resource: ContentId::parse("forge:shell").unwrap(),
+            amount: 300,
+            source: CostSource::ProducerInventory,
+        },
+        ResolvedCost {
+            resource: ContentId::parse("forge:shell").unwrap(),
+            amount: 300,
+            source: CostSource::ProducerInventory,
+        },
+    ];
+    assert!(
+        !research_enabled(&content, &replica, selected),
+        "475 available is below the aggregated 600 shell cost"
+    );
+
+    let (mut overflow_content, overflow_replica, overflow_selected) =
+        forge_lab_replica(u64::MAX, 0);
+    overflow_content
+        .catalog
+        .technologies
+        .get_mut(&ContentId::parse("forge:hardened_shells").unwrap())
+        .unwrap()
+        .costs = vec![
+        ResolvedCost {
+            resource: ContentId::parse("forge:shell").unwrap(),
+            amount: u64::MAX,
+            source: CostSource::ProducerInventory,
+        },
+        ResolvedCost {
+            resource: ContentId::parse("forge:shell").unwrap(),
+            amount: 1,
+            source: CostSource::ProducerInventory,
+        },
+    ];
+    assert!(
+        !research_enabled(&overflow_content, &overflow_replica, overflow_selected),
+        "a same-source aggregate above u64 must fail closed"
+    );
+}
+
+#[test]
+fn research_affordability_uses_main_port_independent_of_inventory_row_order() {
+    let (mut content, mut replica, selected) = forge_lab_replica(0, 10);
+    content
+        .catalog
+        .technologies
+        .get_mut(&ContentId::parse("forge:hardened_shells").unwrap())
+        .unwrap()
+        .costs = vec![ResolvedCost {
+        resource: ContentId::parse("forge:shell").unwrap(),
+        amount: 10,
+        source: CostSource::ProducerInventory,
+    }];
+    assert!(!research_enabled(&content, &replica, selected));
+    replica.economy.inventories.reverse();
+    assert!(
+        !research_enabled(&content, &replica, selected),
+        "Output stock cannot fund Main-inventory research in either row order"
+    );
+
+    for inventory in &mut replica.economy.inventories {
+        inventory.items[0].on_hand = if inventory.port == turts_net_protocol::InventoryPort::Main {
+            10
+        } else {
+            0
+        };
+    }
+    assert!(research_enabled(&content, &replica, selected));
+    replica.economy.inventories.reverse();
+    assert!(
+        research_enabled(&content, &replica, selected),
+        "Main stock remains available with Output listed first"
+    );
+}
+
+#[test]
+fn machine_panel_shows_main_and_output_inventory_with_each_capacity() {
+    let content = forge_ui_content();
+    let selected = 72;
+    let mut replica = Replica::new(20);
+    replica.units.insert(
+        selected,
+        UnitReplica {
+            content_id: "forge:press".into(),
+            owner_slot: 0,
+            facing: None,
+            samples: VecDeque::from([(1, Pos { x: 8.0, y: 8.0 })]),
+        },
+    );
+    replica.economy.inventories = vec![
+        InventoryState {
+            unit: UnitId(selected),
+            port: turts_net_protocol::InventoryPort::Main,
+            items: vec![BalanceState {
+                resource: "forge:ore".into(),
+                on_hand: 2,
+                reserved: 0,
+            }],
+        },
+        InventoryState {
+            unit: UnitId(selected),
+            port: turts_net_protocol::InventoryPort::Output,
+            items: vec![BalanceState {
+                resource: "forge:shell".into(),
+                on_hand: 3,
+                reserved: 0,
+            }],
+        },
+    ];
+    let text = panel_model(
+        &replica,
+        &content,
+        &Selection(Some(selected)),
+        &CommandResults::default(),
+    )
+    .lines
+    .join("\n");
+    assert!(
+        text.contains("Inventory · Main"),
+        "Main port missing: {text}"
+    );
+    assert!(
+        text.contains("Ore: 2 on hand · 0 reserved"),
+        "Main ore missing: {text}"
+    );
+    assert!(
+        text.contains("Capacity: 2/6"),
+        "Main capacity is wrong: {text}"
+    );
+    assert!(
+        text.contains("Inventory · Output"),
+        "Output port missing: {text}"
+    );
+    assert!(
+        text.contains("Shell: 3 on hand · 0 reserved"),
+        "Output shell stock missing: {text}"
+    );
+    assert!(
+        text.contains("Capacity: 3/4"),
+        "Output capacity is wrong: {text}"
     );
 }

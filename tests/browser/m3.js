@@ -31,10 +31,27 @@ async function m3_panel_actions_send_commands(page, outDir, logs = []) {
     assert.equal(joined.error, null);
     const initial = await captureStage(page, outDir, "01-forge-joined", logs);
     const world = initial.debug.replicated_world;
-    const lab = world.units.find((unit) => unit.content_id === "forge:lab" && unit.owner_slot === 0);
-    const labMesh = lab && initial.scene.units.find((unit) => unit.unit_id === lab.unit_id);
+    const press = world.units.find((unit) => unit.content_id === "forge:press" && unit.owner_slot === 0);
+    const pressMesh = press && initial.scene.units.find((unit) => unit.unit_id === press.unit_id);
+    assert(press && pressMesh, "owner machine is absent from actual rendered state");
+    await clickRenderedEntity(page, initial.scene, pressMesh);
+    const pressSelected = await waitForSnapshot(page, (snapshot) => {
+        const texts = visibleTexts(snapshot);
+        return snapshot.debug?.selection === press.unit_id &&
+            texts.includes("Inventory · Main") &&
+            texts.includes("Inventory · Output") &&
+            texts.includes("Capacity: 0/6") &&
+            texts.includes("Capacity: 0/4");
+    }, 5000, "actual rendered press panel shows Main and Output inventory capacity");
+    const pressArtifact = await captureStage(page, outDir, "02-press-two-port-inventory", logs);
+    const pressLines = visibleTexts(pressArtifact);
+    assert(pressLines.includes("Inventory · Main") && pressLines.includes("Inventory · Output"),
+        `actual press panel omitted a labelled inventory port: ${pressLines.join("\n")}`);
+
+    const lab = pressSelected.debug.replicated_world.units.find((unit) => unit.content_id === "forge:lab" && unit.owner_slot === 0);
+    const labMesh = lab && pressArtifact.scene.units.find((unit) => unit.unit_id === lab.unit_id);
     assert(lab && labMesh, "owner research station is absent from actual rendered state");
-    await clickRenderedEntity(page, initial.scene, labMesh);
+    await clickRenderedEntity(page, pressArtifact.scene, labMesh);
     const readyLab = await waitForSnapshot(page, (snapshot) => {
         const current = snapshot.debug?.replicated_world;
         const inventory = current?.economy?.inventories?.find((row) => row.unit === lab.unit_id && row.port === "main");
@@ -42,7 +59,7 @@ async function m3_panel_actions_send_commands(page, outDir, logs = []) {
         const control = (snapshot.ui ?? []).find((row) => row.visible && row.enabled && row.action?.type === "produce" && row.action.producer === lab.unit_id && row.action.recipe === "forge:hardened_shells");
         return snapshot.debug?.selection === lab.unit_id && shells?.on_hand - shells?.reserved >= 10 && Boolean(control);
     }, 120000, "replica inventory and visible enabled research control");
-    const labSelected = await captureStage(page, outDir, "02-lab-research-ready", logs);
+    const labSelected = await captureStage(page, outDir, "03-lab-research-ready", logs);
     const beforeProduce = Math.max(0, ...(readyLab.debug.command_results ?? []).map((result) => result.seq));
     const produce = await clickRenderedUiAction(page, labSelected.scene, "produce", (action, text) =>
         action.producer === lab.unit_id && action.recipe === "forge:hardened_shells" && text === "Research Hardened Shells");
@@ -53,7 +70,7 @@ async function m3_panel_actions_send_commands(page, outDir, logs = []) {
         return Boolean(receipt && proof.acked && proof.applied && queue?.jobs?.some((job) => job.recipe === "forge:hardened_shells"));
     }, 10000, "research command Acked, Applied and present in replicated queue");
     assert(produce.action?.producer === lab.unit_id);
-    const producedArtifact = await captureStage(page, outDir, "03-research-applied", logs);
+    const producedArtifact = await captureStage(page, outDir, "04-research-applied", logs);
     const produceReceipt = produced.debug.command_results.filter((result) => result.seq > beforeProduce).at(-1);
 
     await clickRenderedUiAction(page, producedArtifact.scene, "set_enabled", (action, text) =>
@@ -64,7 +81,7 @@ async function m3_panel_actions_send_commands(page, outDir, logs = []) {
         const proof = receipt && commandProof(snapshot, receipt.seq);
         return Boolean(receipt && proof.acked && proof.applied && queue?.enabled === false);
     }, 10000, "SetEnabled control Acked and Applied with disabled replica state");
-    const disabledArtifact = await captureStage(page, outDir, "04-lab-disabled", logs);
+    const disabledArtifact = await captureStage(page, outDir, "05-lab-disabled", logs);
     const disableReceipt = disabled.debug.command_results.filter((result) => result.seq > produceReceipt.seq).at(-1);
 
     const belt = disabled.debug.replicated_world.belts[0];
@@ -74,7 +91,7 @@ async function m3_panel_actions_send_commands(page, outDir, logs = []) {
     assert(beltUnit && beltMesh, "belt piece has no actual rendered mesh");
     await clickRenderedEntity(page, disabledArtifact.scene, beltMesh);
     const beltSelected = await waitForSnapshot(page, (snapshot) => snapshot.debug?.selection === belt.piece, 5000, "belt piece selected from rendered scene");
-    const beltSelectedArtifact = await captureStage(page, outDir, "05-belt-selected", logs);
+    const beltSelectedArtifact = await captureStage(page, outDir, "06-belt-selected", logs);
     await clickRenderedUiAction(page, beltSelectedArtifact.scene, "remove", (action, text) =>
         action.unit === belt.piece && text === "Remove unit");
     const removed = await waitForSnapshot(page, (snapshot) => {
@@ -83,7 +100,7 @@ async function m3_panel_actions_send_commands(page, outDir, logs = []) {
         const proof = receipt && commandProof(snapshot, receipt.seq);
         return Boolean(receipt && proof.acked && proof.applied && !stillPresent);
     }, 10000, "Remove control Acked and Applied with belt removed from replica");
-    const removedArtifact = await captureStage(page, outDir, "06-belt-removed", logs);
+    const removedArtifact = await captureStage(page, outDir, "07-belt-removed", logs);
     return {
         browser: await page.evaluate(() => navigator.userAgent),
         actions: {
@@ -92,7 +109,8 @@ async function m3_panel_actions_send_commands(page, outDir, logs = []) {
             remove: { unit: belt.piece, receipt: removed.debug.command_results.filter((result) => result.seq > disableReceipt.seq).at(-1), removed: true },
         },
         visible_lines: visibleTexts(removedArtifact),
-        captures: ["01-forge-joined", "02-lab-research-ready", "03-research-applied", "04-lab-disabled", "05-belt-selected", "06-belt-removed"],
+        machine_inventory_panel: { unit_id: press.unit_id, main_visible: true, output_visible: true },
+        captures: ["01-forge-joined", "02-press-two-port-inventory", "03-lab-research-ready", "04-research-applied", "05-lab-disabled", "06-belt-selected", "07-belt-removed"],
     };
 }
 
