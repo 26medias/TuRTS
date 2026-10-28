@@ -400,6 +400,52 @@ fn empty_audit() -> AuditState {
 
 // Scenario acceptance tests below each keep the public audit trail and the source-RON oracle in the loop.
 #[test]
+fn dangling_ghost_hand_stock_with_destroyed_event_is_reported_before_balance() {
+    let oracle = catalog(&forge_dir());
+    let ore = oracle.item("forge:ore").unwrap();
+    let mut before = empty_audit();
+    before
+        .economy
+        .inventories
+        .push(turts_sim::economy::views::InventoryView {
+            unit: 3,
+            owner_slot: 0,
+            capacity: 1,
+            items: vec![turts_sim::economy::views::ItemView {
+                resource: ore.clone(),
+                on_hand: 1,
+                reserved: 0,
+            }],
+        });
+    let mut after = before.clone();
+    after.removed_units.push(3);
+    let event = EconomyEvent {
+        tick: 1,
+        ordinal: 1,
+        owner_slot: 0,
+        kind: EconomyEventKind::Destroyed {
+            unit: 3,
+            cause: turts_sim::economy::events::RemoveCause::Removed,
+            items: vec![turts_sim::economy::events::DestroyedLine {
+                location: turts_sim::economy::events::DestroyedLocation::Inventory(3),
+                item: ore,
+                amount: 1,
+            }],
+        },
+    };
+    let op = OperationAudit {
+        operation_id: 1,
+        before,
+        after,
+        events: vec![event],
+    };
+    assert_eq!(
+        check_operation(&op, &oracle).unwrap_err().invariant,
+        "DANGLING"
+    );
+}
+
+#[test]
 fn c1_belt_full_drill_stops() {
     let (mut app, oracle, mut history) = loaded(&forge_dir());
     run_until(

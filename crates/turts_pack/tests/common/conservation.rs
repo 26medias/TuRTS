@@ -77,15 +77,66 @@ impl OracleCatalog {
         }
         Ok(result)
     }
+    fn parsed_item(&self, item: &str, invariant: &'static str) -> Result<ContentId, CheckFailure> {
+        let item = content_id(&self.package, item).map_err(|e| CheckFailure::new(invariant, e))?;
+        if !self.items.contains(&item) {
+            return Err(CheckFailure::new(
+                invariant,
+                format!("source RON reference {item} is not an exported item"),
+            ));
+        }
+        Ok(item)
+    }
     fn node_item(&self, node: &ContentId) -> Result<ContentId, CheckFailure> {
         let def = self
             .nodes
             .get(node)
             .ok_or_else(|| CheckFailure::new("BAL-ore", format!("unparsed node {node}")))?;
-        ContentId::parse(&def.item).map_err(|e| CheckFailure::new("BAL-ore", e))
+        self.parsed_item(&def.item, "BAL-ore")
     }
     pub fn item(&self, item: &str) -> Result<ContentId, CheckFailure> {
-        ContentId::parse(item).map_err(|e| CheckFailure::new("SHOT", e))
+        self.parsed_item(item, "BAL-ore")
+    }
+    pub fn tracked_materials(&self) -> Result<(ContentId, ContentId), CheckFailure> {
+        let ore_items = self
+            .nodes
+            .values()
+            .map(|node| self.parsed_item(&node.item, "BAL-ore"))
+            .collect::<Result<BTreeSet<_>, _>>()?;
+        if ore_items.len() != 1 {
+            return Err(CheckFailure::new(
+                "BAL-ore",
+                format!("source RON defines {} distinct node items", ore_items.len()),
+            ));
+        }
+        let ore = ore_items.into_iter().next().unwrap();
+        let recipe_outputs = self
+            .recipes
+            .values()
+            .flat_map(|recipe| &recipe.outputs)
+            .map(|stack| self.parsed_item(&stack.item, "BAL-shell"))
+            .collect::<Result<BTreeSet<_>, _>>()?;
+        let weapon_ammo = self
+            .units
+            .values()
+            .filter_map(|unit| unit.weapon.as_ref().and_then(|weapon| weapon.ammo.as_ref()))
+            .map(|ammo| self.parsed_item(&ammo.item, "BAL-shell"))
+            .collect::<Result<BTreeSet<_>, _>>()?;
+        let shell_items = recipe_outputs
+            .intersection(&weapon_ammo)
+            .filter(|item| **item != ore)
+            .cloned()
+            .collect::<BTreeSet<_>>();
+        if shell_items.len() != 1 {
+            return Err(CheckFailure::new(
+                "BAL-shell",
+                format!(
+                    "source RON has {} recipe-output/weapon-ammo item matches outside node stock",
+                    shell_items.len()
+                ),
+            ));
+        }
+        Ok((ore, shell_items.into_iter().next().unwrap()))
     }
 }
 fn parse_file<T: serde::de::DeserializeOwned>(path: &Path) -> Result<T, String> {
@@ -290,9 +341,8 @@ impl OracleCatalog {
             .weapon
             .as_ref()
             .and_then(|w| w.ammo.as_ref())
-            .map(|a| ContentId::parse(&a.item))
-            .transpose()
-            .map_err(|e| CheckFailure::new("SHOT", e.to_string()))?;
+            .map(|ammo| self.parsed_item(&ammo.item, "SHOT"))
+            .transpose()?;
         Ok(item)
     }
 }
@@ -321,14 +371,13 @@ pub fn check_operation(
     op: &OperationAudit,
     oracle_catalog: &OracleCatalog,
 ) -> Result<(), CheckFailure> {
-    let ore = oracle_catalog.item(&format!("{}:ore", oracle_catalog.package))?;
-    let shell = oracle_catalog.item(&format!("{}:shell", oracle_catalog.package))?;
+    check_dangling(&op.after)?;
+    let (ore, shell) = oracle_catalog.tracked_materials()?;
     check_balance(op, oracle_catalog, &ore, "BAL-ore")?;
     check_balance(op, oracle_catalog, &shell, "BAL-shell")?;
     check_shots(op, oracle_catalog)?;
     check_reservations(&op.after, oracle_catalog)?;
     check_refunds(op, oracle_catalog)?;
-    check_dangling(&op.after)?;
     Ok(())
 }
 
