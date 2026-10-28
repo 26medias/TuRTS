@@ -100,6 +100,28 @@ fn inserter_requires_hand_inventory() {
 }
 
 #[test]
+fn inserter_swing_duration_must_be_positive() {
+    let unit = UNIT
+        .replace("machine: Some((recipe: \"forge:ammo\"))", "machine: None")
+        .replace(
+            "inserter: None",
+            "inserter: Some((reach: 1.0, swing_ms: 0, return_ms: 250))",
+        );
+    rejected(&unit, RECIPE, TECH, "inserter.swing_ms");
+}
+
+#[test]
+fn inserter_return_duration_must_be_positive() {
+    let unit = UNIT
+        .replace("machine: Some((recipe: \"forge:ammo\"))", "machine: None")
+        .replace(
+            "inserter: None",
+            "inserter: Some((reach: 1.0, swing_ms: 250, return_ms: 0))",
+        );
+    rejected(&unit, RECIPE, TECH, "inserter.return_ms");
+}
+
+#[test]
 fn machine_needs_matching_inventories() {
     rejected(
         &UNIT.replace(

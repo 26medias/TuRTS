@@ -607,6 +607,59 @@ impl Transaction<'_> {
     }
 }
 
+// Immutable item-table lookup keeps compact encoding local to the transaction.
+impl Transaction<'_> {
+    pub(crate) fn item_content(&self, item: crate::economy::conveyor::ItemIx) -> Option<ContentId> {
+        self.world
+            .get_resource::<ItemTable>()?
+            .content(item)
+            .cloned()
+    }
+
+    pub(crate) fn item_index(&self, item: &ContentId) -> Option<crate::economy::conveyor::ItemIx> {
+        self.world.get_resource::<ItemTable>()?.item_ix(item)
+    }
+}
+
+// Inserter phases stage only the affected arm, never the whole inserter resource.
+impl Transaction<'_> {
+    pub(crate) fn inserter_state(
+        &self,
+        unit: u32,
+    ) -> Result<crate::economy::inserter::InserterState, RejectReason> {
+        if let Some(staged) = self.writes.inserters.get(&unit) {
+            return staged.clone().ok_or(RejectReason::MissingCapability);
+        }
+        self.world
+            .get_resource::<Inserters>()
+            .and_then(|inserters| inserters.0.get(&unit))
+            .cloned()
+            .ok_or(RejectReason::MissingCapability)
+    }
+
+    pub(crate) fn stage_inserter(
+        &mut self,
+        unit: u32,
+        state: crate::economy::inserter::InserterState,
+    ) {
+        self.mark_m3();
+        self.writes.inserters.insert(unit, Some(state));
+    }
+
+    pub(crate) fn conveyor_piece(&self, piece: u32) -> Result<(u32, usize), RejectReason> {
+        if let Some(staged) = self.writes.piece_line.get(&piece) {
+            return (*staged)
+                .map(|(line, index)| (line, usize::from(index)))
+                .ok_or(RejectReason::IntegrityViolation);
+        }
+        self.world
+            .get_resource::<Conveyors>()
+            .and_then(|conveyors| conveyors.piece_line.get(&piece))
+            .map(|(line, index)| (*line, usize::from(*index)))
+            .ok_or(RejectReason::IntegrityViolation)
+    }
+}
+
 // Extractor phase accessors retain the per-key overlay boundary.
 impl Transaction<'_> {
     pub(crate) fn extractor_state(&self, unit: u32) -> Result<ExtractorState, RejectReason> {

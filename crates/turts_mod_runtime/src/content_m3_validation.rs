@@ -210,6 +210,14 @@ pub(crate) fn validate_m3(manifest: &Manifest, catalog: &ContentCatalog) -> Resu
             .map(String::as_str)
             .unwrap_or("content");
         let fail = |field: &str, message: &str| error(&origin, file, field, message);
+        if let Some(inserter) = &unit.inserter {
+            if inserter.swing_ms == 0 {
+                return Err(fail("inserter.swing_ms", "must be positive"));
+            }
+            if inserter.return_ms == 0 {
+                return Err(fail("inserter.return_ms", "must be positive"));
+            }
+        }
         if unit.inserter.is_some() && unit.inventory.is_none() {
             return Err(fail(
                 "inserter.inventory",

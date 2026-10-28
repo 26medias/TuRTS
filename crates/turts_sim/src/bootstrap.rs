@@ -62,6 +62,29 @@ pub fn stage_package(
     if tick_hz == 0 {
         return Err(error("tick_hz", "must be above zero".into()));
     }
+    for unit in catalog.units.values() {
+        let Some(inserter) = &unit.inserter else {
+            continue;
+        };
+        let file = catalog
+            .source_files
+            .get(&unit.id)
+            .map(String::as_str)
+            .unwrap_or("content");
+        for (field, duration_ms) in [
+            ("inserter.swing_ms", inserter.swing_ms),
+            ("inserter.return_ms", inserter.return_ms),
+        ] {
+            if boot_m3::try_inserter_duration_ticks(duration_ms, u32::from(tick_hz)).is_none() {
+                let message = if duration_ms == 0 {
+                    "must be positive".to_string()
+                } else {
+                    format!("duration exceeds u32 elapsed ticks at {tick_hz} Hz")
+                };
+                return Err(ModError::new(&unit.id.package.0, field, message).with_file(file));
+            }
+        }
+    }
     if world.get_resource::<SimClock>().is_none()
         || world.get_resource::<UnitTypes>().is_none()
         || world.get_resource::<IdAllocators>().is_none()
