@@ -68,6 +68,14 @@ pub fn queue_production(
         .get_resource::<InstalledCatalog>()
         .ok_or(RejectReason::UnknownRecipe)?
         .0;
+    if catalog
+        .units
+        .get(&unit_id)
+        .and_then(|unit| unit.research.as_ref())
+        .is_some()
+    {
+        return super::research::queue_research(world, slot, producer, recipe_id);
+    }
     let producer_def = catalog
         .units
         .get(&unit_id)
@@ -158,6 +166,9 @@ pub fn cancel_production(
     if owner != slot {
         return Err(RejectReason::NotOwner);
     }
+    if super::research::is_research_station(world, producer) {
+        return super::research::cancel_research(world, slot, producer, job);
+    }
     if super::machine::machine_ids(world).contains(&producer) {
         return super::machine::cancel_production(world, slot.0, producer, job);
     }
@@ -235,6 +246,8 @@ pub fn cancel_production(
 
 /// Advance the head of each producer queue once, in ascending producer-id order.
 pub(crate) fn run_production(world: &mut World) {
+    let research_ids = super::research::research_station_ids(world);
+    super::research::run_research(world);
     let machine_ids = super::machine::machine_ids(world);
     super::machine::run_machines(world);
     let producers = world
@@ -243,7 +256,9 @@ pub(crate) fn run_production(world: &mut World) {
             queues
                 .0
                 .keys()
-                .filter(|producer| !machine_ids.contains(producer))
+                .filter(|producer| {
+                    !machine_ids.contains(producer) && !research_ids.contains(producer)
+                })
                 .copied()
                 .collect::<Vec<_>>()
         })

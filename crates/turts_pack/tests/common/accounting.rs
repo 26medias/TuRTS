@@ -346,12 +346,14 @@ impl AccountingOracle {
         events: &[EconomyEvent],
         result: Option<&CommandResult>,
     ) -> Result<(), String> {
-        if events
-            .iter()
-            .any(|event| matches!(&event.kind, EconomyEventKind::ItemsProduced { .. }))
-        {
+        if events.iter().any(|event| {
+            matches!(
+                &event.kind,
+                EconomyEventKind::ItemsProduced { .. } | EconomyEventKind::ResearchCompleted { .. }
+            )
+        }) {
             return Err(
-                "M2 accounting oracle does not support ItemsProduced; use the M3 oracle".into(),
+                "M2 accounting oracle does not support M3 events; use the M3 oracle".into(),
             );
         }
         if let ExpectedOperation::TickBoundary { tick } = expected {

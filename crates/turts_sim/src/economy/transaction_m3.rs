@@ -678,3 +678,21 @@ impl Transaction<'_> {
         self.writes.extractors.insert(unit, Some(state));
     }
 }
+
+// Research completion is a per-slot, per-technology overlay entry.
+impl Transaction<'_> {
+    pub(crate) fn research_complete(&self, slot: u8, technology: &ContentId) -> bool {
+        let key = (slot, technology.clone());
+        if let Some(staged) = self.writes.research.get(&key) {
+            return staged.is_some();
+        }
+        self.world
+            .get_resource::<ResearchState>()
+            .is_some_and(|state| state.completed.contains(&key))
+    }
+
+    pub(crate) fn stage_research_complete(&mut self, slot: u8, technology: ContentId) {
+        self.mark_m3();
+        self.writes.research.insert((slot, technology), Some(()));
+    }
+}
