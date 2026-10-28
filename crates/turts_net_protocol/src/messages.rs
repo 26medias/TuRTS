@@ -3,6 +3,7 @@
 //! This crate holds only serde types. It has no Bevy types or Bevy entity ids.
 
 use serde::{Deserialize, Serialize};
+pub use turts_mod_api::Facing;
 
 pub use crate::economy::*;
 
@@ -36,6 +37,7 @@ pub struct UnitSnapshot {
     pub unit_id: UnitId,
     pub content_id: String,
     pub owner_slot: SlotId,
+    pub facing: Option<Facing>,
     pub pos: Pos,
 }
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -190,12 +192,89 @@ pub struct CommandRejected {
     pub tick: u32,
     pub reason: CommandRejectReason,
 }
+
+/// One item reference for each slot on one belt piece. Empty slots carry no index.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BeltPieceRecord {
+    pub piece: UnitId,
+    pub slots: Vec<Option<ContentRef>>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum InserterWaitReason {
+    NoSource,
+    NoDestination,
+    SourceEmpty,
+    DestinationFull,
+}
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum InserterStage {
+    AtSource(Option<InserterWaitReason>),
+    ToDestination,
+    AtDestination(InserterWaitReason),
+    Returning,
+}
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct InserterRecord {
+    pub unit: UnitId,
+    pub enabled: bool,
+    pub stage: InserterStage,
+    pub elapsed: u32,
+    pub source: Option<UnitId>,
+    pub destination: Option<UnitId>,
+}
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ExtractorStatus {
+    Extracting,
+    Full,
+    Depleted,
+}
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ExtractorRecord {
+    pub unit: UnitId,
+    pub enabled: bool,
+    pub node: Option<NodeId>,
+    pub status: ExtractorStatus,
+}
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum WeaponStatus {
+    Ready,
+    Cooling,
+    NoTarget,
+    OutOfAmmo,
+}
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WeaponRecord {
+    pub unit: UnitId,
+    pub enabled: bool,
+    pub cooldown: u32,
+    pub damage: Result<u64, CommandRejectReason>,
+    pub status: WeaponStatus,
+    pub last_target: Option<UnitId>,
+}
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HealthRecord {
+    pub unit: UnitId,
+    pub current: u64,
+}
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ResearchRecord {
+    pub slot: SlotId,
+    pub completed: Vec<ContentRef>,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Snapshot {
     pub tick: u32,
     pub units: Vec<UnitSnapshot>,
     pub nodes: Vec<NodeState>,
     pub economy: EconomyState,
+    pub belts: Vec<BeltPieceRecord>,
+    pub inserters: Vec<InserterRecord>,
+    pub extractors: Vec<ExtractorRecord>,
+    pub weapons: Vec<WeaponRecord>,
+    pub healths: Vec<HealthRecord>,
+    pub research: Vec<ResearchRecord>,
 }
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct WorldDelta {
@@ -206,6 +285,12 @@ pub struct WorldDelta {
     pub positions: Vec<UnitDelta>,
     pub nodes: Vec<NodeState>,
     pub economy: EconomyChanges,
+    pub belts: Vec<BeltPieceRecord>,
+    pub inserters: Vec<InserterRecord>,
+    pub extractors: Vec<ExtractorRecord>,
+    pub weapons: Vec<WeaponRecord>,
+    pub healths: Vec<HealthRecord>,
+    pub research: Vec<ResearchRecord>,
 }
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ResyncRequest;

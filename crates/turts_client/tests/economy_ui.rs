@@ -124,6 +124,8 @@ fn producer_fixture() -> (ClientContent, Replica, u32, ContentId, ContentId) {
             charged: costs,
             reserved: Vec::new(),
         }],
+
+        enabled: true,
     });
     (content, replica, id, producer_id, recipe_id)
 }
@@ -728,6 +730,8 @@ fn selected_inventory_and_gather_wait_reason_are_catalog_derived() {
             on_hand: 17,
             reserved: 4,
         }],
+
+        port: turts_net_protocol::InventoryPort::Main,
     });
     replica.economy.orders.push(OrderState {
         unit: UnitId(id),

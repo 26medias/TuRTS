@@ -27,7 +27,15 @@ fn snapshot(tick: u32) -> Snapshot {
                 x: tick as f32,
                 y: 0.0,
             },
+
+            facing: None,
         }],
+        belts: vec![],
+        inserters: vec![],
+        extractors: vec![],
+        weapons: vec![],
+        healths: vec![],
+        research: vec![],
     }
 }
 
@@ -51,6 +59,12 @@ fn delta(tick: u32, base_tick: u32) -> WorldDelta {
                 y: 0.0,
             },
         }],
+        belts: vec![],
+        inserters: vec![],
+        extractors: vec![],
+        weapons: vec![],
+        healths: vec![],
+        research: vec![],
     }
 }
 
@@ -237,6 +251,13 @@ fn delta_with_unknown_unit_requests_resync() {
             unit_id: UnitId(9),
             pos: Pos { x: 1.0, y: 1.0 },
         }],
+
+        belts: vec![],
+        inserters: vec![],
+        extractors: vec![],
+        weapons: vec![],
+        healths: vec![],
+        research: vec![],
     };
     assert_eq!(r.apply_delta(&unknown, now), DeltaOutcome::ResyncRequested);
     assert!(r.in_resync());

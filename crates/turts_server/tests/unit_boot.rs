@@ -303,7 +303,7 @@ fn completed_output_is_in_same_delta_and_late_join_snapshot_while_cancel_spawns_
 
     let batch = committed_tick(app.world());
     let completed = completed_world(app.world());
-    let delta = export::delta_for(batch, SlotId(0));
+    let delta = export::delta_for(batch, completed, SlotId(0));
     let late_join = export::snapshot_for(completed, SlotId(0));
     assert_eq!(delta.tick, late_join.tick);
     assert_eq!(delta.tick, 101);
@@ -358,8 +358,9 @@ fn completed_output_is_in_same_delta_and_late_join_snapshot_while_cancel_spawns_
     assert!(result.outcome.is_ok());
     app.update();
     assert!(committed_tick(app.world()).spawned.is_empty());
+    let completed = completed_world(app.world());
     assert!(
-        export::delta_for(committed_tick(app.world()), SlotId(0))
+        export::delta_for(committed_tick(app.world()), completed, SlotId(0))
             .spawned
             .is_empty()
     );

@@ -102,7 +102,16 @@ fn snapshot_at(tick: u32, x: f32, y: f32) -> Incoming {
             content_id: "base:command_center".to_string(),
             owner_slot: SlotId(0),
             pos: Pos { x, y },
+
+            facing: None,
         }],
+
+        belts: vec![],
+        inserters: vec![],
+        extractors: vec![],
+        weapons: vec![],
+        healths: vec![],
+        research: vec![],
     })
 }
 
@@ -128,6 +137,13 @@ fn delta_at(tick: u32, base_tick: u32, x: f32, y: f32) -> Incoming {
             unit_id: UnitId(1),
             pos: Pos { x, y },
         }],
+
+        belts: vec![],
+        inserters: vec![],
+        extractors: vec![],
+        weapons: vec![],
+        healths: vec![],
+        research: vec![],
     })
 }
 
@@ -150,6 +166,13 @@ fn empty_delta(tick: u32, base_tick: u32) -> Incoming {
             queues: vec![],
         },
         positions: Vec::new(),
+
+        belts: vec![],
+        inserters: vec![],
+        extractors: vec![],
+        weapons: vec![],
+        healths: vec![],
+        research: vec![],
     })
 }
 
@@ -489,7 +512,16 @@ fn world_with_one_unit() -> World {
             content_id: "acme:scout".to_string(),
             owner_slot: SlotId(0),
             pos: Pos { x: 4.0, y: 4.0 },
+
+            facing: None,
         }],
+
+        belts: vec![],
+        inserters: vec![],
+        extractors: vec![],
+        weapons: vec![],
+        healths: vec![],
+        research: vec![],
     }));
     world.insert_resource(rig.state);
     world.insert_resource(Phase::Joined { slot: 0 });

@@ -988,6 +988,7 @@ fn owner_snapshot_from_audit(
                     x: unit.pos.x,
                     y: unit.pos.y,
                 },
+                facing: unit.facing,
             })
             .collect(),
         nodes: world
@@ -1031,6 +1032,7 @@ fn owner_snapshot_from_audit(
                             reserved: item.reserved,
                         })
                         .collect(),
+                    port: wire::InventoryPort::Main,
                 })
                 .collect(),
             orders: world
@@ -1103,9 +1105,16 @@ fn owner_snapshot_from_audit(
                                 .collect(),
                         })
                         .collect(),
+                    enabled: true,
                 })
                 .collect(),
         },
+        belts: vec![],
+        inserters: vec![],
+        extractors: vec![],
+        weapons: vec![],
+        healths: vec![],
+        research: vec![],
     }
 }
 
