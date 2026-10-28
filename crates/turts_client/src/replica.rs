@@ -9,7 +9,9 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use bevy::platform::time::Instant;
 use turts_mod_api::{ContentId, CostSource, ResourceKind};
 use turts_net_protocol::{
-    EconomyChanges, EconomyState, JobId, NodeId, NodeState, Pos, Snapshot, UnitSnapshot, WorldDelta,
+    BeltPieceRecord, EconomyChanges, EconomyState, ExtractorRecord, HealthRecord, InserterRecord,
+    InventoryPort, JobId, NodeId, NodeState, Pos, ResearchRecord, Snapshot, UnitSnapshot,
+    WeaponRecord, WorldDelta,
 };
 
 use crate::{content::ClientContent, interp};
@@ -19,6 +21,7 @@ use crate::{content::ClientContent, interp};
 pub struct UnitReplica {
     pub content_id: String,
     pub owner_slot: u8,
+    pub facing: Option<turts_net_protocol::Facing>,
     /// Ascending, consecutive ticks.
     pub samples: VecDeque<(u32, Pos)>,
 }
@@ -80,16 +83,37 @@ struct Candidate {
     units: HashMap<u32, UnitReplica>,
     nodes: HashMap<NodeId, NodeState>,
     economy: EconomyState,
+    belts: Vec<BeltPieceRecord>,
+    inserters: Vec<InserterRecord>,
+    extractors: Vec<ExtractorRecord>,
+    weapons: Vec<WeaponRecord>,
+    healths: Vec<HealthRecord>,
+    research: Vec<ResearchRecord>,
+    health_trace: std::collections::BTreeMap<u32, Vec<HealthTraceEntry>>,
     tick: u32,
 }
 
-/// A replica keeps coherent samples and replaces on-wire absolute economy records atomically.
+/// A public health value observed in a coherent server tick. Equal values are omitted.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct HealthTraceEntry {
+    pub tick: u32,
+    pub current: u64,
+}
+
+/// A replica keeps coherent samples and replaces on-wire absolute records atomically.
 #[derive(Debug, Clone)]
 pub struct Replica {
     pub tick_hz: u16,
     pub units: HashMap<u32, UnitReplica>,
     pub nodes: HashMap<NodeId, NodeState>,
     pub economy: EconomyState,
+    pub belts: Vec<BeltPieceRecord>,
+    pub inserters: Vec<InserterRecord>,
+    pub extractors: Vec<ExtractorRecord>,
+    pub weapons: Vec<WeaponRecord>,
+    pub healths: Vec<HealthRecord>,
+    pub research: Vec<ResearchRecord>,
+    pub health_trace: std::collections::BTreeMap<u32, Vec<HealthTraceEntry>>,
     pub snapshot_tick: Option<u32>,
     pub last_applied_tick: Option<u32>,
     pub latest_receipt: Option<Instant>,
@@ -118,6 +142,13 @@ impl Replica {
             units: HashMap::new(),
             nodes: HashMap::new(),
             economy: empty_economy(),
+            belts: Vec::new(),
+            inserters: Vec::new(),
+            extractors: Vec::new(),
+            weapons: Vec::new(),
+            healths: Vec::new(),
+            research: Vec::new(),
+            health_trace: std::collections::BTreeMap::new(),
             snapshot_tick: None,
             last_applied_tick: None,
             latest_receipt: None,
@@ -353,6 +384,7 @@ impl Replica {
                 UnitReplica {
                     content_id: unit.content_id.clone(),
                     owner_slot: unit.owner_slot.0,
+                    facing: unit.facing,
                     samples: VecDeque::from([(snapshot.tick, unit.pos)]),
                 },
             );
@@ -364,15 +396,30 @@ impl Replica {
             }
             nodes.insert(node.id, node.clone());
         }
-        if !valid_economy(context, &units, &nodes, &snapshot.economy) {
-            return None;
-        }
-        Some(Candidate {
+        let mut candidate = Candidate {
             units,
             nodes,
             economy: snapshot.economy.clone(),
+            belts: snapshot.belts.clone(),
+            inserters: snapshot.inserters.clone(),
+            extractors: snapshot.extractors.clone(),
+            weapons: snapshot.weapons.clone(),
+            healths: Vec::new(),
+            research: snapshot.research.clone(),
+            health_trace: self.health_trace.clone(),
             tick: snapshot.tick,
-        })
+        };
+        if !valid_economy(
+            context,
+            &candidate.units,
+            &candidate.nodes,
+            &candidate.economy,
+        ) || !valid_m3_records(context, &candidate.units, &candidate.nodes, &candidate)
+            || !apply_health_records(context, snapshot.tick, &snapshot.healths, &mut candidate)
+        {
+            return None;
+        }
+        Some(candidate)
     }
 
     fn candidate_at(&self, tick: u32) -> Candidate {
@@ -380,6 +427,13 @@ impl Replica {
             units: self.units.clone(),
             nodes: self.nodes.clone(),
             economy: self.economy.clone(),
+            belts: self.belts.clone(),
+            inserters: self.inserters.clone(),
+            extractors: self.extractors.clone(),
+            weapons: self.weapons.clone(),
+            healths: self.healths.clone(),
+            research: self.research.clone(),
+            health_trace: self.health_trace.clone(),
             tick,
         }
     }
@@ -407,21 +461,10 @@ impl Replica {
                 UnitReplica {
                     content_id: unit.content_id.clone(),
                     owner_slot: unit.owner_slot.0,
+                    facing: unit.facing,
                     samples: VecDeque::from([(delta.tick, unit.pos)]),
                 },
             );
-        }
-        for id in &removed {
-            next.units.remove(id);
-            next.economy
-                .inventories
-                .retain(|record| record.unit.0 != *id);
-            next.economy.orders.retain(|record| {
-                record.unit.0 != *id && record.receiver.is_none_or(|receiver| receiver.0 != *id)
-            });
-            next.economy
-                .queues
-                .retain(|record| record.producer.0 != *id);
         }
 
         let mut positions = HashMap::new();
@@ -429,7 +472,6 @@ impl Replica {
             if !finite_pos(position.pos)
                 || positions.insert(position.unit_id.0, position.pos).is_some()
                 || !next.units.contains_key(&position.unit_id.0)
-                || removed.contains(&position.unit_id.0)
             {
                 return None;
             }
@@ -463,10 +505,33 @@ impl Replica {
             }
             next.nodes.insert(node.id, node.clone());
         }
-        if !merge_economy(&mut next.economy, &delta.economy) {
+        if !validate_delta_m3(context, &next.units, &next.nodes, delta, &removed)
+            || !apply_health_records(context, delta.tick, &delta.healths, &mut next)
+            || !merge_economy(&mut next.economy, &delta.economy)
+            || !merge_m3_records(&mut next, delta)
+        {
             return None;
         }
-        if !valid_economy(context, &next.units, &next.nodes, &next.economy) {
+        for id in &removed {
+            next.units.remove(id);
+            next.economy
+                .inventories
+                .retain(|record| record.unit.0 != *id);
+            next.economy.orders.retain(|record| {
+                record.unit.0 != *id && record.receiver.is_none_or(|receiver| receiver.0 != *id)
+            });
+            next.economy
+                .queues
+                .retain(|record| record.producer.0 != *id);
+            next.belts.retain(|record| record.piece.0 != *id);
+            next.inserters.retain(|record| record.unit.0 != *id);
+            next.extractors.retain(|record| record.unit.0 != *id);
+            next.weapons.retain(|record| record.unit.0 != *id);
+            next.healths.retain(|record| record.unit.0 != *id);
+        }
+        if !valid_economy(context, &next.units, &next.nodes, &next.economy)
+            || !valid_m3_records(context, &next.units, &next.nodes, &next)
+        {
             return None;
         }
         next.tick = delta.tick;
@@ -477,6 +542,13 @@ impl Replica {
         self.units = candidate.units;
         self.nodes = candidate.nodes;
         self.economy = candidate.economy;
+        self.belts = candidate.belts;
+        self.inserters = candidate.inserters;
+        self.extractors = candidate.extractors;
+        self.weapons = candidate.weapons;
+        self.healths = candidate.healths;
+        self.research = candidate.research;
+        self.health_trace = candidate.health_trace;
         self.last_applied_tick = Some(candidate.tick);
         self.latest_receipt = Some(now);
         while self.units.values().any(|unit| {
@@ -608,7 +680,14 @@ fn valid_economy(
 
     let mut inventories = HashSet::new();
     for inventory in &economy.inventories {
-        if !inventories.insert(inventory.unit.0) {
+        let port_key = (
+            inventory.unit.0,
+            match inventory.port {
+                InventoryPort::Main => 0u8,
+                InventoryPort::Output => 1u8,
+            },
+        );
+        if !inventories.insert(port_key) {
             return false;
         }
         let Some(unit) = units
@@ -620,12 +699,16 @@ fn valid_economy(
         let Some(unit_id) = parse_id(&unit.content_id) else {
             return false;
         };
-        let Some(definition) = context
-            .content
-            .catalog
-            .units
-            .get(&unit_id)
-            .and_then(|u| u.inventory.as_ref())
+        let Some(definition) =
+            context
+                .content
+                .catalog
+                .units
+                .get(&unit_id)
+                .and_then(|u| match inventory.port {
+                    InventoryPort::Main => u.inventory.as_ref(),
+                    InventoryPort::Output => u.output_inventory.as_ref(),
+                })
         else {
             return false;
         };
@@ -805,40 +888,38 @@ fn valid_economy(
 }
 
 fn merge_economy(current: &mut EconomyState, changes: &EconomyChanges) -> bool {
-    if !unique(
-        changes
-            .balances
-            .iter()
-            .map(|record| record.resource.as_str()),
-    ) || !unique(changes.inventories.iter().map(|record| record.unit.0))
-        || !unique(changes.orders.iter().map(|record| record.unit.0))
-        || !unique(changes.queues.iter().map(|record| record.producer.0))
+    let mut staged = current.clone();
+    if !replace_keyed(&mut staged.balances, &changes.balances, |record| {
+        record.resource.clone()
+    }) || !replace_keyed(&mut staged.inventories, &changes.inventories, |record| {
+        (
+            record.unit.0,
+            match record.port {
+                InventoryPort::Main => 0u8,
+                InventoryPort::Output => 1u8,
+            },
+        )
+    }) || !replace_keyed(&mut staged.orders, &changes.orders, |record| record.unit.0)
+        || !replace_keyed(&mut staged.queues, &changes.queues, |record| {
+            record.producer.0
+        })
     {
         return false;
     }
-    merge_by(&mut current.balances, &changes.balances, |record| {
-        &record.resource
-    });
-    merge_by(&mut current.inventories, &changes.inventories, |record| {
-        &record.unit
-    });
-    merge_by(&mut current.orders, &changes.orders, |record| &record.unit);
-    merge_by(&mut current.queues, &changes.queues, |record| {
-        &record.producer
-    });
+    *current = staged;
     true
 }
 
-fn unique<T: Eq + std::hash::Hash>(keys: impl Iterator<Item = T>) -> bool {
-    let mut seen = HashSet::new();
-    keys.into_iter().all(|key| seen.insert(key))
-}
-
-fn merge_by<T: Clone, K: Eq + std::hash::Hash>(
+/// Apply unique absolute replacements. Duplicate input keys fail before any state changes.
+pub(crate) fn replace_keyed<T: Clone, K: Eq + std::hash::Hash>(
     current: &mut Vec<T>,
     changes: &[T],
-    key: impl Fn(&T) -> &K,
-) {
+    key: impl Fn(&T) -> K,
+) -> bool {
+    let mut seen = HashSet::new();
+    if !changes.iter().all(|record| seen.insert(key(record))) {
+        return false;
+    }
     for change in changes {
         let change_key = key(change);
         if let Some(index) = current
@@ -850,4 +931,261 @@ fn merge_by<T: Clone, K: Eq + std::hash::Hash>(
             current.push(change.clone());
         }
     }
+    true
+}
+
+fn merge_m3_records(candidate: &mut Candidate, delta: &WorldDelta) -> bool {
+    replace_keyed(&mut candidate.belts, &delta.belts, |record| record.piece.0)
+        && replace_keyed(&mut candidate.inserters, &delta.inserters, |record| {
+            record.unit.0
+        })
+        && replace_keyed(&mut candidate.extractors, &delta.extractors, |record| {
+            record.unit.0
+        })
+        && replace_keyed(&mut candidate.weapons, &delta.weapons, |record| {
+            record.unit.0
+        })
+        && replace_keyed(&mut candidate.research, &delta.research, |record| {
+            record.slot.0
+        })
+}
+
+fn validate_delta_m3(
+    context: &ReplicaContext,
+    units: &HashMap<u32, UnitReplica>,
+    nodes: &HashMap<NodeId, NodeState>,
+    delta: &WorldDelta,
+    removed: &HashSet<u32>,
+) -> bool {
+    let removed_has = |id: u32| removed.contains(&id);
+    if delta.belts.iter().any(|record| removed_has(record.piece.0))
+        || delta
+            .inserters
+            .iter()
+            .any(|record| removed_has(record.unit.0))
+        || delta
+            .extractors
+            .iter()
+            .any(|record| removed_has(record.unit.0))
+        || delta
+            .weapons
+            .iter()
+            .any(|record| removed_has(record.unit.0))
+        || delta
+            .economy
+            .inventories
+            .iter()
+            .any(|record| removed_has(record.unit.0))
+        || delta.economy.orders.iter().any(|record| {
+            removed_has(record.unit.0) || record.receiver.is_some_and(|id| removed_has(id.0))
+        })
+        || delta
+            .economy
+            .queues
+            .iter()
+            .any(|record| removed_has(record.producer.0))
+    {
+        return false;
+    }
+    let mut candidate = Candidate {
+        units: units.clone(),
+        nodes: nodes.clone(),
+        economy: empty_economy(),
+        belts: vec![],
+        inserters: vec![],
+        extractors: vec![],
+        weapons: vec![],
+        healths: vec![],
+        research: vec![],
+        health_trace: Default::default(),
+        tick: delta.tick,
+    };
+    candidate.belts = delta.belts.clone();
+    candidate.inserters = delta.inserters.clone();
+    candidate.extractors = delta.extractors.clone();
+    candidate.weapons = delta.weapons.clone();
+    candidate.research = delta.research.clone();
+    let changes_unique = unique_by(&delta.belts, |record| record.piece.0)
+        && unique_by(&delta.inserters, |record| record.unit.0)
+        && unique_by(&delta.extractors, |record| record.unit.0)
+        && unique_by(&delta.weapons, |record| record.unit.0)
+        && unique_by(&delta.healths, |record| record.unit.0)
+        && unique_by(&delta.research, |record| record.slot.0);
+    changes_unique
+        && valid_m3_records(context, &candidate.units, &candidate.nodes, &candidate)
+        && delta
+            .healths
+            .iter()
+            .all(|record| valid_health(context, &candidate.units, record))
+}
+
+fn unique_by<T, K: Eq + std::hash::Hash>(records: &[T], key: impl Fn(&T) -> K) -> bool {
+    let mut seen = HashSet::new();
+    records.iter().all(|record| seen.insert(key(record)))
+}
+
+fn unit_definition<'a>(
+    context: &'a ReplicaContext,
+    units: &HashMap<u32, UnitReplica>,
+    id: u32,
+    owner_only: bool,
+) -> Option<&'a turts_mod_api::ResolvedUnit> {
+    let unit = units.get(&id)?;
+    if owner_only && unit.owner_slot != context.slot {
+        return None;
+    }
+    let content_id = parse_id(&unit.content_id)?;
+    context.content.catalog.units.get(&content_id)
+}
+
+fn valid_health(
+    context: &ReplicaContext,
+    units: &HashMap<u32, UnitReplica>,
+    record: &HealthRecord,
+) -> bool {
+    unit_definition(context, units, record.unit.0, false)
+        .and_then(|definition| definition.health.as_ref())
+        .is_some_and(|health| record.current <= health.max)
+}
+
+fn apply_health_records(
+    context: &ReplicaContext,
+    tick: u32,
+    changes: &[HealthRecord],
+    candidate: &mut Candidate,
+) -> bool {
+    if !unique_by(changes, |record| record.unit.0)
+        || !changes
+            .iter()
+            .all(|record| valid_health(context, &candidate.units, record))
+        || !replace_keyed(&mut candidate.healths, changes, |record| record.unit.0)
+    {
+        return false;
+    }
+    for record in changes {
+        let history = candidate.health_trace.entry(record.unit.0).or_default();
+        if history
+            .last()
+            .is_none_or(|last| last.current != record.current)
+        {
+            history.push(HealthTraceEntry {
+                tick,
+                current: record.current,
+            });
+        }
+    }
+    true
+}
+
+fn valid_m3_records(
+    context: &ReplicaContext,
+    units: &HashMap<u32, UnitReplica>,
+    nodes: &HashMap<NodeId, NodeState>,
+    candidate: &Candidate,
+) -> bool {
+    if !unique_by(&candidate.belts, |record| record.piece.0)
+        || !unique_by(&candidate.inserters, |record| record.unit.0)
+        || !unique_by(&candidate.extractors, |record| record.unit.0)
+        || !unique_by(&candidate.weapons, |record| record.unit.0)
+        || !unique_by(&candidate.healths, |record| record.unit.0)
+        || !unique_by(&candidate.research, |record| record.slot.0)
+    {
+        return false;
+    }
+    for record in &candidate.belts {
+        let Some(definition) = unit_definition(context, units, record.piece.0, true)
+            .and_then(|unit| unit.conveyor.as_ref())
+        else {
+            return false;
+        };
+        if record.slots.len() != usize::from(definition.slots_per_piece)
+            || record.slots.iter().flatten().any(|item| {
+                parse_id(item).is_none_or(|id| {
+                    !definition.accepts.contains(&id)
+                        || context
+                            .content
+                            .catalog
+                            .resources
+                            .get(&id)
+                            .is_none_or(|resource| resource.kind != ResourceKind::Item)
+                })
+            })
+        {
+            return false;
+        }
+    }
+    for record in &candidate.inserters {
+        let Some(unit_def) = unit_definition(context, units, record.unit.0, true)
+            .filter(|unit| unit.inserter.is_some())
+        else {
+            return false;
+        };
+        for (reference, source) in [(record.source, true), (record.destination, false)] {
+            if let Some(reference) = reference {
+                let Some(target) = unit_definition(context, units, reference.0, true) else {
+                    return false;
+                };
+                let capable = if source {
+                    target.output_inventory.is_some()
+                        || target.inventory.is_some()
+                        || target.conveyor.is_some()
+                } else {
+                    target.inventory.is_some() || target.conveyor.is_some()
+                };
+                if !capable || reference.0 == record.unit.0 {
+                    return false;
+                }
+            }
+        }
+        let _ = unit_def;
+    }
+    for record in &candidate.extractors {
+        let Some(unit_def) = unit_definition(context, units, record.unit.0, true)
+            .filter(|unit| unit.extractor.is_some())
+        else {
+            return false;
+        };
+        let Some(inventory) = unit_def.inventory.as_ref() else {
+            return false;
+        };
+        if record.node.is_some_and(|id| {
+            nodes
+                .get(&id)
+                .and_then(|node| parse_id(&node.content_id))
+                .and_then(|id| context.content.catalog.nodes.get(&id))
+                .is_none_or(|node| !inventory.accepts.contains(&node.item))
+        }) {
+            return false;
+        }
+    }
+    for record in &candidate.weapons {
+        if unit_definition(context, units, record.unit.0, true)
+            .is_none_or(|unit| unit.weapon.is_none())
+            || record
+                .last_target
+                .is_some_and(|target| !units.contains_key(&target.0))
+        {
+            return false;
+        }
+    }
+    for record in &candidate.healths {
+        if !valid_health(context, units, record) {
+            return false;
+        }
+    }
+    for record in &candidate.research {
+        if record.slot.0 != context.slot {
+            return false;
+        }
+        let mut completed = HashSet::new();
+        if record.completed.iter().any(|technology| {
+            parse_id(technology).is_none_or(|id| {
+                !completed.insert(id.clone())
+                    || !context.content.catalog.technologies.contains_key(&id)
+            })
+        }) {
+            return false;
+        }
+    }
+    true
 }
