@@ -272,6 +272,13 @@ pub(crate) fn run_production(world: &mut World) {
         if head_stage.is_none() {
             continue;
         }
+        // Preserve M2 worlds without M3 state, but freeze every disabled legacy producer.
+        if world
+            .get_resource::<super::research::Disabled>()
+            .is_some_and(|disabled| disabled.0.contains(&producer))
+        {
+            continue;
+        }
         let Some(owner_slot) = world.iter_entities().find_map(|entity| {
             (entity.get::<UnitId>().is_some_and(|id| id.0 == producer))
                 .then(|| entity.get::<Owner>().map(|owner| owner.0.0))?
@@ -520,5 +527,239 @@ fn event_cost_line(line: &ReservationLine) -> CostLine {
         },
         resource: line.resource.clone(),
         amount: line.amount,
+    }
+}
+
+#[cfg(test)]
+mod m3_disabled_legacy_producer_tests {
+    use super::*;
+    use crate::{
+        Applied, Command, CommandKind, apply_command,
+        bootstrap::InstalledCatalog,
+        economy::{events::NextEventOrdinal, research::Disabled},
+        headless_app,
+        world::Position,
+    };
+    use bevy_math::Vec2;
+    use std::collections::BTreeMap;
+    use turts_mod_api::{
+        CancelRefunds, ContentCatalog, Footprint, MovementDef, PackageId, ProducerDef, RefundRatio,
+        ResolvedProducer, ResolvedProduction, ResolvedUnit, UnitDef, UnitRegistry, WorldPos,
+    };
+
+    #[test]
+    fn legacy_producer_freezes_resumes_and_can_cancel_while_disabled() {
+        let mut app = headless_app(20);
+        let package = PackageId::parse("test").unwrap();
+        let producer_content = ContentId::new(&package, "producer");
+        let product_content = ContentId::new(&package, "product");
+        let recipe_id = ContentId::new(&package, "make_product");
+        let offsets = vec![WorldPos { x: 0.0, y: 0.0 }];
+        let producer_def = ProducerDef {
+            recipes: vec!["test:make_product".into()],
+            queue_capacity: 2,
+            spawn_offsets: offsets.clone(),
+        };
+        let mut types = UnitTypes::default();
+        let producer_type = types
+            .register_unit_type(
+                &package,
+                UnitDef {
+                    id: "producer".into(),
+                    name: "Producer".into(),
+                    footprint: Footprint::Circle { radius: 0.5 },
+                    movement: None,
+                    inventory: None,
+                    gatherer: None,
+                    drop_off: None,
+                    producer: Some(producer_def.clone()),
+                    output_inventory: None,
+                    extractor: None,
+                    conveyor: None,
+                    inserter: None,
+                    machine: None,
+                    research: None,
+                    health: None,
+                    weapon: None,
+                    removal: None,
+                },
+            )
+            .unwrap();
+        let _product_type = types
+            .register_unit_type(
+                &package,
+                UnitDef {
+                    id: "product".into(),
+                    name: "Product".into(),
+                    footprint: Footprint::Circle { radius: 0.25 },
+                    movement: Some(MovementDef { speed: 1.0 }),
+                    inventory: None,
+                    gatherer: None,
+                    drop_off: None,
+                    producer: None,
+                    output_inventory: None,
+                    extractor: None,
+                    conveyor: None,
+                    inserter: None,
+                    machine: None,
+                    research: None,
+                    health: None,
+                    weapon: None,
+                    removal: None,
+                },
+            )
+            .unwrap();
+        let resolved_unit =
+            |id: turts_mod_api::ContentId, name: &str, radius, producer, movement| ResolvedUnit {
+                id,
+                name: name.into(),
+                footprint: Footprint::Circle { radius },
+                movement,
+                inventory: None,
+                gatherer: None,
+                drop_off: None,
+                producer,
+                output_inventory: None,
+                extractor: None,
+                conveyor: None,
+                inserter: None,
+                machine: None,
+                research: None,
+                health: None,
+                weapon: None,
+                removal: None,
+            };
+        let mut catalog = ContentCatalog {
+            resources: BTreeMap::new(),
+            units: BTreeMap::new(),
+            nodes: BTreeMap::new(),
+            production: BTreeMap::new(),
+            recipes: BTreeMap::new(),
+            technologies: BTreeMap::new(),
+            source_files: BTreeMap::new(),
+        };
+        catalog.units.insert(
+            producer_content.clone(),
+            resolved_unit(
+                producer_content,
+                "Producer",
+                0.5,
+                Some(ResolvedProducer {
+                    recipes: vec![recipe_id.clone()],
+                    queue_capacity: 2,
+                    spawn_offsets: offsets,
+                }),
+                None,
+            ),
+        );
+        catalog.units.insert(
+            product_content.clone(),
+            resolved_unit(
+                product_content.clone(),
+                "Product",
+                0.25,
+                None,
+                Some(MovementDef { speed: 1.0 }),
+            ),
+        );
+        catalog.production.insert(
+            recipe_id.clone(),
+            ResolvedProduction {
+                id: recipe_id.clone(),
+                name: "Product".into(),
+                output_unit: product_content,
+                duration_ms: 500,
+                costs: vec![],
+                payment: turts_mod_api::PaymentPolicy::ChargeOnQueue,
+                cancel_refunds: CancelRefunds {
+                    queued: RefundRatio {
+                        numerator: 0,
+                        denominator: 1,
+                    },
+                    running: RefundRatio {
+                        numerator: 0,
+                        denominator: 1,
+                    },
+                    output_blocked: RefundRatio {
+                        numerator: 0,
+                        denominator: 1,
+                    },
+                },
+            },
+        );
+        app.world_mut().insert_resource(types);
+        app.world_mut().insert_resource(InstalledCatalog(catalog));
+        app.world_mut().resource_mut::<NextEventOrdinal>().0 = Some(0);
+        app.world_mut().spawn((
+            UnitId(7),
+            Owner(SlotId(0)),
+            UnitType(producer_type),
+            Position(Vec2::ZERO),
+        ));
+        app.world_mut().resource_mut::<ProductionQueues>().0.insert(
+            7,
+            vec![ProductionJob {
+                id: JobId(1),
+                recipe: recipe_id,
+                stage: JobStage::Running,
+                elapsed_ticks: 3,
+                duration_ticks: 10,
+                charged: vec![],
+                reservation: None,
+            }],
+        );
+
+        let set_enabled = |world: &mut bevy_ecs::world::World, enabled| {
+            apply_command(
+                world,
+                &Command {
+                    slot: SlotId(0),
+                    seq: 1,
+                    kind: CommandKind::SetEnabled {
+                        unit_id: 7,
+                        enabled,
+                    },
+                },
+            )
+        };
+        assert_eq!(
+            set_enabled(app.world_mut(), false).outcome,
+            Ok(Applied { job_id: None })
+        );
+        assert!(app.world().resource::<Disabled>().0.contains(&7));
+        run_production(app.world_mut());
+        assert_eq!(
+            app.world().resource::<ProductionQueues>().0[&7][0].elapsed_ticks,
+            3
+        );
+
+        assert_eq!(
+            set_enabled(app.world_mut(), true).outcome,
+            Ok(Applied { job_id: None })
+        );
+        run_production(app.world_mut());
+        assert_eq!(
+            app.world().resource::<ProductionQueues>().0[&7][0].elapsed_ticks,
+            4
+        );
+
+        assert_eq!(
+            set_enabled(app.world_mut(), false).outcome,
+            Ok(Applied { job_id: None })
+        );
+        let cancelled = apply_command(
+            app.world_mut(),
+            &Command {
+                slot: SlotId(0),
+                seq: 2,
+                kind: CommandKind::CancelProduction {
+                    producer_id: 7,
+                    job_id: JobId(1),
+                },
+            },
+        );
+        assert_eq!(cancelled.outcome, Ok(Applied { job_id: None }));
+        assert!(app.world().resource::<Disabled>().0.contains(&7));
+        assert!(app.world().resource::<ProductionQueues>().0[&7].is_empty());
     }
 }

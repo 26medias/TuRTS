@@ -45,6 +45,13 @@ pub enum CommandKind {
         producer_id: u32,
         job_id: crate::ids::JobId,
     },
+    Remove {
+        unit_id: u32,
+    },
+    SetEnabled {
+        unit_id: u32,
+        enabled: bool,
+    },
 }
 
 /// Commands that wait for the next tick.
@@ -173,6 +180,12 @@ fn apply_command_inner(world: &mut World, command: &Command) -> CommandResult {
             job_id,
         } => cancel_production(world, command.slot, *producer_id, *job_id)
             .map(|()| Applied { job_id: None }),
+        CommandKind::Remove { unit_id } => crate::command_m3::remove(world, command.slot, *unit_id)
+            .map(|()| Applied { job_id: None }),
+        CommandKind::SetEnabled { unit_id, enabled } => {
+            crate::command_m3::set_enabled(world, command.slot, *unit_id, *enabled)
+                .map(|()| Applied { job_id: None })
+        }
     };
     CommandResult {
         slot: command.slot,

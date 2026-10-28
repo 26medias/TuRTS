@@ -3,6 +3,7 @@
 pub(crate) mod boot_m3;
 pub mod bootstrap;
 pub mod command;
+mod command_m3;
 pub mod economy;
 pub mod harness;
 pub mod ids;
