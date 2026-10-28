@@ -1,0 +1,11 @@
+(
+    id: "make_shells",
+    name: "Make Shells",
+    inputs: [(item: "forge_locked:ore", amount: 2)],
+    outputs: [(item: "forge_locked:shell", amount: 1)],
+    duration_ms: 2000,
+    cancel_refunds: (
+        running: (numerator: 1, denominator: 1),
+        output_blocked: (numerator: 1, denominator: 1),
+    ),
+)

@@ -210,6 +210,12 @@ pub(crate) fn validate_m3(manifest: &Manifest, catalog: &ContentCatalog) -> Resu
             .map(String::as_str)
             .unwrap_or("content");
         let fail = |field: &str, message: &str| error(&origin, file, field, message);
+        if unit.inserter.is_some() && unit.inventory.is_none() {
+            return Err(fail(
+                "inserter.inventory",
+                "inserter requires a hand inventory",
+            ));
+        }
         if let Some(output) = &unit.output_inventory {
             if output.capacity == 0 {
                 return Err(fail("output_inventory.capacity", "must be positive"));

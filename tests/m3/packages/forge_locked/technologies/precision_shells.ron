@@ -1,0 +1,14 @@
+(
+    id: "precision_shells",
+    name: "Precision Shells",
+    prerequisites: ["forge_locked:hardened_shells"],
+    duration_ms: 1000,
+    costs: [],
+    payment: ReserveThenCharge,
+    cancel_refunds: (
+        queued: (numerator: 1, denominator: 1),
+        running: (numerator: 1, denominator: 1),
+        output_blocked: (numerator: 1, denominator: 1),
+    ),
+    effects: [],
+)

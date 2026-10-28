@@ -1,0 +1,1 @@
+(target: Unit("forge_locked:drone"), shape: Capsule(radius: 0.6, height: 1.0))
