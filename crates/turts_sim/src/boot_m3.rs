@@ -1034,6 +1034,159 @@ mod tests {
     }
 
     #[test]
+    fn production_command_spawn_installs_mobile_health_and_output_inventory_rows() {
+        use crate::{
+            Command, CommandKind, CommandQueue, CommandResults, MapBounds, Owner, Position, SlotId,
+            UnitId, UnitType,
+            bootstrap::{InstalledCatalog, ProductionDurations},
+            economy::{combat::Healths, ledger::EconomyLedger},
+        };
+        use turts_mod_api::{
+            CancelRefunds, ContentsPolicy, PaymentPolicy, RefundRatio, RemovalDef, ResolvedCost,
+            ResolvedProducer, ResolvedProduction, WorldPos,
+        };
+
+        let producer_id = ContentId::parse("forge:producer").unwrap();
+        let output_id = ContentId::parse("forge:mobile_output").unwrap();
+        let recipe_id = ContentId::parse("forge:produce_mobile_output").unwrap();
+        let item_id = ContentId::parse("forge:alloy").unwrap();
+        let mut catalog = empty_catalog();
+        catalog
+            .resources
+            .insert(item_id.clone(), resource(&item_id, ResourceKind::Item));
+        catalog.units.insert(
+            producer_id.clone(),
+            ResolvedUnit {
+                id: producer_id.clone(),
+                name: "Producer".into(),
+                footprint: Footprint::Circle { radius: 0.6 },
+                movement: None,
+                inventory: None,
+                gatherer: None,
+                drop_off: None,
+                producer: Some(ResolvedProducer {
+                    recipes: vec![recipe_id.clone()],
+                    queue_capacity: 1,
+                    spawn_offsets: vec![WorldPos { x: 2.0, y: 0.0 }],
+                }),
+                output_inventory: None,
+                extractor: None,
+                conveyor: None,
+                inserter: None,
+                machine: None,
+                research: None,
+                health: None,
+                weapon: None,
+                removal: None,
+            },
+        );
+        catalog.units.insert(
+            output_id.clone(),
+            ResolvedUnit {
+                id: output_id.clone(),
+                name: "Mobile Output".into(),
+                footprint: Footprint::Circle { radius: 0.6 },
+                movement: Some(MovementDef { speed: 2.0 }),
+                inventory: None,
+                gatherer: None,
+                drop_off: None,
+                producer: None,
+                output_inventory: Some(ResolvedInventory {
+                    capacity: 3,
+                    accepts: vec![item_id.clone()],
+                }),
+                extractor: None,
+                conveyor: None,
+                inserter: None,
+                machine: None,
+                research: None,
+                health: Some(HealthDef { max: 73 }),
+                weapon: None,
+                removal: Some(RemovalDef {
+                    by_command: false,
+                    contents: ContentsPolicy::Destroy,
+                }),
+            },
+        );
+        catalog.production.insert(
+            recipe_id.clone(),
+            ResolvedProduction {
+                id: recipe_id.clone(),
+                name: "Produce Mobile Output".into(),
+                output_unit: output_id,
+                duration_ms: 1,
+                costs: Vec::<ResolvedCost>::new(),
+                payment: PaymentPolicy::ChargeOnQueue,
+                cancel_refunds: CancelRefunds {
+                    queued: RefundRatio {
+                        numerator: 0,
+                        denominator: 1,
+                    },
+                    running: RefundRatio {
+                        numerator: 0,
+                        denominator: 1,
+                    },
+                    output_blocked: RefundRatio {
+                        numerator: 0,
+                        denominator: 1,
+                    },
+                },
+            },
+        );
+
+        let mut app = crate::headless_app(20);
+        let world = app.world_mut();
+        let types = UnitTypes::from_catalog(&catalog, &UnitTypes::default()).unwrap();
+        let producer_type = types.find("forge:producer").unwrap();
+        world.insert_resource(types);
+        world.insert_resource(InstalledCatalog(catalog));
+        world.insert_resource(ProductionDurations(BTreeMap::from([(
+            recipe_id.clone(),
+            1,
+        )])));
+        world.insert_resource(MapBounds {
+            size: Vec2::splat(10.0),
+        });
+        world
+            .resource_mut::<IdAllocators>()
+            .set_next_values(2, 1, 1);
+        world.spawn((
+            UnitId(1),
+            UnitType(producer_type),
+            Owner(SlotId(0)),
+            Position(Vec2::new(2.0, 2.0)),
+        ));
+        world.resource_mut::<CommandQueue>().0.push_back(Command {
+            slot: SlotId(0),
+            seq: 1,
+            kind: CommandKind::Produce {
+                producer_id: 1,
+                recipe_id,
+            },
+        });
+
+        app.update();
+        assert!(matches!(
+            app.world().resource::<CommandResults>().0[0].outcome,
+            Ok(crate::Applied { job_id: Some(_) })
+        ));
+        app.update();
+
+        let world = app.world();
+        assert_eq!(world.resource::<Healths>().0.get(&2), Some(&73));
+        let output = world
+            .resource::<EconomyLedger>()
+            .output_inventories
+            .get(&2)
+            .expect("production output must install its output inventory");
+        assert_eq!(output.capacity, 3);
+        assert_eq!(
+            output.accepted_items,
+            std::collections::BTreeSet::from([item_id])
+        );
+    }
+
+    #[test]
     fn failed_spawn_binding_leaves_world_and_allocator_unchanged() {
         let mut app = crate::headless_app(20);
         let world = app.world_mut();
