@@ -354,9 +354,11 @@ pub fn setup_scene(
 /// `Update`, after [`update_presented`]: one entity per presented unit. A new unit gets an
 /// entity with the mesh of its visual. A shown unit moves to its presented position. A unit that
 /// is gone from the record loses its entity. The entities never write back to the replica.
+#[allow(clippy::too_many_arguments)]
 pub fn sync_units(
     mut commands: Commands,
     presented: Res<Presented>,
+    state: Res<ReplicaState>,
     acquired: Option<Res<AcquiredPackages>>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
@@ -379,6 +381,14 @@ pub fn sync_units(
                     .get(&unit.content_id)
                     .map_or(0.0, |&(_, lift)| lift);
                 transform.translation = position + Vec3::Y * lift;
+                if let Some(facing) = state
+                    .replica
+                    .as_ref()
+                    .and_then(|replica| replica.units.get(&unit.unit_id))
+                    .and_then(|unit| unit.facing)
+                {
+                    transform.rotation = facing_rotation(facing);
+                }
             }
             continue;
         }
@@ -394,10 +404,21 @@ pub fn sync_units(
             .material
             .get_or_insert_with(|| materials.add(Color::srgb(0.8, 0.3, 0.2)))
             .clone();
+        let rotation = state
+            .replica
+            .as_ref()
+            .and_then(|replica| replica.units.get(&unit.unit_id))
+            .and_then(|unit| unit.facing)
+            .map(facing_rotation)
+            .unwrap_or(Quat::IDENTITY);
         commands.spawn((
             Mesh3d(mesh),
             MeshMaterial3d(material),
-            Transform::from_translation(position + Vec3::Y * lift),
+            Transform {
+                translation: position + Vec3::Y * lift,
+                rotation,
+                ..default()
+            },
             PresentedUnit(unit.unit_id),
         ));
     }
@@ -406,6 +427,17 @@ pub fn sync_units(
             commands.entity(entity).despawn();
         }
     }
+}
+
+/// Convert authored map facing to a visual yaw. Missing facing keeps the shape's default pose.
+pub fn facing_rotation(facing: turts_net_protocol::Facing) -> Quat {
+    let yaw = match facing {
+        turts_net_protocol::Facing::PosY => 0.0,
+        turts_net_protocol::Facing::PosX => std::f32::consts::FRAC_PI_2,
+        turts_net_protocol::Facing::NegY => std::f32::consts::PI,
+        turts_net_protocol::Facing::NegX => -std::f32::consts::FRAC_PI_2,
+    };
+    Quat::from_rotation_y(yaw)
 }
 
 /// The window path of presentation: the scene and the unit entities.

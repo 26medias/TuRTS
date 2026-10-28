@@ -820,6 +820,24 @@ fn selection_is_cleared_when_a_coherent_replacement_removes_or_foreigns_it() {
 }
 
 #[test]
+fn panel_model_shows_blocked_reason() {
+    let (content, mut replica, id, _, _) = producer_fixture();
+    replica.economy.queues[0].jobs[0].stage = JobStage::OutputBlocked;
+    let model = panel_model(
+        &replica,
+        &content,
+        &Selection(Some(id)),
+        &CommandResults::default(),
+    );
+    assert!(
+        model
+            .lines
+            .iter()
+            .any(|line| line.contains("output_blocked"))
+    );
+}
+
+#[test]
 fn known_insufficient_replica_source_disables_production() {
     let (content, mut replica, id, _, _) = producer_fixture();
     for balance in &mut replica.economy.balances {

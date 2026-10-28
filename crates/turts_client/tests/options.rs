@@ -128,6 +128,42 @@ fn parse_cli_reads_hooks() {
 }
 
 #[test]
+fn options_parse_new_hooks() {
+    let options = parse_cli(&args(&[
+        "--server",
+        "http://h:7000",
+        "--ws",
+        "ws://h:7001",
+        "--produce",
+        "17,forge:hardened_shells",
+        "--produce-when-inventory",
+        "17,forge:shell,10",
+        "--live-report",
+        "owner-report.json",
+        "--move",
+        "24,14",
+        "--move-unit",
+        "11",
+        "--move-release-file",
+        "release.flag",
+    ]))
+    .unwrap();
+    assert_eq!(options.produce, Some((17, "forge:hardened_shells".into())));
+    assert_eq!(
+        options.produce_when_inventory,
+        Some((17, "forge:shell".into(), 10))
+    );
+    assert_eq!(
+        options.live_report,
+        Some(PathBuf::from("owner-report.json"))
+    );
+    assert_eq!(
+        options.move_release_file,
+        Some(PathBuf::from("release.flag"))
+    );
+}
+
+#[test]
 fn parse_cli_defaults_and_errors() {
     let options = parse_cli(&args(&["--server", "http://h:7000", "--ws", "ws://h:7001"])).unwrap();
     let default = ClientOptions::default();

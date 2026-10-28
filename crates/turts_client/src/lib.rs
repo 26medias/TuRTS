@@ -31,7 +31,7 @@ use turts_net_protocol::Pos;
 
 use crate::commands::{
     CommandSendStatus, CommandSequence, PendingCommands, repeat_trace, send_commands_traced,
-    submit_trace,
+    submit, submit_trace,
 };
 use crate::debug::{DebugState, exit_when_done, rebuild_debug_state};
 use crate::economy_ui::EconomyUiPlugin;
@@ -48,7 +48,9 @@ use crate::join::{
 use crate::options::{ClientOptions, random_player_id};
 use crate::present::{Presented, update_presented};
 use crate::render::UnitRenderPlugin;
-use crate::scenario::{ScenarioState, TraceAction, TraceCommand};
+use crate::scenario::{
+    ProduceHook, ScenarioState, TraceAction, TraceCommand, produce_command_if_ready,
+};
 
 /// The tick rate of the lightyear link (not of the simulation: `Welcome` carries that).
 const LINK_TICK_HZ: u16 = 20; // prototype constant: measure at M1
@@ -69,6 +71,8 @@ impl Plugin for ClientPlugin {
         let opts = self.0.clone();
         #[cfg(not(target_family = "wasm"))]
         let publish_live_view = !opts.headless && opts.out.is_some();
+        #[cfg(not(target_family = "wasm"))]
+        let publish_live_report = opts.live_report.is_some();
         app.insert_resource(PlayerId(opts.player_id.unwrap_or_else(random_player_id)))
             .insert_resource(Phase::FetchAdvertisement)
             .insert_resource(IngestHooks {
@@ -83,6 +87,7 @@ impl Plugin for ClientPlugin {
             })
             .insert_resource(FrameLog::open(opts.frame_log.as_deref()))
             .insert_resource(ScenarioState::from_path(opts.command_trace.as_deref()))
+            .insert_resource(ProduceHook::from_options(&opts))
             .insert_resource(ClientOpts(opts))
             .init_resource::<IngestCounters>()
             .init_resource::<ReplicaState>()
@@ -113,7 +118,12 @@ impl Plugin for ClientPlugin {
         );
         app.add_systems(
             PostUpdate,
-            (auto_move, drive_scenario, send_commands_traced)
+            (
+                auto_move,
+                drive_scenario,
+                drive_produce_hook,
+                send_commands_traced,
+            )
                 .chain()
                 .before(MessageSystems::Send),
         );
@@ -122,7 +132,46 @@ impl Plugin for ClientPlugin {
         if publish_live_view {
             app.add_systems(Last, live_view::publish_live_view.before(exit_when_done));
         }
+        #[cfg(not(target_family = "wasm"))]
+        if publish_live_report {
+            app.init_resource::<live_view::LiveReportCursor>()
+                .add_systems(Last, live_view::publish_live_report.before(exit_when_done));
+        }
     }
+}
+
+/// Send the optional one-shot Produce only after the coherent owner replica proves its gate.
+fn drive_produce_hook(
+    mut hook: ResMut<ProduceHook>,
+    state: Res<ReplicaState>,
+    mut pending: ResMut<PendingCommands>,
+    status: Res<CommandSendStatus>,
+) {
+    if hook.sent || status.reconnect_required {
+        return;
+    }
+    let (Some(request), Some(welcome), Some(replica)) =
+        (hook.request.clone(), state.welcome, state.replica.as_ref())
+    else {
+        return;
+    };
+    let tick = replica.last_applied_tick;
+    let completed = replica.research.iter().any(|record| {
+        record.slot.0 == welcome.slot && record.completed.iter().any(|tech| tech == &request.1)
+    });
+    if completed && hook.research_completed_tick.is_none() {
+        hook.research_completed_tick = tick;
+    }
+    let Some(command) = produce_command_if_ready(
+        replica,
+        welcome.slot,
+        &request,
+        hook.inventory_gate.as_ref(),
+    ) else {
+        return;
+    };
+    submit(&mut pending, command);
+    hook.sent = true;
 }
 
 /// Drive one due trace action from the latest coherent server tick, after ingest and before send.

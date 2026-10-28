@@ -185,6 +185,7 @@ fn sync_app() -> App {
         .init_asset::<Mesh>()
         .init_asset::<StandardMaterial>()
         .init_resource::<Presented>()
+        .init_resource::<turts_client::ingest::ReplicaState>()
         .insert_resource(AcquiredPackages(Acquired {
             lockfile_hash: String::new(),
             visuals: HashMap::from([(
