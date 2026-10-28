@@ -12,7 +12,7 @@ This index tracks the original F1–F11 requirements. A green task or unit test 
 | F6: fixed point | T14 fixed-point suite reviewed | Final frozen-union gates |
 | F7: research changes ten shots to five | T11 atomic combat tests and T14 industrial scenarios reviewed | Actual F11 passed; final accepted-source replay and C4 remain |
 | F8: wire privacy and lifecycle | T13b accepted, including authoritative belt ownership and health-zero removal; T15a atomic ingest and industrial queue correction accepted | C3 accepted; final process verification and C4 remain |
-| F9: 17 registered faults | T16 builder all17 baseline/red/restored passed; prior independent evidence retained | Final runner interruption repairs, R1 and independent C4 |
+| F9: 17 registered faults | T16 builder registered17 baseline/red/restored passed; R1 requires C6/C10/C11 to match exact formal faults | Corrected formal sweep, F11 privacy assertion/server-log repairs, scoped R1 and C4 |
 | F10: real browser panels and commands | T15b accepted after Sol R1; seven-stage real browser proof with Acked/Applied and state changes | Final Task16 source and C4 |
 | F11: two clients driven by replica state | Actual server/two-client F11 passed; root verified owner privacy, completion1361 before Move1363 and both health traces | Final runner/source acceptance and C4 |
 
@@ -25,3 +25,5 @@ Industrial queue correction accepted on `88d5a3a`: canonical 750/0/17, all eight
 C3 accepted on `2dcdf49`, including source-form correction and precise red-proof reconciliation. T15b accepted on merged `e4c591f`: canonical758/0/17, all eight gates; M2 browsers15/15 and seven-stage Forge rendered control proof. Task16 has passing F11, browser and mutation proofs, but final runner/source gates and review remain outstanding. See root acceptance files under `target/m3-evidence`.
 
 Task16 current proof locations: `target/m3-evidence/t16-builder/f11/run-20261028-fde2d92/f11-summary.json`, `target/m3-evidence/t16-root-f11-preflight.json`, `target/m3-evidence/t16-builder/browser/run-20261028T185908Z-mVY7sY`, `target/m3-evidence/t16-root-m2-native-preflight.json`. Native33 manifests are retained in `target/m3-worktrees/t16/target/m2-refutations/20261028T190611.193595Z-2170093-ea4f701a`. These are builder/root-preflight results, not completed C4 acceptance.
+
+Task16 R1 on frozen `35355c7` found three medium acceptance blockers (privacy predicate, three formal fault definitions, server-log retention) and one low issue (unnecessary finalizer writes trigger recompilation). Actual opponent report contains no private research. All are assigned in one repair wave; no formal case or gate is waived. Report: `target/m3-evidence/t16-review/report.md`.

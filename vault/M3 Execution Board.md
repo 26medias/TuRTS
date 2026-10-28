@@ -173,7 +173,7 @@ In order, only if the milestone proves too large: (1) `SetEnabled`; (2) drone B 
 | T14 | complete | `codex/m3-t14` | `target/m3-worktrees/t14` | `dcddac0` → `0e28855` | Scoped R1 PASS, 0 findings | V0 PASS: 742/0/17; wasm | C1 retries, parsed resource balance, dangling state, full renamed industrial trace. |
 | T15a | complete; queue follow-up accepted | `codex/m3-t15a` | `target/m3-worktrees/t15a` | `1eafa68` → `31c05d8` | R0 PASS | V0 PASS750/0/17 after queue follow-up; wasm | Atomic records, port keys, finalhealth0/removal, movingkill overlap, sharedmerge/debugtrace. |
 | T15b | complete | `codex/m3-t15b` | `target/m3-worktrees/t15b` | `0ee47fd` → `e4c591f` | Same Sol R1 PASS after four repairs | V0 PASS: 758/0/17; wasm | Owner completion hook, aggregate/Main costs, both inventory ports, seven-stage actual browser proof. |
-| T16 | in progress | `codex/m3-t16` | `target/m3-worktrees/t16` | private repaired union; candidate pending | R1 pending | 17 registered faults pass; final acceptance running | Native F11, process/browser scripts, CI and measurements remain. |
+| T16 | in progress | `codex/m3-t16` | `target/m3-worktrees/t16` | private repaired union; candidate pending | R1 FAIL4; bundled repair active | Registered faults pass; C6/C10/C11 definitions require correction | Native F11, process/browser scripts, CI and measurements remain. |
 
 
 ## 11. Checkpoint ledger
