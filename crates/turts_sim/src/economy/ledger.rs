@@ -8,6 +8,7 @@ use turts_mod_api::ContentId;
 pub(crate) enum Endpoint {
     Slot(u8),
     Inventory(u32),
+    Output(u32),
 }
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct ReservationLine {
@@ -35,6 +36,7 @@ pub(crate) struct Inventory {
 pub struct EconomyLedger {
     pub(crate) balances: BTreeMap<(u8, ContentId), Account>,
     pub(crate) inventories: BTreeMap<u32, Inventory>,
+    pub(crate) output_inventories: BTreeMap<u32, Inventory>,
     // Authoritative claims; queue Reservation values are associations/snapshots, never authority.
     // Closed tombstones prevent stale token replay and JobId reuse.
     pub(crate) reservation_claims: BTreeMap<JobId, ReservationClaim>,
@@ -45,4 +47,14 @@ pub struct EconomyLedger {
 pub(crate) enum ReservationClaim {
     Active(Reservation),
     Closed,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::EconomyLedger;
+
+    #[test]
+    fn output_inventory_defaults_empty() {
+        assert!(EconomyLedger::default().output_inventories.is_empty());
+    }
 }

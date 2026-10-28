@@ -96,6 +96,12 @@ pub enum RejectReason {
     UnknownInventory,
     UnknownBalance,
     InvalidAmount,
+    NotRemovable,
+    NotToggleable,
+    PrerequisitesMissing,
+    AlreadyResearched,
+    ResearchInProgress,
+    IntegrityViolation,
 }
 
 impl RejectReason {
@@ -128,6 +134,12 @@ impl RejectReason {
             Self::UnknownInventory => "unknown_inventory",
             Self::UnknownBalance => "unknown_balance",
             Self::InvalidAmount => "invalid_amount",
+            Self::NotRemovable => "not_removable",
+            Self::NotToggleable => "not_toggleable",
+            Self::PrerequisitesMissing => "prerequisites_missing",
+            Self::AlreadyResearched => "already_researched",
+            Self::ResearchInProgress => "research_in_progress",
+            Self::IntegrityViolation => "integrity_violation",
         }
     }
 }

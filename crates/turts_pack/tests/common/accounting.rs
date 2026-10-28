@@ -3083,6 +3083,12 @@ fn check_reservations(s: &AuditState) -> Result<(), String> {
                             .entry((unit, line.resource.clone()))
                             .or_default() += u128::from(line.amount)
                     }
+                    turts_sim::ReservationEndpointView::Output(_) => {
+                        return Err(
+                            "M2 accounting oracle does not support output inventory reservations"
+                                .into(),
+                        );
+                    }
                 }
             }
         }
