@@ -15,7 +15,7 @@ The task board. Move items between sections; keep owner and evidence link on eac
 
 ## In progress
 
-- [ ] **M3 industrial loop implementation (13/20 accepted).** T0 freezes real M2 operation streams; T1 adds the additive API0.2.1 schema, package readers, resolved catalog and source diagnostics, with old-reader serialization compatibility. T2 portable validation and T3a state/reasons are accepted; T4 public boot is accepted; checkpoint C1 passed (all88 added tests have semantic red evidence), T6/T7 are accepted, and T8/T9/T10/T11 are accepted, and T12 starts from `codex/m3-integration`. Board: [[M3 Execution Board]]. Approved scope: [[Decisions/2026-10-27 M3 scope and orchestrator calls]]. F11 privacy resolution: [[Decisions/2026-10-27 M3 F11 private research trigger]]. Extraction, transport, inserters, machines, research and combat are accepted; the forge demo is not complete.
+- [ ] **M3 industrial loop implementation (14/20 accepted).** T0 freezes real M2 operation streams; T1 adds the additive API0.2.1 schema, package readers, resolved catalog and source diagnostics, with old-reader serialization compatibility. T2 portable validation and T3a state/reasons are accepted; T4 public boot is accepted; checkpoint C1 passed (all88 added tests have semantic red evidence), T6/T7 are accepted, and T8/T9/T10/T11/T12 are accepted, and T13a starts before C2 from `codex/m3-integration`. Board: [[M3 Execution Board]]. Approved scope: [[Decisions/2026-10-27 M3 scope and orchestrator calls]]. F11 privacy resolution: [[Decisions/2026-10-27 M3 F11 private research trigger]]. Extraction, transport, inserters, machines, research and combat are accepted; the forge demo is not complete.
 
 No M2 tasks remain in progress; all 16 were accepted on 2026-10-27.
 

@@ -15,9 +15,9 @@ Dashboard for the TuRTS studio. Read this first, then [[Tasks]] and the latest n
 
 **Product:** mod-first RTS engine in Rust and Bevy. Browser WebAssembly client first, authoritative headless server, the official game is a default mod on the public API. Spec: `RTS-Engine-Project-Specifications.md` (v0.7, 2026-10-26).
 
-**Current milestone:** M3 industrial loop, wave W8. T0, T1, T2, T3a, T3, T4, T5, T6, T7, T8, T9, T10 and T11 accepted (13/20 task entries). C1 passed; Remove/SetEnabled commands start. Live progress: [[M3 Execution Board]].
+**Current milestone:** M3 industrial loop, wave W9. T0, T1, T2, T3a, T3, T4, T5, T6, T7, T8, T9, T10, T11 and T12 accepted (14/20 task entries). C1 passed; public views/audit starts before C2. Live progress: [[M3 Execution Board]].
 
-**Phase:** M3 schema API0.2.1 is accepted; the M2 stream is frozen and green. Last canonical gates: 663 passed, 0 failed, 17 ignored; fmt, strict Clippy, workspace check, wasm and boundary passed. Extraction, conveyors, inserters, machine recipes, research and combat are accepted; the complete industrial chain is still pending.
+**Phase:** M3 schema API0.2.1 is accepted; the M2 stream is frozen and green. Last canonical gates: 673 passed, 0 failed, 17 ignored; fmt, strict Clippy, workspace check, wasm and boundary passed. Extraction, conveyors, inserters, machine recipes, research and combat are accepted; the complete industrial chain is still pending.
 
 **M2 baseline:** M1 closed; M2 Tasks 1–16 accepted at canonical source `601e71286e56bd2cbed0ecf9f0240ebcecd63047`. The multiplayer graybox proves the public package path, two-owner server-authoritative economy interactions, browser/native rendered controls, and recovery. Final process acceptance, T7, 15 browser positives, 33 native mutation plants, and 8 browser mutation plants passed. Global workspace tests: 497 passed, 0 failed, 17 ignored across 72 groups. Exact artifacts and hashes are in `docs/measurements/m2.md`. Remote GitHub Actions was not run for this closeout; performance budgets remain open.
 
