@@ -15,7 +15,7 @@ Dashboard for the TuRTS studio. Read this first, then [[Tasks]] and the latest n
 
 **Product:** mod-first RTS engine in Rust and Bevy. Browser WebAssembly client first, authoritative headless server, the official game is a default mod on the public API. Spec: `RTS-Engine-Project-Specifications.md` (v0.7, 2026-10-26).
 
-**Current milestone:** M3 industrial loop, wave W3. T0, T1, T2, T3a, T3, T4 and T5 accepted (7/20 task entries). Checkpoint C1 is running before the three gameplay lanes. Live progress: [[M3 Execution Board]].
+**Current milestone:** M3 industrial loop, wave W5. T0, T1, T2, T3a, T3, T4 and T5 accepted (7/20 task entries). Checkpoint C1 passed; extractor, conveyor and machine lanes are starting in parallel. Live progress: [[M3 Execution Board]].
 
 **Phase:** M3 schema API0.2.1 is accepted; the M2 stream is frozen and green. Last canonical gates: 585 passed, 0 failed, 17 ignored; fmt, strict Clippy, workspace check, wasm and boundary passed. Industrial simulation phases are not implemented yet.
 
