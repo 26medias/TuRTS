@@ -119,13 +119,13 @@ T1 implementation notes: M3 resolution lives in `turts_mod_runtime/src/content_m
 - Test: `crates/turts_sim/tests/m3_shapes.rs`, `crates/turts_net_protocol/tests/reasons_m3.rs`, and an in-file `#[cfg(test)]` module in `outbound.rs` for `wire_reason`
 
 **Interfaces:**
-- Produces: `Endpoint::Output(u32)` with matching `EventSource::Output(u32)` and `ReservationEndpointView::Output(u32)`; every existing exhaustive `Endpoint` match handles `Output` (as an inventory-like endpoint); `EconomyLedger.output_inventories: BTreeMap<u32, Inventory>`; the state types of SPEC 4-9 (`ItemIx`, `BeltLine`, `Conveyors`, `Inserters`, `InserterState`, `ArmStage`, `ArmWait`, `ExtractorState`, `Healths`, `WeaponState`, `ResearchState`, `Disabled`) as `pub(crate)` with `Default`, `Clone`, `PartialEq`; the new sim `RejectReason` values `NotRemovable`, `NotToggleable`, `PrerequisitesMissing`, `AlreadyResearched`, `ResearchInProgress`, `IntegrityViolation` with `as_str`; the wire `CommandRejectReason` values for the first five plus `Internal` (`ALL`, `as_str`); `wire_reason` maps `IntegrityViolation` to `Internal`.
+- Produces: `Endpoint::Output(u32)` with matching `EventSource::Output(u32)` and `ReservationEndpointView::Output(u32)`; every existing exhaustive `Endpoint` match handles `Output` (as an inventory-like endpoint); `EconomyLedger.output_inventories: BTreeMap<u32, Inventory>`; the state types of SPEC 4-9 (`ItemIx`, `BeltLine`, `Conveyors`, `Inserters`, `InserterState`, `ArmStage`, `ArmWait`, `ExtractorState`, `Healths`, `WeaponState`, `ResearchState`, `Disabled`) as `pub(crate)` with `Clone`, `PartialEq`; empty stores have `Default`, while `BeltLine` requires an explicit valid content id; the new sim `RejectReason` values `NotRemovable`, `NotToggleable`, `PrerequisitesMissing`, `AlreadyResearched`, `ResearchInProgress`, `IntegrityViolation` with `as_str`; the wire `CommandRejectReason` values for the first five plus `Internal` (`ALL`, `as_str`); `wire_reason` maps `IntegrityViolation` to `Internal`.
 
-- [ ] **Step 1:** Write `wire_roundtrip_new_reasons` (every new reason round-trips through postcard and `as_str`), `wire_reason_covers_every_sim_reason` (exhaustive over sim reasons), `output_inventory_defaults_empty`.
-- [ ] **Step 2:** Run: expect FAIL.
-- [ ] **Step 3:** Add the types and reasons. Do not add systems or phases. Do not change the wire protocol version yet.
-- [ ] **Step 4:** Run `cargo test -p turts_sim -p turts_net_protocol` and `cargo check --workspace`. Expected: PASS.
-- [ ] **Step 5:** Commit explicit paths.
+- [x] **Step 1:** Write `wire_roundtrip_new_reasons` (every new reason round-trips through postcard and `as_str`), `wire_reason_covers_every_sim_reason` (exhaustive over sim reasons), `output_inventory_defaults_empty`.
+- [x] **Step 2:** Run: expect FAIL.
+- [x] **Step 3:** Add the types and reasons. Do not add systems or phases. Do not change the wire protocol version yet.
+- [x] **Step 4:** Run `cargo test -p turts_sim -p turts_net_protocol` and `cargo check --workspace`. Expected: PASS.
+- [x] **Step 5:** Commit explicit paths.
 
 ### Task 3: Transaction and removal infrastructure
 
