@@ -5,6 +5,7 @@ pub mod extractor;
 pub mod gather;
 pub mod inserter;
 pub mod ledger;
+pub mod machine;
 pub mod production;
 pub mod research;
 pub mod transaction;

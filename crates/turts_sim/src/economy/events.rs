@@ -65,6 +65,11 @@ pub enum EconomyEventKind {
         cause: RemoveCause,
         items: Vec<DestroyedLine>,
     },
+    ItemsProduced {
+        machine: u32,
+        job: u64,
+        outputs: Vec<CostLine>,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
