@@ -27,3 +27,7 @@ The drone positions are (24,12) and (30,4); the turret is at (17,12). These are 
 The browser and native clients share two permanent match slots. Closing a tab does not release its slot. Restart the server for a fresh match; do not open a third client expecting another slot.
 
 Useful feedback includes: what you clicked, what you expected, what happened, whether you were the first or second client, and a screenshot if the selection or panels were unclear. Tell us about unclear status, invisible stock movement, controls that seem unresponsive, or a factory that stops without an explanation.
+
+## Linux browser startup
+
+On this host ordinary Chrome can expose WebGPU but return no adapter, causing `No available adapters` and a renderer panic. The tested Vulkan/WebGPU launch configuration works; a separate configured desktop window is open for testing. See [[Reports/2026-10-28 M3 browser adapter startup]] for reproduction, evidence and limitations. This does not require changing the server or your existing browser profile.
