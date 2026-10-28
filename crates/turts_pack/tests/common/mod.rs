@@ -5,6 +5,8 @@ use turts_mod_api::ContentId;
 use turts_sim::headless_app;
 
 pub mod accounting;
+pub mod conservation;
+pub mod forge_support;
 
 pub fn scenario(tick_hz: u16) -> App {
     headless_app(tick_hz)

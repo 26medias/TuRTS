@@ -1,0 +1,11 @@
+(
+    id: "drill",
+    name: "Bore Drill",
+    footprint: Circle(radius: 1.2),
+    movement: None,
+    inventory: Some((capacity: 4, accepts: ["forge:ore"])),
+    gatherer: None,
+    drop_off: None,
+    producer: None,
+    extractor: Some((per_second: 2, interaction_range: 0.5)),
+)

@@ -1,0 +1,12 @@
+(
+    id: "belt",
+    name: "Chain Belt",
+    footprint: Circle(radius: 0.5),
+    movement: None,
+    inventory: None,
+    gatherer: None,
+    drop_off: None,
+    producer: None,
+    conveyor: Some((slots_per_piece: 4, slots_per_second: 4, accepts: ["forge:ore", "forge:shell"])),
+    removal: Some((by_command: true, contents: Destroy)),
+)
