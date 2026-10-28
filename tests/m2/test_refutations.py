@@ -5,12 +5,36 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
+import subprocess
 
 MODULE_PATH = Path(__file__).with_name("refutations.py")
 spec = importlib.util.spec_from_file_location("m2_refutations", MODULE_PATH)
 refutations = importlib.util.module_from_spec(spec)
 assert spec.loader is not None
 spec.loader.exec_module(refutations)
+M3_MODULE_PATH = Path(__file__).parents[1] / "m3" / "refutations.py"
+m3_spec = importlib.util.spec_from_file_location("m3_refutations", M3_MODULE_PATH)
+m3_refutations = importlib.util.module_from_spec(m3_spec)
+assert m3_spec.loader is not None
+m3_spec.loader.exec_module(m3_refutations)
+
+
+def browser_result(prefix, case_id):
+    summary = {
+        "selected_count": 1,
+        "completed_count": 1,
+        "passed_count": 1,
+        "semantic_failed_count": 0,
+        "infrastructure_failed_count": 0,
+        "timeout_count": 0,
+    }
+    output = "\n".join([
+        f"{prefix}_CASE_START {case_id}",
+        f"{prefix}_CASE_PASS {case_id}",
+        f"{prefix}_CASE_SUMMARY {json.dumps(summary, separators=(",", ":"))}",
+    ]) + "\n"
+    return subprocess.CompletedProcess(["fake"], 0, stdout=output, stderr="")
 
 
 class RefutationRunnerTests(unittest.TestCase):
@@ -205,6 +229,7 @@ class RefutationRunnerTests(unittest.TestCase):
             )
             manifest = refutations.json.loads((evidence / "case.json").read_text())
             self.assertEqual(manifest["status"], "passed")
+            self.assertEqual(manifest["baseline_sha256"], refutations.digest(source))
             self.assertEqual(manifest["baseline_sha256"], manifest["restored_sha256"])
             self.assertNotEqual(manifest["baseline_sha256"], manifest["planted_sha256"])
 
@@ -276,6 +301,40 @@ class RefutationRunnerTests(unittest.TestCase):
             self.assertEqual(manifest["baseline_sha256"], "a" * 64)
             self.assertEqual(manifest["restored_sha256"], "b" * 64)
             self.assertEqual(manifest["id"], "E7-one")
+
+    def test_grouped_plants_restore_on_failure_and_keyboard_interrupt_for_both_runners(self):
+        for runner, prefix in ((refutations, "M2"), (m3_refutations, "M3")):
+            for injected, exception in ((KeyboardInterrupt("interrupt"), KeyboardInterrupt), (
+                browser_result(prefix, "E16-browser-case"), RuntimeError
+            )):
+                with self.subTest(runner=prefix, exception=exception.__name__), tempfile.TemporaryDirectory() as temp:
+                    root = Path(temp)
+                    scratch = root / "scratch"
+                    scratch.mkdir()
+                    (scratch / "a.rs").write_text("gate_a = true\n")
+                    (scratch / "b.rs").write_text("gate_b = true\n")
+                    evidence = root / "evidence"
+                    case_id = "E16-browser-case"
+                    case = {
+                        "id": case_id,
+                        "runtime": "browser",
+                        "browser_case_ids": [case_id],
+                        "expected_selected": 1,
+                        "expected_failure": "the planted browser case",
+                        "command": ["fake-browser"],
+                        "plants": [
+                            {"path": "a.rs", "anchor": "gate_a = true", "replacement": "gate_a = false"},
+                            {"path": "b.rs", "anchor": "gate_b = true", "replacement": "gate_b = false"},
+                        ],
+                    }
+                    with patch.object(runner, "run", side_effect=[browser_result(prefix, case_id), injected]):
+                        with self.assertRaises(exception):
+                            runner.run_case(case, scratch, root / "build", evidence)
+                    self.assertEqual((scratch / "a.rs").read_text(), "gate_a = true\n")
+                    self.assertEqual((scratch / "b.rs").read_text(), "gate_b = true\n")
+                    manifest = json.loads((evidence / "case.json").read_text())
+                    self.assertEqual(manifest["status"], "failed")
+                    self.assertEqual(manifest["baseline_sha256"], manifest["restored_sha256"])
 
 
 if __name__ == "__main__":

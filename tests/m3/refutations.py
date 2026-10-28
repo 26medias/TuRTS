@@ -352,7 +352,7 @@ def run_case(case, scratch, build_dir, evidence_dir):
             raise RuntimeError(f'{case["id"]}: source restore hash differs: {baseline_hash} != {restored_hash}')
         restored = execute("restored.green", logs)
         require_phase_result(case, "restored.green", restored)
-    except Exception as exc:
+    except BaseException as exc:
         for relative, original in originals.items():
             (scratch / relative).write_text(original)
         restored_hashes = {relative: digest(scratch / relative) for relative in originals}
@@ -371,6 +371,9 @@ def run_case(case, scratch, build_dir, evidence_dir):
             "passed", planted_hash, detail, source_hashes,
         )
         print(f'{case["id"]}: RESTORED GREEN source_sha256={restored_hash}')
+    finally:
+        for relative, original in originals.items():
+            (scratch / relative).write_text(original)
 
 
 

@@ -1,10 +1,20 @@
 #!/usr/bin/env bash
 # F10 acceptance against a real Forge server and rendered browser controls.
+# Linux defaults to a private headed Chromium context under Xvfb with Vulkan; callers may set
+# M2_HEADLESS=true or override the Chrome profile variables without changing their desktop DISPLAY.
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-${ROOT}/target/m3-t16}"
 export CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0
+M2_HEADLESS="${M2_HEADLESS:-false}"
+M2_CHROME_ARGS_JSON="${M2_CHROME_ARGS_JSON:-[\"--enable-gpu\",\"--use-angle=vulkan\",\"--enable-features=Vulkan\",\"--enable-unsafe-webgpu\"]}"
+M2_IGNORE_DEFAULT_ARGS_JSON="${M2_IGNORE_DEFAULT_ARGS_JSON:-[\"--enable-unsafe-swiftshader\"]}"
+export M2_HEADLESS M2_CHROME_ARGS_JSON M2_IGNORE_DEFAULT_ARGS_JSON
+case "$M2_HEADLESS" in
+    true|false) ;;
+    *) echo "M2_HEADLESS must be true or false" >&2; exit 2 ;;
+esac
 BUILD_JOBS="${M3_BUILD_JOBS:-1}"
 [[ "$BUILD_JOBS" == 1 ]] || { echo "M3_BUILD_JOBS must be 1" >&2; exit 2; }
 CHROME_BIN="${CHROME_BIN:-$(command -v google-chrome || command -v chromium || true)}"
@@ -69,5 +79,11 @@ for _ in $(seq 1 120); do
     if ! kill -0 "$SERVER_PID" 2>/dev/null; then cat "$OUT/server.log" >&2; exit 1; fi
     sleep 0.1
 done
-node tests/browser/m3.js "http://127.0.0.1:$STATIC_PORT/" "http://127.0.0.1:$HTTP_PORT" "ws://127.0.0.1:$WS_PORT" "$OUT" | tee "$OUT/browser.log"
+BROWSER_COMMAND=(node tests/browser/m3.js "http://127.0.0.1:$STATIC_PORT/" "http://127.0.0.1:$HTTP_PORT" "ws://127.0.0.1:$WS_PORT" "$OUT")
+if [[ "$M2_HEADLESS" == false ]]; then
+    command -v xvfb-run >/dev/null 2>&1 || { echo "xvfb-run is required for the private headed M3 browser" >&2; exit 1; }
+    xvfb-run --auto-servernum --server-args='-screen 0 1280x720x24' "${BROWSER_COMMAND[@]}" | tee "$OUT/browser.log"
+else
+    "${BROWSER_COMMAND[@]}" | tee "$OUT/browser.log"
+fi
 printf 'M3_BROWSER_EVIDENCE %s\n' "$OUT"

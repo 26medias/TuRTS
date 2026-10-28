@@ -916,8 +916,8 @@ async function runAdditionalPackageSmoke(page, pageAddress, packageName, joined,
     const beforeSequence = lastAppliedSequence(joined);
     await clickRenderedEntity(page, joined.scene, owner0Mesh);
     const selected = await waitForSnapshot(page, (snapshot) =>
-        snapshot.debug?.selection === owner0Unit.unit_id && selectedUnitText(snapshot.ui, owner0Unit),
-    5000, `${packageName} actual selected unit Text`);
+        snapshot.debug?.selection === owner0Unit.unit_id,
+    5000, `${packageName} actual selected unit`);
     const selectedArtifact = await captureStage(page, outDir, "02-owner0-selection", logs);
     const selectedText = selectedUnitText(selectedArtifact.ui, owner0Unit);
     assert(selectedText, "actual rendered unit selection was not visible");

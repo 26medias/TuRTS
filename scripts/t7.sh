@@ -49,10 +49,23 @@ cat > "$OUT/server.ron" <<EOF
 )
 EOF
 
-"$ROOT/target/release/turts_server" "$OUT/server.ron" --tick-log "$OUT/server-tick.log" \
+"$CARGO_TARGET_DIR/release/turts_server" "$OUT/server.ron" --tick-log "$OUT/server-tick.log" \
     > "$OUT/server.log" 2>&1 &
 SERVER_PID=$!
-trap 'kill "$SERVER_PID" 2>/dev/null || true' EXIT
+cleanup() {
+    local status=$?
+    trap - EXIT INT TERM
+    if [[ -n "${SERVER_PID:-}" ]] && kill -0 "$SERVER_PID" 2>/dev/null; then
+        kill "$SERVER_PID" 2>/dev/null || true
+    fi
+    if [[ -n "${SERVER_PID:-}" ]]; then
+        wait "$SERVER_PID" 2>/dev/null || true
+    fi
+    exit "$status"
+}
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 for _ in $(seq 1 100); do
     if curl -fsS "http://127.0.0.1:$HTTP_PORT/advertisement.json" > /dev/null 2>&1; then

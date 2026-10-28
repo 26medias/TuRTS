@@ -49,7 +49,8 @@
           8.0,
           8.0
         ],
-        "unit_id": 1
+        "unit_id": 1,
+        "facing": null
       },
       {
         "content_id": "base:harvester",
@@ -58,7 +59,8 @@
           12.0,
           8.0
         ],
-        "unit_id": 2
+        "unit_id": 2,
+        "facing": null
       },
       {
         "content_id": "base:command_center",
@@ -67,7 +69,8 @@
           56.0,
           8.0
         ],
-        "unit_id": 3
+        "unit_id": 3,
+        "facing": null
       },
       {
         "content_id": "base:harvester",
@@ -76,7 +79,8 @@
           52.0,
           8.0
         ],
-        "unit_id": 4
+        "unit_id": 4,
+        "facing": null
       }
     ],
     "economy": {
@@ -96,7 +100,8 @@
               "on_hand": 0,
               "reserved": 0
             }
-          ]
+          ],
+          "port": "main"
         }
       ],
       "orders": [
@@ -108,7 +113,14 @@
         }
       ],
       "queues": []
-    }
+    },
+    "belts": [],
+    "inserters": [],
+    "extractors": [],
+    "weapons": [],
+    "healths": [],
+    "research": [],
+    "health_trace": []
   },
   "selection": null,
   "trace": {
