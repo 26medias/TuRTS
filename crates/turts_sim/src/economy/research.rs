@@ -31,7 +31,6 @@ pub(crate) struct ResearchState {
 pub(crate) struct Disabled(pub(crate) BTreeSet<u32>);
 
 /// Compute a modifier from the completed set and catalog. The definition is never mutated.
-#[allow(dead_code)] // Used from Task 11 combat.
 pub(crate) fn modifier(
     research: &ResearchState,
     catalog: &ContentCatalog,

@@ -63,6 +63,21 @@ pub fn stage_package(
         return Err(error("tick_hz", "must be above zero".into()));
     }
     for unit in catalog.units.values() {
+        if let Some(weapon) = &unit.weapon
+            && boot_m3::try_weapon_cooldown_ticks(weapon.cooldown_ms, u32::from(tick_hz)).is_none()
+        {
+            let file = catalog
+                .source_files
+                .get(&unit.id)
+                .map(String::as_str)
+                .unwrap_or("content");
+            return Err(ModError::new(
+                &unit.id.package.0,
+                "weapon.cooldown_ms",
+                format!("duration exceeds u32 cooldown ticks at {tick_hz} Hz"),
+            )
+            .with_file(file));
+        }
         let Some(inserter) = &unit.inserter else {
             continue;
         };

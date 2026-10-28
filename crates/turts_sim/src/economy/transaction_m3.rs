@@ -515,6 +515,33 @@ pub(crate) fn remove_unit(
     tx.writes.healths.insert(unit, None);
     tx.writes.disabled.insert(unit, None);
 
+    let weapons = tx
+        .world
+        .get_resource::<Weapons>()
+        .ok_or(RejectReason::IntegrityViolation)?;
+    let weapon_ids = weapons
+        .0
+        .keys()
+        .chain(tx.writes.weapons.keys())
+        .copied()
+        .collect::<BTreeSet<_>>();
+    for id in weapon_ids {
+        if id == unit {
+            continue;
+        }
+        let state = match tx.writes.weapons.get(&id) {
+            Some(staged) => staged.as_ref(),
+            None => weapons.0.get(&id),
+        };
+        if let Some(state) = state
+            && state.last_target == Some(unit)
+        {
+            let mut updated = state.clone();
+            updated.last_target = None;
+            tx.writes.weapons.insert(id, Some(updated));
+        }
+    }
+
     let orders = tx
         .world
         .get_resource::<EconomyOrders>()
@@ -694,5 +721,43 @@ impl Transaction<'_> {
     pub(crate) fn stage_research_complete(&mut self, slot: u8, technology: ContentId) {
         self.mark_m3();
         self.writes.research.insert((slot, technology), Some(()));
+    }
+}
+
+// Combat uses per-subject overlays for cooldown and hit points.
+impl Transaction<'_> {
+    pub(crate) fn weapon_state(
+        &self,
+        unit: u32,
+    ) -> Result<crate::economy::combat::WeaponState, RejectReason> {
+        if let Some(staged) = self.writes.weapons.get(&unit) {
+            return staged.clone().ok_or(RejectReason::IntegrityViolation);
+        }
+        self.world
+            .get_resource::<Weapons>()
+            .and_then(|states| states.0.get(&unit))
+            .cloned()
+            .ok_or(RejectReason::IntegrityViolation)
+    }
+
+    pub(crate) fn stage_weapon(&mut self, unit: u32, state: crate::economy::combat::WeaponState) {
+        self.mark_m3();
+        self.writes.weapons.insert(unit, Some(state));
+    }
+
+    pub(crate) fn health(&self, unit: u32) -> Result<u64, RejectReason> {
+        if let Some(staged) = self.writes.healths.get(&unit) {
+            return (*staged).ok_or(RejectReason::IntegrityViolation);
+        }
+        self.world
+            .get_resource::<Healths>()
+            .and_then(|states| states.0.get(&unit))
+            .copied()
+            .ok_or(RejectReason::IntegrityViolation)
+    }
+
+    pub(crate) fn stage_health(&mut self, unit: u32, health: u64) {
+        self.mark_m3();
+        self.writes.healths.insert(unit, Some(health));
     }
 }
