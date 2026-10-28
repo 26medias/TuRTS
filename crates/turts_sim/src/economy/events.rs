@@ -70,6 +70,12 @@ pub enum EconomyEventKind {
         job: u64,
         outputs: Vec<CostLine>,
     },
+    ResearchCompleted {
+        station: u32,
+        job: u64,
+        slot: u8,
+        technology: ContentId,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

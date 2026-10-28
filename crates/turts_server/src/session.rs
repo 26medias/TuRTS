@@ -316,7 +316,7 @@ fn owns_unit(world: &mut World, unit_id: u32, slot: turts_sim::SlotId) -> Option
         .map(|(_, owner)| owner.0 == slot)
 }
 
-fn has_producer_capability(world: &World, unit_id: u32) -> Option<bool> {
+fn has_production_capability(world: &World, unit_id: u32) -> Option<bool> {
     let unit_type = world.iter_entities().find_map(|entity| {
         let id = entity.get::<SimUnitId>()?;
         (id.0 == unit_id)
@@ -332,7 +332,7 @@ fn has_producer_capability(world: &World, unit_id: u32) -> Option<bool> {
             .0
             .units
             .get(&content_id)
-            .is_some_and(|unit| unit.producer.is_some()),
+            .is_some_and(|unit| unit.producer.is_some() || unit.research.is_some()),
     )
 }
 
@@ -350,8 +350,8 @@ fn admit_kind(world: &mut World, staged: &StagedPlayerCommand, tick: u32) -> Opt
             producer_id,
             recipe_id,
         } => {
-            // Check ownership, then producer capability, before parsing client text. The
-            // simulation still validates the enabled recipe and queue semantics.
+            // Check ownership, then production or research capability, before parsing client text.
+            // The simulation still validates enabled recipes and technology queue semantics.
             match owns_unit(world, producer_id.0, staged.slot) {
                 Some(false) => {
                     record_admission_rejection(
@@ -373,7 +373,7 @@ fn admit_kind(world: &mut World, staged: &StagedPlayerCommand, tick: u32) -> Opt
                 }
                 Some(true) => {}
             }
-            if has_producer_capability(world, producer_id.0) != Some(true) {
+            if has_production_capability(world, producer_id.0) != Some(true) {
                 record_admission_rejection(
                     world,
                     staged.clone(),
@@ -665,9 +665,10 @@ mod admission_tests {
     use bevy::time::{TimePlugin, TimeUpdateStrategy};
     use std::collections::BTreeMap;
     use std::time::Duration;
-    use turts_mod_api::content::{ResolvedProducer, ResolvedUnit};
+    use turts_mod_api::content::{ResolvedProducer, ResolvedResearchStation, ResolvedUnit};
     use turts_mod_api::{
-        ContentCatalog, ContentId, Footprint, PackageId, ProducerDef, UnitDef, UnitRegistry,
+        ContentCatalog, ContentId, Footprint, PackageId, ProducerDef, ResearchStationDef, UnitDef,
+        UnitRegistry,
     };
     use turts_sim::{CommandResults, Tick, UnitType};
 
@@ -777,6 +778,102 @@ mod admission_tests {
             unit_ids: vec![UnitId(1)],
             target: Pos { x: 4.0, y: 5.0 },
         }
+    }
+
+    #[test]
+    fn server_admits_produce_for_research_unit() {
+        let (mut app, connection) = app();
+        let package = PackageId::parse("test").unwrap();
+        let research_type = app
+            .world_mut()
+            .resource_mut::<UnitTypes>()
+            .register_unit_type(
+                &package,
+                UnitDef {
+                    id: "lab".into(),
+                    name: "Lab".into(),
+                    footprint: Footprint::Circle { radius: 1.0 },
+                    movement: None,
+                    inventory: None,
+                    gatherer: None,
+                    drop_off: None,
+                    producer: None,
+                    output_inventory: None,
+                    extractor: None,
+                    conveyor: None,
+                    inserter: None,
+                    machine: None,
+                    research: Some(ResearchStationDef {
+                        technologies: vec!["test:technology".into()],
+                        queue_capacity: 1,
+                    }),
+                    health: None,
+                    weapon: None,
+                    removal: None,
+                },
+            )
+            .unwrap();
+        let id = ContentId::new(&package, "lab");
+        app.world_mut()
+            .resource_mut::<turts_sim::bootstrap::InstalledCatalog>()
+            .0
+            .units
+            .insert(
+                id.clone(),
+                ResolvedUnit {
+                    id,
+                    name: "Lab".into(),
+                    footprint: Footprint::Circle { radius: 1.0 },
+                    movement: None,
+                    inventory: None,
+                    gatherer: None,
+                    drop_off: None,
+                    producer: None,
+                    output_inventory: None,
+                    extractor: None,
+                    conveyor: None,
+                    inserter: None,
+                    machine: None,
+                    research: Some(ResolvedResearchStation {
+                        technologies: vec![ContentId::new(&package, "technology")],
+                        queue_capacity: 1,
+                    }),
+                    health: None,
+                    weapon: None,
+                    removal: None,
+                },
+            );
+        app.world_mut().spawn((
+            SimUnitId(2),
+            Owner(turts_sim::SlotId(0)),
+            UnitType(research_type),
+        ));
+
+        let accepted = admit_kind(
+            app.world_mut(),
+            &staged(
+                connection,
+                1,
+                PlayerCommandKind::Produce {
+                    producer_id: UnitId(2),
+                    recipe_id: "test:technology".into(),
+                },
+            ),
+            3,
+        );
+        assert_eq!(
+            accepted,
+            Some(CommandKind::Produce {
+                producer_id: 2,
+                recipe_id: ContentId::new(&package, "technology"),
+            })
+        );
+        assert!(
+            app.world()
+                .resource::<CommandAdmissionDiagnostics>()
+                .0
+                .is_empty()
+        );
     }
 
     #[test]
