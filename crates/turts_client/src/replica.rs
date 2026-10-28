@@ -884,13 +884,20 @@ fn valid_economy(
             } else {
                 return false;
             };
-            let mut expected_costs = BTreeMap::<(CostSource, ContentId), u64>::new();
+            let mut expected_cost_totals = BTreeMap::<(CostSource, ContentId), u128>::new();
             for (source, resource, amount) in expected_cost_lines {
-                let total = expected_costs.entry((source, resource)).or_default();
-                let Some(sum) = total.checked_add(amount) else {
+                let total = expected_cost_totals.entry((source, resource)).or_default();
+                let Some(sum) = total.checked_add(u128::from(amount)) else {
                     return false;
                 };
                 *total = sum;
+            }
+            let mut expected_costs = BTreeMap::<(CostSource, ContentId), u64>::new();
+            for (key, total) in expected_cost_totals {
+                let Ok(total) = u64::try_from(total) else {
+                    return false;
+                };
+                expected_costs.insert(key, total);
             }
 
             for costs in [&job.charged, &job.reserved] {
