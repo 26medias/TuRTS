@@ -1,0 +1,175 @@
+---
+type: task
+date: 2026-10-27
+tags:
+  - turts
+  - board
+  - m3
+ai-first: true
+source: mcp
+---
+
+## For future Claude
+The run sheet for M3 implementation by Codex agents. It says who builds, who reviews, who validates, what depends on what, and what runs in parallel. The task text is in the plan; this note does not repeat it. Update the ledger table at the bottom after every task.
+
+# M3 execution board
+
+**Spec:** `docs/superpowers/specs/2026-10-27-m3-industrial-design.md`. **Plan:** `docs/superpowers/plans/2026-10-27-m3-industrial.md`. **Calls K1 to K8:** confirmed by the user on 2026-10-27 ([[Decisions/2026-10-27 M3 scope and orchestrator calls]]). **Base:** `main` at `21dc347`.
+
+## 1. Roles
+
+| Role | Who | Model (rule from [[Team]]) | Does |
+| --- | --- | --- | --- |
+| Orchestrator (root) | main Codex session | Sol | Dispatches, merges into `codex/m3-integration`, runs gates, keeps this ledger and the vault. Only the orchestrator edits the shared hot files (section 5). |
+| Builder | a domain seat from `.claude/agents/` | Luna | Implements one task. Reads its role file, `CLAUDE.md`, the plan task, the spec sections the task cites. Writes the failing test first. |
+| Reviewer | a different seat, named per task | Sol | Reads the diff, runs the tests and one plant, cites `path:line`. Level R0, R1 or R2 (section 3). |
+| Validator | `qa-lead` seat | Luna runs, Sol judges at checkpoints | Re-runs on the merged branch. Proves each test can go red, and on which build. Not the builder, never the same agent as the reviewer. |
+| Judges at the end | `player`, `mod-builder`, `technical-director` | Sol | Milestone close only (section 7). |
+
+Codex does not load `.claude/agents/` roles by itself. Every dispatch tells the agent to read its role file first.
+
+## 2. Standing rules for every dispatch
+
+- State model and reasoning effort in the brief. Suggested: Luna `medium` for tasks marked M, `high` for tasks marked H; Sol reviewers `high`.
+- Minimum brief: task id, branch `codex/m3-t<N>`, base commit, worktree path, the plan task text, the spec sections it cites, owned paths, the gate commands, the report format (below), and these rules.
+- **Verify, never assume.** Cite `path:line` for each claim. Label anything not traced `NOT TRACED`. List what was run. Agent summaries are leads, not proof.
+- Write in Simplified Technical English (the standing rule).
+- Test first. Show the test red, then green. A test that cannot go red is a defect.
+- Stage explicit paths. Never `git add -A` while another agent runs.
+- Build one binary at a time. Give each lane its own target directory: `CARGO_TARGET_DIR=target/m3-<slot>`. Delete a lane's target directory after its merge. (M2 left 155 GB of build output; disk was 85 percent full.)
+- Do not change a frozen interface (plan "Interfaces" blocks). Stop and report to the orchestrator first.
+- Do not edit a hot shared file that another running task owns (section 5).
+- Report format (at most 400 words, long evidence in a file under the task's worktree): changed paths, tests added, red-to-green evidence, gate output summary, commit hash, deviations from the plan, open questions.
+- Reviewers do not repair code. They report. The builder, or the orchestrator for a small fix, repairs. Only the reviewer that raised a blocking finding re-checks the repair, with a short message.
+
+## 3. Review and validation levels
+
+| Level | Meaning | When |
+| --- | --- | --- |
+| R0 | The orchestrator runs the task's gate commands and reads the diff. No reviewer agent. | Mechanical tasks with exact literal tests |
+| R1 | One Sol reviewer with the named seat lens. | Risky or interface-heavy tasks |
+| R2 | Two lenses. | Not planned. Ask the user first (token budget). |
+| V0 | The orchestrator's gates after each merge. | Every task |
+| V1 | `qa-lead` re-runs everything on `codex/m3-integration`, runs all plants so far (red, then restored green), checks that tests can go red. | Checkpoints C1 to C4 (section 6) |
+
+Gate commands after every merge (all must pass): `cargo fmt --all --check`; `cargo clippy --workspace --all-targets --locked -- -D warnings`; `cargo check --workspace --all-targets`; `cargo test --workspace`; `bash scripts/boundary.sh`; and on a schema or wire task `cargo check --workspace --exclude turts_server --target wasm32-unknown-unknown`. Also keep `cargo test -p turts_pack --test m3_m2_stream` green from Task 0 on.
+
+## 4. Tasks
+
+Effort: M = medium, H = high (Luna). Paths are the owned paths; see the plan for the full list.
+
+| Task | Builder seat (Luna) | Effort | Reviewer (Sol) | Validator | Depends on | Owned paths (short) |
+| --- | --- | --- | --- | --- | --- | --- |
+| T0 M2 operation-stream baseline | qa-lead | M | R1 `simulation-core-engineer` (is the stream real and the plant red?) | V0 | none | `crates/turts_pack/tests/m3_m2_stream.rs`, `tests/m3/m2_operation_stream.json` |
+| T1 Schema API 0.2.1 | mod-runtime-engineer | H | R1 `technical-director` (versioning, boundaries, 66 literal sites) | V0 | T0 | `turts_mod_api`, `turts_mod_runtime` (archive, manifest, visuals), `scripts/boundary.sh`, struct-literal sites |
+| T2 Portable validation | mod-runtime-engineer | M | R0 | V0 | T1 | `turts_mod_runtime/src/content_m3.rs`, its tests |
+| T3a State types, ledger shape, reject reasons | simulation-core-engineer | M | R0 | V0 | T1 | `turts_sim/src/economy/{conveyor,inserter,extractor,combat,research}.rs` (types), `ledger.rs`, reason enums, `outbound.rs` |
+| T5 Package `forge` + E1 scanner | game-designer (content) + qa-lead (scanner) | M | R0 | V1 at C1 (E1 plants) | T2 | `mods/forge/**`, `tests/m3/packages/forge_locked`, `turts_checks` scanner |
+| T3 Transaction and removal | simulation-core-engineer | H | R1 `qa-lead` (atomicity, can failed writes leave state changed?) | V0 | T3a | `economy/transaction.rs` (hot), `plugin.rs` (hot) |
+| T4 Boot | simulation-core-engineer | H | R1 `technical-director` (boot path, boundary, ids) | V1 at C1 | T3, T5 | `bootstrap.rs`, `registry.rs`, `map.rs`, `plugin.rs` (hot), `lib.rs` |
+| T6 Extract phase | simulation-core-engineer | M | R0 | V0 | T4 | `economy/extractor.rs` |
+| T7 Transport phase | simulation-core-engineer | M | R0 | V0 | T4 | `economy/conveyor.rs` |
+| T9 Machines and recipes | simulation-core-engineer | H | R1 `game-designer` (recipe semantics, blocked output) | V0 | T4 | `economy/machine.rs`, `production.rs` (hot) |
+| T8 Inserter phase | simulation-core-engineer | H | R1 `qa-lead` (held item, K7, tie-break tests can go red) | V0 | T6, T7 | `economy/inserter.rs` |
+| T10 Research | simulation-core-engineer | M | R0 | V0 | T9 | `economy/research.rs`, `production.rs` (hot), `session.rs` (hot, admission only) |
+| T11 Combat | simulation-core-engineer | H | R1 `qa-lead` (atomic shot, receiver-removal test) | V0 | T10, T3 | `economy/combat.rs` |
+| T12 Commands Remove and SetEnabled | network-engineer | M | R0 | V1 at C2 | T7, T8, T11 | `command.rs` (hot), `messages.rs` (hot), `session.rs` (hot) |
+| T13a Views and audit | simulation-core-engineer | H | R1 `network-engineer` (public Raw types, delta rule, killed-unit record) | V1 at C2 | T12 | `views.rs` (hot), `events.rs`, `plugin.rs` (hot), `economylog.rs`, `economy_export.rs` |
+| T13b Protocol 3 and export | network-engineer | H | R1 `technical-director` (owner-only filter, versioning, privacy) | V1 at C3 | T13a | `turts_net_protocol`, `export.rs`, `outbound.rs` |
+| T14 Oracle and scenario suite | qa-lead | H | R1 `simulation-core-engineer` (can the oracle be fooled by a matching event? is it independent of sim code?) | V1 at C3 | T13a (grows per case as phases land) | `turts_pack/tests/common/conservation.rs`, `forge_*.rs`, `tests/m3/packages/` |
+| T15a Client replica and ingest | network-engineer | H | R0 | V0 | T13b | `turts_client` replica, ingest, debug |
+| T15b Client UI, hooks, browser test | bevy-rendering-engineer (also reads the web-platform-engineer role for the wasm and `m3.js` parts) | H | R1 `web-platform-engineer` (wasm check, browser test, hook behavior) | V1 at C4 | T15a | `turts_client` render, ui, input, options, scenario, `turts_client_web`, `tests/browser/` |
+| T16 Mutation sweep, process, browser acceptance | qa-lead | H | R1 `simulation-core-engineer` (do the plants model real defects?) | V1 at C4 (full F1 to F11 run) | T14, T15b | `tests/m3/`, `scripts/`, `crates/turts_server/tests/m3_process.rs`, `ci.yml`, `docs/measurements/m3.md` |
+
+## 5. Hot shared files (orchestrator composes)
+
+One task owns each file at a time. If two tasks need it in the same wave, the orchestrator merges one first.
+
+| File | Touched by (in order) |
+| --- | --- |
+| `economy/transaction.rs` | T3a (match arms), T3, T9, T10, T11 (small hooks) |
+| `plugin.rs` | T3, T4, T13a |
+| `economy/production.rs` | T9, then T10 |
+| `economy/views.rs` | T3a (match arms), T13a |
+| `command.rs`, `messages.rs`, `turts_server/src/session.rs` | T3a (reasons), T10 (admission), T12 |
+| `schema.rs` (`turts_mod_api`) | T1 only |
+| `tests/browser/m2.js` | T15b only |
+| `economylog.rs`, `economy_export.rs` | T13a only |
+
+## 6. Waves, parallel lanes and checkpoints
+
+Up to three builders run at once, plus one reviewer or validator. (M2 ran the root plus three lanes.) Each builder uses its own worktree and target directory.
+
+| Wave | Runs in parallel | Needs | Notes |
+| --- | --- | --- | --- |
+| W0 | T0 | main | Must finish before any M3 source edit. Creates `codex/m3-integration`. |
+| W1 | T1 | T0 | The large literal-fix sweep. Nothing else runs. |
+| W2 | T2 ‖ T3a | T1 | Disjoint crates (`turts_mod_runtime` vs `turts_sim`, protocol, server reasons). |
+| W3 | T5 ‖ T3 | T2 for T5; T3a for T3 | Package lane and simulation lane. |
+| W4 | T4 | T3, T5 | Single task. Sets up the empty phases. |
+| **C1** | V1 by qa-lead on the integration branch (E1 plants, M2 stream, all gates) | T4 merged | After W4, before W5. |
+| W5 | T6 ‖ T7 ‖ T9 | T4 | Three builders. Disjoint files. T9 owns `production.rs` in this wave. |
+| W6 | T8 ‖ T10 | T6+T7 for T8; T9 for T10 | |
+| W7 | T11 | T10, T3 | T8 may still run. |
+| W8 | T12 | T7, T8, T11 | |
+| **C2** | V1 after T13a is merged | | |
+| W9 | T13a | T12 | |
+| W10 | T13b ‖ T14 | T13a | T14 starts the oracle and self-tests, then adds cases as phases are done. |
+| **C3** | V1 after T13b and the T14 case suite are merged | | |
+| W11 | T15a | T13b | T14 may still run. |
+| W12 | T15b | T15a | |
+| W13 | T16 | T14, T15b | Full acceptance. |
+| **C4** | V1 full F1 to F11 run, then milestone close (section 7) | | |
+
+```text
+T0 → T1 → {T2, T3a}
+T2 → T5 ; T3a → T3 ; {T3, T5} → T4
+T4 → {T6, T7, T9} ; {T6, T7} → T8 ; T9 → T10 ; {T10, T3} → T11
+{T7, T8, T11} → T12 → T13a → {T13b, T14}
+T13b → T15a → T15b ; {T14, T15b} → T16
+```
+
+Critical path: T0 → T1 → T3a → T3 → T4 → T7 → T8 → T12 → T13a → T13b → T15a → T15b → T16. A delay on any of these delays the milestone; put the strongest builders there.
+
+## 7. Milestone close (after C4)
+
+1. `qa-lead` runs F1 to F11 and the full plant sweep. Record machine type and results in `docs/measurements/m3.md`. Claim no budget.
+2. `technical-director`: one whole-branch review (boundaries, versioning, Open policies still Open).
+3. `player` plays the forge demo in the browser and judges clarity in plain words. `mod-builder` tries to read `mods/forge` as a modder and lists any private gap.
+4. Push `codex/m3-integration`, wait for CI to go green (M2 lesson: per-task tests missed a red fmt step for 7 pushes). Ask the user before the push and before the merge to `main`.
+5. Daily report in `Reports/`, update [[Tasks]] and [[Home]].
+
+## 8. Token budget (proposal, track here)
+
+Estimate: 20 Luna builder runs plus at most one fix round each for 8 of them (about 28), 12 Sol R1 reviews, 4 `qa-lead` checkpoints, 3 milestone judges. About 47 agent runs. This is a proposal under the budget rule ([[Team]], memory "token budget"). If actuals pass 1.3 times the estimate, stop and ask the user. Mitigations: R0 on mechanical tasks; one reviewer per R1; re-checks by short message to the same reviewer; reports capped at 400 words; no probe done twice.
+
+Running count: builders 0, reviews 0, checkpoints 0, judges 0.
+
+## 9. Cut line (from the spec 16.2)
+
+In order, only if the milestone proves too large: (1) `SetEnabled`; (2) drone B and `MoveTo`; (3) browser rendering of belt items; (4) `Remove` as a player command. Never cut: compact belt with backpressure, item recipe with blocked output, hand as inventory, atomic shot with removal, a research that changes a stat, conservation checks with plants, E1, the M2 regression. The orchestrator asks the user before any cut.
+
+## 10. Ledger (update after every task)
+
+| Task | Status | Branch | Worktree | Commit | Reviewer verdict | Validated | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| T0 | not started | | | | | | |
+| T1 | not started | | | | | | |
+| T2 | not started | | | | | | |
+| T3a | not started | | | | | | |
+| T5 | not started | | | | | | |
+| T3 | not started | | | | | | |
+| T4 | not started | | | | | | |
+| T6 | not started | | | | | | |
+| T7 | not started | | | | | | |
+| T9 | not started | | | | | | |
+| T8 | not started | | | | | | |
+| T10 | not started | | | | | | |
+| T11 | not started | | | | | | |
+| T12 | not started | | | | | | |
+| T13a | not started | | | | | | |
+| T13b | not started | | | | | | |
+| T14 | not started | | | | | | |
+| T15a | not started | | | | | | |
+| T15b | not started | | | | | | |
+| T16 | not started | | | | | | |

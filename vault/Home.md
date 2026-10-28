@@ -23,6 +23,7 @@ Dashboard for the TuRTS studio. Read this first, then [[Tasks]] and the latest n
 
 - [[Tasks]]: the board.
 - [[Team]]: the sixteen agents, model tiers, review process.
+- [[M3 Execution Board]]: M3 run sheet for the Codex agents (tasks, reviewers, validators, waves, ledger).
 - `Decisions/`: one note per decision. Start with [[Decisions/2026-10-26 Bevy 0.20]].
 - `Work Log/`: one note per day.
 - `Reports/`: the daily report for the CEO.

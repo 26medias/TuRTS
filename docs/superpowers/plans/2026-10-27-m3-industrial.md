@@ -49,12 +49,16 @@ Failure modes that the SPEC implies and that a task's main test might not reach.
 - Record in `vault/Work Log/` each task's tests, red-to-green evidence, changed paths and the commit hash.
 
 ```text
-T0 → T1 → T2 → T3a → T3 → T4 ; T2 → T5 → T4
-T4 → {T6, T7, T9} ; T6 + T7 → T8 ; T9 → T10 → T11 (T11 also needs T3)
-T7 + T8 + T11 → T12 → T13a → T13b → T14 (helper starts after T4) ; T13b → T15a → T15b ; T14 + T15b → T16
+T0 → T1 → {T2, T3a}          (T3a needs only the Task 1 types, so it may run beside T2)
+T2 → T5 ; T3a → T3 ; {T3, T5} → T4
+T4 → {T6, T7, T9} ; {T6, T7} → T8 ; T9 → T10 ; {T10, T3} → T11
+{T7, T8, T11} → T12 → T13a → {T13b, T14}   (T14 grows case by case as phases land)
+T13b → T15a → T15b ; {T14, T15b} → T16
 ```
 
-Critical path: T0 → T1 → T2 → T3a → T3 → T4 → T7 → T8 → T12 → T13a → T13b → T15a → T15b → T16.
+Critical path: T0 → T1 → T3a → T3 → T4 → T7 → T8 → T12 → T13a → T13b → T15a → T15b → T16.
+
+The run sheet (agents, reviewers, validators, waves, ledger) is in `vault/M3 Execution Board.md`.
 
 ---
 
