@@ -72,10 +72,10 @@ The run sheet (agents, reviewers, validators, waves, ledger) is in `vault/M3 Exe
 - Consumes: `turts_sim::AuditTrail::drain_operations()` and `OperationAudit { operation_id, before, after, events }` (`crates/turts_sim/src/economy/transaction.rs:44-49`), reachable from `turts_pack` tests as in `crates/turts_pack/tests/common/accounting.rs:9-34`. (`economylog` lives in the binary-only `turts_server` crate and is not reachable.)
 - Produces: `tests/m3/m2_operation_stream.json`: for each package in `base, haul, acme, cedar`, for each tick of a 400-tick headless run, the number of captured operations and, for each operation, the list of its event kinds and whether `before == after`.
 
-- [ ] **Step 1:** Write test `m2_operation_stream_matches_baseline`. It boots each package through `turts_pack::load_package`, drives a command script (for base, haul and cedar the Gather and Produce scripts that `economy_accounting.rs` and `economy_variants.rs` already use for that package; for acme a `MoveTo`), runs 400 ticks, and compares the stream to the JSON file. With env `UPDATE_M3_BASELINE=1` it writes the file instead of comparing. It asserts that base, haul and cedar streams contain at least one operation (a file of zeros would prove nothing).
-- [ ] **Step 2:** Run `UPDATE_M3_BASELINE=1 cargo test -p turts_pack --test m3_m2_stream`. Expected: file written.
-- [ ] **Step 3:** Run `cargo test -p turts_pack --test m3_m2_stream`. Expected: PASS. Then plant one extra empty operation per tick in `capture_operation` (temporary, uncommitted), rerun, expect FAIL, and revert it.
-- [ ] **Step 4:** Create branch `codex/m3-integration`; commit `tests/m3/m2_operation_stream.json` and the test.
+- [x] **Step 1:** Write test `m2_operation_stream_matches_baseline`. It boots each package through `turts_pack::load_package`, drives a command script (for base, haul and cedar the Gather and Produce scripts that `economy_accounting.rs` and `economy_variants.rs` already use for that package; for acme a `MoveTo`), runs 400 ticks, and compares the stream to the JSON file. With env `UPDATE_M3_BASELINE=1` it writes the file instead of comparing. It asserts that base, haul and cedar streams contain at least one operation (a file of zeros would prove nothing).
+- [x] **Step 2:** Run `UPDATE_M3_BASELINE=1 cargo test -p turts_pack --test m3_m2_stream`. Expected: file written.
+- [x] **Step 3:** Run `cargo test -p turts_pack --test m3_m2_stream`. Expected: PASS. Then plant one extra empty operation per tick in `capture_operation` (temporary, uncommitted), rerun, expect FAIL, and revert it.
+- [x] **Step 4:** Create branch `codex/m3-integration`; commit `tests/m3/m2_operation_stream.json` and the test.
 
 ### Task 1: Schema types for API 0.2.1
 
@@ -86,16 +86,19 @@ The run sheet (agents, reviewers, validators, waves, ledger) is in `vault/M3 Exe
 **Interfaces:**
 - Produces: every type in SPEC 3 (`Facing`, `ExtractorDef`, `ConveyorDef`, `InserterDef`, `RunRefunds`, `RecipeDef`, `MachineDef`, `HealthDef`, `SlotRelation`, `TargetFilter`, `AmmoDef`, `WeaponDef`, `ContentsPolicy`, `RemovalDef`, `WeaponStat`, `EffectDef`, `TechnologyDef`, `ResearchStationDef`, `BeltLinePlacement`), new `UnitDef` / `Placement` / `MapDef` / `Exports` fields (all `#[serde(default)]`), `ENGINE_API_VERSION = "0.2.1"`, `ContentCatalog` and `Resolved*` accessors for recipes and technologies, archive and manifest readers for the new export lists.
 
-- [ ] **Step 1:** Write `forge_shaped_ron_parses` (a RON fixture of a unit with `machine`, `output_inventory`, `weapon`, `health`, `removal`; a technology; a recipe; a map with `belts` and `facing`) and `old_ron_still_loads` (every file under `mods/{base,haul,acme,cedar}` parses unchanged) and `unknown_field_typo_rejected`.
-- [ ] **Step 2:** Run both: expect FAIL (types missing).
-- [ ] **Step 3:** Add the types and fields. Do not derive `Default` on `UnitDef`, `Footprint` or other public structs (it would invent defaults in the public mod API). Add the new fields explicitly to each existing struct literal. Run `cargo check --workspace --all-targets` so test and example sites show up. Do not edit any file under `mods/`. Bump `ENGINE_API_VERSION` and update only version literals in tests that assert the engine version (not the `^0.2` requirement).
-- [ ] **Step 4:** Run `cargo test -p turts_mod_api -p turts_mod_runtime`. Expected: PASS, including all M2 package tests.
-- [ ] **Step 5:** Commit explicit paths.
+- [x] **Step 1:** Write `forge_shaped_ron_parses` (a RON fixture of a unit with `machine`, `output_inventory`, `weapon`, `health`, `removal`; a technology; a recipe; a map with `belts` and `facing`) and `old_ron_still_loads` (every file under `mods/{base,haul,acme,cedar}` parses unchanged) and `unknown_field_typo_rejected`.
+- [x] **Step 2:** Run both: expect FAIL (types missing).
+- [x] **Step 3:** Add the types and fields. Do not derive `Default` on `UnitDef`, `Footprint` or other public structs (it would invent defaults in the public mod API). Add the new fields explicitly to each existing struct literal. Run `cargo check --workspace --all-targets` so test and example sites show up. Do not edit any file under `mods/`. Bump `ENGINE_API_VERSION` and update only version literals in tests that assert the engine version (not the `^0.2` requirement).
+- [x] **Step 4:** Run `cargo test -p turts_mod_api -p turts_mod_runtime`. Expected: PASS, including all M2 package tests.
+- [x] **Step 5:** Commit explicit paths.
+
+T1 implementation notes: M3 resolution lives in `turts_mod_runtime/src/content_m3.rs`, introduced before T2 to keep new logic out of the legacy resolver. `ContentCatalog.source_files` retains actual source paths for all six gameplay kinds so T2 can keep its frozen diagnostic signature. Empty/default additive fields are omitted during serialization so regenerated `^0.2` packages also load with the baseline 0.2.0 parser.
 
 ### Task 2: Portable validation for the new kinds
 
 **Files:**
-- Create: `crates/turts_mod_runtime/src/content_m3.rs`, `crates/turts_mod_runtime/tests/content_m3.rs`
+- Create: `crates/turts_mod_runtime/tests/content_m3.rs`
+- Modify: `crates/turts_mod_runtime/src/content_m3.rs` (M3 resolution was introduced in T1; add validation here)
 - Modify: `crates/turts_mod_runtime/src/content.rs` (call into `content_m3`), `archive.rs` (call site)
 
 **Interfaces:**
