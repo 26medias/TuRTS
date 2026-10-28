@@ -15,7 +15,7 @@ Dashboard for the TuRTS studio. Read this first, then [[Tasks]] and the latest n
 
 **Product:** mod-first RTS engine in Rust and Bevy. Browser WebAssembly client first, authoritative headless server, the official game is a default mod on the public API. Spec: `RTS-Engine-Project-Specifications.md` (v0.7, 2026-10-26).
 
-**Current milestone:** M2 accepted, 16/16 tasks complete. The public mod API is exercised by the default and alternative economy packages; see `docs/measurements/m2.md` for accepted evidence.
+**Current milestone:** M3 implementation started on `codex/m3-integration`; T0 baseline is in progress. See [[M3 Execution Board]] for the live task ledger. M2 accepted, 16/16 tasks complete. The public mod API is exercised by the default and alternative economy packages; see `docs/measurements/m2.md` for accepted evidence.
 
 **Phase:** M1 closed; M2 Tasks 1–16 accepted at canonical source `601e71286e56bd2cbed0ecf9f0240ebcecd63047`. The multiplayer graybox proves the public package path, two-owner server-authoritative economy interactions, browser/native rendered controls, and recovery. Final process acceptance, T7, 15 browser positives, 33 native mutation plants, and 8 browser mutation plants passed. Global workspace tests: 497 passed, 0 failed, 17 ignored across 72 groups. Exact artifacts and hashes are in `docs/measurements/m2.md`. Remote GitHub Actions was not run for this closeout; performance budgets remain open.
 

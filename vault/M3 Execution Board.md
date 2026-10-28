@@ -14,7 +14,7 @@ The run sheet for M3 implementation by Codex agents. It says who builds, who rev
 
 # M3 execution board
 
-**Spec:** `docs/superpowers/specs/2026-10-27-m3-industrial-design.md`. **Plan:** `docs/superpowers/plans/2026-10-27-m3-industrial.md`. **Calls K1 to K8:** confirmed by the user on 2026-10-27 ([[Decisions/2026-10-27 M3 scope and orchestrator calls]]). **Base:** `main` at `21dc347`.
+**Spec:** `docs/superpowers/specs/2026-10-27-m3-industrial-design.md`. **Plan:** `docs/superpowers/plans/2026-10-27-m3-industrial.md`. **Calls K1 to K8:** confirmed by the user on 2026-10-27 ([[Decisions/2026-10-27 M3 scope and orchestrator calls]]). **Base:** `main` at `fc6931a` (includes the execution board; product source unchanged from `9e1987c`).
 
 ## 1. Roles
 
@@ -143,7 +143,7 @@ Critical path: T0 → T1 → T3a → T3 → T4 → T7 → T8 → T12 → T13a �
 
 Estimate: 20 Luna builder runs plus at most one fix round each for 8 of them (about 28), 12 Sol R1 reviews, 4 `qa-lead` checkpoints, 3 milestone judges. About 47 agent runs. This is a proposal under the budget rule ([[Team]], memory "token budget"). If actuals pass 1.3 times the estimate, stop and ask the user. Mitigations: R0 on mechanical tasks; one reviewer per R1; re-checks by short message to the same reviewer; reports capped at 400 words; no probe done twice.
 
-Running count: builders 0, reviews 0, checkpoints 0, judges 0.
+Running count: builders 1, reviews 0, checkpoints 0, judges 0.
 
 ## 9. Cut line (from the spec 16.2)
 
@@ -153,7 +153,7 @@ In order, only if the milestone proves too large: (1) `SetEnabled`; (2) drone B 
 
 | Task | Status | Branch | Worktree | Commit | Reviewer verdict | Validated | Notes |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| T0 | not started | | | | | | |
+| T0 | in progress | `codex/m3-t0` | `target/m3-worktrees/t0` | pending | R1 pending | pending | Real M2 stream baseline; no M3 source edits. |
 | T1 | not started | | | | | | |
 | T2 | not started | | | | | | |
 | T3a | not started | | | | | | |
