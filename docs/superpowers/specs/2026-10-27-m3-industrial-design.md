@@ -1,6 +1,6 @@
 # M3 industrial loop — design
 
-Date: 2026-10-27. Revision 1. Status: **Draft for gate 1.** Not yet approved by the user.
+Date: 2026-10-27. Revision 1. Status: **Gates 1 and 2 passed. The user confirmed calls K1 to K8 on 2026-10-27.** Ready for implementation.
 Authors: orchestrator, from three brainstorm notes (see section 17). Implementer: a Codex agent.
 Source of record for the product: `RTS-Engine-Project-Specifications.md` (S), version 0.7.
 This design extends the M2 design (`docs/superpowers/specs/2026-10-26-m2-economy-design.md`, M2D).
@@ -20,7 +20,7 @@ balance decision.
 
 The user asked the orchestrator to write the spec and plan and to delegate the implementation. The
 user did not answer the questions below. Each is the orchestrator's call, based on the brainstorm
-recommendations. **The user must confirm or change each one before the plan starts.**
+recommendations. **The user confirmed all eight on 2026-10-27 ("the eight calls are fine").**
 
 | # | Call | Reason | Alternative |
 | --- | --- | --- | --- |

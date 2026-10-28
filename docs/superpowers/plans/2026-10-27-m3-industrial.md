@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Plan status:** Draft for gate 2. The calls K1-K8 in the spec (section 1.1) are orchestrator calls that the user has not yet confirmed. Do not start Task 0 until the user confirms them.
+**Plan status:** Gate 2 passed. The user confirmed the calls K1-K8 in the spec (section 1.1) on 2026-10-27. Task 0 may start.
 
 **Goal:** Prove mine → belt → factory → inserter → ammunition turret → research upgrade with a conservation oracle, through a new `forge` data package, the authoritative server and the browser client.
 

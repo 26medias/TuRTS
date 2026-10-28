@@ -15,7 +15,7 @@ The task board. Move items between sections; keep owner and evidence link on eac
 
 ## In progress
 
-- [ ] **M3 industrial loop: design and plan written; gates 1 and 2 passed.** Spec `docs/superpowers/specs/2026-10-27-m3-industrial-design.md`, plan `docs/superpowers/plans/2026-10-27-m3-industrial.md`. Waiting for the user to confirm calls K1 to K8 ([[Decisions/2026-10-27 M3 scope and orchestrator calls]]). Implementer: a Codex agent. No M3 code yet.
+- [ ] **M3 industrial loop: design and plan written; gates 1 and 2 passed.** Spec `docs/superpowers/specs/2026-10-27-m3-industrial-design.md`, plan `docs/superpowers/plans/2026-10-27-m3-industrial.md`. User confirmed calls K1 to K8 on 2026-10-27; ready for the Codex agent to start Task 0 ([[Decisions/2026-10-27 M3 scope and orchestrator calls]]). Implementer: a Codex agent. No M3 code yet.
 
 No M2 tasks remain in progress; all 16 were accepted on 2026-10-27.
 

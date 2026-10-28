@@ -7,11 +7,11 @@ tags:
   - m3
 ai-first: true
 source: mcp
-status: proposed
+status: approved
 ---
 
 ## For future Claude
-M3 (industrial loop) design and plan are written and passed gate 1 and gate 2. The user asked the orchestrator to write the spec and plan and to have a Codex agent implement them. The user has **not** answered the eight calls below. Do not start implementation until the user confirms or changes K1 to K8.
+M3 (industrial loop) design and plan are written and passed gate 1 and gate 2. The user asked the orchestrator to write the spec and plan and to have a Codex agent implement them. The user confirmed all eight calls below on 2026-10-27 ("the eight calls are fine"). Implementation may start with Task 0 of the plan.
 
 **Who:** orchestrator, on three brainstorm reports (game-designer: content and demonstration; simulation-core-engineer: engine design; recon: M2 code seams). Gate 1 reviewers: qa-lead (instrument), technical-director (architecture).
 **Spec:** `docs/superpowers/specs/2026-10-27-m3-industrial-design.md`. **Plan:** `docs/superpowers/plans/2026-10-27-m3-industrial.md`. **Research:** `docs/research/m3/`.
