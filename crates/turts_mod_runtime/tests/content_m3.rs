@@ -114,7 +114,7 @@ fn machine_needs_matching_inventories() {
 #[test]
 fn machine_inputs_exceed_input_capacity() {
     rejected(
-        &UNIT.replace("capacity: 20", "capacity: 0"),
+        UNIT,
         &RECIPE.replace(
             "inputs: [(item: \"forge:shell\", amount: 1)]",
             "inputs: [(item: \"forge:shell\", amount: 21)]",
