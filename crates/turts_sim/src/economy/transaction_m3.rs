@@ -761,3 +761,20 @@ impl Transaction<'_> {
         self.writes.healths.insert(unit, Some(health));
     }
 }
+
+// Toggle commands change one unit's disabled membership atomically.
+impl Transaction<'_> {
+    pub(crate) fn disabled_contains(&self, unit: u32) -> bool {
+        if let Some(staged) = self.writes.disabled.get(&unit) {
+            return staged.is_some();
+        }
+        self.world
+            .get_resource::<Disabled>()
+            .is_some_and(|disabled| disabled.0.contains(&unit))
+    }
+
+    pub(crate) fn stage_disabled(&mut self, unit: u32, disabled: bool) {
+        self.mark_m3();
+        self.writes.disabled.insert(unit, disabled.then_some(()));
+    }
+}

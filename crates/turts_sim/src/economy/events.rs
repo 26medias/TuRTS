@@ -84,6 +84,10 @@ pub enum EconomyEventKind {
         damage: u64,
         applied: u64,
     },
+    EnabledChanged {
+        unit: u32,
+        enabled: bool,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

@@ -409,6 +409,11 @@ fn admit_kind(world: &mut World, staged: &StagedPlayerCommand, tick: u32) -> Opt
             producer_id: producer_id.0,
             job_id: turts_sim::ids::JobId(job_id.0),
         },
+        PlayerCommandKind::Remove { unit_id } => CommandKind::Remove { unit_id: unit_id.0 },
+        PlayerCommandKind::SetEnabled { unit_id, enabled } => CommandKind::SetEnabled {
+            unit_id: unit_id.0,
+            enabled: *enabled,
+        },
     };
     Some(kind)
 }
@@ -1409,5 +1414,34 @@ mod admission_tests {
             Some(1)
         );
         assert_eq!(app.world().resource::<CommandResults>().0.len(), 1);
+    }
+
+    #[test]
+    fn server_admit_kind_covers_remove_and_set_enabled() {
+        let (mut app, connection) = app();
+        let remove = staged(
+            connection,
+            1,
+            PlayerCommandKind::Remove { unit_id: UnitId(1) },
+        );
+        assert_eq!(
+            admit_kind(app.world_mut(), &remove, 0),
+            Some(CommandKind::Remove { unit_id: 1 })
+        );
+        let toggle = staged(
+            connection,
+            2,
+            PlayerCommandKind::SetEnabled {
+                unit_id: UnitId(1),
+                enabled: false,
+            },
+        );
+        assert_eq!(
+            admit_kind(app.world_mut(), &toggle, 0),
+            Some(CommandKind::SetEnabled {
+                unit_id: 1,
+                enabled: false
+            })
+        );
     }
 }

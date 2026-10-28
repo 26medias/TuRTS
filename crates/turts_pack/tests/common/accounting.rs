@@ -352,6 +352,7 @@ impl AccountingOracle {
                 EconomyEventKind::ItemsProduced { .. }
                     | EconomyEventKind::ResearchCompleted { .. }
                     | EconomyEventKind::Fired { .. }
+                    | EconomyEventKind::EnabledChanged { .. }
             )
         }) {
             return Err(
@@ -1201,6 +1202,11 @@ impl AccountingOracle {
             CommandKind::Gather { unit_id, node_id } => {
                 self.validate_gather_command(b, a, *unit_id, *node_id, events)?
             }
+            CommandKind::Remove { .. } | CommandKind::SetEnabled { .. } => {
+                return Err(
+                    "M2 accounting oracle does not support T12 commands; use the M3 oracle".into(),
+                );
+            }
         }
         self.expected_commands.push(c.clone());
         if !self.command_tick_advanced {
@@ -1211,6 +1217,9 @@ impl AccountingOracle {
 
     fn command_should_succeed(&self, c: &Command, b: &AuditState) -> Result<bool, String> {
         match &c.kind {
+            CommandKind::Remove { .. } | CommandKind::SetEnabled { .. } => {
+                Err("M2 accounting oracle does not support T12 commands; use the M3 oracle".into())
+            }
             CommandKind::MoveTo { unit_ids, target } => {
                 if unit_ids.is_empty()
                     || unit_ids.len() > 256

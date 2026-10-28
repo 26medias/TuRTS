@@ -66,6 +66,13 @@ pub enum PlayerCommandKind {
         producer_id: UnitId,
         job_id: JobId,
     },
+    Remove {
+        unit_id: UnitId,
+    },
+    SetEnabled {
+        unit_id: UnitId,
+        enabled: bool,
+    },
 }
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CommandAck {
@@ -202,3 +209,45 @@ pub struct WorldDelta {
 }
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ResyncRequest;
+
+#[cfg(test)]
+mod m3_command_tests {
+    use super::*;
+
+    fn encode(command: &PlayerCommand) -> Vec<u8> {
+        let mut buffer = [0; 64];
+        postcard::to_slice(command, &mut buffer).unwrap().to_vec()
+    }
+
+    #[test]
+    fn remove_and_set_enabled_roundtrip_and_keep_old_variant_tags() {
+        let remove = PlayerCommand {
+            seq: 9,
+            kind: PlayerCommandKind::Remove { unit_id: UnitId(5) },
+        };
+        let set_enabled = PlayerCommand {
+            seq: 10,
+            kind: PlayerCommandKind::SetEnabled {
+                unit_id: UnitId(5),
+                enabled: false,
+            },
+        };
+        for command in [remove, set_enabled] {
+            let bytes = encode(&command);
+            assert_eq!(
+                postcard::from_bytes::<PlayerCommand>(&bytes).unwrap(),
+                command
+            );
+        }
+        // CancelProduction was the last pre-T12 variant (tag 3). T12 variants append.
+        let previous = PlayerCommand {
+            seq: 11,
+            kind: PlayerCommandKind::CancelProduction {
+                producer_id: UnitId(5),
+                job_id: JobId(7),
+            },
+        };
+        let bytes = encode(&previous);
+        assert_eq!(bytes.get(1), Some(&3));
+    }
+}
