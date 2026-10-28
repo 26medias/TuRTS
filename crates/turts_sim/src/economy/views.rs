@@ -247,6 +247,10 @@ pub struct CatalogAudit {
     pub nodes: Vec<CatalogNodeAudit>,
     pub units: Vec<CatalogUnitAudit>,
     pub recipes: Vec<CatalogRecipeAudit>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub technologies: Vec<super::views_m3::CatalogTechnologyAudit>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub item_recipes: Vec<super::views_m3::CatalogItemRecipeAudit>,
 }
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CatalogNodeAudit {
@@ -302,6 +306,24 @@ pub struct AuditState {
     pub raw_inventories: Vec<RawInventoryAudit>,
     pub raw_orders: Vec<RawOrderAudit>,
     pub raw_queues: Vec<RawQueueAudit>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub raw_output_inventories: Vec<super::views_m3::RawOutputInventoryAudit>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub raw_belts: Vec<super::views_m3::RawBeltAudit>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub raw_inserters: Vec<super::views_m3::RawInserterAudit>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub raw_extractors: Vec<super::views_m3::RawExtractorAudit>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub raw_weapons: Vec<super::views_m3::RawWeaponAudit>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub raw_healths: Vec<super::views_m3::RawHealthAudit>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub research: Vec<super::views_m3::RawResearchAudit>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub disabled: Vec<u32>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub removed_units: Vec<u32>,
     pub compiled_durations: Vec<DurationAudit>,
     pub next_event_ordinal: Option<u64>,
     pub pending_events: Vec<super::events::EconomyEvent>,
@@ -333,6 +355,11 @@ pub struct EconomyChangesView {
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct WorldView {
     pub tick: u32,
+    #[serde(
+        default,
+        skip_serializing_if = "super::views_m3::M3AuditState::is_empty"
+    )]
+    pub m3: super::views_m3::M3AuditState,
     pub units: Vec<crate::world::UnitState>,
     pub nodes: Vec<NodeView>,
     pub economy: EconomyStateView,
@@ -369,8 +396,10 @@ pub fn world_view(world: &mut World) -> WorldView {
         .get_resource::<crate::world::Tick>()
         .map_or(0, |tick| tick.0);
     let units = crate::world::snapshot(world);
+    let m3 = super::views_m3::m3_world_view(world);
     let mut view = WorldView {
         tick,
+        m3,
         units,
         ..WorldView::default()
     };
@@ -714,6 +743,8 @@ pub fn audit_state(world: &mut World) -> AuditState {
                         }),
                     })
                     .collect(),
+                technologies: super::views_m3::catalog_technology_audits(c),
+                item_recipes: super::views_m3::catalog_item_recipe_audits(c),
                 recipes: c
                     .production
                     .iter()
@@ -809,6 +840,7 @@ pub fn audit_state(world: &mut World) -> AuditState {
         pending_events: world.contains_resource::<super::events::PendingEconomyEvents>(),
         event_ordinal: world.contains_resource::<super::events::NextEventOrdinal>(),
     };
+    let m3 = super::views_m3::m3_audit_state(world);
     AuditState {
         tick_hz: world.get_resource::<crate::SimClock>().map(|c| c.tick_hz),
         next_event_ordinal: world
@@ -834,6 +866,15 @@ pub fn audit_state(world: &mut World) -> AuditState {
                     .map(|(producer, jobs)| raw_queue_view((*producer, jobs.clone())))
                     .collect()
             }),
+        raw_output_inventories: m3.raw_output_inventories,
+        raw_belts: m3.raw_belts,
+        raw_inserters: m3.raw_inserters,
+        raw_extractors: m3.raw_extractors,
+        raw_weapons: m3.raw_weapons,
+        raw_healths: m3.raw_healths,
+        research: m3.research,
+        disabled: m3.disabled,
+        removed_units: m3.removed_units,
         compiled_durations,
         catalog,
         ledger_claims,

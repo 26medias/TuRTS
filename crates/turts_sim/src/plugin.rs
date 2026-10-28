@@ -80,6 +80,7 @@ impl Plugin for SimPlugin {
             .init_resource::<NextEventOrdinal>()
             .init_resource::<SpawnedThisTick>()
             .init_resource::<RemovedThisTick>()
+            .init_resource::<crate::economy::views_m3::RemovedHistory>()
             .insert_resource(Slots::new(SLOT_COUNT))
             .insert_resource(SimClock {
                 tick_hz: self.tick_hz,
@@ -175,8 +176,29 @@ fn publish_completed_tick(world: &mut World) {
         &world.resource::<CompletedWorld>().0.economy,
         &completed.economy,
     );
+    let m3_changes = crate::economy::views_m3::m3_changes(
+        &world.resource::<CompletedWorld>().0.m3,
+        &completed.m3,
+    );
     let mut events = std::mem::take(&mut world.resource_mut::<PendingEconomyEvents>().0);
     events.sort_by_key(|event: &EconomyEvent| event.ordinal);
+    let mut healths = m3_changes.healths;
+    let killed_units: BTreeSet<_> = events
+        .iter()
+        .filter_map(|event| match &event.kind {
+            crate::economy::events::EconomyEventKind::Destroyed {
+                unit,
+                cause: crate::economy::events::RemoveCause::Killed { .. },
+                ..
+            } => Some(*unit),
+            _ => None,
+        })
+        .collect();
+    for unit in killed_units {
+        healths.retain(|row| row.unit != unit);
+        healths.push(crate::economy::views_m3::RawHealthAudit { unit, current: 0 });
+    }
+    healths.sort_by_key(|row| row.unit);
     let mut spawned = std::mem::take(&mut world.resource_mut::<SpawnedThisTick>().0);
     let mut removed = std::mem::take(&mut world.resource_mut::<RemovedThisTick>().0);
     let overlap = removed
@@ -198,6 +220,14 @@ fn publish_completed_tick(world: &mut World) {
         positions: changed,
         nodes,
         economy: economy_changes,
+        output_inventories: m3_changes.output_inventories,
+        belts: m3_changes.belts,
+        inserters: m3_changes.inserters,
+        extractors: m3_changes.extractors,
+        weapons: m3_changes.weapons,
+        healths,
+        research: m3_changes.research,
+        enabled: m3_changes.enabled,
         events,
     };
     world.insert_resource(batch);

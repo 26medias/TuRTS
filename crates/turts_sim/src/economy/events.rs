@@ -5,7 +5,13 @@ use serde::{Deserialize, Serialize};
 use turts_mod_api::ContentId;
 
 use crate::{
-    economy::views::{EconomyChangesView, WorldView},
+    economy::{
+        views::{EconomyChangesView, WorldView},
+        views_m3::{
+            RawBeltAudit, RawEnabledAudit, RawExtractorAudit, RawHealthAudit, RawInserterAudit,
+            RawOutputInventoryAudit, RawResearchAudit, RawWeaponAudit,
+        },
+    },
     world::UnitState,
 };
 
@@ -136,6 +142,14 @@ pub struct CommittedTick {
     pub positions: Vec<(u32, bevy_math::Vec2)>,
     pub nodes: Vec<crate::economy::views::NodeView>,
     pub economy: EconomyChangesView,
+    pub output_inventories: Vec<RawOutputInventoryAudit>,
+    pub belts: Vec<RawBeltAudit>,
+    pub inserters: Vec<RawInserterAudit>,
+    pub extractors: Vec<RawExtractorAudit>,
+    pub weapons: Vec<RawWeaponAudit>,
+    pub healths: Vec<RawHealthAudit>,
+    pub research: Vec<RawResearchAudit>,
+    pub enabled: Vec<RawEnabledAudit>,
     pub events: Vec<EconomyEvent>,
 }
 

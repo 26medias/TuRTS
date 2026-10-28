@@ -19,7 +19,7 @@ use crate::{
     map::{check_circle_bounds, check_overlap},
     registry::UnitTypes,
     slots::{SlotId, Slots},
-    world::{MapBounds, Owner, Position, UnitId, UnitType},
+    world::{MapBounds, Owner, Position, UnitFacing, UnitId, UnitType},
 };
 
 #[derive(bevy_ecs::prelude::Resource, Debug, Clone, PartialEq)]
@@ -423,15 +423,21 @@ pub fn install_package(world: &mut World, staged: StagedPackage) {
     world.insert_resource(staged.m3.conveyors);
     world.insert_resource(staged.m3.item_table);
     for (id, kind, owner, position) in staged.units {
-        world.spawn((
+        let mut entity = world.spawn((
             UnitId(id),
             UnitType(kind),
             Owner(SlotId(owner)),
             Position(position),
         ));
+        if let Some(facing) = staged.m3.facings.get(&id).copied() {
+            entity.insert(UnitFacing(facing));
+        }
     }
     for (id, kind, owner, position) in staged.m3.extra_units {
-        world.spawn((UnitId(id), kind, Owner(SlotId(owner)), Position(position)));
+        let mut entity = world.spawn((UnitId(id), kind, Owner(SlotId(owner)), Position(position)));
+        if let Some(facing) = staged.m3.facings.get(&id).copied() {
+            entity.insert(UnitFacing(facing));
+        }
     }
     for (id, rows) in staged.m3.capability_rows {
         boot_m3::apply_capability_rows(world, id, rows);

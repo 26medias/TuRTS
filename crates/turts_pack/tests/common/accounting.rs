@@ -2606,6 +2606,7 @@ impl AccountingOracle {
             unit_id: id,
             content_id: recipe.output_unit.to_string(),
             owner_slot: owner,
+            facing: None,
             pos: bevy_math::Vec2::new(candidate.x, candidate.y),
         });
         expected.economy.units.sort_by_key(|u| u.unit_id);
