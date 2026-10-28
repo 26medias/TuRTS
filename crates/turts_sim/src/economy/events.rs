@@ -73,6 +73,7 @@ pub struct CostLine {
 pub enum EventSource {
     Slot(u8),
     Inventory(u32),
+    Output(u32),
 }
 
 #[derive(Resource, Debug, Clone, Default, PartialEq)]

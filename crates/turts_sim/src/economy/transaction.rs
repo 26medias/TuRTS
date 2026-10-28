@@ -333,6 +333,12 @@ impl Transaction<'_> {
                 .and_then(|i| i.items.get(resource))
                 .copied()
                 .unwrap_or_default(),
+            Endpoint::Output(unit) => ledger
+                .output_inventories
+                .get(&unit)
+                .and_then(|i| i.items.get(resource))
+                .copied()
+                .unwrap_or_default(),
         }
     }
 
@@ -394,6 +400,16 @@ impl Transaction<'_> {
                     return Err(RejectReason::IncompatibleItem);
                 }
             }
+            Endpoint::Output(unit) => {
+                let inventory = self
+                    .world
+                    .get_resource::<EconomyLedger>()
+                    .and_then(|ledger| ledger.output_inventories.get(&unit))
+                    .ok_or(RejectReason::UnknownInventory)?;
+                if !inventory.accepted_items.contains(resource) {
+                    return Err(RejectReason::IncompatibleItem);
+                }
+            }
         }
         Ok(())
     }
@@ -421,6 +437,11 @@ impl Transaction<'_> {
                     }
                     Endpoint::Inventory(unit) => {
                         if let Some(inventory) = ledger.inventories.get_mut(&unit) {
+                            inventory.items.insert(resource, account);
+                        }
+                    }
+                    Endpoint::Output(unit) => {
+                        if let Some(inventory) = ledger.output_inventories.get_mut(&unit) {
                             inventory.items.insert(resource, account);
                         }
                     }
@@ -622,6 +643,7 @@ pub(crate) fn reserve_costs(
             return Err(match line.endpoint {
                 Endpoint::Slot(_) => RejectReason::InsufficientBalance,
                 Endpoint::Inventory(_) => RejectReason::InsufficientItems,
+                Endpoint::Output(_) => RejectReason::InsufficientItems,
             });
         }
         let reserved = old
@@ -666,6 +688,7 @@ pub(crate) fn charge_costs(
             return Err(match line.endpoint {
                 Endpoint::Slot(_) => RejectReason::InsufficientBalance,
                 Endpoint::Inventory(_) => RejectReason::InsufficientItems,
+                Endpoint::Output(_) => RejectReason::InsufficientItems,
             });
         }
         updates.insert(

@@ -104,6 +104,12 @@ pub enum CommandRejectReason {
     ArithmeticOverflow,
     IdExhausted,
     BadSequence,
+    NotRemovable,
+    NotToggleable,
+    PrerequisitesMissing,
+    AlreadyResearched,
+    ResearchInProgress,
+    Internal,
 }
 impl CommandRejectReason {
     pub const ALL: &'static [Self] = &[
@@ -130,6 +136,12 @@ impl CommandRejectReason {
         Self::ArithmeticOverflow,
         Self::IdExhausted,
         Self::BadSequence,
+        Self::NotRemovable,
+        Self::NotToggleable,
+        Self::PrerequisitesMissing,
+        Self::AlreadyResearched,
+        Self::ResearchInProgress,
+        Self::Internal,
     ];
     pub const fn as_str(self) -> &'static str {
         match self {
@@ -156,6 +168,12 @@ impl CommandRejectReason {
             Self::ArithmeticOverflow => "arithmetic_overflow",
             Self::IdExhausted => "id_exhausted",
             Self::BadSequence => "bad_sequence",
+            Self::NotRemovable => "not_removable",
+            Self::NotToggleable => "not_toggleable",
+            Self::PrerequisitesMissing => "prerequisites_missing",
+            Self::AlreadyResearched => "already_researched",
+            Self::ResearchInProgress => "research_in_progress",
+            Self::Internal => "internal",
         }
     }
 }

@@ -151,6 +151,7 @@ pub struct UnitView {
 pub enum ReservationEndpointView {
     Slot(u8),
     Inventory(u32),
+    Output(u32),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -472,6 +473,7 @@ fn job_view(job: ProductionJob) -> JobView {
                 source: match line.endpoint {
                     crate::economy::ledger::Endpoint::Slot(_) => CostSource::SlotBalance,
                     crate::economy::ledger::Endpoint::Inventory(_) => CostSource::ProducerInventory,
+                    crate::economy::ledger::Endpoint::Output(_) => CostSource::ProducerInventory,
                 },
                 resource: line.resource,
                 amount: line.amount,
@@ -484,6 +486,9 @@ fn job_view(job: ProductionJob) -> JobView {
                     source: match line.endpoint {
                         crate::economy::ledger::Endpoint::Slot(_) => CostSource::SlotBalance,
                         crate::economy::ledger::Endpoint::Inventory(_) => {
+                            CostSource::ProducerInventory
+                        }
+                        crate::economy::ledger::Endpoint::Output(_) => {
                             CostSource::ProducerInventory
                         }
                     },
@@ -528,6 +533,7 @@ fn reservation_line_view(line: crate::economy::ledger::ReservationLine) -> Reser
             crate::economy::ledger::Endpoint::Inventory(unit) => {
                 ReservationEndpointView::Inventory(unit)
             }
+            crate::economy::ledger::Endpoint::Output(unit) => ReservationEndpointView::Output(unit),
         },
         resource: line.resource,
         amount: line.amount,
@@ -625,6 +631,9 @@ pub fn audit_state(world: &mut World) -> AuditState {
                                         }
                                         crate::economy::ledger::Endpoint::Inventory(unit) => {
                                             ReservationEndpointView::Inventory(unit)
+                                        }
+                                        crate::economy::ledger::Endpoint::Output(unit) => {
+                                            ReservationEndpointView::Output(unit)
                                         }
                                     },
                                     resource: line.resource.clone(),

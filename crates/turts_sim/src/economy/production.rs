@@ -485,6 +485,7 @@ fn event_cost_line(line: &ReservationLine) -> CostLine {
         source: match line.endpoint {
             Endpoint::Slot(slot) => EventSource::Slot(slot),
             Endpoint::Inventory(unit) => EventSource::Inventory(unit),
+            Endpoint::Output(unit) => EventSource::Output(unit),
         },
         resource: line.resource.clone(),
         amount: line.amount,

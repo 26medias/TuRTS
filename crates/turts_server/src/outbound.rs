@@ -81,6 +81,12 @@ fn wire_reason(reason: turts_sim::RejectReason) -> CommandRejectReason {
         R::IdExhausted => CommandRejectReason::IdExhausted,
         R::BadSequence => CommandRejectReason::BadSequence,
         R::UnknownBalance => CommandRejectReason::InsufficientBalance,
+        R::NotRemovable => CommandRejectReason::NotRemovable,
+        R::NotToggleable => CommandRejectReason::NotToggleable,
+        R::PrerequisitesMissing => CommandRejectReason::PrerequisitesMissing,
+        R::AlreadyResearched => CommandRejectReason::AlreadyResearched,
+        R::ResearchInProgress => CommandRejectReason::ResearchInProgress,
+        R::IntegrityViolation => CommandRejectReason::Internal,
     }
 }
 
@@ -126,6 +132,69 @@ fn payload_bytes<T: serde::Serialize>(message: &T) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn wire_reason_covers_every_sim_reason() {
+        use turts_sim::RejectReason as R;
+
+        let cases = [
+            (R::EmptyCommand, CommandRejectReason::EmptyCommand),
+            (R::TooManyUnits, CommandRejectReason::TooManyUnits),
+            (R::DuplicateUnit, CommandRejectReason::DuplicateUnit),
+            (R::UnknownUnit, CommandRejectReason::UnknownUnit),
+            (R::NotOwner, CommandRejectReason::NotOwner),
+            (R::NotMobile, CommandRejectReason::NotMobile),
+            (R::TargetNotFinite, CommandRejectReason::TargetNotFinite),
+            (R::TargetOutsideMap, CommandRejectReason::TargetOutsideMap),
+            (R::MissingCapability, CommandRejectReason::MissingCapability),
+            (R::UnknownNode, CommandRejectReason::UnknownNode),
+            (R::IncompatibleItem, CommandRejectReason::IncompatibleItem),
+            (R::NodeDepleted, CommandRejectReason::NodeDepleted),
+            (R::UnknownRecipe, CommandRejectReason::UnknownRecipe),
+            (R::RecipeNotEnabled, CommandRejectReason::RecipeNotEnabled),
+            (R::QueueFull, CommandRejectReason::QueueFull),
+            (
+                R::InsufficientBalance,
+                CommandRejectReason::InsufficientBalance,
+            ),
+            (R::InsufficientItems, CommandRejectReason::InsufficientItems),
+            (R::UnknownJob, CommandRejectReason::UnknownJob),
+            (
+                R::RefundDestinationFull,
+                CommandRejectReason::RefundDestinationFull,
+            ),
+            (
+                R::RefundDestinationOverflow,
+                CommandRejectReason::RefundDestinationOverflow,
+            ),
+            (
+                R::ArithmeticOverflow,
+                CommandRejectReason::ArithmeticOverflow,
+            ),
+            (R::IdExhausted, CommandRejectReason::IdExhausted),
+            (R::BadSequence, CommandRejectReason::BadSequence),
+            (R::UnknownInventory, CommandRejectReason::InsufficientItems),
+            (R::UnknownBalance, CommandRejectReason::InsufficientBalance),
+            (R::InvalidAmount, CommandRejectReason::InsufficientItems),
+            (R::NotRemovable, CommandRejectReason::NotRemovable),
+            (R::NotToggleable, CommandRejectReason::NotToggleable),
+            (
+                R::PrerequisitesMissing,
+                CommandRejectReason::PrerequisitesMissing,
+            ),
+            (R::AlreadyResearched, CommandRejectReason::AlreadyResearched),
+            (
+                R::ResearchInProgress,
+                CommandRejectReason::ResearchInProgress,
+            ),
+            (R::IntegrityViolation, CommandRejectReason::Internal),
+        ];
+
+        for (reason, expected) in cases {
+            assert_eq!(wire_reason(reason), expected, "{}", reason.as_str());
+        }
+    }
+
     #[test]
     fn server_internal_reasons_never_leak_as_strings() {
         assert_eq!(
