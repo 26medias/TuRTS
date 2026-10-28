@@ -6,6 +6,10 @@ tags: [turts, m3, report]
 
 # M3 implementation
 
+**Current status: 19/20 task entries accepted.** C1–C3 and client presentation are accepted. Latest canonical product gates are758 passed,0 failed,17 ignored plus WebAssembly, boundaries and the unchanged M2 stream. Task16 has real private-research/combat F11 proof, M2 browsers15/15, Forge browser7/7, M3 faults17/17 and native M2 faults33/33. Runner interruption/hash repairs and final gates are in progress before Task16 review, C4 and three milestone judgments. No user input is currently needed;67/75 approved agent runs used.
+
+The entries below retain the chronological implementation history; the execution board is authoritative for current status.
+
 Seventeen of20 task entries are accepted: T0, T1, T2, T3a, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13a, T13b and T15a. Public Forge boot and shared spawn-row installation pass review; independent checkpoint C1 passed. Extraction, transport, inserters, machines, research and combat passed; Remove/SetEnabled commands passed; views/audit is under repair after independent review, before C2. Exact status: [[M3 Execution Board]]; evidence: [[Work Log/2026-10-28]].
 
 Last canonical gates: 710 passed, 0 failed, 17 ignored; fmt, strict Clippy, workspace check, wasm, boundary and frozen M2 stream passed. The complete industrial chain and forge demonstration are still pending.
