@@ -14,6 +14,15 @@ const {
     visibleTexts,
 } = require("./m2.js");
 
+function portSectionHasCapacity(lines, port, capacity) {
+    const start = lines.indexOf(`Inventory · ${port}`);
+    if (start < 0) return false;
+    const nextPort = lines.findIndex((line, index) => index > start && line.startsWith("Inventory · "));
+    const end = nextPort < 0 ? lines.length : nextPort;
+    return lines.slice(start + 1, end).some((line) =>
+        /^Capacity: \d+\/\d+$/.test(line) && line.endsWith(`/${capacity}`));
+}
+
 function commandProof(snapshot, seq) {
     const results = snapshot.debug?.command_results ?? [];
     return {
@@ -40,13 +49,15 @@ async function m3_panel_actions_send_commands(page, outDir, logs = []) {
         return snapshot.debug?.selection === press.unit_id &&
             texts.includes("Inventory · Main") &&
             texts.includes("Inventory · Output") &&
-            texts.includes("Capacity: 0/6") &&
-            texts.includes("Capacity: 0/4");
+            portSectionHasCapacity(texts, "Main", 6) &&
+            portSectionHasCapacity(texts, "Output", 4);
     }, 5000, "actual rendered press panel shows Main and Output inventory capacity");
     const pressArtifact = await captureStage(page, outDir, "02-press-two-port-inventory", logs);
     const pressLines = visibleTexts(pressArtifact);
-    assert(pressLines.includes("Inventory · Main") && pressLines.includes("Inventory · Output"),
-        `actual press panel omitted a labelled inventory port: ${pressLines.join("\n")}`);
+    assert(pressLines.includes("Inventory · Main") && pressLines.includes("Inventory · Output") &&
+        portSectionHasCapacity(pressLines, "Main", 6) &&
+        portSectionHasCapacity(pressLines, "Output", 4),
+        `actual press panel omitted a labelled port or its catalog capacity: ${pressLines.join("\n")}`);
 
     const lab = pressSelected.debug.replicated_world.units.find((unit) => unit.content_id === "forge:lab" && unit.owner_slot === 0);
     const labMesh = lab && pressArtifact.scene.units.find((unit) => unit.unit_id === lab.unit_id);
