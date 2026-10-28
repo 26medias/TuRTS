@@ -15,7 +15,7 @@ The task board. Move items between sections; keep owner and evidence link on eac
 
 ## In progress
 
-- [ ] **M3 industrial loop: design and plan written; gates 1 and 2 passed.** Spec `docs/superpowers/specs/2026-10-27-m3-industrial-design.md`, plan `docs/superpowers/plans/2026-10-27-m3-industrial.md`. User confirmed calls K1 to K8 on 2026-10-27; implementation started with Task 0 on `codex/m3-integration`. Run sheet: [[M3 Execution Board]] ([[Decisions/2026-10-27 M3 scope and orchestrator calls]]). Implementer: Luna domain builders, Sol reviewers, root orchestrator. T0 captures the real M2 operation stream before M3 source changes.
+- [ ] **M3 industrial loop implementation (2/20 accepted).** T0 freezes real M2 operation streams; T1 adds the additive API0.2.1 schema, package readers, resolved catalog and source diagnostics, with old-reader serialization compatibility. T2 portable validation and T3a simulation state/reasons run in parallel on separate worktrees from `codex/m3-integration`. Board: [[M3 Execution Board]]. Approved scope: [[Decisions/2026-10-27 M3 scope and orchestrator calls]]. F11 privacy resolution: [[Decisions/2026-10-27 M3 F11 private research trigger]]. No industrial phase or forge demo is accepted yet.
 
 No M2 tasks remain in progress; all 16 were accepted on 2026-10-27.
 
