@@ -170,7 +170,7 @@ In order, only if the milestone proves too large: (1) `SetEnabled`; (2) drone B 
 | T12 | complete | `codex/m3-t12` | `target/m3-worktrees/t12` | `01416ed` → `5848355` | R0 PASS | V0 PASS: 673/0/17; wasm | Ownership/no-op, atomic enable/reset, producer freeze, wire/admission. |
 | T13a | complete | `codex/m3-t13a` | `target/m3-worktrees/t13a` | `0ea4ab1`, `db677d7` → `80fe968` | R1 PASS after removal delta fix | V0 PASS:685/0/17; wasm; C2 starts | Raw audit fidelity, facing retained, killed health0, removed disabled unit has no phantom enable. |
 | T13b | complete | `codex/m3-t13b` | `target/m3-worktrees/t13b` | `df96a84`,`2779670` → `78d0ae7` | same R1 PASS after beltprivacy repair | V0 PASS700/0/17; wasm | Protocol3; authoritative per-piece ownership; private research, ports, facing, health0/removal. |
-| T14 | repaired; recovery R1 running | `codex/m3-t14` | `target/m3-worktrees/t14` | `0cb1621`,`fc297aa`,`dcddac0` | scoped R1 recovery running | repaired717/0/17; gates green | Observable compoundC1fault, real renamedindustrialflow, parsedresourceBAL andDANGLINGdiagnostic. |
+| T14 | complete | `codex/m3-t14` | `target/m3-worktrees/t14` | `dcddac0` → `0e28855` | Scoped R1 PASS, 0 findings | V0 PASS: 742/0/17; wasm | C1 retries, parsed resource balance, dangling state, full renamed industrial trace. |
 | T15a | complete | `codex/m3-t15a` | `target/m3-worktrees/t15a` | `1eafa68` → `31c05d8` | R0 PASS | V0 PASS710/0/17; wasm | Atomic records, port keys, finalhealth0/removal, movingkill overlap, sharedmerge/debugtrace. |
 | T15b | implementation and gates | `codex/m3-t15b` | `target/m3-worktrees/t15b` | next docs base | R1 web pending | pending | Presentation/actions/browser; coordinator interface frozen beforeconsumer. |
 | T16 | not started | | | | | | |
@@ -182,7 +182,7 @@ In order, only if the milestone proves too large: (1) `SetEnabled`; (2) drone B 
 | --- | --- | --- | --- |
 | C1 | PASS | `f3b11e7` + test-only repair `32d1495` | `target/m3-evidence/c1/root-acceptance.md`; fresh gates `c1-final-v0/`; all88 tests refuted |
 | C2 | PASS | `b87c111` | `target/m3-evidence/c2/root-acceptance.md`;685/0/17;99 new functions mapped;14 prior plants replayed |
-| C3 | not started | | |
+| C3 | ready; budget approval pending | next frozen docs commit | T13b + T14 + T15a union; T14 V0 all eight gates green |
 | C4 | not started | | |
 
 Execution refinement: independent T13b/T14 worktrees started alongside frozen C2; their merges remained gated on C2 acceptance. No checkpoint source was changed. This overlap avoids idle slots; a checkpoint repair would require dependent rebase.
