@@ -6,12 +6,34 @@ use serde::Deserialize;
 use turts_mod_api::content::{ContentCatalog, ResolvedEffect, ResolvedItemStack};
 use turts_mod_api::{ContentId, Manifest, ModError, PackageId};
 
-use crate::content::error;
+use crate::content::{check_finite_positive, error};
 
 /// Portable rules for API 0.2.1. Keep this separate from reference resolution so the
 /// frozen public catalog validator continues to serve API 0.2 callers.
 pub(crate) fn validate_m3(manifest: &Manifest, catalog: &ContentCatalog) -> Result<(), ModError> {
     let origin = PackageId(manifest.id.clone());
+    for unit in catalog.units.values() {
+        let file = catalog
+            .source_files
+            .get(&unit.id)
+            .map(String::as_str)
+            .unwrap_or("content");
+        if let Some(extractor) = &unit.extractor {
+            check_finite_positive(
+                &origin,
+                file,
+                "extractor.interaction_range",
+                extractor.interaction_range,
+                true,
+            )?;
+        }
+        if let Some(inserter) = &unit.inserter {
+            check_finite_positive(&origin, file, "inserter.reach", inserter.reach, true)?;
+        }
+        if let Some(weapon) = &unit.weapon {
+            check_finite_positive(&origin, file, "weapon.range", weapon.range, true)?;
+        }
+    }
     for recipe in catalog.recipes.values() {
         let file = catalog
             .source_files

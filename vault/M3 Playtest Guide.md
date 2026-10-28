@@ -6,11 +6,11 @@ Forge is an industrial demonstration with a prebuilt factory. There is no constr
 
 ## First client: the factory
 
-The first client to join owns the factory. Left-click an owned unit to select it and inspect its status and inventory. The Bore Drill, Chain Belts, Arm Loaders and Shell Press run automatically; no Gather command is needed to start them.
+The first client to join owns the factory. Left-click an owned unit to select it and inspect its status and inventory. Small pieces are easiest to select near their bases. The Bore Drill, Chain Belts, Arm Loaders and Shell Press run automatically; no Gather command is needed to start them.
 
-Follow the chain from the Ore Vein on the left through the drill and belts to the press. Inspect the Shell Press's separate Main and Output inventories. Its shells feed the Shell Turret above it and the Proving Lab below it.
+Follow the chain from the Ore Vein on the left through the drill and belts to the press. Inspect the Shell Press's separate Main and Output inventories. Its shells feed the Shell Turret below the press and the Proving Lab above it.
 
-Select the Proving Lab and wait until its Main inventory has ten available shells. Use **Research Hardened Shells**. Watch its queue and completed research; the turret's damage rises from 10 to 20 after completion. Research is private to the factory owner.
+Select the Proving Lab and wait until its Main inventory has ten available shells. Use **Research Hardened Shells**. The lab has no visible queue or progress line. Watch **Last command** for `Applied`, then wait for completed research; the turret's damage rises from 10 to 20 after completion. Research is private to the factory owner.
 
 Use **Disable/Enable** on eligible units to observe pauses and backpressure. **Remove** is available only on eligible units and destroys their contents. Start a fresh match after experimenting with removal if the factory can no longer supply itself.
 

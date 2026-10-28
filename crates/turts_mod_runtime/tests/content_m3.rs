@@ -74,6 +74,93 @@ fn weapon_unit() -> String {
     UNIT.replace("machine: Some((recipe: \"forge:ammo\"))", "machine: None").replace("output_inventory: Some((capacity: 10, accepts: [\"forge:shell\"]))", "output_inventory: None").replace("weapon: None", "weapon: Some((range: 5.0, cooldown_ms: 1000, damage: 3, ammo: Some((item: \"forge:shell\", per_shot: 1)), targets: (slots: Any)))")
 }
 
+fn geometric_unit(field: &str, value: f32) -> String {
+    let scalar = format!("{value:?}");
+    match field {
+        "weapon.range" => weapon_unit().replace("range: 5.0", &format!("range: {scalar}")),
+        "extractor.interaction_range" => UNIT
+            .replace(r#"machine: Some((recipe: "forge:ammo"))"#, "machine: None")
+            .replace(
+                r#"output_inventory: Some((capacity: 10, accepts: ["forge:shell"]))"#,
+                "output_inventory: None",
+            )
+            .replace(
+                "extractor: None",
+                &format!("extractor: Some((per_second: 1, interaction_range: {scalar}))"),
+            ),
+        "inserter.reach" => UNIT
+            .replace(r#"machine: Some((recipe: "forge:ammo"))"#, "machine: None")
+            .replace(
+                r#"output_inventory: Some((capacity: 10, accepts: ["forge:shell"]))"#,
+                "output_inventory: None",
+            )
+            .replace(
+                "inserter: None",
+                &format!("inserter: Some((reach: {scalar}, swing_ms: 250, return_ms: 250))"),
+            ),
+        other => panic!("unknown scalar field {other}"),
+    }
+}
+
+fn generated_geometric_values() -> Vec<f32> {
+    let mut values = vec![
+        -1.0,
+        f32::from_bits(0x8000_0001),
+        f32::NAN,
+        f32::INFINITY,
+        f32::NEG_INFINITY,
+    ];
+    let mut state = 0x4d33_7a91_u32;
+    for _ in 0..32 {
+        state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+        values.push(f32::from_bits(0x8000_0001 | (state & 0x7f7f_fffe)));
+    }
+    values
+}
+
+fn geometric_domain_oracle(value: f32) -> bool {
+    let bits = value.to_bits();
+    value == 0.0 || (bits & 0x8000_0000 == 0 && bits & 0x7f80_0000 != 0x7f80_0000)
+}
+
+#[test]
+fn m3_geometric_scalars_accept_finite_nonnegative_domain_and_reject_partitioned_invalid_values() {
+    let fields = [
+        "weapon.range",
+        "extractor.interaction_range",
+        "inserter.reach",
+    ];
+    let valid_boundaries = [0.0, -0.0, f32::from_bits(1), 1.0, f32::MAX];
+    for field in fields {
+        for value in valid_boundaries {
+            assert!(geometric_domain_oracle(value));
+            let unit = geometric_unit(field, value);
+            archive(&unit, RECIPE, TECH, "^0.2.1", &[])
+                .content()
+                .unwrap_or_else(|err| panic!("valid {field}={value:?} rejected: {err:?}"));
+        }
+        for value in generated_geometric_values() {
+            assert!(!geometric_domain_oracle(value));
+            let baseline = geometric_unit(field, 1.0);
+            archive(&baseline, RECIPE, TECH, "^0.2.1", &[])
+                .content()
+                .expect("each invalid fixture has a valid package baseline");
+
+            let invalid = geometric_unit(field, value);
+            let err = archive(&invalid, RECIPE, TECH, "^0.2.1", &[])
+                .content()
+                .expect_err("negative or non-finite authored scalar must fail public loading");
+            assert_eq!(err.package, "forge");
+            assert_eq!(err.file.as_deref(), Some("units/turret.ron"));
+            assert_eq!(err.field_path, field, "{err:?}");
+            assert!(
+                err.message.contains("finite") && err.message.contains(">= 0"),
+                "{err:?}"
+            );
+        }
+    }
+}
+
 #[test]
 fn forge_style_package_accepted() {
     archive(UNIT, RECIPE, TECH, "^0.2.1", &[])

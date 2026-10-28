@@ -1,9 +1,12 @@
-# M2 data package authoring example — API 0.2 design
+# Historical M2 data package authoring example — API 0.2
 
-Status: **Approved design, not implemented**, companion to [M2 economy design](2026-10-26-m2-economy-design.md).
-This is a complete example for the approved M2 schema, not a package supported by today's M1
-loader. No files below are scripts or executable plugins. Values are correctness fixtures,
-not game balance or capacity budgets. All nine manifest fields retain their M1 names.
+Status: **Historical implemented example**, originally accompanying the [M2 economy design](2026-10-26-m2-economy-design.md). The API 0.2 package forms below remain supported by
+the current backward-compatible loader. For the additive M3 API 0.2.1 authoring schema, see
+[the M3 industrial design, section 3](2026-10-27-m3-industrial-design.md#3-public-content-schema-api-021).
+
+This preserves the complete M2 example. No files below are scripts or executable plugins.
+Values are correctness fixtures, not game balance or capacity budgets. All nine manifest fields
+retain their M1 names.
 
 ## Serialization contract
 

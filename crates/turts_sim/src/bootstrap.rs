@@ -63,6 +63,34 @@ pub fn stage_package(
         return Err(error("tick_hz", "must be above zero".into()));
     }
     for unit in catalog.units.values() {
+        let file = catalog
+            .source_files
+            .get(&unit.id)
+            .map(String::as_str)
+            .unwrap_or("content");
+        for (field, value) in [
+            unit.extractor
+                .as_ref()
+                .map(|capability| ("extractor.interaction_range", capability.interaction_range)),
+            unit.inserter
+                .as_ref()
+                .map(|capability| ("inserter.reach", capability.reach)),
+            unit.weapon
+                .as_ref()
+                .map(|capability| ("weapon.range", capability.range)),
+        ]
+        .into_iter()
+        .flatten()
+        {
+            if !value.is_finite() || value < 0.0 {
+                return Err(
+                    ModError::new(&unit.id.package.0, field, "must be finite and >= 0")
+                        .with_file(file),
+                );
+            }
+        }
+    }
+    for unit in catalog.units.values() {
         if let Some(weapon) = &unit.weapon
             && boot_m3::try_weapon_cooldown_ticks(weapon.cooldown_ms, u32::from(tick_hz)).is_none()
         {

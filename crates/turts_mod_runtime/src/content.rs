@@ -45,7 +45,7 @@ pub(crate) fn local_id(origin: &PackageId, file: &str, id: &str) -> Result<Conte
     }
     Ok(ContentId::new(origin, id))
 }
-fn check_finite_positive(
+pub(crate) fn check_finite_positive(
     origin: &PackageId,
     file: &str,
     field: &str,
