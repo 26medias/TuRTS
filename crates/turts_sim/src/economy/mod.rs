@@ -10,6 +10,7 @@ pub mod production;
 pub mod research;
 pub mod transaction;
 pub mod views;
+pub mod views_m3;
 
 use crate::ids::NodeId;
 use crate::world::Position;

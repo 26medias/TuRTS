@@ -947,6 +947,33 @@ mod tests {
     }
 
     #[test]
+    fn killed_unit_has_final_health_zero_in_its_removal_tick() {
+        let mut app = app_with(20, 0, 200);
+        set_ammo(&mut app, 1, 10, 0);
+        app.update();
+        let committed = app
+            .world()
+            .resource::<crate::economy::events::CommittedTick>();
+        assert_eq!(committed.removed, vec![2]);
+        assert!(
+            committed
+                .healths
+                .contains(&crate::economy::views_m3::RawHealthAudit {
+                    unit: 2,
+                    current: 0,
+                })
+        );
+        assert!(!app.world().resource::<Healths>().0.contains_key(&2));
+        app.update();
+        assert!(
+            app.world()
+                .resource::<crate::economy::events::CommittedTick>()
+                .healths
+                .is_empty()
+        );
+    }
+
+    #[test]
     fn shooter_can_kill_itself_without_resurrecting_removed_rows() {
         let mut armed = weapon(0, 200);
         armed.weapon.as_mut().unwrap().targets.slots = SlotRelation::Any;

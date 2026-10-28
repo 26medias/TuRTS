@@ -715,7 +715,10 @@ fn validate_tick_state(
 
 #[cfg(test)]
 mod tests {
-    use super::{EconomyLogRecord, EconomyLogWriter, read_jsonl, validate_records};
+    use super::{
+        EconomyLogRecord, EconomyLogWriter, read_jsonl, validate_operation_continuity,
+        validate_records,
+    };
     use std::io::Cursor;
     use turts_mod_api::WorldPos;
     use turts_sim::economy::views::RawUnitAudit;
@@ -748,6 +751,27 @@ mod tests {
         assert_eq!(decoded_state.economy, state.economy);
         assert_eq!(decoded_state.allocators, state.allocators);
         assert_eq!(decoded_state.claims, state.claims);
+    }
+
+    #[test]
+    fn audit_rejects_state_change_between_operations_for_new_tables() {
+        use turts_sim::economy::views_m3::RawBeltAudit;
+        let previous_operation_after = initial();
+        let mut next_operation_before = previous_operation_after.clone();
+        next_operation_before.raw_belts.push(RawBeltAudit {
+            first_piece: 91,
+            definition: turts_mod_api::ContentId::parse("fixture:belt").unwrap(),
+            owner_slot: 0,
+            slots_per_piece: 1,
+            slots_per_second: 1,
+            rate_carry: 0,
+            raw_slots: Vec::new(),
+            pieces: Vec::new(),
+        });
+        let error =
+            validate_operation_continuity(&previous_operation_after, &next_operation_before, false)
+                .unwrap_err();
+        assert!(error.contains("discontinuous"));
     }
 
     #[test]

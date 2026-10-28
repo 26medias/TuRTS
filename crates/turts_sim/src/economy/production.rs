@@ -499,6 +499,7 @@ fn try_output(
                 unit_id: id,
                 content_id: recipe.output_unit.to_string(),
                 owner_slot: owner.0,
+                facing: None,
                 pos: point,
             },
             inventory,

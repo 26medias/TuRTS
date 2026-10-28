@@ -207,6 +207,7 @@ pub(crate) struct PreparedMapRows {
     pub(crate) conveyors: Conveyors,
     pub(crate) item_table: ItemTable,
     pub(crate) capability_rows: Vec<(u32, PreparedCapabilityRows)>,
+    pub(crate) facings: BTreeMap<u32, Facing>,
 }
 
 pub(crate) struct MapStageContext<'a> {
@@ -333,6 +334,7 @@ pub(crate) fn stage_m3_map(
                 id,
                 install_capability_rows(conveyor_definition, CapabilityBinding::default()),
             ));
+            prepared.facings.insert(id, line_def.facing);
             pieces.push(id);
             geometry.push(BootUnit {
                 id,
@@ -377,6 +379,15 @@ pub(crate) fn stage_m3_map(
                 format!("unknown unit `{unit_id}`"),
             )
         })?;
+        let id = units.get(placement_index).map(|row| row.0).ok_or_else(|| {
+            error(
+                &format!("placements[{placement_index}]"),
+                "unit row is missing".into(),
+            )
+        })?;
+        if let Some(facing) = placement.facing {
+            prepared.facings.insert(id, facing);
+        }
         let (id, _, owner, pos) = units[placement_index];
         let mut binding = CapabilityBinding::default();
         if let Some(extractor) = &definition.extractor {
@@ -1020,6 +1031,7 @@ mod tests {
                     unit_id: id,
                     content_id: "forge:drone".into(),
                     owner_slot: 0,
+                    facing: None,
                     pos: Vec2::new(2.0, 2.0),
                 },
                 inventory: None,

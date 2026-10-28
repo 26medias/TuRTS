@@ -3,7 +3,7 @@
 use bevy_ecs::prelude::*;
 use bevy_math::Vec2;
 use serde::{Deserialize, Serialize};
-use turts_mod_api::UnitTypeId;
+use turts_mod_api::{Facing, UnitTypeId};
 
 use crate::registry::UnitTypes;
 use crate::slots::SlotId;
@@ -23,6 +23,10 @@ pub struct Position(pub Vec2);
 /// The registered unit type of a unit.
 #[derive(Component, Debug, Clone, Copy, PartialEq, Eq)]
 pub struct UnitType(pub UnitTypeId);
+
+/// Optional authored map orientation retained for presentation snapshots.
+#[derive(Component, Debug, Clone, Copy, PartialEq, Eq)]
+pub struct UnitFacing(pub Facing);
 
 /// Where a unit is going. Present while the unit moves.
 #[derive(Component, Debug, Clone, Copy, PartialEq)]
@@ -48,17 +52,19 @@ pub struct UnitState {
     pub unit_id: u32,
     pub content_id: String,
     pub owner_slot: u8,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub facing: Option<Facing>,
     #[serde(with = "vec2_bits")]
     pub pos: Vec2,
 }
 
 /// All units, sorted by unit id.
 pub fn snapshot(world: &mut World) -> Vec<UnitState> {
-    let mut query = world.query::<(&UnitId, &UnitType, &Owner, &Position)>();
+    let mut query = world.query::<(&UnitId, &UnitType, &Owner, &Position, Option<&UnitFacing>)>();
     let types = world.resource::<UnitTypes>();
     let mut states: Vec<UnitState> = query
         .iter(world)
-        .map(|(id, unit_type, owner, position)| UnitState {
+        .map(|(id, unit_type, owner, position, facing)| UnitState {
             unit_id: id.0,
             content_id: types
                 .get(unit_type.0)
@@ -66,6 +72,7 @@ pub fn snapshot(world: &mut World) -> Vec<UnitState> {
                 .content_id
                 .clone(),
             owner_slot: owner.0.0,
+            facing: facing.map(|facing| facing.0),
             pos: position.0,
         })
         .collect();

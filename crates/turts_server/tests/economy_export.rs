@@ -32,6 +32,7 @@ fn unit(id: u32, owner: u8, content_id: &str, p: Vec2) -> UnitState {
         unit_id: id,
         content_id: content_id.into(),
         owner_slot: owner,
+        facing: None,
         pos: p,
     }
 }
@@ -76,6 +77,7 @@ fn job(id: u64, stage: JobStage, charged: Vec<CostView>, reserved: Vec<CostView>
 fn fixture() -> WorldView {
     WorldView {
         tick: 42,
+        m3: turts_sim::economy::views_m3::M3AuditState::default(),
         units: vec![
             unit(1, 0, "acme:harvester", Vec2::new(3., 4.)),
             unit(2, 1, "acme:private", Vec2::new(900., 901.)),
@@ -395,6 +397,14 @@ fn delta_filters_before_projection_keeps_public_lifecycle_and_empty_replacements
                 },
             ],
         },
+        output_inventories: vec![],
+        belts: vec![],
+        inserters: vec![],
+        extractors: vec![],
+        weapons: vec![],
+        healths: vec![],
+        research: vec![],
+        enabled: vec![],
         events: vec![],
     };
     let before = batch.clone();

@@ -617,6 +617,11 @@ impl Transaction<'_> {
                 "unit entity was preflighted before commit"
             );
             world.resource_mut::<RemovedThisTick>().0.push(removal.unit);
+            world.init_resource::<super::views_m3::RemovedHistory>();
+            world
+                .resource_mut::<super::views_m3::RemovedHistory>()
+                .0
+                .insert(removal.unit);
         }
         if let Some(next_event_ordinal) = writes.next_event_ordinal {
             let tick = world.resource::<crate::world::Tick>().0;
@@ -2293,6 +2298,7 @@ mod m3_transaction_contract_tests {
                 unit_id: 7,
                 content_id: "probe:unit".to_string(),
                 owner_slot: 0,
+                facing: None,
                 pos: Vec2::ZERO,
             },
         ]));

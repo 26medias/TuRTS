@@ -3,12 +3,14 @@ mod common;
 use bevy_app::App;
 use common::accounting::{AccountingOracle, ExpectedOperation, advance_accounted_tick, trail};
 use std::path::PathBuf;
-use turts_mod_api::{ContentCatalog, ContentId, CostSource, PaymentPolicy, ResolvedDropOffEffect};
+use turts_mod_api::{
+    ContentCatalog, ContentId, CostSource, Facing, PaymentPolicy, ResolvedDropOffEffect,
+};
 use turts_mod_runtime::archive::PackageArchive;
 use turts_pack::{load_package, pack_checked};
 use turts_sim::{
-    Applied, AuditState, Command, CommandKind, RejectReason, SlotId, Vec2, apply_command,
-    audit_state, headless_app,
+    Applied, AuditState, Command, CommandKind, CommandQueue, CommittedTick, RejectReason, SlotId,
+    UnitState, Vec2, apply_command, audit_state, headless_app, snapshot,
 };
 
 fn cid(id: &str) -> ContentId {
@@ -51,6 +53,156 @@ fn unit_by_id(state: &AuditState, id: u32) -> &turts_sim::UnitView {
         .iter()
         .find(|unit| unit.unit_id == id)
         .expect("unit id is present in public audit state")
+}
+
+#[test]
+fn public_forge_boot_and_remove_retain_authored_facing_and_m2_omission() {
+    let (_, mut app) = load_disk_package("forge");
+    let boot = snapshot(app.world_mut());
+
+    let arm_loader = boot
+        .iter()
+        .find(|unit| unit.content_id == "forge:arm_loader" && unit.pos == Vec2::new(17.0, 10.0))
+        .expect("authored PosY arm loader is present");
+    assert_eq!(arm_loader.facing, Some(Facing::PosY));
+    let negative_arm_loader = boot
+        .iter()
+        .find(|unit| unit.content_id == "forge:arm_loader" && unit.pos == Vec2::new(17.0, 6.0))
+        .expect("authored NegY arm loader is present");
+    assert_eq!(negative_arm_loader.facing, Some(Facing::NegY));
+
+    let belt_ids: Vec<_> = boot
+        .iter()
+        .filter(|unit| unit.content_id == "forge:belt")
+        .map(|unit| {
+            assert_eq!(unit.facing, Some(Facing::PosX));
+            unit.unit_id
+        })
+        .collect();
+    assert_eq!(belt_ids.len(), 6, "all six authored belt pieces boot");
+    let survivor = *belt_ids.last().expect("belt has a final piece");
+    for (seq, unit_id) in belt_ids[..belt_ids.len() - 1].iter().copied().enumerate() {
+        let result = apply_command(
+            app.world_mut(),
+            &command(seq as u32 + 1, CommandKind::Remove { unit_id }),
+        );
+        assert!(
+            result.outcome.is_ok(),
+            "remove belt piece {unit_id}: {result:?}"
+        );
+    }
+
+    let after_remove = snapshot(app.world_mut());
+    assert_eq!(
+        after_remove
+            .iter()
+            .filter(|unit| unit.content_id == "forge:belt")
+            .count(),
+        1
+    );
+    let remaining = after_remove
+        .iter()
+        .find(|unit| unit.unit_id == survivor)
+        .expect("last belt piece remains after other pieces are removed");
+    assert_eq!(remaining.facing, Some(Facing::PosX));
+
+    let legacy_unit = UnitState {
+        unit_id: 999,
+        content_id: "forge:drone".into(),
+        owner_slot: 0,
+        facing: None,
+        pos: Vec2::new(0.0, 0.0),
+    };
+    let legacy_json = serde_json::to_value(legacy_unit).expect("serialize legacy unit");
+    assert!(
+        legacy_json.get("facing").is_none(),
+        "M2 JSON omits absent facing"
+    );
+}
+
+#[test]
+fn scheduled_removal_does_not_publish_phantom_enable_and_keeps_real_enable_delta() {
+    let (_, mut app) = load_disk_package("forge");
+    let boot = snapshot(app.world_mut());
+    let disabled_then_removed = boot
+        .iter()
+        .find(|unit| unit.content_id == "forge:arm_loader" && unit.pos == Vec2::new(17.0, 10.0))
+        .expect("removal target exists")
+        .unit_id;
+    let surviving = boot
+        .iter()
+        .find(|unit| unit.content_id == "forge:arm_loader" && unit.pos == Vec2::new(17.0, 6.0))
+        .expect("live toggle target exists")
+        .unit_id;
+
+    {
+        let mut queue = app.world_mut().resource_mut::<CommandQueue>();
+        queue.0.push_back(command(
+            1,
+            CommandKind::SetEnabled {
+                unit_id: disabled_then_removed,
+                enabled: false,
+            },
+        ));
+        queue.0.push_back(command(
+            2,
+            CommandKind::SetEnabled {
+                unit_id: surviving,
+                enabled: false,
+            },
+        ));
+    }
+    app.update();
+    let disabled_tick = app.world().resource::<CommittedTick>();
+    assert_eq!(disabled_tick.enabled.len(), 2);
+    assert!(disabled_tick.enabled.iter().all(|change| !change.enabled));
+
+    app.world_mut()
+        .resource_mut::<CommandQueue>()
+        .0
+        .push_back(command(
+            3,
+            CommandKind::Remove {
+                unit_id: disabled_then_removed,
+            },
+        ));
+    app.update();
+    let removed_tick = app.world().resource::<CommittedTick>();
+    assert!(removed_tick.removed.contains(&disabled_then_removed));
+    assert!(
+        !removed_tick
+            .enabled
+            .iter()
+            .any(|change| change.unit == disabled_then_removed),
+        "a removed disabled unit must not publish a phantom enable"
+    );
+
+    app.world_mut()
+        .resource_mut::<CommandQueue>()
+        .0
+        .push_back(command(
+            4,
+            CommandKind::SetEnabled {
+                unit_id: surviving,
+                enabled: true,
+            },
+        ));
+    app.update();
+    let enabled_tick = app.world().resource::<CommittedTick>();
+    assert_eq!(
+        enabled_tick.enabled,
+        [turts_sim::economy::views_m3::RawEnabledAudit {
+            unit: surviving,
+            enabled: true,
+        }]
+    );
+
+    app.update();
+    let quiet_tick = app.world().resource::<CommittedTick>();
+    assert!(
+        quiet_tick.enabled.is_empty(),
+        "removed unit emits no later phantom delta"
+    );
 }
 
 fn balance(state: &AuditState, slot: u8, resource: &ContentId) -> u64 {
