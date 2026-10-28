@@ -158,6 +158,9 @@ pub fn cancel_production(
     if owner != slot {
         return Err(RejectReason::NotOwner);
     }
+    if super::machine::machine_ids(world).contains(&producer) {
+        return super::machine::cancel_production(world, slot.0, producer, job);
+    }
     transaction::transact(world, |tx| {
         let mut queues = tx.queues();
         let queue = queues
@@ -232,9 +235,18 @@ pub fn cancel_production(
 
 /// Advance the head of each producer queue once, in ascending producer-id order.
 pub(crate) fn run_production(world: &mut World) {
+    let machine_ids = super::machine::machine_ids(world);
+    super::machine::run_machines(world);
     let producers = world
         .get_resource::<ProductionQueues>()
-        .map(|queues| queues.0.keys().copied().collect::<Vec<_>>())
+        .map(|queues| {
+            queues
+                .0
+                .keys()
+                .filter(|producer| !machine_ids.contains(producer))
+                .copied()
+                .collect::<Vec<_>>()
+        })
         .unwrap_or_default();
     for producer in producers {
         let head_stage = world
