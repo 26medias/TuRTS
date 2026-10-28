@@ -672,7 +672,7 @@ missing inventory (`transaction.rs:419-423`). In M3 code paths, a write to a mis
 
 | Case | Plant |
 | --- | --- |
-| C1 | drop the capacity check in `extract_from_node` |
+| C1 | disable extractor inventory-capacity enforcement at all three defenses: phase free-space clipping, the `extract_from_node` capacity guard, and transaction preflight |
 | C2 | recharge the inputs on each blocked retry |
 | C3 | belt step ignores the occupancy of slot `i+1` (overwrite) |
 | C4 | call `refund_charged` twice |

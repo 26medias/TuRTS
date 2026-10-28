@@ -17,6 +17,8 @@ path = "src/main.rs"
 
 [dev-dependencies]
 serde_json = { workspace = true }
+serde = { workspace = true }
+ron = { workspace = true }
 bevy_app = { workspace = true }
 bevy_math = { workspace = true }
 

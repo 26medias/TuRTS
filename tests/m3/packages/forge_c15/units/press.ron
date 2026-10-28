@@ -1,0 +1,12 @@
+(
+    id: "press",
+    name: "Shell Press",
+    footprint: Circle(radius: 1.2),
+    movement: None,
+    inventory: Some((capacity: 6, accepts: ["forge:ore"])),
+    gatherer: None,
+    drop_off: None,
+    producer: None,
+    output_inventory: Some((capacity: 4, accepts: ["forge:shell"])),
+    machine: Some((recipe: "forge:make_shells")),
+)

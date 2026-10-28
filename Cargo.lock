@@ -8679,6 +8679,8 @@ dependencies = [
  "bevy_app",
  "bevy_ecs",
  "bevy_math",
+ "ron",
+ "serde",
  "serde_json",
  "turts_mod_api",
  "turts_mod_runtime",
