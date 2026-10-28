@@ -6,9 +6,9 @@ tags: [turts, m3, report]
 
 # M3 implementation
 
-Ten of20 task entries are accepted: T0, T1, T2, T3a, T3, T4, T5, T6, T7 and T9. Public Forge boot and shared spawn-row installation pass review; independent checkpoint C1 passed. Extractor, conveyor and machine work passed; inserters and research run in parallel. Exact status: [[M3 Execution Board]]; evidence: [[Work Log/2026-10-28]].
+Twelve of20 task entries are accepted: T0, T1, T2, T3a, T3, T4, T5, T6, T7, T8, T9 and T10. Public Forge boot and shared spawn-row installation pass review; independent checkpoint C1 passed. Extraction, transport, inserters, machines and research passed; combat starts. Exact status: [[M3 Execution Board]]; evidence: [[Work Log/2026-10-28]].
 
-Last canonical gates: 615 passed, 0 failed, 17 ignored; fmt, strict Clippy, workspace check, wasm, boundary and frozen M2 stream passed. The complete industrial chain and forge demonstration are still pending.
+Last canonical gates: 646 passed, 0 failed, 17 ignored; fmt, strict Clippy, workspace check, wasm, boundary and frozen M2 stream passed. The complete industrial chain and forge demonstration are still pending.
 
 Research stays private under the user's approved F11 coordinator design. No push or main merge has occurred.
 

@@ -144,7 +144,7 @@ Critical path: T0 → T1 → T3a → T3 → T4 → T7 → T8 → T12 → T13a �
 
 Estimate: 20 Luna builder runs plus at most one fix round each for 8 of them (about 28), 12 Sol R1 reviews, 4 `qa-lead` checkpoints, 3 milestone judges. About 47 agent runs. This is a proposal under the budget rule ([[Team]], memory "token budget"). If actuals pass 1.3 times the estimate, stop and ask the user. Mitigations: R0 on mechanical tasks; one reviewer per R1; re-checks by short message to the same reviewer; reports capped at 400 words; no probe done twice.
 
-Running count: builders 17 (including scoped T8 repair), reviews 11 (including one capacity retry), checkpoints 1 (6 execution runs), judges 0. Additional orchestration executor runs: 2. Total agent runs: 36. C1 used three private lanes plus scoped repair proofs; no extra review lens.
+Running count: builders 18 (including T11 start), reviews 12 (including T8 scoped recheck), checkpoints 1 (6 execution runs), judges 0. Additional orchestration executor runs: 2. Total agent runs: 38. C1 used three private lanes plus scoped repair proofs; no extra review lens.
 
 ## 9. Cut line (from the spec 16.2)
 
@@ -164,9 +164,9 @@ In order, only if the milestone proves too large: (1) `SetEnabled`; (2) drone B 
 | T6 | complete | `codex/m3-t6` | `target/m3-worktrees/t6` | `189fabe`, `e4b80fb` → `285a680` | R0 PASS after clipping-test supplement | V0 PASS: 605/0/17 | Exact rates, atomic extraction, full/depleted/disabled; combined with T7. |
 | T7 | complete | `codex/m3-t7` | `target/m3-worktrees/t7` | `3b494f7` → `21dc877` | R0 PASS after boundary/split tests | V0 PASS: 597/0/17 | Compact movement/backpressure, exact boundaries, all split edges, empty clock. |
 | T9 | complete | `codex/m3-t9` | `target/m3-worktrees/t9` | `3069b50` → `7a6249c` | R1 game-designer PASS, 0 findings | V0 PASS: 615/0/17 | Atomic item cycles, blocked output, half refund, K8, private derived status. |
-| T8 | scoped repair | `codex/m3-t8` | `target/m3-worktrees/t8` | `b6a8c7a` candidate | R1 FAIL: 2 Medium timing guards | pending | Zero/unrepresentable duration validation; same builder/reviewer. |
-| T10 | starting | `codex/m3-t10` | `target/m3-worktrees/t10` | | R0 pending | pending | Research; Luna medium; T9 accepted. |
-| T11 | not started | | | | | | |
+| T8 | complete | `codex/m3-t8` | `target/m3-worktrees/t8` | `b6a8c7a`, `a1677ac` → `a5271b9` | R1 PASS after two timing guards | V0 PASS: 633/0/17 | K7, held stock, belt endpoints, literal timing; positive/bounded durations. |
+| T10 | complete | `codex/m3-t10` | `target/m3-worktrees/t10` | `ae87c2c` → `4c7b8be` | R0 PASS | V0 PASS: 646/0/17 | Research payment/queue/completion, checked modifiers, server admission. |
+| T11 | starting | `codex/m3-t11` | `target/m3-worktrees/t11` | | R1 qa-lead pending | pending | Combat and removal references; Luna high. |
 | T12 | not started | | | | | | |
 | T13a | not started | | | | | | |
 | T13b | not started | | | | | | |
