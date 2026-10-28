@@ -143,7 +143,7 @@ Critical path: T0 → T1 → T3a → T3 → T4 → T7 → T8 → T12 → T13a �
 
 Estimate: 20 Luna builder runs plus at most one fix round each for 8 of them (about 28), 12 Sol R1 reviews, 4 `qa-lead` checkpoints, 3 milestone judges. About 47 agent runs. This is a proposal under the budget rule ([[Team]], memory "token budget"). If actuals pass 1.3 times the estimate, stop and ask the user. Mitigations: R0 on mechanical tasks; one reviewer per R1; re-checks by short message to the same reviewer; reports capped at 400 words; no probe done twice.
 
-Running count: builders 1, reviews 0, checkpoints 0, judges 0.
+Running count: builders 2, reviews 1, checkpoints 0, judges 0. Additional orchestration executor runs: 1 (V0). Total agent runs: 4.
 
 ## 9. Cut line (from the spec 16.2)
 
@@ -153,8 +153,8 @@ In order, only if the milestone proves too large: (1) `SetEnabled`; (2) drone B 
 
 | Task | Status | Branch | Worktree | Commit | Reviewer verdict | Validated | Notes |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| T0 | in progress | `codex/m3-t0` | `target/m3-worktrees/t0` | pending | R1 pending | pending | Real M2 stream baseline; no M3 source edits. |
-| T1 | not started | | | | | | |
+| T0 | complete | `codex/m3-t0` | `target/m3-worktrees/t0` | `e0e215f` → `fe6765f` | PASS, 0 findings | V0 PASS at `fe6765f`: 498/0/17 | Four 400-tick streams; extra-empty-op plant semantic RED, restored GREEN; independent comparison 1/1. |
+| T1 | starting | `codex/m3-t1` | `target/m3-worktrees/t1` | pending | R1 pending | pending | T0 accepted; API 0.2.1 schema and literal sweep. |
 | T2 | not started | | | | | | |
 | T3a | not started | | | | | | |
 | T5 | not started | | | | | | |
