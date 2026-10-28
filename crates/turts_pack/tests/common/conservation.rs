@@ -372,10 +372,11 @@ pub fn check_operation(
     oracle_catalog: &OracleCatalog,
 ) -> Result<(), CheckFailure> {
     check_dangling(&op.after)?;
+    // Check ammo semantics before aggregate stock so C13 identifies the invalid shot itself.
+    check_shots(op, oracle_catalog)?;
     let (ore, shell) = oracle_catalog.tracked_materials()?;
     check_balance(op, oracle_catalog, &ore, "BAL-ore")?;
     check_balance(op, oracle_catalog, &shell, "BAL-shell")?;
-    check_shots(op, oracle_catalog)?;
     check_reservations(&op.after, oracle_catalog)?;
     check_refunds(op, oracle_catalog)?;
     Ok(())

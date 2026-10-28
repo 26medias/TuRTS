@@ -80,7 +80,7 @@
   {
     "id": "E4-local-capacity",
     "plant_path": "crates/turts_sim/src/economy/transaction.rs",
-    "anchor": "        if new_used > u128::from(tx.inventory(to)?.capacity) {",
+    "anchor": "        if new_used > u128::from(tx.inventory_legacy(to)?.capacity) {",
     "replacement": "        if false {",
     "command": [
       "cargo",
@@ -282,7 +282,7 @@
   {
     "id": "E6-capacity-bypass",
     "plant_path": "crates/turts_sim/src/economy/transaction.rs",
-    "anchor": "        if new_used > u128::from(tx.inventory(to)?.capacity) {",
+    "anchor": "        if new_used > u128::from(tx.inventory_legacy(to)?.capacity) {",
     "replacement": "        if false {",
     "command": [
       "cargo",

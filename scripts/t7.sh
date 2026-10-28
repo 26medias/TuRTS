@@ -9,8 +9,10 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-${ROOT}/target/m3-t16}"
+export CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0
 cd "$ROOT"
-OUT="$ROOT/target/t7"
+OUT="${M3_T7_OUT:-${ROOT}/target/m3-evidence/t16-builder/t7/run-$(date -u +%Y%m%dT%H%M%SZ)-$$}"
 DIST="$ROOT/crates/turts_client_web/dist"
 
 cargo build --release -p turts_server
@@ -23,7 +25,6 @@ for file in "$DIST"/*.wasm "$DIST"/*.js; do
     fi
 done
 
-rm -rf "$OUT"
 mkdir -p "$OUT/pack"
 # `turts-pack` writes `<dir>.tar` next to the directory, so pack a copy: `mods/` stays clean.
 cp -r mods/acme "$OUT/pack/acme"
