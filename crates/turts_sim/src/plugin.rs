@@ -3,6 +3,7 @@
 use bevy_app::{App, FixedPostUpdate, FixedPreUpdate, FixedUpdate, Plugin};
 use bevy_ecs::prelude::*;
 use bevy_time::{Fixed, Time};
+use std::collections::BTreeSet;
 
 use crate::SimClock;
 use crate::command::{CommandQueue, CommandResults, drain_commands};
@@ -17,8 +18,8 @@ use crate::{
     economy::{
         EconomyOrders, SurfaceNodes,
         events::{
-            CommittedTick, CompletedWorld, NextEventOrdinal, PendingEconomyEvents, SpawnedThisTick,
-            StopDiagnostic,
+            CommittedTick, CompletedWorld, NextEventOrdinal, PendingEconomyEvents, RemovedThisTick,
+            SpawnedThisTick, StopDiagnostic,
         },
         ledger::EconomyLedger,
         production::{ProductionQueues, run_production},
@@ -62,6 +63,7 @@ impl Plugin for SimPlugin {
             .init_resource::<PendingEconomyEvents>()
             .init_resource::<NextEventOrdinal>()
             .init_resource::<SpawnedThisTick>()
+            .init_resource::<RemovedThisTick>()
             .insert_resource(Slots::new(SLOT_COUNT))
             .insert_resource(SimClock {
                 tick_hz: self.tick_hz,
@@ -150,10 +152,24 @@ fn publish_completed_tick(world: &mut World) {
     );
     let mut events = std::mem::take(&mut world.resource_mut::<PendingEconomyEvents>().0);
     events.sort_by_key(|event: &EconomyEvent| event.ordinal);
+    let mut spawned = std::mem::take(&mut world.resource_mut::<SpawnedThisTick>().0);
+    let mut removed = std::mem::take(&mut world.resource_mut::<RemovedThisTick>().0);
+    let overlap = removed
+        .iter()
+        .copied()
+        .filter(|unit| spawned.iter().any(|state| state.unit_id == *unit))
+        .collect::<BTreeSet<_>>();
+    debug_assert!(
+        overlap.is_empty(),
+        "a unit cannot be spawned and removed in one tick"
+    );
+    spawned.retain(|state| !overlap.contains(&state.unit_id));
+    removed.retain(|unit| !overlap.contains(unit));
+    removed.sort_unstable();
     let batch = CommittedTick {
         tick,
-        spawned: std::mem::take(&mut world.resource_mut::<SpawnedThisTick>().0),
-        removed: Vec::new(),
+        spawned,
+        removed,
         positions: changed,
         nodes,
         economy: economy_changes,
