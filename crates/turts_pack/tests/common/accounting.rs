@@ -349,7 +349,9 @@ impl AccountingOracle {
         if events.iter().any(|event| {
             matches!(
                 &event.kind,
-                EconomyEventKind::ItemsProduced { .. } | EconomyEventKind::ResearchCompleted { .. }
+                EconomyEventKind::ItemsProduced { .. }
+                    | EconomyEventKind::ResearchCompleted { .. }
+                    | EconomyEventKind::Fired { .. }
             )
         }) {
             return Err(

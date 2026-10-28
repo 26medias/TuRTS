@@ -588,6 +588,11 @@ pub(crate) fn try_ms_to_ticks(ms: u64, tick_hz: u32) -> Option<u64> {
     u64::try_from(ticks).ok()
 }
 
+/// Convert a weapon cooldown when its ceil tick count fits its frozen state. Zero is valid.
+pub(crate) fn try_weapon_cooldown_ticks(ms: u64, tick_hz: u32) -> Option<u32> {
+    u32::try_from(try_ms_to_ticks(ms, tick_hz)?).ok()
+}
+
 /// Convert an inserter duration only when its positive ceil tick count fits its frozen state.
 pub(crate) fn try_inserter_duration_ticks(ms: u64, tick_hz: u32) -> Option<u32> {
     if ms == 0 || tick_hz == 0 {

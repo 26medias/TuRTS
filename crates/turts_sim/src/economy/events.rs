@@ -76,6 +76,14 @@ pub enum EconomyEventKind {
         slot: u8,
         technology: ContentId,
     },
+    Fired {
+        weapon: u32,
+        target: u32,
+        item: Option<ContentId>,
+        ammo: u64,
+        damage: u64,
+        applied: u64,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
