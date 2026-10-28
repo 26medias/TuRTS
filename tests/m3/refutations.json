@@ -138,9 +138,9 @@
   {
     "id": "C6-research-running-refund",
     "kind": "product",
-    "plant_path": "crates/turts_sim/src/economy/research.rs",
-    "anchor": "JobStage::Running => (technology.cancel_refunds.running, None, job.charged.clone()),",
-    "replacement": "JobStage::Running => (technology.cancel_refunds.queued, None, job.charged.clone()),",
+    "plant_path": "crates/turts_sim/src/bootstrap.rs",
+    "anchor": "        catalog: InstalledCatalog(catalog),",
+    "replacement": "        catalog: InstalledCatalog({\n            let mut catalog = catalog;\n            for technology in catalog.technologies.values_mut() {\n                technology.cancel_refunds.running = turts_mod_api::schema::RefundRatio {\n                    numerator: 1,\n                    denominator: 1,\n                };\n            }\n            catalog\n        }),",
     "command": [
       "cargo",
       "test",
@@ -154,7 +154,8 @@
       "--nocapture"
     ],
     "expected_selected": 1,
-    "expected_failure": "REFUND"
+    "expected_failure": "REFUND",
+    "plant_note": "SPEC 15.3 bootstrap fault: install every technology running refund as 1/1 in the staged sim catalog. The C6 source RON remains 1/2 and the independent refund oracle reads that authored ratio."
   },
   {
     "id": "C7-reservation-leak",
@@ -222,9 +223,9 @@
   {
     "id": "C10-inserter-state-survives-despawn",
     "kind": "product",
-    "plant_path": "crates/turts_sim/src/economy/transaction_m3.rs",
-    "anchor": "            tx.writes.inserters.insert(*id, None);",
-    "replacement": "            let _preserved_inserter = *id;",
+    "plant_path": "crates/turts_sim/src/economy/transaction.rs",
+    "anchor": "                ledger.inventories.remove(&removal.unit);",
+    "replacement": "                // refutation: retain the hand INVENTORY row after despawn",
     "command": [
       "cargo",
       "test",
@@ -238,14 +239,15 @@
       "--nocapture"
     ],
     "expected_selected": 1,
-    "expected_failure": "DANGLING"
+    "expected_failure": "DANGLING",
+    "plant_note": "SPEC 15.3 hand-row fault: retain the removed inserter main INVENTORY ledger row. The C10 scenario carries one item in that hand at despawn; the raw report exporter includes the orphan row so DANGLING observes it."
   },
   {
     "id": "C11-node-replenished-after-extract",
     "kind": "product",
     "plant_path": "crates/turts_sim/src/economy/transaction_m3.rs",
-    "anchor": "    node.remaining = node\n        .remaining\n        .checked_sub(amount)\n        .ok_or(RejectReason::NodeDepleted)?;",
-    "replacement": "    node.remaining = node.remaining.saturating_add(amount);",
+    "anchor": "    node.remaining = node\n        .remaining\n        .checked_sub(amount)\n        .ok_or(RejectReason::NodeDepleted)?;\n    tx.stage_node(node);",
+    "replacement": "    node.remaining = node\n        .remaining\n        .checked_sub(amount)\n        .ok_or(RejectReason::NodeDepleted)?;\n    if node.remaining == 0 {\n        node.remaining = 21;\n    }\n    tx.stage_node(node);",
     "command": [
       "cargo",
       "test",
@@ -259,7 +261,8 @@
       "--nocapture"
     ],
     "expected_selected": 1,
-    "expected_failure": "BAL-ore"
+    "expected_failure": "BAL-ore",
+    "plant_note": "SPEC 15.3 depletion-only fault: the C11 authored map starts with 21 ore, and the plant restores that map value only when remaining reaches zero. It does not refill after each extraction."
   },
   {
     "id": "C12-inserter-order-reversed",

@@ -288,6 +288,13 @@ def source_set_hash(hashes):
     return hashlib.sha256(json.dumps(hashes, sort_keys=True).encode()).hexdigest()
 
 
+def restore_sources_if_changed(scratch, originals):
+    for relative, original in originals.items():
+        path = Path(scratch) / relative
+        if not path.is_file() or path.read_bytes() != original:
+            path.write_bytes(original)
+
+
 def run_case(case, scratch, build_dir, evidence_dir):
     def execute(phase, logs):
         for index, command in enumerate(pre_commands(case), 1):
@@ -325,7 +332,7 @@ def run_case(case, scratch, build_dir, evidence_dir):
         if key in originals:
             raise ValueError(f'{case["id"]}: source file listed more than once: {key}')
         path = scratch / relative
-        originals[key] = path.read_text()
+        originals[key] = path.read_bytes()
         baseline_hashes[key] = digest(path)
     baseline_hash = source_set_hash(baseline_hashes)
     planted_hash = None
@@ -345,7 +352,7 @@ def run_case(case, scratch, build_dir, evidence_dir):
         for plant in plants:
             relative = Path(plant["path"]).as_posix()
             identified_plant = {**plant, "id": case["id"]}
-            (scratch / relative).write_text(apply_plant(originals[relative], identified_plant))
+            (scratch / relative).write_text(apply_plant(originals[relative].decode("utf-8"), identified_plant))
         planted_hashes = {relative: digest(scratch / relative) for relative in originals}
         planted_hash = source_set_hash(planted_hashes)
         red = execute("plant.red", logs)
@@ -353,8 +360,7 @@ def run_case(case, scratch, build_dir, evidence_dir):
         detail = f"semantic assertion: {semantic}"
         print(f'{case["id"]}: RED assertion={semantic!r}')
 
-        for relative, original in originals.items():
-            (scratch / relative).write_text(original)
+        restore_sources_if_changed(scratch, originals)
         restored_hashes = {relative: digest(scratch / relative) for relative in originals}
         restored_hash = source_set_hash(restored_hashes)
         if restored_hash != baseline_hash:
@@ -362,8 +368,7 @@ def run_case(case, scratch, build_dir, evidence_dir):
         restored = execute("restored.green", logs)
         require_phase_result(case, "restored.green", restored)
     except BaseException as exc:
-        for relative, original in originals.items():
-            (scratch / relative).write_text(original)
+        restore_sources_if_changed(scratch, originals)
         restored_hashes = {relative: digest(scratch / relative) for relative in originals}
         restored_hash = source_set_hash(restored_hashes)
         write_case_evidence(
@@ -381,8 +386,7 @@ def run_case(case, scratch, build_dir, evidence_dir):
         )
         print(f'{case["id"]}: RESTORED GREEN source_sha256={restored_hash}')
     finally:
-        for relative, original in originals.items():
-            (scratch / relative).write_text(original)
+        restore_sources_if_changed(scratch, originals)
 
 
 def main():

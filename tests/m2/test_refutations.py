@@ -2,6 +2,7 @@
 """Focused tests for the M2 semantic refutation runner."""
 import importlib.util
 import json
+import os
 from pathlib import Path
 import tempfile
 import unittest
@@ -335,6 +336,51 @@ class RefutationRunnerTests(unittest.TestCase):
                     manifest = json.loads((evidence / "case.json").read_text())
                     self.assertEqual(manifest["status"], "failed")
                     self.assertEqual(manifest["baseline_sha256"], manifest["restored_sha256"])
+
+
+    def test_successful_restore_finalizer_preserves_source_mtime_for_both_runners(self):
+        for runner, prefix in ((refutations, "M2"), (m3_refutations, "M3")):
+            with self.subTest(runner=prefix), tempfile.TemporaryDirectory() as temp:
+                root = Path(temp)
+                scratch = root / "scratch"
+                scratch.mkdir()
+                source = scratch / "sample.rs"
+                original = "let gate = true;\n"
+                source.write_text(original)
+                build = root / "build"
+                build.mkdir()
+                evidence = root / "evidence"
+                calls = 0
+                restored_mtime = 1_600_000_000_123_456_789
+
+                def fake_run(_command, _cwd, _build_dir):
+                    nonlocal calls
+                    calls += 1
+                    current = source.read_text()
+                    if calls == 1:
+                        self.assertEqual(current, original)
+                        return subprocess.CompletedProcess(["fake"], 0, "running 1 test\ntest result: ok. 1 passed; 0 failed\n", "")
+                    if calls == 2:
+                        self.assertEqual(current, "let gate = false;\n")
+                        return subprocess.CompletedProcess(["fake"], 1, "running 1 test\nsemantic invariant violated\n", "")
+                    self.assertEqual(calls, 3)
+                    self.assertEqual(current, original)
+                    os.utime(source, ns=(restored_mtime, restored_mtime))
+                    return subprocess.CompletedProcess(["fake"], 0, "running 1 test\ntest result: ok. 1 passed; 0 failed\n", "")
+
+                case = {
+                    "id": "E9-mtime-restore",
+                    "plant_path": "sample.rs",
+                    "anchor": "let gate = true;",
+                    "replacement": "let gate = false;",
+                    "command": ["fake"],
+                    "expected_failure": "semantic invariant violated",
+                }
+                with patch.object(runner, "run", side_effect=fake_run):
+                    runner.run_case(case, scratch, build, evidence)
+
+                self.assertEqual(source.read_text(), original)
+                self.assertEqual(source.stat().st_mtime_ns, restored_mtime)
 
 
 if __name__ == "__main__":

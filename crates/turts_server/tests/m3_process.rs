@@ -81,6 +81,38 @@ fn slot_has_research(report: &Value, slot: u8, technology: &str) -> bool {
         })
 }
 
+fn report_has_research_for_any_slot(report: &Value, technology: &str) -> bool {
+    report["replicated_world"]["research"]
+        .as_array()
+        .is_some_and(|rows| {
+            rows.iter().any(|row| {
+                row["completed"].as_array().is_some_and(|completed| {
+                    completed
+                        .iter()
+                        .any(|entry| entry.as_str() == Some(technology))
+                })
+            })
+        })
+}
+
+#[test]
+fn f11_opponent_privacy_check_rejects_owner_research_row_at_any_slot() {
+    let report = serde_json::json!({
+        "replicated_world": {
+            "research": [{
+                "slot": 0,
+                "completed": ["forge:hardened_shells"]
+            }]
+        }
+    });
+    let current_opponent_check =
+        !report_has_research_for_any_slot(&report, "forge:hardened_shells");
+    assert!(
+        !current_opponent_check,
+        "an owner research row in the opponent report must fail privacy regardless of row slot"
+    );
+}
+
 fn complete_research(report: &Value) -> Option<u32> {
     let tick = u32::try_from(report["research_completed_tick"].as_u64()?).ok()?;
     slot_has_research(report, 0, "forge:hardened_shells").then_some(tick)
@@ -199,6 +231,34 @@ fn has_final_health(report: &Value) -> bool {
 }
 
 #[test]
+fn f11_server_log_is_retained_when_acceptance_test_unwinds() {
+    let dir = support::test_dir("f11-server-log-retention-probe");
+    let package = support::pack("forge", &dir);
+    let evidence = dir.join("stable-server-evidence");
+    let mut original_server_log = Vec::new();
+    let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let server = support::spawn_server_with_evidence(&package, &[], Some(evidence.clone()));
+        original_server_log = fs::read(server.dir.join("server.log"))
+            .expect("the identified server log is readable before unwind");
+        panic!("simulated F11 assertion failure after server startup");
+    }));
+    let panic = outcome.expect_err("the controlled F11 failure is raised after server startup");
+    let panic_message = panic
+        .downcast_ref::<&str>()
+        .copied()
+        .or_else(|| panic.downcast_ref::<String>().map(String::as_str));
+    assert_eq!(
+        panic_message,
+        Some("simulated F11 assertion failure after server startup")
+    );
+    assert_eq!(
+        fs::read(evidence.join("server.log")).expect("the identified server log is retained"),
+        original_server_log,
+        "failure-path evidence retains the original identified server log bytes"
+    );
+}
+
+#[test]
 #[ignore = "real Forge server and two native headless clients; run through scripts/acceptance.sh"]
 fn f11_private_research_coordinator_releases_ordered_opponent_move_and_health_trace() {
     let dir = support::test_dir("f11-m3-private-research");
@@ -289,8 +349,8 @@ fn f11_private_research_coordinator_releases_ordered_opponent_move_and_health_tr
     assert_eq!(final_owner["slot"], 0);
     assert_eq!(final_opponent["slot"], 1);
     assert!(
-        !slot_has_research(&final_opponent, 1, "forge:hardened_shells"),
-        "slot 1 does not receive slot 0 private research"
+        !report_has_research_for_any_slot(&final_opponent, "forge:hardened_shells"),
+        "opponent report contains no owner research regardless of the leaked row slot"
     );
     let (server_research_tick, shots) = audited_events(&audit);
     let server_research_tick =
@@ -340,7 +400,7 @@ fn f11_private_research_coordinator_releases_ordered_opponent_move_and_health_tr
         "owner_slot": final_owner["slot"],
         "opponent_slot": final_opponent["slot"],
         "owner_has_hardened_shells": slot_has_research(&final_owner, 0, "forge:hardened_shells"),
-        "opponent_has_hardened_shells": slot_has_research(&final_opponent, 1, "forge:hardened_shells"),
+        "opponent_has_hardened_shells": report_has_research_for_any_slot(&final_opponent, "forge:hardened_shells"),
         "server_research_completed_tick": server_research_tick,
         "opponent_move_applied_tick": move_tick,
         "initial_health": { "drone_a": 100, "drone_b": 100 },
@@ -350,6 +410,7 @@ fn f11_private_research_coordinator_releases_ordered_opponent_move_and_health_tr
         "owner_report": owner_report,
         "opponent_report": opponent_report,
         "server_audit": audit,
+        "server_log": server.dir.join("server.log"),
         "client_logs": {
             "owner_stdout": dir.join("owner-client.stdout.log"),
             "owner_stderr": dir.join("owner-client.stderr.log"),

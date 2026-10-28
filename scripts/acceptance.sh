@@ -18,6 +18,24 @@ retain_f11_artifacts() {
   fi
   mkdir -p "$destination"
   cp -a "$source/." "$destination/"
+  local server_evidence="$destination/server-process"
+  local server_dir_file="$server_evidence/server-source-directory.txt"
+  if [[ ! -f "$server_dir_file" ]]; then
+    printf 'F11 spawned server directory marker missing: %s\n' "$server_dir_file" >&2
+    return 1
+  fi
+  local server_dir
+  server_dir="$(cat "$server_dir_file")"
+  case "$server_dir" in
+    "$CARGO_TARGET_DIR"/tmp/server_*) ;;
+    *) printf 'F11 server directory is outside the private target tmp root: %s\n' "$server_dir" >&2; return 1 ;;
+  esac
+  if [[ ! -f "$server_dir/server.log" ]]; then
+    printf 'F11 server log missing in identified server directory: %s\n' "$server_dir" >&2
+    return 1
+  fi
+  cp -a "$server_dir/." "$server_evidence/"
+  printf 'server_source_directory=%s\nretained_server_log=server-process/server.log\n' "$server_dir" > "$destination/server-directory-provenance.txt"
   git -C "$ROOT" diff --binary HEAD > "$destination/source.diff"
   {
     printf 'source_head=%s\n' "$(git -C "$ROOT" rev-parse HEAD)"
@@ -99,6 +117,6 @@ if [[ "$selected_m3" != 1 ]]; then
   exit 1
 fi
 f11_status=0
-run_cargo_test f11_private_research exact -p turts_server --test m3_process -- --ignored --test-threads=1 --exact f11_private_research_coordinator_releases_ordered_opponent_move_and_health_trace || f11_status=$?
+TURTS_SERVER_EVIDENCE_DIR="$log_dir/f11-evidence/server-process" run_cargo_test f11_private_research exact -p turts_server --test m3_process -- --ignored --test-threads=1 --exact f11_private_research_coordinator_releases_ordered_opponent_move_and_health_trace || f11_status=$?
 retain_f11_artifacts || f11_status=1
 if [[ "$f11_status" != 0 ]]; then exit "$f11_status"; fi
