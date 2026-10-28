@@ -35,3 +35,12 @@ Recorded for final milestone review. Original user-approved K1–K8 choices rema
 23. Move pure SHOT validation after DANGLING and before aggregate balance checks, retaining every invariant, so C13 reports its named SHOT failure. Cost if wrong: diagnostic priority/test fixture maintenance; no product behavior change.
 
 Validation repairs also replaced an idle renamed-clone scenario with the complete industrial sequence, derived balance roles from parsed RON, checked dangling stock before balance, and removed duplicate recursive key traversal. These repair the instruments; they do not add product policy. The user approved an allowance of75 agent runs; this was user authorization, not an orchestrator ruling.
+
+
+24. Update the two stale M2 mutation anchors from `inventory` to the accepted `inventory_legacy` accessor, preserving selected tests, commands and expectations. This is an equivalent private accessor rename. Cost if wrong: repair mutation setup; no engine behavior change.
+
+25. Update inherited native and browser M2 expected projections with the new industrial/research fields, empty health trace, absent facing defaults and Main inventory port. Preserve all old values and independent full-object assertions. The real M2 process and browser checks exposed stale expected schemas. Cost if wrong: revise test fixtures and projection helpers; no product behavior change.
+
+26. E4/E6 capacity-loss plants bypass both the local legacy guard and central transaction capacity preflight in a private two-file mutation. A local-only bypass stays green because the central guard independently rejects the invalid transfer. Add grouped mutation support while preserving the original fixture, selected test count and failure assertion. Retain and exclude the surviving single-guard run from credited refutations. Cost if wrong: more registry and restoration complexity; correct production guards remain intact.
+
+Proof limits: defensive client panel tests may mutate a resolved catalog beyond what the package loader accepts; they establish panel-boundary behavior, not a valid-package overspend exploit. Compiler failures, infrastructure failures, zero selected tests and surviving mutations are never credited as semantic refutations.
