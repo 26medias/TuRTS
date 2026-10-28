@@ -218,9 +218,11 @@ T1 implementation notes: M3 resolution lives in `turts_mod_runtime/src/content_m
 
 ### Task 10: Research
 
+Orchestrator ruling (2026-10-28): the private modifier helper returns a checked result so arbitrary package values cannot silently saturate or panic on overflow. This is fixed before T11 starts; see `vault/Decisions/2026-10-28 M3 checked research modifier.md`.
+
 **Files:** `crates/turts_sim/src/economy/research.rs`, hooks in `production.rs`, `crates/turts_server/src/session.rs:376-384`; test `crates/turts_sim/tests/research.rs`
 
-**Interfaces:** Consumes Task 9. Produces `Produce(station, technology)` handling for a `research` unit (it uses the reject reasons `PrerequisitesMissing`, `AlreadyResearched`, `ResearchInProgress` that Task 3a added); `ResearchCompleted { station, job, slot, technology }`; `fn modifier(research: &ResearchState, catalog: &ContentCatalog, slot: u8, unit_def: &ContentId, stat: WeaponStat) -> u64`.
+**Interfaces:** Consumes Task 9. Produces `Produce(station, technology)` handling for a `research` unit (it uses the reject reasons `PrerequisitesMissing`, `AlreadyResearched`, `ResearchInProgress` that Task 3a added); `ResearchCompleted { station, job, slot, technology }`; `fn modifier(research: &ResearchState, catalog: &ContentCatalog, slot: u8, unit_def: &ContentId, stat: WeaponStat) -> Result<u64, RejectReason>`.
 
 - [ ] **Step 1:** Write `research_completes_after_ceil_duration` (200 ticks), `produce_without_shells_rejects_insufficient_items_and_leaves_claims` (Review Focus 4), `already_researched_rejects`, `second_request_same_slot_rejects_in_progress`, `locked_prerequisite_rejects`, `cancel_running_refunds_half`, `cancel_queued_refunds_all_and_releases_claim`, `modifier_is_computed_from_completed_set`, `server_admits_produce_for_research_unit`.
 - [ ] **Step 2-4:** Run to fail; implement; PASS.
