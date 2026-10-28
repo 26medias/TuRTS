@@ -4,7 +4,7 @@
 //! before it can change the displayed world. While recovering, the replica retains a bounded,
 //! sorted chain and freezes the latest coherent candidate.
 
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 
 use bevy::platform::time::Instant;
 use turts_mod_api::{ContentId, CostSource, ResourceKind};
@@ -803,37 +803,96 @@ fn valid_economy(
         if !queue_producers.insert(queue.producer.0) {
             return false;
         }
-        let Some(producer) = units
+        let Some(owner_unit) = units
             .get(&queue.producer.0)
-            .filter(|u| u.owner_slot == slot)
+            .filter(|unit| unit.owner_slot == slot)
         else {
             return false;
         };
-        let Some(producer_type) = parse_id(&producer.content_id) else {
+        let Some(owner_type) = parse_id(&owner_unit.content_id) else {
             return false;
         };
-        let Some(producer_def) = context
-            .content
-            .catalog
-            .units
-            .get(&producer_type)
-            .and_then(|u| u.producer.as_ref())
-        else {
+        let Some(unit_def) = context.content.catalog.units.get(&owner_type) else {
             return false;
         };
-        if queue.jobs.len() > usize::from(producer_def.queue_capacity) {
+
+        // The server keeps producer, machine, and research jobs in one per-unit queue map.
+        // Package validation guarantees that a unit has at most one work capability.
+        let producer_def = unit_def.producer.as_ref();
+        let machine_def = unit_def.machine.as_ref();
+        let research_def = unit_def.research.as_ref();
+        let queue_capacity = producer_def
+            .map(|producer| producer.queue_capacity)
+            .or_else(|| machine_def.map(|_| 1))
+            .or_else(|| research_def.map(|research| research.queue_capacity));
+        let Some(queue_capacity) = queue_capacity else {
+            return false;
+        };
+        if queue.jobs.len() > usize::from(queue_capacity) {
             return false;
         }
+
         for job in &queue.jobs {
             let Some(recipe_id) = parse_id(&job.recipe) else {
                 return false;
             };
-            let Some(recipe) = context.content.catalog.production.get(&recipe_id) else {
-                return false;
-            };
-            if !job_ids.insert(job.id) || !producer_def.recipes.contains(&recipe_id) {
+            if !job_ids.insert(job.id) {
                 return false;
             }
+            let expected_cost_lines = if let Some(producer) = producer_def {
+                if !producer.recipes.contains(&recipe_id) {
+                    return false;
+                }
+                let Some(definition) = context.content.catalog.production.get(&recipe_id) else {
+                    return false;
+                };
+                definition
+                    .costs
+                    .iter()
+                    .map(|cost| (cost.source, cost.resource.clone(), cost.amount))
+                    .collect::<Vec<_>>()
+            } else if let Some(machine) = machine_def {
+                if machine.recipe != recipe_id {
+                    return false;
+                }
+                let Some(definition) = context.content.catalog.recipes.get(&recipe_id) else {
+                    return false;
+                };
+                definition
+                    .inputs
+                    .iter()
+                    .map(|input| {
+                        (
+                            CostSource::ProducerInventory,
+                            input.item.clone(),
+                            input.amount,
+                        )
+                    })
+                    .collect::<Vec<_>>()
+            } else if let Some(research) = research_def {
+                if !research.technologies.contains(&recipe_id) {
+                    return false;
+                }
+                let Some(definition) = context.content.catalog.technologies.get(&recipe_id) else {
+                    return false;
+                };
+                definition
+                    .costs
+                    .iter()
+                    .map(|cost| (cost.source, cost.resource.clone(), cost.amount))
+                    .collect::<Vec<_>>()
+            } else {
+                return false;
+            };
+            let mut expected_costs = BTreeMap::<(CostSource, ContentId), u64>::new();
+            for (source, resource, amount) in expected_cost_lines {
+                let total = expected_costs.entry((source, resource)).or_default();
+                let Some(sum) = total.checked_add(amount) else {
+                    return false;
+                };
+                *total = sum;
+            }
+
             for costs in [&job.charged, &job.reserved] {
                 let mut endpoints = HashSet::new();
                 for cost in costs {
@@ -853,22 +912,14 @@ fn valid_economy(
                         .resources
                         .get(&resource_id)
                         .is_none_or(|resource| resource.kind != expected_kind)
-                        || !recipe.costs.iter().any(|expected| {
-                            expected.source == cost.source
-                                && expected.resource == resource_id
-                                && cost.amount <= expected.amount
-                        })
+                        || expected_costs
+                            .get(&(cost.source, resource_id.clone()))
+                            .is_none_or(|amount| cost.amount > *amount)
                     {
                         return false;
                     }
                     if cost.source == CostSource::ProducerInventory {
-                        let Some(inventory_def) = context
-                            .content
-                            .catalog
-                            .units
-                            .get(&producer_type)
-                            .and_then(|u| u.inventory.as_ref())
-                        else {
+                        let Some(inventory_def) = unit_def.inventory.as_ref() else {
                             return false;
                         };
                         if !inventory_def.accepts.contains(&resource_id)

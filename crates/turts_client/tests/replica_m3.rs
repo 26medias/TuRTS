@@ -5,12 +5,13 @@ use turts_client::{
     content::ClientContent,
     replica::{DeltaOutcome, Replica, ReplicaContext, SnapshotOutcome},
 };
+use turts_mod_api::{ContentId, Cost, CostSource};
 use turts_mod_runtime::{archive::PackageArchive, pack::pack_dir};
 use turts_net_protocol::{
     BalanceState, BeltPieceRecord, EconomyChanges, EconomyState, ExtractorRecord, ExtractorStatus,
-    Facing, HealthRecord, InserterRecord, InserterStage, InventoryPort, InventoryState, NodeId,
-    NodeState, Pos, ResearchRecord, SlotId, Snapshot, UnitDelta, UnitId, UnitSnapshot,
-    WeaponRecord, WeaponStatus, WorldDelta,
+    Facing, HealthRecord, InserterRecord, InserterStage, InventoryPort, InventoryState, JobId,
+    JobStage, JobState, NodeId, NodeState, Pos, QueueState, ResearchRecord, SlotId, Snapshot,
+    UnitDelta, UnitId, UnitSnapshot, WeaponRecord, WeaponStatus, WorldDelta,
 };
 
 fn content() -> &'static ClientContent {
@@ -75,10 +76,14 @@ fn delta(tick: u32, base_tick: u32) -> WorldDelta {
         research: vec![],
     }
 }
-fn replica(slot: u8) -> Replica {
+fn replica_with_content(acquired: ClientContent, slot: u8) -> Replica {
     let mut result = Replica::new(20);
-    result.set_context(ReplicaContext::new(content().clone(), slot));
+    result.set_context(ReplicaContext::new(acquired, slot));
     result
+}
+
+fn replica(slot: u8) -> Replica {
+    replica_with_content(content().clone(), slot)
 }
 fn inv(unit: u32, port: InventoryPort, resource: &str, amount: u64) -> InventoryState {
     InventoryState {
@@ -89,6 +94,343 @@ fn inv(unit: u32, port: InventoryPort, resource: &str, amount: u64) -> Inventory
             on_hand: amount,
             reserved: 0,
         }],
+    }
+}
+
+#[test]
+fn repeated_machine_recipe_inputs_validate_aggregated_charges() {
+    let now = Instant::now();
+    let mut acquired = content().clone();
+    let recipe_id = ContentId::parse("forge:make_shells").unwrap();
+    let recipe = acquired.catalog.recipes.get_mut(&recipe_id).unwrap();
+    recipe.inputs.push(recipe.inputs[0].clone());
+
+    let mut initial = snapshot(10, vec![unit(1, "forge:press", 0)]);
+    initial.economy.inventories.push(InventoryState {
+        unit: UnitId(1),
+        port: InventoryPort::Main,
+        items: vec![BalanceState {
+            resource: "forge:ore".into(),
+            on_hand: 0,
+            reserved: 0,
+        }],
+    });
+    initial.economy.queues.push(QueueState {
+        producer: UnitId(1),
+        enabled: true,
+        jobs: vec![JobState {
+            id: JobId(1),
+            recipe: "forge:make_shells".into(),
+            stage: JobStage::Running,
+            elapsed_ticks: 3,
+            duration_ticks: 40,
+            charged: vec![Cost {
+                resource: "forge:ore".into(),
+                amount: 4,
+                source: CostSource::ProducerInventory,
+            }],
+            reserved: vec![],
+        }],
+    });
+    let mut replica = replica_with_content(acquired, 0);
+
+    assert_eq!(
+        replica.apply_snapshot(&initial, now),
+        SnapshotOutcome::Applied { replayed: 0 }
+    );
+    assert_eq!(replica.last_applied_tick, Some(10));
+}
+
+#[test]
+fn empty_forge_research_station_queue_is_valid_in_snapshot() {
+    let now = Instant::now();
+    let mut initial = snapshot(10, vec![unit(7, "forge:lab", 0)]);
+    initial.economy.queues.push(QueueState {
+        producer: UnitId(7),
+        enabled: true,
+        jobs: vec![],
+    });
+    let mut replica = replica(0);
+
+    assert_eq!(
+        replica.apply_snapshot(&initial, now),
+        SnapshotOutcome::Applied { replayed: 0 }
+    );
+    assert_eq!(replica.last_applied_tick, Some(10));
+    assert_eq!(replica.economy.queues, initial.economy.queues);
+}
+
+#[test]
+fn empty_forge_machine_queue_is_valid_in_snapshot() {
+    let now = Instant::now();
+    let mut initial = snapshot(10, vec![unit(1, "forge:press", 0)]);
+    initial.economy.queues.push(QueueState {
+        producer: UnitId(1),
+        enabled: true,
+        jobs: vec![],
+    });
+    let mut replica = replica(0);
+
+    assert_eq!(
+        replica.apply_snapshot(&initial, now),
+        SnapshotOutcome::Applied { replayed: 0 }
+    );
+    assert_eq!(replica.last_applied_tick, Some(10));
+    assert_eq!(replica.economy.queues, initial.economy.queues);
+}
+
+#[test]
+fn active_forge_machine_recipe_cycle_queue_is_valid_in_snapshot() {
+    let now = Instant::now();
+    let mut initial = snapshot(10, vec![unit(1, "forge:press", 0)]);
+    initial.economy.inventories.push(InventoryState {
+        unit: UnitId(1),
+        port: InventoryPort::Main,
+        items: vec![BalanceState {
+            resource: "forge:ore".into(),
+            on_hand: 2,
+            reserved: 0,
+        }],
+    });
+    initial.economy.queues.push(QueueState {
+        producer: UnitId(1),
+        enabled: true,
+        jobs: vec![JobState {
+            id: JobId(1),
+            recipe: "forge:make_shells".into(),
+            stage: JobStage::Running,
+            elapsed_ticks: 3,
+            duration_ticks: 40,
+            charged: vec![Cost {
+                resource: "forge:ore".into(),
+                amount: 2,
+                source: CostSource::ProducerInventory,
+            }],
+            reserved: vec![],
+        }],
+    });
+    let mut replica = replica(0);
+
+    assert_eq!(
+        replica.apply_snapshot(&initial, now),
+        SnapshotOutcome::Applied { replayed: 0 }
+    );
+    assert_eq!(replica.last_applied_tick, Some(10));
+    assert_eq!(replica.economy.queues, initial.economy.queues);
+}
+
+#[test]
+fn active_forge_research_job_queue_is_valid_in_snapshot() {
+    let now = Instant::now();
+    let mut initial = snapshot(10, vec![unit(7, "forge:lab", 0)]);
+    initial.economy.inventories.push(InventoryState {
+        unit: UnitId(7),
+        port: InventoryPort::Main,
+        items: vec![BalanceState {
+            resource: "forge:shell".into(),
+            on_hand: 0,
+            reserved: 0,
+        }],
+    });
+    initial.economy.queues.push(QueueState {
+        producer: UnitId(7),
+        enabled: true,
+        jobs: vec![JobState {
+            id: JobId(1),
+            recipe: "forge:hardened_shells".into(),
+            stage: JobStage::Running,
+            elapsed_ticks: 3,
+            duration_ticks: 200,
+            charged: vec![Cost {
+                resource: "forge:shell".into(),
+                amount: 10,
+                source: CostSource::ProducerInventory,
+            }],
+            reserved: vec![],
+        }],
+    });
+    let mut replica = replica(0);
+
+    assert_eq!(
+        replica.apply_snapshot(&initial, now),
+        SnapshotOutcome::Applied { replayed: 0 }
+    );
+    assert_eq!(replica.last_applied_tick, Some(10));
+    assert_eq!(replica.economy.queues, initial.economy.queues);
+
+    let mut progress = delta(11, 10);
+    let mut advanced_queue = initial.economy.queues[0].clone();
+    advanced_queue.jobs[0].elapsed_ticks = 4;
+    progress.economy.queues.push(advanced_queue.clone());
+    assert_eq!(replica.apply_delta(&progress, now), DeltaOutcome::Applied);
+    assert_eq!(replica.last_applied_tick, Some(11));
+    assert_eq!(replica.economy.queues, vec![advanced_queue.clone()]);
+
+    let mut invalid_progress = delta(12, 11);
+    advanced_queue.jobs[0].recipe = "forge:make_shells".into();
+    invalid_progress.economy.queues.push(advanced_queue);
+    assert_eq!(
+        replica.apply_delta(&invalid_progress, now),
+        DeltaOutcome::ResyncRequested
+    );
+    assert_eq!(replica.last_applied_tick, Some(11));
+}
+
+#[test]
+fn queued_forge_research_reservation_is_valid_in_snapshot() {
+    let now = Instant::now();
+    let mut initial = snapshot(10, vec![unit(7, "forge:lab", 0)]);
+    initial.economy.inventories.push(InventoryState {
+        unit: UnitId(7),
+        port: InventoryPort::Main,
+        items: vec![BalanceState {
+            resource: "forge:shell".into(),
+            on_hand: 10,
+            reserved: 10,
+        }],
+    });
+    initial.economy.queues.push(QueueState {
+        producer: UnitId(7),
+        enabled: true,
+        jobs: vec![JobState {
+            id: JobId(2),
+            recipe: "forge:hardened_shells".into(),
+            stage: JobStage::Queued,
+            elapsed_ticks: 0,
+            duration_ticks: 200,
+            charged: vec![],
+            reserved: vec![Cost {
+                resource: "forge:shell".into(),
+                amount: 10,
+                source: CostSource::ProducerInventory,
+            }],
+        }],
+    });
+    let mut replica = replica(0);
+
+    assert_eq!(
+        replica.apply_snapshot(&initial, now),
+        SnapshotOutcome::Applied { replayed: 0 }
+    );
+    assert_eq!(replica.last_applied_tick, Some(10));
+    assert_eq!(replica.economy.queues, initial.economy.queues);
+}
+
+#[test]
+fn forge_queue_rejects_jobs_outside_capability_and_malformed_costs() {
+    let now = Instant::now();
+    let machine_job = JobState {
+        id: JobId(1),
+        recipe: "forge:make_shells".into(),
+        stage: JobStage::Running,
+        elapsed_ticks: 3,
+        duration_ticks: 40,
+        charged: vec![Cost {
+            resource: "forge:ore".into(),
+            amount: 2,
+            source: CostSource::ProducerInventory,
+        }],
+        reserved: vec![],
+    };
+    let mut unsupported_machine_job = snapshot(10, vec![unit(1, "forge:press", 0)]);
+    unsupported_machine_job.economy.queues.push(QueueState {
+        producer: UnitId(1),
+        enabled: true,
+        jobs: vec![JobState {
+            recipe: "forge:hardened_shells".into(),
+            ..machine_job.clone()
+        }],
+    });
+    let mut over_capacity_machine_queue = snapshot(10, vec![unit(1, "forge:press", 0)]);
+    over_capacity_machine_queue.economy.queues.push(QueueState {
+        producer: UnitId(1),
+        enabled: true,
+        jobs: vec![
+            machine_job.clone(),
+            JobState {
+                id: JobId(2),
+                ..machine_job.clone()
+            },
+        ],
+    });
+    let mut overcharged_machine_job = snapshot(10, vec![unit(1, "forge:press", 0)]);
+    overcharged_machine_job.economy.queues.push(QueueState {
+        producer: UnitId(1),
+        enabled: true,
+        jobs: vec![JobState {
+            charged: vec![Cost {
+                amount: 3,
+                ..machine_job.charged[0].clone()
+            }],
+            ..machine_job
+        }],
+    });
+
+    let research_job = JobState {
+        id: JobId(3),
+        recipe: "forge:hardened_shells".into(),
+        stage: JobStage::Running,
+        elapsed_ticks: 3,
+        duration_ticks: 200,
+        charged: vec![],
+        reserved: vec![Cost {
+            resource: "forge:shell".into(),
+            amount: 10,
+            source: CostSource::ProducerInventory,
+        }],
+    };
+    let mut unsupported_research_job = snapshot(10, vec![unit(7, "forge:lab", 0)]);
+    unsupported_research_job.economy.queues.push(QueueState {
+        producer: UnitId(7),
+        enabled: true,
+        jobs: vec![JobState {
+            recipe: "forge:make_shells".into(),
+            ..research_job.clone()
+        }],
+    });
+    let mut over_capacity_research_queue = snapshot(10, vec![unit(7, "forge:lab", 0)]);
+    over_capacity_research_queue
+        .economy
+        .queues
+        .push(QueueState {
+            producer: UnitId(7),
+            enabled: true,
+            jobs: vec![
+                research_job.clone(),
+                JobState {
+                    id: JobId(4),
+                    ..research_job.clone()
+                },
+            ],
+        });
+    let mut overcharged_research_job = snapshot(10, vec![unit(7, "forge:lab", 0)]);
+    overcharged_research_job.economy.queues.push(QueueState {
+        producer: UnitId(7),
+        enabled: true,
+        jobs: vec![JobState {
+            reserved: vec![Cost {
+                amount: 11,
+                ..research_job.reserved[0].clone()
+            }],
+            ..research_job
+        }],
+    });
+
+    for (case, invalid) in [
+        ("unsupported machine job", unsupported_machine_job),
+        ("machine queue capacity", over_capacity_machine_queue),
+        ("machine cost bound", overcharged_machine_job),
+        ("unsupported research job", unsupported_research_job),
+        ("research queue capacity", over_capacity_research_queue),
+        ("research cost bound", overcharged_research_job),
+    ] {
+        let mut replica = replica(0);
+        assert_eq!(
+            replica.apply_snapshot(&invalid, now),
+            SnapshotOutcome::Invalid,
+            "{case}"
+        );
+        assert_eq!(replica.last_applied_tick, None, "{case}");
     }
 }
 
