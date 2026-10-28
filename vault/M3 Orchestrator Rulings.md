@@ -1,6 +1,6 @@
 # M3 orchestrator rulings
 
-Recorded for milestone review; extend this record if further rulings are needed. Original user-approved K1–K8 choices remain in the scope decision. These implementation rulings preserve that scope.
+Recorded for final milestone review. Original user-approved K1–K8 choices remain in the scope decision. These implementation rulings preserve that scope.
 
 | Ruling | Reason | Cost if wrong |
 | --- | --- | --- |
@@ -28,4 +28,10 @@ Recorded for milestone review; extend this record if further rulings are needed.
 
 20. Promote the isolated industrial-queue correction as a T15a follow-up before starting C3, and refreeze the checkpoint after R0 and canonical gates. No validator has started; UI presentation stays isolated. Cost if wrong: refresh checkpoint source/inventory and review ranges.
 
-Validation repairs also replaced an idle renamed-clone scenario with the complete industrial sequence, derived balance roles from parsed RON, checked dangling stock before balance, and removed duplicate recursive key traversal. These repair the instruments; they do not add product policy. Budget expansion remains a pending user approval, not an orchestrator ruling.
+21. Start isolated T16 registry/process/CI work on the accepted T14 union plus gated UI candidate while C3 and UI R1 run. Canonical merges and final evidence remain acceptance-gated; consume UI repairs before final gates. Cost if wrong: rebase and repeat affected acceptance, with no unreviewed canonical merge.
+
+22. C5 uses phantom output credit plus a private capacity-preflight bypass so the full OutputBlocked buffer commits the fault and reaches the specified BAL-shell check. Correct preflight would otherwise reject cancellation first. Cost if wrong: an extra two-file fault definition; correct engine guards remain intact.
+
+23. Move pure SHOT validation after DANGLING and before aggregate balance checks, retaining every invariant, so C13 reports its named SHOT failure. Cost if wrong: diagnostic priority/test fixture maintenance; no product behavior change.
+
+Validation repairs also replaced an idle renamed-clone scenario with the complete industrial sequence, derived balance roles from parsed RON, checked dangling stock before balance, and removed duplicate recursive key traversal. These repair the instruments; they do not add product policy. The user approved an allowance of75 agent runs; this was user authorization, not an orchestrator ruling.
