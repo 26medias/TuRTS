@@ -42,7 +42,7 @@ pub(crate) fn check_version_table(
                 &manifest.id,
                 "engine_api",
                 format!(
-                    "`{}` needs engine api {}; `{}` admits `{version}`",
+                    "`{}` needs engine api {}; `{}` admits {version}",
                     row.name, row.since_api, manifest.engine_api
                 ),
             )
@@ -82,7 +82,7 @@ mod tests {
         assert_eq!(error.field_path, "engine_api");
         assert!(error.message.contains("new field"), "{error}");
         assert!(error.message.contains("0.2.1"), "{error}");
-        assert!(error.message.contains("`^0.2` admits `0.2.0`"), "{error}");
+        assert!(error.message.contains("`^0.2` admits 0.2.0"), "{error}");
     }
 
     #[test]
