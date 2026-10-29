@@ -170,7 +170,9 @@ def check_spec(path, milestone, items, milestones, register_ids, all_specs=None)
 
 
 def check_spec_case(path, milestone, items, milestones, register_ids):
-    red = check_spec(path, milestone, items, milestones, register_ids)
+    # A self-test case is judged on its own rows only. Live registry specs must not supply R4
+    # evidence, or registering a real milestone spec changes the expected sets of the fixtures.
+    red = check_spec(path, milestone, items, milestones, register_ids, all_specs=[])
     if milestone in {"QA0", "MS"}:
         red = [line for line in red if not RED.match(line) or RED.match(line).group(1) not in {"R1", "R2", "R3"}]
     return red
