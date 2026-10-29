@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Plan status:** DRAFT, revision 1 after gate 2 (rigour `fail` B1, H1, M1, M2, L1-L3; mod-runtime `pass-with-changes` B1, M1, M2, L1). Re-gate this revision. Author: `qa-lead`, 2026-10-29. Commit of record for every `path:line`: `bfef807`.
+**Plan status:** Passed gate 2 (2026-10-29): revision 1 re-checked by `spec-rigour-reviewer` (`pass`, 0 blocking) and `mod-runtime-engineer` (`pass`, 0 blocking); reports in `docs/research/qa0/gate2-*.md` and `plan-repair.md`. The CEO authorized the build on 2026-10-29 (Codex handoff, brief in `vault/Reports/2026-10-29 QA0 Codex brief.md`). Author: `qa-lead`, 2026-10-29. Commit of record for every `path:line`: `bfef807`.
 
 **Goal:** Put the completeness gate and the pixels-only driver rule into CI. Fix the two `turts-pack` defects. Open the schema for additive growth (K1 = O1). Replace the refusal "dependencies are not supported at M1" with a real library check (row QA0, S:721).
 
