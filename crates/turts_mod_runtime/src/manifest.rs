@@ -1,6 +1,6 @@
 //! Manifest validation.
 
-use turts_mod_api::{ENGINE_API_VERSION, Manifest, ModError, PackageId};
+use turts_mod_api::{ENGINE_API_VERSION, KNOWN_CAPABILITIES, Manifest, ModError, PackageId};
 
 use crate::archive::{MANIFEST_PATH, is_safe_path};
 
@@ -39,6 +39,29 @@ pub fn validate_manifest(m: &Manifest) -> Result<(), ModError> {
                 m.engine_api
             ),
         ));
+    }
+
+    let mut seen_capabilities = std::collections::HashSet::new();
+    for capability in &m.capabilities {
+        if !seen_capabilities.insert(capability) {
+            return Err(fail(
+                "capabilities",
+                format!("capability `{capability}` is listed twice"),
+            ));
+        }
+    }
+    for capability in &m.capabilities {
+        if !KNOWN_CAPABILITIES.contains(&capability.as_str()) {
+            let known = if KNOWN_CAPABILITIES.is_empty() {
+                "none".to_string()
+            } else {
+                KNOWN_CAPABILITIES.join(", ")
+            };
+            return Err(fail(
+                "capabilities",
+                format!("unknown capability `{capability}`; known: {known}"),
+            ));
+        }
     }
 
     if !m.dependencies.0.is_empty() {

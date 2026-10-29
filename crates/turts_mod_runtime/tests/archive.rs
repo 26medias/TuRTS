@@ -254,6 +254,43 @@ fn parse_ron_names_a_duplicate_field() {
 }
 
 #[test]
+fn sc1_typo_helth_names_health() {
+    let error = parse_ron::<UnitDef>(
+        "acme",
+        "units/scout.ron",
+        "(id: \"scout\", name: \"Scout\", footprint: Circle(radius: 1.0), helth: Some((max: 5)))",
+    )
+    .unwrap_err();
+    assert!(error.message.contains("did you mean `health`?"), "{error}");
+    assert!(error.allowed.unwrap().contains(&"health".to_string()));
+}
+
+#[test]
+fn sc1_far_name_gives_no_hint() {
+    let error = parse_ron::<UnitDef>(
+        "acme",
+        "units/scout.ron",
+        "(id: \"scout\", name: \"Scout\", footprint: Circle(radius: 1.0), zzzzzzzz: None)",
+    )
+    .unwrap_err();
+    assert!(!error.message.contains("did you mean"), "{error}");
+}
+
+#[test]
+fn sc2_duplicate_unit_key_is_refused() {
+    let error = parse_ron::<UnitDef>(
+        "acme",
+        "units/scout.ron",
+        "(id: \"scout\", name: \"Scout\", footprint: Circle(radius: 1.0), health: None, health: None)",
+    )
+    .unwrap_err();
+    assert!(
+        error.message.starts_with("duplicate field `health`"),
+        "{error}"
+    );
+}
+
+#[test]
 fn parse_ron_wraps_other_errors_with_a_position() {
     let error = parse_ron::<UnitDef>("acme", "units/scout.ron", "(id: ").unwrap_err();
     assert!(

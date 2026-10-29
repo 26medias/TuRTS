@@ -131,6 +131,10 @@ impl PackageArchive {
         )?;
         crate::content_m3::validate_m3_presence(&self.manifest, &self.files)?;
         crate::content_m3::validate_m3(&self.manifest, &catalog)?;
+        crate::version_table::check_version_table(
+            &self.manifest,
+            crate::version_table::VERSION_TABLE,
+        )?;
         Ok(catalog)
     }
 

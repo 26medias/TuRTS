@@ -22,6 +22,7 @@ the same files give the same bytes.
 Before it writes the archive, turts-pack checks the package the way a server and a
 client check it:
   - The manifest and the exported files parse. An unknown field is an error.
+  - The manifest requests only known capabilities, with no duplicates.
   - The units and the map follow the server rules: speed and radius in range, owner
     slot is a real slot, positions inside the map, exactly one map. An error message
     gives the limit that the value broke.

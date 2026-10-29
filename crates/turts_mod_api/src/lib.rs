@@ -30,4 +30,23 @@ pub use schema::{
 };
 
 /// Version of the engine API that this crate defines.
-pub const ENGINE_API_VERSION: &str = "0.2.1";
+pub const ENGINE_API_VERSION: &str = "0.2.2";
+
+/// Engine API versions released by the project, in ascending order.
+pub const RELEASED_ENGINE_APIS: &[&str] = &["0.1.0", "0.2.0", "0.2.1", "0.2.2"];
+
+/// Capabilities that package manifests may request.
+pub const KNOWN_CAPABILITIES: &[&str] = &[];
+
+#[cfg(test)]
+mod tests {
+    use super::{ENGINE_API_VERSION, RELEASED_ENGINE_APIS};
+
+    #[test]
+    fn released_list_ends_with_engine_version() {
+        assert_eq!(
+            RELEASED_ENGINE_APIS.last().copied(),
+            Some(ENGINE_API_VERSION)
+        );
+    }
+}

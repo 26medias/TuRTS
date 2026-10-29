@@ -165,7 +165,13 @@ pub fn drive_acquisition(
             let Some(result) = poll(task) else { return };
             acquisition.task = None;
             let hash = advertised_lockfile_hash(&acquisition);
-            let lockfile = result.and_then(|bytes| check_lockfile(&bytes, &hash));
+            let mod_id = acquisition
+                .advertisement
+                .as_ref()
+                .expect("the advertisement was accepted before the lockfile")
+                .mod_id
+                .clone();
+            let lockfile = result.and_then(|bytes| check_lockfile(&bytes, &hash, &mod_id));
             match lockfile {
                 Ok(lockfile) => {
                     let mut queue: Vec<LockEntry> =

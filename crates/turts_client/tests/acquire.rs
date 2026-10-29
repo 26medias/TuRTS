@@ -77,12 +77,12 @@ fn check_lockfile_refuses_wrong_hash_before_parse() {
     let other = sha256_hex(b"other bytes");
 
     // Wrong hash: the hash check fails and names both hashes. A parse error cannot do that.
-    let error = check_lockfile(bytes, &other).unwrap_err();
+    let error = check_lockfile(bytes, &other, "acme").unwrap_err();
     assert!(error.contains("hash"), "{error}");
     assert!(error.contains(&own) && error.contains(&other), "{error}");
 
     // Right hash: the hash check passes and the parse fails.
-    let error = check_lockfile(bytes, &own).unwrap_err();
+    let error = check_lockfile(bytes, &own, "acme").unwrap_err();
     assert!(error.contains("lockfile"), "{error}");
     assert!(!error.contains(&own), "{error}");
 
@@ -91,7 +91,36 @@ fn check_lockfile_refuses_wrong_hash_before_parse() {
         packages: vec![lock_entry("acme", ExecutionContext::Shared)],
     };
     let bytes = write_lockfile(&lock);
-    assert_eq!(check_lockfile(&bytes, &sha256_hex(&bytes)).unwrap(), lock);
+    assert_eq!(
+        check_lockfile(&bytes, &sha256_hex(&bytes), "acme").unwrap(),
+        lock
+    );
+}
+
+#[test]
+fn a_lockfile_with_two_entries_for_one_id_is_refused() {
+    let lock = Lockfile {
+        packages: vec![
+            lock_entry("acme", ExecutionContext::Shared),
+            lock_entry("acme", ExecutionContext::Shared),
+        ],
+    };
+    let bytes = write_lockfile(&lock);
+    let error = check_lockfile(&bytes, &sha256_hex(&bytes), "acme").unwrap_err();
+    assert_eq!(error, "lockfile: package `acme` has two entries");
+}
+
+#[test]
+fn a_lockfile_without_the_advertised_mod_id_is_refused() {
+    let lock = Lockfile {
+        packages: vec![lock_entry("other", ExecutionContext::Shared)],
+    };
+    let bytes = write_lockfile(&lock);
+    let error = check_lockfile(&bytes, &sha256_hex(&bytes), "acme").unwrap_err();
+    assert_eq!(
+        error,
+        "lockfile: the advertised package `acme` has no entry"
+    );
 }
 
 #[test]

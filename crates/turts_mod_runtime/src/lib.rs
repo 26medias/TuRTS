@@ -9,3 +9,5 @@ pub mod manifest;
 pub mod pack;
 pub mod parse;
 pub mod visuals;
+
+mod version_table;
