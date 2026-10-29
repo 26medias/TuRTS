@@ -5,7 +5,7 @@ mod common;
 
 use common::{acme_archive, acme_archive_with};
 use turts_mod_api::{ModError, Shape};
-use turts_mod_runtime::archive::PackageArchive;
+use turts_mod_runtime::{archive::PackageArchive, resolve::resolve};
 
 /// Rust type names that must never reach a modder.
 const TYPE_NAMES: [&str; 8] = [
@@ -68,14 +68,18 @@ fn t2c_engine_api_that_is_not_a_requirement() {
 }
 
 #[test]
-fn t2c_non_empty_dependencies() {
+fn t2c_dependencies_parse_then_resolve_refuses() {
     let bytes = acme_archive_with(
         "manifest.ron",
         "dependencies: {}",
         "dependencies: {\"lib\": \"^1\"}",
     );
-    let error = refused(&bytes, "dependencies");
-    assert!(error.message.contains("not supported at M1"), "{error}");
+    let archive = PackageArchive::parse(&bytes).unwrap();
+    let error = resolve(&archive.manifest, &[]).unwrap_err();
+    assert_eq!(error.field_path, "dependencies");
+    assert!(error.message.contains("`lib`"), "{error}");
+    assert!(error.message.contains("`^1`"), "{error}");
+    assert!(error.message.contains("not provided"), "{error}");
 }
 
 #[test]

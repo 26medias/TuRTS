@@ -166,6 +166,24 @@ fn boot_fills_file_on_registration_error() {
     assert_eq!(error.package, "acme");
 }
 
+#[test]
+fn boot_refuses_a_root_with_a_dependency() {
+    let root = support::mods_dir().join("acme");
+    let mut files = BTreeMap::new();
+    read_tree(&root, &root, &mut files);
+    let manifest = files.get_mut("manifest.ron").unwrap();
+    let text = String::from_utf8(manifest.clone()).unwrap();
+    *manifest = text
+        .replace("engine_api: \"^0.2\"", "engine_api: \"^0.2.2\"")
+        .replace("dependencies: {}", "dependencies: {\"ai_core\": \"^1.0\"}")
+        .into_bytes();
+    let bytes = pack_files(&files).unwrap();
+    let mut app = headless_app(20);
+    let error = boot::boot(app.world_mut(), &config(Path::new("unused.tar")), &bytes).unwrap_err();
+    assert_eq!(error.field_path, "dependencies");
+    assert!(error.message.contains("not provided"), "{error}");
+}
+
 /// The options of a run with `count` synthetic units and nothing else.
 fn synthetic_cli(count: u32) -> config::Cli {
     config::Cli {

@@ -3,7 +3,7 @@
 use std::path::Path;
 
 use bevy_ecs::world::World;
-use turts_mod_api::{ModError, SourceDef};
+use turts_mod_api::{ModError, PackageKind, SourceDef};
 use turts_mod_runtime::archive::{MANIFEST_PATH, PackageArchive};
 use turts_mod_runtime::pack::pack_dir;
 use turts_mod_runtime::visuals::visuals_by_content;
@@ -11,6 +11,7 @@ use turts_sim::{DEFAULT_TICK_HZ, SimClock, headless_app, install_package, stage_
 
 /// Validate the complete portable catalog and map, then install them atomically.
 pub fn load_package(world: &mut World, archive: &PackageArchive) -> Result<(), ModError> {
+    turts_mod_runtime::resolve::resolve(&archive.manifest, &[])?;
     let catalog = archive.content()?;
     let maps = archive.maps()?;
     let [(file, map)] = maps.as_slice() else {
@@ -39,10 +40,19 @@ pub fn load_package(world: &mut World, archive: &PackageArchive) -> Result<(), M
 
 /// Check the package on the server path and client visual path.
 pub fn check_package(archive: &PackageArchive) -> Result<(), ModError> {
-    let mut app = headless_app(DEFAULT_TICK_HZ);
-    load_package(app.world_mut(), archive)?;
-    visuals_by_content(std::slice::from_ref(archive))?;
-    Ok(())
+    match archive.manifest.kind {
+        PackageKind::Game => {
+            let mut app = headless_app(DEFAULT_TICK_HZ);
+            load_package(app.world_mut(), archive)?;
+            visuals_by_content(std::slice::from_ref(archive))?;
+            Ok(())
+        }
+        PackageKind::Library => {
+            archive.content()?;
+            visuals_by_content(std::slice::from_ref(archive))?;
+            Ok(())
+        }
+    }
 }
 
 /// Pack and validate a package before returning archive bytes.

@@ -1,6 +1,8 @@
 //! Manifest validation.
 
-use turts_mod_api::{ENGINE_API_VERSION, KNOWN_CAPABILITIES, Manifest, ModError, PackageId};
+use turts_mod_api::{
+    ENGINE_API_VERSION, KNOWN_CAPABILITIES, Manifest, ModError, PackageId, PackageKind,
+};
 
 use crate::archive::{MANIFEST_PATH, is_safe_path};
 
@@ -64,21 +66,23 @@ pub fn validate_manifest(m: &Manifest) -> Result<(), ModError> {
         }
     }
 
-    if !m.dependencies.0.is_empty() {
-        return Err(fail(
-            "dependencies",
-            "dependencies are not supported at M1".to_string(),
-        ));
-    }
+    crate::resolve::validate_dependency_fields(m)?;
 
-    if m.exports.maps.len() != 1 {
-        return Err(fail(
-            "exports.maps",
-            format!(
+    let maps_valid = match m.kind {
+        PackageKind::Game => m.exports.maps.len() == 1,
+        PackageKind::Library => m.exports.maps.is_empty(),
+    };
+    if !maps_valid {
+        let message = match m.kind {
+            PackageKind::Game => format!(
                 "a package exports exactly one map at M1, found {}",
                 m.exports.maps.len()
             ),
-        ));
+            PackageKind::Library => {
+                format!("a library exports no map, found {}", m.exports.maps.len())
+            }
+        };
+        return Err(fail("exports.maps", message));
     }
 
     let exports = [

@@ -85,13 +85,13 @@ Count each dispatch and each resumed work turn as one run. Record it before disp
 | Allocation | Planned runs | Used |
 | --- | --- | --- |
 | T1 | 2 | 1 |
-| T2 | 4 | 3 |
+| T2 | 4 | 6 |
 | T3 | 4 | 0 |
 | T4 | 4 | 3 |
-| T5 | 4 | 2 |
+| T5 | 4 | 3 |
 | T6 | 4 | 0 |
-| Repair reserve | 4 | 0 |
-| Total | 22 to 26 | 9 |
+| Repair reserve | 4 | 2 allocated to T2; included in task actuals |
+| Total | 22 to 26 | 13 |
 
 These are planning allowances, not required dispatch counts. Do not spend runs without a task.
 
@@ -106,6 +106,10 @@ These are planning allowances, not required dispatch counts. Do not spend runs w
 | 7 | T5 review | qa-lead | gpt-6.1-sol | high | 9fc246c | pass-with-changes; 2 medium; tie order and removable rule calls |
 | 8 | T2 review | qa-lead | gpt-6.1-sol | high | b91af0f | FAIL; 1 High, 3 medium; separate enforce path, evidence, status, spec policy |
 | 9 | T2 repair | backend-engineer | gpt-6-luna | high | b91af0f | dispatched |
+| 10 | T5 scoped recheck | qa-lead | gpt-6.1-sol | high | 6fc6720 | PASS; both addressed; 0 findings |
+| 11 | T2 scoped recheck | qa-lead | gpt-6.1-sol | high | df9a1f3 | 4 addressed; new medium: exempt rows treated as R4 consumers |
+| 12 | T2 repair round 2 | backend-engineer | gpt-6-luna | high | df9a1f3 | fixed at e3fd97d |
+| 13 | T2 scoped recheck 2 | qa-lead | gpt-6.1-sol | high | e3fd97d | dispatched |
 
 ## 7. Task ledger
 
@@ -115,7 +119,7 @@ These are planning allowances, not required dispatch counts. Do not spend runs w
 | T2 | building | codex/qa0-t2 | - | NOT RUN | NOT RUN | 0 | pending |
 | T3 | pending | codex/qa0-t3 | - | NOT RUN | NOT RUN | 0 | pending |
 | T4 | complete | codex/qa0-t4 | 5ac68b7,5aff67f,547014a | all intended semantic failures exit 101; SC3 review plant exit 101 | five final gates exit 0; 775 passed, 0 failed, 18 ignored | 3 | Sol PASS after text correction; 0 open |
-| T5 | building | codex/qa0-t5 | - | NOT RUN | NOT RUN | 0 | pending |
+| T5 | complete | codex/qa0-t5 | 9fc246c,6fc6720 | stub/old rules exit 101; real tie red101; LR1-LR8 scratch plants red101 | five final gates exit 0; 796 passed, 0 failed, 18 ignored | 3 | same Sol PASS, 0 open |
 | T6 | pending | codex/qa0-t6 | - | NOT RUN | NOT RUN | 0 | pending consumer |
 
 ## 8. Preflight findings
@@ -155,3 +159,5 @@ The repair-selftest and rig-recheck sources both have empty.tsv with different b
 
 
 Wave 1 merge b960f09 pushed. Draft PR: https://github.com/26medias/TuRTS/pull/1 (CI trigger; do not merge).
+
+T5 scoped recheck passed at 6fc6720. T6 rule plants must select the call within the public resolve function; manifest validation also calls the shared LR1/LR2 helpers. The plan names the resolve call, not the separate manifest-validation caller.

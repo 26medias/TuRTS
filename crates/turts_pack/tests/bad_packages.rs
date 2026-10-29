@@ -9,6 +9,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
+use turts_mod_runtime::{archive::PackageArchive, pack::pack_dir};
+
 /// One edit of the fixture: `(file, from, to)`. An empty `from` makes a new file with the
 /// text `to`. Any other `from` must occur in the file, so an edit cannot miss.
 type Edit = (&'static str, &'static str, &'static str);
@@ -30,9 +32,8 @@ fn copy_dir(from: &Path, to: &Path) {
     }
 }
 
-/// Copy the fixture to `<work>/zeta`, apply `edits`, and run `turts-pack` on the copy.
-/// Returns the work directory (the archive would be `<work>/zeta.tar`) and the output.
-fn pack_edited(test: &str, edits: &[Edit]) -> (PathBuf, Output) {
+/// Copy the fixture to `<work>/zeta` and apply edits.
+fn edited_dir(test: &str, edits: &[Edit]) -> PathBuf {
     let work = Path::new(env!("CARGO_TARGET_TMPDIR")).join(test);
     let _ = fs::remove_dir_all(&work);
     let dir = work.join("zeta");
@@ -55,11 +56,17 @@ fn pack_edited(test: &str, edits: &[Edit]) -> (PathBuf, Output) {
             fs::write(&path, text.replacen(from, to, 1)).expect("write a package file");
         }
     }
+    dir
+}
+
+/// Copy and edit the fixture, then run `turts-pack` on the copy.
+fn pack_edited(test: &str, edits: &[Edit]) -> (PathBuf, Output) {
+    let dir = edited_dir(test, edits);
     let output = Command::new(env!("CARGO_BIN_EXE_turts-pack"))
         .arg(&dir)
         .output()
         .expect("turts-pack starts");
-    (work, output)
+    (dir.parent().unwrap().to_path_buf(), output)
 }
 
 /// The package must be refused with exactly this one line on stderr.
@@ -187,4 +194,111 @@ fn a_typo_in_the_unit_of_a_visual_is_refused() {
         &[("visuals/runner.ron", "zeta:runner", "zeta:runer")],
         "zeta/visuals/runner.ron: target: visual target `zeta:runer` is not defined as a unit by the archives (allowed: zeta:crawler, zeta:runner)",
     );
+}
+
+fn library_edits(
+    engine_api: &'static str,
+    dependencies: &'static str,
+    maps: &'static str,
+) -> [Edit; 4] {
+    [
+        ("manifest.ron", "kind: Game", "kind: Library"),
+        ("manifest.ron", "engine_api: \"^0.2\"", engine_api),
+        ("manifest.ron", "dependencies: {}", dependencies),
+        ("manifest.ron", "maps: [\"maps/arena.ron\"]", maps),
+    ]
+}
+
+#[test]
+fn a10_library_with_a_map_is_refused() {
+    assert_refused(
+        "library_with_map",
+        &library_edits(
+            "engine_api: \"^0.2.2\"",
+            "dependencies: {}",
+            "maps: [\"maps/arena.ron\"]",
+        ),
+        "zeta/manifest.ron: exports.maps: a library exports no map, found 1",
+    );
+}
+
+#[test]
+fn a11_library_without_a_map_is_packed() {
+    let (work, output) = pack_edited(
+        "library_without_map",
+        &library_edits("engine_api: \"^0.2.2\"", "dependencies: {}", "maps: []"),
+    );
+    assert_eq!(output.status.code(), Some(0), "{output:?}");
+    assert!(output.stderr.is_empty(), "{output:?}");
+    assert!(work.join("zeta.tar").exists());
+}
+
+#[test]
+fn a11_library_with_dependencies_is_packed() {
+    let (work, output) = pack_edited(
+        "library_with_dependencies",
+        &library_edits(
+            "engine_api: \"^0.2.2\"",
+            "dependencies: {\"ai_core\": \"^1.0\"}",
+            "maps: []",
+        ),
+    );
+    assert_eq!(output.status.code(), Some(0), "{output:?}");
+    assert!(output.stderr.is_empty(), "{output:?}");
+    assert!(work.join("zeta.tar").exists());
+}
+
+#[test]
+fn a15_game_with_a_dependency_is_refused() {
+    assert_refused(
+        "game_with_dependency",
+        &[
+            (
+                "manifest.ron",
+                "engine_api: \"^0.2\"",
+                "engine_api: \"^0.2.2\"",
+            ),
+            (
+                "manifest.ron",
+                "dependencies: {}",
+                "dependencies: {\"ai_core\": \"^1.0\"}",
+            ),
+        ],
+        "zeta/manifest.ron: dependencies: dependency `ai_core` `^1.0` is not provided",
+    );
+}
+
+#[test]
+fn sc4_library_needs_api_0_2_2() {
+    assert_refused(
+        "library_old_api",
+        &library_edits("engine_api: \"^0.2\"", "dependencies: {}", "maps: []"),
+        "zeta/manifest.ron: engine_api: `kind: Library` needs engine api 0.2.2; `^0.2` admits 0.2.1",
+    );
+}
+
+#[test]
+fn sc4_dependencies_need_api_0_2_2() {
+    assert_refused(
+        "library_dependencies_old_api",
+        &library_edits(
+            "engine_api: \"^0.2\"",
+            "dependencies: {\"ai_core\": \"^1.0\"}",
+            "maps: []",
+        ),
+        "zeta/manifest.ron: engine_api: `dependencies` needs engine api 0.2.2; `^0.2` admits 0.2.1",
+    );
+}
+
+#[test]
+fn a12_library_root_is_refused_by_load_package() {
+    let dir = edited_dir(
+        "library_root",
+        &library_edits("engine_api: \"^0.2.2\"", "dependencies: {}", "maps: []"),
+    );
+    let bytes = pack_dir(&dir).unwrap();
+    let archive = PackageArchive::parse(&bytes).unwrap();
+    let mut app = turts_sim::headless_app(20);
+    let error = turts_pack::load_package(app.world_mut(), &archive).unwrap_err();
+    assert_eq!(error.message, "a library cannot be the root of a match");
 }

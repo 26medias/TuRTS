@@ -9,7 +9,26 @@ pub(crate) struct VersionTableRow {
     pub(crate) since_api: &'static str,
 }
 
-pub(crate) const VERSION_TABLE: &[VersionTableRow] = &[];
+fn has_dependencies(manifest: &Manifest) -> bool {
+    !manifest.dependencies.0.is_empty()
+}
+
+fn is_library(manifest: &Manifest) -> bool {
+    manifest.kind == turts_mod_api::PackageKind::Library
+}
+
+pub(crate) const VERSION_TABLE: &[VersionTableRow] = &[
+    VersionTableRow {
+        name: "dependencies",
+        present: has_dependencies,
+        since_api: "0.2.2",
+    },
+    VersionTableRow {
+        name: "kind: Library",
+        present: is_library,
+        since_api: "0.2.2",
+    },
+];
 
 pub(crate) fn check_version_table(
     manifest: &Manifest,

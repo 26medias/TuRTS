@@ -101,6 +101,7 @@ fn pack_cli_help_lists_the_usage_and_the_checks() {
             "server rules",
             "exactly one visual",
             "capabilit",
+            "librar",
         ] {
             assert!(stdout.contains(check), "usage lacks `{check}`:\n{stdout}");
         }
