@@ -121,33 +121,34 @@ def parse_coverage(path, milestone, items, milestones, register_ids):
     return red, rows
 
 
-def rule4(red, specs, items, milestones):
-    """Check in rows against CORE dependencies at this or an earlier milestone."""
+def rule4(red, evidence_specs, consumer_specs, items, milestones):
+    """Use registered rows as evidence; validate dependencies only for checked specs."""
     order = milestones
     evidence = {}
-    entries = []
-    for path, milestone, rows in specs:
+    for path, milestone, rows in evidence_specs:
         if milestone not in order:
             continue
         for item, (disposition, _) in rows.items():
-            entries.append((path, milestone, item, disposition))
-            if disposition in ("in",) or disposition.startswith("done:"):
+            if disposition == "in" or disposition.startswith("done:"):
                 evidence.setdefault(item, []).append((order[milestone], disposition, path))
-    for path, milestone, item, disposition in entries:
-        if disposition != "in" or item not in items:
+    for path, milestone, rows in consumer_specs:
+        if milestone not in order:
             continue
-        for dep in items[item][1]:
-            if items.get(dep, (None, []))[0] != "CORE":
+        for item, (disposition, _) in rows.items():
+            if disposition != "in" or item not in items:
                 continue
-            available = any(ms_order <= order[milestone] and (state == "in" or state.startswith("done:"))
-                            for ms_order, state, _ in evidence.get(dep, []))
-            if not available:
-                red.append(diagnostic("R4", str(path), item, "CORE dependency {} is not in or done at or before {}".format(dep, milestone)))
+            for dep in items[item][1]:
+                if items.get(dep, (None, []))[0] != "CORE":
+                    continue
+                available = any(ms_order <= order[milestone] and (state == "in" or state.startswith("done:"))
+                                for ms_order, state, _ in evidence.get(dep, []))
+                if not available:
+                    red.append(diagnostic("R4", str(path), item, "CORE dependency {} is not in or done at or before {}".format(dep, milestone)))
 
 
 def check_spec(path, milestone, items, milestones, register_ids, all_specs=None):
     red, rows = parse_coverage(path, milestone, items, milestones, register_ids)
-    specs = list(all_specs or [])
+    evidence_specs = list(all_specs or [])
     if all_specs is None:
         # R4 needs coverage evidence from every registered milestone spec.
         for row in read_registry(ROOT / "docs/qa/specs.tsv"):
@@ -155,9 +156,9 @@ def check_spec(path, milestone, items, milestones, register_ids, all_specs=None)
             if candidate == path or row["client"] not in ("yes", "no") or not candidate.is_file():
                 continue
             previous_rows = parse_coverage(candidate, row["milestone"], items, milestones, register_ids)[1]
-            specs.append((candidate, row["milestone"], previous_rows))
-    specs.append((path, milestone, rows))
-    rule4(red, specs, items, milestones)
+            evidence_specs.append((candidate, row["milestone"], previous_rows))
+    evidence_specs.append((path, milestone, rows))
+    rule4(red, evidence_specs, [(path, milestone, rows)], items, milestones)
     return red
 
 
@@ -202,7 +203,8 @@ def enforce(specs_dir, registry_path):
     milestones = milestone_order()
     register_ids = set(re.findall(r"^\| D([0-9]{2}) \|", REGISTER.read_text(encoding="utf-8"), re.M))
     red, registry = registry_checks(specs_dir, registry_path)
-    specs = []
+    evidence_specs = []
+    consumer_specs = []
     checked = 0
     for row in registry:
         name = row["spec"]
@@ -214,17 +216,17 @@ def enforce(specs_dir, registry_path):
             continue
         milestone = row["milestone"]
         found, rows = parse_coverage(path, milestone, items, milestones, register_ids)
-        # Exempt specs do not receive diagnostics, but their rows can satisfy R4.
+        evidence_specs.append((path, milestone, rows))
+        # Exempt specs provide dependency evidence but are not validated as consumers.
         if client == "yes" and name in EXEMPT and row["gate"] != "gated":
-            specs.append((path, milestone, rows))
             continue
         if client == "no":
             red.extend(line for line in found if RED.match(line) and RED.match(line).group(1) not in {"R1", "R2", "R3"})
         else:
             red.extend(found)
-        specs.append((path, milestone, rows))
+        consumer_specs.append((path, milestone, rows))
         checked += 1
-    rule4(red, specs, items, milestones)
+    rule4(red, evidence_specs, consumer_specs, items, milestones)
     return sorted(set(red)), checked
 
 
@@ -288,6 +290,13 @@ def self_test():
     if prior_rules != {"R1"} or prior_checked != 1:
         print("FAIL self-test: prior exempt dependency: want ['R1'] checked 1 got {} checked {}".format(sorted(prior_rules), prior_checked))
         for line in prior_lines:
+            print(line)
+        failures += 1
+    exempt_dir = ROOT / "tests/qa/completeness/dirs/exempt-only"
+    exempt_lines, exempt_checked = enforce(exempt_dir / "specs", exempt_dir / "specs.tsv")
+    if exempt_lines or exempt_checked != 0:
+        print("FAIL self-test: exempt consumer must be skipped; got rules {} checked {}".format(sorted(rule_ids(exempt_lines)), exempt_checked))
+        for line in exempt_lines:
             print(line)
         failures += 1
     print("self-test: {}/{} cases passed; failures={}".format(passed_cases, len(cases), failures))
