@@ -94,3 +94,5 @@ No M2 tasks remain in progress; all 16 were accepted on 2026-10-27.
 **M2 closeout:** All 16 tasks are accepted. Current scope and evidence are summarized in [[Home]] and the [M2 measurements](../docs/measurements/m2.md); the final dated report is [[Reports/2026-10-27]].
 
 Human usability amendment1354e33: catalog-derived principal labels/named local selection, stationary/mobile guidance and research cost/progress. Fresh workspace765/0/18, strict checks and wasm/boundaries pass; real-pointer research completion+damage20, second-client movement and existing Forge7 pass. Historical C4/fault evidence remains qualified unchanged-engine reuse. See vault report “2026-10-28 M3 human playtest repair”; no additional agents dispatched, hosted CI/push/main pending.
+
+**M3 scope closed by user:** technical implementation accepted for integration; human demo clarity remains inadequate. User explicitly authorized merge to main and push. Further demo polish is deferred; integration/CI receipts will be retained in the closeout evidence.
