@@ -8,6 +8,7 @@ pub mod lock;
 pub mod manifest;
 pub mod pack;
 pub mod parse;
+pub mod resolve;
 pub mod visuals;
 
 mod version_table;
