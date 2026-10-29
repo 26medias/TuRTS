@@ -204,7 +204,7 @@ Budget cap reached: 26 authorised agent runs. Run26 must finish and be recorded;
 - Final Python gates: yardstick 355 rows / 181 CORE; completeness 21/21 and checked1; driver 46/46 and live tree green.
 - Final independent sweep: 24 semantic reds (19 Rust exit101,5 Python exit1),24 restored greens exit0,23 clean/blob proofs. Four repeat checks exit0.
 - Hosted final code run: https://github.com/26medias/TuRTS/actions/runs/40923429639. Check and agents passed. All three new agents steps passed. Browser T7 passed, then M2 browser proof failed with the same 15000 ms rifleman timeout after Joined slot 0 as run 40912942212. Cause NOT TRACED; not chased.
-- Required QA0 closure is complete. No source blocker remains. Main integration awaits the CEO.
+- Required QA0 closure is complete. No source blocker remains. The CEO approved main integration; see [[Decisions/2026-10-29 QA0 main integration]].
 - Deferred by scope: A8/MC split and harness, A19 remains an O1 guard, Claude's documentation updates. Optional LR3 help explanation is deferred. Conservative A1 namespace-text refusal follows the approved probe. Root-id-alias policy is NOT TRACED; no new rule was inferred.
 - Main is unchanged at 074fe7e and was not pushed. The pre-existing untracked disk audit report is preserved. RTK executable and command hook are removed.
 
