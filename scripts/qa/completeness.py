@@ -84,9 +84,16 @@ def parse_coverage(path, milestone, items, milestones, register_ids):
     else:
         for line in cov:
             cells = table_cells(line)
-            if cells is None or len(cells) < 3 or not ID.match(cells[0]):
+            if cells is None or len(cells) < 3:
+                continue
+            if [cell.lower() for cell in cells[:3]] == ["id", "disposition", "test"]:
+                continue
+            if all(re.fullmatch(r":?-{3,}:?", cell) for cell in cells):
                 continue
             item, disposition, test = cells[:3]
+            if not ID.match(item):
+                red.append(diagnostic("R1", file_name, item, "row id is malformed"))
+                continue
             if item not in items:
                 red.append(diagnostic("R1", file_name, item, "row id is not in yardstick TSV"))
                 continue
