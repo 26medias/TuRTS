@@ -35,4 +35,6 @@ The register (`docs/research/review-2026-10/00-gap-register.md`, section 3) name
 - **G10** Milestone order QA0 → MC → MP1 → MP2 → M4 → M4b → M5 → MS → MB → M6 → M7 → M8 to M13; budget 180 to 285 agent runs before M4, 525 to 875 to M7. **G15** "playable" does not include terrain.
 - **G11** `ux-designer` seat; `player` and `bevy-rendering-engineer` at every client gate. **G12** agent and person play; a person signs off. **G16** D65 to D74 approved as Proposed with their seats.
 
+**Added 2026-10-29:** the CEO decided "add stop and hold" to the 16.2 combat order list (Decided under D55; the gap register finding F3 named them as genre CORE).
+
 Next: spec amendment to version 0.8 (goal sentence, D65 to D74, section 14 and 15 rows, term fixes, D41 and S:352 updates), gated by `spec-rigour-reviewer` and `player`; CLAUDE.md stale lines; then QA0.
