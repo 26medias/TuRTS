@@ -77,27 +77,53 @@ def without_comments(source):
 
 
 def without_strings(source):
-    """Mask quoted text while preserving offsets and newlines."""
+    """Mask string text but retain executable code in template expressions."""
     chars = list(source)
+    frames = [{"kind": "code", "brace": None}]
     i = 0
-    quote = None
-    escaped = False
     while i < len(chars):
         c = chars[i]
-        if quote:
+        frame = frames[-1]
+        if frame["kind"] == "string":
             if c != "\n":
                 chars[i] = " "
-            if escaped:
-                escaped = False
+            if frame["escaped"]:
+                frame["escaped"] = False
             elif c == "\\":
-                escaped = True
-            elif c == quote:
-                quote = None
+                frame["escaped"] = True
+            elif c == frame["quote"]:
+                frames.pop()
             i += 1
             continue
-        if c in "'\"`":
-            quote = c
+        if frame["kind"] == "template":
+            if c != "\n":
+                chars[i] = " "
+            if frame["escaped"]:
+                frame["escaped"] = False
+            elif c == "\\":
+                frame["escaped"] = True
+            elif c == "`":
+                frames.pop()
+            elif c == "$" and i + 1 < len(chars) and chars[i + 1] == "{":
+                chars[i + 1] = " "
+                frames.append({"kind": "code", "brace": 1})
+                i += 2
+                continue
+            i += 1
+            continue
+        if c in "'\"":
             chars[i] = " "
+            frames.append({"kind": "string", "quote": c, "escaped": False})
+        elif c == "`":
+            chars[i] = " "
+            frames.append({"kind": "template", "escaped": False})
+        elif frame["brace"] is not None and c == "{":
+            frame["brace"] += 1
+        elif frame["brace"] is not None and c == "}":
+            frame["brace"] -= 1
+            if frame["brace"] == 0:
+                chars[i] = " "
+                frames.pop()
         i += 1
     return "".join(chars)
 
