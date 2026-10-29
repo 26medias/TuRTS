@@ -85,13 +85,13 @@ Count each dispatch and each resumed work turn as one run. Record it before disp
 | Allocation | Planned runs | Used |
 | --- | --- | --- |
 | T1 | 2 | 1 |
-| T2 | 4 | 0 |
+| T2 | 4 | 1 |
 | T3 | 4 | 0 |
 | T4 | 4 | 3 |
-| T5 | 4 | 0 |
+| T5 | 4 | 1 |
 | T6 | 4 | 0 |
 | Repair reserve | 4 | 0 |
-| Total | 22 to 26 | 4 |
+| Total | 22 to 26 | 6 |
 
 These are planning allowances, not required dispatch counts. Do not spend runs without a task.
 
@@ -101,16 +101,18 @@ These are planning allowances, not required dispatch counts. Do not spend runs w
 | 2 | T4 build | mod-runtime-engineer | gpt-6-luna | high | 8d621f3 | PASS at 547014a |
 | 3 | T4 review | qa-lead | gpt-6.1-sol | high | 5ac68b7 | pass-with-changes; 1 medium, 0 High; version text |
 | 4 | T4 scoped recheck | qa-lead | gpt-6.1-sol | high | 547014a | PASS; 0 findings |
+| 5 | T2 build | backend-engineer | gpt-6-luna | high | b960f09 | dispatched |
+| 6 | T5 build | mod-runtime-engineer | gpt-6-luna | high | b960f09 | dispatched |
 
 ## 7. Task ledger
 
 | Task | Status | Branch | Commit | Red evidence | Green evidence | Runs used | Reviewer verdict |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | T1 | complete | codex/qa0-t1 | d8bd6a7 → 1a2b82b | missing TSV and tier plant exit 1; scratch hash plant exit 1 | 115 cmp exit 0; exact 83-file hash set; yardstick 355/181/4 and check exit 0 | 1 | R0 PASS |
-| T2 | pending | codex/qa0-t2 | - | NOT RUN | NOT RUN | 0 | pending |
+| T2 | building | codex/qa0-t2 | - | NOT RUN | NOT RUN | 0 | pending |
 | T3 | pending | codex/qa0-t3 | - | NOT RUN | NOT RUN | 0 | pending |
 | T4 | complete | codex/qa0-t4 | 5ac68b7,5aff67f,547014a | all intended semantic failures exit 101; SC3 review plant exit 101 | five final gates exit 0; 775 passed, 0 failed, 18 ignored | 3 | Sol PASS after text correction; 0 open |
-| T5 | pending | codex/qa0-t5 | - | NOT RUN | NOT RUN | 0 | pending |
+| T5 | building | codex/qa0-t5 | - | NOT RUN | NOT RUN | 0 | pending |
 | T6 | pending | codex/qa0-t6 | - | NOT RUN | NOT RUN | 0 | pending consumer |
 
 ## 8. Preflight findings
@@ -147,3 +149,6 @@ CEO call: [[Decisions/2026-10-29 QA0 mutation count and RTK removal]].
 ### T1 path refinement
 
 The repair-selftest and rig-recheck sources both have empty.tsv with different bytes. Keep repair-selftest files at selftest/ and rig-recheck files at selftest/rig-recheck/. Preserve each byte sequence and record each cmp. This resolves a destination collision; no rule or source evidence changes. Root cmp confirmed that the two originals differ (exit 1). Root replayed all 115 source comparisons (exit 0), checked the exact 83-file SHA set (exit 0), and checked yardstick 355/181/4 and byte equality (exit 0).
+
+
+Wave 1 merge b960f09 pushed. Draft PR: https://github.com/26medias/TuRTS/pull/1 (CI trigger; do not merge).
