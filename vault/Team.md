@@ -17,7 +17,7 @@ The studio roster, who decides what, the model tiers, and the review process.
 
 **Orchestrator:** the main Codex session, taking over from Claude Code on 2026-10-26. Picks lenses per gate, makes studio calls, writes specs and plans, keeps this vault.
 
-**Sixteen seats** in `.claude/agents/` (design: `docs/superpowers/specs/2026-10-25-studio-agent-team-design.md`):
+**Seventeen seats** in `.claude/agents/` (design: `docs/superpowers/specs/2026-10-25-studio-agent-team-design.md`):
 
 | Seat | Owns |
 | --- | --- |
@@ -37,6 +37,7 @@ The studio roster, who decides what, the model tiers, and the review process.
 | mod-builder | third-party modder; public API only |
 | player | plays the result; plain language |
 | spec-rigour-reviewer | contradictions, status drift, untestable claims; STE reader |
+| ux-designer | player interface design: control model, input map, HUD widgets and schema, client shell (D65 to D67, D70); added 2026-10-29 (G11) |
 
 **Model routing** (user rule, 2026-10-26): use Sol for reasoning, planning, and reviews; use Luna for execution (edits, implementation, and commands). Keep dispatch scopes and context short, and reuse completed evidence to conserve tokens. This replaces the initial all-Sol routing notes going forward.
 

@@ -17,7 +17,7 @@ Dashboard for the TuRTS studio. Read this first, then [[Tasks]] and the latest n
 
 **Product:** mod-first RTS engine in Rust and Bevy. Browser WebAssembly client first, authoritative headless server, the official game is a default mod on the public API. Spec: `RTS-Engine-Project-Specifications.md` (v0.8, 2026-10-29).
 
-**Current milestone:** QA0. All six tasks are merged into codex/qa0-integration; final code 3e1b0ab. Local verification and all 23 mutations passed. Check and agents CI are green. The known M2 browser failure is unchanged. Closed at 26/26 runs. Run sheet: [[QA0 Execution Board]]. Receipt: [[Work Log/2026-10-29 QA0 T6 receipt]]. Report: [[Reports/2026-10-29]]. The CEO approved main integration on 2026-10-29. QA0 was fast-forwarded into main at e9d3a63; main push is authorised; see [[Decisions/2026-10-29 QA0 main integration]].
+**Current milestone:** QA0 done and merged into `main` (2026-10-29, code `3e1b0ab`, 26/26 runs; [[QA0 Execution Board]]). The orchestrator's doc pass (CLAUDE.md, design, Team) landed after the merge. Next: MC (player control and client foundation), brainstorm with `player`, `bevy-rendering-engineer` and `ux-designer` on the panel.
 
 **Phase:** API0.2.1/protocol3 industrial graybox is locally validated. Exact-source gates:760 passed,0 failed,18 ignored; strict Clippy, wasm, boundaries and frozen M2 stream pass. Native M2 faults33/33, M3 formal faults17/17, browser faults8/8, positive browser15/15, real private-research/combat F11, Forge browser7 and T7 pass. Final judgments and hosted CI/push/main merge approvals remain.
 

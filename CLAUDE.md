@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository state
 
-This repository holds the Cargo workspace (M1 to M3 are done and merged) and the specification.
+This repository holds the Cargo workspace (M1 to M3 and QA0 are done and merged) and the specification.
 `RTS-Engine-Project-Specifications.md` (version 0.8, 2026-10-29) is the source of record for
 all design decisions. Read it before you start any implementation work. The M1 numbers
 (bytes per tick, tick time, frame time, memory, download size) are in
@@ -16,8 +16,9 @@ Toolchain: `rust-toolchain.toml` pins stable with the
 `wasm32-unknown-unknown` target. `scripts/setup-dev.sh` installs the user-level tools (trunk,
 wasm-bindgen-cli, wasm-opt, flamegraph, cargo-llvm-lines, cargo-bloat). `scripts/setup-sudo.sh`
 installs perf, heaptrack, and valgrind and needs root. CI is `.github/workflows/ci.yml`: fmt,
-clippy, wasm32 check, native tests, the acceptance run, the T7 browser job, and the agent
-roster checks. The build and test commands are in "Build and test commands" below.
+clippy, wasm32 check, native tests, the acceptance run, the T7 browser job, and the `agents`
+job: the roster checks, the yardstick check, the completeness gate, and the pixels-only driver
+rule (QA0). The build and test commands are in "Build and test commands" below.
 
 Bevy version: **0.20** (orchestrator call, 2026-10-26; stable at that date). Ten installed Bevy
 skills pin 0.19; read the `bevy-ecs` skill's 0.20 pitfalls before you use any 0.19 snippet.
@@ -88,6 +89,24 @@ responsibility boundaries, not a fixed crate layout. The crate layout is in "Cra
   it with `scripts/acceptance.sh`. A test that starts one binary on its own runs by default:
   `turts-pack`, the `--help` texts, and the headless client against a small fake HTTP server
   (`crates/turts_client/tests/rejected_exit.rs`).
+- QA0 instruments (Python 3 standard library only; the `agents` CI job runs them):
+  - `python3 scripts/qa/yardstick.py --check`: the yardstick list `docs/qa/yardstick-a.tsv`
+    (355 rows, 181 CORE) matches the inventory.
+  - `python3 scripts/qa/completeness.py --self-test` then `--enforce`: the completeness gate.
+    The spec registry is `docs/qa/specs.tsv` (`client` yes/no, `gate` draft/gated/done). The
+    self-test runs the 21 cases of `tests/qa/completeness/cases.tsv`; a case passes only on set
+    equality of rule ids. When a mutation gives an extra rule, fix the fixture, never the
+    expected set. When a spec passes gate 1, set its row to `gated` in the same commit.
+  - `python3 scripts/qa/driver_rule.py --self-test` then `python3 scripts/qa/driver_rule.py
+    tests/browser`: the pixels-only driver rule. Every file `tests/browser/*.js` starts with a
+    role line `// turts-test-role: <driver|pure|oracle|instrument|unit|legacy-bridge>`. A
+    `driver` may not touch the bridges (`turts_ui`, `turts_move`, `turts_debug`, `turts_scene`),
+    `eval`, `new Function`, `vm`, `child_process`, the network built-ins, or a computed member
+    access with a non-literal key (rules A1 to A7). A `legacy-bridge` file is listed in the
+    ledger `tests/browser/legacy-bridge.tsv` (`file`, `until` milestone; at most 5 rows) and
+    is red until that milestone rewrites it. Known gap: a key built in a variable passes the
+    check; code review must catch it.
+  - Evidence and probes from the QA0 design live under `docs/qa/probes/` with `SHA256SUMS`.
 - `bash scripts/boundary.sh`: the T1 forbidden-edge checks (design 4.1). The fixture must be red.
 - `bash scripts/acceptance.sh`: builds both binaries and runs the ignored process tests in
   release, one at a time.
@@ -99,6 +118,15 @@ responsibility boundaries, not a fixed crate layout. The crate layout is in "Cra
   `<dir>` on the server path and the client path, then write `<dir>.tar` next to it and print
   `<archive path> <sha256 hash>`. On a problem it prints the `ModError` (package, file,
   field) on stderr, writes no archive, and exits with 2. `turts-pack --help` lists the checks.
+  A Library package (`kind: Library`, zero maps) takes the library path: no map, no world, no
+  resolver. It is never the root of a match (`a library cannot be the root of a match`; QA0
+  design rule LR7). A Game that declares a dependency is refused on the server path with
+  `dependency <id> <requirement> is not provided` (design rule LR3) until the server serves
+  libraries at MP2 (K5). `ENGINE_API_VERSION` is 0.2.2. The version table
+  (`crates/turts_mod_runtime/src/version_table.rs`) names each new manifest feature
+  (`dependencies`, `kind: Library`) with its `since_api`, and refuses a manifest whose
+  `engine_api` requirement admits a released API older than that. An unknown manifest field
+  gets a `did you mean` hint (K1 = O1).
 - `turts_server <server.ron> [options]`: the headless host. `turts_server --help` lists the
   options, the `server.ron` fields, and the HTTP endpoints. A full `server.ron` and the
   endpoint paths are in design Appendix A. The options:
@@ -146,12 +174,12 @@ and M3 files added to the `turts_sim` and `turts_client` rows. Crates are under 
 | `turts_mod_api` | Content ids, package schema types, `UnitRegistry`, `ENGINE_API_VERSION`, `ModError`. | Any `bevy*` crate. |
 | `turts_net_protocol` | Wire messages, `NET_PROTOCOL_VERSION`. No transport. | Any `bevy*` crate. |
 | `turts_sim` | Authoritative headless world: fixed ticks, flat map, movement, command validation, the M2 and M3 economy (`economy/`), the M3 boot and commands (`boot_m3.rs`, `command_m3.rs`). | `bevy_render`, `bevy_winit`, `bevy_pbr`, `turts_mod_runtime`. |
-| `turts_mod_runtime` | Archive read, manifest and lockfile parse, hash, validation, `pack_dir`, and the client path check `visuals_by_unit`. | Any `bevy*` crate. |
+| `turts_mod_runtime` | Archive read, manifest and lockfile parse, hash, validation, `pack_dir`, the client path check `visuals_by_unit`, the pure dependency resolver `resolve::resolve` (QA0 design rules LR1 to LR8; one production caller, `turts_pack/src/lib.rs`, on the Game path; the client never calls it), and the version table `version_table.rs`. | Any `bevy*` crate. |
 | `turts_pack` (library and binary) | `load_package`, the one path from a package to the world, called by the server and by the packer; the `turts-pack` binary. It needs `turts_sim`, so it cannot live in `turts_mod_runtime`. | Not a dependency of `turts_client`. |
 | `turts_net_lightyear` | The shared lightyear `ProtocolPlugin`: one registration order for both ends. | `turts_sim`, `turts_mod_runtime`. |
 | `turts_server` (binary) | Headless host: HTTP endpoints, lightyear server, snapshots and deltas, tick log, `--stats`, `--synthetic-units`. | `bevy_render`, `bevy_winit`, `bevy_pbr`. |
 | `turts_client` (library and binary) | All client logic: fetch, acquisition, join, replica, interpolation, presentation, input, the economy UI (`economy_ui.rs`), scenarios (`scenario.rs`), the live view (`live_view.rs`). | `turts_sim`. |
-| `turts_client_web` (cdylib) | Thin wasm32 entry for the browser client. Sets `window.turts_debug`, `turts_move`, `turts_memory_bytes`, and `turts_scene` (`{"cameras_3d": n, "units": [..]}`: the active 3D cameras, and the scene entities with a mesh and a unit id, for T7). | Never `turts_sim` (host and wasm32; checked by `scripts/boundary.sh`). |
+| `turts_client_web` (cdylib) | Thin wasm32 entry for the browser client. Sets `window.turts_debug`, `turts_move`, `turts_memory_bytes`, and `turts_scene`: the active 3D cameras (`cameras_3d`), the camera view (`clip_from_world`, `viewport_logical_rect`, `viewport_physical_rect`, `window_logical_size`, `scale_factor`, `render_adapter`), and `units`, the scene entities with a mesh and a unit id, each with `translation`, `ground_screen_center` and `pick_radius` (for T7 and the browser oracles). | Never `turts_sim` (host and wasm32; checked by `scripts/boundary.sh`). |
 | `turts_checks` | Test-only: T1 boundary test and the no-content scan. | Not a dependency of any crate. |
 
 Workspace-wide: no `lightyear_prediction`, no `bevy_replicon`. `vendor/aeronet_websocket` is a
@@ -181,7 +209,7 @@ D67); the order type as a content id in an open envelope (G7, D73).
 
 ## Roadmap
 
-Section 14 lists validation milestones. M1 to M3 are done. The order after them is QA0, MC,
+Section 14 lists validation milestones. M1 to M3 and QA0 are done. The order after them is MC,
 MP1, MP2, M4, M4b, M5, MS, MB, M6, M7, M8 to M13 (G10, Decided 2026-10-29). Section 16.2
 defines the first playable mod (MP1): one faction, three infantry types, one resource and
 harvester, one tank, one turret, a command center, and a power station.
