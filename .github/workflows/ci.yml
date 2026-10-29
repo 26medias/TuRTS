@@ -141,3 +141,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: Agent roster checks (no claude CLI on CI)
         run: SKIP_VALIDATE=1 bash docs/agents/check.sh && SKIP_VALIDATE=1 bash docs/agents/check_fixtures.sh && bash docs/agents/check_claude_md.sh
+      - name: Yardstick list in sync
+        run: python3 scripts/qa/yardstick.py --check
+      - name: Completeness gate
+        run: python3 scripts/qa/completeness.py --self-test && python3 scripts/qa/completeness.py --enforce
