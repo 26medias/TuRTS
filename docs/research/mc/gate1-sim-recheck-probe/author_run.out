@@ -1,0 +1,20 @@
+   max cross-group penetration during motion: 0.0 ghosted: 0
+A block->P: ticks=222 overlaps_at_rest=0 worst=0.000 blocked=0 spare_used=0 max_dist=3.811 R_near=4.582 beyond=0
+   max cross-group penetration during motion: 0.0 ghosted: 0
+B ring->P: ticks=146 overlaps_at_rest=0 worst=0.000 blocked=0 spare_used=0 max_dist=3.811 R_near=4.582 beyond=0
+   max cross-group penetration during motion: 0.0 ghosted: 0
+   max cross-group penetration during motion: 0.0 ghosted: 8
+C2 second group to same P: ticks=228 overlaps_at_rest(all 80)=0 blocked=0 spare_used=8
+   max cross-group penetration during motion: 0.0 ghosted: 0
+   max cross-group penetration during motion: 0.0 ghosted: 0
+D re-order live: ticks=174 overlaps_at_rest=0 worst=0.000 blocked=0 spare_used=0 max_dist=5.632 R_near=4.582 beyond=8
+   max cross-group penetration during motion: 0.0 ghosted: 0
+   max cross-group penetration during motion: 0.0 ghosted: 0
+determinism A==A: True
+   max cross-group penetration during motion: 0.0 ghosted: 0
+   max cross-group penetration during motion: 0.0 ghosted: 0
+D' re-order live, vs new target: overlaps=0 blocked=0 max_dist=3.811 R_near=4.582
+   max cross-group penetration during motion: 0.1494 ghosted: 2
+GMA crossing: overlaps_at_rest=0 blocked=0
+   max cross-group penetration during motion: 0.0 ghosted: 0
+RED spreading off: overlaps_at_rest=780 blocked=0

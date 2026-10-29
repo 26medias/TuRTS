@@ -1,0 +1,5 @@
+A block->P: sep_extra=0.1 ticks=270 rest=38 blocked=2 moving=0 reassigned=6 overlaps=10 worst_overlap=0.069 R_near=4.280 max_dist=3.800 beyond_R_near=0
+B ring->P: sep_extra=0.1 ticks=157 rest=33 blocked=7 moving=0 reassigned=17 overlaps=11 worst_overlap=0.044 R_near=4.280 max_dist=4.602 beyond_R_near=2
+C1 first group: sep_extra=0.1 ticks=270 rest=38 blocked=2 moving=0 reassigned=6 overlaps=10 worst_overlap=0.069 R_near=4.280 max_dist=3.800 beyond_R_near=0
+C2 second group to same P, first at rest: sep_extra=0.1 ticks=242 rest=25 blocked=15 moving=0 reassigned=40 overlaps=37 worst_overlap=0.314 R_near=5.845 max_dist=5.833 beyond_R_near=0
+slot radius of slot 40: 3.637 R_near(40): 4.28

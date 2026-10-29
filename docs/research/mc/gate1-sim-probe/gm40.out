@@ -1,0 +1,15 @@
+A block->P: sep_extra=0.1 ticks=408 rest=15 blocked=25 moving=0 reassigned=35 overlaps=37 worst_overlap=0.266 R_near=4.280 max_dist=4.565 beyond_R_near=1
+B ring->P: sep_extra=0.1 ticks=152 rest=35 blocked=5 moving=0 reassigned=18 overlaps=5 worst_overlap=0.066 R_near=4.280 max_dist=4.269 beyond_R_near=0
+C1 first group: sep_extra=0.1 ticks=408 rest=15 blocked=25 moving=0 reassigned=35 overlaps=37 worst_overlap=0.266 R_near=4.280 max_dist=4.565 beyond_R_near=1
+C2 second group to same P, first at rest: sep_extra=0.1 ticks=266 rest=14 blocked=26 moving=0 reassigned=40 overlaps=103 worst_overlap=0.481 R_near=5.845 max_dist=6.328 beyond_R_near=4
+slot radius of slot 40: 3.637 R_near(40): 4.28
+A block->P: sep_extra=0.0 ticks=370 rest=19 blocked=21 moving=0 reassigned=31 overlaps=35 worst_overlap=0.369 R_near=4.280 max_dist=4.645 beyond_R_near=3
+B ring->P: sep_extra=0.0 ticks=150 rest=36 blocked=4 moving=0 reassigned=14 overlaps=10 worst_overlap=0.152 R_near=4.280 max_dist=3.820 beyond_R_near=0
+C1 first group: sep_extra=0.0 ticks=370 rest=19 blocked=21 moving=0 reassigned=31 overlaps=35 worst_overlap=0.369 R_near=4.280 max_dist=4.645 beyond_R_near=3
+C2 second group to same P, first at rest: sep_extra=0.0 ticks=267 rest=18 blocked=22 moving=0 reassigned=38 overlaps=109 worst_overlap=0.581 R_near=5.845 max_dist=5.882 beyond_R_near=2
+slot radius of slot 40: 3.637 R_near(40): 4.28
+A block->P: sep_extra=0.04 ticks=289 rest=20 blocked=20 moving=0 reassigned=32 overlaps=32 worst_overlap=0.291 R_near=4.280 max_dist=4.572 beyond_R_near=1
+B ring->P: sep_extra=0.04 ticks=155 rest=36 blocked=4 moving=0 reassigned=16 overlaps=9 worst_overlap=0.139 R_near=4.280 max_dist=4.200 beyond_R_near=0
+C1 first group: sep_extra=0.04 ticks=289 rest=20 blocked=20 moving=0 reassigned=32 overlaps=32 worst_overlap=0.291 R_near=4.280 max_dist=4.572 beyond_R_near=1
+C2 second group to same P, first at rest: sep_extra=0.04 ticks=245 rest=19 blocked=21 moving=0 reassigned=39 overlaps=97 worst_overlap=0.472 R_near=5.845 max_dist=6.387 beyond_R_near=3
+slot radius of slot 40: 3.637 R_near(40): 4.28

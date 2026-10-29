@@ -2,3 +2,4 @@
 - [Spec register layout](project_spec_layout.md) — verified anchors in spec v0.8 (D01-D74, terms, 3.1 goal, 14 order, 15) + code facts + compile traps
 - [Client control gap facts](project_client_control_gap.md) — 2026-10-28 anchors: one-unit Selection, plane picking, atomic group MoveTo, 256 cap, no mod UI/audio schema
 - [Bevy 0.20 and CI facts](project_bevy020_ci.md) — 0.20 schedule names; FixedTimesteps driver; lightyear 0.31 trees; gate-2 skeleton probe; cargo tree silent-pass trap
+- [MC gate-1 boundary facts](project_mc_gate1.md) — wasm32 nobevy gap, T1X copy trap, version table 0.2.3 probe, glam versions, JobId

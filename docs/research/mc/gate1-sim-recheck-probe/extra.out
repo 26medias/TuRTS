@@ -1,0 +1,39 @@
+   max cross-group penetration during motion: 0.0 ghosted: 0
+E cloud over P HZ=20: ticks=37 overlaps=0 worst=0.000 blocked=0 claims=0 maxd=3.81 Rnear=4.58 beyond=0
+   max cross-group penetration during motion: 0.0 ghosted: 0
+   max cross-group penetration during motion: 0.1678 ghosted: 25
+F second group while first moves: overlaps(80)=15 blocked=13 claims=58
+   max cross-group penetration during motion: 0.0 ghosted: 0
+   max cross-group penetration during motion: 0.0 ghosted: 0
+G re-order same P while moving HZ=20: ticks=162 overlaps=0 worst=0.000 blocked=0 claims=0 maxd=3.81 Rnear=4.58 beyond=0
+   max cross-group penetration during motion: 0.0 ghosted: 0
+H N=200 HZ=20: ticks=246 overlaps=0 worst=0.000 blocked=0 claims=0 maxd=8.30 Rnear=9.63 beyond=0
+   max cross-group penetration during motion: 0.0 ghosted: 0
+   max cross-group penetration during motion: 0.0 ghosted: 10
+I second group through resting group: overlaps(80)=7 blocked=9 claims=28
+   max cross-group penetration during motion: 0.0 ghosted: 0
+E cloud over P HZ=10: ticks=22 overlaps=0 worst=0.000 blocked=0 claims=0 maxd=3.81 Rnear=4.58 beyond=0
+   max cross-group penetration during motion: 0.0 ghosted: 0
+   max cross-group penetration during motion: 0.2165 ghosted: 15
+F second group while first moves: overlaps(80)=4 blocked=3 claims=24
+   max cross-group penetration during motion: 0.0 ghosted: 0
+   max cross-group penetration during motion: 0.0 ghosted: 0
+G re-order same P while moving HZ=10: ticks=52 overlaps=0 worst=0.000 blocked=0 claims=0 maxd=3.81 Rnear=4.58 beyond=0
+   max cross-group penetration during motion: 0.0 ghosted: 0
+H N=200 HZ=10: ticks=124 overlaps=0 worst=0.000 blocked=0 claims=0 maxd=8.30 Rnear=9.63 beyond=0
+   max cross-group penetration during motion: 0.0 ghosted: 0
+   max cross-group penetration during motion: 0.0 ghosted: 8
+I second group through resting group: overlaps(80)=5 blocked=8 claims=24
+   max cross-group penetration during motion: 0.0 ghosted: 0
+E cloud over P HZ=30: ticks=54 overlaps=0 worst=0.000 blocked=0 claims=0 maxd=3.81 Rnear=4.58 beyond=0
+   max cross-group penetration during motion: 0.0 ghosted: 0
+   max cross-group penetration during motion: 0.0947 ghosted: 8
+F second group while first moves: overlaps(80)=5 blocked=4 claims=17
+   max cross-group penetration during motion: 0.0 ghosted: 0
+   max cross-group penetration during motion: 0.0 ghosted: 0
+G re-order same P while moving HZ=30: ticks=273 overlaps=0 worst=0.000 blocked=0 claims=0 maxd=3.81 Rnear=4.58 beyond=0
+   max cross-group penetration during motion: 0.0 ghosted: 0
+H N=200 HZ=30: ticks=369 overlaps=0 worst=0.000 blocked=0 claims=0 maxd=8.30 Rnear=9.63 beyond=0
+   max cross-group penetration during motion: 0.0 ghosted: 0
+   max cross-group penetration during motion: 0.0 ghosted: 13
+I second group through resting group: overlaps(80)=4 blocked=10 claims=34
