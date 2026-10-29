@@ -3,3 +3,4 @@
 - [M3 spec gate 1](m3-spec-gate1-2026-10-27.md) — model confirms 13.4 and 10/5; C15, C7 plants green as written; E1 export list; empty ops
 - [Gap audit 2026-10-28](gap-audit-2026-10-28.md) — gates missed control loop; browser tests find controls via bridges; coverage gate probe red/green
 - [M1 verify 2026-10-26](m1-verify-2026-10-26.md) — gate green on 548e7ed; five plants green then red after 9cc0972; still green: square-map axis swap, no-camera scene
+- [QA0 design 2026-10-29](qa0-design-2026-10-29.md) — library rule inverted; naive schema dispatch accepts duplicates; 3 parse sites need resolve
