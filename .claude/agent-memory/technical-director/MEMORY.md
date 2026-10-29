@@ -1,4 +1,4 @@
 - [rtk diff false identical](feedback_rtk_diff.md) — use `rtk proxy diff`/`grep` for runs that decide a finding
-- [Spec register layout](project_spec_layout.md) — verified anchors in spec v0.7 (register D01-D64, 4.x, 7, 8, invariants, 14, 15) + API version code + plan-review compile traps
+- [Spec register layout](project_spec_layout.md) — verified anchors in spec v0.8 (D01-D74, terms, 3.1 goal, 14 order, 15) + code facts + compile traps
 - [Client control gap facts](project_client_control_gap.md) — 2026-10-28 anchors: one-unit Selection, plane picking, atomic group MoveTo, 256 cap, no mod UI/audio schema
 - [Bevy 0.20 and CI facts](project_bevy020_ci.md) — 0.20 schedule names; FixedTimesteps driver; lightyear 0.31 trees; gate-2 skeleton probe; cargo tree silent-pass trap

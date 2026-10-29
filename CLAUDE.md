@@ -4,11 +4,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository state
 
-This repository holds the M1 Cargo workspace and the specification.
-`RTS-Engine-Project-Specifications.md` (version 0.7, 2026-10-26) is the source of record for
+This repository holds the Cargo workspace (M1 to M3 are done and merged) and the specification.
+`RTS-Engine-Project-Specifications.md` (version 0.8, 2026-10-29) is the source of record for
 all design decisions. Read it before you start any implementation work. The M1 numbers
 (bytes per tick, tick time, frame time, memory, download size) are in
-`docs/measurements/m1.md`. They are recorded, not judged; the budgets stay open (spec 15).
+`docs/measurements/m1.md`; the M2 and M3 numbers are in `docs/measurements/m2.md` and
+`docs/measurements/m3.md` (also `m1-network-spike.md`, `m2-accounting.md`, `m2-public-api.md`).
+They are recorded, not judged; the budgets stay open (spec 15).
 
 Toolchain: `rust-toolchain.toml` pins stable with the
 `wasm32-unknown-unknown` target. `scripts/setup-dev.sh` installs the user-level tools (trunk,
@@ -30,6 +32,11 @@ A mod-first real-time strategy (RTS) engine in Rust + Bevy. The browser WebAssem
 the primary product. A desktop executable is secondary. Multiplayer is a core requirement.
 The official game is a default mod that uses only the public mod API.
 
+The goal (spec 3.1, G1, Decided 2026-10-29): "Build the Ultimate RTS engine." A mod must be
+able to reproduce the player-facing mechanics of the reference RTS games, within the terrain
+exclusions of 3.2 and D10, and a person must be able to play the default game with mouse and
+keyboard.
+
 ## How to read the specification
 
 Each statement in the spec carries a status. Respect the status:
@@ -39,7 +46,8 @@ Each statement in the spec carries a status. Respect the status:
 - **Open**: no choice has been made. Do not pick one silently. Prototype and report, or ask.
 - **Proposed**: a suggestion, not a commitment.
 
-Section 2 is the decision register (D01 to D59). Section 15 lists open decisions. Cite the
+Section 2 is the decision register (D01 to D74; D65 to D74 are Proposed). Section 15 lists
+open decisions. Cite the
 decision ID when a code choice depends on one.
 
 ## Architecture constraints that shape all code
@@ -70,9 +78,9 @@ These rules come from the spec and apply to every crate:
 
 ## Logical modules (section 4.1)
 
-Simulation core, presentation, mod runtime and API, multiplayer, terrain and geology,
-production and logistics, utility networks, headless host. These are responsibility
-boundaries, not a fixed crate layout. The M1 crate layout is in "Crate layout" below.
+Simulation core, presentation and player interface, mod runtime and API, multiplayer, terrain
+and geology, production and logistics, utility networks, headless host. These are
+responsibility boundaries, not a fixed crate layout. The crate layout is in "Crate layout" below.
 
 ## Build and test commands
 
@@ -130,19 +138,19 @@ boundaries, not a fixed crate layout. The M1 crate layout is in "Crate layout" b
 
 ## Crate layout
 
-Source: `docs/superpowers/specs/2026-10-26-m1-foundation-design.md` section 4.1. Crates are
-under `crates/`. Packages are under `mods/`.
+Source: `docs/superpowers/specs/2026-10-26-m1-foundation-design.md` section 4.1, with the M2
+and M3 files added to the `turts_sim` and `turts_client` rows. Crates are under `crates/`. Packages are under `mods/`.
 
 | Crate | Responsibility | Forbidden dependencies |
 | --- | --- | --- |
 | `turts_mod_api` | Content ids, package schema types, `UnitRegistry`, `ENGINE_API_VERSION`, `ModError`. | Any `bevy*` crate. |
 | `turts_net_protocol` | Wire messages, `NET_PROTOCOL_VERSION`. No transport. | Any `bevy*` crate. |
-| `turts_sim` | Authoritative headless world: fixed ticks, flat map, movement, command validation. | `bevy_render`, `bevy_winit`, `bevy_pbr`, `turts_mod_runtime`. |
+| `turts_sim` | Authoritative headless world: fixed ticks, flat map, movement, command validation, the M2 and M3 economy (`economy/`), the M3 boot and commands (`boot_m3.rs`, `command_m3.rs`). | `bevy_render`, `bevy_winit`, `bevy_pbr`, `turts_mod_runtime`. |
 | `turts_mod_runtime` | Archive read, manifest and lockfile parse, hash, validation, `pack_dir`, and the client path check `visuals_by_unit`. | Any `bevy*` crate. |
 | `turts_pack` (library and binary) | `load_package`, the one path from a package to the world, called by the server and by the packer; the `turts-pack` binary. It needs `turts_sim`, so it cannot live in `turts_mod_runtime`. | Not a dependency of `turts_client`. |
 | `turts_net_lightyear` | The shared lightyear `ProtocolPlugin`: one registration order for both ends. | `turts_sim`, `turts_mod_runtime`. |
 | `turts_server` (binary) | Headless host: HTTP endpoints, lightyear server, snapshots and deltas, tick log, `--stats`, `--synthetic-units`. | `bevy_render`, `bevy_winit`, `bevy_pbr`. |
-| `turts_client` (library and binary) | All client logic: fetch, acquisition, join, replica, interpolation, presentation, input. | `turts_sim`. |
+| `turts_client` (library and binary) | All client logic: fetch, acquisition, join, replica, interpolation, presentation, input, the economy UI (`economy_ui.rs`), scenarios (`scenario.rs`), the live view (`live_view.rs`). | `turts_sim`. |
 | `turts_client_web` (cdylib) | Thin wasm32 entry for the browser client. Sets `window.turts_debug`, `turts_move`, `turts_memory_bytes`, and `turts_scene` (`{"cameras_3d": n, "units": [..]}`: the active 3D cameras, and the scene entities with a mesh and a unit id, for T7). | Never `turts_sim` (host and wasm32; checked by `scripts/boundary.sh`). |
 | `turts_checks` | Test-only: T1 boundary test and the no-content scan. | Not a dependency of any crate. |
 
@@ -156,25 +164,34 @@ boundary check can prove it goes red.
 
 Do not assume any of these. Prototype browser-first and report measurements:
 
-- Scripting language (Rhai is a candidate only).
-- Networking library and transport (WebSockets, WebTransport, WebRTC are candidates).
+- Scripting language (Rhai is a candidate only). It stays Open until the MS spike (G14).
+- Network transport (WebSocket is in use; WebTransport and WebRTC are candidates). The
+  networking library is selected: lightyear (D18, G13).
 - Desktop delivery method (native Bevy or a wrapper such as Tauri).
 - Tick rate, numeric budgets, map dimensions, supported browser versions.
 - Archive format, registry protocol, signature formats.
+- Presentation: importer features, animation formats, crowd path, camera/lighting API.
+- Player control design: control model, player input map, HUD, camera controls, audio, client
+  shell, order envelope, client interaction core (D65 to D74, design Proposed); fog of war (no
+  decision register row); solo-play server form (D41); WebGL fallback.
+
+These lines are decided (CEO, 2026-10-29), not open; assume them: per-unit acceptance of group
+orders with per-unit reasons (G6, D65); engine UI widgets with mod layout and content (G5,
+D67); the order type as a content id in an open envelope (G7, D73).
 
 ## Roadmap
 
-Section 14 lists validation milestones M1 to M12. M1 is the first target: a browser client, an
-authoritative headless server, and one mod-defined unit. Section 16.2 defines the first
-playable mod: one faction, three infantry types, one resource and harvester, one tank, one
-turret, a command center, and a power station.
+Section 14 lists validation milestones. M1 to M3 are done. The order after them is QA0, MC,
+MP1, MP2, M4, M4b, M5, MS, MB, M6, M7, M8 to M13 (G10, Decided 2026-10-29). Section 16.2
+defines the first playable mod (MP1): one faction, three infantry types, one resource and
+harvester, one tank, one turret, a command center, and a power station.
 
 ## Development workflow
 
 Development is agent-first (D43, section 16.1). Build tools when a real need appears during
 implementation, testing, debugging, or profiling. Do not build a large manual editor suite in
-advance. Favor headless scenario execution, machine-readable schemas, and structured
-diagnostics.
+advance; a map or trigger editor is in scope when tooling becomes a need (D43 note, D71).
+Favor headless scenario execution, machine-readable schemas, and structured diagnostics.
 
 Hosting benchmarks (D57, D58): 4 players/1,000 units/1 map and 8 players/5,000 units/2 maps on
 a 4-vCPU, 8-GB server. Measure, do not promise capacity.
@@ -212,11 +229,16 @@ session is the orchestrator. It picks the lenses per gate with these rules.
 - **Independent refutation.** `performance-architect` or `qa-lead` to try to break a claim.
 - **Build.** Domain builder for the crate. `qa-lead` writes or reviews the test instrument.
 - **Verify.** `qa-lead` runs. `player` and `mod-builder` judge.
+- **Client milestones (G11, G12, 2026-10-29).** `player` and `bevy-rendering-engineer` sit at
+  every gate for a milestone with a client. A `ux-designer` seat is planned; it is not yet in
+  the roster. The player check of a milestone is run by the `player` agent and by a person; a
+  person signs off.
 - **Git.** Never `git add -A` while an agent runs. Stage explicit paths. Memory files under
   `.claude/agent-memory/` are staged on purpose, not by accident.
 
 Third-party skills, their caveats, and the deferred and rejected ones are listed in
-`docs/agents/skills.md`. Ten Bevy skills pin 0.19; re-check them when `Cargo.toml` pins a version.
+`docs/agents/skills.md`. Ten Bevy skills pin 0.19; `Cargo.toml` pins `bevy = "=0.20.0"`, so
+re-check each 0.19 snippet against 0.20.
 
 The studio keeps its work log, decisions, task board, knowledge, and the daily CEO report in a
 dedicated Obsidian vault at `vault/` in this repository (committed; public; no secrets).

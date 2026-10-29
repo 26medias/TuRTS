@@ -1,12 +1,12 @@
 # Mod-First RTS Engine — Project Specifications
 
-Version: 0.7 • Date: October 26, 2026 • Status: architectural baseline with research-backed implementation direction
+Version: 0.8 • Date: October 29, 2026 • Status: architectural baseline with research-backed implementation direction
 
 ## 1. Purpose and interpretation
 
-This document records the decisions and design direction established throughout the project discussion. It describes a Rust + Bevy RTS engine targeting browser WebAssembly first and desktop executables second, with multiplayer, comprehensive modding, production and logistics, editable terrain, buried resources, and optional underground utility networks.
+This document records the decisions and design direction established throughout the project discussion. It describes a Rust + Bevy RTS engine targeting browser WebAssembly first and desktop executables second, with multiplayer, comprehensive modding, mouse-and-keyboard player control, production and logistics, editable terrain, buried resources, and optional underground utility networks.
 
-The objective is to build original games whose general capabilities can span traditional RTS mechanics and industrial automation. StarCraft, Warcraft, Command & Conquer, Age of Empires, Factorio, Minecraft, and Cities: Skylines were used as functional references—not as sources of assets, characters, maps, branding, or proprietary content to reproduce. The mod-first approach is an architectural inspiration, not a claim that this project will reproduce any reference engine internally.
+The objective is to build original games whose general capabilities must span the player-facing mechanics of traditional RTS games and industrial automation (goal: Section 3.1). StarCraft, Warcraft, Command & Conquer, Age of Empires, Supreme Commander, Factorio, Minecraft, and Cities: Skylines were used as functional references—not as sources of assets, characters, maps, branding, or proprietary content to reproduce. The mod-first approach is an architectural inspiration, not a claim that this project will reproduce any reference engine internally.
 
 Status terms used throughout:
 
@@ -15,7 +15,13 @@ Status terms used throughout:
 - **Open:** no final choice has been made.
 - **Proposed:** additional implementation or validation detail included to make the specification actionable; not a previously approved commitment.
 
-Examples illustrate what mods could do. They do not require every game to enable every system. This is an architectural specification, not a complete production schedule or a finished low-level API design.
+Terms with one meaning throughout (0.8):
+
+- **Presentation:** the client's visual and audio output of permitted state: rendering, camera view, lighting, animation, effects, audio, overlays, and visual interpolation. Presentation does not include player input or the player interface.
+- **Player input:** the keys and pointer actions of a person, and their mapping to client actions (D66). The word "input" alone means player input. The materials that a recipe, machine, or laboratory consumes are **recipe inputs**.
+- **Player interface:** the player-facing layer of the client: the HUD, the screens, and the controls that a person uses (D65 to D67, D70). The word "interface" alone means the player interface. A protocol between programs is a **protocol** (for example the index protocol); the boundary for mods is the **public mod API**.
+
+Examples illustrate what mods could do. They do not require every game to enable every system. This is an architectural specification, not a complete production schedule or a finished low-level API design. It does set the bar for the result: the goal in Section 3.1.
 
 ## 2. Decision register
 
@@ -27,7 +33,7 @@ Examples illustrate what mods could do. They do not require every game to enable
 | D04 | The official game is a default mod on top of the engine. | Decided |
 | D05 | Mods define game content and rules through the same public facilities as the default game. | Decided |
 | D06 | Support a broad range of RTS mechanics, not arbitrary game genres. | Baseline |
-| D07 | Include research, factories with inputs and outputs, belts, and inserters. | Decided |
+| D07 | Include research, factories with recipe inputs and outputs, belts, and inserters. | Decided |
 | D08 | Allow terrain excavation, filling, leveling, trenches, and earthworks. | Decided |
 | D09 | Use a heightfield with one surface elevation per horizontal location. | Decided |
 | D10 | No playable tunnels, caves, overhangs, or vertically stacked ground surfaces. | Decided |
@@ -38,8 +44,8 @@ Examples illustrate what mods could do. They do not require every game to enable
 | D15 | Keep heavy simulation in Rust and expose a versioned mod API independent of Bevy internals. | Baseline |
 | D16 | Start underground infrastructure with one logical layer and explicit connections. | Baseline |
 | D17 | Store placed infrastructure at fixed elevation; later terrain edits change burial depth. | Baseline |
-| D18 | Use authoritative server simulation. Networking library, transport, scripting language, terrain appearance, and numeric budgets remain open. | Decided / implementation open |
-| D19 | Provide a default server index with a user-changeable URL and a self-hostable index interface. | Decided |
+| D18 | Use authoritative server simulation. The networking library is lightyear (0.8, G13; evidence: `docs/measurements/m1-network-spike.md`; Section 6.10). Transport, scripting language, terrain appearance, and numeric budgets remain open. | Decided / implementation open |
+| D19 | Provide a default server index with a user-changeable URL and a self-hostable index protocol. | Decided |
 | D20 | Servers advertise their game mod/version and provide download URLs for automatic client setup. | Decided |
 | D21 | One server supports multiple independent rooms; players can create rooms and configure mod-provided rules. | Decided |
 | D22 | Room creators can set player count, a short message, and an optional joining password. | Decided |
@@ -57,22 +63,22 @@ Examples illustrate what mods could do. They do not require every game to enable
 | D34 | Use shared sandboxed scripting plus declarative content for downloadable packages; Rust executes heavy engine operations. Language remains open. | Decided |
 | D35 | Resolve dependencies into exact version/hash lockfiles; one library version per game configuration initially, with side-by-side cache versions. | Decided |
 | D36 | Seeded map-generation algorithms belong in optional libraries, not mandatory engine gameplay. | Decided |
-| D37 | Use 3D assets and rendering; mods control camera, lighting, and presentation. Classic RTS view is expected, not enforced. | Decided |
+| D37 | Use 3D assets and rendering; mods control camera, lighting, and presentation. Classic RTS view is expected, not enforced. Note (0.8): the definition of presentation in Section 1 makes this row wider: presentation now also covers audio, overlays, animation, effects, and visual interpolation. Player input and the player interface are not presentation. | Decided |
 | D38 | Support very large maps and multiple maps per match, including client loading/switching. | Decided |
 | D39 | Avoid arbitrary gameplay caps; practical hardware and operator budgets remain necessary. Economical small/medium hosting is a requirement. | Decided direction |
 | D40 | Our server starts with SQLite; alternative servers may choose their own internals while respecting protocols. | Decided |
-| D41 | Saves live on servers; no standalone solo mode or local game saves. Replays and version migration are secondary. | Decided |
+| D41 | Revised in 0.8 (G2) to the "server-in-process" form: saves live on a server. Solo play and local saves run against a local headless server, which is a separate process or a wasm module. `turts_client` never depends on `turts_sim`. Replays and version migration are secondary. | Decided (revised 0.8, G2); local server form open |
 | D42 | Initially restore games using their exact mod versions rather than migrating to newer mods. | Decided |
-| D43 | Development is agent-first; agents build and validate authoring/debug tools as concrete needs emerge. | Decided |
+| D43 | Development is agent-first; agents build and validate authoring/debug tools as concrete needs emerge. Note (0.8, G4): when tooling becomes a need, a modder-facing map or trigger editor is in scope (D71). There is still no precommitted large manual editor suite (Section 16.1). | Decided |
 | D44 | First game: one-faction C&C-style test mod with three infantry types, one resource/harvester, tank, turret, command center, power station. | Decided |
 | D45 | Mods can support conventional CPU-controlled opponents without GPU/model inference; external models may connect as players. | Decided |
 | D46 | Reuse established RTS designs and suitable components, validating performance rather than inventing subsystems unnecessarily. | Decided |
 | D47 | Conventional opponents use modular controllers, authored opening plans, reactive priorities, squad management, and small tactical state machines. | Decided |
-| D48 | AI libraries provide reusable decision machinery; mods provide roles, game knowledge, priorities, and replaceable behaviors. | Decided |
+| D48 | AI libraries provide reusable decision machinery; mods provide roles, game knowledge, priorities, and replaceable behaviors. Note (0.8, G8): the engine provides a Rust bot framework, exposed to all mods through the public mod API, before the script layer exists (Section 17.1). | Decided |
 | D49 | Coordinate AI spending and unit assignments through shared priorities/reservations; recovery can interrupt an opening plan. | Decided |
 | D50 | Use portable cryptographic player identities with locally held private keys and no central account dependency. | Decided |
 | D51 | Recovery initially relies on the user's copied/saved private key; no central recovery service. Offer backup/import and optional encrypted export. | Decided |
-| D52 | Allow an identity on multiple servers, but only one controlling session per claimed slot, with explicit session replacement. | Decided |
+| D52 | Allow an identity on multiple servers, but only one controlling session per claimed slot, with explicit session replacement. Note (0.8, G3): this rule blocks shared control of one slot by several people (Age of Empires co-op). The rule stays. A later decision can allow several sessions per slot as mod policy. | Decided |
 | D53 | Provide a default package registry, independent registries, and direct package URLs; publisher keys are separate from player keys. | Decided |
 | D54 | Desktop browsers with keyboard/mouse first; mobile/tablet support later; executable secondary. | Decided |
 | D55 | Adopt the initial mod gameplay rules in Section 16.2. They are not engine-wide policies. | Decided |
@@ -85,6 +91,18 @@ Examples illustrate what mods could do. They do not require every game to enable
 | D62 | Evaluate instanced baked skeletal animation for mass infantry, rigid-part animation for vehicles, and individual animation where needed. | Baseline; implementation selected by measurement |
 | D63 | Combine reusable high-level navigation with bounded local steering and localized terrain invalidation. | Baseline; navigation components remain candidates |
 | D64 | Expand benchmarks to isolate rendering, animation, movement, replication, streaming, and their combined worst cases. | Baseline validation plan; thresholds open |
+| D65 | Player control model: selection, control groups, smart command, and a per-unit order queue in the engine; mods give filters and defaults. A group order is accepted or refused per unit, with a reason for each refused unit (G6, option B). Seat: `ux-designer`; Second: `simulation-core-engineer`. | Decided line (G6 B); design Proposed (G16, G11) |
+| D66 | Player input map on physical keys: named actions, mod default bindings, player rebinding, and the browser key-capture policy. Seat: `ux-designer`; Second: `web-platform-engineer`. | Proposed (G16, G11) |
+| D67 | HUD model, line (a): the engine supplies UI widgets; mods supply layout and content (panels, tooltips, icons, cursors, command verbs). Seat: `ux-designer`; Second: `mod-runtime-engineer`. | Decided line (G5 a); design Proposed (G16, G11) |
+| D68 | Camera controls (pan, zoom, edge scroll, bounds) in the engine; mods set constraints per D37. Refines D37. Seat: `bevy-rendering-engineer`; Second: `ux-designer`. | Proposed (G16) |
+| D69 | Audio: playback, mix categories, and voice and alert limits in the engine; sound sets are mod content (extends Section 5.8). Seat: `bevy-rendering-engineer`; Second: `mod-runtime-engineer`. | Proposed (G16); formats open |
+| D70 | Client shell: the split between shell-owned screens (identity, server browser, settings) and mod-owned screens (HUD, victory, score). Seats: `backend-engineer` (server side) with `ux-designer` (client side); Second: `game-designer`. | Proposed (G16) |
+| D71 | Map tooling: a versioned map format in the public mod API, and an editor path when tooling becomes a need (D43 note). Seat: `world-engineer`; Second: `mod-runtime-engineer`. | Proposed (G16, G4) |
+| D72 | Client-local persistence: key bindings, settings, and control groups are client-local data, not game saves (clarifies D41). Seat: `web-platform-engineer`; Second: `technical-director`. | Proposed (G16; relates to G2) |
+| D73 | Order envelope: the order type is a content id in an open, engine-defined envelope, so mods can add orders without an engine change. The change goes in at the next network protocol version bump. Refines D15 and Section 6.10. Seat: `mod-runtime-engineer`; Second: `network-engineer`. | Decided line (G7 yes); design Proposed (G16) |
+| D74 | Client interaction core: selection, control groups, the player input map (D66), and command composition live in a client part with no renderer dependency, which agents and bots drive headless. A T1 forbidden-edge test proves the missing edge. Seat: `technical-director`. | Proposed (G16) |
+
+D65, D66, D67 and D70 name the `ux-designer` seat that G11 adds to the studio roster. The G numbers refer to the CEO decisions of 2026-10-29 in the gap register (`docs/research/review-2026-10/00-gap-register.md`) section 3. In a row with a "Decided line", the CEO decided the line; the design under that line is Proposed until its milestone spec passes gate 1. "Smart command" (D65) is the order that the client picks from the target under the pointer, for example gather on a resource and move on open ground.
 
 The earlier suggestion of chunked voxel terrain is superseded by D09–D10. Underground utility placement does not reopen the voxel or underground-navigation scope.
 
@@ -92,13 +110,15 @@ The earlier suggestion of chunked voxel terrain is superseded by D09–D10. Unde
 
 ### 3.1 Goals
 
-The engine must allow mods to build games with different combinations of combat, resource collection, construction, manufacturing, logistics, research, terrain engineering, and utility infrastructure. A traditional RTS should be possible without a factory economy; an industrial RTS should be possible without inventing a separate engine.
+**Decided (0.8, G1, CEO 2026-10-29):** the goal is "Build the Ultimate RTS engine." A mod must be able to reproduce the player-facing mechanics of the reference RTS games, within the terrain exclusions of 3.2 and D10 (no underground movement, no bridges with traversable space beneath), and a person must be able to play the default game with mouse and keyboard. The reference RTS games are StarCraft, Command & Conquer, Age of Empires 2, Warcraft 3, Supreme Commander, and Factorio-style industrial RTS games. Section 14 defines "player-facing mechanics".
 
-The default game must exercise the public mod API. If a mechanic requires a privileged shortcut available only to the default game, either the engine needs a reusable capability or the mechanic must be implemented through the supported mod interface.
+The engine must allow mods to build games with different combinations of combat, resource collection, construction, manufacturing, logistics, research, terrain engineering, and utility infrastructure. A mod must be able to build a traditional RTS without a factory economy, and an industrial RTS without a separate engine.
 
-The browser WASM client is the primary product and must drive compatibility, loading, memory, and rendering validation from the start. Desktop delivery is secondary. A wrapper such as Tauri is a possibility, not a selected implementation or a guarantee of equivalent webview capability. A native Bevy client remains another option. Desktop browsers with keyboard and mouse are the initial target. Phones/tablets and mobile controls are deferred to a later phase. Exact supported browser versions, desktop executable OS support, and minimum client hardware remain open.
+The default game must exercise the public mod API. If a mechanic requires a privileged shortcut available only to the default game, either the engine needs a reusable capability or the mechanic must be implemented through the public mod API.
 
-Use 3D assets and 3D rendering. Mods can control camera angle, motion constraints, lighting, and other supported presentation settings through the public API. A classic RTS camera is expected for the default game but is not an engine restriction.
+The browser WASM client is the primary product and must drive compatibility, loading, memory, rendering, player input, and usability validation from the start. Desktop delivery is secondary. A wrapper such as Tauri is a possibility, not a selected implementation or a guarantee of equivalent webview capability. A native Bevy client remains another option. Desktop browsers with keyboard and mouse are the initial target. Phones/tablets and mobile controls are deferred to a later phase. Exact supported browser versions, desktop executable OS support, and minimum client hardware remain open.
+
+Use 3D assets and 3D rendering. Mods can control camera angle, motion constraints, lighting, and other supported presentation settings through the public API. The default game uses a classic RTS camera with the camera controls of D68 (Proposed); the classic camera is not an engine restriction (D37).
 
 ### 3.2 Explicit exclusions and deferred scope
 
@@ -108,7 +128,7 @@ Use 3D assets and 3D rendering. Mods can control camera angle, motion constraint
 - No requirement for detailed pressure-based fluid simulation or physically realistic electrical simulation by default.
 - No guarantee that arbitrary native plugins can run in a browser.
 - Scale ambition is tens of thousands of units, many players, large maps, high AI command rates, and potentially thousands of spectators. Initial benchmark player counts and server allocation are settled in Section 13.2. Maximum supported scale, map dimensions, engine version, tick rate, frame rate, and client hardware remain open; ambition is not measured capability.
-- No production commitment to all illustrative mechanics at the first release.
+- No production commitment to all illustrative mechanics at the first release. This does not lower the bar of Section 3.1: mouse-and-keyboard play of the default game is a requirement, not an illustrative mechanic.
 
 Bridges with traversable space underneath would introduce multiple ground surfaces and are outside this baseline. Flying units remain a possible RTS capability; their movement and rendering rules require a separate design and do not imply navigable underground terrain.
 
@@ -119,7 +139,7 @@ Bridges with traversable space underneath would introduce multiple ground surfac
 | Module | Responsibility |
 | --- | --- |
 | Simulation core | Authoritative world state, entities, orders, fixed simulation ticks, transactions, gameplay systems |
-| Presentation | Bevy rendering, input, audio, UI, overlays, visual interpolation |
+| Presentation and player interface | Presentation (Bevy rendering, camera view, audio, overlays, visual interpolation); player input and the player interface (HUD, screens, controls). Terms: Section 1. Refined by D65 to D70 and D74 (Proposed) |
 | Mod runtime and API | Content registration, behavior composition, event hooks, script execution, API versioning |
 | Multiplayer | Commands, authority, validation, synchronization, session compatibility |
 | Terrain and geology | Heights, materials, excavation/filling, geological queries, discovery state |
@@ -138,9 +158,9 @@ Use capabilities and components rather than separate incompatible hierarchies fo
 | Entity | Composed capabilities |
 | --- | --- |
 | Worker | Movement, inventory, gathering, hauling, construction or excavation orders |
-| Smelter | Input/output inventories, recipe processor, optional power consumer |
+| Smelter | Recipe input/output inventories, recipe processor, optional power consumer |
 | Barracks | Production queue, resource cost rules, unit-spawn output |
-| Research lab | Input consumption, research contribution, optional power consumer |
+| Research lab | Recipe input consumption, research contribution, optional power consumer |
 | Turret | Targeting, weapon, optional ammunition inventory and power requirement |
 | Pump station | Surface footprint, utility ports, pump behavior, optional power consumer |
 
@@ -161,8 +181,10 @@ Rust structs, traits, and implementation blocks provide encapsulation where appr
 | Progression | Prerequisites, unlocks, modifiers | Technology graph, hero levels, upgrade definitions |
 | Visibility | Visibility queries and fog-of-war mechanisms | Sight ranges, stealth, detection, shared vision |
 | Match rules | Players, teams, lifecycle, event hooks | Factions, victory conditions, diplomacy, modes |
-| Interface | UI primitives and controlled state access | Resource displays, command panels, tooltips, screens |
+| Player interface | UI primitives and controlled state access | Resource displays, command panels, tooltips, screens |
 | AI | Queries and command submission | Build orders, economic priorities, army behavior |
+
+D65 to D68 and D74 refine the Player interface row. Line (a) of G5 applies (Decided, D67): the engine supplies the widgets; mods supply layout and content (D67).
 
 ### 4.4 Separate simulation, replication, and presentation representations
 
@@ -240,17 +262,19 @@ Rust and ECS do not by themselves guarantee determinism or performance. Delibera
 
 ### 6.2 Authoritative server simulation
 
-**Decided:** the server computes authoritative movement, combat, economy, terrain, and other simulation results. Clients submit validated commands and present permitted state. Selective replication, client interpolation, and immediate input acknowledgement are the baseline; final networking library and transport remain open. Full deterministic client lockstep is not the chosen multiplayer architecture. Repeatable server scenarios remain useful for debugging but cross-platform full-world determinism is not required for synchronization.
+**Decided:** the server computes authoritative movement, combat, economy, terrain, and other simulation results. Clients submit validated commands and present permitted state. Selective replication, client interpolation, and immediate player-input acknowledgement are the baseline. The networking library is lightyear (D18, G13, Section 6.10); the transport remains open. Full deterministic client lockstep is not the chosen multiplayer architecture. Repeatable server scenarios remain useful for debugging but cross-platform full-world determinism is not required for synchronization.
+
+**Decided (0.8, G9):** replays are a command log (Section 6.11). So the server simulation must be deterministic for one server build. The same server binary, the same locked package set, the same initial state, and the same command log give the same simulation results (invariant 15). This is a same-build server requirement only. It does not require cross-platform determinism, and it does not introduce client lockstep. Owner: `simulation-core-engineer`.
 
 Economical small/medium hosting is a core requirement. Authority does not imply broadcasting all state or all entities every tick. Reuse proven RTS simulation techniques and compatible open-source infrastructure. StarCraft-style lockstep performance cannot be used as direct evidence of authoritative server hosting cost.
 
-WebSockets remain a straightforward prototype option; WebTransport and WebRTC are candidates subject to library and browser validation. See Section 6.10. No transport or crate has been selected.
+WebSocket is the transport in use since M1 (measured in `docs/measurements/m1-network-spike.md`, P1 to P8); WebTransport and WebRTC are candidates subject to library and browser validation. See Section 6.10. The networking crate is selected (G13); the transport is not.
 
 ### 6.3 State requiring synchronization
 
 The chosen model must cover unit orders and outcomes, inventory and balance changes, production, research, terrain edits, geological depletion, utility topology and operating state, and mod-generated events. Discovery information must be scoped to the appropriate player or team.
 
-**Decided:** saves are server-side; there is no standalone solo mode or local game-save product. Server-hosted matches against bots are compatible with this scope. **Baseline save contract:** preserve authoritative state, slot ownership, and the exact server lockfile. Reconnection restores a player to their claimed slot; late joining can claim an eligible unclaimed slot only when permitted by the mod. Those behaviors are decided; snapshot/catch-up and crash recovery remain implementation work. Replay storage/offering is optional server functionality and secondary. Initially load exact mod versions rather than requiring migration; archive availability and engine-version compatibility still need handling. Browser package caches are not local game saves.
+**Decided (revised 0.8, G2, D41):** saves are server-side. Solo play and local saves run against a local headless server, which is a separate process or a wasm module; `turts_client` never depends on `turts_sim`. The form of the local server is open. Server-hosted matches against bots are compatible with this scope. Key bindings, settings, and control groups are client-local data, not game saves (D72, Proposed). **Baseline save contract:** preserve authoritative state, slot ownership, and the exact server lockfile. Reconnection restores a player to their claimed slot; late joining can claim an eligible unclaimed slot only when permitted by the mod. Those behaviors are decided; snapshot/catch-up and crash recovery remain implementation work. Replay storage/offering is optional server functionality and secondary. Initially load exact mod versions rather than requiring migration; archive availability and engine-version compatibility still need handling. Browser package caches are not local game saves.
 
 ### 6.4 Discovery and hosting topology
 
@@ -339,7 +363,7 @@ The engine authenticates identity, prevents simultaneous duplicate claims, recor
 
 Use reliable validated orders, prioritized movement updates, batched economy/research changes, versioned terrain chunk data, and compact transport/production representations. Do not assume every unit, belt item, or field must be transmitted every simulation tick. Spatial filtering is less effective when a large battle is visible to everyone; test that case explicitly.
 
-**Proposed platform controls:** budgets for commands per tick, affected entities, pathfinding work, edits, script execution, observations, and queued work. Packet size is not a sufficient cost measure. Support group orders, batching, and persistent intentions. AI models operate asynchronously through controlled observation/command interfaces; inference must not block the simulation tick. Budget values remain open and do not prescribe game balance or human-versus-AI rules.
+**Proposed platform controls:** budgets for commands per tick, affected entities, pathfinding work, edits, script execution, observations, and queued work. Packet size is not a sufficient cost measure. Support group orders, batching, and persistent intentions. AI models operate asynchronously through controlled observation and command facilities; inference must not block the simulation tick. Budget values remain open and do not prescribe game balance or human-versus-AI rules.
 
 ### 6.10 Open-source networking reuse
 
@@ -349,11 +373,13 @@ Shortlist recorded from the discussion:
 
 | Candidate | Rationale | Status |
 | --- | --- | --- |
-| [Lightyear](https://github.com/cBournhonesque/lightyear) | Bevy-oriented transport and replication integration; current examined architecture uses Replicon | First prototype recommendation, not selected |
-| [Bevy Replicon](https://github.com/simgine/bevy_replicon) | Server-authoritative replication and visibility control | Alternative assembly foundation; may also be used through Lightyear |
-| [Naia](https://github.com/naia-lib/naia) | Rust/native/WASM networking and protocol/replication facilities | Comparison candidate |
+| [Lightyear](https://github.com/cBournhonesque/lightyear) | Bevy-oriented transport and replication integration; current examined architecture uses Replicon | **Selected (0.8, G13)**, pinned `=0.31.0` |
+| [Bevy Replicon](https://github.com/simgine/bevy_replicon) | Server-authoritative replication and visibility control | Not selected; comparison record |
+| [Naia](https://github.com/naia-lib/naia) | Rust/native/WASM networking and protocol/replication facilities | Not selected; comparison record |
 
-The examined repositories expose permissive MIT/Apache licensing, but exact version compatibility and dependency licensing must be verified during selection. No cited library establishes the target performance envelope. Transport reliability, serialization, and replication can be reused; game-specific relevance, authority, mod schemas, and simulation costs still require engine work.
+**Decided (0.8, G13):** the networking library is lightyear. Evidence: `docs/measurements/m1-network-spike.md` (lightyear 0.31.0, messages only, WebSocket; items P1 to P8 pass, including P1 licences permissive and P8 a wasm client in headless Chrome; the spike gate review kept lightyear). M1 to M3 are built on it. The transport remains open (Section 6.2).
+
+The examined repositories expose permissive MIT/Apache licensing, but exact version compatibility and dependency licensing must be verified for each version change. No cited library establishes the target performance envelope. Transport reliability, serialization, and replication can be reused; game-specific relevance, authority, mod schemas, and simulation costs still require engine work.
 
 **Baseline mod protocol design:** engine-defined message envelopes, stable content IDs, validated mod schemas, supported field types, visibility declarations, and bounded payloads. Downloading a mod that defines a unit or property must not require recompiling the engine client. Do not expose library-specific or Bevy-internal types as the public mod protocol.
 
@@ -362,6 +388,8 @@ The examined repositories expose permissive MIT/Apache licensing, but exact vers
 **Decided:** support non-player viewers. **Baseline proposal:** simulation publishes a bounded feed to a separate spectator service, which handles viewer connections and can distribute through additional relays. Audience growth must not create one additional feed or expensive query stream per viewer on the match server.
 
 Use periodic checkpoints plus sequenced state changes and presentation events; an event-only stream is insufficient unless viewers reproduce a complete deterministic simulation. A joining viewer loads matching content, receives a checkpoint, and catches up. Relays may maintain read-only state and filter it by viewer needs. Replay retention, seek, and exact transport remain open.
+
+**Decided (0.8, G9):** a replay is the command log of a match, with the exact server lockfile and the initial state. A server simulation re-simulates it with the same server build (Section 6.2) and publishes the result as a spectator feed. The re-simulation runs outside `turts_client` (a headless server process or a wasm module, as for D41); `turts_client` never depends on `turts_sim`.
 
 Slow viewers, full relay buffers, and relay failure must not block match simulation. Export has a nonzero fixed cost; the goal is approximately bounded simulation-server work as the audience grows, not literally zero overhead. Relay provisioning and bandwidth must scale separately.
 
@@ -407,7 +435,7 @@ Different production policies are valid: charge when queued, reserve then charge
 
 ### 7.3 Production and factories
 
-Recipes define inputs, outputs, processing duration, eligible machines, and optional operating conditions such as power. The engine schedules execution and handles input/output transactions. Shared primitives should support item production, unit production, and research contribution without assuming identical queue semantics.
+Recipes define recipe inputs, outputs, processing duration, eligible machines, and optional operating conditions such as power. The engine schedules execution and handles recipe input/output transactions. Shared primitives should support item production, unit production, and research contribution without assuming identical queue semantics.
 
 ### 7.4 Belts and inserters
 
@@ -550,6 +578,7 @@ These are baseline correctness requirements derived from the agreed mechanics:
 12. Player slots do not inherently require spawn locations or world entities.
 13. Mods determine admission and gameplay eligibility; the engine enforces identity, atomic transitions, access controls, and budgets.
 14. Spectators do not claim player slots, and viewer backpressure must not stall simulation.
+15. On one server build, a replay of a match's command log, with the same server lockfile and initial state, reproduces the match (0.8, G9). Test: the M11 replay check (Section 14).
 
 ## 13. Performance strategy
 
@@ -663,52 +692,79 @@ Measure server tick distribution including p95/p99 and spikes, client CPU/GPU fr
 
 ### 13.9 Reuse and prototype selection gates
 
-Start from stock Bevy shared assets/batching and representative animated scenes, profile the CPU and GPU separately, then compare the baked/instanced path where it addresses demonstrated costs. Keep room for an RTS-specific renderer without committing to unnecessary custom infrastructure. Navigation, particles, floating-origin support, and replication candidates remain replaceable behind engine-owned interfaces.
+Start from stock Bevy shared assets/batching and representative animated scenes, profile the CPU and GPU separately, then compare the baked/instanced path where it addresses demonstrated costs. Keep room for an RTS-specific renderer without committing to unnecessary custom infrastructure. Navigation, particles, floating-origin support, and replication candidates remain replaceable behind engine-owned APIs.
 
 Before selecting dependencies, pin a mutually compatible stack; inspect required licenses/notices; verify WASM and headless applicability; and test the required behavior with our scenarios. Final animation format, crowd renderer, navigation backend, WebGPU/fallback policy, update cadence, numeric budgets, and client minimums remain engineering decisions. Sources above document techniques or inspected candidate behavior, not a complete code audit or an endorsement of untested capacity.
 
-## 14. Proposed validation milestones
+## 14. Validation milestones
 
-These milestones organize implementation risk; they are not a committed delivery schedule.
+These milestones organize implementation risk and coverage of the goal in Section 3.1. They are not a committed delivery schedule. **Decided (0.8, G10, CEO 2026-10-29):** the order below, from the gap register (`docs/research/review-2026-10/00-gap-register.md`) section 4. The order follows dependencies. The content of each milestone after M3 is direction for its milestone spec and is Proposed until that spec passes gate 1. The token budget of the order is recorded in the gap register, not in this document.
 
-| Milestone | Demonstration | Acceptance evidence |
-| --- | --- | --- |
-| M1 — Shared foundation | Browser client, authoritative headless server, one mod-defined unit | Browser joins a match and presents server results; secondary executable interoperability follows its selected packaging approach |
-| M2 — Mod API | Default mod plus alternative economy mod | Traditional global-balance economy and physical-item economy work without privileged default-game code |
-| M3 — Industrial loop | Mine → belt → factory → inserter → ammunition turret → research upgrade | Inputs/outputs remain consistent under congestion, interruption, and cancellation |
-| M4 — Terrain and geology | Excavate ore-bearing ridge and use opened passage | Correct resource yield, depleted deposits stay depleted, navigation updates locally |
-| M5 — Discovery | Hidden deposit, exploratory digging, research-unlocked scanner | Each player sees only permitted knowledge; chosen networking model respects secrecy goals |
-| M6 — Underground utilities | Utility routes, surface ports, crossings, underground overlay | Crossings do not accidentally connect; terrain edits alter burial without moving infrastructure |
-| M7 — Integrated workload | Combat, factories, belts, edits, utilities, scripts on both targets | Measured performance against agreed budgets; no accounting or synchronization failures |
-| M8 — Discovery and automatic setup | Alternate index, advertised mod, missing dependencies, side-by-side versions | Join works without manual installation; bad/incompatible content fails cleanly |
-| M9 — Multi-room lifecycle | Multiple rooms, password, creator settings, manual/automatic start | Isolated configuration and state; server validation; start policies supplied by mods |
-| M10 — Slots without spawn assumptions | Start with empty slots, late claim, block/reopen/close, disconnect/reconnect | Atomic ownership; no recycling; a test mod claims slots without spawning entities |
-| M11 — Spectator isolation | Many simulated viewers, late viewer, slow/failing relay | Checkpoint catch-up works; player-slot counts unchanged; simulation cost stays within export budget |
-| M12 — AI and worst-case scale | Tens of thousands of units, concentrated battles, high-rate AI commands | Measured CPU/memory/bandwidth; bounded work and fair technical admission under stress |
-| M13 — Compiled assets and animated crowds | Representative default/mod assets through validation, compilation, shared rendering and animation detail paths | Browser CPU/GPU timings, correct culling/shadows/attachments/picking, bounded effects, and reproducible assets; compare stock and specialized paths |
+**Player check (0.8, G10, G12).** Each milestone with a client has a check that a person can fail from the pixels with mouse and keyboard, with one exception: M7 is a budget check, red when a measured number is over its budget. QA0 and MS have no client and no player check. For M6 and M8 to M13, the producer writes the player check in the spec of that milestone before its gate. The `player` agent runs each player check, and a person runs it too; a person signs off (G12). When a milestone spec does not give an "Acceptance evidence" item, the producer writes it in that spec before gate 1.
+
+Terms of this section, one meaning each (source: gap register section 5, items 1 to 3):
+
+- **Player-facing mechanics** (Section 3.1): what a player sees, controls, and is told: selection, orders, HUD, camera, feedback, and match flow. Internal rules alone are not player-facing mechanics.
+- **Blind playtest:** a tester has only the build, the in-game guide, and the pixels. The test fails when the tester cannot find an object, an action, or a reason, or when 60 s pass with no sign of progress.
+- **Completeness gate:** a CI check over a coverage matrix of the CORE items of the gap register. Each milestone spec must map each in-scope item to a named acceptance test and have a "Player path" section; the check also tests the dependency order.
+- **Pixels-only driver:** a browser test driver that uses only pointer events, key events, and screenshots. Test bridges (for example `turts_ui`, `turts_move`) belong to the test oracle only.
+- **QA0 fixture:** the fixture data of the completeness gate (`qa-lead` probe C1 in the gap register). The gate must be green on it and red on M1 to M4 as they stand.
+- **Arrive as a group:** at rest, no two units overlap on screen, and every unit stands near the target.
+
+M1 to M3 are done. Their acceptance column did not include a player check.
+
+| Order | Milestone | Demonstration | Acceptance evidence | Acceptance a player can fail |
+| --- | --- | --- | --- | --- |
+| Done | M1 — Shared foundation | Browser client, authoritative headless server, one mod-defined unit | Browser joins a match and presents server results; secondary executable interoperability follows its selected packaging approach | None (done before 0.8) |
+| Done | M2 — Mod API | Default mod plus alternative economy mod | Traditional global-balance economy and physical-item economy work without privileged default-game code | None (done before 0.8) |
+| Done | M3 — Industrial loop | Mine → belt → factory → inserter → ammunition turret → research upgrade | Recipe inputs/outputs remain consistent under congestion, interruption, and cancellation | None (done before 0.8) |
+| 0 | QA0 — Instrument and schema groundwork | The completeness gate and the pixels-only test driver go into CI before any new milestone is gated. Fix the two `turts-pack` validation defects. Open the schema for additive growth. Replace the "dependencies not supported at M1" refusal with a real library check. | Completeness gate in CI; driver/oracle split in CI | No client, no player check. CI gate: the completeness gate is red on M1 to M4 as they stand and green on the QA0 fixture |
+| 1 | MC — Player control and client foundation | Player input map on physical keys, browser capture and focus, click, box, shift and type selection, control groups, camera pan, zoom, edge scroll and minimap click, order queue with stop, hold, attack and attack-move, selection and status visuals, health bars, refusal reasons, event and alert channel (including machine-problem alerts), team colours. HUD items: selection panel, command card and build menu, tooltips, production queue with progress bar, resource bar (D67). The minimap itself, with minimap click. Gather orders. The order envelope and per-unit group results (D65, D73). Flat-ground group movement: destination spreading, local avoidance, clean arrival, unreachable fallback. No terrain. | The producer sets it in the MC spec | Blind playtest: a tester with only the build completes the M3 industrial demo with mouse and keyboard; 40 units sent to one point arrive as a group |
+| 2 | MP1 — Playable skirmish (Section 16.2) for two people | Lifts the three M3 validation rules that make 16.2 impossible. Construction with a placement ghost, power, damage and armour, engineer repair, rally, charge-over-time payment, teams, the match lifecycle and an outcome per slot, a victory and defeat screen, a minimal two-slot lobby (team, colour, ready). Automatic targeting; visible attack, hit, and death effects; cancel and refund of production and construction. On flat ground: MP1 does not include terrain (G15). | The producer sets it in the MP1 spec | Two people finish a match with mouse and keyboard; both build, power, and fight; both see the result screen |
+| 3 | MP2 — First bot | A Rust bot framework exposed to all mods (G8, Section 17.1) drives a slot. Remembered sightings for bots and humans alike. | The producer sets it in the MP2 spec | A person finishes a match against a bot that builds at least one new building, trains units, and attacks at least once. This asks more than Section 17 ("competent enough for initial testing"); the MP2 spec resolves the difference |
+| 4 | M4 — Terrain and geology | Excavate ore-bearing ridge and use opened passage. The draft is kept and amended per the gap register (section 4, row 4). | Correct resource yield, depleted deposits stay depleted, navigation updates locally | Ridge demo blind playtest |
+| 5 | M4b — Group movement on terrain | Collision, push, chokes, slopes, cliff edges. Before any M7 or M12 number. | The producer sets it in the M4b spec | A group crosses the ridge passage without stacking or walking through walls |
+| 6 | M5 — Discovery, with unit fog of war | Hidden deposit, exploratory digging, research-unlocked scanner; unit fog of war and last-seen state for humans and bots alike. Needs teams (MP1). | Each player sees only permitted knowledge; the networking model respects secrecy goals | A unit that fog hides from one player is absent from the screen of that player, while the other player sees it |
+| 7 | MS — Scripting selection spike | Selects the scripting language and measures it on both targets. It does not build the full runtime. | For each candidate language, on both targets: script call cost per tick at a stated unit count, wasm download size added, and memory added; compared with the budgets the MS spec sets before the spike runs | No client, no player check. The decision is recorded with the measured numbers; the row is red when no candidate meets the budgets or when a number is missing |
+| 8 | MB — Genre breadth | A StarCraft-like second mod from the public mod API only. Needs MP1, M5, M4b and MS. | The producer sets it in the MB spec | A person plays the StarCraft-like mod with mouse and keyboard through a blind playtest, and the modder built it with no engine edit |
+| 9 | M6 — Underground utilities | Utility routes, surface ports, crossings, underground overlay | Crossings do not accidentally connect; terrain edits alter burial without moving infrastructure | The producer writes the player check in the M6 spec before its gate |
+| 10 | M7 — Integrated workload | Combat, factories, belts, edits, utilities, scripts on both targets; fog on; player input latency measured | Measured performance against agreed budgets; no accounting or synchronization failures | p99 player input latency and bandwidth with fog on, recorded against the budgets (gap register F9) that the M7 spec sets; the row is red when a budget is over |
+| 11 | M8 — Discovery and automatic setup | Alternate index, advertised mod, missing dependencies, side-by-side versions; main menu, profile, key-binding store | Join works without manual installation; bad/incompatible content fails cleanly | The producer writes the player check in the M8 spec before its gate |
+| 12 | M9 — Multi-room lifecycle | Multiple rooms, password, creator settings, manual/automatic start; per-slot settings in depth, pause, speed, results | Isolated configuration and state; server validation; start policies supplied by mods | The producer writes the player check in the M9 spec before its gate |
+| 13 | M10 — Slots without spawn assumptions | Identity first; start with empty slots, late claim, block/reopen/close, disconnect/reconnect; saves | Atomic ownership; no recycling; a test mod claims slots without spawning entities | The producer writes the player check in the M10 spec before its gate |
+| 14 | M11 — Spectator isolation | Many simulated viewers, late viewer, slow/failing relay; defeated players observe; replays as a command log (G9) | Checkpoint catch-up works; player-slot counts unchanged; simulation cost stays within export budget; replay test: a replay of a command log reproduces the match on the same build (invariant 15) | The producer writes the player check in the M11 spec before its gate |
+| 15 | M12 — AI and worst-case scale | Tens of thousands of units, concentrated battles, high-rate AI commands; the bot exists since MP2 | Measured CPU/memory/bandwidth; bounded work and fair technical admission under stress | The producer writes the player check in the M12 spec before its gate |
+| 16 | M13 — Compiled assets and animated crowds | Representative default/mod assets through validation, compilation, shared rendering and animation detail paths | Browser CPU/GPU timings, correct culling/shadows/attachments/picking, bounded effects, and reproducible assets; compare stock and specialized paths | The producer writes the player check in the M13 spec before its gate |
 
 Run the early rendering/navigation probes from Section 13.8 alongside foundation work; their position in this table does not defer performance validation until all other milestones are complete.
 
 Representative combined scenario: workers excavate an ore-bearing ridge; belts carry ore to a factory; inserters supply a turret; a lab unlocks a detector; an army uses the opened passage; underground power or water serves the production site. Excavation over a buried line triggers the selected exposure policy.
 
-Additional proposed validation: locked transitive libraries and conflict diagnostics; seeded generator reproducibility; two-map switching with activity continuing off-screen; server save/restart using exact package versions; playable default mod against a conventional bot; agent-readable diagnostic scenarios. These extend the milestone list, not a commitment to implement every subsystem before the first playable build.
+Additional proposed validation: locked transitive libraries and conflict diagnostics; seeded generator reproducibility; two-map switching with activity continuing off-screen; server save/restart using exact package versions; agent-readable diagnostic scenarios. These extend the milestone list. A playable default mod against a conventional bot is no longer an extension: it is MP2.
 
 ## 15. Open decisions and dependencies
 
 | Topic | What must be decided | Why it matters |
 | --- | --- | --- |
 | Game scale | Initial workloads and 4-vCPU/8-GB test budget settled; acceptance thresholds, detailed scenario mixes, map dimensions and ultimate capacity remain open | Determines measurable performance claims |
-| Presentation | 3D/mod control and compiled-asset direction settled; select importer features, animation formats, crowd path, camera/lighting API and terrain appearance | Determines asset compatibility, readability and rendering cost |
+| Presentation | 3D/mod control and compiled-asset direction settled; select importer features, animation formats, crowd path, camera/lighting API (camera controls: D68, Proposed), audio (D69, Proposed) and terrain appearance | Determines asset compatibility, readability and rendering cost |
 | Platform matrix | Desktop browsers/keyboard/mouse first; mobile later settled. WebGPU requirement versus WebGL fallback, exact browsers, minimum client hardware and executable OS targets remain open | Defines graphics capabilities and validation requirements |
 | Navigation and residency | Select routing/steering components, region invalidation, coordinate representation, sparse storage and streaming budgets | Large coordinate ranges alone do not establish scalable worlds |
-| Networking | Authoritative server is settled; select library, transport, schemas, update policies and dependency versions | Drives bandwidth, secrecy, hosting and reconnect implementation |
-| Scripts | Runtime, sandbox, budgets, native/WASM consistency | Defines mod ergonomics and safety/performance boundaries |
+| Networking | Settled: authoritative server (D18) and the library, lightyear `=0.31.0` (D18, G13; evidence `docs/measurements/m1-network-spike.md`). The library choice is closed. Still open: transport (WebSocket in use; WebTransport and WebRTC candidates), schemas and update policies | Drives bandwidth, secrecy, hosting and reconnect implementation |
+| Scripts | Language Open until the MS spike (G14; Rhai is a candidate only); runtime, sandbox, budgets, native/WASM consistency | Defines mod ergonomics and safety/performance boundaries |
+| Player input | Input map on physical keys, default bindings, rebinding, browser key-capture policy (D66, Proposed) | A person must play the default game with mouse and keyboard (Section 3.1) |
+| HUD | Decided line, design open: engine widgets, mod layout and content (G5 a, D67). Open: the widget set and the mod schema (D67 design, Proposed) | Mods give the player interface without engine edits |
+| Order model | Decided line, design open: per-unit acceptance of group orders with per-unit reasons (G6 B, D65); order type as a content id in an open envelope (G7, D73). Open: the queue, the envelope fields, and the protocol bump (D65, D73 design, Proposed) | Mods add orders; a group order does not fail for one unit |
+| Fog of war | Unit fog of war and last-seen state for humans and bots (M5). No decision register row yet; Section 4.3 Visibility row and Section 13.7 hold the current text | Bandwidth figures without fog are an upper bound; players must see different things |
+| Solo play | Form of the local headless server for solo play and local saves: a separate process or a wasm module (D41, revised 0.8, G2). The producer sets its milestone after MP2 | A person wants to start a skirmish alone |
+| WebGL fallback | Whether the browser client needs a WebGL fallback beside WebGPU; owner `web-platform-engineer`. See also the Platform matrix row | A person cannot play a game that does not start in a normal browser |
+| Genre breadth beyond 16.2 | CORE player items of the reference games with no milestone yet. Heroes, spells with a target cursor, neutral creeps and shops: `game-designer` (mod policy) with `simulation-core-engineer` (engine mechanism). Strategic zoom: `bevy-rendering-engineer` (D68). Blueprints: `simulation-core-engineer`. Avatar control on keys: `web-platform-engineer` until the `ux-designer` seat exists (D66). The producer places each after MB | The goal names these games (Section 3.1) |
 | Terrain grid | Horizontal resolution, vertical steps, chunk size, slope rules | Determines edit precision, navigation, memory, visuals |
 | Production API | Express mod-selected reservations, payment, refunds and blocked outputs; do not impose one universal policy | Preserves accounting and mod freedom |
 | Mod packaging | Concrete format/resolver, registry API and namespaces, overrides, trust, cache; registry topology and dependency locks settled. Open formats: content hash algorithm, identifier format, version scheme and constraint syntax, package kind values (including a cosmetic-only kind, Section 5.4), initial capability names | Required for a usable ecosystem |
 | Utility scope | Initial network types and simulation models | Prevents a generic graph from hiding unresolved simulation work |
-| Persistence | Server saves settled; serialization, recovery and reconnect implementation open; replay/migration secondary | Determines restoration contracts |
-| Tools | Agent-first workflow settled; create tools iteratively from observed authoring/debug needs | Enables verifiable autonomous development |
+| Persistence | Server saves settled; solo play and local saves against a local headless server (D41, revised 0.8), its form open; client-local data (D72, Proposed); replays as a command log (G9); serialization, recovery and reconnect implementation open; migration secondary | Determines restoration contracts |
+| Tools | Agent-first workflow settled; create tools iteratively from observed authoring/debug needs; a map or trigger editor when tooling becomes a need (D43 note, D71, Proposed) | Enables verifiable autonomous development |
 | Default game | Roster and basic rules settled; names/art, numeric balancing, timings, placement constraints and edge cases remain | Constrains the first playable release |
 
 Additional open implementation choices: authentication protocol and key/session encoding; index API/versioning; content trust and caching; loading reservations and claim boundaries; room worker isolation; exact administration transfer/timeout behavior; spectator feed format and deployment; dynamic mod-state serialization. Portable identity and room-administration defaults are settled. The ownership and gameplay-policy decisions above are settled and should not be treated as open merely because implementation remains to be designed.
@@ -717,7 +773,7 @@ Additional open implementation choices: authentication protocol and key/session 
 
 ### 16.1 Development workflow
 
-**Decided:** AI development agents are expected to build the engine and mods. Tooling should emerge from their real implementation, testing, debugging, and profiling needs. Agents should track missing capabilities and create/test tools while building the game. Do not precommit to a large manual editor suite.
+**Decided:** AI development agents are expected to build the engine and mods. Tooling should emerge from their real implementation, testing, debugging, and profiling needs. Agents should track missing capabilities and create/test tools while building the game. Do not precommit to a large manual editor suite. When tooling becomes a need, a modder-facing map or trigger editor is in scope (D43 note, G4; D71, Proposed).
 
 **Proposed initial foundations:** headless scenario execution, machine-readable API/package schemas, structured diagnostics, state inspection, and performance reports. These are recommendations, not a selected tool stack. Runtime game bots are separate from development agents.
 
@@ -744,11 +800,13 @@ Additional open implementation choices: authentication protocol and key/session 
 | Command center | Produces units and manages building construction |
 | Construction | Pay credits, select a valid site, then construction progresses over time |
 | Electricity | Power stations supply electricity; insufficient power slows production and disables turrets |
-| Combat orders | Move, attack, attack-move, and automatic targeting |
+| Combat orders | Move, attack, attack-move, and automatic targeting. Proposed in 0.8, awaits the CEO: add stop and hold (the gap register F3 names them as genre CORE; this row is Decided under D55, so the addition is not silent) |
 | Victory | Last player or team with a surviving command center wins |
 | Starting assets | One command center, one harvester, and enough credits to establish power |
 
 These policies are mod-owned and replaceable, not mandatory engine rules. Concentrating production/delivery in the command center avoids additional initial building types. Dedicated barracks, factories, and refineries may be added later. Names/art, statistics, timings, costs, repair accounting, construction restrictions, power-shortage multiplier, and simultaneous-destruction edge cases remain to be specified during implementation. Industry, research, excavation, utilities, and multiple-map demonstrations may be separate follow-on scenarios; their engine scope remains intact.
+
+**Note (0.8, G10):** MP1 (Section 14) is the milestone for this mod. MP1 lifts the three M3 validation rules that block it (gap register F5). The rules are in `crates/turts_mod_runtime/src/content_m3_validation.rs`: "weapons must be static", "a unit with health requires removal", and "a unit with a queue cannot be removed". With these rules, a tank cannot fire and a command center cannot be destroyed, so the victory rule above cannot fire. MP1 adds construction, power, damage, repair, and the match lifecycle.
 
 ## 17. Conventional AI opponents
 
@@ -757,6 +815,8 @@ These policies are mod-owned and replaceable, not mandatory engine rules. Concen
 ### 17.1 Engine, library, and mod responsibilities
 
 **Decided architecture:** reusable modular controllers, authored opening plans, reactive priorities, and small tactical state machines. Libraries provide the decision machinery; mods provide game knowledge, unit/building roles, economic requirements, strategic priorities, and composition targets. Mods may replace the entire opponent or reuse selected pieces. The engine does not prescribe a strategy and a universal bot is not expected to infer arbitrary mechanics automatically.
+
+**Decided (0.8, G8):** the engine provides a Rust bot framework that is exposed to all mods through the public mod API. The default mod gets no private bot path (Section 5.2). The framework is the decision machinery until the script layer exists (D34, MS); libraries and mods still supply game knowledge, roles, and priorities (D48). Owner: `ai-engineer`. Milestone: MP2.
 
 **Baseline execution integration:** bots run on the authoritative server through bounded observation and validated command facilities. Normal movement, targeting, combat, and other high-volume order execution remain in engine systems. Strategic decisions need not run every simulation tick. Exact scheduling and resource budgets require benchmarks. This architecture requires no GPU, model inference, training, or sophisticated search.
 
@@ -787,7 +847,7 @@ Creators may assign mod-provided bots to unclaimed lobby slots. Bot controller i
 
 ## 18. Next design step
 
-The core product decisions are sufficient to begin prototypes: identity/recovery, registry topology, desktop-first delivery, initial mod rules, administration defaults, bot architecture, and hosting benchmarks are settled. The research-backed baseline now separates simulation/network/render data, introduces compiled assets, and specifies scalable animation, navigation, work reduction, and residency directions (Sections 4.4, 5.8 and 13.3–13.9). Build early browser crowd and navigation probes with representative content, compare stock and specialized paths, and test the combined workload. Select scripting/networking components and the browser graphics baseline through these prototypes; define measurable acceptance thresholds and implement the public APIs against the first mod. GCP VM setup/monitoring can proceed when the promised service-account access and concrete test configuration are available. Terrain precision, serialization, scheduling, dependency selection, and numeric budgets remain engineering selections to validate, not universal gameplay policies.
+The core product decisions let prototypes start, but before 0.8 they did not cover player control. Settled: identity/recovery, registry topology, browser-first delivery with the desktop executable secondary (D02, D54), initial mod rules, administration defaults, bot architecture, the networking library (G13), and hosting benchmarks. Not yet designed: the player control model, player input, HUD, camera controls, audio, client shell, map tooling, client-local persistence, the order envelope, and the client interaction core (D65 to D74; D65, D67 and D73 carry a decided line, the rest are Proposed). The next step follows Section 14: QA0, then MC. The research-backed baseline now separates simulation/network/render data, introduces compiled assets, and specifies scalable animation, navigation, work reduction, and residency directions (Sections 4.4, 5.8 and 13.3–13.9). Build early browser crowd and navigation probes with representative content, compare stock and specialized paths, and test the combined workload. Select the scripting language through the MS spike (G14) and the browser graphics baseline through these prototypes; define measurable acceptance thresholds. Implement the public mod API against the first playable mod (Section 16.2) until a person can play it with mouse and keyboard (Section 3.1). GCP VM setup/monitoring can proceed when the promised service-account access and concrete test configuration are available. Terrain precision, serialization, scheduling, dependency selection, and numeric budgets remain engineering selections to validate, not universal gameplay policies.
 
 Reference designs: [Blizzard's original StarCraft AI documentation](https://classic.battle.net/scc/faq/aiscripts.shtml), [StarCraft II authored build options](https://news.blizzard.com/en-gb/article/10053042/patch-2-0-4-now-live), and [OpenRA bot module documentation](https://docs.openra.net/en/release/traits/). OpenRA's modular approach is an architectural reference, not a decision to import its code or require its engine. The original C&C team/trigger approach informs squad missions; it is not assumed to describe every C&C title. Code reuse requires separate dependency/license evaluation.
 
@@ -799,11 +859,13 @@ Reference designs: [Blizzard's original StarCraft AI documentation](https://clas
 - **0.3:** publishable libraries and dependency locks; shared scripting direction; library-owned seeded generation; browser-first 3D presentation; multiple large maps; authoritative economical hosting and established-technique reuse; server-owned SQLite/persistence boundaries; agent-first tools; initial C&C-style roster; conventional bot requirement with detailed design still proposed.
 - **0.4:** accepted modular conventional opponent architecture, authored openings and reactive recovery, game knowledge supplied by mods, shared resource/unit coordination, and tactical state machines. Retained identity, profiles, knowledge APIs, difficulty, and other integration specifics as open or baseline proposals.
 
-- **0.5:** portable identity and user-key recovery; one controller per claimed slot; registries and separate publisher keys; desktop-first device scope; validated default-mod rules; room administration; initial small/medium/stress benchmarks and 4-vCPU/8-GB allocation; planned user-provided GCP service account for VM setup/monitoring.
+- **0.5:** portable identity and user-key recovery; one controller per claimed slot; registries and separate publisher keys; desktop-browser-first device scope (D54); validated default-mod rules; room administration; initial small/medium/stress benchmarks and 4-vCPU/8-GB allocation; planned user-provided GCP service account for VM setup/monitoring.
 - **0.6:** incorporated researched asset compilation, scalable rendering/animation, simulation work reduction, hierarchical/shared navigation plus local steering, compact replication, coordinate/residency separation, candidate components and primary-source links. Expanded browser/server and combined-workload benchmarks; retained unselected libraries, graphics fallback policy and numeric targets as open. No prototype or benchmark results are claimed.
 
 - **0.7:** merge of the studio's 2026-10-26 revision onto 0.6: two package documents named, the package manifest (field list owned by 5.5) and the server lockfile (one entry per package, hashes live there only); the 6.5 workflow takes the server's lockfile instead of resolving versions, checks execution context, and verifies hashes before extraction; side-by-side versions named as a cache property (D35); client-side acquisition split between multiplayer and mod runtime (4.1); open manifest formats listed in Section 15; 6.4 names the server advertisement. The studio agents found the original defects in the first gate review of 6.5.
 
+- **0.8:** records the CEO decisions of 2026-10-29 on the full spec review against the goal "Build the Ultimate RTS engine" (gap register `docs/research/review-2026-10/00-gap-register.md`, decisions G1 to G16). G1: the goal sentence in 3.1, with the terrain exclusion clause (Decided). G2: D41 reopened in the "server-in-process" form; `turts_client` never depends on `turts_sim`. G3: note on D52 (shared control). G4: note on D43 and 16.1 (editor when tooling becomes a need). G5 to G7 and G16: new decision register rows D65 to D74 with seats; D65, D67, and D73 carry a decided line (G6, G5, G7) and a Proposed design; the other rows are Proposed. Invariant 15 (replay on one build). Section 16.2 order list carries a Proposed addition of stop and hold, which awaits the CEO. Section 15 rows for solo play, WebGL fallback, and genre breadth beyond 16.2. G8: Rust bot framework for all mods (D48 note, 17.1). G9: replays as a command log, with a same-build server determinism requirement (6.2, 6.11). G10 and G15: the milestone order in Section 14 (QA0, MC, MP1, MP2, M4, M4b, M5, MS, MB, M6, M7, M8 to M13; M1 to M3 done), each row with a client has an acceptance a person can fail, M7 is a budget check, QA0 and MS have no player check; MP1 has no terrain. G11 and G12 are roster and process decisions, recorded in the gap register; Section 14 records the G12 sign-off by a person. G13: lightyear selected (D18, 6.2, 6.10, 15); the transport stays open. G14: the scripting language stays Open until the MS spike. Text fixes: one meaning each for "presentation", "input", and "interface" (Section 1); lower-bar sentences in 1, 3, 14 and 18 rewritten; the delivery wording in 18 that contradicted D02 removed; Section 15 rows for player input, HUD, order model, and fog of war; Section 16.2 note on MP1.
+
 ---
 
-Source of record: the project conversation and the user's request to incorporate the subsequent large-scale 3D/RTS research. Version 0.7 preserves prior decisions and records the research recommendations as a working baseline, with unresolved choices explicitly identified. Linked primary sources support techniques and candidate behavior; they do not establish this project's capacity. Test budgets are not measured guarantees; no benchmarks, cloud access verification, or resource provisioning were performed by this update.
+Source of record: the project conversation and the user's request to incorporate the subsequent large-scale 3D/RTS research. Version 0.8 adds the CEO decisions of 2026-10-29 on the full spec review. Version 0.7 preserves prior decisions and records the research recommendations as a working baseline, with unresolved choices explicitly identified. Linked primary sources support techniques and candidate behavior; they do not establish this project's capacity. Test budgets are not measured guarantees; no benchmarks, cloud access verification, or resource provisioning were performed by this update.
