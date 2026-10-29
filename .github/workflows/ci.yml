@@ -145,3 +145,5 @@ jobs:
         run: python3 scripts/qa/yardstick.py --check
       - name: Completeness gate
         run: python3 scripts/qa/completeness.py --self-test && python3 scripts/qa/completeness.py --enforce
+      - name: Pixels-only driver rule
+        run: python3 scripts/qa/driver_rule.py --self-test && python3 scripts/qa/driver_rule.py tests/browser
