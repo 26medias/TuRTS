@@ -224,6 +224,7 @@ def self_test():
     registry = read_registry(ROOT / "docs/qa/specs.tsv")
     cases = read_tsv(CASES)
     failures = 0
+    passed_cases = 0
     expected_all = set()
     case_targets = set()
     for number, case in enumerate(cases, 1):
@@ -249,6 +250,8 @@ def self_test():
             for line in got_lines:
                 print(line)
             failures += 1
+        else:
+            passed_cases += 1
     exempt_names = {row["spec"] for row in registry if row["spec"] in EXEMPT and row["gate"] != "gated"}
     for name in sorted(exempt_names):
         matched = any(c["mode"] == "spec" and Path(c["file"]).name == name and c["expected_rules"] != "-" for c in cases)
@@ -261,7 +264,7 @@ def self_test():
     if len(cases) < MIN_CASES:
         print("FAIL self-test: {}<{} cases".format(len(cases), MIN_CASES))
         failures += 1
-    print("self-test: {}/{} cases passed; failures={}".format(len(cases) - failures, len(cases), failures))
+    print("self-test: {}/{} cases passed; failures={}".format(passed_cases, len(cases), failures))
     return 1 if failures else 0
 
 
