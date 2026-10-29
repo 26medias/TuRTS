@@ -48,8 +48,9 @@ for the foundation (milestone M1). A wrong decision there costs more than any la
 - An agent that invents facts about Bevy, wasm-bindgen, or browser limits without checking
   documentation or running code.
 - An agent that reopens a **Decided** item in the spec as if it were open.
-- A roster so large that the orchestrator cannot choose. Sixteen roles is the cap. (G1: the
-  simulation seat was split, see section 4.)
+- A roster so large that the orchestrator cannot choose. Seventeen roles is the cap. (G1: the
+  simulation seat was split, see section 4. CEO decision G11 of 2026-10-29 added the
+  `ux-designer` seat.)
 
 ## 3. Constraints
 
@@ -94,8 +95,9 @@ https://code.claude.com/docs/en/sub-agents.md on Claude Code 2.1.310.
 
 ## 4. The roster
 
-Sixteen roles. File name equals `name`. "Primary" owns the section; "Second" is the standing
-second lens for it. (G1: the boundary reviewer built this table from the spec headings.)
+Seventeen roles. File name equals `name`. "Primary" owns the section; "Second" is the standing
+second lens for it. (G1: the boundary reviewer built this table from the spec headings. G11,
+2026-10-29: the `ux-designer` seat added for the player interface rows D65 to D67 and D70.)
 
 ### Studio core
 
@@ -112,6 +114,7 @@ second lens for it. (G1: the boundary reviewer built this table from the spec he
 | `backend-engineer` | Index, servers, headless host executable, rooms, slots, identity keys, sessions, SQLite, saves, hosting cost | builder | none |
 | `ai-engineer` | Conventional bot controllers, priorities, reservations, squads, state machines, headless bot scenarios | builder | none |
 | `game-designer` | Default mod rules, economy, balance, first playable loop, room settings schema | builder (content) | none |
+| `ux-designer` | Player interface design: control model, player input map, HUD widget set and mod schema, client side of the client shell (D65 to D67, D70). Writes designs, schemas, default input maps, mod-side widget trees; judges a build with mouse and keyboard. No engine Rust. (G11) | builder (design) + reviewer | none |
 | `qa-lead` | Test instruments, headless scenarios, benchmark instrument, acceptance evidence, "can this test go red", agent-first tooling | reviewer + builder (tests) | project |
 | `producer` | Plans, milestone sequence, dependencies, scope control, open-decision tracking | reviewer + planner | none |
 
@@ -131,7 +134,9 @@ second lens for it. (G1: the boundary reviewer built this table from the spec he
 | 3, 3.2 Goals and exclusions | game-designer | technical-director |
 | 3.1 Goals (browser-first, platforms) | web-platform-engineer | game-designer |
 | 4, 4.1, 4.2 Architecture, modules, entities | technical-director | simulation-core-engineer |
-| 4.1 Presentation module; 4.3 Interface row; 3.1 rendering and camera paragraph | bevy-rendering-engineer | technical-director |
+| 4.1 Presentation module; 4.3 Interface row (engine widgets); 3.1 rendering and camera paragraph | bevy-rendering-engineer | technical-director |
+| Player interface design: D65, D66, D67, D70 client side; 6.6 client settings controls | ux-designer | bevy-rendering-engineer |
+| D68 Camera controls | bevy-rendering-engineer | ux-designer |
 | 4.3 Engine mechanisms versus mod policy | mod-runtime-engineer | technical-director |
 | 4.4 Separate simulation, replication, presentation representations | technical-director | network-engineer |
 | 5 (5.1–5.5, 5.7) Mod system | mod-runtime-engineer | technical-director |
@@ -247,6 +252,9 @@ Documented in `CLAUDE.md` under a new "Agent team" section with these bullets. (
 - **Independent refutation.** `performance-architect` or `qa-lead` to try to break a claim.
 - **Build.** Domain builder for the crate. `qa-lead` writes or reviews the test instrument.
 - **Verify.** `qa-lead` runs. `player` and `mod-builder` judge.
+- **Client milestones.** (G11, G12, 2026-10-29) `player`, `bevy-rendering-engineer` and
+  `ux-designer` sit at every gate for a milestone with a client. The player check of a milestone
+  is run by the `player` agent and by a person; a person signs off.
 - **Git.** Never `git add -A` while an agent runs. Stage explicit paths. Memory files under
   `.claude/agent-memory/` are staged on purpose, not by accident.
 
@@ -256,8 +264,8 @@ Each check names its instrument and the result that fails it. (G1: every criteri
 rewritten because the first version could not go red.)
 
 1. **Load.** `claude plugin validate .claude/agents` exits 0. A script extracts the `name:`
-   field from every file in `.claude/agents/`; the set equals the sixteen names in section 4,
-   with no duplicates and no file without `name`. After one session restart, the sixteen names
+   field from every file in `.claude/agents/`; the set equals the seventeen names in section 4,
+   with no duplicates and no file without `name`. After one session restart, the seventeen names
    appear in the session's agent-type list. Fails on: a missing name, a duplicate, or a name
    absent from the list.
 2. **Standing rules identity.** A script extracts the text between the two marker lines from

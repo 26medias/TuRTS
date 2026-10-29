@@ -19,7 +19,7 @@ NAMES = [
     "technical-director", "performance-architect", "simulation-core-engineer", "world-engineer",
     "network-engineer", "web-platform-engineer", "bevy-rendering-engineer", "mod-runtime-engineer",
     "backend-engineer", "ai-engineer", "game-designer", "qa-lead", "producer",
-    "mod-builder", "player", "spec-rigour-reviewer",
+    "mod-builder", "player", "spec-rigour-reviewer", "ux-designer",
 ]
 REVIEWER_ONLY = {"performance-architect", "player", "spec-rigour-reviewer"}
 REV = {"Read", "Grep", "Glob", "Bash", "WebFetch", "WebSearch"}

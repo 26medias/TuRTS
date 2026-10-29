@@ -202,7 +202,7 @@ Use 4 spaces per indentation level, including in Rust. Write clean, DRY code (se
 
 ## Agent team
 
-Sixteen project subagents live in `.claude/agents/`. Their design is
+Seventeen project subagents live in `.claude/agents/`. Their design is
 `docs/superpowers/specs/2026-10-25-studio-agent-team-design.md`. Section 4 of that design
 holds the ownership table: which seat is Primary and Second for each spec section. The main
 session is the orchestrator. It picks the lenses per gate with these rules.
@@ -229,10 +229,10 @@ session is the orchestrator. It picks the lenses per gate with these rules.
 - **Independent refutation.** `performance-architect` or `qa-lead` to try to break a claim.
 - **Build.** Domain builder for the crate. `qa-lead` writes or reviews the test instrument.
 - **Verify.** `qa-lead` runs. `player` and `mod-builder` judge.
-- **Client milestones (G11, G12, 2026-10-29).** `player` and `bevy-rendering-engineer` sit at
-  every gate for a milestone with a client. A `ux-designer` seat is planned; it is not yet in
-  the roster. The player check of a milestone is run by the `player` agent and by a person; a
-  person signs off.
+- **Client milestones.** (G11, G12, 2026-10-29) `player`, `bevy-rendering-engineer` and
+  `ux-designer` sit at every gate for a milestone with a client. `ux-designer` is the Primary
+  for D65, D66, D67 and the client side of D70, and the Second for D68. The player check of a
+  milestone is run by the `player` agent and by a person; a person signs off.
 - **Git.** Never `git add -A` while an agent runs. Stage explicit paths. Memory files under
   `.claude/agent-memory/` are staged on purpose, not by accident.
 

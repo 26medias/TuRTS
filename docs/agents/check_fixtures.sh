@@ -10,7 +10,7 @@ rm -rf "$FX"
 mkdir -p "$FX"
 
 BLOCK="$(sed -n '/standing-rules:start/,/standing-rules:end/p' "$SRC")"
-NAMES="technical-director performance-architect simulation-core-engineer world-engineer network-engineer web-platform-engineer bevy-rendering-engineer mod-runtime-engineer backend-engineer ai-engineer game-designer qa-lead producer mod-builder player spec-rigour-reviewer"
+NAMES="technical-director performance-architect simulation-core-engineer world-engineer network-engineer web-platform-engineer bevy-rendering-engineer mod-runtime-engineer backend-engineer ai-engineer game-designer qa-lead producer mod-builder player spec-rigour-reviewer ux-designer"
 REV="Read, Grep, Glob, Bash, WebFetch, WebSearch"
 DESC='Seat sentence. Modes: review-spec.\n\n<example>\nContext: x\nuser: \"x\"\nassistant: \"x\"\n<commentary>\nx\n</commentary>\n</example>'
 
