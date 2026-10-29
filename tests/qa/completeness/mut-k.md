@@ -372,7 +372,7 @@ beyond the first three bad packages. Never cut: GEO, NAV, LOCAL, G1 to G3, G11, 
 | id | disposition | test |
 | --- | --- | --- |
 | IN01 | in | F9 |
-| ZZ99 | later:M5 | - |
+| invalid-id | mod | - |
 | IN02 | done:crates/turts_client/tests/acquire.rs | - |
 | IN03 | excluded:D01 | - |
 | IN04 | later:M5 | - |
