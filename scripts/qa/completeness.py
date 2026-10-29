@@ -186,6 +186,7 @@ def registry_checks(specs_dir, registry_path):
 
 
 def enforce(specs_dir, registry_path):
+    """Return the diagnostics and checked count used by CLI and self-test."""
     items = yardstick_items()
     milestones = milestone_order()
     register_ids = set(re.findall(r"^\| D([0-9]{2}) \|", REGISTER.read_text(encoding="utf-8"), re.M))
@@ -200,24 +201,20 @@ def enforce(specs_dir, registry_path):
         path = specs_dir / name
         if not path.is_file():
             continue
-        if client == "yes" and name in EXEMPT and row["gate"] != "gated":
-            continue
         milestone = row["milestone"]
+        found, rows = parse_coverage(path, milestone, items, milestones, register_ids)
+        # Exempt specs do not receive diagnostics, but their rows can satisfy R4.
+        if client == "yes" and name in EXEMPT and row["gate"] != "gated":
+            specs.append((path, milestone, rows))
+            continue
         if client == "no":
-            found, rows = parse_coverage(path, milestone, items, milestones, register_ids)
-            # A no-client spec skips R1-R3 but still joins dependency checks.
             red.extend(line for line in found if RED.match(line) and RED.match(line).group(1) not in {"R1", "R2", "R3"})
-            specs.append((path, milestone, rows))
         else:
-            found, rows = parse_coverage(path, milestone, items, milestones, register_ids)
             red.extend(found)
-            specs.append((path, milestone, rows))
+        specs.append((path, milestone, rows))
         checked += 1
-    # R4 sees all checked client specs and dependencies in earlier registry specs.
     rule4(red, specs, items, milestones)
-    print_lines(red)
-    print("checked specs: {}".format(checked))
-    return 1 if red else 0
+    return sorted(set(red)), checked
 
 
 def print_lines(lines):
@@ -234,7 +231,6 @@ def self_test():
     failures = 0
     passed_cases = 0
     expected_all = set()
-    case_targets = set()
     for number, case in enumerate(cases, 1):
         expected = set() if case["expected_rules"] == "-" else set(case["expected_rules"].split(","))
         expected_all.update(expected)
@@ -242,14 +238,11 @@ def self_test():
         if case["mode"] == "spec":
             path = ROOT / path_value
             got_lines = check_spec(path, case["as_milestone"], items, milestones, register_ids)
-            if path.name == "no-client.md" and case["as_milestone"] == "QA0":
+            if case["as_milestone"] in {"QA0", "MS"}:
                 got_lines = [line for line in got_lines if not RED.match(line) or RED.match(line).group(1) not in {"R1", "R2", "R3"}]
-            case_targets.add(path.name)
         elif case["mode"] == "enforce-dir":
             base = ROOT / path_value
-            got_lines, _ = registry_checks(base / "specs", base / "specs.tsv")
-            checked, _registry = _enforce_cases(base / "specs", base / "specs.tsv", items, milestones, register_ids)
-            got_lines = checked
+            got_lines, _checked = enforce(base / "specs", base / "specs.tsv")
         else:
             got_lines = [diagnostic("R1", path_value, "-", "unknown mode")]
         got = {match.group(1) for line in got_lines if (match := RED.match(line))}
@@ -276,28 +269,6 @@ def self_test():
     return 1 if failures else 0
 
 
-def _enforce_cases(specs_dir, registry_path, items, milestones, register_ids):
-    # Kept as a result-producing helper so enforce-dir cases use the same R1-R9 code.
-    red, registry = registry_checks(specs_dir, registry_path)
-    specs = []
-    for row in registry:
-        path = specs_dir / row["spec"]
-        if not path.is_file():
-            continue
-        if row["client"] == "yes":
-            exempt = row["spec"] in EXEMPT and row["gate"] != "gated"
-            if not exempt:
-                found, rows = parse_coverage(path, row["milestone"], items, milestones, register_ids)
-                red.extend(found)
-                specs.append((path, row["milestone"], rows))
-        elif row["client"] == "no":
-            found, rows = parse_coverage(path, row["milestone"], items, milestones, register_ids)
-            red.extend(line for line in found if RED.match(line) and RED.match(line).group(1) not in {"R1", "R2", "R3"})
-            specs.append((path, row["milestone"], rows))
-    rule4(red, specs, items, milestones)
-    return red, registry
-
-
 def main():
     parser = argparse.ArgumentParser()
     group = parser.add_mutually_exclusive_group(required=True)
@@ -308,8 +279,10 @@ def main():
     args = parser.parse_args()
     if args.self_test:
         return self_test()
-    code = enforce(Path(args.specs_dir), Path(args.registry))
-    return code
+    red, checked = enforce(Path(args.specs_dir), Path(args.registry))
+    print_lines(red)
+    print("checked specs: {}".format(checked))
+    return 1 if red else 0
 
 
 if __name__ == "__main__":
