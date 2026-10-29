@@ -300,9 +300,7 @@ def check_directory(directory):
     found = set()
     js_files = sorted(directory.rglob("*.js"))
     for path in js_files:
-        role, line, error = read_role(path)
-        if error:
-            found.add(("DR1", None, path, line, error))
+        found.update(check_file(path))
     ledger_path = directory / "legacy-bridge.tsv"
     rows, header_ok = read_ledger(ledger_path)
     if not header_ok:
