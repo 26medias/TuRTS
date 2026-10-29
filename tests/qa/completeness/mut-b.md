@@ -333,6 +333,10 @@ terrain. CI gets a step "M4 semantic refutations (all 13 plants)".
 
 ## 11. Acceptance
 
+| Test | Evidence |
+| --- | --- |
+| F9 | Player-control gate |
+
 - F1 `cargo test --workspace`, fmt, strict clippy, wasm32 check and `scripts/boundary.sh` pass.
 - F2 G11: the M2 and M3 operation streams are unchanged, and all 17 M3 plants stay red-then-green.
 - F3 G1 and G2 pass; GEO checks pass on the full run.
@@ -368,8 +372,8 @@ beyond the first three bad packages. Never cut: GEO, NAV, LOCAL, G1 to G3, G11, 
 | id | disposition | test |
 | --- | --- | --- |
 | IN01 | in | F9 |
-| IN02 | later:M5 | - |
-| IN03 | later:M5 | - |
+| IN02 | done:crates/turts_client/tests/acquire.rs | - |
+| IN03 | excluded:D01 | - |
 | IN04 | later:M5 | - |
 | IN05 | later:M5 | - |
 | IN08 | later:M5 | - |
@@ -402,7 +406,7 @@ beyond the first three bad packages. Never cut: GEO, NAV, LOCAL, G1 to G3, G11, 
 | OR20 | later:M5 | - |
 | OR22 | later:M5 | - |
 | OR23 | later:M5 | - |
-| OR24 | in | none |
+| OR24 | in | - |
 | OR25 | later:M5 | - |
 | OR26 | later:M5 | - |
 | OR31 | later:M5 | - |
