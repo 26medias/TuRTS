@@ -1,0 +1,6 @@
+== dup
+acme/units/scout.ron: duplicate field `name` at line 1 column 30
+exit=2
+== api3
+acme/manifest.ron: engine_api: engine api `^0.3` does not accept engine `0.2.1`
+exit=2

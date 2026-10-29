@@ -1,0 +1,356 @@
+id	area	name	tier	tier_note	kind	deps
+IN01	A1	Screen-to-world picking	CORE		M	CA01,AN08
+IN02	A1	Action mapping layer	CORE		M	-
+IN03	A1	Modifier semantics	CORE		B	IN02
+IN04	A1	Double-click detection	CORE		M	IN02
+IN05	A1	Hotkey per command button	CORE		B	IN02,UI01
+IN06	A1	Grid hotkey layout	OPTIONAL		B	IN05
+IN07	A1	Command scheme option	OPTIONAL		M	IN02
+IN08	A1	Browser input capture	CORE	(for a browser-first engine)	M	IN02
+IN09	A1	Text input mode	CORE		M	IN02,UI17
+IN10	A1	Touch and gamepad input	OPTIONAL		M	IN02
+PC01	A2	Single select	CORE		M	IN01
+PC02	A2	Box (drag) select	CORE		M	IN01,CA01
+PC03	A2	Box filter rules	COMMON		B	PC02
+PC04	A2	Shift add and remove	CORE		M	PC01,PC02,IN03
+PC05	A2	Type select on screen	CORE		M	PC01,IN04,CA01
+PC06	A2	Type select on map	COMMON		M	PC05
+PC07	A2	Selection cap	COMMON		B	PC02
+PC08	A2	Control group assign and recall	CORE		M	IN02,IN03
+PC09	A2	Control group add	CORE		M	PC08
+PC10	A2	Group double-tap centres camera	CORE		M	PC08,CA14
+PC11	A2	Steal from group	OPTIONAL		M	PC08
+PC12	A2	Subgroups and Tab cycling	COMMON		M	PC02,UI01,UI02
+PC13	A2	Building hotkeys	COMMON		B	PC01
+PC14	A2	Idle worker select	COMMON		B	UN11,UI15
+PC15	A2	Select all army	COMMON		B	PC06
+PC16	A2	Inspect foreign entities	CORE		M	PC01,FV04
+PC17	A2	Ownership gate	CORE		M	-
+PC18	A2	Shared control	OPTIONAL		B	PC17
+PC19	A2	Selection hygiene	CORE		M	PC08
+PC20	A2	Hover highlight	CORE		M	IN01
+PC21	A2	Context cursor	CORE		B	IN01,OR22
+PC22	A2	Smart command	CORE		B	OR01,OR03,EC02
+PC23	A2	Selection visual	CORE		M	AN06
+OR01	A3	Move	CORE		M	PF01
+OR02	A3	Stop	CORE		M	OR11
+OR03	A3	Attack target	CORE		M	CB02
+OR04	A3	Attack-move	CORE		M	OR01,CB03
+OR05	A3	Force move	CORE		M	OR01
+OR06	A3	Force attack	COMMON		B	OR03
+OR07	A3	Patrol	COMMON		M	OR04,OR11
+OR08	A3	Hold position	CORE		M	CB03
+OR09	A3	Stances	COMMON		B	CB03,CB05
+OR10	A3	Guard and follow	COMMON		M	OR03
+OR11	A3	Order queue per unit	CORE		M	-
+OR12	A3	Shift-queued orders	CORE		M	OR11,IN03
+OR13	A3	Waypoint display	COMMON		M	OR11,AN06
+OR14	A3	Edit queued orders	OPTIONAL		M	OR13
+OR15	A3	Rally point	CORE		B	PR05
+OR16	A3	Build order	CORE		B	CO04
+OR17	A3	Gather order	CORE		B	EC02
+OR18	A3	Repair order	COMMON		B	CO11
+OR19	A3	Load and unload	COMMON		M	UN05,UN06
+OR20	A3	Ability order	CORE		B	UN07
+OR21	A3	Autocast toggle	OPTIONAL		B	OR20
+OR22	A3	Order validation feedback	CORE		B	OR11
+OR23	A3	Order acknowledgement	CORE		B	AU01,AN06,PE01
+OR24	A3	Group order fan-out	CORE		M	PC02,OR11
+OR25	A3	Group destination spread	CORE		M	OR24,GM01
+OR26	A3	Order state machine	CORE		M	OR11,CB03,CB05
+OR27	A3	Deploy and transform	COMMON		B	OR20
+OR28	A3	Scatter	OPTIONAL		M	GM04
+OR29	A3	Assist	OPTIONAL		M	OR10
+OR30	A3	Repeat queue	OPTIONAL		M	OR11,PR01
+OR31	A3	Command rate limit	CORE		M	OR22
+GM01	A4	Destination spreading	CORE		M	OR24
+GM02	A4	Formations	COMMON		B	GM01
+GM03	A4	Speed matching	COMMON		M	GM02
+GM04	A4	Local avoidance	CORE		M	GM06
+GM05	A4	Flocking	COMMON		M	GM04
+GM06	A4	Unit collision size	CORE		B	-
+GM07	A4	Push idle friends	CORE		M	GM04
+GM08	A4	Air separation	COMMON		M	UN02
+GM09	A4	Arrival	CORE		M	GM01
+GM10	A4	Unreachable target	CORE		M	PF04
+GM11	A4	Choke traffic	CORE		M	GM04
+GM12	A4	Formation facing	OPTIONAL		M	GM02
+GM13	A4	Worker collision exception	OPTIONAL		B	EC02,GM04
+CA01	A5	Classic RTS camera	CORE		M	-
+CA02	A5	Edge scroll	CORE		M	CA01,IN08
+CA03	A5	Key scroll	CORE		M	CA01,IN02
+CA04	A5	Drag pan	COMMON		M	CA01
+CA05	A5	Zoom	COMMON		B	CA01
+CA06	A5	Strategic zoom	OPTIONAL		M	CA05,UI05
+CA07	A5	Rotation	OPTIONAL		M	CA01
+CA08	A5	Minimap click	CORE		M	UI05
+CA09	A5	Minimap order	CORE		M	UI05,OR24
+CA10	A5	Camera bookmarks	COMMON		M	CA01
+CA11	A5	Jump to last alert	COMMON		M	UI16
+CA12	A5	Follow unit	COMMON		M	CA01
+CA13	A5	Bounds clamp	CORE		B	MP09
+CA14	A5	Centre on selection	CORE		M	CA01
+CA15	A5	Height-aware camera	CORE	(3D)	M	CA01,MP01
+CA16	A5	Scroll speed setting	CORE		M	UI22
+CA17	A5	Second view	OPTIONAL		M	CA01
+UI01	A6	Command card	CORE		B	PC12,IN05
+UI02	A6	Selection panel	CORE		M	PC02
+UI03	A6	Info panel and portrait	CORE		B	PC01
+UI04	A6	Resource bar	CORE		B	EC01
+UI05	A6	Minimap	CORE		M	FV02
+UI07	A6	Minimap ping	COMMON		M	UI05,TM02
+UI08	A6	Minimap alert flash	CORE		M	UI05,UI16
+UI09	A6	Build menu	CORE		B	PR07
+UI10	A6	Production queue display	CORE		B	PR01
+UI11	A6	Tooltips	CORE		B	MD01
+UI12	A6	Health bars	CORE		M	CB01
+UI13	A6	Status icons	COMMON		B	UN09
+UI14	A6	Fog rendering	CORE		M	FV01,FV02
+UI15	A6	Idle worker button	COMMON		B	UN11
+UI16	A6	Event alerts	CORE		B	AU02
+UI17	A6	Chat	CORE		M	IN09
+UI18	A6	Pause	COMMON		B	MF14
+UI19	A6	Surrender and leave	CORE		B	MF08
+UI20	A6	Game speed	COMMON		B	MF04
+UI21	A6	Game clock	COMMON		M	-
+UI22	A6	In-game options menu	CORE		M	-
+UI23	A6	Cursor set	CORE		B	PC21
+UI24	A6	Rally display	COMMON		M	OR15
+UI25	A6	Range display	COMMON		B	CO01
+UI26	A6	Building power indicator	COMMON		B	EC09
+UI27	A6	Mod UI layout	COMMON		B	MD08
+UI28	A6	Floating text	OPTIONAL		B	-
+UI29	A6	Army and production overview	OPTIONAL		M	PR01
+UI30	A6	Localisation	COMMON		B	MD13
+UI31	A6	Objectives panel	COMMON		B	MF08
+CO01	A7	Placement ghost	CORE		M	IN01,AN08
+CO02	A7	Footprint validity	CORE		M	CO01,CO03
+CO03	A7	Placement rules	CORE		B	MP01
+CO04	A7	Construction model	CORE		B	OR16,PR03
+CO05	A7	Worker build queue	COMMON		M	OR12,CO01
+CO06	A7	Multi-worker build	OPTIONAL		B	CO04
+CO07	A7	Under construction state	CORE		B	CB01
+CO08	A7	Cancel and refund	CORE		B	PR03
+CO09	A7	Wall drag	COMMON		M	CO01
+CO10	A7	Gates	OPTIONAL		B	CO09,PF07
+CO11	A7	Repair	COMMON		B	CB01
+CO12	A7	Sell and deconstruct	COMMON		B	CO08
+CO13	A7	Building rotation	OPTIONAL	(CORE for FAC)	M	CO01
+CO14	A7	Foundation and flatten	OPTIONAL		B	MP01
+CO15	A7	Upgrade in place	COMMON		B	PR08
+CO16	A7	Grid overlay	COMMON		M	CO01
+CO17	A7	Line drag placement	OPTIONAL		M	CO09
+CO18	A7	Blueprints	OPTIONAL		M	CO01
+CO19	A7	Capture	OPTIONAL		B	OR20
+CO20	A7	Destruction clears footprint	CORE		B	CB01
+CO21	A7	Placement vs units	CORE		M	CO03,GM07
+CO22	A7	Build radius	COMMON		B	CO03
+PR01	A8	Production queue	CORE		B	-
+PR02	A8	Cancel and refund	CORE		B	PR01,PR03
+PR03	A8	Payment policy	CORE		P	EC01
+PR04	A8	Parallel production	CORE		B	PR01
+PR05	A8	Spawn and exit	CORE		M	PF04
+PR06	A8	Rally applied	CORE		M	OR15,PR05
+PR07	A8	Prerequisites	CORE		B	MD05
+PR08	A8	Research and upgrades	CORE		B	PR07,PR15
+PR09	A8	Ages and tiers	COMMON		B	PR08
+PR10	A8	Unavailable reason	CORE		B	UI09
+PR11	A8	Repeat production	OPTIONAL		M	PR01
+PR12	A8	Batch queue	COMMON		M	PR01
+PR13	A8	Multi-building production	COMMON		M	PR01,OR24
+PR14	A8	Supply block	COMMON		B	EC08
+PR15	A8	Modifier application	CORE		B	MD05
+PR16	A8	Power effect	COMMON		B	EC09
+PR17	A8	Asymmetric factions	CORE		P	MD06
+PR18	A8	Recipes	OPTIONAL		B	EC01
+PR19	A8	Exclusive branches	OPTIONAL		B	PR07
+EC01	A9	Resource types	CORE		B	MD01
+EC02	A9	Gather cycle	CORE		B	OR17,PF01
+EC03	A9	Drop-off choice	CORE		M	EC02
+EC04	A9	Node depletion	CORE		B	EC02
+EC05	A9	Auto-resume and seek	CORE		M	EC04
+EC06	A9	Node occupancy	COMMON		B	EC02
+EC07	A9	Generators	COMMON		B	EC01
+EC08	A9	Population cap	COMMON		B	EC01
+EC09	A9	Power	COMMON		B	EC01
+EC10	A9	Insufficient funds	CORE		P	PR03
+EC11	A9	Tribute and transfer	COMMON		B	TM02
+EC12	A9	Market	OPTIONAL		B	EC01
+EC13	A9	Storage caps	OPTIONAL		B	EC01
+EC14	A9	Regrowing resources	OPTIONAL		B	EC04
+EC15	A9	Upkeep	OPTIONAL		P	EC08
+EC16	A9	Physical items and logistics	OPTIONAL	(CORE for FAC)	B	EC01
+EC17	A9	Income rate display	OPTIONAL		M	UI04
+CB01	A10	Health and death	CORE		B	-
+CB02	A10	Weapons	CORE		B	CB01
+CB03	A10	Auto-target	CORE		M	CB02,FV03
+CB04	A10	Target priority	CORE		B	CB03
+CB05	A10	Retaliation	CORE		B	CB03
+CB06	A10	Leash	COMMON		B	OR08
+CB07	A10	Damage and armour types	CORE		B	MD07
+CB08	A10	Armour value	COMMON		B	CB07
+CB09	A10	Splash damage	CORE		B	CB02
+CB10	A10	Projectiles	CORE		B	CB02
+CB11	A10	Line of fire	COMMON		B	MP01
+CB12	A10	High ground	COMMON		B	FV09
+CB13	A10	Turrets and facing	COMMON		B	CB02
+CB14	A10	Multiple weapons	COMMON		B	CB02
+CB15	A10	Overkill control	OPTIONAL		M	CB04
+CB16	A10	Shields and regeneration	COMMON		B	CB01
+CB17	A10	Healing	COMMON		B	CB01
+CB18	A10	Wrecks and corpses	COMMON		B	CB01
+CB19	A10	Crush	OPTIONAL		B	GM06
+CB20	A10	Accuracy	OPTIONAL		B	CB10
+CB21	A10	Defensive buildings	CORE		B	CB02
+CB22	A10	Ammunition	OPTIONAL		B	CB02
+CB23	A10	Friendly fire	COMMON		P	CB09
+CB24	A10	Kill credit	COMMON		M	UN09,MF12
+CB25	A10	Bonus damage	CORE		B	CB07
+FV01	A11	Black shroud	CORE		M	-
+FV02	A11	Fog of war	CORE		M	FV03
+FV03	A11	Sight radius	CORE		B	-
+FV04	A11	Server-side visibility	CORE	(authoritative)	M	FV03
+FV05	A11	Shared vision	CORE		B	TM02
+FV06	A11	Detection	COMMON		B	FV03
+FV07	A11	Reveal	COMMON		B	FV03
+FV08	A11	Radar gating	OPTIONAL		B	UI05,EC09
+FV09	A11	Terrain occlusion	COMMON		M	MP01
+FV10	A11	Last-seen structures	CORE		M	FV02
+FV11	A11	Fog lobby options	COMMON		P	MF04
+FV12	A11	Shroud generator	OPTIONAL		B	FV01
+FV13	A11	Air vs ground sight	OPTIONAL		B	FV09
+UN01	A12	Ground units and movement classes	CORE		B	PF03
+UN02	A12	Air units	COMMON		B	PF03
+UN03	A12	Naval units	COMMON		B	PF03
+UN04	A12	Amphibious and hover	OPTIONAL		B	UN03
+UN05	A12	Transports	COMMON		B	OR19
+UN06	A12	Garrison	COMMON		B	OR19
+UN07	A12	Abilities	CORE		B	MD04
+UN08	A12	Heroes	OPTIONAL		B	UN09
+UN09	A12	Veterancy	COMMON		B	CB24
+UN10	A12	Line upgrades	COMMON		B	PR15
+UN11	A12	Workers	CORE		B	EC02,CO04
+UN12	A12	Cloak and burrow	COMMON		B	FV06
+UN13	A12	Death and removal	CORE		B	CB01
+UN14	A12	Neutral creeps and critters	OPTIONAL		B	TM01
+UN15	A12	Capturable neutral objects	OPTIONAL		B	CO19
+UN16	A12	Conversion	OPTIONAL		B	OR20
+UN17	A12	Self-repair and regeneration	COMMON		B	CB16
+UN18	A12	Deployables	COMMON		B	OR27
+UN19	A12	Superweapons	COMMON		B	OR20
+UN20	A12	Per-type caps	COMMON		B	PR07
+UN21	A12	Spawners	OPTIONAL		B	PR01
+UN22	A12	Air landing and refuel	OPTIONAL		B	CB22
+PF01	A13	Sensible path	CORE		M	MP01
+PF02	A13	Repath on change	CORE		M	PF01
+PF03	A13	Movement layers	CORE		B	MP01
+PF04	A13	No stuck units	CORE		M	PF01
+PF05	A13	Instant start	CORE		M	PE01
+PF06	A13	Clearance	COMMON		M	GM06
+PF07	A13	Ally and gate passage	OPTIONAL		B	CO10
+PF08	A13	Terrain speed	OPTIONAL		B	MP01
+PF09	A13	Turn radius	COMMON		B	PF01
+PF10	A13	Mass pathing	CORE		M	PE03
+PF11	A13	Shared route display	OPTIONAL		M	OR13
+MF01	A14	Main menu	CORE		M	-
+MF02	A14	Lobby	CORE		B	MD12
+MF03	A14	Map choice	CORE		B	MP05
+MF04	A14	Game settings	CORE		B	MD12
+MF05	A14	AI in slots	CORE		B	BT01
+MF06	A14	Start conditions	CORE		P	MP01
+MF07	A14	Load and countdown	CORE		M	MP07
+MF08	A14	Victory and defeat	CORE		P	MD10
+MF09	A14	Defeated player observes	COMMON		B	RO03
+MF10	A14	Team victory	CORE		B	TM01
+MF11	A14	In-game diplomacy	OPTIONAL		B	TM02
+MF12	A14	Score screen	CORE		B	-
+MF13	A14	Matchmaking and ladder	OPTIONAL		M	MF02
+MF14	A14	Disconnect handling	CORE		B	-
+MF15	A14	Reconnect	COMMON		M	MF14
+MF16	A14	Campaign and scenarios	COMMON		B	MP04
+MF17	A14	Handicap	OPTIONAL		P	MF04
+MF18	A14	Random faction and map	COMMON		B	MF02
+MF19	A14	Co-op vs AI	COMMON		B	MF05
+RO01	A15	Replay recording	COMMON		M	-
+RO02	A15	Replay controls	COMMON		M	RO01
+RO03	A15	Live observers	COMMON		M	FV04
+RO04	A15	Observer UI	OPTIONAL		B	RO03
+RO05	A15	Replay version safety	COMMON		M	RO01
+SV01	A16	Single-player save and load	CORE		M	-
+SV02	A16	Multiplayer save and load	COMMON		M	SV01
+SV03	A16	Autosave	OPTIONAL		M	SV01
+SV04	A16	Save version safety	CORE		M	SV01
+SV05	A16	Mod save data	CORE		B	SV01,MD14
+MP01	A17	Map format	CORE		B	-
+MP02	A17	Map editor	CORE	(moddable engine)	M	MP01
+MP03	A17	Random map generator	COMMON		B	MP01
+MP04	A17	Triggers and map scripts	COMMON		B	MD14
+MP05	A17	Map metadata	CORE		M	MP01
+MP06	A17	Neutral objects	COMMON		B	MP01
+MP07	A17	Map distribution	CORE		M	MP01
+MP08	A17	Map validation	COMMON		M	MP01
+MP09	A17	Playable bounds	CORE		B	MP01
+MP10	A17	Custom game modes	COMMON		B	MP04
+MD01	A18	Unit definition	CORE		B	-
+MD02	A18	Weapon and projectile definition	CORE		B	MD01
+MD03	A18	Building definition	CORE		B	MD01
+MD04	A18	Ability definition	CORE		B	MD20
+MD05	A18	Upgrade and tech definition	CORE		B	MD01
+MD06	A18	Faction definition	CORE		B	MD01
+MD07	A18	Damage and armour tables	CORE		B	MD02
+MD08	A18	UI definitions	CORE		B	UI01
+MD09	A18	Audio definitions	CORE		B	AU01
+MD10	A18	Victory definitions	CORE		B	MF08
+MD11	A18	AI definitions	CORE		B	BT01
+MD12	A18	Lobby settings schema	CORE		B	MF04
+MD13	A18	String tables	COMMON		B	-
+MD14	A18	Event scripting API	COMMON		B	-
+MD15	A18	Fast iteration	COMMON		M	-
+MD16	A18	Data inheritance	COMMON		M	MD01
+MD17	A18	Asset pipeline	CORE		M	-
+MD18	A18	Validation messages	CORE		M	-
+MD19	A18	Mod layering	COMMON		M	MD16
+MD20	A18	Effect system	COMMON		B	MD02
+BT01	A19	Skirmish AI	CORE		B	MD11
+BT02	A19	Difficulty levels	CORE		B	BT01
+BT03	A19	Same command path	CORE		B	OR24
+BT04	A19	Ally AI cooperation	OPTIONAL		B	UI07
+BT05	A19	Unit micro AI	OPTIONAL		B	OR21
+TM01	A20	Teams	CORE		B	MF02
+TM02	A20	Alliance effects	CORE		B	TM01
+TM03	A20	Player colours	CORE		B	AN07
+AU01	A21	Unit responses	CORE		B	PC01,OR23
+AU02	A21	Alerts	CORE		B	UI16
+AU03	A21	Positional effects	CORE		M	-
+AU04	A21	Music	COMMON		B	-
+AU05	A21	Ambient sound	OPTIONAL		B	MP01
+AU06	A21	Volume categories	CORE		M	UI22
+AU07	A21	Sound limiting	CORE		M	AU03
+AU08	A21	Repeat-click lines	OPTIONAL		P	AU01
+AN01	A22	Unit animations	CORE		B	MD17
+AN02	A22	Weapon effects	CORE		B	CB10
+AN03	A22	Construction visuals	CORE		B	CO07
+AN04	A22	Damage states	COMMON		B	CB01
+AN05	A22	Death visuals	CORE		B	UN13
+AN06	A22	Decals for orders	CORE		M	-
+AN07	A22	Team colour on models	CORE		M	-
+AN08	A22	Tick interpolation	CORE		M	-
+AN09	A22	Terrain decals	OPTIONAL		B	MP01
+AN10	A22	Moddable particles	COMMON		B	MD17
+AN11	A22	Instancing and level of detail	CORE		M	PE02
+AN12	A22	Day and night	OPTIONAL		B	FV03
+AN13	A22	Weather	OPTIONAL		B	-
+AC01	A23	Rebindable keys	COMMON		M	IN02
+AC02	A23	Colour-blind support	COMMON		B	TM03
+AC03	A23	UI scale	COMMON		M	UI22
+AC04	A23	Subtitles and text size	OPTIONAL		M	AU01
+AC05	A23	Cursor confine	CORE		M	CA02,IN08
+AC06	A23	Graphics settings	CORE		M	-
+AC07	A23	Reduced motion	OPTIONAL		M	-
+PE01	A24	Order responsiveness	CORE		M	OR23,AN08
+PE02	A24	Stable frame rate	CORE		M	AN11
+PE03	A24	Unit count	CORE		M	PF10
+PE04	A24	Large selection speed	CORE		M	PC02
+PE05	A24	Load time	COMMON		M	-
+PE06	A24	Late-game slowdown	COMMON		M	-
+PE07	A24	Latency hiding	CORE		M	OR23

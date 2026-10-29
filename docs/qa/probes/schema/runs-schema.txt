@@ -1,0 +1,8 @@
+   |
+   = note: `UnitDef` has a derived impl for the trait `Debug`, but this is intentionally ignored during dead code analysis
+
+C0 known: ACCEPTED UnitDef { id: "a", caps: {"health": Health(HealthDef { max: 5 })} }
+C1 new field sight: ACCEPTED UnitDef { id: "a", caps: {"health": Health(HealthDef { max: 5 }), "sight": Sight(SightDef { radius: 7.0 })} }
+C2 typo helth: REJECTED NoSuchStructField { expected: ["id", "health", "sight"], found: "helth", outer: Some("UnitDef") } at 1:11
+C3 typo inside block: REJECTED NoSuchStructField { expected: ["max"], found: "maxx", outer: Some("HealthDef") } at 1:20
+C4 duplicate key: ACCEPTED UnitDef { id: "a", caps: {"health": Health(HealthDef { max: 6 })} }

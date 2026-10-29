@@ -1,0 +1,21 @@
+== p0
+p0.tar sha256:c5b3c77699edc250bcbc65f4e8ecb0aff6ddd847c365b42e5ff9779cb2bae6d7
+exit=0
+== p1
+p1.tar sha256:c8b2fb8d9215d1dbba6192c7327ff5601db3e90df827888e0d8d42b930c9c644
+exit=0
+== p2
+p2.tar sha256:9c50cdf5e4249a6cdcf0605cad9bb850c908ac6bc709c30100079f445b264cee
+exit=0
+== p3
+acme/manifest.ron: dependencies: dependencies are not supported at M1
+exit=2
+== p4
+manifest.ron: unknown field `description` at line 15 column 32 (allowed: id, version, kind, engine_api, dependencies, exports, context, capabilities, license)
+exit=2
+== p5
+manifest.ron: unknown field `licence` at line 15 column 5 (allowed: id, version, kind, engine_api, dependencies, exports, context, capabilities, license)
+exit=2
+== p6 library without map
+acme/manifest.ron: exports.maps: a package exports exactly one map at M1, found 0
+exit=2

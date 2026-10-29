@@ -1,0 +1,10 @@
+[package]
+name = "modrt-probe"
+version = "0.1.0"
+edition = "2024"
+[dependencies]
+turts_mod_api = { path = "../../../../crates/turts_mod_api" }
+ron = "=0.12.2"
+serde = { version = "=1.0.229", features = ["derive"] }
+semver = "=1.0.28"
+[workspace]

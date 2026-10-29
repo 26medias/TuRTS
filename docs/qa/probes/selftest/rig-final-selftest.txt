@@ -1,0 +1,12 @@
+== empty3
+self-test red ["cond1 ['m1', 'm2', 'm3', 'm4']", "cond2 ['R1', 'R2', 'R3', 'R4', 'R5', 'R6', 'R7', 'R8', 'R9']", 'cond3 0<20']
+exit=1
+== f3
+self-test green []
+exit=0
+== nor9
+self-test red ["cond2 ['R9']", 'cond3 19<20']
+exit=1
+== r9green
+self-test red ["case dirs/r9: want ['R9'] got []"]
+exit=1

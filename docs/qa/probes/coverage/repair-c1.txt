@@ -1,0 +1,10 @@
+2026-10-26-m1-foundation-design.md exit=1 rules={R1,R3}
+2026-10-26-m2-economy-design.md exit=1 rules={R1,R3}
+2026-10-27-m3-industrial-design.md exit=1 rules={R1,R3}
+2026-10-28-m4-terrain-design.md exit=1 rules={R1,R3}
+fx_green.md exit=0 rules={}
+fx_mut_a_drop_PC02.md exit=1 rules={R1,R4}
+fx_mut_b_OR24_no_test.md exit=1 rules={R2}
+fx_mut_c_no_player_path.md exit=1 rules={R3}
+fx_mut_d_CA01_later.md exit=1 rules={R4}
+fx_mut_e_PC02_test_H9.md exit=1 rules={R2}
