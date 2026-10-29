@@ -150,15 +150,14 @@ def part_a(source):
 
     for match in re.finditer(r"(?<![\w$])turts_[\w$]*", without_strings(code)):
         add("A1", match.start(), "bridge identifier")
-    for match in re.finditer(r"\[\s*(['\"])(turts_[\w$]+)\1\s*\]", code):
+    for match in re.finditer(r"\[\s*(?:(['\"])(turts_[\w$]+)\1|`(turts_[\w$]+)`)\s*\]", code):
         add("A1", match.start(), "bridge identifier")
-    code_tokens = without_strings(code)
     for pattern, scanned in (
-        (r"(?<![\w$])eval(?![\w$])", code_tokens),
-        (r"(?<![\w$])Function(?![\w$])", code_tokens),
-        (r"\.\s*constructor\b", code_tokens),
+        (r"(?<![\w$])eval(?![\w$])", code),
+        (r"(?<![\w$])Function(?![\w$])", code),
+        (r"\.\s*constructor\b", code),
         (r"\[\s*(['\"])constructor\1\s*\]", code),
-        (r"(?:window|global|globalThis)\s*(?:\.\s*(?:eval|Function)|\[\s*(['\"])(?:eval|Function)\1\s*\])", code),
+        (r"(?:window|global|globalThis)\s*(?:\.\s*(?:eval|Function)|\[\s*(?:(['\"])(?:eval|Function)\1|`(?:eval|Function)`)\s*\])", code),
     ):
         match = re.search(pattern, scanned)
         if match:
