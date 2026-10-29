@@ -89,9 +89,9 @@ Count each dispatch and each resumed work turn as one run. Record it before disp
 | T3 | 4 | 5 |
 | T4 | 4 | 3 |
 | T5 | 4 | 3 |
-| T6 | 4 | 1 |
+| T6 | 4 | 2 |
 | Repair reserve | 4 | 3 allocated (T2:2,T3:1); included in task actuals |
-| Total | 22 to 26 | 19 |
+| Total | 22 to 26 | 20 |
 
 These are planning allowances, not required dispatch counts. Do not spend runs without a task.
 
@@ -115,7 +115,8 @@ These are planning allowances, not required dispatch counts. Do not spend runs w
 | 16 | T3 repair | web-platform-engineer | gpt-6-luna | high | c00135d | source d8b6a52; 44/44, original 40 unchanged |
 | 17 | T3 scoped recheck | qa-lead | gpt-6.1-sol | high | d8b6a52 | 4 addressed; A2 template issue in intermediate head |
 | 18 | T3 final-head recheck | qa-lead | gpt-6.1-sol | high | d6e770c | PASS; 0 findings; A2 template issue addressed |
-| 19 | T6 full gates | qa-lead | gpt-6-luna | high | 6234bf5 | dispatched |
+| 19 | T6 full gates | qa-lead | gpt-6-luna | high | 6234bf5 | running; six CLI texts captured |
+| 20 | T6 consumer judge | mod-builder | gpt-6.1-sol | high | 6234bf5 | pass-with-changes; 1 optional Medium help recommendation; all6 actual errors match |
 
 ## 7. Task ledger
 
@@ -171,3 +172,9 @@ T5 scoped recheck passed at 6fc6720. T6 rule plants must select the call within 
 Wave 2 merge c9e1dbf pushed. Hosted run: https://github.com/26medias/TuRTS/actions/runs/40910221795. T1,T2,T4,T5 accepted; T3 active; T6 pending.
 
 Wave 3 source merge: 6234bf50d285f04d70b0f5d7e1ef3b9cde09aca6. Hosted final source run: https://github.com/26medias/TuRTS/actions/runs/40912942212. Older integration runs 40906459455 and40910221795 cancelled after their status was recorded; final source supersedes them. Main CI was not cancelled.
+
+T6 execution overlap: the independent mod-builder reads six captured CLI errors while the local full gate continues. No source or mutation is shared; this uses the planned consumer seat. Mutation phase still waits for full-run acceptance.
+
+### Consumer disposition
+
+Ruling: retain the pinned LR3 diagnostic and defer the optional QA0 remedy explanation to Claude's documentation pass. The consumer confirms that LR3 meets the approved id/requirement minimum and explicitly permits deferral. No library-serving change is requested. Cost if wrong: a modder must consult K5 to learn that a Game dependency must be removed or deferred at QA0. This recommendation remains visible in the final review and report.
