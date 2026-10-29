@@ -76,32 +76,6 @@ def without_comments(source):
     return "".join(chars)
 
 
-def without_strings(source):
-    """Mask quoted text while preserving offsets and newlines."""
-    chars = list(source)
-    i = 0
-    quote = None
-    escaped = False
-    while i < len(chars):
-        c = chars[i]
-        if quote:
-            if c != "\n":
-                chars[i] = " "
-            if escaped:
-                escaped = False
-            elif c == "\\":
-                escaped = True
-            elif c == quote:
-                quote = None
-            i += 1
-            continue
-        if c in "'\"`":
-            quote = c
-            chars[i] = " "
-        i += 1
-    return "".join(chars)
-
-
 def read_role(path):
     try:
         lines = path.read_text(encoding="utf-8").splitlines()
@@ -148,9 +122,7 @@ def part_a(source):
     def add(rule, offset, text):
         found.setdefault(rule, (line_of(source, offset), text))
 
-    for match in re.finditer(r"(?<![\w$])turts_[\w$]*", without_strings(code)):
-        add("A1", match.start(), "bridge identifier")
-    for match in re.finditer(r"\[\s*(?:(['\"])(turts_[\w$]+)\1|`(turts_[\w$]+)`)\s*\]", code):
+    for match in re.finditer(r"(?<![\w$])turts_[\w$]+", code):
         add("A1", match.start(), "bridge identifier")
     for pattern, scanned in (
         (r"(?<![\w$])eval(?![\w$])", code),

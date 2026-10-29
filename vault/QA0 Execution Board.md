@@ -89,9 +89,9 @@ Count each dispatch and each resumed work turn as one run. Record it before disp
 | T3 | 4 | 7 |
 | T4 | 4 | 3 |
 | T5 | 4 | 3 |
-| T6 | 4 | 5 |
+| T6 | 4 | 6 |
 | Repair reserve | 4 | Included in task actuals; per-task allowances can share unused runs |
-| Total | 22 to 26 | 25 |
+| Total | 22 to 26 | 26 |
 
 These are planning allowances, not required dispatch counts. Do not spend runs without a task.
 
@@ -121,7 +121,8 @@ These are planning allowances, not required dispatch counts. Do not spend runs w
 | 22 | Final whole-branch review | qa-lead | gpt-6.1-sol | high | 7f97950 (code6234bf5) | FAIL; 1 High A1 executable-template bypass; 2 optional findings |
 | 23 | T2/T3 final repair batch | web-platform-engineer + backend-engineer | gpt-6-luna | high | 7f97950 | T3 7b859f8; T2 12dbb83; separate branches |
 | 24 | Final repair recheck | qa-lead | gpt-6.1-sol | high | a48aad1 | R1 addressed; same A1 template finding remains via comment brace |
-| 25 | T3 comment-template repair | web-platform-engineer | gpt-6-luna | high | 7b859f8 | dispatched |
+| 25 | T3 comment-template repair | web-platform-engineer | gpt-6-luna | high | 7b859f8 | b2180c8;46/46; all direct template probes redA1 |
+| 26 | Final review + independent mutation verification | qa-lead | gpt-6.1-sol | high | candidate5b5d6ae then canonical merge | SOURCE_PASS; final23plants next |
 
 ## 7. Task ledger
 
@@ -129,7 +130,7 @@ These are planning allowances, not required dispatch counts. Do not spend runs w
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | T1 | complete | codex/qa0-t1 | d8bd6a7 → 1a2b82b | missing TSV and tier plant exit 1; scratch hash plant exit 1 | 115 cmp exit 0; exact 83-file hash set; yardstick 355/181/4 and check exit 0 | 1 | R0 PASS |
 | T2 | complete | codex/qa0-t2 | e3fd97d; final 12dbb83 | stub red1; trust edits red1; real-enforce skip plant caught after repair | 21/21 and checked1 exit=0; extra regression probes green; timed CI under 1s | 6 plus shared run23 (charged T3) | same Sol PASS incl final malformed-id correction |
-| T3 | final repair | codex/qa0-t3 | d6e770c (5 source commits) | stub red1; A7/DR6/role plants red1; literal escape regression probes | final CI44/44 and live tree exit=0; Node 16 and syntax12 pass; original 40 unchanged | 5 | same Sol PASS on final head, 0 open |
+| T3 | complete | codex/qa0-t3 | d6e770c; final 7b859f8,b2180c8 | stub red1; A7/DR6/role plants red1; literal escape regression probes | final CI44/44 and live tree exit=0; Node 16 and syntax12 pass; original 40 unchanged | 7 | same final Sol SOURCE_PASS on combined candidate5b5d6ae |
 | T4 | complete | codex/qa0-t4 | 5ac68b7,5aff67f,547014a | all intended semantic failures exit 101; SC3 review plant exit 101 | five final gates exit 0; 775 passed, 0 failed, 18 ignored | 3 | Sol PASS after text correction; 0 open |
 | T5 | complete | codex/qa0-t5 | 9fc246c,6fc6720 | stub/old rules exit 101; real tie red101; LR1-LR8 scratch plants red101 | five final gates exit 0; 796 passed, 0 failed, 18 ignored | 3 | same Sol PASS, 0 open |
 | T6 | verifying | codex/qa0-t6 | - | NOT RUN | NOT RUN | 0 | pending consumer |
@@ -191,3 +192,5 @@ Run 23 is shared across T2 and T3, with each role read before that task and each
 Run 26 is the final authorised run. It will recheck the A1 correction and perform independent final-source mutation verification. Stop and report to the CEO after it; do not dispatch run 27.
 
 Ruling: restore the approved probe's conservative A1 namespace scan instead of trusting a partial JavaScript string/template parser. Complete turts_ names remain forbidden as in the probe. Cost if wrong: harmless quoted or template-comment namespace text can be rejected; this is visible as an optional precision limit. Required legal samples must remain green.
+
+Budget cap reached: 26 authorised agent runs. Run26 must finish and be recorded; no run27 is authorised. Stop and report the concrete source, validation and CI state to the CEO after this final run.
