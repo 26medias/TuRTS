@@ -76,6 +76,11 @@ play and local saves run against a local headless server (a separate process or 
 dependency on `turts_sim`). The CEO sees this reading in the report and can correct it. The decisions take effect in the
 spec amendment (version 0.8) and in the milestone order of section 4.
 
+**G5 follow-up (CEO, 2026-10-29).** The CEO asked whether line (a) limits the interface a mod can build. Answer recorded as
+a D67 design constraint, line (a) kept: a mod places any interface element at any position and size, with its own images,
+fonts, and cursors; the engine fixes no layout. Widgets are primitives, not a fixed HUD. Mod code does not paint pixels at
+run time (5.1, D15); a missing primitive is added to the engine for all mods (4.3). Option (b) stays rejected.
+
 Note on G6 and G7: they refine Proposed or Baseline text (S:342, D15, S:358), so the team can decide them as register
 rows D65 and D73 and the CEO only sees them. G8 rests on D48/S:759 ("libraries provide the decision machinery"). G2
 and G9 must say where the server simulation runs for solo play and replays: `turts_client` never depends on

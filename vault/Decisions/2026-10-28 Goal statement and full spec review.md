@@ -37,4 +37,6 @@ The register (`docs/research/review-2026-10/00-gap-register.md`, section 3) name
 
 **Added 2026-10-29:** the CEO decided "add stop and hold" to the 16.2 combat order list (Decided under D55; the gap register finding F3 named them as genre CORE).
 
+**Added 2026-10-29, D67 constraint (G5 kept at line a).** The CEO asked how mods get full freedom over their interface (menus, info panels, avatars) and proposed a canvas layer over the map. Answer: a mod-painted canvas is option (b), rejected by 5.1 (no per-frame script), D15 (no renderer details) and the browser frame budget. Line (a) gives the same freedom with a widget tree: the mod places any element at any position and size, with its own images, fonts and cursors; the engine fixes no layout and draws the primitives (box, image, text, bar, button, list, grid, tooltip, cursor, minimap view). A missing primitive is added for all mods (4.3). CEO: "record it as a D67 design constraint, keep (a)". Recorded in spec D67, section 15 HUD row, history 0.8, and the gap register. The widget set, schema, image formats and limits are the MC spec's work (`ux-designer`, `mod-runtime-engineer`).
+
 Next: spec amendment to version 0.8 (goal sentence, D65 to D74, section 14 and 15 rows, term fixes, D41 and S:352 updates), gated by `spec-rigour-reviewer` and `player`; CLAUDE.md stale lines; then QA0.
