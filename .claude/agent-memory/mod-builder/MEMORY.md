@@ -1,3 +1,4 @@
 - [Gaps in mod manifest and 6.5](gaps-mod-manifest-6-5.md) — 5.3 vs 5.5 field lists differ; identifier/hash/capability formats undefined (2026-10-26)
 - [M1 design gate 1](m1-design-gate1.md) — gate-1 8 gaps closed in rev 2; open: map rules, T2a visual oracle, type-name leak test (2026-10-26)
 - [M1 test zeta run](m1-test-zeta.md) — zeta ran end to end; orphan visual silent; client reject exit 0; --move moves all units
+- [Full review 2026-10-28](full-review-2026-10-28.md) — probes: weapons static, producers indestructible, no building output; C&C 50 %, SC 29.5 %
