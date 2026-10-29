@@ -148,6 +148,14 @@ def rule4(red, specs, items, milestones):
 def check_spec(path, milestone, items, milestones, register_ids, all_specs=None):
     red, rows = parse_coverage(path, milestone, items, milestones, register_ids)
     specs = list(all_specs or [])
+    if all_specs is None:
+        # R4 needs coverage evidence from every registered milestone spec.
+        for row in read_registry(ROOT / "docs/qa/specs.tsv"):
+            candidate = SPEC_ROOT / row["spec"]
+            if candidate == path or row["client"] not in ("yes", "no") or not candidate.is_file():
+                continue
+            previous_rows = parse_coverage(candidate, row["milestone"], items, milestones, register_ids)[1]
+            specs.append((candidate, row["milestone"], previous_rows))
     specs.append((path, milestone, rows))
     rule4(red, specs, items, milestones)
     return red
