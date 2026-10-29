@@ -97,14 +97,14 @@ These are planning allowances, not required dispatch counts. Do not spend runs w
 
 | Run | Task | Seat | Model | Effort | Base | Result |
 | --- | --- | --- | --- | --- | --- | --- |
-| 1 | T1 build | qa-lead | gpt-6-luna | medium | 8d621f3 | dispatched |
+| 1 | T1 build | qa-lead | gpt-6-luna | medium | 8d621f3 | PASS d8bd6a7 |
 | 2 | T4 build | mod-runtime-engineer | gpt-6-luna | high | 8d621f3 | dispatched |
 
 ## 7. Task ledger
 
 | Task | Status | Branch | Commit | Red evidence | Green evidence | Runs used | Reviewer verdict |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| T1 | building | codex/qa0-t1 | - | NOT RUN | NOT RUN | 0 | pending R0 |
+| T1 | complete | codex/qa0-t1 | d8bd6a7 → 1a2b82b | missing TSV and tier plant exit 1; scratch hash plant exit 1 | 115 cmp exit 0; exact 83-file hash set; yardstick 355/181/4 and check exit 0 | 1 | R0 PASS |
 | T2 | pending | codex/qa0-t2 | - | NOT RUN | NOT RUN | 0 | pending |
 | T3 | pending | codex/qa0-t3 | - | NOT RUN | NOT RUN | 0 | pending |
 | T4 | building | codex/qa0-t4 | - | NOT RUN | NOT RUN | 0 | pending |
@@ -141,3 +141,7 @@ T1 branch: codex/qa0-t1, worktree /home/julien/.codex/worktrees/53d3/TuRTS. No p
 | T1 to T5 / T6 | Committed product and instruments become mutation targets | T6 runs after all merges; restore only committed files. |
 
 CEO call: [[Decisions/2026-10-29 QA0 mutation count and RTK removal]].
+
+### T1 path refinement
+
+The repair-selftest and rig-recheck sources both have empty.tsv with different bytes. Keep repair-selftest files at selftest/ and rig-recheck files at selftest/rig-recheck/. Preserve each byte sequence and record each cmp. This resolves a destination collision; no rule or source evidence changes. Root cmp confirmed that the two originals differ (exit 1). Root replayed all 115 source comparisons (exit 0), checked the exact 83-file SHA set (exit 0), and checked yardstick 355/181/4 and byte equality (exit 0).
