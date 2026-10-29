@@ -2,7 +2,8 @@
 
 Date: 2026-10-29. Revision 3. Status: **DRAFT, passed gate 1 (2026-10-29): spec-rigour-reviewer
 pass-with-changes, mod-runtime-engineer pass.** Revision 3 folds in the four non-blocking items of
-the rigour final re-check. No call is confirmed.
+the rigour final re-check. **CEO decisions (2026-10-29): K1 to K6 as recommended (K1 = O1); the
+build is the "must" tier of section 10 only.** The "can slip" items go to MC.
 Author: `qa-lead`. Implementer: a domain builder for each plan task. `qa-lead` writes or reviews
 each instrument.
 Commit of record for every `path:line` in this document: `f56125d`.
@@ -35,7 +36,8 @@ Sources of record:
 
 ### Calls for the CEO
 
-Each call needs a CEO answer before gate 2. The recommendation is the lean of `qa-lead`.
+The CEO answered every call on 2026-10-29: "all as recommended, must only". The recommendation
+column is the decision.
 
 | # | Call | Recommendation | Reason | Alternative and its cost |
 | --- | --- | --- | --- | --- |
