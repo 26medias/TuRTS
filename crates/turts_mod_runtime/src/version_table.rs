@@ -79,10 +79,10 @@ mod tests {
     #[test]
     fn sc3_row_since_0_2_1_refuses_caret_0_2() {
         let error = check_version_table(&manifest("^0.2"), &[row()]).unwrap_err();
-        assert_eq!(error.field_path, "engine_api");
-        assert!(error.message.contains("new field"), "{error}");
-        assert!(error.message.contains("0.2.1"), "{error}");
-        assert!(error.message.contains("`^0.2` admits 0.2.0"), "{error}");
+        assert_eq!(
+            error.to_string(),
+            "zeta/manifest.ron: engine_api: `new field` needs engine api 0.2.1; `^0.2` admits 0.2.0"
+        );
     }
 
     #[test]
