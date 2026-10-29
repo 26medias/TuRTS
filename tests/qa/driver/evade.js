@@ -1,3 +1,4 @@
+// turts-test-role: driver
 const r = eval("req" + "uire");
 const fs = r("node:" + "fs");
 module.exports.drive = async (io) => {

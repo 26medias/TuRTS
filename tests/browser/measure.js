@@ -1,3 +1,4 @@
+// turts-test-role: instrument
 // Browser measurements for the M1 client (design sections 4.5 and 7; plan Tasks 12 and 13).
 //
 // Usage: node measure.js <page url with ?server=..&ws=..> <label> [extra chrome args...]

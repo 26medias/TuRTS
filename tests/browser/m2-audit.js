@@ -1,3 +1,4 @@
+// turts-test-role: pure
 "use strict";
 
 const assert = require("node:assert/strict");

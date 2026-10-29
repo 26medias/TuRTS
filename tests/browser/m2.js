@@ -1,3 +1,4 @@
+// turts-test-role: legacy-bridge
 "use strict";
 
 // M2 browser interaction helpers. These read only the actual Bevy scene/UI snapshots and use

@@ -1,3 +1,4 @@
+// turts-test-role: instrument
 // Network spike P8 (Task 6b): the wasm client joins the spike server in headless Chrome.
 //
 // Usage: node spike_p8.js <page url> <ws host:port>
