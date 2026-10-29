@@ -2,6 +2,7 @@
 """Check roles and pixels-only constraints for browser test files."""
 import argparse
 import csv
+import os
 from pathlib import Path
 import re
 import sys
@@ -149,19 +150,33 @@ def part_a(source):
 
     for match in re.finditer(r"(?<![\w$])turts_[\w$]*", without_strings(code)):
         add("A1", match.start(), "bridge identifier")
-    for pattern in (r"(?<![\w$.])eval\s*\(", r"(?<![\w$])Function(?![\w$])",
-                    r"\.\s*constructor\b", r"\[\s*(['\"])constructor\1\s*\]"):
-        match = re.search(pattern, code)
+    for match in re.finditer(r"\[\s*(['\"])(turts_[\w$]+)\1\s*\]", code):
+        add("A1", match.start(), "bridge identifier")
+    code_tokens = without_strings(code)
+    for pattern, scanned in (
+        (r"(?<![\w$])eval(?![\w$])", code_tokens),
+        (r"(?<![\w$])Function(?![\w$])", code_tokens),
+        (r"\.\s*constructor\b", code_tokens),
+        (r"\[\s*(['\"])constructor\1\s*\]", code),
+        (r"(?:window|global|globalThis)\s*(?:\.\s*(?:eval|Function)|\[\s*(['\"])(?:eval|Function)\1\s*\])", code),
+    ):
+        match = re.search(pattern, scanned)
         if match:
             add("A2", match.start(), "dynamic code")
     for match in re.finditer(r"(?<![\w$.])(?:global|globalThis)(?![\w$])", code):
         add("A3", match.start(), "global access")
 
-    roots = r"(?:process|global|globalThis|window|module)"
+    roots = r"(process|global|globalThis|window|module)"
     for match in re.finditer(roots + r"\s*(?:\?\.\s*)?\[([^\]\n]*)\]", code):
-        key = match.group(1).strip()
-        if not re.fullmatch(r"(['\"])[^'\"+`$]*\1", key):
+        root = match.group(1)
+        key = match.group(2).strip()
+        literal = re.fullmatch(r"(['\"])([^'\"+`$]*)\1", key)
+        if not literal:
             add("A4", match.start(), "computed member with non-literal key")
+        elif root == "process" and literal.group(2) in PROCESS_MEMBERS:
+            add("A4", match.start(), "process code-loading member")
+        elif root == "module" and literal.group(2) != "exports":
+            add("A4", match.start(), "module member other than exports")
     for match in re.finditer(r"\[[^\]\n]*(?:['\"`][^\]\n]*\+|\+[^\]\n]*['\"])[^\]\n]*\]", code):
         add("A4", match.start(), "string-built computed key")
     for match in re.finditer(r"\[\s*`[^`]*\$\{", code):
@@ -298,7 +313,11 @@ def read_ledger(path):
 
 def check_directory(directory):
     found = set()
-    js_files = sorted(directory.rglob("*.js"))
+    js_files = []
+    for current, directories, filenames in os.walk(directory):
+        directories[:] = sorted(name for name in directories if name != "node_modules")
+        js_files.extend(Path(current) / name for name in filenames if name.endswith(".js"))
+    js_files.sort()
     for path in js_files:
         found.update(check_file(path))
     ledger_path = directory / "legacy-bridge.tsv"
