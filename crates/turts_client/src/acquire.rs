@@ -5,6 +5,7 @@
 //! package, `build_acquired` (design 4.4 and 5).
 
 use std::collections::HashMap;
+use std::collections::HashSet;
 
 use crate::content::ClientContent;
 use turts_mod_api::{ContentId, ENGINE_API_VERSION, ExecutionContext, LockEntry, Lockfile, Shape};
@@ -49,10 +50,26 @@ pub fn check_advertisement(bytes: &[u8]) -> Result<Advertisement, String> {
 
 /// Read the lockfile. The bytes are checked against the advertised hash first, and are not
 /// parsed when the hash differs (design 5).
-pub fn check_lockfile(bytes: &[u8], advertised_hash: &str) -> Result<Lockfile, String> {
+pub fn check_lockfile(
+    bytes: &[u8],
+    advertised_hash: &str,
+    advertised_mod_id: &str,
+) -> Result<Lockfile, String> {
     verify_hash(bytes, advertised_hash)
         .map_err(|error| format!("lockfile hash mismatch: {}", error.message))?;
-    read_lockfile(bytes).map_err(|error| error.to_string())
+    let lockfile = read_lockfile(bytes).map_err(|error| error.to_string())?;
+    let mut seen = HashSet::new();
+    for entry in &lockfile.packages {
+        if !seen.insert(entry.id.as_str()) {
+            return Err(format!("lockfile: package `{}` has two entries", entry.id));
+        }
+    }
+    if !seen.contains(advertised_mod_id) {
+        return Err(format!(
+            "lockfile: the advertised package `{advertised_mod_id}` has no entry"
+        ));
+    }
+    Ok(lockfile)
 }
 
 /// The packages the client downloads: context `Client` or `Shared`. A `Server` package is never

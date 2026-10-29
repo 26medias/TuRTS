@@ -96,7 +96,12 @@ fn pack_cli_help_lists_the_usage_and_the_checks() {
         assert!(stdout.starts_with("usage: turts-pack <dir>"), "{stdout}");
         assert!(stdout.contains("<dir>.tar"), "{stdout}");
         assert!(stdout.contains("sha256"), "{stdout}");
-        for check in ["unknown field", "server rules", "exactly one visual"] {
+        for check in [
+            "unknown field",
+            "server rules",
+            "exactly one visual",
+            "capabilit",
+        ] {
             assert!(stdout.contains(check), "usage lacks `{check}`:\n{stdout}");
         }
         assert!(stdout.contains("exits with 2"), "{stdout}");

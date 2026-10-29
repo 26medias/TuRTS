@@ -92,8 +92,34 @@ fn a_field_typo_is_refused() {
             "movement: Some((speed: 8.0))",
             "movenment: Some((speed: 8.0))",
         )],
-        "zeta/units/runner.ron: unknown field `movenment` at line 1 column 64 \
+        "zeta/units/runner.ron: unknown field `movenment` at line 1 column 64; did you mean `movement`? \
          (allowed: id, name, footprint, movement, inventory, gatherer, drop_off, producer, output_inventory, extractor, conveyor, inserter, machine, research, health, weapon, removal)",
+    );
+}
+
+#[test]
+fn an_unknown_capability_is_refused() {
+    assert_refused(
+        "bad_capability",
+        &[(
+            "manifest.ron",
+            "capabilities: []",
+            "capabilities: [\"scripts.server\"]",
+        )],
+        "zeta/manifest.ron: capabilities: unknown capability `scripts.server`; known: none",
+    );
+}
+
+#[test]
+fn a_duplicate_capability_is_refused() {
+    assert_refused(
+        "duplicate_capability",
+        &[(
+            "manifest.ron",
+            "capabilities: []",
+            "capabilities: [\"scripts.server\", \"scripts.server\"]",
+        )],
+        "zeta/manifest.ron: capabilities: capability `scripts.server` is listed twice",
     );
 }
 

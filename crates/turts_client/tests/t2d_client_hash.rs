@@ -64,7 +64,7 @@ fn t2d_lockfile_bytes_off_are_refused() {
     };
     let bytes = write_lockfile(&lock);
     let hash = sha256_hex(&bytes);
-    assert_eq!(check_lockfile(&bytes, &hash).unwrap(), lock);
+    assert_eq!(check_lockfile(&bytes, &hash, "acme").unwrap(), lock);
 
     // Change one letter of a URL. The JSON stays valid, so only the hash check can refuse it.
     let at = bytes
@@ -78,7 +78,7 @@ fn t2d_lockfile_bytes_off_are_refused() {
         "the flip must leave valid JSON"
     );
 
-    let error = check_lockfile(&flipped, &hash).unwrap_err();
+    let error = check_lockfile(&flipped, &hash, "acme").unwrap_err();
     assert!(error.contains("hash"), "{error}");
     assert!(
         error.contains(&hash) && error.contains(&sha256_hex(&flipped)),

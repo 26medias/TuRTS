@@ -87,18 +87,20 @@ Count each dispatch and each resumed work turn as one run. Record it before disp
 | T1 | 2 | 1 |
 | T2 | 4 | 0 |
 | T3 | 4 | 0 |
-| T4 | 4 | 1 |
+| T4 | 4 | 3 |
 | T5 | 4 | 0 |
 | T6 | 4 | 0 |
 | Repair reserve | 4 | 0 |
-| Total | 22 to 26 | 2 |
+| Total | 22 to 26 | 4 |
 
 These are planning allowances, not required dispatch counts. Do not spend runs without a task.
 
 | Run | Task | Seat | Model | Effort | Base | Result |
 | --- | --- | --- | --- | --- | --- | --- |
 | 1 | T1 build | qa-lead | gpt-6-luna | medium | 8d621f3 | PASS d8bd6a7 |
-| 2 | T4 build | mod-runtime-engineer | gpt-6-luna | high | 8d621f3 | dispatched |
+| 2 | T4 build | mod-runtime-engineer | gpt-6-luna | high | 8d621f3 | PASS at 547014a |
+| 3 | T4 review | qa-lead | gpt-6.1-sol | high | 5ac68b7 | pass-with-changes; 1 medium, 0 High; version text |
+| 4 | T4 scoped recheck | qa-lead | gpt-6.1-sol | high | 547014a | PASS; 0 findings |
 
 ## 7. Task ledger
 
@@ -107,7 +109,7 @@ These are planning allowances, not required dispatch counts. Do not spend runs w
 | T1 | complete | codex/qa0-t1 | d8bd6a7 → 1a2b82b | missing TSV and tier plant exit 1; scratch hash plant exit 1 | 115 cmp exit 0; exact 83-file hash set; yardstick 355/181/4 and check exit 0 | 1 | R0 PASS |
 | T2 | pending | codex/qa0-t2 | - | NOT RUN | NOT RUN | 0 | pending |
 | T3 | pending | codex/qa0-t3 | - | NOT RUN | NOT RUN | 0 | pending |
-| T4 | building | codex/qa0-t4 | - | NOT RUN | NOT RUN | 0 | pending |
+| T4 | complete | codex/qa0-t4 | 5ac68b7,5aff67f,547014a | all intended semantic failures exit 101; SC3 review plant exit 101 | five final gates exit 0; 775 passed, 0 failed, 18 ignored | 3 | Sol PASS after text correction; 0 open |
 | T5 | pending | codex/qa0-t5 | - | NOT RUN | NOT RUN | 0 | pending |
 | T6 | pending | codex/qa0-t6 | - | NOT RUN | NOT RUN | 0 | pending consumer |
 
