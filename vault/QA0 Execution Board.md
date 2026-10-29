@@ -86,12 +86,12 @@ Count each dispatch and each resumed work turn as one run. Record it before disp
 | --- | --- | --- |
 | T1 | 2 | 1 |
 | T2 | 4 | 6 |
-| T3 | 4 | 1 |
+| T3 | 4 | 3 |
 | T4 | 4 | 3 |
 | T5 | 4 | 3 |
 | T6 | 4 | 0 |
 | Repair reserve | 4 | 2 allocated to T2; included in task actuals |
-| Total | 22 to 26 | 14 |
+| Total | 22 to 26 | 16 |
 
 These are planning allowances, not required dispatch counts. Do not spend runs without a task.
 
@@ -110,7 +110,9 @@ These are planning allowances, not required dispatch counts. Do not spend runs w
 | 11 | T2 scoped recheck | qa-lead | gpt-6.1-sol | high | df9a1f3 | 4 addressed; new medium: exempt rows treated as R4 consumers |
 | 12 | T2 repair round 2 | backend-engineer | gpt-6-luna | high | df9a1f3 | fixed at e3fd97d |
 | 13 | T2 scoped recheck 2 | qa-lead | gpt-6.1-sol | high | e3fd97d | PASS, 0 findings |
-| 14 | T3 build | web-platform-engineer | gpt-6-luna | high | c9e1dbf | dispatched |
+| 14 | T3 build | web-platform-engineer | gpt-6-luna | high | c9e1dbf | source c00135d; report pending |
+| 15 | T3 review | qa-lead | gpt-6.1-sol | high | c00135d | FAIL; 3 High, 1 medium: eval alias, literal bridge/member, node_modules scan |
+| 16 | T3 repair | web-platform-engineer | gpt-6-luna | high | c00135d | dispatched |
 
 ## 7. Task ledger
 
