@@ -76,58 +76,6 @@ def without_comments(source):
     return "".join(chars)
 
 
-def without_strings(source):
-    """Mask string text but retain executable code in template expressions."""
-    chars = list(source)
-    frames = [{"kind": "code", "brace": None}]
-    i = 0
-    while i < len(chars):
-        c = chars[i]
-        frame = frames[-1]
-        if frame["kind"] == "string":
-            if c != "\n":
-                chars[i] = " "
-            if frame["escaped"]:
-                frame["escaped"] = False
-            elif c == "\\":
-                frame["escaped"] = True
-            elif c == frame["quote"]:
-                frames.pop()
-            i += 1
-            continue
-        if frame["kind"] == "template":
-            if c != "\n":
-                chars[i] = " "
-            if frame["escaped"]:
-                frame["escaped"] = False
-            elif c == "\\":
-                frame["escaped"] = True
-            elif c == "`":
-                frames.pop()
-            elif c == "$" and i + 1 < len(chars) and chars[i + 1] == "{":
-                chars[i + 1] = " "
-                frames.append({"kind": "code", "brace": 1})
-                i += 2
-                continue
-            i += 1
-            continue
-        if c in "'\"":
-            chars[i] = " "
-            frames.append({"kind": "string", "quote": c, "escaped": False})
-        elif c == "`":
-            chars[i] = " "
-            frames.append({"kind": "template", "escaped": False})
-        elif frame["brace"] is not None and c == "{":
-            frame["brace"] += 1
-        elif frame["brace"] is not None and c == "}":
-            frame["brace"] -= 1
-            if frame["brace"] == 0:
-                chars[i] = " "
-                frames.pop()
-        i += 1
-    return "".join(chars)
-
-
 def read_role(path):
     try:
         lines = path.read_text(encoding="utf-8").splitlines()
@@ -174,9 +122,7 @@ def part_a(source):
     def add(rule, offset, text):
         found.setdefault(rule, (line_of(source, offset), text))
 
-    for match in re.finditer(r"(?<![\w$])turts_[\w$]*", without_strings(code)):
-        add("A1", match.start(), "bridge identifier")
-    for match in re.finditer(r"\[\s*(?:(['\"])(turts_[\w$]+)\1|`(turts_[\w$]+)`)\s*\]", code):
+    for match in re.finditer(r"(?<![\w$])turts_[\w$]+", code):
         add("A1", match.start(), "bridge identifier")
     for pattern, scanned in (
         (r"(?<![\w$])eval(?![\w$])", code),
