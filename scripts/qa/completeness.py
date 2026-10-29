@@ -161,6 +161,17 @@ def check_spec(path, milestone, items, milestones, register_ids, all_specs=None)
     return red
 
 
+def check_spec_case(path, milestone, items, milestones, register_ids):
+    red = check_spec(path, milestone, items, milestones, register_ids)
+    if milestone in {"QA0", "MS"}:
+        red = [line for line in red if not RED.match(line) or RED.match(line).group(1) not in {"R1", "R2", "R3"}]
+    return red
+
+
+def rule_ids(lines):
+    return {match.group(1) for line in lines if (match := RED.match(line))}
+
+
 def read_registry(path):
     return read_tsv(path)
 
@@ -237,15 +248,13 @@ def self_test():
         path_value = case["file"]
         if case["mode"] == "spec":
             path = ROOT / path_value
-            got_lines = check_spec(path, case["as_milestone"], items, milestones, register_ids)
-            if case["as_milestone"] in {"QA0", "MS"}:
-                got_lines = [line for line in got_lines if not RED.match(line) or RED.match(line).group(1) not in {"R1", "R2", "R3"}]
+            got_lines = check_spec_case(path, case["as_milestone"], items, milestones, register_ids)
         elif case["mode"] == "enforce-dir":
             base = ROOT / path_value
             got_lines, _checked = enforce(base / "specs", base / "specs.tsv")
         else:
             got_lines = [diagnostic("R1", path_value, "-", "unknown mode")]
-        got = {match.group(1) for line in got_lines if (match := RED.match(line))}
+        got = rule_ids(got_lines)
         if got != expected:
             print("FAIL case {} {}: want {} got {}".format(number, path_value, sorted(expected), sorted(got)))
             for line in got_lines:
@@ -264,6 +273,22 @@ def self_test():
         failures += 1
     if len(cases) < MIN_CASES:
         print("FAIL self-test: {}<{} cases".format(len(cases), MIN_CASES))
+        failures += 1
+    # Keep QA0/MS player-path policy independent of fixture filenames.
+    policy_path = ROOT / "tests/qa/completeness/policy-no-player.md"
+    for milestone in ("QA0", "MS"):
+        policy_rules = rule_ids(check_spec_case(policy_path, milestone, items, milestones, register_ids))
+        if policy_rules & {"R1", "R2", "R3"}:
+            print("FAIL self-test: {} spec mode ran client rules {}".format(milestone, sorted(policy_rules & {"R1", "R2", "R3"})))
+            failures += 1
+    # Exercise the real enforce path with an exempt M1 dependency row.
+    prior_dir = ROOT / "tests/qa/completeness/dirs/prior"
+    prior_lines, prior_checked = enforce(prior_dir / "specs", prior_dir / "specs.tsv")
+    prior_rules = rule_ids(prior_lines)
+    if prior_rules != {"R1"} or prior_checked != 1:
+        print("FAIL self-test: prior exempt dependency: want ['R1'] checked 1 got {} checked {}".format(sorted(prior_rules), prior_checked))
+        for line in prior_lines:
+            print(line)
         failures += 1
     print("self-test: {}/{} cases passed; failures={}".format(passed_cases, len(cases), failures))
     return 1 if failures else 0
