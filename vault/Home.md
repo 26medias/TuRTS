@@ -10,14 +10,14 @@ source: mcp
 
 ## For future Claude
 
-**Latest QA0 state:** All six tasks merged and locally verified; 26/26 agent runs used. Hosted check remains pending. The session stopped at the requested cap. [[Reports/2026-10-29]] supersedes earlier status notes.
+**Latest QA0 state:** QA0 is complete. All six tasks are merged; check and agents CI passed. All 23 mutation cases passed; 26/26 agent runs used. The known M2 browser failure remains. [[Reports/2026-10-29]] supersedes earlier status notes.
 Dashboard for the TuRTS studio. Read this first, then [[Tasks]] and the latest note in Reports.
 
 # TuRTS studio
 
 **Product:** mod-first RTS engine in Rust and Bevy. Browser WebAssembly client first, authoritative headless server, the official game is a default mod on the public API. Spec: `RTS-Engine-Project-Specifications.md` (v0.8, 2026-10-29).
 
-**Current milestone:** QA0. All six tasks are merged into codex/qa0-integration; final code 3e1b0ab. Local verification and all 23 mutations passed. Agents CI is green; hosted check is pending. Stopped at 26/26 runs. Run sheet: [[QA0 Execution Board]]. Receipt: [[Work Log/2026-10-29 QA0 T6 receipt]]. Report: [[Reports/2026-10-29]]. Main is unchanged; CEO approval remains required for main integration.
+**Current milestone:** QA0. All six tasks are merged into codex/qa0-integration; final code 3e1b0ab. Local verification and all 23 mutations passed. Check and agents CI are green. The known M2 browser failure is unchanged. Closed at 26/26 runs. Run sheet: [[QA0 Execution Board]]. Receipt: [[Work Log/2026-10-29 QA0 T6 receipt]]. Report: [[Reports/2026-10-29]]. Main is unchanged; CEO approval remains required for main integration.
 
 **Phase:** API0.2.1/protocol3 industrial graybox is locally validated. Exact-source gates:760 passed,0 failed,18 ignored; strict Clippy, wasm, boundaries and frozen M2 stream pass. Native M2 faults33/33, M3 formal faults17/17, browser faults8/8, positive browser15/15, real private-research/combat F11, Forge browser7 and T7 pass. Final judgments and hosted CI/push/main merge approvals remain.
 

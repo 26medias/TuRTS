@@ -8,7 +8,7 @@ source: codex
 
 ## For future Claude
 
-This is the QA0 run sheet. All six tasks are merged and locally verified. The 26-run cap is reached. Do not dispatch run 27 without the CEO. Hosted check is still pending. The CEO approved all 23 mutation cases. The integration base is `074fe7eed153ae30e56830e639daf84757c16344`. This base contains `7a148ba`.
+This is the QA0 run sheet. All six tasks are complete. Check and agents CI passed at final code 3e1b0ab. The known M2 browser failure remains. The 26-run cap is reached. Do not dispatch run 27 without the CEO. The CEO approved all 23 mutation cases. The integration base is `074fe7eed153ae30e56830e639daf84757c16344`. This base contains `7a148ba`.
 
 # QA0 execution board
 
@@ -133,7 +133,7 @@ These are planning allowances, not required dispatch counts. Do not spend runs w
 | T3 | complete | codex/qa0-t3 | d6e770c; final 7b859f8,b2180c8 | stub red1; A7/DR6/role plants red1; literal escape regression probes | final CI46/46 and live tree exit=0; Node 16 and syntax12 pass; original 40 unchanged | 7 | same final Sol SOURCE_PASS on combined candidate5b5d6ae |
 | T4 | complete | codex/qa0-t4 | 5ac68b7,5aff67f,547014a | all intended semantic failures exit 101; SC3 review plant exit 101 | five final gates exit 0; 775 passed, 0 failed, 18 ignored | 3 | Sol PASS after text correction; 0 open |
 | T5 | complete | codex/qa0-t5 | 9fc246c,6fc6720 | stub/old rules exit 101; real tie red101; LR1-LR8 scratch plants red101 | five final gates exit 0; 796 passed, 0 failed, 18 ignored | 3 | same Sol PASS, 0 open |
-| T6 | local verification complete; hosted check pending | codex/qa0-t6 | receipt 40a48b5,f1f4081; code 3e1b0ab | 23 cases; 24 semantic red commands, no compile-error red | 24 restored greens; 4 repeats; all A1-A21 dispositions in receipt | 6 | final Sol PASS; optional consumer help note deferred |
+| T6 | complete; check and agents CI passed | codex/qa0-t6 | receipt 40a48b5,f1f4081; code 3e1b0ab | 23 cases; 24 semantic red commands, no compile-error red | 24 restored greens; 4 repeats; all A1-A21 dispositions in receipt | 6 | final Sol PASS; optional consumer help note deferred |
 
 ## 8. Preflight findings
 
@@ -195,7 +195,7 @@ Ruling: restore the approved probe's conservative A1 namespace scan instead of t
 
 Budget cap reached: 26 authorised agent runs. Run26 must finish and be recorded; no run27 is authorised. Stop and report the concrete source, validation and CI state to the CEO after this final run.
 
-## Final handoff at the agent cap
+## Final closure at the agent cap
 
 - Unique agent runs: 26/26. No run 27 is authorised. Run 23 is shared between T2 and T3 and is charged only once. RUNS fields inside seat reports count shell/probe operations, not agent dispatches.
 - All six task branches are merged. Code source: 3e1b0ab3897dda6de910bf73c784153aa97d72d9. Later changes are vault-only.
@@ -203,9 +203,9 @@ Budget cap reached: 26 authorised agent runs. Run26 must finish and be recorded;
 - Baseline full run: workspace 796 passed, 0 failed, 18 ignored; process acceptance 17/17; Node 16/16; private Vulkan T7 137-frame oracle passed. Final runtime/browser/CI bytes match that baseline.
 - Final Python gates: yardstick 355 rows / 181 CORE; completeness 21/21 and checked1; driver 46/46 and live tree green.
 - Final independent sweep: 24 semantic reds (19 Rust exit101,5 Python exit1),24 restored greens exit0,23 clean/blob proofs. Four repeat checks exit0.
-- Hosted final code run: https://github.com/26medias/TuRTS/actions/runs/40923429639. Agents and all three new steps are green. Check remains running. Latest browser remains running at this snapshot; prior same-runtime run 40912942212 passed T7 then failed at the unchanged known M2 timeout. Cause NOT TRACED; not chased.
-- Remaining required closure: hosted check success. No source blocker remains.
+- Hosted final code run: https://github.com/26medias/TuRTS/actions/runs/40923429639. Check and agents passed. All three new agents steps passed. Browser T7 passed, then M2 browser proof failed with the same 15000 ms rifleman timeout after Joined slot 0 as run 40912942212. Cause NOT TRACED; not chased.
+- Required QA0 closure is complete. No source blocker remains. Main integration awaits the CEO.
 - Deferred by scope: A8/MC split and harness, A19 remains an O1 guard, Claude's documentation updates. Optional LR3 help explanation is deferred. Conservative A1 namespace-text refusal follows the approved probe. Root-id-alias policy is NOT TRACED; no new rule was inferred.
 - Main is unchanged at 074fe7e and was not pushed. The pre-existing untracked disk audit report is preserved. RTK executable and command hook are removed.
 
-Stop here and ask the CEO before further agent work. CI-only monitoring uses no further agent runs, but the session stops for the required cap report.
+The CEO approved CI-only monitoring after the cap report. No further agent ran. Main was not merged or pushed.

@@ -10,16 +10,14 @@ source: mcp
 
 ## For future Claude
 
-**Latest QA0 state:** Six tasks merged and locally verified; 26/26 agent runs used. Hosted check is pending. Stopped at the requested cap. [[Reports/2026-10-29]].
+**Latest QA0 state:** QA0 is complete. Six tasks merged; check and agents CI passed; all 23 mutation cases passed. Closed at 26/26 agent runs. [[Reports/2026-10-29]].
 The task board. Move items between sections; keep owner and evidence link on each line.
 
 # Task board
 
 ## In progress
 
-- [ ] **QA0 hosted CI closure.** All six tasks and local verification are complete. Final code3e1b0ab; all23mutation cases passed; agents CI green. Hosted check remains pending. No run27 is authorised. [[QA0 Execution Board]] · [[Reports/2026-10-29]]
-
-- [ ] **Full spec review (2026-10-28): 16/16 fail. CEO decided G1-G16 on 2026-10-29 (G1 with clause, rest as team lean).** Spec v0.8 amended and gated (2026-10-29). Stop and hold in 16.2 Decided (CEO, 2026-10-29). QA0 design and plan passed both gates (2026-10-29); K1-K6 decided, must tier. Build handed to Codex on 2026-10-29 ([[Reports/2026-10-29 QA0 Codex brief]]; 6 tasks, 22-26 runs). Integration branch and [[QA0 Execution Board]] created from 074fe7e; all six tasks merged and locally verified, 26/26 agent runs; hosted check pending; stopped at the cap; CEO approved all 23 mutation cases. `ux-designer` seat (G11) created 2026-10-29; D67 design constraint recorded (free placement, keep line a). M4 draft on hold until after MP2. [[Reports/2026-10-28 Full spec review]] · [[Decisions/2026-10-28 Goal statement and full spec review]]
+- [ ] **Full spec review (2026-10-28): 16/16 fail. CEO decided G1-G16 on 2026-10-29 (G1 with clause, rest as team lean).** Spec v0.8 amended and gated (2026-10-29). Stop and hold in 16.2 Decided (CEO, 2026-10-29). QA0 design and plan passed both gates (2026-10-29); K1-K6 decided, must tier. Build handed to Codex on 2026-10-29 ([[Reports/2026-10-29 QA0 Codex brief]]; 6 tasks, 22-26 runs). Integration branch and [[QA0 Execution Board]] created from 074fe7e; all six tasks complete, 26/26 agent runs; check and agents CI passed; known M2 browser failure recorded; CEO approved all 23 mutation cases. `ux-designer` seat (G11) created 2026-10-29; D67 design constraint recorded (free placement, keep line a). M4 draft on hold until after MP2. [[Reports/2026-10-28 Full spec review]] · [[Decisions/2026-10-28 Goal statement and full spec review]]
 - [ ] **M3 industrial loop implementation (20/20 accepted; final milestone judgments active).** T0 freezes real M2 operation streams; T1 adds the additive API0.2.1 schema, package readers, resolved catalog and source diagnostics, with old-reader serialization compatibility. T2 portable validation and T3a state/reasons are accepted; T4 public boot is accepted; checkpoint C1 passed (all88 added tests have semantic red evidence), T6/T7 are accepted, and T8/T9/T10/T11/T12 are accepted, T13a is accepted, and C2 passed on frozen b87c111. T13b export is accepted; T14 oracle/scenario work is accepted while T15a client ingest is accepted and T15b presentation and browser gates are accepted on `codex/m3-integration`. Board: [[M3 Execution Board]]. Approved scope: [[Decisions/2026-10-27 M3 scope and orchestrator calls]]. F11 privacy resolution: [[Decisions/2026-10-27 M3 F11 private research trigger]]. Extraction, transport, inserters, machines, research and combat are accepted; Task16 and independent C4 passed; final technical, player and mod-author judgments remain before the local test handoff and integration approvals.
 
 No M2 tasks remain in progress; all 16 were accepted on 2026-10-27.
@@ -36,6 +34,8 @@ No M2 tasks remain in progress; all 16 were accepted on 2026-10-27.
 - [ ] Acceptance tests T1 to T6 (producer's list), each shown red first.
 
 ## Done
+
+- [x] **QA0 hosted CI closure.** All six tasks are complete. Final code 3e1b0ab; all 23 mutation cases passed; check and agents CI green. Browser has the unchanged known M2 timeout. Closed at 26/26 runs; no run 27 is authorised. [[QA0 Execution Board]] · [[Reports/2026-10-29]]
 
 - [x] **2026-10-27: M2 implementation (Tasks 1–16) accepted.** Final canonical source: `601e71286e56bd2cbed0ecf9f0240ebcecd63047`; task closeout follows all 41 native/browser semantic refutations, six Task16 source/consumer review lenses, the final guarded release acceptance, tracked T7, and all 15 default M2 browser positives. Global workspace validation: 497 passed, 0 failed, 17 ignored across 72 groups; fmt, strict Clippy, wasm and boundary gates passed. Browser mutation audit: 8/8 semantic RED/restored GREEN; native: 33/33; final no-argument M2 browser suite: 15/15. Evidence and hashes: `docs/measurements/m2.md` and `target/task16-canonical-union/final-601e712/`. GitHub Actions was not run; CI-host measurements and performance budgets remain open. The prototype is a multiplayer graybox; gameplay systems beyond the accepted economy slice remain future work.
 
