@@ -85,13 +85,13 @@ Count each dispatch and each resumed work turn as one run. Record it before disp
 | Allocation | Planned runs | Used |
 | --- | --- | --- |
 | T1 | 2 | 1 |
-| T2 | 4 | 1 |
+| T2 | 4 | 3 |
 | T3 | 4 | 0 |
 | T4 | 4 | 3 |
-| T5 | 4 | 1 |
+| T5 | 4 | 2 |
 | T6 | 4 | 0 |
 | Repair reserve | 4 | 0 |
-| Total | 22 to 26 | 6 |
+| Total | 22 to 26 | 9 |
 
 These are planning allowances, not required dispatch counts. Do not spend runs without a task.
 
@@ -101,8 +101,11 @@ These are planning allowances, not required dispatch counts. Do not spend runs w
 | 2 | T4 build | mod-runtime-engineer | gpt-6-luna | high | 8d621f3 | PASS at 547014a |
 | 3 | T4 review | qa-lead | gpt-6.1-sol | high | 5ac68b7 | pass-with-changes; 1 medium, 0 High; version text |
 | 4 | T4 scoped recheck | qa-lead | gpt-6.1-sol | high | 547014a | PASS; 0 findings |
-| 5 | T2 build | backend-engineer | gpt-6-luna | high | b960f09 | dispatched |
-| 6 | T5 build | mod-runtime-engineer | gpt-6-luna | high | b960f09 | dispatched |
+| 5 | T2 build | backend-engineer | gpt-6-luna | high | b960f09 | source PASS b91af0f |
+| 6 | T5 build | mod-runtime-engineer | gpt-6-luna | high | b960f09 | source 9fc246c; gates running |
+| 7 | T5 review | qa-lead | gpt-6.1-sol | high | 9fc246c | pass-with-changes; 2 medium; tie order and removable rule calls |
+| 8 | T2 review | qa-lead | gpt-6.1-sol | high | b91af0f | FAIL; 1 High, 3 medium; separate enforce path, evidence, status, spec policy |
+| 9 | T2 repair | backend-engineer | gpt-6-luna | high | b91af0f | dispatched |
 
 ## 7. Task ledger
 
