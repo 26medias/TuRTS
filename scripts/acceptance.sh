@@ -67,12 +67,12 @@ run_cargo_test() {
     return 1
   fi
   if [[ "$expected" == exact ]]; then
-    if ! rg -q '^test result: ok\. 1 passed; 0 failed; 0 ignored;' "$log"; then
+    if ! grep -Eq '^test result: ok\. 1 passed; 0 failed; 0 ignored;' "$log"; then
       printf 'expected exactly one passing test and no failures: %s (log: %s)\n' "$label" "$log" >&2
       return 1
     fi
   else
-    if ! rg -q '^test result: ok\. [1-9][0-9]* passed; 0 failed;' "$log"; then
+    if ! grep -Eq '^test result: ok\. [1-9][0-9]* passed; 0 failed;' "$log"; then
       printf 'expected at least one passing test and no failures: %s (log: %s)\n' "$label" "$log" >&2
       return 1
     fi
@@ -92,12 +92,12 @@ required=(
   e10_cedar_uses_public_pack_and_boot
 )
 for name in "${required[@]}"; do
-  if ! rg -q "^${name}: test$" <<<"$listing"; then
+  if ! grep -Eq "^${name}: test$" <<<"$listing"; then
     printf 'missing Task 15 process acceptance test: %s\n' "$name" >&2
     exit 1
   fi
 done
-selected=$(rg -c '^(e8_commands_are_authoritative_and_acked|e9_two_owners_late_join_and_output_lifecycle|e9_loss_and_small_buffer_converge|e10_cedar_uses_public_pack_and_boot): test$' <<<"$listing")
+selected=$(grep -Ec '^(e8_commands_are_authoritative_and_acked|e9_two_owners_late_join_and_output_lifecycle|e9_loss_and_small_buffer_converge|e10_cedar_uses_public_pack_and_boot): test$' <<<"$listing")
 if [[ "$selected" != 4 ]]; then
   printf 'expected exactly four Task 15 process acceptance tests, found %s\n' "$selected" >&2
   exit 1
@@ -107,11 +107,11 @@ for name in "${required[@]}"; do
 done
 run_cargo_test t5_convergence exact -p turts_server --test acceptance -- --ignored --test-threads=1 --exact t5_convergence
 listing_m3=$(cargo test --release -p turts_server --test m3_process -- --list)
-if ! rg -q '^f11_private_research_coordinator_releases_ordered_opponent_move_and_health_trace: test$' <<<"$listing_m3"; then
+if ! grep -Eq '^f11_private_research_coordinator_releases_ordered_opponent_move_and_health_trace: test$' <<<"$listing_m3"; then
   echo "missing Task 16 F11 process acceptance test" >&2
   exit 1
 fi
-selected_m3=$(rg -c '^f11_private_research_coordinator_releases_ordered_opponent_move_and_health_trace: test$' <<<"$listing_m3")
+selected_m3=$(grep -Ec '^f11_private_research_coordinator_releases_ordered_opponent_move_and_health_trace: test$' <<<"$listing_m3")
 if [[ "$selected_m3" != 1 ]]; then
   printf 'expected exactly one F11 process test, found %s\n' "$selected_m3" >&2
   exit 1
