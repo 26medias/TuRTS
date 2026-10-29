@@ -1,0 +1,25 @@
+== fx_green.md
+VERDICT green
+exit=0
+== fx_mut_a_drop_PC02.md
+RED R4 wrong-milestone: OR24 in at M4, dependency PC02 in at never
+RED R1 1 'has no row' lines; first: R1 fx_mut_a_drop_PC02.md: CORE item PC02 has no row
+VERDICT red
+exit=1
+== fx_mut_b_OR24_no_test.md
+RED R2 fx_mut_b_OR24_no_test.md: OR24 is in scope with no test
+VERDICT red
+exit=1
+== fx_mut_c_no_player_path.md
+RED R3 fx_mut_c_no_player_path.md: no 'Player path' section with numbered steps
+VERDICT red
+exit=1
+== fx_mut_d_CA01_later.md
+RED R4 wrong-milestone: IN01 in at M4, dependency CA01 in at never
+RED R4 wrong-milestone: PC02 in at M4, dependency CA01 in at never
+VERDICT red
+exit=1
+== fx_mut_e_PC02_test_H9.md
+RED R2 fx_mut_e_PC02_test_H9.md: PC02 names test H9, absent from the acceptance section
+VERDICT red
+exit=1

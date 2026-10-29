@@ -1,0 +1,9 @@
+RED m3-human.js:7: const { waitForSnapshot, captureStage, clickRenderedUiAction, visibleTexts } = require("./m2.js");
+RED m3-human.js:27: await clickRenderedUiAction(page, joined.scene, "select", action => action.unit === lab.unit_id);
+RED m3-human.js:35: await clickRenderedUiAction(page, ready.scene, "produce", action => action.producer === lab.unit_id);
+RED m3-human.js:43: await clickRenderedUiAction(page, complete.scene, "select", a => a.unit === turret.unit_id);
+RED t7.js:134: text: typeof window.turts_debug === "function" ? window.turts_debug() : null,
+RED t7.js:135: scene: typeof window.turts_scene === "function" ? window.turts_scene() : null,
+RED t7.js:152: return `window.turts_scene() gave ${JSON.stringify(scene)}`;
+RED t7.js:213: await page.evaluate(([x, y]) => window.turts_move(x, y), MOVE_TARGET);
+VERDICT red (8 bridge uses)

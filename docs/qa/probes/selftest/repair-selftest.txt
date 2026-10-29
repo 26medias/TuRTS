@@ -1,0 +1,23 @@
+== empty.tsv (full rule set)
+self-test red
+  exempt specs without an expected-red case: ['2026-10-26-m1-foundation-design.md', '2026-10-26-m2-economy-design.md', '2026-10-27-m3-industrial-design.md', '2026-10-28-m4-terrain-design.md']
+  rules with no expected-red case: ['R1', 'R2', 'R3', 'R4', 'R5', 'R6', 'R7', 'R8']
+  0 cases, minimum 18
+exit=1
+== probe-set.tsv (model limited to R1-R4, minimum 10 rows: the probe has no R5-R8 mutations)
+self-test green
+exit=0
+== overlap.tsv (model limited to R1-R4, minimum 10 rows: the probe has no R5-R8 mutations)
+self-test red
+  case fx_mut_a_drop_PC02.md: expected ['R1'] got ['R1', 'R4']
+exit=1
+== no-m4.tsv (model limited to R1-R4, minimum 10 rows: the probe has no R5-R8 mutations)
+self-test red
+  exempt specs without an expected-red case: ['2026-10-28-m4-terrain-design.md']
+  9 cases, minimum 10
+exit=1
+== probe-set.tsv (full rule set)
+self-test red
+  rules with no expected-red case: ['R5', 'R6', 'R7', 'R8']
+  10 cases, minimum 18
+exit=1

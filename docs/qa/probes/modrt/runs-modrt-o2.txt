@@ -1,0 +1,27 @@
+G golden: 20 files, 20 equal, 0 differ, 20 round-trip equal
+E0 valid [O1 real UnitDef]: ACCEPTED
+E0 valid [O2 table]: ACCEPTED
+E1 typo helth [O1 real UnitDef]: REJECTED NoSuchStructField { expected: ["id", "name", "footprint", "movement", "inventory", "gatherer", "drop_off", "producer", "output_inventory", "extractor", "conveyor", "inserter", "machine", "research", "health", "weapon", "removal"], found: "helth", outer: Some("UnitDef") }
+E1 typo helth [O2 table]: REJECTED NoSuchStructField { expected: ["id", "name", "footprint", "movement", "inventory", "gatherer", "drop_off", "producer", "output_inventory", "extractor", "conveyor", "inserter", "machine", "research", "health", "weapon", "removal"], found: "helth", outer: Some("UnitDef") }
+E2 duplicate health [O1 real UnitDef]: REJECTED DuplicateStructField { field: "health", outer: Some("UnitDef") }
+E2 duplicate health [O2 table]: REJECTED DuplicateStructField { field: "health", outer: Some("UnitDef") }
+E3 duplicate required movement [O1 real UnitDef]: REJECTED DuplicateStructField { field: "movement", outer: Some("UnitDef") }
+E3 duplicate required movement [O2 table]: REJECTED DuplicateStructField { field: "movement", outer: Some("UnitDef") }
+E4 missing required movement [O1 real UnitDef]: REJECTED MissingStructField { field: "movement", outer: Some("UnitDef") }
+E4 missing required movement [O2 table]: REJECTED MissingStructField { field: "movement", outer: Some("UnitDef") }
+E5 missing fixed name [O1 real UnitDef]: REJECTED MissingStructField { field: "name", outer: Some("UnitDef") }
+E5 missing fixed name [O2 table]: REJECTED MissingStructField { field: "name", outer: Some("UnitDef") }
+E6 typo inside block [O1 real UnitDef]: REJECTED NoSuchStructField { expected: ["max"], found: "maxx", outer: Some("HealthDef") }
+E6 typo inside block [O2 table]: REJECTED NoSuchStructField { expected: ["max"], found: "maxx", outer: Some("HealthDef") }
+E2 duplicate health [O2 naive, no seen-set]: ACCEPTED
+V engine = 0.2.1
+V manifest.rs:34 engine check for `^0.2` against 0.2.1: pass
+V   same check if engine were 0.3.0: REFUSED
+V manifest.rs:34 engine check for `^0.2.1` against 0.2.1: pass
+V   same check if engine were 0.3.0: REFUSED
+V manifest.rs:34 engine check for `^0.3` against 0.2.1: REFUSED
+V   same check if engine were 0.3.0: pass
+V manifest.rs:34 engine check for `^0.3.0` against 0.2.1: REFUSED
+V   same check if engine were 0.3.0: pass
+V gate health(since 0.2.1) with `^0.2`: Err("`health` needs engine api 0.2.1; `^0.2` admits 0.2.0")
+V gate health(since 0.2.1) with `^0.2.1`: Ok(())

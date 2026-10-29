@@ -1,0 +1,48 @@
+== 1=docs/superpowers/specs/2026-10-26-m1-foundation-design.md
+yardstick items=355 CORE=181
+RED R1 docs/superpowers/specs/2026-10-26-m1-foundation-design.md: no 'Yardstick coverage' section (181 CORE items unlisted)
+RED R3 docs/superpowers/specs/2026-10-26-m1-foundation-design.md: no 'Player path' section with numbered steps
+VERDICT red
+exit=1
+== 2=docs/superpowers/specs/2026-10-26-m2-economy-design.md
+yardstick items=355 CORE=181
+RED R1 docs/superpowers/specs/2026-10-26-m2-economy-design.md: no 'Yardstick coverage' section (181 CORE items unlisted)
+RED R3 docs/superpowers/specs/2026-10-26-m2-economy-design.md: no 'Player path' section with numbered steps
+VERDICT red
+exit=1
+== 3=docs/superpowers/specs/2026-10-27-m3-industrial-design.md
+yardstick items=355 CORE=181
+RED R1 docs/superpowers/specs/2026-10-27-m3-industrial-design.md: no 'Yardstick coverage' section (181 CORE items unlisted)
+RED R3 docs/superpowers/specs/2026-10-27-m3-industrial-design.md: no 'Player path' section with numbered steps
+VERDICT red
+exit=1
+== 4=docs/superpowers/specs/2026-10-28-m4-terrain-design.md
+yardstick items=355 CORE=181
+RED R1 docs/superpowers/specs/2026-10-28-m4-terrain-design.md: no 'Yardstick coverage' section (181 CORE items unlisted)
+RED R3 docs/superpowers/specs/2026-10-28-m4-terrain-design.md: no 'Player path' section with numbered steps
+VERDICT red
+exit=1
+== fixture
+yardstick items=355 CORE=181
+VERDICT green
+exit=0
+== fx_mut_a_drop_PC02.md
+RED R1 1 'has no row' lines; first: R1 /tmp/claude-1000/-home-julien-Projects-TuRTS/0e0457bb-045c-4b6a-945f-1db6a0753ee2/scratchpad/review/qa-probe/fx_mut_a_drop_PC02.md: CORE item PC02 has no row
+VERDICT red
+exit=0
+== fx_mut_b_OR24_no_test.md
+RED R2 /tmp/claude-1000/-home-julien-Projects-TuRTS/0e0457bb-045c-4b6a-945f-1db6a0753ee2/scratchpad/review/qa-probe/fx_mut_b_OR24_no_test.md: OR24 is in scope with no test
+VERDICT red
+exit=0
+== fx_mut_c_no_player_path.md
+RED R3 /tmp/claude-1000/-home-julien-Projects-TuRTS/0e0457bb-045c-4b6a-945f-1db6a0753ee2/scratchpad/review/qa-probe/fx_mut_c_no_player_path.md: no 'Player path' section with numbered steps
+VERDICT red
+exit=0
+== fx_mut_d_CA01_later.md
+RED R4 wrong-milestone: PC02 in at M4, dependency CA01 in at never
+VERDICT red
+exit=0
+== fx_mut_e_PC02_test_H9.md
+RED R2 /tmp/claude-1000/-home-julien-Projects-TuRTS/0e0457bb-045c-4b6a-945f-1db6a0753ee2/scratchpad/review/qa-probe/fx_mut_e_PC02_test_H9.md: PC02 names test H9, absent from the acceptance section
+VERDICT red
+exit=0

@@ -1,0 +1,22 @@
+evade.js           RED ['DR2 eval', 'DR2 module']
+ exit=1
+plain-bad.js       RED ['DR4 "node:fs"']
+ exit=1
+ok-driver.js       GREEN []
+ exit=0
+ctor.js            RED ['DR2 constructor']
+ exit=1
+dynimport.js       RED ['DR3 import()']
+ exit=1
+global.js          RED ['DR2 globalThis', 'DR3 bare require']
+ exit=1
+concat-req.js      RED ['DR3 "node:" + "fs"']
+ exit=1
+concat-bridge.js   RED ['DR2 turts_\\w*', 'DR2 window']
+ exit=1
+alias-req.js       RED ['DR3 bare require']
+ exit=1
+proc.js            RED ['DR2 process']
+ exit=1
+fetch.js           RED ['DR2 fetch']
+ exit=1

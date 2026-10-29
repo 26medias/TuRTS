@@ -1,0 +1,16 @@
+(
+    id: "acme",
+    version: "0.2.0",
+    kind: Game,
+    engine_api: "^0.2",
+    dependencies: {},
+    exports: (
+        units: ["units/scout.ron"],
+        maps: ["maps/field.ron"],
+        visuals: ["visuals/scout.ron"],
+        resources: [], nodes: [], production: [],
+    ),
+    context: Shared,
+    capabilities: [],
+    license: "LicenseRef-TBD", description: "x",
+)
