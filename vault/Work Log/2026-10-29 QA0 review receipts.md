@@ -363,3 +363,137 @@ none; final product worktree clean.
 ### Open questions for the orchestrator
 
 None.
+
+## Final whole-branch review and fix rechecks
+
+This report retains the initial findings and subsequent scoped checks. Run26 is the final verdict.
+
+VERDICT=pass FINDINGS=0 HIGH=0 RUNS=56 NOT_CHECKED=2
+
+Latest controlling verdict: Run26 on canonical `3e1b0ab3897dda6de910bf73c784153aa97d72d9`; earlier findings below are historical and superseded by the final appendix.
+
+## Findings
+
+1. **High, blocking — `scripts/qa/driver_rule.py:151`.** `without_strings` masks executable template interpolation. A driver with ``const state = `${window.turts_debug()}`;`` passes (exit 0); Node executes the bridge. Direct A1 use violates design 4.4, outside the accepted variable-key residual. Preserve interpolation code in A1 scans and add a persistent regression case. `/tmp/turts-qa0-final-review/template-probe.json`.
+2. **Low, optional — `scripts/qa/completeness.py:87`.** A coverage row `| invalid-id | mod | - |` is ignored. R1 says unknown row ids fail. The otherwise-green fixture has no diagnostic. Distinguish header/separator rows from malformed data ids. This cannot conceal missing CORE rows.
+3. **Medium, optional — `crates/turts_pack/src/main.rs:27`.** Consumer report's LR3 remedy/help recommendation is valid but nonblocking: pinned text meets the approved contract. Root explicitly deferred explanation to Claude's documentation pass. Keep that disposition visible.
+
+Source: detached `7f979506dcce1be78aae9c51308adea514e4973e`; production code equals verified `6234bf50d285f04d70b0f5d7e1ef3b9cde09aca6`; later diff is vault-only.
+
+## What I ran
+
+Each row names the claim; the opposite result refutes it. All probes/edits were in `/tmp/turts-qa0-final-review/`.
+
+| Command | Claim | Observed exit/result |
+| --- | --- | --- |
+| `python3 scripts/qa/yardstick.py --check` | design 11/A1 sync | 0 |
+| `python3 scripts/qa/completeness.py --self-test` | A2–A4 exact sets | 0; 21/21 |
+| `python3 scripts/qa/completeness.py --enforce` | A5 shared path | 0; checked1 |
+| `python3 scripts/qa/driver_rule.py --self-test` | A7 sets | 0; 44/44 |
+| `python3 scripts/qa/driver_rule.py tests/browser` | A6 roles | 0 |
+| `sha256sum -c SHA256SUMS` | plan T1 probe integrity | 0; 83 |
+| Python byte comparisons | plan global constraints | 0; protected files unchanged, 46 closures, 12 header-only browser edits |
+| `cargo test -p turts_mod_runtime --test resolve --test archive --test final_review --lib --locked -- --nocapture` | design 6–7 | 0; 37 tests; 25 diamond input permutations; nested duplicates refused |
+| Driver CLI, template bridge | A1 direct bridge fails | 0, defect |
+| Driver CLI, bare bridge | A1 control fails | 1/DR2/A1 |
+| `node execute-template.cjs` | accepted expression executes | 0/BRIDGE_EXECUTED |
+| Python malformed-row probe | R1 unknown row fails | 0; no diagnostics, defect |
+| Python audit of mutation logs | T6 red/restore claims | 0; all23 logs contain failures, restored logs no FAILED |
+
+Read full receipt and acceptance: workspace796/0/18, process17/17, Node16, VulkanT7 passes137frames; all23 mutations red/restored-green. A8 deferred; A19 O1 guard. These receipts do not close finding1.
+
+## Not checked
+
+NOT TRACED: required behavior when `available` aliases the root id (two differing-version Library entries return `[game]`; LR3/LR8 do not define this identity case). Hosted final `check` status remains root-owned.
+
+## What I changed
+
+none. Requested report only; scratch build uses a separate target. Worktree clean.
+
+## Open questions for the orchestrator
+
+Repair finding1 before acceptance. Optional findings can stay deferred.
+
+
+## Run 24 — Final fix batch recheck
+
+VERDICT=fail FINDINGS=3 HIGH=1 RUNS=24 NOT_CHECKED=2
+
+Candidate `a48aad17ba7527d82a434edd66b131e723b8a2b4`, clean detached ed62. Original fix commits: T2 `12dbb83eda815cacbd99fe3466e3e46f01ae79b7` → candidate `50d6e48`; T3 `7b859f8cd32b90746ad3563b506846e4213ba9ba` → candidate `a48aad1`.
+
+### Findings
+
+1. **High, blocking — A1 remains incomplete.** `scripts/qa/driver_rule.py:120` counts a `}` inside a template-expression comment as a real closing brace. ``exports.drive = async io => `${/* } */ window.turts_debug()}`;`` still exits 0; Node prints `BRIDGE_EXECUTED_AFTER_COMMENT`. `without_comments` at `:42` does not remove interpolation comments. Fix template-expression comment handling and persist this regression. This stays inside the original direct-template A1 defect.
+2. **Low, optional — `scripts/qa/driver_rule.py:79`.** A comment containing `turts_debug` inside an otherwise legal interpolation now triggers A1. Both line/block comment controls return `42` in Node without a bridge, but CLI exits 1. The comment handling fix can cover this too.
+3. **Medium, optional — prior consumer help recommendation.** Still deferred to Claude's documentation pass. No source-help change requested.
+
+**ADDRESSED:** original simple-template example now DR2/A1, with a persistent row 45. **ADDRESSED:** malformed R1 row at `scripts/qa/completeness.py:94`; direct malformed and original well-formed unknown ids each produce exactly R1. Original 44 driver rows and all 21 completeness case rows remain byte-identical.
+
+### What I ran
+
+| Command/probe | Exit/result |
+| --- | --- |
+| `python3 scripts/qa/yardstick.py --check` | 0 |
+| `python3 scripts/qa/completeness.py --self-test` | 0; 21/21 |
+| `python3 scripts/qa/completeness.py --enforce` | 0; checked1 |
+| `python3 scripts/qa/driver_rule.py --self-test` | 0; 45/45 |
+| `python3 scripts/qa/driver_rule.py tests/browser` | 0 |
+| Four direct/nested/object/quoted-brace template probes | each 1/DR2/A1 |
+| Escaped/literal/nested legal templates and accepted var-key | each 0 |
+| Original Node execution probe | 0/BRIDGE_EXECUTED |
+| Malformed and well-formed unknown coverage probes | exactly R1 each |
+| Two template-comment controls, CLI/Node | CLI1; Node0/no bridge |
+| Comment-brace bridge, CLI/Node | CLI0; Node0/bridge executed; defect |
+| Case byte checks and old-source23 receipt audit | 0; unchanged prior rows; all23 old-source PASS |
+
+Logs: `/tmp/turts-qa0-final-review/fix-recheck24/`. Current candidate mutation rerun and hosted final CI remain NOT TRACED. Root-id alias required behavior remains NOT TRACED contract ambiguity. No repairs or implementation changes; requested report appendix only.
+
+
+## Run 26 — Final source and independent test verdict
+
+VERDICT=pass FINDINGS=0 HIGH=0 RUNS=56 NOT_CHECKED=2
+
+Canonical `3e1b0ab3897dda6de910bf73c784153aa97d72d9`; reviewed candidate `5b5d6aef897636ae074178372fe3cbdc34a94b38`. Original fixes: T2 `12dbb83`, T3 `7b859f8` and `b2180c8`. **ADDRESSED:** A1 simple and comment-brace template escapes, with persistent cases 45/46 (`scripts/qa/driver_rule.py:125`). **ADDRESSED:** malformed R1 row (`scripts/qa/completeness.py:94`). Conservative complete-namespace scanning follows the approved probe. The earlier comment/literal allowance note is superseded by this policy. No remaining blocker. Optional consumer help remains explicitly deferred.
+
+Exact five Python CLI commands exit 0: yardstick sync 355/181; completeness 21/21 and checked 1; driver 46/46 and live tree exit 0. Direct, nested, object, quoted-brace and comment-brace examples all fail with exit 1/DR2/A1. Both Node witnesses execute bridges. Var-key stays at exit 0; concatenated prefix is A4 only. Prior 45 driver rows and 21 completeness rows are preserved.
+
+After source pass, switched to qa-lead test mode on clean canonical a6bb. All 23 required mutation rows passed: 24 semantic red commands (19 Rust exit 101 with named FAILED tests, 5 Python exit 1), 24 restored greens exit 0. Independent audit verifies committed blob hashes, empty final porcelain, exact HEAD and removal of the file created by row 20. All four flakiness commands exit 0; full bad_packages passes 16/16. No source repairs.
+
+Committed byte comparisons exit 0 for baseline 6234 runtime/browser/CI/harness components, reviewed 5b source excluding vault, and protected contracts. Baseline 796 Rust passes/0 failures/18 ignored, 17 process passes, 16 Node passes and Vulkan T7 with 137 frames remain traced component evidence. No full final pipeline rerun is claimed.
+
+Final artifacts: `/tmp/turts-qa0-t6-final/{mutation-receipt.md,mutation-audit.json,flakiness.json,acceptance.md}`. Concise report: `final-validation-report.md`. Source probes: `/tmp/turts-qa0-final-review/run26/source-checks.json`. A8 stays deferred; A19 stays a guard. Final hosted CI run 40923429639 is root-owned. Root-id alias policy remains NOT TRACED.
+
+## Final canonical validation verdict
+
+VERDICT=pass FINDINGS=0 HIGH=0 RUNS=56 NOT_CHECKED=2
+
+## Findings
+
+No blocking source or instrument findings. Canonical `3e1b0ab3897dda6de910bf73c784153aa97d72d9` matches reviewed candidate `5b5d6ae` outside vault (diff exit0). Both A1 examples now fail with DR2/A1 (`scripts/qa/driver_rule.py:125`; persistent cases 45/46). R1 malformed and well-formed unknown ids both give exactly R1 (`scripts/qa/completeness.py:94`). Original 45 driver cases and 21 completeness cases are preserved. The approved static probe permits conservative namespace-text refusal; no new string allowance is inferred.
+
+## What I ran
+
+Switched from independent review to qa-lead test mode for prescribed plants. All runs use a6bb, warm `target/qa0-t6`, debug/test debug 0, incremental 0, jobs 4.
+
+| Command/check | Claim; refuter | Observed |
+| --- | --- | --- |
+| `python3 /tmp/turts-qa0-t6-final/run_mutations.py 1-23` | Every prescribed plant fails semantically; a compile error or missing named failure refutes | 23 rows; 24 red commands: 19 Rust exit 101, 5 Python exit 1; 24 restored greens exit 0 |
+| `python3 /tmp/turts-qa0-t6-final/audit.py` | Exact tests, committed blobs, clean restoration | 0; both capability/lockfile tests named; all 23 clean/blob proofs; row 20 created file removed |
+| Four commands in `flakiness.json` | Three Python CI commands plus full bad_packages repeat | all exit 0; yardstick 355/181; completeness 21/21, checked 1; driver 46/46, live exit 0; pack 16/16 |
+| Three committed component byte comparisons | Baseline runtime/browser/CI and reviewed fixes apply to final SHA | all0 |
+
+RUNS=56 counts 48 mutation commands, 4 repeats, 1 audit, 3 byte comparisons. Source-phase direct/nested/object/comment-brace CLI probes fail with exit 1/A1; both Node witnesses execute bridges. Accepted var-key stays at exit 0; concatenated prefix is A4 only. Full source-phase evidence: `/tmp/turts-qa0-final-review/run 26/source-checks.json`.
+
+Final artifacts: `/tmp/turts-qa0-t6-final/mutation-receipt.md`, `mutation-audit.json`, `flakiness.json`, and `acceptance.md` (all 21 items). Baseline Rust 796/0/18, process 17/17, Node 16 and Vulkan T7 with 137 frames apply through exact component-byte proof; no final full-pipeline rerun is claimed.
+
+## Not checked
+
+Final hosted CI is root-owned: [run 40923429639](https://github.com/26medias/TuRTS/actions/runs/40923429639). Root-id alias required behavior remains NOT TRACED. A8 is approved deferred; A19 is the approved O1 guard. Consumer LR3 explanation remains optional/deferred.
+
+## What I changed
+
+No lasting product changes. Only prescribed temporary plants, restored; clean canonical HEAD. Requested reports/artifacts only. Original receipts remain untouched.
+
+## Open questions for the orchestrator
+
+None. Record hosted status, save receipts, and stop at authorized run 26.

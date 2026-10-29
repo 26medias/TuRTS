@@ -10,14 +10,14 @@ source: mcp
 
 ## For future Claude
 
-**Latest closeout:** All20 implementation entries, checkpoints C1–C4 and final technical/player/mod-author reviews are accepted after the final repair. Ready for local Forge playtesting. Hosted CI, push and merge to main remain pending approval. Current code07936e8:763/0/18;75/75 approved agent runs used. [[Reports/2026-10-28 M3 ready to test]] supersedes historical status entries below.
+**Latest QA0 state:** All six tasks merged and locally verified; 26/26 agent runs used. Hosted check remains pending. The session stopped at the requested cap. [[Reports/2026-10-29]] supersedes earlier status notes.
 Dashboard for the TuRTS studio. Read this first, then [[Tasks]] and the latest note in Reports.
 
 # TuRTS studio
 
-**Product:** mod-first RTS engine in Rust and Bevy. Browser WebAssembly client first, authoritative headless server, the official game is a default mod on the public API. Spec: `RTS-Engine-Project-Specifications.md` (v0.7, 2026-10-26).
+**Product:** mod-first RTS engine in Rust and Bevy. Browser WebAssembly client first, authoritative headless server, the official game is a default mod on the public API. Spec: `RTS-Engine-Project-Specifications.md` (v0.8, 2026-10-29).
 
-**Current milestone:** QA0 (instrument and schema groundwork). Design and plan passed both gates on 2026-10-29; the CEO chose the Codex handoff for the build (6 tasks, 4 waves, 22 to 26 runs, must tier). Brief: [[Reports/2026-10-29 QA0 Codex brief]]. Run sheet: [[QA0 Execution Board]] (T1 to T5 complete; 20/26 agent runs; T6 browser verification active; all 23 mutation cases approved). M3 is done and merged ([[Reports/2026-10-28 M3 integration]]).
+**Current milestone:** QA0. All six tasks are merged into codex/qa0-integration; final code 3e1b0ab. Local verification and all 23 mutations passed. Agents CI is green; hosted check is pending. Stopped at 26/26 runs. Run sheet: [[QA0 Execution Board]]. Receipt: [[Work Log/2026-10-29 QA0 T6 receipt]]. Report: [[Reports/2026-10-29]]. Main is unchanged; CEO approval remains required for main integration.
 
 **Phase:** API0.2.1/protocol3 industrial graybox is locally validated. Exact-source gates:760 passed,0 failed,18 ignored; strict Clippy, wasm, boundaries and frozen M2 stream pass. Native M2 faults33/33, M3 formal faults17/17, browser faults8/8, positive browser15/15, real private-research/combat F11, Forge browser7 and T7 pass. Final judgments and hosted CI/push/main merge approvals remain.
 
