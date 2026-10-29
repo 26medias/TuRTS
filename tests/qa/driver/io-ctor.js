@@ -1,1 +1,2 @@
+// turts-test-role: driver
 exports.drive = async (io) => { io["con" + "structor"]["con" + "structor"]("return 1")(); };

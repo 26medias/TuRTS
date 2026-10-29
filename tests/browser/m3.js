@@ -1,3 +1,4 @@
+// turts-test-role: legacy-bridge
 "use strict";
 
 // F10 M3 browser acceptance. Every action uses a Bevy-rendered control and Playwright's

@@ -1,3 +1,4 @@
+// turts-test-role: legacy-bridge
 // T7 browser join (design section 7; plan Task 12).
 //
 // Usage:

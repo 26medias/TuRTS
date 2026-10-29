@@ -1,3 +1,4 @@
+// turts-test-role: pure
 "use strict";
 
 function parseBoolean(value, name, fallback) {

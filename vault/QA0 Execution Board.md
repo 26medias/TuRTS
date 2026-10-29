@@ -86,12 +86,12 @@ Count each dispatch and each resumed work turn as one run. Record it before disp
 | --- | --- | --- |
 | T1 | 2 | 1 |
 | T2 | 4 | 6 |
-| T3 | 4 | 3 |
+| T3 | 4 | 5 |
 | T4 | 4 | 3 |
 | T5 | 4 | 3 |
 | T6 | 4 | 0 |
-| Repair reserve | 4 | 2 allocated to T2; included in task actuals |
-| Total | 22 to 26 | 16 |
+| Repair reserve | 4 | 3 allocated (T2:2,T3:1); included in task actuals |
+| Total | 22 to 26 | 18 |
 
 These are planning allowances, not required dispatch counts. Do not spend runs without a task.
 
@@ -112,7 +112,9 @@ These are planning allowances, not required dispatch counts. Do not spend runs w
 | 13 | T2 scoped recheck 2 | qa-lead | gpt-6.1-sol | high | e3fd97d | PASS, 0 findings |
 | 14 | T3 build | web-platform-engineer | gpt-6-luna | high | c9e1dbf | source c00135d; report pending |
 | 15 | T3 review | qa-lead | gpt-6.1-sol | high | c00135d | FAIL; 3 High, 1 medium: eval alias, literal bridge/member, node_modules scan |
-| 16 | T3 repair | web-platform-engineer | gpt-6-luna | high | c00135d | dispatched |
+| 16 | T3 repair | web-platform-engineer | gpt-6-luna | high | c00135d | source d8b6a52; 44/44, original40 unchanged |
+| 17 | T3 scoped recheck | qa-lead | gpt-6.1-sol | high | d8b6a52 | 4 addressed; A2 template issue in intermediate head |
+| 18 | T3 final-head recheck | qa-lead | gpt-6.1-sol | high | d6e770c | PASS; 0 findings; A2 template issue addressed |
 
 ## 7. Task ledger
 
@@ -120,7 +122,7 @@ These are planning allowances, not required dispatch counts. Do not spend runs w
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | T1 | complete | codex/qa0-t1 | d8bd6a7 → 1a2b82b | missing TSV and tier plant exit 1; scratch hash plant exit 1 | 115 cmp exit 0; exact 83-file hash set; yardstick 355/181/4 and check exit 0 | 1 | R0 PASS |
 | T2 | complete | codex/qa0-t2 | e3fd97d (7 source commits) | stub red1; trust edits red1; real-enforce skip plant caught after repair | 21/21 and checked1 exit0; extra regression probes green; timed CI under1s | 6 | same Sol PASS after 2 repair rounds, 0 open |
-| T3 | building | codex/qa0-t3 | - | NOT RUN | NOT RUN | 0 | pending |
+| T3 | complete | codex/qa0-t3 | d6e770c (5 source commits) | stub red1; A7/DR6/role plants red1; literal escape regression probes | final CI44/44 and live tree exit0; Node16 and syntax12 pass; original40 unchanged | 5 | same Sol PASS on final head, 0 open |
 | T4 | complete | codex/qa0-t4 | 5ac68b7,5aff67f,547014a | all intended semantic failures exit 101; SC3 review plant exit 101 | five final gates exit 0; 775 passed, 0 failed, 18 ignored | 3 | Sol PASS after text correction; 0 open |
 | T5 | complete | codex/qa0-t5 | 9fc246c,6fc6720 | stub/old rules exit 101; real tie red101; LR1-LR8 scratch plants red101 | five final gates exit 0; 796 passed, 0 failed, 18 ignored | 3 | same Sol PASS, 0 open |
 | T6 | pending | codex/qa0-t6 | - | NOT RUN | NOT RUN | 0 | pending consumer |

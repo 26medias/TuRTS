@@ -1,3 +1,4 @@
+// turts-test-role: legacy-bridge
 "use strict";
 
 // Human-facing discovery regression: select named controls with real pointer gestures.

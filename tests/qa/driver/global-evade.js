@@ -1,3 +1,4 @@
+// turts-test-role: driver
 exports.drive = async (io) => {
     const g = global["pro" + "cess"];
     const fs = g["mainModule"]["req" + "uire"]("node:" + "fs");
