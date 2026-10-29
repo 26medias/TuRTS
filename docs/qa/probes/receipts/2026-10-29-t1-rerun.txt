@@ -1,140 +1,154 @@
 HEAD=fc7182d812090c15498b750eec155a3da77a746e
 ENGINE_API_VERSION=0.2.1 (crates/turts_mod_api/src/lib.rs:33)
-Source fallback=/home/julien/.cache/turts-qa0-probes/ (the /tmp source paths were unavailable).
+Sources: original task QP and CP directories under /tmp/claude-1000/-home-julien-Projects-TuRTS/0e0457bb-045c-4b6a-945f-1db6a0753ee2/scratchpad/.
 Source mapping: QP/repair-selftest/*.tsv -> docs/qa/probes/selftest/; QP/rig-recheck/*.tsv and selftest3.py -> docs/qa/probes/selftest/rig-recheck/ (preserves both distinct empty.tsv files).
 Copy comparisons:
-cmp /home/julien/.cache/turts-qa0-probes/review/qa-probe/fx_green.md /home/julien/.codex/worktrees/53d3/TuRTS/tests/qa/completeness/green.md exit=0
-cmp /home/julien/.cache/turts-qa0-probes/review/qa-probe/fx_mut_a_drop_PC02.md /home/julien/.codex/worktrees/53d3/TuRTS/tests/qa/completeness/mut-a.md exit=0
-cmp /home/julien/.cache/turts-qa0-probes/review/qa-probe/fx_mut_b_OR24_no_test.md /home/julien/.codex/worktrees/53d3/TuRTS/tests/qa/completeness/mut-b.md exit=0
-cmp /home/julien/.cache/turts-qa0-probes/review/qa-probe/fx_mut_c_no_player_path.md /home/julien/.codex/worktrees/53d3/TuRTS/tests/qa/completeness/mut-c.md exit=0
-cmp /home/julien/.cache/turts-qa0-probes/review/qa-probe/fx_mut_d_CA01_later.md /home/julien/.codex/worktrees/53d3/TuRTS/tests/qa/completeness/mut-d.md exit=0
-cmp /home/julien/.cache/turts-qa0-probes/review/qa-probe/fx_mut_e_PC02_test_H9.md /home/julien/.codex/worktrees/53d3/TuRTS/tests/qa/completeness/mut-e.md exit=0
-cmp /home/julien/.cache/turts-qa0-probes/qa0/repair-driver/alias-req.js /home/julien/.codex/worktrees/53d3/TuRTS/tests/qa/driver/alias-req.js exit=0
-cmp /home/julien/.cache/turts-qa0-probes/qa0/repair-driver/bad-helper.js /home/julien/.codex/worktrees/53d3/TuRTS/tests/qa/driver/bad-helper.js exit=0
-cmp /home/julien/.cache/turts-qa0-probes/qa0/repair-driver/builtin.js /home/julien/.codex/worktrees/53d3/TuRTS/tests/qa/driver/builtin.js exit=0
-cmp /home/julien/.cache/turts-qa0-probes/qa0/repair-driver/concat-bridge.js /home/julien/.codex/worktrees/53d3/TuRTS/tests/qa/driver/concat-bridge.js exit=0
-cmp /home/julien/.cache/turts-qa0-probes/qa0/repair-driver/concat-req.js /home/julien/.codex/worktrees/53d3/TuRTS/tests/qa/driver/concat-req.js exit=0
-cmp /home/julien/.cache/turts-qa0-probes/qa0/repair-driver/ctor.js /home/julien/.codex/worktrees/53d3/TuRTS/tests/qa/driver/ctor.js exit=0
-cmp /home/julien/.cache/turts-qa0-probes/qa0/repair-driver/dynimport.js /home/julien/.codex/worktrees/53d3/TuRTS/tests/qa/driver/dynimport.js exit=0
-cmp /home/julien/.cache/turts-qa0-probes/qa0/repair-driver/evade.js /home/julien/.codex/worktrees/53d3/TuRTS/tests/qa/driver/evade.js exit=0
-cmp /home/julien/.cache/turts-qa0-probes/qa0/repair-driver/fetch.js /home/julien/.codex/worktrees/53d3/TuRTS/tests/qa/driver/fetch.js exit=0
-cmp /home/julien/.cache/turts-qa0-probes/qa0/repair-driver/fs-ticklog.js /home/julien/.codex/worktrees/53d3/TuRTS/tests/qa/driver/fs-ticklog.js exit=0
-cmp /home/julien/.cache/turts-qa0-probes/qa0/repair-driver/global-evade.js /home/julien/.codex/worktrees/53d3/TuRTS/tests/qa/driver/global-evade.js exit=0
-cmp /home/julien/.cache/turts-qa0-probes/qa0/repair-driver/global.js /home/julien/.codex/worktrees/53d3/TuRTS/tests/qa/driver/global.js exit=0
-cmp /home/julien/.cache/turts-qa0-probes/qa0/repair-driver/index-ok.js /home/julien/.codex/worktrees/53d3/TuRTS/tests/qa/driver/index-ok.js exit=0
-cmp /home/julien/.cache/turts-qa0-probes/qa0/repair-driver/io-ctor.js /home/julien/.codex/worktrees/53d3/TuRTS/tests/qa/driver/io-ctor.js exit=0
-cmp /home/julien/.cache/turts-qa0-probes/qa0/repair-driver/literal-key.js /home/julien/.codex/worktrees/53d3/TuRTS/tests/qa/driver/literal-key.js exit=0
-cmp /home/julien/.cache/turts-qa0-probes/qa0/repair-driver/m2-audit-copy.js /home/julien/.codex/worktrees/53d3/TuRTS/tests/qa/driver/m2-audit-copy.js exit=0
-cmp /home/julien/.cache/turts-qa0-probes/qa0/repair-driver/mod-parent.js /home/julien/.codex/worktrees/53d3/TuRTS/tests/qa/driver/mod-parent.js exit=0
-cmp /home/julien/.cache/turts-qa0-probes/qa0/repair-driver/mod-require.js /home/julien/.codex/worktrees/53d3/TuRTS/tests/qa/driver/mod-require.js exit=0
-cmp /home/julien/.cache/turts-qa0-probes/qa0/repair-driver/ok-driver.js /home/julien/.codex/worktrees/53d3/TuRTS/tests/qa/driver/ok-driver.js exit=0
-cmp /home/julien/.cache/turts-qa0-probes/qa0/repair-driver/plain-bad.js /home/julien/.codex/worktrees/53d3/TuRTS/tests/qa/driver/plain-bad.js exit=0
-cmp /home/julien/.cache/turts-qa0-probes/qa0/repair-driver/png-pure.js /home/julien/.codex/worktrees/53d3/TuRTS/tests/qa/driver/png-pure.js exit=0
-cmp /home/julien/.cache/turts-qa0-probes/qa0/repair-driver/proc.js /home/julien/.codex/worktrees/53d3/TuRTS/tests/qa/driver/proc.js exit=0
-cmp /home/julien/.cache/turts-qa0-probes/qa0/repair-driver/pw.js /home/julien/.codex/worktrees/53d3/TuRTS/tests/qa/driver/pw.js exit=0
-cmp /home/julien/.cache/turts-qa0-probes/qa0/repair-driver/req-cache.js /home/julien/.codex/worktrees/53d3/TuRTS/tests/qa/driver/req-cache.js exit=0
-cmp /home/julien/.cache/turts-qa0-probes/qa0/repair-driver/var-key.js /home/julien/.codex/worktrees/53d3/TuRTS/tests/qa/driver/var-key.js exit=0
-cmp /home/julien/.cache/turts-qa0-probes/qa0/repair-driver/via-fs-pure.js /home/julien/.codex/worktrees/53d3/TuRTS/tests/qa/driver/via-fs-pure.js exit=0
-cmp /home/julien/.cache/turts-qa0-probes/qa0/repair-driver/via-helper.js /home/julien/.codex/worktrees/53d3/TuRTS/tests/qa/driver/via-helper.js exit=0
-cmp /home/julien/.cache/turts-qa0-probes/qa0/repair-driver/zlib-driver3.js /home/julien/.codex/worktrees/53d3/TuRTS/tests/qa/driver/zlib-driver3.js exit=0
-cmp /home/julien/.cache/turts-qa0-probes/review/qa-probe/completeness_gate.py /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/coverage/completeness_gate.py exit=0
-cmp /home/julien/.cache/turts-qa0-probes/review/qa-probe/run_mutations.txt /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/coverage/run_mutations.txt exit=0
-cmp /home/julien/.cache/turts-qa0-probes/qa0/repair-c1.txt /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/coverage/repair-c1.txt exit=0
-cmp /home/julien/.cache/turts-qa0-probes/qa0/runs-c1.txt /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/coverage/runs-c1.txt exit=0
-cmp /home/julien/.cache/turts-qa0-probes/review/qa-probe/hook_ban.py /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/bridge/hook_ban.py exit=0
-cmp /home/julien/.cache/turts-qa0-probes/review/qa-probe/fx_blind.js /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/bridge/fx_blind.js exit=0
-cmp /home/julien/.cache/turts-qa0-probes/qa0/runs-c2.txt /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/bridge/runs-c2.txt exit=0
-cmp /home/julien/.cache/turts-qa0-probes/qa0/runs-c2-detail.txt /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/bridge/runs-c2-detail.txt exit=0
-cmp /home/julien/.cache/turts-qa0-probes/qa0/repair-driver/dr_model3.py /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/driver/dr_model3.py exit=0
-cmp /home/julien/.cache/turts-qa0-probes/qa0/repair3-driver.txt /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/driver/repair3-driver.txt exit=0
-cmp /home/julien/.cache/turts-qa0-probes/qa0/repair2-driver.txt /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/driver/repair2-driver.txt exit=0
-cmp /home/julien/.cache/turts-qa0-probes/qa0/repair-driver.txt /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/driver/repair-driver.txt exit=0
-cmp /home/julien/.cache/turts-qa0-probes/qa0/repair-selftest.txt /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/selftest/repair-selftest.txt exit=0
-cmp /home/julien/.cache/turts-qa0-probes/qa0/rig-final-selftest.txt /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/selftest/rig-final-selftest.txt exit=0
-cmp /home/julien/.cache/turts-qa0-probes/qa0/repair-selftest/empty.tsv /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/selftest/empty.tsv exit=0
-cmp /home/julien/.cache/turts-qa0-probes/qa0/repair-selftest/no-m4.tsv /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/selftest/no-m4.tsv exit=0
-cmp /home/julien/.cache/turts-qa0-probes/qa0/repair-selftest/overlap.tsv /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/selftest/overlap.tsv exit=0
-cmp /home/julien/.cache/turts-qa0-probes/qa0/repair-selftest/probe-set.tsv /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/selftest/probe-set.tsv exit=0
-cmp /home/julien/.cache/turts-qa0-probes/qa0/rig-recheck/empty.tsv /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/selftest/rig-recheck/empty.tsv exit=0
-cmp /home/julien/.cache/turts-qa0-probes/qa0/rig-recheck/empty3.tsv /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/selftest/rig-recheck/empty3.tsv exit=0
-cmp /home/julien/.cache/turts-qa0-probes/qa0/rig-recheck/f3.tsv /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/selftest/rig-recheck/f3.tsv exit=0
-cmp /home/julien/.cache/turts-qa0-probes/qa0/rig-recheck/full.tsv /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/selftest/rig-recheck/full.tsv exit=0
-cmp /home/julien/.cache/turts-qa0-probes/qa0/rig-recheck/m4green.tsv /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/selftest/rig-recheck/m4green.tsv exit=0
-cmp /home/julien/.cache/turts-qa0-probes/qa0/rig-recheck/nom4.tsv /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/selftest/rig-recheck/nom4.tsv exit=0
-cmp /home/julien/.cache/turts-qa0-probes/qa0/rig-recheck/nor8.tsv /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/selftest/rig-recheck/nor8.tsv exit=0
-cmp /home/julien/.cache/turts-qa0-probes/qa0/rig-recheck/nor9.tsv /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/selftest/rig-recheck/nor9.tsv exit=0
-cmp /home/julien/.cache/turts-qa0-probes/qa0/rig-recheck/r9green.tsv /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/selftest/rig-recheck/r9green.tsv exit=0
-cmp /home/julien/.cache/turts-qa0-probes/qa0/rig-recheck/subset.tsv /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/selftest/rig-recheck/subset.tsv exit=0
-cmp /home/julien/.cache/turts-qa0-probes/qa0/rig-recheck/superset.tsv /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/selftest/rig-recheck/superset.tsv exit=0
-cmp /home/julien/.cache/turts-qa0-probes/qa0/rig-recheck/selftest3.py /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/selftest/rig-recheck/selftest3.py exit=0
-cmp /home/julien/.cache/turts-qa0-probes/qa0/p0/manifest.ron /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/pack/p0/manifest.ron exit=0
-cmp /home/julien/.cache/turts-qa0-probes/qa0/p0/maps/field.ron /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/pack/p0/maps/field.ron exit=0
-cmp /home/julien/.cache/turts-qa0-probes/qa0/p0/units/scout.ron /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/pack/p0/units/scout.ron exit=0
-cmp /home/julien/.cache/turts-qa0-probes/qa0/p0/visuals/scout.ron /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/pack/p0/visuals/scout.ron exit=0
-cmp /home/julien/.cache/turts-qa0-probes/qa0/p1/manifest.ron /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/pack/p1/manifest.ron exit=0
-cmp /home/julien/.cache/turts-qa0-probes/qa0/p1/maps/field.ron /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/pack/p1/maps/field.ron exit=0
-cmp /home/julien/.cache/turts-qa0-probes/qa0/p1/units/scout.ron /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/pack/p1/units/scout.ron exit=0
-cmp /home/julien/.cache/turts-qa0-probes/qa0/p1/visuals/scout.ron /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/pack/p1/visuals/scout.ron exit=0
-cmp /home/julien/.cache/turts-qa0-probes/qa0/p2/manifest.ron /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/pack/p2/manifest.ron exit=0
-cmp /home/julien/.cache/turts-qa0-probes/qa0/p2/maps/field.ron /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/pack/p2/maps/field.ron exit=0
-cmp /home/julien/.cache/turts-qa0-probes/qa0/p2/units/scout.ron /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/pack/p2/units/scout.ron exit=0
-cmp /home/julien/.cache/turts-qa0-probes/qa0/p2/visuals/scout.ron /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/pack/p2/visuals/scout.ron exit=0
-cmp /home/julien/.cache/turts-qa0-probes/qa0/p3/manifest.ron /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/pack/p3/manifest.ron exit=0
-cmp /home/julien/.cache/turts-qa0-probes/qa0/p3/maps/field.ron /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/pack/p3/maps/field.ron exit=0
-cmp /home/julien/.cache/turts-qa0-probes/qa0/p3/units/scout.ron /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/pack/p3/units/scout.ron exit=0
-cmp /home/julien/.cache/turts-qa0-probes/qa0/p3/visuals/scout.ron /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/pack/p3/visuals/scout.ron exit=0
-cmp /home/julien/.cache/turts-qa0-probes/qa0/p4/manifest.ron /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/pack/p4/manifest.ron exit=0
-cmp /home/julien/.cache/turts-qa0-probes/qa0/p4/maps/field.ron /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/pack/p4/maps/field.ron exit=0
-cmp /home/julien/.cache/turts-qa0-probes/qa0/p4/units/scout.ron /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/pack/p4/units/scout.ron exit=0
-cmp /home/julien/.cache/turts-qa0-probes/qa0/p4/visuals/scout.ron /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/pack/p4/visuals/scout.ron exit=0
-cmp /home/julien/.cache/turts-qa0-probes/qa0/p5/manifest.ron /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/pack/p5/manifest.ron exit=0
-cmp /home/julien/.cache/turts-qa0-probes/qa0/p5/maps/field.ron /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/pack/p5/maps/field.ron exit=0
-cmp /home/julien/.cache/turts-qa0-probes/qa0/p5/units/scout.ron /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/pack/p5/units/scout.ron exit=0
-cmp /home/julien/.cache/turts-qa0-probes/qa0/p5/visuals/scout.ron /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/pack/p5/visuals/scout.ron exit=0
-cmp /home/julien/.cache/turts-qa0-probes/qa0/p6/manifest.ron /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/pack/p6/manifest.ron exit=0
-cmp /home/julien/.cache/turts-qa0-probes/qa0/p6/maps/field.ron /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/pack/p6/maps/field.ron exit=0
-cmp /home/julien/.cache/turts-qa0-probes/qa0/p6/units/scout.ron /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/pack/p6/units/scout.ron exit=0
-cmp /home/julien/.cache/turts-qa0-probes/qa0/p6/visuals/scout.ron /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/pack/p6/visuals/scout.ron exit=0
-cmp /home/julien/.cache/turts-qa0-probes/qa0/p7/manifest.ron /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/pack/p7/manifest.ron exit=0
-cmp /home/julien/.cache/turts-qa0-probes/qa0/p7/maps/field.ron /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/pack/p7/maps/field.ron exit=0
-cmp /home/julien/.cache/turts-qa0-probes/qa0/p7/units/scout.ron /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/pack/p7/units/scout.ron exit=0
-cmp /home/julien/.cache/turts-qa0-probes/qa0/p7/visuals/scout.ron /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/pack/p7/visuals/scout.ron exit=0
-cmp /home/julien/.cache/turts-qa0-probes/qa0/rig-pack/dup/manifest.ron /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/pack/dup/manifest.ron exit=0
-cmp /home/julien/.cache/turts-qa0-probes/qa0/rig-pack/dup/maps/field.ron /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/pack/dup/maps/field.ron exit=0
-cmp /home/julien/.cache/turts-qa0-probes/qa0/rig-pack/dup/units/scout.ron /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/pack/dup/units/scout.ron exit=0
-cmp /home/julien/.cache/turts-qa0-probes/qa0/rig-pack/dup/visuals/scout.ron /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/pack/dup/visuals/scout.ron exit=0
-cmp /home/julien/.cache/turts-qa0-probes/qa0/runs-pack.txt /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/pack/runs-pack.txt exit=0
-cmp /home/julien/.cache/turts-qa0-probes/qa0/repair2-pack.txt /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/pack/repair2-pack.txt exit=0
-cmp /home/julien/.cache/turts-qa0-probes/qa0/rig-pack2.txt /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/pack/rig-pack2.txt exit=0
-cmp /home/julien/.cache/turts-qa0-probes/qa0/schema-probe/Cargo.lock /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/schema/Cargo.lock exit=0
-cmp /home/julien/.cache/turts-qa0-probes/qa0/schema-probe/src/main.rs /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/schema/src/main.rs exit=0
-cmp /home/julien/.cache/turts-qa0-probes/qa0/modrt-probe/Cargo.lock /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/modrt/Cargo.lock exit=0
-cmp /home/julien/.cache/turts-qa0-probes/qa0/modrt-probe/src/main.rs /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/modrt/src/main.rs exit=0
-cmp /home/julien/.cache/turts-qa0-probes/qa0/runs-schema.txt /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/schema/runs-schema.txt exit=0
-cmp /home/julien/.cache/turts-qa0-probes/qa0/runs-modrt-o2.txt /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/modrt/runs-modrt-o2.txt exit=0
-cmp /home/julien/.cache/turts-qa0-probes/qa0/repair-modrt.txt /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/modrt/repair-modrt.txt exit=0
-cmp /home/julien/.cache/turts-qa0-probes/qa0/gate-modrt.md /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/gates/gate-modrt.md exit=0
-cmp /home/julien/.cache/turts-qa0-probes/qa0/gate-rigour.md /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/gates/gate-rigour.md exit=0
-cmp /home/julien/.cache/turts-qa0-probes/qa0/qa-repair.md /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/gates/qa-repair.md exit=0
-cmp /home/julien/.cache/turts-qa0-probes/qa0/qa-repair2.md /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/gates/qa-repair2.md exit=0
+cmp /tmp/claude-1000/-home-julien-Projects-TuRTS/0e0457bb-045c-4b6a-945f-1db6a0753ee2/scratchpad/review/qa-probe/fx_green.md /home/julien/.codex/worktrees/53d3/TuRTS/tests/qa/completeness/green.md exit=0
+cmp /tmp/claude-1000/-home-julien-Projects-TuRTS/0e0457bb-045c-4b6a-945f-1db6a0753ee2/scratchpad/review/qa-probe/fx_mut_a_drop_PC02.md /home/julien/.codex/worktrees/53d3/TuRTS/tests/qa/completeness/mut-a.md exit=0
+cmp /tmp/claude-1000/-home-julien-Projects-TuRTS/0e0457bb-045c-4b6a-945f-1db6a0753ee2/scratchpad/review/qa-probe/fx_mut_b_OR24_no_test.md /home/julien/.codex/worktrees/53d3/TuRTS/tests/qa/completeness/mut-b.md exit=0
+cmp /tmp/claude-1000/-home-julien-Projects-TuRTS/0e0457bb-045c-4b6a-945f-1db6a0753ee2/scratchpad/review/qa-probe/fx_mut_c_no_player_path.md /home/julien/.codex/worktrees/53d3/TuRTS/tests/qa/completeness/mut-c.md exit=0
+cmp /tmp/claude-1000/-home-julien-Projects-TuRTS/0e0457bb-045c-4b6a-945f-1db6a0753ee2/scratchpad/review/qa-probe/fx_mut_d_CA01_later.md /home/julien/.codex/worktrees/53d3/TuRTS/tests/qa/completeness/mut-d.md exit=0
+cmp /tmp/claude-1000/-home-julien-Projects-TuRTS/0e0457bb-045c-4b6a-945f-1db6a0753ee2/scratchpad/review/qa-probe/fx_mut_e_PC02_test_H9.md /home/julien/.codex/worktrees/53d3/TuRTS/tests/qa/completeness/mut-e.md exit=0
+cmp /tmp/claude-1000/-home-julien-Projects-TuRTS/0e0457bb-045c-4b6a-945f-1db6a0753ee2/scratchpad/qa0/repair-driver/alias-req.js /home/julien/.codex/worktrees/53d3/TuRTS/tests/qa/driver/alias-req.js exit=0
+cmp /tmp/claude-1000/-home-julien-Projects-TuRTS/0e0457bb-045c-4b6a-945f-1db6a0753ee2/scratchpad/qa0/repair-driver/bad-helper.js /home/julien/.codex/worktrees/53d3/TuRTS/tests/qa/driver/bad-helper.js exit=0
+cmp /tmp/claude-1000/-home-julien-Projects-TuRTS/0e0457bb-045c-4b6a-945f-1db6a0753ee2/scratchpad/qa0/repair-driver/builtin.js /home/julien/.codex/worktrees/53d3/TuRTS/tests/qa/driver/builtin.js exit=0
+cmp /tmp/claude-1000/-home-julien-Projects-TuRTS/0e0457bb-045c-4b6a-945f-1db6a0753ee2/scratchpad/qa0/repair-driver/concat-bridge.js /home/julien/.codex/worktrees/53d3/TuRTS/tests/qa/driver/concat-bridge.js exit=0
+cmp /tmp/claude-1000/-home-julien-Projects-TuRTS/0e0457bb-045c-4b6a-945f-1db6a0753ee2/scratchpad/qa0/repair-driver/concat-req.js /home/julien/.codex/worktrees/53d3/TuRTS/tests/qa/driver/concat-req.js exit=0
+cmp /tmp/claude-1000/-home-julien-Projects-TuRTS/0e0457bb-045c-4b6a-945f-1db6a0753ee2/scratchpad/qa0/repair-driver/ctor.js /home/julien/.codex/worktrees/53d3/TuRTS/tests/qa/driver/ctor.js exit=0
+cmp /tmp/claude-1000/-home-julien-Projects-TuRTS/0e0457bb-045c-4b6a-945f-1db6a0753ee2/scratchpad/qa0/repair-driver/dynimport.js /home/julien/.codex/worktrees/53d3/TuRTS/tests/qa/driver/dynimport.js exit=0
+cmp /tmp/claude-1000/-home-julien-Projects-TuRTS/0e0457bb-045c-4b6a-945f-1db6a0753ee2/scratchpad/qa0/repair-driver/evade.js /home/julien/.codex/worktrees/53d3/TuRTS/tests/qa/driver/evade.js exit=0
+cmp /tmp/claude-1000/-home-julien-Projects-TuRTS/0e0457bb-045c-4b6a-945f-1db6a0753ee2/scratchpad/qa0/repair-driver/fetch.js /home/julien/.codex/worktrees/53d3/TuRTS/tests/qa/driver/fetch.js exit=0
+cmp /tmp/claude-1000/-home-julien-Projects-TuRTS/0e0457bb-045c-4b6a-945f-1db6a0753ee2/scratchpad/qa0/repair-driver/fs-ticklog.js /home/julien/.codex/worktrees/53d3/TuRTS/tests/qa/driver/fs-ticklog.js exit=0
+cmp /tmp/claude-1000/-home-julien-Projects-TuRTS/0e0457bb-045c-4b6a-945f-1db6a0753ee2/scratchpad/qa0/repair-driver/global-evade.js /home/julien/.codex/worktrees/53d3/TuRTS/tests/qa/driver/global-evade.js exit=0
+cmp /tmp/claude-1000/-home-julien-Projects-TuRTS/0e0457bb-045c-4b6a-945f-1db6a0753ee2/scratchpad/qa0/repair-driver/global.js /home/julien/.codex/worktrees/53d3/TuRTS/tests/qa/driver/global.js exit=0
+cmp /tmp/claude-1000/-home-julien-Projects-TuRTS/0e0457bb-045c-4b6a-945f-1db6a0753ee2/scratchpad/qa0/repair-driver/index-ok.js /home/julien/.codex/worktrees/53d3/TuRTS/tests/qa/driver/index-ok.js exit=0
+cmp /tmp/claude-1000/-home-julien-Projects-TuRTS/0e0457bb-045c-4b6a-945f-1db6a0753ee2/scratchpad/qa0/repair-driver/io-ctor.js /home/julien/.codex/worktrees/53d3/TuRTS/tests/qa/driver/io-ctor.js exit=0
+cmp /tmp/claude-1000/-home-julien-Projects-TuRTS/0e0457bb-045c-4b6a-945f-1db6a0753ee2/scratchpad/qa0/repair-driver/literal-key.js /home/julien/.codex/worktrees/53d3/TuRTS/tests/qa/driver/literal-key.js exit=0
+cmp /tmp/claude-1000/-home-julien-Projects-TuRTS/0e0457bb-045c-4b6a-945f-1db6a0753ee2/scratchpad/qa0/repair-driver/m2-audit-copy.js /home/julien/.codex/worktrees/53d3/TuRTS/tests/qa/driver/m2-audit-copy.js exit=0
+cmp /tmp/claude-1000/-home-julien-Projects-TuRTS/0e0457bb-045c-4b6a-945f-1db6a0753ee2/scratchpad/qa0/repair-driver/mod-parent.js /home/julien/.codex/worktrees/53d3/TuRTS/tests/qa/driver/mod-parent.js exit=0
+cmp /tmp/claude-1000/-home-julien-Projects-TuRTS/0e0457bb-045c-4b6a-945f-1db6a0753ee2/scratchpad/qa0/repair-driver/mod-require.js /home/julien/.codex/worktrees/53d3/TuRTS/tests/qa/driver/mod-require.js exit=0
+cmp /tmp/claude-1000/-home-julien-Projects-TuRTS/0e0457bb-045c-4b6a-945f-1db6a0753ee2/scratchpad/qa0/repair-driver/ok-driver.js /home/julien/.codex/worktrees/53d3/TuRTS/tests/qa/driver/ok-driver.js exit=0
+cmp /tmp/claude-1000/-home-julien-Projects-TuRTS/0e0457bb-045c-4b6a-945f-1db6a0753ee2/scratchpad/qa0/repair-driver/plain-bad.js /home/julien/.codex/worktrees/53d3/TuRTS/tests/qa/driver/plain-bad.js exit=0
+cmp /tmp/claude-1000/-home-julien-Projects-TuRTS/0e0457bb-045c-4b6a-945f-1db6a0753ee2/scratchpad/qa0/repair-driver/png-pure.js /home/julien/.codex/worktrees/53d3/TuRTS/tests/qa/driver/png-pure.js exit=0
+cmp /tmp/claude-1000/-home-julien-Projects-TuRTS/0e0457bb-045c-4b6a-945f-1db6a0753ee2/scratchpad/qa0/repair-driver/proc.js /home/julien/.codex/worktrees/53d3/TuRTS/tests/qa/driver/proc.js exit=0
+cmp /tmp/claude-1000/-home-julien-Projects-TuRTS/0e0457bb-045c-4b6a-945f-1db6a0753ee2/scratchpad/qa0/repair-driver/pw.js /home/julien/.codex/worktrees/53d3/TuRTS/tests/qa/driver/pw.js exit=0
+cmp /tmp/claude-1000/-home-julien-Projects-TuRTS/0e0457bb-045c-4b6a-945f-1db6a0753ee2/scratchpad/qa0/repair-driver/req-cache.js /home/julien/.codex/worktrees/53d3/TuRTS/tests/qa/driver/req-cache.js exit=0
+cmp /tmp/claude-1000/-home-julien-Projects-TuRTS/0e0457bb-045c-4b6a-945f-1db6a0753ee2/scratchpad/qa0/repair-driver/var-key.js /home/julien/.codex/worktrees/53d3/TuRTS/tests/qa/driver/var-key.js exit=0
+cmp /tmp/claude-1000/-home-julien-Projects-TuRTS/0e0457bb-045c-4b6a-945f-1db6a0753ee2/scratchpad/qa0/repair-driver/via-fs-pure.js /home/julien/.codex/worktrees/53d3/TuRTS/tests/qa/driver/via-fs-pure.js exit=0
+cmp /tmp/claude-1000/-home-julien-Projects-TuRTS/0e0457bb-045c-4b6a-945f-1db6a0753ee2/scratchpad/qa0/repair-driver/via-helper.js /home/julien/.codex/worktrees/53d3/TuRTS/tests/qa/driver/via-helper.js exit=0
+cmp /tmp/claude-1000/-home-julien-Projects-TuRTS/0e0457bb-045c-4b6a-945f-1db6a0753ee2/scratchpad/qa0/repair-driver/zlib-driver3.js /home/julien/.codex/worktrees/53d3/TuRTS/tests/qa/driver/zlib-driver3.js exit=0
+cmp /tmp/claude-1000/-home-julien-Projects-TuRTS/0e0457bb-045c-4b6a-945f-1db6a0753ee2/scratchpad/review/qa-probe/completeness_gate.py /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/coverage/completeness_gate.py exit=0
+cmp /tmp/claude-1000/-home-julien-Projects-TuRTS/0e0457bb-045c-4b6a-945f-1db6a0753ee2/scratchpad/review/qa-probe/run_mutations.txt /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/coverage/run_mutations.txt exit=0
+cmp /tmp/claude-1000/-home-julien-Projects-TuRTS/0e0457bb-045c-4b6a-945f-1db6a0753ee2/scratchpad/qa0/repair-c1.txt /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/coverage/repair-c1.txt exit=0
+cmp /tmp/claude-1000/-home-julien-Projects-TuRTS/0e0457bb-045c-4b6a-945f-1db6a0753ee2/scratchpad/qa0/runs-c1.txt /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/coverage/runs-c1.txt exit=0
+cmp /tmp/claude-1000/-home-julien-Projects-TuRTS/0e0457bb-045c-4b6a-945f-1db6a0753ee2/scratchpad/review/qa-probe/hook_ban.py /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/bridge/hook_ban.py exit=0
+cmp /tmp/claude-1000/-home-julien-Projects-TuRTS/0e0457bb-045c-4b6a-945f-1db6a0753ee2/scratchpad/review/qa-probe/fx_blind.js /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/bridge/fx_blind.js exit=0
+cmp /tmp/claude-1000/-home-julien-Projects-TuRTS/0e0457bb-045c-4b6a-945f-1db6a0753ee2/scratchpad/qa0/runs-c2.txt /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/bridge/runs-c2.txt exit=0
+cmp /tmp/claude-1000/-home-julien-Projects-TuRTS/0e0457bb-045c-4b6a-945f-1db6a0753ee2/scratchpad/qa0/runs-c2-detail.txt /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/bridge/runs-c2-detail.txt exit=0
+cmp /tmp/claude-1000/-home-julien-Projects-TuRTS/0e0457bb-045c-4b6a-945f-1db6a0753ee2/scratchpad/qa0/repair-driver/dr_model3.py /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/driver/dr_model3.py exit=0
+cmp /tmp/claude-1000/-home-julien-Projects-TuRTS/0e0457bb-045c-4b6a-945f-1db6a0753ee2/scratchpad/qa0/repair3-driver.txt /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/driver/repair3-driver.txt exit=0
+cmp /tmp/claude-1000/-home-julien-Projects-TuRTS/0e0457bb-045c-4b6a-945f-1db6a0753ee2/scratchpad/qa0/repair2-driver.txt /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/driver/repair2-driver.txt exit=0
+cmp /tmp/claude-1000/-home-julien-Projects-TuRTS/0e0457bb-045c-4b6a-945f-1db6a0753ee2/scratchpad/qa0/repair-driver.txt /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/driver/repair-driver.txt exit=0
+cmp /tmp/claude-1000/-home-julien-Projects-TuRTS/0e0457bb-045c-4b6a-945f-1db6a0753ee2/scratchpad/qa0/repair-selftest.txt /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/selftest/repair-selftest.txt exit=0
+cmp /tmp/claude-1000/-home-julien-Projects-TuRTS/0e0457bb-045c-4b6a-945f-1db6a0753ee2/scratchpad/qa0/rig-final-selftest.txt /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/selftest/rig-final-selftest.txt exit=0
+cmp /tmp/claude-1000/-home-julien-Projects-TuRTS/0e0457bb-045c-4b6a-945f-1db6a0753ee2/scratchpad/qa0/repair-selftest/empty.tsv /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/selftest/empty.tsv exit=0
+cmp /tmp/claude-1000/-home-julien-Projects-TuRTS/0e0457bb-045c-4b6a-945f-1db6a0753ee2/scratchpad/qa0/repair-selftest/no-m4.tsv /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/selftest/no-m4.tsv exit=0
+cmp /tmp/claude-1000/-home-julien-Projects-TuRTS/0e0457bb-045c-4b6a-945f-1db6a0753ee2/scratchpad/qa0/repair-selftest/overlap.tsv /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/selftest/overlap.tsv exit=0
+cmp /tmp/claude-1000/-home-julien-Projects-TuRTS/0e0457bb-045c-4b6a-945f-1db6a0753ee2/scratchpad/qa0/repair-selftest/probe-set.tsv /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/selftest/probe-set.tsv exit=0
+cmp /tmp/claude-1000/-home-julien-Projects-TuRTS/0e0457bb-045c-4b6a-945f-1db6a0753ee2/scratchpad/qa0/rig-recheck/empty.tsv /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/selftest/rig-recheck/empty.tsv exit=0
+cmp /tmp/claude-1000/-home-julien-Projects-TuRTS/0e0457bb-045c-4b6a-945f-1db6a0753ee2/scratchpad/qa0/rig-recheck/empty3.tsv /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/selftest/rig-recheck/empty3.tsv exit=0
+cmp /tmp/claude-1000/-home-julien-Projects-TuRTS/0e0457bb-045c-4b6a-945f-1db6a0753ee2/scratchpad/qa0/rig-recheck/f3.tsv /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/selftest/rig-recheck/f3.tsv exit=0
+cmp /tmp/claude-1000/-home-julien-Projects-TuRTS/0e0457bb-045c-4b6a-945f-1db6a0753ee2/scratchpad/qa0/rig-recheck/full.tsv /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/selftest/rig-recheck/full.tsv exit=0
+cmp /tmp/claude-1000/-home-julien-Projects-TuRTS/0e0457bb-045c-4b6a-945f-1db6a0753ee2/scratchpad/qa0/rig-recheck/m4green.tsv /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/selftest/rig-recheck/m4green.tsv exit=0
+cmp /tmp/claude-1000/-home-julien-Projects-TuRTS/0e0457bb-045c-4b6a-945f-1db6a0753ee2/scratchpad/qa0/rig-recheck/nom4.tsv /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/selftest/rig-recheck/nom4.tsv exit=0
+cmp /tmp/claude-1000/-home-julien-Projects-TuRTS/0e0457bb-045c-4b6a-945f-1db6a0753ee2/scratchpad/qa0/rig-recheck/nor8.tsv /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/selftest/rig-recheck/nor8.tsv exit=0
+cmp /tmp/claude-1000/-home-julien-Projects-TuRTS/0e0457bb-045c-4b6a-945f-1db6a0753ee2/scratchpad/qa0/rig-recheck/nor9.tsv /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/selftest/rig-recheck/nor9.tsv exit=0
+cmp /tmp/claude-1000/-home-julien-Projects-TuRTS/0e0457bb-045c-4b6a-945f-1db6a0753ee2/scratchpad/qa0/rig-recheck/r9green.tsv /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/selftest/rig-recheck/r9green.tsv exit=0
+cmp /tmp/claude-1000/-home-julien-Projects-TuRTS/0e0457bb-045c-4b6a-945f-1db6a0753ee2/scratchpad/qa0/rig-recheck/subset.tsv /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/selftest/rig-recheck/subset.tsv exit=0
+cmp /tmp/claude-1000/-home-julien-Projects-TuRTS/0e0457bb-045c-4b6a-945f-1db6a0753ee2/scratchpad/qa0/rig-recheck/superset.tsv /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/selftest/rig-recheck/superset.tsv exit=0
+cmp /tmp/claude-1000/-home-julien-Projects-TuRTS/0e0457bb-045c-4b6a-945f-1db6a0753ee2/scratchpad/qa0/rig-recheck/selftest3.py /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/selftest/rig-recheck/selftest3.py exit=0
+cmp /tmp/claude-1000/-home-julien-Projects-TuRTS/0e0457bb-045c-4b6a-945f-1db6a0753ee2/scratchpad/qa0/p0/manifest.ron /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/pack/p0/manifest.ron exit=0
+cmp /tmp/claude-1000/-home-julien-Projects-TuRTS/0e0457bb-045c-4b6a-945f-1db6a0753ee2/scratchpad/qa0/p0/maps/field.ron /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/pack/p0/maps/field.ron exit=0
+cmp /tmp/claude-1000/-home-julien-Projects-TuRTS/0e0457bb-045c-4b6a-945f-1db6a0753ee2/scratchpad/qa0/p0/units/scout.ron /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/pack/p0/units/scout.ron exit=0
+cmp /tmp/claude-1000/-home-julien-Projects-TuRTS/0e0457bb-045c-4b6a-945f-1db6a0753ee2/scratchpad/qa0/p0/visuals/scout.ron /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/pack/p0/visuals/scout.ron exit=0
+cmp /tmp/claude-1000/-home-julien-Projects-TuRTS/0e0457bb-045c-4b6a-945f-1db6a0753ee2/scratchpad/qa0/p1/manifest.ron /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/pack/p1/manifest.ron exit=0
+cmp /tmp/claude-1000/-home-julien-Projects-TuRTS/0e0457bb-045c-4b6a-945f-1db6a0753ee2/scratchpad/qa0/p1/maps/field.ron /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/pack/p1/maps/field.ron exit=0
+cmp /tmp/claude-1000/-home-julien-Projects-TuRTS/0e0457bb-045c-4b6a-945f-1db6a0753ee2/scratchpad/qa0/p1/units/scout.ron /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/pack/p1/units/scout.ron exit=0
+cmp /tmp/claude-1000/-home-julien-Projects-TuRTS/0e0457bb-045c-4b6a-945f-1db6a0753ee2/scratchpad/qa0/p1/visuals/scout.ron /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/pack/p1/visuals/scout.ron exit=0
+cmp /tmp/claude-1000/-home-julien-Projects-TuRTS/0e0457bb-045c-4b6a-945f-1db6a0753ee2/scratchpad/qa0/p2/manifest.ron /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/pack/p2/manifest.ron exit=0
+cmp /tmp/claude-1000/-home-julien-Projects-TuRTS/0e0457bb-045c-4b6a-945f-1db6a0753ee2/scratchpad/qa0/p2/maps/field.ron /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/pack/p2/maps/field.ron exit=0
+cmp /tmp/claude-1000/-home-julien-Projects-TuRTS/0e0457bb-045c-4b6a-945f-1db6a0753ee2/scratchpad/qa0/p2/units/scout.ron /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/pack/p2/units/scout.ron exit=0
+cmp /tmp/claude-1000/-home-julien-Projects-TuRTS/0e0457bb-045c-4b6a-945f-1db6a0753ee2/scratchpad/qa0/p2/visuals/scout.ron /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/pack/p2/visuals/scout.ron exit=0
+cmp /tmp/claude-1000/-home-julien-Projects-TuRTS/0e0457bb-045c-4b6a-945f-1db6a0753ee2/scratchpad/qa0/p3/manifest.ron /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/pack/p3/manifest.ron exit=0
+cmp /tmp/claude-1000/-home-julien-Projects-TuRTS/0e0457bb-045c-4b6a-945f-1db6a0753ee2/scratchpad/qa0/p3/maps/field.ron /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/pack/p3/maps/field.ron exit=0
+cmp /tmp/claude-1000/-home-julien-Projects-TuRTS/0e0457bb-045c-4b6a-945f-1db6a0753ee2/scratchpad/qa0/p3/units/scout.ron /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/pack/p3/units/scout.ron exit=0
+cmp /tmp/claude-1000/-home-julien-Projects-TuRTS/0e0457bb-045c-4b6a-945f-1db6a0753ee2/scratchpad/qa0/p3/visuals/scout.ron /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/pack/p3/visuals/scout.ron exit=0
+cmp /tmp/claude-1000/-home-julien-Projects-TuRTS/0e0457bb-045c-4b6a-945f-1db6a0753ee2/scratchpad/qa0/p4/manifest.ron /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/pack/p4/manifest.ron exit=0
+cmp /tmp/claude-1000/-home-julien-Projects-TuRTS/0e0457bb-045c-4b6a-945f-1db6a0753ee2/scratchpad/qa0/p4/maps/field.ron /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/pack/p4/maps/field.ron exit=0
+cmp /tmp/claude-1000/-home-julien-Projects-TuRTS/0e0457bb-045c-4b6a-945f-1db6a0753ee2/scratchpad/qa0/p4/units/scout.ron /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/pack/p4/units/scout.ron exit=0
+cmp /tmp/claude-1000/-home-julien-Projects-TuRTS/0e0457bb-045c-4b6a-945f-1db6a0753ee2/scratchpad/qa0/p4/visuals/scout.ron /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/pack/p4/visuals/scout.ron exit=0
+cmp /tmp/claude-1000/-home-julien-Projects-TuRTS/0e0457bb-045c-4b6a-945f-1db6a0753ee2/scratchpad/qa0/p5/manifest.ron /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/pack/p5/manifest.ron exit=0
+cmp /tmp/claude-1000/-home-julien-Projects-TuRTS/0e0457bb-045c-4b6a-945f-1db6a0753ee2/scratchpad/qa0/p5/maps/field.ron /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/pack/p5/maps/field.ron exit=0
+cmp /tmp/claude-1000/-home-julien-Projects-TuRTS/0e0457bb-045c-4b6a-945f-1db6a0753ee2/scratchpad/qa0/p5/units/scout.ron /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/pack/p5/units/scout.ron exit=0
+cmp /tmp/claude-1000/-home-julien-Projects-TuRTS/0e0457bb-045c-4b6a-945f-1db6a0753ee2/scratchpad/qa0/p5/visuals/scout.ron /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/pack/p5/visuals/scout.ron exit=0
+cmp /tmp/claude-1000/-home-julien-Projects-TuRTS/0e0457bb-045c-4b6a-945f-1db6a0753ee2/scratchpad/qa0/p6/manifest.ron /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/pack/p6/manifest.ron exit=0
+cmp /tmp/claude-1000/-home-julien-Projects-TuRTS/0e0457bb-045c-4b6a-945f-1db6a0753ee2/scratchpad/qa0/p6/maps/field.ron /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/pack/p6/maps/field.ron exit=0
+cmp /tmp/claude-1000/-home-julien-Projects-TuRTS/0e0457bb-045c-4b6a-945f-1db6a0753ee2/scratchpad/qa0/p6/units/scout.ron /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/pack/p6/units/scout.ron exit=0
+cmp /tmp/claude-1000/-home-julien-Projects-TuRTS/0e0457bb-045c-4b6a-945f-1db6a0753ee2/scratchpad/qa0/p6/visuals/scout.ron /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/pack/p6/visuals/scout.ron exit=0
+cmp /tmp/claude-1000/-home-julien-Projects-TuRTS/0e0457bb-045c-4b6a-945f-1db6a0753ee2/scratchpad/qa0/p7/manifest.ron /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/pack/p7/manifest.ron exit=0
+cmp /tmp/claude-1000/-home-julien-Projects-TuRTS/0e0457bb-045c-4b6a-945f-1db6a0753ee2/scratchpad/qa0/p7/maps/field.ron /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/pack/p7/maps/field.ron exit=0
+cmp /tmp/claude-1000/-home-julien-Projects-TuRTS/0e0457bb-045c-4b6a-945f-1db6a0753ee2/scratchpad/qa0/p7/units/scout.ron /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/pack/p7/units/scout.ron exit=0
+cmp /tmp/claude-1000/-home-julien-Projects-TuRTS/0e0457bb-045c-4b6a-945f-1db6a0753ee2/scratchpad/qa0/p7/visuals/scout.ron /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/pack/p7/visuals/scout.ron exit=0
+cmp /tmp/claude-1000/-home-julien-Projects-TuRTS/0e0457bb-045c-4b6a-945f-1db6a0753ee2/scratchpad/qa0/rig-pack/dup/manifest.ron /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/pack/dup/manifest.ron exit=0
+cmp /tmp/claude-1000/-home-julien-Projects-TuRTS/0e0457bb-045c-4b6a-945f-1db6a0753ee2/scratchpad/qa0/rig-pack/dup/maps/field.ron /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/pack/dup/maps/field.ron exit=0
+cmp /tmp/claude-1000/-home-julien-Projects-TuRTS/0e0457bb-045c-4b6a-945f-1db6a0753ee2/scratchpad/qa0/rig-pack/dup/units/scout.ron /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/pack/dup/units/scout.ron exit=0
+cmp /tmp/claude-1000/-home-julien-Projects-TuRTS/0e0457bb-045c-4b6a-945f-1db6a0753ee2/scratchpad/qa0/rig-pack/dup/visuals/scout.ron /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/pack/dup/visuals/scout.ron exit=0
+cmp /tmp/claude-1000/-home-julien-Projects-TuRTS/0e0457bb-045c-4b6a-945f-1db6a0753ee2/scratchpad/qa0/runs-pack.txt /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/pack/runs-pack.txt exit=0
+cmp /tmp/claude-1000/-home-julien-Projects-TuRTS/0e0457bb-045c-4b6a-945f-1db6a0753ee2/scratchpad/qa0/repair2-pack.txt /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/pack/repair2-pack.txt exit=0
+cmp /tmp/claude-1000/-home-julien-Projects-TuRTS/0e0457bb-045c-4b6a-945f-1db6a0753ee2/scratchpad/qa0/rig-pack2.txt /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/pack/rig-pack2.txt exit=0
+cmp /tmp/claude-1000/-home-julien-Projects-TuRTS/0e0457bb-045c-4b6a-945f-1db6a0753ee2/scratchpad/qa0/schema-probe/Cargo.toml /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/schema/Cargo.toml exit=0
+cmp /tmp/claude-1000/-home-julien-Projects-TuRTS/0e0457bb-045c-4b6a-945f-1db6a0753ee2/scratchpad/qa0/schema-probe/Cargo.lock /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/schema/Cargo.lock exit=0
+cmp /tmp/claude-1000/-home-julien-Projects-TuRTS/0e0457bb-045c-4b6a-945f-1db6a0753ee2/scratchpad/qa0/schema-probe/src/main.rs /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/schema/src/main.rs exit=0
+cmp /tmp/claude-1000/-home-julien-Projects-TuRTS/0e0457bb-045c-4b6a-945f-1db6a0753ee2/scratchpad/qa0/modrt-probe/Cargo.lock /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/modrt/Cargo.lock exit=0
+cmp /tmp/claude-1000/-home-julien-Projects-TuRTS/0e0457bb-045c-4b6a-945f-1db6a0753ee2/scratchpad/qa0/modrt-probe/src/main.rs /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/modrt/src/main.rs exit=0
+cmp /tmp/claude-1000/-home-julien-Projects-TuRTS/0e0457bb-045c-4b6a-945f-1db6a0753ee2/scratchpad/qa0/runs-schema.txt /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/schema/runs-schema.txt exit=0
+cmp /tmp/claude-1000/-home-julien-Projects-TuRTS/0e0457bb-045c-4b6a-945f-1db6a0753ee2/scratchpad/qa0/runs-modrt-o2.txt /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/modrt/runs-modrt-o2.txt exit=0
+cmp /tmp/claude-1000/-home-julien-Projects-TuRTS/0e0457bb-045c-4b6a-945f-1db6a0753ee2/scratchpad/qa0/repair-modrt.txt /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/modrt/repair-modrt.txt exit=0
+cmp /tmp/claude-1000/-home-julien-Projects-TuRTS/0e0457bb-045c-4b6a-945f-1db6a0753ee2/scratchpad/qa0/gate-modrt.md /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/gates/gate-modrt.md exit=0
+cmp /tmp/claude-1000/-home-julien-Projects-TuRTS/0e0457bb-045c-4b6a-945f-1db6a0753ee2/scratchpad/qa0/gate-rigour.md /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/gates/gate-rigour.md exit=0
+cmp /tmp/claude-1000/-home-julien-Projects-TuRTS/0e0457bb-045c-4b6a-945f-1db6a0753ee2/scratchpad/qa0/qa-repair.md /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/gates/qa-repair.md exit=0
+cmp /tmp/claude-1000/-home-julien-Projects-TuRTS/0e0457bb-045c-4b6a-945f-1db6a0753ee2/scratchpad/qa0/qa-repair2.md /home/julien/.codex/worktrees/53d3/TuRTS/docs/qa/probes/gates/qa-repair2.md exit=0
 Edited exception: QP/modrt-probe/Cargo.toml -> docs/qa/probes/modrt/Cargo.toml; absolute turts_mod_api path changed to ../../../../crates/turts_mod_api per task brief:34.
-Comparison total=114 failures=0
+Comparison total=115 failures=0
 
-Yardstick extractor runs (claims: Part A extraction and byte equality; a different byte or count refutes):
-awk -F'|' '/^# Part A/{a=1} /^# Part B/{a=0} a && /^\| [A-Z][A-Z][0-9][0-9] \|/ {n++; t=$7; gsub(/^ +| +$/,"",t); split(t,w," "); if(w[1]=="CORE"){c++; if(t!="CORE") cn++}} END{print "rows="n, "core="c, "core_with_note="cn}' docs/research/review-2026-10/inventory-engine.md | exit=0 | rows=355 core=181 core_with_note=4
-python3 scripts/qa/yardstick.py --check before extraction | exit=1 | missing docs/qa/yardstick-a.tsv
-python3 scripts/qa/yardstick.py --extract | exit=0 | wrote docs/qa/yardstick-a.tsv
-awk -F'\t' 'NR>1{n++; if($4=="CORE"){c++; if($5!="") cn++}} END{print "rows="n, "core="c, "core_with_note="cn}' docs/qa/yardstick-a.tsv | exit=0 | rows=355 core=181 core_with_note=4
-python3 scripts/qa/yardstick.py --check | exit=0 | yardstick matches inventory
-Mutation: change first TSV tier CORE -> COMMON; python3 scripts/qa/yardstick.py --check | exit=1 | first difference line 2. Restore saved TSV; python3 scripts/qa/yardstick.py --check | exit=0; cmp saved TSV docs/qa/yardstick-a.tsv | exit=0.
+Yardstick claims and runs (a different count, exit or byte result refutes):
+- `awk -F'|' ... docs/research/review-2026-10/inventory-engine.md` independent count: exit=0, rows=355 core=181 core_with_note=4.
+- `python3 scripts/qa/yardstick.py --check` before extraction: exit=1, missing TSV.
+- `python3 scripts/qa/yardstick.py --extract`: exit=0.
+- `awk -F'\t' ... docs/qa/yardstick-a.tsv`: exit=0, rows=355 core=181 core_with_note=4.
+- `python3 scripts/qa/yardstick.py --check` after extraction: exit=0.
+- Mutation changed first tier `CORE` to `COMMON`: `python3 scripts/qa/yardstick.py --check` exit=1, first difference line 2. Restore saved TSV: check exit=0; `cmp /tmp/turts-qa0-t1/yardstick-a.tsv docs/qa/yardstick-a.tsv` exit=0.
 
-Probe re-runs (claim: the copied probes produce the recorded rule sets; another rule set or exit code refutes):
-Coverage commands: `python3 docs/qa/probes/coverage/completeness_gate.py docs/research/review-2026-10/inventory-engine.md <n>=<file>`.
-M1, M2, M3, M4 each exit=1 rules={R1,R3}; logs: /tmp/turts-qa0-t1/logs/coverage-m1.txt through coverage-m4.txt.
-Fixture `4=tests/qa/completeness/green.md` exit=0 rules={}; mutations `4=tests/qa/completeness/mut-a.md` through mut-e.md: exit=1 rules respectively {R1,R4}, {R2}, {R3}, {R4}, {R2}. Logs: /tmp/turts-qa0-t1/logs/coverage-*.txt. This equals `docs/qa/probes/coverage/repair-c1.txt`.
-Bridge: `python3 docs/qa/probes/bridge/hook_ban.py tests/browser/<file>` on all 12 `tests/browser/*.js`; 7 exit=1, 5 exit=0. `t7.js` exit=1 with 4 uses; `m3-human.js` exit=1 with 4 uses. Per-file commands, exits and counts: /tmp/turts-qa0-t1/probe-records.txt; output logs: /tmp/turts-qa0-t1/logs/bridge-*.txt. Results equal `docs/qa/probes/bridge/runs-c2.txt`.
-Driver model standard invocation from `tests/qa/driver/`: `python3 ../../../docs/qa/probes/driver/dr_model3.py <20 evasion samples> ok-driver.js zlib-driver3.js var-key.js ../../../tests/browser/t7.js ../../../tests/browser/m3-human.js` | exit=0 | 22 RED, 3 GREEN. Pure invocation: `python3 ../../../docs/qa/probes/driver/dr_model3.py --pure ../../../tests/browser/m2-audit.js ../../../tests/browser/t7-launch-options.js png-pure.js literal-key.js index-ok.js` | exit=0 | 5 GREEN. Combined 22 RED, 8 GREEN, as in repair3-driver.txt. The model prints verdict words and always exits 0 (`docs/qa/probes/driver/dr_model3.py:50-57`). Logs: /tmp/turts-qa0-t1/logs/driver-model.txt and driver-pure.txt.
-Package commands: `CARGO_TARGET_DIR=target/qa0-t1 cargo run -q -p turts_pack -- /tmp/turts-qa0-t1/pN`. p0, p1, p2 exit=0; p3, p4, p5, p6, p7 exit=2, matching `docs/qa/probes/pack/runs-pack.txt` for 0.2.1. Hashes p0, p1, p2 match that file exactly. Logs: /tmp/turts-qa0-t1/logs/pack-p0.txt through pack-p7.txt.
-Schema and mod-runtime probes were not rebuilt; they are the archived evidence for K1/O1.
+Coverage probe commands and results (`python3 docs/qa/probes/coverage/completeness_gate.py docs/research/review-2026-10/inventory-engine.md <milestone>=<file>`):
+- `1=docs/superpowers/specs/2026-10-26-m1-foundation-design.md` exit=1 rules={R1,R3}.
+- `2=docs/superpowers/specs/2026-10-26-m2-economy-design.md` exit=1 rules={R1,R3}.
+- `3=docs/superpowers/specs/2026-10-27-m3-industrial-design.md` exit=1 rules={R1,R3}.
+- `4=docs/superpowers/specs/2026-10-28-m4-terrain-design.md` exit=1 rules={R1,R3}.
+- `4=tests/qa/completeness/green.md` exit=0 rules={}.
+- `4=tests/qa/completeness/mut-a.md` exit=1 rules={R1,R4}; `mut-b.md` exit=1 {R2}; `mut-c.md` exit=1 {R3}; `mut-d.md` exit=1 {R4}; `mut-e.md` exit=1 {R2}.
 
-SHA256SUMS red/green check (claim: the manifest detects byte changes; a clean copy failing or a changed copy passing refutes): on scratch copy `/tmp/turts-qa0-t1/hash-probes`, `sha256sum -c SHA256SUMS` exit=0; append one byte to `bridge/fx_blind.js`, same command exit=1 with `bridge/fx_blind.js: FAILED`. Full mutation output: /tmp/turts-qa0-t1/hash-red.txt.
+Bridge command `python3 docs/qa/probes/bridge/hook_ban.py tests/browser/<file>`:
+- `m2-audit.js` exit=0 uses=0; `m2-audit.test.js` exit=0 uses=0; `m2-projection.test.js` exit=1 uses=7; `m2.js` exit=1 uses=24.
+- `m3-human.js` exit=1 uses=4; `m3-mobile.js` exit=1 uses=2; `m3.js` exit=1 uses=6; `measure.js` exit=1 uses=2.
+- `spike_p8.js` exit=0 uses=0; `t7-launch-options.js` exit=0 uses=0; `t7-launch-options.test.js` exit=0 uses=0; `t7.js` exit=1 uses=4.
+
+Driver model commands from `tests/qa/driver/`. Standard command uses `python3 ../../../docs/qa/probes/driver/dr_model3.py` with these args, in order: `evade.js plain-bad.js ctor.js dynimport.js global.js concat-req.js concat-bridge.js alias-req.js proc.js fetch.js global-evade.js via-helper.js pw.js builtin.js io-ctor.js fs-ticklog.js mod-parent.js req-cache.js mod-require.js via-fs-pure.js ok-driver.js zlib-driver3.js var-key.js ../../../tests/browser/t7.js ../../../tests/browser/m3-human.js`; exit=0, 22 RED and 3 GREEN. Pure command `python3 ../../../docs/qa/probes/driver/dr_model3.py --pure ../../../tests/browser/m2-audit.js ../../../tests/browser/t7-launch-options.js png-pure.js literal-key.js index-ok.js`; exit=0, 5 GREEN. Combined 22 RED / 8 GREEN. Model verdict words, not its exit code, are the oracle (`dr_model3.py:50-57`).
+
+Package command prefix: `CARGO_TARGET_DIR=/home/julien/.codex/worktrees/53d3/TuRTS/target/qa0-t1 cargo run -q -p turts_pack -- /tmp/turts-qa0-t1/pN`.
+- p0 exit=0 hash `c5b3c77699edc250bcbc65f4e8ecb0aff6ddd847c365b42e5ff9779cb2bae6d7`.
+- p1 exit=0 hash `c8b2fb8d9215d1dbba6192c7327ff5601db3e90df827888e0d8d42b930c9c644`.
+- p2 exit=0 hash `9c50cdf5e4249a6cdcf0605cad9bb850c908ac6bc709c30100079f445b264cee`.
+- p3 exit=2 (`dependencies are not supported at M1`); p4 exit=2 (unknown `description`); p5 exit=2 (unknown `licence`); p6 exit=2 (zero-map M1 rule); p7 exit=2 (engine `^0.2.2` not accepted by 0.2.1). Hashes p0-p2 equal `runs-pack.txt`.
+- Schema and mod-runtime probes were not rebuilt; they are archived evidence for chosen O1.
+
+SHA checks: on `/tmp/turts-qa0-t1/hash-probes`, clean `sha256sum -c SHA256SUMS` exit=0. Append one byte to `bridge/fx_blind.js`; same check exit=1 and reports that file FAILED. Final in-tree `sha256sum -c SHA256SUMS` exit=0.
