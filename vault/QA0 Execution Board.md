@@ -84,20 +84,21 @@ Count each dispatch and each resumed work turn as one run. Record it before disp
 
 | Allocation | Planned runs | Used |
 | --- | --- | --- |
-| T1 | 2 | 0 |
+| T1 | 2 | 1 |
 | T2 | 4 | 0 |
 | T3 | 4 | 0 |
-| T4 | 4 | 0 |
+| T4 | 4 | 1 |
 | T5 | 4 | 0 |
 | T6 | 4 | 0 |
 | Repair reserve | 4 | 0 |
-| Total | 22 to 26 | 0 |
+| Total | 22 to 26 | 2 |
 
 These are planning allowances, not required dispatch counts. Do not spend runs without a task.
 
 | Run | Task | Seat | Model | Effort | Base | Result |
 | --- | --- | --- | --- | --- | --- | --- |
 | 1 | T1 build | qa-lead | gpt-6-luna | medium | 8d621f3 | dispatched |
+| 2 | T4 build | mod-runtime-engineer | gpt-6-luna | high | 8d621f3 | dispatched |
 
 ## 7. Task ledger
 
@@ -106,7 +107,7 @@ These are planning allowances, not required dispatch counts. Do not spend runs w
 | T1 | building | codex/qa0-t1 | - | NOT RUN | NOT RUN | 0 | pending R0 |
 | T2 | pending | codex/qa0-t2 | - | NOT RUN | NOT RUN | 0 | pending |
 | T3 | pending | codex/qa0-t3 | - | NOT RUN | NOT RUN | 0 | pending |
-| T4 | pending | codex/qa0-t4 | - | NOT RUN | NOT RUN | 0 | pending |
+| T4 | building | codex/qa0-t4 | - | NOT RUN | NOT RUN | 0 | pending |
 | T5 | pending | codex/qa0-t5 | - | NOT RUN | NOT RUN | 0 | pending |
 | T6 | pending | codex/qa0-t6 | - | NOT RUN | NOT RUN | 0 | pending consumer |
 
