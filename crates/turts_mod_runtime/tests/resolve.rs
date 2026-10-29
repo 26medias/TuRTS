@@ -136,6 +136,25 @@ fn order_is_dependencies_first_then_id() {
 }
 
 #[test]
+fn order_uses_smallest_ready_id_across_branches() {
+    let root = manifest("a", PackageKind::Game, &[("b", "^1"), ("c", "^1")]);
+    let libraries = [
+        manifest("b", PackageKind::Library, &[("z", "^1")]),
+        manifest("c", PackageKind::Library, &[]),
+        manifest("z", PackageKind::Library, &[]),
+    ];
+    assert_eq!(
+        resolve(&root, &libraries).unwrap(),
+        vec![
+            PackageId("c".to_string()),
+            PackageId("z".to_string()),
+            PackageId("b".to_string()),
+            PackageId("a".to_string()),
+        ]
+    );
+}
+
+#[test]
 fn a_root_without_dependencies_resolves_to_itself() {
     let root = manifest("root", PackageKind::Game, &[]);
     assert_eq!(
