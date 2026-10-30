@@ -378,9 +378,6 @@ pub(crate) fn validate_m3(manifest: &Manifest, catalog: &ContentCatalog) -> Resu
             return Err(fail("health.max", "must be positive"));
         }
         if let Some(weapon) = &unit.weapon {
-            if unit.movement.is_some() {
-                return Err(fail("weapon", "weapons must be static"));
-            }
             if let Some(ammo) = &weapon.ammo
                 && !unit
                     .inventory

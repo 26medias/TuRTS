@@ -579,6 +579,7 @@ mod tests {
                     },
                 ),
             ]),
+            orders: BTreeMap::new(),
             source_files: BTreeMap::new(),
         };
         let map = MapDef {

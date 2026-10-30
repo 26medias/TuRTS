@@ -5,8 +5,9 @@ use std::io::Read;
 
 use serde::de::DeserializeOwned;
 use turts_mod_api::{
-    ContentCatalog, LockEntry, Manifest, MapDef, ModError, NodeDef, PackageId, ProductionDef,
-    RecipeDef, ResourceDef, TechnologyDef, UnitDef, VisualDef, content::SourceDef,
+    AssetsDef, ContentCatalog, InputMapDef, InterfaceDef, LockEntry, Manifest, MapDef, ModError,
+    NodeDef, OrderDef, OrderRulesDef, PackageId, ProductionDef, RecipeDef, ResourceDef,
+    TechnologyDef, UnitDef, VisualDef, content::SourceDef,
 };
 
 use crate::content::validate_content_with_m3;
@@ -87,6 +88,46 @@ impl PackageArchive {
         self.parse_exports("exports.technologies", &self.manifest.exports.technologies)
     }
 
+    pub fn orders(&self) -> Result<Vec<(String, OrderDef)>, ModError> {
+        let mut out = Vec::new();
+        for path in &self.manifest.exports.orders {
+            let text = self.export_text("exports.orders", path)?;
+            match parse_ron(&self.manifest.id, path, text) {
+                Ok(value) => out.push((path.clone(), value)),
+                Err(_order_error)
+                    if parse_ron::<OrderRulesDef>(&self.manifest.id, path, text).is_ok() => {}
+                Err(error) => return Err(error),
+            }
+        }
+        Ok(out)
+    }
+    pub fn order_rules(&self) -> Result<Vec<(String, OrderRulesDef)>, ModError> {
+        let mut out = Vec::new();
+        for path in &self.manifest.exports.orders {
+            let text = self.export_text("exports.orders", path)?;
+            match parse_ron(&self.manifest.id, path, text) {
+                Ok(value) => {
+                    let _: OrderDef = value;
+                }
+                Err(_) => {
+                    if let Ok(value) = parse_ron(&self.manifest.id, path, text) {
+                        out.push((path.clone(), value));
+                    }
+                }
+            }
+        }
+        Ok(out)
+    }
+    pub fn input_maps(&self) -> Result<Vec<(String, InputMapDef)>, ModError> {
+        self.parse_exports("exports.input", &self.manifest.exports.input)
+    }
+    pub fn interfaces(&self) -> Result<Vec<(String, InterfaceDef)>, ModError> {
+        self.parse_exports("exports.interface", &self.manifest.exports.interface)
+    }
+    pub fn assets(&self) -> Result<Vec<(String, AssetsDef)>, ModError> {
+        self.parse_exports("exports.assets", &self.manifest.exports.assets)
+    }
+
     /// Parse and resolve all gameplay content. Presentation files are never read here.
     pub fn content(&self) -> Result<ContentCatalog, ModError> {
         let origin = self.id();
@@ -120,7 +161,7 @@ impl PackageArchive {
             .into_iter()
             .map(|(file, value)| SourceDef { file, value })
             .collect();
-        let catalog = validate_content_with_m3(
+        let mut catalog = validate_content_with_m3(
             &origin,
             resources,
             units,
@@ -129,12 +170,19 @@ impl PackageArchive {
             recipes,
             technologies,
         )?;
-        crate::content_m3::validate_m3_presence(&self.manifest, &self.files)?;
-        crate::content_m3::validate_m3(&self.manifest, &catalog)?;
+        let mc_content = crate::content_mc_validation::validate_mc(self)?;
+        for (file, order) in &mc_content.orders {
+            let id = turts_mod_api::ContentId::new(&origin, &order.id);
+            catalog.orders.insert(id.clone(), order.clone());
+            catalog.source_files.insert(id, file.clone());
+        }
         crate::version_table::check_version_table(
             &self.manifest,
+            &mc_content,
             crate::version_table::VERSION_TABLE,
         )?;
+        crate::content_m3::validate_m3_presence(&self.manifest, &self.files)?;
+        crate::content_m3::validate_m3(&self.manifest, &catalog)?;
         Ok(catalog)
     }
 
@@ -199,18 +247,22 @@ impl PackageArchive {
         let package = self.manifest.id.as_str();
         let mut out = Vec::with_capacity(paths.len());
         for path in paths {
-            let bytes = self.file(path).ok_or_else(|| {
-                ModError::new(
-                    package,
-                    field,
-                    format!("exported file `{path}` is not in the archive"),
-                )
-                .with_file(MANIFEST_PATH)
-            })?;
-            let text = utf8(bytes, package, path)?;
+            let text = self.export_text(field, path)?;
             out.push((path.clone(), parse_ron(package, path, text)?));
         }
         Ok(out)
+    }
+
+    fn export_text(&self, field: &str, path: &str) -> Result<&str, ModError> {
+        let bytes = self.file(path).ok_or_else(|| {
+            ModError::new(
+                &self.manifest.id,
+                field,
+                format!("exported file `{path}` is not in the archive"),
+            )
+            .with_file(MANIFEST_PATH)
+        })?;
+        utf8(bytes, &self.manifest.id, path)
     }
 }
 

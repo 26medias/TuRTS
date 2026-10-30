@@ -139,6 +139,7 @@ fn catalog(field: GeometricField, value: f32) -> ContentCatalog {
         production: BTreeMap::new(),
         recipes: BTreeMap::new(),
         technologies: BTreeMap::new(),
+        orders: BTreeMap::new(),
         source_files: BTreeMap::from([(id, field.source().into())]),
     }
 }

@@ -1,0 +1,1 @@
+(images: [(id: "rush-icon", path: "assets/icon.png", nine_slice: None), (id: "cursor", path: "assets/cursor.png", nine_slice: None)], fonts: [(id: "default", path: "assets/font.ttf"), (id: "alternate", path: "assets/font.otf")], sounds: [(id: "alert", path: "assets/alert.ogg")], cursors: [(id: "default", image: "cursor", hotspot: (0, 0))])

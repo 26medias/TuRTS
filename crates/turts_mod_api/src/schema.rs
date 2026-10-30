@@ -63,6 +63,14 @@ pub struct Exports {
     pub recipes: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub technologies: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub orders: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub interface: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub input: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub assets: Vec<String>,
 }
 
 /// A map that rejects duplicate keys during deserialization.
