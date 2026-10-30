@@ -50,6 +50,88 @@ pub struct PlayerCommand {
     pub seq: u32,
     pub kind: PlayerCommandKind,
 }
+
+/// One order request shared by all of its subject units.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct OrderEnvelope {
+    pub order: ContentRef,
+    pub units: Vec<UnitId>,
+    pub target: OrderTarget,
+    pub queue: QueueMode,
+    pub group: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum OrderTarget {
+    None,
+    Point(Pos),
+    Unit(UnitId),
+    Node(NodeId),
+    Job(JobId),
+    Content(ContentRef),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum QueueMode {
+    Replace,
+    Append,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct UnitRefusal {
+    pub unit: UnitId,
+    pub reason: CommandRejectReason,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct OrderResult {
+    pub seq: u32,
+    pub tick: u32,
+    pub accepted: Vec<UnitId>,
+    pub refused: Vec<UnitRefusal>,
+    pub envelope: Option<CommandRejectReason>,
+    pub job_id: Option<JobId>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Activity {
+    Idle,
+    Pending,
+    Moving,
+    Attacking,
+    Holding,
+    Gathering,
+    Blocked,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct OrderSummary {
+    pub order: ContentRef,
+    pub target: OrderTarget,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct OrderFailure {
+    pub order: ContentRef,
+    pub reason: CommandRejectReason,
+    pub tick: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct UnitOrderRecord {
+    pub unit: UnitId,
+    pub activity: Activity,
+    pub current: Option<OrderSummary>,
+    pub queued: Vec<OrderSummary>,
+    pub last_failure: Option<OrderFailure>,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum PlayerCommandKind {
     MoveTo {
@@ -119,6 +201,14 @@ pub enum CommandRejectReason {
     AlreadyResearched,
     ResearchInProgress,
     Internal,
+    UnknownOrder,
+    NotApplicable,
+    TargetInvalid,
+    TargetGone,
+    OutOfRange,
+    RateLimited,
+    NotQueueable,
+    Blocked,
 }
 impl CommandRejectReason {
     pub const ALL: &'static [Self] = &[
@@ -151,6 +241,14 @@ impl CommandRejectReason {
         Self::AlreadyResearched,
         Self::ResearchInProgress,
         Self::Internal,
+        Self::UnknownOrder,
+        Self::NotApplicable,
+        Self::TargetInvalid,
+        Self::TargetGone,
+        Self::OutOfRange,
+        Self::RateLimited,
+        Self::NotQueueable,
+        Self::Blocked,
     ];
     pub const fn as_str(self) -> &'static str {
         match self {
@@ -183,6 +281,14 @@ impl CommandRejectReason {
             Self::AlreadyResearched => "already_researched",
             Self::ResearchInProgress => "research_in_progress",
             Self::Internal => "internal",
+            Self::UnknownOrder => "unknown_order",
+            Self::NotApplicable => "not_applicable",
+            Self::TargetInvalid => "target_invalid",
+            Self::TargetGone => "target_gone",
+            Self::OutOfRange => "out_of_range",
+            Self::RateLimited => "rate_limited",
+            Self::NotQueueable => "not_queueable",
+            Self::Blocked => "blocked",
         }
     }
 }
