@@ -34,7 +34,7 @@ User workspace instructions take precedence over the brief's inherited role-file
 ## 2. Standing rules
 
 - Design revision 10 wins over the plan. Report every conflict; stop on a task step that contradicts it or the product spec.
-- K1 to K27 stand as recommended. K11 remains conditional on P1. Full design; no scope cut without CEO.
+- K1 to K27 stand as recommended. K11(a) is retained on Chrome evidence under the CEO Firefox deferral. Full design; no scope cut without CEO.
 - Each task branch starts from integration after all Needs merge; one worktree and target per lane. Build binaries one at a time. Remove the lane and its target only after merge.
 - Red must compile and fail semantically. Show the command and `; echo exit=$?`. Do not pipe away output before the exit code.
 - Order: red, green, commit, gate, plants. Restore plants, then prove changed paths are clean. Never restore uncommitted or new files with git checkout.
@@ -48,17 +48,17 @@ User workspace instructions take precedence over the brief's inherited role-file
 
 Task gate sets are the plan's Local gate commands. T1 requires G-QA. After each task merge, run G-RUST, G-QA and G-FROZEN; also G-WEB for client/server edits. After each wave, push integration only and read hosted check, agents and browser jobs. Never merge or push main.
 
-Frozen M2 SHA256: `bcbf72c2206251f635a7c7f5b6c8f573d69a5fc05a5bd77716e98ebfb08e370b`. Keep forge fixed point and refutation plants. Known browser failure: M2 browser proof; trace in T20, repair in owner task/T21. Current integration CI: NOT TRACED; no wave has completed and no push was made. No T1 merge: stop on P1 result requires the CEO K11 pick first.
+Frozen M2 SHA256: `bcbf72c2206251f635a7c7f5b6c8f573d69a5fc05a5bd77716e98ebfb08e370b`. Keep forge fixed point and refutation plants. Known browser failure: M2 browser proof; trace in T20, repair in owner task/T21. Current integration CI: NOT TRACED; no wave has completed and no push was made. T1 merged at8f612a3 after the CEO release; integration re-gate passed all commands. No wave is complete yet.
 
 ## 4. Tasks
 
-24 numbered tasks; task 2 has two branches, for 25 lanes. All except T1 are NOT STARTED. T1 is STOPPED on its result: Firefox NOT TRACED; Chrome evidence at d524fa3.
+24 numbered tasks; task 2 has two branches, for 25 lanes. T1 merged at8f612a3 after completion of supplementary Chrome receipts and CEO Firefox deferral. T2a is reviewed and awaits its task gate; T3 is in progress. T20 is not started.
 
 | Task | Wave | Needs | Branch | State |
 | --- | --- | --- | --- | --- |
-| T1 | 1 | - | codex/mc-t1 | ACTIVE: Firefox deferred by CEO; finish supplementary records |
-| T2a | 1 | - | codex/mc-t2a | ACTIVE: additive wire types |
-| T3 | 1 | - | codex/mc-t3 | NOT STARTED |
+| T1 | 1 | - | codex/mc-t1 | COMPLETE; merge8f612a3; G-RUST/G-QA/G-FROZEN all0; lane removed |
+| T2a | 1 | - | codex/mc-t2a | REVIEW/GATE PASS e8f9e02; ready to merge |
+| T3 | 1 | - | codex/mc-t3 | ACTIVE: API schema and validator |
 | T20 | 1 | - | codex/mc-t20 | NOT STARTED |
 | T8 | 2 | 2a, 3 | codex/mc-t8 | NOT STARTED |
 | T18 | 2 | 3 | codex/mc-t18 | NOT STARTED |
@@ -140,7 +140,7 @@ Tasks in one wave share no file, except the refutation registries (merge in task
 
 ## 7. Budget and seats
 
-CEO approved about 212 total runs. Build stop line: 170 (106 planned task runs plus 64 repairs). Gate estimate: 42 spent before this build. Build dispatches used: 5/170. Root preflight is recorded separately and is not a builder/reviewer dispatch. T1 estimate 3; stop at 6 task dispatches. Do not dispatch another run at a stop.
+CEO approved about 212 total runs. Build stop line: 170 (106 planned task runs plus 64 repairs). Gate estimate: 42 spent before this build. Build dispatches used: 6/170. Root preflight is recorded separately and is not a builder/reviewer dispatch. T1 estimate 3; stop at 6 task dispatches. Do not dispatch another run at a stop.
 
 One run is one agent dispatch (builder or reviewer). Count every run on the board.
 
@@ -186,11 +186,13 @@ One row per builder/reviewer dispatch or resumed agent work turn. Register befor
 | 1 | T1 build | web-platform-engineer | gpt-6-luna | high | b563624 | d524fa3; Chrome controls/keys exit 0; Firefox no window exit 10; stop. |
 | 2 | T1 evidence review | ux-designer | gpt-6.1-sol | high | d524fa3 | PASS for evidence handoff; no High findings; hashes/G-QA exit 0; scratch hash plant red1/restored0; overall T1 incomplete. |
 
-| 3 | T1 supplementary input records | web-platform-engineer | gpt-6-luna | high | d524fa3 | Dispatched after CEO release; no Firefox runs; complete Chrome pointer rows. |
+| 3 | T1 supplementary input records | web-platform-engineer | gpt-6-luna | high | d524fa3 | 45c7eab; all supplementary Chrome rows traced; hashes/G-QA exit0; 184KiB evidence. |
 
-| 4 | T2a build | network-engineer | gpt-6-luna | high | f8b204e | Dispatched; isolated lane and target; additive types only. |
+| 4 | T2a build | network-engineer | gpt-6-luna | high | f8b204e | e8f9e02; semantic red101, scoped green3/3; G-QA exit0; full G-RUST/G-QA passed in fresh-local gate. |
 
-| 5 | T2a review | mod-runtime-engineer | gpt-6.1-sol | high | e8f9e02 | Dispatched; review code and scoped tests; full gate awaits compiler slot. |
+| 5 | T2a review | mod-runtime-engineer | gpt-6.1-sol | high | e8f9e02 | PASS, no findings; named plant red101/restoredgreen0, clean; full G-RUST/G-QA passed by root. |
+
+| 6 | T3 build | mod-runtime-engineer | gpt-6-luna | high | 8f612a3 | Dispatched; schema/stub/test preparation; compiler slot after T2a gate. |
 
 ## 9. Preflight ledger and stop
 
@@ -224,6 +226,15 @@ Run2 final: ux-designer PASS for the stopped evidence handoff, no High findings;
 
 ## 12. CEO release and disk control, 2026-10-30
 
-[[Decisions/2026-10-30 MC Firefox deferral and continue]] releases the Firefox stop. K11(a) stays; Firefox remains NOT TRACED. Prior stopped-state entries above are historical. Remaining P1 pointer rows are completed in run3 before merge.
+[[Decisions/2026-10-30 MC Firefox deferral and continue]] releases the Firefox stop. K11(a) stays; Firefox remains NOT TRACED. Prior stopped-state entries above are historical. Remaining P1 pointer rows were completed in run3 before merge.
 
 No active Cargo, Rust, Trunk or TuRTS process was present at cleanup. Removed only obsolete generated gate2-player/{debug,wasm-bindgen,wasm-opt,wasm-release,wasm32-unknown-unknown}, gate2-sim/debug, claude-verify/debug, and main debug/incremental. Reclaimed 26,027,208,704 bytes (24.24GiB); free space rose from557GiB to581GiB. Retained old evidence and source worktrees. Receipt: main target/cleanup-archive/20261030-mc-cache-cleanup.json. New build lanes use debug=0 and incremental=0. Delete task targets/worktrees after each verified merge; retain only compact evidence.
+
+Warm cache rule: only one full workspace compiler cache is kept. Root transfers it by rename between idle lane targets; there is no symlink/hardlink sharing and no concurrent mutation. Required CARGO_TARGET_DIR remains specific to the executing lane. Scoped test outputs are disposable once their durable logs exist.
+
+
+## 13. T1 gate and T2a ready
+
+AfterT1 all ten required gate commands passed, frozen hash unchanged; source8f612a3. Logs: target/mc-evidence/after-t1/results.json. Removed the clean merged T1 worktree; no T1 build cache exists. Branch retained.
+
+T2a sourcee8f9e02: independent review PASS, plant red101/restored0, taskG-RUST/G-QA all0. Warm-cache relocation initially exposed a stale local net-protocol artifact: Clippy failed to find the newtypes despite correct committed source. Invalidating all workspace packages with cargo clean -p (keeping third-party dependencies) fixed this; fresh-local strictclippy/wasm/workspacetests/boundary/G-QA allpassed. No source change was needed. Preserve failed gate log as an artifact, not semantic-red evidence. Logs: target/mc-evidence/task-t2a andtask-t2a-fresh-local; reviewer target/mc-evidence/t2a-review/report.md. Future cache transfers invalidate localworkspacepackages before verification.
