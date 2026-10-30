@@ -8,7 +8,7 @@ source: codex
 
 # MC execution board
 
-State: STOPPED on P1 result. Chrome required K11 rows have evidence; Firefox NOT TRACED after failed launch. CEO K11 decision required. No other task may start.
+State: ACTIVE. CEO released the Firefox stop on 2026-10-30: "ignore firefox for now, continue". K11(a) stays on Chrome evidence; Firefox stays NOT TRACED. Finish supplementary P1 records, merge T1, then gate integration and continue wave1.
 
 Plan: `docs/superpowers/plans/2026-10-29-mc-player-control.md`.
 Design of record: `docs/superpowers/specs/2026-10-29-mc-player-control-design.md`, revision 10 at `488b3d3`.
@@ -56,7 +56,7 @@ Frozen M2 SHA256: `bcbf72c2206251f635a7c7f5b6c8f573d69a5fc05a5bd77716e98ebfb08e3
 
 | Task | Wave | Needs | Branch | State |
 | --- | --- | --- | --- | --- |
-| T1 | 1 | - | codex/mc-t1 | STOPPED: Firefox NOT TRACED; CEO K11 |
+| T1 | 1 | - | codex/mc-t1 | ACTIVE: Firefox deferred by CEO; finish supplementary records |
 | T2a | 1 | - | codex/mc-t2a | NOT STARTED |
 | T3 | 1 | - | codex/mc-t3 | NOT STARTED |
 | T20 | 1 | - | codex/mc-t20 | NOT STARTED |
@@ -140,7 +140,7 @@ Tasks in one wave share no file, except the refutation registries (merge in task
 
 ## 7. Budget and seats
 
-CEO approved about 212 total runs. Build stop line: 170 (106 planned task runs plus 64 repairs). Gate estimate: 42 spent before this build. Build dispatches used: 2/170. Root preflight is recorded separately and is not a builder/reviewer dispatch. T1 estimate 3; stop at 6 task dispatches. Do not dispatch another run at a stop.
+CEO approved about 212 total runs. Build stop line: 170 (106 planned task runs plus 64 repairs). Gate estimate: 42 spent before this build. Build dispatches used: 3/170. Root preflight is recorded separately and is not a builder/reviewer dispatch. T1 estimate 3; stop at 6 task dispatches. Do not dispatch another run at a stop.
 
 One run is one agent dispatch (builder or reviewer). Count every run on the board.
 
@@ -186,6 +186,8 @@ One row per builder/reviewer dispatch or resumed agent work turn. Register befor
 | 1 | T1 build | web-platform-engineer | gpt-6-luna | high | b563624 | d524fa3; Chrome controls/keys exit 0; Firefox no window exit 10; stop. |
 | 2 | T1 evidence review | ux-designer | gpt-6.1-sol | high | d524fa3 | PASS for evidence handoff; no High findings; hashes/G-QA exit 0; scratch hash plant red1/restored0; overall T1 incomplete. |
 
+| 3 | T1 supplementary input records | web-platform-engineer | gpt-6-luna | high | d524fa3 | Dispatched after CEO release; no Firefox runs; complete Chrome pointer rows. |
+
 ## 9. Preflight ledger and stop
 
 | Event | Evidence | Result |
@@ -214,3 +216,10 @@ Firefox effort: 04:17:20 to about 04:19:38 UTC (2m18s), unrestricted session. Ve
 The CEO must pick K11 with the Chrome table. No pick is inferred. No task merge, re-gate, wave completion, push or hosted CI is claimed. Both worktrees remain for review. All tasks except T1 are NOT STARTED.
 
 Run2 final: ux-designer PASS for the stopped evidence handoff, no High findings; T1 overall incomplete. G-QA/hash checks exit 0; scratch-only copied-log corruption red exit 1, restored exit 0. Review saved in [[Reports/2026-10-30 MC P1 review]]. Root re-ran G-QA on integration and git diff --check: all exit 0.
+
+
+## 12. CEO release and disk control, 2026-10-30
+
+[[Decisions/2026-10-30 MC Firefox deferral and continue]] releases the Firefox stop. K11(a) stays; Firefox remains NOT TRACED. Prior stopped-state entries above are historical. Remaining P1 pointer rows are completed in run3 before merge.
+
+No active Cargo, Rust, Trunk or TuRTS process was present at cleanup. Removed only obsolete generated gate2-player/{debug,wasm-bindgen,wasm-opt,wasm-release,wasm32-unknown-unknown}, gate2-sim/debug, claude-verify/debug, and main debug/incremental. Reclaimed 26,027,208,704 bytes (24.24GiB); free space rose from557GiB to581GiB. Retained old evidence and source worktrees. Receipt: main target/cleanup-archive/20261030-mc-cache-cleanup.json. New build lanes use debug=0 and incremental=0. Delete task targets/worktrees after each verified merge; retain only compact evidence.
