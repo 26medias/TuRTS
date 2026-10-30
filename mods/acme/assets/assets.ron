@@ -1,0 +1,1 @@
+(images: [(id: "icon_order_move", path: "assets/icon_order_move.png", nine_slice: None), (id: "icon_order_stop", path: "assets/icon_order_stop.png", nine_slice: None)], fonts: [], sounds: [], cursors: [])

@@ -1,0 +1,1 @@
+(id: "order_hold", name: "Hold this position", behaviour: Hold, target: None, fire: Some(InRange), engage: None, icon: "icon_order_hold", hotkey: "key_hold", cursor: None, card: None, units: ["forge:turret"], description: "Hold the selected units.")

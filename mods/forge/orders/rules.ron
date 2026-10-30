@@ -1,0 +1,6 @@
+(queue_depth: 16, smart: [
+        (target: Ground, needs: Movement, order: "forge:order_move"),
+        (target: OwnUnit, needs: Movement, order: "forge:order_move"),
+        (target: ForeignUnit, needs: Movement, order: "forge:order_move"),
+        (target: Content, needs: Research, order: "forge:order_research")
+    ])
