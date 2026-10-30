@@ -112,3 +112,35 @@ Conflict: integration Rust/QA/frozen and Trunk build passed, but default headles
 Choice: rerun T7 with the existing script's supported M2_HEADLESS=false/private-Xvfb path and the headed Vulkan flags already used by the project browser workflow: enable-gpu, use-angle=vulkan, enable-features=Vulkan, enable-unsafe-webgpu; ignore the default unsafe-swiftshader flag. Keep viewport, scene/movement oracle and all pass criteria unchanged. Record exact environment and actual output. Reuse the same compiler cache. No source, shader, acceptance or hardware-driver change. Other completed gates remain valid for the unchanged implementation.
 
 Alternative not taken: mark the failed browser run green, weaken the oracle, change game rendering to hide adapter failure, or stop for CEO on an execution-environment detail within Codex's decision rights.
+
+## C13: give simultaneously available Muster orders distinct card cells
+
+Conflict: rush.ron:1 and order_gather.ron:1 both use card(1,1). Their filters are disjoint for one unit but both orders belong to a mixed trooper/worker selection. Design8.4 (:780) defines CommandCard over the selection; current validator checks collisions per unit (content_mc_validation.rs:443-472), so package validation misses this mixed case.
+
+Choice: move Rush to the free row1/column3 within the existing four-column card. Keep its ID, key, behavior and other authored data unchanged, mirror the fixture, and add a named mixed-subject catalog test that proves shared/specialist orders occupy distinct cells. Get its semantic red before repair, then green. No fixed HUD1 root geometry changes.
+
+Alternative not taken: hide a specialist order, remove mixed selection, change a key or postpone a known overlapping authored control until rendering.
+
+## C14: bundle the font's portable license terms
+
+Conflict: both Roboto-LICENSE.txt copies only reference host /usr/share/common-licenses paths (:44-51). The actual TTF is Roboto Regular2.138 with Apache2.0 license and2011Google copyright in its name table; the package must carry its font license without requiring Debian host files.
+
+Choice: retain the supplied notices, add the actual font copyright attribution, and include the full canonical Apache2.0 terms from /usr/share/common-licenses/Apache-2.0 in both package/fixture. Keep font bytes unchanged and both copies identical. Test the bundled terms/attribution rather than relying on a host path.
+
+Alternative not taken: ship only a host-local reference, replace the font, or invent license terms. No game behavior or accepted asset ID changes.
+
+## C15: validate the authored camera pose without claiming rendered proof
+
+Conflict: muster.rs:248 onward checks an axis-aligned top-down rectangle from height/FOV, ignoring authored pitch0.7 and yaw. Task19 requires the troopers and own post to fit a1280x720 view, plus a screen box for500 centres. The current test proves only a nominal ground rectangle. Independent authored-pose calculations are retained in t19-review/provisional-camera.json; the actual CameraDef consumer belongs to Task11.
+
+Choice: strengthen the data tests with an explicit authored ground-plane perspective model using look-at, vertical height, pitch/yaw and vertical FOV/aspect, consistent with design2.2/7 and the existing look-at convention. Check troopers/own post visibility and the projected500-centre box excluding other centres. Keep the authored map/camera values if those guards pass. Label this a mathematical authored-pose check; actual core/Bevy projection and rendered fit remain NOT TRACED until Tasks9/11/12/13 exercise them. No renderer or API change in Task19.
+
+Alternative not taken: claim a rendered fit from a top-down formula, remove camera coverage, or implement future camera consumers early.
+
+## C16: author a visible LastNotice surface in the full Muster HUD
+
+Conflict: production Muster HUD has no LastNotice binding (interface/hud.ron:3-10), so future refusal/failure text has no authored surface after engine panels are removed. Design8.1 (:721),8.4 LastNotice and9.2 (:873-876), plus ORD6 (:1234), require player text through mod widgets.
+
+Choice: add an appropriately placed Text binding to LastNotice in the production Muster HUD, using existing font/value/visibility mechanisms. Keep exact three-root HUD1 probe layout unchanged. Add a meaningful data test for the binding. No new key, removed step or acceptance-row change; this supplies the existing feedback contract.
+
+Alternative not taken: add an engine hardcoded HUD fallback, silently lose notices, or defer a known missing authored surface until Task15 runtime implementation.
