@@ -31,7 +31,7 @@ Follow `vault/M3 Execution Board.md` sections 1 to 3 and the plan "Execution con
 - Validator: `qa-lead` on the integration branch for tasks 21 to 24 and the plants.
 - Task 23 (PT1, PT2): the `player` agent through the harness `io` only, with the goals only and no read under `docs/` or `mods/`; and a person. The CEO decided (2026-10-29): the CEO plays PT1 and PT2. The log records "not blind". Do not ask who plays; before task 23 starts, tell the CEO the page URL from `scripts/mc-browser.sh --serve-only` and wait.
 - State the model and the reasoning effort on each dispatch.
-- Budget: about 212 agent runs in all (106 task runs, 64 repair allowance, the gates already spent). The CEO approved this budget (2026-10-29). Count every run on the board. Stop and report to the CEO at 170 build runs (106 + 64) before you spend more. A task that reaches twice its estimate stops and reports.
+- Budget: about 212 agent runs in all (106 task runs, 64 repair allowance, the gates already spent). The CEO approved this budget (2026-10-29). Count every run on the board. Stop and report to the CEO at 170 build runs (106 + 64) before you spend more. A task that reaches twice its estimate does not stop (CEO, 2026-10-30): the orchestrator decides whether to continue, records the reason on the board, and reports the overrun in the daily report. A task that reaches four times its estimate stops and reports.
 
 ## 4. Standing rules for every dispatch
 
@@ -44,7 +44,15 @@ Follow `vault/M3 Execution Board.md` sections 1 to 3 and the plan "Execution con
 - The frozen values: `tests/m3/m2_operation_stream.json` keeps its hash; the forge fixed point stays green; the refutation plants keep their red (G-REF, with the known red window of the plan).
 - Do not edit `CLAUDE.md`, `.claude/agents/`, the design, or the product spec. The plan section "Doc updates for the orchestrator" is for Claude after the merge; do not do it.
 - Write in ASD-STE100 Simplified Technical English. Four spaces per indent level.
-- Stop and report to the CEO, do not decide: P1 red or Firefox absent (section 2); a frozen value must change; a plan step contradicts the design or the spec; a Decided item looks wrong; a content id of the task 18 table is red in the no-content scan; the budget stop; who plays task 23; a refutation plant that must retire (it needs a decision note, plan task 21).
+- Decide yourself, do not stop (CEO, 2026-10-30, "allow it to take decisions"). Record each decision as a numbered Codex ruling (C1, C2, ...) on the board and in `vault/Decisions/<date> MC Codex rulings.md`, with the conflict, the choice, the `path:line` evidence, and the alternative you did not take. The orchestrator (Claude) reviews these rulings after each wave and can reverse one; a reversed ruling is a repair in the next wave. You may decide:
+    - A name collision with the no-content scan or with an existing identifier: rename the engine side (a variant, module, file, test or field). Never rename content of `mods/forge` or `mods/muster` that a frozen value or an acceptance row names.
+    - A plan step that disagrees with the design on an instrument detail (a column, a log field, a file name, a command flag, a test name, a fixture): the design wins; apply it and continue.
+    - A plan step that the design does not cover: follow the design's nearest rule and the pattern the code already has.
+    - A design step that an existing M2 or M3 mechanism cannot do as written (as the PT1 belt step, ruling O11): change the step to the nearest existing mechanism that keeps the same player-visible shape (the same keys, the same alert, the same timing bound), and record the computed timing as NOT TRACED until the step runs.
+    - The order of tasks inside a wave, the number of lanes, cache and disk handling, worktree layout.
+    - A review finding of Medium or lower: repair or defer with a reason on the board. A High finding is repaired and re-checked, always.
+    - A task over twice its estimate (section 3).
+- Stop and report to the CEO, do not decide: a frozen value must change (`tests/m3/m2_operation_stream.json`, the forge fixed point); a Decided item of the product spec or a K call looks wrong; a change to the design that changes what the player sees or does (a new key, a removed step, a changed acceptance row); the budget stop at 170 and a task at four times its estimate; the page URL for task 23 (the CEO plays); a refutation plant that must retire; a merge into `main`.
 
 ## 5. The vault
 
