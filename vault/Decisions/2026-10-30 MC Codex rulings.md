@@ -34,3 +34,11 @@ Conflict: Task18 estimate is 2 runs. Its first preparation, implementation and i
 Choice: continue with a bounded repair and independent recheck, registered before dispatch. The current defects are known data/fixture issues; no frozen value, K call or player-visible contract changes. Expected next two runs bring Task18 to 5 runs. Record the overrun in the daily report. Hard task stop is 8 runs; global stop remains 170. Reassess each further run and stop at either hard limit.
 
 Alternative not taken: stop again at 4 runs under the old rule or waive validation. The CEO replaced that old stop rule; the repaired data still needs independent review and all gates.
+
+## C4: extend the old-package RON test dispatcher
+
+Conflict: the Task18 packages now contain MC orders/input/interface/assets files. The pre-MC schema test visits every RON file but recognizes only older directories, so old_ron_still_loads panics on mods/base/orders/order_move.ron. Evidence: crates/turts_mod_api/tests/schema_m3.rs:16-43 and :113-117; actual workspace gate exit101 in target/mc-evidence/t18-builder/repair-run26/g-rust-workspace-test.log.
+
+Choice: add typed parsing for the new directories in this test helper: OrderDef, OrderRulesDef for orders/rules.ron, InputMapDef, InterfaceDef and AssetsDef. Keep the existing legacy parsing and all default-serialization assertions. Keep the unexpected-path failure for genuinely unknown paths. Run the named schema test red then green, and re-gate the repaired candidate. This is a dependent instrument/fixture update under brief section4.
+
+Alternative not taken: skip the new directories, delete old-package coverage, change package schemas or weaken unknown-field checks. Typed parsing preserves the intent and checks all package definitions now present.
