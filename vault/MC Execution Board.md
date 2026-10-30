@@ -8,7 +8,7 @@ source: codex
 
 # MC execution board
 
-State: ACTIVE. T1, T2a and T3 are complete. T3 merged at aceef85; integration G-RUST, G-QA, G-FROZEN and G-WEB passed. Headed Vulkan T7 passed with 115 frames and the server oracle, exit=0. T20 now receives the single compiler cache for its clean-tree M2 baseline. Build runs: 12/170. Wave 1 is incomplete; no integration push or new CI yet.
+State: ACTIVE. T1, T2a and T3 are complete. T3 merged at aceef85; integration G-RUST, G-QA, G-FROZEN and G-WEB passed. Headed Vulkan T7 passed with 115 frames and the server oracle, exit=0. T20 passed the clean local M2 baseline (15/15) and is implementing the harness with the single compiler cache. Build runs: 12/170. Wave 1 is incomplete; no integration push or new CI yet.
 
 Plan: `docs/superpowers/plans/2026-10-29-mc-player-control.md`.
 Design of record: `docs/superpowers/specs/2026-10-29-mc-player-control-design.md`, revision 10 at `488b3d3`.
@@ -57,18 +57,18 @@ CI trigger: `.github/workflows/ci.yml:2-5` runs pushes to main and pull requests
 | Evidence | Current result | Cause and owner |
 | --- | --- | --- |
 | Historical CI 40960227409 | E9-browser-base-economy times out after 15 s. Server completed production at tick175; captured client stayed at tick87. | Underlying cause NOT TRACED. Historical artifact and log retained under target/mc-evidence/t20-builder. |
-| T20 clean local baseline at22a4600 | Selection, economy and recovery pass; E9-browser-base-public-convergence fails its shared-tick public-projection assertion (tests/browser/m2.js:430-444), exit=1. | Forced-software-profile diagnostic; mechanism NOT TRACED. Isolated control and active-lifecycle cases both pass with both pages visible. A full instrumented NVIDIA run passes all15 cases; clean original-source normal-native baseline is running. No engine owner assigned. |
+| T20 clean local baseline at22a4600 | Selection, economy and recovery pass; E9-browser-base-public-convergence fails its shared-tick public-projection assertion (tests/browser/m2.js:430-444), exit=1. | Forced-software-profile diagnostic; mechanism NOT TRACED. Isolated control and active-lifecycle cases both pass with both pages visible. A full instrumented NVIDIA run passes all15 cases; clean original-source normal-native baseline also passed all15 cases, exit0. No engine owner assigned; hosted cause remains NOT TRACED. |
 
 ## 4. Tasks
 
-24 numbered tasks; task 2 has two branches, for 25 lanes. T1 merged at8f612a3 after completion of supplementary Chrome receipts and CEO Firefox deferral. T2a is complete; T3 is in progress. T20 is prepared for its clean-tree baseline.
+24 numbered tasks; task 2 has two branches, for 25 lanes. T1 merged at8f612a3 after completion of supplementary Chrome receipts and CEO Firefox deferral. T2a and T3 are complete. T20 passed its clean local baseline and is implementing the harness.
 
 | Task | Wave | Needs | Branch | State |
 | --- | --- | --- | --- | --- |
 | T1 | 1 | - | codex/mc-t1 | COMPLETE; merge8f612a3; G-RUST/G-QA/G-FROZEN all0; lane removed |
 | T2a | 1 | - | codex/mc-t2a | COMPLETE; merge17286b1; all gates0; lane removed |
 | T3 | 1 | - | codex/mc-t3 | COMPLETE; merge aceef85; all integration gates pass; T7 115 frames |
-| T20 | 1 | - | codex/mc-t20 | ACTIVE: clean-tree M2 baseline; compiler handoff authorized |
+| T20 | 1 | - | codex/mc-t20 | ACTIVE: clean local M2 baseline15/15; harness red/green work |
 | T8 | 2 | 2a, 3 | codex/mc-t8 | NOT STARTED |
 | T18 | 2 | 3 | codex/mc-t18 | NOT STARTED |
 | T19 | 2 | 3 | codex/mc-t19 | NOT STARTED |
@@ -191,29 +191,18 @@ One row per builder/reviewer dispatch or resumed agent work turn. Register befor
 
 | Run | Task | Seat | Model | Effort | Base | Result |
 | --- | --- | --- | --- | --- | --- | --- |
-
 | 1 | T1 build | web-platform-engineer | gpt-6-luna | high | b563624 | d524fa3; Chrome controls/keys exit 0; Firefox no window exit 10; stop. |
 | 2 | T1 evidence review | ux-designer | gpt-6.1-sol | high | d524fa3 | PASS for evidence handoff; no High findings; hashes/G-QA exit 0; scratch hash plant red1/restored0; overall T1 incomplete. |
-
 | 3 | T1 supplementary input records | web-platform-engineer | gpt-6-luna | high | d524fa3 | 45c7eab; all supplementary Chrome rows traced; hashes/G-QA exit0; 184KiB evidence. |
-
 | 4 | T2a build | network-engineer | gpt-6-luna | high | f8b204e | e8f9e02; semantic red101, scoped green3/3; G-QA exit0; full G-RUST/G-QA passed in fresh-local gate. |
-
 | 5 | T2a review | mod-runtime-engineer | gpt-6.1-sol | high | e8f9e02 | PASS, no findings; named plant red101/restoredgreen0, clean; full G-RUST/G-QA passed by root. |
-
 | 6 | T3 build | mod-runtime-engineer | gpt-6-luna | high | 8f612a3 | cac1d76; all22HUD3cases semanticred; scopedgreens API/runtime/pack39/no-content; fullgates running. |
-
 | 7 | T20 build | qa-lead | gpt-6-luna | high | 17286b1 | Read-only contract preparation complete; no code or baseline run; waits for compiler slot. |
-
 | 8 | T3 review | mod-builder | gpt-6.1-sol | high | cac1d76 | FAIL49d42a:5High/5Medium; detailedrepros; repairscommitted d805669 pendingrecheck. |
-
 | 9 | T3 review recheck | mod-builder | gpt-6.1-sol | high | d805669 | FAIL d805669:0High/2Medium; sourcefixes and immutablebinaryrecheck pending. |
-
 | 10 | T3 second recheck | mod-builder | gpt-6.1-sol | high | 08b72a1 | FAIL08b72a1:1High OGGpost-EOS/serialreuse,1MediumRONcomments/rawstrings; fixed67307d1 pendingrecheck. |
-
 | 11 | T3 final functional recheck | mod-builder | gpt-6.1-sol | high | 67307d1 | FunctionalPASS67307d1:0High/0Medium;56CLIobservations; G-REF/numericreceiptpending. |
-
-| 12 | T20 draft/build continuation | qa-lead | gpt-6-luna | high | 17286b1 | Externaldraftready; Node7/7 andsyntaxgreen; realM2baseline waits explicit compilerhandoff. |
+| 12 | T20 draft/build continuation | qa-lead | gpt-6-luna | high | 17286b1 | Current base22a4600; clean normal-native M2 baseline15/15 exit0; temporary diagnostics restored; harness red/green work in progress. Hosted software cause remains NOT TRACED. |
 
 ## 9. Preflight ledger and stop
 
