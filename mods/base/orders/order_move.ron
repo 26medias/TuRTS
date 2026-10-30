@@ -1,0 +1,1 @@
+(id: "order_move", name: "Move selected units", behaviour: Move, target: PointOrUnit, fire: None, engage: None, icon: "icon_order_move", hotkey: "key_move", cursor: None, card: None, units: ["base:harvester", "base:rifleman"], description: "Move the selected units.")

@@ -49,7 +49,7 @@ fn t2c_control_unmodified_package_is_accepted() {
 fn t2c_engine_api_mismatch() {
     let bytes = acme_archive_with(
         "manifest.ron",
-        "engine_api: \"^0.2\"",
+        "engine_api: \"^0.2.3\"",
         "engine_api: \"^0.1\"",
     );
     let error = refused(&bytes, "engine_api");
@@ -61,7 +61,7 @@ fn t2c_engine_api_mismatch() {
 fn t2c_engine_api_that_is_not_a_requirement() {
     let bytes = acme_archive_with(
         "manifest.ron",
-        "engine_api: \"^0.2\"",
+        "engine_api: \"^0.2.3\"",
         "engine_api: \"soon\"",
     );
     refused(&bytes, "engine_api");
