@@ -96,3 +96,11 @@ Conflict: all acceptance tests on179ada7 passed, but the final artifact-retentio
 Choice: rerun the unchanged acceptance script with CARGO_TARGET_DIR set to the canonical absolute path of that same target/mc-t18. Use absolute target paths for future gate wrappers, retaining one cache per lane and all private-directory guards. Record the failed first top-level invocation as exit1 despite passing tests; accept the gate only after an actual top-level exit0. No source or cache duplication is needed.
 
 Alternative not taken: weaken the artifact-retention guard, accept a nonzero gate, or allocate another target directory. This is an execution-path detail within the authorized cache/worktree decision rights.
+
+## C11: wire the MC variant example tests into CI in Task24
+
+Conflict: the new MC reference tests live under the m2_variants example test target. Current CI runs cargo test --workspace at .github/workflows/ci.yml:33, and the actual workspace log confirms it does not execute that example's test target. The seven example tests passed explicitly under the builder and independent reviewer, but need a permanent hosted entry.
+
+Choice: defer the CI hook to Task24, the planned .github/workflows/ci.yml owner (plan:724-726), and require cargo test -p turts_checks --example m2_variants --locked in its check job. Keep the explicit local/example proof now and the selected E2/E3 hosted refutation coverage. Track this with the existing Task24 harness-test hook note; it must be complete before CI1/REG1 signoff. No test or gate is waived for Task18.
+
+Alternative not taken: claim the workspace command runs these seven tests, omit their hosted guard from the finished build, or change the hot CI file ahead of its planned owner. This is a reasoned deferral of CI plumbing, not a change to the acceptance row or game behavior.
