@@ -26,10 +26,10 @@ pub use input::{
     RESERVED_BROWSER_KEYS, WheelDirection,
 };
 pub use interface::{
-    AlertDef, AlertTrigger, Anchor, At, ButtonAction, ButtonIcon, CameraDef, CameraStart,
-    Dimension, Direction, Fill, GuidePage, InterfaceDef, ItemField, LightDef,
-    Placement as WidgetPlacement, Predicate, PrimaryField, Primitive, Size, Source, TextAlign,
-    TextValue, TooltipStyle, UnitPresentation, Value, Widget, WorldPoint, WorldStyle,
+    ActionField, AlertDef, AlertTrigger, Anchor, At, ButtonAction, ButtonIcon, CameraDef,
+    CameraStart, Dimension, Direction, Fill, GuidePage, IconField, InterfaceDef, ItemField,
+    LightDef, Placement as WidgetPlacement, Predicate, PrimaryField, Primitive, Size, Source,
+    TextAlign, TextValue, TooltipStyle, UnitPresentation, Value, Widget, WorldPoint, WorldStyle,
 };
 pub use lock::{LockEntry, Lockfile};
 pub use orders::{

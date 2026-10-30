@@ -318,7 +318,7 @@ fn hud3_order_id_is_a_content_token() {
     std::fs::write(mods.join("acme/orders/rush.ron"), r#"(id:"rush",name:"Rush",behaviour:Move,target:Point,fire:Some(Never),engage:None,icon:"rocket",hotkey:"launch",cursor:None,card:None,units:["acme:scout"],description:"Move quickly")"#).unwrap();
     std::fs::write(
         mods.join("acme/input/bindings.ron"),
-        r#"(actions:[(name:"launch",default:[Key(code:"KeyL",mods:[])])],engine_overrides:[])"#,
+        r#"(actions:[(name:"launch",default:[Key(code:"KeyL",mods:[])])],engine_overrides:[(name:"select",bindings:[Key(code:"KeyS",mods:[])])])"#,
     )
     .unwrap();
     std::fs::write(mods.join("acme/assets/main.ron"), r#"(images:[(id:"rocket",path:"assets/rocket.png",nine_slice:None)],fonts:[],sounds:[],cursors:[])"#).unwrap();
@@ -332,7 +332,7 @@ fn hud3_order_id_is_a_content_token() {
     let probe = scratch.join("rush_probe.rs");
     std::fs::write(
         &probe,
-        "fn probe() { let s = \"rush\"; let a = \"launch\"; let i = \"rocket\"; }",
+        "fn probe() { let s = \"rush\"; let a = \"launch\"; let i = \"rocket\"; let e = \"select\"; }",
     )
     .unwrap();
     let hits = scan_rust(std::slice::from_ref(&probe), &catalog).unwrap();
@@ -354,6 +354,10 @@ fn hud3_order_id_is_a_content_token() {
         hits.iter()
             .any(|hit| hit.token == "rocket" && hit.package == "acme" && hit.field == "id"),
         "asset id must be a scanned token: {hits:#?}"
+    );
+    assert!(
+        !hits.iter().any(|hit| hit.token == "select"),
+        "engine override names must not be mod content tokens: {hits:#?}"
     );
 }
 

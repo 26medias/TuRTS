@@ -92,11 +92,14 @@ impl PackageArchive {
         let mut out = Vec::new();
         for path in &self.manifest.exports.orders {
             let text = self.export_text("exports.orders", path)?;
-            match parse_ron(&self.manifest.id, path, text) {
+            match parse_ron::<OrderDef>(&self.manifest.id, path, text) {
                 Ok(value) => out.push((path.clone(), value)),
-                Err(_order_error)
-                    if parse_ron::<OrderRulesDef>(&self.manifest.id, path, text).is_ok() => {}
-                Err(error) => return Err(error),
+                Err(order_error) => match parse_ron::<OrderRulesDef>(&self.manifest.id, path, text)
+                {
+                    Ok(_) => {}
+                    Err(rules_error) if looks_like_order_rules(text) => return Err(rules_error),
+                    Err(_) => return Err(order_error),
+                },
             }
         }
         Ok(out)
@@ -105,15 +108,14 @@ impl PackageArchive {
         let mut out = Vec::new();
         for path in &self.manifest.exports.orders {
             let text = self.export_text("exports.orders", path)?;
-            match parse_ron(&self.manifest.id, path, text) {
-                Ok(value) => {
-                    let _: OrderDef = value;
-                }
-                Err(_) => {
-                    if let Ok(value) = parse_ron(&self.manifest.id, path, text) {
-                        out.push((path.clone(), value));
-                    }
-                }
+            match parse_ron::<OrderDef>(&self.manifest.id, path, text) {
+                Ok(_) => {}
+                Err(order_error) => match parse_ron::<OrderRulesDef>(&self.manifest.id, path, text)
+                {
+                    Ok(value) => out.push((path.clone(), value)),
+                    Err(rules_error) if looks_like_order_rules(text) => return Err(rules_error),
+                    Err(_) => return Err(order_error),
+                },
             }
         }
         Ok(out)
@@ -264,6 +266,10 @@ impl PackageArchive {
         })?;
         utf8(bytes, &self.manifest.id, path)
     }
+}
+
+fn looks_like_order_rules(text: &str) -> bool {
+    text.contains("queue_depth:") || text.contains("smart:")
 }
 
 /// Whether an archive path is relative, has no empty, `.` or `..` part, and has no backslash.
