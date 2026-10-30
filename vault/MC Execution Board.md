@@ -8,7 +8,7 @@ source: codex
 
 # MC execution board
 
-State: ACTIVE under c3f09d0/O11/design12. T8 and T18 complete; T18 mergeb1b3834 re-gated including headed Vulkan T7(138frames). Run28 Task19 build registered; build28/170. One warm cache now belongs to T19; T18 lane removed. C1-C12 recorded; C11 CI hook belongs to Task24. Wave1 check/agents green, known M2 browser timeout. Main untouched.
+State: ACTIVE under c3f09d0/O11/design12. T8 and T18 complete; T18 mergeb1b3834 re-gated including headed Vulkan T7(138frames). Run28 Task19 build registered; build29/170. One warm cache now belongs to T19; T18 lane removed. C1-C12 recorded; C11 CI hook belongs to Task24. Wave1 check/agents green, known M2 browser timeout. Main untouched.
 
 Plan: `docs/superpowers/plans/2026-10-29-mc-player-control.md`.
 Design of record: `docs/superpowers/specs/2026-10-29-mc-player-control-design.md`, revision 10 at `488b3d3`.
@@ -150,7 +150,7 @@ Tasks in one wave share no file, except the refutation registries (merge in task
 
 ## 7. Budget and seats
 
-CEO approved about 212 total runs. Build stop line: 170 (106 planned task runs plus 64 repairs). Gate estimate: 42 spent before this build. Build dispatches used: 28/170. Root preflight is recorded separately and is not a builder/reviewer dispatch. Twice a task estimate requires a recorded continuation decision; four times is a hard stop. T18 estimate2: soft4, hard8. No dispatch at global170 or a task hard limit.
+CEO approved about 212 total runs. Build stop line: 170 (106 planned task runs plus 64 repairs). Gate estimate: 42 spent before this build. Build dispatches used: 29/170. Root preflight is recorded separately and is not a builder/reviewer dispatch. Twice a task estimate requires a recorded continuation decision; four times is a hard stop. T18 estimate2: soft4, hard8. No dispatch at global170 or a task hard limit.
 
 One run is one agent dispatch (builder or reviewer). Count every run on the board.
 
@@ -219,7 +219,8 @@ One row per builder/reviewer dispatch or resumed agent work turn. Register befor
 | 25 | T18 independent review | mod-runtime-engineer | gpt-6.1-sol | high | 0e83be5 | STOP noPASS:0High/4Medium plus lab/turret coverage concern; inherited belt contract conflict escalated; read-only only, no Cargo/plant. |
 | 26 | T18 C1-C10 repair | mod-builder | gpt-6-luna | high | c244c0a | COMPLETE179ada7: fullgates0,870/0/18; GACC corrected0, registered E2/E3 red101/restored0; input-row red101/green0; clean. |
 | 27 | T18 independent recheck | mod-runtime-engineer | gpt-6.1-sol | high | ead4fef | PASS179ada7:0High/0Medium;36 independenttests0, own input-rowred101/restored0; source/PNG/frozen/gates/C7 audited; clean/idle. |
-| 28 | T19 implementation | mod-builder | gpt-6-luna | high | b1b3834 | REGISTERED: use prepared tests, actual missing-package red, then data/fixture implementation and full gates; task run3/hard12. |
+| 28 | T19 implementation | mod-builder | gpt-6-luna | high | 62bb518 | ACTIVE010368f: missing-package semanticred101, five scoped tests0, no-content9green, real media checked; G-RUST/GQA running. |
+| 29 | T19 independent review | ux-designer | gpt-6.1-sol | high | 010368f | REGISTERED: source/layout/camera/assets audit while builder owns compiler; final tests wait handoff; task run4/soft6/hard12. |
 
 ## 9. Preflight ledger and stop
 
@@ -378,3 +379,5 @@ C11 forward requirement for Task24: add explicit cargo test -p turts_checks --ex
 C12: post-T18 integration Rust/QA/frozen and Trunk passed; default headlessT7 failed before join with noGPUadapter. NVIDIA/Chrome versions verified. Corrective T7 uses documented private-Xvfb headed Vulkan launch, unchanged oracle/viewport/source and samecache. Default adapter cause NOT TRACED. No new agent run. Task18 merge b1b3834 remains pending completed integration web gate. [[Decisions/2026-10-30 MC Codex rulings]].
 
 Task18 final acceptance: candidate179ada7 mergedb1b3834. Root G-RUST/GQA/GFROZEN all0,870/0/18, Trunk0. Default headless T7 failed before GPU startup; original result retained. C12 corrective headed Vulkan T7 passed138frames, movement/scene oracle0, code unchanged. Composite receipt target/mc-evidence/after-t18/final-gates.json. Lane clean/merged and removed; sole cache moved to T19, four workspace-profile cleans0; untracked T19 test preserved and branch rebased to include T18. Task18 used5runs vs estimate2; C3 overrun reason applies, below hard8. [[Reports/2026-10-30 MC T18 final review]].
+
+Task19 candidate010368f committed from prepared source. Five named tests compiled and failed on missing package/fixture before implementation, exit101; five scoped greens and nine NoContent tests now0. Production/fixture copies differ only HUD. Real media decode evidence saved; independent UX review RUN29 registered while RUN28 runs gates. No new minor stop.
