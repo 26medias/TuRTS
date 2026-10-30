@@ -3,7 +3,8 @@
 use std::collections::BTreeMap;
 use std::io::Read;
 
-use serde::de::DeserializeOwned;
+use serde::de::{DeserializeOwned, IgnoredAny, MapAccess, Visitor};
+use serde::{Deserialize, Deserializer};
 use turts_mod_api::{
     AssetsDef, ContentCatalog, InputMapDef, InterfaceDef, LockEntry, Manifest, MapDef, ModError,
     NodeDef, OrderDef, OrderRulesDef, PackageId, ProductionDef, RecipeDef, ResourceDef,
@@ -97,8 +98,15 @@ impl PackageArchive {
                 Err(order_error) => match parse_ron::<OrderRulesDef>(&self.manifest.id, path, text)
                 {
                     Ok(_) => {}
-                    Err(rules_error) if looks_like_order_rules(text) => return Err(rules_error),
-                    Err(_) => return Err(order_error),
+                    Err(rules_error) => {
+                        return Err(classified_order_error(
+                            &self.manifest.id,
+                            path,
+                            text,
+                            order_error,
+                            rules_error,
+                        ));
+                    }
                 },
             }
         }
@@ -113,8 +121,15 @@ impl PackageArchive {
                 Err(order_error) => match parse_ron::<OrderRulesDef>(&self.manifest.id, path, text)
                 {
                     Ok(value) => out.push((path.clone(), value)),
-                    Err(rules_error) if looks_like_order_rules(text) => return Err(rules_error),
-                    Err(_) => return Err(order_error),
+                    Err(rules_error) => {
+                        return Err(classified_order_error(
+                            &self.manifest.id,
+                            path,
+                            text,
+                            order_error,
+                            rules_error,
+                        ));
+                    }
                 },
             }
         }
@@ -268,75 +283,59 @@ impl PackageArchive {
     }
 }
 
-fn looks_like_order_rules(text: &str) -> bool {
-    let bytes = text.as_bytes();
-    let mut index = 0;
-    let mut depth = 0i32;
-    let mut fields = std::collections::BTreeSet::new();
-    while index < bytes.len() {
-        if bytes[index..].starts_with(b"//") {
-            index += 2;
-            while index < bytes.len() && bytes[index] != b'\n' {
-                index += 1;
-            }
-            continue;
-        }
-        if bytes[index..].starts_with(b"/*") {
-            index += 2;
-            while index + 1 < bytes.len() && &bytes[index..index + 2] != b"*/" {
-                index += 1;
-            }
-            index = (index + 2).min(bytes.len());
-            continue;
-        }
-        match bytes[index] {
-            b'"' => {
-                index += 1;
-                while index < bytes.len() {
-                    match bytes[index] {
-                        b'\\' => index = (index + 2).min(bytes.len()),
-                        b'"' => {
-                            index += 1;
-                            break;
-                        }
-                        _ => index += 1,
-                    }
-                }
-            }
-            b'(' | b'{' | b'[' => {
-                depth += 1;
-                index += 1;
-            }
-            b')' | b'}' | b']' => {
-                depth -= 1;
-                index += 1;
-            }
-            byte if depth == 1 && is_ron_identifier_start(byte) => {
-                let start = index;
-                index += 1;
-                while index < bytes.len() && is_ron_identifier_continue(bytes[index]) {
-                    index += 1;
-                }
-                let field_end = index;
-                while index < bytes.len() && bytes[index].is_ascii_whitespace() {
-                    index += 1;
-                }
-                if index < bytes.len() && bytes[index] == b':' {
-                    fields.insert(&text[start..field_end]);
-                }
-            }
-            _ => index += 1,
-        }
+fn classified_order_error(
+    package: &str,
+    path: &str,
+    text: &str,
+    order_error: ModError,
+    rules_error: ModError,
+) -> ModError {
+    match ron::from_str::<OrderExportFields>(text) {
+        Ok(fields) if fields.0.contains("queue_depth") || fields.0.contains("smart") => rules_error,
+        Ok(_) => order_error,
+        Err(_) => ModError::new(
+            package,
+            path,
+            format!(
+                "cannot parse this export as an order or order rules (order: {}; rules: {})",
+                order_error.message, rules_error.message
+            ),
+        )
+        .with_file(path),
     }
-    fields.contains("queue_depth") || fields.contains("smart")
 }
 
-fn is_ron_identifier_start(byte: u8) -> bool {
-    byte.is_ascii_alphabetic() || byte == b'_'
-}
+struct OrderExportFields(std::collections::BTreeSet<String>);
 
-fn is_ron_identifier_continue(byte: u8) -> bool {
-    byte.is_ascii_alphanumeric() || byte == b'_'
+impl<'de> Deserialize<'de> for OrderExportFields {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct FieldSetVisitor;
+
+        impl<'de> Visitor<'de> for FieldSetVisitor {
+            type Value = OrderExportFields;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                formatter.write_str("a named RON struct")
+            }
+
+            fn visit_map<M>(self, mut map: M) -> Result<Self::Value, M::Error>
+            where
+                M: MapAccess<'de>,
+            {
+                let mut fields = std::collections::BTreeSet::new();
+                while let Some(field) = map.next_key::<String>()? {
+                    let _: IgnoredAny = map.next_value()?;
+                    fields.insert(field);
+                }
+                Ok(OrderExportFields(fields))
+            }
+        }
+
+        deserializer.deserialize_struct("", &[], FieldSetVisitor)
+    }
 }
 
 /// Whether an archive path is relative, has no empty, `.` or `..` part, and has no backslash.

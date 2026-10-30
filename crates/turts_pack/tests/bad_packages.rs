@@ -144,15 +144,24 @@ fn hud3_ogg(seconds: u64) -> Vec<u8> {
     packet.extend_from_slice(&48_000u32.to_le_bytes());
     packet.extend_from_slice(&[0; 12]);
     packet.extend_from_slice(&[0xB8, 1]);
-    let mut page = b"OggS\0\x04".to_vec();
-    page.extend_from_slice(&(48_000 * seconds).to_le_bytes());
-    page.extend_from_slice(&1u32.to_le_bytes());
-    page.extend_from_slice(&0u32.to_le_bytes());
-    page.extend_from_slice(&[0; 4]);
-    page.push(1);
-    page.push(packet.len() as u8);
-    page.extend_from_slice(&packet);
-    page
+    fn page(flags: u8, granule: u64, sequence: u32, packet: &[u8]) -> Vec<u8> {
+        let lacing = (!packet.is_empty()).then_some(packet.len() as u8);
+        let mut page = b"OggS\0".to_vec();
+        page.push(flags);
+        page.extend_from_slice(&granule.to_le_bytes());
+        page.extend_from_slice(&1u32.to_le_bytes());
+        page.extend_from_slice(&sequence.to_le_bytes());
+        page.extend_from_slice(&[0; 4]);
+        page.push(u8::from(lacing.is_some()));
+        if let Some(lacing) = lacing {
+            page.push(lacing);
+            page.extend_from_slice(packet);
+        }
+        page
+    }
+    let mut ogg = page(0x02, 0, 0, &packet);
+    ogg.extend(page(0x04, 48_000 * seconds, 1, &[]));
+    ogg
 }
 
 fn hud3_with_image_set(
@@ -690,12 +699,20 @@ fn hud3_order_rules_typo_reports_rules_schema() {
 }
 
 #[test]
-fn hud3_order_rules_classification_allows_spacing_before_colon() {
+fn hud3_order_rules_classification_allows_comments_before_colon() {
     let output = pack_hud3(
-        "hud3_order_rules_spaced_typo",
+        "hud3_order_rules_commented_typo",
         &[
-            ("orders/rules.ron", "queue_depth: 16", "queue_depth : 16"),
-            ("orders/rules.ron", "smart: []", "smart : [], typo: true"),
+            (
+                "orders/rules.ron",
+                "queue_depth: 16",
+                "queue_depth /* depth */ : 16",
+            ),
+            (
+                "orders/rules.ron",
+                "smart: []",
+                "smart /* rules */ : [], typo: true",
+            ),
         ],
     );
     assert_eq!(output.status.code(), Some(2), "{output:?}");

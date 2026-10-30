@@ -191,12 +191,10 @@ fn order_rules_accessor_does_not_silently_skip_unknown_fields() {
         r#"(id:"rush",name:"Rush",behaviour:Attack,target:Unit,fire:None,engage:None,icon:"rush-icon",hotkey:"rush",cursor:None,card:None,units:[],description:"Rush the target")"#,
         r#"(queue_dept:16,smart:[])"#,
     );
+    let error = archive.order_rules().unwrap_err().to_string();
     assert!(
-        archive
-            .order_rules()
-            .unwrap_err()
-            .to_string()
-            .contains("hud/orders/rules.ron: unknown field `queue_dept`")
+        error.contains("hud/orders/rules.ron: unknown field `queue_dept`"),
+        "{error}"
     );
 }
 
@@ -205,6 +203,15 @@ fn order_rules_detection_ignores_quoted_and_commented_field_names() {
     let archive = archive_with_order(
         r#"(id:"rush",name:"Rush",behaviour:Attack,target:Unit,fire:None,engage:None,icon:"rush-icon",hotkey:"rush",cursor:None,card:None,units:[],description:"queue_depth: marker",bogus:true)
             // smart: marker"#,
+    );
+    let error = archive.orders().unwrap_err().to_string();
+    assert!(error.contains("unknown field `bogus`"), "{error}");
+}
+
+#[test]
+fn order_rules_detection_ignores_raw_string_field_names() {
+    let archive = archive_with_order(
+        r##"(id:"rush",name:"Rush",behaviour:Attack,target:Unit,fire:None,engage:None,icon:"rush-icon",hotkey:"rush",cursor:None,card:None,units:[],description:r#"queue_depth: " smart: "#,bogus:true)"##,
     );
     let error = archive.orders().unwrap_err().to_string();
     assert!(error.contains("unknown field `bogus`"), "{error}");
