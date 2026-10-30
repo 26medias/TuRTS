@@ -8,7 +8,7 @@ source: codex
 
 # MC execution board
 
-State: ACTIVE. T1 andT2a are merged and fully re-gated; both task lanes were removed. T3 source67307d1 is accepted: functionalreview0High/0Medium, fulltaskgates0,29refutationsred/restoredgreen, numericstubproof101/0; ready for merge and integration re-gate. T20 completed read-only contract preparation and waits for the compiler slot before its clean-tree baseline. Firefox remains deferred under the CEO release; K11(a) stays on Chrome evidence.
+State: ACTIVE. T1 and T2a are complete. T3 merged at aceef85; integration G-RUST, G-QA, G-FROZEN and web build passed. T7 failed before join because Chrome found no WebGPU adapter. A headed Vulkan retry is running; T3 re-gate is incomplete. T20 waits for that gate and the compiler slot. Build runs: 12/170. Wave 1 is incomplete; no integration push or new CI yet.
 
 Plan: `docs/superpowers/plans/2026-10-29-mc-player-control.md`.
 Design of record: `docs/superpowers/specs/2026-10-29-mc-player-control-design.md`, revision 10 at `488b3d3`.
@@ -58,7 +58,7 @@ Frozen M2 SHA256: `bcbf72c2206251f635a7c7f5b6c8f573d69a5fc05a5bd77716e98ebfb08e3
 | --- | --- | --- | --- | --- |
 | T1 | 1 | - | codex/mc-t1 | COMPLETE; merge8f612a3; G-RUST/G-QA/G-FROZEN all0; lane removed |
 | T2a | 1 | - | codex/mc-t2a | COMPLETE; merge17286b1; all gates0; lane removed |
-| T3 | 1 | - | codex/mc-t3 | ACCEPTED67307d1; ready for merge/re-gate |
+| T3 | 1 | - | codex/mc-t3 | MERGED aceef85; Rust/QA/frozen/web-build pass; T7 GPU startup retry running |
 | T20 | 1 | - | codex/mc-t20 | ACTIVE: read/draft; baseline trace waits for compiler slot |
 | T8 | 2 | 2a, 3 | codex/mc-t8 | NOT STARTED |
 | T18 | 2 | 3 | codex/mc-t18 | NOT STARTED |
