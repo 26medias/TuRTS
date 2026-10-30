@@ -1,9 +1,10 @@
 # MC — Player control and client foundation: design
 
-Date: 2026-10-29. Revision 5. Status: DRAFT, passed gate 1 (2026-10-29): spec-rigour-reviewer,
+Date: 2026-10-29. Revision 6. Status: DRAFT, passed gate 1 (2026-10-29): spec-rigour-reviewer,
 technical-director, bevy-rendering-engineer, player, simulation-core-engineer; three repair
 passes. CEO decisions (2026-10-29): K1 to K27 as recommended (K11 stays conditional on probe P1),
 budget option 1 (the full design, about 184 runs); K20 applied in revision 5 (section 17.2).
+Revision 6 (plan rulings O1 and O4): `muster` ids `dummy` and `rush`; ORD2 pixels half on `muster`.
 Author seat: `ux-designer` (D65, D66, D67, client side of D70; Second on D68).
 Source of record: `RTS-Engine-Project-Specifications.md` version 0.8 (cited as S:line).
 Other sources: the QA0 design `docs/superpowers/specs/2026-10-29-qa0-instrument-design.md`
@@ -485,8 +486,8 @@ policy). The engine hard-codes no rule such as "a moving unit does not fire".
 | `SetEnabled(bool)` | Enable or disable a machine | none |
 
 `forge` and `muster` set `fire: Never` on `move` and `engage: StopAndFire` on `attack`. A mod adds
-an order by data: `muster:charge` binds `Attack` with its own name, icon, hotkey and cursor, and
-the engine source has no string "charge" (test ORD1).
+an order by data: `muster:rush` binds `Attack` with its own name, icon, hotkey and cursor, and
+the engine source has no string "rush" (test ORD1).
 
 A new behaviour is an engine change for all mods (S:211). It is an additive engine API bump under
 the K13 rule (0.2.x, because `^0.2` refuses 0.3.0) with a content-level version row. The row is
@@ -1083,10 +1084,12 @@ buttons and no images. Their maps and units do not change. The M2 browser cases 
 - Slot 0: 40 `trooper` (radius 0.5, speed 3.0, weapon range 4, damage 5, cooldown 1 s, health
   50, removal). Also 2 `worker` (gatherer), 1 `depot` (drop-off), 1 `post` (static, radius 2).
   Also 460 `marker` units (mobile, no weapon) in a far block for SEL2.
-- Slot 1: 10 `target` (mobile, health 40, no weapon) and 1 `post`. Slot 0 starts with an ore
+- Slot 1: 10 `dummy` (mobile, health 40, no weapon) and 1 `post`. Slot 0 starts with an ore
   balance, so the resource line has a source.
-- Orders: the forge set plus attack, gather and `charge` (`Attack` with another name and icon, for
-  ORD1).
+- Orders: the forge set plus attack, gather and `rush` (`Attack` with another name and icon, for
+  ORD1). Names: no `muster` id is an engine identifier or a string literal of the engine source
+  (the no-content scan, `crates/turts_checks/tests/support/mod.rs:403-410`); `target` and `charge`
+  were, so revision 6 renamed them (plan O1 a).
 - The camera starts on the troopers (`CameraDef.start: Point`).
 - The D67 probe layout of 8.5 lives in a test fixture copy of `muster` under
   `crates/turts_pack/tests/fixtures/` (HUD1), not in `muster` itself.
@@ -1181,8 +1184,8 @@ row with other options needs an amendment.
 | SEL3 | Ctrl+click or a double click on a `trooper` selects each own trooper on the screen and no trooper off the screen. | Type select ignores the screen. | pixels | K15 a |
 | SEL4 | Ctrl+1 assigns, 1 recalls, Shift+1 adds, 1 twice centres the camera on the group. A destroyed unit leaves the selection and the group in the same frame. After `io.reload()`, 1 recalls the same live units. | Groups not stored; or dead ids kept. | pixels | K10 a, K27 a |
 | SLOT1 | Invariant 11 (S:577). The driver reloads within 5 s. The client shows the countdown and rejoins the same slot with the stored id within 15 s. A second window with another id gets "no open slot". A second live window with a copy of the stored id gets "This game is open in another window" after the countdown. The slot owner never changes (server stats). | Today's `judge_hello`: the reload gets "no open slot"; or no retry, so a reload within 10 s shows the refusal. | pixels and headless | K27 a |
-| ORD1 | Protocol 4 round trip of each `OrderTarget` and of an envelope for each `Behaviour` (all nine). The server refuses a version 3 `Hello`. `muster:charge` (`Attack` with another name) works, and "charge" is not in engine code (no-content scan). | A behaviour without a wire form (for example no `Job` target); or the server matches order id strings in code. | headless | K2 a, K14 a |
-| ORD2 | One envelope with 300 units: 290 own mobile, 5 own static, 5 foreign. Result: 290 accepted, 5 `not_applicable`, 5 `not_owner`; the 290 move. | Today's all-or-nothing `validate_move_to` (`command.rs:255-294`): 0 accepted. | headless and pixels | K4 b or c |
+| ORD1 | Protocol 4 round trip of each `OrderTarget` and of an envelope for each `Behaviour` (all nine). The server refuses a version 3 `Hello`. `muster:rush` (`Attack` with another name) works, and "charge" is not in engine code (no-content scan). | A behaviour without a wire form (for example no `Job` target); or the server matches order id strings in code. | headless | K2 a, K14 a |
+| ORD2 | Headless half: one envelope with 300 units: 290 own mobile, 5 own static, 5 foreign. Result: 290 accepted, 5 `not_applicable`, 5 `not_owner`; the 290 move. Pixels half (revision 6, plan O4): on `muster`, a box that holds the 40 troopers and the own `post`, then a right click. Result in the reply: 40 accepted, 1 `not_applicable`; the 40 move, the `post` does not. A box cannot hold a foreign unit, so `not_owner` is headless only. | Today's all-or-nothing `validate_move_to` (`command.rs:255-294`): 0 accepted. | headless and pixels | K4 b or c |
 | ORD3 | Shift queues three waypoints, and the unit visits them in order. A plain order replaces the queue. S stops and clears. H holds: the unit stays and fires at a target in range. The server refuses an order beyond `queue_depth` with `queue_full` for that unit, and an `Append` behind `hold` or `gather` with `not_queueable`. A queued order after a completed move starts in the same tick. A gather on a node that empties writes `last_failure` `node_depleted`. Waypoint lines show. | Append treated as replace; stop keeps the queue; or no completion rule. | headless and pixels | K24 b |
 | ORD4 | `muster`: attack on a target out of range moves into range and fires until the target is gone. Attack-move stops to fire at a target in range, then goes on. The explicit `move` (`fire: Never`) on a point under an enemy moves there with no shot. | Attack-move implemented as move; or `choose_target` ignores the ordered target. | headless and pixels | K2 a, K5 a |
 | ORD5 | Right click on the ground: all mobile units move. On the ore node with workers and troopers selected: workers gather, troopers move. On a slot 1 target: troopers attack, workers move. | Smart command resolved once for the whole selection. | pixels and headless | K5 a |
