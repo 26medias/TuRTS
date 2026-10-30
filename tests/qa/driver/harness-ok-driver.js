@@ -17,6 +17,16 @@ exports.drive = async (io, params) => {
     await io.key("KeyB");
     await io.use(1);
     await io.key("Shift", [], { action: "down" });
+    await io.key("KeyA", ["Shift"], { key: "q" });
+    await io.key("KeyA", [], { action: "down", key: "q" });
+    await io.key("KeyA", [], { action: "up", key: "q" });
+    await io.use(2);
+    await io.key("KeyA", [], { key: "q" });
+    await io.key("Control", [], { action: "down" });
+    await io.key("KeyA", ["Shift"], { key: "q" });
+    await io.key("KeyA", [], { key: "q" });
+    await io.key("Control", [], { action: "up" });
+    await io.use(1);
     await io.click(70, 70);
     await io.key("Shift", [], { action: "up" });
     await io.key("Shift", [], { action: "down" });

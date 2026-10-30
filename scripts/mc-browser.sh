@@ -12,19 +12,28 @@ CHROME_BIN="${CHROME_BIN:-$(command -v google-chrome || command -v chromium || t
 if [[ -z "$CHROME_BIN" || ! -x "$CHROME_BIN" ]]; then echo "Chrome binary unavailable; set CHROME_BIN" >&2; exit 1; fi
 export CHROME_BIN
 PACKAGE="${1:-}"
-[[ -n "$PACKAGE" ]] || { echo "usage: scripts/mc-browser.sh <package-dir> [driver.js oracle.js viewport [--params row.json]] [--serve-only]" >&2; exit 2; }
+[[ -n "$PACKAGE" ]] || { echo "usage: scripts/mc-browser.sh <package-dir> [driver.js oracle.js viewport [--params row.json] [--windows N]] [--serve-only]" >&2; exit 2; }
 shift
 SERVE_ONLY=false
-DRIVER="" ORACLE="" VIEWPORT="1280x720" ROW_FILE=""
+DRIVER="" ORACLE="" VIEWPORT="1280x720" ROW_FILE="" WINDOWS="" WINDOWS_SET=false
 while (($#)); do
     case "$1" in
         --serve-only) SERVE_ONLY=true; shift ;;
         --params) (($# >= 2)) || { echo "--params requires a row file" >&2; exit 2; }; ROW_FILE="$2"; shift 2 ;;
+        --windows) (($# >= 2)) || { echo "--windows requires a positive integer" >&2; exit 2; }; [[ "$WINDOWS_SET" == false ]] || { echo "--windows may be specified only once" >&2; exit 2; }; WINDOWS="$2"; WINDOWS_SET=true; shift 2 ;;
         *)
             if [[ -z "$DRIVER" ]]; then DRIVER="$1"; elif [[ -z "$ORACLE" ]]; then ORACLE="$1"; else VIEWPORT="$1"; fi
             shift ;;
     esac
 done
+if [[ "$WINDOWS_SET" == true ]]; then
+    python3 - "$WINDOWS" <<'PYWINDOWS' || { echo "--windows requires a positive integer" >&2; exit 2; }
+import re, sys
+value = sys.argv[1]
+if not re.fullmatch(r"[1-9][0-9]*", value) or int(value) > 9007199254740991:
+    raise SystemExit(1)
+PYWINDOWS
+fi
 [[ "$SERVE_ONLY" == true || ( -n "$DRIVER" && -n "$ORACLE" ) ]] || { echo "driver and oracle are required" >&2; exit 2; }
 [[ "$BUILD_JOBS" =~ ^[1-4]$ ]] || { echo "CARGO_BUILD_JOBS must be between 1 and 4" >&2; exit 2; }
 DIST="$ROOT/crates/turts_client_web/dist"
@@ -103,9 +112,9 @@ echo "Evidence: $OUT"
 if [[ "$SERVE_ONLY" == true ]]; then wait; fi
 
 PARAMS="$OUT/params.json"
-python3 - "$PACKAGE_NAME" "$URL" "http://127.0.0.1:$HTTP_PORT" "ws://127.0.0.1:$WS_PORT" "$ROW_FILE" "$PARAMS" "$VIEWPORT" <<'PYPARAMS'
+python3 - "$PACKAGE_NAME" "$URL" "http://127.0.0.1:$HTTP_PORT" "ws://127.0.0.1:$WS_PORT" "$ROW_FILE" "$PARAMS" "$VIEWPORT" "$WINDOWS" <<'PYPARAMS'
 import json, pathlib, re, sys
-package,url,http,ws,row,out,viewport=sys.argv[1:]
+package,url,http,ws,row,out,viewport,windows=sys.argv[1:]
 match=re.fullmatch(r"(\d+)x(\d+)(?:@([0-9]+(?:\.[0-9]+)?))?",viewport)
 if not match: raise SystemExit("invalid viewport: "+viewport)
 data={"package":package,"url":url,"server_url":http,"ws_url":ws,"windows":1,"device_scale_factor":float(match.group(3) or 1)}
@@ -114,6 +123,7 @@ if row:
     data["windows"]=row_data.get("windows",1)
     data["device_scale_factor"]=row_data.get("device_scale_factor",data["device_scale_factor"])
     data["row"]=row_data.get("row")
+if windows: data["windows"]=int(windows)
 data["viewport"]={"width":int(match.group(1)),"height":int(match.group(2)),"device_scale_factor":data["device_scale_factor"]}
 pathlib.Path(out).write_text(json.dumps(data,sort_keys=True)+"\n")
 PYPARAMS
@@ -125,4 +135,6 @@ resolve_script() {
 }
 DRIVER_PATH="$(resolve_script "$DRIVER")"
 ORACLE_PATH="$(resolve_script "$ORACLE")"
-node "$ROOT/tests/browser/harness/run.js" "$URL" "$OUT" "$DRIVER_PATH" "$ORACLE_PATH" --params "$PARAMS" --viewport "$VIEWPORT" | tee "$OUT/browser.log"
+RUN_ARGS=("$URL" "$OUT" "$DRIVER_PATH" "$ORACLE_PATH" --params "$PARAMS" --viewport "$VIEWPORT")
+[[ "$WINDOWS_SET" == false ]] || RUN_ARGS+=(--windows "$WINDOWS")
+node "$ROOT/tests/browser/harness/run.js" "${RUN_ARGS[@]}" | tee "$OUT/browser.log"

@@ -19,21 +19,31 @@ function parseArgs(args) {
     const [url, outDir, driverPath, oraclePath, ...flags] = args;
     let paramsPath = "";
     let viewport = "";
+    let windows = null;
     for (let index = 0; index < flags.length;) {
         const flag = flags[index++];
         if (flag === "--params" && flags[index]) paramsPath = flags[index++];
         else if (flag === "--viewport" && flags[index]) viewport = flags[index++];
+        else if (flag === "--windows") {
+            if (windows !== null || !flags[index] || !/^[1-9]\d*$/.test(flags[index]) || !Number.isSafeInteger(Number(flags[index]))) {
+                throw new Error("--windows requires a positive integer");
+            }
+            windows = Number(flags[index++]);
+        }
         else throw new Error(`unknown or incomplete argument: ${flag}`);
     }
     if (!paramsPath || !viewport) throw new Error("both --params and --viewport are required");
     const match = /^(\d+)x(\d+)(?:@([0-9]+(?:\.[0-9]+)?))?$/.exec(viewport);
     if (!match) throw new Error(`invalid viewport: ${viewport}`);
-    return { url, outDir, driverPath, oraclePath, paramsPath, width: Number(match[1]), height: Number(match[2]), deviceScaleFactor: Number(match[3] || 1) };
+    return { url, outDir, driverPath, oraclePath, paramsPath, width: Number(match[1]), height: Number(match[2]), deviceScaleFactor: Number(match[3] || 1), windows };
 }
 
 async function run(options) {
+    const loadedParams = JSON.parse(await fs.readFile(options.paramsPath, "utf8"));
+    const windows = options.windows ?? loadedParams.windows ?? 1;
+    if (!Number.isSafeInteger(windows) || windows < 1) throw new Error("params.windows must be a positive integer");
+    const params = deepFreeze({ ...loadedParams, windows });
     const { chromium } = require("playwright-core");
-    const params = deepFreeze(JSON.parse(await fs.readFile(options.paramsPath, "utf8")));
     const driver = require(path.resolve(options.driverPath));
     const oracle = require(path.resolve(options.oraclePath));
     if (typeof driver.drive !== "function") throw new Error("driver must export drive(io, params)");
