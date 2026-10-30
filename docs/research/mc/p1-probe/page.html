@@ -1,0 +1,48 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>P1 key probe</title>
+<style>body{font:20px sans-serif;background:#20242a;color:white;margin:0;min-height:180vh;display:grid;place-items:center}#pad{position:relative;width:80vw;height:80vh;border:2px solid #8cf;display:grid;place-items:center}#tab-sentinel{position:absolute;right:16px;bottom:16px;font:16px sans-serif}</style></head>
+<body><main id="pad" tabindex="0">P1 probe — click here, then send OS keys<button id="tab-sentinel" type="button">Tab focus sentinel</button></main>
+<script>
+const pad = document.querySelector('#pad');
+const params = new URLSearchParams(location.search);
+const identity = {browser:params.get('browser'),group:params.get('group'),runId:params.get('runId')};
+const tab = params.get('tab');
+if (tab) document.title = `P1 sentinel ${tab}`;
+const audio = new AudioContext();
+let clickAudioBefore = null;
+let clickAudioAfter = null;
+async function record(record) {
+  Object.assign(record, identity, {case: record.code ? `${record.type}:${record.code}` : record.type});
+  record.at = new Date().toISOString();
+  try { await fetch('/record', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(record)}); }
+  catch (error) { console.error('P1 record failed', error); }
+}
+function lockState() { return document.pointerLockElement === pad; }
+document.addEventListener('keydown', event => {
+  const row = {type:'keydown',code:event.code,key:event.key,ctrl:event.ctrlKey,shift:event.shiftKey,alt:event.altKey,meta:event.metaKey,cancelable:event.cancelable,focused:document.hasFocus(),activeElement:document.activeElement?.id || document.activeElement?.tagName || null,pointerLocked:lockState(),audioState:audio.state,scrollY:window.scrollY};
+  event.preventDefault();
+  row.defaultPrevented = event.defaultPrevented;
+  record(row);
+  setTimeout(() => record({type:'keydown-settled',code:event.code,ctrl:event.ctrlKey,shift:event.shiftKey,activeElement:document.activeElement?.id || document.activeElement?.tagName || null,scrollY:window.scrollY,pointerLocked:lockState(),focused:document.hasFocus()}), 120);
+});
+document.addEventListener('contextmenu', event => { event.preventDefault(); record({type:'contextmenu',cancelable:event.cancelable,defaultPrevented:event.defaultPrevented}); });
+document.addEventListener('pointerlockchange', () => record({type:'pointerlockchange',pointerLocked:lockState(),focused:document.hasFocus()}));
+for (const kind of ['pointerdown','pointermove','pointerup']) {
+  pad.addEventListener(kind, event => record({type:kind,button:event.button,buttons:event.buttons,x:event.clientX,y:event.clientY,pointerType:event.pointerType,focused:document.hasFocus(),pointerLocked:lockState()}));
+}
+pad.addEventListener('wheel', event => record({type:'wheel',deltaX:event.deltaX,deltaY:event.deltaY,ctrl:event.ctrlKey,cancelable:event.cancelable,devicePixelRatio:window.devicePixelRatio,scrollY:window.scrollY}));
+pad.addEventListener('pointerdown', async () => {
+  if (clickAudioBefore === null) {
+    clickAudioBefore = audio.state;
+    await audio.resume();
+    clickAudioAfter = audio.state;
+    await record({type:'first-click-audio',before:clickAudioBefore,after:clickAudioAfter,focused:document.hasFocus(),pointerLocked:lockState()});
+  }
+  if (params.get('lock') === '1' && !lockState()) {
+    try { await pad.requestPointerLock(); }
+    catch (error) { await record({type:'pointerlock-error',message:String(error)}); }
+  }
+  await record({type:'pointerdown',focused:document.hasFocus(),pointerLocked:lockState(),audioState:audio.state});
+});
+window.addEventListener('load', () => { pad.focus(); record({type:'ready',focused:document.hasFocus(),audioState:audio.state,userAgent:navigator.userAgent}); });
+</script></body></html>
