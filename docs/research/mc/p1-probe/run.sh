@@ -75,6 +75,29 @@ snapshot() {
 }
 window_count() { xdotool search --onlyvisible --class "$CLASS" 2>/dev/null | wc -l; }
 ocr() { tesseract "$1" stdout 2>/dev/null | tr '\n' ' ' || true; }
+pointer_receipt() {
+  local label=$1 case_name=$2 type_name=$3 receipt acted
+  read -r receipt acted < <(python3 - "$HERE/p1-log.jsonl" "$RUN_ID" "$case_name" "$type_name" "$label" <<'PY'
+import json,sys
+path,run_id,case_name,type_name,label=sys.argv[1:]
+rows=[json.loads(l) for l in open(path,encoding='utf-8')]
+hits=[r for r in rows if r.get('runId')==run_id and r.get('case')==case_name and r.get('type')==type_name]
+if not hits: print('NOT_OBSERVED NOT_TRACED')
+else:
+ r=hits[-1]
+ acted='no'
+ if label=='Wheel':
+  before=next((x for x in reversed(rows) if x.get('runId')==run_id and x.get('type')=='wheel' and x.get('case')=='wheel'),{})
+  acted='yes' if before.get('scrollY')!=r.get('scrollY') else 'no'
+ if label=='Ctrl+Wheel':
+  before=next((x for x in reversed(rows) if x.get('runId')==run_id and x.get('type')=='wheel' and x.get('case')=='ctrl-wheel'),{})
+  acted='yes' if before.get('devicePixelRatio')!=r.get('devicePixelRatio') else 'no'
+ print(json.dumps({k:r.get(k) for k in ('case','type','button','buttons','x','y','ctrl','cancelable','defaultPrevented','scrollY','devicePixelRatio')},separators=(',',':')),acted)
+PY
+)
+  append "$BROWSER" pointer_inputs "$label" "$acted" "receipt=$receipt" "$RUN_ID"
+  echo "$BROWSER pointer_inputs $label: $receipt"
+}
 observe_key() {
   local label=$1 sequence=$2 before_title=$3 before_screen=$4 after_title after_screen after_ocr act
   before_count=$(window_count)
@@ -192,16 +215,49 @@ elif [[ "$MODE" == ctrl9 ]]; then
 elif [[ "$MODE" == pointers ]]; then
   start_browser pointer_inputs
   click_pad
-  xdotool mousemove --window "$WIN" 350 350 click 1
+  xdotool key --clearmodifiers Control_L; sleep .2
+  pointer_receipt "Ctrl modifier" keydown:ControlLeft keydown
+  xdotool key --clearmodifiers Shift_L; sleep .2
+  pointer_receipt "Shift modifier" keydown:ShiftLeft keydown
+  xdotool mousemove --window "$WIN" 350 350 click 1; sleep .25
+  pointer_receipt "Left click" left-click pointerup
   xdotool mousemove --window "$WIN" 350 350 mousedown 1
   xdotool mousemove --window "$WIN" 500 430
-  xdotool mouseup 1
-  xdotool mousemove --window "$WIN" 500 400 click 3; sleep .4
-  xdotool mousemove --window "$WIN" 500 400 click 2; sleep .3
-  xdotool mousemove --window "$WIN" 500 400 click 4; sleep .3
-  xdotool keydown ctrl; xdotool mousemove --window "$WIN" 500 400 click 4; xdotool keyup ctrl; sleep .5
-  xdotool mousemove --window "$WIN" 1 400; sleep .2
-  append "$BROWSER" pointer_inputs "pointer group" no "xdotool left click/drag, right click/contextmenu, middle click, wheel, Ctrl+wheel, pointer move to edge; inspect page pointer/wheel records" "$RUN_ID"
+  xdotool mouseup 1; sleep .25
+  pointer_receipt "Left drag" left-drag pointerup
+  context_before=$(snapshot)
+  xdotool mousemove --window "$WIN" 500 400 click 3; sleep .5
+  context_after=$(snapshot); context_ocr=$(ocr "$context_after")
+  pointer_receipt "Right click / contextmenu" right-click-contextmenu contextmenu
+  append "$BROWSER" pointer_inputs "Right click visual check" no "before=$context_before after=$context_after afterOCR=$context_ocr; context menu absent if no menu UI in screenshot" "$RUN_ID"
+  xdotool mousemove --window "$WIN" 500 400 mousedown 2
+  xdotool mousemove --window "$WIN" 600 500
+  xdotool mouseup 2; sleep .3
+  pointer_receipt "Middle drag" middle-drag pointerup
+  xdotool mousemove --window "$WIN" 120 400; sleep .3
+  pointer_receipt "Pointer to edge" pointer-edge pointermove
+  xdotool mousemove --window "$WIN" 500 400
+  wheel_before=$(snapshot); xdotool click 4; sleep .4; wheel_after=$(snapshot)
+  pointer_receipt "Wheel" wheel wheel-settled
+  append "$BROWSER" pointer_inputs "Wheel visual check" "page scroll observed from wheel-settled" "before=$wheel_before after=$wheel_after" "$RUN_ID"
+  xdotool keydown ctrl; xdotool click 4; xdotool keyup ctrl; sleep .5
+  pointer_receipt "Ctrl+Wheel" ctrl-wheel wheel-settled
+  append "$BROWSER" pointer_inputs "Ctrl+Wheel zoom check" "devicePixelRatio comparison in wheel-settled" "before=$wheel_before; final=$(snapshot)" "$RUN_ID"
+  stop_browser
+elif [[ "$MODE" == edge ]]; then
+  start_browser edge_retest
+  xdotool mousemove --window "$WIN" 500 400; sleep .2
+  xdotool mousemove --window "$WIN" 100 400; sleep .3
+  edge=$(python3 - "$HERE/p1-log.jsonl" "$RUN_ID" <<'PY'
+import json,sys
+rows=[json.loads(l) for l in open(sys.argv[1],encoding='utf-8')]
+hits=[r for r in rows if r.get('runId')==sys.argv[2] and r.get('type')=='pointermove' and r.get('case')=='pointer-edge']
+print(json.dumps(hits[-1] if hits else {'result':'NOT OBSERVED'},separators=(',',':')))
+PY
+)
+  edge_act=no; [[ "$edge" == *'"case":"pointer-edge"'* ]] || edge_act="NOT TRACED"
+  append "$BROWSER" edge_retest "Pointer to edge" "$edge_act" "receipt=$edge" "$RUN_ID"
+  echo "$BROWSER edge_retest Pointer to edge: $edge"
   stop_browser
 elif [[ "$MODE" == keys ]]; then
   # Ctrl+digit actions are observable only with known, nonselected sentinel tabs.

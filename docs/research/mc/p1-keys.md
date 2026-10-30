@@ -2,7 +2,7 @@ Firefox NOT TRACED
 
 # P1 headed browser probe
 
-K11 is not decided here: Chrome key rows were observed; Firefox could not start. CEO decision remains pending.
+Firefox remains NOT TRACED by CEO deferral. The Chrome-only K11(a) rows satisfy the stated predicate: each required row reached the page and browser acted=no. This is a Chrome-only result, not a cross-browser result.
 
 A row is reached when the page logged that keydown. `default prevented` is the value read after the page handler. It is recorded per O9 and is not used to judge K11. Chrome browser actions were checked through visible tab/title/window/focus changes, screenshots, and post-key focus/scroll state. Ctrl+Digit9 used `chrome-ctrl9-retest-112633-1793333557`: after selecting tab 1, Ctrl+9 left that title active.
 
@@ -57,13 +57,15 @@ A row is reached when the page logged that keydown. `default prevented` is the v
 | ArrowDown | Chrome | Google Chrome 156.0.8078.47 | yes | yes | yes | no |
 | ArrowLeft | Chrome | Google Chrome 156.0.8078.47 | yes | yes | yes | no |
 | ArrowRight | Chrome | Google Chrome 156.0.8078.47 | yes | yes | yes | no |
-| Left click | Chrome | Google Chrome 156.0.8078.47 | NOT TRACED | NOT TRACED | NOT TRACED | NOT TRACED |
-| Left drag | Chrome | Google Chrome 156.0.8078.47 | NOT TRACED | NOT TRACED | NOT TRACED | NOT TRACED |
-| Right click / contextmenu | Chrome | Google Chrome 156.0.8078.47 | NOT TRACED | NOT TRACED | NOT TRACED | NOT TRACED |
-| Middle drag | Chrome | Google Chrome 156.0.8078.47 | NOT TRACED | NOT TRACED | NOT TRACED | NOT TRACED |
-| Pointer to edge | Chrome | Google Chrome 156.0.8078.47 | NOT TRACED | NOT TRACED | NOT TRACED | NOT TRACED |
-| Wheel | Chrome | Google Chrome 156.0.8078.47 | NOT TRACED | NOT TRACED | NOT TRACED | NOT TRACED |
-| Ctrl+Wheel | Chrome | Google Chrome 156.0.8078.47 | NOT TRACED | NOT TRACED | NOT TRACED | NOT TRACED |
+| Ctrl (modifier) | Chrome | Google Chrome 156.0.8078.47 | yes | yes | yes | no |
+| Shift (modifier) | Chrome | Google Chrome 156.0.8078.47 | yes | yes | yes | no |
+| Left click | Chrome | Google Chrome 156.0.8078.47 | yes | yes | no | no |
+| Left drag | Chrome | Google Chrome 156.0.8078.47 | yes | yes | no | no |
+| Right click / contextmenu | Chrome | Google Chrome 156.0.8078.47 | yes | yes | yes | no |
+| Middle drag | Chrome | Google Chrome 156.0.8078.47 | yes | yes | no | no |
+| Pointer to edge | Chrome | Google Chrome 156.0.8078.47 | yes | yes | no | no |
+| Wheel | Chrome | Google Chrome 156.0.8078.47 | yes | yes | no | yes |
+| Ctrl+Wheel | Chrome | Google Chrome 156.0.8078.47 | yes | yes | no | yes |
 | Ctrl+T (control) | Firefox | NOT TRACED | NOT TRACED | NOT TRACED | NOT TRACED | NOT TRACED |
 | Ctrl+W (control) | Firefox | NOT TRACED | NOT TRACED | NOT TRACED | NOT TRACED | NOT TRACED |
 | Ctrl+Digit1 | Firefox | NOT TRACED | NOT TRACED | NOT TRACED | NOT TRACED | NOT TRACED |
@@ -113,6 +115,8 @@ A row is reached when the page logged that keydown. `default prevented` is the v
 | ArrowDown | Firefox | NOT TRACED | NOT TRACED | NOT TRACED | NOT TRACED | NOT TRACED |
 | ArrowLeft | Firefox | NOT TRACED | NOT TRACED | NOT TRACED | NOT TRACED | NOT TRACED |
 | ArrowRight | Firefox | NOT TRACED | NOT TRACED | NOT TRACED | NOT TRACED | NOT TRACED |
+| Ctrl (modifier) | Firefox | NOT TRACED | NOT TRACED | NOT TRACED | NOT TRACED | NOT TRACED |
+| Shift (modifier) | Firefox | NOT TRACED | NOT TRACED | NOT TRACED | NOT TRACED | NOT TRACED |
 | Left click | Firefox | NOT TRACED | NOT TRACED | NOT TRACED | NOT TRACED | NOT TRACED |
 | Left drag | Firefox | NOT TRACED | NOT TRACED | NOT TRACED | NOT TRACED | NOT TRACED |
 | Right click / contextmenu | Firefox | NOT TRACED | NOT TRACED | NOT TRACED | NOT TRACED | NOT TRACED |
@@ -121,10 +125,10 @@ A row is reached when the page logged that keydown. `default prevented` is the v
 | Wheel | Firefox | NOT TRACED | NOT TRACED | NOT TRACED | NOT TRACED | NOT TRACED |
 | Ctrl+Wheel | Firefox | NOT TRACED | NOT TRACED | NOT TRACED | NOT TRACED | NOT TRACED |
 
-Chrome control evidence: Ctrl+T visibly opened a `New Tab` (title and OCR); Ctrl+W closed its only visible window. The page received ControlLeft only for each control, not the final T/W keydown.
+Chrome control evidence: Ctrl+T visibly opened a `New Tab` (title and OCR); Ctrl+W closed its only visible window. The page received ControlLeft only for each control, not the final T/W keydown. Standalone Ctrl and Shift modifier records are from the completed pointer run.
 
 The first fresh Chrome page reported AudioContext `suspended`; its first click logged `before=suspended`, `after=running`. In the pointer-lock run the first click logged pointer lock true and OS Escape logged pointer lock false; no Escape keydown reached the page while locked (CAM2).
 
 Firefox attempt: `timeout 30 firefox --version` emitted no output and remained blocked in snap-confine D state. A headed control attempt returned `no headed browser window for control-ctrl-t`, exit 10. Firefox rows are NOT TRACED. Safari remains NOT TRACED.
 
-Not traced in this run: pointer binding rows (left click/drag, right click/contextmenu, middle drag, edge movement, wheel and Ctrl+wheel).
+Pointer evidence used run `chrome-pointer_inputs-37963-1793366479`; the final edge receipt is `chrome-edge_retest-40727-1793366536`. Right-click screenshot OCR showed no context menu. Plain wheel scrolled the probe page (scrollY 240 to 134); Ctrl+wheel changed Chrome zoom from 100% to 110% (devicePixelRatio 1.0 to 1.1). The edge movement ended 4.5 px inside the pad boundary, within the 8 px band. These pointer actions are outside the K11 predicate.
