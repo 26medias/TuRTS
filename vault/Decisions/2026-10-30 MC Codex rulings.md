@@ -88,3 +88,11 @@ Conflict: forge_renamed_clone.rs:29-63 enumerates only old Forge gameplay IDs wh
 Choice: extend the fixture's rename-ID collection with the actual exported OrderDef IDs read through PackageArchive::orders, then apply the existing prefix/local-ID rewrite to the copied package. Keep original gameplay ID mappings, all command/operation-trace equality assertions and both conservation negative cases unchanged. Preserve original Forge content and expected frozen results. Run all three fixture tests, then commit and re-gate.
 
 Alternative not taken: delete MC orders/rules from the clone, weaken trace/conservation assertions or change original Forge data. Typed order discovery keeps the renamed fixture valid as approved order content is added, without introducing engine hardcoded IDs.
+
+## C10: pass the same lane target directory as an absolute path to acceptance
+
+Conflict: all acceptance tests on179ada7 passed, but the final artifact-retention guard returned1. Its absolute F11 server marker is compared lexically with CARGO_TARGET_DIR/tmp/server_* (scripts/acceptance.sh:13,30-31), while this invocation supplied relative target/mc-t18. The marker points inside that same physical lane cache. Actual output is in repair-run26/g-acc-command-179ada7.log.
+
+Choice: rerun the unchanged acceptance script with CARGO_TARGET_DIR set to the canonical absolute path of that same target/mc-t18. Use absolute target paths for future gate wrappers, retaining one cache per lane and all private-directory guards. Record the failed first top-level invocation as exit1 despite passing tests; accept the gate only after an actual top-level exit0. No source or cache duplication is needed.
+
+Alternative not taken: weaken the artifact-retention guard, accept a nonzero gate, or allocate another target directory. This is an execution-path detail within the authorized cache/worktree decision rights.
