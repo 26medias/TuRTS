@@ -3,6 +3,12 @@
 Author seat: game-designer. Date: 2026-10-28.
 Purpose: an outside yardstick for the full review of `RTS-Engine-Project-Specifications.md`.
 
+Changes under QA0 K6 (the CEO, by a line in the vault decision log): 2026-10-29, MC K20, five
+dependency edges removed: UI05 no longer needs FV02, CB03 no longer needs FV03, PF01 and MP09 no
+longer need MP01, PC16 no longer needs FV04 (`vault/Decisions/2026-10-29 MC calls K1-K27 and budget.md`).
+A minimap, auto-target, a path, playable bounds and foreign inspection exist on a flat map without
+fog, so MC can test them before M4 and M5.
+
 Order of work. I wrote Part A from genre knowledge before I opened any repo file. I wrote
 Part B after one end-to-end read of the spec. Part A has no spec input.
 
@@ -78,7 +84,7 @@ they fail.
 | PC13 | Building hotkeys | Select a production building or the main base with a key (SC2 Backspace, AOE H). | SC2, AOE, CNC (Home) | B | COMMON | PC01 |
 | PC14 | Idle worker select | A key or button cycles through idle workers. | SC2, WC3, AOE, SUP | B | COMMON | UN11, UI15 |
 | PC15 | Select all army | One key selects every own combat unit. | SC2, SUP, RA2 (Q / P) | B | COMMON | PC06 |
-| PC16 | Inspect foreign entities | Select an enemy, ally, or neutral entity to read its info. No orders. | All6, FAC | M | CORE | PC01, FV04 |
+| PC16 | Inspect foreign entities | Select an enemy, ally, or neutral entity to read its info. No orders. | All6, FAC | M | CORE | PC01 |
 | PC17 | Ownership gate | A player can order only own units. Order from another slot is rejected. | All6 | M | CORE | none |
 | PC18 | Shared control | An ally can order your units when you allow it. | SC1, SC2, WC3, AOE DE (co-op) | B | OPTIONAL | PC17 |
 | PC19 | Selection hygiene | Dead, transported, or converted units leave the selection and the groups. A group survives a reload. | All6 | M | CORE | PC08 |
@@ -171,7 +177,7 @@ they fail.
 | UI02 | Selection panel | Icons of all selected units with health. Click narrows. Shift-click removes. | SC1, SC2, WC3, AOE, SUP, RA2 | M | CORE | PC02 |
 | UI03 | Info panel and portrait | Single selection shows name, health, armour, weapon, kills, and a portrait. | All6, FAC | B | CORE | PC01 |
 | UI04 | Resource bar | Shows each resource, supply or population, power. | All6, FAC | B | CORE | EC01 |
-| UI05 | Minimap | Terrain, entities in player colours, fog, the camera frame. | All6, FAC | M | CORE | FV02 |
+| UI05 | Minimap | Terrain, entities in player colours, fog, the camera frame. | All6, FAC | M | CORE | - |
 | UI07 | Minimap ping | Alt-click marks a point for allies. | SC2, WC3, AOE, SUP | M | COMMON | UI05, TM02 |
 | UI08 | Minimap alert flash | An attack shows as a flash at its location. | All6 | M | CORE | UI05, UI16 |
 | UI09 | Build menu | Structures by tech. Unavailable ones grey out with the missing requirement. | All6, FAC | B | CORE | PR07 |
@@ -277,7 +283,7 @@ they fail.
 | --- | --- | --- | --- | --- | --- | --- |
 | CB01 | Health and death | Each damageable entity has health. At zero it dies. | All6, FAC | B | CORE | none |
 | CB02 | Weapons | Range, cooldown, damage, minimum range, target filter (ground, air, buildings). | All6, FAC (turrets) | B | CORE | CB01 |
-| CB03 | Auto-target | An idle or attack-moving unit engages enemies in its acquisition range. | All6, FAC | M | CORE | CB02, FV03 |
+| CB03 | Auto-target | An idle or attack-moving unit engages enemies in its acquisition range. | All6, FAC | M | CORE | CB02 |
 | CB04 | Target priority | A rule picks the target (threats before buildings, attackers first). | All6 | B | CORE | CB03 |
 | CB05 | Retaliation | A hit unit returns fire. Nearby friends help. | All6 | B | CORE | CB03 |
 | CB06 | Leash | A unit stops a chase and returns to its post. | WC3, AOE, SC2, SUP | B | COMMON | OR08 |
@@ -350,7 +356,7 @@ they fail.
 
 | ID | Item | Definition | Games | Kind | Tier | Depends on |
 | --- | --- | --- | --- | --- | --- | --- |
-| PF01 | Sensible path | A unit takes a short, plausible path to a reachable point. | All6, FAC | M | CORE | MP01 |
+| PF01 | Sensible path | A unit takes a short, plausible path to a reachable point. | All6, FAC | M | CORE | - |
 | PF02 | Repath on change | A new building or a wall changes the paths of units in motion. | All6, FAC | M | CORE | PF01 |
 | PF03 | Movement layers | Land, water, air, hover; cliffs impassable. | All6 | B | CORE | MP01 |
 | PF04 | No stuck units | A blocked unit recovers or gives up visibly. | All6, FAC | M | CORE | PF01 |
@@ -418,7 +424,7 @@ they fail.
 | MP06 | Neutral objects | Trees, rocks, destructible obstacles. | All6, FAC | B | COMMON | MP01 |
 | MP07 | Map distribution | A client downloads a missing map from the host. | SC1, WC3, AOE, SUP | M | CORE | MP01 |
 | MP08 | Map validation | Start positions reachable. Resources placed. | SC2, AOE | M | COMMON | MP01 |
-| MP09 | Playable bounds | Map size and the area units can enter. | All6 | B | CORE | MP01 |
+| MP09 | Playable bounds | Map size and the area units can enter. | All6 | B | CORE | - |
 | MP10 | Custom game modes | A map carries its own rules (WC3 tower defence, DotA). | SC1, SC2, WC3, AOE | B | COMMON | MP04 |
 
 ## A18. Modding surface (MD): what a modder edits

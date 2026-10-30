@@ -1,8 +1,9 @@
 # MC — Player control and client foundation: design
 
-Date: 2026-10-29. Revision 4. Status: DRAFT, passed gate 1 (2026-10-29): spec-rigour-reviewer,
+Date: 2026-10-29. Revision 5. Status: DRAFT, passed gate 1 (2026-10-29): spec-rigour-reviewer,
 technical-director, bevy-rendering-engineer, player, simulation-core-engineer; three repair
-passes; calls K1 to K27 wait for the CEO (section 1.4).
+passes. CEO decisions (2026-10-29): K1 to K27 as recommended (K11 stays conditional on probe P1),
+budget option 1 (the full design, about 184 runs); K20 applied in revision 5 (section 17.2).
 Author seat: `ux-designer` (D65, D66, D67, client side of D70; Second on D68).
 Source of record: `RTS-Engine-Project-Specifications.md` version 0.8 (cited as S:line).
 Other sources: the QA0 design `docs/superpowers/specs/2026-10-29-qa0-instrument-design.md`
@@ -102,7 +103,7 @@ design only when the CEO accepts it. Acceptance rows name the option that they a
 | K17 | The test reading of "arrive as a group" (S:712). | (a) At rest, the footprint discs projected to the screen do not overlap. Each unit stands within R_near = r_max x (sqrt(N / 0.6) + 1) of the target (4.58 for 40 units of radius 0.5). (b) The mesh silhouettes do not overlap. | A tilted camera makes tall meshes of a tight group overlap at rest, so (b) cannot pass. Model run A: the farthest of 40 units stands 3.81 from the target. | (a) |
 | K18 | A floor for text size and button size in mod layouts. | (a) `turts-pack` warns below 11 px text and below 24 x 24 px buttons, and never refuses. (b) Refuse. | The D67 constraint (S:96) says "at any size". (b) breaks it. | (a) |
 | K19 | How the economy-log validator accepts the new movement. Today it replays the M1 straight line, wants orders unchanged, and keeps a `movement_pending` exception (`crates/turts_server/src/economylog.rs:326,553-556,578-663`). Movement writes no operation today. | (a) The sim movement step becomes a pure function over unit records. The sim system and the validator both call it. MC adds no movement operation. (b) One captured operation per unit per tick. Each writes two full `AuditState` values (`transaction.rs:55-60`, `economylog.rs:22`), so the log grows O(N x E). (c) One captured movement operation per tick for all units, O(E) per tick. | Frozen M2 stream: the test counts every operation (`crates/turts_pack/tests/m3_m2_stream.rs:54-58`), an `acme` unit moves (`:263`), and a test pins the fixture hash (`tests/m3/refutations.py:18`). (a) adds no operation, so the stream stays, if `AuditState` writes `UnitOrders` only when it differs from today's plain move (6.1). (b) and (c) add operations: the stream test must filter movement operations out, or the CEO approves a re-freeze. EL1 bound: in the model, the hard projection moves a unit up to 1.167 x speed x dt in one tick (section 18). So (b) and (c) check at most 2 x speed x dt. Under (a) a movement defect passes the validator; GM40, GMA and GMU still catch it. | (a) |
-| K20 | Yardstick dependency changes (the CEO owns the list: QA0D section 3.1, QA0 K6). | Approve or refuse each edge: UI05 no longer needs FV02; CB03 no longer needs FV03; PF01 and MP09 no longer need MP01; PC16 no longer needs FV04. | Each edge holds a row out of MC that MC builds and tests (table in 17.2). Under the current list, 19 rows say `later` although MC tests them (17.2). | Approve all five. Then 19 rows move to `in` in a re-gated amendment. |
+| K20 | Yardstick dependency changes (the CEO owns the list: QA0D section 3.1, QA0 K6). | Approve or refuse each edge: UI05 no longer needs FV02; CB03 no longer needs FV03; PF01 and MP09 no longer need MP01; PC16 no longer needs FV04. | Each edge holds a row out of MC that MC builds and tests (table in 17.2). Under the current list, 19 rows say `later` although MC tests them (17.2). | Approve all five. Then 19 rows move to `in` in a re-gated amendment. **Decided: all five approved (CEO, 2026-10-29); revision 5 applies them.** |
 | K21 | May MC slip items that S:722 names? | (a) No S:722 item slips without the CEO. (b) The cut line of 15.3 may drop S:722 items. | Cut items that S:722 names: the minimap, type select, hold, attack, attack-move. 15.3 lists the Player path steps that each slip breaks. | (a) |
 | K22 | The near forge drone (24,12) stands 7.0 from the turret (17,12), range 8.0 (`mods/forge/maps/proving_ground.ron:11,13`; `mods/forge/units/turret.ron:11`). It dies before window B opens. | (a) The PT1 goals use one drone. (b) The drone steps move to `muster`. (c) A new forge map: it breaks the M3 fixed point. | The server ticks from process start, with no wait for a join (`crates/turts_server/src/stats.rs:131`). PT2 on `muster` covers box selection, groups and spreading. | (a) |
 | K23 | Mod light (D37 Decided; lighting API Open, S:750). Code fixes the light (`crates/turts_client/src/render.rs:344`). | (a) A minimal `LightDef` in MC: direction, colour, illuminance, ambient brightness. (b) Keep the code light until M13. | MC adds `CameraDef`. After MC the light is the only presentation constant that a mod cannot set. Cost: about 1 run. | (a) |
@@ -1285,12 +1286,12 @@ amended and gated again. A slip of an item that S:722 names needs the CEO (K21 a
 
 | Order | Slip | S:722 item? | Coverage rows that change | Player path steps it breaks |
 | --- | --- | --- | --- | --- |
-| 1 | Minimap view (MM1) | yes | none (UI05, CA08 are `later:M5`) | 11 changes: the tester finds the turret in the view; 18 loses the minimap ping |
+| 1 | Minimap view (MM1) | yes | UI05, CA08, CA09, UI08 back to `later:M5` (after K20) | 11 changes: the tester finds the turret in the view; 18 loses the minimap ping |
 | 2 | Pointer lock (CAM2) | no | AC05 to `later:MP1` | none |
 | 3 | Audio | no ("alert channel" is) | AU01, AU02, AU06, MD09; by R4 also OR23, PE01, PE07, PF05, UI16 | 6, 8, 9, 18: the sounds; the text stays |
 | 4 | Type select and double click | yes | PC05, IN04 | none |
 | 5 | The rebinding screen and stored groups | no | PC19 | 14, 15, 16 |
-| 6 | Mobile weapons, attack, attack-move and hold (K5) | yes | OR03 | none in PT1; ORD4 goes |
+| 6 | Mobile weapons, attack, attack-move and hold (K5) | yes | OR03; after K20 also OR04, OR05, CB03 (ORD4) and OR08 (ORD3), and by R4 their dependents | none in PT1; ORD4 goes |
 
 The gate 1 `technical-director` noted a cheaper split: slips 1, 3 and 6 save about 14 runs. Under
 K21 (a), slips 1, 4 and 6 need the CEO.
@@ -1339,7 +1340,7 @@ revision removes it.
 | --- | --- |
 | R1, P4 PT1 not blind | PT1 gives goals only; the Player path is the oracle list (14). |
 | R2, S2 GM40 cannot pass | New rules in 6.3 to 6.5: spacing s = 2 r_max + 0.1, reach below s, landing on the slot. Also order-keeping assignment, a spare pool, same-group yield. GM40 asserts 0 `Blocked`. Model run in 18. |
-| R3 done rows not proven | CB03, PF01, MP09, MD02 move to `later`; R4 moves 8 more rows; K20 asks for five edge changes. |
+| R3 done rows not proven | CB03, PF01, MP09, MD02 move to `later`; R4 moves 8 more rows; K20 asks for five edge changes (approved; revision 5 moves 19 rows back to `in`). |
 | R4 cut line drops S:722 items | K21; table 15.3. |
 | R5 rows assume options | Column "Assumes" (14). |
 | R6 stale F-G1, "D39 note", queue cap | F-G1 removed; the note citations removed; K24. |
@@ -1393,7 +1394,7 @@ revision removes it.
 | Re-check 2: plain orders, EL1 inputs, head envelope, guide | 6.1 plain-order rule and movement inputs; 6.3 pending lists; guide page 5 and groups row (12.1); goals (PT1). |
 | Re-check T N3, N5 | CI step "M2 browser proof" in 1.6 and task 21; `lib.rs` in 15.2. |
 
-### 17.2 K20 detail: rows that MC builds and tests but cannot claim
+### 17.2 K20 detail: rows that MC builds and tests, claimed in revision 5
 
 | Row | Blocking edge (current yardstick) | MC test |
 | --- | --- | --- |
@@ -1406,8 +1407,10 @@ revision removes it.
 | MP09, CA13 | MP09 needs MP01 | GMU, CAM1 |
 | PC16 | needs FV04 (server-side visibility, M5) | SEL1 |
 
-If the CEO approves the five edges of K20, an amendment moves these rows to `in` with the tests
-above, and the gate checks it.
+The CEO approved the five edges (2026-10-29). Revision 5 removes them from
+`docs/research/review-2026-10/inventory-engine.md`, re-extracts `docs/qa/yardstick-a.tsv`, and moves
+the 19 rows above to `in` with the tests named. PF01 claims GM40; ORD5 also shows it. The
+completeness gate (`--enforce`) and `yardstick.py --check` are green on the result (section 18).
 
 ### 17.3 Open questions for the orchestrator
 
@@ -1415,15 +1418,16 @@ above, and the gate checks it.
 2. Who is the person who signs off PT1 and PT2 (G12)?
 3. P1 needs a headed Firefox on the CI image or on a GCP VM. Which one?
 4. M4 takes protocol 5. Record it in the M4 amendment.
-5. K20 changes `docs/qa/yardstick-a.tsv`, which `yardstick.py --check` compares with the
-   inventory (QA0D section 3.1). The change needs the controlled path of QA0 K6.
+5. Done in revision 5: K20 changed `docs/research/review-2026-10/inventory-engine.md` under QA0 K6
+   (CEO line in `vault/Decisions/2026-10-29 MC calls K1-K27 and budget.md`), and `yardstick.py
+   --extract` rewrote `docs/qa/yardstick-a.tsv` (5 rows).
 
 ## 18. What I ran
 
 | Command | Claim tested | Result that would refute | Observed |
 | --- | --- | --- | --- |
 | Read the client, sim, protocol, mod API, server session, export and boundary sources at HEAD | Baseline 1.6 | A cited line that differs | As cited |
-| Local R4 closure over the 181 dispositions, `in` and `done:` rows alike (Python, scratch) | Every `in` or `done:` row has its CORE dependencies `in` or `done:` | A dependency `later` | 0 violations; 62 `in`, 15 `done:`, 104 `later:` |
+| Revision 4: local R4 closure over the 181 dispositions, `in` and `done:` rows alike (Python, scratch) | Every `in` or `done:` row has its CORE dependencies `in` or `done:` | A dependency `later` | 0 violations; 62 `in`, 15 `done:`, 104 `later:` |
 | Group-movement model of 6.3 to 6.5, rules as written (Python, scratch; r 0.5, speed 3, 20 Hz) | GM40 can pass | An overlap at rest or a `Blocked` unit | A (block to P): 0 overlaps, 0 `Blocked`, farthest 3.81. B (ring to P): 0, 0, 3.81. C2 (second group to the same P): 0 overlaps of 80, 0 `Blocked`. D (new order while moving): 0, 0. Two runs equal: true |
 | The same model with spreading off | GM40 can go red | 0 overlaps | 780 overlaps |
 | The same model, two groups of 20 crossing | GMA can pass | A cross-group overlap above 20 % r for more than 10 ticks | 4 ticks above 20 % r, longest run 4; 0 overlaps at rest |
@@ -1433,14 +1437,15 @@ above, and the gate checks it.
 | `sed` and `grep` of `slots.rs`, `session.rs`, `lib.rs:76` | A reload loses the slot | A reclaim path | None: K27 needs a server change |
 | `grep` of `export.rs` | Health is public, weapons are owner-only | Another filter | `export.rs:87-94` |
 | The three gate commands with this spec registered | The gate is green | A non-zero exit | Recorded in the hand-off report |
+| Revision 5 (K20 applied): `yardstick.py --extract` then `--check`; `completeness.py --self-test` then `--enforce` with the MC row `gated` | The yardstick matches the inventory; the gate is green on 81 `in`, 15 `done:`, 85 `later:` rows | A non-zero exit, or an R4 line | `yardstick matches inventory`; `21/21 cases passed`; `checked specs: 2`; all exit 0 |
 
 ## Yardstick coverage
 
 One row for each of the 181 CORE items of `docs/qa/yardstick-a.tsv`, in file order, under the
-current yardstick. `in` rows name a test of section 14. `done:` rows name the earlier test that
-shows the item. `later:` rows name a milestone after MC in `docs/qa/milestones.tsv`. Some rows
-are built by MC but cannot be claimed until the CEO decides K20 (section 17.2). For these rows the
-column "MC test" names the test of section 14. The fourth column is the item name, for people.
+yardstick after K20. `in` rows name a test of section 14. `done:` rows name the earlier test that
+shows the item. `later:` rows name a milestone after MC in `docs/qa/milestones.tsv`. The fourth
+column is the item name, for people. The fifth column held the K20 tests until revision 5; it now
+names a second test only where one exists.
 
 | id | disposition | test | item | MC test |
 | --- | --- | --- | --- | --- |
@@ -1458,24 +1463,24 @@ column "MC test" names the test of section 14. The fourth column is the item nam
 | PC08 | in | SEL4 | Control group assign and recall | - |
 | PC09 | in | SEL4 | Control group add | - |
 | PC10 | in | SEL4 | Group double-tap centres camera | - |
-| PC16 | later:M5 | - | Inspect foreign entities | SEL1 (K20) |
+| PC16 | in | SEL1 | Inspect foreign entities | - |
 | PC17 | in | ORD2 | Ownership gate | - |
 | PC19 | in | SEL4 | Selection hygiene | - |
 | PC20 | in | SEL1 | Hover highlight | - |
 | PC21 | in | HUD4 | Context cursor | - |
-| PC22 | later:M4 | - | Smart command | ORD5 (K20) |
+| PC22 | in | ORD5 | Smart command | - |
 | PC23 | in | VIS1 | Selection visual | - |
-| OR01 | later:M4 | - | Move | ORD5 (K20) |
+| OR01 | in | ORD5 | Move | - |
 | OR02 | in | ORD3 | Stop | - |
 | OR03 | in | ORD4 | Attack target | - |
-| OR04 | later:M4 | - | Attack-move | ORD4 (K20) |
-| OR05 | later:M4 | - | Force move | ORD4 (K20) |
-| OR08 | later:M5 | - | Hold position | ORD3 (K20) |
+| OR04 | in | ORD4 | Attack-move | - |
+| OR05 | in | ORD4 | Force move | - |
+| OR08 | in | ORD3 | Hold position | - |
 | OR11 | in | ORD3 | Order queue per unit | - |
 | OR12 | in | ORD3 | Shift-queued orders | - |
 | OR15 | later:MP1 | - | Rally point | - |
 | OR16 | later:MP1 | - | Build order | - |
-| OR17 | later:M4 | - | Gather order | ORD5 (K20) |
+| OR17 | in | ORD5 | Gather order | - |
 | OR20 | later:MB | - | Ability order | - |
 | OR22 | in | ORD6 | Order validation feedback | - |
 | OR23 | in | ORD7 | Order acknowledgement | - |
@@ -1488,14 +1493,14 @@ column "MC test" names the test of section 14. The fourth column is the item nam
 | GM06 | in | GMA | Unit collision size | - |
 | GM07 | later:M4b | - | Push idle friends | - |
 | GM09 | in | GM40 | Arrival | - |
-| GM10 | later:M4 | - | Unreachable target | GMU (K20) |
+| GM10 | in | GMU | Unreachable target | - |
 | GM11 | later:M4b | - | Choke traffic | - |
 | CA01 | in | CAM1 | Classic RTS camera | - |
 | CA02 | in | CAM1 | Edge scroll | - |
 | CA03 | in | CAM1 | Key scroll | - |
-| CA08 | later:M5 | - | Minimap click | MM1 (K20) |
-| CA09 | later:M5 | - | Minimap order | MM1 (K20) |
-| CA13 | later:M4 | - | Bounds clamp | CAM1 (K20) |
+| CA08 | in | MM1 | Minimap click | - |
+| CA09 | in | MM1 | Minimap order | - |
+| CA13 | in | CAM1 | Bounds clamp | - |
 | CA14 | in | CAM1 | Centre on selection | - |
 | CA15 | later:M4 | - | Height-aware camera | - |
 | CA16 | in | SH1 | Scroll speed setting | - |
@@ -1503,8 +1508,8 @@ column "MC test" names the test of section 14. The fourth column is the item nam
 | UI02 | in | HUD2 | Selection panel | - |
 | UI03 | in | HUD2 | Info panel and portrait | - |
 | UI04 | in | HUD2 | Resource bar | - |
-| UI05 | later:M5 | - | Minimap | MM1 (K20) |
-| UI08 | later:M5 | - | Minimap alert flash | MM1 (K20) |
+| UI05 | in | MM1 | Minimap | - |
+| UI08 | in | MM1 | Minimap alert flash | - |
 | UI09 | in | HUD2 | Build menu | - |
 | UI10 | in | HUD2 | Production queue display | - |
 | UI11 | in | HUD2 | Tooltips | - |
@@ -1535,14 +1540,14 @@ column "MC test" names the test of section 14. The fourth column is the item nam
 | PR15 | done:crates/turts_pack/tests/forge_cases.rs | - | Modifier application | - |
 | PR17 | later:MB | - | Asymmetric factions | - |
 | EC01 | done:crates/turts_pack/tests/economy_gather.rs | - | Resource types | - |
-| EC02 | later:M4 | - | Gather cycle | ORD5 (K20) |
+| EC02 | in | ORD5 | Gather cycle | - |
 | EC03 | later:MP1 | - | Drop-off choice | - |
-| EC04 | later:M4 | - | Node depletion | ORD3 (K20) |
+| EC04 | in | ORD3 | Node depletion | - |
 | EC05 | later:MP1 | - | Auto-resume and seek | - |
 | EC10 | done:crates/turts_pack/tests/economy_production.rs | - | Insufficient funds | - |
 | CB01 | done:crates/turts_pack/tests/forge_cases.rs | - | Health and death | - |
 | CB02 | done:crates/turts_pack/tests/forge_cases.rs | - | Weapons | - |
-| CB03 | later:M5 | - | Auto-target | ORD4 (K20) |
+| CB03 | in | ORD4 | Auto-target | - |
 | CB04 | later:MP1 | - | Target priority | - |
 | CB05 | later:MP1 | - | Retaliation | - |
 | CB07 | later:MP1 | - | Damage and armour types | - |
@@ -1560,10 +1565,10 @@ column "MC test" names the test of section 14. The fourth column is the item nam
 | UN07 | later:MB | - | Abilities | - |
 | UN11 | later:MP1 | - | Workers | - |
 | UN13 | done:crates/turts_pack/tests/forge_cases.rs | - | Death and removal | - |
-| PF01 | later:M4 | - | Sensible path | GM40, ORD5 (K20) |
+| PF01 | in | GM40 | Sensible path | ORD5 also |
 | PF02 | later:M4 | - | Repath on change | - |
 | PF03 | later:M4 | - | Movement layers | - |
-| PF04 | later:M4 | - | No stuck units | GMU (K20) |
+| PF04 | in | GMU | No stuck units | - |
 | PF05 | in | ORD7 | Instant start | - |
 | PF10 | later:M7 | - | Mass pathing | - |
 | MF01 | later:M8 | - | Main menu | - |
@@ -1584,7 +1589,7 @@ column "MC test" names the test of section 14. The fourth column is the item nam
 | MP02 | later:MB | - | Map editor | - |
 | MP05 | later:M9 | - | Map metadata | - |
 | MP07 | later:M8 | - | Map distribution | - |
-| MP09 | later:M4 | - | Playable bounds | GMU (K20) |
+| MP09 | in | GMU | Playable bounds | - |
 | MD01 | in | MOD1 | Unit definition | - |
 | MD02 | later:MB | - | Weapon and projectile definition | - |
 | MD03 | later:MP1 | - | Building definition | - |

@@ -24,7 +24,7 @@ PC12	A2	Subgroups and Tab cycling	COMMON		M	PC02,UI01,UI02
 PC13	A2	Building hotkeys	COMMON		B	PC01
 PC14	A2	Idle worker select	COMMON		B	UN11,UI15
 PC15	A2	Select all army	COMMON		B	PC06
-PC16	A2	Inspect foreign entities	CORE		M	PC01,FV04
+PC16	A2	Inspect foreign entities	CORE		M	PC01
 PC17	A2	Ownership gate	CORE		M	-
 PC18	A2	Shared control	OPTIONAL		B	PC17
 PC19	A2	Selection hygiene	CORE		M	PC08
@@ -97,7 +97,7 @@ UI01	A6	Command card	CORE		B	PC12,IN05
 UI02	A6	Selection panel	CORE		M	PC02
 UI03	A6	Info panel and portrait	CORE		B	PC01
 UI04	A6	Resource bar	CORE		B	EC01
-UI05	A6	Minimap	CORE		M	FV02
+UI05	A6	Minimap	CORE		M	-
 UI07	A6	Minimap ping	COMMON		M	UI05,TM02
 UI08	A6	Minimap alert flash	CORE		M	UI05,UI16
 UI09	A6	Build menu	CORE		B	PR07
@@ -183,7 +183,7 @@ EC16	A9	Physical items and logistics	OPTIONAL	(CORE for FAC)	B	EC01
 EC17	A9	Income rate display	OPTIONAL		M	UI04
 CB01	A10	Health and death	CORE		B	-
 CB02	A10	Weapons	CORE		B	CB01
-CB03	A10	Auto-target	CORE		M	CB02,FV03
+CB03	A10	Auto-target	CORE		M	CB02
 CB04	A10	Target priority	CORE		B	CB03
 CB05	A10	Retaliation	CORE		B	CB03
 CB06	A10	Leash	COMMON		B	OR08
@@ -241,7 +241,7 @@ UN19	A12	Superweapons	COMMON		B	OR20
 UN20	A12	Per-type caps	COMMON		B	PR07
 UN21	A12	Spawners	OPTIONAL		B	PR01
 UN22	A12	Air landing and refuel	OPTIONAL		B	CB22
-PF01	A13	Sensible path	CORE		M	MP01
+PF01	A13	Sensible path	CORE		M	-
 PF02	A13	Repath on change	CORE		M	PF01
 PF03	A13	Movement layers	CORE		B	MP01
 PF04	A13	No stuck units	CORE		M	PF01
@@ -289,7 +289,7 @@ MP05	A17	Map metadata	CORE		M	MP01
 MP06	A17	Neutral objects	COMMON		B	MP01
 MP07	A17	Map distribution	CORE		M	MP01
 MP08	A17	Map validation	COMMON		M	MP01
-MP09	A17	Playable bounds	CORE		B	MP01
+MP09	A17	Playable bounds	CORE		B	-
 MP10	A17	Custom game modes	COMMON		B	MP04
 MD01	A18	Unit definition	CORE		B	-
 MD02	A18	Weapon and projectile definition	CORE		B	MD01
