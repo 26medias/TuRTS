@@ -234,7 +234,7 @@ elif [[ "$MODE" == pointers ]]; then
   xdotool mousemove --window "$WIN" 600 500
   xdotool mouseup 2; sleep .3
   pointer_receipt "Middle drag" middle-drag pointerup
-  xdotool mousemove --window "$WIN" 120 400; sleep .3
+  xdotool mousemove --window "$WIN" 100 400; sleep .3
   pointer_receipt "Pointer to edge" pointer-edge pointermove
   xdotool mousemove --window "$WIN" 500 400
   wheel_before=$(snapshot); xdotool click 4; sleep .4; wheel_after=$(snapshot)
