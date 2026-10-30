@@ -8,7 +8,7 @@ source: codex
 
 # MC execution board
 
-State: ACTIVE under O10 at mainb29e3d8/designrev11. Integration and all open lanes are rebased. T8 run21 is active with Effect::ShellAction, same fields/behavior, no forge/scanner changes. Future client shell file is client_shell.rs. Build21/170. Wave1 draftPR2 CI browser has the unchanged M2 economy timeout; T7 and agents passed, check still running. Main not modified by Codex.
+State: ACTIVE under O10 at mainb29e3d8/designrev11. Integration and all open lanes are rebased. T8 run21 is active with Effect::ShellAction, same fields/behavior, no forge/scanner changes. Future client shell file is client_shell.rs. Build22/170. Wave1 draftPR2 CI browser has the unchanged M2 economy timeout; T7 and agents passed, check still running. Main not modified by Codex.
 
 Plan: `docs/superpowers/plans/2026-10-29-mc-player-control.md`.
 Design of record: `docs/superpowers/specs/2026-10-29-mc-player-control-design.md`, revision 10 at `488b3d3`.
@@ -149,7 +149,7 @@ Tasks in one wave share no file, except the refutation registries (merge in task
 
 ## 7. Budget and seats
 
-CEO approved about 212 total runs. Build stop line: 170 (106 planned task runs plus 64 repairs). Gate estimate: 42 spent before this build. Build dispatches used: 21/170. Root preflight is recorded separately and is not a builder/reviewer dispatch. T1 estimate 3; stop at 6 task dispatches. Do not dispatch another run at a stop.
+CEO approved about 212 total runs. Build stop line: 170 (106 planned task runs plus 64 repairs). Gate estimate: 42 spent before this build. Build dispatches used: 22/170. Root preflight is recorded separately and is not a builder/reviewer dispatch. T1 estimate 3; stop at 6 task dispatches. Do not dispatch another run at a stop.
 
 One run is one agent dispatch (builder or reviewer). Count every run on the board.
 
@@ -212,6 +212,7 @@ One row per builder/reviewer dispatch or resumed agent work turn. Register befor
 | 19 | T18 build | mod-builder | gpt-6-luna | high | adfb662 | STOP under T8 ruling; API/package prep only, no edits/Cargo. Icon-assets file-list omission clarified by root; HUD stays text-only. |
 | 20 | T19 build | mod-builder | gpt-6-luna | high | adfb662 | INTERRUPTED on global stop; untracked muster.rs and external package drafts retained/archived. No Cargo. |
 | 21 | T8 O10 continuation | technical-director | gpt-6-luna | high | 36a86ae | ACTIVE: O10 rename only, preserve fields/data/scanner; red receipt retained; green/gates/plant and review next. |
+| 22 | T8 independent review | qa-lead | gpt-6.1-sol | high | 3d345f6 | REGISTERED: read committed diff now; compiler and plant wait builder handoff; Task8 run3/cap4. |
 
 ## 9. Preflight ledger and stop
 
