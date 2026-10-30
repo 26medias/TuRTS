@@ -57,7 +57,7 @@ Frozen M2 SHA256: `bcbf72c2206251f635a7c7f5b6c8f573d69a5fc05a5bd77716e98ebfb08e3
 | Task | Wave | Needs | Branch | State |
 | --- | --- | --- | --- | --- |
 | T1 | 1 | - | codex/mc-t1 | ACTIVE: Firefox deferred by CEO; finish supplementary records |
-| T2a | 1 | - | codex/mc-t2a | NOT STARTED |
+| T2a | 1 | - | codex/mc-t2a | ACTIVE: additive wire types |
 | T3 | 1 | - | codex/mc-t3 | NOT STARTED |
 | T20 | 1 | - | codex/mc-t20 | NOT STARTED |
 | T8 | 2 | 2a, 3 | codex/mc-t8 | NOT STARTED |
@@ -140,7 +140,7 @@ Tasks in one wave share no file, except the refutation registries (merge in task
 
 ## 7. Budget and seats
 
-CEO approved about 212 total runs. Build stop line: 170 (106 planned task runs plus 64 repairs). Gate estimate: 42 spent before this build. Build dispatches used: 3/170. Root preflight is recorded separately and is not a builder/reviewer dispatch. T1 estimate 3; stop at 6 task dispatches. Do not dispatch another run at a stop.
+CEO approved about 212 total runs. Build stop line: 170 (106 planned task runs plus 64 repairs). Gate estimate: 42 spent before this build. Build dispatches used: 5/170. Root preflight is recorded separately and is not a builder/reviewer dispatch. T1 estimate 3; stop at 6 task dispatches. Do not dispatch another run at a stop.
 
 One run is one agent dispatch (builder or reviewer). Count every run on the board.
 
@@ -187,6 +187,10 @@ One row per builder/reviewer dispatch or resumed agent work turn. Register befor
 | 2 | T1 evidence review | ux-designer | gpt-6.1-sol | high | d524fa3 | PASS for evidence handoff; no High findings; hashes/G-QA exit 0; scratch hash plant red1/restored0; overall T1 incomplete. |
 
 | 3 | T1 supplementary input records | web-platform-engineer | gpt-6-luna | high | d524fa3 | Dispatched after CEO release; no Firefox runs; complete Chrome pointer rows. |
+
+| 4 | T2a build | network-engineer | gpt-6-luna | high | f8b204e | Dispatched; isolated lane and target; additive types only. |
+
+| 5 | T2a review | mod-runtime-engineer | gpt-6.1-sol | high | e8f9e02 | Dispatched; review code and scoped tests; full gate awaits compiler slot. |
 
 ## 9. Preflight ledger and stop
 
