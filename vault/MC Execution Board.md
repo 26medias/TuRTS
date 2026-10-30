@@ -8,7 +8,7 @@ source: codex
 
 # MC execution board
 
-State: ACTIVE. T1, T2a and T3 are complete. T3 merged at aceef85; integration G-RUST, G-QA, G-FROZEN and G-WEB passed. Headed Vulkan T7 passed with 115 frames and the server oracle, exit=0. T20 passed the clean local M2 baseline (15/15) and is implementing the harness with the single compiler cache. Build runs: 13/170. Wave 1 is incomplete; no integration push or new CI yet.
+State: ACTIVE. T1, T2a and T3 are complete. T3 merged at aceef85; integration G-RUST, G-QA, G-FROZEN and G-WEB passed. Headed Vulkan T7 passed with 115 frames and the server oracle, exit=0. T20 passed the clean local M2 baseline (15/15) and is implementing the harness with the single compiler cache. Build runs: 14/170. Wave 1 is incomplete; no integration push or new CI yet.
 
 Plan: `docs/superpowers/plans/2026-10-29-mc-player-control.md`.
 Design of record: `docs/superpowers/specs/2026-10-29-mc-player-control-design.md`, revision 10 at `488b3d3`.
@@ -149,7 +149,7 @@ Tasks in one wave share no file, except the refutation registries (merge in task
 
 ## 7. Budget and seats
 
-CEO approved about 212 total runs. Build stop line: 170 (106 planned task runs plus 64 repairs). Gate estimate: 42 spent before this build. Build dispatches used: 13/170. Root preflight is recorded separately and is not a builder/reviewer dispatch. T1 estimate 3; stop at 6 task dispatches. Do not dispatch another run at a stop.
+CEO approved about 212 total runs. Build stop line: 170 (106 planned task runs plus 64 repairs). Gate estimate: 42 spent before this build. Build dispatches used: 14/170. Root preflight is recorded separately and is not a builder/reviewer dispatch. T1 estimate 3; stop at 6 task dispatches. Do not dispatch another run at a stop.
 
 One run is one agent dispatch (builder or reviewer). Count every run on the board.
 
@@ -203,7 +203,8 @@ One row per builder/reviewer dispatch or resumed agent work turn. Register befor
 | 10 | T3 second recheck | mod-builder | gpt-6.1-sol | high | 08b72a1 | FAIL08b72a1:1High OGGpost-EOS/serialreuse,1MediumRONcomments/rawstrings; fixed67307d1 pendingrecheck. |
 | 11 | T3 final functional recheck | mod-builder | gpt-6.1-sol | high | 67307d1 | FunctionalPASS67307d1:0High/0Medium;56CLIobservations; G-REF/numericreceiptpending. |
 | 12 | T20 draft/build continuation | qa-lead | gpt-6-luna | high | 17286b1 | Current base22a4600; clean normal-native M2 baseline15/15 exit0; temporary diagnostics restored; Candidate9a3365a committed; actual DPR2 row twice and direct DPR1 pass; task gates and plant running. Hosted software cause remains NOT TRACED. |
-| 13 | T20 independent review | web-platform-engineer | gpt-6.1-sol | high | 9a3365a | DISPATCHED: immutable candidate review; read/tests first, plant waits for builder gate release. |
+| 13 | T20 independent review | web-platform-engineer | gpt-6.1-sol | high | 9a3365a | FAIL9a3365a:0High/2Medium; actual held-modifier loss with opts.key at bothDPRs; missing --windows N. Independent plant1/restored0; clean. |
+| 14 | T20 repair | qa-lead | gpt-6-luna | high | 9a3365a | DISPATCHED: preserve held modifiers with opts.key; add documented --windows N; red/green, commit, gates, plant. |
 
 ## 9. Preflight ledger and stop
 
