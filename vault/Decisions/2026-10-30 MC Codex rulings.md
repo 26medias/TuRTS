@@ -69,3 +69,14 @@ Conflict: C6 and the metadata test update touch planted files. The selector list
 Choice: after final commit and normal gates, invoke the unchanged registered run_case function from tests/m2/refutations.py for the two selected registry entries, in the clean committed task lane with its existing target/mc-t18. Keep exclusive compiler/plant ownership, the exact registered precommands/commands, selected-test and semantic-failure guards, baseline/planted/restored logs, source hash provenance and finally restoration (refutations.py:298-390). Record this in-place layout in the receipt, verify full source status before/after and restore hashes even on failure. Do not modify the runner, registry or any guard merely for cache reuse.
 
 Alternative not taken: allocate another full cold compiler cache or run ad-hoc commands without the registered runner's semantic checks. The layout changes; the tested plants and acceptance criteria do not.
+
+
+C5 additional evidence: named red gates found current-package metadata expectations in turts_mod_runtime/tests/archive.rs:152-156 and forge_package.rs:19-20; align Acme lock version/API to0.3.0/^0.2.3 and Forge manifest version/API to0.2.0/^0.2.3. The Forge bump is explicitly required by Task18. economy_variants.rs:505 also expects Cedar's old10 files; retain those10 and assert the14 approved MC additions (24 total). Do not change catalog/economy/hash assertions or independent old-version fixtures.
+
+## C8: keep binary assets out of the conversion fixture's text mutation
+
+Conflict: declared_conversion_coefficient_is_used_by_public_trace decodes every file of a generated Base package as UTF-8 (crates/turts_pack/tests/economy_variants.rs:542-543). Approved MC packages now include valid binary PNG assets, so the existing test panics before its conversion assertions. Named failure exit101 is recorded in repair-run26/g-rust-workspace-test-ed13ac3.log. The independent Cedar file-count failure in the same log is covered by C5.
+
+Choice: inspect/mutate only RON text definitions, preserve binary files byte-for-byte, and keep the one-conversion-coefficient guard plus all subsequent public-loader and positive economic trace assertions. Add explicit original Cedar plus approved MC file coverage when updating its count. Then targeted greens, commit and final gates. No source package gameplay or binary payload changes are authorized by this test repair.
+
+Alternative not taken: decode binary assets lossily, drop them from packages, remove conversion coverage or relax economic assertions. The fixture must support the new approved package format while proving the same conversion behavior.
