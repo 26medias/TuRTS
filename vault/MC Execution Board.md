@@ -8,14 +8,14 @@ source: codex
 
 # MC execution board
 
-State: STOPPED at task 1 preflight. No browser input was sent. No builder or reviewer was dispatched. P1 is NOT TRACED. No other task may start before the CEO receives the P1 result and releases the stop.
+State: STOPPED on P1 result. Chrome required K11 rows have evidence; Firefox NOT TRACED after failed launch. CEO K11 decision required. No other task may start.
 
 Plan: `docs/superpowers/plans/2026-10-29-mc-player-control.md`.
 Design of record: `docs/superpowers/specs/2026-10-29-mc-player-control-design.md`, revision 10 at `488b3d3`.
 Brief: [[Reports/2026-10-29 MC Codex brief]].
-Base: `a0a3076`; integration: `codex/mc-integration`, worktree `/home/julien/Projects/TuRTS-mc-integration`.
+Original base: `a0a3076`; rebased on CEO instruction to `main` at `f503cff`; integration: `codex/mc-integration`, worktree `/home/julien/Projects/TuRTS-mc-integration`.
 Task 1 lane: `codex/mc-t1`, worktree `/home/julien/Projects/TuRTS-mc-t1`, `CARGO_TARGET_DIR=target/mc-t1`.
-Main stays at `e2af4ab`. The pre-existing untracked disk audit stays in the main worktree.
+Main stays at `f503cff`. The pre-existing untracked disk audit stays in the main worktree.
 
 ## 1. Roles and dispatch rules
 
@@ -48,15 +48,15 @@ User workspace instructions take precedence over the brief's inherited role-file
 
 Task gate sets are the plan's Local gate commands. T1 requires G-QA. After each task merge, run G-RUST, G-QA and G-FROZEN; also G-WEB for client/server edits. After each wave, push integration only and read hosted check, agents and browser jobs. Never merge or push main.
 
-Frozen M2 SHA256: `bcbf72c2206251f635a7c7f5b6c8f573d69a5fc05a5bd77716e98ebfb08e370b`. Keep forge fixed point and refutation plants. Known browser failure: M2 browser proof; trace in T20, repair in owner task/T21. Current CI: NOT TRACED; no wave has completed and no push was made.
+Frozen M2 SHA256: `bcbf72c2206251f635a7c7f5b6c8f573d69a5fc05a5bd77716e98ebfb08e370b`. Keep forge fixed point and refutation plants. Known browser failure: M2 browser proof; trace in T20, repair in owner task/T21. Current integration CI: NOT TRACED; no wave has completed and no push was made. No T1 merge: stop on P1 result requires the CEO K11 pick first.
 
 ## 4. Tasks
 
-24 numbered tasks; task 2 has two branches, for 25 lanes. All except T1 are NOT STARTED. T1 is STOPPED at preflight, with no probe result.
+24 numbered tasks; task 2 has two branches, for 25 lanes. All except T1 are NOT STARTED. T1 is STOPPED on its result: Firefox NOT TRACED; Chrome evidence at d524fa3.
 
 | Task | Wave | Needs | Branch | State |
 | --- | --- | --- | --- | --- |
-| T1 | 1 | - | codex/mc-t1 | STOPPED: preflight conflict |
+| T1 | 1 | - | codex/mc-t1 | STOPPED: Firefox NOT TRACED; CEO K11 |
 | T2a | 1 | - | codex/mc-t2a | NOT STARTED |
 | T3 | 1 | - | codex/mc-t3 | NOT STARTED |
 | T20 | 1 | - | codex/mc-t20 | NOT STARTED |
@@ -140,11 +140,11 @@ Tasks in one wave share no file, except the refutation registries (merge in task
 
 ## 7. Budget and seats
 
-CEO approved about 212 total runs. Build stop line: 170 (106 planned task runs plus 64 repairs). Gate estimate: 42 spent before this build. Build dispatches used: 0/170. Root preflight is recorded separately and is not a builder/reviewer dispatch. T1 estimate 3; stop at 6 task dispatches. Do not dispatch another run at a stop.
+CEO approved about 212 total runs. Build stop line: 170 (106 planned task runs plus 64 repairs). Gate estimate: 42 spent before this build. Build dispatches used: 2/170. Root preflight is recorded separately and is not a builder/reviewer dispatch. T1 estimate 3; stop at 6 task dispatches. Do not dispatch another run at a stop.
 
 One run is one agent dispatch (builder or reviewer). Count every run on the board.
 
-| Task |Runs | Builder seat (Luna) | Reviewer seat (Sol) |
+| Task | Runs | Builder seat (Luna) | Reviewer seat (Sol) |
 | --- | --- | --- | --- |
 | 1 | 3 | web-platform-engineer | ux-designer |
 | 2 (2a 2, 2b 4) | 6 | network-engineer | mod-runtime-engineer |
@@ -178,10 +178,13 @@ One run is one agent dispatch (builder or reviewer). Count every run on the boar
 
 ## 8. Run ledger
 
-One row per builder/reviewer dispatch or resumed agent work turn. No runs have occurred. Do not add fake red, green or reviewer results.
+One row per builder/reviewer dispatch or resumed agent work turn. Register before dispatch. Do not add fake red, green or reviewer results.
 
 | Run | Task | Seat | Model | Effort | Base | Result |
 | --- | --- | --- | --- | --- | --- | --- |
+
+| 1 | T1 build | web-platform-engineer | gpt-6-luna | high | b563624 | d524fa3; Chrome controls/keys exit 0; Firefox no window exit 10; stop. |
+| 2 | T1 evidence review | ux-designer | gpt-6.1-sol | high | d524fa3 | PASS for evidence handoff; no High findings; hashes/G-QA exit 0; scratch hash plant red1/restored0; overall T1 incomplete. |
 
 ## 9. Preflight ledger and stop
 
@@ -192,4 +195,22 @@ One row per builder/reviewer dispatch or resumed agent work turn. No runs have o
 | Precedence error | Brief section 1 versus user instruction and plan | User explicitly resolved: design revision 10 wins. Do not follow the brief's plan-wins sentence. |
 | CEO decisions | Current user instruction | 212 approved; stop at 170 build runs; CEO plays both tests, not blind; exact base a0a3076. |
 
-Proposed resolution for the CEO: retain `defaultPrevented` in the raw records and the table, in addition to the plan's `cancelable` column. Use reaches-page and browser-acted for K11. This proposal is not applied. The brief section 4 says to stop and report when a plan step contradicts the design. P1 remains NOT TRACED, not red or green. No merge, re-gate or wave CI is claimed.
+Historical preflight proposal: retain `defaultPrevented` in the raw records and the table, in addition to `cancelable`; use reaches-page and browser-acted for K11. No probe ran before this initial stop. O9 accepted and released this proposal below. The current stop is the Firefox result, not the column conflict.
+
+
+## 10. O9 release, 2026-10-30
+
+CEO relayed ruling O9 at f503cff and released the P1 preflight stop. The P1 table keeps `default prevented` (event.defaultPrevented read after the handler) next to `cancelable`. Record it; do not judge it. K11 uses only `reaches the page` and `browser acted`. Both integration and T1 were rebased on main at f503cff. Rebase kept both work-log entries when their append points conflicted. Prior proposal above is now accepted. No other task is released.
+
+
+## 11. P1 result stop, 2026-10-30
+
+Evidence commit: `d524fa317a91236482ac0be26c7c4b070a65605c` on `codex/mc-t1`. Table: `docs/research/mc/p1-keys.md`. First line: `Firefox NOT TRACED`. Chrome version: Google Chrome 156.0.8078.47. All 31 required Chrome K11 keys reached the page and had no observed browser action. The table records `cancelable` and `default prevented` next to each other per O9; neither is a K11 judgement input. Ctrl+9 uses the separate nonlast-tab retest, not the invalid same-tab observation.
+
+Controls: Ctrl+T visibly opened New Tab; Ctrl+W closed its only browser window. Both controls passed, exit 0. Chrome keys and the corrected Ctrl+9 retest exit 0. Fresh first-click audio: suspended to running. Real Esc under pointer lock: lock true to false, no Escape keydown at the page. Root independently matched all 31 table rows to raw key events, checked F10/Ctrl+9 screenshots, ran bash -n and verified all five SHA256 receipt entries, exit 0.
+
+Firefox effort: 04:17:20 to about 04:19:38 UTC (2m18s), unrestricted session. Version command stalled in snap-confine D state. Headed control attempt returned no window, exit 10 after 11.38s. All Firefox rows NOT TRACED. Safari and seven supplementary Chrome pointer-input rows NOT TRACED. No browser experiments after this stop. Snap child PID 132330 remained in D state at builder handoff; no system files or other browser sessions were changed.
+
+The CEO must pick K11 with the Chrome table. No pick is inferred. No task merge, re-gate, wave completion, push or hosted CI is claimed. Both worktrees remain for review. All tasks except T1 are NOT STARTED.
+
+Run2 final: ux-designer PASS for the stopped evidence handoff, no High findings; T1 overall incomplete. G-QA/hash checks exit 0; scratch-only copied-log corruption red exit 1, restored exit 0. Review saved in [[Reports/2026-10-30 MC P1 review]]. Root re-ran G-QA on integration and git diff --check: all exit 0.
