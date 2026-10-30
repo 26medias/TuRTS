@@ -58,3 +58,14 @@ Conflict: the existing variant instrument recognizes only pre-MC exports, so the
 Choice: first capture the actual existing generator/test failure on a Task18 package, then extend the instrument along its existing typed deterministic rewrite pattern for MC exports, paths and content references. Keep original economy/resource/rename semantics, all rejection guards, complete mapping provenance and deterministic output. Validate generated archives and cross-references, including renamed package/unit/order references and relevant asset/input/interface references. Do not change original package gameplay files or the frozen operation stream. Run the existing generator contract/variant tests and meaningful new MC-reference coverage before the full gate set.
 
 Alternative not taken: strip the new definitions from real packages, silently skip them in a supposedly complete rename, or remove variant proofs. Those choices would make the existing instrument incomplete or violate Task18 content requirements. This is an uncovered instrument extension under the nearest existing pattern, not a new game mechanism.
+
+
+C6 namespace detail: preserve structural widget/layout IDs and engine namespaces (engine override names, cursor context keys, response action keys and colors); rename the corresponding mod action/asset/content references. Widget IDs are explicitly layout names, not gameplay tokens (plan Task3:360; scanner support/mod.rs:171-194). New nonempty reference fixtures must cover balance sources, presentation sound responses and overlapping engine/mod names. Do not infer coverage from empty interface maps.
+
+## C7: run selected refutations with the lane's one compiler cache
+
+Conflict: C6 and the metadata test update touch planted files. The selector lists E2-rename-canonicalizer and E3-policy-binding. The standard M2 wrapper creates a fresh cargo-target for each invocation (tests/m2/refutations.py:407-418), which conflicts with this build's disk/cache policy when repeatedly compiling the same workspace.
+
+Choice: after final commit and normal gates, invoke the unchanged registered run_case function from tests/m2/refutations.py for the two selected registry entries, in the clean committed task lane with its existing target/mc-t18. Keep exclusive compiler/plant ownership, the exact registered precommands/commands, selected-test and semantic-failure guards, baseline/planted/restored logs, source hash provenance and finally restoration (refutations.py:298-390). Record this in-place layout in the receipt, verify full source status before/after and restore hashes even on failure. Do not modify the runner, registry or any guard merely for cache reuse.
+
+Alternative not taken: allocate another full cold compiler cache or run ad-hoc commands without the registered runner's semantic checks. The layout changes; the tested plants and acceptance criteria do not.
