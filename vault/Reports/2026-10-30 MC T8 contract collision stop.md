@@ -21,3 +21,5 @@ Task18 initially reported an icon/assets conflict. Root checked the primary text
 Task19 was interrupted on the global stop. Its untracked muster.rs test and external package drafts are retained. The test was archived with SHA under t19-builder/pre-stop; no compiler was used. No unmerged lane or source was deleted. All local workers/builds are stopped; the single warm compiler cache remains at target/mc-t8.
 
 Wave1 is complete and pushed at8e95e42346d260f24340b9e3b27c7b92e2ea820f, draftPR https://github.com/26medias/TuRTS/pull/2. CI https://github.com/26medias/TuRTS/actions/runs/41097571682 remains running at last read: agents success, check on M2native refutations, browser on T7. Reading that already-running CI is the only continuing work. Main is unchanged.
+
+A read-only CI watcher is active: `gh run watch 41097571682 --exit-status --interval 30`; output target/mc-evidence/wave1-ci-watch.log, tool session24160. This does not resume local implementation or start an agent run. The ShellAction ruling request is pending.
