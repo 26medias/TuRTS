@@ -48,3 +48,24 @@ Local `m2-browser.sh` and `m3-browser.sh` (cost). The PROJ1 adapter need. The li
 
 1. Finding 2: pick option a, b or c.
 2. Finding 3: find the M2 red cause in wave 1, or accept that the browser steps stay hidden until task 21.
+
+## Re-check 1
+
+VERDICT=fail HIGH=1. Plan `9910798`, design `89e1fa3` (revision 8). Probes: `/tmp/claude-1000/-home-julien-Projects-TuRTS/0e0457bb-045c-4b6a-945f-1db6a0753ee2/scratchpad/mc/gate2/qa/re1/`.
+
+| Finding | Status | Plan line | Run |
+| --- | --- | --- | --- |
+| 1 DET1 | fixed | 658, 663 | Two logs with different `wall_ns` and 3 extra ticks: raw `cmp` exit 1; the `.cut` files `cmp` exit 0; one position changed at tick 400: exit 1. |
+| 2 ledger | fixed | 691, 693 | Limit-0 copy on a directory with 1 row: DR7, exit 1; default 5: exit 0. |
+| 3 red window | fixed in part | 69-72, 98-106, 373 | The cause is traced in task 20 step 1. Residual (Medium): before task 21 no local gate runs `scripts/m3-browser.sh` (lines 104, 691, 694 only). Before the M2 fix, "plants add no other failure text" cannot see a defect that comes after the failing point. |
+| 4 io | fixed | 369, 374, 378 | A mimic of the contract: clean `[]`; with `io.page` planted it reports keys, `page` and `evaluate` reachable. |
+| 5 eight plants | fixed | 680-687 | - |
+| 6 frames | not fixed for SEL2 | 479, 571, 573 | `FramesFeed` holds no input reference (no event sequence, no wall time), so the oracle cannot find "the first frame after the mouse-up". The frame-late plant stays green. ORD7 is fixed: the marker frame comes before the result frame. |
+| 7 REG1 | fixed | 24, 468, 471 | - |
+| 8 G-REF | fixed in part | 69-70 | New defect, below. |
+
+New defects:
+
+- High: SEL2 (finding 6). Fix: each frame record holds the last input event sequence (or the input-log wall time) that the frame applied.
+- Medium: the G-REF one-liner reads only `plant_path`. It drops E4-local-capacity and E6-capacity-bypass (`transaction.rs`, task 4), and C1 and C5. Fix: also read `plants[].path`.
+- Medium: `--ledger-limit` default 5 contradicts D:1170-1171 ("lowers `LEDGER_LIMIT` ... so the ledger cannot grow back"). Only the flag at `ci.yml:149` keeps the ledger at 0, and if that flag is removed no check goes red. Fix: set the default to 0 and give the fixtures `--ledger-limit 5`, or amend the design.

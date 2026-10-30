@@ -100,3 +100,27 @@ collide with task 7 in wave 4. Bevy `audio` feature system libraries on CI (ALSA
 
 1. Finding 2: rename `marker` and the muster order ids now (design amendment, as O1), or let task 19 rename by rule?
 2. Finding 1: tests in `turts_server` with `#[path]` (no new boundary), or a library crate for the envelope mapping (new crate row and T1 row)?
+
+## Re-check 1
+
+VERDICT=pass HIGH=0. Plan `9910798`, design `89e1fa3` (revision 8). Code under `crates/` and `mods/` is unchanged since `f69badf` (`git diff --stat f69badf HEAD -- crates mods` is empty).
+
+| Finding | Status | Plan line | Evidence |
+| --- | --- | --- | --- |
+| 1 High, tests unreachable from `turts_pack` | fixed | 22, 555-557, 612, 615 | `mc_orders.rs` and `mc_feedback.rs` go to `crates/turts_server/tests/` with `#[path]`; ORD6 headless half is the session bucket unit tests |
+| 2 High, scan hits on names | fixed | 25, 400-421, 432-434; D:1107 | real `scan_rust` probe: 0 hits for each new id of the table and for 11 `key_<verb>` names; the hit counts that the table states hold (`collect` 256, `build` 8, `bindings` 10, `assets` 12, `produce` 6, `marker` 6) |
+| 3 Medium, false greens | fixed | 357 (t2c:57), 423 (t2c:50-66, e10 `economy.rs:3180-3192`) | `unit_boot.rs:177` not listed: its replace is a no-op and the test still sees the dependency (NOT RUN) |
+| 4 Medium, Codex contract | fixed | 45-48 | branch base, worktree per lane, re-gate after each merge, push and CI read after each wave |
+| 5 Medium, shared files | fixed | 174, 190-193, 599 | `Cargo.lock` 8, 9, 15; `outbound.rs` 2b, 4; `mc_order_rows.rs` uses `CommandKind::Order` only, so `turts_pack/Cargo.toml` needs no edit |
+| 6 Medium, debug owners | fixed | 117, 168-169, 479 | typed feeds in `debug_feed.rs`; `debug.rs` 2b, 9 only |
+| 7 Medium, budget and Needs | fixed | 149-152, 226-231 | `deps2.py`: 0 wave violations, no task later than its earliest wave, path 55 (3, 18, 2b, 4, 6, 13, 15, 16, 21, 23, 24), subtotal 106, total 209 |
+| 8 Low, T1X lock | fixed | 391 | the copy takes the root `Cargo.lock`; the optional `wgpu-*` names are not added (optional) |
+
+`files2.py` on the new Files lines: no path in two tasks of one wave.
+
+New defects from the repair (both Low):
+
+- N1. `plan:172` gives `session.rs` to 2b and 7. Task 4 also edits the `session.rs` tests that assert `NotMobile` (`plan:462`). The waves are 3, 4, 5, so there is no collision. Fix: add 4 to the row.
+- N2. `plan:226` says gate 1 used "6 lens reports and 17 re-check reports". `docs/research/mc/` holds 17 `gate1-*.md` reports: 5 lens reports and 12 re-checks, not counting the evidence files and playlogs. The figure 23 is higher than the files show, so the total errs on the safe side; the citation is wrong.
+
+Runs: `rtk proxy git diff f69badf 9910798`; `python3 -I files2.py`; `python3 -I deps2.py`; the scan probe (`cargo test -p turts_checks --test probe_names` in the scratch tree; 298 hits, all on the control names); `ls docs/research/mc/ | grep '^gate1-'`; grep for stale `marker` unit text in the plan and the design (none).

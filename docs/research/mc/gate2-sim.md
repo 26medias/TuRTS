@@ -43,3 +43,25 @@ This file only. The probes are in the scratchpad.
 
 1. The DET1 wording "byte-equal" (design section 14) needs a ruling: compare the logs without `wall_ns`, or add a new log.
 2. Where does the `blocked` activity come from in the process tests?
+
+## Re-check 1 (plan `9910798`, design `89e1fa3`)
+
+VERDICT=pass HIGH=0
+
+| # | Status | Plan line (at `9910798`) | Run |
+| --- | --- | --- | --- |
+| 1 | fixed | 458 (`OperationAudit.phase`), 464 (phase rule), 468 (red message), 471 (plant b) | Scratch probe: a phase mark and the rule "Orders operation: clock continuity only". 40 Orders operations: `Ok(())`, exit 0. Without the rule: `Err("unit 1 movement differs ...")`, exit 101. The rule holds, and the plant can go red. |
+| 2 | fixed | 658 (awk on columns 1, 3, 4, 5, up to N = 400) | Two acme runs: the `awk` output files `cmp` equal, exit 0. A copy with one changed coordinate: `differ: byte 40`, exit 1. |
+| 3 | fixed | 513, 517 (`--order-log`), 660 (0 `Blocked` lines) | read only |
+| 4 | fixed | 24, 462, 466, 468 (`plain_move_envelope_has_the_moveto_operation_count`), 471 (plant a) | read only |
+| 5 | fixed | 460 (tick t, then t+1), 497 (merge before the cap, `group` 0, atomic, the 3,000 + 3,000 schedule), 499 (tests) | read only |
+| 6 | fixed | 656 (the script holds the GMA crossing), 660 (neighbour self-check), 663 (EL1 drops the group id) | read only |
+| 7 | fixed | 72 (`plant_path`, `expected_failure`, `command`), 85 | read only |
+| 8 | fixed | 511 | read only |
+
+New defects (LOW, not blocking):
+
+- N1. `OperationAudit` gets a new field. The struct literals at `crates/turts_pack/tests/forge_cases.rs:213,240,268,319,371,436` and `crates/turts_pack/tests/forge_renamed_clone.rs:330` then stop compiling. Task 4 (plan line 462) does not list these files. The edit adds the field only and changes no expected value. Add the two files to task 4.
+- N2. The refill "640 / `tick_hz`" (line 511) is not a whole number at some tick rates, for example 30 Hz. Hold the tokens as whole numbers scaled by `tick_hz`: capacity 64 x `tick_hz`, and a refill of 640 for each tick. Then there is no floating-point accumulator.
+
+Probes: `/tmp/claude-1000/-home-julien-Projects-TuRTS/0e0457bb-045c-4b6a-945f-1db6a0753ee2/scratchpad/mc/gate2/sim/rc2_1_1.log`, `rc2_1_0.log`, `det/t1.awkcut`.

@@ -18,3 +18,5 @@ Verified on HEAD f69badf, 2026-10-29 (MC plan gate 2, instrument lens):
 
 **Why:** these set which MC tests can go red or green; re-check them at MC verify.
 **How to apply:** at the MC re-gate and verify, confirm each fix against these facts. See [[qa0-plan-2026-10-29]], [[gap-audit-2026-10-28]].
+
+Re-check 1 (plan 9910798, design 89e1fa3): DET1, ledger, io, 8 plants and REG1 are fixed. Still open: the SEL2 frame-late plant, because the `frames` record has no input reference. The G-REF one-liner reads only `plant_path` and misses the multi-plant cases E4-local-capacity, E6-capacity-bypass, C1 and C5 (their files are in `plants[].path`). The `--ledger-limit` default 5 contradicts D:1170.

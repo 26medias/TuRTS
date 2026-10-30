@@ -32,3 +32,8 @@ Verified 2026-10-29 at f69badf (MC plan gate 2; report docs/research/mc/gate2-td
 **Why:** MC execution and later plans will place tests and rename content; these traps recur.
 **How to apply:** Re-check line numbers before citing; MC tasks move these files. Run the scan
 probe for any new content id before a plan claims a name passes.
+
+Re-check 1 (plan 9910798, design 89e1fa3 rev 8): rulings applied. Content ids are `order_<verb>`,
+inputs `key_<verb>`, unit `beacon`; real scan 0 hits for all. Also hits: collect 256, build 8,
+bindings 10, assets 12, produce 6. Server-code tests go in crates/turts_server/tests with #[path].
+Debug keys read typed feeds in debug_feed.rs. MC critical path 55, total 209.
