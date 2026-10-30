@@ -8,7 +8,7 @@ source: codex
 
 # MC execution board
 
-State: ACTIVE under CEO ruling. T20 cap7; run17 independently rechecks72ddb0a. PASS with0High authorizes merge into integration, re-gate and wave continuation. FAIL requires STOP/report before any further run. Build17/170. T20 is not merged; T1/T2a/T3 complete; main unchanged.
+State: ACTIVE. Wave1 T1/T2a/T3/T20 is complete and integration re-gated at8e95e42. T20 run17 PASS0High/0Medium under CEO cap7. Branch pushed; draftPR2 and CI41097571682 active (agents success, check/browser running). Wave2 task8/18/19 builders are registered for preparation; merge waits for Wave1 CI assessment. Build20/170; main unchanged.
 
 Plan: `docs/superpowers/plans/2026-10-29-mc-player-control.md`.
 Design of record: `docs/superpowers/specs/2026-10-29-mc-player-control-design.md`, revision 10 at `488b3d3`.
@@ -68,10 +68,10 @@ CI trigger: `.github/workflows/ci.yml:2-5` runs pushes to main and pull requests
 | T1 | 1 | - | codex/mc-t1 | COMPLETE; merge8f612a3; G-RUST/G-QA/G-FROZEN all0; lane removed |
 | T2a | 1 | - | codex/mc-t2a | COMPLETE; merge17286b1; all gates0; lane removed |
 | T3 | 1 | - | codex/mc-t3 | COMPLETE; merge aceef85; all integration gates pass; T7 115 frames |
-| T20 | 1 | - | codex/mc-t20 | ACCEPTED72ddb0a; run17 PASS0High/0Medium; integration merge/re-gate next |
-| T8 | 2 | 2a, 3 | codex/mc-t8 | NOT STARTED |
-| T18 | 2 | 3 | codex/mc-t18 | NOT STARTED |
-| T19 | 2 | 3 | codex/mc-t19 | NOT STARTED |
+| T20 | 1 | - | codex/mc-t20 | COMPLETE; merge8e95e42; all integration gates0; task lane removed |
+| T8 | 2 | 2a, 3 | codex/mc-t8 | ACTIVE: builder preparation; compiler release after CI assessment |
+| T18 | 2 | 3 | codex/mc-t18 | ACTIVE: tests/draft only, waits compiler slot |
+| T19 | 2 | 3 | codex/mc-t19 | ACTIVE: tests/draft only, waits compiler slot |
 | T2b | 3 | 2a, 3, 18 | codex/mc-t2b | NOT STARTED |
 | T4 | 4 | 2b, 3 | codex/mc-t4 | NOT STARTED |
 | T9 | 4 | 1, 8, 2b | codex/mc-t9 | NOT STARTED |
@@ -149,7 +149,7 @@ Tasks in one wave share no file, except the refutation registries (merge in task
 
 ## 7. Budget and seats
 
-CEO approved about 212 total runs. Build stop line: 170 (106 planned task runs plus 64 repairs). Gate estimate: 42 spent before this build. Build dispatches used: 17/170. Root preflight is recorded separately and is not a builder/reviewer dispatch. T1 estimate 3; stop at 6 task dispatches. Do not dispatch another run at a stop.
+CEO approved about 212 total runs. Build stop line: 170 (106 planned task runs plus 64 repairs). Gate estimate: 42 spent before this build. Build dispatches used: 20/170. Root preflight is recorded separately and is not a builder/reviewer dispatch. T1 estimate 3; stop at 6 task dispatches. Do not dispatch another run at a stop.
 
 One run is one agent dispatch (builder or reviewer). Count every run on the board.
 
@@ -208,6 +208,9 @@ One row per builder/reviewer dispatch or resumed agent work turn. Register befor
 | 15 | T20 independent recheck | web-platform-engineer | gpt-6.1-sol | high | a8a375c | FAIL a8a375c:0High/1Medium. Original two findings closed; CDP-held modifier disappears from later normal key/click, actual game bothDPRs. Clean. |
 | 16 | T20 final authorized repair | qa-lead | gpt-6-luna | high | a8a375c | 72ddb0a committed; G-QA/G-WEB0, Node17/17; actual DPR1 + twice DPR2 pass; page plant1/restored0; clean. STOP6/6; no further dispatch/merge/push without CEO ruling. |
 | 17 | T20 CEO-authorized independent recheck | web-platform-engineer | gpt-6.1-sol | high | 72ddb0a | PASS72ddb0a:0High/0Medium; fresh actual gameDPR1/2 and CLI override0, Node17/17; clean/idle. CEO conditional merge/re-gate/continue is satisfied. |
+| 18 | T8 build | technical-director | gpt-6-luna | high | Wave2 base | REGISTERED: source/test preparation; no compiler until explicit slot release. |
+| 19 | T18 build | mod-builder | gpt-6-luna | high | Wave2 base | REGISTERED: test/draft preparation; no implementation before semantic red; waits compiler. |
+| 20 | T19 build | mod-builder | gpt-6-luna | high | Wave2 base | REGISTERED: test/draft preparation; no implementation before semantic red; waits compiler. |
 
 ## 9. Preflight ledger and stop
 
@@ -295,3 +298,10 @@ Final stop receipt: target/mc-evidence/t20-builder/final-repair/root-stop-audit.
 The CEO granted exactly one additional independent web-platform-engineer review of72ddb0a, run17/global17of170. If PASS with0High, merge T20 into codex/mc-integration, re-gate and continue Wave1. If FAIL, STOP/report findings before any further run. This supersedes the earlier pending request and cap6. See [[Decisions/2026-10-30 MC T20 seventh review run]]. Other stops and the ban on main merge/push remain.
 
 Run17 result: PASS0High/0Medium on72ddb0a. [[Reports/2026-10-30 MC T20 final review]]. CEO conditional authority now permits integration merge, re-gate and continuation. Root verified the actual report, candidate head and clean source.
+
+
+## Wave1 integrated and pushed
+
+Merge8e95e42346d260f24340b9e3b27c7b92e2ea820f includes T20. Integration after-t20 gates all0: G-RUST858passed/0failed/18ignored, G-QA, G-FROZEN (hashunchanged) and Node17/17. Evidence target/mc-evidence/after-t20. Merged T20 worktree removed after re-gate; single cache remains on integration. All local workspace artifacts were invalidated across dev/native-release/wasm-check/wasm-release profiles after transfer; third-party cache retained.
+
+Pushed codex/mc-integration; draftPR https://github.com/26medias/TuRTS/pull/2 (main untouched). CI https://github.com/26medias/TuRTS/actions/runs/41097571682: agents success; check/native tests and browser/T7 running at last read. Wave2 preparation can proceed; no Wave2 integration merge before results are assessed.
