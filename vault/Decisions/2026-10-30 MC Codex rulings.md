@@ -80,3 +80,11 @@ Conflict: declared_conversion_coefficient_is_used_by_public_trace decodes every 
 Choice: inspect/mutate only RON text definitions, preserve binary files byte-for-byte, and keep the one-conversion-coefficient guard plus all subsequent public-loader and positive economic trace assertions. Add explicit original Cedar plus approved MC file coverage when updating its count. Then targeted greens, commit and final gates. No source package gameplay or binary payload changes are authorized by this test repair.
 
 Alternative not taken: decode binary assets lossily, drop them from packages, remove conversion coverage or relax economic assertions. The fixture must support the new approved package format while proving the same conversion behavior.
+
+## C9: include the new order IDs in the renamed Forge fixture
+
+Conflict: forge_renamed_clone.rs:29-63 enumerates only old Forge gameplay IDs when rewriting the copied package. New smart rules still refer to forge:order_move after the copy is renamed clone, so all three existing tests fail at loader helper:72 with unknown dependency namespace forge. Actual named exit101 output is in repair-run26/g-rust-workspace-test-6dbe394.log. Original Forge fixed point and cases passed before this fixture failure.
+
+Choice: extend the fixture's rename-ID collection with the actual exported OrderDef IDs read through PackageArchive::orders, then apply the existing prefix/local-ID rewrite to the copied package. Keep original gameplay ID mappings, all command/operation-trace equality assertions and both conservation negative cases unchanged. Preserve original Forge content and expected frozen results. Run all three fixture tests, then commit and re-gate.
+
+Alternative not taken: delete MC orders/rules from the clone, weaken trace/conservation assertions or change original Forge data. Typed order discovery keeps the renamed fixture valid as approved order content is added, without introducing engine hardcoded IDs.
