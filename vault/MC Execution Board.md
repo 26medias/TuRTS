@@ -8,7 +8,7 @@ source: codex
 
 # MC execution board
 
-State: ACTIVE. T1, T2a and T3 are complete. T3 merged at aceef85; integration G-RUST, G-QA, G-FROZEN and G-WEB passed. Headed Vulkan T7 passed with 115 frames and the server oracle, exit=0. T20 passed the clean local M2 baseline (15/15) and is implementing the harness with the single compiler cache. Build runs: 16/170. Wave 1 is incomplete; no integration push or new CI yet.
+State: STOP — CEO budget ruling required. T20 reached6 runs against estimate3. Last authorized candidate72ddb0a passes builder G-QA/G-WEB, Node17/17, actual DPR1 and twice DPR2 proofs; root audited receipts and clean source. Independent recheck is pending. T20 is NOT merged. T1/T2a/T3 remain complete; Wave1 push and CI are pending. Build16/170; main unchanged.
 
 Plan: `docs/superpowers/plans/2026-10-29-mc-player-control.md`.
 Design of record: `docs/superpowers/specs/2026-10-29-mc-player-control-design.md`, revision 10 at `488b3d3`.
@@ -68,7 +68,7 @@ CI trigger: `.github/workflows/ci.yml:2-5` runs pushes to main and pull requests
 | T1 | 1 | - | codex/mc-t1 | COMPLETE; merge8f612a3; G-RUST/G-QA/G-FROZEN all0; lane removed |
 | T2a | 1 | - | codex/mc-t2a | COMPLETE; merge17286b1; all gates0; lane removed |
 | T3 | 1 | - | codex/mc-t3 | COMPLETE; merge aceef85; all integration gates pass; T7 115 frames |
-| T20 | 1 | - | codex/mc-t20 | ACTIVE: candidate9a3365a; task gates, plant and independent review |
+| T20 | 1 | - | codex/mc-t20 | STOP at6/6 task runs; candidate72ddb0a gated, independent recheck pending CEO extension |
 | T8 | 2 | 2a, 3 | codex/mc-t8 | NOT STARTED |
 | T18 | 2 | 3 | codex/mc-t18 | NOT STARTED |
 | T19 | 2 | 3 | codex/mc-t19 | NOT STARTED |
@@ -206,7 +206,7 @@ One row per builder/reviewer dispatch or resumed agent work turn. Register befor
 | 13 | T20 independent review | web-platform-engineer | gpt-6.1-sol | high | 9a3365a | FAIL9a3365a:0High/2Medium; actual held-modifier loss with opts.key at bothDPRs; missing --windows N. Independent plant1/restored0; clean. |
 | 14 | T20 repair | qa-lead | gpt-6-luna | high | 9a3365a | Candidatea8a375c committed; named reds1, repaired Node15/15 and actual DPR1/rowDPR2 twice pass; postcommit gates/plant running. |
 | 15 | T20 independent recheck | web-platform-engineer | gpt-6.1-sol | high | a8a375c | FAIL a8a375c:0High/1Medium. Original two findings closed; CDP-held modifier disappears from later normal key/click, actual game bothDPRs. Clean. |
-| 16 | T20 final authorized repair | qa-lead | gpt-6-luna | high | a8a375c | DISPATCHED: CDP-to-Playwright modifier handoff. Sixth task run reaches stop6; finish this run, then STOP/report before any further dispatch or integration action. |
+| 16 | T20 final authorized repair | qa-lead | gpt-6-luna | high | a8a375c | 72ddb0a committed; G-QA/G-WEB0, Node17/17; actual DPR1 + twice DPR2 pass; page plant1/restored0; clean. STOP6/6; no further dispatch/merge/push without CEO ruling. |
 
 ## 9. Preflight ledger and stop
 
@@ -285,3 +285,5 @@ BothGREFmutantcaches/scratchsourcesremovedafterhash/patch/commitreceipts (M2cach
 ## T20 task budget stop
 
 T20 estimate3; runs7,12,13,14,15,16 total6. Run16 is the last authorized repair. Finish its concrete candidate and gate proof, then stop and report to the CEO before another run, merge, wave push or new task. The brief section3 says: "A task that reaches twice its estimate stops and reports." Global stop remains170; currentbuild16/170. An independent recheck after run16 will need a CEO extension.
+
+Final stop receipt: target/mc-evidence/t20-builder/final-repair/root-stop-audit.json. Request: one additional independent review run (T20cap7, wholebuild17/170) and continuation only if that review passes. No decision or extension has been granted yet.
