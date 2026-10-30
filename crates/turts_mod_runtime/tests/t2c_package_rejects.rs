@@ -49,7 +49,7 @@ fn t2c_control_unmodified_package_is_accepted() {
 fn t2c_engine_api_mismatch() {
     let bytes = acme_archive_with(
         "manifest.ron",
-        "engine_api: \"^0.2\"",
+        "engine_api: \"^0.2.3\"",
         "engine_api: \"^0.1\"",
     );
     let error = refused(&bytes, "engine_api");
@@ -61,7 +61,7 @@ fn t2c_engine_api_mismatch() {
 fn t2c_engine_api_that_is_not_a_requirement() {
     let bytes = acme_archive_with(
         "manifest.ron",
-        "engine_api: \"^0.2\"",
+        "engine_api: \"^0.2.3\"",
         "engine_api: \"soon\"",
     );
     refused(&bytes, "engine_api");
@@ -96,7 +96,7 @@ fn t2c_unknown_manifest_field() {
 
 #[test]
 fn t2c_bad_version_and_bad_id() {
-    let bytes = acme_archive_with("manifest.ron", "version: \"0.2.0\"", "version: \"one\"");
+    let bytes = acme_archive_with("manifest.ron", "version: \"0.3.0\"", "version: \"one\"");
     refused(&bytes, "version");
     let bytes = acme_archive_with("manifest.ron", "id: \"acme\"", "id: \"Acme\"");
     refused(&bytes, "id");

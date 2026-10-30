@@ -1,0 +1,1 @@
+(id: "order_remove", name: "Remove this machine", behaviour: Remove, target: None, fire: None, engage: None, icon: "icon_order_remove", hotkey: "key_remove", cursor: None, card: None, units: ["forge:arm_loader", "forge:belt"], description: "Remove the selected units.")

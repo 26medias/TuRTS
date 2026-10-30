@@ -3179,7 +3179,7 @@ fn e10_cedar_uses_public_pack_and_boot() {
         "manifest.ron",
         &std::fs::read_to_string(support::mods_dir().join("cedar/manifest.ron"))
             .unwrap()
-            .replace("engine_api: \"^0.2\"", "engine_api: \"^0.1\""),
+            .replace("engine_api: \"^0.2.3\"", "engine_api: \"^0.1\""),
         &old_api_dir,
     );
     let invalid_archive = std::fs::read(&old_api_package).unwrap();

@@ -26,7 +26,7 @@ fn renamed_clone() -> PathBuf {
     ));
     let _ = fs::remove_dir_all(&target);
     copy_tree(&forge_dir(), &target);
-    let ids = [
+    let mut ids = vec![
         "ore",
         "shell",
         "ore_vein",
@@ -40,7 +40,18 @@ fn renamed_clone() -> PathBuf {
         "make_shells",
         "hardened_shells",
         "proving_ground",
-    ];
+    ]
+    .into_iter()
+    .map(str::to_owned)
+    .collect::<Vec<_>>();
+    let forge = PackageArchive::parse(&pack_dir(&forge_dir()).unwrap()).unwrap();
+    ids.extend(
+        forge
+            .orders()
+            .unwrap()
+            .into_iter()
+            .map(|(_, order)| order.id),
+    );
     let mut files = Vec::new();
     fn walk(dir: &std::path::Path, out: &mut Vec<PathBuf>) {
         for entry in fs::read_dir(dir).unwrap() {
@@ -57,7 +68,7 @@ fn renamed_clone() -> PathBuf {
         let mut text = fs::read_to_string(&path)
             .unwrap()
             .replace("id: \"forge\"", "id: \"clone\"");
-        for id in ids {
+        for id in &ids {
             text = text.replace(&format!("forge:{id}"), &format!("clone:x_{id}"));
             text = text.replace(&format!("id: \"{id}\""), &format!("id: \"x_{id}\""));
         }
