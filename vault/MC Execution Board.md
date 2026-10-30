@@ -8,7 +8,7 @@ source: codex
 
 # MC execution board
 
-State: STOP for CEO design ruling. T8 candidate91d6db7 follows required Effect::Shell but fails NoContent against forge resource name Shell (design2.2 versus11.3). No workaround applied. Wave2 agents stopped; T18 icon issue is a file-list omission, not a design contradiction (HUD stays text-only). Wave1 source8e95e42 remains pushed in draftPR2; CI41097571682 agents passed, check/browser running. Build20/170; main unchanged.
+State: ACTIVE under O10 at mainb29e3d8/designrev11. Integration and open lanes are being rebased; resumeT8 with Effect::ShellAction, same fields/behavior, no forge/scanner changes. Future client shell file is client_shell.rs. Run21 registered for T8 continuation; build21/170. Wave1 draftPR2 CI browser failed, agents passed, check pending assessment; main not modified by Codex.
 
 Plan: `docs/superpowers/plans/2026-10-29-mc-player-control.md`.
 Design of record: `docs/superpowers/specs/2026-10-29-mc-player-control-design.md`, revision 10 at `488b3d3`.
@@ -33,7 +33,7 @@ User workspace instructions take precedence over the brief's inherited role-file
 
 ## 2. Standing rules
 
-- Design revision 10 wins over the plan. Report every conflict; stop on a task step that contradicts it or the product spec.
+- Design revision 11 at b29e3d8 wins over the plan; O10 requires ShellAction and client_shell.rs. Report every conflict; stop on a task step that contradicts it or the product spec.
 - K1 to K27 stand as recommended. K11(a) is retained on Chrome evidence under the CEO Firefox deferral. Full design; no scope cut without CEO.
 - Each task branch starts from integration after all Needs merge; one worktree and target per lane. Build binaries one at a time. Remove the lane and its target only after merge.
 - Red must compile and fail semantically. Show the command and `; echo exit=$?`. Do not pipe away output before the exit code.
@@ -69,7 +69,7 @@ CI trigger: `.github/workflows/ci.yml:2-5` runs pushes to main and pull requests
 | T2a | 1 | - | codex/mc-t2a | COMPLETE; merge17286b1; all gates0; lane removed |
 | T3 | 1 | - | codex/mc-t3 | COMPLETE; merge aceef85; all integration gates pass; T7 115 frames |
 | T20 | 1 | - | codex/mc-t20 | COMPLETE; merge8e95e42; all integration gates0; task lane removed |
-| T8 | 2 | 2a, 3 | codex/mc-t8 | STOP:91d6db7; required Effect::Shell collides with forge resource-name Shell; CEO ruling needed |
+| T8 | 2 | 2a, 3 | codex/mc-t8 | ACTIVE under O10; rebased candidate pending; rename ShellAction, re-run failed scan/gates/plant |
 | T18 | 2 | 3 | codex/mc-t18 | STOP under global T8 ruling; preparation preserved |
 | T19 | 2 | 3 | codex/mc-t19 | STOP under global T8 ruling; preparation preserved |
 | T2b | 3 | 2a, 3, 18 | codex/mc-t2b | NOT STARTED |
@@ -149,7 +149,7 @@ Tasks in one wave share no file, except the refutation registries (merge in task
 
 ## 7. Budget and seats
 
-CEO approved about 212 total runs. Build stop line: 170 (106 planned task runs plus 64 repairs). Gate estimate: 42 spent before this build. Build dispatches used: 20/170. Root preflight is recorded separately and is not a builder/reviewer dispatch. T1 estimate 3; stop at 6 task dispatches. Do not dispatch another run at a stop.
+CEO approved about 212 total runs. Build stop line: 170 (106 planned task runs plus 64 repairs). Gate estimate: 42 spent before this build. Build dispatches used: 21/170. Root preflight is recorded separately and is not a builder/reviewer dispatch. T1 estimate 3; stop at 6 task dispatches. Do not dispatch another run at a stop.
 
 One run is one agent dispatch (builder or reviewer). Count every run on the board.
 
@@ -211,6 +211,7 @@ One row per builder/reviewer dispatch or resumed agent work turn. Register befor
 | 18 | T8 build | technical-director | gpt-6-luna | high | Wave2 base | 91d6db7; T1X red101/green0, fmt/clippy/wasm0; full testsNoContentShellcollision101; STOP before G-QA/finalplant, clean. |
 | 19 | T18 build | mod-builder | gpt-6-luna | high | adfb662 | STOP under T8 ruling; API/package prep only, no edits/Cargo. Icon-assets file-list omission clarified by root; HUD stays text-only. |
 | 20 | T19 build | mod-builder | gpt-6-luna | high | adfb662 | INTERRUPTED on global stop; untracked muster.rs and external package drafts retained/archived. No Cargo. |
+| 21 | T8 O10 continuation | technical-director | gpt-6-luna | high | mainb29e3d8/rebasedT8 | REGISTERED: O10 rename only, preserve fields/data/scanner; red receipt retained; green/gates/plant and review next. |
 
 ## 9. Preflight ledger and stop
 
@@ -314,3 +315,8 @@ T8 real_source_scan_is_clean failed101: identifier Shell atinteraction/lib.rs:14
 T18 clarification: design12.2:1099-1101 says the HUD has textbuttons/noimages; it does not prohibit iconassets outside that HUD. Mandatory OrderDef.icon can be backed by minimal image exports while the HUD stays text-only. The task file-list omitted those required dependencies; adding them on resume is necessary implementation, not a schema/design waiver. Forge minimal icons also need an early asset handoff before Task17 expands them. No T18 data was changed.
 
 Read-only CI watcher for already-running Wave1 run41097571682: unifiedexec session24160, output target/mc-evidence/wave1-ci-watch.log. It records terminal status without a new agent/build run. Local implementation remains stopped; ShellAction proposal is unapplied and the CEO question is pending.
+
+
+## O10 release and rebase
+
+CEO relayed O10 at mainb29e3d8, designrevision11: Effect::ShellAction{action}; behavior/data/scanner unchanged; clientmoduleclient_shell.rs. This releases the Shell contract stop. Integration rebased with merges preserved; the sole work-log append conflict kept both mainO10 notes and all execution entries. Implementation paths are byte-identical to pre-rebaseintegration. Open lanes will be rebased onto this integration; T19 untracked test is backed up and must retain its SHA. Run21 T8 continuation registered. [[Decisions/2026-10-30 MC ruling O10]].
