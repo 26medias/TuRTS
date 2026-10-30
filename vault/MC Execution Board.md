@@ -8,7 +8,7 @@ source: codex
 
 # MC execution board
 
-State: ACTIVE under CEO authority c3f09d0 and O11/design revision12. Integration and open lanes rebased. PT1 uses the Shell Press; computed timing NOT TRACED. C1 repairs HUD3 fixture; C2 repairs Task18 policy/coverage; C3 continues its overrun within hard8. Run26 registered; build26/170. Wave1 native check and agents passed; known browser M2 timeout remains. Main untouched.
+State: ACTIVE under CEO authority c3f09d0 and O11/design revision12. Integration and open lanes rebased. PT1 uses the Shell Press; computed timing NOT TRACED. C1 repairs HUD3 fixture; C2 repairs Task18 policy/coverage; C3 continues its overrun within hard8. Run26 repairs committed; run27 review registered; build27/170. Wave1 native check and agents passed; known browser M2 timeout remains. Main untouched.
 
 Plan: `docs/superpowers/plans/2026-10-29-mc-player-control.md`.
 Design of record: `docs/superpowers/specs/2026-10-29-mc-player-control-design.md`, revision 10 at `488b3d3`.
@@ -150,7 +150,7 @@ Tasks in one wave share no file, except the refutation registries (merge in task
 
 ## 7. Budget and seats
 
-CEO approved about 212 total runs. Build stop line: 170 (106 planned task runs plus 64 repairs). Gate estimate: 42 spent before this build. Build dispatches used: 26/170. Root preflight is recorded separately and is not a builder/reviewer dispatch. Twice a task estimate requires a recorded continuation decision; four times is a hard stop. T18 estimate2: soft4, hard8. No dispatch at global170 or a task hard limit.
+CEO approved about 212 total runs. Build stop line: 170 (106 planned task runs plus 64 repairs). Gate estimate: 42 spent before this build. Build dispatches used: 27/170. Root preflight is recorded separately and is not a builder/reviewer dispatch. Twice a task estimate requires a recorded continuation decision; four times is a hard stop. T18 estimate2: soft4, hard8. No dispatch at global170 or a task hard limit.
 
 One run is one agent dispatch (builder or reviewer). Count every run on the board.
 
@@ -217,7 +217,8 @@ One row per builder/reviewer dispatch or resumed agent work turn. Register befor
 | 23 | T18 build continuation | mod-builder | gpt-6-luna | high | f564f88 | STOP0e83be5: focused4green, packs/scans0; fullgate staleHUD3fixture failed (outerRC notcaptured), GACC interrupted130; no repairs/plants after global stop. |
 | 24 | T19 build continuation | mod-builder | gpt-6-luna | high | f564f88 | STOP test prep finalSHA3fc474607e563d0d3d902b8d32592964cf68f691ab3291e6cb9f7f2fe0046acc; drafts preserved; no Cargo/scan/package implementation. |
 | 25 | T18 independent review | mod-runtime-engineer | gpt-6.1-sol | high | 0e83be5 | STOP noPASS:0High/4Medium plus lab/turret coverage concern; inherited belt contract conflict escalated; read-only only, no Cargo/plant. |
-| 26 | T18 C1/C2 repair | mod-builder | gpt-6-luna | high | c244c0a | REGISTERED: repair fixture/policy coverage under C1/C2; C3 allows task run4/8; global26/170. |
+| 26 | T18 C1/C2 repair | mod-builder | gpt-6-luna | high | c244c0a | ACTIVE ead4fef: five policy reds101/green9, fixture red101/no-content9green, packs5green; formal gates running. |
+| 27 | T18 independent recheck | mod-runtime-engineer | gpt-6.1-sol | high | ead4fef | REGISTERED: final source/policy/fixture recheck; compiler and plant wait handoff; Task18 run5/hard8 under C3. |
 
 ## 9. Preflight ledger and stop
 
@@ -356,3 +357,5 @@ Revision11 PT1 step6 (:1693) requires belt pause/restart. Section5.3 (:532) and 
 CEO main c3f09d0 applied. O11 at63788d7/design12 already changes PT1 step6 to Shell Press, same D/E, alert and timing; computed8s remains NOT TRACED until PT1. Integration rebased with merge topology retained; one work-log conflict kept all main and execution entries. Open T18/T19 lanes rebased; implementation bytes and untracked test preserved (receipt target/mc-evidence/c3-authority-rebase/after.json). Wave1 CI41097571682 now check=success, agents=success, browser=known unchanged M2 economy timeout.
 
 C1: repair stale HUD3 fixture construction only, retain scanner and token assertions. C2: repair all Task18 Medium policy/producer/subject coverage findings before merge, with semantic tests. C3: continue Task18 past soft4 with bounded repair/recheck; hard8/global170 remain. Conflict, evidence and alternatives are in [[Decisions/2026-10-30 MC Codex rulings]]. These rulings are subject to orchestrator review after the wave. Run26 registered before dispatch. Historical STOP entries remain evidence; current state is released.
+
+Rebased merge mapping for current ancestry: T1e896448, T2a44a74d4, T3b9fb2e5, T206fa803a, T8cd38f38. Earlier hashes remain the historical test/run receipts. Integration code was byte-identical across the c3f09d0 rebase; no acceptance change was inferred from a hash rewrite.
