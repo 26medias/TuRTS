@@ -15,6 +15,14 @@ fn wire_roundtrip_new_reasons() {
             "research_in_progress",
         ),
         (CommandRejectReason::Internal, "internal"),
+        (CommandRejectReason::UnknownOrder, "unknown_order"),
+        (CommandRejectReason::NotApplicable, "not_applicable"),
+        (CommandRejectReason::TargetInvalid, "target_invalid"),
+        (CommandRejectReason::TargetGone, "target_gone"),
+        (CommandRejectReason::OutOfRange, "out_of_range"),
+        (CommandRejectReason::RateLimited, "rate_limited"),
+        (CommandRejectReason::NotQueueable, "not_queueable"),
+        (CommandRejectReason::Blocked, "blocked"),
     ];
 
     for (reason, name) in expected {
