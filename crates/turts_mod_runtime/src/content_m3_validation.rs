@@ -377,18 +377,17 @@ pub(crate) fn validate_m3(manifest: &Manifest, catalog: &ContentCatalog) -> Resu
         if unit.health.is_some_and(|health| health.max == 0) {
             return Err(fail("health.max", "must be positive"));
         }
-        if let Some(weapon) = &unit.weapon {
-            if let Some(ammo) = &weapon.ammo
-                && !unit
-                    .inventory
-                    .as_ref()
-                    .is_some_and(|inventory| inventory.accepts.contains(&ammo.item))
-            {
-                return Err(fail(
-                    "weapon.ammo.item",
-                    "weapon ammo item must be accepted by the inventory",
-                ));
-            }
+        if let Some(weapon) = &unit.weapon
+            && let Some(ammo) = &weapon.ammo
+            && !unit
+                .inventory
+                .as_ref()
+                .is_some_and(|inventory| inventory.accepts.contains(&ammo.item))
+        {
+            return Err(fail(
+                "weapon.ammo.item",
+                "weapon ammo item must be accepted by the inventory",
+            ));
         }
         let mut work = Vec::new();
         if unit.gatherer.is_some() {
