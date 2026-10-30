@@ -1,6 +1,6 @@
 # MC — Player control and client foundation: design
 
-Date: 2026-10-29. Revision 10. Status: DRAFT, passed gate 1 (2026-10-29): spec-rigour-reviewer,
+Date: 2026-10-29. Revision 11. Status: DRAFT, passed gate 1 (2026-10-29): spec-rigour-reviewer,
 technical-director, bevy-rendering-engineer, player, simulation-core-engineer; three repair
 passes. CEO decisions (2026-10-29): K1 to K27 as recommended (K11 stays conditional on probe P1),
 budget option 1 (the full design, about 184 runs); K20 applied in revision 5 (section 17.2).
@@ -10,6 +10,8 @@ Revision 7 (gate 2 round 1 rulings): DET1 comparison, `--order-log`, `turts_debu
 Revision 8 (plan G1): content id rule `order_<verb>`, `beacon`; the 4.5 tick reading; the 6.3 merge
 rules. Revision 9 (re-check 1): the frames record carries the wall time and the applied input sequence.
 Revision 10 (re-check 2): frames with input are kept until the oracle reads them.
+Revision 11 (2026-10-30, build ruling O10): the effect `Shell` is `ShellAction`; the client shell module is
+`client_shell.rs`. The `forge` resource `shell` makes the token `shell` and `Shell` content names.
 Author seat: `ux-designer` (D65, D66, D67, client side of D70; Second on D68).
 Source of record: `RTS-Engine-Project-Specifications.md` version 0.8 (cited as S:line).
 Other sources: the QA0 design `docs/superpowers/specs/2026-10-29-qa0-instrument-design.md`
@@ -265,7 +267,8 @@ The core is a plain Rust state machine. One call per frame:
   with no renderer. The client copies the field of view into the Bevy `Projection`.
 - `Effect`: `Send(OrderEnvelope)`, `SelectionChanged`, `GroupsChanged`, `CameraChanged`,
   `Marker { point, kind }`, `Sound { id, category }`, `Notice { text_key, units }`,
-  `Cursor { context }`, `Shell { action }`.
+  `Cursor { context }`, `ShellAction { action }` (revision 11: not `Shell`, a `forge` resource name that
+  the no-content scan refuses, ruling O10).
 
 Presentation never writes back into the core, except through `InputEvent`. Test PROJ1
 (section 14) compares the core projection with `Camera::world_to_viewport`.

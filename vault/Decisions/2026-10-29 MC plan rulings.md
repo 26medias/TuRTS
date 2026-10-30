@@ -23,3 +23,6 @@ Related: [[2026-10-29 MC calls K1-K27 and budget]]
 
 ## Ruling O9 (2026-10-30, Codex task 1 preflight stop)
 Codex found a conflict: design 3.4 lists `default prevented` as a P1 table result; plan task 1 omitted the column (gate 2 qa: the page calls `preventDefault()` itself, so the value is always true). The design wins. Ruling: the P1 table carries `default prevented` next to `cancelable`; the value is recorded, not judged. The K11 rule (task 1 step 4) judges `reaches the page` and `browser acted` only. Plan task 1 "Probe facts" and step 2 updated. No design change.
+
+## Ruling O10 (2026-10-30, Codex task 8 stop)
+Design 2.2 names the effect `Shell { action }`. The `forge` resource `mods/forge/resources/shell.ron` has `id: "shell"`, `name: "Shell"`, `unit_name: "shell"`, so the no-content scan (`crates/turts_checks/tests/support/mod.rs`, exact token match on every Rust identifier in `crates/`) refuses the tokens `shell` and `Shell` in engine code (design 11.3). Ruling: the effect is `ShellAction { action }`; behaviour, data and the scanner do not change. Design revision 11. Also applied ahead of task 16: the module `crates/turts_client/src/shell.rs` of the plan is `client_shell.rs`, because `mod shell;` would hit the same token.
