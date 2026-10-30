@@ -16,8 +16,8 @@ fn forge_packs_and_validates() {
     let bytes = pack_dir(&forge_dir()).expect("forge must pack");
     let archive = PackageArchive::parse(&bytes).expect("forge archive must parse");
     assert_eq!(archive.manifest.id, "forge");
-    assert_eq!(archive.manifest.version, "0.1.0");
-    assert_eq!(archive.manifest.engine_api, "^0.2.1");
+    assert_eq!(archive.manifest.version, "0.2.0");
+    assert_eq!(archive.manifest.engine_api, "^0.2.3");
     let catalog = archive.content().expect("forge content must validate");
     assert_eq!(catalog.resources.len(), 2);
     assert_eq!(catalog.units.len(), 7);
