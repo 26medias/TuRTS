@@ -8,7 +8,7 @@ source: codex
 
 # MC execution board
 
-State: ACTIVE. T1, T2a and T3 are complete. T3 merged at aceef85; integration G-RUST, G-QA, G-FROZEN and G-WEB passed. Headed Vulkan T7 passed with 115 frames and the server oracle, exit=0. T20 passed the clean local M2 baseline (15/15) and is implementing the harness with the single compiler cache. Build runs: 15/170. Wave 1 is incomplete; no integration push or new CI yet.
+State: ACTIVE. T1, T2a and T3 are complete. T3 merged at aceef85; integration G-RUST, G-QA, G-FROZEN and G-WEB passed. Headed Vulkan T7 passed with 115 frames and the server oracle, exit=0. T20 passed the clean local M2 baseline (15/15) and is implementing the harness with the single compiler cache. Build runs: 16/170. Wave 1 is incomplete; no integration push or new CI yet.
 
 Plan: `docs/superpowers/plans/2026-10-29-mc-player-control.md`.
 Design of record: `docs/superpowers/specs/2026-10-29-mc-player-control-design.md`, revision 10 at `488b3d3`.
@@ -149,7 +149,7 @@ Tasks in one wave share no file, except the refutation registries (merge in task
 
 ## 7. Budget and seats
 
-CEO approved about 212 total runs. Build stop line: 170 (106 planned task runs plus 64 repairs). Gate estimate: 42 spent before this build. Build dispatches used: 15/170. Root preflight is recorded separately and is not a builder/reviewer dispatch. T1 estimate 3; stop at 6 task dispatches. Do not dispatch another run at a stop.
+CEO approved about 212 total runs. Build stop line: 170 (106 planned task runs plus 64 repairs). Gate estimate: 42 spent before this build. Build dispatches used: 16/170. Root preflight is recorded separately and is not a builder/reviewer dispatch. T1 estimate 3; stop at 6 task dispatches. Do not dispatch another run at a stop.
 
 One run is one agent dispatch (builder or reviewer). Count every run on the board.
 
@@ -205,7 +205,8 @@ One row per builder/reviewer dispatch or resumed agent work turn. Register befor
 | 12 | T20 draft/build continuation | qa-lead | gpt-6-luna | high | 17286b1 | Current base22a4600; clean normal-native M2 baseline15/15 exit0; temporary diagnostics restored; Candidate9a3365a committed; actual DPR2 row twice and direct DPR1 pass; task gates and plant running. Hosted software cause remains NOT TRACED. |
 | 13 | T20 independent review | web-platform-engineer | gpt-6.1-sol | high | 9a3365a | FAIL9a3365a:0High/2Medium; actual held-modifier loss with opts.key at bothDPRs; missing --windows N. Independent plant1/restored0; clean. |
 | 14 | T20 repair | qa-lead | gpt-6-luna | high | 9a3365a | Candidatea8a375c committed; named reds1, repaired Node15/15 and actual DPR1/rowDPR2 twice pass; postcommit gates/plant running. |
-| 15 | T20 independent recheck | web-platform-engineer | gpt-6.1-sol | high | a8a375c | DISPATCHED: recheck both findings; read/pure tests first, mutation waits for builder release. |
+| 15 | T20 independent recheck | web-platform-engineer | gpt-6.1-sol | high | a8a375c | FAIL a8a375c:0High/1Medium. Original two findings closed; CDP-held modifier disappears from later normal key/click, actual game bothDPRs. Clean. |
+| 16 | T20 final authorized repair | qa-lead | gpt-6-luna | high | a8a375c | DISPATCHED: CDP-to-Playwright modifier handoff. Sixth task run reaches stop6; finish this run, then STOP/report before any further dispatch or integration action. |
 
 ## 9. Preflight ledger and stop
 
@@ -279,3 +280,8 @@ BothGREFmutantcaches/scratchsourcesremovedafterhash/patch/commitreceipts (M2cach
 - T16 / SLOT1: audit the harness setup with the persistence and refusal rows. Current Task20 startup eagerly waits for every page to join, and uses a browser context per page. SLOT1 needs expected refused windows; design10.4 expects shared localStorage per origin and separate sessionStorage per window. The owning persistence test must set up those actual browser semantics and the copied-id case, and must not count a pre-drive timeout as the expected gameplay red. Current Task20 browser proof covers two joined windows and DOM delivery only.
 
 - T24: existing CI Node step explicitly names only three old browser tests (ci.yml:108). Include the new harness contract and CLI tests when wiring final CI so the raw-page plant remains a hosted guard, then inspect actual Node step output.
+
+
+## T20 task budget stop
+
+T20 estimate3; runs7,12,13,14,15,16 total6. Run16 is the last authorized repair. Finish its concrete candidate and gate proof, then stop and report to the CEO before another run, merge, wave push or new task. The brief section3 says: "A task that reaches twice its estimate stops and reports." Global stop remains170; currentbuild16/170. An independent recheck after run16 will need a CEO extension.
