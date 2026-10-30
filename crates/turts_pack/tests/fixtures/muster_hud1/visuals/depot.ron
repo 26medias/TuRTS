@@ -1,0 +1,1 @@
+(target: Unit("muster:depot"), shape: Cuboid(x: 1.5, y: 1.0, z: 1.5))

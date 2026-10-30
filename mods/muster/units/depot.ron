@@ -1,0 +1,1 @@
+(id: "depot", name: "Depot", footprint: Circle(radius: 0.75), movement: None, inventory: Some((capacity: 200, accepts: ["muster:ore_chunk"])), gatherer: None, drop_off: Some((rules: [(item: "muster:ore_chunk", effect: Convert(balance: "muster:ore", per_item: 1))])), producer: None, health: Some((max: 100)), removal: Some((by_command: false, contents: Destroy)))

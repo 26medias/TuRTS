@@ -1,0 +1,1 @@
+(id: "order_gather", name: "Gather ore", behaviour: Gather, target: Node, fire: None, engage: None, icon: "muster_icon_gather", hotkey: "key_gather", cursor: Some("muster_cursor_gather"), card: Some((row: 1, column: 1)), units: ["muster:worker"], description: "Gather ore from the selected deposit.")

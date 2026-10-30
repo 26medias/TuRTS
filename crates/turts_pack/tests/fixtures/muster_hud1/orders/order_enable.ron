@@ -1,0 +1,1 @@
+(id: "order_enable", name: "Enable this machine", behaviour: SetEnabled(true), target: None, fire: None, engage: None, icon: "muster_icon_enable", hotkey: "key_enable", cursor: None, card: None, units: [], description: "Enable the selected machine.")

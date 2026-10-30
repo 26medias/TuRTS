@@ -1,0 +1,1 @@
+(id: "dummy", name: "Training Target", footprint: Circle(radius: 0.5), movement: Some((speed: 1.0)), inventory: None, gatherer: None, drop_off: None, producer: None, health: Some((max: 40)), removal: Some((by_command: false, contents: Destroy)))
