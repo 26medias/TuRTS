@@ -50,12 +50,14 @@ Task gate sets are the plan's Local gate commands. T1 requires G-QA. After each 
 
 Frozen M2 SHA256: `bcbf72c2206251f635a7c7f5b6c8f573d69a5fc05a5bd77716e98ebfb08e370b`. Keep forge fixed point and refutation plants. Known browser failure: M2 browser proof; trace in T20, repair in owner task/T21. Current integration CI: NOT TRACED; no wave has completed and no push was made. T1 merged at8f612a3 after the CEO release; integration re-gate passed all commands. No wave is complete yet.
 
+CI trigger: `.github/workflows/ci.yml:2-5` runs pushes to main and pull requests. After Wave1 gates pass, push integration and open a draft PR to main to run CI. Do not merge it. Keep the pushed code head free of a skip-ci marker; record CI results in a later vault-only commit.
+
 ## Known red window
 
 | Evidence | Current result | Cause and owner |
 | --- | --- | --- |
 | Historical CI 40960227409 | E9-browser-base-economy times out after 15 s. Server completed production at tick175; captured client stayed at tick87. | Underlying cause NOT TRACED. Historical artifact and log retained under target/mc-evidence/t20-builder. |
-| T20 clean local baseline at22a4600 | Selection, economy and recovery pass; E9-browser-base-public-convergence fails its shared-tick public-projection assertion (tests/browser/m2.js:430-444), exit=1. | Investigating hidden-page suspension as a tool hypothesis. No engine owner assigned yet. Task20 must repair a proved harness/tool cause; otherwise record the proved owner. |
+| T20 clean local baseline at22a4600 | Selection, economy and recovery pass; E9-browser-base-public-convergence fails its shared-tick public-projection assertion (tests/browser/m2.js:430-444), exit=1. | Forced-software-profile diagnostic; mechanism NOT TRACED. Isolated control and active-lifecycle cases both pass with both pages visible. A full instrumented NVIDIA run passes all15 cases; clean original-source normal-native baseline is running. No engine owner assigned. |
 
 ## 4. Tasks
 
