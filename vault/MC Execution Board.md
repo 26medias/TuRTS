@@ -8,7 +8,7 @@ source: codex
 
 # MC execution board
 
-State: STOP — CEO budget ruling required. T20 reached6 runs against estimate3. Last authorized candidate72ddb0a passes builder G-QA/G-WEB, Node17/17, actual DPR1 and twice DPR2 proofs; root audited receipts and clean source. Independent recheck is pending. T20 is NOT merged. T1/T2a/T3 remain complete; Wave1 push and CI are pending. Build16/170; main unchanged.
+State: ACTIVE under CEO ruling. T20 cap7; run17 independently rechecks72ddb0a. PASS with0High authorizes merge into integration, re-gate and wave continuation. FAIL requires STOP/report before any further run. Build17/170. T20 is not merged; T1/T2a/T3 complete; main unchanged.
 
 Plan: `docs/superpowers/plans/2026-10-29-mc-player-control.md`.
 Design of record: `docs/superpowers/specs/2026-10-29-mc-player-control-design.md`, revision 10 at `488b3d3`.
@@ -68,7 +68,7 @@ CI trigger: `.github/workflows/ci.yml:2-5` runs pushes to main and pull requests
 | T1 | 1 | - | codex/mc-t1 | COMPLETE; merge8f612a3; G-RUST/G-QA/G-FROZEN all0; lane removed |
 | T2a | 1 | - | codex/mc-t2a | COMPLETE; merge17286b1; all gates0; lane removed |
 | T3 | 1 | - | codex/mc-t3 | COMPLETE; merge aceef85; all integration gates pass; T7 115 frames |
-| T20 | 1 | - | codex/mc-t20 | STOP at6/6 task runs; candidate72ddb0a gated, independent recheck pending CEO extension |
+| T20 | 1 | - | codex/mc-t20 | ACTIVE: CEO cap7; run17 reviews72ddb0a; PASS0High merge/re-gate, FAIL stop |
 | T8 | 2 | 2a, 3 | codex/mc-t8 | NOT STARTED |
 | T18 | 2 | 3 | codex/mc-t18 | NOT STARTED |
 | T19 | 2 | 3 | codex/mc-t19 | NOT STARTED |
@@ -149,7 +149,7 @@ Tasks in one wave share no file, except the refutation registries (merge in task
 
 ## 7. Budget and seats
 
-CEO approved about 212 total runs. Build stop line: 170 (106 planned task runs plus 64 repairs). Gate estimate: 42 spent before this build. Build dispatches used: 16/170. Root preflight is recorded separately and is not a builder/reviewer dispatch. T1 estimate 3; stop at 6 task dispatches. Do not dispatch another run at a stop.
+CEO approved about 212 total runs. Build stop line: 170 (106 planned task runs plus 64 repairs). Gate estimate: 42 spent before this build. Build dispatches used: 17/170. Root preflight is recorded separately and is not a builder/reviewer dispatch. T1 estimate 3; stop at 6 task dispatches. Do not dispatch another run at a stop.
 
 One run is one agent dispatch (builder or reviewer). Count every run on the board.
 
@@ -207,6 +207,7 @@ One row per builder/reviewer dispatch or resumed agent work turn. Register befor
 | 14 | T20 repair | qa-lead | gpt-6-luna | high | 9a3365a | Candidatea8a375c committed; named reds1, repaired Node15/15 and actual DPR1/rowDPR2 twice pass; postcommit gates/plant running. |
 | 15 | T20 independent recheck | web-platform-engineer | gpt-6.1-sol | high | a8a375c | FAIL a8a375c:0High/1Medium. Original two findings closed; CDP-held modifier disappears from later normal key/click, actual game bothDPRs. Clean. |
 | 16 | T20 final authorized repair | qa-lead | gpt-6-luna | high | a8a375c | 72ddb0a committed; G-QA/G-WEB0, Node17/17; actual DPR1 + twice DPR2 pass; page plant1/restored0; clean. STOP6/6; no further dispatch/merge/push without CEO ruling. |
+| 17 | T20 CEO-authorized independent recheck | web-platform-engineer | gpt-6.1-sol | high | 72ddb0a | DISPATCHED under CEO cap7. PASS0High permits merge/re-gate; FAIL stops before any further run. |
 
 ## 9. Preflight ledger and stop
 
@@ -287,3 +288,8 @@ BothGREFmutantcaches/scratchsourcesremovedafterhash/patch/commitreceipts (M2cach
 T20 estimate3; runs7,12,13,14,15,16 total6. Run16 is the last authorized repair. Finish its concrete candidate and gate proof, then stop and report to the CEO before another run, merge, wave push or new task. The brief section3 says: "A task that reaches twice its estimate stops and reports." Global stop remains170; currentbuild16/170. An independent recheck after run16 will need a CEO extension.
 
 Final stop receipt: target/mc-evidence/t20-builder/final-repair/root-stop-audit.json. Request: one additional independent review run (T20cap7, wholebuild17/170) and continuation only if that review passes. No decision or extension has been granted yet.
+
+
+## CEO release: T20 cap7
+
+The CEO granted exactly one additional independent web-platform-engineer review of72ddb0a, run17/global17of170. If PASS with0High, merge T20 into codex/mc-integration, re-gate and continue Wave1. If FAIL, STOP/report findings before any further run. This supersedes the earlier pending request and cap6. See [[Decisions/2026-10-30 MC T20 seventh review run]]. Other stops and the ban on main merge/push remain.
