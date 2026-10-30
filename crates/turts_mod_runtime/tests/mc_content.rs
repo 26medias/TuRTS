@@ -177,6 +177,30 @@ fn validator_rejects_queue_depth_zero_semantically() {
 }
 
 #[test]
+fn order_rules_accessor_preserves_queue_depth_for_range_validation() {
+    let archive = archive_with_order_rules(
+        r#"(id:"rush",name:"Rush",behaviour:Attack,target:Unit,fire:None,engage:None,icon:"rush-icon",hotkey:"rush",cursor:None,card:None,units:[],description:"Rush the target")"#,
+        r#"(queue_depth:256,smart:[])"#,
+    );
+    assert_eq!(archive.order_rules().unwrap()[0].1.queue_depth, 256);
+}
+
+#[test]
+fn order_rules_accessor_does_not_silently_skip_unknown_fields() {
+    let archive = archive_with_order_rules(
+        r#"(id:"rush",name:"Rush",behaviour:Attack,target:Unit,fire:None,engage:None,icon:"rush-icon",hotkey:"rush",cursor:None,card:None,units:[],description:"Rush the target")"#,
+        r#"(queue_dept:16,smart:[])"#,
+    );
+    assert!(
+        archive
+            .order_rules()
+            .unwrap_err()
+            .to_string()
+            .contains("hud/orders/rules.ron: unknown field `queue_dept`")
+    );
+}
+
+#[test]
 fn locked_set_image_cap_uses_the_aggregate_decoded_png_bytes() {
     let first = image_archive("first", 9);
     let second = image_archive("second", 9);

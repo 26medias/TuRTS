@@ -1,5 +1,7 @@
 //! Header-only media metadata used by MC validation; no image or audio decoder is loaded.
 
+use std::collections::BTreeMap;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PngHeader {
     pub width: u32,
@@ -21,15 +23,22 @@ pub fn font_header(bytes: &[u8]) -> bool {
     matches!(bytes.get(..4), Some([0, 1, 0, 0]) | Some(b"OTTO"))
 }
 pub fn ogg_duration_seconds(bytes: &[u8]) -> Option<f64> {
+    #[derive(Default)]
+    struct Stream {
+        packet: Vec<u8>,
+        sample_rate: Option<u32>,
+        final_granule: Option<u64>,
+    }
+
     let mut offset = 0usize;
-    let mut packet = Vec::new();
-    let mut identification = None;
-    let mut last_granule = None;
+    let mut streams = BTreeMap::<u32, Stream>::new();
     while offset < bytes.len() {
         let header = bytes.get(offset..offset.checked_add(27)?)?;
         if header.get(..4)? != b"OggS" || header[4] != 0 {
             return None;
         }
+        let serial = u32::from_le_bytes(header[14..18].try_into().ok()?);
+        let stream = streams.entry(serial).or_default();
         let granule = u64::from_le_bytes(header[6..14].try_into().ok()?);
         let segments = usize::from(header[26]);
         let lacing = bytes.get(offset.checked_add(27)?..offset.checked_add(27 + segments)?)?;
@@ -39,32 +48,37 @@ pub fn ogg_duration_seconds(bytes: &[u8]) -> Option<f64> {
         let body_start = offset.checked_add(27 + segments)?;
         let body = bytes.get(body_start..body_start.checked_add(body_len)?)?;
         if granule != u64::MAX {
-            last_granule = Some(granule);
+            stream.final_granule = Some(granule);
         }
         let mut packet_offset = 0usize;
         for &part in lacing {
             let part = usize::from(part);
-            packet.extend_from_slice(body.get(packet_offset..packet_offset.checked_add(part)?)?);
+            stream
+                .packet
+                .extend_from_slice(body.get(packet_offset..packet_offset.checked_add(part)?)?);
             packet_offset += part;
-            if part < 255 && identification.is_none() {
-                if packet.get(..7)? != b"\x01vorbis" || packet.len() < 30 {
+            if part < 255 && stream.sample_rate.is_none() {
+                if stream.packet.get(..7)? != b"\x01vorbis" || stream.packet.len() < 30 {
                     return None;
                 }
-                let sample_rate = u32::from_le_bytes(packet[12..16].try_into().ok()?);
+                let sample_rate = u32::from_le_bytes(stream.packet[12..16].try_into().ok()?);
                 if sample_rate == 0 {
                     return None;
                 }
-                identification = Some(sample_rate);
+                stream.sample_rate = Some(sample_rate);
             }
-            if part < 255 && identification.is_some() {
-                packet.clear();
+            if part < 255 && stream.sample_rate.is_some() {
+                stream.packet.clear();
             }
         }
         offset = body_start.checked_add(body_len)?;
     }
-    let sample_rate = identification?;
-    let granule = last_granule?;
-    Some(granule as f64 / f64::from(sample_rate))
+    if streams.is_empty() {
+        return None;
+    }
+    streams.values().try_fold(0.0, |total, stream| {
+        Some(total + stream.final_granule? as f64 / f64::from(stream.sample_rate?))
+    })
 }
 
 #[cfg(test)]
@@ -127,5 +141,16 @@ mod tests {
     fn ogg_vorbis_duration_uses_last_page_granule_and_sample_rate() {
         assert_eq!(ogg_duration_seconds(&ogg(31)), Some(31.0));
         assert_eq!(ogg_duration_seconds(b"OggS"), None);
+    }
+
+    #[test]
+    fn chained_vorbis_streams_sum_each_serial_duration() {
+        let mut chained = ogg(31);
+        let mut next_stream = ogg(1);
+        next_stream[14..18].copy_from_slice(&2u32.to_le_bytes());
+        let last_page = next_stream.len() - 27;
+        next_stream[last_page + 14..last_page + 18].copy_from_slice(&2u32.to_le_bytes());
+        chained.extend(next_stream);
+        assert_eq!(ogg_duration_seconds(&chained), Some(32.0));
     }
 }

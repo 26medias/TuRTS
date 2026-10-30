@@ -43,10 +43,12 @@ struct WidgetValidation<'a> {
     package: &'a PackageId,
     file: &'a str,
     images: &'a BTreeSet<&'a str>,
+    image_info: &'a BTreeMap<String, ImageInfo>,
     fonts: &'a BTreeSet<&'a str>,
     orders: &'a BTreeMap<ContentId, (&'a str, &'a OrderDef)>,
     actions: &'a BTreeSet<&'a str>,
     balance_ids: &'a BTreeSet<ContentId>,
+    dependencies: &'a BTreeSet<&'a str>,
 }
 
 /// Parse and validate all API 0.2.3 content exported by one archive.
@@ -68,6 +70,13 @@ pub(crate) fn validate_mc(archive: &PackageArchive) -> Result<ParsedMcContent, M
         assets,
     };
     let package = PackageId(archive.manifest.id.clone());
+    let dependency_ids: BTreeSet<&str> = archive
+        .manifest
+        .dependencies
+        .0
+        .keys()
+        .map(String::as_str)
+        .collect();
     let mut images = BTreeMap::<String, ImageInfo>::new();
     let mut cursors = BTreeMap::<String, String>::new();
     let mut fonts = BTreeSet::new();
@@ -247,19 +256,13 @@ pub(crate) fn validate_mc(archive: &PackageArchive) -> Result<ParsedMcContent, M
                     ),
                 ));
             }
-            if u32::from(cursor.hotspot.0) >= image.width
-                || u32::from(cursor.hotspot.1) >= image.height
-            {
-                return Err(error(
-                    &package,
-                    file,
-                    &format!("cursors[{index}].hotspot"),
-                    format!(
-                        "hotspot ({}, {}) must be inside the {} x {} px image",
-                        cursor.hotspot.0, cursor.hotspot.1, image.width, image.height
-                    ),
-                ));
-            }
+            validate_cursor_hotspot(
+                &package,
+                file,
+                &format!("cursors[{index}].hotspot"),
+                image,
+                cursor.hotspot,
+            )?;
         }
     }
     if decoded_image_bytes > MAX_DECODED_IMAGE_BYTES {
@@ -441,7 +444,14 @@ pub(crate) fn validate_mc(archive: &PackageArchive) -> Result<ParsedMcContent, M
     for (file, order) in &parsed.orders {
         if let Some(cell) = order.card {
             for unit in &order.units {
-                let unit_id = checked_unit_reference(&package, file, "units", unit, &unit_ids)?;
+                let unit_id = checked_unit_reference(
+                    &package,
+                    file,
+                    "units",
+                    unit,
+                    &unit_ids,
+                    &dependency_ids,
+                )?;
                 let key = (unit_id, cell.row, cell.column);
                 if let Some((other_order, _)) =
                     card_cells.insert(key.clone(), (order.id.as_str(), file.as_str()))
@@ -462,16 +472,16 @@ pub(crate) fn validate_mc(archive: &PackageArchive) -> Result<ParsedMcContent, M
             }
         }
         for unit in &order.units {
-            checked_unit_reference(&package, file, "units", unit, &unit_ids)?;
+            checked_unit_reference(&package, file, "units", unit, &unit_ids, &dependency_ids)?;
         }
     }
     for (file, rules) in &parsed.order_rules {
-        if rules.queue_depth == 0 {
+        if rules.queue_depth == 0 || rules.queue_depth > 255 {
             return Err(error(
                 &package,
                 file,
                 "queue_depth",
-                "must be between 1 and 255, got 0",
+                format!("must be between 1 and 255, got {}", rules.queue_depth),
             ));
         }
         for (index, smart) in rules.smart.iter().enumerate() {
@@ -480,6 +490,7 @@ pub(crate) fn validate_mc(archive: &PackageArchive) -> Result<ParsedMcContent, M
                 file,
                 &format!("smart[{index}].order"),
                 &smart.order,
+                &dependency_ids,
             )?;
             if reference.package == package && !order_ids.contains_key(&reference) {
                 return Err(error(
@@ -552,10 +563,12 @@ pub(crate) fn validate_mc(archive: &PackageArchive) -> Result<ParsedMcContent, M
             package: &package,
             file,
             images: &image_ids,
+            image_info: &images,
             fonts: &font_ids,
             orders: &order_ids,
             actions: &actions,
             balance_ids: &balance_ids,
+            dependencies: &dependency_ids,
         };
         for (index, widget) in interface.root.iter().enumerate() {
             validate_widget(
@@ -635,7 +648,7 @@ pub(crate) fn validate_mc(archive: &PackageArchive) -> Result<ParsedMcContent, M
             }
         }
         for (id, presentation) in &interface.units {
-            checked_unit_reference(&package, file, "units", id, &unit_ids)?;
+            checked_unit_reference(&package, file, "units", id, &unit_ids, &dependency_ids)?;
             for (kind, asset) in [
                 ("icon", &presentation.icon),
                 ("portrait", &presentation.portrait),
@@ -671,6 +684,7 @@ pub(crate) fn validate_mc(archive: &PackageArchive) -> Result<ParsedMcContent, M
                 &format!("selection_priority[{index}]"),
                 unit,
                 &unit_ids,
+                &dependency_ids,
             )?;
         }
     }
@@ -814,6 +828,17 @@ pub fn layout_warnings(archive: &PackageArchive) -> Result<Vec<String>, ModError
                 &mut warnings,
             );
         }
+        for (page_index, page) in interface.guide.iter().enumerate() {
+            for (widget_index, widget) in page.widgets.iter().enumerate() {
+                collect_layout_warnings(
+                    &package,
+                    &file,
+                    &format!("guide[{page_index}].widgets[{widget_index}]"),
+                    widget,
+                    &mut warnings,
+                );
+            }
+        }
     }
     Ok(warnings)
 }
@@ -885,6 +910,7 @@ fn validate_widget(
     let orders = context.orders;
     let actions = context.actions;
     let balance_ids = context.balance_ids;
+    let dependencies = context.dependencies;
     if !ids.insert(widget.id.clone()) {
         return Err(error(
             package,
@@ -900,6 +926,7 @@ fn validate_widget(
             &format!("{path}.tooltip"),
             value,
             balance_ids,
+            dependencies,
         )?;
     }
     match &widget.widget {
@@ -940,6 +967,7 @@ fn validate_widget(
                 &format!("{path}.widget.text"),
                 text,
                 balance_ids,
+                dependencies,
             )?;
         }
         Primitive::Bar {
@@ -955,6 +983,7 @@ fn validate_widget(
                 &format!("{path}.widget.value"),
                 value,
                 balance_ids,
+                dependencies,
             )?;
             validate_value(
                 package,
@@ -962,6 +991,7 @@ fn validate_widget(
                 &format!("{path}.widget.max"),
                 max,
                 balance_ids,
+                dependencies,
             )?;
             validate_fill(package, file, &format!("{path}.widget.fill"), fill, images)?;
             validate_fill(
@@ -988,12 +1018,18 @@ fn validate_widget(
                     &format!("{path}.widget.label"),
                     label,
                     balance_ids,
+                    dependencies,
                 )?;
             }
             match action {
                 ButtonAction::Order(id) => {
-                    let reference =
-                        checked_reference(package, file, &format!("{path}.widget.action"), id)?;
+                    let reference = checked_reference(
+                        package,
+                        file,
+                        &format!("{path}.widget.action"),
+                        id,
+                        dependencies,
+                    )?;
                     if reference.package == *package && !orders.contains_key(&reference) {
                         return Err(error(
                             package,
@@ -1023,6 +1059,7 @@ fn validate_widget(
                 &format!("{path}.widget.source"),
                 source,
                 balance_ids,
+                dependencies,
             )?;
             validate_widget(context, &format!("{path}.item"), item, &mut BTreeSet::new())?;
         }
@@ -1032,17 +1069,32 @@ fn validate_widget(
             &format!("{path}.widget.value"),
             value,
             balance_ids,
+            dependencies,
         )?,
         Primitive::Cursor { cursors } => {
-            for (context, (image, _)) in cursors {
+            for (cursor_context, (image, hotspot)) in cursors {
                 if !images.contains(image.as_str()) {
                     return Err(error(
                         package,
                         file,
-                        &format!("{path}.widget.cursors.{context}"),
+                        &format!("{path}.widget.cursors.{cursor_context}"),
                         format!("unknown image asset `{image}`"),
                     ));
                 }
+                let image_info = context.image_info.get(image).expect("validated image id");
+                validate_cursor_dimensions(
+                    package,
+                    file,
+                    &format!("{path}.widget.cursors.{cursor_context}"),
+                    image_info,
+                )?;
+                validate_cursor_hotspot(
+                    package,
+                    file,
+                    &format!("{path}.widget.cursors.{cursor_context}"),
+                    image_info,
+                    *hotspot,
+                )?;
             }
         }
         Primitive::MinimapView { background, .. } => {
@@ -1066,14 +1118,15 @@ fn validate_text_value(
     field: &str,
     value: &turts_mod_api::TextValue,
     balance_ids: &BTreeSet<ContentId>,
+    dependencies: &BTreeSet<&str>,
 ) -> Result<(), ModError> {
     match value {
         turts_mod_api::TextValue::Bind(value) => {
-            validate_value(package, file, field, value, balance_ids)
+            validate_value(package, file, field, value, balance_ids, dependencies)
         }
         turts_mod_api::TextValue::Format(_, values) => {
             for value in values {
-                validate_value(package, file, field, value, balance_ids)?;
+                validate_value(package, file, field, value, balance_ids, dependencies)?;
             }
             Ok(())
         }
@@ -1087,10 +1140,11 @@ fn validate_value(
     field: &str,
     value: &Value,
     balance_ids: &BTreeSet<ContentId>,
+    dependencies: &BTreeSet<&str>,
 ) -> Result<(), ModError> {
     match value {
         Value::Balance(id) => {
-            let reference = checked_reference(package, file, field, id)?;
+            let reference = checked_reference(package, file, field, id, dependencies)?;
             if reference.package == *package && !balance_ids.contains(&reference) {
                 return Err(error(
                     package,
@@ -1102,7 +1156,7 @@ fn validate_value(
         }
         Value::Format(_, values) => {
             for value in values {
-                validate_value(package, file, field, value, balance_ids)?;
+                validate_value(package, file, field, value, balance_ids, dependencies)?;
             }
         }
         _ => {}
@@ -1116,9 +1170,10 @@ fn validate_source(
     field: &str,
     source: &Source,
     balance_ids: &BTreeSet<ContentId>,
+    dependencies: &BTreeSet<&str>,
 ) -> Result<(), ModError> {
     if let Source::Balance(id) = source {
-        let reference = checked_reference(package, file, field, id)?;
+        let reference = checked_reference(package, file, field, id, dependencies)?;
         if reference.package == *package && !balance_ids.contains(&reference) {
             return Err(error(
                 package,
@@ -1158,14 +1213,69 @@ fn validate_icon(
     icon: &ButtonIcon,
     images: &BTreeSet<&str>,
 ) -> Result<(), ModError> {
-    if let ButtonIcon::Asset(id) = icon
-        && !images.contains(id.as_str())
-    {
+    match icon {
+        ButtonIcon::Asset(id) if !images.contains(id.as_str()) => {
+            return Err(error(
+                package,
+                file,
+                field,
+                format!("unknown image asset `{id}`"),
+            ));
+        }
+        ButtonIcon::Item(turts_mod_api::IconField::Icon) => {}
+        ButtonIcon::Bind(Value::SelectionPrimary(
+            turts_mod_api::PrimaryField::Icon | turts_mod_api::PrimaryField::Portrait,
+        )) => {}
+        ButtonIcon::Bind(Value::Item(turts_mod_api::ItemField::Icon)) => {}
+        ButtonIcon::Bind(_) => {
+            return Err(error(
+                package,
+                file,
+                field,
+                "image binding must select an icon or portrait",
+            ));
+        }
+        ButtonIcon::Asset(_) => {}
+    }
+    Ok(())
+}
+
+fn validate_cursor_dimensions(
+    package: &PackageId,
+    file: &str,
+    field: &str,
+    image: &ImageInfo,
+) -> Result<(), ModError> {
+    if image.width > MAX_CURSOR_DIMENSION || image.height > MAX_CURSOR_DIMENSION {
         return Err(error(
             package,
             file,
             field,
-            format!("unknown image asset `{id}`"),
+            format!(
+                "cursor image is {} x {} px; maximum is 128 x 128 px",
+                image.width, image.height
+            ),
+        ));
+    }
+    Ok(())
+}
+
+fn validate_cursor_hotspot(
+    package: &PackageId,
+    file: &str,
+    field: &str,
+    image: &ImageInfo,
+    hotspot: (u16, u16),
+) -> Result<(), ModError> {
+    if u32::from(hotspot.0) >= image.width || u32::from(hotspot.1) >= image.height {
+        return Err(error(
+            package,
+            file,
+            field,
+            format!(
+                "hotspot ({}, {}) must be inside the {} x {} px image",
+                hotspot.0, hotspot.1, image.width, image.height
+            ),
         ));
     }
     Ok(())
@@ -1298,19 +1408,36 @@ fn validate_binding(
             format!("unknown physical key code `{code}`"),
         ));
     }
+    for (index, modifier) in mods.iter().enumerate() {
+        if mods[..index].contains(modifier) {
+            return Err(error(
+                package,
+                file,
+                &format!("{field}.mods"),
+                format!("modifier {modifier:?} is repeated"),
+            ));
+        }
+    }
     let reserved =
         turts_mod_api::RESERVED_BROWSER_KEYS
             .iter()
             .any(|(reserved_code, reserved_mods)| {
-                *reserved_code == code && *reserved_mods == mods.as_slice()
+                *reserved_code == code
+                    && reserved_mods.len() == mods.len()
+                    && reserved_mods.iter().all(|modifier| mods.contains(modifier))
             });
     if reserved {
-        let chord = mods
-            .iter()
-            .map(|modifier| format!("{modifier:?}"))
-            .chain(std::iter::once(code.clone()))
-            .collect::<Vec<_>>()
-            .join("+");
+        let chord = [
+            turts_mod_api::Mod::Ctrl,
+            turts_mod_api::Mod::Shift,
+            turts_mod_api::Mod::Alt,
+        ]
+        .iter()
+        .filter(|modifier| mods.contains(modifier))
+        .map(|modifier| format!("{modifier:?}"))
+        .chain(std::iter::once(code.clone()))
+        .collect::<Vec<_>>()
+        .join("+");
         return Err(error(
             package,
             file,
@@ -1326,8 +1453,19 @@ fn checked_reference(
     file: &str,
     field: &str,
     value: &str,
+    dependencies: &BTreeSet<&str>,
 ) -> Result<ContentId, ModError> {
-    ContentId::parse(value).map_err(|message| error(package, file, field, message))
+    let reference =
+        ContentId::parse(value).map_err(|message| error(package, file, field, message))?;
+    if reference.package != *package && !dependencies.contains(reference.package.0.as_str()) {
+        return Err(error(
+            package,
+            file,
+            field,
+            format!("unknown dependency namespace `{}`", reference.package.0),
+        ));
+    }
+    Ok(reference)
 }
 
 fn checked_unit_reference(
@@ -1336,8 +1474,9 @@ fn checked_unit_reference(
     field: &str,
     value: &str,
     unit_ids: &BTreeSet<ContentId>,
+    dependencies: &BTreeSet<&str>,
 ) -> Result<ContentId, ModError> {
-    let reference = checked_reference(package, file, field, value)?;
+    let reference = checked_reference(package, file, field, value, dependencies)?;
     if reference.package == *package && !unit_ids.contains(&reference) {
         return Err(error(
             package,

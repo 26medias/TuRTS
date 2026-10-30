@@ -120,6 +120,14 @@ fn assert_hud3_refused(test: &str, edits: &[Edit], message: &str) {
     );
 }
 
+fn pack_hud3(test: &str, edits: &[Edit]) -> Output {
+    let dir = hud3_edited_dir(test, edits);
+    Command::new(env!("CARGO_BIN_EXE_turts-pack"))
+        .arg(&dir)
+        .output()
+        .expect("turts-pack starts")
+}
+
 fn hud3_png(width: u32, height: u32, file_size: usize) -> Vec<u8> {
     let mut bytes = b"\x89PNG\r\n\x1a\n\0\0\0\rIHDR".to_vec();
     bytes.extend_from_slice(&width.to_be_bytes());
@@ -511,6 +519,309 @@ fn hud3_supported_modifier_key_code_is_accepted() {
         .output()
         .expect("turts-pack starts");
     assert_eq!(output.status.code(), Some(0), "{output:?}");
+}
+
+#[test]
+fn hud3_supported_ime_key_code_is_accepted() {
+    let output = pack_hud3("hud3_convert_key", &[("input/main.ron", "KeyR", "Convert")]);
+    assert_eq!(output.status.code(), Some(0), "{output:?}");
+}
+
+#[test]
+fn hud3_reserved_browser_binding_ignores_modifier_order() {
+    assert_hud3_refused(
+        "hud3_reserved_binding_permuted",
+        &[
+            ("input/main.ron", "KeyR", "KeyW"),
+            ("input/main.ron", "mods: []", "mods: [Shift, Ctrl]"),
+        ],
+        "zeta/input/main.ron: actions[0].default[0]: Ctrl+Shift+KeyW is reserved by the browser",
+    );
+}
+
+#[test]
+fn hud3_cursor_widget_obeys_cursor_dimensions() {
+    let dir = hud3_edited_dir(
+        "hud3_primitive_cursor_dimension",
+        &[
+            (
+                "interface/main.ron",
+                "widget: MinimapView(frame: \"#ffffff\")",
+                "widget: Cursor(cursors: {\"default\": (\"rush-icon\", (0, 0))})",
+            ),
+            (
+                "assets/main.ron",
+                "cursors: [(id: \"default\", image: \"cursor\", hotspot: (0, 0))]",
+                "cursors: []",
+            ),
+            (
+                "interface/main.ron",
+                "cursors: {\"default\": \"default\"}",
+                "cursors: {}",
+            ),
+            (
+                "orders/rush.ron",
+                "cursor: Some(\"default\")",
+                "cursor: None",
+            ),
+        ],
+    );
+    let mut png = fs::read(dir.join("assets/icon.png")).unwrap();
+    png[16..20].copy_from_slice(&256u32.to_be_bytes());
+    png[20..24].copy_from_slice(&256u32.to_be_bytes());
+    fs::write(dir.join("assets/icon.png"), png).unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_turts-pack"))
+        .arg(&dir)
+        .output()
+        .expect("turts-pack starts");
+    assert_eq!(output.status.code(), Some(2), "{output:?}");
+    assert_eq!(
+        String::from_utf8(output.stderr).unwrap().trim_end(),
+        "zeta/interface/main.ron: root[3].widget.cursors.default: cursor image is 256 x 256 px; maximum is 128 x 128 px",
+    );
+}
+
+#[test]
+fn hud3_cursor_widget_hotspot_must_be_inside_image() {
+    assert_hud3_refused(
+        "hud3_cursor_hotspot",
+        &[(
+            "interface/main.ron",
+            "widget: MinimapView(frame: \"#ffffff\")",
+            "widget: Cursor(cursors: {\"default\": (\"rush-icon\", (999, 999))})",
+        )],
+        "zeta/interface/main.ron: root[3].widget.cursors.default: hotspot (999, 999) must be inside the 32 x 32 px image",
+    );
+}
+
+#[test]
+fn hud3_button_image_supports_primary_portrait_binding() {
+    let dir = hud3_edited_dir(
+        "hud3_primary_portrait_binding",
+        &[
+            (
+                "interface/main.ron",
+                "widget: MinimapView(frame: \"#ffffff\")",
+                "widget: Image(image: Bind(SelectionPrimary(Portrait)), nine_slice: None, tint: None)",
+            ),
+            (
+                "interface/main.ron",
+                "reasons: {}, units: {}, selection_priority: []",
+                "reasons: {}, units: {\"zeta:trooper\": (icon: Some(\"rush-icon\"), portrait: Some(\"rush-icon\"), responses: {})}, selection_priority: [\"zeta:trooper\"]",
+            ),
+        ],
+    );
+    let output = Command::new(env!("CARGO_BIN_EXE_turts-pack"))
+        .arg(&dir)
+        .output()
+        .expect("turts-pack starts");
+    assert_eq!(output.status.code(), Some(0), "{output:?}");
+}
+
+#[test]
+fn hud3_button_action_rejects_icon_item_binding() {
+    let output = pack_hud3(
+        "hud3_button_action_icon",
+        &[(
+            "interface/main.ron",
+            "action: Input(\"rush\")",
+            "action: Item(Icon)",
+        )],
+    );
+    assert_eq!(output.status.code(), Some(2), "{output:?}");
+    assert!(
+        String::from_utf8(output.stderr)
+            .unwrap()
+            .contains("unknown variant `Icon`")
+    );
+}
+
+#[test]
+fn hud3_queue_depth_above_255_has_field_range_error() {
+    assert_hud3_refused(
+        "hud3_queue_depth_overflow",
+        &[("orders/rules.ron", "queue_depth: 16", "queue_depth: 256")],
+        "zeta/orders/rules.ron: queue_depth: must be between 1 and 255, got 256",
+    );
+}
+
+#[test]
+fn hud3_order_rules_typo_reports_rules_schema() {
+    let output = pack_hud3(
+        "hud3_order_rules_typo",
+        &[("orders/rules.ron", "queue_depth: 16", "queue_dept: 16")],
+    );
+    assert_eq!(output.status.code(), Some(2), "{output:?}");
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(stderr.contains("zeta/orders/rules.ron: unknown field `queue_dept`"));
+    assert!(stderr.contains("(allowed: queue_depth, smart)"));
+}
+
+#[test]
+fn hud3_order_units_require_declared_namespace() {
+    let output = pack_hud3(
+        "hud3_order_unknown_namespace",
+        &[("orders/rush.ron", "zeta:trooper", "absent:trooper")],
+    );
+    assert_eq!(output.status.code(), Some(2), "{output:?}");
+    assert!(
+        String::from_utf8(output.stderr)
+            .unwrap()
+            .contains("units: unknown dependency namespace `absent`")
+    );
+}
+
+#[test]
+fn hud3_widget_order_requires_declared_namespace() {
+    let output = pack_hud3(
+        "hud3_widget_order_unknown_namespace",
+        &[(
+            "interface/main.ron",
+            "action: Input(\"rush\")",
+            "action: Order(\"absent:rush\")",
+        )],
+    );
+    assert_eq!(output.status.code(), Some(2), "{output:?}");
+    assert!(
+        String::from_utf8(output.stderr)
+            .unwrap()
+            .contains("root[0].widget.action: unknown dependency namespace `absent`")
+    );
+}
+
+#[test]
+fn hud3_smart_order_requires_declared_namespace() {
+    let output = pack_hud3(
+        "hud3_smart_order_unknown_namespace",
+        &[(
+            "orders/rules.ron",
+            "smart: []",
+            "smart: [(target: Ground, needs: Movement, order: \"absent:rush\")]",
+        )],
+    );
+    assert_eq!(output.status.code(), Some(2), "{output:?}");
+    assert!(
+        String::from_utf8(output.stderr)
+            .unwrap()
+            .contains("smart[0].order: unknown dependency namespace `absent`")
+    );
+}
+
+#[test]
+fn hud3_selection_priority_requires_declared_namespace() {
+    let output = pack_hud3(
+        "hud3_selection_priority_unknown_namespace",
+        &[(
+            "interface/main.ron",
+            "selection_priority: []",
+            "selection_priority: [\"absent:trooper\"]",
+        )],
+    );
+    assert_eq!(output.status.code(), Some(2), "{output:?}");
+    assert!(
+        String::from_utf8(output.stderr)
+            .unwrap()
+            .contains("selection_priority[0]: unknown dependency namespace `absent`")
+    );
+}
+
+#[test]
+fn hud3_unit_presentation_requires_declared_namespace() {
+    let output = pack_hud3(
+        "hud3_unit_presentation_unknown_namespace",
+        &[(
+            "interface/main.ron",
+            "units: {}",
+            "units: {\"absent:trooper\": (icon: Some(\"rush-icon\"), portrait: None, responses: {})}",
+        )],
+    );
+    assert_eq!(output.status.code(), Some(2), "{output:?}");
+    assert!(
+        String::from_utf8(output.stderr)
+            .unwrap()
+            .contains("units: unknown dependency namespace `absent`")
+    );
+}
+
+#[test]
+fn hud3_nested_balance_requires_declared_namespace() {
+    let output = pack_hud3(
+        "hud3_nested_balance_unknown_namespace",
+        &[(
+            "interface/main.ron",
+            "text: Literal(\"Hint\")",
+            "text: Bind(Format(\"{0}\", [Balance(\"absent:ore\")]))",
+        )],
+    );
+    assert_eq!(output.status.code(), Some(2), "{output:?}");
+    assert!(
+        String::from_utf8(output.stderr)
+            .unwrap()
+            .contains("root[2].widget.text: unknown dependency namespace `absent`")
+    );
+}
+
+#[test]
+fn hud3_balance_value_rejects_local_non_balance_content() {
+    let output = pack_hud3(
+        "hud3_balance_wrong_kind",
+        &[(
+            "interface/main.ron",
+            "text: Literal(\"Hint\")",
+            "text: Bind(Format(\"{0}\", [Balance(\"zeta:trooper\")]))",
+        )],
+    );
+    assert_eq!(output.status.code(), Some(2), "{output:?}");
+    assert!(
+        String::from_utf8(output.stderr)
+            .unwrap()
+            .contains("root[2].widget.text: unknown Balance resource `zeta:trooper`")
+    );
+}
+
+#[test]
+fn hud3_balance_list_source_requires_declared_namespace() {
+    let output = pack_hud3(
+        "hud3_balance_source_unknown_namespace",
+        &[(
+            "interface/main.ron",
+            "source: CommandCard",
+            "source: Balance(\"absent:ore\")",
+        )],
+    );
+    assert_eq!(output.status.code(), Some(2), "{output:?}");
+    assert!(
+        String::from_utf8(output.stderr)
+            .unwrap()
+            .contains("root[1].widget.source: unknown dependency namespace `absent`")
+    );
+}
+
+#[test]
+fn hud3_guide_layout_warnings_are_emitted_without_refusal() {
+    let guide = "guide: [(id: \"help\", title: \"Help\", body: \"Body\", widgets: [(id: \"small-text\", size: (w: Px(40.0), h: Px(12.0)), widget: Text(text: Literal(\"x\"), font: None, size: 10, colour: \"#ffffff\", align: Left, wrap: false)), (id: \"small-button\", size: (w: Px(20.0), h: Px(20.0)), widget: Button(icon: None, label: Some(Literal(\"OK\")), action: Input(\"rush\"), hotkey_label: false))])]";
+    let dir = hud3_edited_dir(
+        "hud3_guide_layout_warnings",
+        &[("interface/main.ron", "guide: []", guide)],
+    );
+    let output = Command::new(env!("CARGO_BIN_EXE_turts-pack"))
+        .arg(&dir)
+        .output()
+        .expect("turts-pack starts");
+    assert_eq!(output.status.code(), Some(0), "{output:?}");
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(
+        stderr.contains(
+            "guide[0].widgets[0].widget.size: text is 10 px; recommended minimum is 11 px"
+        ),
+        "{stderr}"
+    );
+    assert!(
+        stderr.contains(
+            "guide[0].widgets[1].size: button is 20 x 20 px; recommended minimum is 24 x 24 px"
+        ),
+        "{stderr}"
+    );
 }
 
 #[test]

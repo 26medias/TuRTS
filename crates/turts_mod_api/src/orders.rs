@@ -93,6 +93,6 @@ pub struct SmartOrder {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct OrderRulesDef {
-    pub queue_depth: u8,
+    pub queue_depth: u16,
     pub smart: Vec<SmartOrder>,
 }

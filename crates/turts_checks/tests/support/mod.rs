@@ -172,9 +172,6 @@ pub fn derive_tokens(root: &Path) -> Result<TokenCatalog, ScanError> {
             for action in &d.actions {
                 add(&mut c, &p, "input-action", &path, "name", &action.name);
             }
-            for action in &d.engine_overrides {
-                add(&mut c, &p, "engine-action", &path, "name", &action.name);
-            }
         }
         for (path, d) in a.assets().map_err(|e| pkgerr(&dir, e))? {
             for image in &d.images {
