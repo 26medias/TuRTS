@@ -176,7 +176,17 @@ fn t1x_copy_with_bevy_render_is_red() {
         copied_crate.join("Cargo.toml"),
     )
     .expect("copy package manifest");
-    std::fs::copy(root.join("Cargo.lock"), temp.join("Cargo.lock")).expect("copy lockfile");
+    std::fs::copy(root.join("Cargo.lock"), copied_crate.join("Cargo.lock"))
+        .expect("copy lockfile beside standalone workspace manifest");
+    assert!(
+        copied_crate.join("Cargo.lock").is_file(),
+        "seeded Cargo.lock must be beside the standalone workspace manifest"
+    );
+    assert!(
+        std::fs::read(copied_crate.join("Cargo.lock")).expect("read copied lockfile")
+            == std::fs::read(root.join("Cargo.lock")).expect("read source lockfile"),
+        "standalone workspace must start with the repository lockfile"
+    );
 
     let manifest = copied_crate.join("Cargo.toml");
     let text = format!(
@@ -196,6 +206,7 @@ fn t1x_copy_with_bevy_render_is_red() {
             "--manifest",
         ])
         .arg(&manifest)
+        .env("CARGO_NET_OFFLINE", "true")
         .current_dir(&root)
         .output()
         .expect("boundary script starts");
