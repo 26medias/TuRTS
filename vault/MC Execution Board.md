@@ -8,7 +8,7 @@ source: codex
 
 # MC execution board
 
-State: ACTIVE under O10 at main b29e3d8, design revision11. Integration and all open lanes are rebased. Task8 complete at merge461d105; all integration gates passed, lane removed. Task18 run23 owns the single compiler cache; Task19 run24 has test preparation ready. Build25/170. Wave1 CI: agents/T7 passed, browser has unchanged M2 economy timeout, native check still running. Main not modified by Codex.
+State: STOP for CEO/orchestrator ruling: revision11 PT1 step6 requires belt disable/re-enable, but retained M2/M3 SetEnabled excludes conveyors and no plan task owns the extension. Task8 complete and re-gated at461d105; T18 candidate0e83be5 and T19 test/drafts preserved, unmerged. Build25/170. All task processes stopped. Wave1 CI agents/T7 pass, unchanged M2 browser timeout, native check pending. Main untouched. [[Reports/2026-10-30 MC belt toggle contract stop]].
 
 Plan: `docs/superpowers/plans/2026-10-29-mc-player-control.md`.
 Design of record: `docs/superpowers/specs/2026-10-29-mc-player-control-design.md`, revision 10 at `488b3d3`.
@@ -70,8 +70,8 @@ CI trigger: `.github/workflows/ci.yml:2-5` runs pushes to main and pull requests
 | T3 | 1 | - | codex/mc-t3 | COMPLETE; merge aceef85; all integration gates pass; T7 115 frames |
 | T20 | 1 | - | codex/mc-t20 | COMPLETE; merge8e95e42; all integration gates0; task lane removed |
 | T8 | 2 | 2a, 3 | codex/mc-t8 | COMPLETE merge461d105; review0High/0Medium; integration G-RUST/G-QA/G-FROZEN0; lane removed |
-| T18 | 2 | 3 | codex/mc-t18 | ACTIVE run23: compiler handed over after T8 re-gate; semantic red first; HUD text-only, required order icons are assets |
-| T19 | 2 | 3 | codex/mc-t19 | ACTIVE run24 test preparation ready; no compiler until cache handoff |
+| T18 | 2 | 3 | codex/mc-t18 | STOP0e83be5 clean/unmerged; review0High/4Medium plus subject/fixture issues; belt contract ruling required |
+| T19 | 2 | 3 | codex/mc-t19 | STOP test/drafts retained; no Cargo; test SHA3fc474607e563d0d3d902b8d32592964cf68f691ab3291e6cb9f7f2fe0046acc |
 | T2b | 3 | 2a, 3, 18 | codex/mc-t2b | NOT STARTED |
 | T4 | 4 | 2b, 3 | codex/mc-t4 | NOT STARTED |
 | T9 | 4 | 1, 8, 2b | codex/mc-t9 | NOT STARTED |
@@ -213,9 +213,9 @@ One row per builder/reviewer dispatch or resumed agent work turn. Register befor
 | 20 | T19 build | mod-builder | gpt-6-luna | high | adfb662 | INTERRUPTED on global stop; untracked muster.rs and external package drafts retained/archived. No Cargo. |
 | 21 | T8 O10 continuation | technical-director | gpt-6-luna | high | 36a86ae | COMPLETE01621d0: O10 rename and lock-seed repair; fullgates0,861/0/18; semantic reds101/greens0, clean. |
 | 22 | T8 independent review | qa-lead | gpt-6.1-sol | high | 3d345f6 | PASS01621d0:0High/0Medium; lock-seed Medium closed, independent boundary13/no-content9 pass0; host-row plant101/restoredgreen0, clean. |
-| 23 | T18 build continuation | mod-builder | gpt-6-luna | high | f564f88 | ACTIVE test preparation complete; no Cargo/package changes until handoff; semantic red before implementation; stop on table-ID scan hit. |
-| 24 | T19 build continuation | mod-builder | gpt-6-luna | high | f564f88 | ACTIVE: test preparation ready, SHA04178491397c224e3d434192a32bd2000a9fea4705df2c7047181c1f56e92728; no Cargo; compiler and implementation wait handoff. |
-| 25 | T18 independent review | mod-runtime-engineer | gpt-6.1-sol | high | 0e83be5 | ACTIVE: initial review0High/4Medium authored-policy/coverage findings; builder repairs within active RUN23; independent compiler/plant waits handoff. |
+| 23 | T18 build continuation | mod-builder | gpt-6-luna | high | f564f88 | STOP0e83be5: focused4green, packs/scans0; fullgate staleHUD3fixture failed (outerRC notcaptured), GACC interrupted130; no repairs/plants after global stop. |
+| 24 | T19 build continuation | mod-builder | gpt-6-luna | high | f564f88 | STOP test prep finalSHA3fc474607e563d0d3d902b8d32592964cf68f691ab3291e6cb9f7f2fe0046acc; drafts preserved; no Cargo/scan/package implementation. |
+| 25 | T18 independent review | mod-runtime-engineer | gpt-6.1-sol | high | 0e83be5 | STOP noPASS:0High/4Medium plus lab/turret coverage concern; inherited belt contract conflict escalated; read-only only, no Cargo/plant. |
 
 ## 9. Preflight ledger and stop
 
@@ -344,3 +344,7 @@ Task18 candidate0e83be525b3e7cfa237957b349dc56db77d5affb committed;69owned files
 RUN25 source audit found four Medium issues on0e83be5: Forge Move lacks explicit Never fire policy; Cedar/Haul producer depots lack Produce/Cancel orders; Base/Cedar/Haul Gather rules follow generic Node movement; Forge lacks Node movement rule. Root checked data and design4.3/5.2, accepted repairs. Authored-policy checks have9named failures, exit1; resolver execution remains NOT TRACED until its owning task. All21PNG icons decode; fourHUDs text-only;22frozen package files byte-identical.
 
 Task18 workspace gate also found stale HUD3 test setup in no_content.rs:304+, which inserts duplicate order/input/assets exports into updated Acme. Root authorized only fixture construction repair, preserving scanner support code, token expectations and assertions; copied bindings/assets must remain valid. This is a dependent fixture update, not a scanner/schema/contract change. Builder records actual failure and repairs/tests within active RUN23; no extra dispatch. Evidence target/mc-evidence/t18-review/initial-findings.md and t18-builder/logs.
+
+## Belt toggle contract stop
+
+Revision11 PT1 step6 (:1693) requires belt pause/restart. Section5.3 (:532) and planTask2b (:341) retain existing M2/M3 SetEnabled, whose command_m3.rs:73-80 applicability excludes conveyors. No plan task assigns a conveyor toggle extension. Root verified primary evidence and stopped all lanes for CEO/orchestrator ruling, choosing no workaround. T18 source stayed0e83be5 clean; activeGACC interrupted130 with own child processes cleaned. T19 test/drafts archived/preserved; all compilers idle. Build25/170, no further dispatch before ruling. Full report [[Reports/2026-10-30 MC belt toggle contract stop]].
