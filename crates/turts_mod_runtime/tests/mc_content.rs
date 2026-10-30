@@ -201,6 +201,16 @@ fn order_rules_accessor_does_not_silently_skip_unknown_fields() {
 }
 
 #[test]
+fn order_rules_detection_ignores_quoted_and_commented_field_names() {
+    let archive = archive_with_order(
+        r#"(id:"rush",name:"Rush",behaviour:Attack,target:Unit,fire:None,engage:None,icon:"rush-icon",hotkey:"rush",cursor:None,card:None,units:[],description:"queue_depth: marker",bogus:true)
+            // smart: marker"#,
+    );
+    let error = archive.orders().unwrap_err().to_string();
+    assert!(error.contains("unknown field `bogus`"), "{error}");
+}
+
+#[test]
 fn locked_set_image_cap_uses_the_aggregate_decoded_png_bytes() {
     let first = image_archive("first", 9);
     let second = image_archive("second", 9);

@@ -269,7 +269,74 @@ impl PackageArchive {
 }
 
 fn looks_like_order_rules(text: &str) -> bool {
-    text.contains("queue_depth:") || text.contains("smart:")
+    let bytes = text.as_bytes();
+    let mut index = 0;
+    let mut depth = 0i32;
+    let mut fields = std::collections::BTreeSet::new();
+    while index < bytes.len() {
+        if bytes[index..].starts_with(b"//") {
+            index += 2;
+            while index < bytes.len() && bytes[index] != b'\n' {
+                index += 1;
+            }
+            continue;
+        }
+        if bytes[index..].starts_with(b"/*") {
+            index += 2;
+            while index + 1 < bytes.len() && &bytes[index..index + 2] != b"*/" {
+                index += 1;
+            }
+            index = (index + 2).min(bytes.len());
+            continue;
+        }
+        match bytes[index] {
+            b'"' => {
+                index += 1;
+                while index < bytes.len() {
+                    match bytes[index] {
+                        b'\\' => index = (index + 2).min(bytes.len()),
+                        b'"' => {
+                            index += 1;
+                            break;
+                        }
+                        _ => index += 1,
+                    }
+                }
+            }
+            b'(' | b'{' | b'[' => {
+                depth += 1;
+                index += 1;
+            }
+            b')' | b'}' | b']' => {
+                depth -= 1;
+                index += 1;
+            }
+            byte if depth == 1 && is_ron_identifier_start(byte) => {
+                let start = index;
+                index += 1;
+                while index < bytes.len() && is_ron_identifier_continue(bytes[index]) {
+                    index += 1;
+                }
+                let field_end = index;
+                while index < bytes.len() && bytes[index].is_ascii_whitespace() {
+                    index += 1;
+                }
+                if index < bytes.len() && bytes[index] == b':' {
+                    fields.insert(&text[start..field_end]);
+                }
+            }
+            _ => index += 1,
+        }
+    }
+    fields.contains("queue_depth") || fields.contains("smart")
+}
+
+fn is_ron_identifier_start(byte: u8) -> bool {
+    byte.is_ascii_alphabetic() || byte == b'_'
+}
+
+fn is_ron_identifier_continue(byte: u8) -> bool {
+    byte.is_ascii_alphanumeric() || byte == b'_'
 }
 
 /// Whether an archive path is relative, has no empty, `.` or `..` part, and has no backslash.
