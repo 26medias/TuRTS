@@ -23,3 +23,10 @@ The MC design (`docs/superpowers/specs/2026-10-29-mc-player-control-design.md`, 
 **Effects.** The MC registry row is `gated` (`docs/qa/specs.tsv`), so `completeness.py --enforce` checks MC in CI from this commit. Next: the MC plan (`producer`), gate 2 with the gate 1 panel plus `qa-lead`, then a Codex brief.
 
 Related: [[2026-10-29 QA0 calls K1-K6 and must tier]] · [[2026-10-28 Goal statement and full spec review]]
+
+**CEO decisions (2026-10-29, after gate 2): "1: Ok. 2: me. 3: ok".**
+
+- Budget: the plan total of about 212 agent runs is approved (106 task runs, 64 repair allowance, 42 spent at the gates). The Codex stop line is 170 build runs.
+- PT1 and PT2 tester: the CEO plays. The log records "not blind".
+- Base commit for `codex/mc-integration`: `main` at `a0a3076`.
+- Go for the Codex build given.

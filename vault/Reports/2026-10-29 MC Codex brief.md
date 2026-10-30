@@ -29,9 +29,9 @@ Follow `vault/M3 Execution Board.md` sections 1 to 3 and the plan "Execution con
 - Builder: the seat the plan "Budget" table names, Luna. Red first, then green.
 - Reviewer: the seat the "Budget" table names, Sol. Reads the diff, runs the tests and one plant, cites `path:line`.
 - Validator: `qa-lead` on the integration branch for tasks 21 to 24 and the plants.
-- Task 23 (PT1, PT2): the `player` agent through the harness `io` only, with the goals only and no read under `docs/` or `mods/`; and a person. The CEO names the person (someone who has not read the design); when the CEO plays, the log records "not blind". Stop and ask the CEO who plays before task 23 starts.
+- Task 23 (PT1, PT2): the `player` agent through the harness `io` only, with the goals only and no read under `docs/` or `mods/`; and a person. The CEO decided (2026-10-29): the CEO plays PT1 and PT2. The log records "not blind". Do not ask who plays; before task 23 starts, tell the CEO the page URL from `scripts/mc-browser.sh --serve-only` and wait.
 - State the model and the reasoning effort on each dispatch.
-- Budget: about 212 agent runs in all (106 task runs, 64 repair allowance, the gates already spent). Count every run on the board. Stop and report to the CEO at 170 build runs (106 + 64) before you spend more. A task that reaches twice its estimate stops and reports.
+- Budget: about 212 agent runs in all (106 task runs, 64 repair allowance, the gates already spent). The CEO approved this budget (2026-10-29). Count every run on the board. Stop and report to the CEO at 170 build runs (106 + 64) before you spend more. A task that reaches twice its estimate stops and reports.
 
 ## 4. Standing rules for every dispatch
 
