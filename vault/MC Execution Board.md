@@ -8,7 +8,7 @@ source: codex
 
 # MC execution board
 
-State: ACTIVE under O10 at mainb29e3d8/designrev11. Integration and open lanes are being rebased; resumeT8 with Effect::ShellAction, same fields/behavior, no forge/scanner changes. Future client shell file is client_shell.rs. Run21 registered for T8 continuation; build21/170. Wave1 draftPR2 CI browser failed, agents passed, check pending assessment; main not modified by Codex.
+State: ACTIVE under O10 at mainb29e3d8/designrev11. Integration and all open lanes are rebased. T8 run21 is active with Effect::ShellAction, same fields/behavior, no forge/scanner changes. Future client shell file is client_shell.rs. Build21/170. Wave1 draftPR2 CI browser has the unchanged M2 economy timeout; T7 and agents passed, check still running. Main not modified by Codex.
 
 Plan: `docs/superpowers/plans/2026-10-29-mc-player-control.md`.
 Design of record: `docs/superpowers/specs/2026-10-29-mc-player-control-design.md`, revision 10 at `488b3d3`.
@@ -211,7 +211,7 @@ One row per builder/reviewer dispatch or resumed agent work turn. Register befor
 | 18 | T8 build | technical-director | gpt-6-luna | high | Wave2 base | 91d6db7; T1X red101/green0, fmt/clippy/wasm0; full testsNoContentShellcollision101; STOP before G-QA/finalplant, clean. |
 | 19 | T18 build | mod-builder | gpt-6-luna | high | adfb662 | STOP under T8 ruling; API/package prep only, no edits/Cargo. Icon-assets file-list omission clarified by root; HUD stays text-only. |
 | 20 | T19 build | mod-builder | gpt-6-luna | high | adfb662 | INTERRUPTED on global stop; untracked muster.rs and external package drafts retained/archived. No Cargo. |
-| 21 | T8 O10 continuation | technical-director | gpt-6-luna | high | mainb29e3d8/rebasedT8 | REGISTERED: O10 rename only, preserve fields/data/scanner; red receipt retained; green/gates/plant and review next. |
+| 21 | T8 O10 continuation | technical-director | gpt-6-luna | high | 36a86ae | ACTIVE: O10 rename only, preserve fields/data/scanner; red receipt retained; green/gates/plant and review next. |
 
 ## 9. Preflight ledger and stop
 
@@ -320,3 +320,9 @@ Read-only CI watcher for already-running Wave1 run41097571682: unifiedexec sessi
 ## O10 release and rebase
 
 CEO relayed O10 at mainb29e3d8, designrevision11: Effect::ShellAction{action}; behavior/data/scanner unchanged; clientmoduleclient_shell.rs. This releases the Shell contract stop. Integration rebased with merges preserved; the sole work-log append conflict kept both mainO10 notes and all execution entries. Implementation paths are byte-identical to pre-rebaseintegration. Open lanes will be rebased onto this integration; T19 untracked test is backed up and must retain its SHA. Run21 T8 continuation registered. [[Decisions/2026-10-30 MC ruling O10]].
+
+Rebase verification: integrationf564f88, T8 36a86ae, T18/T19f564f88 all descend from b29e3d8. T8 implementation bytes are unchanged by rebase. T19 untracked test retains SHA cc73d25ad772faed177b128ae42a94ede038fe001ca0375b2fb937b1c238f8eb. Receipt: target/mc-evidence/o10-rebase/after.json in the main worktree.
+
+CI job124207191614 logs read: T7 oracle passed91frames; M2 economy failed with the unchanged E9-browser-base-economy 15000ms timeout, exit1. M3 controls and browser refutations were skipped after that failure. This is the existing failure assigned to Task21; its cause remains NOT TRACED. Agents passed; native check still runs. Receipt: target/mc-evidence/wave1-ci-browser-assessment.txt.
+
+Disk correction: earlier T8 commands omitted the required debug0/incremental0 overrides. Root archived fingerprints, a31384file inventory, process/source state, then removed the rebuildable debug output while no compiler was active (65653958328 apparentbytes). No source or evidence removed. Remaining release/wasm cache retained. All further Cargo commands must explicitly set CARGO_PROFILE_DEV_DEBUG=0, CARGO_PROFILE_TEST_DEBUG=0, CARGO_INCREMENTAL=0, CARGO_BUILD_JOBS=4. Receipt: target/mc-evidence/o10-cache-cleanup.
