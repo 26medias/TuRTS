@@ -2,6 +2,7 @@
         (target: Ground, needs: Movement, order: "cedar:order_move"),
         (target: OwnUnit, needs: Movement, order: "cedar:order_move"),
         (target: ForeignUnit, needs: Movement, order: "cedar:order_move"),
+        (target: ResourceNodeAccepted, needs: Gatherer, order: "cedar:order_gather"),
         (target: Node, needs: Movement, order: "cedar:order_move"),
-        (target: ResourceNodeAccepted, needs: Gatherer, order: "cedar:order_gather")
+        (target: Content, needs: Producer, order: "cedar:order_produce")
     ])

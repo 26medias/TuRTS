@@ -1,4 +1,5 @@
 use std::{
+    collections::BTreeSet,
     fs,
     path::{Path, PathBuf},
     process::Command,
@@ -6,8 +7,8 @@ use std::{
 };
 
 use turts_mod_api::{
-    ActionDef, AssetsDef, Behaviour, Binding, ContentCatalog, ImageAsset, InputMapDef, Manifest,
-    OrderRulesDef,
+    ActionDef, AssetsDef, Behaviour, Binding, Capability, ContentCatalog, FirePolicy, ImageAsset,
+    InputMapDef, Manifest, OrderRulesDef, SmartTarget,
 };
 use turts_mod_runtime::{archive::PackageArchive, pack::pack_dir};
 use turts_pack::load_package;
@@ -22,6 +23,14 @@ fn repo_root() -> PathBuf {
 
 fn package_dir(id: &str) -> PathBuf {
     repo_root().join("mods").join(id)
+}
+
+fn order_ref(package: &str, verb: &str) -> String {
+    format!("{package}:order_{verb}")
+}
+
+fn order_content_id(package: &str, verb: &str) -> turts_mod_api::ContentId {
+    turts_mod_api::ContentId::parse(&order_ref(package, verb)).expect("valid order id")
 }
 
 fn unique_temp_dir(name: &str) -> PathBuf {
@@ -297,6 +306,169 @@ fn a_new_order_binds_a_behaviour_by_data() {
         "the new order binds Move through package data"
     );
     fs::remove_dir_all(path).expect("remove data-defined order fixture");
+}
+
+#[test]
+fn forge_move_has_never_fire_policy() {
+    let archive = archive_from_dir(&package_dir("forge"));
+    let catalog = archive.content().expect("resolve Forge orders");
+    let move_order = catalog
+        .orders
+        .get(&order_content_id("forge", "move"))
+        .expect("Forge exposes its Move order");
+    assert_eq!(
+        move_order.fire,
+        Some(FirePolicy::Never),
+        "an explicit Move must not fire"
+    );
+}
+
+#[test]
+fn producers_have_produce_and_cancel_orders() {
+    let mut violations = Vec::new();
+    for package in ["base", "cedar", "haul"] {
+        let archive = archive_from_dir(&package_dir(package));
+        let catalog = archive
+            .content()
+            .unwrap_or_else(|error| panic!("resolve {package} catalog: {error}"));
+        let producer_units = catalog
+            .units
+            .values()
+            .filter(|unit| unit.producer.is_some())
+            .map(|unit| unit.id.to_string())
+            .collect::<BTreeSet<_>>();
+        if producer_units.is_empty() {
+            violations.push(format!("{package} has no producer"));
+        }
+        for (verb, behaviour) in [
+            ("produce", Behaviour::Produce),
+            ("cancel", Behaviour::CancelProduction),
+        ] {
+            let local_id = format!("order_{verb}");
+            let content_id = order_content_id(package, verb);
+            let Some(order) = catalog.orders.get(&content_id) else {
+                violations.push(format!("{package} producer package lacks {local_id}"));
+                continue;
+            };
+            assert_eq!(
+                order.behaviour, behaviour,
+                "{package}:{local_id} uses the approved behavior"
+            );
+            if !order.units.iter().any(|unit| producer_units.contains(unit)) {
+                violations.push(format!(
+                    "{package}:{local_id} is not available to a producer"
+                ));
+            }
+        }
+    }
+    assert!(
+        violations.is_empty(),
+        "producer orders cover every producer package: {violations:?}"
+    );
+}
+
+#[test]
+fn resource_nodes_choose_gather_before_generic_move() {
+    let mut violations = Vec::new();
+    for package in ["base", "cedar", "haul"] {
+        let archive = archive_from_dir(&package_dir(package));
+        let smart = archive
+            .order_rules()
+            .unwrap_or_else(|error| panic!("read {package} rules: {error}"))
+            .into_iter()
+            .flat_map(|(_, rules)| rules.smart)
+            .collect::<Vec<_>>();
+        let gather_index = smart.iter().position(|rule| {
+            rule.target == SmartTarget::ResourceNodeAccepted
+                && rule.needs == Capability::Gatherer
+                && rule.order == order_ref(package, "gather")
+        });
+        let generic_move_index = smart.iter().position(|rule| {
+            rule.target == SmartTarget::Node
+                && rule.needs == Capability::Movement
+                && rule.order == order_ref(package, "move")
+        });
+        match (gather_index, generic_move_index) {
+            (Some(gather), Some(move_order)) if gather < move_order => {}
+            (Some(_), Some(_)) => violations.push(format!(
+                "{package} puts generic Node movement before accepted-node gathering"
+            )),
+            (None, _) => violations.push(format!("{package} has no accepted-node Gather rule")),
+            (_, None) => violations.push(format!("{package} has no generic Node Move rule")),
+        }
+    }
+    assert!(
+        violations.is_empty(),
+        "smart rules prioritize accepted-node gathering: {violations:?}"
+    );
+}
+
+#[test]
+fn forge_smart_node_default_uses_move() {
+    let archive = archive_from_dir(&package_dir("forge"));
+    let smart = archive
+        .order_rules()
+        .expect("read Forge order rules")
+        .into_iter()
+        .flat_map(|(_, rules)| rules.smart)
+        .collect::<Vec<_>>();
+    assert!(
+        smart.iter().any(|rule| {
+            rule.target == SmartTarget::Node
+                && rule.needs == Capability::Movement
+                && rule.order == order_ref("forge", "move")
+        }),
+        "Forge routes an unmatched node to Move for a unit with movement"
+    );
+}
+
+#[test]
+fn forge_toggle_orders_cover_existing_toggleable_units() {
+    let archive = archive_from_dir(&package_dir("forge"));
+    let catalog = archive.content().expect("resolve Forge catalog");
+    let toggleable_units = catalog
+        .units
+        .values()
+        .filter(|unit| {
+            unit.extractor.is_some()
+                || unit.inserter.is_some()
+                || unit.machine.is_some()
+                || unit.research.is_some()
+                || unit.producer.is_some()
+                || unit.weapon.is_some()
+        })
+        .map(|unit| unit.id.to_string())
+        .collect::<BTreeSet<_>>();
+    let mut violations = Vec::new();
+    for verb in ["enable", "disable"] {
+        let local_id = format!("order_{verb}");
+        let content_id = order_content_id("forge", verb);
+        let Some(order) = catalog.orders.get(&content_id) else {
+            violations.push(format!("Forge does not export {local_id}"));
+            continue;
+        };
+        let expected_behaviour = if verb == "enable" {
+            Behaviour::SetEnabled(true)
+        } else {
+            Behaviour::SetEnabled(false)
+        };
+        if order.behaviour != expected_behaviour {
+            violations.push(format!(
+                "{local_id} has behavior {:?}, expected {expected_behaviour:?}",
+                order.behaviour
+            ));
+        }
+        let subjects = order.units.iter().cloned().collect::<BTreeSet<_>>();
+        if subjects != toggleable_units {
+            violations.push(format!(
+                "{local_id} subjects {subjects:?}, expected all M3-toggleable units {toggleable_units:?}"
+            ));
+        }
+    }
+    assert!(
+        violations.is_empty(),
+        "Forge toggle orders match M3 toggleability and exclude belts: {violations:?}"
+    );
 }
 
 const EMPTY_INTERFACE: &str = r##"(
