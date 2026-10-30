@@ -8,7 +8,7 @@ source: codex
 
 # MC execution board
 
-State: ACTIVE. CEO released the Firefox stop on 2026-10-30: "ignore firefox for now, continue". K11(a) stays on Chrome evidence; Firefox stays NOT TRACED. Finish supplementary P1 records, merge T1, then gate integration and continue wave1.
+State: ACTIVE. T1 andT2a are merged and fully re-gated; both task lanes were removed. T3 is implementing the full API/schema/validation contract with observed semantic reds. T20 completed read-only contract preparation and waits for the compiler slot before its clean-tree baseline. Firefox remains deferred under the CEO release; K11(a) stays on Chrome evidence.
 
 Plan: `docs/superpowers/plans/2026-10-29-mc-player-control.md`.
 Design of record: `docs/superpowers/specs/2026-10-29-mc-player-control-design.md`, revision 10 at `488b3d3`.
@@ -52,14 +52,14 @@ Frozen M2 SHA256: `bcbf72c2206251f635a7c7f5b6c8f573d69a5fc05a5bd77716e98ebfb08e3
 
 ## 4. Tasks
 
-24 numbered tasks; task 2 has two branches, for 25 lanes. T1 merged at8f612a3 after completion of supplementary Chrome receipts and CEO Firefox deferral. T2a is reviewed and awaits its task gate; T3 is in progress. T20 is not started.
+24 numbered tasks; task 2 has two branches, for 25 lanes. T1 merged at8f612a3 after completion of supplementary Chrome receipts and CEO Firefox deferral. T2a is complete; T3 is in progress. T20 is prepared for its clean-tree baseline.
 
 | Task | Wave | Needs | Branch | State |
 | --- | --- | --- | --- | --- |
 | T1 | 1 | - | codex/mc-t1 | COMPLETE; merge8f612a3; G-RUST/G-QA/G-FROZEN all0; lane removed |
-| T2a | 1 | - | codex/mc-t2a | REVIEW/GATE PASS e8f9e02; ready to merge |
+| T2a | 1 | - | codex/mc-t2a | COMPLETE; merge17286b1; all gates0; lane removed |
 | T3 | 1 | - | codex/mc-t3 | ACTIVE: API schema and validator |
-| T20 | 1 | - | codex/mc-t20 | NOT STARTED |
+| T20 | 1 | - | codex/mc-t20 | ACTIVE: read/draft; baseline trace waits for compiler slot |
 | T8 | 2 | 2a, 3 | codex/mc-t8 | NOT STARTED |
 | T18 | 2 | 3 | codex/mc-t18 | NOT STARTED |
 | T19 | 2 | 3 | codex/mc-t19 | NOT STARTED |
@@ -140,7 +140,7 @@ Tasks in one wave share no file, except the refutation registries (merge in task
 
 ## 7. Budget and seats
 
-CEO approved about 212 total runs. Build stop line: 170 (106 planned task runs plus 64 repairs). Gate estimate: 42 spent before this build. Build dispatches used: 6/170. Root preflight is recorded separately and is not a builder/reviewer dispatch. T1 estimate 3; stop at 6 task dispatches. Do not dispatch another run at a stop.
+CEO approved about 212 total runs. Build stop line: 170 (106 planned task runs plus 64 repairs). Gate estimate: 42 spent before this build. Build dispatches used: 7/170. Root preflight is recorded separately and is not a builder/reviewer dispatch. T1 estimate 3; stop at 6 task dispatches. Do not dispatch another run at a stop.
 
 One run is one agent dispatch (builder or reviewer). Count every run on the board.
 
@@ -194,6 +194,8 @@ One row per builder/reviewer dispatch or resumed agent work turn. Register befor
 
 | 6 | T3 build | mod-runtime-engineer | gpt-6-luna | high | 8f612a3 | Dispatched; schema/stub/test preparation; compiler slot after T2a gate. |
 
+| 7 | T20 build | qa-lead | gpt-6-luna | high | 17286b1 | Read-only contract preparation complete; no code or baseline run; waits for compiler slot. |
+
 ## 9. Preflight ledger and stop
 
 | Event | Evidence | Result |
@@ -238,3 +240,5 @@ Warm cache rule: only one full workspace compiler cache is kept. Root transfers 
 AfterT1 all ten required gate commands passed, frozen hash unchanged; source8f612a3. Logs: target/mc-evidence/after-t1/results.json. Removed the clean merged T1 worktree; no T1 build cache exists. Branch retained.
 
 T2a sourcee8f9e02: independent review PASS, plant red101/restored0, taskG-RUST/G-QA all0. Warm-cache relocation initially exposed a stale local net-protocol artifact: Clippy failed to find the newtypes despite correct committed source. Invalidating all workspace packages with cargo clean -p (keeping third-party dependencies) fixed this; fresh-local strictclippy/wasm/workspacetests/boundary/G-QA allpassed. No source change was needed. Preserve failed gate log as an artifact, not semantic-red evidence. Logs: target/mc-evidence/task-t2a andtask-t2a-fresh-local; reviewer target/mc-evidence/t2a-review/report.md. Future cache transfers invalidate localworkspacepackages before verification.
+
+T2a merged17286b1; after-t2a G-RUST/G-QA/G-FROZEN all0, workspace799/0/18, frozenhash unchanged. CleanmergedT2alane removed. Onecache moved toT3, tenlocalworkspace packages invalidated before fullslot release. T3 now ownsfullcompiler slot; T20 mayread/draftexternally but mustpreservecleanworktree forstep1 baseline untilslotrelease.
