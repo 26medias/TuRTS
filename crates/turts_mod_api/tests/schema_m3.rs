@@ -142,6 +142,10 @@ fn old_packages_omit_m3_defaults_when_serialized_and_nonempty_fields_remain() {
         production: vec![],
         recipes: vec!["recipes/shells.ron".into()],
         technologies: vec!["technologies/hardened.ron".into()],
+        orders: vec![],
+        interface: vec![],
+        input: vec![],
+        assets: vec![],
     })
     .unwrap();
     assert!(exports["recipes"].is_array());

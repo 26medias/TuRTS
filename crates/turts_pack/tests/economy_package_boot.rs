@@ -461,6 +461,10 @@ fn cedar_matches_the_public_ten_file_authoring_example() {
 
         recipes: Vec::new(),
         technologies: Vec::new(),
+        orders: Vec::new(),
+        interface: Vec::new(),
+        input: Vec::new(),
+        assets: Vec::new(),
     };
     assert_eq!(archive.manifest.exports, expected_exports);
     assert_eq!(

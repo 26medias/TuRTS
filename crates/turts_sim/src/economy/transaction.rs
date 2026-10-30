@@ -1805,6 +1805,7 @@ mod m3_transaction_contract_tests {
             production: BTreeMap::new(),
             recipes: BTreeMap::new(),
             technologies: BTreeMap::new(),
+            orders: BTreeMap::new(),
             source_files: BTreeMap::new(),
         };
         catalog.nodes.insert(

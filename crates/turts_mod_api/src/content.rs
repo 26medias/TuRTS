@@ -160,5 +160,6 @@ pub struct ContentCatalog {
     pub production: BTreeMap<ContentId, ResolvedProduction>,
     pub recipes: BTreeMap<ContentId, ResolvedRecipe>,
     pub technologies: BTreeMap<ContentId, ResolvedTechnology>,
+    pub orders: BTreeMap<ContentId, crate::orders::OrderDef>,
     pub source_files: BTreeMap<ContentId, String>,
 }

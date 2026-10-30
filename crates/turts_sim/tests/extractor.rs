@@ -62,6 +62,7 @@ fn extractor_runs_in_fixed_extract_set() {
         production: BTreeMap::new(),
         recipes: BTreeMap::new(),
         technologies: BTreeMap::new(),
+        orders: BTreeMap::new(),
         source_files: BTreeMap::new(),
     };
     let map = MapDef {

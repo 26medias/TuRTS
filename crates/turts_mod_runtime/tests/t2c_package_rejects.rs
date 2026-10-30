@@ -54,7 +54,7 @@ fn t2c_engine_api_mismatch() {
     );
     let error = refused(&bytes, "engine_api");
     assert!(error.message.contains("`^0.1`"), "{error}");
-    assert!(error.message.contains("0.2.2"), "{error}");
+    assert!(error.message.contains("0.2.3"), "{error}");
 }
 
 #[test]

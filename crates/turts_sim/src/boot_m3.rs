@@ -801,6 +801,7 @@ mod tests {
             production: BTreeMap::new(),
             recipes: BTreeMap::new(),
             technologies: BTreeMap::new(),
+            orders: BTreeMap::new(),
             source_files: BTreeMap::new(),
         };
         let nodes = SurfaceNodes(vec![
@@ -883,6 +884,7 @@ mod tests {
             production: BTreeMap::new(),
             recipes: BTreeMap::new(),
             technologies: BTreeMap::new(),
+            orders: BTreeMap::new(),
             source_files: BTreeMap::new(),
         }
     }
@@ -953,6 +955,7 @@ mod tests {
             production: BTreeMap::new(),
             recipes: BTreeMap::new(),
             technologies: BTreeMap::new(),
+            orders: BTreeMap::new(),
             source_files: BTreeMap::new(),
         }
     }

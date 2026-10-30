@@ -17,6 +17,7 @@ impl Default for ClientContent {
                 production: Default::default(),
                 recipes: Default::default(),
                 technologies: Default::default(),
+                orders: Default::default(),
                 source_files: Default::default(),
             },
             shapes: HashMap::new(),
@@ -33,6 +34,7 @@ impl ClientContent {
             production: Default::default(),
             recipes: Default::default(),
             technologies: Default::default(),
+            orders: Default::default(),
             source_files: Default::default(),
         };
         for archive in archives {
@@ -84,6 +86,15 @@ impl ClientContent {
             }
             for (id, value) in part.technologies {
                 if catalog.technologies.insert(id.clone(), value).is_some() {
+                    return Err(ModError::new(
+                        &id.package.0,
+                        "id",
+                        format!("duplicate content id `{id}`"),
+                    ));
+                }
+            }
+            for (id, value) in part.orders {
+                if catalog.orders.insert(id.clone(), value).is_some() {
                     return Err(ModError::new(
                         &id.package.0,
                         "id",

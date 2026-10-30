@@ -1,8 +1,10 @@
 //! Mod runtime: archive read, manifest and lockfile parse, hash, validation.
 
 pub mod archive;
+pub mod asset_headers;
 pub mod content;
 pub mod content_m3;
+pub mod content_mc_validation;
 pub mod hash;
 pub mod lock;
 pub mod manifest;

@@ -1,0 +1,1 @@
+(actions: [(name: "rush", default: [Key(code: "KeyR", mods: [])]), (name: "hold", default: [Key(code: "KeyH", mods: [])])], engine_overrides: [])
