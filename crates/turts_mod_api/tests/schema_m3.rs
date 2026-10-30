@@ -8,6 +8,7 @@ use turts_mod_api::schema::{
     Footprint, HealthDef, InserterDef, InventoryDef, MachineDef, MapDef, MapSize, Placement,
     RemovalDef, ResearchStationDef, SlotRelation, TargetFilter, UnitDef, WeaponDef, WorldPos,
 };
+use turts_mod_api::{AssetsDef, InputMapDef, InterfaceDef, OrderDef, OrderRulesDef};
 
 fn workspace_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
@@ -22,6 +23,13 @@ fn assert_package_ron_loads(path: &Path) {
         .is_some_and(|name| name == "manifest.ron")
     {
         "manifest".into()
+    } else if relative.file_name().is_some_and(|name| name == "rules.ron")
+        && relative
+            .components()
+            .nth(2)
+            .is_some_and(|part| part.as_os_str() == "orders")
+    {
+        "order_rules".into()
     } else {
         relative
             .components()
@@ -38,6 +46,11 @@ fn assert_package_ron_loads(path: &Path) {
         "resources" => ron::from_str::<turts_mod_api::schema::ResourceDef>(&text).map(|_| ()),
         "nodes" => ron::from_str::<turts_mod_api::schema::NodeDef>(&text).map(|_| ()),
         "production" => ron::from_str::<turts_mod_api::schema::ProductionDef>(&text).map(|_| ()),
+        "orders" => ron::from_str::<OrderDef>(&text).map(|_| ()),
+        "order_rules" => ron::from_str::<OrderRulesDef>(&text).map(|_| ()),
+        "input" => ron::from_str::<InputMapDef>(&text).map(|_| ()),
+        "interface" => ron::from_str::<InterfaceDef>(&text).map(|_| ()),
+        "assets" => ron::from_str::<AssetsDef>(&text).map(|_| ()),
         _ => panic!("unexpected package path {}", relative.display()),
     };
     parsed.unwrap_or_else(|error| panic!("{}: {error}", relative.display()));
