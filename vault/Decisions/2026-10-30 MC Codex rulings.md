@@ -42,3 +42,19 @@ Conflict: the Task18 packages now contain MC orders/input/interface/assets files
 Choice: add typed parsing for the new directories in this test helper: OrderDef, OrderRulesDef for orders/rules.ron, InputMapDef, InterfaceDef and AssetsDef. Keep the existing legacy parsing and all default-serialization assertions. Keep the unexpected-path failure for genuinely unknown paths. Run the named schema test red then green, and re-gate the repaired candidate. This is a dependent instrument/fixture update under brief section4.
 
 Alternative not taken: skip the new directories, delete old-package coverage, change package schemas or weaken unknown-field checks. Typed parsing preserves the intent and checks all package definitions now present.
+
+## C5: align dependent package metadata assertions with the planned minor bump
+
+Conflict: Task18 explicitly changes Acme/Base/Cedar/Haul from0.2.0 to0.3.0 and their engine requirement to^0.2.3, while older tests assert0.2.0 archive names/advertisements or mutate the old version anchor. Evidence: plan Task18:425; crates/turts_server/tests/unit_boot.rs:119-147; crates/turts_mod_runtime/tests/t2c_package_rejects.rs:99; crates/turts_pack/tests/economy_package_boot.rs:136,274,381,404; crates/turts_pack/tests/economy_variants.rs:436. The Cedar file/export enumeration at economy_package_boot.rs:405-470 likewise predates the mandated MC additions.
+
+Choice: capture named targeted failures, then update only dependent metadata expectations and edit anchors to the planned0.3.0/^0.2.3 values. Retain every economy/world invariant, original Cedar file and legacy export assertion; extend the explicit expected file/export set with approved MC files rather than drop coverage. Keep independent old-version fixture tests on their intended versions. Leave archive naming and advertisement mechanisms unchanged. This is an instrument/fixture alignment, not an acceptance-row or frozen-economy change.
+
+Alternative not taken: retain old package versions contrary to Task18, weaken semantic economy assertions, or broadly replace every0.2.0 fixture. All unrelated old-version compatibility tests remain intact.
+
+## C6: support MC exports in the existing M2 variant instrument
+
+Conflict: the existing variant instrument recognizes only pre-MC exports, so the Task18 packages' orders/input/interface/assets RON is treated as unexported. Evidence: crates/turts_checks/examples/m2_variants.rs:1109-1134 (exported/category), :1380-1391 (renamed manifest paths), and transform_export at:1395 onward. The package plans require these new exports while existing package/variant proofs must still run.
+
+Choice: first capture the actual existing generator/test failure on a Task18 package, then extend the instrument along its existing typed deterministic rewrite pattern for MC exports, paths and content references. Keep original economy/resource/rename semantics, all rejection guards, complete mapping provenance and deterministic output. Validate generated archives and cross-references, including renamed package/unit/order references and relevant asset/input/interface references. Do not change original package gameplay files or the frozen operation stream. Run the existing generator contract/variant tests and meaningful new MC-reference coverage before the full gate set.
+
+Alternative not taken: strip the new definitions from real packages, silently skip them in a supposedly complete rename, or remove variant proofs. Those choices would make the existing instrument incomplete or violate Task18 content requirements. This is an uncovered instrument extension under the nearest existing pattern, not a new game mechanism.
