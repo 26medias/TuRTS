@@ -137,7 +137,7 @@ pub enum Effect {
     Cursor {
         context: String,
     },
-    Shell {
+    ShellAction {
         action: String,
     },
 }
