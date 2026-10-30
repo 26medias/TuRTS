@@ -12,6 +12,9 @@ const EXPECTED_IO_KEYS = ["click", "drag", "key", "move", "wheel", "screenshot",
 const { createView } = require("./view.js");
 
 function fakePage(name, trace) {
+    const implementationKeyboard = { _pressedModifiers: new Set(), _pressedKeys: new Set() };
+    const clientPage = {};
+    clientPage._connection = { toImpl: (value) => value === clientPage ? { keyboard: implementationKeyboard, mouse: { _keyboard: implementationKeyboard } } : null };
     return {
         name,
         evaluate: async (fn, value) => {
@@ -24,13 +27,14 @@ function fakePage(name, trace) {
         },
         mouse: {
             move: async (...args) => trace.push([name, "move", ...args]),
-            down: async (...args) => trace.push([name, "down", ...args]),
-            up: async (...args) => trace.push([name, "up", ...args]),
+            down: async (...args) => trace.push([name, "down", ...args, [...implementationKeyboard._pressedModifiers]]),
+            up: async (...args) => trace.push([name, "up", ...args, [...implementationKeyboard._pressedModifiers]]),
             wheel: async (...args) => trace.push([name, "wheel", ...args]),
         },
         keyboard: {
-            down: async (...args) => trace.push([name, "keyboard-down", ...args]),
-            up: async (...args) => trace.push([name, "keyboard-up", ...args]),
+            _page: clientPage,
+            down: async (...args) => trace.push([name, "keyboard-down", ...args, [...implementationKeyboard._pressedModifiers]]),
+            up: async (...args) => trace.push([name, "keyboard-up", ...args, [...implementationKeyboard._pressedModifiers]]),
         },
         context: () => ({ newCDPSession: async () => ({
             send: async (...args) => trace.push([name, "cdp-send", ...args]),
@@ -160,6 +164,34 @@ test("CDP logical-key overrides preserve held modifiers per window", async () =>
         ["b", "keyDown", "KeyA", "q", 2], ["b", "keyUp", "KeyA", "q", 2],
         ["b", "keyUp", "ControlLeft", "Control", 0],
     ]);
+});
+
+test("CDP-held modifiers reach subsequent Playwright key and mouse calls", async () => {
+    const trace = [];
+    const { io, inputLog } = createDriverIo([fakePage("a", trace)]);
+    await io.key("Shift", [], { action: "down", key: "Shift" });
+    await io.key("KeyB");
+    await io.click(100, 100);
+    await io.drag(100, 100, 120, 120);
+    await io.key("Shift", [], { action: "up", key: "Shift" });
+    await io.key("KeyC");
+
+    const regularKeyEvents = trace.filter((row) => row[1] === "keyboard-down" || row[1] === "keyboard-up");
+    assert.deepEqual(regularKeyEvents.map((row) => [row[2], row[3]]), [
+        ["KeyB", ["Shift"]], ["KeyB", ["Shift"]], ["KeyC", []], ["KeyC", []],
+    ]);
+    const pointerPresses = trace.filter((row) => row[1] === "down");
+    assert.deepEqual(pointerPresses.map((row) => row.at(-1)), [["Shift"], ["Shift"]]);
+    assert.deepEqual(inputLog.map((entry) => entry.event_seq.length), [1, 2, 3, 10, 1, 2]);
+});
+
+test("modifier synchronization fails before dispatch on an unsupported backend", async () => {
+    const trace = [];
+    const page = fakePage("a", trace);
+    page.keyboard._page._connection.toImpl = () => ({ keyboard: {}, mouse: {} });
+    const { io } = createDriverIo([page]);
+    await assert.rejects(io.key("Shift", [], { action: "down", key: "Shift" }), /unsupported Playwright backend/);
+    assert.equal(trace.some((row) => row[1] === "cdp-send"), false);
 });
 
 test("view has only four read-only methods and refuses the order bridge", async () => {

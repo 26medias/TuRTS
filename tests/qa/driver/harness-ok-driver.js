@@ -32,4 +32,10 @@ exports.drive = async (io, params) => {
     await io.key("Shift", [], { action: "down" });
     await io.drag(60, 60, 90, 90);
     await io.key("Shift", [], { action: "up" });
+    await io.key("Shift", [], { action: "down", key: "Shift" });
+    await io.key("KeyB");
+    await io.click(100, 100);
+    await io.drag(100, 100, 120, 120);
+    await io.key("Shift", [], { action: "up", key: "Shift" });
+    await io.key("KeyC");
 };

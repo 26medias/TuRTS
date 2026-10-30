@@ -79,6 +79,7 @@ function createDriverIo(pages, { outputDir, inputLog = [], initialCursor = { x: 
                 if (action !== "press") {
                     const type = action === "down" ? "keydown" : "keyup";
                     if (opts && typeof opts.key === "string") {
+                        if (keyModifier) requirePlaywrightKeyboardState(page());
                         const session = await page().context().newCDPSession(page());
                         const codeForDispatch = keyModifier?.code || code;
                         const mask = action === "down"
@@ -90,10 +91,14 @@ function createDriverIo(pages, { outputDir, inputLog = [], initialCursor = { x: 
                         const codeForDispatch = keyModifier?.code || code;
                         await send(type, () => page().keyboard[action](codeForDispatch), keyExpectation(code));
                     }
-                    if (keyModifier) setModifierHeld(keyModifier, action === "down", windowIndex);
+                    if (keyModifier) {
+                        setModifierHeld(keyModifier, action === "down", windowIndex);
+                        if (opts && typeof opts.key === "string") syncPlaywrightModifierState(page(), heldModifiers[windowIndex]);
+                    }
                     return;
                 }
                 if (opts && typeof opts.key === "string") {
+                    if (modifiers.length > 0 || heldModifiers[windowIndex].size > 0) requirePlaywrightKeyboardState(page());
                     const session = await page().context().newCDPSession(page());
                     const temporary = [];
                     try {
@@ -103,6 +108,7 @@ function createDriverIo(pages, { outputDir, inputLog = [], initialCursor = { x: 
                             const mask = heldModifierMask(windowIndex) | physical.mask;
                             await send("keydown", () => session.send("Input.dispatchKeyEvent", { type: "keyDown", code: physical.code, key: physical.key, modifiers: mask }), { code: physical.code, key: physical.key });
                             setModifierHeld(physical, true, windowIndex);
+                            syncPlaywrightModifierState(page(), heldModifiers[windowIndex]);
                             temporary.push(physical);
                         }
                         const codeForDispatch = keyModifier?.code || code;
@@ -115,6 +121,7 @@ function createDriverIo(pages, { outputDir, inputLog = [], initialCursor = { x: 
                             const mask = heldModifierMask(windowIndex, physical.code);
                             await send("keyup", () => session.send("Input.dispatchKeyEvent", { type: "keyUp", code: physical.code, key: physical.key, modifiers: mask }), { code: physical.code, key: physical.key });
                             setModifierHeld(physical, false, windowIndex);
+                            syncPlaywrightModifierState(page(), heldModifiers[windowIndex]);
                         }
                         await session.detach();
                     }
@@ -226,6 +233,36 @@ function maybeModifierPhysicalKey(name) {
         Shift: { code: "ShiftLeft", key: "Shift", mask: 8 }, ShiftLeft: { code: "ShiftLeft", key: "Shift", mask: 8 }, ShiftRight: { code: "ShiftRight", key: "Shift", mask: 8 },
     };
     return keys[name] || null;
+}
+
+function requirePlaywrightKeyboardState(page) {
+    const clientPage = page?.keyboard?._page;
+    const connection = clientPage?._connection;
+    if (!clientPage || typeof connection?.toImpl !== "function") {
+        throw new Error("held CDP modifiers require the in-process Playwright page implementation bridge");
+    }
+    let implementationPage;
+    try { implementationPage = connection.toImpl(clientPage); }
+    catch (error) { throw new Error(`cannot resolve Playwright's in-process page implementation: ${error.message || String(error)}`); }
+    const keyboard = implementationPage?.keyboard;
+    const mouseKeyboard = implementationPage?.mouse?._keyboard;
+    if (!(keyboard?._pressedModifiers instanceof Set) || !(keyboard?._pressedKeys instanceof Set) || mouseKeyboard !== keyboard) {
+        throw new Error("unsupported Playwright backend: keyboard modifier sets and the page mouse keyboard link are required");
+    }
+    return keyboard;
+}
+
+function syncPlaywrightModifierState(page, held) {
+    const keyboard = requirePlaywrightKeyboardState(page);
+    const activeNames = new Set([...held.values()].map((physical) => physical.key));
+    for (const name of ["Alt", "Control", "Meta", "Shift"]) {
+        if (activeNames.has(name)) keyboard._pressedModifiers.add(name);
+        else keyboard._pressedModifiers.delete(name);
+    }
+    for (const code of ["AltLeft", "AltRight", "ControlLeft", "ControlRight", "MetaLeft", "MetaRight", "ShiftLeft", "ShiftRight"]) {
+        if (held.has(code)) keyboard._pressedKeys.add(code);
+        else keyboard._pressedKeys.delete(code);
+    }
 }
 
 module.exports = { createDriverIo, IO_KEYS };
