@@ -8,7 +8,7 @@ source: codex
 
 # MC execution board
 
-State: ACTIVE under O10 at main b29e3d8, design revision11. Integration and all open lanes are rebased. Task8 complete at merge461d105; all integration gates passed, lane removed. Task18 run23 owns the single compiler cache; Task19 run24 has test preparation ready. Build24/170. Wave1 CI: agents/T7 passed, browser has unchanged M2 economy timeout, native check still running. Main not modified by Codex.
+State: ACTIVE under O10 at main b29e3d8, design revision11. Integration and all open lanes are rebased. Task8 complete at merge461d105; all integration gates passed, lane removed. Task18 run23 owns the single compiler cache; Task19 run24 has test preparation ready. Build25/170. Wave1 CI: agents/T7 passed, browser has unchanged M2 economy timeout, native check still running. Main not modified by Codex.
 
 Plan: `docs/superpowers/plans/2026-10-29-mc-player-control.md`.
 Design of record: `docs/superpowers/specs/2026-10-29-mc-player-control-design.md`, revision 10 at `488b3d3`.
@@ -149,7 +149,7 @@ Tasks in one wave share no file, except the refutation registries (merge in task
 
 ## 7. Budget and seats
 
-CEO approved about 212 total runs. Build stop line: 170 (106 planned task runs plus 64 repairs). Gate estimate: 42 spent before this build. Build dispatches used: 24/170. Root preflight is recorded separately and is not a builder/reviewer dispatch. T1 estimate 3; stop at 6 task dispatches. Do not dispatch another run at a stop.
+CEO approved about 212 total runs. Build stop line: 170 (106 planned task runs plus 64 repairs). Gate estimate: 42 spent before this build. Build dispatches used: 25/170. Root preflight is recorded separately and is not a builder/reviewer dispatch. T1 estimate 3; stop at 6 task dispatches. Do not dispatch another run at a stop.
 
 One run is one agent dispatch (builder or reviewer). Count every run on the board.
 
@@ -215,6 +215,7 @@ One row per builder/reviewer dispatch or resumed agent work turn. Register befor
 | 22 | T8 independent review | qa-lead | gpt-6.1-sol | high | 3d345f6 | PASS01621d0:0High/0Medium; lock-seed Medium closed, independent boundary13/no-content9 pass0; host-row plant101/restoredgreen0, clean. |
 | 23 | T18 build continuation | mod-builder | gpt-6-luna | high | f564f88 | ACTIVE test preparation complete; no Cargo/package changes until handoff; semantic red before implementation; stop on table-ID scan hit. |
 | 24 | T19 build continuation | mod-builder | gpt-6-luna | high | f564f88 | ACTIVE: test preparation ready, SHA04178491397c224e3d434192a32bd2000a9fea4705df2c7047181c1f56e92728; no Cargo; compiler and implementation wait handoff. |
+| 25 | T18 independent review | mod-runtime-engineer | gpt-6.1-sol | high | 0e83be5 | REGISTERED: read-only source audit while builder gates run; compiler and plant wait explicit handoff; Task18 run3/cap4. |
 
 ## 9. Preflight ledger and stop
 
@@ -337,3 +338,5 @@ RUN22 confirmed Medium at boundary.rs179: scratch copied Cargo.lock to temp/Carg
 Task8 merged at461d10555ad3a34d2c87e81bb7bfcf7aa2496674 after final independent PASS01621d0,0High/0Medium. Root audited final eight logs and861/0/18 counts. Warm cache moved by rename to integration; workspace artifacts invalidated in all four profiles, exit0 each. Integration G-RUST/G-QA/G-FROZEN now running. Wave1 hosted assessment remains: agents/T7 pass, browser has unchanged known M2 economy timeout, native refutations still pending; no hosted success claimed. Local Task8 gates permit integration work while root continues reading that old run. Main untouched.
 
 Task8 integration re-gate complete: all10commands exit0 at source461d105 (intervening commits only vault documents). Frozen hash bcbf72c2206251f635a7c7f5b6c8f573d69a5fc05a5bd77716e98ebfb08e370b retained; forge cases, fixed point and M2 stream pass. Evidence target/mc-evidence/after-t8. Clean/merged lane archived and removed. Sole cache moved by rename to target/mc-t18, workspace outputs invalidated in all four profiles, all0. T18 source test retained; run23 compiler handoff authorized. [[Reports/2026-10-30 MC T8 review]].
+
+Task18 candidate0e83be525b3e7cfa237957b349dc56db77d5affb committed;69owned files. Original semantic red is the missing usable Move order101; other three tests already passed. All four now pass, all five package CLI packs exit0 and per-package scans green. Root read exact intermediate scan output: only order-name/fieldname Move and Stop hit, never a prescribed table ID. New descriptive labels fix that authoring error without ID/scanner/schema changes. RUN25 independent review registered; builder RUN23 retains compiler for full gates and plant.
