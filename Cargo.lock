@@ -8626,6 +8626,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "turts_interaction"
+version = "0.2.0"
+dependencies = [
+ "glam 0.33.12",
+ "turts_mod_api",
+ "turts_net_protocol",
+]
+
+[[package]]
 name = "turts_mod_api"
 version = "0.2.0"
 dependencies = [
