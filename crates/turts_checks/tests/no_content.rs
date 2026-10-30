@@ -296,6 +296,71 @@ fn e1_scans_forge_tokens_and_stray_ron_rules() {
     let _ = std::fs::remove_dir_all(&scratch);
 }
 
+#[test]
+fn hud3_order_id_is_a_content_token() {
+    let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let scratch = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("hud3_order_token");
+    let mods = scratch.join("mods");
+    let _ = std::fs::remove_dir_all(&scratch);
+    copy_tree(&repo.join("mods"), &mods);
+    let manifest_path = mods.join("acme/manifest.ron");
+    let manifest = std::fs::read_to_string(&manifest_path).unwrap();
+    let manifest = manifest
+        .replace("engine_api: \"^0.2\"", "engine_api: \"^0.2.3\"")
+        .replace(
+            "resources: [], nodes: [], production: [],",
+            "resources: [], nodes: [], production: [], orders: [\"orders/rush.ron\"], input: [\"input/bindings.ron\"], assets: [\"assets/main.ron\"],",
+        );
+    std::fs::write(&manifest_path, manifest).unwrap();
+    std::fs::create_dir_all(mods.join("acme/orders")).unwrap();
+    std::fs::create_dir_all(mods.join("acme/input")).unwrap();
+    std::fs::create_dir_all(mods.join("acme/assets")).unwrap();
+    std::fs::write(mods.join("acme/orders/rush.ron"), r#"(id:"rush",name:"Rush",behaviour:Move,target:Point,fire:Some(Never),engage:None,icon:"rocket",hotkey:"launch",cursor:None,card:None,units:["acme:scout"],description:"Move quickly")"#).unwrap();
+    std::fs::write(
+        mods.join("acme/input/bindings.ron"),
+        r#"(actions:[(name:"launch",default:[Key(code:"KeyL",mods:[])])],engine_overrides:[(name:"select",bindings:[Key(code:"KeyS",mods:[])])])"#,
+    )
+    .unwrap();
+    std::fs::write(mods.join("acme/assets/main.ron"), r#"(images:[(id:"rocket",path:"assets/rocket.png",nine_slice:None)],fonts:[],sounds:[],cursors:[])"#).unwrap();
+    let mut png = b"\x89PNG\r\n\x1a\n\0\0\0\rIHDR".to_vec();
+    png.extend_from_slice(&32u32.to_be_bytes());
+    png.extend_from_slice(&32u32.to_be_bytes());
+    png.extend_from_slice(&[8, 6, 0, 0, 0, 0, 0, 0]);
+    std::fs::write(mods.join("acme/assets/rocket.png"), png).unwrap();
+
+    let catalog = derive_tokens(&mods).expect("HUD3 fixture package derives");
+    let probe = scratch.join("rush_probe.rs");
+    std::fs::write(
+        &probe,
+        "fn probe() { let s = \"rush\"; let a = \"launch\"; let i = \"rocket\"; let e = \"select\"; }",
+    )
+    .unwrap();
+    let hits = scan_rust(std::slice::from_ref(&probe), &catalog).unwrap();
+    assert!(
+        hits.iter().any(|hit| {
+            hit.token == "rush"
+                && hit.package == "acme"
+                && hit.definition_path == "orders/rush.ron"
+                && hit.field == "id"
+        }),
+        "order id must be present in the content token scan: {hits:#?}"
+    );
+    assert!(
+        hits.iter()
+            .any(|hit| hit.token == "launch" && hit.package == "acme" && hit.field == "name"),
+        "input action name must be a scanned token: {hits:#?}"
+    );
+    assert!(
+        hits.iter()
+            .any(|hit| hit.token == "rocket" && hit.package == "acme" && hit.field == "id"),
+        "asset id must be a scanned token: {hits:#?}"
+    );
+    assert!(
+        !hits.iter().any(|hit| hit.token == "select"),
+        "engine override names must not be mod content tokens: {hits:#?}"
+    );
+}
+
 fn assert_forge_plant_is_found(name: &str, source: &str, token: &str, category: &str) {
     let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let catalog = derive_tokens(&repo.join("mods")).expect("all exported definitions derive");

@@ -1,0 +1,1 @@
+(id: "hold", name: "Hold", behaviour: Hold, target: None, fire: None, engage: None, icon: "rush-icon", hotkey: "hold", cursor: None, card: Some((row: 0, column: 1)), units: ["zeta:trooper"], description: "Hold position")

@@ -8,7 +8,9 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use turts_mod_api::ModError;
-use turts_mod_runtime::hash::sha256_hex;
+use turts_mod_runtime::{
+    archive::PackageArchive, content_mc_validation::layout_warnings, hash::sha256_hex,
+};
 use turts_pack::pack_checked;
 
 const USAGE: &str = "\
@@ -44,7 +46,10 @@ fn main() -> ExitCode {
             ExitCode::from(2)
         }
         [dir] => match run(Path::new(dir)) {
-            Ok(line) => {
+            Ok((line, warnings)) => {
+                for warning in warnings {
+                    eprintln!("{warning}");
+                }
                 println!("{line}");
                 ExitCode::SUCCESS
             }
@@ -60,8 +65,10 @@ fn main() -> ExitCode {
     }
 }
 
-fn run(dir: &Path) -> Result<String, ModError> {
+fn run(dir: &Path) -> Result<(String, Vec<String>), ModError> {
     let bytes = pack_checked(dir)?;
+    let archive = PackageArchive::parse(&bytes)?;
+    let warnings = layout_warnings(&archive)?;
     let file = archive_path(dir)?;
     fs::write(&file, &bytes).map_err(|error| {
         ModError::new(
@@ -70,7 +77,10 @@ fn run(dir: &Path) -> Result<String, ModError> {
             format!("cannot write `{}`: {error}", file.display()),
         )
     })?;
-    Ok(format!("{} {}", file.display(), sha256_hex(&bytes)))
+    Ok((
+        format!("{} {}", file.display(), sha256_hex(&bytes)),
+        warnings,
+    ))
 }
 
 /// `<dir name>.tar` next to `dir`.

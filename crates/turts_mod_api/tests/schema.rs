@@ -49,6 +49,19 @@ fn duplicate_balance_seed_across_slot_records() -> Result<MapDef, ron::error::Sp
 
 #[test]
 fn all_six_export_lists_and_explicit_options_are_required() {
+    let legacy = ron::from_str::<Exports>(&exports_without("not_a_field")).unwrap();
+    assert!(legacy.orders.is_empty());
+    assert!(legacy.interface.is_empty());
+    assert!(legacy.input.is_empty());
+    assert!(legacy.assets.is_empty());
+    let legacy_json = serde_json::to_value(legacy).unwrap();
+    for field in ["orders", "interface", "input", "assets"] {
+        assert!(
+            legacy_json.get(field).is_none(),
+            "empty {field} must be omitted"
+        );
+    }
+
     for field in [
         "units",
         "maps",
