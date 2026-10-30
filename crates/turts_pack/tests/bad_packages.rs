@@ -528,6 +528,38 @@ fn hud3_supported_ime_key_code_is_accepted() {
 }
 
 #[test]
+fn hud3_supported_bevy_key_codes_are_accepted() {
+    for code in [
+        "BrowserBack",
+        "WakeUp",
+        "Meta",
+        "Hyper",
+        "Turbo",
+        "Abort",
+        "Resume",
+        "Suspend",
+        "Again",
+        "Copy",
+        "Cut",
+        "Find",
+        "Open",
+        "Paste",
+        "Props",
+        "Select",
+        "Undo",
+        "Hiragana",
+        "Katakana",
+        "F35",
+    ] {
+        let output = pack_hud3(
+            &format!("hud3_supported_key_{code}"),
+            &[("input/main.ron", "KeyR", code)],
+        );
+        assert_eq!(output.status.code(), Some(0), "{code}: {output:?}");
+    }
+}
+
+#[test]
 fn hud3_reserved_browser_binding_ignores_modifier_order() {
     assert_hud3_refused(
         "hud3_reserved_binding_permuted",
@@ -654,6 +686,21 @@ fn hud3_order_rules_typo_reports_rules_schema() {
     assert_eq!(output.status.code(), Some(2), "{output:?}");
     let stderr = String::from_utf8(output.stderr).unwrap();
     assert!(stderr.contains("zeta/orders/rules.ron: unknown field `queue_dept`"));
+    assert!(stderr.contains("(allowed: queue_depth, smart)"));
+}
+
+#[test]
+fn hud3_order_rules_classification_allows_spacing_before_colon() {
+    let output = pack_hud3(
+        "hud3_order_rules_spaced_typo",
+        &[
+            ("orders/rules.ron", "queue_depth: 16", "queue_depth : 16"),
+            ("orders/rules.ron", "smart: []", "smart : [], typo: true"),
+        ],
+    );
+    assert_eq!(output.status.code(), Some(2), "{output:?}");
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(stderr.contains("zeta/orders/rules.ron: unknown field `typo`"));
     assert!(stderr.contains("(allowed: queue_depth, smart)"));
 }
 
