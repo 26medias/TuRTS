@@ -50,6 +50,13 @@ Task gate sets are the plan's Local gate commands. T1 requires G-QA. After each 
 
 Frozen M2 SHA256: `bcbf72c2206251f635a7c7f5b6c8f573d69a5fc05a5bd77716e98ebfb08e370b`. Keep forge fixed point and refutation plants. Known browser failure: M2 browser proof; trace in T20, repair in owner task/T21. Current integration CI: NOT TRACED; no wave has completed and no push was made. T1 merged at8f612a3 after the CEO release; integration re-gate passed all commands. No wave is complete yet.
 
+## Known red window
+
+| Evidence | Current result | Cause and owner |
+| --- | --- | --- |
+| Historical CI 40960227409 | E9-browser-base-economy times out after 15 s. Server completed production at tick175; captured client stayed at tick87. | Underlying cause NOT TRACED. Historical artifact and log retained under target/mc-evidence/t20-builder. |
+| T20 clean local baseline at22a4600 | Selection, economy and recovery pass; E9-browser-base-public-convergence fails its shared-tick public-projection assertion (tests/browser/m2.js:430-444), exit=1. | Investigating hidden-page suspension as a tool hypothesis. No engine owner assigned yet. Task20 must repair a proved harness/tool cause; otherwise record the proved owner. |
+
 ## 4. Tasks
 
 24 numbered tasks; task 2 has two branches, for 25 lanes. T1 merged at8f612a3 after completion of supplementary Chrome receipts and CEO Firefox deferral. T2a is complete; T3 is in progress. T20 is prepared for its clean-tree baseline.
