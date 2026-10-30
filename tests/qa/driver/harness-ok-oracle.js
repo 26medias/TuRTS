@@ -11,12 +11,13 @@ exports.judge = async (view, params) => {
     if (width !== params.viewport.width || height !== params.viewport.height) throw new Error(`CSS screenshot dimensions were ${width}x${height}`);
 
     const calls = view.inputLog();
-    const expected = ["click", "drag", "key", "move", "wheel", "screenshot", "save", "wait", "reload", "use", "use", "key", "use", "key", "key", "key", "key", "use", "key", "key", "key", "key", "key", "use", "click", "key", "key", "drag", "key"];
+    const expected = ["click", "drag", "key", "move", "wheel", "screenshot", "save", "wait", "reload", "use", "use", "key", "use", "key", "key", "key", "key", "use", "key", "key", "key", "key", "key", "use", "click", "key", "key", "drag", "key", "key", "key", "click", "drag", "key", "key"];
     if (calls.map((entry) => entry.call).join(",") !== expected.join(",")) throw new Error("input log lost call order");
     const expectedSeq = [
         "1,2,3", "4,5,6,7,8,9,10,11,12,13,14", "15,16", "17", "18", "", "", "", "", "", "", "1,2", "",
         "19", "20,21", "22", "23", "", "3,4", "5", "6,7,8,9", "10,11", "12", "", "24,25,26", "27", "28",
-        "29,30,31,32,33,34,35,36,37,38,39", "40",
+        "29,30,31,32,33,34,35,36,37,38,39", "40", "41", "42,43", "44,45,46",
+        "47,48,49,50,51,52,53,54,55,56", "57", "58,59",
     ];
     if (calls.map((entry) => entry.event_seq.join(",")).join(";") !== expectedSeq.join(";")) throw new Error("input event sequences differ");
     if (calls.some((entry) => !Number.isFinite(entry.wall_time_ms) || !Array.isArray(entry.args))) throw new Error("input log lacks call arguments or wall times");
@@ -46,6 +47,9 @@ exports.judge = async (view, params) => {
     if (calls[22].actual_events.some((event) => event.ctrl_key || event.shift_key)) throw new Error("modifier release did not restore an unmodified state");
     if (shiftHeld(calls[24]).some((value) => !value) || shiftHeld(calls[27]).some((value) => !value)) throw new Error("Shift-held click or drag lost its modifier");
     if (shiftHeld(calls[25]).some(Boolean) || shiftHeld(calls[28]).some(Boolean)) throw new Error("Shift remained active after release");
+    if (shiftHeld(calls[29]).some((value) => !value) || shiftHeld(calls[30]).some((value) => !value)) throw new Error("CDP-held Shift did not reach a subsequent Playwright key");
+    if (shiftHeld(calls[31]).some((value) => !value) || shiftHeld(calls[32]).some((value) => !value)) throw new Error("CDP-held Shift did not reach subsequent Playwright click and drag");
+    if (shiftHeld(calls[33]).some(Boolean) || shiftHeld(calls[34]).some(Boolean)) throw new Error("CDP Shift release did not restore an unmodified Playwright state");
 
     const args = [
         calls[0].args.join(",") === "20,30,left",
@@ -63,6 +67,12 @@ exports.judge = async (view, params) => {
         calls[22].args[0] === "Control" && calls[22].args[2].action === "up",
         calls[24].args.join(",") === "70,70,left",
         calls[27].args.join(",") === "60,60,90,90,left",
+        calls[29].args[0] === "Shift" && calls[29].args[2].key === "Shift",
+        calls[30].args[0] === "KeyB",
+        calls[31].args.join(",") === "100,100,left",
+        calls[32].args.join(",") === "100,100,120,120,left",
+        calls[33].args[2].key === "Shift",
+        calls[34].args[0] === "KeyC",
     ];
     if (args.some((ok) => !ok)) throw new Error("input log lost arguments");
     let refused = false;
