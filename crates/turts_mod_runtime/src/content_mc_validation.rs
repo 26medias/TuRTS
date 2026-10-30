@@ -39,6 +39,16 @@ struct ImageInfo {
     height: u32,
 }
 
+struct WidgetValidation<'a> {
+    package: &'a PackageId,
+    file: &'a str,
+    images: &'a BTreeSet<&'a str>,
+    fonts: &'a BTreeSet<&'a str>,
+    orders: &'a BTreeMap<ContentId, (&'a str, &'a OrderDef)>,
+    actions: &'a BTreeSet<&'a str>,
+    balance_ids: &'a BTreeSet<ContentId>,
+}
+
 /// Parse and validate all API 0.2.3 content exported by one archive.
 pub(crate) fn validate_mc(archive: &PackageArchive) -> Result<ParsedMcContent, ModError> {
     let orders = archive.orders()?;
@@ -538,20 +548,21 @@ pub(crate) fn validate_mc(archive: &PackageArchive) -> Result<ParsedMcContent, M
             ));
         }
         let mut widget_ids = BTreeSet::new();
+        let widget_validation = WidgetValidation {
+            package: &package,
+            file,
+            images: &image_ids,
+            fonts: &font_ids,
+            orders: &order_ids,
+            actions: &actions,
+            balance_ids: &balance_ids,
+        };
         for (index, widget) in interface.root.iter().enumerate() {
             validate_widget(
-                &package,
-                file,
+                &widget_validation,
                 &format!("root[{index}]"),
                 widget,
                 &mut widget_ids,
-                &image_ids,
-                &font_ids,
-                &sound_ids,
-                &order_ids,
-                &actions,
-                &unit_ids,
-                &balance_ids,
             )?;
         }
         let mut alert_ids = BTreeSet::new();
@@ -616,18 +627,10 @@ pub(crate) fn validate_mc(archive: &PackageArchive) -> Result<ParsedMcContent, M
             let mut page_widget_ids = BTreeSet::new();
             for (widget_index, widget) in page.widgets.iter().enumerate() {
                 validate_widget(
-                    &package,
-                    file,
+                    &widget_validation,
                     &format!("guide[{page_index}].widgets[{widget_index}]"),
                     widget,
                     &mut page_widget_ids,
-                    &image_ids,
-                    &font_ids,
-                    &sound_ids,
-                    &order_ids,
-                    &actions,
-                    &unit_ids,
-                    &balance_ids,
                 )?;
             }
         }
@@ -870,19 +873,18 @@ fn collect_layout_warnings(
 }
 
 fn validate_widget(
-    package: &PackageId,
-    file: &str,
+    context: &WidgetValidation<'_>,
     path: &str,
     widget: &turts_mod_api::Widget,
     ids: &mut BTreeSet<String>,
-    images: &BTreeSet<&str>,
-    fonts: &BTreeSet<&str>,
-    sounds: &BTreeSet<&str>,
-    orders: &BTreeMap<ContentId, (&str, &OrderDef)>,
-    actions: &BTreeSet<&str>,
-    unit_ids: &BTreeSet<ContentId>,
-    balance_ids: &BTreeSet<ContentId>,
 ) -> Result<(), ModError> {
+    let package = context.package;
+    let file = context.file;
+    let images = context.images;
+    let fonts = context.fonts;
+    let orders = context.orders;
+    let actions = context.actions;
+    let balance_ids = context.balance_ids;
     if !ids.insert(widget.id.clone()) {
         return Err(error(
             package,
@@ -907,18 +909,10 @@ fn validate_widget(
             }
             for (index, child) in children.iter().enumerate() {
                 validate_widget(
-                    package,
-                    file,
+                    context,
                     &format!("{path}.widget.children[{index}]"),
                     child,
                     ids,
-                    images,
-                    fonts,
-                    sounds,
-                    orders,
-                    actions,
-                    unit_ids,
-                    balance_ids,
                 )?;
             }
         }
@@ -1030,20 +1024,7 @@ fn validate_widget(
                 source,
                 balance_ids,
             )?;
-            validate_widget(
-                package,
-                file,
-                &format!("{path}.item"),
-                item,
-                &mut BTreeSet::new(),
-                images,
-                fonts,
-                sounds,
-                orders,
-                actions,
-                unit_ids,
-                balance_ids,
-            )?;
+            validate_widget(context, &format!("{path}.item"), item, &mut BTreeSet::new())?;
         }
         Primitive::Tooltip { value } => validate_value(
             package,
