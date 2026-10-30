@@ -5,3 +5,4 @@
 - [M1 verify 2026-10-26](m1-verify-2026-10-26.md) — gate green on 548e7ed; five plants green then red after 9cc0972; still green: square-map axis swap, no-camera scene
 - [QA0 design 2026-10-29](qa0-design-2026-10-29.md) — library rule inverted; naive schema dispatch accepts duplicates; 3 parse sites need resolve
 - [QA0 plan 2026-10-29](qa0-plan-2026-10-29.md) — pinned typo texts; dr_model3 exits 0 always; SC2 no red under O1; turts-pack writes tar beside dir
+- [MC plan gate 2](mc-plan-gate2-2026-10-29.md) — DET1 wall_ns; ledger 0 breaks dr6 self-test; CI skips browser steps; io.page bypass
