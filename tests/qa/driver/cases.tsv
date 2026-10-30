@@ -45,3 +45,4 @@ file	literal-process-binding.js	DR2,A4
 dir	dirs/node-modules-excluded	-
 file	template-bridge.js	DR2,A1
 file	template-comment-bridge.js	DR2,A1
+file	harness-sample.js	-
