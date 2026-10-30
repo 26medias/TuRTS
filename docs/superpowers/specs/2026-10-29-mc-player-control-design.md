@@ -1,6 +1,6 @@
 # MC — Player control and client foundation: design
 
-Date: 2026-10-29. Revision 11. Status: DRAFT, passed gate 1 (2026-10-29): spec-rigour-reviewer,
+Date: 2026-10-29. Revision 12. Status: DRAFT, passed gate 1 (2026-10-29): spec-rigour-reviewer,
 technical-director, bevy-rendering-engineer, player, simulation-core-engineer; three repair
 passes. CEO decisions (2026-10-29): K1 to K27 as recommended (K11 stays conditional on probe P1),
 budget option 1 (the full design, about 184 runs); K20 applied in revision 5 (section 17.2).
@@ -12,6 +12,7 @@ rules. Revision 9 (re-check 1): the frames record carries the wall time and the 
 Revision 10 (re-check 2): frames with input are kept until the oracle reads them.
 Revision 11 (2026-10-30, build ruling O10): the effect `Shell` is `ShellAction`; the client shell module is
 `client_shell.rs`. The `forge` resource `shell` makes the token `shell` and `Shell` content names.
+Revision 12 (2026-10-30, build ruling O11): PT1 step 6 disables the Shell Press, not a belt piece.
 Author seat: `ux-designer` (D65, D66, D67, client side of D70; Second on D68).
 Source of record: `RTS-Engine-Project-Specifications.md` version 0.8 (cited as S:line).
 Other sources: the QA0 design `docs/superpowers/specs/2026-10-29-qa0-instrument-design.md`
@@ -1690,8 +1691,11 @@ range at the start, and it is destroyed before window B joins.
 5. A click on the Proving Lab: the info panel shows its name and the shell count. While the lab
    holds fewer than 10 shells, the research entry is disabled, and its tooltip says
    "Needs 10 Shell (n/10)" and "R".
-6. The tester selects a belt piece and disables it (D or the button). The belt stops; within 10 s
-   an alert line says that an arm loader waits, with a sound. Enable (E) starts the items again.
+6. The tester selects the Shell Press and disables it (D or the button). The press stops; its
+   input fills (6 ore at 2 items per second from the arm loader, at most 3 s); the arm loader
+   then waits, and after 5 s (`InserterWaiting(5)`) an alert line says that an arm loader waits,
+   with a sound: within 10 s of the disable. Enable (E) starts the press again and the loader
+   moves. (Revision 12, ruling O11: a belt is not toggleable, `command_m3.rs:73-80`, kept from M3.)
 7. The alert line "Research ready" is in the alert list. It fires when the lab can start the
    research, or at join if it already can, whatever the selection is. The tester starts the
    research (R or the button). The production queue shows a bar and the seconds left.
