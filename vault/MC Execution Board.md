@@ -8,7 +8,7 @@ source: codex
 
 # MC execution board
 
-State: STOP for CEO/orchestrator ruling: revision11 PT1 step6 requires belt disable/re-enable, but retained M2/M3 SetEnabled excludes conveyors and no plan task owns the extension. Task8 complete and re-gated at461d105; T18 candidate0e83be5 and T19 test/drafts preserved, unmerged. Build25/170. All task processes stopped. Wave1 CI agents/T7 pass, unchanged M2 browser timeout, native check pending. Main untouched. [[Reports/2026-10-30 MC belt toggle contract stop]].
+State: ACTIVE under CEO authority c3f09d0 and O11/design revision12. Integration and open lanes rebased. PT1 uses the Shell Press; computed timing NOT TRACED. C1 repairs HUD3 fixture; C2 repairs Task18 policy/coverage; C3 continues its overrun within hard8. Run26 registered; build26/170. Wave1 native check and agents passed; known browser M2 timeout remains. Main untouched.
 
 Plan: `docs/superpowers/plans/2026-10-29-mc-player-control.md`.
 Design of record: `docs/superpowers/specs/2026-10-29-mc-player-control-design.md`, revision 10 at `488b3d3`.
@@ -33,7 +33,7 @@ User workspace instructions take precedence over the brief's inherited role-file
 
 ## 2. Standing rules
 
-- Design revision 11 at b29e3d8 wins over the plan; O10 requires ShellAction and client_shell.rs. Report every conflict; stop on a task step that contradicts it or the product spec.
+- Design revision12 at63788d7, included by main c3f09d0, wins over the plan. O10 requires ShellAction/client_shell.rs; O11 uses the Shell Press for PT1 step6. Apply the brief section4 decision rights and record each Codex ruling C<n> on this board and in the rulings note.
 - K1 to K27 stand as recommended. K11(a) is retained on Chrome evidence under the CEO Firefox deferral. Full design; no scope cut without CEO.
 - Each task branch starts from integration after all Needs merge; one worktree and target per lane. Build binaries one at a time. Remove the lane and its target only after merge.
 - Red must compile and fail semantically. Show the command and `; echo exit=$?`. Do not pipe away output before the exit code.
@@ -41,7 +41,8 @@ User workspace instructions take precedence over the brief's inherited role-file
 - Stage explicit paths. Vault-only commits use [skip ci]. End each commit with `Co-Authored-By: Codex <noreply@openai.com>`.
 - Verify path:line. Mark absent evidence NOT TRACED. Use ASD-STE100 prose and four spaces per indent.
 - Do not edit the design, product spec or Claude configuration. Leave the plan's Doc updates section to its owner.
-- Stop for P1 red, Firefox absent after at most 10 minutes outside the sandbox, frozen value change, design/spec conflict, suspect Decided item, task 18 content id collision, plant retirement without a decision, budget limit, or twice a task estimate.
+- Decide listed name collisions, instrument/fixture details, uncovered steps, same-shape mechanism substitutions, wave/cache layout, Medium-or-lower findings and overruns above twice the estimate. Rename the engine side for a collision; never rename protected Forge/Muster content. Repair and recheck every High.
+- Stop only for required frozen-value change; suspect Decided spec item or K call; a player-visible design change (new key, removed step or changed acceptance row); global170 or task4x estimate; Task23 URL/human play; plant retirement; or main merge. See brief section4:47-55. Do not edit design/spec or choose protected content changes.
 - Before task 23, send the CEO the serve-only URL and wait. Tester identity is decided: CEO, not blind.
 
 ## 3. Gates and CI
@@ -70,8 +71,8 @@ CI trigger: `.github/workflows/ci.yml:2-5` runs pushes to main and pull requests
 | T3 | 1 | - | codex/mc-t3 | COMPLETE; merge aceef85; all integration gates pass; T7 115 frames |
 | T20 | 1 | - | codex/mc-t20 | COMPLETE; merge8e95e42; all integration gates0; task lane removed |
 | T8 | 2 | 2a, 3 | codex/mc-t8 | COMPLETE merge461d105; review0High/0Medium; integration G-RUST/G-QA/G-FROZEN0; lane removed |
-| T18 | 2 | 3 | codex/mc-t18 | STOP0e83be5 clean/unmerged; review0High/4Medium plus subject/fixture issues; belt contract ruling required |
-| T19 | 2 | 3 | codex/mc-t19 | STOP test/drafts retained; no Cargo; test SHA3fc474607e563d0d3d902b8d32592964cf68f691ab3291e6cb9f7f2fe0046acc |
+| T18 | 2 | 3 | codex/mc-t18 | ACTIVE C1/C2 repair; rebasedc244c0a; run26, C3 overrun allowed, hard8 |
+| T19 | 2 | 3 | codex/mc-t19 | READY for compiler after T18; test/drafts preserved; no new run yet |
 | T2b | 3 | 2a, 3, 18 | codex/mc-t2b | NOT STARTED |
 | T4 | 4 | 2b, 3 | codex/mc-t4 | NOT STARTED |
 | T9 | 4 | 1, 8, 2b | codex/mc-t9 | NOT STARTED |
@@ -149,7 +150,7 @@ Tasks in one wave share no file, except the refutation registries (merge in task
 
 ## 7. Budget and seats
 
-CEO approved about 212 total runs. Build stop line: 170 (106 planned task runs plus 64 repairs). Gate estimate: 42 spent before this build. Build dispatches used: 25/170. Root preflight is recorded separately and is not a builder/reviewer dispatch. T1 estimate 3; stop at 6 task dispatches. Do not dispatch another run at a stop.
+CEO approved about 212 total runs. Build stop line: 170 (106 planned task runs plus 64 repairs). Gate estimate: 42 spent before this build. Build dispatches used: 26/170. Root preflight is recorded separately and is not a builder/reviewer dispatch. Twice a task estimate requires a recorded continuation decision; four times is a hard stop. T18 estimate2: soft4, hard8. No dispatch at global170 or a task hard limit.
 
 One run is one agent dispatch (builder or reviewer). Count every run on the board.
 
@@ -216,6 +217,7 @@ One row per builder/reviewer dispatch or resumed agent work turn. Register befor
 | 23 | T18 build continuation | mod-builder | gpt-6-luna | high | f564f88 | STOP0e83be5: focused4green, packs/scans0; fullgate staleHUD3fixture failed (outerRC notcaptured), GACC interrupted130; no repairs/plants after global stop. |
 | 24 | T19 build continuation | mod-builder | gpt-6-luna | high | f564f88 | STOP test prep finalSHA3fc474607e563d0d3d902b8d32592964cf68f691ab3291e6cb9f7f2fe0046acc; drafts preserved; no Cargo/scan/package implementation. |
 | 25 | T18 independent review | mod-runtime-engineer | gpt-6.1-sol | high | 0e83be5 | STOP noPASS:0High/4Medium plus lab/turret coverage concern; inherited belt contract conflict escalated; read-only only, no Cargo/plant. |
+| 26 | T18 C1/C2 repair | mod-builder | gpt-6-luna | high | c244c0a | REGISTERED: repair fixture/policy coverage under C1/C2; C3 allows task run4/8; global26/170. |
 
 ## 9. Preflight ledger and stop
 
@@ -348,3 +350,9 @@ Task18 workspace gate also found stale HUD3 test setup in no_content.rs:304+, wh
 ## Belt toggle contract stop
 
 Revision11 PT1 step6 (:1693) requires belt pause/restart. Section5.3 (:532) and planTask2b (:341) retain existing M2/M3 SetEnabled, whose command_m3.rs:73-80 applicability excludes conveyors. No plan task assigns a conveyor toggle extension. Root verified primary evidence and stopped all lanes for CEO/orchestrator ruling, choosing no workaround. T18 source stayed0e83be5 clean; activeGACC interrupted130 with own child processes cleaned. T19 test/drafts archived/preserved; all compilers idle. Build25/170, no further dispatch before ruling. Full report [[Reports/2026-10-30 MC belt toggle contract stop]].
+
+## Authority update and Codex rulings
+
+CEO main c3f09d0 applied. O11 at63788d7/design12 already changes PT1 step6 to Shell Press, same D/E, alert and timing; computed8s remains NOT TRACED until PT1. Integration rebased with merge topology retained; one work-log conflict kept all main and execution entries. Open T18/T19 lanes rebased; implementation bytes and untracked test preserved (receipt target/mc-evidence/c3-authority-rebase/after.json). Wave1 CI41097571682 now check=success, agents=success, browser=known unchanged M2 economy timeout.
+
+C1: repair stale HUD3 fixture construction only, retain scanner and token assertions. C2: repair all Task18 Medium policy/producer/subject coverage findings before merge, with semantic tests. C3: continue Task18 past soft4 with bounded repair/recheck; hard8/global170 remain. Conflict, evidence and alternatives are in [[Decisions/2026-10-30 MC Codex rulings]]. These rulings are subject to orchestrator review after the wave. Run26 registered before dispatch. Historical STOP entries remain evidence; current state is released.
