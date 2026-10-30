@@ -1,12 +1,14 @@
 # MC — Player control and client foundation: design
 
-Date: 2026-10-29. Revision 7. Status: DRAFT, passed gate 1 (2026-10-29): spec-rigour-reviewer,
+Date: 2026-10-29. Revision 8. Status: DRAFT, passed gate 1 (2026-10-29): spec-rigour-reviewer,
 technical-director, bevy-rendering-engineer, player, simulation-core-engineer; three repair
 passes. CEO decisions (2026-10-29): K1 to K27 as recommended (K11 stays conditional on probe P1),
 budget option 1 (the full design, about 184 runs); K20 applied in revision 5 (section 17.2).
 Revision 6 (plan rulings O1 and O4): `muster` ids `dummy` and `rush`; ORD2 pixels half on `muster`.
 Revision 7 (gate 2 round 1 rulings): DET1 comparison, `--order-log`, `turts_debug.frames`, the
 `Minimap` event and `over_widget` flag, CAM2 Esc to P1, the PT1 person.
+Revision 8 (plan G1): content id rule `order_<verb>`, `beacon`; the 4.5 tick reading; the 6.3 merge
+rules.
 Author seat: `ux-designer` (D65, D66, D67, client side of D70; Second on D68).
 Source of record: `RTS-Engine-Project-Specifications.md` version 0.8 (cited as S:line).
 Other sources: the QA0 design `docs/superpowers/specs/2026-10-29-qa0-instrument-design.md`
@@ -417,7 +419,9 @@ foreign unit moves to that point and does not attack: this is the force move (OR
 - Each unit has one current order and a queue of at most `queue_depth` orders (K24).
 - No modifier: the order replaces the current order and the queue. Shift: the order appends.
 - Each behaviour has a completion rule and a failure rule (table 5.3). When the current order
-  completes or fails, the next queued order starts in the same tick.
+  completes or fails, the next queued order starts in the same tick. Reading (gate 2 sim 5): a
+  unit lands in `Movement` of tick t; `Orders` of tick t+1 sees the completion, pops the queue and
+  starts the next order in that phase, so the unit never idles a tick between orders.
 - An order that fails after `accepted` writes a failure record (`UnitOrderRecord.last_failure`:
   order, reason, tick). The client shows it as a notice, for example "Trooper: Target out of
   range".
@@ -611,6 +615,10 @@ A part of a group that arrives in a later tick (K4) spreads round the reserved s
 earlier part. Model run C2 (section 18): 0 overlaps and 0 blocked units.
 
 The reserved-cell test of step 2 uses the neighbour grid of 6.4, so each slot test is O(1).
+
+Merge and cap rules (gate 2 sim 5): envelopes with one key (slot, `group` above 0, tick) merge
+before the cap; `group` 0 never merges. A waiting envelope is atomic: it spreads in full in one
+tick, or it waits whole.
 
 Work cap (S:651, 13.6). The simulation spreads at most 2,048 units in one tick, for all slots
 together. Each slot has its own pending list, in arrival order, with a limit of 16,384 units. The
@@ -1056,7 +1064,14 @@ from the schema alone.
 
 - `engine_api: "^0.2.3"`. Maps, units, recipes and technologies do not change, so the M3 fixed
   point and the frozen streams stay (REG1).
-- New files: `orders/*.ron` (move, stop, hold, research, cancel, enable, disable, remove),
+- Content id rule (gate 2 td 2, revision 8): no package local id may equal an identifier or a
+  whole string literal of the engine source (the no-content scan). Order ids therefore take the
+  form `order_<verb>`: `order_move`, `order_stop`, `order_hold`, `order_research`,
+  `order_cancel`, `order_enable`, `order_disable`, `order_remove`, `order_produce`,
+  `order_gather`, `order_attack`; `rush` keeps its name. Input actions take `key_<verb>`. The
+  plan (task 18) holds the hit table.
+- New files: `orders/*.ron` (move, stop, hold, research, cancel, enable, disable, remove, with the
+  ids above),
   `orders/rules.ron`, `input/bindings.ron`, `assets/assets.ron` (icons, a portrait for each unit
   type, one UI font, cursors, sounds), `interface/hud.ron`.
 - The HUD has a selection panel and an info panel. The info panel shows the inventory lines, and
@@ -1089,7 +1104,8 @@ buttons and no images. Their maps and units do not change. The M2 browser cases 
 - One map, 64 x 48, with one ore node.
 - Slot 0: 40 `trooper` (radius 0.5, speed 3.0, weapon range 4, damage 5, cooldown 1 s, health
   50, removal). Also 2 `worker` (gatherer), 1 `depot` (drop-off), 1 `post` (static, radius 2).
-  Also 460 `marker` units (mobile, no weapon) in a far block for SEL2.
+  Also 460 `beacon` units (mobile, no weapon) in a far block for SEL2 (`marker` is an engine
+  identifier, `live_view.rs:268`; renamed in revision 8).
 - Slot 1: 10 `dummy` (mobile, health 40, no weapon) and 1 `post`. Slot 0 starts with an ore
   balance, so the resource line has a source.
 - Orders: the forge set plus attack, gather and `rush` (`Attack` with another name and icon, for
