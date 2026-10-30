@@ -8,7 +8,7 @@ source: codex
 
 # MC execution board
 
-State: ACTIVE. T1 andT2a are merged and fully re-gated; both task lanes were removed. T3 is repairing its independent review findings; d805669 closes5High and3Medium, with2Medium left (physical key vocabulary and OrderRules diagnostics). T20 completed read-only contract preparation and waits for the compiler slot before its clean-tree baseline. Firefox remains deferred under the CEO release; K11(a) stays on Chrome evidence.
+State: ACTIVE. T1 andT2a are merged and fully re-gated; both task lanes were removed. T3 source67307d1 is accepted: functionalreview0High/0Medium, fulltaskgates0,29refutationsred/restoredgreen, numericstubproof101/0; ready for merge and integration re-gate. T20 completed read-only contract preparation and waits for the compiler slot before its clean-tree baseline. Firefox remains deferred under the CEO release; K11(a) stays on Chrome evidence.
 
 Plan: `docs/superpowers/plans/2026-10-29-mc-player-control.md`.
 Design of record: `docs/superpowers/specs/2026-10-29-mc-player-control-design.md`, revision 10 at `488b3d3`.
@@ -58,7 +58,7 @@ Frozen M2 SHA256: `bcbf72c2206251f635a7c7f5b6c8f573d69a5fc05a5bd77716e98ebfb08e3
 | --- | --- | --- | --- | --- |
 | T1 | 1 | - | codex/mc-t1 | COMPLETE; merge8f612a3; G-RUST/G-QA/G-FROZEN all0; lane removed |
 | T2a | 1 | - | codex/mc-t2a | COMPLETE; merge17286b1; all gates0; lane removed |
-| T3 | 1 | - | codex/mc-t3 | ACTIVE: review repair;0High/2Medium on d805669; G-REF held |
+| T3 | 1 | - | codex/mc-t3 | ACCEPTED67307d1; ready for merge/re-gate |
 | T20 | 1 | - | codex/mc-t20 | ACTIVE: read/draft; baseline trace waits for compiler slot |
 | T8 | 2 | 2a, 3 | codex/mc-t8 | NOT STARTED |
 | T18 | 2 | 3 | codex/mc-t18 | NOT STARTED |
@@ -140,7 +140,7 @@ Tasks in one wave share no file, except the refutation registries (merge in task
 
 ## 7. Budget and seats
 
-CEO approved about 212 total runs. Build stop line: 170 (106 planned task runs plus 64 repairs). Gate estimate: 42 spent before this build. Build dispatches used: 9/170. Root preflight is recorded separately and is not a builder/reviewer dispatch. T1 estimate 3; stop at 6 task dispatches. Do not dispatch another run at a stop.
+CEO approved about 212 total runs. Build stop line: 170 (106 planned task runs plus 64 repairs). Gate estimate: 42 spent before this build. Build dispatches used: 12/170. Root preflight is recorded separately and is not a builder/reviewer dispatch. T1 estimate 3; stop at 6 task dispatches. Do not dispatch another run at a stop.
 
 One run is one agent dispatch (builder or reviewer). Count every run on the board.
 
@@ -200,6 +200,12 @@ One row per builder/reviewer dispatch or resumed agent work turn. Register befor
 
 | 9 | T3 review recheck | mod-builder | gpt-6.1-sol | high | d805669 | FAIL d805669:0High/2Medium; sourcefixes and immutablebinaryrecheck pending. |
 
+| 10 | T3 second recheck | mod-builder | gpt-6.1-sol | high | 08b72a1 | FAIL08b72a1:1High OGGpost-EOS/serialreuse,1MediumRONcomments/rawstrings; fixed67307d1 pendingrecheck. |
+
+| 11 | T3 final functional recheck | mod-builder | gpt-6.1-sol | high | 67307d1 | FunctionalPASS67307d1:0High/0Medium;56CLIobservations; G-REF/numericreceiptpending. |
+
+| 12 | T20 draft/build continuation | qa-lead | gpt-6-luna | high | 17286b1 | Externaldraftready; Node7/7 andsyntaxgreen; realM2baseline waits explicit compilerhandoff. |
+
 ## 9. Preflight ledger and stop
 
 | Event | Evidence | Result |
@@ -255,3 +261,12 @@ Candidatecac1d76 plusclippy49d42a: scopedAPI/runtime/pack/no-content greens ando
 Repaird805669: packbad_packages56/56, runtime120, API14, no_content9 green; ordinaryG-RUST/G-QA/G-FROZEN all0. Run9 freshCLIrecheck closedall5High and3Medium;2Mediumremain: completephysicalkeycodes andwhitespace-safeOrderRuleserrors. Buildcaps/foreignrefs/dynamicimagebindings/reservedchords fixed. NoT3merge.
 
 Oneevidencelimit: original22HUD3semanticredlogshavecompilednamedfailures butno durable numericexitmarker; do notinventhistory. Reserved/chainedOggregressionreds recordactual101. Afterfullrequiredgates, builderwillrepeat signature-stub instrument proof inisolatedscratch withactualred101/restoredgreen0. Finalreviewwilluseoneimmutablereviewbinarybuiltfromcleancommit withSHA/source/fixtureprovenance; liveCargooutputs changehashonrebuild. Snapshotbinaryisremovedafterreview, hash/logskept.
+
+
+## 15. T3 accepted, 2026-10-30
+
+Source67307d1; no High/Medium functional findings remain. FulltaskG-RUST/G-QA/G-FROZEN0 and pinnedhash unchanged. G-REFselectionindependentlycomputedfromactualchangedfilesmatches17M2+12M3; bothbatchcommands exit0. Rootreadall29caseJSONs and87baseline/red/restoredlogs, confirmednamedtestfailureswithoutcompilererrors, restoredblobhashesequalbaselineandcommittedGitblobs; auditedsource67307d1/provenance. Rootaudit target/mc-evidence/t3-root-verification.json.
+
+Originalsignaturestubredlogsnumericlimitationisnotrewritten. Aftergatesanisolatedcopy repeatedtheinstrument: bad_packagesstub20passed/38failed actual101, restored58/58 actual0; headerstub1passed/4failed actual101, restored5/5 actual0. Exactsourceblobrestorationandallloghashesverifiedbyroot. Numericreceipt target/mc-evidence/t3-builder/signature-stub/provenance.json. Rootauditfirstmisclassified restored.green asred bysubstring; exactfilenameclassifiercorrectedandauditpassed, no sourcechanges.
+
+BothGREFmutantcaches/scratchsourcesremovedafterhash/patch/commitreceipts (M2cache3.7GiB plus40MiBcopy; M3sizeinitscleanuprecord). Accepted30MiBreviewCLIandearlier30MiBsupersededCLIremovedafterSHAverification; manifests/reports/probesretained. Primarycachecontainsreusabledependencies; tenworkspaceartifactsinvalidatedafterstubrestoration.
