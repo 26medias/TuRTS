@@ -8,7 +8,7 @@ source: codex
 
 # MC execution board
 
-State: ACTIVE under O10 at mainb29e3d8/designrev11. Integration and all open lanes are rebased. T8 run21 is active with Effect::ShellAction, same fields/behavior, no forge/scanner changes. Future client shell file is client_shell.rs. Build23/170. Wave1 draftPR2 CI browser has the unchanged M2 economy timeout; T7 and agents passed, check still running. Main not modified by Codex.
+State: ACTIVE under O10 at mainb29e3d8/designrev11. Integration and all open lanes are rebased. T8 run21 is active with Effect::ShellAction, same fields/behavior, no forge/scanner changes. Future client shell file is client_shell.rs. Build24/170. Wave1 draftPR2 CI browser has the unchanged M2 economy timeout; T7 and agents passed, check still running. Main not modified by Codex.
 
 Plan: `docs/superpowers/plans/2026-10-29-mc-player-control.md`.
 Design of record: `docs/superpowers/specs/2026-10-29-mc-player-control-design.md`, revision 10 at `488b3d3`.
@@ -69,9 +69,9 @@ CI trigger: `.github/workflows/ci.yml:2-5` runs pushes to main and pull requests
 | T2a | 1 | - | codex/mc-t2a | COMPLETE; merge17286b1; all gates0; lane removed |
 | T3 | 1 | - | codex/mc-t3 | COMPLETE; merge aceef85; all integration gates pass; T7 115 frames |
 | T20 | 1 | - | codex/mc-t20 | COMPLETE; merge8e95e42; all integration gates0; task lane removed |
-| T8 | 2 | 2a, 3 | codex/mc-t8 | ACTIVE under O10; rebased candidate pending; rename ShellAction, re-run failed scan/gates/plant |
+| T8 | 2 | 2a, 3 | codex/mc-t8 | MERGED 461d105; candidate01621d0 review0High/0Medium; integration gates running |
 | T18 | 2 | 3 | codex/mc-t18 | ACTIVE run23: prepare tests; compiler waits T8 handoff; HUD stays text-only, required order icons are assets |
-| T19 | 2 | 3 | codex/mc-t19 | STOP under global T8 ruling; preparation preserved |
+| T19 | 2 | 3 | codex/mc-t19 | ACTIVE run24 test preparation; no compiler until cache handoff |
 | T2b | 3 | 2a, 3, 18 | codex/mc-t2b | NOT STARTED |
 | T4 | 4 | 2b, 3 | codex/mc-t4 | NOT STARTED |
 | T9 | 4 | 1, 8, 2b | codex/mc-t9 | NOT STARTED |
@@ -149,7 +149,7 @@ Tasks in one wave share no file, except the refutation registries (merge in task
 
 ## 7. Budget and seats
 
-CEO approved about 212 total runs. Build stop line: 170 (106 planned task runs plus 64 repairs). Gate estimate: 42 spent before this build. Build dispatches used: 23/170. Root preflight is recorded separately and is not a builder/reviewer dispatch. T1 estimate 3; stop at 6 task dispatches. Do not dispatch another run at a stop.
+CEO approved about 212 total runs. Build stop line: 170 (106 planned task runs plus 64 repairs). Gate estimate: 42 spent before this build. Build dispatches used: 24/170. Root preflight is recorded separately and is not a builder/reviewer dispatch. T1 estimate 3; stop at 6 task dispatches. Do not dispatch another run at a stop.
 
 One run is one agent dispatch (builder or reviewer). Count every run on the board.
 
@@ -211,9 +211,10 @@ One row per builder/reviewer dispatch or resumed agent work turn. Register befor
 | 18 | T8 build | technical-director | gpt-6-luna | high | Wave2 base | 91d6db7; T1X red101/green0, fmt/clippy/wasm0; full testsNoContentShellcollision101; STOP before G-QA/finalplant, clean. |
 | 19 | T18 build | mod-builder | gpt-6-luna | high | adfb662 | STOP under T8 ruling; API/package prep only, no edits/Cargo. Icon-assets file-list omission clarified by root; HUD stays text-only. |
 | 20 | T19 build | mod-builder | gpt-6-luna | high | adfb662 | INTERRUPTED on global stop; untracked muster.rs and external package drafts retained/archived. No Cargo. |
-| 21 | T8 O10 continuation | technical-director | gpt-6-luna | high | 36a86ae | ACTIVE: candidate3d345f6 gates0,861/0/18, row plant101/restored; repairing reviewer lock-seed Medium in the same active run. |
-| 22 | T8 independent review | qa-lead | gpt-6.1-sol | high | 3d345f6 | ACTIVE: initial3d345f6 review0High/1Medium, copied scratch lock outside workspace; verified repro, builder repairing; final recheck/plant waits handoff. |
-| 23 | T18 build continuation | mod-builder | gpt-6-luna | high | f564f88 | REGISTERED: read/test preparation only until compiler handoff; semantic red before package changes; stop on table-ID scan hit. |
+| 21 | T8 O10 continuation | technical-director | gpt-6-luna | high | 36a86ae | COMPLETE01621d0: O10 rename and lock-seed repair; fullgates0,861/0/18; semantic reds101/greens0, clean. |
+| 22 | T8 independent review | qa-lead | gpt-6.1-sol | high | 3d345f6 | PASS01621d0:0High/0Medium; lock-seed Medium closed, independent boundary13/no-content9 pass0; host-row plant101/restoredgreen0, clean. |
+| 23 | T18 build continuation | mod-builder | gpt-6-luna | high | f564f88 | ACTIVE test preparation complete; no Cargo/package changes until handoff; semantic red before implementation; stop on table-ID scan hit. |
+| 24 | T19 build continuation | mod-builder | gpt-6-luna | high | f564f88 | REGISTERED: preserve prior test/drafts, finish test preparation; compiler and implementation wait handoff. |
 
 ## 9. Preflight ledger and stop
 
@@ -332,3 +333,5 @@ Disk correction: earlier T8 commands omitted the required debug0/incremental0 ov
 Task18 run23 resumes under O10 release. The earlier icon concern was a file-list omission: design12.2 constrains the HUD to text buttons with no images, while each OrderDef requires an icon. Minimal icon assets/exports satisfy both existing contracts; HUD remains text-only. No schema/scanner/design change. Tests must first fail semantically on current packages. Any Task18 table-ID red stops for CEO; the brief overrides the older plan rename suggestion. No compiler use until T8 builder/reviewer finish.
 
 RUN22 confirmed Medium at boundary.rs179: scratch copied Cargo.lock to temp/Cargo.lock, but its workspace root was temp/crates/turts_interaction, so Cargo ignored that seed and generated a new inner lock. Reproduced locate-project0, locked/offline101, offline tree0 with newlock generation; receipt target/mc-evidence/t8-review/lock-location-repro.json. Root accepted finding and handed the compiler back to still-active RUN21 for destination repair and offline fixture enforcement, then commit/gates/plant. RUN22 stays active for final independent recheck. No extra dispatch. Initial candidate fullgates0 with861passed/0failed/18ignored independently audited by root. No Task8 merge yet.
+
+Task8 merged at461d10555ad3a34d2c87e81bb7bfcf7aa2496674 after final independent PASS01621d0,0High/0Medium. Root audited final eight logs and861/0/18 counts. Warm cache moved by rename to integration; workspace artifacts invalidated in all four profiles, exit0 each. Integration G-RUST/G-QA/G-FROZEN now running. Wave1 hosted assessment remains: agents/T7 pass, browser has unchanged known M2 economy timeout, native refutations still pending; no hosted success claimed. Local Task8 gates permit integration work while root continues reading that old run. Main untouched.
