@@ -15,7 +15,17 @@ function createDriverIo(pages, { outputDir, inputLog = [], initialCursor = { x: 
     const state = { selected: 0 };
     const nextSeq = pages.map(() => 0);
     const cursor = pages.map(() => ({ x: initialCursor.x, y: initialCursor.y }));
+    const heldModifiers = pages.map(() => new Map());
     const page = () => pages[state.selected];
+    const heldModifierMask = (windowIndex = state.selected, excludingCode = null) => {
+        let mask = 0;
+        for (const [code, physical] of heldModifiers[windowIndex]) if (code !== excludingCode) mask |= physical.mask;
+        return mask;
+    };
+    const setModifierHeld = (physical, held, windowIndex = state.selected) => {
+        if (held) heldModifiers[windowIndex].set(physical.code, physical);
+        else heldModifiers[windowIndex].delete(physical.code);
+    };
     async function record(call, args, events, action) {
         const started = wallTime();
         const entry = { call, args: structuredClone(args), wall_time_ms: started, window: state.selected + 1, event_types: [], event_seq: [], actual_events: [] };
@@ -64,41 +74,70 @@ function createDriverIo(pages, { outputDir, inputLog = [], initialCursor = { x: 
                 if (!Number.isInteger(holdMs) || holdMs < 0 || holdMs > 60000) throw new RangeError("opts.hold_ms must be an integer from 0 to 60000");
                 if (!["press", "down", "up"].includes(action)) throw new TypeError("opts.action must be press, down, or up");
                 if (action !== "press" && modifiers.length > 0) throw new TypeError("opts.action down/up cannot include modifiers; hold each key with its own io.key call");
+                const windowIndex = state.selected;
+                const keyModifier = maybeModifierPhysicalKey(code);
                 if (action !== "press") {
                     const type = action === "down" ? "keydown" : "keyup";
                     if (opts && typeof opts.key === "string") {
                         const session = await page().context().newCDPSession(page());
-                        try { await send(type, () => session.send("Input.dispatchKeyEvent", { type: action === "down" ? "keyDown" : "keyUp", code, key: opts.key, modifiers: 0 }), { code, key: opts.key }); }
+                        const codeForDispatch = keyModifier?.code || code;
+                        const mask = action === "down"
+                            ? heldModifierMask(windowIndex) | (keyModifier?.mask || 0)
+                            : heldModifierMask(windowIndex, keyModifier?.code || null);
+                        try { await send(type, () => session.send("Input.dispatchKeyEvent", { type: action === "down" ? "keyDown" : "keyUp", code: codeForDispatch, key: opts.key, modifiers: mask }), { code: codeForDispatch, key: opts.key }); }
                         finally { await session.detach(); }
                     } else {
-                        await send(type, () => page().keyboard[action](code), keyExpectation(code));
+                        const codeForDispatch = keyModifier?.code || code;
+                        await send(type, () => page().keyboard[action](codeForDispatch), keyExpectation(code));
                     }
+                    if (keyModifier) setModifierHeld(keyModifier, action === "down", windowIndex);
                     return;
                 }
                 if (opts && typeof opts.key === "string") {
                     const session = await page().context().newCDPSession(page());
+                    const temporary = [];
                     try {
-                        let mask = 0;
                         for (const modifier of modifiers) {
                             const physical = modifierPhysicalKey(modifier);
-                            mask |= physical.mask;
+                            if (heldModifiers[windowIndex].has(physical.code)) continue;
+                            const mask = heldModifierMask(windowIndex) | physical.mask;
                             await send("keydown", () => session.send("Input.dispatchKeyEvent", { type: "keyDown", code: physical.code, key: physical.key, modifiers: mask }), { code: physical.code, key: physical.key });
+                            setModifierHeld(physical, true, windowIndex);
+                            temporary.push(physical);
                         }
-                        await send("keydown", () => session.send("Input.dispatchKeyEvent", { type: "keyDown", code, key: opts.key, modifiers: mask }), { code, key: opts.key });
+                        const codeForDispatch = keyModifier?.code || code;
+                        await send("keydown", () => session.send("Input.dispatchKeyEvent", { type: "keyDown", code: codeForDispatch, key: opts.key, modifiers: heldModifierMask(windowIndex) | (keyModifier?.mask || 0) }), { code: codeForDispatch, key: opts.key });
                         if (holdMs) await page().waitForTimeout(holdMs);
-                        await send("keyup", () => session.send("Input.dispatchKeyEvent", { type: "keyUp", code, key: opts.key, modifiers: mask }), { code, key: opts.key });
-                        for (const modifier of [...modifiers].reverse()) {
-                            const physical = modifierPhysicalKey(modifier);
-                            mask &= ~physical.mask;
+                        await send("keyup", () => session.send("Input.dispatchKeyEvent", { type: "keyUp", code: codeForDispatch, key: opts.key, modifiers: heldModifierMask(windowIndex) }), { code: codeForDispatch, key: opts.key });
+                    } finally {
+                        for (const physical of [...temporary].reverse()) {
+                            if (!heldModifiers[windowIndex].has(physical.code)) continue;
+                            const mask = heldModifierMask(windowIndex, physical.code);
                             await send("keyup", () => session.send("Input.dispatchKeyEvent", { type: "keyUp", code: physical.code, key: physical.key, modifiers: mask }), { code: physical.code, key: physical.key });
+                            setModifierHeld(physical, false, windowIndex);
                         }
-                    } finally { await session.detach(); }
+                        await session.detach();
+                    }
                 } else {
-                    for (const modifier of modifiers) await send("keydown", () => page().keyboard.down(modifier), keyExpectation(modifier));
-                    await send("keydown", () => page().keyboard.down(code), keyExpectation(code));
-                    if (holdMs) await page().waitForTimeout(holdMs);
-                    await send("keyup", () => page().keyboard.up(code), keyExpectation(code));
-                    for (const modifier of [...modifiers].reverse()) await send("keyup", () => page().keyboard.up(modifier), keyExpectation(modifier));
+                    const temporary = [];
+                    try {
+                        for (const modifier of modifiers) {
+                            const physical = modifierPhysicalKey(modifier);
+                            if (heldModifiers[windowIndex].has(physical.code)) continue;
+                            await send("keydown", () => page().keyboard.down(physical.code), keyExpectation(modifier));
+                            setModifierHeld(physical, true, windowIndex);
+                            temporary.push(physical);
+                        }
+                        await send("keydown", () => page().keyboard.down(keyModifier?.code || code), keyExpectation(code));
+                        if (holdMs) await page().waitForTimeout(holdMs);
+                        await send("keyup", () => page().keyboard.up(keyModifier?.code || code), keyExpectation(code));
+                    } finally {
+                        for (const physical of [...temporary].reverse()) {
+                            if (!heldModifiers[windowIndex].has(physical.code)) continue;
+                            await send("keyup", () => page().keyboard.up(physical.code), keyExpectation(physical.code));
+                            setModifierHeld(physical, false, windowIndex);
+                        }
+                    }
                 }
             });
         },
@@ -170,19 +209,23 @@ function safeName(name) {
 }
 
 function keyExpectation(code) {
-    const alias = { Shift: { code: "ShiftLeft", key: "Shift" }, Control: { code: "ControlLeft", key: "Control" }, Alt: { code: "AltLeft", key: "Alt" }, Meta: { code: "MetaLeft", key: "Meta" } };
-    return alias[code] || { code };
+    return maybeModifierPhysicalKey(code) || { code };
 }
 
 function modifierPhysicalKey(name) {
-    const keys = { Alt: { code: "AltLeft", key: "Alt", mask: 1 }, Control: { code: "ControlLeft", key: "Control", mask: 2 }, Meta: { code: "MetaLeft", key: "Meta", mask: 4 }, Shift: { code: "ShiftLeft", key: "Shift", mask: 8 } };
-    const physical = keys[name];
+    const physical = maybeModifierPhysicalKey(name);
     if (!physical) throw new TypeError(`unsupported modifier: ${name}`);
     return physical;
 }
 
-function modifierMask(modifiers) {
-    return modifiers.reduce((value, name) => value | modifierPhysicalKey(name).mask, 0);
+function maybeModifierPhysicalKey(name) {
+    const keys = {
+        Alt: { code: "AltLeft", key: "Alt", mask: 1 }, Option: { code: "AltLeft", key: "Alt", mask: 1 }, AltLeft: { code: "AltLeft", key: "Alt", mask: 1 }, AltRight: { code: "AltRight", key: "Alt", mask: 1 },
+        Control: { code: "ControlLeft", key: "Control", mask: 2 }, Ctrl: { code: "ControlLeft", key: "Control", mask: 2 }, ControlLeft: { code: "ControlLeft", key: "Control", mask: 2 }, ControlRight: { code: "ControlRight", key: "Control", mask: 2 },
+        Meta: { code: "MetaLeft", key: "Meta", mask: 4 }, Cmd: { code: "MetaLeft", key: "Meta", mask: 4 }, Command: { code: "MetaLeft", key: "Meta", mask: 4 }, MetaLeft: { code: "MetaLeft", key: "Meta", mask: 4 }, MetaRight: { code: "MetaRight", key: "Meta", mask: 4 },
+        Shift: { code: "ShiftLeft", key: "Shift", mask: 8 }, ShiftLeft: { code: "ShiftLeft", key: "Shift", mask: 8 }, ShiftRight: { code: "ShiftRight", key: "Shift", mask: 8 },
+    };
+    return keys[name] || null;
 }
 
 module.exports = { createDriverIo, IO_KEYS };

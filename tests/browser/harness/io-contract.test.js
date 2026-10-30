@@ -136,6 +136,32 @@ test("key down/up spans separate calls and every emitted key event is sequenced"
     assert.ok(trace.findIndex((row) => row[1] === "up") < trace.findIndex((row) => row[1] === "keyboard-up"));
 });
 
+test("CDP logical-key overrides preserve held modifiers per window", async () => {
+    const trace = [];
+    const { io } = createDriverIo([fakePage("a", trace), fakePage("b", trace)]);
+    await io.key("Shift", [], { action: "down" });
+    await io.key("KeyA", [], { key: "q" });
+    await io.use(2);
+    await io.key("KeyA", [], { key: "q" });
+    await io.key("Ctrl", [], { action: "down", key: "Control" });
+    await io.key("KeyA", ["ShiftLeft"], { key: "q" });
+    await io.key("KeyA", [], { action: "down", key: "q" });
+    await io.key("KeyA", [], { action: "up", key: "q" });
+    await io.key("ControlLeft", [], { action: "up", key: "Control" });
+
+    const dispatches = trace.filter((row) => row[1] === "cdp-send").map((row) => [row[0], row[3]]);
+    assert.deepEqual(dispatches.map(([window, event]) => [window, event.type, event.code, event.key, event.modifiers]), [
+        ["a", "keyDown", "KeyA", "q", 8], ["a", "keyUp", "KeyA", "q", 8],
+        ["b", "keyDown", "KeyA", "q", 0], ["b", "keyUp", "KeyA", "q", 0],
+        ["b", "keyDown", "ControlLeft", "Control", 2],
+        ["b", "keyDown", "ShiftLeft", "Shift", 10],
+        ["b", "keyDown", "KeyA", "q", 10], ["b", "keyUp", "KeyA", "q", 10],
+        ["b", "keyUp", "ShiftLeft", "Shift", 2],
+        ["b", "keyDown", "KeyA", "q", 2], ["b", "keyUp", "KeyA", "q", 2],
+        ["b", "keyUp", "ControlLeft", "Control", 0],
+    ]);
+});
+
 test("view has only four read-only methods and refuses the order bridge", async () => {
     const makePage = (windowNumber) => ({
         evaluate: async (_fn, name) => name === "turts_memory_bytes" ? 512 + windowNumber : JSON.stringify({ bridge: name, window: windowNumber }),
