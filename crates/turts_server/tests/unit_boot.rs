@@ -121,15 +121,15 @@ fn boot_lockfile_entry_matches_archive() {
     assert_eq!(entry.hash, sha256_hex(&bytes));
     assert_eq!(entry.size, bytes.len() as u64);
     assert!(
-        entry.urls[0].ends_with("/packages/acme-0.2.0.tar"),
+        entry.urls[0].ends_with("/packages/acme-0.3.0.tar"),
         "{:?}",
         entry.urls
     );
     assert_eq!(
         entry.urls,
-        vec![format!("{PUBLIC_URL}/packages/acme-0.2.0.tar")]
+        vec![format!("{PUBLIC_URL}/packages/acme-0.3.0.tar")]
     );
-    assert_eq!(booted.package_file_name, "acme-0.2.0.tar");
+    assert_eq!(booted.package_file_name, "acme-0.3.0.tar");
     assert_eq!(booted.package_bytes, bytes);
 }
 
@@ -144,7 +144,7 @@ fn boot_advertisement_hash_matches_lockfile_bytes() {
         format!("{PUBLIC_URL}/lockfile.json")
     );
     assert_eq!(advertisement.mod_id, "acme");
-    assert_eq!(advertisement.mod_version, "0.2.0");
+    assert_eq!(advertisement.mod_version, "0.3.0");
     assert_eq!(advertisement.engine_version, ENGINE_API_VERSION);
     assert_eq!(advertisement.protocol_version, NET_PROTOCOL_VERSION);
 }

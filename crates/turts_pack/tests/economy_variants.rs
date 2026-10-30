@@ -433,7 +433,7 @@ fn valid_policy_role_swaps_follow_data() {
                 assert_eq!(map["mode"], mode);
                 assert_eq!(map["payment"], payment);
                 let (archive, mut app) = load(&package_dir(&out, &map));
-                assert_eq!(archive.manifest.version, "0.2.0");
+                assert_eq!(archive.manifest.version, "0.3.0");
                 let policy = if payment == "charge" {
                     PaymentPolicy::ChargeOnQueue
                 } else {
