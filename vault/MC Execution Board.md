@@ -8,7 +8,7 @@ source: codex
 
 # MC execution board
 
-State: ACTIVE under O10 at mainb29e3d8/designrev11. Integration and all open lanes are rebased. T8 run21 is active with Effect::ShellAction, same fields/behavior, no forge/scanner changes. Future client shell file is client_shell.rs. Build22/170. Wave1 draftPR2 CI browser has the unchanged M2 economy timeout; T7 and agents passed, check still running. Main not modified by Codex.
+State: ACTIVE under O10 at mainb29e3d8/designrev11. Integration and all open lanes are rebased. T8 run21 is active with Effect::ShellAction, same fields/behavior, no forge/scanner changes. Future client shell file is client_shell.rs. Build23/170. Wave1 draftPR2 CI browser has the unchanged M2 economy timeout; T7 and agents passed, check still running. Main not modified by Codex.
 
 Plan: `docs/superpowers/plans/2026-10-29-mc-player-control.md`.
 Design of record: `docs/superpowers/specs/2026-10-29-mc-player-control-design.md`, revision 10 at `488b3d3`.
@@ -70,7 +70,7 @@ CI trigger: `.github/workflows/ci.yml:2-5` runs pushes to main and pull requests
 | T3 | 1 | - | codex/mc-t3 | COMPLETE; merge aceef85; all integration gates pass; T7 115 frames |
 | T20 | 1 | - | codex/mc-t20 | COMPLETE; merge8e95e42; all integration gates0; task lane removed |
 | T8 | 2 | 2a, 3 | codex/mc-t8 | ACTIVE under O10; rebased candidate pending; rename ShellAction, re-run failed scan/gates/plant |
-| T18 | 2 | 3 | codex/mc-t18 | STOP under global T8 ruling; preparation preserved |
+| T18 | 2 | 3 | codex/mc-t18 | ACTIVE run23: prepare tests; compiler waits T8 handoff; HUD stays text-only, required order icons are assets |
 | T19 | 2 | 3 | codex/mc-t19 | STOP under global T8 ruling; preparation preserved |
 | T2b | 3 | 2a, 3, 18 | codex/mc-t2b | NOT STARTED |
 | T4 | 4 | 2b, 3 | codex/mc-t4 | NOT STARTED |
@@ -149,7 +149,7 @@ Tasks in one wave share no file, except the refutation registries (merge in task
 
 ## 7. Budget and seats
 
-CEO approved about 212 total runs. Build stop line: 170 (106 planned task runs plus 64 repairs). Gate estimate: 42 spent before this build. Build dispatches used: 22/170. Root preflight is recorded separately and is not a builder/reviewer dispatch. T1 estimate 3; stop at 6 task dispatches. Do not dispatch another run at a stop.
+CEO approved about 212 total runs. Build stop line: 170 (106 planned task runs plus 64 repairs). Gate estimate: 42 spent before this build. Build dispatches used: 23/170. Root preflight is recorded separately and is not a builder/reviewer dispatch. T1 estimate 3; stop at 6 task dispatches. Do not dispatch another run at a stop.
 
 One run is one agent dispatch (builder or reviewer). Count every run on the board.
 
@@ -213,6 +213,7 @@ One row per builder/reviewer dispatch or resumed agent work turn. Register befor
 | 20 | T19 build | mod-builder | gpt-6-luna | high | adfb662 | INTERRUPTED on global stop; untracked muster.rs and external package drafts retained/archived. No Cargo. |
 | 21 | T8 O10 continuation | technical-director | gpt-6-luna | high | 36a86ae | ACTIVE: O10 rename only, preserve fields/data/scanner; red receipt retained; green/gates/plant and review next. |
 | 22 | T8 independent review | qa-lead | gpt-6.1-sol | high | 3d345f6 | REGISTERED: read committed diff now; compiler and plant wait builder handoff; Task8 run3/cap4. |
+| 23 | T18 build continuation | mod-builder | gpt-6-luna | high | f564f88 | REGISTERED: read/test preparation only until compiler handoff; semantic red before package changes; stop on table-ID scan hit. |
 
 ## 9. Preflight ledger and stop
 
@@ -327,3 +328,5 @@ Rebase verification: integrationf564f88, T8 36a86ae, T18/T19f564f88 all descend 
 CI job124207191614 logs read: T7 oracle passed91frames; M2 economy failed with the unchanged E9-browser-base-economy 15000ms timeout, exit1. M3 controls and browser refutations were skipped after that failure. This is the existing failure assigned to Task21; its cause remains NOT TRACED. Agents passed; native check still runs. Receipt: target/mc-evidence/wave1-ci-browser-assessment.txt.
 
 Disk correction: earlier T8 commands omitted the required debug0/incremental0 overrides. Root archived fingerprints, a31384file inventory, process/source state, then removed the rebuildable debug output while no compiler was active (65653958328 apparentbytes). No source or evidence removed. Remaining release/wasm cache retained. All further Cargo commands must explicitly set CARGO_PROFILE_DEV_DEBUG=0, CARGO_PROFILE_TEST_DEBUG=0, CARGO_INCREMENTAL=0, CARGO_BUILD_JOBS=4. Receipt: target/mc-evidence/o10-cache-cleanup.
+
+Task18 run23 resumes under O10 release. The earlier icon concern was a file-list omission: design12.2 constrains the HUD to text buttons with no images, while each OrderDef requires an icon. Minimal icon assets/exports satisfy both existing contracts; HUD remains text-only. No schema/scanner/design change. Tests must first fail semantically on current packages. Any Task18 table-ID red stops for CEO; the brief overrides the older plan rename suggestion. No compiler use until T8 builder/reviewer finish.
