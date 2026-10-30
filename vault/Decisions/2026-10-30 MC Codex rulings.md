@@ -104,3 +104,11 @@ Conflict: the new MC reference tests live under the m2_variants example test tar
 Choice: defer the CI hook to Task24, the planned .github/workflows/ci.yml owner (plan:724-726), and require cargo test -p turts_checks --example m2_variants --locked in its check job. Keep the explicit local/example proof now and the selected E2/E3 hosted refutation coverage. Track this with the existing Task24 harness-test hook note; it must be complete before CI1/REG1 signoff. No test or gate is waived for Task18.
 
 Alternative not taken: claim the workspace command runs these seven tests, omit their hosted guard from the finished build, or change the hot CI file ahead of its planned owner. This is a reasoned deferral of CI plumbing, not a change to the acceptance row or game behavior.
+
+## C12: run the browser gate with the documented headed Vulkan profile
+
+Conflict: integration Rust/QA/frozen and Trunk build passed, but default headless Chrome reported no available GPU adapter and failed before join. Receipt target/mc-evidence/after-t18/t7.log. NVIDIA RTX3080/driver580.178.04 is visible; Chrome remains156.0.8078.47. This is a browser launch failure, not evidence of a game join failure. The underlying default-adapter cause remains NOT TRACED.
+
+Choice: rerun T7 with the existing script's supported M2_HEADLESS=false/private-Xvfb path and the headed Vulkan flags already used by the project browser workflow: enable-gpu, use-angle=vulkan, enable-features=Vulkan, enable-unsafe-webgpu; ignore the default unsafe-swiftshader flag. Keep viewport, scene/movement oracle and all pass criteria unchanged. Record exact environment and actual output. Reuse the same compiler cache. No source, shader, acceptance or hardware-driver change. Other completed gates remain valid for the unchanged implementation.
+
+Alternative not taken: mark the failed browser run green, weaken the oracle, change game rendering to hide adapter failure, or stop for CEO on an execution-environment detail within Codex's decision rights.
