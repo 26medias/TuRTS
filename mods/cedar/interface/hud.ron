@@ -4,6 +4,8 @@
         (id: "hud_order_move_button", at: Some((anchor: TopLeft, offset: (16.0, 16.0), pivot: None)), size: (w: Px(128.0), h: Px(28.0)), widget: Button(icon: None, label: Some(Literal("Move selected units")), action: Order("cedar:order_move"), hotkey_label: true)),
         (id: "hud_order_stop_button", at: Some((anchor: TopLeft, offset: (16.0, 50.0), pivot: None)), size: (w: Px(128.0), h: Px(28.0)), widget: Button(icon: None, label: Some(Literal("Stop selected units")), action: Order("cedar:order_stop"), hotkey_label: true)),
         (id: "hud_order_gather_button", at: Some((anchor: TopLeft, offset: (16.0, 84.0), pivot: None)), size: (w: Px(128.0), h: Px(28.0)), widget: Button(icon: None, label: Some(Literal("Gather nearby resources")), action: Order("cedar:order_gather"), hotkey_label: true)),
+        (id: "hud_order_produce_button", at: Some((anchor: TopLeft, offset: (16.0, 118.0), pivot: None)), size: (w: Px(128.0), h: Px(28.0)), widget: Button(icon: None, label: Some(Literal("Start production")), action: Order("cedar:order_produce"), hotkey_label: true)),
+        (id: "hud_order_cancel_button", at: Some((anchor: TopLeft, offset: (16.0, 152.0), pivot: None)), size: (w: Px(128.0), h: Px(28.0)), widget: Button(icon: None, label: Some(Literal("Cancel this job")), action: Order("cedar:order_cancel"), hotkey_label: true)),
     ],
     tooltip_style: (background: "#000000", colour: "#ffffff", font: None, size: 12),
     cursors: {},

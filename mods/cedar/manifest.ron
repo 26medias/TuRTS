@@ -7,7 +7,7 @@
         visuals: ["visuals/depot.ron", "visuals/worker.ron", "visuals/grove.ron"],
         resources: ["resources/wood.ron"], nodes: ["nodes/grove.ron"],
         production: ["production/hire.ron"],
-        orders: ["orders/order_move.ron", "orders/order_stop.ron", "orders/order_gather.ron", "orders/rules.ron"],
+        orders: ["orders/order_move.ron", "orders/order_stop.ron", "orders/order_gather.ron", "orders/order_produce.ron", "orders/order_cancel.ron", "orders/rules.ron"],
         input: ["input/bindings.ron"],
         assets: ["assets/assets.ron"],
         interface: ["interface/hud.ron"],

@@ -303,15 +303,29 @@ fn hud3_order_id_is_a_content_token() {
     let mods = scratch.join("mods");
     let _ = std::fs::remove_dir_all(&scratch);
     copy_tree(&repo.join("mods"), &mods);
+    let acme = mods.join("acme");
+    for path in ["orders", "input", "assets", "interface"] {
+        let path = acme.join(path);
+        if path.exists() {
+            std::fs::remove_dir_all(path).unwrap();
+        }
+    }
     let manifest_path = mods.join("acme/manifest.ron");
-    let manifest = std::fs::read_to_string(&manifest_path).unwrap();
-    let manifest = manifest
-        .replace("engine_api: \"^0.2\"", "engine_api: \"^0.2.3\"")
-        .replace(
-            "resources: [], nodes: [], production: [],",
-            "resources: [], nodes: [], production: [], orders: [\"orders/rush.ron\"], input: [\"input/bindings.ron\"], assets: [\"assets/main.ron\"],",
-        );
-    std::fs::write(&manifest_path, manifest).unwrap();
+    std::fs::write(
+        &manifest_path,
+        r#"(
+            id: "acme", version: "0.3.0", kind: Game, engine_api: "^0.2.3",
+            dependencies: {},
+            exports: (
+                units: ["units/scout.ron"], maps: ["maps/field.ron"],
+                visuals: ["visuals/scout.ron"], resources: [], nodes: [],
+                production: [], orders: ["orders/rush.ron"],
+                input: ["input/bindings.ron"], assets: ["assets/main.ron"],
+            ),
+            context: Shared, capabilities: [], license: "LicenseRef-TBD",
+        )"#,
+    )
+    .unwrap();
     std::fs::create_dir_all(mods.join("acme/orders")).unwrap();
     std::fs::create_dir_all(mods.join("acme/input")).unwrap();
     std::fs::create_dir_all(mods.join("acme/assets")).unwrap();

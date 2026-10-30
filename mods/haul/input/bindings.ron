@@ -1,1 +1,1 @@
-(actions: [(name: "key_move", default: [Key(code: "KeyM", mods: [])]), (name: "key_stop", default: [Key(code: "KeyS", mods: [])]), (name: "key_gather", default: [Key(code: "KeyG", mods: [])])], engine_overrides: [])
+(actions: [(name: "key_move", default: [Key(code: "KeyM", mods: [])]), (name: "key_stop", default: [Key(code: "KeyS", mods: [])]), (name: "key_gather", default: [Key(code: "KeyG", mods: [])]), (name: "key_produce", default: [Key(code: "KeyP", mods: [])]), (name: "key_cancel", default: [Key(code: "KeyC", mods: [])])], engine_overrides: [])
