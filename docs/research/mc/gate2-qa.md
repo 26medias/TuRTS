@@ -69,3 +69,20 @@ New defects:
 - High: SEL2 (finding 6). Fix: each frame record holds the last input event sequence (or the input-log wall time) that the frame applied.
 - Medium: the G-REF one-liner reads only `plant_path`. It drops E4-local-capacity and E6-capacity-bypass (`transaction.rs`, task 4), and C1 and C5. Fix: also read `plants[].path`.
 - Medium: `--ledger-limit` default 5 contradicts D:1170-1171 ("lowers `LEDGER_LIMIT` ... so the ledger cannot grow back"). Only the flag at `ci.yml:149` keeps the ledger at 0, and if that flag is removed no check goes red. Fix: set the default to 0 and give the fixtures `--ledger-limit 5`, or amend the design.
+
+## Re-check 2
+
+VERDICT=pass HIGH=0. Plan `cc514f6`, design `f9353bb` (revision 9).
+
+| Item | Status | Plan line | Run |
+| --- | --- | --- | --- |
+| 6 SEL2 frame late | fixed (by reading) | 371, 481, 573, 575 | Each frame record holds `applied_seq`, and the oracle selects the record that holds the sequence number of the mouse-up. With the plant, that record has `RingsShown` 0, so the oracle can go red. No browser run was made: the timing of the listener and the drain is NOT TRACED until task 9. |
+| Red window, `m3-browser.sh` | fixed | 100 | G-WEB runs it for tasks 2b, 4, 6, 9 and 11. |
+| Red window, "no other failure text" | fixed | 72 | The browser cases are "not checked" until the M2 red is fixed. |
+| G-REF `plants[].path` | fixed | 70, 72 | The plan's selector on `transaction_m3.rs`, `machine.rs` and `command.rs` lists E4, E6-capacity-bypass, C1 and C5 (and also E6-carried-item-loss, C2, C4, C9, C11), exit 0. |
+| `--ledger-limit` default 0 | fixed | 693, 695 | A copy with limit 0: `tests/browser` exit 1 (DR7); a one-row directory exit 1 (DR7). The self-test at 5: exit 0. |
+
+New, low:
+
+- No green `m3-browser.sh` run on hosted CI exists. It was added after the last green CI run, d194fc2. The only green run is local (`vault/Work Log/2026-10-28.md:182`). Add a clean-tree baseline run of `m3-browser.sh` to task 20 step 1.
+- The new `cases.tsv` case needs the default limit, but the self-test passes 5 to the fixtures. The case needs its own limit field.

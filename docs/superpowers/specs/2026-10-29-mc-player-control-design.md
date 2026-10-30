@@ -1,6 +1,6 @@
 # MC — Player control and client foundation: design
 
-Date: 2026-10-29. Revision 9. Status: DRAFT, passed gate 1 (2026-10-29): spec-rigour-reviewer,
+Date: 2026-10-29. Revision 10. Status: DRAFT, passed gate 1 (2026-10-29): spec-rigour-reviewer,
 technical-director, bevy-rendering-engineer, player, simulation-core-engineer; three repair
 passes. CEO decisions (2026-10-29): K1 to K27 as recommended (K11 stays conditional on probe P1),
 budget option 1 (the full design, about 184 runs); K20 applied in revision 5 (section 17.2).
@@ -9,6 +9,7 @@ Revision 7 (gate 2 round 1 rulings): DET1 comparison, `--order-log`, `turts_debu
 `Minimap` event and `over_widget` flag, CAM2 Esc to P1, the PT1 person.
 Revision 8 (plan G1): content id rule `order_<verb>`, `beacon`; the 4.5 tick reading; the 6.3 merge
 rules. Revision 9 (re-check 1): the frames record carries the wall time and the applied input sequence.
+Revision 10 (re-check 2): frames with input are kept until the oracle reads them.
 Author seat: `ux-designer` (D65, D66, D67, client side of D70; Second on D68).
 Source of record: `RTS-Engine-Project-Specifications.md` version 0.8 (cited as S:line).
 Other sources: the QA0 design `docs/superpowers/specs/2026-10-29-qa0-instrument-design.md`
@@ -1147,7 +1148,11 @@ Through `view.bridge`, the oracle reads more fields:
   frame (the harness `io` numbers each event it sends), the latest replicated tick, the unit
   positions presented, the markers shown, and the order results received in that frame. "The
   first presented frame after the mouse-up" is the first record whose applied input sequence
-  includes the mouse-up (gate 2 re-check 1, bevy F4 and qa 6). SEL2 and ORD7 read it (gate 2 qa 6, bevy F4): the native
+  includes the mouse-up (gate 2 re-check 1, bevy F4 and qa 6).
+  The oracle reads the bridge after `drive` ends, so the ring alone can lose the record (gate 2
+  re-check 2, bevy): `frames` also keeps every record with a non-empty applied input sequence
+  since the last `turts_debug.frames_clear()` call, at most 4,096 records (revision 10). A
+  driver cannot call `frames_clear` (bridge rule); the harness calls it before `drive`. SEL2 and ORD7 read it (gate 2 qa 6, bevy F4): the native
   `--frame-log` has positions only (`crates/turts_client/src/framelog.rs`).
 
 The server gains a test hook `--order-log <path>`: one line `tick,unit_id,state,reason` for
