@@ -1,0 +1,25 @@
+// turts-test-role: driver
+"use strict";
+
+exports.drive = async (io, params) => {
+    if (!Object.isFrozen(params)) throw new Error("params must be frozen");
+    await io.click(20, 30, "left");
+    await io.drag(10, 10, 40, 40, "left");
+    await io.key("KeyA", [], { key: "q" });
+    await io.move(50, 50);
+    await io.wheel(90);
+    const shot = await io.screenshot();
+    await io.save("harness-shot.png", shot);
+    await io.wait(10);
+    await io.reload();
+    await io.use(1);
+    await io.use(2);
+    await io.key("KeyB");
+    await io.use(1);
+    await io.key("Shift", [], { action: "down" });
+    await io.click(70, 70);
+    await io.key("Shift", [], { action: "up" });
+    await io.key("Shift", [], { action: "down" });
+    await io.drag(60, 60, 90, 90);
+    await io.key("Shift", [], { action: "up" });
+};
