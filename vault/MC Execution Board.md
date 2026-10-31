@@ -404,3 +404,5 @@ C23: bootstrap absent per-worktree browser node_modules with offline npm ci from
 C25: carry validated per-package queue-depth data into ContentCatalog (u8, default16). C26: public queue-depth type follows designu8; private wide parsing preserves exact overflow diagnostics and invalid-input proof. Task4 RUN32 owns implementation, independent review required. See [[Decisions/2026-10-30 MC Codex rulings]].
 
 C27-C32: Task4 QA repair decisions cover stateful plain replacement/implicit movement, per-unit Produce admission, retained deterministic job_id, target-check priority, complete audit operation spans, and mixed290 actual movement proof. All High findings must be repaired/rechecked before commit/gates; C32 Medium repaired now. See [[Decisions/2026-10-30 MC Codex rulings]].
+
+C33/C34: audit span overlap is High and must be rejected/tested; principal-unit operation metadata is defaulted/omitted for legacy compatibility and must be semantically validated. Task4 repairs remain active under RUN32/RUN34; no candidate/gate acceptance. See [[Decisions/2026-10-30 MC Codex rulings]].
