@@ -473,3 +473,10 @@ Alternative not taken: retire the mutation, weaken semantic guards, relabel old 
 Conflict: uncompiled UX smart draft expects Move(NodeId), but Move supports Point/Unit/PointOrUnit (design5.2); only Gather accepts Node. A generic group id for a lone point move would also bypass the established K19 plain path.
 
 Choice: smart movement fallback at a node composes Point(node.position), while Gather retains NodeId; unit/point conversions follow loaded TargetKind. Explicit point-capable Move under a foreign unit composes the ground point as force move (design4.4), without Attack or Unit-follow; custom Unit-only Move retains authored Unit policy. A lone unqueued point Move uses group0 (design5.1 zero:none/C27 plain path); multi-unit gesture batches share nonzero group. Corrected/additional fixture checks precede compilation/behavior. Alternative: invent Node-target Move, drop mod target policy or silently lose the plain path. No key/accepted-row change.
+
+
+## C60: bound the mobile/static selection fixture over every intended candidate (2026-10-31)
+
+Conflict: tests/selection.rs:12-15 builds its drag rectangle from mobile id1 at(0,0) and static id3 at(0,6), but line21 expects mobile id2 at(6,0) too. The real yaw0 perspective projects id2 outside this narrow box. Design:381 and SEL2:1225 restrict selection to centres inside the screen box; C48 retains all boxed candidates of the selected class, not every matching unit outside it.
+
+Choice: correct the fixture rectangle to the projected min/max of all three intended candidates, with the existing small padding. Keep expected ids1,2 and exclusion of static id3. Preserve the original compiled red and disclose this geometry correction. Production behavior remains centre-in-box, with the independent outside-centre test retained. Re-run the affected named test after the correction; no invented historical pass. Alternative not taken: select matching mobile units outside the drag rectangle or weaken the expected mobile/static behavior. This is a fixture detail under the brief section4 delegated authority, with no changed player key or acceptance row.
