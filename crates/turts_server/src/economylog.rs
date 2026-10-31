@@ -5879,6 +5879,10 @@ mod tests {
         )
     }
 
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "this test fixture exposes independent movement, world and command inputs"
+    )]
     fn automatic_move_log_with_commands_on_map(
         orders: turts_sim::UnitOrders,
         target_units: &[(u32, bevy::math::Vec2)],
@@ -9126,7 +9130,7 @@ mod tests {
                 EconomyLogRecord::Tick { state, .. } => Some(state),
                 _ => None,
             })
-            .last()
+            .next_back()
             .unwrap();
         assert!(
             authored_final
@@ -9175,7 +9179,7 @@ mod tests {
                 EconomyLogRecord::Tick { state, .. } => Some(state),
                 _ => None,
             })
-            .last()
+            .next_back()
             .unwrap();
         assert_eq!(
             unit_orders_for(stateful_final, 1)
@@ -9243,7 +9247,7 @@ mod tests {
                 EconomyLogRecord::Tick { state, .. } => Some(state),
                 _ => None,
             })
-            .last()
+            .next_back()
             .unwrap();
         assert!(
             idless_final
