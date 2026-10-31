@@ -661,3 +661,14 @@ Choice: filter path strings BEFORE opening or hashing files. Exclude any .claude
 Actual correction: run38/c77-c79-final-source/manifest-authorized.json has1154 paths (41excluded), SHA13463adaf2b5b17adb8ff6fb5e8929279092f087b3af7d7df99aa220da559248. Every allowed live hash matches its original recorded hash. Authorized archive SHA is cb388fe114bdb36cc647a9ab971ea1303a275e525281873cd2380f889e4508ff,32224410bytes. The generated broad archive was removed; original manifest is retained with disclosure. Root/reviewer must audit approved entries only, not forbidden files or archive members. No gameplay, acceptance, K call or user configuration changes. Alternative not taken: import role instructions, read excluded data again to validate the archive, or pretend the original collector complied.
 
 Correction recorded at 05:42 Toronto; the current base browser proof remains in progress on unchanged authorized source.
+
+
+## C81: give the helper unit test a stable scheduling allowance (2026-10-31)
+
+Conflict: tests/browser/harness/m2-press.test.js used a1ms deadline although its assertion concerns mouse-up ordering, not scheduler speed. A loaded Node process can exhaust1ms before the first probe. This is a Low instrument finding; it does not concern a product/acceptance timeout.
+
+Choice: raise only that unit-test allowance to500ms. Keep the helper, event-order assertions, real browser5000/15000ms bounds and all acceptance predicates unchanged. Commit only that test file, explicitly, asabe0841f7c934ff88b0e82e15298e46119d17aba with the attribution. Run Node62 and QA on that exact head. Preserve already-completed Rust execution asfa495229e33790aa68bf5f6ad2d5b2512c8d8c79 and prove all Cargo/crates/runtime and real base/CLICK9 dependencies byte-identical; do not repeat unaffected Rust or browser proofs just to change a head label (C39). Record actual execution heads and the one approved unit-only delta. Required final G-WEB, GREF and last plants remain.
+
+Actual progress: fa495 Rust5 commands pass, workspace proof remains exact to that source. abe0841 Node62, QA and frozen checks pass; final T7/M3 are running. Root chose a brief independent native/helper recheck after standard gates, before expensive GREF, to close C77/C79 High/runtime findings early. The same RUN37 will run interaction48, adapter13, real UI layout1 and focused Python4/Node3, then return the cache to RUN38. This is not a new agent run and no plant moves before gates. Alternative not taken: keep a timing-sensitive1ms test, extend any product timeout or repeat source-identical full suites.
+
+Decision recorded at 05:49 Toronto; final web/independent/gref/plant acceptance is pending.
