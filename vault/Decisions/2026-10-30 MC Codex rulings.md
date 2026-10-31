@@ -672,3 +672,10 @@ Choice: raise only that unit-test allowance to500ms. Keep the helper, event-orde
 Actual progress: fa495 Rust5 commands pass, workspace proof remains exact to that source. abe0841 Node62, QA and frozen checks pass; final T7/M3 are running. Root chose a brief independent native/helper recheck after standard gates, before expensive GREF, to close C77/C79 High/runtime findings early. The same RUN37 will run interaction48, adapter13, real UI layout1 and focused Python4/Node3, then return the cache to RUN38. This is not a new agent run and no plant moves before gates. Alternative not taken: keep a timing-sensitive1ms test, extend any product timeout or repeat source-identical full suites.
 
 Decision recorded at 05:49 Toronto; final web/independent/gref/plant acceptance is pending.
+
+
+## C82: overlap Wave5 preparation with the hosted Wave4 run (2026-10-31)
+
+Conflict: the Wave4 push and hosted read are complete, but check/browser jobs are still running. Waiting without source preparation wastes independent work. Brief section4:43 requires a push/read after each wave; section4:53 allows wave/cache layout decisions. Plan48 requires each merge re-gate.
+
+Choice: start Task6 and Task7 after the recorded read of run41195343950, with all pending statuses explicit. One compiler/cache owner only. Independent source/test preparation may overlap hosted validation. Root must read the terminal Wave4 jobs and findings before the next integration merge; no hosted success is inferred. Keep every task/final/permerge gate, independent review and refutation. Use two builders so an independent reviewer still has a slot. Alternative not taken: idle until long hosted tests finish, or run competing caches/merge without CI review.
