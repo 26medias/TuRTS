@@ -105,4 +105,4 @@ Human usability amendment1354e33: catalog-derived principal labels/named local s
 MC update2026-10-31: ACTIVE: 9 of 25 lanes complete. Task9 candidateabe0841 has all standard gates green (workspace1053/0/18), fresh base/CLICK9 passes and69 independent rechecks passed. Final GREF:4/7 passed; the missing-output-mesh baseline passes and its mutation stage is live. Three cases and final FOV/modifier checks remain before review/merge. Build runs:38/170. Rulings:C1-C81. Main remains c3f09d0.
 
 
-MC current: ACTIVE: 10 of25 lanes complete. Task9 merged fb5e2d6 and all12 integration gates passed: workspace1053/0/18, T7 136frames/53moving, actualM3 controls7captures, frozen exact. Wave4 pushed; CI41195343950 agents success, check/browser running. Build38/170; C1-C81; main c3f09d0 unchanged. See [[MC Execution Board]].
+MC current: ACTIVE: 10 of25 lanes complete. Task9 merged fb5e2d6 and all12 integration gates passed: workspace1053/0/18, T7 136frames/53moving, actualM3 controls7captures, frozen exact. Wave4 pushed; CI41195343950 agents success, check/browser running. Build40/170; C1-C82; main c3f09d0 unchanged. See [[MC Execution Board]].

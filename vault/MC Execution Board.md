@@ -76,7 +76,7 @@ CI trigger: `.github/workflows/ci.yml:2-5` runs pushes to main and pull requests
 | T2b | 3 | 2a, 3, 18 | codex/mc-t2b | COMPLETE64cd400; merge6d2c46e; all gates/10GREF0; review0H/0M; lane removed |
 | T4 | 4 | 2b, 3 | codex/mc-t4 | COMPLETE merge0490ebd; review0H/0M,36GREF,all12rootgates0; lane removed |
 | T9 | 4 | 1, 8, 2b | codex/mc-t9 | COMPLETE mergefb5e2d6; independent0High/0unresolvedMedium,69tests,7GREF,FOV/modifier plants,all12integrationgates0; archived lane removed, branch retained. |
-| T6 | 5 | 4 | codex/mc-t6 | ACTIVE RUN39; group movement, sole compiler lease pending. |
+| T6 | 5 | 4 | codex/mc-t6 | ACTIVE RUN39; group movement, sole compiler lease granted, partial semantic red101 captured. |
 | T7 | 5 | 2b, 4 | codex/mc-t7 | ACTIVE RUN40; source/test preparation only, no compiler lease. |
 | T11 | 5 | 9, 19, 20 | codex/mc-t11 | NOT STARTED |
 | T12 | 5 | 3, 9, 19, 20 | codex/mc-t12 | NOT STARTED |
@@ -230,8 +230,8 @@ One row per builder/reviewer dispatch or resumed agent work turn. Register befor
 | 36 | T9 implementation continuation | bevy-rendering-engineer | gpt-6-luna | high | 61535fc | COMPLETE native implementation handoff only; initial semantic reds, C49/C69-C73 repairs and native proofs. Task verification continues in RUN38. |
 | 37 | T9 independent review | technical-director | gpt-6.1-sol | high | abe0841 | COMPLETE PASS0High/0unresolvedMedium;69 independent checks,7/7 GREF audited,FOV3 audited, own modifier0/101/0,63 source hashes restored, clean/cache ROOT. |
 | 38 | T9 pixel proof and final verification continuation | bevy-rendering-engineer | gpt-6-luna | high | abe0841 | COMPLETE: fresh base/CLICK9, all standard gates0,7/7 GREF45commands,FOV0/101/0, clean final index. T9run5/estimate6/soft12/hard24. Historical setup failures preserved. |
-| 39 | T6 group movement builder | simulation-core-engineer | gpt-6-luna | high | 3f83d61 | REGISTERED before dispatch; estimate6/soft12/hard24. Sole cache transfer pending. |
-| 40 | T7 server session builder | backend-engineer | gpt-6-luna | high | 3f83d61 | REGISTERED before dispatch; source/test preparation only, no compiler lease; estimate4/soft8/hard16. |
+| 39 | T6 group movement builder | simulation-core-engineer | gpt-6-luna | high | 487f6c9 | ACTIVE RUN39; owns sole cache; partial compiled overlap red101 captured, full named fixture suite in preparation; estimate6/soft12/hard24. |
+| 40 | T7 server session builder | backend-engineer | gpt-6-luna | high | 487f6c9 | ACTIVE RUN40; scoped source/test preparation only toRED-READY, no compiler lease; estimate4/soft8/hard16. |
 
 ## 9. Preflight ledger and stop
 
@@ -533,3 +533,6 @@ Conflict: the Wave4 push and hosted read are complete, but check/browser jobs ar
 Choice: start Task6 and Task7 after the recorded read of run41195343950, with all pending statuses explicit. One compiler/cache owner only. Independent source/test preparation may overlap hosted validation. Root must read the terminal Wave4 jobs and findings before the next integration merge; no hosted success is inferred. Keep every task/final/permerge gate, independent review and refutation. Use two builders so an independent reviewer still has a slot. Alternative not taken: idle until long hosted tests finish, or run competing caches/merge without CI review.
 
 RUN39/40 registered before dispatch: build40/170, no overrun; same-wave source preparation with sole cache assigned toTask6 after root transfer. Terminal Wave4 CI review required before next integration merge.
+
+
+Wave5 dispatch actualbase487f6c9: RUN39 Task6 owns solecachetarget/mc-t6 after rename/four successful profilecleans (t6-root/cache-from-integration); RUN40 Task7 source-only toRED-READY. Task6 initial partial2test run compiled and failed named40-unit overlap assertion101; a separate lone-unit test had an inadequate200tick fixture horizon, corrected300 before next run. Root rawlog audit t6-root/initial-red-audit.json; full11named fixtures/design boundaries remain pending before production implementation. First-run test bytes preserved honestly before correction; no fabricated pre-run archive. This is PROGRESS, not Task6 acceptance. Global40/170, no taskoverrun, main unchanged. Wave4 latestread agentsgreen, check native tests andbrowserT7 running; terminal review pending before any nextintegrationmerge.
