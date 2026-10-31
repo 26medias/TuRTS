@@ -176,3 +176,11 @@ Conflict: RUN31 High: E8-rejection-ack-send-reversal registry install anchor (te
 Choice: update anchor and replacement together to preserve PendingOrderCommands while injecting the same delayed duplicate-command Ack defect. Retain the original stable expected_failure phrase matching the unchanged message-ID ordering assertion. Require exactly one match per anchor, baseline0, named semantic red, restored0 and exact source restoration. RUN31 applies the qa-lead registry lens and rechecks the final change.
 
 Alternative not taken: retire the plant, weaken its guard, treat an anchor failure as semantic red, or change the observed Ack/rejection ordering rule. No plant retirement or game behaviour change.
+
+## C21: preserve the empty-Move simulation audit route
+
+Conflict: orders.rs:24-25 refuses empty units before the legacy MoveTo validator runs. E8 economy.rs:2072 deliberately marks empty Move seq4 as reaches_domain=true, then requires CommandBoundary evidence at :2345 onward. The new envelope keeps literal empty subjects, but this early refusal removes the existing audited path.
+
+Choice: resolve a valid Move/Point envelope to the legacy MoveTo command even when its subjects are empty. The unchanged simulation validator rejects EmptyCommand and retains its command audit. Other empty fan-outs must receive local envelope refusals, never an unresolved pending entry with zero simulation commands. Keep unknown and unsupported order reasons intact. Require the existing E8 trace assertions to pass. This keeps the Task2b legacy path until Task4 replaces validation.
+
+Alternative not taken: weaken E8 domain-reachability evidence, silently drop an empty command, or implement Task4 early. No frozen expected value, player key, acceptance row or mechanism changes.
