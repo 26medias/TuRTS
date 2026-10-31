@@ -8,7 +8,7 @@ source: codex
 
 # MC execution board
 
-State: ACTIVE: 9 of25 lanes complete; Task9 source accepted abe0841, integration merge/re-gate pending. Independent PASS0High/0unresolvedMedium,69 tests,7/7 GREF and both final plants complete. Build38/170; rulingsC1-C81. Main remains c3f09d0.
+State: ACTIVE: 10 of25 lanes complete. Task9 merged fb5e2d6 and all12 integration gates passed: workspace1053/0/18, T7 136frames/53moving, actualM3 controls7captures, frozen exact. Wave4 pushed; CI41195343950 agents success, check/browser running. Build38/170; C1-C81; main c3f09d0 unchanged.
 
 Plan: `docs/superpowers/plans/2026-10-29-mc-player-control.md`.
 Design of record: `docs/superpowers/specs/2026-10-29-mc-player-control-design.md`, revision12 at63788d7, included by mainc3f09d0.
@@ -62,7 +62,7 @@ CI trigger: `.github/workflows/ci.yml:2-5` runs pushes to main and pull requests
 
 ## 4. Tasks
 
-24 numbered tasks; task2 has two branches, for25lanes. T1/T2a/T3/T20, T8/T18/T19, T2b and T4 are complete. Task9 is under repair; later waves have not started.
+24 numbered tasks; task2 has two branches, for25lanes. T1/T2a/T3/T20, T8/T18/T19, T2b,T4 andT9 are complete. Wave5 preparation follows the Wave4 push/CI read; no task dispatched yet.
 
 | Task | Wave | Needs | Branch | State |
 | --- | --- | --- | --- | --- |
@@ -75,7 +75,7 @@ CI trigger: `.github/workflows/ci.yml:2-5` runs pushes to main and pull requests
 | T19 | 2 | 3 | codex/mc-t19 | COMPLETE merge98135d3; review0High/0Medium; all integration gates0; lane removed |
 | T2b | 3 | 2a, 3, 18 | codex/mc-t2b | COMPLETE64cd400; merge6d2c46e; all gates/10GREF0; review0H/0M; lane removed |
 | T4 | 4 | 2b, 3 | codex/mc-t4 | COMPLETE merge0490ebd; review0H/0M,36GREF,all12rootgates0; lane removed |
-| T9 | 4 | 1, 8, 2b | codex/mc-t9 | Source accepted abe0841; independent PASS0High/0unresolvedMedium, all standard gates,69 checks,7/7 GREF,FOV/modifier plants. Root merge/re-gate pending. |
+| T9 | 4 | 1, 8, 2b | codex/mc-t9 | COMPLETE mergefb5e2d6; independent0High/0unresolvedMedium,69tests,7GREF,FOV/modifier plants,all12integrationgates0; archived lane removed, branch retained. |
 | T6 | 5 | 4 | codex/mc-t6 | NOT STARTED |
 | T7 | 5 | 2b, 4 | codex/mc-t7 | NOT STARTED |
 | T11 | 5 | 9, 19, 20 | codex/mc-t11 | NOT STARTED |
@@ -519,3 +519,6 @@ C79: move cached UI publication to Last before FrameCloseSet so it follows real 
 C79 also orders actual web/native Last feed readers after FrameCloseSet (and native readers before exit), so a fresh producer cannot be read one frame early. This is part of the same snapshot fidelity repair.
 
 Task9 source accepted abe0841 after independent PASS: 0 open High, 0 unresolved Medium; 69 independent checks, all7 guarded GREF cycles, FOV3 and own modifier semantic plants restored exactly. Integration merge and root gates pending; build38/170, no new run or main action.
+
+
+Task9 integrated asfb5e2d6454fefd7a69564a1788eaa52d0ee505e4, code tree identical to reviewedabe0841. All12 postmerge gates actually exit0; workspace106summaries1053passed/0failed/18ignored, T7 136frames/53moving, actualM3 Produce/set_enabled/remove and7captures, frozen SHA unchanged. Root read/hash-checked logs in main target/mc-evidence/after-t9/root-final-audit.json; source/HEAD/status stable. Pushed integrationfb5e2d6; hostedrun41195343950 uses PR merge8c9856e onto mainc3f09d0. Read jobs: agents124520280631 success; check124520280779 andbrowser124520280856 running. No hosted browser success claim yet. DraftPR2 remains draft/unmerged, metadata updated. All170remaining lane target files matched their archived hashes before removal; clean merged T9 worktree removed, branch retained, solecacheintegration. Receipt t9-root/lane-cleanup-complete.json. Build38/170,10of25lanes complete; fullgoal remains active. C39 speedups retain every required final gate and permerge gate.
