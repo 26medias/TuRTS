@@ -562,3 +562,28 @@ The client camera stub owns a default configuration resource: optional initial p
 Publish full frame-local CoreEffects(Vec<Effect>), including Send/SelectionChanged, for later presentation owners after CoreAdapterSet. Raw requests stay separate from actual shown/started feeds. Keep actions.rs, camera movement, minimap behavior and persistence storage/UI stubs. Focused tests cover default preservation, engine/mod runtime overrides, own/live group restore and recall, and once-only queued commands/effect visibility; existing RMB and all core tests cover the world-point factor. Refresh the browser snapshot after these additions.
 
 Alternative not taken: expose mutable core state, invent fake windows, force future shared-file edits, or implement future camera/minimap/storage features early. These are internal configuration/event refinements of D2.2/2.3/3.1/4.2/7/10.4, with no new player key, changed default, removed step, changed acceptance row or budget run. Exact local names may follow the code pattern. Build37/170.
+
+
+## C70: retain frame-local feedback evidence for Task15 without shared-file edits (2026-10-31)
+
+Conflict: plan:604 ORD7 requires response sound in the first right-click mouse-up frame, before OrderResult. FrameRecord had selection/positions/markers/rings/results but no feedback/audio data. Task9 owns the Last record and debug formatter; deferring a field would force a forbidden shared edit in15.
+
+Choice: define default FrameFeedback in the owning feedback.rs stub, with audio_started, notices and alerts. Last clones the whole typed resource into FrameRecord.feedback; FrameCloseSet is public for owner ordering. The adapter only initializes and reads this owner resource. Task15 fills actual current-frame presentation and may extend its own structure without editing core_adapter/debug. No sound/notice/alert implementation is moved into9. A sentinel test proves owner data survives and appears in the Last snapshot. Alternative not taken: infer earlier sound from a later top-level history, forge a started response from a request, or force a later formatter edit. No acceptance-row/player change; run37/170.
+
+## C71: move generic UI capture contracts out of the panel that Task12 deletes (2026-10-31)
+
+Conflict: core_adapter still imported EconomyUI's UiPanelRoot/cursor helper and ordered against sync_panel; debug/render retained Selection aliases. Task12 deletes economy_ui, while R5 and plan shared table:168-172 leave these shared dependencies with9.
+
+Choice: ui_shared owns Selection, UiCaptureRoot, cursor viewport conversion and UiPresentationSet. Legacy EconomyUI reexports marker/helper names and runs sync_panel in the shared set. The actual adapter depends only on shared contracts and runs before the presentation set. Task12 widgets reuse the capture tag/set; no widget behavior is implemented now. debug/render import Selection directly. Preserve all actual hit-geometry/UI-activation tests and the input guards. Alternative not taken: keep a latent compile failure for12 or add future shared adapter/debug edits. This is an internal module/ordering seam; no player/layout change or new run.
+
+## C72: decouple the legacy CPU fixture input module too (2026-10-31)
+
+Conflict: input.rs:6,150 also imported EconomyUI data/pick helpers and ordered against sync_panel. Task12 does not own input.rs and cannot delete EconomyUI cleanly with those references. Its ClickInputPlugin still supports existing CPU/UI fixtures (tests/economy_ui.rs:920,987); production build_app already uses only CoreAdapterPlugin.
+
+Choice: input.rs imports shared Selection/capture/helper/set, owns the unchanged pure unit/node pick helpers, and orders compatibility input after UiPresentationSet. EconomyUI reexports those helpers for old fixture call sites. Document the compatibility-only plugin; keep it unregistered in production. Preserve fixture guards and actual production adapter coverage; no test is retired or weakened. The remaining live_view/lib/web EconomyUI references belong to12, which explicitly owns them. Alternative not taken: remove old UI tests, maintain a hidden compile dependency or register two production input routes. No control/acceptance change; run37/170.
+
+## C73: expose retained validated archives read-only to future feature modules (2026-10-31)
+
+Conflict: Acquisition retains accepted archives at join.rs:81 but keeps the field private. ClientContent currently stores camera/selection/input data, not complete interfaces, lights, assets or asset bytes. PackageArchive already exposes interfaces/assets/file APIs (archive.rs:81,162-166). The client camera/widget/audio owners otherwise need new common-loader edits to read the data already retained in memory.
+
+Choice: add Acquisition::accepted_archives()->&[PackageArchive]. It returns the accepted-so-far slice without cloning or mutation; feature callers wait for AcquiredPackages when they need the complete pool. Acquisition is not cleared or removed after join. No fetching, parsing, cache, validation or asset behavior changes; future feature modules own their readers and logic. This trivial read accessor needs compile validation, not a test that mirrors its one-line implementation. Alternative not taken: make the collection mutable, copy archives into every feature or force new join/content hot-file edits. This fills a readonly module interface, with no new player behavior, data exposure beyond downloaded packages or budget run.
