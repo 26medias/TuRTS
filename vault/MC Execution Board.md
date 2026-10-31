@@ -8,7 +8,7 @@ source: codex
 
 # MC execution board
 
-State: ACTIVE: Waves1-3 complete (8 of25 lanes), pushed6d2c46e. Task2b64cd400 accepted0High/0Medium; root re-gate12commands0,886/0/18,T7(138frames). Wave3 CI41157502932 queued. Runs32T4/33T9UX registered, build33/170. C1-C24 recorded. One cache reserved forT4; T9UX drafts only. Mainc3f09d0 untouched.
+State: ACTIVE: Waves1-3 complete (8 of25 lanes), pushed6d2c46e. Task2b64cd400 accepted0High/0Medium; root re-gate12commands0,886/0/18,T7(138frames). Wave3 CI41157502932 queued. Runs32T4/33T9UX registered, build34/170. C1-C24 recorded. One cache reserved forT4; T9UX drafts only. Mainc3f09d0 untouched.
 
 Plan: `docs/superpowers/plans/2026-10-29-mc-player-control.md`.
 Design of record: `docs/superpowers/specs/2026-10-29-mc-player-control-design.md`, revision12 at63788d7, included by mainc3f09d0.
@@ -224,7 +224,8 @@ One row per builder/reviewer dispatch or resumed agent work turn. Register befor
 | 30 | T2b implementation | network-engineer | gpt-6-luna | high | 363d02d | COMPLETE64cd400;14gate receipts0,886/0/18,10GREF(69commands) namedred/restoredgreen; merge6d2c46e. |
 | 31 | T2b independent review | mod-runtime-engineer; qa-lead registry lens | gpt-6.1-sol | high | 64cd400 | PASS0High/0Medium;26focused tests0, capplant0/101/0, all14gates/10GREF audited; sourceclean; task2runs/estimate4. |
 | 32 | T4 implementation | simulation-core-engineer | gpt-6-luna | high | 6d2c46e plus vault | REGISTERED; red-first queue/audit/validator; task1/estimate8/soft16/hard32. |
-| 33 | T9 core-test preparation | ux-designer | gpt-6-luna | high | 6d2c46e plus vault | REGISTERED C24 external drafts only; no Cargo/source edits; task1/estimate6/soft12/hard24. |
+| 33 | T9 core-test preparation | ux-designer | gpt-6-luna | high | ab6ffd8 | COMPLETE draft-only; external tests/contract, SHA76817063...a2d629, T9 clean, no Cargo, no observed red/green. |
+| 34 | T4 independent review | qa-lead | gpt-6.1-sol | high | ab6ffd8; candidate pending | REGISTERED read-only early audit; no Cargo until handoff; task2/estimate8/soft16/hard32. |
 
 ## 9. Preflight ledger and stop
 
