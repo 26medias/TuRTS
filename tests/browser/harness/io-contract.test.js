@@ -241,3 +241,30 @@ test("save logs compact argument identity that hashes to the saved artifact", as
         assert.deepEqual(inputLog[0].args[1], { byte_length: bytes.length, sha256: expectedHash, saved_as: "artifact.bin" });
     } finally { await fs.rm(outputDir, { recursive: true, force: true }); }
 });
+
+test("screenshot checkpoints remain harness-only and follow the selected window", async () => {
+    const checkpoints = [];
+    const { io, inputLog } = createDriverIo([fakePage("a", []), fakePage("b", [])], {
+        afterScreenshot: async (metadata) => {
+            checkpoints.push(metadata);
+            return { secret: "oracle-only bridge state" };
+        },
+    });
+    assert.deepEqual(Object.keys(io), EXPECTED_IO_KEYS);
+    assert.equal((await io.screenshot()).toString(), "png");
+    await io.use(2);
+    assert.equal((await io.screenshot()).toString(), "png");
+    assert.deepEqual(checkpoints.map(({ input_call, window }) => ({ input_call, window })), [
+        { input_call: 0, window: 1 },
+        { input_call: 2, window: 2 },
+    ]);
+    for (const checkpoint of checkpoints) assert(Number.isFinite(checkpoint.wall_time_ms));
+    assert(!JSON.stringify(inputLog).includes("oracle-only bridge state"));
+});
+
+test("a failed screenshot checkpoint fails the row instead of silently omitting camera evidence", async () => {
+    const { io } = createDriverIo([fakePage("a", [])], {
+        afterScreenshot: async () => { throw new Error("missing camera bridge"); },
+    });
+    await assert.rejects(io.screenshot(), /missing camera bridge/);
+});

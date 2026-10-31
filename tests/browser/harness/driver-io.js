@@ -9,7 +9,7 @@ const IO_KEYS = Object.freeze(["click", "drag", "key", "move", "wheel", "screens
 
 function wallTime() { return Date.now(); }
 
-function createDriverIo(pages, { outputDir, inputLog = [], initialCursor = { x: 0, y: 0 } } = {}) {
+function createDriverIo(pages, { outputDir, inputLog = [], initialCursor = { x: 0, y: 0 }, afterScreenshot } = {}) {
     if (!Array.isArray(pages) || pages.length === 0) throw new TypeError("at least one page is required");
     if (!Number.isFinite(initialCursor.x) || !Number.isFinite(initialCursor.y)) throw new TypeError("initialCursor must have finite x and y");
     const state = { selected: 0 };
@@ -157,7 +157,15 @@ function createDriverIo(pages, { outputDir, inputLog = [], initialCursor = { x: 
                 return send("wheel", () => page().mouse.wheel(0, dy * scale), { delta_y: dy });
             });
         },
-        async screenshot() { return record("screenshot", [], [], noEvent(async () => page().screenshot({ type: "png", scale: "css" }))); },
+        async screenshot() {
+            return record("screenshot", [], [], noEvent(async () => {
+                const input_call = inputLog.length - 1;
+                const window = state.selected + 1;
+                const bytes = await page().screenshot({ type: "png", scale: "css" });
+                if (afterScreenshot) await afterScreenshot({ input_call, window, wall_time_ms: wallTime() });
+                return bytes;
+            }));
+        },
         async save(name, bytes) {
             const safe = safeName(name);
             const contents = Buffer.from(bytes);

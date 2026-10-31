@@ -5,6 +5,7 @@ const fs = require("node:fs/promises");
 const path = require("node:path");
 const { createDriverIo } = require("./driver-io.js");
 const { createView } = require("./view.js");
+const { createSceneCheckpoints } = require("./scene-checkpoints.js");
 
 function deepFreeze(value) {
     if (value && typeof value === "object" && !Object.isFrozen(value)) {
@@ -136,11 +137,17 @@ async function run(options) {
         await pages[0].bringToFront();
         await pages[0].waitForTimeout(100);
         for (const page of pages) await page.evaluate(() => { window.__turts_io_actual_events = []; window.__turts_io_downstream_events = []; window.__turts_io_seq = null; window.__turts_io_dispatching = false; window.__turts_io_expected_event = null; });
-        const { io, state } = createDriverIo(pages, { outputDir: options.outDir, inputLog, initialCursor: { x: options.width / 2, y: options.height / 2 } });
+        const checkpoints = params.capture_scene_checkpoints === true ? createSceneCheckpoints(pages) : null;
+        const { io, state } = createDriverIo(pages, {
+            outputDir: options.outDir, inputLog,
+            initialCursor: { x: options.width / 2, y: options.height / 2 },
+            afterScreenshot: checkpoints?.record,
+        });
         const view = createView(pages, inputLog, serverDir, state);
         try {
             await driver.drive(io, params);
         } finally {
+            if (checkpoints) await fs.writeFile(path.join(options.outDir, "scene-checkpoints.json"), JSON.stringify(checkpoints.snapshots()) + "\n");
             await fs.writeFile(path.join(options.outDir, "input-log.json"), JSON.stringify(inputLog) + "\n");
             const ambient = await Promise.all(pages.map(async (page) => {
                 try { return await page.evaluate(() => ({ ambient: window.__turts_io_ambient_events || [], downstream: window.__turts_io_downstream_events || [] })); }
