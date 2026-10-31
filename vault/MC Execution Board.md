@@ -229,6 +229,7 @@ One row per builder/reviewer dispatch or resumed agent work turn. Register befor
 | 35 | T9 implementation preparation | bevy-rendering-engineer | gpt-6-luna | high | 3203f6b | COMPLETE preparation only: imported tests, API stubs, PROJ1/CLICK9 drafts; uncompiled/unexecuted/uncommitted; task2/estimate6/soft12/hard24. |
 | 36 | T9 implementation continuation | bevy-rendering-engineer | gpt-6-luna | high | 61535fc | ACTIVE:40interaction+185client/1ignored nativepreflight0 root-audited; frozen47-file CLICK9pair running; finalgates/plants pending. |
 | 37 | T9 independent review | technical-director | gpt-6.1-sol | high | 61535fc + active RUN36 diff | ACTIVE read-only source review; concrete early fixes sent builder, independent runtime/plant after exclusive handoff; task4/estimate6/soft12/hard24. |
+| 38 | T9 pixel proof and final verification continuation | bevy-rendering-engineer | gpt-6-luna | high | 61535fc + C73 source and C74-C75 root pixel changes | REGISTERED before resume; required headed pixel pair, exact-source commit, all gates/plants/GREF and clean handoff; T9run5/estimate6/soft12/hard24. |
 
 ## 9. Preflight ledger and stop
 
@@ -498,3 +499,8 @@ C69: source audit found real future dispatch/config gaps under sharedtable172/C4
 
 
 C70-C73 recorded: owner-defined per-frame feedback snapshot/FrameCloseSet; shared UI capture/helper/presentation set; compatibility input.rs decoupled from panel deletion; readonly accepted_archives getter for future feature-owned metadata/assets. No future feature implementation, player change, test retirement or extra run. All known future file-contract seams must pass final source audit before next browser freeze.
+
+
+RUN36 ended after native implementation/handoff while root completed C74-C75 pixel instruments. Task9 is NOT complete. RUN38 registered before follow-up for the remaining required browser/commit/gates/plants/GREF; global38/170, task5/estimate6. No budget exception or new task start. RUN37 remains independent reviewer, runtime/Highrecheck/ownplant pending.
+
+C74 explicit headed profile honored for CI rows without skips; C75 real pixels determine scout click. Root59Node/47selftest/tree/shell checks0, PNG12image Pillowbyte-differential0, oldprofile2semanticfails and invisibleclickold1/new0 guards retained. Rust source unchanged by these JS/shell edits. Root verified latest45interaction/189client/1ignored0. Task24 must use privateXvfb/MC_BROWSER_HEADED1 profile and full harness/*.test.js; Task21 reuses purecodec. Actual new headed pixel pair remains pending.
