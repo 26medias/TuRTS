@@ -8,7 +8,7 @@ source: codex
 
 # MC execution board
 
-State: ACTIVE: O12 released Task 6. Integration and all four open lanes rebased onto main721e56e (design revision13); dirty source hashes preserved.10of25lanes complete;47/170runs; Task6run5/6. C1-C109. H4/H14/H12 repair batch active; initial Unit-target cap scope included, reviewer source-only. No main merge.
+State: ACTIVE: O12 released Task 6. Integration and all four open lanes rebased onto main721e56e (design revision13); dirty source hashes preserved.10of25lanes complete;47/170runs; Task6run5/6. C1-C110. H4/H14/H12 repair active; initial Unit cap and prior-live-execution scope included, reviewer source-only. No main merge.
 
 Plan: `docs/superpowers/plans/2026-10-29-mc-player-control.md`.
 Design of record: `docs/superpowers/specs/2026-10-29-mc-player-control-design.md`, revision12 at63788d7, included by mainc3f09d0.
@@ -895,3 +895,14 @@ Choice: initial authored Move(Unit) and queued Unit-target Move activation enter
 C108's completion rule also respects a reached assigned cohort slot for the unchanged initial physical goal. A refresh must not immediately overwrite that slot with another body's centre, consume a stale reached result after real target/order change, or reset stall/claim state merely because the same goal is refreshed. Keep existing target-gone/queue behavior and exact identity. The independent validator derives initial target position/member identity from the live before-state and accepted input, not a producer flag. Include a Unit-target variant of the oversized-head control with a no-competition control, Pending/body invariance, and preserved Unit reference after activation; queued activation needs the same budget control.
 
 Alternative not taken: exempt Unit references, recharge an already-active follow every tick, change the group key, snapshot the authored order permanently to Point, or require centre overlap. This is a mechanism/applicability ruling under brief4, with the same follow behavior and written cap/Pending shape. It expands the current C106-C108 repair batch before the next freeze, not after final refutations. Unit-target runtime proof is NOT TRACED until the probe runs.47/170 runs; Task6run5/6; no new agent run, merge or push.
+
+
+## C110: keep prior execution live while its replacement is Pending
+
+Conflict: RUN47's captured source (orders.rs SHA4d3ec1f3dad40b6785b78728c34842945abf26477b1b29dd19cbb3601042f5f4 atop ffb21b3) returns immediately for a pending member at run_orders:479, before the live-follow refresh at685/helper1686. Gather continues in its separate phase, but old Move(Unit) A can retain a stale target while replacement B waits. C93 and design6.3:639 keep the previous order; C109 keeps ongoing follow alive without charging a new envelope. This is a traced source lead; the new prepared probe has not yet run and is not an additional confirmed runtime High.
+
+Choice: process the prior execution while B waits, with a separate queue-advance gate. An active A still refreshes its live canonical follow goal and retains unchanged-goal fallback/stall state. Completion, Blocked acknowledgment or TargetGone for A may finish/record A through the normal captured transition, but must not pop or start post-B Append work. B remains the pending head; D remains behind it. A completed prior execution may become idle while B waits. No new cap charge is created for an existing A refresh, and no new order identity is fabricated. Preserve C107 physical escape and actual old Gather/point execution too.
+
+Use a pending-aware execution helper or explicit allow-queue-advance parameter rather than call the old helper unchanged: its completion/TargetGone branches start the queue. Require the prepared real-moving-target/old-A/B-Pending/D-gated control, with actual dispatched busy-head budget and a no-replacement positive control. Source and semantic red/green receipts must distinguish real execution from fixture setup. Alternative not taken: freeze A's live follow, activate D before B, suppress all old failure acknowledgments, or recharge A every tick. This is C93/C109 mechanism completion under brief4 with the existing player-visible Pending and queue behavior.
+
+Evidence: main target/mc-evidence/t6-review/run47/pending-follow-source-lead/ and prepared pending_prior_follow_probe.rs. Add this to the existing repair batch before the next committed candidate/gates; no new agent run.47/170 runs, Task6run5/6; no merge/push.
