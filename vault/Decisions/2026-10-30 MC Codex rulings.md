@@ -184,3 +184,11 @@ Conflict: orders.rs:24-25 refuses empty units before the legacy MoveTo validator
 Choice: resolve a valid Move/Point envelope to the legacy MoveTo command even when its subjects are empty. The unchanged simulation validator rejects EmptyCommand and retains its command audit. Other empty fan-outs must receive local envelope refusals, never an unresolved pending entry with zero simulation commands. Keep unknown and unsupported order reasons intact. Require the existing E8 trace assertions to pass. This keeps the Task2b legacy path until Task4 replaces validation.
 
 Alternative not taken: weaken E8 domain-reachability evidence, silently drop an empty command, or implement Task4 early. No frozen expected value, player key, acceptance row or mechanism changes.
+
+## C22: retain explicit groups when the client splits an envelope
+
+Conflict: RUN31 Medium confirmed by root: commands.rs:217 sets group=first_seq for every split. A gesture with group77 and envelopes of4097 and1 subjects becomes groups[first_seq,first_seq,77]. K4 and design4.3 require one group for the gesture. The helper test derives both cap and input from MAX_ORDER_UNITS, so reducing the constant would not fail it.
+
+Choice: repair now. Retain a supplied nonzero group; assign first_seq only when group is0. Test actual submit_order/send_commands_traced capture with literal4097 subjects and expected4096+1 chunks, plus an unsplit envelope sharing the supplied group. Check literal subject order and sequence progression. Test near-u32::MAX span exhaustion causes reconnect with no partial gesture. Preserve allocate_many checked preflight (commands.rs:78-84). Record compiled semantic red/green.
+
+Alternative not taken: overwrite caller grouping, hide the defect in a helper-only/constant-mirrored test, or defer the known protocol adapter bug to a later task. No new key, step, acceptance row or K change.

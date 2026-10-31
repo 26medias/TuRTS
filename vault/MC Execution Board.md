@@ -393,3 +393,5 @@ C18: repair RUN31 Medium debug.rs:221 empty-envelope legacy rejection fields now
 C19: repair RUN31 High Produce admission regression via existing catalog-selected pre-domain checks; restore malformed-input fixture semantics. C20: repair High E8 delayed-Ack anchor and retain exact semantic failure text. Independent recheck required; no waiver/retirement. See [[Decisions/2026-10-30 MC Codex rulings]].
 
 C21: retain valid empty Move through legacy simulation rejection/audit; refuse other empty fan-outs without pending hangs. Keep existing E8 command-boundary reachability assertions. See [[Decisions/2026-10-30 MC Codex rulings]].
+
+C22: repair explicit shared-group loss on client splits; pin4097 ->4096+1 through actual sender and test sequence exhaustion. RUN31 Medium, same active runs. See [[Decisions/2026-10-30 MC Codex rulings]].
