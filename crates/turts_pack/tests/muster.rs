@@ -1,8 +1,8 @@
 use std::path::PathBuf;
 
 use turts_mod_api::{
-    AlertTrigger, Anchor, CameraStart, ContentsPolicy, Dimension, Footprint, Predicate, Primitive,
-    ResourceKind, SlotRelation, Source, TextValue, UnitDef, Value,
+    AlertTrigger, Anchor, CameraDef, CameraStart, ContentsPolicy, Dimension, Footprint, OrderDef,
+    Predicate, Primitive, ResourceKind, SlotRelation, Source, TextValue, UnitDef, Value,
 };
 use turts_mod_runtime::{archive::PackageArchive, pack::pack_dir};
 use turts_pack::load_package;
@@ -23,6 +23,39 @@ fn unit<'a>(definitions: &'a [(String, UnitDef)], id: &str) -> &'a UnitDef {
         .find(|(_, definition)| definition.id == id)
         .map(|(_, definition)| definition)
         .unwrap_or_else(|| panic!("muster exports unit `{id}`"))
+}
+
+fn order<'a>(definitions: &'a [(String, OrderDef)], id: &str) -> &'a OrderDef {
+    definitions
+        .iter()
+        .find(|(_, definition)| definition.id == id)
+        .map(|(_, definition)| definition)
+        .unwrap_or_else(|| panic!("muster exports order `{id}`"))
+}
+
+fn project_ground_point(camera: &CameraDef, point: (f32, f32), viewport: (f32, f32)) -> (f32, f32) {
+    let CameraStart::Point(look_x, look_y) = camera.start else {
+        panic!("muster camera must start at an authored ground point");
+    };
+    let pitch = camera.pitch;
+    let yaw = camera.yaw;
+    let sin_pitch = pitch.sin();
+    assert!(sin_pitch > 0.0, "camera must look down at the ground plane");
+    let focal = (viewport.1 * 0.5) / (camera.field_of_view.to_radians() * 0.5).tan();
+    let delta = (point.0 - look_x, point.1 - look_y);
+    let backward = (yaw.sin(), yaw.cos());
+    let right = (yaw.cos(), -yaw.sin());
+    let along = backward.0 * delta.0 + backward.1 * delta.1;
+    let side = right.0 * delta.0 + right.1 * delta.1;
+    let depth = camera.height / sin_pitch - pitch.cos() * along;
+    assert!(
+        depth > 0.0,
+        "ground point projects behind the authored camera"
+    );
+    (
+        viewport.0 * 0.5 + focal * side / depth,
+        viewport.1 * 0.5 + focal * sin_pitch * along / depth,
+    )
 }
 
 #[test]
@@ -203,6 +236,108 @@ fn fixture_hud1_loads() {
 }
 
 #[test]
+fn mixed_trooper_worker_orders_have_distinct_command_card_cells() {
+    let package = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../mods/muster");
+    let archive = archive_at(&package);
+    let orders = archive.orders().expect("parse muster orders");
+    let mixed_subjects = ["muster:trooper", "muster:worker"];
+    let visible_orders: Vec<_> = orders
+        .iter()
+        .filter(|(_, order)| {
+            order.card.is_some()
+                && order
+                    .units
+                    .iter()
+                    .any(|unit| mixed_subjects.contains(&unit.as_str()))
+        })
+        .collect();
+    assert_eq!(visible_orders.len(), 7);
+
+    assert_eq!(
+        order(&orders, "order_move").units,
+        [
+            "muster:trooper",
+            "muster:worker",
+            "muster:beacon",
+            "muster:dummy"
+        ]
+    );
+    assert_eq!(order(&orders, "rush").units, ["muster:trooper"]);
+    assert_eq!(order(&orders, "order_gather").units, ["muster:worker"]);
+
+    let mut occupied = std::collections::BTreeMap::new();
+    for (_, order) in visible_orders {
+        let cell = order.card.expect("visible order has a card cell");
+        assert!(
+            occupied
+                .insert((cell.row, cell.column), order.id.as_str())
+                .is_none(),
+            "mixed trooper/worker selection has overlapping order cards at ({}, {})",
+            cell.row,
+            cell.column
+        );
+    }
+    assert_eq!(
+        order(&orders, "rush")
+            .card
+            .map(|cell| (cell.row, cell.column)),
+        Some((1, 3))
+    );
+}
+
+#[test]
+fn muster_bundles_the_full_roboto_license_and_attribution() {
+    let package_license = include_str!("../../../mods/muster/assets/fonts/Roboto-LICENSE.txt");
+    let fixture_license = include_str!("fixtures/muster_hud1/assets/fonts/Roboto-LICENSE.txt");
+
+    assert_eq!(package_license, fixture_license);
+    for required in [
+        "Copyright 2011 Google Inc.",
+        "Apache License",
+        "Version 2.0, January 2004",
+        "END OF TERMS AND CONDITIONS",
+    ] {
+        assert!(
+            package_license.contains(required),
+            "license is missing {required:?}"
+        );
+    }
+}
+
+#[test]
+fn muster_authors_a_last_notice_text_surface() {
+    let package = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../mods/muster");
+    let archive = archive_at(&package);
+    let (_, hud) = archive
+        .interfaces()
+        .expect("parse muster interface")
+        .into_iter()
+        .next()
+        .expect("muster exports one interface");
+    let notice = hud
+        .root
+        .iter()
+        .find(|widget| widget.id == "last_notice")
+        .expect("Muster authors a LastNotice widget");
+
+    assert_eq!(notice.at.unwrap().anchor, Anchor::TopLeft);
+    assert_eq!(notice.at.unwrap().offset, (8.0, 268.0));
+    assert_eq!(notice.size.w, Dimension::Px(272.0));
+    assert_eq!(notice.size.h, Dimension::Px(48.0));
+    assert!(matches!(
+        &notice.widget,
+        Primitive::Text {
+            text: TextValue::Bind(Value::LastNotice),
+            font: Some(font),
+            size: 14,
+            colour,
+            wrap: true,
+            ..
+        } if font == "muster_ui" && colour == "#ffffff"
+    ));
+}
+
+#[test]
 fn muster_camera_starts_on_troopers_with_post_in_view() {
     let package = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../mods/muster");
     let archive = archive_at(&package);
@@ -235,10 +370,9 @@ fn muster_camera_starts_on_troopers_with_post_in_view() {
     assert!((start_x - troop_centre.0).abs() <= 0.001);
     assert!((start_y - troop_centre.1).abs() <= 0.001);
 
-    // The FOV and height define the nominal ground-plane rectangle for a 1280 x 720 view.
-    let half_height =
-        interface.camera.height * (interface.camera.field_of_view.to_radians() * 0.5).tan();
-    let half_width = half_height * (1280.0 / 720.0);
+    // This analytic authored-pose check follows the design's look-at convention. It does not
+    // substitute for the later core/Bevy projection and rendered-viewport checks.
+    let viewport = (1280.0, 720.0);
     let post = map
         .placements
         .iter()
@@ -249,8 +383,10 @@ fn muster_camera_starts_on_troopers_with_post_in_view() {
         .map(|unit| &unit.pos)
         .chain(std::iter::once(&post.pos))
     {
-        assert!((position.x - start_x).abs() <= half_width);
-        assert!((position.y - start_y).abs() <= half_height);
+        let (screen_x, screen_y) =
+            project_ground_point(&interface.camera, (position.x, position.y), viewport);
+        assert!((0.0..=viewport.0).contains(&screen_x), "x={screen_x}");
+        assert!((0.0..=viewport.1).contains(&screen_y), "y={screen_y}");
     }
 }
 
@@ -280,34 +416,32 @@ fn troop_and_beacon_centres_fit_one_screen_box_without_other_units() {
         .collect();
     assert_eq!(selected.len(), 500);
 
-    let min_x = selected
+    let viewport = (1280.0, 720.0);
+    let selected_screen: Vec<_> = selected
         .iter()
-        .map(|unit| unit.pos.x)
+        .map(|unit| project_ground_point(&interface.camera, (unit.pos.x, unit.pos.y), viewport))
+        .collect();
+    for (screen_x, screen_y) in &selected_screen {
+        assert!((0.0..=viewport.0).contains(screen_x));
+        assert!((0.0..=viewport.1).contains(screen_y));
+    }
+    let min_x = selected_screen
+        .iter()
+        .map(|point| point.0)
         .fold(f32::INFINITY, f32::min);
-    let max_x = selected
+    let max_x = selected_screen
         .iter()
-        .map(|unit| unit.pos.x)
+        .map(|point| point.0)
         .fold(f32::NEG_INFINITY, f32::max);
-    let min_y = selected
+    let min_y = selected_screen
         .iter()
-        .map(|unit| unit.pos.y)
+        .map(|point| point.1)
         .fold(f32::INFINITY, f32::min);
-    let max_y = selected
+    let max_y = selected_screen
         .iter()
-        .map(|unit| unit.pos.y)
+        .map(|point| point.1)
         .fold(f32::NEG_INFINITY, f32::max);
-    let box_width = max_x - min_x;
-    let box_height = max_y - min_y;
-    assert!(box_width / box_height <= 1280.0 / 720.0);
-
-    let CameraStart::Point(camera_x, camera_y) = interface.camera.start else {
-        panic!("muster camera must start on the troopers");
-    };
-    let half_height =
-        interface.camera.height * (interface.camera.field_of_view.to_radians() * 0.5).tan();
-    let half_width = half_height * (1280.0 / 720.0);
-    assert!(min_x >= camera_x - half_width && max_x <= camera_x + half_width);
-    assert!(min_y >= camera_y - half_height && max_y <= camera_y + half_height);
+    assert!(max_x > min_x && max_y > min_y);
 
     let others_inside = map
         .placements
@@ -317,7 +451,9 @@ fn troop_and_beacon_centres_fit_one_screen_box_without_other_units() {
                 && matches!(unit.unit.as_str(), "muster:trooper" | "muster:beacon"))
         })
         .filter(|unit| {
-            unit.pos.x >= min_x && unit.pos.x <= max_x && unit.pos.y >= min_y && unit.pos.y <= max_y
+            let (screen_x, screen_y) =
+                project_ground_point(&interface.camera, (unit.pos.x, unit.pos.y), viewport);
+            screen_x >= min_x && screen_x <= max_x && screen_y >= min_y && screen_y <= max_y
         })
         .map(|unit| unit.unit.as_str())
         .collect::<Vec<_>>();
