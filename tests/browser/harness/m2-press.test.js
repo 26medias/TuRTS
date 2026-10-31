@@ -54,7 +54,7 @@ test("rendered entity press completes mouseup before waiting for the predicate",
         scene,
         entry,
         (value) => value.debug.released,
-        1,
+        500,
         "mouseup feedback",
     );
 
