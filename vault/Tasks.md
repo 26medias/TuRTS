@@ -102,4 +102,4 @@ Human usability amendment1354e33: catalog-derived principal labels/named local s
 
 **Integrated:** M3 fast-forwarded into main and pushed; hosted CI running, human-demo limitations retained. See [[Reports/2026-10-28 M3 integration]].
 
-MC update2026-10-31: ACTIVE: Waves1-3 complete (8 of25 lanes), pushed6d2c46e. Wave3 check/agents passed; known browser timeout remains. Task4 candidate2c45b83 has runtime code identical to gate-green0240 (984/0/18), both planplants verified; finalGREF/independent runtime pending. Task9 source/test preparation complete, uncompiled. Build35/170; C1-C58. One compiler/cache. Mainc3f09d0 untouched. [[Reports/2026-10-31]].
+MC update2026-10-31: ACTIVE: Waves1-3 complete; Task4 merged0490ebd after PASS2c45b83 (0High/0Medium), integration re-gate pending. Eight lanes complete plus Task4 merged; Task9 source/test preparation uncompiled. Wave4 not yet pushed; Wave3 check/agents green, known browser timeout. Build35/170; C1-C58. Mainc3f09d0 untouched. [[Reports/2026-10-31]].
