@@ -208,3 +208,19 @@ Conflict: plan Wave4 permits Tasks4/9 together, and Task9 assigns headless core 
 Choice: RUN32 builds Task4 in its own lane with the sole warm target/mc-t4. RUN33 reads Task9 in its own branch/worktree and writes Rust test drafts only under main target/mc-evidence/t9-ux-prep/run33/drafts; no Cargo, implementation or tracked source edits. The later Task9 Bevy builder imports those authored drafts, adds compiling signatures, observes named semantic red, implements green, commits, gates and plants in the required order. Rebase the still-clean Task9 lane onto integration after Task4 so shared registries merge in task order. Each dispatch is counted before it starts.
 
 Alternative not taken: duplicate caches or build binaries concurrently, treat unexecuted drafts as red/pass, or drop the UX test-author seat. No scope, key, acceptance row or stop-rule change.
+
+## C25: carry validated per-package queue depth into the simulation catalog
+
+Conflict: ContentCatalog (crates/turts_mod_api/src/content.rs:156-166) carries OrderDef entries but drops parsed rules. ParsedMcContent.order_rules (crates/turts_mod_runtime/src/content_mc_validation.rs:31,57-69) exists, yet server/sim cannot use the mod queue_depth. Design11.2:1019,1030 defines per-package rules/default16; K24 requires the data value, not a fixed cap.
+
+Choice: add validated order_queue_depths: BTreeMap<PackageId,u8> to ContentCatalog and populate each archive package from its validated rules. Resolve depth by the package that authored the OrderCommand order; use DEFAULT_QUEUE_DEPTH16 if absent. Keep old0.2.2 packages unchanged. MC single-Game behavior is required; future addon-composition behavior remains NOT TRACED and does not add an override mechanism.
+
+Alternative not taken: hardcode16, drop parsed rules, or invent addon precedence/global override behavior. This fills a required data handoff with existing package-qualified catalog lookup. No K24 bound or player behavior change.
+
+## C26: match the public queue-depth type and retain field diagnostics
+
+Conflict: public OrderRulesDef.queue_depth is u16 (crates/turts_mod_api/src/orders.rs:96), while design11.2:1019 explicitly says u8. Existing accessor test mc_content.rs:180-185 preserves raw256 so validation can produce the exact queue_depth error required by bad_packages.rs:681-685. The validator already refuses0/>255, so accepted package values match K24 but the public representation disagrees.
+
+Choice: public OrderRulesDef.queue_depth becomes u8 per design. Use a private wider parsing DTO only to diagnose numeric overflow with the same package/file/queue_depth range error, then narrow representable values. Keep DEFAULT_QUEUE_DEPTH:u8=16, min1 validation, deny_unknown_fields and definition-classification diagnostics. Replace the accessor-preserves256 test with an accessor-rejects256 field-error test using the same invalid RON input; observe compiled red then green. Preserve all existing exact0/256 package stderr and accepted values. Task4 owns this repair at its required rules handoff.
+
+Alternative not taken: leave the public schema off-contract, weaken/remove overflow proof, substitute valid input, or change a K bound/API version. No accepted data, frozen expected value, scanner or player step changes.

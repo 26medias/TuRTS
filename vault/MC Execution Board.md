@@ -399,3 +399,5 @@ C21: retain valid empty Move through legacy simulation rejection/audit; refuse o
 C22: repair explicit shared-group loss on client splits; pin4097 ->4096+1 through actual sender and test sequence exhaustion. RUN31 Medium, same active runs. See [[Decisions/2026-10-30 MC Codex rulings]].
 
 C23: bootstrap absent per-worktree browser node_modules with offline npm ci from unchanged pinned lock, then rerun T7; retain infrastructure failure1. See [[Decisions/2026-10-30 MC Codex rulings]].
+
+C25: carry validated per-package queue-depth data into ContentCatalog (u8, default16). C26: public queue-depth type follows designu8; private wide parsing preserves exact overflow diagnostics and invalid-input proof. Task4 RUN32 owns implementation, independent review required. See [[Decisions/2026-10-30 MC Codex rulings]].
