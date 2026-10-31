@@ -111,4 +111,4 @@ MC current: ACTIVE: 10 of25 lanes complete. Task9 merged fb5e2d6 and all12 integ
 MC latest: ACTIVE:10of25lanes complete. Wave4fb5e2d6 all12localintegrationgates green; hostedCI41195343950 agentsgreen, browserfailed with exactunchangedWave3 M2timeout, checknativeGREF running. Task6prototype14High/1Medium repairs active; Task7/11sourcepreparation andC84instrument ready, Task12analysis only. Build43/170,C1-C86; mainc3f09d0 unchanged. See [[MC Execution Board]].
 
 
-MC latest: STOPPED awaiting CEO pool-capacity ruling.10of25lanes complete; Task6 validtiny-map semanticred101 conflictswithmandatory7slotpool/loneunitarrival. No fallbackselected.45/170runs; Task6run3/6. C1-C91. Mainc3f09d0 unchanged. Fullgoalactive, firstauthoritystopaudit. See [[2026-10-31 MC T6 pool-capacity stop]].
+MC latest: STOPPED awaiting CEO pool-capacity ruling.10of25lanes complete; Task6 validtiny-map semanticred101 conflictswithmandatory7slotpool/loneunitarrival. No fallbackselected.45/170runs; Task6run3/6. C1-C91. Mainc3f09d0 unchanged. Full goal incomplete; awaiting the separate CEO movement-policy ruling. See [[2026-10-31 MC T6 pool-capacity stop]].
