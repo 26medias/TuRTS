@@ -8,7 +8,7 @@ source: codex
 
 # MC execution board
 
-State: ACTIVE:9of25lanes complete. Task4 merged0490ebd and root-gated12/12. Task9 core27/0/0 root-verified after compiled reds; actual client adapter, replica orders and feeds in progress. RUN37 independent source review active; runtime awaits cache handoff. Wave4 awaitsTask9. Build37/170; C1-C63. Mainc3f09d0 untouched.
+State: ACTIVE:9of25lanes complete; Task4 merged/root-gated. Task9 current nativepreflight root-verified40interaction+185client passed/1existingignored; frozen47-file CLICK9pair running. RUN37 source checklist clear; independentruntime/plants/finalgates pending. Build37/170; C1-C66. Mainc3f09d0 untouched.
 
 Plan: `docs/superpowers/plans/2026-10-29-mc-player-control.md`.
 Design of record: `docs/superpowers/specs/2026-10-29-mc-player-control-design.md`, revision12 at63788d7, included by mainc3f09d0.
@@ -227,7 +227,7 @@ One row per builder/reviewer dispatch or resumed agent work turn. Register befor
 | 33 | T9 core-test preparation | ux-designer | gpt-6-luna | high | ab6ffd8 | COMPLETE draft-only; external tests/contract, SHA76817063...a2d629, T9 clean, no Cargo, no observed red/green. |
 | 34 | T4 independent review | qa-lead | gpt-6.1-sol | high | 2c45b83 | PASS0High/0Medium;65independenttests0,ownsemanticplant0/101/0; exactrestore/cacheidle. |
 | 35 | T9 implementation preparation | bevy-rendering-engineer | gpt-6-luna | high | 3203f6b | COMPLETE preparation only: imported tests, API stubs, PROJ1/CLICK9 drafts; uncompiled/unexecuted/uncommitted; task2/estimate6/soft12/hard24. |
-| 36 | T9 implementation continuation | bevy-rendering-engineer | gpt-6-luna | high | 61535fc | ACTIVE: compiled red101 then27headlessgreen0 root-audited; actual client adapter/replica/feed work pending. |
+| 36 | T9 implementation continuation | bevy-rendering-engineer | gpt-6-luna | high | 61535fc | ACTIVE:40interaction+185client/1ignored nativepreflight0 root-audited; frozen47-file CLICK9pair running; finalgates/plants pending. |
 | 37 | T9 independent review | technical-director | gpt-6.1-sol | high | 61535fc + active RUN36 diff | ACTIVE read-only source review; concrete early fixes sent builder, independent runtime/plant after exclusive handoff; task4/estimate6/soft12/hard24. |
 
 ## 9. Preflight ledger and stop
@@ -482,3 +482,8 @@ C65: repair future feed object shapes and owner-only evidence now; debug formatt
 
 
 C66: followTask9green→commitorder withfullprebuildsourcehashmap/snapshot, frozenbothCLICK9attempts, unchangedaftermap and exacttestedbytescommitproof. ActualHEADdirtymetadata stayshonest; nofalseexecutiononnewcommit. Finalcleancommitgates/plantsretained. Earliermixedpairfailedwasmcompile/noBrowserresult. No duplicateidenticalpairrequired.
+
+
+Root verified nativepreflight exactexitfiles0:40interaction/0failed,185client/0failed/1existingignored;9adaptertests hold process-globalclear-testMutex. ProductiononeAppperWasm behavior unchanged. Reviewer named source checklist clear, verdictPENDING runtime. Prebuildmap44723dbe...d3ab5b coversall47changed/untrackedpaths, allstillmatch; base61535fc tree1fb73afa...cae. Browserpaircurrentlylive, no passclaimed. Evidence run36/root-current-native-audit.json and root-pre-click9-source-audit.json.
+
+Task24 forward: add tests/browser/harness/capture-contract.test.js alongside io-contract.test.js in the explicit NodeCIhook (or use harness/*.test.js). It executes actualpagecapture script;18boundaryregressions cost~40ms. Sourceonlyactualred6fail/12pass thenfixed18pass retained; neither replacesrealbrowserproof nor changesledgerlimits.

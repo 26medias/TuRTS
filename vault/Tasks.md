@@ -102,4 +102,4 @@ Human usability amendment1354e33: catalog-derived principal labels/named local s
 
 **Integrated:** M3 fast-forwarded into main and pushed; hosted CI running, human-demo limitations retained. See [[Reports/2026-10-28 M3 integration]].
 
-MC update2026-10-31: ACTIVE:9of25lanes complete. Task4 merged0490ebd and root-gated12/12. Task9 core27/0/0 root-verified after compiled reds; actual client adapter, replica orders and feeds in progress. RUN37 independent source review active; runtime awaits cache handoff. Wave4 awaitsTask9. Build37/170; C1-C63. Mainc3f09d0 untouched.
+MC update2026-10-31: ACTIVE:9of25lanes complete; Task4 merged/root-gated. Task9 current nativepreflight root-verified40interaction+185client passed/1existingignored; frozen47-file CLICK9pair running. RUN37 source checklist clear; independentruntime/plants/finalgates pending. Build37/170; C1-C66. Mainc3f09d0 untouched.
