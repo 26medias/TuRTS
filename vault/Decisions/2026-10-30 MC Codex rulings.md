@@ -437,3 +437,10 @@ Choice: rename engine-side locals to belt_record/items_by_id, preserve all conte
 Conflict: seven new controlled semantic red logs have compiled named failures but their exact mutation patches and before/mutated/restored SHA manifests were not preserved. Builder confirms this gap. Draft behavior also preceded some test development; these are not untouched-base red-first evidence.
 
 Choice: keep the original logs and disclose their limits. After stable full gates, add focused controlled proofs for missing transformations with exact patch/hash/byte-restoration metadata, actual RCs and named detectors, then clean source. Use the same cache and named tests; do not rerun broad suites per mutation. Existing final plan plants/GREF/independent review remain mandatory. This repairs the evidence gap without mislabeling the development sequence. Alternative not taken: claim missing provenance, invent historical hashes or count a compile failure.
+
+
+## C56: explicitly include pre-Task12 M3 controls in integration web gates (2026-10-31)
+
+Conflict: plan Known red window:100 adds m3-browser.sh to local G-WEB for tasks2b/4/6/9/11 beforeTask12. The external root integration helper covered T7 but had no explicit M3 step. Task2b builder M3 proof exists; the prior postmerge helper did not separately run it. That process gap is not a new pass.
+
+Choice: add explicit with-m3 option requiring with-web; it appends unchanged m3-browser.sh after T7 and sets an external artifact directory. Use it for the specified pre12 integration merges; keep the known later window. No prebuilt/skip flag or oracle change. Helper before/after and hashes retained in main target/mc-evidence/integration-m3-gate-c56; current SHA5c087397130c27625cc1afb8ab5c46955baf3b9ec08d0087d44caa56a1d56c99. AST/source QA passes; actual integration runtime remains pending. Alternative not taken: silently treat T7 as M3 proof or add duplicate standalone Trunk build.
