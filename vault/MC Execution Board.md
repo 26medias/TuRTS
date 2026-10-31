@@ -8,7 +8,7 @@ source: codex
 
 # MC execution board
 
-State: ACTIVE: O12 released Task 6. Integration and all four open lanes rebased onto main721e56e (design revision13); dirty source hashes preserved.10of25lanes complete;47/170runs; Task6run5/6. C1-C98. No main merge.
+State: ACTIVE: O12 released Task 6. Integration and all four open lanes rebased onto main721e56e (design revision13); dirty source hashes preserved.10of25lanes complete;47/170runs; Task6run5/6. C1-C99. No main merge.
 
 Plan: `docs/superpowers/plans/2026-10-29-mc-player-control.md`.
 Design of record: `docs/superpowers/specs/2026-10-29-mc-player-control-design.md`, revision12 at63788d7, included by mainc3f09d0.
@@ -739,3 +739,16 @@ Orders alone captures a Blocked failure acknowledgment once, Gather interruption
 Require generic static and mobile obstruction/own-pool tests, stalled Gather coverage, authored correct/wrong-ID failure proofs, idless acknowledgment exactly once, new-order cleanup, exact plain legacy serialization/arithmetic/frozen checks and actual replay. Alternative not taken: special-case the full-width post, use unbounded waiting, add routes, return from a claimed spare to the old goal, assign unrelated movers one sentinel group, fabricate a content order ID, or serialize new fields into every free legacy move. This is a Codex mechanism/data ruling under brief4/O12, preserving the design's player-visible movement and failure shape. No CEO stop is needed.
 
 Verified functional checkpoints before C98: C96 vacancy1/group2 sim and validator-span tests exit0; the span rejects missing/reordered members. C97 follow-up sim179/179 and server73/73 are builder-reported fresh results awaiting final-source verification. The plain-post generic regression remains intentionally red; Task6 is not accepted.47/170runs, Task6run5/6, no merge/push/main change.
+
+
+## C99: let Gather reach checks resolve completed plain fallback
+
+Conflict: RUN47 found Gather's approach setter overwrites a committed C98 slot every Gather phase, and movement arrival can erase the claim budget. An unreachable Gather can then restart forever. Keeping a completed fallback Resting without resolving the actual Gather target also leaves the order active forever. Design6.1 requires stalled Gather coverage;6.5 requires bounded visible failure; M2 Gather still owns interaction reach and semantic endpoint selection.
+
+Choice: the existing real Gather reach check remains authoritative. Same-goal approach refresh must not overwrite an active committed plain fallback slot or reset its timer/claims. Retain the completed fallback result. In the next Orders phase after Gather checked reach, success at Gathering/Unloading consumes the metadata; if the unit is still moving to the node/receiver and outside actual reach, capture the existing Blocked failure once, interrupt Gather and apply normal queued continuation. Successful arrival may also consume metadata in its existing captured Gather stage transition when independent replay proves the actual reach/stage change. Movement writes no order operation. Free legacy paths with no fallback keep their shape.
+
+An optional default-omitted semantic goal key (endpoint kind and node/receiver ID) may live in active PlainMoveProgress. The same key preserves fallback through approach refresh; a real M2 endpoint/stage change clears or reseeds it. Preserve NoReceiver, NodeDepleted and carry/accounting behavior. Replay must independently prove actor-only goal-key/metadata changes from the actual transition, never broadly ignore them.
+
+Require actual inaccessible-Gather and reachable fallback tests, node/receiver changes, unchanged approach refresh, one captured failure and queue continuation. Alternative not taken: reset the budget every frame, return automatically to the original approach, leave an active Gather resting out of range forever, add routes, or make the kernel own economy reach rules. This is a delegated mechanism ruling with the same keys, interaction, timing bounds and existing failure reason.
+
+C98 integration repairs remain mandatory: pending B preserves old execution A until activation; B success OR atomic failure clears old plain progress/identity. Common removal/death clears the transient identity entry. An independent legacy scalar AccountingOracle does not by itself prove new obstruction paths; K19(a) uses shared-step economylog replay there. Preserve all existing independent legacy full-state checks and label unexecuted secondary-model support NOT TRACED rather than replace that oracle with production code.
