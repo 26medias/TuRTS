@@ -102,4 +102,4 @@ Human usability amendment1354e33: catalog-derived principal labels/named local s
 
 **Integrated:** M3 fast-forwarded into main and pushed; hosted CI running, human-demo limitations retained. See [[Reports/2026-10-28 M3 integration]].
 
-MC update2026-10-31: ACTIVE: 9 of 25 lanes complete. Task9 candidateabe0841 has all standard gates green (workspace1053/0/18), fresh base/CLICK9 passes and69 independent rechecks passed. Final GREF: native1/7 passed; six browser cases remain, followed by FOV and independent modifier plants before review/merge. Build runs:38/170. Rulings:C1-C81. Main remains c3f09d0.
+MC update2026-10-31: ACTIVE: 9 of 25 lanes complete. Task9 candidateabe0841 has all standard gates green (workspace1053/0/18), fresh base/CLICK9 passes and69 independent rechecks passed. Final GREF:2/7 passed (native replay and Cedar label); five browser cases remain, followed by FOV and independent modifier plants before review/merge. Build runs:38/170. Rulings:C1-C81. Main remains c3f09d0.
