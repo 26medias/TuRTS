@@ -8,7 +8,7 @@ source: codex
 
 # MC execution board
 
-State: ACTIVE: Waves1-2 complete. T19 merged98135d3; independent0High/0Medium; integration878passed/0failed/18ignored and G-RUST/G-QA/G-FROZEN0. Wave2 pushed98135d3; CI41148971118 queued. Build30/170 includes registered T2b run30. C1-C16 recorded. Mainc3f09d0 untouched; one cache, completed T19 lane removed.
+State: ACTIVE: Waves1-2 complete. T19 merged98135d3; independent0High/0Medium; integration878passed/0failed/18ignored and G-RUST/G-QA/G-FROZEN0. Wave2 pushed98135d3; CI41148971118 queued. Build31/170 includes T2b builder30 and reviewer31. C1-C16 recorded. Mainc3f09d0 untouched; one cache, completed T19 lane removed.
 
 Plan: `docs/superpowers/plans/2026-10-29-mc-player-control.md`.
 Design of record: `docs/superpowers/specs/2026-10-29-mc-player-control-design.md`, revision12 at63788d7, included by mainc3f09d0.
@@ -222,6 +222,7 @@ One row per builder/reviewer dispatch or resumed agent work turn. Register befor
 | 28 | T19 implementation | mod-builder | gpt-6-luna | high | 62bb518 | COMPLETE39a74e3: missing-package/repair named reds101, 8tests0, strict scan9/9, G-RUST/GQA0; merge98135d3. |
 | 29 | T19 independent review | ux-designer | gpt-6.1-sol | high | 39a74e3 | PASS0High/0Medium; 8+9tests0; saved-copy offset plant0/101/0, exact restoration; task4runs/hard12. |
 | 30 | T2b implementation | network-engineer | gpt-6-luna | high | 98135d3 plus vault | REGISTERED: Lightyear reliable limit first, then protocol migration; task1/estimate4/hard16. |
+| 31 | T2b independent review | mod-runtime-engineer; qa-lead registry lens | gpt-6.1-sol | high | 363d02d; final candidate pending | REGISTERED read-only audit first; compiler waits builder handoff; task2/estimate4/hard16. |
 
 ## 9. Preflight ledger and stop
 
