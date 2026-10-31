@@ -299,7 +299,7 @@ fn f11_private_research_coordinator_releases_ordered_opponent_move_and_health_tr
         "--live-report".into(),
         opponent_report.display().to_string(),
         "--move".into(),
-        "17,4".into(),
+        "20,6".into(),
         "--move-unit".into(),
         "10".into(),
         "--move-release-file".into(),
