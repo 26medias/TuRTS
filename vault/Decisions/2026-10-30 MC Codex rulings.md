@@ -679,3 +679,16 @@ Decision recorded at 05:49 Toronto; final web/independent/gref/plant acceptance 
 Conflict: the Wave4 push and hosted read are complete, but check/browser jobs are still running. Waiting without source preparation wastes independent work. Brief section4:43 requires a push/read after each wave; section4:53 allows wave/cache layout decisions. Plan48 requires each merge re-gate.
 
 Choice: start Task6 and Task7 after the recorded read of run41195343950, with all pending statuses explicit. One compiler/cache owner only. Independent source/test preparation may overlap hosted validation. Root must read the terminal Wave4 jobs and findings before the next integration merge; no hosted success is inferred. Keep every task/final/permerge gate, independent review and refutation. Use two builders so an independent reviewer still has a slot. Alternative not taken: idle until long hosted tests finish, or run competing caches/merge without CI review.
+
+
+## C83: pending-spread refusal uses the existing wire rate_limited reason (2026-10-31)
+
+Conflict: Task6 design6.3:632-633 requires per-unit rate_limited above16,384 pending subjects, but sim RejectReason lacks it (command.rs:82-121). Wire CommandRejectReason already hasRateLimited (messages.rs:181), contrary to the initial builder report. Task6 file list omits two exhaustive server mappers.
+
+Choice: Task6 may add only sim RejectReason::RateLimited and as_str rate_limited plus the matching cases in server orders.rs:190-234 and export.rs:439-480. Add direct refusal/mapping coverage. No protocol enum or wire-format change; Task7 owns its session bucket separately and must reuse existing wire value. Preserve frozen stream/fixedpoint and select GREF from the actual changed paths. Alternative not taken: use QueueFull/Internal, omit the pending limit, or add a duplicate wire variant.
+
+## C84: harness captures camera checkpoints without exposing state to the driver (2026-10-31)
+
+Conflict: Task11 plan529-533 requires clip_from_world before/after each camera step, but harness/run.js:142 invokes the oracle only after drive; io has no bridge, and current frames do not retain camera matrices. A final-only camera oracle would weaken acceptance. Existing view.serverFile (view.js:27) can read harness artifacts from the output directory.
+
+Choice: add opt-in harness-owned scene/debug checkpoint capture at each io.screenshot, identified by input-call index/window/time, and write the trusted checkpoint artifact after driver completion, before oracle. Driver still receives only PNG bytes and the same ten IO calls; view retains its same four read-only methods. CAM1 opts in through row params and the oracle reads the artifact through serverFile to judge every step. No game debug/schema or player change. Root owns harness files in Task11 lane; builder owns camera/row/oracle. Add meaningful Node regressions for actual hook, unchanged PNG/IO surface, selected-window identity and readonly snapshots. Actual CAM1 red/green/two passes/PointerLeft plant remain required. Alternative not taken: expose bridge state to driver, add a driver capture/read API, change game debug history, or reduce the oracle to final movement.
