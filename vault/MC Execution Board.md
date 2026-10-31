@@ -8,7 +8,7 @@ source: codex
 
 # MC execution board
 
-State: ACTIVE: 9 of 25 lanes complete. Task 9 candidate8ddefc1 has all13 standard gates green (workspace1049/0/18), T7 at136frames/53moving and actual M3 controls green. CLICK9 rendered pair and independent Node59/native63 remain mapped to unchanged source. Guarded refutations:1/7 passed; the Cedar browser baseline passed and its mutation stages are running. Final FOV and independent modifier plants remain. Build runs:38/170. Rulings:C1-C78. Main remains c3f09d0.
+State: ACTIVE: 9 of 25 lanes complete. Task 9 candidate8ddefc1 has all13 standard gates green (workspace1049/0/18), T7 at136frames/53moving and actual M3 controls green. CLICK9 rendered pair and independent Node59/native63 remain mapped to unchanged source. Guarded refutations:1/7 passed; the Cedar browser baseline passed and its mutation stages are running. Final FOV and independent modifier plants remain. Build runs:38/170. Rulings:C1-C79. Main remains c3f09d0.
 
 Plan: `docs/superpowers/plans/2026-10-29-mc-player-control.md`.
 Design of record: `docs/superpowers/specs/2026-10-29-mc-player-control-design.md`, revision12 at63788d7, included by mainc3f09d0.
@@ -513,3 +513,5 @@ C76 fixture alignment also covers the six existing absolute M2 lookups through a
 C77: repair own-hit gating for Ctrl/double type expansion and clear foreign double-click history. Stop GREF cleanly for the confirmed selection defect, preserve evidence and restore source before repair. No keys, rows or K16 change. See [[Decisions/2026-10-30 MC Codex rulings]].
 
 C78: finish the legacy M2 world click before polling its result. Core correctly acts on PointerUp; the old helper waited before releasing. Preserve all predicates, timeouts and UI/refutation guards. First2 GREF cases passed; third failed its unplanted baseline naturally. C77/C78 repairs remain in RUN38.
+
+C79: move cached UI publication to Last before FrameCloseSet so it follows real PostUpdate layout/visibility. Keep the late Gather visibility assertion and timeout. Require actual UiPlugin geometry proof and real base/CLICK9 reruns. C77/C78/C79 remain in RUN38 before a single final commit.
