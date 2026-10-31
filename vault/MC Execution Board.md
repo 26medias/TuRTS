@@ -8,7 +8,7 @@ source: codex
 
 # MC execution board
 
-State: STOPPED awaiting CEO pool-capacity ruling.10of25lanes complete; Task6 validtiny-map semanticred101 conflictswithmandatory7slotpool/loneunitarrival. No fallbackselected.45/170runs; Task6run3/6. C1-C91. Mainc3f09d0 unchanged. Full goal incomplete; awaiting the separate CEO movement-policy ruling.
+State: ACTIVE: O12 released Task 6. Integration and all four open lanes rebased onto main721e56e (design revision13); dirty source hashes preserved.10of25lanes complete;46/170runs; Task6run4/6. C1-C91. No main merge.
 
 Plan: `docs/superpowers/plans/2026-10-29-mc-player-control.md`.
 Design of record: `docs/superpowers/specs/2026-10-29-mc-player-control-design.md`, revision12 at63788d7, included by mainc3f09d0.
@@ -76,7 +76,7 @@ CI trigger: `.github/workflows/ci.yml:2-5` runs pushes to main and pull requests
 | T2b | 3 | 2a, 3, 18 | codex/mc-t2b | COMPLETE64cd400; merge6d2c46e; all gates/10GREF0; review0H/0M; lane removed |
 | T4 | 4 | 2b, 3 | codex/mc-t4 | COMPLETE merge0490ebd; review0H/0M,36GREF,all12rootgates0; lane removed |
 | T9 | 4 | 1, 8, 2b | codex/mc-t9 | COMPLETE mergefb5e2d6; independent0High/0unresolvedMedium,69tests,7GREF,FOV/modifier plants,all12integrationgates0; archived lane removed, branch retained. |
-| T6 | 5 | 4 | codex/mc-t6 | STOPPED: needsCEO pool-capacity ruling. d3+4dirtyfiles preserved; no merge/finalacceptance; cacheidle. See [[2026-10-31 MC T6 pool-capacity stop]]. |
+| T6 | 5 | 4 | codex/mc-t6 | ACTIVE RUN46: O12 primary-slot repair and retained review findings; sole compiler lease. No final acceptance. |
 | T7 | 5 | 2b, 4 | codex/mc-t7 | ACTIVE RUN40; source/test preparation only, no compiler lease. |
 | T11 | 5 | 9, 19, 20 | codex/mc-t11 | ACTIVE RUN41 source/test preparation only, no compiler lease. |
 | T12 | 5 | 3, 9, 19, 20 | codex/mc-t12 | Analysis28legacytests +HUD1instrument8650131 ready; actualnative/browserred/widgetruntime/HUD4/allfinalproofpending. No legacy deletion. |
@@ -237,6 +237,7 @@ One row per builder/reviewer dispatch or resumed agent work turn. Register befor
 | 43 | T12 widget/guide/cursor preparation | bevy-rendering-engineer with ux-designer | gpt-6-luna | high | 2b22fa8 | COMPLETE analysis only; no code/stubs/rows created, notREDREADY; rootverified28testinventory/3actualplants; native/browser NOTTRACED; estimate8/soft16/hard32. |
 | 44 | T12 HUD1 instrument preparation continuation | bevy-rendering-engineer with ux-designer | gpt-6-luna | high | 2b22fa8 | COMPLETE HUD1 instrument preparation:8650131,Node75/0 with13oraclecases, strictDPRregression/plant0/1/0,QA0; actualbrowser/nativeHUD1NOTTRACED; T12run2/estimate8/soft16/hard32. |
 | 45 | T6 final independent review/recheck | performance-architect | gpt-6.1-sol | high | b4/d3+separatebuilderdirtyproof | COMPLETE SOURCE-ONLY understop; confirmsgeometryandbuildersemanticred;17areas/openHfindingsretained; no runtime/ownplant/PASS. |
+| 46 | T6 O12 repair continuation | simulation-core-engineer | gpt-6-luna | high | d4a8f97+preserved dirty | Registered before dispatch; O12 primary-slot, atomic failure and no-spare stall proofs; repair retained Highs and final gates. Task6run4/6, soft12/hard24. |
 
 ## 9. Preflight ledger and stop
 
@@ -638,3 +639,12 @@ Root read the terminal hosted jobs for run 41195343950 at integration code fb5e2
 Browser retains the exact known M2_CASE_TIMEOUT E9-browser-base-economy failure; its cause is NOT TRACED. Later M3/browser refutations were skipped. No hosted-green claim. CI: https://github.com/26medias/TuRTS/actions/runs/41195343950.
 
 Task 6 remains stopped under brief section 4 pending the separate CEO movement policy ruling. No builds, source repairs, agent dispatches, merge or push were performed. Budget stays 45/170; completed lanes stay 10/25. Main was fetched and remains c3f09d0. Disk has about 677 GiB free. No outputs were deleted. The full MC objective remains incomplete.
+
+
+## O12: resume Task 6 (2026-10-31)
+
+CEO ruling O12, main721e56ee020cbb60c23d2b99acd1fdfd7367d509, design revision13: all N primary slots are required. Fewer than N legal slots fails the envelope atomically with blocked for each unit; no unit moves. Spares are the remaining legal slots, zero or more, up to the existing maximum. Section6.4 is unchanged: with no spare, one second without progress becomes Blocked at once. The earlier pool-capacity stop is released.
+
+The CEO clarified brief section4: when an existing mechanism cannot meet a design rule and the same player-visible shape is kept, Codex decides the mechanism conflict as C<n>, records evidence and the rejected alternative, and continues. Do not escalate the next such conflict merely because the design wording needs an applicability ruling. Frozen/K/Decided changes, changed player-visible shape and the other explicit stop conditions remain.
+
+Integration rebased onto721e56e. The only conflict was the daily work log add/add; both main O12 and integration history were retained. All open lanes T6/T7/T11/T12 rebased onto the resulting integration8eff3c4. All14 dirty or untracked source files are byte-identical before/after; explicit-path stashes retained as backup. Receipt: main target/mc-evidence/o12-rebase/receipt.json. No new cache was created. RUN46 registered before Task6 Luna/high continuation;46/170 total, Task6run4/estimate6. Task6 alone has the compiler lease. Review/source preparation in other lanes remains idle. No main merge or push.

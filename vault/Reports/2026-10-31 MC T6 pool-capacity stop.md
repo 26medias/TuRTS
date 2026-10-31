@@ -1,6 +1,6 @@
 # MC Task6 stop: finite-map pool capacity needs a CEO ruling
 
-Status: STOPPED pending a CEO movement-design decision. No fallback was implemented. The full MC goal remains active and incomplete.
+Status: RELEASED by CEO ruling O12 on main721e56e, design revision13. The historical proof below is preserved. Task6 resumes under the approved primary-slot rule; implementation and full acceptance remain incomplete.
 
 ## Confirmed conflict
 
