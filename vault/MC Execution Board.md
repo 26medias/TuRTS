@@ -8,7 +8,7 @@ source: codex
 
 # MC execution board
 
-State: ACTIVE:9of25lanes complete; Task4 merged/root-gated. Task9 current nativepreflight root-verified40interaction+185client passed/1existingignored; frozen47-file CLICK9pair running. RUN37 source checklist clear; independentruntime/plants/finalgates pending. Build37/170; C1-C66. Mainc3f09d0 untouched.
+State: ACTIVE: 9 of 25 lanes complete. Task 9 CLICK9 failed; the qualified order ID repair has focused green evidence. C67 adds the input queue needed by Task 10. Final browser proof, gates, refutations and independent runtime review are pending. Build runs: 37/170. Rulings: C1-C68. Main remains c3f09d0.
 
 Plan: `docs/superpowers/plans/2026-10-29-mc-player-control.md`.
 Design of record: `docs/superpowers/specs/2026-10-29-mc-player-control-design.md`, revision12 at63788d7, included by mainc3f09d0.
