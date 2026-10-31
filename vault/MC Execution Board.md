@@ -467,3 +467,6 @@ C60: root verified selection.rs:12-21 geometry contradicts design381/1225. Build
 
 
 C61: planP1→reserved-key instruction includes conditional Esc/wheel rows; design328/332/351/353/354 wins. ExistingCtrlT/W and requiredF11/F12 remain; no globalEsc ban or wheel pseudo-key; owningTask11/16 retain explicitdesign behavior. Root audited allfive browser-acted yes rows; table unchanged. RUN36 root verified27headlessgreen0 and current checkpoint hashes; no finalTask9 acceptance.
+
+
+C62: retain selected IDs inside each Last-closed frame for Task13 mouse-up-frame selection500 proof; Task9 owns schema. Do not substitute later top-level selection. Design1150-1159/SEL2 and plan481/Task13step2; instrument only, no new run.
