@@ -224,3 +224,51 @@ Conflict: public OrderRulesDef.queue_depth is u16 (crates/turts_mod_api/src/orde
 Choice: public OrderRulesDef.queue_depth becomes u8 per design. Use a private wider parsing DTO only to diagnose numeric overflow with the same package/file/queue_depth range error, then narrow representable values. Keep DEFAULT_QUEUE_DEPTH:u8=16, min1 validation, deny_unknown_fields and definition-classification diagnostics. Replace the accessor-preserves256 test with an accessor-rejects256 field-error test using the same invalid RON input; observe compiled red then green. Preserve all existing exact0/256 package stderr and accepted values. Task4 owns this repair at its required rules handoff.
 
 Alternative not taken: leave the public schema off-contract, weaken/remove overflow proof, substitute valid input, or change a K bound/API version. No accepted data, frozen expected value, scanner or player step changes.
+
+## C27: apply the plain-move exception only to clean initial state
+
+Conflict: sim/orders.rs:300-313 uses the one-unit/group0 Replace fast path without clearing old current/queue/gather state. The replacement test uses group1 and misses this case. Design4.5:424-439 requires replacement/clearing; design6.1 requires no extra order operation for a fresh plain Move. A plain Move also has currentNone while MoveTarget remains active, so Append cannot infer idle from current alone.
+
+Choice: fresh plain Move with no old current/queue/gather cleanup retains the exact legacy MoveTarget-only audit path. Replacing existing order/gather/queued state must clear it inside an Orders capture before the fresh target is applied. While an implicit plain MoveTarget remains active, appended Move/Hold/Gather waits for landing; the next Orders phase starts it. Test true group0 replacement and plain Move->Append Gather; no group1 fixture substitution.
+
+Alternative not taken: retain stale routes, start appended work early, exempt old-state writes from audit, or change the frozen fresh/legacy operation count. No frozen value or player-rule change.
+
+## C28: retain legacy Produce admission without atomic mixed rejection
+
+Conflict: session.rs:362-376 retains Task2b all-or-nothing production_precheck; one foreign/incapable subject refuses a valid own producer in the same envelope. C19 correctly preserves malformed/wholly refused legacy admissions, but Task4 design5.2 requires per-unit outcomes.
+
+Choice: valid representable mixed Produce reaches per-unit domain validation when an eligible subject exists. Preserve C19 wholly rejected legacy admission and malformed-reference ownership/capability-before-syntax behavior, with the same original invalid inputs and forensic evidence. Apply unit-local reasons and do not disclose foreign details. Test valid own producer plus foreign/incapable subjects, as well as original malformed cases.
+
+Alternative not taken: reject the whole mixed selection, weaken legacy malformed fixtures, or skip admission/domain evidence. No K/acceptance-row change.
+
+## C29: retain the scalar job result through per-unit execution
+
+Conflict: sim/orders.rs:446-447 discards Applied.job_id and :330 returnsNone; server/orders.rs:93-102 exits the per-unit wire path before legacy job-id conversion. This breaks the existing single-producer result needed for CancelProduction (design5.1/5.3). The scalar field has no multi-job shape.
+
+Choice: preserve the existing successful single-producer job_id. For multiple successful producers, select the first successful job in required ascending unit-id execution order for the existing scalar result; all actual jobs remain in the existing owner economy projection. Test single Produce->Cancel and deterministic multi-producer first-success metadata. Do not change the wire schema or add gameplay.
+
+Alternative not taken: drop all job IDs, pick by incoming vector order, or introduce a new per-unit job schema. This follows the existing first-outcome metadata pattern with deterministic execution.
+
+## C30: distinguish decoded target semantics from envelope validity
+
+Conflict: server/orders.rs:39-55 rejects a wrong target variant before checking the subjects, so a foreign unit with Move/Node returns TargetInvalid instead of the design5.2 ownership-first reason. Design5.1 lists malformed envelope targets, while5.2 orders semantic checks after existence/ownership/capability/filter.
+
+Choice: decoded representable target variants, including wrong-kind/NaN, reach per-unit target validation after the specified subject checks; carry an invalid-target marker when needed to avoid early semantic rejection. Structural decoding/envelope validity (unknown order, sequence/rate/cardinality) stays global. Preserve the explicit C19 malformed Produce admission path and priority. Test missing/foreign/incapable/filter-failed/eligible subjects crossed with invalid-kind and nonfinite targets.
+
+Alternative not taken: collapse every semantic target error into a pre-owner envelope rejection or leak foreign state. No new target/key/acceptance contract.
+
+## C31: associate complete command boundaries with their operation span
+
+Conflict: transaction.rs:223-238 drops all-refused commands when no operation exists, and pairs full-envelope input/results with only first_operation.before/after when several units write. economylog.rs:414-427 therefore validates a false boundary, while economy.rs:1652-1677 cannot replay all accepted writes. Design6.1/EL1 require complete admitted-command and audited-write evidence.
+
+Choice: add CommandAudit.operation_end_id:Option<u64> with serde default/skipNone. None means legacy start=end; multi-operation commands carry the final ID. CommandAudit before/after cover the full envelope and match first.before/last.after across the exact contiguous span. Preserve per-unit Orders writes and their unit-id order; enforce behavior-specific coverage, with documented fresh plain/gather command-operation exceptions rather than a universal accepted-count/phase rule. All-refused domain commands retain an auditable no-change command operation/boundary. Replay every result and write using a real Task4 semantic model; no skipped Orders or erased UnitOrders. Preserve legacy single-operation logs and frozen values.
+
+Alternative not taken: retain partial boundaries, omit refusals, flatten all writes into one unaudited effect, or hide unsupported Order replay. This is internal log association, not a player/acceptance/K change.
+
+## C32: prove the mixed envelope causes movement
+
+Conflict: tests/orders.rs:104-111 asserts290 accepted/refusals but not movement/targets, so a false-success result can pass. ORD2 requires the290 move.
+
+Choice: repair the Medium now. Pin every accepted unit's target and one fixed movement tick/position change for the exact mixed300 case; all refused own-static/foreign units retain prior state. Use independent expected behavior and a compiled suppressed-write semantic red before restored green.
+
+Alternative not taken: accept counts alone, compute expected targets with the implementation under test, or defer required state evidence. No scope or acceptance-row change.
