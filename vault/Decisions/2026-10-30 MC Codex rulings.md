@@ -699,3 +699,10 @@ Choice: add opt-in harness-owned scene/debug checkpoint capture at each io.scree
 Conflict: independent RUN42 H11 is Medium: the multi-unit pool omitted P and stopped ring generation without proving all nearer candidates were enumerated (captured movement.rs74-108, source-findings.md). Design6.3:611-613 requires a hex grid round P ordered by distance then angle; checked-in model_lib.py hex_slots includes P.
 
 Choice: repair H11 with the other source findings; do not defer it. Include a legal origin P, preserve N+max(6,ceil(N/4)) pool size, and prove nearest distance/angle ordering with independent small-pool vectors and adequate complete-shell enumeration for large N. Existing reserved/static/bounds exclusions still apply. No new player behavior or frozen-content change. Alternative not taken: accept a visibly shifted multi-unit formation or trust only an overlap test.
+
+
+## C86: new widget scene rectangles use the existing scene logical coordinate space (2026-10-31)
+
+Conflict: Task12 preparation found existing legacy UI snapshot rectangles in camera-viewport physical pixels, while the scene bridge explicitly declares window-logical-pixels-top-left (web lib.rs:484-494). Plan Task12 requires widget id/rect and HUD1 at three viewport/DPR combinations; copying old physical rectangles would double scale at DPR2. Design8.3:751-768 defines logical placement and Bevy-owned DPR multiplication.
+
+Choice: turts_scene.widgets entries use id and rect [left,top,width,height] in the existing top-left window-logical scene space. Convert actual computed Bevy geometry exactly once; player UiScale remains separate from DPR. Keep the existing legacy turts_ui physical-coordinate contract until its owner migrates it; do not treat the old rectangle units as the new widget bridge contract. Add all three actual HUD1 viewport assertions and native computed-geometry proof. Alternative not taken: unconverted physical widgets, a second DPR multiplier, or an oracle that changes its expected coordinates to fit output.

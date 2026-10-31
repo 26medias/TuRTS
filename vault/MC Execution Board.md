@@ -8,7 +8,7 @@ source: codex
 
 # MC execution board
 
-State: ACTIVE: 10 of25 lanes complete. Task9 merged fb5e2d6 and all12 integration gates passed: workspace1053/0/18, T7 136frames/53moving, actualM3 controls7captures, frozen exact. Wave4 pushed; CI41195343950 agents success, check/browser running. Build43/170; C1-C85; main c3f09d0 unchanged.
+State: ACTIVE:10of25lanes complete. Wave4fb5e2d6 all12localintegrationgates green; hostedCI41195343950 agentsgreen, browserfailed with exactunchangedWave3 M2timeout, checknativeGREF running. Task6prototype14High/1Medium repairs active; Task7/11sourcepreparation andC84instrument ready, Task12analysis only. Build43/170,C1-C86; mainc3f09d0 unchanged.
 
 Plan: `docs/superpowers/plans/2026-10-29-mc-player-control.md`.
 Design of record: `docs/superpowers/specs/2026-10-29-mc-player-control-design.md`, revision12 at63788d7, included by mainc3f09d0.
@@ -79,7 +79,7 @@ CI trigger: `.github/workflows/ci.yml:2-5` runs pushes to main and pull requests
 | T6 | 5 | 4 | codex/mc-t6 | ACTIVE RUN39; group movement, sole compiler lease granted, partial semantic red101 captured. |
 | T7 | 5 | 2b, 4 | codex/mc-t7 | ACTIVE RUN40; source/test preparation only, no compiler lease. |
 | T11 | 5 | 9, 19, 20 | codex/mc-t11 | ACTIVE RUN41 source/test preparation only, no compiler lease. |
-| T12 | 5 | 3, 9, 19, 20 | codex/mc-t12 | ACTIVE RUN43 preparation only; no runtime or legacy deletion before actual baseline and T6/T11 legacyM3 proofs. |
+| T12 | 5 | 3, 9, 19, 20 | codex/mc-t12 | RUN43 analysis complete only;28legacytests inventory, no code/teststubs/rows or runtime; sourcepreparation still required. No legacy deletion. |
 | T5 | 6 | 4, 6, 19 | codex/mc-t5 | NOT STARTED |
 | T13 | 6 | 4, 6, 9, 11, 19, 20 | codex/mc-t13 | NOT STARTED |
 | T10 | 7 | 5, 9, 11, 19, 20 | codex/mc-t10 | NOT STARTED |
@@ -234,7 +234,7 @@ One row per builder/reviewer dispatch or resumed agent work turn. Register befor
 | 40 | T7 server session builder | backend-engineer | gpt-6-luna | high | 487f6c9 | COMPLETE RED-READY source preparation only; scoped hashes/stubs/inventory, no compiled red or behavior acceptance; estimate4/soft8/hard16. |
 | 41 | T11 camera and light preparation | bevy-rendering-engineer | gpt-6-luna | high | 30fc272 | COMPLETE source preparation only; scoped snapshots, static0; native/browser red and behavior NOTTRACED; estimate4/soft8/hard16. |
 | 42 | T6 independent performance/determinism review | performance-architect | gpt-6.1-sol | high | 487f6c9+working | COMPLETE early SOURCE review only;14High/1Medium stableH1-H15 with9-file exactsnapshot/17areas; finalruntime/ownplant/PASS pending, new run count before reviewer continuation; T6run2/estimate6/soft12/hard24. |
-| 43 | T12 widget/guide/cursor preparation | bevy-rendering-engineer with ux-designer | gpt-6-luna | high | 2b22fa8 | REGISTERED before dispatch; analysis/fixtures/test stubs only, no compiler or legacy deletion; estimate8/soft16/hard32. |
+| 43 | T12 widget/guide/cursor preparation | bevy-rendering-engineer with ux-designer | gpt-6-luna | high | 2b22fa8 | COMPLETE analysis only; no code/stubs/rows created, notREDREADY; rootverified28testinventory/3actualplants; native/browser NOTTRACED; estimate8/soft16/hard32. |
 
 ## 9. Preflight ledger and stop
 
@@ -568,3 +568,15 @@ Choice: repair H11 with the other source findings; do not defer it. Include a le
 
 
 RUN42 source phase ended with14High/1Medium (not15High); root read the full stableH1-H15 report and17-area inventory, source-findings.{md,json}. The earlier unqualified15High count is corrected. Builderrun39 repairinventorytracksallfindings; no finalreview/independentruntime/ownplant accepted. Any later completed-reviewer followup is a new ledger run first. C85 repairsMediumH11 rather than defers. Task12RUN43 activeprepactualbase2b22fa8, no compiler/legacyremoval. Main unchanged.
+
+
+## C86: new widget scene rectangles use the existing scene logical coordinate space (2026-10-31)
+
+Conflict: Task12 preparation found existing legacy UI snapshot rectangles in camera-viewport physical pixels, while the scene bridge explicitly declares window-logical-pixels-top-left (web lib.rs:484-494). Plan Task12 requires widget id/rect and HUD1 at three viewport/DPR combinations; copying old physical rectangles would double scale at DPR2. Design8.3:751-768 defines logical placement and Bevy-owned DPR multiplication.
+
+Choice: turts_scene.widgets entries use id and rect [left,top,width,height] in the existing top-left window-logical scene space. Convert actual computed Bevy geometry exactly once; player UiScale remains separate from DPR. Keep the existing legacy turts_ui physical-coordinate contract until its owner migrates it; do not treat the old rectangle units as the new widget bridge contract. Add all three actual HUD1 viewport assertions and native computed-geometry proof. Alternative not taken: unconverted physical widgets, a second DPR multiplier, or an oracle that changes its expected coordinates to fit output.
+
+
+Wave4browserjob124520280856 terminalfailure: exactsame normalized M2_CASE_TIMEOUT E9-browser-base-economy textasWave3 (actualcompletedriflemanoutput/renderedmesh15000ms,lastphaseJoinedslot0). HostedT7passed91frames/47moving; M2base-selection passed, base-economy timedout, laterM3/browserplants skipped. Underlyinghostedcause remainsNOTTRACED, ownerTask21; no relaxedpredicate/timeout or mainaction. Root read/archived raw188952byte logSHA73af6e03b8addf080ccea5d9bd01834fae209b95c6fb09c83c2b7185a84676de and comparedprioractualerror inwave4-browser-failure-audit.json. Check124520280779 stillnativeGREF running, agents124520280631 success/rawlog retained. Firstlarge-log write exceededOS argumentlength; nofilewrite/process occurred, then safe16kquotedchunks archivedexacttooltext. Terminalcheckreadstillrequired before nextmerge.
+
+Task12RUN43 did sourceanalysis only, no teststubs/HUDrows/sourcechanges despite broaderpreparation scope; notREDREADY. Root preserved authoritativeallowed-source hashes,28testsourceinventory/plannedreplacementownership andactualthreeGREF IDs inmain target/mc-evidence/t12-builder/run43/root-verified-preparation-inventory.json. Correctedagent shorthand: registered UIplants are E2-browser-hardcoded-label,E9-browser-missing-button,E9-browser-debug-only-ui; positivepackage E9base/haul/cedar cases are separatepaneldependencies, notthoseplantIDs. No plant retired/testdeleted. C86 chooseslogicalscene widgetrects perexistingdesign. All15remaininglanes/finalacceptance/legacy0/CEOplaytests/measurements/all3CIgreen remain unfinished; fullgoalactive43/170. Thisturn madePROGRESS throughsource/proofchanges andverifiedpendingCI; no blockedcondition.
