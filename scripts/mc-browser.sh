@@ -123,6 +123,9 @@ if row:
     data["windows"]=row_data.get("windows",1)
     data["device_scale_factor"]=row_data.get("device_scale_factor",data["device_scale_factor"])
     data["row"]=row_data.get("row")
+    capture=row_data.get("capture_scene_checkpoints",False)
+    if not isinstance(capture,bool): raise SystemExit("capture_scene_checkpoints must be a boolean")
+    data["capture_scene_checkpoints"]=capture
 if windows: data["windows"]=int(windows)
 data["viewport"]={"width":int(match.group(1)),"height":int(match.group(2)),"device_scale_factor":data["device_scale_factor"]}
 pathlib.Path(out).write_text(json.dumps(data,sort_keys=True)+"\n")
