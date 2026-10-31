@@ -160,12 +160,6 @@ pub fn assign_gather(
         .ok_or(RejectReason::ArithmeticOverflow)?;
     let must_deliver = used >= u128::from(inventory.capacity) || has_other_item;
     crate::orders::clear_replaced_movement(world, slot, entity, unit);
-    // Legacy Gather is a Replace command without an authored catalog order.
-    // Clear the old execution and future queue only after every Gather check
-    // has succeeded, so a refused command leaves the prior order untouched.
-    world
-        .entity_mut(entity)
-        .insert(crate::UnitOrders::default());
     let mut orders = world.resource_mut::<EconomyOrders>();
     let order = orders
         .0

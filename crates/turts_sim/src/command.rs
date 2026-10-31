@@ -228,8 +228,23 @@ fn apply_command_inner(world: &mut World, command: &Command) -> CommandResult {
             apply_move_to(world, command.slot, unit_ids, *target).map(|()| Applied { job_id: None })
         }
         CommandKind::Gather { unit_id, node_id } => {
-            crate::economy::gather::assign_gather(world, command.slot, *unit_id, *node_id)
-                .map(|()| Applied { job_id: None })
+            crate::economy::gather::assign_gather(world, command.slot, *unit_id, *node_id).map(
+                |()| {
+                    // The legacy Gather command is a Replace with no authored
+                    // Order identity. Keep this reset out of shared Gather
+                    // activation so queued catalog orders retain their order.
+                    let entity = world
+                        .iter_entities()
+                        .find(|entity| entity.get::<UnitId>().is_some_and(|id| id.0 == *unit_id))
+                        .map(|entity| entity.id());
+                    if let Some(entity) = entity {
+                        world
+                            .entity_mut(entity)
+                            .insert(crate::UnitOrders::default());
+                    }
+                    Applied { job_id: None }
+                },
+            )
         }
         CommandKind::Produce {
             producer_id,
