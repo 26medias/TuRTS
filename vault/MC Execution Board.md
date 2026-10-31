@@ -515,3 +515,5 @@ C77: repair own-hit gating for Ctrl/double type expansion and clear foreign doub
 C78: finish the legacy M2 world click before polling its result. Core correctly acts on PointerUp; the old helper waited before releasing. Preserve all predicates, timeouts and UI/refutation guards. First2 GREF cases passed; third failed its unplanted baseline naturally. C77/C78 repairs remain in RUN38.
 
 C79: move cached UI publication to Last before FrameCloseSet so it follows real PostUpdate layout/visibility. Keep the late Gather visibility assertion and timeout. Require actual UiPlugin geometry proof and real base/CLICK9 reruns. C77/C78/C79 remain in RUN38 before a single final commit.
+
+C79 also orders actual web/native Last feed readers after FrameCloseSet (and native readers before exit), so a fresh producer cannot be read one frame early. This is part of the same snapshot fidelity repair.
