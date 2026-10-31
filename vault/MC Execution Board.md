@@ -8,7 +8,7 @@ source: codex
 
 # MC execution board
 
-State: ACTIVE: 9 of 25 lanes complete. Task 9 candidate 9453783 has two rendered pixel-row passes, 13 standard gates green (workspace 1049/0/18), and independent Node59/native63 green. Refutations: native passed; first browser baseline exposed a panel/fixture overlap. C76 permits a packed scratch-fixture repair; browser cases and final mutations remain. Build runs: 38/170. Rulings: C1-C76. Main remains c3f09d0.
+State: ACTIVE: 9 of 25 lanes complete. Task 9 candidate9ec5188 includes the C76 fixture repair; the focused Cedar browser case passes. Its runtime and CLICK9 dependencies match9453783, which has two rendered pixel passes, 13 standard gates green (1049/0/18), and independent Node59/native63 green. Final9ec gates, seven refutations and mutation/review checks are in progress. Build runs:38/170. Rulings:C1-C76. Main remains c3f09d0.
 
 Plan: `docs/superpowers/plans/2026-10-29-mc-player-control.md`.
 Design of record: `docs/superpowers/specs/2026-10-29-mc-player-control-design.md`, revision12 at63788d7, included by mainc3f09d0.
@@ -75,7 +75,7 @@ CI trigger: `.github/workflows/ci.yml:2-5` runs pushes to main and pull requests
 | T19 | 2 | 3 | codex/mc-t19 | COMPLETE merge98135d3; review0High/0Medium; all integration gates0; lane removed |
 | T2b | 3 | 2a, 3, 18 | codex/mc-t2b | COMPLETE64cd400; merge6d2c46e; all gates/10GREF0; review0H/0M; lane removed |
 | T4 | 4 | 2b, 3 | codex/mc-t4 | COMPLETE merge0490ebd; review0H/0M,36GREF,all12rootgates0; lane removed |
-| T9 | 4 | 1, 8, 2b | codex/mc-t9 | Candidate9453783; rendered pixel pair and standard gates green; RUN38 GREF 1/7 passed; browser cases and FOV remain, then RUN37 final own plant/review. |
+| T9 | 4 | 1, 8, 2b | codex/mc-t9 | Candidate9ec5188; C76 focused Cedar0. Prior945 rendered pair/gates mapped; final9ec gates/GREF/FOV, then RUN37 own plant/review. |
 | T6 | 5 | 4 | codex/mc-t6 | NOT STARTED |
 | T7 | 5 | 2b, 4 | codex/mc-t7 | NOT STARTED |
 | T11 | 5 | 9, 19, 20 | codex/mc-t11 | NOT STARTED |
@@ -228,8 +228,8 @@ One row per builder/reviewer dispatch or resumed agent work turn. Register befor
 | 34 | T4 independent review | qa-lead | gpt-6.1-sol | high | 2c45b83 | PASS0High/0Medium;65independenttests0,ownsemanticplant0/101/0; exactrestore/cacheidle. |
 | 35 | T9 implementation preparation | bevy-rendering-engineer | gpt-6-luna | high | 3203f6b | COMPLETE preparation only: imported tests, API stubs, PROJ1/CLICK9 drafts; uncompiled/unexecuted/uncommitted; task2/estimate6/soft12/hard24. |
 | 36 | T9 implementation continuation | bevy-rendering-engineer | gpt-6-luna | high | 61535fc | COMPLETE native implementation handoff only; initial semantic reds, C49/C69-C73 repairs and native proofs. Task verification continues in RUN38. |
-| 37 | T9 independent review | technical-director | gpt-6.1-sol | high | 9453783 | ACTIVE: source audit, Node59/native63 actual0, C49 High independent recheck PASS; own modifier plant/final GREF audit pending. |
-| 38 | T9 pixel proof and final verification continuation | bevy-rendering-engineer | gpt-6-luna | high | 9453783 | ACTIVE: exact57-path commit; rendered CLICK9 pair0; standard13gates0/1049-0-18; 7 GREF and final FOV plant pending; T9run5/estimate6/soft12/hard24. |
+| 37 | T9 independent review | technical-director | gpt-6.1-sol | high | 9ec5188 | ACTIVE: Node59/native63 on945, C49 High recheck PASS; C76 source and focused pixel repair audited. Final source mapping, own modifier plant and GREF verdict pending. |
+| 38 | T9 pixel proof and final verification continuation | bevy-rendering-engineer | gpt-6-luna | high | 9ec5188 | ACTIVE:945 rendered CLICK9 pair0 and13gates0/1049-0-18; C76 focused Cedar0 and repair commit9ec; final9ec gates/all7GREF/FOV pending. T9run5/estimate6/soft12/hard24. |
 
 ## 9. Preflight ledger and stop
 
