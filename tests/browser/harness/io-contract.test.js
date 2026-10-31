@@ -268,3 +268,13 @@ test("a failed screenshot checkpoint fails the row instead of silently omitting 
     });
     await assert.rejects(io.screenshot(), /missing camera bridge/);
 });
+
+test("overlapping screenshot observations retain their own input-call identities", async () => {
+    const checkpoints = [];
+    const { io } = createDriverIo([fakePage("a", [])], {
+        afterScreenshot: async (metadata) => { checkpoints.push(metadata); },
+    });
+    const pixels = await Promise.all([io.screenshot(), io.screenshot()]);
+    assert.deepEqual(pixels.map((bytes) => bytes.toString()), ["png", "png"]);
+    assert.deepEqual(checkpoints.map((row) => row.input_call).sort(), [0, 1]);
+});

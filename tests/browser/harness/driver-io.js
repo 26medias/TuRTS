@@ -158,10 +158,11 @@ function createDriverIo(pages, { outputDir, inputLog = [], initialCursor = { x: 
             });
         },
         async screenshot() {
+            const input_call = inputLog.length;
+            const window = state.selected + 1;
+            const screenshotPage = page();
             return record("screenshot", [], [], noEvent(async () => {
-                const input_call = inputLog.length - 1;
-                const window = state.selected + 1;
-                const bytes = await page().screenshot({ type: "png", scale: "css" });
+                const bytes = await screenshotPage.screenshot({ type: "png", scale: "css" });
                 if (afterScreenshot) await afterScreenshot({ input_call, window, wall_time_ms: wallTime() });
                 return bytes;
             }));
