@@ -532,3 +532,20 @@ Conflict: plan Task9:486-489 requires CLICK9 green before commit, then final gat
 Choice: follow the plan order. Finish source repairs and focused format/lint preflight, capture a full source snapshot/hash map including tracked and untracked runtime/tests/fixtures/scripts before either CLICK9 build, and freeze all source until both attempts terminate. Check the same map afterward, then commit exactly those tested bytes. Record actual execution HEAD and dirty diff as such; separately prove the new commit's tested source paths match the prebuild map. Do not relabel earlier execution as having run on the later commit. Metadata-only vault changes remain separate. If any relevant source byte changes, rerun the affected proof on stable source. Final clean-commit G-RUST/G-QA/G-WEB/G-REF and PROJ1 plant remain required.
 
 The earlier pair remains exploratory and failed wasm compilation, with no browser result. Its post-start source snapshot does not prove an exact executed tree. Alternative not taken: treat that mixed build as acceptance, violate red-green-commit-gate-plants order, or repeat a fully identical pair solely to change the HEAD label. This is verification instrumentation, not a gate waiver or player/acceptance change. Build37/170, no extra dispatch.
+
+
+## C67: provide the generic incoming core-event queue before Task10 (2026-10-31)
+
+Conflict: current core_adapter.rs:61-77 exposes immutable core/effects, while ui_shared.rs:8-10 offers only SelectionRequests(Vec<u32>). Task10 plan:588 must translate arbitrary actions to InputEvents inside actions.rs without revisiting shared client files (R11). D2.3:279-287 requires the same core on a virtual1280x720 headless view; C47 forbids presentation mutation of the core. A selection-only queue cannot carry its smart/order/group events.
+
+Choice: Task9 adds public CoreInputQueue(Vec<InputEvent>), initializes it in CoreAdapterPlugin and drains it once into the same core event batch. Producers order before the existing CoreAdapterSet. Keep SelectionRequests as a compatibility producer if useful; all core mutation still runs only through InputEvent. Add a scheduled joined/no-Window regression that emits a qualified order from queued input and proves no replay on the next empty update. Use the existing adapter-test lock for its global clear instrumentation. actions.rs stays a stub and the CLI/process action hook stays Task10.
+
+Alternative not taken: postpone an unusable module interface, add a fake Window or expose mutable Core state. This fills the task boundary with the nearest D2.2/2.3 contract; no new key, player step, acceptance row or agent run. Refresh frozen browser snapshot after this repair. Build37/170.
+
+## C68: stabilize and retain CLICK9 screenshot diagnostics without weakening its oracle (2026-10-31)
+
+Conflict: frozen CLICK9 attempt screenshots at initial100-250ms were black. A separate headed diagnostic with1500ms waits renders the scout and panel, while unchanged core state proves right input arrived outside the panel. Mode and delay both changed, so the cause of black headless screenshots is NOT TRACED. The real missing-order High was catalog identity, not proven camera/input geometry.
+
+Choice: allow1500ms pre-input wait in the driver, preserving the same two clicks,150ms between them and15s postcommand wait. Save one final screenshot after that15s too. Keep every selection/accepted-result/server-motion/unique-sequence/200-actual-frame oracle guard unchanged. Use the next frozen pair to inspect early and late images; do not claim a headless fix from the confounded diagnostic. No global harness profile change or headed-skip classification. A diagnostic PASS is not acceptance.
+
+Alternative not taken: change click coordinates without evidence, relax missing results or frame counts, infer rendering from debug, or attribute black pixels to a backend without a controlled comparison. This is a test timing/artifact instrument detail, with no changed player contract. Record both failed pairs and the qualified-ID red/fix/recheck evidence. Build37/170.
