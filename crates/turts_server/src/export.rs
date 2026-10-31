@@ -454,6 +454,7 @@ fn command_reject_reason(reason: turts_sim::RejectReason) -> wire::CommandReject
         R::UnknownRecipe => wire::CommandRejectReason::UnknownRecipe,
         R::RecipeNotEnabled => wire::CommandRejectReason::RecipeNotEnabled,
         R::QueueFull => wire::CommandRejectReason::QueueFull,
+        R::RateLimited => wire::CommandRejectReason::RateLimited,
         R::InsufficientBalance | R::UnknownBalance => {
             wire::CommandRejectReason::InsufficientBalance
         }

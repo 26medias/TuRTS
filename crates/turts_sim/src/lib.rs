@@ -5,6 +5,7 @@ pub mod bootstrap;
 pub mod command;
 mod command_m3;
 pub mod economy;
+pub mod grid;
 pub mod harness;
 pub mod ids;
 pub mod map;

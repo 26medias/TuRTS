@@ -370,6 +370,20 @@ pub struct AuditState {
     pub resources: AuditResourcePresence,
     pub raw_units: Vec<RawUnitAudit>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub movement_progress: Vec<RawMovementProgressAudit>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub movement_pools: Vec<crate::movement::MovementPool>,
+    #[serde(
+        default,
+        skip_serializing_if = "crate::orders::PendingMovementOrders::is_empty"
+    )]
+    pub pending_movement_orders: crate::orders::PendingMovementOrders,
+    #[serde(
+        default,
+        skip_serializing_if = "crate::orders::MovementDispatchState::is_default"
+    )]
+    pub movement_dispatch: crate::orders::MovementDispatchState,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub unit_orders: Vec<RawUnitOrdersAudit>,
     pub raw_inventories: Vec<RawInventoryAudit>,
     pub raw_orders: Vec<RawOrderAudit>,
@@ -403,6 +417,12 @@ pub struct AuditState {
     pub economy: WorldView,
     pub allocators: IdAllocators,
     pub claims: Vec<Option<u64>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RawMovementProgressAudit {
+    pub unit_id: u32,
+    pub progress: crate::movement::MoveProgress,
 }
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct EconomyStateView {
@@ -466,6 +486,13 @@ pub fn world_view(world: &mut World) -> WorldView {
         .get_resource::<crate::world::Tick>()
         .map_or(0, |tick| tick.0);
     let units = crate::world::snapshot(world);
+    let pending_move_units: std::collections::HashSet<_> = world
+        .get_resource::<crate::orders::PendingMovementOrders>()
+        .into_iter()
+        .flat_map(|pending| pending.queues.values())
+        .flat_map(|queue| queue.iter())
+        .flat_map(|request| request.unit_ids.iter().copied())
+        .collect();
     let mut unit_orders: Vec<_> = world
         .iter_entities()
         .filter_map(|entity| {
@@ -478,6 +505,8 @@ pub fn world_view(world: &mut World) -> WorldView {
                 .is_some_and(|failure| failure.reason == crate::RejectReason::Blocked)
             {
                 UnitOrderActivityView::Blocked
+            } else if pending_move_units.contains(&unit_id) {
+                UnitOrderActivityView::Pending
             } else if let Some(current) = &orders.current {
                 match current.behaviour {
                     turts_mod_api::Behaviour::Move if entity.get::<MoveTarget>().is_some() => {
@@ -971,6 +1000,16 @@ pub fn audit_state(world: &mut World) -> AuditState {
             }),
     );
     raw_units.sort_by_key(|u| u.unit_id);
+    let mut movement_progress: Vec<_> = world
+        .iter_entities()
+        .filter_map(|entity| {
+            Some(RawMovementProgressAudit {
+                unit_id: entity.get::<UnitId>()?.0,
+                progress: entity.get::<crate::movement::MoveProgress>()?.clone(),
+            })
+        })
+        .collect();
+    movement_progress.sort_by_key(|movement| movement.unit_id);
     let mut unit_orders: Vec<_> = world
         .iter_entities()
         .filter_map(|entity| {
@@ -1053,6 +1092,17 @@ pub fn audit_state(world: &mut World) -> AuditState {
         }),
         resources,
         raw_units,
+        movement_progress,
+        movement_pools: world
+            .get_resource::<crate::movement::MovementPools>()
+            .map_or_else(Vec::new, |pools| pools.0.values().cloned().collect()),
+        pending_movement_orders: world
+            .get_resource::<crate::orders::PendingMovementOrders>()
+            .cloned()
+            .unwrap_or_default(),
+        movement_dispatch: world
+            .get_resource::<crate::orders::MovementDispatchState>()
+            .map_or_else(Default::default, Clone::clone),
         unit_orders,
         raw_inventories,
         raw_orders,

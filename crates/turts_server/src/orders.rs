@@ -205,6 +205,7 @@ fn wire_reason(reason: RejectReason) -> CommandRejectReason {
         R::UnknownRecipe => CommandRejectReason::UnknownRecipe,
         R::RecipeNotEnabled => CommandRejectReason::RecipeNotEnabled,
         R::QueueFull => CommandRejectReason::QueueFull,
+        R::RateLimited => CommandRejectReason::RateLimited,
         R::InsufficientBalance | R::UnknownBalance => CommandRejectReason::InsufficientBalance,
         R::InsufficientItems | R::UnknownInventory | R::InvalidAmount => {
             CommandRejectReason::InsufficientItems

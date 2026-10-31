@@ -183,13 +183,32 @@ fn per_unit_results_for_a_mixed_envelope() {
                     .is_some_and(|id| id.0 == unit_id)
             })
             .unwrap();
-        assert_eq!(
-            entity.get::<MoveTarget>().unwrap().0,
-            Vec2::new(90.0, 90.0),
-            "accepted unit {unit_id} target"
-        );
+        assert!(entity.get::<MoveTarget>().is_none());
+        assert!(entity.get::<UnitOrders>().unwrap().current.is_none());
     }
+    assert_eq!(
+        app.world()
+            .resource::<turts_sim::orders::PendingMovementOrders>()
+            .pending_units[&0],
+        290
+    );
     app.update();
+    let targets: std::collections::HashSet<_> = (1..=290)
+        .map(|unit_id| {
+            let entity = app
+                .world()
+                .iter_entities()
+                .find(|entity| {
+                    entity
+                        .get::<turts_sim::UnitId>()
+                        .is_some_and(|id| id.0 == unit_id)
+                })
+                .unwrap();
+            let target = entity.get::<MoveTarget>().unwrap().0;
+            (target.x.to_bits(), target.y.to_bits())
+        })
+        .collect();
+    assert_eq!(targets.len(), 290, "spread assigns unique destinations");
     for unit_id in 1..=290 {
         let original_pos = original[(unit_id - 1) as usize].1;
         let col = (unit_id - 1) % 20;
@@ -197,13 +216,6 @@ fn per_unit_results_for_a_mixed_envelope() {
         let start_x = 2.0 + col as f32 * 3.0;
         let start_y = 2.0 + row as f32 * 3.0;
         assert_eq!(original_pos, Vec2::new(start_x, start_y));
-        let dx = 90.0 - start_x;
-        let dy = 90.0 - start_y;
-        let distance = (dx * dx + dy * dy).sqrt();
-        let expected = Vec2::new(
-            start_x + dx / distance * 0.15,
-            start_y + dy / distance * 0.15,
-        );
         let entity = app
             .world()
             .iter_entities()
@@ -215,12 +227,12 @@ fn per_unit_results_for_a_mixed_envelope() {
             .unwrap();
         let actual = entity.get::<Position>().unwrap().0;
         assert!(
-            (actual.x - expected.x).abs() < 0.00001,
-            "accepted unit {unit_id} x: {actual:?} != {expected:?}"
+            actual.distance(original_pos) <= 0.15001,
+            "unit {unit_id} moved too far: {actual:?}"
         );
         assert!(
-            (actual.y - expected.y).abs() < 0.00001,
-            "accepted unit {unit_id} y: {actual:?} != {expected:?}"
+            entity.get::<MoveTarget>().is_some(),
+            "unit {unit_id} has no assigned destination"
         );
     }
     for unit_id in 291..=300 {
@@ -267,7 +279,7 @@ fn point_move_outside_map_clamps_on_the_order_path() {
     assert!(result.units.refused.is_empty());
     assert_eq!(
         app.world().entity(actor).get::<MoveTarget>().unwrap().0,
-        Vec2::new(100.0, 40.0)
+        Vec2::new(99.5, 40.0)
     );
     assert_eq!(
         app.world().entity(actor).get::<Position>().unwrap().0,
@@ -278,11 +290,11 @@ fn point_move_outside_map_clamps_on_the_order_path() {
     assert!(orders.queue.is_empty());
     app.update();
     let moved = app.world().entity(actor).get::<Position>().unwrap().0;
-    assert!(moved.x > initial_pos.x && moved.x <= 100.0);
+    assert!(moved.x > initial_pos.x && moved.x <= 99.5);
     assert!(moved.y > initial_pos.y && moved.y <= 40.0);
     assert_eq!(
         app.world().entity(actor).get::<MoveTarget>().unwrap().0,
-        Vec2::new(100.0, 40.0)
+        Vec2::new(99.5, 40.0)
     );
 }
 
@@ -330,6 +342,13 @@ fn shift_appends_and_plain_replaces() {
         .unwrap()
         .id();
     let orders = app.world().entity(entity).get::<UnitOrders>().unwrap();
+    assert!(
+        orders.current.is_none(),
+        "replace is pending until spread admission"
+    );
+    assert_eq!(orders.queue.len(), 1, "append waits behind pending replace");
+    app.update();
+    let orders = app.world().entity(entity).get::<UnitOrders>().unwrap();
     assert_eq!(
         orders.current.as_ref().unwrap().target,
         OrderTargetSim::Point(Vec2::new(20.0, 20.0))
@@ -339,6 +358,17 @@ fn shift_appends_and_plain_replaces() {
         app.world_mut(),
         &order_command(vec![1], Vec2::new(40.0, 40.0), QueueMode::Replace, 2, 1),
     );
+    let waiting_orders = app.world().entity(entity).get::<UnitOrders>().unwrap();
+    assert_eq!(
+        waiting_orders.current.as_ref().unwrap().target,
+        OrderTargetSim::Point(Vec2::new(20.0, 20.0)),
+        "the previous accepted move stays visible while replacement waits"
+    );
+    assert!(
+        waiting_orders.queue.is_empty(),
+        "replacement discards older waypoints"
+    );
+    app.update();
     let orders = app.world().entity(entity).get::<UnitOrders>().unwrap();
     assert_eq!(
         orders.current.as_ref().unwrap().target,
@@ -427,9 +457,11 @@ fn move_follows_a_unit_target_as_it_moves() {
         actor_pos.x > 2.0 && actor_pos.y > 2.0,
         "actor advances toward the target's new position"
     );
-    assert_eq!(
-        app.world().entity(actor).get::<MoveTarget>().unwrap().0,
-        Vec2::new(40.0, 40.0)
+    let target_pos = app.world().entity(target).get::<Position>().unwrap().0;
+    let actor_target = app.world().entity(actor).get::<MoveTarget>().unwrap().0;
+    assert!(
+        actor_target.distance(target_pos) >= 1.0,
+        "follow destination avoids the target unit: {actor_target:?} vs {target_pos:?}"
     );
 }
 
@@ -748,22 +780,15 @@ fn mixed_order_command_audit_covers_every_per_unit_operation() {
     assert_eq!(result.units.refused, vec![(3, RejectReason::NotApplicable)]);
     let trail = app.world().resource::<AuditTrail>();
     assert_eq!(trail.commands.len(), 1);
-    assert_eq!(trail.operations.len(), 2);
-    assert!(trail.operations.iter().all(|operation| operation.phase == turts_sim::economy::transaction::AuditPhase::Orders));
+    assert_eq!(trail.operations.len(), 1);
     assert_eq!(
-        trail
-            .operations
-            .iter()
-            .map(|operation| operation.unit_id)
-            .collect::<Vec<_>>(),
-        vec![Some(1), Some(2)]
+        trail.operations[0].phase,
+        turts_sim::economy::transaction::AuditPhase::Command
     );
+    assert_eq!(trail.operations[0].unit_id, None);
     assert_eq!(trail.commands[0].before, trail.operations[0].before);
-    assert_eq!(trail.commands[0].after, trail.operations[1].after);
-    assert_eq!(
-        trail.commands[0].operation_end_id,
-        Some(trail.operations[1].operation_id)
-    );
+    assert_eq!(trail.commands[0].after, trail.operations[0].after);
+    assert_eq!(trail.commands[0].operation_end_id, None);
 }
 
 #[test]

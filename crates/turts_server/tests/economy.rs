@@ -1222,6 +1222,7 @@ fn owner_unit_orders_from_audit(
             R::UnknownRecipe => W::UnknownRecipe,
             R::RecipeNotEnabled => W::RecipeNotEnabled,
             R::QueueFull => W::QueueFull,
+            R::RateLimited => W::RateLimited,
             R::InsufficientBalance | R::UnknownBalance => W::InsufficientBalance,
             R::InsufficientItems | R::UnknownInventory | R::InvalidAmount => W::InsufficientItems,
             R::UnknownJob => W::UnknownJob,

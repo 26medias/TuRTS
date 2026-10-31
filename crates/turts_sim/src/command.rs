@@ -95,6 +95,7 @@ pub enum RejectReason {
     UnknownRecipe,
     RecipeNotEnabled,
     QueueFull,
+    RateLimited,
     InsufficientBalance,
     InsufficientItems,
     UnknownJob,
@@ -139,6 +140,7 @@ impl RejectReason {
             Self::UnknownRecipe => "unknown_recipe",
             Self::RecipeNotEnabled => "recipe_not_enabled",
             Self::QueueFull => "queue_full",
+            Self::RateLimited => "rate_limited",
             Self::InsufficientBalance => "insufficient_balance",
             Self::InsufficientItems => "insufficient_items",
             Self::UnknownJob => "unknown_job",
@@ -172,7 +174,8 @@ pub fn apply_command(world: &mut World, command: &Command) -> CommandResult {
         && unit_ids.len() > 1
     {
         return crate::economy::transaction::capture_command(world, command, |world| {
-            let (outcome, units) = apply_move_to_per_unit(world, command.slot, unit_ids, *target);
+            let (outcome, units) =
+                apply_move_to_per_unit(world, command.slot, command.seq, unit_ids, *target);
             CommandResult {
                 slot: command.slot,
                 seq: command.seq,
@@ -193,7 +196,8 @@ pub fn apply_command(world: &mut World, command: &Command) -> CommandResult {
             && order.group == 0;
         if plain_move || plain_gather {
             return crate::economy::transaction::capture_command(world, command, |world| {
-                let (outcome, units) = crate::orders::apply_order(world, command.slot, order);
+                let (outcome, units) =
+                    crate::orders::apply_order(world, command.slot, command.seq, order);
                 CommandResult {
                     slot: command.slot,
                     seq: command.seq,
@@ -203,7 +207,8 @@ pub fn apply_command(world: &mut World, command: &Command) -> CommandResult {
             });
         }
         return crate::economy::transaction::capture_order_command(world, command, |world| {
-            let (outcome, units) = crate::orders::apply_order(world, command.slot, order);
+            let (outcome, units) =
+                crate::orders::apply_order(world, command.slot, command.seq, order);
             CommandResult {
                 slot: command.slot,
                 seq: command.seq,
@@ -267,6 +272,7 @@ pub(crate) fn apply_legacy_move_to(
 fn apply_move_to_per_unit(
     world: &mut World,
     slot: SlotId,
+    seq: u32,
     unit_ids: &[u32],
     target: Vec2,
 ) -> (Result<Applied, RejectReason>, crate::orders::UnitOutcomes) {
@@ -283,7 +289,7 @@ fn apply_move_to_per_unit(
     }
     let bounds = world.get_resource::<MapBounds>().copied();
     let types = world.resource::<UnitTypes>();
-    let index: HashMap<u32, (Entity, SlotId, bool)> = world
+    let index: HashMap<u32, (Entity, SlotId, bool, f32)> = world
         .iter_entities()
         .filter_map(|entity| {
             let id = entity.get::<UnitId>()?;
@@ -297,25 +303,31 @@ fn apply_move_to_per_unit(
                     types
                         .get(unit_type.0)
                         .is_some_and(|entry| entry.movement.is_some()),
+                    types.get(unit_type.0).map_or(0.5, |entry| entry.radius),
                 ),
             ))
         })
         .collect();
-    let inside = bounds.is_some_and(|b| {
-        (0.0..=b.size.x).contains(&target.x) && (0.0..=b.size.y).contains(&target.y)
+    if !target.is_finite() {
+        return (Err(RejectReason::TargetNotFinite), UnitOutcomes::default());
+    }
+    let radius = unit_ids
+        .iter()
+        .filter_map(|id| index.get(id).map(|(_, _, _, radius)| *radius))
+        .fold(0.0_f32, f32::max);
+    let target = bounds.map_or(target, |bounds| {
+        Vec2::new(
+            target.x.clamp(radius, (bounds.size.x - radius).max(radius)),
+            target.y.clamp(radius, (bounds.size.y - radius).max(radius)),
+        )
     });
     let mut outcomes = UnitOutcomes::default();
     for unit_id in unit_ids {
         let result = match index.get(unit_id) {
             None => Err(RejectReason::UnknownUnit),
-            Some((_, owner, _)) if *owner != slot => Err(RejectReason::NotOwner),
-            Some((_, _, false)) => Err(RejectReason::NotApplicable),
-            Some(_) if !target.is_finite() => Err(RejectReason::TargetNotFinite),
-            Some(_) if !inside => Err(RejectReason::TargetOutsideMap),
-            Some((entity, _, _)) => {
-                world.entity_mut(*entity).insert(MoveTarget(target));
-                Ok(())
-            }
+            Some((_, owner, _, _)) if *owner != slot => Err(RejectReason::NotOwner),
+            Some((_, _, false, _)) => Err(RejectReason::NotApplicable),
+            Some(_) => Ok(()),
         };
         match result {
             Ok(()) => {
@@ -332,6 +344,25 @@ fn apply_move_to_per_unit(
             }
             Err(reason) => outcomes.refused.push((*unit_id, reason)),
         }
+    }
+    if !outcomes.accepted.is_empty()
+        && !crate::orders::queue_movement_envelope(
+            world,
+            slot,
+            seq,
+            0,
+            target,
+            outcomes.accepted.clone(),
+            None,
+            true,
+        )
+    {
+        outcomes.refused.extend(
+            outcomes
+                .accepted
+                .drain(..)
+                .map(|unit| (unit, RejectReason::RateLimited)),
+        );
     }
     let outcome = if outcomes.accepted.is_empty() {
         outcomes
@@ -392,9 +423,28 @@ fn apply_move_to(
         })
         .collect();
     let entities = validate_move_to(slot, unit_ids, target, &index, bounds.as_ref())?;
-    for entity in entities {
-        let mut entity = world.entity_mut(entity);
-        entity.insert(MoveTarget(target));
+    if !target.is_finite() {
+        return Err(RejectReason::TargetNotFinite);
+    }
+    let moves: Vec<_> = entities
+        .into_iter()
+        .map(|entity| {
+            let radius = world
+                .entity(entity)
+                .get::<UnitType>()
+                .and_then(|kind| types.get(kind.0))
+                .map_or(0.5, |entry| entry.radius);
+            let clamped = bounds.map_or(target, |bounds| {
+                Vec2::new(
+                    target.x.clamp(radius, (bounds.size.x - radius).max(radius)),
+                    target.y.clamp(radius, (bounds.size.y - radius).max(radius)),
+                )
+            });
+            (entity, clamped)
+        })
+        .collect();
+    for (entity, target) in moves {
+        world.entity_mut(entity).insert(MoveTarget(target));
     }
     if let Some(mut orders) = world.get_resource_mut::<EconomyOrders>() {
         for id in unit_ids {
@@ -410,8 +460,8 @@ fn apply_move_to(
     Ok(())
 }
 
-/// Check order: list empty; more than 256; duplicate id; every id exists; every unit owned by
-/// the sender; target finite; target inside the map. Returns the entities to move.
+/// Check order: list empty; more than 4096; duplicate id; every id exists; every unit owned by
+/// the sender; target finite. Finite target points are clamped by footprint radius.
 fn validate_move_to(
     slot: SlotId,
     unit_ids: &[u32],
@@ -442,12 +492,7 @@ fn validate_move_to(
     if !target.is_finite() {
         return Err(RejectReason::TargetNotFinite);
     }
-    let inside = bounds.is_some_and(|b| {
-        (0.0..=b.size.x).contains(&target.x) && (0.0..=b.size.y).contains(&target.y)
-    });
-    if !inside {
-        return Err(RejectReason::TargetOutsideMap);
-    }
+    let _ = bounds;
     Ok(found.into_iter().map(|(entity, _, _)| entity).collect())
 }
 

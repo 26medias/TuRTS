@@ -22,7 +22,9 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use bevy::app::App;
+use bevy::app::{App, FixedFirst};
+use bevy::ecs::schedule::IntoScheduleConfigs;
+use bevy::prelude::{Query, Res, ResMut, Resource, With};
 use config::HostConfig;
 use turts_mod_api::{ENGINE_API_VERSION, Lockfile};
 use turts_mod_runtime::hash::sha256_hex;
@@ -30,9 +32,9 @@ use turts_mod_runtime::lock::read_lockfile;
 use turts_mod_runtime::pack::pack_files;
 use turts_net_protocol::{Advertisement, NET_PROTOCOL_VERSION, messages};
 use turts_sim::{
-    Command, CommandKind, MapBounds, MoveTarget, SlotId, UnitId, UnitTypes, Vec2, committed_tick,
-    completed_world, gameplay_entity_count, headless_app, initialize_completed_world, snapshot,
-    world_view,
+    Command, CommandKind, MapBounds, MoveTarget, SlotId, Tick, UnitId, UnitTypes, Vec2,
+    committed_tick, completed_world, gameplay_entity_count, headless_app,
+    initialize_completed_world, snapshot, world_view,
 };
 
 const PUBLIC_URL: &str = "http://127.0.0.1:7000";
@@ -203,6 +205,36 @@ fn move_targets(app: &mut App) -> BTreeMap<u32, Vec2> {
         .iter(app.world())
         .map(|(id, target)| (id.0, target.0))
         .collect()
+}
+
+#[derive(Resource, Default)]
+struct RetargetBoundary {
+    tick: u32,
+    before: BTreeMap<u32, Option<Vec2>>,
+    after: BTreeMap<u32, Option<Vec2>>,
+}
+
+fn observe_before_synthetic_retarget(
+    tick: Res<Tick>,
+    units: Query<(&UnitId, Option<&MoveTarget>), With<synthetic::Synthetic>>,
+    mut boundary: ResMut<RetargetBoundary>,
+) {
+    boundary.tick = tick.0;
+    boundary.before = units
+        .iter()
+        .map(|(id, target)| (id.0, target.map(|target| target.0)))
+        .collect();
+    boundary.after.clear();
+}
+
+fn observe_after_synthetic_retarget(
+    units: Query<(&UnitId, Option<&MoveTarget>), With<synthetic::Synthetic>>,
+    mut boundary: ResMut<RetargetBoundary>,
+) {
+    boundary.after = units
+        .iter()
+        .map(|(id, target)| (id.0, target.map(|target| target.0)))
+        .collect();
 }
 
 #[test]
@@ -388,14 +420,26 @@ fn completed_output_is_in_same_delta_and_late_join_snapshot_while_cancel_spawns_
 fn synthetic_units_get_a_new_target_every_40_ticks() {
     let (mut app, _, _) = boot_package("synthetic_retarget", "acme");
     synthetic::install(&mut app, &synthetic_cli(50));
+    app.init_resource::<RetargetBoundary>();
+    app.add_systems(
+        FixedFirst,
+        observe_before_synthetic_retarget.before(synthetic::retarget),
+    );
+    app.add_systems(
+        FixedFirst,
+        observe_after_synthetic_retarget.after(synthetic::retarget),
+    );
     assert_eq!(gameplay_entity_count(app.world_mut()), 51);
     let size = app.world().resource::<MapBounds>().size;
-    // The model: a unit takes the point of `target_point(tick - 1, id)` in tick `tick` when
-    // `(tick - 1 + id) % 40 == 0`, and keeps its target otherwise. A unit that arrives loses its
-    // target, so a unit may lack one; a unit never has a target that the model does not give.
-    let mut expected = move_targets(&mut app);
+    let synthetic_ids: BTreeSet<_> = app
+        .world_mut()
+        .query_filtered::<&UnitId, With<synthetic::Synthetic>>()
+        .iter(app.world())
+        .map(|id| id.0)
+        .collect();
+    let initial_targets = move_targets(&mut app);
     assert_eq!(
-        expected.len(),
+        initial_targets.len(),
         50,
         "each synthetic unit starts with a target"
     );
@@ -403,24 +447,35 @@ fn synthetic_units_get_a_new_target_every_40_ticks() {
     let mut retargets: BTreeMap<u32, u32> = BTreeMap::new();
     for tick in 1..=82u32 {
         app.update();
-        for (&id, target) in expected.iter_mut() {
-            if (u64::from(tick - 1) + u64::from(id)) % 40 == 0 {
-                *target = synthetic::target_point(tick - 1, id, size);
-                *retargets.entry(id).or_default() += 1;
-            }
-        }
-        let actual = move_targets(&mut app);
-        for (id, target) in &actual {
-            assert_eq!(*target, expected[id], "tick {tick}: unit {id}");
-        }
-        for id in expected.keys() {
-            if (u64::from(tick - 1) + u64::from(*id)) % 40 == 0 {
-                assert!(
-                    actual.contains_key(id),
-                    "tick {tick}: unit {id} has no new target"
+        let boundary = app.world().resource::<RetargetBoundary>();
+        assert_eq!(boundary.tick, tick - 1, "retarget observes the prior tick");
+        assert_eq!(
+            boundary.before.keys().copied().collect::<BTreeSet<_>>(),
+            synthetic_ids
+        );
+        assert_eq!(
+            boundary.after.keys().copied().collect::<BTreeSet<_>>(),
+            synthetic_ids
+        );
+        for id in &synthetic_ids {
+            let before_target = boundary.before[id];
+            let after_target = boundary.after[id];
+            if (u64::from(boundary.tick) + u64::from(*id)) % 40 == 0 {
+                assert_eq!(
+                    after_target,
+                    Some(synthetic::target_point(boundary.tick, *id, size)),
+                    "retargeted unit {id} at FixedFirst tick {tick}"
+                );
+                *retargets.entry(*id).or_default() += 1;
+            } else {
+                assert_eq!(
+                    after_target, before_target,
+                    "unscheduled unit {id} is unchanged by the retarget system at tick {tick}"
                 );
             }
         }
+        let actual = move_targets(&mut app);
+        assert!(actual.keys().all(|id| synthetic_ids.contains(id)));
     }
     assert_eq!(retargets.len(), 50, "every unit was retargeted");
     assert!(retargets.values().all(|&times| times >= 2), "{retargets:?}");

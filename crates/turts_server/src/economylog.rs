@@ -539,6 +539,14 @@ pub(crate) fn validate_records(records: &[EconomyLogRecord]) -> Result<(), Strin
                     validate_automatic_order_operation(operation)?;
                 }
                 cursor = operation.after.clone();
+                if operation.phase == turts_sim::economy::transaction::AuditPhase::Command
+                    && operation.before.economy.tick == last_tick
+                {
+                    // A command applied outside FixedPreUpdate belongs to the next tick's
+                    // baseline. Commands drained after the clock advances are inside the
+                    // tick and leave its pre-command snapshot unchanged.
+                    tick_start = operation.after.clone();
+                }
                 tick_events.extend(operation.events.iter().cloned());
             }
             EconomyLogRecord::Claim {
@@ -1807,6 +1815,38 @@ fn validate_order_operation(
             "Orders operation for unit {unit_id} changed its public position/state view"
         ));
     }
+    let replacing = order.queue == turts_sim::QueueMode::Replace;
+    let mut expected_pending = operation.before.pending_movement_orders.clone();
+    let owner = operation
+        .before
+        .raw_units
+        .iter()
+        .find(|unit| unit.unit_id == unit_id)
+        .map_or(0, |unit| unit.owner_slot);
+    if replacing {
+        expected_pending.cancel_units(owner, &[unit_id]);
+    }
+    if operation.after.pending_movement_orders != expected_pending {
+        return Err(format!(
+            "replacement order for unit {unit_id} did not cancel its pending movement membership exactly"
+        ));
+    }
+    let mut expected_progress = operation.before.movement_progress.clone();
+    if replacing {
+        expected_progress.retain(|row| row.unit_id != unit_id);
+    }
+    if operation.after.movement_progress != expected_progress {
+        return Err(format!(
+            "replacement order for unit {unit_id} changed unexpected movement progress"
+        ));
+    }
+    if operation.after.movement_pools != operation.before.movement_pools
+        || operation.after.movement_dispatch != operation.before.movement_dispatch
+    {
+        return Err(format!(
+            "order operation for unit {unit_id} changed scheduler or movement pool state"
+        ));
+    }
     if order.behaviour == turts_mod_api::Behaviour::Remove {
         if operation
             .after
@@ -1882,6 +1922,47 @@ fn validate_automatic_order_operation(operation: &OperationAudit) -> Result<(), 
     let tick = operation.before.economy.tick;
     let mut expected = operation.before.clone();
     let current = orders_before.current.clone();
+
+    let actor_target_before = raw_move_target(&operation.before, unit_id);
+    let actor_target_after = raw_move_target(&operation.after, unit_id);
+    let admitted_request = operation
+        .after
+        .pending_movement_orders
+        .queues
+        .values()
+        .flat_map(|queue| queue.iter())
+        .find(|request| request.unit_ids.contains(&unit_id));
+    let existed_before = operation
+        .before
+        .pending_movement_orders
+        .queues
+        .values()
+        .flat_map(|queue| queue.iter())
+        .any(|request| request.unit_ids.contains(&unit_id));
+    if actor_target_before.is_some() && actor_target_after.is_none() && admitted_request.is_some() {
+        validate_queued_movement_admission(
+            operation,
+            unit_id,
+            admitted_request.unwrap(),
+            existed_before,
+        )?;
+        return Ok(());
+    }
+    if actor_target_before.is_none()
+        && operation
+            .before
+            .movement_progress
+            .iter()
+            .all(|row| row.unit_id != unit_id)
+        && operation
+            .after
+            .movement_progress
+            .iter()
+            .any(|row| row.unit_id == unit_id)
+    {
+        validate_pending_movement_dispatch(operation, unit_id, &mut expected)?;
+        return Ok(());
+    }
 
     match current {
         Some(order)
@@ -1965,7 +2046,337 @@ fn validate_automatic_order_operation(operation: &OperationAudit) -> Result<(), 
     }
     if expected != operation.after {
         return Err(format!(
-            "automatic Orders operation for unit {unit_id} differs from its independently modeled transition"
+            "automatic Orders operation for unit {unit_id} differs from its independently modeled transition (target {:?}->{:?}, orders {:?}->{:?}, pending {:?}->{:?}, progress {:?}->{:?})",
+            raw_move_target(&operation.before, unit_id),
+            raw_move_target(&operation.after, unit_id),
+            unit_orders_for(&operation.before, unit_id),
+            unit_orders_for(&operation.after, unit_id),
+            operation.before.pending_movement_orders,
+            operation.after.pending_movement_orders,
+            operation.before.movement_progress,
+            operation.after.movement_progress
+        ));
+    }
+    Ok(())
+}
+
+fn validate_queued_movement_admission(
+    operation: &OperationAudit,
+    unit_id: u32,
+    request: &turts_sim::orders::PendingMovementOrder,
+    existed_before: bool,
+) -> Result<(), String> {
+    let actor = operation
+        .before
+        .raw_units
+        .iter()
+        .find(|unit| unit.unit_id == unit_id)
+        .ok_or_else(|| format!("queued movement names absent unit {unit_id}"))?;
+    let order = unit_orders_for(&operation.before, unit_id)
+        .current
+        .ok_or_else(|| format!("queued movement unit {unit_id} has no current order"))?;
+    let turts_sim::OrderTargetSim::Point(point) = order.target else {
+        return Err(format!(
+            "queued movement unit {unit_id} has no point target"
+        ));
+    };
+    if request.slot.0 != actor.owner_slot
+        || request.accepted_tick != operation.before.economy.tick
+        || request.group != order.group
+        || request.order.as_ref() != Some(&order)
+        || request.point != point
+        || request.plain
+        || request.unit_ids.windows(2).any(|pair| pair[0] >= pair[1])
+        || !request.unit_ids.contains(&unit_id)
+    {
+        return Err(format!(
+            "queued movement request for unit {unit_id} does not match its active order"
+        ));
+    }
+    let mut expected = operation.before.clone();
+    let mut admission = request.clone();
+    admission.pool_id = 0;
+    if !existed_before && !expected.pending_movement_orders.queue(admission) {
+        return Err(format!(
+            "queued movement request for unit {unit_id} exceeds the pending-unit cap"
+        ));
+    }
+    let raw = expected
+        .raw_units
+        .iter_mut()
+        .find(|unit| unit.unit_id == unit_id)
+        .unwrap();
+    raw.move_target = None;
+    if expected != operation.after {
+        return Err(format!(
+            "queued movement admission for unit {unit_id} differs from its independent queue transition"
+        ));
+    }
+    Ok(())
+}
+
+fn validate_pending_movement_dispatch(
+    operation: &OperationAudit,
+    unit_id: u32,
+    expected: &mut AuditState,
+) -> Result<(), String> {
+    use turts_sim::movement::{
+        MoveProgress, MovementActivity, ReservedFootprint, SpreadMember, StaticFootprint,
+    };
+
+    let actor = operation
+        .before
+        .raw_units
+        .iter()
+        .find(|unit| unit.unit_id == unit_id)
+        .ok_or_else(|| format!("movement dispatch names absent unit {unit_id}"))?;
+    let movement = operation
+        .after
+        .movement_progress
+        .iter()
+        .find(|row| row.unit_id == unit_id)
+        .ok_or_else(|| format!("movement dispatch omitted progress for unit {unit_id}"))?;
+    let target = operation
+        .after
+        .raw_units
+        .iter()
+        .find(|unit| unit.unit_id == unit_id)
+        .and_then(|unit| unit.move_target.as_ref())
+        .ok_or_else(|| format!("movement dispatch omitted target for unit {unit_id}"))?;
+    let slot = actor.owner_slot;
+    let request = operation
+        .before
+        .pending_movement_orders
+        .queues
+        .get(&slot)
+        .and_then(|queue| queue.front())
+        .filter(|request| request.unit_ids.contains(&unit_id))
+        .cloned();
+    let pool_id = movement.progress.pool_id;
+    let mut pool = operation
+        .before
+        .movement_pools
+        .iter()
+        .find(|pool| pool.pool_id == pool_id)
+        .cloned();
+    if let Some(request) = &request {
+        if request.slot.0 != slot || request.pool_id != pool_id {
+            return Err(format!(
+                "movement dispatch for unit {unit_id} does not match its pending envelope"
+            ));
+        }
+        let moving: std::collections::BTreeSet<_> = request.unit_ids.iter().copied().collect();
+        let members: Vec<_> = request
+            .unit_ids
+            .iter()
+            .map(|id| {
+                let raw = operation
+                    .before
+                    .raw_units
+                    .iter()
+                    .find(|unit| unit.unit_id == *id)
+                    .ok_or_else(|| format!("pending movement envelope names absent unit {id}"))?;
+                let kind = operation
+                    .before
+                    .unit_types
+                    .iter()
+                    .find(|kind| kind.type_id == raw.unit_type);
+                Ok(SpreadMember {
+                    id: *id,
+                    position: bevy::math::Vec2::new(raw.pos.x, raw.pos.y),
+                    radius: kind.map_or(0.5, |kind| kind.radius),
+                })
+            })
+            .collect::<Result<_, String>>()?;
+        let mut reserved = Vec::new();
+        let mut static_footprints = Vec::new();
+        for raw in &operation.before.raw_units {
+            if moving.contains(&raw.unit_id) {
+                continue;
+            }
+            let kind = operation
+                .before
+                .unit_types
+                .iter()
+                .find(|kind| kind.type_id == raw.unit_type);
+            let radius = kind.map_or(0.5, |kind| kind.radius);
+            if kind.is_some_and(|kind| kind.movement_speed.is_none()) {
+                static_footprints.push(StaticFootprint {
+                    position: bevy::math::Vec2::new(raw.pos.x, raw.pos.y),
+                    radius,
+                });
+            } else if let Some(target) = &raw.move_target {
+                reserved.push(ReservedFootprint {
+                    position: bevy::math::Vec2::new(target.x, target.y),
+                    radius,
+                });
+            } else {
+                reserved.push(ReservedFootprint {
+                    position: bevy::math::Vec2::new(raw.pos.x, raw.pos.y),
+                    radius,
+                });
+            }
+        }
+        let bounds = operation
+            .before
+            .bounds
+            .as_ref()
+            .ok_or("pending movement dispatch has no map bounds")?;
+        let (mut computed_pool, assignments) = turts_sim::movement::spread_destinations(
+            &members,
+            request.point,
+            &reserved,
+            &static_footprints,
+            bevy::math::Vec2::new(bounds.x, bounds.y),
+        );
+        computed_pool.pool_id = request.pool_id;
+        let expected_target = assignments
+            .iter()
+            .find(|(id, _)| *id == unit_id)
+            .map(|(_, point)| *point)
+            .ok_or_else(|| format!("pending movement envelope did not assign unit {unit_id}"))?;
+        if (target.x - expected_target.x).abs() > 1.0e-5
+            || (target.y - expected_target.y).abs() > 1.0e-5
+        {
+            return Err(format!(
+                "movement dispatch target for unit {unit_id} differs from its deterministic spread slot"
+            ));
+        }
+        pool = Some(computed_pool);
+        let pending = &mut expected.pending_movement_orders;
+        let queue = pending
+            .queues
+            .get_mut(&slot)
+            .ok_or("movement dispatch lost its pending slot queue")?;
+        let popped = queue
+            .pop_front()
+            .ok_or("movement dispatch lost its pending envelope")?;
+        if popped != *request {
+            return Err(format!(
+                "movement dispatch for unit {unit_id} popped a different envelope"
+            ));
+        }
+        if queue.is_empty() {
+            pending.queues.remove(&slot);
+        }
+        let remaining = pending
+            .pending_units
+            .get(&slot)
+            .copied()
+            .unwrap_or_default()
+            .saturating_sub(request.unit_ids.len());
+        pending.pending_units.insert(slot, remaining);
+
+        let tick = operation.before.economy.tick;
+        if expected.movement_dispatch.tick != Some(tick) {
+            expected.movement_dispatch.tick = Some(tick);
+            expected.movement_dispatch.start_slot =
+                operation.before.pending_movement_orders.next_slot % 8;
+            expected.movement_dispatch.used = 0;
+            expected.movement_dispatch.cursor_advanced = false;
+        }
+        expected.movement_dispatch.used = expected
+            .movement_dispatch
+            .used
+            .saturating_add(request.unit_ids.len());
+        if !expected.movement_dispatch.cursor_advanced {
+            expected.movement_dispatch.cursor_advanced = true;
+            expected.pending_movement_orders.next_slot =
+                (expected.movement_dispatch.start_slot + 1) % 8;
+        }
+    } else if pool.is_none() {
+        return Err(format!(
+            "movement dispatch for unit {unit_id} has neither a pending envelope nor an existing pool"
+        ));
+    } else {
+        let existing = pool.as_ref().unwrap();
+        let target_pos = bevy::math::Vec2::new(target.x, target.y);
+        if !existing
+            .slots
+            .iter()
+            .take(existing.primary_count as usize)
+            .any(|slot| *slot == target_pos)
+        {
+            return Err(format!(
+                "movement dispatch target for unit {unit_id} is outside its primary pool slots"
+            ));
+        }
+        if operation
+            .before
+            .movement_progress
+            .iter()
+            .any(|row| row.progress.pool_id == pool_id && row.progress.slot == target_pos)
+        {
+            return Err(format!(
+                "movement dispatch reused an assigned pool slot for unit {unit_id}"
+            ));
+        }
+    }
+
+    let pool = pool.ok_or_else(|| format!("movement dispatch for unit {unit_id} has no pool"))?;
+    let target_pos = bevy::math::Vec2::new(target.x, target.y);
+    let expected_pool = expected
+        .movement_pools
+        .iter_mut()
+        .find(|candidate| candidate.pool_id == pool_id);
+    if let Some(existing) = expected_pool {
+        *existing = pool.clone();
+    } else {
+        expected.movement_pools.push(pool.clone());
+    }
+    expected.movement_pools.sort_by_key(|pool| pool.pool_id);
+    if expected
+        .movement_progress
+        .iter()
+        .any(|row| row.unit_id == unit_id)
+    {
+        return Err(format!(
+            "movement dispatch duplicated progress for unit {unit_id}"
+        ));
+    }
+    expected
+        .movement_progress
+        .push(turts_sim::economy::views::RawMovementProgressAudit {
+            unit_id,
+            progress: MoveProgress {
+                pool_id,
+                slot: target_pos,
+                activity: MovementActivity::Moving,
+                pass_mode: false,
+                stalling_on_group: false,
+                stalled_ticks: 0,
+                best_distance: bevy::math::Vec2::new(actor.pos.x, actor.pos.y).distance(target_pos),
+                claim_count: 0,
+            },
+        });
+    expected.movement_progress.sort_by_key(|row| row.unit_id);
+    let expected_unit = expected
+        .raw_units
+        .iter_mut()
+        .find(|unit| unit.unit_id == unit_id)
+        .unwrap();
+    expected_unit.move_target = Some(target.clone());
+    if let Some(request) = request {
+        if let Some(order) = request.order {
+            let mut orders = unit_orders_for(expected, unit_id);
+            orders.current = Some(order);
+            orders.queue.clear();
+            store_audited_unit_orders(expected, unit_id, orders);
+        }
+    } else if let Some(order) = operation
+        .before
+        .movement_progress
+        .iter()
+        .filter(|row| row.progress.pool_id == pool_id)
+        .find_map(|row| unit_orders_for(&operation.before, row.unit_id).current)
+    {
+        let mut orders = unit_orders_for(expected, unit_id);
+        orders.current = Some(order);
+        store_audited_unit_orders(expected, unit_id, orders);
+    }
+    if *expected != operation.after {
+        return Err(format!(
+            "movement dispatch for unit {unit_id} differs from its independently modeled envelope and slot"
         ));
     }
     Ok(())
@@ -3385,10 +3796,14 @@ fn validate_command_phase_order(
         && order.queue == turts_sim::QueueMode::Replace
         && order.group == 0
         && order.units.len() == 1;
+    let deferred_move = order.behaviour == turts_mod_api::Behaviour::Move
+        && order.queue == turts_sim::QueueMode::Replace
+        && (order.group != 0 || order.units.len() > 1)
+        && matches!(order.target, turts_sim::OrderTargetSim::Point(_));
     let plain_gather = order.behaviour == turts_mod_api::Behaviour::Gather
         && order.queue == turts_sim::QueueMode::Replace
         && order.group == 0;
-    if !plain_move && !plain_gather {
+    if !plain_move && !deferred_move && !plain_gather {
         return Err("accepted order used an undocumented Command-phase shortcut".into());
     }
     let requested = order.units.iter().copied().collect::<BTreeSet<_>>();
@@ -3451,7 +3866,21 @@ fn validate_command_phase_order(
             ));
         }
         let expected_order = order_record(order);
-        if plain_move {
+        if deferred_move {
+            if unit_orders_for(&operation.before, *unit_id)
+                != unit_orders_for(&operation.after, *unit_id)
+                || raw_move_target(&operation.after, *unit_id).is_some()
+                || operation
+                    .after
+                    .movement_progress
+                    .iter()
+                    .any(|row| row.unit_id == *unit_id)
+            {
+                return Err(format!(
+                    "deferred Move for unit {unit_id} did not cancel its old active movement while preserving orders"
+                ));
+            }
+        } else if plain_move {
             let turts_sim::OrderTargetSim::Point(point) = &order.target else {
                 return Err("accepted plain Move has a non-point target".into());
             };
@@ -3526,6 +3955,47 @@ fn validate_command_phase_order(
                     .find(|entry| entry.unit == *unit_id)
         {
             return Err(format!("refused plain order changed unit {unit_id}"));
+        }
+    }
+    if deferred_move {
+        let turts_sim::OrderTargetSim::Point(point) = &order.target else {
+            return Err("accepted deferred Move has a non-point target".into());
+        };
+        let owner = operation
+            .before
+            .raw_units
+            .iter()
+            .find(|unit| accepted.contains(&unit.unit_id))
+            .map_or(command.input.slot.0, |unit| unit.owner_slot);
+        let mut expected_pending = operation.before.pending_movement_orders.clone();
+        expected_pending.cancel_units(owner, accepted);
+        let request = turts_sim::orders::PendingMovementOrder {
+            slot: command.input.slot,
+            accepted_tick: operation.before.economy.tick,
+            seq: command.input.seq,
+            group: order.group,
+            pool_id: 0,
+            point: {
+                let point = clamped_audit_point(&operation.before, *point);
+                bevy::math::Vec2::new(point.x, point.y)
+            },
+            unit_ids: accepted.clone(),
+            order: Some(order_record(order)),
+            plain: false,
+        };
+        if !expected_pending.queue(request)
+            || operation.after.pending_movement_orders != expected_pending
+        {
+            return Err(
+                "deferred Move command did not preserve its exact atomic pending envelope".into(),
+            );
+        }
+        if operation.after.movement_pools != operation.before.movement_pools
+            || operation.after.movement_dispatch != operation.before.movement_dispatch
+        {
+            return Err(
+                "deferred Move command changed movement pools or dispatch accounting".into(),
+            );
         }
     }
     Ok(())
@@ -3613,21 +4083,6 @@ fn validate_operation_phase(
     }
 }
 
-fn same_pos(a: &turts_mod_api::WorldPos, b: &turts_mod_api::WorldPos) -> bool {
-    a.x.to_bits() == b.x.to_bits() && a.y.to_bits() == b.y.to_bits()
-}
-
-fn same_optional_pos(
-    a: &Option<turts_mod_api::WorldPos>,
-    b: &Option<turts_mod_api::WorldPos>,
-) -> bool {
-    match (a, b) {
-        (Some(a), Some(b)) => same_pos(a, b),
-        (None, None) => true,
-        _ => false,
-    }
-}
-
 /// Validate exactly one fixed movement phase. Identity, ownership, economy,
 /// orders, and events stay exact; positions and targets must follow prior targets,
 /// catalog speed, and tick rate.
@@ -3648,102 +4103,107 @@ fn validate_movement_transition(previous: &AuditState, current: &AuditState) -> 
 
     let mut expected = previous.clone();
     expected.economy.tick = current.economy.tick;
-    for expected_unit in &mut expected.raw_units {
-        let actual = current
+    let Some(bounds) = expected.bounds.as_ref() else {
+        if expected
             .raw_units
             .iter()
-            .find(|unit| unit.unit_id == expected_unit.unit_id)
-            .ok_or_else(|| format!("movement removed raw unit {}", expected_unit.unit_id))?;
-        let position = bevy::math::Vec2::new(expected_unit.pos.x, expected_unit.pos.y);
-        let (next, next_target) = match expected_unit.move_target.as_ref() {
-            Some(target) => {
-                let speed = expected
+            .all(|unit| unit.move_target.is_none())
+            && expected.movement_progress.is_empty()
+            && expected.movement_pools.is_empty()
+            && expected == *current
+        {
+            return Ok(());
+        }
+        return Err("movement transition has no map bounds".into());
+    };
+    let progress_by_unit: BTreeMap<_, _> = expected
+        .movement_progress
+        .iter()
+        .map(|movement| (movement.unit_id, movement.progress.clone()))
+        .collect();
+    let frame = turts_sim::movement::MovementFrame {
+        bounds: bevy::math::Vec2::new(bounds.x, bounds.y),
+        tick_hz,
+        units: expected
+            .raw_units
+            .iter()
+            .map(|unit| {
+                let kind = expected
                     .unit_types
                     .iter()
-                    .find(|kind| kind.type_id == expected_unit.unit_type)
-                    .and_then(|kind| kind.movement_speed);
-                match speed {
-                    None => (position, None),
-                    Some(speed) => {
-                        let target_vec = bevy::math::Vec2::new(target.x, target.y);
-                        // Match Bevy Fixed::from_hz: Duration stores the reciprocal in f64,
-                        // then Time<Fixed>::delta_secs exposes that duration as f32.
-                        let delta = std::time::Duration::from_secs_f64(1.0 / f64::from(tick_hz))
-                            .as_secs_f32();
-                        let result = turts_sim::movement::step(
-                            &turts_sim::movement::MovementInput {
-                                position,
-                                target: target_vec,
-                                speed,
-                            },
-                            delta,
-                        );
-                        if result.reached {
-                            (result.position, None)
-                        } else {
-                            (result.position, Some(target.clone()))
-                        }
-                    }
+                    .find(|kind| kind.type_id == unit.unit_type);
+                turts_sim::movement::MovementFrameUnit {
+                    unit_id: unit.unit_id,
+                    owner_slot: unit.owner_slot,
+                    unit_type: unit.unit_type,
+                    position: bevy::math::Vec2::new(unit.pos.x, unit.pos.y),
+                    radius: kind.map_or(0.5, |kind| kind.radius),
+                    speed: kind.and_then(|kind| kind.movement_speed),
+                    target: unit
+                        .move_target
+                        .as_ref()
+                        .map(|target| bevy::math::Vec2::new(target.x, target.y)),
+                    progress: progress_by_unit.get(&unit.unit_id).cloned(),
                 }
-            }
-            None => (position, None),
+            })
+            .collect(),
+        pools: expected
+            .movement_pools
+            .iter()
+            .cloned()
+            .map(|pool| (pool.pool_id, pool))
+            .collect(),
+    };
+    // Match Bevy Fixed::from_hz: Duration stores the reciprocal in f64, then
+    // Time<Fixed>::delta_secs exposes that duration as f32.
+    let delta = std::time::Duration::from_secs_f64(1.0 / f64::from(tick_hz)).as_secs_f32();
+    let outputs = turts_sim::movement::step_frame(&frame, delta);
+    let mut movement_progress = Vec::new();
+    for output in outputs {
+        let expected_unit = expected
+            .raw_units
+            .iter_mut()
+            .find(|unit| unit.unit_id == output.unit_id)
+            .ok_or_else(|| format!("movement removed raw unit {}", output.unit_id))?;
+        expected_unit.pos = turts_mod_api::WorldPos {
+            x: output.position.x,
+            y: output.position.y,
         };
-        let next_pos = turts_mod_api::WorldPos {
-            x: next.x,
-            y: next.y,
-        };
-        let next_move_target = next_target;
-        if !same_pos(&actual.pos, &next_pos)
-            || !same_optional_pos(&actual.move_target, &next_move_target)
-        {
-            return Err(format!(
-                "unit {} movement differs from its prior target and speed",
-                expected_unit.unit_id
-            ));
+        expected_unit.move_target = output.target.map(|target| turts_mod_api::WorldPos {
+            x: target.x,
+            y: target.y,
+        });
+        if let Some(progress) = output.progress {
+            movement_progress.push(turts_sim::economy::views::RawMovementProgressAudit {
+                unit_id: output.unit_id,
+                progress,
+            });
         }
-        expected_unit.pos = actual.pos.clone();
-        expected_unit.move_target = actual.move_target.clone();
     }
+    expected.movement_progress = movement_progress;
+    let active_pools: BTreeSet<_> = expected
+        .movement_progress
+        .iter()
+        .map(|movement| movement.progress.pool_id)
+        .collect();
+    expected
+        .movement_pools
+        .retain(|pool| active_pools.contains(&pool.pool_id));
     for expected_unit in &mut expected.units {
-        let actual = current
-            .units
+        let raw = expected
+            .raw_units
             .iter()
             .find(|unit| unit.unit_id == expected_unit.unit_id)
             .ok_or_else(|| format!("movement removed unit {}", expected_unit.unit_id))?;
-        let raw = current
-            .raw_units
-            .iter()
-            .find(|unit| unit.unit_id == actual.unit_id)
-            .ok_or_else(|| format!("movement has no raw unit {}", actual.unit_id))?;
-        if !same_pos(&actual.pos, &raw.pos) {
-            return Err(format!(
-                "unit {} snapshots disagree after movement",
-                actual.unit_id
-            ));
-        }
-        expected_unit.pos = actual.pos.clone();
+        expected_unit.pos = raw.pos.clone();
     }
     for expected_unit in &mut expected.economy.units {
-        let actual = current
-            .economy
-            .units
+        let raw = expected
+            .raw_units
             .iter()
             .find(|unit| unit.unit_id == expected_unit.unit_id)
             .ok_or_else(|| format!("movement removed world unit {}", expected_unit.unit_id))?;
-        let raw = current
-            .raw_units
-            .iter()
-            .find(|unit| unit.unit_id == actual.unit_id)
-            .ok_or_else(|| format!("movement has no raw unit {}", actual.unit_id))?;
-        if actual.pos.x.to_bits() != raw.pos.x.to_bits()
-            || actual.pos.y.to_bits() != raw.pos.y.to_bits()
-        {
-            return Err(format!(
-                "world unit {} snapshots disagree after movement",
-                actual.unit_id
-            ));
-        }
-        expected_unit.pos = actual.pos;
+        expected_unit.pos = bevy::math::Vec2::new(raw.pos.x, raw.pos.y);
     }
     if expected != *current {
         return Err("movement transition changed nonmovement state".into());
@@ -3921,6 +4381,7 @@ mod tests {
 
     fn one_moving_unit_state() -> AuditState {
         let mut state = initial();
+        state.bounds = Some(WorldPos { x: 32.0, y: 32.0 });
         state.raw_units = vec![RawUnitAudit {
             unit_id: 1,
             owner_slot: 0,
@@ -3948,14 +4409,33 @@ mod tests {
         target_units: &[(u32, bevy::math::Vec2)],
         command: Option<turts_sim::Command>,
     ) -> Vec<EconomyLogRecord> {
+        automatic_move_log_with_commands(
+            orders,
+            target_units,
+            command.into_iter().collect(),
+            bevy::math::Vec2::new(2.0, 2.0),
+            0,
+        )
+    }
+
+    fn automatic_move_log_with_commands(
+        orders: turts_sim::UnitOrders,
+        target_units: &[(u32, bevy::math::Vec2)],
+        commands: Vec<turts_sim::Command>,
+        actor_position: bevy::math::Vec2,
+        post_command_ticks: usize,
+    ) -> Vec<EconomyLogRecord> {
         use std::collections::BTreeMap;
         use turts_mod_api::{
             ContentCatalog, Footprint, OrderDef, PackageId, ResolvedUnit, TargetKind, UnitDef,
             UnitRegistry,
         };
-        use turts_sim::{Owner, Position, UnitType, UnitTypes};
+        use turts_sim::{MapBounds, Owner, Position, UnitType, UnitTypes, Vec2};
 
         let mut app = headless_app(20);
+        app.world_mut().insert_resource(MapBounds {
+            size: Vec2::new(64.0, 64.0),
+        });
         let package = PackageId::parse("fixture").unwrap();
         let kind = app
             .world_mut()
@@ -4041,7 +4521,7 @@ mod tests {
             turts_sim::UnitId(1),
             UnitType(kind),
             Owner(turts_sim::SlotId(0)),
-            Position(bevy::math::Vec2::new(2.0, 2.0)),
+            Position(actor_position),
             orders,
         ));
         for (unit_id, position) in target_units {
@@ -4057,7 +4537,7 @@ mod tests {
         let mut records = vec![EconomyLogRecord::Initial(turts_sim::audit_state(
             app.world_mut(),
         ))];
-        if let Some(command) = command {
+        if !commands.is_empty() {
             app.update();
             let (operations, ticks) = {
                 let mut trail = app.world_mut().resource_mut::<AuditTrail>();
@@ -4065,18 +4545,37 @@ mod tests {
             };
             records.extend(operations.into_iter().map(EconomyLogRecord::Operation));
             records.extend(ticks.into_iter().map(EconomyLogRecord::from_tick));
-            let result = turts_sim::apply_command(app.world_mut(), &command);
-            assert!(
-                result.outcome.is_ok(),
-                "captured Move order must be accepted: {result:?}"
-            );
-            assert_eq!(result.units.accepted, vec![1]);
-            let (commands, operations) = {
-                let mut trail = app.world_mut().resource_mut::<AuditTrail>();
-                (trail.drain_commands(), trail.drain_operations())
-            };
-            records.extend(commands.into_iter().map(EconomyLogRecord::CommandBoundary));
-            records.extend(operations.into_iter().map(EconomyLogRecord::Operation));
+            for command in commands {
+                let expected = match &command.kind {
+                    turts_sim::CommandKind::Order(order) => order.units.clone(),
+                    _ => panic!("movement audit fixture only sends Move order commands"),
+                };
+                let result = turts_sim::apply_command(app.world_mut(), &command);
+                assert!(
+                    result.outcome.is_ok(),
+                    "captured Move order must be accepted: {result:?}"
+                );
+                assert_eq!(result.units.accepted, expected);
+                let (boundaries, operations) = {
+                    let mut trail = app.world_mut().resource_mut::<AuditTrail>();
+                    (trail.drain_commands(), trail.drain_operations())
+                };
+                records.extend(
+                    boundaries
+                        .into_iter()
+                        .map(EconomyLogRecord::CommandBoundary),
+                );
+                records.extend(operations.into_iter().map(EconomyLogRecord::Operation));
+            }
+            for _ in 0..post_command_ticks {
+                app.update();
+                let (operations, ticks) = {
+                    let mut trail = app.world_mut().resource_mut::<AuditTrail>();
+                    (trail.drain_operations(), trail.drain_ticks())
+                };
+                records.extend(operations.into_iter().map(EconomyLogRecord::Operation));
+                records.extend(ticks.into_iter().map(EconomyLogRecord::from_tick));
+            }
             return records;
         }
         app.update();
@@ -4372,10 +4871,13 @@ mod tests {
     fn validator_accepts_an_orders_operation_before_movement() {
         use turts_mod_api::{Footprint, PackageId, UnitDef, UnitRegistry};
         use turts_sim::{
-            MoveTarget, Order, OrderTargetSim, Owner, Position, SlotId, UnitId, UnitOrders,
-            UnitType, UnitTypes, Vec2,
+            MapBounds, MoveTarget, Order, OrderTargetSim, Owner, Position, SlotId, UnitId,
+            UnitOrders, UnitType, UnitTypes, Vec2,
         };
         let mut app = headless_app(10);
+        app.world_mut().insert_resource(MapBounds {
+            size: Vec2::new(32.0, 32.0),
+        });
         let kind = app
             .world_mut()
             .resource_mut::<UnitTypes>()
@@ -4450,7 +4952,7 @@ mod tests {
         assert!(
             validate_records(&records)
                 .unwrap_err()
-                .contains("unit 1 movement differs from its prior target and speed")
+                .contains("movement transition changed nonmovement state")
         );
     }
 
@@ -6123,9 +6625,10 @@ mod tests {
             1,
             "the real run_orders system captures a follow-target refresh"
         );
+        let follow_validation = validate_records(&follow_records);
         assert!(
-            validate_records(&follow_records).is_ok(),
-            "the actual follow-target operation and movement tick validate"
+            follow_validation.is_ok(),
+            "the actual follow-target operation and movement tick validate: {follow_validation:?}"
         );
 
         let queued_records = automatic_move_log(
@@ -6152,12 +6655,327 @@ mod tests {
                 .iter()
                 .filter(|record| matches!(record, EconomyLogRecord::Operation(_)))
                 .count(),
-            1,
-            "the real run_orders system captures target-gone failure and next queued start"
+            3,
+            "the real run_orders system captures target-gone failure, queued spread admission and dispatch"
+        );
+        let queued_validation = validate_records(&queued_records);
+        assert!(
+            queued_validation.is_ok(),
+            "the actual TargetGone failure, queue continuation and movement tick validate: {queued_validation:?}"
+        );
+    }
+
+    fn audited_move_command(
+        units: Vec<u32>,
+        target: bevy::math::Vec2,
+        group: u32,
+        seq: u32,
+    ) -> turts_sim::Command {
+        use turts_sim::{CommandKind, OrderCommand, OrderTargetSim, QueueMode, SlotId};
+
+        let order = turts_mod_api::ContentId::parse("fixture:move").unwrap();
+        turts_sim::Command {
+            slot: SlotId(0),
+            seq,
+            kind: CommandKind::Order(Box::new(OrderCommand {
+                order: order.clone(),
+                behaviour: turts_mod_api::Behaviour::Move,
+                target_kind: turts_mod_api::TargetKind::PointOrUnit,
+                policy: Some(order_policy(
+                    "fixture:move",
+                    turts_mod_api::Behaviour::Move,
+                    turts_mod_api::TargetKind::PointOrUnit,
+                    vec![(
+                        "fixture:walker",
+                        true,
+                        false,
+                        false,
+                        false,
+                        false,
+                        false,
+                        false,
+                    )],
+                )),
+                units,
+                target: OrderTargetSim::Point(target),
+                queue: QueueMode::Replace,
+                group,
+                allowed_units: vec![],
+                queue_depth: 16,
+            })),
+        }
+    }
+
+    #[test]
+    fn validator_replays_actual_gm40_and_gma_movement_logs_and_rejects_corruption() {
+        use std::collections::BTreeMap;
+        use turts_sim::UnitOrders;
+
+        let gm40_positions: Vec<_> = (0..39)
+            .map(|i| {
+                (
+                    i as u32 + 2,
+                    bevy::math::Vec2::new(10.0 + 1.2 * (i % 8) as f32, 10.0 + 1.2 * (i / 8) as f32),
+                )
+            })
+            .collect();
+        let gm40 = automatic_move_log_with_commands(
+            UnitOrders::default(),
+            &gm40_positions,
+            vec![audited_move_command(
+                (1..=40).collect(),
+                bevy::math::Vec2::new(40.0, 30.0),
+                40,
+                1,
+            )],
+            bevy::math::Vec2::new(10.0, 10.0),
+            8,
         );
         assert!(
-            validate_records(&queued_records).is_ok(),
-            "the actual TargetGone failure, queue continuation and movement tick validate"
+            validate_records(&gm40).is_ok(),
+            "the real 40-unit order, pending spread, and movement ticks validate: {:?}",
+            validate_records(&gm40).err()
+        );
+        let mut forged_pending = gm40.clone();
+        let pending_request = forged_pending
+            .iter_mut()
+            .find_map(|record| match record {
+                EconomyLogRecord::CommandBoundary(command)
+                    if command
+                        .after
+                        .pending_movement_orders
+                        .queues
+                        .contains_key(&0) =>
+                {
+                    command
+                        .after
+                        .pending_movement_orders
+                        .queues
+                        .get_mut(&0)
+                        .and_then(|queue| queue.front_mut())
+                }
+                _ => None,
+            })
+            .expect("real GM40 command records its pending envelope");
+        pending_request.point.x += 0.25;
+        let pending_error = validate_records(&forged_pending).unwrap_err();
+        assert!(
+            pending_error.contains("command/operation state mismatch"),
+            "validator rejects a forged pending-envelope point: {pending_error}"
+        );
+
+        let mut forged_pool = gm40.clone();
+        let pool = forged_pool
+            .iter_mut()
+            .find_map(|record| match record {
+                EconomyLogRecord::Tick { state, .. } if !state.movement_pools.is_empty() => {
+                    state.movement_pools.first_mut()
+                }
+                _ => None,
+            })
+            .expect("real GM40 movement tick records its spread pool");
+        pool.slots[0].x += 0.25;
+        let pool_error = validate_records(&forged_pool).unwrap_err();
+        assert!(
+            pool_error.contains("movement transition changed nonmovement state"),
+            "validator rejects a forged spread-pool slot: {pool_error}"
+        );
+
+        let mut forged_progress = gm40.clone();
+        let progress = forged_progress
+            .iter_mut()
+            .find_map(|record| match record {
+                EconomyLogRecord::Tick { state, .. } if !state.movement_progress.is_empty() => {
+                    state.movement_progress.first_mut()
+                }
+                _ => None,
+            })
+            .expect("real GM40 movement tick records its active progress");
+        progress.progress.slot.x += 0.25;
+        let progress_error = validate_records(&forged_progress).unwrap_err();
+        assert!(
+            progress_error.contains("movement transition changed nonmovement state"),
+            "validator rejects a forged movement-progress claim: {progress_error}"
+        );
+
+        let mut forged_radius = gm40.clone();
+        let alter_radius = |state: &mut AuditState| {
+            if let Some(unit) = state.catalog.as_mut().and_then(|catalog| {
+                catalog
+                    .units
+                    .iter_mut()
+                    .find(|unit| unit.movement_speed.is_some())
+            }) {
+                unit.radius += 0.125;
+            }
+            if let Some(unit_type) = state
+                .unit_types
+                .iter_mut()
+                .find(|unit_type| unit_type.movement_speed.is_some())
+            {
+                unit_type.radius += 0.125;
+            }
+        };
+        for record in &mut forged_radius {
+            match record {
+                EconomyLogRecord::Initial(state) => alter_radius(state),
+                EconomyLogRecord::CommandBoundary(command) => {
+                    alter_radius(&mut command.before);
+                    alter_radius(&mut command.after);
+                }
+                EconomyLogRecord::Operation(operation) => {
+                    alter_radius(&mut operation.before);
+                    alter_radius(&mut operation.after);
+                }
+                EconomyLogRecord::Tick { before, state, .. } => {
+                    alter_radius(before);
+                    alter_radius(state);
+                }
+                EconomyLogRecord::Claim { .. } | EconomyLogRecord::Admission { .. } => {}
+            }
+        }
+        let radius_error = validate_records(&forged_radius).unwrap_err();
+        assert!(
+            radius_error.contains("differs from its deterministic spread slot"),
+            "validator rejects a forged mobile-unit radius used by spread and movement: {radius_error}"
+        );
+
+        let mut forged_gm40 = gm40.clone();
+        let tick = forged_gm40
+            .iter_mut()
+            .find_map(|record| match record {
+                EconomyLogRecord::Tick { state, .. } => Some(state),
+                _ => None,
+            })
+            .unwrap();
+        tick.raw_units[0].pos.x += 1.0;
+        assert!(
+            validate_records(&forged_gm40).is_err(),
+            "validator rejects a forged real GM40 position"
+        );
+
+        let mut gma_positions = Vec::with_capacity(39);
+        for k in 1..20 {
+            gma_positions.push((
+                k as u32 + 1,
+                bevy::math::Vec2::new(10.0 + 1.2 * (k % 5) as f32, 20.0 + 1.2 * (k / 5) as f32),
+            ));
+        }
+        for k in 0..20 {
+            gma_positions.push((
+                k as u32 + 21,
+                bevy::math::Vec2::new(24.0 + 1.2 * (k % 5) as f32, 6.0 + 1.2 * (k / 5) as f32),
+            ));
+        }
+        let gma = automatic_move_log_with_commands(
+            UnitOrders::default(),
+            &gma_positions,
+            vec![
+                audited_move_command((1..=20).collect(), bevy::math::Vec2::new(40.0, 22.0), 1, 1),
+                audited_move_command((21..=40).collect(), bevy::math::Vec2::new(26.0, 36.0), 2, 2),
+            ],
+            bevy::math::Vec2::new(10.0, 20.0),
+            600,
+        );
+        let gma_validation = validate_records(&gma);
+        assert!(
+            gma_validation.is_ok(),
+            "the real perpendicular GMA command and movement records validate: {gma_validation:?}"
+        );
+        let mut overlap_runs = BTreeMap::<(u32, u32), usize>::new();
+        let mut longest_overlap_run = 0;
+        let mut longest_pair = (0, 0);
+        let mut longest_pair_positions = (WorldPos { x: 0.0, y: 0.0 }, WorldPos { x: 0.0, y: 0.0 });
+        for state in gma.iter().filter_map(|record| match record {
+            EconomyLogRecord::Tick { state, .. } => Some(state),
+            _ => None,
+        }) {
+            for left in 1..=40 {
+                for right in left + 1..=40 {
+                    if left > 20 || right <= 20 {
+                        continue;
+                    }
+                    let a = state
+                        .raw_units
+                        .iter()
+                        .find(|unit| unit.unit_id == left)
+                        .unwrap();
+                    let b = state
+                        .raw_units
+                        .iter()
+                        .find(|unit| unit.unit_id == right)
+                        .unwrap();
+                    let key = (left, right);
+                    let distance = (a.pos.x - b.pos.x).hypot(a.pos.y - b.pos.y);
+                    if distance < 0.9 {
+                        let run = overlap_runs.entry(key).or_default();
+                        *run += 1;
+                        if *run > longest_overlap_run {
+                            longest_overlap_run = *run;
+                            longest_pair = key;
+                            longest_pair_positions = (a.pos.clone(), b.pos.clone());
+                        }
+                    } else {
+                        overlap_runs.remove(&key);
+                    }
+                }
+            }
+        }
+        assert!(
+            longest_overlap_run <= 10,
+            "GMA pairwise overlap run exceeded ten ticks: {longest_overlap_run}, pair={longest_pair:?}, positions={longest_pair_positions:?}"
+        );
+        let final_gma_state = gma
+            .iter()
+            .rev()
+            .find_map(|record| match record {
+                EconomyLogRecord::Tick { state, .. } => Some(state),
+                _ => None,
+            })
+            .unwrap();
+        assert!(
+            final_gma_state
+                .raw_units
+                .iter()
+                .all(|unit| unit.move_target.is_none()),
+            "GMA actors are no longer moving at the 600-tick audit horizon"
+        );
+        for left in 1..=40 {
+            for right in left + 1..=40 {
+                let a = final_gma_state
+                    .raw_units
+                    .iter()
+                    .find(|unit| unit.unit_id == left)
+                    .unwrap();
+                let b = final_gma_state
+                    .raw_units
+                    .iter()
+                    .find(|unit| unit.unit_id == right)
+                    .unwrap();
+                assert!(
+                    (a.pos.x - b.pos.x).hypot(a.pos.y - b.pos.y) >= 1.0 - 1.0e-5,
+                    "GMA resting actors {left} and {right} overlap at rest"
+                );
+            }
+        }
+        let mut forged_gma = gma;
+        let tick = forged_gma
+            .iter_mut()
+            .rev()
+            .find_map(|record| match record {
+                EconomyLogRecord::Tick { state, .. } => Some(state),
+                _ => None,
+            })
+            .unwrap();
+        let mover = tick
+            .raw_units
+            .iter_mut()
+            .find(|unit| unit.unit_id == 1)
+            .expect("GMA actor remains present in the audited state");
+        mover.pos.x += 0.75;
+        assert!(
+            validate_records(&forged_gma).is_err(),
+            "validator rejects a forged GMA movement position"
         );
     }
 
@@ -8571,7 +9389,15 @@ mod tests {
             turts_sim::UnitType(kind),
             turts_sim::Owner(turts_sim::SlotId(0)),
             turts_sim::Position(bevy_math::Vec2::new(2.0, 2.0)),
-            UnitOrders::default(),
+            UnitOrders {
+                current: Some(turts_sim::Order {
+                    order: turts_mod_api::ContentId::parse("test:old_move").unwrap(),
+                    behaviour: turts_mod_api::Behaviour::Move,
+                    target: OrderTargetSim::Point(bevy_math::Vec2::new(4.0, 4.0)),
+                    group: 0,
+                }),
+                ..Default::default()
+            },
         ));
         app.world_mut().resource_mut::<AuditTrail>().enable();
         let initial_state = turts_sim::audit_state(app.world_mut());
@@ -8602,7 +9428,7 @@ mod tests {
                 }),
                 target: OrderTargetSim::Point(bevy_math::Vec2::new(12.0, 12.0)),
                 queue: QueueMode::Replace,
-                group: 1,
+                group: 0,
                 allowed_units: vec![],
                 queue_depth: 16,
             })),
