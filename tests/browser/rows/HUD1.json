@@ -1,0 +1,12 @@
+{
+  "row": "HUD1",
+  "package": "crates/turts_pack/tests/fixtures/muster_hud1",
+  "driver": "tests/browser/hud-driver.js",
+  "oracle": "tests/browser/hud-oracle.js",
+  "runs": "ci",
+  "viewports": [
+    "1280x720",
+    "1920x1080",
+    "1280x720@2"
+  ]
+}
