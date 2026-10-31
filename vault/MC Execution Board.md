@@ -8,7 +8,7 @@ source: codex
 
 # MC execution board
 
-State: ACTIVE: O12 released Task 6. Integration and all four open lanes rebased onto main721e56e (design revision13); dirty source hashes preserved.10of25lanes complete;47/170runs; Task6run5/6. C1-C91. No main merge.
+State: ACTIVE: O12 released Task 6. Integration and all four open lanes rebased onto main721e56e (design revision13); dirty source hashes preserved.10of25lanes complete;47/170runs; Task6run5/6. C1-C92. No main merge.
 
 Plan: `docs/superpowers/plans/2026-10-29-mc-player-control.md`.
 Design of record: `docs/superpowers/specs/2026-10-29-mc-player-control-design.md`, revision12 at63788d7, included by mainc3f09d0.
@@ -657,3 +657,12 @@ Wave4 check phase is now TRACED: case E9-midtrace-rearm-ignored failed baseline.
 
 
 RUN47 registered before independent Sol/high reviewer continuation. Source review may overlap RUN46 repairs without cache/build/browser use. Review must cite exact captured bytes, distinguish repaired-source from runtime proof, recheck H1-H15 and O12, then wait for a stable committed candidate and explicit compiler handoff for independent runtime/own plant. No acceptance PASS before those steps. Budget47/170, Task6run5/estimate6; no overrun.
+
+
+## C92: prune dead pending members before spreading
+
+Conflict: RUN47 checkpoint1, orders.rs SHA06d6f4c128435f8b35573f17173da4e3899320970ec174e1b478ac9b2c59e3d5, crates/turts_sim/src/orders.rs:688-723 filters absent entities, then calls spread_destinations_with_context before its empty cleanup. crates/turts_sim/src/movement.rs:194-197 requires nonempty input. A pending envelope whose members die can panic; a partial-death envelope also needs a defined live membership. Design6.3 requires atomic envelopes and live legal slots; ordinary unit removal must not leave a permanent pending head.
+
+Choice: before allocation, prune only IDs absent from the live unit set in a captured subjectless Orders operation. Remove an empty head so later envelopes can proceed; preserve the key, arrival order and atomicity of surviving members. Compute N and cap consumption from survivors. Independent replay must prove every removed ID absent from before.raw_units, recompute exact queue/member counts, and require no other state or event changes. Add actual all-dead/partial-death scheduler and replay proofs plus rejection of forged live-member pruning. Use the existing capture mechanism with a narrow Orders wrapper; reselect G-REF for every actually changed path. This is a mechanism decision under the CEO's O12 clarification; it adds no key or visible interaction.
+
+Alternative not taken: spread empty input, retain dead envelopes indefinitely, fail all live survivors because another member died, or exempt arbitrary pending mutations from replay. Source finding is confirmed; runtime repair and independent acceptance remain pending.

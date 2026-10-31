@@ -740,3 +740,12 @@ Choice: preserve authored IDs for roots (card/minimap/ore), and give repeated te
 Conflict: the real_source_scan_is_clean workspace gate at b4bb0eb rejected the helper-local identifier shell in movement.rs as protected Forge content. Engine names may change; protected mod content and the scanner may not.
 
 Choice: rename the engine locals to ring_key and minimum_unseen_ring_key, including their tests. Commit d3ef732 changes only those names/formatting. The exact named scanner test now passes1/1, exit0 (no-content-renamed-green.log), after the recorded real workspace failure101. No content or scanner change. Alternative not taken: rename Forge content, add a scanner exception, or ignore the gate. Later semantic changes remain uncommitted and require fresh gates.
+
+
+## C92: prune dead pending members before spreading
+
+Conflict: RUN47 checkpoint1, orders.rs SHA06d6f4c128435f8b35573f17173da4e3899320970ec174e1b478ac9b2c59e3d5, crates/turts_sim/src/orders.rs:688-723 filters absent entities, then calls spread_destinations_with_context before its empty cleanup. crates/turts_sim/src/movement.rs:194-197 requires nonempty input. A pending envelope whose members die can panic; a partial-death envelope also needs a defined live membership. Design6.3 requires atomic envelopes and live legal slots; ordinary unit removal must not leave a permanent pending head.
+
+Choice: before allocation, prune only IDs absent from the live unit set in a captured subjectless Orders operation. Remove an empty head so later envelopes can proceed; preserve the key, arrival order and atomicity of surviving members. Compute N and cap consumption from survivors. Independent replay must prove every removed ID absent from before.raw_units, recompute exact queue/member counts, and require no other state or event changes. Add actual all-dead/partial-death scheduler and replay proofs plus rejection of forged live-member pruning. Use the existing capture mechanism with a narrow Orders wrapper; reselect G-REF for every actually changed path. This is a mechanism decision under the CEO's O12 clarification; it adds no key or visible interaction.
+
+Alternative not taken: spread empty input, retain dead envelopes indefinitely, fail all live survivors because another member died, or exempt arbitrary pending mutations from replay. Source finding is confirmed; runtime repair and independent acceptance remain pending.
