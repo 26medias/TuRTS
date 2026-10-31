@@ -410,3 +410,6 @@ C33/C34: audit span overlap is High and must be rejected/tested; principal-unit 
 C28 clarified: historical single-subject Produce admissions stay; multi-subject requests get unit-local domain results including all-invalid/malformed-content cases. C35 requires real emitter phase coverage and final post-gate repetition. C36 implements shipped Move Unit/PointOrUnit policy/follow semantics using existing Move completion. See [[Decisions/2026-10-30 MC Codex rulings]].
 
 C37: M3 selected refutations use a one-cache wrapper retaining original CLI frozen/cardinality/provenance plus unchanged run_case guards; QA audit required before actual use. No runtime proof yet. See [[Decisions/2026-10-30 MC Codex rulings]].
+
+
+C38: Task4 replay resolves policy from an immutable InstalledCatalog-backed CatalogAudit order_definitions field, with default/skip-empty legacy serialization. Command-local policy is insufficient. Valid baseline, jointly forged policy and catalog-transition negatives required; early frozen checks, no expected-value changes. RUN32/34 remain active, build34/170. See [[Decisions/2026-10-30 MC Codex rulings]].
