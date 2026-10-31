@@ -102,4 +102,4 @@ Human usability amendment1354e33: catalog-derived principal labels/named local s
 
 **Integrated:** M3 fast-forwarded into main and pushed; hosted CI running, human-demo limitations retained. See [[Reports/2026-10-28 M3 integration]].
 
-MC update2026-10-30: ACTIVE: Waves1-2 complete. T19 merged98135d3; independent0High/0Medium; integration878passed/0failed/18ignored and G-RUST/G-QA/G-FROZEN0. Wave2 pushed98135d3; CI41148971118 queued. Build30/170 includes registered T2b run30. C1-C16 recorded. Mainc3f09d0 untouched; one cache, completed T19 lane removed. [[Reports/2026-10-30]].
+MC update2026-10-30: ACTIVE: Waves1-2 complete and pushed at98135d3. T2b candidate64cd400 is in formal gates; RUN30 builder and RUN31 independent review active, build31/170. C1-C22 recorded. Wave2 CI41148971118: agents green; browser T7 passed89frames then known unchanged M2 economy timeout; native refutations running. Mainc3f09d0 untouched; one cache. [[Reports/2026-10-30]].
