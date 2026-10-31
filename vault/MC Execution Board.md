@@ -8,7 +8,7 @@ source: codex
 
 # MC execution board
 
-State: ACTIVE: O12 released Task 6. Integration and all four open lanes rebased onto main721e56e (design revision13); dirty source hashes preserved.10of25lanes complete;47/170runs; Task6run5/6. C1-C104. Task6 F11 fixture repair follows traced lab-centre obstruction. No main merge.
+State: ACTIVE: O12 released Task 6. Integration and all four open lanes rebased onto main721e56e (design revision13); dirty source hashes preserved.10of25lanes complete;47/170runs; Task6run5/6. C1-C105. Clean ffb21b3 passed native and acceptance gates; browser gates and independent checks remain. No main merge.
 
 Plan: `docs/superpowers/plans/2026-10-29-mc-player-control.md`.
 Design of record: `docs/superpowers/specs/2026-10-29-mc-player-control-design.md`, revision12 at63788d7, included by mainc3f09d0.
@@ -832,3 +832,10 @@ Choice: after all final normal gates pass on a clean committed head (RUST, QA, F
 After the probes, the reviewer explicitly releases the quiescent cache back to the builder. Every selected G-REF case and required postgate plant still runs, with semantic red/restored green and clean source. The reviewer then performs its own plant and final recheck under a new explicit lease. Final acceptance still needs all existing prerequisites; source repairs require the final-source normal gates again. This changes only the timing of an unmutated-source independent check, not gate coverage or red/green/commit/gate/plant order.
 
 Evidence: brief4:42-43 and52, C39 in this note, Task9 early independent runtime in C81 (central rulings note:672); RUN47's source-only confirmation names native_cost, c93_lifecycle, plain_fallback, c99_gather, plain_escape and retained_progress_step harnesses. Alternative not taken: omit/refit registered refutations, mutate source before gates, share the cache concurrently, or claim an early PASS. No new agent run;47/170, Task6run5/6. Current ffb21b3 normal ACC is still running, so no lease has transferred.
+
+
+Final normal-gate checkpoint: ffb21b326f6b87e89d61997c7d69822ca216758a is clean. Root verified all ten native commands exit0, workspace107 groups/1142 passed/0 failed/18 ignored, frozen exact. Full G-ACC also exit0: eight passing summaries/16 tests, E9 loss184.28s, corrected F11 81.01s, F11 retention passed. Root receipts: main target/mc-evidence/t6-root/native-ffb21b3-root-check.json and acc-ffb21b3-root-check.json. T7/M3 browser gates are pending.
+
+The web helper accidentally repeated native checks on the same source. Builder identified its sole process, stopped only that invocation with SIGINT/exit130, confirmed no children remained, and recorded aborted redundant setup. It is not a web pass or semantic failure. Direct unchanged T7 and M3 scripts now run with the approved Vulkan environment and sole cache. No source change; completed native/ACC proofs remain valid.
+
+RUN47 flagged an authored singleton cap edge case for its C105 preliminary probe. D6.3 has no authored Move-envelope exemption from the global cap; preserve legacy idless MoveTo separately. The source lead is not yet a confirmed runtime finding. Do not change source or claim a failure until the valid probe runs. Every selected refutation and final plant remains required.47/170 runs; Task6run5/6; no merge/push.
