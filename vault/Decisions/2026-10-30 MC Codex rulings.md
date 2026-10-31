@@ -444,3 +444,12 @@ Choice: keep the original logs and disclose their limits. After stable full gate
 Conflict: plan Known red window:100 adds m3-browser.sh to local G-WEB for tasks2b/4/6/9/11 beforeTask12. The external root integration helper covered T7 but had no explicit M3 step. Task2b builder M3 proof exists; the prior postmerge helper did not separately run it. That process gap is not a new pass.
 
 Choice: add explicit with-m3 option requiring with-web; it appends unchanged m3-browser.sh after T7 and sets an external artifact directory. Use it for the specified pre12 integration merges; keep the known later window. No prebuilt/skip flag or oracle change. Helper before/after and hashes retained in main target/mc-evidence/integration-m3-gate-c56; current SHA5c087397130c27625cc1afb8ab5c46955baf3b9ec08d0087d44caa56a1d56c99. AST/source QA passes; actual integration runtime remains pending. Alternative not taken: silently treat T7 as M3 proof or add duplicate standalone Trunk build.
+
+
+## C57: preserve completed guarded components and audit their exact union (2026-10-31)
+
+Conflict: the M2 wrapper started its earlier21-case list before C44 made foreign-Gather a22nd selected case. Repeating all21 would waste proven work. A split run must still prove the full changed-file selector. Auxiliary C55 detector/index/anchor setup errors also must not be mislabeled as test passes.
+
+Choice: keep the actual21-case receipt, run the missing Gather case separately with unchanged guarded runner, then audit both with a read-only composite parent. main target/mc-evidence/audit_lane_refutation_components.py SHA09a26a6997f43edc0cd54dee01399fc31a7581a65785a77f53db4432deb06d1a calls C53 guards per component and requires identical source, disjoint cases and exact union against registered base/path union. It records original receipt/audit hashes and paths, without inventing a test run. Parent invocation supplies ab6ffd8; individual reports label their selector check as deferred to the parent.
+
+QA source/AST PASS. Prior10-case/69-command validation0; duplicate-component guard1 with named diagnostic. Actual22-case split/M3 audit remains pending. Keep failed C55 instrument attempts separate; correct seventh test metadata from raw executed command without a runtime rerun. Alternative not taken: omit the case, rerun all successes, merge inconsistent sources, or change the semantic plant/guard.
