@@ -244,8 +244,16 @@ fn apply_command_inner(world: &mut World, command: &Command) -> CommandResult {
             job_id,
         } => cancel_production(world, command.slot, *producer_id, *job_id)
             .map(|()| Applied { job_id: None }),
-        CommandKind::Remove { unit_id } => crate::command_m3::remove(world, command.slot, *unit_id)
-            .map(|()| Applied { job_id: None }),
+        CommandKind::Remove { unit_id } => {
+            let result = crate::command_m3::remove(world, command.slot, *unit_id);
+            if result.is_ok()
+                && let Some(mut identities) =
+                    world.get_resource_mut::<crate::orders::PlainMoveOrderIdentities>()
+            {
+                identities.0.remove(unit_id);
+            }
+            result.map(|()| Applied { job_id: None })
+        }
         CommandKind::SetEnabled { unit_id, enabled } => {
             crate::command_m3::set_enabled(world, command.slot, *unit_id, *enabled)
                 .map(|()| Applied { job_id: None })
@@ -355,6 +363,7 @@ fn apply_move_to_per_unit(
                 point: target,
                 unit_ids: outcomes.accepted.clone(),
                 order: None,
+                member_orders: Default::default(),
                 plain: true,
             },
         )
@@ -446,7 +455,16 @@ fn apply_move_to(
         })
         .collect();
     for (entity, target) in moves {
-        world.entity_mut(entity).insert(MoveTarget(target));
+        let mut movement = world.entity_mut(entity);
+        movement.remove::<crate::movement::PlainMoveProgress>();
+        movement.insert(MoveTarget(target));
+    }
+    if let Some(mut identities) =
+        world.get_resource_mut::<crate::orders::PlainMoveOrderIdentities>()
+    {
+        for id in unit_ids {
+            identities.0.remove(id);
+        }
     }
     if let Some(mut orders) = world.get_resource_mut::<EconomyOrders>() {
         for id in unit_ids {

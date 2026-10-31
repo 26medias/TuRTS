@@ -113,6 +113,13 @@ pub(crate) fn capture_unit_order_operation<R>(
     capture_operation_phase(world, AuditPhase::Orders, Some(unit_id), run)
 }
 
+pub(crate) fn capture_orders_operation<R>(
+    world: &mut World,
+    run: impl FnOnce(&mut World) -> R,
+) -> R {
+    capture_operation_phase(world, AuditPhase::Orders, None, run)
+}
+
 fn capture_operation_phase<R>(
     world: &mut World,
     phase: AuditPhase,
@@ -716,6 +723,11 @@ impl Transaction<'_> {
                 .push(spawn.state);
         }
         for removal in writes.removed {
+            if let Some(mut identities) =
+                world.get_resource_mut::<crate::orders::PlainMoveOrderIdentities>()
+            {
+                identities.0.remove(&removal.unit);
+            }
             if let Some(mut queues) = world.get_resource_mut::<ProductionQueues>() {
                 queues.0.remove(&removal.unit);
             }

@@ -750,6 +750,80 @@ fn outside_target_is_clamped() {
 }
 
 #[test]
+fn queued_outside_point_is_clamped_to_the_radius_inset() {
+    let mut app = app_with_units(&[(8.0, 8.0)], &[]);
+    send_order(
+        &mut app,
+        0,
+        vec![1],
+        Vec2::new(20.0, 20.0),
+        3,
+        QueueMode::Replace,
+    );
+    app.update();
+    let entity = app
+        .world_mut()
+        .iter_entities()
+        .find(|entity| {
+            entity
+                .get::<turts_sim::UnitId>()
+                .is_some_and(|id| id.0 == 1)
+        })
+        .unwrap()
+        .id();
+    let first_target = app.world().entity(entity).get::<MoveTarget>().unwrap().0;
+    send_order(
+        &mut app,
+        0,
+        vec![1],
+        Vec2::new(100.0, 100.0),
+        4,
+        QueueMode::Append,
+    );
+    app.update();
+    assert_eq!(
+        app.world()
+            .entity(entity)
+            .get::<UnitOrders>()
+            .unwrap()
+            .queue
+            .len(),
+        1
+    );
+
+    app.world_mut()
+        .entity_mut(entity)
+        .get_mut::<turts_sim::Position>()
+        .unwrap()
+        .0 = first_target;
+    app.world_mut().entity_mut(entity).remove::<MoveTarget>();
+    app.world_mut()
+        .entity_mut(entity)
+        .get_mut::<turts_sim::movement::MoveProgress>()
+        .unwrap()
+        .activity = turts_sim::movement::MovementActivity::Resting;
+    app.update();
+
+    assert_eq!(
+        app.world().entity(entity).get::<MoveTarget>().unwrap().0,
+        Vec2::new(63.5, 63.5),
+        "queued target is clamped using the unit radius before movement resumes"
+    );
+    assert_eq!(
+        app.world()
+            .entity(entity)
+            .get::<UnitOrders>()
+            .unwrap()
+            .current
+            .as_ref()
+            .unwrap()
+            .target,
+        OrderTargetSim::Point(Vec2::new(100.0, 100.0)),
+        "the authored order retains its original point while MoveTarget uses the radius inset"
+    );
+}
+
+#[test]
 fn nan_target_is_refused() {
     let mut app = app_with_units(&[(8.0, 8.0)], &[]);
     send_order(
@@ -886,16 +960,517 @@ fn post_target_gives_a_ring() {
 }
 
 #[test]
+fn group_zero_singleton_finds_a_free_point_beyond_a_large_post() {
+    let mut app = headless_app(20);
+    let origin = PackageId(ORIGIN.to_owned());
+    for def in [
+        UnitDef {
+            id: "walker".into(),
+            name: "Walker".into(),
+            movement: Some(turts_mod_api::MovementDef { speed: 3.0 }),
+            inventory: None,
+            gatherer: None,
+            drop_off: None,
+            producer: None,
+            footprint: Footprint::Circle { radius: 0.01 },
+            output_inventory: None,
+            extractor: None,
+            conveyor: None,
+            inserter: None,
+            machine: None,
+            research: None,
+            health: None,
+            weapon: None,
+            removal: None,
+        },
+        UnitDef {
+            id: "large_post".into(),
+            name: "Large Post".into(),
+            movement: None,
+            inventory: None,
+            gatherer: None,
+            drop_off: None,
+            producer: None,
+            footprint: Footprint::Circle { radius: 50.0 },
+            output_inventory: None,
+            extractor: None,
+            conveyor: None,
+            inserter: None,
+            machine: None,
+            research: None,
+            health: None,
+            weapon: None,
+            removal: None,
+        },
+    ] {
+        app.world_mut()
+            .resource_mut::<UnitTypes>()
+            .register_unit_type(&origin, def)
+            .unwrap();
+    }
+    let map = MapDef {
+        id: "large_obstacle".into(),
+        size: MapSize {
+            x: 2048.0,
+            y: 2048.0,
+        },
+        placements: vec![
+            Placement {
+                unit: format!("{ORIGIN}:walker"),
+                owner_slot: 0,
+                pos: WorldPos {
+                    x: 700.0,
+                    y: 1024.0,
+                },
+                contents: Vec::new(),
+                facing: None,
+            },
+            Placement {
+                unit: format!("{ORIGIN}:large_post"),
+                owner_slot: 0,
+                pos: WorldPos {
+                    x: 1024.0,
+                    y: 1024.0,
+                },
+                contents: Vec::new(),
+                facing: None,
+            },
+        ],
+        nodes: Vec::new(),
+        slot_economy: Vec::new(),
+        belts: Vec::new(),
+    };
+    load_map(app.world_mut(), &origin, &map).unwrap();
+    let center = Vec2::new(1024.0, 1024.0);
+    send_order(&mut app, 0, vec![1], center, 0, QueueMode::Replace);
+
+    for _ in 0..3000 {
+        app.update();
+    }
+    let units = snapshot(app.world_mut());
+    let mover = units.iter().find(|unit| unit.unit_id == 1).unwrap();
+    let post = units.iter().find(|unit| unit.unit_id == 2).unwrap();
+    assert!(
+        mover.pos.distance(center) >= 50.01 - 1.0e-3,
+        "singleton settled outside the post footprint: {:?}",
+        mover.pos
+    );
+    assert_eq!(
+        app.world()
+            .iter_entities()
+            .find(|entity| entity
+                .get::<turts_sim::UnitId>()
+                .is_some_and(|id| id.0 == 1))
+            .unwrap()
+            .get::<MoveTarget>(),
+        None,
+        "singleton reached a free destination and is resting"
+    );
+    assert_eq!(post.pos, center, "post does not move");
+}
+
+#[test]
+fn plain_singleton_blocked_by_a_full_width_post_reports_failure_by_gmu_deadline() {
+    let mut app = app_with_units_on(&[(0.5, 2.5)], &[], MapSize { x: 7.0, y: 5.0 }, 0.5);
+    let post_type = app
+        .world_mut()
+        .resource_mut::<UnitTypes>()
+        .register_unit_type(
+            &PackageId(ORIGIN.to_owned()),
+            UnitDef {
+                id: "wide-post".into(),
+                name: "Wide post".into(),
+                movement: None,
+                inventory: None,
+                gatherer: None,
+                drop_off: None,
+                producer: None,
+                footprint: Footprint::Circle { radius: 2.0 },
+                output_inventory: None,
+                extractor: None,
+                conveyor: None,
+                inserter: None,
+                machine: None,
+                research: None,
+                health: None,
+                weapon: None,
+                removal: None,
+            },
+        )
+        .unwrap();
+    app.world_mut().spawn((
+        turts_sim::UnitId(2),
+        turts_sim::UnitType(post_type),
+        turts_sim::Owner(SlotId(0)),
+        turts_sim::Position(Vec2::new(3.5, 2.5)),
+    ));
+
+    send_order(
+        &mut app,
+        0,
+        vec![1],
+        Vec2::new(6.5, 2.5),
+        0,
+        QueueMode::Replace,
+    );
+    for _ in 0..200 {
+        app.update();
+    }
+    let mover_id = app
+        .world_mut()
+        .iter_entities()
+        .find(|entity| {
+            entity
+                .get::<turts_sim::UnitId>()
+                .is_some_and(|id| id.0 == 1)
+        })
+        .unwrap()
+        .id();
+    let mover = app.world().entity(mover_id);
+    let position = mover.get::<turts_sim::Position>().unwrap().0;
+    let target = mover.get::<MoveTarget>().map(|target| target.0);
+    let orders = mover.get::<UnitOrders>();
+    assert!(
+        target.is_none()
+            || orders
+                .and_then(|orders| orders.last_failure.as_ref())
+                .is_some_and(|failure| failure.reason == RejectReason::Blocked),
+        "a plain singleton must stop with no target or a Blocked failure by the 10s GMU bound; position={:?}, target={:?}, orders={:?}",
+        position,
+        target,
+        orders
+    );
+    assert_eq!(
+        mover
+            .get::<turts_sim::movement::PlainMoveProgress>()
+            .map(|progress| progress.activity),
+        Some(turts_sim::movement::MovementActivity::Blocked),
+        "the plain move must retain an observable Blocked activity after its target is removed"
+    );
+    let progress = mover
+        .get::<turts_sim::movement::PlainMoveProgress>()
+        .unwrap();
+    assert!(
+        progress.pool_slots.len() <= 6,
+        "N=1 pool has at most six spares"
+    );
+    assert!(
+        progress.claim_count <= 3,
+        "plain fallback uses at most three claims"
+    );
+    assert!(
+        progress.failure_recorded,
+        "Orders acknowledges Blocked once"
+    );
+    assert_eq!(
+        orders
+            .and_then(|orders| orders.last_failure.as_ref())
+            .map(|failure| (failure.order.clone(), failure.reason)),
+        Some((
+            turts_mod_api::ContentId::parse("fixture_pkg:move").unwrap(),
+            RejectReason::Blocked,
+        )),
+        "an authored plain move retains its accepted order identity"
+    );
+    assert_eq!(
+        turts_sim::world_view(app.world_mut())
+            .unit_orders
+            .iter()
+            .find(|row| row.unit_id == 1)
+            .map(|row| row.activity),
+        Some(turts_sim::economy::views::UnitOrderActivityView::Blocked),
+        "the owner-facing activity reports Blocked after acknowledgement"
+    );
+}
+
+#[test]
+fn idless_legacy_move_reports_blocked_without_inventing_an_order_id() {
+    let mut app = app_with_units_on(&[(0.5, 2.5)], &[], MapSize { x: 7.0, y: 5.0 }, 0.5);
+    let post_type = app
+        .world_mut()
+        .resource_mut::<UnitTypes>()
+        .register_unit_type(
+            &PackageId(ORIGIN.to_owned()),
+            UnitDef {
+                id: "wide-post".into(),
+                name: "Wide post".into(),
+                movement: None,
+                inventory: None,
+                gatherer: None,
+                drop_off: None,
+                producer: None,
+                footprint: Footprint::Circle { radius: 2.0 },
+                output_inventory: None,
+                extractor: None,
+                conveyor: None,
+                inserter: None,
+                machine: None,
+                research: None,
+                health: None,
+                weapon: None,
+                removal: None,
+            },
+        )
+        .unwrap();
+    app.world_mut().spawn((
+        turts_sim::UnitId(2),
+        turts_sim::UnitType(post_type),
+        turts_sim::Owner(SlotId(0)),
+        turts_sim::Position(Vec2::new(3.5, 2.5)),
+    ));
+    app.world_mut()
+        .resource_mut::<CommandQueue>()
+        .0
+        .push_back(Command {
+            slot: SlotId(0),
+            seq: 1,
+            kind: CommandKind::MoveTo {
+                unit_ids: vec![1],
+                target: Vec2::new(6.5, 2.5),
+            },
+        });
+    for _ in 0..200 {
+        app.update();
+    }
+    let (progress, orders) = {
+        let mover = app
+            .world_mut()
+            .iter_entities()
+            .find(|entity| {
+                entity
+                    .get::<turts_sim::UnitId>()
+                    .is_some_and(|id| id.0 == 1)
+            })
+            .unwrap();
+        (
+            mover
+                .get::<turts_sim::movement::PlainMoveProgress>()
+                .cloned()
+                .expect("idless movement retains its Blocked activity"),
+            mover.get::<UnitOrders>().cloned(),
+        )
+    };
+    assert_eq!(
+        progress.activity,
+        turts_sim::movement::MovementActivity::Blocked
+    );
+    assert!(progress.failure_recorded);
+    assert!(orders.is_none_or(|orders| orders.last_failure.is_none()));
+    assert_eq!(
+        turts_sim::world_view(app.world_mut())
+            .unit_orders
+            .iter()
+            .find(|row| row.unit_id == 1)
+            .map(|row| row.activity),
+        Some(turts_sim::economy::views::UnitOrderActivityView::Blocked),
+        "idless legacy movement is still visible as Blocked"
+    );
+}
+
+#[test]
+fn finite_map_singleton_reaches_point_when_spares_do_not_fit() {
+    let point = Vec2::new(1.0, 1.0);
+    let mut app = app_with_units_on(&[(0.5, 0.5)], &[], MapSize { x: 1.5, y: 1.5 }, 0.5);
+    send_order(&mut app, 0, vec![1], point, 1, QueueMode::Replace);
+    app.update();
+    assert_eq!(
+        app.world().resource::<CommandResults>().0[0].units.accepted,
+        vec![1],
+        "the valid point order is accepted"
+    );
+    let pool = app
+        .world()
+        .resource::<turts_sim::movement::MovementPools>()
+        .0
+        .values()
+        .next()
+        .expect("the singleton primary pool is allocated");
+    assert_eq!(pool.primary_count, 1);
+    assert_eq!(pool.slots.len(), 1, "the exact-N pool has zero spares");
+
+    for _ in 0..200 {
+        app.update();
+    }
+
+    let unit = snapshot(app.world_mut())
+        .into_iter()
+        .find(|unit| unit.unit_id == 1)
+        .unwrap();
+    assert_eq!(unit.pos, point, "the singleton reaches its requested point");
+    let pending = app
+        .world()
+        .resource::<turts_sim::orders::PendingMovementOrders>();
+    assert!(pending.queues.is_empty());
+    assert!(pending.pending_units.values().all(|count| *count == 0));
+    assert!(pending.pending_member_counts.is_empty());
+    assert_eq!(
+        app.world()
+            .iter_entities()
+            .find(|entity| {
+                entity
+                    .get::<turts_sim::UnitId>()
+                    .is_some_and(|unit| unit.0 == 1)
+            })
+            .unwrap()
+            .get::<MoveTarget>(),
+        None,
+        "the unit has no pending movement target after arrival"
+    );
+}
+
+#[test]
+fn an_exactly_primary_sized_pool_dispatches_without_any_spares() {
+    let point = Vec2::new(1.5, 1.5);
+    let mut app = app_with_units_on(
+        &[(0.5, 0.5), (1.5, 0.5)],
+        &[],
+        MapSize { x: 2.0, y: 2.0 },
+        0.5,
+    );
+    send_order(&mut app, 0, vec![1, 2], point, 1, QueueMode::Replace);
+    app.update();
+
+    let pool = app
+        .world()
+        .resource::<turts_sim::movement::MovementPools>()
+        .0
+        .values()
+        .next()
+        .expect("exactly the required primary pool is legal");
+    assert_eq!(pool.primary_count, 2);
+    assert_eq!(pool.slots.len(), 2, "this pool has no spares");
+    let mut targets: Vec<_> = [1, 2]
+        .into_iter()
+        .map(|id| {
+            app.world()
+                .iter_entities()
+                .find(|entity| {
+                    entity
+                        .get::<turts_sim::UnitId>()
+                        .is_some_and(|unit| unit.0 == id)
+                })
+                .unwrap()
+                .get::<MoveTarget>()
+                .unwrap()
+                .0
+        })
+        .collect();
+    targets.sort_by(|left, right| left.x.total_cmp(&right.x).then(left.y.total_cmp(&right.y)));
+    let mut slots = pool.slots.clone();
+    slots.sort_by(|left, right| left.x.total_cmp(&right.x).then(left.y.total_cmp(&right.y)));
+    assert_eq!(targets, slots, "each member receives one primary slot");
+    let pending = app
+        .world()
+        .resource::<turts_sim::orders::PendingMovementOrders>();
+    assert!(pending.queues.is_empty());
+    assert!(pending.pending_units.values().all(|count| *count == 0));
+}
+
+#[test]
+fn insufficient_primary_slots_block_the_whole_envelope_without_movement() {
+    let positions = [(0.5, 0.5), (1.5, 0.5), (0.5, 1.5)];
+    let point = Vec2::new(1.5, 1.5);
+    let mut app = app_with_units_on(&positions, &[], MapSize { x: 2.0, y: 2.0 }, 0.5);
+    send_order(&mut app, 0, vec![1, 2, 3], point, 1, QueueMode::Replace);
+    app.update();
+    assert_eq!(
+        app.world().resource::<CommandResults>().0[0].units.accepted,
+        vec![1, 2, 3],
+        "the valid point order is accepted before its spread allocation"
+    );
+
+    let units = snapshot(app.world_mut());
+    for (unit, &(x, y)) in units.iter().zip(&positions) {
+        assert_eq!(unit.pos, Vec2::new(x, y), "no member moves on pool failure");
+    }
+    let pending = app
+        .world()
+        .resource::<turts_sim::orders::PendingMovementOrders>();
+    assert!(pending.queues.is_empty());
+    assert!(pending.pending_units.values().all(|count| *count == 0));
+    assert!(
+        pending.pending_member_counts.is_empty(),
+        "an impossible envelope is failed instead of left pending"
+    );
+    for id in [1, 2, 3] {
+        let entity = app
+            .world_mut()
+            .iter_entities()
+            .find(|entity| {
+                entity
+                    .get::<turts_sim::UnitId>()
+                    .is_some_and(|unit| unit.0 == id)
+            })
+            .unwrap();
+        assert_eq!(entity.get::<MoveTarget>(), None, "unit {id} has no target");
+        assert_eq!(
+            entity.get::<turts_sim::movement::MoveProgress>(),
+            None,
+            "unit {id} has no allocated movement state"
+        );
+        let orders = entity.get::<UnitOrders>().unwrap();
+        assert_eq!(orders.current, None, "unit {id} has no active failed move");
+        assert_eq!(
+            orders.last_failure.as_ref().map(|failure| failure.reason),
+            Some(RejectReason::Blocked),
+            "unit {id} receives the blocked failure"
+        );
+    }
+}
+
+#[test]
+fn a_pool_with_fewer_spares_than_requested_still_spreads_its_primary_slots() {
+    let positions = [(0.6, 0.6), (2.4, 0.6), (0.6, 2.4), (2.4, 2.4)];
+    let point = Vec2::new(1.5, 1.5);
+    let mut app = app_with_units_on(&positions, &[], MapSize { x: 3.0, y: 3.0 }, 0.5);
+    send_order(&mut app, 0, vec![1, 2, 3, 4], point, 1, QueueMode::Replace);
+    app.update();
+
+    let pool = app
+        .world()
+        .resource::<turts_sim::movement::MovementPools>()
+        .0
+        .values()
+        .next()
+        .expect("the primary pool is allocated");
+    assert_eq!(pool.primary_count, 4);
+    assert!(
+        (4..10).contains(&pool.slots.len()),
+        "the complete primary pool is retained with only a partial spare set: {:?}",
+        pool.slots
+    );
+    let pending = app
+        .world()
+        .resource::<turts_sim::orders::PendingMovementOrders>();
+    assert!(pending.queues.is_empty());
+    assert!(pending.pending_units.values().all(|count| *count == 0));
+}
+
+#[test]
 fn two_slots_of_3000_spread_in_ticks_t_and_t_plus_1() {
     let positions: Vec<_> = (0..6000)
         .map(|i| (0.5 + (i % 100) as f32 * 0.15, 0.5 + (i / 100) as f32 * 0.15))
         .collect();
     let owners: Vec<_> = (0..6000).map(|i| if i < 3000 { 0 } else { 1 }).collect();
     let mut app = app_with_units_on(&positions, &owners, MapSize { x: 100.0, y: 100.0 }, 0.05);
-    // Select a prior turn that wraps to slot A for tick t, exercising the 8-slot rotation.
-    app.world_mut()
-        .resource_mut::<turts_sim::orders::PendingMovementOrders>()
-        .next_slot = 7;
+    for _ in 0..7 {
+        app.update();
+    }
+    assert_eq!(
+        app.world()
+            .resource::<turts_sim::orders::MovementDispatchState>(),
+        &turts_sim::orders::MovementDispatchState::default(),
+        "legacy idle ticks leave first-cohort scheduler state pristine"
+    );
+    // Tick 8 starts at slot 7, so this initial slot-B command advances the cursor through wrap.
+    *app.world_mut()
+        .resource_mut::<turts_sim::orders::MovementDispatchState>() =
+        turts_sim::orders::MovementDispatchState {
+            tick: Some(0),
+            start_slot: 7,
+            used: 0,
+            cursor_advanced: false,
+        };
     let previous = Vec2::new(20.0, 20.0);
     let target = Vec2::new(45.0, 45.0);
     send_order(

@@ -8732,6 +8732,7 @@ dependencies = [
  "bevy_math",
  "bevy_time",
  "serde",
+ "serde_json",
  "turts_mod_api",
 ]
 

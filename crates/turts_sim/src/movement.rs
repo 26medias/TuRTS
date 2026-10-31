@@ -10,6 +10,16 @@ use std::collections::BTreeMap;
 use crate::registry::UnitTypes;
 use crate::world::{MoveTarget, Position, UnitType};
 
+#[cfg(test)]
+thread_local! {
+    static POOL_SLOT_CANDIDATE_CHECKS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+fn count_pool_slot_candidates(count: usize) {
+    POOL_SLOT_CANDIDATE_CHECKS.with(|checks| checks.set(checks.get() + count));
+}
+
 /// Current lifecycle of one accepted group-movement envelope.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum MovementActivity {
@@ -30,6 +40,28 @@ pub struct MoveProgress {
     pub stalled_ticks: u16,
     pub best_distance: f32,
     pub claim_count: u8,
+}
+
+/// Default-omitted progress for a single legacy move that has encountered an obstacle.
+/// The candidate pool belongs to this unit; it deliberately has no shared pool ID.
+#[derive(Component, Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PlainMoveProgress {
+    pub original_point: Vec2,
+    pub slot: Vec2,
+    pub pool_slots: Vec<Vec2>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gather_goal: Option<PlainGatherGoal>,
+    pub activity: MovementActivity,
+    pub stalled_ticks: u16,
+    pub best_distance: f32,
+    pub claim_count: u8,
+    pub failure_recorded: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum PlainGatherGoal {
+    Node(u32),
+    Receiver(u32),
 }
 
 /// One group's primary destinations and spare destinations.
@@ -155,6 +187,21 @@ impl SpreadContext {
             self.reserved_index.insert(unit_id, index);
             self.max_reserved_radius = self.max_reserved_radius.max(footprint.radius);
         }
+    }
+
+    fn conflicts_with_reserved(&self, candidate: Vec2, radius: f32, excluded_unit: u32) -> bool {
+        self.reserved_grid
+            .within(
+                &self.reserved_points,
+                candidate,
+                radius + self.max_reserved_radius + 0.1,
+            )
+            .into_iter()
+            .any(|index| {
+                self.reserved_units[index] != Some(excluded_unit)
+                    && candidate.distance(self.reserved[index].position)
+                        < radius + self.reserved[index].radius + 0.1 - 1.0e-5
+            })
     }
 }
 
@@ -287,7 +334,8 @@ pub fn spread_destinations_with_context(
             }
         }
         if nearest_indices.len() == wanted {
-            let minimum_unseen_ring_key = i64::from(ring + 1) * i64::from(ring + 1);
+            let next_ring = i64::from(ring + 1);
+            let minimum_unseen_ring_key = (3 * next_ring * next_ring + 3) / 4;
             if nearest_indices
                 .last()
                 .is_some_and(|(ring_key, _, _)| *ring_key < minimum_unseen_ring_key)
@@ -297,7 +345,7 @@ pub fn spread_destinations_with_context(
         }
         ring += 1;
     }
-    if slots.len() < wanted {
+    if slots.len() < members.len() {
         let pool = MovementPool {
             pool_id: 0,
             point,
@@ -312,7 +360,7 @@ pub fn spread_destinations_with_context(
         .map(|(_, _, index)| slots[*index])
         .collect();
 
-    let primary = &slots[..members.len().min(slots.len())];
+    let primary = &slots[..members.len()];
     let centroid = members
         .iter()
         .fold(Vec2::ZERO, |sum, unit| sum + unit.position)
@@ -361,7 +409,7 @@ pub fn spread_destinations_with_context(
         pool_id: 0,
         point,
         spacing,
-        primary_count: members.len().min(slots.len()) as u32,
+        primary_count: members.len() as u32,
         slots,
     };
     (pool, assignments)
@@ -465,7 +513,9 @@ impl MovementSearch<'_> {
         self_index: usize,
     ) -> Option<Vec2> {
         let spacing = 2.0 * radius + 0.1;
-        for ring in 1..=64_i32 {
+        let ring_limit = finite_hex_ring_limit(origin, radius, self.bounds, spacing);
+        let mut best = None;
+        for ring in 1..=ring_limit {
             for side in 0..6 {
                 for step in 0..ring {
                     let (i, j) = match side {
@@ -497,12 +547,21 @@ impl MovementSearch<'_> {
                                     >= radius + self.units[index].radius - 1.0e-5
                         });
                     if free {
-                        return Some(candidate);
+                        if best.is_none_or(|previous| {
+                            nearest_angle_order(candidate, previous, origin).is_lt()
+                        }) {
+                            best = Some(candidate);
+                        }
                     }
                 }
             }
+            if best.is_some_and(|candidate| {
+                minimum_unseen_hex_radius(ring, spacing) > candidate.distance(origin) + 1.0e-5
+            }) {
+                return best;
+            }
         }
-        None
+        best
     }
 
     fn find_free_escape_destination(
@@ -515,7 +574,8 @@ impl MovementSearch<'_> {
     ) -> Option<Vec2> {
         let spacing = 2.0 * radius + 0.1;
         let mut best: Option<Vec2> = None;
-        for ring in 1..=128_i32 {
+        let ring_limit = finite_hex_ring_limit(origin, radius, self.bounds, spacing);
+        for ring in 1..=ring_limit {
             for side in 0..6 {
                 for step in 0..ring {
                     let (i, j) = match side {
@@ -561,12 +621,284 @@ impl MovementSearch<'_> {
                 }
             }
             if best.is_some_and(|candidate| {
-                (ring + 1) as f32 * spacing > candidate.distance(origin) + 1.0e-5
+                minimum_unseen_hex_radius(ring, spacing) > candidate.distance(origin) + 1.0e-5
             }) {
                 return best;
             }
         }
         None
+    }
+}
+
+fn step_plain_progress(
+    bounds: Vec2,
+    tick_hz: u16,
+    max_radius: f32,
+    dt: f32,
+    index: usize,
+    unit: &MovementFrameUnit,
+    mut progress: PlainMoveProgress,
+    units: &[MovementFrameUnit],
+    points: &[crate::grid::GridPoint],
+    grid: &crate::grid::UniformGrid,
+    spread_context: &SpreadContext,
+) -> MovementFrameOutput {
+    let mut output = MovementFrameOutput {
+        unit_id: unit.unit_id,
+        position: unit.position,
+        target: unit.target,
+        progress: unit.progress.clone(),
+        plain_progress: Some(progress.clone()),
+        failed_blocked: false,
+    };
+    let Some(speed) = unit.speed else {
+        output.target = None;
+        output.plain_progress = Some(progress);
+        return output;
+    };
+    if progress.activity == MovementActivity::Resting {
+        output.target = None;
+        output.plain_progress = Some(progress);
+        return output;
+    }
+    let step_limit = speed * dt;
+    let occupied = |point: Vec2| {
+        spread_context.conflicts_with_reserved(point, unit.radius, unit.unit_id)
+            || grid
+                .within(points, point, unit.radius + max_radius)
+                .into_iter()
+                .any(|other_index| {
+                    other_index != index
+                        && point.distance(units[other_index].position)
+                            < unit.radius + units[other_index].radius - 1.0e-5
+                })
+    };
+
+    if progress.activity == MovementActivity::Blocked {
+        let escape = unit.target.filter(|target| !occupied(*target)).or_else(|| {
+            if !occupied(unit.position) {
+                return None;
+            }
+            MovementSearch {
+                bounds,
+                units,
+                points,
+                grid,
+                max_radius,
+            }
+            .find_free_singleton_destination(unit.position, unit.radius, index)
+        });
+        let Some(escape) = escape else {
+            output.target = None;
+            output.plain_progress = Some(progress);
+            return output;
+        };
+        let offset = escape - unit.position;
+        let distance = offset.length();
+        let position = if distance <= step_limit {
+            escape
+        } else if distance > 1.0e-8 {
+            unit.position + offset * (step_limit / distance)
+        } else {
+            unit.position
+        };
+        let reached = position == escape && !occupied(escape);
+        output.position = position;
+        output.target = (!reached).then_some(escape);
+        progress.slot = escape;
+        output.plain_progress = Some(progress);
+        return output;
+    }
+
+    let movement_target = progress.slot;
+    let distance = unit.position.distance(movement_target);
+    if (distance <= step_limit || distance <= 0.025) && !occupied(movement_target) {
+        output.position = movement_target;
+        output.target = None;
+        if progress.claim_count > 0 || progress.slot != progress.original_point {
+            progress.activity = MovementActivity::Resting;
+            output.plain_progress = Some(progress);
+        } else {
+            output.plain_progress = None;
+        }
+        return output;
+    }
+
+    let desired = movement_target - unit.position;
+    let mut velocity = desired.try_normalize().unwrap_or(Vec2::ZERO) * step_limit;
+    let mut separated = false;
+    for other_index in grid.within(
+        points,
+        unit.position,
+        unit.radius + max_radius + 0.05 + step_limit * 1.2,
+    ) {
+        if other_index == index {
+            continue;
+        }
+        let other = &units[other_index];
+        let offset = unit.position - other.position;
+        let separation = offset.length();
+        let limit = unit.radius + other.radius + 0.05;
+        if separation > 1.0e-8 && separation < limit {
+            separated = true;
+            velocity += offset / separation * (limit - separation);
+            if offset.dot(desired) < 0.0 {
+                let along = desired.try_normalize().unwrap_or(Vec2::X);
+                velocity += Vec2::new(along.y, -along.x) * (limit - separation);
+            }
+        }
+    }
+    if !separated && distance > step_limit {
+        velocity = step(
+            &MovementInput {
+                position: unit.position,
+                target: movement_target,
+                speed,
+            },
+            dt,
+        )
+        .position
+            - unit.position;
+    } else if velocity.length() > step_limit && step_limit > 0.0 {
+        velocity = velocity.normalize() * step_limit;
+    }
+    let mut position = unit.position + velocity;
+    for _ in 0..8 {
+        let mut projected = false;
+        for other_index in grid.within(
+            points,
+            position,
+            unit.radius + max_radius + step_limit * 1.2,
+        ) {
+            if other_index == index {
+                continue;
+            }
+            let other = &units[other_index];
+            let offset = position - other.position;
+            let separation = offset.length();
+            let limit = unit.radius + other.radius + 1.0e-4;
+            if separation < limit {
+                let direction = if separation > 1.0e-8 {
+                    offset / separation
+                } else if unit.unit_id < other.unit_id {
+                    Vec2::X
+                } else {
+                    -Vec2::X
+                };
+                position += direction * (limit - separation);
+                projected = true;
+            }
+        }
+        if !projected {
+            break;
+        }
+    }
+    position.x = position
+        .x
+        .clamp(unit.radius, (bounds.x - unit.radius).max(unit.radius));
+    position.y = position
+        .y
+        .clamp(unit.radius, (bounds.y - unit.radius).max(unit.radius));
+
+    let next_distance = position.distance(movement_target);
+    if next_distance <= 0.025 && !occupied(movement_target) {
+        output.position = movement_target;
+        output.target = None;
+        if progress.claim_count > 0 || progress.slot != progress.original_point {
+            progress.activity = MovementActivity::Resting;
+            output.plain_progress = Some(progress);
+        } else {
+            output.plain_progress = None;
+        }
+        return output;
+    }
+    let made_progress = next_distance < progress.best_distance - 0.01 * step_limit;
+    if made_progress {
+        progress.best_distance = next_distance;
+        progress.stalled_ticks = 0;
+    } else {
+        progress.stalled_ticks = progress.stalled_ticks.saturating_add(1);
+    }
+    if progress.stalled_ticks >= tick_hz.max(1) {
+        let spare = if progress.claim_count < 3 {
+            progress
+                .pool_slots
+                .iter()
+                .copied()
+                .filter(|candidate| *candidate != progress.slot && !occupied(*candidate))
+                .min_by(|a, b| nearest_angle_order(*a, *b, unit.position))
+        } else {
+            None
+        };
+        if let Some(spare) = spare {
+            progress
+                .pool_slots
+                .retain(|candidate| *candidate != progress.slot && *candidate != spare);
+            progress.slot = spare;
+            progress.claim_count += 1;
+            progress.stalled_ticks = 0;
+            progress.best_distance = position.distance(spare);
+            output.target = Some(spare);
+        } else {
+            progress.activity = MovementActivity::Blocked;
+            output.target = None;
+            output.failed_blocked = true;
+        }
+    } else {
+        output.target = Some(movement_target);
+    }
+    output.position = position;
+    output.plain_progress = Some(progress);
+    output
+}
+
+fn minimum_unseen_hex_radius(ring: i32, spacing: f32) -> f32 {
+    let next_ring = i128::from(ring) + 1;
+    let minimum_squared = (3 * next_ring * next_ring + 3) / 4;
+    (minimum_squared as f64).sqrt() as f32 * spacing
+}
+
+fn finite_hex_ring_limit(origin: Vec2, radius: f32, bounds: Vec2, spacing: f32) -> i32 {
+    let max_dx = (origin.x - radius)
+        .max(bounds.x - radius - origin.x)
+        .max(0.0);
+    let max_dy = (origin.y - radius)
+        .max(bounds.y - radius - origin.y)
+        .max(0.0);
+    let max_j = (max_dy * 2.0 / (3.0_f32.sqrt() * spacing)).ceil() as i32 + 1;
+    let max_i = (max_dx / spacing + max_j as f32 * 0.5).ceil() as i32 + 1;
+    max_i.saturating_add(max_j).max(1)
+}
+
+fn make_plain_progress(
+    unit: &MovementFrameUnit,
+    original_point: Vec2,
+    context: &SpreadContext,
+) -> PlainMoveProgress {
+    let member = [SpreadMember {
+        id: unit.unit_id,
+        position: unit.position,
+        radius: unit.radius,
+    }];
+    let excluded_units = std::collections::HashSet::from([unit.unit_id]);
+    let (pool, _) =
+        spread_destinations_with_context(&member, original_point, context, &excluded_units);
+    let slot = pool.slots.first().copied().unwrap_or(original_point);
+    let pool_slots = pool.slots.into_iter().skip(1).take(6).collect();
+    PlainMoveProgress {
+        original_point,
+        slot,
+        pool_slots,
+        gather_goal: None,
+        activity: if pool.primary_count == 0 {
+            MovementActivity::Blocked
+        } else {
+            MovementActivity::Moving
+        },
+        stalled_ticks: 0,
+        best_distance: unit.position.distance(slot),
+        claim_count: 0,
+        failure_recorded: false,
     }
 }
 
@@ -611,11 +943,69 @@ fn update_target_claims(
 struct MovementPoolIndex {
     points: Vec<crate::grid::GridPoint>,
     grid: crate::grid::UniformGrid,
+    slot_indices: std::collections::HashMap<(u32, u32), usize>,
+    clearances: Vec<SlotClearance>,
+    available_by_clearance: std::collections::BTreeSet<ClearanceRank>,
+    available_slot_indices: std::collections::HashSet<usize>,
     spacing: f32,
+    max_reach: f32,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct ClearanceHit {
+    clearance: f64,
+    unit_id: Option<u32>,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct SlotClearance {
+    first: ClearanceHit,
+    second: ClearanceHit,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct ClearanceRank {
+    clearance: f64,
+    slot_index: usize,
+}
+
+impl PartialEq for ClearanceRank {
+    fn eq(&self, other: &Self) -> bool {
+        self.clearance.total_cmp(&other.clearance).is_eq() && self.slot_index == other.slot_index
+    }
+}
+
+impl Eq for ClearanceRank {}
+
+impl PartialOrd for ClearanceRank {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for ClearanceRank {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.clearance
+            .total_cmp(&other.clearance)
+            .then_with(|| self.slot_index.cmp(&other.slot_index))
+    }
+}
+
+impl SlotClearance {
+    fn empty() -> Self {
+        let empty = ClearanceHit {
+            clearance: f64::INFINITY,
+            unit_id: None,
+        };
+        Self {
+            first: empty,
+            second: empty,
+        }
+    }
 }
 
 impl MovementPoolIndex {
-    fn new(pool: &MovementPool) -> Self {
+    fn new(pool: &MovementPool, bounds: Vec2) -> Self {
         let points: Vec<_> = pool
             .slots
             .iter()
@@ -626,29 +1016,170 @@ impl MovementPoolIndex {
             })
             .collect();
         let grid = crate::grid::UniformGrid::new(&points, pool.spacing);
+        let slot_indices = points
+            .iter()
+            .enumerate()
+            .map(|(index, point)| {
+                (
+                    (point.position.x.to_bits(), point.position.y.to_bits()),
+                    index,
+                )
+            })
+            .collect();
         Self {
             points,
             grid,
+            slot_indices,
+            clearances: vec![SlotClearance::empty(); pool.slots.len()],
+            available_by_clearance: std::collections::BTreeSet::new(),
+            available_slot_indices: std::collections::HashSet::new(),
             spacing: pool.spacing.max(0.1),
+            max_reach: bounds.length(),
         }
+    }
+
+    fn refresh_slot_clearance(
+        &mut self,
+        slot_index: usize,
+        units: &[MovementFrameUnit],
+        points: &[crate::grid::GridPoint],
+        grid: &crate::grid::UniformGrid,
+        max_radius: f32,
+        assigned: bool,
+    ) {
+        if !assigned {
+            self.available_by_clearance.remove(&ClearanceRank {
+                clearance: self.clearances[slot_index].first.clearance,
+                slot_index,
+            });
+        }
+        let slot = self.points[slot_index].position;
+        let mut nearest = [SlotClearance::empty().first; 2];
+        for unit_index in grid.within(points, slot, 2.0 * max_radius) {
+            let unit = &units[unit_index];
+            let clearance = f64::from(slot.distance(unit.position)) - f64::from(unit.radius);
+            let hit = ClearanceHit {
+                clearance: if clearance > f64::from(max_radius) {
+                    f64::INFINITY
+                } else {
+                    clearance
+                },
+                unit_id: (clearance <= f64::from(max_radius)).then_some(unit.unit_id),
+            };
+            let earlier = |left: ClearanceHit, right: ClearanceHit| {
+                left.clearance
+                    .total_cmp(&right.clearance)
+                    .then_with(|| left.unit_id.cmp(&right.unit_id))
+                    .is_lt()
+            };
+            if earlier(hit, nearest[0]) {
+                nearest[1] = nearest[0];
+                nearest[0] = hit;
+            } else if earlier(hit, nearest[1]) {
+                nearest[1] = hit;
+            }
+        }
+        let clearance = SlotClearance {
+            first: nearest[0],
+            second: nearest[1],
+        };
+        self.clearances[slot_index] = clearance;
+        if !assigned {
+            self.available_by_clearance.insert(ClearanceRank {
+                clearance: clearance.first.clearance,
+                slot_index,
+            });
+            self.available_slot_indices.insert(slot_index);
+        } else {
+            self.available_slot_indices.remove(&slot_index);
+        }
+    }
+
+    fn set_slot_assigned(&mut self, slot_index: usize, assigned: bool) {
+        if assigned {
+            if self.available_slot_indices.remove(&slot_index) {
+                self.available_by_clearance.remove(&ClearanceRank {
+                    clearance: self.clearances[slot_index].first.clearance,
+                    slot_index,
+                });
+            }
+        } else if self.available_slot_indices.insert(slot_index) {
+            self.available_by_clearance.insert(ClearanceRank {
+                clearance: self.clearances[slot_index].first.clearance,
+                slot_index,
+            });
+        }
+    }
+
+    fn has_potential_free_slot(
+        &self,
+        unit_id: u32,
+        position: Vec2,
+        radius: f32,
+        allowed_slot: Option<(u32, u32)>,
+    ) -> bool {
+        let threshold = f64::from(radius) - 1.0e-5;
+        if self
+            .available_by_clearance
+            .last()
+            .is_some_and(|rank| rank.clearance >= threshold)
+        {
+            return true;
+        }
+        if let Some(slot_key) = allowed_slot {
+            if let Some(&slot_index) = self.slot_indices.get(&slot_key) {
+                let clearance = self.clearances[slot_index];
+                let nearest_without_self = if clearance.first.unit_id == Some(unit_id) {
+                    clearance.second
+                } else {
+                    clearance.first
+                };
+                if nearest_without_self.clearance >= threshold {
+                    return true;
+                }
+            }
+        }
+        let local = self.grid.within(&self.points, position, 2.0 * radius);
+        #[cfg(test)]
+        count_pool_slot_candidates(local.len());
+        local.into_iter().any(|slot_index| {
+            if !self.available_slot_indices.contains(&slot_index) {
+                return false;
+            }
+            let clearance = self.clearances[slot_index];
+            clearance.first.unit_id == Some(unit_id) && clearance.second.clearance >= threshold
+        })
     }
 
     fn nearest_free(
         &self,
+        unit_id: u32,
         origin: Vec2,
         pool_id: u64,
-        allowed_slot: (u64, u32, u32),
+        allowed_slot: Option<(u64, u32, u32)>,
         assigned_slots: &std::collections::HashSet<(u64, u32, u32)>,
+        radius: f32,
         is_free: impl Fn(Vec2) -> bool,
     ) -> Option<Vec2> {
-        let max_radius = 512.0_f32;
+        if !self.has_potential_free_slot(
+            unit_id,
+            origin,
+            radius,
+            allowed_slot.map(|(_, x, y)| (x, y)),
+        ) {
+            return None;
+        }
         let mut reach = self.spacing;
-        while reach <= max_radius {
+        loop {
+            let query_reach = reach.min(self.max_reach);
             let mut best: Option<(usize, Vec2)> = None;
-            for index in self.grid.within(&self.points, origin, reach) {
+            let candidates = self.grid.within(&self.points, origin, query_reach);
+            #[cfg(test)]
+            count_pool_slot_candidates(candidates.len());
+            for index in candidates {
                 let point = self.points[index].position;
                 let key = (pool_id, point.x.to_bits(), point.y.to_bits());
-                if (assigned_slots.contains(&key) && key != allowed_slot) || !is_free(point) {
+                if (assigned_slots.contains(&key) && Some(key) != allowed_slot) || !is_free(point) {
                     continue;
                 }
                 if best.is_none_or(|(best_index, best_point)| {
@@ -660,12 +1191,97 @@ impl MovementPoolIndex {
                 }
             }
             if let Some((_, point)) = best {
-                return Some(point);
+                if point.distance(origin) <= query_reach + 1.0e-5 {
+                    return Some(point);
+                }
             }
-            reach *= 2.0;
+            if query_reach >= self.max_reach {
+                return None;
+            }
+            reach = (reach * 2.0).min(self.max_reach);
         }
-        None
     }
+}
+
+fn refresh_nearby_pool_slot_clearances(
+    old_position: Vec2,
+    new_position: Vec2,
+    body_radius: f32,
+    slot_points: &[crate::grid::GridPoint],
+    slot_refs: &[(u64, usize)],
+    slot_grid: &crate::grid::UniformGrid,
+    pool_indexes: &mut BTreeMap<u64, MovementPoolIndex>,
+    units: &[MovementFrameUnit],
+    unit_points: &[crate::grid::GridPoint],
+    unit_grid: &crate::grid::UniformGrid,
+    assigned_slots: &std::collections::HashSet<(u64, u32, u32)>,
+    max_radius: f32,
+) {
+    let reach = body_radius + max_radius;
+    let mut affected = slot_grid
+        .within(slot_points, old_position, reach)
+        .into_iter()
+        .chain(slot_grid.within(slot_points, new_position, reach))
+        .collect::<Vec<_>>();
+    affected.sort_unstable();
+    affected.dedup();
+    for global_index in affected {
+        let (pool_id, slot_index) = slot_refs[global_index];
+        let Some(index) = pool_indexes.get_mut(&pool_id) else {
+            continue;
+        };
+        let point = index.points[slot_index].position;
+        let assigned = assigned_slots.contains(&(pool_id, point.x.to_bits(), point.y.to_bits()));
+        index.refresh_slot_clearance(
+            slot_index,
+            units,
+            unit_points,
+            unit_grid,
+            max_radius,
+            assigned,
+        );
+    }
+}
+
+fn add_pool_slot_claim(
+    claim_counts: &mut std::collections::HashMap<(u64, u32, u32), usize>,
+    pool_indexes: &mut BTreeMap<u64, MovementPoolIndex>,
+    pool_id: u64,
+    point: Vec2,
+) {
+    let key = (pool_id, point.x.to_bits(), point.y.to_bits());
+    let count = claim_counts.entry(key).or_default();
+    if *count == 0 {
+        if let Some(index) = pool_indexes.get_mut(&pool_id) {
+            if let Some(&slot_index) = index.slot_indices.get(&(key.1, key.2)) {
+                index.set_slot_assigned(slot_index, true);
+            }
+        }
+    }
+    *count += 1;
+}
+
+fn remove_pool_slot_claim(
+    claim_counts: &mut std::collections::HashMap<(u64, u32, u32), usize>,
+    pool_indexes: &mut BTreeMap<u64, MovementPoolIndex>,
+    pool_id: u64,
+    point: Vec2,
+) -> bool {
+    let key = (pool_id, point.x.to_bits(), point.y.to_bits());
+    let Some(count) = claim_counts.get_mut(&key) else {
+        return false;
+    };
+    if *count > 1 {
+        *count -= 1;
+        return false;
+    }
+    claim_counts.remove(&key);
+    if let Some(index) = pool_indexes.get_mut(&pool_id) {
+        if let Some(&slot_index) = index.slot_indices.get(&(key.1, key.2)) {
+            index.set_slot_assigned(slot_index, false);
+        }
+    }
+    true
 }
 
 /// One immutable unit row consumed by deterministic group movement.
@@ -679,6 +1295,7 @@ pub struct MovementFrameUnit {
     pub speed: Option<f32>,
     pub target: Option<Vec2>,
     pub progress: Option<MoveProgress>,
+    pub plain_progress: Option<PlainMoveProgress>,
 }
 
 /// All movement-relevant state for one fixed tick. Both the sim and log validator use this input.
@@ -696,6 +1313,7 @@ pub struct MovementFrameOutput {
     pub position: Vec2,
     pub target: Option<Vec2>,
     pub progress: Option<MoveProgress>,
+    pub plain_progress: Option<PlainMoveProgress>,
     pub failed_blocked: bool,
 }
 
@@ -712,11 +1330,33 @@ pub fn step_frame(frame: &MovementFrame, dt: f32) -> Vec<MovementFrameOutput> {
         .collect();
     let max_radius = units.iter().map(|unit| unit.radius).fold(0.0_f32, f32::max);
     let mut grid = crate::grid::UniformGrid::new(&points, 2.0 * max_radius);
-    let pool_indexes: BTreeMap<_, _> = frame
+    let mut pool_indexes: BTreeMap<_, _> = frame
         .pools
         .iter()
-        .map(|(&pool_id, pool)| (pool_id, MovementPoolIndex::new(pool)))
+        .map(|(&pool_id, pool)| (pool_id, MovementPoolIndex::new(pool, frame.bounds)))
         .collect();
+    let mut plain_reserved = Vec::new();
+    let mut plain_static = Vec::new();
+    let mut plain_max_radius = 0.0_f32;
+    for unit in &units {
+        plain_max_radius = plain_max_radius.max(unit.radius);
+        if unit.speed.is_none() {
+            plain_static.push(StaticFootprint {
+                position: unit.position,
+                radius: unit.radius,
+            });
+            continue;
+        }
+        plain_reserved.push((
+            Some(unit.unit_id),
+            ReservedFootprint {
+                position: unit.target.unwrap_or(unit.position),
+                radius: unit.radius,
+            },
+        ));
+    }
+    let mut plain_spread_context =
+        SpreadContext::new(plain_reserved, plain_static, frame.bounds, plain_max_radius);
     let max_step = units
         .iter()
         .filter_map(|unit| unit.speed)
@@ -730,21 +1370,53 @@ pub fn step_frame(frame: &MovementFrame, dt: f32) -> Vec<MovementFrameOutput> {
             position: unit.position,
             target: unit.target,
             progress: unit.progress.clone(),
+            plain_progress: unit.plain_progress.clone(),
             failed_blocked: false,
         })
         .collect();
-    let mut assigned_slots: std::collections::HashSet<(u64, u32, u32)> = units
+    let mut slot_claim_counts: std::collections::HashMap<(u64, u32, u32), usize> = units
         .iter()
         .filter_map(|unit| {
             unit.progress.as_ref().map(|progress| {
                 (
-                    progress.pool_id,
-                    progress.slot.x.to_bits(),
-                    progress.slot.y.to_bits(),
+                    (
+                        progress.pool_id,
+                        progress.slot.x.to_bits(),
+                        progress.slot.y.to_bits(),
+                    ),
+                    1usize,
                 )
             })
         })
-        .collect();
+        .fold(
+            std::collections::HashMap::new(),
+            |mut counts, (key, count)| {
+                *counts.entry(key).or_default() += count;
+                counts
+            },
+        );
+    let mut assigned_slots: std::collections::HashSet<(u64, u32, u32)> =
+        slot_claim_counts.keys().copied().collect();
+    let mut slot_refs = Vec::new();
+    let mut slot_points = Vec::new();
+    for (&pool_id, index) in &pool_indexes {
+        for (slot_index, point) in index.points.iter().enumerate() {
+            slot_refs.push((pool_id, slot_index));
+            slot_points.push(crate::grid::GridPoint {
+                id: slot_points.len() as u32,
+                position: point.position,
+            });
+        }
+    }
+    let slot_grid = crate::grid::UniformGrid::new(&slot_points, 2.0 * max_radius);
+    for (&pool_id, index) in &mut pool_indexes {
+        for slot_index in 0..index.points.len() {
+            let point = index.points[slot_index].position;
+            let assigned =
+                assigned_slots.contains(&(pool_id, point.x.to_bits(), point.y.to_bits()));
+            index.refresh_slot_clearance(slot_index, &units, &points, &grid, max_radius, assigned);
+        }
+    }
     let mut target_claims: std::collections::HashMap<(u32, u32), usize> = units
         .iter()
         .filter_map(|unit| unit.target.map(target_key))
@@ -754,6 +1426,18 @@ pub fn step_frame(frame: &MovementFrame, dt: f32) -> Vec<MovementFrameOutput> {
         });
 
     for index in 0..units.len() {
+        if index > 0 {
+            let previous = &units[index - 1];
+            if previous.speed.is_some() {
+                plain_spread_context.reserve_unit(
+                    previous.unit_id,
+                    ReservedFootprint {
+                        position: previous.target.unwrap_or(previous.position),
+                        radius: previous.radius,
+                    },
+                );
+            }
+        }
         let unit = units[index].clone();
         let Some(speed) = unit.speed else { continue };
         if unit
@@ -777,6 +1461,19 @@ pub fn step_frame(frame: &MovementFrame, dt: f32) -> Vec<MovementFrameOutput> {
                 });
             if !occupied {
                 update_target_claims(&mut target_claims, unit.target, None);
+                let old_key = (
+                    progress.pool_id,
+                    progress.slot.x.to_bits(),
+                    progress.slot.y.to_bits(),
+                );
+                if remove_pool_slot_claim(
+                    &mut slot_claim_counts,
+                    &mut pool_indexes,
+                    progress.pool_id,
+                    progress.slot,
+                ) {
+                    assigned_slots.remove(&old_key);
+                }
                 outputs[index].target = None;
                 outputs[index].progress = None;
                 units[index].target = None;
@@ -821,14 +1518,17 @@ pub fn step_frame(frame: &MovementFrame, dt: f32) -> Vec<MovementFrameOutput> {
                 let key = (progress.pool_id, slot.x.to_bits(), slot.y.to_bits());
                 !target_is_claimed_by_other
                     && !target_is_blocked_by_stationary
+                    && is_free(*slot)
                     && (!assigned_slots.contains(&key) || key == old_slot_key)
             });
             let pool_escape = pool_indexes.get(&progress.pool_id).and_then(|index| {
                 index.nearest_free(
+                    unit.unit_id,
                     unit.position,
                     progress.pool_id,
-                    old_slot_key,
+                    Some(old_slot_key),
                     &assigned_slots,
+                    unit.radius,
                     is_free,
                 )
             });
@@ -861,7 +1561,20 @@ pub fn step_frame(frame: &MovementFrame, dt: f32) -> Vec<MovementFrameOutput> {
             let Some(escape) = escape else { continue };
             let escape_key = (progress.pool_id, escape.x.to_bits(), escape.y.to_bits());
             if escape_key != old_slot_key {
-                assigned_slots.remove(&old_slot_key);
+                if remove_pool_slot_claim(
+                    &mut slot_claim_counts,
+                    &mut pool_indexes,
+                    progress.pool_id,
+                    progress.slot,
+                ) {
+                    assigned_slots.remove(&old_slot_key);
+                }
+                add_pool_slot_claim(
+                    &mut slot_claim_counts,
+                    &mut pool_indexes,
+                    progress.pool_id,
+                    escape,
+                );
                 assigned_slots.insert(escape_key);
                 progress.slot = escape;
             }
@@ -893,8 +1606,59 @@ pub fn step_frame(frame: &MovementFrame, dt: f32) -> Vec<MovementFrameOutput> {
             units[index].position = position;
             points[index].position = position;
             grid.move_point(index, unit.position, position);
+            refresh_nearby_pool_slot_clearances(
+                unit.position,
+                position,
+                unit.radius,
+                &slot_points,
+                &slot_refs,
+                &slot_grid,
+                &mut pool_indexes,
+                &units,
+                &points,
+                &grid,
+                &assigned_slots,
+                max_radius,
+            );
             units[index].target = outputs[index].target;
             units[index].progress = outputs[index].progress.clone();
+            continue;
+        }
+        if let Some(progress) = unit.plain_progress.clone() {
+            let output = step_plain_progress(
+                frame.bounds,
+                frame.tick_hz,
+                max_radius,
+                dt,
+                index,
+                &unit,
+                progress,
+                &units,
+                &points,
+                &grid,
+                &plain_spread_context,
+            );
+            outputs[index] = output.clone();
+            update_target_claims(&mut target_claims, unit.target, output.target);
+            units[index].position = output.position;
+            units[index].target = output.target;
+            units[index].plain_progress = output.plain_progress.clone();
+            points[index].position = output.position;
+            grid.move_point(index, unit.position, output.position);
+            refresh_nearby_pool_slot_clearances(
+                unit.position,
+                output.position,
+                unit.radius,
+                &slot_points,
+                &slot_refs,
+                &slot_grid,
+                &mut pool_indexes,
+                &units,
+                &points,
+                &grid,
+                &assigned_slots,
+                max_radius,
+            );
             continue;
         }
         let Some(target) = unit.target else { continue };
@@ -907,19 +1671,47 @@ pub fn step_frame(frame: &MovementFrame, dt: f32) -> Vec<MovementFrameOutput> {
                         && target.distance(units[other_index].position)
                             < unit.radius + units[other_index].radius - 1.0e-5
                 });
-            let destination = if target_occupied {
-                MovementSearch {
-                    bounds: frame.bounds,
-                    units: &units,
-                    points: &points,
-                    grid: &grid,
+            if target_occupied {
+                let progress = make_plain_progress(&unit, target, &plain_spread_context);
+                let mut plain_unit = unit.clone();
+                plain_unit.target = Some(progress.slot);
+                let output = step_plain_progress(
+                    frame.bounds,
+                    frame.tick_hz,
                     max_radius,
-                }
-                .find_free_singleton_destination(target, unit.radius, index)
-                .unwrap_or(target)
-            } else {
-                target
-            };
+                    dt,
+                    index,
+                    &plain_unit,
+                    progress,
+                    &units,
+                    &points,
+                    &grid,
+                    &plain_spread_context,
+                );
+                outputs[index] = output.clone();
+                update_target_claims(&mut target_claims, unit.target, output.target);
+                units[index].position = output.position;
+                units[index].target = output.target;
+                units[index].plain_progress = output.plain_progress.clone();
+                points[index].position = output.position;
+                grid.move_point(index, unit.position, output.position);
+                refresh_nearby_pool_slot_clearances(
+                    unit.position,
+                    output.position,
+                    unit.radius,
+                    &slot_points,
+                    &slot_refs,
+                    &slot_grid,
+                    &mut pool_indexes,
+                    &units,
+                    &points,
+                    &grid,
+                    &assigned_slots,
+                    max_radius,
+                );
+                continue;
+            }
+            let destination = target;
             let desired = destination - unit.position;
             let step_limit = speed * dt;
             let destination_free = grid
@@ -938,9 +1730,29 @@ pub fn step_frame(frame: &MovementFrame, dt: f32) -> Vec<MovementFrameOutput> {
                 units[index].progress = outputs[index].progress.clone();
                 points[index].position = destination;
                 grid.move_point(index, unit.position, destination);
+                refresh_nearby_pool_slot_clearances(
+                    unit.position,
+                    destination,
+                    unit.radius,
+                    &slot_points,
+                    &slot_refs,
+                    &slot_grid,
+                    &mut pool_indexes,
+                    &units,
+                    &points,
+                    &grid,
+                    &assigned_slots,
+                    max_radius,
+                );
                 continue;
             }
-            let mut velocity = desired.try_normalize().unwrap_or(Vec2::ZERO) * speed * dt;
+            let desired_distance = desired.length();
+            let mut velocity = if desired_distance > 1.0e-8 {
+                desired * (step_limit / desired_distance)
+            } else {
+                Vec2::ZERO
+            };
+            let mut separated = false;
             let reach = unit.radius + max_radius + 0.05 + max_step;
             for other_index in grid.within(&points, unit.position, reach) {
                 if other_index == index {
@@ -951,6 +1763,7 @@ pub fn step_frame(frame: &MovementFrame, dt: f32) -> Vec<MovementFrameOutput> {
                 let separation = offset.length();
                 let limit = unit.radius + other.radius + 0.05;
                 if separation > 1.0e-8 && separation < limit {
+                    separated = true;
                     velocity += offset / separation * (limit - separation);
                     if offset.dot(desired) < 0.0 {
                         let along = desired.try_normalize().unwrap_or(Vec2::X);
@@ -958,10 +1771,23 @@ pub fn step_frame(frame: &MovementFrame, dt: f32) -> Vec<MovementFrameOutput> {
                     }
                 }
             }
-            if velocity.length() > step_limit {
-                velocity = velocity.normalize() * step_limit;
-            }
-            let mut position = unit.position + velocity;
+            let mut position = if !separated && desired_distance > step_limit {
+                step(
+                    &MovementInput {
+                        position: unit.position,
+                        target: destination,
+                        speed,
+                    },
+                    dt,
+                )
+                .position
+            } else {
+                if velocity.length() > step_limit {
+                    velocity = velocity.normalize() * step_limit;
+                }
+                unit.position + velocity
+            };
+            let mut was_projected = false;
             for _ in 0..8 {
                 let mut projected = false;
                 for other_index in
@@ -989,21 +1815,52 @@ pub fn step_frame(frame: &MovementFrame, dt: f32) -> Vec<MovementFrameOutput> {
                 if !projected {
                     break;
                 }
+                was_projected = true;
             }
-            position.x = position.x.clamp(0.0, frame.bounds.x);
-            position.y = position.y.clamp(0.0, frame.bounds.y);
+            position.x = position
+                .x
+                .clamp(unit.radius, (frame.bounds.x - unit.radius).max(unit.radius));
+            position.y = position
+                .y
+                .clamp(unit.radius, (frame.bounds.y - unit.radius).max(unit.radius));
             let reached = position.distance(destination) <= 0.025;
             if reached && destination_free {
                 position = destination;
             }
             outputs[index].position = position;
             outputs[index].target = (!(reached && destination_free)).then_some(destination);
+            if (separated || was_projected) && !(reached && destination_free) {
+                let mut plain = make_plain_progress(&unit, target, &plain_spread_context);
+                plain.slot = destination;
+                plain.best_distance = unit.position.distance(destination);
+                let next_distance = position.distance(destination);
+                if next_distance < plain.best_distance - 0.01 * step_limit {
+                    plain.best_distance = next_distance;
+                } else {
+                    plain.stalled_ticks = 1;
+                }
+                outputs[index].plain_progress = Some(plain);
+            }
             update_target_claims(&mut target_claims, unit.target, outputs[index].target);
             units[index].position = position;
             units[index].target = outputs[index].target;
             units[index].progress = outputs[index].progress.clone();
             points[index].position = position;
             grid.move_point(index, unit.position, position);
+            refresh_nearby_pool_slot_clearances(
+                unit.position,
+                position,
+                unit.radius,
+                &slot_points,
+                &slot_refs,
+                &slot_grid,
+                &mut pool_indexes,
+                &units,
+                &points,
+                &grid,
+                &assigned_slots,
+                max_radius,
+            );
             continue;
         };
         let mut movement_target = target;
@@ -1031,6 +1888,20 @@ pub fn step_frame(frame: &MovementFrame, dt: f32) -> Vec<MovementFrameOutput> {
                 units[index].progress = outputs[index].progress.clone();
                 points[index].position = movement_target;
                 grid.move_point(index, unit.position, movement_target);
+                refresh_nearby_pool_slot_clearances(
+                    unit.position,
+                    movement_target,
+                    unit.radius,
+                    &slot_points,
+                    &slot_refs,
+                    &slot_grid,
+                    &mut pool_indexes,
+                    &units,
+                    &points,
+                    &grid,
+                    &assigned_slots,
+                    max_radius,
+                );
                 continue;
             }
         }
@@ -1040,6 +1911,7 @@ pub fn step_frame(frame: &MovementFrame, dt: f32) -> Vec<MovementFrameOutput> {
         let reach = unit.radius + max_radius + 0.05 + max_step;
         let neighbours = grid.within(&points, position, reach);
         let mut near_same_group = false;
+        let mut separated = false;
         for other_index in neighbours {
             if other_index == index {
                 continue;
@@ -1067,6 +1939,7 @@ pub fn step_frame(frame: &MovementFrame, dt: f32) -> Vec<MovementFrameOutput> {
             let separation = offset.length();
             let limit = unit.radius + other.radius + 0.05;
             if separation > 1.0e-8 && separation < limit {
+                separated = true;
                 let push = (limit - separation) * offset / separation;
                 velocity += push;
                 if !same_group && offset.dot(desired) < 0.0 {
@@ -1077,10 +1950,22 @@ pub fn step_frame(frame: &MovementFrame, dt: f32) -> Vec<MovementFrameOutput> {
         }
         let velocity_len = velocity.length();
         let step_limit = speed * dt;
-        if velocity_len > step_limit && velocity_len > 0.0 {
-            velocity *= step_limit / velocity_len;
+        if !separated && distance > step_limit {
+            position = step(
+                &MovementInput {
+                    position: unit.position,
+                    target: movement_target,
+                    speed,
+                },
+                dt,
+            )
+            .position;
+        } else {
+            if velocity_len > step_limit && velocity_len > 0.0 {
+                velocity *= step_limit / velocity_len;
+            }
+            position += velocity;
         }
-        position += velocity;
 
         // Hard projection prevents footprint overlap. Units resolve in id order.
         let broad_reach = unit.radius + max_radius + max_step;
@@ -1147,6 +2032,20 @@ pub fn step_frame(frame: &MovementFrame, dt: f32) -> Vec<MovementFrameOutput> {
                 units[index].progress = outputs[index].progress.clone();
                 points[index].position = movement_target;
                 grid.move_point(index, unit.position, movement_target);
+                refresh_nearby_pool_slot_clearances(
+                    unit.position,
+                    movement_target,
+                    unit.radius,
+                    &slot_points,
+                    &slot_refs,
+                    &slot_grid,
+                    &mut pool_indexes,
+                    &units,
+                    &points,
+                    &grid,
+                    &assigned_slots,
+                    max_radius,
+                );
                 continue;
             }
         }
@@ -1165,49 +2064,60 @@ pub fn step_frame(frame: &MovementFrame, dt: f32) -> Vec<MovementFrameOutput> {
                 progress.stalled_ticks = 0;
                 progress.best_distance = next_distance;
             } else if progress.claim_count < 3 {
-                if let Some(pool) = frame.pools.get(&progress.pool_id) {
-                    if let Some(spare) = pool
-                        .slots
-                        .iter()
-                        .filter(|slot| {
-                            !assigned_slots.contains(&(
-                                progress.pool_id,
-                                slot.x.to_bits(),
-                                slot.y.to_bits(),
-                            ))
-                        })
-                        .filter(|slot| {
-                            grid.within(&points, **slot, unit.radius + max_radius)
-                                .into_iter()
-                                .all(|other_index| {
-                                    other_index == index
-                                        || slot.distance(units[other_index].position)
-                                            >= unit.radius + units[other_index].radius
-                                })
-                        })
-                        .min_by(|a, b| {
-                            position
-                                .distance_squared(**a)
-                                .total_cmp(&position.distance_squared(**b))
-                        })
-                    {
-                        movement_target = *spare;
-                        assigned_slots.insert((
-                            progress.pool_id,
-                            spare.x.to_bits(),
-                            spare.y.to_bits(),
-                        ));
-                        progress.slot = *spare;
-                        progress.claim_count += 1;
-                        progress.pass_mode = false;
-                        progress.stalled_ticks = 0;
-                        progress.best_distance = position.distance(movement_target);
-                    } else {
-                        progress.activity = MovementActivity::Blocked;
-                        failed_blocked = true;
+                let old_slot_key = (
+                    progress.pool_id,
+                    progress.slot.x.to_bits(),
+                    progress.slot.y.to_bits(),
+                );
+                let spare = pool_indexes.get(&progress.pool_id).and_then(|pool_index| {
+                    pool_index.nearest_free(
+                        unit.unit_id,
+                        position,
+                        progress.pool_id,
+                        None,
+                        &assigned_slots,
+                        unit.radius,
+                        |slot| {
+                            let key = (progress.pool_id, slot.x.to_bits(), slot.y.to_bits());
+                            key != old_slot_key
+                                && grid
+                                    .within(&points, slot, unit.radius + max_radius)
+                                    .into_iter()
+                                    .all(|other_index| {
+                                        other_index == index
+                                            || slot.distance(units[other_index].position)
+                                                >= unit.radius + units[other_index].radius
+                                    })
+                        },
+                    )
+                });
+                if let Some(spare) = spare {
+                    if remove_pool_slot_claim(
+                        &mut slot_claim_counts,
+                        &mut pool_indexes,
+                        progress.pool_id,
+                        progress.slot,
+                    ) {
+                        assigned_slots.remove(&old_slot_key);
                     }
+                    add_pool_slot_claim(
+                        &mut slot_claim_counts,
+                        &mut pool_indexes,
+                        progress.pool_id,
+                        spare,
+                    );
+                    assigned_slots.insert((progress.pool_id, spare.x.to_bits(), spare.y.to_bits()));
+                    movement_target = spare;
+                    progress.slot = spare;
+                    progress.claim_count += 1;
+                    progress.pass_mode = false;
+                    progress.stalled_ticks = 0;
+                    progress.best_distance = position.distance(movement_target);
+                } else {
+                    progress.activity = MovementActivity::Blocked;
+                    failed_blocked = true;
                 }
-            } else if progress.stalled_ticks >= hz.saturating_mul(3) {
+            } else {
                 progress.activity = MovementActivity::Blocked;
                 failed_blocked = true;
             }
@@ -1222,6 +2132,20 @@ pub fn step_frame(frame: &MovementFrame, dt: f32) -> Vec<MovementFrameOutput> {
         units[index].progress = outputs[index].progress.clone();
         points[index].position = position;
         grid.move_point(index, unit.position, position);
+        refresh_nearby_pool_slot_clearances(
+            unit.position,
+            position,
+            unit.radius,
+            &slot_points,
+            &slot_refs,
+            &slot_grid,
+            &mut pool_indexes,
+            &units,
+            &points,
+            &grid,
+            &assigned_slots,
+            max_radius,
+        );
     }
     let moving_pools: std::collections::BTreeSet<_> = outputs
         .iter()
@@ -1275,6 +2199,7 @@ pub(crate) fn integrate_movement(world: &mut World) {
                     speed: entry.movement.as_ref().map(|movement| movement.speed),
                     target: entity.get::<MoveTarget>().map(|target| target.0),
                     progress: entity.get::<MoveProgress>().cloned(),
+                    plain_progress: entity.get::<PlainMoveProgress>().cloned(),
                 },
             ))
         })
@@ -1308,6 +2233,11 @@ pub(crate) fn integrate_movement(world: &mut World) {
         } else {
             entity_mut.remove::<MoveProgress>();
         }
+        if let Some(progress) = output.plain_progress {
+            entity_mut.insert(progress);
+        } else {
+            entity_mut.remove::<PlainMoveProgress>();
+        }
     }
     let active_pools: std::collections::BTreeSet<_> = world
         .iter_entities()
@@ -1327,7 +2257,7 @@ pub(crate) fn integrate_movement(world: &mut World) {
 mod spread_tests {
     use super::{
         MoveProgress, MovementActivity, MovementFrame, MovementFrameUnit, MovementPool,
-        SpreadMember, StaticFootprint, angle, spread_destinations, step_frame,
+        MovementPoolIndex, SpreadMember, StaticFootprint, angle, spread_destinations, step_frame,
     };
     use bevy_math::Vec2;
     use std::collections::BTreeMap;
@@ -1347,6 +2277,8 @@ mod spread_tests {
                 speed: Some(8.0),
                 target: Some(target),
                 progress: None,
+
+                plain_progress: None,
             }],
             pools: BTreeMap::new(),
         };
@@ -1372,6 +2304,8 @@ mod spread_tests {
                 speed: Some(8.0),
                 target: Some(target),
                 progress: None,
+
+                plain_progress: None,
             }],
             pools: BTreeMap::new(),
         };
@@ -1521,6 +2455,79 @@ mod spread_tests {
     }
 
     #[test]
+    fn pool_order_matches_independent_axial_lattice_reference_at_medium_and_large_sizes() {
+        let center = Vec2::new(32.0, 32.0);
+        let spacing = 1.1_f32;
+        for member_count in [135_u32, 1_000] {
+            let members: Vec<_> = (0..member_count)
+                .map(|id| SpreadMember {
+                    id: id + 1,
+                    position: Vec2::new(10.0 + id as f32 * 0.001, 12.0),
+                    radius: 0.5,
+                })
+                .collect();
+            let spare_count = 6_usize.max(members.len().div_ceil(4));
+            let wanted = members.len() + spare_count;
+            let mut reference = vec![(0_i64, 0_i64, center)];
+            for i in -64_i32..=64 {
+                for j in -64_i32..=64 {
+                    let ring = i.abs().max(j.abs()).max((i + j).abs());
+                    if ring == 0 {
+                        continue;
+                    }
+                    let position = Vec2::new(
+                        center.x + spacing * (i as f32 + 0.5 * j as f32),
+                        center.y + spacing * (3.0_f32.sqrt() * 0.5 * j as f32),
+                    );
+                    if position.x < 0.5
+                        || position.y < 0.5
+                        || position.x > 63.5
+                        || position.y > 63.5
+                    {
+                        continue;
+                    }
+                    let ring_key = i64::from(i) * i64::from(i)
+                        + i64::from(i) * i64::from(j)
+                        + i64::from(j) * i64::from(j);
+                    let angle_key = ((position.y - center.y).atan2(position.x - center.x)
+                        * 1_000_000.0)
+                        .round() as i64;
+                    reference.push((ring_key, angle_key, position));
+                }
+            }
+            reference.sort_by_key(|(ring_key, angle_key, _)| (*ring_key, *angle_key));
+            let expected: Vec<_> = reference
+                .into_iter()
+                .take(wanted)
+                .map(|(_, _, position)| position)
+                .collect();
+
+            let (pool, assignments) =
+                spread_destinations(&members, center, &[], &[], Vec2::new(64.0, 64.0));
+            assert_eq!(pool.slots.len(), wanted, "member count {member_count}");
+            assert_eq!(
+                pool.primary_count, member_count,
+                "member count {member_count}"
+            );
+            assert_eq!(assignments.len(), member_count as usize);
+            let mismatch = pool
+                .slots
+                .iter()
+                .zip(&expected)
+                .position(|(actual, expected)| actual != expected);
+            if let Some(index) = mismatch {
+                let start = index.saturating_sub(2);
+                let end = (index + 3).min(expected.len());
+                panic!(
+                    "member count {member_count}, first mismatch {index}; actual={:?}; expected={:?}",
+                    &pool.slots[start..end],
+                    &expected[start..end]
+                );
+            }
+        }
+    }
+
+    #[test]
     fn static_footprint_is_skipped_and_assignments_repeat_bit_exactly() {
         let members: Vec<_> = (0..20)
             .map(|id| SpreadMember {
@@ -1588,6 +2595,8 @@ mod spread_tests {
                         best_distance: 1.0,
                         claim_count: 3,
                     }),
+
+                    plain_progress: None,
                 },
                 MovementFrameUnit {
                     unit_id: 2,
@@ -1598,6 +2607,8 @@ mod spread_tests {
                     speed: None,
                     target: None,
                     progress: None,
+
+                    plain_progress: None,
                 },
                 MovementFrameUnit {
                     unit_id: 3,
@@ -1608,6 +2619,8 @@ mod spread_tests {
                     speed: None,
                     target: None,
                     progress: None,
+
+                    plain_progress: None,
                 },
             ],
             pools: BTreeMap::from([(7, pool)]),
@@ -1627,7 +2640,81 @@ mod spread_tests {
     }
 
     #[test]
-    fn exhausted_claims_become_blocked_at_the_three_second_stall_deadline() {
+    fn no_spare_pool_blocks_on_the_first_other_group_stall_deadline() {
+        let target = Vec2::new(11.0, 10.0);
+        let pool = MovementPool {
+            pool_id: 8,
+            point: target,
+            spacing: 1.1,
+            primary_count: 1,
+            slots: vec![target],
+        };
+        let frame = MovementFrame {
+            bounds: Vec2::new(64.0, 64.0),
+            tick_hz: 20,
+            units: vec![
+                MovementFrameUnit {
+                    unit_id: 1,
+                    owner_slot: 0,
+                    unit_type: 1,
+                    position: Vec2::new(10.0, 10.0),
+                    radius: 0.5,
+                    speed: Some(3.0),
+                    target: Some(target),
+                    progress: Some(MoveProgress {
+                        pool_id: 8,
+                        slot: target,
+                        activity: MovementActivity::Moving,
+                        pass_mode: false,
+                        stalling_on_group: false,
+                        stalled_ticks: 19,
+                        best_distance: 1.0,
+                        claim_count: 0,
+                    }),
+
+                    plain_progress: None,
+                },
+                MovementFrameUnit {
+                    unit_id: 2,
+                    owner_slot: 1,
+                    unit_type: 1,
+                    position: Vec2::new(10.2, 10.0),
+                    radius: 0.5,
+                    speed: None,
+                    target: None,
+                    progress: None,
+
+                    plain_progress: None,
+                },
+            ],
+            pools: BTreeMap::from([(8, pool)]),
+        };
+
+        let mut before_deadline = frame.clone();
+        before_deadline.units[0]
+            .progress
+            .as_mut()
+            .unwrap()
+            .stalled_ticks = 18;
+        let before = step_frame(&before_deadline, 0.05).remove(0);
+        assert!(
+            !before.failed_blocked,
+            "the unit has not stalled for one second yet"
+        );
+        assert_eq!(before.target, Some(target));
+
+        let mover = step_frame(&frame, 0.05).remove(0);
+
+        assert!(mover.failed_blocked);
+        assert_eq!(mover.target, None);
+        assert_eq!(
+            mover.progress.as_ref().map(|progress| progress.activity),
+            Some(MovementActivity::Blocked)
+        );
+    }
+
+    #[test]
+    fn exhausted_claims_become_blocked_at_the_one_second_stall_deadline() {
         let point = Vec2::new(10.0, 10.0);
         let pool = MovementPool {
             pool_id: 9,
@@ -1652,12 +2739,14 @@ mod spread_tests {
                         pool_id: 9,
                         slot: point,
                         activity: MovementActivity::Moving,
-                        pass_mode: false,
+                        pass_mode: true,
                         stalling_on_group: false,
-                        stalled_ticks: 59,
+                        stalled_ticks: 19,
                         best_distance: 0.0,
                         claim_count: 3,
                     }),
+
+                    plain_progress: None,
                 },
                 MovementFrameUnit {
                     unit_id: 2,
@@ -1677,6 +2766,8 @@ mod spread_tests {
                         best_distance: 0.0,
                         claim_count: 0,
                     }),
+
+                    plain_progress: None,
                 },
             ],
             pools: BTreeMap::from([(9, pool)]),
@@ -1691,5 +2782,468 @@ mod spread_tests {
                 .map(|progress| progress.activity),
             Some(MovementActivity::Blocked)
         );
+    }
+
+    #[test]
+    fn zero_available_pool_slots_skip_repeated_grid_queries() {
+        let pool_id = 9;
+        let slots: Vec<_> = (0..5_000_u32)
+            .map(|index| Vec2::new(index as f32 + 1.0, 1.0))
+            .collect();
+        let pool = MovementPool {
+            pool_id,
+            point: Vec2::ZERO,
+            spacing: 1.1,
+            primary_count: 5_000,
+            slots: slots.clone(),
+        };
+        let index = MovementPoolIndex::new(&pool, Vec2::new(10_000.0, 10_000.0));
+        let assigned: std::collections::HashSet<_> = slots
+            .iter()
+            .map(|point| (pool_id, point.x.to_bits(), point.y.to_bits()))
+            .collect();
+        let is_free_calls = std::sync::atomic::AtomicUsize::new(0);
+        for _ in 0..5_000 {
+            assert_eq!(
+                index.nearest_free(1, Vec2::ZERO, pool_id, None, &assigned, 0.5, |_| {
+                    is_free_calls.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    true
+                },),
+                None
+            );
+        }
+        assert_eq!(is_free_calls.load(std::sync::atomic::Ordering::Relaxed), 0);
+    }
+
+    #[test]
+    fn nearest_free_checks_the_final_reach_interval() {
+        let pool = MovementPool {
+            pool_id: 4,
+            point: Vec2::ZERO,
+            spacing: 1.0,
+            primary_count: 1,
+            slots: vec![Vec2::new(300.0, 0.0)],
+        };
+        let mut index = MovementPoolIndex::new(&pool, Vec2::new(300.0, 300.0));
+        index.clearances[0] = super::SlotClearance::empty();
+        index.available_by_clearance.insert(super::ClearanceRank {
+            clearance: f64::INFINITY,
+            slot_index: 0,
+        });
+        index.available_slot_indices.insert(0);
+        assert_eq!(
+            index.nearest_free(
+                1,
+                Vec2::ZERO,
+                pool.pool_id,
+                None,
+                &std::collections::HashSet::new(),
+                0.5,
+                |_| true,
+            ),
+            Some(Vec2::new(300.0, 0.0))
+        );
+    }
+
+    #[test]
+    fn unavailable_spares_are_not_hidden_by_an_assigned_free_primary() {
+        let pool = MovementPool {
+            pool_id: 9,
+            point: Vec2::ZERO,
+            spacing: 1.1,
+            primary_count: 1,
+            slots: vec![Vec2::ZERO, Vec2::new(10.0, 0.0), Vec2::new(11.0, 0.0)],
+        };
+        let mut index = MovementPoolIndex::new(&pool, Vec2::new(20.0, 20.0));
+        let units = vec![
+            MovementFrameUnit {
+                unit_id: 1,
+                owner_slot: 0,
+                unit_type: 1,
+                position: Vec2::new(5.0, 0.0),
+                radius: 0.5,
+                speed: Some(3.0),
+                target: Some(Vec2::new(12.0, 0.0)),
+                progress: None,
+
+                plain_progress: None,
+            },
+            MovementFrameUnit {
+                unit_id: 99,
+                owner_slot: 1,
+                unit_type: 2,
+                position: Vec2::new(10.5, 0.0),
+                radius: 1.0,
+                speed: None,
+                target: None,
+                progress: None,
+
+                plain_progress: None,
+            },
+        ];
+        let points = units
+            .iter()
+            .map(|unit| crate::grid::GridPoint {
+                id: unit.unit_id,
+                position: unit.position,
+            })
+            .collect::<Vec<_>>();
+        let grid = crate::grid::UniformGrid::new(&points, 2.0);
+        let assigned = std::collections::HashSet::from([(
+            pool.pool_id,
+            Vec2::ZERO.x.to_bits(),
+            Vec2::ZERO.y.to_bits(),
+        )]);
+        for slot_index in 0..index.points.len() {
+            let point = index.points[slot_index].position;
+            index.refresh_slot_clearance(
+                slot_index,
+                &units,
+                &points,
+                &grid,
+                1.0,
+                assigned.contains(&(pool.pool_id, point.x.to_bits(), point.y.to_bits())),
+            );
+        }
+        assert!(!index.has_potential_free_slot(1, units[0].position, 0.5, None));
+    }
+
+    #[test]
+    fn step_frame_rejects_fully_occupied_spares_without_pool_wide_stalled_scans() {
+        let count = 64_usize;
+        let bounds = Vec2::splat(512.0);
+        let center = Vec2::splat(256.0);
+        let starts = (0..count)
+            .map(|index| {
+                Vec2::new(
+                    10.0 + (index % 8) as f32 * 3.0,
+                    10.0 + (index / 8) as f32 * 3.0,
+                )
+            })
+            .collect::<Vec<_>>();
+        let members = starts
+            .iter()
+            .enumerate()
+            .map(|(index, &position)| SpreadMember {
+                id: index as u32 + 1,
+                position,
+                radius: [0.2, 0.3, 0.5][index % 3],
+            })
+            .collect::<Vec<_>>();
+        let (pool, assignments) = spread_destinations(&members, center, &[], &[], bounds);
+        let target_by_id = assignments.iter().copied().collect::<BTreeMap<_, _>>();
+        assert_eq!(pool.primary_count, count as u32);
+        assert_eq!(pool.slots.len(), count + count.div_ceil(4));
+        let assigned_keys = assignments
+            .iter()
+            .map(|(_, target)| (target.x.to_bits(), target.y.to_bits()))
+            .collect::<std::collections::HashSet<_>>();
+        let primary_keys = pool.slots[..count]
+            .iter()
+            .map(|target| (target.x.to_bits(), target.y.to_bits()))
+            .collect::<std::collections::HashSet<_>>();
+        assert_eq!(assigned_keys, primary_keys);
+
+        let mut units = Vec::new();
+        for index in 0..count {
+            let unit_id = index as u32 + 1;
+            let position = starts[index];
+            let radius = [0.2, 0.3, 0.5][index % 3];
+            let target = target_by_id[&unit_id];
+            let direction = (target - position).normalize();
+            let blocker_position = position + direction * (radius + 0.5001);
+            assert!((radius + 0.5..radius + 0.502).contains(&position.distance(blocker_position)));
+            units.push(MovementFrameUnit {
+                unit_id,
+                owner_slot: 0,
+                unit_type: index as u32,
+                position,
+                radius,
+                speed: Some(0.05),
+                target: Some(target),
+                progress: Some(MoveProgress {
+                    pool_id: 9,
+                    slot: target,
+                    activity: MovementActivity::Moving,
+                    pass_mode: true,
+                    stalling_on_group: false,
+                    stalled_ticks: 19,
+                    best_distance: position.distance(target),
+                    claim_count: 0,
+                }),
+
+                plain_progress: None,
+            });
+            units.push(MovementFrameUnit {
+                unit_id: 10_000 + unit_id,
+                owner_slot: 1,
+                unit_type: 4,
+                position: blocker_position,
+                radius: 0.5,
+                speed: None,
+                target: None,
+                progress: None,
+
+                plain_progress: None,
+            });
+        }
+        for (index, &point) in pool.slots.iter().skip(count).enumerate() {
+            units.push(MovementFrameUnit {
+                unit_id: 20_000 + index as u32,
+                owner_slot: 1,
+                unit_type: 4,
+                position: point,
+                radius: 0.5,
+                speed: Some(3.0),
+                target: None,
+                progress: Some(MoveProgress {
+                    pool_id: 77,
+                    slot: point,
+                    activity: MovementActivity::Resting,
+                    pass_mode: false,
+                    stalling_on_group: false,
+                    stalled_ticks: 0,
+                    best_distance: 0.0,
+                    claim_count: 0,
+                }),
+
+                plain_progress: None,
+            });
+        }
+        for (left_index, left) in units.iter().enumerate() {
+            for right in &units[left_index + 1..] {
+                assert!(
+                    left.position.distance(right.position) + 1.0e-5 >= left.radius + right.radius,
+                    "invalid overlapping fixture units {} and {}",
+                    left.unit_id,
+                    right.unit_id
+                );
+            }
+        }
+        assert!(pool.slots[..count].iter().all(|slot| {
+            units
+                .iter()
+                .all(|unit| slot.distance(unit.position) + 1.0e-5 >= 0.5 + unit.radius)
+        }));
+        let frame = MovementFrame {
+            bounds,
+            tick_hz: 20,
+            units,
+            pools: BTreeMap::from([(9, pool)]),
+        };
+        super::POOL_SLOT_CANDIDATE_CHECKS.with(|checks| checks.set(0));
+        let output = step_frame(&frame, 0.05);
+        let inspected = super::POOL_SLOT_CANDIDATE_CHECKS.with(std::cell::Cell::get);
+        assert!(
+            output[..count].iter().all(|row| row.failed_blocked),
+            "stalled outputs: {:?}",
+            &output[..3]
+        );
+        assert!(
+            inspected < count,
+            "{count} stalled units inspected {inspected} pool slot candidates despite every spare being occupied"
+        );
+        eprintln!("canonical N={count} occupied-spare candidate inspections={inspected}");
+    }
+}
+
+#[cfg(test)]
+mod plain_movement_tests {
+    use super::{
+        MovementActivity, MovementFrame, MovementFrameUnit, PlainMoveProgress, step_frame,
+    };
+    use bevy_math::Vec2;
+    use std::collections::BTreeMap;
+
+    fn stalled_plain_frame(pool_slots: Vec<Vec2>) -> MovementFrame {
+        let point = Vec2::new(20.0, 10.0);
+        MovementFrame {
+            bounds: Vec2::splat(64.0),
+            tick_hz: 20,
+            units: vec![
+                MovementFrameUnit {
+                    unit_id: 1,
+                    owner_slot: 0,
+                    unit_type: 1,
+                    position: Vec2::new(10.0, 10.0),
+                    radius: 0.5,
+                    speed: Some(0.05),
+                    target: Some(point),
+                    progress: None,
+                    plain_progress: Some(PlainMoveProgress {
+                        original_point: point,
+                        slot: point,
+                        pool_slots,
+                        gather_goal: None,
+                        activity: MovementActivity::Moving,
+                        stalled_ticks: 19,
+                        best_distance: 10.0,
+                        claim_count: 0,
+                        failure_recorded: false,
+                    }),
+                },
+                MovementFrameUnit {
+                    unit_id: 2,
+                    owner_slot: 1,
+                    unit_type: 2,
+                    position: Vec2::new(11.0001, 10.0),
+                    radius: 0.5,
+                    speed: None,
+                    target: None,
+                    progress: None,
+                    plain_progress: None,
+                },
+            ],
+            pools: BTreeMap::new(),
+        }
+    }
+
+    #[test]
+    fn plain_stall_claims_nearest_spare_and_never_requeues_a_used_slot() {
+        let frame = stalled_plain_frame(vec![Vec2::new(13.0, 10.0), Vec2::new(15.0, 10.0)]);
+        let first = step_frame(&frame, 0.05).remove(0);
+        let first_progress = first.plain_progress.unwrap();
+        assert_eq!(first.target, Some(Vec2::new(13.0, 10.0)));
+        assert_eq!(first_progress.slot, Vec2::new(13.0, 10.0));
+        assert_eq!(first_progress.claim_count, 1);
+        assert_eq!(first_progress.pool_slots, vec![Vec2::new(15.0, 10.0)]);
+
+        let mut second_frame = frame;
+        second_frame.units[0].position = first.position;
+        second_frame.units[0].target = first.target;
+        second_frame.units[0].plain_progress = Some(PlainMoveProgress {
+            stalled_ticks: 19,
+            best_distance: first.position.distance(Vec2::new(13.0, 10.0)),
+            ..first_progress
+        });
+        let second = step_frame(&second_frame, 0.05).remove(0);
+        let second_progress = second.plain_progress.unwrap();
+        assert_eq!(second.target, Some(Vec2::new(15.0, 10.0)));
+        assert_eq!(second_progress.slot, Vec2::new(15.0, 10.0));
+        assert_eq!(second_progress.claim_count, 2);
+        assert!(!second_progress.pool_slots.contains(&Vec2::new(20.0, 10.0)));
+    }
+
+    #[test]
+    fn plain_move_without_a_spare_blocks_on_the_first_one_second_deadline() {
+        let frame = stalled_plain_frame(Vec::new());
+        let output = step_frame(&frame, 0.05).remove(0);
+        let progress = output.plain_progress.unwrap();
+        assert_eq!(progress.activity, MovementActivity::Blocked);
+        assert_eq!(progress.stalled_ticks, 20);
+        assert_eq!(output.target, None);
+        assert!(output.failed_blocked);
+    }
+
+    #[test]
+    fn independent_plain_pools_cannot_claim_the_same_reserved_spare() {
+        let shared_spare = Vec2::new(13.0, 15.0);
+        let make_mover = |unit_id, position: Vec2, target: Vec2, blocker: Vec2| {
+            vec![
+                MovementFrameUnit {
+                    unit_id,
+                    owner_slot: unit_id as u8,
+                    unit_type: unit_id,
+                    position,
+                    radius: 0.5,
+                    speed: Some(0.05),
+                    target: Some(target),
+                    progress: None,
+                    plain_progress: Some(PlainMoveProgress {
+                        original_point: target,
+                        slot: target,
+                        pool_slots: vec![shared_spare],
+                        gather_goal: None,
+                        activity: MovementActivity::Moving,
+                        stalled_ticks: 19,
+                        best_distance: position.distance(target),
+                        claim_count: 0,
+                        failure_recorded: false,
+                    }),
+                },
+                MovementFrameUnit {
+                    unit_id: unit_id + 10,
+                    owner_slot: 2,
+                    unit_type: 20,
+                    position: blocker,
+                    radius: 0.5,
+                    speed: None,
+                    target: None,
+                    progress: None,
+                    plain_progress: None,
+                },
+            ]
+        };
+        let frame = MovementFrame {
+            bounds: Vec2::splat(64.0),
+            tick_hz: 20,
+            units: [
+                make_mover(
+                    1,
+                    Vec2::new(10.0, 10.0),
+                    Vec2::new(20.0, 10.0),
+                    Vec2::new(11.0001, 10.0),
+                ),
+                make_mover(
+                    2,
+                    Vec2::new(10.0, 20.0),
+                    Vec2::new(20.0, 20.0),
+                    Vec2::new(11.0001, 20.0),
+                ),
+            ]
+            .concat(),
+            pools: BTreeMap::new(),
+        };
+
+        let output = step_frame(&frame, 0.05);
+        assert_eq!(output[0].target, Some(shared_spare));
+        assert_eq!(output[0].plain_progress.as_ref().unwrap().claim_count, 1);
+        assert_eq!(output[1].target, None);
+        assert_eq!(
+            output[1].plain_progress.as_ref().unwrap().activity,
+            MovementActivity::Blocked
+        );
+    }
+
+    #[test]
+    fn plain_move_with_zero_legal_primary_slots_blocks_before_moving() {
+        let start = Vec2::new(0.5, 0.5);
+        let frame = MovementFrame {
+            bounds: Vec2::splat(1.5),
+            tick_hz: 20,
+            units: vec![
+                MovementFrameUnit {
+                    unit_id: 1,
+                    owner_slot: 0,
+                    unit_type: 1,
+                    position: start,
+                    radius: 0.5,
+                    speed: Some(3.0),
+                    target: Some(Vec2::new(1.0, 1.0)),
+                    progress: None,
+                    plain_progress: None,
+                },
+                MovementFrameUnit {
+                    unit_id: 2,
+                    owner_slot: 1,
+                    unit_type: 2,
+                    position: Vec2::new(1.2, 1.2),
+                    radius: 0.2,
+                    speed: None,
+                    target: None,
+                    progress: None,
+                    plain_progress: None,
+                },
+            ],
+            pools: BTreeMap::new(),
+        };
+
+        let output = step_frame(&frame, 0.05).remove(0);
+        let progress = output.plain_progress.unwrap();
+        assert_eq!(progress.activity, MovementActivity::Blocked);
+        assert_eq!(progress.slot, Vec2::new(1.0, 1.0));
+        assert!(progress.pool_slots.is_empty());
+        assert_eq!(output.position, start);
+        assert_eq!(output.target, None);
     }
 }

@@ -12,3 +12,6 @@ bevy_ecs = { workspace = true }
 bevy_time = { workspace = true }
 bevy_math = { workspace = true, features = ["serialize"] }
 serde = { workspace = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }
