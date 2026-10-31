@@ -200,3 +200,11 @@ Conflict: Trunk passed, but T7 exited1 before any browser test because tests/bro
 Choice: run npm ci --offline --prefix tests/browser in the lane. Record actual exit code and unchanged package/lock hashes, then rerun T7 with the same source, target, C12 launch profile and external evidence path. Retain missing-moduleRC1 as infrastructure failure, never semantic red. Ordinary locked prerequisite installation proceeds within task authorization.
 
 Alternative not taken: add or upgrade a package, share node_modules across worktrees, count the missing-module attempt as a game failure, or ask the CEO to approve existing task setup. No tracked dependency, game or acceptance change.
+
+## C24: prepare the second Wave4 lane without a second compiler cache
+
+Conflict: plan Wave4 permits Tasks4/9 together, and Task9 assigns headless core tests to ux-designer. Full parallel builds duplicate large dependency outputs; the CEO asked to prevent disk growth. Brief4 allows lane/cache/layout decisions. Task9 needs1/8/2b, so it may prepare while Task4 owns the compiler.
+
+Choice: RUN32 builds Task4 in its own lane with the sole warm target/mc-t4. RUN33 reads Task9 in its own branch/worktree and writes Rust test drafts only under main target/mc-evidence/t9-ux-prep/run33/drafts; no Cargo, implementation or tracked source edits. The later Task9 Bevy builder imports those authored drafts, adds compiling signatures, observes named semantic red, implements green, commits, gates and plants in the required order. Rebase the still-clean Task9 lane onto integration after Task4 so shared registries merge in task order. Each dispatch is counted before it starts.
+
+Alternative not taken: duplicate caches or build binaries concurrently, treat unexecuted drafts as red/pass, or drop the UX test-author seat. No scope, key, acceptance row or stop-rule change.

@@ -8,7 +8,7 @@ source: codex
 
 # MC execution board
 
-State: ACTIVE: Waves1-2 complete and pushed98135d3. Wave2 CI41148971118 terminal: check/agents success, browser unchanged M2 economy timeout after T7 passed89frames. T2b64cd400: Rust886/0/18, QA, acceptance, web and frozen green; GREF8/10, independent runtime/plant pending. Build31/170. C1-C23 recorded. Mainc3f09d0 untouched; one cache.
+State: ACTIVE: Waves1-3 complete (8 of25 lanes), pushed6d2c46e. Task2b64cd400 accepted0High/0Medium; root re-gate12commands0,886/0/18,T7(138frames). Wave3 CI41157502932 queued. Runs32T4/33T9UX registered, build33/170. C1-C24 recorded. One cache reserved forT4; T9UX drafts only. Mainc3f09d0 untouched.
 
 Plan: `docs/superpowers/plans/2026-10-29-mc-player-control.md`.
 Design of record: `docs/superpowers/specs/2026-10-29-mc-player-control-design.md`, revision12 at63788d7, included by mainc3f09d0.
@@ -73,9 +73,9 @@ CI trigger: `.github/workflows/ci.yml:2-5` runs pushes to main and pull requests
 | T8 | 2 | 2a, 3 | codex/mc-t8 | COMPLETE merge461d105; review0High/0Medium; integration G-RUST/G-QA/G-FROZEN0; lane removed |
 | T18 | 2 | 3 | codex/mc-t18 | COMPLETE candidate179ada7; mergeb1b3834; review0High/0Medium; all integration gates0 including C12 T7; lane removed |
 | T19 | 2 | 3 | codex/mc-t19 | COMPLETE merge98135d3; review0High/0Medium; all integration gates0; lane removed |
-| T2b | 3 | 2a, 3, 18 | codex/mc-t2b | REGISTERED run30; message-size trace first |
-| T4 | 4 | 2b, 3 | codex/mc-t4 | NOT STARTED |
-| T9 | 4 | 1, 8, 2b | codex/mc-t9 | NOT STARTED |
+| T2b | 3 | 2a, 3, 18 | codex/mc-t2b | COMPLETE64cd400; merge6d2c46e; all gates/10GREF0; review0H/0M; lane removed |
+| T4 | 4 | 2b, 3 | codex/mc-t4 | REGISTERED RUN32 builder; exclusive compiler first |
+| T9 | 4 | 1, 8, 2b | codex/mc-t9 | REGISTERED RUN33 UX test drafts only, no Cargo |
 | T6 | 5 | 4 | codex/mc-t6 | NOT STARTED |
 | T7 | 5 | 2b, 4 | codex/mc-t7 | NOT STARTED |
 | T11 | 5 | 9, 19, 20 | codex/mc-t11 | NOT STARTED |
@@ -221,8 +221,10 @@ One row per builder/reviewer dispatch or resumed agent work turn. Register befor
 | 27 | T18 independent recheck | mod-runtime-engineer | gpt-6.1-sol | high | ead4fef | PASS179ada7:0High/0Medium;36 independenttests0, own input-rowred101/restored0; source/PNG/frozen/gates/C7 audited; clean/idle. |
 | 28 | T19 implementation | mod-builder | gpt-6-luna | high | 62bb518 | COMPLETE39a74e3: missing-package/repair named reds101, 8tests0, strict scan9/9, G-RUST/GQA0; merge98135d3. |
 | 29 | T19 independent review | ux-designer | gpt-6.1-sol | high | 39a74e3 | PASS0High/0Medium; 8+9tests0; saved-copy offset plant0/101/0, exact restoration; task4runs/hard12. |
-| 30 | T2b implementation | network-engineer | gpt-6-luna | high | 363d02d | ACTIVE64cd400; transport traced; semantic reds/greens for Hello, hook, C18/C19/C21/C22; formal gates running; task2runs total/hard16. |
-| 31 | T2b independent review | mod-runtime-engineer; qa-lead registry lens | gpt-6.1-sol | high | 363d02d; final candidate pending | REGISTERED read-only audit first; compiler waits builder handoff; task2/estimate4/hard16. |
+| 30 | T2b implementation | network-engineer | gpt-6-luna | high | 363d02d | COMPLETE64cd400;14gate receipts0,886/0/18,10GREF(69commands) namedred/restoredgreen; merge6d2c46e. |
+| 31 | T2b independent review | mod-runtime-engineer; qa-lead registry lens | gpt-6.1-sol | high | 64cd400 | PASS0High/0Medium;26focused tests0, capplant0/101/0, all14gates/10GREF audited; sourceclean; task2runs/estimate4. |
+| 32 | T4 implementation | simulation-core-engineer | gpt-6-luna | high | 6d2c46e plus vault | REGISTERED; red-first queue/audit/validator; task1/estimate8/soft16/hard32. |
+| 33 | T9 core-test preparation | ux-designer | gpt-6-luna | high | 6d2c46e plus vault | REGISTERED C24 external drafts only; no Cargo/source edits; task1/estimate6/soft12/hard24. |
 
 ## 9. Preflight ledger and stop
 
