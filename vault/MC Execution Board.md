@@ -8,7 +8,7 @@ source: codex
 
 # MC execution board
 
-State: ACTIVE:9of25lanes complete; Task4 merge0490ebd rootgates12/12exit0 (984/0/18,T7=138frames/53moving,M3controls,frozen). Task9 RUN36 implementation starts from61535fc with sole cache. Wave4 awaitsTask9; lastCI Wave3 check/agents passed, known browser timeout. Build36/170; C1-C59. Mainc3f09d0 untouched.
+State: ACTIVE:9of25lanes complete; Task4 merge0490ebd rootgates12/12exit0. Task9 RUN36 has compiled semantic reds for all6headless targets and3PROJ1viewports; behavior implementation active. RUN37 independent source review registered, no competing compiler. Wave4 awaitsTask9. Build37/170; C1-C59. Mainc3f09d0 untouched.
 
 Plan: `docs/superpowers/plans/2026-10-29-mc-player-control.md`.
 Design of record: `docs/superpowers/specs/2026-10-29-mc-player-control-design.md`, revision12 at63788d7, included by mainc3f09d0.
@@ -227,7 +227,8 @@ One row per builder/reviewer dispatch or resumed agent work turn. Register befor
 | 33 | T9 core-test preparation | ux-designer | gpt-6-luna | high | ab6ffd8 | COMPLETE draft-only; external tests/contract, SHA76817063...a2d629, T9 clean, no Cargo, no observed red/green. |
 | 34 | T4 independent review | qa-lead | gpt-6.1-sol | high | 2c45b83 | PASS0High/0Medium;65independenttests0,ownsemanticplant0/101/0; exactrestore/cacheidle. |
 | 35 | T9 implementation preparation | bevy-rendering-engineer | gpt-6-luna | high | 3203f6b | COMPLETE preparation only: imported tests, API stubs, PROJ1/CLICK9 drafts; uncompiled/unexecuted/uncommitted; task2/estimate6/soft12/hard24. |
-| 36 | T9 implementation continuation | bevy-rendering-engineer | gpt-6-luna | high | 61535fc | REGISTERED before resume; actual semantic reds first, then full Task9; task3/estimate6/soft12/hard24. |
+| 36 | T9 implementation continuation | bevy-rendering-engineer | gpt-6-luna | high | 61535fc | ACTIVE: six headless targets and three PROJ1 viewports compiled semantic red101; full behavior implementation follows. |
+| 37 | T9 independent review | technical-director | gpt-6.1-sol | high | 61535fc + active RUN36 diff | REGISTERED before dispatch; read-only source review now, independent runtime/plant after exclusive handoff; task4/estimate6/soft12/hard24. |
 
 ## 9. Preflight ledger and stop
 
@@ -457,3 +458,6 @@ Task4 integrated re-gate complete on61535fc (code merge0490ebd):12commands allac
 Clean/merged Task4 lane archived in t4-completion-provenance.json and removed; branchretained. Onecache moved byrename tointegration thenT9,4workspaceprofilecleans each0; firstmove reclaimed7.9GiB+691.7MiB+6.7MiB+161MiB rebuildableoutputs. No evidence/protected main audit deleted. T9 source stashed/rebased61535fc/restored with all19hashes preserved (run35/rebase-after-t4/receipt.json), later fixture improvements documented; sole cache nowtarget/mc-t9. Root source-only preflight strengthened KM3 independent time/distance boundaries, made PROJ1 three separate cases and corrected target-kind/plain/forceMove composition (C59). Still no Task9 observedsemanticred orfeatureclaim.
 
 RUN36 registered before implementation resume, Luna/high, global36/170, T9run3/estimate6/soft12/hard24. FullTask9 follows red→green→commit→gates→plants; --actions remainsTask10 stub; legacy traces/panel inputs survive until owning tasks. No wave4push untilTask9 complete. Mainunchanged.
+
+
+RUN36 compiled-red checkpoint root-read: six headless targets failed semantically, all three PROJ1 viewport tests failed numeric tolerance; no compilation error in accepted red logs. Raw logs main target/mc-evidence/t9-builder/run36/{interaction-red-all,proj1-red-semantic}.log. RUN37 registered before dispatch for independent technical-director source review, then runtime/plant after builder cache handoff. Global37/170, Task9run4/estimate6/soft12/hard24. Original setup errors remain retained.
