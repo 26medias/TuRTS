@@ -8,7 +8,7 @@ source: codex
 
 # MC execution board
 
-State: ACTIVE: Waves1-3 complete (8 of25 lanes), pushed6d2c46e. Wave3 check/agents passed; known browser timeout remains. Task4 candidate2c45b83 has runtime code identical to gate-green0240 (984/0/18), both planplants verified; finalGREF/independent runtime pending. Task9 source/test preparation complete, uncompiled. Build35/170; C1-C58. One compiler/cache. Mainc3f09d0 untouched.
+State: ACTIVE: Waves1-3 complete; Task4 merged0490ebd after PASS2c45b83 (0High/0Medium), integration re-gate pending. Eight lanes complete plus Task4 merged; Task9 source/test preparation uncompiled. Wave4 not yet pushed; Wave3 check/agents green, known browser timeout. Build35/170; C1-C58. Mainc3f09d0 untouched.
 
 Plan: `docs/superpowers/plans/2026-10-29-mc-player-control.md`.
 Design of record: `docs/superpowers/specs/2026-10-29-mc-player-control-design.md`, revision12 at63788d7, included by mainc3f09d0.
@@ -74,8 +74,8 @@ CI trigger: `.github/workflows/ci.yml:2-5` runs pushes to main and pull requests
 | T18 | 2 | 3 | codex/mc-t18 | COMPLETE candidate179ada7; mergeb1b3834; review0High/0Medium; all integration gates0 including C12 T7; lane removed |
 | T19 | 2 | 3 | codex/mc-t19 | COMPLETE merge98135d3; review0High/0Medium; all integration gates0; lane removed |
 | T2b | 3 | 2a, 3, 18 | codex/mc-t2b | COMPLETE64cd400; merge6d2c46e; all gates/10GREF0; review0H/0M; lane removed |
-| T4 | 4 | 2b, 3 | codex/mc-t4 | REGISTERED RUN32 builder; exclusive compiler first |
-| T9 | 4 | 1, 8, 2b | codex/mc-t9 | REGISTERED RUN33 UX test drafts only, no Cargo |
+| T4 | 4 | 2b, 3 | codex/mc-t4 | MERGED0490ebd after PASS2c45b83; all gates/36GREF/planplants; root re-gate pending |
+| T9 | 4 | 1, 8, 2b | codex/mc-t9 | RUN33/35 preparation complete; uncompiled source/test stubs; awaiting integration gate/cache |
 | T6 | 5 | 4 | codex/mc-t6 | NOT STARTED |
 | T7 | 5 | 2b, 4 | codex/mc-t7 | NOT STARTED |
 | T11 | 5 | 9, 19, 20 | codex/mc-t11 | NOT STARTED |
@@ -223,9 +223,9 @@ One row per builder/reviewer dispatch or resumed agent work turn. Register befor
 | 29 | T19 independent review | ux-designer | gpt-6.1-sol | high | 39a74e3 | PASS0High/0Medium; 8+9tests0; saved-copy offset plant0/101/0, exact restoration; task4runs/hard12. |
 | 30 | T2b implementation | network-engineer | gpt-6-luna | high | 363d02d | COMPLETE64cd400;14gate receipts0,886/0/18,10GREF(69commands) namedred/restoredgreen; merge6d2c46e. |
 | 31 | T2b independent review | mod-runtime-engineer; qa-lead registry lens | gpt-6.1-sol | high | 64cd400 | PASS0High/0Medium;26focused tests0, capplant0/101/0, all14gates/10GREF audited; sourceclean; task2runs/estimate4. |
-| 32 | T4 implementation | simulation-core-engineer | gpt-6-luna | high | ab6ffd8 | ACTIVE0240e9a; final fmt/clippy/wasm/workspace0 (984/0/18); remaining gates/plants/GREF; task1/estimate8/soft16/hard32. |
+| 32 | T4 implementation | simulation-core-engineer | gpt-6-luna | high | ab6ffd8 | COMPLETE2c45b83:984/0/18,all gates0,36GREF/156acceptedcommands,2planplants+7C55; merge0490ebd. |
 | 33 | T9 core-test preparation | ux-designer | gpt-6-luna | high | ab6ffd8 | COMPLETE draft-only; external tests/contract, SHA76817063...a2d629, T9 clean, no Cargo, no observed red/green. |
-| 34 | T4 independent review | qa-lead | gpt-6.1-sol | high | ab6ffd8; final0240e9a pending | ACTIVE source closure no known High; independent runtime/plant waits final gate/cachehandoff; task2/estimate8/soft16/hard32. |
+| 34 | T4 independent review | qa-lead | gpt-6.1-sol | high | 2c45b83 | PASS0High/0Medium;65independenttests0,ownsemanticplant0/101/0; exactrestore/cacheidle. |
 | 35 | T9 implementation preparation | bevy-rendering-engineer | gpt-6-luna | high | 3203f6b | COMPLETE preparation only: imported tests, API stubs, PROJ1/CLICK9 drafts; uncompiled/unexecuted/uncommitted; task2/estimate6/soft12/hard24. |
 
 ## 9. Preflight ledger and stop
@@ -444,3 +444,8 @@ GREF is live: original21M2 wrapper has11completed; omitted foreign-Gather will r
 
 
 C58 repaired the expected diagnostic of the same E8 partial-write mutation. Candidate2c45b83 differs from0240 ONLY that registry expected_failure; root/QA verified all other tracked blobs and reusedcase definitions identical. Original failed wrapper remains failed; root projected18actuallycompleted M2 cases/78commands and audited original guards/source hashes0. All14selected M3/42commands completed on0240 and root/QA actual-source/frozen/whole-source audits0; explicit final-source metadata mapping0. Remaining4M2 on2c45 has foreignGather and mixedcost complete, E9privacy/output pending at observation. Independent reviewer source/gate/plant report prepared, verdictPENDING ownruntime/GREF. Global35/170. No main action.
+
+
+Task4 accepted candidate2c45b8311906caf14793e7eb75b0bbb84462bdb1; independent RUN34 PASS0High/0unresolvedMedium. Root verified65actual tests16orders+7plain+41validator+1realE8, loghashes/RC0; ownautomatic-validator suppression compiledsemantic101 betweenbaseline/restored0, exactbytehashde85...; clean/cacheidle/frozenexact. Root audited36registeredplants/156acceptedcommands (120zero+36native101, includingprerequisites) with originalguards, actualexecutionSHAs and C58registry-only mapping. Full report [[2026-10-31 MC T4 final review]].
+
+Merged Task4 as0490ebdac49ddf09dfbe0d43935309ec75aaca10 withrequiredtrailer; no conflicts. Root diff against2c45 excludingvault is empty, so integratedruntime/test/data tree matchesreviewedcandidate. Integration re-gate is pending before lane removal or Task9 compiler transfer. All43changedpaths are in review; 13,137insertions/368deletions include comprehensiveauditmodels/tests. Historical development/proof limits and failedinstrumentation attempts remain disclosed. Global35/170, Task4 used2runs/estimate8; nooverrun. Main unchanged; Wave4 waitsTask9 beforepush.
