@@ -375,3 +375,34 @@ Choice: model actual allowed catalog-driven removal including disappearance of c
 Conflict: Task9 has no Task4 dependency, but the one-cache layout serializes compilation. The UX tests are drafted and the adapter/core observation seams need early source review.
 
 Choice: register main Task9 builder now on its own clean integration-based lane, for source/design audit, test import and minimal compiling signatures/stubs only. No feature behavior before actual observed semantic red; no Cargo/build/browser/cache use until root transfers exclusive compiler ownership. Root and builder settle internal read-only observation/projection/catalog-query seams during this preparation. Rebase lane after Task4 merge before compilation. Keep legacy literal --trace paths intact. Alternative not taken: wait idle, add another large cache, or implement behavior before tests.
+
+
+## C47: read-only core state and catalog-backed world facts (2026-10-31)
+
+Conflict: design2.2 signal effects omit state the adapter must read; nodes/capability flags cannot alone prove accepted item/weapon targets; Replica Candidate omits wire owner order records.
+
+Choice: Core::new(initial_camera), immutable selection/group/camera queries, pure projection/inverse used by the real adapter. No presentation setters. Add cached catalog-backed compatibility/selection-priority queries; no per-frame per-unit string parsing or permanent false fallback. Eligible distant weapon targets remain Attack candidates; current range is not a filter. Task9 ingests owner order records through snapshot/delta/removal/recovery. Default old map-centered pose holds untilT11. PROJ1 uses production camera-copy code. Alternative: mutable presentation state, test-only projection, or mock-only world completion.
+
+## C48: retain the preferred selection class (2026-10-31)
+
+Conflict: design4.1 allows mod selection_priority but only describes a mobile/static class rule; top-content-only filtering violates Muster SEL2 (40troopers+460beacons).
+
+Choice: earliest authored priority entry represented among own boxed candidates determines mobile/static class. Retain all candidates of that class, ordered by rank then stable id. If none listed, prefer mobile when present, otherwise static. Pin500mobile, static-first and partial-list cases. Actual InterfaceDef and Muster list agree; builder found no contradiction. Alternative: select one type, cap selection or ignore authored ordering. This fills the mechanism detail without changing acceptance rows.
+
+## C49: distinguish order identity from hotkey action (2026-10-31)
+
+Conflict: draft forge:move is not actual forge:order_move, while hotkey key_move references ActionDef.name and its physical bindings. JSON example schema is unspecified.
+
+Choice: UiAction.name uses qualified order id for authored orders; engine names stay table3.3. Resolve hotkey action to all bindings. Effective-bindings JSON has stable actions and qualified orders maps to Vec<Binding>. Shared merge logic serves adapter/example; engine defaults yield to mod overrides/defaults then stored player overrides whenT16 owns them. Alternative: flatten first binding, confuse hotkey/order identity or hardcode content.
+
+## C50: preserve machine cancellation (2026-10-31)
+
+Conflict: Task4 Cancel permits producer/research only, but legacy production.rs:169-173 routes machine cancellation and design5.3 retains M2/M3. Produce restrictions do not narrow Cancel.
+
+Choice: preserve machine-only Cancel capability and immutable item-recipe policy for replay. Test real Running/OutputBlocked refunds/events/state; preserve check priority. Alternative: regress machine commands or widen Produce.
+
+## C51: repair immediate replay families as a batch (2026-10-31)
+
+Conflict: consolidated QA source gaps remain in reserve canonical ordering, research eligibility/all-station/job allocation, late cancellation/removal refusal, idempotent extractor toggle and event-overflow preflight.
+
+Choice: shared real app/catalog fixtures cover research Produce/Cancel, machine Cancel stages, nonempty reserve canonical lines/refunds, late no-write refusals, idempotent toggles and job/event failures. Derive exact state/events/results from immutable policy and prior state. Reserve token/claim lines canonicalize by endpoint/resource; ChargeOnQueue metadata retains authored order. Test related families before broad gates. Alternative: weaken replay, trust capability flags alone or run full acceptance per small fix.
