@@ -152,3 +152,11 @@ Conflict: Task2b step2 names crates/turts_client/tests/commands.rs, but the real
 Choice: use the existing private-system unit-test pattern rather than exposing private internals for tests/commands.rs. The initial join.rs helper red is retained, but final coverage is in src/commands.rs:348, where the sender capture exists (send_commands_traced:224); it drives auto_move in join.rs:360 and inspects its sent PlayerCommand, including the first Move definition when other orders exist. A helper-only assertion is insufficient. Preserve the original compiled red101 and record any stronger hook red/green. Design5.5:548-549 specifies the hook behaviour; this choice changes the test location only.
 
 Alternative not taken: expose private client internals only to match a plan test path, or accept an unused helper as proof of the hook. No wire shape, key, player step or acceptance row changes.
+
+## C18: preserve legacy debug rejection fields for empty envelopes
+
+Conflict: reviewer RUN31 found debug.rs:221 requires refused to be nonempty before emitting rejected_tick/rejected. A rejected empty-body Move has no subjects, so accepted/refused are empty and envelope is Some(EmptyCommand). Task2b rules require the existing command_results rejection fields to remain available; design5.1 uses envelope for a no-unit refusal. Root read debug.rs:199-239 and the scenario result path.
+
+Choice: repair the Medium now. When accepted is empty, use the envelope reason or a refused-unit reason for rejected_tick/rejected. Add a compiled semantic red and green for an empty-envelope result and protect the partial-acceptance shape. Keep the reason, tick and seq unchanged.
+
+Alternative not taken: drop empty-command diagnostics, change the browser oracle to accept missing rejection fields, or defer the known compatibility break. No player key, step, acceptance row or protected content changes.
