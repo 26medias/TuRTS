@@ -8,7 +8,7 @@ source: codex
 
 # MC execution board
 
-State: ACTIVE: O12 released Task 6. Integration and all four open lanes rebased onto main721e56e (design revision13); dirty source hashes preserved.10of25lanes complete;46/170runs; Task6run4/6. C1-C91. No main merge.
+State: ACTIVE: O12 released Task 6. Integration and all four open lanes rebased onto main721e56e (design revision13); dirty source hashes preserved.10of25lanes complete;47/170runs; Task6run5/6. C1-C91. No main merge.
 
 Plan: `docs/superpowers/plans/2026-10-29-mc-player-control.md`.
 Design of record: `docs/superpowers/specs/2026-10-29-mc-player-control-design.md`, revision12 at63788d7, included by mainc3f09d0.
@@ -238,6 +238,7 @@ One row per builder/reviewer dispatch or resumed agent work turn. Register befor
 | 44 | T12 HUD1 instrument preparation continuation | bevy-rendering-engineer with ux-designer | gpt-6-luna | high | 2b22fa8 | COMPLETE HUD1 instrument preparation:8650131,Node75/0 with13oraclecases, strictDPRregression/plant0/1/0,QA0; actualbrowser/nativeHUD1NOTTRACED; T12run2/estimate8/soft16/hard32. |
 | 45 | T6 final independent review/recheck | performance-architect | gpt-6.1-sol | high | b4/d3+separatebuilderdirtyproof | COMPLETE SOURCE-ONLY understop; confirmsgeometryandbuildersemanticred;17areas/openHfindingsretained; no runtime/ownplant/PASS. |
 | 46 | T6 O12 repair continuation | simulation-core-engineer | gpt-6-luna | high | d4a8f97+preserved dirty | Registered before dispatch; O12 primary-slot, atomic failure and no-spare stall proofs; repair retained Highs and final gates. Task6run4/6, soft12/hard24. |
+| 47 | T6 independent O12 and retained-finding recheck | performance-architect | gpt-6.1-sol | high | rebased d4a8f97+active repair | Registered before continuation; source review first, runtime/own plant only after explicit cache handoff and stable gates. Task6run5/6, soft12/hard24. |
 
 ## 9. Preflight ledger and stop
 
@@ -653,3 +654,6 @@ Integration rebased onto721e56e. The only conflict was the daily work log add/ad
 O12 implementation checkpoint: RUN46 reproduced the original compiled singleton red101 on rebased source, then group-movement-o12-green2 passed21/21, exit0. Root read the raw logs and current assertions. This includes the reachable singleton, partial-spare four-unit pool, and impossible three-unit/two-slot atomic per-unit Blocked/no-movement case. The first attempted green retained two invalid fixture assertions (N2 actually fits; PendingMovementOrders::is_empty also checks scheduler IDs); root corrected the diagnosis and required test-only fixes, preserving the failed log. Current singleton proves fewer spares, not zero spares. Exact zero-spare1s deadline, actual replay, retained source findings, final gates/review/plants remain incomplete. No Task6 PASS or merge.
 
 Wave4 check phase is now TRACED: case E9-midtrace-rearm-ignored failed baseline.green before any plant (planted_sha256=null, baseline/restored source hashes equal). Root downloaded the32.8MB existing diagnostic artifact13042513668 and extracted only that case receipt/logs; no build or broad scratch extraction. main target/mc-evidence/wave4-native-trace/root-phase-audit.json records hashes. Cause remains NOT TRACED because no failing operation AuditState was retained in the artifact. Full acceptance must prove the same loss test green without weakening the independent accounting oracle.
+
+
+RUN47 registered before independent Sol/high reviewer continuation. Source review may overlap RUN46 repairs without cache/build/browser use. Review must cite exact captured bytes, distinguish repaired-source from runtime proof, recheck H1-H15 and O12, then wait for a stable committed candidate and explicit compiler handoff for independent runtime/own plant. No acceptance PASS before those steps. Budget47/170, Task6run5/estimate6; no overrun.
