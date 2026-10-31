@@ -6904,13 +6904,12 @@ mod tests {
                                 .inventories
                                 .iter_mut()
                                 .find(|inventory| inventory.unit == 1)
-                            {
-                                if let Some(item) = inventory.items.iter_mut().find(|item| {
+                                && let Some(item) = inventory.items.iter_mut().find(|item| {
                                     item.resource
                                         == turts_mod_api::ContentId::parse("fixture:ore").unwrap()
-                                }) {
-                                    item.on_hand = before_ore;
-                                }
+                                })
+                            {
+                                item.on_hand = before_ore;
                             }
                         }
                         EconomyLogRecord::Operation(operation) => {
@@ -6920,13 +6919,12 @@ mod tests {
                                 .inventories
                                 .iter_mut()
                                 .find(|inventory| inventory.unit == 1)
-                            {
-                                if let Some(item) = inventory.items.iter_mut().find(|item| {
+                                && let Some(item) = inventory.items.iter_mut().find(|item| {
                                     item.resource
                                         == turts_mod_api::ContentId::parse("fixture:ore").unwrap()
-                                }) {
-                                    item.on_hand = before_ore;
-                                }
+                                })
+                            {
+                                item.on_hand = before_ore;
                             }
                         }
                         _ => {}
