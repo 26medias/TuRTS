@@ -8,7 +8,7 @@ source: codex
 
 # MC execution board
 
-State: ACTIVE:10of25lanes complete. Wave4fb5e2d6 all12localintegrationgates green; hostedCI41195343950 agentsgreen, browserfailed with exactunchangedWave3 M2timeout, checknativeGREF running. Task6prototype14High/1Medium repairs active; Task7/11sourcepreparation andC84instrument ready, Task12analysis only. Build44/170,C1-C88; mainc3f09d0 unchanged.
+State: ACTIVE:10of25lanes complete. Wave4fb5e2d6 all12localintegrationgates green; hostedCI41195343950 agentsgreen, browserfailed with exactunchangedWave3 M2timeout, checknativeGREF running. Task6prototype14High/1Medium repairs active; Task7/11sourcepreparation andC84instrument ready, Task12analysis only. Build45/170,C1-C90; mainc3f09d0 unchanged.
 
 Plan: `docs/superpowers/plans/2026-10-29-mc-player-control.md`.
 Design of record: `docs/superpowers/specs/2026-10-29-mc-player-control-design.md`, revision12 at63788d7, included by mainc3f09d0.
@@ -76,7 +76,7 @@ CI trigger: `.github/workflows/ci.yml:2-5` runs pushes to main and pull requests
 | T2b | 3 | 2a, 3, 18 | codex/mc-t2b | COMPLETE64cd400; merge6d2c46e; all gates/10GREF0; review0H/0M; lane removed |
 | T4 | 4 | 2b, 3 | codex/mc-t4 | COMPLETE merge0490ebd; review0H/0M,36GREF,all12rootgates0; lane removed |
 | T9 | 4 | 1, 8, 2b | codex/mc-t9 | COMPLETE mergefb5e2d6; independent0High/0unresolvedMedium,69tests,7GREF,FOV/modifier plants,all12integrationgates0; archived lane removed, branch retained. |
-| T6 | 5 | 4 | codex/mc-t6 | ACTIVE RUN39; group movement, sole compiler lease granted, partial semantic red101 captured. |
+| T6 | 5 | 4 | codex/mc-t6 | Candidateb4bb0eb clean; fullsim/serverfunctionalgreens, formalexactgateslive, RUN45independentreviewstartingread-only. Noacceptance/mergeyet. |
 | T7 | 5 | 2b, 4 | codex/mc-t7 | ACTIVE RUN40; source/test preparation only, no compiler lease. |
 | T11 | 5 | 9, 19, 20 | codex/mc-t11 | ACTIVE RUN41 source/test preparation only, no compiler lease. |
 | T12 | 5 | 3, 9, 19, 20 | codex/mc-t12 | Analysis28legacytests +HUD1instrument8650131 ready; actualnative/browserred/widgetruntime/HUD4/allfinalproofpending. No legacy deletion. |
@@ -230,12 +230,13 @@ One row per builder/reviewer dispatch or resumed agent work turn. Register befor
 | 36 | T9 implementation continuation | bevy-rendering-engineer | gpt-6-luna | high | 61535fc | COMPLETE native implementation handoff only; initial semantic reds, C49/C69-C73 repairs and native proofs. Task verification continues in RUN38. |
 | 37 | T9 independent review | technical-director | gpt-6.1-sol | high | abe0841 | COMPLETE PASS0High/0unresolvedMedium;69 independent checks,7/7 GREF audited,FOV3 audited, own modifier0/101/0,63 source hashes restored, clean/cache ROOT. |
 | 38 | T9 pixel proof and final verification continuation | bevy-rendering-engineer | gpt-6-luna | high | abe0841 | COMPLETE: fresh base/CLICK9, all standard gates0,7/7 GREF45commands,FOV0/101/0, clean final index. T9run5/estimate6/soft12/hard24. Historical setup failures preserved. |
-| 39 | T6 group movement builder | simulation-core-engineer | gpt-6-luna | high | 487f6c9 | ACTIVE RUN39; owns sole cache; partial compiled overlap red101 captured, full named fixture suite in preparation; estimate6/soft12/hard24. |
+| 39 | T6 group movement builder | simulation-core-engineer | gpt-6-luna | high | 487f6c9 | ACTIVE RUN39; candidateb4bb0eb clean,sim/servergreens, exactformalgateslive; retainssolecache; estimate6/soft12/hard24. |
 | 40 | T7 server session builder | backend-engineer | gpt-6-luna | high | 487f6c9 | COMPLETE RED-READY source preparation only; scoped hashes/stubs/inventory, no compiled red or behavior acceptance; estimate4/soft8/hard16. |
 | 41 | T11 camera and light preparation | bevy-rendering-engineer | gpt-6-luna | high | 30fc272 | COMPLETE source preparation only; scoped snapshots, static0; native/browser red and behavior NOTTRACED; estimate4/soft8/hard16. |
 | 42 | T6 independent performance/determinism review | performance-architect | gpt-6.1-sol | high | 487f6c9+working | COMPLETE early SOURCE review only;14High/1Medium stableH1-H15 with9-file exactsnapshot/17areas; finalruntime/ownplant/PASS pending, new run count before reviewer continuation; T6run2/estimate6/soft12/hard24. |
 | 43 | T12 widget/guide/cursor preparation | bevy-rendering-engineer with ux-designer | gpt-6-luna | high | 2b22fa8 | COMPLETE analysis only; no code/stubs/rows created, notREDREADY; rootverified28testinventory/3actualplants; native/browser NOTTRACED; estimate8/soft16/hard32. |
 | 44 | T12 HUD1 instrument preparation continuation | bevy-rendering-engineer with ux-designer | gpt-6-luna | high | 2b22fa8 | COMPLETE HUD1 instrument preparation:8650131,Node75/0 with13oraclecases, strictDPRregression/plant0/1/0,QA0; actualbrowser/nativeHUD1NOTTRACED; T12run2/estimate8/soft16/hard32. |
+| 45 | T6 final independent review/recheck | performance-architect | gpt-6.1-sol | high | b4bb0eb | REGISTERED before completed-reviewer followup; source read-only whilebuilderformal gates, runtime/ownplant afterexclusivelease; T6run3/estimate6/soft12/hard24. |
 
 ## 9. Preflight ledger and stop
 
@@ -601,3 +602,18 @@ Choice: Task11 may add the one boolean field to the actual launcher parameter ge
 Thisturn progress: Task6simpackagefullsuite7 actual0, movement16/orders16/command12 green, GM40/GMAactualaudits+corruption andqueuedGather auditcontrols0; finalserver suite stillred atindependentmoving-gatherer accounting. Root preservedproductionsource and diagnosed double-step arrival (post-stepdistancecomparedagainstfullstepcausesextrasnap), instructedfixproduction withoutweakening accountingoracle. EarlierrealGMAoverlapalert counted same-group pairs; correctedcross-groupfilter perdesign, finalall-pairsrestchecksretained. F/Istrongall80stable2s/noMoveTarget/nooverlapgreen; weakerfi-repair2 remainsunacceptedattempt. Costphasecontext/gridcache andsmall-radius/finite-ring fixes active, fullgates/commit/frozen/GREF/independentreview stillpending.
 
 Task7rootprepared30Hz exactfractionalrefilltests21/21/22envelopes and5461/5461/5462units across3ticks, plusactualscriptmotiontick10; sourceonly, no compiler/semanticred. Task11rootstrengthened nativecamera boundary/playeredge/keyrelease/focuslost/height/group-centretests andC87FOVunits, stilluncompiled. C88launcherparaminstrument8937c98 hasrealgeneratorred1,Node72green0,postcommit0/1/0exactrestore. Task12HUD1instrument8650131 verified13oraclecases/allNode75green,actualDPRwrongfactorred1→green0andpostcommitplant0/1/0exactrestore; allQA0. These areinstrument proofs, notnative/browsergameacceptance. Global44/170, no newagentdispatchthisrecord, no stopcondition/mainaction.
+
+
+## C89: observe synthetic retarget cadence before collision resolution (2026-10-31)
+
+Conflict: unit_boot.rs388-438 compared MoveTarget after Movement against the synthetic requested point. Task6 collision avoidance may legitimately choose a free navigation destination; synthetic.rs93-120 still assigns exact authored targets in FixedFirst. World MoveTarget describes where the unit is going, so disabling avoidance would conflict with design6.4/6.6.
+
+Choice: preserve synthetic production code and test exact cadence at its real scheduler boundary. Read-only FixedFirst observers before retarget and after its deferred writes check all scheduled IDs against target_point(previousTick,id), every unscheduled ID unchanged across that system, all50 observed and retargeted at least twice; retain map-unit/no-extra-target and actualmovement checks. Ordinary fullappupdates remain. Root authorized tests/unit_boot.rs change; oldsource/failure preserved; new actualobserver green andfullserver suite0. Afterstablecommit/gates, RETARGET_TICKS40→39 must fail this new test semantically andrestoreexactly. Alternative not taken: accept arbitrary legal targets, disable collision forsynthetics, or invoke retarget twice manually.
+
+## C90: qualify repeated template instance IDs in the scene widget instrument (2026-10-31)
+
+Conflict: authored widget IDs are validated unique once per definition tree (content_mc_validation.rs914-919), but a Grid/List template such as HUD1's id b expands into multiple rendered instances. New scene rows require an unambiguous id/rect per rendered instance; publishing b repeatedly makes oracle identity ambiguous. The design specifies template expansion and renderedwidget IDs but no instance naming rule.
+
+Choice: preserve authored IDs for roots (card/minimap/ore), and give repeated template instances deterministic qualified identifiers based on the widget path plus item identity (or authored stable index when no identity exists). Do not edit content IDs or input/action bindings. Keep internal action identity and lifecycle bound to actual data. This is an instrument naming detail only. HUD1 oracle rejects duplicate rendered IDs; later runtime/native tests must prove correct template identity. Alternative not taken: publish indistinguishable repeated IDs, rename mod definitions, or weaken the oracle to arbitrary first matches.
+
+Task6candidate55522c9 followedbylint/refactorcandidateb4bb0eb0ff169e5756b535d76fb8898b21974582; bothattributed, finalb4clean. Sim/server fullfunctional andfmtgreens atrecordedactualsources; resetformal-gateheads forb4. ExtraClippy--all-features wasgeneric-skillflagbroaderthanplan andenabledoldspike_serverfielderrors; preserveasdiagnostic/non-gate, no spikeedits. Exactplanclippy--workspace--all-targets--locked passedrepairedtree, rerunonb4formalrequired. Rootenforcesplanoverskillrecommendation. RUN45registeredbeforefinalindependentreviewerfollowup, global45/170, Task6thirdof6estimate; nooverrun. AllC89postgateplant/GREF5/frozen/actualM3/independentruntime remain. No mainchange.
