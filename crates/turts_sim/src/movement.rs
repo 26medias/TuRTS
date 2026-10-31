@@ -270,11 +270,11 @@ pub fn spread_destinations_with_context(
                 ) {
                     let index = slots.len();
                     slots.push(candidate);
-                    let shell = i64::from(i) * i64::from(i)
+                    let ring_key = i64::from(i) * i64::from(i)
                         + i64::from(i) * i64::from(j)
                         + i64::from(j) * i64::from(j);
                     let angle_key = (angle(candidate, point) * 1_000_000.0).round() as i64;
-                    nearest_indices.insert((shell, angle_key, index));
+                    nearest_indices.insert((ring_key, angle_key, index));
                     if nearest_indices.len() > wanted {
                         nearest_indices.pop_last();
                     }
@@ -287,10 +287,10 @@ pub fn spread_destinations_with_context(
             }
         }
         if nearest_indices.len() == wanted {
-            let next_ring_min_shell = i64::from(ring + 1) * i64::from(ring + 1);
+            let minimum_unseen_ring_key = i64::from(ring + 1) * i64::from(ring + 1);
             if nearest_indices
                 .last()
-                .is_some_and(|(shell, _, _)| *shell < next_ring_min_shell)
+                .is_some_and(|(ring_key, _, _)| *ring_key < minimum_unseen_ring_key)
             {
                 break;
             }
@@ -1509,9 +1509,10 @@ mod spread_tests {
             .iter()
             .map(|slot| {
                 let delta = *slot - Vec2::new(32.0, 32.0);
-                let shell = (delta.length_squared() / (pool.spacing * pool.spacing)).round() as i64;
+                let ring_key =
+                    (delta.length_squared() / (pool.spacing * pool.spacing)).round() as i64;
                 let angle = angle(*slot, Vec2::new(32.0, 32.0));
-                (shell, angle)
+                (ring_key, angle)
             })
             .collect();
         assert!(keys.windows(2).all(|pair| {
