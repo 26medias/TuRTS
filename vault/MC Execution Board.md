@@ -8,7 +8,7 @@ source: codex
 
 # MC execution board
 
-State: ACTIVE: O12 released Task 6. Integration and all four open lanes rebased onto main721e56e (design revision13); dirty source hashes preserved.10of25lanes complete;47/170runs; Task6run5/6. C1-C102. No main merge.
+State: ACTIVE: O12 released Task 6. Integration and all four open lanes rebased onto main721e56e (design revision13); dirty source hashes preserved.10of25lanes complete;47/170runs; Task6run5/6. C1-C103. Task6 clean candidate cc6f91e is re-gating after focused E8 repair. No main merge.
 
 Plan: `docs/superpowers/plans/2026-10-29-mc-player-control.md`.
 Design of record: `docs/superpowers/specs/2026-10-29-mc-player-control-design.md`, revision12 at63788d7, included by mainc3f09d0.
@@ -804,3 +804,6 @@ Conflict: Task6 step3 lists ACC and WEB before FROZEN, while the existing native
 Choice: batch independent RUST, QA and FROZEN before long ACC/WEB on the same clean committed source head. Every listed gate remains required before G-REF, postgate plants, reviewer runtime handoff or merge. A source repair requires final-source re-gating; an earlier candidate's green is historical evidence. Preserve red, green, commit, gate, plants. Evidence: plan Task6 step3 at505; brief4 gate/ordering rules at39-56. Alternative not taken: omit a gate, accept a dirty candidate, or rerun an unchanged gate solely for list order.
 
 Verified checkpoint95d5d07: native helper final-rust-qa-frozen-4 has10 commands exit0, workspace1140 passed/0 failed/18 ignored; frozen fixture hash bcbf72c2206251f635a7c7f5b6c8f573d69a5fc05a5bd77716e98ebfb08e370b. G-ACC then failed at E8 operation167: authored singleton target65 on width64 maps to physical63.2 for radius0.8, while the legacy adapter expects64. Correct only the exact singleton Move/Replace/group0/Point adapter from independently audited radius/bounds; keep raw frozen input checks, full-state equality and strict default order metadata. No oracle tolerance relaxation. Task6 is not accepted.47/170 runs, Task6run5/6; no merge/push.
+
+
+Task6 candidate cc6f91e77ffc72dd7df6089694815033a64a2fb0 commits only the E8 adapter and strict validator correction. Root verified clean source, unchanged independent common/accounting.rs and exact frozen SHA. Focused E8 process1/1 exit0; validator positive/forged-current/foreign-failure regression1/1 exit0. Root receipt: main target/mc-evidence/t6-root/e8-cc6f91e-root-check.json. Formal final-head gates running; no acceptance or merge. Ledger47 consecutive unique rows, no missing run.
