@@ -453,3 +453,16 @@ Conflict: the M2 wrapper started its earlier21-case list before C44 made foreign
 Choice: keep the actual21-case receipt, run the missing Gather case separately with unchanged guarded runner, then audit both with a read-only composite parent. main target/mc-evidence/audit_lane_refutation_components.py SHA09a26a6997f43edc0cd54dee01399fc31a7581a65785a77f53db4432deb06d1a calls C53 guards per component and requires identical source, disjoint cases and exact union against registered base/path union. It records original receipt/audit hashes and paths, without inventing a test run. Parent invocation supplies ab6ffd8; individual reports label their selector check as deferred to the parent.
 
 QA source/AST PASS. Prior10-case/69-command validation0; duplicate-component guard1 with named diagnostic. Actual22-case split/M3 audit remains pending. Keep failed C55 instrument attempts separate; correct seventh test metadata from raw executed command without a runtime rerun. Alternative not taken: omit the case, rerun all successes, merge inconsistent sources, or change the semantic plant/guard.
+
+
+## C58: retain the earlier partial-write detector and exact runtime-equivalent proof (2026-10-31)
+
+Conflict: E8-mixed-cost-partial-commit injects the same transaction debit, but new Task4 replay catches the refused operation write before the older seq5 neutrality assertion. Original guarded run correctly halted on missing old diagnostic;18completed cases remain valid.
+
+Choice: update only that case expected_failure to `refused unit 1 changed state inside its order operation`, preserving plant/test/guards. QA verified the cause and raw named compiled101. Registry-only commit2c45b8311906caf14793e7eb75b0bbb84462bdb1 changes exactly this string; static harness15/15 exit0. Preserve original failed receipt; project its18actual completed cases/78commands with original source0240, raw paths, original-receipt SHA and exact metadata/command-filter checks. Re-run the failed and3remaining cases on2c45. Keep completed14M3/42commands on0240; do not repeat them.
+
+Final parent audit may join only this explicitly proven metadata-only change: descendant commits; gitdiff exactly tests/m2/refutations.json; parsed fields identical except this one expected_failure; all other tracked blobs identical; each reused case definition and runner unchanged. Actual execution SHAs stay on each case, target source is separate. Exact disjoint selector union against registered ab6ffd8 remains mandatory. No source/product/fixture edits qualify for reuse.
+
+Current C53 audit SHA061350c841152b7124ae7538fec531ebcd1abdf69181a52fcd318e8fc7efc31c verifies completed projection against original receipt before original guards. C58 parent SHA b8d915ceadda446b4ccc87c7471f377a39c5f87c8a315cd32f4b7dfb16c78189 enforces metadata equivalence. QA source/AST checks pass. Actual projected18M2/78commands and14M3/42commands audits exit0; parent M3→final mapping0. Negative check rejects a genuine runtime-code change with the named registry-only guard, exit1. Final four-case M2 component/union and independent runtime remain pending.
+
+Alternative not taken: retire the mutation, weaken semantic guards, relabel old execution as a new commit, or repeat all completed tests for a checker-message change. This repairs test instrumentation under the design's nearest rule.
