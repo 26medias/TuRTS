@@ -1279,7 +1279,10 @@ impl Plugin for EconomyUiPlugin {
                     .in_set(crate::ui_shared::UiPresentationSet)
                     .after(crate::present::update_presented),
             )
-            .add_systems(PostUpdate, publish_ui_snapshot.after(sync_panel));
+            .add_systems(
+                Last,
+                publish_ui_snapshot.before(crate::core_adapter::FrameCloseSet),
+            );
     }
 }
 

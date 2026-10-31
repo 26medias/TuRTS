@@ -140,7 +140,7 @@ pub fn start() {
             (
                 publish_debug.after(rebuild_debug_state),
                 publish_scene,
-                publish_ui,
+                publish_ui.after(turts_client::core_adapter::FrameCloseSet),
             ),
         );
     app.run();

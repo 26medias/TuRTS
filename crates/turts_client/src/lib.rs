@@ -142,12 +142,22 @@ impl Plugin for ClientPlugin {
         app.add_systems(Last, (rebuild_debug_state, exit_when_done).chain());
         #[cfg(not(target_family = "wasm"))]
         if publish_live_view {
-            app.add_systems(Last, live_view::publish_live_view.before(exit_when_done));
+            app.add_systems(
+                Last,
+                live_view::publish_live_view
+                    .after(crate::core_adapter::FrameCloseSet)
+                    .before(exit_when_done),
+            );
         }
         #[cfg(not(target_family = "wasm"))]
         if publish_live_report {
             app.init_resource::<live_view::LiveReportCursor>()
-                .add_systems(Last, live_view::publish_live_report.before(exit_when_done));
+                .add_systems(
+                    Last,
+                    live_view::publish_live_report
+                        .after(crate::core_adapter::FrameCloseSet)
+                        .before(exit_when_done),
+                );
         }
     }
 }

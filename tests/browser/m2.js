@@ -120,11 +120,8 @@ async function pressRenderedEntityUntil(page, scene, entry, predicate, timeoutMs
     const button = options.button ?? "left";
     await page.mouse.move(x, y);
     await page.mouse.down({ button });
-    try {
-        return await waitForSnapshot(page, predicate, timeoutMs, description);
-    } finally {
-        await page.mouse.up({ button });
-    }
+    await page.mouse.up({ button });
+    return waitForSnapshot(page, predicate, timeoutMs, description);
 }
 
 function uiActionWindowPoint(scene, rect) {
@@ -199,6 +196,7 @@ module.exports = {
     canvasBox,
     clickWindowLogicalPoint,
     clickRenderedEntity,
+    pressRenderedEntityUntil,
     clickRenderedUiAction,
     findVisibleUiAction,
     findPressedUiAction,
