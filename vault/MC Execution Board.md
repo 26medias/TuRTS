@@ -476,3 +476,6 @@ C63: design requires debug.selection list; legacy M2/M3 scalar oracle reads migr
 
 
 C64: Task9 resolves independently rebound add/queue/type held actions from effectivebindings; physicalmods stillmatchauthoredchords. Task16 owns menu/storage, not first runtime support. Focusedoverride-away/independentadd-queue tests required; defaults unchanged. No extra run.
+
+
+C65: repair future feed object shapes and owner-only evidence now; debug formatter serializes fulltypedfeed with same-typedefault. Rawcoreeffects are requests, not startedaudio/appliedcursor. Task12/15/16futureowners filltruthfuldefaults withoutlaterdebug.rs edits. Medium dispositionrepair; build37/170.
