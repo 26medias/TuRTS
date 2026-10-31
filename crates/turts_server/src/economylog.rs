@@ -2517,15 +2517,19 @@ fn validate_remove_order(
             }
         }
     }
-    for belt in &before.raw_belts {
-        if let Some(piece) = belt.pieces.iter().find(|piece| piece.unit == unit_id) {
-            let mut belt_items = BTreeMap::<turts_mod_api::ContentId, u64>::new();
+    for belt_record in &before.raw_belts {
+        if let Some(piece) = belt_record
+            .pieces
+            .iter()
+            .find(|piece| piece.unit == unit_id)
+        {
+            let mut items_by_id = BTreeMap::<turts_mod_api::ContentId, u64>::new();
             for slot in &piece.slots {
                 if let Some(item) = &slot.item {
-                    *belt_items.entry(item.clone()).or_default() += 1;
+                    *items_by_id.entry(item.clone()).or_default() += 1;
                 }
             }
-            destroyed.extend(belt_items.into_iter().map(|(item, amount)| DestroyedLine {
+            destroyed.extend(items_by_id.into_iter().map(|(item, amount)| DestroyedLine {
                 location: DestroyedLocation::BeltPiece(unit_id),
                 item,
                 amount,
@@ -2676,35 +2680,42 @@ fn remove_audit_belt_piece(
 ) -> Result<Vec<turts_sim::economy::views_m3::RawBeltAudit>, String> {
     use turts_sim::economy::views_m3::RawBeltAudit;
     let mut result = Vec::new();
-    for belt in belts {
-        let Some(index) = belt.pieces.iter().position(|piece| piece.unit == unit_id) else {
-            result.push(belt.clone());
+    for belt_record in belts {
+        let Some(index) = belt_record
+            .pieces
+            .iter()
+            .position(|piece| piece.unit == unit_id)
+        else {
+            result.push(belt_record.clone());
             continue;
         };
-        let slots_per_piece = usize::from(belt.slots_per_piece);
-        if slots_per_piece == 0 || belt.raw_slots.len() != belt.pieces.len() * slots_per_piece {
+        let slots_per_piece = usize::from(belt_record.slots_per_piece);
+        if slots_per_piece == 0
+            || belt_record.raw_slots.len() != belt_record.pieces.len() * slots_per_piece
+        {
             return Err("Remove encountered malformed captured conveyor slots".into());
         }
         let split = |start: usize, end: usize| -> Option<RawBeltAudit> {
             (start < end).then(|| RawBeltAudit {
-                first_piece: belt.pieces[start].unit,
-                definition: belt.definition.clone(),
-                owner_slot: belt.owner_slot,
-                slots_per_piece: belt.slots_per_piece,
-                slots_per_second: belt.slots_per_second,
-                rate_carry: belt.rate_carry,
-                raw_slots: belt.raw_slots[start * slots_per_piece..end * slots_per_piece].to_vec(),
-                pieces: belt.pieces[start..end].to_vec(),
+                first_piece: belt_record.pieces[start].unit,
+                definition: belt_record.definition.clone(),
+                owner_slot: belt_record.owner_slot,
+                slots_per_piece: belt_record.slots_per_piece,
+                slots_per_second: belt_record.slots_per_second,
+                rate_carry: belt_record.rate_carry,
+                raw_slots: belt_record.raw_slots[start * slots_per_piece..end * slots_per_piece]
+                    .to_vec(),
+                pieces: belt_record.pieces[start..end].to_vec(),
             })
         };
         if let Some(left) = split(0, index) {
             result.push(left);
         }
-        if let Some(right) = split(index + 1, belt.pieces.len()) {
+        if let Some(right) = split(index + 1, belt_record.pieces.len()) {
             result.push(right);
         }
     }
-    result.sort_by_key(|belt| belt.first_piece);
+    result.sort_by_key(|belt_record| belt_record.first_piece);
     Ok(result)
 }
 
