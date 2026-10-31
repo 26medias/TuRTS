@@ -43,6 +43,7 @@ use turts_client::render::{
     declared_unit_pick_radius, projected_ground_center,
 };
 use turts_net_protocol::{OrderEnvelope, Pos};
+use wasm_bindgen::JsCast;
 use wasm_bindgen::prelude::*;
 
 /// The last debug JSON. The `window.turts_debug` closure reads it.
@@ -72,6 +73,20 @@ pub fn start() {
         }
     };
     let debug = Closure::<dyn Fn() -> String>::new(|| DEBUG.lock().unwrap().clone());
+    let clear_frames = Closure::<dyn Fn()>::new(|| {
+        turts_client::core_adapter::clear_frames();
+        if let Some(window) = web_sys::window() {
+            let _ =
+                js_sys::Reflect::set(&window, &"__turts_seq_queue".into(), &js_sys::Array::new());
+        }
+    });
+    let debug_function: &js_sys::Function = debug.as_ref().unchecked_ref();
+    let _ = js_sys::Reflect::set(
+        debug_function,
+        &"frames_clear".into(),
+        clear_frames.as_ref(),
+    );
+    clear_frames.forget();
     set_global(&window, "turts_debug", debug.as_ref());
     debug.forget();
     let move_to = Closure::<dyn Fn(f32, f32)>::new(|x, y| MOVES.lock().unwrap().push((x, y)));
@@ -357,8 +372,11 @@ fn publish_scene(
 }
 
 fn publish_ui(world: &mut World) {
-    let snapshot = rendered_ui_snapshot(world);
-    *UI.lock().unwrap() = serde_json::to_string(&snapshot).unwrap_or_default();
+    let snapshot = world
+        .get_resource::<turts_client::debug_feed::UiSnapshotFeed>()
+        .map(|feed| feed.0.clone())
+        .unwrap_or_else(|| serde_json::json!(rendered_ui_snapshot(world)));
+    *UI.lock().unwrap() = snapshot.to_string();
 }
 
 /// Actual camera data needed to project world points without duplicating camera constants.

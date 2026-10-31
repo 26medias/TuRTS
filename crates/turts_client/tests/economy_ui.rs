@@ -24,7 +24,7 @@ use turts_client::{
     economy_ui::EconomyUiPlugin,
     economy_ui::{
         RenderedUiNode, Selection, UiAction, UiActionTarget, UiControlEnabled, UiSnapshotText,
-        panel_model, rendered_ui_snapshot,
+        panel_model, panel_model_for_slot, rendered_ui_snapshot,
     },
     ingest::{CommandResult, CommandResults, ReplicaState, WelcomeInfo},
     join::Phase,
@@ -781,7 +781,7 @@ fn selected_inventory_and_gather_wait_reason_are_catalog_derived() {
 }
 
 #[test]
-fn selection_is_cleared_when_a_coherent_replacement_removes_or_foreigns_it() {
+fn selection_is_retained_for_foreign_inspection_and_cleared_when_removed() {
     use bevy::prelude::MinimalPlugins;
     let mut replica = Replica::new(20);
     replica.units.insert(
@@ -815,10 +815,56 @@ fn selection_is_cleared_when_a_coherent_replacement_removes_or_foreigns_it() {
     app.update();
     assert_eq!(app.world().resource::<Selection>().0, Some(7));
 
+    app.world_mut()
+        .resource_mut::<ReplicaState>()
+        .replica
+        .as_mut()
+        .unwrap()
+        .units
+        .get_mut(&7)
+        .unwrap()
+        .owner_slot = 1;
+    app.update();
+    assert_eq!(
+        app.world().resource::<Selection>().0,
+        Some(7),
+        "a foreign unit remains inspectable"
+    );
+
     let mut state = app.world_mut().resource_mut::<ReplicaState>();
     state.replica.as_mut().unwrap().units.clear();
     app.update();
     assert_eq!(app.world().resource::<Selection>().0, None);
+}
+
+#[test]
+fn foreign_selection_shows_public_identity_without_owner_controls_or_economy() {
+    let (content, mut replica, lab) = forge_lab_replica(100, 0);
+    replica.units.get_mut(&lab).unwrap().owner_slot = 1;
+    let model = panel_model_for_slot(
+        &replica,
+        &content,
+        &Selection(Some(lab)),
+        &CommandResults::default(),
+        Some(0),
+    );
+    assert!(
+        model
+            .lines
+            .iter()
+            .any(|line| line.contains("Selected: Proving Lab"))
+    );
+    assert!(model.lines.iter().any(|line| line == "Owner: Player 2"));
+    assert!(
+        model
+            .lines
+            .iter()
+            .all(|line| !line.starts_with("Credits:") && !line.starts_with("Inventory"))
+    );
+    assert!(
+        model.controls.is_empty(),
+        "foreign selection may be inspected but has no select, produce, cancel, toggle, or remove action"
+    );
 }
 
 #[test]

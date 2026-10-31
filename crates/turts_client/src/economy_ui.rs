@@ -14,11 +14,11 @@ use bevy::{
     },
     ui_widgets::{Activate, Button, ScrollArea, observe},
 };
-use turts_mod_api::{ContentId, CostSource, Footprint, ResourceKind};
-use turts_net_protocol::{
-    EconomyState, GatherStage, InventoryPort, JobId, JobStage, NodeId, Pos, UnitId,
-};
+use turts_mod_api::{ContentId, CostSource, ResourceKind};
+use turts_net_protocol::{EconomyState, GatherStage, InventoryPort, JobId, JobStage, UnitId};
 
+pub use crate::input::{hit_test_node, hit_test_unit};
+pub use crate::ui_shared::{Selection, UiCaptureRoot as UiPanelRoot, cursor_in_ui_viewport};
 use crate::{
     commands::{PendingCommands, submit},
     content::ClientContent,
@@ -27,13 +27,10 @@ use crate::{
     replica::Replica,
 };
 
-#[derive(Resource, Debug, Default, Clone, Copy, PartialEq, Eq)]
-pub struct Selection(pub Option<u32>);
-
 #[derive(Resource, Debug, Default)]
 struct UiActionNotice(Option<String>);
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum UiAction {
     Select { unit: u32 },
@@ -48,9 +45,6 @@ pub struct UiActionTarget(pub UiAction);
 
 #[derive(Component, Debug, Clone, Copy, PartialEq, Eq)]
 pub struct UiControlEnabled(pub bool);
-
-#[derive(Component)]
-pub struct UiPanelRoot;
 
 #[derive(Component)]
 pub struct UiSnapshotText;
@@ -86,6 +80,17 @@ pub fn panel_model(
     selection: &Selection,
     results: &CommandResults,
 ) -> PanelModel {
+    panel_model_for_slot(replica, content, selection, results, None)
+}
+
+/// Build the panel while applying the local owner's interaction rights to the selected unit.
+pub fn panel_model_for_slot(
+    replica: &Replica,
+    content: &ClientContent,
+    selection: &Selection,
+    results: &CommandResults,
+    owner_slot: Option<u8>,
+) -> PanelModel {
     let mut model = PanelModel::default();
     let industrial = content
         .catalog
@@ -94,6 +99,9 @@ pub fn panel_model(
         .any(|def| def.research.is_some() || def.machine.is_some() || def.extractor.is_some());
     // Names and capabilities come from the downloaded package, not a Forge ID list.
     for (&id, unit) in &replica.units {
+        if owner_slot.is_some_and(|slot| unit.owner_slot != slot) {
+            continue;
+        }
         let Some(def) = ContentId::parse(&unit.content_id)
             .ok()
             .and_then(|id| content.catalog.units.get(&id))
@@ -141,6 +149,14 @@ pub fn panel_model(
     let def = parsed.as_ref().and_then(|id| content.catalog.units.get(id));
     let name = def.map_or_else(|| unit.content_id.clone(), |d| d.name.clone());
     model.lines.push(format!("Selected: {name} · {selected}"));
+    if owner_slot.is_some_and(|slot| unit.owner_slot != slot) {
+        model
+            .lines
+            .push(format!("Owner: Player {}", unit.owner_slot + 1));
+        append_nodes(&mut model, replica, content);
+        append_last_result(&mut model, results);
+        return model;
+    }
     if industrial && let Some(def) = def {
         model.lines.push(if def.movement.is_some() {
             "Mobile: right-click the ground to move.".into()
@@ -741,57 +757,6 @@ fn append_last_result(model: &mut PanelModel, results: &CommandResults) {
     }
 }
 
-/// Choose the nearest owned unit whose declared footprint contains the map point.
-pub fn hit_test_unit(
-    replica: &Replica,
-    content: &ClientContent,
-    point: Pos,
-    owner: u8,
-) -> Option<u32> {
-    let time = replica.presentation_time(bevy::platform::time::Instant::now())?;
-    let mut hits = Vec::new();
-    for (&id, unit) in &replica.units {
-        if unit.owner_slot != owner {
-            continue;
-        }
-        let Some(def) = ContentId::parse(&unit.content_id)
-            .ok()
-            .and_then(|id| content.catalog.units.get(&id))
-        else {
-            continue;
-        };
-        let Footprint::Circle { radius } = &def.footprint;
-        let Some(pos) = replica.sample(id, time).map(|p| p.pos) else {
-            continue;
-        };
-        let d2 = (pos.x - point.x).powi(2) + (pos.y - point.y).powi(2);
-        if d2 <= radius * radius {
-            hits.push((d2, id));
-        }
-    }
-    hits.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)));
-    hits.first().map(|(_, id)| *id)
-}
-
-/// Choose the nearest declared node whose package radius contains the map point.
-pub fn hit_test_node(replica: &Replica, content: &ClientContent, point: Pos) -> Option<NodeId> {
-    let mut hits = Vec::new();
-    for node in replica.nodes.values() {
-        let Some(def) = ContentId::parse(&node.content_id)
-            .ok()
-            .and_then(|id| content.catalog.nodes.get(&id))
-        else {
-            continue;
-        };
-        let d2 = (node.pos.x - point.x).powi(2) + (node.pos.y - point.y).powi(2);
-        if d2 <= def.radius * def.radius {
-            hits.push((d2, node.id));
-        }
-    }
-    hits.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.1.0.cmp(&b.1.0)));
-    hits.first().map(|(_, id)| *id)
-}
-
 fn activate_action(
     trigger: On<Activate>,
     actions: Query<&UiActionTarget>,
@@ -799,7 +764,7 @@ fn activate_action(
     acquired: Option<Res<AcquiredPackages>>,
     mut notice: ResMut<UiActionNotice>,
     mut pending: ResMut<PendingCommands>,
-    mut selection: ResMut<Selection>,
+    mut selection_requests: ResMut<crate::ui_shared::SelectionRequests>,
 ) {
     let Ok(action) = actions.get(trigger.entity) else {
         return;
@@ -812,7 +777,7 @@ fn activate_action(
     }
     notice.0 = None;
     if let UiAction::Select { unit } = action.0 {
-        selection.0 = Some(unit);
+        selection_requests.0.push(unit);
         return;
     }
     submit(
@@ -901,13 +866,14 @@ pub fn sync_panel(world: &mut World) {
     else {
         return;
     };
-    let model = panel_model(
+    let owner_slot = state.welcome.map(|welcome| welcome.slot);
+    let model = panel_model_for_slot(
         replica,
         content,
         world.resource::<Selection>(),
         world.resource::<CommandResults>(),
+        owner_slot,
     );
-    let owner_slot = state.welcome.map(|welcome| welcome.slot);
     let mut model = model;
     model.controls.retain(|control| {
         let unit = match control.action {
@@ -1127,7 +1093,7 @@ pub fn sync_panel(world: &mut World) {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct RenderedUiNode {
     pub kind: String,
     pub text: String,
@@ -1226,6 +1192,11 @@ pub fn rendered_ui_snapshot(world: &World) -> Vec<RenderedUiNode> {
     rows
 }
 
+fn publish_ui_snapshot(world: &mut World) {
+    let snapshot = serde_json::json!(rendered_ui_snapshot(world));
+    world.resource_mut::<crate::debug_feed::UiSnapshotFeed>().0 = snapshot;
+}
+
 fn actual_layout_visible(
     world: &World,
     entity: Entity,
@@ -1281,30 +1252,14 @@ fn actual_layout_visible(
     .any(|point| viewport.contains(point) && clip.is_none_or(|clip| clip.contains_point(point)))
 }
 
-/// Convert a logical window cursor into UI camera viewport pixels.
-pub fn cursor_in_ui_viewport(cursor: Vec2, camera: &Camera) -> Option<Vec2> {
-    let viewport = camera.physical_viewport_rect()?;
-    let physical = cursor * camera.target_scaling_factor()?;
-    let min = viewport.min.as_vec2();
-    let max = viewport.max.as_vec2();
-    if physical.x < min.x || physical.y < min.y || physical.x >= max.x || physical.y >= max.y {
-        return None;
-    }
-    Some(physical - min)
-}
-
 fn validate_selection(mut selection: ResMut<Selection>, state: Res<ReplicaState>) {
     let Some(selected) = selection.0 else {
         return;
     };
-    let (Some(welcome), Some(replica)) = (state.welcome, state.replica.as_ref()) else {
+    let Some(replica) = state.replica.as_ref() else {
         return;
     };
-    if replica
-        .units
-        .get(&selected)
-        .is_none_or(|unit| unit.owner_slot != welcome.slot)
-    {
+    if !replica.units.contains_key(&selected) {
         selection.0 = None;
     }
 }
@@ -1313,14 +1268,18 @@ pub struct EconomyUiPlugin;
 impl Plugin for EconomyUiPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<Selection>()
+            .init_resource::<crate::ui_shared::SelectionRequests>()
+            .init_resource::<crate::debug_feed::UiSnapshotFeed>()
             .init_resource::<PanelEntities>()
             .init_resource::<UiActionNotice>()
             .add_systems(
                 Update,
                 (validate_selection, sync_panel)
                     .chain()
+                    .in_set(crate::ui_shared::UiPresentationSet)
                     .after(crate::present::update_presented),
-            );
+            )
+            .add_systems(PostUpdate, publish_ui_snapshot.after(sync_panel));
     }
 }
 
@@ -1343,6 +1302,7 @@ mod activation_tests {
         world.init_resource::<PendingCommands>();
         world.init_resource::<UiActionNotice>();
         world.init_resource::<Selection>();
+        world.init_resource::<crate::ui_shared::SelectionRequests>();
         let base = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../mods/base");
         let archive = PackageArchive::parse(&pack_dir(&base).expect("pack base"))
             .expect("parse base archive");
@@ -1423,13 +1383,24 @@ mod activation_tests {
             ))
             .id();
         world.trigger(Activate { entity: selector });
-        assert_eq!(world.resource::<Selection>().0, Some(8));
+        assert_eq!(
+            world.resource::<crate::ui_shared::SelectionRequests>().0,
+            vec![8]
+        );
+        assert_eq!(
+            world.resource::<Selection>().0,
+            None,
+            "the UI observer queues a core input instead of mutating primary selection"
+        );
         assert_eq!(
             world.resource::<PendingCommands>().0.len(),
             2,
             "selection is local, never a server command"
         );
-        world.resource_mut::<Selection>().0 = None;
+        world
+            .resource_mut::<crate::ui_shared::SelectionRequests>()
+            .0
+            .clear();
         world
             .resource_mut::<ReplicaState>()
             .replica
@@ -1441,8 +1412,8 @@ mod activation_tests {
             .owner_slot = 1;
         world.trigger(Activate { entity: selector });
         assert_eq!(
-            world.resource::<Selection>().0,
-            None,
+            world.resource::<crate::ui_shared::SelectionRequests>().0,
+            Vec::<u32>::new(),
             "foreign unit selection is rejected"
         );
         assert_eq!(world.resource::<PendingCommands>().0.len(), 2);

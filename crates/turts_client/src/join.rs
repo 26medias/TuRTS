@@ -81,6 +81,14 @@ pub struct Acquisition {
     archives: Vec<PackageArchive>,
 }
 
+impl Acquisition {
+    /// Archives accepted so far. Callers that need the complete validated package pool should
+    /// wait for `AcquiredPackages`, which is inserted after acquisition finishes.
+    pub fn accepted_archives(&self) -> &[PackageArchive] {
+        &self.archives
+    }
+}
+
 /// The phase after `Welcome`: `Joined` once ingest stored the `Welcome`. `None` means no change.
 pub fn advance_phase(phase: &Phase, state: &ReplicaState) -> Option<Phase> {
     match (phase, state.welcome) {

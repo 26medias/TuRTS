@@ -7,5 +7,17 @@
     <link data-trunk rel="copy-dir" href="assets" />
     <style>html,body{width:100%;height:100%;margin:0}#wrap{width:1280px;height:720px}#turts{width:100%;height:100%}</style>
 </head>
-<body><div id="wrap"><canvas id="turts"></canvas></div></body>
+<body><div id="wrap"><canvas id="turts"></canvas></div>
+<script>
+    window.__turts_seq_queue = [];
+    const turtsCanvas = document.getElementById("turts");
+    for (const type of ["pointerdown", "pointerup", "pointermove", "keydown", "keyup", "wheel"]) {
+        document.addEventListener(type, event => {
+            if (event.target !== turtsCanvas) return;
+            const seq = window.__turts_io_seq;
+            if (Number.isSafeInteger(seq) && seq >= 0) window.__turts_seq_queue.push({ seq, type });
+        }, true);
+    }
+</script>
+</body>
 </html>

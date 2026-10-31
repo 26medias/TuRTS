@@ -18,8 +18,10 @@ PYROW
     for viewport in "${fields[@]:6}"; do
         for attempt in 1 2; do
             echo "ROW $row viewport=$viewport run=$attempt/2 windows=$windows"
-            headed=0
+            headed="${MC_BROWSER_HEADED:-0}"
             [[ "$runs" != headed ]] || headed=1
+            [[ "$headed" == 0 || "$headed" == 1 ]] || { echo "MC_BROWSER_HEADED must be 0 or 1" >&2; exit 2; }
+            echo "BROWSER_PROFILE headed=$headed"
             if ! MC_BROWSER_HEADED="$headed" bash "$ROOT/scripts/mc-browser.sh" "$package" "$driver" "$oracle" "$viewport" --params "$row_path"; then passed=false; status=1; fi
         done
     done
