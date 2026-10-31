@@ -201,14 +201,12 @@ fn browser_move_commands(
         return Some(Vec::new());
     }
     let content = state.content.as_ref()?;
-    Some(
-        targets
-            .iter()
-            .map(|&(x, y)| {
-                turts_client::commands::move_order_envelope(content, unit_ids.clone(), Pos { x, y })
-            })
-            .collect::<Option<Vec<_>>>()?,
-    )
+    targets
+        .iter()
+        .map(|&(x, y)| {
+            turts_client::commands::move_order_envelope(content, unit_ids.clone(), Pos { x, y })
+        })
+        .collect::<Option<Vec<_>>>()
 }
 
 fn drain_moves(
