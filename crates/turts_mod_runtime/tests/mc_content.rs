@@ -177,12 +177,18 @@ fn validator_rejects_queue_depth_zero_semantically() {
 }
 
 #[test]
-fn order_rules_accessor_preserves_queue_depth_for_range_validation() {
+fn order_rules_accessor_rejects_queue_depth_overflow_at_field() {
     let archive = archive_with_order_rules(
         r#"(id:"rush",name:"Rush",behaviour:Attack,target:Unit,fire:None,engage:None,icon:"rush-icon",hotkey:"rush",cursor:None,card:None,units:[],description:"Rush the target")"#,
         r#"(queue_depth:256,smart:[])"#,
     );
-    assert_eq!(archive.order_rules().unwrap()[0].1.queue_depth, 256);
+    let error = archive
+        .order_rules()
+        .expect_err("u8 queue depth cannot hold 256");
+    assert_eq!(
+        error.to_string(),
+        "hud/orders/rules.ron: queue_depth: must be between 1 and 255, got 256"
+    );
 }
 
 #[test]

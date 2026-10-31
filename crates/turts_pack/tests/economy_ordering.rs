@@ -150,7 +150,12 @@ fn same_batch_observes_prior_commit_and_rejection_changes_no_write_set() {
     let results = &app.world().resource::<turts_sim::CommandResults>().0;
     assert_eq!(results[0].outcome, Ok(turts_sim::Applied { job_id: None }));
     assert_eq!(results[1].outcome, Ok(turts_sim::Applied { job_id: None }));
-    assert_eq!(results[2].outcome, Err(RejectReason::NotMobile));
+    assert_eq!(results[2].outcome, Ok(turts_sim::Applied { job_id: None }));
+    assert_eq!(results[2].units.accepted, vec![1]);
+    assert_eq!(
+        results[2].units.refused,
+        vec![(2, RejectReason::NotApplicable)]
+    );
     let target_before_rejection = app
         .world_mut()
         .iter_entities()
@@ -160,7 +165,7 @@ fn same_batch_observes_prior_commit_and_rejection_changes_no_write_set() {
         .copied();
     assert_eq!(
         target_before_rejection,
-        Some(MoveTarget(Vec2::new(40.0, 40.0)))
+        Some(MoveTarget(Vec2::new(50.0, 50.0)))
     );
     let audits = app
         .world()
@@ -198,9 +203,26 @@ fn same_batch_observes_prior_commit_and_rejection_changes_no_write_set() {
             .move_target,
         Some(turts_mod_api::WorldPos { x: 40.0, y: 40.0 })
     );
+    assert_ne!(audits[2].before, audits[2].after);
     assert_eq!(
-        audits[2].before, audits[2].after,
-        "third rejected command preserves the exact state after the first two accepted commands"
+        audits[2]
+            .after
+            .raw_units
+            .iter()
+            .find(|unit| unit.unit_id == 1)
+            .unwrap()
+            .move_target,
+        Some(turts_mod_api::WorldPos { x: 50.0, y: 50.0 }),
+    );
+    assert_eq!(
+        audits[2]
+            .after
+            .raw_units
+            .iter()
+            .find(|unit| unit.unit_id == 2)
+            .unwrap()
+            .move_target,
+        None,
     );
     assert_eq!(audit_state(app.world_mut()), audits[2].after);
     let target_after_rejection = app
@@ -214,7 +236,7 @@ fn same_batch_observes_prior_commit_and_rejection_changes_no_write_set() {
 }
 
 #[test]
-fn move_interrupt_is_immediate_and_group_static_rejects() {
+fn move_interrupt_is_immediate_and_group_static_is_refused_per_unit() {
     let mut app = app_with_units();
     apply_command(
         app.world_mut(),
@@ -234,7 +256,7 @@ fn move_interrupt_is_immediate_and_group_static_rejects() {
         .get::<MoveTarget>()
         .copied();
     assert_eq!(target, Some(MoveTarget(Vec2::new(30.0, 30.0))));
-    let rejected = apply_command(
+    let group_result = apply_command(
         app.world_mut(),
         &command(
             2,
@@ -244,7 +266,15 @@ fn move_interrupt_is_immediate_and_group_static_rejects() {
             },
         ),
     );
-    assert_eq!(rejected.outcome, Err(RejectReason::NotMobile));
+    assert_eq!(
+        group_result.outcome,
+        Ok(turts_sim::Applied { job_id: None })
+    );
+    assert_eq!(group_result.units.accepted, vec![1]);
+    assert_eq!(
+        group_result.units.refused,
+        vec![(2, RejectReason::NotApplicable)]
+    );
     let target_after_group_rejection = app
         .world_mut()
         .iter_entities()
@@ -252,7 +282,10 @@ fn move_interrupt_is_immediate_and_group_static_rejects() {
         .unwrap()
         .get::<MoveTarget>()
         .copied();
-    assert_eq!(target_after_group_rejection, target);
+    assert_eq!(
+        target_after_group_rejection,
+        Some(MoveTarget(Vec2::new(40.0, 40.0)))
+    );
     assert_eq!(
         app.world().resource::<turts_sim::CommandResults>().0.len(),
         0

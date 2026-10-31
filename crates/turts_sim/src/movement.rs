@@ -7,6 +7,39 @@ use bevy_time::{Fixed, Time};
 use crate::registry::UnitTypes;
 use crate::world::{MoveTarget, Position, UnitType};
 
+/// The complete input to one unit's deterministic flat-ground movement step.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct MovementInput {
+    pub position: bevy_math::Vec2,
+    pub target: bevy_math::Vec2,
+    pub speed: f32,
+}
+
+/// The result of one unit's deterministic movement step.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct MovementOutput {
+    pub position: bevy_math::Vec2,
+    pub reached: bool,
+}
+
+/// Move one unit toward its target using the shared simulation and validator step.
+pub fn step(input: &MovementInput, dt: f32) -> MovementOutput {
+    let step = input.speed * dt;
+    let offset = input.target - input.position;
+    let distance = offset.length();
+    if distance <= step {
+        MovementOutput {
+            position: input.target,
+            reached: true,
+        }
+    } else {
+        MovementOutput {
+            position: input.position + offset * (step / distance),
+            reached: false,
+        }
+    }
+}
+
 /// FixedUpdate: move each unit with a `MoveTarget` by `speed * delta` toward its target.
 /// A unit that is within one step of its target lands on it and loses the `MoveTarget`.
 pub(crate) fn integrate_movement(world: &mut World) {
@@ -39,20 +72,20 @@ pub(crate) fn integrate_movement(world: &mut World) {
             world.entity_mut(entity).remove::<MoveTarget>();
             continue;
         };
-        let step = speed * delta;
-        let offset = target - current;
-        let distance = offset.length();
-        let next = if distance <= step {
-            target
-        } else {
-            current + offset * (step / distance)
-        };
+        let output = step(
+            &MovementInput {
+                position: current,
+                target,
+                speed,
+            },
+            delta,
+        );
         let mut entity_mut = world.entity_mut(entity);
-        if distance <= step {
+        if output.reached {
             entity_mut.remove::<MoveTarget>();
         }
         if let Some(mut position) = entity_mut.get_mut::<Position>() {
-            position.set_if_neq(Position(next));
+            position.set_if_neq(Position(output.position));
         }
     }
 }

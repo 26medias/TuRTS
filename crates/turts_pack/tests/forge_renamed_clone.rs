@@ -339,6 +339,8 @@ fn renamed_catalog_lost_ore_fails_balance() {
     let mut after = before.clone();
     after.nodes.first_mut().unwrap().remaining -= 1;
     let op = OperationAudit {
+        phase: turts_sim::economy::transaction::AuditPhase::Other,
+        unit_id: None,
         operation_id: 1,
         before,
         after,
@@ -373,6 +375,8 @@ fn renamed_catalog_duplicate_shell_fails_balance() {
         });
     }
     let op = OperationAudit {
+        phase: turts_sim::economy::transaction::AuditPhase::Other,
+        unit_id: None,
         operation_id: 1,
         before,
         after,

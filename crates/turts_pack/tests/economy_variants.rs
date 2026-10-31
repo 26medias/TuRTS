@@ -1012,6 +1012,20 @@ fn normalize(value: &mut Value, m: &CanonicalMaps, inherited: &BTreeMap<u64, Str
                     "unit-type:{}",
                     types.get(&id).expect("dense type has content mapping")
                 ));
+            } else if key == "units"
+                && let Value::Array(items) = child
+                && items.iter().all(Value::is_string)
+            {
+                for item in items.iter_mut() {
+                    let Some(text) = item.as_str() else {
+                        continue;
+                    };
+                    let replacement = m.2.get(text).or_else(|| m.3.get(text)).cloned();
+                    if let Some(replacement) = replacement {
+                        *item = Value::String(replacement);
+                    }
+                }
+                items.sort_by_key(Value::to_string);
             } else if let Value::String(text) = child {
                 let map = match key.as_str() {
                     "0" | "package" => m.0.get(text),
@@ -1060,6 +1074,17 @@ fn sort_catalog(value: &mut Value) {
     }
     if let Some(Value::Array(items)) = catalog.get_mut("resource_kinds") {
         items.sort_by_key(Value::to_string);
+    }
+    if let Some(Value::Array(items)) = catalog.get_mut("order_definitions") {
+        for definition in items.iter_mut() {
+            if let Some(Value::Array(capabilities)) = definition.get_mut("unit_capabilities") {
+                capabilities.sort_by_key(|entry| entry["unit"].to_string());
+            }
+            if let Some(Value::Array(units)) = definition.get_mut("units") {
+                units.sort_by_key(Value::to_string);
+            }
+        }
+        items.sort_by_key(|definition| definition["id"].to_string());
     }
 }
 

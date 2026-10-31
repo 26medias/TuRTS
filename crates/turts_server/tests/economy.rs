@@ -169,10 +169,12 @@ fn live_audit_reader_ignores_only_unterminated_tail_and_waits_for_tick() {
     };
     let open_boundary = EconomyLogRecord::CommandBoundary(turts_sim::CommandAudit {
         operation_id: 900,
+        operation_end_id: None,
         result: turts_sim::CommandResult {
             slot: input.slot,
             seq: input.seq,
             outcome: Err(turts_sim::RejectReason::EmptyCommand),
+            units: Default::default(),
         },
         input,
         before: last_state.clone(),
@@ -638,6 +640,10 @@ fn pack_e8_validation_variant(into: &std::path::Path) -> std::path::PathBuf {
         .replace(
             "nodes: [\"nodes/ore.ron\"],",
             "nodes: [\"nodes/ore.ron\", \"nodes/timber.ron\"],",
+        )
+        .replace(
+            "production: [\"production/rifleman.ron\", \"production/harvester.ron\"],",
+            "production: [\"production/rifleman.ron\", \"production/harvester.ron\", \"production/free_hire.ron\"],",
         );
     files.insert("manifest.ron".into(), manifest.into_bytes());
 
@@ -686,6 +692,18 @@ fn pack_e8_validation_variant(into: &std::path::Path) -> std::path::PathBuf {
     files.insert(
         "production/harvester.ron".into(),
         b"(id: \"build_harvester\", name: \"Build Harvester\", output_unit: \"base:harvester\", duration_ms: 15000, costs: [(resource: \"base:credits\", amount: 100, source: SlotBalance), (resource: \"base:tokens\", amount: 1, source: SlotBalance)], payment: ChargeOnQueue, cancel_refunds: (queued: (numerator: 1, denominator: 1), running: (numerator: 1, denominator: 2), output_blocked: (numerator: 1, denominator: 1)))".to_vec(),
+    );
+    let center = String::from_utf8(files.get("units/command_center.ron").unwrap().clone())
+        .expect("public command center definition is UTF-8")
+        .replace(
+            "\"base:build_harvester\"], queue_capacity:",
+            "\"base:build_harvester\", \"base:free_hire\"], queue_capacity:",
+        );
+    assert!(center.contains("base:free_hire"));
+    files.insert("units/command_center.ron".into(), center.into_bytes());
+    files.insert(
+        "production/free_hire.ron".into(),
+        b"(id: \"free_hire\", name: \"Free Hire\", output_unit: \"base:harvester\", duration_ms: 60000, costs: [], payment: ReserveThenCharge, cancel_refunds: (queued: (numerator: 1, denominator: 1), running: (numerator: 1, denominator: 1), output_blocked: (numerator: 1, denominator: 1)))".to_vec(),
     );
 
     let bytes = turts_mod_runtime::pack::pack_files(&files).unwrap();
@@ -792,6 +810,181 @@ fn command_input_matches(expected: &turts_sim::Command, actual: &turts_sim::Comm
         ) => expected_producer == actual_producer && expected_job == actual_job,
         _ => false,
     }
+}
+
+fn order_input_matches_frozen(
+    expected: &FrozenCommand,
+    actual: &turts_sim::Command,
+    initial: &turts_sim::AuditState,
+) -> bool {
+    use turts_mod_api::Behaviour;
+    use turts_sim::{CommandKind, OrderTargetSim, QueueMode};
+    let CommandKind::Order(order) = &actual.kind else {
+        return false;
+    };
+    if actual.slot.0 != expected.slot || actual.seq != expected.seq {
+        return false;
+    }
+    let (order_id, behaviour, units, target) = match &expected.kind {
+        FrozenKind::MoveTo { units, target_bits } => (
+            "base:order_move",
+            Behaviour::Move,
+            units.clone(),
+            OrderTargetSim::Point(bevy_math::Vec2::new(
+                f32::from_bits(target_bits[0]),
+                f32::from_bits(target_bits[1]),
+            )),
+        ),
+        FrozenKind::Gather { unit, node } => (
+            "base:order_gather",
+            Behaviour::Gather,
+            vec![*unit],
+            OrderTargetSim::Node(turts_sim::NodeId(*node)),
+        ),
+        FrozenKind::Produce { producer, recipe } => (
+            "base:order_produce",
+            Behaviour::Produce,
+            vec![*producer],
+            OrderTargetSim::Content(turts_mod_api::ContentId::parse(recipe).unwrap()),
+        ),
+        FrozenKind::CancelFirstJob { producer } => {
+            let first_job = initial.allocators.next_values().2;
+            (
+                "base:order_cancel",
+                Behaviour::CancelProduction,
+                vec![*producer],
+                OrderTargetSim::Job(turts_sim::JobId(first_job)),
+            )
+        }
+        FrozenKind::Cancel { producer, job } => (
+            "base:order_cancel",
+            Behaviour::CancelProduction,
+            vec![*producer],
+            OrderTargetSim::Job(turts_sim::JobId(*job)),
+        ),
+    };
+    let target_matches = match (&order.target, &target) {
+        (OrderTargetSim::Point(actual), OrderTargetSim::Point(expected)) => {
+            actual.x.to_bits() == expected.x.to_bits() && actual.y.to_bits() == expected.y.to_bits()
+        }
+        (actual, expected) => actual == expected,
+    };
+    order.order.to_string() == order_id
+        && order.behaviour == behaviour
+        && order.units == units
+        && target_matches
+        && order.queue == QueueMode::Replace
+        && order.group == 0
+}
+
+fn replay_task4_order_log(
+    records: &[economylog::EconomyLogRecord],
+    expected_initial: &turts_sim::AuditState,
+    expected_commands: &[FrozenCommand],
+    expected_claims: &[(u8, u64)],
+) {
+    use economylog::EconomyLogRecord;
+
+    economylog::validate_records(records).unwrap_or_else(|error| {
+        panic!("Task4 catalog-derived order replay rejected the process log: {error}")
+    });
+    let initial = records
+        .iter()
+        .find_map(|record| match record {
+            EconomyLogRecord::Initial(state) => Some(state),
+            _ => None,
+        })
+        .expect("process log has its captured initial state");
+    assert_eq!(
+        initial, expected_initial,
+        "process boot matches public catalog"
+    );
+
+    let mut actual_claims = records
+        .iter()
+        .filter_map(|record| match record {
+            EconomyLogRecord::Claim {
+                player_id, slot, ..
+            } => Some((*slot, *player_id)),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    actual_claims.sort_unstable();
+    let mut expected_claims = expected_claims
+        .iter()
+        .map(|(slot, player_id)| (*slot, *player_id))
+        .collect::<Vec<_>>();
+    expected_claims.sort_unstable();
+    assert_eq!(
+        actual_claims, expected_claims,
+        "process Hello claims match fixture"
+    );
+
+    let commands = records
+        .iter()
+        .filter_map(|record| match record {
+            EconomyLogRecord::CommandBoundary(command) => Some(command),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        commands.len(),
+        expected_commands.len(),
+        "every admitted frozen envelope has exactly one command boundary"
+    );
+    let mut unmatched = expected_commands.iter().collect::<Vec<_>>();
+    for command in commands {
+        let index = unmatched
+            .iter()
+            .position(|expected| {
+                expected.slot == command.input.slot.0 && expected.seq == command.input.seq
+            })
+            .expect("every domain command maps to a frozen protocol envelope");
+        let expected = unmatched.remove(index);
+        assert!(
+            order_input_matches_frozen(expected, &command.input, expected_initial),
+            "slot {} seq {} matches its frozen order, target, subjects, queue and group",
+            expected.slot,
+            expected.seq
+        );
+    }
+    assert!(
+        unmatched.is_empty(),
+        "every expected domain command was captured"
+    );
+}
+
+fn mutate_order_command_after(
+    records: &mut [economylog::EconomyLogRecord],
+    seq: u32,
+    mut mutate: impl FnMut(&mut turts_sim::AuditState),
+) {
+    use economylog::EconomyLogRecord;
+    let operation_id = records
+        .iter()
+        .find_map(|record| match record {
+            EconomyLogRecord::CommandBoundary(command) if command.input.seq == seq => {
+                Some(command.operation_id)
+            }
+            _ => None,
+        })
+        .expect("fixture command boundary exists");
+    let mut changed_boundary = false;
+    let mut changed_operation = false;
+    for record in records {
+        match record {
+            EconomyLogRecord::CommandBoundary(command) if command.operation_id == operation_id => {
+                mutate(&mut command.after);
+                changed_boundary = true;
+            }
+            EconomyLogRecord::Operation(operation) if operation.operation_id == operation_id => {
+                mutate(&mut operation.after);
+                changed_operation = true;
+            }
+            _ => {}
+        }
+    }
+    assert!(changed_boundary && changed_operation);
 }
 
 fn protocol_command(input: &FrozenCommand) -> turts_net_protocol::PlayerCommand {
@@ -975,6 +1168,139 @@ fn audit_last_tick(path: &std::path::Path) -> u32 {
         .expect("audit log has completed ticks")
 }
 
+fn owner_unit_orders_from_audit(
+    state: &turts_sim::AuditState,
+    slot: u8,
+) -> Vec<turts_net_protocol::UnitOrderRecord> {
+    use turts_mod_api::Behaviour;
+    use turts_net_protocol as wire;
+    use turts_sim::{OrderTargetSim, RejectReason as R};
+
+    fn reject_reason(reason: R) -> wire::CommandRejectReason {
+        use wire::CommandRejectReason as W;
+        match reason {
+            R::EmptyCommand => W::EmptyCommand,
+            R::TooManyUnits => W::TooManyUnits,
+            R::DuplicateUnit => W::DuplicateUnit,
+            R::UnknownUnit => W::UnknownUnit,
+            R::NotOwner => W::NotOwner,
+            R::NotMobile => W::NotMobile,
+            R::TargetNotFinite => W::TargetNotFinite,
+            R::TargetOutsideMap => W::TargetOutsideMap,
+            R::MissingCapability => W::MissingCapability,
+            R::UnknownNode => W::UnknownNode,
+            R::IncompatibleItem => W::IncompatibleItem,
+            R::NodeDepleted => W::NodeDepleted,
+            R::UnknownRecipe => W::UnknownRecipe,
+            R::RecipeNotEnabled => W::RecipeNotEnabled,
+            R::QueueFull => W::QueueFull,
+            R::InsufficientBalance | R::UnknownBalance => W::InsufficientBalance,
+            R::InsufficientItems | R::UnknownInventory | R::InvalidAmount => W::InsufficientItems,
+            R::UnknownJob => W::UnknownJob,
+            R::RefundDestinationFull => W::RefundDestinationFull,
+            R::RefundDestinationOverflow => W::RefundDestinationOverflow,
+            R::ArithmeticOverflow => W::ArithmeticOverflow,
+            R::IdExhausted => W::IdExhausted,
+            R::BadSequence => W::BadSequence,
+            R::NotRemovable => W::NotRemovable,
+            R::NotToggleable => W::NotToggleable,
+            R::PrerequisitesMissing => W::PrerequisitesMissing,
+            R::AlreadyResearched => W::AlreadyResearched,
+            R::ResearchInProgress => W::ResearchInProgress,
+            R::IntegrityViolation => W::Internal,
+            R::NotApplicable => W::NotApplicable,
+            R::TargetInvalid => W::TargetInvalid,
+            R::TargetGone => W::TargetGone,
+            R::OutOfRange => W::OutOfRange,
+            R::NotQueueable => W::NotQueueable,
+            R::Blocked => W::Blocked,
+        }
+    }
+
+    let target = |target: &OrderTargetSim| match target {
+        OrderTargetSim::Invalid => panic!("invalid order target in captured unit state"),
+        OrderTargetSim::None => wire::OrderTarget::None,
+        OrderTargetSim::Point(point) => wire::OrderTarget::Point(wire::Pos {
+            x: point.x,
+            y: point.y,
+        }),
+        OrderTargetSim::Unit(unit) => wire::OrderTarget::Unit(wire::UnitId(*unit)),
+        OrderTargetSim::Node(node) => wire::OrderTarget::Node(wire::NodeId(node.0)),
+        OrderTargetSim::Job(job) => wire::OrderTarget::Job(wire::JobId(job.0)),
+        OrderTargetSim::Content(content) => wire::OrderTarget::Content(content.to_string()),
+    };
+    let summary = |order: &turts_sim::Order| wire::OrderSummary {
+        order: order.order.to_string(),
+        target: target(&order.target),
+    };
+
+    state
+        .raw_units
+        .iter()
+        .filter(|unit| unit.owner_slot == slot)
+        .filter_map(|unit| {
+            let unit_type = state
+                .unit_types
+                .iter()
+                .find(|kind| kind.type_id == unit.unit_type)?;
+            let orders = state
+                .unit_orders
+                .iter()
+                .find(|orders| orders.unit_id == unit.unit_id)
+                .map(|orders| orders.orders.clone())
+                .unwrap_or_default();
+            let owns_order_component = !orders.eq(&turts_sim::UnitOrders::default())
+                || state.catalog.as_ref().is_some_and(|catalog| {
+                    catalog.order_definitions.iter().any(|definition| {
+                        definition.unit_capabilities.iter().any(|capability| {
+                            capability.unit == unit_type.content_id
+                                && (capability.movement || capability.weapon)
+                        })
+                    })
+                });
+            if !owns_order_component {
+                return None;
+            }
+            let activity = if orders
+                .last_failure
+                .as_ref()
+                .is_some_and(|failure| failure.reason == R::Blocked)
+            {
+                wire::Activity::Blocked
+            } else if let Some(current) = &orders.current {
+                match current.behaviour {
+                    Behaviour::Move if unit.move_target.is_some() => wire::Activity::Moving,
+                    Behaviour::Move => wire::Activity::Pending,
+                    Behaviour::Attack => wire::Activity::Attacking,
+                    Behaviour::Hold => wire::Activity::Holding,
+                    Behaviour::Gather => wire::Activity::Gathering,
+                    _ => wire::Activity::Pending,
+                }
+            } else if !orders.queue.is_empty() {
+                wire::Activity::Pending
+            } else if unit.move_target.is_some() {
+                wire::Activity::Moving
+            } else {
+                wire::Activity::Idle
+            };
+            Some(wire::UnitOrderRecord {
+                unit: wire::UnitId(unit.unit_id),
+                activity,
+                current: orders.current.as_ref().map(summary),
+                queued: orders.queue.iter().map(summary).collect(),
+                last_failure: orders
+                    .last_failure
+                    .as_ref()
+                    .map(|failure| wire::OrderFailure {
+                        order: failure.order.to_string(),
+                        reason: reject_reason(failure.reason),
+                        tick: failure.tick,
+                    }),
+            })
+        })
+        .collect()
+}
+
 fn owner_snapshot_from_audit(
     state: &turts_sim::AuditState,
     slot: u8,
@@ -1125,7 +1451,7 @@ fn owner_snapshot_from_audit(
         weapons: vec![],
         healths: vec![],
         research: vec![],
-        unit_orders: Vec::new(),
+        unit_orders: owner_unit_orders_from_audit(state, slot),
     }
 }
 
@@ -1657,15 +1983,40 @@ fn replay_public_log_with_model(
                             && expected.seq == command_audit.input.seq
                     })
                     .expect("actual command has one separately frozen trace input");
-                let expected_input = sim_command(&unmatched.remove(index), oracle.modeled_state());
-                assert!(
-                    command_input_matches(&expected_input, &command_audit.input),
-                    "operation {} matches frozen input including raw float bits",
-                    operation.operation_id
-                );
+                let expected_frozen = unmatched.remove(index);
+                let mut expected_input = sim_command(&expected_frozen, oracle.modeled_state());
+                let task4_order =
+                    matches!(&command_audit.input.kind, turts_sim::CommandKind::Order(_));
+                if task4_order {
+                    assert!(
+                        order_input_matches_frozen(
+                            &expected_frozen,
+                            &command_audit.input,
+                            &public_initial,
+                        ),
+                        "operation {} matches frozen Order envelope including raw float bits",
+                        operation.operation_id
+                    );
+                    if let turts_sim::CommandKind::MoveTo { target, .. } = &mut expected_input.kind
+                        && let Some(bounds) = &operation.before.bounds
+                    {
+                        target.x = target.x.clamp(0.0, bounds.x);
+                        target.y = target.y.clamp(0.0, bounds.y);
+                    }
+                } else {
+                    assert!(
+                        command_input_matches(&expected_input, &command_audit.input),
+                        "operation {} matches frozen input including raw float bits",
+                        operation.operation_id
+                    );
+                }
                 oracle
                     .observe(
-                        &accounting::ExpectedOperation::Command(expected_input),
+                        &if task4_order {
+                            accounting::ExpectedOperation::Task4Order(command_audit.input.clone())
+                        } else {
+                            accounting::ExpectedOperation::Command(expected_input.clone())
+                        },
                         &operation.before,
                         &operation.after,
                         &operation.events,
@@ -1674,7 +2025,9 @@ fn replay_public_log_with_model(
                     .unwrap_or_else(|error| {
                         panic!("command operation {}: {error}", operation.operation_id)
                     });
-                command_records.push((*command_audit).clone());
+                let mut projected_audit = (*command_audit).clone();
+                projected_audit.input = expected_input;
+                command_records.push(projected_audit);
                 continue;
             }
 
@@ -1742,6 +2095,44 @@ fn replay_public_log_with_model(
                         Some((producer, job_id, phase)),
                     )
                 };
+            if let Some((producer, job_id, accounting::AutomaticPhase::ProductionAdvance)) =
+                producer_visit
+                && operation.events.iter().any(|event| matches!(
+                    &event.kind,
+                    turts_sim::EconomyEventKind::ProductionStarted { producer: event_producer, job: event_job, .. }
+                        if *event_producer == producer && *event_job == job_id
+                ))
+            {
+                let mut forged_after = operation.after.clone();
+                forged_after
+                    .raw_queues
+                    .iter_mut()
+                    .find(|queue| queue.producer == producer)
+                    .and_then(|queue| queue.jobs.iter_mut().find(|job| job.id == job_id))
+                    .expect("captured production job exists")
+                    .stage = turts_sim::JobStage::Queued;
+                forged_after
+                    .economy
+                    .queues
+                    .iter_mut()
+                    .find(|queue| queue.producer == producer)
+                    .and_then(|queue| queue.jobs.iter_mut().find(|job| job.id == job_id))
+                    .expect("captured public production job exists")
+                    .stage = turts_sim::JobStage::Queued;
+                let mut corrupted_oracle = oracle.clone();
+                assert!(
+                    corrupted_oracle
+                        .observe(
+                            &expected,
+                            &operation.before,
+                            &forged_after,
+                            &operation.events,
+                            None,
+                        )
+                        .is_err(),
+                    "independent accounting rejects ProductionStarted without the modeled job-stage transition"
+                );
+            }
             oracle
                 .observe(
                     &expected,
@@ -1986,7 +2377,7 @@ fn e8_commands_are_authoritative_and_acked() {
     let own_pos = position(owner_harvester);
     let foreign_pos = position(foreign_harvester);
     let center_pos = position(owner_center);
-    let bounds = public_initial.bounds.expect("public map bounds");
+    let bounds = public_initial.bounds.as_ref().expect("public map bounds");
     let unknown_unit = public_initial
         .economy
         .units
@@ -2097,7 +2488,7 @@ fn e8_commands_are_authoritative_and_acked() {
         ),
         // Malformed qualified-reference syntax is rejected before domain command capture.
         (produce_fixture(8, owner_center, "malformed"), false),
-        // The command center is owned but static; this tests the domain NotMobile path.
+        // The command center is owned but does not have the order's movement capability.
         (
             move_fixture(9, vec![owner_center], center_pos.x - 1.0, center_pos.y),
             true,
@@ -2229,8 +2620,12 @@ fn e8_commands_are_authoritative_and_acked() {
     assert_rejection(6, CommandRejectReason::MissingCapability);
     assert_rejection(7, CommandRejectReason::UnknownRecipe);
     assert_rejection(8, CommandRejectReason::UnknownRecipe);
-    assert_rejection(9, CommandRejectReason::NotMobile);
-    assert_rejection(10, CommandRejectReason::TargetOutsideMap);
+    assert_rejection(9, CommandRejectReason::NotApplicable);
+    assert_eq!(
+        command_attempt_receipt(&wire, 10, "applied").kind,
+        "applied",
+        "Task4 Move clamps finite outside points to the map edge"
+    );
     assert_rejection(11, CommandRejectReason::InsufficientBalance);
     for index in 12..12 + capacity {
         assert_eq!(
@@ -2252,6 +2647,68 @@ fn e8_commands_are_authoritative_and_acked() {
     assert_ack_before_every_rejection(&wire);
 
     let decoded = read_complete_economy_log(economy_log_path(&server)).unwrap();
+    let seq10_audit = decoded
+        .iter()
+        .find_map(|record| match record {
+            economylog::EconomyLogRecord::CommandBoundary(command)
+                if command.input.slot.0 == wire_slot && command.input.seq == 10 =>
+            {
+                Some(command)
+            }
+            _ => None,
+        })
+        .expect("outside finite point reaches the admitted Order audit");
+    let seq10_operation = decoded
+        .iter()
+        .find_map(|record| match record {
+            economylog::EconomyLogRecord::Operation(operation)
+                if operation.operation_id == seq10_audit.operation_id =>
+            {
+                Some(operation)
+            }
+            _ => None,
+        })
+        .expect("clamped Move has a matching Orders operation");
+    let bounds = public_initial.bounds.as_ref().expect("public map bounds");
+    assert_eq!(
+        seq10_operation
+            .after
+            .raw_units
+            .iter()
+            .find(|unit| unit.unit_id == owner_harvester)
+            .unwrap()
+            .pos,
+        seq10_operation
+            .before
+            .raw_units
+            .iter()
+            .find(|unit| unit.unit_id == owner_harvester)
+            .unwrap()
+            .pos,
+        "the Orders operation sets a target without teleporting the actor"
+    );
+    assert_eq!(
+        seq10_operation
+            .after
+            .raw_units
+            .iter()
+            .find(|target| target.unit_id == owner_harvester)
+            .unwrap()
+            .move_target,
+        Some(turts_mod_api::WorldPos {
+            x: bounds.x,
+            y: own_pos.y
+        }),
+        "the finite target is clamped to the exact public map edge"
+    );
+    assert!(
+        seq10_operation
+            .after
+            .unit_orders
+            .iter()
+            .all(|orders| { orders.unit_id != owner_harvester }),
+        "fresh plain Move keeps the zero-extra-order-state fast path"
+    );
     let admissions = decoded
         .iter()
         .filter_map(|record| match record {
@@ -2307,9 +2764,13 @@ fn e8_commands_are_authoritative_and_acked() {
         .expect("qualified unknown recipe reaches domain command capture");
     assert!(matches!(
         &seq7_audit.input.kind,
-        turts_sim::CommandKind::Produce { producer_id, recipe_id }
-            if *producer_id == owner_center
-                && recipe_id == &ContentId::parse("missing:train_rifleman").unwrap()
+        turts_sim::CommandKind::Order(order)
+            if order.order.to_string() == "base:order_produce"
+                && order.behaviour == turts_mod_api::Behaviour::Produce
+                && order.units == [owner_center]
+                && order.target == turts_sim::OrderTargetSim::Content(
+                    ContentId::parse("missing:train_rifleman").unwrap()
+                )
     ));
     assert_eq!(
         seq7_audit.result.outcome,
@@ -2386,7 +2847,13 @@ fn e8_commands_are_authoritative_and_acked() {
 
     // Reconstruct every domain command from the frozen public fixture, while malformed,
     // duplicate-sequence, and missing-capability envelopes remain admission-only.
-    let _oracle = replay_public_log(
+    replay_task4_order_log(
+        &decoded,
+        &public_initial,
+        &all_frozen,
+        &[(trace_slot, 10_001), (wire_slot, 10_002)],
+    );
+    let _economic_oracle = replay_public_log(
         economy_log_path(&server),
         "base",
         &[(trace_slot, 10_001), (wire_slot, 10_002)],
@@ -2571,6 +3038,22 @@ fn run_e8_public_variant_process() {
                 job: u64::MAX,
             },
         },
+        FrozenCommand {
+            slot,
+            seq: 7,
+            kind: FrozenKind::Produce {
+                producer: center,
+                recipe: "base:free_hire",
+            },
+        },
+        FrozenCommand {
+            slot,
+            seq: 8,
+            kind: FrozenKind::Cancel {
+                producer: center,
+                job: initial.allocators.next_values().2,
+            },
+        },
     ];
     let commands: Vec<PlayerCommand> = frozen.iter().map(protocol_command).collect();
     let wire = wire_sender::send_commands(&server.http_url, &server.ws_addr, player_id, commands);
@@ -2587,6 +3070,8 @@ fn run_e8_public_variant_process() {
         Some(CommandRejectReason::RecipeNotEnabled),
         Some(CommandRejectReason::InsufficientBalance),
         Some(CommandRejectReason::UnknownJob),
+        None,
+        None,
     ];
     for (index, expected) in expected.iter().enumerate() {
         let attempt = &wire.attempts[index];
@@ -2601,7 +3086,7 @@ fn run_e8_public_variant_process() {
 
     let log = economy_log_path(&server);
     let records = read_complete_economy_log(log).unwrap();
-    for frozen_command in frozen.iter().skip(1) {
+    for frozen_command in frozen.iter().skip(1).take(5) {
         let audit = records
             .iter()
             .find_map(|record| match record {
@@ -2636,7 +3121,136 @@ fn run_e8_public_variant_process() {
         );
         assert!(operation.events.is_empty());
     }
-    replay_public_log_with_model(log, initial, catalog, &[(slot, player_id)], &frozen, false);
+    replay_task4_order_log(&records, &initial, &frozen, &[(slot, player_id)]);
+    let _economic_oracle = replay_public_log_with_model(
+        log,
+        initial.clone(),
+        catalog,
+        &[(slot, player_id)],
+        &frozen,
+        false,
+    );
+    let produced = records
+        .iter()
+        .find_map(|record| match record {
+            economylog::EconomyLogRecord::CommandBoundary(command)
+                if command.input.slot.0 == slot && command.input.seq == 7 =>
+            {
+                command
+                    .result
+                    .outcome
+                    .as_ref()
+                    .ok()
+                    .and_then(|applied| applied.job_id)
+                    .map(|job| (job.0, &command.after))
+            }
+            _ => None,
+        })
+        .expect("free ReserveThenCharge production is applied");
+    let (job_id, produced_state) = produced;
+    let raw_job = produced_state
+        .raw_queues
+        .iter()
+        .find(|queue| queue.producer == center)
+        .and_then(|queue| queue.jobs.iter().find(|job| job.id == job_id))
+        .expect("captured zero-cost job remains queued at Produce boundary");
+    assert_eq!(
+        raw_job
+            .reservation
+            .as_ref()
+            .map(|reservation| reservation.lines.as_slice()),
+        Some([].as_slice()),
+        "ReserveThenCharge captures Some(empty) even when the recipe costs nothing"
+    );
+    assert!(produced_state.ledger_claims.iter().any(|claim| matches!(
+        claim,
+        turts_sim::ReservationClaimView::Active { map_job_id, token_job_id, lines }
+            if *map_job_id == job_id && *token_job_id == job_id && lines.is_empty()
+    )));
+    let canceled_state = records
+        .iter()
+        .find_map(|record| match record {
+            economylog::EconomyLogRecord::CommandBoundary(command)
+                if command.input.slot.0 == slot && command.input.seq == 8 =>
+            {
+                Some(&command.after)
+            }
+            _ => None,
+        })
+        .expect("zero-cost job Cancel is audited");
+    assert!(canceled_state.ledger_claims.iter().any(|claim| matches!(
+        claim,
+        turts_sim::ReservationClaimView::Closed { map_job_id } if *map_job_id == job_id
+    )));
+
+    let mut missing_reservation = records.clone();
+    mutate_order_command_after(&mut missing_reservation, 7, |state| {
+        let job = state
+            .raw_queues
+            .iter_mut()
+            .find(|queue| queue.producer == center)
+            .and_then(|queue| queue.jobs.iter_mut().find(|job| job.id == job_id))
+            .expect("captured zero-cost job exists");
+        job.reservation = None;
+    });
+    assert!(
+        economylog::validate_records(&missing_reservation)
+            .unwrap_err()
+            .contains("Produce changed state outside the catalog-derived job"),
+        "captured Produce without its empty reservation token is rejected"
+    );
+
+    let mut mismatched_token = records.clone();
+    mutate_order_command_after(&mut mismatched_token, 7, |state| {
+        let claim = state
+            .ledger_claims
+            .iter_mut()
+            .find(|claim| {
+                matches!(
+                    claim,
+                    turts_sim::ReservationClaimView::Active { map_job_id, .. }
+                        if *map_job_id == job_id
+                )
+            })
+            .expect("active zero-cost claim exists");
+        *claim = turts_sim::ReservationClaimView::Active {
+            map_job_id: job_id,
+            token_job_id: job_id + 1,
+            lines: vec![],
+        };
+    });
+    assert!(
+        economylog::validate_records(&mismatched_token)
+            .unwrap_err()
+            .contains("Produce changed state outside the catalog-derived job"),
+        "captured claim with a token for another JobId is rejected"
+    );
+
+    let mut leaked_claim = records.clone();
+    mutate_order_command_after(&mut leaked_claim, 8, |state| {
+        let claim = state
+            .ledger_claims
+            .iter_mut()
+            .find(|claim| {
+                matches!(
+                    claim,
+                    turts_sim::ReservationClaimView::Closed { map_job_id }
+                        if *map_job_id == job_id
+                )
+            })
+            .expect("Cancel closes the zero-cost reservation claim");
+        *claim = turts_sim::ReservationClaimView::Active {
+            map_job_id: job_id,
+            token_job_id: job_id,
+            lines: vec![],
+        };
+    });
+    assert!(
+        economylog::validate_records(&leaked_claim)
+            .unwrap_err()
+            .contains("Cancel changed state outside requested job removal"),
+        "captured Cancel that leaks the empty claim is rejected"
+    );
 }
 
 #[test]

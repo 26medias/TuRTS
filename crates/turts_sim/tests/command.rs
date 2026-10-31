@@ -90,7 +90,7 @@ fn validate_move_to_rejects_malformed_lists() {
     let mut app = app_with_two_units();
     let target = Vec2::new(30.0, 30.0);
     send(&mut app, 0, 1, vec![], target);
-    send(&mut app, 0, 2, (1..=257).collect(), target);
+    send(&mut app, 0, 2, (1..=4097).collect(), target);
     send(&mut app, 0, 3, vec![1, 1], target);
     send(&mut app, 0, 4, vec![1, 99], target);
     app.update();
@@ -102,23 +102,34 @@ fn validate_move_to_rejects_malformed_lists() {
             (1, Err(RejectReason::EmptyCommand)),
             (2, Err(RejectReason::TooManyUnits)),
             (3, Err(RejectReason::DuplicateUnit)),
-            (4, Err(RejectReason::UnknownUnit)),
+            (4, Ok(turts_sim::Applied { job_id: None })),
         ]
     );
-    // A rejected command changes nothing.
-    assert_eq!(moving_count(&mut app), 0);
+    assert_eq!(results(&app)[3].units.accepted, vec![1]);
+    assert_eq!(
+        results(&app)[3].units.refused,
+        vec![(99, RejectReason::UnknownUnit)]
+    );
+    assert_eq!(moving_count(&mut app), 1);
     let before = snapshot(app.world_mut());
     app.update();
-    assert_eq!(snapshot(app.world_mut()), before);
+    let after = snapshot(app.world_mut());
+    assert_ne!(after[0].pos, before[0].pos);
+    assert_eq!(after[1].pos, before[1].pos);
 }
 
 #[test]
-fn exactly_256_units_is_not_too_many() {
+fn exactly_4096_units_is_not_too_many() {
     let mut app = app_with_two_units();
-    // 256 ids pass the length check; the first unknown id then fails the existence check.
-    send(&mut app, 0, 1, (1..=256).collect(), Vec2::new(30.0, 30.0));
+    // 4,096 ids pass the cap; per-unit validation still accepts only the existing mobile units.
+    send(&mut app, 0, 1, (1..=4096).collect(), Vec2::new(30.0, 30.0));
     app.update();
-    assert_eq!(results(&app)[0].outcome, Err(RejectReason::UnknownUnit));
+    assert_eq!(
+        results(&app)[0].outcome,
+        Ok(turts_sim::Applied { job_id: None })
+    );
+    assert_eq!(results(&app)[0].units.accepted, vec![1, 2]);
+    assert_eq!(results(&app)[0].units.refused.len(), 4094);
 }
 
 #[test]
@@ -230,7 +241,7 @@ fn map_owner_slot_decides_who_may_move_a_unit() {
 }
 
 #[test]
-fn mixed_ownership_in_one_command_is_not_owner_and_moves_nothing() {
+fn mixed_ownership_in_one_command_refuses_each_unit_and_moves_nothing() {
     // Unit 1 and unit 2 are both owned by slot 0. Slot 1 lists both.
     let mut app = app_with_two_units();
     send(&mut app, 1, 1, vec![1, 2], Vec2::new(30.0, 30.0));
@@ -319,7 +330,7 @@ fn reject_reason_strings_match_the_wire_names() {
 }
 
 #[test]
-fn move_to_mixed_mobile_and_static_units_is_atomic() {
+fn move_to_mixed_mobile_and_static_units_move_per_unit() {
     let mut app = headless_app(20);
     let origin = PackageId(ORIGIN.to_string());
     let mobile = UnitDef {
@@ -392,6 +403,14 @@ fn move_to_mixed_mobile_and_static_units_is_atomic() {
     load_map(app.world_mut(), &origin, &map).unwrap();
     send(&mut app, 0, 1, vec![1, 2], Vec2::new(30.0, 30.0));
     app.update();
-    assert_eq!(results(&app)[0].outcome, Err(RejectReason::NotMobile));
-    assert_eq!(moving_count(&mut app), 0);
+    assert_eq!(
+        results(&app)[0].outcome,
+        Ok(turts_sim::Applied { job_id: None })
+    );
+    assert_eq!(results(&app)[0].units.accepted, vec![1]);
+    assert_eq!(
+        results(&app)[0].units.refused,
+        vec![(2, RejectReason::NotApplicable)]
+    );
+    assert_eq!(moving_count(&mut app), 1);
 }

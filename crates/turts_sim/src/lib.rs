@@ -9,6 +9,7 @@ pub mod harness;
 pub mod ids;
 pub mod map;
 pub mod movement;
+pub mod orders;
 pub mod plugin;
 pub mod registry;
 pub mod slots;
@@ -43,8 +44,8 @@ pub use economy::ledger::EconomyLedger;
 pub use economy::production::JobStage;
 pub use economy::transaction::{AuditTrail, CommandAudit, OperationAudit, TickAudit};
 pub use economy::views::{
-    AuditState, BalanceView, CostView, EconomyChangesView, EconomyStateView, InventoryView,
-    ItemView, JobView, NodeView, OrderView, QueueView, ReservationClaimView,
+    AuditState, BalanceView, CatalogOrderAudit, CostView, EconomyChangesView, EconomyStateView,
+    InventoryView, ItemView, JobView, NodeView, OrderView, QueueView, ReservationClaimView,
     ReservationEndpointView, ReservationLineView, UnitTypeView, UnitView, WorldView, audit_state,
     balance_view, inventory_view, node_view, order_view, queue_view, world_view,
 };
@@ -52,6 +53,10 @@ pub use economy::{EconomyOrders, SurfaceNodes};
 pub use harness::headless_app;
 pub use ids::{IdAllocators, JobId, NodeId};
 pub use map::load_map;
+pub use orders::{
+    Order, OrderCommand, OrderFailure, OrderPolicyAudit, OrderTargetSim,
+    OrderUnitCapabilitiesAudit, QueueMode, UnitOrders, UnitOutcomes,
+};
 pub use plugin::SimPlugin;
 pub use plugin::SimSet;
 pub use registry::{UnitTypeEntry, UnitTypes};
@@ -104,12 +109,16 @@ pub fn spawn_synthetic_units(
         .collect::<Result<Vec<_>, String>>()?;
     boot_m3::initialize_m3_resources(world);
     for ((id, pos), rows) in ids.iter().zip(positions).zip(capability_rows) {
-        world.spawn((
+        let order_capable = orders::unit_order_capable(world, unit_type);
+        let mut entity = world.spawn((
             UnitId(*id),
             world::UnitType(unit_type),
             world::Owner(crate::SlotId(0)),
             world::Position(*pos),
         ));
+        if order_capable {
+            entity.insert(orders::UnitOrders::default());
+        }
         if let Some(inventory) = &definition.inventory {
             world
                 .resource_mut::<economy::ledger::EconomyLedger>()
