@@ -1,6 +1,6 @@
 # MC — Player control and client foundation: design
 
-Date: 2026-10-29. Revision 12. Status: DRAFT, passed gate 1 (2026-10-29): spec-rigour-reviewer,
+Date: 2026-10-29. Revision 13. Status: DRAFT, passed gate 1 (2026-10-29): spec-rigour-reviewer,
 technical-director, bevy-rendering-engineer, player, simulation-core-engineer; three repair
 passes. CEO decisions (2026-10-29): K1 to K27 as recommended (K11 stays conditional on probe P1),
 budget option 1 (the full design, about 184 runs); K20 applied in revision 5 (section 17.2).
@@ -13,6 +13,7 @@ Revision 10 (re-check 2): frames with input are kept until the oracle reads them
 Revision 11 (2026-10-30, build ruling O10): the effect `Shell` is `ShellAction`; the client shell module is
 `client_shell.rs`. The `forge` resource `shell` makes the token `shell` and `Shell` content names.
 Revision 12 (2026-10-30, build ruling O11): PT1 step 6 disables the Shell Press, not a belt piece.
+Revision 13 (2026-10-31, build ruling O12): the slot pool of 6.3 requires the N primary slots only; spares are the legal slots that fit.
 Author seat: `ux-designer` (D65, D66, D67, client side of D70; Second on D68).
 Source of record: `RTS-Engine-Project-Specifications.md` version 0.8 (cited as S:line).
 Other sources: the QA0 design `docs/superpowers/specs/2026-10-29-qa0-instrument-design.md`
@@ -608,8 +609,12 @@ point P:
 2. Reserved cells: the slots of resting units of other envelopes, and the live slots of moves in
    progress. The pool skips a slot within s of a reserved cell. It also skips a slot outside
    the map (inset by r_max) and a slot inside a static footprint.
-3. Pool: a hexagonal grid round P. The pool holds N + max(6, ceil(N / 4)) slots, sorted by
-   distance to P, ties by angle. The first N are the primary slots; the rest are spares.
+3. Pool: a hexagonal grid round P. The pool holds up to N + max(6, ceil(N / 4)) slots, sorted by
+   distance to P, ties by angle. The first N are the primary slots; the rest are spares. The N
+   primary slots are required: when fewer than N legal slots exist, the whole envelope fails
+   with `blocked` for each unit, and no unit moves. The spares are the legal slots that remain,
+   zero or more (revision 13, ruling O12). With no spare, a unit that makes no progress for 1 s
+   (6.4) has no free slot to take and becomes `Blocked` at once.
 4. Order-keeping assignment, O(N log N): take the travel direction from the group centroid to P.
    Sort the units and the primary slots by their position along that direction. Cut both lists
    into bands of round(sqrt(N)). In each band, sort by the lateral position and pair them in
