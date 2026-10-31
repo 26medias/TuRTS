@@ -8,7 +8,7 @@ source: codex
 
 # MC execution board
 
-State: ACTIVE: O12 released Task 6. Integration and all four open lanes rebased onto main721e56e (design revision13); dirty source hashes preserved.10of25lanes complete;47/170runs; Task6run5/6. C1-C103. Task6 clean candidate cc6f91e is re-gating after focused E8 repair. No main merge.
+State: ACTIVE: O12 released Task 6. Integration and all four open lanes rebased onto main721e56e (design revision13); dirty source hashes preserved.10of25lanes complete;47/170runs; Task6run5/6. C1-C104. Task6 F11 fixture repair follows traced lab-centre obstruction. No main merge.
 
 Plan: `docs/superpowers/plans/2026-10-29-mc-player-control.md`.
 Design of record: `docs/superpowers/specs/2026-10-29-mc-player-control-design.md`, revision12 at63788d7, included by mainc3f09d0.
@@ -807,3 +807,14 @@ Verified checkpoint95d5d07: native helper final-rust-qa-frozen-4 has10 commands 
 
 
 Task6 candidate cc6f91e77ffc72dd7df6089694815033a64a2fb0 commits only the E8 adapter and strict validator correction. Root verified clean source, unchanged independent common/accounting.rs and exact frozen SHA. Focused E8 process1/1 exit0; validator positive/forged-current/foreign-failure regression1/1 exit0. Root receipt: main target/mc-evidence/t6-root/e8-cc6f91e-root-check.json. Formal final-head gates running; no acceptance or merge. Ledger47 consecutive unique rows, no missing run.
+
+
+## C104: use clear ground inside turret range in the F11 process fixture
+
+Conflict: final-source G-ACC on cc6f91e failed at F11's 230-second final-health wait. Root read the retained reports: both clients welcomed, research completed at tick1361, opponent Move accepted/applied at1363, drone9 lost all health, drone10 kept100 health and rested at(15.05,2.874167). This was not a startup failure. F11 sends Move(17,4) at crates/turts_server/tests/m3_process.rs:301-302, exactly the lab centre at mods/forge/maps/proving_ground.ron:12. The lab radius1.2 plus drone radius0.6 makes that ground target obstructed. The new legal fallback is outside turret range8 at(17,12). The old fixture relied on movement through a static body.
+
+Choice: change only this native process fixture's ground target to(20,6). It is within the existing radius-inset32x16 map and clear of the lab, press and arm loader; the segment from the drone's initial(30,4) is clear. Distance to turret is sqrt45, about6.708, below range8. Builder independently checked the geometry. Keep actual research completion before release, accepted move after research, private research projection, both clients' exact health steps, ten10-damage shots at drone9 and five20-damage shots at drone10, and the same230-second deadline. Actual timing and focused green remain NOT TRACED until the run finishes. Forge files, frozen fixture, design and gameplay rules do not change.
+
+Evidence: retained failed acceptance at lane target/m3-evidence/t16-builder/acceptance/20261031T160856Z/f11-evidence; root selected report hashes/state in main target/mc-evidence/t6-root/f11-cc6f91e-failure-classification.json. Turret range: mods/forge/units/turret.ron:11; drone radius: mods/forge/units/drone.ron:4; exact assertions remain m3_process.rs:355-398. This is a test-fixture/mechanism applicability ruling under brief4:49-51. Alternative not taken: remove collision handling, change Forge content or its frozen values, widen the deadline, accept missing damage, or retry the same unreachable predicate. No CEO stop applies.
+
+All ten native gates passed on cc6f91e; local exact E9loss passed1/1 after184.31s and E10 passed. Full G-ACC is exit1, not a pass. Required next steps: focused F11 green, commit the fixture correction, final-source gates, selected G-REF and postgate plants, then independent runtime review.47/170 runs; Task6run5/6. No merge/push.
