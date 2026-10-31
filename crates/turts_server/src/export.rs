@@ -93,6 +93,7 @@ pub fn snapshot_for(view: &WorldView, slot: SlotId) -> wire::Snapshot {
             .collect(),
         healths: view.m3.raw_healths.iter().map(health_state).collect(),
         research: research_records(&view.m3.research, Some(slot)),
+        unit_orders: Vec::new(),
     }
 }
 
@@ -181,6 +182,7 @@ pub fn delta_for(batch: &CommittedTick, view: &WorldView, slot: SlotId) -> wire:
                     .any(|changed| changed.slot == record.slot.0)
             })
             .collect(),
+        unit_orders: Vec::new(),
     }
 }
 

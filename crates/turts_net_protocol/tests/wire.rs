@@ -19,8 +19,8 @@ where
 }
 
 #[test]
-fn wire_v3_roundtrips_original_fields_and_reasons() {
-    assert_eq!(NET_PROTOCOL_VERSION, 3);
+fn wire_v4_roundtrips_existing_fields_and_reasons() {
+    assert_eq!(NET_PROTOCOL_VERSION, 4);
     round_trip(UnitId(4_000_000_000));
     round_trip(SlotId(255));
     round_trip(Pos { x: 1.5, y: -2.25 });
@@ -33,6 +33,7 @@ fn wire_v3_roundtrips_original_fields_and_reasons() {
         slot_id: SlotId(1),
         tick: 99,
         tick_hz: 20,
+        match_id: 0x1234,
     });
     round_trip(JoinRejected {
         reason: "player already in match".into(),
@@ -111,6 +112,7 @@ fn wire_v3_roundtrips_original_fields_and_reasons() {
         weapons: vec![],
         healths: vec![],
         research: vec![],
+        unit_orders: vec![],
     });
     round_trip(WorldDelta {
         tick: 8,
@@ -135,38 +137,30 @@ fn wire_v3_roundtrips_original_fields_and_reasons() {
         weapons: vec![],
         healths: vec![],
         research: vec![],
+        unit_orders: Vec::new(),
     });
-    for kind in [
-        PlayerCommandKind::MoveTo {
-            unit_ids: vec![UnitId(1), UnitId(2)],
-            target: Pos { x: 3.0, y: 4.0 },
-        },
-        PlayerCommandKind::Gather {
-            unit_id: UnitId(2),
-            node_id: NodeId(3),
-        },
-        PlayerCommandKind::Produce {
-            producer_id: UnitId(4),
-            recipe_id: "base:hire".into(),
-        },
-        PlayerCommandKind::CancelProduction {
-            producer_id: UnitId(4),
-            job_id: JobId(5),
-        },
-    ] {
-        round_trip(PlayerCommand { seq: 12, kind });
-    }
-    round_trip(CommandAck { seq: 12, tick: 40 });
-    round_trip(CommandApplied {
+    round_trip(PlayerCommand {
         seq: 12,
-        tick: 41,
-        job_id: Some(JobId(9)),
+        order: OrderEnvelope {
+            order: "base:order_move".into(),
+            units: vec![UnitId(1), UnitId(2)],
+            target: OrderTarget::Point(Pos { x: 3.0, y: 4.0 }),
+            queue: QueueMode::Append,
+            group: 7,
+        },
     });
+    round_trip(CommandAck { seq: 12, tick: 40 });
     for reason in CommandRejectReason::ALL {
-        round_trip(CommandRejected {
+        round_trip(OrderResult {
             seq: 12,
             tick: 42,
-            reason: *reason,
+            accepted: vec![],
+            refused: vec![UnitRefusal {
+                unit: UnitId(4),
+                reason: *reason,
+            }],
+            envelope: None,
+            job_id: None,
         });
         assert_eq!(
             reason.as_str(),

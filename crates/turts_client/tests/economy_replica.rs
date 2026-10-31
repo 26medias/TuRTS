@@ -65,6 +65,7 @@ fn snapshot(tick: u32) -> Snapshot {
         weapons: vec![],
         healths: vec![],
         research: vec![],
+        unit_orders: Vec::new(),
     }
 }
 
@@ -88,6 +89,7 @@ fn delta(tick: u32, base_tick: u32) -> WorldDelta {
         weapons: vec![],
         healths: vec![],
         research: vec![],
+        unit_orders: Vec::new(),
     }
 }
 

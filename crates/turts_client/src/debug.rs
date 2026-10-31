@@ -167,6 +167,7 @@ pub fn debug_json(world: &World) -> String {
         .unwrap_or_default();
     json!({
         "phase": phase,
+        "match_id": world.get_resource::<ReplicaState>().and_then(|state| state.welcome.map(|welcome| welcome.match_id)),
         "units": units,
         "last_frame": last_frame,
         "trace": trace,
@@ -199,6 +200,89 @@ fn command_result_json(result: &CommandResult) -> Value {
         CommandResult::Rejected { seq, tick, reason } => {
             json!({ "seq": seq, "rejected_tick": tick, "rejected": reason.as_str() })
         }
+        CommandResult::Order {
+            seq,
+            tick,
+            accepted,
+            refused,
+            envelope,
+            job_id,
+        } => {
+            let mut value = serde_json::Map::new();
+            value.insert("seq".into(), json!(seq));
+            if !accepted.is_empty() {
+                value.insert("applied_tick".into(), json!(tick));
+                value.insert("job_id".into(), json!(job_id.map(|id| id.0)));
+            }
+            if accepted.is_empty() && (envelope.is_some() || !refused.is_empty()) {
+                let reason = envelope.or_else(|| refused.first().map(|refusal| refusal.reason));
+                if let Some(reason) = reason {
+                    value.insert("rejected_tick".into(), json!(tick));
+                    value.insert("rejected".into(), json!(reason.as_str()));
+                }
+            }
+            value.insert(
+                "accepted".into(),
+                json!(accepted.iter().map(|unit| unit.0).collect::<Vec<_>>()),
+            );
+            value.insert(
+                "refused".into(),
+                json!(
+                    refused
+                        .iter()
+                        .map(|refusal| json!({
+                            "unit": refusal.unit.0,
+                            "reason": refusal.reason.as_str(),
+                        }))
+                        .collect::<Vec<_>>()
+                ),
+            );
+            Value::Object(value)
+        }
+    }
+}
+
+#[cfg(test)]
+mod command_result_json_tests {
+    use super::command_result_json;
+    use crate::ingest::CommandResult;
+    use turts_net_protocol::{CommandRejectReason, UnitId, UnitRefusal};
+
+    #[test]
+    fn empty_order_rejection_preserves_legacy_debug_keys() {
+        let value = command_result_json(&CommandResult::Order {
+            seq: 9,
+            tick: 41,
+            accepted: Vec::new(),
+            refused: Vec::new(),
+            envelope: Some(CommandRejectReason::EmptyCommand),
+            job_id: None,
+        });
+        assert_eq!(value["seq"], 9);
+        assert_eq!(value["rejected_tick"], 41);
+        assert_eq!(value["rejected"], "empty_command");
+        assert_eq!(value["accepted"], serde_json::json!([]));
+        assert_eq!(value["refused"], serde_json::json!([]));
+    }
+
+    #[test]
+    fn partial_order_acceptance_is_not_reported_as_all_rejected() {
+        let value = command_result_json(&CommandResult::Order {
+            seq: 10,
+            tick: 42,
+            accepted: vec![UnitId(1)],
+            refused: vec![UnitRefusal {
+                unit: UnitId(2),
+                reason: CommandRejectReason::NotOwner,
+            }],
+            envelope: None,
+            job_id: None,
+        });
+        assert_eq!(value["applied_tick"], 42);
+        assert!(value.get("rejected_tick").is_none());
+        assert!(value.get("rejected").is_none());
+        assert_eq!(value["accepted"], serde_json::json!([1]));
+        assert_eq!(value["refused"][0]["reason"], "not_owner");
     }
 }
 
@@ -255,22 +339,11 @@ pub fn report_json(world: &World) -> Value {
         let ordered = receipts?.ordered_for(ack.seq, ack.connection_epoch)?;
         Some(json!({ "seq": ack.seq, "connection_epoch": ack.connection_epoch, "ack_precedes_rejection": ordered }))
     }).collect();
-    let command_results: Vec<Value> = results
-        .0
-        .iter()
-        .map(|result| match result {
-            CommandResult::Acked { seq, tick } => json!({ "seq": seq, "ack_tick": tick }),
-            CommandResult::Applied { seq, tick, job_id } => {
-                json!({ "seq": seq, "applied_tick": tick, "job_id": job_id.map(|job| job.0) })
-            }
-            CommandResult::Rejected { seq, tick, reason } => {
-                json!({ "seq": seq, "rejected_tick": tick, "rejected": reason.as_str() })
-            }
-        })
-        .collect();
+    let command_results: Vec<Value> = results.0.iter().map(command_result_json).collect();
     let debug = serde_json::from_str(&debug_json(world)).unwrap_or(Value::Null);
     json!({
         "welcomed": state.welcome.is_some(),
+        "match_id": state.welcome.map(|welcome| welcome.match_id),
         "rejected_reason": rejected_reason,
         "slot": state.welcome.map(|welcome| welcome.slot),
         "disconnected_after_connect": world.resource::<JoinState>().disconnected_after_connect,

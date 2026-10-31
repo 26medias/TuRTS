@@ -795,34 +795,44 @@ fn command_input_matches(expected: &turts_sim::Command, actual: &turts_sim::Comm
 }
 
 fn protocol_command(input: &FrozenCommand) -> turts_net_protocol::PlayerCommand {
-    use turts_net_protocol::{PlayerCommand, PlayerCommandKind, Pos, UnitId};
-    let kind = match &input.kind {
-        FrozenKind::MoveTo { units, target_bits } => PlayerCommandKind::MoveTo {
-            unit_ids: units.iter().copied().map(UnitId).collect(),
-            target: Pos {
+    use turts_net_protocol::{OrderEnvelope, OrderTarget, PlayerCommand, Pos, QueueMode, UnitId};
+    let (order, units, target) = match &input.kind {
+        FrozenKind::MoveTo { units, target_bits } => (
+            "base:order_move",
+            units.iter().copied().map(UnitId).collect(),
+            OrderTarget::Point(Pos {
                 x: f32::from_bits(target_bits[0]),
                 y: f32::from_bits(target_bits[1]),
-            },
-        },
-        FrozenKind::Produce { producer, recipe } => PlayerCommandKind::Produce {
-            producer_id: UnitId(*producer),
-            recipe_id: (*recipe).to_owned(),
-        },
-        FrozenKind::Gather { unit, node } => PlayerCommandKind::Gather {
-            unit_id: UnitId(*unit),
-            node_id: turts_net_protocol::NodeId(*node),
-        },
-        FrozenKind::Cancel { producer, job } => PlayerCommandKind::CancelProduction {
-            producer_id: UnitId(*producer),
-            job_id: turts_net_protocol::JobId(*job),
-        },
+            }),
+        ),
+        FrozenKind::Produce { producer, recipe } => (
+            "base:order_produce",
+            vec![UnitId(*producer)],
+            OrderTarget::Content((*recipe).to_owned()),
+        ),
+        FrozenKind::Gather { unit, node } => (
+            "base:order_gather",
+            vec![UnitId(*unit)],
+            OrderTarget::Node(turts_net_protocol::NodeId(*node)),
+        ),
+        FrozenKind::Cancel { producer, job } => (
+            "base:order_cancel",
+            vec![UnitId(*producer)],
+            OrderTarget::Job(turts_net_protocol::JobId(*job)),
+        ),
         FrozenKind::CancelFirstJob { .. } => {
             panic!("trace-only dynamic cancellation is not a static wire fixture")
         }
     };
     PlayerCommand {
         seq: input.seq,
-        kind,
+        order: OrderEnvelope {
+            order: order.into(),
+            units,
+            target,
+            queue: QueueMode::Replace,
+            group: 0,
+        },
     }
 }
 
@@ -1115,6 +1125,7 @@ fn owner_snapshot_from_audit(
         weapons: vec![],
         healths: vec![],
         research: vec![],
+        unit_orders: Vec::new(),
     }
 }
 
@@ -1874,7 +1885,7 @@ fn start_economy_server(
 #[ignore = "real WebSocket process acceptance; run through scripts/acceptance.sh"]
 fn e8_commands_are_authoritative_and_acked() {
     use turts_mod_api::{ContentId, CostSource};
-    use turts_net_protocol::{CommandRejectReason, PlayerCommand, PlayerCommandKind};
+    use turts_net_protocol::{CommandRejectReason, OrderTarget, PlayerCommand};
 
     let package_dir = support::test_dir("e8-economy");
     let package = support::pack("base", &package_dir);
@@ -2276,9 +2287,10 @@ fn e8_commands_are_authoritative_and_acked() {
         &CommandRejectReason::NotOwner
     );
     assert!(matches!(
-        &admission(8).1.kind,
-        PlayerCommandKind::Produce { producer_id, recipe_id }
-            if producer_id.0 == owner_center && recipe_id == "malformed"
+        &admission(8).1.order,
+        order if order.order == "base:order_produce"
+            && order.units == [turts_net_protocol::UnitId(owner_center)]
+            && order.target == OrderTarget::Content("malformed".into())
     ));
     assert!(admissions.iter().all(|(_, command)| command.seq != 7));
 

@@ -4,6 +4,7 @@ const PANEL_WIDE_WIDTH: f32 = 390.0;
 
 use std::collections::BTreeMap;
 
+use crate::commands::ClientCommand;
 use bevy::camera::visibility::InheritedVisibility;
 use bevy::{
     prelude::*,
@@ -15,8 +16,7 @@ use bevy::{
 };
 use turts_mod_api::{ContentId, CostSource, Footprint, ResourceKind};
 use turts_net_protocol::{
-    EconomyState, GatherStage, InventoryPort, JobId, JobStage, NodeId, PlayerCommandKind, Pos,
-    UnitId,
+    EconomyState, GatherStage, InventoryPort, JobId, JobStage, NodeId, Pos, UnitId,
 };
 
 use crate::{
@@ -713,6 +713,30 @@ fn append_last_result(model: &mut PanelModel, results: &CommandResults) {
             "Last command: rejected · {} · seq {seq} · tick {tick}",
             reason.as_str()
         )),
+        Some(CommandResult::Order {
+            seq,
+            tick,
+            accepted,
+            refused,
+            envelope,
+            job_id,
+            ..
+        }) => {
+            if accepted.is_empty() {
+                let reason = envelope
+                    .or_else(|| refused.first().map(|unit| unit.reason))
+                    .unwrap_or(turts_net_protocol::CommandRejectReason::Internal);
+                model.lines.push(format!(
+                    "Last command: rejected · {} · seq {seq} · tick {tick}",
+                    reason.as_str()
+                ));
+            } else {
+                let job = job_id.map_or_else(String::new, |id| format!(" · job {}", id.0));
+                model.lines.push(format!(
+                    "Last command: applied · seq {seq} · tick {tick}{job}"
+                ));
+            }
+        }
         None => {}
     }
 }
@@ -795,19 +819,19 @@ fn activate_action(
         &mut pending,
         match &action.0 {
             UiAction::Select { .. } => return,
-            UiAction::Produce { producer, recipe } => PlayerCommandKind::Produce {
+            UiAction::Produce { producer, recipe } => ClientCommand::Produce {
                 producer_id: UnitId(*producer),
                 recipe_id: recipe.clone(),
             },
-            UiAction::Cancel { producer, job } => PlayerCommandKind::CancelProduction {
+            UiAction::Cancel { producer, job } => ClientCommand::CancelProduction {
                 producer_id: UnitId(*producer),
                 job_id: *job,
             },
-            UiAction::SetEnabled { unit, enabled } => PlayerCommandKind::SetEnabled {
+            UiAction::SetEnabled { unit, enabled } => ClientCommand::SetEnabled {
                 unit_id: UnitId(*unit),
                 enabled: *enabled,
             },
-            UiAction::Remove { unit } => PlayerCommandKind::Remove {
+            UiAction::Remove { unit } => ClientCommand::Remove {
                 unit_id: UnitId(*unit),
             },
         },
@@ -1347,6 +1371,7 @@ mod activation_tests {
                 slot: 0,
                 tick: 0,
                 tick_hz: 20,
+                match_id: 0,
             }),
             replica: Some(replica),
             ..ReplicaState::default()
@@ -1360,7 +1385,7 @@ mod activation_tests {
                     producer: 8,
                     recipe: recipe_id.clone(),
                 },
-                PlayerCommandKind::Produce {
+                ClientCommand::Produce {
                     producer_id: UnitId(8),
                     recipe_id,
                 },
@@ -1370,7 +1395,7 @@ mod activation_tests {
                     producer: 8,
                     job: JobId(91),
                 },
-                PlayerCommandKind::CancelProduction {
+                ClientCommand::CancelProduction {
                     producer_id: UnitId(8),
                     job_id: JobId(91),
                 },

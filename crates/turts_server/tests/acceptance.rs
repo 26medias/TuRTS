@@ -416,7 +416,7 @@ struct T4Case {
     homes: &'static [(u32, (f32, f32))],
 }
 
-/// T4: invalid `MoveTo` commands. Each gets `CommandAck`, then `CommandRejected` with its
+/// T4: invalid `MoveTo` commands. Each gets `CommandAck`, then `OrderResult` with its
 /// reason, and no unit ever moves. The real base map checks static rejection and slot-1 ownership
 /// while movement targets its slot-owned mobile harvester. Acme retains the map-bound check.
 #[test]

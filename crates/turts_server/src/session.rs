@@ -11,14 +11,14 @@ use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
 use lightyear::prelude::server::*;
 use lightyear::prelude::*;
-use turts_mod_api::{ContentId, PackageId};
+use turts_mod_api::{Behaviour, ContentId, PackageId};
 use turts_net_lightyear::ReliableChannel;
 use turts_net_protocol::NET_PROTOCOL_VERSION;
 use turts_net_protocol::messages::*;
-use turts_net_protocol::{CommandRejectReason, PlayerCommand, PlayerCommandKind};
+use turts_net_protocol::{CommandRejectReason, MAX_ORDER_UNITS, PlayerCommand};
 use turts_sim::{
-    ClaimError, Command as SimCommand, CommandKind, CommandQueue, CompletedWorld, Owner, SimSet,
-    Slots, Tick as SimTick, UnitId as SimUnitId, UnitType, UnitTypes, Vec2,
+    ClaimError, CommandQueue, CompletedWorld, Owner, SimSet, Slots, Tick as SimTick,
+    UnitId as SimUnitId, UnitType, UnitTypes,
 };
 
 use crate::{economylog::EconomyLogSink, export, stats::Stats};
@@ -64,6 +64,7 @@ pub struct SnapshotDue;
 pub fn install(app: &mut App, advertised: Advertised) {
     app.insert_resource(advertised);
     app.init_resource::<StagedPlayerCommands>()
+        .init_resource::<PendingOrderCommands>()
         .init_resource::<CommandAdmissionDiagnostics>()
         .init_resource::<ReliableTraffic>();
     app.add_systems(
@@ -139,6 +140,7 @@ pub fn receive_hello(
     advertised: Res<Advertised>,
     mut traffic: ResMut<ReliableTraffic>,
     mut economy_log: Option<ResMut<EconomyLogSink>>,
+    match_id: Res<crate::stats::MatchId>,
 ) {
     for (entity, mut receiver, has_session, pending_kick) in clients.iter_mut() {
         let mut decided = has_session || pending_kick;
@@ -171,6 +173,7 @@ pub fn receive_hello(
                             slot_id: SlotId(slot.0),
                             tick: tick.0,
                             tick_hz: advertised.tick_hz,
+                            match_id: match_id.0,
                         });
                         traffic.record(entity);
                     }
@@ -201,6 +204,8 @@ pub struct StagedPlayerCommand {
 }
 #[derive(Resource, Debug, Default)]
 pub struct StagedPlayerCommands(pub VecDeque<StagedPlayerCommand>);
+#[derive(Resource, Debug, Default)]
+pub struct PendingOrderCommands(pub BTreeMap<(u8, u32), PlayerCommand>);
 #[derive(Debug, Clone, PartialEq)]
 pub struct AdmissionRecord {
     pub envelope: PlayerCommand,
@@ -291,21 +296,94 @@ pub fn admit_player_commands(world: &mut World) {
             false
         };
         if !newer {
-            record_admission_rejection(world, staged, tick, CommandRejectReason::BadSequence);
+            let result = crate::orders::refusal(&staged.envelope, CommandRejectReason::BadSequence);
+            record_admission_rejection(
+                world,
+                staged,
+                tick,
+                result,
+                CommandRejectReason::BadSequence,
+            );
             continue;
         }
-        let Some(kind) = admit_kind(world, &staged, tick) else {
+        if let Some(reason) = production_precheck(world, &staged) {
+            let result = crate::orders::refusal(&staged.envelope, reason);
+            record_admission_rejection(world, staged, tick, result, reason);
             continue;
+        }
+        let resolved = {
+            let catalog = &world.resource::<crate::orders::ServerCatalog>().0;
+            crate::orders::to_sim(staged.slot, &staged.envelope, catalog)
         };
-        world
-            .resource_mut::<CommandQueue>()
-            .0
-            .push_back(SimCommand {
-                slot: staged.slot,
-                seq: staged.envelope.seq,
-                kind,
-            });
+        match resolved {
+            Ok(commands) => {
+                world.resource_mut::<PendingOrderCommands>().0.insert(
+                    (staged.slot.0, staged.envelope.seq),
+                    staged.envelope.clone(),
+                );
+                world.resource_mut::<CommandQueue>().0.extend(commands);
+            }
+            Err(mut result) => {
+                result.tick = tick;
+                let reason = result
+                    .envelope
+                    .or_else(|| result.refused.first().map(|refusal| refusal.reason))
+                    .unwrap_or(CommandRejectReason::Internal);
+                record_admission_rejection(world, staged, tick, result, reason);
+            }
+        }
     }
+}
+
+/// Preserve the existing information-safe Produce admission order while the open envelope is
+/// resolved by package behavior: ownership, capability, then target reference syntax.
+fn production_precheck(
+    world: &mut World,
+    staged: &StagedPlayerCommand,
+) -> Option<CommandRejectReason> {
+    if staged.envelope.order.units.is_empty() || staged.envelope.order.units.len() > MAX_ORDER_UNITS
+    {
+        return None;
+    }
+    let order_id = ContentId::parse(&staged.envelope.order.order).ok()?;
+    let is_produce = world
+        .resource::<crate::orders::ServerCatalog>()
+        .0
+        .orders
+        .get(&order_id)
+        .is_some_and(|definition| definition.behaviour == Behaviour::Produce);
+    if !is_produce {
+        return None;
+    }
+    let OrderTarget::Content(reference) = &staged.envelope.order.target else {
+        return None;
+    };
+
+    for unit in &staged.envelope.order.units {
+        match owns_unit(world, unit.0, staged.slot) {
+            Some(true) => {}
+            Some(false) => return Some(CommandRejectReason::NotOwner),
+            None => return Some(CommandRejectReason::UnknownUnit),
+        }
+    }
+    if staged
+        .envelope
+        .order
+        .units
+        .iter()
+        .any(|unit| has_production_capability(world, unit.0) != Some(true))
+    {
+        return Some(CommandRejectReason::MissingCapability);
+    }
+    let parsed = ContentId::parse(reference).and_then(|id| {
+        PackageId::parse(&id.package.0).map(|package| ContentId {
+            package,
+            local: id.local,
+        })
+    });
+    parsed
+        .is_err()
+        .then_some(CommandRejectReason::UnknownRecipe)
 }
 
 fn owns_unit(world: &mut World, unit_id: u32, slot: turts_sim::SlotId) -> Option<bool> {
@@ -336,88 +414,6 @@ fn has_production_capability(world: &World, unit_id: u32) -> Option<bool> {
     )
 }
 
-fn admit_kind(world: &mut World, staged: &StagedPlayerCommand, tick: u32) -> Option<CommandKind> {
-    let kind = match &staged.envelope.kind {
-        PlayerCommandKind::MoveTo { unit_ids, target } => CommandKind::MoveTo {
-            unit_ids: unit_ids.iter().map(|id| id.0).collect(),
-            target: Vec2::new(target.x, target.y),
-        },
-        PlayerCommandKind::Gather { unit_id, node_id } => CommandKind::Gather {
-            unit_id: unit_id.0,
-            node_id: turts_sim::ids::NodeId(node_id.0),
-        },
-        PlayerCommandKind::Produce {
-            producer_id,
-            recipe_id,
-        } => {
-            // Check ownership, then production or research capability, before parsing client text.
-            // The simulation still validates enabled recipes and technology queue semantics.
-            match owns_unit(world, producer_id.0, staged.slot) {
-                Some(false) => {
-                    record_admission_rejection(
-                        world,
-                        staged.clone(),
-                        tick,
-                        CommandRejectReason::NotOwner,
-                    );
-                    return None;
-                }
-                None => {
-                    record_admission_rejection(
-                        world,
-                        staged.clone(),
-                        tick,
-                        CommandRejectReason::UnknownUnit,
-                    );
-                    return None;
-                }
-                Some(true) => {}
-            }
-            if has_production_capability(world, producer_id.0) != Some(true) {
-                record_admission_rejection(
-                    world,
-                    staged.clone(),
-                    tick,
-                    CommandRejectReason::MissingCapability,
-                );
-                return None;
-            }
-            let parsed = ContentId::parse(recipe_id).and_then(|id| {
-                PackageId::parse(&id.package.0).map(|package| ContentId {
-                    package,
-                    local: id.local,
-                })
-            });
-            let Ok(recipe_id) = parsed else {
-                record_admission_rejection(
-                    world,
-                    staged.clone(),
-                    tick,
-                    CommandRejectReason::UnknownRecipe,
-                );
-                return None;
-            };
-            CommandKind::Produce {
-                producer_id: producer_id.0,
-                recipe_id,
-            }
-        }
-        PlayerCommandKind::CancelProduction {
-            producer_id,
-            job_id,
-        } => CommandKind::CancelProduction {
-            producer_id: producer_id.0,
-            job_id: turts_sim::ids::JobId(job_id.0),
-        },
-        PlayerCommandKind::Remove { unit_id } => CommandKind::Remove { unit_id: unit_id.0 },
-        PlayerCommandKind::SetEnabled { unit_id, enabled } => CommandKind::SetEnabled {
-            unit_id: unit_id.0,
-            enabled: *enabled,
-        },
-    };
-    Some(kind)
-}
-
 fn postcard_wire_bytes(envelope: &PlayerCommand) -> Option<Vec<u8>> {
     let mut buffer = vec![0; 256];
     loop {
@@ -435,6 +431,7 @@ fn record_admission_rejection(
     world: &mut World,
     staged: StagedPlayerCommand,
     tick: u32,
+    mut order_result: OrderResult,
     reason: CommandRejectReason,
 ) {
     let player_id = world
@@ -481,12 +478,9 @@ fn record_admission_rejection(
             tick,
             reason,
         });
-    if let Some(mut sender) = world.get_mut::<MessageSender<CommandRejected>>(staged.connection) {
-        sender.send::<ReliableChannel>(CommandRejected {
-            seq: staged.envelope.seq,
-            tick,
-            reason,
-        });
+    order_result.tick = tick;
+    if let Some(mut sender) = world.get_mut::<MessageSender<OrderResult>>(staged.connection) {
+        sender.send::<ReliableChannel>(order_result);
         world
             .resource_mut::<ReliableTraffic>()
             .record(staged.connection);
@@ -638,6 +632,16 @@ mod tests {
     }
 
     #[test]
+    fn protocol_3_hello_is_refused() {
+        let mut slots = Slots::new(2);
+        assert_eq!(
+            judge_hello(&hello(7, 3, HASH), &advertised(), &mut slots),
+            Err("protocol version mismatch")
+        );
+        assert_eq!(slots.slot_of(7), None, "a refused Hello takes no slot");
+    }
+
+    #[test]
     fn judge_refuses_the_same_player_twice_and_keeps_the_first_slot() {
         let mut slots = Slots::new(2);
         assert_eq!(
@@ -675,7 +679,9 @@ mod admission_tests {
         ContentCatalog, ContentId, Footprint, PackageId, ProducerDef, ResearchStationDef, UnitDef,
         UnitRegistry,
     };
-    use turts_sim::{CommandResults, Tick, UnitType};
+    use turts_sim::{
+        CommandKind, CommandResults, Owner, Tick, UnitId as SimUnitId, UnitType, UnitTypes,
+    };
 
     fn app() -> (App, Entity) {
         let mut app = App::new();
@@ -688,6 +694,7 @@ mod admission_tests {
                     .before(SimSet::Commands),
             );
         app.init_resource::<StagedPlayerCommands>()
+            .init_resource::<PendingOrderCommands>()
             .init_resource::<CommandAdmissionDiagnostics>()
             .init_resource::<ReliableTraffic>();
         let package = PackageId::parse("test").unwrap();
@@ -760,6 +767,8 @@ mod admission_tests {
         app.world_mut().insert_resource(types);
         app.world_mut()
             .insert_resource(turts_sim::bootstrap::InstalledCatalog(catalog));
+        app.world_mut()
+            .insert_resource(crate::orders::ServerCatalog(test_order_catalog()));
         let connection = app
             .world_mut()
             .spawn(Session {
@@ -772,18 +781,127 @@ mod admission_tests {
             .spawn((SimUnitId(1), Owner(turts_sim::SlotId(0)), UnitType(type_id)));
         (app, connection)
     }
-    fn staged(connection: Entity, seq: u32, kind: PlayerCommandKind) -> StagedPlayerCommand {
+    #[derive(Clone)]
+    enum FixtureOrder {
+        MoveTo {
+            unit_ids: Vec<UnitId>,
+            target: Pos,
+        },
+        Produce {
+            producer_id: UnitId,
+            recipe_id: String,
+        },
+        Remove {
+            unit_id: UnitId,
+        },
+        SetEnabled {
+            unit_id: UnitId,
+            enabled: bool,
+        },
+    }
+
+    fn test_order_catalog() -> ContentCatalog {
+        use turts_mod_api::{Behaviour, ContentId, OrderDef, TargetKind};
+        let mut catalog = ContentCatalog {
+            resources: BTreeMap::new(),
+            units: BTreeMap::new(),
+            nodes: BTreeMap::new(),
+            production: BTreeMap::new(),
+            recipes: BTreeMap::new(),
+            technologies: BTreeMap::new(),
+            orders: BTreeMap::new(),
+            source_files: BTreeMap::new(),
+        };
+        for (name, behaviour, target) in [
+            ("move", Behaviour::Move, TargetKind::Point),
+            ("gather", Behaviour::Gather, TargetKind::Node),
+            ("produce", Behaviour::Produce, TargetKind::Content),
+            ("cancel", Behaviour::CancelProduction, TargetKind::Job),
+            ("remove", Behaviour::Remove, TargetKind::None),
+            ("enabled", Behaviour::SetEnabled(false), TargetKind::None),
+            ("enabled-on", Behaviour::SetEnabled(true), TargetKind::None),
+        ] {
+            let id = ContentId::parse(&format!("test:{name}")).unwrap();
+            catalog.orders.insert(
+                id.clone(),
+                OrderDef {
+                    id: id.local.clone(),
+                    name: name.into(),
+                    behaviour,
+                    target,
+                    fire: None,
+                    engage: None,
+                    icon: String::new(),
+                    hotkey: String::new(),
+                    cursor: None,
+                    card: None,
+                    units: Vec::new(),
+                    description: String::new(),
+                },
+            );
+        }
+        catalog
+    }
+
+    fn staged(connection: Entity, seq: u32, kind: FixtureOrder) -> StagedPlayerCommand {
+        let (order, units, target) = match kind {
+            FixtureOrder::MoveTo { unit_ids, target } => {
+                ("test:move", unit_ids, OrderTarget::Point(target))
+            }
+            FixtureOrder::Produce {
+                producer_id,
+                recipe_id,
+            } => (
+                "test:produce",
+                vec![producer_id],
+                OrderTarget::Content(recipe_id),
+            ),
+            FixtureOrder::Remove { unit_id } => ("test:remove", vec![unit_id], OrderTarget::None),
+            FixtureOrder::SetEnabled { unit_id, enabled } => {
+                let order = if enabled {
+                    "test:enabled-on"
+                } else {
+                    "test:enabled"
+                };
+                (order, vec![unit_id], OrderTarget::None)
+            }
+        };
         StagedPlayerCommand {
             connection,
             slot: turts_sim::SlotId(0),
-            envelope: PlayerCommand { seq, kind },
+            envelope: PlayerCommand {
+                seq,
+                order: OrderEnvelope {
+                    order: order.into(),
+                    units,
+                    target,
+                    queue: QueueMode::Replace,
+                    group: 0,
+                },
+            },
         }
     }
-    fn move_kind() -> PlayerCommandKind {
-        PlayerCommandKind::MoveTo {
+    fn move_kind() -> FixtureOrder {
+        FixtureOrder::MoveTo {
             unit_ids: vec![UnitId(1)],
             target: Pos { x: 4.0, y: 5.0 },
         }
+    }
+
+    fn admit_kind(
+        world: &mut World,
+        staged: &StagedPlayerCommand,
+        _tick: u32,
+    ) -> Option<CommandKind> {
+        crate::orders::to_sim(
+            staged.slot,
+            &staged.envelope,
+            &world.resource::<crate::orders::ServerCatalog>().0,
+        )
+        .ok()?
+        .into_iter()
+        .next()
+        .map(|command| command.kind)
     }
 
     #[test]
@@ -860,7 +978,7 @@ mod admission_tests {
             &staged(
                 connection,
                 1,
-                PlayerCommandKind::Produce {
+                FixtureOrder::Produce {
                     producer_id: UnitId(2),
                     recipe_id: "test:technology".into(),
                 },
@@ -894,6 +1012,8 @@ mod admission_tests {
         app.add_plugins(turts_net_lightyear::ProtocolPlugin);
         app.add_plugins(turts_sim::SimPlugin { tick_hz: 20 });
         app.init_resource::<crate::stats::Stats>();
+        app.insert_resource(crate::stats::MatchId(0));
+        app.insert_resource(crate::orders::ServerCatalog(test_order_catalog()));
         install(
             &mut app,
             Advertised {
@@ -1025,21 +1145,17 @@ mod admission_tests {
             .id();
 
         let commands = [
-            PlayerCommand {
-                seq: 1,
-                kind: move_kind(),
-            },
-            PlayerCommand {
-                seq: 2,
-                kind: PlayerCommandKind::Produce {
+            staged(connection, 1, move_kind()).envelope,
+            staged(
+                connection,
+                2,
+                FixtureOrder::Produce {
                     producer_id: UnitId(1),
                     recipe_id: "BAD:??".into(),
                 },
-            },
-            PlayerCommand {
-                seq: 2,
-                kind: move_kind(),
-            },
+            )
+            .envelope,
+            staged(connection, 2, move_kind()).envelope,
         ];
         {
             let mut sender = app
@@ -1281,7 +1397,7 @@ mod admission_tests {
         let envelope = staged(
             connection,
             3,
-            PlayerCommandKind::Produce {
+            FixtureOrder::Produce {
                 producer_id: UnitId(1),
                 recipe_id: "FOREIGN:bad:recipe".into(),
             },
@@ -1302,7 +1418,7 @@ mod admission_tests {
         assert_eq!(records[0].seq, envelope.envelope.seq);
         assert_eq!(records[0].reason.as_str(), "unknown_recipe");
         assert!(!records[0].reason.as_str().contains("FOREIGN"));
-        assert_eq!(records[0].envelope.kind, envelope.envelope.kind);
+        assert_eq!(records[0].envelope.order, envelope.envelope.order);
         assert_eq!(records[0].tick, 11);
         assert!(app.world().resource::<CommandQueue>().0.is_empty());
         assert_eq!(
@@ -1327,7 +1443,7 @@ mod admission_tests {
             .push_back(staged(
                 connection,
                 4,
-                PlayerCommandKind::Produce {
+                FixtureOrder::Produce {
                     producer_id: UnitId(2),
                     recipe_id: "BAD:??".into(),
                 },
@@ -1364,7 +1480,7 @@ mod admission_tests {
             .push_back(staged(
                 connection,
                 1,
-                PlayerCommandKind::Produce {
+                FixtureOrder::Produce {
                     producer_id: UnitId(1),
                     recipe_id: "BAD:??".into(),
                 },
@@ -1421,11 +1537,7 @@ mod admission_tests {
     #[test]
     fn server_admit_kind_covers_remove_and_set_enabled() {
         let (mut app, connection) = app();
-        let remove = staged(
-            connection,
-            1,
-            PlayerCommandKind::Remove { unit_id: UnitId(1) },
-        );
+        let remove = staged(connection, 1, FixtureOrder::Remove { unit_id: UnitId(1) });
         assert_eq!(
             admit_kind(app.world_mut(), &remove, 0),
             Some(CommandKind::Remove { unit_id: 1 })
@@ -1433,7 +1545,7 @@ mod admission_tests {
         let toggle = staged(
             connection,
             2,
-            PlayerCommandKind::SetEnabled {
+            FixtureOrder::SetEnabled {
                 unit_id: UnitId(1),
                 enabled: false,
             },

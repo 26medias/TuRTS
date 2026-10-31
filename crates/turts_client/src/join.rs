@@ -8,6 +8,7 @@
 
 use std::net::SocketAddr;
 
+use crate::commands::ClientCommand;
 use crate::commands::{
     CommandSendStatus, CommandSequence, PendingCommands, owned_mobile_ids, submit,
 };
@@ -20,7 +21,6 @@ use lightyear::transport::channel::ChannelKind;
 use turts_mod_api::LockEntry;
 use turts_mod_runtime::archive::PackageArchive;
 use turts_net_lightyear::ReliableChannel;
-use turts_net_protocol::PlayerCommandKind;
 use turts_net_protocol::messages::{Hello, JoinRejected};
 use turts_net_protocol::{Advertisement, NET_PROTOCOL_VERSION, Pos, UnitId};
 
@@ -397,7 +397,7 @@ pub fn auto_move(
     unit_ids.sort_by_key(|id| id.0);
     submit(
         &mut pending,
-        PlayerCommandKind::MoveTo {
+        ClientCommand::MoveTo {
             unit_ids,
             target: Pos { x, y },
         },

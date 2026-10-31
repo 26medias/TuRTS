@@ -7,6 +7,7 @@ mod economylog;
 mod export;
 mod http;
 mod net;
+mod orders;
 mod outbound;
 mod session;
 mod stats;
@@ -66,6 +67,12 @@ fn run() -> Result<(), String> {
     });
 
     let booted = boot::boot(app.world_mut(), &cfg, &bytes).map_err(|error| error.to_string())?;
+    let server_catalog = booted
+        .archive
+        .content()
+        .map_err(|error| error.to_string())?;
+    app.insert_resource(orders::ServerCatalog(server_catalog));
+    app.insert_resource(stats::generate_match_id());
     let package = &booted.archive.manifest;
     eprintln!(
         "turts_server: package {} {}, lockfile {}",

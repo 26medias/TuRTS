@@ -1,5 +1,6 @@
 //! Shared world input: left selects owned units, right orders the current selected mobile.
 
+use crate::commands::ClientCommand;
 use crate::{
     commands::{CommandSendStatus, PendingCommands, submit},
     economy_ui::{Selection, UiPanelRoot, cursor_in_ui_viewport, hit_test_node, hit_test_unit},
@@ -8,7 +9,7 @@ use crate::{
 };
 use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
-use turts_net_protocol::{PlayerCommandKind, Pos, UnitId};
+use turts_net_protocol::{Pos, UnitId};
 
 /// Map ground-plane ray intersection: scene x/z map to protocol x/y.
 pub fn ground_point(ray: Ray3d) -> Option<Pos> {
@@ -122,7 +123,7 @@ pub fn world_pointer_commands(
         if gatherer.items.contains(&node_def.item) {
             submit(
                 &mut pending,
-                PlayerCommandKind::Gather {
+                ClientCommand::Gather {
                     unit_id: UnitId(selected),
                     node_id,
                 },
@@ -133,7 +134,7 @@ pub fn world_pointer_commands(
     if unit_def.movement.is_some() {
         submit(
             &mut pending,
-            PlayerCommandKind::MoveTo {
+            ClientCommand::MoveTo {
                 unit_ids: vec![UnitId(selected)],
                 target: point,
             },

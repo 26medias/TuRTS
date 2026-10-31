@@ -332,6 +332,34 @@ fn snapshot_json(world: &World) -> Value {
                 "tick": tick,
                 "reason": reason.as_str(),
             }),
+            CommandResult::Order {
+                seq,
+                tick,
+                accepted,
+                refused,
+                envelope,
+                job_id,
+                ..
+            } => {
+                if accepted.is_empty() {
+                    let reason = envelope
+                        .or_else(|| refused.first().map(|unit| unit.reason))
+                        .unwrap_or(turts_net_protocol::CommandRejectReason::Internal);
+                    json!({
+                        "seq": seq,
+                        "kind": "rejected",
+                        "tick": tick,
+                        "reason": reason.as_str(),
+                    })
+                } else {
+                    json!({
+                        "seq": seq,
+                        "kind": "applied",
+                        "tick": tick,
+                        "job_id": job_id.map(|job| job.0),
+                    })
+                }
+            }
         })
         .collect();
 
@@ -425,6 +453,7 @@ mod tests {
                 slot: 0,
                 tick: 9,
                 tick_hz: 20,
+                match_id: 0,
             }),
             ..Default::default()
         });

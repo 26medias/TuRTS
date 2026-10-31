@@ -27,6 +27,7 @@ pub struct Welcome {
     pub slot_id: SlotId,
     pub tick: u32,
     pub tick_hz: u16,
+    pub match_id: u64,
 }
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct JoinRejected {
@@ -48,8 +49,11 @@ pub struct UnitDelta {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PlayerCommand {
     pub seq: u32,
-    pub kind: PlayerCommandKind,
+    pub order: OrderEnvelope,
 }
+
+/// The largest number of subject units in one order envelope (K4).
+pub const MAX_ORDER_UNITS: usize = 4096;
 
 /// One order request shared by all of its subject units.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -133,41 +137,9 @@ pub struct UnitOrderRecord {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub enum PlayerCommandKind {
-    MoveTo {
-        unit_ids: Vec<UnitId>,
-        target: Pos,
-    },
-    Gather {
-        unit_id: UnitId,
-        node_id: NodeId,
-    },
-    Produce {
-        producer_id: UnitId,
-        recipe_id: String,
-    },
-    CancelProduction {
-        producer_id: UnitId,
-        job_id: JobId,
-    },
-    Remove {
-        unit_id: UnitId,
-    },
-    SetEnabled {
-        unit_id: UnitId,
-        enabled: bool,
-    },
-}
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CommandAck {
     pub seq: u32,
     pub tick: u32,
-}
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct CommandApplied {
-    pub seq: u32,
-    pub tick: u32,
-    pub job_id: Option<JobId>,
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -292,12 +264,6 @@ impl CommandRejectReason {
         }
     }
 }
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct CommandRejected {
-    pub seq: u32,
-    pub tick: u32,
-    pub reason: CommandRejectReason,
-}
 
 /// One item reference for each slot on one belt piece. Empty slots carry no index.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -381,6 +347,7 @@ pub struct Snapshot {
     pub weapons: Vec<WeaponRecord>,
     pub healths: Vec<HealthRecord>,
     pub research: Vec<ResearchRecord>,
+    pub unit_orders: Vec<UnitOrderRecord>,
 }
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct WorldDelta {
@@ -397,48 +364,7 @@ pub struct WorldDelta {
     pub weapons: Vec<WeaponRecord>,
     pub healths: Vec<HealthRecord>,
     pub research: Vec<ResearchRecord>,
+    pub unit_orders: Vec<UnitOrderRecord>,
 }
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ResyncRequest;
-
-#[cfg(test)]
-mod m3_command_tests {
-    use super::*;
-
-    fn encode(command: &PlayerCommand) -> Vec<u8> {
-        let mut buffer = [0; 64];
-        postcard::to_slice(command, &mut buffer).unwrap().to_vec()
-    }
-
-    #[test]
-    fn remove_and_set_enabled_roundtrip_and_keep_old_variant_tags() {
-        let remove = PlayerCommand {
-            seq: 9,
-            kind: PlayerCommandKind::Remove { unit_id: UnitId(5) },
-        };
-        let set_enabled = PlayerCommand {
-            seq: 10,
-            kind: PlayerCommandKind::SetEnabled {
-                unit_id: UnitId(5),
-                enabled: false,
-            },
-        };
-        for command in [remove, set_enabled] {
-            let bytes = encode(&command);
-            assert_eq!(
-                postcard::from_bytes::<PlayerCommand>(&bytes).unwrap(),
-                command
-            );
-        }
-        // CancelProduction was the last pre-T12 variant (tag 3). T12 variants append.
-        let previous = PlayerCommand {
-            seq: 11,
-            kind: PlayerCommandKind::CancelProduction {
-                producer_id: UnitId(5),
-                job_id: JobId(7),
-            },
-        };
-        let bytes = encode(&previous);
-        assert_eq!(bytes.get(1), Some(&3));
-    }
-}

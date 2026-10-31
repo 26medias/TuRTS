@@ -1,12 +1,12 @@
-//! Protocol 3 snapshots, world deltas, and fixed-tick command outcomes.
+//! Protocol 4 snapshots, world deltas, and fixed-tick order results.
 
 use crate::export;
+use crate::session::PendingOrderCommands;
 use crate::session::{ReliableTraffic, Session};
 use crate::stats::Stats;
 use bevy::prelude::*;
 use lightyear::prelude::*;
 use turts_net_lightyear::{ReliableChannel, StateChannel};
-use turts_net_protocol::CommandRejectReason;
 use turts_net_protocol::messages::*;
 use turts_sim::{CommandResults, Tick as SimTick, committed_tick, completed_world};
 
@@ -17,76 +17,34 @@ pub fn install(app: &mut App) {
 pub fn send_command_results(
     results: Res<CommandResults>,
     tick: Res<SimTick>,
-    mut sessions: Query<(
-        Entity,
-        &Session,
-        &mut MessageSender<CommandApplied>,
-        &mut MessageSender<CommandRejected>,
-    )>,
+    mut sessions: Query<(Entity, &Session, &mut MessageSender<OrderResult>)>,
+    mut pending: ResMut<PendingOrderCommands>,
     mut traffic: ResMut<ReliableTraffic>,
 ) {
+    let mut sent = std::collections::BTreeSet::new();
     for result in &results.0 {
-        for (entity, session, mut applied, mut rejected) in &mut sessions {
+        let key = (result.slot.0, result.seq);
+        if !sent.insert(key) {
+            continue;
+        }
+        let Some(command) = pending.0.remove(&key) else {
+            continue;
+        };
+        let command_results: Vec<_> = results
+            .0
+            .iter()
+            .filter(|candidate| candidate.slot == result.slot && candidate.seq == result.seq)
+            .cloned()
+            .collect();
+        let mut message = crate::orders::to_wire(&command_results, &command);
+        message.tick = tick.0;
+        for (entity, session, mut sender) in &mut sessions {
             if session.slot != result.slot {
                 continue;
             }
-            match result.outcome {
-                Ok(done) => {
-                    applied.send::<ReliableChannel>(CommandApplied {
-                        seq: result.seq,
-                        tick: tick.0,
-                        job_id: done.job_id.map(|id| turts_net_protocol::JobId(id.0)),
-                    });
-                    traffic.record(entity);
-                }
-                Err(reason) => {
-                    rejected.send::<ReliableChannel>(CommandRejected {
-                        seq: result.seq,
-                        tick: tick.0,
-                        reason: wire_reason(reason),
-                    });
-                    traffic.record(entity);
-                }
-            }
+            sender.send::<ReliableChannel>(message.clone());
+            traffic.record(entity);
         }
-    }
-}
-
-fn wire_reason(reason: turts_sim::RejectReason) -> CommandRejectReason {
-    use turts_sim::RejectReason as R;
-    match reason {
-        R::EmptyCommand => CommandRejectReason::EmptyCommand,
-        R::TooManyUnits => CommandRejectReason::TooManyUnits,
-        R::DuplicateUnit => CommandRejectReason::DuplicateUnit,
-        R::UnknownUnit => CommandRejectReason::UnknownUnit,
-        R::NotOwner => CommandRejectReason::NotOwner,
-        R::NotMobile => CommandRejectReason::NotMobile,
-        R::TargetNotFinite => CommandRejectReason::TargetNotFinite,
-        R::TargetOutsideMap => CommandRejectReason::TargetOutsideMap,
-        R::MissingCapability => CommandRejectReason::MissingCapability,
-        R::UnknownNode => CommandRejectReason::UnknownNode,
-        R::IncompatibleItem => CommandRejectReason::IncompatibleItem,
-        R::NodeDepleted => CommandRejectReason::NodeDepleted,
-        R::UnknownRecipe => CommandRejectReason::UnknownRecipe,
-        R::RecipeNotEnabled => CommandRejectReason::RecipeNotEnabled,
-        R::QueueFull => CommandRejectReason::QueueFull,
-        R::InsufficientBalance => CommandRejectReason::InsufficientBalance,
-        R::InsufficientItems | R::UnknownInventory | R::InvalidAmount => {
-            CommandRejectReason::InsufficientItems
-        }
-        R::UnknownJob => CommandRejectReason::UnknownJob,
-        R::RefundDestinationFull => CommandRejectReason::RefundDestinationFull,
-        R::RefundDestinationOverflow => CommandRejectReason::RefundDestinationOverflow,
-        R::ArithmeticOverflow => CommandRejectReason::ArithmeticOverflow,
-        R::IdExhausted => CommandRejectReason::IdExhausted,
-        R::BadSequence => CommandRejectReason::BadSequence,
-        R::UnknownBalance => CommandRejectReason::InsufficientBalance,
-        R::NotRemovable => CommandRejectReason::NotRemovable,
-        R::NotToggleable => CommandRejectReason::NotToggleable,
-        R::PrerequisitesMissing => CommandRejectReason::PrerequisitesMissing,
-        R::AlreadyResearched => CommandRejectReason::AlreadyResearched,
-        R::ResearchInProgress => CommandRejectReason::ResearchInProgress,
-        R::IntegrityViolation => CommandRejectReason::Internal,
     }
 }
 
@@ -129,83 +87,4 @@ pub fn send_deltas(world: &mut World) {
 fn payload_bytes<T: serde::Serialize>(message: &T) -> u64 {
     postcard::experimental::serialized_size(message).expect("a wire message serializes to postcard")
         as u64
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn wire_reason_covers_every_sim_reason() {
-        use turts_sim::RejectReason as R;
-
-        let cases = [
-            (R::EmptyCommand, CommandRejectReason::EmptyCommand),
-            (R::TooManyUnits, CommandRejectReason::TooManyUnits),
-            (R::DuplicateUnit, CommandRejectReason::DuplicateUnit),
-            (R::UnknownUnit, CommandRejectReason::UnknownUnit),
-            (R::NotOwner, CommandRejectReason::NotOwner),
-            (R::NotMobile, CommandRejectReason::NotMobile),
-            (R::TargetNotFinite, CommandRejectReason::TargetNotFinite),
-            (R::TargetOutsideMap, CommandRejectReason::TargetOutsideMap),
-            (R::MissingCapability, CommandRejectReason::MissingCapability),
-            (R::UnknownNode, CommandRejectReason::UnknownNode),
-            (R::IncompatibleItem, CommandRejectReason::IncompatibleItem),
-            (R::NodeDepleted, CommandRejectReason::NodeDepleted),
-            (R::UnknownRecipe, CommandRejectReason::UnknownRecipe),
-            (R::RecipeNotEnabled, CommandRejectReason::RecipeNotEnabled),
-            (R::QueueFull, CommandRejectReason::QueueFull),
-            (
-                R::InsufficientBalance,
-                CommandRejectReason::InsufficientBalance,
-            ),
-            (R::InsufficientItems, CommandRejectReason::InsufficientItems),
-            (R::UnknownJob, CommandRejectReason::UnknownJob),
-            (
-                R::RefundDestinationFull,
-                CommandRejectReason::RefundDestinationFull,
-            ),
-            (
-                R::RefundDestinationOverflow,
-                CommandRejectReason::RefundDestinationOverflow,
-            ),
-            (
-                R::ArithmeticOverflow,
-                CommandRejectReason::ArithmeticOverflow,
-            ),
-            (R::IdExhausted, CommandRejectReason::IdExhausted),
-            (R::BadSequence, CommandRejectReason::BadSequence),
-            (R::UnknownInventory, CommandRejectReason::InsufficientItems),
-            (R::UnknownBalance, CommandRejectReason::InsufficientBalance),
-            (R::InvalidAmount, CommandRejectReason::InsufficientItems),
-            (R::NotRemovable, CommandRejectReason::NotRemovable),
-            (R::NotToggleable, CommandRejectReason::NotToggleable),
-            (
-                R::PrerequisitesMissing,
-                CommandRejectReason::PrerequisitesMissing,
-            ),
-            (R::AlreadyResearched, CommandRejectReason::AlreadyResearched),
-            (
-                R::ResearchInProgress,
-                CommandRejectReason::ResearchInProgress,
-            ),
-            (R::IntegrityViolation, CommandRejectReason::Internal),
-        ];
-
-        for (reason, expected) in cases {
-            assert_eq!(wire_reason(reason), expected, "{}", reason.as_str());
-        }
-    }
-
-    #[test]
-    fn server_internal_reasons_never_leak_as_strings() {
-        assert_eq!(
-            wire_reason(turts_sim::RejectReason::UnknownInventory),
-            CommandRejectReason::InsufficientItems
-        );
-        assert_eq!(
-            wire_reason(turts_sim::RejectReason::UnknownBalance),
-            CommandRejectReason::InsufficientBalance
-        );
-    }
 }

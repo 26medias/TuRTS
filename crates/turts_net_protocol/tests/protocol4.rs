@@ -13,11 +13,11 @@ where
 }
 
 #[test]
-fn protocol_version_is_3_and_old_hello_is_rejected_by_version_mismatch() {
-    assert_eq!(NET_PROTOCOL_VERSION, 3);
+fn protocol_version_is_4_and_version_3_is_old() {
+    assert_eq!(NET_PROTOCOL_VERSION, 4);
     let old_hello = Hello {
         player_id: 17,
-        protocol_version: 2,
+        protocol_version: 3,
         lockfile_hash: "sha256:fixture".into(),
     };
     round_trip(old_hello);
@@ -94,6 +94,7 @@ fn postcard_roundtrip_every_new_record() {
             slot: SlotId(0),
             completed: vec!["forge:hardened_shells".into()],
         }],
+        unit_orders: Vec::new(),
     };
     round_trip(records.clone());
     round_trip(WorldDelta {
@@ -123,5 +124,6 @@ fn postcard_roundtrip_every_new_record() {
         weapons: records.weapons,
         healths: records.healths,
         research: records.research,
+        unit_orders: Vec::new(),
     });
 }

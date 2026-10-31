@@ -666,8 +666,8 @@
         "replacement": "            let duplicate_seq = session.last_seq.is_some_and(|last| envelope.seq <= last);\n            if !duplicate_seq {\n                if let Ok(mut sender) = acks.get_mut(entity) {\n                    sender.send::<ReliableChannel>(CommandAck {\n                        seq: envelope.seq,\n                        tick: tick.0,\n                    });\n                    traffic.record(entity);\n                }\n            }"
       },
       {
-        "anchor": "pub fn install(app: &mut App, advertised: Advertised) {\n    app.insert_resource(advertised);\n    app.init_resource::<StagedPlayerCommands>()\n        .init_resource::<CommandAdmissionDiagnostics>()\n        .init_resource::<ReliableTraffic>();",
-        "replacement": "pub fn install(app: &mut App, advertised: Advertised) {\n    app.insert_resource(advertised);\n    app.init_resource::<StagedPlayerCommands>()\n        .init_resource::<CommandAdmissionDiagnostics>()\n        .init_resource::<ReliableTraffic>()\n        .init_resource::<DelayedCommandAcks>();\n    app.add_systems(\n        PreUpdate,\n        send_delayed_command_acks.after(MessageSystems::Receive),\n    );"
+        "anchor": "pub fn install(app: &mut App, advertised: Advertised) {\n    app.insert_resource(advertised);\n    app.init_resource::<StagedPlayerCommands>()\n        .init_resource::<PendingOrderCommands>()\n        .init_resource::<CommandAdmissionDiagnostics>()\n        .init_resource::<ReliableTraffic>();",
+        "replacement": "pub fn install(app: &mut App, advertised: Advertised) {\n    app.insert_resource(advertised);\n    app.init_resource::<StagedPlayerCommands>()\n        .init_resource::<PendingOrderCommands>()\n        .init_resource::<CommandAdmissionDiagnostics>()\n        .init_resource::<ReliableTraffic>()\n        .init_resource::<DelayedCommandAcks>();\n    app.add_systems(\n        PreUpdate,\n        send_delayed_command_acks.after(MessageSystems::Receive),\n    );"
       },
       {
         "anchor": "fn record_admission_rejection(\n",
