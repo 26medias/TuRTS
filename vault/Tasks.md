@@ -102,4 +102,4 @@ Human usability amendment1354e33: catalog-derived principal labels/named local s
 
 **Integrated:** M3 fast-forwarded into main and pushed; hosted CI running, human-demo limitations retained. See [[Reports/2026-10-28 M3 integration]].
 
-MC update2026-10-31: ACTIVE:9of25lanes complete; Task4 merge0490ebd rootgates12/12exit0 (984/0/18,T7=138frames/53moving,M3controls,frozen). Task9 RUN36 implementation starts from61535fc with sole cache. Wave4 awaitsTask9; lastCI Wave3 check/agents passed, known browser timeout. Build36/170; C1-C59. Mainc3f09d0 untouched. [[Reports/2026-10-31]].
+MC update2026-10-31: ACTIVE:9of25lanes complete; Task4 merge0490ebd rootgates12/12exit0. Task9 RUN36 has compiled semantic reds for all6headless targets and3PROJ1viewports; behavior implementation active. RUN37 independent source review registered, no competing compiler. Wave4 awaitsTask9. Build37/170; C1-C59. Mainc3f09d0 untouched. [[MC Execution Board]]
