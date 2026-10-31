@@ -8,7 +8,7 @@ source: codex
 
 # MC execution board
 
-State: ACTIVE: Waves1-3 complete (8 of25 lanes), pushed6d2c46e. Wave3 CI41157502932 check/agents passed; browser retains known M2 timeout. Task4 clean candidate0240e9a in final gates; no merge yet. Task9 source/test preparation complete, still uncompiled. Build35/170; C1-C55 recorded. One compiler/cache owner. Mainc3f09d0 untouched.
+State: ACTIVE: Waves1-3 complete (8 of25 lanes), pushed6d2c46e. Wave3 CI41157502932 check/agents passed; browser retains known M2 timeout. Task4 clean candidate0240e9a in final gates; no merge yet. Task9 source/test preparation complete, still uncompiled. Build35/170; C1-C56 recorded. One compiler/cache owner. Mainc3f09d0 untouched.
 
 Plan: `docs/superpowers/plans/2026-10-29-mc-player-control.md`.
 Design of record: `docs/superpowers/specs/2026-10-29-mc-player-control-design.md`, revision12 at63788d7, included by mainc3f09d0.
@@ -433,3 +433,6 @@ Stable Task4 source moved49f556c ->6056fc0 for test let-chain lint ->0240e9a for
 
 
 Task4 exact0240e9ae059e1e022ab5acb9dc8b4900f58ea640: root read final fmt/Clippy/wasm/workspace raw logs, all actualRC0. Workspace99groups sum984passed/0failed/18ignored. Candidate source clean. Remaining boundaries/QA/frozen/acceptance/web, post-gate provenance repairs,2planplants,36registeredrefutations and independent runtime remain required. No Task4 merge accepted. Previous goal turn classified PROGRESS: Task9 scaffolds/source corrections and authoritative rulings/evidence changed the next actions; this turn adds reproducible exact-source audit and verified final Rust results. Goal remains active, build35/170, main unchanged.
+
+
+C56 root-helper source QA passed, actual postmerge M3 runtime pending; prior post2b helper invocation gap remains disclosed. Task4 final GACC is live PID1850880, source0240e9a, currently recovery scenario; do not restart from an observation delay. Root found original combined GQA files did not retain self-test stdout despite a summary saying they did. Builder confirmed and reran cheap checks into split persistent files: completeness-selftest21/21 and driver-selftest47 cases bothactualRC0; enforce/tree also0. Root read the exact new logs. No new build run or source change, global35/170.
