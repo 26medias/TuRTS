@@ -106,6 +106,207 @@ fn foreign_units_are_inspectable_but_never_box_selected() {
 }
 
 #[test]
+fn foreign_click_modifiers_and_double_click_never_expand_to_own_units() {
+    let mut same_content_world = TestWorld::default();
+    same_content_world.units[3].content_id = "forge:drone".into();
+    let foreign_px =
+        Core::default().project_world_to_screen(same_content_world.units[3].position, &VIEW);
+
+    let mut ctrl_core = Core::default();
+    ctrl_core.step(
+        &[
+            InputEvent::KeyDown {
+                code: "ControlLeft".into(),
+                mods: vec![Mod::Ctrl],
+            },
+            InputEvent::PointerDown {
+                button: Button::Left,
+                px: foreign_px,
+                over_widget: false,
+            },
+            InputEvent::PointerUp {
+                button: Button::Left,
+                px: foreign_px,
+                over_widget: false,
+            },
+            InputEvent::KeyUp {
+                code: "ControlLeft".into(),
+            },
+        ],
+        &same_content_world,
+        &VIEW,
+        100,
+    );
+    assert_eq!(
+        ids(&ctrl_core),
+        vec![UnitId(4)],
+        "Ctrl-clicking a foreign same-content unit must inspect only that foreign unit"
+    );
+
+    let mut double_core = Core::default();
+    click(
+        &mut double_core,
+        &same_content_world,
+        Button::Left,
+        foreign_px,
+        vec![],
+        100,
+    );
+    click(
+        &mut double_core,
+        &same_content_world,
+        Button::Left,
+        foreign_px,
+        vec![],
+        200,
+    );
+    assert_eq!(
+        ids(&double_core),
+        vec![UnitId(4)],
+        "double-clicking a foreign same-content unit must never expand to own units"
+    );
+
+    let mut foreign_only_core = Core::default();
+    let foreign_only_world = TestWorld::default();
+    let foreign_only_px =
+        foreign_only_core.project_world_to_screen(foreign_only_world.units[3].position, &VIEW);
+    click(
+        &mut foreign_only_core,
+        &foreign_only_world,
+        Button::Left,
+        foreign_only_px,
+        vec![],
+        100,
+    );
+    click(
+        &mut foreign_only_core,
+        &foreign_only_world,
+        Button::Left,
+        foreign_only_px,
+        vec![],
+        200,
+    );
+    assert_eq!(
+        ids(&foreign_only_core),
+        vec![UnitId(4)],
+        "double-clicking a foreign-only content type must preserve its read-only inspection"
+    );
+
+    let effects = click(
+        &mut double_core,
+        &same_content_world,
+        Button::Right,
+        foreign_px,
+        vec![],
+        300,
+    );
+    assert!(
+        sent(&effects).is_empty(),
+        "foreign RMB must not send an order"
+    );
+    assert_eq!(ids(&double_core), vec![UnitId(4)]);
+}
+
+#[test]
+fn foreign_click_does_not_seed_nearby_own_double_click_expansion() {
+    let mut world = TestWorld::default();
+    world.units.push(unit(
+        6,
+        "forge:drone",
+        OTHER,
+        vec2(0.2, 0.0),
+        &[turts_mod_api::Capability::Movement],
+    ));
+    let mut core = Core::default();
+    let foreign_px = core.project_world_to_screen(world.units[5].position, &VIEW);
+    let own_px = core.project_world_to_screen(world.units[0].position, &VIEW);
+    assert!(
+        foreign_px.distance(own_px) <= 4.0,
+        "fixture must keep the foreign and own press points within the double-click distance"
+    );
+
+    click(&mut core, &world, Button::Left, foreign_px, vec![], 100);
+    assert_eq!(ids(&core), vec![UnitId(6)]);
+    click(&mut core, &world, Button::Left, own_px, vec![], 200);
+    assert_eq!(
+        ids(&core),
+        vec![UnitId(1)],
+        "a foreign click must not seed double-click expansion on a nearby own unit"
+    );
+}
+
+#[test]
+fn shift_click_still_toggles_a_foreign_unit_for_inspection() {
+    let world = TestWorld::default();
+    let foreign_px = Core::default().project_world_to_screen(world.units[3].position, &VIEW);
+    let mut core = Core::default();
+    click(&mut core, &world, Button::Left, foreign_px, vec![], 100);
+    assert_eq!(ids(&core), vec![UnitId(4)]);
+
+    core.step(
+        &[InputEvent::KeyDown {
+            code: "ShiftLeft".into(),
+            mods: vec![Mod::Shift],
+        }],
+        &world,
+        &VIEW,
+        150,
+    );
+    click(
+        &mut core,
+        &world,
+        Button::Left,
+        foreign_px,
+        vec![Mod::Shift],
+        200,
+    );
+    core.step(
+        &[InputEvent::KeyUp {
+            code: "ShiftLeft".into(),
+        }],
+        &world,
+        &VIEW,
+        250,
+    );
+    assert!(
+        ids(&core).is_empty(),
+        "Shift+click must toggle off the inspected foreign unit"
+    );
+
+    select_world_point(&mut core, &world, UnitId(2), 300);
+    core.step(
+        &[InputEvent::KeyDown {
+            code: "ShiftLeft".into(),
+            mods: vec![Mod::Shift],
+        }],
+        &world,
+        &VIEW,
+        350,
+    );
+    click(
+        &mut core,
+        &world,
+        Button::Left,
+        foreign_px,
+        vec![Mod::Shift],
+        400,
+    );
+    core.step(
+        &[InputEvent::KeyUp {
+            code: "ShiftLeft".into(),
+        }],
+        &world,
+        &VIEW,
+        450,
+    );
+    assert_eq!(
+        ids(&core),
+        vec![UnitId(2), UnitId(4)],
+        "Shift+click must retain the current own selection while toggling the foreign inspection"
+    );
+}
+
+#[test]
 fn selection_has_no_256_unit_cap() {
     let world = TestWorld {
         units: (1..=301)

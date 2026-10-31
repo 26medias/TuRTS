@@ -21,6 +21,7 @@ use turts_client::acquire::build_acquired;
 use turts_client::{
     acquire::Acquired,
     content::ClientContent,
+    debug_feed::UiSnapshotFeed,
     economy_ui::EconomyUiPlugin,
     economy_ui::{
         RenderedUiNode, Selection, UiAction, UiActionTarget, UiControlEnabled, UiSnapshotText,
@@ -40,6 +41,16 @@ use turts_net_protocol::{
     BalanceState, GatherStage, GatherWaitReason, InventoryState, JobId, JobStage, NodeId,
     NodeState, OrderState, Pos, QueueState, UnitId,
 };
+
+#[derive(Resource, Default)]
+struct UiSnapshotAtFrameClose(serde_json::Value);
+
+fn capture_ui_snapshot_at_frame_close(
+    mut captured: ResMut<UiSnapshotAtFrameClose>,
+    feed: Res<UiSnapshotFeed>,
+) {
+    captured.0.clone_from(&feed.0);
+}
 
 fn base_content() -> ClientContent {
     let base = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../mods/base");
@@ -362,6 +373,69 @@ fn rendered_ui_snapshot_matches_optional_clip_and_real_button_pressed_state() {
             .unwrap()
             .visible,
         "fully clipped roots remain excluded",
+    );
+}
+
+#[test]
+fn cached_ui_snapshot_matches_first_frame_layout_after_update_spawn() {
+    fn spawn_late_row(world: &mut World) {
+        let root = world
+            .iter_entities()
+            .find(|entity| entity.contains::<turts_client::economy_ui::UiPanelRoot>())
+            .expect("real economy panel exists")
+            .id();
+        world.spawn((
+            Text::new("First frame layout witness"),
+            TextFont {
+                font_size: FontSize::Px(14.0),
+                ..default()
+            },
+            TextColor(Color::srgb(0.92, 0.95, 0.92)),
+            Node {
+                width: px(240),
+                height: px(24),
+                ..default()
+            },
+            UiSnapshotText,
+            ChildOf(root),
+        ));
+    }
+
+    let (mut app, _, _, _) = cpu_ui_app(1.0, 1);
+    app.init_resource::<UiSnapshotAtFrameClose>()
+        .add_systems(
+            Update,
+            spawn_late_row.before(turts_client::economy_ui::sync_panel),
+        )
+        .add_systems(
+            Last,
+            capture_ui_snapshot_at_frame_close.after(turts_client::core_adapter::FrameCloseSet),
+        );
+    app.update();
+
+    let cached = app.world().resource::<UiSnapshotFeed>().0.clone();
+    let after_frame_close = app.world().resource::<UiSnapshotAtFrameClose>().0.clone();
+    let direct = serde_json::to_value(rendered_ui_snapshot(app.world())).unwrap();
+    assert_eq!(
+        cached, direct,
+        "the published snapshot must include the UI layout completed this frame"
+    );
+    assert_eq!(
+        after_frame_close, direct,
+        "Last consumers after FrameCloseSet must see the completed UI snapshot"
+    );
+    let witness = rendered_ui_snapshot(app.world())
+        .into_iter()
+        .find(|row| row.text == "First frame layout witness")
+        .expect("newly spawned UI row is included in the rendered snapshot");
+    assert!(
+        witness.visible,
+        "the new row must be visible after Bevy layout"
+    );
+    assert!(
+        witness.rect[2] > 0.0 && witness.rect[3] > 0.0,
+        "the new row must have positive computed geometry: {:?}",
+        witness.rect
     );
 }
 

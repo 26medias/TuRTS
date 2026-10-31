@@ -450,17 +450,19 @@ impl Core {
             }
             return;
         };
+        let own_hit = unit.owner_slot == world.own_slot();
         let content = unit.content_id.clone();
         let settings = world.interaction_settings();
-        let double = !self.has_modifier_action("add_modifier")
+        let double = own_hit
+            && !self.has_modifier_action("add_modifier")
             && !self.has_modifier_action("type_modifier")
             && self.last_click.as_ref().is_some_and(|(time, point, id)| {
                 now.saturating_sub(*time) <= settings.double_click_ms
                     && point.distance(press_px) <= settings.double_click_pixels
                     && id == &content
             });
-        self.last_click = Some((now, press_px, content.clone()));
-        if double || self.has_modifier_action("type_modifier") {
+        self.last_click = own_hit.then(|| (now, press_px, content.clone()));
+        if double || (own_hit && self.has_modifier_action("type_modifier")) {
             self.selected = world
                 .units()
                 .iter()
