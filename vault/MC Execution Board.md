@@ -8,7 +8,7 @@ source: codex
 
 # MC execution board
 
-State: ACTIVE:9of25lanes complete; Task4 merge0490ebd rootgates12/12exit0. Task9 RUN36 has compiled semantic reds for all6headless targets and3PROJ1viewports; behavior implementation active. RUN37 independent source review registered, no competing compiler. Wave4 awaitsTask9. Build37/170; C1-C59. Mainc3f09d0 untouched.
+State: ACTIVE:9of25lanes complete; Task4 merge0490ebd rootgates12/12exit0. Task9 RUN36 has compiled semantic reds for all6headless targets and3PROJ1viewports; behavior implementation active. RUN37 independent source review registered, no competing compiler. Wave4 awaitsTask9. Build37/170; C1-C61. Mainc3f09d0 untouched.
 
 Plan: `docs/superpowers/plans/2026-10-29-mc-player-control.md`.
 Design of record: `docs/superpowers/specs/2026-10-29-mc-player-control-design.md`, revision12 at63788d7, included by mainc3f09d0.
@@ -227,8 +227,8 @@ One row per builder/reviewer dispatch or resumed agent work turn. Register befor
 | 33 | T9 core-test preparation | ux-designer | gpt-6-luna | high | ab6ffd8 | COMPLETE draft-only; external tests/contract, SHA76817063...a2d629, T9 clean, no Cargo, no observed red/green. |
 | 34 | T4 independent review | qa-lead | gpt-6.1-sol | high | 2c45b83 | PASS0High/0Medium;65independenttests0,ownsemanticplant0/101/0; exactrestore/cacheidle. |
 | 35 | T9 implementation preparation | bevy-rendering-engineer | gpt-6-luna | high | 3203f6b | COMPLETE preparation only: imported tests, API stubs, PROJ1/CLICK9 drafts; uncompiled/unexecuted/uncommitted; task2/estimate6/soft12/hard24. |
-| 36 | T9 implementation continuation | bevy-rendering-engineer | gpt-6-luna | high | 61535fc | ACTIVE: six headless targets and three PROJ1 viewports compiled semantic red101; full behavior implementation follows. |
-| 37 | T9 independent review | technical-director | gpt-6.1-sol | high | 61535fc + active RUN36 diff | REGISTERED before dispatch; read-only source review now, independent runtime/plant after exclusive handoff; task4/estimate6/soft12/hard24. |
+| 36 | T9 implementation continuation | bevy-rendering-engineer | gpt-6-luna | high | 61535fc | ACTIVE: compiled red101 then27headlessgreen0 root-audited; actual client adapter/replica/feed work pending. |
+| 37 | T9 independent review | technical-director | gpt-6.1-sol | high | 61535fc + active RUN36 diff | ACTIVE read-only source review; concrete early fixes sent builder, independent runtime/plant after exclusive handoff; task4/estimate6/soft12/hard24. |
 
 ## 9. Preflight ledger and stop
 
@@ -464,3 +464,6 @@ RUN36 compiled-red checkpoint root-read: six headless targets failed semanticall
 
 
 C60: root verified selection.rs:12-21 geometry contradicts design381/1225. Build drag bounds from all three intended projected centres; retain expected mobileids1,2/staticid3 exclusion and outside-centre test. Original compiled red retained; production never selects out-of-box matching units. No new run.
+
+
+C61: planP1→reserved-key instruction includes conditional Esc/wheel rows; design328/332/351/353/354 wins. ExistingCtrlT/W and requiredF11/F12 remain; no globalEsc ban or wheel pseudo-key; owningTask11/16 retain explicitdesign behavior. Root audited allfive browser-acted yes rows; table unchanged. RUN36 root verified27headlessgreen0 and current checkpoint hashes; no finalTask9 acceptance.
