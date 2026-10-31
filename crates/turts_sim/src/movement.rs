@@ -769,7 +769,6 @@ fn step_plain_progress(
         velocity = velocity.normalize() * step_limit;
     }
     let mut position = unit.position + velocity;
-    let mut was_projected = false;
     for _ in 0..8 {
         let mut projected = false;
         for other_index in grid.within(
@@ -799,7 +798,6 @@ fn step_plain_progress(
         if !projected {
             break;
         }
-        was_projected = true;
     }
     position.x = position
         .x
@@ -809,8 +807,8 @@ fn step_plain_progress(
         .clamp(unit.radius, (bounds.y - unit.radius).max(unit.radius));
 
     let next_distance = position.distance(movement_target);
-    if (separated || was_projected) && next_distance <= 0.025 && !occupied(movement_target) {
-        output.position = movement_target;
+    if position == movement_target && !occupied(movement_target) {
+        output.position = position;
         output.target = None;
         if progress.claim_count > 0 || progress.slot != progress.original_point {
             progress.activity = MovementActivity::Resting;
@@ -1739,7 +1737,7 @@ pub fn step_frame(frame: &MovementFrame, dt: f32) -> Vec<MovementFrameOutput> {
                         || destination.distance(units[other_index].position)
                             >= unit.radius + units[other_index].radius - 1.0e-5
                 });
-            if desired.length() <= step_limit && destination_free {
+            if (desired.length() <= step_limit || desired.length() <= 0.025) && destination_free {
                 outputs[index].position = destination;
                 outputs[index].target = None;
                 units[index].position = destination;
@@ -1840,11 +1838,9 @@ pub fn step_frame(frame: &MovementFrame, dt: f32) -> Vec<MovementFrameOutput> {
             position.y = position
                 .y
                 .clamp(unit.radius, (frame.bounds.y - unit.radius).max(unit.radius));
-            // Preserve the legacy fixed-step result when no collision changed
-            // this tick's motion. The tolerance is only a contact correction;
-            // applying it after an otherwise exact step can jump across the
-            // target and complete one tick early.
-            let reached = (separated || was_projected) && position.distance(destination) <= 0.025;
+            // Arrival eligibility was checked before movement, so this step
+            // may end early only if it reaches the destination exactly.
+            let reached = position == destination;
             if reached && destination_free {
                 position = destination;
             }
@@ -1888,7 +1884,7 @@ pub fn step_frame(frame: &MovementFrame, dt: f32) -> Vec<MovementFrameOutput> {
         let mut failed_blocked = false;
         let mut position = unit.position;
         let distance = position.distance(movement_target);
-        if distance <= speed * dt {
+        if distance <= speed * dt || distance <= 0.025 {
             let occupied = grid
                 .within(&points, movement_target, unit.radius + max_radius)
                 .into_iter()
@@ -1990,7 +1986,6 @@ pub fn step_frame(frame: &MovementFrame, dt: f32) -> Vec<MovementFrameOutput> {
 
         // Hard projection prevents footprint overlap. Units resolve in id order.
         let broad_reach = unit.radius + max_radius + max_step;
-        let mut was_projected = false;
         for _ in 0..8 {
             let mut projected = false;
             for other_index in grid.within(&points, position, broad_reach) {
@@ -2024,7 +2019,6 @@ pub fn step_frame(frame: &MovementFrame, dt: f32) -> Vec<MovementFrameOutput> {
             if !projected {
                 break;
             }
-            was_projected = true;
         }
         position.x = position
             .x
@@ -2034,7 +2028,7 @@ pub fn step_frame(frame: &MovementFrame, dt: f32) -> Vec<MovementFrameOutput> {
             .clamp(unit.radius, (frame.bounds.y - unit.radius).max(unit.radius));
 
         let next_distance = position.distance(movement_target);
-        if (separated || was_projected) && next_distance <= 0.025 {
+        if position == movement_target {
             let occupied = grid
                 .within(&points, movement_target, unit.radius + max_radius)
                 .into_iter()
@@ -2280,8 +2274,8 @@ pub(crate) fn integrate_movement(world: &mut World) {
 mod spread_tests {
     use super::{
         MoveProgress, MovementActivity, MovementFrame, MovementFrameUnit, MovementInput,
-        MovementPool, MovementPoolIndex, SpreadMember, StaticFootprint, angle, spread_destinations,
-        step, step_frame,
+        MovementPool, MovementPoolIndex, PlainMoveProgress, SpreadMember, StaticFootprint, angle,
+        spread_destinations, step, step_frame,
     };
     use bevy_math::Vec2;
     use std::collections::BTreeMap;
@@ -2391,6 +2385,83 @@ mod spread_tests {
         assert_eq!(output.position, expected);
         assert_eq!(output.target, Some(target));
         assert_eq!(output.progress.unwrap().activity, MovementActivity::Moving);
+    }
+
+    #[test]
+    fn contact_correction_does_not_add_a_post_step_arrival_snap() {
+        let target = Vec2::new(5.0, 5.0);
+        let position = Vec2::new(4.83, 5.0);
+        let modes = [
+            (None, None),
+            (
+                Some(MoveProgress {
+                    pool_id: 1,
+                    slot: target,
+                    activity: MovementActivity::Moving,
+                    pass_mode: false,
+                    stalling_on_group: false,
+                    stalled_ticks: 0,
+                    best_distance: position.distance(target),
+                    claim_count: 0,
+                }),
+                None,
+            ),
+            (
+                None,
+                Some(PlainMoveProgress {
+                    original_point: target,
+                    slot: target,
+                    pool_slots: vec![],
+                    gather_goal: None,
+                    activity: MovementActivity::Moving,
+                    stalled_ticks: 0,
+                    best_distance: position.distance(target),
+                    claim_count: 1,
+                    failure_recorded: false,
+                }),
+            ),
+        ];
+
+        for (progress, plain_progress) in modes {
+            let frame = MovementFrame {
+                bounds: Vec2::splat(16.0),
+                tick_hz: 20,
+                units: vec![
+                    MovementFrameUnit {
+                        unit_id: 1,
+                        owner_slot: 0,
+                        unit_type: 1,
+                        position,
+                        radius: 0.5,
+                        speed: Some(3.0),
+                        target: Some(target),
+                        progress,
+                        plain_progress,
+                    },
+                    MovementFrameUnit {
+                        unit_id: 2,
+                        owner_slot: 1,
+                        unit_type: 2,
+                        position: Vec2::new(3.81, 5.0),
+                        radius: 0.5,
+                        speed: None,
+                        target: None,
+                        progress: None,
+                        plain_progress: None,
+                    },
+                ],
+                pools: BTreeMap::new(),
+            };
+
+            let output = step_frame(&frame, 0.05).remove(0);
+            assert!(
+                output.position.distance(position) <= 0.150_001,
+                "contact movement exceeded one step: {:?}",
+                output.position
+            );
+            assert_eq!(output.target, Some(target));
+            assert_ne!(output.position, target);
+        }
     }
 
     #[test]

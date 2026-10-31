@@ -780,15 +780,23 @@ fn mixed_order_command_audit_covers_every_per_unit_operation() {
     assert_eq!(result.units.refused, vec![(3, RejectReason::NotApplicable)]);
     let trail = app.world().resource::<AuditTrail>();
     assert_eq!(trail.commands.len(), 1);
-    assert_eq!(trail.operations.len(), 1);
+    assert_eq!(trail.operations.len(), 2);
     assert_eq!(
         trail.operations[0].phase,
-        turts_sim::economy::transaction::AuditPhase::Command
+        turts_sim::economy::transaction::AuditPhase::Orders
     );
-    assert_eq!(trail.operations[0].unit_id, None);
+    assert_eq!(trail.operations[0].unit_id, Some(1));
+    assert_eq!(trail.operations[1].unit_id, Some(2));
+    assert_eq!(
+        trail.operations[1].phase,
+        turts_sim::economy::transaction::AuditPhase::Orders
+    );
     assert_eq!(trail.commands[0].before, trail.operations[0].before);
-    assert_eq!(trail.commands[0].after, trail.operations[0].after);
-    assert_eq!(trail.commands[0].operation_end_id, None);
+    assert_eq!(trail.commands[0].after, trail.operations[1].after);
+    assert_eq!(
+        trail.commands[0].operation_end_id,
+        Some(trail.operations[1].operation_id)
+    );
 }
 
 #[test]
