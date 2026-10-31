@@ -62,7 +62,7 @@ CI trigger: `.github/workflows/ci.yml:2-5` runs pushes to main and pull requests
 
 ## 4. Tasks
 
-24 numbered tasks; task2 has two branches, for25lanes. T1/T2a/T3/T20, T8/T18/T19, T2b,T4 andT9 are complete. Wave5 preparation follows the Wave4 push/CI read; no task dispatched yet.
+24 numbered tasks; task2 has two branches, for25lanes. T1/T2a/T3/T20, T8/T18/T19, T2b,T4 andT9 are complete. Wave5 is active: T6 repair owns the compiler; T7/T11/T12 preparations are preserved until their implementation lease.
 
 | Task | Wave | Needs | Branch | State |
 | --- | --- | --- | --- | --- |
@@ -76,9 +76,9 @@ CI trigger: `.github/workflows/ci.yml:2-5` runs pushes to main and pull requests
 | T2b | 3 | 2a, 3, 18 | codex/mc-t2b | COMPLETE64cd400; merge6d2c46e; all gates/10GREF0; review0H/0M; lane removed |
 | T4 | 4 | 2b, 3 | codex/mc-t4 | COMPLETE merge0490ebd; review0H/0M,36GREF,all12rootgates0; lane removed |
 | T9 | 4 | 1, 8, 2b | codex/mc-t9 | COMPLETE mergefb5e2d6; independent0High/0unresolvedMedium,69tests,7GREF,FOV/modifier plants,all12integrationgates0; archived lane removed, branch retained. |
-| T6 | 5 | 4 | codex/mc-t6 | ACTIVE RUN46: O12 primary-slot repair and retained review findings; sole compiler lease. No final acceptance. |
-| T7 | 5 | 2b, 4 | codex/mc-t7 | ACTIVE RUN40; source/test preparation only, no compiler lease. |
-| T11 | 5 | 9, 19, 20 | codex/mc-t11 | ACTIVE RUN41 source/test preparation only, no compiler lease. |
+| T6 | 5 | 4 | codex/mc-t6 | ACTIVE RUN46: C106-C108 repair after three independent Highs; ffb21b3 passed normal gates. Sole compiler lease; no acceptance. |
+| T7 | 5 | 2b, 4 | codex/mc-t7 | PREPARED RUN40; source/tests preserved, implementation and semantic red pending; no compiler lease. |
+| T11 | 5 | 9, 19, 20 | codex/mc-t11 | PREPARED RUN41; source/tests preserved, native/browser red pending; no compiler lease. |
 | T12 | 5 | 3, 9, 19, 20 | codex/mc-t12 | Analysis28legacytests +HUD1instrument8650131 ready; actualnative/browserred/widgetruntime/HUD4/allfinalproofpending. No legacy deletion. |
 | T5 | 6 | 4, 6, 19 | codex/mc-t5 | NOT STARTED |
 | T13 | 6 | 4, 6, 9, 11, 19, 20 | codex/mc-t13 | NOT STARTED |
@@ -237,8 +237,8 @@ One row per builder/reviewer dispatch or resumed agent work turn. Register befor
 | 43 | T12 widget/guide/cursor preparation | bevy-rendering-engineer with ux-designer | gpt-6-luna | high | 2b22fa8 | COMPLETE analysis only; no code/stubs/rows created, notREDREADY; rootverified28testinventory/3actualplants; native/browser NOTTRACED; estimate8/soft16/hard32. |
 | 44 | T12 HUD1 instrument preparation continuation | bevy-rendering-engineer with ux-designer | gpt-6-luna | high | 2b22fa8 | COMPLETE HUD1 instrument preparation:8650131,Node75/0 with13oraclecases, strictDPRregression/plant0/1/0,QA0; actualbrowser/nativeHUD1NOTTRACED; T12run2/estimate8/soft16/hard32. |
 | 45 | T6 final independent review/recheck | performance-architect | gpt-6.1-sol | high | b4/d3+separatebuilderdirtyproof | COMPLETE SOURCE-ONLY understop; confirmsgeometryandbuildersemanticred;17areas/openHfindingsretained; no runtime/ownplant/PASS. |
-| 46 | T6 O12 repair continuation | simulation-core-engineer | gpt-6-luna | high | d4a8f97+preserved dirty | Registered before dispatch; O12 primary-slot, atomic failure and no-spare stall proofs; repair retained Highs and final gates. Task6run4/6, soft12/hard24. |
-| 47 | T6 independent O12 and retained-finding recheck | performance-architect | gpt-6.1-sol | high | rebased d4a8f97+active repair | Registered before continuation; source review first, runtime/own plant only after explicit cache handoff and stable gates. Task6run5/6, soft12/hard24. |
+| 46 | T6 O12 repair continuation | simulation-core-engineer | gpt-6-luna | high | d4a8f97+preserved dirty | ACTIVE: O12 repaired; ffb21b3 normal gates all0. C106-C108 cap/escape/follow repair batch after RUN47 independent reds. Sole compiler lease; GREF/plants/final acceptance pending. Task6run4/6, soft12/hard24. |
+| 47 | T6 independent O12 and retained-finding recheck | performance-architect | gpt-6.1-sol | high | rebased d4a8f97+active repair | ACTIVE SOURCE-ONLY after C105 preliminary runtime: ffb21b3 verified gates; H4/H14/H12 compiled semantic101, other probes pass. Lease returned; repaired runtime/own plant/final PASS pending. Task6run5/6, soft12/hard24. |
 
 ## 9. Preflight ledger and stop
 
