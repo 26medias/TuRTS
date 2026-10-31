@@ -765,7 +765,7 @@
       "--exact",
       "--nocapture"
     ],
-    "expected_failure": "rejected seq 5 is write neutral",
+    "expected_failure": "refused unit 1 changed state inside its order operation",
     "runtime": "rust"
   },
   {
