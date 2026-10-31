@@ -160,3 +160,19 @@ Conflict: reviewer RUN31 found debug.rs:221 requires refused to be nonempty befo
 Choice: repair the Medium now. When accepted is empty, use the envelope reason or a refused-unit reason for rejected_tick/rejected. Add a compiled semantic red and green for an empty-envelope result and protect the partial-acceptance shape. Keep the reason, tick and seq unchanged.
 
 Alternative not taken: drop empty-command diagnostics, change the browser oracle to accept missing rejection fields, or defer the known compatibility break. No player key, step, acceptance row or protected content changes.
+
+## C19: retain Produce pre-domain admission through catalog behaviour
+
+Conflict: RUN31 High: session.rs:305-315 now calls to_sim directly, and orders.rs:46-49 parses Content before checking the producer. The base session.rs:340-410 checks ownership, production/research capability, then ContentId and PackageId syntax before simulation. E8 economy.rs:2282-2295 requires MissingCapability/UnknownRecipe/NotOwner admission records and the original malformed input. Some unit fixtures were changed to valid references, which removes that proof. Design5.2 requires ownership/capability before target checks; Task2b must keep G-ACC green.
+
+Choice: repair and independently recheck the High. Select the existing pre-domain Produce admission mechanism through catalog Behaviour::Produce, keep the existing check order/reasons and no simulation audit on admission rejection, then call the open-envelope adapter. Restore the exact malformed fixture bodies and semantic assertions. Fixtures may gain catalog definitions required by the new adapter, without replacing malformed targets or weakening trace/ownership assertions.
+
+Alternative not taken: accept target-invalid before ownership, change acceptance expectations, move early admissions into simulation, or substitute valid inputs for malformed-input proofs. This adapts an existing mechanism and preserves player behaviour; no spec/K/frozen change.
+
+## C20: reanchor the delayed-Ack plant without changing its semantic guard
+
+Conflict: RUN31 High: E8-rejection-ack-send-reversal registry install anchor (tests/m2/refutations.json:669-670) omits PendingOrderCommands inserted at session.rs:63, so it has zero matches. The changed expected_failure at refutations.json:711 also adds OrderResult, but the actual economy.rs:881 assertion still says actual ReliableChannel MessageIds put Ack before rejection for seq.
+
+Choice: update anchor and replacement together to preserve PendingOrderCommands while injecting the same delayed duplicate-command Ack defect. Retain the original stable expected_failure phrase matching the unchanged message-ID ordering assertion. Require exactly one match per anchor, baseline0, named semantic red, restored0 and exact source restoration. RUN31 applies the qa-lead registry lens and rechecks the final change.
+
+Alternative not taken: retire the plant, weaken its guard, treat an anchor failure as semantic red, or change the observed Ack/rejection ordering rule. No plant retirement or game behaviour change.
