@@ -237,7 +237,7 @@ Alternative not taken: retain stale routes, start appended work early, exempt ol
 
 Conflict: session.rs:362-376 retains Task2b all-or-nothing production_precheck; one foreign/incapable subject refuses a valid own producer in the same envelope. C19 correctly preserves malformed/wholly refused legacy admissions, but Task4 design5.2 requires per-unit outcomes.
 
-Choice: valid representable mixed Produce reaches per-unit domain validation when an eligible subject exists. Preserve C19 wholly rejected legacy admission and malformed-reference ownership/capability-before-syntax behavior, with the same original invalid inputs and forensic evidence. Apply unit-local reasons and do not disclose foreign details. Test valid own producer plus foreign/incapable subjects, as well as original malformed cases.
+Choice: every valid representable multi-subject Produce reaches per-unit domain validation, even when no subject is eligible. Preserve C19 historical single-subject early admission and malformed-reference ownership/capability-before-syntax behavior, with the same original invalid inputs and forensic evidence. Apply unit-local reasons and do not disclose foreign details. For new multi-subject malformed Content, retain raw invalid-content information for unit-local validation after ownership/capability, distinct from wrong target kind. Test valid own producer plus foreign/incapable subjects, all-invalid mixed subjects and original single-subject malformed cases. Preserve legacy immediate/Gather capability reasons so one subject's reason does not depend on another eligible subject.
 
 Alternative not taken: reject the whole mixed selection, weaken legacy malformed fixtures, or skip admission/domain evidence. No K/acceptance-row change.
 
@@ -288,3 +288,19 @@ Conflict: no-op/immediate actions can have no state diff, so C31 cannot infer wh
 Choice: add OperationAudit.unit_id:Option<u32> with serde default/skipNone and a capture_unit_order_operation helper. Tag the principal subject of per-unit Orders writes/attempt results; legacy and non-order records remainNone. Validate envelope membership and deterministic subject ordering inside command spans with behavior-specific result/write coverage. Do not treat metadata alone as proof or forbid valid repeated-unit completion/start operations outside a single span. A fabricated wrong/outside-subject tag must fail semantic replay. Fresh plain/gather exceptions and no-change all-refused Command evidence stay compatible.
 
 Alternative not taken: infer every actor from state diffs, drop no-op evidence, impose a universal accepted-count shortcut, or flatten per-unit writes. This is internal audit instrumentation; old/default serialized data and frozen expectations remain unchanged.
+
+## C35: exercise the actual phase emitter in the validator plant
+
+Conflict: validator_accepts_an_orders_operation_before_movement originally supplies a literal Orders phase to a helper, so the plan plant that changes the real capture emitter to Other cannot reach it. The old-helper regression red is not proof of the required emitter defect.
+
+Choice: retain the same test name but capture, serialize and decode an actual Orders operation before Movement. The real capture_unit_order_operation emitter change to Other must produce the named prior-target/speed movement diagnostic, followed by byte-identical restoration and green. The precommit test-development red is recorded separately; repeat the required final plant after commit and gates. Plain-move plant(a) must affect shared plain/legacy paths so both named plain-envelope and frozen-stream tests fail.
+
+Alternative not taken: accept a literal fixture as emitter coverage, retire/rename away the plant, or count a compile error. No game/acceptance/K change.
+
+## C36: implement declared Move unit targets and target policy
+
+Conflict: design5.2:493 says Move follows a unit; runtime content_mc_validation.rs:1292 accepts Unit/PointOrUnit and shipped Muster order_move declares PointOrUnit and moving to another unit. Sim orders.rs:411-413 rejects Unit and server orders.rs:55-67 drops OrderDef.target, so a Unit-only mod definition can incorrectly accept a point.
+
+Choice: carry/resolve the authored TargetKind into per-unit checks after existence/ownership/capability/filter. Implement Move/Unit live target tracking, target disappearance failure and queue continuation. Apply design5.3 Move completion when resting on its destination; Hold/Gather alone are never-completing barriers. Follow the target's current position until that completion, without introducing a permanent nonqueueable mode. The legacy fresh plain Point fast path stays exact; Unit follow uses tracked/audited order state because the existing MoveTarget holds a point only. Group avoidance/spreading remains Task6. Test moving target before arrival, disappearance, completion/next queue and Unit-only policy rejection of Point.
+
+Alternative not taken: reject shipped valid targets, drop mod policy, defer Move to the Attack task, or change keys/accepted rows. This fills the declared behavior with existing order-state/movement mechanisms and preserves frozen point behavior.
