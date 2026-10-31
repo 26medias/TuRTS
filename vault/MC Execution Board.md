@@ -507,3 +507,5 @@ C74 explicit headed profile honored for CI rows without skips; C75 real pixels d
 
 
 C76: the first browser GREF baseline hit a legacy panel covering the Cedar depot after required camera fit removal. Translate only generated base/haul/cedar fixture coordinates and width, preserving relative geometry and all assertions. Original mods, production camera and capture rules stay unchanged. Failed baseline retained; final proof pending. See [[Decisions/2026-10-30 MC Codex rulings]].
+
+C76 fixture alignment also covers the six existing absolute M2 lookups through a validated test-only X offset. Keep every owner/content/oracle guard, and translate after case-specific blocker insertion.
