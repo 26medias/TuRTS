@@ -8,7 +8,7 @@ source: codex
 
 # MC execution board
 
-State: ACTIVE: 10 of25 lanes complete. Task9 merged fb5e2d6 and all12 integration gates passed: workspace1053/0/18, T7 136frames/53moving, actualM3 controls7captures, frozen exact. Wave4 pushed; CI41195343950 agents success, check/browser running. Build42/170; C1-C84; main c3f09d0 unchanged.
+State: ACTIVE: 10 of25 lanes complete. Task9 merged fb5e2d6 and all12 integration gates passed: workspace1053/0/18, T7 136frames/53moving, actualM3 controls7captures, frozen exact. Wave4 pushed; CI41195343950 agents success, check/browser running. Build43/170; C1-C84; main c3f09d0 unchanged.
 
 Plan: `docs/superpowers/plans/2026-10-29-mc-player-control.md`.
 Design of record: `docs/superpowers/specs/2026-10-29-mc-player-control-design.md`, revision12 at63788d7, included by mainc3f09d0.
@@ -79,7 +79,7 @@ CI trigger: `.github/workflows/ci.yml:2-5` runs pushes to main and pull requests
 | T6 | 5 | 4 | codex/mc-t6 | ACTIVE RUN39; group movement, sole compiler lease granted, partial semantic red101 captured. |
 | T7 | 5 | 2b, 4 | codex/mc-t7 | ACTIVE RUN40; source/test preparation only, no compiler lease. |
 | T11 | 5 | 9, 19, 20 | codex/mc-t11 | ACTIVE RUN41 source/test preparation only, no compiler lease. |
-| T12 | 5 | 3, 9, 19, 20 | codex/mc-t12 | NOT STARTED |
+| T12 | 5 | 3, 9, 19, 20 | codex/mc-t12 | ACTIVE RUN43 preparation only; no runtime or legacy deletion before actual baseline and T6/T11 legacyM3 proofs. |
 | T5 | 6 | 4, 6, 19 | codex/mc-t5 | NOT STARTED |
 | T13 | 6 | 4, 6, 9, 11, 19, 20 | codex/mc-t13 | NOT STARTED |
 | T10 | 7 | 5, 9, 11, 19, 20 | codex/mc-t10 | NOT STARTED |
@@ -234,6 +234,7 @@ One row per builder/reviewer dispatch or resumed agent work turn. Register befor
 | 40 | T7 server session builder | backend-engineer | gpt-6-luna | high | 487f6c9 | COMPLETE RED-READY source preparation only; scoped hashes/stubs/inventory, no compiled red or behavior acceptance; estimate4/soft8/hard16. |
 | 41 | T11 camera and light preparation | bevy-rendering-engineer | gpt-6-luna | high | 30fc272 | COMPLETE source preparation only; scoped snapshots, static0; native/browser red and behavior NOTTRACED; estimate4/soft8/hard16. |
 | 42 | T6 independent performance/determinism review | performance-architect | gpt-6.1-sol | high | 487f6c9+working | REGISTERED before dispatch; source-only until builder lease handoff; final verdict/runtime/ownplant pending; T6run2/estimate6/soft12/hard24. |
+| 43 | T12 widget/guide/cursor preparation | bevy-rendering-engineer with ux-designer | gpt-6-luna | high | ee4b5ee | REGISTERED before dispatch; analysis/fixtures/test stubs only, no compiler or legacy deletion; estimate8/soft16/hard32. |
 
 ## 9. Preflight ledger and stop
 
@@ -555,3 +556,5 @@ Conflict: Task11 plan529-533 requires clip_from_world before/after each camera s
 Choice: add opt-in harness-owned scene/debug checkpoint capture at each io.screenshot, identified by input-call index/window/time, and write the trusted checkpoint artifact after driver completion, before oracle. Driver still receives only PNG bytes and the same ten IO calls; view retains its same four read-only methods. CAM1 opts in through row params and the oracle reads the artifact through serverFile to judge every step. No game debug/schema or player change. Root owns harness files in Task11 lane; builder owns camera/row/oracle. Add meaningful Node regressions for actual hook, unchanged PNG/IO surface, selected-window identity and readonly snapshots. Actual CAM1 red/green/two passes/PointerLeft plant remain required. Alternative not taken: expose bridge state to driver, add a driver capture/read API, change game debug history, or reduce the oracle to final movement.
 
 RootC84instrument commit026759e inTask11lane only: actual prehooksemantic redexit1; Node68allgreen, QA3+driver47self/tree0; postcommit focusedcontrolledhookplant0/1/0 exactrestore. Actualproductionrunner withfakebrowser proves driversavedforgery overwrittenbeforeoracle; no actualgameacceptance claim. Receipt main target/mc-evidence/t11-root/checkpoints/root-hook-plant-receipt.json. Camera/sourcepreparationRUN41 complete uncompiled/redunobserved. Task6currentcodecheckscompile andA40partialpasses; fullscope/gatespending. RUN42 performance-architect Sol/high registered for independentTask6source review, no compiler lease; budget42/170. Wave4latestCIagentsgreen, checknativeGREF andbrowserT7running, nofailedstepyet; terminalreviewstillrequired beforemerge. Mainunchanged.
+
+C84instrument finalheadcf87b0e inTask11lane: Node69allgreen; actualold026source+newidentityregressionfails1, fixed0. Finalcontrolledhookplant0/1/0 exactrestore, scopedharnessstatusclean; no camera/browser/runtime acceptance. Root corrected childtestTransformimport and wrote Task7/Task11 implementationreviewcontracts outsidevault with truthfulpreparation-onlystatus. RUN42sourceaudit found15Highprototypeissues (cost/scheduler/arrival/queue/audit); builderrepairingbeforebroadgates, finalverdictpending. RUN43registeredTask12analysis/fixtures only, no compiler/no legacyremoval; global43/170, task12firstof8. Runtime/taskmerge order andrequiredM3proofs preserved.
