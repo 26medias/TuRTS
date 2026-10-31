@@ -7,7 +7,7 @@ use serde::de::{DeserializeOwned, IgnoredAny, MapAccess, Visitor};
 use serde::{Deserialize, Deserializer};
 use turts_mod_api::{
     AssetsDef, ContentCatalog, InputMapDef, InterfaceDef, LockEntry, Manifest, MapDef, ModError,
-    NodeDef, OrderDef, OrderRulesDef, PackageId, ProductionDef, RecipeDef, ResourceDef,
+    NodeDef, OrderDef, OrderRulesDef, PackageId, ProductionDef, RecipeDef, ResourceDef, SmartOrder,
     TechnologyDef, UnitDef, VisualDef, content::SourceDef,
 };
 
@@ -18,6 +18,29 @@ use crate::parse::parse_ron;
 
 /// Archive path of the manifest.
 pub const MANIFEST_PATH: &str = "manifest.ron";
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawOrderRulesDef {
+    queue_depth: u16,
+    smart: Vec<SmartOrder>,
+}
+
+fn parse_order_rules(package: &str, path: &str, text: &str) -> Result<OrderRulesDef, ModError> {
+    let raw: RawOrderRulesDef = parse_ron(package, path, text)?;
+    if raw.queue_depth > u8::MAX.into() {
+        return Err(ModError::new(
+            package,
+            "queue_depth",
+            format!("must be between 1 and 255, got {}", raw.queue_depth),
+        )
+        .with_file(path));
+    }
+    Ok(OrderRulesDef {
+        queue_depth: raw.queue_depth as u8,
+        smart: raw.smart,
+    })
+}
 
 /// A package archive, read in memory. Nothing is written to disk.
 #[derive(Debug, Clone, PartialEq)]
@@ -95,8 +118,7 @@ impl PackageArchive {
             let text = self.export_text("exports.orders", path)?;
             match parse_ron::<OrderDef>(&self.manifest.id, path, text) {
                 Ok(value) => out.push((path.clone(), value)),
-                Err(order_error) => match parse_ron::<OrderRulesDef>(&self.manifest.id, path, text)
-                {
+                Err(order_error) => match parse_order_rules(&self.manifest.id, path, text) {
                     Ok(_) => {}
                     Err(rules_error) => {
                         return Err(classified_order_error(
@@ -118,8 +140,7 @@ impl PackageArchive {
             let text = self.export_text("exports.orders", path)?;
             match parse_ron::<OrderDef>(&self.manifest.id, path, text) {
                 Ok(_) => {}
-                Err(order_error) => match parse_ron::<OrderRulesDef>(&self.manifest.id, path, text)
-                {
+                Err(order_error) => match parse_order_rules(&self.manifest.id, path, text) {
                     Ok(value) => out.push((path.clone(), value)),
                     Err(rules_error) => {
                         return Err(classified_order_error(
@@ -188,6 +209,15 @@ impl PackageArchive {
             technologies,
         )?;
         let mc_content = crate::content_mc_validation::validate_mc(self)?;
+        let order_queue_depth = mc_content
+            .order_rules
+            .first()
+            .map_or(turts_mod_api::DEFAULT_QUEUE_DEPTH, |(_, rules)| {
+                rules.queue_depth
+            });
+        catalog
+            .order_queue_depths
+            .insert(origin.clone(), order_queue_depth);
         for (file, order) in &mc_content.orders {
             let id = turts_mod_api::ContentId::new(&origin, &order.id);
             catalog.orders.insert(id.clone(), order.clone());

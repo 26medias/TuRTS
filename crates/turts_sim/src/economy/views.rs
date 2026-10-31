@@ -147,6 +147,50 @@ pub struct UnitView {
     #[serde(with = "world_pos_bits")]
     pub pos: WorldPos,
 }
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum UnitOrderTargetView {
+    None,
+    Point(WorldPos),
+    Unit(u32),
+    Node(NodeId),
+    Job(crate::JobId),
+    Content(ContentId),
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct UnitOrderSummaryView {
+    pub order: String,
+    pub target: UnitOrderTargetView,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct UnitOrderFailureView {
+    pub order: String,
+    pub reason: crate::RejectReason,
+    pub tick: u32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum UnitOrderActivityView {
+    Idle,
+    Pending,
+    Moving,
+    Attacking,
+    Holding,
+    Gathering,
+    Blocked,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct UnitOrderView {
+    pub unit_id: u32,
+    pub owner_slot: u8,
+    pub activity: UnitOrderActivityView,
+    pub current: Option<UnitOrderSummaryView>,
+    pub queued: Vec<UnitOrderSummaryView>,
+    pub last_failure: Option<UnitOrderFailureView>,
+}
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ReservationEndpointView {
     Slot(u8),
@@ -200,6 +244,11 @@ pub struct RawUnitAudit {
     #[serde(with = "optional_world_pos_bits")]
     pub move_target: Option<WorldPos>,
 }
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RawUnitOrdersAudit {
+    pub unit_id: u32,
+    pub orders: crate::orders::UnitOrders,
+}
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RawInventoryAudit {
     pub unit: u32,
@@ -248,9 +297,20 @@ pub struct CatalogAudit {
     pub units: Vec<CatalogUnitAudit>,
     pub recipes: Vec<CatalogRecipeAudit>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub order_definitions: Vec<CatalogOrderAudit>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub technologies: Vec<super::views_m3::CatalogTechnologyAudit>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub item_recipes: Vec<super::views_m3::CatalogItemRecipeAudit>,
+}
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CatalogOrderAudit {
+    pub id: ContentId,
+    pub behaviour: turts_mod_api::Behaviour,
+    pub target: turts_mod_api::TargetKind,
+    pub units: Vec<String>,
+    pub queue_depth: u8,
+    pub unit_capabilities: Vec<crate::orders::OrderUnitCapabilitiesAudit>,
 }
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CatalogNodeAudit {
@@ -263,11 +323,17 @@ pub struct CatalogUnitAudit {
     pub id: ContentId,
     pub radius: f32,
     pub movement_speed: Option<f32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub removal: Option<turts_mod_api::RemovalDef>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub machine_recipe: Option<ContentId>,
     pub inventory: Option<(u64, Vec<ContentId>)>,
     pub gatherer: Option<CatalogGathererAudit>,
     pub drop_off: Vec<CatalogDropOffAudit>,
     #[serde(with = "optional_producer_bits")]
     pub producer: Option<(Vec<ContentId>, u16, Vec<WorldPos>)>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub research: Option<(Vec<ContentId>, u16)>,
 }
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CatalogGathererAudit {
@@ -303,6 +369,8 @@ pub struct AuditState {
     pub bounds: Option<WorldPos>,
     pub resources: AuditResourcePresence,
     pub raw_units: Vec<RawUnitAudit>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub unit_orders: Vec<RawUnitOrdersAudit>,
     pub raw_inventories: Vec<RawInventoryAudit>,
     pub raw_orders: Vec<RawOrderAudit>,
     pub raw_queues: Vec<RawQueueAudit>,
@@ -362,6 +430,8 @@ pub struct WorldView {
     pub m3: super::views_m3::M3AuditState,
     pub units: Vec<crate::world::UnitState>,
     pub nodes: Vec<NodeView>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub unit_orders: Vec<UnitOrderView>,
     pub economy: EconomyStateView,
 }
 
@@ -396,11 +466,60 @@ pub fn world_view(world: &mut World) -> WorldView {
         .get_resource::<crate::world::Tick>()
         .map_or(0, |tick| tick.0);
     let units = crate::world::snapshot(world);
+    let mut unit_orders: Vec<_> = world
+        .iter_entities()
+        .filter_map(|entity| {
+            let unit_id = entity.get::<UnitId>()?.0;
+            let owner_slot = entity.get::<Owner>()?.0.0;
+            let orders = entity.get::<crate::orders::UnitOrders>()?;
+            let activity = if orders
+                .last_failure
+                .as_ref()
+                .is_some_and(|failure| failure.reason == crate::RejectReason::Blocked)
+            {
+                UnitOrderActivityView::Blocked
+            } else if let Some(current) = &orders.current {
+                match current.behaviour {
+                    turts_mod_api::Behaviour::Move if entity.get::<MoveTarget>().is_some() => {
+                        UnitOrderActivityView::Moving
+                    }
+                    turts_mod_api::Behaviour::Move => UnitOrderActivityView::Pending,
+                    turts_mod_api::Behaviour::Attack => UnitOrderActivityView::Attacking,
+                    turts_mod_api::Behaviour::Hold => UnitOrderActivityView::Holding,
+                    turts_mod_api::Behaviour::Gather => UnitOrderActivityView::Gathering,
+                    _ => UnitOrderActivityView::Pending,
+                }
+            } else if !orders.queue.is_empty() {
+                UnitOrderActivityView::Pending
+            } else if entity.get::<MoveTarget>().is_some() {
+                UnitOrderActivityView::Moving
+            } else {
+                UnitOrderActivityView::Idle
+            };
+            Some(UnitOrderView {
+                unit_id,
+                owner_slot,
+                activity,
+                current: orders.current.as_ref().map(unit_order_summary),
+                queued: orders.queue.iter().map(unit_order_summary).collect(),
+                last_failure: orders
+                    .last_failure
+                    .as_ref()
+                    .map(|failure| UnitOrderFailureView {
+                        order: failure.order.to_string(),
+                        reason: failure.reason,
+                        tick: failure.tick,
+                    }),
+            })
+        })
+        .collect();
+    unit_orders.sort_by_key(|record| record.unit_id);
     let m3 = super::views_m3::m3_world_view(world);
     let mut view = WorldView {
         tick,
         m3,
         units,
+        unit_orders,
         ..WorldView::default()
     };
     for ((slot, resource), account) in economy.balances {
@@ -446,6 +565,28 @@ pub fn world_view(world: &mut World) -> WorldView {
     }
     view.nodes = node_views(world);
     view
+}
+
+fn unit_order_summary(order: &crate::orders::Order) -> UnitOrderSummaryView {
+    UnitOrderSummaryView {
+        order: order.order.to_string(),
+        target: match &order.target {
+            crate::orders::OrderTargetSim::Invalid => UnitOrderTargetView::None,
+            crate::orders::OrderTargetSim::None => UnitOrderTargetView::None,
+            crate::orders::OrderTargetSim::Point(position) => {
+                UnitOrderTargetView::Point(WorldPos {
+                    x: position.x,
+                    y: position.y,
+                })
+            }
+            crate::orders::OrderTargetSim::Unit(unit) => UnitOrderTargetView::Unit(*unit),
+            crate::orders::OrderTargetSim::Node(node) => UnitOrderTargetView::Node(*node),
+            crate::orders::OrderTargetSim::Job(job) => UnitOrderTargetView::Job(*job),
+            crate::orders::OrderTargetSim::Content(content) => {
+                UnitOrderTargetView::Content(content.clone())
+            }
+        },
+    }
 }
 
 /// Return absolute records that differ from the previous completed economy snapshot.
@@ -628,7 +769,8 @@ pub fn audit_state(world: &mut World) -> AuditState {
                 })
                 .collect()
         });
-    let economy = world_view(world);
+    let mut economy = world_view(world);
+    economy.unit_orders.clear();
     let allocators = *world
         .get_resource::<IdAllocators>()
         .unwrap_or(&IdAllocators {
@@ -708,6 +850,8 @@ pub fn audit_state(world: &mut World) -> AuditState {
                             turts_mod_api::Footprint::Circle { radius } => radius,
                         },
                         movement_speed: d.movement.as_ref().map(|m| m.speed),
+                        removal: d.removal,
+                        machine_recipe: d.machine.as_ref().map(|machine| machine.recipe.clone()),
                         inventory: d
                             .inventory
                             .as_ref()
@@ -741,6 +885,9 @@ pub fn audit_state(world: &mut World) -> AuditState {
                         producer: d.producer.as_ref().map(|p| {
                             (p.recipes.clone(), p.queue_capacity, p.spawn_offsets.clone())
                         }),
+                        research: d.research.as_ref().map(|research| {
+                            (research.technologies.clone(), research.queue_capacity)
+                        }),
                     })
                     .collect(),
                 technologies: super::views_m3::catalog_technology_audits(c),
@@ -765,6 +912,45 @@ pub fn audit_state(world: &mut World) -> AuditState {
                         refunds: r.cancel_refunds,
                     })
                     .collect(),
+                order_definitions: c
+                    .orders
+                    .iter()
+                    .map(|(id, definition)| CatalogOrderAudit {
+                        id: id.clone(),
+                        behaviour: definition.behaviour,
+                        target: definition.target,
+                        units: definition.units.clone(),
+                        queue_depth: c
+                            .order_queue_depths
+                            .get(&id.package)
+                            .copied()
+                            .unwrap_or(turts_mod_api::DEFAULT_QUEUE_DEPTH),
+                        unit_capabilities: c
+                            .units
+                            .iter()
+                            .map(
+                                |(unit_id, unit)| crate::orders::OrderUnitCapabilitiesAudit {
+                                    unit: unit_id.to_string(),
+                                    movement: unit.movement.is_some(),
+                                    weapon: unit.weapon.is_some(),
+                                    gatherer: unit.gatherer.is_some(),
+                                    producer: unit.producer.is_some(),
+                                    research: unit.research.is_some(),
+                                    removable: unit
+                                        .removal
+                                        .as_ref()
+                                        .is_some_and(|policy| policy.by_command),
+                                    toggleable: unit.extractor.is_some()
+                                        || unit.inserter.is_some()
+                                        || unit.machine.is_some()
+                                        || unit.research.is_some()
+                                        || unit.producer.is_some()
+                                        || unit.weapon.is_some(),
+                                },
+                            )
+                            .collect(),
+                    })
+                    .collect(),
             }
         });
     let mut raw_units = Vec::new();
@@ -785,6 +971,18 @@ pub fn audit_state(world: &mut World) -> AuditState {
             }),
     );
     raw_units.sort_by_key(|u| u.unit_id);
+    let mut unit_orders: Vec<_> = world
+        .iter_entities()
+        .filter_map(|entity| {
+            let unit_id = entity.get::<UnitId>()?.0;
+            let orders = entity.get::<crate::orders::UnitOrders>()?;
+            (*orders != crate::orders::UnitOrders::default()).then(|| RawUnitOrdersAudit {
+                unit_id,
+                orders: orders.clone(),
+            })
+        })
+        .collect();
+    unit_orders.sort_by_key(|orders| orders.unit_id);
     let raw_inventories = world
         .get_resource::<EconomyLedger>()
         .map_or_else(Vec::new, |ledger| {
@@ -855,6 +1053,7 @@ pub fn audit_state(world: &mut World) -> AuditState {
         }),
         resources,
         raw_units,
+        unit_orders,
         raw_inventories,
         raw_orders,
         raw_queues: world

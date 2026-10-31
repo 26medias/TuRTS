@@ -18,6 +18,7 @@ impl Default for ClientContent {
                 recipes: Default::default(),
                 technologies: Default::default(),
                 orders: Default::default(),
+                order_queue_depths: std::collections::BTreeMap::new(),
                 source_files: Default::default(),
             },
             shapes: HashMap::new(),
@@ -35,6 +36,7 @@ impl ClientContent {
             recipes: Default::default(),
             technologies: Default::default(),
             orders: Default::default(),
+            order_queue_depths: std::collections::BTreeMap::new(),
             source_files: Default::default(),
         };
         for archive in archives {

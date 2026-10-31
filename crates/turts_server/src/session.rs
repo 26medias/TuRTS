@@ -359,6 +359,29 @@ fn production_precheck(
         return None;
     };
 
+    let representable = ContentId::parse(reference)
+        .and_then(|id| {
+            PackageId::parse(&id.package.0).map(|package| ContentId {
+                package,
+                local: id.local,
+            })
+        })
+        .is_ok();
+    if staged.envelope.order.units.len() > 1 {
+        // Multi-subject envelopes always reach per-unit validation, including malformed
+        // content targets, so ownership and capability priority is resolved per subject.
+        return None;
+    }
+    if representable
+        && staged.envelope.order.units.iter().any(|unit| {
+            owns_unit(world, unit.0, staged.slot) == Some(true)
+                && has_production_capability(world, unit.0) == Some(true)
+        })
+    {
+        // A syntactically representable mixed envelope must receive per-unit domain results.
+        return None;
+    }
+
     for unit in &staged.envelope.order.units {
         match owns_unit(world, unit.0, staged.slot) {
             Some(true) => {}
@@ -736,6 +759,7 @@ mod admission_tests {
             recipes: BTreeMap::new(),
             technologies: BTreeMap::new(),
             orders: BTreeMap::new(),
+            order_queue_depths: std::collections::BTreeMap::new(),
             source_files: BTreeMap::new(),
         };
         catalog.units.insert(
@@ -791,6 +815,10 @@ mod admission_tests {
             producer_id: UnitId,
             recipe_id: String,
         },
+        CancelProduction {
+            producer_id: UnitId,
+            job_id: u64,
+        },
         Remove {
             unit_id: UnitId,
         },
@@ -810,6 +838,7 @@ mod admission_tests {
             recipes: BTreeMap::new(),
             technologies: BTreeMap::new(),
             orders: BTreeMap::new(),
+            order_queue_depths: std::collections::BTreeMap::new(),
             source_files: BTreeMap::new(),
         };
         for (name, behaviour, target) in [
@@ -855,6 +884,14 @@ mod admission_tests {
                 "test:produce",
                 vec![producer_id],
                 OrderTarget::Content(recipe_id),
+            ),
+            FixtureOrder::CancelProduction {
+                producer_id,
+                job_id,
+            } => (
+                "test:cancel",
+                vec![producer_id],
+                OrderTarget::Job(turts_net_protocol::economy::JobId(job_id)),
             ),
             FixtureOrder::Remove { unit_id } => ("test:remove", vec![unit_id], OrderTarget::None),
             FixtureOrder::SetEnabled { unit_id, enabled } => {
@@ -987,10 +1024,25 @@ mod admission_tests {
         );
         assert_eq!(
             accepted,
-            Some(CommandKind::Produce {
-                producer_id: 2,
-                recipe_id: ContentId::new(&package, "technology"),
-            })
+            Some(CommandKind::Order(Box::new(turts_sim::OrderCommand {
+                order: ContentId::new(&package, "produce"),
+                behaviour: Behaviour::Produce,
+                target_kind: turts_mod_api::TargetKind::Content,
+                policy: Some(turts_sim::OrderPolicyAudit {
+                    id: ContentId::new(&package, "produce"),
+                    behaviour: Behaviour::Produce,
+                    target: turts_mod_api::TargetKind::Content,
+                    units: vec![],
+                    queue_depth: turts_mod_api::DEFAULT_QUEUE_DEPTH,
+                    unit_capabilities: vec![],
+                }),
+                units: vec![2],
+                target: turts_sim::OrderTargetSim::Content(ContentId::new(&package, "technology")),
+                queue: turts_sim::QueueMode::Replace,
+                group: 0,
+                allowed_units: vec![],
+                queue_depth: turts_mod_api::DEFAULT_QUEUE_DEPTH,
+            })))
         );
         assert!(
             app.world()
@@ -1061,6 +1113,7 @@ mod admission_tests {
             recipes: BTreeMap::new(),
             technologies: BTreeMap::new(),
             orders: BTreeMap::new(),
+            order_queue_depths: std::collections::BTreeMap::new(),
             source_files: BTreeMap::new(),
         };
         catalog.units.insert(
@@ -1315,8 +1368,12 @@ mod admission_tests {
         assert_eq!(results[0].seq, 1);
         assert!(matches!(
             results[0].outcome,
-            Err(turts_sim::RejectReason::NotMobile)
+            Err(turts_sim::RejectReason::NotApplicable)
         ));
+        assert_eq!(
+            results[0].units.refused,
+            vec![(1, turts_sim::RejectReason::NotApplicable)]
+        );
         assert!(app.world().resource::<CommandQueue>().0.is_empty());
         let audit = app.world().resource::<turts_sim::AuditTrail>();
         assert_eq!(
@@ -1463,6 +1520,441 @@ mod admission_tests {
     }
 
     #[test]
+    fn representable_mixed_produce_envelope_reaches_per_unit_validation() {
+        let (mut app, connection) = app();
+        let producer_type = app
+            .world()
+            .iter_entities()
+            .find_map(|entity| entity.get::<UnitType>().copied())
+            .unwrap();
+        app.world_mut()
+            .spawn((SimUnitId(2), Owner(turts_sim::SlotId(1)), producer_type));
+        app.world_mut()
+            .spawn((SimUnitId(4), Owner(turts_sim::SlotId(0)), producer_type));
+        let static_type = app
+            .world_mut()
+            .resource_mut::<UnitTypes>()
+            .register_unit_type(
+                &PackageId::parse("test").unwrap(),
+                UnitDef {
+                    id: "static".into(),
+                    name: "Static".into(),
+                    footprint: Footprint::Circle { radius: 1.0 },
+                    movement: None,
+                    inventory: None,
+                    gatherer: None,
+                    drop_off: None,
+                    producer: None,
+                    output_inventory: None,
+                    extractor: None,
+                    conveyor: None,
+                    inserter: None,
+                    machine: None,
+                    research: None,
+                    health: None,
+                    weapon: None,
+                    removal: None,
+                },
+            )
+            .unwrap();
+        let static_id = ContentId::parse("test:static").unwrap();
+        app.world_mut()
+            .resource_mut::<turts_sim::bootstrap::InstalledCatalog>()
+            .0
+            .units
+            .insert(
+                static_id.clone(),
+                ResolvedUnit {
+                    id: static_id,
+                    name: "Static".into(),
+                    footprint: Footprint::Circle { radius: 1.0 },
+                    movement: None,
+                    inventory: None,
+                    gatherer: None,
+                    drop_off: None,
+                    producer: None,
+                    output_inventory: None,
+                    extractor: None,
+                    conveyor: None,
+                    inserter: None,
+                    machine: None,
+                    research: None,
+                    health: None,
+                    weapon: None,
+                    removal: None,
+                },
+            );
+        app.world_mut().spawn((
+            SimUnitId(3),
+            Owner(turts_sim::SlotId(0)),
+            UnitType(static_type),
+        ));
+        let recipe = ContentId::parse("test:existing_recipe").unwrap();
+        let producer = ContentId::parse("test:producer").unwrap();
+        {
+            let mut installed = app
+                .world_mut()
+                .resource_mut::<turts_sim::bootstrap::InstalledCatalog>();
+            let unit = installed.0.units.get_mut(&producer).unwrap();
+            unit.producer.as_mut().unwrap().recipes = vec![recipe.clone()];
+            installed.0.production.insert(
+                recipe.clone(),
+                turts_mod_api::ResolvedProduction {
+                    id: recipe.clone(),
+                    name: "Existing recipe".into(),
+                    output_unit: producer,
+                    duration_ms: 1000,
+                    costs: vec![],
+                    payment: turts_mod_api::PaymentPolicy::ChargeOnQueue,
+                    cancel_refunds: turts_mod_api::CancelRefunds {
+                        queued: turts_mod_api::RefundRatio {
+                            numerator: 0,
+                            denominator: 1,
+                        },
+                        running: turts_mod_api::RefundRatio {
+                            numerator: 0,
+                            denominator: 1,
+                        },
+                        output_blocked: turts_mod_api::RefundRatio {
+                            numerator: 0,
+                            denominator: 1,
+                        },
+                    },
+                },
+            );
+        }
+        app.world_mut()
+            .insert_resource(turts_sim::bootstrap::ProductionDurations(BTreeMap::from([
+                (recipe.clone(), 20),
+            ])));
+        let mut produce_staged = staged(
+            connection,
+            8,
+            FixtureOrder::Produce {
+                producer_id: UnitId(1),
+                recipe_id: recipe.to_string(),
+            },
+        );
+        produce_staged.envelope.order.units = vec![UnitId(4), UnitId(1), UnitId(2), UnitId(3)];
+        assert_eq!(production_precheck(app.world_mut(), &produce_staged), None);
+        let command = crate::orders::to_sim(
+            produce_staged.slot,
+            &produce_staged.envelope,
+            &app.world().resource::<crate::orders::ServerCatalog>().0,
+        )
+        .unwrap()
+        .remove(0);
+        let result = turts_sim::apply_command(app.world_mut(), &command);
+        assert_eq!(result.units.accepted, vec![1, 4]);
+        assert_eq!(
+            result.units.refused,
+            vec![
+                (2, turts_sim::RejectReason::NotOwner),
+                (3, turts_sim::RejectReason::MissingCapability),
+            ]
+        );
+        assert_eq!(
+            result.outcome,
+            Ok(turts_sim::Applied {
+                job_id: Some(turts_sim::JobId(1))
+            })
+        );
+        let queues = turts_sim::economy::views::world_view(app.world_mut())
+            .economy
+            .queues;
+        assert_eq!(
+            queues
+                .iter()
+                .find(|queue| queue.producer == 1)
+                .unwrap()
+                .jobs[0]
+                .id,
+            1
+        );
+        assert!(queues.iter().all(|queue| queue.producer != 2));
+        assert_eq!(
+            queues
+                .iter()
+                .find(|queue| queue.producer == 4)
+                .unwrap()
+                .jobs[0]
+                .id,
+            2,
+            "unit-id order determines the next job id, independent of envelope order"
+        );
+
+        let cancel = crate::orders::to_sim(
+            turts_sim::SlotId(0),
+            &staged(
+                connection,
+                9,
+                FixtureOrder::CancelProduction {
+                    producer_id: UnitId(1),
+                    job_id: 1,
+                },
+            )
+            .envelope,
+            &app.world().resource::<crate::orders::ServerCatalog>().0,
+        )
+        .unwrap()
+        .remove(0);
+        let canceled = turts_sim::apply_command(app.world_mut(), &cancel);
+        assert_eq!(canceled.units.accepted, vec![1]);
+        let queues = turts_sim::economy::views::world_view(app.world_mut())
+            .economy
+            .queues;
+        assert!(
+            queues
+                .iter()
+                .find(|queue| queue.producer == 1)
+                .unwrap()
+                .jobs
+                .is_empty()
+        );
+        assert_eq!(
+            queues
+                .iter()
+                .find(|queue| queue.producer == 4)
+                .unwrap()
+                .jobs[0]
+                .id,
+            2
+        );
+
+        let cancel_second = crate::orders::to_sim(
+            turts_sim::SlotId(0),
+            &staged(
+                connection,
+                10,
+                FixtureOrder::CancelProduction {
+                    producer_id: UnitId(4),
+                    job_id: 2,
+                },
+            )
+            .envelope,
+            &app.world().resource::<crate::orders::ServerCatalog>().0,
+        )
+        .unwrap()
+        .remove(0);
+        assert_eq!(
+            turts_sim::apply_command(app.world_mut(), &cancel_second)
+                .units
+                .accepted,
+            vec![4]
+        );
+
+        let producer_one = app
+            .world()
+            .iter_entities()
+            .find_map(|entity| {
+                entity
+                    .get::<SimUnitId>()
+                    .is_some_and(|id| id.0 == 1)
+                    .then_some(entity.id())
+            })
+            .unwrap();
+        app.world_mut()
+            .entity_mut(producer_one)
+            .insert(Owner(turts_sim::SlotId(1)));
+        let mut later_success = staged(
+            connection,
+            11,
+            FixtureOrder::Produce {
+                producer_id: UnitId(1),
+                recipe_id: recipe.to_string(),
+            },
+        );
+        later_success.envelope.order.units = vec![UnitId(4), UnitId(1)];
+        assert_eq!(production_precheck(app.world_mut(), &later_success), None);
+        let later_success_command = crate::orders::to_sim(
+            later_success.slot,
+            &later_success.envelope,
+            &app.world().resource::<crate::orders::ServerCatalog>().0,
+        )
+        .unwrap()
+        .remove(0);
+        let later_success_result =
+            turts_sim::apply_command(app.world_mut(), &later_success_command);
+        assert_eq!(
+            later_success_result.units.accepted,
+            vec![4],
+            "{later_success_result:?}"
+        );
+        assert_eq!(
+            later_success_result.units.refused,
+            vec![(1, turts_sim::RejectReason::NotOwner)]
+        );
+        assert_eq!(
+            later_success_result.outcome,
+            Ok(turts_sim::Applied {
+                job_id: Some(turts_sim::JobId(3))
+            }),
+            "the first successful unit in unit-id order supplies the envelope job id"
+        );
+    }
+
+    #[test]
+    fn multi_produce_all_invalid_subjects_keep_per_unit_priority() {
+        let (mut app, connection) = app();
+        let producer_type = app
+            .world()
+            .iter_entities()
+            .find_map(|entity| entity.get::<UnitType>().copied())
+            .unwrap();
+        app.world_mut()
+            .spawn((SimUnitId(2), Owner(turts_sim::SlotId(1)), producer_type));
+        let static_type = app
+            .world_mut()
+            .resource_mut::<UnitTypes>()
+            .register_unit_type(
+                &PackageId::parse("test").unwrap(),
+                UnitDef {
+                    id: "static".into(),
+                    name: "Static".into(),
+                    footprint: Footprint::Circle { radius: 1.0 },
+                    movement: None,
+                    inventory: None,
+                    gatherer: None,
+                    drop_off: None,
+                    producer: None,
+                    output_inventory: None,
+                    extractor: None,
+                    conveyor: None,
+                    inserter: None,
+                    machine: None,
+                    research: None,
+                    health: None,
+                    weapon: None,
+                    removal: None,
+                },
+            )
+            .unwrap();
+        let static_id = ContentId::parse("test:static").unwrap();
+        app.world_mut()
+            .resource_mut::<turts_sim::bootstrap::InstalledCatalog>()
+            .0
+            .units
+            .insert(
+                static_id.clone(),
+                ResolvedUnit {
+                    id: static_id,
+                    name: "Static".into(),
+                    footprint: Footprint::Circle { radius: 1.0 },
+                    movement: None,
+                    inventory: None,
+                    gatherer: None,
+                    drop_off: None,
+                    producer: None,
+                    output_inventory: None,
+                    extractor: None,
+                    conveyor: None,
+                    inserter: None,
+                    machine: None,
+                    research: None,
+                    health: None,
+                    weapon: None,
+                    removal: None,
+                },
+            );
+        app.world_mut().spawn((
+            SimUnitId(3),
+            Owner(turts_sim::SlotId(0)),
+            UnitType(static_type),
+        ));
+        let recipe = ContentId::parse("test:existing_recipe").unwrap();
+        let producer = ContentId::parse("test:producer").unwrap();
+        {
+            let mut installed = app
+                .world_mut()
+                .resource_mut::<turts_sim::bootstrap::InstalledCatalog>();
+            installed
+                .0
+                .units
+                .get_mut(&producer)
+                .unwrap()
+                .producer
+                .as_mut()
+                .unwrap()
+                .recipes = vec![recipe.clone()];
+            installed.0.production.insert(
+                recipe.clone(),
+                turts_mod_api::ResolvedProduction {
+                    id: recipe.clone(),
+                    name: "Existing recipe".into(),
+                    output_unit: producer,
+                    duration_ms: 1000,
+                    costs: vec![],
+                    payment: turts_mod_api::PaymentPolicy::ChargeOnQueue,
+                    cancel_refunds: turts_mod_api::CancelRefunds {
+                        queued: turts_mod_api::RefundRatio {
+                            numerator: 0,
+                            denominator: 1,
+                        },
+                        running: turts_mod_api::RefundRatio {
+                            numerator: 0,
+                            denominator: 1,
+                        },
+                        output_blocked: turts_mod_api::RefundRatio {
+                            numerator: 0,
+                            denominator: 1,
+                        },
+                    },
+                },
+            );
+        }
+        app.world_mut()
+            .insert_resource(turts_sim::bootstrap::ProductionDurations(BTreeMap::from([
+                (recipe, 20),
+            ])));
+        app.world_mut()
+            .resource_mut::<turts_sim::AuditTrail>()
+            .enable();
+        for (seq, reference) in [(9, "test:existing_recipe"), (10, "BAD:??")] {
+            let mut staged = staged(
+                connection,
+                seq,
+                FixtureOrder::Produce {
+                    producer_id: UnitId(2),
+                    recipe_id: reference.into(),
+                },
+            );
+            staged.envelope.order.units = vec![UnitId(2), UnitId(3)];
+            assert_eq!(
+                production_precheck(app.world_mut(), &staged),
+                None,
+                "multi-subject Produce must reach per-unit checks even when no subject is eligible"
+            );
+            let command = crate::orders::to_sim(
+                staged.slot,
+                &staged.envelope,
+                &app.world().resource::<crate::orders::ServerCatalog>().0,
+            )
+            .unwrap()
+            .remove(0);
+            let result = turts_sim::apply_command(app.world_mut(), &command);
+            assert!(result.units.accepted.is_empty());
+            assert_eq!(
+                result.units.refused,
+                vec![
+                    (2, turts_sim::RejectReason::NotOwner),
+                    (3, turts_sim::RejectReason::MissingCapability),
+                ]
+            );
+            let trail = app.world().resource::<turts_sim::AuditTrail>();
+            let audit = trail.commands.last().unwrap();
+            assert_eq!(audit.result.units.refused, result.units.refused);
+            assert_eq!(
+                audit.before, audit.after,
+                "all-refused envelope must preserve its command boundary"
+            );
+            assert_eq!(
+                trail.operations.last().unwrap().phase,
+                turts_sim::economy::transaction::AuditPhase::Command
+            );
+        }
+    }
+
+    #[test]
     fn scheduled_admission_uses_advanced_tick_and_rejects_before_domain_audit() {
         let (mut app, connection) = app();
         app.world_mut().resource_mut::<Tick>().0 = 40;
@@ -1540,7 +2032,25 @@ mod admission_tests {
         let remove = staged(connection, 1, FixtureOrder::Remove { unit_id: UnitId(1) });
         assert_eq!(
             admit_kind(app.world_mut(), &remove, 0),
-            Some(CommandKind::Remove { unit_id: 1 })
+            Some(CommandKind::Order(Box::new(turts_sim::OrderCommand {
+                order: ContentId::parse("test:remove").unwrap(),
+                behaviour: Behaviour::Remove,
+                target_kind: turts_mod_api::TargetKind::None,
+                policy: Some(turts_sim::OrderPolicyAudit {
+                    id: ContentId::parse("test:remove").unwrap(),
+                    behaviour: Behaviour::Remove,
+                    target: turts_mod_api::TargetKind::None,
+                    units: vec![],
+                    queue_depth: turts_mod_api::DEFAULT_QUEUE_DEPTH,
+                    unit_capabilities: vec![],
+                }),
+                units: vec![1],
+                target: turts_sim::OrderTargetSim::None,
+                queue: turts_sim::QueueMode::Replace,
+                group: 0,
+                allowed_units: vec![],
+                queue_depth: turts_mod_api::DEFAULT_QUEUE_DEPTH,
+            })))
         );
         let toggle = staged(
             connection,
@@ -1552,10 +2062,25 @@ mod admission_tests {
         );
         assert_eq!(
             admit_kind(app.world_mut(), &toggle, 0),
-            Some(CommandKind::SetEnabled {
-                unit_id: 1,
-                enabled: false
-            })
+            Some(CommandKind::Order(Box::new(turts_sim::OrderCommand {
+                order: ContentId::parse("test:enabled").unwrap(),
+                behaviour: Behaviour::SetEnabled(false),
+                target_kind: turts_mod_api::TargetKind::None,
+                policy: Some(turts_sim::OrderPolicyAudit {
+                    id: ContentId::parse("test:enabled").unwrap(),
+                    behaviour: Behaviour::SetEnabled(false),
+                    target: turts_mod_api::TargetKind::None,
+                    units: vec![],
+                    queue_depth: turts_mod_api::DEFAULT_QUEUE_DEPTH,
+                    unit_capabilities: vec![],
+                }),
+                units: vec![1],
+                target: turts_sim::OrderTargetSim::None,
+                queue: turts_sim::QueueMode::Replace,
+                group: 0,
+                allowed_units: vec![],
+                queue_depth: turts_mod_api::DEFAULT_QUEUE_DEPTH,
+            })))
         );
     }
 }

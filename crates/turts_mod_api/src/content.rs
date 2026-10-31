@@ -161,5 +161,7 @@ pub struct ContentCatalog {
     pub recipes: BTreeMap<ContentId, ResolvedRecipe>,
     pub technologies: BTreeMap<ContentId, ResolvedTechnology>,
     pub orders: BTreeMap<ContentId, crate::orders::OrderDef>,
+    /// Package-authored per-unit order queue depth (default 16).
+    pub order_queue_depths: BTreeMap<crate::PackageId, u8>,
     pub source_files: BTreeMap<ContentId, String>,
 }

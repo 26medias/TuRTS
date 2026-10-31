@@ -272,8 +272,8 @@
   {
     "id": "E6-repeated-spawn",
     "plant_path": "crates/turts_sim/src/economy/transaction.rs",
-    "anchor": "            world.spawn((\n                UnitId(spawn.id),\n                crate::world::UnitType(spawn.unit_type),\n                Owner(SlotId(spawn.owner_slot)),\n                crate::world::Position(spawn.position),\n            ));",
-    "replacement": "            world.spawn((UnitId(spawn.id), crate::world::UnitType(spawn.unit_type), Owner(SlotId(spawn.owner_slot)), crate::world::Position(spawn.position)));\n            world.spawn((\n                UnitId(spawn.id),\n                crate::world::UnitType(spawn.unit_type),\n                Owner(SlotId(spawn.owner_slot)),\n                crate::world::Position(spawn.position),\n            ));",
+    "anchor": "            let mut entity = world.spawn((\n                UnitId(spawn.id),\n                crate::world::UnitType(spawn.unit_type),\n                Owner(SlotId(spawn.owner_slot)),\n                crate::world::Position(spawn.position),\n            ));\n            if order_capable {\n                entity.insert(crate::orders::UnitOrders::default());\n            }",
+    "replacement": "            let mut entity = world.spawn((\n                UnitId(spawn.id),\n                crate::world::UnitType(spawn.unit_type),\n                Owner(SlotId(spawn.owner_slot)),\n                crate::world::Position(spawn.position),\n            ));\n            if order_capable {\n                entity.insert(crate::orders::UnitOrders::default());\n            }\n            let mut duplicate = world.spawn((\n                UnitId(spawn.id),\n                crate::world::UnitType(spawn.unit_type),\n                Owner(SlotId(spawn.owner_slot)),\n                crate::world::Position(spawn.position),\n            ));\n            if order_capable {\n                duplicate.insert(crate::orders::UnitOrders::default());\n            }",
     "command": [
       "cargo",
       "test",
@@ -362,8 +362,8 @@
   {
     "id": "E6-event-only-spawn",
     "plant_path": "crates/turts_sim/src/economy/transaction.rs",
-    "anchor": "            world.spawn((\n                UnitId(spawn.id),\n                crate::world::UnitType(spawn.unit_type),\n                Owner(SlotId(spawn.owner_slot)),\n                crate::world::Position(spawn.position),\n            ));",
-    "replacement": "            let _entity_without_gameplay_identity = world.spawn_empty();",
+    "anchor": "            let mut entity = world.spawn((\n                UnitId(spawn.id),\n                crate::world::UnitType(spawn.unit_type),\n                Owner(SlotId(spawn.owner_slot)),\n                crate::world::Position(spawn.position),\n            ));\n            if order_capable {\n                entity.insert(crate::orders::UnitOrders::default());\n            }",
+    "replacement": "            let mut entity = world.spawn((\n                crate::world::UnitType(spawn.unit_type),\n                Owner(SlotId(spawn.owner_slot)),\n                crate::world::Position(spawn.position),\n            ));\n            if order_capable {\n                entity.insert(crate::orders::UnitOrders::default());\n            }",
     "command": [
       "cargo",
       "test",
@@ -621,8 +621,18 @@
     "id": "E8-foreign-gather-owner-check",
     "kind": "process",
     "plant_path": "crates/turts_sim/src/economy/gather.rs",
-    "anchor": "pub fn assign_gather(\n    world: &mut World,\n    slot: SlotId,\n    unit: u32,\n    node: NodeId,\n) -> Result<(), RejectReason> {\n    let entity = find_unit(world, unit).ok_or(RejectReason::UnknownUnit)?;\n    if world.get::<Owner>(entity).map(|owner| owner.0) != Some(slot) {",
-    "replacement": "pub fn assign_gather(\n    world: &mut World,\n    slot: SlotId,\n    unit: u32,\n    node: NodeId,\n) -> Result<(), RejectReason> {\n    let entity = find_unit(world, unit).ok_or(RejectReason::UnknownUnit)?;\n    if false && world.get::<Owner>(entity).map(|owner| owner.0) != Some(slot) {",
+    "plants": [
+      {
+        "path": "crates/turts_sim/src/economy/gather.rs",
+        "anchor": "pub fn assign_gather(\n    world: &mut World,\n    slot: SlotId,\n    unit: u32,\n    node: NodeId,\n) -> Result<(), RejectReason> {\n    let entity = find_unit(world, unit).ok_or(RejectReason::UnknownUnit)?;\n    if world.get::<Owner>(entity).map(|owner| owner.0) != Some(slot) {",
+        "replacement": "pub fn assign_gather(\n    world: &mut World,\n    slot: SlotId,\n    unit: u32,\n    node: NodeId,\n) -> Result<(), RejectReason> {\n    let entity = find_unit(world, unit).ok_or(RejectReason::UnknownUnit)?;\n    if false && world.get::<Owner>(entity).map(|owner| owner.0) != Some(slot) {"
+      },
+      {
+        "path": "crates/turts_sim/src/orders.rs",
+        "anchor": "        if owner != Some(slot) {\n            outcomes.refused.push((*unit_id, R::NotOwner));\n            continue;\n        }",
+        "replacement": "        if command.behaviour != Behaviour::Gather && owner != Some(slot) {\n            outcomes.refused.push((*unit_id, R::NotOwner));\n            continue;\n        }"
+      }
+    ],
     "pre_commands": [
       [
         "cargo",
@@ -755,7 +765,7 @@
       "--exact",
       "--nocapture"
     ],
-    "expected_failure": "rejected seq 5 is write neutral",
+    "expected_failure": "refused unit 1 changed state inside its order operation",
     "runtime": "rust"
   },
   {

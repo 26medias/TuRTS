@@ -383,6 +383,7 @@ mod tests {
             recipes: BTreeMap::new(),
             technologies,
             orders: BTreeMap::new(),
+            order_queue_depths: std::collections::BTreeMap::new(),
             source_files: BTreeMap::new(),
         };
         let map = MapDef {
@@ -1192,6 +1193,7 @@ mod tests {
             recipes: BTreeMap::new(),
             technologies: BTreeMap::new(),
             orders: BTreeMap::new(),
+            order_queue_depths: std::collections::BTreeMap::new(),
             source_files: BTreeMap::from([(cid(WEAPON), "units/weapon.ron".into())]),
         };
         let map = MapDef {

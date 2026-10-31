@@ -476,7 +476,7 @@ pub(crate) fn validate_mc(archive: &PackageArchive) -> Result<ParsedMcContent, M
         }
     }
     for (file, rules) in &parsed.order_rules {
-        if rules.queue_depth == 0 || rules.queue_depth > 255 {
+        if rules.queue_depth == 0 {
             return Err(error(
                 &package,
                 file,

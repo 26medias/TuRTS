@@ -406,19 +406,28 @@ fn t3_process_claims_create_nothing() {
     }
 }
 
-/// One T4 case: `label` names the test directory, `reason` is the expected rejection, and
-/// `homes` lists every unit of the map with the place it must never leave.
+/// One T4 case: `label` names the test directory, `expected` describes the result, and
+/// `homes` lists every unit of the map before the command.
 struct T4Case {
     label: &'static str,
-    reason: &'static str,
+    expected: T4Expected,
     package: &'static str,
     args: &'static [&'static str],
     homes: &'static [(u32, (f32, f32))],
 }
 
-/// T4: invalid `MoveTo` commands. Each gets `CommandAck`, then `OrderResult` with its
-/// reason, and no unit ever moves. The real base map checks static rejection and slot-1 ownership
-/// while movement targets its slot-owned mobile harvester. Acme retains the map-bound check.
+#[derive(Clone, Copy)]
+enum T4Expected {
+    Rejected(&'static str),
+    ClampedMove {
+        unit: u32,
+        start: (f32, f32),
+        bounds: (f32, f32),
+    },
+}
+
+/// T4: invalid Move orders get an exact refusal after CommandAck. Finite points outside either
+/// map clamp to its edge and move only the selected unit.
 #[test]
 #[ignore]
 fn t4_command_validation() {
@@ -430,36 +439,44 @@ fn t4_command_validation() {
     ];
     let cases = [
         T4Case {
-            label: "static_not_mobile",
-            reason: "not_mobile",
+            label: "static_not_applicable",
+            expected: T4Expected::Rejected("not_applicable"),
             package: "base",
             args: &["--move", "10,8", "--move-unit", "1"],
             homes: BASE_HOME,
         },
         T4Case {
             label: "target_not_finite",
-            reason: "target_not_finite",
+            expected: T4Expected::Rejected("target_not_finite"),
             package: "base",
             args: &["--move", "NaN,8", "--move-unit", "2"],
             homes: BASE_HOME,
         },
         T4Case {
             label: "target_outside_map",
-            reason: "target_outside_map",
+            expected: T4Expected::ClampedMove {
+                unit: 2,
+                start: (12.0, 8.0),
+                bounds: (64.0, 64.0),
+            },
             package: "base",
             args: &["--move", "99,8", "--move-unit", "2"],
             homes: BASE_HOME,
         },
         T4Case {
             label: "outside_acme",
-            reason: "target_outside_map",
+            expected: T4Expected::ClampedMove {
+                unit: 1,
+                start: (4.0, 4.0),
+                bounds: (48.0, 48.0),
+            },
             package: "acme",
             args: &["--move", "56,4", "--move-unit", "1"],
             homes: &[(1, (4.0, 4.0))],
         },
         T4Case {
             label: "not_owner_by_map",
-            reason: "not_owner",
+            expected: T4Expected::Rejected("not_owner"),
             package: "base",
             args: &["--move", "10,8", "--move-unit", "4"],
             homes: BASE_HOME,
@@ -467,7 +484,7 @@ fn t4_command_validation() {
     ];
     for T4Case {
         label,
-        reason,
+        expected,
         package,
         args,
         homes,
@@ -490,30 +507,80 @@ fn t4_command_validation() {
             "{label}: the first result is the ack: {report}"
         );
         assert_eq!(results[1]["seq"], 1, "{label}: {report}");
-        assert_eq!(results[1]["rejected"], reason, "{label}: {report}");
-        assert!(results[1]["rejected_tick"].is_u64(), "{label}: {report}");
-        assert_eq!(
-            report["receipt_order_proofs"][0]["ack_precedes_rejection"], true,
-            "{label}: {report}"
-        );
+        match expected {
+            T4Expected::Rejected(reason) => {
+                assert_eq!(results[1]["rejected"], reason, "{label}: {report}");
+                assert!(results[1]["rejected_tick"].is_u64(), "{label}: {report}");
+                assert_eq!(
+                    report["receipt_order_proofs"][0]["ack_precedes_rejection"], true,
+                    "{label}: {report}"
+                );
+            }
+            T4Expected::ClampedMove { unit, .. } => {
+                assert_eq!(
+                    results[1]["accepted"],
+                    serde_json::json!([unit]),
+                    "{label}: {report}"
+                );
+                assert_eq!(
+                    results[1]["refused"],
+                    serde_json::json!([]),
+                    "{label}: {report}"
+                );
+                assert!(results[1]["applied_tick"].is_u64(), "{label}: {report}");
+            }
+        }
 
         let ticks = read_tick_log(&server.tick_log);
         assert!(!ticks.is_empty(), "{label}: empty tick log");
         for (tick, records) in by_tick(&ticks) {
             assert_eq!(records.len(), homes.len(), "{label}: units at tick {tick}");
         }
+        let mut clamped_unit_moved = false;
         for record in &ticks {
             let home = homes
                 .iter()
                 .find(|(unit, _)| *unit == record.unit_id)
                 .map(|(_, home)| *home)
                 .unwrap_or_else(|| panic!("{label}: unexpected unit {}", record.unit_id));
+            match expected {
+                T4Expected::Rejected(_) => assert!(
+                    near(record.pos, home),
+                    "{label}: unit {} at {:?} at tick {}, home {home:?}",
+                    record.unit_id,
+                    record.pos,
+                    record.tick
+                ),
+                T4Expected::ClampedMove {
+                    unit,
+                    start,
+                    bounds,
+                } if record.unit_id == unit => {
+                    assert!(
+                        record.pos.0 >= 0.0
+                            && record.pos.0 <= bounds.0
+                            && record.pos.1 >= 0.0
+                            && record.pos.1 <= bounds.1,
+                        "{label}: unit {} escaped map bounds {:?} at {:?}",
+                        record.unit_id,
+                        bounds,
+                        record.pos
+                    );
+                    clamped_unit_moved |= record.pos.0 > start.0 + 0.01;
+                }
+                T4Expected::ClampedMove { .. } => assert!(
+                    near(record.pos, home),
+                    "{label}: unrelated unit {} at {:?} at tick {}, home {home:?}",
+                    record.unit_id,
+                    record.pos,
+                    record.tick
+                ),
+            }
+        }
+        if matches!(expected, T4Expected::ClampedMove { .. }) {
             assert!(
-                near(record.pos, home),
-                "{label}: unit {} at {:?} at tick {}, home {home:?}",
-                record.unit_id,
-                record.pos,
-                record.tick
+                clamped_unit_moved,
+                "{label}: selected unit did not move toward its clamped point"
             );
         }
     }

@@ -201,6 +201,9 @@ pub enum AutomaticSubject {
 #[derive(Debug, Clone, PartialEq)]
 pub enum ExpectedOperation {
     Command(Command),
+    /// A Task4 Order input modeled through the independently frozen M2 economic rules plus
+    /// its own per-unit Order state transition. Legacy `Command(Order)` stays fail-closed.
+    Task4Order(Command),
     InventoryTransfer {
         slot: u8,
         from: u32,
@@ -243,6 +246,7 @@ impl FrozenJob {
 
 /// A reference model whose expectations are made from the input command and frozen catalog.
 /// It deliberately ignores diagnostic operation counters when checking economic truth.
+#[derive(Clone)]
 pub struct AccountingOracle {
     initial: AuditState,
     catalog: ContentCatalog,
@@ -430,6 +434,9 @@ impl AccountingOracle {
         match expected {
             ExpectedOperation::Command(command) => {
                 self.command(command, before, after, events, result)?
+            }
+            ExpectedOperation::Task4Order(command) => {
+                self.task4_order(command, before, after, events, result)?
             }
             ExpectedOperation::InventoryTransfer {
                 slot,
@@ -718,6 +725,93 @@ impl AccountingOracle {
         a: &AuditState,
         events: &[EconomyEvent],
         result: Option<&CommandResult>,
+    ) -> Result<(), String> {
+        self.command_with_task4_gather(c, b, a, events, result, None)
+    }
+
+    fn task4_order(
+        &mut self,
+        command: &Command,
+        before: &AuditState,
+        after: &AuditState,
+        events: &[EconomyEvent],
+        result: Option<&CommandResult>,
+    ) -> Result<(), String> {
+        use turts_sim::{CommandKind, OrderTargetSim};
+        let CommandKind::Order(order) = &command.kind else {
+            return Err("Task4Order expectation requires a protocol Order input".into());
+        };
+        if order.queue != turts_sim::QueueMode::Replace || order.group != 0 {
+            return Err("independent E8 order bridge supports only Replace group zero".into());
+        }
+        let kind = match (&order.behaviour, &order.target) {
+            (turts_mod_api::Behaviour::Move, OrderTargetSim::Point(point)) => {
+                let bounds = before.bounds.as_ref().ok_or("Move map bounds missing")?;
+                CommandKind::MoveTo {
+                    unit_ids: order.units.clone(),
+                    target: bevy_math::Vec2::new(
+                        point.x.clamp(0.0, bounds.x),
+                        point.y.clamp(0.0, bounds.y),
+                    ),
+                }
+            }
+            (turts_mod_api::Behaviour::Gather, OrderTargetSim::Node(node))
+                if order.units.len() == 1 =>
+            {
+                CommandKind::Gather {
+                    unit_id: order.units[0],
+                    node_id: *node,
+                }
+            }
+            (turts_mod_api::Behaviour::Produce, OrderTargetSim::Content(recipe))
+                if order.units.len() == 1 =>
+            {
+                CommandKind::Produce {
+                    producer_id: order.units[0],
+                    recipe_id: recipe.clone(),
+                }
+            }
+            (turts_mod_api::Behaviour::CancelProduction, OrderTargetSim::Job(job))
+                if order.units.len() == 1 =>
+            {
+                CommandKind::CancelProduction {
+                    producer_id: order.units[0],
+                    job_id: *job,
+                }
+            }
+            _ => return Err("independent E8 order bridge does not model this Order shape".into()),
+        };
+        let projected = Command {
+            slot: command.slot,
+            seq: command.seq,
+            kind,
+        };
+        let task4_gather = (order.behaviour == turts_mod_api::Behaviour::Gather).then(|| {
+            turts_sim::orders::Order {
+                order: order.order.clone(),
+                behaviour: order.behaviour,
+                target: order.target.clone(),
+                group: order.group,
+            }
+        });
+        self.command_with_task4_gather(
+            &projected,
+            before,
+            after,
+            events,
+            result,
+            task4_gather.as_ref(),
+        )
+    }
+
+    fn command_with_task4_gather(
+        &mut self,
+        c: &Command,
+        b: &AuditState,
+        a: &AuditState,
+        events: &[EconomyEvent],
+        result: Option<&CommandResult>,
+        task4_gather: Option<&turts_sim::Order>,
     ) -> Result<(), String> {
         let r = result.ok_or("submitted command has no result")?;
         if events.iter().any(|event| event.owner_slot != c.slot.0) {
@@ -1200,11 +1294,17 @@ impl AccountingOracle {
                 self.validate_move_command(b, a, unit_ids, *target, events)?
             }
             CommandKind::Gather { unit_id, node_id } => {
-                self.validate_gather_command(b, a, *unit_id, *node_id, events)?
+                self.validate_gather_command(b, a, *unit_id, *node_id, events, task4_gather)?
             }
             CommandKind::Remove { .. } | CommandKind::SetEnabled { .. } => {
                 return Err(
                     "M2 accounting oracle does not support T12 commands; use the M3 oracle".into(),
+                );
+            }
+            CommandKind::Order(_) => {
+                return Err(
+                    "M2 accounting oracle does not model Task4 per-unit orders; use the Task4 oracle"
+                        .into(),
                 );
             }
         }
@@ -1220,6 +1320,10 @@ impl AccountingOracle {
             CommandKind::Remove { .. } | CommandKind::SetEnabled { .. } => {
                 Err("M2 accounting oracle does not support T12 commands; use the M3 oracle".into())
             }
+            CommandKind::Order(_) => Err(
+                "M2 accounting oracle does not model Task4 per-unit orders; use the Task4 oracle"
+                    .into(),
+            ),
             CommandKind::MoveTo { unit_ids, target } => {
                 if unit_ids.is_empty()
                     || unit_ids.len() > 256
@@ -1441,6 +1545,7 @@ impl AccountingOracle {
         unit: u32,
         node: turts_sim::NodeId,
         events: &[EconomyEvent],
+        task4_order: Option<&turts_sim::Order>,
     ) -> Result<(), String> {
         if !events.is_empty() {
             return Err("Gather command emitted events".into());
@@ -1498,6 +1603,29 @@ impl AccountingOracle {
             view.node = Some(node);
             view.receiver = None;
             view.stage = order.stage;
+        }
+        if let Some(order) = task4_order {
+            let orders = turts_sim::UnitOrders {
+                current: Some(order.clone()),
+                ..Default::default()
+            };
+            if let Some(raw_orders) = expected
+                .unit_orders
+                .iter_mut()
+                .find(|raw_orders| raw_orders.unit_id == unit)
+            {
+                raw_orders.orders = orders;
+            } else {
+                expected
+                    .unit_orders
+                    .push(turts_sim::economy::views::RawUnitOrdersAudit {
+                        unit_id: unit,
+                        orders,
+                    });
+                expected
+                    .unit_orders
+                    .sort_by_key(|raw_orders| raw_orders.unit_id);
+            }
         }
         project_raw_queues(&mut expected)?;
         if expected != *a {
@@ -2911,7 +3039,18 @@ fn project_raw_queues(state: &mut AuditState) -> Result<(), String> {
             };
             let charged = job.charged.iter().map(line).collect::<Vec<_>>();
             let reserved = job.reserved.iter().map(line).collect::<Vec<_>>();
-            let reservation = if reserved.is_empty() {
+            let reserve_then_charge = state
+                .catalog
+                .as_ref()
+                .and_then(|catalog| {
+                    catalog
+                        .recipes
+                        .iter()
+                        .find(|recipe| recipe.id == job.recipe)
+                })
+                .is_some_and(|recipe| recipe.payment == PaymentPolicy::ReserveThenCharge)
+                && job.stage == JobStage::Queued;
+            let reservation = if !reserve_then_charge {
                 None
             } else {
                 let claim = state
