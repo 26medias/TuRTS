@@ -312,3 +312,14 @@ Conflict: Task4 changes M3-planted files, while the C7 wrapper only imports the 
 Choice: prepare main target/mc-evidence/run_lane_m3_refutations.py, derived from the archived exact C7 wrapper. It imports unchanged M3 run_case/run/semantic guards, preserves the frozen hash and17-case ordered registry checks, captures original source_provenance, records every actual command return/stdout hash, and archives its wrapper bytes/hash plus registry/runner hashes. It requires clean committed source and one exclusively owned lane target; final restoration/clean status/frozen hash remain mandatory. QA reviews it before first use. AST parse passed; no refutation has yet run through it. Wrapper SHA380ef9fd49ac363c09490abf98282fc85e8a51ed9978644e3c0b4481524d7e13.
 
 Alternative not taken: allocate duplicate scratch targets, copy modules with weakened guards, bypass M3 preflight, or treat wrapper syntax as runtime proof. Product scripts/registries remain unchanged by this layout decision.
+
+
+## C38: validate orders against the captured catalog
+
+Conflict: Task4 draft economylog.rs:755-769 compares command fields only to command.policy. Both can be forged together. C34 needs a definition source independent of that command. Existing economy/views.rs:294-307,797-803 captures InstalledCatalog as CatalogAudit; mod_api/content.rs:163-165 holds orders and package queue depths.
+
+Choice: add default/skip-empty order_definitions to CatalogAudit, captured from InstalledCatalog with exact identity, behaviour, target, unit filter, package-resolved queue depth and catalog-backed capability evidence. Validate each catalog-backed Order against this source, not its own embedded policy. Keep catalog immutable across audited transitions. Require a valid economic/order baseline, a jointly forged command/policy rejection and a changed-catalog transition rejection. Preserve legacy audit paths and omit the new field when empty.
+
+The frozen m3_m2_stream.rs:107-128 records operation identity, event kinds and before-equals-after, rather than raw catalog bytes. A static catalog field can preserve that stream, but this is not yet runtime proof. Run frozen checks early. Do not alter any frozen file, hash, fixed-point expectation or accepted row; stop if an actual frozen value must change.
+
+Alternative not taken: trust matching command-local copies, add another equally command-local source, or weaken replay. This is internal audit instrumentation under the existing captured-catalog pattern.
