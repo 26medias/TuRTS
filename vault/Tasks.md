@@ -102,4 +102,4 @@ Human usability amendment1354e33: catalog-derived principal labels/named local s
 
 **Integrated:** M3 fast-forwarded into main and pushed; hosted CI running, human-demo limitations retained. See [[Reports/2026-10-28 M3 integration]].
 
-MC update2026-10-31: ACTIVE: 9 of 25 lanes complete. Task 9 candidate8ddefc1 has all13 standard gates green (workspace1049/0/18), T7 at136frames/53moving and actual M3 controls green. CLICK9 rendered pair and independent Node59/native63 remain mapped to unchanged source. Seven guarded refutations are running; final FOV and independent modifier plants remain. Build runs:38/170. Rulings:C1-C76. Main remains c3f09d0.
+MC update2026-10-31: ACTIVE: 9 of 25 lanes complete. Task 9 candidate8ddefc1 has all13 standard gates green (workspace1049/0/18), T7 at136frames/53moving and actual M3 controls green. CLICK9 rendered pair and independent Node59/native63 remain mapped to unchanged source. Guarded refutations:1/7 passed; the Cedar browser baseline passed and its mutation stages are running. Final FOV and independent modifier plants remain. Build runs:38/170. Rulings:C1-C76. Main remains c3f09d0.
