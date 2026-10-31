@@ -2039,13 +2039,62 @@ fn replay_public_log_with_model(
                         operation.operation_id
                     );
                 }
+                let task4_singleton_move = match &command_audit.input.kind {
+                    turts_sim::CommandKind::Order(order)
+                        if order.behaviour == turts_mod_api::Behaviour::Move
+                            && order.queue == turts_sim::QueueMode::Replace
+                            && order.group == 0
+                            && order.units.len() == 1
+                            && command_audit.result.units.accepted.as_slice()
+                                == order.units.as_slice()
+                            && matches!(order.target, turts_sim::OrderTargetSim::Point(_)) =>
+                    {
+                        let unit_id = order.units[0];
+                        let radius = operation
+                            .before
+                            .raw_units
+                            .iter()
+                            .find(|unit| unit.unit_id == unit_id)
+                            .map(|unit| unit.unit_type)
+                            .and_then(|type_id| {
+                                public_initial
+                                    .unit_types
+                                    .iter()
+                                    .find(|unit_type| unit_type.type_id == type_id)
+                            })
+                            .map(|unit_type| unit_type.radius);
+                        radius.and_then(|radius| {
+                            let bounds = operation.before.bounds.as_ref()?;
+                            let turts_sim::OrderTargetSim::Point(point) = order.target else {
+                                unreachable!()
+                            };
+                            Some(turts_sim::Command {
+                                slot: command_audit.input.slot,
+                                seq: command_audit.input.seq,
+                                kind: turts_sim::CommandKind::MoveTo {
+                                    unit_ids: vec![unit_id],
+                                    target: bevy::math::Vec2::new(
+                                        point.x.clamp(radius, (bounds.x - radius).max(radius)),
+                                        point.y.clamp(radius, (bounds.y - radius).max(radius)),
+                                    ),
+                                },
+                            })
+                        })
+                    }
+                    _ => None,
+                };
+                let mut projected_input = expected_input.clone();
+                let expected_operation = if let Some(projected) = task4_singleton_move {
+                    projected_input = projected.clone();
+                    accounting::ExpectedOperation::Command(projected)
+                } else if task4_order {
+                    accounting::ExpectedOperation::Task4Order(command_audit.input.clone())
+                } else {
+                    accounting::ExpectedOperation::Command(expected_input.clone())
+                };
                 oracle
                     .observe(
-                        &if task4_order {
-                            accounting::ExpectedOperation::Task4Order(command_audit.input.clone())
-                        } else {
-                            accounting::ExpectedOperation::Command(expected_input.clone())
-                        },
+                        &expected_operation,
                         &operation.before,
                         &operation.after,
                         &operation.events,
@@ -2055,7 +2104,7 @@ fn replay_public_log_with_model(
                         panic!("command operation {}: {error}", operation.operation_id)
                     });
                 let mut projected_audit = (*command_audit).clone();
-                projected_audit.input = expected_input;
+                projected_audit.input = projected_input;
                 command_records.push(projected_audit);
                 continue;
             }
@@ -2407,6 +2456,12 @@ fn e8_commands_are_authoritative_and_acked() {
     let foreign_pos = position(foreign_harvester);
     let center_pos = position(owner_center);
     let bounds = public_initial.bounds.as_ref().expect("public map bounds");
+    let harvester_radius = public_initial
+        .unit_types
+        .iter()
+        .find(|unit_type| unit_type.content_id == "base:harvester")
+        .expect("public package defines the harvester")
+        .radius;
     let unknown_unit = public_initial
         .economy
         .units
@@ -2725,10 +2780,10 @@ fn e8_commands_are_authoritative_and_acked() {
             .unwrap()
             .move_target,
         Some(turts_mod_api::WorldPos {
-            x: bounds.x,
+            x: bounds.x - harvester_radius,
             y: own_pos.y
         }),
-        "the finite target is clamped to the exact public map edge"
+        "the finite target is clamped to the radius-inset public map edge"
     );
     assert!(
         seq10_operation

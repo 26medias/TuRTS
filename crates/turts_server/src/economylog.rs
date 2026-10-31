@@ -1996,11 +1996,7 @@ fn validate_order_operation(
             let plain_cleanup = order.queue == turts_sim::QueueMode::Replace
                 && order.group == 0
                 && order.units.len() == 1
-                && matches!(order.target, turts_sim::OrderTargetSim::Point(_))
-                && (before_orders.current.is_some()
-                    || !before_orders.queue.is_empty()
-                    || before_orders.last_failure.is_some()
-                    || before_orders != Default::default());
+                && matches!(order.target, turts_sim::OrderTargetSim::Point(_));
             if plain_cleanup {
                 expected_orders = Default::default();
                 expected_target = Some(clamped_audit_point(
@@ -8485,6 +8481,132 @@ mod tests {
                 .unwrap_err()
                 .contains("moved its actor before Movement"),
             "Orders phase must reject actor teleportation"
+        );
+    }
+
+    #[test]
+    fn validator_models_singleton_group_zero_point_replace_cleanup_exactly() {
+        let mut before = one_moving_unit_state();
+        before.raw_units[0].move_target = Some(WorldPos { x: 4.0, y: 2.0 });
+        assert_eq!(
+            unit_orders_for(&before, 1),
+            turts_sim::UnitOrders::default()
+        );
+
+        let target = bevy::math::Vec2::new(8.0, 8.0);
+        let mut after = before.clone();
+        after.raw_units[0].move_target = Some(clamped_audit_point(
+            &before,
+            target,
+            audit_unit_radius(&before, 1),
+        ));
+        let mut command = one_order_command(
+            "fixture:move",
+            turts_mod_api::Behaviour::Move,
+            turts_mod_api::TargetKind::Point,
+            turts_sim::OrderTargetSim::Point(target),
+            order_policy(
+                "fixture:move",
+                turts_mod_api::Behaviour::Move,
+                turts_mod_api::TargetKind::Point,
+                vec![(
+                    "fixture:walker",
+                    true,
+                    false,
+                    false,
+                    false,
+                    false,
+                    false,
+                    false,
+                )],
+            ),
+        );
+        if let turts_sim::CommandKind::Order(order) = &mut command.kind {
+            order.group = 0;
+        }
+        let valid = single_order_records(
+            before,
+            after,
+            command,
+            vec![1],
+            vec![],
+            turts_sim::economy::transaction::AuditPhase::Orders,
+        );
+        assert!(
+            validate_records(&valid).is_ok(),
+            "MoveTarget-only prior state with default UnitOrders accepts the exact singleton cleanup"
+        );
+
+        let mut forged_current = valid.clone();
+        for record in &mut forged_current {
+            match record {
+                EconomyLogRecord::CommandBoundary(boundary) => {
+                    boundary.after.unit_orders =
+                        vec![turts_sim::economy::views::RawUnitOrdersAudit {
+                            unit_id: 1,
+                            orders: turts_sim::UnitOrders {
+                                current: Some(turts_sim::Order {
+                                    order: turts_mod_api::ContentId::parse("fixture:move").unwrap(),
+                                    behaviour: turts_mod_api::Behaviour::Move,
+                                    target: turts_sim::OrderTargetSim::Point(target),
+                                    group: 0,
+                                }),
+                                ..Default::default()
+                            },
+                        }];
+                }
+                EconomyLogRecord::Operation(operation) => {
+                    operation.after.unit_orders =
+                        vec![turts_sim::economy::views::RawUnitOrdersAudit {
+                            unit_id: 1,
+                            orders: turts_sim::UnitOrders {
+                                current: Some(turts_sim::Order {
+                                    order: turts_mod_api::ContentId::parse("fixture:move").unwrap(),
+                                    behaviour: turts_mod_api::Behaviour::Move,
+                                    target: turts_sim::OrderTargetSim::Point(target),
+                                    group: 0,
+                                }),
+                                ..Default::default()
+                            },
+                        }];
+                }
+                _ => {}
+            }
+        }
+        assert!(
+            validate_records(&forged_current)
+                .unwrap_err()
+                .contains("unexpected UnitOrders"),
+            "a current authored-order record cannot be forged into the plain cleanup branch"
+        );
+
+        let mut forged_foreign_failure = valid;
+        for record in &mut forged_foreign_failure {
+            let after = match record {
+                EconomyLogRecord::CommandBoundary(boundary) => Some(&mut boundary.after),
+                EconomyLogRecord::Operation(operation) => Some(&mut operation.after),
+                _ => None,
+            };
+            if let Some(after) = after {
+                store_audited_unit_orders(
+                    after,
+                    1,
+                    turts_sim::UnitOrders {
+                        last_failure: Some(turts_sim::OrderFailure {
+                            order: turts_mod_api::ContentId::parse("foreign:order").unwrap(),
+                            reason: turts_sim::RejectReason::TargetGone,
+                            tick: after.economy.tick,
+                        }),
+                        ..Default::default()
+                    },
+                );
+            }
+        }
+        assert!(
+            validate_records(&forged_foreign_failure)
+                .unwrap_err()
+                .contains("unexpected UnitOrders"),
+            "a foreign failure identity cannot survive singleton Replace cleanup"
         );
     }
 
