@@ -6,7 +6,10 @@ use turts_net_protocol::{
     CommandRejectReason, MAX_ORDER_UNITS, OrderResult, OrderTarget, PlayerCommand, UnitId,
     UnitRefusal,
 };
-use turts_sim::{Command, CommandKind, RejectReason, SlotId};
+use turts_sim::{
+    Command, CommandKind, RejectReason, SlotId,
+    orders::{OrderCommand, OrderTargetSim, QueueMode},
+};
 
 #[derive(Resource, Clone)]
 pub struct ServerCatalog(pub ContentCatalog);
@@ -36,71 +39,75 @@ pub fn to_sim(
     {
         return Err(refusal(command, CommandRejectReason::EmptyCommand));
     }
-    let commands = match (definition.behaviour, &order.target) {
-        (Behaviour::Move, OrderTarget::Point(target)) => vec![CommandKind::MoveTo {
-            unit_ids: order.units.iter().map(|unit| unit.0).collect(),
-            target: bevy::math::Vec2::new(target.x, target.y),
-        }],
-        (Behaviour::Gather, OrderTarget::Node(node)) => order
-            .units
-            .iter()
-            .map(|unit| CommandKind::Gather {
-                unit_id: unit.0,
-                node_id: turts_sim::NodeId(node.0),
-            })
-            .collect(),
-        (Behaviour::Produce, OrderTarget::Content(content)) => {
-            let Ok(recipe_id) = ContentId::parse(content) else {
-                return Err(refusal(command, CommandRejectReason::TargetInvalid));
-            };
-            order
+    let target = match &order.target {
+        OrderTarget::None => OrderTargetSim::None,
+        OrderTarget::Point(point) => OrderTargetSim::Point(bevy::math::Vec2::new(point.x, point.y)),
+        OrderTarget::Unit(unit) => OrderTargetSim::Unit(unit.0),
+        OrderTarget::Node(node) => OrderTargetSim::Node(turts_sim::NodeId(node.0)),
+        OrderTarget::Job(job) => OrderTargetSim::Job(turts_sim::JobId(job.0)),
+        OrderTarget::Content(content) => ContentId::parse(content)
+            .map(OrderTargetSim::Content)
+            .unwrap_or(OrderTargetSim::Invalid),
+    };
+    let order_package = order_id.package.clone();
+    let queue_depth = catalog
+        .order_queue_depths
+        .get(&order_package)
+        .copied()
+        .unwrap_or(turts_mod_api::DEFAULT_QUEUE_DEPTH);
+    let sim_order = OrderCommand {
+        order: order_id.clone(),
+        behaviour: definition.behaviour,
+        target_kind: definition.target,
+        policy: Some(turts_sim::OrderPolicyAudit {
+            id: order_id.clone(),
+            behaviour: definition.behaviour,
+            target: definition.target,
+            units: definition.units.clone(),
+            queue_depth,
+            unit_capabilities: catalog
                 .units
                 .iter()
-                .map(|unit| CommandKind::Produce {
-                    producer_id: unit.0,
-                    recipe_id: recipe_id.clone(),
+                .map(|(id, unit)| turts_sim::OrderUnitCapabilitiesAudit {
+                    unit: id.to_string(),
+                    movement: unit.movement.is_some(),
+                    weapon: unit.weapon.is_some(),
+                    gatherer: unit.gatherer.is_some(),
+                    producer: unit.producer.is_some(),
+                    research: unit.research.is_some(),
+                    removable: unit
+                        .removal
+                        .as_ref()
+                        .is_some_and(|policy| policy.by_command),
+                    toggleable: unit.extractor.is_some()
+                        || unit.inserter.is_some()
+                        || unit.machine.is_some()
+                        || unit.research.is_some()
+                        || unit.producer.is_some()
+                        || unit.weapon.is_some(),
                 })
-                .collect()
-        }
-        (Behaviour::CancelProduction, OrderTarget::Job(job)) => order
-            .units
-            .iter()
-            .map(|unit| CommandKind::CancelProduction {
-                producer_id: unit.0,
-                job_id: turts_sim::JobId(job.0),
-            })
-            .collect(),
-        (Behaviour::Remove, OrderTarget::None) => order
-            .units
-            .iter()
-            .map(|unit| CommandKind::Remove { unit_id: unit.0 })
-            .collect(),
-        (Behaviour::SetEnabled(enabled), OrderTarget::None) => order
-            .units
-            .iter()
-            .map(|unit| CommandKind::SetEnabled {
-                unit_id: unit.0,
-                enabled,
-            })
-            .collect(),
-        (Behaviour::Stop | Behaviour::Hold | Behaviour::Attack, _) => {
-            return Err(refusal(command, CommandRejectReason::NotApplicable));
-        }
-        _ => return Err(refusal(command, CommandRejectReason::TargetInvalid)),
+                .collect(),
+        }),
+        units: order.units.iter().map(|unit| unit.0).collect(),
+        target,
+        queue: match order.queue {
+            turts_net_protocol::QueueMode::Replace => QueueMode::Replace,
+            turts_net_protocol::QueueMode::Append => QueueMode::Append,
+        },
+        group: order.group,
+        allowed_units: definition.units.clone(),
+        queue_depth,
     };
-    Ok(commands
-        .into_iter()
-        .map(|kind| Command {
-            slot,
-            seq: command.seq,
-            kind,
-        })
-        .collect())
+    Ok(vec![Command {
+        slot,
+        seq: command.seq,
+        kind: CommandKind::Order(Box::new(sim_order)),
+    }])
 }
 
-/// Apply the first simulation outcome to every unit until Task 4 adds per-unit outcomes.
+/// Convert simulation per-unit outcomes to the protocol result.
 pub fn to_wire(results: &[turts_sim::CommandResult], command: &PlayerCommand) -> OrderResult {
-    let mut result = OrderResult {
+    let mut wire_result = OrderResult {
         seq: command.seq,
         tick: 0,
         accepted: Vec::new(),
@@ -108,27 +115,57 @@ pub fn to_wire(results: &[turts_sim::CommandResult], command: &PlayerCommand) ->
         envelope: None,
         job_id: None,
     };
+    if let Some(sim_result) = results.first()
+        && (!sim_result.units.accepted.is_empty() || !sim_result.units.refused.is_empty())
+    {
+        wire_result.accepted = sim_result
+            .units
+            .accepted
+            .iter()
+            .copied()
+            .map(UnitId)
+            .collect();
+        wire_result.refused = sim_result
+            .units
+            .refused
+            .iter()
+            .map(|(unit, reason)| UnitRefusal {
+                unit: UnitId(*unit),
+                reason: wire_reason(*reason),
+            })
+            .collect();
+        wire_result.job_id = sim_result
+            .outcome
+            .as_ref()
+            .ok()
+            .and_then(|applied| applied.job_id)
+            .map(|job| turts_net_protocol::JobId(job.0));
+        if wire_result.accepted.is_empty() && command.order.units.is_empty() {
+            wire_result.envelope = wire_result.refused.first().map(|refusal| refusal.reason);
+        }
+        return wire_result;
+    }
     if let Some(outcome) = results.first().map(|result| &result.outcome) {
         match outcome {
             Ok(applied) => {
-                result.accepted.clone_from(&command.order.units);
-                result.job_id = applied.job_id.map(|job| turts_net_protocol::JobId(job.0));
+                wire_result.accepted.clone_from(&command.order.units);
+                wire_result.job_id = applied.job_id.map(|job| turts_net_protocol::JobId(job.0));
             }
             Err(reason) => {
                 let reason = wire_reason(*reason);
                 if command.order.units.is_empty() {
-                    result.envelope = Some(reason);
+                    wire_result.envelope = Some(reason);
                 } else {
-                    result.refused = refusals(&command.order.units, reason);
+                    wire_result.refused = refusals(&command.order.units, reason);
                 }
             }
         }
     } else if command.order.units.is_empty() {
-        result.envelope = Some(CommandRejectReason::Internal);
+        wire_result.envelope = Some(CommandRejectReason::Internal);
     } else {
-        result.refused = refusals(&command.order.units, CommandRejectReason::Internal);
+        wire_result.refused = refusals(&command.order.units, CommandRejectReason::Internal);
     }
-    result
+    wire_result
 }
 
 pub fn refusal(command: &PlayerCommand, reason: CommandRejectReason) -> OrderResult {
@@ -184,6 +221,12 @@ fn wire_reason(reason: RejectReason) -> CommandRejectReason {
         R::AlreadyResearched => CommandRejectReason::AlreadyResearched,
         R::ResearchInProgress => CommandRejectReason::ResearchInProgress,
         R::IntegrityViolation => CommandRejectReason::Internal,
+        R::NotApplicable => CommandRejectReason::NotApplicable,
+        R::TargetInvalid => CommandRejectReason::TargetInvalid,
+        R::TargetGone => CommandRejectReason::TargetGone,
+        R::OutOfRange => CommandRejectReason::OutOfRange,
+        R::NotQueueable => CommandRejectReason::NotQueueable,
+        R::Blocked => CommandRejectReason::Blocked,
     }
 }
 
@@ -214,6 +257,7 @@ mod tests {
             recipes: Default::default(),
             technologies: Default::default(),
             orders: Default::default(),
+            order_queue_depths: std::collections::BTreeMap::new(),
             source_files: Default::default(),
         }
     }
@@ -268,7 +312,7 @@ mod tests {
         assert_eq!(converted.len(), 1);
         assert!(matches!(
             &converted[0].kind,
-            CommandKind::MoveTo { unit_ids, .. } if unit_ids.is_empty()
+            CommandKind::Order(order) if order.units.is_empty()
         ));
     }
 

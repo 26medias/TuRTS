@@ -16,7 +16,7 @@ use crate::world::UnitType;
 use crate::world::{MapBounds, MoveTarget, Owner, UnitId};
 
 /// The most units one command may list.
-const MAX_UNITS_PER_COMMAND: usize = 256;
+pub const MAX_UNITS_PER_COMMAND: usize = 4096;
 
 /// A request from one slot. `seq` is the sender's number for the request.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -52,6 +52,7 @@ pub enum CommandKind {
         unit_id: u32,
         enabled: bool,
     },
+    Order(Box<crate::orders::OrderCommand>),
 }
 
 /// Commands that wait for the next tick.
@@ -64,6 +65,8 @@ pub struct CommandResult {
     pub slot: SlotId,
     pub seq: u32,
     pub outcome: Result<Applied, RejectReason>,
+    #[serde(default)]
+    pub units: crate::orders::UnitOutcomes,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -109,6 +112,12 @@ pub enum RejectReason {
     AlreadyResearched,
     ResearchInProgress,
     IntegrityViolation,
+    NotApplicable,
+    TargetInvalid,
+    TargetGone,
+    OutOfRange,
+    NotQueueable,
+    Blocked,
 }
 
 impl RejectReason {
@@ -147,12 +156,62 @@ impl RejectReason {
             Self::AlreadyResearched => "already_researched",
             Self::ResearchInProgress => "research_in_progress",
             Self::IntegrityViolation => "integrity_violation",
+            Self::NotApplicable => "not_applicable",
+            Self::TargetInvalid => "target_invalid",
+            Self::TargetGone => "target_gone",
+            Self::OutOfRange => "out_of_range",
+            Self::NotQueueable => "not_queueable",
+            Self::Blocked => "blocked",
         }
     }
 }
 
 /// Apply one admitted command synchronously. Automatic simulation phases do not run here.
 pub fn apply_command(world: &mut World, command: &Command) -> CommandResult {
+    if let CommandKind::MoveTo { unit_ids, target } = &command.kind
+        && unit_ids.len() > 1
+    {
+        return crate::economy::transaction::capture_command(world, command, |world| {
+            let (outcome, units) = apply_move_to_per_unit(world, command.slot, unit_ids, *target);
+            CommandResult {
+                slot: command.slot,
+                seq: command.seq,
+                outcome,
+                units,
+            }
+        });
+    }
+    if let CommandKind::Order(order) = &command.kind {
+        let plain_move = order.behaviour == turts_mod_api::Behaviour::Move
+            && order.queue == crate::orders::QueueMode::Replace
+            && order.group == 0
+            && order.units.len() == 1
+            && matches!(&order.target, crate::orders::OrderTargetSim::Point(_))
+            && crate::orders::plain_move_has_no_prior_order_state(world, order);
+        let plain_gather = order.behaviour == turts_mod_api::Behaviour::Gather
+            && order.queue == crate::orders::QueueMode::Replace
+            && order.group == 0;
+        if plain_move || plain_gather {
+            return crate::economy::transaction::capture_command(world, command, |world| {
+                let (outcome, units) = crate::orders::apply_order(world, command.slot, order);
+                CommandResult {
+                    slot: command.slot,
+                    seq: command.seq,
+                    outcome,
+                    units,
+                }
+            });
+        }
+        return crate::economy::transaction::capture_order_command(world, command, |world| {
+            let (outcome, units) = crate::orders::apply_order(world, command.slot, order);
+            CommandResult {
+                slot: command.slot,
+                seq: command.seq,
+                outcome,
+                units,
+            }
+        });
+    }
     crate::economy::transaction::capture_command(world, command, |world| {
         apply_command_inner(world, command)
     })
@@ -186,12 +245,111 @@ fn apply_command_inner(world: &mut World, command: &Command) -> CommandResult {
             crate::command_m3::set_enabled(world, command.slot, *unit_id, *enabled)
                 .map(|()| Applied { job_id: None })
         }
+        CommandKind::Order(_) => Err(RejectReason::NotApplicable),
     };
     CommandResult {
         slot: command.slot,
         seq: command.seq,
         outcome,
+        units: crate::orders::UnitOutcomes::default(),
     }
+}
+
+pub(crate) fn apply_legacy_move_to(
+    world: &mut World,
+    slot: SlotId,
+    unit_ids: &[u32],
+    target: Vec2,
+) -> Result<(), RejectReason> {
+    apply_move_to(world, slot, unit_ids, target)
+}
+
+fn apply_move_to_per_unit(
+    world: &mut World,
+    slot: SlotId,
+    unit_ids: &[u32],
+    target: Vec2,
+) -> (Result<Applied, RejectReason>, crate::orders::UnitOutcomes) {
+    use crate::orders::UnitOutcomes;
+    if unit_ids.is_empty() {
+        return (Err(RejectReason::EmptyCommand), UnitOutcomes::default());
+    }
+    if unit_ids.len() > MAX_UNITS_PER_COMMAND {
+        return (Err(RejectReason::TooManyUnits), UnitOutcomes::default());
+    }
+    let mut seen = HashSet::with_capacity(unit_ids.len());
+    if unit_ids.iter().any(|id| !seen.insert(*id)) {
+        return (Err(RejectReason::DuplicateUnit), UnitOutcomes::default());
+    }
+    let bounds = world.get_resource::<MapBounds>().copied();
+    let types = world.resource::<UnitTypes>();
+    let index: HashMap<u32, (Entity, SlotId, bool)> = world
+        .iter_entities()
+        .filter_map(|entity| {
+            let id = entity.get::<UnitId>()?;
+            let owner = entity.get::<Owner>()?;
+            let unit_type = entity.get::<UnitType>()?;
+            Some((
+                id.0,
+                (
+                    entity.id(),
+                    owner.0,
+                    types
+                        .get(unit_type.0)
+                        .is_some_and(|entry| entry.movement.is_some()),
+                ),
+            ))
+        })
+        .collect();
+    let inside = bounds.is_some_and(|b| {
+        (0.0..=b.size.x).contains(&target.x) && (0.0..=b.size.y).contains(&target.y)
+    });
+    let mut outcomes = UnitOutcomes::default();
+    for unit_id in unit_ids {
+        let result = match index.get(unit_id) {
+            None => Err(RejectReason::UnknownUnit),
+            Some((_, owner, _)) if *owner != slot => Err(RejectReason::NotOwner),
+            Some((_, _, false)) => Err(RejectReason::NotApplicable),
+            Some(_) if !target.is_finite() => Err(RejectReason::TargetNotFinite),
+            Some(_) if !inside => Err(RejectReason::TargetOutsideMap),
+            Some((entity, _, _)) => {
+                world.entity_mut(*entity).insert(MoveTarget(target));
+                Ok(())
+            }
+        };
+        match result {
+            Ok(()) => {
+                outcomes.accepted.push(*unit_id);
+                if let Some(mut orders) = world.get_resource_mut::<EconomyOrders>()
+                    && let Some(order) = orders.0.get_mut(unit_id)
+                {
+                    order.node = None;
+                    order.deposit = None;
+                    order.receiver = None;
+                    order.stage = crate::economy::gather::GatherStage::Idle;
+                    order.carry = crate::economy::gather::RateCarry::default();
+                }
+            }
+            Err(reason) => outcomes.refused.push((*unit_id, reason)),
+        }
+    }
+    let outcome = if outcomes.accepted.is_empty() {
+        outcomes
+            .refused
+            .first()
+            .map_or(Err(RejectReason::NotApplicable), |(_, reason)| Err(*reason))
+    } else {
+        Ok(Applied { job_id: None })
+    };
+    (outcome, outcomes)
+}
+
+pub(crate) fn apply_legacy_unit(
+    world: &mut World,
+    slot: SlotId,
+    kind: CommandKind,
+) -> Result<Applied, RejectReason> {
+    apply_command_inner(world, &Command { slot, seq: 0, kind }).outcome
 }
 
 /// Freeze the admitted batch, then apply commands in its original order.
@@ -293,7 +451,7 @@ fn validate_move_to(
     Ok(found.into_iter().map(|(entity, _, _)| entity).collect())
 }
 
-mod vec2_bits {
+pub(crate) mod vec2_bits {
     use bevy_math::Vec2;
     use serde::{Deserialize, Deserializer, Serialize, Serializer};
     pub fn serialize<S: Serializer>(value: &Vec2, serializer: S) -> Result<S::Ok, S::Error> {

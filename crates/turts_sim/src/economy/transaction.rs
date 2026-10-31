@@ -46,6 +46,8 @@ pub struct AuditTrail {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CommandAudit {
     pub operation_id: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub operation_end_id: Option<u64>,
     pub input: crate::command::Command,
     pub result: crate::command::CommandResult,
     pub before: AuditState,
@@ -55,9 +57,21 @@ pub struct CommandAudit {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct OperationAudit {
     pub operation_id: u64,
+    #[serde(default)]
+    pub phase: AuditPhase,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub unit_id: Option<u32>,
     pub before: AuditState,
     pub after: AuditState,
     pub events: Vec<EconomyEvent>,
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum AuditPhase {
+    Command,
+    Orders,
+    #[default]
+    Other,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -88,6 +102,23 @@ impl AuditTrail {
 }
 
 pub(crate) fn capture_operation<R>(world: &mut World, run: impl FnOnce(&mut World) -> R) -> R {
+    capture_operation_phase(world, AuditPhase::Other, None, run)
+}
+
+pub(crate) fn capture_unit_order_operation<R>(
+    world: &mut World,
+    unit_id: u32,
+    run: impl FnOnce(&mut World) -> R,
+) -> R {
+    capture_operation_phase(world, AuditPhase::Orders, Some(unit_id), run)
+}
+
+fn capture_operation_phase<R>(
+    world: &mut World,
+    phase: AuditPhase,
+    unit_id: Option<u32>,
+    run: impl FnOnce(&mut World) -> R,
+) -> R {
     let enabled = world
         .get_resource::<AuditTrail>()
         .is_some_and(|trail| trail.enabled);
@@ -122,6 +153,8 @@ pub(crate) fn capture_operation<R>(world: &mut World, run: impl FnOnce(&mut Worl
     trail.capture_depth = 0;
     trail.operations.push(OperationAudit {
         operation_id: id,
+        phase,
+        unit_id,
         before,
         after,
         events,
@@ -168,6 +201,7 @@ pub(crate) fn capture_command(
     trail.capture_depth = 0;
     trail.commands.push(CommandAudit {
         operation_id: id,
+        operation_end_id: None,
         input: input.clone(),
         result: result.clone(),
         before: before.clone(),
@@ -175,10 +209,82 @@ pub(crate) fn capture_command(
     });
     trail.operations.push(OperationAudit {
         operation_id: id,
+        phase: AuditPhase::Command,
+        unit_id: None,
         before,
         after,
         events,
     });
+    result
+}
+
+pub(crate) fn capture_order_command(
+    world: &mut World,
+    input: &crate::command::Command,
+    run: impl FnOnce(&mut World) -> crate::command::CommandResult,
+) -> crate::command::CommandResult {
+    let enabled = world
+        .get_resource::<AuditTrail>()
+        .is_some_and(|trail| trail.enabled);
+    if !enabled || world.resource::<AuditTrail>().capture_depth != 0 {
+        return run(world);
+    }
+    let before = crate::economy::views::audit_state(world);
+    let operation_start = world.resource::<AuditTrail>().operations.len();
+    let result = run(world);
+    let after = crate::economy::views::audit_state(world);
+    let first_operation = world
+        .resource::<AuditTrail>()
+        .operations
+        .get(operation_start)
+        .cloned();
+    if let Some(operation) = first_operation {
+        let last_operation = world
+            .resource::<AuditTrail>()
+            .operations
+            .last()
+            .unwrap()
+            .operation_id;
+        world
+            .resource_mut::<AuditTrail>()
+            .commands
+            .push(CommandAudit {
+                operation_id: operation.operation_id,
+                operation_end_id: (last_operation != operation.operation_id)
+                    .then_some(last_operation),
+                input: input.clone(),
+                result: result.clone(),
+                before,
+                after,
+            });
+    } else {
+        let id = world
+            .resource::<AuditTrail>()
+            .next_operation_id
+            .checked_add(1);
+        let Some(id) = id else {
+            world.resource_mut::<AuditTrail>().valid = false;
+            return result;
+        };
+        let mut trail = world.resource_mut::<AuditTrail>();
+        trail.next_operation_id = id;
+        trail.commands.push(CommandAudit {
+            operation_id: id,
+            operation_end_id: None,
+            input: input.clone(),
+            result: result.clone(),
+            before: before.clone(),
+            after: after.clone(),
+        });
+        trail.operations.push(OperationAudit {
+            operation_id: id,
+            phase: AuditPhase::Command,
+            unit_id: None,
+            before,
+            after,
+            events: Vec::new(),
+        });
+    }
     result
 }
 
@@ -1652,6 +1758,7 @@ mod raw_audit_capture_tests {
                 slot: input.slot,
                 seq: input.seq,
                 outcome: Err(RejectReason::UnknownRecipe),
+                units: Default::default(),
             }
         });
         assert_eq!(result.outcome, Err(RejectReason::UnknownRecipe));
@@ -1806,6 +1913,7 @@ mod m3_transaction_contract_tests {
             recipes: BTreeMap::new(),
             technologies: BTreeMap::new(),
             orders: BTreeMap::new(),
+            order_queue_depths: std::collections::BTreeMap::new(),
             source_files: BTreeMap::new(),
         };
         catalog.nodes.insert(
