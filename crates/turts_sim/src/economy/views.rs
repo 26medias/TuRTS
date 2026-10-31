@@ -499,27 +499,43 @@ pub fn world_view(world: &mut World) -> WorldView {
         .filter_map(|entity| {
             let unit_id = entity.get::<UnitId>()?.0;
             let owner_slot = entity.get::<Owner>()?.0.0;
-            let Some(orders) = entity.get::<crate::orders::UnitOrders>() else {
-                if entity
+            let pending = pending_moves
+                .is_some_and(|pending| pending.pending_member_counts.contains_key(&unit_id));
+            let blocked = entity
+                .get::<crate::movement::MoveProgress>()
+                .is_some_and(|progress| {
+                    progress.activity == crate::movement::MovementActivity::Blocked
+                })
+                || entity
                     .get::<crate::movement::PlainMoveProgress>()
-                    .is_none_or(|progress| {
-                        progress.activity != crate::movement::MovementActivity::Blocked
-                    })
-                {
+                    .is_some_and(|progress| {
+                        progress.activity == crate::movement::MovementActivity::Blocked
+                    });
+            let active_gather = orders.0.get(&unit_id).is_some_and(|order| {
+                order.node.is_some() && order.stage != crate::economy::gather::GatherStage::Idle
+            });
+            let Some(orders) = entity.get::<crate::orders::UnitOrders>() else {
+                let activity = if pending {
+                    UnitOrderActivityView::Pending
+                } else if blocked {
+                    UnitOrderActivityView::Blocked
+                } else if active_gather {
+                    UnitOrderActivityView::Gathering
+                } else if entity.get::<MoveTarget>().is_some() {
+                    UnitOrderActivityView::Moving
+                } else {
                     return None;
-                }
+                };
                 return Some(UnitOrderView {
                     unit_id,
                     owner_slot,
-                    activity: UnitOrderActivityView::Blocked,
+                    activity,
                     current: None,
                     queued: Vec::new(),
                     last_failure: None,
                 });
             };
-            let activity = if pending_moves
-                .is_some_and(|pending| pending.pending_member_counts.contains_key(&unit_id))
-            {
+            let activity = if pending {
                 UnitOrderActivityView::Pending
             } else if entity
                 .get::<crate::movement::MoveProgress>()
@@ -548,6 +564,8 @@ pub fn world_view(world: &mut World) -> WorldView {
                 }
             } else if !orders.queue.is_empty() {
                 UnitOrderActivityView::Pending
+            } else if active_gather {
+                UnitOrderActivityView::Gathering
             } else if entity.get::<MoveTarget>().is_some() {
                 UnitOrderActivityView::Moving
             } else if orders

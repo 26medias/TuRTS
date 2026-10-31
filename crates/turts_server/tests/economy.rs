@@ -500,7 +500,7 @@ fn decoded_fractional_movement_uses_captured_fixed_timestep() {
         .id();
     app.world_mut()
         .entity_mut(worker_entity)
-        .insert(Position(Vec2::new(0.01, 1.0)));
+        .insert(Position(Vec2::new(0.5, 1.0)));
     app.world_mut().resource_mut::<AuditTrail>().enable();
     let initial = audit_state(app.world_mut());
     let command = Command {
@@ -547,7 +547,7 @@ fn decoded_fractional_movement_uses_captured_fixed_timestep() {
         })
         .expect("decoded worker movement");
     let fixed_delta = std::time::Duration::from_secs_f64(1.0 / 30.0).as_secs_f32();
-    assert_eq!(movement.to_bits(), (0.01_f32 + 3.0 * fixed_delta).to_bits());
+    assert_eq!(movement.to_bits(), (0.5_f32 + 3.0 * fixed_delta).to_bits());
 
     let mut corrupted = decoded;
     let moved = corrupted

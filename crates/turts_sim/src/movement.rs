@@ -662,21 +662,23 @@ fn step_plain_progress(
         return output;
     }
     let step_limit = speed * dt;
+    let body_occupied = |point: Vec2| {
+        grid.within(points, point, unit.radius + max_radius)
+            .into_iter()
+            .any(|other_index| {
+                other_index != index
+                    && point.distance(units[other_index].position)
+                        < unit.radius + units[other_index].radius - 1.0e-5
+            })
+    };
     let occupied = |point: Vec2| {
         spread_context.conflicts_with_reserved(point, unit.radius, unit.unit_id)
-            || grid
-                .within(points, point, unit.radius + max_radius)
-                .into_iter()
-                .any(|other_index| {
-                    other_index != index
-                        && point.distance(units[other_index].position)
-                            < unit.radius + units[other_index].radius - 1.0e-5
-                })
+            || body_occupied(point)
     };
 
     if progress.activity == MovementActivity::Blocked {
         let escape = unit.target.filter(|target| !occupied(*target)).or_else(|| {
-            if !occupied(unit.position) {
+            if !body_occupied(unit.position) {
                 return None;
             }
             MovementSearch {
@@ -1663,14 +1665,16 @@ pub fn step_frame(frame: &MovementFrame, dt: f32) -> Vec<MovementFrameOutput> {
         }
         let Some(target) = unit.target else { continue };
         let Some(mut progress) = unit.progress.clone() else {
-            let target_occupied = grid
-                .within(&points, target, unit.radius + max_radius)
-                .into_iter()
-                .any(|other_index| {
-                    other_index != index
-                        && target.distance(units[other_index].position)
-                            < unit.radius + units[other_index].radius - 1.0e-5
-                });
+            let target_occupied =
+                plain_spread_context.conflicts_with_reserved(target, unit.radius, unit.unit_id)
+                    || grid
+                        .within(&points, target, unit.radius + max_radius)
+                        .into_iter()
+                        .any(|other_index| {
+                            other_index != index
+                                && target.distance(units[other_index].position)
+                                    < unit.radius + units[other_index].radius - 1.0e-5
+                        });
             if target_occupied {
                 let progress = make_plain_progress(&unit, target, &plain_spread_context);
                 let mut plain_unit = unit.clone();
@@ -1823,7 +1827,11 @@ pub fn step_frame(frame: &MovementFrame, dt: f32) -> Vec<MovementFrameOutput> {
             position.y = position
                 .y
                 .clamp(unit.radius, (frame.bounds.y - unit.radius).max(unit.radius));
-            let reached = position.distance(destination) <= 0.025;
+            // Preserve the legacy fixed-step result when no collision changed
+            // this tick's motion. The tolerance is only a contact correction;
+            // applying it after an otherwise exact step can jump across the
+            // target and complete one tick early.
+            let reached = (separated || was_projected) && position.distance(destination) <= 0.025;
             if reached && destination_free {
                 position = destination;
             }
@@ -1867,7 +1875,7 @@ pub fn step_frame(frame: &MovementFrame, dt: f32) -> Vec<MovementFrameOutput> {
         let mut failed_blocked = false;
         let mut position = unit.position;
         let distance = position.distance(movement_target);
-        if distance <= speed * dt || distance <= 0.025 {
+        if distance <= speed * dt {
             let occupied = grid
                 .within(&points, movement_target, unit.radius + max_radius)
                 .into_iter()
@@ -2256,8 +2264,9 @@ pub(crate) fn integrate_movement(world: &mut World) {
 #[cfg(test)]
 mod spread_tests {
     use super::{
-        MoveProgress, MovementActivity, MovementFrame, MovementFrameUnit, MovementPool,
-        MovementPoolIndex, SpreadMember, StaticFootprint, angle, spread_destinations, step_frame,
+        MoveProgress, MovementActivity, MovementFrame, MovementFrameUnit, MovementInput,
+        MovementPool, MovementPoolIndex, SpreadMember, StaticFootprint, angle, spread_destinations,
+        step, step_frame,
     };
     use bevy_math::Vec2;
     use std::collections::BTreeMap;
@@ -2290,7 +2299,7 @@ mod spread_tests {
     }
 
     #[test]
-    fn progressless_singleton_move_allows_only_the_small_landing_snap() {
+    fn progressless_singleton_move_keeps_the_exact_free_step_before_arrival() {
         let target = Vec2::new(22.0, 10.0);
         let frame = MovementFrame {
             bounds: Vec2::new(64.0, 64.0),
@@ -2310,9 +2319,17 @@ mod spread_tests {
             pools: BTreeMap::new(),
         };
         let output = step_frame(&frame, 0.05).remove(0);
-        assert_eq!(output.position, target);
-        assert!(output.target.is_none());
-        assert!(output.position.distance(frame.units[0].position) <= 0.425);
+        let expected = step(
+            &MovementInput {
+                position: frame.units[0].position,
+                target,
+                speed: 8.0,
+            },
+            0.05,
+        );
+        assert_eq!(output.position, expected.position);
+        assert_eq!(output.target, Some(target));
+        assert!(output.position.distance(frame.units[0].position) <= 0.4);
     }
 
     #[test]
@@ -3050,7 +3067,8 @@ mod spread_tests {
 #[cfg(test)]
 mod plain_movement_tests {
     use super::{
-        MovementActivity, MovementFrame, MovementFrameUnit, PlainMoveProgress, step_frame,
+        MovementActivity, MovementFrame, MovementFrameUnit, MovementInput, PlainMoveProgress, step,
+        step_frame,
     };
     use bevy_math::Vec2;
     use std::collections::BTreeMap;
@@ -3096,6 +3114,142 @@ mod plain_movement_tests {
             ],
             pools: BTreeMap::new(),
         }
+    }
+
+    #[test]
+    fn unobstructed_step_keeps_the_legacy_target_until_within_one_step() {
+        let position = Vec2::new(22.25925, 9.274589);
+        let target = Vec2::new(22.386324, 9.181545);
+        let speed = 3.0;
+        let dt = 0.05;
+        let frame = MovementFrame {
+            bounds: Vec2::splat(64.0),
+            tick_hz: 20,
+            units: vec![MovementFrameUnit {
+                unit_id: 3,
+                owner_slot: 0,
+                unit_type: 1,
+                position,
+                radius: 0.5,
+                speed: Some(speed),
+                target: Some(target),
+                progress: None,
+                plain_progress: None,
+            }],
+            pools: BTreeMap::new(),
+        };
+
+        let expected = step(
+            &MovementInput {
+                position,
+                target,
+                speed,
+            },
+            dt,
+        )
+        .position;
+        let output = step_frame(&frame, dt);
+
+        assert_eq!(output[0].position, expected);
+        assert_eq!(output[0].target, Some(target));
+    }
+
+    #[test]
+    fn plain_move_respects_reserved_spacing_before_using_a_zero_primary_point() {
+        let target = Vec2::new(0.5, 1.2);
+        let frame = MovementFrame {
+            bounds: Vec2::splat(2.0),
+            tick_hz: 20,
+            units: vec![
+                MovementFrameUnit {
+                    unit_id: 1,
+                    owner_slot: 0,
+                    unit_type: 1,
+                    position: Vec2::new(0.5, 0.5),
+                    radius: 0.5,
+                    speed: Some(3.0),
+                    target: Some(target),
+                    progress: None,
+                    plain_progress: None,
+                },
+                MovementFrameUnit {
+                    unit_id: 2,
+                    owner_slot: 1,
+                    unit_type: 1,
+                    position: Vec2::new(1.5, 1.5),
+                    radius: 0.5,
+                    speed: Some(3.0),
+                    target: None,
+                    progress: None,
+                    plain_progress: None,
+                },
+            ],
+            pools: BTreeMap::new(),
+        };
+
+        let output = step_frame(&frame, 0.05);
+
+        assert_eq!(output[0].position, Vec2::new(0.5, 0.5));
+        assert_eq!(output[0].target, None);
+        let progress = output[0]
+            .plain_progress
+            .as_ref()
+            .expect("reserved spacing activates the plain fallback");
+        assert_eq!(progress.activity, MovementActivity::Blocked);
+        assert!(progress.pool_slots.is_empty());
+    }
+
+    #[test]
+    fn blocked_plain_unit_does_not_escape_for_reservation_spacing_alone() {
+        let position = Vec2::new(10.0, 10.0);
+        let frame = MovementFrame {
+            bounds: Vec2::splat(64.0),
+            tick_hz: 20,
+            units: vec![
+                MovementFrameUnit {
+                    unit_id: 1,
+                    owner_slot: 0,
+                    unit_type: 1,
+                    position,
+                    radius: 0.5,
+                    speed: Some(3.0),
+                    target: None,
+                    progress: None,
+                    plain_progress: Some(PlainMoveProgress {
+                        original_point: Vec2::new(20.0, 10.0),
+                        slot: position,
+                        pool_slots: vec![],
+                        gather_goal: None,
+                        activity: MovementActivity::Blocked,
+                        stalled_ticks: 20,
+                        best_distance: 10.0,
+                        claim_count: 3,
+                        failure_recorded: true,
+                    }),
+                },
+                MovementFrameUnit {
+                    unit_id: 2,
+                    owner_slot: 1,
+                    unit_type: 1,
+                    position: Vec2::new(11.05, 10.0),
+                    radius: 0.5,
+                    speed: Some(3.0),
+                    target: None,
+                    progress: None,
+                    plain_progress: None,
+                },
+            ],
+            pools: BTreeMap::new(),
+        };
+
+        let output = step_frame(&frame, 0.05);
+
+        assert_eq!(output[0].position, position);
+        assert_eq!(output[0].target, None);
+        assert_eq!(
+            output[0].plain_progress.as_ref().unwrap().activity,
+            MovementActivity::Blocked
+        );
     }
 
     #[test]

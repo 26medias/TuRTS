@@ -890,6 +890,11 @@ fn update_plain_move_identities(
     identities: &mut BTreeMap<u32, turts_sim::Order>,
 ) {
     match &command.input.kind {
+        turts_sim::CommandKind::Gather { unit_id, .. } => {
+            if command.result.outcome.is_ok() {
+                identities.remove(unit_id);
+            }
+        }
         turts_sim::CommandKind::MoveTo { .. } => {
             for unit_id in &command.result.units.accepted {
                 identities.remove(unit_id);
@@ -6391,6 +6396,8 @@ mod tests {
     fn actual_plain_gather_fallback_log(
         authored_gather: bool,
         prior_authored_move: bool,
+        active_authored_move: bool,
+        restart_legacy_gather: bool,
     ) -> (Vec<EconomyLogRecord>, u32, f32) {
         use std::collections::BTreeMap;
         use turts_mod_api::{
@@ -6571,6 +6578,7 @@ mod tests {
 
         let mut seq = 2;
         if prior_authored_move {
+            assert!(!active_authored_move || !restart_legacy_gather);
             let move_command = turts_sim::Command {
                 slot: turts_sim::SlotId(0),
                 seq,
@@ -6594,7 +6602,11 @@ mod tests {
                         )],
                     )),
                     units: vec![1],
-                    target: turts_sim::OrderTargetSim::Point(bevy::math::Vec2::new(4.0, 8.0)),
+                    target: turts_sim::OrderTargetSim::Point(if active_authored_move {
+                        bevy::math::Vec2::new(30.0, 8.0)
+                    } else {
+                        bevy::math::Vec2::new(4.0, 8.0)
+                    }),
                     queue: turts_sim::QueueMode::Replace,
                     group: 0,
                     allowed_units: vec![],
@@ -6610,7 +6622,7 @@ mod tests {
             records.extend(commands.into_iter().map(EconomyLogRecord::CommandBoundary));
             records.extend(operations.into_iter().map(EconomyLogRecord::Operation));
             seq += 1;
-            for _ in 0..24 {
+            for _ in 0..if active_authored_move { 1 } else { 24 } {
                 app.update();
                 let (operations, ticks) = {
                     let mut trail = app.world_mut().resource_mut::<AuditTrail>();
@@ -6705,6 +6717,65 @@ mod tests {
                         .is_some_and(|failure| failure.reason == turts_sim::RejectReason::Blocked)
             }) {
                 break;
+            }
+        }
+        if restart_legacy_gather {
+            assert!(!authored_gather);
+            let restart = turts_sim::Command {
+                slot: turts_sim::SlotId(0),
+                seq,
+                kind: turts_sim::CommandKind::Gather {
+                    unit_id: 1,
+                    node_id: turts_sim::NodeId(1),
+                },
+            };
+            let result = turts_sim::apply_command(app.world_mut(), &restart);
+            assert!(
+                result.outcome.is_ok(),
+                "legacy Gather restart accepted: {result:?}"
+            );
+            let (commands, operations) = {
+                let mut trail = app.world_mut().resource_mut::<AuditTrail>();
+                (trail.drain_commands(), trail.drain_operations())
+            };
+            records.extend(commands.into_iter().map(EconomyLogRecord::CommandBoundary));
+            records.extend(operations.into_iter().map(EconomyLogRecord::Operation));
+
+            let blocker_departure = turts_sim::Command {
+                slot: turts_sim::SlotId(1),
+                seq: seq + 1,
+                kind: turts_sim::CommandKind::MoveTo {
+                    unit_ids: vec![2],
+                    target: bevy::math::Vec2::new(14.0, 8.0),
+                },
+            };
+            let result = turts_sim::apply_command(app.world_mut(), &blocker_departure);
+            assert!(
+                result.outcome.is_ok(),
+                "blocker departure accepted: {result:?}"
+            );
+            let (commands, operations) = {
+                let mut trail = app.world_mut().resource_mut::<AuditTrail>();
+                (trail.drain_commands(), trail.drain_operations())
+            };
+            records.extend(commands.into_iter().map(EconomyLogRecord::CommandBoundary));
+            records.extend(operations.into_iter().map(EconomyLogRecord::Operation));
+
+            for _ in 0..400 {
+                app.update();
+                let (operations, ticks) = {
+                    let mut trail = app.world_mut().resource_mut::<AuditTrail>();
+                    (trail.drain_operations(), trail.drain_ticks())
+                };
+                records.extend(operations.into_iter().map(EconomyLogRecord::Operation));
+                records.extend(ticks.into_iter().map(EconomyLogRecord::from_tick));
+                let state = turts_sim::audit_state(app.world_mut());
+                if state.raw_orders.iter().any(|order| {
+                    order.unit == 1
+                        && order.stage == turts_sim::economy::gather::GatherStage::Gathering
+                }) {
+                    break;
+                }
             }
         }
         (records, gather_command_tick, gather_distance)
@@ -9112,7 +9183,7 @@ mod tests {
     #[test]
     fn validator_replays_gather_fallback_as_final_endpoint_and_blocks_outside_reach() {
         let (records, gather_start_tick, gather_distance) =
-            actual_plain_gather_fallback_log(true, false);
+            actual_plain_gather_fallback_log(true, false, false, false);
         let validation = validate_records(&records);
         assert!(
             validation.is_ok(),
@@ -9198,7 +9269,7 @@ mod tests {
             "the committed fallback point remains outside the Gather interaction range"
         );
 
-        let (idless_records, _, _) = actual_plain_gather_fallback_log(false, false);
+        let (idless_records, _, _) = actual_plain_gather_fallback_log(false, false, false, false);
         let idless_validation = validate_records(&idless_records);
         assert!(
             idless_validation.is_ok(),
@@ -9226,7 +9297,8 @@ mod tests {
             "idless Gather keeps its only visible terminal Blocked result"
         );
 
-        let (completed_then_idless, _, _) = actual_plain_gather_fallback_log(false, true);
+        let (completed_then_idless, _, _) =
+            actual_plain_gather_fallback_log(false, true, false, false);
         let completed_validation = validate_records(&completed_then_idless);
         assert!(
             completed_validation.is_ok(),
@@ -9250,6 +9322,86 @@ mod tests {
                     && row.progress.activity == turts_sim::movement::MovementActivity::Blocked
                     && row.progress.failure_recorded),
             "completed authored Move identity does not leak into the later legacy Gather failure"
+        );
+
+        let (restarted, _, _) = actual_plain_gather_fallback_log(false, false, false, true);
+        let restarted_validation = validate_records(&restarted);
+        assert!(
+            restarted_validation.is_ok(),
+            "new legacy Gather after terminal Blocked replays: {:?}",
+            restarted_validation.err()
+        );
+        assert!(
+            restarted.iter().any(|record| match record {
+                EconomyLogRecord::Operation(operation) => {
+                    operation.before.plain_movement_progress.iter().any(|row| {
+                        row.unit_id == 1
+                            && row.progress.activity
+                                == turts_sim::movement::MovementActivity::Blocked
+                    }) && operation
+                        .after
+                        .plain_movement_progress
+                        .iter()
+                        .all(|row| row.unit_id != 1)
+                        && operation.after.raw_orders.iter().any(|row| {
+                            row.unit == 1
+                                && row.stage
+                                    == turts_sim::economy::gather::GatherStage::MovingToNode
+                        })
+                }
+                _ => false,
+            }),
+            "accepted legacy Gather clears the prior Blocked movement state"
+        );
+        let restarted_final = restarted
+            .iter()
+            .rev()
+            .find_map(|record| match record {
+                EconomyLogRecord::Tick { state, .. } => Some(state),
+                _ => None,
+            })
+            .expect("restarted Gather records fixed ticks");
+        assert_eq!(
+            restarted_final
+                .raw_orders
+                .iter()
+                .find(|order| order.unit == 1)
+                .unwrap()
+                .stage,
+            turts_sim::economy::gather::GatherStage::Gathering,
+            "after the blocker leaves, the new legacy Gather completes its approach"
+        );
+        assert!(
+            restarted_final
+                .plain_movement_progress
+                .iter()
+                .all(|row| row.unit_id != 1)
+        );
+
+        let (active_move_then_idless, _, _) =
+            actual_plain_gather_fallback_log(false, true, true, false);
+        let active_validation = validate_records(&active_move_then_idless);
+        assert!(
+            active_validation.is_ok(),
+            "legacy Gather interrupting active authored Move replays: {:?}",
+            active_validation.err()
+        );
+        let active_final = active_move_then_idless
+            .iter()
+            .rev()
+            .find_map(|record| match record {
+                EconomyLogRecord::Tick { state, .. } => Some(state),
+                _ => None,
+            })
+            .expect("the active Move interruption fixture includes final ticks");
+        assert!(unit_orders_for(active_final, 1).last_failure.is_none());
+        assert!(
+            active_final
+                .plain_movement_progress
+                .iter()
+                .any(|row| row.unit_id == 1
+                    && row.progress.activity == turts_sim::movement::MovementActivity::Blocked),
+            "the old authored Move ID cannot leak into the later idless Gather failure"
         );
     }
 

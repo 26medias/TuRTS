@@ -159,7 +159,7 @@ pub fn assign_gather(
         })
         .ok_or(RejectReason::ArithmeticOverflow)?;
     let must_deliver = used >= u128::from(inventory.capacity) || has_other_item;
-    world.entity_mut(entity).remove::<MoveTarget>();
+    crate::orders::clear_replaced_movement(world, slot, entity, unit);
     let mut orders = world.resource_mut::<EconomyOrders>();
     let order = orders
         .0

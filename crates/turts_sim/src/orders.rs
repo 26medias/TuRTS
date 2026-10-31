@@ -10,6 +10,16 @@ use turts_mod_api::{Behaviour, ContentId};
 use crate::world::MoveTarget;
 use crate::{JobId, NodeId, SlotId};
 
+#[cfg(test)]
+thread_local! {
+    static PENDING_QUEUE_MEMBER_SCAN_STEPS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+fn count_pending_queue_member_scan_step() {
+    PENDING_QUEUE_MEMBER_SCAN_STEPS.with(|count| count.set(count.get() + 1));
+}
+
 /// A complete move envelope waiting for its atomic spread turn.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PendingMovementOrder {
@@ -176,6 +186,12 @@ impl PendingMovementOrders {
         let Some(queue) = self.queues.get_mut(&slot) else {
             return;
         };
+        if unit_ids
+            .iter()
+            .all(|unit_id| !self.pending_member_counts.contains_key(unit_id))
+        {
+            return;
+        }
         let mut canceled = 0;
         let mut canceled_members = BTreeMap::<u32, usize>::new();
         for request in queue.iter_mut() {
@@ -183,7 +199,11 @@ impl PendingMovementOrders {
                 .unit_ids
                 .iter()
                 .copied()
-                .filter(|id| removed.contains(id))
+                .filter(|id| {
+                    #[cfg(test)]
+                    count_pending_queue_member_scan_step();
+                    removed.contains(id)
+                })
                 .collect();
             canceled += removed_from_request.len();
             for id in removed_from_request {
@@ -219,6 +239,18 @@ impl PendingMovementOrders {
         _tick: u32,
         unit_ids: &[u32],
     ) -> bool {
+        if unit_ids
+            .iter()
+            .all(|unit_id| !self.pending_member_counts.contains_key(unit_id))
+        {
+            return self
+                .pending_units
+                .get(&slot)
+                .copied()
+                .unwrap_or_default()
+                .saturating_add(unit_ids.len())
+                <= 16_384;
+        }
         let replacement: std::collections::HashSet<_> = unit_ids.iter().copied().collect();
         let mut remaining = self.pending_units.get(&slot).copied().unwrap_or_default();
         if let Some(queue) = self.queues.get(&slot) {
@@ -228,7 +260,11 @@ impl PendingMovementOrders {
                     request
                         .unit_ids
                         .iter()
-                        .filter(|id| replacement.contains(id))
+                        .filter(|id| {
+                            #[cfg(test)]
+                            count_pending_queue_member_scan_step();
+                            replacement.contains(id)
+                        })
                         .count()
                 })
                 .sum::<usize>();
@@ -2115,7 +2151,7 @@ fn apply_unit_order(
     }
 }
 
-fn clear_replaced_movement(
+pub(crate) fn clear_replaced_movement(
     world: &mut World,
     slot: SlotId,
     entity: bevy_ecs::entity::Entity,
@@ -2163,6 +2199,40 @@ fn clear_gather(world: &mut World, unit_id: u32) {
 mod tests {
     use super::*;
     use turts_mod_api::{Footprint, GathererDef, PackageId, ProducerDef, UnitDef, UnitRegistry};
+
+    #[test]
+    fn unrelated_pending_members_do_not_scan_for_singleton_replacement_preflight() {
+        PENDING_QUEUE_MEMBER_SCAN_STEPS.with(|count| count.set(0));
+        let mut pending = PendingMovementOrders::default();
+        assert!(pending.queue(PendingMovementOrder {
+            slot: SlotId(0),
+            accepted_tick: 0,
+            seq: 1000,
+            group: 91,
+            pool_id: 0,
+            point: Vec2::new(48.0, 48.0),
+            unit_ids: (1000..17_000).collect(),
+            order: None,
+            member_orders: BTreeMap::new(),
+            plain: false,
+        }));
+        assert_eq!(pending.pending_units.get(&0), Some(&16_000));
+
+        for unit_id in 20_000..21_000 {
+            assert!(pending.can_queue_after_replacing(0, 0, 1, &[unit_id]));
+            pending.cancel_units(0, &[unit_id]);
+        }
+
+        PENDING_QUEUE_MEMBER_SCAN_STEPS.with(|count| {
+            assert_eq!(
+                count.get(),
+                0,
+                "unrelated pending members must use the maintained membership index"
+            );
+        });
+        assert_eq!(pending.pending_units.get(&0), Some(&16_000));
+        assert_eq!(pending.pending_member_counts.len(), 16_000);
+    }
 
     fn gatherer_app() -> (bevy_app::App, bevy_ecs::entity::Entity) {
         let mut app = crate::headless_app(20);
@@ -2277,6 +2347,125 @@ mod tests {
                 },
             ]));
         (app, entity)
+    }
+
+    #[test]
+    fn accepted_legacy_gather_clears_stale_movement_state_and_identity() {
+        let (mut app, entity) = gatherer_app();
+        let worker = ContentId::parse("test:worker").unwrap();
+        let item = ContentId::parse("test:iron").unwrap();
+        app.world_mut()
+            .resource_mut::<crate::bootstrap::InstalledCatalog>()
+            .0
+            .units
+            .get_mut(&worker)
+            .unwrap()
+            .gatherer
+            .as_mut()
+            .unwrap()
+            .items = vec![item.clone()];
+        app.world_mut()
+            .insert_resource(crate::economy::EconomyOrders(BTreeMap::from([(
+                1,
+                crate::economy::GatherOrder {
+                    node: None,
+                    deposit: None,
+                    receiver: None,
+                    stage: crate::economy::gather::GatherStage::Idle,
+                    carry: crate::economy::gather::RateCarry::default(),
+                },
+            )])));
+        app.world_mut().insert_resource(crate::EconomyLedger {
+            inventories: BTreeMap::from([(
+                1,
+                crate::economy::ledger::Inventory {
+                    capacity: 4,
+                    accepted_items: std::collections::BTreeSet::from([item]),
+                    items: BTreeMap::new(),
+                },
+            )]),
+            ..Default::default()
+        });
+        app.world_mut().entity_mut(entity).insert((
+            crate::movement::MoveProgress {
+                pool_id: 5,
+                slot: Vec2::new(30.0, 30.0),
+                activity: crate::movement::MovementActivity::Blocked,
+                pass_mode: false,
+                stalling_on_group: false,
+                stalled_ticks: 20,
+                best_distance: 1.0,
+                claim_count: 3,
+            },
+            crate::movement::PlainMoveProgress {
+                original_point: Vec2::new(30.0, 30.0),
+                slot: Vec2::new(30.0, 30.0),
+                pool_slots: vec![],
+                gather_goal: None,
+                activity: crate::movement::MovementActivity::Blocked,
+                stalled_ticks: 20,
+                best_distance: 1.0,
+                claim_count: 0,
+                failure_recorded: true,
+            },
+            MoveTarget(Vec2::new(30.0, 30.0)),
+        ));
+        app.world_mut()
+            .insert_resource(PlainMoveOrderIdentities(BTreeMap::from([(
+                1,
+                Order {
+                    order: ContentId::parse("test:old-move").unwrap(),
+                    behaviour: Behaviour::Move,
+                    target: OrderTargetSim::Point(Vec2::new(30.0, 30.0)),
+                    group: 0,
+                },
+            )])));
+
+        let result = crate::command::apply_command(
+            app.world_mut(),
+            &crate::command::Command {
+                slot: SlotId(0),
+                seq: 8,
+                kind: crate::command::CommandKind::Gather {
+                    unit_id: 1,
+                    node_id: NodeId(1),
+                },
+            },
+        );
+
+        assert!(
+            result.outcome.is_ok(),
+            "legacy Gather refusal: {:?}",
+            result.outcome
+        );
+        let actor = app.world().entity(entity);
+        assert!(actor.get::<MoveTarget>().is_none());
+        assert!(actor.get::<crate::movement::MoveProgress>().is_none());
+        assert!(actor.get::<crate::movement::PlainMoveProgress>().is_none());
+        assert!(
+            !app.world()
+                .resource::<PlainMoveOrderIdentities>()
+                .0
+                .contains_key(&1)
+        );
+        assert_eq!(
+            app.world()
+                .resource::<crate::economy::EconomyOrders>()
+                .0
+                .get(&1)
+                .unwrap()
+                .stage,
+            crate::economy::gather::GatherStage::MovingToNode
+        );
+        let view = crate::economy::views::world_view(app.world_mut());
+        assert_eq!(
+            view.unit_orders
+                .iter()
+                .find(|order| order.unit_id == 1)
+                .unwrap()
+                .activity,
+            crate::economy::views::UnitOrderActivityView::Gathering
+        );
     }
 
     #[test]
