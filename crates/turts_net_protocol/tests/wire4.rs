@@ -29,6 +29,26 @@ fn every_order_target_round_trips() {
 }
 
 #[test]
+fn maximum_varint_unit_envelope_fits_postcard_message() {
+    let envelope = OrderEnvelope {
+        order: "forge:order_move".to_owned(),
+        units: vec![UnitId(u32::MAX); turts_net_protocol::MAX_ORDER_UNITS],
+        target: OrderTarget::None,
+        queue: QueueMode::Replace,
+        group: u32::MAX,
+    };
+
+    let encoded = postcard::to_vec::<_, 32_768>(&envelope).expect("4096-unit envelope serializes");
+    assert!(
+        encoded.len() <= turts_net_protocol::MAX_ORDER_UNITS * 5 + 64,
+        "encoded {} bytes",
+        encoded.len()
+    );
+    let decoded: OrderEnvelope = postcard::from_bytes(&encoded).expect("envelope decodes");
+    assert_eq!(decoded, envelope);
+}
+
+#[test]
 fn order_result_round_trips_with_refusals() {
     let result = OrderResult {
         seq: 12,

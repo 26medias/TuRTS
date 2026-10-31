@@ -30,7 +30,7 @@ use bevy::render::renderer::RenderAdapterInfo;
 use bevy::window::{PrimaryWindow, WindowRef};
 use turts_client::ClientOpts;
 use turts_client::build_app;
-use turts_client::commands::{CommandSendStatus, PendingCommands, owned_mobile_ids, submit};
+use turts_client::commands::{CommandSendStatus, PendingCommands, owned_mobile_ids, submit_order};
 use turts_client::debug::{DebugState, rebuild_debug_state};
 use turts_client::economy_ui::rendered_ui_snapshot;
 use turts_client::ingest::{
@@ -42,8 +42,7 @@ use turts_client::render::{
     PresentedNode as SceneNode, PresentedUnit as SceneUnit, declared_node_pick_radius,
     declared_unit_pick_radius, projected_ground_center,
 };
-use turts_net_protocol::PlayerCommandKind;
-use turts_net_protocol::Pos;
+use turts_net_protocol::{OrderEnvelope, Pos};
 use wasm_bindgen::prelude::*;
 
 /// The last debug JSON. The `window.turts_debug` closure reads it.
@@ -187,7 +186,7 @@ fn memory_bytes() -> f64 {
 fn browser_move_commands(
     state: &ReplicaState,
     targets: &[(f32, f32)],
-) -> Option<Vec<PlayerCommandKind>> {
+) -> Option<Vec<OrderEnvelope>> {
     let ready = state.content.is_some()
         && state.welcome.is_some()
         && state
@@ -201,14 +200,14 @@ fn browser_move_commands(
     if unit_ids.is_empty() {
         return Some(Vec::new());
     }
+    let content = state.content.as_ref()?;
     Some(
         targets
             .iter()
-            .map(|&(x, y)| PlayerCommandKind::MoveTo {
-                unit_ids: unit_ids.clone(),
-                target: Pos { x, y },
+            .map(|&(x, y)| {
+                turts_client::commands::move_order_envelope(content, unit_ids.clone(), Pos { x, y })
             })
-            .collect(),
+            .collect::<Option<Vec<_>>>()?,
     )
 }
 
@@ -230,7 +229,7 @@ fn drain_moves(
     };
     moves.clear();
     for command in commands {
-        submit(&mut pending, command);
+        submit_order(&mut pending, command);
     }
 }
 
@@ -594,7 +593,7 @@ mod tests {
             replica::{Replica, UnitReplica},
         };
         use turts_mod_runtime::{archive::PackageArchive, pack::pack_dir};
-        use turts_net_protocol::{Pos, UnitId};
+        use turts_net_protocol::{OrderEnvelope, OrderTarget, Pos, QueueMode, UnitId};
 
         let targets = [(4.0, 5.0)];
         assert!(browser_move_commands(&ReplicaState::default(), &targets).is_none());
@@ -661,15 +660,26 @@ mod tests {
             slot: 0,
             tick: 1,
             tick_hz: 20,
+            match_id: 0,
         });
+        let expected_order = turts_client::commands::move_order_envelope(
+            &content,
+            Vec::new(),
+            Pos { x: 4.0, y: 5.0 },
+        )
+        .unwrap()
+        .order;
         state.content = Some(content);
         state.replica = Some(replica);
         let expanded = browser_move_commands(&state, &targets).unwrap();
         assert_eq!(
             expanded,
-            vec![PlayerCommandKind::MoveTo {
-                unit_ids: vec![UnitId(2), UnitId(4)],
-                target: Pos { x: 4.0, y: 5.0 },
+            vec![OrderEnvelope {
+                order: expected_order,
+                units: vec![UnitId(2), UnitId(4)],
+                target: OrderTarget::Point(Pos { x: 4.0, y: 5.0 }),
+                queue: QueueMode::Replace,
+                group: 0,
             }]
         );
 

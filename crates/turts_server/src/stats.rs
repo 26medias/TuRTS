@@ -12,7 +12,9 @@
 //! tick log is ordered after the timer, so `--tick-log` adds nothing to a tick time.
 
 use std::collections::VecDeque;
+use std::collections::hash_map::RandomState;
 use std::fs;
+use std::hash::{BuildHasher, Hash, Hasher};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -43,6 +45,20 @@ pub struct Stats {
     pub resync_requests: u64,
     /// The postcard size of every `WorldDelta` sent, summed over the sessions.
     pub delta_payload_bytes_total: u64,
+}
+
+#[derive(Resource, Clone, Copy, Debug)]
+pub struct MatchId(pub u64);
+
+pub fn generate_match_id() -> MatchId {
+    let mut hasher = RandomState::new().build_hasher();
+    std::process::id().hash(&mut hasher);
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos()
+        .hash(&mut hasher);
+    MatchId(hasher.finish())
 }
 
 /// The system that ends the timing of a tick. A system that must run after the timing
@@ -110,6 +126,7 @@ fn write_when_due(
     mut timer: ResMut<TickTimer>,
     mut exit: MessageReader<AppExit>,
     stats: Res<Stats>,
+    match_id: Res<MatchId>,
     tick: Res<Tick>,
     units: Query<(), With<UnitId>>,
 ) {
@@ -118,7 +135,10 @@ fn write_when_due(
         return;
     }
     timer.last_write = Instant::now();
-    let text = format!("{}\n", render(&timer, &stats, tick.0, units.iter().count()));
+    let text = format!(
+        "{}\n",
+        render(&timer, &stats, match_id.0, tick.0, units.iter().count())
+    );
     if let Err(error) = replace_file(&timer.path, &text) {
         eprintln!(
             "turts_server: cannot write --stats `{}`: {error}",
@@ -133,6 +153,7 @@ fn write_when_due(
 fn render(
     timer: &TickTimer,
     stats: &Stats,
+    match_id: u64,
     ticks: u32,
     gameplay_entities: usize,
 ) -> serde_json::Value {
@@ -144,6 +165,7 @@ fn render(
             .duration_since(UNIX_EPOCH)
             .map_or(0, |elapsed| elapsed.as_millis() as u64),
         "ticks": ticks,
+        "match_id": match_id,
         "tick_p50_us": percentile(&sorted, 50),
         "tick_p99_us": percentile(&sorted, 99),
         "tick_max_us": sorted.last().copied().unwrap_or(0),
@@ -225,6 +247,7 @@ mod tests {
     /// take at least 2 ms, so the timer has something to measure.
     fn stats_app(path: Option<&Path>, sleep_in_tick: bool) -> App {
         let mut app = headless_app(20);
+        app.insert_resource(generate_match_id());
         install(&mut app, &cli(path));
         if sleep_in_tick {
             app.add_systems(FixedUpdate, || {

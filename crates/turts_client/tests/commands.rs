@@ -1,7 +1,7 @@
 use turts_client::commands::{
-    CommandSequence, PendingCommand, PendingCommands, SequenceExhausted, submit,
+    ClientCommand, CommandSequence, PendingCommand, PendingCommands, SequenceExhausted, submit,
 };
-use turts_net_protocol::{JobId, NodeId, PlayerCommandKind};
+use turts_net_protocol::{JobId, NodeId};
 use turts_net_protocol::{Pos, UnitId};
 
 #[test]
@@ -9,28 +9,28 @@ fn one_sequence_covers_move_gather_produce_cancel() {
     let mut pending = PendingCommands::default();
     submit(
         &mut pending,
-        PlayerCommandKind::MoveTo {
+        ClientCommand::MoveTo {
             unit_ids: vec![UnitId(1)],
             target: Pos { x: 2.0, y: 3.0 },
         },
     );
     submit(
         &mut pending,
-        PlayerCommandKind::Gather {
+        ClientCommand::Gather {
             unit_id: UnitId(2),
             node_id: NodeId(3),
         },
     );
     submit(
         &mut pending,
-        PlayerCommandKind::Produce {
+        ClientCommand::Produce {
             producer_id: UnitId(4),
             recipe_id: "base:hire".to_owned(),
         },
     );
     submit(
         &mut pending,
-        PlayerCommandKind::CancelProduction {
+        ClientCommand::CancelProduction {
             producer_id: UnitId(4),
             job_id: JobId(5),
         },
@@ -48,15 +48,15 @@ fn one_sequence_covers_move_gather_produce_cancel() {
 fn pending_commands_preserve_fifo_order() {
     let mut pending = PendingCommands::default();
     let commands = [
-        PlayerCommandKind::Gather {
+        ClientCommand::Gather {
             unit_id: UnitId(1),
             node_id: NodeId(10),
         },
-        PlayerCommandKind::Produce {
+        ClientCommand::Produce {
             producer_id: UnitId(2),
             recipe_id: "base:hire".to_owned(),
         },
-        PlayerCommandKind::CancelProduction {
+        ClientCommand::CancelProduction {
             producer_id: UnitId(2),
             job_id: JobId(20),
         },
@@ -173,24 +173,44 @@ fn disconnected_sender_preserves_fifo_and_sequence_until_connected() {
     use turts_client::content::ClientContent;
     use turts_client::join::{AcquiredPackages, Phase};
     use turts_client::options::ClientOptions;
+    use turts_mod_api::{Behaviour, ContentId, OrderDef, TargetKind};
     use turts_net_protocol::PlayerCommand;
 
     let mut options = ClientOptions::default();
     options.headless = true;
     let mut app = build_app(options);
+    let mut content = ClientContent::default();
+    let order_id = ContentId::parse("acme:order_gather").unwrap();
+    content.catalog.orders.insert(
+        order_id.clone(),
+        OrderDef {
+            id: order_id.local,
+            name: "Gather".into(),
+            behaviour: Behaviour::Gather,
+            target: TargetKind::Node,
+            fire: None,
+            engage: None,
+            icon: String::new(),
+            hotkey: String::new(),
+            cursor: None,
+            card: None,
+            units: vec![],
+            description: String::new(),
+        },
+    );
     app.insert_resource(AcquiredPackages(Acquired {
         lockfile_hash: String::new(),
         visuals: Default::default(),
         map_size: (1.0, 1.0),
         unit_names: Default::default(),
-        content: ClientContent::default(),
+        content,
     }));
     *app.world_mut().resource_mut::<Phase>() = Phase::Joined { slot: 0 };
     let disconnected = app
         .world_mut()
         .spawn(MessageSender::<PlayerCommand>::default())
         .id();
-    let command = PlayerCommandKind::Gather {
+    let command = ClientCommand::Gather {
         unit_id: UnitId(1),
         node_id: NodeId(2),
     };

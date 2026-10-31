@@ -36,6 +36,7 @@ fn snapshot(tick: u32) -> Snapshot {
         weapons: vec![],
         healths: vec![],
         research: vec![],
+        unit_orders: Vec::new(),
     }
 }
 
@@ -65,6 +66,7 @@ fn delta(tick: u32, base_tick: u32) -> WorldDelta {
         weapons: vec![],
         healths: vec![],
         research: vec![],
+        unit_orders: Vec::new(),
     }
 }
 
@@ -258,6 +260,7 @@ fn delta_with_unknown_unit_requests_resync() {
         weapons: vec![],
         healths: vec![],
         research: vec![],
+        unit_orders: Vec::new(),
     };
     assert_eq!(r.apply_delta(&unknown, now), DeltaOutcome::ResyncRequested);
     assert!(r.in_resync());

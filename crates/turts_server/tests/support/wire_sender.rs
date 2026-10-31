@@ -12,8 +12,8 @@ use lightyear::prelude::*;
 use lightyear::transport::channel::ChannelKind;
 use turts_net_lightyear::{ProtocolPlugin, ReliableChannel, tick_duration};
 use turts_net_protocol::{
-    CommandApplied, CommandRejected, Hello, JoinRejected, NET_PROTOCOL_VERSION, PlayerCommand,
-    Snapshot, Welcome, WorldDelta,
+    Hello, JoinRejected, NET_PROTOCOL_VERSION, OrderResult, PlayerCommand, Snapshot, Welcome,
+    WorldDelta,
 };
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -243,8 +243,7 @@ fn receive(
     mut welcome: Query<&mut MessageReceiver<Welcome>>,
     mut rejected: Query<&mut MessageReceiver<JoinRejected>>,
     mut acks: Query<&mut MessageReceiver<turts_net_protocol::CommandAck>>,
-    mut applied: Query<&mut MessageReceiver<CommandApplied>>,
-    mut rejections: Query<&mut MessageReceiver<CommandRejected>>,
+    mut results: Query<&mut MessageReceiver<OrderResult>>,
     mut snapshots: Query<&mut MessageReceiver<Snapshot>>,
     mut deltas: Query<&mut MessageReceiver<WorldDelta>>,
 ) {
@@ -283,31 +282,28 @@ fn receive(
             });
         }
     }
-    for mut receiver in applied.iter_mut() {
+    for mut receiver in results.iter_mut() {
         for message in receiver.receive_with_tick() {
             let reliable = message.channel_kind == ChannelKind::of::<ReliableChannel>();
             report.reliable_count = report.reliable_count.saturating_add(u32::from(reliable));
+            let result = message.data;
+            let (kind, reason) = if !result.accepted.is_empty() {
+                ("applied", None)
+            } else {
+                (
+                    "rejected",
+                    result
+                        .envelope
+                        .or_else(|| result.refused.first().map(|r| r.reason)),
+                )
+            };
             report.receipts.push(Receipt {
-                seq: message.data.seq,
-                kind: "applied",
+                seq: result.seq,
+                kind,
                 reliable,
                 message_id: message.message_id.map(|id| id.0),
                 remote_tick: message.remote_tick.0,
-                reason: None,
-            });
-        }
-    }
-    for mut receiver in rejections.iter_mut() {
-        for message in receiver.receive_with_tick() {
-            let reliable = message.channel_kind == ChannelKind::of::<ReliableChannel>();
-            report.reliable_count = report.reliable_count.saturating_add(u32::from(reliable));
-            report.receipts.push(Receipt {
-                seq: message.data.seq,
-                kind: "rejected",
-                reliable,
-                message_id: message.message_id.map(|id| id.0),
-                remote_tick: message.remote_tick.0,
-                reason: Some(message.data.reason),
+                reason,
             });
         }
     }

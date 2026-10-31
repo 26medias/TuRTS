@@ -37,7 +37,7 @@ fn protocol_plugin_builds_on_client_and_server_apps() {
 }
 
 #[test]
-fn protocol_plugin_registers_ten_messages() {
+fn protocol_plugin_registers_nine_messages() {
     let app = server_app();
     assert!(app.is_message_registered::<Hello>());
     assert!(app.is_message_registered::<Welcome>());
@@ -46,8 +46,7 @@ fn protocol_plugin_registers_ten_messages() {
     assert!(app.is_message_registered::<WorldDelta>());
     assert!(app.is_message_registered::<PlayerCommand>());
     assert!(app.is_message_registered::<CommandAck>());
-    assert!(app.is_message_registered::<CommandApplied>());
-    assert!(app.is_message_registered::<CommandRejected>());
+    assert!(app.is_message_registered::<OrderResult>());
     assert!(app.is_message_registered::<ResyncRequest>());
     let app = client_app();
     assert!(app.is_message_registered::<Hello>());
@@ -57,7 +56,6 @@ fn protocol_plugin_registers_ten_messages() {
     assert!(app.is_message_registered::<WorldDelta>());
     assert!(app.is_message_registered::<PlayerCommand>());
     assert!(app.is_message_registered::<CommandAck>());
-    assert!(app.is_message_registered::<CommandApplied>());
-    assert!(app.is_message_registered::<CommandRejected>());
+    assert!(app.is_message_registered::<OrderResult>());
     assert!(app.is_message_registered::<ResyncRequest>());
 }

@@ -284,6 +284,7 @@ pub fn build_app(opts: ClientOptions) -> App {
 #[cfg(test)]
 mod produce_hook_observation_tests {
     use super::drive_produce_hook;
+    use crate::commands::ClientCommand;
     use crate::{
         commands::{CommandSendStatus, PendingCommands},
         ingest::{ReplicaState, WelcomeInfo},
@@ -292,7 +293,7 @@ mod produce_hook_observation_tests {
     };
     use bevy::prelude::{Schedule, World};
     use std::collections::VecDeque;
-    use turts_net_protocol::{PlayerCommandKind, Pos, ResearchRecord, SlotId, UnitId};
+    use turts_net_protocol::{Pos, ResearchRecord, SlotId, UnitId};
 
     #[test]
     fn sent_produce_still_observes_first_later_owner_completion_once() {
@@ -313,6 +314,7 @@ mod produce_hook_observation_tests {
                 slot: 0,
                 tick: 10,
                 tick_hz: 20,
+                match_id: 0,
             }),
             ..Default::default()
         };
@@ -359,7 +361,7 @@ mod produce_hook_observation_tests {
         assert!(matches!(
             world.resource::<PendingCommands>().0.front(),
             Some(crate::commands::PendingCommand::Submit {
-                kind: PlayerCommandKind::Produce {
+                kind: ClientCommand::Produce {
                     producer_id: UnitId(7),
                     ..
                 },

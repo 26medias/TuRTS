@@ -164,6 +164,7 @@ fn receive_hello(
                         slot_id: SlotId(0),
                         tick: tick.0,
                         tick_hz: 20,
+                        match_id: 0,
                     });
                 }
                 commands.entity(entity).insert(Welcomed);
@@ -186,7 +187,7 @@ fn receive_hello(
 fn receive_moves(
     mut moves: Query<(Entity, &mut MessageReceiver<PlayerCommand>), With<ClientOf>>,
     mut acks: Query<&mut MessageSender<CommandAck>>,
-    mut rejections: Query<&mut MessageSender<CommandRejected>>,
+    mut results: Query<&mut MessageSender<OrderResult>>,
     mut delayed_acks: ResMut<DelayedCommandAcks>,
     cfg: Res<Cfg>,
     tick: Res<SimTick>,
@@ -195,11 +196,27 @@ fn receive_moves(
         for envelope in receiver.receive() {
             let command = envelope;
             if cfg.reverse_command_results {
-                if let Ok(mut sender) = rejections.get_mut(entity) {
-                    sender.send::<ReliableChannel>(CommandRejected {
+                if let Ok(mut sender) = results.get_mut(entity) {
+                    sender.send::<ReliableChannel>(OrderResult {
                         seq: command.seq,
                         tick: tick.0,
-                        reason: turts_net_protocol::CommandRejectReason::BadSequence,
+                        accepted: Vec::new(),
+                        refused: command
+                            .order
+                            .units
+                            .iter()
+                            .copied()
+                            .map(|unit| UnitRefusal {
+                                unit,
+                                reason: turts_net_protocol::CommandRejectReason::BadSequence,
+                            })
+                            .collect(),
+                        envelope: command
+                            .order
+                            .units
+                            .is_empty()
+                            .then_some(turts_net_protocol::CommandRejectReason::BadSequence),
+                        job_id: None,
                     });
                 }
                 delayed_acks.0.push((entity, command.seq));
@@ -277,6 +294,7 @@ fn send_deltas(
         weapons: vec![],
         healths: vec![],
         research: vec![],
+        unit_orders: Vec::new(),
     };
     let payload = postcard_len(&deltas) as u64;
     for mut sender in senders.iter_mut() {
@@ -287,7 +305,7 @@ fn send_deltas(
 
 fn postcard_len(deltas: &WorldDelta) -> usize {
     postcard::experimental::serialized_size(deltas)
-        .expect("a protocol 3 WorldDelta serializes to postcard")
+        .expect("a protocol 4 WorldDelta serializes to postcard")
 }
 
 #[cfg(test)]
@@ -362,6 +380,7 @@ mod payload_tests {
                     enabled: true,
                 }],
             },
+            unit_orders: Vec::new(),
         };
         let mut buffer = [0; 4096];
         let encoded = postcard::to_slice(&delta, &mut buffer).unwrap();
