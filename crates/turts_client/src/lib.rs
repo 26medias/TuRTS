@@ -1,21 +1,33 @@
 //! Client logic: fetch, acquisition, join, replica, interpolation, presentation, input.
 
 pub mod acquire;
+pub mod actions;
+pub mod audio;
+pub mod camera;
+pub mod client_shell;
 pub mod commands;
 pub mod content;
+pub mod core_adapter;
 pub mod debug;
+pub mod debug_feed;
 pub mod economy_ui;
+pub mod feedback;
 pub mod fetch;
 pub mod framelog;
 pub mod ingest;
 pub mod input;
 pub mod interp;
 pub mod join;
+pub mod minimap;
 pub mod options;
+pub mod persist;
 pub mod present;
 pub mod render;
 pub mod replica;
 mod scenario;
+pub mod ui_shared;
+pub mod visuals;
+pub mod widgets;
 
 #[cfg(not(target_family = "wasm"))]
 mod live_view;
@@ -33,6 +45,7 @@ use crate::commands::{
     CommandSendStatus, CommandSequence, PendingCommands, repeat_trace, send_commands_traced,
     submit, submit_trace,
 };
+use crate::core_adapter::CoreAdapterPlugin;
 use crate::debug::{DebugState, exit_when_done, rebuild_debug_state};
 use crate::economy_ui::EconomyUiPlugin;
 use crate::framelog::{FrameLog, write_frame_log};
@@ -40,7 +53,6 @@ use crate::ingest::{
     CommandResults, IngestCounters, IngestHooks, ReceiptWitnesses, ReplicaState,
     arm_drop_world_changes, ingest_messages,
 };
-use crate::input::ClickInputPlugin;
 use crate::join::{
     Acquisition, JoinState, Phase, auto_move, drive_acquisition, on_connected, on_disconnected,
     receive_rejection, start_connection, update_phase,
@@ -130,12 +142,22 @@ impl Plugin for ClientPlugin {
         app.add_systems(Last, (rebuild_debug_state, exit_when_done).chain());
         #[cfg(not(target_family = "wasm"))]
         if publish_live_view {
-            app.add_systems(Last, live_view::publish_live_view.before(exit_when_done));
+            app.add_systems(
+                Last,
+                live_view::publish_live_view
+                    .after(crate::core_adapter::FrameCloseSet)
+                    .before(exit_when_done),
+            );
         }
         #[cfg(not(target_family = "wasm"))]
         if publish_live_report {
             app.init_resource::<live_view::LiveReportCursor>()
-                .add_systems(Last, live_view::publish_live_report.before(exit_when_done));
+                .add_systems(
+                    Last,
+                    live_view::publish_live_report
+                        .after(crate::core_adapter::FrameCloseSet)
+                        .before(exit_when_done),
+                );
         }
     }
 }
@@ -275,8 +297,20 @@ pub fn build_app(opts: ClientOptions) -> App {
     });
     app.add_plugins(ProtocolPlugin);
     app.add_plugins(ClientPlugin(opts));
+    app.add_plugins((
+        CoreAdapterPlugin,
+        actions::ActionsPlugin,
+        camera::ClientCameraPlugin,
+        widgets::WidgetsPlugin,
+        visuals::VisualsPlugin,
+        minimap::MinimapPlugin,
+        feedback::FeedbackPlugin,
+        audio::AudioPlugin,
+        client_shell::ClientShellPlugin,
+        persist::PersistPlugin,
+    ));
     if !headless {
-        app.add_plugins((UnitRenderPlugin, EconomyUiPlugin, ClickInputPlugin));
+        app.add_plugins((UnitRenderPlugin, EconomyUiPlugin));
     }
     app
 }

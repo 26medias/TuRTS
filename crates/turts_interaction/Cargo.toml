@@ -9,3 +9,7 @@ publish.workspace = true
 glam = "=0.33.12"
 turts_mod_api = { path = "../turts_mod_api" }
 turts_net_protocol = { path = "../turts_net_protocol" }
+
+[dev-dependencies]
+serde_json.workspace = true
+turts_mod_runtime = { path = "../turts_mod_runtime" }

@@ -63,8 +63,100 @@ pub fn debug_json(world: &World) -> String {
         })
         .unwrap_or(Value::Null);
     let selection = world
-        .get_resource::<crate::economy_ui::Selection>()
+        .get_resource::<crate::ui_shared::Selection>()
         .and_then(|selection| selection.0);
+    let selected_units = world
+        .get_resource::<crate::debug_feed::SelectionFeed>()
+        .map(|feed| feed.0.clone())
+        .unwrap_or_default();
+    let groups = world
+        .get_resource::<crate::debug_feed::GroupsFeed>()
+        .map(|feed| {
+            feed.0
+                .iter()
+                .map(|(group, units)| (group.to_string(), json!(units)))
+                .collect::<serde_json::Map<_, _>>()
+        })
+        .unwrap_or_default();
+    let frames = world
+        .get_resource::<crate::core_adapter::FrameFeeds>()
+        .map(|feeds| json!({"recent":feeds.recent,"retained_input":feeds.retained_input}))
+        .unwrap_or_else(|| json!({"recent":[],"retained_input":[]}));
+    let results = world
+        .get_resource::<crate::debug_feed::ResultsFeed>()
+        .map(|feed| feed.0.clone())
+        .unwrap_or_default();
+    let cursor = world
+        .get_resource::<crate::debug_feed::CursorFeed>()
+        .map_or_else(
+            || json!(crate::debug_feed::CursorFeed::default()),
+            |feed| json!(feed),
+        );
+    let ui_snapshot = world
+        .get_resource::<crate::debug_feed::UiSnapshotFeed>()
+        .map_or(Value::Null, |feed| feed.0.clone());
+    let notices = world
+        .get_resource::<crate::debug_feed::NoticesFeed>()
+        .map_or_else(Vec::new, |feed| feed.0.clone());
+    let alerts = world
+        .get_resource::<crate::debug_feed::AlertsFeed>()
+        .map_or_else(Vec::new, |feed| feed.0.clone());
+    let audio = world
+        .get_resource::<crate::debug_feed::AudioFeed>()
+        .map_or_else(
+            || json!(crate::debug_feed::AudioFeed::default()),
+            |feed| json!(feed),
+        );
+    let context_menu = world
+        .get_resource::<crate::debug_feed::ContextMenuFeed>()
+        .map_or_else(
+            || json!(crate::debug_feed::ContextMenuFeed::default()),
+            |feed| json!(feed),
+        );
+    let focus = world
+        .get_resource::<crate::debug_feed::FocusFeed>()
+        .is_some_and(|feed| feed.0);
+    let player_id = world
+        .get_resource::<crate::debug_feed::PlayerIdFeed>()
+        .and_then(|feed| feed.0);
+    let alert_pings = world
+        .get_resource::<crate::debug_feed::AlertPingsFeed>()
+        .map_or_else(Vec::new, |feed| feed.0.clone());
+    let markers_shown = world
+        .get_resource::<crate::debug_feed::MarkersShown>()
+        .map_or_else(Vec::new, |feed| feed.0.clone());
+    let rings_shown = world
+        .get_resource::<crate::debug_feed::RingsShown>()
+        .map_or_else(Vec::new, |feed| feed.0.clone());
+    let effective_bindings = world
+        .get_resource::<ReplicaState>()
+        .and_then(|state| state.content.as_ref())
+        .map(|content| {
+            let runtime = world
+                .get_resource::<crate::core_adapter::CorePreferences>()
+                .map(|preferences| preferences.runtime_bindings.clone())
+                .unwrap_or_default();
+            let actions = turts_interaction::input_map::effective_actions_with_runtime(
+                &content.input_map,
+                &runtime,
+            );
+            let action_json: serde_json::Map<_, _> = actions
+                .iter()
+                .map(|(name, bindings)| (name.clone(), json!(bindings)))
+                .collect();
+            let order_json: serde_json::Map<_, _> = content
+                .catalog
+                .orders
+                .iter()
+                .filter_map(|(id, order)| {
+                    actions
+                        .get(&order.hotkey)
+                        .map(|bindings| (id.to_string(), json!(bindings)))
+                })
+                .collect();
+            json!({"actions":action_json,"orders":order_json})
+        })
+        .unwrap_or_else(|| json!({"actions":{},"orders":{}}));
     let replicated_world = world
         .get_resource::<ReplicaState>()
         .and_then(|state| state.replica.as_ref())
@@ -110,7 +202,10 @@ pub fn debug_json(world: &World) -> String {
                 .collect::<Vec<_>>()
         })
         .unwrap_or_default();
-    let rendered_ui_nodes = crate::economy_ui::rendered_ui_snapshot(world).len();
+    let rendered_ui_nodes = world
+        .get_resource::<crate::debug_feed::UiSnapshotFeed>()
+        .and_then(|feed| feed.0.as_array())
+        .map_or(0, Vec::len);
     let ingest = world.get_resource::<crate::ingest::IngestHooks>().map(|hooks| {
         let replica = world.get_resource::<ReplicaState>().and_then(|state| state.replica.as_ref());
         json!({
@@ -175,7 +270,23 @@ pub fn debug_json(world: &World) -> String {
         "reconnect_required": world.get_resource::<CommandSendStatus>().is_some_and(|status| status.reconnect_required),
         "command_results": command_results,
         "research_completed_tick": world.get_resource::<crate::scenario::ProduceHook>().and_then(|hook| hook.research_completed_tick),
-        "selection": selection,
+        "selection": selected_units,
+        "ui_selection": selection,
+        "groups": groups,
+        "frames": frames,
+        "results": results,
+        "cursor": cursor,
+        "ui_snapshot": ui_snapshot,
+        "notices": notices,
+        "alerts": alerts,
+        "audio": audio,
+        "contextmenu": context_menu,
+        "focus": focus,
+        "player_id": player_id,
+        "alert_pings": alert_pings,
+        "markers_shown": markers_shown,
+        "rings_shown": rings_shown,
+        "effective_bindings": effective_bindings,
         "rendered_ui_nodes": rendered_ui_nodes,
         "ingest": ingest,
         "replicated_world": replicated_world,
@@ -296,6 +407,21 @@ pub fn report_json(world: &World) -> Value {
         Some(json!({ "seq": ack.seq, "connection_epoch": ack.connection_epoch, "ack_precedes_rejection": ordered }))
     }).collect();
     let command_results: Vec<Value> = results.0.iter().map(command_result_json).collect();
+    let selection = world
+        .get_resource::<crate::debug_feed::SelectionFeed>()
+        .map_or_else(Vec::new, |feed| feed.0.clone());
+    let groups = world
+        .get_resource::<crate::debug_feed::GroupsFeed>()
+        .map(|feed| {
+            feed.0
+                .iter()
+                .map(|(group, units)| (group.to_string(), json!(units)))
+                .collect::<serde_json::Map<_, _>>()
+        })
+        .unwrap_or_default();
+    let subject_results = world
+        .get_resource::<crate::debug_feed::ResultsFeed>()
+        .map_or_else(Vec::new, |feed| feed.0.clone());
     let debug = serde_json::from_str(&debug_json(world)).unwrap_or(Value::Null);
     json!({
         "welcomed": state.welcome.is_some(),
@@ -311,6 +437,9 @@ pub fn report_json(world: &World) -> Value {
         "successor_requests": counters.successor_requests,
         "deltas_dropped": counters.deltas_dropped,
         "command_results": command_results,
+        "selection": selection,
+        "groups": groups,
+        "results": subject_results,
         "trace": world.get_resource::<ScenarioState>().map(|scenario| json!({
             "enabled": scenario.enabled,
             "complete": scenario.is_complete(),
@@ -412,6 +541,27 @@ mod command_result_json_tests {
     use super::command_result_json;
     use crate::ingest::CommandResult;
     use turts_net_protocol::{CommandRejectReason, UnitId, UnitRefusal};
+
+    #[test]
+    fn cursor_audio_and_contextmenu_are_typed_objects_with_truthful_empty_defaults() {
+        let mut world = bevy::prelude::World::new();
+        world.insert_resource(crate::debug_feed::CursorFeed::default());
+        world.insert_resource(crate::debug_feed::AudioFeed::default());
+        world.insert_resource(crate::debug_feed::ContextMenuFeed::default());
+        let debug: serde_json::Value = serde_json::from_str(&super::debug_json(&world)).unwrap();
+        assert_eq!(
+            debug["cursor"],
+            serde_json::json!({"context":null,"image_id":null,"applied_icon":null})
+        );
+        assert_eq!(
+            debug["audio"],
+            serde_json::json!({"context_state":null,"started":[],"categories":{}})
+        );
+        assert_eq!(
+            debug["contextmenu"],
+            serde_json::json!({"count":0,"count_prevented":0})
+        );
+    }
 
     #[test]
     fn empty_order_rejection_preserves_legacy_debug_keys() {

@@ -146,7 +146,13 @@ fn ui_snapshot(world: &World) -> Vec<Value> {
         );
     }
 
-    rendered_ui_snapshot(world)
+    let snapshot = world
+        .get_resource::<crate::debug_feed::UiSnapshotFeed>()
+        .and_then(|feed| {
+            serde_json::from_value::<Vec<crate::economy_ui::RenderedUiNode>>(feed.0.clone()).ok()
+        })
+        .unwrap_or_else(|| rendered_ui_snapshot(world));
+    snapshot
         .into_iter()
         .map(|node| {
             let control = node.action.as_ref().and_then(|action| controls.get(action));
