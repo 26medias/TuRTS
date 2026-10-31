@@ -8,7 +8,7 @@ source: codex
 
 # MC execution board
 
-State: ACTIVE: O12 released Task 6. Integration and all four open lanes rebased onto main721e56e (design revision13); dirty source hashes preserved.10of25lanes complete;47/170runs; Task6run5/6. C1-C101. No main merge.
+State: ACTIVE: O12 released Task 6. Integration and all four open lanes rebased onto main721e56e (design revision13); dirty source hashes preserved.10of25lanes complete;47/170runs; Task6run5/6. C1-C102. No main merge.
 
 Plan: `docs/superpowers/plans/2026-10-29-mc-player-control.md`.
 Design of record: `docs/superpowers/specs/2026-10-29-mc-player-control-design.md`, revision12 at63788d7, included by mainc3f09d0.
@@ -780,3 +780,18 @@ Choice: preserve original M1 step position/reached semantics for an unobstructed
 Alternative not taken: accept one-tick-early motion, round the oracle coordinates, relax its equality, or change the frozen fixture. This is a Codex implementation/applicability ruling preserving the chosen K19/plain behavior. The hosted E9-midtrace-rearm-ignored baseline is still a separate process case: the same cause is only an inference until the exact ignored e9_loss_and_small_buffer_converge test passes in G-ACC.
 
 Additional fresh evidence: C100 body-free/reservation-illegal target has compiled red then green in reserved-point-green; new legacy Gather accepted-state reset has a real sim/replay regression. Current sim library188/188 is builder-reported. C99 Gather replay now covers authored/idless failures, actual endpoint range, stable Blocked visibility, and authored-completion→new idless Gather without stale identity; root/reviewer are auditing exact receipt/source linkage. No Task6 acceptance or integration merge yet;47/170runs, Task6run5/6.
+
+
+## C102: accepted idless Gather replaces prior current and queue
+
+Conflict: after the C98 legacy Gather motion reset, prior UnitOrders.current and queued work still remained. A valid old cohort Move A with queued Hold C could cause C to start over a newly accepted legacy Gather. The legacy command has no queue modifier; treating it differently from the normal replacement rule would leave stale work active and incorrect exported status.
+
+Choice: accepted legacy CommandKind::Gather uses the nearest design4.5 Replace rule: after all validation succeeds, clear prior current/queue/history, pending membership, target, group/plain progress and transient move identity; assign normal M2 Gather state without inventing an authored ID. Capture and independently model the nondefault order-state reset through the proper existing command/order span. Already-default free legacy input adds no extra order operation or fields. A refused Gather preserves every prior order, queue and motion field. Add valid Move A+queued Hold C interruption and refused-input preservation controls; exported status comes from real active Gather when no authored current exists.
+
+Alternative not taken: let old C override the new accepted Gather, preserve an obsolete current Move, fabricate a content order ID, or clear old state before validation. This is a Codex legacy/new-mechanism applicability ruling under brief4, with the existing Gather interaction and failure rules. Source/runtime recheck remains required.
+
+C101 further applies the pre-step arrival decision to retained plain and ordinary group progress: initial distance0.17 with step0.15 cannot take a step then snap an extra0.02. Normal tolerance eligibility is evaluated before movement; Blocked escape keeps its distinct at-most-one-step bound. Focused regressions and the source repair are being batched with C102/lints before the final gate head.
+
+Current candidate c6e328865b9ff2e451ea28f3a68fde3e078c6282 is committed and reviewable, but is not accepted. First exact formal fmt passed; Clippy failed101 with13 Task6 lint findings, so no later gate was counted. Builder batches these repairs and C102 before recommitting. The earlier workspace fractional-timestep fixture used invalid radius0.5 start x0.01; it now starts at legal inset x0.5 while retaining the exact (0.5+3*dt).to_bits assertion. Focused proof is green; full final-source workspace still pending.
+
+RUN47's current source matrix distinguishes confirmed source repair from independent runtime. New critical C96/C97/C99 behavior needs a valid compiled prefeature red or a postgate semantic plant plus restored green/clean bytes; root made this part of the conditional cache lease, alongside C89 and generic plain-lifecycle plants. Final G-REF remains actual-selector-driven(current20native cases), not a fixed historical count.47/170runs, Task6run5/6, no integration merge or main push.
