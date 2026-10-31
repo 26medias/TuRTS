@@ -8,7 +8,7 @@ source: codex
 
 # MC execution board
 
-State: ACTIVE: 10 of25 lanes complete. Task9 merged fb5e2d6 and all12 integration gates passed: workspace1053/0/18, T7 136frames/53moving, actualM3 controls7captures, frozen exact. Wave4 pushed; CI41195343950 agents success, check/browser running. Build40/170; C1-C82; main c3f09d0 unchanged.
+State: ACTIVE: 10 of25 lanes complete. Task9 merged fb5e2d6 and all12 integration gates passed: workspace1053/0/18, T7 136frames/53moving, actualM3 controls7captures, frozen exact. Wave4 pushed; CI41195343950 agents success, check/browser running. Build41/170; C1-C82; main c3f09d0 unchanged.
 
 Plan: `docs/superpowers/plans/2026-10-29-mc-player-control.md`.
 Design of record: `docs/superpowers/specs/2026-10-29-mc-player-control-design.md`, revision12 at63788d7, included by mainc3f09d0.
@@ -78,7 +78,7 @@ CI trigger: `.github/workflows/ci.yml:2-5` runs pushes to main and pull requests
 | T9 | 4 | 1, 8, 2b | codex/mc-t9 | COMPLETE mergefb5e2d6; independent0High/0unresolvedMedium,69tests,7GREF,FOV/modifier plants,all12integrationgates0; archived lane removed, branch retained. |
 | T6 | 5 | 4 | codex/mc-t6 | ACTIVE RUN39; group movement, sole compiler lease granted, partial semantic red101 captured. |
 | T7 | 5 | 2b, 4 | codex/mc-t7 | ACTIVE RUN40; source/test preparation only, no compiler lease. |
-| T11 | 5 | 9, 19, 20 | codex/mc-t11 | NOT STARTED |
+| T11 | 5 | 9, 19, 20 | codex/mc-t11 | ACTIVE RUN41 source/test preparation only, no compiler lease. |
 | T12 | 5 | 3, 9, 19, 20 | codex/mc-t12 | NOT STARTED |
 | T5 | 6 | 4, 6, 19 | codex/mc-t5 | NOT STARTED |
 | T13 | 6 | 4, 6, 9, 11, 19, 20 | codex/mc-t13 | NOT STARTED |
@@ -231,7 +231,8 @@ One row per builder/reviewer dispatch or resumed agent work turn. Register befor
 | 37 | T9 independent review | technical-director | gpt-6.1-sol | high | abe0841 | COMPLETE PASS0High/0unresolvedMedium;69 independent checks,7/7 GREF audited,FOV3 audited, own modifier0/101/0,63 source hashes restored, clean/cache ROOT. |
 | 38 | T9 pixel proof and final verification continuation | bevy-rendering-engineer | gpt-6-luna | high | abe0841 | COMPLETE: fresh base/CLICK9, all standard gates0,7/7 GREF45commands,FOV0/101/0, clean final index. T9run5/estimate6/soft12/hard24. Historical setup failures preserved. |
 | 39 | T6 group movement builder | simulation-core-engineer | gpt-6-luna | high | 487f6c9 | ACTIVE RUN39; owns sole cache; partial compiled overlap red101 captured, full named fixture suite in preparation; estimate6/soft12/hard24. |
-| 40 | T7 server session builder | backend-engineer | gpt-6-luna | high | 487f6c9 | ACTIVE RUN40; scoped source/test preparation only toRED-READY, no compiler lease; estimate4/soft8/hard16. |
+| 40 | T7 server session builder | backend-engineer | gpt-6-luna | high | 487f6c9 | COMPLETE RED-READY source preparation only; scoped hashes/stubs/inventory, no compiled red or behavior acceptance; estimate4/soft8/hard16. |
+| 41 | T11 camera and light preparation | bevy-rendering-engineer | gpt-6-luna | high | 30fc272 | REGISTERED before dispatch; source/test preparation only toRED-READY, no compiler lease; estimate4/soft8/hard16. |
 
 ## 9. Preflight ledger and stop
 
@@ -536,3 +537,5 @@ RUN39/40 registered before dispatch: build40/170, no overrun; same-wave source p
 
 
 Wave5 dispatch actualbase487f6c9: RUN39 Task6 owns solecachetarget/mc-t6 after rename/four successful profilecleans (t6-root/cache-from-integration); RUN40 Task7 source-only toRED-READY. Task6 initial partial2test run compiled and failed named40-unit overlap assertion101; a separate lone-unit test had an inadequate200tick fixture horizon, corrected300 before next run. Root rawlog audit t6-root/initial-red-audit.json; full11named fixtures/design boundaries remain pending before production implementation. First-run test bytes preserved honestly before correction; no fabricated pre-run archive. This is PROGRESS, not Task6 acceptance. Global40/170, no taskoverrun, main unchanged. Wave4 latestread agentsgreen, check native tests andbrowserT7 running; terminal review pending before any nextintegrationmerge.
+
+RUN40 Task7 source preparation complete, uncompiled RED-READY; root strengthened ignoredprocess test to assert scoutstationaryticks1-9 and actualfirstmovementtick10 (exact20Hz/6unitssec step), not only a logstring. Source-onlydiffcheck0; no runtimeclaim. Root review notes pending for implementation. RUN41 Task11 Luna/high registered before source/test preparation, no compiler lease; build41/170. All future final gates/rows retained. Main unchanged.
