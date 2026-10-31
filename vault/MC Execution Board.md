@@ -8,7 +8,7 @@ source: codex
 
 # MC execution board
 
-State: ACTIVE: O12 released Task 6. Integration and all four open lanes rebased onto main721e56e (design revision13); dirty source hashes preserved.10of25lanes complete;47/170runs; Task6run5/6. C1-C110. H4/H14/H12 repair active; initial Unit cap and prior-live-execution scope included, reviewer source-only. No main merge.
+State: ACTIVE: O12 released Task 6. Integration and all four open lanes rebased onto main721e56e (design revision13); dirty source hashes preserved.10of25lanes complete;48/170runs; Task6run6/6. C1-C110. H4/H14/H12 repair active; initial Unit cap and prior-live-execution scope included, reviewer source-only. No main merge.
 
 Plan: `docs/superpowers/plans/2026-10-29-mc-player-control.md`.
 Design of record: `docs/superpowers/specs/2026-10-29-mc-player-control-design.md`, revision12 at63788d7, included by mainc3f09d0.
@@ -76,7 +76,7 @@ CI trigger: `.github/workflows/ci.yml:2-5` runs pushes to main and pull requests
 | T2b | 3 | 2a, 3, 18 | codex/mc-t2b | COMPLETE64cd400; merge6d2c46e; all gates/10GREF0; review0H/0M; lane removed |
 | T4 | 4 | 2b, 3 | codex/mc-t4 | COMPLETE merge0490ebd; review0H/0M,36GREF,all12rootgates0; lane removed |
 | T9 | 4 | 1, 8, 2b | codex/mc-t9 | COMPLETE mergefb5e2d6; independent0High/0unresolvedMedium,69tests,7GREF,FOV/modifier plants,all12integrationgates0; archived lane removed, branch retained. |
-| T6 | 5 | 4 | codex/mc-t6 | ACTIVE RUN46: C106-C108 repair after three independent Highs; ffb21b3 passed normal gates. Sole compiler lease; no acceptance. |
+| T6 | 5 | 4 | codex/mc-t6 | ACTIVE RUN48: finish C106-C110 repair and final proof; coherent six-file WIP retained. Sole compiler lease; no acceptance. |
 | T7 | 5 | 2b, 4 | codex/mc-t7 | PREPARED RUN40; source/tests preserved, implementation and semantic red pending; no compiler lease. |
 | T11 | 5 | 9, 19, 20 | codex/mc-t11 | PREPARED RUN41; source/tests preserved, native/browser red pending; no compiler lease. |
 | T12 | 5 | 3, 9, 19, 20 | codex/mc-t12 | Analysis28legacytests +HUD1instrument8650131 ready; actualnative/browserred/widgetruntime/HUD4/allfinalproofpending. No legacy deletion. |
@@ -237,8 +237,10 @@ One row per builder/reviewer dispatch or resumed agent work turn. Register befor
 | 43 | T12 widget/guide/cursor preparation | bevy-rendering-engineer with ux-designer | gpt-6-luna | high | 2b22fa8 | COMPLETE analysis only; no code/stubs/rows created, notREDREADY; rootverified28testinventory/3actualplants; native/browser NOTTRACED; estimate8/soft16/hard32. |
 | 44 | T12 HUD1 instrument preparation continuation | bevy-rendering-engineer with ux-designer | gpt-6-luna | high | 2b22fa8 | COMPLETE HUD1 instrument preparation:8650131,Node75/0 with13oraclecases, strictDPRregression/plant0/1/0,QA0; actualbrowser/nativeHUD1NOTTRACED; T12run2/estimate8/soft16/hard32. |
 | 45 | T6 final independent review/recheck | performance-architect | gpt-6.1-sol | high | b4/d3+separatebuilderdirtyproof | COMPLETE SOURCE-ONLY understop; confirmsgeometryandbuildersemanticred;17areas/openHfindingsretained; no runtime/ownplant/PASS. |
-| 46 | T6 O12 repair continuation | simulation-core-engineer | gpt-6-luna | high | d4a8f97+preserved dirty | ACTIVE: O12 repaired; ffb21b3 normal gates all0. C106-C108 cap/escape/follow repair batch after RUN47 independent reds. Sole compiler lease; GREF/plants/final acceptance pending. Task6run4/6, soft12/hard24. |
+| 46 | T6 O12 repair continuation | simulation-core-engineer | gpt-6-luna | high | d4a8f97+preserved dirty | COMPLETE WIP handoff only: C106-C110 simulation/replay focused proofs; six files uncommitted, no final gates/GREF/plants/PASS. Continued by RUN48. Task6run4/6, soft12/hard24. |
 | 47 | T6 independent O12 and retained-finding recheck | performance-architect | gpt-6.1-sol | high | rebased d4a8f97+active repair | ACTIVE SOURCE-ONLY after C105 preliminary runtime: ffb21b3 verified gates; H4/H14/H12 compiled semantic101, other probes pass. Lease returned; repaired runtime/own plant/final PASS pending. Task6run5/6, soft12/hard24. |
+| 48 | T6 C106-C110 repair completion and final proof | simulation-core-engineer | gpt-6-luna | high | ffb21b3+six-file coherent WIP | Registered before continuation. Finish focused/replay controls, commit, all required final gates, C105 handoff, selected GREF and semantic plants. Task6run6/estimate6, soft12/hard24. |
+
 
 ## 9. Preflight ledger and stop
 
@@ -906,3 +908,6 @@ Choice: process the prior execution while B waits, with a separate queue-advance
 Use a pending-aware execution helper or explicit allow-queue-advance parameter rather than call the old helper unchanged: its completion/TargetGone branches start the queue. Require the prepared real-moving-target/old-A/B-Pending/D-gated control, with actual dispatched busy-head budget and a no-replacement positive control. Source and semantic red/green receipts must distinguish real execution from fixture setup. Alternative not taken: freeze A's live follow, activate D before B, suppress all old failure acknowledgments, or recharge A every tick. This is C93/C109 mechanism completion under brief4 with the existing player-visible Pending and queue behavior.
 
 Evidence: main target/mc-evidence/t6-review/run47/pending-follow-source-lead/ and prepared pending_prior_follow_probe.rs. Add this to the existing repair batch before the next committed candidate/gates; no new agent run.47/170 runs, Task6run5/6; no merge/push.
+
+
+RUN46 ended with a WIP repair handoff, not Task6 completion. Six explicit source files are dirty atop ffb21b3; root saved coherent exact bytes/hashes at main target/mc-evidence/t6-root/c106-c110-working-checkpoint/ (second hash pass matched; frozen SHA exact). C106 component promotion+Append replay selected1/1 exit0 with four forged-state negatives; focused group checkpoints are green but full repaired-source gates/refutations/plants remain. RUN48 registered before resuming the same Luna/high builder to finish the full authorized task.48/170 runs, Task6run6/estimate6, soft12/hard24; no new stop condition or merge/push. RUN47 remains source-only.
