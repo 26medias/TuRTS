@@ -102,4 +102,4 @@ Human usability amendment1354e33: catalog-derived principal labels/named local s
 
 **Integrated:** M3 fast-forwarded into main and pushed; hosted CI running, human-demo limitations retained. See [[Reports/2026-10-28 M3 integration]].
 
-MC update2026-10-31: ACTIVE: 9 of 25 lanes complete. Task 9 candidate 9453783 has two rendered pixel-row passes, 13 standard gates green (workspace 1049/0/18), and independent Node59/native63 green. Seven refutations and final mutation checks remain before review/merge. Build runs: 38/170. Rulings: C1-C75. Main remains c3f09d0.
+MC update2026-10-31: ACTIVE: 9 of 25 lanes complete. Task 9 candidate9ec5188 includes the C76 fixture repair; the focused Cedar browser case passes. Its runtime and CLICK9 dependencies match9453783, which has two rendered pixel passes, 13 standard gates green (1049/0/18), and independent Node59/native63 green. Final9ec gates, seven refutations and mutation/review checks are in progress. Build runs:38/170. Rulings:C1-C76. Main remains c3f09d0.
