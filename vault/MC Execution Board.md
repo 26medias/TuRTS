@@ -470,3 +470,6 @@ C61: planP1→reserved-key instruction includes conditional Esc/wheel rows; desi
 
 
 C62: retain selected IDs inside each Last-closed frame for Task13 mouse-up-frame selection500 proof; Task9 owns schema. Do not substitute later top-level selection. Design1150-1159/SEL2 and plan481/Task13step2; instrument only, no new run.
+
+
+C63: design requires debug.selection list; legacy M2/M3 scalar oracle reads migrate shape only, exact one-ID selection guards and rendered UI checks retained. No scalar compatibility workaround or early driver migration. Run actual browser paths/refutations atstablecommit. No new agent run.
