@@ -4,6 +4,20 @@
 // M2 browser interaction helpers. These read only the actual Bevy scene/UI snapshots and use
 // Playwright's normal pointer path; they never submit commands through the debug bridge.
 const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const { fixtureOffset, fixtureWorldX, validateTranslationReceipt } = require("./harness/m2-fixture.js");
+const M2_PACKAGE_NAME = process.env.M2_PACKAGE_NAME;
+const M2_CASE_ID = process.env.M2_CASE_ID ?? "";
+const FIXTURE_OFFSET_RAW = process.env.M2_FIXTURE_X_OFFSET;
+const FIXTURE_RECEIPT_PATH = process.env.M2_FIXTURE_TRANSLATION_RECEIPT;
+const FIXTURE_X_OFFSET = M2_PACKAGE_NAME === undefined
+    ? fixtureOffset(undefined, FIXTURE_OFFSET_RAW)
+    : validateTranslationReceipt(
+        M2_PACKAGE_NAME,
+        M2_CASE_ID,
+        FIXTURE_OFFSET_RAW,
+        FIXTURE_RECEIPT_PATH ? JSON.parse(fs.readFileSync(FIXTURE_RECEIPT_PATH, "utf8")) : null,
+    );
 const {
     assertOwnerWorldMatchesAudit,
     auditStateAt,
@@ -529,7 +543,7 @@ async function runParameterLossProof(page, caseId, kind, outDir, logs, result, c
     const needsGather = kind === "extraction" || kind === "conversion";
     const worker = units.find((unit) => unit.owner_slot === 0 && unit.content_id === "base:harvester");
     const producer = units.find((unit) => unit.owner_slot === 0 && unit.content_id === "base:command_center" &&
-        unit.pos[0] === 8 && unit.pos[1] === 8);
+        unit.pos[0] === fixtureWorldX(8, FIXTURE_X_OFFSET) && unit.pos[1] === 8);
     const target = needsGather ? worker : producer;
     const targetMesh = target && snapshot.scene.units.find((unit) => unit.unit_id === target.unit_id);
     assert(target && targetMesh, `${kind} loss fixture lacks its real owner-0 target mesh`);
@@ -619,7 +633,7 @@ async function runParameterLossProof(page, caseId, kind, outDir, logs, result, c
     } else {
         armed = await arm();
         if (needsGather) {
-            const node = selected.scene.nodes.find((entry) => Math.abs(entry.translation[0] - 24) < 1e-3 && Math.abs(entry.translation[2] - 8) < 1e-3);
+            const node = selected.scene.nodes.find((entry) => Math.abs(entry.translation[0] - fixtureWorldX(24, FIXTURE_X_OFFSET)) < 1e-3 && Math.abs(entry.translation[2] - 8) < 1e-3);
             assert(node, `${kind} actual ore node mesh is missing`);
             const beforeSequence = lastAppliedSequence(armed);
             await clickRenderedEntity(page, selected.scene, node, { button: "right" });
@@ -1300,7 +1314,7 @@ async function runBaseUiSmoke(argv) {
         // The fixture's owner-0 Command Center is selected from its received public unit position.
         // The click uses the actual rendered mesh center and Rust-published active-camera projection.
         const commandCenter = joined.debug.units.find((unit) =>
-            unit.content_id === "base:command_center" && Math.abs(unit.pos[0] - 8) < 1e-3 && Math.abs(unit.pos[1] - 8) < 1e-3
+            unit.content_id === "base:command_center" && Math.abs(unit.pos[0] - fixtureWorldX(8, FIXTURE_X_OFFSET)) < 1e-3 && Math.abs(unit.pos[1] - 8) < 1e-3
         );
         const commandCenterMesh = commandCenter && joined.scene.units.find((unit) => unit.unit_id === commandCenter.unit_id);
         assert(commandCenter && commandCenterMesh, "owner-0 Command Center is absent from actual received/rendered state");
@@ -1346,7 +1360,7 @@ async function runBaseUiSmoke(argv) {
             const harvester = units.find((unit) => unit.content_id === "base:harvester" && unit.owner_slot === 0);
             const mesh = harvester && joinedArtifact.scene.units.find((unit) => unit.unit_id === harvester.unit_id);
             const node = joinedArtifact.scene.nodes.find((candidate) =>
-                Math.abs(candidate.translation[0] - 24) < 1e-3 && Math.abs(candidate.translation[2] - 8) < 1e-3);
+                Math.abs(candidate.translation[0] - fixtureWorldX(24, FIXTURE_X_OFFSET)) < 1e-3 && Math.abs(candidate.translation[2] - 8) < 1e-3);
             assert(harvester && mesh && node, "base recovery fixture lacks its owner-0 Harvester or ore node");
             await clickRenderedEntity(page, joinedArtifact.scene, mesh);
             await waitForSnapshot(page, (snapshot) =>
@@ -1428,7 +1442,7 @@ async function runBaseUiSmoke(argv) {
         };
 
         const harvester = cancelledArtifact.debug.units.find((unit) =>
-            unit.content_id === "base:harvester" && Math.abs(unit.pos[0] - 12) < 1e-3 && Math.abs(unit.pos[1] - 8) < 1e-3
+            unit.content_id === "base:harvester" && Math.abs(unit.pos[0] - fixtureWorldX(12, FIXTURE_X_OFFSET)) < 1e-3 && Math.abs(unit.pos[1] - 8) < 1e-3
         );
         const harvesterMesh = harvester && cancelledArtifact.scene.units.find((unit) => unit.unit_id === harvester.unit_id);
         assert(harvester && harvesterMesh, "owner-0 Harvester is absent from actual received/rendered state");
@@ -1451,7 +1465,7 @@ async function runBaseUiSmoke(argv) {
         );
 
         const node = selectedHarvesterArtifact.scene.nodes.find((candidate) =>
-            Math.abs(candidate.translation[0] - 24) < 1e-3 && Math.abs(candidate.translation[2] - 8) < 1e-3
+            Math.abs(candidate.translation[0] - fixtureWorldX(24, FIXTURE_X_OFFSET)) < 1e-3 && Math.abs(candidate.translation[2] - 8) < 1e-3
         );
         assert(node, "fixture ore node is absent from actual rendered scene meshes");
         let recoveryArtifact;
