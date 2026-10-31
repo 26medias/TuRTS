@@ -17,7 +17,7 @@ Dashboard for the TuRTS studio. Read this first, then [[Tasks]] and the latest n
 
 **Product:** mod-first RTS engine in Rust and Bevy. Browser WebAssembly client first, authoritative headless server, the official game is a default mod on the public API. Spec: `RTS-Engine-Project-Specifications.md` (v0.8, 2026-10-29).
 
-**Current milestone:** ACTIVE:9of25lanes complete; Task4 merge0490ebd rootgates12/12exit0. Task9 RUN36 has compiled semantic reds for all6headless targets and3PROJ1viewports; behavior implementation active. RUN37 independent source review registered, no competing compiler. Wave4 awaitsTask9. Build37/170; C1-C59. Mainc3f09d0 untouched. [[MC Execution Board]]
+**Current milestone:** ACTIVE:9of25lanes complete. Task4 merged0490ebd and root-gated12/12. Task9 core27/0/0 root-verified after compiled reds; actual client adapter, replica orders and feeds in progress. RUN37 independent source review active; runtime awaits cache handoff. Wave4 awaitsTask9. Build37/170; C1-C61. Mainc3f09d0 untouched.
 
 **Last accepted M3 baseline:** API0.2.1/protocol3 industrial graybox is locally validated. Exact-source gates:760 passed,0 failed,18 ignored; strict Clippy, wasm, boundaries and frozen M2 stream pass. Native M2 faults33/33, M3 formal faults17/17, browser faults8/8, positive browser15/15, real private-research/combat F11, Forge browser7 and T7 pass. Final judgments and hosted CI/push/main merge approvals remain.
 
