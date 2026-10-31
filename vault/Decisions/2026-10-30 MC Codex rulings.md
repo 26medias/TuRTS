@@ -323,3 +323,30 @@ Choice: add default/skip-empty order_definitions to CatalogAudit, captured from 
 The frozen m3_m2_stream.rs:107-128 records operation identity, event kinds and before-equals-after, rather than raw catalog bytes. A static catalog field can preserve that stream, but this is not yet runtime proof. Run frozen checks early. Do not alter any frozen file, hash, fixed-point expectation or accepted row; stop if an actual frozen value must change.
 
 Alternative not taken: trust matching command-local copies, add another equally command-local source, or weaken replay. This is internal audit instrumentation under the existing captured-catalog pattern.
+
+
+## C39: remove repeated gate work without reducing coverage (2026-10-31)
+
+Conflict: repeated full acceptance during fixture repair delays feedback. scripts/acceptance.sh runs the acceptance aggregate, then repeats t5_convergence. The external integration_gates.py builds Trunk before t7.sh:18-19 builds it again. CEO approved the proposed speedups on2026-10-31.
+
+Choice: use focused failing and affected suites during repairs, preflight changed process fixtures together, then run every required full gate on the stable committed candidate. Keep separate review, semantic reds, plants, frozen checks, per-merge integration gates and per-wave push/CI. Builder and reviewer work together with one compiler owner. Remove the external duplicate Trunk invocation; unchanged T7 still builds Trunk before its browser/oracle. Builder deduplicates convergence execution with explicit named success enforcement and an exact fallback when aggregate filters exclude it. Test missing/failing/fallback cases with a shell stub before full acceptance.
+
+Helper source/archive hashes and syntax/source checks are in main target/mc-evidence/gate-dedup-c39/receipt.json; actual next web gate remains NOT TRACED. Alternative not taken: defer mandatory integration gates to wave end, omit a test, trust stale binaries or allocate concurrent build caches.
+
+## C40: box the new Order command payload (2026-10-31)
+
+Conflict: inline OrderCommand makes every CommandKind at least256bytes and fails strict Clippy large_enum_variant. Plan shows an inline payload; design does not fix the in-memory Rust representation.
+
+Choice: CommandKind::Order(Box<OrderCommand>) at crates/turts_sim/src/command.rs:55. Preserve serde payload, commands and player behavior. Builder/reviewer recommend this layout; require exact JSON/plain/frozen parity with ordinary gates. Clippy and affected suites report green on candidate6e25954; final candidate evidence remains mandatory. Alternative not taken: suppress the size warning and inflate every legacy command.
+
+## C41: canonicalize added catalog authority fields in trace fixtures (2026-10-31)
+
+Conflict: new catalog order definitions preserve a package-dependent lexical order after rename, causing the existing equal-trace assertion to fail in economy_variants.rs.
+
+Choice: retain every authority field; normalize qualified unit strings, sort definitions by normalized id, and nested capabilities by normalized unit (crates/turts_pack/tests/economy_variants.rs:1078-1080). Preserve complete trace equality and all prior normalization. Builder full pack suite reports0 and reviewer has read the repair. Alternative not taken: clear policy fields, weaken equality or preserve the accidental source ordering.
+
+## C42: adapt dependent process fixtures to the Order contract (2026-10-31)
+
+Conflict: old process expectations require not_mobile and finite outside-map rejection, omit owner idle order rows, and hardcode base order IDs for Haul. They predate the planned Order route and conflict with design5.2/K6 and owner projections.
+
+Choice: preserve static rejection with not_applicable (acceptance.rs:442-443); preserve both outside-map cases as positive Applied/bounded-movement process proofs, leaving direct legacy MoveTo rejection unchanged. Independently derive complete owner order rows from captured state/catalog (economy.rs:1190+) and expected order identity from the immutable package-qualified catalog (:815-872). Keep complete DTO equality, frozen input checks, Task4 semantic replay and independent M2 automatic/tick/economic replay; do not erase fields or bypass the old oracle. E8 and focused E9 report0; the resulting missing order state on product spawn was a genuine implementation bug and is repaired in6e25954, not hidden in the projector. Alternative not taken: change product clamp/reasons to satisfy stale fixtures, omit cases or relax replay. Final full gates/review remain pending.

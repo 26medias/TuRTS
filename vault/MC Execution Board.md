@@ -8,7 +8,7 @@ source: codex
 
 # MC execution board
 
-State: ACTIVE: Waves1-3 complete (8 of25 lanes), pushed6d2c46e. Task2b64cd400 accepted0High/0Medium; root re-gate12commands0,886/0/18,T7(138frames). Wave3 CI41157502932 queued. Runs32T4/33T9UX registered, build34/170. C1-C24 recorded. One cache reserved forT4; T9UX drafts only. Mainc3f09d0 untouched.
+State: ACTIVE: Waves1-3 complete (8 of25 lanes), pushed6d2c46e. Wave3 CI41157502932 check/agents passed; browser retains known M2 timeout. Task4 candidate6e25954 in gates after focused E9 spawn repair; no merge yet. Task9 UX drafts only. Build34/170; C1-C42 recorded. One compiler/cache owner. Mainc3f09d0 untouched.
 
 Plan: `docs/superpowers/plans/2026-10-29-mc-player-control.md`.
 Design of record: `docs/superpowers/specs/2026-10-29-mc-player-control-design.md`, revision12 at63788d7, included by mainc3f09d0.
@@ -49,7 +49,7 @@ User workspace instructions take precedence over the brief's inherited role-file
 
 Task gate sets are the plan's Local gate commands. T1 requires G-QA. After each task merge, run G-RUST, G-QA and G-FROZEN; also G-WEB for client/server edits. After each wave, push integration only and read hosted check, agents and browser jobs. Never merge or push main.
 
-Frozen M2 SHA256: `bcbf72c2206251f635a7c7f5b6c8f573d69a5fc05a5bd77716e98ebfb08e370b`. Keep forge fixed point and refutation plants. Known browser failure: M2 browser proof; trace in T20, repair in owner task/T21. Wave1 hosted source8e95e42: check/agents success; browser failed at the unchanged M2 economy timeout after T7 passed. Native M2 refutations, all17M3 plants and acceptance succeeded. Receipt target/mc-evidence/wave1-ci-terminal-jobs.json. Wave2 remains in progress and has not been pushed.
+Frozen M2 SHA256: `bcbf72c2206251f635a7c7f5b6c8f573d69a5fc05a5bd77716e98ebfb08e370b`. Keep forge fixed point and refutation plants. Known browser failure: M2 browser proof; trace in T20, repair in owner task/T21. Wave1 hosted source8e95e42: check/agents success; browser failed at the unchanged M2 economy timeout after T7 passed. Native M2 refutations, all17M3 plants and acceptance succeeded. Receipt target/mc-evidence/wave1-ci-terminal-jobs.json. Wave2 check/agents passed; known browser timeout retained. Wave3 pushed6d2c46e with check/agents passed and the same browser failure.
 
 CI trigger: `.github/workflows/ci.yml:2-5` runs pushes to main and pull requests. After Wave1 gates pass, push integration and open a draft PR to main to run CI. Do not merge it. Keep the pushed code head free of a skip-ci marker; record CI results in a later vault-only commit.
 
@@ -413,3 +413,6 @@ C37: M3 selected refutations use a one-cache wrapper retaining original CLI froz
 
 
 C38: Task4 replay resolves policy from an immutable InstalledCatalog-backed CatalogAudit order_definitions field, with default/skip-empty legacy serialization. Command-local policy is insufficient. Valid baseline, jointly forged policy and catalog-transition negatives required; early frozen checks, no expected-value changes. RUN32/34 remain active, build34/170. See [[Decisions/2026-10-30 MC Codex rulings]].
+
+
+CEO2026-10-31 approved C39 faster repair loop and removal of duplicate test/build work, retaining all required final gates, plants and per-merge checks. C40 boxes Order payload without serde change; C41 preserves strict renamed-catalog equality; C42 updates dependent process fixtures while retaining full independent replay. See [[Decisions/2026-10-30 MC Codex rulings]]. Task4 candidate6e25954 has focused E9 spawn repair green; full gates and independent runtime are pending. Build34/170.
