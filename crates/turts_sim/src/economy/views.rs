@@ -542,13 +542,11 @@ pub fn world_view(world: &mut World) -> WorldView {
                 .is_some_and(|progress| {
                     progress.activity == crate::movement::MovementActivity::Blocked
                 })
-            {
-                UnitOrderActivityView::Blocked
-            } else if entity
-                .get::<crate::movement::PlainMoveProgress>()
-                .is_some_and(|progress| {
-                    progress.activity == crate::movement::MovementActivity::Blocked
-                })
+                || entity
+                    .get::<crate::movement::PlainMoveProgress>()
+                    .is_some_and(|progress| {
+                        progress.activity == crate::movement::MovementActivity::Blocked
+                    })
             {
                 UnitOrderActivityView::Blocked
             } else if let Some(current) = &orders.current {

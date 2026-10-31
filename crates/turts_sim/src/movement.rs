@@ -546,12 +546,12 @@ impl MovementSearch<'_> {
                                 || candidate.distance(self.units[index].position)
                                     >= radius + self.units[index].radius - 1.0e-5
                         });
-                    if free {
-                        if best.is_none_or(|previous| {
+                    if free
+                        && best.is_none_or(|previous| {
                             nearest_angle_order(candidate, previous, origin).is_lt()
-                        }) {
-                            best = Some(candidate);
-                        }
+                        })
+                    {
+                        best = Some(candidate);
                     }
                 }
             }
@@ -630,6 +630,10 @@ impl MovementSearch<'_> {
     }
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the shared frame kernel passes immutable index inputs without rebuilding them"
+)]
 fn step_plain_progress(
     bounds: Vec2,
     tick_hz: u16,
@@ -765,6 +769,7 @@ fn step_plain_progress(
         velocity = velocity.normalize() * step_limit;
     }
     let mut position = unit.position + velocity;
+    let mut was_projected = false;
     for _ in 0..8 {
         let mut projected = false;
         for other_index in grid.within(
@@ -794,6 +799,7 @@ fn step_plain_progress(
         if !projected {
             break;
         }
+        was_projected = true;
     }
     position.x = position
         .x
@@ -803,7 +809,7 @@ fn step_plain_progress(
         .clamp(unit.radius, (bounds.y - unit.radius).max(unit.radius));
 
     let next_distance = position.distance(movement_target);
-    if next_distance <= 0.025 && !occupied(movement_target) {
+    if (separated || was_projected) && next_distance <= 0.025 && !occupied(movement_target) {
         output.position = movement_target;
         output.target = None;
         if progress.claim_count > 0 || progress.slot != progress.original_point {
@@ -1128,17 +1134,17 @@ impl MovementPoolIndex {
         {
             return true;
         }
-        if let Some(slot_key) = allowed_slot {
-            if let Some(&slot_index) = self.slot_indices.get(&slot_key) {
-                let clearance = self.clearances[slot_index];
-                let nearest_without_self = if clearance.first.unit_id == Some(unit_id) {
-                    clearance.second
-                } else {
-                    clearance.first
-                };
-                if nearest_without_self.clearance >= threshold {
-                    return true;
-                }
+        if let Some(slot_key) = allowed_slot
+            && let Some(&slot_index) = self.slot_indices.get(&slot_key)
+        {
+            let clearance = self.clearances[slot_index];
+            let nearest_without_self = if clearance.first.unit_id == Some(unit_id) {
+                clearance.second
+            } else {
+                clearance.first
+            };
+            if nearest_without_self.clearance >= threshold {
+                return true;
             }
         }
         let local = self.grid.within(&self.points, position, 2.0 * radius);
@@ -1153,6 +1159,10 @@ impl MovementPoolIndex {
         })
     }
 
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "pool candidate lookup needs exact caller, reservation and collision context"
+    )]
     fn nearest_free(
         &self,
         unit_id: u32,
@@ -1192,10 +1202,10 @@ impl MovementPoolIndex {
                     best = Some((index, point));
                 }
             }
-            if let Some((_, point)) = best {
-                if point.distance(origin) <= query_reach + 1.0e-5 {
-                    return Some(point);
-                }
+            if let Some((_, point)) = best
+                && point.distance(origin) <= query_reach + 1.0e-5
+            {
+                return Some(point);
             }
             if query_reach >= self.max_reach {
                 return None;
@@ -1205,6 +1215,10 @@ impl MovementPoolIndex {
     }
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "incremental clearance refresh receives the shared frame indexes and claim state"
+)]
 fn refresh_nearby_pool_slot_clearances(
     old_position: Vec2,
     new_position: Vec2,
@@ -1253,12 +1267,11 @@ fn add_pool_slot_claim(
 ) {
     let key = (pool_id, point.x.to_bits(), point.y.to_bits());
     let count = claim_counts.entry(key).or_default();
-    if *count == 0 {
-        if let Some(index) = pool_indexes.get_mut(&pool_id) {
-            if let Some(&slot_index) = index.slot_indices.get(&(key.1, key.2)) {
-                index.set_slot_assigned(slot_index, true);
-            }
-        }
+    if *count == 0
+        && let Some(index) = pool_indexes.get_mut(&pool_id)
+        && let Some(&slot_index) = index.slot_indices.get(&(key.1, key.2))
+    {
+        index.set_slot_assigned(slot_index, true);
     }
     *count += 1;
 }
@@ -1278,10 +1291,10 @@ fn remove_pool_slot_claim(
         return false;
     }
     claim_counts.remove(&key);
-    if let Some(index) = pool_indexes.get_mut(&pool_id) {
-        if let Some(&slot_index) = index.slot_indices.get(&(key.1, key.2)) {
-            index.set_slot_assigned(slot_index, false);
-        }
+    if let Some(index) = pool_indexes.get_mut(&pool_id)
+        && let Some(&slot_index) = index.slot_indices.get(&(key.1, key.2))
+    {
+        index.set_slot_assigned(slot_index, false);
     }
     true
 }
@@ -1977,6 +1990,7 @@ pub fn step_frame(frame: &MovementFrame, dt: f32) -> Vec<MovementFrameOutput> {
 
         // Hard projection prevents footprint overlap. Units resolve in id order.
         let broad_reach = unit.radius + max_radius + max_step;
+        let mut was_projected = false;
         for _ in 0..8 {
             let mut projected = false;
             for other_index in grid.within(&points, position, broad_reach) {
@@ -2010,6 +2024,7 @@ pub fn step_frame(frame: &MovementFrame, dt: f32) -> Vec<MovementFrameOutput> {
             if !projected {
                 break;
             }
+            was_projected = true;
         }
         position.x = position
             .x
@@ -2019,7 +2034,7 @@ pub fn step_frame(frame: &MovementFrame, dt: f32) -> Vec<MovementFrameOutput> {
             .clamp(unit.radius, (frame.bounds.y - unit.radius).max(unit.radius));
 
         let next_distance = position.distance(movement_target);
-        if next_distance <= 0.025 {
+        if (separated || was_projected) && next_distance <= 0.025 {
             let occupied = grid
                 .within(&points, movement_target, unit.radius + max_radius)
                 .into_iter()
@@ -2330,6 +2345,52 @@ mod spread_tests {
         assert_eq!(output.position, expected.position);
         assert_eq!(output.target, Some(target));
         assert!(output.position.distance(frame.units[0].position) <= 0.4);
+    }
+
+    #[test]
+    fn active_group_progress_does_not_add_a_post_step_arrival_snap() {
+        let target = Vec2::new(2.0, 1.0);
+        let position = Vec2::new(1.83, 1.0);
+        let frame = MovementFrame {
+            bounds: Vec2::splat(16.0),
+            tick_hz: 20,
+            units: vec![MovementFrameUnit {
+                unit_id: 1,
+                owner_slot: 0,
+                unit_type: 1,
+                position,
+                radius: 0.5,
+                speed: Some(3.0),
+                target: Some(target),
+                progress: Some(MoveProgress {
+                    pool_id: 1,
+                    slot: target,
+                    activity: MovementActivity::Moving,
+                    pass_mode: false,
+                    stalling_on_group: false,
+                    stalled_ticks: 0,
+                    best_distance: position.distance(target),
+                    claim_count: 0,
+                }),
+                plain_progress: None,
+            }],
+            pools: BTreeMap::new(),
+        };
+
+        let output = step_frame(&frame, 0.05).remove(0);
+        let expected = step(
+            &MovementInput {
+                position,
+                target,
+                speed: 3.0,
+            },
+            0.05,
+        )
+        .position;
+
+        assert_eq!(output.position, expected);
+        assert_eq!(output.target, Some(target));
+        assert_eq!(output.progress.unwrap().activity, MovementActivity::Moving);
     }
 
     #[test]
@@ -3152,6 +3213,56 @@ mod plain_movement_tests {
 
         assert_eq!(output[0].position, expected);
         assert_eq!(output[0].target, Some(target));
+    }
+
+    #[test]
+    fn retained_plain_progress_does_not_add_a_post_step_arrival_snap() {
+        let target = Vec2::new(2.0, 1.0);
+        let position = Vec2::new(1.83, 1.0);
+        let frame = MovementFrame {
+            bounds: Vec2::splat(16.0),
+            tick_hz: 20,
+            units: vec![MovementFrameUnit {
+                unit_id: 1,
+                owner_slot: 0,
+                unit_type: 1,
+                position,
+                radius: 0.5,
+                speed: Some(3.0),
+                target: Some(target),
+                progress: None,
+                plain_progress: Some(PlainMoveProgress {
+                    original_point: target,
+                    slot: target,
+                    pool_slots: vec![],
+                    gather_goal: None,
+                    activity: MovementActivity::Moving,
+                    stalled_ticks: 0,
+                    best_distance: position.distance(target),
+                    claim_count: 1,
+                    failure_recorded: false,
+                }),
+            }],
+            pools: BTreeMap::new(),
+        };
+
+        let output = step_frame(&frame, 0.05).remove(0);
+        let expected = step(
+            &MovementInput {
+                position,
+                target,
+                speed: 3.0,
+            },
+            0.05,
+        )
+        .position;
+
+        assert_eq!(output.position, expected);
+        assert_eq!(output.target, Some(target));
+        assert_eq!(
+            output.plain_progress.unwrap().activity,
+            MovementActivity::Moving
+        );
     }
 
     #[test]

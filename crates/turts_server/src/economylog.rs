@@ -507,6 +507,23 @@ pub(crate) fn validate_records(records: &[EconomyLogRecord]) -> Result<(), Strin
                             if matches!(command.input.kind, turts_sim::CommandKind::Order(_)) {
                                 validate_command_phase_order(command, operation)?;
                             }
+                            if let turts_sim::CommandKind::Gather { unit_id, .. } =
+                                &command.input.kind
+                            {
+                                let accepted = command.result.outcome.is_ok();
+                                let before = unit_orders_for(&operation.before, *unit_id);
+                                let after = unit_orders_for(&operation.after, *unit_id);
+                                let expected = if accepted {
+                                    turts_sim::UnitOrders::default()
+                                } else {
+                                    before
+                                };
+                                if after != expected {
+                                    return Err(format!(
+                                        "legacy Gather command for unit {unit_id} did not model its accepted Replace reset"
+                                    ));
+                                }
+                            }
                         }
                         turts_sim::economy::transaction::AuditPhase::Orders => {
                             if active_order_command.is_some() {
@@ -6413,6 +6430,7 @@ mod tests {
         let worker = ContentId::new(&package, "worker");
         let gather = ContentId::new(&package, "gather");
         let move_order = ContentId::new(&package, "move");
+        let hold_order = ContentId::new(&package, "hold");
         let catalog = ContentCatalog {
             resources: BTreeMap::from([(
                 item.clone(),
@@ -6490,6 +6508,23 @@ mod tests {
                         name: "Move".into(),
                         behaviour: turts_mod_api::Behaviour::Move,
                         target: TargetKind::PointOrUnit,
+                        fire: None,
+                        engage: None,
+                        icon: String::new(),
+                        hotkey: String::new(),
+                        cursor: None,
+                        card: None,
+                        units: vec![],
+                        description: String::new(),
+                    },
+                ),
+                (
+                    hold_order.clone(),
+                    OrderDef {
+                        id: hold_order.local.clone(),
+                        name: "Hold".into(),
+                        behaviour: turts_mod_api::Behaviour::Hold,
+                        target: TargetKind::None,
                         fire: None,
                         engage: None,
                         icon: String::new(),
@@ -6608,7 +6643,7 @@ mod tests {
                         bevy::math::Vec2::new(4.0, 8.0)
                     }),
                     queue: turts_sim::QueueMode::Replace,
-                    group: 0,
+                    group: if active_authored_move { 7 } else { 0 },
                     allowed_units: vec![],
                     queue_depth: 16,
                 })),
@@ -6622,6 +6657,47 @@ mod tests {
             records.extend(commands.into_iter().map(EconomyLogRecord::CommandBoundary));
             records.extend(operations.into_iter().map(EconomyLogRecord::Operation));
             seq += 1;
+            if active_authored_move {
+                let queued_hold = turts_sim::Command {
+                    slot: turts_sim::SlotId(0),
+                    seq,
+                    kind: turts_sim::CommandKind::Order(Box::new(turts_sim::OrderCommand {
+                        order: hold_order,
+                        behaviour: turts_mod_api::Behaviour::Hold,
+                        target_kind: TargetKind::None,
+                        policy: Some(order_policy(
+                            "fixture:hold",
+                            turts_mod_api::Behaviour::Hold,
+                            TargetKind::None,
+                            vec![(
+                                "fixture:worker",
+                                true,
+                                false,
+                                true,
+                                false,
+                                false,
+                                false,
+                                false,
+                            )],
+                        )),
+                        units: vec![1],
+                        target: turts_sim::OrderTargetSim::None,
+                        queue: turts_sim::QueueMode::Append,
+                        group: 0,
+                        allowed_units: vec![],
+                        queue_depth: 16,
+                    })),
+                };
+                let result = turts_sim::apply_command(app.world_mut(), &queued_hold);
+                assert_eq!(result.units.accepted, vec![1]);
+                let (commands, operations) = {
+                    let mut trail = app.world_mut().resource_mut::<AuditTrail>();
+                    (trail.drain_commands(), trail.drain_operations())
+                };
+                records.extend(commands.into_iter().map(EconomyLogRecord::CommandBoundary));
+                records.extend(operations.into_iter().map(EconomyLogRecord::Operation));
+                seq += 1;
+            }
             for _ in 0..if active_authored_move { 1 } else { 24 } {
                 app.update();
                 let (operations, ticks) = {
@@ -9403,6 +9479,40 @@ mod tests {
                     && row.progress.activity == turts_sim::movement::MovementActivity::Blocked),
             "the old authored Move ID cannot leak into the later idless Gather failure"
         );
+        let gather_reset = active_move_then_idless
+            .iter()
+            .find_map(|record| match record {
+                EconomyLogRecord::CommandBoundary(command)
+                    if matches!(command.input.kind, turts_sim::CommandKind::Gather { .. }) =>
+                {
+                    Some(command)
+                }
+                _ => None,
+            })
+            .expect("the active-Move fixture includes an accepted legacy Gather");
+        assert!(gather_reset.result.outcome.is_ok());
+        assert_eq!(unit_orders_for(&gather_reset.before, 1).queue.len(), 1);
+        assert!(
+            unit_orders_for(&gather_reset.before, 1).current.is_some(),
+            "the deferred cohort's Move A is active before legacy Gather"
+        );
+        assert!(
+            gather_reset
+                .before
+                .raw_units
+                .iter()
+                .find(|unit| unit.unit_id == 1)
+                .is_some_and(|unit| unit.move_target.is_some()),
+            "the replaced Move is still physically active"
+        );
+        assert_eq!(
+            unit_orders_for(&gather_reset.after, 1),
+            turts_sim::UnitOrders::default(),
+            "accepted idless Gather replaces both prior current and queued orders"
+        );
+        assert!(gather_reset.after.raw_orders.iter().any(|row| {
+            row.unit == 1 && row.stage == turts_sim::economy::gather::GatherStage::MovingToNode
+        }));
     }
 
     #[test]

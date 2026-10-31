@@ -1035,16 +1035,13 @@ fn dispatch_pending_movement(world: &mut World) {
     let mut spread_context = index_cache.context.take().unwrap();
     for offset in 0..PENDING_SLOTS {
         let slot = (start_slot + offset) % PENDING_SLOTS;
-        loop {
-            let Some(mut request) = world
-                .resource::<PendingMovementOrders>()
-                .queues
-                .get(&slot)
-                .and_then(VecDeque::front)
-                .cloned()
-            else {
-                break;
-            };
+        while let Some(mut request) = world
+            .resource::<PendingMovementOrders>()
+            .queues
+            .get(&slot)
+            .and_then(VecDeque::front)
+            .cloned()
+        {
             let live_ids: Vec<_> = request
                 .unit_ids
                 .iter()
@@ -1260,11 +1257,11 @@ fn dispatch_pending_movement(world: &mut World) {
                                 best_distance: member.position.distance(target),
                                 claim_count: 0,
                             });
-                            if let Some(order) = order {
-                                if let Some(mut orders) = entity_mut.get_mut::<UnitOrders>() {
-                                    orders.last_failure = None;
-                                    orders.current = Some(order);
-                                }
+                            if let Some(order) = order
+                                && let Some(mut orders) = entity_mut.get_mut::<UnitOrders>()
+                            {
+                                orders.last_failure = None;
+                                orders.current = Some(order);
                             }
                         }
                         if replace_order {
@@ -2409,6 +2406,25 @@ mod tests {
                 failure_recorded: true,
             },
             MoveTarget(Vec2::new(30.0, 30.0)),
+            UnitOrders {
+                current: Some(Order {
+                    order: ContentId::parse("test:move-a").unwrap(),
+                    behaviour: Behaviour::Move,
+                    target: OrderTargetSim::Point(Vec2::new(30.0, 30.0)),
+                    group: 4,
+                }),
+                queue: VecDeque::from([Order {
+                    order: ContentId::parse("test:hold-c").unwrap(),
+                    behaviour: Behaviour::Hold,
+                    target: OrderTargetSim::None,
+                    group: 4,
+                }]),
+                last_failure: Some(OrderFailure {
+                    order: ContentId::parse("test:old-failure").unwrap(),
+                    reason: crate::RejectReason::Blocked,
+                    tick: 7,
+                }),
+            },
         ));
         app.world_mut()
             .insert_resource(PlainMoveOrderIdentities(BTreeMap::from([(
@@ -2442,6 +2458,7 @@ mod tests {
         assert!(actor.get::<MoveTarget>().is_none());
         assert!(actor.get::<crate::movement::MoveProgress>().is_none());
         assert!(actor.get::<crate::movement::PlainMoveProgress>().is_none());
+        assert_eq!(actor.get::<UnitOrders>(), Some(&UnitOrders::default()));
         assert!(
             !app.world()
                 .resource::<PlainMoveOrderIdentities>()
@@ -2465,6 +2482,80 @@ mod tests {
                 .unwrap()
                 .activity,
             crate::economy::views::UnitOrderActivityView::Gathering
+        );
+    }
+
+    #[test]
+    fn refused_legacy_gather_preserves_existing_order_and_queue() {
+        let (mut app, entity) = gatherer_app();
+        let worker = ContentId::parse("test:worker").unwrap();
+        let item = ContentId::parse("test:iron").unwrap();
+        app.world_mut()
+            .resource_mut::<crate::bootstrap::InstalledCatalog>()
+            .0
+            .units
+            .get_mut(&worker)
+            .unwrap()
+            .gatherer
+            .as_mut()
+            .unwrap()
+            .items = vec![item.clone()];
+        app.world_mut()
+            .resource_mut::<crate::economy::SurfaceNodes>()
+            .0[0]
+            .remaining = 0;
+        app.world_mut().insert_resource(crate::EconomyLedger {
+            inventories: BTreeMap::from([(
+                1,
+                crate::economy::ledger::Inventory {
+                    capacity: 4,
+                    accepted_items: std::collections::BTreeSet::from([item]),
+                    items: BTreeMap::new(),
+                },
+            )]),
+            ..Default::default()
+        });
+        let before = UnitOrders {
+            current: Some(Order {
+                order: ContentId::parse("test:move-a").unwrap(),
+                behaviour: Behaviour::Move,
+                target: OrderTargetSim::Point(Vec2::new(30.0, 30.0)),
+                group: 4,
+            }),
+            queue: VecDeque::from([Order {
+                order: ContentId::parse("test:hold-c").unwrap(),
+                behaviour: Behaviour::Hold,
+                target: OrderTargetSim::None,
+                group: 4,
+            }]),
+            last_failure: Some(OrderFailure {
+                order: ContentId::parse("test:old-failure").unwrap(),
+                reason: crate::RejectReason::Blocked,
+                tick: 7,
+            }),
+        };
+        app.world_mut().entity_mut(entity).insert(before.clone());
+
+        let result = crate::command::apply_command(
+            app.world_mut(),
+            &crate::command::Command {
+                slot: SlotId(0),
+                seq: 9,
+                kind: crate::command::CommandKind::Gather {
+                    unit_id: 1,
+                    node_id: NodeId(1),
+                },
+            },
+        );
+
+        assert_eq!(result.outcome, Err(crate::RejectReason::NodeDepleted));
+        assert_eq!(
+            app.world().entity(entity).get::<UnitOrders>(),
+            Some(&before)
+        );
+        assert_eq!(
+            app.world().entity(entity).get::<MoveTarget>(),
+            Some(&MoveTarget(Vec2::new(30.0, 30.0)))
         );
     }
 
