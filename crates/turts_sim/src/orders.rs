@@ -474,25 +474,28 @@ pub(crate) fn apply_order(
                     .values()
                     .find(|unit| unit.id.to_string() == content_id)
             });
-        let capable =
-            match command.behaviour {
-                Behaviour::Move => registry_movement,
-                Behaviour::Stop | Behaviour::Hold => {
-                    definition.is_some_and(|unit| unit.weapon.is_some()) || registry_movement
-                }
-                Behaviour::Attack => match command.target {
-                    OrderTargetSim::Point(_) => registry_movement,
-                    OrderTargetSim::Unit(_) => definition.is_some_and(|unit| unit.weapon.is_some()),
-                    _ => false,
-                },
-                Behaviour::Gather => definition.is_some_and(|unit| unit.gatherer.is_some()),
-                Behaviour::Produce => definition
-                    .is_some_and(|unit| unit.producer.is_some() || unit.research.is_some()),
-                Behaviour::CancelProduction => definition
-                    .is_some_and(|unit| unit.producer.is_some() || unit.research.is_some()),
-                Behaviour::Remove => definition.is_some_and(|unit| unit.removal.is_some()),
-                Behaviour::SetEnabled(_) => definition.is_some_and(unit_toggleable),
-            };
+        let capable = match command.behaviour {
+            Behaviour::Move => registry_movement,
+            Behaviour::Stop | Behaviour::Hold => {
+                definition.is_some_and(|unit| unit.weapon.is_some()) || registry_movement
+            }
+            Behaviour::Attack => match command.target {
+                OrderTargetSim::Point(_) => registry_movement,
+                OrderTargetSim::Unit(_) => definition.is_some_and(|unit| unit.weapon.is_some()),
+                _ => false,
+            },
+            Behaviour::Gather => definition.is_some_and(|unit| unit.gatherer.is_some()),
+            Behaviour::Produce => {
+                definition.is_some_and(|unit| unit.producer.is_some() || unit.research.is_some())
+            }
+            Behaviour::CancelProduction => definition.is_some_and(|unit| {
+                unit.producer.is_some() || unit.research.is_some() || unit.machine.is_some()
+            }),
+            Behaviour::Remove => definition
+                .and_then(|unit| unit.removal.as_ref())
+                .is_some_and(|removal| removal.by_command),
+            Behaviour::SetEnabled(_) => definition.is_some_and(unit_toggleable),
+        };
         if !capable {
             let reason = match command.behaviour {
                 Behaviour::Gather | Behaviour::Produce | Behaviour::CancelProduction => {
@@ -1046,6 +1049,39 @@ mod tests {
                 },
             ]));
         (app, entity)
+    }
+
+    #[test]
+    fn remove_capability_requires_by_command_before_filter_and_target_checks() {
+        let (mut app, entity) = gatherer_app();
+        let worker_id = ContentId::parse("test:worker").unwrap();
+        let catalog = &mut app
+            .world_mut()
+            .resource_mut::<crate::bootstrap::InstalledCatalog>()
+            .0;
+        catalog.units.get_mut(&worker_id).unwrap().removal = Some(turts_mod_api::RemovalDef {
+            by_command: false,
+            contents: turts_mod_api::ContentsPolicy::Destroy,
+        });
+
+        let command = OrderCommand {
+            order: ContentId::parse("test:remove").unwrap(),
+            behaviour: Behaviour::Remove,
+            target_kind: turts_mod_api::TargetKind::None,
+            policy: None,
+            units: vec![app.world().entity(entity).get::<crate::UnitId>().unwrap().0],
+            target: OrderTargetSim::Point(Vec2::new(8.0, 8.0)),
+            queue: QueueMode::Replace,
+            group: 0,
+            allowed_units: vec!["other:unit".into()],
+            queue_depth: turts_mod_api::DEFAULT_QUEUE_DEPTH,
+        };
+        let (_, outcomes) = apply_order(app.world_mut(), SlotId(0), &command);
+        assert_eq!(
+            outcomes.refused,
+            vec![(1, crate::command::RejectReason::NotRemovable)],
+            "a disabled removal capability wins over custom filter and target failures"
+        );
     }
 
     #[test]

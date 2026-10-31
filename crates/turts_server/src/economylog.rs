@@ -759,15 +759,14 @@ fn expected_order_refusal(
         .iter()
         .find(|ty| ty.type_id == unit.unit_type)
         .map(|ty| ty.content_id.as_str());
-    let catalog_order = before
+    let catalog = before
         .catalog
         .as_ref()
-        .and_then(|catalog| {
-            catalog
-                .order_definitions
-                .iter()
-                .find(|definition| definition.id == order.order)
-        })
+        .ok_or_else(|| format!("order {} has no immutable catalog", order.order))?;
+    let catalog_order = catalog
+        .order_definitions
+        .iter()
+        .find(|definition| definition.id == order.order)
         .ok_or_else(|| format!("order {} is absent from the immutable catalog", order.order))?;
     let capability = content_id.and_then(|content| {
         catalog_order
@@ -791,6 +790,12 @@ fn expected_order_refusal(
         }
         turts_mod_api::Behaviour::CancelProduction => {
             capability.is_some_and(|entry| entry.producer || entry.research)
+                || content_id.is_some_and(|content| {
+                    catalog
+                        .units
+                        .iter()
+                        .any(|unit| unit.id.to_string() == content && unit.machine_recipe.is_some())
+                })
         }
         turts_mod_api::Behaviour::Remove => capability.is_some_and(|entry| entry.removable),
         turts_mod_api::Behaviour::SetEnabled(_) => capability.is_some_and(|entry| entry.toggleable),
@@ -899,6 +904,9 @@ fn expected_order_refusal(
                 return Ok(Some(R::MissingCapability));
             };
             if let Some((technologies, capacity)) = &unit_definition.research {
+                if !technologies.contains(recipe) {
+                    return Ok(Some(R::RecipeNotEnabled));
+                }
                 let Some(technology) = catalog
                     .technologies
                     .iter()
@@ -906,9 +914,6 @@ fn expected_order_refusal(
                 else {
                     return Ok(Some(R::UnknownRecipe));
                 };
-                if !technologies.contains(recipe) {
-                    return Ok(Some(R::RecipeNotEnabled));
-                }
                 if technology.prerequisites.iter().any(|prerequisite| {
                     !before
                         .research
@@ -924,27 +929,23 @@ fn expected_order_refusal(
                 {
                     return Ok(Some(R::AlreadyResearched));
                 }
-                let stations = catalog
-                    .units
+                let stations = before
+                    .raw_units
                     .iter()
-                    .filter(|unit| {
-                        unit.research
-                            .as_ref()
-                            .is_some_and(|(enabled, _)| enabled.contains(recipe))
+                    .filter(|raw| raw.owner_slot == sender_slot)
+                    .filter(|raw| {
+                        before.unit_types.iter().any(|ty| {
+                            ty.type_id == raw.unit_type
+                                && catalog.units.iter().any(|unit| {
+                                    unit.id.to_string() == ty.content_id
+                                        && unit
+                                            .research
+                                            .as_ref()
+                                            .is_some_and(|(enabled, _)| enabled.contains(recipe))
+                                })
+                        })
                     })
-                    .filter_map(|unit| {
-                        before
-                            .raw_units
-                            .iter()
-                            .find(|raw| {
-                                raw.owner_slot == sender_slot
-                                    && before.unit_types.iter().any(|ty| {
-                                        ty.type_id == raw.unit_type
-                                            && ty.content_id == unit.id.to_string()
-                                    })
-                            })
-                            .map(|raw| raw.unit_id)
-                    })
+                    .map(|raw| raw.unit_id)
                     .collect::<BTreeSet<_>>();
                 if before.raw_queues.iter().any(|queue| {
                     stations.contains(&queue.producer)
@@ -960,12 +961,15 @@ fn expected_order_refusal(
                 if queue_len >= usize::from(*capacity) {
                     return Ok(Some(R::QueueFull));
                 }
-                return Ok(expected_job_cost_refusal(
-                    before,
-                    unit_id,
-                    sender_slot,
-                    &technology.costs,
-                ));
+                if before.allocators.next_values().2.checked_add(1).is_none() {
+                    return Ok(Some(R::IdExhausted));
+                }
+                if let Some(reason) =
+                    expected_job_cost_refusal(before, unit_id, sender_slot, &technology.costs)
+                {
+                    return Ok(Some(reason));
+                }
+                return Ok(expected_event_ordinal_refusal(before));
             }
             let Some((recipes, capacity, _)) = unit_definition.producer.as_ref() else {
                 return Ok(Some(R::MissingCapability));
@@ -985,12 +989,15 @@ fn expected_order_refusal(
             if queue_len >= usize::from(*capacity) {
                 return Ok(Some(R::QueueFull));
             }
-            return Ok(expected_job_cost_refusal(
-                before,
-                unit_id,
-                sender_slot,
-                &recipe_definition.costs,
-            ));
+            if before.allocators.next_values().2.checked_add(1).is_none() {
+                return Ok(Some(R::IdExhausted));
+            }
+            if let Some(reason) =
+                expected_job_cost_refusal(before, unit_id, sender_slot, &recipe_definition.costs)
+            {
+                return Ok(Some(reason));
+            }
+            return Ok(expected_event_ordinal_refusal(before));
         }
         (turts_mod_api::Behaviour::CancelProduction, turts_sim::OrderTargetSim::Job(job))
             if !before.raw_queues.iter().any(|queue| {
@@ -998,6 +1005,51 @@ fn expected_order_refusal(
             }) =>
         {
             return Ok(Some(R::UnknownJob));
+        }
+        (turts_mod_api::Behaviour::CancelProduction, turts_sim::OrderTargetSim::Job(job)) => {
+            return expected_cancel_refusal(before, unit_id, *job);
+        }
+        (turts_mod_api::Behaviour::Remove, turts_sim::OrderTargetSim::None) => {
+            if before
+                .raw_queues
+                .iter()
+                .find(|queue| queue.producer == unit_id)
+                .is_some_and(|queue| !queue.jobs.is_empty())
+            {
+                return Ok(Some(R::NotRemovable));
+            }
+            if before.ledger_claims.iter().any(|claim| {
+                matches!(claim, turts_sim::ReservationClaimView::Active { lines, .. } if lines.iter().any(|line| matches!(line.endpoint, turts_sim::ReservationEndpointView::Inventory(id) | turts_sim::ReservationEndpointView::Output(id) if id == unit_id)))
+            }) {
+                return Ok(Some(R::IntegrityViolation));
+            }
+            if before
+                .economy
+                .inventories
+                .iter()
+                .find(|inventory| inventory.unit == unit_id)
+                .is_some_and(|inventory| inventory.items.iter().any(|item| item.reserved > 0))
+                || before
+                    .raw_output_inventories
+                    .iter()
+                    .find(|inventory| inventory.unit == unit_id)
+                    .is_some_and(|inventory| {
+                        inventory
+                            .items
+                            .iter()
+                            .any(|(_, account)| account.reserved > 0)
+                    })
+            {
+                return Ok(Some(R::IntegrityViolation));
+            }
+            return Ok(expected_event_ordinal_refusal(before));
+        }
+        (turts_mod_api::Behaviour::SetEnabled(enabled), turts_sim::OrderTargetSim::None) => {
+            let was_enabled = before.disabled.binary_search(&unit_id).is_err();
+            if was_enabled == *enabled {
+                return Ok(None);
+            }
+            return Ok(expected_event_ordinal_refusal(before));
         }
         _ => {}
     }
@@ -1044,7 +1096,8 @@ fn expected_job_cost_refusal(
 ) -> Option<turts_sim::RejectReason> {
     use turts_mod_api::CostSource;
     use turts_sim::RejectReason as R;
-    for cost in costs {
+    let costs = canonical_order_costs(costs);
+    for cost in &costs {
         match cost.source {
             CostSource::SlotBalance => {
                 let Some(balance) = before.economy.balances.iter().find(|balance| {
@@ -1081,6 +1134,282 @@ fn expected_job_cost_refusal(
     None
 }
 
+fn canonical_order_costs(costs: &[turts_sim::CostView]) -> Vec<turts_sim::CostView> {
+    let mut canonical = costs.to_vec();
+    canonical
+        .sort_by(|left, right| (left.source, &left.resource).cmp(&(right.source, &right.resource)));
+    canonical
+}
+
+fn expected_event_ordinal_refusal(before: &AuditState) -> Option<turts_sim::RejectReason> {
+    before
+        .next_event_ordinal
+        .filter(|ordinal| ordinal.checked_add(1).is_some())
+        .is_none()
+        .then_some(turts_sim::RejectReason::ArithmeticOverflow)
+}
+
+fn expected_cancel_refusal(
+    before: &AuditState,
+    producer: u32,
+    job_id: turts_sim::JobId,
+) -> Result<Option<turts_sim::RejectReason>, String> {
+    use turts_sim::{RejectReason as R, economy::production::JobStage};
+    let Some(job) = before
+        .raw_queues
+        .iter()
+        .find(|queue| queue.producer == producer)
+        .and_then(|queue| queue.jobs.iter().find(|job| job.id == job_id.0))
+    else {
+        return Ok(Some(R::UnknownJob));
+    };
+    let policy = captured_order_job_policy(before, producer, &job.recipe)?;
+    let is_machine = before
+        .raw_units
+        .iter()
+        .find(|unit| unit.unit_id == producer)
+        .and_then(|actor| {
+            before
+                .unit_types
+                .iter()
+                .find(|kind| kind.type_id == actor.unit_type)
+        })
+        .and_then(|kind| {
+            before.catalog.as_ref().and_then(|catalog| {
+                catalog
+                    .units
+                    .iter()
+                    .find(|unit| unit.id.to_string() == kind.content_id)
+            })
+        })
+        .is_some_and(|unit| unit.machine_recipe.is_some());
+    let (ratio, refunds, reservation) = match job.stage {
+        JobStage::Queued if is_machine => return Ok(Some(R::IntegrityViolation)),
+        JobStage::Queued => (
+            policy.refunds.queued,
+            if policy.payment == turts_mod_api::PaymentPolicy::ChargeOnQueue {
+                job.charged.clone()
+            } else {
+                Vec::new()
+            },
+            job.reservation.as_ref(),
+        ),
+        JobStage::Running => (policy.refunds.running, job.charged.clone(), None),
+        JobStage::OutputBlocked => (policy.refunds.output_blocked, job.charged.clone(), None),
+    };
+    if let Some(reservation) = reservation {
+        let mut expected_lines = reservation.lines.clone();
+        expected_lines.sort_by(|left, right| {
+            (reservation_endpoint_order(&left.endpoint), &left.resource)
+                .cmp(&(reservation_endpoint_order(&right.endpoint), &right.resource))
+        });
+        if expected_lines.windows(2).any(|pair| {
+            pair[0].endpoint == pair[1].endpoint && pair[0].resource == pair[1].resource
+        }) {
+            return Ok(Some(R::InvalidAmount));
+        }
+        let claim_exists = before.ledger_claims.iter().any(|claim| {
+            matches!(claim, turts_sim::ReservationClaimView::Active { map_job_id, token_job_id, lines }
+                if *map_job_id == job_id.0
+                    && *token_job_id == reservation.job_id
+                    && lines == &expected_lines)
+        });
+        if !claim_exists {
+            return Ok(Some(R::UnknownJob));
+        }
+        for line in &expected_lines {
+            let reserved = match line.endpoint {
+                turts_sim::ReservationEndpointView::Slot(slot) => before
+                    .economy
+                    .balances
+                    .iter()
+                    .find(|balance| balance.slot == slot && balance.resource == line.resource)
+                    .map(|balance| balance.reserved)
+                    .unwrap_or(0),
+                turts_sim::ReservationEndpointView::Inventory(unit) => before
+                    .economy
+                    .inventories
+                    .iter()
+                    .find(|inventory| inventory.unit == unit)
+                    .and_then(|inventory| {
+                        inventory
+                            .items
+                            .iter()
+                            .find(|item| item.resource == line.resource)
+                    })
+                    .map_or(0, |item| item.reserved),
+                turts_sim::ReservationEndpointView::Output(unit) => before
+                    .raw_output_inventories
+                    .iter()
+                    .find(|inventory| inventory.unit == unit)
+                    .and_then(|inventory| {
+                        inventory
+                            .items
+                            .iter()
+                            .find(|(item, _)| item == &line.resource)
+                    })
+                    .map_or(0, |(_, account)| account.reserved),
+            };
+            if reserved < line.amount {
+                return Ok(Some(R::ArithmeticOverflow));
+            }
+        }
+    }
+    if let Some(reason) = expected_refund_refusal(before, &refunds, ratio) {
+        return Ok(Some(reason));
+    }
+    Ok(expected_event_ordinal_refusal(before))
+}
+
+fn reservation_endpoint_order(endpoint: &turts_sim::ReservationEndpointView) -> u8 {
+    match endpoint {
+        turts_sim::ReservationEndpointView::Slot(_) => 0,
+        turts_sim::ReservationEndpointView::Inventory(_) => 1,
+        turts_sim::ReservationEndpointView::Output(_) => 2,
+    }
+}
+
+fn expected_refund_refusal(
+    before: &AuditState,
+    costs: &[turts_sim::ReservationLineView],
+    ratio: turts_mod_api::RefundRatio,
+) -> Option<turts_sim::RejectReason> {
+    use turts_sim::{RejectReason as R, ReservationEndpointView as E};
+    if ratio.denominator == 0 || ratio.numerator > ratio.denominator {
+        return Some(R::InvalidAmount);
+    }
+    let mut lines = costs.to_vec();
+    lines.sort_by(|left, right| {
+        (reservation_endpoint_order(&left.endpoint), &left.resource)
+            .cmp(&(reservation_endpoint_order(&right.endpoint), &right.resource))
+    });
+    if lines
+        .windows(2)
+        .any(|pair| pair[0].endpoint == pair[1].endpoint && pair[0].resource == pair[1].resource)
+    {
+        return Some(R::InvalidAmount);
+    }
+    let mut inventory_credits = BTreeMap::<(u8, u32), u128>::new();
+    for line in lines {
+        let refund = match u64::try_from(
+            u128::from(line.amount) * u128::from(ratio.numerator) / u128::from(ratio.denominator),
+        ) {
+            Ok(refund) => refund,
+            Err(_) => return Some(R::ArithmeticOverflow),
+        };
+        match line.endpoint {
+            E::Slot(slot) => {
+                let Some(balance) = before
+                    .economy
+                    .balances
+                    .iter()
+                    .find(|balance| balance.slot == slot && balance.resource == line.resource)
+                else {
+                    return Some(R::UnknownBalance);
+                };
+                if balance.on_hand.checked_add(refund).is_none() {
+                    return Some(R::RefundDestinationOverflow);
+                }
+            }
+            E::Inventory(unit) => {
+                let Some(inventory) = before
+                    .economy
+                    .inventories
+                    .iter()
+                    .find(|inventory| inventory.unit == unit)
+                else {
+                    return Some(R::UnknownInventory);
+                };
+                if !before
+                    .raw_inventories
+                    .iter()
+                    .find(|row| row.unit == unit)
+                    .is_some_and(|row| row.accepted_items.contains(&line.resource))
+                {
+                    return Some(R::IncompatibleItem);
+                }
+                let on_hand = inventory
+                    .items
+                    .iter()
+                    .find(|item| item.resource == line.resource)
+                    .map_or(0, |item| item.on_hand);
+                if on_hand.checked_add(refund).is_none() {
+                    return Some(R::RefundDestinationOverflow);
+                }
+                *inventory_credits.entry((0, unit)).or_default() += u128::from(refund);
+            }
+            E::Output(unit) => {
+                let Some(inventory) = before
+                    .raw_output_inventories
+                    .iter()
+                    .find(|inventory| inventory.unit == unit)
+                else {
+                    return Some(R::IntegrityViolation);
+                };
+                if !inventory.accepted_items.contains(&line.resource) {
+                    return Some(R::IncompatibleItem);
+                }
+                let on_hand = inventory
+                    .items
+                    .iter()
+                    .find(|(item, _)| item == &line.resource)
+                    .map_or(0, |(_, account)| account.on_hand);
+                if on_hand.checked_add(refund).is_none() {
+                    return Some(R::RefundDestinationOverflow);
+                }
+                *inventory_credits.entry((1, unit)).or_default() += u128::from(refund);
+            }
+        }
+    }
+    for ((endpoint_kind, unit), credit) in inventory_credits {
+        let (used, capacity) = match endpoint_kind {
+            0 => {
+                let Some(inventory) = before
+                    .economy
+                    .inventories
+                    .iter()
+                    .find(|row| row.unit == unit)
+                else {
+                    return Some(R::UnknownInventory);
+                };
+                (
+                    inventory
+                        .items
+                        .iter()
+                        .map(|item| u128::from(item.on_hand))
+                        .sum::<u128>(),
+                    u128::from(inventory.capacity),
+                )
+            }
+            1 => {
+                let Some(inventory) = before
+                    .raw_output_inventories
+                    .iter()
+                    .find(|row| row.unit == unit)
+                else {
+                    return Some(R::IntegrityViolation);
+                };
+                (
+                    inventory
+                        .items
+                        .iter()
+                        .map(|(_, account)| u128::from(account.on_hand))
+                        .sum::<u128>(),
+                    u128::from(inventory.capacity),
+                )
+            }
+            _ => unreachable!(),
+        };
+        if used
+            .checked_add(credit)
+            .is_none_or(|total| total > capacity)
+        {
+            return Some(R::RefundDestinationFull);
+        }
+    }
+    None
+}
+
 fn validate_order_policy(command: &CommandAudit) -> Result<(), String> {
     let turts_sim::CommandKind::Order(order) = &command.input.kind else {
         return Ok(());
@@ -1106,16 +1435,56 @@ fn validate_order_policy(command: &CommandAudit) -> Result<(), String> {
     let canonical_units = canonical_order_units(&definition.units);
     let command_units = canonical_order_units(&order.allowed_units);
     let definition_capabilities = canonical_capabilities(&definition.unit_capabilities);
-    if canonical_units.windows(2).any(|pair| pair[0] == pair[1])
-        || command_units.windows(2).any(|pair| pair[0] == pair[1])
-        || definition_capabilities
-            .windows(2)
-            .any(|pair| pair[0].unit == pair[1].unit)
+    if definition_capabilities
+        .windows(2)
+        .any(|pair| pair[0].unit == pair[1].unit)
     {
         return Err(format!(
-            "order command {} has duplicate catalog filter or capability entries",
+            "order command {} has duplicate capability entries",
             command.operation_id
         ));
+    }
+    if order.behaviour == turts_mod_api::Behaviour::Remove {
+        for subject in &order.units {
+            let Some(actor) = command
+                .before
+                .raw_units
+                .iter()
+                .find(|unit| unit.unit_id == *subject)
+            else {
+                continue;
+            };
+            let Some(content) = command
+                .before
+                .unit_types
+                .iter()
+                .find(|unit_type| unit_type.type_id == actor.unit_type)
+                .map(|unit_type| unit_type.content_id.as_str())
+            else {
+                continue;
+            };
+            let Some(loaded_unit) = catalog
+                .units
+                .iter()
+                .find(|unit| unit.id.to_string() == content)
+            else {
+                continue;
+            };
+            let catalog_removable = loaded_unit
+                .removal
+                .as_ref()
+                .is_some_and(|policy| policy.by_command);
+            let captured_removable = definition_capabilities
+                .iter()
+                .find(|capability| capability.unit == content)
+                .is_some_and(|capability| capability.removable);
+            if catalog_removable != captured_removable {
+                return Err(format!(
+                    "order command {} has Remove capability inconsistent with loaded unit policy",
+                    command.operation_id
+                ));
+            }
+        }
     }
     if order.behaviour != definition.behaviour
         || order.target_kind != definition.target
@@ -1342,6 +1711,7 @@ fn validate_order_operation(
             let plain_cleanup = order.queue == turts_sim::QueueMode::Replace
                 && order.group == 0
                 && order.units.len() == 1
+                && matches!(order.target, turts_sim::OrderTargetSim::Point(_))
                 && (before_orders.current.is_some()
                     || !before_orders.queue.is_empty()
                     || before_orders.last_failure.is_some()
@@ -1393,9 +1763,9 @@ fn validate_order_operation(
         }
         turts_mod_api::Behaviour::Produce
         | turts_mod_api::Behaviour::CancelProduction
-        | turts_mod_api::Behaviour::Remove
         | turts_mod_api::Behaviour::SetEnabled(_)
         | turts_mod_api::Behaviour::Attack => {}
+        turts_mod_api::Behaviour::Remove => expected_orders = Default::default(),
     }
     if after_orders != expected_orders {
         return Err(format!(
@@ -1964,7 +2334,7 @@ fn validate_set_enabled_state(
         .filter(|row| row.unit == unit_id)
     {
         row.enabled = enabled;
-        if !enabled {
+        if changed && !enabled {
             row.rate_carry = 0;
         }
     }
@@ -2052,8 +2422,290 @@ fn validate_immediate_economy_order(
         (turts_mod_api::Behaviour::CancelProduction, turts_sim::OrderTargetSim::Job(job)) => {
             validate_cancel_order(unit_id, *job, order, before, after, operation_events)
         }
+        (turts_mod_api::Behaviour::Remove, turts_sim::OrderTargetSim::None) => {
+            validate_remove_order(unit_id, before, after, operation_events)
+        }
         _ => Ok(()),
     }
+}
+
+fn validate_remove_order(
+    unit_id: u32,
+    before: &AuditState,
+    after: &AuditState,
+    events: &[EconomyEvent],
+) -> Result<(), String> {
+    use turts_sim::economy::events::{DestroyedLine, DestroyedLocation, RemoveCause};
+
+    let actor = before
+        .raw_units
+        .iter()
+        .find(|unit| unit.unit_id == unit_id)
+        .ok_or("Remove actor is absent from prior state")?;
+    let content_id = before
+        .unit_types
+        .iter()
+        .find(|kind| kind.type_id == actor.unit_type)
+        .map(|kind| kind.content_id.as_str())
+        .ok_or("Remove actor type is absent from prior state")?;
+    let unit_policy = before
+        .catalog
+        .as_ref()
+        .and_then(|catalog| {
+            catalog
+                .units
+                .iter()
+                .find(|unit| unit.id.to_string() == content_id)
+        })
+        .ok_or("Remove actor is absent from immutable catalog")?;
+    if !unit_policy
+        .removal
+        .as_ref()
+        .is_some_and(|policy| policy.by_command)
+    {
+        return Err("accepted Remove lacks catalog command-removal permission".into());
+    }
+    if before
+        .raw_queues
+        .iter()
+        .find(|queue| queue.producer == unit_id)
+        .is_some_and(|queue| !queue.jobs.is_empty())
+    {
+        return Err("accepted Remove has queued production jobs".into());
+    }
+    if before.ledger_claims.iter().any(|claim| {
+        matches!(claim, turts_sim::ReservationClaimView::Active { lines, .. } if lines.iter().any(|line| matches!(line.endpoint, turts_sim::ReservationEndpointView::Inventory(id) | turts_sim::ReservationEndpointView::Output(id) if id == unit_id)))
+    }) {
+        return Err("accepted Remove retains an active inventory reservation".into());
+    }
+
+    let mut destroyed = Vec::<DestroyedLine>::new();
+    if let Some(inventory) = before
+        .economy
+        .inventories
+        .iter()
+        .find(|inventory| inventory.unit == unit_id)
+    {
+        for item in &inventory.items {
+            if item.reserved != 0 {
+                return Err("accepted Remove retains reserved inventory stock".into());
+            }
+            if item.on_hand > 0 {
+                destroyed.push(DestroyedLine {
+                    location: DestroyedLocation::Inventory(unit_id),
+                    item: item.resource.clone(),
+                    amount: item.on_hand,
+                });
+            }
+        }
+    }
+    if let Some(inventory) = before
+        .raw_output_inventories
+        .iter()
+        .find(|inventory| inventory.unit == unit_id)
+    {
+        for (item, account) in &inventory.items {
+            if account.reserved != 0 {
+                return Err("accepted Remove retains reserved output stock".into());
+            }
+            if account.on_hand > 0 {
+                destroyed.push(DestroyedLine {
+                    location: DestroyedLocation::Output(unit_id),
+                    item: item.clone(),
+                    amount: account.on_hand,
+                });
+            }
+        }
+    }
+    for belt in &before.raw_belts {
+        if let Some(piece) = belt.pieces.iter().find(|piece| piece.unit == unit_id) {
+            let mut belt_items = BTreeMap::<turts_mod_api::ContentId, u64>::new();
+            for slot in &piece.slots {
+                if let Some(item) = &slot.item {
+                    *belt_items.entry(item.clone()).or_default() += 1;
+                }
+            }
+            destroyed.extend(belt_items.into_iter().map(|(item, amount)| DestroyedLine {
+                location: DestroyedLocation::BeltPiece(unit_id),
+                item,
+                amount,
+            }));
+        }
+    }
+    destroyed
+        .sort_by(|left, right| (left.location, &left.item).cmp(&(right.location, &right.item)));
+    let event = event_for_order(
+        before,
+        unit_id,
+        turts_sim::EconomyEventKind::Destroyed {
+            unit: unit_id,
+            cause: RemoveCause::Removed,
+            items: destroyed,
+        },
+    )?;
+    if events != [event.clone()] {
+        return Err("Remove destruction event differs from captured unit contents".into());
+    }
+
+    let mut expected = before.clone();
+    expected.raw_units.retain(|unit| unit.unit_id != unit_id);
+    expected.units.retain(|unit| unit.unit_id != unit_id);
+    expected
+        .economy
+        .units
+        .retain(|unit| unit.unit_id != unit_id);
+    expected
+        .unit_orders
+        .retain(|orders| orders.unit_id != unit_id);
+    expected
+        .raw_inventories
+        .retain(|inventory| inventory.unit != unit_id);
+    expected
+        .economy
+        .inventories
+        .retain(|inventory| inventory.unit != unit_id);
+    expected.raw_orders.retain(|order| order.unit != unit_id);
+    expected
+        .economy
+        .orders
+        .retain(|order| order.unit != unit_id);
+    for order in expected
+        .raw_orders
+        .iter_mut()
+        .filter(|order| order.unit != unit_id)
+    {
+        if order.receiver == Some(unit_id) {
+            order.receiver = None;
+        }
+    }
+    for order in expected
+        .economy
+        .orders
+        .iter_mut()
+        .filter(|order| order.unit != unit_id)
+    {
+        if order.receiver == Some(unit_id) {
+            order.receiver = None;
+        }
+    }
+    expected
+        .raw_queues
+        .retain(|queue| queue.producer != unit_id);
+    expected
+        .economy
+        .queues
+        .retain(|queue| queue.producer != unit_id);
+    expected
+        .raw_output_inventories
+        .retain(|inventory| inventory.unit != unit_id);
+    expected.raw_belts = remove_audit_belt_piece(&before.raw_belts, unit_id)?;
+    expected
+        .raw_inserters
+        .retain(|inserter| inserter.unit != unit_id);
+    for inserter in &mut expected.raw_inserters {
+        if inserter.source == Some(unit_id) {
+            inserter.source = None;
+        }
+        if inserter.destination == Some(unit_id) {
+            inserter.destination = None;
+        }
+    }
+    expected
+        .raw_extractors
+        .retain(|extractor| extractor.unit != unit_id);
+    expected.raw_weapons.retain(|weapon| weapon.unit != unit_id);
+    for weapon in &mut expected.raw_weapons {
+        if weapon.last_target == Some(unit_id) {
+            weapon.last_target = None;
+        }
+    }
+    expected.raw_healths.retain(|health| health.unit != unit_id);
+    expected.disabled.retain(|unit| *unit != unit_id);
+    if !expected.removed_units.contains(&unit_id) {
+        expected.removed_units.push(unit_id);
+        expected.removed_units.sort_unstable();
+    }
+    expected.economy.m3.raw_output_inventories = expected.raw_output_inventories.clone();
+    expected.economy.m3.raw_belts = expected.raw_belts.clone();
+    expected.economy.m3.raw_inserters = expected.raw_inserters.clone();
+    expected.economy.m3.raw_extractors = expected.raw_extractors.clone();
+    expected.economy.m3.raw_weapons = expected.raw_weapons.clone();
+    expected.economy.m3.raw_healths = expected
+        .raw_healths
+        .iter()
+        .filter(|health| {
+            expected
+                .raw_units
+                .iter()
+                .any(|unit| unit.unit_id == health.unit)
+        })
+        .cloned()
+        .collect();
+    expected.economy.m3.disabled = expected.disabled.clone();
+    expected.economy.m3.removed_units.clear();
+    expected.append_order_event(event);
+    if expected != *after {
+        let expected_json = serde_json::to_value(&expected).unwrap_or_default();
+        let after_json = serde_json::to_value(after).unwrap_or_default();
+        let differing_fields = expected_json
+            .as_object()
+            .into_iter()
+            .flat_map(|expected_fields| expected_fields.keys())
+            .filter(|field| expected_json.get(*field) != after_json.get(*field))
+            .cloned()
+            .collect::<Vec<_>>();
+        let expected_economy = serde_json::to_value(&expected.economy).unwrap_or_default();
+        let after_economy = serde_json::to_value(&after.economy).unwrap_or_default();
+        let differing_economy_fields = expected_economy
+            .as_object()
+            .into_iter()
+            .flat_map(|expected_fields| expected_fields.keys())
+            .filter(|field| expected_economy.get(*field) != after_economy.get(*field))
+            .cloned()
+            .collect::<Vec<_>>();
+        return Err(format!(
+            "Remove changed state outside its catalog-derived destruction delta: {differing_fields:?}, economy {differing_economy_fields:?}"
+        ));
+    }
+    Ok(())
+}
+
+fn remove_audit_belt_piece(
+    belts: &[turts_sim::economy::views_m3::RawBeltAudit],
+    unit_id: u32,
+) -> Result<Vec<turts_sim::economy::views_m3::RawBeltAudit>, String> {
+    use turts_sim::economy::views_m3::RawBeltAudit;
+    let mut result = Vec::new();
+    for belt in belts {
+        let Some(index) = belt.pieces.iter().position(|piece| piece.unit == unit_id) else {
+            result.push(belt.clone());
+            continue;
+        };
+        let slots_per_piece = usize::from(belt.slots_per_piece);
+        if slots_per_piece == 0 || belt.raw_slots.len() != belt.pieces.len() * slots_per_piece {
+            return Err("Remove encountered malformed captured conveyor slots".into());
+        }
+        let split = |start: usize, end: usize| -> Option<RawBeltAudit> {
+            (start < end).then(|| RawBeltAudit {
+                first_piece: belt.pieces[start].unit,
+                definition: belt.definition.clone(),
+                owner_slot: belt.owner_slot,
+                slots_per_piece: belt.slots_per_piece,
+                slots_per_second: belt.slots_per_second,
+                rate_carry: belt.rate_carry,
+                raw_slots: belt.raw_slots[start * slots_per_piece..end * slots_per_piece].to_vec(),
+                pieces: belt.pieces[start..end].to_vec(),
+            })
+        };
+        if let Some(left) = split(0, index) {
+            result.push(left);
+        }
+        if let Some(right) = split(index + 1, belt.pieces.len()) {
+            result.push(right);
+        }
+    }
+    result.sort_by_key(|belt| belt.first_piece);
+    Ok(result)
 }
 
 fn validate_produce_order(
@@ -2157,8 +2809,7 @@ fn validate_produce_order(
         )?;
     }
     if job_policy.payment == turts_mod_api::PaymentPolicy::ReserveThenCharge {
-        let lines = job_policy
-            .costs
+        let lines = canonical_order_costs(&job_policy.costs)
             .iter()
             .map(|cost| turts_sim::ReservationLineView {
                 endpoint: match cost.source {
@@ -2235,6 +2886,32 @@ fn captured_order_job_policy(
             payment: technology.payment,
             refunds: technology.refunds,
         })
+    } else if unit.machine_recipe.as_ref() == Some(id) {
+        let recipe = catalog
+            .item_recipes
+            .iter()
+            .find(|recipe| recipe.id == *id)
+            .ok_or("order machine recipe is absent from captured catalog")?;
+        Ok(OrderJobPolicy {
+            costs: recipe
+                .inputs
+                .iter()
+                .map(|input| turts_sim::CostView {
+                    source: turts_mod_api::CostSource::ProducerInventory,
+                    resource: input.item.clone(),
+                    amount: input.amount,
+                })
+                .collect(),
+            payment: turts_mod_api::PaymentPolicy::ChargeOnQueue,
+            refunds: turts_mod_api::CancelRefunds {
+                queued: turts_mod_api::RefundRatio {
+                    numerator: 0,
+                    denominator: 1,
+                },
+                running: recipe.refunds.running,
+                output_blocked: recipe.refunds.output_blocked,
+            },
+        })
     } else {
         let recipe = catalog
             .recipes
@@ -2258,6 +2935,11 @@ fn next_raw_job(
     duration: u64,
     charge_now: bool,
 ) -> Result<ExpectedQueuedJob, String> {
+    let reservation_costs = if charge_now {
+        costs.to_vec()
+    } else {
+        canonical_order_costs(costs)
+    };
     let charged = if charge_now {
         costs
             .iter()
@@ -2273,7 +2955,7 @@ fn next_raw_job(
     let reserved = if charge_now {
         Vec::new()
     } else {
-        costs
+        reservation_costs
             .iter()
             .map(|cost| turts_sim::CostView {
                 source: cost.source,
@@ -2283,22 +2965,26 @@ fn next_raw_job(
             .collect::<Vec<_>>()
     };
     let raw_lines = |reserved: bool| {
-        costs
-            .iter()
-            .filter(|_| reserved)
-            .map(|cost| turts_sim::ReservationLineView {
-                endpoint: match cost.source {
-                    turts_mod_api::CostSource::SlotBalance => {
-                        turts_sim::ReservationEndpointView::Slot(owner_slot)
-                    }
-                    turts_mod_api::CostSource::ProducerInventory => {
-                        turts_sim::ReservationEndpointView::Inventory(producer)
-                    }
-                },
-                resource: cost.resource.clone(),
-                amount: cost.amount,
-            })
-            .collect::<Vec<_>>()
+        (if charge_now {
+            costs
+        } else {
+            &reservation_costs
+        })
+        .iter()
+        .filter(|_| reserved)
+        .map(|cost| turts_sim::ReservationLineView {
+            endpoint: match cost.source {
+                turts_mod_api::CostSource::SlotBalance => {
+                    turts_sim::ReservationEndpointView::Slot(owner_slot)
+                }
+                turts_mod_api::CostSource::ProducerInventory => {
+                    turts_sim::ReservationEndpointView::Inventory(producer)
+                }
+            },
+            resource: cost.resource.clone(),
+            amount: cost.amount,
+        })
+        .collect::<Vec<_>>()
     };
     let raw_charged = if charge_now {
         raw_lines(true)
@@ -3249,6 +3935,7 @@ mod tests {
     fn automatic_move_log(
         orders: turts_sim::UnitOrders,
         target_units: &[(u32, bevy::math::Vec2)],
+        command: Option<turts_sim::Command>,
     ) -> Vec<EconomyLogRecord> {
         use std::collections::BTreeMap;
         use turts_mod_api::{
@@ -3359,6 +4046,28 @@ mod tests {
         let mut records = vec![EconomyLogRecord::Initial(turts_sim::audit_state(
             app.world_mut(),
         ))];
+        if let Some(command) = command {
+            app.update();
+            let (operations, ticks) = {
+                let mut trail = app.world_mut().resource_mut::<AuditTrail>();
+                (trail.drain_operations(), trail.drain_ticks())
+            };
+            records.extend(operations.into_iter().map(EconomyLogRecord::Operation));
+            records.extend(ticks.into_iter().map(EconomyLogRecord::from_tick));
+            let result = turts_sim::apply_command(app.world_mut(), &command);
+            assert!(
+                result.outcome.is_ok(),
+                "captured Move order must be accepted: {result:?}"
+            );
+            assert_eq!(result.units.accepted, vec![1]);
+            let (commands, operations) = {
+                let mut trail = app.world_mut().resource_mut::<AuditTrail>();
+                (trail.drain_commands(), trail.drain_operations())
+            };
+            records.extend(commands.into_iter().map(EconomyLogRecord::CommandBoundary));
+            records.extend(operations.into_iter().map(EconomyLogRecord::Operation));
+            return records;
+        }
         app.update();
         let (operations, ticks) = {
             let mut audit = app.world_mut().resource_mut::<AuditTrail>();
@@ -3578,6 +4287,8 @@ mod tests {
                 id: producer_id,
                 radius: 0.5,
                 movement_speed: None,
+                removal: None,
+                machine_recipe: None,
                 inventory: None,
                 gatherer: None,
                 drop_off: vec![],
@@ -4026,6 +4737,1110 @@ mod tests {
         records
     }
 
+    fn actual_remove_order_records() -> Vec<EconomyLogRecord> {
+        use std::collections::BTreeMap;
+        use turts_mod_api::{
+            BalanceAmount, ContentCatalog, ContentId, ContentsPolicy, Footprint, ItemStack, MapDef,
+            MapSize, MovementDef, OrderDef, PackageId, Placement, RemovalDef, ResolvedInventory,
+            ResolvedUnit, ResourceDef, ResourceKind, SlotEconomyInit, SourceDef, TargetKind,
+            WorldPos,
+        };
+        use turts_sim::{Command, CommandKind, Order, OrderCommand, OrderTargetSim, QueueMode};
+
+        let mut app = turts_sim::headless_app(20);
+        let package = PackageId::parse("fixture").unwrap();
+        let iron = ContentId::new(&package, "iron");
+        let credits = ContentId::new(&package, "credits");
+        let worker = ContentId::new(&package, "worker");
+        let remove = ContentId::new(&package, "remove");
+        let catalog = ContentCatalog {
+            resources: BTreeMap::from([
+                (
+                    iron.clone(),
+                    ResourceDef {
+                        id: iron.local.clone(),
+                        name: "Iron".into(),
+                        unit_name: "ore".into(),
+                        kind: ResourceKind::Item,
+                    },
+                ),
+                (
+                    credits.clone(),
+                    ResourceDef {
+                        id: credits.local.clone(),
+                        name: "Credits".into(),
+                        unit_name: "credits".into(),
+                        kind: ResourceKind::Balance,
+                    },
+                ),
+            ]),
+            units: BTreeMap::from([(
+                worker.clone(),
+                ResolvedUnit {
+                    id: worker.clone(),
+                    name: "Worker".into(),
+                    footprint: Footprint::Circle { radius: 0.5 },
+                    movement: Some(MovementDef { speed: 3.0 }),
+                    inventory: Some(ResolvedInventory {
+                        capacity: 10,
+                        accepts: vec![iron.clone()],
+                    }),
+                    gatherer: None,
+                    drop_off: None,
+                    producer: None,
+                    output_inventory: Some(ResolvedInventory {
+                        capacity: 5,
+                        accepts: vec![iron.clone()],
+                    }),
+                    extractor: None,
+                    conveyor: None,
+                    inserter: None,
+                    machine: None,
+                    research: None,
+                    health: None,
+                    weapon: None,
+                    removal: Some(RemovalDef {
+                        by_command: true,
+                        contents: ContentsPolicy::Destroy,
+                    }),
+                },
+            )]),
+            nodes: BTreeMap::new(),
+            production: BTreeMap::new(),
+            recipes: BTreeMap::new(),
+            technologies: BTreeMap::new(),
+            orders: BTreeMap::from([(
+                remove.clone(),
+                OrderDef {
+                    id: remove.local.clone(),
+                    name: "Remove".into(),
+                    behaviour: turts_mod_api::Behaviour::Remove,
+                    target: TargetKind::None,
+                    fire: None,
+                    engage: None,
+                    icon: String::new(),
+                    hotkey: String::new(),
+                    cursor: None,
+                    card: None,
+                    units: vec![],
+                    description: String::new(),
+                },
+            )]),
+            order_queue_depths: BTreeMap::new(),
+            source_files: BTreeMap::new(),
+        };
+        let map = MapDef {
+            id: "field".into(),
+            size: MapSize { x: 20.0, y: 20.0 },
+            placements: vec![Placement {
+                unit: worker.to_string(),
+                owner_slot: 0,
+                pos: WorldPos { x: 2.0, y: 2.0 },
+                contents: vec![ItemStack {
+                    item: iron.to_string(),
+                    amount: 4,
+                }],
+                facing: None,
+            }],
+            nodes: vec![],
+            slot_economy: vec![SlotEconomyInit {
+                slot: 0,
+                balances: vec![BalanceAmount {
+                    balance: credits.to_string(),
+                    amount: 20,
+                }],
+            }],
+            belts: vec![],
+        };
+        let staged = turts_sim::stage_package(
+            app.world(),
+            catalog,
+            SourceDef {
+                file: "maps/field.ron".into(),
+                value: map,
+            },
+            20,
+        )
+        .unwrap();
+        turts_sim::install_package(app.world_mut(), staged);
+        let entity = app
+            .world()
+            .iter_entities()
+            .find(|entity| {
+                entity
+                    .get::<turts_sim::UnitId>()
+                    .is_some_and(|id| id.0 == 1)
+            })
+            .unwrap()
+            .id();
+        app.world_mut().entity_mut(entity).insert((
+            turts_sim::world::MoveTarget(bevy::math::Vec2::new(8.0, 8.0)),
+            turts_sim::UnitOrders {
+                current: Some(Order {
+                    order: ContentId::parse("fixture:move").unwrap(),
+                    behaviour: turts_mod_api::Behaviour::Move,
+                    target: OrderTargetSim::Point(bevy::math::Vec2::new(8.0, 8.0)),
+                    group: 1,
+                }),
+                queue: std::collections::VecDeque::from([Order {
+                    order: ContentId::parse("fixture:hold").unwrap(),
+                    behaviour: turts_mod_api::Behaviour::Hold,
+                    target: OrderTargetSim::None,
+                    group: 1,
+                }]),
+                ..Default::default()
+            },
+        ));
+        app.world_mut().resource_mut::<AuditTrail>().enable();
+        let before = turts_sim::audit_state(app.world_mut());
+        let definition = before
+            .catalog
+            .as_ref()
+            .unwrap()
+            .order_definitions
+            .iter()
+            .find(|definition| definition.id == remove)
+            .unwrap();
+        let command = Command {
+            slot: turts_sim::SlotId(0),
+            seq: 1,
+            kind: CommandKind::Order(Box::new(OrderCommand {
+                order: remove,
+                behaviour: turts_mod_api::Behaviour::Remove,
+                target_kind: TargetKind::None,
+                policy: Some(turts_sim::OrderPolicyAudit {
+                    id: definition.id.clone(),
+                    behaviour: definition.behaviour,
+                    target: definition.target,
+                    units: definition.units.clone(),
+                    queue_depth: definition.queue_depth,
+                    unit_capabilities: definition.unit_capabilities.clone(),
+                }),
+                units: vec![1],
+                target: OrderTargetSim::None,
+                queue: QueueMode::Replace,
+                group: 1,
+                allowed_units: definition.units.clone(),
+                queue_depth: definition.queue_depth,
+            })),
+        };
+        let result = turts_sim::apply_command(app.world_mut(), &command);
+        assert!(
+            result.outcome.is_ok(),
+            "Remove must be admitted: {result:?}"
+        );
+        assert_eq!(result.units.accepted, vec![1]);
+        let (commands, operations) = {
+            let mut trail = app.world_mut().resource_mut::<AuditTrail>();
+            (trail.drain_commands(), trail.drain_operations())
+        };
+        assert_eq!(commands.len(), 1);
+        assert_eq!(operations.len(), 1);
+        vec![
+            EconomyLogRecord::Initial(before),
+            EconomyLogRecord::CommandBoundary(commands.into_iter().next().unwrap()),
+            EconomyLogRecord::Operation(operations.into_iter().next().unwrap()),
+        ]
+    }
+
+    fn actual_machine_cancel_order_records(output_blocked: bool) -> Vec<EconomyLogRecord> {
+        use std::collections::BTreeMap;
+        use turts_mod_api::{
+            ContentCatalog, ContentId, Footprint, ItemStack, MapDef, MapSize, OrderDef, PackageId,
+            Placement, ResolvedInventory, ResolvedItemStack, ResolvedMachine, ResolvedRecipe,
+            ResolvedUnit, ResourceDef, ResourceKind, RunRefunds, SourceDef, TargetKind, WorldPos,
+        };
+        use turts_sim::{Command, CommandKind, OrderCommand, OrderTargetSim, QueueMode};
+
+        let mut app = turts_sim::headless_app(20);
+        let package = PackageId::parse("fixture").unwrap();
+        let ore = ContentId::new(&package, "ore");
+        let part = ContentId::new(&package, "part");
+        let machine = ContentId::new(&package, "press");
+        let recipe = ContentId::new(&package, "make_part");
+        let cancel = ContentId::new(&package, "cancel");
+        let ratio = turts_mod_api::RefundRatio {
+            numerator: 1,
+            denominator: 2,
+        };
+        let catalog = ContentCatalog {
+            resources: BTreeMap::from([
+                (
+                    ore.clone(),
+                    ResourceDef {
+                        id: ore.local.clone(),
+                        name: "Ore".into(),
+                        unit_name: "ore".into(),
+                        kind: ResourceKind::Item,
+                    },
+                ),
+                (
+                    part.clone(),
+                    ResourceDef {
+                        id: part.local.clone(),
+                        name: "Part".into(),
+                        unit_name: "part".into(),
+                        kind: ResourceKind::Item,
+                    },
+                ),
+            ]),
+            units: BTreeMap::from([(
+                machine.clone(),
+                ResolvedUnit {
+                    id: machine.clone(),
+                    name: "Press".into(),
+                    footprint: Footprint::Circle { radius: 0.5 },
+                    movement: None,
+                    inventory: Some(ResolvedInventory {
+                        capacity: 8,
+                        accepts: vec![ore.clone()],
+                    }),
+                    gatherer: None,
+                    drop_off: None,
+                    producer: None,
+                    output_inventory: Some(ResolvedInventory {
+                        capacity: 1,
+                        accepts: vec![part.clone()],
+                    }),
+                    extractor: None,
+                    conveyor: None,
+                    inserter: None,
+                    machine: Some(ResolvedMachine {
+                        recipe: recipe.clone(),
+                    }),
+                    research: None,
+                    health: None,
+                    weapon: None,
+                    removal: None,
+                },
+            )]),
+            nodes: BTreeMap::new(),
+            production: BTreeMap::new(),
+            recipes: BTreeMap::from([(
+                recipe.clone(),
+                ResolvedRecipe {
+                    id: recipe.clone(),
+                    name: "Make part".into(),
+                    inputs: vec![ResolvedItemStack {
+                        item: ore.clone(),
+                        amount: 2,
+                    }],
+                    outputs: vec![ResolvedItemStack {
+                        item: part,
+                        amount: 1,
+                    }],
+                    duration_ms: 2_000,
+                    cancel_refunds: RunRefunds {
+                        running: ratio,
+                        output_blocked: ratio,
+                    },
+                },
+            )]),
+            technologies: BTreeMap::new(),
+            orders: BTreeMap::from([(
+                cancel.clone(),
+                OrderDef {
+                    id: cancel.local.clone(),
+                    name: "Cancel".into(),
+                    behaviour: turts_mod_api::Behaviour::CancelProduction,
+                    target: TargetKind::Job,
+                    fire: None,
+                    engage: None,
+                    icon: String::new(),
+                    hotkey: String::new(),
+                    cursor: None,
+                    card: None,
+                    units: vec![],
+                    description: String::new(),
+                },
+            )]),
+            order_queue_depths: BTreeMap::new(),
+            source_files: BTreeMap::new(),
+        };
+        let map = MapDef {
+            id: "field".into(),
+            size: MapSize { x: 20.0, y: 20.0 },
+            placements: vec![Placement {
+                unit: machine.to_string(),
+                owner_slot: 0,
+                pos: WorldPos { x: 2.0, y: 2.0 },
+                contents: vec![ItemStack {
+                    item: ore.to_string(),
+                    amount: 4,
+                }],
+                facing: None,
+            }],
+            nodes: vec![],
+            slot_economy: vec![],
+            belts: vec![],
+        };
+        let staged = turts_sim::stage_package(
+            app.world(),
+            catalog,
+            SourceDef {
+                file: "maps/field.ron".into(),
+                value: map,
+            },
+            20,
+        )
+        .unwrap();
+        turts_sim::install_package(app.world_mut(), staged);
+        app.update();
+        if output_blocked {
+            for _ in 0..100 {
+                app.update();
+                let state = turts_sim::audit_state(app.world_mut());
+                let current_stage = state
+                    .raw_queues
+                    .iter()
+                    .find(|queue| queue.producer == 1)
+                    .and_then(|queue| queue.jobs.first())
+                    .map(|job| job.stage);
+                if current_stage == Some(turts_sim::economy::production::JobStage::OutputBlocked) {
+                    break;
+                }
+            }
+        }
+        app.world_mut().resource_mut::<AuditTrail>().enable();
+        let before = turts_sim::audit_state(app.world_mut());
+        let job = before.raw_queues[0].jobs[0].clone();
+        assert_eq!(
+            job.stage,
+            if output_blocked {
+                turts_sim::economy::production::JobStage::OutputBlocked
+            } else {
+                turts_sim::economy::production::JobStage::Running
+            }
+        );
+        let definition = before
+            .catalog
+            .as_ref()
+            .unwrap()
+            .order_definitions
+            .iter()
+            .find(|definition| definition.id == cancel)
+            .unwrap();
+        let command = Command {
+            slot: turts_sim::SlotId(0),
+            seq: 1,
+            kind: CommandKind::Order(Box::new(OrderCommand {
+                order: cancel,
+                behaviour: turts_mod_api::Behaviour::CancelProduction,
+                target_kind: TargetKind::Job,
+                policy: Some(turts_sim::OrderPolicyAudit {
+                    id: definition.id.clone(),
+                    behaviour: definition.behaviour,
+                    target: definition.target,
+                    units: definition.units.clone(),
+                    queue_depth: definition.queue_depth,
+                    unit_capabilities: definition.unit_capabilities.clone(),
+                }),
+                units: vec![1],
+                target: OrderTargetSim::Job(turts_sim::JobId(job.id)),
+                queue: QueueMode::Replace,
+                group: 1,
+                allowed_units: definition.units.clone(),
+                queue_depth: definition.queue_depth,
+            })),
+        };
+        let result = turts_sim::apply_command(app.world_mut(), &command);
+        assert!(
+            result.outcome.is_ok(),
+            "machine Cancel must be admitted: {result:?}"
+        );
+        assert_eq!(result.units.accepted, vec![1]);
+        let (commands, operations) = {
+            let mut trail = app.world_mut().resource_mut::<AuditTrail>();
+            (trail.drain_commands(), trail.drain_operations())
+        };
+        assert_eq!(commands.len(), 1);
+        assert_eq!(operations.len(), 1);
+        let records = vec![
+            EconomyLogRecord::Initial(before),
+            EconomyLogRecord::CommandBoundary(commands.into_iter().next().unwrap()),
+            EconomyLogRecord::Operation(operations.into_iter().next().unwrap()),
+        ];
+        let (EconomyLogRecord::Initial(before), EconomyLogRecord::Operation(operation)) =
+            (&records[0], &records[2])
+        else {
+            unreachable!()
+        };
+        let refund_amount = operation.events.iter().find_map(|event| match &event.kind {
+            turts_sim::EconomyEventKind::ProductionCancelled { refunded, .. } => {
+                refunded.first().map(|line| line.amount)
+            }
+            _ => None,
+        });
+        assert_eq!(
+            refund_amount,
+            Some(1),
+            "two input items at a half refund return one"
+        );
+        let before_ore = before
+            .economy
+            .inventories
+            .iter()
+            .find(|inventory| inventory.unit == 1)
+            .and_then(|inventory| inventory.items.iter().find(|item| item.resource == ore))
+            .map_or(0, |item| item.on_hand);
+        let after_ore = operation
+            .after
+            .economy
+            .inventories
+            .iter()
+            .find(|inventory| inventory.unit == 1)
+            .and_then(|inventory| inventory.items.iter().find(|item| item.resource == ore))
+            .map_or(0, |item| item.on_hand);
+        assert_eq!(
+            after_ore,
+            before_ore + 1,
+            "machine Cancel credits its real item refund"
+        );
+        records
+    }
+
+    fn actual_reserve_then_charge_order_records() -> Vec<EconomyLogRecord> {
+        use std::collections::BTreeMap;
+        use turts_mod_api::{
+            BalanceAmount, ContentCatalog, ContentId, Footprint, MapDef, MapSize, OrderDef,
+            PackageId, Placement, ResolvedCost, ResolvedProducer, ResolvedProduction, ResolvedUnit,
+            ResourceDef, ResourceKind, SlotEconomyInit, SourceDef, TargetKind, WorldPos,
+        };
+
+        let mut app = turts_sim::headless_app(20);
+        let package = PackageId::parse("fixture").unwrap();
+        let alpha = ContentId::new(&package, "alpha");
+        let zeta = ContentId::new(&package, "zeta");
+        let producer = ContentId::new(&package, "producer");
+        let recipe = ContentId::new(&package, "recipe");
+        let produce = ContentId::new(&package, "produce");
+        let cancel = ContentId::new(&package, "cancel");
+        let refunds = turts_mod_api::CancelRefunds {
+            queued: turts_mod_api::RefundRatio {
+                numerator: 1,
+                denominator: 1,
+            },
+            running: turts_mod_api::RefundRatio {
+                numerator: 1,
+                denominator: 1,
+            },
+            output_blocked: turts_mod_api::RefundRatio {
+                numerator: 1,
+                denominator: 1,
+            },
+        };
+        let catalog = ContentCatalog {
+            resources: BTreeMap::from([
+                (
+                    alpha.clone(),
+                    ResourceDef {
+                        id: alpha.local.clone(),
+                        name: "Alpha".into(),
+                        unit_name: "alpha".into(),
+                        kind: ResourceKind::Balance,
+                    },
+                ),
+                (
+                    zeta.clone(),
+                    ResourceDef {
+                        id: zeta.local.clone(),
+                        name: "Zeta".into(),
+                        unit_name: "zeta".into(),
+                        kind: ResourceKind::Balance,
+                    },
+                ),
+            ]),
+            units: BTreeMap::from([(
+                producer.clone(),
+                ResolvedUnit {
+                    id: producer.clone(),
+                    name: "Producer".into(),
+                    footprint: Footprint::Circle { radius: 0.5 },
+                    movement: None,
+                    inventory: None,
+                    gatherer: None,
+                    drop_off: None,
+                    producer: Some(ResolvedProducer {
+                        recipes: vec![recipe.clone()],
+                        queue_capacity: 2,
+                        spawn_offsets: vec![],
+                    }),
+                    output_inventory: None,
+                    extractor: None,
+                    conveyor: None,
+                    inserter: None,
+                    machine: None,
+                    research: None,
+                    health: None,
+                    weapon: None,
+                    removal: None,
+                },
+            )]),
+            nodes: BTreeMap::new(),
+            production: BTreeMap::from([(
+                recipe.clone(),
+                ResolvedProduction {
+                    id: recipe.clone(),
+                    name: "Recipe".into(),
+                    output_unit: producer.clone(),
+                    duration_ms: 5_000,
+                    costs: vec![
+                        ResolvedCost {
+                            resource: zeta.clone(),
+                            amount: 7,
+                            source: turts_mod_api::CostSource::SlotBalance,
+                        },
+                        ResolvedCost {
+                            resource: alpha.clone(),
+                            amount: 3,
+                            source: turts_mod_api::CostSource::SlotBalance,
+                        },
+                    ],
+                    payment: turts_mod_api::PaymentPolicy::ReserveThenCharge,
+                    cancel_refunds: refunds,
+                },
+            )]),
+            recipes: BTreeMap::new(),
+            technologies: BTreeMap::new(),
+            orders: BTreeMap::from([
+                (
+                    produce.clone(),
+                    OrderDef {
+                        id: produce.local.clone(),
+                        name: "Produce".into(),
+                        behaviour: turts_mod_api::Behaviour::Produce,
+                        target: TargetKind::Content,
+                        fire: None,
+                        engage: None,
+                        icon: String::new(),
+                        hotkey: String::new(),
+                        cursor: None,
+                        card: None,
+                        units: vec![],
+                        description: String::new(),
+                    },
+                ),
+                (
+                    cancel.clone(),
+                    OrderDef {
+                        id: cancel.local.clone(),
+                        name: "Cancel".into(),
+                        behaviour: turts_mod_api::Behaviour::CancelProduction,
+                        target: TargetKind::Job,
+                        fire: None,
+                        engage: None,
+                        icon: String::new(),
+                        hotkey: String::new(),
+                        cursor: None,
+                        card: None,
+                        units: vec![],
+                        description: String::new(),
+                    },
+                ),
+            ]),
+            order_queue_depths: BTreeMap::new(),
+            source_files: BTreeMap::new(),
+        };
+        let map = MapDef {
+            id: "field".into(),
+            size: MapSize { x: 20.0, y: 20.0 },
+            placements: vec![Placement {
+                unit: producer.to_string(),
+                owner_slot: 0,
+                pos: WorldPos { x: 2.0, y: 2.0 },
+                contents: vec![],
+                facing: None,
+            }],
+            nodes: vec![],
+            slot_economy: vec![SlotEconomyInit {
+                slot: 0,
+                balances: vec![
+                    BalanceAmount {
+                        balance: alpha.to_string(),
+                        amount: 100,
+                    },
+                    BalanceAmount {
+                        balance: zeta.to_string(),
+                        amount: 100,
+                    },
+                ],
+            }],
+            belts: vec![],
+        };
+        let staged = turts_sim::stage_package(
+            app.world(),
+            catalog,
+            SourceDef {
+                file: "maps/field.ron".into(),
+                value: map,
+            },
+            20,
+        )
+        .unwrap();
+        turts_sim::install_package(app.world_mut(), staged);
+        app.world_mut().resource_mut::<AuditTrail>().enable();
+        let initial = turts_sim::audit_state(app.world_mut());
+        let mut records = vec![EconomyLogRecord::Initial(initial.clone())];
+        let produce_command = recorded_order_command(
+            &initial,
+            "fixture:produce",
+            turts_mod_api::Behaviour::Produce,
+            TargetKind::Content,
+            turts_sim::OrderTargetSim::Content(recipe),
+            1,
+            1,
+        );
+        let produced = capture_order_records(&mut app, &mut records, produce_command);
+        let job = produced.outcome.unwrap().job_id.unwrap();
+        let after_produce = turts_sim::audit_state(app.world_mut());
+        let raw_job = after_produce
+            .raw_queues
+            .iter()
+            .find(|queue| queue.producer == 1)
+            .unwrap()
+            .jobs
+            .first()
+            .unwrap();
+        assert_eq!(
+            raw_job
+                .reservation
+                .as_ref()
+                .unwrap()
+                .lines
+                .iter()
+                .map(|line| line.resource.to_string())
+                .collect::<Vec<_>>(),
+            vec!["fixture:alpha", "fixture:zeta"]
+        );
+        assert_eq!(
+            after_produce
+                .ledger_claims
+                .iter()
+                .find_map(|claim| match claim {
+                    turts_sim::ReservationClaimView::Active {
+                        map_job_id, lines, ..
+                    } if *map_job_id == job.0 => Some(
+                        lines
+                            .iter()
+                            .map(|line| line.resource.to_string())
+                            .collect::<Vec<_>>()
+                    ),
+                    _ => None,
+                })
+                .unwrap(),
+            vec!["fixture:alpha", "fixture:zeta"]
+        );
+        let cancel_command = recorded_order_command(
+            &after_produce,
+            "fixture:cancel",
+            turts_mod_api::Behaviour::CancelProduction,
+            TargetKind::Job,
+            turts_sim::OrderTargetSim::Job(job),
+            1,
+            2,
+        );
+        let cancelled = capture_order_records(&mut app, &mut records, cancel_command);
+        assert_eq!(cancelled.units.accepted, vec![1]);
+        records
+    }
+
+    fn extractor_app() -> bevy_app::App {
+        use std::collections::BTreeMap;
+        use turts_mod_api::{
+            ContentCatalog, ContentId, ExtractorDef, Footprint, MapDef, MapSize, NodePlacement,
+            OrderDef, PackageId, Placement, ResolvedInventory, ResolvedNode, ResolvedUnit,
+            ResourceDef, ResourceKind, SourceDef, TargetKind, WorldPos,
+        };
+
+        let package = PackageId::parse("fixture").unwrap();
+        let ore = ContentId::new(&package, "ore");
+        let deposit = ContentId::new(&package, "deposit");
+        let drill = ContentId::new(&package, "drill");
+        let enable = ContentId::new(&package, "enable");
+        let disable = ContentId::new(&package, "disable");
+        let catalog = ContentCatalog {
+            resources: BTreeMap::from([(
+                ore.clone(),
+                ResourceDef {
+                    id: ore.local.clone(),
+                    name: "Ore".into(),
+                    unit_name: "ore".into(),
+                    kind: ResourceKind::Item,
+                },
+            )]),
+            units: BTreeMap::from([(
+                drill.clone(),
+                ResolvedUnit {
+                    id: drill.clone(),
+                    name: "Drill".into(),
+                    footprint: Footprint::Circle { radius: 0.5 },
+                    movement: None,
+                    inventory: Some(ResolvedInventory {
+                        capacity: 10,
+                        accepts: vec![ore.clone()],
+                    }),
+                    gatherer: None,
+                    drop_off: None,
+                    producer: None,
+                    output_inventory: None,
+                    extractor: Some(ExtractorDef {
+                        per_second: 1,
+                        interaction_range: 5.0,
+                    }),
+                    conveyor: None,
+                    inserter: None,
+                    machine: None,
+                    research: None,
+                    health: None,
+                    weapon: None,
+                    removal: None,
+                },
+            )]),
+            nodes: BTreeMap::from([(
+                deposit.clone(),
+                ResolvedNode {
+                    id: deposit.clone(),
+                    name: "Deposit".into(),
+                    item: ore.clone(),
+                    radius: 1.0,
+                },
+            )]),
+            production: BTreeMap::new(),
+            recipes: BTreeMap::new(),
+            technologies: BTreeMap::new(),
+            orders: BTreeMap::from([
+                (
+                    enable.clone(),
+                    OrderDef {
+                        id: enable.local.clone(),
+                        name: "Enable".into(),
+                        behaviour: turts_mod_api::Behaviour::SetEnabled(true),
+                        target: TargetKind::None,
+                        fire: None,
+                        engage: None,
+                        icon: String::new(),
+                        hotkey: String::new(),
+                        cursor: None,
+                        card: None,
+                        units: vec![],
+                        description: String::new(),
+                    },
+                ),
+                (
+                    disable.clone(),
+                    OrderDef {
+                        id: disable.local.clone(),
+                        name: "Disable".into(),
+                        behaviour: turts_mod_api::Behaviour::SetEnabled(false),
+                        target: TargetKind::None,
+                        fire: None,
+                        engage: None,
+                        icon: String::new(),
+                        hotkey: String::new(),
+                        cursor: None,
+                        card: None,
+                        units: vec![],
+                        description: String::new(),
+                    },
+                ),
+            ]),
+            order_queue_depths: BTreeMap::new(),
+            source_files: BTreeMap::new(),
+        };
+        let map = MapDef {
+            id: "field".into(),
+            size: MapSize { x: 20.0, y: 20.0 },
+            placements: vec![Placement {
+                unit: drill.to_string(),
+                owner_slot: 0,
+                pos: WorldPos { x: 2.0, y: 2.0 },
+                contents: vec![],
+                facing: None,
+            }],
+            nodes: vec![NodePlacement {
+                node: deposit.to_string(),
+                pos: WorldPos { x: 4.0, y: 2.0 },
+                remaining: 10,
+            }],
+            slot_economy: vec![],
+            belts: vec![],
+        };
+        let mut app = turts_sim::headless_app(20);
+        let staged = turts_sim::stage_package(
+            app.world(),
+            catalog,
+            SourceDef {
+                file: "maps/field.ron".into(),
+                value: map,
+            },
+            20,
+        )
+        .unwrap();
+        turts_sim::install_package(app.world_mut(), staged);
+        app
+    }
+
+    fn research_app(
+        balance: u64,
+        payment: turts_mod_api::PaymentPolicy,
+        enabled: bool,
+        prerequisites: Vec<turts_mod_api::ContentId>,
+    ) -> bevy_app::App {
+        use std::collections::BTreeMap;
+        use turts_mod_api::{
+            BalanceAmount, ContentCatalog, ContentId, ContentRef, Footprint, MapDef, MapSize,
+            OrderDef, PackageId, Placement, RefundRatio, ResolvedCost, ResolvedResearchStation,
+            ResolvedTechnology, ResolvedUnit, ResourceDef, ResourceKind, SlotEconomyInit,
+            SourceDef, TargetKind, WorldPos,
+        };
+
+        let package = PackageId::parse("fixture").unwrap();
+        let credits = ContentId::new(&package, "credits");
+        let lab = ContentId::new(&package, "lab");
+        let technology = ContentId::new(&package, "theory");
+        let produce = ContentId::new(&package, "order_research");
+        let cancel = ContentId::new(&package, "order_cancel");
+        let enable = ContentId::new(&package, "order_enable");
+        let disable = ContentId::new(&package, "order_disable");
+        let enabled_technologies = enabled.then_some(technology.clone()).into_iter().collect();
+        let ratio = RefundRatio {
+            numerator: 1,
+            denominator: 2,
+        };
+        let catalog = ContentCatalog {
+            resources: BTreeMap::from([(
+                credits.clone(),
+                ResourceDef {
+                    id: credits.local.clone(),
+                    name: "Credits".into(),
+                    unit_name: "credits".into(),
+                    kind: ResourceKind::Balance,
+                },
+            )]),
+            units: BTreeMap::from([(
+                lab.clone(),
+                ResolvedUnit {
+                    id: lab.clone(),
+                    name: "Lab".into(),
+                    footprint: Footprint::Circle { radius: 0.5 },
+                    movement: None,
+                    inventory: None,
+                    gatherer: None,
+                    drop_off: None,
+                    producer: None,
+                    output_inventory: None,
+                    extractor: None,
+                    conveyor: None,
+                    inserter: None,
+                    machine: None,
+                    research: Some(ResolvedResearchStation {
+                        technologies: enabled_technologies,
+                        queue_capacity: 2,
+                    }),
+                    health: None,
+                    weapon: None,
+                    removal: None,
+                },
+            )]),
+            nodes: BTreeMap::new(),
+            production: BTreeMap::new(),
+            recipes: BTreeMap::new(),
+            technologies: BTreeMap::from([(
+                technology.clone(),
+                ResolvedTechnology {
+                    id: technology.clone(),
+                    name: "Theory".into(),
+                    prerequisites,
+                    duration_ms: 2_000,
+                    costs: vec![ResolvedCost {
+                        resource: credits.clone(),
+                        amount: 5,
+                        source: turts_mod_api::CostSource::SlotBalance,
+                    }],
+                    payment,
+                    cancel_refunds: turts_mod_api::CancelRefunds {
+                        queued: ratio,
+                        running: ratio,
+                        output_blocked: ratio,
+                    },
+                    effects: vec![],
+                },
+            )]),
+            orders: BTreeMap::from([
+                (
+                    produce.clone(),
+                    OrderDef {
+                        id: produce.local.clone(),
+                        name: "Research".into(),
+                        behaviour: turts_mod_api::Behaviour::Produce,
+                        target: TargetKind::Content,
+                        fire: None,
+                        engage: None,
+                        icon: String::new(),
+                        hotkey: String::new(),
+                        cursor: None,
+                        card: None,
+                        units: Vec::<ContentRef>::new(),
+                        description: String::new(),
+                    },
+                ),
+                (
+                    cancel.clone(),
+                    OrderDef {
+                        id: cancel.local.clone(),
+                        name: "Cancel research".into(),
+                        behaviour: turts_mod_api::Behaviour::CancelProduction,
+                        target: TargetKind::Job,
+                        fire: None,
+                        engage: None,
+                        icon: String::new(),
+                        hotkey: String::new(),
+                        cursor: None,
+                        card: None,
+                        units: Vec::<ContentRef>::new(),
+                        description: String::new(),
+                    },
+                ),
+                (
+                    enable.clone(),
+                    OrderDef {
+                        id: enable.local.clone(),
+                        name: "Enable station".into(),
+                        behaviour: turts_mod_api::Behaviour::SetEnabled(true),
+                        target: TargetKind::None,
+                        fire: None,
+                        engage: None,
+                        icon: String::new(),
+                        hotkey: String::new(),
+                        cursor: None,
+                        card: None,
+                        units: vec![],
+                        description: String::new(),
+                    },
+                ),
+                (
+                    disable.clone(),
+                    OrderDef {
+                        id: disable.local.clone(),
+                        name: "Disable station".into(),
+                        behaviour: turts_mod_api::Behaviour::SetEnabled(false),
+                        target: TargetKind::None,
+                        fire: None,
+                        engage: None,
+                        icon: String::new(),
+                        hotkey: String::new(),
+                        cursor: None,
+                        card: None,
+                        units: vec![],
+                        description: String::new(),
+                    },
+                ),
+            ]),
+            order_queue_depths: BTreeMap::new(),
+            source_files: BTreeMap::new(),
+        };
+        let map = MapDef {
+            id: "field".into(),
+            size: MapSize { x: 20.0, y: 20.0 },
+            placements: vec![
+                Placement {
+                    unit: lab.to_string(),
+                    owner_slot: 0,
+                    pos: WorldPos { x: 2.0, y: 2.0 },
+                    contents: vec![],
+                    facing: None,
+                },
+                Placement {
+                    unit: lab.to_string(),
+                    owner_slot: 0,
+                    pos: WorldPos { x: 5.0, y: 2.0 },
+                    contents: vec![],
+                    facing: None,
+                },
+            ],
+            nodes: vec![],
+            slot_economy: vec![SlotEconomyInit {
+                slot: 0,
+                balances: vec![BalanceAmount {
+                    balance: credits.to_string(),
+                    amount: balance,
+                }],
+            }],
+            belts: vec![],
+        };
+        let mut app = turts_sim::headless_app(20);
+        let staged = turts_sim::stage_package(
+            app.world(),
+            catalog,
+            SourceDef {
+                file: "maps/field.ron".into(),
+                value: map,
+            },
+            20,
+        )
+        .unwrap();
+        turts_sim::install_package(app.world_mut(), staged);
+        app
+    }
+
+    fn recorded_order_command(
+        state: &AuditState,
+        order_id: &str,
+        behaviour: turts_mod_api::Behaviour,
+        target_kind: turts_mod_api::TargetKind,
+        target: turts_sim::OrderTargetSim,
+        unit: u32,
+        seq: u32,
+    ) -> turts_sim::Command {
+        let order_id = turts_mod_api::ContentId::parse(order_id).unwrap();
+        let definition = state
+            .catalog
+            .as_ref()
+            .unwrap()
+            .order_definitions
+            .iter()
+            .find(|definition| definition.id == order_id)
+            .unwrap();
+        turts_sim::Command {
+            slot: turts_sim::SlotId(0),
+            seq,
+            kind: turts_sim::CommandKind::Order(Box::new(turts_sim::OrderCommand {
+                order: order_id,
+                behaviour,
+                target_kind,
+                policy: Some(turts_sim::OrderPolicyAudit {
+                    id: definition.id.clone(),
+                    behaviour: definition.behaviour,
+                    target: definition.target,
+                    units: definition.units.clone(),
+                    queue_depth: definition.queue_depth,
+                    unit_capabilities: definition.unit_capabilities.clone(),
+                }),
+                units: vec![unit],
+                target,
+                queue: turts_sim::QueueMode::Replace,
+                group: 1,
+                allowed_units: definition.units.clone(),
+                queue_depth: definition.queue_depth,
+            })),
+        }
+    }
+
+    fn capture_order_records(
+        app: &mut bevy_app::App,
+        records: &mut Vec<EconomyLogRecord>,
+        command: turts_sim::Command,
+    ) -> turts_sim::CommandResult {
+        let result = turts_sim::apply_command(app.world_mut(), &command);
+        let (commands, operations) = {
+            let mut trail = app.world_mut().resource_mut::<AuditTrail>();
+            (trail.drain_commands(), trail.drain_operations())
+        };
+        records.extend(commands.into_iter().map(EconomyLogRecord::CommandBoundary));
+        records.extend(operations.into_iter().map(EconomyLogRecord::Operation));
+        result
+    }
+
     #[test]
     fn validator_rejects_a_move_order_that_teleports_its_actor() {
         let mut records = valid_point_move_records();
@@ -4153,6 +5968,8 @@ mod tests {
                 id: turts_mod_api::ContentId::parse("fixture:walker").unwrap(),
                 radius: 0.5,
                 movement_speed: Some(3.0),
+                removal: None,
+                machine_recipe: None,
                 inventory: None,
                 gatherer: Some(CatalogGathererAudit {
                     items: vec![item.clone()],
@@ -4285,6 +6102,7 @@ mod tests {
                 ..Default::default()
             },
             &[(2, bevy::math::Vec2::new(5.0, 2.0))],
+            None,
         );
         assert_eq!(
             follow_records
@@ -4316,6 +6134,7 @@ mod tests {
                 ..Default::default()
             },
             &[],
+            None,
         );
         assert_eq!(
             queued_records
@@ -4328,6 +6147,104 @@ mod tests {
         assert!(
             validate_records(&queued_records).is_ok(),
             "the actual TargetGone failure, queue continuation and movement tick validate"
+        );
+    }
+
+    #[test]
+    fn validator_models_group_zero_unit_move_as_tracked_replacement() {
+        use turts_sim::{CommandKind, OrderCommand, OrderTargetSim, QueueMode};
+
+        let move_id = turts_mod_api::ContentId::parse("fixture:move").unwrap();
+        let command = turts_sim::Command {
+            slot: turts_sim::SlotId(0),
+            seq: 1,
+            kind: CommandKind::Order(Box::new(OrderCommand {
+                order: move_id.clone(),
+                behaviour: turts_mod_api::Behaviour::Move,
+                units: vec![1],
+                target_kind: turts_mod_api::TargetKind::PointOrUnit,
+                policy: Some(turts_sim::OrderPolicyAudit {
+                    id: move_id,
+                    behaviour: turts_mod_api::Behaviour::Move,
+                    target: turts_mod_api::TargetKind::PointOrUnit,
+                    units: vec![],
+                    queue_depth: 16,
+                    unit_capabilities: vec![turts_sim::OrderUnitCapabilitiesAudit {
+                        unit: "fixture:walker".into(),
+                        movement: true,
+                        weapon: false,
+                        gatherer: false,
+                        producer: false,
+                        research: false,
+                        removable: false,
+                        toggleable: false,
+                    }],
+                }),
+                target: OrderTargetSim::Unit(2),
+                queue: QueueMode::Replace,
+                group: 0,
+                allowed_units: vec![],
+                queue_depth: 16,
+            })),
+        };
+        let records = automatic_move_log(
+            turts_sim::UnitOrders {
+                current: Some(turts_sim::Order {
+                    order: turts_mod_api::ContentId::parse("fixture:move").unwrap(),
+                    behaviour: turts_mod_api::Behaviour::Move,
+                    target: OrderTargetSim::Point(bevy::math::Vec2::new(7.0, 2.0)),
+                    group: 1,
+                }),
+                queue: std::collections::VecDeque::from([turts_sim::Order {
+                    order: turts_mod_api::ContentId::parse("fixture:move").unwrap(),
+                    behaviour: turts_mod_api::Behaviour::Move,
+                    target: OrderTargetSim::Point(bevy::math::Vec2::new(8.0, 2.0)),
+                    group: 1,
+                }]),
+                ..Default::default()
+            },
+            &[(2, bevy::math::Vec2::new(10.0, 2.0))],
+            Some(command),
+        );
+        assert!(
+            validate_records(&records).is_ok(),
+            "group-zero Move(Unit) must replace prior state with tracked follow behavior: {:?}",
+            validate_records(&records).err()
+        );
+
+        let mut forged = records;
+        let forged_after = {
+            let order_operation = forged
+                .iter_mut()
+                .find_map(|record| match record {
+                    EconomyLogRecord::Operation(operation)
+                        if operation.phase
+                            == turts_sim::economy::transaction::AuditPhase::Orders
+                            && operation.unit_id == Some(1) =>
+                    {
+                        Some(operation)
+                    }
+                    _ => None,
+                })
+                .unwrap();
+            order_operation
+                .after
+                .unit_orders
+                .iter_mut()
+                .find(|orders| orders.unit_id == 1)
+                .unwrap()
+                .orders = Default::default();
+            order_operation.after.clone()
+        };
+        if let Some(boundary) = forged.iter_mut().find_map(|record| match record {
+            EconomyLogRecord::CommandBoundary(boundary) => Some(boundary),
+            _ => None,
+        }) {
+            boundary.after = forged_after;
+        }
+        assert!(
+            validate_records(&forged).is_err(),
+            "group-zero Move(Unit) cannot discard its tracked follow state"
         );
     }
 
@@ -4615,6 +6532,943 @@ mod tests {
     }
 
     #[test]
+    fn validator_accepts_repeated_catalog_order_filter_entries() {
+        let mut records = valid_point_move_records();
+        assert!(
+            validate_records(&records).is_ok(),
+            "ordinary catalog-backed order must validate"
+        );
+        let duplicate_unit = "fixture:walker".to_owned();
+        for record in &mut records {
+            match record {
+                EconomyLogRecord::Initial(state) => {
+                    let definition = &mut state.catalog.as_mut().unwrap().order_definitions[0];
+                    definition
+                        .units
+                        .extend([duplicate_unit.clone(), duplicate_unit.clone()]);
+                }
+                EconomyLogRecord::CommandBoundary(command) => {
+                    for state in [&mut command.before, &mut command.after] {
+                        let definition = &mut state.catalog.as_mut().unwrap().order_definitions[0];
+                        definition
+                            .units
+                            .extend([duplicate_unit.clone(), duplicate_unit.clone()]);
+                    }
+                    let turts_sim::CommandKind::Order(order) = &mut command.input.kind else {
+                        unreachable!();
+                    };
+                    order.allowed_units = vec![duplicate_unit.clone(), duplicate_unit.clone()];
+                    let policy = order.policy.as_mut().unwrap();
+                    policy.units = order.allowed_units.clone();
+                }
+                EconomyLogRecord::Operation(operation) => {
+                    for state in [&mut operation.before, &mut operation.after] {
+                        let definition = &mut state.catalog.as_mut().unwrap().order_definitions[0];
+                        definition
+                            .units
+                            .extend([duplicate_unit.clone(), duplicate_unit.clone()]);
+                    }
+                }
+                _ => {}
+            }
+        }
+        let validation = validate_records(&records);
+        assert!(
+            validation.is_ok(),
+            "repeated unit filter entries are valid and have membership semantics: {:?}",
+            validation.err()
+        );
+
+        if let EconomyLogRecord::CommandBoundary(command) = &mut records[1]
+            && let turts_sim::CommandKind::Order(order) = &mut command.input.kind
+        {
+            order.units.push(order.units[0]);
+        }
+        assert!(
+            validate_records(&records)
+                .unwrap_err()
+                .contains("duplicate order envelope has nonempty results or wrong outcome"),
+            "duplicate command subjects remain invalid even with a repeated catalog filter"
+        );
+    }
+
+    #[test]
+    fn validator_models_material_bearing_remove_and_rejects_state_event_corruption() {
+        let records = actual_remove_order_records();
+        let EconomyLogRecord::Initial(initial) = &records[0] else {
+            unreachable!();
+        };
+        assert_eq!(
+            initial
+                .unit_orders
+                .iter()
+                .find(|orders| orders.unit_id == 1)
+                .unwrap()
+                .orders
+                .queue
+                .len(),
+            1,
+            "captured Remove starts with a current and queued order"
+        );
+        assert!(
+            initial
+                .economy
+                .inventories
+                .iter()
+                .find(|inventory| inventory.unit == 1)
+                .unwrap()
+                .items
+                .iter()
+                .any(|item| item.on_hand == 4),
+            "captured Remove starts with destroyable inventory contents"
+        );
+        let validation = validate_records(&records);
+        assert!(
+            validation.is_ok(),
+            "genuine captured Remove with current/queue and materials must validate: {:?}",
+            validation.err()
+        );
+
+        let mut forged_capability = actual_remove_order_records();
+        for record in &mut forged_capability {
+            match record {
+                EconomyLogRecord::Initial(state) => {
+                    state.catalog.as_mut().unwrap().order_definitions[0].unit_capabilities[0]
+                        .removable = false;
+                }
+                EconomyLogRecord::CommandBoundary(command) => {
+                    for state in [&mut command.before, &mut command.after] {
+                        state.catalog.as_mut().unwrap().order_definitions[0].unit_capabilities[0]
+                            .removable = false;
+                    }
+                    if let turts_sim::CommandKind::Order(order) = &mut command.input.kind {
+                        order.policy.as_mut().unwrap().unit_capabilities[0].removable = false;
+                    }
+                }
+                EconomyLogRecord::Operation(operation) => {
+                    for state in [&mut operation.before, &mut operation.after] {
+                        state.catalog.as_mut().unwrap().order_definitions[0].unit_capabilities[0]
+                            .removable = false;
+                    }
+                }
+                _ => {}
+            }
+        }
+        assert!(
+            validate_records(&forged_capability)
+                .unwrap_err()
+                .contains("Remove capability inconsistent with loaded unit policy"),
+            "joint catalog/policy edits cannot contradict the captured RemovalDef"
+        );
+
+        let mut forged_balance = records.clone();
+        for record in &mut forged_balance {
+            match record {
+                EconomyLogRecord::CommandBoundary(command) => {
+                    command.after.economy.balances[0].on_hand += 1;
+                }
+                EconomyLogRecord::Operation(operation) => {
+                    operation.after.economy.balances[0].on_hand += 1;
+                }
+                _ => {}
+            }
+        }
+        assert!(
+            validate_records(&forged_balance)
+                .unwrap_err()
+                .contains("Remove changed state outside its catalog-derived destruction delta"),
+            "Remove cannot forge an unrelated balance change"
+        );
+
+        let mut forged_inventory = records.clone();
+        for record in &mut forged_inventory {
+            let state = match record {
+                EconomyLogRecord::CommandBoundary(command) => Some(&mut command.after),
+                EconomyLogRecord::Operation(operation) => Some(&mut operation.after),
+                _ => None,
+            };
+            if let Some(state) = state {
+                state
+                    .raw_inventories
+                    .push(turts_sim::economy::views::RawInventoryAudit {
+                        unit: 99,
+                        capacity: 1,
+                        accepted_items: vec![],
+                    });
+            }
+        }
+        assert!(
+            validate_records(&forged_inventory)
+                .unwrap_err()
+                .contains("Remove changed state outside its catalog-derived destruction delta"),
+            "Remove cannot forge an unrelated inventory row"
+        );
+
+        let mut forged_event = records;
+        if let EconomyLogRecord::Operation(operation) = &mut forged_event[2]
+            && let turts_sim::EconomyEventKind::Destroyed { items, .. } =
+                &mut operation.events[0].kind
+        {
+            items[0].amount += 1;
+        }
+        let event_error = validate_records(&forged_event).unwrap_err();
+        assert!(
+            event_error.contains("operation 1 event contribution differs from its after state"),
+            "Remove must report exactly the destroyed materials: {event_error}"
+        );
+    }
+
+    #[test]
+    fn validator_models_remove_clearing_cross_unit_references() {
+        use turts_sim::economy::gather::GatherStage;
+        use turts_sim::economy::views::{RawOrderAudit, UnitView};
+        use turts_sim::economy::views_m3::{RawWeaponAudit, RawWeaponStatusAudit};
+
+        fn add_dependent_unit(state: &mut AuditState, active_links: bool) {
+            state.raw_units.push(RawUnitAudit {
+                unit_id: 2,
+                owner_slot: 0,
+                unit_type: 1,
+                pos: WorldPos { x: 6.0, y: 2.0 },
+                move_target: None,
+            });
+            state.raw_units.sort_by_key(|unit| unit.unit_id);
+            state.unit_types.push(turts_sim::UnitTypeView {
+                type_id: 1,
+                content_id: "fixture:weapon".into(),
+                movement_speed: None,
+                radius: 0.5,
+            });
+            let catalog_unit = turts_sim::economy::views::CatalogUnitAudit {
+                id: turts_mod_api::ContentId::parse("fixture:weapon").unwrap(),
+                radius: 0.5,
+                movement_speed: None,
+                removal: None,
+                machine_recipe: None,
+                inventory: None,
+                gatherer: None,
+                drop_off: vec![],
+                producer: None,
+                research: None,
+            };
+            let catalog = state.catalog.as_mut().unwrap();
+            catalog.units.push(catalog_unit);
+            catalog.units.sort_by(|left, right| left.id.cmp(&right.id));
+            state.units.push(UnitView {
+                unit_id: 2,
+                content_id: "fixture:weapon".into(),
+                owner_slot: 0,
+                pos: WorldPos { x: 6.0, y: 2.0 },
+            });
+            state.units.sort_by_key(|unit| unit.unit_id);
+            state.economy.units.push(turts_sim::world::UnitState {
+                unit_id: 2,
+                content_id: "fixture:weapon".into(),
+                owner_slot: 0,
+                facing: None,
+                pos: bevy::math::Vec2::new(6.0, 2.0),
+            });
+            state.economy.units.sort_by_key(|unit| unit.unit_id);
+            let receiver = active_links.then_some(1);
+            state.raw_orders.push(RawOrderAudit {
+                unit: 2,
+                node: None,
+                deposit: None,
+                receiver,
+                stage: GatherStage::Idle,
+                rate_carry: 0,
+            });
+            state.economy.orders.push(turts_sim::OrderView {
+                unit: 2,
+                owner_slot: 0,
+                node: None,
+                receiver,
+                stage: GatherStage::Idle,
+            });
+            state.economy.orders.sort_by_key(|order| order.unit);
+            state.raw_weapons.push(RawWeaponAudit {
+                unit: 2,
+                enabled: true,
+                cooldown: 0,
+                effective_damage: Ok(5),
+                status: RawWeaponStatusAudit::Ready,
+                last_target: active_links.then_some(1),
+            });
+            state.raw_weapons.sort_by_key(|weapon| weapon.unit);
+            state.economy.m3.raw_weapons = state.raw_weapons.clone();
+        }
+
+        fn set_dependent_links(state: &mut AuditState, active_links: bool) {
+            let link = active_links.then_some(1);
+            let order = state
+                .raw_orders
+                .iter_mut()
+                .find(|order| order.unit == 2)
+                .unwrap();
+            order.receiver = link;
+            let order = state
+                .economy
+                .orders
+                .iter_mut()
+                .find(|order| order.unit == 2)
+                .unwrap();
+            order.receiver = link;
+            let weapon = state
+                .raw_weapons
+                .iter_mut()
+                .find(|weapon| weapon.unit == 2)
+                .unwrap();
+            weapon.last_target = link;
+            state.economy.m3.raw_weapons = state.raw_weapons.clone();
+        }
+
+        let mut records = actual_remove_order_records();
+        for record in &mut records {
+            match record {
+                EconomyLogRecord::Initial(state) => add_dependent_unit(state, true),
+                EconomyLogRecord::CommandBoundary(command) => {
+                    add_dependent_unit(&mut command.before, true);
+                    add_dependent_unit(&mut command.after, false);
+                }
+                EconomyLogRecord::Operation(operation) => {
+                    add_dependent_unit(&mut operation.before, true);
+                    add_dependent_unit(&mut operation.after, false);
+                }
+                _ => {}
+            }
+        }
+        assert!(
+            validate_records(&records).is_ok(),
+            "Remove must clear a gather receiver and weapon target that point at the removed unit: {:?}",
+            validate_records(&records).err()
+        );
+
+        let mut retained_links = records.clone();
+        for record in &mut retained_links {
+            match record {
+                EconomyLogRecord::CommandBoundary(command) => {
+                    set_dependent_links(&mut command.after, true)
+                }
+                EconomyLogRecord::Operation(operation) => {
+                    set_dependent_links(&mut operation.after, true)
+                }
+                _ => {}
+            }
+        }
+        assert!(
+            validate_records(&retained_links)
+                .unwrap_err()
+                .contains("Remove changed state outside its catalog-derived destruction delta"),
+            "accepted Remove cannot retain cross-unit receiver/target references"
+        );
+    }
+
+    #[test]
+    fn validator_replays_machine_cancel_in_running_and_output_blocked_stages() {
+        for output_blocked in [false, true] {
+            let records = actual_machine_cancel_order_records(output_blocked);
+            assert!(
+                validate_records(&records).is_ok(),
+                "machine Cancel at {:?} must match item-recipe refund policy: {:?}",
+                if output_blocked {
+                    "output-blocked"
+                } else {
+                    "running"
+                },
+                validate_records(&records).err()
+            );
+            if !output_blocked {
+                let mut missing_refund = records.clone();
+                let before_ore = match &missing_refund[2] {
+                    EconomyLogRecord::Operation(operation) => operation
+                        .before
+                        .economy
+                        .inventories
+                        .iter()
+                        .find(|inventory| inventory.unit == 1)
+                        .and_then(|inventory| {
+                            inventory.items.iter().find(|item| {
+                                item.resource
+                                    == turts_mod_api::ContentId::parse("fixture:ore").unwrap()
+                            })
+                        })
+                        .map_or(0, |item| item.on_hand),
+                    _ => unreachable!(),
+                };
+                for record in &mut missing_refund {
+                    match record {
+                        EconomyLogRecord::CommandBoundary(boundary) => {
+                            if let Some(inventory) = boundary
+                                .after
+                                .economy
+                                .inventories
+                                .iter_mut()
+                                .find(|inventory| inventory.unit == 1)
+                            {
+                                if let Some(item) = inventory.items.iter_mut().find(|item| {
+                                    item.resource
+                                        == turts_mod_api::ContentId::parse("fixture:ore").unwrap()
+                                }) {
+                                    item.on_hand = before_ore;
+                                }
+                            }
+                        }
+                        EconomyLogRecord::Operation(operation) => {
+                            if let Some(inventory) = operation
+                                .after
+                                .economy
+                                .inventories
+                                .iter_mut()
+                                .find(|inventory| inventory.unit == 1)
+                            {
+                                if let Some(item) = inventory.items.iter_mut().find(|item| {
+                                    item.resource
+                                        == turts_mod_api::ContentId::parse("fixture:ore").unwrap()
+                                }) {
+                                    item.on_hand = before_ore;
+                                }
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                assert!(
+                    validate_records(&missing_refund).is_err(),
+                    "machine Cancel cannot report a nonzero refund without crediting ore"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn validator_replays_research_produce_cancel_for_both_payment_policies() {
+        for payment in [
+            turts_mod_api::PaymentPolicy::ChargeOnQueue,
+            turts_mod_api::PaymentPolicy::ReserveThenCharge,
+        ] {
+            let mut app = research_app(100, payment, true, vec![]);
+            app.world_mut().resource_mut::<AuditTrail>().enable();
+            let initial = turts_sim::audit_state(app.world_mut());
+            let mut records = vec![EconomyLogRecord::Initial(initial.clone())];
+
+            let produce = recorded_order_command(
+                &initial,
+                "fixture:order_research",
+                turts_mod_api::Behaviour::Produce,
+                turts_mod_api::TargetKind::Content,
+                turts_sim::OrderTargetSim::Content(
+                    turts_mod_api::ContentId::parse("fixture:theory").unwrap(),
+                ),
+                1,
+                1,
+            );
+            let produced = capture_order_records(&mut app, &mut records, produce);
+            let job = produced
+                .outcome
+                .expect("accepted research Produce outcome")
+                .job_id
+                .expect("accepted research Produce returns its job ID");
+            assert_eq!(produced.units.accepted, vec![1]);
+
+            let current = turts_sim::audit_state(app.world_mut());
+            let cancel = recorded_order_command(
+                &current,
+                "fixture:order_cancel",
+                turts_mod_api::Behaviour::CancelProduction,
+                turts_mod_api::TargetKind::Job,
+                turts_sim::OrderTargetSim::Job(job),
+                1,
+                2,
+            );
+            let canceled = capture_order_records(&mut app, &mut records, cancel);
+            assert_eq!(canceled.units.accepted, vec![1]);
+            assert!(
+                validate_records(&records).is_ok(),
+                "captured research Produce->Cancel must replay for {payment:?}: {:?}",
+                validate_records(&records).err()
+            );
+        }
+    }
+
+    #[test]
+    fn validator_replays_research_refusal_priority_across_stations() {
+        let payment = turts_mod_api::PaymentPolicy::ChargeOnQueue;
+        let mut app = research_app(100, payment, false, vec![]);
+        app.world_mut().resource_mut::<AuditTrail>().enable();
+        let initial = turts_sim::audit_state(app.world_mut());
+        let mut records = vec![EconomyLogRecord::Initial(initial.clone())];
+        let not_enabled = recorded_order_command(
+            &initial,
+            "fixture:order_research",
+            turts_mod_api::Behaviour::Produce,
+            turts_mod_api::TargetKind::Content,
+            turts_sim::OrderTargetSim::Content(
+                turts_mod_api::ContentId::parse("fixture:ghost").unwrap(),
+            ),
+            1,
+            1,
+        );
+        let refused = capture_order_records(&mut app, &mut records, not_enabled);
+        assert_eq!(
+            refused.units.refused[0].1,
+            turts_sim::RejectReason::RecipeNotEnabled
+        );
+        assert!(validate_records(&records).is_ok());
+        let mut wrong_reason = records.clone();
+        let EconomyLogRecord::CommandBoundary(boundary) = &mut wrong_reason[1] else {
+            panic!("expected first refusal boundary")
+        };
+        boundary.result.units.refused[0].1 = turts_sim::RejectReason::UnknownRecipe;
+        assert!(
+            validate_records(&wrong_reason).is_err(),
+            "a research station's disabled technology must not be logged as unknown"
+        );
+
+        let mut app = research_app(
+            100,
+            turts_mod_api::PaymentPolicy::ChargeOnQueue,
+            true,
+            vec![],
+        );
+        app.world_mut().resource_mut::<AuditTrail>().enable();
+        let initial = turts_sim::audit_state(app.world_mut());
+        let mut records = vec![EconomyLogRecord::Initial(initial.clone())];
+        let enqueue_on_second_lab = recorded_order_command(
+            &initial,
+            "fixture:order_research",
+            turts_mod_api::Behaviour::Produce,
+            turts_mod_api::TargetKind::Content,
+            turts_sim::OrderTargetSim::Content(
+                turts_mod_api::ContentId::parse("fixture:theory").unwrap(),
+            ),
+            2,
+            1,
+        );
+        let accepted = capture_order_records(&mut app, &mut records, enqueue_on_second_lab);
+        assert_eq!(accepted.units.accepted, vec![2]);
+        let after_enqueue = turts_sim::audit_state(app.world_mut());
+        let duplicate_research = recorded_order_command(
+            &after_enqueue,
+            "fixture:order_research",
+            turts_mod_api::Behaviour::Produce,
+            turts_mod_api::TargetKind::Content,
+            turts_sim::OrderTargetSim::Content(
+                turts_mod_api::ContentId::parse("fixture:theory").unwrap(),
+            ),
+            1,
+            2,
+        );
+        let refused = capture_order_records(&mut app, &mut records, duplicate_research);
+        assert_eq!(
+            refused.units.refused[0].1,
+            turts_sim::RejectReason::ResearchInProgress
+        );
+        assert!(
+            validate_records(&records).is_ok(),
+            "ResearchInProgress must inspect all same-slot stations: {:?}",
+            validate_records(&records).err()
+        );
+    }
+
+    #[test]
+    fn validator_replays_research_job_id_exhaustion_before_cost() {
+        let mut app = research_app(0, turts_mod_api::PaymentPolicy::ChargeOnQueue, true, vec![]);
+        app.world_mut()
+            .resource_mut::<turts_sim::IdAllocators>()
+            .set_next_values(3, 1, u64::MAX);
+        app.world_mut().resource_mut::<AuditTrail>().enable();
+        let initial = turts_sim::audit_state(app.world_mut());
+        let mut records = vec![EconomyLogRecord::Initial(initial.clone())];
+        let command = recorded_order_command(
+            &initial,
+            "fixture:order_research",
+            turts_mod_api::Behaviour::Produce,
+            turts_mod_api::TargetKind::Content,
+            turts_sim::OrderTargetSim::Content(
+                turts_mod_api::ContentId::parse("fixture:theory").unwrap(),
+            ),
+            1,
+            1,
+        );
+        let refused = capture_order_records(&mut app, &mut records, command);
+        assert_eq!(
+            refused.units.refused[0].1,
+            turts_sim::RejectReason::IdExhausted
+        );
+        assert!(
+            validate_records(&records).is_ok(),
+            "job ID allocation precedes payment checks: {:?}",
+            validate_records(&records).err()
+        );
+        let mut wrong_priority = records;
+        let EconomyLogRecord::CommandBoundary(boundary) = &mut wrong_priority[1] else {
+            panic!("expected id exhaustion boundary")
+        };
+        boundary.result.units.refused[0].1 = turts_sim::RejectReason::InsufficientBalance;
+        assert!(validate_records(&wrong_priority).is_err());
+    }
+
+    #[test]
+    fn validator_replays_idempotent_toggle_and_event_ordinal_failure() {
+        let mut app = research_app(
+            100,
+            turts_mod_api::PaymentPolicy::ChargeOnQueue,
+            true,
+            vec![],
+        );
+        app.world_mut().resource_mut::<AuditTrail>().enable();
+        let initial = turts_sim::audit_state(app.world_mut());
+        let mut records = vec![EconomyLogRecord::Initial(initial.clone())];
+        let already_enabled = recorded_order_command(
+            &initial,
+            "fixture:order_enable",
+            turts_mod_api::Behaviour::SetEnabled(true),
+            turts_mod_api::TargetKind::None,
+            turts_sim::OrderTargetSim::None,
+            1,
+            1,
+        );
+        let result = capture_order_records(&mut app, &mut records, already_enabled);
+        assert_eq!(result.units.accepted, vec![1]);
+        assert!(
+            validate_records(&records).is_ok(),
+            "idempotent SetEnabled succeeds without allocating an event: {:?}",
+            validate_records(&records).err()
+        );
+
+        let mut app = research_app(
+            100,
+            turts_mod_api::PaymentPolicy::ChargeOnQueue,
+            true,
+            vec![],
+        );
+        app.world_mut()
+            .resource_mut::<turts_sim::NextEventOrdinal>()
+            .0 = Some(u64::MAX);
+        app.world_mut().resource_mut::<AuditTrail>().enable();
+        let initial = turts_sim::audit_state(app.world_mut());
+        let mut records = vec![EconomyLogRecord::Initial(initial.clone())];
+        let disable = recorded_order_command(
+            &initial,
+            "fixture:order_disable",
+            turts_mod_api::Behaviour::SetEnabled(false),
+            turts_mod_api::TargetKind::None,
+            turts_sim::OrderTargetSim::None,
+            1,
+            1,
+        );
+        let refused = capture_order_records(&mut app, &mut records, disable);
+        assert_eq!(
+            refused.units.refused[0].1,
+            turts_sim::RejectReason::ArithmeticOverflow
+        );
+        assert!(
+            validate_records(&records).is_ok(),
+            "changed toggle requires an event ordinal: {:?}",
+            validate_records(&records).err()
+        );
+    }
+
+    #[test]
+    fn validator_preserves_extractor_rate_carry_on_idempotent_toggle() {
+        let mut app = extractor_app();
+        app.world_mut().resource_mut::<AuditTrail>().enable();
+        let initial = turts_sim::audit_state(app.world_mut());
+        let mut records = vec![EconomyLogRecord::Initial(initial)];
+        app.update();
+        let (operations, ticks) = {
+            let mut trail = app.world_mut().resource_mut::<AuditTrail>();
+            (trail.drain_operations(), trail.drain_ticks())
+        };
+        records.extend(operations.into_iter().map(EconomyLogRecord::Operation));
+        records.extend(ticks.into_iter().map(EconomyLogRecord::from_tick));
+        let before_toggle = turts_sim::audit_state(app.world_mut());
+        let carry = before_toggle.raw_extractors[0].rate_carry;
+        assert!(
+            carry > 0,
+            "one extraction tick should retain a fractional rate carry"
+        );
+        let enable = recorded_order_command(
+            &before_toggle,
+            "fixture:enable",
+            turts_mod_api::Behaviour::SetEnabled(true),
+            turts_mod_api::TargetKind::None,
+            turts_sim::OrderTargetSim::None,
+            1,
+            1,
+        );
+        let result = capture_order_records(&mut app, &mut records, enable);
+        assert_eq!(result.units.accepted, vec![1]);
+        let after_toggle = turts_sim::audit_state(app.world_mut());
+        assert_eq!(after_toggle.raw_extractors[0].rate_carry, carry);
+        assert!(
+            validate_records(&records).is_ok(),
+            "idempotent extractor toggle must preserve carry: {:?}",
+            validate_records(&records).err()
+        );
+    }
+
+    #[test]
+    fn validator_preserves_carry_for_already_disabled_extractor() {
+        let mut app = extractor_app();
+        let enabled = turts_sim::audit_state(app.world_mut());
+        let disable = recorded_order_command(
+            &enabled,
+            "fixture:disable",
+            turts_mod_api::Behaviour::SetEnabled(false),
+            turts_mod_api::TargetKind::None,
+            turts_sim::OrderTargetSim::None,
+            1,
+            1,
+        );
+        let disabled = turts_sim::apply_command(app.world_mut(), &disable);
+        assert_eq!(disabled.units.accepted, vec![1]);
+        app.world_mut().resource_mut::<AuditTrail>().enable();
+        let initial = turts_sim::audit_state(app.world_mut());
+        assert!(initial.disabled.contains(&1));
+        let mut records = vec![EconomyLogRecord::Initial(initial.clone())];
+        let disable_again = recorded_order_command(
+            &initial,
+            "fixture:disable",
+            turts_mod_api::Behaviour::SetEnabled(false),
+            turts_mod_api::TargetKind::None,
+            turts_sim::OrderTargetSim::None,
+            1,
+            1,
+        );
+        let result = capture_order_records(&mut app, &mut records, disable_again);
+        assert_eq!(result.units.accepted, vec![1]);
+        fn set_carry(state: &mut AuditState, carry: u16) {
+            state
+                .raw_extractors
+                .iter_mut()
+                .find(|extractor| extractor.unit == 1)
+                .unwrap()
+                .rate_carry = carry;
+            state
+                .economy
+                .m3
+                .raw_extractors
+                .iter_mut()
+                .find(|extractor| extractor.unit == 1)
+                .unwrap()
+                .rate_carry = carry;
+        }
+        for record in &mut records {
+            match record {
+                EconomyLogRecord::Initial(state) => set_carry(state, 7),
+                EconomyLogRecord::CommandBoundary(command) => {
+                    set_carry(&mut command.before, 7);
+                    set_carry(&mut command.after, 7);
+                }
+                EconomyLogRecord::Operation(operation) => {
+                    set_carry(&mut operation.before, 7);
+                    set_carry(&mut operation.after, 7);
+                }
+                _ => {}
+            }
+        }
+        assert!(
+            validate_records(&records).is_ok(),
+            "already-disabled no-op must retain extractor carry: {:?}",
+            validate_records(&records).err()
+        );
+    }
+
+    #[test]
+    fn validator_replays_canonical_reserve_then_charge_tokens() {
+        let records = actual_reserve_then_charge_order_records();
+        assert!(
+            validate_records(&records).is_ok(),
+            "real reversed authored costs must replay in canonical reservation order: {:?}",
+            validate_records(&records).err()
+        );
+    }
+
+    #[test]
+    fn validator_models_late_cancel_refund_overflow_and_full_refusals() {
+        use turts_sim::economy::views::{ItemView, RawInventoryAudit, ReservationLineView};
+        use turts_sim::{RejectReason, ReservationEndpointView};
+
+        for inventory_full in [false, true] {
+            let (mut before, _recipe) = producer_order_state(true);
+            let other_balance = turts_mod_api::ContentId::parse("fixture:other_credit").unwrap();
+            before
+                .catalog
+                .as_mut()
+                .unwrap()
+                .resource_kinds
+                .push((other_balance.clone(), turts_mod_api::ResourceKind::Balance));
+            before
+                .catalog
+                .as_mut()
+                .unwrap()
+                .resource_kinds
+                .sort_by(|left, right| left.0.cmp(&right.0));
+            before.economy.balances.push(turts_sim::BalanceView {
+                slot: 0,
+                resource: other_balance.clone(),
+                on_hand: 10,
+                reserved: 0,
+            });
+            before.economy.balances.sort_by(|left, right| {
+                (left.slot, &left.resource).cmp(&(right.slot, &right.resource))
+            });
+            let resource = turts_mod_api::ContentId::parse(if inventory_full {
+                "fixture:item"
+            } else {
+                "fixture:credit"
+            })
+            .unwrap();
+            let (source, endpoint, reason) = if inventory_full {
+                before
+                    .catalog
+                    .as_mut()
+                    .unwrap()
+                    .resource_kinds
+                    .push((resource.clone(), turts_mod_api::ResourceKind::Item));
+                before.catalog.as_mut().unwrap().units[0].inventory =
+                    Some((4, vec![resource.clone()]));
+                before.raw_inventories.push(RawInventoryAudit {
+                    unit: 1,
+                    capacity: 4,
+                    accepted_items: vec![resource.clone()],
+                });
+                before.economy.inventories.push(turts_sim::InventoryView {
+                    unit: 1,
+                    owner_slot: 0,
+                    capacity: 4,
+                    items: vec![ItemView {
+                        resource: resource.clone(),
+                        on_hand: 4,
+                        reserved: 0,
+                    }],
+                });
+                (
+                    turts_mod_api::CostSource::ProducerInventory,
+                    ReservationEndpointView::Inventory(1),
+                    RejectReason::RefundDestinationFull,
+                )
+            } else {
+                before
+                    .catalog
+                    .as_mut()
+                    .unwrap()
+                    .resource_kinds
+                    .push((resource.clone(), turts_mod_api::ResourceKind::Balance));
+                before.economy.balances.push(turts_sim::BalanceView {
+                    slot: 0,
+                    resource: resource.clone(),
+                    on_hand: u64::MAX,
+                    reserved: 0,
+                });
+                (
+                    turts_mod_api::CostSource::SlotBalance,
+                    ReservationEndpointView::Slot(0),
+                    RejectReason::RefundDestinationOverflow,
+                )
+            };
+            let line = ReservationLineView {
+                endpoint,
+                resource: resource.clone(),
+                amount: 1,
+            };
+            let catalog = before.catalog.as_mut().unwrap();
+            catalog.recipes[0].costs = vec![turts_sim::CostView {
+                source,
+                resource: resource.clone(),
+                amount: 1,
+            }];
+            catalog.recipes[0].payment = turts_mod_api::PaymentPolicy::ChargeOnQueue;
+            let job = &mut before.raw_queues[0].jobs[0];
+            job.stage = turts_sim::JobStage::Running;
+            job.charged = vec![line.clone()];
+            job.reservation = None;
+            let public_job = &mut before.economy.queues[0].jobs[0];
+            public_job.stage = turts_sim::JobStage::Running;
+            public_job.charged = vec![turts_sim::CostView {
+                source,
+                resource: resource.clone(),
+                amount: 1,
+            }];
+            public_job.reserved.clear();
+
+            let cancel = one_order_command(
+                "fixture:cancel",
+                turts_mod_api::Behaviour::CancelProduction,
+                turts_mod_api::TargetKind::Job,
+                turts_sim::OrderTargetSim::Job(turts_sim::JobId(1)),
+                order_policy(
+                    "fixture:cancel",
+                    turts_mod_api::Behaviour::CancelProduction,
+                    turts_mod_api::TargetKind::Job,
+                    vec![(
+                        "fixture:producer",
+                        false,
+                        false,
+                        false,
+                        true,
+                        false,
+                        false,
+                        true,
+                    )],
+                ),
+            );
+            let records = single_order_records(
+                before.clone(),
+                before,
+                cancel,
+                vec![],
+                vec![(1, reason)],
+                turts_sim::economy::transaction::AuditPhase::Orders,
+            );
+            assert!(
+                validate_records(&records).is_ok(),
+                "late Cancel refusal {reason:?} must remain an exact no-write result: {:?}",
+                validate_records(&records).err()
+            );
+
+            let mut wrong_reason = records.clone();
+            let EconomyLogRecord::CommandBoundary(boundary) = &mut wrong_reason[1] else {
+                panic!("expected late Cancel refusal boundary")
+            };
+            let forged_reason = RejectReason::UnknownJob;
+            boundary.result.units.refused[0].1 = forged_reason;
+            boundary.result.outcome = Err(forged_reason);
+            assert!(
+                validate_records(&wrong_reason).is_err(),
+                "the validator must independently derive the late Cancel refusal reason"
+            );
+
+            let mut forged_write = records;
+            if let EconomyLogRecord::CommandBoundary(boundary) = &mut forged_write[1] {
+                boundary
+                    .after
+                    .economy
+                    .balances
+                    .iter_mut()
+                    .find(|balance| balance.resource == other_balance)
+                    .unwrap()
+                    .on_hand += 1;
+            }
+            if let EconomyLogRecord::Operation(operation) = &mut forged_write[2] {
+                operation
+                    .after
+                    .economy
+                    .balances
+                    .iter_mut()
+                    .find(|balance| balance.resource == other_balance)
+                    .unwrap()
+                    .on_hand += 1;
+            }
+            assert!(
+                validate_records(&forged_write).is_err(),
+                "refused late Cancel cannot credit an unrelated balance"
+            );
+        }
+    }
+
+    #[test]
     fn validator_rejects_missing_or_duplicate_catalog_order_definitions() {
         fn alter_catalog(state: &mut AuditState, duplicate: bool) {
             let definitions = &mut state.catalog.as_mut().unwrap().order_definitions;
@@ -4870,6 +7724,8 @@ mod tests {
                 id: turts_mod_api::ContentId::parse("fixture:walker").unwrap(),
                 radius: 0.5,
                 movement_speed: Some(3.0),
+                removal: None,
+                machine_recipe: None,
                 inventory: None,
                 gatherer: Some(turts_sim::economy::views::CatalogGathererAudit {
                     items: vec![item],
