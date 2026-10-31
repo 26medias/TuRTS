@@ -145,10 +145,10 @@ Choice: add an appropriately placed Text binding to LastNotice in the production
 
 Alternative not taken: add an engine hardcoded HUD fallback, silently lose notices, or defer a known missing authored surface until Task15 runtime implementation.
 
-## C17: place the CLI move-hook test beside the actual hook
+## C17: test the CLI move hook through its private sender seam
 
 Conflict: Task2b step2 names crates/turts_client/tests/commands.rs, but the real auto_move system is in crates/turts_client/src/join.rs:356-410. The first compiling red instrument is join.rs:433-465 and proves a missing envelope helper only.
 
-Choice: keep the test beside auto_move in join.rs, following the existing private-system unit-test pattern. Final coverage must exercise the actual auto_move hook and inspect its queued/sent PlayerCommand, including the first Move definition when other orders exist. A helper-only assertion is insufficient. Preserve the original compiled red101 and record any stronger hook red/green. Design5.5:548-549 specifies the hook behaviour; this choice changes the test location only.
+Choice: use the existing private-system unit-test pattern rather than exposing private internals for tests/commands.rs. The initial join.rs helper red is retained, but final coverage is in src/commands.rs:348, where the sender capture exists (send_commands_traced:224); it drives auto_move in join.rs:360 and inspects its sent PlayerCommand, including the first Move definition when other orders exist. A helper-only assertion is insufficient. Preserve the original compiled red101 and record any stronger hook red/green. Design5.5:548-549 specifies the hook behaviour; this choice changes the test location only.
 
 Alternative not taken: expose private client internals only to match a plan test path, or accept an unused helper as proof of the hook. No wire shape, key, player step or acceptance row changes.
