@@ -111,4 +111,4 @@ MC current: ACTIVE: 10 of25 lanes complete. Task9 merged fb5e2d6 and all12 integ
 MC latest: ACTIVE: O12 released Task 6. Integration and all four open lanes rebased onto main721e56e (design revision13); dirty source hashes preserved.10of25lanes complete;47/170runs; Task6run5/6. C1-C102. No main merge.
 
 
-MC latest: ACTIVE: O12 applied on main721e56e/design13.10of25lanes complete;47/170runs; Task6run5/6. C1-C108. Clean ffb21b3 has focused E8/E9loss/F11 green; final gates/refutations/runtime review remain. No main merge.
+MC latest: ACTIVE: 10 of 25 lanes complete; 47/170 runs; Task6 run5/6. C1-C108 recorded. Task6 normal gates passed at ffb21b3; independent review found cap/physical-escape/follow-completion Highs. The C106-C108 repair batch is active; fresh gates, refutations and final review remain. No CEO stop or main merge.
