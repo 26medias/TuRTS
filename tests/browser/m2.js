@@ -190,6 +190,7 @@ module.exports = {
     findPressedUiAction,
     findVisibleUiText,
     visibleTexts,
+    hasSingleDebugSelection,
     lastAppliedSequence,
     lastCommand,
     waitForSnapshot,
@@ -258,6 +259,11 @@ function visibleTexts(snapshot) {
     return (snapshot.ui ?? [])
         .filter((row) => row.kind === "text" && row.visible === true)
         .map((row) => row.text);
+}
+
+function hasSingleDebugSelection(snapshot, unitId) {
+    const selected = snapshot?.debug?.selection;
+    return Array.isArray(selected) && selected.length === 1 && selected[0] === unitId;
 }
 
 function assertPickCircleClearOfPanel(scene, ui, entry) {
@@ -412,14 +418,14 @@ async function runSecondOwnerConvergenceSmoke(page, pageAddress, packageName, ou
             let ownerSelection;
             try {
                 ownerSelection = await pressRenderedEntityUntil(ownerPage, owner1.scene, ownerMesh, (snapshot) =>
-                    snapshot.debug?.selection === ownerUnit.unit_id && Boolean(selectedUnitText(snapshot.ui, ownerUnit)),
+                    hasSingleDebugSelection(snapshot, ownerUnit.unit_id) && Boolean(selectedUnitText(snapshot.ui, ownerUnit)),
                 5000, `${packageName} owner-1 real selection`);
             } catch (error) {
                 await captureStage(ownerPage, outDir, "failure-owner1-selection", logs);
                 throw error;
             }
             const ownerSelectionArtifact = await captureStage(ownerPage, outDir, "10-owner1-selection", logs);
-            assert.equal(ownerSelectionArtifact.debug.selection, ownerUnit.unit_id);
+            assert.deepEqual(ownerSelectionArtifact.debug.selection, [ownerUnit.unit_id]);
             assert.equal(lastAppliedSequence(ownerSelectionArtifact), lastAppliedSequence(owner1Artifact),
                 "owner-1 selection must not issue a world command");
             const ownerCircle = assertPickCircleClearOfPanel(ownerSelectionArtifact.scene, ownerSelectionArtifact.ui, ownerMesh);
@@ -532,7 +538,7 @@ async function runParameterLossProof(page, caseId, kind, outDir, logs, result, c
     await waitForSnapshot(page, (current) => visibleTexts(current).includes(`Selected: ${targetLabel} · ${target.unit_id}`),
         5000, `${kind} target actual rendered selection`);
     const selected = await captureStage(page, outDir, `${kind}-selected`, logs);
-    assert.equal(selected.debug.selection, target.unit_id, `${kind} target selection uses actual Bevy UI`);
+    assert.deepEqual(selected.debug.selection, [target.unit_id], `${kind} target selection uses actual Bevy UI`);
     assert.equal(lastAppliedSequence(selected), lastAppliedSequence(snapshot), `${kind} selection must not send a PlayerCommand`);
     assertPickCircleClearOfPanel(selected.scene, selected.ui, selected.scene.units.find((unit) => unit.unit_id === target.unit_id));
 
@@ -773,7 +779,7 @@ async function runBaseRecoveryProof(page, scene, worker, node, outDir, logs, res
     assert.equal(heldConfig.debug.ingest.max_buffered_batches, 3, "browser cap must update the already joined Replica");
     assert.deepEqual(heldConfig.debug.ingest.armed_drop_world_changes.kinds, ["extraction"]);
 
-    assert.equal(before.debug?.selection, worker.unit_id,
+    assert(hasSingleDebugSelection(before, worker.unit_id),
         "recovery proof requires the Harvester selected through the actual rendered UI before loss configuration");
     assert(visibleTexts(before).includes(`Selected: Harvester · ${worker.unit_id}`),
         "recovery proof requires actual visible Harvester selection Text");
@@ -927,12 +933,12 @@ async function runAdditionalPackageSmoke(page, pageAddress, packageName, joined,
     const beforeSequence = lastAppliedSequence(joined);
     await clickRenderedEntity(page, joined.scene, owner0Mesh);
     const selected = await waitForSnapshot(page, (snapshot) =>
-        snapshot.debug?.selection === owner0Unit.unit_id,
+        hasSingleDebugSelection(snapshot, owner0Unit.unit_id),
     5000, `${packageName} actual selected unit`);
     const selectedArtifact = await captureStage(page, outDir, "02-owner0-selection", logs);
     const selectedText = selectedUnitText(selectedArtifact.ui, owner0Unit);
     assert(selectedText, "actual rendered unit selection was not visible");
-    assert.equal(selectedArtifact.debug.selection, owner0Unit.unit_id);
+    assert.deepEqual(selectedArtifact.debug.selection, [owner0Unit.unit_id]);
     assert.equal(lastAppliedSequence(selectedArtifact), beforeSequence, "unit selection must not submit a world command");
     const circle = assertPickCircleClearOfPanel(selectedArtifact.scene, selectedArtifact.ui, owner0Mesh);
     result.stages.selection = { package: packageName, unit_id: owner0Unit.unit_id, rendered_text: selectedText.text, ...circle, passed: true };
@@ -1302,7 +1308,7 @@ async function runBaseUiSmoke(argv) {
         await clickRenderedEntity(page, joined.scene, commandCenterMesh);
         const selected = await waitForSnapshot(page, (snapshot) => {
             const texts = visibleTexts(snapshot);
-            return snapshot.debug?.selection === commandCenter.unit_id &&
+            return hasSingleDebugSelection(snapshot, commandCenter.unit_id) &&
                 texts.some((text) => /^Credits:/.test(text)) &&
                 !texts.includes("Select a unit or producer");
         }, 5000, "Command Center selection and rebuilt owner economy panel", diagnostic);
@@ -1315,7 +1321,7 @@ async function runBaseUiSmoke(argv) {
             const pickCircleGeometry = assertPickCircleClearOfPanel(selectedArtifact.scene, selectedArtifact.ui, commandCenterMesh);
             const selectedText = visibleTexts(selectedArtifact).find((text) => text.startsWith("Selected:"));
             assert.equal(selectedText, `Selected: Command Center · ${commandCenter.unit_id}`, "selection must appear in actual visible Bevy Text");
-            assert.equal(selectedArtifact.debug?.selection, commandCenter.unit_id, "read-only debug selection must agree with actual rendered Text");
+            assert(hasSingleDebugSelection(selectedArtifact, commandCenter.unit_id), "read-only debug selection must agree with actual rendered Text");
             assert(!visibleTexts(selectedArtifact).some((text) => text.startsWith("Last command:")), "unit selection must not submit a world command");
             producerId = commandCenter.unit_id;
             visibleProduceAction = findVisibleUiAction(selectedArtifact.ui, "produce", (action, text) =>
@@ -1344,7 +1350,7 @@ async function runBaseUiSmoke(argv) {
             assert(harvester && mesh && node, "base recovery fixture lacks its owner-0 Harvester or ore node");
             await clickRenderedEntity(page, joinedArtifact.scene, mesh);
             await waitForSnapshot(page, (snapshot) =>
-                snapshot.debug?.selection === harvester.unit_id &&
+                hasSingleDebugSelection(snapshot, harvester.unit_id) &&
                 visibleTexts(snapshot).some((text) => text.startsWith("Gather:")),
             5000, "recovery Harvester selection and rebuilt Gather row");
             const workerSelection = await captureStage(page, outDir, "02-recovery-harvester-selected", logs);
@@ -1428,7 +1434,7 @@ async function runBaseUiSmoke(argv) {
         assert(harvester && harvesterMesh, "owner-0 Harvester is absent from actual received/rendered state");
         await clickRenderedEntity(page, cancelledArtifact.scene, harvesterMesh);
         await waitForSnapshot(page, (snapshot) =>
-            snapshot.debug?.selection === harvester.unit_id &&
+            hasSingleDebugSelection(snapshot, harvester.unit_id) &&
             visibleTexts(snapshot).some((text) => text.startsWith("Gather:")),
         5000, "Harvester selection and rebuilt Gather row");
         const selectedHarvesterArtifact = await captureStage(page, outDir, "07-selected-harvester", logs);
@@ -1451,7 +1457,7 @@ async function runBaseUiSmoke(argv) {
         let recoveryArtifact;
         if (targetCaseId === "E9-browser-base-economy") {
             const beforeGather = await liveSnapshot(page);
-            assert.equal(beforeGather.debug?.selection, harvester.unit_id,
+            assert(hasSingleDebugSelection(beforeGather, harvester.unit_id),
                 "selected Harvester must remain selected before the economy Gather command");
             const freshNode = beforeGather.scene.nodes.find((candidate) => candidate.node_id === node.node_id);
             assert(freshNode, "fixture ore node is absent from the fresh rendered scene");

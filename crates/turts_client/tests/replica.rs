@@ -7,7 +7,10 @@ use turts_client::content::ClientContent;
 use turts_client::replica::ReplicaContext;
 use turts_client::replica::{DeltaOutcome, Replica, SnapshotOutcome};
 use turts_mod_runtime::{archive::PackageArchive, pack::pack_dir};
-use turts_net_protocol::{Pos, SlotId, Snapshot, UnitDelta, UnitId, UnitSnapshot, WorldDelta};
+use turts_net_protocol::{
+    Activity, OrderSummary, OrderTarget, Pos, SlotId, Snapshot, UnitDelta, UnitId, UnitOrderRecord,
+    UnitSnapshot, WorldDelta,
+};
 
 fn pos(x: f32, y: f32) -> Pos {
     Pos { x, y }
@@ -74,6 +77,19 @@ fn delta(tick: u32, base_tick: u32, positions: &[(u32, Pos)]) -> WorldDelta {
     }
 }
 
+fn owner_move_record(id: u32, target: OrderTarget) -> UnitOrderRecord {
+    UnitOrderRecord {
+        unit: UnitId(id),
+        activity: Activity::Moving,
+        current: Some(OrderSummary {
+            order: "base:order_move".into(),
+            target,
+        }),
+        queued: Vec::new(),
+        last_failure: None,
+    }
+}
+
 fn replica() -> Replica {
     static CONTENT: OnceLock<ClientContent> = OnceLock::new();
     let content = CONTENT
@@ -110,6 +126,111 @@ fn new_replica_is_in_resync_and_buffers_deltas() {
     assert!(!r.in_resync());
     assert_eq!(r.last_applied_tick, Some(11));
     assert_eq!(r.snapshot_tick, Some(10));
+}
+
+#[test]
+fn owner_unit_orders_stage_snapshot_delta_clear_removal_and_recovery_atomically() {
+    let now = Instant::now();
+    let mut r = replica();
+    let mut initial = snapshot(10, &[(1, pos(0.0, 0.0))]);
+    initial.unit_orders = vec![owner_move_record(1, OrderTarget::Point(pos(5.0, 6.0)))];
+    assert_eq!(
+        r.apply_snapshot(&initial, now),
+        SnapshotOutcome::Applied { replayed: 0 }
+    );
+    assert_eq!(
+        r.unit_orders[&1].current.as_ref().unwrap().target,
+        OrderTarget::Point(pos(5.0, 6.0))
+    );
+
+    let mut clear = delta(11, 10, &[(1, pos(1.0, 0.0))]);
+    clear.unit_orders = vec![UnitOrderRecord {
+        unit: UnitId(1),
+        activity: Activity::Idle,
+        current: None,
+        queued: Vec::new(),
+        last_failure: None,
+    }];
+    assert_eq!(r.apply_delta(&clear, now), DeltaOutcome::Applied);
+    assert!(
+        r.unit_orders[&1].current.is_none(),
+        "an authored idle record clears the current owner order"
+    );
+    let omit = delta(12, 11, &[(1, pos(2.0, 0.0))]);
+    assert_eq!(r.apply_delta(&omit, now), DeltaOutcome::Applied);
+    assert!(
+        r.unit_orders.is_empty(),
+        "a complete owner table without the prior record removes it"
+    );
+
+    let mut restored = snapshot(20, &[(1, pos(0.0, 0.0))]);
+    restored.unit_orders = vec![owner_move_record(1, OrderTarget::Point(pos(8.0, 9.0)))];
+    assert_eq!(
+        r.apply_snapshot(&restored, now),
+        SnapshotOutcome::Applied { replayed: 0 }
+    );
+    let mut removed = delta(21, 20, &[]);
+    removed.removed = vec![UnitId(1)];
+    assert_eq!(r.apply_delta(&removed, now), DeltaOutcome::Applied);
+    assert!(
+        r.unit_orders.is_empty(),
+        "removing the unit removes its owner-order record in the same candidate"
+    );
+
+    let mut recovering = replica();
+    let mut recovered_snapshot = snapshot(30, &[(1, pos(0.0, 0.0))]);
+    recovered_snapshot.unit_orders = vec![owner_move_record(1, OrderTarget::Point(pos(3.0, 4.0)))];
+    let mut recovered_delta = delta(31, 30, &[(1, pos(1.0, 0.0))]);
+    recovered_delta.unit_orders = vec![owner_move_record(1, OrderTarget::Point(pos(7.0, 8.0)))];
+    assert_eq!(
+        recovering.apply_delta(&recovered_delta, now),
+        DeltaOutcome::Buffered
+    );
+    assert_eq!(
+        recovering.apply_snapshot(&recovered_snapshot, now),
+        SnapshotOutcome::Applied { replayed: 1 }
+    );
+    assert_eq!(
+        recovering.unit_orders[&1].current.as_ref().unwrap().target,
+        OrderTarget::Point(pos(7.0, 8.0)),
+        "retained delta order state must replay with the same atomic candidate"
+    );
+}
+
+#[test]
+fn invalid_owner_order_candidate_preserves_display_and_recovery_prefix() {
+    let now = Instant::now();
+    let mut r = replica();
+    let mut initial = snapshot(9, &[(1, pos(0.0, 0.0))]);
+    initial.unit_orders = vec![owner_move_record(1, OrderTarget::Point(pos(5.0, 6.0)))];
+    assert_eq!(
+        r.apply_snapshot(&initial, now),
+        SnapshotOutcome::Applied { replayed: 0 }
+    );
+    let mut baseline = delta(10, 9, &[(1, pos(10.0, 0.0))]);
+    baseline.unit_orders = vec![owner_move_record(1, OrderTarget::Point(pos(5.0, 6.0)))];
+    assert_eq!(r.apply_delta(&baseline, now), DeltaOutcome::Applied);
+
+    let mut invalid = delta(12, 11, &[(1, pos(12.0, 0.0))]);
+    invalid.unit_orders = vec![owner_move_record(999, OrderTarget::Point(pos(12.0, 1.0)))];
+    assert_eq!(r.apply_delta(&invalid, now), DeltaOutcome::ResyncRequested);
+    let valid_prefix = delta(11, 10, &[(1, pos(11.0, 0.0))]);
+    assert_eq!(r.apply_delta(&valid_prefix, now), DeltaOutcome::Buffered);
+
+    assert_eq!(
+        r.apply_snapshot(&snapshot(11, &[(1, pos(100.0, 0.0))]), now),
+        SnapshotOutcome::ResyncRequested { replayed: 0 }
+    );
+    assert_eq!(
+        r.last_applied_tick,
+        Some(10),
+        "recovery must not publish a valid snapshot/prefix before an invalid owner-order table"
+    );
+    assert_eq!(r.units[&1].samples.back().unwrap().1, pos(10.0, 0.0));
+    assert_eq!(
+        r.unit_orders[&1].current.as_ref().unwrap().target,
+        OrderTarget::Point(pos(5.0, 6.0))
+    );
 }
 
 #[test]

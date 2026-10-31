@@ -13,6 +13,7 @@ const {
     clickRenderedEntity,
     clickRenderedUiAction,
     visibleTexts,
+    hasSingleDebugSelection,
 } = require("./m2.js");
 
 function portSectionHasCapacity(lines, port, capacity) {
@@ -47,7 +48,7 @@ async function m3_panel_actions_send_commands(page, outDir, logs = []) {
     await clickRenderedEntity(page, initial.scene, pressMesh);
     const pressSelected = await waitForSnapshot(page, (snapshot) => {
         const texts = visibleTexts(snapshot);
-        return snapshot.debug?.selection === press.unit_id &&
+        return hasSingleDebugSelection(snapshot, press.unit_id) &&
             texts.includes("Inventory · Main") &&
             texts.includes("Inventory · Output") &&
             portSectionHasCapacity(texts, "Main", 6) &&
@@ -69,7 +70,7 @@ async function m3_panel_actions_send_commands(page, outDir, logs = []) {
         const inventory = current?.economy?.inventories?.find((row) => row.unit === lab.unit_id && row.port === "main");
         const shells = inventory?.items?.find((item) => item.resource === "forge:shell");
         const control = (snapshot.ui ?? []).find((row) => row.visible && row.enabled && row.action?.type === "produce" && row.action.producer === lab.unit_id && row.action.recipe === "forge:hardened_shells");
-        return snapshot.debug?.selection === lab.unit_id && shells?.on_hand - shells?.reserved >= 10 && Boolean(control);
+        return hasSingleDebugSelection(snapshot, lab.unit_id) && shells?.on_hand - shells?.reserved >= 10 && Boolean(control);
     }, 120000, "replica inventory and visible enabled research control");
     const labSelected = await captureStage(page, outDir, "03-lab-research-ready", logs);
     const beforeProduce = Math.max(0, ...(readyLab.debug.command_results ?? []).map((result) => result.seq));
@@ -102,7 +103,7 @@ async function m3_panel_actions_send_commands(page, outDir, logs = []) {
     const beltMesh = beltUnit && disabledArtifact.scene.units.find((unit) => unit.unit_id === belt.piece);
     assert(beltUnit && beltMesh, "belt piece has no actual rendered mesh");
     await clickRenderedEntity(page, disabledArtifact.scene, beltMesh);
-    const beltSelected = await waitForSnapshot(page, (snapshot) => snapshot.debug?.selection === belt.piece, 5000, "belt piece selected from rendered scene");
+    const beltSelected = await waitForSnapshot(page, (snapshot) => hasSingleDebugSelection(snapshot, belt.piece), 5000, "belt piece selected from rendered scene");
     const beltSelectedArtifact = await captureStage(page, outDir, "06-belt-selected", logs);
     await clickRenderedUiAction(page, beltSelectedArtifact.scene, "remove", (action, text) =>
         action.unit === belt.piece && text === "Remove unit");

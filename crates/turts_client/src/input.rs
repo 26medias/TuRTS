@@ -3,13 +3,16 @@
 use crate::commands::ClientCommand;
 use crate::{
     commands::{CommandSendStatus, PendingCommands, submit},
-    economy_ui::{Selection, UiPanelRoot, cursor_in_ui_viewport, hit_test_node, hit_test_unit},
+    content::ClientContent,
     ingest::ReplicaState,
     join::{AcquiredPackages, Phase},
+    replica::Replica,
+    ui_shared::{Selection, UiCaptureRoot, UiPresentationSet, cursor_in_ui_viewport},
 };
 use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
-use turts_net_protocol::{Pos, UnitId};
+use turts_mod_api::{ContentId, Footprint};
+use turts_net_protocol::{NodeId, Pos, UnitId};
 
 /// Map ground-plane ray intersection: scene x/z map to protocol x/y.
 pub fn ground_point(ray: Ray3d) -> Option<Pos> {
@@ -34,7 +37,7 @@ pub fn world_pointer_commands(
             &InheritedVisibility,
             &ComputedUiTargetCamera,
         ),
-        With<UiPanelRoot>,
+        With<UiCaptureRoot>,
     >,
     state: Res<ReplicaState>,
     acquired: Option<Res<AcquiredPackages>>,
@@ -142,12 +145,61 @@ pub fn world_pointer_commands(
     }
 }
 
+/// Compatibility plugin for legacy CPU/UI fixtures; production input uses `CoreAdapterPlugin`.
 pub struct ClickInputPlugin;
 impl Plugin for ClickInputPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(
-            Update,
-            world_pointer_commands.after(crate::economy_ui::sync_panel),
-        );
+        app.add_systems(Update, world_pointer_commands.after(UiPresentationSet));
     }
+}
+
+/// Choose the nearest owned unit whose declared footprint contains the map point.
+pub fn hit_test_unit(
+    replica: &Replica,
+    content: &ClientContent,
+    point: Pos,
+    owner: u8,
+) -> Option<u32> {
+    let time = replica.presentation_time(bevy::platform::time::Instant::now())?;
+    let mut hits = Vec::new();
+    for (&id, unit) in &replica.units {
+        if unit.owner_slot != owner {
+            continue;
+        }
+        let Some(def) = ContentId::parse(&unit.content_id)
+            .ok()
+            .and_then(|id| content.catalog.units.get(&id))
+        else {
+            continue;
+        };
+        let Footprint::Circle { radius } = &def.footprint;
+        let Some(pos) = replica.sample(id, time).map(|p| p.pos) else {
+            continue;
+        };
+        let d2 = (pos.x - point.x).powi(2) + (pos.y - point.y).powi(2);
+        if d2 <= radius * radius {
+            hits.push((d2, id));
+        }
+    }
+    hits.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)));
+    hits.first().map(|(_, id)| *id)
+}
+
+/// Choose the nearest declared node whose package radius contains the map point.
+pub fn hit_test_node(replica: &Replica, content: &ClientContent, point: Pos) -> Option<NodeId> {
+    let mut hits = Vec::new();
+    for node in replica.nodes.values() {
+        let Some(def) = ContentId::parse(&node.content_id)
+            .ok()
+            .and_then(|id| content.catalog.nodes.get(&id))
+        else {
+            continue;
+        };
+        let d2 = (node.pos.x - point.x).powi(2) + (node.pos.y - point.y).powi(2);
+        if d2 <= def.radius * def.radius {
+            hits.push((d2, node.id));
+        }
+    }
+    hits.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.1.0.cmp(&b.1.0)));
+    hits.first().map(|(_, id)| *id)
 }

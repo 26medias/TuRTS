@@ -206,6 +206,7 @@ fn sync_app() -> App {
                         height: 1.8,
                     },
                 )]),
+                ..ClientContent::default()
             },
         }))
         .add_systems(Update, sync_units);

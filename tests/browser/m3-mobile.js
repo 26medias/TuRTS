@@ -3,7 +3,7 @@
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const { chromium } = require("playwright-core");
-const { waitForSnapshot, captureStage, clickRenderedUiAction, visibleTexts, projectGroundPoint, clickWindowLogicalPoint } = require("./m2.js");
+const { waitForSnapshot, captureStage, clickRenderedUiAction, visibleTexts, projectGroundPoint, clickWindowLogicalPoint, hasSingleDebugSelection } = require("./m2.js");
 async function main() {
     const [url, out] = process.argv.slice(2);
     assert(url && out, "usage: node m3-mobile.js <fresh-owner-url> <artifacts>");
@@ -22,7 +22,7 @@ async function main() {
         assert(drone);
         assert(!joined.ui.some(r => r.visible && r.action?.type === "select" && r.text === "Select Proving Lab"), "no enemy factory selection control");
         await clickRenderedUiAction(dronePage, joined.scene, "select", a => a.unit === drone.unit_id);
-        const selected = await waitForSnapshot(dronePage, s => s.debug?.selection === drone.unit_id &&
+        const selected = await waitForSnapshot(dronePage, s => hasSingleDebugSelection(s, drone.unit_id) &&
             visibleTexts(s).includes("Mobile: right-click the ground to move."), 5000, "selected drone explains movement");
         await captureStage(dronePage, out, "01-mobile-selected", []);
         await clickWindowLogicalPoint(dronePage, selected.scene, projectGroundPoint(selected.scene, [28, 6]), { button: "right" });
