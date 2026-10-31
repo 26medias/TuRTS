@@ -192,3 +192,11 @@ Conflict: RUN31 Medium confirmed by root: commands.rs:217 sets group=first_seq f
 Choice: repair now. Retain a supplied nonzero group; assign first_seq only when group is0. Test actual submit_order/send_commands_traced capture with literal4097 subjects and expected4096+1 chunks, plus an unsplit envelope sharing the supplied group. Check literal subject order and sequence progression. Test near-u32::MAX span exhaustion causes reconnect with no partial gesture. Preserve allocate_many checked preflight (commands.rs:78-84). Record compiled semantic red/green.
 
 Alternative not taken: overwrite caller grouping, hide the defect in a helper-only/constant-mirrored test, or defer the known protocol adapter bug to a later task. No new key, step, acceptance row or K change.
+
+## C23: install the unchanged locked browser prerequisite per worktree
+
+Conflict: Trunk passed, but T7 exited1 before any browser test because tests/browser/node_modules was absent and t7.js:37 could not require playwright-core. The plan makes node_modules per worktree; tests/browser/package.json and package-lock.json already pin playwright-core1.64.1, and scripts/t7.sh documents npm ci as a prerequisite. This is missing task setup, not a changed dependency.
+
+Choice: run npm ci --offline --prefix tests/browser in the lane. Record actual exit code and unchanged package/lock hashes, then rerun T7 with the same source, target, C12 launch profile and external evidence path. Retain missing-moduleRC1 as infrastructure failure, never semantic red. Ordinary locked prerequisite installation proceeds within task authorization.
+
+Alternative not taken: add or upgrade a package, share node_modules across worktrees, count the missing-module attempt as a game failure, or ask the CEO to approve existing task setup. No tracked dependency, game or acceptance change.
