@@ -466,3 +466,10 @@ Final parent audit may join only this explicitly proven metadata-only change: de
 Current C53 audit SHA061350c841152b7124ae7538fec531ebcd1abdf69181a52fcd318e8fc7efc31c verifies completed projection against original receipt before original guards. C58 parent SHA b8d915ceadda446b4ccc87c7471f377a39c5f87c8a315cd32f4b7dfb16c78189 enforces metadata equivalence. QA source/AST checks pass. Actual projected18M2/78commands and14M3/42commands audits exit0; parent M3→final mapping0. Negative check rejects a genuine runtime-code change with the named registry-only guard, exit1. Final four-case M2 component/union and independent runtime remain pending.
 
 Alternative not taken: retire the mutation, weaken semantic guards, relabel old execution as a new commit, or repeat all completed tests for a checker-message change. This repairs test instrumentation under the design's nearest rule.
+
+
+## C59: compose targets according to authored policy and retain plain movement (2026-10-31)
+
+Conflict: uncompiled UX smart draft expects Move(NodeId), but Move supports Point/Unit/PointOrUnit (design5.2); only Gather accepts Node. A generic group id for a lone point move would also bypass the established K19 plain path.
+
+Choice: smart movement fallback at a node composes Point(node.position), while Gather retains NodeId; unit/point conversions follow loaded TargetKind. Explicit point-capable Move under a foreign unit composes the ground point as force move (design4.4), without Attack or Unit-follow; custom Unit-only Move retains authored Unit policy. A lone unqueued point Move uses group0 (design5.1 zero:none/C27 plain path); multi-unit gesture batches share nonzero group. Corrected/additional fixture checks precede compilation/behavior. Alternative: invent Node-target Move, drop mod target policy or silently lose the plain path. No key/accepted-row change.
