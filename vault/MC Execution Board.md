@@ -821,3 +821,14 @@ All ten native gates passed on cc6f91e; local exact E9loss passed1/1 after184.31
 
 
 C104 focused verification: root read f11-c104-green/test.log and exit.txt0: exact F11 process1/1 passed in81.12s. The only fixture diff17,4→20,6 is committed as ffb21b326f6b87e89d61997c7d69822ca216758a with the Codex trailer; source is clean. This replaces the earlier timing NOT TRACED status for this local focused run. All exact research/order/privacy/damage/health/shot assertions passed. Native final-head gates restarted on ffb21b3; Task6 acceptance still pending.47/170runs; no merge/push.
+
+
+## C105: check independent native behavior before the long refutation batch
+
+Conflict: the earlier Task6 cache handoff waits for all20 selected G-REF cases and builder plants before any independent runtime. A retained behavior/cost defect found then would require those long checks again. The CEO approved speedups with coverage kept; C39 already permits builder/reviewer cooperation with one compiler owner, and Task9 used an early independent native check before G-REF.
+
+Choice: after all final normal gates pass on a clean committed head (RUST, QA, FROZEN, ACC, T7 and all seven M3 browser controls), the builder may explicitly release the sole cache for a preliminary independent native functional/cost check. RUN47 confirmed its six prepared external harnesses need no production, test or registry source mutation and use the same absolute lane target. Compiled library/API setup errors are not semantic reds. Preserve exact source hashes and selected branch-hit/geometry guards. No reviewer own plant, acceptance PASS or merge occurs in this preliminary phase.
+
+After the probes, the reviewer explicitly releases the quiescent cache back to the builder. Every selected G-REF case and required postgate plant still runs, with semantic red/restored green and clean source. The reviewer then performs its own plant and final recheck under a new explicit lease. Final acceptance still needs all existing prerequisites; source repairs require the final-source normal gates again. This changes only the timing of an unmutated-source independent check, not gate coverage or red/green/commit/gate/plant order.
+
+Evidence: brief4:42-43 and52, C39 in this note, Task9 early independent runtime in C79/current source history; RUN47's source-only confirmation names native_cost, c93_lifecycle, plain_fallback, c99_gather, plain_escape and retained_progress_step harnesses. Alternative not taken: omit/refit registered refutations, mutate source before gates, share the cache concurrently, or claim an early PASS. No new agent run;47/170, Task6run5/6. Current ffb21b3 normal ACC is still running, so no lease has transferred.
