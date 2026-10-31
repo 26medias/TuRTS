@@ -272,3 +272,19 @@ Conflict: tests/orders.rs:104-111 asserts290 accepted/refusals but not movement/
 Choice: repair the Medium now. Pin every accepted unit's target and one fixed movement tick/position change for the exact mixed300 case; all refused own-static/foreign units retain prior state. Use independent expected behavior and a compiled suppressed-write semantic red before restored green.
 
 Alternative not taken: accept counts alone, compute expected targets with the implementation under test, or defer required state evidence. No scope or acceptance-row change.
+
+## C33: reject overlapping or malformed audit spans
+
+Conflict: RUN34 found economylog.rs:349-357,425-445 permits a second CommandBoundary inside an active span to replace the first obligation. A forged first boundary with wrong final state can be hidden by a later correct one. Some(end) on a Command-phase legacy boundary is also ignored. This can make EL1 replay accept incomplete evidence.
+
+Choice: classify the integrity finding High and repair before gates. Reject nested/overlapping spans, duplicate starts, reversed/out-of-range ends, incomplete spans and invalid legacy Command-phase span metadata. Test a valid full-span baseline and a fabricated nested boundary with wrong first.after; require a named semantic failure, then correct-log green. Every boundary must remain accountable until its covered span closes.
+
+Alternative not taken: defer as a Medium, replace active obligations, or silently ignore metadata. No player, K, frozen value or accepted-row change.
+
+## C34: tag the principal unit of an order operation
+
+Conflict: no-op/immediate actions can have no state diff, so C31 cannot infer which subject an Orders operation covers. Per-subject replay must still validate its result and ownership of writes.
+
+Choice: add OperationAudit.unit_id:Option<u32> with serde default/skipNone and a capture_unit_order_operation helper. Tag the principal subject of per-unit Orders writes/attempt results; legacy and non-order records remainNone. Validate envelope membership and deterministic subject ordering inside command spans with behavior-specific result/write coverage. Do not treat metadata alone as proof or forbid valid repeated-unit completion/start operations outside a single span. A fabricated wrong/outside-subject tag must fail semantic replay. Fresh plain/gather exceptions and no-change all-refused Command evidence stay compatible.
+
+Alternative not taken: infer every actor from state diffs, drop no-op evidence, impose a universal accepted-count shortcut, or flatten per-unit writes. This is internal audit instrumentation; old/default serialized data and frozen expectations remain unchanged.
