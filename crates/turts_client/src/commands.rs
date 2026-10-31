@@ -214,7 +214,11 @@ fn split_order(order: OrderEnvelope, first_seq: u32) -> Vec<PlayerCommand> {
             order,
         }];
     }
-    let group = first_seq;
+    let group = if order.group == 0 {
+        first_seq
+    } else {
+        order.group
+    };
     order
         .units
         .chunks(MAX_ORDER_UNITS)
@@ -361,6 +365,30 @@ mod tests {
         content
     }
 
+    fn sender_test_app(next_sequence: Option<u32>) -> App {
+        use lightyear::prelude::*;
+
+        let mut app = App::new();
+        app.insert_resource(PendingCommands::default())
+            .insert_resource(CommandSequence {
+                next: next_sequence,
+            })
+            .insert_resource(CommandSendStatus::default())
+            .insert_resource(Phase::Joined { slot: 0 })
+            .insert_resource(ReplicaState::default())
+            .insert_resource(ReceiptWitnesses::default())
+            .insert_resource(CommandResults::default())
+            .insert_resource(ScenarioState::default())
+            .insert_resource(SentCommandCapture::default());
+        app.add_systems(Update, send_commands_traced);
+        app.world_mut().spawn((
+            MessageSender::<PlayerCommand>::default(),
+            RemoteId(PeerId::Netcode(5)),
+            Connected,
+        ));
+        app
+    }
+
     #[test]
     fn move_hook_sends_the_first_move_order() {
         use lightyear::prelude::*;
@@ -465,6 +493,91 @@ mod tests {
         assert_eq!(
             commands[1].order.units,
             vec![UnitId(MAX_ORDER_UNITS as u32)]
+        );
+    }
+
+    #[test]
+    fn submit_order_preserves_explicit_group_across_split_and_unsplit_envelopes() {
+        let first = OrderEnvelope {
+            order: "acme:order_move".into(),
+            units: (0..4097).map(UnitId).collect(),
+            target: OrderTarget::Point(Pos { x: 8.0, y: 9.0 }),
+            queue: QueueMode::Append,
+            group: 77,
+        };
+        let second = OrderEnvelope {
+            order: "acme:order_move".into(),
+            units: vec![UnitId(9000)],
+            target: OrderTarget::Point(Pos { x: 8.0, y: 9.0 }),
+            queue: QueueMode::Append,
+            group: 77,
+        };
+        let mut app = sender_test_app(Some(1));
+        {
+            let mut pending = app.world_mut().resource_mut::<PendingCommands>();
+            submit_order(&mut pending, first);
+            submit_order(&mut pending, second);
+        }
+
+        app.update();
+
+        let sent = &app.world().resource::<SentCommandCapture>().0;
+        assert_eq!(sent.len(), 3);
+        assert_eq!(
+            sent.iter().map(|command| command.seq).collect::<Vec<_>>(),
+            [1, 2, 3]
+        );
+        assert_eq!(
+            sent.iter()
+                .map(|command| command.order.units.len())
+                .collect::<Vec<_>>(),
+            [4096, 1, 1]
+        );
+        assert!(sent.iter().all(|command| command.order.group == 77));
+        assert_eq!(sent[0].order.units[0], UnitId(0));
+        assert_eq!(sent[0].order.units[4095], UnitId(4095));
+        assert_eq!(sent[1].order.units, [UnitId(4096)]);
+        assert_eq!(sent[2].order.units, [UnitId(9000)]);
+        assert_eq!(
+            sent.iter()
+                .map(|command| command.order.order.as_str())
+                .collect::<Vec<_>>(),
+            ["acme:order_move", "acme:order_move", "acme:order_move"]
+        );
+        assert_eq!(app.world().resource::<CommandSequence>().next, Some(4));
+    }
+
+    #[test]
+    fn oversized_gesture_sequence_exhaustion_sends_no_partial_commands() {
+        let mut app = sender_test_app(Some(u32::MAX));
+        let order = OrderEnvelope {
+            order: "acme:order_move".into(),
+            units: (0..4097).map(UnitId).collect(),
+            target: OrderTarget::Point(Pos { x: 8.0, y: 9.0 }),
+            queue: QueueMode::Append,
+            group: 77,
+        };
+        submit_order(
+            &mut app.world_mut().resource_mut::<PendingCommands>(),
+            order,
+        );
+
+        app.update();
+
+        assert!(app.world().resource::<SentCommandCapture>().0.is_empty());
+        assert!(
+            app.world()
+                .resource::<CommandSendStatus>()
+                .reconnect_required
+        );
+        assert_eq!(
+            app.world().resource::<CommandSequence>().next,
+            Some(u32::MAX)
+        );
+        assert!(app.world().resource::<PendingCommands>().0.is_empty());
+        assert_eq!(
+            app.world().resource::<ScenarioState>().error.as_deref(),
+            Some("command sequence exhausted")
         );
     }
 
