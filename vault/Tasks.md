@@ -101,3 +101,5 @@ Human usability amendment1354e33: catalog-derived principal labels/named local s
 **M3 scope closed by user:** technical implementation accepted for integration; human demo clarity remains inadequate. User explicitly authorized merge to main and push. Further demo polish is deferred; integration/CI receipts will be retained in the closeout evidence.
 
 **Integrated:** M3 fast-forwarded into main and pushed; hosted CI running, human-demo limitations retained. See [[Reports/2026-10-28 M3 integration]].
+
+MC update2026-10-30: ACTIVE: Waves1-2 complete. T19 merged98135d3; independent0High/0Medium; integration878passed/0failed/18ignored and G-RUST/G-QA/G-FROZEN0. Wave2 pushed98135d3; CI41148971118 queued. Build30/170 includes registered T2b run30. C1-C16 recorded. Mainc3f09d0 untouched; one cache, completed T19 lane removed. [[Reports/2026-10-30]].

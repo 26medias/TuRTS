@@ -8,14 +8,14 @@ source: codex
 
 # MC execution board
 
-State: ACTIVE under c3f09d0/O11/design12. T8 and T18 complete; T18 mergeb1b3834 re-gated including headed Vulkan T7(138frames). Run28 Task19 build registered; build29/170. One warm cache now belongs to T19; T18 lane removed. C1-C12 recorded; C11 CI hook belongs to Task24. Wave1 check/agents green, known M2 browser timeout. Main untouched.
+State: ACTIVE: Waves1-2 complete. T19 merged98135d3; independent0High/0Medium; integration878passed/0failed/18ignored and G-RUST/G-QA/G-FROZEN0. Wave2 pushed98135d3; CI41148971118 queued. Build30/170 includes registered T2b run30. C1-C16 recorded. Mainc3f09d0 untouched; one cache, completed T19 lane removed.
 
 Plan: `docs/superpowers/plans/2026-10-29-mc-player-control.md`.
-Design of record: `docs/superpowers/specs/2026-10-29-mc-player-control-design.md`, revision 10 at `488b3d3`.
+Design of record: `docs/superpowers/specs/2026-10-29-mc-player-control-design.md`, revision12 at63788d7, included by mainc3f09d0.
 Brief: [[Reports/2026-10-29 MC Codex brief]].
 Original base: `a0a3076`; rebased on CEO instruction to `main` at `f503cff`; integration: `codex/mc-integration`, worktree `/home/julien/Projects/TuRTS-mc-integration`.
 Task 1 lane: `codex/mc-t1`, worktree `/home/julien/Projects/TuRTS-mc-t1`, `CARGO_TARGET_DIR=target/mc-t1`.
-Main stays at `f503cff`. The pre-existing untracked disk audit stays in the main worktree.
+Main stays at `c3f09d0`. The pre-existing untracked disk audit stays in the main worktree.
 
 ## 1. Roles and dispatch rules
 
@@ -72,8 +72,8 @@ CI trigger: `.github/workflows/ci.yml:2-5` runs pushes to main and pull requests
 | T20 | 1 | - | codex/mc-t20 | COMPLETE; merge8e95e42; all integration gates0; task lane removed |
 | T8 | 2 | 2a, 3 | codex/mc-t8 | COMPLETE merge461d105; review0High/0Medium; integration G-RUST/G-QA/G-FROZEN0; lane removed |
 | T18 | 2 | 3 | codex/mc-t18 | COMPLETE candidate179ada7; mergeb1b3834; review0High/0Medium; all integration gates0 including C12 T7; lane removed |
-| T19 | 2 | 3 | codex/mc-t19 | ACTIVE run28; test/drafts preserved, cache handed over; semantic red before package implementation |
-| T2b | 3 | 2a, 3, 18 | codex/mc-t2b | NOT STARTED |
+| T19 | 2 | 3 | codex/mc-t19 | COMPLETE merge98135d3; review0High/0Medium; all integration gates0; lane removed |
+| T2b | 3 | 2a, 3, 18 | codex/mc-t2b | REGISTERED run30; message-size trace first |
 | T4 | 4 | 2b, 3 | codex/mc-t4 | NOT STARTED |
 | T9 | 4 | 1, 8, 2b | codex/mc-t9 | NOT STARTED |
 | T6 | 5 | 4 | codex/mc-t6 | NOT STARTED |
@@ -219,8 +219,9 @@ One row per builder/reviewer dispatch or resumed agent work turn. Register befor
 | 25 | T18 independent review | mod-runtime-engineer | gpt-6.1-sol | high | 0e83be5 | STOP noPASS:0High/4Medium plus lab/turret coverage concern; inherited belt contract conflict escalated; read-only only, no Cargo/plant. |
 | 26 | T18 C1-C10 repair | mod-builder | gpt-6-luna | high | c244c0a | COMPLETE179ada7: fullgates0,870/0/18; GACC corrected0, registered E2/E3 red101/restored0; input-row red101/green0; clean. |
 | 27 | T18 independent recheck | mod-runtime-engineer | gpt-6.1-sol | high | ead4fef | PASS179ada7:0High/0Medium;36 independenttests0, own input-rowred101/restored0; source/PNG/frozen/gates/C7 audited; clean/idle. |
-| 28 | T19 implementation | mod-builder | gpt-6-luna | high | 62bb518 | ACTIVE010368f: missing-package semanticred101, five scoped tests0, no-content9green, real media checked; G-RUST/GQA running. |
-| 29 | T19 independent review | ux-designer | gpt-6.1-sol | high | 010368f | REGISTERED: source/layout/camera/assets audit while builder owns compiler; final tests wait handoff; task run4/soft6/hard12. |
+| 28 | T19 implementation | mod-builder | gpt-6-luna | high | 62bb518 | COMPLETE39a74e3: missing-package/repair named reds101, 8tests0, strict scan9/9, G-RUST/GQA0; merge98135d3. |
+| 29 | T19 independent review | ux-designer | gpt-6.1-sol | high | 39a74e3 | PASS0High/0Medium; 8+9tests0; saved-copy offset plant0/101/0, exact restoration; task4runs/hard12. |
+| 30 | T2b implementation | network-engineer | gpt-6-luna | high | 98135d3 plus vault | REGISTERED: Lightyear reliable limit first, then protocol migration; task1/estimate4/hard16. |
 
 ## 9. Preflight ledger and stop
 
