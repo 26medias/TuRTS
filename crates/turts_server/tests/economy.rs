@@ -873,17 +873,26 @@ fn order_input_matches_frozen(
                 .iter()
                 .find(|definition| {
                     definition.behaviour == behaviour
-                        && match (&definition.target, &target) {
+                        && matches!(
+                            (&definition.target, &target),
                             (turts_mod_api::TargetKind::Point, OrderTargetSim::Point(_))
-                            | (turts_mod_api::TargetKind::PointOrUnit, OrderTargetSim::Point(_))
-                            | (turts_mod_api::TargetKind::Unit, OrderTargetSim::Unit(_))
-                            | (turts_mod_api::TargetKind::PointOrUnit, OrderTargetSim::Unit(_))
-                            | (turts_mod_api::TargetKind::Node, OrderTargetSim::Node(_))
-                            | (turts_mod_api::TargetKind::Job, OrderTargetSim::Job(_))
-                            | (turts_mod_api::TargetKind::Content, OrderTargetSim::Content(_))
-                            | (turts_mod_api::TargetKind::None, OrderTargetSim::None) => true,
-                            _ => false,
-                        }
+                                | (
+                                    turts_mod_api::TargetKind::PointOrUnit,
+                                    OrderTargetSim::Point(_)
+                                )
+                                | (turts_mod_api::TargetKind::Unit, OrderTargetSim::Unit(_))
+                                | (
+                                    turts_mod_api::TargetKind::PointOrUnit,
+                                    OrderTargetSim::Unit(_)
+                                )
+                                | (turts_mod_api::TargetKind::Node, OrderTargetSim::Node(_))
+                                | (turts_mod_api::TargetKind::Job, OrderTargetSim::Job(_))
+                                | (
+                                    turts_mod_api::TargetKind::Content,
+                                    OrderTargetSim::Content(_)
+                                )
+                                | (turts_mod_api::TargetKind::None, OrderTargetSim::None)
+                        )
                 })
                 .map(|definition| definition.id.to_string())
         })
