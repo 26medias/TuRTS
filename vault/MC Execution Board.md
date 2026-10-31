@@ -8,7 +8,7 @@ source: codex
 
 # MC execution board
 
-State: ACTIVE: O12 released Task 6. Integration and all four open lanes rebased onto main721e56e (design revision13); dirty source hashes preserved.10of25lanes complete;47/170runs; Task6run5/6. C1-C105. Clean ffb21b3 passed native and acceptance gates; browser gates and independent checks remain. No main merge.
+State: ACTIVE: O12 released Task 6. Integration and all four open lanes rebased onto main721e56e (design revision13); dirty source hashes preserved.10of25lanes complete;47/170runs; Task6run5/6. C1-C105. Clean ffb21b3 passed all normal gates; preliminary independent runtime active, G-REF/plants pending. No main merge.
 
 Plan: `docs/superpowers/plans/2026-10-29-mc-player-control.md`.
 Design of record: `docs/superpowers/specs/2026-10-29-mc-player-control-design.md`, revision12 at63788d7, included by mainc3f09d0.
@@ -839,3 +839,8 @@ Final normal-gate checkpoint: ffb21b326f6b87e89d61997c7d69822ca216758a is clean.
 The web helper accidentally repeated native checks on the same source. Builder identified its sole process, stopped only that invocation with SIGINT/exit130, confirmed no children remained, and recorded aborted redundant setup. It is not a web pass or semantic failure. Direct unchanged T7 and M3 scripts now run with the approved Vulkan environment and sole cache. No source change; completed native/ACC proofs remain valid.
 
 RUN47 flagged an authored singleton cap edge case for its C105 preliminary probe. D6.3 has no authored Move-envelope exemption from the global cap; preserve legacy idless MoveTo separately. The source lead is not yet a confirmed runtime finding. Do not change source or claim a failure until the valid probe runs. Every selected refutation and final plant remains required.47/170 runs; Task6run5/6; no merge/push.
+
+
+C105 preliminary handoff: all normal gates are now green on clean ffb21b3. Root verified T7 exit0,136 frames/53 moving and exact final(20,8), with its segment oracle1/1; M3 exit0 and cleanup0, all seven canvas/full capture pairs and accepted produce/disable/remove results. The first T7 attempt exited1 before browser assertions because playwright-core was absent; locked offline npm ci repaired setup, then unchanged-source retry passed. Both attempts remain recorded. Root web receipt: main target/mc-evidence/t6-root/web-ffb21b3-root-check.json.
+
+Builder explicitly released the quiescent sole cache to RUN47. Reviewer verifies prerequisites before preliminary unmutated-source native/cost probes, prioritizing the authored singleton cap control. No production/test/registry mutation, own plant or acceptance PASS is authorized in this phase. All20 selected G-REF cases, required builder plants and reviewer final own plant remain pending.47/170 runs; Task6run5/6; no merge/push.
