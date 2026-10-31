@@ -8,7 +8,7 @@ source: codex
 
 # MC execution board
 
-State: ACTIVE: 9 of 25 lanes complete. Task9 candidateabe0841 has all standard gates green (workspace1053/0/18), fresh base/CLICK9 passes and69 independent rechecks passed. The exact7-case GREF is live; final FOV and independent modifier plants remain before review/merge. Build runs:38/170. Rulings:C1-C81. Main remains c3f09d0.
+State: ACTIVE: 9 of 25 lanes complete. Task9 candidateabe0841 has all standard gates green (workspace1053/0/18), fresh base/CLICK9 passes and69 independent rechecks passed. Final GREF: native1/7 passed; six browser cases remain, followed by FOV and independent modifier plants before review/merge. Build runs:38/170. Rulings:C1-C81. Main remains c3f09d0.
 
 Plan: `docs/superpowers/plans/2026-10-29-mc-player-control.md`.
 Design of record: `docs/superpowers/specs/2026-10-29-mc-player-control-design.md`, revision12 at63788d7, included by mainc3f09d0.
@@ -75,7 +75,7 @@ CI trigger: `.github/workflows/ci.yml:2-5` runs pushes to main and pull requests
 | T19 | 2 | 3 | codex/mc-t19 | COMPLETE merge98135d3; review0High/0Medium; all integration gates0; lane removed |
 | T2b | 3 | 2a, 3, 18 | codex/mc-t2b | COMPLETE64cd400; merge6d2c46e; all gates/10GREF0; review0H/0M; lane removed |
 | T4 | 4 | 2b, 3 | codex/mc-t4 | COMPLETE merge0490ebd; review0H/0M,36GREF,all12rootgates0; lane removed |
-| T9 | 4 | 1, 8, 2b | codex/mc-t9 | Candidateabe0841: fresh base/CLICK9, all standard gates and independent69 pass. New7GREF live, then builderFOV and reviewer modifier plant/final decision before merge. |
+| T9 | 4 | 1, 8, 2b | codex/mc-t9 | Candidateabe0841: fresh base/CLICK9, all standard gates and independent69 pass. Final GREF1/7 passed, browser cases live, then builderFOV and reviewer modifier plant/final decision before merge. |
 | T6 | 5 | 4 | codex/mc-t6 | NOT STARTED |
 | T7 | 5 | 2b, 4 | codex/mc-t7 | NOT STARTED |
 | T11 | 5 | 9, 19, 20 | codex/mc-t11 | NOT STARTED |
@@ -229,7 +229,7 @@ One row per builder/reviewer dispatch or resumed agent work turn. Register befor
 | 35 | T9 implementation preparation | bevy-rendering-engineer | gpt-6-luna | high | 3203f6b | COMPLETE preparation only: imported tests, API stubs, PROJ1/CLICK9 drafts; uncompiled/unexecuted/uncommitted; task2/estimate6/soft12/hard24. |
 | 36 | T9 implementation continuation | bevy-rendering-engineer | gpt-6-luna | high | 61535fc | COMPLETE native implementation handoff only; initial semantic reds, C49/C69-C73 repairs and native proofs. Task verification continues in RUN38. |
 | 37 | T9 independent review | technical-director | gpt-6.1-sol | high | abe0841 | ACTIVE read-only: current69 actual tests0, source63 unchanged; C49/C77/C79 independently rechecked. Cache returned to RUN38. Final GREF/FOV and own modifier plant remain. |
-| 38 | T9 pixel proof and final verification continuation | bevy-rendering-engineer | gpt-6-luna | high | abe0841 | ACTIVE: repaired source, fresh base/CLICK9 and all standard gates0; independent69 accepted. Cache returned; exact7GREF atgref-abe0841-c7 live, thenFOV. Prior mkdir collision setup-only. T9run5/estimate6/soft12/hard24. |
+| 38 | T9 pixel proof and final verification continuation | bevy-rendering-engineer | gpt-6-luna | high | abe0841 | ACTIVE: repaired source, fresh base/CLICK9 and all standard gates0; independent69 accepted. Cache returned; final GREF1/7 passed atgref-abe0841-c7, browser cases live, thenFOV. Prior mkdir collision setup-only. T9run5/estimate6/soft12/hard24. |
 
 ## 9. Preflight ledger and stop
 
