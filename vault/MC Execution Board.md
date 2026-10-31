@@ -8,7 +8,7 @@ source: codex
 
 # MC execution board
 
-State: ACTIVE:9of25lanes complete. Task4 merged0490ebd and root-gated12/12. Task9 core27/0/0 root-verified after compiled reds; actual client adapter, replica orders and feeds in progress. RUN37 independent source review active; runtime awaits cache handoff. Wave4 awaitsTask9. Build37/170; C1-C61. Mainc3f09d0 untouched.
+State: ACTIVE:9of25lanes complete. Task4 merged0490ebd and root-gated12/12. Task9 core27/0/0 root-verified after compiled reds; actual client adapter, replica orders and feeds in progress. RUN37 independent source review active; runtime awaits cache handoff. Wave4 awaitsTask9. Build37/170; C1-C63. Mainc3f09d0 untouched.
 
 Plan: `docs/superpowers/plans/2026-10-29-mc-player-control.md`.
 Design of record: `docs/superpowers/specs/2026-10-29-mc-player-control-design.md`, revision12 at63788d7, included by mainc3f09d0.
