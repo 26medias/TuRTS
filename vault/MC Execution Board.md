@@ -223,9 +223,9 @@ One row per builder/reviewer dispatch or resumed agent work turn. Register befor
 | 29 | T19 independent review | ux-designer | gpt-6.1-sol | high | 39a74e3 | PASS0High/0Medium; 8+9tests0; saved-copy offset plant0/101/0, exact restoration; task4runs/hard12. |
 | 30 | T2b implementation | network-engineer | gpt-6-luna | high | 363d02d | COMPLETE64cd400;14gate receipts0,886/0/18,10GREF(69commands) namedred/restoredgreen; merge6d2c46e. |
 | 31 | T2b independent review | mod-runtime-engineer; qa-lead registry lens | gpt-6.1-sol | high | 64cd400 | PASS0High/0Medium;26focused tests0, capplant0/101/0, all14gates/10GREF audited; sourceclean; task2runs/estimate4. |
-| 32 | T4 implementation | simulation-core-engineer | gpt-6-luna | high | 6d2c46e plus vault | REGISTERED; red-first queue/audit/validator; task1/estimate8/soft16/hard32. |
+| 32 | T4 implementation | simulation-core-engineer | gpt-6-luna | high | ab6ffd8 | ACTIVE0240e9a; final fmt/clippy/wasm/workspace0 (984/0/18); remaining gates/plants/GREF; task1/estimate8/soft16/hard32. |
 | 33 | T9 core-test preparation | ux-designer | gpt-6-luna | high | ab6ffd8 | COMPLETE draft-only; external tests/contract, SHA76817063...a2d629, T9 clean, no Cargo, no observed red/green. |
-| 34 | T4 independent review | qa-lead | gpt-6.1-sol | high | ab6ffd8; candidate pending | REGISTERED read-only early audit; no Cargo until handoff; task2/estimate8/soft16/hard32. |
+| 34 | T4 independent review | qa-lead | gpt-6.1-sol | high | ab6ffd8; final0240e9a pending | ACTIVE source closure no known High; independent runtime/plant waits final gate/cachehandoff; task2/estimate8/soft16/hard32. |
 | 35 | T9 implementation preparation | bevy-rendering-engineer | gpt-6-luna | high | 3203f6b | COMPLETE preparation only: imported tests, API stubs, PROJ1/CLICK9 drafts; uncompiled/unexecuted/uncommitted; task2/estimate6/soft12/hard24. |
 
 ## 9. Preflight ledger and stop
@@ -430,3 +430,6 @@ Task4 finalproof closure:31validator tests and15static M2 harness tests exit0; Q
 
 
 Stable Task4 source moved49f556c ->6056fc0 for test let-chain lint ->0240e9a for engine-local protected-token rename. Root inspected0240e9a; no content/scanner/behavior change. Format/strict Clippy/wasm0; workspace test is live PID1840544 at current observation, exact source0240e9a and compact sole cache. C54/C55 record the collision repair and honest missing dev-red mutation metadata; focused post-gate proofs will close it. QA auditor recheck passed source c20bbf34; final M3 runtime still pending. Global35/170.
+
+
+Task4 exact0240e9ae059e1e022ab5acb9dc8b4900f58ea640: root read final fmt/Clippy/wasm/workspace raw logs, all actualRC0. Workspace99groups sum984passed/0failed/18ignored. Candidate source clean. Remaining boundaries/QA/frozen/acceptance/web, post-gate provenance repairs,2planplants,36registeredrefutations and independent runtime remain required. No Task4 merge accepted. Previous goal turn classified PROGRESS: Task9 scaffolds/source corrections and authoritative rulings/evidence changed the next actions; this turn adds reproducible exact-source audit and verified final Rust results. Goal remains active, build35/170, main unchanged.
