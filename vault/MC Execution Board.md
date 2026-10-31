@@ -8,7 +8,7 @@ source: codex
 
 # MC execution board
 
-State: ACTIVE: 9 of 25 lanes complete. Task9 candidateabe0841 has all standard gates green (workspace1053/0/18), fresh base/CLICK9 passes and69 independent rechecks passed. Final GREF:4/7 passed; the missing-output-mesh baseline passes and its mutation stage is live. Three cases and final FOV/modifier checks remain before review/merge. Build runs:38/170. Rulings:C1-C81. Main remains c3f09d0.
+State: ACTIVE: 9 of25 lanes complete; Task9 source accepted abe0841, integration merge/re-gate pending. Independent PASS0High/0unresolvedMedium,69 tests,7/7 GREF and both final plants complete. Build38/170; rulingsC1-C81. Main remains c3f09d0.
 
 Plan: `docs/superpowers/plans/2026-10-29-mc-player-control.md`.
 Design of record: `docs/superpowers/specs/2026-10-29-mc-player-control-design.md`, revision12 at63788d7, included by mainc3f09d0.
@@ -75,7 +75,7 @@ CI trigger: `.github/workflows/ci.yml:2-5` runs pushes to main and pull requests
 | T19 | 2 | 3 | codex/mc-t19 | COMPLETE merge98135d3; review0High/0Medium; all integration gates0; lane removed |
 | T2b | 3 | 2a, 3, 18 | codex/mc-t2b | COMPLETE64cd400; merge6d2c46e; all gates/10GREF0; review0H/0M; lane removed |
 | T4 | 4 | 2b, 3 | codex/mc-t4 | COMPLETE merge0490ebd; review0H/0M,36GREF,all12rootgates0; lane removed |
-| T9 | 4 | 1, 8, 2b | codex/mc-t9 | Candidateabe0841: fresh base/CLICK9, all standard gates and independent69 pass. Final GREF4/7 passed, three cases remain, then builderFOV and reviewer modifier plant/final decision before merge. |
+| T9 | 4 | 1, 8, 2b | codex/mc-t9 | Source accepted abe0841; independent PASS0High/0unresolvedMedium, all standard gates,69 checks,7/7 GREF,FOV/modifier plants. Root merge/re-gate pending. |
 | T6 | 5 | 4 | codex/mc-t6 | NOT STARTED |
 | T7 | 5 | 2b, 4 | codex/mc-t7 | NOT STARTED |
 | T11 | 5 | 9, 19, 20 | codex/mc-t11 | NOT STARTED |
@@ -228,8 +228,8 @@ One row per builder/reviewer dispatch or resumed agent work turn. Register befor
 | 34 | T4 independent review | qa-lead | gpt-6.1-sol | high | 2c45b83 | PASS0High/0Medium;65independenttests0,ownsemanticplant0/101/0; exactrestore/cacheidle. |
 | 35 | T9 implementation preparation | bevy-rendering-engineer | gpt-6-luna | high | 3203f6b | COMPLETE preparation only: imported tests, API stubs, PROJ1/CLICK9 drafts; uncompiled/unexecuted/uncommitted; task2/estimate6/soft12/hard24. |
 | 36 | T9 implementation continuation | bevy-rendering-engineer | gpt-6-luna | high | 61535fc | COMPLETE native implementation handoff only; initial semantic reds, C49/C69-C73 repairs and native proofs. Task verification continues in RUN38. |
-| 37 | T9 independent review | technical-director | gpt-6.1-sol | high | abe0841 | ACTIVE read-only: current69 actual tests0, source63 unchanged; C49/C77/C79 independently rechecked. Cache returned to RUN38. Final GREF/FOV and own modifier plant remain. |
-| 38 | T9 pixel proof and final verification continuation | bevy-rendering-engineer | gpt-6-luna | high | abe0841 | ACTIVE: repaired source, fresh base/CLICK9 and all standard gates0; independent69 accepted. Cache returned; final GREF4/7 passed atgref-abe0841-c7, browser cases live, thenFOV. Prior mkdir collision setup-only. T9run5/estimate6/soft12/hard24. |
+| 37 | T9 independent review | technical-director | gpt-6.1-sol | high | abe0841 | COMPLETE PASS0High/0unresolvedMedium;69 independent checks,7/7 GREF audited,FOV3 audited, own modifier0/101/0,63 source hashes restored, clean/cache ROOT. |
+| 38 | T9 pixel proof and final verification continuation | bevy-rendering-engineer | gpt-6-luna | high | abe0841 | COMPLETE: fresh base/CLICK9, all standard gates0,7/7 GREF45commands,FOV0/101/0, clean final index. T9run5/estimate6/soft12/hard24. Historical setup failures preserved. |
 
 ## 9. Preflight ledger and stop
 
@@ -517,3 +517,5 @@ C78: finish the legacy M2 world click before polling its result. Core correctly 
 C79: move cached UI publication to Last before FrameCloseSet so it follows real PostUpdate layout/visibility. Keep the late Gather visibility assertion and timeout. Require actual UiPlugin geometry proof and real base/CLICK9 reruns. C77/C78/C79 remain in RUN38 before a single final commit.
 
 C79 also orders actual web/native Last feed readers after FrameCloseSet (and native readers before exit), so a fresh producer cannot be read one frame early. This is part of the same snapshot fidelity repair.
+
+Task9 source accepted abe0841 after independent PASS: 0 open High, 0 unresolved Medium; 69 independent checks, all7 guarded GREF cycles, FOV3 and own modifier semantic plants restored exactly. Integration merge and root gates pending; build38/170, no new run or main action.
