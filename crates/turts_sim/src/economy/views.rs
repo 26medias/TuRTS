@@ -323,6 +323,10 @@ pub struct CatalogUnitAudit {
     pub id: ContentId,
     pub radius: f32,
     pub movement_speed: Option<f32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub removal: Option<turts_mod_api::RemovalDef>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub machine_recipe: Option<ContentId>,
     pub inventory: Option<(u64, Vec<ContentId>)>,
     pub gatherer: Option<CatalogGathererAudit>,
     pub drop_off: Vec<CatalogDropOffAudit>,
@@ -846,6 +850,8 @@ pub fn audit_state(world: &mut World) -> AuditState {
                             turts_mod_api::Footprint::Circle { radius } => radius,
                         },
                         movement_speed: d.movement.as_ref().map(|m| m.speed),
+                        removal: d.removal,
+                        machine_recipe: d.machine.as_ref().map(|machine| machine.recipe.clone()),
                         inventory: d
                             .inventory
                             .as_ref()
