@@ -825,9 +825,8 @@ fn order_input_matches_frozen(
     if actual.slot.0 != expected.slot || actual.seq != expected.seq {
         return false;
     }
-    let (order_id, behaviour, units, target) = match &expected.kind {
+    let (behaviour, units, target) = match &expected.kind {
         FrozenKind::MoveTo { units, target_bits } => (
-            "base:order_move",
             Behaviour::Move,
             units.clone(),
             OrderTargetSim::Point(bevy_math::Vec2::new(
@@ -836,13 +835,11 @@ fn order_input_matches_frozen(
             )),
         ),
         FrozenKind::Gather { unit, node } => (
-            "base:order_gather",
             Behaviour::Gather,
             vec![*unit],
             OrderTargetSim::Node(turts_sim::NodeId(*node)),
         ),
         FrozenKind::Produce { producer, recipe } => (
-            "base:order_produce",
             Behaviour::Produce,
             vec![*producer],
             OrderTargetSim::Content(turts_mod_api::ContentId::parse(recipe).unwrap()),
@@ -850,14 +847,12 @@ fn order_input_matches_frozen(
         FrozenKind::CancelFirstJob { producer } => {
             let first_job = initial.allocators.next_values().2;
             (
-                "base:order_cancel",
                 Behaviour::CancelProduction,
                 vec![*producer],
                 OrderTargetSim::Job(turts_sim::JobId(first_job)),
             )
         }
         FrozenKind::Cancel { producer, job } => (
-            "base:order_cancel",
             Behaviour::CancelProduction,
             vec![*producer],
             OrderTargetSim::Job(turts_sim::JobId(*job)),
@@ -869,7 +864,31 @@ fn order_input_matches_frozen(
         }
         (actual, expected) => actual == expected,
     };
-    order.order.to_string() == order_id
+    let expected_order_id = initial
+        .catalog
+        .as_ref()
+        .and_then(|catalog| {
+            catalog
+                .order_definitions
+                .iter()
+                .find(|definition| {
+                    definition.behaviour == behaviour
+                        && match (&definition.target, &target) {
+                            (turts_mod_api::TargetKind::Point, OrderTargetSim::Point(_))
+                            | (turts_mod_api::TargetKind::PointOrUnit, OrderTargetSim::Point(_))
+                            | (turts_mod_api::TargetKind::Unit, OrderTargetSim::Unit(_))
+                            | (turts_mod_api::TargetKind::PointOrUnit, OrderTargetSim::Unit(_))
+                            | (turts_mod_api::TargetKind::Node, OrderTargetSim::Node(_))
+                            | (turts_mod_api::TargetKind::Job, OrderTargetSim::Job(_))
+                            | (turts_mod_api::TargetKind::Content, OrderTargetSim::Content(_))
+                            | (turts_mod_api::TargetKind::None, OrderTargetSim::None) => true,
+                            _ => false,
+                        }
+                })
+                .map(|definition| definition.id.to_string())
+        })
+        .is_some_and(|expected_order_id| order.order.to_string() == expected_order_id);
+    expected_order_id
         && order.behaviour == behaviour
         && order.units == units
         && target_matches

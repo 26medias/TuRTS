@@ -675,12 +675,16 @@ impl Transaction<'_> {
             world.resource_mut::<IdAllocators>().next_unit = next_unit_id;
         }
         for spawn in writes.spawned {
-            world.spawn((
+            let order_capable = crate::orders::unit_order_capable(world, spawn.unit_type);
+            let mut entity = world.spawn((
                 UnitId(spawn.id),
                 crate::world::UnitType(spawn.unit_type),
                 Owner(SlotId(spawn.owner_slot)),
                 crate::world::Position(spawn.position),
             ));
+            if order_capable {
+                entity.insert(crate::orders::UnitOrders::default());
+            }
             if let Some(inventory) = spawn.inventory {
                 world
                     .resource_mut::<EconomyLedger>()
