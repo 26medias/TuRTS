@@ -3,7 +3,7 @@
 //! These types are marker types. `ProtocolPlugin` registers them.
 
 /// Ordered and reliable, in both directions. Carries `Hello`, `Welcome`, `JoinRejected`,
-/// `Snapshot`, `PlayerCommand`, `CommandAck`, `CommandApplied`, `CommandRejected` and `ResyncRequest`.
+/// `Snapshot`, `PlayerCommand`, `CommandAck`, `OrderResult` and `ResyncRequest`.
 pub struct ReliableChannel;
 
 /// Unordered and unreliable, server to client. Carries `WorldDelta`. Every delta that arrives

@@ -577,7 +577,7 @@ fn dpi_two_panel_border_blocks_world_order_and_outside_click_still_orders() {
         "an outside click reaches the real world-order path"
     );
     assert!(
-        matches!(app.world().resource::<PendingCommands>().0.front(), Some(turts_client::commands::PendingCommand::Submit { kind: turts_net_protocol::PlayerCommandKind::MoveTo { unit_ids, .. }, trace_step: None }) if unit_ids == &vec![UnitId(mobile)])
+        matches!(app.world().resource::<PendingCommands>().0.front(), Some(turts_client::commands::PendingCommand::Submit { kind: turts_client::commands::ClientCommand::MoveTo { unit_ids, .. }, trace_step: None }) if unit_ids == &vec![UnitId(mobile)])
     );
     assert_ne!(producer, mobile);
 }
@@ -700,6 +700,7 @@ fn owned_move_expansion_uses_only_mobile_records_after_ready_context() {
         slot: 0,
         tick: 1,
         tick_hz: 20,
+        match_id: 0,
     });
     state.content = Some(content);
     state.replica = Some(replica);
@@ -797,6 +798,7 @@ fn selection_is_cleared_when_a_coherent_replacement_removes_or_foreigns_it() {
             slot: 0,
             tick: 1,
             tick_hz: 20,
+            match_id: 0,
         }),
         replica: Some(replica),
         ..Default::default()
@@ -890,6 +892,7 @@ fn cpu_ui_app_at(scale: f32, jobs: usize, width: u32, height: u32) -> (App, Enti
             slot: 0,
             tick: 1,
             tick_hz: 20,
+            match_id: 0,
         }),
         content: Some(content.clone()),
         replica: Some(replica),
@@ -1406,7 +1409,7 @@ fn real_pointer_press_survives_replica_progress_update_and_never_reaches_world()
             .cloned()
             .collect::<Vec<_>>(),
         vec![turts_client::commands::PendingCommand::Submit {
-            kind: turts_net_protocol::PlayerCommandKind::Produce {
+            kind: turts_client::commands::ClientCommand::Produce {
                 producer_id: UnitId(producer),
                 recipe_id: match action {
                     UiAction::Produce { recipe, .. } => recipe,
@@ -1532,7 +1535,7 @@ fn real_scroll_reaches_the_fifth_exact_cancel_action_at_dpi_two() {
             .cloned()
             .collect::<Vec<_>>(),
         vec![turts_client::commands::PendingCommand::Submit {
-            kind: turts_net_protocol::PlayerCommandKind::CancelProduction {
+            kind: turts_client::commands::ClientCommand::CancelProduction {
                 producer_id: UnitId(producer),
                 job_id: JobId(95),
             },

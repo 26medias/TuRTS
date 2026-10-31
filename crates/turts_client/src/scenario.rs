@@ -7,9 +7,10 @@
 use std::collections::BTreeMap;
 use std::path::Path;
 
+use crate::commands::ClientCommand;
 use bevy::prelude::Resource;
 use serde::{Deserialize, Serialize};
-use turts_net_protocol::{JobId, PlayerCommand, PlayerCommandKind, UnitId};
+use turts_net_protocol::{JobId, PlayerCommand, UnitId};
 
 use crate::ingest::CommandResult;
 
@@ -39,7 +40,7 @@ pub(crate) fn produce_command_if_ready(
     owner_slot: u8,
     request: &(u32, String),
     inventory_gate: Option<&(u32, String, u64)>,
-) -> Option<PlayerCommandKind> {
+) -> Option<ClientCommand> {
     replica.last_applied_tick?;
     let (producer, technology) = request;
     if replica.units.get(producer)?.owner_slot != owner_slot {
@@ -79,7 +80,7 @@ pub(crate) fn produce_command_if_ready(
             return None;
         }
     }
-    Some(PlayerCommandKind::Produce {
+    Some(ClientCommand::Produce {
         producer_id: turts_net_protocol::UnitId(*producer),
         recipe_id: technology.clone(),
     })
@@ -101,7 +102,7 @@ pub(crate) struct TraceStep {
     deny_unknown_fields
 )]
 pub(crate) enum TraceCommand {
-    Submit(PlayerCommandKind),
+    Submit(ClientCommand),
     CancelAppliedJob {
         producer_id: UnitId,
         produced_by_step: usize,
@@ -238,6 +239,7 @@ impl ScenarioState {
         &mut self,
         step_index: usize,
         envelope: PlayerCommand,
+        submitted: Option<ClientCommand>,
         result_cursor: usize,
     ) -> Result<(), String> {
         let Some(binding) = self
@@ -255,7 +257,7 @@ impl ScenarioState {
             .ok_or_else(|| {
                 "trace sender reported an envelope before the driver started".to_owned()
             })?
-            .record_sent(step_index, envelope_for_driver, result_cursor)?;
+            .record_sent(step_index, envelope_for_driver, submitted, result_cursor)?;
         Ok(())
     }
 
@@ -272,14 +274,17 @@ impl ScenarioState {
                 .enumerate()
                 .skip(cursor.min(results.len()))
                 .find_map(|(_, result)| match result {
-                    CommandResult::Applied { seq, .. } | CommandResult::Rejected { seq, .. }
+                    CommandResult::Applied { seq, .. }
+                    | CommandResult::Rejected { seq, .. }
+                    | CommandResult::Order { seq, .. }
                         if *seq == envelope.seq =>
                     {
                         Some(result.clone())
                     }
                     CommandResult::Acked { .. }
                     | CommandResult::Applied { .. }
-                    | CommandResult::Rejected { .. } => None,
+                    | CommandResult::Rejected { .. }
+                    | CommandResult::Order { .. } => None,
                 });
         }
     }
@@ -309,7 +314,7 @@ impl ScenarioState {
 pub(crate) enum TraceAction {
     Submit {
         step_index: usize,
-        kind: PlayerCommandKind,
+        kind: ClientCommand,
     },
     RepeatLastEnvelope {
         step_index: usize,
@@ -339,7 +344,7 @@ struct SentEnvelope {
 enum IssuedAction {
     Submit {
         step_index: usize,
-        kind: PlayerCommandKind,
+        kind: ClientCommand,
     },
     Repeat {
         step_index: usize,
@@ -405,6 +410,13 @@ impl TraceDriver {
             let terminal = match result {
                 CommandResult::Applied { seq, tick, job_id } => Some((*seq, *tick, Some(*job_id))),
                 CommandResult::Rejected { seq, tick, .. } => Some((*seq, *tick, None)),
+                CommandResult::Order {
+                    seq,
+                    tick,
+                    accepted,
+                    job_id,
+                    ..
+                } => Some((*seq, *tick, (!accepted.is_empty()).then_some(*job_id))),
                 CommandResult::Acked { .. } => None,
             };
             let Some((seq, result_tick, job_id)) = terminal else {
@@ -431,7 +443,7 @@ impl TraceDriver {
             let step = &self.steps[step_index];
             let outcome = match (&step.command, job_id) {
                 (
-                    TraceCommand::Submit(PlayerCommandKind::Produce { producer_id, .. }),
+                    TraceCommand::Submit(ClientCommand::Produce { producer_id, .. }),
                     Some(Some(job_id)),
                 ) => StepOutcome::AppliedJob {
                     producer_id: *producer_id,
@@ -515,7 +527,7 @@ impl TraceDriver {
                             ));
                         }
                     };
-                    let kind = PlayerCommandKind::CancelProduction {
+                    let kind = ClientCommand::CancelProduction {
                         producer_id: *producer_id,
                         job_id,
                     };
@@ -559,6 +571,7 @@ impl TraceDriver {
         &mut self,
         step_index: usize,
         envelope: PlayerCommand,
+        submitted: Option<ClientCommand>,
         result_cursor_after_send: usize,
     ) -> Result<(), String> {
         let issued = self.issued.take().ok_or_else(|| {
@@ -569,7 +582,7 @@ impl TraceDriver {
                 step_index: expected_step,
                 kind,
             } => {
-                if envelope.kind != *kind {
+                if submitted.as_ref() != Some(kind) {
                     self.issued = Some(issued);
                     return Err(format!(
                         "trace step {step_index} sent a command different from its frozen input"
@@ -581,7 +594,7 @@ impl TraceDriver {
                 step_index: expected_step,
                 envelope: expected_envelope,
             } => {
-                if envelope != *expected_envelope {
+                if submitted.is_some() || envelope != *expected_envelope {
                     self.issued = Some(issued);
                     return Err(format!(
                         "trace step {step_index} changed the repeated PlayerCommand envelope"
@@ -627,7 +640,7 @@ fn validate_steps(steps: &[TraceStep]) -> Result<(), String> {
                 };
                 let is_matching_produce = matches!(
                     &produced.command,
-                    TraceCommand::Submit(PlayerCommandKind::Produce {
+                    TraceCommand::Submit(ClientCommand::Produce {
                         producer_id: submitted_producer,
                         ..
                     }) if submitted_producer == producer_id
@@ -675,11 +688,9 @@ fn validate_steps(steps: &[TraceStep]) -> Result<(), String> {
 mod produce_hook_tests {
     use std::collections::VecDeque;
 
-    use super::produce_command_if_ready;
+    use super::{ClientCommand, produce_command_if_ready};
     use crate::replica::{Replica, UnitReplica};
-    use turts_net_protocol::{
-        BalanceState, EconomyState, InventoryPort, InventoryState, PlayerCommandKind, UnitId,
-    };
+    use turts_net_protocol::{BalanceState, EconomyState, InventoryPort, InventoryState, UnitId};
 
     #[test]
     fn scenario_waits_for_replica_state() {
@@ -713,7 +724,7 @@ mod produce_hook_tests {
         replica.last_applied_tick = Some(41);
         assert_eq!(
             produce_command_if_ready(&replica, 0, &request, Some(&gate)),
-            Some(PlayerCommandKind::Produce {
+            Some(ClientCommand::Produce {
                 producer_id: UnitId(7),
                 recipe_id: "forge:hardened_shells".into()
             })
