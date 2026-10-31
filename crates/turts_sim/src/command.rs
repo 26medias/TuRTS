@@ -348,13 +348,15 @@ fn apply_move_to_per_unit(
     if !outcomes.accepted.is_empty()
         && !crate::orders::queue_movement_envelope(
             world,
-            slot,
-            seq,
-            0,
-            target,
-            outcomes.accepted.clone(),
-            None,
-            true,
+            crate::orders::MovementEnvelopeRequest {
+                slot,
+                seq,
+                group: 0,
+                point: target,
+                unit_ids: outcomes.accepted.clone(),
+                order: None,
+                plain: true,
+            },
         )
     {
         outcomes.refused.extend(

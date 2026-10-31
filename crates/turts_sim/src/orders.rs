@@ -291,30 +291,31 @@ fn unit_toggleable(unit: &turts_mod_api::ResolvedUnit) -> bool {
         || unit.weapon.is_some()
 }
 
-pub(crate) fn queue_movement_envelope(
-    world: &mut World,
-    slot: SlotId,
-    seq: u32,
-    group: u32,
-    point: Vec2,
-    unit_ids: Vec<u32>,
-    order: Option<Order>,
-    plain: bool,
-) -> bool {
+pub(crate) fn queue_movement_envelope(world: &mut World, request: MovementEnvelopeRequest) -> bool {
     let tick = world.resource::<crate::world::Tick>().0;
     world
         .resource_mut::<PendingMovementOrders>()
         .queue(PendingMovementOrder {
-            slot,
+            slot: request.slot,
             accepted_tick: tick,
-            seq,
-            group,
+            seq: request.seq,
+            group: request.group,
             pool_id: 0,
-            point,
-            unit_ids,
-            order,
-            plain,
+            point: request.point,
+            unit_ids: request.unit_ids,
+            order: request.order,
+            plain: request.plain,
         })
+}
+
+pub(crate) struct MovementEnvelopeRequest {
+    pub(crate) slot: SlotId,
+    pub(crate) seq: u32,
+    pub(crate) group: u32,
+    pub(crate) point: Vec2,
+    pub(crate) unit_ids: Vec<u32>,
+    pub(crate) order: Option<Order>,
+    pub(crate) plain: bool,
 }
 
 /// Run one fixed-tick order phase.
@@ -343,8 +344,7 @@ pub(crate) fn run_orders(world: &mut World) {
                 progress.activity == crate::movement::MovementActivity::Blocked
                     && world.entity(entity).get::<MoveTarget>().is_none()
             });
-        if blocked && current.is_some() {
-            let current = current.unwrap();
+        if let Some(current) = current.as_ref().filter(|_| blocked) {
             let slot = world
                 .entity(entity)
                 .get::<crate::world::Owner>()
@@ -454,10 +454,9 @@ pub(crate) fn run_orders(world: &mut World) {
 }
 
 fn queue_unallocated_move_orders(world: &mut World) {
-    let mut grouped: BTreeMap<
-        (u8, u32, u32, u32, u32),
-        Vec<(u32, bevy_ecs::entity::Entity, Vec2, Order)>,
-    > = BTreeMap::new();
+    type GroupKey = (u8, u32, u32, u32, u32);
+    type GroupMembers = Vec<(u32, bevy_ecs::entity::Entity, Vec2, Order)>;
+    let mut grouped: BTreeMap<GroupKey, GroupMembers> = BTreeMap::new();
     for entity in world.iter_entities() {
         let (Some(unit_id), Some(owner), Some(orders), Some(target)) = (
             entity.get::<crate::world::UnitId>(),
@@ -508,13 +507,15 @@ fn queue_unallocated_move_orders(world: &mut World) {
                 let queued = if queue_request {
                     queue_movement_envelope(
                         world,
-                        SlotId(slot),
-                        unit_id,
-                        group,
-                        point,
-                        unit_ids.clone(),
-                        Some(order.clone()),
-                        false,
+                        MovementEnvelopeRequest {
+                            slot: SlotId(slot),
+                            seq: unit_id,
+                            group,
+                            point,
+                            unit_ids: unit_ids.clone(),
+                            order: Some(order.clone()),
+                            plain: false,
+                        },
                     )
                 } else {
                     true
@@ -1189,21 +1190,23 @@ pub(crate) fn apply_order(
         let queued = can_queue
             && queue_movement_envelope(
                 world,
-                slot,
-                seq,
-                command.group,
-                point,
-                spread_units.clone(),
-                spread_order,
-                false,
+                MovementEnvelopeRequest {
+                    slot,
+                    seq,
+                    group: command.group,
+                    point,
+                    unit_ids: spread_units.clone(),
+                    order: spread_order,
+                    plain: false,
+                },
             );
         if queued {
             for unit in &spread_units {
-                if let Some(entity) = entity_by_unit.get(unit).copied() {
-                    if let Some(mut orders) = world.entity_mut(entity).get_mut::<UnitOrders>() {
-                        orders.queue.clear();
-                        orders.last_failure = None;
-                    }
+                if let Some(entity) = entity_by_unit.get(unit).copied()
+                    && let Some(mut orders) = world.entity_mut(entity).get_mut::<UnitOrders>()
+                {
+                    orders.queue.clear();
+                    orders.last_failure = None;
                 }
                 clear_gather(world, *unit);
             }
@@ -1786,13 +1789,15 @@ mod tests {
         for unit_id in 1..=128_u32 {
             assert!(queue_movement_envelope(
                 app.world_mut(),
-                SlotId(0),
-                unit_id,
-                0,
-                Vec2::new(90.0, 90.0),
-                vec![unit_id],
-                Some(order.clone()),
-                false,
+                MovementEnvelopeRequest {
+                    slot: SlotId(0),
+                    seq: unit_id,
+                    group: 0,
+                    point: Vec2::new(90.0, 90.0),
+                    unit_ids: vec![unit_id],
+                    order: Some(order.clone()),
+                    plain: false,
+                },
             ));
         }
 
@@ -1904,18 +1909,20 @@ mod tests {
         let stale = Vec2::new(40.0, 40.0);
         assert!(queue_movement_envelope(
             app.world_mut(),
-            SlotId(0),
-            1,
-            9,
-            stale,
-            vec![1],
-            Some(Order {
-                order: ContentId::parse("test:move").unwrap(),
-                behaviour: Behaviour::Move,
-                target: OrderTargetSim::Point(stale),
+            MovementEnvelopeRequest {
+                slot: SlotId(0),
+                seq: 1,
                 group: 9,
-            }),
-            false,
+                point: stale,
+                unit_ids: vec![1],
+                order: Some(Order {
+                    order: ContentId::parse("test:move").unwrap(),
+                    behaviour: Behaviour::Move,
+                    target: OrderTargetSim::Point(stale),
+                    group: 9,
+                }),
+                plain: false,
+            },
         ));
         let command = crate::Command {
             slot: SlotId(0),
@@ -1960,18 +1967,20 @@ mod tests {
         let stale = Vec2::new(40.0, 40.0);
         assert!(queue_movement_envelope(
             app.world_mut(),
-            SlotId(0),
-            1,
-            9,
-            stale,
-            vec![1],
-            Some(Order {
-                order: ContentId::parse("test:move").unwrap(),
-                behaviour: Behaviour::Move,
-                target: OrderTargetSim::Point(stale),
+            MovementEnvelopeRequest {
+                slot: SlotId(0),
+                seq: 1,
                 group: 9,
-            }),
-            false,
+                point: stale,
+                unit_ids: vec![1],
+                order: Some(Order {
+                    order: ContentId::parse("test:move").unwrap(),
+                    behaviour: Behaviour::Move,
+                    target: OrderTargetSim::Point(stale),
+                    group: 9,
+                }),
+                plain: false,
+            },
         ));
         let command = crate::Command {
             slot: SlotId(0),

@@ -1939,13 +1939,11 @@ fn validate_automatic_order_operation(operation: &OperationAudit) -> Result<(), 
         .values()
         .flat_map(|queue| queue.iter())
         .any(|request| request.unit_ids.contains(&unit_id));
-    if actor_target_before.is_some() && actor_target_after.is_none() && admitted_request.is_some() {
-        validate_queued_movement_admission(
-            operation,
-            unit_id,
-            admitted_request.unwrap(),
-            existed_before,
-        )?;
+    if actor_target_before.is_some()
+        && actor_target_after.is_none()
+        && let Some(admitted_request) = admitted_request
+    {
+        validate_queued_movement_admission(operation, unit_id, admitted_request, existed_before)?;
         return Ok(());
     }
     if actor_target_before.is_none()
@@ -2284,12 +2282,7 @@ fn validate_pending_movement_dispatch(
             expected.pending_movement_orders.next_slot =
                 (expected.movement_dispatch.start_slot + 1) % 8;
         }
-    } else if pool.is_none() {
-        return Err(format!(
-            "movement dispatch for unit {unit_id} has neither a pending envelope nor an existing pool"
-        ));
-    } else {
-        let existing = pool.as_ref().unwrap();
+    } else if let Some(existing) = pool.as_ref() {
         let target_pos = bevy::math::Vec2::new(target.x, target.y);
         if !existing
             .slots
@@ -2311,6 +2304,10 @@ fn validate_pending_movement_dispatch(
                 "movement dispatch reused an assigned pool slot for unit {unit_id}"
             ));
         }
+    } else {
+        return Err(format!(
+            "movement dispatch for unit {unit_id} has neither a pending envelope nor an existing pool"
+        ));
     }
 
     let pool = pool.ok_or_else(|| format!("movement dispatch for unit {unit_id} has no pool"))?;

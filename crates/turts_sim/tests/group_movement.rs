@@ -737,10 +737,11 @@ fn outside_target_is_clamped() {
         QueueMode::Replace,
     );
     app.update();
-    assert!(matches!(
-        app.world().resource::<CommandResults>().0[0].outcome,
-        Ok(_)
-    ));
+    assert!(
+        app.world().resource::<CommandResults>().0[0]
+            .outcome
+            .is_ok()
+    );
     for _ in 0..600 {
         app.update();
     }
@@ -1027,7 +1028,7 @@ fn per_slot_pending_limit_refuses_units_above_16384() {
             0,
             (start..start + 4096).collect(),
             Vec2::new(64.0, 64.0),
-            batch as u32 + 1,
+            batch + 1,
             QueueMode::Replace,
         );
     }

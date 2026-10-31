@@ -449,121 +449,125 @@ pub fn step(input: &MovementInput, dt: f32) -> MovementOutput {
     }
 }
 
-fn find_free_singleton_destination(
-    origin: Vec2,
-    radius: f32,
+struct MovementSearch<'a> {
     bounds: Vec2,
-    units: &[MovementFrameUnit],
-    points: &[crate::grid::GridPoint],
-    grid: &crate::grid::UniformGrid,
-    self_index: usize,
+    units: &'a [MovementFrameUnit],
+    points: &'a [crate::grid::GridPoint],
+    grid: &'a crate::grid::UniformGrid,
     max_radius: f32,
-) -> Option<Vec2> {
-    let spacing = 2.0 * radius + 0.1;
-    for ring in 1..=64_i32 {
-        for side in 0..6 {
-            for step in 0..ring {
-                let (i, j) = match side {
-                    0 => (ring - step, step),
-                    1 => (-step, ring),
-                    2 => (-ring, ring - step),
-                    3 => (-ring + step, -step),
-                    4 => (step, -ring),
-                    _ => (ring, -ring + step),
-                };
-                let candidate = Vec2::new(
-                    origin.x + spacing * (i as f32 + 0.5 * j as f32),
-                    origin.y + spacing * (3.0_f32.sqrt() * 0.5 * j as f32),
-                );
-                if candidate.x < radius
-                    || candidate.y < radius
-                    || candidate.x > bounds.x - radius
-                    || candidate.y > bounds.y - radius
-                {
-                    continue;
-                }
-                let free = grid
-                    .within(points, candidate, radius + max_radius)
-                    .into_iter()
-                    .all(|index| {
-                        index == self_index
-                            || candidate.distance(units[index].position)
-                                >= radius + units[index].radius - 1.0e-5
-                    });
-                if free {
-                    return Some(candidate);
-                }
-            }
-        }
-    }
-    None
 }
 
-fn find_free_escape_destination(
-    origin: Vec2,
-    radius: f32,
-    bounds: Vec2,
-    units: &[MovementFrameUnit],
-    points: &[crate::grid::GridPoint],
-    grid: &crate::grid::UniformGrid,
-    self_index: usize,
-    max_radius: f32,
-    pool_id: u64,
-    assigned_slots: &std::collections::HashSet<(u64, u32, u32)>,
-) -> Option<Vec2> {
-    let spacing = 2.0 * radius + 0.1;
-    let mut best: Option<Vec2> = None;
-    for ring in 1..=128_i32 {
-        for side in 0..6 {
-            for step in 0..ring {
-                let (i, j) = match side {
-                    0 => (ring - step, step),
-                    1 => (-step, ring),
-                    2 => (-ring, ring - step),
-                    3 => (-ring + step, -step),
-                    4 => (step, -ring),
-                    _ => (ring, -ring + step),
-                };
-                let candidate = Vec2::new(
-                    origin.x + spacing * (i as f32 + 0.5 * j as f32),
-                    origin.y + spacing * (3.0_f32.sqrt() * 0.5 * j as f32),
-                );
-                if candidate.x < radius
-                    || candidate.y < radius
-                    || candidate.x > bounds.x - radius
-                    || candidate.y > bounds.y - radius
-                {
-                    continue;
-                }
-                let key = (pool_id, candidate.x.to_bits(), candidate.y.to_bits());
-                if assigned_slots.contains(&key) {
-                    continue;
-                }
-                let free = grid
-                    .within(points, candidate, radius + max_radius)
-                    .into_iter()
-                    .all(|index| {
-                        index == self_index
-                            || candidate.distance(units[index].position)
-                                >= radius + units[index].radius - 1.0e-5
-                    });
-                if free {
-                    let replace = best.is_none_or(|previous| {
-                        nearest_angle_order(candidate, previous, origin).is_lt()
-                    });
-                    if replace {
-                        best = Some(candidate);
+impl MovementSearch<'_> {
+    fn find_free_singleton_destination(
+        &self,
+        origin: Vec2,
+        radius: f32,
+        self_index: usize,
+    ) -> Option<Vec2> {
+        let spacing = 2.0 * radius + 0.1;
+        for ring in 1..=64_i32 {
+            for side in 0..6 {
+                for step in 0..ring {
+                    let (i, j) = match side {
+                        0 => (ring - step, step),
+                        1 => (-step, ring),
+                        2 => (-ring, ring - step),
+                        3 => (-ring + step, -step),
+                        4 => (step, -ring),
+                        _ => (ring, -ring + step),
+                    };
+                    let candidate = Vec2::new(
+                        origin.x + spacing * (i as f32 + 0.5 * j as f32),
+                        origin.y + spacing * (3.0_f32.sqrt() * 0.5 * j as f32),
+                    );
+                    if candidate.x < radius
+                        || candidate.y < radius
+                        || candidate.x > self.bounds.x - radius
+                        || candidate.y > self.bounds.y - radius
+                    {
+                        continue;
+                    }
+                    let free = self
+                        .grid
+                        .within(self.points, candidate, radius + self.max_radius)
+                        .into_iter()
+                        .all(|index| {
+                            index == self_index
+                                || candidate.distance(self.units[index].position)
+                                    >= radius + self.units[index].radius - 1.0e-5
+                        });
+                    if free {
+                        return Some(candidate);
                     }
                 }
             }
         }
-        if best.is_some_and(|candidate| {
-            (ring + 1) as f32 * spacing > candidate.distance(origin) + 1.0e-5
-        }) {
-            return best;
-        }
+        None
     }
-    None
+
+    fn find_free_escape_destination(
+        &self,
+        origin: Vec2,
+        radius: f32,
+        self_index: usize,
+        pool_id: u64,
+        assigned_slots: &std::collections::HashSet<(u64, u32, u32)>,
+    ) -> Option<Vec2> {
+        let spacing = 2.0 * radius + 0.1;
+        let mut best: Option<Vec2> = None;
+        for ring in 1..=128_i32 {
+            for side in 0..6 {
+                for step in 0..ring {
+                    let (i, j) = match side {
+                        0 => (ring - step, step),
+                        1 => (-step, ring),
+                        2 => (-ring, ring - step),
+                        3 => (-ring + step, -step),
+                        4 => (step, -ring),
+                        _ => (ring, -ring + step),
+                    };
+                    let candidate = Vec2::new(
+                        origin.x + spacing * (i as f32 + 0.5 * j as f32),
+                        origin.y + spacing * (3.0_f32.sqrt() * 0.5 * j as f32),
+                    );
+                    if candidate.x < radius
+                        || candidate.y < radius
+                        || candidate.x > self.bounds.x - radius
+                        || candidate.y > self.bounds.y - radius
+                    {
+                        continue;
+                    }
+                    let key = (pool_id, candidate.x.to_bits(), candidate.y.to_bits());
+                    if assigned_slots.contains(&key) {
+                        continue;
+                    }
+                    let free = self
+                        .grid
+                        .within(self.points, candidate, radius + self.max_radius)
+                        .into_iter()
+                        .all(|index| {
+                            index == self_index
+                                || candidate.distance(self.units[index].position)
+                                    >= radius + self.units[index].radius - 1.0e-5
+                        });
+                    if free {
+                        let replace = best.is_none_or(|previous| {
+                            nearest_angle_order(candidate, previous, origin).is_lt()
+                        });
+                        if replace {
+                            best = Some(candidate);
+                        }
+                    }
+                }
+            }
+            if best.is_some_and(|candidate| {
+                (ring + 1) as f32 * spacing > candidate.distance(origin) + 1.0e-5
+            }) {
+                return best;
+            }
+        }
+        None
+    }
 }
 
 fn nearest_angle_order(left: Vec2, right: Vec2, origin: Vec2) -> std::cmp::Ordering {
@@ -828,15 +832,17 @@ pub fn step_frame(frame: &MovementFrame, dt: f32) -> Vec<MovementFrameOutput> {
                     is_free,
                 )
             });
-            let outside_escape = find_free_escape_destination(
+            let outside_escape = MovementSearch {
+                bounds: frame.bounds,
+                units: &units,
+                points: &points,
+                grid: &grid,
+                max_radius,
+            }
+            .find_free_escape_destination(
                 unit.position,
                 unit.radius,
-                frame.bounds,
-                &units,
-                &points,
-                &grid,
                 index,
-                max_radius,
                 progress.pool_id,
                 &assigned_slots,
             );
@@ -902,16 +908,14 @@ pub fn step_frame(frame: &MovementFrame, dt: f32) -> Vec<MovementFrameOutput> {
                             < unit.radius + units[other_index].radius - 1.0e-5
                 });
             let destination = if target_occupied {
-                find_free_singleton_destination(
-                    target,
-                    unit.radius,
-                    frame.bounds,
-                    &units,
-                    &points,
-                    &grid,
-                    index,
+                MovementSearch {
+                    bounds: frame.bounds,
+                    units: &units,
+                    points: &points,
+                    grid: &grid,
                     max_radius,
-                )
+                }
+                .find_free_singleton_destination(target, unit.radius, index)
                 .unwrap_or(target)
             } else {
                 target
