@@ -8,7 +8,7 @@ source: codex
 
 # MC execution board
 
-State: ACTIVE: 10 of25 lanes complete. Task9 merged fb5e2d6 and all12 integration gates passed: workspace1053/0/18, T7 136frames/53moving, actualM3 controls7captures, frozen exact. Wave4 pushed; CI41195343950 agents success, check/browser running. Build43/170; C1-C84; main c3f09d0 unchanged.
+State: ACTIVE: 10 of25 lanes complete. Task9 merged fb5e2d6 and all12 integration gates passed: workspace1053/0/18, T7 136frames/53moving, actualM3 controls7captures, frozen exact. Wave4 pushed; CI41195343950 agents success, check/browser running. Build43/170; C1-C85; main c3f09d0 unchanged.
 
 Plan: `docs/superpowers/plans/2026-10-29-mc-player-control.md`.
 Design of record: `docs/superpowers/specs/2026-10-29-mc-player-control-design.md`, revision12 at63788d7, included by mainc3f09d0.
@@ -233,8 +233,8 @@ One row per builder/reviewer dispatch or resumed agent work turn. Register befor
 | 39 | T6 group movement builder | simulation-core-engineer | gpt-6-luna | high | 487f6c9 | ACTIVE RUN39; owns sole cache; partial compiled overlap red101 captured, full named fixture suite in preparation; estimate6/soft12/hard24. |
 | 40 | T7 server session builder | backend-engineer | gpt-6-luna | high | 487f6c9 | COMPLETE RED-READY source preparation only; scoped hashes/stubs/inventory, no compiled red or behavior acceptance; estimate4/soft8/hard16. |
 | 41 | T11 camera and light preparation | bevy-rendering-engineer | gpt-6-luna | high | 30fc272 | COMPLETE source preparation only; scoped snapshots, static0; native/browser red and behavior NOTTRACED; estimate4/soft8/hard16. |
-| 42 | T6 independent performance/determinism review | performance-architect | gpt-6.1-sol | high | 487f6c9+working | REGISTERED before dispatch; source-only until builder lease handoff; final verdict/runtime/ownplant pending; T6run2/estimate6/soft12/hard24. |
-| 43 | T12 widget/guide/cursor preparation | bevy-rendering-engineer with ux-designer | gpt-6-luna | high | ee4b5ee | REGISTERED before dispatch; analysis/fixtures/test stubs only, no compiler or legacy deletion; estimate8/soft16/hard32. |
+| 42 | T6 independent performance/determinism review | performance-architect | gpt-6.1-sol | high | 487f6c9+working | COMPLETE early SOURCE review only;14High/1Medium stableH1-H15 with9-file exactsnapshot/17areas; finalruntime/ownplant/PASS pending, new run count before reviewer continuation; T6run2/estimate6/soft12/hard24. |
+| 43 | T12 widget/guide/cursor preparation | bevy-rendering-engineer with ux-designer | gpt-6-luna | high | 2b22fa8 | REGISTERED before dispatch; analysis/fixtures/test stubs only, no compiler or legacy deletion; estimate8/soft16/hard32. |
 
 ## 9. Preflight ledger and stop
 
@@ -557,4 +557,14 @@ Choice: add opt-in harness-owned scene/debug checkpoint capture at each io.scree
 
 RootC84instrument commit026759e inTask11lane only: actual prehooksemantic redexit1; Node68allgreen, QA3+driver47self/tree0; postcommit focusedcontrolledhookplant0/1/0 exactrestore. Actualproductionrunner withfakebrowser proves driversavedforgery overwrittenbeforeoracle; no actualgameacceptance claim. Receipt main target/mc-evidence/t11-root/checkpoints/root-hook-plant-receipt.json. Camera/sourcepreparationRUN41 complete uncompiled/redunobserved. Task6currentcodecheckscompile andA40partialpasses; fullscope/gatespending. RUN42 performance-architect Sol/high registered for independentTask6source review, no compiler lease; budget42/170. Wave4latestCIagentsgreen, checknativeGREF andbrowserT7running, nofailedstepyet; terminalreviewstillrequired beforemerge. Mainunchanged.
 
-C84instrument finalheadcf87b0e inTask11lane: Node69allgreen; actualold026source+newidentityregressionfails1, fixed0. Finalcontrolledhookplant0/1/0 exactrestore, scopedharnessstatusclean; no camera/browser/runtime acceptance. Root corrected childtestTransformimport and wrote Task7/Task11 implementationreviewcontracts outsidevault with truthfulpreparation-onlystatus. RUN42sourceaudit found15Highprototypeissues (cost/scheduler/arrival/queue/audit); builderrepairingbeforebroadgates, finalverdictpending. RUN43registeredTask12analysis/fixtures only, no compiler/no legacyremoval; global43/170, task12firstof8. Runtime/taskmerge order andrequiredM3proofs preserved.
+C84instrument finalheadcf87b0e inTask11lane: Node69allgreen; actualold026source+newidentityregressionfails1, fixed0. Finalcontrolledhookplant0/1/0 exactrestore, scopedharnessstatusclean; no camera/browser/runtime acceptance. Root corrected childtestTransformimport and wrote Task7/Task11 implementationreviewcontracts outsidevault with truthfulpreparation-onlystatus. RUN42sourceaudit found14High/1Mediumprototypeissues (cost/scheduler/arrival/queue/audit); builderrepairingbeforebroadgates, finalverdictpending. RUN43registeredTask12analysis/fixtures only, no compiler/no legacyremoval; global43/170, task12firstof8. Runtime/taskmerge order andrequiredM3proofs preserved.
+
+
+## C85: repair the omitted pool origin and nearest-angle ordering (2026-10-31)
+
+Conflict: independent RUN42 H11 is Medium: the multi-unit pool omitted P and stopped ring generation without proving all nearer candidates were enumerated (captured movement.rs74-108, source-findings.md). Design6.3:611-613 requires a hex grid round P ordered by distance then angle; checked-in model_lib.py hex_slots includes P.
+
+Choice: repair H11 with the other source findings; do not defer it. Include a legal origin P, preserve N+max(6,ceil(N/4)) pool size, and prove nearest distance/angle ordering with independent small-pool vectors and adequate complete-shell enumeration for large N. Existing reserved/static/bounds exclusions still apply. No new player behavior or frozen-content change. Alternative not taken: accept a visibly shifted multi-unit formation or trust only an overlap test.
+
+
+RUN42 source phase ended with14High/1Medium (not15High); root read the full stableH1-H15 report and17-area inventory, source-findings.{md,json}. The earlier unqualified15High count is corrected. Builderrun39 repairinventorytracksallfindings; no finalreview/independentruntime/ownplant accepted. Any later completed-reviewer followup is a new ledger run first. C85 repairsMediumH11 rather than defers. Task12RUN43 activeprepactualbase2b22fa8, no compiler/legacyremoval. Main unchanged.
