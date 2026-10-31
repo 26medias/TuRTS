@@ -8,7 +8,7 @@ source: codex
 
 # MC execution board
 
-State: ACTIVE:10of25lanes complete. Wave4fb5e2d6 all12localintegrationgates green; hostedCI41195343950 agentsgreen, browserfailed with exactunchangedWave3 M2timeout, checknativeGREF running. Task6prototype14High/1Medium repairs active; Task7/11sourcepreparation andC84instrument ready, Task12analysis only. Build44/170,C1-C87; mainc3f09d0 unchanged.
+State: ACTIVE:10of25lanes complete. Wave4fb5e2d6 all12localintegrationgates green; hostedCI41195343950 agentsgreen, browserfailed with exactunchangedWave3 M2timeout, checknativeGREF running. Task6prototype14High/1Medium repairs active; Task7/11sourcepreparation andC84instrument ready, Task12analysis only. Build44/170,C1-C88; mainc3f09d0 unchanged.
 
 Plan: `docs/superpowers/plans/2026-10-29-mc-player-control.md`.
 Design of record: `docs/superpowers/specs/2026-10-29-mc-player-control-design.md`, revision12 at63788d7, included by mainc3f09d0.
@@ -79,7 +79,7 @@ CI trigger: `.github/workflows/ci.yml:2-5` runs pushes to main and pull requests
 | T6 | 5 | 4 | codex/mc-t6 | ACTIVE RUN39; group movement, sole compiler lease granted, partial semantic red101 captured. |
 | T7 | 5 | 2b, 4 | codex/mc-t7 | ACTIVE RUN40; source/test preparation only, no compiler lease. |
 | T11 | 5 | 9, 19, 20 | codex/mc-t11 | ACTIVE RUN41 source/test preparation only, no compiler lease. |
-| T12 | 5 | 3, 9, 19, 20 | codex/mc-t12 | RUN43 analysis only complete; RUN44 explicitHUD1 instrument preparation active, no compiler/runtime/legacy deletion. |
+| T12 | 5 | 3, 9, 19, 20 | codex/mc-t12 | Analysis28legacytests +HUD1instrument8650131 ready; actualnative/browserred/widgetruntime/HUD4/allfinalproofpending. No legacy deletion. |
 | T5 | 6 | 4, 6, 19 | codex/mc-t5 | NOT STARTED |
 | T13 | 6 | 4, 6, 9, 11, 19, 20 | codex/mc-t13 | NOT STARTED |
 | T10 | 7 | 5, 9, 11, 19, 20 | codex/mc-t10 | NOT STARTED |
@@ -235,7 +235,7 @@ One row per builder/reviewer dispatch or resumed agent work turn. Register befor
 | 41 | T11 camera and light preparation | bevy-rendering-engineer | gpt-6-luna | high | 30fc272 | COMPLETE source preparation only; scoped snapshots, static0; native/browser red and behavior NOTTRACED; estimate4/soft8/hard16. |
 | 42 | T6 independent performance/determinism review | performance-architect | gpt-6.1-sol | high | 487f6c9+working | COMPLETE early SOURCE review only;14High/1Medium stableH1-H15 with9-file exactsnapshot/17areas; finalruntime/ownplant/PASS pending, new run count before reviewer continuation; T6run2/estimate6/soft12/hard24. |
 | 43 | T12 widget/guide/cursor preparation | bevy-rendering-engineer with ux-designer | gpt-6-luna | high | 2b22fa8 | COMPLETE analysis only; no code/stubs/rows created, notREDREADY; rootverified28testinventory/3actualplants; native/browser NOTTRACED; estimate8/soft16/hard32. |
-| 44 | T12 HUD1 instrument preparation continuation | bevy-rendering-engineer with ux-designer | gpt-6-luna | high | 2b22fa8 | REGISTERED before completed-agent followup; HUD1 driver/oracle/row and Node contract tests only, no compiler/runtime/legacy deletion; T12run2/estimate8/soft16/hard32. |
+| 44 | T12 HUD1 instrument preparation continuation | bevy-rendering-engineer with ux-designer | gpt-6-luna | high | 2b22fa8 | COMPLETE HUD1 instrument preparation:8650131,Node75/0 with13oraclecases, strictDPRregression/plant0/1/0,QA0; actualbrowser/nativeHUD1NOTTRACED; T12run2/estimate8/soft16/hard32. |
 
 ## 9. Preflight ledger and stop
 
@@ -590,3 +590,14 @@ Conflict: the Task11 preparatory test invented direct .84 CameraDef→Core FOV c
 Choice: infer degrees for authored CameraDef.field_of_view from the existing accepted data and convert once with to_radians into CameraState.vertical_fov. Keep pitch/yaw in their existing radians and do not edit authored content. Correct preparatory native test to48degrees→48.to_radians; controls fixture .9rad becomes .9.to_degrees authored. Root preserved exact before/after source in t11-root/fov-unit-preparation-correction.json; compile and actualsemanticred remain NOTTRACED. Require actual accepted-interface/native projection and CAM1 proof later. Alternative not taken: copy60radians, alter accepted mod values, or bless the invented .84-unit fixture.
 
 Root verified c2-repair14 actual0/1testpass after correctsamegroupyield/hardprojection physics, nothorizontuning; nofullTask6acceptance. C87 corrects cameraunitfixturebeforeproduction. RUN44 registered before Task12completed-agentfollowup forconcreteHUD1instruments, secondof8estimate,global44/170. No extraTask6reviewerfollowupstarted, cacheownerTask6.
+
+
+## C88: carry C84 capture opt-in through the real launcher (2026-10-31)
+
+Conflict: root C84 tests passed the runner directly, but scripts/mc-browser.sh114-130 reconstructs params.json from an allowlist and dropped capture_scene_checkpoints. Root previously inferred that the whole row reached the runner; source inspection proves that inference was wrong. CAM1 would have lacked stage data before any camera assertion.
+
+Choice: Task11 may add the one boolean field to the actual launcher parameter generator, validate its type, and test that exact PYPARAMS block with native Python (no browser/compiler). Keep all existing viewport/windows/device-scale precedence. Top-level CAM1 row flag reaches runner params. Root committed8937c98 after actual generator-test red1→fullNode72green0, shellsyntax/driverchecks0; postcommit field-drop plant0/1/0 with exactrestore in launcher-final-receipt.json. Same10driver/fourview APIs; no game behavior or acceptance change. ActualCAM1 remainsNOTTRACED. Alternative not taken: fake checkpoint data, silently skip per-step assertions, or activate captures globally.
+
+Thisturn progress: Task6simpackagefullsuite7 actual0, movement16/orders16/command12 green, GM40/GMAactualaudits+corruption andqueuedGather auditcontrols0; finalserver suite stillred atindependentmoving-gatherer accounting. Root preservedproductionsource and diagnosed double-step arrival (post-stepdistancecomparedagainstfullstepcausesextrasnap), instructedfixproduction withoutweakening accountingoracle. EarlierrealGMAoverlapalert counted same-group pairs; correctedcross-groupfilter perdesign, finalall-pairsrestchecksretained. F/Istrongall80stable2s/noMoveTarget/nooverlapgreen; weakerfi-repair2 remainsunacceptedattempt. Costphasecontext/gridcache andsmall-radius/finite-ring fixes active, fullgates/commit/frozen/GREF/independentreview stillpending.
+
+Task7rootprepared30Hz exactfractionalrefilltests21/21/22envelopes and5461/5461/5462units across3ticks, plusactualscriptmotiontick10; sourceonly, no compiler/semanticred. Task11rootstrengthened nativecamera boundary/playeredge/keyrelease/focuslost/height/group-centretests andC87FOVunits, stilluncompiled. C88launcherparaminstrument8937c98 hasrealgeneratorred1,Node72green0,postcommit0/1/0exactrestore. Task12HUD1instrument8650131 verified13oraclecases/allNode75green,actualDPRwrongfactorred1→green0andpostcommitplant0/1/0exactrestore; allQA0. These areinstrument proofs, notnative/browsergameacceptance. Global44/170, no newagentdispatchthisrecord, no stopcondition/mainaction.
