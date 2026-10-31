@@ -1,0 +1,1 @@
+(id: "order_enable", name: "Enable this machine", behaviour: SetEnabled(true), target: None, fire: None, engage: None, icon: "icon_order_enable", hotkey: "key_enable", cursor: None, card: None, units: ["forge:drill", "forge:press", "forge:arm_loader", "forge:lab", "forge:turret"], description: "Enable the selected units.")

@@ -5,10 +5,17 @@ use std::{
     path::{Path, PathBuf},
     process::ExitCode,
 };
+#[cfg(test)]
 use turts_mod_api::{
-    BalanceAmount, ContentId, Cost, CostSource, DropOffEffect, GathererDef, InventoryDef,
-    ItemStack, Manifest, MapDef, NodeDef, NodePlacement, PaymentPolicy, Placement, ProducerDef,
-    ProductionDef, ResourceDef, ResourceKind, SlotEconomyInit, UnitDef, VisualDef, VisualTarget,
+    ActionDef, AssetsDef, Binding, CursorAsset, Dimension, Direction, EngineOverride, FileAsset,
+    InputMapDef, Mod, Size, TextAlign, UnitPresentation,
+};
+use turts_mod_api::{
+    BalanceAmount, ButtonAction, ButtonIcon, ContentId, Cost, CostSource, DropOffEffect, Fill,
+    GathererDef, InterfaceDef, InventoryDef, ItemStack, Manifest, MapDef, NodeDef, NodePlacement,
+    OrderDef, OrderRulesDef, PaymentPolicy, Placement, Primitive, ProducerDef, ProductionDef,
+    ResourceDef, ResourceKind, SlotEconomyInit, Source, TextValue, UnitDef, Value, VisualDef,
+    VisualTarget, Widget,
 };
 use turts_mod_runtime::{archive::PackageArchive, pack::pack_dir, visuals::visuals_by_content};
 
@@ -1114,6 +1121,10 @@ fn exported(m: &Manifest, p: &str) -> bool {
         .chain(&m.exports.resources)
         .chain(&m.exports.nodes)
         .chain(&m.exports.production)
+        .chain(&m.exports.orders)
+        .chain(&m.exports.interface)
+        .chain(&m.exports.input)
+        .chain(&m.exports.assets)
         .any(|x| x == p)
 }
 fn category(m: &Manifest, p: &str) -> Option<&'static str> {
@@ -1124,6 +1135,10 @@ fn category(m: &Manifest, p: &str) -> Option<&'static str> {
         (&m.exports.resources, "resources"),
         (&m.exports.nodes, "nodes"),
         (&m.exports.production, "production"),
+        (&m.exports.orders, "orders"),
+        (&m.exports.interface, "interface"),
+        (&m.exports.input, "input"),
+        (&m.exports.assets, "assets"),
     ]
     .into_iter()
     .find_map(|(xs, c)| xs.iter().any(|x| x == p).then_some(c))
@@ -1198,6 +1213,15 @@ fn make_plan(xs: &[Input], seed: i64) -> Result<Plan, String> {
                 "maps",
                 x.archive
                     .maps()
+                    .map_err(|e| e.to_string())?
+                    .into_iter()
+                    .map(|(p, v)| (p, v.id))
+                    .collect(),
+            ),
+            (
+                "orders",
+                x.archive
+                    .orders()
                     .map_err(|e| e.to_string())?
                     .into_iter()
                     .map(|(p, v)| (p, v.id))
@@ -1294,6 +1318,89 @@ fn make_plan(xs: &[Input], seed: i64) -> Result<Plan, String> {
                 &v.name,
             )?;
         }
+        for (path, v) in x.archive.orders().map_err(|e| e.to_string())? {
+            put_name(
+                &mut z,
+                &mut output_names,
+                seed,
+                p,
+                "orders",
+                &path,
+                "name",
+                &v.name,
+            )?;
+        }
+        for (path, _) in x.archive.order_rules().map_err(|e| e.to_string())? {
+            let n = format!("v_{}.ron", hash(seed, p, "orders", &path, "path"));
+            let np = Path::new(&path)
+                .parent()
+                .unwrap_or(Path::new(""))
+                .join(n)
+                .to_string_lossy()
+                .replace('\\', "/");
+            if z.paths.values().any(|old| old == &np) {
+                return Err("path mapping collision".into());
+            }
+            z.paths.insert((p.into(), path.clone()), np);
+        }
+        for (path, assets) in x.archive.assets().map_err(|e| e.to_string())? {
+            let n = format!("v_{}.ron", hash(seed, p, "assets", &path, "path"));
+            let np = Path::new(&path)
+                .parent()
+                .unwrap_or(Path::new(""))
+                .join(n)
+                .to_string_lossy()
+                .replace('\\', "/");
+            if z.paths.values().any(|old| old == &np) {
+                return Err("path mapping collision".into());
+            }
+            z.paths.insert((p.into(), path.clone()), np);
+            for id in assets
+                .images
+                .iter()
+                .map(|asset| asset.id.as_str())
+                .chain(assets.fonts.iter().map(|asset| asset.id.as_str()))
+                .chain(assets.sounds.iter().map(|asset| asset.id.as_str()))
+                .chain(assets.cursors.iter().map(|asset| asset.id.as_str()))
+            {
+                z.ids.insert(
+                    (p.into(), "assets".into(), id.into()),
+                    format!("v_{}", hash(seed, p, "assets", &path, id)),
+                );
+            }
+        }
+        for (path, input) in x.archive.input_maps().map_err(|e| e.to_string())? {
+            let n = format!("v_{}.ron", hash(seed, p, "input", &path, "path"));
+            let np = Path::new(&path)
+                .parent()
+                .unwrap_or(Path::new(""))
+                .join(n)
+                .to_string_lossy()
+                .replace('\\', "/");
+            if z.paths.values().any(|old| old == &np) {
+                return Err("path mapping collision".into());
+            }
+            z.paths.insert((p.into(), path), np);
+            for action in input.actions {
+                z.ids.insert(
+                    (p.into(), "input".into(), action.name.clone()),
+                    format!("v_{}", hash(seed, p, "input", &action.name, "name")),
+                );
+            }
+        }
+        for (path, _) in x.archive.interfaces().map_err(|e| e.to_string())? {
+            let n = format!("v_{}.ron", hash(seed, p, "interface", &path, "path"));
+            let np = Path::new(&path)
+                .parent()
+                .unwrap_or(Path::new(""))
+                .join(n)
+                .to_string_lossy()
+                .replace('\\', "/");
+            if z.paths.values().any(|old| old == &np) {
+                return Err("path mapping collision".into());
+            }
+            z.paths.insert((p.into(), path), np);
+        }
     }
     Ok(z)
 }
@@ -1387,6 +1494,10 @@ fn rename_manifest(m: &Manifest, p: &str, z: &Plan) -> Result<Manifest, String> 
         .chain(&mut o.exports.resources)
         .chain(&mut o.exports.nodes)
         .chain(&mut o.exports.production)
+        .chain(&mut o.exports.orders)
+        .chain(&mut o.exports.interface)
+        .chain(&mut o.exports.input)
+        .chain(&mut o.exports.assets)
     {
         *x = newpath(z, p, x)?
     }
@@ -1471,6 +1582,67 @@ fn transform_export(
     for (f, mut v) in x.archive.visuals().map_err(|e| e.to_string())? {
         if f == path {
             visual(&mut v, z)?;
+            return ronbytes(&v);
+        }
+    }
+    for (f, mut v) in x.archive.orders().map_err(|e| e.to_string())? {
+        if f == path {
+            let old = v.id.clone();
+            let new = local(z, p, "orders", &old)?;
+            let old_name = v.name.clone();
+            order(&mut v, p, path, z)?;
+            defs.push(defrec(p, "orders", path, &old, &new, Some(&z.packages[p])));
+            names.push(NameRecord {
+                package: p.into(),
+                category: "orders".into(),
+                definition_path: path.into(),
+                field: "name".into(),
+                old: old_name,
+                new: name(z, p, "orders", path, "name")?,
+            });
+            return ronbytes(&v);
+        }
+    }
+    for (f, mut v) in x.archive.order_rules().map_err(|e| e.to_string())? {
+        if f == path {
+            order_rules(&mut v, p, z)?;
+            return ronbytes(&v);
+        }
+    }
+    for (f, mut v) in x.archive.input_maps().map_err(|e| e.to_string())? {
+        if f == path {
+            for action in &mut v.actions {
+                let old = action.name.clone();
+                action.name = local(z, p, "input", &old)?;
+                defs.push(defrec(p, "input", path, &old, &action.name, None));
+            }
+            return ronbytes(&v);
+        }
+    }
+    for (f, mut v) in x.archive.interfaces().map_err(|e| e.to_string())? {
+        if f == path {
+            interface(&mut v, p, z)?;
+            return ronbytes(&v);
+        }
+    }
+    for (f, mut v) in x.archive.assets().map_err(|e| e.to_string())? {
+        if f == path {
+            for asset in &mut v.images {
+                let old = asset.id.clone();
+                asset.id = local(z, p, "assets", &old)?;
+                defs.push(defrec(p, "assets", path, &old, &asset.id, None));
+            }
+            for asset in v.fonts.iter_mut().chain(&mut v.sounds) {
+                let old = asset.id.clone();
+                asset.id = local(z, p, "assets", &old)?;
+                defs.push(defrec(p, "assets", path, &old, &asset.id, None));
+            }
+            for asset in &mut v.cursors {
+                let old = asset.id.clone();
+                asset.id = local(z, p, "assets", &old)?;
+                asset.image = local(z, p, "assets", &asset.image)?;
+                defs.push(defrec(p, "assets", path, &old, &asset.id, None));
+            }
             return ronbytes(&v);
         }
     }
@@ -1634,6 +1806,190 @@ fn visual(v: &mut VisualDef, z: &Plan) -> Result<(), String> {
     }
     Ok(())
 }
+fn mapped_local(z: &Plan, p: &str, category: &str, value: &str) -> String {
+    z.ids
+        .get(&(p.into(), category.into(), value.into()))
+        .cloned()
+        .unwrap_or_else(|| value.into())
+}
+fn order(v: &mut OrderDef, p: &str, path: &str, z: &Plan) -> Result<(), String> {
+    v.id = local(z, p, "orders", &v.id)?;
+    v.name = name(z, p, "orders", path, "name")?;
+    v.icon = local(z, p, "assets", &v.icon)?;
+    v.hotkey = local(z, p, "input", &v.hotkey)?;
+    if let Some(cursor) = &mut v.cursor {
+        *cursor = local(z, p, "assets", cursor)?;
+    }
+    for unit in &mut v.units {
+        *unit = ref_id(z, "units", unit)?;
+    }
+    Ok(())
+}
+fn order_rules(v: &mut OrderRulesDef, p: &str, z: &Plan) -> Result<(), String> {
+    for smart in &mut v.smart {
+        smart.order = ref_id(z, "orders", &smart.order)?;
+    }
+    let _ = p;
+    Ok(())
+}
+fn fill(v: &mut Fill, p: &str, z: &Plan) -> Result<(), String> {
+    if let Fill::Image { id, .. } = v {
+        *id = mapped_local(z, p, "assets", id);
+    }
+    Ok(())
+}
+fn value(v: &mut Value, p: &str, z: &Plan) -> Result<(), String> {
+    match v {
+        Value::Balance(id) => *id = ref_id(z, "resources", id)?,
+        Value::Format(_, values) => {
+            for value in values {
+                value_fn(value, p, z)?;
+            }
+        }
+        _ => {}
+    }
+    Ok(())
+}
+fn value_fn(v: &mut Value, p: &str, z: &Plan) -> Result<(), String> {
+    value(v, p, z)
+}
+fn text_value(v: &mut TextValue, p: &str, z: &Plan) -> Result<(), String> {
+    match v {
+        TextValue::Bind(value) => value_fn(value, p, z)?,
+        TextValue::Format(_, values) => {
+            for value in values {
+                value_fn(value, p, z)?;
+            }
+        }
+        _ => {}
+    }
+    Ok(())
+}
+fn button_icon(v: &mut ButtonIcon, p: &str, z: &Plan) -> Result<(), String> {
+    match v {
+        ButtonIcon::Asset(id) => *id = mapped_local(z, p, "assets", id),
+        ButtonIcon::Bind(value) => value_fn(value, p, z)?,
+        ButtonIcon::Item(_) => {}
+    }
+    Ok(())
+}
+fn widget(v: &mut Widget, p: &str, z: &Plan) -> Result<(), String> {
+    if let Some(tooltip) = &mut v.tooltip {
+        value_fn(tooltip, p, z)?;
+    }
+    match &mut v.widget {
+        Primitive::Box {
+            fill: widget_fill,
+            children,
+            ..
+        } => {
+            if let Some(widget_fill) = widget_fill {
+                fill(widget_fill, p, z)?;
+            }
+            for child in children {
+                widget(child, p, z)?;
+            }
+        }
+        Primitive::Image { image, .. } => button_icon(image, p, z)?,
+        Primitive::Text { text, font, .. } => {
+            text_value(text, p, z)?;
+            if let Some(font) = font {
+                *font = mapped_local(z, p, "assets", font);
+            }
+        }
+        Primitive::Bar {
+            value: current,
+            max,
+            fill: current_fill,
+            background,
+            ..
+        } => {
+            value_fn(current, p, z)?;
+            value_fn(max, p, z)?;
+            fill(current_fill, p, z)?;
+            fill(background, p, z)?;
+        }
+        Primitive::Button {
+            icon,
+            label,
+            action,
+            ..
+        } => {
+            if let Some(icon) = icon {
+                button_icon(icon, p, z)?;
+            }
+            if let Some(label) = label {
+                text_value(label, p, z)?;
+            }
+            match action {
+                ButtonAction::Order(id) => *id = ref_id(z, "orders", id)?,
+                ButtonAction::Input(id) => *id = mapped_local(z, p, "input", id),
+                ButtonAction::Item(_) => {}
+            }
+        }
+        Primitive::List { source, item, .. } | Primitive::Grid { source, item, .. } => {
+            if let Source::Balance(id) = source {
+                *id = ref_id(z, "resources", id)?;
+            }
+            widget(item, p, z)?;
+        }
+        Primitive::Tooltip { value: tooltip } => value_fn(tooltip, p, z)?,
+        Primitive::Cursor { cursors } => {
+            for (image, _) in cursors.values_mut() {
+                *image = mapped_local(z, p, "assets", image);
+            }
+        }
+        Primitive::MinimapView { background, .. } => {
+            if let Some(background) = background {
+                fill(background, p, z)?;
+            }
+        }
+    }
+    Ok(())
+}
+fn interface(v: &mut InterfaceDef, p: &str, z: &Plan) -> Result<(), String> {
+    if let Some(font) = &mut v.tooltip_style.font {
+        *font = mapped_local(z, p, "assets", font);
+    }
+    if let Some(font) = &mut v.world.tooltip.font {
+        *font = mapped_local(z, p, "assets", font);
+    }
+    v.cursors = std::mem::take(&mut v.cursors)
+        .into_iter()
+        .map(|(cursor, image)| (cursor, mapped_local(z, p, "assets", &image)))
+        .collect();
+    for alert in &mut v.alerts {
+        if let Some(sound) = &mut alert.sound {
+            *sound = mapped_local(z, p, "assets", sound);
+        }
+    }
+    let mut units = BTreeMap::new();
+    for (id, mut presentation) in std::mem::take(&mut v.units) {
+        if let Some(icon) = &mut presentation.icon {
+            *icon = mapped_local(z, p, "assets", icon);
+        }
+        if let Some(portrait) = &mut presentation.portrait {
+            *portrait = mapped_local(z, p, "assets", portrait);
+        }
+        for sound in presentation.responses.values_mut().flatten() {
+            *sound = mapped_local(z, p, "assets", sound);
+        }
+        units.insert(ref_id(z, "units", &id)?, presentation);
+    }
+    v.units = units;
+    for unit in &mut v.selection_priority {
+        *unit = ref_id(z, "units", unit)?;
+    }
+    for widget_def in &mut v.root {
+        widget(widget_def, p, z)?;
+    }
+    for page in &mut v.guide {
+        for widget_def in &mut page.widgets {
+            widget(widget_def, p, z)?;
+        }
+    }
+    Ok(())
+}
 fn validate(a: &PackageArchive) -> Result<(), String> {
     let catalog = a
         .content()
@@ -1690,6 +2046,71 @@ fn validate(a: &PackageArchive) -> Result<(), String> {
                 if resource.kind != turts_mod_api::ResourceKind::Balance {
                     return Err(format!("{file}: `{id}` is not a balance resource"));
                 }
+            }
+        }
+    }
+    let package = a.manifest.id.as_str();
+    let order_ids = a
+        .orders()
+        .map_err(|e| e.to_string())?
+        .into_iter()
+        .map(|(_, order)| format!("{package}:{}", order.id))
+        .collect::<BTreeSet<_>>();
+    let asset_ids = a
+        .assets()
+        .map_err(|e| e.to_string())?
+        .into_iter()
+        .flat_map(|(_, assets)| {
+            assets
+                .images
+                .into_iter()
+                .map(|asset| asset.id)
+                .chain(assets.fonts.into_iter().map(|asset| asset.id))
+                .chain(assets.sounds.into_iter().map(|asset| asset.id))
+                .chain(assets.cursors.into_iter().map(|asset| asset.id))
+        })
+        .collect::<BTreeSet<_>>();
+    let input_actions = a
+        .input_maps()
+        .map_err(|e| e.to_string())?
+        .into_iter()
+        .flat_map(|(_, input)| input.actions.into_iter().map(|action| action.name))
+        .collect::<BTreeSet<_>>();
+    for (path, order) in a.orders().map_err(|e| e.to_string())? {
+        if !asset_ids.contains(&order.icon) {
+            return Err(format!(
+                "{path}: order icon `{}` is not exported",
+                order.icon
+            ));
+        }
+        if !input_actions.contains(&order.hotkey) {
+            return Err(format!(
+                "{path}: order hotkey `{}` is not exported",
+                order.hotkey
+            ));
+        }
+        for unit in &order.units {
+            let id = ContentId::parse(unit).map_err(|e| format!("{path}: {e}"))?;
+            if !catalog.units.contains_key(&id) {
+                return Err(format!("{path}: dangling order unit `{id}`"));
+            }
+        }
+    }
+    for (path, rules) in a.order_rules().map_err(|e| e.to_string())? {
+        for smart in rules.smart {
+            if !order_ids.contains(&smart.order) {
+                return Err(format!(
+                    "{path}: dangling order rule reference `{}`",
+                    smart.order
+                ));
+            }
+        }
+    }
+    for (path, interface) in a.interfaces().map_err(|e| e.to_string())? {
+        for unit in interface.units.keys().chain(&interface.selection_priority) {
+            let id = ContentId::parse(unit).map_err(|e| format!("{path}: {e}"))?;
+            if !catalog.units.contains_key(&id) {
+                return Err(format!("{path}: dangling interface unit `{id}`"));
             }
         }
     }
@@ -2041,7 +2462,7 @@ mod tests {
     }
 
     #[test]
-    fn all_six_typed_exports_restore_after_inverse_rename() {
+    fn all_mc_exports_restore_after_inverse_rename() {
         let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../mods/cedar");
         let temp = env::temp_dir().join(format!("m2-variant-roundtrip-{}", std::process::id()));
         let _ = fs::remove_dir_all(&temp);
@@ -2078,6 +2499,360 @@ mod tests {
         assert_eq!(restored.maps().unwrap(), original.maps().unwrap());
         assert_eq!(restored.visuals().unwrap(), original.visuals().unwrap());
         assert_eq!(restored.content().unwrap(), original.content().unwrap());
+        assert_eq!(restored.orders().unwrap(), original.orders().unwrap());
+        assert_eq!(
+            restored.order_rules().unwrap(),
+            original.order_rules().unwrap()
+        );
+        assert_eq!(
+            restored.input_maps().unwrap(),
+            original.input_maps().unwrap()
+        );
+        assert_eq!(
+            restored.interfaces().unwrap(),
+            original.interfaces().unwrap()
+        );
+        assert_eq!(restored.assets().unwrap(), original.assets().unwrap());
+        fs::remove_dir_all(temp).unwrap();
+    }
+
+    #[test]
+    fn generated_mc_exports_rewrite_ids_references_and_paths() {
+        fn widget(id: &str, primitive: Primitive) -> Widget {
+            Widget {
+                id: id.into(),
+                at: None,
+                size: Size {
+                    w: Dimension::Px(64.0),
+                    h: Dimension::Px(24.0),
+                },
+                layer: 0,
+                visible: Vec::new(),
+                widget: primitive,
+                tooltip: None,
+            }
+        }
+        fn collect_actions(widget: &Widget, orders: &mut Vec<String>, inputs: &mut Vec<String>) {
+            match &widget.widget {
+                Primitive::Button { action, .. } => match action {
+                    ButtonAction::Order(id) => orders.push(id.clone()),
+                    ButtonAction::Input(id) => inputs.push(id.clone()),
+                    ButtonAction::Item(_) => {}
+                },
+                Primitive::Box { children, .. } => {
+                    for child in children {
+                        collect_actions(child, orders, inputs);
+                    }
+                }
+                Primitive::List { item, .. } | Primitive::Grid { item, .. } => {
+                    collect_actions(item, orders, inputs);
+                }
+                _ => {}
+            }
+        }
+
+        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../mods/cedar");
+        let temp = env::temp_dir().join(format!("m2-variant-mc-refs-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&temp);
+        fs::create_dir_all(&temp).unwrap();
+        let source = temp.join("source");
+        copy_tree(&root, &source);
+        let manifest_path = source.join("manifest.ron");
+        let mut manifest: Manifest =
+            ron::from_str(&fs::read_to_string(&manifest_path).unwrap()).unwrap();
+        manifest
+            .exports
+            .resources
+            .push("resources/test_balance.ron".into());
+        manifest.exports.resources.sort();
+        fs::write(
+            manifest_path,
+            ron::ser::to_string_pretty(
+                &ManifestOutput::from(&manifest),
+                ron::ser::PrettyConfig::default(),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        fs::write(
+            source.join("resources/test_balance.ron"),
+            ron::ser::to_string_pretty(
+                &ResourceDef {
+                    id: "test_balance".into(),
+                    name: "Fixture Balance".into(),
+                    unit_name: "credit".into(),
+                    kind: ResourceKind::Balance,
+                },
+                ron::ser::PrettyConfig::default(),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        let asset_path = source.join("assets/assets.ron");
+        let mut assets: AssetsDef =
+            ron::from_str(&fs::read_to_string(&asset_path).unwrap()).unwrap();
+        assets.fonts.push(FileAsset {
+            id: "font_ui".into(),
+            path: "assets/ui.ttf".into(),
+        });
+        assets.sounds.push(FileAsset {
+            id: "sound_select".into(),
+            path: "assets/select.ogg".into(),
+        });
+        assets.cursors.push(CursorAsset {
+            id: "select".into(),
+            image: "icon_order_move".into(),
+            hotspot: (0, 0),
+        });
+        fs::write(
+            asset_path,
+            ron::ser::to_string_pretty(&assets, ron::ser::PrettyConfig::default()).unwrap(),
+        )
+        .unwrap();
+        let fixtures = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../turts_pack/tests/fixtures/hud3/assets");
+        fs::copy(fixtures.join("font.ttf"), source.join("assets/ui.ttf")).unwrap();
+        fs::copy(fixtures.join("alert.ogg"), source.join("assets/select.ogg")).unwrap();
+        let bindings_path = source.join("input/bindings.ron");
+        let mut input: InputMapDef =
+            ron::from_str(&fs::read_to_string(&bindings_path).unwrap()).unwrap();
+        input.actions.push(ActionDef {
+            name: "select".into(),
+            default: vec![Binding::Key {
+                code: "KeyA".into(),
+                mods: Vec::<Mod>::new(),
+            }],
+        });
+        input.engine_overrides.push(EngineOverride {
+            name: "select".into(),
+            bindings: vec![Binding::Key {
+                code: "KeyM".into(),
+                mods: Vec::<Mod>::new(),
+            }],
+        });
+        fs::write(
+            bindings_path,
+            ron::ser::to_string_pretty(&input, ron::ser::PrettyConfig::default()).unwrap(),
+        )
+        .unwrap();
+        let order_path = source.join("orders/order_move.ron");
+        let mut order: OrderDef = ron::from_str(&fs::read_to_string(&order_path).unwrap()).unwrap();
+        order.hotkey = "select".into();
+        fs::write(
+            order_path,
+            ron::ser::to_string_pretty(&order, ron::ser::PrettyConfig::default()).unwrap(),
+        )
+        .unwrap();
+        let interface_path = source.join("interface/hud.ron");
+        let mut interface: InterfaceDef =
+            ron::from_str(&fs::read_to_string(&interface_path).unwrap()).unwrap();
+        interface.tooltip_style.font = Some("font_ui".into());
+        interface.world.tooltip.font = Some("font_ui".into());
+        interface.cursors.insert("select".into(), "select".into());
+        interface.units.insert(
+            "cedar:depot".into(),
+            UnitPresentation {
+                icon: Some("icon_order_move".into()),
+                portrait: None,
+                responses: BTreeMap::from([("selected".into(), vec!["sound_select".into()])]),
+            },
+        );
+        interface.root.push(widget(
+            "fixture_input_button",
+            Primitive::Button {
+                icon: Some(ButtonIcon::Asset("icon_order_move".into())),
+                label: Some(TextValue::Literal("Select".into())),
+                action: ButtonAction::Input("select".into()),
+                hotkey_label: false,
+            },
+        ));
+        interface.root.push(widget(
+            "fixture_balance_list",
+            Primitive::List {
+                source: Source::Balance("cedar:test_balance".into()),
+                direction: Direction::Horizontal,
+                gap: 1,
+                max_items: 1,
+                item: Box::new(widget(
+                    "fixture_balance_value",
+                    Primitive::Text {
+                        text: TextValue::Bind(Value::Balance("cedar:test_balance".into())),
+                        font: Some("font_ui".into()),
+                        size: 12,
+                        colour: "#ffffff".into(),
+                        align: TextAlign::Left,
+                        wrap: false,
+                    },
+                )),
+            },
+        ));
+        interface.root.push(widget(
+            "fixture_cursor",
+            Primitive::Cursor {
+                cursors: BTreeMap::from([("select".into(), ("icon_order_move".into(), (0, 0)))]),
+            },
+        ));
+        fs::write(
+            interface_path,
+            ron::ser::to_string_pretty(&interface, ron::ser::PrettyConfig::default()).unwrap(),
+        )
+        .unwrap();
+        let stage = temp.join("stage");
+        build(
+            &source,
+            &stage,
+            123,
+            PaymentPolicy::ReserveThenCharge,
+            "reserve",
+            "rename",
+        )
+        .unwrap();
+        let original = PackageArchive::parse(&pack_dir(&source).unwrap()).unwrap();
+        let original_input = discover(&source).unwrap().remove(0);
+        let forward = make_plan(std::slice::from_ref(&original_input), 123).unwrap();
+        let renamed_id = forward.packages["cedar"].clone();
+        let renamed = discover(&stage.join(&renamed_id))
+            .unwrap()
+            .remove(0)
+            .archive;
+
+        let old_orders = original.orders().unwrap();
+        let new_orders = renamed.orders().unwrap();
+        assert_eq!(old_orders.len(), new_orders.len());
+        let order_ids = new_orders
+            .iter()
+            .map(|(_, order)| format!("{renamed_id}:{}", order.id))
+            .collect::<BTreeSet<_>>();
+        let new_assets = renamed.assets().unwrap();
+        let asset_ids = new_assets
+            .iter()
+            .flat_map(|(_, assets)| {
+                assets
+                    .images
+                    .iter()
+                    .map(|asset| asset.id.as_str())
+                    .chain(assets.fonts.iter().map(|asset| asset.id.as_str()))
+                    .chain(assets.sounds.iter().map(|asset| asset.id.as_str()))
+                    .chain(assets.cursors.iter().map(|asset| asset.id.as_str()))
+            })
+            .map(str::to_owned)
+            .collect::<BTreeSet<_>>();
+        let input_maps = renamed.input_maps().unwrap();
+        let input_actions = input_maps
+            .iter()
+            .flat_map(|(_, input)| input.actions.iter().map(|action| action.name.clone()))
+            .collect::<BTreeSet<_>>();
+        assert_eq!(input_maps.len(), 1);
+        assert_eq!(input_maps[0].1.engine_overrides[0].name, "select");
+        assert!(input_actions.iter().all(|action| action != "select"));
+        assert!(
+            old_orders
+                .iter()
+                .all(|(_, old)| new_orders.iter().any(|(_, new)| {
+                    new.id != old.id && new.icon != old.icon && new.hotkey != old.hotkey
+                }))
+        );
+        assert!(new_orders.iter().all(|(_, order)| {
+            asset_ids.contains(&order.icon)
+                && input_actions.contains(&order.hotkey)
+                && order
+                    .units
+                    .iter()
+                    .all(|unit| unit.starts_with(&format!("{renamed_id}:")))
+        }));
+        assert!(
+            renamed
+                .order_rules()
+                .unwrap()
+                .iter()
+                .flat_map(|(_, rules)| rules.smart.iter())
+                .all(|rule| order_ids.contains(&rule.order))
+        );
+        let interfaces = renamed.interfaces().unwrap();
+        assert!(!interfaces.is_empty());
+        let mut response_sounds = Vec::new();
+        let mut balance_list = None;
+        let mut cursor_asset = None;
+        assert!(
+            interfaces
+                .iter()
+                .flat_map(|(_, interface)| interface.units.keys())
+                .all(|unit| unit.starts_with(&format!("{renamed_id}:")))
+        );
+        for (_, interface) in &interfaces {
+            assert_ne!(interface.tooltip_style.font.as_deref(), Some("font_ui"));
+            assert!(interface.cursors.contains_key("select"));
+            assert_ne!(
+                interface.cursors.get("select").map(String::as_str),
+                Some("select")
+            );
+            for presentation in interface.units.values() {
+                for sounds in presentation.responses.values() {
+                    response_sounds.extend(sounds.iter().cloned());
+                }
+            }
+            for widget in &interface.root {
+                match &widget.widget {
+                    Primitive::List {
+                        source: Source::Balance(balance),
+                        ..
+                    } => {
+                        balance_list = Some(balance.clone());
+                    }
+                    Primitive::Cursor { cursors } => {
+                        cursor_asset = cursors.get("select").map(|(asset, _)| asset.clone());
+                    }
+                    _ => {}
+                }
+            }
+        }
+        assert!(!response_sounds.is_empty());
+        assert!(
+            response_sounds
+                .iter()
+                .all(|sound| asset_ids.contains(sound))
+        );
+        assert!(response_sounds.iter().all(|sound| sound != "sound_select"));
+        let balance_list = balance_list.expect("Balance source in list is retained");
+        assert!(balance_list.starts_with(&format!("{renamed_id}:")));
+        assert_ne!(balance_list, "cedar:test_balance");
+        let cursor_asset = cursor_asset.expect("cursor widget entry is retained");
+        assert!(asset_ids.contains(&cursor_asset));
+        assert_ne!(cursor_asset, "icon_order_move");
+        let mut ui_orders = Vec::new();
+        let mut ui_inputs = Vec::new();
+        for (_, interface) in &interfaces {
+            for widget in &interface.root {
+                collect_actions(widget, &mut ui_orders, &mut ui_inputs);
+            }
+        }
+        assert!(!ui_orders.is_empty());
+        assert!(!ui_inputs.is_empty());
+        assert!(ui_orders.iter().all(|order| order_ids.contains(order)));
+        assert!(ui_inputs.iter().all(|input| input_actions.contains(input)));
+        let mapping: serde_json::Value =
+            serde_json::from_slice(&fs::read(stage.join("mapping.json")).unwrap()).unwrap();
+        for category in ["orders", "input", "interface", "assets"] {
+            assert!(
+                mapping["paths"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|path| path["category"] == category),
+                "mapping must retain {category} export path provenance"
+            );
+        }
+        assert!(
+            mapping["definitions"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|definition| {
+                    definition["category"] == "orders"
+                        && definition["old_full_id"].as_str().is_some()
+                        && definition["new_full_id"].as_str().is_some()
+                })
+        );
         fs::remove_dir_all(temp).unwrap();
     }
 }

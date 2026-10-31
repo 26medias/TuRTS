@@ -14,19 +14,13 @@ use bevy::prelude::*;
 use turts_mod_api::{ContentId, Footprint, Shape};
 use turts_net_protocol::Pos;
 
-use crate::economy_ui::UiPanelRoot;
 use crate::ingest::ReplicaState;
 use crate::join::{AcquiredPackages, Phase};
 use crate::present::{Presented, update_presented};
 
 const CAMERA_TILT_UP: f32 = 0.8;
 const CAMERA_TILT_BACK: f32 = 0.6;
-const SCENE_MARGIN: f32 = 12.0;
 const CAMERA_MAX_FIT_ITERATIONS: usize = 96;
-/// The camera stands this high above the ground in the initial scene.
-const CAMERA_HEIGHT: f32 = 40.0;
-/// The camera stands this far behind the centre of the map in the initial scene.
-const CAMERA_BACK: f32 = 30.0;
 
 /// The scene point of a map position, on the ground.
 pub fn world_to_scene(pos: Pos) -> Vec3 {
@@ -235,54 +229,6 @@ pub fn fit_camera_transform(
     None
 }
 
-fn panel_screen_rect(node: &ComputedNode, transform: &UiGlobalTransform) -> Option<Rect> {
-    let size = node.size();
-    let center = transform.to_scale_angle_translation().2;
-    (size.is_finite() && size.min_element() > 0.0 && center.is_finite())
-        .then(|| Rect::from_center_half_size(center, size * 0.5))
-}
-
-fn fit_scene_camera(
-    acquired: Option<Res<AcquiredPackages>>,
-    panels: Query<(&ComputedNode, &UiGlobalTransform), With<UiPanelRoot>>,
-    mut cameras: Query<(&Camera, &Projection, &mut Transform), With<Camera3d>>,
-) {
-    let Some(acquired) = acquired else { return };
-    let Some((panel_node, panel_transform)) = panels.iter().next() else {
-        return;
-    };
-    let Some(panel_rect) = panel_screen_rect(panel_node, panel_transform) else {
-        return;
-    };
-    for (camera, projection, mut transform) in &mut cameras {
-        let Some(viewport) = camera.physical_viewport_rect() else {
-            continue;
-        };
-        let viewport_size = viewport.size().as_vec2();
-        let panel_rect = Rect::from_corners(
-            panel_rect.min - viewport.min.as_vec2(),
-            panel_rect.max - viewport.min.as_vec2(),
-        );
-        let margin = SCENE_MARGIN / panel_node.inverse_scale_factor.max(f32::MIN_POSITIVE);
-        let Some(free_rect) = free_scene_rect(viewport_size, Some(panel_rect), margin) else {
-            continue;
-        };
-        let Projection::Perspective(perspective) = projection else {
-            continue;
-        };
-        if let Some(fitted) = fit_camera_transform(
-            acquired.0.map_size,
-            max_declared_pick_radius(&acquired.0.content),
-            viewport_size,
-            free_rect,
-            perspective.fov,
-            perspective.near,
-        ) {
-            *transform = fitted;
-        }
-    }
-}
-
 /// The mesh of a visual shape. The mesh is centred on its own origin.
 ///
 /// A capsule `height` is the full height, so the cylinder between the caps is
@@ -335,11 +281,7 @@ pub fn setup_scene(
     *done = true;
     let (width, depth) = acquired.0.map_size;
     let centre = Vec3::new(width / 2.0, 0.0, depth / 2.0);
-    commands.spawn((
-        Camera3d::default(),
-        Transform::from_translation(centre + Vec3::new(0.0, CAMERA_HEIGHT, CAMERA_BACK))
-            .looking_at(centre, Vec3::Y),
-    ));
+    commands.spawn((Camera3d::default(), Transform::default()));
     commands.spawn((
         DirectionalLight::default(),
         Transform::from_xyz(-20.0, 60.0, -20.0).looking_at(Vec3::ZERO, Vec3::Y),
@@ -451,12 +393,6 @@ impl Plugin for UnitRenderPlugin {
                 .chain()
                 .after(update_presented),
         );
-        app.add_systems(
-            PostUpdate,
-            fit_scene_camera
-                .after(bevy::ui::UiSystems::Layout)
-                .before(bevy::transform::TransformSystems::Propagate),
-        );
     }
 }
 
@@ -537,7 +473,7 @@ fn sync_world_names(
     presented: Res<Presented>,
     state: Res<ReplicaState>,
     acquired: Option<Res<AcquiredPackages>>,
-    selection: Res<crate::economy_ui::Selection>,
+    selection: Res<crate::ui_shared::Selection>,
     cameras: Query<(&Camera, &GlobalTransform), With<Camera3d>>,
     mut labels: Query<(Entity, &WorldName, &mut Node, &mut Text)>,
 ) {

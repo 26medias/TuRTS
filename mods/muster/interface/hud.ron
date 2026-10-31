@@ -1,0 +1,37 @@
+(
+    id: "hud",
+    root: [
+        (id: "card", at: Some((anchor: TopLeft, offset: (8.0, 8.0), pivot: None)), size: (w: Px(272.0), h: Px(204.0)), visible: [SelectionNotEmpty, PrimaryOwned], widget: Grid(source: CommandCard, columns: 4, rows: 3, cell: (64, 64), gap: 4, item: (id: "b", size: (w: Fill, h: Fill), widget: Button(icon: Some(Item(Icon)), label: None, action: Item(Action), hotkey_label: true))), tooltip: Some(Item(Reason))),
+        (id: "selection", at: Some((anchor: TopLeft, offset: (8.0, 220.0), pivot: None)), size: (w: Px(272.0), h: Px(42.0)), widget: Text(text: Format("Selected: {0}", [SelectionPrimary(Name)]), font: Some("muster_ui"), size: 16, colour: "#ffffff", align: Left, wrap: true)),
+        (id: "last_notice", at: Some((anchor: TopLeft, offset: (8.0, 268.0), pivot: None)), size: (w: Px(272.0), h: Px(48.0)), widget: Text(text: Bind(LastNotice), font: Some("muster_ui"), size: 14, colour: "#ffffff", align: Left, wrap: true)),
+        (id: "alerts", at: Some((anchor: TopRight, offset: (-8.0, 8.0), pivot: None)), size: (w: Px(300.0), h: Px(160.0)), widget: List(source: Alerts, direction: Vertical, gap: 4, max_items: 5, item: (id: "alert_line", size: (w: Fill, h: Px(28.0)), widget: Text(text: Item(Title), font: Some("muster_ui"), size: 14, colour: "#ffffff", align: Left, wrap: true)))),
+        (id: "minimap", at: Some((anchor: BottomRight, offset: (-8.0, -8.0), pivot: None)), size: (w: Px(200.0), h: Px(200.0)), widget: MinimapView(background: Some(Colour("#17232f")), frame: "#ffffff", unit_size: 2.0, ping: Some("#ffcc00"))),
+        (id: "ore", at: Some((anchor: Bottom, offset: (0.0, -4.0), pivot: None)), size: (w: Px(160.0), h: Px(28.0)), widget: Text(text: Format("Ore {0}", [Balance("muster:ore")]), font: Some("muster_ui"), size: 18, colour: "#ffffff", align: Centre, wrap: false)),
+        (id: "guide", at: Some((anchor: BottomLeft, offset: (8.0, -8.0), pivot: None)), size: (w: Px(360.0), h: Px(110.0)), visible: [GuideOpen], widget: Text(text: Bind(Guide), font: Some("muster_ui"), size: 14, colour: "#ffffff", align: Left, wrap: true)),
+    ],
+    tooltip_style: (background: "#111820", colour: "#ffffff", font: Some("muster_ui"), size: 14),
+    cursors: {"default": "muster_cursor_default", "select": "muster_cursor_select", "move": "muster_cursor_move", "attack": "muster_cursor_attack", "gather": "muster_cursor_gather", "forbidden": "muster_cursor_forbidden"},
+    camera: (pitch: 0.7, yaw: 0.0, field_of_view: 60.0, minimum: 10.0, maximum: 90.0, start: Point(28.85, 20.20), height: 38.0, margin: 0.0, pan_speed: 1.0, edge_band: true),
+    light: Some((direction: (-0.5, -1.0, -0.4), colour: "#ffffff", illuminance: 10000.0, ambient: 0.3)),
+    slot_colours: ["#0072B2", "#E69F00"],
+    world: (ground: "#34424d", grid: "#50616d", selection: "#ffffff", health: "#56d4a8", range: "#f2cc60", show_range: true, tooltip: (background: "#111820", colour: "#ffffff", font: Some("muster_ui"), size: 14), health_bar: (width: 48, height: 6, background: "#182029", health: "#56d4a8")),
+    alerts: [
+        (id: "muster_unit_damaged", trigger: OwnUnitDamaged, sound: Some("muster_alert"), text: "Unit under attack", minimap_ping: true, cooldown: 1.0, priority: 10, coalesce_radius: 5.0),
+        (id: "muster_unit_destroyed", trigger: OwnUnitDestroyed, sound: Some("muster_alert"), text: "Unit destroyed", minimap_ping: true, cooldown: 1.0, priority: 20, coalesce_radius: 5.0),
+    ],
+    reasons: {"not_owner": "That unit belongs to the other side.", "not_applicable": "That unit cannot do this.", "unknown_order": "That order is not available.", "target_invalid": "That is not a valid target.", "target_gone": "That target is gone.", "out_of_range": "That target is out of range.", "queue_full": "The order queue is full.", "not_queueable": "This order cannot be queued.", "blocked": "The unit cannot reach that place."},
+    units: {
+        "muster:beacon": (icon: Some("muster_portrait_beacon"), portrait: Some("muster_portrait_beacon"), responses: {"select": ["muster_voice_select"], "order": ["muster_voice_order"]}),
+        "muster:trooper": (icon: Some("muster_portrait_trooper"), portrait: Some("muster_portrait_trooper"), responses: {"select": ["muster_voice_select"], "order": ["muster_voice_order"]}),
+        "muster:worker": (icon: Some("muster_portrait_worker"), portrait: Some("muster_portrait_worker"), responses: {"select": ["muster_voice_select"], "order": ["muster_voice_order"]}),
+        "muster:depot": (icon: Some("muster_portrait_depot"), portrait: Some("muster_portrait_depot"), responses: {"select": ["muster_voice_select"], "order": ["muster_voice_order"]}),
+        "muster:post": (icon: Some("muster_portrait_post"), portrait: Some("muster_portrait_post"), responses: {"select": ["muster_voice_select"], "order": ["muster_voice_order"]}),
+        "muster:dummy": (icon: Some("muster_portrait_dummy"), portrait: Some("muster_portrait_dummy"), responses: {"select": ["muster_voice_select"], "order": ["muster_voice_order"]}),
+    },
+    selection_priority: ["muster:trooper", "muster:worker", "muster:beacon", "muster:dummy", "muster:depot", "muster:post"],
+    guide: [
+        (id: "muster_start", title: "Welcome", body: "Move your units with M or a right click. Select the card to see the orders available to each unit."),
+        (id: "muster_orders", title: "Orders", body: "Troopers can attack a target or rush to a point and stop to fire. Workers can gather ore from the deposit and bring it to the depot."),
+        (id: "muster_controls", title: "Controls", body: "Use the menu to review or change controls. Press F1 to open or close this guide."),
+    ],
+)

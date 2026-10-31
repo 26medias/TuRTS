@@ -1,0 +1,1 @@
+(id: "order_cancel", name: "Cancel this job", behaviour: CancelProduction, target: Job, fire: None, engage: None, icon: "icon_order_cancel", hotkey: "key_cancel", cursor: None, card: None, units: ["forge:lab"], description: "Cancel the selected units.")

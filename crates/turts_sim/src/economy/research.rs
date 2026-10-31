@@ -579,6 +579,8 @@ mod tests {
                     },
                 ),
             ]),
+            orders: BTreeMap::new(),
+            order_queue_depths: std::collections::BTreeMap::new(),
             source_files: BTreeMap::new(),
         };
         let map = MapDef {

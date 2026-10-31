@@ -125,6 +125,8 @@ fn validate_content_m2(
         production: BTreeMap::new(),
         recipes: BTreeMap::new(),
         technologies: BTreeMap::new(),
+        orders: BTreeMap::new(),
+        order_queue_depths: std::collections::BTreeMap::new(),
         source_files: BTreeMap::new(),
     };
     for src in resources {

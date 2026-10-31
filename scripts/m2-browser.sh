@@ -236,6 +236,28 @@ PYBLOCKERS
     printf '%s\n' '{"fixture":"public base map clone with two appended owner-0 Command Center output blockers","placements":[{"unit":"base:command_center","owner_slot":0,"pos":[8,12]},{"unit":"base:command_center","owner_slot":0,"pos":[8,4]}],"prior_placement_ids_preserved":true,"recipe_and_duration_unchanged":true}' > "$ARTIFACT_DIR/package-profile-overrides.json"
 fi
 
+FIXTURE_X_OFFSET=0
+case "$PACKAGE" in
+    base) FIXTURE_X_OFFSET=18; MAP_RELATIVE_PATH="maps/flat.ron" ;;
+    haul) FIXTURE_X_OFFSET=18; MAP_RELATIVE_PATH="maps/field.ron" ;;
+    cedar) FIXTURE_X_OFFSET=18; MAP_RELATIVE_PATH="maps/clearing.ron" ;;
+    acme) MAP_RELATIVE_PATH="" ;;
+esac
+if [[ "$FIXTURE_X_OFFSET" == 18 ]]; then
+    python3 "$ROOT/tests/m2/browser_fixture.py" \
+        --source "$ROOT/mods/$PACKAGE/$MAP_RELATIVE_PATH" \
+        --packed "$ARTIFACT_DIR/pack/$PACKAGE/$MAP_RELATIVE_PATH" \
+        --receipt "$ARTIFACT_DIR/map-fixture-translation.json" \
+        --package "$PACKAGE" --case "$CASE_ID" --offset-x "$FIXTURE_X_OFFSET" \
+        > "$ARTIFACT_DIR/map-fixture-translation.log" 2>&1 || {
+            cat "$ARTIFACT_DIR/map-fixture-translation.log" >&2
+            exit 1
+        }
+else
+    printf '{"package":"%s","case_id":"%s","offset_x":0,"map_translation":"none"}\n' \
+        "$PACKAGE" "$CASE_ID" > "$ARTIFACT_DIR/map-fixture-translation.json"
+fi
+
 "$PACKER_BIN" "$ARTIFACT_DIR/pack/$PACKAGE" > "$ARTIFACT_DIR/pack.log" 2>&1
 
 cat > "$ARTIFACT_DIR/server.ron" <<EOF_SERVER
@@ -319,6 +341,8 @@ printf 'Package: %s\nArtifacts: %s\n' "$PACKAGE" "$ARTIFACT_DIR"
 set +e
 M2_PACKAGE_NAME="$PACKAGE" \
 M2_CASE_ID="$CASE_ID" \
+M2_FIXTURE_X_OFFSET="$FIXTURE_X_OFFSET" \
+M2_FIXTURE_TRANSLATION_RECEIPT="$ARTIFACT_DIR/map-fixture-translation.json" \
 M2_HEADLESS=false \
 M2_CHROME_ARGS_JSON="${M2_CHROME_ARGS_JSON:-[\"--enable-gpu\",\"--use-angle=vulkan\",\"--enable-features=Vulkan\",\"--enable-unsafe-webgpu\"]}" \
 M2_IGNORE_DEFAULT_ARGS_JSON="${M2_IGNORE_DEFAULT_ARGS_JSON:-[\"--enable-unsafe-swiftshader\"]}" \

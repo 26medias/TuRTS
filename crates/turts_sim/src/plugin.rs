@@ -10,6 +10,7 @@ use crate::command::{CommandQueue, CommandResults, drain_commands};
 use crate::economy::events::{EconomyEvent, MatchStopped, StopReason};
 use crate::economy::views::{economy_changes, world_view};
 use crate::movement::integrate_movement;
+use crate::orders::run_orders;
 use crate::registry::UnitTypes;
 use crate::slots::{SLOT_COUNT, Slots};
 use crate::world::snapshot;
@@ -31,6 +32,7 @@ use crate::{
 pub enum SimSet {
     Advance,
     Commands,
+    Orders,
     Movement,
     Gather,
     Extract,
@@ -89,6 +91,7 @@ impl Plugin for SimPlugin {
             .configure_sets(
                 FixedUpdate,
                 (
+                    SimSet::Orders,
                     SimSet::Movement,
                     SimSet::Gather,
                     SimSet::Extract,
@@ -110,6 +113,10 @@ impl Plugin for SimPlugin {
             .add_systems(
                 FixedPreUpdate,
                 drain_commands.in_set(SimSet::Commands).after(advance_tick),
+            )
+            .add_systems(
+                FixedUpdate,
+                run_orders.in_set(SimSet::Orders).run_if(not_stopped),
             )
             .add_systems(
                 FixedUpdate,

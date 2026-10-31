@@ -35,6 +35,10 @@ forbid turts_server $HOST "" bevy_render bevy_winit bevy_pbr
 nobevy turts_mod_api $HOST ""
 nobevy turts_mod_runtime $HOST ""
 nobevy turts_net_protocol $HOST ""
+nobevy turts_interaction $HOST ""
+nobevy turts_interaction wasm32-unknown-unknown ""
+forbid turts_interaction $HOST "" turts_sim wgpu winit
+forbid turts_interaction wasm32-unknown-unknown "" turts_sim wgpu winit
 forbid turts_client $HOST "" turts_sim
 forbid turts_client wasm32-unknown-unknown "" turts_sim
 # The browser entry must not reach the server simulation either (M1 verify).

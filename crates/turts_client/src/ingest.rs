@@ -14,8 +14,7 @@ use lightyear::prelude::*;
 use lightyear::transport::channel::ChannelKind;
 use turts_net_lightyear::ReliableChannel;
 use turts_net_protocol::{
-    CommandAck, CommandApplied, CommandRejectReason, CommandRejected, Pos, ResyncRequest, Snapshot,
-    Welcome, WorldDelta,
+    CommandAck, CommandRejectReason, OrderResult, Pos, ResyncRequest, Snapshot, Welcome, WorldDelta,
 };
 
 use crate::replica::{
@@ -64,6 +63,7 @@ pub struct WelcomeInfo {
     pub slot: u8,
     pub tick: u32,
     pub tick_hz: u16,
+    pub match_id: u64,
 }
 
 /// The client copy of the world. `replica` is `None` until the `Welcome` arrives.
@@ -256,6 +256,14 @@ pub enum CommandResult {
         tick: u32,
         reason: CommandRejectReason,
     },
+    Order {
+        seq: u32,
+        tick: u32,
+        accepted: Vec<turts_net_protocol::UnitId>,
+        refused: Vec<turts_net_protocol::UnitRefusal>,
+        envelope: Option<CommandRejectReason>,
+        job_id: Option<turts_net_protocol::JobId>,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -392,6 +400,7 @@ fn on_welcome(hooks: &mut IngestHooks, state: &mut ReplicaState, welcome: &Welco
         slot: welcome.slot_id.0,
         tick: welcome.tick,
         tick_hz: welcome.tick_hz,
+        match_id: welcome.match_id,
     });
     hooks.drop_ticks = hooks
         .drop_offsets
@@ -866,8 +875,7 @@ pub fn ingest_messages(
     mut snapshots: Query<(Entity, &mut MessageReceiver<Snapshot>)>,
     mut deltas: Query<&mut MessageReceiver<WorldDelta>>,
     mut acks: Query<(Entity, &mut MessageReceiver<CommandAck>)>,
-    mut applied: Query<(Entity, &mut MessageReceiver<CommandApplied>)>,
-    mut rejections: Query<(Entity, &mut MessageReceiver<CommandRejected>)>,
+    mut order_results: Query<(Entity, &mut MessageReceiver<OrderResult>)>,
     mut requests: Query<(Entity, &mut MessageSender<ResyncRequest>)>,
     mut hooks: ResMut<IngestHooks>,
     mut counters: ResMut<IngestCounters>,
@@ -938,47 +946,33 @@ pub fn ingest_messages(
             });
         }
     }
-    for (entity, mut receiver) in &mut applied {
+    for (entity, mut receiver) in &mut order_results {
         let epoch = witnesses.epoch_for(entity.to_bits());
         for received in receiver.receive_with_tick() {
             witnesses.record_message(
                 epoch,
                 received.channel_kind == ChannelKind::of::<ReliableChannel>(),
             );
+            let kind = if received.data.accepted.is_empty() {
+                ReceiptKind::Rejected
+            } else {
+                ReceiptKind::Applied
+            };
             witnesses.record_receipt(ReceiptWitness {
                 connection_epoch: epoch,
                 seq: received.data.seq,
-                kind: ReceiptKind::Applied,
+                kind,
                 reliable: received.channel_kind == ChannelKind::of::<ReliableChannel>(),
                 message_id: received.message_id.map(|id| id.0),
                 remote_tick: received.remote_tick.0,
             });
-            results.0.push(CommandResult::Applied {
+            results.0.push(CommandResult::Order {
                 seq: received.data.seq,
                 tick: received.data.tick,
+                accepted: received.data.accepted,
+                refused: received.data.refused,
+                envelope: received.data.envelope,
                 job_id: received.data.job_id,
-            });
-        }
-    }
-    for (entity, mut receiver) in &mut rejections {
-        let epoch = witnesses.epoch_for(entity.to_bits());
-        for received in receiver.receive_with_tick() {
-            witnesses.record_message(
-                epoch,
-                received.channel_kind == ChannelKind::of::<ReliableChannel>(),
-            );
-            witnesses.record_receipt(ReceiptWitness {
-                connection_epoch: epoch,
-                seq: received.data.seq,
-                kind: ReceiptKind::Rejected,
-                reliable: received.channel_kind == ChannelKind::of::<ReliableChannel>(),
-                message_id: received.message_id.map(|id| id.0),
-                remote_tick: received.remote_tick.0,
-            });
-            results.0.push(CommandResult::Rejected {
-                seq: received.data.seq,
-                tick: received.data.tick,
-                reason: received.data.reason,
             });
         }
     }
@@ -1061,6 +1055,7 @@ mod world_change_tests {
             weapons: vec![],
             healths: vec![],
             research: vec![],
+            unit_orders: Vec::new(),
         }
     }
 
@@ -1351,6 +1346,7 @@ mod browser_config_tests {
                     weapons: vec![],
                     healths: vec![],
                     research: vec![],
+                    unit_orders: Vec::new(),
                 },
                 99,
             )],
@@ -1409,6 +1405,7 @@ mod browser_config_tests {
                 weapons: vec![],
                 healths: vec![],
                 research: vec![],
+                unit_orders: Vec::new(),
             },
             WorldDelta {
                 tick: 12,
@@ -1429,6 +1426,7 @@ mod browser_config_tests {
                 weapons: vec![],
                 healths: vec![],
                 research: vec![],
+                unit_orders: Vec::new(),
             },
             WorldDelta {
                 tick: 13,
@@ -1449,6 +1447,7 @@ mod browser_config_tests {
                 weapons: vec![],
                 healths: vec![],
                 research: vec![],
+                unit_orders: Vec::new(),
             },
         ]);
         let mut state = ReplicaState {

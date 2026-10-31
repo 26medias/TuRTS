@@ -1,0 +1,20 @@
+(
+    id: "zeta",
+    version: "0.2.0",
+    kind: Game,
+    engine_api: "^0.2.3",
+    dependencies: {},
+    exports: (
+        units: ["units/trooper.ron"],
+        maps: ["maps/arena.ron"],
+        visuals: ["visuals/trooper.ron"],
+        resources: [], nodes: [], production: [], recipes: [], technologies: [],
+        orders: ["orders/rush.ron", "orders/hold.ron", "orders/rules.ron"],
+        interface: ["interface/main.ron"],
+        input: ["input/main.ron"],
+        assets: ["assets/main.ron"],
+    ),
+    context: Shared,
+    capabilities: [],
+    license: "test",
+)

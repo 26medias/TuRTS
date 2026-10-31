@@ -1,0 +1,1 @@
+(id: "order_research", name: "Research an upgrade", behaviour: Produce, target: Content, fire: None, engage: None, icon: "icon_order_research", hotkey: "key_research", cursor: None, card: None, units: ["forge:lab"], description: "Research the selected units.")

@@ -7,7 +7,7 @@ use common::{
 };
 use serde_json::{Value, json};
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet},
     fs,
     path::{Path, PathBuf},
     process::Command as ProcessCommand,
@@ -433,7 +433,7 @@ fn valid_policy_role_swaps_follow_data() {
                 assert_eq!(map["mode"], mode);
                 assert_eq!(map["payment"], payment);
                 let (archive, mut app) = load(&package_dir(&out, &map));
-                assert_eq!(archive.manifest.version, "0.2.0");
+                assert_eq!(archive.manifest.version, "0.3.0");
                 let policy = if payment == "charge" {
                     PaymentPolicy::ChargeOnQueue
                 } else {
@@ -502,7 +502,39 @@ fn acme_remains_a_separate_empty_economy_public_load() {
 fn independent_cedar_packs_and_conserves() {
     let cedar = root().join("mods/cedar");
     let files = read_tree(&cedar);
-    assert_eq!(files.len(), 10);
+    let expected_files = [
+        "manifest.ron",
+        "assets/assets.ron",
+        "assets/icon_order_cancel.png",
+        "assets/icon_order_gather.png",
+        "assets/icon_order_move.png",
+        "assets/icon_order_produce.png",
+        "assets/icon_order_stop.png",
+        "input/bindings.ron",
+        "interface/hud.ron",
+        "orders/order_cancel.ron",
+        "orders/order_gather.ron",
+        "orders/order_move.ron",
+        "orders/order_produce.ron",
+        "orders/order_stop.ron",
+        "orders/rules.ron",
+        "resources/wood.ron",
+        "units/depot.ron",
+        "units/worker.ron",
+        "nodes/grove.ron",
+        "production/hire.ron",
+        "maps/clearing.ron",
+        "visuals/depot.ron",
+        "visuals/worker.ron",
+        "visuals/grove.ron",
+    ]
+    .into_iter()
+    .map(str::to_owned)
+    .collect::<BTreeSet<_>>();
+    assert_eq!(
+        files.keys().cloned().collect::<BTreeSet<_>>(),
+        expected_files
+    );
     assert!(!cedar.join("Cargo.toml").exists());
     assert!(!cedar.join("src").exists());
     let (archive, app) = load(&cedar);
@@ -539,7 +571,16 @@ fn declared_conversion_coefficient_is_used_by_public_trace() {
     let mapping = generate(&root().join("mods/base"), &output, "balance", "charge");
     let package = package_dir(&output, &mapping);
     let mut conversions = Vec::new();
-    for (path, bytes) in read_tree(&package) {
+    let files = read_tree(&package);
+    let non_ron_files = files
+        .iter()
+        .filter(|(path, _)| !path.ends_with(".ron"))
+        .map(|(path, bytes)| (path.clone(), bytes.clone()))
+        .collect::<BTreeMap<_, _>>();
+    for (path, bytes) in files {
+        if !path.ends_with(".ron") {
+            continue;
+        }
         let mut text = String::from_utf8(bytes).unwrap();
         if text.contains("effect: Convert") {
             assert_eq!(
@@ -557,6 +598,13 @@ fn declared_conversion_coefficient_is_used_by_public_trace() {
         1,
         "one public conversion fixture was transformed"
     );
+    for (path, bytes) in non_ron_files {
+        assert_eq!(
+            fs::read(package.join(&path)).unwrap(),
+            bytes,
+            "non-RON asset bytes remain unchanged: {path}"
+        );
+    }
     let (_, app) = load(&package);
     let catalog = &app.world().resource::<InstalledCatalog>().0;
     assert!(
@@ -964,6 +1012,20 @@ fn normalize(value: &mut Value, m: &CanonicalMaps, inherited: &BTreeMap<u64, Str
                     "unit-type:{}",
                     types.get(&id).expect("dense type has content mapping")
                 ));
+            } else if key == "units"
+                && let Value::Array(items) = child
+                && items.iter().all(Value::is_string)
+            {
+                for item in items.iter_mut() {
+                    let Some(text) = item.as_str() else {
+                        continue;
+                    };
+                    let replacement = m.2.get(text).or_else(|| m.3.get(text)).cloned();
+                    if let Some(replacement) = replacement {
+                        *item = Value::String(replacement);
+                    }
+                }
+                items.sort_by_key(Value::to_string);
             } else if let Value::String(text) = child {
                 let map = match key.as_str() {
                     "0" | "package" => m.0.get(text),
@@ -1012,6 +1074,17 @@ fn sort_catalog(value: &mut Value) {
     }
     if let Some(Value::Array(items)) = catalog.get_mut("resource_kinds") {
         items.sort_by_key(Value::to_string);
+    }
+    if let Some(Value::Array(items)) = catalog.get_mut("order_definitions") {
+        for definition in items.iter_mut() {
+            if let Some(Value::Array(capabilities)) = definition.get_mut("unit_capabilities") {
+                capabilities.sort_by_key(|entry| entry["unit"].to_string());
+            }
+            if let Some(Value::Array(units)) = definition.get_mut("units") {
+                units.sort_by_key(Value::to_string);
+            }
+        }
+        items.sort_by_key(|definition| definition["id"].to_string());
     }
 }
 

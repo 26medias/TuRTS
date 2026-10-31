@@ -146,7 +146,13 @@ fn ui_snapshot(world: &World) -> Vec<Value> {
         );
     }
 
-    rendered_ui_snapshot(world)
+    let snapshot = world
+        .get_resource::<crate::debug_feed::UiSnapshotFeed>()
+        .and_then(|feed| {
+            serde_json::from_value::<Vec<crate::economy_ui::RenderedUiNode>>(feed.0.clone()).ok()
+        })
+        .unwrap_or_else(|| rendered_ui_snapshot(world));
+    snapshot
         .into_iter()
         .map(|node| {
             let control = node.action.as_ref().and_then(|action| controls.get(action));
@@ -332,6 +338,34 @@ fn snapshot_json(world: &World) -> Value {
                 "tick": tick,
                 "reason": reason.as_str(),
             }),
+            CommandResult::Order {
+                seq,
+                tick,
+                accepted,
+                refused,
+                envelope,
+                job_id,
+                ..
+            } => {
+                if accepted.is_empty() {
+                    let reason = envelope
+                        .or_else(|| refused.first().map(|unit| unit.reason))
+                        .unwrap_or(turts_net_protocol::CommandRejectReason::Internal);
+                    json!({
+                        "seq": seq,
+                        "kind": "rejected",
+                        "tick": tick,
+                        "reason": reason.as_str(),
+                    })
+                } else {
+                    json!({
+                        "seq": seq,
+                        "kind": "applied",
+                        "tick": tick,
+                        "job_id": job_id.map(|job| job.0),
+                    })
+                }
+            }
         })
         .collect();
 
@@ -425,6 +459,7 @@ mod tests {
                 slot: 0,
                 tick: 9,
                 tick_hz: 20,
+                match_id: 0,
             }),
             ..Default::default()
         });

@@ -1,0 +1,8 @@
+(queue_depth: 16, smart: [
+    (target: ForeignUnitWeaponTarget, needs: Weapon, order: "muster:order_attack"),
+    (target: ResourceNodeAccepted, needs: Gatherer, order: "muster:order_gather"),
+    (target: Ground, needs: Movement, order: "muster:order_move"),
+    (target: OwnUnit, needs: Movement, order: "muster:order_move"),
+    (target: ForeignUnit, needs: Movement, order: "muster:order_move"),
+    (target: Node, needs: Movement, order: "muster:order_move"),
+])

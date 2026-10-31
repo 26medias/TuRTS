@@ -1,0 +1,16 @@
+(
+    id: "main",
+    root: [
+        (id: "rush-button", at: Some((anchor: TopLeft, offset: (8.0, 8.0))), size: (w: Px(32.0), h: Px(32.0)), layer: 0, visible: [], widget: Button(icon: Some(Asset("rush-icon")), label: Some(Literal("Rush")), action: Input("rush"), hotkey_label: true), tooltip: None),
+        (id: "orders", at: Some((anchor: TopLeft, offset: (48.0, 8.0))), size: (w: Px(120.0), h: Px(40.0)), layer: 0, visible: [], widget: List(source: CommandCard, direction: Vertical, gap: 2, max_items: 4, item: (id: "order-item", size: (w: Fill, h: Fit), widget: Button(icon: Some(Item(Icon)), label: None, action: Item(Action), hotkey_label: true))), tooltip: None),
+        (id: "hint", at: Some((anchor: BottomLeft, offset: (8.0, -8.0))), size: (w: Px(120.0), h: Px(20.0)), layer: 0, visible: [], widget: Text(text: Literal("Hint"), font: Some("default"), size: 12, colour: "#ffffff", align: Left, wrap: false), tooltip: None),
+        (id: "minimap", size: (w: Px(200.0), h: Px(200.0)), widget: MinimapView(frame: "#ffffff")),
+    ],
+    tooltip_style: (background: "#000000", colour: "#ffffff", font: Some("default"), size: 12),
+    cursors: {"default": "default"},
+    camera: (pitch: 0.7, yaw: 0.0, field_of_view: 60.0, minimum: 10.0, maximum: 100.0, start: Point(5.0, 5.0), height: 40.0, margin: 2.0, pan_speed: 1.0, edge_band: true),
+    light: None,
+    slot_colours: ["#0072B2", "#E69F00"],
+    world: (ground: "#111111", grid: "#222222", selection: "#ffffff", health: "#009E73", range: "#56B4E9", show_range: true, tooltip: (background: "#000000", colour: "#ffffff", font: Some("default"), size: 12), health_bar: (width: 32, height: 4, background: "#000000", health: "#009E73")),
+    alerts: [], reasons: {}, units: {}, selection_priority: [], guide: [],
+)

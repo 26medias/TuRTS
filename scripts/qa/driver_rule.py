@@ -9,7 +9,7 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[2]
 SAMPLES = ROOT / "tests/qa/driver"
-ROLES = {"driver", "pure", "oracle", "instrument", "unit", "legacy-bridge"}
+ROLES = {"driver", "pure", "oracle", "instrument", "unit", "legacy-bridge", "harness"}
 LEDGER_LIMIT = 5
 DRIVER_PART_A = {"A1", "A2", "A3", "A4", "A5", "A6", "A7"}
 CHANNEL_MODULES = {

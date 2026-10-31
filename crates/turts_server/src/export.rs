@@ -93,6 +93,12 @@ pub fn snapshot_for(view: &WorldView, slot: SlotId) -> wire::Snapshot {
             .collect(),
         healths: view.m3.raw_healths.iter().map(health_state).collect(),
         research: research_records(&view.m3.research, Some(slot)),
+        unit_orders: view
+            .unit_orders
+            .iter()
+            .filter(|record| record.owner_slot == slot.0)
+            .map(unit_order_state)
+            .collect(),
     }
 }
 
@@ -180,6 +186,12 @@ pub fn delta_for(batch: &CommittedTick, view: &WorldView, slot: SlotId) -> wire:
                     .iter()
                     .any(|changed| changed.slot == record.slot.0)
             })
+            .collect(),
+        unit_orders: view
+            .unit_orders
+            .iter()
+            .filter(|record| record.owner_slot == slot.0)
+            .map(unit_order_state)
             .collect(),
     }
 }
@@ -460,6 +472,55 @@ fn command_reject_reason(reason: turts_sim::RejectReason) -> wire::CommandReject
         R::AlreadyResearched => wire::CommandRejectReason::AlreadyResearched,
         R::ResearchInProgress => wire::CommandRejectReason::ResearchInProgress,
         R::IntegrityViolation => wire::CommandRejectReason::Internal,
+        R::NotApplicable => wire::CommandRejectReason::NotApplicable,
+        R::TargetInvalid => wire::CommandRejectReason::TargetInvalid,
+        R::TargetGone => wire::CommandRejectReason::TargetGone,
+        R::OutOfRange => wire::CommandRejectReason::OutOfRange,
+        R::NotQueueable => wire::CommandRejectReason::NotQueueable,
+        R::Blocked => wire::CommandRejectReason::Blocked,
+    }
+}
+
+fn unit_order_state(record: &turts_sim::economy::views::UnitOrderView) -> wire::UnitOrderRecord {
+    use turts_sim::economy::views::{
+        UnitOrderActivityView as Activity, UnitOrderSummaryView as Summary,
+        UnitOrderTargetView as Target,
+    };
+    let summary = |summary: &Summary| wire::OrderSummary {
+        order: summary.order.clone(),
+        target: match &summary.target {
+            Target::None => wire::OrderTarget::None,
+            Target::Point(point) => wire::OrderTarget::Point(messages::Pos {
+                x: point.x,
+                y: point.y,
+            }),
+            Target::Unit(unit) => wire::OrderTarget::Unit(messages::UnitId(*unit)),
+            Target::Node(node) => wire::OrderTarget::Node(messages::NodeId(node.0)),
+            Target::Job(job) => wire::OrderTarget::Job(messages::JobId(job.0)),
+            Target::Content(content) => wire::OrderTarget::Content(content.to_string()),
+        },
+    };
+    wire::UnitOrderRecord {
+        unit: messages::UnitId(record.unit_id),
+        activity: match record.activity {
+            Activity::Idle => wire::Activity::Idle,
+            Activity::Pending => wire::Activity::Pending,
+            Activity::Moving => wire::Activity::Moving,
+            Activity::Attacking => wire::Activity::Attacking,
+            Activity::Holding => wire::Activity::Holding,
+            Activity::Gathering => wire::Activity::Gathering,
+            Activity::Blocked => wire::Activity::Blocked,
+        },
+        current: record.current.as_ref().map(summary),
+        queued: record.queued.iter().map(summary).collect(),
+        last_failure: record
+            .last_failure
+            .as_ref()
+            .map(|failure| wire::OrderFailure {
+                order: failure.order.clone(),
+                reason: command_reject_reason(failure.reason),
+                tick: failure.tick,
+            }),
     }
 }
 

@@ -1,0 +1,1 @@
+(id: "trooper", name: "Trooper", footprint: Circle(radius: 0.5), movement: Some((speed: 2.0)), inventory: None, gatherer: None, drop_off: None, producer: None)
