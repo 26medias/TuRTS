@@ -242,50 +242,6 @@ fn command_result_json(result: &CommandResult) -> Value {
     }
 }
 
-#[cfg(test)]
-mod command_result_json_tests {
-    use super::command_result_json;
-    use crate::ingest::CommandResult;
-    use turts_net_protocol::{CommandRejectReason, UnitId, UnitRefusal};
-
-    #[test]
-    fn empty_order_rejection_preserves_legacy_debug_keys() {
-        let value = command_result_json(&CommandResult::Order {
-            seq: 9,
-            tick: 41,
-            accepted: Vec::new(),
-            refused: Vec::new(),
-            envelope: Some(CommandRejectReason::EmptyCommand),
-            job_id: None,
-        });
-        assert_eq!(value["seq"], 9);
-        assert_eq!(value["rejected_tick"], 41);
-        assert_eq!(value["rejected"], "empty_command");
-        assert_eq!(value["accepted"], serde_json::json!([]));
-        assert_eq!(value["refused"], serde_json::json!([]));
-    }
-
-    #[test]
-    fn partial_order_acceptance_is_not_reported_as_all_rejected() {
-        let value = command_result_json(&CommandResult::Order {
-            seq: 10,
-            tick: 42,
-            accepted: vec![UnitId(1)],
-            refused: vec![UnitRefusal {
-                unit: UnitId(2),
-                reason: CommandRejectReason::NotOwner,
-            }],
-            envelope: None,
-            job_id: None,
-        });
-        assert_eq!(value["applied_tick"], 42);
-        assert!(value.get("rejected_tick").is_none());
-        assert!(value.get("rejected").is_none());
-        assert_eq!(value["accepted"], serde_json::json!([1]));
-        assert_eq!(value["refused"][0]["reason"], "not_owner");
-    }
-}
-
 /// `Last`: rebuild [`DebugState`].
 pub fn rebuild_debug_state(world: &mut World) {
     let json = debug_json(world);
@@ -448,5 +404,49 @@ pub fn exit_when_done(world: &mut World) {
         None => {
             world.write_message(AppExit::Success);
         }
+    }
+}
+
+#[cfg(test)]
+mod command_result_json_tests {
+    use super::command_result_json;
+    use crate::ingest::CommandResult;
+    use turts_net_protocol::{CommandRejectReason, UnitId, UnitRefusal};
+
+    #[test]
+    fn empty_order_rejection_preserves_legacy_debug_keys() {
+        let value = command_result_json(&CommandResult::Order {
+            seq: 9,
+            tick: 41,
+            accepted: Vec::new(),
+            refused: Vec::new(),
+            envelope: Some(CommandRejectReason::EmptyCommand),
+            job_id: None,
+        });
+        assert_eq!(value["seq"], 9);
+        assert_eq!(value["rejected_tick"], 41);
+        assert_eq!(value["rejected"], "empty_command");
+        assert_eq!(value["accepted"], serde_json::json!([]));
+        assert_eq!(value["refused"], serde_json::json!([]));
+    }
+
+    #[test]
+    fn partial_order_acceptance_is_not_reported_as_all_rejected() {
+        let value = command_result_json(&CommandResult::Order {
+            seq: 10,
+            tick: 42,
+            accepted: vec![UnitId(1)],
+            refused: vec![UnitRefusal {
+                unit: UnitId(2),
+                reason: CommandRejectReason::NotOwner,
+            }],
+            envelope: None,
+            job_id: None,
+        });
+        assert_eq!(value["applied_tick"], 42);
+        assert!(value.get("rejected_tick").is_none());
+        assert!(value.get("rejected").is_none());
+        assert_eq!(value["accepted"], serde_json::json!([1]));
+        assert_eq!(value["refused"][0]["reason"], "not_owner");
     }
 }
