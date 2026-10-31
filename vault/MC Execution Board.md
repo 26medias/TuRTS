@@ -8,7 +8,7 @@ source: codex
 
 # MC execution board
 
-State: ACTIVE: 9 of 25 lanes complete. Task 9 candidate 9453783 has two rendered pixel-row passes, 13 standard gates green (workspace 1049/0/18), and independent Node59/native63 green. Refutations: 1 of 7 passed; six browser cases and final mutation checks remain before review/merge. Build runs: 38/170. Rulings: C1-C75. Main remains c3f09d0.
+State: ACTIVE: 9 of 25 lanes complete. Task 9 candidate 9453783 has two rendered pixel-row passes, 13 standard gates green (workspace 1049/0/18), and independent Node59/native63 green. Refutations: native passed; first browser baseline exposed a panel/fixture overlap. C76 permits a packed scratch-fixture repair; browser cases and final mutations remain. Build runs: 38/170. Rulings: C1-C76. Main remains c3f09d0.
 
 Plan: `docs/superpowers/plans/2026-10-29-mc-player-control.md`.
 Design of record: `docs/superpowers/specs/2026-10-29-mc-player-control-design.md`, revision12 at63788d7, included by mainc3f09d0.
@@ -504,3 +504,6 @@ C70-C73 recorded: owner-defined per-frame feedback snapshot/FrameCloseSet; share
 RUN36 ended after native implementation/handoff while root completed C74-C75 pixel instruments. Task9 is NOT complete. RUN38 registered before follow-up for the remaining required browser/commit/gates/plants/GREF; global38/170, task5/estimate6. No budget exception or new task start. RUN37 remains independent reviewer, runtime/Highrecheck/ownplant pending.
 
 C74 explicit headed profile honored for CI rows without skips; C75 real pixels determine scout click. Root59Node/47selftest/tree/shell checks0, PNG12image Pillowbyte-differential0, oldprofile2semanticfails and invisibleclickold1/new0 guards retained. Rust source unchanged by these JS/shell edits. Root verified latest45interaction/189client/1ignored0. Task24 must use privateXvfb/MC_BROWSER_HEADED1 profile and full harness/*.test.js; Task21 reuses purecodec. Actual new headed pixel pair remains pending.
+
+
+C76: the first browser GREF baseline hit a legacy panel covering the Cedar depot after required camera fit removal. Translate only generated base/haul/cedar fixture coordinates and width, preserving relative geometry and all assertions. Original mods, production camera and capture rules stay unchanged. Failed baseline retained; final proof pending. See [[Decisions/2026-10-30 MC Codex rulings]].
