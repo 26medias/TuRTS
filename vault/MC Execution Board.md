@@ -8,7 +8,7 @@ source: codex
 
 # MC execution board
 
-State: ACTIVE: 9 of 25 lanes complete. Task9 has uncommitted C77/C78/C79 selection, click-helper and UI-snapshot repairs. Focused native/helper tests pass; corrected real base and fresh CLICK9 proofs precede the next commit. Prior8d standard gates and2refutations remain historical; the third baseline failed. Build runs:38/170. Rulings:C1-C80. Main remains c3f09d0.
+State: ACTIVE: 9 of 25 lanes complete. Task9 repaired runtime is committed atfa49522; finalabe0841 changes only a helper-unit deadline. Fresh real base and headed CLICK9 pair pass. Rust5 gates pass on identicalfa495 runtime; Node62/QA/frozen pass onabe. Final web gates, independent rechecks, GREF and plants remain. Build runs:38/170. Rulings:C1-C81. Main remains c3f09d0.
 
 Plan: `docs/superpowers/plans/2026-10-29-mc-player-control.md`.
 Design of record: `docs/superpowers/specs/2026-10-29-mc-player-control-design.md`, revision12 at63788d7, included by mainc3f09d0.
@@ -75,7 +75,7 @@ CI trigger: `.github/workflows/ci.yml:2-5` runs pushes to main and pull requests
 | T19 | 2 | 3 | codex/mc-t19 | COMPLETE merge98135d3; review0High/0Medium; all integration gates0; lane removed |
 | T2b | 3 | 2a, 3, 18 | codex/mc-t2b | COMPLETE64cd400; merge6d2c46e; all gates/10GREF0; review0H/0M; lane removed |
 | T4 | 4 | 2b, 3 | codex/mc-t4 | COMPLETE merge0490ebd; review0H/0M,36GREF,all12rootgates0; lane removed |
-| T9 | 4 | 1, 8, 2b | codex/mc-t9 | C77/C78/C79 uncommitted repair; focused native/helper proof green, real base/CLICK9 before commit. Prior8d13gates/2GREF historical. Final gates/GREF/FOV/review remain. |
+| T9 | 4 | 1, 8, 2b | codex/mc-t9 | Candidateabe0841 (fa495 repaired runtime, unit-only500ms change). Fresh base/CLICK9 pair0; Rust5/Node62/QA/frozen0. Final web, independent rechecks, GREF/FOV/own plant pending. |
 | T6 | 5 | 4 | codex/mc-t6 | NOT STARTED |
 | T7 | 5 | 2b, 4 | codex/mc-t7 | NOT STARTED |
 | T11 | 5 | 9, 19, 20 | codex/mc-t11 | NOT STARTED |
@@ -229,7 +229,7 @@ One row per builder/reviewer dispatch or resumed agent work turn. Register befor
 | 35 | T9 implementation preparation | bevy-rendering-engineer | gpt-6-luna | high | 3203f6b | COMPLETE preparation only: imported tests, API stubs, PROJ1/CLICK9 drafts; uncompiled/unexecuted/uncommitted; task2/estimate6/soft12/hard24. |
 | 36 | T9 implementation continuation | bevy-rendering-engineer | gpt-6-luna | high | 61535fc | COMPLETE native implementation handoff only; initial semantic reds, C49/C69-C73 repairs and native proofs. Task verification continues in RUN38. |
 | 37 | T9 independent review | technical-director | gpt-6.1-sol | high | 8ddefc1 | ACTIVE: prior Node59/native63 mapped to unchanged bytes, C49 recheck PASS, C76 source/pixels repair audited, all13 final raw gate logs0. Own modifier plant and final GREF verdict pending. |
-| 38 | T9 pixel proof and final verification continuation | bevy-rendering-engineer | gpt-6-luna | high | 8ddefc1 + uncommitted repairs | ACTIVE: C77 own-only type selection, C78 world click release, C79 post-layout feed/readers; native/helper proof green. Real base and new pixel pair precede one combined commit/final gates. C80 authorized snapshots. T9run5/estimate6/soft12/hard24. |
+| 38 | T9 pixel proof and final verification continuation | bevy-rendering-engineer | gpt-6-luna | high | abe0841 | ACTIVE: C77/C78/C79 committedfa495; real base/CLICK9 pair0; Rust5 fa4950; C81 unit-onlyabe, Node62/QA/frozen0. Final web→RUN37 native handoff→GREF/FOV. C80 snapshots verified. T9run5/estimate6/soft12/hard24. |
 
 ## 9. Preflight ledger and stop
 
