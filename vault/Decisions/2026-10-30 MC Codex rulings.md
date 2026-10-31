@@ -406,3 +406,12 @@ Choice: preserve machine-only Cancel capability and immutable item-recipe policy
 Conflict: consolidated QA source gaps remain in reserve canonical ordering, research eligibility/all-station/job allocation, late cancellation/removal refusal, idempotent extractor toggle and event-overflow preflight.
 
 Choice: shared real app/catalog fixtures cover research Produce/Cancel, machine Cancel stages, nonempty reserve canonical lines/refunds, late no-write refusals, idempotent toggles and job/event failures. Derive exact state/events/results from immutable policy and prior state. Reserve token/claim lines canonicalize by endpoint/resource; ChargeOnQueue metadata retains authored order. Test related families before broad gates. Alternative: weaken replay, trust capability flags alone or run full acceptance per small fix.
+
+
+## C52: keep frame/results instruments explicit and fixture inputs valid (2026-10-31)
+
+Conflict: Task9 preparation proposed an unpinned debug shape, inferred200frames from a fixed delay, and assumed0.9default FOV. Its test scaffolds also used an undeclared direct glam import, package-relative Forge path and borrowed temporary effects.
+
+Choice: debug.frames exposes recent and retained_input collections; records carry frame_index. Keep64recent/4096nonempty-seq retention and clear both through harness-only frames_clear. Per-unit debug.results retain seq,tick,unit,status,optionalreason; existing command_results preserves full envelope/Ack evidence. Retention oracle checks200actual presented frames after the click, not elapsed-time inference. Real client keeps prior map-centered Transform and Bevy default pi/4 FOV untilT11; PROJ1 explicitly uses0.9 to detect omitted copy. Pinned bevy_camera0.20 projection.rs:417-420 confirms default pi/4.
+
+Root repaired source-only fixtures: direct Bevy vec2 import (same pinned glam0.33.12), CARGO_MANIFEST_DIR package path, both F10/Escape menu bindings, persistent effect lifetime, float round-trip tolerance, mandatory driver/oracle roles and pointerup diagnostics accepted by unchanged scanner. Actual scout click coordinates remain unverified until browser run. Driver-rule0 and JS syntax0; no Cargo/runtime/behavior proof claimed. Details main target/mc-evidence/t9-builder/run35/root-preflight-notes.md. Alternative: invent production behavior to satisfy invalid fixtures, add a new dependency, drop a menu binding or assume a frame rate.

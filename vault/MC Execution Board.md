@@ -8,7 +8,7 @@ source: codex
 
 # MC execution board
 
-State: ACTIVE: Waves1-3 complete (8 of25 lanes), pushed6d2c46e. Wave3 CI41157502932 check/agents passed; browser retains known M2 timeout. Task4 candidate6e25954 in gates after focused E9 spawn repair; no merge yet. Task9 UX drafts only. Build35/170; C1-C46 recorded. One compiler/cache owner. Mainc3f09d0 untouched.
+State: ACTIVE: Waves1-3 complete (8 of25 lanes), pushed6d2c46e. Wave3 CI41157502932 check/agents passed; browser retains known M2 timeout. Task4 candidate6e25954 in gates after focused E9 spawn repair; no merge yet. Task9 UX drafts only. Build35/170; C1-C52 recorded. One compiler/cache owner. Mainc3f09d0 untouched.
 
 Plan: `docs/superpowers/plans/2026-10-29-mc-player-control.md`.
 Design of record: `docs/superpowers/specs/2026-10-29-mc-player-control-design.md`, revision12 at63788d7, included by mainc3f09d0.
@@ -226,7 +226,7 @@ One row per builder/reviewer dispatch or resumed agent work turn. Register befor
 | 32 | T4 implementation | simulation-core-engineer | gpt-6-luna | high | 6d2c46e plus vault | REGISTERED; red-first queue/audit/validator; task1/estimate8/soft16/hard32. |
 | 33 | T9 core-test preparation | ux-designer | gpt-6-luna | high | ab6ffd8 | COMPLETE draft-only; external tests/contract, SHA76817063...a2d629, T9 clean, no Cargo, no observed red/green. |
 | 34 | T4 independent review | qa-lead | gpt-6.1-sol | high | ab6ffd8; candidate pending | REGISTERED read-only early audit; no Cargo until handoff; task2/estimate8/soft16/hard32. |
-| 35 | T9 implementation preparation | bevy-rendering-engineer | gpt-6-luna | high | 3203f6b | REGISTERED source/test-stub preparation only; no Cargo/cache until handoff; task2/estimate6/soft12/hard24. |
+| 35 | T9 implementation preparation | bevy-rendering-engineer | gpt-6-luna | high | 3203f6b | COMPLETE preparation only: imported tests, API stubs, PROJ1/CLICK9 drafts; uncompiled/unexecuted/uncommitted; task2/estimate6/soft12/hard24. |
 
 ## 9. Preflight ledger and stop
 
@@ -422,3 +422,5 @@ C43-C46 record valid-data/Remove semantic repairs, preserved mutation detectors 
 
 
 Wave3 terminal CI41157502932 on6d2c46e: check124407427372 and agents124407427127 success. Root read raw logs; all33registered native M2 cases and17M3 cases have semantic RED/restored GREEN, full acceptance/F11 passed. Browser retains unchanged M2 timeout after T7(97frames). Raw logs/terminal metadata: main target/mc-evidence/wave3-{check,agents,browser}-job.log and wave3-ci-terminal-jobs.json. Check SHA f3fba3e0de94fa0127d9a74493f09b16afdc8e62171e85f470c896a13aba05f7; agents SHA b9bedfbdb9695d38e1f5c67561123d24ae03e9a0ab28f1afbe09fc84779cfd73. C47-C51 record Task9 read-only interfaces/selection/action identity and batched Task4 model fidelity, no gate waiver. Build35/170.
+
+Task9 RUN35 preparation complete; no Cargo/compiler/browser/cache use, no behavior accepted. Root fixture-source corrections and C52 instrument names are documented. Task4 combined validator preflight27/27 exit0 after family repairs; QA source batch recheck pending. Global35/170. Disk685GiB free; sole25GiB cache and4.5GiB retained evidence.

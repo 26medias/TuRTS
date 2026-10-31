@@ -102,4 +102,4 @@ Human usability amendment1354e33: catalog-derived principal labels/named local s
 
 **Integrated:** M3 fast-forwarded into main and pushed; hosted CI running, human-demo limitations retained. See [[Reports/2026-10-28 M3 integration]].
 
-MC update2026-10-31: ACTIVE: Waves1-3 complete (8 of25 lanes), pushed6d2c46e. Wave3 CI41157502932 check/agents passed; browser retains known M2 timeout. Task4 candidate6e25954 in gates after focused E9 spawn repair; no merge yet. Task9 UX drafts only. Build34/170; C1-C42 recorded. One compiler/cache owner. Mainc3f09d0 untouched. [[Reports/2026-10-31]].
+MC update2026-10-31: ACTIVE: Waves1-3 complete (8 of25 lanes), pushed6d2c46e. Wave3 CI41157502932 check/agents passed; browser retains known M2 timeout. Task4 candidate6e25954 in gates after focused E9 spawn repair; no merge yet. Task9 source/test preparation complete; uncompiled, no feature accepted. Build35/170; C1-C52 recorded. One compiler/cache owner. Mainc3f09d0 untouched. [[Reports/2026-10-31]].
