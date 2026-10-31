@@ -424,3 +424,16 @@ Conflict: final Task4 selected refutations have36cases and many commands; manual
 Choice: root prepares main target/mc-evidence/audit_lane_refutations.py SHA c20bbf348a25b007e3325f6a80d363ac4b4b57ba65debf4c6c1f44fa4cfdb320. It loads original guards and registry from the exact recorded git commit, checks raw stdout hashes/actual RCs/prerequisites/cwd/target, reconstructs original/planted/restored source hashes, checks M3 frozen/complete-source provenance, and recomputes the selector from the registered base using both path fields. Final invocations must supply the base. It never runs Cargo or modifies source.
 
 QA found the first draft wrongly assumed the M2 source-set helper existed in M3; root fixed the family-specific hash rule and added complete source-path/selector checks. QA source recheck has no known concern. Existing T2b10cases/69commands audit passes with base363d02d and preserves the old audit as a separate file. M3 runtime remains NOT TRACED until final Task4 receipts. Alternative not taken: trust summaries, weaken original guards, or rerun expensive tests solely to review saved proof.
+
+
+## C54: rename engine locals for the protected content scan (2026-10-31)
+
+Conflict: final workspace gate on6056fc0 fails real_source_scan_is_clean because new Remove projection local belt matches a protected Forge token.
+
+Choice: rename engine-side locals to belt_record/items_by_id, preserve all content/scanner/expectations. Root inspected0240e9a: identifier and formatting changes only in economylog.rs:2518+,2681+. Exact named scanner passes0; full final gates now run on0240e9a. Alternative not taken: change Forge names, weaken scanner or waive failure.
+
+## C55: retain honest red provenance and close missing metadata (2026-10-31)
+
+Conflict: seven new controlled semantic red logs have compiled named failures but their exact mutation patches and before/mutated/restored SHA manifests were not preserved. Builder confirms this gap. Draft behavior also preceded some test development; these are not untouched-base red-first evidence.
+
+Choice: keep the original logs and disclose their limits. After stable full gates, add focused controlled proofs for missing transformations with exact patch/hash/byte-restoration metadata, actual RCs and named detectors, then clean source. Use the same cache and named tests; do not rerun broad suites per mutation. Existing final plan plants/GREF/independent review remain mandatory. This repairs the evidence gap without mislabeling the development sequence. Alternative not taken: claim missing provenance, invent historical hashes or count a compile failure.
