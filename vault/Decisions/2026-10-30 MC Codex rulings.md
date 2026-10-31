@@ -350,3 +350,28 @@ Choice: retain every authority field; normalize qualified unit strings, sort def
 Conflict: old process expectations require not_mobile and finite outside-map rejection, omit owner idle order rows, and hardcode base order IDs for Haul. They predate the planned Order route and conflict with design5.2/K6 and owner projections.
 
 Choice: preserve static rejection with not_applicable (acceptance.rs:442-443); preserve both outside-map cases as positive Applied/bounded-movement process proofs, leaving direct legacy MoveTo rejection unchanged. Independently derive complete owner order rows from captured state/catalog (economy.rs:1190+) and expected order identity from the immutable package-qualified catalog (:815-872). Keep complete DTO equality, frozen input checks, Task4 semantic replay and independent M2 automatic/tick/economic replay; do not erase fields or bypass the old oracle. E8 and focused E9 report0; the resulting missing order state on product spawn was a genuine implementation bug and is repaired in6e25954, not hidden in the projector. Alternative not taken: change product clamp/reasons to satisfy stale fixtures, omit cases or relax replay. Final full gates/review remain pending.
+
+
+## C43: preserve valid authored filters and removal capability priority (2026-10-31)
+
+Conflict: the Task4 validator adds uniqueness to OrderDef.units although the loader permits repeated references for card=None and the sim tests membership. The Remove runtime tests removal.is_some while catalog authority/legacy M3 requires by_command.
+
+Choice: permit repeated authored filter entries with membership semantics, independently of envelope DuplicateUnit and capability-definition uniqueness. Match loaded removal.by_command capability before unit-filter/target checks. Require a genuinely loaded repeated-filter accepted order/log baseline, a duplicate-envelope refusal control and crossed disabled-removal/filter/target cases. Builder reports compiled red101/restoredgreen0 for filter and priority checks. No accepted-data or player contract change. Alternative not taken: invent a new loader restriction or alter reason priority.
+
+## C44: reanchor existing semantic mutation checks (2026-10-31)
+
+Conflict: the Task4 shared spawn repair changes two exact anchors, and new outer Order ownership guards shield the foreign-Gather mutation. QA source audit found E6-repeated-spawn/E6-event-only-spawn anchor counts0; E8-foreign-gather-owner-check must now break both relevant owner barriers.
+
+Choice: reanchor both spawn plants while retaining UnitOrders initialization and the original repeated/event-only defect. Extend the Gather ownership plant to the specific outer and inner barriers with all paths in the registry so selection includes it. Preserve the original semantic detector, provenance, exact restore and QA review. Recompute GREF after registry changes. Alternative not taken: retire a plant, accept a green mutant or remove the new guard from product code.
+
+## C45: independently model accepted removal writes (2026-10-31)
+
+Conflict: accepted Remove currently preserves prior UnitOrders in the replay expectation and does not model complete M3 removal/material/events, so active removal can false-reject and unrelated corruption can pass (economylog.rs:1380-1420; command_m3.rs:53+; economy/transaction_m3.rs:354-560).
+
+Choice: model actual allowed catalog-driven removal including disappearance of current/queued orders, contained material, jobs/claims and Destroyed events. Capture required removal policy through the existing immutable CatalogAudit authority, default/omit when absent, and keep frozen values unchanged. Require genuine current+queue/material-bearing removal baseline and corrupted balance/inventory/event negatives. QA must recheck. Alternative not taken: special-case actor absence, erase state, weaken replay or use a command-local policy as authority.
+
+## C46: prepare Task9 tests alongside Task4 without a second compiler (2026-10-31)
+
+Conflict: Task9 has no Task4 dependency, but the one-cache layout serializes compilation. The UX tests are drafted and the adapter/core observation seams need early source review.
+
+Choice: register main Task9 builder now on its own clean integration-based lane, for source/design audit, test import and minimal compiling signatures/stubs only. No feature behavior before actual observed semantic red; no Cargo/build/browser/cache use until root transfers exclusive compiler ownership. Root and builder settle internal read-only observation/projection/catalog-query seams during this preparation. Rebase lane after Task4 merge before compilation. Keep legacy literal --trace paths intact. Alternative not taken: wait idle, add another large cache, or implement behavior before tests.

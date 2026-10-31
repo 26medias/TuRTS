@@ -8,7 +8,7 @@ source: codex
 
 # MC execution board
 
-State: ACTIVE: Waves1-3 complete (8 of25 lanes), pushed6d2c46e. Wave3 CI41157502932 check/agents passed; browser retains known M2 timeout. Task4 candidate6e25954 in gates after focused E9 spawn repair; no merge yet. Task9 UX drafts only. Build34/170; C1-C42 recorded. One compiler/cache owner. Mainc3f09d0 untouched.
+State: ACTIVE: Waves1-3 complete (8 of25 lanes), pushed6d2c46e. Wave3 CI41157502932 check/agents passed; browser retains known M2 timeout. Task4 candidate6e25954 in gates after focused E9 spawn repair; no merge yet. Task9 UX drafts only. Build35/170; C1-C46 recorded. One compiler/cache owner. Mainc3f09d0 untouched.
 
 Plan: `docs/superpowers/plans/2026-10-29-mc-player-control.md`.
 Design of record: `docs/superpowers/specs/2026-10-29-mc-player-control-design.md`, revision12 at63788d7, included by mainc3f09d0.
@@ -226,6 +226,7 @@ One row per builder/reviewer dispatch or resumed agent work turn. Register befor
 | 32 | T4 implementation | simulation-core-engineer | gpt-6-luna | high | 6d2c46e plus vault | REGISTERED; red-first queue/audit/validator; task1/estimate8/soft16/hard32. |
 | 33 | T9 core-test preparation | ux-designer | gpt-6-luna | high | ab6ffd8 | COMPLETE draft-only; external tests/contract, SHA76817063...a2d629, T9 clean, no Cargo, no observed red/green. |
 | 34 | T4 independent review | qa-lead | gpt-6.1-sol | high | ab6ffd8; candidate pending | REGISTERED read-only early audit; no Cargo until handoff; task2/estimate8/soft16/hard32. |
+| 35 | T9 implementation preparation | bevy-rendering-engineer | gpt-6-luna | high | 3203f6b | REGISTERED source/test-stub preparation only; no Cargo/cache until handoff; task2/estimate6/soft12/hard24. |
 
 ## 9. Preflight ledger and stop
 
@@ -416,3 +417,5 @@ C38: Task4 replay resolves policy from an immutable InstalledCatalog-backed Cata
 
 
 CEO2026-10-31 approved C39 faster repair loop and removal of duplicate test/build work, retaining all required final gates, plants and per-merge checks. C40 boxes Order payload without serde change; C41 preserves strict renamed-catalog equality; C42 updates dependent process fixtures while retaining full independent replay. See [[Decisions/2026-10-30 MC Codex rulings]]. Task4 candidate6e25954 has focused E9 spawn repair green; full gates and independent runtime are pending. Build34/170.
+
+C43-C46 record valid-data/Remove semantic repairs, preserved mutation detectors and Task9 source/test-stub preparation while Task4 owns the compiler. RUN35 registered before dispatch; global35/170. No Task4 merge accepted.
