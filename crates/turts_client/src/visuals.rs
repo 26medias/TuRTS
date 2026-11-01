@@ -1359,7 +1359,7 @@ fn annulus_mesh(gaps: bool) -> Mesh {
     let mut indices = Vec::new();
     for index in 0..=segments {
         let angle = index as f32 / segments as f32 * std::f32::consts::TAU;
-        let inner = 0.94;
+        let inner = 0.88;
         let outer = 1.0;
         for radius in [inner, outer] {
             positions.push([radius * angle.cos(), 0.0, radius * angle.sin()]);
@@ -1403,6 +1403,7 @@ fn create_shared_meshes(assets: &mut VisualAssets, meshes: &mut Assets<Mesh>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use bevy::mesh::VertexAttributeValues;
     use bevy::render::render_resource::{DepthBiasState, StencilState, TextureFormat};
     use std::time::Duration;
     use turts_net_protocol::{OrderEnvelope, QueueMode, UnitId};
@@ -2008,6 +2009,18 @@ mod tests {
         };
         assert_eq!(index_count(solid), 192 * 6);
         assert!(index_count(foreign) < index_count(solid));
+        let solid_positions = match solid.attribute(Mesh::ATTRIBUTE_POSITION).unwrap() {
+            VertexAttributeValues::Float32x3(positions) => positions,
+            _ => panic!("shared ring mesh positions should be float3"),
+        };
+        let foreign_positions = match foreign.attribute(Mesh::ATTRIBUTE_POSITION).unwrap() {
+            VertexAttributeValues::Float32x3(positions) => positions,
+            _ => panic!("foreign ring mesh positions should be float3"),
+        };
+        for positions in [solid_positions, foreign_positions] {
+            assert!((positions[0][0] - 0.88).abs() <= f32::EPSILON);
+            assert!((positions[1][0] - 1.0).abs() <= f32::EPSILON);
+        }
         let foreign_indices = match foreign.indices().unwrap() {
             Indices::U32(indices) => indices,
             _ => panic!("foreign ring mesh indices should be u32"),

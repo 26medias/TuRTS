@@ -39,6 +39,19 @@ async function judge(view) {
     const foreignUnit = resolveUnit(selectedForeign.checkpoint, target.foreign, 1, "muster:dummy");
     const ownImage = await screenshot(view, "vis1-own-selected");
     const foreignImage = await screenshot(view, "vis1-foreign-selected");
+    const initial = requireStage(checkpointsByLabel, "vis1-full-initial");
+    const initialImage = await screenshot(view, "vis1-full-initial");
+    const initialForeign = resolveUnit(initial.checkpoint, target.foreign, 1, "muster:dummy");
+    assert.equal(initialForeign.unit_id, foreignUnit.unit_id,
+        "VIS1 foreign ring reference must be the same public unit as the selected capture");
+    assert.deepEqual(initialForeign.translation, foreignUnit.translation,
+        "VIS1 foreign ring reference must keep the same unit at the same world position");
+    assert(!(initial.checkpoint.debug.selection || []).includes(foreignUnit.unit_id),
+        "VIS1 initial foreign ring reference must have the target unselected");
+    assert(!(initial.checkpoint.debug.rings_shown || []).some((ring) => ring.unit === foreignUnit.unit_id),
+        "VIS1 initial foreign ring reference must not already contain the target ring");
+    assert.deepEqual(initial.checkpoint.scene.clip_from_world, selectedForeign.checkpoint.scene.clip_from_world,
+        "VIS1 selected and initial ring captures must use the same camera projection");
     assertSlotColor(ownImage, ownUnit, 0);
     assertSlotColor(foreignImage, foreignUnit, 1);
 
@@ -48,7 +61,7 @@ async function judge(view) {
         "VIS1 own selection must draw a solid slot-coloured ring in actual screenshot pixels");
     assert((selectedForeign.checkpoint.debug.selection || []).includes(foreignUnit.unit_id),
         "VIS1 foreign dummy must be selected in the actual C84 snapshot");
-    assert(visibleForeignGaps(foreignImage, selectedForeign.checkpoint.scene, foreignUnit),
+    assert(visibleForeignGaps(foreignImage, selectedForeign.checkpoint.scene, foreignUnit, initialImage),
         "VIS1 foreign selection must draw slot-coloured ring segments with four visible gaps");
     assert((selectedOwn.checkpoint.debug.rings_shown || []).some((ring) => ring.unit === ownUnit.unit_id && ring.own === true),
         "VIS1 C84 must record the selected own ring as actually visible");
@@ -214,17 +227,34 @@ function visibleRingPixels(image, scene, unit, radius) {
     return samples.filter((sample) => sample.coloured).length >= 9;
 }
 
-function visibleForeignGaps(image, scene, unit) {
+function visibleForeignGaps(image, scene, unit, unselectedImage) {
     const radius = unit.pick_radius;
-    if (!Number.isFinite(radius) || radius <= 0) return false;
-    const ring = ringSamples(image, scene, unit, radius, 16, 0.025);
-    const solidAtDiagonals = [2, 6, 10, 14].every((index) => ring[index].coloured);
+    if (!Number.isFinite(radius) || radius <= 0 || !unselectedImage ||
+        image.width !== unselectedImage.width || image.height !== unselectedImage.height) return false;
+    const ring = ringSamples(image, scene, unit, radius * 0.94, 16, 0.025);
+    const solidAtDiagonals = [2, 6, 10, 14].every((index) => {
+        const point = ring[index].point;
+        return Boolean(point && nearColor(pixelAt(image, Math.round(point[0]), Math.round(point[1])), SLOT_RGB[unit.owner_slot], 85));
+    });
     const gapsAtCardinals = [0, 4, 8, 12].every((index) => {
         const point = ring[index].point;
         if (!point) return true;
-        return !nearColor(pixelAt(image, Math.round(point[0]), Math.round(point[1])), SLOT_RGB[unit.owner_slot], 85);
+        return ringGapDiffersFromUnit(image, unselectedImage, point, SLOT_RGB[unit.owner_slot]);
     });
     return solidAtDiagonals && gapsAtCardinals;
+}
+
+function ringGapDiffersFromUnit(image, unselectedImage, point, slotColour) {
+    for (let dy = -2; dy <= 2; dy += 1) for (let dx = -2; dx <= 2; dx += 1) {
+        const x = Math.round(point[0] + dx);
+        const y = Math.round(point[1] + dy);
+        const selected = pixelAt(image, x, y);
+        const unselected = pixelAt(unselectedImage, x, y);
+        if (!selected || !unselected) continue;
+        const changed = Math.hypot(selected[0] - unselected[0], selected[1] - unselected[1], selected[2] - unselected[2]) >= 25;
+        if (changed && !nearColor(selected, slotColour, 85)) return true;
+    }
+    return false;
 }
 
 function ringSamples(image, scene, unit, radius, count, height) {
@@ -435,4 +465,4 @@ function nearColor(pixel, expected, tolerance) {
     return Boolean(pixel && pixel[3] >= 245 && Math.hypot(pixel[0] - expected[0], pixel[1] - expected[1], pixel[2] - expected[2]) <= tolerance);
 }
 
-module.exports = { judge, project, ringSamples, visibleRingPixels, visibleForeignGaps, assertHealthBar, assertTooltipPixels, waypointPolylineColorMatches, healthFillRatioMatches, visibleMarkerRingPixels };
+module.exports = { judge, project, ringSamples, visibleRingPixels, visibleForeignGaps, ringGapDiffersFromUnit, assertHealthBar, assertTooltipPixels, waypointPolylineColorMatches, healthFillRatioMatches, visibleMarkerRingPixels };

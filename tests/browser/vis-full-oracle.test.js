@@ -20,7 +20,7 @@ function paint(imageData, point, color, radius = 1) {
 }
 
 function paintRing(imageData, scene, unit, color, gaps) {
-    const samples = ringSamples(imageData, scene, unit, unit.pick_radius, 64, 0.025);
+    const samples = ringSamples(imageData, scene, unit, unit.pick_radius * 0.94, 64, 0.025);
     for (let index = 0; index < samples.length; index += 1) {
         const angle = index * Math.PI * 2 / samples.length;
         const atGap = gaps && [0, 1, 2, 3].some((gap) => {
@@ -28,12 +28,13 @@ function paintRing(imageData, scene, unit, color, gaps) {
             const difference = Math.abs(((angle - center + Math.PI * 3) % (Math.PI * 2)) - Math.PI);
             return difference < 0.09;
         });
-        if (!atGap && samples[index].point) paint(imageData, samples[index].point, color);
+        if (samples[index].point) paint(imageData, samples[index].point, [245, 245, 245], 0);
+        if (!atGap && samples[index].point) paint(imageData, samples[index].point, color, 0);
     }
 }
 
 function paintRingMissingQuadrant(imageData, scene, unit, color, missingQuadrant) {
-    const samples = ringSamples(imageData, scene, unit, unit.pick_radius, 64, 0.025);
+    const samples = ringSamples(imageData, scene, unit, unit.pick_radius * 0.94, 64, 0.025);
     for (let index = 0; index < samples.length; index += 1) {
         const angle = index * Math.PI * 2 / samples.length;
         const quadrant = Math.floor(angle / (Math.PI / 2));
@@ -42,9 +43,14 @@ function paintRingMissingQuadrant(imageData, scene, unit, color, missingQuadrant
             const difference = Math.abs(((angle - center + Math.PI * 3) % (Math.PI * 2)) - Math.PI);
             return difference < 0.09;
         });
-        if (quadrant !== missingQuadrant && !atCardinalGap && samples[index].point) {
-            paint(imageData, samples[index].point, color);
-        }
+        if (samples[index].point) paint(imageData, samples[index].point, [245, 245, 245], 0);
+        if (quadrant !== missingQuadrant && !atCardinalGap && samples[index].point) paint(imageData, samples[index].point, color, 0);
+    }
+}
+
+function fill(imageData, color) {
+    for (let offset = 0; offset < imageData.rgba.length; offset += 4) {
+        imageData.rgba.set([...color, 255], offset);
     }
 }
 
@@ -57,16 +63,21 @@ test("VIS1 pixel oracle accepts a solid own ring and four-gap foreign ring", () 
     const scene = { clip_from_world: [1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1], viewport_logical_rect: [0, 0, 100, 100] };
     const unit = { unit_id: 7, owner_slot: 1, translation: [0, 0, 0], ground_screen_center: [50, 50], pick_radius: 0.5 };
     const orange = [230, 159, 0];
+    const baseline = image(100, 100);
+    fill(baseline, orange);
     const gaps = image(100, 100);
+    gaps.rgba.set(baseline.rgba);
     paintRing(gaps, scene, unit, orange, true);
-    assert.equal(visibleForeignGaps(gaps, scene, unit), true);
+    assert.equal(visibleForeignGaps(gaps, scene, unit, baseline), true);
     const solid = image(100, 100);
+    solid.rgba.set(baseline.rgba);
     paintRing(solid, scene, unit, orange, false);
-    assert.equal(visibleForeignGaps(solid, scene, unit), false);
+    assert.equal(visibleForeignGaps(solid, scene, unit, baseline), false);
     assert.equal(visibleRingPixels(solid, scene, unit, unit.pick_radius), true);
     const missingQuadrant = image(100, 100);
+    missingQuadrant.rgba.set(baseline.rgba);
     paintRingMissingQuadrant(missingQuadrant, scene, unit, orange, 2);
-    assert.equal(visibleForeignGaps(missingQuadrant, scene, unit), false,
+    assert.equal(visibleForeignGaps(missingQuadrant, scene, unit, baseline), false,
         "four-gap oracle must reject an otherwise good ring with a missing third quadrant");
 });
 
