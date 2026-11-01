@@ -8,7 +8,7 @@ source: codex
 
 # MC execution board
 
-State: ACTIVE Wave6. Task5 merged e214ccc and integration re-gate pending;14/25complete,15merged;66/170runs. RUN64/65 complete and allholds released. Root owns the sole integration compiler cache; Task13 RUN62/66 source-only. O13/design14 at mainf050e42; C1-C170. No main merge/push.
+State: ACTIVE Wave6. Task5 COMPLETE at mergee214ccc; integration11/11gates0 at e7e0e17.15/25lanes complete;66/170runs. Task5lane removed after evidence/process checks; branch and evidence retained. Root owns sole integration cache pending Task13 transfer. Task13 RUN62/66 source-only, rebasedca0c36b, production still old renderer until real baseline reds. O13/design14/mainf050e42; C1-C171. No main merge/push.
 
 Plan: `docs/superpowers/plans/2026-10-29-mc-player-control.md`.
 Design of record: `docs/superpowers/specs/2026-10-29-mc-player-control-design.md`, revision14 at mainf050e42.
@@ -80,7 +80,7 @@ CI trigger: `.github/workflows/ci.yml:2-5` runs pushes to main and pull requests
 | T7 | 5 | 2b, 4 | codex/mc-t7 | COMPLETE c190c909; merge7e575c9; independent0H/0M/30tests/ownplant, integration12/12gates0 (1231/0/19,T7,M3); lane removed, evidence and branch retained. |
 | T11 | 5 | 9, 19, 20 | codex/mc-t11 | COMPLETE c996463; merge aff4d63; independent 0H/0M/0L, 11 probes, CAM1 2/2 and both plants restored; integration 12/12 gates0,1266/0/19; completed artifacts archived and lane removed, branch retained. |
 | T12 | 5 | 3, 9, 19, 20 | codex/mc-t12 | COMPLETE candidate77ca599; mergeaf567c4. Independent0High/0remaining,7probes and own production101→0. FreshHUD1six/HUD4two pass; required runtime-default mutation1→restore0. Integration11/11gates0,1306/0/19,frozen,T7. All28removed tests mapped; registered3panelplants remain planned-window NOT CHECKED. Lane removed, evidence/cache/branch preserved. |
-| T5 | 6 | 4, 6, 19 | codex/mc-t5 | MERGED e214ccc from98147ae; RUN65 finalPASS0High/15probes/ownplant. All task gates+19GREF+2requiredplants passed; integration re-gate ACTIVE before completion/cleanup. |
+| T5 | 6 | 4, 6, 19 | codex/mc-t5 | COMPLETE mergee214ccc from98147ae. RUN65 PASS0High,15independentprobes/ownplant0-101-0; alltaskgates/19GREF/2requiredplants; integration11/11gates0,1419/0/19,T7 137frames/53moving. Lane removed after provenance/hold checks; branch retained. |
 | T13 | 6 | 4, 6, 9, 11, 19, 20 | codex/mc-t13 | ACTIVE RUN62 after O13 release/rebase; unchanged palette, thresholds20 normal/10 simulated severity1.0. Source-only until root lease; candidate preserved, runtime NOT TRACED, no cache. |
 | T10 | 7 | 5, 9, 11, 19, 20 | codex/mc-t10 | NOT STARTED |
 | T15 | 7 | 4, 7, 12, 13 | codex/mc-t15 | NOT STARTED |
@@ -255,8 +255,8 @@ One row per builder/reviewer dispatch or resumed agent work turn. Register befor
 | 61 | T5 weapons, attack/attack-move and audited policies | simulation-core-engineer | gpt-6-luna | high | Wave5 ad0eef4 plus registration docs | Registered BEFORE dispatch. Task5run1/estimate4, soft8/hard16. Branch codex/mc-t5 and own worktree; sole compiler/cache lease after root transfer, all five variables. Must get compiled server-envelope/actual rush semantic red before production implementation; preserve frozen Forge replay and Task6 movement/queues. |
 | 62 | T13 visuals, palette and pixel instruments | bevy-rendering-engineer | gpt-6-luna | high | Wave5 ad0eef4 plus registration docs | Registered BEFORE dispatch. Task13run1/estimate5, soft10/hard20. Own branch/worktree; SOURCE/PURE-NODE ONLY until root lease, no Cargo/compiler/browser/second cache. Prepare tests/drivers/oracles and implementation patches outside lane; preserve old renderer for actual VIS1/palette red before applying production implementation. |
 | 63 | T5 independent combat/policy/replay review | qa-lead | gpt-6.1-sol | high | Task5 base12e435c plus RUN61 stable WIP | Registered BEFORE dispatch. Task5run2/estimate4, soft8/hard16. SOURCE-ONLY: inspect current stable interfaces and prepare finite independent probes outside lane; no compiler/cache/browser/source edits until root lease. Check actual lifecycle, all fire/engage axes, immutable catalog policy, plain Move identity audit, grid/determinism, frozen evidence and required plants. |
-| 64 | T5 repair continuation after O13 | simulation-core-engineer | gpt-6-luna | high | 12ded296, O13 mainf050e42 | Registered BEFORE resuming completed RUN61. Task5run3/estimate4; soft8/hard16. Eight WIP files restored byte-identical. Repair all four RUN63 failures, native/ACC/T7/frozen/GREF and required plants, commit and clean handoff. Sole compiler/cache lease target/mc-t5. |
-| 65 | T5 independent recheck after O13 | qa-lead | gpt-6.1-sol | high | O13-rebased Task5 plus WIP | Registered BEFORE resuming completed RUN63. Task5run4/estimate4; soft8/hard16. Source-only until runtime handoff. Verify all four High repairs, independent15probes and own production plant after final gates; no simultaneous compiler/cache owner. |
+| 64 | T5 repair continuation after O13 | simulation-core-engineer | gpt-6-luna | high | 12ded296, O13 mainf050e42 | COMPLETE clean98147ae; all10native/QA/frozen0,ACC0,headedT7 0;19selectedGREF,requiredJob/rushplants semantic101 thenrestored0. Finalhandoff/run64. Task5run3/estimate4. |
+| 65 | T5 independent recheck after O13 | qa-lead | gpt-6.1-sol | high | O13-rebased Task5 plus WIP | COMPLETE PASS0High on98147ae. Original15independentprobes0; ownfocus-preferenceplant0/101/0, exactrestore+all16sourcehashes; allnormal/GREF/requiredplant evidence raw/hashrechecked. Allholdsreleased; merged/regated/laneremoved. Task5run4/estimate4. |
 | 66 | T13 independent visual/acceptance source review | ux-designer | gpt-6.1-sol | high | T13 prep2bcb9ae plus off-lane candidate | Registered BEFORE dispatch. Task13run2/estimate5; soft10/hard20. SOURCE-ONLY until explicit root lease. Review design14/O13/C161/C163/C167; full VIS1 pixels+first-frame state, SEL2/3, palette thresholds, shared assets, hover/bar/marker/blocked lifetimes and actual VIS2 instrumentation. Candidate not yet compiled/applied; prepare finite independent probes/own four-gap visual plant outside lane. T5 RUN65 owns sole runtime. |
 
 ## 9. Preflight ledger and stop
@@ -1607,3 +1607,21 @@ Conflict: the expanded oracle did not judge its selection-cleared screenshot, co
 Choice: repair all before Task13 final gates. Check absence of full-health unselected bars in default mode; compare damaged fill width/ratio with actual public health and full reference, plus native retained child scaling; derive the actual current->queued waypoint polyline from C84 and sample those segments; require actual active-marker pixels. Keep physical PNG-only driver targets and existing fixture/acceptance values.
 
 Evidence: staged vis-full-oracle.js:81-90,238-254,284-300; staged visuals.rs:798-809. Alternative not taken: accept a permanently visible/full-width bar, reject a correct non-collinear polyline, or substitute debug metadata for saved pixels. Actual browser checks remain NOT TRACED.66/170runs.
+
+### C170 scope clarification
+
+Actual owner-public unit order DTOs are needed for the waypoint oracle. Task13 may add sorted replica.unit_orders under replicated_world.unit_orders in both debug.rs cached capture and direct rebuild, with native consistency checks. Catalog max health is public reference data for fill ratios. No private server state, prediction, or driver semantic reads.
+
+## C171: prove the offscreen type-selection precondition
+
+Conflict: the required SEL3 no-screen-test plant has no effect if all own same-type units are onscreen. The draft oracle compared visible candidates but did not require an offscreen peer, and the driver did no camera setup.
+
+Choice: require actual C84 own same-type total > visible >=1 at Ctrl-click and double-click, with a valid visible clicked unit. Use physical PNG-derived zoom/pan when needed; preserve the existing Muster fixture, screen rule and required plant. The oracle may inspect actual public C84 state; the driver keeps PNG-only input targeting. An unexercised predicate or remained-green plant is not accepted.
+
+Evidence: planTask13step4/type-selection plant; design4.1/SEL3 visible-only rule; Task13 sel-driver/oracle. Alternative not taken: retire the plant, invent a content change, or call an all-visible fixture proof of screen filtering. Actual runtime precondition is NOT TRACED until Task13 lease.66/170runs.
+
+## Task5 complete and lane closed
+
+Root verified all11integrationgates at e7e0e17 (code mergee214ccc):1419passed/0failed/19ignored in113groups; bound headedT7exit0,137frames/53moving and no browsererrors. RawWEB SHA1ef18235276351259ddf854d771f2886b9ece6077555234698795f340831ed3d. Evidence integration-t5-e7e0e17*, root summary t5-root-98147ae/integration-verified.json. WorktreeTask5clean98147ae had no activecwd/executable references, no cache left, nounique evidence; ignored rebuilt outputs inventory46,924,473bytes. Rootremovedworktree, kept codex/mc-t5/backups/stash/originalWIP/evidence. Receipt t5-closeout-preservation/completion.json.15/25complete;66/170runs.
+
+Root rebased7Task13 commits onto e7e0e17 whileintegrationchecks ran, cleannewHEADca0c36b3a5f8500e9ea99842621adf58a3238a5a. No sourceconflicts; builder/reviewerrefreshcandidatepreimages beforeanyruntime. ThisisGit/sourceoverlap, no parallelcompiler. Wave6push/hostedread waitsTask13completion. Both hostedpanelmigrationfailuresremainTask21window.
