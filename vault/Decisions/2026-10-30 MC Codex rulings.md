@@ -1260,3 +1260,14 @@ Choice: load stable distinct CPU-retained cursor handles for each qualified imag
 Evidence: local bevy_winit-0.20.0/src/cursor/mod.rs:136-149 builds CustomCursorCacheKey::Image without hotspot and takes CustomCached when present; :90-105 reuses cached OS cursors. cursor/custom_cursor.rs:15-33 defines the same key fields. Root read these primary source paths and RUN56 independently found the issue. Current Task12 asset/runtime lookup was image-id-only. Design8.2 Cursor and8.1 require authored hotspots and separate CPU cursor assets.
 
 This is an internal mechanism/cache repair under brief4, keeping the same player-visible cursor design. Alternative not taken: patch vendored Bevy, crop/shift images to alter the key, report component equality as OS hotspot proof, or forbid valid shared-image declarations.58/170 runs; no new run or CEO stop.
+
+
+## C143: do not invent a command-card cell for an unplaced order
+
+Conflict: the first actual1280x720 diagnostic passes HUD1's outer rectangles, but the screenshot shows overlapping command buttons. Captured order_disable and order_gather both occupy[76,76,64,64]. Disable declares card:None; Gather explicitly owns row1/column1. The generic sequential fallback puts an unplaced order in an authored cell.
+
+Choice: Grid(Source::CommandCard) draws only rows with a valid authored CardCell, filtering before capacity limiting, in initial spawn and retained reconciliation. Do not auto-place None entries. Other Grid sources keep normal sequential flow; an authored List(CommandCard) may still show the complete source. Keep all commands, mod data, keys and typed actions unchanged. Add Some/None, capacity and generic-flow controls.
+
+Evidence: actual diagnostic main t12-builder/run55/browser/runs/run-20261101T082739Z-5gtren/hud1-after-selection-box.png and scene-checkpoints.json; root viewed/read both. Fixture orders/order_disable.ron:1 has card:None and order_gather.ron:1 has Some(row1,column1), matching production. Root receipt t12-root/c143-card-layout.json retains exact rows, authoring and hashes. Design8:719-721 and8.3 assign layout to the mod;8.4 supplies the card-cell field. The diagnostic is not final-source acceptance because its build overlapped edits.
+
+This is an uncovered placement-detail repair under brief4, not a cut of an order or a changed acceptance row. Alternative not taken: invent free cells, overwrite authored cells, rename protected content, or accept correct outer rectangles while inner controls overlap.58/170 runs; no new run or CEO stop.
