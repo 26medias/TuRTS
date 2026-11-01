@@ -104,7 +104,7 @@ Human usability amendment1354e33: catalog-derived principal labels/named local s
 
 ## Current MC status
 
-ACTIVE:13/25 lanes complete;57/170 runs. Tasks6,7 and11 are merged and re-gated; Wave5 needs Task12. RUN55 implements the widget runtime after all6 actual HUD1 baseline reds; RUN56 independent review is active. Solecache:target/mc-t12. C1-C136 recorded. Main stays721e56e; no main merge/push. See [[MC Execution Board]] and [[Reports/2026-11-01]].
+ACTIVE:13/25 lanes complete;58/170 runs. Tasks6,7 and11 are merged and re-gated; Wave5 needs Task12. RUN55 implements the widget runtime after all6 actual HUD1 baseline reds; RUN56 independent review is active. Solecache:target/mc-t12. C1-C138 recorded. Main stays721e56e; no main merge/push. See [[MC Execution Board]] and [[Reports/2026-11-01]].
 
 ## Historical MC checkpoints
 

@@ -1207,3 +1207,12 @@ Choice: capture actual post-layout widget geometry once. Keep turts_ui/UiSnapsho
 Evidence: design13.2:1171-1175 adds scene widgets and says turts_ui stays. web lib.rs:488-492 declares window-logical scene coordinates and camera-viewport-physical UI rect coordinates; existing bridge contract tests:550,564-565 assert both. Legacy economy_ui.rs:1097-1108 defines the computed UI row. C86 already records the CSS scene requirement. Current Task12 snapshot.rs:12-30 reads the first Window and divides the feed geometry. Root read all paths. RUN56 will independently test actual target-camera/nonzero-viewport cases.
 
 This is an instrument-coordinate repair under brief4, with no player-visible layout or acceptance-row change. Alternative not taken: silently change turts_ui, cancel player scale, trust an unrelated Window, or omit the viewport origin.57/170 runs; no new dispatch or CEO stop.
+
+
+## C138: complete permitted source semantics in a disjoint module
+
+Conflict: the widget tree/input/cursor integration and the table8.4 source semantics can proceed independently after their action contract is fixed. Keeping them on one writer delays runtime proof; overlapping module edits would risk conflicts.
+
+Choice: register RUN58, Luna/high, for widgets/sources.rs and inline tests only. RUN55 explicitly froze SourceContext/ItemData and supplied the dispatcher JSON contract for Order, Select, Produce(producer/content), CancelProduction(producer/job), and Input. RUN55 owns tree/actions/cursor and all compiler/cache/browser execution. RUN56 independently reviews. RUN57 remains completed; no resumed run or second cache is hidden.
+
+Evidence: design8.4:775-795 defines allowed sources and actions; existing sources.rs is an isolated adapter with explicit replica/catalog/owner inputs. RUN55 confirmed the exact disjoint ownership/API before dispatch. Brief4 permits lane/cache layout choices and the CEO approved safe parallelism. Alternative not taken: change the data surface, let two writers edit one module, run concurrent compilers, skip semantic source tests, or count an uncompiled helper as green.58/170 runs; Task12run6/8; no CEO stop.

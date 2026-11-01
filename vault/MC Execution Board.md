@@ -8,7 +8,7 @@ source: codex
 
 # MC execution board
 
-State: ACTIVE: 13/25 lanes complete; 57/170 runs registered. Task11 COMPLETE at aff4d63, independent 0 open findings, integration 12/12 gates0 (1266/0/19, T7, M3). RUN55 Task12 owns the sole compiler/cache; RUN56 mod-runtime review is source-only; RUN57 supplied assets.rs source-only; RUN55 integrates and tests it. C1-C137. Wave5 needs Task12; no main merge/push.
+State: ACTIVE: 13/25 lanes complete; 58/170 runs registered. Task11 COMPLETE at aff4d63, independent 0 open findings, integration 12/12 gates0 (1266/0/19, T7, M3). RUN55 Task12 owns the sole compiler/cache; RUN56 mod-runtime review is source-only; RUN57 supplied assets.rs source-only; RUN58 implements sources.rs; RUN55 integrates/tests both. C1-C138. Wave5 needs Task12; no main merge/push.
 
 Plan: `docs/superpowers/plans/2026-10-29-mc-player-control.md`.
 Design of record: `docs/superpowers/specs/2026-10-29-mc-player-control-design.md`, revision13 at main721e56e.
@@ -250,6 +250,8 @@ One row per builder/reviewer dispatch or resumed agent work turn. Register befor
 | 55 | T12 widget, cursor and guide implementation continuation | bevy-rendering-engineer with ux-designer | gpt-6-luna | high | ffff0a3 after T7 rebase | Registered BEFORE dispatch. Active sole compiler/browser owner after Task11 merge. Actual native9selected/7semantic failures exit101; C134 HUD1 all6 named missing-widget/panel failures exit1 with valid owned selection and exact viewport/DPR. Runtime implementation active; preserve legacy28 until covered. Task12 run3/estimate8, soft16/hard32. |
 | 56 | T12 independent widget runtime and data-source review | mod-runtime-engineer | gpt-6.1-sol | high | f6577b9 plus RUN55 preparation | Registered BEFORE dispatch; source-only and pure Node on immutable outside-lane snapshots until committed gates and explicit lease. Independent42/42 pure instrument probes pass; runtime review/own production plant pending. Check table8.4 privacy, assets, scale, actions and legacy28. Task12 run4/estimate8, soft16/hard32. |
 | 57 | T12 parallel asset loader implementation | bevy-rendering-engineer with ux-designer | gpt-6-luna | high | f6577b9 plus active RUN55 source | COMPLETE source-only handoff:390-line assets.rs with qualified image/cursor/font maps, separate CPU-retained cursor decode, nine-slice and reload controls. No compiler/browser/cache execution; tests NOT TRACED. RUN55 integrates/runs and repairs; RUN56 independently reviews. Task12 run5/estimate8, soft16/hard32. |
+
+| 58 | T12 parallel permitted source semantics | bevy-rendering-engineer with ux-designer | gpt-6-luna | high | f6577b9 plus active RUN55 source | Registered BEFORE dispatch. Own sources.rs only, including inline tests. Preserve SourceContext/ItemData API; implement agreed typed action JSON, owner/capability/affordability/binding semantics. No compiler/browser/cache lease; RUN55 executes and integrates. Task12 run6/estimate8, soft16/hard32. |
 
 ## 9. Preflight ledger and stop
 
@@ -1218,3 +1220,12 @@ Choice: capture actual post-layout widget geometry once. Keep turts_ui/UiSnapsho
 Evidence: design13.2:1171-1175 adds scene widgets and says turts_ui stays. web lib.rs:488-492 declares window-logical scene coordinates and camera-viewport-physical UI rect coordinates; existing bridge contract tests:550,564-565 assert both. Legacy economy_ui.rs:1097-1108 defines the computed UI row. C86 already records the CSS scene requirement. Current Task12 snapshot.rs:12-30 reads the first Window and divides the feed geometry. Root read all paths. RUN56 will independently test actual target-camera/nonzero-viewport cases.
 
 This is an instrument-coordinate repair under brief4, with no player-visible layout or acceptance-row change. Alternative not taken: silently change turts_ui, cancel player scale, trust an unrelated Window, or omit the viewport origin.57/170 runs; no new dispatch or CEO stop.
+
+
+## C138: complete permitted source semantics in a disjoint module
+
+Conflict: the widget tree/input/cursor integration and the table8.4 source semantics can proceed independently after their action contract is fixed. Keeping them on one writer delays runtime proof; overlapping module edits would risk conflicts.
+
+Choice: register RUN58, Luna/high, for widgets/sources.rs and inline tests only. RUN55 explicitly froze SourceContext/ItemData and supplied the dispatcher JSON contract for Order, Select, Produce(producer/content), CancelProduction(producer/job), and Input. RUN55 owns tree/actions/cursor and all compiler/cache/browser execution. RUN56 independently reviews. RUN57 remains completed; no resumed run or second cache is hidden.
+
+Evidence: design8.4:775-795 defines allowed sources and actions; existing sources.rs is an isolated adapter with explicit replica/catalog/owner inputs. RUN55 confirmed the exact disjoint ownership/API before dispatch. Brief4 permits lane/cache layout choices and the CEO approved safe parallelism. Alternative not taken: change the data surface, let two writers edit one module, run concurrent compilers, skip semantic source tests, or count an uncompiled helper as green.58/170 runs; Task12run6/8; no CEO stop.
