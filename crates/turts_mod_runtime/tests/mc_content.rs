@@ -152,6 +152,48 @@ fn validator_accepts_modifier_keys_and_minimap_color_frame_with_defaults() {
 }
 
 #[test]
+fn attack_cannot_declare_a_move_or_hold_fire_policy() {
+    for policy in ["Never", "InRange"] {
+        let archive = archive_with_order(&format!(
+            r#"(id:"rush",name:"Rush",behaviour:Attack,target:Unit,fire:Some({policy}),engage:None,icon:"rush-icon",hotkey:"rush",cursor:None,card:None,units:[],description:"Rush the target")"#
+        ));
+        let error = archive
+            .content()
+            .expect_err("Attack fire policies must be rejected at the authored field");
+        assert_eq!(
+            error.to_string(),
+            "hud/orders/rush.ron: fire: fire policy is only valid for Move or Hold"
+        );
+    }
+}
+
+#[test]
+fn move_and_hold_accept_their_authored_fire_policies() {
+    for (behaviour, target, policy) in [
+        ("Move", "Point", "InRange"),
+        ("Move", "Point", "Never"),
+        ("Hold", "None", "InRange"),
+        ("Hold", "None", "Never"),
+    ] {
+        let archive = archive_with_order(&format!(
+            r#"(id:"rush",name:"Rush",behaviour:{behaviour},target:{target},fire:Some({policy}),engage:None,icon:"rush-icon",hotkey:"rush",cursor:None,card:None,units:[],description:"Order")"#
+        ));
+        assert!(
+            archive.content().is_ok(),
+            "{behaviour} with fire {policy} must remain valid"
+        );
+    }
+    assert!(
+        archive_with_order(
+            r#"(id:"rush",name:"Rush",behaviour:Attack,target:Unit,fire:None,engage:None,icon:"rush-icon",hotkey:"rush",cursor:None,card:None,units:[],description:"Attack")"#
+        )
+        .content()
+        .is_ok(),
+        "Attack with fire None remains valid"
+    );
+}
+
+#[test]
 fn validator_rejects_cancel_production_with_point_target_semantically() {
     let archive = archive_with_order(
         r#"(id:"cancel",name:"Cancel",behaviour:CancelProduction,target:Point,fire:None,engage:None,icon:"rush-icon",hotkey:"cancel",cursor:None,card:None,units:["hud:trooper"],description:"Cancel a job")"#,

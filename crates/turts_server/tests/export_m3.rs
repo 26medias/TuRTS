@@ -177,6 +177,7 @@ fn delta_for_slot1_has_healths_and_removed_only() {
         effective_damage: Ok(10),
         status: RawWeaponStatusAudit::Ready,
         last_target: None,
+        ordered_target_fired: None,
     }];
     batch.belts = vec![RawBeltAudit {
         first_piece: 20,
@@ -322,6 +323,7 @@ fn weapon_effective_damage_preserves_checked_error() {
         effective_damage: Err(turts_sim::RejectReason::ArithmeticOverflow),
         status: RawWeaponStatusAudit::Ready,
         last_target: None,
+        ordered_target_fired: None,
     }];
     let snapshot = export::snapshot_for(&view, SlotId(0));
     assert_eq!(

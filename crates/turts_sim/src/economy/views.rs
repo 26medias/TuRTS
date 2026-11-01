@@ -308,6 +308,10 @@ pub struct CatalogOrderAudit {
     pub id: ContentId,
     pub behaviour: turts_mod_api::Behaviour,
     pub target: turts_mod_api::TargetKind,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fire: Option<turts_mod_api::FirePolicy>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub engage: Option<turts_mod_api::EngagePolicy>,
     pub units: Vec<String>,
     pub queue_depth: u8,
     pub unit_capabilities: Vec<crate::orders::OrderUnitCapabilitiesAudit>,
@@ -323,6 +327,10 @@ pub struct CatalogUnitAudit {
     pub id: ContentId,
     pub radius: f32,
     pub movement_speed: Option<f32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub weapon_range: Option<f32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub weapon_targets: Option<turts_mod_api::SlotRelation>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub removal: Option<turts_mod_api::RemovalDef>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -950,6 +958,8 @@ pub fn audit_state(world: &mut World) -> AuditState {
                             turts_mod_api::Footprint::Circle { radius } => radius,
                         },
                         movement_speed: d.movement.as_ref().map(|m| m.speed),
+                        weapon_range: d.weapon.as_ref().map(|weapon| weapon.range),
+                        weapon_targets: d.weapon.as_ref().map(|weapon| weapon.targets.slots),
                         removal: d.removal,
                         machine_recipe: d.machine.as_ref().map(|machine| machine.recipe.clone()),
                         inventory: d
@@ -1019,6 +1029,8 @@ pub fn audit_state(world: &mut World) -> AuditState {
                         id: id.clone(),
                         behaviour: definition.behaviour,
                         target: definition.target,
+                        fire: definition.fire,
+                        engage: definition.engage,
                         units: definition.units.clone(),
                         queue_depth: c
                             .order_queue_depths

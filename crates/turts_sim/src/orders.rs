@@ -477,6 +477,10 @@ pub struct OrderPolicyAudit {
     pub id: ContentId,
     pub behaviour: Behaviour,
     pub target: turts_mod_api::TargetKind,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fire: Option<turts_mod_api::FirePolicy>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub engage: Option<turts_mod_api::EngagePolicy>,
     pub units: Vec<String>,
     pub queue_depth: u8,
     pub unit_capabilities: Vec<OrderUnitCapabilitiesAudit>,
@@ -692,14 +696,36 @@ fn insert_promoted_request(
 /// Run one fixed-tick order phase.
 pub(crate) fn run_orders(world: &mut World) {
     dispatch_pending_movement(world);
-    let unit_entities: BTreeMap<_, _> = world
-        .iter_entities()
-        .filter_map(|entity| {
-            entity
-                .get::<crate::world::UnitId>()
-                .map(|id| (id.0, entity.id()))
-        })
-        .collect();
+    let mut unit_entities = BTreeMap::new();
+    let mut engagement_points = Vec::new();
+    let mut engagement_positions = BTreeMap::new();
+    let mut engagement_owners = BTreeMap::new();
+    for entity in world.iter_entities() {
+        let Some(id) = entity.get::<crate::world::UnitId>() else {
+            continue;
+        };
+        unit_entities.insert(id.0, entity.id());
+        let (Some(position), Some(owner)) = (
+            entity.get::<crate::world::Position>(),
+            entity.get::<crate::world::Owner>(),
+        ) else {
+            continue;
+        };
+        engagement_points.push(crate::grid::GridPoint {
+            id: id.0,
+            position: position.0,
+        });
+        engagement_positions.insert(id.0, position.0);
+        engagement_owners.insert(id.0, owner.0.0);
+    }
+    engagement_points.sort_unstable_by_key(|point| point.id);
+    let engagement_cell_size = world
+        .get_resource::<crate::bootstrap::InstalledCatalog>()
+        .into_iter()
+        .flat_map(|catalog| catalog.0.units.values())
+        .filter_map(|unit| unit.weapon.as_ref().map(|weapon| weapon.range))
+        .fold(f32::EPSILON, f32::max);
+    let engagement_grid = crate::grid::UniformGrid::new(&engagement_points, engagement_cell_size);
     for (&unit_id, &entity) in &unit_entities {
         let replacement_pending = unit_has_pending_move(world, unit_id);
         let no_plain_move_state = world.entity(entity).get::<MoveTarget>().is_none()
@@ -772,7 +798,7 @@ pub(crate) fn run_orders(world: &mut World) {
             .get::<UnitOrders>()
             .and_then(|orders| orders.current.as_ref())
             .is_some_and(|current| {
-                current.behaviour == Behaviour::Move
+                matches!(current.behaviour, Behaviour::Move | Behaviour::Attack)
                     && matches!(current.target, OrderTargetSim::Unit(_))
             });
         if completed_plain_fallback && !gather_still_approaching && !current_is_unit_follow {
@@ -904,7 +930,7 @@ pub(crate) fn run_orders(world: &mut World) {
             continue;
         }
         let current = current.unwrap();
-        if current.behaviour == Behaviour::Move
+        if matches!(current.behaviour, Behaviour::Move | Behaviour::Attack)
             && let OrderTargetSim::Unit(target_id) = current.target
         {
             if world
@@ -916,10 +942,73 @@ pub(crate) fn run_orders(world: &mut World) {
                 // the actor's post-move queue.
                 continue;
             }
-            run_unit_follow_move(world, entity, unit_id, current, target_id, &unit_entities);
+            if current.behaviour == Behaviour::Attack {
+                run_unit_attack(world, entity, unit_id, current, target_id, &unit_entities);
+            } else {
+                run_unit_follow_move(world, entity, unit_id, current, target_id, &unit_entities);
+            }
             continue;
         }
-        let completed_move = current.behaviour == Behaviour::Move
+        if current.behaviour == Behaviour::Attack
+            && let OrderTargetSim::Point(point) = current.target
+            && world.entity(entity).get::<MoveTarget>().is_none()
+        {
+            let engage = world
+                .resource::<crate::bootstrap::InstalledCatalog>()
+                .0
+                .orders
+                .get(&current.order)
+                .is_some_and(|definition| {
+                    definition.engage == Some(turts_mod_api::EngagePolicy::StopAndFire)
+                });
+            let target_in_range = engage
+                && attack_point_has_target_in_range(
+                    world,
+                    entity,
+                    unit_id,
+                    &engagement_grid,
+                    &engagement_points,
+                    &engagement_positions,
+                    &engagement_owners,
+                );
+            if target_in_range {
+                continue;
+            }
+            let resting_at_slot = world
+                .entity(entity)
+                .get::<crate::movement::MoveProgress>()
+                .is_some_and(|progress| {
+                    progress.activity == crate::movement::MovementActivity::Resting
+                        && world
+                            .entity(entity)
+                            .get::<crate::world::Position>()
+                            .is_some_and(|position| position.0 == progress.slot)
+                })
+                || (world
+                    .entity(entity)
+                    .get::<crate::movement::MoveProgress>()
+                    .is_none()
+                    && world
+                        .entity(entity)
+                        .get::<crate::world::Position>()
+                        .is_some_and(|position| position.0 == point));
+            if !resting_at_slot {
+                let resume = world
+                    .entity(entity)
+                    .get::<crate::movement::MoveProgress>()
+                    .map_or(point, |progress| progress.slot);
+                crate::economy::transaction::capture_unit_order_operation(
+                    world,
+                    unit_id,
+                    |world| {
+                        world.entity_mut(entity).insert(MoveTarget(resume));
+                    },
+                );
+                continue;
+            }
+        }
+        let completed_move = matches!(current.behaviour, Behaviour::Move | Behaviour::Attack)
+            && matches!(current.target, OrderTargetSim::Point(_))
             && world
                 .entity(entity)
                 .get::<crate::world::MoveTarget>()
@@ -982,6 +1071,64 @@ pub(crate) fn run_orders(world: &mut World) {
     queue_unallocated_move_orders(world);
     dispatch_pending_movement(world);
     finish_movement_dispatch_tick(world);
+}
+
+fn attack_point_has_target_in_range(
+    world: &World,
+    entity: bevy_ecs::entity::Entity,
+    unit_id: u32,
+    grid: &crate::grid::UniformGrid,
+    points: &[crate::grid::GridPoint],
+    positions: &BTreeMap<u32, Vec2>,
+    owners: &BTreeMap<u32, u8>,
+) -> bool {
+    let Some(origin) = positions.get(&unit_id).copied() else {
+        return false;
+    };
+    let Some(owner) = owners.get(&unit_id).copied() else {
+        return false;
+    };
+    let Some(unit_type) = world.entity(entity).get::<crate::world::UnitType>() else {
+        return false;
+    };
+    let Some(unit_definition) = world
+        .resource::<crate::registry::UnitTypes>()
+        .get(unit_type.0)
+    else {
+        return false;
+    };
+    let Ok(content_id) = turts_mod_api::ContentId::parse(&unit_definition.content_id) else {
+        return false;
+    };
+    let Some(weapon) = world
+        .resource::<crate::bootstrap::InstalledCatalog>()
+        .0
+        .units
+        .get(&content_id)
+        .and_then(|unit| unit.weapon.as_ref())
+    else {
+        return false;
+    };
+    let Some(healths) = world.get_resource::<crate::economy::combat::Healths>() else {
+        return false;
+    };
+    grid.within(points, origin, weapon.range)
+        .into_iter()
+        .any(|index| {
+            let target = points[index].id;
+            let Some(target_owner) = owners.get(&target).copied() else {
+                return false;
+            };
+            if !healths.0.get(&target).is_some_and(|health| *health > 0) {
+                return false;
+            }
+            let relation_matches = match weapon.targets.slots {
+                turts_mod_api::SlotRelation::Other => target_owner != owner,
+                turts_mod_api::SlotRelation::Same => target_owner == owner,
+                turts_mod_api::SlotRelation::Any => true,
+            };
+            relation_matches && positions.contains_key(&target)
+        })
 }
 
 fn finish_movement_dispatch_tick(world: &mut World) {
@@ -1300,11 +1447,11 @@ fn queue_unallocated_move_orders(world: &mut World) {
             if entity.get::<crate::movement::MoveProgress>().is_some() {
                 continue;
             }
-            let Some(order) = orders
-                .current
-                .as_ref()
-                .filter(|order| order.behaviour == Behaviour::Move)
-            else {
+            let Some(order) = orders.current.as_ref().filter(|order| {
+                order.behaviour == Behaviour::Move
+                    || (order.behaviour == Behaviour::Attack
+                        && matches!(order.target, OrderTargetSim::Point(_)))
+            }) else {
                 continue;
             };
             if matches!(order.target, OrderTargetSim::Unit(_))
@@ -2035,6 +2182,130 @@ fn dispatch_pending_movement(world: &mut World) {
     world.insert_resource(index_cache);
 }
 
+fn attack_goal(
+    world: &World,
+    entity: bevy_ecs::entity::Entity,
+    target_position: bevy_math::Vec2,
+) -> Option<bevy_math::Vec2> {
+    let actor = world.entity(entity).get::<crate::world::Position>()?.0;
+    let unit_type = world.entity(entity).get::<crate::world::UnitType>()?.0;
+    let unit = world
+        .resource::<crate::registry::UnitTypes>()
+        .get(unit_type)?;
+    let id = turts_mod_api::ContentId::parse(&unit.content_id).ok()?;
+    let weapon = world
+        .resource::<crate::bootstrap::InstalledCatalog>()
+        .0
+        .units
+        .get(&id)?
+        .weapon
+        .as_ref()?;
+    let delta = target_position - actor;
+    (delta.length_squared() > weapon.range * weapon.range).then(|| {
+        clamp_target(
+            world,
+            target_position - delta.normalize_or_zero() * weapon.range,
+            unit.radius,
+        )
+    })
+}
+
+fn run_unit_attack(
+    world: &mut World,
+    entity: bevy_ecs::entity::Entity,
+    unit_id: u32,
+    current: Order,
+    target_id: u32,
+    entity_by_unit: &BTreeMap<u32, bevy_ecs::entity::Entity>,
+) {
+    let target_position = entity_by_unit.get(&target_id).and_then(|target| {
+        world
+            .entity(*target)
+            .get::<crate::world::Position>()
+            .map(|position| position.0)
+    });
+    let Some(target_position) = target_position else {
+        let fired = world
+            .get_resource::<crate::economy::combat::Weapons>()
+            .and_then(|weapons| weapons.0.get(&unit_id))
+            .is_some_and(|state| state.ordered_target_fired == Some(target_id));
+        let slot = world
+            .entity(entity)
+            .get::<crate::world::Owner>()
+            .map_or(SlotId(0), |owner| owner.0);
+        let tick = world.resource::<crate::world::Tick>().0;
+        crate::economy::transaction::capture_unit_order_operation(world, unit_id, |world| {
+            let mut entity_mut = world.entity_mut(entity);
+            if let Some(mut orders) = entity_mut.get_mut::<UnitOrders>() {
+                orders.current = None;
+                if !fired {
+                    orders.last_failure = Some(OrderFailure {
+                        order: current.order.clone(),
+                        reason: crate::command::RejectReason::TargetGone,
+                        tick,
+                    });
+                }
+            }
+            entity_mut.remove::<MoveTarget>();
+            entity_mut.remove::<crate::movement::MoveProgress>();
+            entity_mut.remove::<crate::movement::PlainMoveProgress>();
+            if !unit_has_pending_move(world, unit_id) {
+                start_next_queued_order(world, slot, entity, unit_id);
+            }
+        });
+        return;
+    };
+    let Some(goal) = attack_goal(world, entity, target_position) else {
+        if world.entity(entity).get::<MoveTarget>().is_some() {
+            crate::economy::transaction::capture_unit_order_operation(world, unit_id, |world| {
+                let mut entity_mut = world.entity_mut(entity);
+                entity_mut.remove::<MoveTarget>();
+                entity_mut.remove::<crate::movement::MoveProgress>();
+                entity_mut.remove::<crate::movement::PlainMoveProgress>();
+            });
+        }
+        return;
+    };
+    let can_move = world
+        .entity(entity)
+        .get::<crate::world::UnitType>()
+        .and_then(|kind| world.resource::<crate::registry::UnitTypes>().get(kind.0))
+        .is_some_and(|unit| unit.movement.is_some());
+    if !can_move {
+        let slot = world
+            .entity(entity)
+            .get::<crate::world::Owner>()
+            .map_or(SlotId(0), |owner| owner.0);
+        let tick = world.resource::<crate::world::Tick>().0;
+        crate::economy::transaction::capture_unit_order_operation(world, unit_id, |world| {
+            if let Some(mut orders) = world.entity_mut(entity).get_mut::<UnitOrders>() {
+                orders.current = None;
+                orders.last_failure = Some(OrderFailure {
+                    order: current.order.clone(),
+                    reason: crate::command::RejectReason::OutOfRange,
+                    tick,
+                });
+            }
+            if !unit_has_pending_move(world, unit_id) {
+                start_next_queued_order(world, slot, entity, unit_id);
+            }
+        });
+        return;
+    }
+    if world
+        .entity(entity)
+        .get::<MoveTarget>()
+        .is_none_or(|target| target.0 != goal)
+    {
+        crate::economy::transaction::capture_unit_order_operation(world, unit_id, |world| {
+            let mut entity_mut = world.entity_mut(entity);
+            entity_mut.remove::<crate::movement::MoveProgress>();
+            entity_mut.remove::<crate::movement::PlainMoveProgress>();
+            entity_mut.insert(MoveTarget(goal));
+        });
+    }
+}
+
 fn run_unit_follow_move(
     world: &mut World,
     entity: bevy_ecs::entity::Entity,
@@ -2263,6 +2534,49 @@ fn start_order(
             forget_plain_move_identity(world, unit);
             Ok(())
         }
+        (Behaviour::Attack, OrderTargetSim::Unit(target_id)) => {
+            let target_position = world
+                .iter_entities()
+                .find(|candidate| {
+                    candidate
+                        .get::<crate::world::UnitId>()
+                        .is_some_and(|id| id.0 == *target_id)
+                })
+                .and_then(|candidate| candidate.get::<crate::world::Position>().map(|pos| pos.0))
+                .ok_or(crate::command::RejectReason::TargetGone)?;
+            let target = attack_goal(world, entity, target_position);
+            if let Some(mut weapons) = world.get_resource_mut::<crate::economy::combat::Weapons>()
+                && let Some(state) = weapons.0.get_mut(&unit)
+            {
+                state.last_target = None;
+                state.ordered_target_fired = None;
+            }
+            let mut entity_mut = world.entity_mut(entity);
+            entity_mut.remove::<crate::movement::MoveProgress>();
+            entity_mut.remove::<crate::movement::PlainMoveProgress>();
+            if let Some(target) = target {
+                entity_mut.insert(crate::world::MoveTarget(target));
+            } else {
+                entity_mut.remove::<crate::world::MoveTarget>();
+            }
+            forget_plain_move_identity(world, unit);
+            Ok(())
+        }
+        (Behaviour::Attack, OrderTargetSim::Point(point)) => {
+            let target = clamp_target(world, *point, unit_radius(world, entity));
+            if let Some(mut weapons) = world.get_resource_mut::<crate::economy::combat::Weapons>()
+                && let Some(state) = weapons.0.get_mut(&unit)
+            {
+                state.last_target = None;
+                state.ordered_target_fired = None;
+            }
+            let mut entity_mut = world.entity_mut(entity);
+            entity_mut.remove::<crate::movement::MoveProgress>();
+            entity_mut.remove::<crate::movement::PlainMoveProgress>();
+            entity_mut.insert(crate::world::MoveTarget(target));
+            forget_plain_move_identity(world, unit);
+            Ok(())
+        }
         (Behaviour::Hold, _) => {
             world
                 .entity_mut(entity)
@@ -2455,7 +2769,9 @@ pub(crate) fn apply_order(
             }
         }
 
-        let deferred_move = command.behaviour == Behaviour::Move
+        let deferred_move = (command.behaviour == Behaviour::Move
+            || (command.behaviour == Behaviour::Attack
+                && matches!(command.target, OrderTargetSim::Point(_))))
             && command.queue == QueueMode::Replace
             && (((command.group != 0 || command.units.len() > 1)
                 && matches!(
@@ -3090,6 +3406,53 @@ fn apply_unit_order(
             }
             Ok(None)
         }
+        Behaviour::Attack => match order.target {
+            OrderTargetSim::Unit(_) | OrderTargetSim::Point(_) => {
+                let pending_replace =
+                    command.queue == QueueMode::Append && unit_has_pending_move(world, unit_id);
+                let active_order = order.clone();
+                if command.queue == QueueMode::Replace {
+                    clear_replaced_movement(world, slot, entity, unit_id);
+                }
+                let mut orders = world
+                    .entity(entity)
+                    .get::<UnitOrders>()
+                    .cloned()
+                    .unwrap_or_default();
+                let starts_now = if command.queue == QueueMode::Append {
+                    if orders.current.is_some()
+                        || world.entity(entity).get::<MoveTarget>().is_some()
+                        || unit_has_pending_move(world, unit_id)
+                    {
+                        orders.queue.push_back(order.clone());
+                        false
+                    } else {
+                        orders.current = Some(order);
+                        true
+                    }
+                } else {
+                    orders.current = Some(order);
+                    orders.queue.clear();
+                    true
+                };
+                world.entity_mut(entity).insert(orders);
+                if starts_now {
+                    if let Some(mut weapons) =
+                        world.get_resource_mut::<crate::economy::combat::Weapons>()
+                        && let Some(state) = weapons.0.get_mut(&unit_id)
+                    {
+                        state.last_target = None;
+                        state.ordered_target_fired = None;
+                    }
+                    start_order(world, slot, entity, unit_id, &active_order)?;
+                }
+                if !pending_replace {
+                    clear_gather(world, unit_id);
+                }
+                Ok(None)
+            }
+            _ => Err(R::TargetInvalid),
+        },
         Behaviour::Stop => {
             clear_replaced_movement(world, slot, entity, unit_id);
             world.entity_mut(entity).insert(UnitOrders::default());
@@ -3227,7 +3590,6 @@ fn apply_unit_order(
             }
             Ok(job_id)
         }
-        Behaviour::Attack => Err(R::NotApplicable),
     }
 }
 

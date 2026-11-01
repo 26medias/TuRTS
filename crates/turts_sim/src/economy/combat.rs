@@ -33,6 +33,7 @@ pub(crate) struct WeaponState {
     pub(crate) cooldown: u32,
     pub(crate) status: WeaponStatus,
     pub(crate) last_target: Option<u32>,
+    pub(crate) ordered_target_fired: Option<u32>,
 }
 
 /// Weapon states indexed by unit id.
@@ -70,6 +71,13 @@ struct WeaponParameters {
     targets: SlotRelation,
 }
 
+struct CombatIndex<'a> {
+    grid: &'a crate::grid::UniformGrid,
+    points: &'a [crate::grid::GridPoint],
+    positions: &'a BTreeMap<u32, bevy_math::Vec2>,
+    owners: &'a BTreeMap<u32, u8>,
+}
+
 /// Run each enabled weapon once, in ascending unit-id order.
 pub(crate) fn run_combat(world: &mut World) {
     if !world.contains_resource::<Weapons>()
@@ -79,24 +87,145 @@ pub(crate) fn run_combat(world: &mut World) {
     {
         return;
     }
-    let mut weapons = world
+    let mut entities = BTreeMap::new();
+    let mut points = Vec::new();
+    let mut owners = BTreeMap::new();
+    let mut positions = BTreeMap::new();
+    for entity in world.iter_entities() {
+        let (Some(id), Some(position), Some(owner)) = (
+            entity.get::<UnitId>(),
+            entity.get::<Position>(),
+            entity.get::<Owner>(),
+        ) else {
+            continue;
+        };
+        entities.insert(id.0, entity.id());
+        points.push(crate::grid::GridPoint {
+            id: id.0,
+            position: position.0,
+        });
+        owners.insert(id.0, owner.0.0);
+        positions.insert(id.0, position.0);
+    }
+    points.sort_unstable_by_key(|point| point.id);
+    let cell_size = world
+        .resource::<InstalledCatalog>()
+        .0
+        .units
+        .values()
+        .filter_map(|unit| unit.weapon.as_ref().map(|weapon| weapon.range))
+        .fold(f32::EPSILON, f32::max);
+    let grid = crate::grid::UniformGrid::new(&points, cell_size);
+    let combat_index = CombatIndex {
+        grid: &grid,
+        points: &points,
+        positions: &positions,
+        owners: &owners,
+    };
+    let mut weapon_ids = world
         .resource::<Weapons>()
         .0
         .keys()
         .copied()
         .collect::<Vec<_>>();
-    weapons.sort_unstable();
-    for weapon in weapons {
-        if world.resource::<Disabled>().0.contains(&weapon) || !unit_exists(world, weapon) {
-            continue;
-        }
-        let Some(parameters) = weapon_parameters(world, weapon) else {
+    weapon_ids.sort_unstable();
+    for weapon in weapon_ids {
+        if world.resource::<Disabled>().0.contains(&weapon) {
             continue;
         };
-        let target = choose_target(world, weapon, &parameters);
+        let Some(entity) = entities.get(&weapon).copied() else {
+            continue;
+        };
+        // Earlier weapons in this same phase may have destroyed a later
+        // shooter. The phase index is deliberately built once, so validate
+        // the indexed entity before reading its components.
+        if world.get::<UnitId>(entity).is_none() {
+            continue;
+        }
+        let Some(parameters) = weapon_parameters(world, world.entity(entity)) else {
+            continue;
+        };
+        let order = world
+            .entity(entity)
+            .get::<crate::orders::UnitOrders>()
+            .and_then(|orders| orders.current.as_ref())
+            .or_else(|| {
+                world
+                    .get_resource::<crate::orders::PlainMoveOrderIdentities>()
+                    .and_then(|orders| orders.0.get(&weapon))
+            });
+        let order_definition = order.and_then(|order| {
+            world
+                .resource::<InstalledCatalog>()
+                .0
+                .orders
+                .get(&order.order)
+                .filter(|definition| definition.behaviour == order.behaviour)
+        });
+        // An active authored identity is trusted only when it resolves in the
+        // installed match catalog and its behavior agrees with the captured
+        // order. Never infer a mutable or missing definition from the order.
+        if order.is_some() && order_definition.is_none() {
+            continue;
+        }
+        let fire_policy = order_definition.and_then(|definition| definition.fire);
+        let suppressed_by_fire_policy = order.is_some_and(|order| {
+            matches!(
+                order.behaviour,
+                turts_mod_api::Behaviour::Move | turts_mod_api::Behaviour::Hold
+            )
+        }) && fire_policy == Some(turts_mod_api::FirePolicy::Never);
+        let stops_for_engage = order.is_some_and(|order| {
+            order.behaviour == turts_mod_api::Behaviour::Attack
+                && matches!(order.target, crate::orders::OrderTargetSim::Point(_))
+                && order_definition.is_some_and(|definition| {
+                    definition.engage == Some(turts_mod_api::EngagePolicy::StopAndFire)
+                })
+        });
+        let suppressed_by_engage = order.is_some_and(|order| {
+            order.behaviour == turts_mod_api::Behaviour::Attack
+                && matches!(order.target, crate::orders::OrderTargetSim::Point(_))
+        }) && !stops_for_engage;
+        let origin = positions[&weapon];
+        let focus = order.and_then(|order| match order.target {
+            crate::orders::OrderTargetSim::Unit(target)
+                if order.behaviour == turts_mod_api::Behaviour::Attack =>
+            {
+                Some(target)
+            }
+            _ => None,
+        });
+        let target = if suppressed_by_fire_policy || suppressed_by_engage {
+            None
+        } else {
+            choose_target(world, origin, &parameters, &combat_index, focus)
+        };
+        if target.is_some()
+            && stops_for_engage
+            && world
+                .entity(entity)
+                .get::<crate::world::MoveTarget>()
+                .is_some()
+        {
+            crate::economy::transaction::capture_post_movement_order_operation(
+                world,
+                weapon,
+                |world| {
+                    world
+                        .entity_mut(entity)
+                        .remove::<crate::world::MoveTarget>();
+                },
+            );
+        }
         let _ = transaction::transact(world, |tx| {
             tx.mark_m3();
             let mut state = tx.weapon_state(weapon)?;
+            // Attack-move needs acquisition state even when cooldown or ammo
+            // blocks a shot. Keep the legacy M3 weapon history unchanged for
+            // units without an authored StopAndFire point order.
+            if stops_for_engage {
+                state.last_target = target;
+            }
             if state.cooldown > 0 {
                 state.cooldown -= 1;
             }
@@ -108,25 +237,28 @@ pub(crate) fn run_combat(world: &mut World) {
 
             let Some(target) = target else {
                 state.status = WeaponStatus::NoTarget;
-                state.last_target = None;
+                if focus.is_none() || state.last_target != focus {
+                    state.last_target = None;
+                }
                 tx.stage_weapon(weapon, state);
                 return Ok(());
             };
-            fire(tx, weapon, target, &parameters, &mut state)
+            fire(
+                tx,
+                weapon,
+                target,
+                &parameters,
+                &mut state,
+                focus == Some(target),
+            )
         });
     }
 }
 
-fn unit_exists(world: &World, unit: u32) -> bool {
-    world
-        .iter_entities()
-        .any(|entity| entity.get::<UnitId>().is_some_and(|id| id.0 == unit))
-}
-
-fn weapon_parameters(world: &World, weapon: u32) -> Option<WeaponParameters> {
-    let entity = world
-        .iter_entities()
-        .find(|entity| entity.get::<UnitId>().is_some_and(|id| id.0 == weapon))?;
+fn weapon_parameters(
+    world: &World,
+    entity: bevy_ecs::world::EntityRef<'_>,
+) -> Option<WeaponParameters> {
     let owner = entity.get::<Owner>()?.0.0;
     let unit_type = entity.get::<UnitType>()?.0;
     let type_entry = world.resource::<UnitTypes>().get(unit_type)?;
@@ -162,34 +294,42 @@ fn weapon_parameters(world: &World, weapon: u32) -> Option<WeaponParameters> {
     })
 }
 
-fn choose_target(world: &World, weapon: u32, parameters: &WeaponParameters) -> Option<u32> {
-    let origin = world
-        .iter_entities()
-        .find(|entity| entity.get::<UnitId>().is_some_and(|id| id.0 == weapon))?
-        .get::<Position>()?
-        .0;
+fn choose_target(
+    world: &World,
+    origin: bevy_math::Vec2,
+    parameters: &WeaponParameters,
+    candidates: &CombatIndex<'_>,
+    focus: Option<u32>,
+) -> Option<u32> {
     let range_squared = parameters.range * parameters.range;
     let healths = &world.resource::<Healths>().0;
-    world
-        .iter_entities()
-        .filter_map(|entity| {
-            let id = entity.get::<UnitId>()?.0;
-            let health = healths.get(&id)?;
-            if *health == 0 {
-                return None;
-            }
-            let owner = entity.get::<Owner>()?.0.0;
-            let relation_matches = match parameters.targets {
-                SlotRelation::Other => owner != parameters.owner,
-                SlotRelation::Same => owner == parameters.owner,
-                SlotRelation::Any => true,
-            };
-            if !relation_matches {
-                return None;
-            }
-            let distance_squared = entity.get::<Position>()?.0.distance_squared(origin);
-            (distance_squared <= range_squared).then_some((distance_squared, id))
-        })
+    let matches = |id: u32| {
+        let health = healths.get(&id)?;
+        if *health == 0 {
+            return None;
+        }
+        let owner = *candidates.owners.get(&id)?;
+        let relation_matches = match parameters.targets {
+            SlotRelation::Other => owner != parameters.owner,
+            SlotRelation::Same => owner == parameters.owner,
+            SlotRelation::Any => true,
+        };
+        if !relation_matches {
+            return None;
+        }
+        let distance_squared = candidates.positions.get(&id)?.distance_squared(origin);
+        (distance_squared <= range_squared).then_some((distance_squared, id))
+    };
+    if let Some(focus) = focus
+        && matches(focus).is_some()
+    {
+        return Some(focus);
+    }
+    candidates
+        .grid
+        .within(candidates.points, origin, parameters.range)
+        .into_iter()
+        .filter_map(|point_index| matches(candidates.points[point_index].id))
         .min_by(|left, right| {
             left.0
                 .total_cmp(&right.0)
@@ -204,6 +344,7 @@ fn fire(
     target: u32,
     parameters: &WeaponParameters,
     state: &mut WeaponState,
+    ordered_attack: bool,
 ) -> Result<(), RejectReason> {
     let ammo_amount = if let Some((item, per_shot)) = &parameters.ammo {
         tx.inventory(Endpoint::Inventory(weapon))?;
@@ -244,7 +385,10 @@ fn fire(
     } else {
         WeaponStatus::Cooling
     };
-    state.last_target = (remaining > 0).then_some(target);
+    state.last_target = (remaining > 0 || ordered_attack).then_some(target);
+    if ordered_attack {
+        state.ordered_target_fired = Some(target);
+    }
     tx.stage_weapon(weapon, state.clone());
     tx.stage_event(
         parameters.owner,
@@ -268,13 +412,14 @@ mod tests {
     use std::collections::BTreeMap;
 
     use turts_mod_api::{
-        ContentCatalog, ContentId, Footprint, MapDef, MapSize, Placement, ResolvedAmmo,
-        ResolvedInventory, ResolvedUnit, ResolvedWeapon, ResourceDef, ResourceKind, SlotRelation,
-        SourceDef, TargetFilter, WorldPos,
+        Behaviour, ContentCatalog, ContentId, EngagePolicy, FirePolicy, Footprint, MapDef, MapSize,
+        OrderDef, Placement, ResolvedAmmo, ResolvedInventory, ResolvedUnit, ResolvedWeapon,
+        ResourceDef, ResourceKind, SlotRelation, SourceDef, TargetFilter, TargetKind, WorldPos,
     };
 
     use crate::{
-        EconomyLedger, Position, UnitId,
+        EconomyLedger, Order, OrderTargetSim, Position, RejectReason, SlotId, UnitId, UnitOrders,
+        apply_command,
         bootstrap::InstalledCatalog,
         economy::combat::{Healths, WeaponState, WeaponStatus},
         economy::ledger::Account,
@@ -453,6 +598,705 @@ mod tests {
                 _ => None,
             })
             .collect()
+    }
+
+    fn install_order(
+        app: &mut bevy_app::App,
+        id: &str,
+        behaviour: Behaviour,
+        target: TargetKind,
+        fire: Option<FirePolicy>,
+        engage: Option<EngagePolicy>,
+    ) {
+        let content_id = cid(id);
+        app.world_mut()
+            .resource_mut::<InstalledCatalog>()
+            .0
+            .orders
+            .insert(
+                content_id.clone(),
+                OrderDef {
+                    id: content_id.local.clone(),
+                    name: id.into(),
+                    behaviour,
+                    target,
+                    fire,
+                    engage,
+                    icon: String::new(),
+                    hotkey: String::new(),
+                    cursor: None,
+                    card: None,
+                    units: vec![WEAPON.into()],
+                    description: String::new(),
+                },
+            );
+    }
+
+    fn set_order(app: &mut bevy_app::App, order: Order) {
+        let entity = app
+            .world()
+            .iter_entities()
+            .find(|entity| entity.get::<UnitId>().is_some_and(|id| id.0 == 1))
+            .unwrap()
+            .id();
+        app.world_mut().entity_mut(entity).insert(UnitOrders {
+            current: Some(order),
+            ..Default::default()
+        });
+    }
+
+    #[test]
+    fn move_never_policy_suppresses_mobile_weapon_fire() {
+        let mut app = app_with(20, 0, 5);
+        install_order(
+            &mut app,
+            "combat_fixture:move_never",
+            Behaviour::Move,
+            TargetKind::Point,
+            Some(FirePolicy::Never),
+            None,
+        );
+        app.world_mut()
+            .insert_resource(crate::orders::PlainMoveOrderIdentities(BTreeMap::from([(
+                1,
+                Order {
+                    order: cid("combat_fixture:move_never"),
+                    behaviour: Behaviour::Move,
+                    target: OrderTargetSim::Point(bevy_math::Vec2::new(20.0, 20.0)),
+                    group: 0,
+                },
+            )])));
+        let actor = app
+            .world()
+            .iter_entities()
+            .find(|entity| entity.get::<UnitId>().is_some_and(|id| id.0 == 1))
+            .unwrap()
+            .id();
+        app.world_mut()
+            .entity_mut(actor)
+            .insert(crate::MoveTarget(bevy_math::Vec2::new(20.0, 20.0)));
+        app.update();
+        assert_eq!(app.world().resource::<Healths>().0[&2], 200);
+    }
+
+    #[test]
+    fn hold_in_range_policy_keeps_a_stationary_weapon_firing() {
+        let mut app = app_with(20, 0, 5);
+        install_order(
+            &mut app,
+            "combat_fixture:hold_fire",
+            Behaviour::Hold,
+            TargetKind::None,
+            Some(FirePolicy::InRange),
+            None,
+        );
+        set_order(
+            &mut app,
+            Order {
+                order: cid("combat_fixture:hold_fire"),
+                behaviour: Behaviour::Hold,
+                target: OrderTargetSim::None,
+                group: 0,
+            },
+        );
+        app.update();
+        assert_eq!(app.world().resource::<Healths>().0[&2], 195);
+    }
+
+    #[test]
+    fn unknown_active_order_identity_cannot_fire() {
+        let mut app = app_with(20, 0, 5);
+        set_order(
+            &mut app,
+            Order {
+                order: cid("combat_fixture:missing_order"),
+                behaviour: Behaviour::Move,
+                target: OrderTargetSim::Point(bevy_math::Vec2::new(20.0, 20.0)),
+                group: 0,
+            },
+        );
+
+        crate::economy::combat::run_combat(app.world_mut());
+
+        assert_eq!(app.world().resource::<Healths>().0[&2], 200);
+    }
+
+    #[test]
+    fn active_order_behavior_must_match_its_installed_definition_to_fire() {
+        let mut app = app_with(20, 0, 5);
+        install_order(
+            &mut app,
+            "combat_fixture:move_default",
+            Behaviour::Move,
+            TargetKind::Point,
+            None,
+            None,
+        );
+        set_order(
+            &mut app,
+            Order {
+                order: cid("combat_fixture:move_default"),
+                behaviour: Behaviour::Hold,
+                target: OrderTargetSim::None,
+                group: 0,
+            },
+        );
+
+        crate::economy::combat::run_combat(app.world_mut());
+
+        assert_eq!(app.world().resource::<Healths>().0[&2], 200);
+    }
+
+    #[test]
+    fn authored_move_with_default_fire_policy_keeps_in_range_fire() {
+        let mut app = app_with(20, 0, 5);
+        install_order(
+            &mut app,
+            "combat_fixture:move_default",
+            Behaviour::Move,
+            TargetKind::Point,
+            None,
+            None,
+        );
+        set_order(
+            &mut app,
+            Order {
+                order: cid("combat_fixture:move_default"),
+                behaviour: Behaviour::Move,
+                target: OrderTargetSim::Point(bevy_math::Vec2::new(20.0, 20.0)),
+                group: 0,
+            },
+        );
+
+        crate::economy::combat::run_combat(app.world_mut());
+
+        assert_eq!(app.world().resource::<Healths>().0[&2], 195);
+    }
+
+    #[test]
+    fn unit_attack_prefers_its_ordered_target_when_in_range() {
+        let mut app = app_with_units(
+            20,
+            vec![
+                weapon(1000, 5),
+                unit(TARGET, Some(200)),
+                unit(TARGET, Some(200)),
+            ],
+            vec![
+                placement(WEAPON, 0, 5.0, 5.0),
+                placement(TARGET, 1, 6.0, 5.0),
+                placement(TARGET, 1, 7.0, 5.0),
+            ],
+            BTreeMap::new(),
+        );
+        install_order(
+            &mut app,
+            "combat_fixture:attack",
+            Behaviour::Attack,
+            TargetKind::Unit,
+            None,
+            None,
+        );
+        set_order(
+            &mut app,
+            Order {
+                order: cid("combat_fixture:attack"),
+                behaviour: Behaviour::Attack,
+                target: OrderTargetSim::Unit(3),
+                group: 0,
+            },
+        );
+        app.update();
+        let health = &app.world().resource::<Healths>().0;
+        assert_eq!(
+            health[&2], 200,
+            "the nearer non-ordered target stays untouched"
+        );
+        assert_eq!(health[&3], 195, "the ordered target receives the shot");
+    }
+
+    #[test]
+    fn mobile_unit_attack_approaches_until_it_can_fire() {
+        let mut attacker = weapon(1000, 5);
+        attacker.movement = Some(turts_mod_api::MovementDef { speed: 3.0 });
+        let mut app = app_with_units(
+            20,
+            vec![attacker, unit(TARGET, Some(200))],
+            vec![
+                placement(WEAPON, 0, 5.0, 5.0),
+                placement(TARGET, 1, 20.0, 5.0),
+            ],
+            BTreeMap::new(),
+        );
+        install_attack_order(&mut app);
+        set_order(&mut app, attack_order(2));
+        for _ in 0..80 {
+            app.update();
+            if app.world().resource::<Healths>().0[&2] < 200 {
+                break;
+            }
+        }
+        assert!(app.world().resource::<Healths>().0[&2] < 200);
+        let actor = app
+            .world()
+            .iter_entities()
+            .find(|entity| entity.get::<UnitId>().is_some_and(|id| id.0 == 1))
+            .unwrap();
+        assert!(actor.get::<Position>().unwrap().0.x > 10.0);
+        assert_eq!(
+            actor
+                .get::<UnitOrders>()
+                .unwrap()
+                .current
+                .as_ref()
+                .unwrap()
+                .target,
+            OrderTargetSim::Unit(2),
+        );
+    }
+
+    fn attack_order(target: u32) -> Order {
+        Order {
+            order: cid("combat_fixture:attack"),
+            behaviour: Behaviour::Attack,
+            target: OrderTargetSim::Unit(target),
+            group: 0,
+        }
+    }
+
+    fn install_attack_order(app: &mut bevy_app::App) {
+        install_order(
+            app,
+            "combat_fixture:attack",
+            Behaviour::Attack,
+            TargetKind::Unit,
+            None,
+            None,
+        );
+    }
+
+    #[test]
+    fn static_weapon_records_out_of_range_after_acceptance() {
+        let mut app = app_with_units(
+            20,
+            vec![weapon(1000, 5), unit(TARGET, Some(200))],
+            vec![
+                placement(WEAPON, 0, 5.0, 5.0),
+                placement(TARGET, 1, 20.0, 5.0),
+            ],
+            BTreeMap::new(),
+        );
+        install_attack_order(&mut app);
+        let command = crate::Command {
+            slot: SlotId(0),
+            seq: 1,
+            kind: crate::CommandKind::Order(Box::new(crate::OrderCommand {
+                order: cid("combat_fixture:attack"),
+                behaviour: Behaviour::Attack,
+                target_kind: TargetKind::Unit,
+                policy: None,
+                units: vec![1],
+                target: OrderTargetSim::Unit(2),
+                queue: crate::QueueMode::Replace,
+                group: 0,
+                allowed_units: vec![WEAPON.into()],
+                queue_depth: 16,
+            })),
+        };
+        let accepted = apply_command(app.world_mut(), &command);
+        assert_eq!(accepted.units.accepted, vec![1]);
+        app.update();
+        let actor = app
+            .world()
+            .iter_entities()
+            .find(|entity| entity.get::<UnitId>().is_some_and(|id| id.0 == 1))
+            .unwrap();
+        assert_eq!(
+            actor
+                .get::<UnitOrders>()
+                .unwrap()
+                .last_failure
+                .as_ref()
+                .unwrap()
+                .reason,
+            RejectReason::OutOfRange,
+        );
+    }
+
+    #[test]
+    fn attack_target_gone_before_first_shot_is_a_failure() {
+        let mut app = app_with(20, 1000, 5);
+        install_attack_order(&mut app);
+        set_order(&mut app, attack_order(2));
+        let target = app
+            .world()
+            .iter_entities()
+            .find(|entity| entity.get::<UnitId>().is_some_and(|id| id.0 == 2))
+            .unwrap()
+            .id();
+        app.world_mut().despawn(target);
+        app.update();
+        let actor = app
+            .world()
+            .iter_entities()
+            .find(|entity| entity.get::<UnitId>().is_some_and(|id| id.0 == 1))
+            .unwrap();
+        assert_eq!(
+            actor
+                .get::<UnitOrders>()
+                .unwrap()
+                .last_failure
+                .as_ref()
+                .unwrap()
+                .reason,
+            RejectReason::TargetGone,
+        );
+    }
+
+    #[test]
+    fn attack_target_gone_after_a_shot_completes_normally() {
+        let mut app = app_with(20, 0, 250);
+        install_attack_order(&mut app);
+        set_order(&mut app, attack_order(2));
+        app.update();
+        app.update();
+        let actor = app
+            .world()
+            .iter_entities()
+            .find(|entity| entity.get::<UnitId>().is_some_and(|id| id.0 == 1))
+            .unwrap();
+        let orders = actor.get::<UnitOrders>().unwrap();
+        assert!(orders.current.is_none());
+        assert!(orders.last_failure.is_none());
+    }
+
+    #[test]
+    fn ordered_target_firing_survives_distractor_shots_before_target_loss() {
+        let mut attacker = weapon(0, 5);
+        attacker.movement = Some(turts_mod_api::MovementDef { speed: 3.0 });
+        let mut app = app_with_units(
+            20,
+            vec![attacker, unit(TARGET, Some(200)), unit(TARGET, Some(200))],
+            vec![
+                placement(WEAPON, 0, 5.0, 5.0),
+                placement(TARGET, 1, 6.0, 5.0),
+                placement(TARGET, 1, 7.0, 5.0),
+            ],
+            BTreeMap::new(),
+        );
+        install_attack_order(&mut app);
+        set_order(&mut app, attack_order(2));
+        app.update();
+        assert_eq!(app.world().resource::<Healths>().0[&2], 195);
+
+        let target = app
+            .world()
+            .iter_entities()
+            .find(|entity| entity.get::<UnitId>().is_some_and(|id| id.0 == 2))
+            .unwrap()
+            .id();
+        app.world_mut()
+            .entity_mut(target)
+            .get_mut::<Position>()
+            .unwrap()
+            .0 = bevy_math::Vec2::new(25.0, 25.0);
+        app.update();
+        assert_eq!(app.world().resource::<Healths>().0[&3], 195);
+        assert_eq!(
+            app.world().resource::<crate::economy::combat::Weapons>().0[&1].ordered_target_fired,
+            Some(2),
+            "a distractor shot must not replace direct-order firing evidence",
+        );
+
+        app.world_mut().despawn(target);
+        app.update();
+        let actor = app
+            .world()
+            .iter_entities()
+            .find(|entity| entity.get::<UnitId>().is_some_and(|id| id.0 == 1))
+            .unwrap();
+        assert!(actor.get::<UnitOrders>().unwrap().current.is_none());
+        assert!(actor.get::<UnitOrders>().unwrap().last_failure.is_none());
+    }
+
+    #[test]
+    fn combat_skips_a_later_shooter_destroyed_this_phase() {
+        let mut second_weapon = weapon(0, 5);
+        second_weapon.id = cid("combat_fixture:second_weapon");
+        let mut app = app_with_units(
+            20,
+            vec![weapon(0, 1_000), second_weapon, unit(TARGET, Some(200))],
+            vec![
+                placement(WEAPON, 0, 5.0, 5.0),
+                placement("combat_fixture:second_weapon", 1, 6.0, 5.0),
+                placement(TARGET, 1, 20.0, 20.0),
+            ],
+            BTreeMap::new(),
+        );
+        set_ammo(&mut app, 2, 10, 0);
+        app.update();
+        assert!(!app.world().resource::<Healths>().0.contains_key(&2));
+        assert_eq!(
+            fired_events(&app),
+            vec![(1, 2, Some(cid(AMMO)), 1, 1_000, 100)]
+        );
+    }
+
+    fn attack_point_order() -> Order {
+        Order {
+            order: cid("combat_fixture:attack_move"),
+            behaviour: Behaviour::Attack,
+            target: OrderTargetSim::Point(bevy_math::Vec2::new(20.0, 20.0)),
+            group: 0,
+        }
+    }
+
+    fn install_attack_move(app: &mut bevy_app::App) {
+        install_order(
+            app,
+            "combat_fixture:attack_move",
+            Behaviour::Attack,
+            TargetKind::Point,
+            None,
+            Some(EngagePolicy::StopAndFire),
+        );
+        set_order(app, attack_point_order());
+        let actor = app
+            .world()
+            .iter_entities()
+            .find(|entity| entity.get::<UnitId>().is_some_and(|id| id.0 == 1))
+            .unwrap()
+            .id();
+        app.world_mut()
+            .entity_mut(actor)
+            .insert(crate::MoveTarget(bevy_math::Vec2::new(20.0, 20.0)));
+    }
+
+    #[test]
+    fn attack_move_stops_to_fire_at_a_nearby_target() {
+        let mut app = app_with(20, 1000, 5);
+        install_attack_move(&mut app);
+        app.update();
+        let actor = app
+            .world()
+            .iter_entities()
+            .find(|entity| entity.get::<UnitId>().is_some_and(|id| id.0 == 1))
+            .unwrap();
+        assert!(actor.get::<crate::MoveTarget>().is_none());
+        assert_eq!(app.world().resource::<Healths>().0[&2], 195);
+    }
+
+    #[test]
+    fn attack_move_stays_paused_on_acquired_target_without_ammo() {
+        let mut attacker = weapon(0, 5);
+        attacker.movement = Some(turts_mod_api::MovementDef { speed: 10.0 });
+        let mut app = app_with_units(
+            20,
+            vec![attacker, unit(TARGET, Some(200))],
+            vec![
+                placement(WEAPON, 0, 5.0, 5.0),
+                placement(TARGET, 1, 6.0, 5.0),
+            ],
+            BTreeMap::new(),
+        );
+        install_attack_move(&mut app);
+        set_ammo(&mut app, 1, 0, 0);
+
+        app.update();
+        let actor = app
+            .world()
+            .iter_entities()
+            .find(|entity| entity.get::<UnitId>().is_some_and(|id| id.0 == 1))
+            .unwrap();
+        assert!(actor.get::<crate::MoveTarget>().is_none());
+        assert_eq!(app.world().resource::<Healths>().0[&2], 200);
+        assert_eq!(
+            app.world().resource::<crate::economy::combat::Weapons>().0[&1].last_target,
+            Some(2),
+            "target acquisition survives the blocked first shot",
+        );
+        let acquired_position = app
+            .world()
+            .iter_entities()
+            .find(|entity| entity.get::<UnitId>().is_some_and(|id| id.0 == 1))
+            .unwrap()
+            .get::<Position>()
+            .unwrap()
+            .0;
+
+        for _ in 0..3 {
+            app.update();
+            let actor = app
+                .world()
+                .iter_entities()
+                .find(|entity| entity.get::<UnitId>().is_some_and(|id| id.0 == 1))
+                .unwrap();
+            assert!(actor.get::<crate::MoveTarget>().is_none());
+            assert_eq!(actor.get::<Position>().unwrap().0, acquired_position);
+        }
+    }
+
+    #[test]
+    fn no_order_no_ammo_keeps_legacy_target_history() {
+        for previous_target in [None, Some(2)] {
+            let mut app = app_with(20, 0, 5);
+            set_ammo(&mut app, 1, 0, 0);
+            app.world_mut()
+                .resource_mut::<crate::economy::combat::Weapons>()
+                .0
+                .get_mut(&1)
+                .unwrap()
+                .last_target = previous_target;
+
+            app.update();
+
+            assert_eq!(
+                app.world().resource::<crate::economy::combat::Weapons>().0[&1].last_target,
+                previous_target,
+                "the un-ordered M3 path keeps prior target history when no ammo is available",
+            );
+        }
+    }
+
+    #[test]
+    fn suppressed_authored_policies_advance_cooldown_without_firing() {
+        let cases = [
+            (
+                "combat_fixture:move_never_cooldown",
+                Behaviour::Move,
+                TargetKind::Point,
+                OrderTargetSim::Point(bevy_math::Vec2::new(20.0, 20.0)),
+                Some(FirePolicy::Never),
+                None,
+            ),
+            (
+                "combat_fixture:hold_never_cooldown",
+                Behaviour::Hold,
+                TargetKind::None,
+                OrderTargetSim::None,
+                Some(FirePolicy::Never),
+                None,
+            ),
+            (
+                "combat_fixture:attack_no_engage_cooldown",
+                Behaviour::Attack,
+                TargetKind::Point,
+                OrderTargetSim::Point(bevy_math::Vec2::new(20.0, 20.0)),
+                None,
+                None,
+            ),
+        ];
+        for (id, behaviour, target_kind, target, fire, engage) in cases {
+            let mut app = app_with(20, 0, 5);
+            install_order(&mut app, id, behaviour, target_kind, fire, engage);
+            set_order(
+                &mut app,
+                Order {
+                    order: cid(id),
+                    behaviour,
+                    target,
+                    group: 0,
+                },
+            );
+            app.world_mut()
+                .resource_mut::<crate::economy::combat::Weapons>()
+                .0
+                .get_mut(&1)
+                .unwrap()
+                .cooldown = 3;
+
+            crate::economy::combat::run_combat(app.world_mut());
+            crate::economy::combat::run_combat(app.world_mut());
+            assert_eq!(app.world().resource::<Healths>().0[&2], 200, "{id}");
+            assert_eq!(
+                app.world().resource::<crate::economy::combat::Weapons>().0[&1].cooldown,
+                1,
+                "{id} advances the enabled weapon timer",
+            );
+
+            install_order(
+                &mut app,
+                "combat_fixture:hold_in_range_after_cooldown",
+                Behaviour::Hold,
+                TargetKind::None,
+                Some(FirePolicy::InRange),
+                None,
+            );
+            set_order(
+                &mut app,
+                Order {
+                    order: cid("combat_fixture:hold_in_range_after_cooldown"),
+                    behaviour: Behaviour::Hold,
+                    target: OrderTargetSim::None,
+                    group: 0,
+                },
+            );
+            crate::economy::combat::run_combat(app.world_mut());
+            assert_eq!(app.world().resource::<Healths>().0[&2], 195, "{id}");
+        }
+    }
+
+    #[test]
+    fn attack_move_resumes_its_slot_after_the_engaged_target_is_gone() {
+        let mut app = app_with(20, 0, 250);
+        install_attack_move(&mut app);
+        app.update();
+        app.update();
+        let actor = app
+            .world()
+            .iter_entities()
+            .find(|entity| entity.get::<UnitId>().is_some_and(|id| id.0 == 1))
+            .unwrap();
+        assert_eq!(
+            actor.get::<crate::MoveTarget>().unwrap().0,
+            bevy_math::Vec2::new(20.0, 20.0),
+        );
+    }
+
+    #[test]
+    fn attack_move_stays_paused_when_a_second_target_remains_in_range() {
+        let mut attacker = weapon(0, 250);
+        attacker.movement = Some(turts_mod_api::MovementDef { speed: 3.0 });
+        let mut app = app_with_units(
+            20,
+            vec![attacker, unit(TARGET, Some(200)), unit(TARGET, Some(200))],
+            vec![
+                placement(WEAPON, 0, 5.0, 5.0),
+                placement(TARGET, 1, 6.0, 5.0),
+                placement(TARGET, 1, 7.0, 5.0),
+            ],
+            BTreeMap::new(),
+        );
+        install_attack_move(&mut app);
+
+        app.update();
+        assert!(!app.world().resource::<Healths>().0.contains_key(&2));
+        let paused_position = app
+            .world()
+            .iter_entities()
+            .find(|entity| entity.get::<UnitId>().is_some_and(|id| id.0 == 1))
+            .unwrap()
+            .get::<Position>()
+            .unwrap()
+            .0;
+
+        app.update();
+        let actor = app
+            .world()
+            .iter_entities()
+            .find(|entity| entity.get::<UnitId>().is_some_and(|id| id.0 == 1))
+            .unwrap();
+        assert_eq!(actor.get::<Position>().unwrap().0, paused_position);
+        assert!(actor.get::<crate::MoveTarget>().is_none());
+        assert!(!app.world().resource::<Healths>().0.contains_key(&3));
+
+        app.update();
+        let actor = app
+            .world()
+            .iter_entities()
+            .find(|entity| entity.get::<UnitId>().is_some_and(|id| id.0 == 1))
+            .unwrap();
+        assert!(actor.get::<crate::MoveTarget>().is_some());
     }
 
     fn set_ammo(app: &mut bevy_app::App, unit: u32, amount: u64, reserved: u64) {
@@ -934,6 +1778,7 @@ mod tests {
                     cooldown: 2,
                     status: WeaponStatus::Cooling,
                     last_target: Some(3),
+                    ordered_target_fired: None,
                 },
             );
         app.update();

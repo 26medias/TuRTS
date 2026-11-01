@@ -63,6 +63,8 @@ pub fn to_sim(
             id: order_id.clone(),
             behaviour: definition.behaviour,
             target: definition.target,
+            fire: definition.fire,
+            engage: definition.engage,
             units: definition.units.clone(),
             queue_depth,
             unit_capabilities: catalog

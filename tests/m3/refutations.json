@@ -360,8 +360,8 @@
     "id": "C16-double-range",
     "kind": "product",
     "plant_path": "crates/turts_sim/src/economy/combat.rs",
-    "anchor": "(distance_squared <= range_squared).then_some((distance_squared, id))",
-    "replacement": "(distance_squared <= 4.0 * range_squared).then_some((distance_squared, id))",
+    "anchor": "range: weapon_def.range,",
+    "replacement": "range: weapon_def.range * 2.0,",
     "command": [
       "cargo",
       "test",

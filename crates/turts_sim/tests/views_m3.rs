@@ -100,6 +100,7 @@ fn views_expose_no_pub_crate_types() {
         effective_damage: Err(RejectReason::ArithmeticOverflow),
         status: RawWeaponStatusAudit::Ready,
         last_target: None,
+        ordered_target_fired: None,
     };
     assert_eq!(
         weapon.effective_damage,

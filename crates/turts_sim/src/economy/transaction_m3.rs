@@ -519,6 +519,21 @@ pub(crate) fn remove_unit(
         .world
         .get_resource::<Weapons>()
         .ok_or(RejectReason::IntegrityViolation)?;
+    let ordered_attackers = tx
+        .world
+        .iter_entities()
+        .filter_map(|entity| {
+            let attacker = entity.get::<crate::world::UnitId>()?.0;
+            entity
+                .get::<crate::orders::UnitOrders>()
+                .and_then(|orders| orders.current.as_ref())
+                .is_some_and(|order| {
+                    order.behaviour == turts_mod_api::Behaviour::Attack
+                        && order.target == crate::orders::OrderTargetSim::Unit(unit)
+                })
+                .then_some(attacker)
+        })
+        .collect::<BTreeSet<_>>();
     let weapon_ids = weapons
         .0
         .keys()
@@ -534,11 +549,21 @@ pub(crate) fn remove_unit(
             None => weapons.0.get(&id),
         };
         if let Some(state) = state
-            && state.last_target == Some(unit)
+            && (state.last_target == Some(unit) || state.ordered_target_fired == Some(unit))
         {
+            let retained_for_order = ordered_attackers.contains(&id);
             let mut updated = state.clone();
-            updated.last_target = None;
-            tx.writes.weapons.insert(id, Some(updated));
+            if !retained_for_order {
+                if updated.last_target == Some(unit) {
+                    updated.last_target = None;
+                }
+                if updated.ordered_target_fired == Some(unit) {
+                    updated.ordered_target_fired = None;
+                }
+            }
+            if updated != *state {
+                tx.writes.weapons.insert(id, Some(updated));
+            }
         }
     }
 
