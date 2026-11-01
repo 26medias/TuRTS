@@ -1050,3 +1050,12 @@ Task6 final review PASS ed793bb,0High;21externalprobes/191focusedtests, all20GRE
 T7/T11/T12 rebased onto450c023;10dirty prepared paths preserved byte-for-byte with explicit-path stash backups retained. Receipt main wave5-after-t6-rebase/receipt.json. RUN51 registered before new Luna/high T7 continuation;51/170 total, Task7run2/4. Wave5stillneedsT7/T11/T12; push/readCIafterwave. No main merge or push.
 
 RUN52 registered before Sol/high network-engineer review. Source-only contract preparation may overlap RUN51; only RUN51 owns the compiler/cache.52/170 runs, Task7run3/4. RUN51 has compiled K27 and exact-order-log semantic reds; K25/implementation remain active. No new CEO stop.
+
+
+## C122: reject command-script tick zero before installation
+
+Conflict: the new script loader accepts tick0, but the fixed schedule advances Tick before applying script entries. A tick0 entry would remain unexecuted without an error. The plan does not define tick0 behavior.
+
+Choice: reject the whole script at load time if any entry has tick0. The error identifies the file, entry index and invalid tick. Validate before installing the Script resource or its system. Keep the existing first executable tick1; do not retime an entry or silently drop it.
+
+Evidence: crates/turts_server/src/command_script.rs:23-40 loads and groups entries before installation; :44-47 removes only the current tick. crates/turts_sim/src/plugin.rs:93,115,118 orders Advance before Commands, and :157 implements the tick advance. This is an instrument detail under brief section4, with no K, frozen value or player action change. Alternative not taken: silently lose tick0, move the simulation clock, or reinterpret zero as one. RUN51 implements the loader negative; runtime proof remains NOT TRACED until it runs.52/170 runs; Task7run3/4.

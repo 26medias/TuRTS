@@ -1056,3 +1056,12 @@ Conflict: root asked for C97 distinct valid Move IDs and mentioned disjoint unit
 Choice: accept the actual sensitive final-head C97 counterplant for per-member ID preservation. Record that the fixture uses one type; a combined disjoint-type/definition runtime fixture is NOT TRACED here. Keep separate type-authority tests and the source-verified type-independent member map; do not claim the combined fixture passed. No acceptance row or design rule is removed. C97 still requires preserving each accepted definition for every valid member.
 
 Evidence: run49/plants/C97-member-order-identity/ baseline0/semantic101/restored0 on the exact orders::tests::merged_group_spread_keeps_each_member_order_identity path; the earlier untyped empty-map compile failure is setup-only. Alternative not taken: count compilation as a red, invent disjoint-type evidence, weaken the ID assertion, or edit a gated test to chase redundant mutation coverage. Instrument/coverage decision under brief4; no CEO stop.50/170 runs.
+
+
+## C122: reject command-script tick zero before installation
+
+Conflict: the new script loader accepts tick0, but the fixed schedule advances Tick before applying script entries. A tick0 entry would remain unexecuted without an error. The plan does not define tick0 behavior.
+
+Choice: reject the whole script at load time if any entry has tick0. The error identifies the file, entry index and invalid tick. Validate before installing the Script resource or its system. Keep the existing first executable tick1; do not retime an entry or silently drop it.
+
+Evidence: crates/turts_server/src/command_script.rs:23-40 loads and groups entries before installation; :44-47 removes only the current tick. crates/turts_sim/src/plugin.rs:93,115,118 orders Advance before Commands, and :157 implements the tick advance. This is an instrument detail under brief section4, with no K, frozen value or player action change. Alternative not taken: silently lose tick0, move the simulation clock, or reinterpret zero as one. RUN51 implements the loader negative; runtime proof remains NOT TRACED until it runs.52/170 runs; Task7run3/4.
