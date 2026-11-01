@@ -1227,3 +1227,25 @@ Choice: extend Task12 by one narrow read-only Core pending-order-id accessor. Af
 Evidence: interaction/lib.rs:31 stores pending_order; :139 and:202 set it, :162 cancels, :263 takes it on target consumption. Existing public accessors:56-70 expose camera/selection/groups but no pending order. Current Task12 cursor.rs:27-63 mirrors requests and:88-94 guesses from image identity. mods/muster/orders/order_attack.ron:1 and rush.ron:1 both declare muster_cursor_attack with different target kinds. Root read all paths. This is a same-shape readonly integration seam under brief4; no new key, behavior, asset or acceptance row.
 
 Alternative not taken: infer authority from a shared image, duplicate effective-binding/modifier rules, retain stale targeting state, or weaken HUD4 to the unique Move case.58/170 runs; no new dispatch or CEO stop.
+
+
+## C140: format Guide text from authored page strings
+
+Conflict: production Muster authors Text(Bind(Guide)), but the initial source adapter returns structured item arrays and the Text renderer serializes them as JSON. The guide would show internal field/enum syntax rather than the authored player text. RUN56 M1 requests disposition.
+
+Choice: repair M1. When Guide is a Text/Format value, return readable authored page title/body strings joined by newlines. Keep Source::Guide list rows structured for templates. Add no instructional copy, content-specific rule, page layout or new schema. Empty guide text is empty.
+
+Evidence: mods/muster/interface/hud.ron:10 binds Guide in a Text widget. Current Task12 sources.rs:125 uses source_items_value for Value::Guide; mod.rs text_value/display_value serializes nonstrings to JSON. Design8.2 permits text binding and8.4:791 defines Guide as authored pages; design8:719-721 keeps copy/layout in mod content. This is a Medium repair and uncovered value-format detail under brief4. Runtime readability is NOT TRACED until the real renderer runs.
+
+Alternative not taken: expose item JSON to players, invent engine help copy, alter production guide content to hide the adapter defect, or remove structured List(Guide) support.58/170 runs; no new run or CEO stop.
+
+
+## C141: send the existing guide key through the same core action flow
+
+Conflict: Core resolves the approved F1 toggle_guide action but its KeyDown dispatch has no matching branch. The initial widget button handler directly toggles guide state and also queues UiAction. A future effect consumer would then toggle the button twice, while F1 remains ineffective. The Task12 file list omits this necessary Core dispatch hunk.
+
+Choice: extend Task12's interaction/lib.rs scope to emit ShellAction(toggle_guide) from the existing key action, as menu already does. Both authored Button Input(toggle_guide) and F1 flow through Core, then one widget effect consumer changes GuideOpen after CoreAdapterSet. Remove direct duplicate button mutation. Prove each action in an actual adapter frame and actual GuideOpen-dependent retained visibility. Preserve the same entity across toggles.
+
+Evidence: interaction/input_map.rs:63 binds toggle_guide to F1; the initial interaction/lib.rs KeyDown menu/cancel branch:154-177 drops the resolved guide action. UiAction's fallback already emits ShellAction. Initial Task12 mod.rs activate_widget toggles directly and queues the action; no CoreEffects consumer existed. RUN56 independently traced both paths. The current repair now adds the guide branch next to menu and a consumer. C135 requires real generic activation and visibility, not just queued-event/state assertions.
+
+This is a same-shape mechanism/file-ownership repair under brief4, not a new key or acceptance row. Alternative not taken: add close_guide to the schema, duplicate key handling in the UI, count a direct observer-only test as the full path, or allow a double toggle.58/170 runs; no new dispatch or CEO stop.
