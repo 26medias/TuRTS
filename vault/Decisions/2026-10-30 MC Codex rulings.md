@@ -1196,3 +1196,14 @@ Conflict: Task12 has independent image/font asset work and substantial source/tr
 Choice: register RUN57, Luna/high, for widgets/assets.rs only in the Task12 worktree. RUN55 keeps sources, tree, module registration, integration and the sole compiler/browser/cache lease. RUN57 writes source and meaningful tests against the agreed qualified WidgetAssets API, then RUN55 executes them with its normal validation. RUN56 independently reviews both. No additional lane or target is created.
 
 Evidence: design8.1:733-737 requires render-only normal images and separate CPU-retained cursor assets. RUN55 supplied the disjoint API before dispatch: qualified image/cursor/font maps, nine-slice metadata, handle accessors and load_widget_assets. Brief4 permits lane/cache layout decisions and the CEO approved safe parallelism. Alternative not taken: run a second compiler, overlap edits to the renderer, reduce review, or add more analysis-only runs.57/170 runs; Task12 run5/8; no CEO stop.
+
+
+## C137: retain physical UI rows and derive window CSS scene rectangles
+
+Conflict: the first Task12 snapshot draft divides every UiSnapshotFeed rect by a DPR read from the first Window. This changes the existing turts_ui physical-coordinate contract, although design13.2 keeps that bridge. C86 requires only the new turts_scene.widgets rectangles to be window-logical/CSS. A nonzero camera viewport or a different target camera also makes the first-Window shortcut wrong.
+
+Choice: capture actual post-layout widget geometry once. Keep turts_ui/UiSnapshotFeed rects in camera-viewport physical pixels. Derive the new scene widget rects in window-logical pixels using each node's actual target camera, target scaling and physical viewport origin. Preserve player UiScale and all strict row assertions. A separate derived rect field is permitted; do not reuse one differently scaled array for both contracts.
+
+Evidence: design13.2:1171-1175 adds scene widgets and says turts_ui stays. web lib.rs:488-492 declares window-logical scene coordinates and camera-viewport-physical UI rect coordinates; existing bridge contract tests:550,564-565 assert both. Legacy economy_ui.rs:1097-1108 defines the computed UI row. C86 already records the CSS scene requirement. Current Task12 snapshot.rs:12-30 reads the first Window and divides the feed geometry. Root read all paths. RUN56 will independently test actual target-camera/nonzero-viewport cases.
+
+This is an instrument-coordinate repair under brief4, with no player-visible layout or acceptance-row change. Alternative not taken: silently change turts_ui, cancel player scale, trust an unrelated Window, or omit the viewport origin.57/170 runs; no new dispatch or CEO stop.
