@@ -62,13 +62,12 @@ pub fn record_changes(world: &mut World) {
                 | UnitOrderActivityView::Attacking
                 | UnitOrderActivityView::Holding
                 | UnitOrderActivityView::Gathering => Some(("Moving", None)),
-                UnitOrderActivityView::Blocked => Some((
-                    "Blocked",
-                    row.last_failure
-                        .as_ref()
-                        .map(|failure| failure.reason.as_str()),
-                )),
-                UnitOrderActivityView::Idle => match row.last_failure.as_ref() {
+                UnitOrderActivityView::Blocked => Some(("Blocked", Some("blocked"))),
+                UnitOrderActivityView::Idle => match row
+                    .last_failure
+                    .as_ref()
+                    .filter(|failure| failure.tick == tick)
+                {
                     Some(failure) => Some(("Failed", Some(failure.reason.as_str()))),
                     None => previous
                         .get(&row.unit_id)
