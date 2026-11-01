@@ -8,7 +8,7 @@ source: codex
 
 # MC execution board
 
-State: ACTIVE: 13/25 lanes complete; 56/170 runs registered. Task11 COMPLETE at aff4d63, independent 0 open findings, integration 12/12 gates0 (1266/0/19, T7, M3). RUN55 Task12 owns the sole compiler/cache; RUN56 mod-runtime review registered source-only. C1-C134. Wave5 needs Task12; no main merge/push.
+State: ACTIVE: 13/25 lanes complete; 56/170 runs registered. Task11 COMPLETE at aff4d63, independent 0 open findings, integration 12/12 gates0 (1266/0/19, T7, M3). RUN55 Task12 owns the sole compiler/cache; RUN56 mod-runtime review registered source-only. C1-C135. Wave5 needs Task12; no main merge/push.
 
 Plan: `docs/superpowers/plans/2026-10-29-mc-player-control.md`.
 Design of record: `docs/superpowers/specs/2026-10-29-mc-player-control-design.md`, revision13 at main721e56e.
@@ -1185,3 +1185,12 @@ Choice: remove only the failed startup seed/API experiments, preserve the planne
 Evidence: main target/mc-evidence/t12-builder/run55/dpr2-device-pixel-box-probe.log records the wrong physical box. The matching force2 probe reports2560x1440; actual hud1-dpr2-force-profile/runs/run-20261101T072921Z-DZjDvu records logical1280x720, scale2 and two selected owned units, then reaches the intended missing-widget/present-panel oracle red. Local winit-0.30.13/src/platform_impl/web/web_sys/resize_scaling.rs:231-263 trusts devicePixelContentBoxSize; bevy_winit-0.20.0/src/state.rs:1065-1068 applies it. The primary report https://github.com/microsoft/playwright/issues/18591 describes this same emulation mismatch. Task12 tests/browser/harness/run.js:42-84 now derives and validates the launch profile; launch-profile.test.js supplies five pure controls. The complete real six-run baseline is still running, not claimed green or complete.
 
 This is an instrument/profile repair under brief4, with no player-visible design or acceptance-row change. Alternative not taken: distort driver coordinates, patch ResizeObserver, retain ineffective product startup seeds, relax DPR geometry checks, or apply force2 to DPR1 contexts.56/170 runs; no new dispatch or CEO stop.
+
+
+## C135: prove guide close through authored button content
+
+Conflict: Task12 requires guide close-button handling, but the existing Muster guide is a Text widget and supplies no close Button. The engine must not invent HUD layout or text. Forge guide content and its close-button pixel acceptance belong to Task17.
+
+Choice: Task12 implements the generic authored Button Input(toggle_guide) path and GuideOpen visibility. An installed-runtime test supplies a small authored interface with a close button, dispatches and handles the button interaction, and checks guide state and rendered visibility. A direct toggle helper call alone is insufficient. Keep production Muster content unchanged for this proof. Task17 supplies the actual Forge guide button and proves its HUD2 pixel path as planned.
+
+Evidence: plan Task12 Files at:542 requires the guide close button; Task17 Step2 at:617 requires F1 and the button to close Forge's guide. mods/muster/interface/hud.ron:10 defines the guide as Text(Bind(Guide)); no close Button is present. Design8:719-721 and8.1:726-727 assign HUD layout/content to mod widgets, and design8.4:794 defines Input actions for buttons. This is a fixture and ownership decision under brief4; no player-visible step or acceptance row changes. Alternative not taken: draw an engine-owned close button, claim a nonexistent authored control was exercised, omit installed dispatch proof, or move Forge's pixel acceptance into this lane.56/170 runs; no new dispatch or CEO stop.
