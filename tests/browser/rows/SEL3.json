@@ -1,0 +1,13 @@
+{
+  "row": "SEL3",
+  "package": "crates/turts_pack/tests/fixtures/muster_hud4",
+  "driver": "tests/browser/sel-driver.js",
+  "oracle": "tests/browser/sel-oracle.js",
+  "runs": "ci",
+  "capture_scene_checkpoints": true,
+  "viewports": ["1280x720"],
+  "stages": [
+    { "label": "sel3-ctrl-type", "gesture": "click", "modifiers": ["Control"], "start": { "x": 115, "y": 100 }, "expected_selection": 40, "expected_rings": 40 },
+    { "label": "sel3-double-type", "gesture": "double-click", "start": { "x": 115, "y": 100 }, "expected_selection": 40, "expected_rings": 40 }
+  ]
+}

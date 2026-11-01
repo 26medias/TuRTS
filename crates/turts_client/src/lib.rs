@@ -19,6 +19,7 @@ pub mod interp;
 pub mod join;
 pub mod minimap;
 pub mod options;
+pub mod palette;
 pub mod persist;
 pub mod present;
 pub mod render;

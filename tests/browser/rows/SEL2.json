@@ -1,0 +1,16 @@
+{
+  "row": "SEL2",
+  "package": "crates/turts_pack/tests/fixtures/muster_hud4",
+  "driver": "tests/browser/sel-driver.js",
+  "oracle": "tests/browser/sel-oracle.js",
+  "runs": "ci",
+  "capture_scene_checkpoints": true,
+  "viewports": ["1280x720"],
+  "stages": [
+    { "label": "sel2-500-own-mobile", "gesture": "box", "start": { "x": 20, "y": 20 }, "end": { "x": 1260, "y": 700 }, "expected_selection": 500, "expected_rings": 500 },
+    { "label": "sel2-static-only", "gesture": "box", "start": { "x": 24, "y": 24 }, "end": { "x": 210, "y": 190 }, "expected_selection": 2, "expected_rings": 2 },
+    { "label": "sel2-mixed-owner", "gesture": "box", "start": { "x": 800, "y": 24 }, "end": { "x": 1256, "y": 360 }, "expected_selection": 1, "expected_rings": 1 },
+    { "label": "sel2-shift-add", "gesture": "box", "modifiers": ["Shift"], "start": { "x": 24, "y": 190 }, "end": { "x": 210, "y": 360 }, "expected_selection": 3, "expected_rings": 3 },
+    { "label": "sel2-shift-remove", "gesture": "click", "modifiers": ["Shift"], "start": { "x": 115, "y": 100 }, "expected_selection": 2, "expected_rings": 2 }
+  ]
+}
