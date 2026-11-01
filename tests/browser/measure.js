@@ -21,6 +21,7 @@
 const { chromium } = require("playwright-core");
 const os = require("node:os");
 const { installWebGpuTelemetry } = require("./measure-webgpu-hook.js");
+const { buildVis2LaunchOptions } = require("./harness/measure-launch-options.js");
 
 const FIRST_FRAME_TIMEOUT_MS = 60000;
 const RECORD_MS = 10000;
@@ -36,7 +37,10 @@ const percentile = (sorted, p) => sorted[Math.floor(p * (sorted.length - 1))];
     }
     const executablePath = process.env.CHROME_BIN || "/usr/bin/google-chrome";
     const vis2 = label === "vis2";
-    const browser = await chromium.launch({ executablePath, headless: !vis2, args: extra });
+    const launchOptions = vis2
+        ? buildVis2LaunchOptions(executablePath, extra, process.env)
+        : { executablePath, headless: true, args: extra };
+    const browser = await chromium.launch(launchOptions);
     const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
     if (vis2) await page.addInitScript(installWebGpuTelemetry);
     const logs = [];
@@ -88,7 +92,9 @@ const percentile = (sorted, p) => sorted[Math.floor(p * (sorted.length - 1))];
             logical_processors: cpus.length,
             total_memory_bytes: os.totalmem(),
         };
-        report.chromeArgs = extra;
+        report.display = process.env.DISPLAY || null;
+        report.chromeArgs = launchOptions.args;
+        report.chromeIgnoreDefaultArgs = launchOptions.ignoreDefaultArgs;
         report.browserMode = "headed";
     }
     if (firstFrameMs !== null) {
