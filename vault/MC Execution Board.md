@@ -8,7 +8,7 @@ source: codex
 
 # MC execution board
 
-State: ACTIVE. CEO O13 releases STOP-PAL1; design14 at main f050e42. Integration and open Task5/Task13 lanes rebased.14/25lanes complete;65/170runs registered. Wave6 resumes Task5 repairs and Task13 source preparation. One compiler/cache lease belongs to Task5. C1-C164; no main merge/push.
+State: ACTIVE. CEO O13 releases STOP-PAL1; design14 at main f050e42. Integration and open Task5/Task13 lanes rebased.14/25lanes complete;66/170runs registered. Wave6 resumes Task5 repairs and Task13 source preparation. One compiler/cache lease belongs to Task5 reviewer RUN65. C1-C167; no main merge/push.
 
 Plan: `docs/superpowers/plans/2026-10-29-mc-player-control.md`.
 Design of record: `docs/superpowers/specs/2026-10-29-mc-player-control-design.md`, revision14 at mainf050e42.
@@ -257,6 +257,7 @@ One row per builder/reviewer dispatch or resumed agent work turn. Register befor
 | 63 | T5 independent combat/policy/replay review | qa-lead | gpt-6.1-sol | high | Task5 base12e435c plus RUN61 stable WIP | Registered BEFORE dispatch. Task5run2/estimate4, soft8/hard16. SOURCE-ONLY: inspect current stable interfaces and prepare finite independent probes outside lane; no compiler/cache/browser/source edits until root lease. Check actual lifecycle, all fire/engage axes, immutable catalog policy, plain Move identity audit, grid/determinism, frozen evidence and required plants. |
 | 64 | T5 repair continuation after O13 | simulation-core-engineer | gpt-6-luna | high | 12ded296, O13 mainf050e42 | Registered BEFORE resuming completed RUN61. Task5run3/estimate4; soft8/hard16. Eight WIP files restored byte-identical. Repair all four RUN63 failures, native/ACC/T7/frozen/GREF and required plants, commit and clean handoff. Sole compiler/cache lease target/mc-t5. |
 | 65 | T5 independent recheck after O13 | qa-lead | gpt-6.1-sol | high | O13-rebased Task5 plus WIP | Registered BEFORE resuming completed RUN63. Task5run4/estimate4; soft8/hard16. Source-only until runtime handoff. Verify all four High repairs, independent15probes and own production plant after final gates; no simultaneous compiler/cache owner. |
+| 66 | T13 independent visual/acceptance source review | ux-designer | gpt-6.1-sol | high | T13 prep2bcb9ae plus off-lane candidate | Registered BEFORE dispatch. Task13run2/estimate5; soft10/hard20. SOURCE-ONLY until explicit root lease. Review design14/O13/C161/C163/C167; full VIS1 pixels+first-frame state, SEL2/3, palette thresholds, shared assets, hover/bar/marker/blocked lifetimes and actual VIS2 instrumentation. Candidate not yet compiled/applied; prepare finite independent probes/own four-gap visual plant outside lane. T5 RUN65 owns sole runtime. |
 
 ## 9. Preflight ledger and stop
 
@@ -1576,3 +1577,9 @@ Conflict: the proposed extra baseline-marker-native.patch would assert FrameReco
 Choice: reject before any run and give it no red credit. Required Task13 baseline reds remain the plan's real headed VIS1 one-colour failure and native palette contract failure. Native marker tests assert valid intent/state logic with deterministic time; actual first-frame visible markers require full VIS1 screenshots and matching C84 frames. The rejected optional patch stays labelled REJECTED_BEFORE_RUN in its manifest. No registered plant or acceptance requirement is removed.
 
 Evidence: candidate/baseline-marker-native.patch calls the renderless acme_order_app; candidate VisualsPlugin returns without RenderPlugin. The source was reviewed before a compiler/browser lease. Alternative not taken: count a permanently failing renderer-free assertion as useful red, or fake visibility records in headless code just to make it pass.14/25complete;65/170runs, no new dispatch.
+
+## Task5 gates complete; independent review and Task13 source review
+
+RUN64 finalhandoff at98147ae is clean with allnormalgates0,19GREF restored, requiredJob/rushplants101->0, frozenhashunchanged. Root read rawT7 proof137frames/53moving and actualresult; no all-green CI claim. RUN64 released allholds and completed. Root granted RUN65 sole Task5cache/runtime for independent15andownplant; source/read/deletionhold remains until thatreviewends.
+
+RUN66 registered before dispatch for independent Task13 ux-designer source review (Sol/high); no compiler/browser/server/cache or laneedits. Task13 prep2bcb9ae plus off-lane patch61cb464a…63baf remains uncompiled; requiredbaselineheadedVIS1/nativepalette reds pending root rebase/handoff afterTask5merge/regate.66/170runs;14/25complete.
