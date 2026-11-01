@@ -49,7 +49,7 @@ pub fn write_transition(
     writeln!(out, "{tick},{unit_id},{state},{}", reason.unwrap_or("-"))
 }
 
-fn record_changes(world: &mut World) {
+pub fn record_changes(world: &mut World) {
     let tick = world.resource::<Tick>().0;
     let previous = world.resource::<OrderLog>().previous.clone();
     let rows: Vec<_> = turts_sim::completed_world(world)
@@ -86,42 +86,35 @@ fn record_changes(world: &mut World) {
         })
         .collect();
 
-    let mut current: BTreeMap<_, _> = rows
+    let current: BTreeMap<_, _> = rows
         .into_iter()
         .map(|(unit, state, reason)| (unit, (state, reason)))
         .collect();
+    let mut transitions = BTreeMap::new();
+    for (unit, next) in &current {
+        if previous.get(unit) != Some(next) {
+            transitions.insert(*unit, next.clone());
+        }
+    }
+    for (unit, (state, _)) in &previous {
+        if !current.contains_key(unit) && state != "Done" && state != "Failed" {
+            transitions.insert(*unit, ("Done".to_string(), "-".to_string()));
+        }
+    }
+
     let mut log = world.resource_mut::<OrderLog>();
-    for (unit, (state, reason)) in &current {
-        let next = (state.clone(), reason.clone());
-        if log.previous.get(unit) != Some(&next) {
-            write_transition(
-                &mut log.out,
-                tick,
-                *unit,
-                state,
-                (reason != "-").then_some(reason),
-            )
-            .unwrap_or_else(|error| panic!("turts_server: cannot write --order-log: {error}"));
-        }
+    for (unit, (state, reason)) in transitions {
+        write_transition(
+            &mut log.out,
+            tick,
+            unit,
+            &state,
+            (reason != "-").then_some(reason.as_str()),
+        )
+        .unwrap_or_else(|error| panic!("turts_server: cannot write --order-log: {error}"));
     }
-    let finished: Vec<_> = log
-        .previous
-        .keys()
-        .filter(|unit| !current.contains_key(unit))
-        .copied()
-        .collect();
-    for unit in finished {
-        if log
-            .previous
-            .get(&unit)
-            .is_some_and(|(state, _)| state != "Done" && state != "Failed")
-        {
-            write_transition(&mut log.out, tick, unit, "Done", None)
-                .unwrap_or_else(|error| panic!("turts_server: cannot write --order-log: {error}"));
-        }
-        log.previous.remove(&unit);
-    }
-    log.previous.append(&mut current);
+    log.previous.retain(|unit, _| current.contains_key(unit));
+    log.previous.extend(current);
     log.out
         .flush()
         .unwrap_or_else(|error| panic!("turts_server: cannot flush --order-log: {error}"));

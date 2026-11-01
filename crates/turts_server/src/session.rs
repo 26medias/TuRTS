@@ -157,6 +157,22 @@ pub fn judge_hello(
     }
 }
 
+/// Decide a Hello while tracking accepted identities in the current receive-system invocation.
+fn judge_hello_in_batch(
+    hello: &Hello,
+    advertised: &Advertised,
+    slots: &mut Slots,
+    has_live_session: bool,
+    accepted_in_batch: &mut BTreeSet<u64>,
+) -> Result<turts_sim::SlotId, &'static str> {
+    let has_live_session = has_live_session || accepted_in_batch.contains(&hello.player_id);
+    let result = judge_hello(hello, advertised, slots, has_live_session);
+    if result.is_ok() {
+        accepted_in_batch.insert(hello.player_id);
+    }
+    result
+}
+
 /// The connections that may send a `Hello`.
 type HelloClients<'w, 's> = Query<
     'w,
@@ -193,6 +209,7 @@ pub fn receive_hello(
     match_id: Res<crate::stats::MatchId>,
     live_sessions: Query<&Session>,
 ) {
+    let mut accepted_in_batch = BTreeSet::new();
     for (entity, mut receiver, has_session, pending_kick) in clients.iter_mut() {
         let mut decided = has_session || pending_kick;
         for hello in receiver.receive() {
@@ -205,7 +222,13 @@ pub fn receive_hello(
             let has_live_session = live_sessions
                 .iter()
                 .any(|session| session.player_id == hello.player_id);
-            match judge_hello(&hello, &advertised, &mut slots, has_live_session) {
+            match judge_hello_in_batch(
+                &hello,
+                &advertised,
+                &mut slots,
+                has_live_session,
+                &mut accepted_in_batch,
+            ) {
                 Ok(slot) => {
                     if let Some(log) = economy_log.as_mut() {
                         log.write_claim(tick.0, hello.player_id, slot.0);
@@ -696,6 +719,40 @@ mod tests {
         hello(player_id, NET_PROTOCOL_VERSION, HASH)
     }
 
+    fn spawn_hello_peers(app: &mut App, id: u64) -> (Entity, Entity) {
+        let registry = app.world().resource::<ChannelRegistry>();
+        let mut sender_transport = Transport::default();
+        sender_transport.add_channel_send_from_registry::<ReliableChannel>(registry);
+        sender_transport.add_channel_receive_from_registry::<ReliableChannel>(registry);
+        let sender = app
+            .world_mut()
+            .spawn((
+                Client,
+                Link::default(),
+                sender_transport,
+                MessageSender::<Hello>::default(),
+                RemoteId(PeerId::Server),
+                Linked,
+                Connected,
+            ))
+            .id();
+        let receiver = app
+            .world_mut()
+            .spawn((
+                ClientOf,
+                Link::default(),
+                Transport::default(),
+                RemoteId(PeerId::Local(id)),
+                Linked,
+                Connected,
+                MessageReceiver::<Hello>::default(),
+                MessageSender::<Welcome>::default(),
+                MessageSender::<JoinRejected>::default(),
+            ))
+            .id();
+        (sender, receiver)
+    }
+
     #[test]
     fn judge_accepts_a_matching_hello_and_claims_the_first_open_slot() {
         let mut slots = Slots::new(2);
@@ -780,6 +837,102 @@ mod tests {
         assert_eq!(
             judge_hello(&good(7), &advertised(), &mut slots, true),
             Err("This game is open in another window"),
+        );
+    }
+
+    #[test]
+    fn two_hellos_for_one_player_in_the_same_receive_batch_reject_the_second() {
+        let mut slots = Slots::new(2);
+        let mut accepted_in_batch = BTreeSet::new();
+        assert_eq!(
+            judge_hello_in_batch(
+                &good(7),
+                &advertised(),
+                &mut slots,
+                false,
+                &mut accepted_in_batch,
+            ),
+            Ok(turts_sim::SlotId(0)),
+        );
+        assert_eq!(
+            judge_hello_in_batch(
+                &good(7),
+                &advertised(),
+                &mut slots,
+                false,
+                &mut accepted_in_batch,
+            ),
+            Err("This game is open in another window"),
+        );
+        assert_eq!(slots.slot_of(7), Some(turts_sim::SlotId(0)));
+        assert_eq!(slots.owner_of(turts_sim::SlotId(1)), None);
+    }
+
+    #[test]
+    fn receive_hello_rejects_two_live_connections_in_one_frame() {
+        use bevy::time::TimeUpdateStrategy;
+        use lightyear::link::recv_payload_from_bytes;
+        use lightyear::prelude::server::ServerPlugins;
+
+        let mut app = App::new();
+        app.add_plugins(ServerPlugins {
+            tick_duration: Duration::from_millis(50),
+        });
+        app.add_plugins(turts_net_lightyear::ProtocolPlugin);
+        app.add_plugins(turts_sim::SimPlugin { tick_hz: 20 });
+        app.init_resource::<crate::stats::Stats>();
+        app.insert_resource(crate::stats::MatchId(0));
+        install(&mut app, advertised());
+        let (source_a, client_a) = spawn_hello_peers(&mut app, 1);
+        let (source_b, client_b) = spawn_hello_peers(&mut app, 2);
+        app.finish();
+        app.cleanup();
+        app.insert_resource(TimeUpdateStrategy::ManualDuration(Duration::ZERO));
+        app.update();
+
+        for source in [source_a, source_b] {
+            app.world_mut()
+                .get_mut::<MessageSender<Hello>>(source)
+                .unwrap()
+                .send::<ReliableChannel>(good(7));
+        }
+        app.update();
+        for (source, client) in [(source_a, client_a), (source_b, client_b)] {
+            let packets = {
+                let mut entity = app.world_mut().entity_mut(source);
+                let mut link = entity.get_mut::<Link>().unwrap();
+                let mut packets = Vec::new();
+                while let Some(packet) = link.send.pop() {
+                    packets.push(packet);
+                }
+                packets
+            };
+            assert!(!packets.is_empty(), "Hello was serialized for {source:?}");
+            for packet in packets {
+                app.world_mut()
+                    .entity_mut(client)
+                    .get_mut::<Link>()
+                    .unwrap()
+                    .recv
+                    .push_raw(recv_payload_from_bytes(packet));
+            }
+        }
+        app.update();
+
+        let accepted = [client_a, client_b]
+            .into_iter()
+            .filter(|client| app.world().get::<Session>(*client).is_some())
+            .count();
+        let refused = [client_a, client_b]
+            .into_iter()
+            .filter(|client| app.world().get::<PendingKick>(*client).is_some())
+            .count();
+        assert_eq!(accepted, 1, "exactly one live session keeps the slot");
+        assert_eq!(refused, 1, "the other connection is rejected");
+        assert_eq!(app.world().resource::<crate::stats::Stats>().hellos, 2);
+        assert_eq!(
+            app.world().resource::<Slots>().slot_of(7),
+            Some(turts_sim::SlotId(0))
         );
     }
 }
