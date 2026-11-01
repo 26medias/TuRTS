@@ -104,7 +104,7 @@ Human usability amendment1354e33: catalog-derived principal labels/named local s
 
 ## Current MC status
 
-ACTIVE:13/25 lanes complete;59/170 runs. Tasks6,7 and11 merged/re-gated; Wave5 needs Task12. The28-test replacement map is cleared and old panel removed. Post-removal native19targets pass (lib84/lifecycle5), harness102/102. Task12 clean candidatec17d8e8 has freshHUD4 both green and6HUD1 carry under C150; root source/fixture checks pass. Solecache target/mc-t12; committed gates/mutation and RUN56 installed review remain. C1-C153 recorded. Main stays721e56e; no main merge/push. See [[MC Execution Board]] and [[Reports/2026-11-01]].
+ACTIVE:13/25 lanes complete;59/170 runs. Tasks6,7 and11 merged/re-gated; Wave5 needs Task12. The28-test replacement map is cleared and old panel removed. Post-removal native19targets pass (lib84/lifecycle5), harness102/102. Task12 clean candidatec17d8e8 has freshHUD4 both green and6HUD1 carry under C150; root source/fixture checks pass. Solecache target/mc-t12; committed gates/mutation and RUN56 installed review remain. C1-C154 recorded. Main stays721e56e; no main merge/push. See [[MC Execution Board]] and [[Reports/2026-11-01]].
 
 ## Historical MC checkpoints
 

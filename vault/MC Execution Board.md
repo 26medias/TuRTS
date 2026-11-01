@@ -1401,3 +1401,16 @@ Choice: retain the raw interrupted log and a per-file path/size/time manifest; i
 Evidence: root manifest covers2834 rebuildable files/875366961 logical bytes, process references empty, tracked paths empty, clean c17d8e8 lane. Main t12-root/cache-environment-incident-20261101 holds manifest.json, pre-deletion receipt.json and completion.json. Raw interrupted build remains run55/final-gates-v003/trunk-release.log. The intended cache is retained; no Trunk/T7 green is claimed from the interrupted run.
 
 Alternative not taken: leave a duplicate cache, reuse unpinned output as proof, delete evidence/source, remove active cache, or ask the CEO to decide routine cache recovery.59/170 runs; no CEO stop.
+
+
+## C154: batch independent runtime diagnostics before the final repair gates
+
+Conflict: while WEB was running, RUN56 found an additional Fit rows-to-empty defect: a previously measured container skips update when no child measurement remains and can keep ghost capture bounds. Applying each late edge separately before running the prepared runtime probes would repeat expensive builds. T7 also used the default headless profile and failed GPU startup; its inner release build passed, but browser acceptance did not run.
+
+Choice: after RUN55 stops all processes, give RUN56 the sole compiler/cache lease for one finite native diagnostic batch on committed c17d8e8: nested Fit geometry, DPR2/UiScale/nonzero camera/multiwindow geometry, cursor-free replacement, rows-to-empty-to-rows, and three Core controls. RUN55 prepares a repair outside the lane only. Reviewer restores exact source and returns all findings together. Builder then repairs/commits the batch and runs final gates and HUD4 plant; reviewer repeats the cheap native batch and its own production plant after final gates for final acceptance. No formal plant runs before the WEB gate is green.
+
+Use the existing bound gate runner for final T7. It scopes all five Cargo variables, M2_HEADLESS=false, Vulkan GPU flags and ignored software fallback, and records actual cwd/head/exits. Do not improvise another default-profile invocation. Keep the first headless GPU failure as setup evidence, not semantic red. Root read scripts/t7.sh:83-98: the headed path uses xvfb-run and the oracle runs while the server remains alive.
+
+Evidence: RUN55 reports no owned processes and quiescent source; RUN56 explicitly received the sole lease and has seven prepared native probes. The only lane changes during this lease are reviewer temporary tests. Repair sketch d3e278f3…7b93c6 stays outside source. Main run55/final-gates-v004 preserves the headless setup failure and successful inner build.
+
+This is wave/instrument scheduling under brief4 and the CEO-approved grouping. Alternative not taken: skip the empty-container invariant, let two agents edit/compile together, run plants before final gates, call a GPU setup failure a product red, or restart every expensive build for each new diagnostic.59/170 runs; no new dispatch or CEO stop.
