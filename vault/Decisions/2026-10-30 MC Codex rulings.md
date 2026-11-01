@@ -1216,3 +1216,14 @@ Conflict: the widget tree/input/cursor integration and the table8.4 source seman
 Choice: register RUN58, Luna/high, for widgets/sources.rs and inline tests only. RUN55 explicitly froze SourceContext/ItemData and supplied the dispatcher JSON contract for Order, Select, Produce(producer/content), CancelProduction(producer/job), and Input. RUN55 owns tree/actions/cursor and all compiler/cache/browser execution. RUN56 independently reviews. RUN57 remains completed; no resumed run or second cache is hidden.
 
 Evidence: design8.4:775-795 defines allowed sources and actions; existing sources.rs is an isolated adapter with explicit replica/catalog/owner inputs. RUN55 confirmed the exact disjoint ownership/API before dispatch. Brief4 permits lane/cache layout choices and the CEO approved safe parallelism. Alternative not taken: change the data surface, let two writers edit one module, run concurrent compilers, skip semantic source tests, or count an uncompiled helper as green.58/170 runs; Task12run6/8; no CEO stop.
+
+
+## C139: read targeting state from the interaction core
+
+Conflict: the first cursor draft keeps a second pending-order state from raw keyboard/UI requests and guesses an order from a unique cursor image. Two real Muster orders share that image; modifier/action resolution and target cancellation/consumption already belong to Core. A client guess can retain or choose the wrong target mode.
+
+Choice: extend Task12 by one narrow read-only Core pending-order-id accessor. After the actual Core step, cursor presentation reads the authoritative pending order through CoreRuntime, then resolves its package-local override. Remove raw-key request tracking and unique-image inference. Add real-core/installed controls with shared cursor IDs, no-target action, cancellation and consumed targeting. No direct presentation mutation of Core state.
+
+Evidence: interaction/lib.rs:31 stores pending_order; :139 and:202 set it, :162 cancels, :263 takes it on target consumption. Existing public accessors:56-70 expose camera/selection/groups but no pending order. Current Task12 cursor.rs:27-63 mirrors requests and:88-94 guesses from image identity. mods/muster/orders/order_attack.ron:1 and rush.ron:1 both declare muster_cursor_attack with different target kinds. Root read all paths. This is a same-shape readonly integration seam under brief4; no new key, behavior, asset or acceptance row.
+
+Alternative not taken: infer authority from a shared image, duplicate effective-binding/modifier rules, retain stale targeting state, or weaken HUD4 to the unique Move case.58/170 runs; no new dispatch or CEO stop.
