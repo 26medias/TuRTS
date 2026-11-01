@@ -8,7 +8,7 @@ source: codex
 
 # MC execution board
 
-State: ACTIVE: 14/25 lanes complete;60/170 runs. Wave5 COMPLETE at integration af567c4. Task12 candidate77ca599 passed independent review with0openfindings,7native probes and own production plant. Fresh8HUD runs and required cursor mutation/restored pair pass. Integration11/11re-gates pass (1306/0/19,frozen,T7). Task12 lane removed after evidence preservation; sole reusable cache is in integration. Wave5 push/CI read next, then Wave6 Tasks5/13. C1-C157; no main merge/push.
+State: ACTIVE:14/25lanes complete;62/170runs registered. Wave5 pushed atad0eef4; hosted CI41300331651:agentsSUCCESS,check/browserRUNNING, final read pending. Task5 RUN61 owns the next sole compiler/cache lease; Task13 RUN62 prepares source/pure-Node instruments without a second cache. C1-C157. Wave6 active; no main merge/push.
 
 Plan: `docs/superpowers/plans/2026-10-29-mc-player-control.md`.
 Design of record: `docs/superpowers/specs/2026-10-29-mc-player-control-design.md`, revision13 at main721e56e.
@@ -80,8 +80,8 @@ CI trigger: `.github/workflows/ci.yml:2-5` runs pushes to main and pull requests
 | T7 | 5 | 2b, 4 | codex/mc-t7 | COMPLETE c190c909; merge7e575c9; independent0H/0M/30tests/ownplant, integration12/12gates0 (1231/0/19,T7,M3); lane removed, evidence and branch retained. |
 | T11 | 5 | 9, 19, 20 | codex/mc-t11 | COMPLETE c996463; merge aff4d63; independent 0H/0M/0L, 11 probes, CAM1 2/2 and both plants restored; integration 12/12 gates0,1266/0/19; completed artifacts archived and lane removed, branch retained. |
 | T12 | 5 | 3, 9, 19, 20 | codex/mc-t12 | COMPLETE candidate77ca599; mergeaf567c4. Independent0High/0remaining,7probes and own production101→0. FreshHUD1six/HUD4two pass; required runtime-default mutation1→restore0. Integration11/11gates0,1306/0/19,frozen,T7. All28removed tests mapped; registered3panelplants remain planned-window NOT CHECKED. Lane removed, evidence/cache/branch preserved. |
-| T5 | 6 | 4, 6, 19 | codex/mc-t5 | NOT STARTED |
-| T13 | 6 | 4, 6, 9, 11, 19, 20 | codex/mc-t13 | NOT STARTED |
+| T5 | 6 | 4, 6, 19 | codex/mc-t5 | ACTIVE RUN61 registered; source/test red-first work begins after root cache handoff. |
+| T13 | 6 | 4, 6, 9, 11, 19, 20 | codex/mc-t13 | ACTIVE RUN62 registered; source/pure-Node preparation only, no compiler/browser/cache until Task5 lease release. |
 | T10 | 7 | 5, 9, 11, 19, 20 | codex/mc-t10 | NOT STARTED |
 | T15 | 7 | 4, 7, 12, 13 | codex/mc-t15 | NOT STARTED |
 | T17 | 7 | 3, 12, 13, 19, 20 | codex/mc-t17 | NOT STARTED |
@@ -150,7 +150,7 @@ Tasks in one wave share no file, except the refutation registries (merge in task
 
 ## 7. Budget and seats
 
-CEO approved about 212 total runs. Build stop line: 170 (106 planned task runs plus 64 repairs). Gate estimate: 42 spent before this build. Build dispatches used: 60/170. Root preflight is recorded separately and is not a builder/reviewer dispatch. Twice a task estimate requires a recorded continuation decision; four times is a hard stop. T18 estimate2: soft4, hard8. No dispatch at global170 or a task hard limit.
+CEO approved about 212 total runs. Build stop line: 170 (106 planned task runs plus 64 repairs). Gate estimate: 42 spent before this build. Build dispatches used: 62/170. Root preflight is recorded separately and is not a builder/reviewer dispatch. Twice a task estimate requires a recorded continuation decision; four times is a hard stop. T18 estimate2: soft4, hard8. No dispatch at global170 or a task hard limit.
 
 One run is one agent dispatch (builder or reviewer). Count every run on the board.
 
@@ -252,6 +252,8 @@ One row per builder/reviewer dispatch or resumed agent work turn. Register befor
 | 58 | T12 parallel permitted source semantics | bevy-rendering-engineer with ux-designer | gpt-6-luna | high | f6577b9 plus active RUN55 source | COMPLETE source-only handoff f6fc7731 sources.rs with inline semantic tests, qualified assets and exact typed actions. No compiler/browser/cache execution; RUN55 executes/integrates and owns later repairs. RUN56 continues independent review, including H7 target-aware capability. Task12 run6/estimate8, soft16/hard32. |
 | 59 | T12 authored widget lifecycle coverage | bevy-rendering-engineer with ux-designer | gpt-6-luna | high | f6577b9 plus RUN55 repaired runtime | COMPLETE source-only handoff6f56c184, initial lifecycle3/3 executed by RUN55. RUN55 then extended to5/5 in native-final-v004: exact Produce/disabled action, retained press/cancel/job cleanup, DPR2 fifth-job scroll, actual CoreAdapter inside/outside world input and first-frame/clip/inactive-camera snapshot. Initial helper world suppression was NOT TRACED; new controls are separate RUN55 proof. Handoff preserved in main t12-lifecycle/run59. Task12run7/estimate8, soft16/hard32. |
 | 60 | T12 required production cursor mutation and handoff | bevy-rendering-engineer with ux-designer | gpt-6-luna | high | 77ca599 | COMPLETE. Registered before resuming interrupted RUN55. Correct production context override only: actual headed HUD4 nondefault move→default mismatch, command1; exact cursorSHAae02fe39 restore and HUD4two0. FixtureSHA14246814 unchanged. Clean77ca599 handoff, no acceptance claim before RUN56 PASS; mergedaf567c4 and root11gates0. Task12run8/estimate8; build60/170. |
+| 61 | T5 weapons, attack/attack-move and audited policies | simulation-core-engineer | gpt-6-luna | high | Wave5 ad0eef4 plus registration docs | Registered BEFORE dispatch. Task5run1/estimate4, soft8/hard16. Branch codex/mc-t5 and own worktree; sole compiler/cache lease after root transfer, all five variables. Must get compiled server-envelope/actual rush semantic red before production implementation; preserve frozen Forge replay and Task6 movement/queues. |
+| 62 | T13 visuals, palette and pixel instruments | bevy-rendering-engineer | gpt-6-luna | high | Wave5 ad0eef4 plus registration docs | Registered BEFORE dispatch. Task13run1/estimate5, soft10/hard20. Own branch/worktree; SOURCE/PURE-NODE ONLY until root lease, no Cargo/compiler/browser/second cache. Prepare tests/drivers/oracles and implementation patches outside lane; preserve old renderer for actual VIS1/palette red before applying production implementation. |
 
 ## 9. Preflight ledger and stop
 
@@ -1466,3 +1468,8 @@ Choice: commit this vault ruling with [skip ci], then add one empty CI-trigger c
 Evidence: .github/workflows/ci.yml:2-5; connected GitHub PR2 is open/draft/unmerged with that remote head; git ls-remote confirms integrationfb5e2d6 and main721e56e. The integration11gates passed before this doc/empty-only step.
 
 This is an instrument command/flag judgment under brief4. Alternative not taken: push main, remove the required vault skip marker, bypass a check, silently treat absent CI as green, or change the product to obtain a run.60/170runs; no new agent or CEO stop.
+
+
+Wave5 pushed to origin codex/mc-integration atad0eef46c7a3514488ac95efcbb9798795d0668c using exact old-head leasefb5e2d6; main remains721e56e. Hosted run https://github.com/26medias/TuRTS/actions/runs/41300331651 was read through the connected GitHub app: agents124829747745SUCCESS, check124829747567RUNNING (fmt/strictClippy/wasm passed, native tests active), browser124829747692RUNNING (helper tests passed, T7 active). Final job results are not claimed; root continues monitoring. Raw initial/read receipts are main wave5-ci-ad0eef4/*.json. The wave push/read checkpoint is complete; reversible Wave6 work now proceeds while hosted jobs run.
+
+RUN61/62 registered before dispatch. Task5 has the sole local compiler/cache after root transfer. Task13 can prepare independent source/pure-Node instruments and outside-lane implementation patches, but must preserve the old renderer until its actual VIS1/palette semantic red and receives no second cache. These lanes own disjoint Sim/server vs client/render/instrument files; registry merges remain task-number ordered. No test or final CI result is omitted.62/170runs,14/25complete.
