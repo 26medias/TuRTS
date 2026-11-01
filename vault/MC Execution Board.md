@@ -8,7 +8,7 @@ source: codex
 
 # MC execution board
 
-State: ACTIVE: 13/25 lanes complete; 59/170 runs registered. Task11 COMPLETE at aff4d63, independent 0 open findings, integration 12/12 gates0 (1266/0/19, T7, M3). RUN55 Task12 owns the sole compiler/cache; RUN56 mod-runtime review is source-only; RUN57 supplied assets.rs source-only; RUN58 supplied sources.rs source-only; RUN55 integrates/tests both; RUN59 writes isolated lifecycle coverage. C1-C145. Wave5 needs Task12; no main merge/push.
+State: ACTIVE: 13/25 lanes complete; 59/170 runs registered. Task11 COMPLETE at aff4d63, independent 0 open findings, integration 12/12 gates0 (1266/0/19, T7, M3). RUN55 Task12 owns the sole compiler/cache; RUN56 mod-runtime review is source-only; RUN57 supplied assets.rs source-only; RUN58 supplied sources.rs source-only; RUN55 integrates/tests both; RUN59 writes isolated lifecycle coverage. C1-C147. Wave5 needs Task12; no main merge/push.
 
 Plan: `docs/superpowers/plans/2026-10-29-mc-player-control.md`.
 Design of record: `docs/superpowers/specs/2026-10-29-mc-player-control-design.md`, revision13 at main721e56e.
@@ -1306,3 +1306,25 @@ Choice: register RUN59, Luna/high, for tests/widgets_lifecycle.rs only after the
 Evidence: RUN55 supplied the public setup/ownership contract and five concrete gaps; legacy28 map explicitly marks partial coverage. Existing tests/widgets.rs has10 small placement/guide/hit cases and cannot substitute for installed lifecycle tests. The matrix is complete before the new writer starts; no source freeze or compiler lease overlaps are hidden. Brief4 permits cache/lane layout decisions; CEO approved safe parallelism.
 
 Alternative not taken: delete old tests with future-only replacements, let two writers edit runtime modules, add a second cache, or call unexecuted tests green.59/170 runs; Task12run7/8; no CEO stop.
+
+
+## C146: repair the remaining widget Medium and Low findings now
+
+Conflict: RUN56 v005 identifies off-viewport tooltips (M2), Auto/Fit containers with absolute children collapsing (M3), a new package drawing against retained old assets after decode failure (M4), missing documented pan cursor contexts (M5), and pixel conversions outside placement.rs (L1). These are Task12 runtime/instrument gaps, not reasons to change the design or stop.
+
+Choice: repair all five now. M2 flips/clamps automatic tooltips against the actual target viewport with authored content/style unchanged. M3 supports natural Fit containers using real content/child measurement, with nested tests rather than guessed glyph metrics. M4 uses the existing Phase::Failed path on new presentation decode failure and clears/hides old widget drawing, capture, actions and cursor claims atomically; do not mix revisions. M5 gets pan direction/context from the actual camera controller's logical pan state through a read-only seam, using up/down/left/right and diagonal pan_* names with declared/default image fallback; PointerLeft, focus, UI and edge-disable cases must work. L1 routes conversions through placement and makes the required grep clean.
+
+Evidence: immutable main t12-review/run56/source-findings-v005.json and source-pass-v005/ cite tooltip.rs:41, placement/mod absolute-child layout, assets.rs:76 replacement path and cursor context omissions. join.rs:37-46 already provides Phase::Failed. Design8.1-8.3 gives mod style/layout, Fit and pan_* contexts; plan Task12 requires the pixel-conversion grep. Root read the inventory and source. The H6 camera timing repair also follows the explicit plan: cursor derivation/feed in Last before FrameCloseSet and CursorSystems::Update, after PostUpdate camera propagation. Local bevy_winit0.20 cursor/mod.rs:36 registers its processing in Last.
+
+Alternative not taken: defer incomplete planned primitives, claim leaf-only Fit proves containers, show stale accepted bytes, duplicate raw camera binding logic, omit pan cursors, or relax grep.59/170 runs; no extra dispatch or CEO stop.
+
+
+## C147: resolve item-dependent container tooltips in each row scope
+
+Conflict: D67 and protected Muster put tooltip Item(Reason) on the command-card Grid, while the template Button has no tooltip. The initial renderer resolves it on the Grid with no item and never passes it to the row, so disabled reasons cannot be displayed. Field presence in the source is not rendered tooltip proof.
+
+Choice: for List/Grid, an item-dependent tooltip expression, including nested Format/Item, becomes the template row's default unless that template overrides it. Resolve it in the row's own item context and do not also bind the unbound Item expression on the container. Item-independent container tooltips remain container-scoped. Preserve nested row scope and override behavior. Supply public OrderDef.description in existing contextual ItemField::Body so authored tooltip formats can use name/key/body/reason; invent no missing fields for data types without one.
+
+Evidence: mods/muster/interface/hud.ron:4 places Some(Item(Reason)) on Grid and template Button.tooltip is absent. Design8.5:802-810 does the same in the D67 probe;8.2 permits tooltip on any widget and names description/key/reason content. RUN56 confirmed the parent-grid item=None path in the frozen renderer. Existing ItemField::Body and OrderDef.description provide the needed data; no schema or protected content edit is required.
+
+This is a scope/instrument mechanism repair under brief4. Alternative not taken: change protected Muster layout, render an empty parent tooltip, overwrite nested item scopes, fabricate description text, or call source Reason coverage a rendered tooltip pass.59/170 runs; no new dispatch or CEO stop.
