@@ -127,4 +127,4 @@ function isNodeMaterial(rgba) {
     return r > g * 1.08 && g > b * 1.3;
 }
 
-module.exports = { readTargets, components, classify, foot, isOpenGround, isNodeMaterial, isUnitMaterial };
+module.exports = { readTargets, findOpenGround, components, classify, foot, isOpenGround, isNodeMaterial, isUnitMaterial };
