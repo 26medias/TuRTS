@@ -1341,3 +1341,14 @@ This resolves a replacement-test instrument conflict by following the design; it
 
 
 Task12 removal checkpoint: RUN56 and root cleared the exact28-row replacement map734614b3…b54b5f after v004 native proof. RUN55 removed economy_ui source/test, the module declaration, m3-mobile.js and its ledger row. Root verified remaining legacy ledger is exactly4 rows. All removed tests and replacements/dispositions are listed in today's work log. The three registered panel plants remain NOT CHECKED / planned red window; no retirement. Final source freeze, HUD1/HUD4 matrix, gates, mutation and independent installed review remain pending.59/170 runs,13/25 complete.
+
+
+## C149: choose actual visible ground outside captured HUD for the cursor instrument
+
+Conflict: final HUD4 added a positive default-context stage after the seven existing stages. Both executions fail because selection is not cleared. Root traced the actual ground click256,201 inside the authored card rectangle8,8,272,204. The pixel helper accepts dark near-neutral backdrop instead of visible green playfield. UI capture correctly suppresses that clearing click; these failures do not prove a runtime cursor fault.
+
+Choice: repair the pixel-only open-ground recognizer to accept actual visible playfield and reject backdrop, unit/node silhouettes and HUD pixels. Preserve the cleared-selection and applied-cursor checks, all prior stages, and the driver/oracle boundary. Add positive/negative pixel controls, then rerun HUD4 against the frozen repaired candidate. The required default-for-every-hover plant must fail a nondefault hover assertion; the added default stage is positive coverage, not a prerequisite for that plant.
+
+Evidence: tests/browser/harness/hud4-pixels.js:86-109 accepts high<150 and spread<45; tests/browser/hud4-driver.js:90-93 uses that coordinate for selection clearing. Both final run completion.json files095246-xorzKn and095313-tBe1CY report exit1 with actual selection1. Their params/input/checkpoints are retained under main t12-builder/run55/browser-final/runs. The six preceding HUD1 completions all exit0; root separately checked profile, CSS PNG dimensions, all three computed root rectangles and absence of engine panel in final-hud1-captured-geometry.json.
+
+Alternative not taken: weaken empty-selection proof, disable actual UI capture, let the driver read scene/debug rectangles, claim these setup failures as the mutation red, or repeat unaffected rows solely for a pixel helper edit. A newly found nested Fit reflow repair remains under C146; if its production path affects HUD1, run the affected rows again.59/170 runs; no new dispatch or CEO stop.
