@@ -518,6 +518,13 @@ fn drive_core_adapter(
         return;
     };
     if runtime.core.is_none() {
+        if !state
+            .replica
+            .as_ref()
+            .is_some_and(|replica| replica.snapshot_tick.is_some())
+        {
+            return;
+        }
         let Some(map_size) = world.map_size() else {
             return;
         };
@@ -892,6 +899,7 @@ mod adapter_tests {
         path::PathBuf,
         sync::Mutex,
     };
+    use turts_mod_api::{CameraDef, CameraStart};
     use turts_mod_runtime::{archive::PackageArchive, pack::pack_dir};
     use turts_net_protocol::Pos;
 
@@ -931,6 +939,7 @@ mod adapter_tests {
             },
         );
         replica.last_applied_tick = Some(1);
+        replica.snapshot_tick = Some(1);
         let state = ReplicaState {
             replica: Some(replica),
             welcome: Some(WelcomeInfo {
@@ -942,13 +951,18 @@ mod adapter_tests {
             content: Some(content.clone()),
             config: Default::default(),
         };
-        let camera = CameraState {
-            look_at: Vec2::new(32.0, 32.0),
-            height: 40.0,
-            pitch: (30.0f32 / 40.0).atan(),
-            yaw: 0.0,
-            vertical_fov: std::f32::consts::FRAC_PI_4,
-        };
+        let camera = content.camera.as_ref().map_or(
+            CameraState {
+                look_at: Vec2::new(32.0, 32.0),
+                height: 40.0,
+                pitch: (30.0f32 / 40.0).atan(),
+                yaw: 0.0,
+                vertical_fov: std::f32::consts::FRAC_PI_4,
+            },
+            |definition| {
+                crate::camera::camera_state_from_definition(definition, Vec2::new(64.0, 64.0), None)
+            },
+        );
         let px = Core::new(camera).project_world_to_screen(
             Vec2::new(4.0, 4.0),
             &Viewport {
@@ -959,6 +973,7 @@ mod adapter_tests {
         let mut app = App::new();
         app.add_plugins(MinimalPlugins)
             .add_plugins(CoreAdapterPlugin)
+            .add_plugins(crate::camera::ClientCameraPlugin)
             .insert_resource(state)
             .insert_resource(AcquiredPackages(acquired))
             .insert_resource(Presented {
@@ -1012,6 +1027,7 @@ mod adapter_tests {
             );
         }
         replica.last_applied_tick = Some(1);
+        replica.snapshot_tick = Some(1);
         let state = ReplicaState {
             replica: Some(replica),
             welcome: Some(WelcomeInfo {
@@ -1020,16 +1036,21 @@ mod adapter_tests {
                 tick_hz: 20,
                 match_id: 1,
             }),
-            content: Some(content),
+            content: Some(content.clone()),
             config: Default::default(),
         };
-        let camera = CameraState {
-            look_at: Vec2::new(32.0, 32.0),
-            height: 40.0,
-            pitch: (30.0f32 / 40.0).atan(),
-            yaw: 0.0,
-            vertical_fov: std::f32::consts::FRAC_PI_4,
-        };
+        let camera = content.camera.as_ref().map_or(
+            CameraState {
+                look_at: Vec2::new(32.0, 32.0),
+                height: 40.0,
+                pitch: (30.0f32 / 40.0).atan(),
+                yaw: 0.0,
+                vertical_fov: std::f32::consts::FRAC_PI_4,
+            },
+            |definition| {
+                crate::camera::camera_state_from_definition(definition, Vec2::new(64.0, 64.0), None)
+            },
+        );
         let px = Core::new(camera).project_world_to_screen(
             Vec2::new(32.0, 32.0),
             &Viewport {
@@ -1063,6 +1084,7 @@ mod adapter_tests {
         let mut app = App::new();
         app.add_plugins(MinimalPlugins)
             .add_plugins(CoreAdapterPlugin)
+            .add_plugins(crate::camera::ClientCameraPlugin)
             .insert_resource(state)
             .insert_resource(AcquiredPackages(acquired))
             .insert_resource(presented)
@@ -1423,6 +1445,145 @@ mod adapter_tests {
         assert!(camera.authored.is_some());
         assert_eq!(camera.scroll_speed, 1.0);
         assert!(camera.edge_scroll);
+    }
+
+    #[test]
+    fn owned_camera_start_waits_for_snapshot_and_survives_later_resync() {
+        let _guard = test_lock();
+        let (mut app, window, _) = acme_order_app();
+        app.world_mut().despawn(window);
+        let authored = CameraDef {
+            pitch: 0.62,
+            yaw: -0.3,
+            field_of_view: 48.0,
+            minimum: 12.0,
+            maximum: 88.0,
+            start: CameraStart::OwnedCentre,
+            height: 42.0,
+            margin: 6.0,
+            pan_speed: 1.0,
+            edge_band: true,
+        };
+        app.world_mut()
+            .resource_mut::<AcquiredPackages>()
+            .0
+            .content
+            .camera = Some(authored.clone());
+        app.world_mut()
+            .resource_mut::<ReplicaState>()
+            .content
+            .as_mut()
+            .expect("joined content")
+            .camera = Some(authored);
+        app.world_mut()
+            .resource_mut::<ReplicaState>()
+            .replica
+            .as_mut()
+            .expect("joined replica")
+            .snapshot_tick = None;
+
+        app.update();
+        assert!(
+            app.world().resource::<CoreRuntime>().core().is_none(),
+            "Welcome and acquired map metadata must not latch the map-centre fallback before a snapshot"
+        );
+        assert!(
+            app.world()
+                .resource::<crate::camera::CameraConfiguration>()
+                .initial_pose
+                .is_none()
+        );
+
+        app.world_mut()
+            .resource_mut::<ReplicaState>()
+            .replica
+            .as_mut()
+            .expect("joined replica")
+            .snapshot_tick = Some(1);
+        app.update();
+        let expected = Vec2::new(4.0, 4.0);
+        let latched_pose = app
+            .world()
+            .resource::<CoreRuntime>()
+            .core()
+            .expect("accepted snapshot starts the core")
+            .camera_state();
+        assert_eq!(latched_pose.look_at, expected);
+        assert_eq!(latched_pose.height, 42.0);
+        assert!((latched_pose.vertical_fov - 48.0_f32.to_radians()).abs() < 1.0e-6);
+
+        {
+            let mut state = app.world_mut().resource_mut::<ReplicaState>();
+            let replica = state.replica.as_mut().expect("joined replica");
+            replica.snapshot_tick = None;
+            replica.units.get_mut(&1).expect("own scout").samples =
+                VecDeque::from([(2, Pos { x: 60.0, y: 50.0 })]);
+        }
+        app.world_mut().resource_mut::<Presented>().units[0].pos = Pos { x: 60.0, y: 50.0 };
+        app.update();
+        assert_eq!(
+            app.world()
+                .resource::<CoreRuntime>()
+                .core()
+                .expect("resync keeps the existing core")
+                .camera_state(),
+            latched_pose,
+            "a later recovery gap must not replace the camera pose latched from the initial snapshot"
+        );
+    }
+
+    #[test]
+    fn empty_initial_snapshot_falls_back_to_authored_map_centre() {
+        let _guard = test_lock();
+        let (mut app, window, _) = acme_order_app();
+        app.world_mut().despawn(window);
+        let mut authored = app
+            .world()
+            .resource::<AcquiredPackages>()
+            .0
+            .content
+            .camera
+            .clone()
+            .expect("Acme camera");
+        authored.start = CameraStart::OwnedCentre;
+        app.world_mut()
+            .resource_mut::<AcquiredPackages>()
+            .0
+            .content
+            .camera = Some(authored.clone());
+        app.world_mut()
+            .resource_mut::<ReplicaState>()
+            .content
+            .as_mut()
+            .expect("joined content")
+            .camera = Some(authored);
+        {
+            let mut state = app.world_mut().resource_mut::<ReplicaState>();
+            let replica = state.replica.as_mut().expect("joined replica");
+            replica.units.clear();
+            replica.snapshot_tick = None;
+        }
+        app.world_mut().resource_mut::<Presented>().units.clear();
+        app.update();
+        assert!(app.world().resource::<CoreRuntime>().core().is_none());
+
+        app.world_mut()
+            .resource_mut::<ReplicaState>()
+            .replica
+            .as_mut()
+            .expect("joined replica")
+            .snapshot_tick = Some(1);
+        app.update();
+        assert_eq!(
+            app.world()
+                .resource::<CoreRuntime>()
+                .core()
+                .expect("accepted empty snapshot starts the core")
+                .camera_state()
+                .look_at,
+            Vec2::new(32.0, 32.0),
+            "an accepted snapshot with no owned units falls back to the map centre"
+        );
     }
 
     #[test]

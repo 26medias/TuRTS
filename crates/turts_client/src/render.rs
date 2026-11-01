@@ -15,7 +15,7 @@ use turts_mod_api::{ContentId, Footprint, Shape};
 use turts_net_protocol::Pos;
 
 use crate::ingest::ReplicaState;
-use crate::join::{AcquiredPackages, Phase};
+use crate::join::{AcquiredPackages, Acquisition, Phase};
 use crate::present::{Presented, update_presented};
 
 const CAMERA_TILT_UP: f32 = 0.8;
@@ -270,6 +270,7 @@ pub fn setup_scene(
     mut commands: Commands,
     phase: Res<Phase>,
     acquired: Option<Res<AcquiredPackages>>,
+    acquisition: Option<Res<Acquisition>>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut done: Local<bool>,
@@ -282,10 +283,12 @@ pub fn setup_scene(
     let (width, depth) = acquired.0.map_size;
     let centre = Vec3::new(width / 2.0, 0.0, depth / 2.0);
     commands.spawn((Camera3d::default(), Transform::default()));
-    commands.spawn((
-        DirectionalLight::default(),
-        Transform::from_xyz(-20.0, 60.0, -20.0).looking_at(Vec3::ZERO, Vec3::Y),
-    ));
+    let light = acquisition
+        .as_deref()
+        .and_then(|acquisition| crate::camera::resolve_light(acquisition.accepted_archives()));
+    let (directional, transform, ambient) = crate::camera::light_components(light.as_ref());
+    commands.spawn((directional, transform));
+    commands.insert_resource(ambient);
     commands.spawn((
         Mesh3d(meshes.add(Plane3d::default().mesh().size(width, depth))),
         MeshMaterial3d(materials.add(Color::srgb(0.25, 0.4, 0.25))),

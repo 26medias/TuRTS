@@ -123,6 +123,16 @@ impl Core {
                         {
                             self.recall_group(group, world);
                             effects.push(Effect::SelectionChanged);
+                            if self.camera_controller.group_recall_centres(
+                                &action,
+                                now_ms,
+                                world.interaction_settings().double_click_ms,
+                                &mut self.camera,
+                                &self.selected,
+                                world,
+                            ) {
+                                effects.push(Effect::CameraChanged);
+                            }
                         } else if let Some(order) =
                             world.orders().iter().find(|o| o.hotkey == action)
                         {
@@ -135,6 +145,14 @@ impl Core {
                                     &mut effects,
                                 );
                                 self.pending_order = None;
+                            }
+                        } else if action == "centre_selection" {
+                            if self.camera_controller.centre_selection(
+                                &mut self.camera,
+                                &self.selected,
+                                world,
+                            ) {
+                                effects.push(Effect::CameraChanged);
                             }
                         } else if action == "menu" {
                             effects.push(Effect::ShellAction {
@@ -284,6 +302,12 @@ impl Core {
             }
         }
         self.prune(world);
+        let held_camera_actions: Vec<_> = self
+            .keys
+            .iter()
+            .filter_map(|code| self.action_for_key(code, world))
+            .filter(|action| action.starts_with("camera_pan_"))
+            .collect();
         self.camera_controller.step(
             &mut self.camera,
             events,
@@ -291,6 +315,7 @@ impl Core {
             view,
             now_ms,
             &self.selected,
+            &held_camera_actions,
             &mut effects,
         );
         effects
