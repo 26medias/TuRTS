@@ -8,14 +8,14 @@ source: codex
 
 # MC execution board
 
-State: STOPPED on STOP-PAL1, awaiting CEO palette/VIS1 ruling.14/25lanes complete;63/170runs. Wave5 pushedad0eef4 and fully read:agentsSUCCESS,check/browserFAILUREon planned old-panel migration. Task5 HEAD7e010c2+preserved WIP; Task13 HEAD128ca44clean with off-lane candidate. All lanes quiescent, sole cache idle inTask5. C1-C160; no main merge/push.
+State: ACTIVE. CEO O13 releases STOP-PAL1; design14 at main f050e42. Integration and open Task5/Task13 lanes rebased.14/25lanes complete;65/170runs registered. Wave6 resumes Task5 repairs and Task13 source preparation. One compiler/cache lease belongs to Task5. C1-C160; no main merge/push.
 
 Plan: `docs/superpowers/plans/2026-10-29-mc-player-control.md`.
-Design of record: `docs/superpowers/specs/2026-10-29-mc-player-control-design.md`, revision13 at main721e56e.
+Design of record: `docs/superpowers/specs/2026-10-29-mc-player-control-design.md`, revision14 at mainf050e42.
 Brief: [[Reports/2026-10-29 MC Codex brief]].
 Original base: `a0a3076`; rebased on CEO instruction to `main` at `f503cff`; integration: `codex/mc-integration`, worktree `/home/julien/Projects/TuRTS-mc-integration`.
 Task 1 lane: `codex/mc-t1`, worktree `/home/julien/Projects/TuRTS-mc-t1`, `CARGO_TARGET_DIR=target/mc-t1`.
-Main base is `721e56e` (CEO O12/design13); do not merge or push main. The pre-existing untracked disk audit stays in the main worktree.
+Main base is `f050e42` (CEO O13/design14); do not merge or push main. The pre-existing untracked disk audit stays in the main worktree.
 
 ## 1. Roles and dispatch rules
 
@@ -33,7 +33,7 @@ User workspace instructions take precedence over the brief's inherited role-file
 
 ## 2. Standing rules
 
-- Design revision13 at main721e56e wins over the plan; O12 requires all N legal primary slots, with zero or more spares. O10 requires ShellAction/client_shell.rs; O11 uses the Shell Press for PT1 step6. Apply the brief section4 decision rights and record each Codex ruling C<n> on this board and in the rulings note.
+- Design revision14 at mainf050e42 wins over the plan; O13 requires VIS1 >=20 normal and >=10 each Machado simulation at severity1.0 with the unchanged Okabe-Ito palette; O12 requires all N legal primary slots, with zero or more spares. O10 requires ShellAction/client_shell.rs; O11 uses the Shell Press for PT1 step6. Apply the brief section4 decision rights and record each Codex ruling C<n> on this board and in the rulings note.
 - K1 to K27 stand as recommended. K11(a) is retained on Chrome evidence under the CEO Firefox deferral. Full design; no scope cut without CEO.
 - Each task branch starts from integration after all Needs merge; one worktree and target per lane. Build binaries one at a time. Remove the lane and its target only after merge.
 - Red must compile and fail semantically. Show the command and `; echo exit=$?`. Do not pipe away output before the exit code.
@@ -80,8 +80,8 @@ CI trigger: `.github/workflows/ci.yml:2-5` runs pushes to main and pull requests
 | T7 | 5 | 2b, 4 | codex/mc-t7 | COMPLETE c190c909; merge7e575c9; independent0H/0M/30tests/ownplant, integration12/12gates0 (1231/0/19,T7,M3); lane removed, evidence and branch retained. |
 | T11 | 5 | 9, 19, 20 | codex/mc-t11 | COMPLETE c996463; merge aff4d63; independent 0H/0M/0L, 11 probes, CAM1 2/2 and both plants restored; integration 12/12 gates0,1266/0/19; completed artifacts archived and lane removed, branch retained. |
 | T12 | 5 | 3, 9, 19, 20 | codex/mc-t12 | COMPLETE candidate77ca599; mergeaf567c4. Independent0High/0remaining,7probes and own production101→0. FreshHUD1six/HUD4two pass; required runtime-default mutation1→restore0. Integration11/11gates0,1306/0/19,frozen,T7. All28removed tests mapped; registered3panelplants remain planned-window NOT CHECKED. Lane removed, evidence/cache/branch preserved. |
-| T5 | 6 | 4, 6, 19 | codex/mc-t5 | QUIESCENT for global STOP-PAL1; RUN61 HEAD7e010c2+8WIP files preserved. Four independent lifecycle/replay/spread failures remain; not accepted. |
-| T13 | 6 | 4, 6, 9, 11, 19, 20 | codex/mc-t13 | STOP-PAL1; RUN62 HEAD128ca44clean; fixed-palette/VIS1 numerical conflict confirmed independently. Source-only instruments/off-lane candidate preserved; runtime NOT TRACED, no cache. |
+| T5 | 6 | 4, 6, 19 | codex/mc-t5 | ACTIVE RUN64 continuation at12ded29, eight WIP files restored byte-identical after O13 rebase. Repair four lifecycle/replay/spread failures; sole compiler lease. RUN65 independent source recheck; not accepted. |
+| T13 | 6 | 4, 6, 9, 11, 19, 20 | codex/mc-t13 | ACTIVE RUN62 after O13 release/rebase; unchanged palette, thresholds20 normal/10 simulated severity1.0. Source-only until root lease; candidate preserved, runtime NOT TRACED, no cache. |
 | T10 | 7 | 5, 9, 11, 19, 20 | codex/mc-t10 | NOT STARTED |
 | T15 | 7 | 4, 7, 12, 13 | codex/mc-t15 | NOT STARTED |
 | T17 | 7 | 3, 12, 13, 19, 20 | codex/mc-t17 | NOT STARTED |
@@ -255,6 +255,8 @@ One row per builder/reviewer dispatch or resumed agent work turn. Register befor
 | 61 | T5 weapons, attack/attack-move and audited policies | simulation-core-engineer | gpt-6-luna | high | Wave5 ad0eef4 plus registration docs | Registered BEFORE dispatch. Task5run1/estimate4, soft8/hard16. Branch codex/mc-t5 and own worktree; sole compiler/cache lease after root transfer, all five variables. Must get compiled server-envelope/actual rush semantic red before production implementation; preserve frozen Forge replay and Task6 movement/queues. |
 | 62 | T13 visuals, palette and pixel instruments | bevy-rendering-engineer | gpt-6-luna | high | Wave5 ad0eef4 plus registration docs | Registered BEFORE dispatch. Task13run1/estimate5, soft10/hard20. Own branch/worktree; SOURCE/PURE-NODE ONLY until root lease, no Cargo/compiler/browser/second cache. Prepare tests/drivers/oracles and implementation patches outside lane; preserve old renderer for actual VIS1/palette red before applying production implementation. |
 | 63 | T5 independent combat/policy/replay review | qa-lead | gpt-6.1-sol | high | Task5 base12e435c plus RUN61 stable WIP | Registered BEFORE dispatch. Task5run2/estimate4, soft8/hard16. SOURCE-ONLY: inspect current stable interfaces and prepare finite independent probes outside lane; no compiler/cache/browser/source edits until root lease. Check actual lifecycle, all fire/engage axes, immutable catalog policy, plain Move identity audit, grid/determinism, frozen evidence and required plants. |
+| 64 | T5 repair continuation after O13 | simulation-core-engineer | gpt-6-luna | high | 12ded296, O13 mainf050e42 | Registered BEFORE resuming completed RUN61. Task5run3/estimate4; soft8/hard16. Eight WIP files restored byte-identical. Repair all four RUN63 failures, native/ACC/T7/frozen/GREF and required plants, commit and clean handoff. Sole compiler/cache lease target/mc-t5. |
+| 65 | T5 independent recheck after O13 | qa-lead | gpt-6.1-sol | high | O13-rebased Task5 plus WIP | Registered BEFORE resuming completed RUN63. Task5run4/estimate4; soft8/hard16. Source-only until runtime handoff. Verify all four High repairs, independent15probes and own production plant after final gates; no simultaneous compiler/cache owner. |
 
 ## 9. Preflight ledger and stop
 
@@ -1510,3 +1512,11 @@ Evidence: current combat.rs:264 builds that parameter; choose_target:281-310 app
 At2026-11-01UTC, root independently confirmed the fixed design9.1 Okabe–Ito palette fails VIS1's >=20 CIEDE2000 at Machado severity1.0: minima12.25/11.61/10.87. The severity is not specified in the design; no weaker definition is selected to force green. Both independent implementations pass the published2.0425reference. Brief4reserves player-visible/acceptance changes to CEO. All lanes quiescent; no palette/criterion/design change. See [[Reports/2026-11-01 MC palette stop]] for the exact conflict, raw reproducible proof, source/WIP preservation and pending CEO question.
 
 14/25complete,63/170runs. Task5 HEAD7e010c2+8WIP files preserved; Task13 HEAD128ca44clean, production patches outside lane, no cache/runtime. RUN63probes preserved. Main721e56eunchanged. Final Wave5 CI41300331651:agentsSUCCESS;checkFAILUREon old-panel registry anchor FileNotFoundError;browserFAILUREon rebuilt owner-panel selection timeout5000ms. Both are planned Task21migration work, no three-job-green claim. The palette is the mandatory stop; task implementation and runtime remain stopped pending CEO ruling.
+
+## CEO O13: release STOP-PAL1 and resume Wave6
+
+CEO call at mainf050e429b38222c9917314bb23c1568dd7ad816c, design revision14: keep the exact Okabe-Ito defaults. VIS1 requires every pair >=20 without simulation and >=10 under each Machado2009 protan/deutan/tritan simulation at severity1.0. The native test must assert both thresholds; design VIS1 records21.73 normal,12.25/11.61/10.87 simulated. No palette change. Task12-to-21 hosted failures remain in the approved red window, owned byTask21.
+
+Root rebased integration fromedba4a0 ontof050e42 tof9bacec; only upstream research/design/decision files and combined work-log documentation differ, no implementation source changed. Work-log conflicts retain both O13 and earlier history. Task5 rebased from7e010c2 to12ded296; all eight dirty files saved, stashed, restored and SHA256 matched byte-for-byte. Task13 rebased all five commits onto integration; source/candidate evidence retained. Back-up refs codex/mc-o13-pre-* and a named stash remain until merged/proven-safe. Evidence: target/mc-evidence/o13-rebase-20261101.
+
+RUN62 stays active and source-only. RUN64/65 registered before resuming completed builder/reviewer:65/170. Task5 nowrun4/estimate4; no overrun ruling needed. Compiler/browser remains one owner; Task13 no second cache. STOP-PAL1 released; no main merge or push.
