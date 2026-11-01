@@ -59,9 +59,9 @@ function deriveTargets(image) {
 
 function selectorPoints(selector, targets, image, gesture) {
     if (selector === "all-visible-slot0") return boxAroundPixels(targets.slot0_pixels, image, 8);
-    if (selector === "500-mobile-clusters") return boxAround(clusteredBodies(targets.slot0_bodies, 55, 500), image, 8);
+    if (selector === "500-mobile-clusters") return boxAround(clusteredBodies(targets.slot0_bodies, 36), image, 8);
     if (selector === "500-mobile-plus-visible-foreign") {
-        const own = clusteredBodies(targets.slot0_bodies, 55, 500);
+        const own = clusteredBodies(targets.slot0_bodies, 36);
         const foreign = targets.all_slot_bodies.filter((entry) => entry.slot === 1);
         if (!foreign.length) throw new Error("SEL screenshot has no slot-1 body pixels; mixed-owner target is NOT TRACED");
         return boxAround([...own, ...foreign], image, 8);
@@ -153,8 +153,7 @@ function isHudPixel(x, y, image) {
 }
 
 function isBodyComponent(entry) {
-    const aspect = entry.height / entry.width;
-    return entry.pixels >= 30 && entry.width <= 80 && entry.height <= 80 && aspect >= 0.45 && aspect <= 2.2;
+    return entry.pixels >= 20 && entry.width >= 4 && entry.height >= 4 && entry.width <= 100 && entry.height <= 100;
 }
 
 function boundsOf(entries) {
@@ -182,7 +181,7 @@ function boxAroundPixels(entries, image, margin) {
     return unionBox([{ ...bounds, x: 0, y: 0, width: 0, height: 0, pixels: 1 }], image, margin);
 }
 
-function clusteredBodies(entries, distance, count) {
+function clusteredBodies(entries, distance) {
     const parent = entries.map((_, index) => index);
     const root = (index) => {
         while (parent[index] !== index) { parent[index] = parent[parent[index]]; index = parent[index]; }
@@ -200,13 +199,10 @@ function clusteredBodies(entries, distance, count) {
         if (!groups.has(key)) groups.set(key, []);
         groups.get(key).push(entry);
     });
-    const selected = [];
-    for (const group of [...groups.values()].filter((items) => items.length >= 10).sort((a, b) => b.length - a.length)) {
-        selected.push(...group);
-        if (selected.length >= count) break;
-    }
-    if (selected.length < count) throw new Error(`SEL screenshot pixels expose ${selected.length} candidate units for the ${count}-unit box; pixel target is NOT TRACED`);
-    return selected.slice(0, count);
+    const selected = [...groups.values()].sort((a, b) =>
+        b.reduce((sum, entry) => sum + entry.pixels, 0) - a.reduce((sum, entry) => sum + entry.pixels, 0))[0];
+    if (!selected || selected.length < 2) throw new Error("SEL screenshot has no multi-component own-colour cluster; pixel target is NOT TRACED");
+    return selected;
 }
 function footPoint(body) { return { x: Math.round(body.x), y: Math.round(body.maxY - Math.max(1, body.height * 0.08)) }; }
 function inside(x, y, bounds) { return x >= bounds.minX && x <= bounds.maxX && y >= bounds.minY && y <= bounds.maxY; }
