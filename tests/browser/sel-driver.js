@@ -13,7 +13,7 @@ async function drive(io, params) {
     let before = decodePng(initialPng);
     if ((params.stages || []).some((stage) => stage.label?.startsWith("sel3-"))) {
         await io.move(before.width / 2, before.height / 2);
-        await io.wheel(-8);
+        await io.wheel(-1200);
         await io.wait(250);
         initialPng = Buffer.from(await io.screenshot());
         before = decodePng(initialPng);
