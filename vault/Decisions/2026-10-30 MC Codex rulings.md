@@ -1394,3 +1394,14 @@ Use the existing bound gate runner for final T7. It scopes all five Cargo variab
 Evidence: RUN55 reports no owned processes and quiescent source; RUN56 explicitly received the sole lease and has seven prepared native probes. The only lane changes during this lease are reviewer temporary tests. Repair sketch d3e278f3…7b93c6 stays outside source. Main run55/final-gates-v004 preserves the headless setup failure and successful inner build.
 
 This is wave/instrument scheduling under brief4 and the CEO-approved grouping. Alternative not taken: skip the empty-container invariant, let two agents edit/compile together, run plants before final gates, call a GPU setup failure a product red, or restart every expensive build for each new diagnostic.59/170 runs; no new dispatch or CEO stop.
+
+
+## C155: reject the fixture mutation and register the required production continuation
+
+Conflict: after all eight fresh browser runs passed on77ca599, RUN55 proposed and began changing the HUD4 fixture default-image mapping. Task12step4 explicitly requires production to return default context for every hover. A fixture swap tests a different fault; an assertion failure from it cannot satisfy the required plant.
+
+Choice: root interrupted RUN55, stopped only its verified owned process group730275, preserved the attempted diff/logs with no proof credit, and restored the fixture bytes from committed77ca599. Root checked actual SHA14246814…c99c matches, lane clean, no compiler processes. Register RUN60 before resuming that interrupted builder agent to perform the exact production fault in widgets/cursor.rs, require a named NONDEFAULT context assertion failure, restore exact production bytes and show both HUD4 runs green. No fixture edit is permitted for this plant.
+
+Evidence: plan Task12step4 at:547 says return default context for every hover. cursor.rs:59-88 computes context and optional order cursor, then selected_cursor:89 applies it. Root receipt main t12-root/rejected-fixture-plant-20261101 records the rejected diff, exact restore and no-credit disposition. RUN55 fresh matrix has eight completion.json exits0 at browser-final-77ca599/runs.
+
+Alternative not taken: accept a different plant, claim an interrupted setup run as semantic red, leave protected fixture content changed, or resume an interrupted run without a ledger row.60/170 runs,Task12run8/estimate8; no CEO stop.
