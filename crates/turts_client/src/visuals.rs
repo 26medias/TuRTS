@@ -7,11 +7,17 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 
 use bevy::ecs::system::SystemParam;
+use bevy::material::AlphaMode;
+use bevy::pbr::{ExtendedMaterial, MaterialExtension, MaterialExtensionPipeline, MaterialPlugin};
 use bevy::platform::time::Instant;
+use bevy::reflect::TypePath;
 use bevy::{
     asset::RenderAssetUsages,
     mesh::{Indices, PrimitiveTopology},
     prelude::*,
+    render::render_resource::{
+        AsBindGroup, CompareFunction, DepthStencilState, RenderPipelineDescriptor,
+    },
     window::PrimaryWindow,
 };
 use turts_mod_api::ContentId;
@@ -31,6 +37,7 @@ use crate::{
 struct VisualAssets {
     ring: Option<Handle<Mesh>>,
     foreign_ring: Option<Handle<Mesh>>,
+    ring_overlay_materials: Vec<Handle<RingOverlayMaterial>>,
     bar: Option<Handle<Mesh>>,
     marker_material: Option<Handle<StandardMaterial>>,
     blocked_material: Option<Handle<StandardMaterial>>,
@@ -43,6 +50,82 @@ struct VisualAssets {
     tooltip_size: u16,
     tooltip_font: Option<String>,
     health_bar_size: Vec2,
+}
+
+type RingOverlayMaterial = ExtendedMaterial<StandardMaterial, RingOverlayExtension>;
+
+/// Keeps footprint rings visible over larger unit silhouettes without changing their ground size.
+#[derive(Asset, AsBindGroup, TypePath, Clone, Debug)]
+struct RingOverlayExtension {}
+
+impl MaterialExtension for RingOverlayExtension {
+    fn alpha_mode() -> Option<AlphaMode> {
+        Some(AlphaMode::Blend)
+    }
+
+    fn enable_prepass() -> bool {
+        false
+    }
+
+    fn enable_shadows() -> bool {
+        false
+    }
+
+    fn specialize(
+        _pipeline: &MaterialExtensionPipeline,
+        descriptor: &mut RenderPipelineDescriptor,
+        _layout: &bevy::mesh::MeshVertexBufferLayoutRef,
+        _key: bevy::pbr::MaterialExtensionKey<Self>,
+    ) -> Result<(), bevy::render::render_resource::SpecializedMeshPipelineError> {
+        let depth = descriptor
+            .depth_stencil
+            .as_mut()
+            .expect("3D ring overlay pipeline has depth state");
+        configure_ring_overlay_depth(depth);
+        Ok(())
+    }
+}
+
+fn configure_ring_overlay_depth(depth: &mut DepthStencilState) {
+    depth.depth_compare = Some(CompareFunction::Always);
+    depth.depth_write_enabled = Some(false);
+}
+
+fn create_ring_overlay_materials(
+    palette: &[Handle<StandardMaterial>],
+    materials: &Assets<StandardMaterial>,
+    overlays: &mut Assets<RingOverlayMaterial>,
+) -> Option<Vec<Handle<RingOverlayMaterial>>> {
+    let bases = palette
+        .iter()
+        .map(|handle| materials.get(handle).cloned())
+        .collect::<Option<Vec<_>>>()?;
+    Some(
+        bases
+            .into_iter()
+            .map(|base| {
+                overlays.add(ExtendedMaterial {
+                    base: StandardMaterial {
+                        alpha_mode: AlphaMode::Blend,
+                        ..base
+                    },
+                    extension: RingOverlayExtension {},
+                })
+            })
+            .collect(),
+    )
+}
+
+#[derive(Clone)]
+enum VisualMaterial {
+    Standard(Handle<StandardMaterial>),
+    RingOverlay(Handle<RingOverlayMaterial>),
+}
+
+impl From<Handle<StandardMaterial>> for VisualMaterial {
+    fn from(material: Handle<StandardMaterial>) -> Self {
+        Self::Standard(material)
+    }
 }
 
 #[derive(SystemParam)]
@@ -308,6 +391,7 @@ impl Plugin for VisualsPlugin {
         if !app.is_plugin_added::<bevy::render::RenderPlugin>() {
             return;
         }
+        app.add_plugins(MaterialPlugin::<RingOverlayMaterial>::default());
         app.init_resource::<VisualAssets>()
             .init_resource::<HealthDisplay>()
             .init_resource::<VisualState>()
@@ -329,11 +413,21 @@ impl Plugin for VisualsPlugin {
 fn prepare_assets(
     mut assets: ResMut<VisualAssets>,
     acquired: Option<Res<AcquiredPackages>>,
+    palette: Res<SlotMaterials>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
+    mut ring_materials: ResMut<Assets<RingOverlayMaterial>>,
 ) {
     if assets.ring.is_none() {
         let Some(acquired) = acquired else { return };
+        if palette.0.is_empty() {
+            return;
+        }
+        let Some(ring_overlay_materials) =
+            create_ring_overlay_materials(&palette.0, &materials, &mut ring_materials)
+        else {
+            return;
+        };
         let world = acquired
             .0
             .presentation
@@ -379,6 +473,7 @@ fn prepare_assets(
             )
         });
         create_shared_meshes(&mut assets, &mut meshes);
+        assets.ring_overlay_materials = ring_overlay_materials;
         assets.marker_material = Some(materials.add(unlit(range_color)));
         assets.blocked_material = Some(materials.add(unlit(Color::srgb(0.9, 0.12, 0.08))));
         assets.range_material = Some(materials.add(unlit(range_color)));
@@ -545,8 +640,7 @@ fn draw_world_visuals(
         now,
     );
 
-    let mut desired =
-        HashMap::<VisualId, (Handle<Mesh>, Handle<StandardMaterial>, Transform)>::new();
+    let mut desired = HashMap::<VisualId, (Handle<Mesh>, VisualMaterial, Transform)>::new();
     let mut ring_metadata = HashMap::new();
     for unit_id in &selected.0 {
         let Some(shown_unit) = presented_by_id.get(unit_id) else {
@@ -563,7 +657,10 @@ fn draw_world_visuals(
         };
         let turts_mod_api::Footprint::Circle { radius } = &def.footprint;
         let slot = usize::from(unit.owner_slot).min(palette.0.len().saturating_sub(1));
-        let Some(material) = palette.0.get(slot).cloned() else {
+        let Some(body_material) = palette.0.get(slot).cloned() else {
+            continue;
+        };
+        let Some(material) = assets.ring_overlay_materials.get(slot).cloned() else {
             continue;
         };
         let own = unit.owner_slot == local_slot;
@@ -585,7 +682,7 @@ fn draw_world_visuals(
             id,
             (
                 mesh,
-                material.clone(),
+                VisualMaterial::RingOverlay(material),
                 Transform {
                     translation: position,
                     scale: Vec3::splat(*radius),
@@ -622,7 +719,8 @@ fn draw_world_visuals(
                         assets
                             .range_material
                             .clone()
-                            .unwrap_or_else(|| material.clone()),
+                            .unwrap_or(body_material)
+                            .into(),
                         Transform {
                             translation: range_position,
                             scale: Vec3::splat(weapon.range),
@@ -638,8 +736,17 @@ fn draw_world_visuals(
         if let (Some(shown_unit), Some(unit)) =
             (presented_by_id.get(&unit_id), replica.units.get(&unit_id))
         {
-            if let Some(material) = palette.0.get(usize::from(unit.owner_slot)).cloned() {
-                if let Some(mesh) = assets.ring.clone() {
+            if let Some(material) = assets
+                .ring_overlay_materials
+                .get(usize::from(unit.owner_slot))
+                .cloned()
+            {
+                let mesh = if unit.owner_slot == local_slot {
+                    assets.ring.clone()
+                } else {
+                    assets.foreign_ring.clone()
+                };
+                if let Some(mesh) = mesh {
                     let radius = ContentId::parse(&shown_unit.content_id)
                         .ok()
                         .and_then(|id| content.catalog.units.get(&id))
@@ -658,7 +765,7 @@ fn draw_world_visuals(
                         },
                         (
                             mesh,
-                            material,
+                            VisualMaterial::RingOverlay(material),
                             Transform {
                                 translation: world_to_scene(shown_unit.pos) + Vec3::Y * 0.032,
                                 scale: Vec3::splat(radius * 0.96),
@@ -705,7 +812,7 @@ fn draw_world_visuals(
                             id,
                             (
                                 mesh,
-                                material.clone(),
+                                material.clone().into(),
                                 Transform {
                                     translation: position,
                                     scale: Vec3::splat(0.38),
@@ -733,7 +840,7 @@ fn draw_world_visuals(
                             id,
                             (
                                 mesh,
-                                material.clone(),
+                                material.clone().into(),
                                 Transform {
                                     translation: position,
                                     scale: Vec3::splat(0.16),
@@ -775,7 +882,7 @@ fn draw_world_visuals(
                         id,
                         (
                             mesh,
-                            material.clone(),
+                            material.clone().into(),
                             Transform {
                                 translation: point,
                                 scale: Vec3::new(0.7, 0.08, 0.08),
@@ -892,7 +999,7 @@ fn sync_health_bars(
     camera: &Camera,
     camera_transform: &GlobalTransform,
     generation: u64,
-    desired: &mut HashMap<VisualId, (Handle<Mesh>, Handle<StandardMaterial>, Transform)>,
+    desired: &mut HashMap<VisualId, (Handle<Mesh>, VisualMaterial, Transform)>,
     fractions: &mut HashMap<u32, f32>,
 ) {
     let (Some(mesh), Some(background), Some(fill)) =
@@ -931,7 +1038,7 @@ fn sync_health_bars(
             id,
             (
                 mesh.clone(),
-                background.clone(),
+                background.clone().into(),
                 Transform {
                     translation: position,
                     scale: Vec3::new(size.x, size.y, 0.1),
@@ -953,7 +1060,7 @@ fn reconcile_visual_entities(
         (Entity, &VisualId, &mut Transform, Option<&mut RingMetadata>),
         Without<HealthFill>,
     >,
-    mut desired: HashMap<VisualId, (Handle<Mesh>, Handle<StandardMaterial>, Transform)>,
+    mut desired: HashMap<VisualId, (Handle<Mesh>, VisualMaterial, Transform)>,
     ring_metadata: &HashMap<u32, RingMetadata>,
     health_fractions: &HashMap<u32, f32>,
     bar_mesh: Option<Handle<Mesh>>,
@@ -984,19 +1091,9 @@ fn reconcile_visual_entities(
             let Some(metadata) = ring_metadata.get(&id.unit).copied() else {
                 continue;
             };
-            commands
-                .spawn((
-                    id,
-                    metadata,
-                    Mesh3d(mesh),
-                    MeshMaterial3d(material),
-                    transform,
-                ))
-                .id()
+            spawn_visual(commands, id, Some(metadata), mesh, material, transform)
         } else {
-            commands
-                .spawn((id, Mesh3d(mesh), MeshMaterial3d(material), transform))
-                .id()
+            spawn_visual(commands, id, None, mesh, material, transform)
         };
         if id.kind == VisualKind::HealthBackground {
             if let (Some(bar_mesh), Some(health_material)) = (&bar_mesh, &health_material) {
@@ -1013,6 +1110,34 @@ fn reconcile_visual_entities(
                     ChildOf(parent),
                 ));
             }
+        }
+    }
+}
+
+fn spawn_visual(
+    commands: &mut Commands,
+    id: VisualId,
+    ring_metadata: Option<RingMetadata>,
+    mesh: Handle<Mesh>,
+    material: VisualMaterial,
+    transform: Transform,
+) -> Entity {
+    match material {
+        VisualMaterial::Standard(material) => {
+            let mut entity =
+                commands.spawn((id, Mesh3d(mesh), MeshMaterial3d(material), transform));
+            if let Some(metadata) = ring_metadata {
+                entity.insert(metadata);
+            }
+            entity.id()
+        }
+        VisualMaterial::RingOverlay(material) => {
+            let mut entity =
+                commands.spawn((id, Mesh3d(mesh), MeshMaterial3d(material), transform));
+            if let Some(metadata) = ring_metadata {
+                entity.insert(metadata);
+            }
+            entity.id()
         }
     }
 }
@@ -1214,8 +1339,50 @@ fn create_shared_meshes(assets: &mut VisualAssets, meshes: &mut Assets<Mesh>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use bevy::render::render_resource::{DepthBiasState, StencilState, TextureFormat};
     use std::time::Duration;
     use turts_net_protocol::{OrderEnvelope, QueueMode, UnitId};
+
+    #[test]
+    fn ring_overlay_uses_shared_per_slot_colours_and_depth_overlay_state() {
+        let mut materials = Assets::<StandardMaterial>::default();
+        let palette = [Color::srgb_u8(0, 114, 178), Color::srgb_u8(230, 159, 0)];
+        let handles = palette
+            .iter()
+            .copied()
+            .map(|base_color| {
+                materials.add(StandardMaterial {
+                    base_color,
+                    unlit: true,
+                    ..default()
+                })
+            })
+            .collect::<Vec<_>>();
+        let mut overlays = Assets::<RingOverlayMaterial>::default();
+        let overlay_handles = create_ring_overlay_materials(&handles, &materials, &mut overlays)
+            .expect("each overlay must correspond to one body palette slot");
+        assert_eq!(overlay_handles.len(), palette.len());
+        for (handle, expected) in overlay_handles.iter().zip(palette) {
+            let overlay = overlays.get(handle).expect("shared slot overlay exists");
+            assert_eq!(overlay.base.base_color, expected);
+            assert!(overlay.base.unlit);
+            assert_eq!(overlay.base.alpha_mode, AlphaMode::Blend);
+        }
+
+        assert_eq!(RingOverlayExtension::alpha_mode(), Some(AlphaMode::Blend));
+        assert!(!RingOverlayExtension::enable_prepass());
+        assert!(!RingOverlayExtension::enable_shadows());
+        let mut depth = DepthStencilState {
+            format: TextureFormat::Depth32Float,
+            depth_write_enabled: Some(true),
+            depth_compare: Some(CompareFunction::Less),
+            stencil: StencilState::default(),
+            bias: DepthBiasState::default(),
+        };
+        configure_ring_overlay_depth(&mut depth);
+        assert_eq!(depth.depth_compare, Some(CompareFunction::Always));
+        assert_eq!(depth.depth_write_enabled, Some(false));
+    }
 
     #[derive(Resource)]
     struct HealthTestFraction(f32);
@@ -1225,7 +1392,7 @@ mod tests {
 
     #[derive(Resource)]
     struct HealthReconcileTestInput {
-        desired: HashMap<VisualId, (Handle<Mesh>, Handle<StandardMaterial>, Transform)>,
+        desired: HashMap<VisualId, (Handle<Mesh>, VisualMaterial, Transform)>,
         fractions: HashMap<u32, f32>,
         bar_mesh: Option<Handle<Mesh>>,
         health_material: Option<Handle<StandardMaterial>>,
@@ -1700,7 +1867,10 @@ mod tests {
         let background = Handle::<StandardMaterial>::default();
         let health = Handle::<StandardMaterial>::default();
         let input = HealthReconcileTestInput {
-            desired: HashMap::from([(parent_id, (parent_mesh, background, Transform::default()))]),
+            desired: HashMap::from([(
+                parent_id,
+                (parent_mesh, background.into(), Transform::default()),
+            )]),
             fractions: HashMap::from([(unit, 0.25)]),
             bar_mesh: Some(bar_mesh),
             health_material: Some(health),
