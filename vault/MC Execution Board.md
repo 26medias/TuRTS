@@ -8,7 +8,7 @@ source: codex
 
 # MC execution board
 
-State: ACTIVE: 13/25 lanes complete; 59/170 runs registered. Task11 COMPLETE at aff4d63, independent 0 open findings, integration 12/12 gates0 (1266/0/19, T7, M3). RUN55 Task12 owns the sole compiler/cache; RUN56 mod-runtime review is source-only; RUN57 supplied assets.rs source-only; RUN58 supplied sources.rs source-only; RUN55 integrates/tests both; RUN59 writes isolated lifecycle coverage. C1-C147. Wave5 needs Task12; no main merge/push.
+State: ACTIVE: 13/25 lanes complete; 59/170 runs registered. Task11 COMPLETE at aff4d63, independent 0 open findings, integration 12/12 gates0 (1266/0/19, T7, M3). RUN55 Task12 owns the sole compiler/cache; RUN56 mod-runtime review is source-only; RUN57 supplied assets.rs source-only; RUN58 supplied sources.rs source-only; RUN55 integrates/tests both; RUN59 supplied lifecycle coverage; RUN55 extends its Core/world-routing controls. C1-C147. Wave5 needs Task12; no main merge/push.
 
 Plan: `docs/superpowers/plans/2026-10-29-mc-player-control.md`.
 Design of record: `docs/superpowers/specs/2026-10-29-mc-player-control-design.md`, revision13 at main721e56e.
@@ -250,8 +250,7 @@ One row per builder/reviewer dispatch or resumed agent work turn. Register befor
 | 56 | T12 independent widget runtime and data-source review | mod-runtime-engineer | gpt-6.1-sol | high | f6577b9 plus RUN55 preparation | Registered BEFORE dispatch; source-only and pure Node on immutable outside-lane snapshots until committed gates and explicit lease. Independent42/42 pure instrument probes pass; runtime review/own production plant pending. Check table8.4 privacy, assets, scale, actions and legacy28. Task12 run4/estimate8, soft16/hard32. |
 | 57 | T12 parallel asset loader implementation | bevy-rendering-engineer with ux-designer | gpt-6-luna | high | f6577b9 plus active RUN55 source | COMPLETE source-only handoff:390-line assets.rs with qualified image/cursor/font maps, separate CPU-retained cursor decode, nine-slice and reload controls. No compiler/browser/cache execution; tests NOT TRACED. RUN55 integrates/runs and repairs; RUN56 independently reviews. Task12 run5/estimate8, soft16/hard32. |
 | 58 | T12 parallel permitted source semantics | bevy-rendering-engineer with ux-designer | gpt-6-luna | high | f6577b9 plus active RUN55 source | COMPLETE source-only handoff f6fc7731 sources.rs with inline semantic tests, qualified assets and exact typed actions. No compiler/browser/cache execution; RUN55 executes/integrates and owns later repairs. RUN56 continues independent review, including H7 target-aware capability. Task12 run6/estimate8, soft16/hard32. |
-
-| 59 | T12 authored widget lifecycle coverage | bevy-rendering-engineer with ux-designer | gpt-6-luna | high | f6577b9 plus RUN55 repaired runtime | Registered BEFORE dispatch. Own tests/widgets_lifecycle.rs only, source/tests with no compiler/browser/cache lease. Use public authored-tree APIs; exact Produce/Cancel PendingCommands, retained press/job cleanup, long-list DPR2 cancellation, clip/camera/world routing, disabled activation. RUN55 executes/integrates. Task12 run7/estimate8, soft16/hard32. |
+| 59 | T12 authored widget lifecycle coverage | bevy-rendering-engineer with ux-designer | gpt-6-luna | high | f6577b9 plus RUN55 repaired runtime | COMPLETE source-only handoff6f56c184, lifecycle3/3 executed by RUN55: exact Produce/disabled action, retained press/cancel/job cleanup and DPR2 fifth-job scroll. Initial helper has no CoreAdapter; world suppression NOT TRACED, RUN55 adds positive outside-world control. Handoff preserved in main t12-lifecycle/run59. Task12run7/estimate8, soft16/hard32. |
 
 ## 9. Preflight ledger and stop
 
