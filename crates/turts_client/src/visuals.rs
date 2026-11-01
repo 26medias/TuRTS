@@ -7,6 +7,7 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 
 use bevy::ecs::system::SystemParam;
+use bevy::gizmos::prelude::{AppGizmoBuilder, GizmoConfig, GizmoConfigGroup, Gizmos};
 use bevy::material::AlphaMode;
 use bevy::pbr::{ExtendedMaterial, MaterialExtension, MaterialExtensionPipeline, MaterialPlugin};
 use bevy::platform::time::Instant;
@@ -55,6 +56,16 @@ struct VisualAssets {
 }
 
 type RingOverlayMaterial = ExtendedMaterial<StandardMaterial, RingOverlayExtension>;
+
+#[derive(Clone, Default, Reflect, GizmoConfigGroup)]
+struct OrderMarkerGizmoConfigGroup;
+
+fn order_marker_gizmo_config() -> GizmoConfig {
+    GizmoConfig {
+        depth_bias: -1.0,
+        ..default()
+    }
+}
 
 /// Keeps footprint rings visible over larger unit silhouettes without changing their ground size.
 #[derive(Asset, AsBindGroup, TypePath, Clone, Debug)]
@@ -419,6 +430,7 @@ impl Plugin for VisualsPlugin {
         if !app.is_plugin_added::<bevy::render::RenderPlugin>() {
             return;
         }
+        app.insert_gizmo_config(OrderMarkerGizmoConfigGroup, order_marker_gizmo_config());
         app.add_plugins(MaterialPlugin::<RingOverlayMaterial>::default());
         app.init_resource::<VisualAssets>()
             .init_resource::<HealthDisplay>()
@@ -532,6 +544,7 @@ fn draw_world_visuals(
     window: Query<&Window, With<PrimaryWindow>>,
     cameras: Query<(&Camera, &GlobalTransform), With<Camera3d>>,
     mut gizmos: Gizmos,
+    mut marker_gizmos: Gizmos<OrderMarkerGizmoConfigGroup>,
     mut shown: Query<
         (Entity, &VisualId, &mut Transform, Option<&mut RingMetadata>),
         Without<HealthFill>,
@@ -916,12 +929,12 @@ fn draw_world_visuals(
                     }
                 }
                 "attack" => {
-                    gizmos.line(
+                    marker_gizmos.line(
                         position + Vec3::new(-0.3, 0.04, -0.3),
                         position + Vec3::new(0.3, 0.04, 0.3),
                         Color::srgb(0.96, 0.88, 0.2),
                     );
-                    gizmos.line(
+                    marker_gizmos.line(
                         position + Vec3::new(-0.3, 0.04, 0.3),
                         position + Vec3::new(0.3, 0.04, -0.3),
                         Color::srgb(0.96, 0.88, 0.2),
@@ -983,12 +996,12 @@ fn draw_world_visuals(
                             },
                         ),
                     );
-                    gizmos.line(
+                    marker_gizmos.line(
                         point + Vec3::new(-0.3, 0.07, -0.3),
                         point + Vec3::new(0.3, 0.07, 0.3),
                         Color::srgb(0.9, 0.12, 0.08),
                     );
-                    gizmos.line(
+                    marker_gizmos.line(
                         point + Vec3::new(-0.3, 0.07, 0.3),
                         point + Vec3::new(0.3, 0.07, -0.3),
                         Color::srgb(0.9, 0.12, 0.08),
@@ -1519,6 +1532,12 @@ mod tests {
         configure_ring_overlay_depth(&mut depth);
         assert_eq!(depth.depth_compare, Some(CompareFunction::Always));
         assert_eq!(depth.depth_write_enabled, Some(false));
+    }
+
+    #[test]
+    fn order_marker_gizmos_render_in_front_without_changing_other_gizmos() {
+        assert_eq!(order_marker_gizmo_config().depth_bias, -1.0);
+        assert_eq!(GizmoConfig::default().depth_bias, 0.0);
     }
 
     #[derive(Resource)]

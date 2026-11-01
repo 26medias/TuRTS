@@ -129,7 +129,7 @@ async function judge(view) {
     const attackImmediate = requireStage(checkpointsByLabel, "vis1-attack-immediate");
     const attackClick = precedingInput(input, attackImmediate.screenshotIndex, (entry) =>
         entry.call === "click" && entry.args?.[2] === "right" && nearPoint(entry.args, target.foreign));
-    const attackMarker = assertFirstFrameMarker(attackClick, attackImmediate.checkpoint, "attack", ownUnit.unit_id);
+    const attackMarker = assertFirstFrameMarker(attackClick, attackImmediate, "attack", ownUnit.unit_id);
     const attackImage = await screenshot(view, "vis1-attack-immediate");
     assertAttackPixels(attackImage, attackImmediate.checkpoint.scene, attackMarker);
     assertAttackPixels(damageImage, damage.checkpoint.scene, attackMarker);
@@ -143,11 +143,11 @@ async function judge(view) {
     const moveImmediate = requireStage(checkpointsByLabel, "vis1-move-immediate");
     const moveClick = precedingInput(input, moveImmediate.screenshotIndex, (entry) =>
         entry.call === "click" && entry.args?.[2] === "right" && nearPoint(entry.args, target.ground2));
-    const moveMarker = assertFirstFrameMarker(moveClick, moveImmediate.checkpoint, "move", ownUnit.unit_id);
+    const moveMarker = assertFirstFrameMarker(moveClick, moveImmediate, "move", ownUnit.unit_id);
     const waypoint = requireStage(checkpointsByLabel, "vis1-waypoint-queued");
     const waypointClick = precedingInput(input, waypoint.screenshotIndex, (entry) =>
         entry.call === "click" && entry.args?.[2] === "right" && nearPoint(entry.args, target.ground));
-    const waypointMarker = assertFirstFrameMarker(waypointClick, waypoint.checkpoint, "move", ownUnit.unit_id);
+    const waypointMarker = assertFirstFrameMarker(waypointClick, waypoint, "move", ownUnit.unit_id);
     const waypointImage = await screenshot(view, "vis1-waypoint-queued");
     assertMarkerPixels(waypointImage, waypoint.checkpoint.scene, waypointMarker);
     const waypointPath = requireStage(checkpointsByLabel, "vis1-waypoint-path");
