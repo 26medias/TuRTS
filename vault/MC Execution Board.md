@@ -8,7 +8,7 @@ source: codex
 
 # MC execution board
 
-State: ACTIVE Wave6.15/25lanes complete;66/170runs. Task5 COMPLETE mergee214ccc, integration11/11gates0 at e7e0e17, lane removed with provenance. RUN62 owns sole Task13cache/runtime onbaselineca0c36b3; nativepalette semanticred101 (4selected/1referencepass/3contractfails); requiredheadedVIS1baseline building. RUN66 source-only. Production visualpatch remainsoff-lane untilbothvalidreds. O13/design14/mainf050e42; C1-C171; no main merge/push.
+State: ACTIVE Wave6.15/25complete;66/170runs. Task13 requiredpalette and2headedVIS1baseline reds VERIFIED. Productionapplied andfullclientnative/palettegreen; provisional715985a bindsheadedSEL2/3/VIS1/fullrows nowrunning. RUN62solecache/runtime target/mc-t13; RUN66sourceonly untilfinalgates. Task5COMPLETEmergee214ccc/integration11gates0/laneremoved. O13/design14/mainf050e42; C1-C172. No main merge/push.
 
 Plan: `docs/superpowers/plans/2026-10-29-mc-player-control.md`.
 Design of record: `docs/superpowers/specs/2026-10-29-mc-player-control-design.md`, revision14 at mainf050e42.
@@ -1633,3 +1633,15 @@ Root transferred the sole idle cache integration->Task13 and cleaned11workspacep
 BoundheadedVIS1baseline active labelrun62-baseline-vis1-ca0c36b3-20261101 usingapprovedC156helperd4f50077…db1e. Source remainsoldonecolourrenderer; actualbrowserresultisNOTTRACEDuntilcompletes. Optionalrendererfreevisiblemarkerassertionwasrejectedunrun underC167. RoutineSystemParam<=16/PrimaryWindowimportcompilepreps remainofflane; a compilererror earns no redcredit.15/25complete;66/170runs; wave6CIpush/readafterTask13.
 
 C168 source timing addendum: CoreAdapter intent/draw are Update; commands sequence/send is PostUpdate(lib.rs132-139), so a new click cannot have a result before its first presentation. Equal-result-tickcommittedIdle is post-command authoritative; firstframevisibilityneedsnodelay.
+
+## C172: bind browser greens to provisional clean source commits
+
+Conflict: the approved bound row helper accepts a clean committed tree or explicit modified tracked paths, but Task13 introduces new untracked driver/oracle/row files. Its full headed green phase cannot run with the exact source guard until those files are committed. The plan lists the first commit after the green phase.
+
+Choice: after the required genuine native/browser baseline reds and focused native greens, permit an explicit-path provisional branch commit to obtain clean source identity for headed green rows. It is not acceptance or merge approval. All required SEL2/SEL3/VIS1/fullVIS1/palette greens remain mandatory; any repair has a new clean commit and bound rerun. Final normal gates and required plants follow stable greens, and independent review precedes integration merge. Keep the helper's source guards unchanged.
+
+Evidence: C156helper run_mc_rows.py modified-path check; Task13 new VIS1-full files; both actual baseline reds atca0c36b3. Provisional715985a follows fullclient nativeexit0 and pureguards; headedrows remain pending. Alternative not taken: weaken source guards, call untracked code clean, or claim final green before actual browser runs. No player-visible/design/acceptance change.66/170runs.
+
+### C163 related test fixture scope
+
+Mechanical client-test adaptations caused by the new visual-intent field and required per-slot owner/material inputs are in Task13 scope. Keep existing assertions, add the required actual owner/material fixture data and exhaustive-pattern .. where unrelated to visual intent. These are newly required fixture adaptations, not claims that baseline fixtures were already failing. Includes tests/widgets_lifecycle.rs and tests/render_map.rs. Routine import/type/Bevy API compile repairs need no per-line root permission; compile failures earn no red credit.

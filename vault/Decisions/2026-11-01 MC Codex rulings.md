@@ -100,3 +100,15 @@ Choice: require actual C84 own same-type total > visible >=1 at Ctrl-click and d
 
 Evidence: planTask13step4/type-selection plant; design4.1/SEL3 visible-only rule; Task13 sel-driver/oracle. Alternative not taken: retire the plant, invent a content change, or call an all-visible fixture proof of screen filtering. Actual runtime precondition is NOT TRACED until Task13 lease.66/170runs.
 
+
+## C172: bind browser greens to provisional clean source commits
+
+Conflict: the approved bound row helper accepts a clean committed tree or explicit modified tracked paths, but Task13 introduces new untracked driver/oracle/row files. Its full headed green phase cannot run with the exact source guard until those files are committed. The plan lists the first commit after the green phase.
+
+Choice: after the required genuine native/browser baseline reds and focused native greens, permit an explicit-path provisional branch commit to obtain clean source identity for headed green rows. It is not acceptance or merge approval. All required SEL2/SEL3/VIS1/fullVIS1/palette greens remain mandatory; any repair has a new clean commit and bound rerun. Final normal gates and required plants follow stable greens, and independent review precedes integration merge. Keep the helper's source guards unchanged.
+
+Evidence: C156helper run_mc_rows.py modified-path check; Task13 new VIS1-full files; both actual baseline reds atca0c36b3. Provisional715985a follows fullclient nativeexit0 and pureguards; headedrows remain pending. Alternative not taken: weaken source guards, call untracked code clean, or claim final green before actual browser runs. No player-visible/design/acceptance change.66/170runs.
+
+### C163 related test fixture scope
+
+Mechanical client-test adaptations caused by the new visual-intent field and required per-slot owner/material inputs are in Task13 scope. Keep existing assertions, add the required actual owner/material fixture data and exhaustive-pattern .. where unrelated to visual intent. These are newly required fixture adaptations, not claims that baseline fixtures were already failing. Includes tests/widgets_lifecycle.rs and tests/render_map.rs. Routine import/type/Bevy API compile repairs need no per-line root permission; compile failures earn no red credit.
