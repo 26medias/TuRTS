@@ -1679,3 +1679,6 @@ C176 keeps the exact outer footprint and uses inner0.88/midpoint0.94 for a reada
 
 
 Task13 instrument update:7702c8b pair failed on missing initial base64 artifact before visual checks; no red credit. Clean0c26fab shares screenshot persistence, preserves input/checkpoint association and measures damaged health after moving pointer away from the overlapping tooltip. C176 uses four interior quadrant sample groups at radius1 neighbourhood, with solid/missing-quadrant/gaps-only controls. Fresh headed full row active; final gates/plants/VIS2/review still pending. Root manually read actual7702 tooltip text "Training Target · Slot 2"; provisional source-bound receipt t13-root/tooltip-manual-7702c8b.json.66/170runs;15/25complete.
+
+
+C177: actual0c26fab saved captures expose attack cross occlusion despite first-frame marker metadata. Root viewed PNG. Keep exact target/cross/colour/timing; use dedicated marker gizmo depth_bias=-1, preserving unrelated gizmo configuration. Actual repaired full-row proof remains pending. The preceding helper-wrapper TypeError is instrument failure, not semantic red. Details in today's Codex rulings.66/170runs;15/25complete.

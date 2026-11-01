@@ -160,3 +160,12 @@ Actual7702c8b evidence saved the initial PNG but omitted its base64 companion; b
 Exact diagonal raster pixels were antialiased beyond the colour tolerance. Sample only each quadrant interior indices[1,2,3],[5,6,7],[9,10,11],[13,14,15] at midpoint radius0.94, with a1pixel neighbourhood. Require four coloured interiors plus four changed non-slot gap regions. Positive, solid, missing-quadrant and gaps-only pure controls pass; actual production foreign-solid plant remains required. Do not count cardinal-only colour as an interior segment.
 
 The derived replay next found damaged fill35/48 against C84 health35/40. Root viewed the real PNG: the foreign tooltip overlaps the bar. Move the physical pointer to PNG-derived ground after the immediate attack capture, then measure unobscured damage. Keep actual health ratio and existing tolerance. The initial click/marker frame is still captured first. Candidate0c26fab fresh headed full row is pending; no production health fault or green acceptance is claimed from this replay.66/170runs.
+
+
+## C177: keep the attack cross visible at its actual target
+
+Conflict: offline diagnostic replay of actual0c26fab captures passes ring and health checks after the helper-wrapper repair, then fails attack-marker pixels. Actual first-applied C84 frame contains the attack marker, but its ground-level gizmo cross is hidden by the larger target body. Root viewed the actual vis1-attack-immediate.png and confirmed the cross is absent.
+
+Choice: retain exact target, cross shape, colour and first-click timing. Use a dedicated marker gizmo configuration with depth_bias=-1 for the attack cross. Pinned Bevy0.20 config.rs:217-227 explicitly defines this value as always in front. Do not change the default configuration for unrelated gizmos. This is the nearest existing render mechanism that preserves the required player-visible marker; no new key, fixture change, acceptance change or per-unit asset. Add native configuration/registration proof and run the full real browser row after the production repair.
+
+Evidence: crates/turts_client/src/visuals.rs:919,924 draws both cross lines at target ground position; actual0c26fab C84/PNG under t13-vis1-full-evidence-0c26fab-20261101; local pinned bevy_gizmos-0.20.0/src/config.rs:217-227. Alternative not taken: accept marker metadata without pixels, raise/change the target, weaken the pixel assertion, or change all gizmo depth behaviour. Actual repaired browser pixels remain NOT TRACED.66/170runs.
