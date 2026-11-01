@@ -8,14 +8,14 @@ source: codex
 
 # MC execution board
 
-State: ACTIVE:10/25 lanes complete;50/170 runs; Task6run8/6 (soft12/hard24). C1-C120. Cleaned793bb all normal gates green and independent21probes/191tests green,0knownHigh. RUN49 owns GREF/plants; first6/18M2 restored-green. TwoM3 cases/final ownplant/review and integrationmerge/regate remain. No main merge.
+State: ACTIVE:11/25 lanes complete;51/170 runs registered. Task6 COMPLETE at merge450c023, final review0High; integration12/12 gates0 (1211/0/18,T7,M3). RUN51 Task7 continuation registered before dispatch, Task7run2/4 (soft8/hard16). C1-C121. Wave5 remains open; no main merge/push.
 
 Plan: `docs/superpowers/plans/2026-10-29-mc-player-control.md`.
 Design of record: `docs/superpowers/specs/2026-10-29-mc-player-control-design.md`, revision12 at63788d7, included by mainc3f09d0.
 Brief: [[Reports/2026-10-29 MC Codex brief]].
 Original base: `a0a3076`; rebased on CEO instruction to `main` at `f503cff`; integration: `codex/mc-integration`, worktree `/home/julien/Projects/TuRTS-mc-integration`.
 Task 1 lane: `codex/mc-t1`, worktree `/home/julien/Projects/TuRTS-mc-t1`, `CARGO_TARGET_DIR=target/mc-t1`.
-Main stays at `c3f09d0`. The pre-existing untracked disk audit stays in the main worktree.
+Main base is `721e56e` (CEO O12/design13); do not merge or push main. The pre-existing untracked disk audit stays in the main worktree.
 
 ## 1. Roles and dispatch rules
 
@@ -33,7 +33,7 @@ User workspace instructions take precedence over the brief's inherited role-file
 
 ## 2. Standing rules
 
-- Design revision12 at63788d7, included by main c3f09d0, wins over the plan. O10 requires ShellAction/client_shell.rs; O11 uses the Shell Press for PT1 step6. Apply the brief section4 decision rights and record each Codex ruling C<n> on this board and in the rulings note.
+- Design revision13 at main721e56e wins over the plan; O12 requires all N legal primary slots, with zero or more spares. O10 requires ShellAction/client_shell.rs; O11 uses the Shell Press for PT1 step6. Apply the brief section4 decision rights and record each Codex ruling C<n> on this board and in the rulings note.
 - K1 to K27 stand as recommended. K11(a) is retained on Chrome evidence under the CEO Firefox deferral. Full design; no scope cut without CEO.
 - Each task branch starts from integration after all Needs merge; one worktree and target per lane. Build binaries one at a time. Remove the lane and its target only after merge.
 - Red must compile and fail semantically. Show the command and `; echo exit=$?`. Do not pipe away output before the exit code.
@@ -76,7 +76,7 @@ CI trigger: `.github/workflows/ci.yml:2-5` runs pushes to main and pull requests
 | T2b | 3 | 2a, 3, 18 | codex/mc-t2b | COMPLETE64cd400; merge6d2c46e; all gates/10GREF0; review0H/0M; lane removed |
 | T4 | 4 | 2b, 3 | codex/mc-t4 | COMPLETE merge0490ebd; review0H/0M,36GREF,all12rootgates0; lane removed |
 | T9 | 4 | 1, 8, 2b | codex/mc-t9 | COMPLETE mergefb5e2d6; independent0High/0unresolvedMedium,69tests,7GREF,FOV/modifier plants,all12integrationgates0; archived lane removed, branch retained. |
-| T6 | 5 | 4 | codex/mc-t6 | ACTIVE RUN49 candidate7898b267: finite source0High; native10/10 exit0,1207/0/18. All normal gates green; RUN50 C105 runtime owns sole compiler lease; GREF/plants/final review pending. |
+| T6 | 5 | 4 | codex/mc-t6 | COMPLETE ed793bb; merge450c023; final review0High,21probes/191tests;20GREF/8plants/ownplant; integration12/12 gates0,1211/0/18,T7,M3; lane removed with compressed evidence/cache preserved. |
 | T7 | 5 | 2b, 4 | codex/mc-t7 | PREPARED RUN40; source/tests preserved, implementation and semantic red pending; no compiler lease. |
 | T11 | 5 | 9, 19, 20 | codex/mc-t11 | PREPARED RUN41; source/tests preserved, native/browser red pending; no compiler lease. |
 | T12 | 5 | 3, 9, 19, 20 | codex/mc-t12 | Analysis28legacytests +HUD1instrument8650131 ready; actualnative/browserred/widgetruntime/HUD4/allfinalproofpending. No legacy deletion. |
@@ -241,8 +241,9 @@ One row per builder/reviewer dispatch or resumed agent work turn. Register befor
 | 47 | T6 independent O12 and retained-finding recheck | performance-architect | gpt-6.1-sol | high | rebased d4a8f97+active repair | COMPLETE SOURCE-ONLY, no PASS; final finite report c115-c116-final-source-boundary. After C105 preliminary runtime: ffb21b3 verified gates; H4/H14/H12 compiled semantic101, other probes pass. Lease returned; repaired runtime/own plant/final PASS pending. Task6run5/6, soft12/hard24. |
 | 48 | T6 C106-C110 repair completion and final proof | simulation-core-engineer | gpt-6-luna | high | ffb21b3+six-file coherent WIP | COMPLETE WIP only: seven-path coherent boundary, full sim/server green, final source review has unresolved findings. No commit or formal repaired gates. Originally registered before continuation. Finish focused/replay controls, commit, all required final gates, C105 handoff, selected GREF and semantic plants. Task6run6/estimate6, soft12/hard24. |
 
-| 49 | T6 finite source findings repair and task completion | simulation-core-engineer | gpt-6-luna | high | ffb21b3+seven-file coherent WIP | Registered before continuation: fix exact RUN47 final report, meaningful controls, commit, normal gates, C105 runtime handoff, GREF/plants. Task6run7/estimate6, soft12/hard24. |
-| 50 | T6 independent finite finding closure and final review | performance-architect | gpt-6.1-sol | high | ffb21b3+RUN49 repairs | Registered before reviewer continuation. Source-only until stable clean candidate, all normal gates and explicit C105 runtime lease. Recheck finite report, retained actual counterexamples and own final plant. Task6run8/estimate6, soft12/hard24. |
+| 49 | T6 finite source findings repair and task completion | simulation-core-engineer | gpt-6-luna | high | ffb21b3+seven-file WIP | COMPLETE ed793bb; all normal gates0,20GREF/87commands,8validplants/27executions; source exact restored; merge450c023 and integration12/12gates0. Task6run7/6. |
+| 50 | T6 independent finite finding closure and final review | performance-architect | gpt-6.1-sol | high | ffb21b3+RUN49 repairs | COMPLETE PASS ed793bb:0High,C114Mediumdeferred,C121scope;21probes/191tests, all20GREF/8plants verified, ownGM40 0/101/0 exactrestore; finalcache returned. Task6run8/6. |
+| 51 | T7 server session implementation continuation | backend-engineer | gpt-6-luna | high | integration450c023+preserved5pathprep | Registered BEFORE dispatch; finish task7 from compiled semantic reds, buckets/rejoin/script/log, commit/gate/plants. Task7run2/estimate4, soft8/hard16; no other compiler until root hands off the sole cache. |
 
 ## 9. Preflight ledger and stop
 
@@ -1040,3 +1041,9 @@ Conflict: root asked for C97 distinct valid Move IDs and mentioned disjoint unit
 Choice: accept the actual sensitive final-head C97 counterplant for per-member ID preservation. Record that the fixture uses one type; a combined disjoint-type/definition runtime fixture is NOT TRACED here. Keep separate type-authority tests and the source-verified type-independent member map; do not claim the combined fixture passed. No acceptance row or design rule is removed. C97 still requires preserving each accepted definition for every valid member.
 
 Evidence: run49/plants/C97-member-order-identity/ baseline0/semantic101/restored0 on the exact orders::tests::merged_group_spread_keeps_each_member_order_identity path; the earlier untyped empty-map compile failure is setup-only. Alternative not taken: count compilation as a red, invent disjoint-type evidence, weaken the ID assertion, or edit a gated test to chase redundant mutation coverage. Instrument/coverage decision under brief4; no CEO stop.50/170 runs.
+
+## Task6 complete and Task7 continuation
+
+Task6 final review PASS ed793bb,0High;21externalprobes/191focusedtests, all20GREF/87commands,8buildercycles/27selectedruns and reviewerGM40own0/101/0 with exactrestore. Root merged450c023, verified identical engine/script/test/mod source, moved the sole cache atomically to integration and cleaned only local package artifacts across profiles. Integration12/12commands passed:1211/0/18, allQA/frozen exact,T7and7M3controls. Root receipt main t6-root/integration-450c023-root-check.json. Task6evidence preserved off-lane; remaining3.95GB generated evidence compressed losslessly to4.22MB with CRC check, manifest and archiveSHA58282c8c7de262936e831db5f75ad5bfd25d1a4d086b9c5160d174755920bff4. Clean merged worktree removed only after proc cwd/exe/fd/maps checks; cache preserved,~3.77GiB physically freed. No Claude-prefixed file read or archived.
+
+T7/T11/T12 rebased onto450c023;10dirty prepared paths preserved byte-for-byte with explicit-path stash backups retained. Receipt main wave5-after-t6-rebase/receipt.json. RUN51 registered before new Luna/high T7 continuation;51/170 total, Task7run2/4. Wave5stillneedsT7/T11/T12; push/readCIafterwave. No main merge or push.
