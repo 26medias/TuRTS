@@ -8,7 +8,7 @@ source: codex
 
 # MC execution board
 
-State: ACTIVE: 13/25 lanes complete; 56/170 runs registered. Task11 COMPLETE at aff4d63, independent 0 open findings, integration 12/12 gates0 (1266/0/19, T7, M3). RUN55 Task12 owns the sole compiler/cache; RUN56 mod-runtime review registered source-only. C1-C133. Wave5 needs Task12; no main merge/push.
+State: ACTIVE: 13/25 lanes complete; 56/170 runs registered. Task11 COMPLETE at aff4d63, independent 0 open findings, integration 12/12 gates0 (1266/0/19, T7, M3). RUN55 Task12 owns the sole compiler/cache; RUN56 mod-runtime review registered source-only. C1-C134. Wave5 needs Task12; no main merge/push.
 
 Plan: `docs/superpowers/plans/2026-10-29-mc-player-control.md`.
 Design of record: `docs/superpowers/specs/2026-10-29-mc-player-control-design.md`, revision13 at main721e56e.
@@ -62,7 +62,7 @@ CI trigger: `.github/workflows/ci.yml:2-5` runs pushes to main and pull requests
 
 ## 4. Tasks
 
-24 numbered tasks; task2 has two branches, for25lanes. T1/T2a/T3/T20, T8/T18/T19, T2b,T4 andT9 are complete. Wave5 is active: T6 and T7 are complete. RUN53 T11 owns the compiler/cache, RUN54 prepares independent source review, and T12 preparation is preserved.
+24 numbered tasks; task2 has two branches, for25lanes. T1/T2a/T3/T20, T8/T18/T19, T2b,T4 andT9 are complete. Wave5 is active: T6, T7 and T11 are complete. RUN55 T12 owns the compiler/cache; RUN56 performs independent source and pure-Node review.
 
 | Task | Wave | Needs | Branch | State |
 | --- | --- | --- | --- | --- |
@@ -78,8 +78,8 @@ CI trigger: `.github/workflows/ci.yml:2-5` runs pushes to main and pull requests
 | T9 | 4 | 1, 8, 2b | codex/mc-t9 | COMPLETE mergefb5e2d6; independent0High/0unresolvedMedium,69tests,7GREF,FOV/modifier plants,all12integrationgates0; archived lane removed, branch retained. |
 | T6 | 5 | 4 | codex/mc-t6 | COMPLETE ed793bb; merge450c023; final review0High,21probes/191tests;20GREF/8plants/ownplant; integration12/12 gates0,1211/0/18,T7,M3; lane removed with compressed evidence/cache preserved. |
 | T7 | 5 | 2b, 4 | codex/mc-t7 | COMPLETE c190c909; merge7e575c9; independent0H/0M/30tests/ownplant, integration12/12gates0 (1231/0/19,T7,M3); lane removed, evidence and branch retained. |
-| T11 | 5 | 9, 19, 20 | codex/mc-t11 | COMPLETE c996463; merge aff4d63; independent 0H/0M/0L, 11 probes, CAM1 2/2 and both plants restored; integration 12/12 gates0,1266/0/19; archive/cleanup pending. |
-| T12 | 5 | 3, 9, 19, 20 | codex/mc-t12 | ACTIVE RUN55. Rebased f6577b9 with all79 prepared paths preserved; sole cache leased. Native widgets compiled semantic red; actual HUD1 oracle red still pending driver pixel recognition. No legacy deletion. RUN56 source-only review. |
+| T11 | 5 | 9, 19, 20 | codex/mc-t11 | COMPLETE c996463; merge aff4d63; independent 0H/0M/0L, 11 probes, CAM1 2/2 and both plants restored; integration 12/12 gates0,1266/0/19; completed artifacts archived and lane removed, branch retained. |
+| T12 | 5 | 3, 9, 19, 20 | codex/mc-t12 | ACTIVE RUN55. Rebased f6577b9 with all79 prepared paths preserved; sole cache leased. Native widgets compiled semantic red; HUD1 at DPR1 and repaired DPR2 reaches owned selection and named missing-widget/present-panel red. C134 complete six-run baseline active. No legacy deletion. RUN56 source/pure-Node review. |
 | T5 | 6 | 4, 6, 19 | codex/mc-t5 | NOT STARTED |
 | T13 | 6 | 4, 6, 9, 11, 19, 20 | codex/mc-t13 | NOT STARTED |
 | T10 | 7 | 5, 9, 11, 19, 20 | codex/mc-t10 | NOT STARTED |
@@ -1174,3 +1174,14 @@ Conflict: Task12 Step1 needs a valid selected HUD1 fixture at all three viewport
 Choice: implement only the already-owned R7 canvas/window sizing prerequisite while widget runtime remains stubbed and legacy UI/tests remain present. Then rerun the actual HUD1 baseline. Require logical1280x720 at DPR2 with the proper physical render target and unmodified CSS input coordinates. Preserve the old mismatch as precondition/legacy-sizing evidence. Keep native defaults unless a concrete shared repair is necessary; do not divide driver coordinates or relax C86/DPR assertions.
 
 Evidence: design13.1:1146 defines device scale2, and design10.3 requires a viewport-filling canvas. Actual main t12-builder/run55/browser-hud1-{ground-box,cluster-box,checkpoint,box}-probe records confirm the mismatch. Plan Task12 assigns canvas sizing to its Step2. Design wins on this instrument/mechanism dependency. Player UiScale remains separate; later SH1 verifies menu scale changes and native widget geometry must handle it. Alternative not taken: label failed selection as widget red, distort pixels, weaken the viewport assertion, or implement/remove widgets before their meaningful red.56/170 runs; no CEO stop.
+
+
+## C134: match Chrome physical scale to each MC context DPR
+
+Conflict: at context DPR2, headed Chrome reports CSS1280x720 and devicePixelRatio2, but ResizeObserver.devicePixelContentBoxSize is1280x720. winit trusts this box as physical pixels. Bevy therefore publishes logical640x360, and the unchanged pixel driver cannot establish the required selected fixture. Both experimental startup resolution seeds are overwritten by the resize event.
+
+Choice: remove only the failed startup seed/API experiments, preserve the planned responsive CSS, and set --force-device-scale-factor to the same effective DPR as browser.newContext for each harness invocation, including1. Reject conflicting or duplicate explicit flags; record the effective DPR, viewport and arguments. Keep all row, coordinate, selection and oracle assertions. Add pure profile tests and repeat the full unchanged HUD1 matrix before widget implementation. Do not use a global force2 flag.
+
+Evidence: main target/mc-evidence/t12-builder/run55/dpr2-device-pixel-box-probe.log records the wrong physical box. The matching force2 probe reports2560x1440; actual hud1-dpr2-force-profile/runs/run-20261101T072921Z-DZjDvu records logical1280x720, scale2 and two selected owned units, then reaches the intended missing-widget/present-panel oracle red. Local winit-0.30.13/src/platform_impl/web/web_sys/resize_scaling.rs:231-263 trusts devicePixelContentBoxSize; bevy_winit-0.20.0/src/state.rs:1065-1068 applies it. The primary report https://github.com/microsoft/playwright/issues/18591 describes this same emulation mismatch. Task12 tests/browser/harness/run.js:42-84 now derives and validates the launch profile; launch-profile.test.js supplies five pure controls. The complete real six-run baseline is still running, not claimed green or complete.
+
+This is an instrument/profile repair under brief4, with no player-visible design or acceptance-row change. Alternative not taken: distort driver coordinates, patch ResizeObserver, retain ineffective product startup seeds, relax DPR geometry checks, or apply force2 to DPR1 contexts.56/170 runs; no new dispatch or CEO stop.
