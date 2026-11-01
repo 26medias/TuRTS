@@ -50,6 +50,7 @@ async function judge(view, params) {
             `SEL ${stage.label} first mouse-up frame actual rendered ring count`);
         assertFrameSelectionIsOwn(frame, debug, stage);
         assertModifiers(action, stage);
+        if (stage.gesture === "box") assertBoxSelectionCenters(action, frame, scene, stage);
         if (stage.label === "sel2-static-only") assertStaticOnlySelection(frame, debug, stage);
         if (stage.label === "sel2-mixed-owner") assertMixedOwnerBox(action, scene, debug);
         if (frame.selection.length > 0) {
@@ -75,6 +76,23 @@ function assertFrameSelectionIsOwn(frame, debug, stage) {
         assert.equal(unit.owner_slot, localSlot, `SEL ${stage.label} selected a foreign owner slot`);
         if (stage.expected_content_ids) assert(stage.expected_content_ids.includes(unit.content_id), `SEL ${stage.label} selected unexpected ${unit.content_id}`);
     }
+}
+
+function assertBoxSelectionCenters(action, frame, scene, stage) {
+    const [x0, y0, x1, y1, button] = action.args;
+    assert.equal(button, "left", `SEL ${stage.label} must use a physical left drag`);
+    const box = { minX: Math.min(x0, x1), maxX: Math.max(x0, x1), minY: Math.min(y0, y1), maxY: Math.max(y0, y1) };
+    const selected = new Set(frame.selection);
+    const centers = (scene?.units || []).filter((unit) => selected.has(unit.unit_id))
+        .map((unit) => unit.ground_screen_center)
+        .filter((center) => Array.isArray(center) && center.length === 2 && center.every(Number.isFinite));
+    assert.equal(centers.length, frame.selection.length,
+        `SEL ${stage.label} selected centers must map to actual rendered scene units`);
+    const inside = centers.filter(([x, y]) => x >= box.minX && x <= box.maxX && y >= box.minY && y <= box.maxY);
+    const adds = (stage.modifiers || []).includes("Shift");
+    if (adds) assert(inside.length > 0, `SEL ${stage.label} Shift+drag must contain an actual selected center`);
+    else assert.equal(inside.length, centers.length,
+        `SEL ${stage.label} box must contain every selected unit center in the captured frame`);
 }
 
 function assertStaticOnlySelection(frame, debug, stage) {
