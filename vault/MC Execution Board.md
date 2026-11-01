@@ -8,7 +8,7 @@ source: codex
 
 # MC execution board
 
-State: ACTIVE:12/25 lanes complete;54/170 runs registered. Task7 COMPLETE at7e575c9, independent0High/0Medium, integration12/12gates0 (1231/0/19,T7,M3). RUN53 T11 owns sole compiler/cache; RUN54 UX review registered source-only. C1-C126. Wave5 needs11/12; no main merge/push.
+State: ACTIVE:12/25 lanes complete;54/170 runs registered. Task7 COMPLETE at7e575c9, independent0High/0Medium, integration12/12gates0 (1231/0/19,T7,M3). RUN53 T11 owns sole compiler/cache; RUN54 UX review registered source-only. C1-C127. Wave5 needs11/12; no main merge/push.
 
 Plan: `docs/superpowers/plans/2026-10-29-mc-player-control.md`.
 Design of record: `docs/superpowers/specs/2026-10-29-mc-player-control-design.md`, revision13 at main721e56e.
@@ -1107,3 +1107,12 @@ Conflict: camera OwnedCentre must use the player's actual units. Welcome creates
 Choice: extend Task11 scope by a narrow initial-construction guard in core_adapter.rs. Create the first Core only after Replica.snapshot_tick is Some, with authored camera configuration set before construction. A valid accepted snapshot with zero own units must still create Core and use the OwnedCentre fallback. Do not use a nonempty-unit test, gate an existing Core on later resync, or reset an existing camera. Add actual whole-client lifecycle controls for Welcome before snapshot, owned and empty accepted snapshots, and later recovery.
 
 Evidence: design section7 requires OwnedCentre and mod start selection. core_adapter.rs:520-531 constructs Core once and reads the initial_pose fallback; ingest.rs:394-404 creates the replica on Welcome; replica.rs:120,156 starts snapshot_tick asNone, and :270-272 sets it only after accepted commit. Root read all three paths. This is a necessary same-shape startup mechanism under brief4, with no K, frozen value or acceptance-row change. Alternative not taken: latch the pre-snapshot fallback, wait forever for a nonempty owned set, re-centre after each resync, or reset Core state. RUN53 implements; RUN54 independently checks.54/170 runs; no CEO stop.
+
+
+## C127: apply player pan speed to incremental middle drag
+
+Conflict: the early camera draft uses a fixed ground anchor for middle drag, but applies the player scroll-speed setting only to key and edge pan. Design section7 states the pan-speed rule without a middle-drag exception. A fixed-anchor correction multiplied repeatedly would also depend on frame partition.
+
+Choice: apply the player scroll-speed multiplier to all three pan modes. At speed1, middle drag keeps direct ground-grab behavior. At other settings, scale incremental projected ground deltas. Projection supplies height scaling. Do not multiply the remaining error from one initial anchor on every frame. Add speed1 anchor, speed2 distance and equal-input/frame-partition controls.
+
+Evidence: design section7 pan rule; early interaction/camera.rs:53-66 applies anchor minus current ground directly, while :131-136 applies player speed only in the key/edge path. Root read the draft. RUN54 independently prepares signed-yaw speed and frame-partition probes outside the lane. This is implementation of the existing pan rule under brief4, with no new setting or key. Alternative not taken: silently exempt drag, make speed depend on pointer event frequency, or repeatedly amplify an initial-anchor error. Runtime proof is NOT TRACED until the revised source runs.54/170 runs; no CEO stop.
