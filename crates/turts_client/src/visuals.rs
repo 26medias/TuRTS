@@ -38,7 +38,8 @@ struct VisualAssets {
     ring: Option<Handle<Mesh>>,
     foreign_ring: Option<Handle<Mesh>>,
     ring_overlay_materials: Vec<Handle<RingOverlayMaterial>>,
-    neutral_ring_overlay: Option<Handle<RingOverlayMaterial>>,
+    neutral_ring_overlays: Vec<Handle<RingOverlayMaterial>>,
+    ring_underlay_indices: Vec<usize>,
     bar: Option<Handle<Mesh>>,
     marker_material: Option<Handle<StandardMaterial>>,
     blocked_material: Option<Handle<StandardMaterial>>,
@@ -117,18 +118,29 @@ fn create_ring_overlay_materials(
     )
 }
 
-fn create_neutral_ring_overlay_material(
+fn create_neutral_ring_overlay_materials(
     overlays: &mut Assets<RingOverlayMaterial>,
-) -> Handle<RingOverlayMaterial> {
-    overlays.add(ExtendedMaterial {
-        base: StandardMaterial {
-            base_color: Color::srgb(0.96, 0.96, 0.96),
-            alpha_mode: AlphaMode::Blend,
-            unlit: true,
-            ..default()
-        },
-        extension: RingOverlayExtension {},
-    })
+) -> Vec<Handle<RingOverlayMaterial>> {
+    [Color::srgb(0.96, 0.96, 0.96), Color::BLACK]
+        .into_iter()
+        .map(|base_color| {
+            overlays.add(ExtendedMaterial {
+                base: StandardMaterial {
+                    base_color,
+                    alpha_mode: AlphaMode::Blend,
+                    unlit: true,
+                    ..default()
+                },
+                extension: RingOverlayExtension {},
+            })
+        })
+        .collect()
+}
+
+fn neutral_ring_overlay_index(slot_colour: Color) -> usize {
+    let colour = slot_colour.to_srgba();
+    let luminance = 0.2126 * colour.red + 0.7152 * colour.green + 0.0722 * colour.blue;
+    usize::from(luminance >= 0.82)
 }
 
 #[derive(Clone)]
@@ -444,7 +456,19 @@ fn prepare_assets(
         else {
             return;
         };
-        let neutral_ring_overlay = create_neutral_ring_overlay_material(&mut ring_materials);
+        let neutral_ring_overlays = create_neutral_ring_overlay_materials(&mut ring_materials);
+        let ring_underlay_indices = palette
+            .0
+            .iter()
+            .map(|handle| {
+                materials
+                    .get(handle)
+                    .map(|material| neutral_ring_overlay_index(material.base_color))
+            })
+            .collect::<Option<Vec<_>>>();
+        let Some(ring_underlay_indices) = ring_underlay_indices else {
+            return;
+        };
         let world = acquired
             .0
             .presentation
@@ -491,7 +515,8 @@ fn prepare_assets(
         });
         create_shared_meshes(&mut assets, &mut meshes);
         assets.ring_overlay_materials = ring_overlay_materials;
-        assets.neutral_ring_overlay = Some(neutral_ring_overlay);
+        assets.neutral_ring_overlays = neutral_ring_overlays;
+        assets.ring_underlay_indices = ring_underlay_indices;
         assets.marker_material = Some(materials.add(unlit(range_color)));
         assets.blocked_material = Some(materials.add(unlit(Color::srgb(0.9, 0.12, 0.08))));
         assets.range_material = Some(materials.add(unlit(range_color)));
@@ -697,8 +722,9 @@ fn draw_world_visuals(
             identity: 0,
         };
         if !own
-            && let (Some(underlay), Some(neutral)) =
-                (assets.ring.clone(), assets.neutral_ring_overlay.clone())
+            && let (Some(underlay), Some(neutral_index)) =
+                (assets.ring.clone(), assets.ring_underlay_indices.get(slot))
+            && let Some(neutral) = assets.neutral_ring_overlays.get(*neutral_index).cloned()
         {
             desired.insert(
                 VisualId {
@@ -796,9 +822,12 @@ fn draw_world_visuals(
                             *radius
                         })
                         .unwrap_or(0.5);
+                    let slot = usize::from(unit.owner_slot);
                     if unit.owner_slot != local_slot
-                        && let (Some(underlay), Some(neutral)) =
-                            (assets.ring.clone(), assets.neutral_ring_overlay.clone())
+                        && let (Some(underlay), Some(neutral_index)) =
+                            (assets.ring.clone(), assets.ring_underlay_indices.get(slot))
+                        && let Some(neutral) =
+                            assets.neutral_ring_overlays.get(*neutral_index).cloned()
                     {
                         desired.insert(
                             VisualId {
@@ -1427,11 +1456,11 @@ mod tests {
         let overlay_handles = create_ring_overlay_materials(&handles, &materials, &mut overlays)
             .expect("each overlay must correspond to one body palette slot");
         assert_eq!(overlay_handles.len(), palette.len());
-        let neutral = create_neutral_ring_overlay_material(&mut overlays);
+        let neutral = create_neutral_ring_overlay_materials(&mut overlays);
         assert_eq!(
             overlays.len(),
-            palette.len() + 1,
-            "one neutral shared underlay serves every foreign ring"
+            palette.len() + 2,
+            "two neutral shared underlays serve every foreign ring"
         );
         for (handle, expected) in overlay_handles.iter().zip(palette) {
             let overlay = overlays.get(handle).expect("shared slot overlay exists");
@@ -1439,11 +1468,43 @@ mod tests {
             assert!(overlay.base.unlit);
             assert_eq!(overlay.base.alpha_mode, AlphaMode::Blend);
         }
-        let neutral = overlays
-            .get(&neutral)
-            .expect("shared neutral ring underlay exists");
-        assert_eq!(neutral.base.base_color, Color::srgb(0.96, 0.96, 0.96));
-        assert!(neutral.base.unlit);
+        let neutral_colours = neutral
+            .iter()
+            .map(|handle| {
+                let neutral = overlays
+                    .get(handle)
+                    .expect("shared neutral ring underlay exists");
+                assert!(neutral.base.unlit);
+                assert_eq!(neutral.base.alpha_mode, AlphaMode::Blend);
+                neutral.base.base_color
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            neutral_colours,
+            [Color::srgb(0.96, 0.96, 0.96), Color::BLACK]
+        );
+
+        let cases = [
+            (Color::WHITE, 1, "white slot gets black contrast"),
+            (Color::BLACK, 0, "black slot gets white contrast"),
+            (
+                Color::srgb_u8(230, 159, 0),
+                0,
+                "default orange keeps white contrast",
+            ),
+        ];
+        for (slot_colour, expected, message) in cases {
+            let selected_backer = neutral_ring_overlay_index(slot_colour);
+            assert_eq!(selected_backer, expected, "{message}");
+            assert_eq!(
+                neutral_colours[selected_backer],
+                if expected == 0 {
+                    Color::srgb(0.96, 0.96, 0.96)
+                } else {
+                    Color::BLACK
+                }
+            );
+        }
 
         assert_eq!(RingOverlayExtension::alpha_mode(), Some(AlphaMode::Blend));
         assert!(!RingOverlayExtension::enable_prepass());

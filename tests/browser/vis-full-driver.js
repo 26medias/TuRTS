@@ -42,6 +42,7 @@ async function drive(io) {
         await io.save("vis1-full-recognition-failed.png", initial.bytes);
         throw new Error("VIS1 PNG target recognition failed before input; no scene/debug data was read by the driver");
     }
+    initial.record.label = "vis1-full-initial";
     await io.save("vis1-full-initial.png", initial.bytes);
     inputCall += 1;
     const avoid = targetSet.candidates.concat([{
