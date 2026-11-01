@@ -123,6 +123,8 @@ if row:
     data["windows"]=row_data.get("windows",1)
     data["device_scale_factor"]=row_data.get("device_scale_factor",data["device_scale_factor"])
     data["row"]=row_data.get("row")
+    for key in ("fixture_tree_sha256", "fixture_catalog", "pick_world_epsilon", "stages"):
+        if key in row_data: data[key]=row_data[key]
     capture=row_data.get("capture_scene_checkpoints",False)
     if not isinstance(capture,bool): raise SystemExit("capture_scene_checkpoints must be a boolean")
     data["capture_scene_checkpoints"]=capture

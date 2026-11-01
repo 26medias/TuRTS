@@ -101,6 +101,24 @@ fn group_recall_restores_members_and_dead_ids_are_pruned() {
 }
 
 #[test]
+fn authored_button_group_recall_runs_core_selection_semantics() {
+    let world = TestWorld::default();
+    let mut core = Core::default();
+    select_world_point(&mut core, &world, UnitId(1), 10);
+    assign(&mut core, &world, "Digit1", vec![Mod::Ctrl], 20);
+    select_world_point(&mut core, &world, UnitId(2), 30);
+    core.step(
+        &[InputEvent::UiAction {
+            name: "group_recall_1".into(),
+        }],
+        &world,
+        &VIEW,
+        40,
+    );
+    assert_eq!(ids(&core), vec![UnitId(1)]);
+}
+
+#[test]
 fn a_unit_can_belong_to_more_than_one_group() {
     let world = TestWorld::default();
     let mut core = Core::default();

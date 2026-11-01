@@ -1,0 +1,37 @@
+{
+  "row": "HUD4",
+  "package": "crates/turts_pack/tests/fixtures/muster_hud4",
+  "driver": "tests/browser/hud4-driver.js",
+  "oracle": "tests/browser/hud4-oracle.js",
+  "runs": "ci",
+  "capture_scene_checkpoints": true,
+  "viewports": ["1280x720"],
+  "fixture_tree_sha256": "31e4252bfba5060b43d071aaf237ce5c9cbd3fd7889ee1181b11677b434043c2",
+  "pick_world_epsilon": 0.0001,
+  "fixture_catalog": {
+    "units": {
+      "attacker": { "content_id": "muster:trooper", "owner_slot": 0, "weapon_target_slots": "Other", "gatherer_items": [] },
+      "worker": { "content_id": "muster:worker", "owner_slot": 0, "weapon_target_slots": null, "gatherer_items": ["muster:ore_chunk"] },
+      "foreign": { "content_id": "muster:dummy", "owner_slot": 1, "weapon_target_slots": null, "gatherer_items": [] }
+    },
+    "node": { "content_id": "muster:ore_node", "item": "muster:ore_chunk" },
+    "cursors": {
+      "default": "muster_cursor_default",
+      "move": "muster_cursor_move",
+      "attack": "muster_cursor_attack",
+      "gather": "muster_cursor_gather",
+      "forbidden": "muster_cursor_forbidden"
+    },
+    "move_order_cursor_override": "muster_cursor_move"
+  },
+  "stages": [
+    { "label": "select-attacker", "target": "attacker", "selection": "attacker", "cursor": { "context": "move", "image_id": "muster_cursor_move", "applied_icon": "muster_cursor_move" } },
+    { "label": "select-worker", "target": "worker", "selection": "worker", "cursor": { "context": "move", "image_id": "muster_cursor_move", "applied_icon": "muster_cursor_move" } },
+    { "label": "select-foreign", "target": "foreign", "selection": "foreign" },
+    { "label": "hover-foreign-attack", "target": "foreign", "selection": "attacker", "cursor": { "context": "attack", "image_id": "muster_cursor_attack", "applied_icon": "muster_cursor_attack" } },
+    { "label": "hover-node-gather", "target": "node", "selection": "worker", "cursor": { "context": "gather", "image_id": "muster_cursor_gather", "applied_icon": "muster_cursor_gather" } },
+    { "label": "attack-mode-invalid-node", "target": "node", "selection": "attacker", "mode_key": "KeyA", "cursor": { "context": "forbidden", "image_id": "muster_cursor_forbidden", "applied_icon": "muster_cursor_forbidden" } },
+    { "label": "move-mode-ground-point", "target": "ground", "selection": "attacker", "mode_key": "KeyM", "cursor": { "context": "target", "image_id": "muster_cursor_move", "applied_icon": "muster_cursor_move" } },
+    { "label": "default-ground", "target": "ground", "selection": null, "cursor": { "context": "default", "image_id": "muster_cursor_default", "applied_icon": "muster_cursor_default" } }
+  ]
+}

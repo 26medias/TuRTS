@@ -47,6 +47,51 @@ function fakeView({ width = 1280, height = 720, dpr = 1, rendered = widgets(widt
     };
 }
 
+function checkpointView({ width = 1280, height = 720, rendered = widgets(width, height),
+    legacyUi = [], selection = [7], click = true, screenshotBeforeDrag = false } = {}) {
+    const actualScene = {
+        ...scene(width, height, rendered),
+        units: [{ unit_id: 7, ground_screen_center: [400, 300], pick_radius: 0.5 }],
+        nodes: [],
+    };
+    const actualDebug = {
+        phase: "Joined { slot: 0 }",
+        selection,
+        ui_snapshot: legacyUi,
+        replicated_world: { units: [{ unit_id: 7, content_id: "muster:trooper", owner_slot: 0 }] },
+    };
+    const input = screenshotBeforeDrag ? [
+        { call: "screenshot", args: [] },
+        { call: "drag", args: [300, 200, 500, 400, "left"], event_seq: [1, 2, 3] },
+    ] : [
+        { call: "drag", args: [300, 200, 500, 400, "left"], event_seq: [1, 2, 3] },
+        { call: "screenshot", args: [] },
+    ];
+    const files = {
+        "hud1-pixel-target.json": JSON.stringify({
+            selection_box: { start: { x: 300, y: 200 }, end: { x: 500, y: 400 } },
+            screenshot_ordinal: 0,
+        }),
+        "scene-checkpoints.json": JSON.stringify([
+            { input_call: screenshotBeforeDrag ? 0 : 1, window: 1, scene: actualScene, debug: actualDebug },
+        ]),
+    };
+    return {
+        inputLog: () => click ? input : input.filter((entry) => entry.call !== "drag"),
+        async serverFile(file) { return files[file]; },
+        async bridge(name) {
+            if (name === "turts_debug") return actualDebug;
+            if (name === "turts_scene") return actualScene;
+            if (name === "turts_ui") return legacyUi;
+            throw new Error(`unexpected bridge ${name}`);
+        },
+    };
+}
+
+function checkpointParams(width = 1280, height = 720) {
+    return { ...params(width, height), capture_scene_checkpoints: true };
+}
+
 for (const [width, height, dpr] of [[1280, 720, 1], [1920, 1080, 1], [1280, 720, 2]]) {
     test(`authored logical widget rectangles pass at ${width}x${height}@${dpr}`, async () => {
         await judge(fakeView({ width, height, dpr }), params(width, height, dpr));
@@ -101,6 +146,23 @@ test("every rendered widget requires an id and a positive finite rectangle", asy
 
 test("selection must be real and nonempty before placement is judged", async () => {
     await assert.rejects(judge(fakeView({ selection: [] }), params(1280, 720)), /actual debug selection must be nonempty/);
+});
+
+test("C84 proof accepts only a clicked candidate selecting a rendered replicated unit", async () => {
+    await judge(checkpointView(), checkpointParams());
+    await assert.rejects(
+        judge(checkpointView({ selection: [] }), checkpointParams()),
+        /actual debug selection must be nonempty after pixel-derived box selection/,
+    );
+    await assert.rejects(
+        judge(checkpointView({ click: false }), checkpointParams()),
+        /was not dispatched as physical drag IO/,
+    );
+});
+
+test("C84 selected checkpoint must follow the exact physical drag", async () => {
+    await assert.rejects(judge(checkpointView({ screenshotBeforeDrag: true }), checkpointParams()),
+        /checkpoint screenshot must be captured after its physical selection drag/);
 });
 
 test("an oracle row without a harness selection click fails", async () => {

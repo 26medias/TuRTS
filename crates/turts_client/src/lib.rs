@@ -10,7 +10,6 @@ pub mod content;
 pub mod core_adapter;
 pub mod debug;
 pub mod debug_feed;
-pub mod economy_ui;
 pub mod feedback;
 pub mod fetch;
 pub mod framelog;
@@ -47,7 +46,6 @@ use crate::commands::{
 };
 use crate::core_adapter::CoreAdapterPlugin;
 use crate::debug::{DebugState, exit_when_done, rebuild_debug_state};
-use crate::economy_ui::EconomyUiPlugin;
 use crate::framelog::{FrameLog, write_frame_log};
 use crate::ingest::{
     CommandResults, IngestCounters, IngestHooks, ReceiptWitnesses, ReplicaState,
@@ -310,7 +308,7 @@ pub fn build_app(opts: ClientOptions) -> App {
         persist::PersistPlugin,
     ));
     if !headless {
-        app.add_plugins((UnitRenderPlugin, EconomyUiPlugin));
+        app.add_plugins(UnitRenderPlugin);
     }
     app
 }

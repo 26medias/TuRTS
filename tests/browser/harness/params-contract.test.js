@@ -30,6 +30,22 @@ test("launcher carries the top-level checkpoint opt-in to the production harness
     assert.equal(params.device_scale_factor, 2);
 });
 
+test("launcher carries HUD fixture and stage metadata into readonly oracle params", () => {
+    const fixture_catalog = { units: { worker: { content_id: "muster:worker" } } };
+    const stages = [{ label: "select-worker", target: "worker" }];
+    const params = launchParams({
+        row: "HUD4",
+        fixture_tree_sha256: "fixture-hash",
+        fixture_catalog,
+        pick_world_epsilon: 0.0001,
+        stages,
+    });
+    assert.equal(params.fixture_tree_sha256, "fixture-hash");
+    assert.deepEqual(params.fixture_catalog, fixture_catalog);
+    assert.equal(params.pick_world_epsilon, 0.0001);
+    assert.deepEqual(params.stages, stages);
+});
+
 test("ordinary rows keep checkpoint capture disabled", () => {
     assert.notEqual(launchParams({ row: "CLICK9" }).capture_scene_checkpoints, true);
     assert.equal(launchParams({ row: "CAM1", capture_scene_checkpoints: false }).capture_scene_checkpoints, false);

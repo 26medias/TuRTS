@@ -29,9 +29,14 @@ pub(crate) struct CameraController {
     pointer: Option<(Vec2, bool)>,
     drag_last_px: Option<Vec2>,
     last_group_recall: Option<(u64, String)>,
+    pan_context: Option<String>,
 }
 
 impl CameraController {
+    pub(crate) fn pan_context(&self) -> Option<&str> {
+        self.pan_context.as_deref()
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn step(
         &mut self,
@@ -105,38 +110,9 @@ impl CameraController {
             .last_step_ms
             .replace(now_ms)
             .map_or(0.0, |last| now_ms.saturating_sub(last) as f32 / 1_000.0);
+        let (horizontal, vertical) = self.pan_axes(&options, view, held_actions);
+        self.pan_context = pan_context(horizontal, vertical);
         if elapsed > 0.0 {
-            let has_action = |name: &str| held_actions.iter().any(|action| action == name);
-            let mut horizontal = axis(
-                has_action("camera_pan_right"),
-                has_action("camera_pan_left"),
-            );
-            let mut vertical = axis(has_action("camera_pan_up"), has_action("camera_pan_down"));
-
-            if options.edge_scroll
-                && options
-                    .authored
-                    .as_ref()
-                    .is_none_or(|authored| authored.edge_band)
-                && let Some((point, eligible)) = self.pointer
-                && eligible
-                && point.x >= 0.0
-                && point.y >= 0.0
-                && point.x <= view.size.x
-                && point.y <= view.size.y
-            {
-                if point.x < 8.0 {
-                    horizontal -= 1.0;
-                } else if point.x >= view.size.x - 8.0 {
-                    horizontal += 1.0;
-                }
-                if point.y < 8.0 {
-                    vertical += 1.0;
-                } else if point.y >= view.size.y - 8.0 {
-                    vertical -= 1.0;
-                }
-            }
-
             let right = Vec2::new(camera.yaw.cos(), -camera.yaw.sin());
             let forward = Vec2::new(-camera.yaw.sin(), -camera.yaw.cos());
             let direction = right * horizontal + forward * vertical;
@@ -156,6 +132,45 @@ impl CameraController {
         if *camera != start_camera {
             effects.push(Effect::CameraChanged);
         }
+    }
+
+    fn pan_axes(
+        &self,
+        options: &CameraOptions,
+        view: &Viewport,
+        held_actions: &[String],
+    ) -> (f32, f32) {
+        let has_action = |name: &str| held_actions.iter().any(|action| action == name);
+        let mut horizontal = axis(
+            has_action("camera_pan_right"),
+            has_action("camera_pan_left"),
+        );
+        let mut vertical = axis(has_action("camera_pan_up"), has_action("camera_pan_down"));
+
+        if options.edge_scroll
+            && options
+                .authored
+                .as_ref()
+                .is_none_or(|authored| authored.edge_band)
+            && let Some((point, eligible)) = self.pointer
+            && eligible
+            && point.x >= 0.0
+            && point.y >= 0.0
+            && point.x <= view.size.x
+            && point.y <= view.size.y
+        {
+            if point.x < 8.0 {
+                horizontal -= 1.0;
+            } else if point.x >= view.size.x - 8.0 {
+                horizontal += 1.0;
+            }
+            if point.y < 8.0 {
+                vertical += 1.0;
+            } else if point.y >= view.size.y - 8.0 {
+                vertical -= 1.0;
+            }
+        }
+        (horizontal, vertical)
     }
 
     pub(crate) fn centre_selection(
@@ -200,6 +215,29 @@ impl CameraController {
         camera.look_at = centre;
         clamp_to_map(camera, world);
         camera.look_at != before
+    }
+}
+
+fn pan_context(horizontal: f32, vertical: f32) -> Option<String> {
+    let horizontal = if horizontal < 0.0 {
+        Some("left")
+    } else if horizontal > 0.0 {
+        Some("right")
+    } else {
+        None
+    };
+    let vertical = if vertical > 0.0 {
+        Some("up")
+    } else if vertical < 0.0 {
+        Some("down")
+    } else {
+        None
+    };
+    match (vertical, horizontal) {
+        (None, None) => None,
+        (Some(vertical), None) => Some(format!("pan_{vertical}")),
+        (None, Some(horizontal)) => Some(format!("pan_{horizontal}")),
+        (Some(vertical), Some(horizontal)) => Some(format!("pan_{vertical}_{horizontal}")),
     }
 }
 

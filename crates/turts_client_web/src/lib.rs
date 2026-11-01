@@ -25,14 +25,15 @@
 use std::sync::{LazyLock, Mutex};
 
 use bevy::camera::RenderTarget;
+use bevy::camera::visibility::InheritedVisibility;
 use bevy::prelude::*;
 use bevy::render::renderer::RenderAdapterInfo;
+use bevy::ui::{CalculatedClip, ComputedNode, ComputedUiTargetCamera, UiGlobalTransform};
 use bevy::window::{PrimaryWindow, WindowRef};
 use turts_client::ClientOpts;
 use turts_client::build_app;
 use turts_client::commands::{CommandSendStatus, PendingCommands, owned_mobile_ids, submit_order};
 use turts_client::debug::{DebugState, rebuild_debug_state};
-use turts_client::economy_ui::rendered_ui_snapshot;
 use turts_client::ingest::{
     BrowserIngestConfig, IngestCounters, IngestHooks, ReplicaState, apply_browser_ingest_config,
     ingest_messages,
@@ -255,20 +256,28 @@ fn publish_debug(state: Res<DebugState>) {
 fn publish_scene(
     units: Query<(&SceneUnit, &GlobalTransform), With<Mesh3d>>,
     nodes: Query<(&SceneNode, &GlobalTransform), With<Mesh3d>>,
-    cameras: Query<(&Camera, &GlobalTransform, &RenderTarget), With<Camera3d>>,
+    cameras: Query<(Entity, &Camera, &GlobalTransform, &RenderTarget), With<Camera3d>>,
     windows: Query<(Entity, &Window), With<PrimaryWindow>>,
+    widgets: Query<(
+        &turts_client::widgets::primitives::AuthoredWidgetId,
+        &ComputedNode,
+        &UiGlobalTransform,
+        &ComputedUiTargetCamera,
+        &InheritedVisibility,
+        Option<&CalculatedClip>,
+    )>,
     state: Res<ReplicaState>,
     adapter_info: Option<Res<RenderAdapterInfo>>,
 ) {
     let active: Vec<_> = cameras
         .iter()
-        .filter(|(camera, _, _)| camera.is_active)
+        .filter(|(_, camera, _, _)| camera.is_active)
         .collect();
     let primary_window = windows.iter().next();
     let primary_entity = primary_window.map(|(entity, _)| entity);
     let primary_active: Vec<_> = active
         .iter()
-        .filter(|(_, _, target)| match target {
+        .filter(|(_, _, _, target)| match target {
             RenderTarget::Window(WindowRef::Primary) => primary_entity.is_some(),
             RenderTarget::Window(WindowRef::Entity(entity)) => {
                 primary_entity.as_ref() == Some(entity)
@@ -280,7 +289,7 @@ fn publish_scene(
         .collect();
     let camera_metadata = if primary_active.len() == 1 {
         primary_window.and_then(|(_, window)| {
-            let (camera, transform, _) = *primary_active[0];
+            let (_, camera, transform, _) = *primary_active[0];
             Some(SceneCamera {
                 window_logical_size: Vec2::new(window.width(), window.height()),
                 viewport_logical_rect: camera.logical_viewport_rect()?,
@@ -295,7 +304,7 @@ fn publish_scene(
     let projection_camera = primary_active
         .first()
         .filter(|_| primary_active.len() == 1)
-        .map(|(camera, transform, _)| (*camera, *transform));
+        .map(|(_, camera, transform, _)| (*camera, *transform));
 
     let mut entries: Vec<SceneEntry> = units
         .iter()
@@ -362,20 +371,87 @@ fn publish_scene(
         name: info.name.clone(),
         device_type: format!("{:?}", info.device_type),
     });
-    *SCENE.lock().unwrap() = scene_json(
+    let mut scene: serde_json::Value = serde_json::from_str(&scene_json(
         active.len(),
         camera_metadata,
         adapter,
         &entries,
         &node_entries,
-    );
+    ))
+    .unwrap_or_else(|_| serde_json::json!({}));
+    let mut widget_rects = widgets
+        .iter()
+        .filter_map(|(id, node, transform, target, visible, clip)| {
+            if !visible.get()
+                || node.size().min_element() <= 0.0
+                || !intersects_calculated_clip(node, transform, clip)
+            {
+                return None;
+            }
+            let camera_id = target.get()?;
+            let (_, camera, _, _) = cameras
+                .iter()
+                .find(|(entity, _, _, _)| *entity == camera_id)?;
+            let viewport = camera.physical_viewport_rect()?;
+            let scale = camera.target_scaling_factor()?;
+            if !camera.is_active || !scale.is_finite() || scale <= 0.0 {
+                return None;
+            }
+            let centre = transform.to_scale_angle_translation().2;
+            let size = node.size();
+            let origin = viewport.min.as_vec2();
+            let rect = [
+                (origin.x + centre.x - size.x / 2.0) / scale,
+                (origin.y + centre.y - size.y / 2.0) / scale,
+                size.x / scale,
+                size.y / scale,
+            ];
+            rect.iter()
+                .all(|value| value.is_finite())
+                .then(|| serde_json::json!({"id":id.0,"rect":rect}))
+        })
+        .collect::<Vec<_>>();
+    widget_rects.sort_by(|left, right| left["id"].as_str().cmp(&right["id"].as_str()));
+    scene["widgets"] = serde_json::Value::Array(widget_rects);
+    *SCENE.lock().unwrap() = scene.to_string();
+}
+
+fn intersects_calculated_clip(
+    node: &ComputedNode,
+    transform: &UiGlobalTransform,
+    clip: Option<&CalculatedClip>,
+) -> bool {
+    match clip {
+        Some(CalculatedClip::FullyClipped) => false,
+        Some(CalculatedClip::Rects(clips)) => {
+            let centre = transform.to_scale_angle_translation().2;
+            let half = node.size() / 2.0;
+            let corners = [
+                Vec2::new(centre.x - half.x, centre.y - half.y),
+                Vec2::new(centre.x + half.x, centre.y - half.y),
+                Vec2::new(centre.x - half.x, centre.y + half.y),
+                Vec2::new(centre.x + half.x, centre.y + half.y),
+            ];
+            clips.iter().all(|clip| {
+                let mut local = corners
+                    .into_iter()
+                    .map(|point| clip.world_to_clip_local.transform_point2(point));
+                let first = local.next().unwrap_or(Vec2::ZERO);
+                let bounds = local.fold(Rect::from_corners(first, first), |bounds, point| {
+                    Rect::from_corners(bounds.min.min(point), bounds.max.max(point))
+                });
+                !bounds.intersect(clip.rect).is_empty()
+            })
+        }
+        None => true,
+    }
 }
 
 fn publish_ui(world: &mut World) {
     let snapshot = world
         .get_resource::<turts_client::debug_feed::UiSnapshotFeed>()
         .map(|feed| feed.0.clone())
-        .unwrap_or_else(|| serde_json::json!(rendered_ui_snapshot(world)));
+        .unwrap_or_else(|| turts_client::widgets::snapshot::snapshot(world));
     *UI.lock().unwrap() = snapshot.to_string();
 }
 
@@ -408,6 +484,44 @@ fn number(value: f32) -> serde_json::Value {
     serde_json::Number::from_f64(value as f64)
         .map(serde_json::Value::Number)
         .unwrap_or(serde_json::Value::Null)
+}
+
+#[cfg(test)]
+mod widget_scene_tests {
+    use super::*;
+
+    #[test]
+    fn scene_widget_bridge_omits_fully_clipped_nodes_and_keeps_partial_intersections() {
+        let node = ComputedNode {
+            size: Vec2::splat(20.0),
+            ..default()
+        };
+        let transform = UiGlobalTransform::default();
+        assert!(!intersects_calculated_clip(
+            &node,
+            &transform,
+            Some(&CalculatedClip::FullyClipped)
+        ));
+        let outside = CalculatedClip::default().with_rect(
+            Rect::from_corners(Vec2::splat(20.0), Vec2::splat(30.0)),
+            &transform,
+        );
+        assert!(!intersects_calculated_clip(
+            &node,
+            &transform,
+            Some(&outside)
+        ));
+        let partial = CalculatedClip::default().with_rect(
+            Rect::from_corners(Vec2::splat(-5.0), Vec2::splat(5.0)),
+            &transform,
+        );
+        assert!(intersects_calculated_clip(
+            &node,
+            &transform,
+            Some(&partial)
+        ));
+        assert!(intersects_calculated_clip(&node, &transform, None));
+    }
 }
 
 fn pair(value: Vec2) -> serde_json::Value {

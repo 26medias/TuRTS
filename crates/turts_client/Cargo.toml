@@ -16,6 +16,9 @@ lightyear = { workspace = true, features = ["client"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
 
+[dev-dependencies]
+ron = { workspace = true }
+
 [target.'cfg(not(target_family = "wasm"))'.dependencies]
 ureq = { workspace = true }
 

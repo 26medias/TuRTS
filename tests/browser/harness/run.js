@@ -39,11 +39,51 @@ function parseArgs(args) {
     return { url, outDir, driverPath, oraclePath, paramsPath, width: Number(match[1]), height: Number(match[2]), deviceScaleFactor: Number(match[3] || 1), windows };
 }
 
+function launchArgsForDpr(args, dpr) {
+    if (!Array.isArray(args) || args.some((arg) => typeof arg !== "string")) {
+        throw new Error("Chrome launch arguments must be an array of strings");
+    }
+    if (!Number.isFinite(dpr) || dpr <= 0) throw new Error("effective device scale factor must be positive and finite");
+    const flag = "--force-device-scale-factor";
+    const found = [];
+    for (let index = 0; index < args.length; index += 1) {
+        const arg = args[index];
+        if (arg === flag) {
+            const value = args[index + 1];
+            if (!value || value.startsWith("--")) throw new Error(`${flag} needs one positive numeric value`);
+            found.push({ index, value });
+            index += 1;
+        } else if (arg.startsWith(`${flag}=`)) {
+            found.push({ index, value: arg.slice(flag.length + 1) });
+        }
+    }
+    if (found.length > 1) throw new Error(`conflicting explicit ${flag} arguments`);
+    if (found.length === 1) {
+        const supplied = Number(found[0].value);
+        if (!Number.isFinite(supplied) || supplied <= 0) throw new Error(`${flag} needs one positive numeric value`);
+        if (Math.abs(supplied - dpr) > 1e-9) {
+            throw new Error(`explicit ${flag}=${found[0].value} conflicts with effective DPR ${dpr}`);
+        }
+        return [...args];
+    }
+    return [...args, `${flag}=${dpr}`];
+}
+
 async function run(options) {
     const loadedParams = JSON.parse(await fs.readFile(options.paramsPath, "utf8"));
     const windows = options.windows ?? loadedParams.windows ?? 1;
     if (!Number.isSafeInteger(windows) || windows < 1) throw new Error("params.windows must be a positive integer");
     const params = deepFreeze({ ...loadedParams, windows });
+    const effectiveDpr = Number(params.device_scale_factor ?? options.deviceScaleFactor);
+    const baseChromeArgs = JSON.parse(process.env.MC_CHROME_ARGS_JSON || '["--enable-gpu","--use-angle=vulkan","--enable-features=Vulkan","--enable-unsafe-webgpu"]');
+    const chromeArgs = launchArgsForDpr(baseChromeArgs, effectiveDpr);
+    const headless = process.env.MC_BROWSER_HEADED !== "1";
+    await fs.writeFile(path.join(options.outDir, "browser-profile.json"), JSON.stringify({
+        args: chromeArgs,
+        device_scale_factor: effectiveDpr,
+        headless,
+        viewport_css: [options.width, options.height],
+    }, null, 2) + "\n");
     const { chromium } = require("playwright-core");
     const driver = require(path.resolve(options.driverPath));
     const oracle = require(path.resolve(options.oraclePath));
@@ -51,8 +91,8 @@ async function run(options) {
     if (typeof oracle.judge !== "function") throw new Error("oracle must export judge(view, params)");
     const browser = await chromium.launch({
         executablePath: process.env.CHROME_BIN || undefined,
-        headless: process.env.MC_BROWSER_HEADED !== "1",
-        args: JSON.parse(process.env.MC_CHROME_ARGS_JSON || '["--enable-gpu","--use-angle=vulkan","--enable-features=Vulkan","--enable-unsafe-webgpu"]'),
+        headless,
+        args: chromeArgs,
         ignoreDefaultArgs: JSON.parse(process.env.MC_CHROME_IGNORE_DEFAULT_ARGS_JSON || '["--enable-unsafe-swiftshader"]'),
     });
     const pages = [];
@@ -61,7 +101,7 @@ async function run(options) {
     try {
         const windows = Number(params.windows || 1);
         for (let n = 0; n < windows; n += 1) {
-            const context = await browser.newContext({ viewport: { width: options.width, height: options.height }, deviceScaleFactor: Number(params.device_scale_factor || options.deviceScaleFactor) });
+            const context = await browser.newContext({ viewport: { width: options.width, height: options.height }, deviceScaleFactor: effectiveDpr });
             await context.addInitScript(() => {
                 window.__turts_io_actual_events = [];
                 window.__turts_io_dispatching = false;
@@ -170,4 +210,4 @@ if (require.main === module) run(parseArgs(process.argv.slice(2))).catch((error)
     process.exitCode = 1;
 });
 
-module.exports = { deepFreeze, parseArgs };
+module.exports = { deepFreeze, launchArgsForDpr, parseArgs };

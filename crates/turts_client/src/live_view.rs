@@ -19,7 +19,6 @@ use serde_json::{Value, json};
 use crate::ClientOpts;
 use crate::commands::CommandSendStatus;
 use crate::debug::report_json;
-use crate::economy_ui::{Selection, UiAction, UiActionTarget, rendered_ui_snapshot};
 use crate::ingest::{CommandResult, CommandResults, ReplicaState};
 use crate::join::Phase;
 use crate::present::Presented;
@@ -27,6 +26,7 @@ use crate::render::{
     PresentedNode, PresentedUnit as RenderedUnit, declared_node_pick_radius,
     declared_unit_pick_radius, projected_ground_center,
 };
+use crate::widgets::primitives::AuthoredWidgetId;
 
 static NEXT_TEMP_ID: AtomicU64 = AtomicU64::new(0);
 
@@ -119,14 +119,12 @@ pub fn publish_live_view(world: &mut World) {
 }
 
 fn ui_snapshot(world: &World) -> Vec<Value> {
-    let mut controls = std::collections::HashMap::<UiAction, (u64, Option<[f32; 4]>, bool)>::new();
+    let mut controls = std::collections::HashMap::<String, (u64, Option<[f32; 4]>, bool)>::new();
     for entity in world.iter_entities() {
-        if !entity.contains::<Button>() {
+        if !entity.contains::<Button>() || entity.get::<AuthoredWidgetId>().is_none() {
             continue;
         }
-        let Some(action) = entity.get::<UiActionTarget>() else {
-            continue;
-        };
+        let id = entity.get::<AuthoredWidgetId>().unwrap().0.clone();
         let rect = entity
             .get::<ComputedNode>()
             .zip(entity.get::<UiGlobalTransform>())
@@ -141,30 +139,32 @@ fn ui_snapshot(world: &World) -> Vec<Value> {
                 ]
             });
         controls.insert(
-            action.0.clone(),
+            id,
             (entity.id().to_bits(), rect, entity.contains::<Pressed>()),
         );
     }
 
     let snapshot = world
         .get_resource::<crate::debug_feed::UiSnapshotFeed>()
-        .and_then(|feed| {
-            serde_json::from_value::<Vec<crate::economy_ui::RenderedUiNode>>(feed.0.clone()).ok()
-        })
-        .unwrap_or_else(|| rendered_ui_snapshot(world));
+        .map(|feed| feed.0.clone())
+        .unwrap_or_else(|| crate::widgets::snapshot::snapshot(world));
     snapshot
+        .as_array()
+        .cloned()
+        .unwrap_or_default()
         .into_iter()
         .map(|node| {
-            let control = node.action.as_ref().and_then(|action| controls.get(action));
+            let id = node.get("id").and_then(Value::as_str).unwrap_or_default();
+            let control = controls.get(id);
             json!({
-                "text": node.text,
-                "rect": node.rect,
-                "visible": node.visible,
-                "enabled": node.enabled,
-                "action": node.action,
+                "text": node.get("text").cloned().unwrap_or(Value::Null),
+                "rect": node.get("rect").cloned().unwrap_or(Value::Null),
+                "visible": node.get("visible").cloned().unwrap_or(Value::Bool(false)),
+                "enabled": node.get("enabled").cloned().unwrap_or(Value::Bool(false)),
+                "action": node.get("widget_action").cloned().unwrap_or(Value::Null),
                 "button_entity": control.map(|control| control.0),
                 "button_rect": control.and_then(|control| control.1),
-                "button_pressed": control.map(|control| control.2),
+                "button_pressed": control.map(|control| control.2).or_else(|| node.get("button_pressed").and_then(Value::as_bool)),
             })
         })
         .collect()
@@ -396,7 +396,7 @@ fn snapshot_json(world: &World) -> Value {
             "frame_ns": presented.frame_ns,
             "unit_count": presented.units.len(),
         })),
-        "selection": world.get_resource::<Selection>().and_then(|selection| selection.0),
+        "selection": world.get_resource::<crate::debug_feed::SelectionFeed>().and_then(|selection| selection.0.first().copied()),
         "command_results": command_results,
         "reconnect_required": world.get_resource::<CommandSendStatus>().is_some_and(|status| status.reconnect_required),
         "ui": ui_snapshot(world),
@@ -435,11 +435,16 @@ mod tests {
         use bevy::ui_widgets::Button;
         use turts_net_protocol::Pos;
 
-        use crate::economy_ui::{Selection, UiAction, UiActionTarget, UiSnapshotText};
         use crate::ingest::{CommandResults, ReplicaState, WelcomeInfo};
         use crate::join::Phase;
         use crate::present::Presented;
         use crate::replica::{Replica, UnitReplica};
+        use crate::{
+            debug_feed::SelectionFeed,
+            widgets::primitives::{
+                AuthoredWidgetId, WidgetAction, WidgetButtonAction, WidgetEnabled,
+            },
+        };
 
         let mut world = World::new();
         let mut replica = Replica::new(20);
@@ -465,17 +470,18 @@ mod tests {
         });
         world.insert_resource(Phase::Joined { slot: 0 });
         world.insert_resource(Presented::default());
-        world.insert_resource(Selection(Some(7)));
+        world.insert_resource(SelectionFeed(vec![7]));
         world.insert_resource(CommandResults::default());
-        let action = UiAction::Produce {
-            producer: 7,
-            recipe: "test:worker".into(),
-        };
-        world.spawn((Button, UiActionTarget(action.clone()), Pressed));
         world.spawn((
-            UiSnapshotText,
+            Button,
+            AuthoredWidgetId("ui.test.produce".into()),
+            WidgetEnabled(true),
+            WidgetButtonAction(WidgetAction::Produce {
+                producer: 7,
+                content_id: "test:worker".into(),
+            }),
+            Pressed,
             Text::new("Actual rendered panel text"),
-            UiActionTarget(action),
         ));
 
         let snapshot = super::snapshot_json(&world);

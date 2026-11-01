@@ -57,6 +57,16 @@ impl Core {
         self.camera
     }
 
+    /// Read-only cursor context for the camera controller's active pan direction.
+    pub fn camera_pan_context(&self) -> Option<&str> {
+        self.camera_controller.pan_context()
+    }
+
+    /// Read-only presentation seam for the order currently awaiting a target.
+    pub fn pending_order_id(&self) -> Option<&str> {
+        self.pending_order.as_deref()
+    }
+
     /// Read-only observation seam for the active unit selection.
     ///
     /// Task 9 preparation stub: behavior is implemented after semantic red evidence is recorded.
@@ -105,70 +115,7 @@ impl Core {
                     }
                     let action = self.action_for_key(code, world);
                     if let Some(action) = action {
-                        if let Some(group) = action
-                            .strip_prefix("group_assign_")
-                            .and_then(|value| value.parse::<u8>().ok())
-                        {
-                            self.assign_group(group, false, world);
-                            effects.push(Effect::GroupsChanged);
-                        } else if let Some(group) = action
-                            .strip_prefix("group_add_")
-                            .and_then(|value| value.parse::<u8>().ok())
-                        {
-                            self.assign_group(group, true, world);
-                            effects.push(Effect::GroupsChanged);
-                        } else if let Some(group) = action
-                            .strip_prefix("group_recall_")
-                            .and_then(|value| value.parse::<u8>().ok())
-                        {
-                            self.recall_group(group, world);
-                            effects.push(Effect::SelectionChanged);
-                            if self.camera_controller.group_recall_centres(
-                                &action,
-                                now_ms,
-                                world.interaction_settings().double_click_ms,
-                                &mut self.camera,
-                                &self.selected,
-                                world,
-                            ) {
-                                effects.push(Effect::CameraChanged);
-                            }
-                        } else if let Some(order) =
-                            world.orders().iter().find(|o| o.hotkey == action)
-                        {
-                            self.pending_order = Some(order.id.clone());
-                            if order.target == TargetKind::None {
-                                self.compose_explicit(
-                                    order,
-                                    OrderTarget::None,
-                                    world,
-                                    &mut effects,
-                                );
-                                self.pending_order = None;
-                            }
-                        } else if action == "centre_selection" {
-                            if self.camera_controller.centre_selection(
-                                &mut self.camera,
-                                &self.selected,
-                                world,
-                            ) {
-                                effects.push(Effect::CameraChanged);
-                            }
-                        } else if action == "menu" {
-                            effects.push(Effect::ShellAction {
-                                action: "menu".into(),
-                            });
-                        } else if action == "cancel" {
-                            if self.pending_order.take().is_some() {
-                                effects.push(Effect::Cursor {
-                                    context: "default".into(),
-                                });
-                            } else {
-                                effects.push(Effect::ShellAction {
-                                    action: "menu".into(),
-                                });
-                            }
-                        }
+                        self.dispatch_named_action(&action, world, now_ms, &mut effects);
                     }
                 }
                 InputEvent::KeyUp { code } => {
@@ -196,18 +143,9 @@ impl Core {
                     } else if let Some(order) =
                         world.orders().iter().find(|order| order.id == *name)
                     {
-                        if order.target == TargetKind::None {
-                            self.compose_explicit(order, OrderTarget::None, world, &mut effects);
-                        } else {
-                            self.pending_order = Some(order.id.clone());
-                            effects.push(Effect::Cursor {
-                                context: order.cursor.clone().unwrap_or_else(|| "target".into()),
-                            });
-                        }
+                        self.dispatch_order(order, world, &mut effects);
                     } else {
-                        effects.push(Effect::ShellAction {
-                            action: name.clone(),
-                        });
+                        self.dispatch_named_action(name, world, now_ms, &mut effects);
                     }
                 }
                 InputEvent::RestoreGroups { groups } => {
@@ -319,6 +257,87 @@ impl Core {
             &mut effects,
         );
         effects
+    }
+
+    fn dispatch_named_action(
+        &mut self,
+        action: &str,
+        world: &dyn WorldView,
+        now_ms: u64,
+        effects: &mut Vec<Effect>,
+    ) {
+        if let Some(group) = action
+            .strip_prefix("group_assign_")
+            .and_then(|value| value.parse::<u8>().ok())
+        {
+            self.assign_group(group, false, world);
+            effects.push(Effect::GroupsChanged);
+        } else if let Some(group) = action
+            .strip_prefix("group_add_")
+            .and_then(|value| value.parse::<u8>().ok())
+        {
+            self.assign_group(group, true, world);
+            effects.push(Effect::GroupsChanged);
+        } else if let Some(group) = action
+            .strip_prefix("group_recall_")
+            .and_then(|value| value.parse::<u8>().ok())
+        {
+            self.recall_group(group, world);
+            effects.push(Effect::SelectionChanged);
+            if self.camera_controller.group_recall_centres(
+                action,
+                now_ms,
+                world.interaction_settings().double_click_ms,
+                &mut self.camera,
+                &self.selected,
+                world,
+            ) {
+                effects.push(Effect::CameraChanged);
+            }
+        } else if let Some(order) = world.orders().iter().find(|order| order.hotkey == action) {
+            self.dispatch_order(order, world, effects);
+        } else if action == "centre_selection" {
+            if self
+                .camera_controller
+                .centre_selection(&mut self.camera, &self.selected, world)
+            {
+                effects.push(Effect::CameraChanged);
+            }
+        } else if action == "menu" || action == "toggle_guide" {
+            effects.push(Effect::ShellAction {
+                action: action.into(),
+            });
+        } else if action == "cancel" {
+            if self.pending_order.take().is_some() {
+                effects.push(Effect::Cursor {
+                    context: "default".into(),
+                });
+            } else {
+                effects.push(Effect::ShellAction {
+                    action: "menu".into(),
+                });
+            }
+        }
+    }
+
+    fn dispatch_order(
+        &mut self,
+        order: &OrderDef,
+        world: &dyn WorldView,
+        effects: &mut Vec<Effect>,
+    ) {
+        if order.target == TargetKind::None {
+            self.pending_order = None;
+            self.compose_explicit(order, OrderTarget::None, world, effects);
+            effects.push(Effect::Cursor {
+                context: "default".into(),
+            });
+        } else {
+            self.pending_order = Some(order.id.clone());
+            effects.push(Effect::Cursor {
+                context: order.cursor.clone().unwrap_or_else(|| "target".into()),
+            });
+        }
     }
 }
 

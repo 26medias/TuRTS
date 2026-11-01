@@ -80,6 +80,81 @@ fn arrow_pans() {
 }
 
 #[test]
+fn read_only_pan_cursor_context_follows_controller_state_and_input_guards() {
+    let world = world();
+    let mut core = Core::new(camera());
+    step(
+        &mut core,
+        &world,
+        &[InputEvent::KeyDown {
+            code: "ArrowUp".into(),
+            mods: vec![],
+        }],
+        0,
+    );
+    assert_eq!(core.camera_pan_context(), Some("pan_up"));
+
+    step(
+        &mut core,
+        &world,
+        &[InputEvent::PointerMove {
+            px: vec2(2.0, 2.0),
+            over_widget: false,
+        }],
+        1,
+    );
+    assert_eq!(core.camera_pan_context(), Some("pan_up_left"));
+
+    step(
+        &mut core,
+        &world,
+        &[InputEvent::PointerMove {
+            px: vec2(2.0, 2.0),
+            over_widget: true,
+        }],
+        2,
+    );
+    assert_eq!(core.camera_pan_context(), Some("pan_up"));
+
+    step(&mut core, &world, &[InputEvent::FocusLost], 3);
+    assert_eq!(core.camera_pan_context(), None);
+}
+
+#[test]
+fn canonical_no_target_button_order_clears_an_existing_target_mode() {
+    let world = world();
+    let mut core = Core::new(camera());
+    step(
+        &mut core,
+        &world,
+        &[
+            InputEvent::UiAction {
+                name: "ui_select:1".into(),
+            },
+            InputEvent::UiAction {
+                name: "forge:order_move".into(),
+            },
+        ],
+        0,
+    );
+    assert_eq!(core.pending_order_id(), Some("forge:order_move"));
+
+    step(
+        &mut core,
+        &world,
+        &[InputEvent::UiAction {
+            name: "forge:order_stop".into(),
+        }],
+        1,
+    );
+    assert_eq!(
+        core.pending_order_id(),
+        None,
+        "a canonical Stop button submits its command and exits the previous target mode"
+    );
+}
+
+#[test]
 fn edge_band_pans() {
     let world = world();
     let mut core = Core::new(camera());
@@ -246,6 +321,58 @@ fn space_centres() {
         core.camera_state().look_at.distance(expected) < 0.01,
         "Space must centre on selected unit at {expected:?}"
     );
+}
+
+#[test]
+fn authored_button_centre_selection_uses_the_same_core_camera_action() {
+    let world = world();
+    let mut core = Core::new(camera());
+    step(
+        &mut core,
+        &world,
+        &[InputEvent::UiAction {
+            name: "ui_select:1".into(),
+        }],
+        0,
+    );
+    step(
+        &mut core,
+        &world,
+        &[InputEvent::UiAction {
+            name: "centre_selection".into(),
+        }],
+        1,
+    );
+    assert!(
+        core.camera_state()
+            .look_at
+            .distance(world.units[0].position)
+            < 0.01,
+        "the authored centre_selection action must execute Core camera semantics"
+    );
+}
+
+#[test]
+fn authored_button_order_hotkey_enters_the_same_explicit_target_mode() {
+    let world = world();
+    let mut core = Core::new(camera());
+    step(
+        &mut core,
+        &world,
+        &[InputEvent::UiAction {
+            name: "ui_select:1".into(),
+        }],
+        0,
+    );
+    step(
+        &mut core,
+        &world,
+        &[InputEvent::UiAction {
+            name: "key_order_attack".into(),
+        }],
+        1,
+    );
+    assert_eq!(core.pending_order_id(), Some("forge:order_attack"));
 }
 
 #[test]

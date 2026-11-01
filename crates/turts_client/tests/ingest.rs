@@ -543,6 +543,7 @@ fn world_with_one_unit() -> World {
         map_size: (32.0, 32.0),
         unit_names: HashMap::new(),
         content: ClientContent::default(),
+        presentation: Default::default(),
     }));
     world.insert_resource(Presented {
         frame_ns: 5,

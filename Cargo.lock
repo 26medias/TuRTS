@@ -8600,6 +8600,7 @@ dependencies = [
  "gloo-net",
  "js-sys",
  "lightyear",
+ "ron",
  "serde",
  "serde_json",
  "turts_interaction",

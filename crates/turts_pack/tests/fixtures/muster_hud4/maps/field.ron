@@ -1,0 +1,14 @@
+(
+    id: "field",
+    size: (x: 32.0, y: 24.0),
+    placements: [
+        (unit: "muster:trooper", owner_slot: 0, pos: (x: 6.0, y: 10.0), contents: []),
+        (unit: "muster:worker", owner_slot: 0, pos: (x: 12.0, y: 10.0), contents: []),
+        (unit: "muster:dummy", owner_slot: 1, pos: (x: 19.0, y: 10.0), contents: []),
+    ],
+    nodes: [(node: "muster:ore_node", pos: (x: 25.0, y: 10.0), remaining: 1000)],
+    slot_economy: [
+        (slot: 0, balances: [(balance: "muster:ore", amount: 500)]),
+        (slot: 1, balances: []),
+    ],
+)

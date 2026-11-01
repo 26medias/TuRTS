@@ -7,17 +7,23 @@ const ROOT_WIDGETS = Object.freeze(["card", "minimap", "ore"]);
 
 async function judge(view, params) {
     const input = view.inputLog();
-    const selectedUnitClick = input.find((entry) =>
-        entry.call === "click" && entry.args?.[2] === "left" && entry.event_seq?.length >= 3);
-    assert(selectedUnitClick, "HUD1 must use an actual harness left click to select a visible unit");
+    let debug;
+    let scene;
+    if (params.capture_scene_checkpoints === true) {
+        ({ debug, scene } = await selectedCheckpoint(view, input));
+    } else {
+        const selectedUnitClick = input.find((entry) =>
+            entry.call === "click" && entry.args?.[2] === "left" && entry.event_seq?.length >= 3);
+        assert(selectedUnitClick, "HUD1 must use an actual harness left click to select a visible unit");
+        debug = await view.bridge("turts_debug");
+        scene = await view.bridge("turts_scene");
+        assert(Array.isArray(debug?.selection) && debug.selection.length > 0,
+            "HUD1 actual debug selection must be nonempty before widget placement is judged");
+    }
 
-    const debug = await view.bridge("turts_debug");
-    const selection = debug?.selection;
-    assert(Array.isArray(selection) && selection.length > 0,
-        "HUD1 actual debug selection must be nonempty before widget placement is judged");
-
-    const scene = await view.bridge("turts_scene");
-    const legacyUi = await view.bridge("turts_ui");
+    const legacyUi = params.capture_scene_checkpoints === true
+        ? debug.ui_snapshot
+        : await view.bridge("turts_ui");
     const faults = [];
     const viewport = params?.viewport;
     const expectedWidth = viewport?.width;
@@ -90,6 +96,62 @@ async function judge(view, params) {
     }
 
     if (faults.length) throw new Error(`HUD1: ${faults.join("; ")}`);
+}
+
+async function selectedCheckpoint(view, input) {
+    const pixelEvidence = JSON.parse(await view.serverFile("hud1-pixel-target.json"));
+    const checkpoints = JSON.parse(await view.serverFile("scene-checkpoints.json"));
+    const screenshotRows = input.map((entry, index) => ({ entry, index }))
+        .filter(({ entry }) => entry.call === "screenshot");
+    const checkpointsByCall = new Map(checkpoints.map((checkpoint) => [checkpoint.input_call, checkpoint]));
+    const box = pixelEvidence.selection_box;
+    assert(box?.start && box?.end &&
+        [box.start.x, box.start.y, box.end.x, box.end.y].every(Number.isFinite),
+    "HUD1 screenshot pixels did not yield a finite owned selection box");
+    const dragIndex = input.findIndex((entry) => entry.call === "drag" &&
+        entry.args?.[0] === box.start.x && entry.args?.[1] === box.start.y &&
+        entry.args?.[2] === box.end.x && entry.args?.[3] === box.end.y &&
+        entry.args?.[4] === "left");
+    const drag = input[dragIndex];
+    assert(drag && drag.event_seq?.length >= 3,
+        "HUD1 pixel-derived selection box was not dispatched as physical drag IO");
+    const screenshot = screenshotRows[pixelEvidence.screenshot_ordinal];
+    assert(screenshot, `HUD1 selection box screenshot ${pixelEvidence.screenshot_ordinal} is missing`);
+    assert(screenshot.index > dragIndex,
+        "HUD1 selected checkpoint screenshot must be captured after its physical selection drag");
+    assert.equal(screenshot, screenshotRows.at(-1),
+        "HUD1 selected checkpoint must come from the final post-selection screenshot");
+    const checkpoint = checkpointsByCall.get(screenshot.index);
+    assert(checkpoint, "HUD1 selection box screenshot has no C84 checkpoint");
+    const selection = checkpoint.debug?.selection;
+    assert(Array.isArray(selection) && selection.length > 0,
+        "HUD1 actual debug selection must be nonempty after pixel-derived box selection before layout is judged");
+    const replicatedUnits = checkpoint.debug?.replicated_world?.units;
+    const renderedUnits = checkpoint.scene?.units;
+    assert(Array.isArray(replicatedUnits) && Array.isArray(renderedUnits),
+        "HUD1 selected checkpoint lacks actual replicated or rendered units");
+    const ownSlot = joinedSlot(checkpoint.debug?.phase);
+    assert(Number.isSafeInteger(ownSlot), "HUD1 selected checkpoint is not in an actual joined player phase");
+    const renderedIds = new Set(renderedUnits.map((unit) => unit.unit_id));
+    const selectedOwned = replicatedUnits.some((unit) =>
+        selection.includes(unit.unit_id) && unit.owner_slot === ownSlot && renderedIds.has(unit.unit_id));
+    assert(selectedOwned, "HUD1 selection must include an actually rendered unit owned by the joined slot");
+    const finalDebug = await view.bridge("turts_debug");
+    const finalScene = await view.bridge("turts_scene");
+    assert.deepEqual(finalDebug?.selection, selection,
+        "HUD1 final actual selection must still match the captured owned selection");
+    assert.equal(finalDebug?.phase, checkpoint.debug.phase,
+        "HUD1 final joined phase must still match the captured selection phase");
+    assert.deepEqual(finalDebug?.ui_snapshot, checkpoint.debug.ui_snapshot,
+        "HUD1 final UI snapshot must match the captured widget state");
+    assert.deepEqual(finalScene?.widgets, checkpoint.scene.widgets,
+        "HUD1 final rendered widget metadata must match the captured selection state");
+    return { debug: checkpoint.debug, scene: checkpoint.scene };
+}
+
+function joinedSlot(phase) {
+    const match = typeof phase === "string" && /^Joined \{ slot: (\d+) \}$/.exec(phase);
+    return match ? Number(match[1]) : null;
 }
 
 function near(actual, expected) {

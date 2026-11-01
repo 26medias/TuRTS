@@ -75,6 +75,8 @@ pub struct CoreRuntime {
     started: Option<Instant>,
     pressed_keys: HashSet<String>,
     cursor: Option<Vec2>,
+    pointer_over_widget: Option<bool>,
+    window_focused: Option<bool>,
     last_ui_selection: Option<u32>,
     last_core_primary: Option<u32>,
     pending_sequences: Vec<u32>,
@@ -96,6 +98,14 @@ impl CoreRuntime {
     }
     pub fn effects(&self) -> &[ValueEffect] {
         &self.last_effects
+    }
+    /// Read-only interaction state used to present the cursor for a pending target order.
+    pub fn pending_order_id(&self) -> Option<&str> {
+        self.core.as_ref()?.pending_order_id()
+    }
+    /// Read-only camera controller pan context for mod-authored cursor presentation.
+    pub fn camera_pan_context(&self) -> Option<&str> {
+        self.core.as_ref()?.camera_pan_context()
     }
 }
 
@@ -426,26 +436,42 @@ fn over_widget(
             &UiGlobalTransform,
             &InheritedVisibility,
             &ComputedUiTargetCamera,
+            Option<&CalculatedClip>,
         ),
         With<UiCaptureRoot>,
     >,
     cameras: &Query<(Entity, &Camera), With<Camera3d>>,
 ) -> bool {
-    panels.iter().any(|(node, transform, visible, target)| {
-        if !visible.get() {
-            return false;
-        }
-        let Some(camera_id) = target.get() else {
-            return false;
-        };
-        let Some((_, camera)) = cameras.iter().find(|(entity, _)| *entity == camera_id) else {
-            return false;
-        };
-        let Some(point) = cursor_in_ui_viewport(cursor, camera) else {
-            return false;
-        };
-        node.size().min_element() <= 0.0 || node.contains_point(*transform, point)
-    })
+    panels
+        .iter()
+        .any(|(node, transform, visible, target, clip)| {
+            if !visible.get() || node.size().min_element() <= 0.0 {
+                return false;
+            }
+            let Some(camera_id) = target.get() else {
+                return false;
+            };
+            let Some((_, camera)) = cameras.iter().find(|(entity, _)| *entity == camera_id) else {
+                return false;
+            };
+            if !camera.is_active {
+                return false;
+            }
+            let Some(point) = cursor_in_ui_viewport(cursor, camera) else {
+                return false;
+            };
+            if !node.contains_point(*transform, point) {
+                return false;
+            }
+            match clip {
+                Some(CalculatedClip::FullyClipped) => false,
+                Some(CalculatedClip::Rects(clips)) => clips.iter().all(|clip| {
+                    clip.rect
+                        .contains(clip.world_to_clip_local.transform_point2(point))
+                }),
+                None => true,
+            }
+        })
 }
 
 #[derive(SystemParam)]
@@ -460,6 +486,7 @@ struct AdapterInputs<'w, 's> {
             &'static UiGlobalTransform,
             &'static InheritedVisibility,
             &'static ComputedUiTargetCamera,
+            Option<&'static CalculatedClip>,
         ),
         With<UiCaptureRoot>,
     >,
@@ -538,19 +565,26 @@ fn drive_core_adapter(
         runtime.core = Some(Core::new(initial_camera));
     }
     let mut events = Vec::new();
-    let mut current_cursor = runtime.cursor;
+    let mut current_cursor = (runtime.window_focused != Some(false))
+        .then_some(runtime.cursor)
+        .flatten();
     for event in input.window_events.read() {
         let primary = input.windows.iter().next().map(|(entity, _)| entity);
         match event {
             WindowEvent::CursorMoved(value) if Some(value.window) == primary => {
-                current_cursor = Some(value.position);
-                events.push(InputEvent::PointerMove {
-                    px: value.position,
-                    over_widget: over_widget(value.position, &input.panels, &input.cameras),
-                });
+                if runtime.window_focused != Some(false) {
+                    current_cursor = Some(value.position);
+                    let over = over_widget(value.position, &input.panels, &input.cameras);
+                    runtime.pointer_over_widget = Some(over);
+                    events.push(InputEvent::PointerMove {
+                        px: value.position,
+                        over_widget: over,
+                    });
+                }
             }
             WindowEvent::CursorLeft(value) if Some(value.window) == primary => {
                 current_cursor = None;
+                runtime.pointer_over_widget = None;
                 events.push(InputEvent::PointerLeft);
             }
             WindowEvent::KeyboardInput(value) if Some(value.window) == primary && !value.repeat => {
@@ -587,30 +621,55 @@ fn drive_core_adapter(
                 }
             }
             WindowEvent::MouseWheel(value) if Some(value.window) == primary => {
-                if !runtime
-                    .pressed_keys
-                    .iter()
-                    .any(|key| key.starts_with("Control"))
+                let over_ui = current_cursor
+                    .is_some_and(|cursor| over_widget(cursor, &input.panels, &input.cameras));
+                if !over_ui
+                    && !runtime
+                        .pressed_keys
+                        .iter()
+                        .any(|key| key.starts_with("Control"))
                 {
                     events.push(InputEvent::Wheel { delta: value.y });
                 }
             }
             WindowEvent::WindowFocused(value) if Some(value.window) == primary => {
                 output.focus_feed.0 = value.focused;
+                runtime.window_focused = Some(value.focused);
                 if !value.focused {
                     runtime.pressed_keys.clear();
+                    current_cursor = None;
+                    runtime.pointer_over_widget = None;
                     events.push(InputEvent::FocusLost);
                 }
             }
             WindowEvent::KeyboardFocusLost(_) => {
                 output.focus_feed.0 = false;
                 runtime.pressed_keys.clear();
+                current_cursor = None;
+                runtime.pointer_over_widget = None;
                 events.push(InputEvent::FocusLost);
             }
             _ => {}
         }
     }
     events.append(&mut output.input_events.0);
+    if runtime.window_focused != Some(false)
+        && let Some(px) = current_cursor
+        && !events
+            .iter()
+            .any(|event| matches!(event, InputEvent::PointerMove { .. }))
+    {
+        // Re-evaluate capture while the physical pointer is stationary. UI visibility and
+        // clipping can change under it without a new OS CursorMoved event.
+        let over = over_widget(px, &input.panels, &input.cameras);
+        if runtime.pointer_over_widget != Some(over) {
+            runtime.pointer_over_widget = Some(over);
+            events.push(InputEvent::PointerMove {
+                px,
+                over_widget: over,
+            });
+        }
+    }
     runtime.cursor = current_cursor;
     for unit in std::mem::take(&mut output.selection_requests.0) {
         events.push(InputEvent::UiAction {
@@ -916,18 +975,58 @@ mod adapter_tests {
     }
 
     fn acme_order_app() -> (App, Entity, Vec2) {
+        acme_order_app_with_widgets(false)
+    }
+
+    fn acme_order_app_with_widgets(include_widgets: bool) -> (App, Entity, Vec2) {
         let package = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../mods/acme");
         let archive =
             PackageArchive::parse(&pack_dir(&package).expect("pack Acme")).expect("parse Acme");
-        let content =
-            crate::content::ClientContent::from_archives(&[archive]).expect("resolve Acme content");
-        let acquired = Acquired {
-            lockfile_hash: String::new(),
-            visuals: HashMap::new(),
-            map_size: (64.0, 64.0),
-            unit_names: HashMap::new(),
-            content: content.clone(),
+        let mut acquired = if include_widgets {
+            crate::acquire::build_acquired(std::slice::from_ref(&archive), String::new())
+                .expect("acquire Acme presentation")
+        } else {
+            let content = crate::content::ClientContent::from_archives(&[archive.clone()])
+                .expect("resolve Acme content");
+            Acquired {
+                lockfile_hash: String::new(),
+                visuals: HashMap::new(),
+                map_size: (64.0, 64.0),
+                unit_names: HashMap::new(),
+                content,
+                presentation: Default::default(),
+            }
         };
+        if include_widgets {
+            acquired
+                .presentation
+                .interface
+                .as_mut()
+                .expect("Acme interface")
+                .root
+                .push(turts_mod_api::Widget {
+                    id: "test_guide_toggle".into(),
+                    at: Some(turts_mod_api::At {
+                        anchor: turts_mod_api::Anchor::TopLeft,
+                        offset: (200.0, 16.0),
+                        pivot: None,
+                    }),
+                    size: turts_mod_api::Size {
+                        w: turts_mod_api::Dimension::Px(120.0),
+                        h: turts_mod_api::Dimension::Px(28.0),
+                    },
+                    layer: 3,
+                    visible: vec![turts_mod_api::Predicate::GuideOpen],
+                    tooltip: None,
+                    widget: turts_mod_api::Primitive::Button {
+                        icon: None,
+                        label: Some(turts_mod_api::TextValue::Literal("Guide".into())),
+                        action: turts_mod_api::ButtonAction::Input("toggle_guide".into()),
+                        hotkey_label: true,
+                    },
+                });
+        }
+        let content = acquired.content.clone();
         let mut replica = crate::replica::Replica::new(20);
         replica.units.insert(
             1,
@@ -973,8 +1072,11 @@ mod adapter_tests {
         let mut app = App::new();
         app.add_plugins(MinimalPlugins)
             .add_plugins(CoreAdapterPlugin)
-            .add_plugins(crate::camera::ClientCameraPlugin)
-            .insert_resource(state)
+            .add_plugins(crate::camera::ClientCameraPlugin);
+        if include_widgets {
+            app.add_plugins(crate::widgets::WidgetsPlugin);
+        }
+        app.insert_resource(state)
             .insert_resource(AcquiredPackages(acquired))
             .insert_resource(Presented {
                 frame_ns: 1,
@@ -992,6 +1094,11 @@ mod adapter_tests {
             .init_resource::<PendingCommands>()
             .init_resource::<CommandSendStatus>()
             .init_resource::<CommandResults>();
+        if include_widgets {
+            app.insert_resource(crate::join::Phase::Joined { slot: 0 })
+                .insert_resource(bevy::asset::Assets::<bevy::prelude::Image>::default())
+                .insert_resource(bevy::asset::Assets::<bevy::prelude::Font>::default());
+        }
         let window = app
             .world_mut()
             .spawn((Window::default(), PrimaryWindow))
@@ -1013,6 +1120,7 @@ mod adapter_tests {
             map_size: (64.0, 64.0),
             unit_names: HashMap::new(),
             content: content.clone(),
+            presentation: Default::default(),
         };
         let mut replica = crate::replica::Replica::new(20);
         for (id, x) in [(1, 32.0), (2, 33.0)] {
@@ -1414,6 +1522,146 @@ mod adapter_tests {
     }
 
     #[test]
+    fn pending_order_cursor_seam_tracks_real_core_target_and_cancellation() {
+        let _guard = test_lock();
+        let (mut app, window, _) = acme_order_app();
+        app.world_mut().despawn(window);
+        app.update();
+        app.world_mut().resource_mut::<CoreInputQueue>().0 = vec![
+            InputEvent::UiAction {
+                name: "ui_select:1".into(),
+            },
+            InputEvent::UiAction {
+                name: "acme:order_move".into(),
+            },
+        ];
+        app.update();
+        assert_eq!(
+            app.world().resource::<CoreRuntime>().pending_order_id(),
+            Some("acme:order_move"),
+            "the presentation seam reports the actual order awaiting its target"
+        );
+
+        app.world_mut().resource_mut::<CoreInputQueue>().0 = vec![
+            InputEvent::PointerDown {
+                button: turts_interaction::Button::Right,
+                px: Vec2::new(600.0, 350.0),
+                over_widget: false,
+            },
+            InputEvent::PointerUp {
+                button: turts_interaction::Button::Right,
+                px: Vec2::new(600.0, 350.0),
+                over_widget: false,
+            },
+        ];
+        app.update();
+        assert_eq!(
+            app.world().resource::<CoreRuntime>().pending_order_id(),
+            None,
+            "right-click cancellation clears the core state observed by the cursor"
+        );
+    }
+
+    #[test]
+    fn guide_button_and_f1_both_toggle_once_through_core_shell_action() {
+        let _guard = test_lock();
+        let (mut app, window, _) = acme_order_app_with_widgets(true);
+        app.update();
+        assert!(
+            app.world()
+                .resource::<crate::widgets::guide::GuideOpen>()
+                .is_open
+        );
+        let guide_button = app
+            .world()
+            .iter_entities()
+            .find(|entity| {
+                entity
+                    .get::<crate::widgets::primitives::AuthoredWidgetId>()
+                    .is_some_and(|id| id.0 == "test_guide_toggle")
+            })
+            .expect("the test-authored guide toggle is installed")
+            .id();
+        let initial_visibility = *app.world().get::<Visibility>(guide_button).unwrap();
+        assert_eq!(initial_visibility, Visibility::Visible);
+        assert_eq!(
+            app.world().get::<Text>(guide_button).unwrap().0,
+            "Guide [F1]",
+            "hotkey_label displays the effective player binding"
+        );
+
+        app.world_mut().trigger(bevy::ui_widgets::Activate {
+            entity: guide_button,
+        });
+        assert!(
+            app.world()
+                .resource::<crate::widgets::guide::GuideOpen>()
+                .is_open,
+            "button activation queues input without toggling locally"
+        );
+        app.update();
+        assert!(
+            !app.world()
+                .resource::<crate::widgets::guide::GuideOpen>()
+                .is_open
+        );
+        assert_eq!(
+            app.world().get::<Visibility>(guide_button),
+            Some(&Visibility::Hidden)
+        );
+        assert!(app.world().resource::<CoreEffects>().0.iter().any(
+            |effect| matches!(effect, Effect::ShellAction { action } if action == "toggle_guide")
+        ));
+        assert!(app.world().get_entity(guide_button).is_ok());
+
+        {
+            let mut events = app.world_mut().resource_mut::<Messages<WindowEvent>>();
+            events.write(key(
+                window,
+                KeyCode::F1,
+                ButtonState::Pressed,
+                Key::Unidentified(bevy::input::keyboard::NativeKey::Unidentified),
+            ));
+            events.write(key(
+                window,
+                KeyCode::F1,
+                ButtonState::Released,
+                Key::Unidentified(bevy::input::keyboard::NativeKey::Unidentified),
+            ));
+        }
+        app.update();
+        assert!(
+            app.world()
+                .resource::<crate::widgets::guide::GuideOpen>()
+                .is_open
+        );
+        assert_eq!(
+            app.world().get::<Visibility>(guide_button),
+            Some(&Visibility::Visible)
+        );
+        assert!(
+            app.world().get_entity(guide_button).is_ok(),
+            "GuideOpen changes retain widget and button identity"
+        );
+        assert!(app.world().resource::<CoreEffects>().0.iter().any(
+            |effect| matches!(effect, Effect::ShellAction { action } if action == "toggle_guide")
+        ));
+
+        app.world_mut().resource_mut::<ReplicaState>().replica = None;
+        app.update();
+        assert!(
+            app.world()
+                .resource::<crate::widgets::guide::GuideOpen>()
+                .is_open,
+            "an early adapter return does not replay the prior frame's F1 shell action"
+        );
+        assert_eq!(
+            app.world().get::<Visibility>(guide_button),
+            Some(&Visibility::Visible)
+        );
+    }
+
+    #[test]
     fn adapter_defers_core_until_joined_and_uses_optional_camera_pose() {
         let _guard = test_lock();
         let (mut app, window, _) = acme_order_app();
@@ -1737,6 +1985,127 @@ mod adapter_tests {
         }
         app.update();
         assert_eq!(app.world().resource::<SelectionFeed>().0, vec![2]);
+    }
+
+    #[test]
+    fn stationary_edge_pointer_stops_when_capture_appears_and_never_rearms_after_exit_or_focus_loss()
+     {
+        let _guard = test_lock();
+        let (mut app, window, _) = fixture_app_with_ui(true);
+        let camera = app
+            .world_mut()
+            .spawn((
+                Camera3d::default(),
+                Camera {
+                    computed: bevy::camera::ComputedCameraValues {
+                        target_info: Some(bevy::camera::RenderTargetInfo {
+                            physical_size: UVec2::new(1280, 720),
+                            scale_factor: 1.0,
+                        }),
+                        ..default()
+                    },
+                    viewport: Some(bevy::camera::Viewport {
+                        physical_size: UVec2::new(1280, 720),
+                        ..default()
+                    }),
+                    ..default()
+                },
+                bevy::camera::RenderTarget::Window(bevy::window::WindowRef::Entity(window)),
+                IsDefaultUiCamera,
+                Transform::from_xyz(32.0, 40.0, 62.0)
+                    .looking_at(Vec3::new(32.0, 0.0, 32.0), Vec3::Y),
+            ))
+            .id();
+        app.update();
+
+        let edge = Vec2::new(1.0, 180.0);
+        app.world_mut()
+            .resource_mut::<Messages<WindowEvent>>()
+            .write(WindowEvent::CursorMoved(bevy::window::CursorMoved {
+                window,
+                position: edge,
+                delta: None,
+            }));
+        app.update();
+        assert_eq!(
+            app.world().resource::<CoreRuntime>().camera_pan_context(),
+            Some("pan_left"),
+            "a real pointer at the edge activates edge-pan"
+        );
+
+        let panel = app
+            .world_mut()
+            .spawn((
+                Node {
+                    position_type: PositionType::Absolute,
+                    left: Val::Px(0.0),
+                    top: Val::Px(80.0),
+                    width: Val::Px(80.0),
+                    height: Val::Px(220.0),
+                    ..default()
+                },
+                bevy::ui::UiTargetCamera(camera),
+                Visibility::Visible,
+                UiCaptureRoot,
+            ))
+            .id();
+        app.update(); // publish computed UI geometry
+        app.update(); // refresh live capture with no new pointer event
+        assert_eq!(
+            app.world().resource::<CoreRuntime>().camera_pan_context(),
+            None,
+            "newly visible UI beneath a stationary pointer stops edge-pan"
+        );
+
+        app.world_mut()
+            .resource_mut::<Messages<WindowEvent>>()
+            .write(WindowEvent::CursorLeft(bevy::window::CursorLeft { window }));
+        app.world_mut().despawn(panel);
+        app.update();
+        app.update();
+        assert_eq!(
+            app.world().resource::<CoreRuntime>().camera_pan_context(),
+            None,
+            "removing UI after CursorLeft cannot rearm from stale window coordinates"
+        );
+
+        app.world_mut()
+            .resource_mut::<Messages<WindowEvent>>()
+            .write(WindowEvent::CursorMoved(bevy::window::CursorMoved {
+                window,
+                position: edge,
+                delta: None,
+            }));
+        app.update();
+        assert_eq!(
+            app.world().resource::<CoreRuntime>().camera_pan_context(),
+            Some("pan_left")
+        );
+        app.world_mut()
+            .resource_mut::<Messages<WindowEvent>>()
+            .write(WindowEvent::WindowFocused(bevy::window::WindowFocused {
+                window,
+                focused: false,
+            }));
+        app.update();
+        app.update();
+        assert_eq!(
+            app.world().resource::<CoreRuntime>().camera_pan_context(),
+            None,
+            "focus loss clears edge-pan and the saved pointer"
+        );
+        app.world_mut()
+            .resource_mut::<Messages<WindowEvent>>()
+            .write(WindowEvent::WindowFocused(bevy::window::WindowFocused {
+                window,
+                focused: true,
+            }));
+        app.update();
+        assert_eq!(
+            app.world().resource::<CoreRuntime>().camera_pan_context(),
+            None,
+            "focus gain alone never reuses stale coordinates"
+        );
     }
 
     #[test]

@@ -204,6 +204,7 @@ fn disconnected_sender_preserves_fifo_and_sequence_until_connected() {
         map_size: (1.0, 1.0),
         unit_names: Default::default(),
         content,
+        presentation: Default::default(),
     }));
     *app.world_mut().resource_mut::<Phase>() = Phase::Joined { slot: 0 };
     let disconnected = app

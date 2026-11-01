@@ -4,6 +4,7 @@
   "driver": "tests/browser/hud-driver.js",
   "oracle": "tests/browser/hud-oracle.js",
   "runs": "ci",
+  "capture_scene_checkpoints": true,
   "viewports": [
     "1280x720",
     "1920x1080",

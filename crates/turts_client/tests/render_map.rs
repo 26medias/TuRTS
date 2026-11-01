@@ -208,6 +208,7 @@ fn sync_app() -> App {
                 )]),
                 ..ClientContent::default()
             },
+            presentation: Default::default(),
         }))
         .add_systems(Update, sync_units);
     app
@@ -269,6 +270,7 @@ fn setup_app(phase: Phase) -> App {
             map_size: (64.0, 64.0),
             unit_names: HashMap::new(),
             content: ClientContent::default(),
+            presentation: Default::default(),
         }))
         .add_systems(Update, setup_scene);
     app
@@ -347,6 +349,7 @@ fn sync_nodes_uses_downloaded_shapes_and_stable_ids() {
             map_size: (64.0, 64.0),
             unit_names: HashMap::new(),
             content,
+            presentation: Default::default(),
         }))
         .add_systems(Update, sync_nodes);
     app.update();
