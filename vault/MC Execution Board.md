@@ -8,7 +8,7 @@ source: codex
 
 # MC execution board
 
-State: ACTIVE:11/25 lanes complete;52/170 runs registered. Task6 COMPLETE at merge450c023, final review0High; integration12/12 gates0 (1211/0/18,T7,M3). RUN51/52 Task7 implementation and independent review active, Task7run3/4 (soft8/hard16). C1-C122. Wave5 remains open; no main merge/push.
+State: ACTIVE:11/25 lanes complete;53/170 runs registered. Task6 COMPLETE at merge450c023, final review0High; integration12/12 gates0 (1211/0/18,T7,M3). RUN51/52 Task7 implementation and independent review active, Task7run3/4 (soft8/hard16). C1-C122. Wave5 remains open; no main merge/push.
 
 Plan: `docs/superpowers/plans/2026-10-29-mc-player-control.md`.
 Design of record: `docs/superpowers/specs/2026-10-29-mc-player-control-design.md`, revision13 at main721e56e.
@@ -150,7 +150,7 @@ Tasks in one wave share no file, except the refutation registries (merge in task
 
 ## 7. Budget and seats
 
-CEO approved about 212 total runs. Build stop line: 170 (106 planned task runs plus 64 repairs). Gate estimate: 42 spent before this build. Build dispatches used: 52/170. Root preflight is recorded separately and is not a builder/reviewer dispatch. Twice a task estimate requires a recorded continuation decision; four times is a hard stop. T18 estimate2: soft4, hard8. No dispatch at global170 or a task hard limit.
+CEO approved about 212 total runs. Build stop line: 170 (106 planned task runs plus 64 repairs). Gate estimate: 42 spent before this build. Build dispatches used: 53/170. Root preflight is recorded separately and is not a builder/reviewer dispatch. Twice a task estimate requires a recorded continuation decision; four times is a hard stop. T18 estimate2: soft4, hard8. No dispatch at global170 or a task hard limit.
 
 One run is one agent dispatch (builder or reviewer). Count every run on the board.
 
@@ -245,6 +245,7 @@ One row per builder/reviewer dispatch or resumed agent work turn. Register befor
 | 50 | T6 independent finite finding closure and final review | performance-architect | gpt-6.1-sol | high | ffb21b3+RUN49 repairs | COMPLETE PASS ed793bb:0High,C114Mediumdeferred,C121scope;21probes/191tests, all20GREF/8plants verified, ownGM40 0/101/0 exactrestore; finalcache returned. Task6run8/6. |
 | 51 | T7 server session implementation continuation | backend-engineer | gpt-6-luna | high | integration450c023+preserved5pathprep | Registered BEFORE dispatch; finish task7 from compiled semantic reds, buckets/rejoin/script/log, commit/gate/plants. Task7run2/estimate4, soft8/hard16; no other compiler until root hands off the sole cache. |
 | 52 | T7 independent session/script/log review | network-engineer | gpt-6.1-sol | high | Task7 base63c8ab4 plus active RUN51 | Registered BEFORE dispatch; contract/source-only preparation now, no cache/compiler until clean committed candidate/gates and explicit lease. Final independent tests and own plant required. Task7run3/estimate4, soft8/hard16. |
+| 53 | T11 camera and light implementation continuation | bevy-rendering-engineer | gpt-6-luna | high | d568edb+preserved5pathprep | Registered BEFORE dispatch; source/test preparation only while RUN51/52 own sole cache. Root must explicitly hand off compiler/browser before any build. Finish actual red, green, commit, gates, plants. Task11run2/estimate4, soft8/hard16. |
 
 ## 9. Preflight ledger and stop
 
@@ -1059,3 +1060,5 @@ Conflict: the new script loader accepts tick0, but the fixed schedule advances T
 Choice: reject the whole script at load time if any entry has tick0. The error identifies the file, entry index and invalid tick. Validate before installing the Script resource or its system. Keep the existing first executable tick1; do not retime an entry or silently drop it.
 
 Evidence: crates/turts_server/src/command_script.rs:23-40 loads and groups entries before installation; :44-47 removes only the current tick. crates/turts_sim/src/plugin.rs:93,115,118 orders Advance before Commands, and :157 implements the tick advance. This is an instrument detail under brief section4, with no K, frozen value or player action change. Alternative not taken: silently lose tick0, move the simulation clock, or reinterpret zero as one. RUN51 implements the loader negative; runtime proof remains NOT TRACED until it runs.52/170 runs; Task7run3/4.
+
+RUN53 registered before T11 continuation: independent source/test preparation overlaps Task7 gates/review, with no compiler/browser/cache use until root hands off the lease.53/170 runs; Task11run2/4. Production implementation waits for its compiled native and actual browser reds.
