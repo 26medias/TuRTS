@@ -8,7 +8,7 @@ source: codex
 
 # MC execution board
 
-State: ACTIVE. CEO O13 releases STOP-PAL1; design14 at main f050e42. Integration and open Task5/Task13 lanes rebased.14/25lanes complete;65/170runs registered. Wave6 resumes Task5 repairs and Task13 source preparation. One compiler/cache lease belongs to Task5. C1-C161; no main merge/push.
+State: ACTIVE. CEO O13 releases STOP-PAL1; design14 at main f050e42. Integration and open Task5/Task13 lanes rebased.14/25lanes complete;65/170runs registered. Wave6 resumes Task5 repairs and Task13 source preparation. One compiler/cache lease belongs to Task5. C1-C164; no main merge/push.
 
 Plan: `docs/superpowers/plans/2026-10-29-mc-player-control.md`.
 Design of record: `docs/superpowers/specs/2026-10-29-mc-player-control-design.md`, revision14 at mainf050e42.
@@ -62,7 +62,7 @@ CI trigger: `.github/workflows/ci.yml:2-5` runs pushes to main and pull requests
 
 ## 4. Tasks
 
-24 numbered tasks; task2 has two branches, for25lanes. Waves1–5 are complete:14lanes. Task12 merged and re-gated ataf567c4. The sole cache belongs to integration; no child agent holds a runtime/read/deletion lease. Wave5 push/CI read precedes Wave6 Tasks5/13.
+24 numbered tasks; task2 has two branches, for25lanes. Waves1–5 are complete:14lanes. Task12 merged and re-gated ataf567c4. The sole cache belongs to Task5; RUN64 owns runtime and RUN65 is source-only. RUN62 prepares Task13 source without a second cache. Wave5 push/CI read completed before Wave6.
 
 | Task | Wave | Needs | Branch | State |
 | --- | --- | --- | --- | --- |

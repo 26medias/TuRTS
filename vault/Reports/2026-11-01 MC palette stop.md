@@ -8,6 +8,8 @@ source: codex
 
 # MC STOP-PAL1: CEO ruling required for the default palette and VIS1
 
+**Released:** CEO ruling O13, mainf050e42/design14. The palette stays; VIS1 is >=20 normal and >=10 per Machado severity1.0 simulation. Integration and both lanes rebased; Tasks5/13 resumed. The report below preserves the earlier stop evidence and its then-pending question.
+
 Implementation stopped under the user's brief section4. All three active lanes/agents are quiescent. No palette, severity, threshold, design or acceptance row was changed to obtain a pass.
 
 The conflict is between design revision13 section9.1:850-853, which fixes the eight Okabe–Ito default hex values, and VIS1:1254, which requires CIEDE2000 distance at least20 for every pair under protan, deutan and tritan Machado simulation. The design does not state a numerical severity. The proposed native test uses the standard full-severity1.0 matrices; root did not choose a weaker simulation to force green.
