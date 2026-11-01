@@ -27,9 +27,9 @@ async function judge(view, params) {
             assert(Math.hypot(second.args[0] - first.args[0], second.args[1] - first.args[1]) <= 4, `SEL ${stage.label} clicks exceed the 4 px double-click radius`);
         }
         const mouseUp = action.actual_events?.find((event) => event.type === "pointerup");
-        assert(mouseUp?.canvas_target, `SEL ${stage.label} mouse-up did not land on the rendered canvas`);
+        assert(mouseUp?.canvas_target, `SEL ${stage.label} pointer release did not land on the rendered canvas`);
         const mouseUpSeq = mouseUp?.seq;
-        assert(Number.isInteger(mouseUpSeq), `SEL ${stage.label} has no actual canvas mouse-up sequence`);
+        assert(Number.isInteger(mouseUpSeq), `SEL ${stage.label} has no actual canvas pointer-release sequence`);
         const saveIndex = input.findIndex((entry) => entry.call === "save" && entry.args?.[0] === `${stage.label}.png`);
         assert(saveIndex > 0, `SEL ${stage.label} must capture its result from screenshot pixels`);
         let screenshotIndex = saveIndex - 1;
@@ -42,12 +42,12 @@ async function judge(view, params) {
         const frames = debug.frames?.retained_input;
         assert(Array.isArray(frames), `SEL ${stage.label} C84 checkpoint has no retained input-correlated frame list`);
         const appliedFrames = frames.filter((record) => record.applied_seq?.includes(mouseUpSeq));
-        assert.equal(appliedFrames.length, 1, `SEL ${stage.label} mouse-up ${mouseUpSeq} must apply to exactly one presented frame`);
+        assert.equal(appliedFrames.length, 1, `SEL ${stage.label} pointer release ${mouseUpSeq} must apply to exactly one presented frame`);
         const frame = appliedFrames[0];
         if (Number.isInteger(stage.expected_selection)) assert.equal(frame.selection?.length, stage.expected_selection,
-            `SEL ${stage.label} first mouse-up frame selection count`);
+            `SEL ${stage.label} first pointer-release frame selection count`);
         if (Number.isInteger(stage.expected_rings)) assert.equal(frame.rings?.length, stage.expected_rings,
-            `SEL ${stage.label} first mouse-up frame actual rendered ring count`);
+            `SEL ${stage.label} first pointer-release frame actual rendered ring count`);
         assertFrameSelectionIsOwn(frame, debug, stage);
         assertModifiers(action, stage);
         if (stage.gesture === "box") assertBoxSelectionCenters(action, frame, scene, stage);

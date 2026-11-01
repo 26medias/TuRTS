@@ -1,7 +1,22 @@
 use turts_client::palette::SLOT_RGB;
 
-// Dichromat matrices from Machado, Oliveira and Fernandes (2009), DOI 10.1109/TVCG.2009.113.
-// CIEDE2000 equations and the reference pair follow Sharma, Wu and Dalal (2005).
+// VIS1 O13 palette contract: preserve the eight authored Okabe-Ito sRGB values
+// (`https://jfly.uni-koeln.de/color/`). Machado et al. (2009) matrices are the
+// severity-1.0 dichromat endpoints (DOI 10.1109/TVCG.2009.113). CIEDE2000
+// follows Sharma, Wu and Dalal (2005), including its supplementary test vector
+// (DOI 10.1002/col.20070). Thresholds are >=20 without simulation and >=10
+// under each simulation, as ruled by design revision 14 / O13.
+const OKABE_ITO_RGB: [[u8; 3]; 8] = [
+    [0, 114, 178],
+    [230, 159, 0],
+    [0, 158, 115],
+    [213, 94, 0],
+    [86, 180, 233],
+    [204, 121, 167],
+    [240, 228, 66],
+    [0, 0, 0],
+];
+
 const MACHADO_2009: [[[f64; 3]; 3]; 3] = [
     [
         [0.152_286, 1.052_583, -0.204_868],
@@ -28,20 +43,50 @@ fn ciede2000_reference_pair_matches_published_test_vector() {
 }
 
 #[test]
-fn every_slot_pair_is_separated_under_all_machado_2009_deficiencies() {
-    for matrix in MACHADO_2009 {
-        let transformed: Vec<_> = SLOT_RGB
-            .iter()
-            .map(|rgb| srgb_to_lab(simulate(*rgb, matrix)))
-            .collect();
-        for left in 0..transformed.len() {
-            for right in left + 1..transformed.len() {
-                assert!(
-                    ciede2000(transformed[left], transformed[right]) >= 20.0,
-                    "palette slots {left} and {right} have CIEDE2000 distance {:.3}",
-                    ciede2000(transformed[left], transformed[right]),
-                );
-            }
+fn default_slot_rgb_matches_the_authored_okabe_ito_palette() {
+    assert_eq!(
+        SLOT_RGB, OKABE_ITO_RGB,
+        "VIS1 O13 keeps the authored default palette"
+    );
+}
+
+#[test]
+fn every_slot_pair_meets_o13_distance_without_simulation() {
+    assert_pairwise_minimum(SLOT_RGB, identity_matrix(), 20.0, "normal vision");
+}
+
+#[test]
+fn every_slot_pair_meets_o13_distance_under_all_machado_2009_deficiencies() {
+    for (name, matrix) in [
+        ("protan", MACHADO_2009[0]),
+        ("deutan", MACHADO_2009[1]),
+        ("tritan", MACHADO_2009[2]),
+    ] {
+        assert_pairwise_minimum(SLOT_RGB, matrix, 10.0, name);
+    }
+}
+
+fn identity_matrix() -> [[f64; 3]; 3] {
+    [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]
+}
+
+fn assert_pairwise_minimum(
+    palette: [[u8; 3]; 8],
+    matrix: [[f64; 3]; 3],
+    threshold: f64,
+    mode: &str,
+) {
+    let transformed: Vec<_> = palette
+        .iter()
+        .map(|rgb| srgb_to_lab(simulate(*rgb, matrix)))
+        .collect();
+    for left in 0..transformed.len() {
+        for right in left + 1..transformed.len() {
+            let distance = ciede2000(transformed[left], transformed[right]);
+            assert!(
+                distance >= threshold,
+                "{mode}: palette slots {left} and {right} have CIEDE2000 distance {distance:.3}; expected >= {threshold:.1}",
+            );
         }
     }
 }

@@ -19,6 +19,8 @@
 // Default flags give software rendering (SwiftShader). Performance runs on a dev machine pass
 // `--enable-gpu --use-angle=gl`. The two kinds of run are never compared (design 4.5).
 const { chromium } = require("playwright-core");
+const os = require("node:os");
+const { installWebGpuTelemetry } = require("./measure-webgpu-hook.js");
 
 const FIRST_FRAME_TIMEOUT_MS = 60000;
 const RECORD_MS = 10000;
@@ -33,32 +35,62 @@ const percentile = (sorted, p) => sorted[Math.floor(p * (sorted.length - 1))];
         process.exit(2);
     }
     const executablePath = process.env.CHROME_BIN || "/usr/bin/google-chrome";
-    const browser = await chromium.launch({ executablePath, headless: true, args: extra });
+    const vis2 = label === "vis2";
+    const browser = await chromium.launch({ executablePath, headless: !vis2, args: extra });
     const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
+    if (vis2) await page.addInitScript(installWebGpuTelemetry);
     const logs = [];
     page.on("console", (m) => logs.push(m.type() + ": " + m.text()));
     page.on("pageerror", (e) => logs.push("pageerror: " + e.message));
 
     const startedAt = Date.now();
     await page.goto(url);
-    const gl = await page.evaluate(() => {
+    const gl = vis2 ? null : await page.evaluate(() => {
         const context = document.createElement("canvas").getContext("webgl2");
         return context ? context.getParameter(context.RENDERER) : "no webgl2";
     });
 
     let firstFrameMs = null;
+    let actualUnits = null;
     while (Date.now() - startedAt < FIRST_FRAME_TIMEOUT_MS) {
-        const text = await page
-            .evaluate(() => (typeof window.turts_debug === "function" ? window.turts_debug() : ""))
-            .catch(() => "");
-        if (text) {
+        const ready = vis2
+            ? await page.evaluate(() => {
+                if (typeof window.turts_debug !== "function" || typeof window.turts_scene !== "function") return null;
+                try {
+                    const debug = JSON.parse(window.turts_debug());
+                    const scene = JSON.parse(window.turts_scene());
+                    const worldCount = debug?.replicated_world?.units?.length ?? null;
+                    const sceneCount = Array.isArray(scene?.units) ? scene.units.length : null;
+                    return { ok: worldCount === 5000 && sceneCount === 5000, units: { replicatedWorld: worldCount, renderedScene: sceneCount } };
+                } catch {
+                    return null;
+                }
+            }).catch(() => null)
+            : await page.evaluate(() => typeof window.turts_debug === "function" ? window.turts_debug() : "")
+                .then((text) => ({ ok: Boolean(text), units: null }))
+                .catch(() => ({ ok: false, units: null }));
+        if (ready?.ok) {
             firstFrameMs = Date.now() - startedAt;
+            actualUnits = ready.units;
             break;
         }
         await page.waitForTimeout(50);
     }
 
     let report = { label, chrome: browser.version(), gl, firstFrameMs };
+    if (vis2) {
+        const cpus = os.cpus();
+        report.machine = {
+            platform: process.platform,
+            architecture: os.arch(),
+            release: os.release(),
+            cpu_model: cpus[0]?.model || null,
+            logical_processors: cpus.length,
+            total_memory_bytes: os.totalmem(),
+        };
+        report.chromeArgs = extra;
+        report.browserMode = "headed";
+    }
     if (firstFrameMs !== null) {
         const bytesAtFirstFrame = await page.evaluate(() => {
             const entries = performance
@@ -67,7 +99,7 @@ const percentile = (sorted, p) => sorted[Math.floor(p * (sorted.length - 1))];
                 .map((e) => ({ name: new URL(e.name).pathname.split("/").pop() || "/", transfer: e.transferSize, decoded: e.decodedBodySize }));
             return { files: entries, transferTotal: entries.reduce((sum, e) => sum + e.transfer, 0) };
         });
-        await page.evaluate(() => {
+        const gpuStart = await page.evaluate((measureGpu) => {
             window.__rafIntervals = [];
             let previous = performance.now();
             const step = (now) => {
@@ -76,7 +108,8 @@ const percentile = (sorted, p) => sorted[Math.floor(p * (sorted.length - 1))];
                 requestAnimationFrame(step);
             };
             requestAnimationFrame(step);
-        });
+            return measureGpu ? { ...window.__mcGpuMetrics } : null;
+        }, vis2);
         const memory = [];
         for (let waited = 0; waited < RECORD_MS; waited += SAMPLE_MS) {
             await page.waitForTimeout(SAMPLE_MS);
@@ -92,8 +125,37 @@ const percentile = (sorted, p) => sorted[Math.floor(p * (sorted.length - 1))];
             const text = window.turts_debug();
             return text ? JSON.parse(text).phase : null;
         });
+        const vis2Measurements = vis2 ? await page.evaluate((start) => {
+            const current = window.__mcGpuMetrics;
+            const currentTextureAcquisitions = current.currentTextureAcquisitions - start.currentTextureAcquisitions;
+            const submittedDrawCalls = current.submittedDrawCalls - start.submittedDrawCalls;
+            const debug = JSON.parse(window.turts_debug());
+            const scene = JSON.parse(window.turts_scene());
+            return {
+                actualUnits: scene.units.length,
+                worldUnits: debug.replicated_world?.units?.length ?? null,
+                bevyRenderAdapter: debug.render_adapter ?? null,
+                webgpu: {
+                    adapterRequested: current.adapterRequested,
+                    adapterInfo: current.adapterInfo,
+                    activeDeviceId: current.activeDeviceId,
+                    acquiredDeviceCount: current.acquiredDeviceCount,
+                    deviceAcquired: current.deviceAcquired,
+                    configuredDeviceAcquired: current.configuredDeviceAcquired,
+                    configuredContexts: current.configuredContexts,
+                    currentTextureAcquisitions,
+                    submittedDrawCalls,
+                    meanSubmittedDrawCallsPerRafInterval: window.__rafIntervals.length > 1
+                        ? submittedDrawCalls / (window.__rafIntervals.length - 1) : null,
+                    submissions: current.submissions - start.submissions,
+                    executedBundles: current.executedBundles - start.executedBundles,
+                    instrumentationErrors: current.instrumentationErrors,
+                },
+            };
+        }, gpuStart) : null;
         report = {
             ...report,
+            ...(vis2 ? { actualUnits, vis2: vis2Measurements } : {}),
             bytesAtFirstFrame,
             frames: {
                 count: sorted.length,
@@ -107,9 +169,33 @@ const percentile = (sorted, p) => sorted[Math.floor(p * (sorted.length - 1))];
     } else {
         report.logs = logs.slice(0, 12);
     }
+    const adapterInfoText = JSON.stringify(report.vis2?.webgpu?.adapterInfo || {}).toLowerCase();
+    const bevyAdapter = report.vis2?.bevyRenderAdapter || {};
+    const bevyVendor = typeof bevyAdapter.vendor === "number"
+        ? bevyAdapter.vendor.toString(16) : String(bevyAdapter.vendor || "").toLowerCase();
+    const bevyAdapterText = JSON.stringify(bevyAdapter).toLowerCase();
+    const adapterInfoComplete = Object.values(report.vis2?.webgpu?.adapterInfo || {})
+        .some((value) => typeof value === "string" && value.length > 0) &&
+        (bevyAdapter.device || bevyAdapter.description || bevyAdapterText.includes("nvidia"));
+    const nvidiaAdapter = /nvidia|10de/.test(`${adapterInfoText} ${bevyVendor} ${bevyAdapterText}`);
+    const softwareAdapter = /swiftshader|software/.test(adapterInfoText + bevyAdapterText);
+    if (vis2 && report.vis2) {
+        report.vis2.adapterEvidence = { nvidiaAdapter, softwareAdapter, adapterInfoComplete };
+    }
+    const wasmMemory = report.wasmMemoryBytes?.last;
+    const vis2Ready = !vis2 || (report.vis2?.actualUnits === 5000 && report.vis2?.worldUnits === 5000 &&
+        report.vis2?.webgpu?.adapterRequested && report.vis2?.webgpu?.deviceAcquired &&
+        report.vis2?.webgpu?.configuredDeviceAcquired && Number.isInteger(report.vis2?.webgpu?.activeDeviceId) &&
+        report.vis2?.webgpu?.configuredContexts > 0 && report.vis2?.webgpu?.currentTextureAcquisitions > 0 &&
+        report.vis2?.webgpu?.submittedDrawCalls > 0 && report.vis2?.webgpu?.instrumentationErrors?.length === 0 &&
+        bevyAdapter.backend?.toLowerCase().includes("webgpu") &&
+        adapterInfoComplete && nvidiaAdapter && !softwareAdapter &&
+        Number.isFinite(report.frames?.p50_ms) && report.frames.p50_ms > 0 &&
+        Number.isFinite(report.frames?.p99_ms) && report.frames.p99_ms > 0 &&
+        Number.isFinite(wasmMemory) && wasmMemory > 0);
     console.log(JSON.stringify(report, null, 2));
     await browser.close();
-    process.exit(firstFrameMs === null ? 1 : 0);
+    process.exit(firstFrameMs === null || !vis2Ready ? 1 : 0);
 })().catch((e) => {
     console.error(e);
     process.exit(1);

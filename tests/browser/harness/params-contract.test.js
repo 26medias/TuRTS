@@ -23,6 +23,38 @@ function launchParams(row, viewport = "1280x720@2") {
     } finally { fs.rmSync(output, { recursive: true, force: true }); }
 }
 
+function launcherServerArgv(syntheticSet, syntheticUnits) {
+    const source = fs.readFileSync(path.join(__dirname, "../../../scripts/mc-browser.sh"), "utf8");
+    const start = source.indexOf("SERVER_ARGS=(");
+    const end = source.indexOf("PYSERVERARGV\n", start) + "PYSERVERARGV\n".length;
+    assert(start >= 0 && end > start, "extract the actual production server argv array and recorder");
+    const output = fs.mkdtempSync(path.join(os.tmpdir(), "mc-server-argv-"));
+    try {
+        execFileSync("bash", ["-c", source.slice(start, end)], {
+            env: { ...process.env, TARGET: "/fixture/target", OUT: output, SYNTHETIC_SET: syntheticSet, SYNTHETIC_UNITS: syntheticUnits },
+            stdio: "pipe",
+        });
+        return JSON.parse(fs.readFileSync(path.join(output, "server-argv.json"), "utf8"))
+            .map((arg) => arg.startsWith(output + path.sep) ? `<OUT>/${arg.slice(output.length + 1)}` : arg);
+    } finally { fs.rmSync(output, { recursive: true, force: true }); }
+}
+
+function launcherSyntheticUnits(row) {
+    const source = fs.readFileSync(path.join(__dirname, "../../../scripts/mc-browser.sh"), "utf8");
+    const block = source.match(/<<'PYSYNTHETIC'\n([\s\S]*?)\nPYSYNTHETIC/);
+    assert(block, "extract the actual pre-build synthetic row validator");
+    const root = path.resolve(__dirname, "../../..");
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), "mc-synthetic-row-"));
+    try {
+        const rowPath = path.join(directory, "row.json");
+        fs.writeFileSync(rowPath, JSON.stringify(row));
+        const output = execFileSync("python3", ["-c", block[1], root, rowPath], {
+            encoding: "utf8", stdio: ["pipe", "pipe", "pipe"],
+        });
+        return output.trim();
+    } finally { fs.rmSync(directory, { recursive: true, force: true }); }
+}
+
 test("launcher carries the top-level checkpoint opt-in to the production harness params", () => {
     const { params } = launchParams({ row: "CAM1", capture_scene_checkpoints: true, windows: 2 });
     assert.equal(params.capture_scene_checkpoints, true);
@@ -62,4 +94,31 @@ test("launcher rejects a non-boolean checkpoint setting instead of silently losi
 test("launcher retains a declared synthetic count in oracle params", () => {
     const { params } = launchParams({ row: "VIS2", synthetic_units: 4485 });
     assert.equal(params.synthetic_units, 4485);
+});
+
+test("the production params generator is byte-identical when synthetic_units is absent", () => {
+    const base = launchParams({ row: "VIS2" });
+    const absent = launchParams({ row: "VIS2", capture_scene_checkpoints: false });
+    assert.equal(base.bytes, absent.bytes);
+    assert.equal(Object.hasOwn(base.params, "synthetic_units"), false);
+    const expected = '{"capture_scene_checkpoints": false, "device_scale_factor": 2.0, "package": "fixture", "row": "VIS2", "server_url": "http://server", "url": "http://fixture", "viewport": {"device_scale_factor": 2.0, "height": 720, "width": 1280}, "windows": 1, "ws_url": "ws://server"}\n';
+    assert.equal(base.bytes, expected);
+});
+
+test("the production synthetic argument helper forwards 4485 as exactly two argv elements", () => {
+    assert.equal(launcherSyntheticUnits({ row: "VIS2", synthetic_units: 4485 }), "4485");
+    assert.deepEqual(launcherServerArgv("true", "4485"), ["/fixture/target/release/turts_server", "<OUT>/server.ron", "--synthetic-units", "4485"]);
+    assert.deepEqual(launcherServerArgv("false", ""), ["/fixture/target/release/turts_server", "<OUT>/server.ron", "--tick-log", "<OUT>/server-tick.log"]);
+});
+
+test("synthetic_units rejects booleans, non-integers, negatives, and overflow", () => {
+    for (const value of [true, false, 4485.0 + 0.5, -1, 4294967296, "4485", null]) {
+        assert.throws(() => launcherSyntheticUnits({ synthetic_units: value }), { status: 2 }, `value ${JSON.stringify(value)}`);
+    }
+});
+
+test("synthetic_units accepts the full unsigned 32-bit integer endpoints", () => {
+    assert.equal(launcherSyntheticUnits({ synthetic_units: 0 }), "0");
+    assert.deepEqual(launcherServerArgv("true", "0"), ["/fixture/target/release/turts_server", "<OUT>/server.ron", "--synthetic-units", "0", "--tick-log", "<OUT>/server-tick.log"]);
+    assert.equal(launcherSyntheticUnits({ synthetic_units: 4294967295 }), "4294967295");
 });
