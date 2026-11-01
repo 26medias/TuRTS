@@ -1682,3 +1682,6 @@ Task13 instrument update:7702c8b pair failed on missing initial base64 artifact 
 
 
 C177: actual0c26fab saved captures expose attack cross occlusion despite first-frame marker metadata. Root viewed PNG. Keep exact target/cross/colour/timing; use dedicated marker gizmo depth_bias=-1, preserving unrelated gizmo configuration. Actual repaired full-row proof remains pending. The preceding helper-wrapper TypeError is instrument failure, not semantic red. Details in today's Codex rulings.66/170runs;15/25complete.
+
+
+C178: real Moving/Pending plain moves project current:null despite captured authored identity; queued record alone cannot draw the required two-leg path. Task13 may repair read-only sim/economy/views.rs to use existing PlainMoveOrderIdentities as fallback, with real-command native red/green and legacy/stale/precedence controls. No wire/schema/frozen/audit change. Wait for immutable4dfe full row to end before modifying source; final gates and real pixels remain required.66/170runs;15/25complete.
