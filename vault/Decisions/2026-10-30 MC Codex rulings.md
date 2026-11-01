@@ -1249,3 +1249,14 @@ Choice: extend Task12's interaction/lib.rs scope to emit ShellAction(toggle_guid
 Evidence: interaction/input_map.rs:63 binds toggle_guide to F1; the initial interaction/lib.rs KeyDown menu/cancel branch:154-177 drops the resolved guide action. UiAction's fallback already emits ShellAction. Initial Task12 mod.rs activate_widget toggles directly and queues the action; no CoreEffects consumer existed. RUN56 independently traced both paths. The current repair now adds the guide branch next to menu and a consumer. C135 requires real generic activation and visibility, not just queued-event/state assertions.
 
 This is a same-shape mechanism/file-ownership repair under brief4, not a new key or acceptance row. Alternative not taken: add close_guide to the schema, duplicate key handling in the UI, count a direct observer-only test as the full path, or allow a double toggle.58/170 runs; no new dispatch or CEO stop.
+
+
+## C142: give each cursor image/hotspot pair its own cache identity
+
+Conflict: accepted cursor declarations may use the same image with different hotspots. Bevy0.20's Winit custom cursor cache key includes image handle/atlas/flip/rect but omits hotspot. Switching only CustomCursorImage.hotspot can therefore reuse the first OS cursor, although the component/feed appears changed.
+
+Choice: load stable distinct CPU-retained cursor handles for each qualified image-id/hotspot pair, including interface, order and nested primitive declarations. Select the exact pair at runtime; repeated lookup of one pair reuses its handle, while a different hotspot has a different cache identity. Refresh/remove variants on package replacement. Keep normal UI images render-only and preserve authored image/hotspot values. Add same-image/different-hotspot and replacement controls; independently inspect actual handle selection. OS runtime remains NOT TRACED until exercised.
+
+Evidence: local bevy_winit-0.20.0/src/cursor/mod.rs:136-149 builds CustomCursorCacheKey::Image without hotspot and takes CustomCached when present; :90-105 reuses cached OS cursors. cursor/custom_cursor.rs:15-33 defines the same key fields. Root read these primary source paths and RUN56 independently found the issue. Current Task12 asset/runtime lookup was image-id-only. Design8.2 Cursor and8.1 require authored hotspots and separate CPU cursor assets.
+
+This is an internal mechanism/cache repair under brief4, keeping the same player-visible cursor design. Alternative not taken: patch vendored Bevy, crop/shift images to alter the key, report component equality as OS hotspot proof, or forbid valid shared-image declarations.58/170 runs; no new run or CEO stop.

@@ -8,7 +8,7 @@ source: codex
 
 # MC execution board
 
-State: ACTIVE: 13/25 lanes complete; 58/170 runs registered. Task11 COMPLETE at aff4d63, independent 0 open findings, integration 12/12 gates0 (1266/0/19, T7, M3). RUN55 Task12 owns the sole compiler/cache; RUN56 mod-runtime review is source-only; RUN57 supplied assets.rs source-only; RUN58 supplied sources.rs source-only; RUN55 integrates/tests both. C1-C141. Wave5 needs Task12; no main merge/push.
+State: ACTIVE: 13/25 lanes complete; 58/170 runs registered. Task11 COMPLETE at aff4d63, independent 0 open findings, integration 12/12 gates0 (1266/0/19, T7, M3). RUN55 Task12 owns the sole compiler/cache; RUN56 mod-runtime review is source-only; RUN57 supplied assets.rs source-only; RUN58 supplied sources.rs source-only; RUN55 integrates/tests both. C1-C142. Wave5 needs Task12; no main merge/push.
 
 Plan: `docs/superpowers/plans/2026-10-29-mc-player-control.md`.
 Design of record: `docs/superpowers/specs/2026-10-29-mc-player-control-design.md`, revision13 at main721e56e.
@@ -1260,3 +1260,14 @@ Choice: extend Task12's interaction/lib.rs scope to emit ShellAction(toggle_guid
 Evidence: interaction/input_map.rs:63 binds toggle_guide to F1; the initial interaction/lib.rs KeyDown menu/cancel branch:154-177 drops the resolved guide action. UiAction's fallback already emits ShellAction. Initial Task12 mod.rs activate_widget toggles directly and queues the action; no CoreEffects consumer existed. RUN56 independently traced both paths. The current repair now adds the guide branch next to menu and a consumer. C135 requires real generic activation and visibility, not just queued-event/state assertions.
 
 This is a same-shape mechanism/file-ownership repair under brief4, not a new key or acceptance row. Alternative not taken: add close_guide to the schema, duplicate key handling in the UI, count a direct observer-only test as the full path, or allow a double toggle.58/170 runs; no new dispatch or CEO stop.
+
+
+## C142: give each cursor image/hotspot pair its own cache identity
+
+Conflict: accepted cursor declarations may use the same image with different hotspots. Bevy0.20's Winit custom cursor cache key includes image handle/atlas/flip/rect but omits hotspot. Switching only CustomCursorImage.hotspot can therefore reuse the first OS cursor, although the component/feed appears changed.
+
+Choice: load stable distinct CPU-retained cursor handles for each qualified image-id/hotspot pair, including interface, order and nested primitive declarations. Select the exact pair at runtime; repeated lookup of one pair reuses its handle, while a different hotspot has a different cache identity. Refresh/remove variants on package replacement. Keep normal UI images render-only and preserve authored image/hotspot values. Add same-image/different-hotspot and replacement controls; independently inspect actual handle selection. OS runtime remains NOT TRACED until exercised.
+
+Evidence: local bevy_winit-0.20.0/src/cursor/mod.rs:136-149 builds CustomCursorCacheKey::Image without hotspot and takes CustomCached when present; :90-105 reuses cached OS cursors. cursor/custom_cursor.rs:15-33 defines the same key fields. Root read these primary source paths and RUN56 independently found the issue. Current Task12 asset/runtime lookup was image-id-only. Design8.2 Cursor and8.1 require authored hotspots and separate CPU cursor assets.
+
+This is an internal mechanism/cache repair under brief4, keeping the same player-visible cursor design. Alternative not taken: patch vendored Bevy, crop/shift images to alter the key, report component equality as OS hotspot proof, or forbid valid shared-image declarations.58/170 runs; no new run or CEO stop.
