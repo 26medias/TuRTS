@@ -268,6 +268,7 @@ pub fn debug_json(world: &World) -> String {
     json!({
         "phase": phase,
         "match_id": world.get_resource::<ReplicaState>().and_then(|state| state.welcome.map(|welcome| welcome.match_id)),
+        "slot": world.get_resource::<ReplicaState>().and_then(|state| state.welcome.map(|welcome| welcome.slot)),
         "units": units,
         "last_frame": last_frame,
         "trace": trace,
@@ -501,7 +502,7 @@ fn unit_max_health(
 #[cfg(test)]
 mod unit_order_debug_tests {
     use super::{DebugState, debug_json, rebuild_debug_state, unit_orders_json};
-    use crate::ingest::ReplicaState;
+    use crate::ingest::{ReplicaState, WelcomeInfo};
     use crate::replica::Replica;
     use std::collections::HashMap;
     use turts_net_protocol::{Activity, UnitId, UnitOrderRecord};
@@ -556,6 +557,12 @@ mod unit_order_debug_tests {
         );
         let mut state = ReplicaState::default();
         state.replica = Some(replica);
+        state.welcome = Some(WelcomeInfo {
+            slot: 1,
+            tick: 8,
+            tick_hz: 20,
+            match_id: 99,
+        });
         let mut world = bevy::prelude::World::new();
         world.insert_resource(state);
         world.insert_resource(DebugState::default());
@@ -572,6 +579,8 @@ mod unit_order_debug_tests {
             rebuilt["replicated_world"]["unit_orders"][0]["unit"], 8,
             "debug captures expose only the actual Replica owner-specific DTO"
         );
+        assert_eq!(captured["slot"], 1, "debug captures expose the actual Welcome slot");
+        assert_eq!(rebuilt["slot"], 1, "debug rebuild preserves the actual Welcome slot");
     }
 }
 
