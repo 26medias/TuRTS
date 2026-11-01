@@ -104,7 +104,7 @@ Human usability amendment1354e33: catalog-derived principal labels/named local s
 
 ## Current MC status
 
-ACTIVE:14/25lanes complete;63/170runs. Wave5 pushed atad0eef4 after integration11/11gates0 (1306/0/19,frozen,T7). CI41300331651:agentsSUCCESS,check/browserRUNNING; root will read final jobs. Wave6 Task5 RUN61 gets sole compiler/cache; Task13 RUN62 source/pure-Node preparation only until explicit lease. C1-C157. Main stays721e56e. See [[MC Execution Board]] and [[Reports/2026-11-01]].
+STOPPED on mandatory CEO ruling STOP-PAL1: fixed design palette fails VIS1's >=20distance under full Machado simulation.14/25lanes complete;63/170runs. Task5 WIP and Task13 source-only preparation preserved; no implementation/runtime continues. Wave5 local11gatespass; hosted agentsSUCCESS/check+browserFAILUREat planned old-panel migration. C1-C160. Main721e56eunchanged. See [[Reports/2026-11-01 MC palette stop]].
 
 ## Historical MC checkpoints
 

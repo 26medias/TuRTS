@@ -1427,3 +1427,32 @@ Choice: commit this vault ruling with [skip ci], then add one empty CI-trigger c
 Evidence: .github/workflows/ci.yml:2-5; connected GitHub PR2 is open/draft/unmerged with that remote head; git ls-remote confirms integrationfb5e2d6 and main721e56e. The integration11gates passed before this doc/empty-only step.
 
 This is an instrument command/flag judgment under brief4. Alternative not taken: push main, remove the required vault skip marker, bypass a check, silently treat absent CI as green, or change the product to obtain a run.60/170runs; no new agent or CEO stop.
+
+
+## C158: resolve active and queued policies from the immutable audited catalog
+
+Conflict: runtime Order stores identity/behaviour/target but not fire/engage. Adding duplicate policy fields to every active/queued Order would require many fixture literal changes. The design requires authored policy to survive queue activation and strict replay, not a particular internal duplicate field layout.
+
+Choice approved before the stop: resolve by order ID only in the per-match immutable InstalledCatalog; capture the complete typed fire/engage values in CatalogOrderAudit and OrderPolicyAudit; strictly compare command policy to catalog and reject catalog changes. No changing/uncaptured lookup, unknown-ID silent fallback or weaker validator is allowed. Other runtime state affecting combat, including plain Move identity and shot history, must also be audited or purely derived. Preserve the plain Move rule: no UnitOrders.current or extra order operation.
+
+Evidence: orders.rs:436-483 holds current/queued IDs and command policy; economy/views.rs:307 and:1015 captures catalog order definitions. tests/common/accounting.rs:412 already rejects catalog changes. Builder added queue/policy-tamper tests and reports frozen preflights unchanged. RUN63 still has four failing lifecycle/replay/spreading probes in WIP; this mechanism approval is not Task5 acceptance. Alternative not taken: read mutable definitions at activation, duplicate inconsistent partial policies, weaken accounting, or alter frozen expected values.63/170runs; no new dispatch.
+
+
+## C159: add the typed synthetic-units launcher field
+
+Conflict: Task13 VIS2 requires --synthetic-units4485, but mc-browser.sh:76 launches only config/tick-log and its parameter extractor does not retain synthetic_units. This is an instrument gap, not a player-visible design change.
+
+Choice approved before the stop: allow Task13 to own a narrow optional synthetic_units JSON integer0..u32::MAX (excluding bool), validated before builds and forwarded by shell array as exactly --synthetic-units N. Absent means identical old argv/params; declared values are retained in params; actual server argv is recorded. Positive synthetic count has no tick log because the server disables it. No generic arbitrary server-argument pass-through. Root also accepted the separate palette module as a red-test seam while rendering remains unchanged.
+
+Evidence: server/config.rs:50,157 defines/parses the existing generic flag; ticklog.rs:40 disables its log for positive counts. Root counted maps/field.ron directly:515actors, including460beacons+40troopers (the SEL2cluster); VIS2adds4485. Source-only Node/Python contract tests are reported green; actual Task13 runtime is NOT TRACED. The proposed WebGPU measurement-counter change and two-ring-topology mechanism remain unapproved/unexecuted at the stop.
+
+The prepared bound row wrapper now has SHAd4f50077362c5fa01e76042f2ff74d9fb729bd89764187ee1b5adbe6ef73db1e: it also scopes MC_PIXELS_HEADED=1 and rejects a success without the required2runs/viewport completion records. Its --help/syntax pass; no actual row through it is claimed yet. Alternative not taken: silently SKIP a headed measurement as green, invent5000actors, break unchanged row bytes, or record nonexistent tick logs.63/170runs; no new dispatch.
+
+
+## C160: move C16 to the effective weapon-range parameter
+
+Conflict: Task5 now uses both grid.within(range) and a local/focus distance<=range_squared guard. C16's old narrow-predicate-only double remained green because the grid filtered candidates first. Moving only the grid predicate would leave the other guard intact.
+
+Choice approved before the stop: keep C16-double-range's named selected1test and double-effective-range fault, but move its single anchor upstream within combat.rs weapon_parameters: range: weapon_def.range, becomes range: weapon_def.range * 2.0,. This feeds both range filters and leaves unrelated avoidance-grid callers unchanged. The edit must remain mechanical and earn actual named semantic red/exact restore before acceptance.
+
+Evidence: current combat.rs:264 builds that parameter; choose_target:281-310 applies the local/focus check and then the grid query. RUN63 independently agreed with the fault meaning. The first remained-green attempt is retained as incomplete evidence. At the mandatory stop, the registry edit and rerun are NOT DONE. No plant is retired and no game expected value changes. Alternative not taken: retire C16, accept its remained-green result, corrupt all movement-grid queries, or count a compile failure as red.63/170runs; no new dispatch.
