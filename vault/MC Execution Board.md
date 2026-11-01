@@ -8,7 +8,7 @@ source: codex
 
 # MC execution board
 
-State: ACTIVE: O12 released Task6; design13/main721e56e base applied.10/25 lanes complete;50/170 runs; Task6run8/6, soft12/hard24. Candidate7898b267 clean; independent finite source0High; official native10/10 exit0 (1207/0/18). Normal7898b267 gates green; RUN50 found follow-cohort completion High, C117 repair awaits immutable lease return. GREF/plants/final review pending. C1-C117. No main merge.
+State: ACTIVE:10/25 lanes complete;50/170 runs; Task6run8/6 (soft12/hard24). C1-C119. C117-C119 repaired at cleaned793bb; source review0knownHigh, native10/10 exit0 (1211/0/18). FreshACC running; WEB/repaired runtime/GREF/plants/finalreview pending. No main merge.
 
 Plan: `docs/superpowers/plans/2026-10-29-mc-player-control.md`.
 Design of record: `docs/superpowers/specs/2026-10-29-mc-player-control-design.md`, revision12 at63788d7, included by mainc3f09d0.
@@ -1016,3 +1016,6 @@ Conflict: the new C118 replay context finds the next member by scanning request 
 Choice: repair before commit with a small context containing the validated request and next_index. Require the exact next unit ID; advance only after complete modeled-state equality succeeds. Drop the context when the cursor reaches the validated member count. Preserve interruption, truncation, membership, order/target and cleanup checks. Remove the repeated prefix/progress completion scans; no broad validator rewrite, new serialized state or claim of universal linear replay. Existing strict positive/negative controls must remain green.
 
 Evidence: RUN50 c117-source-review2 identifies new loops near economylog.rs395,3968,4328; builder confirms the per-member nested scans. Alternative not taken: label an unmeasured offline cost lead as a movement-frame High, defer a small avoidable cubic loop, or relax full-state comparison. This is a Medium repair decision under brief4 and C112/C118. No CEO stop.50/170 runs; Task6run8/6.
+
+
+C117-C119 repair committed as570a1593, with equivalent lint-only follow-uped793bb4635cb529ec10e1b809d0c9b9648bd717. Four explicit paths: movement terminal follow-result retention, captured successful follow cleanup (including self/no successor), strict per-member replay context with exact contiguous membership/complete-span checks, and an indexed replay cursor. Sim focused6/6 and strict lifecycle/forged-negative controls passed before commit. RUN50 final source disposition0knownproductionHigh and independently verified the committed/lint delta; runtime recheck pending. Official native helper on cleaned793bb passed10/10 commands, workspace107summaries/1211passed/0failed/18ignored and unchanged frozen values. Root receipt main t6-root/native-ed793bb-root-check.json. A reported1207count was corrected from raw logs; that count belongs to the earlier7898candidate. New-head ACC is running; new-head WEB/C105recheck/20selectednativeGREF/plants/finalreview still required. Existing7898greens remain historical.50/170 runs; Task6run8/6; no CEO stop, integration merge or push.

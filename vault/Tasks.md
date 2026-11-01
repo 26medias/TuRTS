@@ -120,3 +120,5 @@ MC latest2026-10-31:50/170 runs,10/25 complete. Task6 final3 source repair snaps
 MC latest: Task6 candidate7898b267 clean; native gates10/10 exit0 (1207/0/18), independent source0High. ACC/WEB/runtime/refutations/plants/final acceptance remain.10/25 complete;50/170 runs. [[MC Execution Board]].
 
 MC latest: Task6 all normal gates green on7898b267; RUN50 owns C105 unmutated runtime lease. Refutations/plants/final review remain.10/25 complete;50/170 runs.
+
+MC latest: Task6 C117-C119 repaired ated793bb; native10/10 exit0,1211/0/18; source review0knownHigh. FreshACC/WEB/repairedruntime/refutations/plants/finalreview remain.10/25 complete;50/170 runs. [[MC Execution Board]].
