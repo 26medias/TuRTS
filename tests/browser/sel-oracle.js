@@ -9,10 +9,8 @@ const SLOT_RGB = [[0, 114, 178], [230, 159, 0], [0, 158, 115], [213, 94, 0], [86
 async function judge(view, params) {
     const input = view.inputLog();
     const actions = input.filter((entry) => entry.call === "drag" || entry.call === "click");
-    const debug = await view.bridge("turts_debug");
-    const scene = await view.bridge("turts_scene");
-    const frames = debug?.frames?.retained_input;
-    assert(Array.isArray(frames), "SEL needs actual C84 input-correlated retained frames");
+    const checkpoints = JSON.parse(await view.serverFile("scene-checkpoints.json"));
+    assert(Array.isArray(checkpoints), "SEL needs actual C84 scene checkpoints");
     let actionIndex = 0;
     for (const stage of params.stages || []) {
         const count = stage.gesture === "double-click" ? 2 : 1;
@@ -32,14 +30,28 @@ async function judge(view, params) {
         assert(mouseUp?.canvas_target, `SEL ${stage.label} mouse-up did not land on the rendered canvas`);
         const mouseUpSeq = mouseUp?.seq;
         assert(Number.isInteger(mouseUpSeq), `SEL ${stage.label} has no actual canvas mouse-up sequence`);
-        const frame = frames.find((record) => record.applied_seq?.includes(mouseUpSeq));
-        assert(frame, `SEL ${stage.label} has no first presented frame for mouse-up sequence ${mouseUpSeq}`);
+        const saveIndex = input.findIndex((entry) => entry.call === "save" && entry.args?.[0] === `${stage.label}.png`);
+        assert(saveIndex > 0, `SEL ${stage.label} must capture its result from screenshot pixels`);
+        let screenshotIndex = saveIndex - 1;
+        while (screenshotIndex >= 0 && input[screenshotIndex].call !== "screenshot") screenshotIndex -= 1;
+        assert(screenshotIndex >= 0, `SEL ${stage.label} has no result screenshot input`);
+        const checkpoint = checkpoints.find((entry) => entry.input_call === screenshotIndex && entry.window === 1);
+        assert(checkpoint?.debug && checkpoint?.scene, `SEL ${stage.label} screenshot has no actual C84 scene/debug checkpoint`);
+        const debug = checkpoint.debug;
+        const scene = checkpoint.scene;
+        const frames = debug.frames?.retained_input;
+        assert(Array.isArray(frames), `SEL ${stage.label} C84 checkpoint has no retained input-correlated frame list`);
+        const appliedFrames = frames.filter((record) => record.applied_seq?.includes(mouseUpSeq));
+        assert.equal(appliedFrames.length, 1, `SEL ${stage.label} mouse-up ${mouseUpSeq} must apply to exactly one presented frame`);
+        const frame = appliedFrames[0];
         if (Number.isInteger(stage.expected_selection)) assert.equal(frame.selection?.length, stage.expected_selection,
             `SEL ${stage.label} first mouse-up frame selection count`);
         if (Number.isInteger(stage.expected_rings)) assert.equal(frame.rings?.length, stage.expected_rings,
             `SEL ${stage.label} first mouse-up frame actual rendered ring count`);
         assertFrameSelectionIsOwn(frame, debug, stage);
         assertModifiers(action, stage);
+        if (stage.label === "sel2-static-only") assertStaticOnlySelection(frame, debug, stage);
+        if (stage.label === "sel2-mixed-owner") assertMixedOwnerBox(action, scene, debug);
         if (frame.selection.length > 0) {
             const encoded = await view.serverFile(`${stage.label}.png.b64`);
             const image = decodePng(Buffer.from(encoded, "base64"));
@@ -62,6 +74,35 @@ function assertFrameSelectionIsOwn(frame, debug, stage) {
         assert(unit, `SEL ${stage.label} selected id ${id} is absent from the actual public replica`);
         assert.equal(unit.owner_slot, localSlot, `SEL ${stage.label} selected a foreign owner slot`);
         if (stage.expected_content_ids) assert(stage.expected_content_ids.includes(unit.content_id), `SEL ${stage.label} selected unexpected ${unit.content_id}`);
+    }
+}
+
+function assertStaticOnlySelection(frame, debug, stage) {
+    const units = debug?.replicated_world?.units;
+    assert(Array.isArray(units), `SEL ${stage.label} has no public unit replica`);
+    const selected = new Set(frame.selection);
+    const contents = units.filter((unit) => selected.has(unit.unit_id)).map((unit) => unit.content_id).sort();
+    assert.deepEqual(contents, [...stage.expected_content_ids].sort(),
+        `SEL ${stage.label} must select exactly the own post and depot static units`);
+}
+
+function assertMixedOwnerBox(action, scene, debug) {
+    const [x0, y0, x1, y1, button] = action.args;
+    assert.equal(button, "left", "SEL mixed-owner box must be a physical left drag");
+    const box = { minX: Math.min(x0, x1), maxX: Math.max(x0, x1), minY: Math.min(y0, y1), maxY: Math.max(y0, y1) };
+    const localSlot = debug?.slot;
+    const foreignVisible = (scene?.units || []).filter((unit) => unit.owner_slot !== localSlot &&
+        Array.isArray(unit.ground_screen_center) && unit.ground_screen_center.length === 2 &&
+        unit.ground_screen_center.every(Number.isFinite) &&
+        unit.ground_screen_center[0] >= box.minX && unit.ground_screen_center[0] <= box.maxX &&
+        unit.ground_screen_center[1] >= box.minY && unit.ground_screen_center[1] <= box.maxY);
+    assert(foreignVisible.length > 0, "SEL mixed-owner drag box must enclose an actual visible foreign unit center");
+    const publicUnits = new Map((debug?.replicated_world?.units || []).map((unit) => [unit.unit_id, unit]));
+    assert(foreignVisible.every((unit) => publicUnits.get(unit.unit_id)?.owner_slot !== undefined),
+        "SEL mixed-owner box targets must map to actual public replica units");
+    for (const unit of foreignVisible) {
+        assert.notEqual(publicUnits.get(unit.unit_id)?.owner_slot, localSlot,
+            `SEL mixed-owner fixture unit ${unit.unit_id} must be foreign`);
     }
 }
 

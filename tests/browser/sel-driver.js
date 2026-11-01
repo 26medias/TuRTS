@@ -4,7 +4,7 @@
 const { decodePng, pixelAt } = require("./harness/png.js");
 
 const SLOT_COLORS = [[0, 114, 178], [230, 159, 0], [0, 158, 115], [213, 94, 0], [86, 180, 233], [204, 121, 167], [240, 228, 66], [0, 0, 0]];
-const COLOR_TOLERANCE = 115;
+const COLOR_TOLERANCE = 48;
 
 async function drive(io, params) {
     if (!Array.isArray(params.stages) || params.stages.length === 0) throw new Error("SEL driver needs row stages");
@@ -94,6 +94,9 @@ function colorComponents(image, color) {
     const queue = new Int32Array(size);
     const out = [];
     const matches = (index) => {
+        const x = index % image.width;
+        const y = Math.floor(index / image.width);
+        if (isHudPixel(x, y, image)) return false;
         const offset = index * 4;
         const rgb = [image.rgba[offset], image.rgba[offset + 1], image.rgba[offset + 2]];
         return image.rgba[offset + 3] >= 245 && Math.hypot(rgb[0] - color[0], rgb[1] - color[1], rgb[2] - color[2]) <= COLOR_TOLERANCE;
@@ -127,12 +130,19 @@ function colorBounds(image, color) {
     for (let y = 0; y < image.height; y += 1) for (let x = 0; x < image.width; x += 1) {
         const pixel = pixelAt(image, x, y);
         if (!pixel || pixel[3] < 245 || Math.hypot(pixel[0] - color[0], pixel[1] - color[1], pixel[2] - color[2]) > COLOR_TOLERANCE) continue;
-        // Exclude the authored root HUD bands. The oracle remains responsible for proving that
-        // every picked id is an actual owner unit and every ring is visible at its scene center.
-        if ((x < 280 && y < 220) || (x > image.width - 220 && y > image.height - 220) || y > image.height - 40) continue;
+        if (isHudPixel(x, y, image)) continue;
         minX = Math.min(minX, x); minY = Math.min(minY, y); maxX = Math.max(maxX, x); maxY = Math.max(maxY, y);
     }
     return maxX >= minX && maxY >= minY ? { minX, minY, maxX, maxY } : null;
+}
+
+function isHudPixel(x, y, image) {
+    return (x < 300 && y < 330) ||
+        (x > image.width - 320 && y < 180) ||
+        (x > image.width - 220 && y > image.height - 220) ||
+        (x < 380 && y > image.height - 140) ||
+        (x > image.width / 2 - 100 && x < image.width / 2 + 100 && y > image.height - 32) ||
+        y > image.height - 40;
 }
 
 function isBodyComponent(entry) {
