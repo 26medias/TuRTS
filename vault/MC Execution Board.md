@@ -8,7 +8,7 @@ source: codex
 
 # MC execution board
 
-State: ACTIVE:11/25 lanes complete;51/170 runs registered. Task6 COMPLETE at merge450c023, final review0High; integration12/12 gates0 (1211/0/18,T7,M3). RUN51 Task7 continuation registered before dispatch, Task7run2/4 (soft8/hard16). C1-C121. Wave5 remains open; no main merge/push.
+State: ACTIVE:11/25 lanes complete;52/170 runs registered. Task6 COMPLETE at merge450c023, final review0High; integration12/12 gates0 (1211/0/18,T7,M3). RUN51 Task7 continuation registered before dispatch, Task7run2/4 (soft8/hard16). C1-C121. Wave5 remains open; no main merge/push.
 
 Plan: `docs/superpowers/plans/2026-10-29-mc-player-control.md`.
 Design of record: `docs/superpowers/specs/2026-10-29-mc-player-control-design.md`, revision12 at63788d7, included by mainc3f09d0.
@@ -244,6 +244,7 @@ One row per builder/reviewer dispatch or resumed agent work turn. Register befor
 | 49 | T6 finite source findings repair and task completion | simulation-core-engineer | gpt-6-luna | high | ffb21b3+seven-file WIP | COMPLETE ed793bb; all normal gates0,20GREF/87commands,8validplants/27executions; source exact restored; merge450c023 and integration12/12gates0. Task6run7/6. |
 | 50 | T6 independent finite finding closure and final review | performance-architect | gpt-6.1-sol | high | ffb21b3+RUN49 repairs | COMPLETE PASS ed793bb:0High,C114Mediumdeferred,C121scope;21probes/191tests, all20GREF/8plants verified, ownGM40 0/101/0 exactrestore; finalcache returned. Task6run8/6. |
 | 51 | T7 server session implementation continuation | backend-engineer | gpt-6-luna | high | integration450c023+preserved5pathprep | Registered BEFORE dispatch; finish task7 from compiled semantic reds, buckets/rejoin/script/log, commit/gate/plants. Task7run2/estimate4, soft8/hard16; no other compiler until root hands off the sole cache. |
+| 52 | T7 independent session/script/log review | network-engineer | gpt-6.1-sol | high | Task7 base63c8ab4 plus active RUN51 | Registered BEFORE dispatch; contract/source-only preparation now, no cache/compiler until clean committed candidate/gates and explicit lease. Final independent tests and own plant required. Task7run3/estimate4, soft8/hard16. |
 
 ## 9. Preflight ledger and stop
 
@@ -1047,3 +1048,5 @@ Evidence: run49/plants/C97-member-order-identity/ baseline0/semantic101/restored
 Task6 final review PASS ed793bb,0High;21externalprobes/191focusedtests, all20GREF/87commands,8buildercycles/27selectedruns and reviewerGM40own0/101/0 with exactrestore. Root merged450c023, verified identical engine/script/test/mod source, moved the sole cache atomically to integration and cleaned only local package artifacts across profiles. Integration12/12commands passed:1211/0/18, allQA/frozen exact,T7and7M3controls. Root receipt main t6-root/integration-450c023-root-check.json. Task6evidence preserved off-lane; remaining3.95GB generated evidence compressed losslessly to4.22MB with CRC check, manifest and archiveSHA58282c8c7de262936e831db5f75ad5bfd25d1a4d086b9c5160d174755920bff4. Clean merged worktree removed only after proc cwd/exe/fd/maps checks; cache preserved,~3.77GiB physically freed. No Claude-prefixed file read or archived.
 
 T7/T11/T12 rebased onto450c023;10dirty prepared paths preserved byte-for-byte with explicit-path stash backups retained. Receipt main wave5-after-t6-rebase/receipt.json. RUN51 registered before new Luna/high T7 continuation;51/170 total, Task7run2/4. Wave5stillneedsT7/T11/T12; push/readCIafterwave. No main merge or push.
+
+RUN52 registered before Sol/high network-engineer review. Source-only contract preparation may overlap RUN51; only RUN51 owns the compiler/cache.52/170 runs, Task7run3/4. RUN51 has compiled K27 and exact-order-log semantic reds; K25/implementation remain active. No new CEO stop.
