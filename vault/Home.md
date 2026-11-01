@@ -17,7 +17,7 @@ Dashboard for the TuRTS studio. Read this first, then [[Tasks]] and the latest n
 
 **Product:** mod-first RTS engine in Rust and Bevy. Browser WebAssembly client first, authoritative headless server, the official game is a default mod on the public API. Spec: `RTS-Engine-Project-Specifications.md` (v0.8, 2026-10-29).
 
-**Current milestone:** ACTIVE: 13/25 lanes complete; 59/170 runs. Task12 old panel removed after the28-test replacement review. Post-removal native19targets pass (lib84/lifecycle5), harness102/102. Task12 clean candidate5feedd5: all6 HUD1 runs carry under C150, freshHUD4 both pass with root source/fixture checks. Committed gates and mutations running; independent installed review remains. RUN55 owns solecache target/mc-t12; RUN56 reviews. C1-C150. Wave5 needs Task12; no main merge/push.
+**Current milestone:** ACTIVE: 13/25 lanes complete; 59/170 runs. Task12 old panel removed after the28-test replacement review. Post-removal native19targets pass (lib84/lifecycle5), harness102/102. Task12 clean candidatec17d8e8: all6 HUD1 runs carry under C150, freshHUD4 both pass with root source/fixture checks. Committed gates and mutations running; independent installed review remains. RUN55 owns solecache target/mc-t12; RUN56 reviews. C1-C153. Wave5 needs Task12; no main merge/push.
 
 **Last accepted M3 baseline:** API0.2.1/protocol3 industrial graybox is locally validated. Exact-source gates:760 passed,0 failed,18 ignored; strict Clippy, wasm, boundaries and frozen M2 stream pass. Native M2 faults33/33, M3 formal faults17/17, browser faults8/8, positive browser15/15, real private-research/combat F11, Forge browser7 and T7 pass. Final judgments and hosted CI/push/main merge approvals remain.
 

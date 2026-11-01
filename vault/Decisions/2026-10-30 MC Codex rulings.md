@@ -1370,3 +1370,14 @@ Choice: change exactly the three leading comments to turts-test-role: unit. Keep
 Evidence: c17d8e8c273329a55234527bc15a630e1845b407 changes only the first comment in harness/hud4-oracle.test.js, hud4-pixels.test.js and launch-profile.test.js. Root exact diff main t12-root/qa-role-impact-c17d8e8.diff. Failed role/duplicate-label logs and final47-case PASS remain run55/final-gates-v002/driver-rule-selftest*.log; actual104-test log is browser-harness-tests.log.
 
 This is an instrument metadata-name correction under brief4. Alternative not taken: raise the ledger limit, classify executable drivers as unit tests, omit QA, discard failures, or repeat all native simulations for comment-only changes.59/170 runs; no new dispatch or CEO stop.
+
+
+## C153: remove the interrupted default web cache and continue
+
+Conflict: RUN55 started Trunk without exporting the five required Cargo cache/profile variables. It wrote partial host/wasm artifacts outside the sole leased cache, then interrupted before completion. This attempt is not WEB gate evidence. The builder correctly stopped compiler work for root cache inspection; this is a layout decision, not a narrowed CEO stop.
+
+Choice: retain the raw interrupted log and a per-file path/size/time manifest; inspect active Cargo/Rust/Trunk/wasm-opt and all accessible process cwd/exe/fd links. After confirming no references or tracked files, remove only lane target/wasm-release and target/wasm32-unknown-unknown. Preserve target/mc-t12 and all evidence. Resume RUN55 with all five variables scoped on each actual command and explicit cwd. No new run or source change.
+
+Evidence: root manifest covers2834 rebuildable files/875366961 logical bytes, process references empty, tracked paths empty, clean c17d8e8 lane. Main t12-root/cache-environment-incident-20261101 holds manifest.json, pre-deletion receipt.json and completion.json. Raw interrupted build remains run55/final-gates-v003/trunk-release.log. The intended cache is retained; no Trunk/T7 green is claimed from the interrupted run.
+
+Alternative not taken: leave a duplicate cache, reuse unpinned output as proof, delete evidence/source, remove active cache, or ask the CEO to decide routine cache recovery.59/170 runs; no CEO stop.
