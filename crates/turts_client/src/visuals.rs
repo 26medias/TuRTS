@@ -38,6 +38,7 @@ struct VisualAssets {
     ring: Option<Handle<Mesh>>,
     foreign_ring: Option<Handle<Mesh>>,
     ring_overlay_materials: Vec<Handle<RingOverlayMaterial>>,
+    neutral_ring_overlay: Option<Handle<RingOverlayMaterial>>,
     bar: Option<Handle<Mesh>>,
     marker_material: Option<Handle<StandardMaterial>>,
     blocked_material: Option<Handle<StandardMaterial>>,
@@ -116,6 +117,20 @@ fn create_ring_overlay_materials(
     )
 }
 
+fn create_neutral_ring_overlay_material(
+    overlays: &mut Assets<RingOverlayMaterial>,
+) -> Handle<RingOverlayMaterial> {
+    overlays.add(ExtendedMaterial {
+        base: StandardMaterial {
+            base_color: Color::srgb(0.96, 0.96, 0.96),
+            alpha_mode: AlphaMode::Blend,
+            unlit: true,
+            ..default()
+        },
+        extension: RingOverlayExtension {},
+    })
+}
+
 #[derive(Clone)]
 enum VisualMaterial {
     Standard(Handle<StandardMaterial>),
@@ -157,6 +172,7 @@ struct VisualId {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 enum VisualKind {
     Selected,
+    RingUnderlay,
     Hover,
     Range,
     HealthBackground,
@@ -428,6 +444,7 @@ fn prepare_assets(
         else {
             return;
         };
+        let neutral_ring_overlay = create_neutral_ring_overlay_material(&mut ring_materials);
         let world = acquired
             .0
             .presentation
@@ -474,6 +491,7 @@ fn prepare_assets(
         });
         create_shared_meshes(&mut assets, &mut meshes);
         assets.ring_overlay_materials = ring_overlay_materials;
+        assets.neutral_ring_overlay = Some(neutral_ring_overlay);
         assets.marker_material = Some(materials.add(unlit(range_color)));
         assets.blocked_material = Some(materials.add(unlit(Color::srgb(0.9, 0.12, 0.08))));
         assets.range_material = Some(materials.add(unlit(range_color)));
@@ -678,6 +696,29 @@ fn draw_world_visuals(
             generation: visuals.generation,
             identity: 0,
         };
+        if !own
+            && let (Some(underlay), Some(neutral)) =
+                (assets.ring.clone(), assets.neutral_ring_overlay.clone())
+        {
+            desired.insert(
+                VisualId {
+                    kind: VisualKind::RingUnderlay,
+                    unit: *unit_id,
+                    ordinal: 0,
+                    generation: visuals.generation,
+                    identity: 0,
+                },
+                (
+                    underlay,
+                    VisualMaterial::RingOverlay(neutral),
+                    Transform {
+                        translation: world_to_scene(shown_unit.pos) + Vec3::Y * 0.021,
+                        scale: Vec3::splat(*radius),
+                        ..default()
+                    },
+                ),
+            );
+        }
         desired.insert(
             id,
             (
@@ -755,6 +796,29 @@ fn draw_world_visuals(
                             *radius
                         })
                         .unwrap_or(0.5);
+                    if unit.owner_slot != local_slot
+                        && let (Some(underlay), Some(neutral)) =
+                            (assets.ring.clone(), assets.neutral_ring_overlay.clone())
+                    {
+                        desired.insert(
+                            VisualId {
+                                kind: VisualKind::RingUnderlay,
+                                unit: unit_id,
+                                ordinal: 1,
+                                generation: visuals.generation,
+                                identity: 0,
+                            },
+                            (
+                                underlay,
+                                VisualMaterial::RingOverlay(neutral),
+                                Transform {
+                                    translation: world_to_scene(shown_unit.pos) + Vec3::Y * 0.028,
+                                    scale: Vec3::splat(radius * 0.96),
+                                    ..default()
+                                },
+                            ),
+                        );
+                    }
                     desired.insert(
                         VisualId {
                             kind: VisualKind::Hover,
@@ -1362,12 +1426,23 @@ mod tests {
         let overlay_handles = create_ring_overlay_materials(&handles, &materials, &mut overlays)
             .expect("each overlay must correspond to one body palette slot");
         assert_eq!(overlay_handles.len(), palette.len());
+        let neutral = create_neutral_ring_overlay_material(&mut overlays);
+        assert_eq!(
+            overlays.len(),
+            palette.len() + 1,
+            "one neutral shared underlay serves every foreign ring"
+        );
         for (handle, expected) in overlay_handles.iter().zip(palette) {
             let overlay = overlays.get(handle).expect("shared slot overlay exists");
             assert_eq!(overlay.base.base_color, expected);
             assert!(overlay.base.unlit);
             assert_eq!(overlay.base.alpha_mode, AlphaMode::Blend);
         }
+        let neutral = overlays
+            .get(&neutral)
+            .expect("shared neutral ring underlay exists");
+        assert_eq!(neutral.base.base_color, Color::srgb(0.96, 0.96, 0.96));
+        assert!(neutral.base.unlit);
 
         assert_eq!(RingOverlayExtension::alpha_mode(), Some(AlphaMode::Blend));
         assert!(!RingOverlayExtension::enable_prepass());
