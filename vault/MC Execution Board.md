@@ -8,7 +8,7 @@ source: codex
 
 # MC execution board
 
-State: ACTIVE:14/25lanes complete;62/170runs registered. Wave5 pushed atad0eef4; hosted CI41300331651:agentsSUCCESS,check/browserRUNNING, final read pending. Task5 RUN61 owns the next sole compiler/cache lease; Task13 RUN62 prepares source/pure-Node instruments without a second cache. C1-C157. Wave6 active; no main merge/push.
+State: ACTIVE:14/25lanes complete;63/170runs registered. Wave5 pushed atad0eef4; hosted CI41300331651:agentsSUCCESS,check/browserRUNNING, final read pending. Task5 RUN61 owns the next sole compiler/cache lease; Task13 RUN62 prepares source/pure-Node instruments without a second cache. C1-C157. Wave6 active; no main merge/push.
 
 Plan: `docs/superpowers/plans/2026-10-29-mc-player-control.md`.
 Design of record: `docs/superpowers/specs/2026-10-29-mc-player-control-design.md`, revision13 at main721e56e.
@@ -150,7 +150,7 @@ Tasks in one wave share no file, except the refutation registries (merge in task
 
 ## 7. Budget and seats
 
-CEO approved about 212 total runs. Build stop line: 170 (106 planned task runs plus 64 repairs). Gate estimate: 42 spent before this build. Build dispatches used: 62/170. Root preflight is recorded separately and is not a builder/reviewer dispatch. Twice a task estimate requires a recorded continuation decision; four times is a hard stop. T18 estimate2: soft4, hard8. No dispatch at global170 or a task hard limit.
+CEO approved about 212 total runs. Build stop line: 170 (106 planned task runs plus 64 repairs). Gate estimate: 42 spent before this build. Build dispatches used: 63/170. Root preflight is recorded separately and is not a builder/reviewer dispatch. Twice a task estimate requires a recorded continuation decision; four times is a hard stop. T18 estimate2: soft4, hard8. No dispatch at global170 or a task hard limit.
 
 One run is one agent dispatch (builder or reviewer). Count every run on the board.
 
@@ -254,6 +254,7 @@ One row per builder/reviewer dispatch or resumed agent work turn. Register befor
 | 60 | T12 required production cursor mutation and handoff | bevy-rendering-engineer with ux-designer | gpt-6-luna | high | 77ca599 | COMPLETE. Registered before resuming interrupted RUN55. Correct production context override only: actual headed HUD4 nondefault move→default mismatch, command1; exact cursorSHAae02fe39 restore and HUD4two0. FixtureSHA14246814 unchanged. Clean77ca599 handoff, no acceptance claim before RUN56 PASS; mergedaf567c4 and root11gates0. Task12run8/estimate8; build60/170. |
 | 61 | T5 weapons, attack/attack-move and audited policies | simulation-core-engineer | gpt-6-luna | high | Wave5 ad0eef4 plus registration docs | Registered BEFORE dispatch. Task5run1/estimate4, soft8/hard16. Branch codex/mc-t5 and own worktree; sole compiler/cache lease after root transfer, all five variables. Must get compiled server-envelope/actual rush semantic red before production implementation; preserve frozen Forge replay and Task6 movement/queues. |
 | 62 | T13 visuals, palette and pixel instruments | bevy-rendering-engineer | gpt-6-luna | high | Wave5 ad0eef4 plus registration docs | Registered BEFORE dispatch. Task13run1/estimate5, soft10/hard20. Own branch/worktree; SOURCE/PURE-NODE ONLY until root lease, no Cargo/compiler/browser/second cache. Prepare tests/drivers/oracles and implementation patches outside lane; preserve old renderer for actual VIS1/palette red before applying production implementation. |
+| 63 | T5 independent combat/policy/replay review | qa-lead | gpt-6.1-sol | high | Task5 base12e435c plus RUN61 stable WIP | Registered BEFORE dispatch. Task5run2/estimate4, soft8/hard16. SOURCE-ONLY: inspect current stable interfaces and prepare finite independent probes outside lane; no compiler/cache/browser/source edits until root lease. Check actual lifecycle, all fire/engage axes, immutable catalog policy, plain Move identity audit, grid/determinism, frozen evidence and required plants. |
 
 ## 9. Preflight ledger and stop
 
