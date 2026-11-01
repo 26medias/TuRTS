@@ -8,7 +8,7 @@ source: codex
 
 # MC execution board
 
-State: ACTIVE: O12 released Task 6. Integration and all four open lanes rebased onto main721e56e (design revision13); dirty source hashes preserved.10of25lanes complete;49/170runs; Task6run7/6, soft12/hard24. C1-C116. RUN49 repairs the exact RUN47 final source findings, then commits and gates; no repaired acceptance yet. No main merge.
+State: ACTIVE: O12 released Task 6. Integration and all four open lanes rebased onto main721e56e (design revision13); dirty source hashes preserved.10of25lanes complete;50/170runs; Task6run8/6, soft12/hard24. C1-C116. RUN49 repairs the exact RUN47 final source findings, then commits and gates; no repaired acceptance yet. No main merge.
 
 Plan: `docs/superpowers/plans/2026-10-29-mc-player-control.md`.
 Design of record: `docs/superpowers/specs/2026-10-29-mc-player-control-design.md`, revision12 at63788d7, included by mainc3f09d0.
@@ -242,6 +242,7 @@ One row per builder/reviewer dispatch or resumed agent work turn. Register befor
 | 48 | T6 C106-C110 repair completion and final proof | simulation-core-engineer | gpt-6-luna | high | ffb21b3+six-file coherent WIP | COMPLETE WIP only: seven-path coherent boundary, full sim/server green, final source review has unresolved findings. No commit or formal repaired gates. Originally registered before continuation. Finish focused/replay controls, commit, all required final gates, C105 handoff, selected GREF and semantic plants. Task6run6/estimate6, soft12/hard24. |
 
 | 49 | T6 finite source findings repair and task completion | simulation-core-engineer | gpt-6-luna | high | ffb21b3+seven-file coherent WIP | Registered before continuation: fix exact RUN47 final report, meaningful controls, commit, normal gates, C105 runtime handoff, GREF/plants. Task6run7/estimate6, soft12/hard24. |
+| 50 | T6 independent finite finding closure and final review | performance-architect | gpt-6.1-sol | high | ffb21b3+RUN49 repairs | Registered before reviewer continuation. Source-only until stable clean candidate, all normal gates and explicit C105 runtime lease. Recheck finite report, retained actual counterexamples and own final plant. Task6run8/estimate6, soft12/hard24. |
 
 ## 9. Preflight ledger and stop
 
@@ -977,3 +978,5 @@ Evidence for both decisions: RUN47 seven-path boundary source review and exact c
 ## Resume after status handling error
 
 Root ended status-only turns while authorized work remained. This caused an avoidable idle period. Status and ETA questions are steering; root must answer briefly and continue work until an explicit pause or a required stop condition. RUN48 ended at a seven-path uncommitted boundary; RUN47 source report has finite unresolved findings, not PASS. RUN49 is registered before builder continuation.49/170 runs; Task6run7/6, below soft12/hard24. No new CEO decision is needed.
+
+RUN50 registered before independent Sol/high reviewer continuation. Source review may overlap RUN49 repair; no reviewer runtime/compiler/browser until explicit C105 lease after stable normal gates.50/170; Task6run8/6, below soft12/hard24.
