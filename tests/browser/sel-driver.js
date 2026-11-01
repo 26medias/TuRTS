@@ -11,14 +11,31 @@ async function drive(io, params) {
     await io.key("F1");
     let initialPng = Buffer.from(await io.screenshot());
     let before = decodePng(initialPng);
-    if ((params.stages || []).some((stage) => stage.label?.startsWith("sel3-"))) {
-        await io.move(before.width / 2, before.height / 2);
+    let sel3TargetPoint = null;
+    if (params.stages.some((stage) => stage.label?.startsWith("sel3-"))) {
+        const initialTargets = deriveTargets(before);
+        const trooperColumn = trooperColumnFromPixels(initialTargets.slot0_bodies);
+        if (!trooperColumn) throw new Error("SEL3 initial PNG has no trooper-column pixel target");
+        const center = { x: Math.round(before.width / 2), y: Math.round(before.height / 2) };
+        const foot = footPoint(trooperColumn);
+        await io.drag(foot.x, foot.y, center.x, center.y, "middle");
+        await io.wait(250);
         await io.wheel(-1200);
+        await io.wait(250);
+        const zoomed = decodePng(Buffer.from(await io.screenshot()));
+        const centeredTrooper = nearestPalettePixel(zoomed, center, SLOT_COLORS[0], 18);
+        if (!centeredTrooper) throw new Error("SEL3 zoomed PNG has no own-colour trooper at viewport center");
+        sel3TargetPoint = { x: zoomed.width - 160, y: Math.round(zoomed.height / 2) };
+        await io.drag(centeredTrooper.x, centeredTrooper.y, sel3TargetPoint.x, sel3TargetPoint.y, "middle");
         await io.wait(250);
         initialPng = Buffer.from(await io.screenshot());
         before = decodePng(initialPng);
+        if (!nearestPalettePixel(before, sel3TargetPoint, SLOT_COLORS[0], 10)) {
+            throw new Error("SEL3 final PNG does not show an own-colour body at its camera target");
+        }
     }
     const targets = deriveTargets(before);
+    targets.trooper_target_point = sel3TargetPoint;
     await io.save("sel-initial.png", initialPng);
     await io.save("sel-pixel-targets.json", encodeJson(targets));
     for (const stage of params.stages) {
@@ -83,6 +100,10 @@ function selectorPoints(selector, targets, image, gesture) {
         if (!mobile) throw new Error("SEL screenshot has no isolated round slot-0 silhouette; mobile pixel target is NOT TRACED");
         return gesture === "box" ? unionBox([mobile], image, 3) : { start: footPoint(mobile), end: footPoint(mobile) };
     }
+    if (selector === "trooper-column-slot0") {
+        if (!targets.trooper_target_point) throw new Error("SEL3 has no screenshot-derived trooper target");
+        return { start: targets.trooper_target_point, end: targets.trooper_target_point };
+    }
     if (selector === "first-visible-slot0") {
         const body = targets.slot0_bodies[0];
         return gesture === "box" ? unionBox([body], image, 3) : { start: footPoint(body), end: footPoint(body) };
@@ -97,6 +118,28 @@ function selectorPoints(selector, targets, image, gesture) {
         return { start: footPoint(body), end: footPoint(body) };
     }
     throw new Error(`SEL row has unknown screenshot-derived selector ${selector}`);
+}
+
+function trooperColumnFromPixels(entries) {
+    return entries.filter((entry) => {
+        const aspect = entry.height / entry.width;
+        return entry.pixels >= 400 && entry.pixels <= 1_000 && entry.width >= 10 && entry.width <= 18 &&
+            entry.height >= 40 && entry.height <= 70 && aspect >= 2.5 && aspect <= 6;
+    }).sort((a, b) => Math.abs(a.x - 640) - Math.abs(b.x - 640))[0];
+}
+
+function nearestPalettePixel(image, point, color, radius) {
+    let nearest = null;
+    let nearestDistance = Infinity;
+    for (let y = Math.max(0, Math.floor(point.y - radius)); y <= Math.min(image.height - 1, Math.ceil(point.y + radius)); y += 1) {
+        for (let x = Math.max(0, Math.floor(point.x - radius)); x <= Math.min(image.width - 1, Math.ceil(point.x + radius)); x += 1) {
+            const pixel = pixelAt(image, x, y);
+            if (!pixel || pixel[3] < 245 || Math.hypot(pixel[0] - color[0], pixel[1] - color[1], pixel[2] - color[2]) > COLOR_TOLERANCE) continue;
+            const distance = Math.hypot(x - point.x, y - point.y);
+            if (distance < nearestDistance) { nearest = { x, y }; nearestDistance = distance; }
+        }
+    }
+    return nearest;
 }
 
 function colorComponents(image, color) {

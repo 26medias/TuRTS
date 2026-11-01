@@ -8,7 +8,9 @@ const SLOT_RGB = [[0, 114, 178], [230, 159, 0], [0, 158, 115], [213, 94, 0], [86
 
 async function judge(view, params) {
     const input = view.inputLog();
-    const actions = input.filter((entry) => entry.call === "drag" || entry.call === "click");
+    const actions = input.filter((entry) => entry.call === "click" ||
+        (entry.call === "drag" && entry.args?.[4] !== "middle"));
+    assertSelectionCameraPans(input, params, actions[0]);
     const checkpoints = JSON.parse(await view.serverFile("scene-checkpoints.json"));
     assert(Array.isArray(checkpoints), "SEL needs actual C84 scene checkpoints");
     let actionIndex = 0;
@@ -44,10 +46,10 @@ async function judge(view, params) {
         const appliedFrames = frames.filter((record) => record.applied_seq?.includes(mouseUpSeq));
         assert.equal(appliedFrames.length, 1, `SEL ${stage.label} pointer release ${mouseUpSeq} must apply to exactly one presented frame`);
         const frame = appliedFrames[0];
-        if (Number.isInteger(stage.expected_selection)) assert.equal(frame.selection?.length, stage.expected_selection,
-            `SEL ${stage.label} first pointer-release frame selection count`);
         if (Number.isInteger(stage.expected_rings)) assert.equal(frame.rings?.length, stage.expected_rings,
             `SEL ${stage.label} first pointer-release frame actual rendered ring count`);
+        if (Number.isInteger(stage.expected_selection)) assert.equal(frame.selection?.length, stage.expected_selection,
+            `SEL ${stage.label} first pointer-release frame selection count`);
         assertFrameSelectionIsOwn(frame, debug, stage);
         assertModifiers(action, stage);
         if (stage.gesture === "box") assertBoxSelectionCenters(action, frame, scene, stage);
@@ -61,6 +63,27 @@ async function judge(view, params) {
                 `SEL ${stage.label} must show slot-coloured ring pixels for every selected unit in its saved screenshot`);
         }
         if (stage.expected_unit_content_id) assertTypeSelectionIsVisible(frame, debug, scene, stage);
+    }
+}
+
+function assertSelectionCameraPans(input, params, firstSelectionAction) {
+    const sel3 = (params.stages || []).some((stage) => stage.label?.startsWith("sel3-"));
+    const pans = input.filter((entry) => entry.call === "drag" && entry.args?.[4] === "middle");
+    assert(firstSelectionAction, "SEL needs at least one physical selection action");
+    const selectionIndex = input.indexOf(firstSelectionAction);
+    assert.equal(pans.length, sel3 ? 2 : 0,
+        "SEL3 must use the two declared physical middle-drag camera calibrations before zoomed selection");
+    if (!sel3) return;
+    for (const [index, pan] of pans.entries()) {
+        assert(Number.isFinite(pan.wall_time_ms), `SEL3 camera pan ${index + 1} must be an actual logged physical input`);
+        assert(Math.hypot(pan.args[2] - pan.args[0], pan.args[3] - pan.args[1]) > 0,
+            `SEL3 camera pan ${index + 1} must physically move the pointer`);
+        const down = pan.actual_events?.find((event) => event.type === "pointerdown");
+        const up = pan.actual_events?.find((event) => event.type === "pointerup");
+        assert(down?.canvas_target && up?.canvas_target,
+            `SEL3 camera pan ${index + 1} must begin and end on the rendered canvas`);
+        assert(input.indexOf(pan) < selectionIndex,
+            `SEL3 camera pan ${index + 1} must precede the selection gesture`);
     }
 }
 
