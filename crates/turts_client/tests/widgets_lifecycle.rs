@@ -868,7 +868,7 @@ fn actual_window_adapter_suppresses_widget_targeting_then_routes_outside_move_or
             .0
             .iter()
             .find_map(|pending| match pending {
-                PendingCommand::Order { order } => Some(order.clone()),
+                PendingCommand::Order { order, .. } => Some(order.clone()),
                 _ => None,
             });
     let order = order.expect("outside actual window input submits one world order");

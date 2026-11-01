@@ -1,0 +1,9 @@
+{
+  "row": "VIS1",
+  "package": "crates/turts_pack/tests/fixtures/muster_hud4",
+  "driver": "tests/browser/vis-full-driver.js",
+  "oracle": "tests/browser/vis-full-oracle.js",
+  "runs": "ci",
+  "capture_scene_checkpoints": true,
+  "viewports": ["1280x720"]
+}

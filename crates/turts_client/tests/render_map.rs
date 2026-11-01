@@ -10,9 +10,10 @@ use turts_client::input::ground_point;
 use turts_client::join::{AcquiredPackages, Phase};
 use turts_client::present::{Presented, PresentedUnit as PresentedRecord};
 use turts_client::render::{
-    PresentedUnit, declared_node_pick_radius, declared_unit_pick_radius, mesh_for, mesh_lift,
-    projected_ground_center, setup_scene, sync_units, world_to_scene,
+    PresentedUnit, SlotMaterials, declared_node_pick_radius, declared_unit_pick_radius, mesh_for,
+    mesh_lift, projected_ground_center, setup_scene, sync_units, world_to_scene,
 };
+use turts_client::replica::{Replica, UnitReplica};
 use turts_mod_api::Shape;
 use turts_net_protocol::Pos;
 
@@ -184,6 +185,7 @@ fn sync_app() -> App {
     app.add_plugins((MinimalPlugins, AssetPlugin::default()))
         .init_asset::<Mesh>()
         .init_asset::<StandardMaterial>()
+        .init_resource::<SlotMaterials>()
         .init_resource::<Presented>()
         .init_resource::<turts_client::ingest::ReplicaState>()
         .insert_resource(AcquiredPackages(Acquired {
@@ -211,7 +213,32 @@ fn sync_app() -> App {
             presentation: Default::default(),
         }))
         .add_systems(Update, sync_units);
+    let material = app
+        .world_mut()
+        .resource_mut::<Assets<StandardMaterial>>()
+        .add(StandardMaterial::default());
+    app.world_mut()
+        .resource_mut::<SlotMaterials>()
+        .0
+        .push(material);
     app
+}
+
+fn set_replica_units(app: &mut App, unit_ids: &[u32]) {
+    let mut state = app.world_mut().resource_mut::<turts_client::ingest::ReplicaState>();
+    let replica = state.replica.get_or_insert_with(|| Replica::new(20));
+    replica.units.clear();
+    for &unit_id in unit_ids {
+        replica.units.insert(
+            unit_id,
+            UnitReplica {
+                content_id: "pkg:man".to_string(),
+                owner_slot: 0,
+                facing: None,
+                samples: Default::default(),
+            },
+        );
+    }
 }
 
 /// The shown units as `(unit_id, translation)`, ascending.
@@ -230,6 +257,7 @@ fn sync_units_spawns_moves_and_despawns() {
     let mut app = sync_app();
     app.world_mut().resource_mut::<Presented>().units =
         vec![record(1, 8.0, 3.0), record(2, 5.0, 6.0)];
+    set_replica_units(&mut app, &[1, 2]);
     app.update();
     // The capsule is 1.8 tall, so it stands 0.9 above the ground.
     assert_eq!(
@@ -240,6 +268,7 @@ fn sync_units_spawns_moves_and_despawns() {
     // Unit 1 moves; unit 2 is gone from the record; unit 3 is new. No duplicate for unit 1.
     app.world_mut().resource_mut::<Presented>().units =
         vec![record(1, 9.5, 4.0), record(3, 1.0, 2.0)];
+    set_replica_units(&mut app, &[1, 3]);
     app.update();
     assert_eq!(
         shown(&mut app),
@@ -253,6 +282,7 @@ fn sync_units_skips_a_unit_without_a_visual() {
     let mut other = record(1, 8.0, 3.0);
     other.content_id = "pkg:unknown".to_string();
     app.world_mut().resource_mut::<Presented>().units = vec![other];
+    set_replica_units(&mut app, &[1]);
     app.update();
     assert_eq!(shown(&mut app), Vec::new());
 }

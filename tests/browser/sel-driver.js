@@ -9,8 +9,15 @@ const COLOR_TOLERANCE = 48;
 async function drive(io, params) {
     if (!Array.isArray(params.stages) || params.stages.length === 0) throw new Error("SEL driver needs row stages");
     await io.key("F1");
-    const initialPng = Buffer.from(await io.screenshot());
-    const before = decodePng(initialPng);
+    let initialPng = Buffer.from(await io.screenshot());
+    let before = decodePng(initialPng);
+    if ((params.stages || []).some((stage) => stage.label?.startsWith("sel3-"))) {
+        await io.move(before.width / 2, before.height / 2);
+        await io.wheel(8);
+        await io.wait(250);
+        initialPng = Buffer.from(await io.screenshot());
+        before = decodePng(initialPng);
+    }
     const targets = deriveTargets(before);
     await io.save("sel-initial.png", initialPng);
     await io.save("sel-pixel-targets.json", encodeJson(targets));

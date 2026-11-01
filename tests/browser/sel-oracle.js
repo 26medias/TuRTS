@@ -136,9 +136,16 @@ function assertModifiers(action, stage) {
 function assertTypeSelectionIsVisible(frame, debug, scene, stage) {
     const localSlot = debug.slot;
     const candidates = (debug.replicated_world?.units || []).filter((unit) => unit.owner_slot === localSlot && unit.content_id === stage.expected_unit_content_id);
+    const viewport = scene.viewport_logical_rect;
+    assert(Array.isArray(viewport) && viewport.length === 4,
+        `SEL ${stage.label} actual scene must provide its viewport for the offscreen precondition`);
     const visible = candidates.filter((unit) => scene.units?.some((entry) => entry.unit_id === unit.unit_id &&
-        Array.isArray(entry.ground_screen_center) && entry.ground_screen_center.length === 2 && entry.ground_screen_center.every(Number.isFinite)));
+        Array.isArray(entry.ground_screen_center) && entry.ground_screen_center.length === 2 && entry.ground_screen_center.every(Number.isFinite) &&
+        entry.ground_screen_center[0] >= viewport[0] && entry.ground_screen_center[0] <= viewport[0] + viewport[2] &&
+        entry.ground_screen_center[1] >= viewport[1] && entry.ground_screen_center[1] <= viewport[1] + viewport[3]));
     assert(visible.length > 0, `SEL ${stage.label} has no visible own ${stage.expected_unit_content_id} candidates in actual scene`);
+    assert(candidates.length > visible.length,
+        `SEL ${stage.label} requires actual same-type own candidates offscreen: total ${candidates.length}, visible ${visible.length}`);
     assert.equal(frame.selection.length, visible.length, `SEL ${stage.label} must select each visible own ${stage.expected_unit_content_id} and no off-screen unit`);
     const selected = new Set(frame.selection);
     for (const unit of visible) assert(selected.has(unit.unit_id), `SEL ${stage.label} omitted visible ${stage.expected_unit_content_id} ${unit.unit_id}`);
