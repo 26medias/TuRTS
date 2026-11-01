@@ -8,7 +8,7 @@ source: codex
 
 # MC execution board
 
-State: ACTIVE:11/25 lanes complete;53/170 runs registered. Task6 COMPLETE at merge450c023, final review0High; integration12/12 gates0 (1211/0/18,T7,M3). RUN51/52 Task7 implementation and independent review active, Task7run3/4 (soft8/hard16). C1-C125. Wave5 remains open; no main merge/push.
+State: ACTIVE:12/25 lanes complete;54/170 runs registered. Task7 COMPLETE at7e575c9, independent0High/0Medium, integration12/12gates0 (1231/0/19,T7,M3). RUN53 T11 owns sole compiler/cache; RUN54 UX review registered source-only. C1-C125. Wave5 needs11/12; no main merge/push.
 
 Plan: `docs/superpowers/plans/2026-10-29-mc-player-control.md`.
 Design of record: `docs/superpowers/specs/2026-10-29-mc-player-control-design.md`, revision13 at main721e56e.
@@ -62,7 +62,7 @@ CI trigger: `.github/workflows/ci.yml:2-5` runs pushes to main and pull requests
 
 ## 4. Tasks
 
-24 numbered tasks; task2 has two branches, for25lanes. T1/T2a/T3/T20, T8/T18/T19, T2b,T4 andT9 are complete. Wave5 is active: T6 is complete; RUN51 T7 owns the compiler, RUN52 reviews independently, and T11/T12 preparations are preserved until their implementation lease.
+24 numbered tasks; task2 has two branches, for25lanes. T1/T2a/T3/T20, T8/T18/T19, T2b,T4 andT9 are complete. Wave5 is active: T6 and T7 are complete. RUN53 T11 owns the compiler/cache, RUN54 prepares independent source review, and T12 preparation is preserved.
 
 | Task | Wave | Needs | Branch | State |
 | --- | --- | --- | --- | --- |
@@ -77,8 +77,8 @@ CI trigger: `.github/workflows/ci.yml:2-5` runs pushes to main and pull requests
 | T4 | 4 | 2b, 3 | codex/mc-t4 | COMPLETE merge0490ebd; review0H/0M,36GREF,all12rootgates0; lane removed |
 | T9 | 4 | 1, 8, 2b | codex/mc-t9 | COMPLETE mergefb5e2d6; independent0High/0unresolvedMedium,69tests,7GREF,FOV/modifier plants,all12integrationgates0; archived lane removed, branch retained. |
 | T6 | 5 | 4 | codex/mc-t6 | COMPLETE ed793bb; merge450c023; final review0High,21probes/191tests;20GREF/8plants/ownplant; integration12/12 gates0,1211/0/18,T7,M3; lane removed with compressed evidence/cache preserved. |
-| T7 | 5 | 2b, 4 | codex/mc-t7 | ACTIVE RUN51/52; source f9cca40, compiled reds/greens; H1-H3/C122 fixes committed, final gates and independent runtime/plant pending. |
-| T11 | 5 | 9, 19, 20 | codex/mc-t11 | PREPARED RUN41; source/tests preserved, native/browser red pending; no compiler lease. |
+| T7 | 5 | 2b, 4 | codex/mc-t7 | COMPLETE c190c909; merge7e575c9; independent0H/0M/30tests/ownplant, integration12/12gates0 (1231/0/19,T7,M3); lane removed, evidence and branch retained. |
+| T11 | 5 | 9, 19, 20 | codex/mc-t11 | ACTIVE RUN53; rebased6f73ed5 ontoT7,21core+4clienttests andCAM1 prepared; solecacheleased for actualreds and fullimplementation. RUN54source-onlyreview. |
 | T12 | 5 | 3, 9, 19, 20 | codex/mc-t12 | Analysis28legacytests +HUD1instrument8650131 ready; actualnative/browserred/widgetruntime/HUD4/allfinalproofpending. No legacy deletion. |
 | T5 | 6 | 4, 6, 19 | codex/mc-t5 | NOT STARTED |
 | T13 | 6 | 4, 6, 9, 11, 19, 20 | codex/mc-t13 | NOT STARTED |
@@ -150,7 +150,7 @@ Tasks in one wave share no file, except the refutation registries (merge in task
 
 ## 7. Budget and seats
 
-CEO approved about 212 total runs. Build stop line: 170 (106 planned task runs plus 64 repairs). Gate estimate: 42 spent before this build. Build dispatches used: 53/170. Root preflight is recorded separately and is not a builder/reviewer dispatch. Twice a task estimate requires a recorded continuation decision; four times is a hard stop. T18 estimate2: soft4, hard8. No dispatch at global170 or a task hard limit.
+CEO approved about 212 total runs. Build stop line: 170 (106 planned task runs plus 64 repairs). Gate estimate: 42 spent before this build. Build dispatches used: 54/170. Root preflight is recorded separately and is not a builder/reviewer dispatch. Twice a task estimate requires a recorded continuation decision; four times is a hard stop. T18 estimate2: soft4, hard8. No dispatch at global170 or a task hard limit.
 
 One run is one agent dispatch (builder or reviewer). Count every run on the board.
 
@@ -244,8 +244,9 @@ One row per builder/reviewer dispatch or resumed agent work turn. Register befor
 | 49 | T6 finite source findings repair and task completion | simulation-core-engineer | gpt-6-luna | high | ffb21b3+seven-file WIP | COMPLETE ed793bb; all normal gates0,20GREF/87commands,8validplants/27executions; source exact restored; merge450c023 and integration12/12gates0. Task6run7/6. |
 | 50 | T6 independent finite finding closure and final review | performance-architect | gpt-6.1-sol | high | ffb21b3+RUN49 repairs | COMPLETE PASS ed793bb:0High,C114Mediumdeferred,C121scope;21probes/191tests, all20GREF/8plants verified, ownGM40 0/101/0 exactrestore; finalcache returned. Task6run8/6. |
 | 51 | T7 server session implementation continuation | backend-engineer | gpt-6-luna | high | integration450c023+preserved5pathprep | COMPLETE builder c190c909; compiled reds/greens, f9native1228/0/19 andACC17/0/0,196GREF2/12commands, C125boundedfinal253/0/18+QA+process1/1; lease returned toRUN52. Task7run2/4; independentreview/mergepending. |
-| 52 | T7 independent session/script/log review | network-engineer | gpt-6.1-sol | high | Task7 base63c8ab4 plus active RUN51 | Registered BEFORE dispatch; contract/source-only preparation now, no cache/compiler until clean committed candidate/gates and explicit lease. Final independent tests and own plant required. Task7run3/estimate4, soft8/hard16. |
+| 52 | T7 independent session/script/log review | network-engineer | gpt-6.1-sol | high | Task7 base63c8ab4 plus RUN51 | COMPLETE PASS c190c909;0H/0M,30focusedgreens, ownfreshnessplant2named101s/restored0,16hashesexact, lease/readholdreturned. Task7run3/4. |
 | 53 | T11 camera and light implementation continuation | bevy-rendering-engineer | gpt-6-luna | high | d568edb+preserved5pathprep | Registered BEFORE dispatch; source/test preparation only while RUN51/52 own sole cache. Root must explicitly hand off compiler/browser before any build. Finish actual red, green, commit, gates, plants. Task11run2/estimate4, soft8/hard16. |
+| 54 | T11 independent camera and light review | ux-designer | gpt-6.1-sol | high | 6f73ed5+RUN53preparedfiles | Registered BEFORE dispatch; source/contract review only until cleancandidate/gates and explicitlease. Fullindependentfocusedruntime/ownplantrequired. Task11run3/estimate4, soft8/hard16; no compiler/browser yet. |
 
 ## 9. Preflight ledger and stop
 
