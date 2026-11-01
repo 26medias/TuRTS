@@ -112,3 +112,19 @@ Evidence: C156helper run_mc_rows.py modified-path check; Task13 new VIS1-full fi
 ### C163 related test fixture scope
 
 Mechanical client-test adaptations caused by the new visual-intent field and required per-slot owner/material inputs are in Task13 scope. Keep existing assertions, add the required actual owner/material fixture data and exhaustive-pattern .. where unrelated to visual intent. These are newly required fixture adaptations, not claims that baseline fixtures were already failing. Includes tests/widgets_lifecycle.rs and tests/render_map.rs. Routine import/type/Bevy API compile repairs need no per-line root permission; compile failures earn no red credit.
+
+## C173: derive dense selection targets from actual screenshot regions
+
+Conflict: the first SEL driver required500 isolated pixel components, but the real rendered formation has merged/tiny bodies. It found14components despite515actualsceneunits. The mixed-owner orange pixels are RGB194,140,42, about59from authored230,159,0 after the existing output transform, outside its48tolerance. The mobile Shift selector picked a merged5Troopercolumn, giving7selected from2statics rather than the required3.
+
+Choice: derive the mobile formation box from the largest contiguous PNG-own-colour cluster, calibrate the PNG recognizer tolerance to60 from actual saved pixels, and choose an isolated one-mobile silhouette for Shift operations. Keep expected500/2/3/2 counts, actual C84 own/foreign checks and every required plant. No scene/debug input targeting or map/content change. Root offline checked the new PNG box[576,206,901,391] contains exactly500actualowner0centres. This is an instrument repair; the complete row remains pending.
+
+Evidence: firstSEL2 captures715985a/cfcd163/76e2bf5; source sel-driver.js; root t13-root/sel2-pixel-box-offline-check.json. The first76e2bf5 mouse-upseq13 actually appliesonce inframe163 with selection500/rings500; sourcehash-bound rootreceipt sel2-first-frame-partial-positive.json. This proves only that first case; complete row failed later instrumentation and gets no green credit. Alternative not taken: change500expectation to componentcount, accept a multiunit Shift target as one, or weaken owner/timing checks.66/170runs.
+
+## C174: expose the actual local slot in C84 debug snapshots
+
+Conflict: SEL/VIS1-full ownership oracles require actual local slot, but debug_json lacks slot while the direct final report already exposes WelcomeInfo.slot. A row owner_slot expectation alone cannot prove the actual joined client slot.
+
+Choice: add actual WelcomeInfo.slot to debug_json in existing Task13 debug.rs ownership, with native capture/rebuild consistency. Preserve strict own/foreign oracle checks; join per-unit owners from actual replicated_world.units byunit_id because scene.units has no owner_slot. Keep driver inputs PNG-only and do not add a guessed slot or new wire field.
+
+Evidence: debug.rs cached/direct report builders; actual76e2bf5 C84 top-levelkeys and sceneunitkeys; sel-oracle.js owner checks. Alternative not taken: trust a row constant as actual client state, classify missing scene owner fields as foreign, or relax the ownership assertion. Focused native debug consistency passed; full headed row remains pending.66/170runs.
