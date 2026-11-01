@@ -1368,3 +1368,14 @@ This applies the CEO-approved test grouping and brief4 instrument judgment. Alte
 Task12 candidate5feedd5548b8c4805c82849395b5368b226c51b2 committed with explicit staging and attribution. Root verified clean lane and unchanged frozen M2 hash. Fresh HUD4 pair exits0 at10:03:00/10:03:28UTC; root independently rejudged both actual captures through immutable oracleSHA4a3f95c8, all8stages/47calls each. Pre/post manifestf7005940 matches all109 live entries; both copied fixtures match63/63 source files. Receipts main t12-root/fresh-hud4-verified and fresh-hud4-source-fixture-binding.json. Six HUD1 passes carry only under C150's exact impact/source contract. Earlier HUD4 selection/input diagnostics remain preserved and are not semantic mutation reds.
 
 RUN55 owns committed locked RUST/QA/WEB gates and the required default-hover mutation. RUN56 independent installed probes and own production mutation remain pending; Task12 is not yet merged.59/170 runs,13/25 complete; work continues without a checkpoint pause.
+
+
+## C151: retain browser observations through equivalent lint refactoring
+
+Conflict: strict Clippy rejects the initial committed widget candidate5feedd5. The necessary lint repair changes seven source/test files, so source hashes alone cannot label old browser observations as executions of new commit0c96cd7.
+
+Choice: carry the existing HUD1/HUD4 observations with their original source/impact receipts through the exact lint-only diff. Root read every hunk: nested conditions become equivalent short-circuit let chains; Bevy Query tuple/filter signatures become identical aliases; chunks_exact(2) becomes as_chunks::<2>().0 (same complete pairs/remainder handling); clone-to-slice and borrow scopes affect test setup only; allow(too_many_arguments) is scoped to test constructors. No widget, cursor, input, geometry or acquisition behavior changes. Require final locked workspace/QA/WEB gates and independent runtime/plant on0c96cd7.
+
+Evidence: git commit0c96cd73698a82d6271a11103637839284d1fded; root full exact diff saved at main t12-root/lint-impact-0c96cd7.diff. First nine lint diagnostics/exit101 remain in run55/final-gates-v001 and are not semantic red evidence. Strict Clippy now passes; the remaining gates are still running.
+
+This is the CEO-approved grouping with explicit provenance, not a dropped gate. Alternative not taken: claim earlier runs executed the new hash, suppress production warnings globally, or repeat the full browser matrix for type aliases/equivalent conditions alone.59/170 runs; no new dispatch or CEO stop.

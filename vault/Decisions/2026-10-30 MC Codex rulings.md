@@ -1348,3 +1348,14 @@ Choice: retain those six actual HUD1 passes as impact-carried evidence with thei
 Evidence: root matched the original mod.rs SHAce7081bc…9008 to RUN56 snapshot, then diffed it against the repair. The diff only adds per-axis Dimension::Fit guards at the two apply_node_placement calls/helper. False/false keeps the previous assignments. The HUD1 authored fixture has no Fit dimensions; Grid rows resolve to fixed cells. Other changed paths are lifecycle tests and HUD4-only pixels/oracle tests. Root receipts: main t12-root/nested-fit-impact.diff and nested-fit-hud1-impact.json. RUN56 rechecked the source repair; actual independent nested geometry execution remains pending.
 
 This applies the CEO-approved test grouping and brief4 instrument judgment. Alternative not taken: pretend an old-source run executed new source, skip nested runtime proof, weaken a cursor assertion, or rerun all six HUD1 cases solely to exercise a branch their fixture never reaches.59/170 runs; no new dispatch or CEO stop.
+
+
+## C151: retain browser observations through equivalent lint refactoring
+
+Conflict: strict Clippy rejects the initial committed widget candidate5feedd5. The necessary lint repair changes seven source/test files, so source hashes alone cannot label old browser observations as executions of new commit0c96cd7.
+
+Choice: carry the existing HUD1/HUD4 observations with their original source/impact receipts through the exact lint-only diff. Root read every hunk: nested conditions become equivalent short-circuit let chains; Bevy Query tuple/filter signatures become identical aliases; chunks_exact(2) becomes as_chunks::<2>().0 (same complete pairs/remainder handling); clone-to-slice and borrow scopes affect test setup only; allow(too_many_arguments) is scoped to test constructors. No widget, cursor, input, geometry or acquisition behavior changes. Require final locked workspace/QA/WEB gates and independent runtime/plant on0c96cd7.
+
+Evidence: git commit0c96cd73698a82d6271a11103637839284d1fded; root full exact diff saved at main t12-root/lint-impact-0c96cd7.diff. First nine lint diagnostics/exit101 remain in run55/final-gates-v001 and are not semantic red evidence. Strict Clippy now passes; the remaining gates are still running.
+
+This is the CEO-approved grouping with explicit provenance, not a dropped gate. Alternative not taken: claim earlier runs executed the new hash, suppress production warnings globally, or repeat the full browser matrix for type aliases/equivalent conditions alone.59/170 runs; no new dispatch or CEO stop.
