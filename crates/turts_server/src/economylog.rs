@@ -4,7 +4,7 @@
 //! is supplied. The Task 15 acceptance harness also includes this module for
 //! typed replay and process-level evidence checks.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::io::{BufRead, BufReader, BufWriter, Write};
 use std::path::Path;
 
@@ -50,6 +50,7 @@ pub(crate) enum EconomyLogRecord {
 
 struct ActiveOrderSpan {
     command: CommandAudit,
+    prior_plain_candidates: BTreeMap<u32, PlainCandidateReplay>,
     end_id: u64,
     last_unit_id: Option<u32>,
     next_subject_index: usize,
@@ -64,6 +65,46 @@ struct ActiveQueuedCapacityFailureSpan {
     unit_ids: Vec<u32>,
     member_orders: BTreeMap<u32, turts_sim::Order>,
     next_subject_index: usize,
+}
+
+#[derive(Clone)]
+struct PlainCandidatePriorReplay {
+    orders: turts_sim::UnitOrders,
+    move_target: Option<turts_mod_api::WorldPos>,
+    movement_progress: Option<turts_sim::economy::views::RawMovementProgressAudit>,
+    plain_progress: Option<turts_sim::economy::views::RawPlainMovementProgressAudit>,
+    physical_escape: Option<turts_sim::economy::views::RawPhysicalEscapeAudit>,
+    raw_gather: Option<turts_sim::economy::views::RawOrderAudit>,
+    public_gather: Option<turts_sim::economy::views::OrderView>,
+    identity: Option<turts_sim::Order>,
+}
+
+#[derive(Clone)]
+struct PlainCandidateReplay {
+    order: turts_sim::Order,
+    accepted_tick: u32,
+    seq: u32,
+    arrival_ordinal: u64,
+    preceding_pool_id: u64,
+    point: bevy::math::Vec2,
+    prior: PlainCandidatePriorReplay,
+}
+
+fn accepted_plain_candidate_context(
+    command: &CommandAudit,
+    candidates: &BTreeMap<u32, PlainCandidateReplay>,
+) -> BTreeMap<u32, PlainCandidateReplay> {
+    command
+        .result
+        .units
+        .accepted
+        .iter()
+        .filter_map(|unit_id| {
+            candidates
+                .get(unit_id)
+                .map(|candidate| (*unit_id, candidate.clone()))
+        })
+        .collect()
 }
 
 impl EconomyLogRecord {
@@ -340,6 +381,9 @@ pub(crate) fn validate_records(records: &[EconomyLogRecord]) -> Result<(), Strin
     let mut active_order_command: Option<ActiveOrderSpan> = None;
     let mut active_queued_capacity_failure: Option<ActiveQueuedCapacityFailureSpan> = None;
     let mut plain_move_identities = BTreeMap::new();
+    let mut plain_candidates = BTreeMap::<u32, PlainCandidateReplay>::new();
+    let mut legacy_pending_move_to = BTreeSet::<u32>::new();
+    let mut plain_arrival_ordinal = 0_u64;
     let mut last_operation: Option<u64> = None;
     let mut last_tick = initial.economy.tick;
     let mut tick_events = initial.pending_events.clone();
@@ -429,6 +473,19 @@ pub(crate) fn validate_records(records: &[EconomyLogRecord]) -> Result<(), Strin
                 }
                 let command_start = commands.remove(&operation.operation_id);
                 let is_command = command_start.is_some();
+                let require_direct_winners = is_pending_movement_dispatch_operation(operation)
+                    && cursor.movement_dispatch.tick == Some(operation.before.economy.tick);
+                let inside_command_span = is_command || active_order_command.is_some();
+                if !inside_command_span
+                    && operation.phase != turts_sim::economy::transaction::AuditPhase::Command
+                {
+                    reconcile_plain_candidate_dispatches(
+                        &mut cursor,
+                        &operation.before,
+                        &mut plain_candidates,
+                        require_direct_winners,
+                    )?;
+                }
                 match operation.phase {
                     turts_sim::economy::transaction::AuditPhase::Command => {
                         if !is_command {
@@ -507,6 +564,13 @@ pub(crate) fn validate_records(records: &[EconomyLogRecord]) -> Result<(), Strin
                             if matches!(command.input.kind, turts_sim::CommandKind::Order(_)) {
                                 validate_command_phase_order(command, operation)?;
                             }
+                            if matches!(command.input.kind, turts_sim::CommandKind::MoveTo { .. }) {
+                                validate_legacy_move_to_command(
+                                    command,
+                                    operation,
+                                    &plain_candidates,
+                                )?;
+                            }
                             if let turts_sim::CommandKind::Gather { unit_id, .. } =
                                 &command.input.kind
                             {
@@ -546,6 +610,10 @@ pub(crate) fn validate_records(records: &[EconomyLogRecord]) -> Result<(), Strin
                             if end_id == operation.operation_id {
                                 let mut span = ActiveOrderSpan {
                                     command: command.clone(),
+                                    prior_plain_candidates: accepted_plain_candidate_context(
+                                        command,
+                                        &plain_candidates,
+                                    ),
                                     end_id,
                                     last_unit_id: None,
                                     next_subject_index: 0,
@@ -557,6 +625,10 @@ pub(crate) fn validate_records(records: &[EconomyLogRecord]) -> Result<(), Strin
                             } else {
                                 let mut span = ActiveOrderSpan {
                                     command: command.clone(),
+                                    prior_plain_candidates: accepted_plain_candidate_context(
+                                        command,
+                                        &plain_candidates,
+                                    ),
                                     end_id,
                                     last_unit_id: None,
                                     next_subject_index: 0,
@@ -583,7 +655,60 @@ pub(crate) fn validate_records(records: &[EconomyLogRecord]) -> Result<(), Strin
                     && (operation.phase == turts_sim::economy::transaction::AuditPhase::Command
                         || completed_order_span)
                 {
+                    let candidate = plain_candidate_from_command(
+                        command,
+                        &plain_move_identities,
+                        &mut plain_arrival_ordinal,
+                    );
                     update_plain_move_identities(command, &mut plain_move_identities);
+                    if is_deferred_move_replace(&command.input.kind) {
+                        for unit_id in &command.result.units.accepted {
+                            if let Some(candidate) = plain_candidates.get(unit_id) {
+                                if let Some(identity) = &candidate.prior.identity {
+                                    plain_move_identities.insert(*unit_id, identity.clone());
+                                } else {
+                                    plain_move_identities.remove(unit_id);
+                                }
+                            }
+                        }
+                    }
+                    if let turts_sim::CommandKind::MoveTo { unit_ids, .. } = &command.input.kind
+                        && unit_ids.len() > 1
+                    {
+                        for unit_id in &command.result.units.accepted {
+                            // If a provisional authored singleton was replaced
+                            // by this deferred legacy envelope, production
+                            // restores the candidate's prior execution (and
+                            // its identity) until the envelope activates.
+                            if let Some(candidate) = plain_candidates.get(unit_id) {
+                                if let Some(identity) = &candidate.prior.identity {
+                                    plain_move_identities.insert(*unit_id, identity.clone());
+                                } else {
+                                    plain_move_identities.remove(unit_id);
+                                }
+                            }
+                            if operation
+                                .after
+                                .pending_movement_orders
+                                .pending_member_counts
+                                .contains_key(unit_id)
+                            {
+                                legacy_pending_move_to.insert(*unit_id);
+                            }
+                        }
+                    }
+                    let candidate_unit = candidate.as_ref().map(|(unit_id, _)| *unit_id);
+                    for unit_id in accepted_replacement_units(command) {
+                        if candidate_unit != Some(unit_id) {
+                            plain_candidates.remove(&unit_id);
+                        }
+                    }
+                    if let Some((unit_id, mut candidate)) = candidate {
+                        if let Some(previous) = plain_candidates.get(&unit_id) {
+                            candidate.prior = previous.prior.clone();
+                        }
+                        plain_candidates.insert(unit_id, candidate);
+                    }
                 }
                 if operation.phase == turts_sim::economy::transaction::AuditPhase::Orders
                     && !is_command
@@ -674,10 +799,88 @@ pub(crate) fn validate_records(records: &[EconomyLogRecord]) -> Result<(), Strin
                                             .as_ref()
                                             != Some(&failure)
                                 });
+                            let candidate_promoted =
+                                plain_candidates.get(&unit_id).is_some_and(|candidate| {
+                                    operation
+                                        .after
+                                        .pending_movement_orders
+                                        .queues
+                                        .values()
+                                        .flatten()
+                                        .any(|request| {
+                                            request.unit_ids.contains(&unit_id)
+                                                && request.order_for_unit(unit_id)
+                                                    == Some(&candidate.order)
+                                                && !operation
+                                                    .before
+                                                    .pending_movement_orders
+                                                    .pending_member_counts
+                                                    .contains_key(&unit_id)
+                                        })
+                                });
+                            let initial_dispatch_winners =
+                                if is_pending_movement_dispatch_operation(operation)
+                                    && operation.before.movement_dispatch.tick
+                                        != Some(operation.before.economy.tick)
+                                {
+                                    operation
+                                        .before
+                                        .pending_movement_orders
+                                        .queues
+                                        .get(
+                                            &operation
+                                                .before
+                                                .raw_units
+                                                .iter()
+                                                .find(|raw| raw.unit_id == unit_id)
+                                                .map_or(0, |raw| raw.owner_slot),
+                                        )
+                                        .and_then(|queue| {
+                                            queue
+                                                .iter()
+                                                .find(|request| request.unit_ids.contains(&unit_id))
+                                        })
+                                        .and_then(|request| {
+                                            let start_slot = dispatch_start_slot_for_tick(
+                                                &operation.before.pending_movement_orders,
+                                                &operation.before.movement_dispatch,
+                                                operation.before.economy.tick,
+                                            );
+                                            independent_plain_winners_before_request(
+                                                &operation.before,
+                                                &plain_candidates,
+                                                start_slot,
+                                                request,
+                                            )
+                                        })
+                                        .unwrap_or_default()
+                                } else {
+                                    Vec::new()
+                                };
                             validate_automatic_order_operation(
                                 operation,
                                 plain_move_identities.get(&unit_id),
+                                plain_candidates.get(&unit_id),
+                                &plain_candidates,
+                                legacy_pending_move_to.contains(&unit_id),
                             )?;
+                            if legacy_pending_move_to.contains(&unit_id)
+                                && is_movement_pool_member_dispatch_operation(operation)
+                            {
+                                legacy_pending_move_to.remove(&unit_id);
+                            }
+                            for winner in initial_dispatch_winners {
+                                plain_candidates.remove(&winner);
+                            }
+                            if candidate_promoted
+                                && let Some(candidate) = plain_candidates.remove(&unit_id)
+                            {
+                                if let Some(identity) = candidate.prior.identity {
+                                    plain_move_identities.insert(unit_id, identity);
+                                } else {
+                                    plain_move_identities.remove(&unit_id);
+                                }
+                            }
                             if plain_blocked_ack || replaced_by_group_move || fresh_rate_limit {
                                 plain_move_identities.remove(&unit_id);
                             }
@@ -767,6 +970,12 @@ pub(crate) fn validate_records(records: &[EconomyLogRecord]) -> Result<(), Strin
                 state,
                 events,
             } => {
+                reconcile_plain_candidate_dispatches(
+                    &mut cursor,
+                    state,
+                    &mut plain_candidates,
+                    true,
+                )?;
                 if last_tick.checked_add(1) != Some(*tick) {
                     return Err(format!("tick {tick} is out of order or discontinuous"));
                 }
@@ -801,6 +1010,7 @@ pub(crate) fn validate_records(records: &[EconomyLogRecord]) -> Result<(), Strin
                 }
                 validate_tick_state(&cursor, state, *tick, movement_pending)?;
                 reconcile_plain_move_identities(state, &mut plain_move_identities);
+                plain_candidates.clear();
                 cursor = state.clone();
                 tick_start = state.clone();
                 tick_events.clear();
@@ -912,10 +1122,16 @@ fn update_plain_move_identities(
                 identities.remove(unit_id);
             }
         }
-        turts_sim::CommandKind::MoveTo { .. } => {
-            for unit_id in &command.result.units.accepted {
-                identities.remove(unit_id);
+        turts_sim::CommandKind::MoveTo { unit_ids, .. } => {
+            if unit_ids.len() == 1 && command.result.outcome.is_ok() {
+                // A successful legacy singleton replaces the current execution
+                // immediately, so its previous authored identity is no longer
+                // eligible to explain a later Blocked result.
+                identities.remove(&unit_ids[0]);
             }
+            // A multi-unit legacy MoveTo can wait for an atomic spread turn.
+            // Its prior execution continues during that wait, so retain those
+            // identities until the actual per-unit activation operation.
         }
         turts_sim::CommandKind::Remove { unit_id } => {
             if command.result.outcome.is_ok() {
@@ -928,8 +1144,13 @@ fn update_plain_move_identities(
                     continue;
                 }
                 let deferred_move = order.behaviour == turts_mod_api::Behaviour::Move
-                    && (order.group != 0 || order.units.len() > 1)
-                    && matches!(&order.target, turts_sim::OrderTargetSim::Point(_));
+                    && (((order.group != 0 || order.units.len() > 1)
+                        && matches!(
+                            &order.target,
+                            turts_sim::OrderTargetSim::Point(_)
+                                | turts_sim::OrderTargetSim::Unit(_)
+                        ))
+                        || matches!(&order.target, turts_sim::OrderTargetSim::Unit(_)));
                 if deferred_move {
                     continue;
                 }
@@ -954,6 +1175,130 @@ fn update_plain_move_identities(
         }
         _ => {}
     }
+}
+
+fn accepted_replacement_units(command: &CommandAudit) -> Vec<u32> {
+    match &command.input.kind {
+        turts_sim::CommandKind::MoveTo { unit_ids, .. }
+            if unit_ids.len() == 1 && command.result.outcome.is_ok() =>
+        {
+            unit_ids.clone()
+        }
+        turts_sim::CommandKind::MoveTo { .. } => command.result.units.accepted.clone(),
+        turts_sim::CommandKind::Gather { unit_id, .. }
+        | turts_sim::CommandKind::Remove { unit_id }
+            if command.result.outcome.is_ok() =>
+        {
+            vec![*unit_id]
+        }
+        turts_sim::CommandKind::Order(order) if order.queue == turts_sim::QueueMode::Replace => {
+            command.result.units.accepted.clone()
+        }
+        _ => Vec::new(),
+    }
+}
+
+fn is_deferred_move_replace(kind: &turts_sim::CommandKind) -> bool {
+    let turts_sim::CommandKind::Order(order) = kind else {
+        return false;
+    };
+    order.behaviour == turts_mod_api::Behaviour::Move
+        && order.queue == turts_sim::QueueMode::Replace
+        && (((order.group != 0 || order.units.len() > 1)
+            && matches!(
+                order.target,
+                turts_sim::OrderTargetSim::Point(_) | turts_sim::OrderTargetSim::Unit(_)
+            ))
+            || matches!(order.target, turts_sim::OrderTargetSim::Unit(_)))
+}
+
+fn plain_candidate_from_command(
+    command: &CommandAudit,
+    identities: &BTreeMap<u32, turts_sim::Order>,
+    arrival_ordinal: &mut u64,
+) -> Option<(u32, PlainCandidateReplay)> {
+    let turts_sim::CommandKind::Order(input) = &command.input.kind else {
+        return None;
+    };
+    if input.behaviour != turts_mod_api::Behaviour::Move
+        || input.queue != turts_sim::QueueMode::Replace
+        || input.group != 0
+        || input.units.len() != 1
+        || !matches!(&input.target, turts_sim::OrderTargetSim::Point(_))
+    {
+        return None;
+    }
+    let unit_id = input.units[0];
+    if command.result.units.accepted != [unit_id] {
+        return None;
+    }
+    let actor = command
+        .before
+        .raw_units
+        .iter()
+        .find(|unit| unit.unit_id == unit_id)?;
+    let turts_sim::OrderTargetSim::Point(authored_point) = &input.target else {
+        return None;
+    };
+    let point = clamped_audit_point(
+        &command.before,
+        *authored_point,
+        audit_unit_radius(&command.before, unit_id),
+    );
+    *arrival_ordinal = arrival_ordinal.saturating_add(1);
+    let prior = PlainCandidatePriorReplay {
+        orders: unit_orders_for(&command.before, unit_id),
+        move_target: actor.move_target.clone(),
+        movement_progress: command
+            .before
+            .movement_progress
+            .iter()
+            .find(|row| row.unit_id == unit_id)
+            .cloned(),
+        plain_progress: command
+            .before
+            .plain_movement_progress
+            .iter()
+            .find(|row| row.unit_id == unit_id)
+            .cloned(),
+        physical_escape: command
+            .before
+            .physical_escapes
+            .iter()
+            .find(|row| row.unit_id == unit_id)
+            .cloned(),
+        raw_gather: command
+            .before
+            .raw_orders
+            .iter()
+            .find(|row| row.unit == unit_id)
+            .cloned(),
+        public_gather: command
+            .before
+            .economy
+            .orders
+            .iter()
+            .find(|row| row.unit == unit_id)
+            .cloned(),
+        identity: identities.get(&unit_id).cloned(),
+    };
+    Some((
+        unit_id,
+        PlainCandidateReplay {
+            order: turts_sim::Order {
+                order: input.order.clone(),
+                behaviour: input.behaviour,
+                target: input.target.clone(),
+                group: input.group,
+            },
+            accepted_tick: command.before.economy.tick,
+            seq: command.input.seq,
+            arrival_ordinal: *arrival_ordinal,
+            preceding_pool_id: command.before.pending_movement_orders.next_pool_id,
+            point: bevy::math::Vec2::new(point.x, point.y),
+            prior,
+        },
+    ))
 }
 
 fn reconcile_plain_move_identities(
@@ -1958,8 +2303,12 @@ fn validate_order_operation(
 
     if order.behaviour == turts_mod_api::Behaviour::Move
         && order.queue == turts_sim::QueueMode::Replace
-        && (order.group != 0 || order.units.len() > 1)
-        && matches!(order.target, turts_sim::OrderTargetSim::Point(_))
+        && (((order.group != 0 || order.units.len() > 1)
+            && matches!(
+                order.target,
+                turts_sim::OrderTargetSim::Point(_) | turts_sim::OrderTargetSim::Unit(_)
+            ))
+            || matches!(order.target, turts_sim::OrderTargetSim::Unit(_)))
     {
         return validate_deferred_move_admission_operation(span, operation, unit_id);
     }
@@ -2219,6 +2568,9 @@ fn validate_order_operation(
 fn validate_automatic_order_operation(
     operation: &OperationAudit,
     plain_identity: Option<&turts_sim::Order>,
+    plain_candidate: Option<&PlainCandidateReplay>,
+    plain_candidates: &BTreeMap<u32, PlainCandidateReplay>,
+    legacy_pending_move_to: bool,
 ) -> Result<(), String> {
     let unit_id = operation.unit_id.ok_or_else(|| {
         format!(
@@ -2269,6 +2621,51 @@ fn validate_automatic_order_operation(
         .plain_movement_progress
         .iter()
         .find(|row| row.unit_id == unit_id);
+    let prior_plain_failure_ack = plain_before.is_some_and(|before| {
+        before.progress.activity == turts_sim::movement::MovementActivity::Blocked
+            && !before.progress.failure_recorded
+            && operation
+                .after
+                .pending_movement_orders
+                .pending_member_counts
+                .contains_key(&unit_id)
+            && operation
+                .after
+                .plain_movement_progress
+                .iter()
+                .find(|row| row.unit_id == unit_id)
+                .is_some_and(|after| {
+                    after.progress.original_point == before.progress.original_point
+                        && after.progress.slot == before.progress.slot
+                        && after.progress.pool_slots == before.progress.pool_slots
+                        && after.progress.claim_count == before.progress.claim_count
+                        && after.progress.activity == turts_sim::movement::MovementActivity::Blocked
+                        && after.progress.failure_recorded
+                })
+    });
+    if let Some(candidate) = plain_candidate
+        && actor_target_before
+            .as_ref()
+            .is_some_and(|target| target.x == candidate.point.x && target.y == candidate.point.y)
+        && operation
+            .after
+            .pending_movement_orders
+            .pending_member_counts
+            .contains_key(&unit_id)
+        && !operation
+            .before
+            .pending_movement_orders
+            .pending_member_counts
+            .contains_key(&unit_id)
+    {
+        return validate_plain_candidate_promotion(
+            operation,
+            unit_id,
+            candidate,
+            plain_candidates,
+            &mut expected,
+        );
+    }
     let plain_removed = plain_before.is_some()
         && !operation
             .after
@@ -2298,6 +2695,86 @@ fn validate_automatic_order_operation(
         let completed_fallback = progress.activity
             == turts_sim::movement::MovementActivity::Resting
             && (progress.claim_count > 0 || progress.slot != progress.original_point);
+        if let Some(order) = current.as_ref().filter(|order| {
+            order.behaviour == turts_mod_api::Behaviour::Move
+                && matches!(order.target, turts_sim::OrderTargetSim::Unit(_))
+        }) {
+            let turts_sim::OrderTargetSim::Unit(target_id) = order.target else {
+                unreachable!()
+            };
+            let mut expected = operation.before.clone();
+            expected
+                .plain_movement_progress
+                .retain(|row| row.unit_id != unit_id);
+            match operation
+                .before
+                .raw_units
+                .iter()
+                .find(|unit| unit.unit_id == target_id)
+            {
+                None => {
+                    set_audit_move_target(&mut expected, unit_id, None)?;
+                    expected
+                        .movement_progress
+                        .retain(|row| row.unit_id != unit_id);
+                    orders_after.current = None;
+                    orders_after.last_failure = Some(turts_sim::OrderFailure {
+                        order: order.order.clone(),
+                        reason: turts_sim::RejectReason::TargetGone,
+                        tick,
+                    });
+                    clear_audited_gather_cycle(&mut expected, unit_id)?;
+                    start_next_audited_order_if_not_pending(
+                        &mut expected,
+                        unit_id,
+                        &mut orders_after,
+                    )?;
+                }
+                Some(target) => {
+                    let goal = clamped_audit_point(
+                        &operation.before,
+                        bevy::math::Vec2::new(target.pos.x, target.pos.y),
+                        audit_unit_radius(&operation.before, unit_id),
+                    );
+                    if completed_fallback
+                        && progress.original_point.x == goal.x
+                        && progress.original_point.y == goal.y
+                        && progress.slot == bevy::math::Vec2::new(actor.pos.x, actor.pos.y)
+                        && raw_move_target(&operation.before, unit_id).is_none()
+                        && !operation
+                            .before
+                            .physical_escapes
+                            .iter()
+                            .any(|escape| escape.unit_id == unit_id)
+                    {
+                        set_audit_move_target(&mut expected, unit_id, None)?;
+                        orders_after.current = None;
+                        start_next_audited_order_if_not_pending(
+                            &mut expected,
+                            unit_id,
+                            &mut orders_after,
+                        )?;
+                    } else if progress.original_point.x != goal.x
+                        || progress.original_point.y != goal.y
+                    {
+                        set_audit_move_target(&mut expected, unit_id, Some(goal))?;
+                    } else {
+                        return Err(format!(
+                            "Orders operation {} removed active Unit-follow fallback without reaching or changing its live goal",
+                            operation.operation_id
+                        ));
+                    }
+                }
+            }
+            store_audited_unit_orders(&mut expected, unit_id, orders_after);
+            if !operation.events.is_empty() || expected != operation.after {
+                return Err(format!(
+                    "Orders operation {} changed state beyond the independently modeled Unit-follow fallback transition",
+                    operation.operation_id
+                ));
+            }
+            return Ok(());
+        }
         let still_approaching = matches!(
             gather_stage,
             Some(
@@ -2345,17 +2822,38 @@ fn validate_automatic_order_operation(
             span.unit_ids.len(),
         );
     }
-    if let Some(request) = pending_before
-        && recorded_orders_after
-            .last_failure
-            .as_ref()
-            .is_some_and(|failure| {
-                failure.reason == turts_sim::RejectReason::Blocked
-                    && orders_before.last_failure.as_ref() != Some(failure)
-            })
+    if !prior_plain_failure_ack
+        && let Some(request) = pending_before
+        && request.plain
+        && request.member_orders.is_empty()
+        && request.order.is_none()
+        && operation.after.plain_movement_progress.iter().any(|row| {
+            row.unit_id == unit_id
+                && row.progress.activity == turts_sim::movement::MovementActivity::Blocked
+                && row.progress.failure_recorded
+        })
     {
         validate_pending_movement_failure(operation, unit_id, request, &mut expected)?;
         return Ok(());
+    }
+    if !prior_plain_failure_ack
+        && let Some(request) = pending_before
+        && recorded_orders_after
+            .last_failure
+            .as_ref()
+            .is_some_and(|failure| orders_before.last_failure.as_ref() != Some(failure))
+    {
+        match recorded_orders_after.last_failure.as_ref().unwrap().reason {
+            turts_sim::RejectReason::Blocked => {
+                validate_pending_movement_failure(operation, unit_id, request, &mut expected)?;
+                return Ok(());
+            }
+            turts_sim::RejectReason::TargetGone => {
+                validate_pending_target_gone(operation, unit_id, request, &mut expected)?;
+                return Ok(());
+            }
+            _ => {}
+        }
     }
     let plain_failure_pending = plain_before.is_some_and(|row| {
         (row.progress.activity == turts_sim::movement::MovementActivity::Blocked
@@ -2403,7 +2901,7 @@ fn validate_automatic_order_operation(
         }
         clear_audited_gather_cycle(&mut expected, unit_id)?;
         if current.is_some() || has_queue {
-            start_next_audited_order(&mut expected, unit_id, &mut orders_after)?;
+            start_next_audited_order_if_not_pending(&mut expected, unit_id, &mut orders_after)?;
         }
         store_audited_unit_orders(&mut expected, unit_id, orders_after);
         if expected != operation.after {
@@ -2420,19 +2918,14 @@ fn validate_automatic_order_operation(
         validate_queued_movement_admission(operation, unit_id, admitted_request)?;
         return Ok(());
     }
-    if actor_target_before.is_none()
-        && operation
-            .before
-            .movement_progress
-            .iter()
-            .all(|row| row.unit_id != unit_id)
-        && operation
-            .after
-            .movement_progress
-            .iter()
-            .any(|row| row.unit_id == unit_id)
-    {
-        validate_pending_movement_dispatch(operation, unit_id, &mut expected)?;
+    if is_movement_pool_member_dispatch_operation(operation) {
+        validate_pending_movement_dispatch(
+            operation,
+            unit_id,
+            plain_candidates,
+            legacy_pending_move_to,
+            &mut expected,
+        )?;
         return Ok(());
     }
 
@@ -2450,27 +2943,110 @@ fn validate_automatic_order_operation(
                 None => {
                     orders_after.current = None;
                     orders_after.last_failure = Some(turts_sim::OrderFailure {
-                        order: order.order,
+                        order: order.order.clone(),
                         reason: turts_sim::RejectReason::TargetGone,
                         tick,
                     });
                     set_audit_move_target(&mut expected, unit_id, None)?;
-                    start_next_audited_order(&mut expected, unit_id, &mut orders_after)?;
+                    expected
+                        .movement_progress
+                        .retain(|row| row.unit_id != unit_id);
+                    expected
+                        .plain_movement_progress
+                        .retain(|row| row.unit_id != unit_id);
+                    clear_audited_gather_cycle(&mut expected, unit_id)?;
+                    start_next_audited_order_if_not_pending(
+                        &mut expected,
+                        unit_id,
+                        &mut orders_after,
+                    )?;
                 }
-                Some(target) if actor.pos == target.pos => {
-                    orders_after.current = None;
-                    set_audit_move_target(&mut expected, unit_id, None)?;
-                    start_next_audited_order(&mut expected, unit_id, &mut orders_after)?;
-                }
-                Some(target)
-                    if raw_move_target(&operation.before, unit_id) != Some(target.pos.clone()) =>
-                {
-                    set_audit_move_target(&mut expected, unit_id, Some(target.pos.clone()))?;
-                }
-                Some(_) => {
-                    return Err(format!(
-                        "automatic Orders operation for unit {unit_id} records an unchanged follow target"
-                    ));
+                Some(target) => {
+                    let goal = clamped_audit_point(
+                        &operation.before,
+                        bevy::math::Vec2::new(target.pos.x, target.pos.y),
+                        audit_unit_radius(&operation.before, unit_id),
+                    );
+                    let goal_vec = bevy::math::Vec2::new(goal.x, goal.y);
+                    let actor_position = bevy::math::Vec2::new(actor.pos.x, actor.pos.y);
+                    let cohort_progress = operation
+                        .before
+                        .movement_progress
+                        .iter()
+                        .find(|row| row.unit_id == unit_id);
+                    let cohort_goal = cohort_progress
+                        .and_then(|row| row.progress.follow_origin)
+                        .filter(|origin| origin.target_unit_id == target_id)
+                        .map(|origin| origin.goal)
+                        .or_else(|| {
+                            cohort_progress.and_then(|row| {
+                                operation
+                                    .before
+                                    .movement_pools
+                                    .iter()
+                                    .find(|pool| pool.pool_id == row.progress.pool_id)
+                                    .map(|pool| pool.point)
+                            })
+                        });
+                    let plain_progress = operation
+                        .before
+                        .plain_movement_progress
+                        .iter()
+                        .find(|row| row.unit_id == unit_id);
+                    let physical_escape_active = operation
+                        .before
+                        .physical_escapes
+                        .iter()
+                        .any(|escape| escape.unit_id == unit_id);
+                    let cohort_fallback_reached = cohort_progress.is_some_and(|row| {
+                        cohort_goal == Some(goal_vec)
+                            && row.progress.activity
+                                == turts_sim::movement::MovementActivity::Resting
+                            && row.progress.slot == actor_position
+                            && actor_target_before.is_none()
+                            && !physical_escape_active
+                    });
+                    let plain_fallback_reached = plain_progress.is_some_and(|row| {
+                        row.progress.original_point == goal_vec
+                            && row.progress.activity
+                                == turts_sim::movement::MovementActivity::Resting
+                            && row.progress.slot == actor_position
+                            && actor_target_before.is_none()
+                            && !physical_escape_active
+                    });
+                    if (actor_position == goal_vec && !physical_escape_active)
+                        || cohort_fallback_reached
+                        || plain_fallback_reached
+                    {
+                        orders_after.current = None;
+                        set_audit_move_target(&mut expected, unit_id, None)?;
+                        start_next_audited_order_if_not_pending(
+                            &mut expected,
+                            unit_id,
+                            &mut orders_after,
+                        )?;
+                    } else {
+                        let same_cohort_goal = cohort_progress.is_some_and(|row| {
+                            row.progress.follow_origin.is_some_and(|origin| {
+                                origin.target_unit_id == target_id && origin.goal == goal_vec
+                            }) || (row.progress.follow_origin.is_none()
+                                && cohort_goal == Some(goal_vec))
+                        });
+                        let same_plain_goal = plain_progress
+                            .is_some_and(|row| row.progress.original_point == goal_vec);
+                        if same_cohort_goal || same_plain_goal {
+                            return Err(format!(
+                                "automatic Orders operation for unit {unit_id} records an unchanged follow target"
+                            ));
+                        }
+                        expected
+                            .movement_progress
+                            .retain(|row| row.unit_id != unit_id);
+                        expected
+                            .plain_movement_progress
+                            .retain(|row| row.unit_id != unit_id);
+                        set_audit_move_target(&mut expected, unit_id, Some(goal))?;
+                    }
                 }
             }
         }
@@ -2480,7 +3056,7 @@ fn validate_automatic_order_operation(
                 && actor.move_target.is_none() =>
         {
             orders_after.current = None;
-            start_next_audited_order(&mut expected, unit_id, &mut orders_after)?;
+            start_next_audited_order_if_not_pending(&mut expected, unit_id, &mut orders_after)?;
         }
         Some(order)
             if order.behaviour == turts_mod_api::Behaviour::Gather
@@ -2498,14 +3074,28 @@ fn validate_automatic_order_operation(
                 tick,
             });
             clear_audited_gather_cycle(&mut expected, unit_id)?;
-            start_next_audited_order(&mut expected, unit_id, &mut orders_after)?;
+            start_next_audited_order_if_not_pending(&mut expected, unit_id, &mut orders_after)?;
         }
         None if !orders_before.queue.is_empty() && actor.move_target.is_none() => {
-            start_next_audited_order(&mut expected, unit_id, &mut orders_after)?;
+            start_next_audited_order_if_not_pending(&mut expected, unit_id, &mut orders_after)?;
         }
         _ => {
             return Err(format!(
-                "automatic Orders operation for unit {unit_id} has no valid completion, failure or queued-start transition"
+                "automatic Orders operation {} for unit {unit_id} has no valid completion, failure or queued-start transition (current {:?}, queue {}, target {:?}, pending {}, progress {}, dispatch tick {:?}/used {})",
+                operation.operation_id,
+                current
+                    .as_ref()
+                    .map(|order| (&order.order, order.behaviour, &order.target)),
+                orders_before.queue.len(),
+                actor_target_before,
+                pending_before.is_some(),
+                operation
+                    .before
+                    .movement_progress
+                    .iter()
+                    .any(|row| row.unit_id == unit_id),
+                operation.before.movement_dispatch.tick,
+                operation.before.movement_dispatch.used,
             ));
         }
     }
@@ -2584,7 +3174,7 @@ fn validate_queued_movement_capacity_failure(
         tick: operation.before.economy.tick,
     });
     clear_audited_gather_cycle(&mut expected, unit_id)?;
-    start_next_audited_order(&mut expected, unit_id, &mut orders)?;
+    start_next_audited_order_if_not_pending(&mut expected, unit_id, &mut orders)?;
     store_audited_unit_orders(&mut expected, unit_id, orders);
     if !operation.events.is_empty() {
         return Err(format!(
@@ -2628,8 +3218,9 @@ fn queued_capacity_failure_span(
     let Some(actor) = operation
         .before
         .raw_units
-        .iter()
-        .find(|unit| unit.unit_id == unit_id)
+        .binary_search_by_key(&unit_id, |unit| unit.unit_id)
+        .ok()
+        .map(|index| &operation.before.raw_units[index])
     else {
         return Err(format!(
             "queued RateLimited failure names absent unit {unit_id}"
@@ -2717,11 +3308,23 @@ fn validate_queued_movement_admission(
     let order = unit_orders_for(&operation.before, unit_id)
         .current
         .ok_or_else(|| format!("queued movement unit {unit_id} has no current order"))?;
-    let turts_sim::OrderTargetSim::Point(_) = order.target else {
-        return Err(format!(
-            "queued movement unit {unit_id} has no point target"
-        ));
+    let resolved_goal = |order: &turts_sim::Order| -> Option<bevy::math::Vec2> {
+        match order.target {
+            turts_sim::OrderTargetSim::Point(point) => Some(point),
+            turts_sim::OrderTargetSim::Unit(target_id) => operation
+                .before
+                .raw_units
+                .iter()
+                .find(|unit| unit.unit_id == target_id)
+                .map(|unit| bevy::math::Vec2::new(unit.pos.x, unit.pos.y)),
+            _ => None,
+        }
     };
+    if resolved_goal(&order).is_none() {
+        return Err(format!(
+            "queued movement unit {unit_id} has no live move target"
+        ));
+    }
     let mut expected_ids = operation
         .before
         .raw_units
@@ -2737,9 +3340,7 @@ fn validate_queued_movement_admission(
                 return None;
             }
             let candidate = unit_orders_for(&operation.before, raw.unit_id).current?;
-            let turts_sim::OrderTargetSim::Point(candidate_point) = candidate.target else {
-                return None;
-            };
+            let candidate_point = resolved_goal(&candidate)?;
             let same_group = candidate.behaviour == turts_mod_api::Behaviour::Move
                 && candidate.group == order.group;
             let radius = audit_unit_radius(&operation.before, raw.unit_id);
@@ -2759,11 +3360,8 @@ fn validate_queued_movement_admission(
         .first()
         .and_then(|first| unit_orders_for(&operation.before, *first).current)
         .unwrap_or_else(|| order.clone());
-    let turts_sim::OrderTargetSim::Point(anchor_point) = anchor_order.target else {
-        return Err(format!(
-            "queued movement anchor for unit {unit_id} has no point target"
-        ));
-    };
+    let anchor_point = resolved_goal(&anchor_order)
+        .ok_or_else(|| format!("queued movement anchor for unit {unit_id} has no live target"))?;
     let max_radius = expected_ids
         .iter()
         .map(|candidate| audit_unit_radius(&operation.before, *candidate))
@@ -2839,9 +3437,444 @@ fn validate_queued_movement_admission(
     Ok(())
 }
 
+fn validate_plain_candidate_promotion(
+    operation: &OperationAudit,
+    unit_id: u32,
+    candidate: &PlainCandidateReplay,
+    plain_candidates: &BTreeMap<u32, PlainCandidateReplay>,
+    expected: &mut AuditState,
+) -> Result<(), String> {
+    if !plain_candidate_lost_to_tick_budget(operation, unit_id, candidate, plain_candidates) {
+        return Err(format!(
+            "plain Move candidate promotion for unit {unit_id} was eligible for direct dispatch"
+        ));
+    }
+    let actor = operation
+        .before
+        .raw_units
+        .iter()
+        .find(|unit| unit.unit_id == unit_id)
+        .ok_or_else(|| format!("plain Move candidate names absent unit {unit_id}"))?;
+    if actor
+        .move_target
+        .as_ref()
+        .is_none_or(|target| target.x != candidate.point.x || target.y != candidate.point.y)
+        || operation
+            .before
+            .pending_movement_orders
+            .pending_member_counts
+            .contains_key(&unit_id)
+    {
+        return Err(format!(
+            "plain Move candidate promotion for unit {unit_id} has no matching unallocated accepted target"
+        ));
+    }
+    let request = turts_sim::orders::PendingMovementOrder {
+        slot: turts_sim::SlotId(actor.owner_slot),
+        accepted_tick: candidate.accepted_tick,
+        seq: candidate.seq,
+        group: 0,
+        pool_id: 0,
+        point: candidate.point,
+        unit_ids: vec![unit_id],
+        order: Some(candidate.order.clone()),
+        member_orders: BTreeMap::from([(unit_id, candidate.order.clone())]),
+        plain: false,
+    };
+    if !expected.pending_movement_orders.queue(request) {
+        return Err(format!(
+            "plain Move candidate for unit {unit_id} exceeded reserved pending capacity"
+        ));
+    }
+    let queue = expected
+        .pending_movement_orders
+        .queues
+        .get_mut(&actor.owner_slot)
+        .ok_or("plain candidate queue insertion omitted its slot")?;
+    let promoted = queue
+        .pop_back()
+        .ok_or("plain candidate queue insertion omitted its appended request")?;
+    let insert_at = queue
+        .iter()
+        .position(|existing| {
+            existing.accepted_tick > candidate.accepted_tick
+                || (existing.accepted_tick == candidate.accepted_tick
+                    && existing.pool_id > candidate.preceding_pool_id)
+        })
+        .unwrap_or(queue.len());
+    queue.insert(insert_at, promoted);
+
+    set_audit_move_target(expected, unit_id, candidate.prior.move_target.clone())?;
+    expected
+        .movement_progress
+        .retain(|row| row.unit_id != unit_id);
+    if let Some(progress) = &candidate.prior.movement_progress {
+        expected.movement_progress.push(progress.clone());
+        expected.movement_progress.sort_by_key(|row| row.unit_id);
+    }
+    expected
+        .plain_movement_progress
+        .retain(|row| row.unit_id != unit_id);
+    if let Some(progress) = &candidate.prior.plain_progress {
+        expected.plain_movement_progress.push(progress.clone());
+        expected
+            .plain_movement_progress
+            .sort_by_key(|row| row.unit_id);
+    }
+    expected
+        .physical_escapes
+        .retain(|row| row.unit_id != unit_id);
+    if let Some(escape) = &candidate.prior.physical_escape {
+        expected.physical_escapes.push(escape.clone());
+        expected.physical_escapes.sort_by_key(|row| row.unit_id);
+    }
+    let mut prior_orders = candidate.prior.orders.clone();
+    // Accepted Replace clears the old future queue; only validated Appends
+    // admitted after that command remain behind its Pending replacement.
+    prior_orders.queue = unit_orders_for(&operation.before, unit_id).queue;
+    store_audited_unit_orders(expected, unit_id, prior_orders);
+
+    expected.raw_orders.retain(|row| row.unit != unit_id);
+    if let Some(gather) = &candidate.prior.raw_gather {
+        expected.raw_orders.push(gather.clone());
+        expected.raw_orders.sort_by_key(|row| row.unit);
+    }
+    expected.economy.orders.retain(|row| row.unit != unit_id);
+    if let Some(gather) = &candidate.prior.public_gather {
+        expected.economy.orders.push(gather.clone());
+        expected.economy.orders.sort_by_key(|row| row.unit);
+    }
+    if !operation.events.is_empty() || *expected != operation.after {
+        return Err(format!(
+            "plain Move candidate promotion for unit {unit_id} differs from independently restored prior execution and Pending admission"
+        ));
+    }
+    Ok(())
+}
+
+fn plain_candidate_lost_to_tick_budget(
+    operation: &OperationAudit,
+    unit_id: u32,
+    candidate: &PlainCandidateReplay,
+    candidates: &BTreeMap<u32, PlainCandidateReplay>,
+) -> bool {
+    if candidate.arrival_ordinal == 0 {
+        return false;
+    }
+    let Some(actor) = operation
+        .before
+        .raw_units
+        .binary_search_by_key(&unit_id, |unit| unit.unit_id)
+        .ok()
+        .map(|index| &operation.before.raw_units[index])
+    else {
+        return false;
+    };
+    if actor
+        .move_target
+        .as_ref()
+        .is_none_or(|target| target.x != candidate.point.x || target.y != candidate.point.y)
+        || operation
+            .before
+            .pending_movement_orders
+            .pending_member_counts
+            .contains_key(&unit_id)
+    {
+        return false;
+    }
+    !independent_plain_candidate_winners(&operation.before, candidates, true).contains(&unit_id)
+}
+
+fn independent_plain_candidate_winners(
+    state: &AuditState,
+    candidates: &BTreeMap<u32, PlainCandidateReplay>,
+    process_pending_requests: bool,
+) -> Vec<u32> {
+    const SPREAD_CAP: usize = 2048;
+    let raw_by_id: BTreeMap<_, _> = state
+        .raw_units
+        .iter()
+        .map(|unit| (unit.unit_id, unit))
+        .collect();
+    let live_ids = raw_by_id.keys().copied().collect::<BTreeSet<_>>();
+    let mut by_slot = BTreeMap::<u8, VecDeque<(u32, &PlainCandidateReplay)>>::new();
+    for (&unit_id, candidate) in candidates {
+        if !live_ids.contains(&unit_id)
+            || state
+                .pending_movement_orders
+                .pending_member_counts
+                .contains_key(&unit_id)
+        {
+            continue;
+        }
+        let Some(actor) = raw_by_id.get(&unit_id) else {
+            continue;
+        };
+        if actor
+            .move_target
+            .as_ref()
+            .is_none_or(|target| target.x != candidate.point.x || target.y != candidate.point.y)
+        {
+            continue;
+        }
+        by_slot
+            .entry(actor.owner_slot)
+            .or_default()
+            .push_back((unit_id, candidate));
+    }
+    for queue in by_slot.values_mut() {
+        let mut ordered: Vec<_> = queue.drain(..).collect();
+        ordered.sort_by_key(|(unit_id, candidate)| {
+            (candidate.accepted_tick, candidate.arrival_ordinal, *unit_id)
+        });
+        queue.extend(ordered);
+    }
+
+    let tick = state.economy.tick;
+    let start_slot = dispatch_start_slot_for_tick(
+        &state.pending_movement_orders,
+        &state.movement_dispatch,
+        tick,
+    );
+    let mut used = if state.movement_dispatch.tick == Some(tick) {
+        state.movement_dispatch.used
+    } else {
+        0
+    };
+    let mut winners = Vec::new();
+    for offset in 0..8_u8 {
+        let slot = (start_slot + offset) % 8;
+        let candidate_queue = by_slot.entry(slot).or_default();
+        let requests = state
+            .pending_movement_orders
+            .queues
+            .get(&slot)
+            .cloned()
+            .unwrap_or_default();
+        let mut request_index = 0;
+        loop {
+            let candidate = candidate_queue.front().copied();
+            let request = requests.get(request_index);
+            let choose_candidate = match (candidate, request) {
+                (Some((_unit_id, candidate)), Some(request)) => {
+                    candidate.accepted_tick < request.accepted_tick
+                        || (candidate.accepted_tick == request.accepted_tick
+                            && request.pool_id > candidate.preceding_pool_id)
+                }
+                (Some(_), None) => true,
+                _ => false,
+            };
+            if choose_candidate {
+                if used > 0 && used.saturating_add(1) > SPREAD_CAP {
+                    break;
+                }
+                let (unit_id, _) = candidate_queue.pop_front().unwrap();
+                winners.push(unit_id);
+                used = used.saturating_add(1);
+                continue;
+            }
+            let Some(request) = request else {
+                break;
+            };
+            let count = request
+                .unit_ids
+                .iter()
+                .filter(|member| {
+                    live_ids.contains(member)
+                        && audit_pending_target_is_live(request, **member, &live_ids)
+                })
+                .count();
+            if count == 0 {
+                request_index += 1;
+                continue;
+            }
+            if used > 0 && used.saturating_add(count) > SPREAD_CAP {
+                break;
+            }
+            if !process_pending_requests {
+                return winners;
+            }
+            used = used.saturating_add(count);
+            request_index += 1;
+        }
+    }
+    winners
+}
+
+fn reconcile_plain_candidate_dispatches(
+    expected: &mut AuditState,
+    observed: &AuditState,
+    candidates: &mut BTreeMap<u32, PlainCandidateReplay>,
+    require_accounted: bool,
+) -> Result<(), String> {
+    let tick = if expected.economy.tick == observed.economy.tick {
+        expected.economy.tick
+    } else if expected.economy.tick.checked_add(1) == Some(observed.economy.tick) {
+        observed.economy.tick
+    } else {
+        return Ok(());
+    };
+    if expected.pending_movement_orders.queues != observed.pending_movement_orders.queues
+        || expected.pending_movement_orders.pending_units
+            != observed.pending_movement_orders.pending_units
+        || expected.pending_movement_orders.pending_member_counts
+            != observed.pending_movement_orders.pending_member_counts
+        || expected.pending_movement_orders.next_pool_id
+            != observed.pending_movement_orders.next_pool_id
+    {
+        return Ok(());
+    }
+    let prior_scheduler_initialized = expected.movement_dispatch.tick.is_some()
+        || expected.pending_movement_orders.next_pool_id != 0
+        || expected.pending_movement_orders.next_slot != 0
+        || !expected.pending_movement_orders.queues.is_empty();
+    if expected.pending_movement_orders.queues.is_empty()
+        && (candidates.is_empty() || !prior_scheduler_initialized)
+    {
+        return Ok(());
+    }
+    let start_slot = dispatch_start_slot_for_tick(
+        &expected.pending_movement_orders,
+        &expected.movement_dispatch,
+        tick,
+    );
+    let mut arbitration_state = expected.clone();
+    arbitration_state.economy.tick = tick;
+    let winners = independent_plain_candidate_winners(&arbitration_state, candidates, false);
+    if winners.is_empty() {
+        return Ok(());
+    }
+
+    let mut modeled = expected.movement_dispatch.clone();
+    let mut next_slot = expected.pending_movement_orders.next_slot;
+    if modeled.tick != Some(tick) {
+        modeled.tick = Some(tick);
+        modeled.start_slot = start_slot;
+        modeled.used = 0;
+        modeled.cursor_advanced = false;
+    }
+    modeled.used = modeled.used.saturating_add(winners.len());
+    if !modeled.cursor_advanced {
+        modeled.cursor_advanced = true;
+        next_slot = (modeled.start_slot + 1) % 8;
+    }
+
+    if observed.movement_dispatch == expected.movement_dispatch
+        && observed.pending_movement_orders.next_slot == expected.pending_movement_orders.next_slot
+    {
+        return if require_accounted {
+            Err(format!(
+                "direct-winner accounting mismatch at tick {tick} for {:?}: expected used {}, observed used {}",
+                winners, modeled.used, observed.movement_dispatch.used
+            ))
+        } else {
+            Ok(())
+        };
+    }
+    if observed.movement_dispatch != modeled
+        || observed.pending_movement_orders.next_slot != next_slot
+    {
+        return Err(format!(
+            "direct-winner accounting mismatch: expected used {}, observed used {}",
+            modeled.used, observed.movement_dispatch.used
+        ));
+    }
+
+    expected.movement_dispatch = modeled;
+    expected.pending_movement_orders.next_slot = next_slot;
+    for unit_id in winners {
+        candidates.remove(&unit_id);
+    }
+    Ok(())
+}
+
+fn is_pending_movement_dispatch_operation(operation: &OperationAudit) -> bool {
+    if operation.phase != turts_sim::economy::transaction::AuditPhase::Orders {
+        return false;
+    }
+    let Some(unit_id) = operation.unit_id else {
+        return false;
+    };
+    operation
+        .before
+        .pending_movement_orders
+        .pending_member_counts
+        .contains_key(&unit_id)
+        && !operation
+            .after
+            .pending_movement_orders
+            .pending_member_counts
+            .contains_key(&unit_id)
+        && operation
+            .after
+            .movement_progress
+            .iter()
+            .any(|row| row.unit_id == unit_id)
+}
+
+fn is_movement_pool_member_dispatch_operation(operation: &OperationAudit) -> bool {
+    if operation.phase != turts_sim::economy::transaction::AuditPhase::Orders {
+        return false;
+    }
+    let Some(unit_id) = operation.unit_id else {
+        return false;
+    };
+    let Some(after_progress) = operation
+        .after
+        .movement_progress
+        .iter()
+        .find(|row| row.unit_id == unit_id)
+    else {
+        return false;
+    };
+    let before_progress = operation
+        .before
+        .movement_progress
+        .iter()
+        .find(|row| row.unit_id == unit_id);
+    if before_progress == Some(after_progress) {
+        return false;
+    }
+    let pending_member = is_pending_movement_dispatch_operation(operation);
+    let Some(pool) = operation
+        .after
+        .movement_pools
+        .iter()
+        .find(|pool| pool.pool_id == after_progress.progress.pool_id)
+    else {
+        return false;
+    };
+    let Some(target) = operation
+        .after
+        .raw_units
+        .iter()
+        .find(|unit| unit.unit_id == unit_id)
+        .and_then(|unit| unit.move_target.as_ref())
+    else {
+        return false;
+    };
+    let target = bevy::math::Vec2::new(target.x, target.y);
+    let primary_slot = pool
+        .slots
+        .iter()
+        .take(pool.primary_count as usize)
+        .any(|slot| *slot == target);
+    let slot_was_assigned = operation.before.movement_progress.iter().any(|row| {
+        row.progress.pool_id == after_progress.progress.pool_id && row.progress.slot == target
+    });
+    let pool_was_active = operation
+        .before
+        .movement_pools
+        .iter()
+        .any(|before_pool| before_pool.pool_id == after_progress.progress.pool_id);
+    pending_member || (pool_was_active && primary_slot && !slot_was_assigned)
+}
+
 fn validate_pending_movement_dispatch(
     operation: &OperationAudit,
     unit_id: u32,
+    plain_candidates: &BTreeMap<u32, PlainCandidateReplay>,
+    legacy_pending_move_to: bool,
     expected: &mut AuditState,
 ) -> Result<(), String> {
     use turts_sim::movement::{
@@ -2946,9 +3979,35 @@ fn validate_pending_movement_dispatch(
             .bounds
             .as_ref()
             .ok_or("pending movement dispatch has no map bounds")?;
+        let max_radius = members
+            .iter()
+            .map(|member| member.radius)
+            .fold(0.0_f32, f32::max);
+        let anchor_order = request
+            .unit_ids
+            .first()
+            .and_then(|id| request.order_for_unit(*id));
+        let allocation_point = match anchor_order.map(|order| &order.target) {
+            Some(turts_sim::OrderTargetSim::Unit(target_id)) => {
+                let target = operation
+                    .before
+                    .raw_units
+                    .iter()
+                    .find(|unit| unit.unit_id == *target_id)
+                    .ok_or("pending Unit target disappeared before allocation")?;
+                let point = clamped_audit_point(
+                    &operation.before,
+                    bevy::math::Vec2::new(target.pos.x, target.pos.y),
+                    max_radius,
+                );
+                bevy::math::Vec2::new(point.x, point.y)
+            }
+            Some(turts_sim::OrderTargetSim::Point(_)) => request.point,
+            _ => request.point,
+        };
         let (mut computed_pool, assignments) = turts_sim::movement::spread_destinations(
             &members,
-            request.point,
+            allocation_point,
             &reserved,
             &static_footprints,
             bevy::math::Vec2::new(bounds.x, bounds.y),
@@ -3001,15 +4060,26 @@ fn validate_pending_movement_dispatch(
 
         let tick = operation.before.economy.tick;
         if expected.movement_dispatch.tick != Some(tick) {
-            let start_slot = expected_dispatch_start_slot(
+            let start_slot = dispatch_start_slot_for_tick(
                 &expected.pending_movement_orders,
                 &expected.movement_dispatch,
                 tick,
             );
+            let direct_plain_winners = independent_plain_winners_before_request(
+                &operation.before,
+                plain_candidates,
+                start_slot,
+                request,
+            )
+            .ok_or_else(|| {
+                format!(
+                    "movement dispatch for unit {unit_id} is absent from independent FIFO arbitration"
+                )
+            })?;
             expected.movement_dispatch.tick = Some(tick);
             expected.movement_dispatch.start_slot = start_slot;
-            expected.movement_dispatch.used = 0;
-            expected.movement_dispatch.cursor_advanced = false;
+            expected.movement_dispatch.used = direct_plain_winners.len();
+            expected.movement_dispatch.cursor_advanced = !direct_plain_winners.is_empty();
         }
         expected.movement_dispatch.used = expected
             .movement_dispatch
@@ -3050,6 +4120,35 @@ fn validate_pending_movement_dispatch(
 
     let pool = pool.ok_or_else(|| format!("movement dispatch for unit {unit_id} has no pool"))?;
     let target_pos = bevy::math::Vec2::new(target.x, target.y);
+    let follow_origin = match request
+        .as_ref()
+        .and_then(|request| request.order_for_unit(unit_id))
+        .map(|order| &order.target)
+    {
+        Some(turts_sim::OrderTargetSim::Unit(target_unit_id)) => {
+            let live_target = operation
+                .before
+                .raw_units
+                .iter()
+                .find(|unit| unit.unit_id == *target_unit_id)
+                .ok_or("pending Unit target disappeared before follow origin capture")?;
+            let goal = clamped_audit_point(
+                &operation.before,
+                bevy::math::Vec2::new(live_target.pos.x, live_target.pos.y),
+                audit_unit_radius(&operation.before, unit_id),
+            );
+            Some(turts_sim::movement::FollowMoveOrigin {
+                target_unit_id: *target_unit_id,
+                goal: bevy::math::Vec2::new(goal.x, goal.y),
+            })
+        }
+        _ => operation
+            .before
+            .movement_progress
+            .iter()
+            .find(|row| row.unit_id == unit_id)
+            .and_then(|row| row.progress.follow_origin),
+    };
     let expected_pool = expected
         .movement_pools
         .iter_mut()
@@ -3081,6 +4180,7 @@ fn validate_pending_movement_dispatch(
                 stalled_ticks: 0,
                 best_distance: bevy::math::Vec2::new(actor.pos.x, actor.pos.y).distance(target_pos),
                 claim_count: 0,
+                follow_origin,
             },
         });
     expected.movement_progress.sort_by_key(|row| row.unit_id);
@@ -3091,7 +4191,19 @@ fn validate_pending_movement_dispatch(
             orders.last_failure = None;
             store_audited_unit_orders(expected, unit_id, orders);
             clear_audited_gather_cycle(expected, unit_id)?;
+        } else if request.plain && request.member_orders.is_empty() {
+            let mut orders = unit_orders_for(expected, unit_id);
+            orders.current = None;
+            orders.last_failure = None;
+            store_audited_unit_orders(expected, unit_id, orders);
+            clear_audited_gather_cycle(expected, unit_id)?;
         }
+    } else if legacy_pending_move_to {
+        let mut orders = unit_orders_for(expected, unit_id);
+        orders.current = None;
+        orders.last_failure = None;
+        store_audited_unit_orders(expected, unit_id, orders);
+        clear_audited_gather_cycle(expected, unit_id)?;
     } else if let Some(order) = operation
         .before
         .movement_progress
@@ -3120,17 +4232,263 @@ fn validate_pending_movement_dispatch(
             .map(|(id, left, right)| (id, left.move_target.clone(), right.move_target.clone()))
             .collect();
         return Err(format!(
-            "movement dispatch for unit {unit_id} differs from its independently modeled envelope and slot (pool={}, progress={}, target={}, raw_diff={changed_raw_units:?}, orders={}, pending={}, scheduler={} expected={:?} actual={:?}, economy={}, units={})",
+            "movement dispatch for unit {unit_id} differs from its independently modeled envelope and slot (pool={}, progress={}, target={}, raw_diff={changed_raw_units:?}, orders={} expected_orders={:?} actual_orders={:?}, pending={} expected_pending={:?} actual_pending={:?}, scheduler={} expected={:?} actual={:?}, economy={}, units={})",
             expected.movement_pools == operation.after.movement_pools,
             expected.movement_progress == operation.after.movement_progress,
             expected.raw_units == operation.after.raw_units,
             expected.unit_orders == operation.after.unit_orders,
+            unit_orders_for(expected, unit_id),
+            unit_orders_for(&operation.after, unit_id),
             expected.pending_movement_orders == operation.after.pending_movement_orders,
+            expected.pending_movement_orders,
+            operation.after.pending_movement_orders,
             expected.movement_dispatch == operation.after.movement_dispatch,
             expected.movement_dispatch,
             operation.after.movement_dispatch,
             expected.economy == operation.after.economy,
             expected.units == operation.after.units,
+        ));
+    }
+    Ok(())
+}
+
+fn audit_pending_target_is_live(
+    request: &turts_sim::orders::PendingMovementOrder,
+    unit_id: u32,
+    live_ids: &BTreeSet<u32>,
+) -> bool {
+    match request.order_for_unit(unit_id).map(|order| &order.target) {
+        Some(turts_sim::OrderTargetSim::Unit(target_id)) => live_ids.contains(target_id),
+        Some(turts_sim::OrderTargetSim::Point(_)) | None => true,
+        _ => false,
+    }
+}
+
+fn independent_plain_winners_before_request(
+    state: &AuditState,
+    candidates: &BTreeMap<u32, PlainCandidateReplay>,
+    start_slot: u8,
+    target_request: &turts_sim::orders::PendingMovementOrder,
+) -> Option<Vec<u32>> {
+    use std::collections::VecDeque;
+
+    const SPREAD_CAP: usize = 2048;
+    let raw_by_id: BTreeMap<_, _> = state
+        .raw_units
+        .iter()
+        .map(|unit| (unit.unit_id, unit))
+        .collect();
+    let live_ids = raw_by_id.keys().copied().collect::<BTreeSet<_>>();
+    let mut by_slot = BTreeMap::<u8, VecDeque<(u32, &PlainCandidateReplay)>>::new();
+    for (unit_id, candidate) in candidates {
+        if state
+            .pending_movement_orders
+            .pending_member_counts
+            .contains_key(unit_id)
+            || !live_ids.contains(unit_id)
+        {
+            continue;
+        }
+        let Some(actor) = raw_by_id.get(unit_id) else {
+            continue;
+        };
+        by_slot
+            .entry(actor.owner_slot)
+            .or_default()
+            .push_back((*unit_id, candidate));
+    }
+    for queue in by_slot.values_mut() {
+        let mut ordered: Vec<_> = queue.drain(..).collect();
+        ordered.sort_by_key(|(unit_id, candidate)| {
+            (candidate.accepted_tick, candidate.arrival_ordinal, *unit_id)
+        });
+        queue.extend(ordered);
+    }
+
+    let mut used = if state.movement_dispatch.tick == Some(state.economy.tick) {
+        state.movement_dispatch.used
+    } else {
+        0
+    };
+    let mut winners = Vec::new();
+    for offset in 0..8_u8 {
+        let slot = (start_slot + offset) % 8;
+        let candidate_queue = by_slot.entry(slot).or_default();
+        let pending_queue = state
+            .pending_movement_orders
+            .queues
+            .get(&slot)
+            .cloned()
+            .unwrap_or_default();
+        let mut pending_index = 0_usize;
+        loop {
+            let candidate = candidate_queue.front().copied();
+            let request = pending_queue.get(pending_index);
+            let choose_candidate = match (candidate, request) {
+                (Some((_unit_id, candidate)), Some(request)) => {
+                    candidate.accepted_tick < request.accepted_tick
+                        || (candidate.accepted_tick == request.accepted_tick
+                            && request.pool_id > candidate.preceding_pool_id)
+                }
+                (Some(_), None) => true,
+                _ => false,
+            };
+            if choose_candidate {
+                if used > 0 && used.saturating_add(1) > SPREAD_CAP {
+                    break;
+                }
+                let (unit_id, _) = candidate_queue.pop_front().unwrap();
+                used = used.saturating_add(1);
+                winners.push(unit_id);
+                continue;
+            }
+            let Some(request) = request else {
+                break;
+            };
+            if request.slot == target_request.slot
+                && request.pool_id == target_request.pool_id
+                && request.unit_ids == target_request.unit_ids
+            {
+                return Some(winners);
+            }
+            let count = request
+                .unit_ids
+                .iter()
+                .filter(|id| {
+                    live_ids.contains(id) && audit_pending_target_is_live(request, **id, &live_ids)
+                })
+                .count();
+            pending_index += 1;
+            if count == 0 {
+                continue;
+            }
+            if used > 0 && used.saturating_add(count) > SPREAD_CAP {
+                break;
+            }
+            used = used.saturating_add(count);
+        }
+    }
+    None
+}
+
+fn validate_pending_target_gone(
+    operation: &OperationAudit,
+    unit_id: u32,
+    request: &turts_sim::orders::PendingMovementOrder,
+    expected: &mut AuditState,
+) -> Result<(), String> {
+    if !request.unit_ids.contains(&unit_id) {
+        return Err(format!(
+            "TargetGone actor {unit_id} is outside its pending envelope"
+        ));
+    }
+    let order = request
+        .order_for_unit(unit_id)
+        .ok_or("TargetGone pending actor has no accepted order identity")?;
+    let turts_sim::OrderTargetSim::Unit(target_id) = &order.target else {
+        return Err("TargetGone pending movement is not a Unit-target order".into());
+    };
+    if operation
+        .before
+        .raw_units
+        .iter()
+        .any(|unit| unit.unit_id == *target_id)
+    {
+        return Err(format!(
+            "pending Unit target {target_id} still exists before TargetGone failure"
+        ));
+    }
+    if operation.before.economy.tick
+        != unit_orders_for(&operation.after, unit_id)
+            .last_failure
+            .as_ref()
+            .map_or(u32::MAX, |failure| failure.tick)
+        || unit_orders_for(&operation.after, unit_id)
+            .last_failure
+            .as_ref()
+            .is_none_or(|failure| {
+                failure.order != order.order
+                    || failure.reason != turts_sim::RejectReason::TargetGone
+            })
+    {
+        return Err(format!(
+            "TargetGone failure identity or tick is wrong for unit {unit_id}"
+        ));
+    }
+    let queue = expected
+        .pending_movement_orders
+        .queues
+        .get(&request.slot.0)
+        .ok_or("TargetGone envelope disappeared before failure")?;
+    let head = queue
+        .front()
+        .ok_or("TargetGone envelope has no pending head")?;
+    if head.pool_id != request.pool_id || !head.unit_ids.contains(&unit_id) {
+        return Err("TargetGone failure did not refer to the pending head".into());
+    }
+    let pending = &mut expected.pending_movement_orders;
+    let queue = pending
+        .queues
+        .get_mut(&request.slot.0)
+        .ok_or("TargetGone member has no slot queue")?;
+    let head = queue
+        .front_mut()
+        .ok_or("TargetGone member has no queue head")?;
+    if head.pool_id != request.pool_id || !head.unit_ids.contains(&unit_id) {
+        return Err("TargetGone member did not match the current pending envelope".into());
+    }
+    head.unit_ids.retain(|member_id| *member_id != unit_id);
+    head.member_orders.remove(&unit_id);
+    if head.unit_ids.is_empty() {
+        let popped = pending
+            .queues
+            .get_mut(&request.slot.0)
+            .and_then(VecDeque::pop_front)
+            .ok_or("TargetGone final member has no queue head")?;
+        if popped.pool_id != request.pool_id {
+            return Err("TargetGone final member popped a different pending envelope".into());
+        }
+        if pending
+            .queues
+            .get(&request.slot.0)
+            .is_some_and(VecDeque::is_empty)
+        {
+            pending.queues.remove(&request.slot.0);
+        }
+    }
+    if let Some(count) = pending.pending_member_counts.get_mut(&unit_id) {
+        *count = count.saturating_sub(1);
+        if *count == 0 {
+            pending.pending_member_counts.remove(&unit_id);
+        }
+    }
+    let remaining = pending
+        .pending_units
+        .get(&request.slot.0)
+        .copied()
+        .unwrap_or_default()
+        .saturating_sub(1);
+    pending.pending_units.insert(request.slot.0, remaining);
+    set_audit_move_target(expected, unit_id, None)?;
+    expected
+        .movement_progress
+        .retain(|row| row.unit_id != unit_id);
+    expected
+        .plain_movement_progress
+        .retain(|row| row.unit_id != unit_id);
+    let mut orders = unit_orders_for(&operation.before, unit_id);
+    orders.current = None;
+    orders.last_failure = Some(turts_sim::OrderFailure {
+        order: order.order.clone(),
+        reason: turts_sim::RejectReason::TargetGone,
+        tick: operation.before.economy.tick,
+    });
+    clear_audited_gather_cycle(expected, unit_id)?;
+    start_next_audited_order_if_not_pending(expected, unit_id, &mut orders)?;
+    store_audited_unit_orders(expected, unit_id, orders);
+    if !operation.events.is_empty() || *expected != operation.after {
+        return Err(format!(
+            "TargetGone pending transition for unit {unit_id} changed unrelated state"
         ));
     }
     Ok(())
@@ -3202,9 +4560,33 @@ fn validate_pending_movement_failure(
         .bounds
         .as_ref()
         .ok_or("failed movement envelope has no map bounds")?;
+    let allocation_point = request
+        .unit_ids
+        .first()
+        .and_then(|anchor| request.order_for_unit(*anchor))
+        .and_then(|order| match order.target {
+            turts_sim::OrderTargetSim::Unit(target_id) => operation
+                .before
+                .raw_units
+                .iter()
+                .find(|unit| unit.unit_id == target_id)
+                .map(|target| {
+                    let point = clamped_audit_point(
+                        &operation.before,
+                        bevy::math::Vec2::new(target.pos.x, target.pos.y),
+                        members
+                            .iter()
+                            .map(|member| member.radius)
+                            .fold(0.0_f32, f32::max),
+                    );
+                    bevy::math::Vec2::new(point.x, point.y)
+                }),
+            _ => None,
+        })
+        .unwrap_or(request.point);
     let (_, assignments) = turts_sim::movement::spread_destinations(
         &members,
-        request.point,
+        allocation_point,
         &reserved,
         &static_footprints,
         bevy::math::Vec2::new(bounds.x, bounds.y),
@@ -3266,22 +4648,60 @@ fn validate_pending_movement_failure(
         pending.pending_units.insert(slot, remaining);
     }
 
-    let order = request.order_for_unit(unit_id).ok_or_else(|| {
-        format!("failed movement envelope for unit {unit_id} omits its accepted order")
-    })?;
     set_audit_move_target(expected, unit_id, None)?;
     expected
         .movement_progress
         .retain(|row| row.unit_id != unit_id);
-    let mut orders = unit_orders_for(expected, unit_id);
-    orders.current = None;
-    orders.last_failure = Some(turts_sim::OrderFailure {
-        order: order.order.clone(),
-        reason: turts_sim::RejectReason::Blocked,
-        tick: operation.before.economy.tick,
-    });
-    store_audited_unit_orders(expected, unit_id, orders);
-    clear_audited_gather_cycle(expected, unit_id)?;
+    if let Some(order) = request.order_for_unit(unit_id) {
+        let mut orders = unit_orders_for(expected, unit_id);
+        orders.current = None;
+        orders.last_failure = Some(turts_sim::OrderFailure {
+            order: order.order.clone(),
+            reason: turts_sim::RejectReason::Blocked,
+            tick: operation.before.economy.tick,
+        });
+        store_audited_unit_orders(expected, unit_id, orders);
+        clear_audited_gather_cycle(expected, unit_id)?;
+    } else if request.plain && request.member_orders.is_empty() {
+        let actor_position = operation
+            .before
+            .raw_units
+            .iter()
+            .find(|unit| unit.unit_id == unit_id)
+            .map(|unit| bevy::math::Vec2::new(unit.pos.x, unit.pos.y))
+            .ok_or("failed legacy movement actor disappeared")?;
+        let mut orders = unit_orders_for(expected, unit_id);
+        orders.current = None;
+        orders.last_failure = None;
+        store_audited_unit_orders(expected, unit_id, orders);
+        expected
+            .plain_movement_progress
+            .retain(|row| row.unit_id != unit_id);
+        expected.plain_movement_progress.push(
+            turts_sim::economy::views::RawPlainMovementProgressAudit {
+                unit_id,
+                progress: turts_sim::movement::PlainMoveProgress {
+                    original_point: request.point,
+                    slot: actor_position,
+                    pool_slots: Vec::new(),
+                    gather_goal: None,
+                    activity: turts_sim::movement::MovementActivity::Blocked,
+                    stalled_ticks: 0,
+                    best_distance: actor_position.distance(request.point),
+                    claim_count: 0,
+                    failure_recorded: true,
+                },
+            },
+        );
+        expected
+            .plain_movement_progress
+            .sort_by_key(|row| row.unit_id);
+        clear_audited_gather_cycle(expected, unit_id)?;
+    } else {
+        return Err(format!(
+            "failed movement envelope for unit {unit_id} omits its accepted order"
+        ));
+    }
     if !operation.events.is_empty() {
         return Err(format!(
             "failed movement operation for unit {unit_id} emitted an economy event"
@@ -3526,6 +4946,21 @@ fn start_next_audited_order(
     }
 }
 
+fn start_next_audited_order_if_not_pending(
+    state: &mut AuditState,
+    unit_id: u32,
+    orders: &mut turts_sim::UnitOrders,
+) -> Result<(), String> {
+    if state
+        .pending_movement_orders
+        .pending_member_counts
+        .contains_key(&unit_id)
+    {
+        return Ok(());
+    }
+    start_next_audited_order(state, unit_id, orders)
+}
+
 fn audited_gather_start_failure(
     state: &AuditState,
     actor: &turts_sim::economy::views::RawUnitAudit,
@@ -3657,6 +5092,26 @@ fn set_audit_move_target(
         .ok_or_else(|| format!("order transition names absent unit {unit_id}"))?;
     unit.move_target = target;
     Ok(())
+}
+
+fn clear_audit_gather(state: &mut AuditState, unit_id: u32) {
+    if let Some(row) = state.raw_orders.iter_mut().find(|row| row.unit == unit_id) {
+        row.node = None;
+        row.deposit = None;
+        row.receiver = None;
+        row.stage = turts_sim::economy::gather::GatherStage::Idle;
+        row.rate_carry = 0;
+    }
+    if let Some(row) = state
+        .economy
+        .orders
+        .iter_mut()
+        .find(|row| row.unit == unit_id)
+    {
+        row.node = None;
+        row.receiver = None;
+        row.stage = turts_sim::economy::gather::GatherStage::Idle;
+    }
 }
 
 fn store_audited_unit_orders(state: &mut AuditState, unit_id: u32, orders: turts_sim::UnitOrders) {
@@ -4743,8 +6198,16 @@ fn validate_deferred_move_admission_operation(
         expected
             .pending_movement_orders
             .cancel_units(owner, accepted);
-        let turts_sim::OrderTargetSim::Point(point) = order.target else {
-            return Err("deferred Move admission has a non-point target".into());
+        let point = match &order.target {
+            turts_sim::OrderTargetSim::Point(point) => *point,
+            turts_sim::OrderTargetSim::Unit(target_id) => operation
+                .before
+                .raw_units
+                .iter()
+                .find(|unit| unit.unit_id == *target_id)
+                .map(|unit| bevy::math::Vec2::new(unit.pos.x, unit.pos.y))
+                .ok_or("deferred Move admission has a missing unit target")?,
+            _ => return Err("deferred Move admission has an invalid target".into()),
         };
         let max_radius = accepted
             .iter()
@@ -4767,7 +6230,10 @@ fn validate_deferred_move_admission_operation(
             return Err("deferred Move admission exceeds its pending-unit cap".into());
         }
     }
-    let mut expected_orders = unit_orders_for(&operation.before, unit_id);
+    if let Some(candidate) = span.prior_plain_candidates.get(&unit_id) {
+        restore_plain_candidate_prior_audit(&mut expected, unit_id, candidate);
+    }
+    let mut expected_orders = unit_orders_for(&expected, unit_id);
     expected_orders.queue.clear();
     store_audited_unit_orders(&mut expected, unit_id, expected_orders);
     if expected != operation.after {
@@ -4864,6 +6330,311 @@ fn validate_order_span_end(
     Ok(())
 }
 
+fn validate_legacy_move_to_command(
+    command: &CommandAudit,
+    operation: &OperationAudit,
+    plain_candidates: &BTreeMap<u32, PlainCandidateReplay>,
+) -> Result<(), String> {
+    use turts_sim::{CommandKind, RejectReason as R};
+    let CommandKind::MoveTo { unit_ids, target } = &command.input.kind else {
+        return Ok(());
+    };
+    let mut expected = operation.before.clone();
+    let mut accepted = Vec::new();
+    let mut refused = Vec::new();
+    if unit_ids.is_empty() {
+        if command.result.outcome != Err(R::EmptyCommand) {
+            return Err("empty legacy MoveTo has the wrong result".into());
+        }
+        return if operation.before == operation.after {
+            Ok(())
+        } else {
+            Err("empty legacy MoveTo changed state".into())
+        };
+    }
+    if unit_ids.len() > turts_sim::command::MAX_UNITS_PER_COMMAND {
+        if command.result.outcome != Err(R::TooManyUnits) {
+            return Err("oversized legacy MoveTo has the wrong result".into());
+        }
+        return if operation.before == operation.after {
+            Ok(())
+        } else {
+            Err("oversized legacy MoveTo changed state".into())
+        };
+    }
+    let unique: BTreeSet<_> = unit_ids.iter().copied().collect();
+    if unique.len() != unit_ids.len() {
+        if command.result.outcome != Err(R::DuplicateUnit) {
+            return Err("duplicate legacy MoveTo has the wrong result".into());
+        }
+        return if operation.before == operation.after {
+            Ok(())
+        } else {
+            Err("duplicate legacy MoveTo changed state".into())
+        };
+    }
+    let multi = unit_ids.len() > 1;
+    if multi && !target.is_finite() {
+        if command.result.outcome != Err(R::TargetNotFinite)
+            || command.result.units != turts_sim::UnitOutcomes::default()
+        {
+            return Err(
+                "nonfinite legacy multi-unit MoveTo must be a global refusal with empty unit results"
+                    .into(),
+            );
+        }
+        return if operation.before == operation.after {
+            Ok(())
+        } else {
+            Err("nonfinite legacy multi-unit MoveTo changed state".into())
+        };
+    }
+    if multi {
+        for unit_id in unit_ids {
+            let reason = match operation
+                .before
+                .raw_units
+                .iter()
+                .find(|unit| unit.unit_id == *unit_id)
+            {
+                None => Some(R::UnknownUnit),
+                Some(unit) if unit.owner_slot != command.input.slot.0 => Some(R::NotOwner),
+                Some(unit)
+                    if operation
+                        .before
+                        .unit_types
+                        .iter()
+                        .find(|kind| kind.type_id == unit.unit_type)
+                        .is_none_or(|kind| kind.movement_speed.is_none()) =>
+                {
+                    Some(R::NotApplicable)
+                }
+                Some(_) if !target.is_finite() => Some(R::TargetNotFinite),
+                Some(_) => None,
+            };
+            if let Some(reason) = reason {
+                refused.push((*unit_id, reason));
+            } else {
+                accepted.push(*unit_id);
+            }
+        }
+        let mut accepted_after_capacity = accepted.clone();
+        let replaced: BTreeSet<_> = accepted.iter().copied().collect();
+        let pending_count = expected
+            .pending_movement_orders
+            .pending_units
+            .get(&command.input.slot.0)
+            .copied()
+            .unwrap_or_default();
+        let canceled_count = expected
+            .pending_movement_orders
+            .queues
+            .get(&command.input.slot.0)
+            .into_iter()
+            .flatten()
+            .map(|request| {
+                request
+                    .unit_ids
+                    .iter()
+                    .filter(|id| replaced.contains(id))
+                    .count()
+            })
+            .sum::<usize>();
+        let reserved_count = plain_candidates
+            .iter()
+            .filter(|(unit_id, candidate)| {
+                !replaced.contains(unit_id)
+                    && operation
+                        .before
+                        .raw_units
+                        .binary_search_by_key(unit_id, |unit| &unit.unit_id)
+                        .ok()
+                        .map(|index| &operation.before.raw_units[index])
+                        .is_some_and(|unit| {
+                            unit.owner_slot == command.input.slot.0
+                                && unit.move_target.as_ref().is_some_and(|target| {
+                                    target.x == candidate.point.x && target.y == candidate.point.y
+                                })
+                                && !expected
+                                    .pending_movement_orders
+                                    .pending_member_counts
+                                    .contains_key(unit_id)
+                        })
+            })
+            .count();
+        if pending_count
+            .saturating_sub(canceled_count)
+            .saturating_add(accepted.len())
+            .saturating_add(reserved_count)
+            > 16_384
+        {
+            refused.extend(accepted.drain(..).map(|unit_id| (unit_id, R::RateLimited)));
+            accepted_after_capacity.clear();
+        }
+        if command.result.units.accepted != accepted
+            || command.result.units.refused != refused
+            || command.result.outcome
+                != if accepted.is_empty() {
+                    Err(refused
+                        .first()
+                        .map_or(R::NotApplicable, |(_, reason)| *reason))
+                } else {
+                    Ok(turts_sim::Applied { job_id: None })
+                }
+        {
+            return Err(
+                "legacy multi-unit MoveTo result differs from independent validation and capacity"
+                    .into(),
+            );
+        }
+        if !accepted_after_capacity.is_empty() {
+            let point = clamped_audit_point(
+                &expected,
+                *target,
+                unit_ids
+                    .iter()
+                    .filter_map(|unit_id| {
+                        expected
+                            .raw_units
+                            .iter()
+                            .find(|unit| unit.unit_id == *unit_id)
+                    })
+                    .map(|unit| audit_unit_radius(&expected, unit.unit_id))
+                    .fold(0.0_f32, f32::max),
+            );
+            expected
+                .pending_movement_orders
+                .cancel_units(command.input.slot.0, &accepted);
+            let request = turts_sim::orders::PendingMovementOrder {
+                slot: turts_sim::SlotId(command.input.slot.0),
+                accepted_tick: command.before.economy.tick,
+                seq: command.input.seq,
+                group: 0,
+                pool_id: 0,
+                point: bevy::math::Vec2::new(point.x, point.y),
+                unit_ids: accepted.clone(),
+                order: None,
+                member_orders: BTreeMap::new(),
+                plain: true,
+            };
+            if !expected.pending_movement_orders.queue(request) {
+                return Err(
+                    "legacy multi-unit MoveTo unexpectedly exceeds pending capacity".into(),
+                );
+            }
+            for unit_id in &accepted {
+                if let Some(candidate) = plain_candidates.get(unit_id) {
+                    restore_plain_candidate_prior_audit(&mut expected, *unit_id, candidate);
+                }
+                let mut orders = unit_orders_for(&expected, *unit_id);
+                orders.queue.clear();
+                store_audited_unit_orders(&mut expected, *unit_id, orders);
+            }
+        }
+    } else {
+        let unit_id = unit_ids[0];
+        let refusal = match operation
+            .before
+            .raw_units
+            .iter()
+            .find(|unit| unit.unit_id == unit_id)
+        {
+            None => Some(R::UnknownUnit),
+            Some(unit) if unit.owner_slot != command.input.slot.0 => Some(R::NotOwner),
+            Some(unit)
+                if operation
+                    .before
+                    .unit_types
+                    .iter()
+                    .find(|kind| kind.type_id == unit.unit_type)
+                    .is_none_or(|kind| kind.movement_speed.is_none()) =>
+            {
+                Some(R::NotMobile)
+            }
+            Some(_) if !target.is_finite() => Some(R::TargetNotFinite),
+            Some(_) => None,
+        };
+        if let Some(reason) = refusal {
+            if command.result.outcome != Err(reason) {
+                return Err(format!(
+                    "legacy MoveTo refusal is {reason:?}, not the recorded result"
+                ));
+            }
+        } else {
+            if command.result.outcome != Ok(turts_sim::Applied { job_id: None }) {
+                return Err("valid singleton legacy MoveTo was not accepted".into());
+            }
+            let point =
+                clamped_audit_point(&expected, *target, audit_unit_radius(&expected, unit_id));
+            set_audit_move_target(&mut expected, unit_id, Some(point))?;
+            expected
+                .movement_progress
+                .retain(|row| row.unit_id != unit_id);
+            expected
+                .plain_movement_progress
+                .retain(|row| row.unit_id != unit_id);
+            expected
+                .pending_movement_orders
+                .cancel_units(command.input.slot.0, &[unit_id]);
+            store_audited_unit_orders(&mut expected, unit_id, turts_sim::UnitOrders::default());
+            clear_audit_gather(&mut expected, unit_id);
+        }
+    }
+    if expected != operation.after {
+        return Err("legacy MoveTo changed state outside its validated replacement".into());
+    }
+    Ok(())
+}
+
+fn restore_plain_candidate_prior_audit(
+    state: &mut AuditState,
+    unit_id: u32,
+    candidate: &PlainCandidateReplay,
+) {
+    let prior = &candidate.prior;
+    if let Some(raw) = state
+        .raw_units
+        .iter_mut()
+        .find(|raw| raw.unit_id == unit_id)
+    {
+        raw.move_target = prior.move_target.clone();
+    }
+    state.movement_progress.retain(|row| row.unit_id != unit_id);
+    if let Some(progress) = &prior.movement_progress {
+        state.movement_progress.push(progress.clone());
+        state.movement_progress.sort_by_key(|row| row.unit_id);
+    }
+    state
+        .plain_movement_progress
+        .retain(|row| row.unit_id != unit_id);
+    if let Some(progress) = &prior.plain_progress {
+        state.plain_movement_progress.push(progress.clone());
+        state.plain_movement_progress.sort_by_key(|row| row.unit_id);
+    }
+    state.physical_escapes.retain(|row| row.unit_id != unit_id);
+    if let Some(escape) = &prior.physical_escape {
+        state.physical_escapes.push(escape.clone());
+        state.physical_escapes.sort_by_key(|row| row.unit_id);
+    }
+    let mut orders = prior.orders.clone();
+    orders.queue.clear();
+    store_audited_unit_orders(state, unit_id, orders);
+    if let Some(gather) = &prior.raw_gather {
+        state.raw_orders.retain(|row| row.unit != unit_id);
+        state.raw_orders.push(gather.clone());
+        state.raw_orders.sort_by_key(|row| row.unit);
+    } else {
+        state.raw_orders.retain(|row| row.unit != unit_id);
+    }
+    if let Some(gather) = &prior.public_gather {
+        state.economy.orders.retain(|row| row.unit != unit_id);
+        state.economy.orders.push(gather.clone());
+        state.economy.orders.sort_by_key(|row| row.unit);
+    } else {
+        state.economy.orders.retain(|row| row.unit != unit_id);
+    }
+}
+
 fn validate_command_phase_order(
     command: &CommandAudit,
     operation: &OperationAudit,
@@ -4895,11 +6666,16 @@ fn validate_command_phase_order(
     let plain_move = order.behaviour == turts_mod_api::Behaviour::Move
         && order.queue == turts_sim::QueueMode::Replace
         && order.group == 0
-        && order.units.len() == 1;
+        && order.units.len() == 1
+        && matches!(order.target, turts_sim::OrderTargetSim::Point(_));
     let deferred_move = order.behaviour == turts_mod_api::Behaviour::Move
         && order.queue == turts_sim::QueueMode::Replace
-        && (order.group != 0 || order.units.len() > 1)
-        && matches!(order.target, turts_sim::OrderTargetSim::Point(_));
+        && ((order.group != 0 || order.units.len() > 1)
+            && matches!(
+                order.target,
+                turts_sim::OrderTargetSim::Point(_) | turts_sim::OrderTargetSim::Unit(_)
+            )
+            || matches!(order.target, turts_sim::OrderTargetSim::Unit(_)));
     let plain_gather = order.behaviour == turts_mod_api::Behaviour::Gather
         && order.queue == turts_sim::QueueMode::Replace
         && order.group == 0;
@@ -5062,8 +6838,16 @@ fn validate_command_phase_order(
         }
     }
     if deferred_move {
-        let turts_sim::OrderTargetSim::Point(point) = &order.target else {
-            return Err("accepted deferred Move has a non-point target".into());
+        let point = match &order.target {
+            turts_sim::OrderTargetSim::Point(point) => *point,
+            turts_sim::OrderTargetSim::Unit(target_id) => operation
+                .before
+                .raw_units
+                .iter()
+                .find(|unit| unit.unit_id == *target_id)
+                .map(|unit| bevy::math::Vec2::new(unit.pos.x, unit.pos.y))
+                .ok_or("accepted deferred Move has a missing unit target")?,
+            _ => return Err("accepted deferred Move has an invalid target".into()),
         };
         let owner = operation
             .before
@@ -5084,7 +6868,7 @@ fn validate_command_phase_order(
                     .iter()
                     .map(|unit_id| audit_unit_radius(&operation.before, *unit_id))
                     .fold(0.0_f32, f32::max);
-                let point = clamped_audit_point(&operation.before, *point, radius);
+                let point = clamped_audit_point(&operation.before, point, radius);
                 bevy::math::Vec2::new(point.x, point.y)
             },
             unit_ids: accepted.clone(),
@@ -5461,7 +7245,7 @@ fn validate_movement_transition(previous: &AuditState, current: &AuditState) -> 
         && (expected.movement_dispatch.tick != Some(current.economy.tick)
             || !expected.movement_dispatch.cursor_advanced)
     {
-        let start_slot = expected_dispatch_start_slot(
+        let start_slot = dispatch_start_slot_for_tick(
             &expected.pending_movement_orders,
             &expected.movement_dispatch,
             current.economy.tick,
@@ -5497,6 +7281,11 @@ fn validate_movement_transition(previous: &AuditState, current: &AuditState) -> 
         .iter()
         .map(|movement| (movement.unit_id, movement.progress.clone()))
         .collect();
+    let physical_escape_by_unit: BTreeMap<_, _> = expected
+        .physical_escapes
+        .iter()
+        .map(|escape| (escape.unit_id, escape.escape.clone()))
+        .collect();
     let frame = turts_sim::movement::MovementFrame {
         bounds: bevy::math::Vec2::new(bounds.x, bounds.y),
         tick_hz,
@@ -5521,6 +7310,7 @@ fn validate_movement_transition(previous: &AuditState, current: &AuditState) -> 
                         .map(|target| bevy::math::Vec2::new(target.x, target.y)),
                     progress: progress_by_unit.get(&unit.unit_id).cloned(),
                     plain_progress: plain_progress_by_unit.get(&unit.unit_id).cloned(),
+                    physical_escape: physical_escape_by_unit.get(&unit.unit_id).cloned(),
                 }
             })
             .collect(),
@@ -5537,6 +7327,7 @@ fn validate_movement_transition(previous: &AuditState, current: &AuditState) -> 
     let outputs = turts_sim::movement::step_frame(&frame, delta);
     let mut movement_progress = Vec::new();
     let mut plain_movement_progress = Vec::new();
+    let mut physical_escapes = Vec::new();
     for output in outputs {
         let expected_unit = expected
             .raw_units
@@ -5565,9 +7356,16 @@ fn validate_movement_transition(previous: &AuditState, current: &AuditState) -> 
                 },
             );
         }
+        if let Some(escape) = output.physical_escape {
+            physical_escapes.push(turts_sim::economy::views::RawPhysicalEscapeAudit {
+                unit_id: output.unit_id,
+                escape,
+            });
+        }
     }
     expected.movement_progress = movement_progress;
     expected.plain_movement_progress = plain_movement_progress;
+    expected.physical_escapes = physical_escapes;
     let active_pools: BTreeSet<_> = expected
         .movement_progress
         .iter()
@@ -5609,6 +7407,18 @@ fn expected_dispatch_start_slot(
             ((u32::from(pending.next_slot) + idle_ticks) % 8) as u8
         }
         None => (tick.saturating_sub(1) % 8) as u8,
+    }
+}
+
+fn dispatch_start_slot_for_tick(
+    pending: &turts_sim::orders::PendingMovementOrders,
+    state: &turts_sim::orders::MovementDispatchState,
+    tick: u32,
+) -> u8 {
+    if state.tick == Some(tick) {
+        state.start_slot
+    } else {
+        expected_dispatch_start_slot(pending, state, tick)
     }
 }
 
@@ -5889,6 +7699,46 @@ mod tests {
         radius: f32,
         extra_orders: &[(u32, turts_sim::UnitOrders)],
     ) -> Vec<EconomyLogRecord> {
+        automatic_move_log_with_pending_on_map(
+            orders,
+            target_units,
+            commands,
+            actor_position,
+            post_command_ticks,
+            bounds,
+            radius,
+            extra_orders,
+            &[],
+            &[],
+            Vec::new(),
+            None,
+            None,
+            None,
+            None,
+        )
+    }
+
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "this test fixture exposes independent movement, world and command inputs"
+    )]
+    fn automatic_move_log_with_pending_on_map(
+        orders: turts_sim::UnitOrders,
+        target_units: &[(u32, bevy::math::Vec2)],
+        commands: Vec<turts_sim::Command>,
+        actor_position: bevy::math::Vec2,
+        post_command_ticks: usize,
+        bounds: bevy::math::Vec2,
+        radius: f32,
+        extra_orders: &[(u32, turts_sim::UnitOrders)],
+        extra_move_targets: &[(u32, bevy::math::Vec2)],
+        extra_owner_slots: &[(u32, u8)],
+        commands_after_first_tick: Vec<turts_sim::Command>,
+        initial_pending: Option<turts_sim::orders::PendingMovementOrder>,
+        initial_dispatch: Option<turts_sim::orders::MovementDispatchState>,
+        initial_move_target: Option<bevy::math::Vec2>,
+        initial_plain_progress: Option<turts_sim::movement::PlainMoveProgress>,
+    ) -> Vec<EconomyLogRecord> {
         use std::collections::BTreeMap;
         use turts_mod_api::{
             ContentCatalog, Footprint, OrderDef, PackageId, ResolvedUnit, TargetKind, UnitDef,
@@ -5986,6 +7836,34 @@ mod tests {
             Position(actor_position),
             orders,
         ));
+        if let Some(target) = initial_move_target {
+            let actor = app
+                .world_mut()
+                .iter_entities()
+                .find(|entity| {
+                    entity
+                        .get::<turts_sim::UnitId>()
+                        .is_some_and(|id| id.0 == 1)
+                })
+                .unwrap()
+                .id();
+            app.world_mut()
+                .entity_mut(actor)
+                .insert(turts_sim::world::MoveTarget(target));
+        }
+        if let Some(progress) = initial_plain_progress {
+            let actor = app
+                .world_mut()
+                .iter_entities()
+                .find(|entity| {
+                    entity
+                        .get::<turts_sim::UnitId>()
+                        .is_some_and(|id| id.0 == 1)
+                })
+                .unwrap()
+                .id();
+            app.world_mut().entity_mut(actor).insert(progress);
+        }
         for (unit_id, position) in target_units {
             app.world_mut().spawn((
                 turts_sim::UnitId(*unit_id),
@@ -6007,6 +7885,47 @@ mod tests {
                 .expect("extra orders name a fixture unit")
                 .id();
             app.world_mut().entity_mut(entity).insert(orders.clone());
+        }
+        for (unit_id, target) in extra_move_targets {
+            let entity = app
+                .world_mut()
+                .iter_entities()
+                .find(|entity| {
+                    entity
+                        .get::<turts_sim::UnitId>()
+                        .is_some_and(|id| id.0 == *unit_id)
+                })
+                .expect("extra MoveTargets name a fixture unit")
+                .id();
+            app.world_mut()
+                .entity_mut(entity)
+                .insert(turts_sim::world::MoveTarget(*target));
+        }
+        for (unit_id, owner_slot) in extra_owner_slots {
+            let entity = app
+                .world_mut()
+                .iter_entities()
+                .find(|entity| {
+                    entity
+                        .get::<turts_sim::UnitId>()
+                        .is_some_and(|id| id.0 == *unit_id)
+                })
+                .expect("extra owners name a fixture unit")
+                .id();
+            app.world_mut()
+                .entity_mut(entity)
+                .insert(turts_sim::Owner(turts_sim::SlotId(*owner_slot)));
+        }
+        if let Some(request) = initial_pending {
+            assert!(
+                app.world_mut()
+                    .resource_mut::<turts_sim::orders::PendingMovementOrders>()
+                    .queue(request)
+            );
+        }
+        if let Some(dispatch) = initial_dispatch {
+            *app.world_mut()
+                .resource_mut::<turts_sim::orders::MovementDispatchState>() = dispatch;
         }
         app.world_mut().resource_mut::<AuditTrail>().enable();
         let mut records = vec![EconomyLogRecord::Initial(turts_sim::audit_state(
@@ -6045,7 +7964,7 @@ mod tests {
                 );
                 records.extend(operations.into_iter().map(EconomyLogRecord::Operation));
             }
-            for _ in 0..post_command_ticks {
+            for post_tick in 0..post_command_ticks {
                 app.update();
                 let (operations, ticks) = {
                     let mut trail = app.world_mut().resource_mut::<AuditTrail>();
@@ -6053,6 +7972,33 @@ mod tests {
                 };
                 records.extend(operations.into_iter().map(EconomyLogRecord::Operation));
                 records.extend(ticks.into_iter().map(EconomyLogRecord::from_tick));
+                if post_tick == 0 {
+                    for command in commands_after_first_tick.clone() {
+                        let expected = match &command.kind {
+                            turts_sim::CommandKind::Order(order) => Some(order.units.clone()),
+                            turts_sim::CommandKind::MoveTo { .. } => None,
+                            _ => panic!("movement audit fixture only sends point-move commands"),
+                        };
+                        let result = turts_sim::apply_command(app.world_mut(), &command);
+                        assert!(
+                            result.outcome.is_ok(),
+                            "captured later Move order must be accepted: {result:?}"
+                        );
+                        if let Some(expected) = expected {
+                            assert_eq!(result.units.accepted, expected);
+                        }
+                        let (boundaries, operations) = {
+                            let mut trail = app.world_mut().resource_mut::<AuditTrail>();
+                            (trail.drain_commands(), trail.drain_operations())
+                        };
+                        records.extend(
+                            boundaries
+                                .into_iter()
+                                .map(EconomyLogRecord::CommandBoundary),
+                        );
+                        records.extend(operations.into_iter().map(EconomyLogRecord::Operation));
+                    }
+                }
             }
             return records;
         }
@@ -8898,6 +10844,451 @@ mod tests {
         );
     }
 
+    #[test]
+    fn target_gone_prunes_only_its_member_before_atomic_spread() {
+        use turts_sim::orders::PendingMovementOrder;
+        use turts_sim::{Order, OrderTargetSim, SlotId};
+
+        let missing_target = Order {
+            order: turts_mod_api::ContentId::parse("fixture:move").unwrap(),
+            behaviour: turts_mod_api::Behaviour::Move,
+            target: OrderTargetSim::Unit(99),
+            group: 7,
+        };
+        let surviving_order = Order {
+            order: turts_mod_api::ContentId::parse("fixture:move").unwrap(),
+            behaviour: turts_mod_api::Behaviour::Move,
+            target: OrderTargetSim::Point(bevy::math::Vec2::new(14.0, 14.0)),
+            group: 7,
+        };
+        let records = automatic_move_log_with_pending_on_map(
+            turts_sim::UnitOrders::default(),
+            &[(2, bevy::math::Vec2::new(8.0, 12.0))],
+            vec![],
+            bevy::math::Vec2::new(8.0, 8.0),
+            0,
+            bevy::math::Vec2::new(64.0, 64.0),
+            0.5,
+            &[],
+            &[],
+            &[],
+            Vec::new(),
+            Some(PendingMovementOrder {
+                slot: SlotId(0),
+                accepted_tick: 0,
+                seq: 4,
+                group: 7,
+                pool_id: 9,
+                point: bevy::math::Vec2::new(14.0, 14.0),
+                unit_ids: vec![1, 2],
+                order: Some(missing_target.clone()),
+                member_orders: std::collections::BTreeMap::from([
+                    (1, missing_target),
+                    (2, surviving_order.clone()),
+                ]),
+                plain: false,
+            }),
+            None,
+            None,
+            None,
+        );
+
+        let target_gone = records
+            .iter()
+            .find_map(|record| match record {
+                EconomyLogRecord::Operation(operation)
+                    if operation.unit_id == Some(1)
+                        && operation.after.unit_orders.iter().any(|row| {
+                            row.unit_id == 1
+                                && row.orders.last_failure.as_ref().is_some_and(|failure| {
+                                    failure.reason == turts_sim::RejectReason::TargetGone
+                                        && failure.order == surviving_order.order
+                                })
+                        }) =>
+                {
+                    Some(operation)
+                }
+                _ => None,
+            })
+            .expect("the missing target actor receives its own captured failure");
+        let remaining = target_gone
+            .after
+            .pending_movement_orders
+            .queues
+            .get(&0)
+            .and_then(|queue| queue.front())
+            .expect("the surviving actor keeps the original envelope");
+        assert_eq!(remaining.pool_id, 1);
+        assert_eq!(remaining.accepted_tick, 0);
+        assert_eq!(remaining.unit_ids, vec![2]);
+        assert_eq!(remaining.member_orders.get(&2), Some(&surviving_order));
+        assert_eq!(remaining.point, bevy::math::Vec2::new(14.0, 14.0));
+        assert!(
+            records.iter().any(|record| matches!(record,
+                EconomyLogRecord::Operation(operation)
+                    if operation.unit_id == Some(2)
+                        && operation.after.pending_movement_orders.queues.get(&0).is_none_or(std::collections::VecDeque::is_empty)
+                        && operation.after.movement_progress.iter().any(|progress| progress.unit_id == 2)
+            )),
+            "the survivor receives an atomic spread assignment after the failed member is pruned"
+        );
+        let validation = validate_records(&records);
+        assert!(
+            validation.is_ok(),
+            "per-member TargetGone pruning and survivor dispatch replay: {validation:?}"
+        );
+
+        let mut forged = records.clone();
+        let record = forged
+            .iter_mut()
+            .find(|record| matches!(record,
+                EconomyLogRecord::Operation(operation) if operation.operation_id == target_gone.operation_id
+            ))
+            .unwrap();
+        let EconomyLogRecord::Operation(operation) = record else {
+            unreachable!()
+        };
+        operation.after.pending_movement_orders.queues.clear();
+        operation
+            .after
+            .pending_movement_orders
+            .pending_units
+            .clear();
+        operation
+            .after
+            .pending_movement_orders
+            .pending_member_counts
+            .clear();
+        assert!(
+            validate_records(&forged)
+                .unwrap_err()
+                .contains("TargetGone pending transition"),
+            "the replay rejects dropping a live member while recording another actor's TargetGone"
+        );
+    }
+
+    #[test]
+    fn validator_keeps_append_gated_when_prior_move_completes_during_pending_replace() {
+        let move_id = turts_mod_api::ContentId::parse("fixture:move").unwrap();
+        let hold_id = turts_mod_api::ContentId::parse("fixture:hold").unwrap();
+        let pending_move = turts_sim::Order {
+            order: move_id.clone(),
+            behaviour: turts_mod_api::Behaviour::Move,
+            target: turts_sim::OrderTargetSim::Point(bevy::math::Vec2::new(24.0, 24.0)),
+            group: 1,
+        };
+        let append_hold = turts_sim::Order {
+            order: hold_id,
+            behaviour: turts_mod_api::Behaviour::Hold,
+            target: turts_sim::OrderTargetSim::None,
+            group: 0,
+        };
+        let records = automatic_move_log_with_pending_on_map(
+            turts_sim::UnitOrders {
+                current: Some(turts_sim::Order {
+                    order: move_id,
+                    behaviour: turts_mod_api::Behaviour::Move,
+                    target: turts_sim::OrderTargetSim::Point(bevy::math::Vec2::new(8.1, 8.0)),
+                    group: 0,
+                }),
+                queue: std::collections::VecDeque::from([append_hold.clone()]),
+                ..Default::default()
+            },
+            &[],
+            vec![],
+            bevy::math::Vec2::new(8.0, 8.0),
+            0,
+            bevy::math::Vec2::new(64.0, 64.0),
+            0.5,
+            &[],
+            &[],
+            &[],
+            Vec::new(),
+            Some(turts_sim::orders::PendingMovementOrder {
+                slot: turts_sim::SlotId(0),
+                accepted_tick: 0,
+                seq: 2,
+                group: 1,
+                pool_id: 0,
+                point: bevy::math::Vec2::new(24.0, 24.0),
+                unit_ids: vec![1],
+                order: Some(pending_move.clone()),
+                member_orders: std::collections::BTreeMap::from([(1, pending_move)]),
+                plain: false,
+            }),
+            Some(turts_sim::orders::MovementDispatchState {
+                tick: Some(1),
+                start_slot: 0,
+                used: 2048,
+                cursor_advanced: true,
+            }),
+            None,
+            None,
+        );
+        let completion = records
+            .iter()
+            .find_map(|record| match record {
+                EconomyLogRecord::Operation(operation)
+                    if operation.phase == turts_sim::economy::transaction::AuditPhase::Orders
+                        && operation.unit_id == Some(1)
+                        && operation.before.unit_orders.iter().any(|row| {
+                            row.unit_id == 1
+                                && row.orders.current.is_some()
+                                && row.orders.queue.len() == 1
+                        })
+                        && operation.after.unit_orders.iter().any(|row| {
+                            row.unit_id == 1
+                                && row.orders.current.is_none()
+                                && row.orders.queue.len() == 1
+                                && row.orders.queue.front() == Some(&append_hold)
+                        }) =>
+                {
+                    Some(operation)
+                }
+                _ => None,
+            })
+            .expect("prior Move completes while its replacement remains pending");
+        assert!(
+            completion
+                .after
+                .pending_movement_orders
+                .pending_member_counts
+                .contains_key(&1),
+            "the accepted replacement is still waiting after prior completion"
+        );
+        let validation = validate_records(&records);
+        assert!(
+            validation.is_ok(),
+            "replay retains the Append suffix and gates it behind the pending Move: {validation:?}"
+        );
+
+        let mut forged = records.clone();
+        let operation = forged
+            .iter_mut()
+            .find_map(|record| match record {
+                EconomyLogRecord::Operation(operation)
+                    if operation.operation_id == completion.operation_id =>
+                {
+                    Some(operation)
+                }
+                _ => None,
+            })
+            .unwrap();
+        operation.after.unit_orders[0].orders.current = Some(append_hold);
+        assert!(
+            validate_records(&forged)
+                .unwrap_err()
+                .contains("automatic Orders operation"),
+            "replay rejects advancing Append before the pending replacement activates"
+        );
+    }
+
+    #[test]
+    fn validator_replays_prior_unit_follow_refresh_while_replacement_waits() {
+        let move_id = turts_mod_api::ContentId::parse("fixture:move").unwrap();
+        let hold_id = turts_mod_api::ContentId::parse("fixture:hold").unwrap();
+        let pending_move = turts_sim::Order {
+            order: move_id.clone(),
+            behaviour: turts_mod_api::Behaviour::Move,
+            target: turts_sim::OrderTargetSim::Point(bevy::math::Vec2::new(24.0, 24.0)),
+            group: 1,
+        };
+        let append_hold = turts_sim::Order {
+            order: hold_id,
+            behaviour: turts_mod_api::Behaviour::Hold,
+            target: turts_sim::OrderTargetSim::None,
+            group: 0,
+        };
+        let prior_follow = turts_sim::Order {
+            order: move_id.clone(),
+            behaviour: turts_mod_api::Behaviour::Move,
+            target: turts_sim::OrderTargetSim::Unit(2),
+            group: 0,
+        };
+        let records = automatic_move_log_with_pending_on_map(
+            turts_sim::UnitOrders {
+                current: Some(prior_follow.clone()),
+                queue: std::collections::VecDeque::from([append_hold.clone()]),
+                ..Default::default()
+            },
+            &[(2, bevy::math::Vec2::new(20.0, 8.0))],
+            vec![],
+            bevy::math::Vec2::new(8.0, 8.0),
+            0,
+            bevy::math::Vec2::new(64.0, 64.0),
+            0.5,
+            &[],
+            &[],
+            &[],
+            Vec::new(),
+            Some(turts_sim::orders::PendingMovementOrder {
+                slot: turts_sim::SlotId(0),
+                accepted_tick: 0,
+                seq: 2,
+                group: 1,
+                pool_id: 0,
+                point: bevy::math::Vec2::new(24.0, 24.0),
+                unit_ids: vec![1],
+                order: Some(pending_move.clone()),
+                member_orders: std::collections::BTreeMap::from([(1, pending_move)]),
+                plain: false,
+            }),
+            Some(turts_sim::orders::MovementDispatchState {
+                tick: Some(1),
+                start_slot: 0,
+                used: 2048,
+                cursor_advanced: true,
+            }),
+            Some(bevy::math::Vec2::new(16.0, 8.0)),
+            None,
+        );
+        let refresh = records
+            .iter()
+            .find_map(|record| match record {
+                EconomyLogRecord::Operation(operation)
+                    if operation.phase == turts_sim::economy::transaction::AuditPhase::Orders
+                        && operation.unit_id == Some(1)
+                        && operation.before.unit_orders.iter().any(|row| {
+                            row.unit_id == 1 && row.orders.current.as_ref() == Some(&prior_follow)
+                        })
+                        && operation.after.raw_units.iter().any(|unit| {
+                            unit.unit_id == 1
+                                && unit
+                                    .move_target
+                                    .as_ref()
+                                    .is_some_and(|target| target.x == 20.0 && target.y == 8.0)
+                        }) =>
+                {
+                    Some(operation)
+                }
+                _ => None,
+            })
+            .expect("the previous Unit-follow refresh executes while B remains pending");
+        assert!(
+            refresh
+                .after
+                .pending_movement_orders
+                .pending_member_counts
+                .contains_key(&1)
+        );
+        assert_eq!(
+            unit_orders_for(&refresh.after, 1).current.as_ref(),
+            Some(&prior_follow)
+        );
+        assert_eq!(
+            unit_orders_for(&refresh.after, 1).queue.front(),
+            Some(&append_hold)
+        );
+        let validation = validate_records(&records);
+        assert!(
+            validation.is_ok(),
+            "replay models the old follow operation separately from B's pending suffix: {validation:?}"
+        );
+    }
+
+    #[test]
+    fn validator_completes_unchanged_unit_follow_at_legal_fallback_slot() {
+        let move_id = turts_mod_api::ContentId::parse("fixture:move").unwrap();
+        let hold_id = turts_mod_api::ContentId::parse("fixture:hold").unwrap();
+        let append_hold = turts_sim::Order {
+            order: hold_id,
+            behaviour: turts_mod_api::Behaviour::Hold,
+            target: turts_sim::OrderTargetSim::None,
+            group: 0,
+        };
+        let actor_position = bevy::math::Vec2::new(7.0, 8.0);
+        let target_position = bevy::math::Vec2::new(8.0, 8.0);
+        let progress = turts_sim::movement::PlainMoveProgress {
+            original_point: target_position,
+            slot: actor_position,
+            pool_slots: vec![actor_position],
+            gather_goal: None,
+            activity: turts_sim::movement::MovementActivity::Resting,
+            stalled_ticks: 0,
+            best_distance: 0.0,
+            claim_count: 1,
+            failure_recorded: false,
+        };
+        let records = automatic_move_log_with_pending_on_map(
+            turts_sim::UnitOrders {
+                current: Some(turts_sim::Order {
+                    order: move_id,
+                    behaviour: turts_mod_api::Behaviour::Move,
+                    target: turts_sim::OrderTargetSim::Unit(2),
+                    group: 0,
+                }),
+                queue: std::collections::VecDeque::from([append_hold.clone()]),
+                ..Default::default()
+            },
+            &[(2, target_position)],
+            vec![],
+            actor_position,
+            0,
+            bevy::math::Vec2::new(64.0, 64.0),
+            0.5,
+            &[],
+            &[],
+            &[],
+            Vec::new(),
+            None,
+            None,
+            None,
+            Some(progress),
+        );
+        let completion = records
+            .iter()
+            .find_map(|record| match record {
+                EconomyLogRecord::Operation(operation)
+                    if operation.phase == turts_sim::economy::transaction::AuditPhase::Orders
+                        && operation.unit_id == Some(1)
+                        && operation.before.unit_orders.iter().any(|row| {
+                            row.unit_id == 1
+                                && row.orders.current.as_ref().is_some_and(|order| {
+                                    order.target == turts_sim::OrderTargetSim::Unit(2)
+                                })
+                        })
+                        && operation.after.unit_orders.iter().any(|row| {
+                            row.unit_id == 1
+                                && row.orders.current.as_ref().is_some_and(|order| {
+                                    order.behaviour == turts_mod_api::Behaviour::Hold
+                                })
+                        }) =>
+                {
+                    Some(operation)
+                }
+                _ => None,
+            })
+            .expect("the live Unit follow completes at its unchanged legal fallback slot");
+        assert_eq!(
+            completion
+                .after
+                .raw_units
+                .iter()
+                .find(|unit| unit.unit_id == 1)
+                .unwrap()
+                .pos,
+            turts_mod_api::WorldPos {
+                x: actor_position.x,
+                y: actor_position.y,
+            }
+        );
+        assert!(
+            completion
+                .before
+                .plain_movement_progress
+                .iter()
+                .any(|row| row.unit_id == 1
+                    && row.progress.activity == turts_sim::movement::MovementActivity::Resting
+                    && row.progress.slot == actor_position
+                    && row.progress.original_point == target_position)
+        );
+        let validation = validate_records(&records);
+        assert!(
+            validation.is_ok(),
+            "replay accepts a reached legal fallback for the unchanged Unit target: {validation:?}"
+        );
+    }
+
     fn audited_move_command(
         units: Vec<u32>,
         target: bevy::math::Vec2,
@@ -8947,6 +11338,2309 @@ mod tests {
                 queue_depth: 16,
             })),
         }
+    }
+
+    fn actual_legacy_multi_move_to_log(refuse_for_capacity: bool) -> Vec<EconomyLogRecord> {
+        actual_legacy_multi_move_to_log_with_target(
+            refuse_for_capacity,
+            bevy::math::Vec2::new(40.0, 40.0),
+        )
+    }
+
+    fn actual_legacy_multi_move_to_log_with_target(
+        refuse_for_capacity: bool,
+        target: bevy::math::Vec2,
+    ) -> Vec<EconomyLogRecord> {
+        actual_legacy_multi_move_to_log_with_candidates(refuse_for_capacity, target, None, 0)
+    }
+
+    fn actual_legacy_multi_move_to_log_with_candidates(
+        refuse_for_capacity: bool,
+        target: bevy::math::Vec2,
+        pending_unit_count: Option<usize>,
+        transient_reservation_count: u32,
+    ) -> Vec<EconomyLogRecord> {
+        use std::collections::BTreeMap;
+        use turts_mod_api::{
+            ContentCatalog, Footprint, OrderDef, PackageId, ResolvedUnit, TargetKind, UnitDef,
+            UnitRegistry,
+        };
+        use turts_sim::{MapBounds, Owner, Position, UnitType, UnitTypes};
+
+        let mut app = headless_app(20);
+        app.world_mut().insert_resource(MapBounds {
+            size: bevy::math::Vec2::new(64.0, 64.0),
+        });
+        let package = PackageId::parse("fixture").unwrap();
+        let kind = app
+            .world_mut()
+            .resource_mut::<UnitTypes>()
+            .register_unit_type(
+                &package,
+                UnitDef {
+                    id: "walker".into(),
+                    name: "Walker".into(),
+                    footprint: Footprint::Circle { radius: 0.5 },
+                    movement: Some(turts_mod_api::MovementDef { speed: 3.0 }),
+                    inventory: None,
+                    gatherer: None,
+                    drop_off: None,
+                    producer: None,
+                    output_inventory: None,
+                    extractor: None,
+                    conveyor: None,
+                    inserter: None,
+                    machine: None,
+                    research: None,
+                    health: None,
+                    weapon: None,
+                    removal: None,
+                },
+            )
+            .unwrap();
+        let unit_content = turts_mod_api::ContentId::new(&package, "walker");
+        let move_content = turts_mod_api::ContentId::new(&package, "move");
+        let hold_content = turts_mod_api::ContentId::new(&package, "hold");
+        let mut catalog = ContentCatalog {
+            resources: BTreeMap::new(),
+            units: BTreeMap::new(),
+            nodes: BTreeMap::new(),
+            production: BTreeMap::new(),
+            recipes: BTreeMap::new(),
+            technologies: BTreeMap::new(),
+            orders: BTreeMap::new(),
+            order_queue_depths: BTreeMap::new(),
+            source_files: BTreeMap::new(),
+        };
+        catalog.units.insert(
+            unit_content.clone(),
+            ResolvedUnit {
+                id: unit_content,
+                name: "Walker".into(),
+                footprint: Footprint::Circle { radius: 0.5 },
+                movement: Some(turts_mod_api::MovementDef { speed: 3.0 }),
+                inventory: None,
+                gatherer: None,
+                drop_off: None,
+                producer: None,
+                output_inventory: None,
+                extractor: None,
+                conveyor: None,
+                inserter: None,
+                machine: None,
+                research: None,
+                health: None,
+                weapon: None,
+                removal: None,
+            },
+        );
+        for (id, behaviour, target) in [
+            (
+                move_content,
+                turts_mod_api::Behaviour::Move,
+                TargetKind::PointOrUnit,
+            ),
+            (
+                hold_content,
+                turts_mod_api::Behaviour::Hold,
+                TargetKind::None,
+            ),
+        ] {
+            catalog.orders.insert(
+                id.clone(),
+                OrderDef {
+                    id: id.local.clone(),
+                    name: id.local.clone(),
+                    behaviour,
+                    target,
+                    fire: None,
+                    engage: None,
+                    icon: String::new(),
+                    hotkey: String::new(),
+                    cursor: None,
+                    card: None,
+                    units: vec![],
+                    description: String::new(),
+                },
+            );
+        }
+        app.world_mut()
+            .insert_resource(turts_sim::bootstrap::InstalledCatalog(catalog));
+        let mut entities = BTreeMap::new();
+        for (unit_id, x) in [(1, 8.0), (2, 12.0), (3, 16.0)] {
+            let entity = app
+                .world_mut()
+                .spawn((
+                    turts_sim::UnitId(unit_id),
+                    UnitType(kind),
+                    Owner(turts_sim::SlotId(0)),
+                    Position(bevy::math::Vec2::new(x, 8.0)),
+                    turts_sim::UnitOrders::default(),
+                ))
+                .id();
+            entities.insert(unit_id, entity);
+        }
+        for unit_id in 4..4 + transient_reservation_count {
+            let offset = unit_id - 4;
+            let entity = app
+                .world_mut()
+                .spawn((
+                    turts_sim::UnitId(unit_id),
+                    UnitType(kind),
+                    Owner(turts_sim::SlotId(0)),
+                    Position(bevy::math::Vec2::new(
+                        24.0 + (offset % 8) as f32 * 2.0,
+                        8.0 + (offset / 8) as f32 * 2.0,
+                    )),
+                    turts_sim::UnitOrders::default(),
+                ))
+                .id();
+            entities.insert(unit_id, entity);
+        }
+        let prior = turts_sim::Order {
+            order: turts_mod_api::ContentId::parse("fixture:prior").unwrap(),
+            behaviour: turts_mod_api::Behaviour::Move,
+            target: turts_sim::OrderTargetSim::Point(bevy::math::Vec2::new(24.0, 24.0)),
+            group: 4,
+        };
+        for unit_id in [1, 2] {
+            app.world_mut().entity_mut(entities[&unit_id]).insert((
+                turts_sim::UnitOrders {
+                    current: Some(prior.clone()),
+                    queue: std::collections::VecDeque::from([turts_sim::Order {
+                        order: turts_mod_api::ContentId::parse("fixture:old-future").unwrap(),
+                        behaviour: turts_mod_api::Behaviour::Hold,
+                        target: turts_sim::OrderTargetSim::None,
+                        group: 0,
+                    }]),
+                    last_failure: None,
+                },
+                turts_sim::MoveTarget(bevy::math::Vec2::new(24.0, 24.0)),
+            ));
+        }
+        let tick = app.world().resource::<turts_sim::world::Tick>().0;
+        let head_order = turts_sim::Order {
+            order: turts_mod_api::ContentId::parse("fixture:head").unwrap(),
+            behaviour: turts_mod_api::Behaviour::Move,
+            target: turts_sim::OrderTargetSim::Point(bevy::math::Vec2::new(52.0, 52.0)),
+            group: 9,
+        };
+        let mut pending = turts_sim::orders::PendingMovementOrders::default();
+        if let Some(pending_unit_count) = pending_unit_count {
+            if pending_unit_count > 0 {
+                assert!(pending.queue(turts_sim::orders::PendingMovementOrder {
+                    slot: turts_sim::SlotId(0),
+                    accepted_tick: tick,
+                    seq: 1,
+                    group: 0,
+                    pool_id: 0,
+                    point: bevy::math::Vec2::new(52.0, 52.0),
+                    unit_ids: (10_000..10_000 + pending_unit_count as u32).collect(),
+                    order: None,
+                    member_orders: BTreeMap::new(),
+                    plain: true,
+                }));
+            }
+        } else if refuse_for_capacity {
+            assert!(pending.queue(turts_sim::orders::PendingMovementOrder {
+                slot: turts_sim::SlotId(0),
+                accepted_tick: tick,
+                seq: 1,
+                group: 0,
+                pool_id: 0,
+                point: bevy::math::Vec2::new(52.0, 52.0),
+                unit_ids: (10_000..26_384).collect(),
+                order: None,
+                member_orders: BTreeMap::new(),
+                plain: true,
+            }));
+        } else {
+            assert!(pending.queue(turts_sim::orders::PendingMovementOrder {
+                slot: turts_sim::SlotId(0),
+                accepted_tick: tick,
+                seq: 1,
+                group: 9,
+                pool_id: 0,
+                point: bevy::math::Vec2::new(52.0, 52.0),
+                unit_ids: vec![3],
+                order: Some(head_order.clone()),
+                member_orders: BTreeMap::from([(3, head_order)]),
+                plain: false,
+            }));
+            app.world_mut()
+                .insert_resource(turts_sim::orders::MovementDispatchState {
+                    tick: Some(tick),
+                    start_slot: 0,
+                    used: 2047,
+                    cursor_advanced: true,
+                });
+        }
+        app.world_mut().insert_resource(pending);
+        app.world_mut().resource_mut::<AuditTrail>().enable();
+        let mut records = vec![EconomyLogRecord::Initial(turts_sim::audit_state(
+            app.world_mut(),
+        ))];
+
+        for unit_id in 4..4 + transient_reservation_count {
+            let command = audited_move_command(
+                vec![unit_id],
+                bevy::math::Vec2::new(30.0 + (unit_id % 7) as f32, 36.0),
+                0,
+                unit_id,
+            );
+            let result = turts_sim::apply_command(app.world_mut(), &command);
+            assert_eq!(result.units.accepted, vec![unit_id]);
+            let (commands, operations) = {
+                let mut trail = app.world_mut().resource_mut::<AuditTrail>();
+                (trail.drain_commands(), trail.drain_operations())
+            };
+            records.extend(commands.into_iter().map(EconomyLogRecord::CommandBoundary));
+            records.extend(operations.into_iter().map(EconomyLogRecord::Operation));
+        }
+
+        let replace = turts_sim::Command {
+            slot: turts_sim::SlotId(0),
+            seq: 2,
+            kind: turts_sim::CommandKind::MoveTo {
+                unit_ids: vec![1, 2],
+                target,
+            },
+        };
+        let result = turts_sim::apply_command(app.world_mut(), &replace);
+        if !target.is_finite() {
+            assert_eq!(
+                result.outcome,
+                Err(turts_sim::RejectReason::TargetNotFinite)
+            );
+            assert_eq!(result.units, turts_sim::UnitOutcomes::default());
+            assert_eq!(result.units.accepted, Vec::<u32>::new());
+            let (commands, operations) = {
+                let mut trail = app.world_mut().resource_mut::<AuditTrail>();
+                (trail.drain_commands(), trail.drain_operations())
+            };
+            records.extend(commands.into_iter().map(EconomyLogRecord::CommandBoundary));
+            records.extend(operations.into_iter().map(EconomyLogRecord::Operation));
+            return records;
+        }
+        if refuse_for_capacity {
+            assert!(result.units.accepted.is_empty());
+            assert_eq!(
+                result.units.refused,
+                vec![
+                    (1, turts_sim::RejectReason::RateLimited),
+                    (2, turts_sim::RejectReason::RateLimited)
+                ]
+            );
+        } else {
+            assert_eq!(result.units.accepted, vec![1, 2]);
+        }
+        let (commands, operations) = {
+            let mut trail = app.world_mut().resource_mut::<AuditTrail>();
+            (trail.drain_commands(), trail.drain_operations())
+        };
+        records.extend(commands.into_iter().map(EconomyLogRecord::CommandBoundary));
+        records.extend(operations.into_iter().map(EconomyLogRecord::Operation));
+        if refuse_for_capacity {
+            return records;
+        }
+
+        let append = turts_sim::Command {
+            slot: turts_sim::SlotId(0),
+            seq: 3,
+            kind: turts_sim::CommandKind::Order(Box::new(turts_sim::OrderCommand {
+                order: turts_mod_api::ContentId::parse("fixture:hold").unwrap(),
+                behaviour: turts_mod_api::Behaviour::Hold,
+                target_kind: turts_mod_api::TargetKind::None,
+                policy: Some(order_policy(
+                    "fixture:hold",
+                    turts_mod_api::Behaviour::Hold,
+                    turts_mod_api::TargetKind::None,
+                    vec![(
+                        "fixture:walker",
+                        true,
+                        false,
+                        false,
+                        false,
+                        false,
+                        false,
+                        false,
+                    )],
+                )),
+                units: vec![1, 2],
+                target: turts_sim::OrderTargetSim::None,
+                queue: turts_sim::QueueMode::Append,
+                group: 0,
+                allowed_units: vec![],
+                queue_depth: 16,
+            })),
+        };
+        let result = turts_sim::apply_command(app.world_mut(), &append);
+        assert_eq!(result.units.accepted, vec![1, 2]);
+        let (commands, operations) = {
+            let mut trail = app.world_mut().resource_mut::<AuditTrail>();
+            (trail.drain_commands(), trail.drain_operations())
+        };
+        records.extend(commands.into_iter().map(EconomyLogRecord::CommandBoundary));
+        records.extend(operations.into_iter().map(EconomyLogRecord::Operation));
+
+        for _ in 0..2 {
+            app.update();
+            let (operations, ticks) = {
+                let mut trail = app.world_mut().resource_mut::<AuditTrail>();
+                (trail.drain_operations(), trail.drain_ticks())
+            };
+            records.extend(operations.into_iter().map(EconomyLogRecord::Operation));
+            records.extend(ticks.into_iter().map(EconomyLogRecord::from_tick));
+        }
+        records
+    }
+
+    fn actual_legacy_impossible_move_log() -> Vec<EconomyLogRecord> {
+        use turts_mod_api::{Footprint, PackageId, UnitDef, UnitRegistry};
+        use turts_sim::{MapBounds, Owner, Position, UnitType, UnitTypes};
+
+        let mut app = headless_app(20);
+        app.world_mut().insert_resource(MapBounds {
+            size: bevy::math::Vec2::new(2.0, 2.0),
+        });
+        let kind = app
+            .world_mut()
+            .resource_mut::<UnitTypes>()
+            .register_unit_type(
+                &PackageId::parse("fixture").unwrap(),
+                UnitDef {
+                    id: "walker".into(),
+                    name: "Walker".into(),
+                    footprint: Footprint::Circle { radius: 0.5 },
+                    movement: Some(turts_mod_api::MovementDef { speed: 3.0 }),
+                    inventory: None,
+                    gatherer: None,
+                    drop_off: None,
+                    producer: None,
+                    output_inventory: None,
+                    extractor: None,
+                    conveyor: None,
+                    inserter: None,
+                    machine: None,
+                    research: None,
+                    health: None,
+                    weapon: None,
+                    removal: None,
+                },
+            )
+            .unwrap();
+        for (unit_id, position) in [
+            (1, bevy::math::Vec2::new(0.5, 0.5)),
+            (2, bevy::math::Vec2::new(1.5, 0.5)),
+            (3, bevy::math::Vec2::new(0.5, 1.5)),
+        ] {
+            app.world_mut().spawn((
+                turts_sim::UnitId(unit_id),
+                UnitType(kind),
+                Owner(turts_sim::SlotId(0)),
+                Position(position),
+                turts_sim::UnitOrders::default(),
+            ));
+        }
+        app.world_mut().resource_mut::<AuditTrail>().enable();
+        let mut records = vec![EconomyLogRecord::Initial(turts_sim::audit_state(
+            app.world_mut(),
+        ))];
+        let command = turts_sim::Command {
+            slot: turts_sim::SlotId(0),
+            seq: 1,
+            kind: turts_sim::CommandKind::MoveTo {
+                unit_ids: vec![1, 2, 3],
+                target: bevy::math::Vec2::new(1.5, 1.5),
+            },
+        };
+        let result = turts_sim::apply_command(app.world_mut(), &command);
+        assert_eq!(result.units.accepted, vec![1, 2, 3]);
+        let (commands, operations) = {
+            let mut trail = app.world_mut().resource_mut::<AuditTrail>();
+            (trail.drain_commands(), trail.drain_operations())
+        };
+        records.extend(commands.into_iter().map(EconomyLogRecord::CommandBoundary));
+        records.extend(operations.into_iter().map(EconomyLogRecord::Operation));
+        app.update();
+        let (operations, ticks) = {
+            let mut trail = app.world_mut().resource_mut::<AuditTrail>();
+            (trail.drain_operations(), trail.drain_ticks())
+        };
+        records.extend(operations.into_iter().map(EconomyLogRecord::Operation));
+        records.extend(ticks.into_iter().map(EconomyLogRecord::from_tick));
+        records
+    }
+
+    fn actual_plain_candidate_cap_log(action: u8) -> Vec<EconomyLogRecord> {
+        use std::collections::BTreeMap;
+        use turts_mod_api::{
+            ContentCatalog, Footprint, OrderDef, PackageId, ResolvedUnit, TargetKind, UnitDef,
+            UnitRegistry,
+        };
+        use turts_sim::{
+            MapBounds, Owner, Position, UnitType, UnitTypes,
+            orders::{MovementDispatchState, PendingMovementOrder, PendingMovementOrders},
+        };
+
+        let mut app = headless_app(20);
+        app.world_mut().insert_resource(MapBounds {
+            size: bevy::math::Vec2::new(64.0, 64.0),
+        });
+        let package = PackageId::parse("fixture").unwrap();
+        let kind = app
+            .world_mut()
+            .resource_mut::<UnitTypes>()
+            .register_unit_type(
+                &package,
+                UnitDef {
+                    id: "walker".into(),
+                    name: "Walker".into(),
+                    footprint: Footprint::Circle { radius: 0.5 },
+                    movement: Some(turts_mod_api::MovementDef { speed: 3.0 }),
+                    inventory: None,
+                    gatherer: None,
+                    drop_off: None,
+                    producer: None,
+                    output_inventory: None,
+                    extractor: None,
+                    conveyor: None,
+                    inserter: None,
+                    machine: None,
+                    research: None,
+                    health: None,
+                    weapon: None,
+                    removal: None,
+                },
+            )
+            .unwrap();
+        let unit_id = turts_mod_api::ContentId::new(&package, "walker");
+        let move_order = turts_mod_api::ContentId::new(&package, "move");
+        let hold_order = turts_mod_api::ContentId::new(&package, "hold");
+        let mut catalog = ContentCatalog {
+            resources: BTreeMap::new(),
+            units: BTreeMap::new(),
+            nodes: BTreeMap::new(),
+            production: BTreeMap::new(),
+            recipes: BTreeMap::new(),
+            technologies: BTreeMap::new(),
+            orders: BTreeMap::new(),
+            order_queue_depths: BTreeMap::new(),
+            source_files: BTreeMap::new(),
+        };
+        catalog.units.insert(
+            unit_id.clone(),
+            ResolvedUnit {
+                id: unit_id,
+                name: "Walker".into(),
+                footprint: Footprint::Circle { radius: 0.5 },
+                movement: Some(turts_mod_api::MovementDef { speed: 3.0 }),
+                inventory: None,
+                gatherer: None,
+                drop_off: None,
+                producer: None,
+                output_inventory: None,
+                extractor: None,
+                conveyor: None,
+                inserter: None,
+                machine: None,
+                research: None,
+                health: None,
+                weapon: None,
+                removal: None,
+            },
+        );
+        catalog.orders.insert(
+            move_order.clone(),
+            OrderDef {
+                id: move_order.local.clone(),
+                name: "Move".into(),
+                behaviour: turts_mod_api::Behaviour::Move,
+                target: TargetKind::PointOrUnit,
+                fire: None,
+                engage: None,
+                icon: String::new(),
+                hotkey: String::new(),
+                cursor: None,
+                card: None,
+                units: vec![],
+                description: String::new(),
+            },
+        );
+        catalog.orders.insert(
+            hold_order.clone(),
+            OrderDef {
+                id: hold_order.local.clone(),
+                name: "Hold".into(),
+                behaviour: turts_mod_api::Behaviour::Hold,
+                target: TargetKind::None,
+                fire: None,
+                engage: None,
+                icon: String::new(),
+                hotkey: String::new(),
+                cursor: None,
+                card: None,
+                units: vec![],
+                description: String::new(),
+            },
+        );
+        app.world_mut()
+            .insert_resource(turts_sim::bootstrap::InstalledCatalog(catalog));
+        for (id, x) in [(1, 8.0), (2, 12.0)] {
+            app.world_mut().spawn((
+                turts_sim::UnitId(id),
+                UnitType(kind),
+                Owner(turts_sim::SlotId(0)),
+                Position(bevy::math::Vec2::new(x, 8.0)),
+                turts_sim::UnitOrders::default(),
+            ));
+        }
+        let prior_move_target = bevy::math::Vec2::new(18.0, 8.0);
+        let candidate_entity = app
+            .world_mut()
+            .iter_entities()
+            .find(|entity| {
+                entity
+                    .get::<turts_sim::UnitId>()
+                    .is_some_and(|id| id.0 == 2)
+            })
+            .unwrap()
+            .id();
+        app.world_mut().entity_mut(candidate_entity).insert((
+            turts_sim::MoveTarget(prior_move_target),
+            turts_sim::UnitOrders {
+                current: Some(turts_sim::Order {
+                    order: move_order.clone(),
+                    behaviour: turts_mod_api::Behaviour::Move,
+                    target: turts_sim::OrderTargetSim::Point(prior_move_target),
+                    group: 0,
+                }),
+                ..Default::default()
+            },
+        ));
+        let head_order = turts_sim::Order {
+            order: move_order.clone(),
+            behaviour: turts_mod_api::Behaviour::Move,
+            target: turts_sim::OrderTargetSim::Point(bevy::math::Vec2::new(20.0, 20.0)),
+            group: 1,
+        };
+        if action != 11 {
+            assert!(
+                app.world_mut()
+                    .resource_mut::<PendingMovementOrders>()
+                    .queue(PendingMovementOrder {
+                        slot: turts_sim::SlotId(0),
+                        accepted_tick: 0,
+                        seq: 1,
+                        group: 1,
+                        pool_id: 0,
+                        point: bevy::math::Vec2::new(20.0, 20.0),
+                        unit_ids: vec![1],
+                        order: Some(head_order.clone()),
+                        member_orders: BTreeMap::from([(1, head_order)]),
+                        plain: false,
+                    })
+            );
+        } else {
+            // The modern-command phase-guard fixture begins with an initialized
+            // scheduler but no pending head, so candidate 2 is genuinely first
+            // and fits the one remaining slot before command 1.
+            app.world_mut()
+                .resource_mut::<PendingMovementOrders>()
+                .next_pool_id = 1;
+        }
+        *app.world_mut().resource_mut::<MovementDispatchState>() = MovementDispatchState {
+            tick: Some(if action == 11 { 0 } else { 1 }),
+            start_slot: 0,
+            used: if action == 9 || action == 10 {
+                2046
+            } else {
+                2047
+            },
+            cursor_advanced: action != 11,
+        };
+        app.world_mut().resource_mut::<AuditTrail>().enable();
+        let mut records = vec![EconomyLogRecord::Initial(turts_sim::audit_state(
+            app.world_mut(),
+        ))];
+
+        let mut command = audited_move_command(vec![2], bevy::math::Vec2::new(24.0, 24.0), 0, 2);
+        if action == 3
+            && let turts_sim::CommandKind::Order(order) = &mut command.kind
+        {
+            order.target = turts_sim::OrderTargetSim::Unit(1);
+            order.group = 0;
+        }
+        let result = turts_sim::apply_command(app.world_mut(), &command);
+        assert!(
+            result.outcome.is_ok(),
+            "candidate Move is accepted: {result:?}"
+        );
+        assert_eq!(result.units.accepted, vec![2]);
+        let (commands, operations) = {
+            let mut trail = app.world_mut().resource_mut::<AuditTrail>();
+            (trail.drain_commands(), trail.drain_operations())
+        };
+        records.extend(commands.into_iter().map(EconomyLogRecord::CommandBoundary));
+        records.extend(operations.into_iter().map(EconomyLogRecord::Operation));
+
+        if action != 3 {
+            let mut replacement =
+                audited_move_command(vec![2], bevy::math::Vec2::new(26.0, 24.0), 0, 3);
+            if action == 12
+                && let turts_sim::CommandKind::Order(order) = &mut replacement.kind
+            {
+                order.target = turts_sim::OrderTargetSim::Unit(1);
+                order.group = 1;
+            } else if action == 7
+                && let turts_sim::CommandKind::Order(order) = &mut replacement.kind
+            {
+                order.group = 1;
+            }
+            let result = turts_sim::apply_command(app.world_mut(), &replacement);
+            assert!(
+                result.outcome.is_ok(),
+                "repeated candidate Replace is accepted: {result:?}"
+            );
+            assert_eq!(result.units.accepted, vec![2]);
+            let (commands, operations) = {
+                let mut trail = app.world_mut().resource_mut::<AuditTrail>();
+                (trail.drain_commands(), trail.drain_operations())
+            };
+            records.extend(commands.into_iter().map(EconomyLogRecord::CommandBoundary));
+            records.extend(operations.into_iter().map(EconomyLogRecord::Operation));
+        }
+
+        match action {
+            0 => {
+                let append = turts_sim::Command {
+                    slot: turts_sim::SlotId(0),
+                    seq: 4,
+                    kind: turts_sim::CommandKind::Order(Box::new(turts_sim::OrderCommand {
+                        order: hold_order,
+                        behaviour: turts_mod_api::Behaviour::Hold,
+                        target_kind: turts_mod_api::TargetKind::None,
+                        policy: Some(order_policy(
+                            "fixture:hold",
+                            turts_mod_api::Behaviour::Hold,
+                            turts_mod_api::TargetKind::None,
+                            vec![(
+                                "fixture:walker",
+                                true,
+                                false,
+                                false,
+                                false,
+                                false,
+                                false,
+                                false,
+                            )],
+                        )),
+                        units: vec![2],
+                        target: turts_sim::OrderTargetSim::None,
+                        queue: turts_sim::QueueMode::Append,
+                        group: 0,
+                        allowed_units: vec![],
+                        queue_depth: 16,
+                    })),
+                };
+                let result = turts_sim::apply_command(app.world_mut(), &append);
+                assert!(
+                    result.outcome.is_ok(),
+                    "candidate Append is accepted: {result:?}"
+                );
+                assert_eq!(result.units.accepted, vec![2]);
+                let (commands, operations) = {
+                    let mut trail = app.world_mut().resource_mut::<AuditTrail>();
+                    (trail.drain_commands(), trail.drain_operations())
+                };
+                records.extend(commands.into_iter().map(EconomyLogRecord::CommandBoundary));
+                records.extend(operations.into_iter().map(EconomyLogRecord::Operation));
+            }
+            1 => {
+                let replace = turts_sim::Command {
+                    slot: turts_sim::SlotId(0),
+                    seq: 4,
+                    kind: turts_sim::CommandKind::Order(Box::new(turts_sim::OrderCommand {
+                        order: hold_order,
+                        behaviour: turts_mod_api::Behaviour::Hold,
+                        target_kind: turts_mod_api::TargetKind::None,
+                        policy: Some(order_policy(
+                            "fixture:hold",
+                            turts_mod_api::Behaviour::Hold,
+                            turts_mod_api::TargetKind::None,
+                            vec![(
+                                "fixture:walker",
+                                true,
+                                false,
+                                false,
+                                false,
+                                false,
+                                action == 4,
+                                false,
+                            )],
+                        )),
+                        units: vec![2],
+                        target: turts_sim::OrderTargetSim::None,
+                        queue: turts_sim::QueueMode::Replace,
+                        group: 0,
+                        allowed_units: vec![],
+                        queue_depth: 16,
+                    })),
+                };
+                let result = turts_sim::apply_command(app.world_mut(), &replace);
+                assert!(
+                    result.outcome.is_ok(),
+                    "candidate Hold replacement is accepted: {result:?}"
+                );
+                assert_eq!(result.units.accepted, vec![2]);
+                let (commands, operations) = {
+                    let mut trail = app.world_mut().resource_mut::<AuditTrail>();
+                    (trail.drain_commands(), trail.drain_operations())
+                };
+                records.extend(commands.into_iter().map(EconomyLogRecord::CommandBoundary));
+                records.extend(operations.into_iter().map(EconomyLogRecord::Operation));
+            }
+            2 => {
+                let refused = turts_sim::Command {
+                    slot: turts_sim::SlotId(1),
+                    seq: 4,
+                    kind: turts_sim::CommandKind::MoveTo {
+                        unit_ids: vec![2],
+                        target: bevy::math::Vec2::new(26.0, 24.0),
+                    },
+                };
+                let result = turts_sim::apply_command(app.world_mut(), &refused);
+                assert!(result.outcome.is_err(), "foreign legacy MoveTo is refused");
+                assert!(result.units.accepted.is_empty());
+                let (commands, operations) = {
+                    let mut trail = app.world_mut().resource_mut::<AuditTrail>();
+                    (trail.drain_commands(), trail.drain_operations())
+                };
+                records.extend(commands.into_iter().map(EconomyLogRecord::CommandBoundary));
+                records.extend(operations.into_iter().map(EconomyLogRecord::Operation));
+            }
+            5 | 6 => {
+                if action == 6 {
+                    let append = turts_sim::Command {
+                        slot: turts_sim::SlotId(0),
+                        seq: 4,
+                        kind: turts_sim::CommandKind::Order(Box::new(turts_sim::OrderCommand {
+                            order: hold_order.clone(),
+                            behaviour: turts_mod_api::Behaviour::Hold,
+                            target_kind: turts_mod_api::TargetKind::None,
+                            policy: Some(order_policy(
+                                "fixture:hold",
+                                turts_mod_api::Behaviour::Hold,
+                                turts_mod_api::TargetKind::None,
+                                vec![(
+                                    "fixture:walker",
+                                    true,
+                                    false,
+                                    false,
+                                    false,
+                                    false,
+                                    false,
+                                    false,
+                                )],
+                            )),
+                            units: vec![2],
+                            target: turts_sim::OrderTargetSim::None,
+                            queue: turts_sim::QueueMode::Append,
+                            group: 0,
+                            allowed_units: vec![],
+                            queue_depth: 16,
+                        })),
+                    };
+                    let append_result = turts_sim::apply_command(app.world_mut(), &append);
+                    assert!(append_result.outcome.is_ok());
+                    let (commands, operations) = {
+                        let mut trail = app.world_mut().resource_mut::<AuditTrail>();
+                        (trail.drain_commands(), trail.drain_operations())
+                    };
+                    records.extend(commands.into_iter().map(EconomyLogRecord::CommandBoundary));
+                    records.extend(operations.into_iter().map(EconomyLogRecord::Operation));
+                }
+                let replace = turts_sim::Command {
+                    slot: turts_sim::SlotId(0),
+                    seq: 5,
+                    kind: turts_sim::CommandKind::MoveTo {
+                        unit_ids: vec![2],
+                        target: bevy::math::Vec2::new(28.0, 24.0),
+                    },
+                };
+                let result = turts_sim::apply_command(app.world_mut(), &replace);
+                assert_eq!(result.outcome, Ok(turts_sim::Applied { job_id: None }));
+                assert_eq!(
+                    app.world()
+                        .entity(candidate_entity)
+                        .get::<turts_sim::UnitOrders>()
+                        .unwrap(),
+                    &turts_sim::UnitOrders::default(),
+                    "legacy singleton Replace clears the old current and future queue"
+                );
+                let (commands, operations) = {
+                    let mut trail = app.world_mut().resource_mut::<AuditTrail>();
+                    (trail.drain_commands(), trail.drain_operations())
+                };
+                records.extend(commands.into_iter().map(EconomyLogRecord::CommandBoundary));
+                records.extend(operations.into_iter().map(EconomyLogRecord::Operation));
+            }
+            9 | 11 => {
+                let append = turts_sim::Command {
+                    slot: turts_sim::SlotId(0),
+                    seq: 4,
+                    kind: turts_sim::CommandKind::Order(Box::new(turts_sim::OrderCommand {
+                        order: hold_order,
+                        behaviour: turts_mod_api::Behaviour::Hold,
+                        target_kind: turts_mod_api::TargetKind::None,
+                        policy: Some(order_policy(
+                            "fixture:hold",
+                            turts_mod_api::Behaviour::Hold,
+                            turts_mod_api::TargetKind::None,
+                            vec![(
+                                "fixture:walker",
+                                true,
+                                false,
+                                false,
+                                false,
+                                false,
+                                false,
+                                false,
+                            )],
+                        )),
+                        units: vec![1],
+                        target: turts_sim::OrderTargetSim::None,
+                        queue: turts_sim::QueueMode::Append,
+                        group: 0,
+                        allowed_units: vec![],
+                        queue_depth: 16,
+                    })),
+                };
+                let result = turts_sim::apply_command(app.world_mut(), &append);
+                assert_eq!(result.units.accepted, vec![1]);
+                let (commands, operations) = {
+                    let mut trail = app.world_mut().resource_mut::<AuditTrail>();
+                    (trail.drain_commands(), trail.drain_operations())
+                };
+                records.extend(commands.into_iter().map(EconomyLogRecord::CommandBoundary));
+                records.extend(operations.into_iter().map(EconomyLogRecord::Operation));
+            }
+            10 => {
+                let replacement = turts_sim::Command {
+                    slot: turts_sim::SlotId(0),
+                    seq: 4,
+                    kind: turts_sim::CommandKind::MoveTo {
+                        unit_ids: vec![1],
+                        target: bevy::math::Vec2::new(28.0, 24.0),
+                    },
+                };
+                let result = turts_sim::apply_command(app.world_mut(), &replacement);
+                assert!(result.outcome.is_ok());
+                let (commands, operations) = {
+                    let mut trail = app.world_mut().resource_mut::<AuditTrail>();
+                    (trail.drain_commands(), trail.drain_operations())
+                };
+                records.extend(commands.into_iter().map(EconomyLogRecord::CommandBoundary));
+                records.extend(operations.into_iter().map(EconomyLogRecord::Operation));
+            }
+            12 => {}
+            3 => {}
+            7 => {}
+            _ => panic!("unsupported candidate fixture action {action}"),
+        }
+
+        for _ in 0..if action == 3 { 2 } else { 1 } {
+            app.update();
+            let (operations, ticks) = {
+                let mut trail = app.world_mut().resource_mut::<AuditTrail>();
+                (trail.drain_operations(), trail.drain_ticks())
+            };
+            records.extend(operations.into_iter().map(EconomyLogRecord::Operation));
+            records.extend(ticks.into_iter().map(EconomyLogRecord::from_tick));
+        }
+        records
+    }
+
+    #[test]
+    fn validator_replays_capped_plain_candidate_promotion() {
+        use std::collections::BTreeMap;
+
+        let records = actual_plain_candidate_cap_log(0);
+        assert!(
+            records.iter().any(|record| matches!(record,
+                EconomyLogRecord::Operation(operation)
+                    if operation.phase == turts_sim::economy::transaction::AuditPhase::Orders
+                        && operation.unit_id == Some(2)
+                        && operation.after.pending_movement_orders.pending_member_counts.contains_key(&2)
+            )),
+            "the actual over-cap singleton is promoted through a captured Pending transition"
+        );
+        assert!(
+            records.iter().any(|record| matches!(record,
+                EconomyLogRecord::Operation(operation)
+                    if operation.unit_id == Some(2)
+                        && operation.after.unit_orders.iter().any(|row| row.unit_id == 2 && row.orders.queue.len() == 1)
+            )),
+            "the accepted Append suffix is present in a captured actor state"
+        );
+        assert!(
+            records.iter().any(|record| matches!(record,
+                EconomyLogRecord::Operation(operation)
+                    if operation.phase == turts_sim::economy::transaction::AuditPhase::Orders
+                        && operation.unit_id == Some(2)
+                        && operation.after.pending_movement_orders.pending_member_counts.contains_key(&2)
+                        && operation.after.unit_orders.iter().any(|row| row.unit_id == 2
+                            && row.orders.queue.len() == 1
+                            && row.orders.current.as_ref().is_some_and(|order| {
+                                order.behaviour == turts_mod_api::Behaviour::Move
+                                    && order.target == turts_sim::OrderTargetSim::Point(bevy::math::Vec2::new(18.0, 8.0))
+                            }))
+            )),
+            "promotion restores prior Move and retains the accepted Append suffix while replacement waits"
+        );
+        let validation = validate_records(&records);
+        assert!(
+            validation.is_ok(),
+            "the independent replay accepts candidate promotion and restores the prior actor state: {validation:?}"
+        );
+
+        let promotion_index = records
+            .iter()
+            .position(|record| matches!(record,
+                EconomyLogRecord::Operation(operation)
+                    if operation.phase == turts_sim::economy::transaction::AuditPhase::Orders
+                        && operation.unit_id == Some(2)
+                        && operation.after.pending_movement_orders.pending_member_counts.contains_key(&2)
+            ))
+            .unwrap();
+        let mut candidate_ordinal = 0;
+        let accepted_candidate = records
+            .iter()
+            .filter_map(|record| match record {
+                EconomyLogRecord::CommandBoundary(command)
+                    if matches!(&command.input.kind,
+                        turts_sim::CommandKind::Order(order)
+                            if order.units == [2]
+                                && order.queue == turts_sim::QueueMode::Replace
+                                && order.group == 0) =>
+                {
+                    super::plain_candidate_from_command(
+                        command,
+                        &std::collections::BTreeMap::new(),
+                        &mut candidate_ordinal,
+                    )
+                    .map(|(_, candidate)| candidate)
+                }
+                _ => None,
+            })
+            .last()
+            .expect("the accepted singleton command has an independent replay candidate");
+        let candidate_history = BTreeMap::from([(2, accepted_candidate.clone())]);
+        let EconomyLogRecord::Operation(actual_promotion) = &records[promotion_index] else {
+            unreachable!()
+        };
+        assert!(super::plain_candidate_lost_to_tick_budget(
+            actual_promotion,
+            2,
+            &accepted_candidate,
+            &candidate_history,
+        ));
+        let mut unnecessary_promotion = actual_promotion.clone();
+        unnecessary_promotion.before.movement_dispatch.used = 2046;
+        assert_eq!(
+            unnecessary_promotion
+                .before
+                .pending_movement_orders
+                .pending_units
+                .get(&0),
+            Some(&1),
+            "the nontrivial control keeps the existing head and one unit of cap room"
+        );
+        assert!(
+            !super::plain_candidate_lost_to_tick_budget(
+                &unnecessary_promotion,
+                2,
+                &accepted_candidate,
+                &candidate_history,
+            ),
+            "an otherwise valid candidate cannot be promoted when it was directly dispatchable"
+        );
+
+        for (label, mutate) in [
+            (
+                "prior target",
+                Box::new(|operation: &mut turts_sim::OperationAudit| {
+                    set_audit_move_target(
+                        &mut operation.after,
+                        2,
+                        Some(turts_mod_api::WorldPos { x: 23.0, y: 24.0 }),
+                    )
+                    .unwrap();
+                }) as Box<dyn Fn(&mut turts_sim::OperationAudit)>,
+            ),
+            (
+                "queue suffix",
+                Box::new(|operation: &mut turts_sim::OperationAudit| {
+                    let unit = operation
+                        .after
+                        .unit_orders
+                        .iter_mut()
+                        .find(|row| row.unit_id == 2)
+                        .unwrap();
+                    unit.orders.queue.clear();
+                }),
+            ),
+            (
+                "accepted identity",
+                Box::new(|operation: &mut turts_sim::OperationAudit| {
+                    let request = operation
+                        .after
+                        .pending_movement_orders
+                        .queues
+                        .values_mut()
+                        .flatten()
+                        .find(|request| request.unit_ids.contains(&2))
+                        .unwrap();
+                    request.order.as_mut().unwrap().order =
+                        turts_mod_api::ContentId::parse("fixture:forged").unwrap();
+                    request.member_orders.get_mut(&2).unwrap().order =
+                        turts_mod_api::ContentId::parse("fixture:forged").unwrap();
+                }),
+            ),
+            (
+                "pending capacity",
+                Box::new(|operation: &mut turts_sim::OperationAudit| {
+                    *operation
+                        .after
+                        .pending_movement_orders
+                        .pending_units
+                        .get_mut(&0)
+                        .unwrap() += 1;
+                }),
+            ),
+        ] {
+            let mut forged = records.clone();
+            let EconomyLogRecord::Operation(operation) = &mut forged[promotion_index] else {
+                unreachable!()
+            };
+            mutate(operation);
+            let error = validate_records(&forged).expect_err(label);
+            assert!(
+                error.contains("plain Move candidate promotion"),
+                "{label} forgery is rejected by candidate replay, got: {error}"
+            );
+        }
+    }
+
+    #[test]
+    fn validator_tracks_candidate_replacement_and_refusal_lifecycle() {
+        let replaced = actual_plain_candidate_cap_log(1);
+        let replaced_validation = validate_records(&replaced);
+        assert!(
+            replaced_validation.is_ok(),
+            "accepted Hold Replace cancels the candidate before arbitration: {replaced_validation:?}"
+        );
+        let replaced_final = replaced
+            .iter()
+            .rev()
+            .find_map(|record| match record {
+                EconomyLogRecord::Tick { state, .. } => Some(state),
+                _ => None,
+            })
+            .unwrap();
+        assert!(
+            !replaced_final
+                .pending_movement_orders
+                .pending_member_counts
+                .contains_key(&2)
+        );
+        assert!(
+            unit_orders_for(replaced_final, 2)
+                .current
+                .as_ref()
+                .is_some_and(|order| order.behaviour == turts_mod_api::Behaviour::Hold)
+        );
+
+        let refused = actual_plain_candidate_cap_log(2);
+        let refused_validation = validate_records(&refused);
+        assert!(
+            refused_validation.is_ok(),
+            "refused legacy MoveTo leaves the candidate available for promotion: {refused_validation:?}"
+        );
+        assert!(refused.iter().any(|record| matches!(record,
+            EconomyLogRecord::Operation(operation)
+                if operation.phase == turts_sim::economy::transaction::AuditPhase::Orders
+                    && operation.unit_id == Some(2)
+                    && operation.after.pending_movement_orders.pending_member_counts.contains_key(&2)
+                    && operation.after.unit_orders.iter().any(|row| row.unit_id == 2
+                        && row.orders.current.as_ref().is_some_and(|order| {
+                            order.behaviour == turts_mod_api::Behaviour::Move
+                                && order.target == turts_sim::OrderTargetSim::Point(bevy::math::Vec2::new(18.0, 8.0))
+                        }))
+        )), "refusal preserves the previous current order while candidate B waits");
+
+        for action in [5, 6] {
+            let replaced = actual_plain_candidate_cap_log(action);
+            let validation = validate_records(&replaced);
+            assert!(
+                validation.is_ok(),
+                "accepted legacy singleton MoveTo Replace {action} clears stale order state: {validation:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn validator_replays_legacy_multi_move_wait_replacement_and_append_suffix() {
+        let records = actual_legacy_multi_move_to_log(false);
+        assert!(records.iter().any(|record| matches!(record,
+            EconomyLogRecord::Operation(operation)
+                if operation.phase == turts_sim::economy::transaction::AuditPhase::Command
+                    && operation.after.pending_movement_orders.pending_member_counts.contains_key(&1)
+                    && operation.after.pending_movement_orders.pending_member_counts.contains_key(&2)
+                    && operation.after.unit_orders.iter().any(|row| row.unit_id == 1
+                        && row.orders.current.as_ref().is_some_and(|order| order.order == turts_mod_api::ContentId::parse("fixture:prior").unwrap())
+                        && row.orders.queue.is_empty())
+        )), "accepted legacy envelope waits while retaining the prior current order");
+        assert!(records.iter().any(|record| matches!(record,
+            EconomyLogRecord::Operation(operation)
+                if operation.phase == turts_sim::economy::transaction::AuditPhase::Orders
+                    && operation.before.pending_movement_orders.pending_member_counts.contains_key(&1)
+                    && operation.after.movement_progress.iter().any(|row| row.unit_id == 1)
+                    && operation.after.unit_orders.iter().any(|row| row.unit_id == 1
+                        && row.orders.current.is_none()
+                        && row.orders.queue.len() == 1)
+        )), "activation replaces current while retaining only the later Append suffix");
+        let validation = validate_records(&records);
+        assert!(
+            validation.is_ok(),
+            "strict replay accepts legacy waiting, appended suffix, and activation: {validation:?}"
+        );
+
+        let legacy_command = records
+            .iter()
+            .find_map(|record| match record {
+                EconomyLogRecord::CommandBoundary(command)
+                    if matches!(command.input.kind, turts_sim::CommandKind::MoveTo { .. }) =>
+                {
+                    Some(command)
+                }
+                _ => None,
+            })
+            .expect("the fixture records the accepted legacy replacement");
+        let prior = turts_sim::Order {
+            order: turts_mod_api::ContentId::parse("fixture:prior-authored-move").unwrap(),
+            behaviour: turts_mod_api::Behaviour::Move,
+            target: turts_sim::OrderTargetSim::Point(bevy::math::Vec2::new(24.0, 24.0)),
+            group: 0,
+        };
+        let mut identities =
+            std::collections::BTreeMap::from([(1, prior.clone()), (2, prior.clone())]);
+        super::update_plain_move_identities(legacy_command, &mut identities);
+        assert_eq!(
+            identities,
+            std::collections::BTreeMap::from([(1, prior.clone()), (2, prior)]),
+            "a deferred legacy replacement retains each prior execution identity until activation"
+        );
+    }
+
+    #[test]
+    fn validator_restores_original_candidate_prior_on_deferred_group_replace() {
+        let records = actual_plain_candidate_cap_log(7);
+        let deferred = records.iter().find_map(|record| match record {
+            EconomyLogRecord::Operation(operation)
+                if operation
+                    .after
+                    .pending_movement_orders
+                    .pending_member_counts
+                    .contains_key(&2)
+                    && operation.after.unit_orders.iter().any(|row| {
+                        row.unit_id == 2
+                            && row.orders.current.as_ref().is_some_and(|order| {
+                                order.target
+                                    == turts_sim::OrderTargetSim::Point(bevy::math::Vec2::new(
+                                        18.0, 8.0,
+                                    ))
+                            })
+                    }) =>
+            {
+                Some(operation)
+            }
+            _ => None,
+        });
+        assert!(
+            deferred.is_some(),
+            "the deferred Group Replace restores candidate A's original execution while C waits; trace={:?}",
+            records
+                .iter()
+                .filter_map(|record| match record {
+                    EconomyLogRecord::Operation(operation) => Some((
+                        operation.operation_id,
+                        operation.phase,
+                        operation
+                            .after
+                            .pending_movement_orders
+                            .pending_member_counts
+                            .clone(),
+                        unit_orders_for(&operation.after, 2),
+                    )),
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+        );
+        let validation = validate_records(&records);
+        assert!(
+            validation.is_ok(),
+            "strict replay restores original candidate prior on deferred Group Replace: {validation:?}"
+        );
+
+        let mut forged = records.clone();
+        let operation = forged
+            .iter_mut()
+            .find_map(|record| match record {
+                EconomyLogRecord::Operation(operation)
+                    if operation
+                        .after
+                        .pending_movement_orders
+                        .pending_member_counts
+                        .contains_key(&2)
+                        && operation
+                            .after
+                            .unit_orders
+                            .iter()
+                            .any(|row| row.unit_id == 2) =>
+                {
+                    Some(operation)
+                }
+                _ => None,
+            })
+            .unwrap();
+        set_audit_move_target(
+            &mut operation.after,
+            2,
+            Some(turts_mod_api::WorldPos { x: 25.0, y: 24.0 }),
+        )
+        .unwrap();
+        let error = validate_records(&forged).expect_err("wrong restored candidate prior");
+        assert!(
+            error.contains("deferred Replace Move admission"),
+            "wrong prior must be rejected by strict deferred replay, got: {error}"
+        );
+    }
+
+    #[test]
+    fn validator_restores_original_candidate_prior_on_deferred_unit_replace() {
+        let records = actual_plain_candidate_cap_log(12);
+        let deferred = records.iter().find_map(|record| match record {
+            EconomyLogRecord::Operation(operation)
+                if operation
+                    .after
+                    .pending_movement_orders
+                    .pending_member_counts
+                    .contains_key(&2)
+                    && operation.after.unit_orders.iter().any(|row| {
+                        row.unit_id == 2
+                            && row.orders.current.as_ref().is_some_and(|order| {
+                                order.target
+                                    == turts_sim::OrderTargetSim::Point(bevy::math::Vec2::new(
+                                        18.0, 8.0,
+                                    ))
+                            })
+                    }) =>
+            {
+                Some(operation)
+            }
+            _ => None,
+        });
+        assert!(
+            deferred.is_some(),
+            "deferred Unit Replace restores prior A while C waits"
+        );
+        let validation = validate_records(&records);
+        assert!(
+            validation.is_ok(),
+            "strict replay restores original candidate prior on deferred Unit Replace: {validation:?}"
+        );
+
+        let mut forged = records.clone();
+        let operation = forged
+            .iter_mut()
+            .find_map(|record| match record {
+                EconomyLogRecord::Operation(operation)
+                    if operation
+                        .after
+                        .pending_movement_orders
+                        .pending_member_counts
+                        .contains_key(&2)
+                        && operation
+                            .after
+                            .unit_orders
+                            .iter()
+                            .any(|row| row.unit_id == 2) =>
+                {
+                    Some(operation)
+                }
+                _ => None,
+            })
+            .unwrap();
+        set_audit_move_target(
+            &mut operation.after,
+            2,
+            Some(turts_mod_api::WorldPos { x: 25.0, y: 24.0 }),
+        )
+        .unwrap();
+        let error = validate_records(&forged).expect_err("wrong restored Unit candidate prior");
+        assert!(
+            error.contains("deferred Replace Move admission"),
+            "wrong prior must be rejected by strict deferred Unit replay, got: {error}"
+        );
+    }
+
+    #[test]
+    fn validator_rejects_no_mutation_on_refused_legacy_multi_move_to() {
+        let records = actual_legacy_multi_move_to_log(true);
+        assert!(
+            records.iter().any(|record| matches!(record,
+                EconomyLogRecord::Operation(operation)
+                    if operation.phase == turts_sim::economy::transaction::AuditPhase::Command
+                        && operation.before == operation.after
+            )),
+            "capacity refusal contributes a no-change command operation"
+        );
+        let validation = validate_records(&records);
+        assert!(
+            validation.is_ok(),
+            "strict replay accepts a capacity refusal preserving current and queue: {validation:?}"
+        );
+    }
+
+    #[test]
+    fn validator_counts_other_transient_candidates_in_legacy_multi_capacity() {
+        let records = actual_legacy_multi_move_to_log_with_candidates(
+            true,
+            bevy::math::Vec2::new(40.0, 40.0),
+            Some(16_320),
+            63,
+        );
+        let boundary = records
+            .iter()
+            .find_map(|record| match record {
+                EconomyLogRecord::CommandBoundary(command)
+                    if matches!(command.input.kind, turts_sim::CommandKind::MoveTo { .. }) =>
+                {
+                    Some(command)
+                }
+                _ => None,
+            })
+            .expect("the legacy MoveTo boundary is retained");
+        assert_eq!(boundary.result.units.accepted, Vec::<u32>::new());
+        assert_eq!(
+            boundary.result.units.refused,
+            vec![
+                (1, turts_sim::RejectReason::RateLimited),
+                (2, turts_sim::RejectReason::RateLimited),
+            ]
+        );
+        assert_eq!(
+            boundary
+                .before
+                .pending_movement_orders
+                .pending_units
+                .get(&0),
+            Some(&16_320)
+        );
+        assert_eq!(
+            records
+                .iter()
+                .filter(|record| matches!(record,
+                    EconomyLogRecord::CommandBoundary(command)
+                        if matches!(&command.input.kind, turts_sim::CommandKind::Order(order)
+                            if order.group == 0 && order.queue == turts_sim::QueueMode::Replace)))
+                .count(),
+            63,
+            "the combined-capacity predecessor consists of 63 actual accepted transient reservations"
+        );
+        let validation = validate_records(&records);
+        assert!(
+            validation.is_ok(),
+            "16320 pending plus 63 reserved plus two incoming actors is rejected atomically and replays: {validation:?}"
+        );
+        let mut forged_acceptance = records.clone();
+        let boundary = forged_acceptance
+            .iter_mut()
+            .find_map(|record| match record {
+                EconomyLogRecord::CommandBoundary(command)
+                    if matches!(command.input.kind, turts_sim::CommandKind::MoveTo { .. }) =>
+                {
+                    Some(command)
+                }
+                _ => None,
+            })
+            .unwrap();
+        boundary.result.units.accepted = vec![1, 2];
+        boundary.result.units.refused.clear();
+        boundary.result.outcome = Ok(turts_sim::Applied { job_id: None });
+        let error = validate_records(&forged_acceptance).expect_err("over-cap legacy acceptance");
+        assert!(
+            error.contains("legacy multi-unit MoveTo result differs"),
+            "the exact combined-capacity rule rejects forged acceptance: {error}"
+        );
+    }
+
+    #[test]
+    fn validator_replays_global_nonfinite_legacy_multi_move_to_refusals() {
+        for target in [
+            bevy::math::Vec2::new(f32::NAN, 40.0),
+            bevy::math::Vec2::new(40.0, f32::INFINITY),
+        ] {
+            let records = actual_legacy_multi_move_to_log_with_target(false, target);
+            let boundary = records
+                .iter()
+                .find_map(|record| match record {
+                    EconomyLogRecord::CommandBoundary(command)
+                        if matches!(command.input.kind, turts_sim::CommandKind::MoveTo { .. }) =>
+                    {
+                        Some(command)
+                    }
+                    _ => None,
+                })
+                .expect("the rejected legacy envelope is retained");
+            assert_eq!(
+                boundary.result.outcome,
+                Err(turts_sim::RejectReason::TargetNotFinite)
+            );
+            assert_eq!(boundary.result.units, turts_sim::UnitOutcomes::default());
+            assert!(
+                records
+                    .iter()
+                    .filter_map(|record| match record {
+                        EconomyLogRecord::Operation(operation)
+                            if operation.phase
+                                == turts_sim::economy::transaction::AuditPhase::Command =>
+                        {
+                            Some(operation)
+                        }
+                        _ => None,
+                    })
+                    .all(|operation| operation.before == operation.after)
+            );
+            let validation = validate_records(&records);
+            assert!(
+                validation.is_ok(),
+                "global nonfinite multi-unit refusal with empty actor outcomes replays unchanged: {validation:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn validator_replays_idless_legacy_atomic_no_primary_failure() {
+        let records = actual_legacy_impossible_move_log();
+        let final_state = records
+            .iter()
+            .rev()
+            .find_map(|record| match record {
+                EconomyLogRecord::Tick { state, .. } => Some(state),
+                _ => None,
+            })
+            .unwrap();
+        assert_eq!(final_state.raw_units.len(), 3);
+        assert!(
+            final_state
+                .raw_units
+                .iter()
+                .all(|unit| unit.move_target.is_none())
+        );
+        assert_eq!(final_state.plain_movement_progress.len(), 3);
+        assert!(
+            final_state
+                .plain_movement_progress
+                .iter()
+                .all(
+                    |row| row.progress.activity == turts_sim::movement::MovementActivity::Blocked
+                        && row.progress.failure_recorded
+                )
+        );
+        assert!(
+            final_state
+                .unit_orders
+                .iter()
+                .all(|row| row.orders.last_failure.is_none()),
+            "idless legacy movement records Blocked without inventing an authored order ID"
+        );
+        let validation = validate_records(&records);
+        assert!(
+            validation.is_ok(),
+            "idless atomic failure replays exactly: {validation:?}"
+        );
+    }
+
+    #[test]
+    fn validator_routes_initial_unit_follow_through_cap_and_samples_live_anchor() {
+        let records = actual_plain_candidate_cap_log(3);
+        let validation = validate_records(&records);
+        assert!(
+            validation.is_ok(),
+            "initial Move(Unit) waits for capacity then dispatches by live target identity: {validation:?}"
+        );
+        let dispatch = records
+            .iter()
+            .find_map(|record| match record {
+                EconomyLogRecord::Operation(operation)
+                    if operation.unit_id == Some(2)
+                        && operation
+                            .after
+                            .movement_progress
+                            .iter()
+                            .any(|row| row.unit_id == 2)
+                        && !operation
+                            .before
+                            .movement_progress
+                            .iter()
+                            .any(|row| row.unit_id == 2) =>
+                {
+                    Some(operation)
+                }
+                _ => None,
+            })
+            .expect("the pending Unit-target order eventually receives a spread pool");
+        assert_eq!(dispatch.before.economy.tick, 2);
+        let target_position = dispatch
+            .before
+            .raw_units
+            .iter()
+            .find(|unit| unit.unit_id == 1)
+            .map(|unit| bevy::math::Vec2::new(unit.pos.x, unit.pos.y))
+            .unwrap();
+        assert!(target_position.distance(bevy::math::Vec2::new(8.0, 8.0)) > 0.1);
+        let progress = dispatch
+            .after
+            .movement_progress
+            .iter()
+            .find(|row| row.unit_id == 2)
+            .unwrap();
+        let pool = dispatch
+            .after
+            .movement_pools
+            .iter()
+            .find(|pool| pool.pool_id == progress.progress.pool_id)
+            .unwrap();
+        assert!(
+            pool.point.distance(target_position) < 1.0e-5,
+            "allocation samples Unit 1's live position at dispatch"
+        );
+        assert_eq!(
+            unit_orders_for(&dispatch.after, 2)
+                .current
+                .as_ref()
+                .map(|order| &order.target),
+            Some(&turts_sim::OrderTargetSim::Unit(1)),
+            "the activated current order retains its Unit reference"
+        );
+    }
+
+    #[test]
+    fn plain_candidate_promotion_counts_all_same_tick_candidates() {
+        use std::collections::BTreeMap;
+
+        let records = actual_plain_candidate_cap_log(0);
+        let promotion = records
+            .iter()
+            .find_map(|record| match record {
+                EconomyLogRecord::Operation(operation)
+                    if operation.phase == turts_sim::economy::transaction::AuditPhase::Orders
+                        && operation.unit_id == Some(2)
+                        && operation
+                            .after
+                            .pending_movement_orders
+                            .pending_member_counts
+                            .contains_key(&2) =>
+                {
+                    Some(operation.clone())
+                }
+                _ => None,
+            })
+            .expect("the fixture contains a real promoted singleton");
+        let mut candidate_ordinal = 0;
+        let candidate = records
+            .iter()
+            .find_map(|record| match record {
+                EconomyLogRecord::CommandBoundary(command)
+                    if matches!(&command.input.kind,
+                        turts_sim::CommandKind::Order(order)
+                            if order.units == [2]
+                                && order.queue == turts_sim::QueueMode::Replace
+                                && order.group == 0) =>
+                {
+                    super::plain_candidate_from_command(
+                        command,
+                        &BTreeMap::new(),
+                        &mut candidate_ordinal,
+                    )
+                    .map(|(_, candidate)| candidate)
+                }
+                _ => None,
+            })
+            .expect("the fixture candidate is reconstructed from accepted input");
+
+        let mut synthetic = promotion.clone();
+        let actor = synthetic
+            .before
+            .raw_units
+            .iter()
+            .find(|unit| unit.unit_id == 2)
+            .cloned()
+            .expect("the candidate actor remains live in the fixture");
+        let pending_members: Vec<_> = (10_000..12_040).collect();
+        for unit_id in &pending_members {
+            let mut member = actor.clone();
+            member.unit_id = *unit_id;
+            member.owner_slot = 0;
+            synthetic.before.raw_units.push(member);
+        }
+        let mut pending = turts_sim::orders::PendingMovementOrders::default();
+        assert!(pending.queue(turts_sim::orders::PendingMovementOrder {
+            slot: turts_sim::SlotId(0),
+            accepted_tick: synthetic.before.economy.tick,
+            seq: 1,
+            group: 55,
+            pool_id: 1,
+            point: bevy::math::Vec2::new(20.0, 20.0),
+            unit_ids: pending_members,
+            order: None,
+            member_orders: std::collections::BTreeMap::new(),
+            plain: false,
+        }));
+        pending.next_slot = 0;
+        synthetic.before.pending_movement_orders = pending;
+        synthetic.before.movement_dispatch = turts_sim::orders::MovementDispatchState {
+            tick: Some(synthetic.before.economy.tick),
+            start_slot: 0,
+            used: 0,
+            cursor_advanced: true,
+        };
+        let mut history = BTreeMap::new();
+        let mut last = None;
+        for ordinal in 1..=10_u64 {
+            let unit_id = 3000 + ordinal as u32;
+            let mut candidate = candidate.clone();
+            candidate.arrival_ordinal = ordinal;
+            candidate.accepted_tick = synthetic.before.economy.tick;
+            candidate.preceding_pool_id = 0;
+            let mut member = actor.clone();
+            member.unit_id = unit_id;
+            member.owner_slot = 1;
+            member.move_target = Some(turts_mod_api::WorldPos {
+                x: candidate.point.x,
+                y: candidate.point.y,
+            });
+            synthetic.before.raw_units.push(member);
+            history.insert(unit_id, candidate.clone());
+            if ordinal == 10 {
+                last = Some(candidate);
+            }
+        }
+        synthetic.before.raw_units.sort_by_key(|unit| unit.unit_id);
+        let last = last.expect("the tenth candidate is the over-cap member");
+        assert_eq!(
+            synthetic.before.pending_movement_orders.queues[&0][0]
+                .unit_ids
+                .len(),
+            2040
+        );
+        assert_eq!(
+            synthetic
+                .before
+                .pending_movement_orders
+                .pending_units
+                .get(&0),
+            Some(&2040)
+        );
+        assert_eq!(synthetic.before.movement_dispatch.used, 0);
+        assert_eq!(
+            synthetic
+                .before
+                .raw_units
+                .iter()
+                .find(|unit| unit.unit_id == 3001)
+                .unwrap()
+                .owner_slot,
+            1
+        );
+        assert_eq!(
+            super::independent_plain_candidate_winners(&synthetic.before, &history, true),
+            (3001..3009).collect::<Vec<_>>(),
+            "the 2040-member head leaves room for exactly eight of ten candidates"
+        );
+        assert!(
+            super::plain_candidate_lost_to_tick_budget(&synthetic, 3010, &last, &history),
+            "the tenth candidate loses despite whole history: ordinal {}, target {:?}, pending {}, winners {:?}",
+            last.arrival_ordinal,
+            synthetic
+                .before
+                .raw_units
+                .iter()
+                .find(|unit| unit.unit_id == 3010)
+                .and_then(|unit| unit.move_target.as_ref()),
+            synthetic
+                .before
+                .pending_movement_orders
+                .pending_member_counts
+                .contains_key(&3010),
+            super::independent_plain_candidate_winners(&synthetic.before, &history, true),
+        );
+        assert!(
+            !super::plain_candidate_lost_to_tick_budget(
+                &synthetic,
+                3010,
+                &last,
+                &BTreeMap::from([(3010, last.clone())]),
+            ),
+            "ignoring the other nine accepted candidates would incorrectly promote this actor"
+        );
+    }
+
+    #[test]
+    fn validator_counts_direct_plain_winners_before_cohort_dispatch() {
+        let records = automatic_move_log_with_commands(
+            turts_sim::UnitOrders::default(),
+            &[
+                (2, bevy::math::Vec2::new(8.0, 12.0)),
+                (3, bevy::math::Vec2::new(12.0, 8.0)),
+            ],
+            vec![
+                audited_move_command(vec![1], bevy::math::Vec2::new(20.0, 20.0), 0, 1),
+                audited_move_command(vec![2, 3], bevy::math::Vec2::new(30.0, 30.0), 77, 2),
+            ],
+            bevy::math::Vec2::new(8.0, 8.0),
+            1,
+        );
+        let dispatch = records.iter().find_map(|record| match record {
+            EconomyLogRecord::Operation(operation)
+                if operation.unit_id == Some(2)
+                    && operation
+                        .after
+                        .movement_progress
+                        .iter()
+                        .any(|row| row.unit_id == 2)
+                    && operation.after.movement_dispatch.used > 0 =>
+            {
+                Some(operation)
+            }
+            _ => None,
+        });
+        let dispatch = dispatch.expect("the actual mixed command batch dispatches its cohort");
+        assert_eq!(dispatch.after.movement_dispatch.used, 3);
+        let validation = validate_records(&records);
+        assert!(
+            validation.is_ok(),
+            "replay accounts for the prior direct winner in the shared movement cap: {validation:?}"
+        );
+
+        let mut forged = records.clone();
+        let operation = forged
+            .iter_mut()
+            .find_map(|record| match record {
+                EconomyLogRecord::Operation(operation)
+                    if operation.operation_id == dispatch.operation_id =>
+                {
+                    Some(operation)
+                }
+                _ => None,
+            })
+            .unwrap();
+        operation.after.movement_dispatch.used = 2;
+        assert!(
+            validate_records(&forged)
+                .unwrap_err()
+                .contains("movement dispatch"),
+            "the replay rejects a forged shared-cap count that omits the direct winner"
+        );
+    }
+
+    #[test]
+    fn validator_reconciles_direct_winners_between_or_after_cohort_dispatches() {
+        let interleaved = automatic_move_log_with_commands(
+            turts_sim::UnitOrders::default(),
+            &[
+                (2, bevy::math::Vec2::new(8.0, 12.0)),
+                (3, bevy::math::Vec2::new(12.0, 8.0)),
+                (4, bevy::math::Vec2::new(12.0, 12.0)),
+                (5, bevy::math::Vec2::new(16.0, 8.0)),
+            ],
+            vec![
+                audited_move_command(vec![1, 2], bevy::math::Vec2::new(24.0, 24.0), 77, 1),
+                audited_move_command(vec![3], bevy::math::Vec2::new(28.0, 24.0), 0, 2),
+                audited_move_command(vec![4, 5], bevy::math::Vec2::new(32.0, 24.0), 88, 3),
+            ],
+            bevy::math::Vec2::new(8.0, 8.0),
+            1,
+        );
+        let second_group = interleaved
+            .iter()
+            .find_map(|record| match record {
+                EconomyLogRecord::Operation(operation)
+                    if operation.unit_id == Some(4)
+                        && operation
+                            .after
+                            .movement_progress
+                            .iter()
+                            .any(|row| row.unit_id == 4)
+                        && operation.before.movement_dispatch.used == 3 =>
+                {
+                    Some(operation)
+                }
+                _ => None,
+            })
+            .expect("the second cohort starts after the intervening direct winner");
+        assert_eq!(second_group.after.movement_dispatch.used, 5);
+        let validation = validate_records(&interleaved);
+        assert!(
+            validation.is_ok(),
+            "replay accounts for an unrecorded direct winner between captured cohorts: {validation:?}"
+        );
+        let mut forged_interleaved = interleaved.clone();
+        let operation = forged_interleaved
+            .iter_mut()
+            .find_map(|record| match record {
+                EconomyLogRecord::Operation(operation)
+                    if operation.operation_id == second_group.operation_id =>
+                {
+                    Some(operation)
+                }
+                _ => None,
+            })
+            .unwrap();
+        operation.before.movement_dispatch.used = 2;
+        let forged_interleaved_error = validate_records(&forged_interleaved).unwrap_err();
+        assert!(
+            forged_interleaved_error.contains("direct-winner accounting mismatch"),
+            "the replay rejects an inter-cohort before-state that omits the direct winner: {forged_interleaved_error}"
+        );
+
+        let ordinary_order = turts_sim::UnitOrders {
+            current: Some(turts_sim::Order {
+                order: turts_mod_api::ContentId::parse("fixture:move").unwrap(),
+                behaviour: turts_mod_api::Behaviour::Move,
+                target: turts_sim::OrderTargetSim::Point(bevy::math::Vec2::new(12.1, 8.0)),
+                group: 31,
+            }),
+            ..Default::default()
+        };
+        let bridged_ordinary = automatic_move_log_with_pending_on_map(
+            turts_sim::UnitOrders::default(),
+            &[
+                (2, bevy::math::Vec2::new(8.0, 12.0)),
+                (3, bevy::math::Vec2::new(12.0, 8.0)),
+                (4, bevy::math::Vec2::new(12.0, 12.0)),
+                (5, bevy::math::Vec2::new(16.0, 8.0)),
+                (6, bevy::math::Vec2::new(16.0, 12.0)),
+                (9, bevy::math::Vec2::new(20.0, 8.0)),
+            ],
+            vec![
+                audited_move_command(vec![1, 2], bevy::math::Vec2::new(24.0, 24.0), 77, 1),
+                audited_move_command(vec![6], bevy::math::Vec2::new(28.0, 24.0), 0, 2),
+                audited_move_command(vec![4, 5], bevy::math::Vec2::new(32.0, 24.0), 88, 3),
+            ],
+            bevy::math::Vec2::new(8.0, 8.0),
+            1,
+            bevy::math::Vec2::new(64.0, 64.0),
+            0.5,
+            &[(3, ordinary_order)],
+            &[(3, bevy::math::Vec2::new(12.1, 8.0))],
+            &[],
+            Vec::new(),
+            None,
+            None,
+            None,
+            None,
+        );
+        let ordinary_operation = bridged_ordinary
+            .iter()
+            .find_map(|record| match record {
+                EconomyLogRecord::Operation(operation)
+                    if operation.unit_id == Some(3)
+                        && unit_orders_for(&operation.before, 3)
+                            .current
+                            .as_ref()
+                            .is_some_and(|order| {
+                                order.target
+                                    == turts_sim::OrderTargetSim::Point(bevy::math::Vec2::new(
+                                        12.1, 8.0,
+                                    ))
+                            })
+                        && unit_orders_for(&operation.after, 3).current.is_none() =>
+                {
+                    Some(operation)
+                }
+                _ => None,
+            })
+            .expect("the completed prior Move records its ordinary completion");
+        assert!(ordinary_operation.before.movement_dispatch.used >= 3);
+        assert_eq!(
+            ordinary_operation.before.movement_dispatch.used,
+            ordinary_operation.after.movement_dispatch.used
+        );
+        let ordinary_validation = validate_records(&bridged_ordinary);
+        assert!(
+            ordinary_validation.is_ok(),
+            "the direct winner is reconciled before the ordinary follow-refresh operation: {ordinary_validation:?}"
+        );
+        let mut forged_ordinary = bridged_ordinary.clone();
+        let ordinary = forged_ordinary
+            .iter_mut()
+            .find_map(|record| match record {
+                EconomyLogRecord::Operation(operation)
+                    if operation.operation_id == ordinary_operation.operation_id =>
+                {
+                    Some(operation)
+                }
+                _ => None,
+            })
+            .unwrap();
+        ordinary.before.movement_dispatch.used = 2;
+        let forged_ordinary_error = validate_records(&forged_ordinary).unwrap_err();
+        assert!(
+            forged_ordinary_error.contains("discontinuous"),
+            "the ordinary-operation bridge remains tied to the preceding exact snapshot: {forged_ordinary_error}"
+        );
+
+        let prior_cohort = audited_move_command(vec![1], bevy::math::Vec2::new(24.0, 24.0), 77, 1);
+        let later_candidate =
+            audited_move_command(vec![2], bevy::math::Vec2::new(28.0, 24.0), 0, 2);
+        let later_tick_plain = automatic_move_log_with_pending_on_map(
+            turts_sim::UnitOrders::default(),
+            &[(2, bevy::math::Vec2::new(12.0, 8.0))],
+            vec![prior_cohort],
+            bevy::math::Vec2::new(8.0, 8.0),
+            2,
+            bevy::math::Vec2::new(64.0, 64.0),
+            0.5,
+            &[],
+            &[],
+            &[],
+            vec![later_candidate],
+            None,
+            None,
+            None,
+            None,
+        );
+        let later_tick_state = later_tick_plain
+            .iter()
+            .find_map(|record| match record {
+                EconomyLogRecord::Tick { tick: 3, state, .. } => Some(state),
+                _ => None,
+            })
+            .expect("the later direct singleton has a Tick 3 result");
+        assert_eq!(later_tick_state.movement_dispatch.tick, Some(3));
+        assert_eq!(later_tick_state.movement_dispatch.used, 1);
+        let later_tick_validation = validate_records(&later_tick_plain);
+        assert!(
+            later_tick_validation.is_ok(),
+            "a direct singleton after a prior cohort is accounted on the next tick: {later_tick_validation:?}"
+        );
+        let mut forged_later_tick = later_tick_plain.clone();
+        let tick = forged_later_tick
+            .iter_mut()
+            .find_map(|record| match record {
+                EconomyLogRecord::Tick { tick: 3, state, .. } => Some(state),
+                _ => None,
+            })
+            .unwrap();
+        tick.movement_dispatch.used = 0;
+        let forged_later_tick_error = validate_records(&forged_later_tick).unwrap_err();
+        assert!(
+            forged_later_tick_error.contains("direct-winner accounting mismatch"),
+            "the later-tick bridge rejects a candidate omitted from the shared budget: {forged_later_tick_error}"
+        );
+
+        let mut slot_one_first =
+            audited_move_command(vec![1], bevy::math::Vec2::new(24.0, 24.0), 77, 1);
+        slot_one_first.slot = turts_sim::SlotId(1);
+        let mut slot_one_second =
+            audited_move_command(vec![2], bevy::math::Vec2::new(28.0, 24.0), 88, 2);
+        slot_one_second.slot = turts_sim::SlotId(1);
+        let mut slot_two_candidate =
+            audited_move_command(vec![3], bevy::math::Vec2::new(32.0, 24.0), 0, 3);
+        slot_two_candidate.slot = turts_sim::SlotId(2);
+        let cross_slot = automatic_move_log_with_pending_on_map(
+            turts_sim::UnitOrders::default(),
+            &[
+                (2, bevy::math::Vec2::new(12.0, 8.0)),
+                (3, bevy::math::Vec2::new(12.0, 12.0)),
+            ],
+            vec![slot_one_first, slot_one_second, slot_two_candidate],
+            bevy::math::Vec2::new(8.0, 8.0),
+            1,
+            bevy::math::Vec2::new(64.0, 64.0),
+            0.5,
+            &[],
+            &[],
+            &[(1, 1), (2, 1), (3, 2)],
+            Vec::new(),
+            None,
+            None,
+            None,
+            None,
+        );
+        let slot_one_second_dispatch = cross_slot
+            .iter()
+            .find_map(|record| match record {
+                EconomyLogRecord::Operation(operation)
+                    if operation.unit_id == Some(2)
+                        && operation
+                            .after
+                            .movement_progress
+                            .iter()
+                            .any(|row| row.unit_id == 2) =>
+                {
+                    Some(operation)
+                }
+                _ => None,
+            })
+            .expect("the second slot-one cohort dispatch is captured");
+        assert_eq!(
+            slot_one_second_dispatch.before.movement_dispatch.start_slot,
+            1
+        );
+        assert_eq!(slot_one_second_dispatch.before.movement_dispatch.used, 1);
+        assert_eq!(slot_one_second_dispatch.after.movement_dispatch.used, 2);
+        let cross_slot_final = cross_slot
+            .iter()
+            .find_map(|record| match record {
+                EconomyLogRecord::Tick { tick: 2, state, .. } => Some(state),
+                _ => None,
+            })
+            .unwrap();
+        assert_eq!(cross_slot_final.movement_dispatch.used, 3);
+        let cross_slot_validation = validate_records(&cross_slot);
+        assert!(
+            cross_slot_validation.is_ok(),
+            "an active tick reuses its true start slot while processing another slot's candidate: {cross_slot_validation:?}"
+        );
+
+        let trailing = automatic_move_log_with_commands(
+            turts_sim::UnitOrders::default(),
+            &[
+                (2, bevy::math::Vec2::new(8.0, 12.0)),
+                (3, bevy::math::Vec2::new(12.0, 8.0)),
+            ],
+            vec![
+                audited_move_command(vec![1, 2], bevy::math::Vec2::new(24.0, 24.0), 77, 1),
+                audited_move_command(vec![3], bevy::math::Vec2::new(28.0, 24.0), 0, 2),
+            ],
+            bevy::math::Vec2::new(8.0, 8.0),
+            1,
+        );
+        let terminal_state = trailing
+            .iter()
+            .find_map(|record| match record {
+                EconomyLogRecord::Tick { state, .. } if state.movement_dispatch.used == 3 => {
+                    Some(state)
+                }
+                _ => None,
+            })
+            .expect("the Tick record includes the trailing direct winner");
+        let validation = validate_records(&trailing);
+        assert!(
+            validation.is_ok(),
+            "replay accounts for an unrecorded direct winner after the final cohort: {validation:?}"
+        );
+        let mut forged_trailing = trailing.clone();
+        let state = forged_trailing
+            .iter_mut()
+            .find_map(|record| match record {
+                EconomyLogRecord::Tick { state, .. }
+                    if state.movement_dispatch.tick == terminal_state.movement_dispatch.tick =>
+                {
+                    Some(state)
+                }
+                _ => None,
+            })
+            .unwrap();
+        state.movement_dispatch.used = 2;
+        assert!(
+            validate_records(&forged_trailing)
+                .unwrap_err()
+                .contains("direct-winner accounting mismatch"),
+            "the Tick bridge rejects a trailing direct winner omitted from the cap count"
+        );
+    }
+
+    #[test]
+    fn validator_rejects_premature_direct_grants_inside_legacy_and_modern_command_spans() {
+        for (label, mut records, is_legacy) in [
+            (
+                "legacy MoveTo boundary",
+                actual_plain_candidate_cap_log(2),
+                true,
+            ),
+            (
+                "modern Order span",
+                actual_plain_candidate_cap_log(0),
+                false,
+            ),
+        ] {
+            let command_id = records
+                .iter()
+                .find_map(|record| match record {
+                    EconomyLogRecord::CommandBoundary(command)
+                        if if is_legacy {
+                            matches!(command.input.kind, turts_sim::CommandKind::MoveTo { .. })
+                        } else {
+                            matches!(command.input.kind, turts_sim::CommandKind::Order(_))
+                        } =>
+                    {
+                        Some(command.operation_id)
+                    }
+                    _ => None,
+                })
+                .expect("the command boundary is recorded");
+            let operation = records
+                .iter_mut()
+                .find_map(|record| match record {
+                    EconomyLogRecord::Operation(operation)
+                        if operation.operation_id == command_id =>
+                    {
+                        Some(operation)
+                    }
+                    _ => None,
+                })
+                .expect("the command has its captured operation start");
+            assert_eq!(operation.before.movement_dispatch.used, 2047);
+            operation.after.movement_dispatch.used += 1;
+            let error = validate_records(&records).expect_err(label);
+            let rejected_at_boundary = if is_legacy {
+                error.contains("command/operation state mismatch")
+            } else {
+                error.contains("changed scheduler or movement pool state")
+            };
+            assert!(
+                rejected_at_boundary,
+                "a direct winner cannot be granted inside the {label}: {error}"
+            );
+        }
+    }
+
+    #[test]
+    fn validator_does_not_reconcile_winners_before_later_legacy_or_modern_commands() {
+        for (action, is_legacy) in [(9, false), (10, true)] {
+            let records = actual_plain_candidate_cap_log(action);
+            let validation = validate_records(&records);
+            assert!(
+                validation.is_ok(),
+                "accepted candidate remains ungranted until Orders dispatch during command span {action}: {validation:?}"
+            );
+            let command = records
+                .iter()
+                .find_map(|record| match record {
+                    EconomyLogRecord::CommandBoundary(command)
+                        if if is_legacy {
+                            matches!(command.input.kind, turts_sim::CommandKind::MoveTo { .. })
+                        } else {
+                            matches!(&command.input.kind,
+                                turts_sim::CommandKind::Order(order)
+                                    if order.units == [1] && order.queue == turts_sim::QueueMode::Append)
+                        } =>
+                    {
+                        Some(command)
+                    }
+                    _ => None,
+                })
+                .expect("the later command boundary is present");
+            let operation = records
+                .iter()
+                .find_map(|record| match record {
+                    EconomyLogRecord::Operation(operation)
+                        if operation.operation_id == command.operation_id =>
+                    {
+                        Some(operation)
+                    }
+                    _ => None,
+                })
+                .expect("the later command has an operation start");
+            if !is_legacy {
+                assert_eq!(
+                    operation.phase,
+                    turts_sim::economy::transaction::AuditPhase::Orders,
+                    "the modern command has a captured Orders operation"
+                );
+            }
+            assert!(
+                operation
+                    .before
+                    .pending_movement_orders
+                    .pending_member_counts
+                    .contains_key(&1)
+            );
+            assert_eq!(operation.before.movement_dispatch.used, 2046);
+            assert_eq!(
+                operation.after.movement_dispatch.used, operation.before.movement_dispatch.used,
+                "command operations do not grant an earlier candidate"
+            );
+        }
+    }
+
+    #[test]
+    fn validator_rejects_premature_grant_in_modern_command_before_state() {
+        let mut records = actual_plain_candidate_cap_log(11);
+        assert!(validate_records(&records).is_ok());
+        let command_index = records
+            .iter()
+            .position(|record| {
+                matches!(record,
+                EconomyLogRecord::CommandBoundary(command)
+                    if matches!(&command.input.kind,
+                        turts_sim::CommandKind::Order(order)
+                            if order.units == [1] && order.queue == turts_sim::QueueMode::Append))
+            })
+            .expect("the later modern command is present");
+        let command_id = match &records[command_index] {
+            EconomyLogRecord::CommandBoundary(command) => command.operation_id,
+            _ => unreachable!(),
+        };
+        let operation_index = records
+            .iter()
+            .position(|record| {
+                matches!(record,
+                EconomyLogRecord::Operation(operation)
+                    if operation.operation_id == command_id)
+            })
+            .expect("the modern command operation is present");
+        let operation = match &records[operation_index] {
+            EconomyLogRecord::Operation(operation) => operation,
+            _ => unreachable!(),
+        };
+        assert_eq!(
+            operation.phase,
+            turts_sim::economy::transaction::AuditPhase::Orders
+        );
+        assert_eq!(operation.before.movement_dispatch.used, 2047);
+        assert!(operation.before.pending_movement_orders.queues.is_empty());
+
+        let grant = |state: &mut AuditState| {
+            state.movement_dispatch.used = 2048;
+            state.movement_dispatch.cursor_advanced = true;
+            state.pending_movement_orders.next_slot = 1;
+        };
+        match &mut records[command_index] {
+            EconomyLogRecord::CommandBoundary(command) => {
+                grant(&mut command.before);
+                grant(&mut command.after);
+            }
+            _ => unreachable!(),
+        }
+        match &mut records[operation_index] {
+            EconomyLogRecord::Operation(operation) => {
+                grant(&mut operation.before);
+                grant(&mut operation.after);
+            }
+            _ => unreachable!(),
+        }
+        records.truncate(operation_index + 1);
+        let error = validate_records(&records).expect_err("grant before accepted command");
+        assert!(
+            error.contains("orders operation before snapshot is discontinuous"),
+            "the command boundary must reject a scheduler grant before its operation: {error}"
+        );
     }
 
     #[test]
@@ -9268,6 +13962,90 @@ mod tests {
                 .as_ref()
                 .map(|failure| failure.order.clone()),
             Some(turts_mod_api::ContentId::parse("fixture:move").unwrap())
+        );
+
+        let blocked_ack = authored
+            .iter()
+            .find_map(|record| match record {
+                EconomyLogRecord::Operation(operation)
+                    if operation.unit_id == Some(1)
+                        && operation.before.plain_movement_progress.iter().any(|row| {
+                            row.unit_id == 1
+                                && row.progress.activity
+                                    == turts_sim::movement::MovementActivity::Blocked
+                                && !row.progress.failure_recorded
+                        }) =>
+                {
+                    Some(operation.clone())
+                }
+                _ => None,
+            })
+            .expect("the actual authored A Blocked acknowledgement is retained");
+        let mut replayed_identities = std::collections::BTreeMap::new();
+        for record in &authored {
+            if let EconomyLogRecord::CommandBoundary(command) = record {
+                super::update_plain_move_identities(command, &mut replayed_identities);
+            }
+            if matches!(record,
+                EconomyLogRecord::Operation(operation)
+                    if operation.operation_id == blocked_ack.operation_id)
+            {
+                break;
+            }
+        }
+        let identity = replayed_identities
+            .get(&1)
+            .expect("the accepted authored A identity comes from command history")
+            .clone();
+        let mut prior_waiting_for_legacy_b = blocked_ack.clone();
+        let pending_b = turts_sim::orders::PendingMovementOrder {
+            slot: turts_sim::SlotId(0),
+            accepted_tick: blocked_ack.before.economy.tick,
+            seq: 2,
+            group: 0,
+            pool_id: 0,
+            point: bevy::math::Vec2::new(40.0, 40.0),
+            unit_ids: vec![1, 2],
+            order: None,
+            member_orders: std::collections::BTreeMap::new(),
+            plain: true,
+        };
+        assert!(
+            prior_waiting_for_legacy_b
+                .before
+                .pending_movement_orders
+                .queue(pending_b.clone())
+        );
+        assert!(
+            prior_waiting_for_legacy_b
+                .after
+                .pending_movement_orders
+                .queue(pending_b)
+        );
+        let ack_replay = super::validate_automatic_order_operation(
+            &prior_waiting_for_legacy_b,
+            Some(&identity),
+            None,
+            &std::collections::BTreeMap::new(),
+            true,
+        );
+        assert!(
+            ack_replay.is_ok(),
+            "the actual old-A failure remains an acknowledgment while legacy B is Pending: {ack_replay:?}"
+        );
+        let mut wrong_identity = identity;
+        wrong_identity.order = turts_mod_api::ContentId::parse("fixture:forged-a").unwrap();
+        let wrong_identity_error = super::validate_automatic_order_operation(
+            &prior_waiting_for_legacy_b,
+            Some(&wrong_identity),
+            None,
+            &std::collections::BTreeMap::new(),
+            true,
+        )
+        .expect_err("replay rejects a forged old-A identity while B waits");
+        assert!(
+            wrong_identity_error.contains("plain movement Blocked acknowledgement"),
+            "the prior execution identity remains independently checked: {wrong_identity_error}"
         );
 
         let previous_hold = turts_sim::UnitOrders {

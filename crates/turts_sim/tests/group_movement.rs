@@ -105,6 +105,900 @@ fn send_order(
         });
 }
 
+#[test]
+fn authored_singleton_obeys_shared_oversized_head_budget_in_both_arrival_orders() {
+    for prior_active_move in [false, true] {
+        for candidate_first in [false, true] {
+            let positions: Vec<_> = (0..2049)
+                .map(|index| {
+                    (
+                        2.0 + (index % 63) as f32 * 2.0,
+                        2.0 + (index / 63) as f32 * 2.0,
+                    )
+                })
+                .collect();
+            let owners = vec![0; 2049];
+            let mut app =
+                app_with_units_on(&positions, &owners, MapSize { x: 128.0, y: 128.0 }, 0.5);
+            if prior_active_move {
+                let entity = app
+                    .world_mut()
+                    .iter_entities()
+                    .find(|entity| {
+                        entity
+                            .get::<turts_sim::UnitId>()
+                            .is_some_and(|id| id.0 == 2049)
+                    })
+                    .unwrap()
+                    .id();
+                app.world_mut().entity_mut(entity).insert((
+                    MoveTarget(Vec2::new(70.0, 66.0)),
+                    UnitOrders {
+                        current: Some(turts_sim::Order {
+                            order: turts_mod_api::ContentId::parse("fixture_pkg:move").unwrap(),
+                            behaviour: turts_mod_api::Behaviour::Move,
+                            target: OrderTargetSim::Point(Vec2::new(70.0, 66.0)),
+                            group: 0,
+                        }),
+                        ..Default::default()
+                    },
+                ));
+            }
+            let group_ids: Vec<_> = (1..=2048).collect();
+            if candidate_first {
+                send_order(
+                    &mut app,
+                    0,
+                    vec![2049],
+                    Vec2::new(120.0, 120.0),
+                    0,
+                    QueueMode::Replace,
+                );
+            }
+            send_order(
+                &mut app,
+                0,
+                group_ids,
+                Vec2::new(80.0, 80.0),
+                1,
+                QueueMode::Replace,
+            );
+            if !candidate_first {
+                send_order(
+                    &mut app,
+                    0,
+                    vec![2049],
+                    Vec2::new(120.0, 120.0),
+                    0,
+                    QueueMode::Replace,
+                );
+            }
+            send_hold(&mut app, 0, 2049, QueueMode::Append);
+            // Arrival order, not numeric command sequence, determines the slot FIFO.
+            {
+                let mut commands = app.world_mut().resource_mut::<CommandQueue>();
+                let candidate_seq = if candidate_first { 99 } else { 1 };
+                let group_seq = if candidate_first { 1 } else { 99 };
+                for command in &mut commands.0 {
+                    if let CommandKind::Order(order) = &command.kind {
+                        if order.units == [2049] {
+                            command.seq = candidate_seq;
+                        } else if order.units.len() == 2048 {
+                            command.seq = group_seq;
+                        }
+                    }
+                }
+            }
+            let initial_candidate_pos = positions[2048];
+            app.update();
+
+            let candidate = snapshot(app.world_mut())
+                .into_iter()
+                .find(|unit| unit.unit_id == 2049)
+                .unwrap();
+            if candidate_first {
+                assert!(candidate.pos.distance(Vec2::from(initial_candidate_pos)) <= 0.150_001);
+                assert_ne!(candidate.pos, Vec2::from(initial_candidate_pos));
+            } else if prior_active_move {
+                assert_eq!(
+                    candidate.pos,
+                    Vec2::from(initial_candidate_pos) + Vec2::new(0.15, 0.0),
+                    "the retained prior Move continues while its replacement waits"
+                );
+            } else {
+                assert_eq!(candidate.pos, Vec2::from(initial_candidate_pos));
+            }
+            let entity = app
+                .world_mut()
+                .iter_entities()
+                .find(|entity| {
+                    entity
+                        .get::<turts_sim::UnitId>()
+                        .is_some_and(|id| id.0 == 2049)
+                })
+                .unwrap()
+                .id();
+            assert!(
+                app.world()
+                    .resource::<turts_sim::orders::PendingMovementOrders>()
+                    .pending_member_counts
+                    .contains_key(&2049)
+                    == !candidate_first,
+                "slot arrival order determines which envelope waits"
+            );
+            if !candidate_first && prior_active_move {
+                assert_eq!(
+                    app.world().entity(entity).get::<MoveTarget>(),
+                    Some(&MoveTarget(Vec2::new(70.0, 66.0))),
+                    "a waiting replacement restores the previous execution target"
+                );
+                assert_eq!(
+                    app.world()
+                        .entity(entity)
+                        .get::<UnitOrders>()
+                        .unwrap()
+                        .current
+                        .as_ref()
+                        .map(|order| order.target.clone()),
+                    Some(OrderTargetSim::Point(Vec2::new(70.0, 66.0)))
+                );
+            } else if !candidate_first {
+                assert!(app.world().entity(entity).get::<MoveTarget>().is_none());
+            } else {
+                assert_eq!(
+                    app.world().entity(entity).get::<MoveTarget>(),
+                    Some(&MoveTarget(Vec2::new(120.0, 120.0)))
+                );
+            }
+            assert_eq!(
+                app.world()
+                    .entity(entity)
+                    .get::<UnitOrders>()
+                    .unwrap()
+                    .queue
+                    .iter()
+                    .map(|order| order.behaviour)
+                    .collect::<Vec<_>>(),
+                vec![turts_mod_api::Behaviour::Hold],
+                "an Append accepted behind the reservation survives promotion"
+            );
+            assert!(
+                app.world()
+                    .entity(entity)
+                    .get::<turts_sim::movement::MoveProgress>()
+                    .is_none()
+            );
+            assert_eq!(
+                app.world()
+                    .resource::<turts_sim::orders::MovementDispatchState>()
+                    .used,
+                if candidate_first { 1 } else { 2048 }
+            );
+        }
+    }
+}
+
+#[test]
+fn unopposed_authored_singleton_keeps_its_command_only_audit_shape() {
+    let mut app = app_with_units(&[(8.0, 8.0)], &[0]);
+    app.world_mut()
+        .resource_mut::<turts_sim::AuditTrail>()
+        .enable();
+    send_order(
+        &mut app,
+        0,
+        vec![1],
+        Vec2::new(12.0, 8.0),
+        0,
+        QueueMode::Replace,
+    );
+    app.update();
+
+    let trail = app.world().resource::<turts_sim::AuditTrail>();
+    assert_eq!(trail.commands.len(), 1);
+    assert_eq!(
+        trail.operations.len(),
+        1,
+        "one command operation is expected"
+    );
+    assert_eq!(
+        trail.operations[0].phase,
+        turts_sim::economy::transaction::AuditPhase::Command,
+        "the plain move adds no Orders-phase operation"
+    );
+    assert!(
+        app.world()
+            .resource::<turts_sim::orders::MovementDispatchState>()
+            .is_default(),
+        "a plain-only tick keeps default-omitted audit scheduler state"
+    );
+    assert!(
+        app.world()
+            .resource::<turts_sim::orders::PendingMovementOrders>()
+            .is_empty()
+    );
+    let mover = snapshot(app.world_mut()).pop().unwrap();
+    assert!(mover.pos.x > 8.0 && mover.pos.x <= 8.150_001);
+}
+
+#[test]
+fn authored_singleton_reserves_pending_admission_capacity_before_acceptance() {
+    let mut app = app_with_units(&[(8.0, 8.0)], &[0]);
+    let fake_members: Vec<_> = (10_000..26_384).collect();
+    let request = turts_sim::orders::PendingMovementOrder {
+        slot: SlotId(0),
+        accepted_tick: 0,
+        seq: 1,
+        group: 9,
+        pool_id: 0,
+        point: Vec2::new(20.0, 20.0),
+        unit_ids: fake_members,
+        order: None,
+        member_orders: Default::default(),
+        plain: false,
+    };
+    assert!(
+        app.world_mut()
+            .resource_mut::<turts_sim::orders::PendingMovementOrders>()
+            .queue(request)
+    );
+    send_order(
+        &mut app,
+        0,
+        vec![1],
+        Vec2::new(12.0, 8.0),
+        0,
+        QueueMode::Replace,
+    );
+    app.update();
+
+    let result = &app.world().resource::<CommandResults>().0[0];
+    assert_eq!(result.outcome, Err(RejectReason::RateLimited));
+    assert_eq!(result.units.refused, vec![(1, RejectReason::RateLimited)]);
+    assert!(
+        app.world_mut()
+            .iter_entities()
+            .find(|entity| {
+                entity
+                    .get::<turts_sim::UnitId>()
+                    .is_some_and(|id| id.0 == 1)
+            })
+            .unwrap()
+            .get::<MoveTarget>()
+            .is_none()
+    );
+}
+
+#[test]
+fn unit_target_move_waits_for_cap_and_samples_live_target_at_activation() {
+    let positions: Vec<_> = (0..2050)
+        .map(|index| {
+            (
+                2.0 + (index % 63) as f32 * 2.0,
+                2.0 + (index / 63) as f32 * 2.0,
+            )
+        })
+        .collect();
+    let mut owners = vec![0; 2050];
+    owners[2049] = 1;
+    let mut app = app_with_units_on(&positions, &owners, MapSize { x: 128.0, y: 128.0 }, 0.5);
+    let before = snapshot(app.world_mut());
+    let mover_before = before.iter().find(|unit| unit.unit_id == 2049).unwrap().pos;
+    let group_ids: Vec<_> = (1..=2048).collect();
+    send_order(
+        &mut app,
+        0,
+        group_ids,
+        Vec2::new(80.0, 80.0),
+        1,
+        QueueMode::Replace,
+    );
+    send_unit_move(&mut app, 0, 2049, 2050, QueueMode::Replace);
+    app.update();
+    assert!(
+        app.world()
+            .resource::<turts_sim::orders::PendingMovementOrders>()
+            .pending_member_counts
+            .contains_key(&2049),
+        "the live Unit-target envelope waits behind the full 2048-member head"
+    );
+    assert_eq!(
+        snapshot(app.world_mut())
+            .iter()
+            .find(|unit| unit.unit_id == 2049)
+            .unwrap()
+            .pos,
+        mover_before,
+        "a waiting Unit-target move does not move at the stale admission point"
+    );
+
+    let target_entity = app
+        .world_mut()
+        .iter_entities()
+        .find(|entity| {
+            entity
+                .get::<turts_sim::UnitId>()
+                .is_some_and(|id| id.0 == 2050)
+        })
+        .unwrap()
+        .id();
+    app.world_mut()
+        .entity_mut(target_entity)
+        .get_mut::<turts_sim::Position>()
+        .unwrap()
+        .0 = Vec2::new(10.0, 110.0);
+    app.update();
+    assert!(
+        !app.world()
+            .resource::<turts_sim::orders::PendingMovementOrders>()
+            .pending_member_counts
+            .contains_key(&2049),
+        "the waiting Unit-target envelope activates on its later turn"
+    );
+    let mover_entity = app
+        .world_mut()
+        .iter_entities()
+        .find(|entity| {
+            entity
+                .get::<turts_sim::UnitId>()
+                .is_some_and(|id| id.0 == 2049)
+        })
+        .unwrap()
+        .id();
+    let mover = app.world().entity(mover_entity);
+    assert_eq!(
+        mover
+            .get::<UnitOrders>()
+            .unwrap()
+            .current
+            .as_ref()
+            .map(|order| order.target.clone()),
+        Some(OrderTargetSim::Unit(2050)),
+        "activation preserves the live Unit target identity"
+    );
+    let progress = mover
+        .get::<turts_sim::movement::MoveProgress>()
+        .expect("the Unit-target order receives a spread slot");
+    let pool = app
+        .world()
+        .resource::<turts_sim::movement::MovementPools>()
+        .0
+        .get(&progress.pool_id)
+        .unwrap();
+    assert_eq!(pool.point, Vec2::new(10.0, 110.0));
+    app.world_mut()
+        .entity_mut(target_entity)
+        .get_mut::<turts_sim::Position>()
+        .unwrap()
+        .0 = Vec2::new(10.0, 115.0);
+    app.update();
+    let mover = app.world().entity(mover_entity);
+    assert!(
+        mover.get::<turts_sim::movement::MoveProgress>().is_none(),
+        "a real follow-target change reopens direct following from the previous slot"
+    );
+    assert!(
+        mover
+            .get::<turts_sim::movement::PlainMoveProgress>()
+            .is_some_and(|progress| {
+                progress.original_point.distance(Vec2::new(10.0, 115.0)) <= 0.5001
+            })
+            || mover
+                .get::<MoveTarget>()
+                .is_some_and(|target| target.0.distance(Vec2::new(10.0, 115.0)) <= 1.2),
+        "the changed target receives a fresh legal approach or fallback rooted at its new goal: target={:?}, plain={:?}, pos={:?}",
+        mover.get::<MoveTarget>(),
+        mover.get::<turts_sim::movement::PlainMoveProgress>(),
+        mover.get::<turts_sim::Position>()
+    );
+    assert!(
+        app.world()
+            .resource::<turts_sim::orders::PendingMovementOrders>()
+            .pending_member_counts
+            .get(&2049)
+            .is_none(),
+        "ordinary active follow refresh does not recharge the dispatch cap"
+    );
+}
+
+#[test]
+fn merged_unit_follow_keeps_each_members_radius_inset_origin() {
+    let mut app = app_with_units_on(
+        &[(8.0, 8.0), (8.0, 56.0), (0.5, 32.0)],
+        &[0, 0, 1],
+        MapSize { x: 64.0, y: 64.0 },
+        0.5,
+    );
+    let large_type = app
+        .world_mut()
+        .resource_mut::<UnitTypes>()
+        .register_unit_type(
+            &PackageId(ORIGIN.to_owned()),
+            UnitDef {
+                id: "large-walker".into(),
+                name: "Large Walker".into(),
+                movement: Some(turts_mod_api::MovementDef { speed: 3.0 }),
+                inventory: None,
+                gatherer: None,
+                drop_off: None,
+                producer: None,
+                footprint: Footprint::Circle { radius: 1.0 },
+                output_inventory: None,
+                extractor: None,
+                conveyor: None,
+                inserter: None,
+                machine: None,
+                research: None,
+                health: None,
+                weapon: None,
+                removal: None,
+            },
+        )
+        .unwrap();
+    let large_entity = app
+        .world_mut()
+        .iter_entities()
+        .find(|entity| {
+            entity
+                .get::<turts_sim::UnitId>()
+                .is_some_and(|id| id.0 == 2)
+        })
+        .unwrap()
+        .id();
+    app.world_mut()
+        .entity_mut(large_entity)
+        .insert(turts_sim::UnitType(large_type));
+
+    app.world_mut()
+        .resource_mut::<CommandQueue>()
+        .0
+        .push_back(Command {
+            slot: SlotId(0),
+            seq: 1,
+            kind: CommandKind::Order(Box::new(OrderCommand {
+                order: turts_mod_api::ContentId::parse("fixture_pkg:move").unwrap(),
+                behaviour: turts_mod_api::Behaviour::Move,
+                target_kind: turts_mod_api::TargetKind::PointOrUnit,
+                policy: None,
+                units: vec![1, 2],
+                target: OrderTargetSim::Unit(3),
+                queue: QueueMode::Replace,
+                group: 77,
+                allowed_units: Vec::new(),
+                queue_depth: 16,
+            })),
+        });
+    app.update();
+
+    let pool = app
+        .world()
+        .resource::<turts_sim::movement::MovementPools>()
+        .0
+        .values()
+        .next()
+        .expect("the merged Move(Unit) envelope creates one shared pool");
+    assert_eq!(pool.primary_count, 2);
+    assert_eq!(pool.point, Vec2::new(1.0, 32.0));
+    for (unit_id, expected_goal) in [(1, Vec2::new(0.5, 32.0)), (2, Vec2::new(1.0, 32.0))] {
+        let entity = app
+            .world_mut()
+            .iter_entities()
+            .find(|entity| {
+                entity
+                    .get::<turts_sim::UnitId>()
+                    .is_some_and(|id| id.0 == unit_id)
+            })
+            .unwrap()
+            .id();
+        let progress = app
+            .world()
+            .entity(entity)
+            .get::<turts_sim::movement::MoveProgress>()
+            .expect("each member retains its initial spread assignment");
+        assert_eq!(
+            progress.follow_origin,
+            Some(turts_sim::movement::FollowMoveOrigin {
+                target_unit_id: 3,
+                goal: expected_goal,
+            }),
+            "member {unit_id} radius {:?} got {:?}",
+            app.world()
+                .resource::<UnitTypes>()
+                .get(
+                    app.world()
+                        .entity(entity)
+                        .get::<turts_sim::UnitType>()
+                        .unwrap()
+                        .0
+                )
+                .map(|kind| kind.radius),
+            progress.follow_origin
+        );
+        assert_eq!(
+            current_target(&mut app, unit_id),
+            Some(OrderTargetSim::Unit(3))
+        );
+    }
+
+    app.update();
+    for unit_id in [1, 2] {
+        let entity = app
+            .world_mut()
+            .iter_entities()
+            .find(|entity| {
+                entity
+                    .get::<turts_sim::UnitId>()
+                    .is_some_and(|id| id.0 == unit_id)
+            })
+            .unwrap()
+            .id();
+        assert!(
+            app.world()
+                .entity(entity)
+                .get::<turts_sim::movement::MoveProgress>()
+                .is_some(),
+            "same live Unit target must not discard the actor's assigned slot"
+        );
+        assert_eq!(
+            current_target(&mut app, unit_id),
+            Some(OrderTargetSim::Unit(3))
+        );
+    }
+}
+
+#[test]
+fn pending_unit_target_failure_preserves_identity_and_starts_append() {
+    let mut app = app_with_units(&[(8.0, 8.0), (12.0, 8.0)], &[0, 1]);
+    *app.world_mut()
+        .resource_mut::<turts_sim::orders::MovementDispatchState>() =
+        turts_sim::orders::MovementDispatchState {
+            tick: Some(1),
+            start_slot: 0,
+            used: 2048,
+            cursor_advanced: true,
+        };
+    send_unit_move(&mut app, 0, 1, 2, QueueMode::Replace);
+    send_hold(&mut app, 0, 1, QueueMode::Append);
+    app.update();
+    assert!(
+        app.world()
+            .resource::<turts_sim::orders::PendingMovementOrders>()
+            .pending_member_counts
+            .contains_key(&1),
+        "the Unit-target envelope waits under the shared tick budget: tick={:?}, dispatch={:?}, pending={:?}",
+        app.world().resource::<Tick>(),
+        app.world()
+            .resource::<turts_sim::orders::MovementDispatchState>(),
+        app.world()
+            .resource::<turts_sim::orders::PendingMovementOrders>()
+    );
+    let target_entity = app
+        .world_mut()
+        .iter_entities()
+        .find(|entity| {
+            entity
+                .get::<turts_sim::UnitId>()
+                .is_some_and(|id| id.0 == 2)
+        })
+        .unwrap()
+        .id();
+    app.world_mut().entity_mut(target_entity).despawn();
+    app.update();
+    let mover_entity = app
+        .world_mut()
+        .iter_entities()
+        .find(|entity| {
+            entity
+                .get::<turts_sim::UnitId>()
+                .is_some_and(|id| id.0 == 1)
+        })
+        .unwrap()
+        .id();
+    let mover = app.world().entity(mover_entity);
+    let orders = mover.get::<UnitOrders>().unwrap();
+    assert_eq!(
+        orders.last_failure,
+        Some(turts_sim::OrderFailure {
+            order: turts_mod_api::ContentId::parse("fixture_pkg:move").unwrap(),
+            reason: RejectReason::TargetGone,
+            tick: 2,
+        }),
+        "pending activation reports TargetGone under the accepted Move identity"
+    );
+    assert!(
+        orders
+            .current
+            .as_ref()
+            .is_some_and(|order| order.behaviour == turts_mod_api::Behaviour::Hold)
+    );
+    assert!(mover.get::<MoveTarget>().is_none());
+    assert!(
+        !app.world()
+            .resource::<turts_sim::orders::PendingMovementOrders>()
+            .pending_member_counts
+            .contains_key(&1)
+    );
+}
+
+#[test]
+fn pending_replace_keeps_prior_follow_live_and_gates_append_until_activation() {
+    let mut app = app_with_units(&[(8.0, 8.0), (16.0, 8.0)], &[0, 0]);
+    let mover_entity = app
+        .world_mut()
+        .iter_entities()
+        .find(|entity| {
+            entity
+                .get::<turts_sim::UnitId>()
+                .is_some_and(|id| id.0 == 1)
+        })
+        .unwrap()
+        .id();
+    app.world_mut().entity_mut(mover_entity).insert((
+        MoveTarget(Vec2::new(16.0, 8.0)),
+        UnitOrders {
+            current: Some(turts_sim::Order {
+                order: turts_mod_api::ContentId::parse("fixture_pkg:move").unwrap(),
+                behaviour: turts_mod_api::Behaviour::Move,
+                target: OrderTargetSim::Unit(2),
+                group: 0,
+            }),
+            ..Default::default()
+        },
+    ));
+    *app.world_mut()
+        .resource_mut::<turts_sim::orders::MovementDispatchState>() =
+        turts_sim::orders::MovementDispatchState {
+            tick: Some(1),
+            start_slot: 0,
+            used: 2048,
+            cursor_advanced: true,
+        };
+    send_order(
+        &mut app,
+        0,
+        vec![1],
+        Vec2::new(24.0, 24.0),
+        0,
+        QueueMode::Replace,
+    );
+    send_hold(&mut app, 0, 1, QueueMode::Append);
+    let target_entity = app
+        .world_mut()
+        .iter_entities()
+        .find(|entity| {
+            entity
+                .get::<turts_sim::UnitId>()
+                .is_some_and(|id| id.0 == 2)
+        })
+        .unwrap()
+        .id();
+    app.world_mut()
+        .entity_mut(target_entity)
+        .get_mut::<turts_sim::Position>()
+        .unwrap()
+        .0 = Vec2::new(20.0, 8.0);
+
+    app.update();
+
+    let mover = app.world().entity(mover_entity);
+    assert!(
+        app.world()
+            .resource::<turts_sim::orders::PendingMovementOrders>()
+            .pending_member_counts
+            .contains_key(&1),
+        "the replacement waits while the prior execution runs"
+    );
+    assert_eq!(
+        mover
+            .get::<UnitOrders>()
+            .unwrap()
+            .current
+            .as_ref()
+            .map(|order| order.target.clone()),
+        Some(OrderTargetSim::Unit(2)),
+        "the prior Unit-follow order remains current until replacement activation"
+    );
+    let refreshed_target = mover.get::<MoveTarget>().unwrap().0;
+    let moved_follow_target = app
+        .world()
+        .entity(target_entity)
+        .get::<turts_sim::Position>()
+        .unwrap()
+        .0;
+    assert_ne!(refreshed_target, Vec2::new(16.0, 8.0));
+    assert!(
+        (1.0 - 1.0e-4..=1.1 + 1.0e-3).contains(&refreshed_target.distance(moved_follow_target)),
+        "the prior follow refresh selects a legal approach to the moved target: {refreshed_target:?}"
+    );
+    assert_eq!(
+        mover
+            .get::<UnitOrders>()
+            .unwrap()
+            .queue
+            .iter()
+            .map(|order| order.behaviour)
+            .collect::<Vec<_>>(),
+        vec![turts_mod_api::Behaviour::Hold],
+        "the Append remains behind the pending replacement"
+    );
+
+    app.update();
+
+    let mover = app.world().entity(mover_entity);
+    assert!(
+        !app.world()
+            .resource::<turts_sim::orders::PendingMovementOrders>()
+            .pending_member_counts
+            .contains_key(&1),
+        "the replacement activates on its next available turn"
+    );
+    assert_eq!(
+        mover
+            .get::<UnitOrders>()
+            .unwrap()
+            .current
+            .as_ref()
+            .map(|order| order.target.clone()),
+        Some(OrderTargetSim::Point(Vec2::new(24.0, 24.0))),
+        "the replacement becomes current before its Append"
+    );
+    assert_eq!(
+        mover
+            .get::<UnitOrders>()
+            .unwrap()
+            .queue
+            .iter()
+            .map(|order| order.behaviour)
+            .collect::<Vec<_>>(),
+        vec![turts_mod_api::Behaviour::Hold],
+        "the Append is still queued after replacement activation"
+    );
+}
+
+#[test]
+fn pending_replace_allows_prior_completion_without_advancing_append() {
+    let mut app = app_with_units(&[(8.0, 8.0)], &[0]);
+    let mover_entity = app
+        .world_mut()
+        .iter_entities()
+        .find(|entity| {
+            entity
+                .get::<turts_sim::UnitId>()
+                .is_some_and(|id| id.0 == 1)
+        })
+        .unwrap()
+        .id();
+    app.world_mut().entity_mut(mover_entity).insert((
+        MoveTarget(Vec2::new(8.1, 8.0)),
+        UnitOrders {
+            current: Some(turts_sim::Order {
+                order: turts_mod_api::ContentId::parse("fixture_pkg:move").unwrap(),
+                behaviour: turts_mod_api::Behaviour::Move,
+                target: OrderTargetSim::Point(Vec2::new(8.1, 8.0)),
+                group: 0,
+            }),
+            ..Default::default()
+        },
+    ));
+    *app.world_mut()
+        .resource_mut::<turts_sim::orders::MovementDispatchState>() =
+        turts_sim::orders::MovementDispatchState {
+            tick: Some(1),
+            start_slot: 0,
+            used: 2048,
+            cursor_advanced: true,
+        };
+    send_order(
+        &mut app,
+        0,
+        vec![1],
+        Vec2::new(24.0, 24.0),
+        0,
+        QueueMode::Replace,
+    );
+    send_hold(&mut app, 0, 1, QueueMode::Append);
+
+    app.update();
+
+    *app.world_mut()
+        .resource_mut::<turts_sim::orders::MovementDispatchState>() =
+        turts_sim::orders::MovementDispatchState {
+            tick: Some(2),
+            start_slot: 0,
+            used: 2048,
+            cursor_advanced: true,
+        };
+    app.update();
+
+    let mover = app.world().entity(mover_entity);
+    assert!(
+        app.world()
+            .resource::<turts_sim::orders::PendingMovementOrders>()
+            .pending_member_counts
+            .contains_key(&1)
+    );
+    assert!(
+        mover.get::<MoveTarget>().is_none(),
+        "the prior Move completes normally"
+    );
+    let orders = mover.get::<UnitOrders>().unwrap();
+    assert!(
+        orders.current.is_none(),
+        "the completed prior Move becomes idle during Pending: current={:?}, target={:?}, progress={:?}, pending={:?}",
+        orders.current,
+        mover.get::<MoveTarget>(),
+        mover.get::<turts_sim::movement::PlainMoveProgress>(),
+        app.world()
+            .resource::<turts_sim::orders::PendingMovementOrders>()
+    );
+    assert_eq!(
+        orders
+            .queue
+            .iter()
+            .map(|order| order.behaviour)
+            .collect::<Vec<_>>(),
+        vec![turts_mod_api::Behaviour::Hold],
+        "the Append remains behind the waiting replacement"
+    );
+
+    app.update();
+
+    let mover = app.world().entity(mover_entity);
+    assert!(
+        !app.world()
+            .resource::<turts_sim::orders::PendingMovementOrders>()
+            .pending_member_counts
+            .contains_key(&1)
+    );
+    assert_eq!(
+        mover
+            .get::<UnitOrders>()
+            .unwrap()
+            .current
+            .as_ref()
+            .map(|order| order.target.clone()),
+        Some(OrderTargetSim::Point(Vec2::new(24.0, 24.0)))
+    );
+    assert_eq!(
+        mover
+            .get::<UnitOrders>()
+            .unwrap()
+            .queue
+            .iter()
+            .map(|order| order.behaviour)
+            .collect::<Vec<_>>(),
+        vec![turts_mod_api::Behaviour::Hold]
+    );
+}
+
+fn send_unit_move(app: &mut bevy_app::App, slot: u8, id: u32, target_id: u32, queue: QueueMode) {
+    let seq = app
+        .world()
+        .resource::<Tick>()
+        .0
+        .wrapping_add(101)
+        .wrapping_add(app.world().resource::<CommandQueue>().0.len() as u32);
+    app.world_mut()
+        .resource_mut::<CommandQueue>()
+        .0
+        .push_back(Command {
+            slot: SlotId(slot),
+            seq,
+            kind: CommandKind::Order(Box::new(OrderCommand {
+                order: turts_mod_api::ContentId::parse("fixture_pkg:move").unwrap(),
+                behaviour: turts_mod_api::Behaviour::Move,
+                target_kind: turts_mod_api::TargetKind::PointOrUnit,
+                policy: None,
+                units: vec![id],
+                target: OrderTargetSim::Unit(target_id),
+                queue,
+                group: 0,
+                allowed_units: Vec::new(),
+                queue_depth: 16,
+            })),
+        });
+}
+
 fn send_stop(app: &mut bevy_app::App, slot: u8, id: u32) {
     let seq = app.world().resource::<Tick>().0.wrapping_add(50);
     app.world_mut()
@@ -121,6 +1015,34 @@ fn send_stop(app: &mut bevy_app::App, slot: u8, id: u32) {
                 units: vec![id],
                 target: OrderTargetSim::None,
                 queue: QueueMode::Replace,
+                group: 0,
+                allowed_units: Vec::new(),
+                queue_depth: 16,
+            })),
+        });
+}
+
+fn send_hold(app: &mut bevy_app::App, slot: u8, id: u32, queue: QueueMode) {
+    let seq = app
+        .world()
+        .resource::<Tick>()
+        .0
+        .wrapping_add(51)
+        .wrapping_add(app.world().resource::<CommandQueue>().0.len() as u32);
+    app.world_mut()
+        .resource_mut::<CommandQueue>()
+        .0
+        .push_back(Command {
+            slot: SlotId(slot),
+            seq,
+            kind: CommandKind::Order(Box::new(OrderCommand {
+                order: turts_mod_api::ContentId::parse("fixture_pkg:hold").unwrap(),
+                behaviour: turts_mod_api::Behaviour::Hold,
+                target_kind: turts_mod_api::TargetKind::None,
+                policy: None,
+                units: vec![id],
+                target: OrderTargetSim::None,
+                queue,
                 group: 0,
                 allowed_units: Vec::new(),
                 queue_depth: 16,
@@ -1183,6 +2105,415 @@ fn plain_singleton_blocked_by_a_full_width_post_reports_failure_by_gmu_deadline(
     );
 }
 
+fn full_width_post_app() -> bevy_app::App {
+    let mut app = app_with_units_on(&[(0.5, 2.5)], &[], MapSize { x: 7.0, y: 5.0 }, 0.5);
+    let post_type = app
+        .world_mut()
+        .resource_mut::<UnitTypes>()
+        .register_unit_type(
+            &PackageId(ORIGIN.to_owned()),
+            UnitDef {
+                id: "wide-post".into(),
+                name: "Wide post".into(),
+                movement: None,
+                inventory: None,
+                gatherer: None,
+                drop_off: None,
+                producer: None,
+                footprint: Footprint::Circle { radius: 2.0 },
+                output_inventory: None,
+                extractor: None,
+                conveyor: None,
+                inserter: None,
+                machine: None,
+                research: None,
+                health: None,
+                weapon: None,
+                removal: None,
+            },
+        )
+        .unwrap();
+    app.world_mut().spawn((
+        turts_sim::UnitId(2),
+        turts_sim::UnitType(post_type),
+        turts_sim::Owner(SlotId(0)),
+        turts_sim::Position(Vec2::new(3.5, 2.5)),
+    ));
+    app
+}
+
+#[test]
+fn blocked_plain_move_escape_survives_queued_and_pre_ack_holds() {
+    use turts_sim::economy::views::UnitOrderActivityView as Activity;
+    for replace_before_ack in [false, true] {
+        let mut app = full_width_post_app();
+        app.world_mut()
+            .resource_mut::<turts_sim::AuditTrail>()
+            .enable();
+        send_order(
+            &mut app,
+            0,
+            vec![1],
+            Vec2::new(6.5, 2.5),
+            0,
+            QueueMode::Replace,
+        );
+        if !replace_before_ack {
+            send_hold(&mut app, 0, 1, QueueMode::Append);
+        }
+
+        let mut blocked_output_seen = false;
+        for _ in 0..200 {
+            app.update();
+            let entity = app
+                .world_mut()
+                .iter_entities()
+                .find(|entity| {
+                    entity
+                        .get::<turts_sim::UnitId>()
+                        .is_some_and(|id| id.0 == 1)
+                })
+                .unwrap()
+                .id();
+            let mover = app.world().entity(entity);
+            if mover.get::<turts_sim::movement::PhysicalEscape>().is_some() {
+                blocked_output_seen = true;
+                if replace_before_ack {
+                    let progress = mover
+                        .get::<turts_sim::movement::PlainMoveProgress>()
+                        .expect(
+                            "the movement result is still present before Orders acknowledges it",
+                        );
+                    assert_eq!(
+                        progress.activity,
+                        turts_sim::movement::MovementActivity::Blocked
+                    );
+                    assert!(!progress.failure_recorded);
+                    send_hold(&mut app, 0, 1, QueueMode::Replace);
+                }
+                break;
+            }
+        }
+        assert!(
+            blocked_output_seen,
+            "Blocked movement output creates escape before Order cleanup"
+        );
+
+        let entity = app
+            .world_mut()
+            .iter_entities()
+            .find(|entity| {
+                entity
+                    .get::<turts_sim::UnitId>()
+                    .is_some_and(|id| id.0 == 1)
+            })
+            .unwrap()
+            .id();
+        let before_cleanup_escape = app
+            .world()
+            .entity(entity)
+            .get::<turts_sim::movement::PhysicalEscape>()
+            .is_some();
+        assert!(before_cleanup_escape);
+        app.update();
+        let after_cleanup = app.world().entity(entity);
+        assert_eq!(
+            after_cleanup
+                .get::<UnitOrders>()
+                .unwrap()
+                .current
+                .as_ref()
+                .map(|order| order.behaviour),
+            Some(turts_mod_api::Behaviour::Hold),
+            "normal queue/replacement continuation remains immediate"
+        );
+        assert!(
+            after_cleanup
+                .get::<turts_sim::movement::PhysicalEscape>()
+                .is_some(),
+            "Hold cleanup cannot erase the actor's physical escape obligation"
+        );
+
+        let mut previous = app
+            .world()
+            .entity(entity)
+            .get::<turts_sim::Position>()
+            .unwrap()
+            .0;
+        let mut cleared = false;
+        for _ in 0..300 {
+            app.update();
+            let mover = app.world().entity(entity);
+            let position = mover.get::<turts_sim::Position>().unwrap().0;
+            assert!(
+                position.distance(previous) <= 0.150_001,
+                "escape takes at most one speed-times-delta step"
+            );
+            previous = position;
+            if mover.get::<turts_sim::movement::PhysicalEscape>().is_none() {
+                cleared = true;
+                break;
+            }
+        }
+        assert!(cleared, "physical escape ends once penetration clears");
+        let post = Vec2::new(3.5, 2.5);
+        assert!(previous.distance(post) >= 2.5 - 1.0e-5);
+        let view = turts_sim::world_view(app.world_mut());
+        assert_eq!(
+            view.unit_orders
+                .iter()
+                .find(|row| row.unit_id == 1)
+                .unwrap()
+                .activity,
+            Activity::Holding,
+            "new/queued Hold activity appears after the physical obligation clears"
+        );
+        let settled = previous;
+        for _ in 0..40 {
+            app.update();
+            assert_eq!(
+                app.world()
+                    .entity(entity)
+                    .get::<turts_sim::Position>()
+                    .unwrap()
+                    .0,
+                settled,
+                "the cleared actor rests stably"
+            );
+        }
+    }
+}
+
+#[test]
+fn unit_follow_move_completes_at_its_reached_legal_fallback() {
+    let mut app = app_with_units_on(
+        &[(2.0, 8.0), (8.0, 8.0)],
+        &[0, 1],
+        MapSize { x: 16.0, y: 16.0 },
+        0.5,
+    );
+    send_unit_move(&mut app, 0, 1, 2, QueueMode::Replace);
+    send_hold(&mut app, 0, 1, QueueMode::Append);
+
+    let mut completed_tick = None;
+    let mut observed_rest = None;
+    for _ in 0..300 {
+        let mover_entity = app
+            .world_mut()
+            .iter_entities()
+            .find(|entity| {
+                entity
+                    .get::<turts_sim::UnitId>()
+                    .is_some_and(|id| id.0 == 1)
+            })
+            .unwrap()
+            .id();
+        let prior_mover = app.world().entity(mover_entity);
+        let plain_resting = prior_mover
+            .get::<turts_sim::movement::PlainMoveProgress>()
+            .is_some_and(|progress| {
+                progress.activity == turts_sim::movement::MovementActivity::Resting
+                    && progress.slot == prior_mover.get::<turts_sim::Position>().unwrap().0
+            });
+        let cohort_resting = prior_mover
+            .get::<turts_sim::movement::MoveProgress>()
+            .is_some_and(|progress| {
+                progress.activity == turts_sim::movement::MovementActivity::Resting
+                    && progress.slot == prior_mover.get::<turts_sim::Position>().unwrap().0
+                    && app
+                        .world()
+                        .resource::<turts_sim::movement::MovementPools>()
+                        .0
+                        .get(&progress.pool_id)
+                        .is_some_and(|pool| pool.point == Vec2::new(8.0, 8.0))
+            });
+        if plain_resting || cohort_resting {
+            observed_rest = Some(prior_mover.get::<turts_sim::Position>().unwrap().0);
+        }
+        app.update();
+        let units = snapshot(app.world_mut());
+        let mover = units.iter().find(|unit| unit.unit_id == 1).unwrap();
+        let entity = app
+            .world_mut()
+            .iter_entities()
+            .find(|entity| {
+                entity
+                    .get::<turts_sim::UnitId>()
+                    .is_some_and(|id| id.0 == 1)
+            })
+            .unwrap()
+            .id();
+        let orders = app.world().entity(entity).get::<UnitOrders>().unwrap();
+        if orders
+            .current
+            .as_ref()
+            .is_some_and(|order| order.behaviour == turts_mod_api::Behaviour::Hold)
+        {
+            completed_tick = Some(app.world().resource::<Tick>().0);
+            assert!(mover.pos.distance(Vec2::new(8.0, 8.0)) > 0.5);
+            let rested_at = observed_rest.expect("follow move reaches and rests at a legal slot");
+            assert_eq!(
+                mover.pos, rested_at,
+                "completion preserves the reached slot"
+            );
+            assert!(
+                mover.pos.distance(Vec2::new(8.0, 8.0)) >= 1.0 - 1.0e-5,
+                "the completed fallback remains outside the sum of unit radii"
+            );
+            assert!(app.world().entity(entity).get::<MoveTarget>().is_none());
+            assert!(
+                app.world()
+                    .entity(entity)
+                    .get::<turts_sim::movement::MoveProgress>()
+                    .is_none()
+            );
+            assert!(
+                app.world()
+                    .entity(entity)
+                    .get::<turts_sim::movement::PlainMoveProgress>()
+                    .is_none()
+            );
+            break;
+        }
+    }
+    let completed_tick = completed_tick.expect("a rested legal fallback completes Move(Unit)");
+    assert!(
+        completed_tick <= 100,
+        "completion is prompt, tick={completed_tick}"
+    );
+    let entity = app
+        .world_mut()
+        .iter_entities()
+        .find(|entity| {
+            entity
+                .get::<turts_sim::UnitId>()
+                .is_some_and(|id| id.0 == 1)
+        })
+        .unwrap()
+        .id();
+    let settled = app
+        .world()
+        .entity(entity)
+        .get::<turts_sim::Position>()
+        .unwrap()
+        .0;
+    for _ in 0..40 {
+        app.update();
+        assert_eq!(
+            app.world()
+                .entity(entity)
+                .get::<turts_sim::Position>()
+                .unwrap()
+                .0,
+            settled
+        );
+    }
+}
+
+#[test]
+fn moved_follow_target_reopens_motion_instead_of_consuming_old_fallback() {
+    let mut app = app_with_units_on(
+        &[(2.0, 8.0), (8.0, 8.0)],
+        &[0, 1],
+        MapSize { x: 16.0, y: 16.0 },
+        0.5,
+    );
+    send_unit_move(&mut app, 0, 1, 2, QueueMode::Replace);
+    send_hold(&mut app, 0, 1, QueueMode::Append);
+
+    let mut reached_old_fallback = false;
+    for _ in 0..300 {
+        app.update();
+        let mover_entity = app
+            .world_mut()
+            .iter_entities()
+            .find(|entity| {
+                entity
+                    .get::<turts_sim::UnitId>()
+                    .is_some_and(|id| id.0 == 1)
+            })
+            .unwrap()
+            .id();
+        let mover = app.world().entity(mover_entity);
+        let plain_resting = mover
+            .get::<turts_sim::movement::PlainMoveProgress>()
+            .is_some_and(|progress| {
+                progress.activity == turts_sim::movement::MovementActivity::Resting
+            });
+        let cohort_resting = mover
+            .get::<turts_sim::movement::MoveProgress>()
+            .is_some_and(|progress| {
+                progress.activity == turts_sim::movement::MovementActivity::Resting
+                    && progress.slot == mover.get::<turts_sim::Position>().unwrap().0
+                    && app
+                        .world()
+                        .resource::<turts_sim::movement::MovementPools>()
+                        .0
+                        .get(&progress.pool_id)
+                        .is_some_and(|pool| pool.point == Vec2::new(8.0, 8.0))
+            });
+        if plain_resting || cohort_resting {
+            reached_old_fallback = true;
+            break;
+        }
+    }
+    assert!(
+        reached_old_fallback,
+        "the old target produces a real Resting fallback before the follow phase"
+    );
+    let target_entity = app
+        .world_mut()
+        .iter_entities()
+        .find(|entity| {
+            entity
+                .get::<turts_sim::UnitId>()
+                .is_some_and(|id| id.0 == 2)
+        })
+        .unwrap()
+        .id();
+    app.world_mut()
+        .entity_mut(target_entity)
+        .get_mut::<turts_sim::Position>()
+        .unwrap()
+        .0 = Vec2::new(8.0, 11.0);
+    app.update();
+    let mover_entity = app
+        .world_mut()
+        .iter_entities()
+        .find(|entity| {
+            entity
+                .get::<turts_sim::UnitId>()
+                .is_some_and(|id| id.0 == 1)
+        })
+        .unwrap()
+        .id();
+    let mover = app.world().entity(mover_entity);
+    let orders = mover.get::<UnitOrders>().unwrap();
+    assert_eq!(
+        orders
+            .current
+            .as_ref()
+            .map(|order| (&order.behaviour, &order.target)),
+        Some((&turts_mod_api::Behaviour::Move, &OrderTargetSim::Unit(2))),
+        "moving the live target does not consume the previous fallback or start Hold"
+    );
+    assert_eq!(
+        orders.queue.len(),
+        1,
+        "the queued Hold remains behind the active follow order"
+    );
+    let retargeted = mover.get::<MoveTarget>().map(|target| target.0).unwrap();
+    assert!(
+        retargeted.distance(Vec2::new(8.0, 11.0)) <= 1.2,
+        "follow motion adopts an approach point for the new target"
+    );
+    assert!(
+        mover
+            .get::<turts_sim::movement::PlainMoveProgress>()
+            .is_none_or(|progress| progress.original_point == Vec2::new(8.0, 11.0))
+    );
+}
+
 #[test]
 fn idless_legacy_move_reports_blocked_without_inventing_an_order_id() {
     let mut app = app_with_units_on(&[(0.5, 2.5)], &[], MapSize { x: 7.0, y: 5.0 }, 0.5);
@@ -1255,6 +2586,23 @@ fn idless_legacy_move_reports_blocked_without_inventing_an_order_id() {
         turts_sim::movement::MovementActivity::Blocked
     );
     assert!(progress.failure_recorded);
+    let mover_entity = app
+        .world_mut()
+        .iter_entities()
+        .find(|entity| {
+            entity
+                .get::<turts_sim::UnitId>()
+                .is_some_and(|id| id.0 == 1)
+        })
+        .unwrap()
+        .id();
+    assert!(
+        app.world()
+            .entity(mover_entity)
+            .get::<turts_sim::movement::PhysicalEscape>()
+            .is_none(),
+        "the idless terminal Blocked result remains after physical clearance"
+    );
     assert!(orders.is_none_or(|orders| orders.last_failure.is_none()));
     assert_eq!(
         turts_sim::world_view(app.world_mut())
@@ -1265,6 +2613,24 @@ fn idless_legacy_move_reports_blocked_without_inventing_an_order_id() {
         Some(turts_sim::economy::views::UnitOrderActivityView::Blocked),
         "idless legacy movement is still visible as Blocked"
     );
+    let settled = app
+        .world()
+        .entity(mover_entity)
+        .get::<turts_sim::Position>()
+        .unwrap()
+        .0;
+    for _ in 0..40 {
+        app.update();
+        assert_eq!(
+            app.world()
+                .entity(mover_entity)
+                .get::<turts_sim::Position>()
+                .unwrap()
+                .0,
+            settled,
+            "terminal idless Blocked remains stable without a fabricated order ID"
+        );
+    }
 }
 
 #[test]
@@ -1371,7 +2737,17 @@ fn insufficient_primary_slots_block_the_whole_envelope_without_movement() {
     let positions = [(0.5, 0.5), (1.5, 0.5), (0.5, 1.5)];
     let point = Vec2::new(1.5, 1.5);
     let mut app = app_with_units_on(&positions, &[], MapSize { x: 2.0, y: 2.0 }, 0.5);
-    send_order(&mut app, 0, vec![1, 2, 3], point, 1, QueueMode::Replace);
+    app.world_mut()
+        .resource_mut::<CommandQueue>()
+        .0
+        .push_back(Command {
+            slot: SlotId(0),
+            seq: 1,
+            kind: CommandKind::MoveTo {
+                unit_ids: vec![1, 2, 3],
+                target: point,
+            },
+        });
     app.update();
     assert_eq!(
         app.world().resource::<CommandResults>().0[0].units.accepted,
@@ -1408,12 +2784,18 @@ fn insufficient_primary_slots_block_the_whole_envelope_without_movement() {
             None,
             "unit {id} has no allocated movement state"
         );
+        let plain = entity
+            .get::<turts_sim::movement::PlainMoveProgress>()
+            .expect("legacy idless failure remains visible as blocked");
+        assert_eq!(
+            plain.activity,
+            turts_sim::movement::MovementActivity::Blocked
+        );
         let orders = entity.get::<UnitOrders>().unwrap();
         assert_eq!(orders.current, None, "unit {id} has no active failed move");
         assert_eq!(
-            orders.last_failure.as_ref().map(|failure| failure.reason),
-            Some(RejectReason::Blocked),
-            "unit {id} receives the blocked failure"
+            orders.last_failure, None,
+            "idless legacy input invents no Order ID"
         );
     }
 }

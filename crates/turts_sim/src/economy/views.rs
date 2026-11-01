@@ -374,6 +374,8 @@ pub struct AuditState {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub plain_movement_progress: Vec<RawPlainMovementProgressAudit>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub physical_escapes: Vec<RawPhysicalEscapeAudit>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub movement_pools: Vec<crate::movement::MovementPool>,
     #[serde(
         default,
@@ -430,6 +432,11 @@ pub struct RawMovementProgressAudit {
 pub struct RawPlainMovementProgressAudit {
     pub unit_id: u32,
     pub progress: crate::movement::PlainMoveProgress,
+}
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RawPhysicalEscapeAudit {
+    pub unit_id: u32,
+    pub escape: crate::movement::PhysicalEscape,
 }
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct EconomyStateView {
@@ -510,7 +517,28 @@ pub fn world_view(world: &mut World) -> WorldView {
                     .get::<crate::movement::PlainMoveProgress>()
                     .is_some_and(|progress| {
                         progress.activity == crate::movement::MovementActivity::Blocked
-                    });
+                    })
+                || entity.get::<crate::movement::PhysicalEscape>().is_some();
+            let fresh_blocked =
+                entity
+                    .get::<crate::movement::MoveProgress>()
+                    .is_some_and(|progress| {
+                        progress.activity == crate::movement::MovementActivity::Blocked
+                    })
+                    || entity
+                        .get::<crate::movement::PlainMoveProgress>()
+                        .is_some_and(|progress| {
+                            progress.activity == crate::movement::MovementActivity::Blocked
+                                && !progress.failure_recorded
+                        })
+                    || entity.get::<crate::movement::PhysicalEscape>().is_some();
+            let terminal_plain_blocked = entity
+                .get::<crate::movement::PlainMoveProgress>()
+                .is_some_and(|progress| {
+                    progress.activity == crate::movement::MovementActivity::Blocked
+                        && progress.failure_recorded
+                });
+            let physically_escaping = entity.get::<crate::movement::PhysicalEscape>().is_some();
             let active_gather = orders.0.get(&unit_id).is_some_and(|order| {
                 order.node.is_some() && order.stage != crate::economy::gather::GatherStage::Idle
             });
@@ -523,6 +551,8 @@ pub fn world_view(world: &mut World) -> WorldView {
                     UnitOrderActivityView::Gathering
                 } else if entity.get::<MoveTarget>().is_some() {
                     UnitOrderActivityView::Moving
+                } else if terminal_plain_blocked {
+                    UnitOrderActivityView::Blocked
                 } else {
                     return None;
                 };
@@ -537,17 +567,7 @@ pub fn world_view(world: &mut World) -> WorldView {
             };
             let activity = if pending {
                 UnitOrderActivityView::Pending
-            } else if entity
-                .get::<crate::movement::MoveProgress>()
-                .is_some_and(|progress| {
-                    progress.activity == crate::movement::MovementActivity::Blocked
-                })
-                || entity
-                    .get::<crate::movement::PlainMoveProgress>()
-                    .is_some_and(|progress| {
-                        progress.activity == crate::movement::MovementActivity::Blocked
-                    })
-            {
+            } else if physically_escaping || fresh_blocked {
                 UnitOrderActivityView::Blocked
             } else if let Some(current) = &orders.current {
                 match current.behaviour {
@@ -570,6 +590,7 @@ pub fn world_view(world: &mut World) -> WorldView {
                 .last_failure
                 .as_ref()
                 .is_some_and(|failure| failure.reason == crate::RejectReason::Blocked)
+                || terminal_plain_blocked
             {
                 UnitOrderActivityView::Blocked
             } else {
@@ -1070,6 +1091,16 @@ pub fn audit_state(world: &mut World) -> AuditState {
         })
         .collect();
     plain_movement_progress.sort_by_key(|movement| movement.unit_id);
+    let mut physical_escapes: Vec<_> = world
+        .iter_entities()
+        .filter_map(|entity| {
+            Some(RawPhysicalEscapeAudit {
+                unit_id: entity.get::<UnitId>()?.0,
+                escape: entity.get::<crate::movement::PhysicalEscape>()?.clone(),
+            })
+        })
+        .collect();
+    physical_escapes.sort_by_key(|escape| escape.unit_id);
     let mut unit_orders: Vec<_> = world
         .iter_entities()
         .filter_map(|entity| {
@@ -1154,6 +1185,7 @@ pub fn audit_state(world: &mut World) -> AuditState {
         raw_units,
         movement_progress,
         plain_movement_progress,
+        physical_escapes,
         movement_pools: world
             .get_resource::<crate::movement::MovementPools>()
             .map_or_else(Vec::new, |pools| pools.0.values().cloned().collect()),

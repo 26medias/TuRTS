@@ -1,6 +1,6 @@
 //! Per-unit orders and the fixed-tick order phase.
 
-use std::collections::{BTreeMap, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use bevy_ecs::prelude::{Component, Resource, World};
 use bevy_math::Vec2;
@@ -13,11 +13,35 @@ use crate::{JobId, NodeId, SlotId};
 #[cfg(test)]
 thread_local! {
     static PENDING_QUEUE_MEMBER_SCAN_STEPS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+    static PENDING_CAPACITY_LOOKUPS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+    static PLAIN_CANDIDATE_INDEX_STEPS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+    static PLAIN_PROMOTION_HEADER_STEPS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+    static LEGACY_WAITER_ENTITY_LOOKUPS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }
 
 #[cfg(test)]
 fn count_pending_queue_member_scan_step() {
     PENDING_QUEUE_MEMBER_SCAN_STEPS.with(|count| count.set(count.get() + 1));
+}
+
+#[cfg(test)]
+fn count_pending_capacity_lookup() {
+    PENDING_CAPACITY_LOOKUPS.with(|count| count.set(count.get() + 1));
+}
+
+#[cfg(test)]
+fn count_plain_candidate_index_step() {
+    PLAIN_CANDIDATE_INDEX_STEPS.with(|count| count.set(count.get() + 1));
+}
+
+#[cfg(test)]
+fn count_plain_promotion_header_step() {
+    PLAIN_PROMOTION_HEADER_STEPS.with(|count| count.set(count.get() + 1));
+}
+
+#[cfg(test)]
+fn count_legacy_waiter_entity_lookup() {
+    LEGACY_WAITER_ENTITY_LOOKUPS.with(|count| count.set(count.get() + 1));
 }
 
 /// A complete move envelope waiting for its atomic spread turn.
@@ -70,6 +94,85 @@ pub struct MovementDispatchState {
 /// Audit replay reconstructs this transient cache from validated command boundaries.
 #[derive(Resource, Debug, Default, Clone, PartialEq)]
 pub struct PlainMoveOrderIdentities(pub BTreeMap<u32, Order>);
+
+#[derive(Resource, Default)]
+struct PlainMoveReservations {
+    entries: BTreeMap<u32, PlainMoveReservation>,
+    slot_counts: BTreeMap<u8, usize>,
+    winners: BTreeSet<u32>,
+    next_ordinal: u64,
+    budget_tick: Option<u32>,
+    budget_start_slot: u8,
+    budget_used: usize,
+}
+
+impl PlainMoveReservations {
+    fn insert(&mut self, unit_id: u32, reservation: PlainMoveReservation) {
+        if let Some(previous) = self.entries.remove(&unit_id) {
+            decrement_slot_count(&mut self.slot_counts, previous.slot.0);
+        }
+        *self.slot_counts.entry(reservation.slot.0).or_default() += 1;
+        self.entries.insert(unit_id, reservation);
+        self.winners.remove(&unit_id);
+    }
+
+    fn remove(&mut self, unit_id: &u32) -> Option<PlainMoveReservation> {
+        self.winners.remove(unit_id);
+        let previous = self.entries.remove(unit_id)?;
+        decrement_slot_count(&mut self.slot_counts, previous.slot.0);
+        Some(previous)
+    }
+
+    fn remove_dead(&mut self, live_ids: &std::collections::HashSet<u32>) {
+        let dead: Vec<_> = self
+            .entries
+            .keys()
+            .filter(|unit_id| !live_ids.contains(unit_id))
+            .copied()
+            .collect();
+        for unit_id in dead {
+            self.remove(&unit_id);
+        }
+        self.winners.retain(|unit_id| live_ids.contains(unit_id));
+    }
+}
+
+fn decrement_slot_count(counts: &mut BTreeMap<u8, usize>, slot: u8) {
+    if let Some(count) = counts.get_mut(&slot) {
+        *count = count.saturating_sub(1);
+        if *count == 0 {
+            counts.remove(&slot);
+        }
+    }
+}
+
+/// One-shot marker for queued Unit-target activation. Active follows refresh
+/// directly and do not become new capped envelopes on later ticks.
+#[derive(Resource, Default)]
+struct UnitMoveNeedsAllocation(BTreeSet<u32>);
+
+#[derive(Debug, Clone)]
+struct PlainMoveReservation {
+    slot: SlotId,
+    accepted_tick: u32,
+    seq: u32,
+    arrival_ordinal: u64,
+    preceding_pool_id: u64,
+    point: Vec2,
+    order: Order,
+    prior: PlainMovePriorState,
+}
+
+#[derive(Debug, Clone, Default)]
+struct PlainMovePriorState {
+    unit_orders: Option<UnitOrders>,
+    move_target: Option<MoveTarget>,
+    move_progress: Option<crate::movement::MoveProgress>,
+    plain_progress: Option<crate::movement::PlainMoveProgress>,
+    physical_escape: Option<crate::movement::PhysicalEscape>,
+    gather: Option<crate::economy::GatherOrder>,
+    identity: Option<Order>,
+}
 
 #[derive(Resource, Default)]
 struct SpreadIndexCache {
@@ -283,6 +386,32 @@ fn decrement_member_count(counts: &mut BTreeMap<u32, usize>, unit_id: u32) {
     }
 }
 
+fn pending_member_target_is_live(
+    request: &PendingMovementOrder,
+    unit_id: u32,
+    live_ids: &std::collections::HashSet<u32>,
+) -> bool {
+    match request.order_for_unit(unit_id).map(|order| &order.target) {
+        Some(OrderTargetSim::Unit(target_id)) => live_ids.contains(target_id),
+        Some(OrderTargetSim::Point(_)) | None => true,
+        _ => false,
+    }
+}
+
+fn pending_live_member_count(
+    request: &PendingMovementOrder,
+    live_ids: &std::collections::HashSet<u32>,
+) -> usize {
+    request
+        .unit_ids
+        .iter()
+        .filter(|unit_id| {
+            live_ids.contains(unit_id)
+                && pending_member_target_is_live(request, **unit_id, live_ids)
+        })
+        .count()
+}
+
 /// The target carried by one simulation order.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum OrderTargetSim {
@@ -415,6 +544,98 @@ pub(crate) fn queue_movement_envelope(world: &mut World, request: MovementEnvelo
         })
 }
 
+pub(crate) fn queue_legacy_move_to_envelope(
+    world: &mut World,
+    request: MovementEnvelopeRequest,
+) -> bool {
+    let tick = world.resource::<crate::world::Tick>().0;
+    if !world
+        .resource::<PendingMovementOrders>()
+        .can_queue_after_replacing(request.slot.0, 0, tick, &request.unit_ids)
+        || !movement_envelope_capacity_available_after_replacing(
+            world,
+            request.slot,
+            &request.unit_ids,
+        )
+    {
+        return false;
+    }
+    let pending_request = PendingMovementOrder {
+        slot: request.slot,
+        accepted_tick: tick,
+        seq: request.seq,
+        group: 0,
+        pool_id: 0,
+        point: request.point,
+        unit_ids: request.unit_ids.clone(),
+        order: None,
+        member_orders: BTreeMap::new(),
+        plain: true,
+    };
+    let mut pending = world.resource_mut::<PendingMovementOrders>();
+    pending.cancel_units(request.slot.0, &request.unit_ids);
+    if !pending.queue(pending_request) {
+        return false;
+    }
+    true
+}
+
+/// On successful deferred legacy Replace admission, cancel only future work.
+/// The current execution (including a provisional plain Move) remains active
+/// until the legacy envelope actually gets its spread turn.
+pub(crate) fn prepare_legacy_move_to_waiters(
+    world: &mut World,
+    unit_ids: &[u32],
+    entity_by_unit: &std::collections::HashMap<u32, bevy_ecs::entity::Entity>,
+) {
+    for unit_id in unit_ids {
+        #[cfg(test)]
+        count_legacy_waiter_entity_lookup();
+        if let Some(entity) = entity_by_unit.get(unit_id).copied() {
+            if let Some(mut orders) = world.entity_mut(entity).get_mut::<UnitOrders>() {
+                orders.queue.clear();
+            }
+            let candidate = world
+                .get_resource_mut::<PlainMoveReservations>()
+                .and_then(|mut reservations| reservations.remove(unit_id));
+            if let Some(candidate) = candidate {
+                restore_plain_move_prior(world, entity, *unit_id, &candidate.prior, false);
+            }
+            if let Some(mut needs) = world.get_resource_mut::<UnitMoveNeedsAllocation>() {
+                needs.0.remove(unit_id);
+            }
+        }
+    }
+}
+
+/// Reset an actor for an immediately accepted idless legacy MoveTo Replace.
+/// PhysicalEscape is an independent collision obligation and deliberately survives.
+pub(crate) fn reset_legacy_move_to_unit(
+    world: &mut World,
+    slot: SlotId,
+    entity: bevy_ecs::entity::Entity,
+    unit_id: u32,
+) {
+    world
+        .resource_mut::<PendingMovementOrders>()
+        .cancel_units(slot.0, &[unit_id]);
+    if let Some(mut needs) = world.get_resource_mut::<UnitMoveNeedsAllocation>() {
+        needs.0.remove(&unit_id);
+    }
+    forget_plain_move_identity(world, unit_id);
+    let mut actor = world.entity_mut(entity);
+    actor.remove::<crate::movement::MoveProgress>();
+    actor.remove::<crate::movement::PlainMoveProgress>();
+    if actor
+        .get::<UnitOrders>()
+        .is_some_and(|orders| *orders != UnitOrders::default())
+    {
+        actor.insert(UnitOrders::default());
+    }
+    drop(actor);
+    clear_gather(world, unit_id);
+}
+
 pub(crate) struct MovementEnvelopeRequest {
     pub(crate) slot: SlotId,
     pub(crate) seq: u32,
@@ -424,6 +645,49 @@ pub(crate) struct MovementEnvelopeRequest {
     pub(crate) order: Option<Order>,
     pub(crate) member_orders: BTreeMap<u32, Order>,
     pub(crate) plain: bool,
+}
+
+#[derive(Default)]
+struct PromotionHeaderIndex {
+    prefix_max: Vec<(u32, u64)>,
+}
+
+impl PromotionHeaderIndex {
+    fn new(queue: &VecDeque<PendingMovementOrder>) -> Self {
+        let mut prefix_max = Vec::with_capacity(queue.len());
+        let mut maximum = None::<(u32, u64)>;
+        for request in queue {
+            #[cfg(test)]
+            count_plain_promotion_header_step();
+            let key = (request.accepted_tick, request.pool_id);
+            maximum = Some(maximum.map_or(key, |previous| previous.max(key)));
+            prefix_max.push(maximum.unwrap());
+        }
+        Self { prefix_max }
+    }
+
+    fn first_qualifying(&self, accepted_tick: u32, preceding_pool_id: u64) -> Option<usize> {
+        let key = (accepted_tick, preceding_pool_id);
+        let index = self.prefix_max.partition_point(|maximum| *maximum <= key);
+        (index < self.prefix_max.len()).then_some(index)
+    }
+}
+
+fn insert_promoted_request(
+    queue: &mut VecDeque<PendingMovementOrder>,
+    promoted: PendingMovementOrder,
+    accepted_tick: u32,
+    preceding_pool_id: u64,
+    header: &PromotionHeaderIndex,
+) {
+    let insert_at = header
+        .first_qualifying(accepted_tick, preceding_pool_id)
+        .unwrap_or(header.prefix_max.len());
+    // Losers are visited in reverse accepted-arrival order. Their original
+    // insertion boundaries are therefore nonincreasing within a slot: an
+    // earlier boundary stays fixed when later promotions are already present,
+    // and an equal boundary prepends to restore FIFO.
+    queue.insert(insert_at, promoted);
 }
 
 /// Run one fixed-tick order phase.
@@ -438,9 +702,7 @@ pub(crate) fn run_orders(world: &mut World) {
         })
         .collect();
     for (&unit_id, &entity) in &unit_entities {
-        if unit_has_pending_move(world, unit_id) {
-            continue;
-        }
+        let replacement_pending = unit_has_pending_move(world, unit_id);
         let no_plain_move_state = world.entity(entity).get::<MoveTarget>().is_none()
             && world
                 .entity(entity)
@@ -506,7 +768,15 @@ pub(crate) fn run_orders(world: &mut World) {
                     | crate::economy::gather::GatherStage::MovingToReceiver
             )
         );
-        if completed_plain_fallback && !gather_still_approaching {
+        let current_is_unit_follow = world
+            .entity(entity)
+            .get::<UnitOrders>()
+            .and_then(|orders| orders.current.as_ref())
+            .is_some_and(|current| {
+                current.behaviour == Behaviour::Move
+                    && matches!(current.target, OrderTargetSim::Unit(_))
+            });
+        if completed_plain_fallback && !gather_still_approaching && !current_is_unit_follow {
             crate::economy::transaction::capture_unit_order_operation(world, unit_id, |world| {
                 world
                     .entity_mut(entity)
@@ -569,7 +839,7 @@ pub(crate) fn run_orders(world: &mut World) {
                 }
                 clear_gather(world, unit_id);
                 forget_plain_move_identity(world, unit_id);
-                if has_queued || had_current {
+                if (has_queued || had_current) && !unit_has_pending_move(world, unit_id) {
                     start_next_queued_order(world, slot, entity, unit_id);
                 }
             });
@@ -604,7 +874,9 @@ pub(crate) fn run_orders(world: &mut World) {
                         orders.current = None;
                     }
                 }
-                start_next_queued_order(world, slot, entity, unit_id);
+                if !unit_has_pending_move(world, unit_id) {
+                    start_next_queued_order(world, slot, entity, unit_id);
+                }
             });
             continue;
         }
@@ -617,7 +889,7 @@ pub(crate) fn run_orders(world: &mut World) {
                 .entity(entity)
                 .get::<crate::world::MoveTarget>()
                 .is_none();
-            if waiting && plain_move_landed {
+            if waiting && plain_move_landed && !replacement_pending {
                 let slot = world
                     .entity(entity)
                     .get::<crate::world::Owner>()
@@ -636,6 +908,15 @@ pub(crate) fn run_orders(world: &mut World) {
         if current.behaviour == Behaviour::Move
             && let OrderTargetSim::Unit(target_id) = current.target
         {
+            if world
+                .get_resource::<UnitMoveNeedsAllocation>()
+                .is_some_and(|pending| pending.0.contains(&unit_id))
+            {
+                // A queued Unit follow is a new envelope. It must pass through
+                // the shared cap before ordinary follow completion can advance
+                // the actor's post-move queue.
+                continue;
+            }
             run_unit_follow_move(world, entity, unit_id, current, target_id, &unit_entities);
             continue;
         }
@@ -676,7 +957,11 @@ pub(crate) fn run_orders(world: &mut World) {
                     });
                 }
                 orders.current = None;
-                orders.queue.pop_front()
+                if replacement_pending {
+                    None
+                } else {
+                    orders.queue.pop_front()
+                }
             };
             if depleted_gather {
                 let _ = crate::economy::gather::interrupt_order(world, slot, unit_id);
@@ -689,7 +974,9 @@ pub(crate) fn run_orders(world: &mut World) {
                         .unwrap()
                         .current = Some(next);
                 }
-                start_next_queued_order(world, slot, entity, unit_id);
+                if !unit_has_pending_move(world, unit_id) {
+                    start_next_queued_order(world, slot, entity, unit_id);
+                }
             }
         });
     }
@@ -701,11 +988,15 @@ pub(crate) fn run_orders(world: &mut World) {
 fn finish_movement_dispatch_tick(world: &mut World) {
     const PENDING_SLOTS: u8 = 8;
     let tick = world.resource::<crate::world::Tick>().0;
-    let (start_slot, advance_cursor, initialized) = {
+    let (start_slot, advance_cursor, initialized, plain_budget) = {
         let state = world.resource::<MovementDispatchState>();
         let pending = world.resource::<PendingMovementOrders>();
+        let plain_budget = world
+            .get_resource::<PlainMoveReservations>()
+            .filter(|reservations| reservations.budget_tick == Some(tick))
+            .map_or(0, |reservations| reservations.budget_used);
         if state.tick == Some(tick) {
-            (state.start_slot, !state.cursor_advanced, true)
+            (state.start_slot, !state.cursor_advanced, true, plain_budget)
         } else {
             (
                 dispatch_start_slot(pending, state, tick),
@@ -714,6 +1005,7 @@ fn finish_movement_dispatch_tick(world: &mut World) {
                     || pending.next_pool_id != 0
                     || pending.next_slot != 0
                     || !pending.queues.is_empty(),
+                plain_budget,
             )
         }
     };
@@ -727,7 +1019,7 @@ fn finish_movement_dispatch_tick(world: &mut World) {
         let mut state = world.resource_mut::<MovementDispatchState>();
         state.tick = Some(tick);
         state.start_slot = start_slot;
-        state.used = 0;
+        state.used = plain_budget;
         state.cursor_advanced = true;
     }
     world.resource_mut::<PendingMovementOrders>().next_slot = (start_slot + 1) % PENDING_SLOTS;
@@ -746,6 +1038,233 @@ fn dispatch_start_slot(
         }
         None => tick.saturating_sub(1).rem_euclid(PENDING_SLOTS) as u8,
     }
+}
+
+fn arbitrate_plain_move_reservations(world: &mut World) {
+    const SPREAD_CAP: usize = 2048;
+    const PENDING_SLOTS: u8 = 8;
+    let tick = world.resource::<crate::world::Tick>().0;
+    let live_ids: std::collections::HashSet<_> = world
+        .iter_entities()
+        .filter_map(|entity| entity.get::<crate::world::UnitId>().map(|id| id.0))
+        .collect();
+    if let Some(mut reservations) = world.get_resource_mut::<PlainMoveReservations>() {
+        reservations.remove_dead(&live_ids);
+    }
+    let Some(reservations) = world.get_resource::<PlainMoveReservations>() else {
+        return;
+    };
+    if reservations.entries.is_empty() {
+        return;
+    }
+    let pending = world.resource::<PendingMovementOrders>();
+    let state = world.resource::<MovementDispatchState>();
+    let start_slot = if state.tick == Some(tick) {
+        state.start_slot
+    } else {
+        dispatch_start_slot(pending, state, tick)
+    };
+    let mut used = if state.tick == Some(tick) {
+        state.used
+    } else {
+        reservations
+            .budget_tick
+            .filter(|budget_tick| *budget_tick == tick)
+            .map_or(0, |_| reservations.budget_used)
+    };
+    let mut winners = BTreeSet::new();
+    let mut reservation_candidates = BTreeMap::<u8, VecDeque<(u32, PlainMoveReservation)>>::new();
+    for (&unit_id, reservation) in &reservations.entries {
+        #[cfg(test)]
+        count_plain_candidate_index_step();
+        reservation_candidates
+            .entry(reservation.slot.0)
+            .or_default()
+            .push_back((unit_id, reservation.clone()));
+    }
+    for candidates in reservation_candidates.values_mut() {
+        let mut ordered: Vec<_> = candidates.drain(..).collect();
+        ordered
+            .sort_by_key(|(unit_id, entry)| (entry.accepted_tick, entry.arrival_ordinal, *unit_id));
+        candidates.extend(ordered);
+    }
+    for offset in 0..PENDING_SLOTS {
+        let slot = (start_slot + offset) % PENDING_SLOTS;
+        let mut queue_index = 0;
+        let candidates = reservation_candidates.entry(slot).or_default();
+        loop {
+            let queued = pending
+                .queues
+                .get(&slot)
+                .and_then(|queue| queue.get(queue_index));
+            let candidate = candidates.front();
+            let choose_candidate = match (candidate, queued) {
+                (Some((unit_id, entry)), Some(request)) => {
+                    reservation_precedes_request(*unit_id, entry, request)
+                }
+                (Some(_), None) => true,
+                _ => false,
+            };
+            let count = if choose_candidate {
+                1
+            } else if let Some(request) = queued {
+                pending_live_member_count(request, &live_ids)
+            } else {
+                break;
+            };
+            if count == 0 {
+                queue_index += 1;
+                continue;
+            }
+            if used > 0 && used.saturating_add(count) > SPREAD_CAP {
+                break;
+            }
+            if choose_candidate {
+                let unit_id = candidates.front().unwrap().0;
+                winners.insert(unit_id);
+                candidates.pop_front();
+            } else {
+                queue_index += 1;
+            }
+            used = used.saturating_add(count);
+        }
+    }
+    let mut losers: Vec<_> = reservations
+        .entries
+        .iter()
+        .filter(|(unit_id, _)| !winners.contains(unit_id))
+        .map(|(&unit_id, reservation)| (unit_id, reservation.clone()))
+        .collect();
+    losers.sort_by_key(|(unit_id, entry)| {
+        std::cmp::Reverse((entry.accepted_tick, entry.arrival_ordinal, *unit_id))
+    });
+    world.resource_mut::<PlainMoveReservations>().winners = winners;
+
+    let entity_by_unit: BTreeMap<_, _> = world
+        .iter_entities()
+        .filter_map(|entity| {
+            entity
+                .get::<crate::world::UnitId>()
+                .map(|id| (id.0, entity.id()))
+        })
+        .collect();
+    let promotion_headers = {
+        let pending = world.resource::<PendingMovementOrders>();
+        (0..PENDING_SLOTS)
+            .map(|slot| {
+                let header = pending
+                    .queues
+                    .get(&slot)
+                    .map(PromotionHeaderIndex::new)
+                    .unwrap_or_default();
+                (slot, header)
+            })
+            .collect::<BTreeMap<_, _>>()
+    };
+    for (unit_id, reservation) in losers {
+        let Some(entity) = entity_by_unit.get(&unit_id).copied() else {
+            world
+                .resource_mut::<PlainMoveReservations>()
+                .remove(&unit_id);
+            continue;
+        };
+        crate::economy::transaction::capture_unit_order_operation(world, unit_id, |world| {
+            let request = PendingMovementOrder {
+                slot: reservation.slot,
+                accepted_tick: reservation.accepted_tick,
+                seq: reservation.seq,
+                group: 0,
+                pool_id: 0,
+                point: reservation.point,
+                unit_ids: vec![unit_id],
+                order: Some(reservation.order.clone()),
+                member_orders: BTreeMap::from([(unit_id, reservation.order.clone())]),
+                plain: false,
+            };
+            let queued = world.resource_mut::<PendingMovementOrders>().queue(request);
+            debug_assert!(queued, "reserved plain move capacity must remain available");
+            if let Some(queue) = world
+                .resource_mut::<PendingMovementOrders>()
+                .queues
+                .get_mut(&reservation.slot.0)
+            {
+                let promoted = queue
+                    .pop_back()
+                    .expect("the newly queued singleton remains at the queue tail");
+                insert_promoted_request(
+                    queue,
+                    promoted,
+                    reservation.accepted_tick,
+                    reservation.preceding_pool_id,
+                    promotion_headers
+                        .get(&reservation.slot.0)
+                        .expect("every scheduler slot has an immutable header index"),
+                );
+            }
+            restore_plain_move_prior(world, entity, unit_id, &reservation.prior, true);
+            world
+                .resource_mut::<PlainMoveReservations>()
+                .remove(&unit_id);
+        });
+    }
+}
+
+fn record_dispatch_selection(world: &mut World, tick: u32, start_slot: u8, count: usize) {
+    let prior_plain_budget = world
+        .get_resource::<PlainMoveReservations>()
+        .filter(|reservations| reservations.budget_tick == Some(tick))
+        .map_or(0, |reservations| reservations.budget_used);
+    let advance_cursor = {
+        let mut state = world.resource_mut::<MovementDispatchState>();
+        if state.tick != Some(tick) {
+            state.tick = Some(tick);
+            state.start_slot = start_slot;
+            state.used = prior_plain_budget;
+            state.cursor_advanced = prior_plain_budget != 0;
+        }
+        state.used = state.used.saturating_add(count);
+        if !state.cursor_advanced {
+            state.cursor_advanced = true;
+            true
+        } else {
+            false
+        }
+    };
+    if advance_cursor {
+        world.resource_mut::<PendingMovementOrders>().next_slot = (start_slot + 1) % 8;
+    }
+    if prior_plain_budget > 0
+        && let Some(mut reservations) = world.get_resource_mut::<PlainMoveReservations>()
+    {
+        reservations.budget_used = 0;
+        reservations.budget_tick = None;
+    }
+}
+
+fn record_plain_dispatch_selection(world: &mut World, tick: u32, start_slot: u8, count: usize) {
+    if world.resource::<MovementDispatchState>().tick == Some(tick) {
+        let start_slot = world.resource::<MovementDispatchState>().start_slot;
+        record_dispatch_selection(world, tick, start_slot, count);
+        return;
+    }
+    world.init_resource::<PlainMoveReservations>();
+    let mut reservations = world.resource_mut::<PlainMoveReservations>();
+    if reservations.budget_tick != Some(tick) {
+        reservations.budget_tick = Some(tick);
+        reservations.budget_start_slot = start_slot;
+        reservations.budget_used = 0;
+    }
+    reservations.budget_used = reservations.budget_used.saturating_add(count);
+}
+
+fn reservation_precedes_request(
+    _unit_id: u32,
+    reservation: &PlainMoveReservation,
+    request: &PendingMovementOrder,
+) -> bool {
+    reservation.accepted_tick < request.accepted_tick
+        || (reservation.accepted_tick == request.accepted_tick
+            && request.pool_id > reservation.preceding_pool_id)
 }
 
 fn queue_unallocated_move_orders(world: &mut World) {
@@ -789,7 +1308,14 @@ fn queue_unallocated_move_orders(world: &mut World) {
             else {
                 continue;
             };
-            let OrderTargetSim::Point(raw_point) = order.target else {
+            if matches!(order.target, OrderTargetSim::Unit(_))
+                && !world
+                    .get_resource::<UnitMoveNeedsAllocation>()
+                    .is_some_and(|pending| pending.0.contains(&unit_id))
+            {
+                continue;
+            }
+            let Some(raw_point) = resolved_move_point(world, &entity_by_unit, &order) else {
                 continue;
             };
             if clamp_target(world, raw_point, unit_radius(world, entity.id())) != target.0 {
@@ -809,9 +1335,8 @@ fn queue_unallocated_move_orders(world: &mut World) {
         for ((slot, group, _), mut members) in grouped {
             members.sort_unstable_by_key(|(unit_id, ..)| *unit_id);
             let unit_ids: Vec<_> = members.iter().map(|(unit_id, ..)| *unit_id).collect();
-            let raw_point = match members[0].2.target {
-                OrderTargetSim::Point(point) => point,
-                _ => continue,
+            let Some(raw_point) = resolved_move_point(world, &entity_by_unit, &members[0].2) else {
+                continue;
             };
             let max_radius = members
                 .iter()
@@ -856,6 +1381,13 @@ fn queue_unallocated_move_orders(world: &mut World) {
                 refresh_spread_reservation(world, first_unit_id, first_entity);
             }
             if queued {
+                if let Some(mut needs_allocation) =
+                    world.get_resource_mut::<UnitMoveNeedsAllocation>()
+                {
+                    for unit_id in &unit_ids {
+                        needs_allocation.0.remove(unit_id);
+                    }
+                }
                 for (unit_id, entity, _) in members.into_iter().skip(1) {
                     crate::economy::transaction::capture_unit_order_operation(
                         world,
@@ -914,6 +1446,23 @@ fn queue_unallocated_move_orders(world: &mut World) {
     }
 }
 
+fn resolved_move_point(
+    world: &World,
+    entity_by_unit: &BTreeMap<u32, bevy_ecs::entity::Entity>,
+    order: &Order,
+) -> Option<Vec2> {
+    match &order.target {
+        OrderTargetSim::Point(point) => Some(*point),
+        OrderTargetSim::Unit(target_id) => entity_by_unit.get(target_id).and_then(|entity| {
+            world
+                .entity(*entity)
+                .get::<crate::world::Position>()
+                .map(|p| p.0)
+        }),
+        _ => None,
+    }
+}
+
 /// Keep the phase-local reservation index in sync with order transitions between
 /// the two dispatch passes. In particular, a refused Move can immediately start
 /// a queued Hold, changing its effective reservation from the old target to its
@@ -962,6 +1511,7 @@ fn dispatch_pending_movement(world: &mut World) {
     const SPREAD_CAP: usize = 2048;
     const PENDING_SLOTS: u8 = 8;
 
+    arbitrate_plain_move_reservations(world);
     let tick = world.resource::<crate::world::Tick>().0;
     let pending = world.resource::<PendingMovementOrders>();
     let (start_slot, mut used) = {
@@ -969,7 +1519,11 @@ fn dispatch_pending_movement(world: &mut World) {
         if state.tick == Some(tick) {
             (state.start_slot, state.used)
         } else {
-            (dispatch_start_slot(pending, state, tick), 0)
+            let budget = world
+                .get_resource::<PlainMoveReservations>()
+                .filter(|reservations| reservations.budget_tick == Some(tick))
+                .map_or(0, |reservations| reservations.budget_used);
+            (dispatch_start_slot(pending, state, tick), budget)
         }
     };
     let entity_by_unit: BTreeMap<_, _> = world
@@ -1033,15 +1587,164 @@ fn dispatch_pending_movement(world: &mut World) {
         }
     }
     let mut spread_context = index_cache.context.take().unwrap();
+    let mut reservation_candidates = BTreeMap::<u8, VecDeque<(u32, PlainMoveReservation)>>::new();
+    if let Some(reservations) = world.get_resource::<PlainMoveReservations>() {
+        for &unit_id in &reservations.winners {
+            let Some(reservation) = reservations.entries.get(&unit_id) else {
+                continue;
+            };
+            #[cfg(test)]
+            count_plain_candidate_index_step();
+            reservation_candidates
+                .entry(reservation.slot.0)
+                .or_default()
+                .push_back((unit_id, reservation.clone()));
+        }
+    }
+    for candidates in reservation_candidates.values_mut() {
+        let mut ordered: Vec<_> = candidates.drain(..).collect();
+        ordered
+            .sort_by_key(|(unit_id, entry)| (entry.accepted_tick, entry.arrival_ordinal, *unit_id));
+        candidates.extend(ordered);
+    }
     for offset in 0..PENDING_SLOTS {
         let slot = (start_slot + offset) % PENDING_SLOTS;
-        while let Some(mut request) = world
-            .resource::<PendingMovementOrders>()
-            .queues
-            .get(&slot)
-            .and_then(VecDeque::front)
-            .cloned()
-        {
+        let candidates = reservation_candidates.entry(slot).or_default();
+        loop {
+            let candidate = candidates.front().cloned();
+            #[cfg(test)]
+            if candidate.is_some() {
+                count_plain_candidate_index_step();
+            }
+            let queued_head = world
+                .resource::<PendingMovementOrders>()
+                .queues
+                .get(&slot)
+                .and_then(VecDeque::front)
+                .cloned();
+            let choose_candidate = match (&candidate, &queued_head) {
+                (Some((unit_id, entry)), Some(request)) => {
+                    reservation_precedes_request(*unit_id, entry, request)
+                }
+                (Some(_), None) => true,
+                _ => false,
+            };
+            if choose_candidate {
+                if used > 0 && used.saturating_add(1) > SPREAD_CAP {
+                    break;
+                }
+                let (unit_id, _) = candidates.pop_front().unwrap();
+                if let Some(mut reservations) = world.get_resource_mut::<PlainMoveReservations>() {
+                    reservations.remove(&unit_id);
+                }
+                record_plain_dispatch_selection(world, tick, start_slot, 1);
+                used = used.saturating_add(1);
+                continue;
+            }
+            let Some(mut request) = queued_head else {
+                break;
+            };
+            let target_gone_ids: Vec<_> = request
+                .unit_ids
+                .iter()
+                .copied()
+                .filter(|unit_id| {
+                    request
+                        .order_for_unit(*unit_id)
+                        .and_then(|order| match order.target {
+                            OrderTargetSim::Unit(target_id) => Some(target_id),
+                            _ => None,
+                        })
+                        .is_some_and(|target_id| !entity_by_unit.contains_key(&target_id))
+                })
+                .collect();
+            for unit_id in target_gone_ids {
+                let Some(entity) = entity_by_unit.get(&unit_id).copied() else {
+                    continue;
+                };
+                let failure_order = request.order_for_unit(unit_id).cloned();
+                crate::economy::transaction::capture_unit_order_operation(
+                    world,
+                    unit_id,
+                    |world| {
+                        let mut pending = world.resource_mut::<PendingMovementOrders>();
+                        let queue = pending
+                            .queues
+                            .get_mut(&slot)
+                            .expect("the target-gone movement envelope remains queued");
+                        let head = queue
+                            .front_mut()
+                            .expect("the target-gone movement envelope remains at its head");
+                        debug_assert_eq!(head.pool_id, request.pool_id);
+                        head.unit_ids.retain(|member| *member != unit_id);
+                        head.member_orders.remove(&unit_id);
+                        let remaining = pending
+                            .pending_units
+                            .get(&slot)
+                            .copied()
+                            .unwrap_or_default()
+                            .saturating_sub(1);
+                        pending.pending_units.insert(slot, remaining);
+                        decrement_member_count(&mut pending.pending_member_counts, unit_id);
+                        if pending
+                            .queues
+                            .get(&slot)
+                            .and_then(VecDeque::front)
+                            .is_some_and(|head| head.unit_ids.is_empty())
+                        {
+                            pending.pop_front(slot);
+                        }
+                        drop(pending);
+
+                        let tick = world.resource::<crate::world::Tick>().0;
+                        let mut actor = world.entity_mut(entity);
+                        actor.remove::<MoveTarget>();
+                        actor.remove::<MoveProgress>();
+                        actor.remove::<crate::movement::PlainMoveProgress>();
+                        if failure_order.is_some() && actor.get::<UnitOrders>().is_none() {
+                            actor.insert(UnitOrders::default());
+                        }
+                        if let (Some(order), Some(mut orders)) =
+                            (failure_order.clone(), actor.get_mut::<UnitOrders>())
+                        {
+                            orders.current = None;
+                            orders.last_failure = Some(OrderFailure {
+                                order: order.order,
+                                reason: crate::command::RejectReason::TargetGone,
+                                tick,
+                            });
+                        }
+                        forget_plain_move_identity(world, unit_id);
+                        clear_gather(world, unit_id);
+                        start_next_queued_order(world, SlotId(slot), entity, unit_id);
+                    },
+                );
+                let actor = world.entity(entity);
+                if let (Some(position), Some(unit_type)) = (
+                    actor.get::<crate::world::Position>(),
+                    actor.get::<crate::world::UnitType>(),
+                ) {
+                    let reserved_position = actor
+                        .get::<MoveTarget>()
+                        .map_or(position.0, |target| target.0);
+                    let radius = world
+                        .resource::<crate::registry::UnitTypes>()
+                        .get(unit_type.0)
+                        .map_or(0.5, |entry| entry.radius);
+                    spread_context.reserve_unit(
+                        unit_id,
+                        ReservedFootprint {
+                            position: reserved_position,
+                            radius,
+                        },
+                    );
+                }
+                request.unit_ids.retain(|member| *member != unit_id);
+                request.member_orders.remove(&unit_id);
+            }
+            if request.unit_ids.is_empty() {
+                continue;
+            }
             let live_ids: Vec<_> = request
                 .unit_ids
                 .iter()
@@ -1086,6 +1789,23 @@ fn dispatch_pending_movement(world: &mut World) {
                     continue;
                 }
                 request.unit_ids = live_ids;
+            }
+            if let Some(anchor_id) = request.unit_ids.first().copied()
+                && let Some(Order {
+                    target: OrderTargetSim::Unit(target_id),
+                    ..
+                }) = request.order_for_unit(anchor_id)
+                && let Some(target_entity) = entity_by_unit.get(target_id)
+                && let Some(target_position) =
+                    world.entity(*target_entity).get::<crate::world::Position>()
+            {
+                let max_radius = request
+                    .unit_ids
+                    .iter()
+                    .filter_map(|unit_id| entity_by_unit.get(unit_id))
+                    .map(|entity| unit_radius(world, *entity))
+                    .fold(0.0_f32, f32::max);
+                request.point = clamp_target(world, target_position.0, max_radius);
             }
             // Dead members are pruned before the shared tick cap is evaluated, so
             // the surviving envelope keeps its original arrival order and uses its
@@ -1150,11 +1870,20 @@ fn dispatch_pending_movement(world: &mut World) {
                                 debug_assert_eq!(popped.pool_id, request.pool_id);
                             }
                             let tick = world.resource::<crate::world::Tick>().0;
+                            let idless_legacy = request.plain
+                                && request.order.is_none()
+                                && request.member_orders.is_empty();
                             {
                                 let mut entity_mut = world.entity_mut(entity);
                                 entity_mut.remove::<MoveTarget>();
                                 entity_mut.remove::<MoveProgress>();
                                 entity_mut.remove::<crate::movement::PlainMoveProgress>();
+                                if idless_legacy
+                                    && let Some(mut orders) = entity_mut.get_mut::<UnitOrders>()
+                                {
+                                    orders.current = None;
+                                    orders.last_failure = None;
+                                }
                                 if let (Some(order), Some(mut orders)) =
                                     (failure_order.clone(), entity_mut.get_mut::<UnitOrders>())
                                 {
@@ -1168,6 +1897,21 @@ fn dispatch_pending_movement(world: &mut World) {
                             }
                             if failure_order.is_some() {
                                 clear_gather(world, member.id);
+                            } else if request.plain {
+                                clear_gather(world, member.id);
+                                world.entity_mut(entity).insert(
+                                    crate::movement::PlainMoveProgress {
+                                        original_point: request.point,
+                                        slot: member.position,
+                                        pool_slots: Vec::new(),
+                                        gather_goal: None,
+                                        activity: MovementActivity::Blocked,
+                                        stalled_ticks: 0,
+                                        best_distance: member.position.distance(request.point),
+                                        claim_count: 0,
+                                        failure_recorded: true,
+                                    },
+                                );
                             }
                             forget_plain_move_identity(world, member.id);
                         },
@@ -1206,6 +1950,19 @@ fn dispatch_pending_movement(world: &mut World) {
                     .cloned()
                     .or_else(|| request.order.clone());
                 let replace_order = order.is_some();
+                let follow_origin = order.as_ref().and_then(|order| {
+                    let OrderTargetSim::Unit(target_id) = &order.target else {
+                        return None;
+                    };
+                    let target_position = entity_by_unit
+                        .get(target_id)
+                        .and_then(|entity| world.entity(*entity).get::<crate::world::Position>())?
+                        .0;
+                    Some(crate::movement::FollowMoveOrigin {
+                        target_unit_id: *target_id,
+                        goal: clamp_target(world, target_position, member.radius),
+                    })
+                });
                 let first = first_operation;
                 first_operation = false;
                 crate::economy::transaction::capture_unit_order_operation(
@@ -1218,25 +1975,19 @@ fn dispatch_pending_movement(world: &mut World) {
                                 .pop_front(slot)
                                 .expect("the selected spread envelope remains at its queue head");
                             debug_assert_eq!(popped.pool_id, request.pool_id);
-                            let advance_cursor = {
-                                let mut state = world.resource_mut::<MovementDispatchState>();
-                                if state.tick != Some(tick) {
-                                    state.tick = Some(tick);
-                                    state.start_slot = start_slot;
-                                    state.used = 0;
-                                    state.cursor_advanced = false;
+                            if request.plain {
+                                if let Some(mut reservations) =
+                                    world.get_resource_mut::<PlainMoveReservations>()
+                                {
+                                    for unit_id in &request.unit_ids {
+                                        reservations.remove(unit_id);
+                                    }
                                 }
-                                state.used = state.used.saturating_add(next_count);
-                                if !state.cursor_advanced {
-                                    state.cursor_advanced = true;
-                                    true
-                                } else {
-                                    false
-                                }
-                            };
-                            if advance_cursor {
-                                world.resource_mut::<PendingMovementOrders>().next_slot =
-                                    (start_slot + 1) % PENDING_SLOTS;
+                                record_plain_dispatch_selection(
+                                    world, tick, start_slot, next_count,
+                                );
+                            } else {
+                                record_dispatch_selection(world, tick, start_slot, next_count);
                             }
                             world
                                 .resource_mut::<MovementPools>()
@@ -1256,15 +2007,24 @@ fn dispatch_pending_movement(world: &mut World) {
                                 stalled_ticks: 0,
                                 best_distance: member.position.distance(target),
                                 claim_count: 0,
+                                follow_origin,
                             });
                             if let Some(order) = order
                                 && let Some(mut orders) = entity_mut.get_mut::<UnitOrders>()
                             {
                                 orders.last_failure = None;
                                 orders.current = Some(order);
+                            } else if request.plain
+                                && request.member_orders.is_empty()
+                                && let Some(mut orders) = entity_mut.get_mut::<UnitOrders>()
+                            {
+                                // A legacy MoveTo Replace keeps only Appends accepted while
+                                // this envelope waited, not the replaced current order.
+                                orders.last_failure = None;
+                                orders.current = None;
                             }
                         }
-                        if replace_order {
+                        if replace_order || (request.plain && request.member_orders.is_empty()) {
                             forget_plain_move_identity(world, member.id);
                             clear_gather(world, member.id);
                         }
@@ -1316,14 +2076,73 @@ fn run_unit_follow_move(
             world
                 .entity_mut(entity)
                 .remove::<crate::world::MoveTarget>();
-            start_next_queued_order(world, slot, entity, unit_id);
+            world
+                .entity_mut(entity)
+                .remove::<crate::movement::MoveProgress>();
+            world
+                .entity_mut(entity)
+                .remove::<crate::movement::PlainMoveProgress>();
+            if !unit_has_pending_move(world, unit_id) {
+                start_next_queued_order(world, slot, entity, unit_id);
+            }
         });
         return;
     };
     let Some(current_position) = current_position else {
         return;
     };
-    if current_position == target_position {
+    let target_goal = clamp_target(world, target_position, unit_radius(world, entity));
+    let cohort_progress = world
+        .entity(entity)
+        .get::<crate::movement::MoveProgress>()
+        .cloned();
+    let cohort_pool_goal = cohort_progress.as_ref().and_then(|progress| {
+        world
+            .get_resource::<crate::movement::MovementPools>()
+            .and_then(|pools| pools.0.get(&progress.pool_id))
+            .map(|pool| pool.point)
+    });
+    let same_goal_cohort = cohort_progress.as_ref().is_some_and(|progress| {
+        progress
+            .follow_origin
+            .is_some_and(|origin| origin.target_unit_id == target_id && origin.goal == target_goal)
+            || (progress.follow_origin.is_none() && cohort_pool_goal == Some(target_goal))
+    });
+    let cohort_fallback_reached = cohort_progress.as_ref().is_some_and(|progress| {
+        same_goal_cohort
+            && progress.activity == crate::movement::MovementActivity::Resting
+            && progress.slot == current_position
+            && world.entity(entity).get::<MoveTarget>().is_none()
+            && world
+                .entity(entity)
+                .get::<crate::movement::PhysicalEscape>()
+                .is_none()
+    });
+    let plain_progress = world
+        .entity(entity)
+        .get::<crate::movement::PlainMoveProgress>()
+        .cloned();
+    let same_goal_fallback = plain_progress
+        .as_ref()
+        .is_some_and(|progress| progress.original_point == target_goal);
+    let fallback_reached = same_goal_fallback
+        && plain_progress.as_ref().is_some_and(|progress| {
+            progress.activity == crate::movement::MovementActivity::Resting
+                && progress.slot == current_position
+                && world.entity(entity).get::<MoveTarget>().is_none()
+                && world
+                    .entity(entity)
+                    .get::<crate::movement::PhysicalEscape>()
+                    .is_none()
+        });
+    let physical_escape_active = world
+        .entity(entity)
+        .get::<crate::movement::PhysicalEscape>()
+        .is_some();
+    if (current_position == target_goal && !physical_escape_active)
+        || fallback_reached
+        || cohort_fallback_reached
+    {
         let slot = world
             .entity(entity)
             .get::<crate::world::Owner>()
@@ -1337,18 +2156,30 @@ fn run_unit_follow_move(
             world
                 .entity_mut(entity)
                 .remove::<crate::world::MoveTarget>();
-            start_next_queued_order(world, slot, entity, unit_id);
+            if !unit_has_pending_move(world, unit_id) {
+                start_next_queued_order(world, slot, entity, unit_id);
+            }
         });
+    } else if same_goal_fallback || same_goal_cohort {
+        // A fallback for the unchanged legal goal is still active or resting;
+        // refreshing the target actor must not reopen or erase that result.
+        return;
     } else {
         let move_target = world
             .entity(entity)
             .get::<crate::world::MoveTarget>()
             .map(|target| target.0);
-        if move_target != Some(target_position) {
+        if move_target != Some(target_goal) || plain_progress.is_some() {
             crate::economy::transaction::capture_unit_order_operation(world, unit_id, |world| {
-                world
-                    .entity_mut(entity)
-                    .insert(crate::world::MoveTarget(target_position));
+                if cohort_progress.is_some() {
+                    world
+                        .entity_mut(entity)
+                        .remove::<crate::movement::MoveProgress>();
+                }
+                let mut entity_mut = world.entity_mut(entity);
+                entity_mut.remove::<crate::movement::MoveProgress>();
+                entity_mut.remove::<crate::movement::PlainMoveProgress>();
+                entity_mut.insert(crate::world::MoveTarget(target_goal));
             });
         }
     }
@@ -1418,6 +2249,12 @@ fn start_order(
             entity_mut.remove::<crate::movement::MoveProgress>();
             entity_mut.remove::<crate::movement::PlainMoveProgress>();
             entity_mut.insert(crate::world::MoveTarget(target));
+            drop(entity_mut);
+            world.init_resource::<UnitMoveNeedsAllocation>();
+            world
+                .resource_mut::<UnitMoveNeedsAllocation>()
+                .0
+                .insert(unit);
             forget_plain_move_identity(world, unit);
             Ok(())
         }
@@ -1613,16 +2450,47 @@ pub(crate) fn apply_order(
             }
         }
 
+        let deferred_move = command.behaviour == Behaviour::Move
+            && command.queue == QueueMode::Replace
+            && (((command.group != 0 || command.units.len() > 1)
+                && matches!(
+                    &command.target,
+                    OrderTargetSim::Point(_) | OrderTargetSim::Unit(_)
+                ))
+                || matches!(&command.target, OrderTargetSim::Unit(_)));
+        let singleton_replace_move = command.behaviour == Behaviour::Move
+            && command.queue == QueueMode::Replace
+            && command.group == 0
+            && command.units.len() == 1
+            && matches!(&command.target, OrderTargetSim::Point(_));
+        if singleton_replace_move
+            && !plain_move_reservation_capacity_available(world, slot, *unit_id)
+        {
+            outcomes.refused.push((*unit_id, R::RateLimited));
+            continue;
+        }
+        let inherited_prior = if singleton_replace_move {
+            let reservation = world
+                .get_resource_mut::<PlainMoveReservations>()
+                .and_then(|mut reservations| reservations.remove(unit_id));
+            reservation.map(|reservation| {
+                restore_plain_move_prior(world, entity, *unit_id, &reservation.prior, false);
+                reservation.prior
+            })
+        } else {
+            None
+        };
+        let reservation_prior = singleton_replace_move.then(|| {
+            inherited_prior
+                .clone()
+                .unwrap_or_else(|| capture_plain_move_prior(world, entity, *unit_id))
+        });
         let order = Order {
             order: command.order.clone(),
             behaviour: command.behaviour,
             target: command.target.clone(),
             group: command.group,
         };
-        let deferred_move = command.behaviour == Behaviour::Move
-            && command.queue == QueueMode::Replace
-            && (command.group != 0 || command.units.len() > 1)
-            && matches!(&command.target, OrderTargetSim::Point(_));
         if deferred_move {
             spread_units.push(*unit_id);
             spread_order = Some(order);
@@ -1635,7 +2503,8 @@ pub(crate) fn apply_order(
             && command.group == 0
             && command.units.len() == 1
             && matches!(&command.target, OrderTargetSim::Point(_))
-            && plain_move_has_no_prior_order_state(world, command);
+            && (plain_move_has_no_prior_order_state(world, command)
+                || plain_move_reservation_exists(world, *unit_id));
         let plain_gather = command.behaviour == Behaviour::Gather
             && command.queue == QueueMode::Replace
             && command.group == 0
@@ -1657,7 +2526,16 @@ pub(crate) fn apply_order(
             let target = clamp_target(world, *target, unit_radius(world, entity));
             crate::command::apply_legacy_move_to(world, slot, &[*unit_id], target)
                 .expect("order validation precedes legacy move application");
-            remember_plain_move_identity(world, *unit_id, order);
+            remember_plain_move_identity(world, *unit_id, order.clone());
+            record_plain_move_reservation(
+                world,
+                *unit_id,
+                slot,
+                seq,
+                target,
+                order.clone(),
+                reservation_prior.clone().unwrap_or_default(),
+            );
             outcomes.accepted.push(*unit_id);
             continue;
         }
@@ -1671,6 +2549,7 @@ pub(crate) fn apply_order(
                 outcomes.refused.push((*unit_id, R::TargetInvalid));
                 continue;
             };
+            let target = clamp_target(world, *target, unit_radius(world, entity));
             crate::economy::transaction::capture_unit_order_operation(world, *unit_id, |world| {
                 world
                     .resource_mut::<PendingMovementOrders>()
@@ -1679,19 +2558,23 @@ pub(crate) fn apply_order(
                 movement.remove::<MoveTarget>();
                 movement.remove::<crate::movement::MoveProgress>();
                 movement.remove::<crate::movement::PlainMoveProgress>();
-                crate::command::apply_legacy_move_to(
-                    world,
-                    slot,
-                    &[*unit_id],
-                    clamp_target(world, *target, unit_radius(world, entity)),
-                )
-                .expect("order validation precedes legacy move application");
+                crate::command::apply_legacy_move_to(world, slot, &[*unit_id], target)
+                    .expect("order validation precedes legacy move application");
                 if let Some(mut orders) = world.entity_mut(entity).get_mut::<UnitOrders>() {
                     *orders = UnitOrders::default();
                 }
                 clear_gather(world, *unit_id);
                 remember_plain_move_identity(world, *unit_id, order.clone());
             });
+            record_plain_move_reservation(
+                world,
+                *unit_id,
+                slot,
+                seq,
+                target,
+                order.clone(),
+                reservation_prior.clone().unwrap_or_default(),
+            );
             outcomes.accepted.push(*unit_id);
             continue;
         }
@@ -1707,6 +2590,13 @@ pub(crate) fn apply_order(
                 if first_job_id.is_none() {
                     first_job_id = job_id;
                 }
+                if command.queue == QueueMode::Replace
+                    && command.behaviour != Behaviour::Move
+                    && let Some(mut reservations) =
+                        world.get_resource_mut::<PlainMoveReservations>()
+                {
+                    reservations.remove(unit_id);
+                }
                 outcomes.accepted.push(*unit_id)
             }
             Err(reason) => outcomes.refused.push((*unit_id, reason)),
@@ -1721,13 +2611,24 @@ pub(crate) fn apply_order(
             .map(|entity| unit_radius(world, *entity))
             .fold(0.0_f32, f32::max);
         let point = match command.target {
-            OrderTargetSim::Point(point) => clamp_target(world, point, max_radius),
-            _ => unreachable!("deferred movement has a point target"),
+            OrderTargetSim::Point(point) => point,
+            OrderTargetSim::Unit(target_id) => entity_by_unit
+                .get(&target_id)
+                .and_then(|entity| {
+                    world
+                        .entity(*entity)
+                        .get::<crate::world::Position>()
+                        .map(|p| p.0)
+                })
+                .expect("validated unit target remains present during command application"),
+            _ => unreachable!("deferred movement has a point or unit target"),
         };
+        let point = clamp_target(world, point, max_radius);
         let tick = world.resource::<crate::world::Tick>().0;
         let can_queue = world
             .resource::<PendingMovementOrders>()
-            .can_queue_after_replacing(slot.0, command.group, tick, &spread_units);
+            .can_queue_after_replacing(slot.0, command.group, tick, &spread_units)
+            && movement_envelope_capacity_available_after_replacing(world, slot, &spread_units);
         if !can_queue {
             outcomes
                 .accepted
@@ -1738,11 +2639,8 @@ pub(crate) fn apply_order(
                     .copied()
                     .map(|unit| (unit, R::RateLimited)),
             );
-        }
-        let mut next_pending = world.resource::<PendingMovementOrders>().clone();
-        next_pending.cancel_units(slot.0, &spread_units);
-        let queued = can_queue
-            && next_pending.queue(PendingMovementOrder {
+        } else {
+            let request = PendingMovementOrder {
                 slot,
                 accepted_tick: tick,
                 seq,
@@ -1753,11 +2651,10 @@ pub(crate) fn apply_order(
                 order: spread_order,
                 member_orders: BTreeMap::new(),
                 plain: false,
-            });
-        if queued {
+            };
+            let mut request = Some(request);
             spread_units.sort_unstable();
-            for (index, unit_id) in spread_units.iter().enumerate() {
-                let next_pending = (index == 0).then(|| next_pending.clone());
+            for unit_id in &spread_units {
                 let Some(entity) = entity_by_unit.get(unit_id).copied() else {
                     continue;
                 };
@@ -1765,23 +2662,32 @@ pub(crate) fn apply_order(
                     world,
                     *unit_id,
                     |world| {
-                        if let Some(next_pending) = next_pending {
-                            world.insert_resource(next_pending);
+                        if let Some(request) = request.take() {
+                            let mut pending = world.resource_mut::<PendingMovementOrders>();
+                            pending.cancel_units(slot.0, &spread_units);
+                            assert!(
+                                pending.queue(request),
+                                "capacity was preflighted before captured envelope admission"
+                            );
                         }
                         if let Some(mut orders) = world.entity_mut(entity).get_mut::<UnitOrders>() {
                             orders.queue.clear();
                         }
+                        let canceled_plain = world
+                            .get_resource_mut::<PlainMoveReservations>()
+                            .and_then(|mut reservations| reservations.remove(unit_id));
+                        if let Some(reservation) = canceled_plain {
+                            restore_plain_move_prior(
+                                world,
+                                entity,
+                                *unit_id,
+                                &reservation.prior,
+                                false,
+                            );
+                        }
                     },
                 );
             }
-        }
-        if !queued && can_queue {
-            outcomes
-                .accepted
-                .retain(|unit| !spread_unit_set.contains(unit));
-            outcomes
-                .refused
-                .extend(spread_units.into_iter().map(|unit| (unit, R::RateLimited)));
         }
     }
 
@@ -1885,11 +2791,183 @@ pub(crate) fn plain_move_has_no_prior_order_state(world: &World, command: &Order
         })
 }
 
+pub(crate) fn plain_move_reservation_exists(world: &World, unit_id: u32) -> bool {
+    world
+        .get_resource::<PlainMoveReservations>()
+        .is_some_and(|reservations| reservations.entries.contains_key(&unit_id))
+}
+
+fn plain_move_reservation_capacity_available(world: &World, slot: SlotId, unit_id: u32) -> bool {
+    #[cfg(test)]
+    count_pending_capacity_lookup();
+    let pending = world.resource::<PendingMovementOrders>();
+    let pending_count = pending
+        .pending_units
+        .get(&slot.0)
+        .copied()
+        .unwrap_or_default();
+    let pending_replaced = pending
+        .pending_member_counts
+        .get(&unit_id)
+        .copied()
+        .unwrap_or_default();
+    let reserved_count = world
+        .get_resource::<PlainMoveReservations>()
+        .and_then(|reservations| reservations.slot_counts.get(&slot.0).copied())
+        .unwrap_or_default();
+    let replaces_reservation = world
+        .get_resource::<PlainMoveReservations>()
+        .and_then(|reservations| reservations.entries.get(&unit_id))
+        .is_some_and(|reservation| reservation.slot == slot);
+    pending_count
+        .saturating_sub(pending_replaced)
+        .saturating_add(reserved_count)
+        .saturating_sub(usize::from(replaces_reservation))
+        .saturating_add(1)
+        <= 16_384
+}
+
+fn movement_envelope_capacity_available_after_replacing(
+    world: &World,
+    slot: SlotId,
+    unit_ids: &[u32],
+) -> bool {
+    let replace_ids: std::collections::HashSet<_> = unit_ids.iter().copied().collect();
+    let pending = world.resource::<PendingMovementOrders>();
+    let current_pending = pending
+        .pending_units
+        .get(&slot.0)
+        .copied()
+        .unwrap_or_default();
+    let removed_pending = replace_ids
+        .iter()
+        .filter_map(|unit_id| {
+            #[cfg(test)]
+            count_pending_capacity_lookup();
+            pending.pending_member_counts.get(unit_id)
+        })
+        .copied()
+        .sum::<usize>();
+    let pending_after = current_pending
+        .saturating_sub(removed_pending)
+        .saturating_add(replace_ids.len());
+    let reserved_after = world
+        .get_resource::<PlainMoveReservations>()
+        .map_or(0, |reservations| {
+            reservations
+                .slot_counts
+                .get(&slot.0)
+                .copied()
+                .unwrap_or_default()
+                .saturating_sub(
+                    replace_ids
+                        .iter()
+                        .filter(|unit_id| {
+                            reservations
+                                .entries
+                                .get(unit_id)
+                                .is_some_and(|reservation| reservation.slot == slot)
+                        })
+                        .count(),
+                )
+        });
+    pending_after.saturating_add(reserved_after) <= 16_384
+}
+
+fn capture_plain_move_prior(
+    world: &World,
+    entity: bevy_ecs::entity::Entity,
+    unit_id: u32,
+) -> PlainMovePriorState {
+    let entity = world.entity(entity);
+    PlainMovePriorState {
+        unit_orders: entity.get::<UnitOrders>().cloned(),
+        move_target: entity.get::<MoveTarget>().copied(),
+        move_progress: entity.get::<crate::movement::MoveProgress>().cloned(),
+        plain_progress: entity.get::<crate::movement::PlainMoveProgress>().cloned(),
+        physical_escape: entity.get::<crate::movement::PhysicalEscape>().cloned(),
+        gather: world
+            .get_resource::<crate::economy::EconomyOrders>()
+            .and_then(|orders| orders.0.get(&unit_id))
+            .cloned(),
+        identity: world
+            .get_resource::<PlainMoveOrderIdentities>()
+            .and_then(|identities| identities.0.get(&unit_id))
+            .cloned(),
+    }
+}
+
+fn restore_plain_move_prior(
+    world: &mut World,
+    entity: bevy_ecs::entity::Entity,
+    unit_id: u32,
+    prior: &PlainMovePriorState,
+    preserve_append_suffix: bool,
+) {
+    let suffix = if preserve_append_suffix {
+        world
+            .entity(entity)
+            .get::<UnitOrders>()
+            .map(|orders| orders.queue.clone())
+            .unwrap_or_default()
+    } else {
+        VecDeque::new()
+    };
+    {
+        let mut entity_mut = world.entity_mut(entity);
+        entity_mut.remove::<MoveTarget>();
+        entity_mut.remove::<crate::movement::MoveProgress>();
+        entity_mut.remove::<crate::movement::PlainMoveProgress>();
+        entity_mut.remove::<crate::movement::PhysicalEscape>();
+        if let Some(target) = prior.move_target {
+            entity_mut.insert(target);
+        }
+        if let Some(progress) = &prior.move_progress {
+            entity_mut.insert(progress.clone());
+        }
+        if let Some(progress) = &prior.plain_progress {
+            entity_mut.insert(progress.clone());
+        }
+        if let Some(escape) = &prior.physical_escape {
+            entity_mut.insert(escape.clone());
+        }
+        let mut orders = prior.unit_orders.clone().unwrap_or_default();
+        // Replace cleared the old queue at acceptance; only later Appends survive.
+        orders.queue = suffix;
+        if prior.unit_orders.is_some() || !orders.queue.is_empty() {
+            entity_mut.insert(orders);
+        } else {
+            entity_mut.remove::<UnitOrders>();
+        }
+    }
+    if let Some(mut economy_orders) = world.get_resource_mut::<crate::economy::EconomyOrders>() {
+        economy_orders.0.remove(&unit_id);
+        if let Some(gather) = &prior.gather {
+            economy_orders.0.insert(unit_id, gather.clone());
+        }
+    } else if let Some(gather) = &prior.gather {
+        let mut economy_orders = crate::economy::EconomyOrders::default();
+        economy_orders.0.insert(unit_id, gather.clone());
+        world.insert_resource(economy_orders);
+    }
+    if let Some(mut identities) = world.get_resource_mut::<PlainMoveOrderIdentities>() {
+        identities.0.remove(&unit_id);
+    }
+    if let Some(identity) = &prior.identity {
+        world.init_resource::<PlainMoveOrderIdentities>();
+        world
+            .resource_mut::<PlainMoveOrderIdentities>()
+            .0
+            .insert(unit_id, identity.clone());
+    }
+}
+
 fn unit_has_pending_move(world: &World, unit_id: u32) -> bool {
     world
         .resource::<PendingMovementOrders>()
         .pending_member_counts
         .contains_key(&unit_id)
+        || plain_move_reservation_exists(world, unit_id)
 }
 
 fn unit_orders_empty(world: &World, unit_id: u32) -> bool {
@@ -2174,9 +3252,42 @@ fn remember_plain_move_identity(world: &mut World, unit_id: u32, order: Order) {
         .insert(unit_id, order);
 }
 
-fn forget_plain_move_identity(world: &mut World, unit_id: u32) {
+fn record_plain_move_reservation(
+    world: &mut World,
+    unit_id: u32,
+    slot: SlotId,
+    seq: u32,
+    point: Vec2,
+    order: Order,
+    prior: PlainMovePriorState,
+) {
+    let accepted_tick = world.resource::<crate::world::Tick>().0;
+    let preceding_pool_id = world.resource::<PendingMovementOrders>().next_pool_id;
+    world.init_resource::<PlainMoveReservations>();
+    let mut reservations = world.resource_mut::<PlainMoveReservations>();
+    reservations.next_ordinal = reservations.next_ordinal.saturating_add(1);
+    let arrival_ordinal = reservations.next_ordinal;
+    reservations.insert(
+        unit_id,
+        PlainMoveReservation {
+            slot,
+            accepted_tick,
+            seq,
+            arrival_ordinal,
+            preceding_pool_id,
+            point,
+            order,
+            prior,
+        },
+    );
+}
+
+pub(crate) fn forget_plain_move_identity(world: &mut World, unit_id: u32) {
     if let Some(mut identities) = world.get_resource_mut::<PlainMoveOrderIdentities>() {
         identities.0.remove(&unit_id);
+    }
+    if let Some(mut reservations) = world.get_resource_mut::<PlainMoveReservations>() {
+        reservations.remove(&unit_id);
     }
 }
 
@@ -2196,6 +3307,53 @@ fn clear_gather(world: &mut World, unit_id: u32) {
 mod tests {
     use super::*;
     use turts_mod_api::{Footprint, GathererDef, PackageId, ProducerDef, UnitDef, UnitRegistry};
+
+    #[test]
+    fn legacy_waiter_preparation_uses_one_indexed_lookup_per_member() {
+        const MEMBERS: u32 = 512;
+        let mut world = World::new();
+        let mut entity_by_unit = std::collections::HashMap::new();
+        for unit_id in 1..=MEMBERS {
+            let entity = world
+                .spawn((
+                    crate::world::UnitId(unit_id),
+                    UnitOrders {
+                        current: Some(Order {
+                            order: ContentId::parse("test:move").unwrap(),
+                            behaviour: Behaviour::Move,
+                            target: OrderTargetSim::Point(Vec2::new(12.0, 8.0)),
+                            group: 0,
+                        }),
+                        queue: VecDeque::from([Order {
+                            order: ContentId::parse("test:old-future").unwrap(),
+                            behaviour: Behaviour::Hold,
+                            target: OrderTargetSim::None,
+                            group: 0,
+                        }]),
+                        ..Default::default()
+                    },
+                ))
+                .id();
+            entity_by_unit.insert(unit_id, entity);
+        }
+        LEGACY_WAITER_ENTITY_LOOKUPS.with(|count| count.set(0));
+        prepare_legacy_move_to_waiters(
+            &mut world,
+            &(1..=MEMBERS).collect::<Vec<_>>(),
+            &entity_by_unit,
+        );
+        assert_eq!(
+            LEGACY_WAITER_ENTITY_LOOKUPS.with(std::cell::Cell::get),
+            MEMBERS as usize,
+            "each accepted member uses the shared entity index once"
+        );
+        assert!((1..=MEMBERS).all(|unit_id| {
+            world
+                .entity(entity_by_unit[&unit_id])
+                .get::<UnitOrders>()
+                .is_some_and(|orders| orders.queue.is_empty())
+        }));
+    }
 
     #[test]
     fn unrelated_pending_members_do_not_scan_for_singleton_replacement_preflight() {
@@ -2393,6 +3551,8 @@ mod tests {
                 stalled_ticks: 20,
                 best_distance: 1.0,
                 claim_count: 3,
+
+                follow_origin: None,
             },
             crate::movement::PlainMoveProgress {
                 original_point: Vec2::new(30.0, 30.0),
@@ -3021,6 +4181,648 @@ mod tests {
     }
 
     #[test]
+    fn candidate_capacity_and_winner_indexes_visit_only_relevant_members() {
+        let (mut capacity_app, _) = gatherer_app();
+        let mut pending = PendingMovementOrders::default();
+        assert!(pending.queue(PendingMovementOrder {
+            slot: SlotId(0),
+            accepted_tick: 0,
+            seq: 1,
+            group: 9,
+            pool_id: 0,
+            point: Vec2::new(50.0, 50.0),
+            unit_ids: (10_000..26_000).collect(),
+            order: None,
+            member_orders: BTreeMap::new(),
+            plain: false,
+        }));
+        capacity_app.world_mut().insert_resource(pending);
+        let accepted_order = Order {
+            order: ContentId::parse("test:move").unwrap(),
+            behaviour: Behaviour::Move,
+            target: OrderTargetSim::Point(Vec2::new(50.0, 50.0)),
+            group: 0,
+        };
+        for unit_id in 27_000..27_064 {
+            record_plain_move_reservation(
+                capacity_app.world_mut(),
+                unit_id,
+                SlotId(0),
+                unit_id,
+                Vec2::new(50.0, 50.0),
+                accepted_order.clone(),
+                PlainMovePriorState::default(),
+            );
+        }
+        PENDING_CAPACITY_LOOKUPS.with(|count| count.set(0));
+        PENDING_QUEUE_MEMBER_SCAN_STEPS.with(|count| count.set(0));
+        let admitted = (30_000..31_000)
+            .filter(|unit_id| {
+                if !plain_move_reservation_capacity_available(
+                    capacity_app.world(),
+                    SlotId(0),
+                    *unit_id,
+                ) {
+                    return false;
+                }
+                record_plain_move_reservation(
+                    capacity_app.world_mut(),
+                    *unit_id,
+                    SlotId(0),
+                    *unit_id,
+                    Vec2::new(50.0, 50.0),
+                    accepted_order.clone(),
+                    PlainMovePriorState::default(),
+                );
+                true
+            })
+            .count();
+        assert_eq!(admitted, 320, "the indexed counts still enforce 16,384");
+        assert_eq!(
+            PENDING_CAPACITY_LOOKUPS.with(std::cell::Cell::get),
+            1000,
+            "each admission checks only its actor membership and per-slot counters"
+        );
+        assert_eq!(
+            PENDING_QUEUE_MEMBER_SCAN_STEPS.with(std::cell::Cell::get),
+            0,
+            "unrelated 16,000-member requests are not rescanned for each singleton"
+        );
+
+        let (mut dispatch_app, first) = gatherer_app();
+        dispatch_app
+            .world_mut()
+            .insert_resource(crate::world::MapBounds {
+                size: Vec2::new(64.0, 64.0),
+            });
+        let mobile_type = dispatch_app
+            .world()
+            .entity(first)
+            .get::<crate::UnitType>()
+            .unwrap()
+            .0;
+        let target = Vec2::new(50.0, 50.0);
+        for unit_id in 1..=128_u32 {
+            let entity = if unit_id == 1 {
+                first
+            } else {
+                dispatch_app
+                    .world_mut()
+                    .spawn((
+                        crate::UnitId(unit_id),
+                        crate::UnitType(mobile_type),
+                        crate::Owner(SlotId(0)),
+                        crate::Position(Vec2::new(
+                            4.0 + (unit_id % 12) as f32 * 1.5,
+                            4.0 + (unit_id / 12) as f32 * 1.5,
+                        )),
+                        UnitOrders::default(),
+                    ))
+                    .id()
+            };
+            dispatch_app
+                .world_mut()
+                .entity_mut(entity)
+                .insert(MoveTarget(target));
+            record_plain_move_reservation(
+                dispatch_app.world_mut(),
+                unit_id,
+                SlotId(0),
+                unit_id,
+                target,
+                accepted_order.clone(),
+                PlainMovePriorState::default(),
+            );
+        }
+        PLAIN_CANDIDATE_INDEX_STEPS.with(|count| count.set(0));
+        dispatch_pending_movement(dispatch_app.world_mut());
+        dispatch_pending_movement(dispatch_app.world_mut());
+        assert!(
+            dispatch_app
+                .world()
+                .resource::<PlainMoveReservations>()
+                .entries
+                .is_empty()
+        );
+        assert_eq!(
+            dispatch_app
+                .world()
+                .resource::<PlainMoveReservations>()
+                .budget_used,
+            128
+        );
+        assert!(
+            dispatch_app
+                .world()
+                .resource::<MovementDispatchState>()
+                .is_default()
+        );
+        assert_eq!(
+            PLAIN_CANDIDATE_INDEX_STEPS.with(std::cell::Cell::get),
+            128 * 3,
+            "one arbitration index, one dispatch index and one pop per winner bound candidate work linearly"
+        );
+    }
+
+    #[test]
+    fn promotion_header_scan_is_shared_by_losers_with_the_same_predecessor() {
+        const OLD: u32 = 16_000;
+        const LOSERS: u32 = 64;
+        let mut queue = VecDeque::new();
+        for index in 0..OLD {
+            queue.push_back(PendingMovementOrder {
+                slot: SlotId(0),
+                accepted_tick: 5,
+                seq: index,
+                group: 0,
+                pool_id: u64::from(index + 1),
+                point: Vec2::ZERO,
+                unit_ids: vec![100_000 + index],
+                order: None,
+                member_orders: BTreeMap::new(),
+                plain: true,
+            });
+        }
+        PLAIN_PROMOTION_HEADER_STEPS.with(|count| count.set(0));
+        let header = PromotionHeaderIndex::new(&queue);
+        for index in (0..LOSERS).rev() {
+            insert_promoted_request(
+                &mut queue,
+                PendingMovementOrder {
+                    slot: SlotId(0),
+                    accepted_tick: 6,
+                    seq: index,
+                    group: 0,
+                    pool_id: u64::from(OLD + index + 1),
+                    point: Vec2::new(index as f32, 0.0),
+                    unit_ids: vec![index + 1],
+                    order: None,
+                    member_orders: BTreeMap::new(),
+                    plain: false,
+                },
+                6,
+                u64::from(OLD),
+                &header,
+            );
+        }
+        let promoted: Vec<_> = queue
+            .iter()
+            .skip(OLD as usize)
+            .map(|request| request.unit_ids[0])
+            .collect();
+        assert_eq!(promoted, (1..=LOSERS).collect::<Vec<_>>());
+        assert_eq!(
+            PLAIN_PROMOTION_HEADER_STEPS.with(std::cell::Cell::get),
+            OLD as usize,
+            "one immutable predecessor boundary scans the old header once, regardless of loser count"
+        );
+    }
+
+    #[test]
+    fn promotion_boundaries_are_isolated_per_slot_and_index_distinct_predecessors_once() {
+        let mut long = VecDeque::from([pending_header(0, 5, 1), pending_header(0, 5, 2)]);
+        let mut short = VecDeque::from([pending_header(1, 5, 1)]);
+        let long_header = PromotionHeaderIndex::new(&long);
+        let short_header = PromotionHeaderIndex::new(&short);
+        insert_promoted_request(&mut long, pending_header(0, 6, 3), 6, 99, &long_header);
+        insert_promoted_request(&mut short, pending_header(1, 6, 3), 6, 99, &short_header);
+        assert_eq!(long.len(), 3);
+        assert_eq!(short.len(), 2);
+
+        let mut unequal_long = VecDeque::from([pending_header(0, 6, 1), pending_header(0, 6, 2)]);
+        let mut unequal_short = VecDeque::from([pending_header(1, 6, 1)]);
+        let long_index = PromotionHeaderIndex::new(&unequal_long);
+        let short_index = PromotionHeaderIndex::new(&unequal_short);
+        for offset in (0..3_u64).rev() {
+            insert_promoted_request(
+                &mut unequal_long,
+                pending_header(0, 6, 101 + offset),
+                6,
+                99,
+                &long_index,
+            );
+            insert_promoted_request(
+                &mut unequal_short,
+                pending_header(1, 6, 201 + offset),
+                6,
+                99,
+                &short_index,
+            );
+        }
+        assert_eq!(
+            unequal_long
+                .iter()
+                .map(|request| request.pool_id)
+                .collect::<Vec<_>>(),
+            vec![1, 2, 101, 102, 103],
+            "slot 0 keeps its original length-two boundary and FIFO order"
+        );
+        assert_eq!(
+            unequal_short
+                .iter()
+                .map(|request| request.pool_id)
+                .collect::<Vec<_>>(),
+            vec![1, 201, 202, 203],
+            "slot 1 uses its own length-one boundary and preserves FIFO"
+        );
+
+        const OLD: u32 = 16_000;
+        const LOSERS: u32 = 64;
+        let mut queue = VecDeque::new();
+        for index in 0..OLD {
+            queue.push_back(pending_header(0, 5, u64::from(index + 1)));
+        }
+        PLAIN_PROMOTION_HEADER_STEPS.with(|count| count.set(0));
+        let header = PromotionHeaderIndex::new(&queue);
+        for index in (0..LOSERS).rev() {
+            insert_promoted_request(
+                &mut queue,
+                pending_header(0, 6, u64::from(OLD + index + 1)),
+                6,
+                u64::from(index),
+                &header,
+            );
+        }
+        assert_eq!(queue.len(), OLD as usize + LOSERS as usize);
+        assert_eq!(
+            queue
+                .iter()
+                .skip(OLD as usize)
+                .map(|request| request.unit_ids[0])
+                .collect::<Vec<_>>(),
+            (OLD + 1..=OLD + LOSERS).collect::<Vec<_>>(),
+            "nonmonotone raw header IDs do not change reverse-promotion FIFO"
+        );
+        assert_eq!(
+            PLAIN_PROMOTION_HEADER_STEPS.with(std::cell::Cell::get),
+            OLD as usize,
+            "all predecessor queries share one immutable scan of the existing header"
+        );
+    }
+
+    #[test]
+    fn promotion_header_index_matches_linear_reference_for_unordered_ids_and_reverse_fifo() {
+        let original = VecDeque::from([
+            pending_header(0, 6, 7),
+            pending_header(0, 6, 2),
+            pending_header(0, 6, 9),
+            pending_header(0, 6, 4),
+        ]);
+        let mut indexed = original.clone();
+        let mut reference = original.clone();
+        let header = PromotionHeaderIndex::new(&original);
+        let predecessors = [10, 8, 6, 6, 1];
+        for (reverse_ordinal, predecessor) in predecessors.into_iter().enumerate() {
+            let promoted = pending_header(0, 6, 20 + reverse_ordinal as u64);
+            insert_promoted_request(&mut indexed, promoted.clone(), 6, predecessor, &header);
+
+            let linear_boundary = reference
+                .iter()
+                .position(|request| (request.accepted_tick, request.pool_id) > (6, predecessor))
+                .unwrap_or(reference.len());
+            reference.insert(linear_boundary, promoted);
+            assert_eq!(indexed, reference, "after predecessor query {predecessor}");
+        }
+    }
+
+    fn pending_header(slot: u8, accepted_tick: u32, pool_id: u64) -> PendingMovementOrder {
+        PendingMovementOrder {
+            slot: SlotId(slot),
+            accepted_tick,
+            seq: pool_id as u32,
+            group: 0,
+            pool_id,
+            point: Vec2::ZERO,
+            unit_ids: vec![pool_id as u32],
+            order: None,
+            member_orders: BTreeMap::new(),
+            plain: true,
+        }
+    }
+
+    #[test]
+    fn missing_unit_target_does_not_consume_virtual_spread_capacity() {
+        let (mut app, _first) = gatherer_app();
+        let mut pending = PendingMovementOrders::default();
+        let missing_target = Order {
+            order: ContentId::parse("test:follow-missing").unwrap(),
+            behaviour: Behaviour::Move,
+            target: OrderTargetSim::Unit(999),
+            group: 71,
+        };
+        let point_order = Order {
+            order: ContentId::parse("test:move").unwrap(),
+            behaviour: Behaviour::Move,
+            target: OrderTargetSim::Point(Vec2::new(50.0, 50.0)),
+            group: 71,
+        };
+        let member_orders = BTreeMap::from([
+            (10, missing_target),
+            (11, point_order.clone()),
+            (12, point_order),
+        ]);
+        assert!(pending.queue(PendingMovementOrder {
+            slot: SlotId(0),
+            accepted_tick: 0,
+            seq: 1,
+            group: 71,
+            pool_id: 0,
+            point: Vec2::new(50.0, 50.0),
+            unit_ids: vec![10, 11, 12],
+            order: None,
+            member_orders,
+            plain: false,
+        }));
+        app.world_mut().insert_resource(pending);
+        app.world_mut().insert_resource(MovementDispatchState {
+            tick: Some(0),
+            start_slot: 0,
+            used: 2045,
+            cursor_advanced: true,
+        });
+        for unit_id in [10, 11, 12] {
+            app.world_mut().spawn(crate::UnitId(unit_id));
+        }
+        let candidate = Order {
+            order: ContentId::parse("test:move-candidate").unwrap(),
+            behaviour: Behaviour::Move,
+            target: OrderTargetSim::Point(Vec2::new(52.0, 50.0)),
+            group: 0,
+        };
+        record_plain_move_reservation(
+            app.world_mut(),
+            1,
+            SlotId(0),
+            2,
+            Vec2::new(52.0, 50.0),
+            candidate,
+            PlainMovePriorState::default(),
+        );
+
+        arbitrate_plain_move_reservations(app.world_mut());
+
+        assert!(
+            app.world()
+                .resource::<PlainMoveReservations>()
+                .winners
+                .contains(&1),
+            "the two valid pending members leave one cap slot for the later singleton"
+        );
+        assert_eq!(
+            pending_live_member_count(
+                app.world().resource::<PendingMovementOrders>().queues[&0]
+                    .front()
+                    .unwrap(),
+                &app.world()
+                    .iter_entities()
+                    .filter_map(|entity| entity.get::<crate::UnitId>().map(|id| id.0))
+                    .collect(),
+            ),
+            2
+        );
+    }
+
+    #[test]
+    fn dead_first_unit_target_member_does_not_anchor_surviving_envelope() {
+        let (mut app, first) = gatherer_app();
+        app.world_mut().entity_mut(first).insert(crate::UnitId(2));
+        app.world_mut()
+            .entity_mut(first)
+            .insert(crate::Position(Vec2::new(12.0, 8.0)));
+        let mobile_type = app
+            .world()
+            .entity(first)
+            .get::<crate::UnitType>()
+            .unwrap()
+            .0;
+        for (unit_id, position) in [(3, Vec2::new(24.0, 24.0)), (4, Vec2::new(48.0, 48.0))] {
+            app.world_mut().spawn((
+                crate::UnitId(unit_id),
+                crate::UnitType(mobile_type),
+                crate::Owner(SlotId(0)),
+                crate::Position(position),
+                UnitOrders::default(),
+            ));
+        }
+        let dead_member_order = Order {
+            order: ContentId::parse("test:follow-three").unwrap(),
+            behaviour: Behaviour::Move,
+            target: OrderTargetSim::Unit(3),
+            group: 81,
+        };
+        let survivor_order = Order {
+            order: ContentId::parse("test:follow-four").unwrap(),
+            behaviour: Behaviour::Move,
+            target: OrderTargetSim::Unit(4),
+            group: 81,
+        };
+        let mut pending = PendingMovementOrders::default();
+        assert!(pending.queue(PendingMovementOrder {
+            slot: SlotId(0),
+            accepted_tick: 0,
+            seq: 1,
+            group: 81,
+            pool_id: 1,
+            point: Vec2::new(24.0, 24.0),
+            unit_ids: vec![1, 2],
+            order: Some(dead_member_order.clone()),
+            member_orders: BTreeMap::from([(1, dead_member_order), (2, survivor_order.clone())]),
+            plain: false,
+        }));
+        app.world_mut().insert_resource(pending);
+
+        dispatch_pending_movement(app.world_mut());
+
+        let target = app.world().entity(first).get::<MoveTarget>().unwrap().0;
+        assert!(
+            target.distance(Vec2::new(48.0, 48.0)) < 2.0,
+            "the surviving member's live Unit target, not the removed first member's target, anchors the pool"
+        );
+        assert!(
+            target.distance(Vec2::new(24.0, 24.0)) > 20.0,
+            "the dead first member's stale target must not redirect the survivor"
+        );
+        assert!(
+            app.world()
+                .resource::<PendingMovementOrders>()
+                .pending_member_counts
+                .is_empty()
+        );
+        assert_eq!(
+            app.world()
+                .entity(first)
+                .get::<UnitOrders>()
+                .unwrap()
+                .current,
+            Some(survivor_order)
+        );
+    }
+
+    #[test]
+    fn target_gone_queued_hold_refreshes_reservation_before_survivor_spread() {
+        let (mut app, first) = gatherer_app();
+        let mobile_type = app
+            .world()
+            .entity(first)
+            .get::<crate::UnitType>()
+            .unwrap()
+            .0;
+        app.world_mut().entity_mut(first).insert((
+            crate::Position(Vec2::new(8.0, 8.0)),
+            MoveTarget(Vec2::new(40.0, 40.0)),
+            UnitOrders {
+                current: Some(Order {
+                    order: ContentId::parse("test:follow-gone").unwrap(),
+                    behaviour: Behaviour::Move,
+                    target: OrderTargetSim::Unit(99),
+                    group: 5,
+                }),
+                queue: VecDeque::from([Order {
+                    order: ContentId::parse("test:hold").unwrap(),
+                    behaviour: Behaviour::Hold,
+                    target: OrderTargetSim::None,
+                    group: 0,
+                }]),
+                last_failure: None,
+            },
+        ));
+        let survivor = app
+            .world_mut()
+            .spawn((
+                crate::UnitId(2),
+                crate::UnitType(mobile_type),
+                crate::Owner(SlotId(0)),
+                crate::Position(Vec2::new(12.0, 8.0)),
+                UnitOrders::default(),
+            ))
+            .id();
+        let failed_order = Order {
+            order: ContentId::parse("test:follow-gone").unwrap(),
+            behaviour: Behaviour::Move,
+            target: OrderTargetSim::Unit(99),
+            group: 5,
+        };
+        let survivor_order = Order {
+            order: ContentId::parse("test:move-point").unwrap(),
+            behaviour: Behaviour::Move,
+            target: OrderTargetSim::Point(Vec2::new(8.0, 8.0)),
+            group: 5,
+        };
+        let mut pending = PendingMovementOrders::default();
+        assert!(pending.queue(PendingMovementOrder {
+            slot: SlotId(0),
+            accepted_tick: 0,
+            seq: 1,
+            group: 5,
+            pool_id: 1,
+            point: Vec2::new(8.0, 8.0),
+            unit_ids: vec![1, 2],
+            order: Some(failed_order.clone()),
+            member_orders: BTreeMap::from([(1, failed_order), (2, survivor_order)]),
+            plain: false,
+        }));
+        app.world_mut().insert_resource(pending);
+
+        dispatch_pending_movement(app.world_mut());
+
+        assert_eq!(
+            app.world().entity(first).get::<MoveTarget>(),
+            None,
+            "TargetGone starts the queued Hold before the survivor is spread"
+        );
+        let allocated = app
+            .world()
+            .entity(survivor)
+            .get::<crate::movement::MoveProgress>()
+            .expect("the surviving group member receives a movement pool")
+            .slot;
+        assert!(
+            allocated.distance(Vec2::new(8.0, 8.0)) >= 1.1 - 1.0e-4,
+            "the survivor's destination respects the failed member's new resting position"
+        );
+    }
+
+    #[test]
+    fn queued_self_follow_waits_for_the_shared_cap_before_advancing_hold() {
+        let (mut app, entity) = gatherer_app();
+        let unit_id = 1;
+        let move_id = ContentId::parse("test:move").unwrap();
+        let hold_id = ContentId::parse("test:hold").unwrap();
+        let missing_follow = Order {
+            order: move_id.clone(),
+            behaviour: Behaviour::Move,
+            target: OrderTargetSim::Unit(999),
+            group: 0,
+        };
+        let queued_self_follow = Order {
+            order: move_id.clone(),
+            behaviour: Behaviour::Move,
+            target: OrderTargetSim::Unit(unit_id),
+            group: 0,
+        };
+        let queued_hold = Order {
+            order: hold_id,
+            behaviour: Behaviour::Hold,
+            target: OrderTargetSim::None,
+            group: 0,
+        };
+        app.world_mut().entity_mut(entity).insert((
+            UnitOrders {
+                current: Some(missing_follow.clone()),
+                queue: VecDeque::from([queued_self_follow.clone(), queued_hold.clone()]),
+                last_failure: None,
+            },
+            MoveTarget(Vec2::new(16.0, 8.0)),
+        ));
+        let tick = app.world().resource::<crate::world::Tick>().0;
+        let request = PendingMovementOrder {
+            slot: SlotId(0),
+            accepted_tick: tick,
+            seq: 1,
+            group: 1,
+            pool_id: 1,
+            point: Vec2::new(16.0, 8.0),
+            unit_ids: vec![unit_id],
+            order: Some(missing_follow.clone()),
+            member_orders: BTreeMap::from([(unit_id, missing_follow)]),
+            plain: false,
+        };
+        assert!(
+            app.world_mut()
+                .resource_mut::<PendingMovementOrders>()
+                .queue(request)
+        );
+        *app.world_mut().resource_mut::<MovementDispatchState>() = MovementDispatchState {
+            tick: Some(tick),
+            start_slot: 0,
+            used: 2048,
+            cursor_advanced: true,
+        };
+
+        run_orders(app.world_mut());
+
+        let orders = app.world().entity(entity).get::<UnitOrders>().unwrap();
+        assert_eq!(orders.current.as_ref(), Some(&queued_self_follow));
+        assert_eq!(orders.queue.front(), Some(&queued_hold));
+        assert!(unit_has_pending_move(app.world(), unit_id));
+        assert!(
+            app.world()
+                .resource::<PendingMovementOrders>()
+                .queues
+                .get(&0)
+                .unwrap()
+                .iter()
+                .any(
+                    |request| request.order_for_unit(unit_id).is_some_and(|order| {
+                        order.behaviour == Behaviour::Move
+                            && order.target == OrderTargetSim::Unit(unit_id)
+                    })
+                ),
+            "the self-follow waits as an initial movement envelope"
+        );
+    }
+
+    #[test]
     fn second_dispatch_refreshes_reservations_after_rate_limited_hold_continuation() {
         let (mut app, held) = gatherer_app();
         app.world_mut().insert_resource(crate::world::MapBounds {
@@ -3462,6 +5264,8 @@ mod tests {
                 stalled_ticks: 20,
                 best_distance: 1.0,
                 claim_count: 3,
+
+                follow_origin: None,
             },
         ));
         app.world_mut().entity_mut(entity).insert(UnitOrders {
@@ -3725,6 +5529,674 @@ mod tests {
         assert_eq!(trail.commands.len(), 1);
         assert_eq!(trail.operations.len(), 1);
         assert_eq!(trail.operations[0].before, trail.operations[0].after);
+    }
+
+    #[test]
+    fn late_refused_replace_keeps_provisional_plain_move_and_append_suffix() {
+        let (mut app, entity) = gatherer_app();
+        let candidate = OrderCommand {
+            order: ContentId::parse("test:move-candidate").unwrap(),
+            behaviour: Behaviour::Move,
+            target_kind: turts_mod_api::TargetKind::Point,
+            policy: None,
+            units: vec![1],
+            target: OrderTargetSim::Point(Vec2::new(40.0, 40.0)),
+            queue: QueueMode::Replace,
+            group: 0,
+            allowed_units: vec![],
+            queue_depth: 16,
+        };
+        let (_, outcomes) = apply_order(app.world_mut(), SlotId(0), 1, &candidate);
+        assert_eq!(outcomes.accepted, vec![1]);
+        let suffix = OrderCommand {
+            order: ContentId::parse("test:move-suffix").unwrap(),
+            behaviour: Behaviour::Move,
+            target_kind: turts_mod_api::TargetKind::Point,
+            policy: None,
+            units: vec![1],
+            target: OrderTargetSim::Point(Vec2::new(45.0, 40.0)),
+            queue: QueueMode::Append,
+            group: 0,
+            allowed_units: vec![],
+            queue_depth: 16,
+        };
+        let (_, outcomes) = apply_order(app.world_mut(), SlotId(0), 2, &suffix);
+        assert_eq!(outcomes.accepted, vec![1]);
+        let before_orders = app
+            .world()
+            .entity(entity)
+            .get::<UnitOrders>()
+            .unwrap()
+            .clone();
+        let before_target = app.world().entity(entity).get::<MoveTarget>().unwrap().0;
+        assert_eq!(before_target, Vec2::new(40.0, 40.0));
+        assert!(before_orders.current.is_none());
+        assert_eq!(before_orders.queue.len(), 1);
+        assert_eq!(
+            before_orders.queue[0].order, suffix.order,
+            "the accepted Append suffix remains queued behind the legacy-style candidate"
+        );
+        assert!(
+            app.world()
+                .resource::<PlainMoveReservations>()
+                .entries
+                .contains_key(&1)
+        );
+        let before_identity = app.world().resource::<PlainMoveOrderIdentities>().0[&1].clone();
+
+        app.world_mut().resource_mut::<crate::AuditTrail>().enable();
+        let rejected = OrderCommand {
+            order: ContentId::parse("test:gather-incompatible").unwrap(),
+            behaviour: Behaviour::Gather,
+            target_kind: turts_mod_api::TargetKind::Node,
+            policy: None,
+            units: vec![1],
+            target: OrderTargetSim::Node(NodeId(1)),
+            queue: QueueMode::Replace,
+            group: 0,
+            allowed_units: vec![],
+            queue_depth: 16,
+        };
+        let (_, outcomes) = apply_order(app.world_mut(), SlotId(0), 3, &rejected);
+        assert_eq!(
+            outcomes.refused,
+            vec![(1, crate::command::RejectReason::IncompatibleItem)]
+        );
+        assert_eq!(
+            app.world().entity(entity).get::<UnitOrders>().unwrap(),
+            &before_orders
+        );
+        assert_eq!(
+            app.world().entity(entity).get::<MoveTarget>().unwrap().0,
+            before_target
+        );
+        assert!(
+            app.world()
+                .resource::<PlainMoveReservations>()
+                .entries
+                .contains_key(&1)
+        );
+        assert_eq!(
+            app.world().resource::<PlainMoveOrderIdentities>().0[&1],
+            before_identity
+        );
+        let trail = app.world().resource::<crate::AuditTrail>();
+        assert_eq!(trail.operations.len(), 1);
+        assert_eq!(trail.operations[0].before, trail.operations[0].after);
+    }
+
+    #[test]
+    fn accepted_legacy_move_to_cancels_a_modern_plain_candidate() {
+        let (mut app, entity) = gatherer_app();
+        let candidate = crate::Command {
+            slot: SlotId(0),
+            seq: 1,
+            kind: crate::CommandKind::Order(Box::new(OrderCommand {
+                order: ContentId::parse("test:modern-move").unwrap(),
+                behaviour: Behaviour::Move,
+                target_kind: turts_mod_api::TargetKind::PointOrUnit,
+                policy: None,
+                units: vec![1],
+                target: OrderTargetSim::Point(Vec2::new(40.0, 40.0)),
+                queue: QueueMode::Replace,
+                group: 0,
+                allowed_units: vec![],
+                queue_depth: 16,
+            })),
+        };
+        assert_eq!(
+            crate::apply_command(app.world_mut(), &candidate)
+                .units
+                .accepted,
+            vec![1]
+        );
+        assert!(
+            app.world()
+                .resource::<PlainMoveReservations>()
+                .entries
+                .contains_key(&1)
+        );
+        let active = Order {
+            order: ContentId::parse("test:active-before-legacy").unwrap(),
+            behaviour: Behaviour::Move,
+            target: OrderTargetSim::Point(Vec2::new(32.0, 32.0)),
+            group: 5,
+        };
+        app.world_mut().entity_mut(entity).insert((
+            UnitOrders {
+                current: Some(active.clone()),
+                queue: VecDeque::from([Order {
+                    order: ContentId::parse("test:future-before-legacy").unwrap(),
+                    behaviour: Behaviour::Hold,
+                    target: OrderTargetSim::Point(Vec2::new(8.0, 8.0)),
+                    group: 0,
+                }]),
+                last_failure: None,
+            },
+            crate::movement::MoveProgress {
+                pool_id: 3,
+                slot: Vec2::new(32.0, 32.0),
+                activity: crate::movement::MovementActivity::Moving,
+                pass_mode: false,
+                stalling_on_group: false,
+                stalled_ticks: 0,
+                best_distance: 1.0,
+                claim_count: 0,
+                follow_origin: None,
+            },
+            crate::movement::PhysicalEscape {
+                target: Some(Vec2::new(9.0, 8.0)),
+            },
+        ));
+
+        let rejected = crate::Command {
+            slot: SlotId(1),
+            seq: 2,
+            kind: crate::CommandKind::MoveTo {
+                unit_ids: vec![1],
+                target: Vec2::new(44.0, 44.0),
+            },
+        };
+        assert_eq!(
+            crate::apply_command(app.world_mut(), &rejected).outcome,
+            Err(crate::command::RejectReason::NotOwner)
+        );
+        assert!(
+            app.world()
+                .resource::<PlainMoveReservations>()
+                .entries
+                .contains_key(&1)
+        );
+        assert_eq!(
+            app.world()
+                .entity(entity)
+                .get::<UnitOrders>()
+                .unwrap()
+                .current,
+            Some(active)
+        );
+        assert_eq!(
+            app.world()
+                .entity(entity)
+                .get::<UnitOrders>()
+                .unwrap()
+                .queue
+                .len(),
+            1
+        );
+        assert!(
+            app.world()
+                .entity(entity)
+                .get::<crate::movement::MoveProgress>()
+                .is_some()
+        );
+
+        let accepted = crate::Command {
+            slot: SlotId(0),
+            seq: 3,
+            kind: crate::CommandKind::MoveTo {
+                unit_ids: vec![1],
+                target: Vec2::new(44.0, 44.0),
+            },
+        };
+        assert_eq!(
+            crate::apply_command(app.world_mut(), &accepted).outcome,
+            Ok(crate::Applied { job_id: None })
+        );
+        assert_eq!(
+            app.world().entity(entity).get::<MoveTarget>().unwrap().0,
+            Vec2::new(44.0, 44.0)
+        );
+        assert_eq!(
+            app.world().entity(entity).get::<UnitOrders>().unwrap(),
+            &UnitOrders::default()
+        );
+        assert!(
+            app.world()
+                .entity(entity)
+                .get::<crate::movement::MoveProgress>()
+                .is_none()
+        );
+        assert_eq!(
+            app.world()
+                .entity(entity)
+                .get::<crate::movement::PhysicalEscape>()
+                .and_then(|escape| escape.target),
+            Some(Vec2::new(9.0, 8.0)),
+            "legacy MoveTo replaces voluntary movement without erasing physical escape"
+        );
+        assert!(
+            !app.world()
+                .resource::<PlainMoveReservations>()
+                .entries
+                .contains_key(&1)
+        );
+        app.update();
+        assert_eq!(
+            app.world().entity(entity).get::<MoveTarget>().unwrap().0,
+            Vec2::new(44.0, 44.0),
+            "the replaced cohort progress cannot restore its older target"
+        );
+        assert!(
+            !app.world()
+                .resource::<PlainMoveOrderIdentities>()
+                .0
+                .contains_key(&1)
+        );
+    }
+
+    #[test]
+    fn refused_legacy_multi_move_to_preserves_gather_and_prior_orders() {
+        let (mut app, first) = gatherer_app();
+        let first_type = app
+            .world()
+            .entity(first)
+            .get::<crate::UnitType>()
+            .unwrap()
+            .0;
+        let second = app
+            .world_mut()
+            .spawn((
+                crate::UnitId(2),
+                crate::UnitType(first_type),
+                crate::Owner(SlotId(0)),
+                crate::Position(Vec2::new(10.0, 8.0)),
+                UnitOrders::default(),
+            ))
+            .id();
+        let current = Order {
+            order: ContentId::parse("test:old-current").unwrap(),
+            behaviour: Behaviour::Move,
+            target: OrderTargetSim::Point(Vec2::new(20.0, 20.0)),
+            group: 1,
+        };
+        let queued = Order {
+            order: ContentId::parse("test:old-queued").unwrap(),
+            behaviour: Behaviour::Hold,
+            target: OrderTargetSim::Point(Vec2::new(10.0, 8.0)),
+            group: 0,
+        };
+        let gather = crate::economy::GatherOrder {
+            node: Some(crate::NodeId(7)),
+            deposit: Some(crate::NodeId(7)),
+            receiver: None,
+            stage: crate::economy::gather::GatherStage::Gathering,
+            carry: crate::economy::gather::RateCarry::default(),
+        };
+        for entity in [first, second] {
+            app.world_mut().entity_mut(entity).insert(UnitOrders {
+                current: Some(current.clone()),
+                queue: VecDeque::from([queued.clone()]),
+                last_failure: None,
+            });
+        }
+        app.world_mut()
+            .resource_mut::<crate::economy::EconomyOrders>()
+            .0
+            .insert(1, gather.clone());
+        app.world_mut()
+            .resource_mut::<crate::economy::EconomyOrders>()
+            .0
+            .insert(2, gather.clone());
+        let before_targets = [
+            app.world().entity(first).get::<MoveTarget>().copied(),
+            app.world().entity(second).get::<MoveTarget>().copied(),
+        ];
+        let mut full = PendingMovementOrders::default();
+        assert!(full.queue(PendingMovementOrder {
+            slot: SlotId(0),
+            accepted_tick: 0,
+            seq: 1,
+            group: 0,
+            pool_id: 0,
+            point: Vec2::new(48.0, 48.0),
+            unit_ids: (10_000..26_384).collect(),
+            order: None,
+            member_orders: BTreeMap::new(),
+            plain: true,
+        }));
+        app.world_mut().insert_resource(full);
+
+        let refused = crate::Command {
+            slot: SlotId(0),
+            seq: 2,
+            kind: crate::CommandKind::MoveTo {
+                unit_ids: vec![1, 2],
+                target: Vec2::new(40.0, 40.0),
+            },
+        };
+        let result = crate::apply_command(app.world_mut(), &refused);
+        assert!(result.units.accepted.is_empty());
+        assert_eq!(result.units.refused.len(), 2);
+        for (index, (unit_id, entity)) in [(1, first), (2, second)].into_iter().enumerate() {
+            assert_eq!(
+                app.world()
+                    .entity(entity)
+                    .get::<UnitOrders>()
+                    .unwrap()
+                    .current,
+                Some(current.clone())
+            );
+            assert_eq!(
+                app.world()
+                    .entity(entity)
+                    .get::<UnitOrders>()
+                    .unwrap()
+                    .queue,
+                VecDeque::from([queued.clone()])
+            );
+            assert_eq!(
+                app.world().resource::<crate::economy::EconomyOrders>().0[&unit_id],
+                gather
+            );
+            assert_eq!(
+                app.world().entity(entity).get::<MoveTarget>().copied(),
+                before_targets[index]
+            );
+        }
+        assert_eq!(
+            app.world()
+                .resource::<PendingMovementOrders>()
+                .pending_units[&0],
+            16_384
+        );
+    }
+
+    #[test]
+    fn authored_plain_blocked_identity_is_acknowledged_while_legacy_multi_waits() {
+        let (mut app, first) = gatherer_app();
+        let first_type = app
+            .world()
+            .entity(first)
+            .get::<crate::UnitType>()
+            .unwrap()
+            .0;
+        let second = app
+            .world_mut()
+            .spawn((
+                crate::UnitId(2),
+                crate::UnitType(first_type),
+                crate::Owner(SlotId(0)),
+                crate::Position(Vec2::new(10.0, 8.0)),
+                UnitOrders::default(),
+            ))
+            .id();
+        let authored = Order {
+            order: ContentId::parse("test:authored-old-move").unwrap(),
+            behaviour: Behaviour::Move,
+            target: OrderTargetSim::Point(Vec2::new(20.0, 20.0)),
+            group: 0,
+        };
+        app.world_mut().entity_mut(first).insert((
+            UnitOrders::default(),
+            crate::movement::PlainMoveProgress {
+                original_point: Vec2::new(20.0, 20.0),
+                slot: Vec2::new(8.0, 8.0),
+                pool_slots: Vec::new(),
+                gather_goal: None,
+                activity: crate::movement::MovementActivity::Blocked,
+                stalled_ticks: 20,
+                best_distance: Vec2::new(20.0, 20.0).distance(Vec2::new(8.0, 8.0)),
+                claim_count: 3,
+                failure_recorded: false,
+            },
+        ));
+        app.world_mut().init_resource::<PlainMoveOrderIdentities>();
+        app.world_mut()
+            .resource_mut::<PlainMoveOrderIdentities>()
+            .0
+            .insert(1, authored.clone());
+        let tick = app.world().resource::<crate::world::Tick>().0;
+        *app.world_mut().resource_mut::<MovementDispatchState>() = MovementDispatchState {
+            tick: Some(tick),
+            start_slot: 0,
+            used: 2047,
+            cursor_advanced: true,
+        };
+
+        let replacement = crate::Command {
+            slot: SlotId(0),
+            seq: 2,
+            kind: crate::CommandKind::MoveTo {
+                unit_ids: vec![1, 2],
+                target: Vec2::new(40.0, 40.0),
+            },
+        };
+        let admitted = crate::apply_command(app.world_mut(), &replacement);
+        assert_eq!(admitted.units.accepted, vec![1, 2]);
+        assert_eq!(
+            app.world().resource::<PlainMoveOrderIdentities>().0.get(&1),
+            Some(&authored)
+        );
+        run_orders(app.world_mut());
+
+        let orders = app.world().entity(first).get::<UnitOrders>().unwrap();
+        assert_eq!(orders.current, None);
+        let failure = orders
+            .last_failure
+            .as_ref()
+            .expect("prior A is acknowledged");
+        assert_eq!(failure.order, authored.order);
+        assert_eq!(failure.reason, crate::command::RejectReason::Blocked);
+        assert_eq!(failure.tick, tick);
+        assert!(
+            app.world()
+                .entity(first)
+                .get::<crate::movement::PlainMoveProgress>()
+                .is_some_and(|progress| progress.failure_recorded)
+        );
+        assert!(unit_has_pending_move(app.world(), 1));
+        assert!(unit_has_pending_move(app.world(), 2));
+        assert!(
+            !app.world()
+                .resource::<PlainMoveOrderIdentities>()
+                .0
+                .contains_key(&1)
+        );
+        assert!(
+            app.world()
+                .entity(second)
+                .get::<UnitOrders>()
+                .unwrap()
+                .last_failure
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn admitted_legacy_multi_move_retains_current_until_dispatch_and_keeps_new_append() {
+        let (mut app, first) = gatherer_app();
+        app.world_mut().insert_resource(crate::world::MapBounds {
+            size: Vec2::new(64.0, 64.0),
+        });
+        let kind = app
+            .world()
+            .entity(first)
+            .get::<crate::UnitType>()
+            .unwrap()
+            .0;
+        let second = app
+            .world_mut()
+            .spawn((
+                crate::UnitId(2),
+                crate::UnitType(kind),
+                crate::Owner(SlotId(0)),
+                crate::Position(Vec2::new(10.0, 8.0)),
+                UnitOrders::default(),
+            ))
+            .id();
+        let head = app
+            .world_mut()
+            .spawn((
+                crate::UnitId(3),
+                crate::UnitType(kind),
+                crate::Owner(SlotId(0)),
+                crate::Position(Vec2::new(16.0, 8.0)),
+                UnitOrders::default(),
+            ))
+            .id();
+        let current = Order {
+            order: ContentId::parse("test:prior-move").unwrap(),
+            behaviour: Behaviour::Move,
+            target: OrderTargetSim::Point(Vec2::new(30.0, 30.0)),
+            group: 4,
+        };
+        let gather = crate::economy::GatherOrder {
+            node: Some(crate::NodeId(7)),
+            deposit: Some(crate::NodeId(7)),
+            receiver: None,
+            stage: crate::economy::gather::GatherStage::Gathering,
+            carry: crate::economy::gather::RateCarry::default(),
+        };
+        for (unit_id, entity) in [(1, first), (2, second)] {
+            app.world_mut().entity_mut(entity).insert((
+                UnitOrders {
+                    current: Some(current.clone()),
+                    queue: VecDeque::from([Order {
+                        order: ContentId::parse("test:old-future").unwrap(),
+                        behaviour: Behaviour::Hold,
+                        target: OrderTargetSim::None,
+                        group: 0,
+                    }]),
+                    last_failure: None,
+                },
+                MoveTarget(Vec2::new(30.0, 30.0)),
+            ));
+            app.world_mut()
+                .resource_mut::<crate::economy::EconomyOrders>()
+                .0
+                .insert(unit_id, gather.clone());
+        }
+        let tick = app.world().resource::<crate::world::Tick>().0;
+        let head_order = Order {
+            order: ContentId::parse("test:head-move").unwrap(),
+            behaviour: Behaviour::Move,
+            target: OrderTargetSim::Point(Vec2::new(50.0, 50.0)),
+            group: 7,
+        };
+        assert!(
+            app.world_mut()
+                .resource_mut::<PendingMovementOrders>()
+                .queue(PendingMovementOrder {
+                    slot: SlotId(0),
+                    accepted_tick: tick,
+                    seq: 1,
+                    group: 7,
+                    pool_id: 0,
+                    point: Vec2::new(50.0, 50.0),
+                    unit_ids: vec![3],
+                    order: Some(head_order.clone()),
+                    member_orders: BTreeMap::from([(3, head_order)]),
+                    plain: false,
+                })
+        );
+        *app.world_mut().resource_mut::<MovementDispatchState>() = MovementDispatchState {
+            tick: Some(tick),
+            start_slot: 0,
+            used: 2047,
+            cursor_advanced: true,
+        };
+
+        let replace = crate::Command {
+            slot: SlotId(0),
+            seq: 2,
+            kind: crate::CommandKind::MoveTo {
+                unit_ids: vec![1, 2],
+                target: Vec2::new(40.0, 40.0),
+            },
+        };
+        let result = crate::apply_command(app.world_mut(), &replace);
+        assert_eq!(result.units.accepted, vec![1, 2]);
+        for (unit_id, entity) in [(1, first), (2, second)] {
+            assert_eq!(
+                app.world()
+                    .entity(entity)
+                    .get::<UnitOrders>()
+                    .unwrap()
+                    .current,
+                Some(current.clone())
+            );
+            assert!(
+                app.world()
+                    .entity(entity)
+                    .get::<UnitOrders>()
+                    .unwrap()
+                    .queue
+                    .is_empty()
+            );
+            assert_eq!(
+                app.world().resource::<crate::economy::EconomyOrders>().0[&unit_id].stage,
+                crate::economy::gather::GatherStage::Gathering
+            );
+        }
+        let append = crate::Command {
+            slot: SlotId(0),
+            seq: 3,
+            kind: crate::CommandKind::Order(Box::new(OrderCommand {
+                order: ContentId::parse("test:append-hold").unwrap(),
+                behaviour: Behaviour::Hold,
+                target_kind: turts_mod_api::TargetKind::None,
+                policy: None,
+                units: vec![1, 2],
+                target: OrderTargetSim::None,
+                queue: QueueMode::Append,
+                group: 0,
+                allowed_units: vec![],
+                queue_depth: 16,
+            })),
+        };
+        assert_eq!(
+            crate::apply_command(app.world_mut(), &append)
+                .units
+                .accepted,
+            vec![1, 2]
+        );
+
+        dispatch_pending_movement(app.world_mut());
+        assert_eq!(
+            app.world()
+                .resource::<PendingMovementOrders>()
+                .pending_units[&0],
+            2
+        );
+        for entity in [first, second] {
+            assert_eq!(
+                app.world()
+                    .entity(entity)
+                    .get::<UnitOrders>()
+                    .unwrap()
+                    .current,
+                Some(current.clone())
+            );
+            assert_eq!(
+                app.world()
+                    .entity(entity)
+                    .get::<UnitOrders>()
+                    .unwrap()
+                    .queue
+                    .len(),
+                1
+            );
+        }
+        app.world_mut().resource_mut::<crate::world::Tick>().0 = tick + 1;
+        dispatch_pending_movement(app.world_mut());
+        for (unit_id, entity) in [(1, first), (2, second)] {
+            let orders = app.world().entity(entity).get::<UnitOrders>().unwrap();
+            assert_eq!(orders.current, None);
+            assert_eq!(orders.queue.len(), 1, "only post-Replace Append survives");
+            assert!(app.world().entity(entity).get::<MoveTarget>().is_some());
+            assert!(
+                !app.world()
+                    .resource::<PendingMovementOrders>()
+                    .pending_member_counts
+                    .contains_key(&unit_id)
+            );
+            assert_eq!(
+                app.world().resource::<crate::economy::EconomyOrders>().0[&unit_id].stage,
+                crate::economy::gather::GatherStage::Idle
+            );
+        }
+        assert!(app.world().entity(head).get::<MoveTarget>().is_some());
     }
 
     #[test]

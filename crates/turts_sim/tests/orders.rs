@@ -442,9 +442,17 @@ fn move_follows_a_unit_target_as_it_moves() {
         &unit_target_move_command(1, 2, QueueMode::Replace),
     );
     assert_eq!(result.units.accepted, vec![1]);
+    assert!(
+        app.world().entity(actor).get::<MoveTarget>().is_none(),
+        "a Unit-target move waits for the shared movement dispatch"
+    );
     assert_eq!(
-        app.world().entity(actor).get::<MoveTarget>().unwrap().0,
-        initial_target
+        app.world()
+            .resource::<turts_sim::orders::PendingMovementOrders>()
+            .pending_member_counts
+            .get(&1),
+        Some(&1),
+        "initial Unit-target movement participates in the shared cap"
     );
     app.world_mut()
         .entity_mut(target)
@@ -462,6 +470,10 @@ fn move_follows_a_unit_target_as_it_moves() {
     assert!(
         actor_target.distance(target_pos) >= 1.0,
         "follow destination avoids the target unit: {actor_target:?} vs {target_pos:?}"
+    );
+    assert!(
+        actor_target.distance(target_pos) < initial_target.distance(target_pos),
+        "the first allocation samples the live Unit target, not its stale admission point"
     );
 }
 

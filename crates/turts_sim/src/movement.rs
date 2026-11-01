@@ -40,6 +40,16 @@ pub struct MoveProgress {
     pub stalled_ticks: u16,
     pub best_distance: f32,
     pub claim_count: u8,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub follow_origin: Option<FollowMoveOrigin>,
+}
+
+/// The live Unit target and per-actor legal goal used for initial spread.
+/// This keeps a shared max-radius pool anchor from looking like target motion.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct FollowMoveOrigin {
+    pub target_unit_id: u32,
+    pub goal: Vec2,
 }
 
 /// Default-omitted progress for a single legacy move that has encountered an obstacle.
@@ -56,6 +66,13 @@ pub struct PlainMoveProgress {
     pub best_distance: f32,
     pub claim_count: u8,
     pub failure_recorded: bool,
+}
+
+/// Physical recovery that continues after an order has already failed.
+/// Unlike movement progress, this state belongs to the unit body, not its order.
+#[derive(Component, Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PhysicalEscape {
+    pub target: Option<Vec2>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -630,6 +647,23 @@ impl MovementSearch<'_> {
     }
 }
 
+fn body_overlaps_position(
+    position: Vec2,
+    self_index: usize,
+    radius: f32,
+    units: &[MovementFrameUnit],
+    points: &[crate::grid::GridPoint],
+    grid: &crate::grid::UniformGrid,
+    max_radius: f32,
+) -> bool {
+    grid.within(points, position, radius + max_radius)
+        .into_iter()
+        .any(|index| {
+            index != self_index
+                && position.distance(units[index].position) < radius + units[index].radius - 1.0e-5
+        })
+}
+
 #[expect(
     clippy::too_many_arguments,
     reason = "the shared frame kernel passes immutable index inputs without rebuilding them"
@@ -653,6 +687,7 @@ fn step_plain_progress(
         target: unit.target,
         progress: unit.progress.clone(),
         plain_progress: Some(progress.clone()),
+        physical_escape: unit.physical_escape.clone(),
         failed_blocked: false,
     };
     let Some(speed) = unit.speed else {
@@ -849,6 +884,17 @@ fn step_plain_progress(
             progress.activity = MovementActivity::Blocked;
             output.target = None;
             output.failed_blocked = true;
+            if body_overlaps_position(
+                position,
+                index,
+                unit.radius,
+                units,
+                points,
+                grid,
+                max_radius,
+            ) {
+                output.physical_escape = Some(PhysicalEscape { target: None });
+            }
         }
     } else {
         output.target = Some(movement_target);
@@ -1309,6 +1355,7 @@ pub struct MovementFrameUnit {
     pub target: Option<Vec2>,
     pub progress: Option<MoveProgress>,
     pub plain_progress: Option<PlainMoveProgress>,
+    pub physical_escape: Option<PhysicalEscape>,
 }
 
 /// All movement-relevant state for one fixed tick. Both the sim and log validator use this input.
@@ -1327,6 +1374,7 @@ pub struct MovementFrameOutput {
     pub target: Option<Vec2>,
     pub progress: Option<MoveProgress>,
     pub plain_progress: Option<PlainMoveProgress>,
+    pub physical_escape: Option<PhysicalEscape>,
     pub failed_blocked: bool,
 }
 
@@ -1384,6 +1432,7 @@ pub fn step_frame(frame: &MovementFrame, dt: f32) -> Vec<MovementFrameOutput> {
             target: unit.target,
             progress: unit.progress.clone(),
             plain_progress: unit.plain_progress.clone(),
+            physical_escape: unit.physical_escape.clone(),
             failed_blocked: false,
         })
         .collect();
@@ -1453,6 +1502,151 @@ pub fn step_frame(frame: &MovementFrame, dt: f32) -> Vec<MovementFrameOutput> {
         }
         let unit = units[index].clone();
         let Some(speed) = unit.speed else { continue };
+        if unit.physical_escape.is_some() {
+            let overlapping = body_overlaps_position(
+                unit.position,
+                index,
+                unit.radius,
+                &units,
+                &points,
+                &grid,
+                max_radius,
+            );
+            if !overlapping {
+                outputs[index].physical_escape = None;
+                if outputs[index]
+                    .progress
+                    .as_ref()
+                    .is_some_and(|progress| progress.activity == MovementActivity::Blocked)
+                {
+                    let progress = outputs[index].progress.take().unwrap();
+                    let key = (
+                        progress.pool_id,
+                        progress.slot.x.to_bits(),
+                        progress.slot.y.to_bits(),
+                    );
+                    if remove_pool_slot_claim(
+                        &mut slot_claim_counts,
+                        &mut pool_indexes,
+                        progress.pool_id,
+                        progress.slot,
+                    ) {
+                        assigned_slots.remove(&key);
+                    }
+                }
+                units[index].physical_escape = None;
+                units[index].progress = outputs[index].progress.clone();
+                units[index].plain_progress = outputs[index].plain_progress.clone();
+                // Clearance ends the obligation. A newly accepted target can
+                // resume through the ordinary movement path on this same tick.
+            } else {
+                let escape = unit
+                    .physical_escape
+                    .as_ref()
+                    .and_then(|state| state.target)
+                    .filter(|target| {
+                        !body_overlaps_position(
+                            *target,
+                            index,
+                            unit.radius,
+                            &units,
+                            &points,
+                            &grid,
+                            max_radius,
+                        )
+                    })
+                    .or_else(|| {
+                        MovementSearch {
+                            bounds: frame.bounds,
+                            units: &units,
+                            points: &points,
+                            grid: &grid,
+                            max_radius,
+                        }
+                        .find_free_singleton_destination(
+                            unit.position,
+                            unit.radius,
+                            index,
+                        )
+                    });
+                let Some(escape) = escape else {
+                    outputs[index].physical_escape = Some(PhysicalEscape { target: None });
+                    units[index].physical_escape = outputs[index].physical_escape.clone();
+                    continue;
+                };
+                let offset = escape - unit.position;
+                let distance = offset.length();
+                let mut position = if distance <= speed * dt {
+                    escape
+                } else if distance > 1.0e-8 {
+                    unit.position + offset * ((speed * dt) / distance)
+                } else {
+                    unit.position
+                };
+                position.x = position
+                    .x
+                    .clamp(unit.radius, (frame.bounds.x - unit.radius).max(unit.radius));
+                position.y = position
+                    .y
+                    .clamp(unit.radius, (frame.bounds.y - unit.radius).max(unit.radius));
+                let still_overlapping = body_overlaps_position(
+                    position,
+                    index,
+                    unit.radius,
+                    &units,
+                    &points,
+                    &grid,
+                    max_radius,
+                );
+                outputs[index].position = position;
+                outputs[index].physical_escape = still_overlapping.then_some(PhysicalEscape {
+                    target: Some(escape),
+                });
+                if !still_overlapping {
+                    if outputs[index]
+                        .progress
+                        .as_ref()
+                        .is_some_and(|progress| progress.activity == MovementActivity::Blocked)
+                    {
+                        let progress = outputs[index].progress.take().unwrap();
+                        let key = (
+                            progress.pool_id,
+                            progress.slot.x.to_bits(),
+                            progress.slot.y.to_bits(),
+                        );
+                        if remove_pool_slot_claim(
+                            &mut slot_claim_counts,
+                            &mut pool_indexes,
+                            progress.pool_id,
+                            progress.slot,
+                        ) {
+                            assigned_slots.remove(&key);
+                        }
+                    }
+                }
+                units[index].position = position;
+                units[index].physical_escape = outputs[index].physical_escape.clone();
+                units[index].progress = outputs[index].progress.clone();
+                units[index].plain_progress = outputs[index].plain_progress.clone();
+                points[index].position = position;
+                grid.move_point(index, unit.position, position);
+                refresh_nearby_pool_slot_clearances(
+                    unit.position,
+                    position,
+                    unit.radius,
+                    &slot_points,
+                    &slot_refs,
+                    &slot_grid,
+                    &mut pool_indexes,
+                    &units,
+                    &points,
+                    &grid,
+                    &assigned_slots,
+                    max_radius,
+                );
+                continue;
+            }
+        }
         if unit
             .progress
             .as_ref()
@@ -2143,6 +2337,19 @@ pub fn step_frame(frame: &MovementFrame, dt: f32) -> Vec<MovementFrameOutput> {
         outputs[index].target = (!failed_blocked).then_some(movement_target);
         update_target_claims(&mut target_claims, unit.target, outputs[index].target);
         outputs[index].failed_blocked = failed_blocked;
+        if failed_blocked
+            && body_overlaps_position(
+                position,
+                index,
+                unit.radius,
+                &units,
+                &points,
+                &grid,
+                max_radius,
+            )
+        {
+            outputs[index].physical_escape = Some(PhysicalEscape { target: None });
+        }
         outputs[index].progress = Some(progress);
         units[index].position = position;
         units[index].target = outputs[index].target;
@@ -2217,6 +2424,7 @@ pub(crate) fn integrate_movement(world: &mut World) {
                     target: entity.get::<MoveTarget>().map(|target| target.0),
                     progress: entity.get::<MoveProgress>().cloned(),
                     plain_progress: entity.get::<PlainMoveProgress>().cloned(),
+                    physical_escape: entity.get::<PhysicalEscape>().cloned(),
                 },
             ))
         })
@@ -2254,6 +2462,11 @@ pub(crate) fn integrate_movement(world: &mut World) {
             entity_mut.insert(progress);
         } else {
             entity_mut.remove::<PlainMoveProgress>();
+        }
+        if let Some(escape) = output.physical_escape {
+            entity_mut.insert(escape);
+        } else {
+            entity_mut.remove::<PhysicalEscape>();
         }
     }
     let active_pools: std::collections::BTreeSet<_> = world
@@ -2297,6 +2510,7 @@ mod spread_tests {
                 progress: None,
 
                 plain_progress: None,
+                physical_escape: None,
             }],
             pools: BTreeMap::new(),
         };
@@ -2324,6 +2538,7 @@ mod spread_tests {
                 progress: None,
 
                 plain_progress: None,
+                physical_escape: None,
             }],
             pools: BTreeMap::new(),
         };
@@ -2365,8 +2580,11 @@ mod spread_tests {
                     stalled_ticks: 0,
                     best_distance: position.distance(target),
                     claim_count: 0,
+
+                    follow_origin: None,
                 }),
                 plain_progress: None,
+                physical_escape: None,
             }],
             pools: BTreeMap::new(),
         };
@@ -2403,6 +2621,8 @@ mod spread_tests {
                     stalled_ticks: 0,
                     best_distance: position.distance(target),
                     claim_count: 0,
+
+                    follow_origin: None,
                 }),
                 None,
             ),
@@ -2437,6 +2657,8 @@ mod spread_tests {
                         target: Some(target),
                         progress,
                         plain_progress,
+
+                        physical_escape: None,
                     },
                     MovementFrameUnit {
                         unit_id: 2,
@@ -2448,6 +2670,7 @@ mod spread_tests {
                         target: None,
                         progress: None,
                         plain_progress: None,
+                        physical_escape: None,
                     },
                 ],
                 pools: BTreeMap::new(),
@@ -2743,9 +2966,12 @@ mod spread_tests {
                         stalled_ticks: 60,
                         best_distance: 1.0,
                         claim_count: 3,
+
+                        follow_origin: None,
                     }),
 
                     plain_progress: None,
+                    physical_escape: None,
                 },
                 MovementFrameUnit {
                     unit_id: 2,
@@ -2758,6 +2984,7 @@ mod spread_tests {
                     progress: None,
 
                     plain_progress: None,
+                    physical_escape: None,
                 },
                 MovementFrameUnit {
                     unit_id: 3,
@@ -2770,6 +2997,7 @@ mod spread_tests {
                     progress: None,
 
                     plain_progress: None,
+                    physical_escape: None,
                 },
             ],
             pools: BTreeMap::from([(7, pool)]),
@@ -2819,9 +3047,12 @@ mod spread_tests {
                         stalled_ticks: 19,
                         best_distance: 1.0,
                         claim_count: 0,
+
+                        follow_origin: None,
                     }),
 
                     plain_progress: None,
+                    physical_escape: None,
                 },
                 MovementFrameUnit {
                     unit_id: 2,
@@ -2834,6 +3065,7 @@ mod spread_tests {
                     progress: None,
 
                     plain_progress: None,
+                    physical_escape: None,
                 },
             ],
             pools: BTreeMap::from([(8, pool)]),
@@ -2893,9 +3125,12 @@ mod spread_tests {
                         stalled_ticks: 19,
                         best_distance: 0.0,
                         claim_count: 3,
+
+                        follow_origin: None,
                     }),
 
                     plain_progress: None,
+                    physical_escape: None,
                 },
                 MovementFrameUnit {
                     unit_id: 2,
@@ -2914,9 +3149,12 @@ mod spread_tests {
                         stalled_ticks: 0,
                         best_distance: 0.0,
                         claim_count: 0,
+
+                        follow_origin: None,
                     }),
 
                     plain_progress: None,
+                    physical_escape: None,
                 },
             ],
             pools: BTreeMap::from([(9, pool)]),
@@ -3016,6 +3254,7 @@ mod spread_tests {
                 progress: None,
 
                 plain_progress: None,
+                physical_escape: None,
             },
             MovementFrameUnit {
                 unit_id: 99,
@@ -3028,6 +3267,7 @@ mod spread_tests {
                 progress: None,
 
                 plain_progress: None,
+                physical_escape: None,
             },
         ];
         let points = units
@@ -3119,9 +3359,12 @@ mod spread_tests {
                     stalled_ticks: 19,
                     best_distance: position.distance(target),
                     claim_count: 0,
+
+                    follow_origin: None,
                 }),
 
                 plain_progress: None,
+                physical_escape: None,
             });
             units.push(MovementFrameUnit {
                 unit_id: 10_000 + unit_id,
@@ -3134,6 +3377,7 @@ mod spread_tests {
                 progress: None,
 
                 plain_progress: None,
+                physical_escape: None,
             });
         }
         for (index, &point) in pool.slots.iter().skip(count).enumerate() {
@@ -3154,9 +3398,12 @@ mod spread_tests {
                     stalled_ticks: 0,
                     best_distance: 0.0,
                     claim_count: 0,
+
+                    follow_origin: None,
                 }),
 
                 plain_progress: None,
+                physical_escape: None,
             });
         }
         for (left_index, left) in units.iter().enumerate() {
@@ -3231,6 +3478,8 @@ mod plain_movement_tests {
                         claim_count: 0,
                         failure_recorded: false,
                     }),
+
+                    physical_escape: None,
                 },
                 MovementFrameUnit {
                     unit_id: 2,
@@ -3242,6 +3491,7 @@ mod plain_movement_tests {
                     target: None,
                     progress: None,
                     plain_progress: None,
+                    physical_escape: None,
                 },
             ],
             pools: BTreeMap::new(),
@@ -3267,6 +3517,7 @@ mod plain_movement_tests {
                 target: Some(target),
                 progress: None,
                 plain_progress: None,
+                physical_escape: None,
             }],
             pools: BTreeMap::new(),
         };
@@ -3313,6 +3564,8 @@ mod plain_movement_tests {
                     claim_count: 1,
                     failure_recorded: false,
                 }),
+
+                physical_escape: None,
             }],
             pools: BTreeMap::new(),
         };
@@ -3353,6 +3606,7 @@ mod plain_movement_tests {
                     target: Some(target),
                     progress: None,
                     plain_progress: None,
+                    physical_escape: None,
                 },
                 MovementFrameUnit {
                     unit_id: 2,
@@ -3364,6 +3618,7 @@ mod plain_movement_tests {
                     target: None,
                     progress: None,
                     plain_progress: None,
+                    physical_escape: None,
                 },
             ],
             pools: BTreeMap::new(),
@@ -3408,6 +3663,8 @@ mod plain_movement_tests {
                         claim_count: 3,
                         failure_recorded: true,
                     }),
+
+                    physical_escape: None,
                 },
                 MovementFrameUnit {
                     unit_id: 2,
@@ -3419,6 +3676,7 @@ mod plain_movement_tests {
                     target: None,
                     progress: None,
                     plain_progress: None,
+                    physical_escape: None,
                 },
             ],
             pools: BTreeMap::new(),
@@ -3496,6 +3754,8 @@ mod plain_movement_tests {
                         claim_count: 0,
                         failure_recorded: false,
                     }),
+
+                    physical_escape: None,
                 },
                 MovementFrameUnit {
                     unit_id: unit_id + 10,
@@ -3507,6 +3767,7 @@ mod plain_movement_tests {
                     target: None,
                     progress: None,
                     plain_progress: None,
+                    physical_escape: None,
                 },
             ]
         };
@@ -3558,6 +3819,7 @@ mod plain_movement_tests {
                     target: Some(Vec2::new(1.0, 1.0)),
                     progress: None,
                     plain_progress: None,
+                    physical_escape: None,
                 },
                 MovementFrameUnit {
                     unit_id: 2,
@@ -3569,6 +3831,7 @@ mod plain_movement_tests {
                     target: None,
                     progress: None,
                     plain_progress: None,
+                    physical_escape: None,
                 },
             ],
             pools: BTreeMap::new(),

@@ -190,7 +190,8 @@ pub fn apply_command(world: &mut World, command: &Command) -> CommandResult {
             && order.group == 0
             && order.units.len() == 1
             && matches!(&order.target, crate::orders::OrderTargetSim::Point(_))
-            && crate::orders::plain_move_has_no_prior_order_state(world, order);
+            && (crate::orders::plain_move_has_no_prior_order_state(world, order)
+                || crate::orders::plain_move_reservation_exists(world, order.units[0]));
         let plain_gather = order.behaviour == turts_mod_api::Behaviour::Gather
             && order.queue == crate::orders::QueueMode::Replace
             && order.group == 0;
@@ -225,7 +226,8 @@ pub fn apply_command(world: &mut World, command: &Command) -> CommandResult {
 fn apply_command_inner(world: &mut World, command: &Command) -> CommandResult {
     let outcome = match &command.kind {
         CommandKind::MoveTo { unit_ids, target } => {
-            apply_move_to(world, command.slot, unit_ids, *target).map(|()| Applied { job_id: None })
+            apply_legacy_command_move_to(world, command.slot, unit_ids, *target)
+                .map(|()| Applied { job_id: None })
         }
         CommandKind::Gather { unit_id, node_id } => {
             crate::economy::gather::assign_gather(world, command.slot, *unit_id, *node_id).map(
@@ -353,23 +355,12 @@ fn apply_move_to_per_unit(
             Some(_) => Ok(()),
         };
         match result {
-            Ok(()) => {
-                outcomes.accepted.push(*unit_id);
-                if let Some(mut orders) = world.get_resource_mut::<EconomyOrders>()
-                    && let Some(order) = orders.0.get_mut(unit_id)
-                {
-                    order.node = None;
-                    order.deposit = None;
-                    order.receiver = None;
-                    order.stage = crate::economy::gather::GatherStage::Idle;
-                    order.carry = crate::economy::gather::RateCarry::default();
-                }
-            }
+            Ok(()) => outcomes.accepted.push(*unit_id),
             Err(reason) => outcomes.refused.push((*unit_id, reason)),
         }
     }
     if !outcomes.accepted.is_empty()
-        && !crate::orders::queue_movement_envelope(
+        && !crate::orders::queue_legacy_move_to_envelope(
             world,
             crate::orders::MovementEnvelopeRequest {
                 slot,
@@ -389,6 +380,12 @@ fn apply_move_to_per_unit(
                 .drain(..)
                 .map(|unit| (unit, RejectReason::RateLimited)),
         );
+    } else if !outcomes.accepted.is_empty() {
+        let entity_by_unit = index
+            .iter()
+            .map(|(&unit_id, (entity, _, _, _))| (unit_id, *entity))
+            .collect::<HashMap<_, _>>();
+        crate::orders::prepare_legacy_move_to_waiters(world, &outcomes.accepted, &entity_by_unit);
     }
     let outcome = if outcomes.accepted.is_empty() {
         outcomes
@@ -430,6 +427,25 @@ fn apply_move_to(
     unit_ids: &[u32],
     target: Vec2,
 ) -> Result<(), RejectReason> {
+    apply_move_to_with_legacy_replace(world, slot, unit_ids, target, false)
+}
+
+fn apply_legacy_command_move_to(
+    world: &mut World,
+    slot: SlotId,
+    unit_ids: &[u32],
+    target: Vec2,
+) -> Result<(), RejectReason> {
+    apply_move_to_with_legacy_replace(world, slot, unit_ids, target, true)
+}
+
+fn apply_move_to_with_legacy_replace(
+    world: &mut World,
+    slot: SlotId,
+    unit_ids: &[u32],
+    target: Vec2,
+    legacy_replace: bool,
+) -> Result<(), RejectReason> {
     let bounds = world.get_resource::<MapBounds>().copied();
     let types = world.resource::<UnitTypes>();
     let index: HashMap<u32, (Entity, SlotId, bool)> = world
@@ -470,16 +486,16 @@ fn apply_move_to(
         })
         .collect();
     for (entity, target) in moves {
+        if legacy_replace {
+            let unit_id = world.entity(entity).get::<UnitId>().map(|id| id.0).unwrap();
+            crate::orders::reset_legacy_move_to_unit(world, slot, entity, unit_id);
+        }
         let mut movement = world.entity_mut(entity);
         movement.remove::<crate::movement::PlainMoveProgress>();
         movement.insert(MoveTarget(target));
     }
-    if let Some(mut identities) =
-        world.get_resource_mut::<crate::orders::PlainMoveOrderIdentities>()
-    {
-        for id in unit_ids {
-            identities.0.remove(id);
-        }
+    for id in unit_ids {
+        crate::orders::forget_plain_move_identity(world, *id);
     }
     if let Some(mut orders) = world.get_resource_mut::<EconomyOrders>() {
         for id in unit_ids {
