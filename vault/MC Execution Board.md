@@ -8,7 +8,7 @@ source: codex
 
 # MC execution board
 
-State: ACTIVE: 13/25 lanes complete; 56/170 runs registered. Task11 COMPLETE at aff4d63, independent 0 open findings, integration 12/12 gates0 (1266/0/19, T7, M3). RUN55 Task12 owns the sole compiler/cache; RUN56 mod-runtime review registered source-only. C1-C135. Wave5 needs Task12; no main merge/push.
+State: ACTIVE: 13/25 lanes complete; 57/170 runs registered. Task11 COMPLETE at aff4d63, independent 0 open findings, integration 12/12 gates0 (1266/0/19, T7, M3). RUN55 Task12 owns the sole compiler/cache; RUN56 mod-runtime review is source-only; RUN57 implements assets.rs without a build lease. C1-C136. Wave5 needs Task12; no main merge/push.
 
 Plan: `docs/superpowers/plans/2026-10-29-mc-player-control.md`.
 Design of record: `docs/superpowers/specs/2026-10-29-mc-player-control-design.md`, revision13 at main721e56e.
@@ -249,6 +249,8 @@ One row per builder/reviewer dispatch or resumed agent work turn. Register befor
 | 54 | T11 independent camera and light review | ux-designer | gpt-6.1-sol | high | c996463 | COMPLETE PASS 0H/0M/0L;11 independent probes, first CAM1 2/2 supplied C131 restore and independent pixels; own drag-speed plant0/101/0, exact source restored, lease/read hold returned. Task11 run3/4. |
 | 55 | T12 widget, cursor and guide implementation continuation | bevy-rendering-engineer with ux-designer | gpt-6-luna | high | ffff0a3 after T7 rebase | Registered BEFORE dispatch. Active sole compiler/browser owner after Task11 merge. Actual native9selected/7semantic failures exit101; C134 HUD1 all6 named missing-widget/panel failures exit1 with valid owned selection and exact viewport/DPR. Runtime implementation active; preserve legacy28 until covered. Task12 run3/estimate8, soft16/hard32. |
 | 56 | T12 independent widget runtime and data-source review | mod-runtime-engineer | gpt-6.1-sol | high | f6577b9 plus RUN55 preparation | Registered BEFORE dispatch; source-only and pure Node on immutable outside-lane snapshots until committed gates and explicit lease. Independent42/42 pure instrument probes pass; runtime review/own production plant pending. Check table8.4 privacy, assets, scale, actions and legacy28. Task12 run4/estimate8, soft16/hard32. |
+
+| 57 | T12 parallel asset loader implementation | bevy-rendering-engineer with ux-designer | gpt-6-luna | high | f6577b9 plus active RUN55 source | Registered BEFORE dispatch. Own only widgets/assets.rs, source/test edits only; no compiler/browser/cache lease. Implement agreed qualified WidgetAssets API and real decode/usage/handle tests; RUN55 owns module registration and execution. Task12 run5/estimate8, soft16/hard32. |
 
 ## 9. Preflight ledger and stop
 
@@ -1197,3 +1199,12 @@ Evidence: plan Task12 Files at:542 requires the guide close button; Task17 Step2
 
 
 Disk pass2026-11-01:24 completed economy.jsonl logs (14,598,330,399 bytes) are preserved as sibling .jsonl.zst files (18,042,501 bytes). Root checked no open process file references, source unchanged, compression/CRC/decompression exit0, and exact decompressed SHA-256 before each raw removal. Reclaimed13.58GiB; MC evidence now2.3GiB,684GiB filesystem free. Active Task12/cache/source and all screenshots/reports remain. Old raw path mappings and restoration instructions: main target/mc-evidence/completed-log-compression-20261101/README.md; per-file hashes/exits in receipt.json. These are lossless storage changes, not evidence deletion or a new run. RUN55 implements; RUN56's package-local asset collision High is being repaired with a two-package regression before gates.
+
+
+## C136: implement the asset loader in parallel with the widget tree
+
+Conflict: Task12 has independent image/font asset work and substantial source/tree integration work. Waiting for one builder to write both delays the full runtime, while a second compiler would duplicate cache and violate the standing lease.
+
+Choice: register RUN57, Luna/high, for widgets/assets.rs only in the Task12 worktree. RUN55 keeps sources, tree, module registration, integration and the sole compiler/browser/cache lease. RUN57 writes source and meaningful tests against the agreed qualified WidgetAssets API, then RUN55 executes them with its normal validation. RUN56 independently reviews both. No additional lane or target is created.
+
+Evidence: design8.1:733-737 requires render-only normal images and separate CPU-retained cursor assets. RUN55 supplied the disjoint API before dispatch: qualified image/cursor/font maps, nine-slice metadata, handle accessors and load_widget_assets. Brief4 permits lane/cache layout decisions and the CEO approved safe parallelism. Alternative not taken: run a second compiler, overlap edits to the renderer, reduce review, or add more analysis-only runs.57/170 runs; Task12 run5/8; no CEO stop.

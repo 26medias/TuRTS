@@ -1187,3 +1187,12 @@ Conflict: Task12 requires guide close-button handling, but the existing Muster g
 Choice: Task12 implements the generic authored Button Input(toggle_guide) path and GuideOpen visibility. An installed-runtime test supplies a small authored interface with a close button, dispatches and handles the button interaction, and checks guide state and rendered visibility. A direct toggle helper call alone is insufficient. Keep production Muster content unchanged for this proof. Task17 supplies the actual Forge guide button and proves its HUD2 pixel path as planned.
 
 Evidence: plan Task12 Files at:542 requires the guide close button; Task17 Step2 at:617 requires F1 and the button to close Forge's guide. mods/muster/interface/hud.ron:10 defines the guide as Text(Bind(Guide)); no close Button is present. Design8:719-721 and8.1:726-727 assign HUD layout/content to mod widgets, and design8.4:794 defines Input actions for buttons. This is a fixture and ownership decision under brief4; no player-visible step or acceptance row changes. Alternative not taken: draw an engine-owned close button, claim a nonexistent authored control was exercised, omit installed dispatch proof, or move Forge's pixel acceptance into this lane.56/170 runs; no new dispatch or CEO stop.
+
+
+## C136: implement the asset loader in parallel with the widget tree
+
+Conflict: Task12 has independent image/font asset work and substantial source/tree integration work. Waiting for one builder to write both delays the full runtime, while a second compiler would duplicate cache and violate the standing lease.
+
+Choice: register RUN57, Luna/high, for widgets/assets.rs only in the Task12 worktree. RUN55 keeps sources, tree, module registration, integration and the sole compiler/browser/cache lease. RUN57 writes source and meaningful tests against the agreed qualified WidgetAssets API, then RUN55 executes them with its normal validation. RUN56 independently reviews both. No additional lane or target is created.
+
+Evidence: design8.1:733-737 requires render-only normal images and separate CPU-retained cursor assets. RUN55 supplied the disjoint API before dispatch: qualified image/cursor/font maps, nine-slice metadata, handle accessors and load_widget_assets. Brief4 permits lane/cache layout decisions and the CEO approved safe parallelism. Alternative not taken: run a second compiler, overlap edits to the renderer, reduce review, or add more analysis-only runs.57/170 runs; Task12 run5/8; no CEO stop.
