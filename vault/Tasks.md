@@ -108,7 +108,7 @@ MC update2026-10-31: ACTIVE: 9 of 25 lanes complete. Task9 candidateabe0841 has 
 MC current: ACTIVE: 10 of25 lanes complete. Task9 merged fb5e2d6 and all12 integration gates passed: workspace1053/0/18, T7 136frames/53moving, actualM3 controls7captures, frozen exact. Wave4 pushed; CI41195343950 agents success, check/browser running. Build40/170; C1-C82; main c3f09d0 unchanged. See [[MC Execution Board]].
 
 
-MC latest: Task7 COMPLETE at7e575c9, independent0H/0M and integration12/12gates0;12/25complete,55/170runs. Task11RUN53builder/54reviewactive, solecacheT11. Wave5stillneeds11/12. [[MC Execution Board]].
+MC latest: Task11 COMPLETE at aff4d63, independent0findings and integration12/12 gates0;13/25 complete,56/170 runs. Task12 RUN55 builder/56 review active, solecache target/mc-t12. Wave5 needs Task12. [[MC Execution Board]].
 
 
 MC latest: ACTIVE: 10 of 25 lanes complete; 48/170 runs; Task6 run6/6. C1-C110 recorded. Task6 normal gates passed at ffb21b3; independent review found cap/physical-escape/follow-completion Highs. The C106-C108 repair batch is active; fresh gates, refutations and final review remain. No CEO stop or main merge.
