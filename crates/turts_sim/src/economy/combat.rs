@@ -71,6 +71,13 @@ struct WeaponParameters {
     targets: SlotRelation,
 }
 
+struct CombatIndex<'a> {
+    grid: &'a crate::grid::UniformGrid,
+    points: &'a [crate::grid::GridPoint],
+    positions: &'a BTreeMap<u32, bevy_math::Vec2>,
+    owners: &'a BTreeMap<u32, u8>,
+}
+
 /// Run each enabled weapon once, in ascending unit-id order.
 pub(crate) fn run_combat(world: &mut World) {
     if !world.contains_resource::<Weapons>()
@@ -109,6 +116,12 @@ pub(crate) fn run_combat(world: &mut World) {
         .filter_map(|unit| unit.weapon.as_ref().map(|weapon| weapon.range))
         .fold(f32::EPSILON, f32::max);
     let grid = crate::grid::UniformGrid::new(&points, cell_size);
+    let combat_index = CombatIndex {
+        grid: &grid,
+        points: &points,
+        positions: &positions,
+        owners: &owners,
+    };
     let mut weapon_ids = world
         .resource::<Weapons>()
         .0
@@ -185,17 +198,7 @@ pub(crate) fn run_combat(world: &mut World) {
         let target = if suppressed_by_fire_policy || suppressed_by_engage {
             None
         } else {
-            choose_target(
-                world,
-                weapon,
-                origin,
-                &parameters,
-                &grid,
-                &points,
-                &positions,
-                &owners,
-                focus,
-            )
+            choose_target(world, origin, &parameters, &combat_index, focus)
         };
         if target.is_some()
             && stops_for_engage
@@ -293,13 +296,9 @@ fn weapon_parameters(
 
 fn choose_target(
     world: &World,
-    _weapon: u32,
     origin: bevy_math::Vec2,
     parameters: &WeaponParameters,
-    grid: &crate::grid::UniformGrid,
-    points: &[crate::grid::GridPoint],
-    positions: &BTreeMap<u32, bevy_math::Vec2>,
-    owners: &BTreeMap<u32, u8>,
+    candidates: &CombatIndex<'_>,
     focus: Option<u32>,
 ) -> Option<u32> {
     let range_squared = parameters.range * parameters.range;
@@ -309,7 +308,7 @@ fn choose_target(
         if *health == 0 {
             return None;
         }
-        let owner = *owners.get(&id)?;
+        let owner = *candidates.owners.get(&id)?;
         let relation_matches = match parameters.targets {
             SlotRelation::Other => owner != parameters.owner,
             SlotRelation::Same => owner == parameters.owner,
@@ -318,7 +317,7 @@ fn choose_target(
         if !relation_matches {
             return None;
         }
-        let distance_squared = positions.get(&id)?.distance_squared(origin);
+        let distance_squared = candidates.positions.get(&id)?.distance_squared(origin);
         (distance_squared <= range_squared).then_some((distance_squared, id))
     };
     if let Some(focus) = focus
@@ -326,9 +325,11 @@ fn choose_target(
     {
         return Some(focus);
     }
-    grid.within(points, origin, parameters.range)
+    candidates
+        .grid
+        .within(candidates.points, origin, parameters.range)
         .into_iter()
-        .filter_map(|index| matches(points[index].id))
+        .filter_map(|point_index| matches(candidates.points[point_index].id))
         .min_by(|left, right| {
             left.0
                 .total_cmp(&right.0)
