@@ -231,17 +231,15 @@ function visibleForeignGaps(image, scene, unit, unselectedImage) {
     const radius = unit.pick_radius;
     if (!Number.isFinite(radius) || radius <= 0 || !unselectedImage ||
         image.width !== unselectedImage.width || image.height !== unselectedImage.height) return false;
-    const ring = ringSamples(image, scene, unit, radius * 0.94, 16, 0.025);
-    const solidAtDiagonals = [2, 6, 10, 14].every((index) => {
-        const point = ring[index].point;
-        return Boolean(point && nearColor(pixelAt(image, Math.round(point[0]), Math.round(point[1])), SLOT_RGB[unit.owner_slot], 85));
-    });
+    const ring = ringSamples(image, scene, unit, radius * 0.94, 16, 0.025, 1);
+    const colouredQuadrants = [1, 5, 9, 13].every((start) =>
+        ring.slice(start, start + 3).some((sample) => sample.coloured));
     const gapsAtCardinals = [0, 4, 8, 12].every((index) => {
         const point = ring[index].point;
         if (!point) return true;
         return ringGapDiffersFromUnit(image, unselectedImage, point, SLOT_RGB[unit.owner_slot]);
     });
-    return solidAtDiagonals && gapsAtCardinals;
+    return colouredQuadrants && gapsAtCardinals;
 }
 
 function ringGapDiffersFromUnit(image, unselectedImage, point, slotColour) {
@@ -257,7 +255,7 @@ function ringGapDiffersFromUnit(image, unselectedImage, point, slotColour) {
     return false;
 }
 
-function ringSamples(image, scene, unit, radius, count, height) {
+function ringSamples(image, scene, unit, radius, count, height, colourSearchRadius = 2) {
     const matrix = scene.clip_from_world;
     const viewport = scene.viewport_logical_rect;
     assert(Array.isArray(matrix) && matrix.length === 16 && Array.isArray(viewport), "VIS1 requires actual C84 camera projection metadata");
@@ -265,7 +263,7 @@ function ringSamples(image, scene, unit, radius, count, height) {
         const angle = index * Math.PI * 2 / count;
         const point = project(matrix, viewport, [unit.translation[0] + Math.cos(angle) * radius, height,
             unit.translation[2] + Math.sin(angle) * radius]);
-        return { point, coloured: Boolean(point && hasColor(image, point, SLOT_RGB[unit.owner_slot], 85)) };
+        return { point, coloured: Boolean(point && hasColor(image, point, SLOT_RGB[unit.owner_slot], 85, colourSearchRadius)) };
     });
 }
 

@@ -18,12 +18,10 @@ async function drive(io) {
         const screenshotCall = inputCall++;
         const bytes = Buffer.from(await io.screenshot());
         const record = { label, screenshot_call: screenshotCall, point: null };
-        shots.push(record);
         if (save) {
-            await io.save(`${label}.png`, bytes);
-            inputCall += 1;
-            await io.save(`${label}.png.b64`, Buffer.from(bytes.toString("base64")));
-            inputCall += 1;
+            shots.push(record);
+            await saveScreenshotFiles(io, label, bytes);
+            inputCall += 2;
         }
         return { bytes, record, image: decodePng(bytes) };
     }
@@ -43,8 +41,9 @@ async function drive(io) {
         throw new Error("VIS1 PNG target recognition failed before input; no scene/debug data was read by the driver");
     }
     initial.record.label = "vis1-full-initial";
-    await io.save("vis1-full-initial.png", initial.bytes);
-    inputCall += 1;
+    shots.push(initial.record);
+    await saveScreenshotFiles(io, initial.record.label, initial.bytes);
+    inputCall += 2;
     const avoid = targetSet.candidates.concat([{
         minX: targetSet.ground.x - 2,
         minY: targetSet.ground.y - 2,
@@ -99,6 +98,7 @@ async function drive(io) {
     const actualForeign = currentTargets.foreign;
     actionCall = await act("attack-foreign", "click", actualForeign.x, actualForeign.y, "right");
     await capture("vis1-attack-immediate", actualForeign);
+    await act("move-away-from-health-bar", "move", targets.ground.x, targets.ground.y);
     let damaged = null;
     for (let attempt = 0; attempt < 120; attempt += 1) {
         await act(`damage-poll-wait-${attempt}`, "wait", 100);
@@ -109,10 +109,9 @@ async function drive(io) {
             damaged = poll;
             damaged.record.label = "vis1-foreign-damaged";
             damaged.record.point = point;
-            await io.save("vis1-foreign-damaged.png", damaged.bytes);
-            inputCall += 1;
-            await io.save("vis1-foreign-damaged.png.b64", Buffer.from(damaged.bytes.toString("base64")));
-            inputCall += 1;
+            shots.push(damaged.record);
+            await saveScreenshotFiles(io, damaged.record.label, damaged.bytes);
+            inputCall += 2;
             break;
         }
     }
@@ -176,6 +175,11 @@ async function drive(io) {
     await io.save("vis1-full-steps.json", Buffer.from(JSON.stringify({ targets, actions, shots }, null, 2) + "\n"));
 }
 
+async function saveScreenshotFiles(io, label, bytes) {
+    await io.save(`${label}.png`, bytes);
+    await io.save(`${label}.png.b64`, Buffer.from(bytes.toString("base64")));
+}
+
 function hasHealthFill(image, target) {
     if (!target?.bounds) return false;
     const [left, top, width] = target.bounds;
@@ -236,4 +240,4 @@ function hasAttackCrossNear(image, point) {
     return best >= 6;
 }
 
-module.exports = { drive, hasHealthFill, hasRangeColorNear, hasWaypointColorNear, hasAttackCrossNear };
+module.exports = { drive, saveScreenshotFiles, hasHealthFill, hasRangeColorNear, hasWaypointColorNear, hasAttackCrossNear };

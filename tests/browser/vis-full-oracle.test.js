@@ -64,7 +64,8 @@ test("VIS1 pixel oracle accepts a solid own ring and four-gap foreign ring", () 
     const unit = { unit_id: 7, owner_slot: 1, translation: [0, 0, 0], ground_screen_center: [50, 50], pick_radius: 0.5 };
     const orange = [230, 159, 0];
     const baseline = image(100, 100);
-    fill(baseline, orange);
+    const ground = [80, 130, 80];
+    fill(baseline, ground);
     const gaps = image(100, 100);
     gaps.rgba.set(baseline.rgba);
     paintRing(gaps, scene, unit, orange, true);
@@ -74,6 +75,11 @@ test("VIS1 pixel oracle accepts a solid own ring and four-gap foreign ring", () 
     paintRing(solid, scene, unit, orange, false);
     assert.equal(visibleForeignGaps(solid, scene, unit, baseline), false);
     assert.equal(visibleRingPixels(solid, scene, unit, unit.pick_radius), true);
+    const gapsOnly = image(100, 100);
+    gapsOnly.rgba.set(baseline.rgba);
+    paintRing(gapsOnly, scene, unit, ground, true);
+    assert.equal(visibleForeignGaps(gapsOnly, scene, unit, baseline), false,
+        "four neutral gaps without four coloured quadrants must fail");
     const missingQuadrant = image(100, 100);
     missingQuadrant.rgba.set(baseline.rgba);
     paintRingMissingQuadrant(missingQuadrant, scene, unit, orange, 2);
