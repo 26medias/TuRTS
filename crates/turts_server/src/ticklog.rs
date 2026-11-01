@@ -107,6 +107,8 @@ mod tests {
             tick_log: Some(tick_log.to_path_buf()),
             stats: None,
             economy_log: None,
+            command_script: None,
+            order_log: None,
             synthetic_units,
             run_ticks: None,
         }

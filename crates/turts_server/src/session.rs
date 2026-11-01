@@ -31,6 +31,7 @@ const REASON_PROTOCOL: &str = "protocol version mismatch";
 const REASON_LOCKFILE: &str = "lockfile hash mismatch";
 const REASON_ALREADY_IN_MATCH: &str = "player already in match";
 const REASON_NO_OPEN_SLOT: &str = "no open slot";
+const REASON_DUPLICATE_WINDOW: &str = "This game is open in another window";
 
 /// A connection that sent an accepted `Hello`.
 #[derive(Component)]
@@ -40,6 +41,49 @@ pub struct Session {
     /// The slot of the player. It is permanent for the match (D25).
     pub slot: turts_sim::SlotId,
     pub player_id: u64,
+}
+
+/// Whole tick_hz-scaled admission tokens, retained for the slot across reconnects.
+#[derive(Resource, Default)]
+pub struct RateLimitBuckets(BTreeMap<u8, ClientBuckets>);
+
+#[derive(Clone, Copy)]
+struct ClientBuckets {
+    envelope_tokens: u64,
+    unit_tokens: u64,
+    last_tick: u32,
+}
+
+impl RateLimitBuckets {
+    fn admit(&mut self, slot: u8, tick: u32, tick_hz: u16, units: usize) -> bool {
+        let hz = u64::from(tick_hz.max(1));
+        let envelope_capacity = 64 * hz;
+        let unit_capacity = 16_384 * hz;
+        let buckets = self.0.entry(slot).or_insert(ClientBuckets {
+            envelope_tokens: envelope_capacity,
+            unit_tokens: unit_capacity,
+            last_tick: tick,
+        });
+        let elapsed = u64::from(tick.saturating_sub(buckets.last_tick));
+        buckets.envelope_tokens = buckets
+            .envelope_tokens
+            .saturating_add(elapsed.saturating_mul(640))
+            .min(envelope_capacity);
+        buckets.unit_tokens = buckets
+            .unit_tokens
+            .saturating_add(elapsed.saturating_mul(163_840))
+            .min(unit_capacity);
+        buckets.last_tick = tick;
+
+        let envelope_cost = hz;
+        let unit_cost = (units as u64).saturating_mul(hz);
+        if buckets.envelope_tokens < envelope_cost || buckets.unit_tokens < unit_cost {
+            return false;
+        }
+        buckets.envelope_tokens -= envelope_cost;
+        buckets.unit_tokens -= unit_cost;
+        true
+    }
 }
 
 /// Unlink the connection when `at` has passed. `JoinRejected` has left by then.
@@ -66,7 +110,8 @@ pub fn install(app: &mut App, advertised: Advertised) {
     app.init_resource::<StagedPlayerCommands>()
         .init_resource::<PendingOrderCommands>()
         .init_resource::<CommandAdmissionDiagnostics>()
-        .init_resource::<ReliableTraffic>();
+        .init_resource::<ReliableTraffic>()
+        .init_resource::<RateLimitBuckets>();
     app.add_systems(
         FixedPreUpdate,
         admit_player_commands
@@ -94,6 +139,7 @@ pub fn judge_hello(
     hello: &Hello,
     advertised: &Advertised,
     slots: &mut Slots,
+    has_live_session: bool,
 ) -> Result<turts_sim::SlotId, &'static str> {
     if hello.protocol_version != NET_PROTOCOL_VERSION {
         return Err(REASON_PROTOCOL);
@@ -101,10 +147,14 @@ pub fn judge_hello(
     if hello.lockfile_hash != advertised.lockfile_hash {
         return Err(REASON_LOCKFILE);
     }
-    slots.claim(hello.player_id).map_err(|error| match error {
-        ClaimError::AlreadyClaimed => REASON_ALREADY_IN_MATCH,
-        ClaimError::NoOpenSlot => REASON_NO_OPEN_SLOT,
-    })
+    match slots.claim(hello.player_id) {
+        Ok(slot) => Ok(slot),
+        Err(ClaimError::AlreadyClaimed) if !has_live_session => slots
+            .slot_of(hello.player_id)
+            .ok_or(REASON_ALREADY_IN_MATCH),
+        Err(ClaimError::AlreadyClaimed) => Err(REASON_DUPLICATE_WINDOW),
+        Err(ClaimError::NoOpenSlot) => Err(REASON_NO_OPEN_SLOT),
+    }
 }
 
 /// The connections that may send a `Hello`.
@@ -141,6 +191,7 @@ pub fn receive_hello(
     mut traffic: ResMut<ReliableTraffic>,
     mut economy_log: Option<ResMut<EconomyLogSink>>,
     match_id: Res<crate::stats::MatchId>,
+    live_sessions: Query<&Session>,
 ) {
     for (entity, mut receiver, has_session, pending_kick) in clients.iter_mut() {
         let mut decided = has_session || pending_kick;
@@ -151,7 +202,10 @@ pub fn receive_hello(
             }
             decided = true;
             stats.hellos += 1;
-            match judge_hello(&hello, &advertised, &mut slots) {
+            let has_live_session = live_sessions
+                .iter()
+                .any(|session| session.player_id == hello.player_id);
+            match judge_hello(&hello, &advertised, &mut slots, has_live_session) {
                 Ok(slot) => {
                     if let Some(log) = economy_log.as_mut() {
                         log.write_claim(tick.0, hello.player_id, slot.0);
@@ -309,6 +363,23 @@ pub fn admit_player_commands(world: &mut World) {
         if let Some(reason) = production_precheck(world, &staged) {
             let result = crate::orders::refusal(&staged.envelope, reason);
             record_admission_rejection(world, staged, tick, result, reason);
+            continue;
+        }
+        let tick_hz = world.resource::<Advertised>().tick_hz;
+        if !world.resource_mut::<RateLimitBuckets>().admit(
+            staged.slot.0,
+            tick,
+            tick_hz,
+            staged.envelope.order.units.len(),
+        ) {
+            let result = crate::orders::refusal(&staged.envelope, CommandRejectReason::RateLimited);
+            record_admission_rejection(
+                world,
+                staged,
+                tick,
+                result,
+                CommandRejectReason::RateLimited,
+            );
             continue;
         }
         let resolved = {
@@ -629,11 +700,11 @@ mod tests {
     fn judge_accepts_a_matching_hello_and_claims_the_first_open_slot() {
         let mut slots = Slots::new(2);
         assert_eq!(
-            judge_hello(&good(7), &advertised(), &mut slots),
+            judge_hello(&good(7), &advertised(), &mut slots, false),
             Ok(turts_sim::SlotId(0))
         );
         assert_eq!(
-            judge_hello(&good(8), &advertised(), &mut slots),
+            judge_hello(&good(8), &advertised(), &mut slots, false),
             Ok(turts_sim::SlotId(1))
         );
     }
@@ -643,12 +714,12 @@ mod tests {
         let mut slots = Slots::new(2);
         let both_wrong = hello(7, 2, "sha256:other");
         assert_eq!(
-            judge_hello(&both_wrong, &advertised(), &mut slots),
+            judge_hello(&both_wrong, &advertised(), &mut slots, false),
             Err("protocol version mismatch")
         );
         let wrong_hash = hello(7, NET_PROTOCOL_VERSION, "sha256:other");
         assert_eq!(
-            judge_hello(&wrong_hash, &advertised(), &mut slots),
+            judge_hello(&wrong_hash, &advertised(), &mut slots, false),
             Err("lockfile hash mismatch")
         );
         assert_eq!(slots.slot_of(7), None, "a refused Hello takes no slot");
@@ -658,7 +729,7 @@ mod tests {
     fn protocol_3_hello_is_refused() {
         let mut slots = Slots::new(2);
         assert_eq!(
-            judge_hello(&hello(7, 3, HASH), &advertised(), &mut slots),
+            judge_hello(&hello(7, 3, HASH), &advertised(), &mut slots, false),
             Err("protocol version mismatch")
         );
         assert_eq!(slots.slot_of(7), None, "a refused Hello takes no slot");
@@ -668,12 +739,12 @@ mod tests {
     fn judge_refuses_the_same_player_twice_and_keeps_the_first_slot() {
         let mut slots = Slots::new(2);
         assert_eq!(
-            judge_hello(&good(7), &advertised(), &mut slots),
+            judge_hello(&good(7), &advertised(), &mut slots, false),
             Ok(turts_sim::SlotId(0))
         );
         assert_eq!(
-            judge_hello(&good(7), &advertised(), &mut slots),
-            Err("player already in match")
+            judge_hello(&good(7), &advertised(), &mut slots, true),
+            Err("This game is open in another window")
         );
         assert_eq!(slots.slot_of(7), Some(turts_sim::SlotId(0)));
         assert_eq!(slots.owner_of(turts_sim::SlotId(1)), None);
@@ -682,11 +753,33 @@ mod tests {
     #[test]
     fn judge_refuses_a_third_player_when_no_slot_is_open() {
         let mut slots = Slots::new(2);
-        judge_hello(&good(1), &advertised(), &mut slots).unwrap();
-        judge_hello(&good(2), &advertised(), &mut slots).unwrap();
+        judge_hello(&good(1), &advertised(), &mut slots, false).unwrap();
+        judge_hello(&good(2), &advertised(), &mut slots, false).unwrap();
         assert_eq!(
-            judge_hello(&good(3), &advertised(), &mut slots),
+            judge_hello(&good(3), &advertised(), &mut slots, false),
             Err("no open slot")
+        );
+    }
+
+    #[test]
+    fn reload_reclaims_a_held_slot_with_no_live_session() {
+        let mut slots = Slots::new(2);
+        let slot = slots.claim(7).unwrap();
+
+        assert_eq!(
+            judge_hello(&good(7), &advertised(), &mut slots, false),
+            Ok(slot),
+        );
+    }
+
+    #[test]
+    fn reload_while_the_old_session_lives_is_refused() {
+        let mut slots = Slots::new(2);
+        slots.claim(7).unwrap();
+
+        assert_eq!(
+            judge_hello(&good(7), &advertised(), &mut slots, true),
+            Err("This game is open in another window"),
         );
     }
 }
@@ -707,9 +800,17 @@ mod admission_tests {
     };
 
     fn app() -> (App, Entity) {
+        app_at_hz(20)
+    }
+
+    fn app_at_hz(tick_hz: u16) -> (App, Entity) {
         let mut app = App::new();
+        app.insert_resource(Advertised {
+            lockfile_hash: String::new(),
+            tick_hz,
+        });
         app.add_plugins(TimePlugin)
-            .add_plugins(turts_sim::SimPlugin { tick_hz: 20 })
+            .add_plugins(turts_sim::SimPlugin { tick_hz })
             .add_systems(
                 FixedPreUpdate,
                 admit_player_commands
@@ -719,7 +820,8 @@ mod admission_tests {
         app.init_resource::<StagedPlayerCommands>()
             .init_resource::<PendingOrderCommands>()
             .init_resource::<CommandAdmissionDiagnostics>()
-            .init_resource::<ReliableTraffic>();
+            .init_resource::<ReliableTraffic>()
+            .init_resource::<RateLimitBuckets>();
         let package = PackageId::parse("test").unwrap();
         let mut types = UnitTypes::default();
         let type_id = types
@@ -923,6 +1025,281 @@ mod admission_tests {
             unit_ids: vec![UnitId(1)],
             target: Pos { x: 4.0, y: 5.0 },
         }
+    }
+
+    fn move_for(connection: Entity, seq: u32, unit_ids: Vec<UnitId>) -> StagedPlayerCommand {
+        staged(
+            connection,
+            seq,
+            FixtureOrder::MoveTo {
+                unit_ids,
+                target: Pos { x: 4.0, y: 5.0 },
+            },
+        )
+    }
+
+    #[test]
+    fn bucket_refuses_the_65th_envelope_in_one_burst() {
+        let (mut app, connection) = app();
+        app.world_mut()
+            .resource_mut::<StagedPlayerCommands>()
+            .0
+            .extend((1..=65).map(|seq| move_for(connection, seq, vec![UnitId(1)])));
+
+        admit_player_commands(app.world_mut());
+
+        let records = &app.world().resource::<CommandAdmissionDiagnostics>().0;
+        assert_eq!(records.len(), 1, "only the 65th envelope is refused");
+        assert_eq!(records[0].seq, 65);
+        assert_eq!(records[0].reason, CommandRejectReason::RateLimited);
+        assert_eq!(records[0].envelope.order.units, vec![UnitId(1)]);
+    }
+
+    #[test]
+    fn bucket_refills_after_one_second_of_ticks() {
+        let (mut app, connection) = app();
+        app.world_mut()
+            .resource_mut::<StagedPlayerCommands>()
+            .0
+            .extend((1..=65).map(|seq| move_for(connection, seq, vec![UnitId(1)])));
+        admit_player_commands(app.world_mut());
+
+        app.world_mut().resource_mut::<SimTick>().0 = 20;
+        app.world_mut()
+            .resource_mut::<StagedPlayerCommands>()
+            .0
+            .push_back(move_for(connection, 66, vec![UnitId(1)]));
+        admit_player_commands(app.world_mut());
+
+        let records = &app.world().resource::<CommandAdmissionDiagnostics>().0;
+        assert_eq!(records.len(), 1, "refill admits the next envelope");
+        assert_eq!(records[0].seq, 65);
+        assert_eq!(records[0].reason, CommandRejectReason::RateLimited);
+        assert_eq!(
+            app.world().resource::<PendingOrderCommands>().0.len(),
+            65,
+            "64 pre-refill envelopes and sequence 66 are admitted",
+        );
+    }
+
+    #[test]
+    fn envelope_bucket_refills_32_tokens_per_tick_at_twenty_hz() {
+        let (mut app, connection) = app();
+        app.world_mut()
+            .resource_mut::<StagedPlayerCommands>()
+            .0
+            .extend((1..=64).map(|seq| move_for(connection, seq, vec![UnitId(1)])));
+        admit_player_commands(app.world_mut());
+
+        app.world_mut().resource_mut::<SimTick>().0 = 1;
+        app.world_mut()
+            .resource_mut::<StagedPlayerCommands>()
+            .0
+            .extend((65..=97).map(|seq| move_for(connection, seq, vec![UnitId(1)])));
+        admit_player_commands(app.world_mut());
+
+        assert_eq!(app.world().resource::<PendingOrderCommands>().0.len(), 96);
+        let refused = &app.world().resource::<CommandAdmissionDiagnostics>().0;
+        assert_eq!(refused.len(), 1);
+        assert_eq!(refused[0].seq, 97);
+        assert_eq!(refused[0].reason, CommandRejectReason::RateLimited);
+    }
+
+    #[test]
+    fn unit_bucket_refuses_above_16384() {
+        let (mut app, connection) = app();
+        let mut first = 1_u32;
+        for (seq, size) in [(1, 4096), (2, 4096), (3, 4096), (4, 4096), (5, 1)] {
+            let units = (first..first + size).map(UnitId).collect();
+            app.world_mut()
+                .resource_mut::<StagedPlayerCommands>()
+                .0
+                .push_back(move_for(connection, seq, units));
+            first += size;
+        }
+
+        admit_player_commands(app.world_mut());
+
+        let records = &app.world().resource::<CommandAdmissionDiagnostics>().0;
+        assert_eq!(records.len(), 1, "the 16,385th unit order is refused");
+        assert_eq!(records[0].seq, 5);
+        assert_eq!(records[0].reason, CommandRejectReason::RateLimited);
+        assert_eq!(records[0].envelope.order.units, vec![UnitId(16_385)]);
+    }
+
+    #[test]
+    fn unit_bucket_refills_8192_tokens_per_tick_at_twenty_hz() {
+        let (mut app, connection) = app();
+        for (seq, start) in [(1, 1_u32), (2, 4097), (3, 8193), (4, 12_289)] {
+            app.world_mut()
+                .resource_mut::<StagedPlayerCommands>()
+                .0
+                .push_back(move_for(
+                    connection,
+                    seq,
+                    (start..start + 4096).map(UnitId).collect(),
+                ));
+        }
+        admit_player_commands(app.world_mut());
+
+        app.world_mut().resource_mut::<SimTick>().0 = 1;
+        for (seq, start) in [(5, 16_385_u32), (6, 20_481), (7, 24_577)] {
+            app.world_mut()
+                .resource_mut::<StagedPlayerCommands>()
+                .0
+                .push_back(move_for(
+                    connection,
+                    seq,
+                    (start..start + 4096).map(UnitId).collect(),
+                ));
+        }
+        admit_player_commands(app.world_mut());
+
+        let admitted_units: usize = app
+            .world()
+            .resource::<PendingOrderCommands>()
+            .0
+            .values()
+            .map(|command| command.order.units.len())
+            .sum();
+        assert_eq!(admitted_units, 24_576);
+        let refused = &app.world().resource::<CommandAdmissionDiagnostics>().0;
+        assert_eq!(refused.len(), 1);
+        assert_eq!(refused[0].seq, 7);
+        assert_eq!(refused[0].reason, CommandRejectReason::RateLimited);
+    }
+
+    #[test]
+    fn envelope_bucket_keeps_fractional_refill_tokens_at_thirty_hz() {
+        let (mut app, connection) = app_at_hz(30);
+        app.world_mut()
+            .resource_mut::<StagedPlayerCommands>()
+            .0
+            .extend((1..=64).map(|seq| move_for(connection, seq, vec![UnitId(1)])));
+        admit_player_commands(app.world_mut());
+        let mut next_seq = 65;
+        // 640 scaled tokens per tick / 30 per envelope: 21, 21, then 22.
+        for (tick, expected_total_admitted, expected_total_refused) in
+            [(1, 85, 2), (2, 106, 4), (3, 128, 5)]
+        {
+            app.world_mut().resource_mut::<SimTick>().0 = tick;
+            for _ in 0..23 {
+                app.world_mut()
+                    .resource_mut::<StagedPlayerCommands>()
+                    .0
+                    .push_back(move_for(connection, next_seq, vec![UnitId(1)]));
+                next_seq += 1;
+            }
+            admit_player_commands(app.world_mut());
+            assert_eq!(
+                app.world().resource::<PendingOrderCommands>().0.len(),
+                expected_total_admitted,
+                "whole scaled tokens must retain the fractional refill at tick {tick}",
+            );
+            let refused = &app.world().resource::<CommandAdmissionDiagnostics>().0;
+            assert_eq!(refused.len(), expected_total_refused, "tick {tick}");
+            assert!(
+                refused
+                    .iter()
+                    .all(|record| record.reason == CommandRejectReason::RateLimited)
+            );
+        }
+    }
+
+    #[test]
+    fn unit_bucket_keeps_fractional_refill_tokens_at_thirty_hz() {
+        let (mut app, connection) = app_at_hz(30);
+        let mut next_seq = 1;
+        for _ in 0..4 {
+            app.world_mut()
+                .resource_mut::<StagedPlayerCommands>()
+                .0
+                .push_back(move_for(
+                    connection,
+                    next_seq,
+                    (1..=4096).map(UnitId).collect(),
+                ));
+            next_seq += 1;
+        }
+        admit_player_commands(app.world_mut());
+        // 163840 scaled tokens per tick / 30: 5461, 5461, then 5462 units.
+        for (tick, tail, expected_total_units) in
+            [(1, 1365_u32, 21845), (2, 1365, 27306), (3, 1366, 32768)]
+        {
+            app.world_mut().resource_mut::<SimTick>().0 = tick;
+            for count in [4096, tail, 1] {
+                app.world_mut()
+                    .resource_mut::<StagedPlayerCommands>()
+                    .0
+                    .push_back(move_for(
+                        connection,
+                        next_seq,
+                        (1..=count).map(UnitId).collect(),
+                    ));
+                next_seq += 1;
+            }
+            admit_player_commands(app.world_mut());
+            let admitted_units: usize = app
+                .world()
+                .resource::<PendingOrderCommands>()
+                .0
+                .values()
+                .map(|command| command.order.units.len())
+                .sum();
+            assert_eq!(admitted_units, expected_total_units, "tick {tick}");
+            let refused = &app.world().resource::<CommandAdmissionDiagnostics>().0;
+            assert_eq!(
+                refused.len(),
+                tick as usize,
+                "exactly one excess unit per tick"
+            );
+            assert!(
+                refused
+                    .iter()
+                    .all(|record| record.reason == CommandRejectReason::RateLimited)
+            );
+        }
+    }
+
+    #[test]
+    fn unit_bucket_refusal_does_not_spend_envelope_token() {
+        let mut buckets = RateLimitBuckets::default();
+        let slot = 0;
+        for _ in 0..4 {
+            assert!(buckets.admit(slot, 0, 20, 4096));
+        }
+        assert!(!buckets.admit(slot, 0, 20, 1));
+        let bucket = buckets.0.get(&slot).unwrap();
+        assert_eq!(bucket.envelope_tokens, 60 * 20);
+        assert_eq!(bucket.unit_tokens, 0);
+    }
+
+    #[test]
+    fn bucket_capacity_is_shared_across_connections_rejoining_the_same_slot() {
+        let (mut app, first_connection) = app();
+        app.world_mut()
+            .resource_mut::<StagedPlayerCommands>()
+            .0
+            .extend((1..=64).map(|seq| move_for(first_connection, seq, vec![UnitId(1)])));
+        admit_player_commands(app.world_mut());
+
+        let rejoined_connection = app
+            .world_mut()
+            .spawn(Session {
+                last_seq: None,
+                slot: turts_sim::SlotId(0),
+                player_id: 1,
+            })
+            .id();
+        app.world_mut()
+            .resource_mut::<StagedPlayerCommands>()
+            .0
+            .push_back(move_for(rejoined_connection, 1, vec![UnitId(1)]));
+        admit_player_commands(app.world_mut());
+
+        let records = &app.world().resource::<CommandAdmissionDiagnostics>().0;
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].reason, CommandRejectReason::RateLimited);
     }
 
     fn admit_kind(

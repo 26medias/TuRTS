@@ -193,6 +193,8 @@ fn synthetic_cli(count: u32) -> config::Cli {
         tick_log: None,
         stats: None,
         economy_log: None,
+        command_script: None,
+        order_log: None,
         synthetic_units: count,
         run_ticks: None,
     }

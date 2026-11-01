@@ -133,3 +133,4 @@ f11_status=0
 TURTS_SERVER_EVIDENCE_DIR="$log_dir/f11-evidence/server-process" run_cargo_test f11_private_research exact -p turts_server --test m3_process -- --ignored --test-threads=1 --exact f11_private_research_coordinator_releases_ordered_opponent_move_and_health_trace || f11_status=$?
 retain_f11_artifacts || f11_status=1
 if [[ "$f11_status" != 0 ]]; then exit "$f11_status"; fi
+run_cargo_test command_script exact -p turts_server --test command_script -- --ignored --test-threads=1 --exact command_script_moves_acme_unit_at_fixed_tick_without_a_client

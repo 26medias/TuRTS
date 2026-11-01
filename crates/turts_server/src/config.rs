@@ -43,6 +43,10 @@ Options:
   --economy-log PATH
                   Write trusted economy audit JSONL to PATH. The file contains private data
                   for all players and is intended only for local test evidence.
+  --command-script PATH
+                  Apply fixed-tick JSON order envelopes without a network client.
+  --order-log PATH
+                  Write deterministic order state changes: tick,unit_id,state,reason.
   --synthetic-units N
                   Add N units of the first unit type of the package. A system gives each
                   one a new move target every 40 ticks. Use it for load runs.
@@ -113,7 +117,8 @@ pub fn read_config(path: &Path) -> Result<HostConfig, String> {
 }
 
 /// The command line: `turts_server <server.ron> [--tick-log P] [--stats P]
-/// [--synthetic-units N] [--run-ticks N] [--economy-log PATH]`.
+/// [--synthetic-units N] [--run-ticks N] [--economy-log PATH] [--command-script PATH]
+/// [--order-log PATH]`.
 #[allow(dead_code)] // Tasks 7b and 7c read the options that Task 7a does not.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Cli {
@@ -123,6 +128,8 @@ pub struct Cli {
     pub synthetic_units: u32,
     pub run_ticks: Option<u32>,
     pub economy_log: Option<PathBuf>,
+    pub command_script: Option<PathBuf>,
+    pub order_log: Option<PathBuf>,
 }
 
 /// Parse the arguments after the program name.
@@ -135,6 +142,8 @@ pub fn parse_cli(args: &[String]) -> Result<Cli, String> {
         synthetic_units: 0,
         run_ticks: None,
         economy_log: None,
+        command_script: None,
+        order_log: None,
     };
     let mut args = args.iter();
     while let Some(arg) = args.next() {
@@ -148,6 +157,8 @@ pub fn parse_cli(args: &[String]) -> Result<Cli, String> {
             "--synthetic-units" => cli.synthetic_units = number(arg, value(arg)?)?,
             "--run-ticks" => cli.run_ticks = Some(number(arg, value(arg)?)?),
             "--economy-log" => cli.economy_log = Some(PathBuf::from(value(arg)?)),
+            "--command-script" => cli.command_script = Some(PathBuf::from(value(arg)?)),
+            "--order-log" => cli.order_log = Some(PathBuf::from(value(arg)?)),
             option if option.starts_with("--") => {
                 return Err(format!("unknown option `{option}`\n{USAGE}"));
             }

@@ -2,11 +2,13 @@
 //! simulation with lightyear sessions.
 
 mod boot;
+mod command_script;
 mod config;
 mod economylog;
 mod export;
 mod http;
 mod net;
+mod orderlog;
 mod orders;
 mod outbound;
 mod session;
@@ -91,6 +93,8 @@ fn run() -> Result<(), String> {
     ));
 
     session::install(&mut app, advertised);
+    command_script::install(&mut app, cli.command_script.as_deref())?;
+    orderlog::install(&mut app, cli.order_log.as_deref())?;
     outbound::install(&mut app);
     net::install(&mut app, cfg.http_addr(), ws_addr);
     ticklog::install(&mut app, &cli);
