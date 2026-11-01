@@ -151,16 +151,15 @@ pub fn build_acquired(
 fn presentation_from_archives(archives: &[PackageArchive]) -> Result<PresentationContent, String> {
     let mut presentation = PresentationContent::default();
     for archive in archives {
-        if presentation.interface.is_none() {
-            if let Some((_, interface)) = archive
+        if presentation.interface.is_none()
+            && let Some((_, interface)) = archive
                 .interfaces()
                 .map_err(|error| error.to_string())?
                 .into_iter()
                 .next()
-            {
-                presentation.interface = Some(interface);
-                presentation.interface_package = Some(archive.id().0);
-            }
+        {
+            presentation.interface = Some(interface);
+            presentation.interface_package = Some(archive.id().0);
         }
         for (_, assets) in archive.assets().map_err(|error| error.to_string())? {
             merge_asset_bytes(archive, assets, &mut presentation)?;

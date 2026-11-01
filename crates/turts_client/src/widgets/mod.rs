@@ -1433,17 +1433,30 @@ fn list_at(offset: f32, direction: turts_mod_api::Direction) -> turts_mod_api::A
     }
 }
 
-fn update_widget_button_states(
-    mut buttons: Query<
-        (
-            Option<&bevy::ui::Pressed>,
-            Option<&bevy::picking::hover::Hovered>,
-            &primitives::WidgetEnabled,
-            &mut BackgroundColor,
-        ),
-        With<Button>,
-    >,
-) {
+type ButtonVisualQuery<'w, 's> = Query<
+    'w,
+    's,
+    (
+        Option<&'static bevy::ui::Pressed>,
+        Option<&'static bevy::picking::hover::Hovered>,
+        &'static primitives::WidgetEnabled,
+        &'static mut BackgroundColor,
+    ),
+    With<Button>,
+>;
+
+type ButtonActionQuery<'w, 's> = Query<
+    'w,
+    's,
+    (
+        &'static primitives::WidgetButtonAction,
+        Option<&'static primitives::WidgetEnabled>,
+        Has<bevy::ui::InteractionDisabled>,
+    ),
+    With<Button>,
+>;
+
+fn update_widget_button_states(mut buttons: ButtonVisualQuery<'_, '_>) {
     for (pressed, hovered, enabled, mut background) in &mut buttons {
         *background = BackgroundColor(if !enabled.0 {
             Color::srgb(0.20, 0.20, 0.20)
@@ -1459,14 +1472,7 @@ fn update_widget_button_states(
 
 fn activate_widget(
     trigger: On<Activate>,
-    actions: Query<
-        (
-            &primitives::WidgetButtonAction,
-            Option<&primitives::WidgetEnabled>,
-            Has<bevy::ui::InteractionDisabled>,
-        ),
-        With<Button>,
-    >,
+    actions: ButtonActionQuery<'_, '_>,
     mut queue: ResMut<CoreInputQueue>,
     state: Res<ReplicaState>,
     acquired: Option<Res<AcquiredPackages>>,

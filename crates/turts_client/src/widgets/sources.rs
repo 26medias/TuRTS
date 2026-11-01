@@ -534,43 +534,41 @@ fn production_queue(context: SourceContext<'_>) -> SourceData {
             .units
             .get(id)
             .is_some_and(|unit| unit.owner_slot == context.owner_slot)
-    }) {
-        if let Some(queue) = context
-            .replica
-            .economy
-            .queues
-            .iter()
-            .find(|queue| queue.producer.0 == selected)
-        {
-            for job in &queue.jobs {
-                let mut item = ItemData::default();
-                let name = job_name(context, &job.recipe);
-                item.set(ItemField::Name, name);
-                item.set(
-                    ItemField::Progress,
-                    if job.duration_ticks == 0 {
-                        1.0
-                    } else {
-                        (job.elapsed_ticks as f64 / job.duration_ticks as f64).clamp(0.0, 1.0)
-                    },
-                );
-                if let Some(icon) = job_icon(context, &job.recipe) {
-                    item.set(ItemField::Icon, icon);
-                }
-                let ticks_left = job.duration_ticks.saturating_sub(job.elapsed_ticks);
-                item.set(
-                    ItemField::RemainingSeconds,
-                    ticks_left as f64 / context.replica.tick_hz.max(1) as f64,
-                );
-                item.set(
-                    ItemField::CancelAction,
-                    WidgetAction::CancelProduction {
-                        producer: selected,
-                        job: job.id.0,
-                    },
-                );
-                items.push(item);
+    }) && let Some(queue) = context
+        .replica
+        .economy
+        .queues
+        .iter()
+        .find(|queue| queue.producer.0 == selected)
+    {
+        for job in &queue.jobs {
+            let mut item = ItemData::default();
+            let name = job_name(context, &job.recipe);
+            item.set(ItemField::Name, name);
+            item.set(
+                ItemField::Progress,
+                if job.duration_ticks == 0 {
+                    1.0
+                } else {
+                    (job.elapsed_ticks as f64 / job.duration_ticks as f64).clamp(0.0, 1.0)
+                },
+            );
+            if let Some(icon) = job_icon(context, &job.recipe) {
+                item.set(ItemField::Icon, icon);
             }
+            let ticks_left = job.duration_ticks.saturating_sub(job.elapsed_ticks);
+            item.set(
+                ItemField::RemainingSeconds,
+                ticks_left as f64 / context.replica.tick_hz.max(1) as f64,
+            );
+            item.set(
+                ItemField::CancelAction,
+                WidgetAction::CancelProduction {
+                    producer: selected,
+                    job: job.id.0,
+                },
+            );
+            items.push(item);
         }
     }
     SourceData {
@@ -1169,6 +1167,7 @@ mod tests {
         BalanceState, HealthRecord, JobId, JobStage, Pos, QueueState, UnitId,
     };
 
+    #[allow(clippy::too_many_arguments)]
     fn context<'a>(
         replica: &'a Replica,
         content: &'a ClientContent,

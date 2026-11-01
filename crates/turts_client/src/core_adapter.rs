@@ -35,6 +35,19 @@ use crate::{
 
 static CLEAR_FRAMES_REQUESTED: AtomicBool = AtomicBool::new(false);
 
+type CapturePanelQuery<'w, 's> = Query<
+    'w,
+    's,
+    (
+        &'static ComputedNode,
+        &'static UiGlobalTransform,
+        &'static InheritedVisibility,
+        &'static ComputedUiTargetCamera,
+        Option<&'static CalculatedClip>,
+    ),
+    With<UiCaptureRoot>,
+>;
+
 #[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
 pub(crate) struct CoreAdapterSet;
 
@@ -430,16 +443,7 @@ fn pointer_button(button: bevy::input::mouse::MouseButton) -> Option<turts_mod_a
 }
 fn over_widget(
     cursor: Vec2,
-    panels: &Query<
-        (
-            &ComputedNode,
-            &UiGlobalTransform,
-            &InheritedVisibility,
-            &ComputedUiTargetCamera,
-            Option<&CalculatedClip>,
-        ),
-        With<UiCaptureRoot>,
-    >,
+    panels: &CapturePanelQuery<'_, '_>,
     cameras: &Query<(Entity, &Camera), With<Camera3d>>,
 ) -> bool {
     panels
@@ -478,18 +482,7 @@ fn over_widget(
 struct AdapterInputs<'w, 's> {
     windows: Query<'w, 's, (Entity, &'static Window), With<PrimaryWindow>>,
     window_events: MessageReader<'w, 's, WindowEvent>,
-    panels: Query<
-        'w,
-        's,
-        (
-            &'static ComputedNode,
-            &'static UiGlobalTransform,
-            &'static InheritedVisibility,
-            &'static ComputedUiTargetCamera,
-            Option<&'static CalculatedClip>,
-        ),
-        With<UiCaptureRoot>,
-    >,
+    panels: CapturePanelQuery<'w, 's>,
     cameras: Query<'w, 's, (Entity, &'static Camera), With<Camera3d>>,
     camera_query: Query<'w, 's, (&'static mut Transform, &'static mut Projection), With<Camera3d>>,
 }
@@ -986,8 +979,9 @@ mod adapter_tests {
             crate::acquire::build_acquired(std::slice::from_ref(&archive), String::new())
                 .expect("acquire Acme presentation")
         } else {
-            let content = crate::content::ClientContent::from_archives(&[archive.clone()])
-                .expect("resolve Acme content");
+            let content =
+                crate::content::ClientContent::from_archives(std::slice::from_ref(&archive))
+                    .expect("resolve Acme content");
             Acquired {
                 lockfile_hash: String::new(),
                 visuals: HashMap::new(),

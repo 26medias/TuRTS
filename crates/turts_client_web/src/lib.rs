@@ -253,19 +253,25 @@ fn publish_debug(state: Res<DebugState>) {
 
 /// `Last`: list the rendered units and count the active 3D cameras for the page.
 /// `GlobalTransform` is up to date here: the transform propagation runs in `PostUpdate`.
+type SceneWidgetQuery<'w, 's> = Query<
+    'w,
+    's,
+    (
+        &'static turts_client::widgets::primitives::AuthoredWidgetId,
+        &'static ComputedNode,
+        &'static UiGlobalTransform,
+        &'static ComputedUiTargetCamera,
+        &'static InheritedVisibility,
+        Option<&'static CalculatedClip>,
+    ),
+>;
+
 fn publish_scene(
     units: Query<(&SceneUnit, &GlobalTransform), With<Mesh3d>>,
     nodes: Query<(&SceneNode, &GlobalTransform), With<Mesh3d>>,
     cameras: Query<(Entity, &Camera, &GlobalTransform, &RenderTarget), With<Camera3d>>,
     windows: Query<(Entity, &Window), With<PrimaryWindow>>,
-    widgets: Query<(
-        &turts_client::widgets::primitives::AuthoredWidgetId,
-        &ComputedNode,
-        &UiGlobalTransform,
-        &ComputedUiTargetCamera,
-        &InheritedVisibility,
-        Option<&CalculatedClip>,
-    )>,
+    widgets: SceneWidgetQuery<'_, '_>,
     state: Res<ReplicaState>,
     adapter_info: Option<Res<RenderAdapterInfo>>,
 ) {

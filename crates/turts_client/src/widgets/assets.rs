@@ -184,7 +184,7 @@ fn normalize_cursor_image(image: Image) -> Option<Image> {
     if image.texture_descriptor.format == TextureFormat::Rgba16Unorm {
         let pixels = image.data.as_deref()?;
         let mut rgba8 = Vec::with_capacity(pixels.len() / 2);
-        for channel in pixels.chunks_exact(2) {
+        for channel in pixels.as_chunks::<2>().0 {
             let sample = u16::from_le_bytes([channel[0], channel[1]]);
             rgba8.push(((u32::from(sample) + 128) / 257) as u8);
         }

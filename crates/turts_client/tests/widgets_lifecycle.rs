@@ -157,6 +157,7 @@ fn authored_list(id: &str, source: Source, item_action: ActionField, max_items: 
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn installed_app(
     acquired: Acquired,
     replica: Replica,
@@ -180,6 +181,7 @@ fn installed_app(
     )
 }
 
+#[allow(clippy::too_many_arguments)]
 fn installed_app_with_updates(
     mut acquired: Acquired,
     mut replica: Replica,
@@ -809,23 +811,24 @@ fn actual_window_adapter_suppresses_widget_targeting_then_routes_outside_move_or
         app.update();
     };
     let click = |app: &mut App, point: Vec2| {
-        let mut events = app.world_mut().resource_mut::<Messages<WindowEvent>>();
-        events.write(WindowEvent::CursorMoved(bevy::window::CursorMoved {
-            window,
-            position: point,
-            delta: None,
-        }));
-        events.write(WindowEvent::MouseButtonInput(MouseButtonInput {
-            button: MouseButton::Left,
-            state: ButtonState::Pressed,
-            window,
-        }));
-        events.write(WindowEvent::MouseButtonInput(MouseButtonInput {
-            button: MouseButton::Left,
-            state: ButtonState::Released,
-            window,
-        }));
-        drop(events);
+        {
+            let mut events = app.world_mut().resource_mut::<Messages<WindowEvent>>();
+            events.write(WindowEvent::CursorMoved(bevy::window::CursorMoved {
+                window,
+                position: point,
+                delta: None,
+            }));
+            events.write(WindowEvent::MouseButtonInput(MouseButtonInput {
+                button: MouseButton::Left,
+                state: ButtonState::Pressed,
+                window,
+            }));
+            events.write(WindowEvent::MouseButtonInput(MouseButtonInput {
+                button: MouseButton::Left,
+                state: ButtonState::Released,
+                window,
+            }));
+        }
         app.update();
     };
 
@@ -1062,18 +1065,19 @@ fn nested_fit_widgets_converge_after_dynamic_text_changes() {
     let mut prior_width = 0.0;
     let mut retained_text = None;
     for amount in [1_u64, 12_345, 7] {
-        let mut state = app.world_mut().resource_mut::<ReplicaState>();
-        state
-            .replica
-            .as_mut()
-            .unwrap()
-            .economy
-            .balances
-            .iter_mut()
-            .find(|balance| balance.resource == resource)
-            .unwrap()
-            .on_hand = amount;
-        drop(state);
+        {
+            let mut state = app.world_mut().resource_mut::<ReplicaState>();
+            state
+                .replica
+                .as_mut()
+                .unwrap()
+                .economy
+                .balances
+                .iter_mut()
+                .find(|balance| balance.resource == resource)
+                .unwrap()
+                .on_hand = amount;
+        }
 
         let mut settled_widths = Vec::new();
         for step in 0..20 {
