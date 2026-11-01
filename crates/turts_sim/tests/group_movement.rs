@@ -492,11 +492,10 @@ fn unit_target_move_waits_for_cap_and_samples_live_target_at_activation() {
         mover.get::<turts_sim::Position>()
     );
     assert!(
-        app.world()
+        !app.world()
             .resource::<turts_sim::orders::PendingMovementOrders>()
             .pending_member_counts
-            .get(&2049)
-            .is_none(),
+            .contains_key(&2049),
         "ordinary active follow refresh does not recharge the dispatch cap"
     );
 }

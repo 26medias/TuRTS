@@ -632,7 +632,6 @@ pub(crate) fn reset_legacy_move_to_unit(
     {
         actor.insert(UnitOrders::default());
     }
-    drop(actor);
     clear_gather(world, unit_id);
 }
 
@@ -1315,7 +1314,7 @@ fn queue_unallocated_move_orders(world: &mut World) {
             {
                 continue;
             }
-            let Some(raw_point) = resolved_move_point(world, &entity_by_unit, &order) else {
+            let Some(raw_point) = resolved_move_point(world, &entity_by_unit, order) else {
                 continue;
             };
             if clamp_target(world, raw_point, unit_radius(world, entity.id())) != target.0 {
@@ -1694,8 +1693,6 @@ fn dispatch_pending_movement(world: &mut World) {
                         {
                             pending.pop_front(slot);
                         }
-                        drop(pending);
-
                         let tick = world.resource::<crate::world::Tick>().0;
                         let mut actor = world.entity_mut(entity);
                         actor.remove::<MoveTarget>();
@@ -2163,7 +2160,6 @@ fn run_unit_follow_move(
     } else if same_goal_fallback || same_goal_cohort {
         // A fallback for the unchanged legal goal is still active or resting;
         // refreshing the target actor must not reopen or erase that result.
-        return;
     } else {
         let move_target = world
             .entity(entity)
@@ -2249,7 +2245,6 @@ fn start_order(
             entity_mut.remove::<crate::movement::MoveProgress>();
             entity_mut.remove::<crate::movement::PlainMoveProgress>();
             entity_mut.insert(crate::world::MoveTarget(target));
-            drop(entity_mut);
             world.init_resource::<UnitMoveNeedsAllocation>();
             world
                 .resource_mut::<UnitMoveNeedsAllocation>()

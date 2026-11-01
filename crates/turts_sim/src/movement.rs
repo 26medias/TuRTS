@@ -1602,26 +1602,25 @@ pub fn step_frame(frame: &MovementFrame, dt: f32) -> Vec<MovementFrameOutput> {
                 outputs[index].physical_escape = still_overlapping.then_some(PhysicalEscape {
                     target: Some(escape),
                 });
-                if !still_overlapping {
-                    if outputs[index]
+                if !still_overlapping
+                    && outputs[index]
                         .progress
                         .as_ref()
                         .is_some_and(|progress| progress.activity == MovementActivity::Blocked)
-                    {
-                        let progress = outputs[index].progress.take().unwrap();
-                        let key = (
-                            progress.pool_id,
-                            progress.slot.x.to_bits(),
-                            progress.slot.y.to_bits(),
-                        );
-                        if remove_pool_slot_claim(
-                            &mut slot_claim_counts,
-                            &mut pool_indexes,
-                            progress.pool_id,
-                            progress.slot,
-                        ) {
-                            assigned_slots.remove(&key);
-                        }
+                {
+                    let progress = outputs[index].progress.take().unwrap();
+                    let key = (
+                        progress.pool_id,
+                        progress.slot.x.to_bits(),
+                        progress.slot.y.to_bits(),
+                    );
+                    if remove_pool_slot_claim(
+                        &mut slot_claim_counts,
+                        &mut pool_indexes,
+                        progress.pool_id,
+                        progress.slot,
+                    ) {
+                        assigned_slots.remove(&key);
                     }
                 }
                 units[index].position = position;
