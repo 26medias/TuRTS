@@ -3972,12 +3972,12 @@ fn validate_pending_movement_dispatch(
             .get(&dispatch_key)
             .map(|context| context.request.clone())
     });
-    if let Some(dispatch_request) = &dispatch_request {
-        if dispatch_request.unit_ids.get(next_member_index) != Some(&unit_id) {
-            return Err(format!(
-                "movement dispatch for unit {unit_id} is not the next member of its validated envelope"
-            ));
-        }
+    if let Some(dispatch_request) = &dispatch_request
+        && dispatch_request.unit_ids.get(next_member_index) != Some(&unit_id)
+    {
+        return Err(format!(
+            "movement dispatch for unit {unit_id} is not the next member of its validated envelope"
+        ));
     }
     let mut pool = operation
         .before
