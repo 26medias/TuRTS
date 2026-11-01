@@ -8,7 +8,7 @@ source: codex
 
 # MC execution board
 
-State: ACTIVE:11/25 lanes complete;53/170 runs registered. Task6 COMPLETE at merge450c023, final review0High; integration12/12 gates0 (1211/0/18,T7,M3). RUN51/52 Task7 implementation and independent review active, Task7run3/4 (soft8/hard16). C1-C122. Wave5 remains open; no main merge/push.
+State: ACTIVE:11/25 lanes complete;53/170 runs registered. Task6 COMPLETE at merge450c023, final review0High; integration12/12 gates0 (1211/0/18,T7,M3). RUN51/52 Task7 implementation and independent review active, Task7run3/4 (soft8/hard16). C1-C123. Wave5 remains open; no main merge/push.
 
 Plan: `docs/superpowers/plans/2026-10-29-mc-player-control.md`.
 Design of record: `docs/superpowers/specs/2026-10-29-mc-player-control-design.md`, revision13 at main721e56e.
@@ -1062,3 +1062,12 @@ Choice: reject the whole script at load time if any entry has tick0. The error i
 Evidence: crates/turts_server/src/command_script.rs:23-40 loads and groups entries before installation; :44-47 removes only the current tick. crates/turts_sim/src/plugin.rs:93,115,118 orders Advance before Commands, and :157 implements the tick advance. This is an instrument detail under brief section4, with no K, frozen value or player action change. Alternative not taken: silently lose tick0, move the simulation clock, or reinterpret zero as one. RUN51 implements the loader negative; runtime proof remains NOT TRACED until it runs.52/170 runs; Task7run3/4.
 
 RUN53 registered before T11 continuation: independent source/test preparation overlaps Task7 gates/review, with no compiler/browser/cache use until root hands off the lease.53/170 runs; Task11run2/4. Production implementation waits for its compiled native and actual browser reds.
+
+
+## C123: migrate the existing E8 plant anchor without changing its fault
+
+Conflict: Task7 adds RateLimitBuckets initialization. Existing E8 replacement1 still anchors the old ReliableTraffic terminator, so it matches zero times. Its other three anchors each match once. Running that plant unchanged would fail setup instead of testing Ack/rejection order.
+
+Choice: after the active clean-head ACC finishes, update only the E8 anchor and its replacement to retain RateLimitBuckets initialization. Preserve all other replacement bytes, pre-commands, test command, expected named failure and guards. Commit the registry separately, run affected QA and both selected GREF cases, then final plants. Do not retire the plant. Carry f9cca40 native/ACC production evidence to the registry-only candidate only after exact production-tree equivalence is verified; record both heads. Full integration re-gating after merge remains required.
+
+Evidence: tests/m2/refutations.json:670-680 defines E8 and the stale initializer anchor. crates/turts_server/src/session.rs:108-114 adds the bucket resource. Root counted E8 anchors1,0,1,1 on clean f9cca40. This is an instrument applicability ruling under brief4, preserving the fault and expected red. Alternative not taken: count setup as red, remove E8, drop bucket initialization from the planted program, interrupt a valid ACC run, or repeat unchanged production gates for a registry-only edit.53/170 runs; no CEO stop.
