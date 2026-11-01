@@ -549,15 +549,21 @@ pub(crate) fn remove_unit(
             None => weapons.0.get(&id),
         };
         if let Some(state) = state
-            && state.last_target == Some(unit)
+            && (state.last_target == Some(unit) || state.ordered_target_fired == Some(unit))
         {
             let retained_for_order = ordered_attackers.contains(&id);
-            if retained_for_order {
-                continue;
-            }
             let mut updated = state.clone();
-            updated.last_target = None;
-            tx.writes.weapons.insert(id, Some(updated));
+            if !retained_for_order {
+                if updated.last_target == Some(unit) {
+                    updated.last_target = None;
+                }
+                if updated.ordered_target_fired == Some(unit) {
+                    updated.ordered_target_fired = None;
+                }
+            }
+            if updated != *state {
+                tx.writes.weapons.insert(id, Some(updated));
+            }
         }
     }
 

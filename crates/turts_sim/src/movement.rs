@@ -1380,6 +1380,16 @@ pub struct MovementFrameOutput {
 
 /// Deterministic movement kernel shared by the ECS adapter and economy-log replay.
 pub fn step_frame(frame: &MovementFrame, dt: f32) -> Vec<MovementFrameOutput> {
+    step_frame_preserving_resting(frame, dt, &std::collections::BTreeSet::new())
+}
+
+/// Move a frame while retaining resting slots for orders that still need their
+/// assigned destination after a temporary combat pause.
+pub fn step_frame_preserving_resting(
+    frame: &MovementFrame,
+    dt: f32,
+    preserve_resting_units: &std::collections::BTreeSet<u32>,
+) -> Vec<MovementFrameOutput> {
     let mut units = frame.units.clone();
     units.sort_unstable_by_key(|unit| unit.unit_id);
     let mut points: Vec<_> = units
@@ -2387,6 +2397,7 @@ pub fn step_frame(frame: &MovementFrame, dt: f32) -> Vec<MovementFrameOutput> {
             progress.activity == MovementActivity::Resting
                 && !moving_pools.contains(&progress.pool_id)
                 && progress.follow_origin.is_none()
+                && !preserve_resting_units.contains(&output.unit_id)
         }) {
             output.progress = None;
         }
@@ -2442,7 +2453,21 @@ pub(crate) fn integrate_movement(world: &mut World) {
         units: units.iter().map(|(_, _, unit)| unit.clone()).collect(),
         pools: world.resource::<MovementPools>().0.clone(),
     };
-    let outputs = step_frame(&frame, delta);
+    let preserve_resting_units = units
+        .iter()
+        .filter_map(|(unit_id, entity, _)| {
+            world
+                .entity(*entity)
+                .get::<crate::orders::UnitOrders>()
+                .and_then(|orders| orders.current.as_ref())
+                .is_some_and(|order| {
+                    order.behaviour == turts_mod_api::Behaviour::Attack
+                        && matches!(order.target, crate::orders::OrderTargetSim::Point(_))
+                })
+                .then_some(*unit_id)
+        })
+        .collect();
+    let outputs = step_frame_preserving_resting(&frame, delta, &preserve_resting_units);
     for ((_, entity, _), output) in units.into_iter().zip(outputs) {
         let mut entity_mut = world.entity_mut(entity);
         if let Some(target) = output.target {

@@ -552,6 +552,27 @@ pub(crate) fn validate_records(records: &[EconomyLogRecord]) -> Result<(), Strin
                         )?;
                         movement_pending = false;
                     }
+                    turts_sim::economy::transaction::AuditPhase::PostMovementOrders => {
+                        if is_command {
+                            return Err(format!(
+                                "command operation {} has PostMovementOrders phase",
+                                operation.operation_id
+                            ));
+                        }
+                        if operation.unit_id.is_none() {
+                            return Err(format!(
+                                "PostMovementOrders operation {} omits its Attack point subject",
+                                operation.operation_id
+                            ));
+                        }
+                        validate_operation_phase(
+                            &cursor,
+                            &operation.before,
+                            movement_pending,
+                            operation.phase,
+                        )?;
+                        movement_pending = false;
+                    }
                 }
                 if operation
                     .events
@@ -672,7 +693,10 @@ pub(crate) fn validate_records(records: &[EconomyLogRecord]) -> Result<(), Strin
                                 started_order_span = true;
                             }
                         }
-                        turts_sim::economy::transaction::AuditPhase::Other => unreachable!(),
+                        turts_sim::economy::transaction::AuditPhase::Other
+                        | turts_sim::economy::transaction::AuditPhase::PostMovementOrders => {
+                            unreachable!()
+                        }
                     }
                 }
                 if !started_order_span && let Some(mut span) = active_order_command.take() {
@@ -743,8 +767,11 @@ pub(crate) fn validate_records(records: &[EconomyLogRecord]) -> Result<(), Strin
                         plain_candidates.insert(unit_id, candidate);
                     }
                 }
-                if operation.phase == turts_sim::economy::transaction::AuditPhase::Orders
-                    && !is_command
+                if matches!(
+                    operation.phase,
+                    turts_sim::economy::transaction::AuditPhase::Orders
+                        | turts_sim::economy::transaction::AuditPhase::PostMovementOrders
+                ) && !is_command
                     && !was_active_order_span
                     && active_order_command.is_none()
                 {
@@ -1183,7 +1210,9 @@ fn update_plain_move_identities(
                 if order.queue == turts_sim::QueueMode::Append {
                     continue;
                 }
-                let deferred_move = order.behaviour == turts_mod_api::Behaviour::Move
+                let deferred_move = (order.behaviour == turts_mod_api::Behaviour::Move
+                    || (order.behaviour == turts_mod_api::Behaviour::Attack
+                        && matches!(order.target, turts_sim::OrderTargetSim::Point(_))))
                     && (((order.group != 0 || order.units.len() > 1)
                         && matches!(
                             &order.target,
@@ -1242,7 +1271,9 @@ fn is_deferred_move_replace(kind: &turts_sim::CommandKind) -> bool {
     let turts_sim::CommandKind::Order(order) = kind else {
         return false;
     };
-    order.behaviour == turts_mod_api::Behaviour::Move
+    (order.behaviour == turts_mod_api::Behaviour::Move
+        || (order.behaviour == turts_mod_api::Behaviour::Attack
+            && matches!(order.target, turts_sim::OrderTargetSim::Point(_))))
         && order.queue == turts_sim::QueueMode::Replace
         && (((order.group != 0 || order.units.len() > 1)
             && matches!(
@@ -2343,7 +2374,9 @@ fn validate_order_operation(
         ));
     }
 
-    if order.behaviour == turts_mod_api::Behaviour::Move
+    if (order.behaviour == turts_mod_api::Behaviour::Move
+        || (order.behaviour == turts_mod_api::Behaviour::Attack
+            && matches!(order.target, turts_sim::OrderTargetSim::Point(_))))
         && order.queue == turts_sim::QueueMode::Replace
         && (((order.group != 0 || order.units.len() > 1)
             && matches!(
@@ -2461,13 +2494,63 @@ fn validate_order_operation(
         }
         turts_mod_api::Behaviour::Produce
         | turts_mod_api::Behaviour::CancelProduction
-        | turts_mod_api::Behaviour::SetEnabled(_)
-        | turts_mod_api::Behaviour::Attack => {}
+        | turts_mod_api::Behaviour::SetEnabled(_) => {}
+        turts_mod_api::Behaviour::Attack => {
+            let point = match &order.target {
+                turts_sim::OrderTargetSim::Point(point) => Some(*point),
+                turts_sim::OrderTargetSim::Unit(target_id) => {
+                    let target = operation
+                        .before
+                        .raw_units
+                        .iter()
+                        .find(|unit| unit.unit_id == *target_id)
+                        .ok_or_else(|| {
+                            format!("accepted Attack for unit {unit_id} has a missing unit target")
+                        })?;
+                    let target_position = bevy::math::Vec2::new(target.pos.x, target.pos.y);
+                    let goal = audit_attack_goal(&operation.before, unit_id, target_position)?;
+                    goal.map(|point| bevy::math::Vec2::new(point.x, point.y))
+                }
+                _ => {
+                    return Err(format!(
+                        "accepted Attack for unit {unit_id} has an invalid target"
+                    ));
+                }
+            };
+            let target = point.map(|point| {
+                clamped_audit_point(
+                    &operation.before,
+                    point,
+                    audit_unit_radius(&operation.before, unit_id),
+                )
+            });
+            let starts_now = order.queue == turts_sim::QueueMode::Replace
+                || (before_orders.current.is_none()
+                    && before_target.is_none()
+                    && !operation
+                        .before
+                        .pending_movement_orders
+                        .pending_member_counts
+                        .contains_key(&unit_id));
+            if order.queue == turts_sim::QueueMode::Replace {
+                expected_orders = turts_sim::UnitOrders {
+                    current: Some(order_record(order)),
+                    ..Default::default()
+                };
+                expected_target = target;
+            } else if starts_now {
+                expected_orders.current = Some(order_record(order));
+                expected_target = target;
+            } else {
+                expected_orders.queue.push_back(order_record(order));
+            }
+        }
         turts_mod_api::Behaviour::Remove => expected_orders = Default::default(),
     }
     if after_orders != expected_orders {
         return Err(format!(
-            "accepted order for unit {unit_id} produced unexpected UnitOrders"
+            "accepted order operation {} for unit {unit_id} produced unexpected UnitOrders: expected {expected_orders:?}, actual {after_orders:?}",
+            operation.operation_id
         ));
     }
     if order.behaviour != turts_mod_api::Behaviour::Remove
@@ -2590,6 +2673,7 @@ fn validate_order_operation(
         }
     }
     validate_legacy_gather_order_state(order, unit_id, &operation.before, &operation.after)?;
+    validate_attack_weapon_target_reset(order, unit_id, &operation.before, &operation.after)?;
     validate_set_enabled_state(
         order,
         unit_id,
@@ -2632,9 +2716,271 @@ fn validate_automatic_order_operation(
     let tick = operation.before.economy.tick;
     let mut expected = operation.before.clone();
     let current = orders_before.current.clone();
-
     let actor_target_before = raw_move_target(&operation.before, unit_id);
     let actor_target_after = raw_move_target(&operation.after, unit_id);
+
+    if operation.phase == turts_sim::economy::transaction::AuditPhase::PostMovementOrders
+        && !current.as_ref().is_some_and(|order| {
+            order.behaviour == turts_mod_api::Behaviour::Attack
+                && matches!(order.target, turts_sim::OrderTargetSim::Point(_))
+        })
+    {
+        return Err(format!(
+            "post-movement order operation {} is not an Attack point pause",
+            operation.operation_id
+        ));
+    }
+
+    if let Some(order) = current.as_ref().filter(|order| {
+        order.behaviour == turts_mod_api::Behaviour::Attack
+            && matches!(order.target, turts_sim::OrderTargetSim::Unit(_))
+    }) {
+        let turts_sim::OrderTargetSim::Unit(target_id) = order.target else {
+            unreachable!()
+        };
+        let target = operation
+            .before
+            .raw_units
+            .iter()
+            .find(|unit| unit.unit_id == target_id);
+        let weapon = operation
+            .before
+            .raw_weapons
+            .iter()
+            .find(|weapon| weapon.unit == unit_id);
+        let fired = weapon.is_some_and(|weapon| weapon.ordered_target_fired == Some(target_id));
+        match target {
+            None => {
+                orders_after.current = None;
+                if !fired {
+                    orders_after.last_failure = Some(turts_sim::OrderFailure {
+                        order: order.order.clone(),
+                        reason: turts_sim::RejectReason::TargetGone,
+                        tick,
+                    });
+                }
+                set_audit_move_target(&mut expected, unit_id, None)?;
+                expected
+                    .movement_progress
+                    .retain(|row| row.unit_id != unit_id);
+                expected
+                    .plain_movement_progress
+                    .retain(|row| row.unit_id != unit_id);
+                if !expected
+                    .pending_movement_orders
+                    .pending_member_counts
+                    .contains_key(&unit_id)
+                {
+                    start_next_audited_order(&mut expected, unit_id, &mut orders_after)?;
+                }
+            }
+            Some(target) => {
+                let point = bevy::math::Vec2::new(target.pos.x, target.pos.y);
+                let can_move = operation
+                    .before
+                    .unit_types
+                    .iter()
+                    .find(|kind| kind.type_id == actor.unit_type)
+                    .is_some_and(|kind| kind.movement_speed.is_some());
+                let goal = audit_attack_goal(&operation.before, unit_id, point)?;
+                match goal {
+                    Some(_) if !can_move => {
+                        orders_after.current = None;
+                        orders_after.last_failure = Some(turts_sim::OrderFailure {
+                            order: order.order.clone(),
+                            reason: turts_sim::RejectReason::OutOfRange,
+                            tick,
+                        });
+                        if !expected
+                            .pending_movement_orders
+                            .pending_member_counts
+                            .contains_key(&unit_id)
+                        {
+                            start_next_audited_order(&mut expected, unit_id, &mut orders_after)?;
+                        }
+                    }
+                    Some(goal) if actor_target_before.as_ref() != Some(&goal) => {
+                        expected
+                            .movement_progress
+                            .retain(|row| row.unit_id != unit_id);
+                        expected
+                            .plain_movement_progress
+                            .retain(|row| row.unit_id != unit_id);
+                        set_audit_move_target(&mut expected, unit_id, Some(goal))?;
+                    }
+                    None if actor_target_before.is_some() => {
+                        set_audit_move_target(&mut expected, unit_id, None)?;
+                        expected
+                            .movement_progress
+                            .retain(|row| row.unit_id != unit_id);
+                        expected
+                            .plain_movement_progress
+                            .retain(|row| row.unit_id != unit_id);
+                    }
+                    _ => {
+                        return Err(format!(
+                            "automatic Orders operation {} records no Attack pursuit transition for unit {unit_id}",
+                            operation.operation_id
+                        ));
+                    }
+                }
+            }
+        }
+        store_audited_unit_orders(&mut expected, unit_id, orders_after);
+        if !operation.events.is_empty() || expected != operation.after {
+            return Err(format!(
+                "automatic Orders operation {} changed state beyond the independently modeled Attack Unit transition",
+                operation.operation_id
+            ));
+        }
+        return Ok(());
+    }
+
+    let attack_point_schedule_transition = is_movement_pool_member_dispatch_operation(operation)
+        || queued_capacity_failure_span(operation)?.is_some()
+        || operation
+            .after
+            .pending_movement_orders
+            .queues
+            .values()
+            .flat_map(|queue| queue.iter())
+            .any(|request| {
+                request.unit_ids.contains(&unit_id)
+                    && !operation
+                        .before
+                        .pending_movement_orders
+                        .queues
+                        .values()
+                        .flat_map(|queue| queue.iter())
+                        .any(|before_request| before_request == request)
+            });
+    if (!attack_point_schedule_transition
+        || operation.phase == turts_sim::economy::transaction::AuditPhase::PostMovementOrders)
+        && let Some(order) = current.as_ref().filter(|order| {
+            order.behaviour == turts_mod_api::Behaviour::Attack
+                && matches!(order.target, turts_sim::OrderTargetSim::Point(_))
+        })
+    {
+        let turts_sim::OrderTargetSim::Point(point) = order.target else {
+            unreachable!()
+        };
+        let point_world = turts_mod_api::WorldPos {
+            x: point.x,
+            y: point.y,
+        };
+        let engage = operation
+            .before
+            .catalog
+            .as_ref()
+            .and_then(|catalog| {
+                catalog
+                    .order_definitions
+                    .iter()
+                    .find(|definition| definition.id == order.order)
+            })
+            .and_then(|definition| definition.engage);
+        let target_in_range = audit_attack_point_target_in_range(&operation.before, unit_id)?;
+        match (actor_target_before.as_ref(), actor_target_after.as_ref()) {
+            (Some(_), None)
+                if operation.phase
+                    == turts_sim::economy::transaction::AuditPhase::PostMovementOrders
+                    && engage == Some(turts_mod_api::EngagePolicy::StopAndFire)
+                    && target_in_range =>
+            {
+                set_audit_move_target(&mut expected, unit_id, None)?;
+            }
+            (None, Some(after))
+                if operation.phase == turts_sim::economy::transaction::AuditPhase::Orders
+                    && engage == Some(turts_mod_api::EngagePolicy::StopAndFire)
+                    && !target_in_range =>
+            {
+                let progress = operation
+                    .before
+                    .movement_progress
+                    .iter()
+                    .find(|row| row.unit_id == unit_id);
+                let resume = progress
+                    .map(|row| row.progress.slot)
+                    .unwrap_or_else(|| bevy::math::Vec2::new(point_world.x, point_world.y));
+                let expected_target = clamped_audit_point(
+                    &operation.before,
+                    resume,
+                    audit_unit_radius(&operation.before, unit_id),
+                );
+                if after != &expected_target {
+                    return Err(format!(
+                        "Attack-move resume for unit {unit_id} did not restore its audited slot"
+                    ));
+                }
+                set_audit_move_target(&mut expected, unit_id, Some(expected_target))?;
+            }
+            (None, None)
+                if operation.phase == turts_sim::economy::transaction::AuditPhase::Orders
+                    && !target_in_range =>
+            {
+                let progress = operation
+                    .before
+                    .movement_progress
+                    .iter()
+                    .find(|row| row.unit_id == unit_id);
+                let point_vec = bevy::math::Vec2::new(point_world.x, point_world.y);
+                let arrived = progress.is_some_and(|row| {
+                    row.progress.activity == turts_sim::movement::MovementActivity::Resting
+                        && actor.pos.x == row.progress.slot.x
+                        && actor.pos.y == row.progress.slot.y
+                }) || (progress.is_none()
+                    && actor.pos.x == point_vec.x
+                    && actor.pos.y == point_vec.y);
+                let blocked = progress.is_some_and(|row| {
+                    row.progress.activity == turts_sim::movement::MovementActivity::Blocked
+                });
+                if arrived || blocked {
+                    orders_after.current = None;
+                    if blocked {
+                        orders_after.last_failure = Some(turts_sim::OrderFailure {
+                            order: order.order.clone(),
+                            reason: turts_sim::RejectReason::Blocked,
+                            tick,
+                        });
+                    }
+                    if !expected
+                        .pending_movement_orders
+                        .pending_member_counts
+                        .contains_key(&unit_id)
+                    {
+                        start_next_audited_order(&mut expected, unit_id, &mut orders_after)?;
+                    }
+                } else if engage == Some(turts_mod_api::EngagePolicy::StopAndFire) {
+                    let resume = progress.map_or(point_vec, |row| row.progress.slot);
+                    let expected_target = clamped_audit_point(
+                        &operation.before,
+                        resume,
+                        audit_unit_radius(&operation.before, unit_id),
+                    );
+                    set_audit_move_target(&mut expected, unit_id, Some(expected_target))?;
+                } else {
+                    return Err(format!(
+                        "Attack point operation for unit {unit_id} has no arrival or engagement transition"
+                    ));
+                }
+            }
+            _ => {
+                return Err(format!(
+                    "automatic Attack point operation {} has no valid pause, resume, completion or failure transition for unit {unit_id}",
+                    operation.operation_id
+                ));
+            }
+        }
+        store_audited_unit_orders(&mut expected, unit_id, orders_after);
+        if !operation.events.is_empty() || expected != operation.after {
+            return Err(format!(
+                "automatic Attack point operation {} differs from its independently modeled transition",
+                operation.operation_id
+            ));
+        }
+        return Ok(());
+    }
+
     let admitted_request = operation
         .after
         .pending_movement_orders
@@ -2843,8 +3189,10 @@ fn validate_automatic_order_operation(
         return Ok(());
     }
     if let Some(order) = current.as_ref().filter(|order| {
-        order.behaviour == turts_mod_api::Behaviour::Move
-            && matches!(order.target, turts_sim::OrderTargetSim::Point(_))
+        matches!(
+            order.behaviour,
+            turts_mod_api::Behaviour::Move | turts_mod_api::Behaviour::Attack
+        ) && matches!(order.target, turts_sim::OrderTargetSim::Point(_))
     }) && recorded_orders_after
         .last_failure
         .as_ref()
@@ -2854,7 +3202,7 @@ fn validate_automatic_order_operation(
         })
     {
         let span = queued_capacity_failure_span(operation)?
-            .ok_or("rate-limited queued Move has no complete group-failure span")?;
+            .ok_or("rate-limited queued movement has no complete group-failure span")?;
         return validate_queued_movement_capacity_failure(
             operation,
             unit_id,
@@ -3266,7 +3614,10 @@ fn queued_capacity_failure_span(
     let turts_sim::OrderTargetSim::Point(_) = order.target else {
         return Ok(None);
     };
-    if order.behaviour != turts_mod_api::Behaviour::Move {
+    if !matches!(
+        order.behaviour,
+        turts_mod_api::Behaviour::Move | turts_mod_api::Behaviour::Attack
+    ) {
         return Ok(None);
     }
     let Some(actor) = operation
@@ -3300,8 +3651,10 @@ fn queued_capacity_failure_span(
         let Some(candidate) = unit_orders_for(&operation.before, raw.unit_id).current else {
             continue;
         };
-        if candidate.behaviour != turts_mod_api::Behaviour::Move
-            || candidate.group != order.group
+        if !matches!(
+            candidate.behaviour,
+            turts_mod_api::Behaviour::Move | turts_mod_api::Behaviour::Attack
+        ) || candidate.group != order.group
             || (order.group == 0 && raw.unit_id != unit_id)
         {
             continue;
@@ -3395,7 +3748,9 @@ fn validate_queued_movement_admission(
             }
             let candidate = unit_orders_for(&operation.before, raw.unit_id).current?;
             let candidate_point = resolved_goal(&candidate)?;
-            let same_group = candidate.behaviour == turts_mod_api::Behaviour::Move
+            let same_group = (candidate.behaviour == turts_mod_api::Behaviour::Move
+                || (candidate.behaviour == turts_mod_api::Behaviour::Attack
+                    && matches!(candidate.target, turts_sim::OrderTargetSim::Point(_))))
                 && candidate.group == order.group;
             let radius = audit_unit_radius(&operation.before, raw.unit_id);
             let effective = clamped_audit_point(&operation.before, candidate_point, radius);
@@ -4978,6 +5333,44 @@ fn start_next_audited_order(
                     tick: state.economy.tick,
                 });
             }
+            (turts_mod_api::Behaviour::Attack, turts_sim::OrderTargetSim::Unit(target_id)) => {
+                if let Some(target_position) = state
+                    .raw_units
+                    .iter()
+                    .find(|unit| unit.unit_id == *target_id)
+                    .map(|target| bevy::math::Vec2::new(target.pos.x, target.pos.y))
+                {
+                    reset_audited_weapon_target(state, unit_id);
+                    state
+                        .movement_progress
+                        .retain(|progress| progress.unit_id != unit_id);
+                    let point = audit_attack_goal(state, unit_id, target_position)?;
+                    set_audit_move_target(state, unit_id, point)?;
+                    return Ok(());
+                }
+                orders.current = None;
+                orders.last_failure = Some(turts_sim::OrderFailure {
+                    order: next.order,
+                    reason: turts_sim::RejectReason::TargetGone,
+                    tick: state.economy.tick,
+                });
+            }
+            (turts_mod_api::Behaviour::Attack, turts_sim::OrderTargetSim::Point(point)) => {
+                reset_audited_weapon_target(state, unit_id);
+                state
+                    .movement_progress
+                    .retain(|progress| progress.unit_id != unit_id);
+                set_audit_move_target(
+                    state,
+                    unit_id,
+                    Some(clamped_audit_point(
+                        state,
+                        *point,
+                        audit_unit_radius(state, unit_id),
+                    )),
+                )?;
+                return Ok(());
+            }
             (turts_mod_api::Behaviour::Hold, _) => {
                 set_audit_move_target(state, unit_id, None)?;
                 return Ok(());
@@ -5185,6 +5578,18 @@ fn set_audit_move_target(
     Ok(())
 }
 
+fn reset_audited_weapon_target(state: &mut AuditState, unit_id: u32) {
+    if let Some(weapon) = state
+        .raw_weapons
+        .iter_mut()
+        .find(|weapon| weapon.unit == unit_id)
+    {
+        weapon.last_target = None;
+        weapon.ordered_target_fired = None;
+    }
+    state.economy.m3.raw_weapons.clone_from(&state.raw_weapons);
+}
+
 fn clear_audit_gather(state: &mut AuditState, unit_id: u32) {
     if let Some(row) = state.raw_orders.iter_mut().find(|row| row.unit == unit_id) {
         row.node = None;
@@ -5222,7 +5627,14 @@ fn validate_legacy_gather_order_state(
     after: &AuditState,
 ) -> Result<(), String> {
     use turts_mod_api::Behaviour;
-    let should_clear = matches!(order.behaviour, Behaviour::Move | Behaviour::Stop);
+    let preserves_pending_gather = order.behaviour == Behaviour::Attack
+        && order.queue == turts_sim::QueueMode::Append
+        && before
+            .pending_movement_orders
+            .pending_member_counts
+            .contains_key(&unit_id);
+    let should_clear = matches!(order.behaviour, Behaviour::Move | Behaviour::Stop)
+        || (order.behaviour == Behaviour::Attack && !preserves_pending_gather);
     let mut expected_raw = before
         .raw_orders
         .iter()
@@ -5307,6 +5719,36 @@ fn validate_legacy_gather_order_state(
             "did not clear the M2 gather cycle"
         };
         return Err(format!("order for unit {unit_id} {reason}"));
+    }
+    Ok(())
+}
+
+fn validate_attack_weapon_target_reset(
+    order: &turts_sim::OrderCommand,
+    unit_id: u32,
+    before: &AuditState,
+    after: &AuditState,
+) -> Result<(), String> {
+    if order.behaviour != turts_mod_api::Behaviour::Attack {
+        return Ok(());
+    }
+    let before_orders = unit_orders_for(before, unit_id);
+    let starts_now = order.queue == turts_sim::QueueMode::Replace
+        || (before_orders.current.is_none()
+            && raw_move_target(before, unit_id).is_none()
+            && !before
+                .pending_movement_orders
+                .pending_member_counts
+                .contains_key(&unit_id));
+    let mut expected = before.raw_weapons.clone();
+    if starts_now && let Some(weapon) = expected.iter_mut().find(|weapon| weapon.unit == unit_id) {
+        weapon.last_target = None;
+        weapon.ordered_target_fired = None;
+    }
+    if after.raw_weapons != expected || after.economy.m3.raw_weapons != expected {
+        return Err(format!(
+            "Attack for unit {unit_id} changed weapon target history outside its accepted start"
+        ));
     }
     Ok(())
 }
@@ -7030,6 +7472,92 @@ fn audit_unit_radius(state: &AuditState, unit_id: u32) -> f32 {
         .map_or(0.5, |kind| kind.radius)
 }
 
+fn audit_attack_goal(
+    state: &AuditState,
+    unit_id: u32,
+    target_position: bevy::math::Vec2,
+) -> Result<Option<turts_mod_api::WorldPos>, String> {
+    let actor = state
+        .raw_units
+        .iter()
+        .find(|unit| unit.unit_id == unit_id)
+        .ok_or_else(|| format!("Attack target calculation names absent unit {unit_id}"))?;
+    let unit_type = state
+        .unit_types
+        .iter()
+        .find(|kind| kind.type_id == actor.unit_type)
+        .ok_or_else(|| format!("Attack target calculation has unknown type for unit {unit_id}"))?;
+    let unit_content = state
+        .catalog
+        .as_ref()
+        .and_then(|catalog| {
+            catalog
+                .units
+                .iter()
+                .find(|unit| unit.id.to_string() == unit_type.content_id)
+        })
+        .ok_or_else(|| {
+            format!("Attack target calculation lacks catalog unit for unit {unit_id}")
+        })?;
+    let range = unit_content.weapon_range.ok_or_else(|| {
+        format!("Attack target calculation lacks weapon range for unit {unit_id}")
+    })?;
+    let origin = bevy::math::Vec2::new(actor.pos.x, actor.pos.y);
+    let delta = target_position - origin;
+    Ok((delta.length_squared() > range * range).then(|| {
+        clamped_audit_point(
+            state,
+            target_position - delta.normalize_or_zero() * range,
+            audit_unit_radius(state, unit_id),
+        )
+    }))
+}
+
+fn audit_attack_point_target_in_range(state: &AuditState, unit_id: u32) -> Result<bool, String> {
+    let actor = state
+        .raw_units
+        .iter()
+        .find(|unit| unit.unit_id == unit_id)
+        .ok_or_else(|| format!("Attack-move target check names absent unit {unit_id}"))?;
+    let unit_type = state
+        .unit_types
+        .iter()
+        .find(|kind| kind.type_id == actor.unit_type)
+        .ok_or_else(|| format!("Attack-move target check has unknown type for unit {unit_id}"))?;
+    let weapon = state
+        .catalog
+        .as_ref()
+        .and_then(|catalog| {
+            catalog
+                .units
+                .iter()
+                .find(|unit| unit.id.to_string() == unit_type.content_id)
+        })
+        .ok_or_else(|| format!("Attack-move target check lacks catalog unit for unit {unit_id}"))?;
+    let (Some(range), Some(targets)) = (weapon.weapon_range, weapon.weapon_targets) else {
+        return Ok(false);
+    };
+    let origin = bevy::math::Vec2::new(actor.pos.x, actor.pos.y);
+    let range_squared = range * range;
+    Ok(state.raw_units.iter().any(|candidate| {
+        if !state
+            .raw_healths
+            .iter()
+            .any(|health| health.unit == candidate.unit_id && health.current > 0)
+        {
+            return false;
+        }
+        let relation_matches = match targets {
+            turts_mod_api::SlotRelation::Other => candidate.owner_slot != actor.owner_slot,
+            turts_mod_api::SlotRelation::Same => candidate.owner_slot == actor.owner_slot,
+            turts_mod_api::SlotRelation::Any => true,
+        };
+        relation_matches
+            && origin.distance_squared(bevy::math::Vec2::new(candidate.pos.x, candidate.pos.y))
+                <= range_squared
+    }))
+}
+
 fn clamped_audit_point(
     state: &AuditState,
     point: bevy::math::Vec2,
@@ -7087,6 +7615,9 @@ fn validate_operation_phase(
         turts_sim::economy::transaction::AuditPhase::Command
         | turts_sim::economy::transaction::AuditPhase::Orders => {
             validate_clock_continuity(previous, current, "orders operation")
+        }
+        turts_sim::economy::transaction::AuditPhase::PostMovementOrders => {
+            validate_operation_continuity(previous, current, movement_pending)
         }
         turts_sim::economy::transaction::AuditPhase::Other => {
             validate_operation_continuity(previous, current, movement_pending)
@@ -7415,7 +7946,22 @@ fn validate_movement_transition(previous: &AuditState, current: &AuditState) -> 
     // Match Bevy Fixed::from_hz: Duration stores the reciprocal in f64, then
     // Time<Fixed>::delta_secs exposes that duration as f32.
     let delta = std::time::Duration::from_secs_f64(1.0 / f64::from(tick_hz)).as_secs_f32();
-    let outputs = turts_sim::movement::step_frame(&frame, delta);
+    let preserve_resting_units = expected
+        .unit_orders
+        .iter()
+        .filter_map(|row| {
+            row.orders
+                .current
+                .as_ref()
+                .is_some_and(|order| {
+                    order.behaviour == turts_mod_api::Behaviour::Attack
+                        && matches!(order.target, turts_sim::OrderTargetSim::Point(_))
+                })
+                .then_some(row.unit_id)
+        })
+        .collect();
+    let outputs =
+        turts_sim::movement::step_frame_preserving_resting(&frame, delta, &preserve_resting_units);
     let mut movement_progress = Vec::new();
     let mut plain_movement_progress = Vec::new();
     let mut physical_escapes = Vec::new();
@@ -7551,6 +8097,28 @@ mod tests {
     fn initial() -> AuditState {
         let mut app = headless_app(10);
         turts_sim::audit_state(app.world_mut())
+    }
+
+    #[test]
+    fn validator_rejects_unitless_post_movement_order_phase() {
+        let state = initial();
+        let records = vec![
+            EconomyLogRecord::Initial(state.clone()),
+            EconomyLogRecord::Operation(turts_sim::OperationAudit {
+                operation_id: 1,
+                phase: turts_sim::economy::transaction::AuditPhase::PostMovementOrders,
+                unit_id: None,
+                before: state.clone(),
+                after: state,
+                events: vec![],
+            }),
+        ];
+
+        let error = validate_records(&records).expect_err("unitless post-movement relabel");
+        assert!(
+            error.contains("omits its Attack point subject"),
+            "unitless PostMovementOrders must be rejected at phase admission: {error}"
+        );
     }
 
     type OrderCapabilityRow = (&'static str, bool, bool, bool, bool, bool, bool, bool);
@@ -8941,6 +9509,8 @@ mod tests {
                 id: producer_id,
                 radius: 0.5,
                 movement_speed: None,
+                weapon_range: None,
+                weapon_targets: None,
                 removal: None,
                 machine_recipe: None,
                 inventory: None,
@@ -10765,6 +11335,8 @@ mod tests {
                 id: turts_mod_api::ContentId::parse("fixture:walker").unwrap(),
                 radius: 0.5,
                 movement_speed: Some(3.0),
+                weapon_range: None,
+                weapon_targets: None,
                 removal: None,
                 machine_recipe: None,
                 inventory: None,
@@ -15531,6 +16103,114 @@ mod tests {
     }
 
     #[test]
+    fn validator_replays_rate_limited_attack_move_with_mixed_group_members() {
+        use turts_sim::orders::PendingMovementOrder;
+
+        let mut before = one_moving_unit_state();
+        before.raw_units[0].move_target = Some(WorldPos { x: 30.0, y: 30.0 });
+        let attack = turts_sim::Order {
+            order: turts_mod_api::ContentId::parse("fixture:rush").unwrap(),
+            behaviour: turts_mod_api::Behaviour::Attack,
+            target: turts_sim::OrderTargetSim::Point(bevy::math::Vec2::new(30.0, 30.0)),
+            group: 77,
+        };
+        let move_order = turts_sim::Order {
+            order: turts_mod_api::ContentId::parse("fixture:move").unwrap(),
+            behaviour: turts_mod_api::Behaviour::Move,
+            target: turts_sim::OrderTargetSim::Point(bevy::math::Vec2::new(30.0, 30.0)),
+            group: 77,
+        };
+        before.raw_units.push(RawUnitAudit {
+            unit_id: 2,
+            owner_slot: 0,
+            unit_type: 0,
+            pos: WorldPos { x: 4.0, y: 2.0 },
+            move_target: Some(WorldPos { x: 30.0, y: 30.0 }),
+        });
+        before.units.push(turts_sim::UnitView {
+            unit_id: 2,
+            content_id: "fixture:walker".into(),
+            owner_slot: 0,
+            pos: WorldPos { x: 4.0, y: 2.0 },
+        });
+        before.raw_units.sort_by_key(|unit| unit.unit_id);
+        before.units.sort_by_key(|unit| unit.unit_id);
+        store_audited_unit_orders(
+            &mut before,
+            1,
+            turts_sim::UnitOrders {
+                current: Some(attack.clone()),
+                ..Default::default()
+            },
+        );
+        store_audited_unit_orders(
+            &mut before,
+            2,
+            turts_sim::UnitOrders {
+                current: Some(move_order),
+                ..Default::default()
+            },
+        );
+        let mut pending = turts_sim::orders::PendingMovementOrders::default();
+        assert!(pending.queue(PendingMovementOrder {
+            slot: turts_sim::SlotId(0),
+            accepted_tick: 0,
+            seq: 1000,
+            group: 3,
+            pool_id: 0,
+            point: bevy::math::Vec2::new(40.0, 40.0),
+            unit_ids: (1000..17_384).collect(),
+            order: None,
+            member_orders: Default::default(),
+            plain: false,
+        }));
+        before.pending_movement_orders = pending;
+
+        let mut after = before.clone();
+        set_audit_move_target(&mut after, 1, None).unwrap();
+        let mut failed_orders = unit_orders_for(&after, 1);
+        failed_orders.current = None;
+        failed_orders.last_failure = Some(turts_sim::OrderFailure {
+            order: attack.order.clone(),
+            reason: turts_sim::RejectReason::RateLimited,
+            tick: before.economy.tick,
+        });
+        store_audited_unit_orders(&mut after, 1, failed_orders);
+        let operation = turts_sim::OperationAudit {
+            operation_id: 1,
+            phase: turts_sim::economy::transaction::AuditPhase::Orders,
+            unit_id: Some(1),
+            before,
+            after,
+            events: vec![],
+        };
+        let span = queued_capacity_failure_span(&operation)
+            .unwrap()
+            .expect("Attack Point group has a complete atomic capacity-failure span");
+        assert_eq!(span.unit_ids, vec![1, 2]);
+        assert_eq!(
+            span.member_orders[&1].behaviour,
+            turts_mod_api::Behaviour::Attack
+        );
+        assert_eq!(
+            span.member_orders[&2].behaviour,
+            turts_mod_api::Behaviour::Move
+        );
+        assert!(
+            validate_queued_movement_capacity_failure(
+                &operation,
+                1,
+                &attack,
+                span.slot,
+                span.group,
+                span.pending_units,
+                span.unit_ids.len(),
+            )
+            .is_ok()
+        );
+    }
+
+    #[test]
     fn validator_keeps_original_group_size_for_vacancy_one_refusal_span() {
         use turts_sim::orders::PendingMovementOrder;
 
@@ -16322,6 +17002,8 @@ mod tests {
                 id: turts_mod_api::ContentId::parse("fixture:weapon").unwrap(),
                 radius: 0.5,
                 movement_speed: None,
+                weapon_range: Some(10.0),
+                weapon_targets: Some(turts_mod_api::SlotRelation::Other),
                 removal: None,
                 machine_recipe: None,
                 inventory: None,
@@ -16372,6 +17054,7 @@ mod tests {
                 effective_damage: Ok(5),
                 status: RawWeaponStatusAudit::Ready,
                 last_target: active_links.then_some(1),
+                ordered_target_fired: None,
             });
             state.raw_weapons.sort_by_key(|weapon| weapon.unit);
             state.economy.m3.raw_weapons = state.raw_weapons.clone();
@@ -17287,6 +17970,8 @@ mod tests {
                 id: turts_mod_api::ContentId::parse("fixture:walker").unwrap(),
                 radius: 0.5,
                 movement_speed: Some(3.0),
+                weapon_range: None,
+                weapon_targets: None,
                 removal: None,
                 machine_recipe: None,
                 inventory: None,

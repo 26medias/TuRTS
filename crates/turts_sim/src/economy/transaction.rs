@@ -70,6 +70,7 @@ pub struct OperationAudit {
 pub enum AuditPhase {
     Command,
     Orders,
+    PostMovementOrders,
     #[default]
     Other,
 }
@@ -111,6 +112,14 @@ pub(crate) fn capture_unit_order_operation<R>(
     run: impl FnOnce(&mut World) -> R,
 ) -> R {
     capture_operation_phase(world, AuditPhase::Orders, Some(unit_id), run)
+}
+
+pub(crate) fn capture_post_movement_order_operation<R>(
+    world: &mut World,
+    unit_id: u32,
+    run: impl FnOnce(&mut World) -> R,
+) -> R {
+    capture_operation_phase(world, AuditPhase::PostMovementOrders, Some(unit_id), run)
 }
 
 pub(crate) fn capture_orders_operation<R>(

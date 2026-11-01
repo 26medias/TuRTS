@@ -1325,12 +1325,12 @@ fn validate_order_target(
             "StopAndFire is only valid for a point target",
         ));
     }
-    if !matches!(order.behaviour, B::Move | B::Hold | B::Attack) && order.fire.is_some() {
+    if !matches!(order.behaviour, B::Move | B::Hold) && order.fire.is_some() {
         return Err(error(
             package,
             file,
             "fire",
-            "fire policy is only valid for Move, Hold or Attack",
+            "fire policy is only valid for Move or Hold",
         ));
     }
     if order.behaviour != B::Attack && order.engage.is_some() {

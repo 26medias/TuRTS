@@ -100,6 +100,8 @@ pub struct RawWeaponAudit {
     pub effective_damage: Result<u64, RejectReason>,
     pub status: RawWeaponStatusAudit,
     pub last_target: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ordered_target_fired: Option<u32>,
 }
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RawHealthAudit {
@@ -465,6 +467,7 @@ pub fn m3_audit_state(world: &World) -> M3AuditState {
                         WeaponStatus::OutOfAmmo => RawWeaponStatusAudit::OutOfAmmo,
                     },
                     last_target: row.last_target,
+                    ordered_target_fired: row.ordered_target_fired,
                 }
             })
             .collect();
@@ -566,6 +569,7 @@ mod tests {
             effective_damage: Err(RejectReason::ArithmeticOverflow),
             status: RawWeaponStatusAudit::Ready,
             last_target: None,
+            ordered_target_fired: None,
         }
         .effective_damage;
     }

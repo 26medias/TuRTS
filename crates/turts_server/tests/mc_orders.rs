@@ -1,18 +1,27 @@
 //! Protocol 4 behavior envelopes must resolve through package definitions into simulation orders.
 
+#[path = "../src/economylog.rs"]
+#[allow(dead_code)]
+mod economylog;
 #[path = "../src/orders.rs"]
 #[allow(dead_code)]
 mod orders;
 
-use std::path::PathBuf;
+use std::{collections::BTreeMap, path::PathBuf};
 
-use turts_mod_api::{Behaviour, TargetKind};
+use turts_mod_api::{
+    Behaviour, ContentCatalog, ContentId, EngagePolicy, Footprint, HealthDef, MapDef, MapSize,
+    MovementDef, OrderDef, Placement, RemovalDef, ResolvedAmmo, ResolvedInventory, ResolvedUnit,
+    ResolvedWeapon, ResourceDef, ResourceKind, SlotRelation, SourceDef, TargetFilter, TargetKind,
+    WorldPos,
+};
 use turts_mod_runtime::{archive::PackageArchive, pack::pack_dir};
 use turts_net_protocol::{OrderEnvelope, OrderTarget, PlayerCommand, Pos, QueueMode, UnitId};
 use turts_pack::load_package;
 use turts_sim::{
-    CommandKind, MoveTarget, OrderTargetSim, Owner, Position, SlotId, UnitOrders, UnitTypes,
-    apply_command, headless_app,
+    AuditTrail, CommandKind, CommandQueue, MoveTarget, OrderTargetSim, Owner, Position, SlotId,
+    UnitOrders, UnitTypes, apply_command, audit_state, headless_app, install_package,
+    stage_package,
 };
 
 fn muster() -> PackageArchive {
@@ -42,6 +51,158 @@ fn sim_target_for(kind: TargetKind) -> OrderTargetSim {
         TargetKind::Content => {
             OrderTargetSim::Content(turts_mod_api::ContentId::parse("muster:trooper").unwrap())
         }
+    }
+}
+
+fn audit_catalog() -> ContentCatalog {
+    let units = ["audit:shooter", "audit:enemy"]
+        .into_iter()
+        .map(|id| {
+            let content_id = ContentId::parse(id).unwrap();
+            let shooter = id == "audit:shooter";
+            let unit = ResolvedUnit {
+                id: content_id.clone(),
+                name: id.into(),
+                footprint: Footprint::Circle { radius: 0.25 },
+                movement: shooter.then_some(MovementDef { speed: 10.0 }),
+                inventory: None,
+                gatherer: None,
+                drop_off: None,
+                producer: None,
+                output_inventory: None,
+                extractor: None,
+                conveyor: None,
+                inserter: None,
+                machine: None,
+                research: None,
+                health: Some(HealthDef { max: 60 }),
+                weapon: shooter.then_some(ResolvedWeapon {
+                    range: 3.0,
+                    cooldown_ms: 0,
+                    damage: 1,
+                    ammo: None,
+                    targets: TargetFilter {
+                        slots: SlotRelation::Other,
+                    },
+                }),
+                removal: Some(RemovalDef {
+                    by_command: true,
+                    contents: turts_mod_api::ContentsPolicy::Destroy,
+                }),
+            };
+            (content_id, unit)
+        })
+        .collect();
+    let order = |id: &str, behaviour, target, engage| {
+        let definition = OrderDef {
+            id: id.into(),
+            name: id.into(),
+            behaviour,
+            target,
+            fire: None,
+            engage,
+            icon: String::new(),
+            hotkey: String::new(),
+            cursor: None,
+            card: None,
+            units: vec!["audit:shooter".into()],
+            description: id.into(),
+        };
+        (
+            ContentId::parse(&format!("audit:{id}")).unwrap(),
+            definition,
+        )
+    };
+    ContentCatalog {
+        resources: BTreeMap::new(),
+        units,
+        nodes: BTreeMap::new(),
+        production: BTreeMap::new(),
+        recipes: BTreeMap::new(),
+        technologies: BTreeMap::new(),
+        orders: [
+            order("move", Behaviour::Move, TargetKind::Point, None),
+            order(
+                "rush",
+                Behaviour::Attack,
+                TargetKind::Point,
+                Some(EngagePolicy::StopAndFire),
+            ),
+        ]
+        .into_iter()
+        .collect(),
+        order_queue_depths: BTreeMap::new(),
+        source_files: BTreeMap::new(),
+    }
+}
+
+fn audit_fixture() -> (bevy_app::App, ContentCatalog) {
+    audit_fixture_at_enemy(audit_catalog(), WorldPos { x: 35.0, y: 5.0 })
+}
+
+fn audit_fixture_at_enemy(
+    catalog: ContentCatalog,
+    enemy_position: WorldPos,
+) -> (bevy_app::App, ContentCatalog) {
+    let map = MapDef {
+        id: "audit:field".into(),
+        size: MapSize { x: 40.0, y: 40.0 },
+        placements: vec![
+            Placement {
+                unit: "audit:shooter".into(),
+                owner_slot: 0,
+                pos: WorldPos { x: 5.0, y: 5.0 },
+                contents: vec![],
+                facing: None,
+            },
+            Placement {
+                unit: "audit:shooter".into(),
+                owner_slot: 0,
+                pos: WorldPos { x: 5.0, y: 7.0 },
+                contents: vec![],
+                facing: None,
+            },
+            Placement {
+                unit: "audit:enemy".into(),
+                owner_slot: 1,
+                pos: enemy_position,
+                contents: vec![],
+                facing: None,
+            },
+        ],
+        nodes: vec![],
+        slot_economy: vec![],
+        belts: vec![],
+    };
+    let mut app = headless_app(20);
+    let staged = stage_package(
+        app.world(),
+        catalog.clone(),
+        SourceDef {
+            file: "maps/field.ron".into(),
+            value: map,
+        },
+        20,
+    )
+    .expect("stage audit fixture");
+    install_package(app.world_mut(), staged);
+    (app, catalog)
+}
+
+fn drain_audit(app: &mut bevy_app::App, writer: &mut economylog::EconomyLogWriter<Vec<u8>>) {
+    let mut trail = app.world_mut().resource_mut::<AuditTrail>();
+    for command in trail.drain_commands() {
+        writer
+            .write_command(&trail, command)
+            .expect("write command audit");
+    }
+    for operation in trail.drain_operations() {
+        writer
+            .write_operation(&trail, operation)
+            .expect("write operation audit");
+    }
+    for tick in trail.drain_ticks() {
+        writer.write_tick(&trail, tick).expect("write tick audit");
     }
 }
 
@@ -302,4 +463,634 @@ fn queued_attack_activates_against_its_captured_policy() {
         "muster:order_move",
         "the legacy plain-move adapter retains the authored fire policy identity",
     );
+}
+
+#[test]
+fn queued_group_attack_spreads_and_strictly_replays() {
+    let (mut app, catalog) = audit_fixture();
+    let mut members = app
+        .world()
+        .iter_entities()
+        .filter_map(|entity| {
+            let (Some(id), Some(owner), Some(kind)) = (
+                entity.get::<turts_sim::UnitId>(),
+                entity.get::<Owner>(),
+                entity.get::<turts_sim::UnitType>(),
+            ) else {
+                return None;
+            };
+            (owner.0 == SlotId(0)
+                && catalog
+                    .units
+                    .contains_key(&ContentId::parse("audit:shooter").unwrap())
+                && app
+                    .world()
+                    .resource::<UnitTypes>()
+                    .get(kind.0)
+                    .is_some_and(|unit| unit.content_id == "audit:shooter"))
+            .then_some(id.0)
+        })
+        .collect::<Vec<_>>();
+    members.sort_unstable();
+    members.truncate(2);
+    assert_eq!(members.len(), 2);
+
+    app.world_mut().resource_mut::<AuditTrail>().enable();
+    let initial = audit_state(app.world_mut());
+    let mut writer = economylog::EconomyLogWriter::new(Vec::new());
+    {
+        let trail = app.world().resource::<AuditTrail>();
+        writer
+            .write_initial(trail, initial)
+            .expect("write initial audit snapshot");
+    }
+
+    for (seq, id, target, queue, group) in [
+        (
+            1,
+            "audit:move",
+            OrderTarget::Point(Pos { x: 6.0, y: 6.0 }),
+            QueueMode::Replace,
+            11,
+        ),
+        (
+            2,
+            "audit:rush",
+            OrderTarget::Point(Pos { x: 20.0, y: 5.0 }),
+            QueueMode::Append,
+            12,
+        ),
+    ] {
+        let command = PlayerCommand {
+            seq,
+            order: OrderEnvelope {
+                order: id.into(),
+                units: members.iter().copied().map(UnitId).collect(),
+                target,
+                queue,
+                group,
+            },
+        };
+        let sim = orders::to_sim(SlotId(0), &command, &catalog)
+            .unwrap_or_else(|error| panic!("{id} resolves: {error:?}"));
+        assert_eq!(sim.len(), 1);
+        app.world_mut()
+            .resource_mut::<CommandQueue>()
+            .0
+            .push_back(sim.into_iter().next().unwrap());
+    }
+
+    for _ in 0..80 {
+        app.update();
+        let mut trail = app.world_mut().resource_mut::<AuditTrail>();
+        for command in trail.drain_commands() {
+            writer
+                .write_command(&trail, command)
+                .expect("write command audit");
+        }
+        for operation in trail.drain_operations() {
+            writer
+                .write_operation(&trail, operation)
+                .expect("write operation audit");
+        }
+        for tick in trail.drain_ticks() {
+            writer.write_tick(&trail, tick).expect("write tick audit");
+        }
+    }
+    let records = writer
+        .into_inner()
+        .split(|byte| *byte == b'\n')
+        .filter(|line| !line.is_empty())
+        .map(|line| serde_json::from_slice(line).expect("parse audit log record"))
+        .collect::<Vec<economylog::EconomyLogRecord>>();
+    assert!(
+        economylog::validate_records(&records).is_ok(),
+        "queued Point Attack shared-spread operations strictly replay: {:?}",
+        economylog::validate_records(&records)
+    );
+}
+
+#[test]
+fn queued_unit_attack_activates_and_strictly_replays() {
+    let mut catalog = audit_catalog();
+    let mut focus = catalog.orders[&ContentId::parse("audit:rush").unwrap()].clone();
+    focus.id = "focus".into();
+    focus.name = "Focus".into();
+    focus.behaviour = Behaviour::Attack;
+    focus.target = TargetKind::Unit;
+    focus.engage = Some(EngagePolicy::StopAndFire);
+    catalog
+        .orders
+        .insert(ContentId::parse("audit:focus").unwrap(), focus);
+    let (mut app, catalog) = audit_fixture_at_enemy(catalog, WorldPos { x: 35.0, y: 5.0 });
+    app.world_mut().resource_mut::<AuditTrail>().enable();
+    let initial = audit_state(app.world_mut());
+    let mut writer = economylog::EconomyLogWriter::new(Vec::new());
+    {
+        let trail = app.world().resource::<AuditTrail>();
+        writer
+            .write_initial(trail, initial)
+            .expect("write initial audit snapshot");
+    }
+
+    let move_command = PlayerCommand {
+        seq: 1,
+        order: OrderEnvelope {
+            order: "audit:move".into(),
+            units: vec![UnitId(1)],
+            target: OrderTarget::Point(Pos { x: 6.0, y: 5.0 }),
+            queue: QueueMode::Replace,
+            group: 0,
+        },
+    };
+    let sim_move = orders::to_sim(SlotId(0), &move_command, &catalog).unwrap();
+    assert_eq!(
+        apply_command(app.world_mut(), &sim_move[0]).units.accepted,
+        vec![1]
+    );
+    drain_audit(&mut app, &mut writer);
+
+    let attack_command = PlayerCommand {
+        seq: 2,
+        order: OrderEnvelope {
+            order: "audit:focus".into(),
+            units: vec![UnitId(1)],
+            target: OrderTarget::Unit(UnitId(3)),
+            queue: QueueMode::Append,
+            group: 0,
+        },
+    };
+    let sim_attack = orders::to_sim(SlotId(0), &attack_command, &catalog).unwrap();
+    assert_eq!(
+        apply_command(app.world_mut(), &sim_attack[0])
+            .units
+            .accepted,
+        vec![1]
+    );
+    drain_audit(&mut app, &mut writer);
+    assert_eq!(
+        app.world()
+            .entity(
+                app.world()
+                    .iter_entities()
+                    .find(|entity| entity
+                        .get::<turts_sim::UnitId>()
+                        .is_some_and(|id| id.0 == 1))
+                    .unwrap()
+                    .id()
+            )
+            .get::<UnitOrders>()
+            .unwrap()
+            .queue
+            .len(),
+        1
+    );
+
+    let mut attack_activated = false;
+    for _ in 0..160 {
+        app.update();
+        let active = app
+            .world()
+            .iter_entities()
+            .find(|entity| {
+                entity
+                    .get::<turts_sim::UnitId>()
+                    .is_some_and(|id| id.0 == 1)
+            })
+            .and_then(|entity| entity.get::<UnitOrders>())
+            .and_then(|orders| orders.current.as_ref())
+            .is_some_and(|order| order.order.to_string() == "audit:focus");
+        attack_activated |= active;
+        drain_audit(&mut app, &mut writer);
+        if !active && attack_activated {
+            break;
+        }
+    }
+    assert!(
+        attack_activated,
+        "queued Unit Attack becomes active after Move"
+    );
+    assert!(
+        app.world()
+            .iter_entities()
+            .all(|entity| entity.get::<turts_sim::UnitId>().is_none_or(|id| id.0 != 3)),
+        "attacker pursues and removes its assigned target",
+    );
+
+    let records = writer
+        .into_inner()
+        .split(|byte| *byte == b'\n')
+        .filter(|line| !line.is_empty())
+        .map(|line| serde_json::from_slice(line).expect("parse audit log record"))
+        .collect::<Vec<economylog::EconomyLogRecord>>();
+    assert!(
+        economylog::validate_records(&records).is_ok(),
+        "queued Unit Attack activation and target completion strictly replay: {:?}",
+        economylog::validate_records(&records)
+    );
+}
+
+#[test]
+fn point_attack_switches_to_another_eligible_target_and_strictly_replays() {
+    let mut catalog = audit_catalog();
+    catalog
+        .units
+        .get_mut(&ContentId::parse("audit:enemy").unwrap())
+        .unwrap()
+        .health
+        .as_mut()
+        .unwrap()
+        .max = 1;
+    let map = MapDef {
+        id: "audit:target-switch-field".into(),
+        size: MapSize { x: 40.0, y: 40.0 },
+        placements: vec![
+            Placement {
+                unit: "audit:shooter".into(),
+                owner_slot: 0,
+                pos: WorldPos { x: 5.0, y: 5.0 },
+                contents: vec![],
+                facing: None,
+            },
+            Placement {
+                unit: "audit:enemy".into(),
+                owner_slot: 1,
+                pos: WorldPos { x: 6.0, y: 5.0 },
+                contents: vec![],
+                facing: None,
+            },
+            Placement {
+                unit: "audit:enemy".into(),
+                owner_slot: 1,
+                pos: WorldPos { x: 7.0, y: 5.0 },
+                contents: vec![],
+                facing: None,
+            },
+        ],
+        nodes: vec![],
+        slot_economy: vec![],
+        belts: vec![],
+    };
+    let mut app = headless_app(20);
+    let staged = stage_package(
+        app.world(),
+        catalog.clone(),
+        SourceDef {
+            file: "maps/target-switch.ron".into(),
+            value: map,
+        },
+        20,
+    )
+    .expect("stage target switch fixture");
+    install_package(app.world_mut(), staged);
+    app.world_mut().resource_mut::<AuditTrail>().enable();
+    let initial = audit_state(app.world_mut());
+    let mut writer = economylog::EconomyLogWriter::new(Vec::new());
+    {
+        let trail = app.world().resource::<AuditTrail>();
+        writer
+            .write_initial(trail, initial)
+            .expect("write initial audit snapshot");
+    }
+
+    let command = PlayerCommand {
+        seq: 1,
+        order: OrderEnvelope {
+            order: "audit:rush".into(),
+            units: vec![UnitId(1)],
+            target: OrderTarget::Point(Pos { x: 20.0, y: 5.0 }),
+            queue: QueueMode::Replace,
+            group: 0,
+        },
+    };
+    let sim = orders::to_sim(SlotId(0), &command, &catalog).expect("resolve rush");
+    assert_eq!(
+        apply_command(app.world_mut(), &sim[0]).units.accepted,
+        vec![1]
+    );
+    drain_audit(&mut app, &mut writer);
+
+    let mut paused_position = None;
+    for tick in 0..3 {
+        app.update();
+        let actor = app
+            .world()
+            .iter_entities()
+            .find(|entity| {
+                entity
+                    .get::<turts_sim::UnitId>()
+                    .is_some_and(|id| id.0 == 1)
+            })
+            .unwrap();
+        let position = actor.get::<Position>().unwrap().0;
+        if tick == 0 {
+            paused_position = Some(position);
+            assert!(actor.get::<MoveTarget>().is_none());
+            assert!(
+                app.world()
+                    .iter_entities()
+                    .all(|entity| entity.get::<turts_sim::UnitId>().is_none_or(|id| id.0 != 2)),
+                "first in-range target is destroyed"
+            );
+        } else if tick == 1 {
+            assert_eq!(position, paused_position.unwrap());
+            assert!(actor.get::<MoveTarget>().is_none());
+            assert!(
+                app.world()
+                    .iter_entities()
+                    .all(|entity| entity.get::<turts_sim::UnitId>().is_none_or(|id| id.0 != 3)),
+                "the second in-range target is destroyed without an intervening move"
+            );
+        } else {
+            assert!(actor.get::<MoveTarget>().is_some());
+        }
+        drain_audit(&mut app, &mut writer);
+    }
+
+    let records = writer
+        .into_inner()
+        .split(|byte| *byte == b'\n')
+        .filter(|line| !line.is_empty())
+        .map(|line| serde_json::from_slice(line).expect("parse audit log record"))
+        .collect::<Vec<economylog::EconomyLogRecord>>();
+    assert!(
+        economylog::validate_records(&records).is_ok(),
+        "target switch remains paused and strictly replays: {:?}",
+        economylog::validate_records(&records)
+    );
+}
+
+#[test]
+fn suppressed_order_cooldowns_advance_and_strictly_replay() {
+    let mut catalog = audit_catalog();
+    catalog
+        .units
+        .get_mut(&ContentId::parse("audit:shooter").unwrap())
+        .unwrap()
+        .weapon
+        .as_mut()
+        .unwrap()
+        .cooldown_ms = 1_000;
+    for (id, policy) in [
+        ("hold_never", turts_mod_api::FirePolicy::Never),
+        ("hold_fire", turts_mod_api::FirePolicy::InRange),
+    ] {
+        let content_id = ContentId::parse(&format!("audit:{id}")).unwrap();
+        catalog.orders.insert(
+            content_id,
+            OrderDef {
+                id: id.into(),
+                name: id.into(),
+                behaviour: Behaviour::Hold,
+                target: TargetKind::None,
+                fire: Some(policy),
+                engage: None,
+                icon: String::new(),
+                hotkey: String::new(),
+                cursor: None,
+                card: None,
+                units: vec!["audit:shooter".into()],
+                description: id.into(),
+            },
+        );
+    }
+    let (mut app, catalog) = audit_fixture_at_enemy(catalog, WorldPos { x: 8.0, y: 5.0 });
+    app.world_mut().resource_mut::<AuditTrail>().enable();
+    let initial = audit_state(app.world_mut());
+    let mut writer = economylog::EconomyLogWriter::new(Vec::new());
+    {
+        let trail = app.world().resource::<AuditTrail>();
+        writer
+            .write_initial(trail, initial)
+            .expect("write initial audit snapshot");
+    }
+
+    app.update();
+    drain_audit(&mut app, &mut writer);
+    assert_eq!(
+        audit_state(app.world_mut())
+            .raw_healths
+            .iter()
+            .find(|health| health.unit == 3)
+            .unwrap()
+            .current,
+        59,
+        "the enabled weapon fires once before the cooldown test",
+    );
+
+    for (seq, id) in [(1, "audit:hold_never"), (2, "audit:hold_fire")] {
+        let command = PlayerCommand {
+            seq,
+            order: OrderEnvelope {
+                order: id.into(),
+                units: vec![UnitId(1)],
+                target: OrderTarget::None,
+                queue: QueueMode::Replace,
+                group: 0,
+            },
+        };
+        let sim = orders::to_sim(SlotId(0), &command, &catalog)
+            .unwrap_or_else(|error| panic!("{id} resolves: {error:?}"));
+        assert_eq!(
+            apply_command(app.world_mut(), &sim[0]).units.accepted,
+            vec![1]
+        );
+        drain_audit(&mut app, &mut writer);
+        let ticks = if id == "audit:hold_never" { 20 } else { 1 };
+        for _ in 0..ticks {
+            app.update();
+            drain_audit(&mut app, &mut writer);
+        }
+        let remaining_health = audit_state(app.world_mut())
+            .raw_healths
+            .iter()
+            .find(|health| health.unit == 3)
+            .unwrap()
+            .current;
+        if id == "audit:hold_never" {
+            assert_eq!(remaining_health, 59, "Never suppresses all cooldown shots");
+            assert_eq!(
+                audit_state(app.world_mut())
+                    .raw_weapons
+                    .iter()
+                    .find(|weapon| weapon.unit == 1)
+                    .unwrap()
+                    .cooldown,
+                0,
+                "Never still advances the enabled weapon timer",
+            );
+        } else {
+            assert_eq!(remaining_health, 58, "InRange fires on the next ready tick");
+        }
+    }
+
+    let records = writer
+        .into_inner()
+        .split(|byte| *byte == b'\n')
+        .filter(|line| !line.is_empty())
+        .map(|line| serde_json::from_slice(line).expect("parse audit log record"))
+        .collect::<Vec<economylog::EconomyLogRecord>>();
+    assert!(
+        economylog::validate_records(&records).is_ok(),
+        "suppressed authored cooldowns and prompt re-enable strictly replay: {:?}",
+        economylog::validate_records(&records)
+    );
+}
+
+fn empty_ammo_attack_move_pause_replays(group: u32) {
+    let mut catalog = audit_catalog();
+    let ammo = ContentId::parse("audit:ammo").unwrap();
+    catalog.resources.insert(
+        ammo.clone(),
+        ResourceDef {
+            id: "ammo".into(),
+            name: "Ammo".into(),
+            unit_name: "shot".into(),
+            kind: ResourceKind::Item,
+        },
+    );
+    let shooter = catalog
+        .units
+        .get_mut(&ContentId::parse("audit:shooter").unwrap())
+        .unwrap();
+    shooter.inventory = Some(ResolvedInventory {
+        capacity: 5,
+        accepts: vec![ammo.clone()],
+    });
+    shooter.weapon.as_mut().unwrap().ammo = Some(ResolvedAmmo {
+        item: ammo,
+        per_shot: 1,
+    });
+    let (mut app, catalog) = audit_fixture_at_enemy(catalog, WorldPos { x: 6.0, y: 5.0 });
+    app.world_mut().resource_mut::<AuditTrail>().enable();
+    let initial = audit_state(app.world_mut());
+    let mut writer = economylog::EconomyLogWriter::new(Vec::new());
+    {
+        let trail = app.world().resource::<AuditTrail>();
+        writer
+            .write_initial(trail, initial)
+            .expect("write initial audit snapshot");
+    }
+
+    let actor = app
+        .world()
+        .iter_entities()
+        .find_map(|entity| {
+            let (Some(id), Some(owner), Some(kind)) = (
+                entity.get::<turts_sim::UnitId>(),
+                entity.get::<Owner>(),
+                entity.get::<turts_sim::UnitType>(),
+            ) else {
+                return None;
+            };
+            (owner.0 == SlotId(0)
+                && app
+                    .world()
+                    .resource::<UnitTypes>()
+                    .get(kind.0)
+                    .is_some_and(|unit| unit.content_id == "audit:shooter"))
+            .then_some(id.0)
+        })
+        .expect("audit shooter");
+    let command = PlayerCommand {
+        seq: 1,
+        order: OrderEnvelope {
+            order: "audit:rush".into(),
+            units: vec![UnitId(actor)],
+            target: OrderTarget::Point(Pos { x: 20.0, y: 5.0 }),
+            queue: QueueMode::Replace,
+            group,
+        },
+    };
+    let sim = orders::to_sim(SlotId(0), &command, &catalog).expect("resolve rush");
+    let result = apply_command(app.world_mut(), &sim[0]);
+    assert_eq!(result.units.accepted, vec![actor]);
+    assert!(result.units.refused.is_empty());
+    {
+        let mut trail = app.world_mut().resource_mut::<AuditTrail>();
+        for command in trail.drain_commands() {
+            writer
+                .write_command(&trail, command)
+                .expect("write command audit");
+        }
+        for operation in trail.drain_operations() {
+            writer
+                .write_operation(&trail, operation)
+                .expect("write operation audit");
+        }
+    }
+
+    let mut position_after_acquisition = None;
+    for tick in 0..4 {
+        app.update();
+        let entity = app
+            .world()
+            .iter_entities()
+            .find(|entity| {
+                entity
+                    .get::<turts_sim::UnitId>()
+                    .is_some_and(|id| id.0 == actor)
+            })
+            .unwrap();
+        let position = entity.get::<Position>().unwrap().0;
+        if tick == 0 {
+            position_after_acquisition = Some(position);
+            assert_eq!(
+                entity
+                    .get::<UnitOrders>()
+                    .and_then(|orders| orders.current.as_ref())
+                    .map(|order| order.order.to_string()),
+                Some("audit:rush".into()),
+                "the actual server-resolved Point Attack is active",
+            );
+        } else {
+            assert_eq!(position, position_after_acquisition.unwrap());
+        }
+        assert_eq!(
+            audit_state(app.world_mut())
+                .raw_healths
+                .iter()
+                .find(|health| health.unit == 3)
+                .unwrap()
+                .current,
+            60,
+        );
+
+        let mut trail = app.world_mut().resource_mut::<AuditTrail>();
+        for command in trail.drain_commands() {
+            writer
+                .write_command(&trail, command)
+                .expect("write command audit");
+        }
+        for operation in trail.drain_operations() {
+            writer
+                .write_operation(&trail, operation)
+                .expect("write operation audit");
+        }
+        for tick in trail.drain_ticks() {
+            writer.write_tick(&trail, tick).expect("write tick audit");
+        }
+    }
+
+    let records = writer
+        .into_inner()
+        .split(|byte| *byte == b'\n')
+        .filter(|line| !line.is_empty())
+        .map(|line| serde_json::from_slice(line).expect("parse audit log record"))
+        .collect::<Vec<economylog::EconomyLogRecord>>();
+    assert!(
+        economylog::validate_records(&records).is_ok(),
+        "no-ammo acquisition and attack-move pause strictly replay: {:?}",
+        economylog::validate_records(&records)
+    );
+}
+
+#[test]
+fn empty_ammo_singleton_attack_move_pause_replays_before_first_shot() {
+    empty_ammo_attack_move_pause_replays(0);
+}
+
+#[test]
+fn empty_ammo_group_attack_move_pause_replays_before_first_shot() {
+    empty_ammo_attack_move_pause_replays(1);
 }
