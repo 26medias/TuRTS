@@ -1337,3 +1337,14 @@ Choice: repair the pixel-only open-ground recognizer to accept actual visible pl
 Evidence: tests/browser/harness/hud4-pixels.js:86-109 accepts high<150 and spread<45; tests/browser/hud4-driver.js:90-93 uses that coordinate for selection clearing. Both final run completion.json files095246-xorzKn and095313-tBe1CY report exit1 with actual selection1. Their params/input/checkpoints are retained under main t12-builder/run55/browser-final/runs. The six preceding HUD1 completions all exit0; root separately checked profile, CSS PNG dimensions, all three computed root rectangles and absence of engine panel in final-hud1-captured-geometry.json.
 
 Alternative not taken: weaken empty-selection proof, disable actual UI capture, let the driver read scene/debug rectangles, claim these setup failures as the mutation red, or repeat unaffected rows solely for a pixel helper edit. A newly found nested Fit reflow repair remains under C146; if its production path affects HUD1, run the affected rows again.59/170 runs; no new dispatch or CEO stop.
+
+
+## C150: carry HUD1 through the isolated Fit-axis repair
+
+Conflict: the final-phase6 HUD1 runs pass, but the nested Fit repair changes the common placement helper after that build. Blindly calling those results a new-head run would be false; repeating unchanged HUD1 paths would add no coverage for the repaired nested Fit behavior.
+
+Choice: retain those six actual HUD1 passes as impact-carried evidence with their original source manifest. Run the repaired HUD4 twice and require the installed nested Fit grow/shrink/convergence test plus independent geometry probe. Final committed workspace/QA/WEB gates remain required. This carry expires if further production or HUD1 instrument/fixture changes affect the paths.
+
+Evidence: root matched the original mod.rs SHAce7081bc…9008 to RUN56 snapshot, then diffed it against the repair. The diff only adds per-axis Dimension::Fit guards at the two apply_node_placement calls/helper. False/false keeps the previous assignments. The HUD1 authored fixture has no Fit dimensions; Grid rows resolve to fixed cells. Other changed paths are lifecycle tests and HUD4-only pixels/oracle tests. Root receipts: main t12-root/nested-fit-impact.diff and nested-fit-hud1-impact.json. RUN56 rechecked the source repair; actual independent nested geometry execution remains pending.
+
+This applies the CEO-approved test grouping and brief4 instrument judgment. Alternative not taken: pretend an old-source run executed new source, skip nested runtime proof, weaken a cursor assertion, or rerun all six HUD1 cases solely to exercise a branch their fixture never reaches.59/170 runs; no new dispatch or CEO stop.
