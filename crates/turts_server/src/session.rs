@@ -222,6 +222,7 @@ pub fn receive_hello(
             let has_live_session = live_sessions
                 .iter()
                 .any(|session| session.player_id == hello.player_id);
+            let already_claimed = slots.slot_of(hello.player_id).is_some();
             match judge_hello_in_batch(
                 &hello,
                 &advertised,
@@ -230,7 +231,7 @@ pub fn receive_hello(
                 &mut accepted_in_batch,
             ) {
                 Ok(slot) => {
-                    if let Some(log) = economy_log.as_mut() {
+                    if !already_claimed && let Some(log) = economy_log.as_mut() {
                         log.write_claim(tick.0, hello.player_id, slot.0);
                     }
                     eprintln!(
@@ -753,6 +754,59 @@ mod tests {
         (sender, receiver)
     }
 
+    fn hello_test_app() -> App {
+        use lightyear::prelude::server::ServerPlugins;
+
+        let mut app = App::new();
+        app.add_plugins(ServerPlugins {
+            tick_duration: Duration::from_millis(50),
+        });
+        app.add_plugins(turts_net_lightyear::ProtocolPlugin);
+        app.add_plugins(turts_sim::SimPlugin { tick_hz: 20 });
+        app.init_resource::<crate::stats::Stats>();
+        app.insert_resource(crate::stats::MatchId(0));
+        install(&mut app, advertised());
+        app.finish();
+        app.cleanup();
+        app.insert_resource(bevy::time::TimeUpdateStrategy::ManualDuration(
+            Duration::ZERO,
+        ));
+        app.update();
+        app
+    }
+
+    fn deliver_hello(app: &mut App, source: Entity, client: Entity, hello: Hello) {
+        use lightyear::link::recv_payload_from_bytes;
+
+        app.world_mut()
+            .get_mut::<MessageSender<Hello>>(source)
+            .unwrap()
+            .send::<ReliableChannel>(hello);
+        app.update();
+        let packets = {
+            let mut entity = app.world_mut().entity_mut(source);
+            let mut link = entity.get_mut::<Link>().unwrap();
+            let mut packets = Vec::new();
+            while let Some(packet) = link.send.pop() {
+                packets.push(packet);
+            }
+            packets
+        };
+        assert!(
+            !packets.is_empty(),
+            "the Hello uses the real Link transport"
+        );
+        for packet in packets {
+            app.world_mut()
+                .entity_mut(client)
+                .get_mut::<Link>()
+                .unwrap()
+                .recv
+                .push_raw(recv_payload_from_bytes(packet));
+        }
+        app.update();
+    }
+
     #[test]
     fn judge_accepts_a_matching_hello_and_claims_the_first_open_slot() {
         let mut slots = Slots::new(2);
@@ -934,6 +988,50 @@ mod tests {
             app.world().resource::<Slots>().slot_of(7),
             Some(turts_sim::SlotId(0))
         );
+    }
+
+    #[test]
+    fn rejoin_reuses_slot_without_writing_a_second_economy_claim() {
+        let mut app = hello_test_app();
+        let path = std::env::temp_dir().join(format!(
+            "turts_hello_rejoin_{}_{}.jsonl",
+            std::process::id(),
+            std::thread::current().name().unwrap_or("test")
+        ));
+        let _ = std::fs::remove_file(&path);
+        app.world_mut()
+            .resource_mut::<turts_sim::AuditTrail>()
+            .enable();
+        let initial = turts_sim::audit_state(app.world_mut());
+        let trail = app.world().resource::<turts_sim::AuditTrail>();
+        app.insert_resource(
+            crate::economylog::EconomyLogSink::create(&path, trail, initial).unwrap(),
+        );
+
+        let (source_a, client_a) = spawn_hello_peers(&mut app, 1);
+        deliver_hello(&mut app, source_a, client_a, good(7));
+        assert_eq!(
+            app.world().get::<Session>(client_a).unwrap().slot,
+            turts_sim::SlotId(0)
+        );
+        app.world_mut().despawn(client_a);
+
+        let (source_b, client_b) = spawn_hello_peers(&mut app, 2);
+        deliver_hello(&mut app, source_b, client_b, good(7));
+        assert_eq!(
+            app.world().get::<Session>(client_b).unwrap().slot,
+            turts_sim::SlotId(0)
+        );
+
+        let records = crate::economylog::read_jsonl_file(&path).unwrap();
+        let claims = records
+            .iter()
+            .filter(|record| matches!(record, crate::economylog::EconomyLogRecord::Claim { .. }))
+            .count();
+        assert_eq!(claims, 1, "a rejoin must not emit a second Claim record");
+        crate::economylog::validate_records(&records).unwrap();
+        drop(app);
+        std::fs::remove_file(path).unwrap();
     }
 }
 
