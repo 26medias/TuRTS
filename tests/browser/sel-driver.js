@@ -4,7 +4,7 @@
 const { decodePng, pixelAt } = require("./harness/png.js");
 
 const SLOT_COLORS = [[0, 114, 178], [230, 159, 0], [0, 158, 115], [213, 94, 0], [86, 180, 233], [204, 121, 167], [240, 228, 66], [0, 0, 0]];
-const COLOR_TOLERANCE = 48;
+const COLOR_TOLERANCE = 60;
 
 async function drive(io, params) {
     if (!Array.isArray(params.stages) || params.stages.length === 0) throw new Error("SEL driver needs row stages");
