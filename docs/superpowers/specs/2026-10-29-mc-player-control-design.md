@@ -1,6 +1,6 @@
 # MC — Player control and client foundation: design
 
-Date: 2026-10-29. Revision 13. Status: DRAFT, passed gate 1 (2026-10-29): spec-rigour-reviewer,
+Date: 2026-10-29. Revision 14. Status: DRAFT, passed gate 1 (2026-10-29): spec-rigour-reviewer,
 technical-director, bevy-rendering-engineer, player, simulation-core-engineer; three repair
 passes. CEO decisions (2026-10-29): K1 to K27 as recommended (K11 stays conditional on probe P1),
 budget option 1 (the full design, about 184 runs); K20 applied in revision 5 (section 17.2).
@@ -14,6 +14,7 @@ Revision 11 (2026-10-30, build ruling O10): the effect `Shell` is `ShellAction`;
 `client_shell.rs`. The `forge` resource `shell` makes the token `shell` and `Shell` content names.
 Revision 12 (2026-10-30, build ruling O11): PT1 step 6 disables the Shell Press, not a belt piece.
 Revision 13 (2026-10-31, build ruling O12): the slot pool of 6.3 requires the N primary slots only; spares are the legal slots that fit.
+Revision 14 (2026-11-01, CEO call, ruling O13): VIS1 thresholds are 20 with no simulation and 10 under each simulation at severity 1.0; the Okabe-Ito palette stays.
 Author seat: `ux-designer` (D65, D66, D67, client side of D70; Second on D68).
 Source of record: `RTS-Engine-Project-Specifications.md` version 0.8 (cited as S:line).
 Other sources: the QA0 design `docs/superpowers/specs/2026-10-29-qa0-instrument-design.md`
@@ -850,7 +851,8 @@ Seat: `bevy-rendering-engineer` (presentation, D69). Second: `ux-designer`.
 - Team colours (AN07, TM03): each slot has one material in its colour. This replaces the one
   material of `render.rs:403-406`. Default palette (Okabe-Ito): `#0072B2`, `#E69F00`, `#009E73`,
   `#D55E00`, `#56B4E9`, `#CC79A7`, `#F0E442`, `#000000`. The mod can give its own
-  (`slot_colours`). Test VIS1 checks the palette under colour-vision simulation.
+  (`slot_colours`). Test VIS1 checks the palette under colour-vision simulation (thresholds in
+  the VIS1 row, revision 14, ruling O13).
 - Order markers (AN06): a marker shows at the target in the frame of the click. Move: a ring.
   Attack: a cross. Gather: a dot on the node. The marker of a move stays until every unit of that
   envelope rests or is `Blocked`, with a limit of 60 s. Waypoint lines show the queued orders of own selected units, from
@@ -1251,7 +1253,7 @@ row with other options needs an amendment.
 | HUD3 | `turts-pack` refuses each bad case below with package, file and field. Layout: an unknown widget kind, an unknown source, a duplicate widget id, a `card` collision. Images: a missing asset id, a PNG over 2048 px, a cursor image over 128 px, more than 256 MiB of decoded image bytes (IHDR sum) in a package or in the locked set. Fonts and sounds: a missing font file, fonts over 8 MiB, a sound over 30 s, sound files over 32 MiB in one package. Orders: a reserved key binding, `CancelProduction` without a `Job` target. It warns, with exit 0, for 10 px text. The version table refuses `^0.2` with `exports.interface`. | The validator accepts; the cap reads file bytes; or a version row is missing. | headless | K12 a, K13 a, K18 a |
 | HUD4 | The driver points at five targets. They are an own unit, a foreign unit (attack), a node (gather), an invalid target (forbidden), and a point in target mode. For each, the oracle reads `turts_debug.cursor`: the context, the mod image id, and the cursor that the window applied (`CursorIcon`). | One cursor for all contexts. | pixels | - |
 | MM1 | The minimap shows units in slot colours and the camera frame. A left click and a drag move the camera. A right click sends the smart command at that ground point. | The minimap click does not move the camera. | pixels | - |
-| VIS1 | Rings in slot colours, solid for own and with gaps for foreign; range circles; health bars as set; markers that stay until rest. Each slot uses its own material. The default palette keeps a CIEDE2000 distance of at least 20 between each pair under protan, deutan and tritan simulation (Machado 2009 matrices). | One material for all units (`render.rs:403-406`); or a palette pair under 20. | pixels and headless | - |
+| VIS1 | Rings in slot colours, solid for own and with gaps for foreign; range circles; health bars as set; markers that stay until rest. Each slot uses its own material. The default palette keeps a CIEDE2000 distance of at least 20 between each pair with no simulation, and at least 10 between each pair under each of protan, deutan and tritan simulation (Machado 2009 matrices, severity 1.0). Measured (revision 14, `docs/research/mc/palette/README.md`): 21.73 with no simulation; 12.25 protan, 11.61 deutan, 10.87 tritan. | One material for all units (`render.rs:403-406`); or a pair under 20 with no simulation; or a pair under 10 under a simulation. | pixels and headless | - |
 | VIS2 | Chrome WebGPU, `muster` with 5,000 units: frame time p50 and p99, draw calls and memory are recorded in `docs/measurements/mc.md`. The row is red when a number is missing. | No record. | headed | - |
 | ALR1 | Forced states give one alert line each, with sound and ping. The states: own unit damaged, research ready, research complete, extractor full, output blocked, out of ammo, inserter waiting for more than 5 s. A second damage within the cooldown gives no second alert. At most 2 alert sounds play at once. | No derivation; or no cooldown. | headless and pixels | K8 a |
 | AUD1 | `turts_debug.audio` shows each context suspended before the first click and running after it. No audio player entity exists while a context is suspended. Select and order responses play in `voice`, one at a time. Each volume changes the gain of its category and survives a reload. An unknown sound id fails `turts-pack`. | No resume hook in the web entry. | pixels | K7 a |
