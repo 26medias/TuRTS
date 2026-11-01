@@ -104,7 +104,7 @@ Human usability amendment1354e33: catalog-derived principal labels/named local s
 
 ## Current MC status
 
-STOPPED on mandatory CEO ruling STOP-PAL1: fixed design palette fails VIS1's >=20distance under full Machado simulation.14/25lanes complete;63/170runs. Task5 WIP and Task13 source-only preparation preserved; no implementation/runtime continues. Wave5 local11gatespass; hosted agentsSUCCESS/check+browserFAILUREat planned old-panel migration. C1-C160. Main721e56eunchanged. See [[Reports/2026-11-01 MC palette stop]].
+ACTIVE MC Wave6;15/25 lanes complete,66/170 build runs. Task5 COMPLETE at mergee214ccc with all11 integration gates green. Task13 RUN62 owns the sole cache/runtime; RUN66 reviews source independently. Required palette/browser baseline reds and headed SEL2/SEL3/basic VIS1 greens verified. Full VIS1 production visibility repairs and final gates/plants/VIS2/review remain. O13 released STOP-PAL1; design14/mainf050e42; C1-C177. Both hosted panel failures remain in the Task21 red window. No main merge/push. [[MC Execution Board]].
 
 ## Historical MC checkpoints
 
