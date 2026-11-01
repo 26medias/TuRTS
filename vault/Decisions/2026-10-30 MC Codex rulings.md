@@ -1405,3 +1405,14 @@ Choice: root interrupted RUN55, stopped only its verified owned process group730
 Evidence: plan Task12step4 at:547 says return default context for every hover. cursor.rs:59-88 computes context and optional order cursor, then selected_cursor:89 applies it. Root receipt main t12-root/rejected-fixture-plant-20261101 records the rejected diff, exact restore and no-credit disposition. RUN55 fresh matrix has eight completion.json exits0 at browser-final-77ca599/runs.
 
 Alternative not taken: accept a different plant, claim an interrupted setup run as semantic red, leave protected fixture content changed, or resume an interrupted run without a ledger row.60/170 runs,Task12run8/estimate8; no CEO stop.
+
+
+## C156: standardize future MC row commands and source receipts
+
+Conflict: earlier ad hoc WEB commands omitted cache or GPU variables, and the final fresh matrix lacked a separate pre-run file manifest (correctly marked false in its receipt). Repeating those command shapes would create avoidable setup failures and weak source attribution.
+
+Choice: prepare a local bound row wrapper, main target/mc-evidence/gate-runner/run_mc_rows.py (SHAbd3eb4f05db970dd77249362ec61e8dfbcd5aff3af195b80b2003ddda09cc494). It requires explicit lane/cache/head/row/unique evidence label, pins five Cargo variables and the accepted headed Vulkan MC profile, records actual argv/env/cwd/exits/raw hashes, and compares pre/post allowed source SHA256 manifests. Clean baseline is required; a production mutation must declare its exact modified paths. It preserves driver/oracle code and IO boundaries. Claude paths are skipped and symlinks are recorded without dereferencing. T7 continues through its existing bound runner.
+
+Evidence: the wrapper syntax and --help exit0; no end-to-end row through this new wrapper is claimed yet. Its first scheduled future row must supply that proof. Current Task12 acceptance uses its actual original runs/receipts plus root source/gate/artifact/fixture checks, not this future wrapper. The builder receipt field named commit_tree_sha256 is a Git object ID, not a SHA256 file digest; read it as the Git tree ID. Root does not relabel it or invent a missing pre-run manifest.
+
+This is an instrument/command detail under brief4. Alternative not taken: change product code to hide setup failures, synthesize historic source snapshots, weaken an oracle, allow concurrent caches, or rerun current accepted rows merely to exercise a new wrapper.60/170runs; no new dispatch or CEO stop.

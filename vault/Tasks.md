@@ -104,7 +104,7 @@ Human usability amendment1354e33: catalog-derived principal labels/named local s
 
 ## Current MC status
 
-ACTIVE:13/25 lanes complete;60/170 runs. Wave5 needs Task12. Candidate77ca599 repairs both independently proven Fit defects; lifecycle7/7 green. RUN55 owns solecache target/mc-t12 and final locked gates. FreshfullHUD1/HUD4, headed T7, required mutation and final RUN56 seven-probe/own-plant acceptance remain. C1-C155 recorded. Main stays721e56e. See [[MC Execution Board]] and [[Reports/2026-11-01]].
+ACTIVE:14/25lanes complete;60/170runs. Wave5 complete ataf567c4. Task12 candidate77ca599 passed independent0openfindings/7probes/ownplant; fresh8HUD runs and required production cursor mutation restored. Integration11/11gates0 (1306/0/19,frozen,T7). Task12 lane removed; sole cache in integration. Wave5 push/readCI next, then Wave6 Tasks5/13. C1-C156. Main stays721e56e. See [[MC Execution Board]] and [[Reports/2026-11-01]].
 
 ## Historical MC checkpoints
 

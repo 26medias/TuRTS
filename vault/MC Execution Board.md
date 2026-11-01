@@ -8,7 +8,7 @@ source: codex
 
 # MC execution board
 
-State: ACTIVE: 13/25 lanes complete; 59/170 runs registered. Task11 COMPLETE at aff4d63, independent 0 open findings, integration 12/12 gates0 (1266/0/19, T7, M3). RUN55 Task12 owns the sole compiler/cache; RUN56 mod-runtime review is source-only; RUN57 supplied assets.rs source-only; RUN58 supplied sources.rs source-only; RUN55 integrates/tests both; RUN59 supplied lifecycle coverage; RUN55 extends its Core/world-routing controls. C1-C147. Wave5 needs Task12; no main merge/push.
+State: ACTIVE: 14/25 lanes complete;60/170 runs. Wave5 COMPLETE at integration af567c4. Task12 candidate77ca599 passed independent review with0openfindings,7native probes and own production plant. Fresh8HUD runs and required cursor mutation/restored pair pass. Integration11/11re-gates pass (1306/0/19,frozen,T7). Task12 lane removed after evidence preservation; sole reusable cache is in integration. Wave5 push/CI read next, then Wave6 Tasks5/13. C1-C156; no main merge/push.
 
 Plan: `docs/superpowers/plans/2026-10-29-mc-player-control.md`.
 Design of record: `docs/superpowers/specs/2026-10-29-mc-player-control-design.md`, revision13 at main721e56e.
@@ -62,7 +62,7 @@ CI trigger: `.github/workflows/ci.yml:2-5` runs pushes to main and pull requests
 
 ## 4. Tasks
 
-24 numbered tasks; task2 has two branches, for25lanes. T1/T2a/T3/T20, T8/T18/T19, T2b,T4 andT9 are complete. Wave5 is active: T6, T7 and T11 are complete. RUN55 T12 owns the compiler/cache; RUN56 performs independent source and pure-Node review.
+24 numbered tasks; task2 has two branches, for25lanes. Waves1–5 are complete:14lanes. Task12 merged and re-gated ataf567c4. The sole cache belongs to integration; no child agent holds a runtime/read/deletion lease. Wave5 push/CI read precedes Wave6 Tasks5/13.
 
 | Task | Wave | Needs | Branch | State |
 | --- | --- | --- | --- | --- |
@@ -79,7 +79,7 @@ CI trigger: `.github/workflows/ci.yml:2-5` runs pushes to main and pull requests
 | T6 | 5 | 4 | codex/mc-t6 | COMPLETE ed793bb; merge450c023; final review0High,21probes/191tests;20GREF/8plants/ownplant; integration12/12 gates0,1211/0/18,T7,M3; lane removed with compressed evidence/cache preserved. |
 | T7 | 5 | 2b, 4 | codex/mc-t7 | COMPLETE c190c909; merge7e575c9; independent0H/0M/30tests/ownplant, integration12/12gates0 (1231/0/19,T7,M3); lane removed, evidence and branch retained. |
 | T11 | 5 | 9, 19, 20 | codex/mc-t11 | COMPLETE c996463; merge aff4d63; independent 0H/0M/0L, 11 probes, CAM1 2/2 and both plants restored; integration 12/12 gates0,1266/0/19; completed artifacts archived and lane removed, branch retained. |
-| T12 | 5 | 3, 9, 19, 20 | codex/mc-t12 | ACTIVE RUN55. Rebased f6577b9 with all79 prepared paths preserved; sole cache leased. Native widgets compiled semantic red; HUD1 at DPR1 and repaired DPR2 reaches owned selection and named missing-widget/present-panel red. C134 baseline verified: all6 named widget/panel reds with valid owned selection and exact viewport/DPR. Implementation active; no legacy deletion yet. RUN56 source/pure-Node review. |
+| T12 | 5 | 3, 9, 19, 20 | codex/mc-t12 | COMPLETE candidate77ca599; mergeaf567c4. Independent0High/0remaining,7probes and own production101→0. FreshHUD1six/HUD4two pass; required runtime-default mutation1→restore0. Integration11/11gates0,1306/0/19,frozen,T7. All28removed tests mapped; registered3panelplants remain planned-window NOT CHECKED. Lane removed, evidence/cache/branch preserved. |
 | T5 | 6 | 4, 6, 19 | codex/mc-t5 | NOT STARTED |
 | T13 | 6 | 4, 6, 9, 11, 19, 20 | codex/mc-t13 | NOT STARTED |
 | T10 | 7 | 5, 9, 11, 19, 20 | codex/mc-t10 | NOT STARTED |
@@ -150,7 +150,7 @@ Tasks in one wave share no file, except the refutation registries (merge in task
 
 ## 7. Budget and seats
 
-CEO approved about 212 total runs. Build stop line: 170 (106 planned task runs plus 64 repairs). Gate estimate: 42 spent before this build. Build dispatches used: 56/170. Root preflight is recorded separately and is not a builder/reviewer dispatch. Twice a task estimate requires a recorded continuation decision; four times is a hard stop. T18 estimate2: soft4, hard8. No dispatch at global170 or a task hard limit.
+CEO approved about 212 total runs. Build stop line: 170 (106 planned task runs plus 64 repairs). Gate estimate: 42 spent before this build. Build dispatches used: 60/170. Root preflight is recorded separately and is not a builder/reviewer dispatch. Twice a task estimate requires a recorded continuation decision; four times is a hard stop. T18 estimate2: soft4, hard8. No dispatch at global170 or a task hard limit.
 
 One run is one agent dispatch (builder or reviewer). Count every run on the board.
 
@@ -247,11 +247,11 @@ One row per builder/reviewer dispatch or resumed agent work turn. Register befor
 | 53 | T11 camera and light implementation continuation | bevy-rendering-engineer | gpt-6-luna | high | d568edb preparation, rebased6f73ed5 | COMPLETE c996463; all normal gates0, E9 GREF green/semantic1/green, PointerLeft native101 and CAM1 red2/2, exact restore/native0; C131 web green independently supplied by RUN54. Task11 run2/4. |
 | 54 | T11 independent camera and light review | ux-designer | gpt-6.1-sol | high | c996463 | COMPLETE PASS 0H/0M/0L;11 independent probes, first CAM1 2/2 supplied C131 restore and independent pixels; own drag-speed plant0/101/0, exact source restored, lease/read hold returned. Task11 run3/4. |
 | 55 | T12 widget, cursor and guide implementation continuation | bevy-rendering-engineer with ux-designer | gpt-6-luna | high | ffff0a3 after T7 rebase | Registered BEFORE dispatch. Implementation completed through77ca599 finalgates and fresh8browsergreens. INTERRUPTED when its proposed fixture plant contradicted Task12step4; no plantcredit. Root restored and registered RUN60 before continuation. Actual native9selected/7semantic failures exit101; C134 HUD1 all6 named missing-widget/panel failures exit1 with valid owned selection and exact viewport/DPR. Runtime implementation active; preserve legacy28 until covered. Task12 run3/estimate8, soft16/hard32. |
-| 56 | T12 independent widget runtime and data-source review | mod-runtime-engineer | gpt-6.1-sol | high | f6577b9 plus RUN55 preparation | Registered BEFORE dispatch; Independent42/42 pure instrument probes pass. C154 explicit sole-cache/compiler lease now runs seven native diagnostic probes on c17d8e8, before the batched repair. Exact restore/release required; final runtime baseline and own production plant remain after final WEB/gates. Check table8.4 privacy, assets, scale, actions and legacy28. Task12 run4/estimate8, soft16/hard32. |
+| 56 | T12 independent widget runtime and data-source review | mod-runtime-engineer | gpt-6.1-sol | high | f6577b9 plus RUN55 preparation | COMPLETE final77ca599 PASS0High/0remaining. Independent7/7native probes and42/42 pure instrument probes; own pending-clear production plant selected1 semantic101, exactrestore selected1green0. Full source/gate/browser attribution explicit; final report SHAe05466c5. All holds/processes released; root read raw receipts/hashes before merge. Task12run4/estimate8. |
 | 57 | T12 parallel asset loader implementation | bevy-rendering-engineer with ux-designer | gpt-6-luna | high | f6577b9 plus active RUN55 source | COMPLETE source-only handoff:390-line assets.rs with qualified image/cursor/font maps, separate CPU-retained cursor decode, nine-slice and reload controls. No compiler/browser/cache execution; tests NOT TRACED. RUN55 integrates/runs and repairs; RUN56 independently reviews. Task12 run5/estimate8, soft16/hard32. |
 | 58 | T12 parallel permitted source semantics | bevy-rendering-engineer with ux-designer | gpt-6-luna | high | f6577b9 plus active RUN55 source | COMPLETE source-only handoff f6fc7731 sources.rs with inline semantic tests, qualified assets and exact typed actions. No compiler/browser/cache execution; RUN55 executes/integrates and owns later repairs. RUN56 continues independent review, including H7 target-aware capability. Task12 run6/estimate8, soft16/hard32. |
 | 59 | T12 authored widget lifecycle coverage | bevy-rendering-engineer with ux-designer | gpt-6-luna | high | f6577b9 plus RUN55 repaired runtime | COMPLETE source-only handoff6f56c184, initial lifecycle3/3 executed by RUN55. RUN55 then extended to5/5 in native-final-v004: exact Produce/disabled action, retained press/cancel/job cleanup, DPR2 fifth-job scroll, actual CoreAdapter inside/outside world input and first-frame/clip/inactive-camera snapshot. Initial helper world suppression was NOT TRACED; new controls are separate RUN55 proof. Handoff preserved in main t12-lifecycle/run59. Task12run7/estimate8, soft16/hard32. |
-| 60 | T12 required production cursor mutation and handoff | bevy-rendering-engineer with ux-designer | gpt-6-luna | high | 77ca599 | Registered BEFORE resuming interrupted RUN55 agent. Root rejected/stopped its fixture-mapping plant, restored exact fixture SHA14246814…c99c and verified no compilers/clean source. Resume same lane only for Task12step4 PRODUCTION default-for-every-hover fault, actual nondefault-stage semantic red, exact restore/HUD4pairgreen and final handoff. Task12run8/estimate8, soft16/hard32; build60/170. |
+| 60 | T12 required production cursor mutation and handoff | bevy-rendering-engineer with ux-designer | gpt-6-luna | high | 77ca599 | COMPLETE. Registered before resuming interrupted RUN55. Correct production context override only: actual headed HUD4 nondefault move→default mismatch, command1; exact cursorSHAae02fe39 restore and HUD4two0. FixtureSHA14246814 unchanged. Clean77ca599 handoff, no acceptance claim before RUN56 PASS; mergedaf567c4 and root11gates0. Task12run8/estimate8; build60/170. |
 
 ## 9. Preflight ledger and stop
 
@@ -1431,3 +1431,27 @@ Choice: root interrupted RUN55, stopped only its verified owned process group730
 Evidence: plan Task12step4 at:547 says return default context for every hover. cursor.rs:59-88 computes context and optional order cursor, then selected_cursor:89 applies it. Root receipt main t12-root/rejected-fixture-plant-20261101 records the rejected diff, exact restore and no-credit disposition. RUN55 fresh matrix has eight completion.json exits0 at browser-final-77ca599/runs.
 
 Alternative not taken: accept a different plant, claim an interrupted setup run as semantic red, leave protected fixture content changed, or resume an interrupted run without a ledger row.60/170 runs,Task12run8/estimate8; no CEO stop.
+
+
+## Task12 closeout and Wave5 checkpoint
+
+Task12 COMPLETE at candidate77ca599d41b1110263af37516c5c0c2ba34ad1ef, mergeaf567c4f1afb3875ba8d9f474d10efda236b6032. Native initial9selected/7named semantic failures exit101; HUD1 original6named missing-widget/panel failures exit1. Final candidate RUST/QA all actual0; workspace1306/0/19, Node104/104. Fresh8browser runs all actual0, after the shared retained-row repair; the earlier C150/C151 carries are now superseded by same-candidate observations. Root separately checked every completion/profile, actual HUD1 root geometry, actual HUD4 oracle rejudgement,63-file fixture trees and configured served tar hashes.
+
+Required Task12 production plant forces all contexts and overrides to default in cursor.rs only. Both actual headed runs fail the named nondefault select-attacker move context (command1); exact sourceSHAae02fe39 restores and both HUD4 runs pass0. The rejected fixture-only attempt has no credit. Independent RUN56 final report e05466c5/98fffac3 gives0High/0remaining: Core3/3+installed4/4 actual0, corrected Fit row tops36/88/140, size460x152→0x0→460x100, exact job302 action, camera/DPR/scale and asset replacement. Its own production pending-clear plant selects1, compiles and fails101, then exactSHA c9ced2bf restoration selects1/passes0. Root read the raw logs, actual argv/cwd/five env/HEAD/exits and final source hashes.
+
+Integration re-gate af567c4:10native/QA/frozen commands all0 plus bound headed T7/Trunk/oracle0; workspace1306/0/19. Frozen M2 SHA remainsbcbf72c2206251f635a7c7f5b6c8f573d69a5fc05a5bd77716e98ebfb08e370b. T7 captured137frames/53moving; lag is recorded, not judged. No old-panel M3 browser run is claimed inside the planned red window. The3registered panel plants remain NOT CHECKED; no retirement. Task15 authored GathererWaiting and native-view-proof migration remain pending under their explicit dispositions.
+
+Root moved the idle cache atomically to integration and invalidated only11workspace packages across profiles. Main cache-t12-to-integration-af567c4 holds the receipts. Task12 lane-local510files/28768653bytes are preserved in t12-closeout-preservation/lane-local-evidence.tar.zst (7735221bytes, SHA5f64b008…), with creation/CRC/byte-compare all0. Source branch remains; worktree removed after merge/gates/read/process holds cleared. Main target/mc-evidence retains all builder/reviewer/root proof. No Claude file was read or imported.
+
+14/25lanes complete,60/170runs; Task12run8/estimate8, no overrun stop. Wave5 push/readCI next; continue Wave6 automatically. Main stays721e56e, including the pre-existing untracked disk audit.
+
+
+## C156: standardize future MC row commands and source receipts
+
+Conflict: earlier ad hoc WEB commands omitted cache or GPU variables, and the final fresh matrix lacked a separate pre-run file manifest (correctly marked false in its receipt). Repeating those command shapes would create avoidable setup failures and weak source attribution.
+
+Choice: prepare a local bound row wrapper, main target/mc-evidence/gate-runner/run_mc_rows.py (SHAbd3eb4f05db970dd77249362ec61e8dfbcd5aff3af195b80b2003ddda09cc494). It requires explicit lane/cache/head/row/unique evidence label, pins five Cargo variables and the accepted headed Vulkan MC profile, records actual argv/env/cwd/exits/raw hashes, and compares pre/post allowed source SHA256 manifests. Clean baseline is required; a production mutation must declare its exact modified paths. It preserves driver/oracle code and IO boundaries. Claude paths are skipped and symlinks are recorded without dereferencing. T7 continues through its existing bound runner.
+
+Evidence: the wrapper syntax and --help exit0; no end-to-end row through this new wrapper is claimed yet. Its first scheduled future row must supply that proof. Current Task12 acceptance uses its actual original runs/receipts plus root source/gate/artifact/fixture checks, not this future wrapper. The builder receipt field named commit_tree_sha256 is a Git object ID, not a SHA256 file digest; read it as the Git tree ID. Root does not relabel it or invent a missing pre-run manifest.
+
+This is an instrument/command detail under brief4. Alternative not taken: change product code to hide setup failures, synthesize historic source snapshots, weaken an oracle, allow concurrent caches, or rerun current accepted rows merely to exercise a new wrapper.60/170runs; no new dispatch or CEO stop.
