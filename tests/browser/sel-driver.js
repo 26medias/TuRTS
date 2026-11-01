@@ -13,7 +13,7 @@ async function drive(io, params) {
     let before = decodePng(initialPng);
     if ((params.stages || []).some((stage) => stage.label?.startsWith("sel3-"))) {
         await io.move(before.width / 2, before.height / 2);
-        await io.wheel(8);
+        await io.wheel(-8);
         await io.wait(250);
         initialPng = Buffer.from(await io.screenshot());
         before = decodePng(initialPng);
@@ -75,8 +75,12 @@ function selectorPoints(selector, targets, image, gesture) {
         return unionBox(square, image, 1);
     }
     if (selector === "mobile-slot0") {
-        const mobile = targets.slot0_bodies.filter((entry) => entry.height / entry.width >= 1.2).sort((a, b) => b.pixels - a.pixels)[0];
-        if (!mobile) throw new Error("SEL screenshot has no isolated tall slot-0 silhouette; mobile pixel target is NOT TRACED");
+        const mobile = targets.slot0_bodies.filter((entry) => {
+            const aspect = entry.height / entry.width;
+            return entry.pixels >= 30 && entry.pixels <= 150 && entry.width >= 8 && entry.width <= 14 &&
+                entry.height >= 8 && entry.height <= 14 && aspect >= 0.75 && aspect <= 1.35;
+        }).sort((a, b) => a.x - b.x)[0];
+        if (!mobile) throw new Error("SEL screenshot has no isolated round slot-0 silhouette; mobile pixel target is NOT TRACED");
         return gesture === "box" ? unionBox([mobile], image, 3) : { start: footPoint(mobile), end: footPoint(mobile) };
     }
     if (selector === "first-visible-slot0") {

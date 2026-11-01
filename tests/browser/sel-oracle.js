@@ -109,13 +109,13 @@ function assertMixedOwnerBox(action, scene, debug) {
     assert.equal(button, "left", "SEL mixed-owner box must be a physical left drag");
     const box = { minX: Math.min(x0, x1), maxX: Math.max(x0, x1), minY: Math.min(y0, y1), maxY: Math.max(y0, y1) };
     const localSlot = debug?.slot;
-    const foreignVisible = (scene?.units || []).filter((unit) => unit.owner_slot !== localSlot &&
+    const publicUnits = new Map((debug?.replicated_world?.units || []).map((unit) => [unit.unit_id, unit]));
+    const foreignVisible = (scene?.units || []).filter((unit) => publicUnits.get(unit.unit_id)?.owner_slot !== localSlot &&
         Array.isArray(unit.ground_screen_center) && unit.ground_screen_center.length === 2 &&
         unit.ground_screen_center.every(Number.isFinite) &&
         unit.ground_screen_center[0] >= box.minX && unit.ground_screen_center[0] <= box.maxX &&
         unit.ground_screen_center[1] >= box.minY && unit.ground_screen_center[1] <= box.maxY);
     assert(foreignVisible.length > 0, "SEL mixed-owner drag box must enclose an actual visible foreign unit center");
-    const publicUnits = new Map((debug?.replicated_world?.units || []).map((unit) => [unit.unit_id, unit]));
     assert(foreignVisible.every((unit) => publicUnits.get(unit.unit_id)?.owner_slot !== undefined),
         "SEL mixed-owner box targets must map to actual public replica units");
     for (const unit of foreignVisible) {
