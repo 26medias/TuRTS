@@ -8,7 +8,7 @@ source: codex
 
 # MC execution board
 
-State: ACTIVE: 13/25 lanes complete; 58/170 runs registered. Task11 COMPLETE at aff4d63, independent 0 open findings, integration 12/12 gates0 (1266/0/19, T7, M3). RUN55 Task12 owns the sole compiler/cache; RUN56 mod-runtime review is source-only; RUN57 supplied assets.rs source-only; RUN58 supplied sources.rs source-only; RUN55 integrates/tests both. C1-C143. Wave5 needs Task12; no main merge/push.
+State: ACTIVE: 13/25 lanes complete; 59/170 runs registered. Task11 COMPLETE at aff4d63, independent 0 open findings, integration 12/12 gates0 (1266/0/19, T7, M3). RUN55 Task12 owns the sole compiler/cache; RUN56 mod-runtime review is source-only; RUN57 supplied assets.rs source-only; RUN58 supplied sources.rs source-only; RUN55 integrates/tests both; RUN59 writes isolated lifecycle coverage. C1-C145. Wave5 needs Task12; no main merge/push.
 
 Plan: `docs/superpowers/plans/2026-10-29-mc-player-control.md`.
 Design of record: `docs/superpowers/specs/2026-10-29-mc-player-control-design.md`, revision13 at main721e56e.
@@ -250,6 +250,8 @@ One row per builder/reviewer dispatch or resumed agent work turn. Register befor
 | 56 | T12 independent widget runtime and data-source review | mod-runtime-engineer | gpt-6.1-sol | high | f6577b9 plus RUN55 preparation | Registered BEFORE dispatch; source-only and pure Node on immutable outside-lane snapshots until committed gates and explicit lease. Independent42/42 pure instrument probes pass; runtime review/own production plant pending. Check table8.4 privacy, assets, scale, actions and legacy28. Task12 run4/estimate8, soft16/hard32. |
 | 57 | T12 parallel asset loader implementation | bevy-rendering-engineer with ux-designer | gpt-6-luna | high | f6577b9 plus active RUN55 source | COMPLETE source-only handoff:390-line assets.rs with qualified image/cursor/font maps, separate CPU-retained cursor decode, nine-slice and reload controls. No compiler/browser/cache execution; tests NOT TRACED. RUN55 integrates/runs and repairs; RUN56 independently reviews. Task12 run5/estimate8, soft16/hard32. |
 | 58 | T12 parallel permitted source semantics | bevy-rendering-engineer with ux-designer | gpt-6-luna | high | f6577b9 plus active RUN55 source | COMPLETE source-only handoff f6fc7731 sources.rs with inline semantic tests, qualified assets and exact typed actions. No compiler/browser/cache execution; RUN55 executes/integrates and owns later repairs. RUN56 continues independent review, including H7 target-aware capability. Task12 run6/estimate8, soft16/hard32. |
+
+| 59 | T12 authored widget lifecycle coverage | bevy-rendering-engineer with ux-designer | gpt-6-luna | high | f6577b9 plus RUN55 repaired runtime | Registered BEFORE dispatch. Own tests/widgets_lifecycle.rs only, source/tests with no compiler/browser/cache lease. Use public authored-tree APIs; exact Produce/Cancel PendingCommands, retained press/job cleanup, long-list DPR2 cancellation, clip/camera/world routing, disabled activation. RUN55 executes/integrates. Task12 run7/estimate8, soft16/hard32. |
 
 ## 9. Preflight ledger and stop
 
@@ -1282,3 +1284,25 @@ Choice: Grid(Source::CommandCard) draws only rows with a valid authored CardCell
 Evidence: actual diagnostic main t12-builder/run55/browser/runs/run-20261101T082739Z-5gtren/hud1-after-selection-box.png and scene-checkpoints.json; root viewed/read both. Fixture orders/order_disable.ron:1 has card:None and order_gather.ron:1 has Some(row1,column1), matching production. Root receipt t12-root/c143-card-layout.json retains exact rows, authoring and hashes. Design8:719-721 and8.3 assign layout to the mod;8.4 supplies the card-cell field. The diagnostic is not final-source acceptance because its build overlapped edits.
 
 This is an uncovered placement-detail repair under brief4, not a cut of an order or a changed acceptance row. Alternative not taken: invent free cells, overwrite authored cells, rename protected content, or accept correct outer rectangles while inner controls overlap.58/170 runs; no new run or CEO stop.
+
+
+## C144: pass the declared HUD4 row metadata to the harness
+
+Conflict: real HUD4 recognition now succeeds, but its oracle receives no fixture_catalog, stages, hash or pick epsilon. The launcher currently copies only operational row/window/DPR/capture fields, so it drops the C130 public fixture contract before the harness freezes params.
+
+Choice: copy exactly fixture_tree_sha256, fixture_catalog, pick_world_epsilon and stages from the row into generated params. Preserve runtime URLs/package/window/DPR handling and read-only deep freezing. Exercise the actual Python generator and keep the row/oracle checks unchanged. No source/debug access enters the driver.
+
+Evidence: scripts/mc-browser.sh:120-132 builds params from a field subset; repaired :126-127 adds the four metadata fields. HUD4.json already declares them and hud4-oracle validates them. Actual failed rows reached validateFixtureCatalog with missing params. Root independently ran the old and new production generators at all3 HUD1 viewports: bytes match exactly; HUD4 metadata survives; injected row URL/package fields cannot replace pinned runtime values. Receipt main t12-root/c144-row-params/root-check.json; builder params-contract tests exercise the real heredoc. This is an instrument-field repair under brief4 and C130.
+
+Alternative not taken: invent missing catalog claims in the oracle, drop its role/geometry checks, let row metadata replace server URLs, or rerun unchanged HUD1 solely for these HUD4-only fields.58/170 runs at decision; no new dispatch or CEO stop.
+
+
+## C145: add isolated authored-widget lifecycle tests in parallel
+
+Conflict: current HUD1/HUD4 passes do not prove the old panel's exact command, pressed-control, job-retirement, scroll and clipping invariants. RUN55 still has source High repairs. The public authored-tree/action seam is now stable enough for disjoint coverage.
+
+Choice: register RUN59, Luna/high, for tests/widgets_lifecycle.rs only after the frozen matrix completes. RUN55 owns runtime/source repairs and the sole compiler/browser/cache; RUN59 writes tests but runs no compiler. Test the real authored tree and public WidgetsPlugin/CoreAdapter where needed. Authored ButtonAction is Order/Input/Item; resolved Produce/Cancel are WidgetAction values and enqueue PendingCommands. Preserve exact producer/job/content identity and actual input/geometry behavior. RUN56 independently reviews all replacements before legacy deletion.
+
+Evidence: RUN55 supplied the public setup/ownership contract and five concrete gaps; legacy28 map explicitly marks partial coverage. Existing tests/widgets.rs has10 small placement/guide/hit cases and cannot substitute for installed lifecycle tests. The matrix is complete before the new writer starts; no source freeze or compiler lease overlaps are hidden. Brief4 permits cache/lane layout decisions; CEO approved safe parallelism.
+
+Alternative not taken: delete old tests with future-only replacements, let two writers edit runtime modules, add a second cache, or call unexecuted tests green.59/170 runs; Task12run7/8; no CEO stop.

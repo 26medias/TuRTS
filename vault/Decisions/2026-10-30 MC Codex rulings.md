@@ -1271,3 +1271,25 @@ Choice: Grid(Source::CommandCard) draws only rows with a valid authored CardCell
 Evidence: actual diagnostic main t12-builder/run55/browser/runs/run-20261101T082739Z-5gtren/hud1-after-selection-box.png and scene-checkpoints.json; root viewed/read both. Fixture orders/order_disable.ron:1 has card:None and order_gather.ron:1 has Some(row1,column1), matching production. Root receipt t12-root/c143-card-layout.json retains exact rows, authoring and hashes. Design8:719-721 and8.3 assign layout to the mod;8.4 supplies the card-cell field. The diagnostic is not final-source acceptance because its build overlapped edits.
 
 This is an uncovered placement-detail repair under brief4, not a cut of an order or a changed acceptance row. Alternative not taken: invent free cells, overwrite authored cells, rename protected content, or accept correct outer rectangles while inner controls overlap.58/170 runs; no new run or CEO stop.
+
+
+## C144: pass the declared HUD4 row metadata to the harness
+
+Conflict: real HUD4 recognition now succeeds, but its oracle receives no fixture_catalog, stages, hash or pick epsilon. The launcher currently copies only operational row/window/DPR/capture fields, so it drops the C130 public fixture contract before the harness freezes params.
+
+Choice: copy exactly fixture_tree_sha256, fixture_catalog, pick_world_epsilon and stages from the row into generated params. Preserve runtime URLs/package/window/DPR handling and read-only deep freezing. Exercise the actual Python generator and keep the row/oracle checks unchanged. No source/debug access enters the driver.
+
+Evidence: scripts/mc-browser.sh:120-132 builds params from a field subset; repaired :126-127 adds the four metadata fields. HUD4.json already declares them and hud4-oracle validates them. Actual failed rows reached validateFixtureCatalog with missing params. Root independently ran the old and new production generators at all3 HUD1 viewports: bytes match exactly; HUD4 metadata survives; injected row URL/package fields cannot replace pinned runtime values. Receipt main t12-root/c144-row-params/root-check.json; builder params-contract tests exercise the real heredoc. This is an instrument-field repair under brief4 and C130.
+
+Alternative not taken: invent missing catalog claims in the oracle, drop its role/geometry checks, let row metadata replace server URLs, or rerun unchanged HUD1 solely for these HUD4-only fields.58/170 runs at decision; no new dispatch or CEO stop.
+
+
+## C145: add isolated authored-widget lifecycle tests in parallel
+
+Conflict: current HUD1/HUD4 passes do not prove the old panel's exact command, pressed-control, job-retirement, scroll and clipping invariants. RUN55 still has source High repairs. The public authored-tree/action seam is now stable enough for disjoint coverage.
+
+Choice: register RUN59, Luna/high, for tests/widgets_lifecycle.rs only after the frozen matrix completes. RUN55 owns runtime/source repairs and the sole compiler/browser/cache; RUN59 writes tests but runs no compiler. Test the real authored tree and public WidgetsPlugin/CoreAdapter where needed. Authored ButtonAction is Order/Input/Item; resolved Produce/Cancel are WidgetAction values and enqueue PendingCommands. Preserve exact producer/job/content identity and actual input/geometry behavior. RUN56 independently reviews all replacements before legacy deletion.
+
+Evidence: RUN55 supplied the public setup/ownership contract and five concrete gaps; legacy28 map explicitly marks partial coverage. Existing tests/widgets.rs has10 small placement/guide/hit cases and cannot substitute for installed lifecycle tests. The matrix is complete before the new writer starts; no source freeze or compiler lease overlaps are hidden. Brief4 permits cache/lane layout decisions; CEO approved safe parallelism.
+
+Alternative not taken: delete old tests with future-only replacements, let two writers edit runtime modules, add a second cache, or call unexecuted tests green.59/170 runs; Task12run7/8; no CEO stop.
