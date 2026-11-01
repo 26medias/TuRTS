@@ -8,7 +8,7 @@ source: codex
 
 # MC execution board
 
-State: ACTIVE:12/25 lanes complete;55/170 runs registered. Task7 COMPLETE at7e575c9, independent0High/0Medium, integration12/12gates0 (1231/0/19,T7,M3). RUN53 T11 owns sole compiler/cache; RUN54 UX review registered source-only. C1-C127. Wave5 needs11/12; no main merge/push.
+State: ACTIVE:12/25 lanes complete;55/170 runs registered. Task7 COMPLETE at7e575c9, independent0High/0Medium, integration12/12gates0 (1231/0/19,T7,M3). RUN53 T11 owns sole compiler/cache; RUN54 UX review registered source-only. C1-C128. Wave5 needs11/12; no main merge/push.
 
 Plan: `docs/superpowers/plans/2026-10-29-mc-player-control.md`.
 Design of record: `docs/superpowers/specs/2026-10-29-mc-player-control-design.md`, revision13 at main721e56e.
@@ -1119,3 +1119,12 @@ Choice: apply the player scroll-speed multiplier to all three pan modes. At spee
 Evidence: design section7 pan rule; early interaction/camera.rs:53-66 applies anchor minus current ground directly, while :131-136 applies player speed only in the key/edge path. Root read the draft. RUN54 independently prepares signed-yaw speed and frame-partition probes outside the lane. This is implementation of the existing pan rule under brief4, with no new setting or key. Alternative not taken: silently exempt drag, make speed depend on pointer event frequency, or repeatedly amplify an initial-anchor error. Runtime proof is NOT TRACED until the revised source runs.54/170 runs; no CEO stop.
 
 RUN55 is registered before Task12 continuation. Its source/test work overlaps Task11 implementation and source review. It has no compiler, browser or cache lease. The lane is clean at ffff0a3 after rebase; all four accepted HUD1 instrument files match their prior bytes. Receipt: main target/mc-evidence/t12-root/rebase-after-t7/receipt.json.55/170 runs; no new stop condition.
+
+
+## C128: make camera comments and the pre-snapshot test describe the final code
+
+Conflict: RUN54's Low source finding identifies four comments that still call implemented camera functions preparation stubs. The configuration test name implies a ready pose before the adapter, but asserts None before a snapshot; its fixture is Point while its assertion text says OwnedCentre.
+
+Choice: repair the stale comments and rename/reword that test to state the first-snapshot requirement for its actual Point fixture. Keep the stronger whole-adapter owned/empty/recovery tests. Wait for any active browser row to finish before editing. No production behavior or assertion is removed.
+
+Evidence: crates/turts_client/src/camera.rs:33,75,87,105 stale comments; :223 test name and :248 message, verified by root. This is a Low repair under brief4. Alternative not taken: leave misleading completion/readiness documentation, claim this fixture proves the whole startup order, or replace the stronger lifecycle controls.55/170 runs; no stop.
