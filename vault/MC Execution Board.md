@@ -8,7 +8,7 @@ source: codex
 
 # MC execution board
 
-State: ACTIVE: O12 released Task 6. Integration and all four open lanes rebased onto main721e56e (design revision13); dirty source hashes preserved.10of25lanes complete;50/170runs; Task6run8/6, soft12/hard24. C1-C116. RUN49 repairs the exact RUN47 final source findings, then commits and gates; no repaired acceptance yet. No main merge.
+State: ACTIVE: O12 released Task6; design13/main721e56e base applied.10/25 lanes complete;50/170 runs; Task6run8/6, soft12/hard24. Candidate7898b267 clean; independent finite source0High; official native10/10 exit0 (1207/0/18). ACC/WEB, independent runtime, GREF/plants/final review pending. C1-C116. No main merge.
 
 Plan: `docs/superpowers/plans/2026-10-29-mc-player-control.md`.
 Design of record: `docs/superpowers/specs/2026-10-29-mc-player-control-design.md`, revision12 at63788d7, included by mainc3f09d0.
@@ -76,7 +76,7 @@ CI trigger: `.github/workflows/ci.yml:2-5` runs pushes to main and pull requests
 | T2b | 3 | 2a, 3, 18 | codex/mc-t2b | COMPLETE64cd400; merge6d2c46e; all gates/10GREF0; review0H/0M; lane removed |
 | T4 | 4 | 2b, 3 | codex/mc-t4 | COMPLETE merge0490ebd; review0H/0M,36GREF,all12rootgates0; lane removed |
 | T9 | 4 | 1, 8, 2b | codex/mc-t9 | COMPLETE mergefb5e2d6; independent0High/0unresolvedMedium,69tests,7GREF,FOV/modifier plants,all12integrationgates0; archived lane removed, branch retained. |
-| T6 | 5 | 4 | codex/mc-t6 | ACTIVE RUN49: repair finite C115/C116 replay/index findings, commit and final proof. Seven-file coherent WIP retained; sole compiler lease; no acceptance. |
+| T6 | 5 | 4 | codex/mc-t6 | ACTIVE RUN49 candidate7898b267: finite source0High; native10/10 exit0,1207/0/18. ACC/WEB and C105/runtime/GREF/plants/final review pending. Sole compiler lease. |
 | T7 | 5 | 2b, 4 | codex/mc-t7 | PREPARED RUN40; source/tests preserved, implementation and semantic red pending; no compiler lease. |
 | T11 | 5 | 9, 19, 20 | codex/mc-t11 | PREPARED RUN41; source/tests preserved, native/browser red pending; no compiler lease. |
 | T12 | 5 | 3, 9, 19, 20 | codex/mc-t12 | Analysis28legacytests +HUD1instrument8650131 ready; actualnative/browserred/widgetruntime/HUD4/allfinalproofpending. No legacy deletion. |
@@ -983,3 +983,9 @@ RUN50 registered before independent Sol/high reviewer continuation. Source revie
 
 
 RUN49/RUN50 repair checkpoint: root verified the C116 cross-slot compiled panic (1 selected, exit101), repaired cross-slot/index/lookup/queued-self component greens, and full sim207 plus integration suites and server92/92 checkpoint exits0. These package results predate final test-only additions and are not formal acceptance. Per-slot immutable prefix maxima matched a linear insertion oracle in12,000 generated cases (root evidence t6-root/run49-promotion-index); C116 also has Rust nonmonotone/interior/equal-boundary controls. Source-only RUN50 is positive on the finite production repairs; full acceptance and repaired runtime remain pending. The phase test was tightened after an insensitive mutant passed. The matched-tick modern command prefix then gave actual0/101/0: disabling the span guard accepted a forged premature grant. Exact restoration and raw logs/observed exits are retained. This development mutant gives no postgate plant credit. Final3 source snapshot is explicit seven-path copies; economylog SHA1b912f7a20c9c8acdfdc22afc0645e2ab9e9ea362198761b858152bfd4b7d31f. Group/Unit prior restoration and forged negatives pass2/2. Old-authored Blocked identity has producer and component replay controls; the latter is not a regenerated end-to-end scheduler trace. Combined-capacity proof uses63 real accepted reservations with constructed16,320 pending entries, not a reconstructed live K25 history. No source commit, formal repaired gates, acceptance or merge yet.50/170 runs; Task6run8/6, soft12/hard24. Disk667GiB free; one compiler cache.
+
+## Task6 committed repair and native gates
+
+RUN49 committed754a1f5 explicit seven paths and then lint-only7898b267 explicit three paths; both have Codex trailers and clean state. RUN50 independently verified final3 source copies and Git blobs:0 known open production-source Highs, not acceptance PASS. Official reviewed native runner on7898b267 passed10/10 commands: exact Clippy, wasm, workspace1207 passed/0 failed/18 ignored across107 summaries, boundary, allQA, frozen hash and frozen tests. Root read all logs/exits/environment and wrote main target/mc-evidence/t6-root/native-7898b267-root-check.json. Source scalar accounting oracle remains unchanged. ACC and direct T7/M3 follow; C105 runtime, selected20native GREF, required plants and final independent acceptance remain.50/170; Task6run8/6.
+
+An earlier ad hoc gate wrapper omitted process environment for Clippy/WASM and produced an undefined status. Those runs are not accepted. Root verified quiescence and /proc cwd/exe/fd/maps references, acquired Cargo locks, preserved inventory/provenance/logs, then deleted only inactive default target/debug and target/wasm32-unknown-unknown outputs.7.45GiB physically freed;671GiB free. Sole target/mc-t6 and clean source7898b267 remained. Receipt: main target/mc-evidence/t6-root/run49-wrong-env-cleanup/receipt.json. All compiler commands must set explicit per-process target/profile/incremental/job environment; shell environment does not persist between tool calls. The approved native helper environment.json and actual live Cargo /proc environment were both verified before accepting results. No new run, merge or push.
