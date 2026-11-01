@@ -63,3 +63,27 @@ Conflict: the proposed extra baseline-marker-native.patch would assert FrameReco
 Choice: reject before any run and give it no red credit. Required Task13 baseline reds remain the plan's real headed VIS1 one-colour failure and native palette contract failure. Native marker tests assert valid intent/state logic with deterministic time; actual first-frame visible markers require full VIS1 screenshots and matching C84 frames. The rejected optional patch stays labelled REJECTED_BEFORE_RUN in its manifest. No registered plant or acceptance requirement is removed.
 
 Evidence: candidate/baseline-marker-native.patch calls the renderless acme_order_app; candidate VisualsPlugin returns without RenderPlugin. The source was reviewed before a compiler/browser lease. Alternative not taken: count a permanently failing renderer-free assertion as useful red, or fake visibility records in headless code just to make it pass.14/25complete;65/170runs, no new dispatch.
+
+## C168: use authoritative same-tick marker terminal state
+
+Conflict: the draft changed marker retirement from replica_tick >= result_tick to strict > because an unrun native assertion assumed equal-tick Idle could be stale. Actual ordering disproves that premise. Session admits after Advance before Commands; FixedPostUpdate publishes completed worldN after Orders/Movement; FixedLast outbound stamps resultN and sends its same-tick delta. Client commits unit_orders and last_applied_tick together. Equal-tick Idle/Blocked can be a valid completed order.
+
+Choice: retain original C163 inclusive >= and repair the invalid test. Pre-result-tick Idle holds a marker; authoritative equal-tick terminal state retires it; equal-tick Moving and unresolved fragments retain it. Protect initial click visibility through actual same-frame intent before ACK. No invented tick delay or wire field. The equal-tick High claim is retracted after source trace, not recorded as a production fix.
+
+Evidence: server/session.rs:115-119; sim/plugin.rs:93-150; server/outbound.rs:14,40,60-75; client/ingest.rs:908-988; client/replica.rs:551-565. Alternative not taken: let an unrun assertion define timing, or leave a marker waiting for a nonexistent next tick after completion. Runtime is NOT TRACED until Task13 lease.66/170runs.
+
+## C169: preserve change detection for unchanged health fills
+
+Conflict: the fill loop passes &mut Bevy Mut<Transform> into a helper before checking whether the fraction differs. DerefMut marks the component changed even when the helper writes nothing. This causes avoidable retained-bar extraction work.
+
+Choice: repair this Medium finding now. Check fraction equality through read access first; call the mutating helper only for an actual geometry change. Add a native Changed<Transform> control for unchanged retained fill and changed fraction, with actual child geometry. Unit-body guard and visible output stay unchanged.
+
+Evidence: staged visuals.rs fill update loop and update_health_fill_transform; Bevy Mut change detection. Alternative not taken: claim an unchanged value proves no change-tracking churn. Actual regression is NOT TRACED until Task13 lease.66/170runs.
+
+## C170: make full VIS1 oracle match visible state and waypoint geometry
+
+Conflict: the expanded oracle did not judge its selection-cleared screenshot, counted a few green pixels as enough for a damaged bar, sampled a straight line to the queued target while production draws via the current target, and checked active marker metadata without its saved pixels. These are bounded Medium coverage/correctness findings.
+
+Choice: repair all before Task13 final gates. Check absence of full-health unselected bars in default mode; compare damaged fill width/ratio with actual public health and full reference, plus native retained child scaling; derive the actual current->queued waypoint polyline from C84 and sample those segments; require actual active-marker pixels. Keep physical PNG-only driver targets and existing fixture/acceptance values.
+
+Evidence: staged vis-full-oracle.js:81-90,238-254,284-300; staged visuals.rs:798-809. Alternative not taken: accept a permanently visible/full-width bar, reject a correct non-collinear polyline, or substitute debug metadata for saved pixels. Actual browser checks remain NOT TRACED.66/170runs.

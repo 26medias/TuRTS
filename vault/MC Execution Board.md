@@ -8,7 +8,7 @@ source: codex
 
 # MC execution board
 
-State: ACTIVE. CEO O13 releases STOP-PAL1; design14 at main f050e42. Integration and open Task5/Task13 lanes rebased.14/25lanes complete;66/170runs registered. Wave6 resumes Task5 repairs and Task13 source preparation. One compiler/cache lease belongs to Task5 reviewer RUN65. C1-C167; no main merge/push.
+State: ACTIVE Wave6. Task5 merged e214ccc and integration re-gate pending;14/25complete,15merged;66/170runs. RUN64/65 complete and allholds released. Root owns the sole integration compiler cache; Task13 RUN62/66 source-only. O13/design14 at mainf050e42; C1-C170. No main merge/push.
 
 Plan: `docs/superpowers/plans/2026-10-29-mc-player-control.md`.
 Design of record: `docs/superpowers/specs/2026-10-29-mc-player-control-design.md`, revision14 at mainf050e42.
@@ -80,7 +80,7 @@ CI trigger: `.github/workflows/ci.yml:2-5` runs pushes to main and pull requests
 | T7 | 5 | 2b, 4 | codex/mc-t7 | COMPLETE c190c909; merge7e575c9; independent0H/0M/30tests/ownplant, integration12/12gates0 (1231/0/19,T7,M3); lane removed, evidence and branch retained. |
 | T11 | 5 | 9, 19, 20 | codex/mc-t11 | COMPLETE c996463; merge aff4d63; independent 0H/0M/0L, 11 probes, CAM1 2/2 and both plants restored; integration 12/12 gates0,1266/0/19; completed artifacts archived and lane removed, branch retained. |
 | T12 | 5 | 3, 9, 19, 20 | codex/mc-t12 | COMPLETE candidate77ca599; mergeaf567c4. Independent0High/0remaining,7probes and own production101→0. FreshHUD1six/HUD4two pass; required runtime-default mutation1→restore0. Integration11/11gates0,1306/0/19,frozen,T7. All28removed tests mapped; registered3panelplants remain planned-window NOT CHECKED. Lane removed, evidence/cache/branch preserved. |
-| T5 | 6 | 4, 6, 19 | codex/mc-t5 | ACTIVE RUN64 continuation at12ded29, eight WIP files restored byte-identical after O13 rebase. Repair four lifecycle/replay/spread failures; sole compiler lease. RUN65 independent source recheck; not accepted. |
+| T5 | 6 | 4, 6, 19 | codex/mc-t5 | MERGED e214ccc from98147ae; RUN65 finalPASS0High/15probes/ownplant. All task gates+19GREF+2requiredplants passed; integration re-gate ACTIVE before completion/cleanup. |
 | T13 | 6 | 4, 6, 9, 11, 19, 20 | codex/mc-t13 | ACTIVE RUN62 after O13 release/rebase; unchanged palette, thresholds20 normal/10 simulated severity1.0. Source-only until root lease; candidate preserved, runtime NOT TRACED, no cache. |
 | T10 | 7 | 5, 9, 11, 19, 20 | codex/mc-t10 | NOT STARTED |
 | T15 | 7 | 4, 7, 12, 13 | codex/mc-t15 | NOT STARTED |
@@ -1583,3 +1583,27 @@ Evidence: candidate/baseline-marker-native.patch calls the renderless acme_order
 RUN64 finalhandoff at98147ae is clean with allnormalgates0,19GREF restored, requiredJob/rushplants101->0, frozenhashunchanged. Root read rawT7 proof137frames/53moving and actualresult; no all-green CI claim. RUN64 released allholds and completed. Root granted RUN65 sole Task5cache/runtime for independent15andownplant; source/read/deletionhold remains until thatreviewends.
 
 RUN66 registered before dispatch for independent Task13 ux-designer source review (Sol/high); no compiler/browser/server/cache or laneedits. Task13 prep2bcb9ae plus off-lane patch61cb464a…63baf remains uncompiled; requiredbaselineheadedVIS1/nativepalette reds pending root rebase/handoff afterTask5merge/regate.66/170runs;14/25complete.
+
+## C168: use authoritative same-tick marker terminal state
+
+Conflict: the draft changed marker retirement from replica_tick >= result_tick to strict > because an unrun native assertion assumed equal-tick Idle could be stale. Actual ordering disproves that premise. Session admits after Advance before Commands; FixedPostUpdate publishes completed worldN after Orders/Movement; FixedLast outbound stamps resultN and sends its same-tick delta. Client commits unit_orders and last_applied_tick together. Equal-tick Idle/Blocked can be a valid completed order.
+
+Choice: retain original C163 inclusive >= and repair the invalid test. Pre-result-tick Idle holds a marker; authoritative equal-tick terminal state retires it; equal-tick Moving and unresolved fragments retain it. Protect initial click visibility through actual same-frame intent before ACK. No invented tick delay or wire field. The equal-tick High claim is retracted after source trace, not recorded as a production fix.
+
+Evidence: server/session.rs:115-119; sim/plugin.rs:93-150; server/outbound.rs:14,40,60-75; client/ingest.rs:908-988; client/replica.rs:551-565. Alternative not taken: let an unrun assertion define timing, or leave a marker waiting for a nonexistent next tick after completion. Runtime is NOT TRACED until Task13 lease.66/170runs.
+
+## C169: preserve change detection for unchanged health fills
+
+Conflict: the fill loop passes &mut Bevy Mut<Transform> into a helper before checking whether the fraction differs. DerefMut marks the component changed even when the helper writes nothing. This causes avoidable retained-bar extraction work.
+
+Choice: repair this Medium finding now. Check fraction equality through read access first; call the mutating helper only for an actual geometry change. Add a native Changed<Transform> control for unchanged retained fill and changed fraction, with actual child geometry. Unit-body guard and visible output stay unchanged.
+
+Evidence: staged visuals.rs fill update loop and update_health_fill_transform; Bevy Mut change detection. Alternative not taken: claim an unchanged value proves no change-tracking churn. Actual regression is NOT TRACED until Task13 lease.66/170runs.
+
+## C170: make full VIS1 oracle match visible state and waypoint geometry
+
+Conflict: the expanded oracle did not judge its selection-cleared screenshot, counted a few green pixels as enough for a damaged bar, sampled a straight line to the queued target while production draws via the current target, and checked active marker metadata without its saved pixels. These are bounded Medium coverage/correctness findings.
+
+Choice: repair all before Task13 final gates. Check absence of full-health unselected bars in default mode; compare damaged fill width/ratio with actual public health and full reference, plus native retained child scaling; derive the actual current->queued waypoint polyline from C84 and sample those segments; require actual active-marker pixels. Keep physical PNG-only driver targets and existing fixture/acceptance values.
+
+Evidence: staged vis-full-oracle.js:81-90,238-254,284-300; staged visuals.rs:798-809. Alternative not taken: accept a permanently visible/full-width bar, reject a correct non-collinear polyline, or substitute debug metadata for saved pixels. Actual browser checks remain NOT TRACED.66/170runs.
