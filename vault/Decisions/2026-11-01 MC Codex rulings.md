@@ -138,3 +138,16 @@ Choice: retain exactfootprintradius, ground projection, slotcolour and solid-own
 This resolves the literal one-material-per-slot draw-method conflict with a bounded global render representation, under brief4 rights for the nearest existing mechanism that keeps the exact player-visible shape. The design is not edited. Native pipeline/composition/asset-sharing controls and actual four-gap pixels remain mandatory, followed by the independent foreign-solid plant.
 
 Evidence: actualPNG/C84 run62-vis1-full-bdaacd8-20261101; fixture crates/turts_pack/tests/fixtures/muster_hud4/{units,visuals}/dummy.ron:1; pinned Bevy0.20 bevy_pbr/src/extended_material.rs:31,123 and pbr_material.rs:682-697. Root viewed screenshot and read footprint/visual data. Alternative not taken: changefootprintradius/palette, shrinkthefixturetohidebug, or count a frustum-visible ring entity as visible gap pixels. Runtime fix is provisional until fullVIS1green/ownedplant.66/170runs.
+
+
+## C176: sample the visible ring stroke inside its exact footprint
+
+Conflict: the C175 overlay changes real pixels, but a stroke from inner radius0.94 to outer1.0 is subpixel at fixture radius0.5. The oracle sampled the mathematical outer edge, where raster rounding can select unchanged body pixels. Root compared actual selected and initial PNGs:40 changed pixels and3 neutral pixels in the ring region. The pipeline works; this is not evidence to replace it.
+
+Choice: keep outer radius exactly1.0 times the footprint and use inner radius0.88. Sample the stroke midpoint0.94 times the radius. Compare each foreign gap with the same unit in the initial unselected PNG, guarded by matching pose/camera, and still require all four coloured quadrants. Keep solid, missing-quadrant and centre-only negative controls and the independent actual foreign-solid plant. This selects an unfrozen stroke thickness and repairs the instrument; it does not change the footprint or acceptance row.
+
+Evidence: crates/turts_client/src/visuals.rs ring mesh; tests/browser/vis-full-oracle.js gap samples; actual735e921 selected/initial PNG comparison. Candidate db3a3ca completed two runs but the driver omitted the initial screenshot from its checkpoint index. Both failed before the visual oracle and earn no visual red credit. Repair the index and rerun bound to clean source. Alternative not taken: enlarge the footprint, accept gaps without coloured quadrants, or treat an instrumentation failure as a semantic failure.66/170runs.
+
+### C175 contrast clarification
+
+Use at most two globally shared neutral underlay materials, black and white. Select the contrasting backer from the actual slot material colour, including legal custom slot colours. Native pure-white and pure-black controls require opposite backers. No per-unit materials, palette edits or extra ring topologies. A single white underlay can erase the gaps of a legal white slot, so this bounded representation preserves the same required visible pattern. Source: visuals.rs actual slot-colour material construction and underlay selection. Candidate7702c8b has focused controls green; real VIS1-full remains pending.

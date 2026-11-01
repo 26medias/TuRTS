@@ -8,7 +8,7 @@ source: codex
 
 # MC execution board
 
-State: ACTIVE Wave6.15/25complete;66/170runs. Task13 requiredpalette and2headedVIS1baseline reds VERIFIED. Productionapplied andfullclientnative/palettegreen; provisional715985a bindsheadedSEL2/3/VIS1/fullrows nowrunning. RUN62solecache/runtime target/mc-t13; RUN66sourceonly untilfinalgates. Task5COMPLETEmergee214ccc/integration11gates0/laneremoved. O13/design14/mainf050e42; C1-C172. No main merge/push.
+State: ACTIVE Wave6.15/25 complete;66/170 runs. Task5 COMPLETE and integration re-gated. Task13 required baseline reds verified; SEL2/SEL3/basic VIS1 headed2/2 green. Full VIS1 browser proof is running at7702c8b after C175 overlay/contrast and C176 stroke/oracle fixes. RUN62 sole cache/runtime owner; RUN66 source-only until final gates. O13/design14/mainf050e42; C1-C176. No main merge/push.
 
 Plan: `docs/superpowers/plans/2026-10-29-mc-player-control.md`.
 Design of record: `docs/superpowers/specs/2026-10-29-mc-player-control-design.md`, revision14 at mainf050e42.
@@ -1671,3 +1671,8 @@ Choice: retain exactfootprintradius, ground projection, slotcolour and solid-own
 This resolves the literal one-material-per-slot draw-method conflict with a bounded global render representation, under brief4 rights for the nearest existing mechanism that keeps the exact player-visible shape. The design is not edited. Native pipeline/composition/asset-sharing controls and actual four-gap pixels remain mandatory, followed by the independent foreign-solid plant.
 
 Evidence: actualPNG/C84 run62-vis1-full-bdaacd8-20261101; fixture crates/turts_pack/tests/fixtures/muster_hud4/{units,visuals}/dummy.ron:1; pinned Bevy0.20 bevy_pbr/src/extended_material.rs:31,123 and pbr_material.rs:682-697. Root viewed screenshot and read footprint/visual data. Alternative not taken: changefootprintradius/palette, shrinkthefixturetohidebug, or count a frustum-visible ring entity as visible gap pixels. Runtime fix is provisional until fullVIS1green/ownedplant.66/170runs.
+
+
+## C176 and C175 contrast clarification
+
+C176 keeps the exact outer footprint and uses inner0.88/midpoint0.94 for a readable stroke and guarded same-pose reference samples. Four coloured quadrants and independent foreign-solid plant remain required. C175 uses at most two shared neutral backers selected from actual slot colour; black/white native controls pass. Full row db3a3ca failed before the visual oracle because the initial saved PNG was absent from the checkpoint index; this earns no semantic red credit. Index fixed in clean7702c8b; bound full VIS1 running. Details: [[Decisions/2026-11-01 MC Codex rulings]].66/170 runs;15/25 complete.
