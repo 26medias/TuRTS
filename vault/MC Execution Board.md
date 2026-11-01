@@ -1379,3 +1379,14 @@ Choice: carry the existing HUD1/HUD4 observations with their original source/imp
 Evidence: git commit0c96cd73698a82d6271a11103637839284d1fded; root full exact diff saved at main t12-root/lint-impact-0c96cd7.diff. First nine lint diagnostics/exit101 remain in run55/final-gates-v001 and are not semantic red evidence. Strict Clippy now passes; the remaining gates are still running.
 
 This is the CEO-approved grouping with explicit provenance, not a dropped gate. Alternative not taken: claim earlier runs executed the new hash, suppress production warnings globally, or repeat the full browser matrix for type aliases/equivalent conditions alone.59/170 runs; no new dispatch or CEO stop.
+
+
+## C152: use the declared unit role on harness unit tests
+
+Conflict: G-QA rejects three new HUD4/launch-profile test files because their role comment says test, which is not a supported role. The first attempted header edit temporarily left duplicate role lines; that failed attempt remains recorded. The files are unit tests, not driver/oracle entry points.
+
+Choice: change exactly the three leading comments to turts-test-role: unit. Keep QA rules/limits unchanged. At committed c17d8e8, driver-rule selftest47/47 and enforcement pass; all104 Node harness tests pass. Root read the complete3-line metadata diff. Carry native RUST gates from committed0c96cd7 because no Rust/Cargo/build source changed; carry browser observations with their original source and C150/C151 impact records. WEB/T7 and mutation still run on the current candidate. Each command receipt must name its actual head and exit; no old command is relabeled as a c17 execution.
+
+Evidence: c17d8e8c273329a55234527bc15a630e1845b407 changes only the first comment in harness/hud4-oracle.test.js, hud4-pixels.test.js and launch-profile.test.js. Root exact diff main t12-root/qa-role-impact-c17d8e8.diff. Failed role/duplicate-label logs and final47-case PASS remain run55/final-gates-v002/driver-rule-selftest*.log; actual104-test log is browser-harness-tests.log.
+
+This is an instrument metadata-name correction under brief4. Alternative not taken: raise the ledger limit, classify executable drivers as unit tests, omit QA, discard failures, or repeat all native simulations for comment-only changes.59/170 runs; no new dispatch or CEO stop.
