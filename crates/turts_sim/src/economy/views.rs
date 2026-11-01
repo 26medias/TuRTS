@@ -308,6 +308,10 @@ pub struct CatalogOrderAudit {
     pub id: ContentId,
     pub behaviour: turts_mod_api::Behaviour,
     pub target: turts_mod_api::TargetKind,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fire: Option<turts_mod_api::FirePolicy>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub engage: Option<turts_mod_api::EngagePolicy>,
     pub units: Vec<String>,
     pub queue_depth: u8,
     pub unit_capabilities: Vec<crate::orders::OrderUnitCapabilitiesAudit>,
@@ -1019,6 +1023,8 @@ pub fn audit_state(world: &mut World) -> AuditState {
                         id: id.clone(),
                         behaviour: definition.behaviour,
                         target: definition.target,
+                        fire: definition.fire,
+                        engage: definition.engage,
                         units: definition.units.clone(),
                         queue_depth: c
                             .order_queue_depths

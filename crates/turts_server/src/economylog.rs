@@ -2145,6 +2145,8 @@ fn validate_order_policy(command: &CommandAudit) -> Result<(), String> {
     if policy.id != definition.id
         || policy.behaviour != definition.behaviour
         || policy.target != definition.target
+        || policy.fire != definition.fire
+        || policy.engage != definition.engage
         || canonical_order_units(&policy.units) != canonical_units
         || policy.queue_depth != definition.queue_depth
         || canonical_capabilities(&policy.unit_capabilities) != definition_capabilities
@@ -7563,6 +7565,8 @@ mod tests {
             id: turts_mod_api::ContentId::parse(id).unwrap(),
             behaviour,
             target,
+            fire: None,
+            engage: None,
             units: vec![],
             queue_depth: 16,
             unit_capabilities: capabilities
@@ -7614,6 +7618,8 @@ mod tests {
                     id: policy.id.clone(),
                     behaviour: policy.behaviour,
                     target: policy.target,
+                    fire: policy.fire,
+                    engage: policy.engage,
                     units: policy.units.clone(),
                     queue_depth: policy.queue_depth,
                     unit_capabilities: policy.unit_capabilities.clone(),
@@ -9142,6 +9148,8 @@ mod tests {
                     id: turts_mod_api::ContentId::parse("fixture:move").unwrap(),
                     behaviour: turts_mod_api::Behaviour::Move,
                     target: turts_mod_api::TargetKind::Point,
+                    fire: None,
+                    engage: None,
                     units: vec![],
                     queue_depth: 16,
                     unit_capabilities: vec![turts_sim::OrderUnitCapabilitiesAudit {
@@ -9567,6 +9575,8 @@ mod tests {
                     id: definition.id.clone(),
                     behaviour: definition.behaviour,
                     target: definition.target,
+                    fire: None,
+                    engage: None,
                     units: definition.units.clone(),
                     queue_depth: definition.queue_depth,
                     unit_capabilities: definition.unit_capabilities.clone(),
@@ -9786,6 +9796,8 @@ mod tests {
                     id: definition.id.clone(),
                     behaviour: definition.behaviour,
                     target: definition.target,
+                    fire: None,
+                    engage: None,
                     units: definition.units.clone(),
                     queue_depth: definition.queue_depth,
                     unit_capabilities: definition.unit_capabilities.clone(),
@@ -10467,6 +10479,8 @@ mod tests {
                     id: definition.id.clone(),
                     behaviour: definition.behaviour,
                     target: definition.target,
+                    fire: None,
+                    engage: None,
                     units: definition.units.clone(),
                     queue_depth: definition.queue_depth,
                     unit_capabilities: definition.unit_capabilities.clone(),
@@ -10658,6 +10672,8 @@ mod tests {
                 id: order_id.clone(),
                 behaviour: turts_mod_api::Behaviour::Move,
                 target: turts_mod_api::TargetKind::Point,
+                fire: None,
+                engage: None,
                 units: vec![],
                 queue_depth: 16,
                 unit_capabilities: vec![turts_sim::OrderUnitCapabilitiesAudit {
@@ -10767,6 +10783,8 @@ mod tests {
                 id: order_id.clone(),
                 behaviour: turts_mod_api::Behaviour::Gather,
                 target: turts_mod_api::TargetKind::Node,
+                fire: None,
+                engage: None,
                 units: vec![],
                 queue_depth: 16,
                 unit_capabilities: vec![turts_sim::OrderUnitCapabilitiesAudit {
@@ -15232,6 +15250,8 @@ mod tests {
                     id: move_id,
                     behaviour: turts_mod_api::Behaviour::Move,
                     target: turts_mod_api::TargetKind::PointOrUnit,
+                    fire: None,
+                    engage: None,
                     units: vec![],
                     queue_depth: 16,
                     unit_capabilities: vec![turts_sim::OrderUnitCapabilitiesAudit {
@@ -16068,6 +16088,25 @@ mod tests {
                 .unwrap_err()
                 .contains("differs from its immutable catalog definition"),
             "command target kind must match captured catalog policy"
+        );
+    }
+
+    #[test]
+    fn validator_rejects_forged_fire_or_engage_policy_snapshot() {
+        let mut records = valid_point_move_records();
+        assert!(
+            validate_records(&records).is_ok(),
+            "baseline order replay validates"
+        );
+        if let EconomyLogRecord::CommandBoundary(command) = &mut records[1]
+            && let turts_sim::CommandKind::Order(order) = &mut command.input.kind
+        {
+            order.policy.as_mut().unwrap().fire = Some(turts_mod_api::FirePolicy::Never);
+        }
+        let error = validate_records(&records).unwrap_err();
+        assert!(
+            error.contains("differs from its immutable catalog definition"),
+            "a replay must reject a changed fire policy: {error}"
         );
     }
 
@@ -17111,7 +17150,8 @@ mod tests {
     fn audit_catalog_captures_loaded_order_policy_and_package_queue_depth() {
         use std::collections::BTreeMap;
         use turts_mod_api::{
-            ContentCatalog, ContentId, Footprint, MovementDef, OrderDef, PackageId, TargetKind,
+            ContentCatalog, ContentId, FirePolicy, Footprint, MovementDef, OrderDef, PackageId,
+            TargetKind,
         };
         let mut app = headless_app(20);
         let order_id = ContentId::parse("fixture:move").unwrap();
@@ -17156,7 +17196,7 @@ mod tests {
                 name: "Move".into(),
                 behaviour: turts_mod_api::Behaviour::Move,
                 target: TargetKind::Point,
-                fire: None,
+                fire: Some(FirePolicy::Never),
                 engage: None,
                 icon: String::new(),
                 hotkey: String::new(),
@@ -17174,6 +17214,7 @@ mod tests {
         assert_eq!(captured[0].id, order_id);
         assert_eq!(captured[0].behaviour, turts_mod_api::Behaviour::Move);
         assert_eq!(captured[0].target, TargetKind::Point);
+        assert_eq!(captured[0].fire, Some(FirePolicy::Never));
         assert_eq!(captured[0].units, vec!["fixture:walker"]);
         assert_eq!(captured[0].queue_depth, 3);
         assert_eq!(captured[0].unit_capabilities[0].unit, "fixture:walker");
@@ -18108,6 +18149,8 @@ mod tests {
                     id: turts_mod_api::ContentId::parse("test:move").unwrap(),
                     behaviour: turts_mod_api::Behaviour::Move,
                     target: turts_mod_api::TargetKind::Point,
+                    fire: None,
+                    engage: None,
                     units: vec![],
                     queue_depth: 16,
                     unit_capabilities: vec![turts_sim::OrderUnitCapabilitiesAudit {
