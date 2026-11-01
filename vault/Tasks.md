@@ -102,6 +102,14 @@ Human usability amendment1354e33: catalog-derived principal labels/named local s
 
 **Integrated:** M3 fast-forwarded into main and pushed; hosted CI running, human-demo limitations retained. See [[Reports/2026-10-28 M3 integration]].
 
+## Current MC status
+
+ACTIVE:13/25 lanes complete;56/170 runs. Tasks6,7 and11 are merged and re-gated; Wave5 needs Task12. RUN55 implements the widget runtime after all6 actual HUD1 baseline reds; RUN56 independent review is active. Solecache:target/mc-t12. C1-C135 recorded. Main stays721e56e; no main merge/push. See [[MC Execution Board]] and [[Reports/2026-11-01]].
+
+## Historical MC checkpoints
+
+The following entries retain earlier checkpoint records. They are not the current status.
+
 MC update2026-10-31: ACTIVE: 9 of 25 lanes complete. Task9 candidateabe0841 has all standard gates green (workspace1053/0/18), fresh base/CLICK9 passes and69 independent rechecks passed. Final GREF:4/7 passed; the missing-output-mesh baseline passes and its mutation stage is live. Three cases and final FOV/modifier checks remain before review/merge. Build runs:38/170. Rulings:C1-C81. Main remains c3f09d0.
 
 
