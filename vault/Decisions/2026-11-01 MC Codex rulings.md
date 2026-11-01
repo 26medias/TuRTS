@@ -151,3 +151,12 @@ Evidence: crates/turts_client/src/visuals.rs ring mesh; tests/browser/vis-full-o
 ### C175 contrast clarification
 
 Use at most two globally shared neutral underlay materials, black and white. Select the contrasting backer from the actual slot material colour, including legal custom slot colours. Native pure-white and pure-black controls require opposite backers. No per-unit materials, palette edits or extra ring topologies. A single white underlay can erase the gaps of a legal white slot, so this bounded representation preserves the same required visible pattern. Source: visuals.rs actual slot-colour material construction and underlay selection. Candidate7702c8b has focused controls green; real VIS1-full remains pending.
+
+
+### C170/C176 screenshot instrument clarification
+
+Actual7702c8b evidence saved the initial PNG but omitted its base64 companion; both headed attempts stopped before visual assertions. Candidate0c26fab uses one persistence helper, records only saved screenshot stages, and keeps the real input-call/checkpoint association. An offline derived view supplied the original PNG bytes as the missing base64 input without changing captured evidence; this is diagnostic only, with no acceptance or red credit.
+
+Exact diagonal raster pixels were antialiased beyond the colour tolerance. Sample only each quadrant interior indices[1,2,3],[5,6,7],[9,10,11],[13,14,15] at midpoint radius0.94, with a1pixel neighbourhood. Require four coloured interiors plus four changed non-slot gap regions. Positive, solid, missing-quadrant and gaps-only pure controls pass; actual production foreign-solid plant remains required. Do not count cardinal-only colour as an interior segment.
+
+The derived replay next found damaged fill35/48 against C84 health35/40. Root viewed the real PNG: the foreign tooltip overlaps the bar. Move the physical pointer to PNG-derived ground after the immediate attack capture, then measure unobscured damage. Keep actual health ratio and existing tolerance. The initial click/marker frame is still captured first. Candidate0c26fab fresh headed full row is pending; no production health fault or green acceptance is claimed from this replay.66/170runs.
