@@ -1,0 +1,8 @@
+(queue_depth: 16, smart: [
+        (target: Ground, needs: Movement, order: "base:order_move"),
+        (target: OwnUnit, needs: Movement, order: "base:order_move"),
+        (target: ForeignUnit, needs: Movement, order: "base:order_move"),
+        (target: ResourceNodeAccepted, needs: Gatherer, order: "base:order_gather"),
+        (target: Node, needs: Movement, order: "base:order_move"),
+        (target: Content, needs: Producer, order: "base:order_produce")
+    ])

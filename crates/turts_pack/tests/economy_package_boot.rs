@@ -133,7 +133,7 @@ fn assert_inventory(
 #[test]
 fn base_boots_both_slots_with_converting_credit_economy() {
     let (archive, state) = boot("base");
-    assert_eq!(archive.manifest.version, "0.2.0");
+    assert_eq!(archive.manifest.version, "0.3.0");
     let resources = archive.resources().unwrap();
     assert_eq!(resources.len(), 2);
     assert_eq!(
@@ -271,7 +271,7 @@ fn base_boots_both_slots_with_converting_credit_economy() {
 #[test]
 fn haul_boots_local_item_economy_for_both_slots() {
     let (archive, state) = boot("haul");
-    assert_eq!(archive.manifest.version, "0.2.0");
+    assert_eq!(archive.manifest.version, "0.3.0");
     let resources = archive.resources().unwrap();
     assert_eq!(resources.len(), 1);
     assert_eq!(resources[0].1.kind, ResourceKind::Item);
@@ -378,7 +378,7 @@ fn haul_boots_local_item_economy_for_both_slots() {
 #[test]
 fn acme_keeps_its_m1_scout_without_economy_content() {
     let (archive, state) = boot("acme");
-    assert_eq!(archive.manifest.version, "0.2.0");
+    assert_eq!(archive.manifest.version, "0.3.0");
     assert!(archive.resources().unwrap().is_empty());
     assert!(archive.nodes().unwrap().is_empty());
     assert!(archive.production().unwrap().is_empty());
@@ -401,9 +401,23 @@ fn acme_keeps_its_m1_scout_without_economy_content() {
 #[test]
 fn cedar_matches_the_public_ten_file_authoring_example() {
     let (archive, state) = boot("cedar");
-    assert_eq!(archive.manifest.version, "0.2.0");
+    assert_eq!(archive.manifest.version, "0.3.0");
     let expected = [
         "manifest.ron",
+        "assets/assets.ron",
+        "assets/icon_order_cancel.png",
+        "assets/icon_order_gather.png",
+        "assets/icon_order_move.png",
+        "assets/icon_order_produce.png",
+        "assets/icon_order_stop.png",
+        "input/bindings.ron",
+        "interface/hud.ron",
+        "orders/order_cancel.ron",
+        "orders/order_gather.ron",
+        "orders/order_move.ron",
+        "orders/order_produce.ron",
+        "orders/order_stop.ron",
+        "orders/rules.ron",
         "resources/wood.ron",
         "units/depot.ron",
         "units/worker.ron",
@@ -442,7 +456,7 @@ fn cedar_matches_the_public_ten_file_authoring_example() {
     }
     assert_eq!(archive.manifest.id, "cedar");
     assert_eq!(archive.manifest.kind, PackageKind::Game);
-    assert_eq!(archive.manifest.engine_api, "^0.2");
+    assert_eq!(archive.manifest.engine_api, "^0.2.3");
     assert_eq!(archive.manifest.dependencies, UniqueMap(Default::default()));
     assert_eq!(archive.manifest.context, ExecutionContext::Shared);
     assert!(archive.manifest.capabilities.is_empty());
@@ -461,6 +475,17 @@ fn cedar_matches_the_public_ten_file_authoring_example() {
 
         recipes: Vec::new(),
         technologies: Vec::new(),
+        orders: vec![
+            "orders/order_move.ron".into(),
+            "orders/order_stop.ron".into(),
+            "orders/order_gather.ron".into(),
+            "orders/order_produce.ron".into(),
+            "orders/order_cancel.ron".into(),
+            "orders/rules.ron".into(),
+        ],
+        interface: vec!["interface/hud.ron".into()],
+        input: vec!["input/bindings.ron".into()],
+        assets: vec!["assets/assets.ron".into()],
     };
     assert_eq!(archive.manifest.exports, expected_exports);
     assert_eq!(

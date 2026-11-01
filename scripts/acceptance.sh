@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Build both public binaries, verify the Task 15 process-test selector, then run
-# process acceptance serially in release mode. Existing T5 is repeated afterwards.
+# process acceptance serially in release mode. T5 is checked from that run,
+# with an exact-test fallback when a selector excludes it.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -84,6 +85,19 @@ cargo build --release -p turts_client
 run_cargo_test unit_boot aggregate -p turts_server --test unit_boot -- --ignored --test-threads=1
 run_cargo_test hello aggregate -p turts_server --test hello -- --ignored --test-threads=1
 run_cargo_test acceptance aggregate -p turts_server --test acceptance -- --ignored --test-threads=1 "$@"
+t5_passes=$(grep -Ec '^test t5_convergence \.\.\. ok$' "$log_dir/acceptance.log" || true)
+if [[ "$t5_passes" == 1 ]]; then
+  {
+    printf 'source_log=acceptance.log\n'
+    grep -E '^test t5_convergence \.\.\. ok$|^test result:' "$log_dir/acceptance.log"
+    printf 'named_test_pass_count=1\n'
+  } > "$log_dir/t5_convergence.log"
+elif [[ "$t5_passes" == 0 ]]; then
+  run_cargo_test t5_convergence exact -p turts_server --test acceptance -- --ignored --test-threads=1 --exact t5_convergence
+else
+  printf 'expected exactly one passing t5_convergence in acceptance.log, found %s\n' "$t5_passes" >&2
+  exit 1
+fi
 listing=$(cargo test --release -p turts_server --test economy -- --list)
 required=(
   e8_commands_are_authoritative_and_acked
@@ -105,7 +119,6 @@ fi
 for name in "${required[@]}"; do
   run_cargo_test "$name" exact -p turts_server --test economy -- --ignored --test-threads=1 --exact "$name"
 done
-run_cargo_test t5_convergence exact -p turts_server --test acceptance -- --ignored --test-threads=1 --exact t5_convergence
 listing_m3=$(cargo test --release -p turts_server --test m3_process -- --list)
 if ! grep -Eq '^f11_private_research_coordinator_releases_ordered_opponent_move_and_health_trace: test$' <<<"$listing_m3"; then
   echo "missing Task 16 F11 process acceptance test" >&2
@@ -120,3 +133,4 @@ f11_status=0
 TURTS_SERVER_EVIDENCE_DIR="$log_dir/f11-evidence/server-process" run_cargo_test f11_private_research exact -p turts_server --test m3_process -- --ignored --test-threads=1 --exact f11_private_research_coordinator_releases_ordered_opponent_move_and_health_trace || f11_status=$?
 retain_f11_artifacts || f11_status=1
 if [[ "$f11_status" != 0 ]]; then exit "$f11_status"; fi
+run_cargo_test command_script exact -p turts_server --test command_script -- --ignored --test-threads=1 --exact command_script_moves_acme_unit_at_fixed_tick_without_a_client

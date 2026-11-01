@@ -27,6 +27,7 @@ pub struct Welcome {
     pub slot_id: SlotId,
     pub tick: u32,
     pub tick_hz: u16,
+    pub match_id: u64,
 }
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct JoinRejected {
@@ -48,44 +49,97 @@ pub struct UnitDelta {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PlayerCommand {
     pub seq: u32,
-    pub kind: PlayerCommandKind,
+    pub order: OrderEnvelope,
 }
+
+/// The largest number of subject units in one order envelope (K4).
+pub const MAX_ORDER_UNITS: usize = 4096;
+
+/// One order request shared by all of its subject units.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub enum PlayerCommandKind {
-    MoveTo {
-        unit_ids: Vec<UnitId>,
-        target: Pos,
-    },
-    Gather {
-        unit_id: UnitId,
-        node_id: NodeId,
-    },
-    Produce {
-        producer_id: UnitId,
-        recipe_id: String,
-    },
-    CancelProduction {
-        producer_id: UnitId,
-        job_id: JobId,
-    },
-    Remove {
-        unit_id: UnitId,
-    },
-    SetEnabled {
-        unit_id: UnitId,
-        enabled: bool,
-    },
+#[serde(deny_unknown_fields)]
+pub struct OrderEnvelope {
+    pub order: ContentRef,
+    pub units: Vec<UnitId>,
+    pub target: OrderTarget,
+    pub queue: QueueMode,
+    pub group: u32,
 }
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum OrderTarget {
+    None,
+    Point(Pos),
+    Unit(UnitId),
+    Node(NodeId),
+    Job(JobId),
+    Content(ContentRef),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum QueueMode {
+    Replace,
+    Append,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct UnitRefusal {
+    pub unit: UnitId,
+    pub reason: CommandRejectReason,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct OrderResult {
+    pub seq: u32,
+    pub tick: u32,
+    pub accepted: Vec<UnitId>,
+    pub refused: Vec<UnitRefusal>,
+    pub envelope: Option<CommandRejectReason>,
+    pub job_id: Option<JobId>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Activity {
+    Idle,
+    Pending,
+    Moving,
+    Attacking,
+    Holding,
+    Gathering,
+    Blocked,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct OrderSummary {
+    pub order: ContentRef,
+    pub target: OrderTarget,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct OrderFailure {
+    pub order: ContentRef,
+    pub reason: CommandRejectReason,
+    pub tick: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct UnitOrderRecord {
+    pub unit: UnitId,
+    pub activity: Activity,
+    pub current: Option<OrderSummary>,
+    pub queued: Vec<OrderSummary>,
+    pub last_failure: Option<OrderFailure>,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CommandAck {
     pub seq: u32,
     pub tick: u32,
-}
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct CommandApplied {
-    pub seq: u32,
-    pub tick: u32,
-    pub job_id: Option<JobId>,
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -119,6 +173,14 @@ pub enum CommandRejectReason {
     AlreadyResearched,
     ResearchInProgress,
     Internal,
+    UnknownOrder,
+    NotApplicable,
+    TargetInvalid,
+    TargetGone,
+    OutOfRange,
+    RateLimited,
+    NotQueueable,
+    Blocked,
 }
 impl CommandRejectReason {
     pub const ALL: &'static [Self] = &[
@@ -151,6 +213,14 @@ impl CommandRejectReason {
         Self::AlreadyResearched,
         Self::ResearchInProgress,
         Self::Internal,
+        Self::UnknownOrder,
+        Self::NotApplicable,
+        Self::TargetInvalid,
+        Self::TargetGone,
+        Self::OutOfRange,
+        Self::RateLimited,
+        Self::NotQueueable,
+        Self::Blocked,
     ];
     pub const fn as_str(self) -> &'static str {
         match self {
@@ -183,14 +253,16 @@ impl CommandRejectReason {
             Self::AlreadyResearched => "already_researched",
             Self::ResearchInProgress => "research_in_progress",
             Self::Internal => "internal",
+            Self::UnknownOrder => "unknown_order",
+            Self::NotApplicable => "not_applicable",
+            Self::TargetInvalid => "target_invalid",
+            Self::TargetGone => "target_gone",
+            Self::OutOfRange => "out_of_range",
+            Self::RateLimited => "rate_limited",
+            Self::NotQueueable => "not_queueable",
+            Self::Blocked => "blocked",
         }
     }
-}
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct CommandRejected {
-    pub seq: u32,
-    pub tick: u32,
-    pub reason: CommandRejectReason,
 }
 
 /// One item reference for each slot on one belt piece. Empty slots carry no index.
@@ -275,6 +347,7 @@ pub struct Snapshot {
     pub weapons: Vec<WeaponRecord>,
     pub healths: Vec<HealthRecord>,
     pub research: Vec<ResearchRecord>,
+    pub unit_orders: Vec<UnitOrderRecord>,
 }
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct WorldDelta {
@@ -291,48 +364,7 @@ pub struct WorldDelta {
     pub weapons: Vec<WeaponRecord>,
     pub healths: Vec<HealthRecord>,
     pub research: Vec<ResearchRecord>,
+    pub unit_orders: Vec<UnitOrderRecord>,
 }
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ResyncRequest;
-
-#[cfg(test)]
-mod m3_command_tests {
-    use super::*;
-
-    fn encode(command: &PlayerCommand) -> Vec<u8> {
-        let mut buffer = [0; 64];
-        postcard::to_slice(command, &mut buffer).unwrap().to_vec()
-    }
-
-    #[test]
-    fn remove_and_set_enabled_roundtrip_and_keep_old_variant_tags() {
-        let remove = PlayerCommand {
-            seq: 9,
-            kind: PlayerCommandKind::Remove { unit_id: UnitId(5) },
-        };
-        let set_enabled = PlayerCommand {
-            seq: 10,
-            kind: PlayerCommandKind::SetEnabled {
-                unit_id: UnitId(5),
-                enabled: false,
-            },
-        };
-        for command in [remove, set_enabled] {
-            let bytes = encode(&command);
-            assert_eq!(
-                postcard::from_bytes::<PlayerCommand>(&bytes).unwrap(),
-                command
-            );
-        }
-        // CancelProduction was the last pre-T12 variant (tag 3). T12 variants append.
-        let previous = PlayerCommand {
-            seq: 11,
-            kind: PlayerCommandKind::CancelProduction {
-                producer_id: UnitId(5),
-                job_id: JobId(7),
-            },
-        };
-        let bytes = encode(&previous);
-        assert_eq!(bytes.get(1), Some(&3));
-    }
-}

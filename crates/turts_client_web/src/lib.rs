@@ -25,14 +25,15 @@
 use std::sync::{LazyLock, Mutex};
 
 use bevy::camera::RenderTarget;
+use bevy::camera::visibility::InheritedVisibility;
 use bevy::prelude::*;
 use bevy::render::renderer::RenderAdapterInfo;
+use bevy::ui::{CalculatedClip, ComputedNode, ComputedUiTargetCamera, UiGlobalTransform};
 use bevy::window::{PrimaryWindow, WindowRef};
 use turts_client::ClientOpts;
 use turts_client::build_app;
-use turts_client::commands::{CommandSendStatus, PendingCommands, owned_mobile_ids, submit};
+use turts_client::commands::{CommandSendStatus, PendingCommands, owned_mobile_ids, submit_order};
 use turts_client::debug::{DebugState, rebuild_debug_state};
-use turts_client::economy_ui::rendered_ui_snapshot;
 use turts_client::ingest::{
     BrowserIngestConfig, IngestCounters, IngestHooks, ReplicaState, apply_browser_ingest_config,
     ingest_messages,
@@ -42,8 +43,8 @@ use turts_client::render::{
     PresentedNode as SceneNode, PresentedUnit as SceneUnit, declared_node_pick_radius,
     declared_unit_pick_radius, projected_ground_center,
 };
-use turts_net_protocol::PlayerCommandKind;
-use turts_net_protocol::Pos;
+use turts_net_protocol::{OrderEnvelope, Pos};
+use wasm_bindgen::JsCast;
 use wasm_bindgen::prelude::*;
 
 /// The last debug JSON. The `window.turts_debug` closure reads it.
@@ -73,6 +74,20 @@ pub fn start() {
         }
     };
     let debug = Closure::<dyn Fn() -> String>::new(|| DEBUG.lock().unwrap().clone());
+    let clear_frames = Closure::<dyn Fn()>::new(|| {
+        turts_client::core_adapter::clear_frames();
+        if let Some(window) = web_sys::window() {
+            let _ =
+                js_sys::Reflect::set(&window, &"__turts_seq_queue".into(), &js_sys::Array::new());
+        }
+    });
+    let debug_function: &js_sys::Function = debug.as_ref().unchecked_ref();
+    let _ = js_sys::Reflect::set(
+        debug_function,
+        &"frames_clear".into(),
+        clear_frames.as_ref(),
+    );
+    clear_frames.forget();
     set_global(&window, "turts_debug", debug.as_ref());
     debug.forget();
     let move_to = Closure::<dyn Fn(f32, f32)>::new(|x, y| MOVES.lock().unwrap().push((x, y)));
@@ -126,7 +141,7 @@ pub fn start() {
             (
                 publish_debug.after(rebuild_debug_state),
                 publish_scene,
-                publish_ui,
+                publish_ui.after(turts_client::core_adapter::FrameCloseSet),
             ),
         );
     app.run();
@@ -187,7 +202,7 @@ fn memory_bytes() -> f64 {
 fn browser_move_commands(
     state: &ReplicaState,
     targets: &[(f32, f32)],
-) -> Option<Vec<PlayerCommandKind>> {
+) -> Option<Vec<OrderEnvelope>> {
     let ready = state.content.is_some()
         && state.welcome.is_some()
         && state
@@ -201,15 +216,13 @@ fn browser_move_commands(
     if unit_ids.is_empty() {
         return Some(Vec::new());
     }
-    Some(
-        targets
-            .iter()
-            .map(|&(x, y)| PlayerCommandKind::MoveTo {
-                unit_ids: unit_ids.clone(),
-                target: Pos { x, y },
-            })
-            .collect(),
-    )
+    let content = state.content.as_ref()?;
+    targets
+        .iter()
+        .map(|&(x, y)| {
+            turts_client::commands::move_order_envelope(content, unit_ids.clone(), Pos { x, y })
+        })
+        .collect::<Option<Vec<_>>>()
 }
 
 fn drain_moves(
@@ -230,7 +243,7 @@ fn drain_moves(
     };
     moves.clear();
     for command in commands {
-        submit(&mut pending, command);
+        submit_order(&mut pending, command);
     }
 }
 
@@ -240,23 +253,37 @@ fn publish_debug(state: Res<DebugState>) {
 
 /// `Last`: list the rendered units and count the active 3D cameras for the page.
 /// `GlobalTransform` is up to date here: the transform propagation runs in `PostUpdate`.
+type SceneWidgetQuery<'w, 's> = Query<
+    'w,
+    's,
+    (
+        &'static turts_client::widgets::primitives::AuthoredWidgetId,
+        &'static ComputedNode,
+        &'static UiGlobalTransform,
+        &'static ComputedUiTargetCamera,
+        &'static InheritedVisibility,
+        Option<&'static CalculatedClip>,
+    ),
+>;
+
 fn publish_scene(
     units: Query<(&SceneUnit, &GlobalTransform), With<Mesh3d>>,
     nodes: Query<(&SceneNode, &GlobalTransform), With<Mesh3d>>,
-    cameras: Query<(&Camera, &GlobalTransform, &RenderTarget), With<Camera3d>>,
+    cameras: Query<(Entity, &Camera, &GlobalTransform, &RenderTarget), With<Camera3d>>,
     windows: Query<(Entity, &Window), With<PrimaryWindow>>,
+    widgets: SceneWidgetQuery<'_, '_>,
     state: Res<ReplicaState>,
     adapter_info: Option<Res<RenderAdapterInfo>>,
 ) {
     let active: Vec<_> = cameras
         .iter()
-        .filter(|(camera, _, _)| camera.is_active)
+        .filter(|(_, camera, _, _)| camera.is_active)
         .collect();
     let primary_window = windows.iter().next();
     let primary_entity = primary_window.map(|(entity, _)| entity);
     let primary_active: Vec<_> = active
         .iter()
-        .filter(|(_, _, target)| match target {
+        .filter(|(_, _, _, target)| match target {
             RenderTarget::Window(WindowRef::Primary) => primary_entity.is_some(),
             RenderTarget::Window(WindowRef::Entity(entity)) => {
                 primary_entity.as_ref() == Some(entity)
@@ -268,7 +295,7 @@ fn publish_scene(
         .collect();
     let camera_metadata = if primary_active.len() == 1 {
         primary_window.and_then(|(_, window)| {
-            let (camera, transform, _) = *primary_active[0];
+            let (_, camera, transform, _) = *primary_active[0];
             Some(SceneCamera {
                 window_logical_size: Vec2::new(window.width(), window.height()),
                 viewport_logical_rect: camera.logical_viewport_rect()?,
@@ -283,7 +310,7 @@ fn publish_scene(
     let projection_camera = primary_active
         .first()
         .filter(|_| primary_active.len() == 1)
-        .map(|(camera, transform, _)| (*camera, *transform));
+        .map(|(_, camera, transform, _)| (*camera, *transform));
 
     let mut entries: Vec<SceneEntry> = units
         .iter()
@@ -350,18 +377,88 @@ fn publish_scene(
         name: info.name.clone(),
         device_type: format!("{:?}", info.device_type),
     });
-    *SCENE.lock().unwrap() = scene_json(
+    let mut scene: serde_json::Value = serde_json::from_str(&scene_json(
         active.len(),
         camera_metadata,
         adapter,
         &entries,
         &node_entries,
-    );
+    ))
+    .unwrap_or_else(|_| serde_json::json!({}));
+    let mut widget_rects = widgets
+        .iter()
+        .filter_map(|(id, node, transform, target, visible, clip)| {
+            if !visible.get()
+                || node.size().min_element() <= 0.0
+                || !intersects_calculated_clip(node, transform, clip)
+            {
+                return None;
+            }
+            let camera_id = target.get()?;
+            let (_, camera, _, _) = cameras
+                .iter()
+                .find(|(entity, _, _, _)| *entity == camera_id)?;
+            let viewport = camera.physical_viewport_rect()?;
+            let scale = camera.target_scaling_factor()?;
+            if !camera.is_active || !scale.is_finite() || scale <= 0.0 {
+                return None;
+            }
+            let centre = transform.to_scale_angle_translation().2;
+            let size = node.size();
+            let origin = viewport.min.as_vec2();
+            let rect = [
+                (origin.x + centre.x - size.x / 2.0) / scale,
+                (origin.y + centre.y - size.y / 2.0) / scale,
+                size.x / scale,
+                size.y / scale,
+            ];
+            rect.iter()
+                .all(|value| value.is_finite())
+                .then(|| serde_json::json!({"id":id.0,"rect":rect}))
+        })
+        .collect::<Vec<_>>();
+    widget_rects.sort_by(|left, right| left["id"].as_str().cmp(&right["id"].as_str()));
+    scene["widgets"] = serde_json::Value::Array(widget_rects);
+    *SCENE.lock().unwrap() = scene.to_string();
+}
+
+fn intersects_calculated_clip(
+    node: &ComputedNode,
+    transform: &UiGlobalTransform,
+    clip: Option<&CalculatedClip>,
+) -> bool {
+    match clip {
+        Some(CalculatedClip::FullyClipped) => false,
+        Some(CalculatedClip::Rects(clips)) => {
+            let centre = transform.to_scale_angle_translation().2;
+            let half = node.size() / 2.0;
+            let corners = [
+                Vec2::new(centre.x - half.x, centre.y - half.y),
+                Vec2::new(centre.x + half.x, centre.y - half.y),
+                Vec2::new(centre.x - half.x, centre.y + half.y),
+                Vec2::new(centre.x + half.x, centre.y + half.y),
+            ];
+            clips.iter().all(|clip| {
+                let mut local = corners
+                    .into_iter()
+                    .map(|point| clip.world_to_clip_local.transform_point2(point));
+                let first = local.next().unwrap_or(Vec2::ZERO);
+                let bounds = local.fold(Rect::from_corners(first, first), |bounds, point| {
+                    Rect::from_corners(bounds.min.min(point), bounds.max.max(point))
+                });
+                !bounds.intersect(clip.rect).is_empty()
+            })
+        }
+        None => true,
+    }
 }
 
 fn publish_ui(world: &mut World) {
-    let snapshot = rendered_ui_snapshot(world);
-    *UI.lock().unwrap() = serde_json::to_string(&snapshot).unwrap_or_default();
+    let snapshot = world
+        .get_resource::<turts_client::debug_feed::UiSnapshotFeed>()
+        .map(|feed| feed.0.clone())
+        .unwrap_or_else(|| turts_client::widgets::snapshot::snapshot(world));
+    *UI.lock().unwrap() = snapshot.to_string();
 }
 
 /// Actual camera data needed to project world points without duplicating camera constants.
@@ -393,6 +490,44 @@ fn number(value: f32) -> serde_json::Value {
     serde_json::Number::from_f64(value as f64)
         .map(serde_json::Value::Number)
         .unwrap_or(serde_json::Value::Null)
+}
+
+#[cfg(test)]
+mod widget_scene_tests {
+    use super::*;
+
+    #[test]
+    fn scene_widget_bridge_omits_fully_clipped_nodes_and_keeps_partial_intersections() {
+        let node = ComputedNode {
+            size: Vec2::splat(20.0),
+            ..default()
+        };
+        let transform = UiGlobalTransform::default();
+        assert!(!intersects_calculated_clip(
+            &node,
+            &transform,
+            Some(&CalculatedClip::FullyClipped)
+        ));
+        let outside = CalculatedClip::default().with_rect(
+            Rect::from_corners(Vec2::splat(20.0), Vec2::splat(30.0)),
+            &transform,
+        );
+        assert!(!intersects_calculated_clip(
+            &node,
+            &transform,
+            Some(&outside)
+        ));
+        let partial = CalculatedClip::default().with_rect(
+            Rect::from_corners(Vec2::splat(-5.0), Vec2::splat(5.0)),
+            &transform,
+        );
+        assert!(intersects_calculated_clip(
+            &node,
+            &transform,
+            Some(&partial)
+        ));
+        assert!(intersects_calculated_clip(&node, &transform, None));
+    }
 }
 
 fn pair(value: Vec2) -> serde_json::Value {
@@ -594,7 +729,7 @@ mod tests {
             replica::{Replica, UnitReplica},
         };
         use turts_mod_runtime::{archive::PackageArchive, pack::pack_dir};
-        use turts_net_protocol::{Pos, UnitId};
+        use turts_net_protocol::{OrderEnvelope, OrderTarget, Pos, QueueMode, UnitId};
 
         let targets = [(4.0, 5.0)];
         assert!(browser_move_commands(&ReplicaState::default(), &targets).is_none());
@@ -661,15 +796,26 @@ mod tests {
             slot: 0,
             tick: 1,
             tick_hz: 20,
+            match_id: 0,
         });
+        let expected_order = turts_client::commands::move_order_envelope(
+            &content,
+            Vec::new(),
+            Pos { x: 4.0, y: 5.0 },
+        )
+        .unwrap()
+        .order;
         state.content = Some(content);
         state.replica = Some(replica);
         let expanded = browser_move_commands(&state, &targets).unwrap();
         assert_eq!(
             expanded,
-            vec![PlayerCommandKind::MoveTo {
-                unit_ids: vec![UnitId(2), UnitId(4)],
-                target: Pos { x: 4.0, y: 5.0 },
+            vec![OrderEnvelope {
+                order: expected_order,
+                units: vec![UnitId(2), UnitId(4)],
+                target: OrderTarget::Point(Pos { x: 4.0, y: 5.0 }),
+                queue: QueueMode::Replace,
+                group: 0,
             }]
         );
 

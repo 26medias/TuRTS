@@ -1,0 +1,1 @@
+(id: "order_research", name: "Start research", behaviour: Produce, target: Content, fire: None, engage: None, icon: "muster_icon_research", hotkey: "key_research", cursor: None, card: None, units: [], description: "Start research at the selected lab.")

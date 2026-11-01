@@ -2,11 +2,14 @@
 //! simulation with lightyear sessions.
 
 mod boot;
+mod command_script;
 mod config;
 mod economylog;
 mod export;
 mod http;
 mod net;
+mod orderlog;
+mod orders;
 mod outbound;
 mod session;
 mod stats;
@@ -66,6 +69,12 @@ fn run() -> Result<(), String> {
     });
 
     let booted = boot::boot(app.world_mut(), &cfg, &bytes).map_err(|error| error.to_string())?;
+    let server_catalog = booted
+        .archive
+        .content()
+        .map_err(|error| error.to_string())?;
+    app.insert_resource(orders::ServerCatalog(server_catalog));
+    app.insert_resource(stats::generate_match_id());
     let package = &booted.archive.manifest;
     eprintln!(
         "turts_server: package {} {}, lockfile {}",
@@ -84,6 +93,8 @@ fn run() -> Result<(), String> {
     ));
 
     session::install(&mut app, advertised);
+    command_script::install(&mut app, cli.command_script.as_deref())?;
+    orderlog::install(&mut app, cli.order_log.as_deref())?;
     outbound::install(&mut app);
     net::install(&mut app, cfg.http_addr(), ws_addr);
     ticklog::install(&mut app, &cli);

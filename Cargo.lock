@@ -8600,8 +8600,10 @@ dependencies = [
  "gloo-net",
  "js-sys",
  "lightyear",
+ "ron",
  "serde",
  "serde_json",
+ "turts_interaction",
  "turts_mod_api",
  "turts_mod_runtime",
  "turts_net_lightyear",
@@ -8623,6 +8625,17 @@ dependencies = [
  "wasm-bindgen",
  "wasm-bindgen-test",
  "web-sys",
+]
+
+[[package]]
+name = "turts_interaction"
+version = "0.2.0"
+dependencies = [
+ "glam 0.33.12",
+ "serde_json",
+ "turts_mod_api",
+ "turts_mod_runtime",
+ "turts_net_protocol",
 ]
 
 [[package]]
@@ -8720,6 +8733,7 @@ dependencies = [
  "bevy_math",
  "bevy_time",
  "serde",
+ "serde_json",
  "turts_mod_api",
 ]
 

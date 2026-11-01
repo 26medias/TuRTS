@@ -83,6 +83,7 @@ fn welcome(tick: u32) -> Incoming {
         slot_id: SlotId(0),
         tick,
         tick_hz: 20,
+        match_id: 0,
     })
 }
 
@@ -112,6 +113,7 @@ fn snapshot_at(tick: u32, x: f32, y: f32) -> Incoming {
         weapons: vec![],
         healths: vec![],
         research: vec![],
+        unit_orders: Vec::new(),
     })
 }
 
@@ -144,6 +146,7 @@ fn delta_at(tick: u32, base_tick: u32, x: f32, y: f32) -> Incoming {
         weapons: vec![],
         healths: vec![],
         research: vec![],
+        unit_orders: Vec::new(),
     })
 }
 
@@ -173,6 +176,7 @@ fn empty_delta(tick: u32, base_tick: u32) -> Incoming {
         weapons: vec![],
         healths: vec![],
         research: vec![],
+        unit_orders: Vec::new(),
     })
 }
 
@@ -522,6 +526,7 @@ fn world_with_one_unit() -> World {
         weapons: vec![],
         healths: vec![],
         research: vec![],
+        unit_orders: Vec::new(),
     }));
     world.insert_resource(rig.state);
     world.insert_resource(Phase::Joined { slot: 0 });
@@ -538,6 +543,7 @@ fn world_with_one_unit() -> World {
         map_size: (32.0, 32.0),
         unit_names: HashMap::new(),
         content: ClientContent::default(),
+        presentation: Default::default(),
     }));
     world.insert_resource(Presented {
         frame_ns: 5,

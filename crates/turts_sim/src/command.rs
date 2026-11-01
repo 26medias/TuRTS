@@ -16,7 +16,7 @@ use crate::world::UnitType;
 use crate::world::{MapBounds, MoveTarget, Owner, UnitId};
 
 /// The most units one command may list.
-const MAX_UNITS_PER_COMMAND: usize = 256;
+pub const MAX_UNITS_PER_COMMAND: usize = 4096;
 
 /// A request from one slot. `seq` is the sender's number for the request.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -52,6 +52,7 @@ pub enum CommandKind {
         unit_id: u32,
         enabled: bool,
     },
+    Order(Box<crate::orders::OrderCommand>),
 }
 
 /// Commands that wait for the next tick.
@@ -64,6 +65,8 @@ pub struct CommandResult {
     pub slot: SlotId,
     pub seq: u32,
     pub outcome: Result<Applied, RejectReason>,
+    #[serde(default)]
+    pub units: crate::orders::UnitOutcomes,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -92,6 +95,7 @@ pub enum RejectReason {
     UnknownRecipe,
     RecipeNotEnabled,
     QueueFull,
+    RateLimited,
     InsufficientBalance,
     InsufficientItems,
     UnknownJob,
@@ -109,6 +113,12 @@ pub enum RejectReason {
     AlreadyResearched,
     ResearchInProgress,
     IntegrityViolation,
+    NotApplicable,
+    TargetInvalid,
+    TargetGone,
+    OutOfRange,
+    NotQueueable,
+    Blocked,
 }
 
 impl RejectReason {
@@ -130,6 +140,7 @@ impl RejectReason {
             Self::UnknownRecipe => "unknown_recipe",
             Self::RecipeNotEnabled => "recipe_not_enabled",
             Self::QueueFull => "queue_full",
+            Self::RateLimited => "rate_limited",
             Self::InsufficientBalance => "insufficient_balance",
             Self::InsufficientItems => "insufficient_items",
             Self::UnknownJob => "unknown_job",
@@ -147,12 +158,66 @@ impl RejectReason {
             Self::AlreadyResearched => "already_researched",
             Self::ResearchInProgress => "research_in_progress",
             Self::IntegrityViolation => "integrity_violation",
+            Self::NotApplicable => "not_applicable",
+            Self::TargetInvalid => "target_invalid",
+            Self::TargetGone => "target_gone",
+            Self::OutOfRange => "out_of_range",
+            Self::NotQueueable => "not_queueable",
+            Self::Blocked => "blocked",
         }
     }
 }
 
 /// Apply one admitted command synchronously. Automatic simulation phases do not run here.
 pub fn apply_command(world: &mut World, command: &Command) -> CommandResult {
+    if let CommandKind::MoveTo { unit_ids, target } = &command.kind
+        && unit_ids.len() > 1
+    {
+        return crate::economy::transaction::capture_command(world, command, |world| {
+            let (outcome, units) =
+                apply_move_to_per_unit(world, command.slot, command.seq, unit_ids, *target);
+            CommandResult {
+                slot: command.slot,
+                seq: command.seq,
+                outcome,
+                units,
+            }
+        });
+    }
+    if let CommandKind::Order(order) = &command.kind {
+        let plain_move = order.behaviour == turts_mod_api::Behaviour::Move
+            && order.queue == crate::orders::QueueMode::Replace
+            && order.group == 0
+            && order.units.len() == 1
+            && matches!(&order.target, crate::orders::OrderTargetSim::Point(_))
+            && (crate::orders::plain_move_has_no_prior_order_state(world, order)
+                || crate::orders::plain_move_reservation_exists(world, order.units[0]));
+        let plain_gather = order.behaviour == turts_mod_api::Behaviour::Gather
+            && order.queue == crate::orders::QueueMode::Replace
+            && order.group == 0;
+        if plain_move || plain_gather {
+            return crate::economy::transaction::capture_command(world, command, |world| {
+                let (outcome, units) =
+                    crate::orders::apply_order(world, command.slot, command.seq, order);
+                CommandResult {
+                    slot: command.slot,
+                    seq: command.seq,
+                    outcome,
+                    units,
+                }
+            });
+        }
+        return crate::economy::transaction::capture_order_command(world, command, |world| {
+            let (outcome, units) =
+                crate::orders::apply_order(world, command.slot, command.seq, order);
+            CommandResult {
+                slot: command.slot,
+                seq: command.seq,
+                outcome,
+                units,
+            }
+        });
+    }
     crate::economy::transaction::capture_command(world, command, |world| {
         apply_command_inner(world, command)
     })
@@ -161,11 +226,27 @@ pub fn apply_command(world: &mut World, command: &Command) -> CommandResult {
 fn apply_command_inner(world: &mut World, command: &Command) -> CommandResult {
     let outcome = match &command.kind {
         CommandKind::MoveTo { unit_ids, target } => {
-            apply_move_to(world, command.slot, unit_ids, *target).map(|()| Applied { job_id: None })
+            apply_legacy_command_move_to(world, command.slot, unit_ids, *target)
+                .map(|()| Applied { job_id: None })
         }
         CommandKind::Gather { unit_id, node_id } => {
-            crate::economy::gather::assign_gather(world, command.slot, *unit_id, *node_id)
-                .map(|()| Applied { job_id: None })
+            crate::economy::gather::assign_gather(world, command.slot, *unit_id, *node_id).map(
+                |()| {
+                    // The legacy Gather command is a Replace with no authored
+                    // Order identity. Keep this reset out of shared Gather
+                    // activation so queued catalog orders retain their order.
+                    let entity = world
+                        .iter_entities()
+                        .find(|entity| entity.get::<UnitId>().is_some_and(|id| id.0 == *unit_id))
+                        .map(|entity| entity.id());
+                    if let Some(entity) = entity {
+                        world
+                            .entity_mut(entity)
+                            .insert(crate::UnitOrders::default());
+                    }
+                    Applied { job_id: None }
+                },
+            )
         }
         CommandKind::Produce {
             producer_id,
@@ -180,18 +261,149 @@ fn apply_command_inner(world: &mut World, command: &Command) -> CommandResult {
             job_id,
         } => cancel_production(world, command.slot, *producer_id, *job_id)
             .map(|()| Applied { job_id: None }),
-        CommandKind::Remove { unit_id } => crate::command_m3::remove(world, command.slot, *unit_id)
-            .map(|()| Applied { job_id: None }),
+        CommandKind::Remove { unit_id } => {
+            let result = crate::command_m3::remove(world, command.slot, *unit_id);
+            if result.is_ok()
+                && let Some(mut identities) =
+                    world.get_resource_mut::<crate::orders::PlainMoveOrderIdentities>()
+            {
+                identities.0.remove(unit_id);
+            }
+            result.map(|()| Applied { job_id: None })
+        }
         CommandKind::SetEnabled { unit_id, enabled } => {
             crate::command_m3::set_enabled(world, command.slot, *unit_id, *enabled)
                 .map(|()| Applied { job_id: None })
         }
+        CommandKind::Order(_) => Err(RejectReason::NotApplicable),
     };
     CommandResult {
         slot: command.slot,
         seq: command.seq,
         outcome,
+        units: crate::orders::UnitOutcomes::default(),
     }
+}
+
+pub(crate) fn apply_legacy_move_to(
+    world: &mut World,
+    slot: SlotId,
+    unit_ids: &[u32],
+    target: Vec2,
+) -> Result<(), RejectReason> {
+    apply_move_to(world, slot, unit_ids, target)
+}
+
+fn apply_move_to_per_unit(
+    world: &mut World,
+    slot: SlotId,
+    seq: u32,
+    unit_ids: &[u32],
+    target: Vec2,
+) -> (Result<Applied, RejectReason>, crate::orders::UnitOutcomes) {
+    use crate::orders::UnitOutcomes;
+    if unit_ids.is_empty() {
+        return (Err(RejectReason::EmptyCommand), UnitOutcomes::default());
+    }
+    if unit_ids.len() > MAX_UNITS_PER_COMMAND {
+        return (Err(RejectReason::TooManyUnits), UnitOutcomes::default());
+    }
+    let mut seen = HashSet::with_capacity(unit_ids.len());
+    if unit_ids.iter().any(|id| !seen.insert(*id)) {
+        return (Err(RejectReason::DuplicateUnit), UnitOutcomes::default());
+    }
+    let bounds = world.get_resource::<MapBounds>().copied();
+    let types = world.resource::<UnitTypes>();
+    let index: HashMap<u32, (Entity, SlotId, bool, f32)> = world
+        .iter_entities()
+        .filter_map(|entity| {
+            let id = entity.get::<UnitId>()?;
+            let owner = entity.get::<Owner>()?;
+            let unit_type = entity.get::<UnitType>()?;
+            Some((
+                id.0,
+                (
+                    entity.id(),
+                    owner.0,
+                    types
+                        .get(unit_type.0)
+                        .is_some_and(|entry| entry.movement.is_some()),
+                    types.get(unit_type.0).map_or(0.5, |entry| entry.radius),
+                ),
+            ))
+        })
+        .collect();
+    if !target.is_finite() {
+        return (Err(RejectReason::TargetNotFinite), UnitOutcomes::default());
+    }
+    let radius = unit_ids
+        .iter()
+        .filter_map(|id| index.get(id).map(|(_, _, _, radius)| *radius))
+        .fold(0.0_f32, f32::max);
+    let target = bounds.map_or(target, |bounds| {
+        Vec2::new(
+            target.x.clamp(radius, (bounds.size.x - radius).max(radius)),
+            target.y.clamp(radius, (bounds.size.y - radius).max(radius)),
+        )
+    });
+    let mut outcomes = UnitOutcomes::default();
+    for unit_id in unit_ids {
+        let result = match index.get(unit_id) {
+            None => Err(RejectReason::UnknownUnit),
+            Some((_, owner, _, _)) if *owner != slot => Err(RejectReason::NotOwner),
+            Some((_, _, false, _)) => Err(RejectReason::NotApplicable),
+            Some(_) => Ok(()),
+        };
+        match result {
+            Ok(()) => outcomes.accepted.push(*unit_id),
+            Err(reason) => outcomes.refused.push((*unit_id, reason)),
+        }
+    }
+    if !outcomes.accepted.is_empty()
+        && !crate::orders::queue_legacy_move_to_envelope(
+            world,
+            crate::orders::MovementEnvelopeRequest {
+                slot,
+                seq,
+                group: 0,
+                point: target,
+                unit_ids: outcomes.accepted.clone(),
+                order: None,
+                member_orders: Default::default(),
+                plain: true,
+            },
+        )
+    {
+        outcomes.refused.extend(
+            outcomes
+                .accepted
+                .drain(..)
+                .map(|unit| (unit, RejectReason::RateLimited)),
+        );
+    } else if !outcomes.accepted.is_empty() {
+        let entity_by_unit = index
+            .iter()
+            .map(|(&unit_id, (entity, _, _, _))| (unit_id, *entity))
+            .collect::<HashMap<_, _>>();
+        crate::orders::prepare_legacy_move_to_waiters(world, &outcomes.accepted, &entity_by_unit);
+    }
+    let outcome = if outcomes.accepted.is_empty() {
+        outcomes
+            .refused
+            .first()
+            .map_or(Err(RejectReason::NotApplicable), |(_, reason)| Err(*reason))
+    } else {
+        Ok(Applied { job_id: None })
+    };
+    (outcome, outcomes)
+}
+
+pub(crate) fn apply_legacy_unit(
+    world: &mut World,
+    slot: SlotId,
+    kind: CommandKind,
+) -> Result<Applied, RejectReason> {
+    apply_command_inner(world, &Command { slot, seq: 0, kind }).outcome
 }
 
 /// Freeze the admitted batch, then apply commands in its original order.
@@ -215,6 +427,25 @@ fn apply_move_to(
     unit_ids: &[u32],
     target: Vec2,
 ) -> Result<(), RejectReason> {
+    apply_move_to_with_legacy_replace(world, slot, unit_ids, target, false)
+}
+
+fn apply_legacy_command_move_to(
+    world: &mut World,
+    slot: SlotId,
+    unit_ids: &[u32],
+    target: Vec2,
+) -> Result<(), RejectReason> {
+    apply_move_to_with_legacy_replace(world, slot, unit_ids, target, true)
+}
+
+fn apply_move_to_with_legacy_replace(
+    world: &mut World,
+    slot: SlotId,
+    unit_ids: &[u32],
+    target: Vec2,
+    legacy_replace: bool,
+) -> Result<(), RejectReason> {
     let bounds = world.get_resource::<MapBounds>().copied();
     let types = world.resource::<UnitTypes>();
     let index: HashMap<u32, (Entity, SlotId, bool)> = world
@@ -234,9 +465,37 @@ fn apply_move_to(
         })
         .collect();
     let entities = validate_move_to(slot, unit_ids, target, &index, bounds.as_ref())?;
-    for entity in entities {
-        let mut entity = world.entity_mut(entity);
-        entity.insert(MoveTarget(target));
+    if !target.is_finite() {
+        return Err(RejectReason::TargetNotFinite);
+    }
+    let moves: Vec<_> = entities
+        .into_iter()
+        .map(|entity| {
+            let radius = world
+                .entity(entity)
+                .get::<UnitType>()
+                .and_then(|kind| types.get(kind.0))
+                .map_or(0.5, |entry| entry.radius);
+            let clamped = bounds.map_or(target, |bounds| {
+                Vec2::new(
+                    target.x.clamp(radius, (bounds.size.x - radius).max(radius)),
+                    target.y.clamp(radius, (bounds.size.y - radius).max(radius)),
+                )
+            });
+            (entity, clamped)
+        })
+        .collect();
+    for (entity, target) in moves {
+        if legacy_replace {
+            let unit_id = world.entity(entity).get::<UnitId>().map(|id| id.0).unwrap();
+            crate::orders::reset_legacy_move_to_unit(world, slot, entity, unit_id);
+        }
+        let mut movement = world.entity_mut(entity);
+        movement.remove::<crate::movement::PlainMoveProgress>();
+        movement.insert(MoveTarget(target));
+    }
+    for id in unit_ids {
+        crate::orders::forget_plain_move_identity(world, *id);
     }
     if let Some(mut orders) = world.get_resource_mut::<EconomyOrders>() {
         for id in unit_ids {
@@ -252,8 +511,8 @@ fn apply_move_to(
     Ok(())
 }
 
-/// Check order: list empty; more than 256; duplicate id; every id exists; every unit owned by
-/// the sender; target finite; target inside the map. Returns the entities to move.
+/// Check order: list empty; more than 4096; duplicate id; every id exists; every unit owned by
+/// the sender; target finite. Finite target points are clamped by footprint radius.
 fn validate_move_to(
     slot: SlotId,
     unit_ids: &[u32],
@@ -284,16 +543,11 @@ fn validate_move_to(
     if !target.is_finite() {
         return Err(RejectReason::TargetNotFinite);
     }
-    let inside = bounds.is_some_and(|b| {
-        (0.0..=b.size.x).contains(&target.x) && (0.0..=b.size.y).contains(&target.y)
-    });
-    if !inside {
-        return Err(RejectReason::TargetOutsideMap);
-    }
+    let _ = bounds;
     Ok(found.into_iter().map(|(entity, _, _)| entity).collect())
 }
 
-mod vec2_bits {
+pub(crate) mod vec2_bits {
     use bevy_math::Vec2;
     use serde::{Deserialize, Deserializer, Serialize, Serializer};
     pub fn serialize<S: Serializer>(value: &Vec2, serializer: S) -> Result<S::Ok, S::Error> {

@@ -6,14 +6,49 @@ use crate::scenario::ScenarioState;
 use bevy::prelude::*;
 use lightyear::prelude::*;
 use std::collections::VecDeque;
+use turts_mod_api::Behaviour;
 use turts_net_lightyear::ReliableChannel;
-use turts_net_protocol::{PlayerCommand, PlayerCommandKind};
+use turts_net_protocol::{
+    JobId, MAX_ORDER_UNITS, NodeId, OrderEnvelope, OrderTarget, PlayerCommand, Pos, QueueMode,
+    UnitId,
+};
+
+/// Client-side semantic adapter for existing gameplay actions. The wire uses mod-owned orders.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub enum ClientCommand {
+    MoveTo {
+        unit_ids: Vec<UnitId>,
+        target: Pos,
+    },
+    Gather {
+        unit_id: UnitId,
+        node_id: NodeId,
+    },
+    Produce {
+        producer_id: UnitId,
+        recipe_id: String,
+    },
+    CancelProduction {
+        producer_id: UnitId,
+        job_id: JobId,
+    },
+    Remove {
+        unit_id: UnitId,
+    },
+    SetEnabled {
+        unit_id: UnitId,
+        enabled: bool,
+    },
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum PendingCommand {
     Submit {
-        kind: PlayerCommandKind,
+        kind: ClientCommand,
         trace_step: Option<usize>,
+    },
+    Order {
+        order: OrderEnvelope,
     },
     Repeat {
         envelope: PlayerCommand,
@@ -39,6 +74,15 @@ impl CommandSequence {
         self.next = current.checked_add(1);
         Ok(current)
     }
+
+    fn allocate_many(&mut self, count: usize) -> Result<u32, SequenceExhausted> {
+        let first = self.next.ok_or(SequenceExhausted)?;
+        let count = u32::try_from(count).map_err(|_| SequenceExhausted)?;
+        let last_offset = count.checked_sub(1).ok_or(SequenceExhausted)?;
+        let last = first.checked_add(last_offset).ok_or(SequenceExhausted)?;
+        self.next = last.checked_add(1);
+        Ok(first)
+    }
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SequenceExhausted;
@@ -46,18 +90,18 @@ pub struct SequenceExhausted;
 pub struct CommandSendStatus {
     pub reconnect_required: bool,
 }
-pub fn submit(pending: &mut PendingCommands, kind: PlayerCommandKind) {
+pub fn submit(pending: &mut PendingCommands, kind: ClientCommand) {
     pending.0.push_back(PendingCommand::Submit {
         kind,
         trace_step: None,
     });
 }
 
-pub(crate) fn submit_trace(
-    pending: &mut PendingCommands,
-    kind: PlayerCommandKind,
-    trace_step: usize,
-) {
+pub fn submit_order(pending: &mut PendingCommands, order: OrderEnvelope) {
+    pending.0.push_back(PendingCommand::Order { order });
+}
+
+pub(crate) fn submit_trace(pending: &mut PendingCommands, kind: ClientCommand, trace_step: usize) {
     pending.0.push_back(PendingCommand::Submit {
         kind,
         trace_step: Some(trace_step),
@@ -104,6 +148,93 @@ pub fn owned_mobile_ids(state: &crate::ingest::ReplicaState) -> Vec<turts_net_pr
     ids
 }
 
+/// Resolve the legacy client action through package order definitions before sending it.
+pub(crate) fn order_envelope(
+    content: &crate::content::ClientContent,
+    command: ClientCommand,
+) -> Option<OrderEnvelope> {
+    let (behaviour, units, target) = match command {
+        ClientCommand::MoveTo { unit_ids, target } => {
+            (Behaviour::Move, unit_ids, OrderTarget::Point(target))
+        }
+        ClientCommand::Gather { unit_id, node_id } => {
+            (Behaviour::Gather, vec![unit_id], OrderTarget::Node(node_id))
+        }
+        ClientCommand::Produce {
+            producer_id,
+            recipe_id,
+        } => (
+            Behaviour::Produce,
+            vec![producer_id],
+            OrderTarget::Content(recipe_id),
+        ),
+        ClientCommand::CancelProduction {
+            producer_id,
+            job_id,
+        } => (
+            Behaviour::CancelProduction,
+            vec![producer_id],
+            OrderTarget::Job(job_id),
+        ),
+        ClientCommand::Remove { unit_id } => (Behaviour::Remove, vec![unit_id], OrderTarget::None),
+        ClientCommand::SetEnabled { unit_id, enabled } => (
+            Behaviour::SetEnabled(enabled),
+            vec![unit_id],
+            OrderTarget::None,
+        ),
+    };
+    let order = content
+        .catalog
+        .orders
+        .iter()
+        .find(|(_, definition)| definition.behaviour == behaviour)
+        .map(|(id, _)| id.to_string())?;
+    Some(OrderEnvelope {
+        order,
+        units,
+        target,
+        queue: QueueMode::Replace,
+        group: 0,
+    })
+}
+
+/// Build a browser Move envelope from the first catalog order with Move behaviour.
+pub fn move_order_envelope(
+    content: &crate::content::ClientContent,
+    unit_ids: Vec<UnitId>,
+    target: Pos,
+) -> Option<OrderEnvelope> {
+    order_envelope(content, ClientCommand::MoveTo { unit_ids, target })
+}
+
+fn split_order(order: OrderEnvelope, first_seq: u32) -> Vec<PlayerCommand> {
+    if order.units.len() <= MAX_ORDER_UNITS {
+        return vec![PlayerCommand {
+            seq: first_seq,
+            order,
+        }];
+    }
+    let group = if order.group == 0 {
+        first_seq
+    } else {
+        order.group
+    };
+    order
+        .units
+        .chunks(MAX_ORDER_UNITS)
+        .enumerate()
+        .map(|(index, units)| {
+            let mut fragment = order.clone();
+            fragment.units = units.to_vec();
+            fragment.group = group;
+            PlayerCommand {
+                seq: first_seq + index as u32,
+                order: fragment,
+            }
+        })
+        .collect()
+}
+
 /// Send the single shared FIFO only after a fresh session has joined. Ordinary adapters must
 /// provide their intended literal bodies before enqueueing; trace steps use the same path.
 #[allow(clippy::too_many_arguments)] // Bevy system resources stay explicit at this boundary.
@@ -112,6 +243,7 @@ pub(crate) fn send_commands_traced(
     mut sequence: ResMut<CommandSequence>,
     mut status: ResMut<CommandSendStatus>,
     phase: Res<Phase>,
+    replica_state: Res<crate::ingest::ReplicaState>,
     mut senders: Query<(Entity, &mut MessageSender<PlayerCommand>), With<Connected>>,
     mut witnesses: ResMut<ReceiptWitnesses>,
     mut scenario: ResMut<ScenarioState>,
@@ -124,9 +256,20 @@ pub(crate) fn send_commands_traced(
     for (entity, mut sender) in &mut senders {
         let epoch = witnesses.epoch_for(entity.to_bits());
         while let Some(command) = pending.0.pop_front() {
-            let (envelope, trace_step) = match command {
+            let (envelopes, trace_step, submitted) = match command {
                 PendingCommand::Submit { kind, trace_step } => {
-                    let seq = match sequence.allocate() {
+                    let submitted = kind.clone();
+                    let Some(content) = replica_state.content.as_ref() else {
+                        pending
+                            .0
+                            .push_front(PendingCommand::Submit { kind, trace_step });
+                        break;
+                    };
+                    let Some(order) = order_envelope(content, kind) else {
+                        continue;
+                    };
+                    let count = order.units.len().max(1).div_ceil(MAX_ORDER_UNITS);
+                    let seq = match sequence.allocate_many(count) {
                         Ok(seq) => seq,
                         Err(_) => {
                             status.reconnect_required = true;
@@ -135,23 +278,41 @@ pub(crate) fn send_commands_traced(
                             break;
                         }
                     };
-                    (PlayerCommand { seq, kind }, trace_step)
+                    (split_order(order, seq), trace_step, Some(submitted))
+                }
+                PendingCommand::Order { order } => {
+                    let count = order.units.len().max(1).div_ceil(MAX_ORDER_UNITS);
+                    let seq = match sequence.allocate_many(count) {
+                        Ok(seq) => seq,
+                        Err(_) => {
+                            status.reconnect_required = true;
+                            pending.0.clear();
+                            scenario.error = Some("command sequence exhausted".into());
+                            break;
+                        }
+                    };
+                    (split_order(order, seq), None, None)
                 }
                 PendingCommand::Repeat {
                     envelope,
                     trace_step,
-                } => (envelope, Some(trace_step)),
+                } => (vec![envelope], Some(trace_step), None),
             };
-            sender.send::<ReliableChannel>(envelope.clone());
-            #[cfg(test)]
-            if let Some(capture) = sent_capture.as_deref_mut() {
-                capture.0.push(envelope.clone());
-            }
-            witnesses.record_message(epoch, true);
-            if let Some(step) = trace_step
-                && let Err(error) = scenario.record_sent(step, envelope, results.0.len())
-            {
-                scenario.error = Some(error);
+            let last_index = envelopes.len().saturating_sub(1);
+            for (index, envelope) in envelopes.into_iter().enumerate() {
+                sender.send::<ReliableChannel>(envelope.clone());
+                #[cfg(test)]
+                if let Some(capture) = sent_capture.as_deref_mut() {
+                    capture.0.push(envelope.clone());
+                }
+                witnesses.record_message(epoch, true);
+                if index == last_index
+                    && let Some(step) = trace_step
+                    && let Err(error) =
+                        scenario.record_sent(step, envelope, submitted.clone(), results.0.len())
+                {
+                    scenario.error = Some(error);
+                }
             }
         }
     }
@@ -164,8 +325,261 @@ pub(crate) struct SentCommandCapture(Vec<PlayerCommand>);
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ClientOpts;
+    use crate::ingest::{IngestHooks, ReplicaState, WelcomeInfo};
+    use crate::join::{Phase, auto_move};
+    use crate::options::parse_cli;
+    use crate::replica::{Replica, UnitReplica};
     use crate::scenario::{ScenarioState, TraceAction};
+    use bevy::prelude::IntoScheduleConfigs;
     use std::time::{SystemTime, UNIX_EPOCH};
+    use turts_mod_api::{ContentId, OrderDef, TargetKind};
+    use turts_net_protocol::{OrderTarget, QueueMode};
+
+    fn move_test_content() -> crate::content::ClientContent {
+        let mut content = crate::content::ClientContent::default();
+        for (id, behaviour) in [
+            ("acme:order_attack", Behaviour::Attack),
+            ("acme:order_move", Behaviour::Move),
+            ("acme:order_move_second", Behaviour::Move),
+        ] {
+            let parsed = ContentId::parse(id).expect("valid test order id");
+            content.catalog.orders.insert(
+                parsed.clone(),
+                OrderDef {
+                    id: parsed.local,
+                    name: id.into(),
+                    behaviour,
+                    target: TargetKind::Point,
+                    fire: None,
+                    engage: None,
+                    icon: "move".into(),
+                    hotkey: "KeyM".into(),
+                    cursor: None,
+                    card: None,
+                    units: vec![],
+                    description: String::new(),
+                },
+            );
+        }
+        content
+    }
+
+    fn sender_test_app(next_sequence: Option<u32>) -> App {
+        use lightyear::prelude::*;
+
+        let mut app = App::new();
+        app.insert_resource(PendingCommands::default())
+            .insert_resource(CommandSequence {
+                next: next_sequence,
+            })
+            .insert_resource(CommandSendStatus::default())
+            .insert_resource(Phase::Joined { slot: 0 })
+            .insert_resource(ReplicaState::default())
+            .insert_resource(ReceiptWitnesses::default())
+            .insert_resource(CommandResults::default())
+            .insert_resource(ScenarioState::default())
+            .insert_resource(SentCommandCapture::default());
+        app.add_systems(Update, send_commands_traced);
+        app.world_mut().spawn((
+            MessageSender::<PlayerCommand>::default(),
+            RemoteId(PeerId::Netcode(5)),
+            Connected,
+        ));
+        app
+    }
+
+    #[test]
+    fn move_hook_sends_the_first_move_order() {
+        use lightyear::prelude::*;
+
+        let args = [
+            "--server",
+            "http://127.0.0.1:7000",
+            "--ws",
+            "ws://127.0.0.1:7001",
+            "--move",
+            "20,8",
+            "--move-unit",
+            "7",
+            "--move-after-ticks",
+            "5",
+        ]
+        .map(str::to_owned);
+        let mut options = parse_cli(&args).expect("valid --move test options");
+        options.headless = true;
+
+        let mut replica = Replica::new(20);
+        replica.snapshot_tick = Some(10);
+        replica.units.insert(
+            7,
+            UnitReplica {
+                content_id: "acme:trooper".into(),
+                owner_slot: 0,
+                facing: None,
+                samples: Default::default(),
+            },
+        );
+        let state = ReplicaState {
+            replica: Some(replica),
+            welcome: Some(WelcomeInfo {
+                slot: 0,
+                tick: 10,
+                tick_hz: 20,
+                match_id: 0,
+            }),
+            content: Some(move_test_content()),
+            config: Default::default(),
+        };
+        let mut app = App::new();
+        app.insert_resource(ClientOpts(options))
+            .insert_resource(state)
+            .insert_resource(IngestHooks {
+                highest_delta_tick: Some(15),
+                ..Default::default()
+            })
+            .insert_resource(PendingCommands::default())
+            .insert_resource(CommandSequence::default())
+            .insert_resource(CommandSendStatus::default())
+            .insert_resource(Phase::Joined { slot: 0 })
+            .insert_resource(ReceiptWitnesses::default())
+            .insert_resource(CommandResults::default())
+            .insert_resource(ScenarioState::default())
+            .insert_resource(SentCommandCapture::default());
+        app.add_systems(Update, (auto_move, send_commands_traced).chain());
+        app.world_mut().spawn((
+            MessageSender::<PlayerCommand>::default(),
+            RemoteId(PeerId::Netcode(5)),
+            Connected,
+        ));
+
+        app.update();
+
+        let sent = &app.world().resource::<SentCommandCapture>().0;
+        assert_eq!(sent.len(), 1);
+        assert_eq!(sent[0].order.order, "acme:order_move");
+        assert_eq!(sent[0].order.units, vec![UnitId(7)]);
+        assert_eq!(
+            sent[0].order.target,
+            OrderTarget::Point(Pos { x: 20.0, y: 8.0 })
+        );
+        assert_eq!(sent[0].order.queue, QueueMode::Replace);
+    }
+
+    #[test]
+    fn oversized_order_splits_at_k4_with_one_group_and_sequential_ids() {
+        let order = OrderEnvelope {
+            order: "acme:order_move".into(),
+            units: (0..MAX_ORDER_UNITS + 1)
+                .map(|unit| UnitId(unit as u32))
+                .collect(),
+            target: OrderTarget::Point(Pos { x: 8.0, y: 9.0 }),
+            queue: QueueMode::Append,
+            group: 0,
+        };
+        let commands = split_order(order, 50);
+        assert_eq!(commands.len(), 2);
+        assert_eq!(commands[0].seq, 50);
+        assert_eq!(commands[1].seq, 51);
+        assert_eq!(commands[0].order.units.len(), MAX_ORDER_UNITS);
+        assert_eq!(commands[1].order.units.len(), 1);
+        assert_eq!(commands[0].order.group, 50);
+        assert_eq!(commands[1].order.group, 50);
+        assert_eq!(commands[0].order.units.first(), Some(&UnitId(0)));
+        assert_eq!(
+            commands[0].order.units.last(),
+            Some(&UnitId(MAX_ORDER_UNITS as u32 - 1))
+        );
+        assert_eq!(
+            commands[1].order.units,
+            vec![UnitId(MAX_ORDER_UNITS as u32)]
+        );
+    }
+
+    #[test]
+    fn submit_order_preserves_explicit_group_across_split_and_unsplit_envelopes() {
+        let first = OrderEnvelope {
+            order: "acme:order_move".into(),
+            units: (0..4097).map(UnitId).collect(),
+            target: OrderTarget::Point(Pos { x: 8.0, y: 9.0 }),
+            queue: QueueMode::Append,
+            group: 77,
+        };
+        let second = OrderEnvelope {
+            order: "acme:order_move".into(),
+            units: vec![UnitId(9000)],
+            target: OrderTarget::Point(Pos { x: 8.0, y: 9.0 }),
+            queue: QueueMode::Append,
+            group: 77,
+        };
+        let mut app = sender_test_app(Some(1));
+        {
+            let mut pending = app.world_mut().resource_mut::<PendingCommands>();
+            submit_order(&mut pending, first);
+            submit_order(&mut pending, second);
+        }
+
+        app.update();
+
+        let sent = &app.world().resource::<SentCommandCapture>().0;
+        assert_eq!(sent.len(), 3);
+        assert_eq!(
+            sent.iter().map(|command| command.seq).collect::<Vec<_>>(),
+            [1, 2, 3]
+        );
+        assert_eq!(
+            sent.iter()
+                .map(|command| command.order.units.len())
+                .collect::<Vec<_>>(),
+            [4096, 1, 1]
+        );
+        assert!(sent.iter().all(|command| command.order.group == 77));
+        assert_eq!(sent[0].order.units[0], UnitId(0));
+        assert_eq!(sent[0].order.units[4095], UnitId(4095));
+        assert_eq!(sent[1].order.units, [UnitId(4096)]);
+        assert_eq!(sent[2].order.units, [UnitId(9000)]);
+        assert_eq!(
+            sent.iter()
+                .map(|command| command.order.order.as_str())
+                .collect::<Vec<_>>(),
+            ["acme:order_move", "acme:order_move", "acme:order_move"]
+        );
+        assert_eq!(app.world().resource::<CommandSequence>().next, Some(4));
+    }
+
+    #[test]
+    fn oversized_gesture_sequence_exhaustion_sends_no_partial_commands() {
+        let mut app = sender_test_app(Some(u32::MAX));
+        let order = OrderEnvelope {
+            order: "acme:order_move".into(),
+            units: (0..4097).map(UnitId).collect(),
+            target: OrderTarget::Point(Pos { x: 8.0, y: 9.0 }),
+            queue: QueueMode::Append,
+            group: 77,
+        };
+        submit_order(
+            &mut app.world_mut().resource_mut::<PendingCommands>(),
+            order,
+        );
+
+        app.update();
+
+        assert!(app.world().resource::<SentCommandCapture>().0.is_empty());
+        assert!(
+            app.world()
+                .resource::<CommandSendStatus>()
+                .reconnect_required
+        );
+        assert_eq!(
+            app.world().resource::<CommandSequence>().next,
+            Some(u32::MAX)
+        );
+        assert!(app.world().resource::<PendingCommands>().0.is_empty());
+        assert_eq!(
+            app.world().resource::<ScenarioState>().error.as_deref(),
+            Some("command sequence exhausted")
+        );
+    }
 
     #[test]
     fn trace_sender_preserves_empty_static_and_foreign_move_bodies() {
@@ -194,6 +608,10 @@ mod tests {
             .insert_resource(CommandSequence::default())
             .insert_resource(CommandSendStatus::default())
             .insert_resource(Phase::Joined { slot: 0 })
+            .insert_resource(ReplicaState {
+                content: Some(move_test_content()),
+                ..Default::default()
+            })
             .insert_resource(ReceiptWitnesses::default())
             .insert_resource(CommandResults::default())
             .insert_resource(scenario)
@@ -237,16 +655,17 @@ mod tests {
                     .envelope
                     .as_ref()
                     .unwrap()
-                    .kind,
-                kind
+                    .order
+                    .order,
+                "acme:order_move"
             );
         }
         let ordinary_kinds = [
-            PlayerCommandKind::MoveTo {
+            ClientCommand::MoveTo {
                 unit_ids: Vec::new(),
                 target: turts_net_protocol::Pos { x: 6.0, y: 7.0 },
             },
-            PlayerCommandKind::MoveTo {
+            ClientCommand::MoveTo {
                 unit_ids: vec![
                     turts_net_protocol::UnitId(3),
                     turts_net_protocol::UnitId(99),
@@ -261,11 +680,11 @@ mod tests {
 
         let sent = &app.world().resource::<SentCommandCapture>().0;
         let expected_kinds = [
-            PlayerCommandKind::MoveTo {
+            ClientCommand::MoveTo {
                 unit_ids: Vec::new(),
                 target: turts_net_protocol::Pos { x: 1.0, y: 2.0 },
             },
-            PlayerCommandKind::MoveTo {
+            ClientCommand::MoveTo {
                 unit_ids: vec![
                     turts_net_protocol::UnitId(3),
                     turts_net_protocol::UnitId(99),
@@ -278,7 +697,13 @@ mod tests {
         assert_eq!(sent.len(), expected_kinds.len());
         for (index, (command, kind)) in sent.iter().zip(expected_kinds).enumerate() {
             assert_eq!(command.seq, index as u32 + 1);
-            assert_eq!(command.kind, kind);
+            assert_eq!(command.order.order, "acme:order_move");
+            let ClientCommand::MoveTo { unit_ids, target } = kind else {
+                panic!("expected MoveTo test command");
+            };
+            assert_eq!(command.order.units, unit_ids);
+            assert_eq!(command.order.target, OrderTarget::Point(target));
+            assert_eq!(command.order.queue, QueueMode::Replace);
         }
         assert_eq!(app.world().resource::<CommandSequence>().next, Some(5));
         assert!(app.world().resource::<PendingCommands>().0.is_empty());

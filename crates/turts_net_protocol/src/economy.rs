@@ -1,4 +1,4 @@
-//! Protocol 3 economy and stable identifier records.
+//! Protocol economy and stable identifier records.
 
 use crate::messages::{Pos, UnitId};
 use serde::{Deserialize, Serialize};

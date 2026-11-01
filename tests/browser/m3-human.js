@@ -5,7 +5,7 @@
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const { chromium } = require("playwright-core");
-const { waitForSnapshot, captureStage, clickRenderedUiAction, visibleTexts } = require("./m2.js");
+const { waitForSnapshot, captureStage, clickRenderedUiAction, visibleTexts, hasSingleDebugSelection } = require("./m2.js");
 
 async function main() {
     const [url, out] = process.argv.slice(2);
@@ -26,7 +26,7 @@ async function main() {
         const lab = joined.debug.replicated_world.units.find(u => u.content_id === "forge:lab");
         assert(lab);
         await clickRenderedUiAction(page, joined.scene, "select", action => action.unit === lab.unit_id);
-        const selected = await waitForSnapshot(page, s => s.debug?.selection === lab.unit_id &&
+        const selected = await waitForSnapshot(page, s => hasSingleDebugSelection(s, lab.unit_id) &&
             visibleTexts(s).some(t => t.includes("Research cost") && t.includes("10")), 5000, "named selector opens research and explains cost");
         assert.equal(selected.debug.command_results.length, joined.debug.command_results.length, "select does not send a command");
         assert(visibleTexts(selected).some(t => t.includes("stationary")));
@@ -42,7 +42,7 @@ async function main() {
         await captureStage(page, out, "04-research-complete", []);
         const turret = complete.debug.replicated_world.units.find(u => u.content_id === "forge:turret");
         await clickRenderedUiAction(page, complete.scene, "select", a => a.unit === turret.unit_id);
-        await waitForSnapshot(page, s => s.debug?.selection === turret.unit_id && visibleTexts(s).some(t => t.includes("Damage: 20")),
+        await waitForSnapshot(page, s => hasSingleDebugSelection(s, turret.unit_id) && visibleTexts(s).some(t => t.includes("Damage: 20")),
             5000, "named turret selector reveals upgraded damage");
         await captureStage(page, out, "05-upgraded-turret", []);
         assert.deepEqual(errors, []);

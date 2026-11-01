@@ -3,10 +3,12 @@
 use std::collections::BTreeMap;
 use std::io::Read;
 
-use serde::de::DeserializeOwned;
+use serde::de::{DeserializeOwned, IgnoredAny, MapAccess, Visitor};
+use serde::{Deserialize, Deserializer};
 use turts_mod_api::{
-    ContentCatalog, LockEntry, Manifest, MapDef, ModError, NodeDef, PackageId, ProductionDef,
-    RecipeDef, ResourceDef, TechnologyDef, UnitDef, VisualDef, content::SourceDef,
+    AssetsDef, ContentCatalog, InputMapDef, InterfaceDef, LockEntry, Manifest, MapDef, ModError,
+    NodeDef, OrderDef, OrderRulesDef, PackageId, ProductionDef, RecipeDef, ResourceDef, SmartOrder,
+    TechnologyDef, UnitDef, VisualDef, content::SourceDef,
 };
 
 use crate::content::validate_content_with_m3;
@@ -16,6 +18,29 @@ use crate::parse::parse_ron;
 
 /// Archive path of the manifest.
 pub const MANIFEST_PATH: &str = "manifest.ron";
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawOrderRulesDef {
+    queue_depth: u16,
+    smart: Vec<SmartOrder>,
+}
+
+fn parse_order_rules(package: &str, path: &str, text: &str) -> Result<OrderRulesDef, ModError> {
+    let raw: RawOrderRulesDef = parse_ron(package, path, text)?;
+    if raw.queue_depth > u8::MAX.into() {
+        return Err(ModError::new(
+            package,
+            "queue_depth",
+            format!("must be between 1 and 255, got {}", raw.queue_depth),
+        )
+        .with_file(path));
+    }
+    Ok(OrderRulesDef {
+        queue_depth: raw.queue_depth as u8,
+        smart: raw.smart,
+    })
+}
 
 /// A package archive, read in memory. Nothing is written to disk.
 #[derive(Debug, Clone, PartialEq)]
@@ -87,6 +112,60 @@ impl PackageArchive {
         self.parse_exports("exports.technologies", &self.manifest.exports.technologies)
     }
 
+    pub fn orders(&self) -> Result<Vec<(String, OrderDef)>, ModError> {
+        let mut out = Vec::new();
+        for path in &self.manifest.exports.orders {
+            let text = self.export_text("exports.orders", path)?;
+            match parse_ron::<OrderDef>(&self.manifest.id, path, text) {
+                Ok(value) => out.push((path.clone(), value)),
+                Err(order_error) => match parse_order_rules(&self.manifest.id, path, text) {
+                    Ok(_) => {}
+                    Err(rules_error) => {
+                        return Err(classified_order_error(
+                            &self.manifest.id,
+                            path,
+                            text,
+                            order_error,
+                            rules_error,
+                        ));
+                    }
+                },
+            }
+        }
+        Ok(out)
+    }
+    pub fn order_rules(&self) -> Result<Vec<(String, OrderRulesDef)>, ModError> {
+        let mut out = Vec::new();
+        for path in &self.manifest.exports.orders {
+            let text = self.export_text("exports.orders", path)?;
+            match parse_ron::<OrderDef>(&self.manifest.id, path, text) {
+                Ok(_) => {}
+                Err(order_error) => match parse_order_rules(&self.manifest.id, path, text) {
+                    Ok(value) => out.push((path.clone(), value)),
+                    Err(rules_error) => {
+                        return Err(classified_order_error(
+                            &self.manifest.id,
+                            path,
+                            text,
+                            order_error,
+                            rules_error,
+                        ));
+                    }
+                },
+            }
+        }
+        Ok(out)
+    }
+    pub fn input_maps(&self) -> Result<Vec<(String, InputMapDef)>, ModError> {
+        self.parse_exports("exports.input", &self.manifest.exports.input)
+    }
+    pub fn interfaces(&self) -> Result<Vec<(String, InterfaceDef)>, ModError> {
+        self.parse_exports("exports.interface", &self.manifest.exports.interface)
+    }
+    pub fn assets(&self) -> Result<Vec<(String, AssetsDef)>, ModError> {
+        self.parse_exports("exports.assets", &self.manifest.exports.assets)
+    }
+
     /// Parse and resolve all gameplay content. Presentation files are never read here.
     pub fn content(&self) -> Result<ContentCatalog, ModError> {
         let origin = self.id();
@@ -120,7 +199,7 @@ impl PackageArchive {
             .into_iter()
             .map(|(file, value)| SourceDef { file, value })
             .collect();
-        let catalog = validate_content_with_m3(
+        let mut catalog = validate_content_with_m3(
             &origin,
             resources,
             units,
@@ -129,12 +208,28 @@ impl PackageArchive {
             recipes,
             technologies,
         )?;
-        crate::content_m3::validate_m3_presence(&self.manifest, &self.files)?;
-        crate::content_m3::validate_m3(&self.manifest, &catalog)?;
+        let mc_content = crate::content_mc_validation::validate_mc(self)?;
+        let order_queue_depth = mc_content
+            .order_rules
+            .first()
+            .map_or(turts_mod_api::DEFAULT_QUEUE_DEPTH, |(_, rules)| {
+                rules.queue_depth
+            });
+        catalog
+            .order_queue_depths
+            .insert(origin.clone(), order_queue_depth);
+        for (file, order) in &mc_content.orders {
+            let id = turts_mod_api::ContentId::new(&origin, &order.id);
+            catalog.orders.insert(id.clone(), order.clone());
+            catalog.source_files.insert(id, file.clone());
+        }
         crate::version_table::check_version_table(
             &self.manifest,
+            &mc_content,
             crate::version_table::VERSION_TABLE,
         )?;
+        crate::content_m3::validate_m3_presence(&self.manifest, &self.files)?;
+        crate::content_m3::validate_m3(&self.manifest, &catalog)?;
         Ok(catalog)
     }
 
@@ -199,18 +294,77 @@ impl PackageArchive {
         let package = self.manifest.id.as_str();
         let mut out = Vec::with_capacity(paths.len());
         for path in paths {
-            let bytes = self.file(path).ok_or_else(|| {
-                ModError::new(
-                    package,
-                    field,
-                    format!("exported file `{path}` is not in the archive"),
-                )
-                .with_file(MANIFEST_PATH)
-            })?;
-            let text = utf8(bytes, package, path)?;
+            let text = self.export_text(field, path)?;
             out.push((path.clone(), parse_ron(package, path, text)?));
         }
         Ok(out)
+    }
+
+    fn export_text(&self, field: &str, path: &str) -> Result<&str, ModError> {
+        let bytes = self.file(path).ok_or_else(|| {
+            ModError::new(
+                &self.manifest.id,
+                field,
+                format!("exported file `{path}` is not in the archive"),
+            )
+            .with_file(MANIFEST_PATH)
+        })?;
+        utf8(bytes, &self.manifest.id, path)
+    }
+}
+
+fn classified_order_error(
+    package: &str,
+    path: &str,
+    text: &str,
+    order_error: ModError,
+    rules_error: ModError,
+) -> ModError {
+    match ron::from_str::<OrderExportFields>(text) {
+        Ok(fields) if fields.0.contains("queue_depth") || fields.0.contains("smart") => rules_error,
+        Ok(_) => order_error,
+        Err(_) => ModError::new(
+            package,
+            path,
+            format!(
+                "cannot parse this export as an order or order rules (order: {}; rules: {})",
+                order_error.message, rules_error.message
+            ),
+        )
+        .with_file(path),
+    }
+}
+
+struct OrderExportFields(std::collections::BTreeSet<String>);
+
+impl<'de> Deserialize<'de> for OrderExportFields {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct FieldSetVisitor;
+
+        impl<'de> Visitor<'de> for FieldSetVisitor {
+            type Value = OrderExportFields;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                formatter.write_str("a named RON struct")
+            }
+
+            fn visit_map<M>(self, mut map: M) -> Result<Self::Value, M::Error>
+            where
+                M: MapAccess<'de>,
+            {
+                let mut fields = std::collections::BTreeSet::new();
+                while let Some(field) = map.next_key::<String>()? {
+                    let _: IgnoredAny = map.next_value()?;
+                    fields.insert(field);
+                }
+                Ok(OrderExportFields(fields))
+            }
+        }
+
+        deserializer.deserialize_struct("", &[], FieldSetVisitor)
     }
 }
 

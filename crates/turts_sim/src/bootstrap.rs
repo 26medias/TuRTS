@@ -451,18 +451,26 @@ pub fn install_package(world: &mut World, staged: StagedPackage) {
     world.insert_resource(staged.m3.conveyors);
     world.insert_resource(staged.m3.item_table);
     for (id, kind, owner, position) in staged.units {
+        let order_capable = crate::orders::unit_order_capable(world, kind);
         let mut entity = world.spawn((
             UnitId(id),
             UnitType(kind),
             Owner(SlotId(owner)),
             Position(position),
         ));
+        if order_capable {
+            entity.insert(crate::orders::UnitOrders::default());
+        }
         if let Some(facing) = staged.m3.facings.get(&id).copied() {
             entity.insert(UnitFacing(facing));
         }
     }
     for (id, kind, owner, position) in staged.m3.extra_units {
+        let order_capable = crate::orders::unit_order_capable(world, kind.0);
         let mut entity = world.spawn((UnitId(id), kind, Owner(SlotId(owner)), Position(position)));
+        if order_capable {
+            entity.insert(crate::orders::UnitOrders::default());
+        }
         if let Some(facing) = staged.m3.facings.get(&id).copied() {
             entity.insert(UnitFacing(facing));
         }

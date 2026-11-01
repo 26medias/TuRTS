@@ -155,12 +155,16 @@ pub fn load_map(world: &mut World, origin: &PackageId, map: &MapDef) -> Result<(
         size: Vec2::new(map.size.x, map.size.y),
     });
     for spawn in staged {
-        world.spawn((
+        let order_capable = crate::orders::unit_order_capable(world, spawn.unit_type);
+        let mut entity = world.spawn((
             UnitId(spawn.id),
             UnitType(spawn.unit_type),
             Owner(SlotId(spawn.owner_slot)),
             Position(spawn.pos),
         ));
+        if order_capable {
+            entity.insert(crate::orders::UnitOrders::default());
+        }
     }
     Ok(())
 }

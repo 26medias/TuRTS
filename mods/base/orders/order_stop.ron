@@ -1,0 +1,1 @@
+(id: "order_stop", name: "Stop selected units", behaviour: Stop, target: None, fire: None, engage: None, icon: "icon_order_stop", hotkey: "key_stop", cursor: None, card: None, units: ["base:harvester", "base:rifleman"], description: "Stop the selected units.")

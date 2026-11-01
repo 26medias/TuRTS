@@ -1,0 +1,1 @@
+(id: "rush", name: "Rush", behaviour: Attack, target: Point, fire: None, engage: Some(StopAndFire), icon: "rush-icon", hotkey: "rush", cursor: Some("default"), card: Some((row: 0, column: 0)), units: ["zeta:trooper"], description: "Attack the target")

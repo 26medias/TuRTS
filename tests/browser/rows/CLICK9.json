@@ -1,0 +1,8 @@
+{
+  "row": "CLICK9",
+  "package": "mods/acme",
+  "driver": "tests/browser/click9-driver.js",
+  "oracle": "tests/browser/click9-oracle.js",
+  "runs": "ci",
+  "viewports": ["1280x720"]
+}

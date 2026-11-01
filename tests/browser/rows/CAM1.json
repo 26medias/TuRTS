@@ -1,0 +1,9 @@
+{
+  "row": "CAM1",
+  "package": "mods/acme",
+  "driver": "tests/browser/cam1-driver.js",
+  "oracle": "tests/browser/cam1-oracle.js",
+  "capture_scene_checkpoints": true,
+  "runs": "ci",
+  "viewports": ["1280x720"]
+}

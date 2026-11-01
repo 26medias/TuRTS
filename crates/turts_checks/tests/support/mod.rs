@@ -91,6 +91,10 @@ pub fn derive_tokens(root: &Path) -> Result<TokenCatalog, ScanError> {
             ("resource-export", &a.manifest.exports.resources),
             ("node-export", &a.manifest.exports.nodes),
             ("production-export", &a.manifest.exports.production),
+            ("order-export", &a.manifest.exports.orders),
+            ("interface-export", &a.manifest.exports.interface),
+            ("input-export", &a.manifest.exports.input),
+            ("asset-export", &a.manifest.exports.assets),
             ("recipe-export", &a.manifest.exports.recipes),
             ("technology-export", &a.manifest.exports.technologies),
         ] {
@@ -146,6 +150,43 @@ pub fn derive_tokens(root: &Path) -> Result<TokenCatalog, ScanError> {
         );
         for (path, d) in a.units().map_err(|e| pkgerr(&dir, e))? {
             add_unit(&mut c, &p, &path, &d);
+        }
+        for (path, d) in a.orders().map_err(|e| pkgerr(&dir, e))? {
+            add_id(&mut c, &p, &path, "id", &d.id, "order");
+            add(&mut c, &p, "order-name", &path, "name", &d.name);
+            add(&mut c, &p, "image-asset-ref", &path, "icon", &d.icon);
+            add(&mut c, &p, "input-action-ref", &path, "hotkey", &d.hotkey);
+            if let Some(cursor) = &d.cursor {
+                add(&mut c, &p, "cursor-asset-ref", &path, "cursor", cursor);
+            }
+            for unit in &d.units {
+                add_id(&mut c, &p, &path, "units", unit, "unit-ref");
+            }
+        }
+        for (path, d) in a.order_rules().map_err(|e| pkgerr(&dir, e))? {
+            for smart in &d.smart {
+                add_id(&mut c, &p, &path, "smart.order", &smart.order, "order-ref");
+            }
+        }
+        for (path, d) in a.input_maps().map_err(|e| pkgerr(&dir, e))? {
+            for action in &d.actions {
+                add(&mut c, &p, "input-action", &path, "name", &action.name);
+            }
+        }
+        for (path, d) in a.assets().map_err(|e| pkgerr(&dir, e))? {
+            for image in &d.images {
+                add_id(&mut c, &p, &path, "id", &image.id, "image-asset");
+            }
+            for font in &d.fonts {
+                add_id(&mut c, &p, &path, "id", &font.id, "font-asset");
+            }
+            for sound in &d.sounds {
+                add_id(&mut c, &p, &path, "id", &sound.id, "sound-asset");
+            }
+            for cursor in &d.cursors {
+                add_id(&mut c, &p, &path, "id", &cursor.id, "cursor-asset");
+                add(&mut c, &p, "image-asset-ref", &path, "image", &cursor.image);
+            }
         }
         for (path, d) in a.resources().map_err(|e| pkgerr(&dir, e))? {
             add_id(&mut c, &p, &path, "id", &d.id, "resource");

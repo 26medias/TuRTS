@@ -10,8 +10,8 @@ use bevy::platform::time::Instant;
 use turts_mod_api::{ContentId, CostSource, ResourceKind};
 use turts_net_protocol::{
     BeltPieceRecord, EconomyChanges, EconomyState, ExtractorRecord, HealthRecord, InserterRecord,
-    InventoryPort, JobId, NodeId, NodeState, Pos, ResearchRecord, Snapshot, UnitSnapshot,
-    WeaponRecord, WorldDelta,
+    InventoryPort, JobId, NodeId, NodeState, Pos, ResearchRecord, Snapshot, UnitOrderRecord,
+    UnitSnapshot, WeaponRecord, WorldDelta,
 };
 
 use crate::{content::ClientContent, interp};
@@ -89,6 +89,7 @@ struct Candidate {
     weapons: Vec<WeaponRecord>,
     healths: Vec<HealthRecord>,
     research: Vec<ResearchRecord>,
+    unit_orders: HashMap<u32, UnitOrderRecord>,
     health_trace: std::collections::BTreeMap<u32, Vec<HealthTraceEntry>>,
     tick: u32,
 }
@@ -113,6 +114,8 @@ pub struct Replica {
     pub weapons: Vec<WeaponRecord>,
     pub healths: Vec<HealthRecord>,
     pub research: Vec<ResearchRecord>,
+    /// Owner-specific orders staged atomically with their unit snapshot and tick.
+    pub unit_orders: HashMap<u32, UnitOrderRecord>,
     pub health_trace: std::collections::BTreeMap<u32, Vec<HealthTraceEntry>>,
     pub snapshot_tick: Option<u32>,
     pub last_applied_tick: Option<u32>,
@@ -148,6 +151,7 @@ impl Replica {
             weapons: Vec::new(),
             healths: Vec::new(),
             research: Vec::new(),
+            unit_orders: HashMap::new(),
             health_trace: std::collections::BTreeMap::new(),
             snapshot_tick: None,
             last_applied_tick: None,
@@ -406,9 +410,12 @@ impl Replica {
             weapons: snapshot.weapons.clone(),
             healths: Vec::new(),
             research: snapshot.research.clone(),
+            unit_orders: HashMap::new(),
             health_trace: self.health_trace.clone(),
             tick: snapshot.tick,
         };
+        candidate.unit_orders =
+            stage_unit_orders(context, &snapshot.unit_orders, &candidate.units)?;
         if !valid_economy(
             context,
             &candidate.units,
@@ -433,6 +440,7 @@ impl Replica {
             weapons: self.weapons.clone(),
             healths: self.healths.clone(),
             research: self.research.clone(),
+            unit_orders: self.unit_orders.clone(),
             health_trace: self.health_trace.clone(),
             tick,
         }
@@ -512,6 +520,9 @@ impl Replica {
         {
             return None;
         }
+        // WorldDelta carries the current complete owner order table, including explicit idle
+        // records, so replacement also clears records omitted by a later delta.
+        next.unit_orders = stage_unit_orders(context, &delta.unit_orders, &next.units)?;
         for id in &removed {
             next.units.remove(id);
             next.economy
@@ -528,6 +539,7 @@ impl Replica {
             next.extractors.retain(|record| record.unit.0 != *id);
             next.weapons.retain(|record| record.unit.0 != *id);
             next.healths.retain(|record| record.unit.0 != *id);
+            next.unit_orders.remove(id);
         }
         if !valid_economy(context, &next.units, &next.nodes, &next.economy)
             || !valid_m3_records(context, &next.units, &next.nodes, &next)
@@ -548,6 +560,7 @@ impl Replica {
         self.weapons = candidate.weapons;
         self.healths = candidate.healths;
         self.research = candidate.research;
+        self.unit_orders = candidate.unit_orders;
         self.health_trace = candidate.health_trace;
         self.last_applied_tick = Some(candidate.tick);
         self.latest_receipt = Some(now);
@@ -635,6 +648,50 @@ fn valid_unit(context: &ReplicaContext, unit: &UnitSnapshot) -> bool {
     finite_pos(unit.pos)
         && parse_id(&unit.content_id)
             .is_some_and(|id| context.content.catalog.units.contains_key(&id))
+}
+
+fn stage_unit_orders(
+    context: &ReplicaContext,
+    records: &[UnitOrderRecord],
+    units: &HashMap<u32, UnitReplica>,
+) -> Option<HashMap<u32, UnitOrderRecord>> {
+    let mut staged = HashMap::with_capacity(records.len());
+    for record in records {
+        let unit = units.get(&record.unit.0)?;
+        if unit.owner_slot != context.slot || staged.contains_key(&record.unit.0) {
+            return None;
+        }
+        let valid_order = |id: &str| {
+            ContentId::parse(id)
+                .ok()
+                .is_some_and(|id| context.content.catalog.orders.contains_key(&id))
+        };
+        if record
+            .current
+            .iter()
+            .any(|summary| !valid_order(&summary.order))
+            || record
+                .queued
+                .iter()
+                .any(|summary| !valid_order(&summary.order))
+            || record
+                .last_failure
+                .as_ref()
+                .is_some_and(|failure| !valid_order(&failure.order))
+            || record
+                .current
+                .iter()
+                .chain(&record.queued)
+                .any(|summary| match &summary.target {
+                    turts_net_protocol::OrderTarget::Point(point) => !finite_pos(*point),
+                    _ => false,
+                })
+        {
+            return None;
+        }
+        staged.insert(record.unit.0, record.clone());
+    }
+    Some(staged)
 }
 
 fn valid_node(context: &ReplicaContext, node: &NodeState) -> bool {
@@ -1055,6 +1112,7 @@ fn validate_delta_m3(
         weapons: vec![],
         healths: vec![],
         research: vec![],
+        unit_orders: HashMap::new(),
         health_trace: Default::default(),
         tick: delta.tick,
     };

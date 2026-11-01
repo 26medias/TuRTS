@@ -6,6 +6,7 @@ use std::path::PathBuf;
 use std::process::{Command, Output};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..")
@@ -92,6 +93,10 @@ fn t1_boundary_script_passes() {
     for line in [
         format!("checked: turts_client_web {host}: no turts_sim"),
         "checked: turts_client_web wasm32-unknown-unknown: no turts_sim".to_string(),
+        format!("checked: turts_interaction {host}: no bevy*"),
+        "checked: turts_interaction wasm32-unknown-unknown: no bevy*".to_string(),
+        format!("checked: turts_interaction {host}: no turts_sim wgpu winit"),
+        "checked: turts_interaction wasm32-unknown-unknown: no turts_sim wgpu winit".to_string(),
     ] {
         assert!(
             out_of(&output).lines().any(|got| got == line),
@@ -99,6 +104,114 @@ fn t1_boundary_script_passes() {
             out_of(&output)
         );
     }
+}
+
+#[test]
+fn t1x_full_run_prints_four_lines() {
+    let output = run(&[]);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stderr: {:?}",
+        err_of(&output)
+    );
+    let host = host_triple();
+    let expected = [
+        format!("checked: turts_interaction {host}: no bevy*"),
+        "checked: turts_interaction wasm32-unknown-unknown: no bevy*".to_string(),
+        format!("checked: turts_interaction {host}: no turts_sim wgpu winit"),
+        "checked: turts_interaction wasm32-unknown-unknown: no turts_sim wgpu winit".to_string(),
+    ];
+    let stdout = out_of(&output);
+    for line in expected {
+        assert!(
+            stdout.lines().any(|got| got == line),
+            "missing {line:?} in {stdout:?}"
+        );
+    }
+}
+
+#[test]
+fn t1x_real_crate_wasm32_is_red_for_mod_api() {
+    let output = run(&[
+        "--rule",
+        "forbid",
+        "--crate",
+        "turts_interaction",
+        "--target",
+        "wasm32-unknown-unknown",
+        "--names",
+        "turts_mod_api",
+    ]);
+    assert_red(
+        &output,
+        "forbidden edge: turts_interaction -> turts_mod_api\n",
+    );
+}
+
+#[test]
+fn t1x_copy_with_bevy_render_is_red() {
+    let root = repo_root();
+    let stamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system time after epoch")
+        .as_nanos();
+    let temp = std::env::temp_dir().join(format!(
+        "turts-interaction-t1x-{}-{stamp}",
+        std::process::id()
+    ));
+    let copied_crate = temp.join("crates/turts_interaction");
+    std::fs::create_dir_all(copied_crate.join("src")).expect("create copied crate");
+    for entry in std::fs::read_dir(root.join("crates/turts_interaction/src")).expect("read sources")
+    {
+        let entry = entry.expect("source entry");
+        std::fs::copy(
+            entry.path(),
+            copied_crate.join("src").join(entry.file_name()),
+        )
+        .expect("copy source");
+    }
+    std::fs::copy(
+        root.join("crates/turts_interaction/Cargo.toml"),
+        copied_crate.join("Cargo.toml"),
+    )
+    .expect("copy package manifest");
+    std::fs::copy(root.join("Cargo.lock"), copied_crate.join("Cargo.lock"))
+        .expect("copy lockfile beside standalone workspace manifest");
+    assert!(
+        copied_crate.join("Cargo.lock").is_file(),
+        "seeded Cargo.lock must be beside the standalone workspace manifest"
+    );
+    assert!(
+        std::fs::read(copied_crate.join("Cargo.lock")).expect("read copied lockfile")
+            == std::fs::read(root.join("Cargo.lock")).expect("read source lockfile"),
+        "standalone workspace must start with the repository lockfile"
+    );
+
+    let manifest = copied_crate.join("Cargo.toml");
+    let text = format!(
+        "[workspace]\nresolver = \"3\"\n\n[package]\nname = \"turts_interaction\"\nversion = \"0.2.0\"\nedition = \"2024\"\nlicense = \"LicenseRef-TBD\"\npublish = false\n\n[dependencies]\nglam = \"=0.33.12\"\nturts_mod_api = {{ path = \"{}\" }}\nturts_net_protocol = {{ path = \"{}\" }}\nbevy_render = \"=0.20.0\"\n",
+        root.join("crates/turts_mod_api").display(),
+        root.join("crates/turts_net_protocol").display(),
+    );
+    std::fs::write(&manifest, text).expect("write standalone manifest");
+
+    let output = Command::new("bash")
+        .arg("scripts/boundary.sh")
+        .args([
+            "--rule",
+            "no-bevy-prefix",
+            "--crate",
+            "turts_interaction",
+            "--manifest",
+        ])
+        .arg(&manifest)
+        .env("CARGO_NET_OFFLINE", "true")
+        .current_dir(&root)
+        .output()
+        .expect("boundary script starts");
+    let _ = std::fs::remove_dir_all(temp);
+    assert_red(&output, "forbidden edge: turts_interaction -> bevy_app\n");
 }
 
 #[test]

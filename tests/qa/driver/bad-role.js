@@ -1,2 +1,2 @@
-// turts-test-role: harness
+// turts-test-role: harnes
 exports.run = () => true;

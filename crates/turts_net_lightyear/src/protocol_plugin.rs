@@ -37,9 +37,7 @@ impl Plugin for ProtocolPlugin {
             .add_direction(NetworkDirection::ClientToServer);
         app.register_message::<CommandAck>()
             .add_direction(NetworkDirection::ServerToClient);
-        app.register_message::<CommandApplied>()
-            .add_direction(NetworkDirection::ServerToClient);
-        app.register_message::<CommandRejected>()
+        app.register_message::<OrderResult>()
             .add_direction(NetworkDirection::ServerToClient);
         app.register_message::<ResyncRequest>()
             .add_direction(NetworkDirection::ClientToServer);

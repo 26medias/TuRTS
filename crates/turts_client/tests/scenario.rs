@@ -7,6 +7,9 @@ mod options {
 mod replica {
     pub use turts_client::replica::{Replica, UnitReplica};
 }
+mod commands {
+    pub use turts_client::commands::ClientCommand;
+}
 
 #[allow(dead_code)] // The integration test exercises the parser and pure driver in isolation.
 #[path = "../src/scenario.rs"]
@@ -16,15 +19,40 @@ use scenario::{
     DropWorldChange, TraceAction, TraceCommand, TraceDriver, TraceStep, parse_drop_world_changes,
     parse_trace,
 };
+use turts_client::commands::ClientCommand;
 use turts_client::ingest::CommandResult;
-use turts_net_protocol::{
-    CommandRejectReason, JobId, NodeId, PlayerCommand, PlayerCommandKind, Pos, UnitId,
-};
+use turts_net_protocol::{CommandRejectReason, JobId, NodeId, PlayerCommand, Pos, UnitId};
 
-fn move_kind() -> PlayerCommandKind {
-    PlayerCommandKind::MoveTo {
+fn move_kind() -> ClientCommand {
+    ClientCommand::MoveTo {
         unit_ids: vec![UnitId(3)],
         target: Pos { x: 4.0, y: 5.0 },
+    }
+}
+
+fn move_envelope(seq: u32) -> PlayerCommand {
+    PlayerCommand {
+        seq,
+        order: turts_net_protocol::OrderEnvelope {
+            order: "muster:order_move".into(),
+            units: vec![UnitId(3)],
+            target: turts_net_protocol::OrderTarget::Point(Pos { x: 4.0, y: 5.0 }),
+            queue: turts_net_protocol::QueueMode::Replace,
+            group: 0,
+        },
+    }
+}
+
+fn produce_envelope(seq: u32) -> PlayerCommand {
+    PlayerCommand {
+        seq,
+        order: turts_net_protocol::OrderEnvelope {
+            order: "base:order_produce".into(),
+            units: vec![UnitId(8)],
+            target: turts_net_protocol::OrderTarget::Content("base:hire".into()),
+            queue: turts_net_protocol::QueueMode::Replace,
+            group: 0,
+        },
     }
 }
 
@@ -54,7 +82,7 @@ fn required_result_waits_for_matching_applied_or_rejected_sequence() {
         trace_step(1, TraceCommand::Submit(move_kind()), true),
         trace_step(
             2,
-            TraceCommand::Submit(PlayerCommandKind::Gather {
+            TraceCommand::Submit(ClientCommand::Gather {
                 unit_id: UnitId(3),
                 node_id: NodeId(9),
             }),
@@ -69,14 +97,7 @@ fn required_result_waits_for_matching_applied_or_rejected_sequence() {
         [TraceAction::Submit { step_index: 0, .. }]
     ));
     driver
-        .record_sent(
-            0,
-            PlayerCommand {
-                seq: 40,
-                kind: move_kind(),
-            },
-            0,
-        )
+        .record_sent(0, move_envelope(40), Some(move_kind()), 0)
         .unwrap();
 
     assert!(
@@ -133,7 +154,7 @@ fn cancel_resolves_only_an_earlier_applied_production_job() {
     let steps = vec![
         trace_step(
             0,
-            TraceCommand::Submit(PlayerCommandKind::Produce {
+            TraceCommand::Submit(ClientCommand::Produce {
                 producer_id: UnitId(8),
                 recipe_id: "base:hire".to_owned(),
             }),
@@ -157,13 +178,11 @@ fn cancel_resolves_only_an_earlier_applied_production_job() {
     driver
         .record_sent(
             0,
-            PlayerCommand {
-                seq: 9,
-                kind: PlayerCommandKind::Produce {
-                    producer_id: UnitId(8),
-                    recipe_id: "base:hire".to_owned(),
-                },
-            },
+            produce_envelope(9),
+            Some(ClientCommand::Produce {
+                producer_id: UnitId(8),
+                recipe_id: "base:hire".to_owned(),
+            }),
             0,
         )
         .unwrap();
@@ -181,7 +200,7 @@ fn cancel_resolves_only_an_earlier_applied_production_job() {
         cancel.as_slice(),
         [TraceAction::Submit {
             step_index: 1,
-            kind: PlayerCommandKind::CancelProduction {
+            kind: ClientCommand::CancelProduction {
                 producer_id: UnitId(8),
                 job_id: JobId(55),
             },
@@ -194,7 +213,7 @@ fn cancel_fails_after_rejected_production_reference() {
     let steps = vec![
         trace_step(
             0,
-            TraceCommand::Submit(PlayerCommandKind::Produce {
+            TraceCommand::Submit(ClientCommand::Produce {
                 producer_id: UnitId(8),
                 recipe_id: "base:hire".to_owned(),
             }),
@@ -214,13 +233,11 @@ fn cancel_fails_after_rejected_production_reference() {
     driver
         .record_sent(
             0,
-            PlayerCommand {
-                seq: 9,
-                kind: PlayerCommandKind::Produce {
-                    producer_id: UnitId(8),
-                    recipe_id: "base:hire".to_owned(),
-                },
-            },
+            produce_envelope(9),
+            Some(ClientCommand::Produce {
+                producer_id: UnitId(8),
+                recipe_id: "base:hire".to_owned(),
+            }),
             0,
         )
         .unwrap();
@@ -266,11 +283,10 @@ fn repeat_waits_for_the_original_terminal_then_requires_a_new_terminal() {
         first.as_slice(),
         [TraceAction::Submit { step_index: 0, .. }]
     ));
-    let actual = PlayerCommand {
-        seq: 77,
-        kind: move_kind(),
-    };
-    driver.record_sent(0, actual.clone(), 0).unwrap();
+    let actual = move_envelope(77);
+    driver
+        .record_sent(0, actual.clone(), Some(move_kind()), 0)
+        .unwrap();
     assert!(driver.update(3, &[]).unwrap().is_empty());
     let original_applied = vec![CommandResult::Applied {
         seq: 77,
@@ -291,7 +307,7 @@ fn repeat_waits_for_the_original_terminal_then_requires_a_new_terminal() {
         job_id: None,
     }];
     driver
-        .record_sent(1, actual.clone(), original_applied.len())
+        .record_sent(1, actual.clone(), None, original_applied.len())
         .unwrap();
     assert!(driver.update(3, &original_applied).unwrap().is_empty());
     assert!(
@@ -316,11 +332,10 @@ fn repeat_can_be_scheduled_in_the_original_result_update() {
     ];
     let mut driver = TraceDriver::new(steps, 3).unwrap();
     driver.update(3, &[]).unwrap();
-    let actual = PlayerCommand {
-        seq: 78,
-        kind: move_kind(),
-    };
-    driver.record_sent(0, actual.clone(), 0).unwrap();
+    let actual = move_envelope(78);
+    driver
+        .record_sent(0, actual.clone(), Some(move_kind()), 0)
+        .unwrap();
     let original_applied = vec![CommandResult::Applied {
         seq: 78,
         tick: 3,
@@ -335,7 +350,7 @@ fn repeat_can_be_scheduled_in_the_original_result_update() {
         }] if envelope == &actual
     ));
     driver
-        .record_sent(1, actual.clone(), original_applied.len())
+        .record_sent(1, actual.clone(), None, original_applied.len())
         .unwrap();
     assert!(driver.update(3, &original_applied).unwrap().is_empty());
     assert!(!driver.is_complete());

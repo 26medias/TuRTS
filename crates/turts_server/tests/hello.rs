@@ -16,8 +16,7 @@ fn path_text(path: &Path) -> &str {
     path.to_str().expect("the test paths are UTF-8")
 }
 
-/// Review Focus 1 (D25): two clients send `Hello` with the same `player_id`. The second gets
-/// `JoinRejected { reason: "player already in match" }` and the first keeps its slot.
+/// Two live connections with the same `player_id` cannot share one slot.
 #[test]
 #[ignore]
 fn hello_duplicate_player_is_rejected() {
@@ -54,7 +53,10 @@ fn hello_duplicate_player_is_rejected() {
     );
     assert_eq!(first["rejected_reason"], serde_json::Value::Null);
     assert_eq!(second["welcomed"], false, "the second client: {second}");
-    assert_eq!(second["rejected_reason"], "player already in match");
+    assert_eq!(
+        second["rejected_reason"],
+        "This game is open in another window"
+    );
 }
 
 /// A `Hello` with another protocol version gets `JoinRejected`, then the server disconnects the

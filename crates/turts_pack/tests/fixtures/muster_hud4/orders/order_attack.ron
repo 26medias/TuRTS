@@ -1,0 +1,1 @@
+(id: "order_attack", name: "Attack a target", behaviour: Attack, target: Unit, fire: None, engage: None, icon: "muster_icon_attack", hotkey: "key_attack", cursor: Some("muster_cursor_attack"), card: Some((row: 1, column: 0)), units: ["muster:trooper"], description: "Attack the selected target.")

@@ -336,13 +336,16 @@ fn health_requires_removal() {
     );
 }
 #[test]
-fn weapon_must_be_static() {
-    rejected(
+fn mobile_weapon_is_accepted() {
+    archive(
         &weapon_unit().replace("movement: None", "movement: Some((speed: 1.0))"),
         RECIPE,
         TECH,
-        "weapon",
-    );
+        "^0.2.1",
+        &[],
+    )
+    .content()
+    .expect("a moving unit may carry a weapon");
 }
 #[test]
 fn weapon_ammo_item_not_accepted() {

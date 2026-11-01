@@ -655,6 +655,8 @@ mod tests {
             production: BTreeMap::new(),
             recipes: BTreeMap::new(),
             technologies: BTreeMap::new(),
+            orders: BTreeMap::new(),
+            order_queue_depths: std::collections::BTreeMap::new(),
             source_files: BTreeMap::new(),
         };
         let unit_types = UnitTypes::from_catalog(&catalog, &UnitTypes::default()).unwrap();

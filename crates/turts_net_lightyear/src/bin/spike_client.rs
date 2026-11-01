@@ -21,7 +21,6 @@ use lightyear::transport::channel::ChannelKind;
 use lightyear::transport::packet::message::MessageId;
 use turts_net_lightyear::{ProtocolPlugin, ReliableChannel, tick_duration};
 use turts_net_protocol::NET_PROTOCOL_VERSION;
-use turts_net_protocol::PlayerCommandKind;
 use turts_net_protocol::messages::*;
 
 #[derive(Resource)]
@@ -193,7 +192,7 @@ fn receive(
     mut welcome: Query<&mut MessageReceiver<Welcome>>,
     mut rejected: Query<&mut MessageReceiver<JoinRejected>>,
     mut acks: Query<&mut MessageReceiver<CommandAck>>,
-    mut rejected_commands: Query<&mut MessageReceiver<CommandRejected>>,
+    mut order_results: Query<&mut MessageReceiver<OrderResult>>,
     mut deltas: Query<&mut MessageReceiver<WorldDelta>>,
 ) {
     let epoch = state.receipt_epoch.unwrap_or_default();
@@ -228,13 +227,17 @@ fn receive(
             state.typed_command_results.push("ack");
         }
     }
-    for mut receiver in rejected_commands.iter_mut() {
+    for mut receiver in order_results.iter_mut() {
         for received in receiver.receive_with_tick() {
             capture_receipt(
                 &mut state,
                 epoch,
                 received.data.seq,
-                "rejected",
+                if received.data.accepted.is_empty() {
+                    "rejected"
+                } else {
+                    "applied"
+                },
                 received.channel_kind,
                 received.message_id,
                 received.remote_tick.0,
@@ -242,7 +245,13 @@ fn receive(
             if let Some(id) = received.message_id {
                 state.rejection_message_ids.push(id.0);
             }
-            state.typed_command_results.push("rejected");
+            state
+                .typed_command_results
+                .push(if received.data.accepted.is_empty() {
+                    "rejected"
+                } else {
+                    "applied"
+                });
         }
     }
     for mut receiver in deltas.iter_mut() {
@@ -297,9 +306,12 @@ fn send_moves(
     if let Ok(mut sender) = sender.single_mut() {
         sender.send::<ReliableChannel>(PlayerCommand {
             seq: state.next_seq,
-            kind: PlayerCommandKind::MoveTo {
-                unit_ids: vec![UnitId(0)],
-                target: Pos { x: 10.0, y: 10.0 },
+            order: OrderEnvelope {
+                order: "spike:move".into(),
+                units: vec![UnitId(0)],
+                target: OrderTarget::Point(Pos { x: 10.0, y: 10.0 }),
+                queue: QueueMode::Replace,
+                group: 0,
             },
         });
         record_reliable_message(&mut state, ChannelKind::of::<ReliableChannel>());

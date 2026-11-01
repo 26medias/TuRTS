@@ -1,0 +1,1 @@
+(target: Node("muster:ore_node"), shape: Cuboid(x: 3.5, y: 3.5, z: 1.2))

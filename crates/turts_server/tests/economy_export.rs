@@ -78,6 +78,7 @@ fn fixture() -> WorldView {
     WorldView {
         tick: 42,
         m3: turts_sim::economy::views_m3::M3AuditState::default(),
+        unit_orders: vec![],
         units: vec![
             unit(1, 0, "acme:harvester", Vec2::new(3., 4.)),
             unit(2, 1, "acme:private", Vec2::new(900., 901.)),

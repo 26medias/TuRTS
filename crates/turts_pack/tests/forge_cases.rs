@@ -211,6 +211,8 @@ fn bal_ore_fails_on_lost_item() {
     let mut after = before.clone();
     after.nodes[0].remaining -= 1;
     let op = OperationAudit {
+        phase: turts_sim::economy::transaction::AuditPhase::Other,
+        unit_id: None,
         operation_id: 1,
         before,
         after,
@@ -238,6 +240,8 @@ fn bal_shell_fails_on_duplicated_shell() {
         reserved: 0,
     });
     let op = OperationAudit {
+        phase: turts_sim::economy::transaction::AuditPhase::Other,
+        unit_id: None,
         operation_id: 1,
         before,
         after,
@@ -266,6 +270,8 @@ fn shot_fails_when_event_ammo_zero() {
         },
     };
     let op = OperationAudit {
+        phase: turts_sim::economy::transaction::AuditPhase::Other,
+        unit_id: None,
         operation_id: 1,
         before: state.clone(),
         after: state,
@@ -317,6 +323,8 @@ fn dmg_fails_on_wrong_damage() {
         },
     };
     let op = OperationAudit {
+        phase: turts_sim::economy::transaction::AuditPhase::Other,
+        unit_id: None,
         operation_id: 1,
         before,
         after,
@@ -369,6 +377,8 @@ fn refund_fails_on_wrong_ratio() {
         },
     };
     let op = OperationAudit {
+        phase: turts_sim::economy::transaction::AuditPhase::Other,
+        unit_id: None,
         operation_id: 1,
         before,
         after,
@@ -434,6 +444,8 @@ fn dangling_ghost_hand_stock_with_destroyed_event_is_reported_before_balance() {
         },
     };
     let op = OperationAudit {
+        phase: turts_sim::economy::transaction::AuditPhase::Other,
+        unit_id: None,
         operation_id: 1,
         before,
         after,

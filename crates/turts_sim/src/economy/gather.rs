@@ -159,7 +159,7 @@ pub fn assign_gather(
         })
         .ok_or(RejectReason::ArithmeticOverflow)?;
     let must_deliver = used >= u128::from(inventory.capacity) || has_other_item;
-    world.entity_mut(entity).remove::<MoveTarget>();
+    crate::orders::clear_replaced_movement(world, slot, entity, unit);
     let mut orders = world.resource_mut::<EconomyOrders>();
     let order = orders
         .0
@@ -450,7 +450,12 @@ fn move_or_arrive_node(
         unit_radius,
         world.get_resource::<MapBounds>().map(|bounds| bounds.size),
     );
-    set_target(world, unit, target);
+    set_target(
+        world,
+        unit,
+        target,
+        crate::movement::PlainGatherGoal::Node(node_id.0),
+    );
 }
 
 fn gather_one_tick(
@@ -659,7 +664,12 @@ fn move_or_arrive_receiver(
         unit_radius,
         world.get_resource::<MapBounds>().map(|bounds| bounds.size),
     );
-    set_target(world, unit, target);
+    set_target(
+        world,
+        unit,
+        target,
+        crate::movement::PlainGatherGoal::Receiver(receiver),
+    );
     let _ = gatherer;
     let _ = node_id;
 }
@@ -1233,8 +1243,18 @@ fn set_deposit(world: &mut World, unit: u32, deposit: NodeId) {
         world.entity_mut(entity).remove::<MoveTarget>();
     }
 }
-fn set_target(world: &mut World, unit: u32, target: Vec2) {
+fn set_target(world: &mut World, unit: u32, target: Vec2, goal: crate::movement::PlainGatherGoal) {
     if let Some(entity) = find_unit(world, unit) {
+        if let Some(mut progress) = world.get_mut::<crate::movement::PlainMoveProgress>(entity) {
+            match progress.gather_goal {
+                None => {
+                    progress.gather_goal = Some(goal);
+                    return;
+                }
+                Some(existing) if existing == goal => return,
+                Some(_) => {}
+            }
+        }
         if let Some(mut current) = world.get_mut::<MoveTarget>(entity) {
             current.0 = target;
         } else {

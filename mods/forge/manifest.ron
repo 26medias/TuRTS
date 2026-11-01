@@ -1,8 +1,8 @@
 (
     id: "forge",
-    version: "0.1.0",
+    version: "0.2.0",
     kind: Game,
-    engine_api: "^0.2.1",
+    engine_api: "^0.2.3",
     dependencies: {},
     exports: (
         units: [
@@ -30,6 +30,9 @@
         production: [],
         recipes: ["recipes/make_shells.ron"],
         technologies: ["technologies/hardened_shells.ron"],
+        orders: ["orders/order_move.ron", "orders/order_stop.ron", "orders/order_hold.ron", "orders/order_research.ron", "orders/order_cancel.ron", "orders/order_enable.ron", "orders/order_disable.ron", "orders/order_remove.ron", "orders/rules.ron"],
+        input: ["input/bindings.ron"],
+        assets: ["assets/assets.ron"],
     ),
     context: Shared,
     capabilities: [],
