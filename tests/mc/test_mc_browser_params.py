@@ -3,6 +3,7 @@ import pathlib
 import sys
 import unittest
 
+sys.dont_write_bytecode = True
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2] / "scripts"))
 
 from mc_browser_params import add_synthetic_param, synthetic_server_args, synthetic_units

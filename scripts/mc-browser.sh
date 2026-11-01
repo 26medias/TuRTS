@@ -42,6 +42,7 @@ if [[ -n "$ROW_FILE" ]]; then
     [[ -f "$ROW_FILE" ]] || { echo "missing row file: $ROW_FILE" >&2; exit 2; }
     SYNTHETIC_UNITS="$(python3 - "$ROOT" "$ROW_FILE" <<'PYSYNTHETIC'
 import json, pathlib, sys
+sys.dont_write_bytecode = True
 sys.path.insert(0, str(pathlib.Path(sys.argv[1]) / "scripts"))
 from mc_browser_params import synthetic_units
 try:
@@ -143,6 +144,7 @@ if [[ "$SERVE_ONLY" == true ]]; then wait; fi
 PARAMS="$OUT/params.json"
 python3 - "$ROOT" "$PACKAGE_NAME" "$URL" "http://127.0.0.1:$HTTP_PORT" "ws://127.0.0.1:$WS_PORT" "$ROW_FILE" "$PARAMS" "$VIEWPORT" "$WINDOWS" <<'PYPARAMS'
 import json, pathlib, re, sys
+sys.dont_write_bytecode = True
 root,package,url,http,ws,row,out,viewport,windows=sys.argv[1:]
 sys.path.insert(0, str(pathlib.Path(root) / "scripts"))
 from mc_browser_params import add_synthetic_param
