@@ -1095,3 +1095,12 @@ Evidence: RUN51 limited diff crates/turts_server/src/orderlog.rs and crates/turt
 
 
 C124/C125 evidence clarification: RUN52 actual Point-Append probe confirms movement allocation clears last_failure before terminal completion (orders.rs:2012). The real Append test is a valid green lifecycle control, but does not prove stale failure survives to completion. H4's compiled red is the installed-logger completed-view input regression. Natural stale-terminal reachability is NOT TRACED; do not claim a proven live game failure from the Point case. The logger repair preserves correct state semantics for supplied history. Reviewer ownplant must name exactly which probe detects it. Two reviewer failed fixture attempts remain setup evidence, with no plant-red credit. Root also corrected immutable RUN51handoff ACCignored9 typo: actual17/0/0 across9summaries. Errata main t7-root/RUN51-handoff-errata.json; original report kept.
+
+
+## C126: wait for the first accepted snapshot before Core construction
+
+Conflict: camera OwnedCentre must use the player's actual units. Welcome creates a replica with no snapshot, but the existing adapter can construct Core from that empty frame and latch the map-centre fallback. The Task11 owned file list omits core_adapter.rs, where first construction happens.
+
+Choice: extend Task11 scope by a narrow initial-construction guard in core_adapter.rs. Create the first Core only after Replica.snapshot_tick is Some, with authored camera configuration set before construction. A valid accepted snapshot with zero own units must still create Core and use the OwnedCentre fallback. Do not use a nonempty-unit test, gate an existing Core on later resync, or reset an existing camera. Add actual whole-client lifecycle controls for Welcome before snapshot, owned and empty accepted snapshots, and later recovery.
+
+Evidence: design section7 requires OwnedCentre and mod start selection. core_adapter.rs:520-531 constructs Core once and reads the initial_pose fallback; ingest.rs:394-404 creates the replica on Welcome; replica.rs:120,156 starts snapshot_tick asNone, and :270-272 sets it only after accepted commit. Root read all three paths. This is a necessary same-shape startup mechanism under brief4, with no K, frozen value or acceptance-row change. Alternative not taken: latch the pre-snapshot fallback, wait forever for a nonempty owned set, re-centre after each resync, or reset Core state. RUN53 implements; RUN54 independently checks.54/170 runs; no CEO stop.

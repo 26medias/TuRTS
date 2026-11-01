@@ -8,7 +8,7 @@ source: codex
 
 # MC execution board
 
-State: ACTIVE:12/25 lanes complete;54/170 runs registered. Task7 COMPLETE at7e575c9, independent0High/0Medium, integration12/12gates0 (1231/0/19,T7,M3). RUN53 T11 owns sole compiler/cache; RUN54 UX review registered source-only. C1-C125. Wave5 needs11/12; no main merge/push.
+State: ACTIVE:12/25 lanes complete;54/170 runs registered. Task7 COMPLETE at7e575c9, independent0High/0Medium, integration12/12gates0 (1231/0/19,T7,M3). RUN53 T11 owns sole compiler/cache; RUN54 UX review registered source-only. C1-C126. Wave5 needs11/12; no main merge/push.
 
 Plan: `docs/superpowers/plans/2026-10-29-mc-player-control.md`.
 Design of record: `docs/superpowers/specs/2026-10-29-mc-player-control-design.md`, revision13 at main721e56e.
@@ -1098,3 +1098,12 @@ C124/C125 evidence clarification: RUN52 actual Point-Append probe confirms movem
 Task11 RUN53 actual compiled reds: corecamera21selected,5passed16failed, exit101; clientcamera4selected,1passed3failed, exit101. Root read raw outputs/exit files, excluded an earlier zero-selection client filter; rootreceipt main t11-root/native-red-read-check.json. ActualCAM1 browserred pending, no greenproduction yet. RUN54 source-only startup review traced Welcome before Snapshot and Replica.snapshot_tick as readiness; valid empty-owned snapshot fallback must work, later resync must not resetcamera. Seven independent Core probes prepared outsidebranch, NOTTRACED untilreviewlease. Ledger verified54 consecutiveunique runrows.
 
 Disk cleanup complete outsideactivecache: losslessarchives retain28913 completedtmp files and19 copiedF11artifactfiles. zstdCRC and tar source-byte comparison exit0; no activeprocessrefs; inventory+SHA+mapping in main t7-root/completed-artifact-archive/receipt.json. Raw2.2GiB fileblocks replaced by~12MBarchives; no source/evidencecontent lost. Originalcachetmp staging and copiedF11directory removed onlyafterverification; immutable reports' oldF11paths map to f11-evidence.tar.zst. ActiveT11cache unaffected; third-partydeps retained.
+
+
+## C126: wait for the first accepted snapshot before Core construction
+
+Conflict: camera OwnedCentre must use the player's actual units. Welcome creates a replica with no snapshot, but the existing adapter can construct Core from that empty frame and latch the map-centre fallback. The Task11 owned file list omits core_adapter.rs, where first construction happens.
+
+Choice: extend Task11 scope by a narrow initial-construction guard in core_adapter.rs. Create the first Core only after Replica.snapshot_tick is Some, with authored camera configuration set before construction. A valid accepted snapshot with zero own units must still create Core and use the OwnedCentre fallback. Do not use a nonempty-unit test, gate an existing Core on later resync, or reset an existing camera. Add actual whole-client lifecycle controls for Welcome before snapshot, owned and empty accepted snapshots, and later recovery.
+
+Evidence: design section7 requires OwnedCentre and mod start selection. core_adapter.rs:520-531 constructs Core once and reads the initial_pose fallback; ingest.rs:394-404 creates the replica on Welcome; replica.rs:120,156 starts snapshot_tick asNone, and :270-272 sets it only after accepted commit. Root read all three paths. This is a necessary same-shape startup mechanism under brief4, with no K, frozen value or acceptance-row change. Alternative not taken: latch the pre-snapshot fallback, wait forever for a nonempty owned set, re-centre after each resync, or reset Core state. RUN53 implements; RUN54 independently checks.54/170 runs; no CEO stop.
