@@ -134,3 +134,5 @@ MC latest: Task6 C117-C119 repaired ated793bb; native10/10 exit0,1211/0/18; sour
 MC latest2026-11-01: Task6ed793bb normal gates and21independentprobes/191tests green; GREF/plants/finalreview underway.10/25 complete;50/170 runs. [[MC Execution Board]].
 
 MC latest: Task6COMPLETE at450c023 with final0High and integration12/12gates0;11/25complete. RUN51/52 T7 implementation/review active (53/170,Task7run3/4); correctness repairs under verification. RUN53 T11 source/test preparation overlaps T7; compiler lease remains T7. Wave5stillneeds7/11/12. [[MC Execution Board]].
+
+MC latest: CEO O13 releases STOP-PAL1; design14 at mainf050e42. Integration and both open lanes rebased; Task5 all8WIP source files restored byte-identical. Tasks5/13 resumed,14/25complete;65/170runs. Task21 owns hosted panel-migration failures. [[MC Execution Board]].

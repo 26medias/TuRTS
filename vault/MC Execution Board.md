@@ -8,7 +8,7 @@ source: codex
 
 # MC execution board
 
-State: ACTIVE. CEO O13 releases STOP-PAL1; design14 at main f050e42. Integration and open Task5/Task13 lanes rebased.14/25lanes complete;65/170runs registered. Wave6 resumes Task5 repairs and Task13 source preparation. One compiler/cache lease belongs to Task5. C1-C160; no main merge/push.
+State: ACTIVE. CEO O13 releases STOP-PAL1; design14 at main f050e42. Integration and open Task5/Task13 lanes rebased.14/25lanes complete;65/170runs registered. Wave6 resumes Task5 repairs and Task13 source preparation. One compiler/cache lease belongs to Task5. C1-C161; no main merge/push.
 
 Plan: `docs/superpowers/plans/2026-10-29-mc-player-control.md`.
 Design of record: `docs/superpowers/specs/2026-10-29-mc-player-control-design.md`, revision14 at mainf050e42.
@@ -1520,3 +1520,11 @@ CEO call at mainf050e429b38222c9917314bb23c1568dd7ad816c, design revision14: kee
 Root rebased integration fromedba4a0 ontof050e42 tof9bacec; only upstream research/design/decision files and combined work-log documentation differ, no implementation source changed. Work-log conflicts retain both O13 and earlier history. Task5 rebased from7e010c2 to12ded296; all eight dirty files saved, stashed, restored and SHA256 matched byte-for-byte. Task13 rebased all five commits onto integration; source/candidate evidence retained. Back-up refs codex/mc-o13-pre-* and a named stash remain until merged/proven-safe. Evidence: target/mc-evidence/o13-rebase-20261101.
 
 RUN62 stays active and source-only. RUN64/65 registered before resuming completed builder/reviewer:65/170. Task5 nowrun4/estimate4; no overrun ruling needed. Compiler/browser remains one owner; Task13 no second cache. STOP-PAL1 released; no main merge or push.
+
+## C161: share two ring topologies without per-unit assets
+
+Conflict: design9.1:864 says one shared ring mesh, while9.1:840-843 requires a solid own ring and a foreign ring with four gaps. The prepared Mesh3d/StandardMaterial renderer represents gaps in geometry; one fixed topology cannot represent both with the same per-slot material. Candidate visuals.rs:28-31,190-191 holds two handles and creates each once.
+
+Choice: use two global shared ring meshes, one solid and one with four gaps, and one global shared bar mesh. Keep one unlit material per slot, no per-unit mesh/material creation, and identical visible geometry. This is the nearest existing render mechanism with the same player-visible shape under brief4. Add a native asset-sharing assertion; actual browser performance is NOT TRACED until VIS2. The design is not edited.
+
+Alternative not taken: lose the foreign gaps, build per-unit assets, add a custom shader/material system only to encode the gap topology, or claim the candidate uses one topology. O13 palette/thresholds are unchanged.14/25complete;65/170runs, no new dispatch.
