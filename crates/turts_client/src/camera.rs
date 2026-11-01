@@ -121,9 +121,11 @@ pub(crate) fn light_components(
     } else {
         Vec3::Y
     };
-    let mut directional = DirectionalLight::default();
-    directional.color = colour;
-    directional.illuminance = light.illuminance;
+    let directional = DirectionalLight {
+        color: colour,
+        illuminance: light.illuminance,
+        ..Default::default()
+    };
     (
         directional,
         Transform::default().looking_to(direction, up),

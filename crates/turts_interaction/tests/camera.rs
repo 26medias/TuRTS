@@ -1,3 +1,4 @@
+#[allow(dead_code)]
 mod common;
 
 use common::{TestWorld, VIEW};
@@ -32,13 +33,14 @@ fn camera_def() -> CameraDef {
 }
 
 fn world() -> TestWorld {
-    let mut world = TestWorld::default();
-    world.camera_options = CameraOptions {
-        authored: Some(camera_def()),
-        scroll_speed: 1.0,
-        edge_scroll: true,
-    };
-    world
+    TestWorld {
+        camera_options: CameraOptions {
+            authored: Some(camera_def()),
+            scroll_speed: 1.0,
+            edge_scroll: true,
+        },
+        ..TestWorld::default()
+    }
 }
 
 fn step(core: &mut Core, world: &TestWorld, events: &[InputEvent], now_ms: u64) {
@@ -373,7 +375,7 @@ fn middle_drag_stops_after_pointer_left_or_focus_loss() {
             16,
         );
         let stopped_at = core.camera_state().look_at;
-        step(&mut core, &world, &[stop.clone()], 17);
+        step(&mut core, &world, std::slice::from_ref(&stop), 17);
         step(
             &mut core,
             &world,
