@@ -112,3 +112,5 @@ MC latest: ACTIVE: O12 released Task 6. Integration and all four open lanes reba
 
 
 MC latest: ACTIVE: 10 of 25 lanes complete; 48/170 runs; Task6 run6/6. C1-C110 recorded. Task6 normal gates passed at ffb21b3; independent review found cap/physical-escape/follow-completion Highs. The C106-C108 repair batch is active; fresh gates, refutations and final review remain. No CEO stop or main merge.
+
+MC current2026-10-31 22:34EDT:10/25 complete;49/170 runs; Task6run7/6. RUN49 repairs finite promotion/replay findings after WIP sim/server greens. Final committed gates/review/GREF remain; no main merge. [[MC Execution Board]].

@@ -8,7 +8,7 @@ source: codex
 
 # MC execution board
 
-State: ACTIVE: O12 released Task 6. Integration and all four open lanes rebased onto main721e56e (design revision13); dirty source hashes preserved.10of25lanes complete;48/170runs; Task6run6/6. C1-C113. RUN48 closes cap/escape/follow and replay/index findings; RUN47 source-only, no repaired acceptance yet. No main merge.
+State: ACTIVE: O12 released Task 6. Integration and all four open lanes rebased onto main721e56e (design revision13); dirty source hashes preserved.10of25lanes complete;49/170runs; Task6run7/6, soft12/hard24. C1-C116. RUN49 repairs the exact RUN47 final source findings, then commits and gates; no repaired acceptance yet. No main merge.
 
 Plan: `docs/superpowers/plans/2026-10-29-mc-player-control.md`.
 Design of record: `docs/superpowers/specs/2026-10-29-mc-player-control-design.md`, revision12 at63788d7, included by mainc3f09d0.
@@ -76,7 +76,7 @@ CI trigger: `.github/workflows/ci.yml:2-5` runs pushes to main and pull requests
 | T2b | 3 | 2a, 3, 18 | codex/mc-t2b | COMPLETE64cd400; merge6d2c46e; all gates/10GREF0; review0H/0M; lane removed |
 | T4 | 4 | 2b, 3 | codex/mc-t4 | COMPLETE merge0490ebd; review0H/0M,36GREF,all12rootgates0; lane removed |
 | T9 | 4 | 1, 8, 2b | codex/mc-t9 | COMPLETE mergefb5e2d6; independent0High/0unresolvedMedium,69tests,7GREF,FOV/modifier plants,all12integrationgates0; archived lane removed, branch retained. |
-| T6 | 5 | 4 | codex/mc-t6 | ACTIVE RUN48: finish C106-C110 repair and final proof; coherent six-file WIP retained. Sole compiler lease; no acceptance. |
+| T6 | 5 | 4 | codex/mc-t6 | ACTIVE RUN49: repair finite C115/C116 replay/index findings, commit and final proof. Seven-file coherent WIP retained; sole compiler lease; no acceptance. |
 | T7 | 5 | 2b, 4 | codex/mc-t7 | PREPARED RUN40; source/tests preserved, implementation and semantic red pending; no compiler lease. |
 | T11 | 5 | 9, 19, 20 | codex/mc-t11 | PREPARED RUN41; source/tests preserved, native/browser red pending; no compiler lease. |
 | T12 | 5 | 3, 9, 19, 20 | codex/mc-t12 | Analysis28legacytests +HUD1instrument8650131 ready; actualnative/browserred/widgetruntime/HUD4/allfinalproofpending. No legacy deletion. |
@@ -238,9 +238,10 @@ One row per builder/reviewer dispatch or resumed agent work turn. Register befor
 | 44 | T12 HUD1 instrument preparation continuation | bevy-rendering-engineer with ux-designer | gpt-6-luna | high | 2b22fa8 | COMPLETE HUD1 instrument preparation:8650131,Node75/0 with13oraclecases, strictDPRregression/plant0/1/0,QA0; actualbrowser/nativeHUD1NOTTRACED; T12run2/estimate8/soft16/hard32. |
 | 45 | T6 final independent review/recheck | performance-architect | gpt-6.1-sol | high | b4/d3+separatebuilderdirtyproof | COMPLETE SOURCE-ONLY understop; confirmsgeometryandbuildersemanticred;17areas/openHfindingsretained; no runtime/ownplant/PASS. |
 | 46 | T6 O12 repair continuation | simulation-core-engineer | gpt-6-luna | high | d4a8f97+preserved dirty | COMPLETE WIP handoff only: C106-C110 simulation/replay focused proofs; six files uncommitted, no final gates/GREF/plants/PASS. Continued by RUN48. Task6run4/6, soft12/hard24. |
-| 47 | T6 independent O12 and retained-finding recheck | performance-architect | gpt-6.1-sol | high | rebased d4a8f97+active repair | ACTIVE SOURCE-ONLY after C105 preliminary runtime: ffb21b3 verified gates; H4/H14/H12 compiled semantic101, other probes pass. Lease returned; repaired runtime/own plant/final PASS pending. Task6run5/6, soft12/hard24. |
-| 48 | T6 C106-C110 repair completion and final proof | simulation-core-engineer | gpt-6-luna | high | ffb21b3+six-file coherent WIP | Registered before continuation. Finish focused/replay controls, commit, all required final gates, C105 handoff, selected GREF and semantic plants. Task6run6/estimate6, soft12/hard24. |
+| 47 | T6 independent O12 and retained-finding recheck | performance-architect | gpt-6.1-sol | high | rebased d4a8f97+active repair | COMPLETE SOURCE-ONLY, no PASS; final finite report c115-c116-final-source-boundary. After C105 preliminary runtime: ffb21b3 verified gates; H4/H14/H12 compiled semantic101, other probes pass. Lease returned; repaired runtime/own plant/final PASS pending. Task6run5/6, soft12/hard24. |
+| 48 | T6 C106-C110 repair completion and final proof | simulation-core-engineer | gpt-6-luna | high | ffb21b3+six-file coherent WIP | COMPLETE WIP only: seven-path coherent boundary, full sim/server green, final source review has unresolved findings. No commit or formal repaired gates. Originally registered before continuation. Finish focused/replay controls, commit, all required final gates, C105 handoff, selected GREF and semantic plants. Task6run6/estimate6, soft12/hard24. |
 
+| 49 | T6 finite source findings repair and task completion | simulation-core-engineer | gpt-6-luna | high | ffb21b3+seven-file coherent WIP | Registered before continuation: fix exact RUN47 final report, meaningful controls, commit, normal gates, C105 runtime handoff, GREF/plants. Task6run7/estimate6, soft12/hard24. |
 
 ## 9. Preflight ledger and stop
 
@@ -972,3 +973,7 @@ Choice: include this new header-search cost in C112. Compute/cache immutable pre
 Require a many-older-requests/many-promotions operation-count control plus the existing arrival/FIFO and cap controls. Alternatives not taken: defer a newly introduced repeated header scan as if it were old debt, sort by seq/pool ID, or silently reverse new candidates. This is execution/index handling under brief4 and C112.
 
 Evidence for both decisions: RUN47 seven-path boundary source review and exact captured command/Orders call stacks, main target/mc-evidence/t6-builder/run48/source-review-checkpoint/ and run47 reports. They join active RUN48 before the next commit/gates; no new agent run.48/170 runs, Task6run6/estimate6, soft12/hard24; no CEO stop, merge or push. New targeted runtime controls remain NOT TRACED until run.
+
+## Resume after status handling error
+
+Root ended status-only turns while authorized work remained. This caused an avoidable idle period. Status and ETA questions are steering; root must answer briefly and continue work until an explicit pause or a required stop condition. RUN48 ended at a seven-path uncommitted boundary; RUN47 source report has finite unresolved findings, not PASS. RUN49 is registered before builder continuation.49/170 runs; Task6run7/6, below soft12/hard24. No new CEO decision is needed.
