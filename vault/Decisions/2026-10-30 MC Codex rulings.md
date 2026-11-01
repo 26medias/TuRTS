@@ -1416,3 +1416,14 @@ Choice: prepare a local bound row wrapper, main target/mc-evidence/gate-runner/r
 Evidence: the wrapper syntax and --help exit0; no end-to-end row through this new wrapper is claimed yet. Its first scheduled future row must supply that proof. Current Task12 acceptance uses its actual original runs/receipts plus root source/gate/artifact/fixture checks, not this future wrapper. The builder receipt field named commit_tree_sha256 is a Git object ID, not a SHA256 file digest; read it as the Git tree ID. Root does not relabel it or invent a missing pre-run manifest.
 
 This is an instrument/command detail under brief4. Alternative not taken: change product code to hide setup failures, synthesize historic source snapshots, weaken an oracle, allow concurrent caches, or rerun current accepted rows merely to exercise a new wrapper.60/170runs; no new dispatch or CEO stop.
+
+
+## C157: trigger the Wave5 pull-request CI without changing source
+
+Conflict: vault-only closeout commits correctly carry [skip ci], but Wave5 must produce a hosted CI read. This workflow listens to main pushes and pull_request; the current integration PR is draft/open, so its synchronization uses the head commit. GitHub's official [skip instructions](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/skip-workflow-runs) say a skip instruction on the pull-request head skips that run. There is no workflow_dispatch trigger in this workflow.
+
+Choice: commit this vault ruling with [skip ci], then add one empty CI-trigger commit without a skip marker and push only codex/mc-integration with an exact force-with-lease for the known prior remote headfb5e2d6454fefd7a69564a1788eaa52d0ee505e4. Source stays identical to the locally gated mergeaf567c4 except vault records. Read the actual PR workflow jobs; do not claim green before completion.
+
+Evidence: .github/workflows/ci.yml:2-5; connected GitHub PR2 is open/draft/unmerged with that remote head; git ls-remote confirms integrationfb5e2d6 and main721e56e. The integration11gates passed before this doc/empty-only step.
+
+This is an instrument command/flag judgment under brief4. Alternative not taken: push main, remove the required vault skip marker, bypass a check, silently treat absent CI as green, or change the product to obtain a run.60/170runs; no new agent or CEO stop.

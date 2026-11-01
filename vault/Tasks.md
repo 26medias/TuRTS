@@ -104,7 +104,7 @@ Human usability amendment1354e33: catalog-derived principal labels/named local s
 
 ## Current MC status
 
-ACTIVE:14/25lanes complete;60/170runs. Wave5 complete ataf567c4. Task12 candidate77ca599 passed independent0openfindings/7probes/ownplant; fresh8HUD runs and required production cursor mutation restored. Integration11/11gates0 (1306/0/19,frozen,T7). Task12 lane removed; sole cache in integration. Wave5 push/readCI next, then Wave6 Tasks5/13. C1-C156. Main stays721e56e. See [[MC Execution Board]] and [[Reports/2026-11-01]].
+ACTIVE:14/25lanes complete;60/170runs. Wave5 complete ataf567c4. Task12 candidate77ca599 passed independent0openfindings/7probes/ownplant; fresh8HUD runs and required production cursor mutation restored. Integration11/11gates0 (1306/0/19,frozen,T7). Task12 lane removed; sole cache in integration. Wave5 push/readCI next, then Wave6 Tasks5/13. C1-C157. Main stays721e56e. See [[MC Execution Board]] and [[Reports/2026-11-01]].
 
 ## Historical MC checkpoints
 
