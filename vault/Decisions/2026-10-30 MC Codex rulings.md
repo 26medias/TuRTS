@@ -1315,3 +1315,14 @@ Choice: for List/Grid, an item-dependent tooltip expression, including nested Fo
 Evidence: mods/muster/interface/hud.ron:4 places Some(Item(Reason)) on Grid and template Button.tooltip is absent. Design8.5:802-810 does the same in the D67 probe;8.2 permits tooltip on any widget and names description/key/reason content. RUN56 confirmed the parent-grid item=None path in the frozen renderer. Existing ItemField::Body and OrderDef.description provide the needed data; no schema or protected content edit is required.
 
 This is a scope/instrument mechanism repair under brief4. Alternative not taken: change protected Muster layout, render an empty parent tooltip, overwrite nested item scopes, fabricate description text, or call source Reason coverage a rendered tooltip pass.59/170 runs; no new dispatch or CEO stop.
+
+
+## C148: replace gather panel copy through the designed source boundary
+
+Conflict: the removed panel test combines selected inventory assertions with the exact engine-generated line `Gather: waiting · destination_full`. Copying that line into the new runtime would add an unlisted widget query and engine HUD text. The initial legacy map incorrectly asks to retain that exact line.
+
+Choice: retain the inventory assertions through the actual SelectionPrimary.Inventory source, including both ports and each capacity. Retire only the old panel-copy assertion under the explicit panel removal. The mandatory authored GathererWaiting alert remains owned by Task15 and is NOT CHECKED in Task12. Do not invent a direct gather-status source. Foreign inspection, private-data exclusion and removed-selection pruning still require current source/Core regression evidence; this disposition does not waive them.
+
+Evidence: design8.1:731-733 removes economy_ui and its English text;8.4:775-796 lists the permitted widget queries and excludes direct gather-stage access;9.4:891-911 maps GathererWaiting to GatherStage::Waiting. Plan Task15:601 explicitly requires that derivation. Legacy economy_ui.rs test:785-855 combines inventory with the old exact line. Current widgets/sources.rs:1526 tests both ports and authored capacity; interaction/tests/groups.rs:74-99 asserts removed units leave active selection in the same step. Tests must execute on the final candidate before replacement credit.
+
+This resolves a replacement-test instrument conflict by following the design; it changes no design rule or acceptance row. Alternative not taken: preserve forbidden engine copy, expose a new query, silently drop the wait alert, or claim future Task15 behavior is already green.59/170 runs; no new dispatch or CEO stop.
