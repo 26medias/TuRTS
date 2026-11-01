@@ -8,7 +8,7 @@ source: codex
 
 # MC execution board
 
-State: ACTIVE:12/25 lanes complete;54/170 runs registered. Task7 COMPLETE at7e575c9, independent0High/0Medium, integration12/12gates0 (1231/0/19,T7,M3). RUN53 T11 owns sole compiler/cache; RUN54 UX review registered source-only. C1-C127. Wave5 needs11/12; no main merge/push.
+State: ACTIVE:12/25 lanes complete;55/170 runs registered. Task7 COMPLETE at7e575c9, independent0High/0Medium, integration12/12gates0 (1231/0/19,T7,M3). RUN53 T11 owns sole compiler/cache; RUN54 UX review registered source-only. C1-C127. Wave5 needs11/12; no main merge/push.
 
 Plan: `docs/superpowers/plans/2026-10-29-mc-player-control.md`.
 Design of record: `docs/superpowers/specs/2026-10-29-mc-player-control-design.md`, revision13 at main721e56e.
@@ -150,7 +150,7 @@ Tasks in one wave share no file, except the refutation registries (merge in task
 
 ## 7. Budget and seats
 
-CEO approved about 212 total runs. Build stop line: 170 (106 planned task runs plus 64 repairs). Gate estimate: 42 spent before this build. Build dispatches used: 54/170. Root preflight is recorded separately and is not a builder/reviewer dispatch. Twice a task estimate requires a recorded continuation decision; four times is a hard stop. T18 estimate2: soft4, hard8. No dispatch at global170 or a task hard limit.
+CEO approved about 212 total runs. Build stop line: 170 (106 planned task runs plus 64 repairs). Gate estimate: 42 spent before this build. Build dispatches used: 55/170. Root preflight is recorded separately and is not a builder/reviewer dispatch. Twice a task estimate requires a recorded continuation decision; four times is a hard stop. T18 estimate2: soft4, hard8. No dispatch at global170 or a task hard limit.
 
 One run is one agent dispatch (builder or reviewer). Count every run on the board.
 
@@ -247,6 +247,7 @@ One row per builder/reviewer dispatch or resumed agent work turn. Register befor
 | 52 | T7 independent session/script/log review | network-engineer | gpt-6.1-sol | high | Task7 base63c8ab4 plus RUN51 | COMPLETE PASS c190c909;0H/0M,30focusedgreens, ownfreshnessplant2named101s/restored0,16hashesexact, lease/readholdreturned. Task7run3/4. |
 | 53 | T11 camera and light implementation continuation | bevy-rendering-engineer | gpt-6-luna | high | d568edb+preserved5pathprep | Registered BEFORE dispatch; source/test preparation only while RUN51/52 own sole cache. Root must explicitly hand off compiler/browser before any build. Finish actual red, green, commit, gates, plants. Task11run2/estimate4, soft8/hard16. |
 | 54 | T11 independent camera and light review | ux-designer | gpt-6.1-sol | high | 6f73ed5+RUN53preparedfiles | Registered BEFORE dispatch; source/contract review only until cleancandidate/gates and explicitlease. Fullindependentfocusedruntime/ownplantrequired. Task11run3/estimate4, soft8/hard16; no compiler/browser yet. |
+| 55 | T12 widget, cursor and guide implementation continuation | bevy-rendering-engineer with ux-designer | gpt-6-luna | high | ffff0a3 after T7 rebase | Registered BEFORE dispatch. Source/test preparation only while RUN53 owns the sole compiler. Preserve four HUD1 instrument files; prepare native/HUD4 controls and legacy test mapping. No green production before actual native/browser reds. Task12 run3/estimate8, soft16/hard32. |
 
 ## 9. Preflight ledger and stop
 
@@ -1116,3 +1117,5 @@ Conflict: the early camera draft uses a fixed ground anchor for middle drag, but
 Choice: apply the player scroll-speed multiplier to all three pan modes. At speed1, middle drag keeps direct ground-grab behavior. At other settings, scale incremental projected ground deltas. Projection supplies height scaling. Do not multiply the remaining error from one initial anchor on every frame. Add speed1 anchor, speed2 distance and equal-input/frame-partition controls.
 
 Evidence: design section7 pan rule; early interaction/camera.rs:53-66 applies anchor minus current ground directly, while :131-136 applies player speed only in the key/edge path. Root read the draft. RUN54 independently prepares signed-yaw speed and frame-partition probes outside the lane. This is implementation of the existing pan rule under brief4, with no new setting or key. Alternative not taken: silently exempt drag, make speed depend on pointer event frequency, or repeatedly amplify an initial-anchor error. Runtime proof is NOT TRACED until the revised source runs.54/170 runs; no CEO stop.
+
+RUN55 is registered before Task12 continuation. Its source/test work overlaps Task11 implementation and source review. It has no compiler, browser or cache lease. The lane is clean at ffff0a3 after rebase; all four accepted HUD1 instrument files match their prior bytes. Receipt: main target/mc-evidence/t12-root/rebase-after-t7/receipt.json.55/170 runs; no new stop condition.
