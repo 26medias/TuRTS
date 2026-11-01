@@ -971,6 +971,17 @@ fn pending_replace_allows_prior_completion_without_advancing_append() {
 }
 
 fn send_unit_move(app: &mut bevy_app::App, slot: u8, id: u32, target_id: u32, queue: QueueMode) {
+    send_unit_move_in_group(app, slot, id, target_id, queue, 0);
+}
+
+fn send_unit_move_in_group(
+    app: &mut bevy_app::App,
+    slot: u8,
+    id: u32,
+    target_id: u32,
+    queue: QueueMode,
+    group: u32,
+) {
     let seq = app
         .world()
         .resource::<Tick>()
@@ -991,7 +1002,7 @@ fn send_unit_move(app: &mut bevy_app::App, slot: u8, id: u32, target_id: u32, qu
                 units: vec![id],
                 target: OrderTargetSim::Unit(target_id),
                 queue,
-                group: 0,
+                group,
                 allowed_units: Vec::new(),
                 queue_depth: 16,
             })),
@@ -2407,6 +2418,235 @@ fn unit_follow_move_completes_at_its_reached_legal_fallback() {
             settled
         );
     }
+}
+
+#[test]
+fn mixed_radius_unit_cohort_consumes_resting_follow_origin_in_orders() {
+    let mut app = app_with_units_on(
+        &[(2.0, 8.0), (2.0, 4.0), (8.0, 8.0), (14.0, 8.0)],
+        &[0, 0, 1, 1],
+        MapSize { x: 16.0, y: 16.0 },
+        0.5,
+    );
+    let origin = PackageId(ORIGIN.to_owned());
+    let large_type = app
+        .world_mut()
+        .resource_mut::<UnitTypes>()
+        .register_unit_type(
+            &origin,
+            UnitDef {
+                id: "large-walker".into(),
+                name: "Large walker".into(),
+                movement: Some(turts_mod_api::MovementDef { speed: 3.0 }),
+                inventory: None,
+                gatherer: None,
+                drop_off: None,
+                producer: None,
+                footprint: Footprint::Circle { radius: 0.8 },
+                output_inventory: None,
+                extractor: None,
+                conveyor: None,
+                inserter: None,
+                machine: None,
+                research: None,
+                health: None,
+                weapon: None,
+                removal: None,
+            },
+        )
+        .unwrap();
+    for id in [2, 3] {
+        let entity = app
+            .world_mut()
+            .iter_entities()
+            .find(|entity| {
+                entity
+                    .get::<turts_sim::UnitId>()
+                    .is_some_and(|unit| unit.0 == id)
+            })
+            .unwrap()
+            .id();
+        app.world_mut()
+            .entity_mut(entity)
+            .insert(turts_sim::UnitType(large_type));
+    }
+
+    send_unit_move_in_group(&mut app, 0, 1, 3, QueueMode::Replace, 71);
+    send_unit_move_in_group(&mut app, 0, 2, 4, QueueMode::Replace, 71);
+    send_hold(&mut app, 0, 1, QueueMode::Append);
+    app.update();
+
+    let pool_ids: Vec<_> = [1, 2]
+        .into_iter()
+        .map(|id| {
+            let entity = app
+                .world_mut()
+                .iter_entities()
+                .find(|entity| {
+                    entity
+                        .get::<turts_sim::UnitId>()
+                        .is_some_and(|unit| unit.0 == id)
+                })
+                .unwrap();
+            entity
+                .get::<turts_sim::movement::MoveProgress>()
+                .expect("both accepted Unit references use the shared cohort")
+                .pool_id
+        })
+        .collect();
+    assert_eq!(pool_ids[0], pool_ids[1]);
+    for (id, target_id) in [(1, 3), (2, 4)] {
+        let actor = app
+            .world_mut()
+            .iter_entities()
+            .find(|entity| {
+                entity
+                    .get::<turts_sim::UnitId>()
+                    .is_some_and(|unit| unit.0 == id)
+            })
+            .unwrap();
+        assert_eq!(
+            actor
+                .get::<UnitOrders>()
+                .unwrap()
+                .current
+                .as_ref()
+                .map(|order| &order.target),
+            Some(&OrderTargetSim::Unit(target_id)),
+            "each merged member keeps its own live Unit reference"
+        );
+    }
+
+    let mut resting_slots = [None, None];
+    let mut finished = [false, false];
+    for _ in 0..300 {
+        app.update();
+        for (index, id) in [1, 2].into_iter().enumerate() {
+            let entity = app
+                .world_mut()
+                .iter_entities()
+                .find(|entity| {
+                    entity
+                        .get::<turts_sim::UnitId>()
+                        .is_some_and(|unit| unit.0 == id)
+                })
+                .unwrap()
+                .id();
+            let actor = app.world().entity(entity);
+            if actor
+                .get::<turts_sim::movement::MoveProgress>()
+                .is_some_and(|progress| {
+                    progress.activity == turts_sim::movement::MovementActivity::Resting
+                        && progress.slot == actor.get::<turts_sim::Position>().unwrap().0
+                        && progress.follow_origin.is_some()
+                })
+            {
+                resting_slots[index] = Some(actor.get::<turts_sim::Position>().unwrap().0);
+            }
+            let orders = actor.get::<UnitOrders>().unwrap();
+            let completed = if id == 1 {
+                orders
+                    .current
+                    .as_ref()
+                    .is_some_and(|order| order.behaviour == turts_mod_api::Behaviour::Hold)
+            } else {
+                orders.current.is_none()
+            };
+            if completed && resting_slots[index].is_some() {
+                assert_eq!(
+                    actor.get::<turts_sim::Position>().unwrap().0,
+                    resting_slots[index].unwrap(),
+                    "follow completion consumes the reached slot without reopening movement"
+                );
+                assert!(actor.get::<MoveTarget>().is_none());
+                assert!(actor.get::<turts_sim::movement::MoveProgress>().is_none());
+                finished[index] = true;
+            }
+        }
+        if finished == [true, true] {
+            break;
+        }
+    }
+    assert!(
+        resting_slots[0].is_some(),
+        "queued actor reached a legal slot"
+    );
+    assert!(
+        resting_slots[1].is_some(),
+        "unqueued actor reached a legal slot"
+    );
+    assert_eq!(
+        finished,
+        [true, true],
+        "both follow orders complete in Orders"
+    );
+
+    let settled: Vec<_> = [1, 2]
+        .into_iter()
+        .map(|id| {
+            let entity = app
+                .world_mut()
+                .iter_entities()
+                .find(|entity| {
+                    entity
+                        .get::<turts_sim::UnitId>()
+                        .is_some_and(|unit| unit.0 == id)
+                })
+                .unwrap();
+            entity.get::<turts_sim::Position>().unwrap().0
+        })
+        .collect();
+    for _ in 0..40 {
+        app.update();
+        for (index, id) in [1, 2].into_iter().enumerate() {
+            let entity = app
+                .world_mut()
+                .iter_entities()
+                .find(|entity| {
+                    entity
+                        .get::<turts_sim::UnitId>()
+                        .is_some_and(|unit| unit.0 == id)
+                })
+                .unwrap();
+            assert_eq!(
+                entity.get::<turts_sim::Position>().unwrap().0,
+                settled[index]
+            );
+            assert!(entity.get::<turts_sim::movement::MoveProgress>().is_none());
+        }
+    }
+}
+
+#[test]
+fn unit_self_follow_completion_clears_allocated_progress_without_queue() {
+    let mut app = app_with_units_on(&[(8.0, 8.0)], &[0], MapSize { x: 16.0, y: 16.0 }, 0.5);
+    send_unit_move(&mut app, 0, 1, 1, QueueMode::Replace);
+    let mut completed = false;
+    for _ in 0..4 {
+        app.update();
+        let entity = app
+            .world_mut()
+            .iter_entities()
+            .find(|entity| {
+                entity
+                    .get::<turts_sim::UnitId>()
+                    .is_some_and(|unit| unit.0 == 1)
+            })
+            .unwrap()
+            .id();
+        let actor = app.world().entity(entity);
+        let orders = actor.get::<UnitOrders>().unwrap();
+        if orders.current.is_none() {
+            assert!(actor.get::<MoveTarget>().is_none());
+            assert!(actor.get::<turts_sim::movement::MoveProgress>().is_none());
+            completed = true;
+            break;
+        }
+    }
+    assert!(
+        completed,
+        "a self-target resolves as an already reached legal goal"
+    );
 }
 
 #[test]

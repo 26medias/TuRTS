@@ -2386,6 +2386,7 @@ pub fn step_frame(frame: &MovementFrame, dt: f32) -> Vec<MovementFrameOutput> {
         if output.progress.as_ref().is_some_and(|progress| {
             progress.activity == MovementActivity::Resting
                 && !moving_pools.contains(&progress.pool_id)
+                && progress.follow_origin.is_none()
         }) {
             output.progress = None;
         }

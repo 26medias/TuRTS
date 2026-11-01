@@ -2153,6 +2153,16 @@ fn run_unit_follow_move(
             world
                 .entity_mut(entity)
                 .remove::<crate::world::MoveTarget>();
+            if cohort_progress.is_some() {
+                world
+                    .entity_mut(entity)
+                    .remove::<crate::movement::MoveProgress>();
+            }
+            if plain_progress.is_some() {
+                world
+                    .entity_mut(entity)
+                    .remove::<crate::movement::PlainMoveProgress>();
+            }
             if !unit_has_pending_move(world, unit_id) {
                 start_next_queued_order(world, slot, entity, unit_id);
             }
