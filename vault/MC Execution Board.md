@@ -8,7 +8,7 @@ source: codex
 
 # MC execution board
 
-State: ACTIVE:11/25 lanes complete;53/170 runs registered. Task6 COMPLETE at merge450c023, final review0High; integration12/12 gates0 (1211/0/18,T7,M3). RUN51/52 Task7 implementation and independent review active, Task7run3/4 (soft8/hard16). C1-C123. Wave5 remains open; no main merge/push.
+State: ACTIVE:11/25 lanes complete;53/170 runs registered. Task6 COMPLETE at merge450c023, final review0High; integration12/12 gates0 (1211/0/18,T7,M3). RUN51/52 Task7 implementation and independent review active, Task7run3/4 (soft8/hard16). C1-C125. Wave5 remains open; no main merge/push.
 
 Plan: `docs/superpowers/plans/2026-10-29-mc-player-control.md`.
 Design of record: `docs/superpowers/specs/2026-10-29-mc-player-control-design.md`, revision13 at main721e56e.
@@ -243,7 +243,7 @@ One row per builder/reviewer dispatch or resumed agent work turn. Register befor
 
 | 49 | T6 finite source findings repair and task completion | simulation-core-engineer | gpt-6-luna | high | ffb21b3+seven-file WIP | COMPLETE ed793bb; all normal gates0,20GREF/87commands,8validplants/27executions; source exact restored; merge450c023 and integration12/12gates0. Task6run7/6. |
 | 50 | T6 independent finite finding closure and final review | performance-architect | gpt-6.1-sol | high | ffb21b3+RUN49 repairs | COMPLETE PASS ed793bb:0High,C114Mediumdeferred,C121scope;21probes/191tests, all20GREF/8plants verified, ownGM40 0/101/0 exactrestore; finalcache returned. Task6run8/6. |
-| 51 | T7 server session implementation continuation | backend-engineer | gpt-6-luna | high | integration450c023+preserved5pathprep | Registered BEFORE dispatch; finish task7 from compiled semantic reds, buckets/rejoin/script/log, commit/gate/plants. Task7run2/estimate4, soft8/hard16; no other compiler until root hands off the sole cache. |
+| 51 | T7 server session implementation continuation | backend-engineer | gpt-6-luna | high | integration450c023+preserved5pathprep | COMPLETE builder c190c909; compiled reds/greens, f9native1228/0/19 andACC17/0/0,196GREF2/12commands, C125boundedfinal253/0/18+QA+process1/1; lease returned toRUN52. Task7run2/4; independentreview/mergepending. |
 | 52 | T7 independent session/script/log review | network-engineer | gpt-6.1-sol | high | Task7 base63c8ab4 plus active RUN51 | Registered BEFORE dispatch; contract/source-only preparation now, no cache/compiler until clean committed candidate/gates and explicit lease. Final independent tests and own plant required. Task7run3/estimate4, soft8/hard16. |
 | 53 | T11 camera and light implementation continuation | bevy-rendering-engineer | gpt-6-luna | high | d568edb+preserved5pathprep | Registered BEFORE dispatch; source/test preparation only while RUN51/52 own sole cache. Root must explicitly hand off compiler/browser before any build. Finish actual red, green, commit, gates, plants. Task11run2/estimate4, soft8/hard16. |
 
