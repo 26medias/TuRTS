@@ -1143,3 +1143,133 @@ fn nested_fit_widgets_converge_after_dynamic_text_changes() {
         prior_width = settled_widths[0];
     }
 }
+
+#[test]
+fn fit_queue_reflows_rows_and_retires_extent_when_empty() {
+    let (acquired, replica, _, recipe) = accepted_fixture();
+    let (mut app, window, camera, producer) = installed_app(
+        acquired,
+        replica,
+        Source::ProductionQueue,
+        ActionField::CancelAction,
+        &[201, 202, 203],
+        2.0,
+        1600,
+        1000,
+    );
+    let mut list = authored_list(
+        "fit.queue",
+        Source::ProductionQueue,
+        ActionField::CancelAction,
+        16,
+    );
+    list.size = Size {
+        w: Dimension::Fit,
+        h: Dimension::Fit,
+    };
+    app.world_mut()
+        .resource_mut::<AcquiredPackages>()
+        .0
+        .presentation
+        .interface
+        .as_mut()
+        .unwrap()
+        .root = vec![list];
+    for _ in 0..12 {
+        app.update();
+    }
+
+    let widget = |app: &App, id: &str| {
+        app.world()
+            .iter_entities()
+            .find(|entity| {
+                entity
+                    .get::<AuthoredWidgetId>()
+                    .is_some_and(|value| value.0 == id)
+            })
+            .unwrap_or_else(|| panic!("missing installed widget {id}"))
+            .id()
+    };
+    let top = |app: &App, entity: Entity| {
+        app.world()
+            .get::<UiGlobalTransform>(entity)
+            .unwrap()
+            .to_scale_angle_translation()
+            .2
+            .y
+            - app.world().get::<ComputedNode>(entity).unwrap().size().y / 2.0
+    };
+    let list_entity = widget(&app, "fit.queue");
+    let row_entities = [201, 202, 203]
+        .map(|job| authored_button(&app, &WidgetAction::CancelProduction { producer, job }));
+    let initial = app.world().get::<ComputedNode>(list_entity).unwrap().size();
+    assert!(
+        (initial - Vec2::new(460.0, 152.0)).abs().max_element() < 1.0,
+        "three measured 230x24 rows with 2px gaps at DPR2 should fit their authored content: {initial:?}"
+    );
+    let row_tops = row_entities.map(|row| top(&app, row));
+    assert!(
+        (row_tops[1] - row_tops[0] - 52.0).abs() < 1.0
+            && (row_tops[2] - row_tops[1] - 52.0).abs() < 1.0,
+        "reconciled rows must retain their new authored flow positions: {row_tops:?}"
+    );
+
+    set_jobs(
+        app.world_mut()
+            .resource_mut::<ReplicaState>()
+            .replica
+            .as_mut()
+            .unwrap(),
+        producer,
+        &recipe,
+        &[],
+    );
+    for _ in 0..12 {
+        app.update();
+    }
+    assert_eq!(widget(&app, "fit.queue"), list_entity);
+    let empty = app.world().get::<ComputedNode>(list_entity).unwrap().size();
+    assert!(
+        empty.max_element() < 1.0,
+        "an empty authored Fit List must return to empty natural bounds: {empty:?}"
+    );
+    let snapshot_value = snapshot::snapshot(app.world());
+    let row = snapshot_value
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| row["id"] == "fit.queue")
+        .expect("the authored list remains in the semantic snapshot");
+    assert_eq!(
+        row["visible"], false,
+        "a zero-area empty Fit List must not retain a stale pointer capture rectangle"
+    );
+
+    set_jobs(
+        app.world_mut()
+            .resource_mut::<ReplicaState>()
+            .replica
+            .as_mut()
+            .unwrap(),
+        producer,
+        &recipe,
+        &[301, 302],
+    );
+    for _ in 0..12 {
+        app.update();
+    }
+    let restored = app.world().get::<ComputedNode>(list_entity).unwrap().size();
+    assert!(
+        (restored - Vec2::new(460.0, 100.0)).abs().max_element() < 1.0,
+        "a repopulated two-row Fit List returns to measured content bounds: {restored:?}"
+    );
+    let current = authored_button(&app, &WidgetAction::CancelProduction { producer, job: 302 });
+    press(&mut app, window, camera, current, 2.0);
+    release_as_click(&mut app, window, camera, current, 2.0);
+    let commands = submitted_commands(&app);
+    assert!(
+        matches!(commands.as_slice(), [ClientCommand::CancelProduction { producer_id, job_id }]
+            if producer_id.0 == producer && job_id.0 == 302),
+        "the repopulated row retains its exact current producer/job action: {commands:?}"
+    );
+}

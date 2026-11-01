@@ -185,7 +185,15 @@ fn update_fit_layout(world: &mut World) {
             }
         }
 
-        if !has_measure {
+        let empty_authored_container = !has_measure
+            && world
+                .get::<Children>(entity)
+                .is_none_or(|children| children.is_empty())
+            && matches!(
+                binding.primitive,
+                Primitive::Box { .. } | Primitive::List { .. } | Primitive::Grid { .. }
+            );
+        if !has_measure && !empty_authored_container {
             continue;
         }
         if let Some(mut node) = world.get_mut::<Node>(entity) {
@@ -1111,6 +1119,11 @@ fn reconcile_list_rows(world: &mut World, context: &sources::SourceContext<'_>) 
             if let Some(mut row) = world.get_mut::<WidgetListRow>(row_entity) {
                 row.index = index;
                 row.template = row_template.clone();
+            }
+            if let Some(mut binding) = world.get_mut::<WidgetBinding>(row_entity) {
+                binding.at = row_template.at.unwrap();
+                binding.size = row_template.size;
+                binding.parent_size = parent_size;
             }
             if let Some((node, transform)) =
                 placement::authored_node(parent_size, &row_template.at.unwrap(), row_template.size)
