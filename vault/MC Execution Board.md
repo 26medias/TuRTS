@@ -1843,3 +1843,6 @@ C215 resolves SEL1 instrument target: actualForge foreigners are weaponless dron
 
 
 C216: root caught native-reference.sh forcing target/mc-t10 and hd1_reference.py enforcing the same literal. In another lane this would make a duplicate build cache. Hold Task10 merge; repair only assigned-target routing/validation in these2instruments. Use an actual stopped Cargo-stub control (not gameplay red), then fresh native binding/browser proof/currentQA and byte-identity carry of unaffected native gates/plants. RUN77 re-check is registered before dispatch; Task10run3/2 belowsoft4/hard8. Prove actual non10 routing after integration merge with its sole cache.77/170runs.
+
+
+C217: HUD2 uses two companion instruments: HUD2.json actualForge and HUD2-MUSTER.json actualMuster, same pixel-only driver/oracle with explicit scenario. Both required for acceptance HUD2/finalbatch. The runner supports onepackage perrow, so no omitted resource-line obligation or fake mixedpackage windows.77/170runs.

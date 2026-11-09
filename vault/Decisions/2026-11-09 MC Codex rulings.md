@@ -417,3 +417,12 @@ Choice: root repairs only these two orchestration instruments. Require and norma
 Register RUN77 for the independent bounded repair re-check. Compare complete source delta and actual native bytes: carry prior native G-RUST, unaffected G-ACC cases and unchanged product plants with their original identities only if native code, fixtures and executable bytes are unchanged. Re-run the affected actual native-reference component, current QA and headed browser pair on the final source. Root will additionally run the actual named native binding in integration's non10 cache after merge, alongside all mandatory integration re-gates. If an input or binary changes, re-run the affected gate; do not relabel old executions. No retired plant or player change is needed.
 
 This is the brief section4 instrument/cache/Medium repair decision and the CEO test-grouping instruction. Alternative not taken: create the second cache, weaken source/binary binding, accept a hardcoded lane in a shared acceptance script, or repeat all unchanged acceptance cases without a changed input. Global77/170 registered before dispatch; Task10run3/estimate2, belowsoft4/hard8.
+
+
+## C217: Split HUD2's two package checks into companion instruments
+
+Conflict: HUD2 requires the Forge HUD and the Muster ore resource line (design section14:1252). The runner gives each row exactly one package (mc-pixels.sh:12-25); extra windows share that package. The plan names only HUD2.json, so one invocation cannot exercise both authored packages.
+
+Choice: keep HUD2.json on actual Forge and add HUD2-MUSTER.json on mods/muster with a unique instrument ID and an explicit known-scenario parameter to the same pixel-only driver/oracle. Both instruments belong to acceptance row HUD2 and must pass in the Task17/final batch. The Muster case must observe the real visible ore line with actual replicated balance, not merely find a schema entry. Preserve baseline/green evidence for the relevant obligation; do not count an unrelated missing Forge HUD as a Muster red.
+
+This is a brief section4 fixture/file/instrument split, consistent with existing companion visual cases. Alternative not taken: omit one package, pretend two windows load different packages, add product behavior to switch packages, or change the acceptance row. Global77/170; no new agent run.
