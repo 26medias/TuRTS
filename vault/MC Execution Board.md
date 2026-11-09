@@ -1740,3 +1740,6 @@ ACTIVE Wave7:16/25complete;73/170runs registered. Wave6 pushed588dcd3; CI4268172
 
 
 C189resolvesTask15 AUD1 dependency: advanceonlydesignedvolume-menu/persistence subset from16, actualmeasuredAudioPlayercount, controlledMuster-copyalertfixture; nohidden setter/newplayercontrol, fullrealbrowserproof remains. Task16extends same menu andinheritscoveredvolume tests, no manufacturedred. C190retains actualHD1 unknownargument diagnostic: RUN72 compiledreal-server semanticred101 beforeimplementation. RUN73 pureNode resume-hook red1 is sourceunitproof only, no browser/Cargo claim. See Nov9rulings.
+
+
+C191resolvesHD1id-only/publicorder and Content/Job gaps: existingsemanticUiAction forordinaryorders, narrowtypedUIorder/corecomposition sharedbyrealProduce/Cancel widgets andheadlesshook; preserveUIguards/playerbehavior, no directenvelopebypass. ControlledHD1Muster-copyfixture permitted foractualall-behavior coverage, exactaccepted/refusedsets andrealgroups. Actualpublicorderidspreserved; proseexampledoesnotrenamecontent. RUN74earlyreviewcaughtmissingkeysemantics/fullcoverage andqueue/groupmodifierdefects; RUN72repairs beforegreen.
