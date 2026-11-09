@@ -8,7 +8,7 @@ source: codex
 
 # MC execution board
 
-State: ACTIVE MC Wave6 on desktop. 15/25 complete;71/170 runs. Task13 at40b9d90: normal gates passed; ambient Shift-loss reproduced in2 bounded headed runs and temporary harness restored exactly. RUN70 owns isolated cleanSEL2/remaining plants; RUN71 source review then exclusive final native/VIS1 own plant; fresh finalVIS2 remains. No main merge/push.
+State: ACTIVE MC Wave6 on desktop.15/25complete;71/170runs. Task13 normal gates and all4required mutation cycles verified; C186 controlledambient Shift-loss reproduced2/2 and cleanisolatedSEL2 control2/2 passes. RUN71 owns exclusive native/fullVIS1 own-plant verification; RUN70 idle/source-only until lease return, then freshfinal5000 VIS2. Task13 not accepted; no main merge/push.
 
 Plan: `docs/superpowers/plans/2026-10-29-mc-player-control.md`.
 Design of record: `docs/superpowers/specs/2026-10-29-mc-player-control-design.md`, revision14 at mainf050e42.
@@ -81,7 +81,7 @@ CI trigger: `.github/workflows/ci.yml:2-5` runs pushes to main and pull requests
 | T11 | 5 | 9, 19, 20 | codex/mc-t11 | COMPLETE c996463; merge aff4d63; independent 0H/0M/0L, 11 probes, CAM1 2/2 and both plants restored; integration 12/12 gates0,1266/0/19; completed artifacts archived and lane removed, branch retained. |
 | T12 | 5 | 3, 9, 19, 20 | codex/mc-t12 | COMPLETE candidate77ca599; mergeaf567c4. Independent0High/0remaining,7probes and own production101→0. FreshHUD1six/HUD4two pass; required runtime-default mutation1→restore0. Integration11/11gates0,1306/0/19,frozen,T7. All28removed tests mapped; registered3panelplants remain planned-window NOT CHECKED. Lane removed, evidence/cache/branch preserved. |
 | T5 | 6 | 4, 6, 19 | codex/mc-t5 | COMPLETE mergee214ccc from98147ae. RUN65 PASS0High,15independentprobes/ownplant0-101-0; alltaskgates/19GREF/2requiredplants; integration11/11gates0,1419/0/19,T7 137frames/53moving. Lane removed after provenance/hold checks; branch retained. |
-| T13 | 6 | 4, 6, 9, 11, 19, 20 | codex/mc-t13 | ACTIVE RUN67 runtime/RUN69 review. C178 native19/19; fullVIS1 actual2/2 at9cf, actual5000-unit VIS2 record, final static-sensitive SEL2 actual2/2 at59f2. Remaining impact rows, fullgates, requiredplants, independent actualplant/runtime and source-bound final record. Not accepted. |
+| T13 | 6 | 4, 6, 9, 11, 19, 20 | codex/mc-t13 | ACTIVE40b9d90. Normal10gates/T7 green; fullVIS1/SEL2/SEL3 evidence and world-box/one-frame/no-screen/palette requiredplants verified. C186 ambientShiftloss diagnosed and isolatedcontrol2/2green. RUN71 owns finalnative/fullVIS1 actualforeign-solidplant, then RUN70fresh5000 VIS2/docs and independent finalaudit. Not accepted. |
 | T10 | 7 | 5, 9, 11, 19, 20 | codex/mc-t10 | NOT STARTED |
 | T15 | 7 | 4, 7, 12, 13 | codex/mc-t15 | NOT STARTED |
 | T17 | 7 | 3, 12, 13, 19, 20 | codex/mc-t17 | NOT STARTED |
@@ -1727,3 +1727,6 @@ C186: dedicated headed X display for remaining Task13 browser checks, unchanged 
 
 
 C186 measured update: controlled actual unsequenced Shift=false move reproduced original Shift-add1!=3 in2/2 headed runs at40b9d90. Before selection[43,44], release frames300/272 selection[41]/rings1, actual Shift=true down/up, unchangedcamera,1/6 actual frames after injectedfalse before nextpointer. Exact harness restored SHA021e888d… and clean. Root independent audit t13-root/desktop-resume-20261109/shift-add-causal-runtime-audit.json. This is diagnostic, not required plant credit; historical synthesizedKeyUp remains inferred. Clean isolatedSEL2 control is pending.
+
+
+Task13 RUN70 required plants complete: no-screen actual red2/2 exit1 with candidates40/visible39/selected40 (offscreenownTrooper40 selected), exact CoreSHA c9ced2… restored then green2/2 exit0 selecting39/ID40excluded. Palette nearpair red101 with normal0.377<20/protan0.372<10; exact paletteSHA71728a… restored and4/4green0. Root raw audits saved under t13-root/desktop-resume-20261109/{no-screen-required-plant-audit,palette-required-plant-audit}.json. RUN70 released allholds/processes; root verifiedclean/no compiler and granted RUN71 exclusive samecache runtime. No duplicated palette execution needed; reviewer audits receipt.
