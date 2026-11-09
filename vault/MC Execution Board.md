@@ -8,7 +8,7 @@ source: codex
 
 # MC execution board
 
-State: ACTIVE Wave6.15/25complete;69/170runs. Task13 actual fullVIS1 2/2 green at9cf2363, actual5000-unit VIS2 record verified, strengthened SEL2 2/2 green at59f2dbe. RUN67 owns final impact rows/gates/plants; RUN69 independent review stays source-only until lease. C1-C182. Task13 not accepted; no main merge/push.
+State: PAUSED by CEO for travel/laptop transfer on 2026-11-09. 15/25 complete; 69/170 runs. Task13 at40b9d90 is unfinished and not accepted. Normal gates passed; plants/review/finalVIS2 remain, including an unresolved restored-source Shift-add failure. See [[Reports/2026-11-09 MC laptop handoff]]. No main merge/push.
 
 Plan: `docs/superpowers/plans/2026-10-29-mc-player-control.md`.
 Design of record: `docs/superpowers/specs/2026-10-29-mc-player-control-design.md`, revision14 at mainf050e42.
@@ -258,9 +258,9 @@ One row per builder/reviewer dispatch or resumed agent work turn. Register befor
 | 64 | T5 repair continuation after O13 | simulation-core-engineer | gpt-6-luna | high | 12ded296, O13 mainf050e42 | COMPLETE clean98147ae; all10native/QA/frozen0,ACC0,headedT7 0;19selectedGREF,requiredJob/rushplants semantic101 thenrestored0. Finalhandoff/run64. Task5run3/estimate4. |
 | 65 | T5 independent recheck after O13 | qa-lead | gpt-6.1-sol | high | O13-rebased Task5 plus WIP | COMPLETE PASS0High on98147ae. Original15independentprobes0; ownfocus-preferenceplant0/101/0, exactrestore+all16sourcehashes; allnormal/GREF/requiredplant evidence raw/hashrechecked. Allholdsreleased; merged/regated/laneremoved. Task5run4/estimate4. |
 | 66 | T13 independent visual/acceptance source review | ux-designer | gpt-6.1-sol | high | T13 prep2bcb9ae plus off-lane candidate | INTERRUPTED at CEO travel pause; source reports/probes retained, no final runtime PASS. Registered BEFORE original dispatch. Task13run2/estimate5; soft10/hard20. SOURCE-ONLY until explicit root lease. Review design14/O13/C161/C163/C167; full VIS1 pixels+first-frame state, SEL2/3, palette thresholds, shared assets, hover/bar/marker/blocked lifetimes and actual VIS2 instrumentation. Candidate not yet compiled/applied; prepare finite independent probes/own four-gap visual plant outside lane. T5 RUN65 owns sole runtime. |
-| 67 | T13 resume, C178 projection and final visuals proof | bevy-rendering-engineer | gpt-6-luna | high | 4dfe0b3, integration640fa20 | Registered BEFORE dispatch2026-11-09. Task13run3/estimate5, soft10/hard20. Resume C178 real-command regression red then read-only view repair; fresh fullVIS1, final gates/plants/VIS2. Sole compiler/browser/cache owner target/mc-t13. Prior interrupted4dfe wrapper is notPASS. Preserve full scope and frozen values; independent review remains required. |
+| 67 | T13 resume, C178 projection and final visuals proof | bevy-rendering-engineer | gpt-6-luna | high | 4dfe0b3, integration640fa20 | Registered BEFORE dispatch2026-11-09. Task13run3/estimate5, soft10/hard20. Resume C178 real-command regression red then read-only view repair; fresh fullVIS1, final gates/plants/VIS2. Sole compiler/browser/cache owner target/mc-t13. Prior interrupted4dfe wrapper is notPASS. Preserve full scope and frozen values; independent review remains required.  PAUSED by CEO travel request2026-11-09; no active lease. Resume from laptop handoff and raw pause checkpoint; Task13 not accepted. |
 | 68 | T13 resumed independent visual and projection review | ux-designer | gpt-6.1-sol | high | 4dfe0b3 plus RUN67 C178 | Registered BEFORE dispatch2026-11-09. Task13run4/estimate5. SOURCE-ONLY until explicit runtime lease. Rebind historical RUN66 evidence/probes to actual final source; review C175-C178, actual pixel/first-frame/waypoint proofs, final native initialize and own foreign-solid plant. No compiler/cache/browser/lane edits until handoff. |
-| 69 | T13 final source and runtime review continuation | ux-designer | gpt-6.1-sol | high | 1b649dc plus C179/C181 repairs | Registered BEFORE resuming completed RUN68. Task13run5/estimate5, soft10/hard20. Review stable actual repair source and raw replay, then exclusive native initialization/own actual foreign-solid plant after builder final gates. SOURCE-ONLY until explicit lease; full acceptance NOT TRACED. |
+| 69 | T13 final source and runtime review continuation | ux-designer | gpt-6.1-sol | high | 1b649dc plus C179/C181 repairs | Registered BEFORE resuming completed RUN68. Task13run5/estimate5, soft10/hard20. Review stable actual repair source and raw replay, then exclusive native initialization/own actual foreign-solid plant after builder final gates. SOURCE-ONLY until explicit lease; full acceptance NOT TRACED.  PAUSED by CEO travel request2026-11-09; no active lease. Resume from laptop handoff and raw pause checkpoint; Task13 not accepted. |
 
 ## 9. Preflight ledger and stop
 
@@ -1710,3 +1710,8 @@ C184: required external ExtendedMaterial.base collides with derived base package
 
 
 C185: one-frame plant actualfirstcases prove seq13 frames163/148 release0rings/0selection and EXACT nextframe500/500, preselection0. Existing named first-release ring assertion0!==500 is equivalent to plan's prose message. Credit only that firstnonShiftcase; take-based plant's laterShift side effect explicitly unclaimed. Exactrestore/selectedgreen still pending. RootrawSHA-boundwitness saved. World-box plantalreadytwoactualreds→exactrestore→twoSEL2greens; no sourcefaultretired.69/170runs.
+
+
+## CEO travel pause 2026-11-09
+
+PAUSED by CEO for travel/laptop transfer on 2026-11-09. 15/25 complete; 69/170 runs. Task13 at40b9d90 is unfinished and not accepted. Normal gates passed; plants/review/finalVIS2 remain, including an unresolved restored-source Shift-add failure. See [[Reports/2026-11-09 MC laptop handoff]]. No main merge/push. RUN67 and RUN69 must preserve evidence and restore temporary mutations. No further implementation dispatch until CEO resume. Next runtime state is in their pause receipts.
