@@ -8,7 +8,7 @@ source: codex
 
 # MC execution board
 
-State: PAUSED by CEO for travel/laptop transfer.15/25 complete;66/170 runs. Integration committed; Task13 clean4dfe0b3 provisional. Last browser attempt INTERRUPTED (session99365 missing/no live process), not a pass. C178 recorded but not implemented. See [[Reports/2026-11-01 MC laptop handoff]]. No main merge/push.
+State: ACTIVE after CEO resume2026-11-09.15/25complete;67/170runs registered. Task13 clean4dfe0b3 provisional; C178 next. RUN67 builder registered before dispatch and owns sole target/mc-t13 compiler/runtime. Previous RUN62/RUN66 interrupted at travel pause; no live handles. Main nowbb611bd from external documentation-only changes; no main merge/push by Codex.
 
 Plan: `docs/superpowers/plans/2026-10-29-mc-player-control.md`.
 Design of record: `docs/superpowers/specs/2026-10-29-mc-player-control-design.md`, revision14 at mainf050e42.
@@ -258,6 +258,7 @@ One row per builder/reviewer dispatch or resumed agent work turn. Register befor
 | 64 | T5 repair continuation after O13 | simulation-core-engineer | gpt-6-luna | high | 12ded296, O13 mainf050e42 | COMPLETE clean98147ae; all10native/QA/frozen0,ACC0,headedT7 0;19selectedGREF,requiredJob/rushplants semantic101 thenrestored0. Finalhandoff/run64. Task5run3/estimate4. |
 | 65 | T5 independent recheck after O13 | qa-lead | gpt-6.1-sol | high | O13-rebased Task5 plus WIP | COMPLETE PASS0High on98147ae. Original15independentprobes0; ownfocus-preferenceplant0/101/0, exactrestore+all16sourcehashes; allnormal/GREF/requiredplant evidence raw/hashrechecked. Allholdsreleased; merged/regated/laneremoved. Task5run4/estimate4. |
 | 66 | T13 independent visual/acceptance source review | ux-designer | gpt-6.1-sol | high | T13 prep2bcb9ae plus off-lane candidate | Registered BEFORE dispatch. Task13run2/estimate5; soft10/hard20. SOURCE-ONLY until explicit root lease. Review design14/O13/C161/C163/C167; full VIS1 pixels+first-frame state, SEL2/3, palette thresholds, shared assets, hover/bar/marker/blocked lifetimes and actual VIS2 instrumentation. Candidate not yet compiled/applied; prepare finite independent probes/own four-gap visual plant outside lane. T5 RUN65 owns sole runtime. |
+| 67 | T13 resume, C178 projection and final visuals proof | bevy-rendering-engineer | gpt-6-luna | high | 4dfe0b3, integration640fa20 | Registered BEFORE dispatch2026-11-09. Task13run3/estimate5, soft10/hard20. Resume C178 real-command regression red then read-only view repair; fresh fullVIS1, final gates/plants/VIS2. Sole compiler/browser/cache owner target/mc-t13. Prior interrupted4dfe wrapper is notPASS. Preserve full scope and frozen values; independent review remains required. |
 
 ## 9. Preflight ledger and stop
 
