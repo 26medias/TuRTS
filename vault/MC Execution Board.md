@@ -1782,3 +1782,6 @@ C199 allows RUN73 one bounded two-target cargo fetch to resolve plannedaudio Car
 
 
 C200 resolves ORD6physicalburst instrument: optional bounded count1..100 on existingio.click, samepixel/realtrustedCDPevents/per-release trace. Trustedharness may holdonlyapplicationRAFcallbacks duringboundedburst, thenrealflush/finallyrelease, no driverpauseAPI/game-state setter/newchannel. Requireactual100releases→100realcoreenvelopes/serverresults and separatelybound101stacceptedafter1s; actualrefusaltext/error timing remains. K25bucket/refill/tickrate unchanged. No realbrowsercredit fromhelperunit tests. See Nov9rulings.74/170runs.
+
+
+C201 corrects root earlierTask10-existing-menu assumption: actualclient_shell.rs empty, staleFutureTask10comment; Task10headlessownsnomenu. C189volume/shellsubset thereforeimplementedNOWinTask15: singleexisting-keyF10/Esc overlay +fourvolumes viarealShellActionmenu effect, realUIcapture. Task16extendsSAMEoverlaylater. No key/acceptance/player-screen change, no hiddenvolumesetter. Rootownsincorrectpriorassumption; seeNov9rulings.74/170runs.
