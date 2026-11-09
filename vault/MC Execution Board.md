@@ -8,7 +8,7 @@ source: codex
 
 # MC execution board
 
-State: ACTIVE Wave7:16/25complete;74/170buildruns. RUN73 Task15 boundedcompiled-stub-red lease; RUN72 Task10 andRUN74review source-only. Wave6CI42681727530 terminal: agentsSUCCESS, check/browserFAIL exactapprovedTask21migration-window errors; allrawlogsread. C188mergeholdreleased; everylocalgate/reviewstillrequired. Mainbb611bdunchanged.
+State: ACTIVE Wave7:16/25complete;74/170buildruns. RUN72 Task10 sole local runtime/cache; RUN73 Task15 green source-only; RUN74 independent review source-only until lease. Wave6CI42681727530 terminal: agentsSUCCESS, check/browserFAIL exactapprovedTask21migration-window errors; allrawlogsread. C188mergeholdreleased; everylocalgate/reviewstillrequired. Mainbb611bdunchanged.
 
 Plan: `docs/superpowers/plans/2026-10-29-mc-player-control.md`.
 Design of record: `docs/superpowers/specs/2026-10-29-mc-player-control-design.md`, revision14 at mainf050e42.
@@ -83,7 +83,7 @@ CI trigger: `.github/workflows/ci.yml:2-5` runs pushes to main and pull requests
 | T5 | 6 | 4, 6, 19 | codex/mc-t5 | COMPLETE mergee214ccc from98147ae. RUN65 PASS0High,15independentprobes/ownplant0-101-0; alltaskgates/19GREF/2requiredplants; integration11/11gates0,1419/0/19,T7 137frames/53moving. Lane removed after provenance/hold checks; branch retained. |
 | T13 | 6 | 4, 6, 9, 11, 19, 20 | codex/mc-t13 | COMPLETE merge60082da; candidate9ae04f4, independent0High/0Medium, normal/requiredplants/native19/actualforeignsolid closed, fresh5000VIS2record; native10integrationgates0 (1446/0/19), T7 137frames/53moving exit0; lane removed, branch/evidence retained. |
 | T10 | 7 | 5, 9, 11, 19, 20 | codex/mc-t10 | ACTIVE RUN72 builder; ownlane/solecache, native/browserHD1 redfirst. |
-| T15 | 7 | 4, 7, 12, 13 | codex/mc-t15 | ACTIVE RUN73 sourceprep/redtests only; runtimelease pending. |
+| T15 | 7 | 4, 7, 12, 13 | codex/mc-t15 | ACTIVE RUN73 green source-only; compiled stub reds archived, runtimelease pending. |
 | T17 | 7 | 3, 12, 13, 19, 20 | codex/mc-t17 | NOT STARTED |
 | T14 | 8 | 5, 12, 13, 15 | codex/mc-t14 | NOT STARTED |
 | T16 | 8 | 7, 12, 15 | codex/mc-t16 | NOT STARTED |
@@ -1764,3 +1764,6 @@ Cache interleave: RUN72explicitlyreleasedidlecompiler whilecontinuingHD1fixture/
 
 
 C196HD1actualparity: trustedlauncher copiesboundrealnative--out+receipt intoeachbrowserevidencedir, oracle.serverFile only, nodriverresults/capability. Separatefreshservers/samefixture; reuseONEprovennativeexecutionfor2browserattemptsifruntime/action/package identitiesmatch. Exactper-envelopeaccepted/refused inclmissing/extra/emptyopposites. Sharedfixtureordinarygroups/staticcamera; C195double-recallstress focusednativeonly.
+
+
+Cache return and native progress: RUN73 completed actual compiled alerts/notices/volume/audio-readiness stub reds (101), unknown-sound validator green0. Root verified exact84path post-red archive/patch against25primarysourcehashes before green implementation. Cache returned15→10 after explicit82path RUN72 WIP stash5a786ee0…; all5workspacecleans0 and every82path hash/status restored. RUN72 sole runtime, RUN73 green SOURCEONLY, RUN74 SOURCEONLY. Receipts t15-root/borrowed-baseline-20261109 and t10-root/cache-return-after-t15-reds-20261109. Native HD1 actual1test green6.28s: Hold then Shift+Move produces authoritative not_queueable refusal for39livingTroopers, allrequiredbehaviors/groups asserted. Prior ownDepotAttack accepted and UI-disabled DepotStop hypotheses retained; neither is final parity proof. Bound native report, actual browser pair, committed gates/plants and independent final review remain. Global74/170;16/25complete. Disk658GiBfree, one local MC cache.
