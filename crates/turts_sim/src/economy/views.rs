@@ -509,6 +509,7 @@ pub fn world_view(world: &mut World) -> WorldView {
         .map_or(0, |tick| tick.0);
     let units = crate::world::snapshot(world);
     let pending_moves = world.get_resource::<crate::orders::PendingMovementOrders>();
+    let plain_move_identities = world.get_resource::<crate::orders::PlainMoveOrderIdentities>();
     let mut unit_orders: Vec<_> = world
         .iter_entities()
         .filter_map(|entity| {
@@ -516,6 +517,10 @@ pub fn world_view(world: &mut World) -> WorldView {
             let owner_slot = entity.get::<Owner>()?.0.0;
             let pending = pending_moves
                 .is_some_and(|pending| pending.pending_member_counts.contains_key(&unit_id));
+            let active_plain_move = pending || entity.get::<MoveTarget>().is_some();
+            let plain_move_identity = plain_move_identities
+                .and_then(|identities| identities.0.get(&unit_id))
+                .filter(|_| active_plain_move);
             let blocked = entity
                 .get::<crate::movement::MoveProgress>()
                 .is_some_and(|progress| {
@@ -568,7 +573,7 @@ pub fn world_view(world: &mut World) -> WorldView {
                     unit_id,
                     owner_slot,
                     activity,
-                    current: None,
+                    current: plain_move_identity.map(unit_order_summary),
                     queued: Vec::new(),
                     last_failure: None,
                 });
@@ -608,7 +613,11 @@ pub fn world_view(world: &mut World) -> WorldView {
                 unit_id,
                 owner_slot,
                 activity,
-                current: orders.current.as_ref().map(unit_order_summary),
+                current: orders
+                    .current
+                    .as_ref()
+                    .or(plain_move_identity)
+                    .map(unit_order_summary),
                 queued: orders.queue.iter().map(unit_order_summary).collect(),
                 last_failure: orders
                     .last_failure
