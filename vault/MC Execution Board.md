@@ -1809,3 +1809,6 @@ C207 repairs a K4 implementation gap: typed UiOrder must use existing alloc_grou
 
 
 C208 applies design13.4 to HD1: every authored HUDbutton click first checks visible screenshotcolour with purePNG decoding/literalHUDpalette, savesactualcheckPNG/observation, failsbeforeclick onwrong/missingcolour. No driverpackage/debug/widgetread/newcapability. BatchwithC207beforefinalgates/acceptance; rawresultoracle unchanged.74/170runs.
+
+
+C209 explicitly defers3Low instrument notes: early malformed Content/Job-worldpoint diagnostic; extra binding.source/source_after equality; release-label/profile cross-check. Actual trusted validfixture execution/source/runtime/status proof remains mandatory. No remainingHigh/Medium beyond current C207/C208 repairs; no extra invalid-input/security matrix. Anyactualcontractfailure overridesdeferral.74/170runs.
