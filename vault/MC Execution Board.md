@@ -1687,3 +1687,8 @@ C177: actual0c26fab saved captures expose attack cross occlusion despite first-f
 
 
 C178: real Moving/Pending plain moves project current:null despite captured authored identity; queued record alone cannot draw the required two-leg path. Task13 may repair read-only sim/economy/views.rs to use existing PlainMoveOrderIdentities as fallback, with real-command native red/green and legacy/stale/precedence controls. No wire/schema/frozen/audit change. Wait for immutable4dfe full row to end before modifying source; final gates and real pixels remain required.66/170runs;15/25complete.
+
+
+## C179 actual hardware measurement
+
+RUN68 found VIS2 readiness hard-requires NVIDIA. Root decides this instrument conflict: design9.1 requires actual Chrome WebGPU5000 measurement, no vendor restriction. Require complete actual nonsoftwarehardware metadata/configureddevice/context/submitteddraws and positivefinite metrics; record the actual machine. No inventedbudget or fakeGPU. See [[Decisions/2026-11-09 MC Codex rulings]].68/170runs.
