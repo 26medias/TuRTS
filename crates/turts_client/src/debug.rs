@@ -555,14 +555,16 @@ mod unit_order_debug_tests {
                 last_failure: None,
             },
         );
-        let mut state = ReplicaState::default();
-        state.replica = Some(replica);
-        state.welcome = Some(WelcomeInfo {
-            slot: 1,
-            tick: 8,
-            tick_hz: 20,
-            match_id: 99,
-        });
+        let state = ReplicaState {
+            replica: Some(replica),
+            welcome: Some(WelcomeInfo {
+                slot: 1,
+                tick: 8,
+                tick_hz: 20,
+                match_id: 99,
+            }),
+            ..ReplicaState::default()
+        };
         let mut world = bevy::prelude::World::new();
         world.insert_resource(state);
         world.insert_resource(DebugState::default());

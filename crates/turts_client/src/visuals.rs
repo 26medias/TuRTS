@@ -830,89 +830,87 @@ fn draw_world_visuals(
         }
     }
 
-    if let Some(unit_id) = hovered {
-        if let (Some(shown_unit), Some(unit)) =
+    if let Some(unit_id) = hovered
+        && let (Some(shown_unit), Some(unit)) =
             (presented_by_id.get(&unit_id), replica.units.get(&unit_id))
-        {
-            if let Some(material) = assets
-                .ring_overlay_materials
-                .get(usize::from(unit.owner_slot))
-                .cloned()
+        && let Some(material) = assets
+            .ring_overlay_materials
+            .get(usize::from(unit.owner_slot))
+            .cloned()
+    {
+        let mesh = if unit.owner_slot == local_slot {
+            assets.ring.clone()
+        } else {
+            assets.foreign_ring.clone()
+        };
+        if let Some(mesh) = mesh {
+            let radius = ContentId::parse(&shown_unit.content_id)
+                .ok()
+                .and_then(|id| content.catalog.units.get(&id))
+                .map(|unit| {
+                    let turts_mod_api::Footprint::Circle { radius } = &unit.footprint;
+                    *radius
+                })
+                .unwrap_or(0.5);
+            let slot = usize::from(unit.owner_slot);
+            if unit.owner_slot != local_slot
+                && let (Some(underlay), Some(neutral_index)) =
+                    (assets.ring.clone(), assets.ring_underlay_indices.get(slot))
+                && let Some(neutral) = assets.neutral_ring_overlays.get(*neutral_index).cloned()
             {
-                let mesh = if unit.owner_slot == local_slot {
-                    assets.ring.clone()
-                } else {
-                    assets.foreign_ring.clone()
-                };
-                if let Some(mesh) = mesh {
-                    let radius = ContentId::parse(&shown_unit.content_id)
-                        .ok()
-                        .and_then(|id| content.catalog.units.get(&id))
-                        .map(|unit| {
-                            let turts_mod_api::Footprint::Circle { radius } = &unit.footprint;
-                            *radius
-                        })
-                        .unwrap_or(0.5);
-                    let slot = usize::from(unit.owner_slot);
-                    if unit.owner_slot != local_slot
-                        && let (Some(underlay), Some(neutral_index)) =
-                            (assets.ring.clone(), assets.ring_underlay_indices.get(slot))
-                        && let Some(neutral) =
-                            assets.neutral_ring_overlays.get(*neutral_index).cloned()
-                    {
-                        desired.insert(
-                            VisualId {
-                                kind: VisualKind::RingUnderlay,
-                                unit: unit_id,
-                                ordinal: 1,
-                                generation: visuals.generation,
-                                identity: 0,
-                            },
-                            (
-                                underlay,
-                                VisualMaterial::RingOverlay(neutral),
-                                Transform {
-                                    translation: world_to_scene(shown_unit.pos) + Vec3::Y * 0.028,
-                                    scale: Vec3::splat(radius * 0.96),
-                                    ..default()
-                                },
-                            ),
-                        );
-                    }
-                    desired.insert(
-                        VisualId {
-                            kind: VisualKind::Hover,
-                            unit: unit_id,
-                            ordinal: 0,
-                            generation: visuals.generation,
-                            identity: 0,
+                desired.insert(
+                    VisualId {
+                        kind: VisualKind::RingUnderlay,
+                        unit: unit_id,
+                        ordinal: 1,
+                        generation: visuals.generation,
+                        identity: 0,
+                    },
+                    (
+                        underlay,
+                        VisualMaterial::RingOverlay(neutral),
+                        Transform {
+                            translation: world_to_scene(shown_unit.pos) + Vec3::Y * 0.028,
+                            scale: Vec3::splat(radius * 0.96),
+                            ..default()
                         },
-                        (
-                            mesh,
-                            VisualMaterial::RingOverlay(material),
-                            Transform {
-                                translation: world_to_scene(shown_unit.pos) + Vec3::Y * 0.032,
-                                scale: Vec3::splat(radius * 0.96),
-                                ..default()
-                            },
-                        ),
-                    );
-                }
+                    ),
+                );
             }
+            desired.insert(
+                VisualId {
+                    kind: VisualKind::Hover,
+                    unit: unit_id,
+                    ordinal: 0,
+                    generation: visuals.generation,
+                    identity: 0,
+                },
+                (
+                    mesh,
+                    VisualMaterial::RingOverlay(material),
+                    Transform {
+                        translation: world_to_scene(shown_unit.pos) + Vec3::Y * 0.032,
+                        scale: Vec3::splat(radius * 0.96),
+                        ..default()
+                    },
+                ),
+            );
         }
     }
 
     let mut health_fractions = HashMap::new();
     sync_health_bars(
-        &replica.healths,
-        &presented_by_id,
-        &content.catalog,
-        &selected_ids,
-        display.0,
-        &assets,
-        camera,
-        camera_transform,
-        visuals.generation,
+        HealthBarSync {
+            healths: &replica.healths,
+            presented: &presented_by_id,
+            catalog: &content.catalog,
+            selected: &selected_ids,
+            mode: display.0,
+            assets: &assets,
+            camera,
+            camera_transform,
+            generation: visuals.generation,
+        },
         &mut desired,
         &mut health_fractions,
     );
@@ -991,44 +989,43 @@ fn draw_world_visuals(
         if now.duration_since(*start).as_secs_f32() >= 2.0 {
             continue;
         }
-        if let Some(unit) = presented_by_id.get(&unit_id) {
-            if let Some(material) = assets.blocked_material.clone() {
-                if let Some(mesh) = assets.bar.clone() {
-                    let id = VisualId {
-                        kind: VisualKind::Blocked,
-                        unit: unit_id,
-                        ordinal: 0,
-                        generation: visuals.generation,
-                        identity: 0,
-                    };
-                    let point = world_to_scene(unit.pos) + Vec3::Y * 1.5;
-                    desired.insert(
-                        id,
-                        (
-                            mesh,
-                            material.clone().into(),
-                            Transform {
-                                translation: point,
-                                scale: Vec3::new(0.7, 0.08, 0.08),
-                                ..default()
-                            },
-                        ),
-                    );
-                    marker_gizmos.line(
-                        point + Vec3::new(-0.3, 0.07, -0.3),
-                        point + Vec3::new(0.3, 0.07, 0.3),
-                        Color::srgb(0.9, 0.12, 0.08),
-                    );
-                    marker_gizmos.line(
-                        point + Vec3::new(-0.3, 0.07, 0.3),
-                        point + Vec3::new(0.3, 0.07, -0.3),
-                        Color::srgb(0.9, 0.12, 0.08),
-                    );
-                    markers_shown
-                        .0
-                        .push(serde_json::json!({"kind":"blocked","unit":unit_id}));
-                }
-            }
+        if let Some(unit) = presented_by_id.get(&unit_id)
+            && let Some(material) = assets.blocked_material.clone()
+            && let Some(mesh) = assets.bar.clone()
+        {
+            let id = VisualId {
+                kind: VisualKind::Blocked,
+                unit: unit_id,
+                ordinal: 0,
+                generation: visuals.generation,
+                identity: 0,
+            };
+            let point = world_to_scene(unit.pos) + Vec3::Y * 1.5;
+            desired.insert(
+                id,
+                (
+                    mesh,
+                    material.clone().into(),
+                    Transform {
+                        translation: point,
+                        scale: Vec3::new(0.7, 0.08, 0.08),
+                        ..default()
+                    },
+                ),
+            );
+            marker_gizmos.line(
+                point + Vec3::new(-0.3, 0.07, -0.3),
+                point + Vec3::new(0.3, 0.07, 0.3),
+                Color::srgb(0.9, 0.12, 0.08),
+            );
+            marker_gizmos.line(
+                point + Vec3::new(-0.3, 0.07, 0.3),
+                point + Vec3::new(0.3, 0.07, -0.3),
+                Color::srgb(0.9, 0.12, 0.08),
+            );
+            markers_shown
+                .0
+                .push(serde_json::json!({"kind":"blocked","unit":unit_id}));
         }
     }
 
@@ -1079,7 +1076,7 @@ fn draw_world_visuals(
         camera,
         camera_transform,
         &presented_by_id,
-        &replica,
+        replica,
         &content.catalog,
         &assets,
         widget_assets.as_deref(),
@@ -1113,19 +1110,34 @@ fn collect_visible_rings(
         }));
 }
 
-fn sync_health_bars(
-    healths: &[turts_net_protocol::HealthRecord],
-    presented: &HashMap<u32, &crate::present::PresentedUnit>,
-    catalog: &turts_mod_api::ContentCatalog,
-    selected: &HashSet<u32>,
+struct HealthBarSync<'a> {
+    healths: &'a [turts_net_protocol::HealthRecord],
+    presented: &'a HashMap<u32, &'a crate::present::PresentedUnit>,
+    catalog: &'a turts_mod_api::ContentCatalog,
+    selected: &'a HashSet<u32>,
     mode: HealthMode,
-    assets: &VisualAssets,
-    camera: &Camera,
-    camera_transform: &GlobalTransform,
+    assets: &'a VisualAssets,
+    camera: &'a Camera,
+    camera_transform: &'a GlobalTransform,
     generation: u64,
+}
+
+fn sync_health_bars(
+    input: HealthBarSync<'_>,
     desired: &mut HashMap<VisualId, (Handle<Mesh>, VisualMaterial, Transform)>,
     fractions: &mut HashMap<u32, f32>,
 ) {
+    let HealthBarSync {
+        healths,
+        presented,
+        catalog,
+        selected,
+        mode,
+        assets,
+        camera,
+        camera_transform,
+        generation,
+    } = input;
     let (Some(mesh), Some(background), Some(fill)) =
         (&assets.bar, &assets.bar_background, &assets.bar_health)
     else {
@@ -1219,21 +1231,21 @@ fn reconcile_visual_entities(
         } else {
             spawn_visual(commands, id, None, mesh, material, transform)
         };
-        if id.kind == VisualKind::HealthBackground {
-            if let (Some(bar_mesh), Some(health_material)) = (&bar_mesh, &health_material) {
-                let fraction = health_fractions.get(&id.unit).copied().unwrap_or(1.0);
-                commands.spawn((
-                    HealthFill(id.unit),
-                    Mesh3d(bar_mesh.clone()),
-                    MeshMaterial3d(health_material.clone()),
-                    Transform {
-                        translation: Vec3::new(-(1.0 - fraction) * 0.45, 0.0, 0.08),
-                        scale: Vec3::new(fraction, 1.0, 1.0),
-                        ..default()
-                    },
-                    ChildOf(parent),
-                ));
-            }
+        if id.kind == VisualKind::HealthBackground
+            && let (Some(bar_mesh), Some(health_material)) = (&bar_mesh, &health_material)
+        {
+            let fraction = health_fractions.get(&id.unit).copied().unwrap_or(1.0);
+            commands.spawn((
+                HealthFill(id.unit),
+                Mesh3d(bar_mesh.clone()),
+                MeshMaterial3d(health_material.clone()),
+                Transform {
+                    translation: Vec3::new(-(1.0 - fraction) * 0.45, 0.0, 0.08),
+                    scale: Vec3::new(fraction, 1.0, 1.0),
+                    ..default()
+                },
+                ChildOf(parent),
+            ));
         }
     }
 }
@@ -1320,28 +1332,28 @@ fn update_world_tooltip(
             commands.entity(entity).despawn();
         }
     }
-    if let Some((id, text, point)) = text {
-        if !matching_tooltip_exists {
-            commands.spawn((
-                WorldTooltip(id),
-                Text::new(text),
-                TextFont {
-                    font_size: FontSize::Px(f32::from(assets.tooltip_size)),
-                    font: FontSource::Handle(font),
-                    ..default()
-                },
-                TextColor(assets.tooltip_colour),
-                BackgroundColor(assets.tooltip_background.with_alpha(0.92)),
-                Node {
-                    position_type: PositionType::Absolute,
-                    left: px(point.x + 12.0),
-                    top: px(point.y - 12.0),
-                    padding: UiRect::axes(px(6), px(3)),
-                    ..default()
-                },
-                bevy::picking::Pickable::IGNORE,
-            ));
-        }
+    if let Some((id, text, point)) = text
+        && !matching_tooltip_exists
+    {
+        commands.spawn((
+            WorldTooltip(id),
+            Text::new(text),
+            TextFont {
+                font_size: FontSize::Px(f32::from(assets.tooltip_size)),
+                font: FontSource::Handle(font),
+                ..default()
+            },
+            TextColor(assets.tooltip_colour),
+            BackgroundColor(assets.tooltip_background.with_alpha(0.92)),
+            Node {
+                position_type: PositionType::Absolute,
+                left: px(point.x + 12.0),
+                top: px(point.y - 12.0),
+                padding: UiRect::axes(px(6), px(3)),
+                ..default()
+            },
+            bevy::picking::Pickable::IGNORE,
+        ));
     }
 }
 
@@ -2079,7 +2091,7 @@ mod tests {
             .query::<(&HealthFill, &Transform, &ChildOf)>();
         let fill_data: Vec<_> = fills
             .iter(app.world())
-            .map(|(fill, transform, parent)| (fill.0, transform.clone(), parent.parent()))
+            .map(|(fill, transform, parent)| (fill.0, *transform, parent.parent()))
             .collect();
         assert_eq!(
             fill_data.len(),
@@ -2145,7 +2157,9 @@ mod tests {
         };
         let has_segment = |segment: u32| {
             foreign_indices
-                .chunks_exact(6)
+                .as_chunks::<6>()
+                .0
+                .iter()
                 .any(|triangle_pair| triangle_pair[0] == segment * 2)
         };
         for gap in [0, 48, 96, 144] {

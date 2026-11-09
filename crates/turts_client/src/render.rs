@@ -388,10 +388,9 @@ pub fn sync_units(
                     .and_then(|replica| replica.units.get(&unit.unit_id))
                     .and_then(|unit| unit.facing)
                     .map(facing_rotation)
+                    && transform.rotation != rotation
                 {
-                    if transform.rotation != rotation {
-                        transform.rotation = rotation;
-                    }
+                    transform.rotation = rotation;
                 }
             }
             continue;
