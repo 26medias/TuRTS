@@ -104,7 +104,7 @@ Human usability amendment1354e33: catalog-derived principal labels/named local s
 
 ## Current MC status
 
-ACTIVE MC Wave6 after CEO resume2026-11-09.15/25complete;68/170runs. RUN67 Task13 builder owns sole target/mc-t13 runtime; RUN68 reviews source independently. C178 regression/projection repair is next, then remaining Task13 gates/plants/VIS2 and Wave6 integration/CI. Design14/O13 remains in force; main externalbb611bd has only later documentation changes. No main merge/push. [[MC Execution Board]].
+ACTIVE MC Wave6 after CEO resume2026-11-09.15/25complete;69/170runs. RUN67 Task13 builder owns sole target/mc-t13 runtime; RUN69 reviews source and will own final runtime after handoff. C178 regression/projection repair is next, then remaining Task13 gates/plants/VIS2 and Wave6 integration/CI. Design14/O13 remains in force; main externalbb611bd has only later documentation changes. No main merge/push. [[MC Execution Board]].
 
 ## Historical MC checkpoints
 
