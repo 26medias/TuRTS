@@ -302,3 +302,16 @@ Choice: repair only the legacy test's expected report projection now. Include sn
 Preserve the compiled E9 red and prove the focused case green. Batch the independently found native tick:null parser disagreement with this repair: reject explicit null as required by C194, retain omission semantics, and show a named malformed-tick red then restored valid/invalid controls. Commit the bounded changes, rerun final gates/G-ACC, and rerun actual HD1 native/browser acceptance because C204 runtime hashes differed. No frozen audit/stream value, wire shape or gameplay changes are needed.
 
 This is the brief section4 instrument/report-field/incomplete ownership resolution. Alternative not taken: call every legacy failure an approved window, postpone a required native gate to21, weaken full-state equality, or change the frozen baseline. Global74/170; no new agent run.
+
+
+## C206: Enforce command environments and remove duplicate default caches
+
+Conflict: a focused Cargo command omitted the required environment and compiled into Task10 target/release. A second default target/debug cache also exists. The semantic test stopped at missing turts_client, so that attempt is setup failure, not the independent-projection red. Repeating manual environment entry wastes disk and time.
+
+Choice: stop all compiler/runtime processes and preserve raw logs, both dirty source files, inventories, timestamps and workspace Cargo fingerprint metadata. Root confirmed only standard rebuildable Cargo outputs and no active Cargo/rustc/Trunk/server/client process. Remove only target/release and target/debug; keep target/mc-t10 and all evidence. Actual free space rose from688043413504 to690931560448 bytes, about2.69GiB reclaimed. Receipt: t10-root/default-cache-audit/cleanup-receipt.json.
+
+All future Cargo, Trunk and native/browser runtime commands must use the environment-enforcing exec_in_lane.py wrapper or an already-approved gate helper that enforces the same environment/cache. No naked Cargo command. The new wrapper resolves the expected short commit to the actual full commit, requires the existing named MC cache, assigns all5Cargo variables, rejects an existing default cache or competing compiler, requires --locked for Cargo compilation, records actual argv/env/source/raw exit, and rejects concurrent source drift. The --audio flag supplies the verified C197 pkg-config prefix. Pure source-only Node/syntax checks remain allowed.
+
+Root positive control verified all5environment values. Negative controls rejected unlocked Cargo and dirty source without a grant before command execution; a temporary Git fixture with a deliberately changed source produced command0/wrapper2. The helper never reads Claude path contents. Wrapper SHA65d28e4d81b3e5c6e326a451d23225ca39ef50153df97b480f25e834d38b1df8. Proof: t10-root/environment-wrapper-controls. Root holds runtime until explicit return; no new source work is permitted during this cleanup.
+
+This is the brief section4 cache/lane/instrument decision and follows the CEO disk constraint. Alternative not taken: keep duplicate caches, delete active outputs or unpreserved work, credit setup failure as semantic red, or rely on repeated hand-entered environments. Global74/170; no new agent run.
