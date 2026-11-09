@@ -1791,3 +1791,6 @@ C202: actualHD1headedChromeBevymetadata BrowserWebGpu/Other/emptyname defeats an
 
 
 C203: Task15ALR1provesactualderivation/sound/pingfeed+rule/unit/position, visiblealertline andrealwithin1shealthdrops/frame-emissioncooldown; nottotalretainedlistafter7s. OPEN acceptanceobligation: actualMINIMAPpingpixels ownedTask14(needs15AlertPings), thenrerunfullALR1+MM1. Task24mustrequirefullALR1visibleping; no permanent skip/fullrowgreenclaimnow. MinimapTask14stub cannotcountasdrawn.74/170runs.
+
+
+Task10provisionalHD1green: rootfixture-only5centerfixes gave native0/headed2of2exit0;204results/39not_queueable each, exactreason/status/groups/selection/native, actualXvfb103 preflight0, rootrawaudit cell-center-repair/runtime-run01/root-parity-audit.json. Candidatefe5311 committed88files. FirstnormalgateClippy101 same-type id.clone().into(); narrowidentityrepair pending. C204 permits historicalbrowsercarryONLYafteractual3rebuiltruntimehashesALLidentical +unchangedactions/package/driver/oracle; originalexecutionidentityretained. Otherwiseaffectedbrowserrepeat. Allnormalgates/nativeGACC/plants/reviewremain.74/170runs;16/25complete.

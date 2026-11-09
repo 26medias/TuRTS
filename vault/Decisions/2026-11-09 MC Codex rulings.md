@@ -279,3 +279,12 @@ Choice: Task15 proves all forced alert derivations, actual sound, actual ping fe
 Task14 owns the actual minimap ping drawing and visible pixel proof. After Task14 implements it, rerun ALR1 with that pixel predicate enabled together with its MM1 ping checks. Keep the visible-ping obligation explicitly OPEN on the board until then; Task15 must not claim that part green. Task24 requires the complete ALR1 row including visible ping before final acceptance. Do not hide the obligation behind a permanent skip or count a stub as a rendered minimap. No designed player behavior or final acceptance is removed.
 
 This is the brief section4 uncovered instrument/nearest existing mechanism and ownership resolution. Alternative not taken: advance the whole minimap into Task15, fake pixels from debug metadata, treat a list of identical retained entries as a cooldown measurement, or claim complete ALR1 before the minimap exists. Global74/170; no new agent run.
+
+
+## C204: Conditional exact-binary carry for the same-type Clippy repair
+
+Conflict: committed Task10 gate stops at Clippy101 because id.clone().into() converts a value to its own type (interaction/lib.rs:167). Removing that redundant conversion is required. Unconditionally repeating the84.88s browser pair for an unchanged compiled program adds no coverage; a source-only equivalence claim is insufficient proof.
+
+Choice: after the one-line identity-conversion repair, run all required normal gates and fresh native execution. Carry the historical successful browser pair only if the actual rebuilt release client, server and test executable hashes ALL exactly equal the previously browser-tested native binding, and the action/package/driver/oracle bytes are unchanged. Record the exact patch and each before/after hash. Keep the old execution HEAD/dirty identity; never relabel the old native receipt current under the new HEAD. Any differing runtime byte or further runtime/input change requires affected browser recheck. No native, gate or plant is waived.
+
+This is a brief section4 instrument/redundancy decision consistent with the CEO's test-grouping instruction. Alternative not taken: waive Clippy, infer binary equality without measurement, reuse proof after a changed binary/input, or repeat a known identical compiled program solely for source identity metadata. Conditional proof is NOT TRACED until actual comparison. Global74/170; no new agent run.
