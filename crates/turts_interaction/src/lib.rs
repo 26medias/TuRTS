@@ -192,12 +192,17 @@ impl Core {
                     if valid_units.is_empty() {
                         continue;
                     }
+                    let group = if valid_units.len() > 1 {
+                        self.alloc_group()
+                    } else {
+                        0
+                    };
                     send_explicit_units(
                         definition,
                         &valid_units,
                         protocol_target,
                         QueueMode::Replace,
-                        0,
+                        group,
                         &mut effects,
                     );
                 }

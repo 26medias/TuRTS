@@ -90,6 +90,10 @@ fn typed_content_order_uses_intended_owned_producer_independent_of_selection_and
         QueueMode::Replace,
         "UI production retains replace semantics under Shift"
     );
+    assert_eq!(
+        envelopes[0].group, 0,
+        "one intended producer keeps the ungrouped UI order path"
+    );
     let foreign = core.step(
         &[InputEvent::UiOrder {
             order: "forge:order_produce".into(),
@@ -131,6 +135,70 @@ fn typed_content_order_uses_intended_owned_producer_independent_of_selection_and
     assert!(
         sent(&target_mismatch).is_empty(),
         "a Job target cannot be sent to a Content order"
+    );
+}
+
+#[test]
+fn typed_content_order_splits_4097_producers_into_one_shared_group() {
+    let mut world = TestWorld {
+        units: (1..=4097)
+            .map(|id| unit(id, "forge:drone", OWN, vec2(id as f32 * 0.0001, 0.0), &[]))
+            .collect(),
+        ..Default::default()
+    };
+    world.orders.push(order(
+        "forge:order_produce",
+        turts_mod_api::Behaviour::Produce,
+        turts_mod_api::TargetKind::Content,
+    ));
+    world.orders.last_mut().unwrap().units.clear();
+    world.producible = (1..=4097)
+        .map(|id| (UnitId(id), "forge:train_drone".into()))
+        .collect();
+
+    let intended: Vec<_> = (1..=4097).map(UnitId).collect();
+    let mut core = Core::default();
+    let effects = core.step(
+        &[InputEvent::UiOrder {
+            order: "forge:order_produce".into(),
+            units: intended.clone(),
+            target: UiOrderTarget::Content("forge:train_drone".into()),
+        }],
+        &world,
+        &VIEW,
+        10,
+    );
+
+    let envelopes = sent(&effects);
+    assert_eq!(
+        envelopes.len(),
+        2,
+        "4,097 producers need two bounded envelopes"
+    );
+    assert_eq!(
+        envelopes
+            .iter()
+            .map(|envelope| envelope.units.len())
+            .collect::<Vec<_>>(),
+        vec![4096, 1],
+        "typed content orders use the protocol maximum of 4,096 units per envelope"
+    );
+    let mut submitted: Vec<_> = envelopes
+        .iter()
+        .flat_map(|envelope| envelope.units.iter().copied())
+        .collect();
+    submitted.sort_by_key(|id| id.0);
+    assert_eq!(
+        submitted, intended,
+        "both chunks preserve the exact producer set"
+    );
+    assert_eq!(
+        envelopes[0].group, envelopes[1].group,
+        "all chunks from one typed order share one group id"
+    );
+    assert!(
+        envelopes[0].group > 0,
+        "a multi-producer order has a group id"
     );
 }
 
