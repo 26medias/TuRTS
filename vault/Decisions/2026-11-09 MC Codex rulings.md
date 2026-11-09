@@ -230,3 +230,12 @@ Choice: use the existing UnitPresentation.responses string-key map (crates/turts
 Authorize only the missing error-response entries in production mods/muster/interface/hud.ron and the controlled feedback fixture; all existing ids, rules, keys, texts and order behavior stay. Task17 authors the corresponding Forge error-response entries with its new interface. The existing Muster asset is reused. This implements the already-designed audible feedback; it adds no player control or schema field. Keep real sound/category/timing proof and missing-sound validator controls.
 
 Alternative not taken: a new global schema field, an engine-side Muster/Forge sound id, suffix guessing, silent real refusal in the shipped package, or an error sound on every accepted result. This is the nearest existing mechanism/incomplete instrument choice under brief section4. Global74/170; no new agent run.
+
+
+## C199: Resolve audio dependencies during source preparation
+
+Conflict: RUN72 owns the sole compiler/cache and must keep it for HD1. Task15 has added the planned Bevy audio/vorbis features but its new dependency lock/download preparation can run without compiling or creating another target. Waiting for a compiler handoff to discover missing locked dependencies adds avoidable delay.
+
+Choice: allow RUN73 one bounded cargo fetch --target x86_64-unknown-linux-gnu --target wasm32-unknown-unknown preparation command in its own lane. Preserve the original Cargo.lock, record actual command/env/raw output/exit and the resulting lock diff, and confirm no target/compiler/server/browser was created. Accept only dependency resolution required by the planned features, with no broad cargo update or generate-lockfile. Other platforms are not downloaded. RUN72 remains the sole compiler/runtime owner. RUN73 returns to source-only after fetch.
+
+This is the brief section4 cache/lane handling decision. No native/browser test or compilation credit is given. The exact archived post-red source remains historical and unchanged. Alternative not taken: a parallel compiler/cache, unnecessary all-platform downloads, a broad lock refresh, or waiting until compiler lease for network-only preparation. Global74/170; no new agent run.
