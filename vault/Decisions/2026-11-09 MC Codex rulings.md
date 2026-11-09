@@ -345,3 +345,12 @@ Independent review completed the existing diff source audit with no remaining Hi
 The trusted launcher already requires actual successful named execution, matching before/after/current source, actual argv/env/binary hashes and raw status. The actual accepted fixture uses typed targets and actual release executables; no contradictory or forged receipt was accepted. These notes do not affect valid action semantics, player behavior, source identity or the measured native/browser result comparison. Preserve them as known Low limits, not silent fixes or extra gates. Required missing/stale reference checks, C207/C208 and all final runtime/gates/plants remain.
 
 This is the brief section4 Medium-or-lower finding decision. Alternative not taken: broaden the current repair into malformed-script UX or adversarial receipt security, or claim the extra checks already exist. A new actual contract failure overrides this deferral. Global74/170; no new agent run.
+
+
+## C210: Put observed tick rate beside the debug snapshot
+
+Conflict: ALR1 needs the actual tick rate to measure a1s cooldown. The Task15 draft put tick_hz only in one replicated_world publication path, creating inconsistent captures and another strict legacy owner-projection mismatch like C205. Tick rate is observation metadata, not an added unit/world-state DTO field.
+
+Choice: publish the actual Replica.tick_hz as top-level turts_debug.tick_hz and native report metadata, in all capture/rebuild paths; use null when no actual replica exists. Keep replicated_world unchanged. ALR1 reads the actual top-level rate. Add capture/rebuild consistency assertions. Root inspected the current debug.rs diff and verified no tick_hz remains under replicated_world. This avoids changing an unrelated server test or frozen value for read-only timing metadata.
+
+This is the brief section4 log-field/instrument placement decision. Alternative not taken: hardcode20Hz, update only one publication path, or expand the replicated-world DTO with observation-only metadata. Source checks pass; actual native/browser proof remains NOT TRACED until Task15 receives its runtime lease. Global74/170; no new agent run.

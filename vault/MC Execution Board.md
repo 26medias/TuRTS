@@ -1812,3 +1812,6 @@ C208 applies design13.4 to HD1: every authored HUDbutton click first checks visi
 
 
 C209 explicitly defers3Low instrument notes: early malformed Content/Job-worldpoint diagnostic; extra binding.source/source_after equality; release-label/profile cross-check. Actual trusted validfixture execution/source/runtime/status proof remains mandatory. No remainingHigh/Medium beyond current C207/C208 repairs; no extra invalid-input/security matrix. Anyactualcontractfailure overridesdeferral.74/170runs.
+
+
+C210 places actual replica tick_hz at TOP-LEVEL debug/native report metadata in all capture paths; ALR1 reads that actualrate. No replicated_world schema expansion or hardcoded20Hz; no second C205-style legacy projection mismatch. Capture/rebuild source controls added; actualruntimeproof pendingTask15lease.74/170runs.
