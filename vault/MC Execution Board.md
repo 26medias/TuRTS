@@ -8,7 +8,7 @@ source: codex
 
 # MC execution board
 
-State: ACTIVE Wave7:16/25complete;76/170buildruns. ROOT owns the sole local runtime/cache for Task10 final verification. RUN72 ended with a clean handoff; RUN74 owns the sole runtime for final review. RUN73 and RUN75 ended source preparation; each needs a new ledger row before continuation. Wave6CI42681727530 terminal: agentsSUCCESS, check/browserFAIL exactapprovedTask21migration-window errors; allrawlogsread. C188mergeholdreleased; everylocalgate/reviewstillrequired. Mainbb611bdunchanged.
+State: ACTIVE Wave7:16/25complete;77/170buildruns. ROOT owns the sole local runtime/cache for Task10 final verification. RUN72 ended with a clean handoff; RUN74 owns the sole runtime for final review. RUN73 and RUN75 ended source preparation; each needs a new ledger row before continuation. Wave6CI42681727530 terminal: agentsSUCCESS, check/browserFAIL exactapprovedTask21migration-window errors; allrawlogsread. C188mergeholdreleased; everylocalgate/reviewstillrequired. Mainbb611bdunchanged.
 
 Plan: `docs/superpowers/plans/2026-10-29-mc-player-control.md`.
 Design of record: `docs/superpowers/specs/2026-10-29-mc-player-control-design.md`, revision14 at mainf050e42.
@@ -268,6 +268,7 @@ One row per builder/reviewer dispatch or resumed agent work turn. Register befor
 | 74 | T10 independent early-to-final review | qa-lead | gpt-6.1-sol | high | c4afbc9 + RUN72candidate | Registered BEFORE dispatch. Task10run2/estimate2 soft4/hard8; global74/170. SOURCEONLY until rootlease. Review realcore/actions/native-browserparity/groupproof and C187 operationalreuse proof, then actualindependent tests/ownplant and finalcandidate0High afterbuildergates. |
 | 75 | T17 source/test/asset preparation | ux-designer | gpt-6-luna | high | Current integration after C211 | Registered before dispatch. Task17 run1/estimate4, soft8/hard16; global75/170. Own lane/branch, SOURCEONLY; no target/compiler/browser/server or Forge HUD before actual baseline reds. |
 | 76 | T17 builder continuation | ux-designer | gpt-6-luna | high | RUN75 five-path source handoff | Registered BEFORE continuation. Task17 run2/estimate4, soft8/hard16; global76/170. SOURCEONLY SEL1/HUD2 baseline preparation until explicit sole-cache lease after T10 merge/regate. No Forge HUD/assets before actual baseline reds. |
+| 77 | T10 independent cache-routing repair re-check | qa-lead | gpt-6.1-sol | high | Approved311d486 plus C216 bounded instrument repair | Registered BEFORE continuation. Task10 run3/estimate2, soft4/hard8; global77/170. Re-check only assigned-cache repair and affected HD1 proof. Original RUN74 approval/plants preserved for unchanged product source; no new broad matrix. |
 
 ## 9. Preflight ledger and stop
 
@@ -1839,3 +1840,6 @@ Task10 final311d486 local acceptance evidence: headed HD1 pair2/2 exit0, every11
 
 
 C215 resolves SEL1 instrument target: actualForge foreigners are weaponless drones. Add one existing foreign forge:turret only in a controlled sel1/forge fixture copy, owner1 at visible empty(26,8), emptycontents. Keep original Forge maps/units fixed; keep clone content byte-identical except documented placement and mirror later HUD/assets. Require the range assertion unconditionally; HUD2 remains actualForge. Preserve clone/delta proof and actual preHUD reds.76/170; RUN76 source-only.
+
+
+C216: root caught native-reference.sh forcing target/mc-t10 and hd1_reference.py enforcing the same literal. In another lane this would make a duplicate build cache. Hold Task10 merge; repair only assigned-target routing/validation in these2instruments. Use an actual stopped Cargo-stub control (not gameplay red), then fresh native binding/browser proof/currentQA and byte-identity carry of unaffected native gates/plants. RUN77 re-check is registered before dispatch; Task10run3/2 belowsoft4/hard8. Prove actual non10 routing after integration merge with its sole cache.77/170runs.
