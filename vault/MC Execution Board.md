@@ -1707,3 +1707,6 @@ C183: actual CAM1 failure was a14pixelHUDglyph competing with183pixelScout. Init
 
 
 C184: required external ExtendedMaterial.base collides with derived base package identifier. Existing provenance-backed generic exception may allow identifiers_only:true; all bare string/bytes/fullIDs/paths remain scanned, replaceable locals renamed. Explicit bare-literal controls + true→false boundary plant/restoration and newlyaffected registered E1-derived-scan required. O10ShellAction decision is unchanged; thisnewexternalAPIcollision is separatelyreported. Native203 gate failedscanner, ae6030a native/QA/frozen gates all0 provisional; finaltest/localrename patch and finalgate rerun remain.69/170runs.
+
+
+C185: one-frame plant actualfirstcases prove seq13 frames163/148 release0rings/0selection and EXACT nextframe500/500, preselection0. Existing named first-release ring assertion0!==500 is equivalent to plan's prose message. Credit only that firstnonShiftcase; take-based plant's laterShift side effect explicitly unclaimed. Exactrestore/selectedgreen still pending. RootrawSHA-boundwitness saved. World-box plantalreadytwoactualreds→exactrestore→twoSEL2greens; no sourcefaultretired.69/170runs.
