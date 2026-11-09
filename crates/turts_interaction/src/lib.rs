@@ -164,7 +164,7 @@ impl Core {
                     };
                     let (target_kind, protocol_target) = match target {
                         UiOrderTarget::Content(id) => {
-                            (TargetKind::Content, OrderTarget::Content(id.clone().into()))
+                            (TargetKind::Content, OrderTarget::Content(id.clone()))
                         }
                         UiOrderTarget::Job(id) => (TargetKind::Job, OrderTarget::Job(*id)),
                     };

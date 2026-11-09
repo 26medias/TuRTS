@@ -492,7 +492,7 @@ fn installed_build_menu_activation_submits_one_exact_produce_and_disabled_activa
         vec![turts_net_protocol::OrderEnvelope {
             order,
             units: vec![UnitId(producer)],
-            target: turts_net_protocol::OrderTarget::Content(recipe.into()),
+            target: turts_net_protocol::OrderTarget::Content(recipe),
             queue: turts_net_protocol::QueueMode::Replace,
             group: 0,
         }]
@@ -628,7 +628,7 @@ fn installed_build_menu_activation_skips_foreign_first_produce_order_and_uses_in
         vec![turts_net_protocol::OrderEnvelope {
             order: "zzz:order_produce_intended".into(),
             units: vec![UnitId(producer)],
-            target: turts_net_protocol::OrderTarget::Content(recipe.into()),
+            target: turts_net_protocol::OrderTarget::Content(recipe),
             queue: turts_net_protocol::QueueMode::Replace,
             group: 0,
         }],

@@ -170,15 +170,14 @@ fn headless_actions_drive_core_and_report_per_unit_results_on_muster() {
         .expect("the actual replicated unit list is reported");
     let mut by_kind = BTreeMap::<&str, Vec<u32>>::new();
     for unit in units {
-        if unit["owner_slot"] == 0 {
-            if let Some(content) = unit["content_id"].as_str() {
-                if content == "muster:trooper" || content == "muster:worker" {
-                    by_kind
-                        .entry(content)
-                        .or_default()
-                        .push(unit["unit_id"].as_u64().unwrap() as u32);
-                }
-            }
+        if unit["owner_slot"] == 0
+            && let Some(content) = unit["content_id"].as_str()
+            && (content == "muster:trooper" || content == "muster:worker")
+        {
+            by_kind
+                .entry(content)
+                .or_default()
+                .push(unit["unit_id"].as_u64().unwrap() as u32);
         }
     }
     for members in by_kind.values_mut() {

@@ -175,7 +175,7 @@ fn validate_action(
         return Err("job order requires a Job target and no world_point".into());
     }
     if action.content_id.is_none() && action.job_id.is_none() {
-        if action.units.len() > 0 {
+        if !action.units.is_empty() {
             return Err("units are only valid with content_id or job_id".into());
         }
         if definition.target == TargetKind::None && action.world_point.is_some() {
@@ -340,11 +340,10 @@ fn action_point(action: &Action, core: &Core) -> Result<Vec2, String> {
 mod tests {
     use super::read_actions;
     use std::fs;
-    use std::path::PathBuf;
 
     #[test]
     fn omitted_action_ticks_inherit_the_previous_effective_tick() {
-        let path = PathBuf::from(std::env::temp_dir()).join(format!(
+        let path = std::env::temp_dir().join(format!(
             "turts-hd1-missing-tick-{}.json",
             std::process::id()
         ));
