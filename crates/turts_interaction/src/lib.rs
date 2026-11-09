@@ -14,7 +14,9 @@ use std::collections::{BTreeMap, HashMap};
 use turts_mod_api::{
     Behaviour, Capability, InputMapDef, Mod, OrderDef, OrderRulesDef, SmartTarget, TargetKind,
 };
-use turts_net_protocol::{NodeId, OrderEnvelope, OrderTarget, Pos, QueueMode, SlotId, UnitId};
+use turts_net_protocol::{
+    JobId, NodeId, OrderEnvelope, OrderTarget, Pos, QueueMode, SlotId, UnitId,
+};
 
 pub use turts_mod_api::Button;
 
@@ -147,6 +149,62 @@ impl Core {
                     } else {
                         self.dispatch_named_action(name, world, now_ms, &mut effects);
                     }
+                }
+                InputEvent::UiOrder {
+                    order,
+                    units,
+                    target,
+                } => {
+                    let Some(definition) = world
+                        .orders()
+                        .iter()
+                        .find(|definition| definition.id == *order)
+                    else {
+                        continue;
+                    };
+                    let (target_kind, protocol_target) = match target {
+                        UiOrderTarget::Content(id) => {
+                            (TargetKind::Content, OrderTarget::Content(id.clone()))
+                        }
+                        UiOrderTarget::Job(id) => (TargetKind::Job, OrderTarget::Job(*id)),
+                    };
+                    if definition.target != target_kind {
+                        continue;
+                    }
+                    let Some(valid_units) = intended_units(definition, units, world) else {
+                        continue;
+                    };
+                    let valid_units: Vec<_> = valid_units
+                        .into_iter()
+                        .filter(|id| {
+                            world
+                                .units()
+                                .iter()
+                                .find(|unit| unit.id == *id)
+                                .is_some_and(|unit| match target {
+                                    UiOrderTarget::Content(content) => {
+                                        world.can_produce(unit, content)
+                                    }
+                                    UiOrderTarget::Job(job) => world.has_job(unit, *job),
+                                })
+                        })
+                        .collect();
+                    if valid_units.is_empty() {
+                        continue;
+                    }
+                    let group = if valid_units.len() > 1 {
+                        self.alloc_group()
+                    } else {
+                        0
+                    };
+                    send_explicit_units(
+                        definition,
+                        &valid_units,
+                        protocol_target,
+                        QueueMode::Replace,
+                        group,
+                        &mut effects,
+                    );
                 }
                 InputEvent::RestoreGroups { groups } => {
                     self.groups = vec![Vec::new(); 10];
@@ -675,19 +733,7 @@ impl Core {
         } else {
             QueueMode::Replace
         };
-        for chunk in units.chunks(turts_net_protocol::MAX_ORDER_UNITS) {
-            let eligible = chunk.to_vec();
-            if eligible.is_empty() {
-                continue;
-            }
-            effects.push(Effect::Send(OrderEnvelope {
-                order: order.id.clone(),
-                units: eligible,
-                target: target.clone(),
-                queue,
-                group,
-            }));
-        }
+        send_explicit_units(order, &units, target, queue, group, effects);
     }
     fn smart_command(
         &mut self,
@@ -965,6 +1011,13 @@ pub enum InputEvent {
     UiAction {
         name: String,
     },
+    /// Typed content/job order from an authored UI control or deterministic fixture.
+    /// The supplied unit set is validated against ownership, order eligibility, and target facts.
+    UiOrder {
+        order: String,
+        units: Vec<UnitId>,
+        target: UiOrderTarget,
+    },
     /// Restore persisted control groups after validating membership against the joined world.
     RestoreGroups {
         groups: Vec<(u8, Vec<UnitId>)>,
@@ -974,6 +1027,61 @@ pub enum InputEvent {
         button: Button,
         local: [f32; 2],
     },
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum UiOrderTarget {
+    Content(String),
+    Job(JobId),
+}
+
+fn intended_units(
+    order: &OrderDef,
+    requested: &[UnitId],
+    world: &dyn WorldView,
+) -> Option<Vec<UnitId>> {
+    let mut seen = std::collections::HashSet::new();
+    let mut valid = Vec::new();
+    for id in requested {
+        if !seen.insert(*id) {
+            continue;
+        }
+        let Some(unit) = world.units().iter().find(|unit| unit.id == *id) else {
+            continue;
+        };
+        if unit.owner_slot != world.own_slot()
+            || (!order.units.is_empty()
+                && !order
+                    .units
+                    .iter()
+                    .any(|content| content == &unit.content_id))
+        {
+            continue;
+        }
+        valid.push(*id);
+    }
+    Some(valid)
+}
+
+fn send_explicit_units(
+    order: &OrderDef,
+    units: &[UnitId],
+    target: OrderTarget,
+    queue: QueueMode,
+    group: u32,
+    effects: &mut Vec<Effect>,
+) {
+    for chunk in units.chunks(turts_net_protocol::MAX_ORDER_UNITS) {
+        if !chunk.is_empty() {
+            effects.push(Effect::Send(OrderEnvelope {
+                order: order.id.clone(),
+                units: chunk.to_vec(),
+                target: target.clone(),
+                queue,
+                group,
+            }));
+        }
+    }
 }
 
 /// A unit record that is safe for the renderer-independent interaction core.
@@ -1032,6 +1140,14 @@ pub trait WorldView {
     }
     /// Returns whether this unit can gather the item represented by the node.
     fn can_gather(&self, unit: &UnitView, node: &NodeView) -> bool;
+    /// Whether the replicated/catalog view authorizes this unit to produce the requested content.
+    fn can_produce(&self, _unit: &UnitView, _content_id: &str) -> bool {
+        false
+    }
+    /// Whether this unit currently owns the requested queued job.
+    fn has_job(&self, _unit: &UnitView, _job: JobId) -> bool {
+        false
+    }
     /// Returns whether this unit's weapon can target this foreign unit.
     fn can_weapon_target(&self, unit: &UnitView, target: &UnitView) -> bool;
 }

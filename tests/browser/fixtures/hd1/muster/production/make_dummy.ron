@@ -1,0 +1,13 @@
+(
+    id: "make_dummy",
+    name: "Build Beacon",
+    output_unit: "muster:beacon",
+    duration_ms: 60000,
+    costs: [],
+    payment: ChargeOnQueue,
+    cancel_refunds: (
+        queued: (numerator: 1, denominator: 1),
+        running: (numerator: 1, denominator: 1),
+        output_blocked: (numerator: 1, denominator: 1),
+    ),
+)

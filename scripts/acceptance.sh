@@ -5,8 +5,9 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-${ROOT}/target/m3-t16}"
+export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-${ROOT}/target/mc-t10}"
 export CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0
+export CARGO_BUILD_JOBS="${CARGO_BUILD_JOBS:-4}"
 
 log_dir="${M3_ACCEPTANCE_LOG_DIR:-${ROOT}/target/m3-evidence/t16-builder/acceptance/$(date -u +%Y%m%dT%H%M%SZ)}"
 mkdir -p "$log_dir"
@@ -134,3 +135,5 @@ TURTS_SERVER_EVIDENCE_DIR="$log_dir/f11-evidence/server-process" run_cargo_test 
 retain_f11_artifacts || f11_status=1
 if [[ "$f11_status" != 0 ]]; then exit "$f11_status"; fi
 run_cargo_test command_script exact -p turts_server --test command_script -- --ignored --test-threads=1 --exact command_script_moves_acme_unit_at_fixed_tick_without_a_client
+MC_HD1_NATIVE_REFERENCE_DIR="$log_dir/hd1-native-reference-run" scripts/hd1-native-reference.sh >"$log_dir/hd1-native-reference.log" 2>&1
+run_cargo_test hd1_c195 exact -p turts_client --test hd1 -- --ignored --test-threads=1 --exact same_tick_double_group_recall_reprojects_the_following_world_target

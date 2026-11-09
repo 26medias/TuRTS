@@ -187,6 +187,8 @@ struct FrameWorld {
     camera_options: CameraOptions,
     map_size: Option<Vec2>,
     index: ContentIndex,
+    producible: HashSet<(u32, String)>,
+    jobs: HashSet<(u32, u64)>,
 }
 impl WorldView for FrameWorld {
     fn units(&self) -> &[UnitView] {
@@ -239,6 +241,13 @@ impl WorldView for FrameWorld {
                     .get(&node.content_id)
                     .is_some_and(|node_facts| unit_facts.gather_items.contains(&node_facts.item))
             })
+    }
+    fn can_produce(&self, unit: &UnitView, content_id: &str) -> bool {
+        self.producible
+            .contains(&(unit.id.0, content_id.to_owned()))
+    }
+    fn has_job(&self, unit: &UnitView, job: turts_net_protocol::JobId) -> bool {
+        self.jobs.contains(&(unit.id.0, job.0))
     }
     fn can_weapon_target(&self, unit: &UnitView, target: &UnitView) -> bool {
         let relation = self
@@ -401,6 +410,42 @@ fn frame_world(
         });
     }
     nodes.sort_by_key(|node| node.id.0);
+    let mut producible = HashSet::new();
+    for (&producer, unit) in &replica.units {
+        let Ok(content_id) = ContentId::parse(&unit.content_id) else {
+            continue;
+        };
+        let Some(definition) = content.catalog.units.get(&content_id) else {
+            continue;
+        };
+        if let Some(producer_def) = &definition.producer {
+            producible.extend(
+                producer_def
+                    .recipes
+                    .iter()
+                    .map(|id| (producer, id.to_string())),
+            );
+        }
+        if let Some(research_def) = &definition.research {
+            producible.extend(
+                research_def
+                    .technologies
+                    .iter()
+                    .map(|id| (producer, id.to_string())),
+            );
+        }
+    }
+    let jobs = replica
+        .economy
+        .queues
+        .iter()
+        .flat_map(|queue| {
+            queue
+                .jobs
+                .iter()
+                .map(move |job| (queue.producer.0, job.id.0))
+        })
+        .collect();
     Some(FrameWorld {
         units,
         nodes,
@@ -423,6 +468,8 @@ fn frame_world(
         camera_options,
         map_size: acquired.map(|a| Vec2::new(a.0.map_size.0, a.0.map_size.1)),
         index,
+        producible,
+        jobs,
     })
 }
 

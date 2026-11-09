@@ -20,6 +20,8 @@ pub struct ClientOptions {
     pub frame_log: Option<PathBuf>,
     /// Test hook: write the final report to this path.
     pub out: Option<PathBuf>,
+    /// Test hook: drive the interaction core from a JSON action list.
+    pub actions: Option<PathBuf>,
     /// Test-only trusted diagnostic: write the actual received Snapshot/WorldDelta DTOs to JSONL.
     /// These records contain private owner economy fields and must not be distributed.
     pub raw_world_log: Option<PathBuf>,
@@ -66,6 +68,7 @@ impl Default for ClientOptions {
             player_id: None,
             frame_log: None,
             out: None,
+            actions: None,
             raw_world_log: None,
             auto_move: None,
             auto_move_after_ticks: 5,
@@ -111,6 +114,7 @@ Test hooks:
   --run-secs S    Stop after S seconds. Without it, a joined client runs until it is killed.
   --out PATH      When the run ends, write the final report to PATH as JSON. The report
                   holds the join result, the command results and the final positions.
+  --actions PATH  In headless mode, drive the interaction core from a JSON action list.
   --raw-world-log PATH
                   Test-only trusted diagnostic of received Snapshot/WorldDelta DTOs before
                   client validation. It can contain private owner economy fields; keep it local.
@@ -183,6 +187,7 @@ pub fn parse_cli(args: &[String]) -> Result<ClientOptions, String> {
             "--player-id" => options.player_id = Some(number(flag, value()?)?),
             "--frame-log" => options.frame_log = Some(PathBuf::from(value()?)),
             "--out" => options.out = Some(PathBuf::from(value()?)),
+            "--actions" => options.actions = Some(PathBuf::from(value()?)),
             "--raw-world-log" => options.raw_world_log = Some(PathBuf::from(value()?)),
             "--move" => options.auto_move = Some(point(flag, value()?)?),
             "--move-after-ticks" => options.auto_move_after_ticks = number(flag, value()?)?,
@@ -242,6 +247,9 @@ pub fn parse_cli(args: &[String]) -> Result<ClientOptions, String> {
     }
     if options.ws_url.is_empty() {
         return Err("--ws is required".to_string());
+    }
+    if options.actions.is_some() && !options.headless {
+        return Err("--actions requires --headless".to_string());
     }
     Ok(options)
 }

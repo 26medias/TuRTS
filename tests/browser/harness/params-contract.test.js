@@ -55,6 +55,17 @@ function launcherSyntheticUnits(row) {
     } finally { fs.rmSync(directory, { recursive: true, force: true }); }
 }
 
+function validateFixtureActions(fixtureRoot, relative) {
+    const script = `import json,pathlib,sys\nsys.path.insert(0,sys.argv[1])\nfrom mc_browser_params import actions_file\ntry: print(json.dumps(actions_file({"actions_file":sys.argv[3]},pathlib.Path(sys.argv[2]))[1]))\nexcept ValueError as error: print(error); raise SystemExit(2)`;
+    try {
+        return execFileSync("python3", ["-c", script, path.resolve(__dirname, "../../../scripts"), fixtureRoot, relative], {
+            encoding: "utf8", env: { ...process.env, PYTHONDONTWRITEBYTECODE: "1" },
+        });
+    } catch (error) {
+        throw new Error([error.stdout?.trim(), error.stderr?.trim(), error.message].filter(Boolean).join("\n"));
+    }
+}
+
 test("launcher carries the top-level checkpoint opt-in to the production harness params", () => {
     const { params } = launchParams({ row: "CAM1", capture_scene_checkpoints: true, windows: 2 });
     assert.equal(params.capture_scene_checkpoints, true);
@@ -94,6 +105,53 @@ test("launcher rejects a non-boolean checkpoint setting instead of silently losi
 test("launcher retains a declared synthetic count in oracle params", () => {
     const { params } = launchParams({ row: "VIS2", synthetic_units: 4485 });
     assert.equal(params.synthetic_units, 4485);
+});
+
+test("launcher loads a fixture-contained actions_file as immutable harness data with path and digest", () => {
+    const { params } = launchParams({ row: "HD1", actions_file: "hd1-actions.json" });
+    assert.equal(params.actions_file, "hd1-actions.json");
+    assert.match(params.actions_sha256, /^[a-f0-9]{64}$/);
+    assert.ok(Array.isArray(params.actions) && params.actions.length > 0);
+});
+
+test("launcher rejects actions_file traversal, inline conflicts, and malformed action lists", () => {
+    assert.throws(() => launchParams({ actions_file: "../../outside.json" }), /actions_file/);
+    assert.throws(() => launchParams({ actions_file: "hd1-actions.json", actions: [] }), /inline actions/);
+    assert.throws(() => launchParams({ actions_file: "missing-actions.json" }), /actions_file/);
+});
+
+test("actions_file validator rejects non-lists, malformed action ticks, and symlinks outside fixtures", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "hd1-actions-") );
+    const outside = fs.mkdtempSync(path.join(os.tmpdir(), "hd1-outside-") );
+    try {
+        fs.writeFileSync(path.join(root, "object.json"), JSON.stringify({ tick: 1 }));
+        fs.writeFileSync(path.join(root, "bad-tick.json"), JSON.stringify([{ tick: true, do: "order" }]));
+        fs.writeFileSync(path.join(root, "null-tick.json"), JSON.stringify([{ tick: null, do: "order" }]));
+        fs.writeFileSync(path.join(root, "overflow-tick.json"), JSON.stringify([{ tick: 4294967296, do: "order" }]));
+        fs.writeFileSync(path.join(root, "max-tick.json"), JSON.stringify([{ tick: 4294967295, do: "order", order: "muster:order_stop" }]));
+        fs.writeFileSync(path.join(root, "mixed-ticks.json"), JSON.stringify([
+            { tick: 10, do: "order", order: "muster:order_move", world_point: [2, 3] },
+            { do: "order", order: "muster:order_stop" },
+            { tick: 12, do: "order", order: "muster:order_move", world_point: [4, 5] },
+        ]));
+        fs.writeFileSync(path.join(root, "omitted-ticks.json"), JSON.stringify([
+            { do: "order", order: "muster:order_stop" },
+            { do: "order", order: "muster:order_hold" },
+        ]));
+        fs.writeFileSync(path.join(outside, "actions.json"), "[]");
+        fs.symlinkSync(path.join(outside, "actions.json"), path.join(root, "escape.json"));
+        assert.throws(() => validateFixtureActions(root, "object.json"), /JSON action list/);
+        assert.throws(() => validateFixtureActions(root, "bad-tick.json"), /tick must be an integer in 0\.\.=/);
+        assert.throws(() => validateFixtureActions(root, "null-tick.json"), /tick must be an integer in 0\.\.=/);
+        assert.throws(() => validateFixtureActions(root, "overflow-tick.json"), /tick must be an integer in 0\.\.=/);
+        assert.throws(() => validateFixtureActions(root, "escape.json"), /under tests\/browser\/fixtures/);
+        assert.deepEqual(JSON.parse(validateFixtureActions(root, "mixed-ticks.json" )).map((action) => action.tick), [10, 10, 12]);
+        assert.deepEqual(JSON.parse(validateFixtureActions(root, "omitted-ticks.json" )).map((action) => action.tick), [0, 0]);
+        assert.deepEqual(JSON.parse(validateFixtureActions(root, "max-tick.json" )).map((action) => action.tick), [4294967295]);
+    } finally {
+        fs.rmSync(root, { recursive: true, force: true });
+        fs.rmSync(outside, { recursive: true, force: true });
+    }
 });
 
 test("the production params generator is byte-identical when synthetic_units is absent", () => {

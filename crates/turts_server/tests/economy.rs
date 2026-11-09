@@ -1489,6 +1489,14 @@ fn owner_report_projection_from_audit(
     slot: u8,
 ) -> serde_json::Value {
     let snapshot = owner_snapshot_from_audit(state, slot);
+    assert!(
+        state.raw_healths.is_empty(),
+        "M2 audit has no raw health state; expected unit max_health must remain null"
+    );
+    assert!(
+        snapshot.healths.is_empty(),
+        "M2 owner snapshot has no health rows"
+    );
     serde_json::json!({
         "tick": snapshot.tick,
         "units": snapshot.units.iter().map(|unit| serde_json::json!({
@@ -1497,6 +1505,8 @@ fn owner_report_projection_from_audit(
             "owner_slot": unit.owner_slot.0,
             "facing": unit.facing,
             "pos": [unit.pos.x, unit.pos.y],
+            // M2 packages have no health state, so the debug health reference is null.
+            "max_health": serde_json::Value::Null,
         })).collect::<Vec<_>>(),
         "nodes": snapshot.nodes,
         "economy": snapshot.economy,
@@ -1509,6 +1519,7 @@ fn owner_report_projection_from_audit(
         "healths": snapshot.healths,
         "research": snapshot.research,
         "health_trace": [],
+        "unit_orders": snapshot.unit_orders,
     })
 }
 
@@ -1519,6 +1530,7 @@ fn canonicalize_wire_snapshot(value: &mut serde_json::Value) {
         }
     }
     sort_by(&mut value["units"], "unit_id");
+    sort_by(&mut value["unit_orders"], "unit");
     sort_by(&mut value["nodes"], "id");
     sort_by(&mut value["economy"]["balances"], "resource");
     sort_by(&mut value["economy"]["inventories"], "unit");

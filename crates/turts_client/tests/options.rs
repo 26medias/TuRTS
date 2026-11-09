@@ -84,6 +84,8 @@ fn parse_cli_reads_hooks() {
         "frames.jsonl",
         "--out",
         "out.json",
+        "--actions",
+        "actions.json",
         "--raw-world-log",
         "wire.jsonl",
         "--move",
@@ -115,6 +117,7 @@ fn parse_cli_reads_hooks() {
     assert_eq!(options.player_id, Some(42));
     assert_eq!(options.frame_log, Some(PathBuf::from("frames.jsonl")));
     assert_eq!(options.out, Some(PathBuf::from("out.json")));
+    assert_eq!(options.actions, Some(PathBuf::from("actions.json")));
     assert_eq!(options.raw_world_log, Some(PathBuf::from("wire.jsonl")));
     assert_eq!(options.auto_move, Some((20.5, 30.0)));
     assert_eq!(options.auto_move_after_ticks, 9);

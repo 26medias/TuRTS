@@ -1,0 +1,7 @@
+[
+  { "tick": 2, "do": "box_select", "world_rect": [9, 11, 13, 13] },
+  { "tick": 4, "do": "group_assign", "group": 2 },
+  { "tick": 6, "do": "group_recall", "group": 2 },
+  { "tick": 6, "do": "group_recall", "group": 2 },
+  { "tick": 6, "do": "order", "order": "muster:order_move", "world_point": [32, 22] }
+]
