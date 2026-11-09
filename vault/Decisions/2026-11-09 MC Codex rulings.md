@@ -219,3 +219,14 @@ Choice: download the official apt libasound2-dev 1.2.11-1ubuntu0.3 package, veri
 Evidence: packageSHA b83795b1ba0e40cfa8363359fd17a06260838d8ae0f315531771a62f7c7e215a matches apt. pkg-config returns the local include/library paths and -lasound. Loading the actual development library path reports ALSA1.2.11. Real native compile/link remains NOT TRACED until RUN73 receives the sole compiler lease; no competing compiler was started. Receipt and env.sh are under target/mc-evidence/native-prerequisites/alsa.
 
 Alternative not taken: ask the CEO for sudo, modify system libraries, disable native audio, fabricate headers, or claim successful native compilation from a pkg-config check. This is the brief section4 local cache/environment handling decision. Global74/170; no new agent run.
+
+
+## C198: Bind error feedback through existing authored unit responses
+
+Conflict: design9.2:878, ORD6:1241 and HUD2 require an error sound. AssetsDef only gives sound ids and paths; the design gives no explicit global error-event field. Muster already exports its error OGG (mods/muster/assets/assets.ron:28), but its six unit presentations only bind select/order (interface/hud.ron:24-29). Inferring a sound from its asset name would make arbitrary mod ids significant.
+
+Choice: use the existing UnitPresentation.responses string-key map (crates/turts_mod_api/src/interface.rs:410-413) with the event key error. Play the actual authored response in category effects for a real local refusal, per-unit/server envelope refusal or later last_failure transition. Prefer the affected unit presentation. For a unitless error or unavailable unit, use the first authored error list in deterministic unit-id order. No error request occurs for an accepted-only result. All normal sound-id validation applies (content_mc_validation.rs:667-675). Do not infer ids from names or hardcode a package id.
+
+Authorize only the missing error-response entries in production mods/muster/interface/hud.ron and the controlled feedback fixture; all existing ids, rules, keys, texts and order behavior stay. Task17 authors the corresponding Forge error-response entries with its new interface. The existing Muster asset is reused. This implements the already-designed audible feedback; it adds no player control or schema field. Keep real sound/category/timing proof and missing-sound validator controls.
+
+Alternative not taken: a new global schema field, an engine-side Muster/Forge sound id, suffix guessing, silent real refusal in the shipped package, or an error sound on every accepted result. This is the nearest existing mechanism/incomplete instrument choice under brief section4. Global74/170; no new agent run.
