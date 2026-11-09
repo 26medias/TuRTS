@@ -208,3 +208,14 @@ Choice: a trusted native launcher produces the real --out plus a binding receipt
 Run native and browser against separate fresh servers with the same controlled fixture, so slots and world state do not contaminate parity. One successful bound native report may serve both browser attempts when all runtime/action/package identities match; invalidate it after relevant changes. Retain original execution identity rather than relabel an old report as a newer run. Test launcher missing-reference/stale-binding controls; do not count a missing artifact as a gameplay red. This is the required test-artifact transport under brief section4; no acceptance is removed and no player behavior changes.
 
 C195 fixture clarification: keep ordinary assign/recall in the shared HD1 fixture and the plan's fixed authored-camera projection. The double-recall camera stress remains in the focused actual native drive_actions/Core regression. No browser screenshot camera estimator is required.
+
+
+## C197: Use a local ALSA development prefix for native audio
+
+Conflict: Task15 adds native Bevy audio (plan:601; design9.5). Desktop pkg-config cannot find alsa, libasound2-dev is not installed, and sudo requires a password. The matching runtime libasound2t64 1.2.11-1ubuntu0.3 is installed. Stopping for a system package is outside the narrowed stop list.
+
+Choice: download the official apt libasound2-dev 1.2.11-1ubuntu0.3 package, verify its SHA256 against apt metadata, and extract its real headers/development linker file under primary target/mc-evidence/native-prerequisites/alsa/sysroot. The development linker file resolves through a local symlink to the installed matching runtime. Use the two explicit PKG_CONFIG_PATH and PKG_CONFIG_SYSROOT_DIR variables in native audio builds and record them with the execution receipt. No system files, product source, frozen data or player controls change. Do not inject these desktop paths into committed Cargo configuration. Keep the existing5Cargo profile variables.
+
+Evidence: packageSHA b83795b1ba0e40cfa8363359fd17a06260838d8ae0f315531771a62f7c7e215a matches apt. pkg-config returns the local include/library paths and -lasound. Loading the actual development library path reports ALSA1.2.11. Real native compile/link remains NOT TRACED until RUN73 receives the sole compiler lease; no competing compiler was started. Receipt and env.sh are under target/mc-evidence/native-prerequisites/alsa.
+
+Alternative not taken: ask the CEO for sudo, modify system libraries, disable native audio, fabricate headers, or claim successful native compilation from a pkg-config check. This is the brief section4 local cache/environment handling decision. Global74/170; no new agent run.
