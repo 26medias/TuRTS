@@ -2,10 +2,14 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-export CARGO_TARGET_DIR="$ROOT/target/mc-t10"
+: "${CARGO_TARGET_DIR:?CARGO_TARGET_DIR must name the assigned lane cache}"
+export CARGO_TARGET_DIR
 export CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0
-export CARGO_BUILD_JOBS=4
+export CARGO_BUILD_JOBS="${CARGO_BUILD_JOBS:-4}"
+[[ "$CARGO_BUILD_JOBS" =~ ^[1-4]$ ]] || { echo "CARGO_BUILD_JOBS must be 1..4" >&2; exit 2; }
 cd "$ROOT"
+CARGO_TARGET_DIR="$(PYTHONDONTWRITEBYTECODE=1 python3 scripts/hd1_reference.py target "$ROOT")"
+export CARGO_TARGET_DIR
 EVIDENCE="${MC_HD1_NATIVE_REFERENCE_DIR:-}"
 [[ -n "$EVIDENCE" ]] || { echo "MC_HD1_NATIVE_REFERENCE_DIR is required" >&2; exit 2; }
 [[ ! -e "$EVIDENCE" ]] || { echo "native reference output already exists: $EVIDENCE" >&2; exit 2; }

@@ -52,6 +52,19 @@ def read_json(path: Path) -> object:
     return json.loads(path.read_text())
 
 
+def target_directory(root: Path) -> Path:
+    value = os.environ.get("CARGO_TARGET_DIR")
+    if not value:
+        raise ValueError("CARGO_TARGET_DIR must name the assigned lane cache")
+    path = Path(value)
+    target = (path if path.is_absolute() else root / path).resolve()
+    if target.parent != root / "target" or not (
+        target.name.startswith("mc-") or target.name == "m3-t16"
+    ):
+        raise ValueError("native HD1 target must be this worktree's assigned MC or legacy CI cache")
+    return target
+
+
 def runtime_manifest(run_dir: Path) -> list[dict[str, str]]:
     client = read_json(run_dir / "client-argv.json")
     server = read_json(run_dir / "server-argv.json")
@@ -78,13 +91,16 @@ def execution_evidence(root: Path, run_dir: Path, evidence_dir: Path) -> dict[st
     if launcher.get("server_build_argv") != expected_server_build:
         raise ValueError("native launcher did not record the locked release server build")
     env = launcher.get("environment")
-    expected_target = str((root / "target/mc-t10").resolve())
+    expected_target = str(target_directory(root))
     if not isinstance(env, dict) or env.get("CARGO_TARGET_DIR") != expected_target:
-        raise ValueError("native launcher did not use the bound mc-t10 target directory")
+        raise ValueError("native launcher did not use the assigned lane target directory")
     if launcher.get("working_directory") != str(root.resolve()):
         raise ValueError("native launcher working directory is not the repository lane")
+    jobs = os.environ.get("CARGO_BUILD_JOBS", "4")
+    if jobs not in {"1", "2", "3", "4"} or env.get("CARGO_BUILD_JOBS") != jobs:
+        raise ValueError("native launcher did not preserve the assigned compiler job budget")
     if any(env.get(key) != value for key, value in {
-        "CARGO_PROFILE_DEV_DEBUG": "0", "CARGO_PROFILE_TEST_DEBUG": "0", "CARGO_INCREMENTAL": "0", "CARGO_BUILD_JOBS": "4",
+        "CARGO_PROFILE_DEV_DEBUG": "0", "CARGO_PROFILE_TEST_DEBUG": "0", "CARGO_INCREMENTAL": "0",
     }.items()):
         raise ValueError("native launcher build environment does not match the accepted profile")
     server_build_status = (evidence_dir / "server-build-status.txt").read_text().strip()
@@ -200,7 +216,7 @@ def validate(root: Path, reference: Path) -> None:
         raise ValueError("native HD1 controlled package is stale")
     if source_identity(root) != data.get("source"):
         raise ValueError("native HD1 source HEAD or dirty source manifest is stale")
-    run_dir = Path(os.environ.get("CARGO_TARGET_DIR", root / "target/mc-t10")) / "tmp/hd1"
+    run_dir = target_directory(root) / "tmp/hd1"
     if runtime_manifest(run_dir) != data.get("runtime_manifest"):
         raise ValueError("native HD1 runtime byte manifest is stale")
     print("native HD1 reference binding is current")
@@ -220,9 +236,13 @@ def main() -> int:
     snapshot = sub.add_parser("snapshot")
     snapshot.add_argument("repo", type=Path)
     snapshot.add_argument("destination", type=Path)
+    target = sub.add_parser("target")
+    target.add_argument("repo", type=Path)
     args = parser.parse_args()
     try:
-        if args.command == "create":
+        if args.command == "target":
+            print(target_directory(args.repo.resolve()))
+        elif args.command == "create":
             save(args.repo.resolve(), args.run_dir.resolve(), args.destination.resolve(), args.evidence.resolve())
         elif args.command == "snapshot":
             args.destination.write_text(json.dumps(source_identity(args.repo.resolve()), indent=2, sort_keys=True) + "\n")
