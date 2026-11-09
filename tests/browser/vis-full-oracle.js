@@ -129,7 +129,8 @@ async function judge(view) {
     const attackImmediate = requireStage(checkpointsByLabel, "vis1-attack-immediate");
     const attackClick = precedingInput(input, attackImmediate.screenshotIndex, (entry) =>
         entry.call === "click" && entry.args?.[2] === "right" && nearPoint(entry.args, target.foreign));
-    const attackMarker = assertFirstFrameMarker(attackClick, attackImmediate, "attack", ownUnit.unit_id);
+    const attackMarker = assertFirstFrameMarker(attackClick, attackImmediate, "attack", ownUnit.unit_id,
+        hoverTooltip.checkpoint, { world: [foreignUnit.translation[0], foreignUnit.translation[2]] });
     const attackImage = await screenshot(view, "vis1-attack-immediate");
     assertAttackPixels(attackImage, attackImmediate.checkpoint.scene, attackMarker);
     assertAttackPixels(damageImage, damage.checkpoint.scene, attackMarker);
@@ -143,11 +144,13 @@ async function judge(view) {
     const moveImmediate = requireStage(checkpointsByLabel, "vis1-move-immediate");
     const moveClick = precedingInput(input, moveImmediate.screenshotIndex, (entry) =>
         entry.call === "click" && entry.args?.[2] === "right" && nearPoint(entry.args, target.ground2));
-    const moveMarker = assertFirstFrameMarker(moveClick, moveImmediate, "move", ownUnit.unit_id);
+    const moveMarker = assertFirstFrameMarker(moveClick, moveImmediate, "move", ownUnit.unit_id,
+        afterAttackStop.checkpoint, { pixel: target.ground2 });
     const waypoint = requireStage(checkpointsByLabel, "vis1-waypoint-queued");
     const waypointClick = precedingInput(input, waypoint.screenshotIndex, (entry) =>
         entry.call === "click" && entry.args?.[2] === "right" && nearPoint(entry.args, target.ground));
-    const waypointMarker = assertFirstFrameMarker(waypointClick, waypoint, "move", ownUnit.unit_id);
+    const waypointMarker = assertFirstFrameMarker(waypointClick, waypoint, "move", ownUnit.unit_id,
+        moveImmediate.checkpoint, { pixel: target.ground });
     const waypointImage = await screenshot(view, "vis1-waypoint-queued");
     assertMarkerPixels(waypointImage, waypoint.checkpoint.scene, waypointMarker);
     const waypointPath = requireStage(checkpointsByLabel, "vis1-waypoint-path");
@@ -174,15 +177,27 @@ async function judge(view) {
         "VIS1 unobscured Gather dot capture must keep the actual camera pose fixed");
     const gatherClick = precedingInput(input, gatherImmediate.screenshotIndex, (entry) =>
         entry.call === "click" && entry.args?.[2] === "right" && nearPoint(entry.args, target.node));
-    const gatherMarker = assertFirstFrameMarker(gatherClick, gatherImmediate, "gather");
+    const gatherer = resolveUnit(gatherBefore.checkpoint, target.worker, 0, "muster:worker");
+    const nodeBefore = resolveNode(gatherBefore.checkpoint, target.node);
     const node = resolveNode(gatherImmediate.checkpoint, target.node);
-    assert.equal(gatherMarker.units.length, 1, "VIS1 Gather marker must preserve the selected worker only");
+    const nodeAfter = resolveNode(gatherAfterPointerAway.checkpoint, target.node);
+    assert.equal(nodeBefore.node_id, node.node_id, "VIS1 pre-Gather node identity must stay fixed");
+    assert.equal(nodeAfter.node_id, node.node_id, "VIS1 post-Gather node identity must stay fixed");
+    assert.deepEqual(nodeBefore.translation, node.translation, "VIS1 pre-Gather node pose must stay fixed");
+    assert.deepEqual(nodeAfter.translation, node.translation, "VIS1 post-Gather node pose must stay fixed");
+    assert.deepEqual(nodeBefore.position, node.position, "VIS1 pre-Gather replica node position must stay fixed");
+    assert.deepEqual(nodeAfter.position, node.position, "VIS1 post-Gather replica node position must stay fixed");
+    const gatherMarker = assertFirstFrameMarker(gatherClick, gatherImmediate, "gather", gatherer.unit_id,
+        gatherBefore.checkpoint, { world: [node.translation[0], node.translation[2]] });
+    assert.deepEqual(gatherMarker.units, [gatherer.unit_id], "VIS1 Gather marker must preserve the selected worker only");
     assert(Math.hypot(gatherMarker.x - node.translation[0], gatherMarker.y - node.translation[2]) <= 0.1,
         "VIS1 Gather marker target must match the actual rendered resource node position");
     assert(Math.hypot(gatherMarker.x - node.position.x, gatherMarker.y - node.position.y) <= 0.1,
         "VIS1 Gather marker target must match the actual public replica node position");
     const beforeGatherImage = await screenshot(view, "vis1-gather-before");
+    const immediateGatherImage = await screenshot(view, "vis1-gather-immediate");
     const afterGatherImage = await screenshot(view, "vis1-gather-after-pointer-away");
+    assertGatherDotPixels(immediateGatherImage, beforeGatherImage, gatherImmediate.checkpoint.scene, gatherMarker);
     assertGatherDotPixels(afterGatherImage, beforeGatherImage, gatherAfterPointerAway.checkpoint.scene, gatherMarker);
 }
 
@@ -352,7 +367,7 @@ function assertTooltipPixels(image, scene, unit) {
     assert(foreground >= 8, "VIS1 delayed tooltip must render visible name/owner glyph pixels");
 }
 
-function assertFirstFrameMarker(action, stage, kind, unitId = null) {
+function assertFirstFrameMarker(action, stage, kind, unitId, beforeCheckpoint, expectedTarget) {
     assert(action, `VIS1 ${kind} marker has no corresponding physical target click`);
     const up = action.actual_events?.find((event) => event.type === "pointerup");
     assert(up?.canvas_target && Number.isInteger(up.seq), `VIS1 ${kind} click must release on canvas with an actual input sequence`);
@@ -360,8 +375,15 @@ function assertFirstFrameMarker(action, stage, kind, unitId = null) {
     const applied = records.filter((record) => record.applied_seq?.includes(up.seq));
     assert.equal(applied.length, 1, `VIS1 ${kind} pointer release ${up.seq} must apply to exactly one first frame`);
     const frame = applied[0];
-    const marker = (frame.markers || []).find((entry) => entry.kind === kind && (!unitId || entry.units?.includes(unitId)));
-    assert(marker, `VIS1 ${kind} marker must be current in the first applied pointer-release frame`);
+    const beforeMarkers = beforeCheckpoint.debug.markers_shown || [];
+    const beforeIntentIds = new Set(beforeMarkers.map((entry) => entry.intent_id));
+    const candidates = (frame.markers || []).filter((entry) =>
+        entry.kind === kind && entry.units?.includes(unitId) &&
+        Number.isInteger(entry.intent_id) && !beforeIntentIds.has(entry.intent_id) &&
+        markerMatchesTarget(entry, stage.checkpoint.scene, expectedTarget));
+    assert.equal(candidates.length, 1,
+        `VIS1 ${kind} first frame must contain exactly one new marker matching this click target and public unit`);
+    const marker = candidates[0];
     const expectedOrder = kind === "attack" ? "muster:order_attack" :
         kind === "gather" ? "muster:order_gather" : "muster:order_move";
     assert.equal(marker.order, expectedOrder, `VIS1 ${kind} marker must preserve the exact sent order`);
@@ -372,6 +394,19 @@ function assertFirstFrameMarker(action, stage, kind, unitId = null) {
     assert.deepEqual([...marker.units].sort((left, right) => left - right), [...frame.selection].sort((left, right) => left - right),
         `VIS1 ${kind} marker units must equal the actual selected units in the first applied frame`);
     return marker;
+}
+
+function markerMatchesTarget(marker, scene, expectedTarget) {
+    if (expectedTarget.world) {
+        return Math.hypot(marker.x - expectedTarget.world[0], marker.y - expectedTarget.world[1]) <= 0.1;
+    }
+    if (expectedTarget.pixel) {
+        const projected = project(scene.clip_from_world, scene.viewport_logical_rect,
+            [marker.x, 0.035, marker.y]);
+        return projected && Math.hypot(projected[0] - expectedTarget.pixel.x,
+            projected[1] - expectedTarget.pixel.y) <= 5;
+    }
+    return false;
 }
 
 function resolveNode(stage, target) {

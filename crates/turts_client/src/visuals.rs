@@ -42,7 +42,7 @@ struct VisualAssets {
     neutral_ring_overlays: Vec<Handle<RingOverlayMaterial>>,
     ring_underlay_indices: Vec<usize>,
     bar: Option<Handle<Mesh>>,
-    marker_material: Option<Handle<StandardMaterial>>,
+    marker_overlay_material: Option<Handle<RingOverlayMaterial>>,
     blocked_material: Option<Handle<StandardMaterial>>,
     range_material: Option<Handle<StandardMaterial>>,
     bar_background: Option<Handle<StandardMaterial>>,
@@ -146,6 +146,21 @@ fn create_neutral_ring_overlay_materials(
             })
         })
         .collect()
+}
+
+fn create_marker_overlay_material(
+    colour: Color,
+    overlays: &mut Assets<RingOverlayMaterial>,
+) -> Handle<RingOverlayMaterial> {
+    overlays.add(ExtendedMaterial {
+        base: StandardMaterial {
+            base_color: colour,
+            alpha_mode: AlphaMode::Blend,
+            unlit: true,
+            ..default()
+        },
+        extension: RingOverlayExtension {},
+    })
 }
 
 fn neutral_ring_overlay_index(slot_colour: Color) -> usize {
@@ -529,7 +544,10 @@ fn prepare_assets(
         assets.ring_overlay_materials = ring_overlay_materials;
         assets.neutral_ring_overlays = neutral_ring_overlays;
         assets.ring_underlay_indices = ring_underlay_indices;
-        assets.marker_material = Some(materials.add(unlit(range_color)));
+        assets.marker_overlay_material = Some(create_marker_overlay_material(
+            range_color,
+            &mut ring_materials,
+        ));
         assets.blocked_material = Some(materials.add(unlit(Color::srgb(0.9, 0.12, 0.08))));
         assets.range_material = Some(materials.add(unlit(range_color)));
         assets.bar_background = Some(materials.add(unlit(bar_background)));
@@ -900,7 +918,7 @@ fn draw_world_visuals(
     );
 
     for marker in &visuals.markers {
-        let material = assets.marker_material.clone();
+        let material = assets.marker_overlay_material.clone();
         if let Some(material) = material {
             let kind = marker_kind(&marker.kind);
             let position = Vec3::new(marker.position.x, 0.035, marker.position.y);
@@ -918,7 +936,7 @@ fn draw_world_visuals(
                             id,
                             (
                                 mesh,
-                                material.clone().into(),
+                                VisualMaterial::RingOverlay(material.clone()),
                                 Transform {
                                     translation: position,
                                     scale: Vec3::splat(0.38),
@@ -946,7 +964,7 @@ fn draw_world_visuals(
                             id,
                             (
                                 mesh,
-                                material.clone().into(),
+                                VisualMaterial::RingOverlay(material.clone()),
                                 Transform {
                                     translation: position,
                                     scale: Vec3::splat(0.16),
@@ -1532,6 +1550,26 @@ mod tests {
         configure_ring_overlay_depth(&mut depth);
         assert_eq!(depth.depth_compare, Some(CompareFunction::Always));
         assert_eq!(depth.depth_write_enabled, Some(false));
+    }
+
+    #[test]
+    fn order_markers_share_range_colour_overlay_material() {
+        let mut overlays = Assets::<RingOverlayMaterial>::default();
+        let marker_colour = Color::srgb_u8(242, 204, 96);
+        let marker = create_marker_overlay_material(marker_colour, &mut overlays);
+        let stored = overlays.get(&marker).expect("shared marker overlay exists");
+
+        assert_eq!(
+            overlays.len(),
+            1,
+            "all order markers use one shared material"
+        );
+        assert_eq!(stored.base.base_color, marker_colour);
+        assert!(stored.base.unlit);
+        assert_eq!(stored.base.alpha_mode, AlphaMode::Blend);
+        assert_eq!(RingOverlayExtension::alpha_mode(), Some(AlphaMode::Blend));
+        assert!(!RingOverlayExtension::enable_prepass());
+        assert!(!RingOverlayExtension::enable_shadows());
     }
 
     #[test]

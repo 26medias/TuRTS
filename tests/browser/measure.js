@@ -22,6 +22,7 @@ const { chromium } = require("playwright-core");
 const os = require("node:os");
 const { installWebGpuTelemetry } = require("./measure-webgpu-hook.js");
 const { buildVis2LaunchOptions } = require("./harness/measure-launch-options.js");
+const { adapterEvidence, vis2Ready: isVis2Ready } = require("./vis2-validation.js");
 
 const FIRST_FRAME_TIMEOUT_MS = 60000;
 const RECORD_MS = 10000;
@@ -140,7 +141,7 @@ const percentile = (sorted, p) => sorted[Math.floor(p * (sorted.length - 1))];
             return {
                 actualUnits: scene.units.length,
                 worldUnits: debug.replicated_world?.units?.length ?? null,
-                bevyRenderAdapter: debug.render_adapter ?? null,
+                renderAdapter: scene.render_adapter ?? null,
                 webgpu: {
                     adapterRequested: current.adapterRequested,
                     adapterInfo: current.adapterInfo,
@@ -175,30 +176,10 @@ const percentile = (sorted, p) => sorted[Math.floor(p * (sorted.length - 1))];
     } else {
         report.logs = logs.slice(0, 12);
     }
-    const adapterInfoText = JSON.stringify(report.vis2?.webgpu?.adapterInfo || {}).toLowerCase();
-    const bevyAdapter = report.vis2?.bevyRenderAdapter || {};
-    const bevyVendor = typeof bevyAdapter.vendor === "number"
-        ? bevyAdapter.vendor.toString(16) : String(bevyAdapter.vendor || "").toLowerCase();
-    const bevyAdapterText = JSON.stringify(bevyAdapter).toLowerCase();
-    const adapterInfoComplete = Object.values(report.vis2?.webgpu?.adapterInfo || {})
-        .some((value) => typeof value === "string" && value.length > 0) &&
-        (bevyAdapter.device || bevyAdapter.description || bevyAdapterText.includes("nvidia"));
-    const nvidiaAdapter = /nvidia|10de/.test(`${adapterInfoText} ${bevyVendor} ${bevyAdapterText}`);
-    const softwareAdapter = /swiftshader|software/.test(adapterInfoText + bevyAdapterText);
     if (vis2 && report.vis2) {
-        report.vis2.adapterEvidence = { nvidiaAdapter, softwareAdapter, adapterInfoComplete };
+        report.vis2.adapterEvidence = adapterEvidence(report);
     }
-    const wasmMemory = report.wasmMemoryBytes?.last;
-    const vis2Ready = !vis2 || (report.vis2?.actualUnits === 5000 && report.vis2?.worldUnits === 5000 &&
-        report.vis2?.webgpu?.adapterRequested && report.vis2?.webgpu?.deviceAcquired &&
-        report.vis2?.webgpu?.configuredDeviceAcquired && Number.isInteger(report.vis2?.webgpu?.activeDeviceId) &&
-        report.vis2?.webgpu?.configuredContexts > 0 && report.vis2?.webgpu?.currentTextureAcquisitions > 0 &&
-        report.vis2?.webgpu?.submittedDrawCalls > 0 && report.vis2?.webgpu?.instrumentationErrors?.length === 0 &&
-        bevyAdapter.backend?.toLowerCase().includes("webgpu") &&
-        adapterInfoComplete && nvidiaAdapter && !softwareAdapter &&
-        Number.isFinite(report.frames?.p50_ms) && report.frames.p50_ms > 0 &&
-        Number.isFinite(report.frames?.p99_ms) && report.frames.p99_ms > 0 &&
-        Number.isFinite(wasmMemory) && wasmMemory > 0);
+    const vis2Ready = !vis2 || isVis2Ready(report);
     console.log(JSON.stringify(report, null, 2));
     await browser.close();
     process.exit(firstFrameMs === null || !vis2Ready ? 1 : 0);
