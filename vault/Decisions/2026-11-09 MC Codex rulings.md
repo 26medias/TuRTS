@@ -94,3 +94,17 @@ Alternative not taken: weaken the selection oracle, accept retries as resolution
 
 
 C186 measured result: two bounded actual headed reproductions at unchanged40b9d90 fail the expected Shift-add1!=3 assertion; actual injected false event, frame separation, unchangedcamera and true subsequent pointerflags are preserved and independently audited. Driver harness restored byte-for-byte, clean. The oldrun actual synthesizedKeyUp remains unlogged/inferred. Clean isolatedSEL2 and same-profile configured hardware proof remain pending. Rawreceipt t13-shift-ambient-diagnostic-40b9d90-20261109/receipt.json; rootaudit shift-add-causal-runtime-audit.json.
+
+
+C186finalhardwareclosure: freshactualVIS2 under Xvfb100 used actualconfiguredNVIDIA/Ampere device1 with5000replicated/rendered units,89textureacquisitions/178submissions/0instrumenterrors. Source40b and record9ae. Root/RUN71verifiedraw; C186hardwarependingrequirement fulfilled.
+
+
+## C187: Reuse frozen suites from the full workspace gate
+
+Conflict: the native gate helper runs cargo test --workspace --locked, then runs the same forge_cases, forge_fixed_point and m3_m2_stream suites again for G-FROZEN on unchanged source. The CEO approved removal of redundant execution while retaining quality. The current Task13 integration run completed both forms successfully; the second invocation cost40.234s.
+
+Choice: future native gates may use integration_gates_v2.py with reuse-frozen-workspace. The full workspace command still executes after every merge. G-FROZEN reuses only the three actual named suite results from that same successful workspace execution, requires each suite exactly once with positive passed count, zero failures and zero ignored tests, and checks the frozen file against the approved SHA. The existing frozen-hash gate still runs. A receipt records actual workspace log hash, suites, source file hash and reused command; it explicitly says no second execution occurred. Each caller must keep source/head unchanged across the gates as before. All other G-RUST/G-QA/G-WEB commands stay required.
+
+Evidence: the real Task13 integration workspace log has forge_cases26/26, forge_fixed_point1/1 and m3_m2_stream1/1. The original repeated frozen command also passed. Actual positive verification plus nine negative controls reject omitted suites, zero executed tests, failed tests and ignored tests: t13-root/desktop-resume-20261109/frozen-reuse-proof-controls.json. New untracked helpers are integration_gates_v2.py and frozen_workspace_proof.py; the original helper and historical evidence stay unchanged.
+
+This is test-instrument command grouping under the CEO speed approval and brief section4. It does not change frozen values or remove a gate or plant. Alternative not taken: skip the frozen assertions, accept filtered/empty/ignored execution, defer integration gates across task merges, or rerun the same deterministic tests without a source change.

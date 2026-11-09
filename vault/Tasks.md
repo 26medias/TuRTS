@@ -147,3 +147,8 @@ ACTIVE MC Wave6 on desktop. 15/25 complete;71/170 runs. Task13 at40b9d90: normal
 
 
 ACTIVE MC Wave6 on desktop.15/25complete;71/170runs. Task13 normal gates and all4required mutation cycles verified; C186 controlledambient Shift-loss reproduced2/2 and cleanisolatedSEL2 control2/2 passes. RUN71 owns exclusive native/fullVIS1 own-plant verification; RUN70 idle/source-only until lease return, then freshfinal5000 VIS2. Task13 not accepted; no main merge/push. Required no-screen red2/2 exit1 / exactrestore green2/2 exit0; palette red101 / exactrestore4/4green0. Native/QA/frozen gates on original40b runtime retain their original identity; finalvisual ownplant and freshVIS2 remain.
+
+
+## Task13 complete, Wave6 CI pending
+
+ACTIVE:16/25MC tasks complete;71/170buildruns. Task13 merged60082da, independent0High/0Medium; native10gates0 (1446/0/19) and headedT7exit0 (137frames/53moving). Final5000-unitVIS2record9ae verified; GCPpendingD59. Lane removed, branch/evidence retained, solecache on integration. Wave6 push/hostedCI next, then Wave7. No main merge/push. FreshVIS2 p50133.3/p99199.9ms,1529submitted calls over10s,505872384bytes, actualNVIDIA/Ampere configureddevice and5000/5000counts; exactgrep red0/exit1 then green4/exit0, finaldoccommit9ae04f4. Ownreview plant red2/2 namedfour-gapfailure then exactrestoregreen2/2; native19/19. Rootmerged916matching sourceentries/44paths, re-gatednative10+WEBall0, frozenSHAunchanged, and removedcleaninactiveTask13lane aftercachehandoff. Manifestmap/filehashmetadata correction preservedpriorreceipt; all916entries andactualfilehashverified. Sourceandrawdataunchanged. C187records verifiedsame-workspace frozenproofreuse toavoidrepeat execution;9negativecontrols.
