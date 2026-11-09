@@ -8,7 +8,7 @@ source: codex
 
 # MC execution board
 
-State: ACTIVE Wave7:16/25complete;75/170buildruns. ROOT owns the sole local runtime/cache for Task10 final verification. RUN72 is frozen after the two-file C213 commit; RUN74 remains source-only. RUN73 and RUN75 ended source preparation; each needs a new ledger row before continuation. Wave6CI42681727530 terminal: agentsSUCCESS, check/browserFAIL exactapprovedTask21migration-window errors; allrawlogsread. C188mergeholdreleased; everylocalgate/reviewstillrequired. Mainbb611bdunchanged.
+State: ACTIVE Wave7:16/25complete;76/170buildruns. ROOT owns the sole local runtime/cache for Task10 final verification. RUN72 is frozen after the two-file C213 commit; RUN74 remains source-only. RUN73 and RUN75 ended source preparation; each needs a new ledger row before continuation. Wave6CI42681727530 terminal: agentsSUCCESS, check/browserFAIL exactapprovedTask21migration-window errors; allrawlogsread. C188mergeholdreleased; everylocalgate/reviewstillrequired. Mainbb611bdunchanged.
 
 Plan: `docs/superpowers/plans/2026-10-29-mc-player-control.md`.
 Design of record: `docs/superpowers/specs/2026-10-29-mc-player-control-design.md`, revision14 at mainf050e42.
@@ -267,6 +267,7 @@ One row per builder/reviewer dispatch or resumed agent work turn. Register befor
 | 73 | T15 feedback/audio source preparation | bevy-rendering-engineer | gpt-6-luna | high | c4afbc9 | SOURCE PREP COMPLETE, UNCOMPILED/UNACCEPTED. 98 paths archived/hashed at run73/handoff-20261109; no target. Resume only under new ledger row/explicit lease. Actual stub reds preserved; pure checks25/25. |
 | 74 | T10 independent early-to-final review | qa-lead | gpt-6.1-sol | high | c4afbc9 + RUN72candidate | Registered BEFORE dispatch. Task10run2/estimate2 soft4/hard8; global74/170. SOURCEONLY until rootlease. Review realcore/actions/native-browserparity/groupproof and C187 operationalreuse proof, then actualindependent tests/ownplant and finalcandidate0High afterbuildergates. |
 | 75 | T17 source/test/asset preparation | ux-designer | gpt-6-luna | high | Current integration after C211 | Registered before dispatch. Task17 run1/estimate4, soft8/hard16; global75/170. Own lane/branch, SOURCEONLY; no target/compiler/browser/server or Forge HUD before actual baseline reds. |
+| 76 | T17 builder continuation | ux-designer | gpt-6-luna | high | RUN75 five-path source handoff | Registered BEFORE continuation. Task17 run2/estimate4, soft8/hard16; global76/170. SOURCEONLY SEL1/HUD2 baseline preparation until explicit sole-cache lease after T10 merge/regate. No Forge HUD/assets before actual baseline reds. |
 
 ## 9. Preflight ledger and stop
 
@@ -1829,3 +1830,6 @@ C213 fixes root producer-colour calibration: make_dummy actually builds Beacon. 
 
 
 C213 measured: clean Task10 commit311d486 changes only hd1-ui-pixels.js and its pure test. All1369 original source files compared: only those2JS hashes differ. Fresh actual named native process exit0; client/server/test executable hashes, package tree and action bytes match e349 exactly. Carry e349 G-RUST/G-ACC accepted, retaining original execution identity. Current5G-QA commands and3pure controls each exit0. Fresh native report is independently bound to311d486; live timing means its full bytes differ, so no report-byte equality is claimed. Actual headed pair is active; no browser acceptance yet. Proof t10-root/final-311d486/c213-source-identity.json/current-gqa-results.json/native-reference-driver.75/170runs; ROOT sole runtime.
+
+
+C214: register RUN76 before Task17 continuation. Prepare the missing SEL1 baseline source now. After Task10 acceptance, merge and full integration re-gates, give the sole cache to Task17 for its actual pre-HUD native/browser baseline batch, then to Task15 while Task17 writes content source. Keep one compiler/cache/runtime owner and preserve/hash every WIP path before a cache move. No green content before actual baseline reds, no second cache, and no gate omission. Task15 continuation needs its own later ledger row.76/170runs; Task17run2/4.

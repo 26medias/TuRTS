@@ -388,3 +388,12 @@ This is the brief section4 instrument-detail/test-grouping decision under the CE
 
 
 C213 measurement: complete Git diff is exactly the2authorized pure-JS files on311d486. Root compared all1369 original source files and verified freshly built/executed client/server/test binary hashes, actions and package bytes equal e349. Carry conditions passed; original native/G-ACC receipts remain labelled e349. Current G-QA/pure controls and fresh bound named native execution each exit0. Full fresh report bytes differ with live timing and remain independently bound; report-byte equality is not a gate-carry condition. The new actual headed pair remains pending.
+
+
+## C214: Run Task17 baselines before the Task15 build lease
+
+Conflict: Task17 RUN75 prepared the native guide and HUD2 baseline but has no SEL1 driver and no actual baseline execution. The sole cache is still Task10-owned. Task15 source is ready for compilation. Waiting for the entire Task15 runtime batch would leave Task17 content preparation blocked on its red-first obligation.
+
+Choice: register RUN76 as Task17 builder continuation now, source-only for the missing baseline instrument. After Task10 passes review, merges and its full integration re-gates, move the sole cache under the existing preservation/cleaning procedure to Task17 for a bounded pre-HUD native/browser red batch. Then move the cache to Task15 while Task17 writes HUD/assets/guide source. Do not add the production HUD before actual baseline reds. All normal gates, plants and independent review remain. Task15 needs a new ledger row before its builder resumes.
+
+Evidence: plan Task17 step1 (2026-10-29-mc-player-control.md:614-619) requires both HUD2 and SEL1 before HUD content; RUN75 handoff states SEL1 and actual reds pending. The brief section4 permits task order inside a wave and cache/lane handling. Alternative not taken: a second cache/compiler, calling syntax checks semantic red, or keeping Task17 idle through Task15's full validation. Global76/170 registered before continuation; Task17 run2/estimate4, soft8/hard16.
