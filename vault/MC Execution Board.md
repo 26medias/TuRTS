@@ -1692,3 +1692,6 @@ C178: real Moving/Pending plain moves project current:null despite captured auth
 ## C179 actual hardware measurement
 
 RUN68 found VIS2 readiness hard-requires NVIDIA. Root decides this instrument conflict: design9.1 requires actual Chrome WebGPU5000 measurement, no vendor restriction. Require complete actual nonsoftwarehardware metadata/configureddevice/context/submitteddraws and positivefinite metrics; record the actual machine. No inventedbudget or fakeGPU. See [[Decisions/2026-11-09 MC Codex rulings]].68/170runs.
+
+
+C180: imported external documentation-only mainbb611bd INTO integration, preserving both work-log histories and the disk audit. No runtime/design/frozen changes and no merge/push INTO main. Task13 active lane untouched. Required integration re-gate remains after its later code merge.68/170runs.
