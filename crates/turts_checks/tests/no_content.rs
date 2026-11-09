@@ -105,7 +105,7 @@ fn credit_exemption_applies_only_to_identifiers() {
     std::fs::create_dir_all(&src).unwrap();
     std::fs::write(
         src.join("identifier.rs"),
-        "fn ledger() { let credit = 1; { let r#credit = 2; } }",
+        "fn ledger() { let credit = 1; { let r#credit = 2; } let base = 3; }",
     )
     .unwrap();
     std::fs::write(
