@@ -1849,3 +1849,6 @@ C217: HUD2 uses two companion instruments: HUD2.json actualForge and HUD2-MUSTER
 
 
 C216 compatibility includes exact explicitly assigned legacyCI target/m3-t16, traced in ci.yml. Stopped-stub red02 proves oldtargetoverride; patched MCtarget and legacyCIcontrols both0, no compiler/newcache. FirststubSyntaxError preserved as uncreditedsetup. Clean candidate83e6228 changes onlytwoinstrumentfiles; fresh affectedproof pending. RUN77 source-only; ROOT sole runtime.77/170.
+
+
+C218: SEL1 world-tooltip text uses existing turts_ui actual-entity observation. Add kindworld_tooltip rows from WorldTooltip+Text/computedlayout, not AuthoredWidgetId spoofing/catalog-derived expectations. NarrowTask17 visuals marker visibility +snapshotinstrument ownership, actual semantic baseline beforegreen, paired0.5s pixels+text browserproof required. No OCR/driverchannel/tooltipbehavior change.77/170.

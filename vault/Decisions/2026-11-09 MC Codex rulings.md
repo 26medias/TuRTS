@@ -432,3 +432,12 @@ C216 compatibility: RUN77 traced CI check/browser env at .github/workflows/ci.ym
 
 
 C216 consolidated compatibility repair also preserves the assigned compiler budget: CI declares jobs2, whereas the new helper previously forced4 and required4 in its binding. Keep caller jobs1..4 (default4 if absent), bind the actual recorded value, and retain all debug/incremental guards. The local wrapper still requires jobs4. Actual stopped CI stub observes both target/m3-t16 and jobs2, exit0 without compiler/cache. Candidateb051e04 changes only the same2instrumentfiles; earlier83native proof remains historical, final bound process/browser check is new. RUN77 found no other material source issue in its consolidated audit before this bounded correction.
+
+
+## C218: Observe actual world-tooltip text through the existing UI bridge
+
+Conflict: SEL1 requires the unit name/owner world tooltip after0.5s (design9.1:844 and section14:1231). Design13.4:1198 says text is checked through turts_ui, with no OCR. The actual tooltip is Bevy WorldTooltip+Text (visuals.rs:1282-1357), while snapshot.rs:12-20 ignores every entity without AuthoredWidgetId. A pixel panel/glyph check alone cannot establish the required text.
+
+Choice: authorize Task17's narrow observation repair in visuals.rs and widgets/snapshot.rs. Expose the existing marker/unit field within the crate for the test seam. Extend turts_ui with actual world-tooltip rows, kind world_tooltip, observation id world.tooltip.<unit> and unit id, real Bevy Text, computed rectangle and actual layout visibility. Never attach AuthoredWidgetId to an engine tooltip or derive text from the catalog in the observer. Keep authored rows and scene_widgets unchanged. No new driver channel, OCR, input, style, delay or gameplay change.
+
+Prepare a focused actual-marker/Text semantic red before implementing the snapshot branch; the marker visibility change alone is allowed for that test seam. Run it in the bounded baseline lease. Browser SEL1 must pair absence before0.5s with actual tooltip pixels and exact rendered name/owner through turts_ui after0.5s. Required text cannot remain NOT TRACED at acceptance. This is the brief section4 instrument/log-field and nearest existing mechanism choice. Alternative not taken: waive the text, infer it from package declarations, mark an engine entity as authored, use OCR, or expose semantics to the driver. Global77/170; no new agent run.
