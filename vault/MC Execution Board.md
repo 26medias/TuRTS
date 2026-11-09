@@ -8,7 +8,7 @@ source: codex
 
 # MC execution board
 
-State: ACTIVE Wave7:16/25complete;74/170buildruns. RUN72 Task10 sole local runtime/cache; RUN73 Task15 green source-only; RUN74 independent review source-only until lease. Wave6CI42681727530 terminal: agentsSUCCESS, check/browserFAIL exactapprovedTask21migration-window errors; allrawlogsread. C188mergeholdreleased; everylocalgate/reviewstillrequired. Mainbb611bdunchanged.
+State: ACTIVE Wave7:16/25complete;74/170buildruns. ROOT owns the sole local runtime/cache for Task10 final verification. RUN72 has an edit-only commit grant; RUN73 and RUN74 remain source-only. Wave6CI42681727530 terminal: agentsSUCCESS, check/browserFAIL exactapprovedTask21migration-window errors; allrawlogsread. C188mergeholdreleased; everylocalgate/reviewstillrequired. Mainbb611bdunchanged.
 
 Plan: `docs/superpowers/plans/2026-10-29-mc-player-control.md`.
 Design of record: `docs/superpowers/specs/2026-10-29-mc-player-control-design.md`, revision14 at mainf050e42.
@@ -1800,3 +1800,6 @@ C205: native G-ACC1d7c816 fails E9 full owner report at tick241 because expected
 
 
 C206: root stopped runtime after omitted Cargo environment created default cache. Preserved raw logs, dirty sources, inventories and workspace fingerprints; no active compilers/server/client. Removed only rebuildable target/release and target/debug; reclaimed2.69GiB; retained38GiB soleMC cache. New exec_in_lane.py (SHA65d28e4d…) or approved enforcing gate helpers REQUIRED for allfuture Cargo/Trunk/runtime commands.5env/locked/existingcache/shortHEAD/sourceimmutability/rawexit are enforced; actualpositive/3negativecontrols passed. ROOTowns runtime untilreturn. Correct-target E9 red and null-tick red preserved; wrong-target attempt is uncredited setup.74/170runs.
+
+
+Root C205 focused verification is green under enforced wrapper4fffdc82…: native explicit-null rejection1/1 exit0, parameters/projection13/13 exit0, E9 audit-projection1/1 exit0 (53.24s test,70.87s including compilation). Each wrapper receipt records unchanged source and absent default caches. Existing correct-target semantic reds remain; wrong-target missing-client run is setup only. RUN72 may format/document/commit4bounded code paths, then freezes. ROOT will execute final committed gates/GACC/native+headed acceptance.16/25complete;74/170runs.
