@@ -188,3 +188,12 @@ Conflict: the current draft Rust Action requires tick and the Python actions_fil
 Choice: tick is optional. A missing tick uses the preceding effective tick, or0 for the first action, preserving list order without an invented delay. Explicit ticks remain nonnegative integers in nondecreasing order; booleans are invalid. Native parsing and the browser parameter helper use identical normalization. The source fixture remains unchanged, and its raw hash still identifies the authored file; params may carry normalized actions. Add positive controls for all-omitted and mixed explicit10 followed by omitted fields, plus existing invalid/decreasing controls. Explicitly timed fixtures retain their schedules. This is the design-nearest instrument timing default under brief section4, not a player-visible timing change.
 
 Alternative not taken: require an extra field absent from design examples, treat each missing tick as0 after a later scheduled action and reject it, reorder actions, or add a new automatic delay.
+
+
+## C195: Reproject each authored headless action after prior core input
+
+Conflict: the draft hook batches same-tick actions and projects their world points using the pre-batch camera. A double group recall can centre the camera inside Core::step, making a later already-projected command target the wrong world point. The design requires headless actions to follow the same core/camera semantics as browser input.
+
+Choice: tick is an earliest-due threshold for this client test hook. Preserve list order and dispatch at most one authored action per CoreAdapter frame, projecting it from the fresh core state after the prior action was processed. Key/pointer events for one authored action remain atomic. Do not add sleeps or increment authored ticks; C194 omitted-tick normalization is unchanged. Add a focused actual-core/action regression: double group recall changes the camera, then a named world-point command must still emit the intended world target. Accepted/refused-set parity alone cannot detect a wrong point. The separate server --command-script/DET1 exact-tick contract stays unchanged.
+
+This is the nearest existing input-frame/projection mechanism under brief section4, with unchanged player keys/targets and no new visible delay rule. Alternative not taken: use a stale camera for all events, invent direct world-target envelopes outside the core, or relax the server replay schedule.
