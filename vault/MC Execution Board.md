@@ -8,7 +8,7 @@ source: codex
 
 # MC execution board
 
-State: ACTIVE Wave7:16/25complete;74/170runs registered. Wave6 pushed588dcd3; CI42681727530 agents success, check/browser RUNNING (not green). RUN72 Task10 sole localruntime; RUN73 Task15 red-test/source prep only under C188. NoWave7merge before terminalWave6jobs read/classified. Main unchangedbb611bd.
+State: ACTIVE Wave7:16/25complete;74/170buildruns. RUN72 Task10 solelocalruntime/cache; RUN74 independentreview source-only; RUN73 Task15 redtest/fixtureprep only. Wave6CI42681727530 terminal: agentsSUCCESS, check/browserFAIL exactapprovedTask21migration-window errors; allrawlogsread. C188mergeholdreleased; everylocalgate/reviewstillrequired. Mainbb611bdunchanged.
 
 Plan: `docs/superpowers/plans/2026-10-29-mc-player-control.md`.
 Design of record: `docs/superpowers/specs/2026-10-29-mc-player-control-design.md`, revision14 at mainf050e42.
@@ -1746,3 +1746,6 @@ C191resolvesHD1id-only/publicorder and Content/Job gaps: existingsemanticUiActio
 
 
 C192: HD1rowactions_file resolvesonevalidatedfixturesJSON intoimmutableparams.actions; nativeandbrowser sharethefile. No driverfilesystem/debug access or duplicatedstages. Narrowexistingrunner/parameterhelper/testedit authorized; requirecontainment/type/conflictcontrols andfixturehashprovenance.
+
+
+Wave6terminalCI42681727530 on588dcd3: agentsSUCCESS; check format/clippy/wasm/native/boundarypassed, Pythonbrowserregistry testfailsFileNotFoundremoved economy_ui.rs; browserT7passed89frames thenexactlegacyCommandCenter selection/rebuiltownerpanel5000ms timeoutJoinedslot0. BothapprovedO13Task12→21window, ownerTask21. Rootread/preservedall3rawlogs+terminalclassification inmain target/mc-evidence/wave6-ci; no generic unchangedM2timeout claim. C188terminalholdreleased. C187helperacceptedbyindependentRUN74: intrinsiccleanHEAD/status/940trackedinputbyteguard includingsource/vendor/.cargo/toolchain, uniqueevidenceoutput, 9root+15independentfrozen-suite negativecontrols and6head/source+3compilerinputdriftcontrols; oldhelperunchanged.

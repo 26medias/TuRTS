@@ -157,3 +157,8 @@ ACTIVE:16/25MC tasks complete;71/170buildruns. Task13 merged60082da, independent
 ## Wave6 push/read and Wave7 dispatch
 
 ACTIVE Wave7:16/25complete;73/170runs registered. Wave6 pushed588dcd3; CI42681727530 agents success, check/browser RUNNING (not green). RUN72 Task10 sole localruntime; RUN73 Task15 red-test/source prep only under C188. NoWave7merge before terminalWave6jobs read/classified. Main unchangedbb611bd. RUN72 andRUN73 are registered BEFORE dispatch. PR2 remainsdraft/unmerged, updated throughWave6. AllpreviousTask13 evidence retained; solecache willmove fromintegration toTask10. CIURL https://github.com/26medias/TuRTS/actions/runs/42681727530.
+
+
+## Wave6 terminal CI and Wave7 progress
+
+ACTIVE Wave7:16/25complete;74/170buildruns. RUN72 Task10 solelocalruntime/cache; RUN74 independentreview source-only; RUN73 Task15 redtest/fixtureprep only. Wave6CI42681727530 terminal: agentsSUCCESS, check/browserFAIL exactapprovedTask21migration-window errors; allrawlogsread. C188mergeholdreleased; everylocalgate/reviewstillrequired. Mainbb611bdunchanged. Task10compiledreal--actionsred101verified; firstin-progressrun exposedmodifier/groupdefect (repaired), ineligibleworkersfilteredbeforeattackenvelope (instrumentexpectationrepair), ID-onlyorder/ContentJobseam (C191) andsinglefixtureparams(C192). IndependentdraftHighhardcodedMusterwidgetids repaired/source-rechecked; non-Muster/heldShift/ownership/job regressionsstillrequired beforecandidate. Task15sourceprepnative/notices/audio fixtures andC189menuvolumeAPI; pureNode missingresumehookred1 only, noCargo/browseracceptance claim. C187same-workspace frozenreusecontrolleracceptedwithintrinsic940inputguard andnegativecontrols; originalhelper/historyretained.
