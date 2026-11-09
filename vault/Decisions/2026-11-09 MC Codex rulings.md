@@ -179,3 +179,12 @@ Conflict: Bevy0.20 AudioOutput is pub(crate) with a private MixerDeviceSink (ins
 Choice: the design9.5 pre-WASM constructor hook keeps the actual contexts and exposes a read-only snapshot of their actual state values. Add context_states to AudioFeed/debug while retaining aggregate context_state for compatibility. The browser oracle requires a nonempty list and all suspended before the first input, all running after actual resume. The wasm audio owner uses the same actual observation to gate audio-player creation; the debug publisher may merge the actual snapshot too. Never treat resume-called or its promise creation as success. Retain measured player_entities and active_by_category counts from actual ECS audio entities; real OGG playback and real sink/category gain remain required, not invented feed values. The pure Node fake-context tests cover hook logic only and do not count as actual browser AUD1.
 
 This is a log-field/read-only observation bridge under the brief section4 and the design's existing hook mechanism. No extra player control or Bevy-private access. Missing/unavailable actual contexts stay unavailable/locked, not optimistically running. Alternative not taken: private Bevy-field access, a test-only state setter, a guessed running flag, or checking just one of several contexts.
+
+
+## C194: Accept the design's optional HD1 tick field
+
+Conflict: the current draft Rust Action requires tick and the Python actions_file helper rejects its absence, but design2.3:283-286 explicitly gives smart_command/order/group_assign examples without tick.
+
+Choice: tick is optional. A missing tick uses the preceding effective tick, or0 for the first action, preserving list order without an invented delay. Explicit ticks remain nonnegative integers in nondecreasing order; booleans are invalid. Native parsing and the browser parameter helper use identical normalization. The source fixture remains unchanged, and its raw hash still identifies the authored file; params may carry normalized actions. Add positive controls for all-omitted and mixed explicit10 followed by omitted fields, plus existing invalid/decreasing controls. Explicitly timed fixtures retain their schedules. This is the design-nearest instrument timing default under brief section4, not a player-visible timing change.
+
+Alternative not taken: require an extra field absent from design examples, treat each missing tick as0 after a later scheduled action and reject it, reorder actions, or add a new automatic delay.

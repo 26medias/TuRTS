@@ -1752,3 +1752,6 @@ Wave6terminalCI42681727530 on588dcd3: agentsSUCCESS; check format/clippy/wasm/na
 
 
 C193actualaudioobservation: verifiedBevyAudioOutputprivate; preWASMhookread-onlysnapshot ofALLrealcontextstates feedsowner gating/debug. Nonemptyall-suspended→all-running AUD1, no guessedresumesuccess, actualentity/categorycounts andrealOGG/gains stillrequired. PureNode fakecontexts are unitproofonly.
+
+
+C194: HD1tickoptionalperdesignexamples; missinginheritsprior effective tick(0first), orderpreserved, explicitnonnegative/nondecreasing integer andboolrejection. Native/browsernormalizationmatch; positiveall-omitted/mixedcontrols required. Rootcaughtmandatorytickdraftbeforecandidate.
