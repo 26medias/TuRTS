@@ -327,3 +327,12 @@ Conflict: independent review found the new UiOrder path always calls send_explic
 Choice: repair the implementation. After ownership/capability filtering, use the same existing alloc_group rule as ordinary orders: more than one valid unit gets one nonzero group id, shared by every split chunk; a single producer keeps group0. Add one focused4097-unit Content test that checks chunk bounds, exact unit union and one group, plus retain the single-producer/Replace guard. No new key, schema, player action or K4 change is needed.
 
 Let the already-active e200 native gate finish without source drift. Batch this repair and any remaining consolidated review findings before the next final gate run. Preserve prior outputs as historical checks, not final-source acceptance. This is a brief section4 review repair and nearest existing mechanism decision. Alternative not taken: keep an uncovered K4 violation, reject otherwise valid multi-unit typed input, add a second allocator, or change the single-producer widget behavior. Global74/170; no new agent run.
+
+
+## C208: Check visible HUD colour before each HD1 button click
+
+Conflict: design13.4 explicitly requires a driver to check HUD button colour in a screenshot before clicking. The HD1 driver uses the allowed authored layout literals but, before its final checkpoint, clicks without inspecting pixels. The successful result comparison does not replace this explicit instrument requirement.
+
+Choice: add a narrow pure screenshot-colour check before each authored UI-button click. Use the existing PNG decoder, literal colours learned from the controlled HUD and the authored click region. The driver reads only io.screenshot bytes, never package files, turts_scene/widgets or semantic bridges. Preserve the checked PNG and colour observation through io.save. A missing or wrong visible colour must stop before the click. Keep the same action list, physical inputs, native/browser result oracle and all expected outcomes.
+
+Use a small pure helper/control if needed: actual known colour passes; absent/wrong colour rejects. Queue buttons without icons use their authored visible button colour; do not claim icon identity there. Batch with C207 before the next final committed gate/acceptance run. This follows the design over the incomplete plan instrument detail under brief section4. Alternative not taken: exempt HD1 without design support, read widget rectangles semantically, or call a blind fixed-coordinate click a pixel check. Global74/170; no new agent run.

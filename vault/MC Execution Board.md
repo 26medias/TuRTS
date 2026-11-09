@@ -1806,3 +1806,6 @@ Root C205 focused verification is green under enforced wrapper4fffdc82…: nativ
 
 
 C207 repairs a K4 implementation gap: typed UiOrder must use existing alloc_group after valid-unit filtering when count>1, and share it across4096-unit chunks; single-producer group0 stays. One4097-unit Content boundary control required. Current e200 gate remains frozen until it ends; batch review fixes before next final run. K4/design unchanged, no CEO stop.74/170runs.
+
+
+C208 applies design13.4 to HD1: every authored HUDbutton click first checks visible screenshotcolour with purePNG decoding/literalHUDpalette, savesactualcheckPNG/observation, failsbeforeclick onwrong/missingcolour. No driverpackage/debug/widgetread/newcapability. BatchwithC207beforefinalgates/acceptance; rawresultoracle unchanged.74/170runs.
