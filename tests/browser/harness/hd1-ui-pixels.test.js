@@ -26,7 +26,7 @@ test("HD1 UI pixel palette names the authored order and producer controls", () =
         [{ order: "muster:order_remove" }, UI_COLORS.remove],
         [{ order: "muster:order_disable" }, UI_COLORS.disable],
         [{ order: "muster:order_enable" }, UI_COLORS.enable],
-        [{ order: "muster:order_research", content_id: "muster:make_dummy" }, UI_COLORS.produceDummy],
+        [{ order: "muster:order_research", content_id: "muster:make_dummy" }, UI_COLORS.produceBeacon],
         [{ order: "muster:order_cancel", job_id: 1 }, UI_COLORS.cancel],
     ];
     for (const [action, expected] of cases) assert.deepEqual(expectedButtonColor(action), expected);

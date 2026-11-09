@@ -12,7 +12,7 @@ const UI_COLORS = Object.freeze({
     remove: [255, 140, 200],
     disable: [255, 166, 87],
     enable: [86, 212, 168],
-    produceDummy: [240, 155, 155],
+    produceBeacon: [128, 212, 255],
     cancel: [33, 66, 77],
 });
 
@@ -29,7 +29,7 @@ const ORDER_COLORS = Object.freeze({
 
 function expectedButtonColor(action) {
     if (action && Number.isInteger(action.job_id)) return UI_COLORS.cancel;
-    if (action?.content_id === "muster:make_dummy") return UI_COLORS.produceDummy;
+    if (action?.content_id === "muster:make_dummy") return UI_COLORS.produceBeacon;
     const color = ORDER_COLORS[action?.order];
     if (!color) throw new Error(`HD1 has no authored button color for ${action?.order}`);
     return color;
