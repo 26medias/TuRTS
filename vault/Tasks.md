@@ -104,7 +104,7 @@ Human usability amendment1354e33: catalog-derived principal labels/named local s
 
 ## Current MC status
 
-PAUSED by CEO for travel/laptop transfer on 2026-11-09. 15/25 complete; 69/170 runs. Task13 at40b9d90 is unfinished and not accepted. Normal gates passed; plants/review/finalVIS2 remain, including an unresolved restored-source Shift-add failure. See [[Reports/2026-11-09 MC laptop handoff]]. No main merge/push.
+ACTIVE on the desktop: 17/25 MC lanes complete; 78/170 build runs registered. Task10 merged at ea943bf and all integration native/QA/frozen/web gates passed. The actual HD1 process also passed in the assigned integration cache; no duplicate cache. Task17 RUN76 receives the next bounded baseline lease; Task15 RUN78 starts source-only continuation, then gets the sole compiler after that baseline. Wave7 push/CI follows Tasks15 and17. Main bb611bd is unchanged. CEO PT1/PT2 stop remains at Task23.
 
 ## Historical MC checkpoints
 
