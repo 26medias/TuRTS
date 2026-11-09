@@ -104,7 +104,7 @@ Human usability amendment1354e33: catalog-derived principal labels/named local s
 
 ## Current MC status
 
-ACTIVE on the desktop: 17/25 MC lanes complete; 78/170 build runs registered. Task10 merged at ea943bf and all integration native/QA/frozen/web gates passed. The actual HD1 process also passed in the assigned integration cache; no duplicate cache. Task17 RUN76 owns the sole cache for the bounded baseline lease; Task15 RUN78 is source-only, then gets the sole compiler after that baseline. Wave7 push/CI follows Tasks15 and17. Main bb611bd is unchanged. CEO PT1/PT2 stop remains at Task23.
+ACTIVE on the desktop: 17/25 MC lanes complete; 79/170 build runs registered. Task10 merged at ea943bf and all integration native/QA/frozen/web gates passed. The actual HD1 process also passed in the assigned integration cache; no duplicate cache. Task15 RUN78 owns the sole compiler/cache for focused native checks; Task17 RUN76 is source-only on HUD/assets/guide after verified baseline reds. RUN79 reviews Task15 source only. Wave7 push/CI follows Tasks15 and17. Main bb611bd is unchanged. CEO PT1/PT2 stop remains at Task23.
 
 ## Historical MC checkpoints
 

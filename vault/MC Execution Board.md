@@ -8,7 +8,7 @@ source: codex
 
 # MC execution board
 
-State: ACTIVE on the desktop: 17/25 MC lanes complete; 78/170 build runs registered. Task10 merged at ea943bf and all integration native/QA/frozen/web gates passed. The actual HD1 process also passed in the assigned integration cache; no duplicate cache. Task17 RUN76 owns the sole cache for the bounded baseline lease; Task15 RUN78 is source-only, then gets the sole compiler after that baseline. Wave7 push/CI follows Tasks15 and17. Main bb611bd is unchanged. CEO PT1/PT2 stop remains at Task23.
+State: ACTIVE on the desktop: 17/25 MC lanes complete; 79/170 build runs registered. Task10 merged at ea943bf and all integration native/QA/frozen/web gates passed. The actual HD1 process also passed in the assigned integration cache; no duplicate cache. Task15 RUN78 owns the sole compiler/cache for focused native checks; Task17 RUN76 is source-only on HUD/assets/guide after verified baseline reds. RUN79 reviews Task15 source only. Wave7 push/CI follows Tasks15 and17. Main bb611bd is unchanged. CEO PT1/PT2 stop remains at Task23.
 
 Plan: `docs/superpowers/plans/2026-10-29-mc-player-control.md`.
 Design of record: `docs/superpowers/specs/2026-10-29-mc-player-control-design.md`, revision14 at mainf050e42.
@@ -270,6 +270,7 @@ One row per builder/reviewer dispatch or resumed agent work turn. Register befor
 | 76 | T17 builder continuation | ux-designer | gpt-6-luna | high | RUN75 five-path source handoff | Registered BEFORE continuation. Task17 run2/estimate4, soft8/hard16; global76/170. SOURCEONLY SEL1/HUD2 baseline preparation until explicit sole-cache lease after T10 merge/regate. No Forge HUD/assets before actual baseline reds. |
 | 77 | T10 independent cache-routing repair re-check | qa-lead | gpt-6.1-sol | high | Approved311d486 plus C216 bounded instrument repair | Registered BEFORE continuation. Task10 run3/estimate2, soft4/hard8; global77/170. Re-check only assigned-cache repair and affected HD1 proof. Original RUN74 approval/plants preserved for unchanged product source; no new broad matrix. | COMPLETE b051e04 approval0High/0unresolvedMedium;3LowC209. Root merged/regated/actualnon10proof0.
 | 78 | T15 source and runtime continuation | bevy-rendering-engineer | gpt-6-luna | high | Preserved RUN73 WIP rebased to ea943bf | Registered BEFORE dispatch. Task15 run2/estimate5, soft10/hard20; global78/170. SOURCEONLY compatibility audit while Task17 has baseline lease; no Cargo/target/server/browser until explicit sole-cache handoff. Then compile/gates/actual browser acceptance on the existing scope. |
+| 79 | T15 independent source-to-final review | ux-designer | gpt-6.1-sol | high | ea943bf plus RUN78 preserved implementation | Registered BEFORE dispatch. Task15 run3/estimate5, soft10/hard20; global79/170. SOURCEONLY until explicit final runtime lease. Consolidate feedback/audio/real-input acceptance findings before costly final gates, then independent own plant/final review after builder gates/plants. |
 
 ## 9. Preflight ledger and stop
 
@@ -1863,3 +1864,6 @@ Task17 runtime handoff measured: C212 offline fetch0, only expected existing pac
 
 
 RUN76 native baselines root-audited: guide3tests1pass2fail101 at missingForgeinterface; C218focusedlibtest1actualfailure101 at missingrealWorldTooltip row. InitialValue.iter compilefailure and exactshort0tests run are setup-only/uncredited. HUD2 actualheaded2/2 named no-selection-panel reds1 after C84 proves realownedselection[1]. SEL1 unsupported rowfacts attempt issetup-only; currentclear-pixel predicate needsC219body-colour calibration despite correctempty Coreselection/renderedrings. Keep runnerwhitelist, use existingrow/package/fixturefacts, correctpixelcomparison withactualinitialimage +samecamera/staticpositions +actualselectionringmetadata. Re-runaffectedbaseline beforeproductgreen.78/170. Rootnativeaudit t17-root/baseline-native-audit.json.
+
+
+Task17 bounded baseline COMPLETE: nativeguide2fail101/1lexicalcontrolpass, actualWorldTooltip snapshotlib1fail101; headedHUD2 no-panel2reds1 afterrealownedselection; SEL1v4 missingworldtooltipobservation2reds1 withactualdelayedglyphs; MusterexistingOre5002green0. Root audited rawreceipts/C84/PNG; no hoverproductdefect. C219addendum confirms selected-onlyRingsShown. Root archived55T17and98T15paths, movedsolecache17→15/all5cleans0, restoredEVERYhash/status; stash5943947retained. RUN78 nowexclusivefocusednative --audio wrapper; RUN76 SOURCEGREEN only, no target/compiler/browser. RUN79 registeredbeforeindependentsourceaudit.79/170;17/25complete.
