@@ -1749,3 +1749,6 @@ C192: HD1rowactions_file resolvesonevalidatedfixturesJSON intoimmutableparams.ac
 
 
 Wave6terminalCI42681727530 on588dcd3: agentsSUCCESS; check format/clippy/wasm/native/boundarypassed, Pythonbrowserregistry testfailsFileNotFoundremoved economy_ui.rs; browserT7passed89frames thenexactlegacyCommandCenter selection/rebuiltownerpanel5000ms timeoutJoinedslot0. BothapprovedO13Task12→21window, ownerTask21. Rootread/preservedall3rawlogs+terminalclassification inmain target/mc-evidence/wave6-ci; no generic unchangedM2timeout claim. C188terminalholdreleased. C187helperacceptedbyindependentRUN74: intrinsiccleanHEAD/status/940trackedinputbyteguard includingsource/vendor/.cargo/toolchain, uniqueevidenceoutput, 9root+15independentfrozen-suite negativecontrols and6head/source+3compilerinputdriftcontrols; oldhelperunchanged.
+
+
+C193actualaudioobservation: verifiedBevyAudioOutputprivate; preWASMhookread-onlysnapshot ofALLrealcontextstates feedsowner gating/debug. Nonemptyall-suspended→all-running AUD1, no guessedresumesuccess, actualentity/categorycounts andrealOGG/gains stillrequired. PureNode fakecontexts are unitproofonly.
