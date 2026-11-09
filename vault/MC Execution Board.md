@@ -8,7 +8,7 @@ source: codex
 
 # MC execution board
 
-State: ACTIVE Wave7:16/25complete;75/170buildruns. ROOT owns the sole local runtime/cache for Task10 final verification. RUN72 has an edit-only commit grant; RUN73 and RUN74 remain source-only. Wave6CI42681727530 terminal: agentsSUCCESS, check/browserFAIL exactapprovedTask21migration-window errors; allrawlogsread. C188mergeholdreleased; everylocalgate/reviewstillrequired. Mainbb611bdunchanged.
+State: ACTIVE Wave7:16/25complete;75/170buildruns. ROOT owns the sole local runtime/cache for Task10 final verification. RUN72 is frozen after the two-file C213 commit; RUN74 remains source-only. RUN73 and RUN75 ended source preparation; each needs a new ledger row before continuation. Wave6CI42681727530 terminal: agentsSUCCESS, check/browserFAIL exactapprovedTask21migration-window errors; allrawlogsread. C188mergeholdreleased; everylocalgate/reviewstillrequired. Mainbb611bdunchanged.
 
 Plan: `docs/superpowers/plans/2026-10-29-mc-player-control.md`.
 Design of record: `docs/superpowers/specs/2026-10-29-mc-player-control-design.md`, revision14 at mainf050e42.
@@ -1826,3 +1826,6 @@ C212 authorizes only test dev-dependency turts_interaction for actual effective 
 
 
 C213 fixes root producer-colour calibration: make_dummy actually builds Beacon. Both real pre-click17 PNGs show413pixels atRGB128,212,255; wrongDummyRGB0. Only purepalette/testlabel maychange; no input/package/Rust/oracleexpectation change. Carry e349native/GACC onlyifexactnativeinputs+freshbinariesidentical; currentGQA/purecontrols/freshnativebinding/actualheadedpair andplants/review/fullintegrationregates required. Preservefailedpixel attempts.75/170runs.
+
+
+C213 measured: clean Task10 commit311d486 changes only hd1-ui-pixels.js and its pure test. All1369 original source files compared: only those2JS hashes differ. Fresh actual named native process exit0; client/server/test executable hashes, package tree and action bytes match e349 exactly. Carry e349 G-RUST/G-ACC accepted, retaining original execution identity. Current5G-QA commands and3pure controls each exit0. Fresh native report is independently bound to311d486; live timing means its full bytes differ, so no report-byte equality is claimed. Actual headed pair is active; no browser acceptance yet. Proof t10-root/final-311d486/c213-source-identity.json/current-gqa-results.json/native-reference-driver.75/170runs; ROOT sole runtime.
