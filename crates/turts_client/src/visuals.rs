@@ -116,11 +116,11 @@ fn create_ring_overlay_materials(
     Some(
         bases
             .into_iter()
-            .map(|base| {
+            .map(|slot_material| {
                 overlays.add(ExtendedMaterial {
                     base: StandardMaterial {
                         alpha_mode: AlphaMode::Blend,
-                        ..base
+                        ..slot_material
                     },
                     extension: RingOverlayExtension {},
                 })
@@ -1452,8 +1452,15 @@ fn annulus_mesh(gaps: bool) -> Mesh {
         if in_gap {
             continue;
         }
-        let base = index * 2;
-        indices.extend_from_slice(&[base, base + 2, base + 1, base + 1, base + 2, base + 3]);
+        let first_vertex = index * 2;
+        indices.extend_from_slice(&[
+            first_vertex,
+            first_vertex + 2,
+            first_vertex + 1,
+            first_vertex + 1,
+            first_vertex + 2,
+            first_vertex + 3,
+        ]);
     }
     let mut mesh = Mesh::new(
         PrimitiveTopology::TriangleList,

@@ -110,7 +110,7 @@ fn credit_exemption_applies_only_to_identifiers() {
     .unwrap();
     std::fs::write(
         src.join("literals.rs"),
-        "const A: &str = \"credit\"; const B: &[u8] = b\"credit\"; const C: &str = \"base:credits\"; const D: &str = \"resources/credits.ron\";",
+        "const A: &str = \"credit\"; const B: &[u8] = b\"credit\"; const C: &str = \"base:credits\"; const D: &str = \"resources/credits.ron\"; const E: &str = \"base\"; const F: &[u8] = b\"base\";",
     )
     .unwrap();
     std::fs::write(
@@ -144,6 +144,15 @@ fn credit_exemption_applies_only_to_identifiers() {
             "literal {token:?} ({category}) must remain a hit: {hits:#?}"
         );
     }
+    assert_eq!(
+        hits.iter()
+            .filter(|hit| hit.source.ends_with("literals.rs")
+                && hit.token == "base"
+                && hit.category == "package")
+            .count(),
+        2,
+        "bare package string and byte-string literals must remain visible"
+    );
     assert_eq!(
         hits.iter()
             .filter(|hit| hit.source.ends_with("literals.rs") && hit.token == "credit")
