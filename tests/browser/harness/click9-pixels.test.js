@@ -43,6 +43,15 @@ for (const colour of [[200, 75, 50, 255], [0, 114, 178, 255]]) {
     });
 }
 
+test("a small blue HUD glyph does not make the rendered scout ambiguous", () => {
+    const frame = image();
+    fill(frame, 12, 8, 5, 5, [0, 114, 178, 255]);
+    fill(frame, 80, 40, 9, 15, [0, 114, 178, 255]);
+    const scout = findScout(frame);
+    assert(scout);
+    assert(scout.x >= 80 && scout.x < 89 && scout.y >= 51 && scout.y < 55);
+});
+
 test("green ground, white text and a large coloured UI region are not a unit", () => {
     const frame = image();
     fill(frame, 0, 0, 160, 100, [90, 140, 85, 255]);
