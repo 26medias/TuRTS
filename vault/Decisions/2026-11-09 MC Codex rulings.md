@@ -121,7 +121,7 @@ Evidence: Task13 merge60082da passed all10native gates and headedT7; push588dcd3
 
 ## C189: Close Task15 audio, menu and fixture seams
 
-Conflict: AUD1 belongs to Task15 and requires real category gain changes that survive reload. Design9.5/10.1 places the four volumes in the F10/Esc menu, but Task16 implements that menu and persistence after Task15. A hidden test setter would not exercise the designed player path. AudioFeed also lacks an entity count for the explicit no-player-while-suspended assertion, and Muster has sounds/responses but no alert definitions.
+Conflict: AUD1 belongs to Task15 and requires real category gain changes that survive reload. Design9.5/10.1 places the four volumes in the F10/Esc menu, but Task16 implements that menu and persistence after Task15. A hidden test setter would not exercise the designed player path. AudioFeed also lacks an entity count for the explicit no-player-while-suspended assertion, and Muster has damage/destruction rules but lacks definitions for the other required alert triggers.
 
 Choice:
 
@@ -129,7 +129,7 @@ Choice:
 - Add a measured audio-player count to the observational audio feed/web debug bridge, derived from actual audio entities. Real context state, real OGG playback and actual gain remain the browser proof. A dedicated pre-WASM resume script and a pure Node unit test are allowed instruments; the Node fake-context red is not the actual AUD1 browser result.
 - Add a controlled browser fixture package copied from Muster, with explicit alert rules and existing real assets/sounds, if no existing fixture overlay provides the rules. Keep mods/muster and protected Forge content unchanged. Use a nested fixture whose package-directory basename matches its manifest id. Drivers act through io; do not force client debug/replica fields from a driver. Native forced-record tests remain permitted as written. Browser alerts must derive from accepted fixture content plus real authoritative state/transitions.
 
-Evidence: design9.5:917-931, menu10.1:945, persistence10.4:963-978, AUD1:1259; plan Task15 precedes Task16 and Task16 needs15. Existing client_shell.rs/persist.rs are empty registration stubs. debug_feed.rs:38-43 has context_state/started/categories but no entity count. Muster assets/interface provide OGG responses without alert rules. This is an uncovered fixture/instrument/dependency mechanism resolved by advancing the minimum existing designed behavior; full scope and player-visible shape stay intact. Root owns the small cross-task ownership change and later Task16 handoff.
+Evidence: design9.5:917-931, menu10.1:945, persistence10.4:963-978, AUD1:1259; plan Task15 precedes Task16 and Task16 needs15. Existing client_shell.rs/persist.rs are empty registration stubs. debug_feed.rs:38-43 has context_state/started/categories but no entity count. Muster assets/interface provide OGG responses and two existing damage/destruction rules (mods/muster/interface/hud.ron:18-20); the fixture extends remaining trigger coverage. This is an uncovered fixture/instrument/dependency mechanism resolved by advancing the minimum existing designed behavior; full scope and player-visible shape stay intact. Root owns the small cross-task ownership change and later Task16 handoff.
 
 Alternative not taken: defer or weaken AUD1, create an acceptance cycle, add a hidden debug setter or extra player control, or declare audible/persistent behavior from feed values alone. RUN73 remains source-preparation only until its exclusive runtime lease; actual compiled native red precedes corresponding native production behavior.
 
@@ -138,3 +138,6 @@ Alternative not taken: defer or weaken AUD1, create an acceptance cycle, add a h
 Conflict: Task10 Step1 describes unknown option --actions, but the current parser reports unknown argument --actions. Baseline c4afbc9 crates/turts_client/src/options.rs:219 returns unknown argument for unrecognized input.
 
 Choice: retain that established CLI diagnostic. RUN72's compiled real-server HD1 test failed with unknown argument --actions and exit101 before implementation. This is the same missing-feature failure; do not alter unrelated CLI wording to match plan prose. Preserve the actual output/exit and require real action behavior for green. No acceptance or player control changes.
+
+
+C189 evidence correction: root initially carried an unverified source-summary claim that Muster had no alert rules. Direct inspection confirms OwnUnitDamaged and OwnUnitDestroyed at hud.ron:19-20. Corrected the ruling to require only missing trigger coverage; preserve those existing rules. The volume-menu/persistence and observed-player-count decisions are unchanged. No runtime or mod content was changed by this correction.
