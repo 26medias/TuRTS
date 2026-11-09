@@ -8,7 +8,7 @@ source: codex
 
 # MC execution board
 
-State: ACTIVE on the desktop: 17/25 MC lanes complete; 78/170 build runs registered. Task10 merged at ea943bf and all integration native/QA/frozen/web gates passed. The actual HD1 process also passed in the assigned integration cache; no duplicate cache. Task17 RUN76 receives the next bounded baseline lease; Task15 RUN78 starts source-only continuation, then gets the sole compiler after that baseline. Wave7 push/CI follows Tasks15 and17. Main bb611bd is unchanged. CEO PT1/PT2 stop remains at Task23.
+State: ACTIVE on the desktop: 17/25 MC lanes complete; 78/170 build runs registered. Task10 merged at ea943bf and all integration native/QA/frozen/web gates passed. The actual HD1 process also passed in the assigned integration cache; no duplicate cache. Task17 RUN76 owns the sole cache for the bounded baseline lease; Task15 RUN78 is source-only, then gets the sole compiler after that baseline. Wave7 push/CI follows Tasks15 and17. Main bb611bd is unchanged. CEO PT1/PT2 stop remains at Task23.
 
 Plan: `docs/superpowers/plans/2026-10-29-mc-player-control.md`.
 Design of record: `docs/superpowers/specs/2026-10-29-mc-player-control-design.md`, revision14 at mainf050e42.
@@ -1857,3 +1857,6 @@ C218: SEL1 world-tooltip text uses existing turts_ui actual-entity observation. 
 Task10 COMPLETE at merge ea943bf: all11 postmerge stages0, native1454/0/21 in115groups, exact frozen26+1+1 reused from that workspace execution, headed T7/pass137frames. Actual shared HD1 native process in target/mc-integration passed0; all three executables are in that assigned cache and no target/mc-t10 appeared. Root verified product tree equal reviewed b051e04, retired the clean inactive Task10 worktree, preserved evidence and branch. Root acceptance audit: t10-merge-b051e04/acceptance-audit.json.17/25complete.
 
 Task17 C212 offline lock resolution passed0 with only the existing turts_interaction test-dependency edge; no package refresh or target created. First helper ps-no-process exit1 was an uncredited preflight setup issue, fixed before Cargo. Task17 rebase preserved all54 WIP hashes/status. Task15 rebase preserved97 files exactly and the98th core_adapter is the verified conflict-free three-way merge of saved WIP and Task10. Both archives/stashes retained outside lanes. RUN78 registered before source-only dispatch.78/170runs.
+
+
+Task17 runtime handoff measured: C212 offline fetch0, only expected existing pack→interaction test edge, no target/package refresh; sourcehelper ps empty-result exception was setup-only. Root archived/stashed55 paths, moved the sole cache integration→17 with all5workspace cleans0, restored EVERY WIP hash/status and kept stash3208cb0. RUN76 now has exclusive bounded baseline lease under wrapper; no HUD/assets/snapshot green before actual named reds. RUN78 /root/mc_t15_build2 was dispatched only after ledger commitff46bbb, SOURCEONLY.78/170. Receipts t17-root/{c212-lock-resolution,cache-lease-baseline}/receipt.json.
