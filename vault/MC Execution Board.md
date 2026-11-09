@@ -1721,3 +1721,6 @@ PAUSED by CEO for travel/laptop transfer on 2026-11-09. 15/25 complete; 69/170 r
 ## CEO desktop resume2026-11-09
 
 ACTIVE on the desktop after explicit CEO resume2026-11-09. 15/25complete;70/170runs registered. Task13 at40b9d90 remains unaccepted. RUN70 builder owns sole runtime to resolve restored-source SEL2 Shift-add failure, then remaining plants. No laptop work occurred. No main merge/push.
+
+
+C186: dedicated headed X display for remaining Task13 browser checks, unchanged assertions and actual hardware WebGPU proof required. Old Shift-add failure retained; actual synthesized release in oldrun is inference, bounded diagnostic and isolated results NOT TRACED until they run. See [[Decisions/2026-11-09 MC Codex rulings]].
