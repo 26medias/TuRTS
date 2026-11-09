@@ -1,7 +1,7 @@
 mod common;
 use common::*;
 use glam::vec2;
-use turts_interaction::{Core, InputEvent};
+use turts_interaction::{Core, InputEvent, UiOrderTarget};
 use turts_mod_api::{Binding, EngineOverride, Mod};
 use turts_net_protocol::{OrderTarget, QueueMode, UnitId};
 
@@ -33,6 +33,181 @@ fn submit_move(
         over_widget: false,
     });
     core.step(&events, world, &VIEW, now_ms)
+}
+
+#[test]
+fn typed_content_order_uses_intended_owned_producer_independent_of_selection_and_shift() {
+    let mut world = TestWorld::default();
+    world.orders.push(order(
+        "forge:order_produce",
+        turts_mod_api::Behaviour::Produce,
+        turts_mod_api::TargetKind::Content,
+    ));
+    world.orders.last_mut().unwrap().units.clear();
+    world
+        .producible
+        .push((UnitId(5), "forge:train_drone".into()));
+    world
+        .producible
+        .push((UnitId(4), "forge:train_drone".into()));
+    let mut core = Core::default();
+    select_world_point(&mut core, &world, UnitId(1), 10);
+    let selected = core.selected_units().to_vec();
+    let effects = core.step(
+        &[
+            InputEvent::KeyDown {
+                code: "ShiftLeft".into(),
+                mods: vec![Mod::Shift],
+            },
+            InputEvent::UiOrder {
+                order: "forge:order_produce".into(),
+                units: vec![UnitId(5)],
+                target: UiOrderTarget::Content("forge:train_drone".into()),
+            },
+        ],
+        &world,
+        &VIEW,
+        20,
+    );
+    assert_eq!(
+        core.selected_units(),
+        selected,
+        "typed producer action must not change selection"
+    );
+    let envelopes = sent(&effects);
+    assert_eq!(envelopes.len(), 1);
+    assert_eq!(
+        envelopes[0].units,
+        vec![UnitId(5)],
+        "the intended producer is sent, not selected unit 1"
+    );
+    assert_eq!(
+        envelopes[0].target,
+        OrderTarget::Content("forge:train_drone".into())
+    );
+    assert_eq!(
+        envelopes[0].queue,
+        QueueMode::Replace,
+        "UI production retains replace semantics under Shift"
+    );
+    let foreign = core.step(
+        &[InputEvent::UiOrder {
+            order: "forge:order_produce".into(),
+            units: vec![UnitId(4)],
+            target: UiOrderTarget::Content("forge:train_drone".into()),
+        }],
+        &world,
+        &VIEW,
+        30,
+    );
+    assert!(
+        sent(&foreign).is_empty(),
+        "even an authored production fact cannot make a foreign producer valid"
+    );
+    let nonproducer = core.step(
+        &[InputEvent::UiOrder {
+            order: "forge:order_produce".into(),
+            units: vec![UnitId(3)],
+            target: UiOrderTarget::Content("forge:train_drone".into()),
+        }],
+        &world,
+        &VIEW,
+        40,
+    );
+    assert!(
+        sent(&nonproducer).is_empty(),
+        "a unit without the actual recipe fact cannot produce it"
+    );
+    let target_mismatch = core.step(
+        &[InputEvent::UiOrder {
+            order: "forge:order_produce".into(),
+            units: vec![UnitId(5)],
+            target: UiOrderTarget::Job(turts_net_protocol::JobId(7)),
+        }],
+        &world,
+        &VIEW,
+        50,
+    );
+    assert!(
+        sent(&target_mismatch).is_empty(),
+        "a Job target cannot be sent to a Content order"
+    );
+}
+
+#[test]
+fn typed_job_order_rejects_wrong_owner_or_missing_job_without_sending() {
+    let mut world = TestWorld::default();
+    world.orders.push(order(
+        "forge:order_cancel",
+        turts_mod_api::Behaviour::CancelProduction,
+        turts_mod_api::TargetKind::Job,
+    ));
+    world.jobs.push((UnitId(5), turts_net_protocol::JobId(7)));
+    world.jobs.push((UnitId(4), turts_net_protocol::JobId(7)));
+    let mut core = Core::default();
+    let invalid_owner = core.step(
+        &[InputEvent::UiOrder {
+            order: "forge:order_cancel".into(),
+            units: vec![UnitId(4)],
+            target: UiOrderTarget::Job(turts_net_protocol::JobId(7)),
+        }],
+        &world,
+        &VIEW,
+        10,
+    );
+    assert!(
+        sent(&invalid_owner).is_empty(),
+        "foreign producer cannot cancel its job"
+    );
+    let missing_job = core.step(
+        &[InputEvent::UiOrder {
+            order: "forge:order_cancel".into(),
+            units: vec![UnitId(5)],
+            target: UiOrderTarget::Job(turts_net_protocol::JobId(99)),
+        }],
+        &world,
+        &VIEW,
+        20,
+    );
+    assert!(
+        sent(&missing_job).is_empty(),
+        "an absent job cannot be cancelled"
+    );
+    let target_mismatch = core.step(
+        &[InputEvent::UiOrder {
+            order: "forge:order_cancel".into(),
+            units: vec![UnitId(5)],
+            target: UiOrderTarget::Content("forge:train_drone".into()),
+        }],
+        &world,
+        &VIEW,
+        30,
+    );
+    assert!(
+        sent(&target_mismatch).is_empty(),
+        "a Content target cannot be sent to a Job order"
+    );
+    let valid = core.step(
+        &[InputEvent::UiOrder {
+            order: "forge:order_cancel".into(),
+            units: vec![UnitId(5)],
+            target: UiOrderTarget::Job(turts_net_protocol::JobId(7)),
+        }],
+        &world,
+        &VIEW,
+        40,
+    );
+    assert_eq!(sent(&valid).len(), 1);
+    assert_eq!(
+        sent(&valid)[0].units,
+        vec![UnitId(5)],
+        "valid cancel routes through the core composer"
+    );
+    assert_eq!(
+        sent(&valid)[0].target,
+        OrderTarget::Job(turts_net_protocol::JobId(7))
+    );
+    assert_eq!(sent(&valid)[0].queue, QueueMode::Replace);
 }
 
 #[test]

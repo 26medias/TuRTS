@@ -1,0 +1,203 @@
+[
+  {
+    "tick": 2,
+    "do": "box_select",
+    "world_rect": [
+      24,
+      17,
+      33,
+      23
+    ]
+  },
+  {
+    "tick": 4,
+    "do": "group_assign",
+    "group": 1
+  },
+  {
+    "tick": 5,
+    "do": "click_select",
+    "world_point": [
+      25,
+      18
+    ]
+  },
+  {
+    "tick": 6,
+    "do": "order",
+    "order": "muster:order_remove",
+    "ui_point": [
+      176,
+      108
+    ]
+  },
+  {
+    "tick": 8,
+    "do": "group_recall",
+    "group": 1
+  },
+  {
+    "tick": 10,
+    "do": "smart_command",
+    "world_point": [
+      40,
+      26
+    ]
+  },
+  {
+    "tick": 14,
+    "do": "order",
+    "order": "muster:order_attack",
+    "world_point": [
+      54,
+      34
+    ],
+    "ui_point": [
+      40,
+      108
+    ]
+  },
+  {
+    "tick": 18,
+    "do": "box_select",
+    "world_rect": [
+      9,
+      11,
+      13,
+      13
+    ]
+  },
+  {
+    "tick": 22,
+    "do": "order",
+    "order": "muster:order_gather",
+    "world_point": [
+      7,
+      9
+    ],
+    "ui_point": [
+      108,
+      108
+    ]
+  },
+  {
+    "tick": 26,
+    "do": "group_assign",
+    "group": 2
+  },
+  {
+    "tick": 28,
+    "do": "order",
+    "order": "muster:order_move",
+    "world_point": [
+      15,
+      15
+    ],
+    "ui_point": [
+      40,
+      40
+    ]
+  },
+  {
+    "tick": 30,
+    "do": "group_recall",
+    "group": 1
+  },
+  {
+    "tick": 40,
+    "do": "order",
+    "order": "muster:order_stop",
+    "ui_point": [
+      108,
+      40
+    ]
+  },
+  {
+    "tick": 42,
+    "do": "order",
+    "order": "muster:order_hold",
+    "ui_point": [
+      176,
+      40
+    ]
+  },
+  {
+    "tick": 46,
+    "do": "order",
+    "order": "muster:order_move",
+    "world_point": [
+      40,
+      26
+    ],
+    "ui_point": [
+      40,
+      40
+    ],
+    "queue": true
+  },
+  {
+    "tick": 64,
+    "do": "click_select",
+    "world_point": [
+      14,
+      12
+    ]
+  },
+  {
+    "tick": 65,
+    "do": "order",
+    "order": "muster:order_research",
+    "content_id": "muster:make_dummy",
+    "units": [
+      43
+    ],
+    "ui_point": [
+      40,
+      352
+    ]
+  },
+  {
+    "tick": 66,
+    "do": "order",
+    "order": "muster:order_cancel",
+    "job_id": 1,
+    "units": [
+      43
+    ],
+    "ui_point": [
+      40,
+      412
+    ]
+  },
+  {
+    "tick": 68,
+    "do": "click_select",
+    "world_point": [
+      14,
+      12
+    ]
+  },
+  {
+    "tick": 70,
+    "do": "order",
+    "order": "muster:order_disable",
+    "ui_point": [
+      40,
+      176
+    ]
+  },
+  {
+    "tick": 72,
+    "do": "order",
+    "order": "muster:order_enable",
+    "ui_point": [
+      108,
+      176
+    ]
+  },
+  {
+    "tick": 101,
+    "do": "group_recall",
+    "group": 1
+  }
+]

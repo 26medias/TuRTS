@@ -1,0 +1,12 @@
+{
+  "row": "HD1",
+  "package": "tests/browser/fixtures/hd1/muster",
+  "driver": "tests/browser/hd1-driver.js",
+  "oracle": "tests/browser/hd1-oracle.js",
+  "runs": "ci",
+  "capture_scene_checkpoints": true,
+  "viewports": ["1280x720"],
+  "actions_file": "hd1-actions.json",
+  "windows": 1,
+  "device_scale_factor": 1
+}

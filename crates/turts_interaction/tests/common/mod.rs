@@ -8,7 +8,7 @@ use turts_mod_api::{
     Behaviour, Binding, Button, Capability, InputMapDef, Mod, OrderDef, OrderRulesDef, SmartOrder,
     SmartTarget, TargetKind,
 };
-use turts_net_protocol::{NodeId, SlotId, UnitId};
+use turts_net_protocol::{JobId, NodeId, SlotId, UnitId};
 
 pub const OWN: SlotId = SlotId(0);
 pub const OTHER: SlotId = SlotId(1);
@@ -28,6 +28,8 @@ pub struct TestWorld {
     pub interaction: InteractionSettings,
     pub camera_options: CameraOptions,
     pub map_size: Option<Vec2>,
+    pub producible: Vec<(UnitId, String)>,
+    pub jobs: Vec<(UnitId, JobId)>,
 }
 
 impl Default for TestWorld {
@@ -125,6 +127,8 @@ impl Default for TestWorld {
             interaction: InteractionSettings::default(),
             camera_options: CameraOptions::default(),
             map_size: Some(vec2(64.0, 64.0)),
+            producible: Vec::new(),
+            jobs: Vec::new(),
         }
     }
 }
@@ -166,6 +170,14 @@ impl WorldView for TestWorld {
     fn can_gather(&self, unit: &UnitView, node: &NodeView) -> bool {
         unit.capabilities.contains(&Capability::Gatherer) && node.content_id == "forge:ore_node"
     }
+    fn can_produce(&self, unit: &UnitView, content_id: &str) -> bool {
+        self.producible
+            .iter()
+            .any(|(id, content)| *id == unit.id && content == content_id)
+    }
+    fn has_job(&self, unit: &UnitView, job: JobId) -> bool {
+        self.jobs.contains(&(unit.id, job))
+    }
     fn can_weapon_target(&self, unit: &UnitView, target: &UnitView) -> bool {
         unit.capabilities.contains(&Capability::Weapon) && target.owner_slot != unit.owner_slot
     }
@@ -189,7 +201,7 @@ pub fn unit(
     }
 }
 
-fn order(id: &str, behaviour: Behaviour, target: TargetKind) -> OrderDef {
+pub fn order(id: &str, behaviour: Behaviour, target: TargetKind) -> OrderDef {
     let (_, short_id) = id
         .split_once(':')
         .expect("fixture order ids have a package prefix");

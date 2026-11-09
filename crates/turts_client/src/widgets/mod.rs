@@ -1489,7 +1489,6 @@ fn activate_widget(
     mut queue: ResMut<CoreInputQueue>,
     state: Res<ReplicaState>,
     acquired: Option<Res<AcquiredPackages>>,
-    mut pending: ResMut<crate::commands::PendingCommands>,
 ) {
     let Ok((action, enabled, interaction_disabled)) = actions.get(trigger.entity) else {
         return;
@@ -1549,41 +1548,82 @@ fn activate_widget(
                     .any(|technology| technology.to_string() == *content_id)
             });
             if accepts {
-                crate::commands::submit(
-                    &mut pending,
-                    crate::commands::ClientCommand::Produce {
-                        producer_id: turts_net_protocol::UnitId(*producer),
-                        recipe_id: content_id.clone(),
-                    },
-                );
+                let Some(order) = acquired
+                    .0
+                    .content
+                    .catalog
+                    .orders
+                    .iter()
+                    .find(|(_, order)| {
+                        order.behaviour == turts_mod_api::Behaviour::Produce
+                            && order.target == turts_mod_api::TargetKind::Content
+                            && (order.units.is_empty()
+                                || order
+                                    .units
+                                    .iter()
+                                    .any(|allowed| allowed == &unit.content_id))
+                    })
+                    .map(|(id, _)| id.to_string())
+                else {
+                    return;
+                };
+                queue.0.push(turts_interaction::InputEvent::UiOrder {
+                    order,
+                    units: vec![turts_net_protocol::UnitId(*producer)],
+                    target: turts_interaction::UiOrderTarget::Content(content_id.clone()),
+                });
             }
         }
         primitives::WidgetAction::CancelProduction {
             producer,
             job: job_id,
         } => {
+            let Some(acquired) = acquired.as_ref() else {
+                return;
+            };
             let Some(slot) = state.welcome.map(|welcome| welcome.slot) else {
                 return;
             };
             let Some(replica) = state.replica.as_ref() else {
                 return;
             };
-            if replica
+            if let Some(unit) = replica
                 .units
                 .get(producer)
-                .is_some_and(|unit| unit.owner_slot == slot)
-                && replica.economy.queues.iter().any(|queue| {
-                    queue.producer.0 == *producer
-                        && queue.jobs.iter().any(|job| job.id.0 == *job_id)
+                .filter(|unit| unit.owner_slot == slot)
+                .filter(|_| {
+                    replica.economy.queues.iter().any(|queue| {
+                        queue.producer.0 == *producer
+                            && queue.jobs.iter().any(|job| job.id.0 == *job_id)
+                    })
                 })
             {
-                crate::commands::submit(
-                    &mut pending,
-                    crate::commands::ClientCommand::CancelProduction {
-                        producer_id: turts_net_protocol::UnitId(*producer),
-                        job_id: turts_net_protocol::JobId(*job_id),
-                    },
-                );
+                let Some(order) = acquired
+                    .0
+                    .content
+                    .catalog
+                    .orders
+                    .iter()
+                    .find(|(_, order)| {
+                        order.behaviour == turts_mod_api::Behaviour::CancelProduction
+                            && order.target == turts_mod_api::TargetKind::Job
+                            && (order.units.is_empty()
+                                || order
+                                    .units
+                                    .iter()
+                                    .any(|allowed| allowed == &unit.content_id))
+                    })
+                    .map(|(id, _)| id.to_string())
+                else {
+                    return;
+                };
+                queue.0.push(turts_interaction::InputEvent::UiOrder {
+                    order,
+                    units: vec![turts_net_protocol::UnitId(*producer)],
+                    target: turts_interaction::UiOrderTarget::Job(turts_net_protocol::JobId(
+                        *job_id,
+                    )),
+                });
             }
         }
     }

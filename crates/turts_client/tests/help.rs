@@ -66,6 +66,20 @@ fn help_says_what_move_moves_and_what_the_exit_codes_mean() {
 }
 
 #[test]
+fn actions_option_requires_headless_mode() {
+    let output = client(&[
+        "--server",
+        "http://h:7000",
+        "--ws",
+        "ws://h:7001",
+        "--actions",
+        "actions.json",
+    ]);
+    assert_eq!(output.status.code(), Some(2), "{output:?}");
+    assert!(String::from_utf8_lossy(&output.stderr).contains("--actions requires --headless"));
+}
+
+#[test]
 fn a_command_line_error_points_to_help() {
     for args in [&[][..], &["--bogus"][..], &["--server"][..]] {
         let output = client(args);

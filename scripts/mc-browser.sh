@@ -38,15 +38,18 @@ fi
 [[ "$BUILD_JOBS" =~ ^[1-4]$ ]] || { echo "CARGO_BUILD_JOBS must be between 1 and 4" >&2; exit 2; }
 SYNTHETIC_UNITS=""
 SYNTHETIC_SET=false
+HD1_NATIVE_REFERENCE=""
 if [[ -n "$ROW_FILE" ]]; then
     [[ -f "$ROW_FILE" ]] || { echo "missing row file: $ROW_FILE" >&2; exit 2; }
     SYNTHETIC_UNITS="$(python3 - "$ROOT" "$ROW_FILE" <<'PYSYNTHETIC'
 import json, pathlib, sys
 sys.dont_write_bytecode = True
 sys.path.insert(0, str(pathlib.Path(sys.argv[1]) / "scripts"))
-from mc_browser_params import synthetic_units
+from mc_browser_params import actions_file, synthetic_units
 try:
-    value = synthetic_units(json.loads(pathlib.Path(sys.argv[2]).read_text()))
+    row = json.loads(pathlib.Path(sys.argv[2]).read_text())
+    value = synthetic_units(row)
+    actions_file(row, pathlib.Path(sys.argv[1]) / "tests/browser/fixtures")
 except (ValueError, json.JSONDecodeError) as error:
     print(f"invalid row synthetic_units: {error}", file=sys.stderr)
     raise SystemExit(2)
@@ -54,6 +57,15 @@ print("" if value is None else value)
 PYSYNTHETIC
 )" || exit 2
     [[ -z "$SYNTHETIC_UNITS" ]] || SYNTHETIC_SET=true
+    ROW_NAME="$(python3 - "$ROW_FILE" <<'PYROW'
+import json, pathlib, sys
+print(json.loads(pathlib.Path(sys.argv[1]).read_text()).get("row", ""))
+PYROW
+)"
+    if [[ "$ROW_NAME" == "HD1" ]]; then
+        HD1_NATIVE_REFERENCE="${MC_HD1_NATIVE_REFERENCE_DIR:-}"
+        [[ -n "$HD1_NATIVE_REFERENCE" && -d "$HD1_NATIVE_REFERENCE" ]] || { echo "HD1 requires an explicit MC_HD1_NATIVE_REFERENCE_DIR with a native binding" >&2; exit 2; }
+    fi
 fi
 DIST="$ROOT/crates/turts_client_web/dist"
 mkdir -p "$OUT_ROOT"
@@ -71,6 +83,11 @@ env CARGO_BUILD_JOBS="$BUILD_JOBS" cargo build --release -p turts_server >"$OUT/
 env CARGO_BUILD_JOBS="$BUILD_JOBS" cargo build --release -p turts_pack --bin turts-pack >"$OUT/packer-build.log" 2>&1 || { cat "$OUT/packer-build.log" >&2; exit 1; }
 env CARGO_BUILD_JOBS="$BUILD_JOBS" cargo run --release -p turts_pack --bin turts-pack -- "$PACK/$PACKAGE_NAME" >"$OUT/pack.log" 2>&1 || { cat "$OUT/pack.log" >&2; exit 1; }
 (cd "$ROOT/crates/turts_client_web" && env CARGO_BUILD_JOBS="$BUILD_JOBS" trunk build --release) >"$OUT/trunk-build.log" 2>&1 || { cat "$OUT/trunk-build.log" >&2; exit 1; }
+if [[ -n "$HD1_NATIVE_REFERENCE" ]]; then
+    PYTHONDONTWRITEBYTECODE=1 python3 "$ROOT/scripts/hd1_reference.py" validate "$ROOT" "$HD1_NATIVE_REFERENCE"
+    mkdir -p "$OUT/native-reference"
+    cp -a "$HD1_NATIVE_REFERENCE"/. "$OUT/native-reference"/
+fi
 
 read -r STATIC_PORT HTTP_PORT WS_PORT < <(python3 - <<'PYPORTS'
 import socket
@@ -147,7 +164,7 @@ import json, pathlib, re, sys
 sys.dont_write_bytecode = True
 root,package,url,http,ws,row,out,viewport,windows=sys.argv[1:]
 sys.path.insert(0, str(pathlib.Path(root) / "scripts"))
-from mc_browser_params import add_synthetic_param
+from mc_browser_params import add_actions_param, add_synthetic_param
 match=re.fullmatch(r"(\d+)x(\d+)(?:@([0-9]+(?:\.[0-9]+)?))?",viewport)
 if not match: raise SystemExit("invalid viewport: "+viewport)
 data={"package":package,"url":url,"server_url":http,"ws_url":ws,"windows":1,"device_scale_factor":float(match.group(3) or 1)}
@@ -162,6 +179,7 @@ if row:
     if not isinstance(capture,bool): raise SystemExit("capture_scene_checkpoints must be a boolean")
     data["capture_scene_checkpoints"]=capture
     data=add_synthetic_param(data,row_data)
+    data=add_actions_param(data,row_data,pathlib.Path(root)/"tests/browser/fixtures")
 if windows: data["windows"]=int(windows)
 data["viewport"]={"width":int(match.group(1)),"height":int(match.group(2)),"device_scale_factor":data["device_scale_factor"]}
 pathlib.Path(out).write_text(json.dumps(data,sort_keys=True)+"\n")

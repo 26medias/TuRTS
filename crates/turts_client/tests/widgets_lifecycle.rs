@@ -425,10 +425,47 @@ fn submitted_commands(app: &App) -> Vec<ClientCommand> {
         .collect()
 }
 
+fn submitted_order_envelopes(app: &App) -> Vec<turts_net_protocol::OrderEnvelope> {
+    app.world()
+        .resource::<PendingCommands>()
+        .0
+        .iter()
+        .filter_map(|pending| match pending {
+            PendingCommand::Order { order, .. } => Some(order.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
 #[test]
 fn installed_build_menu_activation_submits_one_exact_produce_and_disabled_activation_submits_none()
 {
     let (acquired, replica, producer, recipe) = accepted_fixture();
+    let producer_content = acquired
+        .content
+        .catalog
+        .units
+        .values()
+        .find(|unit| unit.producer.is_some())
+        .expect("producer definition")
+        .id
+        .to_string();
+    let order = acquired
+        .content
+        .catalog
+        .orders
+        .iter()
+        .find(|(_, order)| {
+            order.behaviour == turts_mod_api::Behaviour::Produce
+                && order.target == turts_mod_api::TargetKind::Content
+                && (order.units.is_empty()
+                    || order
+                        .units
+                        .iter()
+                        .any(|allowed| allowed == &producer_content))
+        })
+        .map(|(id, _)| id.to_string())
+        .expect("public qualified Produce order");
     let (mut app, window, camera, _) = installed_app(
         acquired,
         replica,
@@ -451,15 +488,18 @@ fn installed_build_menu_activation_submits_one_exact_produce_and_disabled_activa
     );
     release_as_click(&mut app, window, camera, entity, 1.0);
     assert_eq!(
-        submitted_commands(&app),
-        vec![ClientCommand::Produce {
-            producer_id: UnitId(producer),
-            recipe_id: recipe,
+        submitted_order_envelopes(&app),
+        vec![turts_net_protocol::OrderEnvelope {
+            order,
+            units: vec![UnitId(producer)],
+            target: turts_net_protocol::OrderTarget::Content(recipe.into()),
+            queue: turts_net_protocol::QueueMode::Replace,
+            group: 0,
         }]
     );
     assert!(
-        app.world().resource::<CoreInputQueue>().0.is_empty(),
-        "production never leaks into world input"
+        submitted_commands(&app).is_empty(),
+        "production does not enqueue legacy client commands"
     );
 
     let (acquired, mut replica, producer, recipe) = accepted_fixture();
@@ -498,6 +538,196 @@ fn installed_build_menu_activation_submits_one_exact_produce_and_disabled_activa
     assert!(
         submitted_commands(&disabled_app).is_empty(),
         "disabled real pointer activation submits nothing"
+    );
+}
+
+#[test]
+fn installed_build_menu_activation_skips_foreign_first_produce_order_and_uses_intended_producer() {
+    let (mut acquired, replica, producer, recipe) = accepted_fixture();
+    let producer_content = acquired
+        .content
+        .catalog
+        .units
+        .values()
+        .find(|unit| unit.producer.is_some())
+        .expect("producer definition")
+        .id
+        .to_string();
+    let other_content = acquired
+        .content
+        .catalog
+        .units
+        .keys()
+        .map(ToString::to_string)
+        .find(|id| id != &producer_content)
+        .expect("a distinct unit content id for the restricted order");
+    let template = acquired
+        .content
+        .catalog
+        .orders
+        .values()
+        .find(|order| {
+            order.behaviour == turts_mod_api::Behaviour::Produce
+                && order.target == turts_mod_api::TargetKind::Content
+        })
+        .expect("accepted Produce order")
+        .clone();
+    let stale = acquired
+        .content
+        .catalog
+        .orders
+        .iter()
+        .filter(|(_, order)| {
+            order.behaviour == turts_mod_api::Behaviour::Produce
+                && order.target == turts_mod_api::TargetKind::Content
+        })
+        .map(|(id, _)| id.clone())
+        .collect::<Vec<_>>();
+    for id in stale {
+        acquired.content.catalog.orders.remove(&id);
+    }
+
+    let restricted_id = turts_mod_api::ContentId::parse("aaa:order_produce_foreign").unwrap();
+    let mut restricted = template.clone();
+    restricted.id = restricted_id.local.clone();
+    restricted.units = vec![other_content];
+    acquired
+        .content
+        .catalog
+        .orders
+        .insert(restricted_id, restricted);
+    let intended_id = turts_mod_api::ContentId::parse("zzz:order_produce_intended").unwrap();
+    let mut intended = template;
+    intended.id = intended_id.local.clone();
+    intended.units = vec![producer_content];
+    acquired
+        .content
+        .catalog
+        .orders
+        .insert(intended_id, intended);
+
+    let (mut app, window, camera, _) = installed_app(
+        acquired,
+        replica,
+        Source::BuildMenu,
+        ActionField::Action,
+        &[],
+        1.0,
+        1280,
+        720,
+    );
+    let action = WidgetAction::Produce {
+        producer,
+        content_id: recipe.clone(),
+    };
+    let entity = authored_button(&app, &action);
+    press(&mut app, window, camera, entity, 1.0);
+    release_as_click(&mut app, window, camera, entity, 1.0);
+    assert_eq!(
+        submitted_order_envelopes(&app),
+        vec![turts_net_protocol::OrderEnvelope {
+            order: "zzz:order_produce_intended".into(),
+            units: vec![UnitId(producer)],
+            target: turts_net_protocol::OrderTarget::Content(recipe.into()),
+            queue: turts_net_protocol::QueueMode::Replace,
+            group: 0,
+        }],
+        "the installed widget selects a qualified order allowed for this producer"
+    );
+}
+
+#[test]
+fn installed_cancel_activation_skips_foreign_first_job_order_and_keeps_job_identity() {
+    let (mut acquired, replica, producer, _recipe) = accepted_fixture();
+    let producer_content = acquired
+        .content
+        .catalog
+        .units
+        .values()
+        .find(|unit| unit.producer.is_some())
+        .expect("producer definition")
+        .id
+        .to_string();
+    let other_content = acquired
+        .content
+        .catalog
+        .units
+        .keys()
+        .map(ToString::to_string)
+        .find(|id| id != &producer_content)
+        .expect("distinct unit type for restricted order");
+    let template = acquired
+        .content
+        .catalog
+        .orders
+        .values()
+        .find(|order| {
+            order.behaviour == turts_mod_api::Behaviour::CancelProduction
+                && order.target == turts_mod_api::TargetKind::Job
+        })
+        .expect("accepted CancelProduction order")
+        .clone();
+    let stale = acquired
+        .content
+        .catalog
+        .orders
+        .iter()
+        .filter(|(_, order)| {
+            order.behaviour == turts_mod_api::Behaviour::CancelProduction
+                && order.target == turts_mod_api::TargetKind::Job
+        })
+        .map(|(id, _)| id.clone())
+        .collect::<Vec<_>>();
+    for id in stale {
+        acquired.content.catalog.orders.remove(&id);
+    }
+
+    let restricted_id = turts_mod_api::ContentId::parse("aaa:order_cancel_foreign").unwrap();
+    let mut restricted = template.clone();
+    restricted.id = restricted_id.local.clone();
+    restricted.units = vec![other_content];
+    acquired
+        .content
+        .catalog
+        .orders
+        .insert(restricted_id, restricted);
+    let intended_id = turts_mod_api::ContentId::parse("zzz:order_cancel_intended").unwrap();
+    let mut intended = template;
+    intended.id = intended_id.local.clone();
+    intended.units = vec![producer_content];
+    acquired
+        .content
+        .catalog
+        .orders
+        .insert(intended_id, intended);
+
+    let (mut app, window, camera, _) = installed_app(
+        acquired,
+        replica,
+        Source::ProductionQueue,
+        ActionField::CancelAction,
+        &[FIRST_JOB],
+        1.0,
+        1280,
+        720,
+    );
+    let action = WidgetAction::CancelProduction {
+        producer,
+        job: FIRST_JOB,
+    };
+    let entity = authored_button(&app, &action);
+    press(&mut app, window, camera, entity, 1.0);
+    release_as_click(&mut app, window, camera, entity, 1.0);
+    assert_eq!(
+        submitted_order_envelopes(&app),
+        vec![turts_net_protocol::OrderEnvelope {
+            order: "zzz:order_cancel_intended".into(),
+            units: vec![UnitId(producer)],
+            target: turts_net_protocol::OrderTarget::Job(JobId(FIRST_JOB)),
+            queue: turts_net_protocol::QueueMode::Replace,
+            group: 0,
+        }],
+        "the installed queue button sends the qualified job order allowed for its producer"
     );
 }
 
@@ -551,10 +781,13 @@ fn held_cancel_button_keeps_identity_through_progress_and_retired_rows_are_prune
     );
     release_as_click(&mut app, window, camera, first, 1.0);
     assert_eq!(
-        submitted_commands(&app),
-        vec![ClientCommand::CancelProduction {
-            producer_id: UnitId(producer),
-            job_id: JobId(FIRST_JOB),
+        submitted_order_envelopes(&app),
+        vec![turts_net_protocol::OrderEnvelope {
+            order: "base:order_cancel".into(),
+            units: vec![UnitId(producer)],
+            target: turts_net_protocol::OrderTarget::Job(JobId(FIRST_JOB)),
+            queue: turts_net_protocol::QueueMode::Replace,
+            group: 0,
         }],
         "release dispatches exactly the displayed job"
     );
@@ -740,15 +973,18 @@ fn bounded_queue_scroll_reaches_fifth_cancel_at_dpr_two_and_keeps_world_input_cl
     press(&mut app, window, camera, fifth_button, 2.0);
     release_as_click(&mut app, window, camera, fifth_button, 2.0);
     assert_eq!(
-        submitted_commands(&app),
-        vec![ClientCommand::CancelProduction {
-            producer_id: UnitId(producer),
-            job_id: JobId(FIRST_JOB + 4),
+        submitted_order_envelopes(&app),
+        vec![turts_net_protocol::OrderEnvelope {
+            order: "base:order_cancel".into(),
+            units: vec![UnitId(producer)],
+            target: turts_net_protocol::OrderTarget::Job(JobId(FIRST_JOB + 4)),
+            queue: turts_net_protocol::QueueMode::Replace,
+            group: 0,
         }]
     );
     assert!(
-        app.world().resource::<CoreInputQueue>().0.is_empty(),
-        "scroll and cancel remain UI input"
+        submitted_commands(&app).is_empty(),
+        "scroll and cancel do not enqueue legacy client commands"
     );
 }
 
@@ -1266,10 +1502,10 @@ fn fit_queue_reflows_rows_and_retires_extent_when_empty() {
     let current = authored_button(&app, &WidgetAction::CancelProduction { producer, job: 302 });
     press(&mut app, window, camera, current, 2.0);
     release_as_click(&mut app, window, camera, current, 2.0);
-    let commands = submitted_commands(&app);
+    let orders = submitted_order_envelopes(&app);
     assert!(
-        matches!(commands.as_slice(), [ClientCommand::CancelProduction { producer_id, job_id }]
-            if producer_id.0 == producer && job_id.0 == 302),
-        "the repopulated row retains its exact current producer/job action: {commands:?}"
+        matches!(orders.as_slice(), [order]
+            if order.units == [UnitId(producer)] && order.target == turts_net_protocol::OrderTarget::Job(JobId(302))),
+        "the repopulated row retains its exact current producer/job action: {orders:?}"
     );
 }
