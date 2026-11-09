@@ -1695,3 +1695,6 @@ RUN68 found VIS2 readiness hard-requires NVIDIA. Root decides this instrument co
 
 
 C180: imported external documentation-only mainbb611bd INTO integration, preserving both work-log histories and the disk audit. No runtime/design/frozen changes and no merge/push INTO main. Task13 active lane untouched. Required integration re-gate remains after its later code merge.68/170runs.
+
+
+C181: actual1b649dc two-headed row fails the waypoint oracle because it chooses retained moveintent1 instead of newqueuedintent2; C178 records now contain both correct targets. Gather physical stage still executed with actualworker2/node1/intent3. Root unchanged Gather pixel helper on real images fails observed0changedpixels (focusedexit1, NOT full-rowGatherfailure), and manualPNGshowsnodot. Authorize one shared markeroverlay with existingexactgeometry/target/colour, immediate+unobscured proof and corrected click-specific marker binding; freshfullrow mandatory. See today's Codex rulings and t13-root/resume-20261109/gather-actual-pixel-red.json.68/170runs.
