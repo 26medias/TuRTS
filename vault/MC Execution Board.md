@@ -1836,3 +1836,6 @@ C214: register RUN76 before Task17 continuation. Prepare the missing SEL1 baseli
 
 
 Task10 final311d486 local acceptance evidence: headed HD1 pair2/2 exit0, every11button check passed per run,204unit results/status/reasons exactly match the fresh native process,39held-Move refusals, groups39+2 and finalselection39. Hardware adapter identity NOT TRACED (actual BrowserWebGpu/Other/empty name). Required NoCore plant compiled and joined actual Muster but returned0results; named HD1 failed Remove40vs39, exit101. Exact source hash restored, status empty, same named process exit0. RUN72 ended clean. RUN74 now owns exclusive runtime for C196 controls and its own GroupDrop plant/finalreview. No Task10 merge yet. See t10-root/final-311d486/{root-final-parity-audit.json,no-core-plant/receipt.json}.76/170runs.
+
+
+C215 resolves SEL1 instrument target: actualForge foreigners are weaponless drones. Add one existing foreign forge:turret only in a controlled sel1/forge fixture copy, owner1 at visible empty(26,8), emptycontents. Keep original Forge maps/units fixed; keep clone content byte-identical except documented placement and mirror later HUD/assets. Require the range assertion unconditionally; HUD2 remains actualForge. Preserve clone/delta proof and actual preHUD reds.76/170; RUN76 source-only.
