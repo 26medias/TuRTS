@@ -363,3 +363,14 @@ Conflict: four agent slots include root. Task15's source work is ready but canno
 Choice: RUN73 saves its98-path WIP archive/patch/hash handoff outside Git and ends uncompiled/unaccepted, with its branch/worktree unchanged and no target. Register RUN75 as Task17 builder source/test/asset preparation only in its own branch/worktree from current integration. Do not compile, create another target, start browser/server, or add the Forge HUD before the required actual baseline reds. Source preparation may write the baseline tests, drivers/oracles and asset/provenance recipes. Root retains the sole runtime lease.
 
 When Task15 gets its compiler lease, resume the preserved builder under a new ledger row before it runs; count that continuation toward Task15's estimate/cap. No new task acceptance, budget expansion or wave reordering occurs. This is the brief section4 lane/cache/concurrency decision. Alternative not taken: a second compiler/cache, losing uncommitted audio work, or leaving an available preparation slot unused. RUN73 handoff: t15-builder/run73/handoff-20261109/receipt.json. Global75/170 registered before dispatch; Task17 run1/estimate4, soft8/hard16.
+
+
+## C212: Test the actual effective bindings and preserve the Press R plant
+
+Conflict: Task17's guide test must use effective bindings, but turts_pack has no dev-dependency on the existing turts_interaction resolver (input_map.rs:93-120). Reimplementing the resolver in the test risks a self-confirming duplicate. The plan also exempts bare single-letter labels in step1 while step4 explicitly requires the Press R plant to fail.
+
+Choice: authorize only a test-only turts_interaction path dependency in crates/turts_pack/Cargo.toml. Use the real effective resolver as the independent source of key labels. Root will resolve the minimal lock edge under controlled metadata preparation before the actual baseline; no hand-edited lock, broad update, compiler or new target is permitted during source-only prep. The current edit is one dev-dependency line.
+
+For guide pages1-4, retain whole-word multi-character/special-key checks. A bare article A/a remains ordinary prose. A single-letter label used as an explicit key instruction or chord, such as Press R, is a key mention and must fail. Include article-positive and imperative-negative controls. Keep the required Press R plant and the page5 real Bindings source; do not weaken or retire it. This resolves the instrument contradiction in favour of the design's key-free first pages while preserving the plan's article safeguard.
+
+This is the brief section4 omitted dependency and test-instrument choice. Alternative not taken: duplicate the binding resolver, ban ordinary articles, allow explicit Press R through the guide check, or remove a required plant. Global75/170; no new agent run.

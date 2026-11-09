@@ -264,8 +264,9 @@ One row per builder/reviewer dispatch or resumed agent work turn. Register befor
 | 70 | T13 desktop continuation after CEO travel pause | bevy-rendering-engineer | gpt-6-luna | high | 40b9d90 | COMPLETE9ae04f4. C186causaldiagnostic/isolatedSEL2, no-screen/palette requiredplants, finalactual5000VIS2 redrecord/green/commit. Rootmerged60082da. Allholds released. Global71/170. |
 | 71 | T13 desktop final independent review continuation | ux-designer | gpt-6.1-sol | high | 40b9d90/9ae04f4 | COMPLETE APPROVED0High/0unresolvedMedium. Native19/19; actualfullVIS1baseline2green/ownforeignsolid2red/exactrestore2green; finalsource/rawGPU5000/docs audited. Map/filehashlabel corrected and originalreceipt preserved. Allholds released. |
 | 72 | T10 headless actions implementation | bevy-rendering-engineer | gpt-6-luna | high | currentintegration afterWave6 | Registered BEFORE dispatch. Task10run1/estimate2 soft4/hard8. Solelocalruntime/cache in target/mc-t10. Actualredfirst, HD1native/browser, gates/plants thenindependentreview. |
-| 73 | T15 feedback/audio source preparation | bevy-rendering-engineer | gpt-6-luna | high | currentintegration afterWave6 | Registered BEFORE dispatch. Task15run1/estimate5 soft10/hard20. SOURCEPREPONLY until exclusivelease; write redtests/instruments, noCargo/browser/server/productionbehavior before realred. |
+| 73 | T15 feedback/audio source preparation | bevy-rendering-engineer | gpt-6-luna | high | c4afbc9 | SOURCE PREP COMPLETE, UNCOMPILED/UNACCEPTED. 98 paths archived/hashed at run73/handoff-20261109; no target. Resume only under new ledger row/explicit lease. Actual stub reds preserved; pure checks25/25. |
 | 74 | T10 independent early-to-final review | qa-lead | gpt-6.1-sol | high | c4afbc9 + RUN72candidate | Registered BEFORE dispatch. Task10run2/estimate2 soft4/hard8; global74/170. SOURCEONLY until rootlease. Review realcore/actions/native-browserparity/groupproof and C187 operationalreuse proof, then actualindependent tests/ownplant and finalcandidate0High afterbuildergates. |
+| 75 | T17 source/test/asset preparation | ux-designer | gpt-6-luna | high | Current integration after C211 | Registered before dispatch. Task17 run1/estimate4, soft8/hard16; global75/170. Own lane/branch, SOURCEONLY; no target/compiler/browser/server or Forge HUD before actual baseline reds. |
 
 ## 9. Preflight ledger and stop
 
@@ -1817,6 +1818,8 @@ C209 explicitly defers3Low instrument notes: early malformed Content/Job-worldpo
 C210 places actual replica tick_hz at TOP-LEVEL debug/native report metadata in all capture paths; ALR1 reads that actualrate. No replicated_world schema expansion or hardcoded20Hz; no second C205-style legacy projection mismatch. Capture/rebuild source controls added; actualruntimeproof pendingTask15lease.74/170runs.
 
 
-| 75 | T17 source/test/asset preparation | ux-designer | gpt-6-luna | high | Current integration after C211 | Registered before dispatch. Task17 run1/estimate4, soft8/hard16; global75/170. Own lane/branch, SOURCEONLY; no target/compiler/browser/server or Forge HUD before actual baseline reds. |
 
 C211: RUN73 source preparation ended uncompiled/unaccepted with98owned paths archived/hashed, no target; resume later under a NEW ledger row. RUN75 uses freed slot for Task17 baseline tests/driver/asset recipes, all Needs merged. ROOT still sole runtime; no other wave or budget expansion. Task15 handoff t15-builder/run73/handoff-20261109/receipt.json.75/170registered;16/25complete.
+
+
+C212 authorizes only test dev-dependency turts_interaction for actual effective key labels; minimal Cargo.lock resolution remains pending before Task17 baseline. Bare A/a prose allowed; explicit single-key instruction Press R must fail, preserving the required plant. No duplicate resolver or relaxed guide requirement. RUN75 branch/worktree created from integration0bee132; SOURCEONLY.75/170runs.
