@@ -1846,3 +1846,6 @@ C216: root caught native-reference.sh forcing target/mc-t10 and hd1_reference.py
 
 
 C217: HUD2 uses two companion instruments: HUD2.json actualForge and HUD2-MUSTER.json actualMuster, same pixel-only driver/oracle with explicit scenario. Both required for acceptance HUD2/finalbatch. The runner supports onepackage perrow, so no omitted resource-line obligation or fake mixedpackage windows.77/170runs.
+
+
+C216 compatibility includes exact explicitly assigned legacyCI target/m3-t16, traced in ci.yml. Stopped-stub red02 proves oldtargetoverride; patched MCtarget and legacyCIcontrols both0, no compiler/newcache. FirststubSyntaxError preserved as uncreditedsetup. Clean candidate83e6228 changes onlytwoinstrumentfiles; fresh affectedproof pending. RUN77 source-only; ROOT sole runtime.77/170.
