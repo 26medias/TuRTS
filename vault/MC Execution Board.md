@@ -8,7 +8,7 @@ source: codex
 
 # MC execution board
 
-State: ACTIVE Wave7:16/25complete;76/170buildruns. ROOT owns the sole local runtime/cache for Task10 final verification. RUN72 is frozen after the two-file C213 commit; RUN74 remains source-only. RUN73 and RUN75 ended source preparation; each needs a new ledger row before continuation. Wave6CI42681727530 terminal: agentsSUCCESS, check/browserFAIL exactapprovedTask21migration-window errors; allrawlogsread. C188mergeholdreleased; everylocalgate/reviewstillrequired. Mainbb611bdunchanged.
+State: ACTIVE Wave7:16/25complete;76/170buildruns. ROOT owns the sole local runtime/cache for Task10 final verification. RUN72 ended with a clean handoff; RUN74 owns the sole runtime for final review. RUN73 and RUN75 ended source preparation; each needs a new ledger row before continuation. Wave6CI42681727530 terminal: agentsSUCCESS, check/browserFAIL exactapprovedTask21migration-window errors; allrawlogsread. C188mergeholdreleased; everylocalgate/reviewstillrequired. Mainbb611bdunchanged.
 
 Plan: `docs/superpowers/plans/2026-10-29-mc-player-control.md`.
 Design of record: `docs/superpowers/specs/2026-10-29-mc-player-control-design.md`, revision14 at mainf050e42.
@@ -1833,3 +1833,6 @@ C213 measured: clean Task10 commit311d486 changes only hd1-ui-pixels.js and its 
 
 
 C214: register RUN76 before Task17 continuation. Prepare the missing SEL1 baseline source now. After Task10 acceptance, merge and full integration re-gates, give the sole cache to Task17 for its actual pre-HUD native/browser baseline batch, then to Task15 while Task17 writes content source. Keep one compiler/cache/runtime owner and preserve/hash every WIP path before a cache move. No green content before actual baseline reds, no second cache, and no gate omission. Task15 continuation needs its own later ledger row.76/170runs; Task17run2/4.
+
+
+Task10 final311d486 local acceptance evidence: headed HD1 pair2/2 exit0, every11button check passed per run,204unit results/status/reasons exactly match the fresh native process,39held-Move refusals, groups39+2 and finalselection39. Hardware adapter identity NOT TRACED (actual BrowserWebGpu/Other/empty name). Required NoCore plant compiled and joined actual Muster but returned0results; named HD1 failed Remove40vs39, exit101. Exact source hash restored, status empty, same named process exit0. RUN72 ended clean. RUN74 now owns exclusive runtime for C196 controls and its own GroupDrop plant/finalreview. No Task10 merge yet. See t10-root/final-311d486/{root-final-parity-audit.json,no-core-plant/receipt.json}.76/170runs.
