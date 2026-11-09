@@ -65,8 +65,8 @@ def actions_file(row: dict[str, Any], fixture_root: Path) -> tuple[str, list[dic
             raise ValueError(f"action {index + 1} must be an object")
         if "tick" in action:
             tick = action["tick"]
-            if type(tick) is not int or tick < 0:
-                raise ValueError(f"action {index + 1} tick must be a nonnegative integer")
+            if type(tick) is not int or tick < 0 or tick > 0xFFFF_FFFF:
+                raise ValueError(f"action {index + 1} tick must be an integer in 0..={0xFFFF_FFFF}")
             if index > 0 and tick < previous:
                 raise ValueError(f"action {index + 1} has a tick before the previous action")
             previous = tick

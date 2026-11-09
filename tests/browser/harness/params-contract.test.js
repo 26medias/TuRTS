@@ -126,6 +126,9 @@ test("actions_file validator rejects non-lists, malformed action ticks, and syml
     try {
         fs.writeFileSync(path.join(root, "object.json"), JSON.stringify({ tick: 1 }));
         fs.writeFileSync(path.join(root, "bad-tick.json"), JSON.stringify([{ tick: true, do: "order" }]));
+        fs.writeFileSync(path.join(root, "null-tick.json"), JSON.stringify([{ tick: null, do: "order" }]));
+        fs.writeFileSync(path.join(root, "overflow-tick.json"), JSON.stringify([{ tick: 4294967296, do: "order" }]));
+        fs.writeFileSync(path.join(root, "max-tick.json"), JSON.stringify([{ tick: 4294967295, do: "order", order: "muster:order_stop" }]));
         fs.writeFileSync(path.join(root, "mixed-ticks.json"), JSON.stringify([
             { tick: 10, do: "order", order: "muster:order_move", world_point: [2, 3] },
             { do: "order", order: "muster:order_stop" },
@@ -138,10 +141,13 @@ test("actions_file validator rejects non-lists, malformed action ticks, and syml
         fs.writeFileSync(path.join(outside, "actions.json"), "[]");
         fs.symlinkSync(path.join(outside, "actions.json"), path.join(root, "escape.json"));
         assert.throws(() => validateFixtureActions(root, "object.json"), /JSON action list/);
-        assert.throws(() => validateFixtureActions(root, "bad-tick.json"), /tick must be a nonnegative integer/);
+        assert.throws(() => validateFixtureActions(root, "bad-tick.json"), /tick must be an integer in 0\.\.=/);
+        assert.throws(() => validateFixtureActions(root, "null-tick.json"), /tick must be an integer in 0\.\.=/);
+        assert.throws(() => validateFixtureActions(root, "overflow-tick.json"), /tick must be an integer in 0\.\.=/);
         assert.throws(() => validateFixtureActions(root, "escape.json"), /under tests\/browser\/fixtures/);
         assert.deepEqual(JSON.parse(validateFixtureActions(root, "mixed-ticks.json" )).map((action) => action.tick), [10, 10, 12]);
         assert.deepEqual(JSON.parse(validateFixtureActions(root, "omitted-ticks.json" )).map((action) => action.tick), [0, 0]);
+        assert.deepEqual(JSON.parse(validateFixtureActions(root, "max-tick.json" )).map((action) => action.tick), [4294967295]);
     } finally {
         fs.rmSync(root, { recursive: true, force: true });
         fs.rmSync(outside, { recursive: true, force: true });

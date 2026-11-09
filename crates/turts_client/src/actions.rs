@@ -20,7 +20,7 @@ const VIEWPORT: Viewport = Viewport {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Action {
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_tick")]
     tick: Option<u32>,
     #[serde(rename = "do")]
     kind: String,
@@ -43,6 +43,13 @@ struct Action {
     queue: bool,
     #[serde(default)]
     group: Option<u8>,
+}
+
+fn deserialize_tick<'de, D>(deserializer: D) -> Result<Option<u32>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    u32::deserialize(deserializer).map(Some)
 }
 
 #[derive(Resource, Default)]
@@ -373,6 +380,24 @@ mod tests {
             [0, 0]
         );
         fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn explicit_null_action_tick_is_rejected() {
+        let path =
+            std::env::temp_dir().join(format!("turts-hd1-null-tick-{}.json", std::process::id()));
+        fs::write(
+            &path,
+            r#"[{"tick":null,"do":"order","order":"muster:order_stop"}]"#,
+        )
+        .unwrap();
+        let actions = read_actions(&path);
+        fs::remove_file(path).unwrap();
+
+        assert!(
+            actions.is_err(),
+            "an explicit null tick is invalid; only an omitted tick inherits the previous tick"
+        );
     }
 }
 
