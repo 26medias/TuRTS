@@ -141,3 +141,6 @@ MC latest: Task5 COMPLETE mergee214ccc, independent0High/15probes/ownplant; inte
 
 
 ACTIVE on the desktop after explicit CEO resume2026-11-09. 15/25complete;70/170runs registered. Task13 at40b9d90 remains unaccepted. RUN70 builder owns sole runtime to resolve restored-source SEL2 Shift-add failure, then remaining plants. No laptop work occurred. No main merge/push. See [[MC Execution Board]] and the November9 handoff for exact evidence and remaining sequence.
+
+
+ACTIVE MC Wave6 on desktop. 15/25 complete;71/170 runs. Task13 at40b9d90: normal gates passed; ambient Shift-loss reproduced in2 bounded headed runs and temporary harness restored exactly. RUN70 owns isolated cleanSEL2/remaining plants; RUN71 source review then exclusive final native/VIS1 own plant; fresh finalVIS2 remains. No main merge/push. C186 causal diagnostic actual2/2 namedred1, exact harnessrestore/clean. The old failed run is retained; no retry-only acceptance and no production modifier change. Clean isolated control and remaining Task13 requirements still pending.

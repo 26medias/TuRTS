@@ -8,7 +8,7 @@ source: codex
 
 # MC execution board
 
-State: ACTIVE on the desktop after explicit CEO resume2026-11-09. 15/25complete;71/170runs registered. Task13 at40b9d90 remains unaccepted. RUN70 builder owns sole runtime to resolve restored-source SEL2 Shift-add failure, then remaining plants. No laptop work occurred. No main merge/push.
+State: ACTIVE MC Wave6 on desktop. 15/25 complete;71/170 runs. Task13 at40b9d90: normal gates passed; ambient Shift-loss reproduced in2 bounded headed runs and temporary harness restored exactly. RUN70 owns isolated cleanSEL2/remaining plants; RUN71 source review then exclusive final native/VIS1 own plant; fresh finalVIS2 remains. No main merge/push.
 
 Plan: `docs/superpowers/plans/2026-10-29-mc-player-control.md`.
 Design of record: `docs/superpowers/specs/2026-10-29-mc-player-control-design.md`, revision14 at mainf050e42.
@@ -1724,3 +1724,6 @@ ACTIVE on the desktop after explicit CEO resume2026-11-09. 15/25complete;70/170r
 
 
 C186: dedicated headed X display for remaining Task13 browser checks, unchanged assertions and actual hardware WebGPU proof required. Old Shift-add failure retained; actual synthesized release in oldrun is inference, bounded diagnostic and isolated results NOT TRACED until they run. See [[Decisions/2026-11-09 MC Codex rulings]].
+
+
+C186 measured update: controlled actual unsequenced Shift=false move reproduced original Shift-add1!=3 in2/2 headed runs at40b9d90. Before selection[43,44], release frames300/272 selection[41]/rings1, actual Shift=true down/up, unchangedcamera,1/6 actual frames after injectedfalse before nextpointer. Exact harness restored SHA021e888d… and clean. Root independent audit t13-root/desktop-resume-20261109/shift-add-causal-runtime-audit.json. This is diagnostic, not required plant credit; historical synthesizedKeyUp remains inferred. Clean isolatedSEL2 control is pending.
