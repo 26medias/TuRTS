@@ -1803,3 +1803,6 @@ C206: root stopped runtime after omitted Cargo environment created default cache
 
 
 Root C205 focused verification is green under enforced wrapper4fffdc82…: native explicit-null rejection1/1 exit0, parameters/projection13/13 exit0, E9 audit-projection1/1 exit0 (53.24s test,70.87s including compilation). Each wrapper receipt records unchanged source and absent default caches. Existing correct-target semantic reds remain; wrong-target missing-client run is setup only. RUN72 may format/document/commit4bounded code paths, then freezes. ROOT will execute final committed gates/GACC/native+headed acceptance.16/25complete;74/170runs.
+
+
+C207 repairs a K4 implementation gap: typed UiOrder must use existing alloc_group after valid-unit filtering when count>1, and share it across4096-unit chunks; single-producer group0 stays. One4097-unit Content boundary control required. Current e200 gate remains frozen until it ends; batch review fixes before next final run. K4/design unchanged, no CEO stop.74/170runs.

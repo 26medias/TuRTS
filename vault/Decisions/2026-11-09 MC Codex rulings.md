@@ -318,3 +318,12 @@ This is the brief section4 cache/lane/instrument decision and follows the CEO di
 
 
 C206 measured hardening: independent reviewer found direct Cargo target/config flags can override the environment. Wrapper now rejects --target-dir, --build-dir and --config forms before execution. Actual two negative controls passed; current SHA4fffdc82e7900d9d44c69dc13fb1d067606893c72d980123d23a1dba5c81d4b0. Actual null-tick and E9 greens used this version and recorded all5environment values/source stability/no default cache. Current source and the hash-verified inverse-patch reconstruction of65d28e4d are archived with honest provenance under environment-wrapper-controls/source. Reviewer accepted the prescribed-command scope.
+
+
+## C207: Use the existing group allocator for large typed UI orders
+
+Conflict: independent review found the new UiOrder path always calls send_explicit_units with group0 (interaction/lib.rs:195-202). That helper splits more than4096 units. A valid Content action for4097 eligible producers therefore becomes two group0 envelopes, contrary to K4. Installed production widgets use one producer, so the current HD1 fixture cannot detect this boundary.
+
+Choice: repair the implementation. After ownership/capability filtering, use the same existing alloc_group rule as ordinary orders: more than one valid unit gets one nonzero group id, shared by every split chunk; a single producer keeps group0. Add one focused4097-unit Content test that checks chunk bounds, exact unit union and one group, plus retain the single-producer/Replace guard. No new key, schema, player action or K4 change is needed.
+
+Let the already-active e200 native gate finish without source drift. Batch this repair and any remaining consolidated review findings before the next final gate run. Preserve prior outputs as historical checks, not final-source acceptance. This is a brief section4 review repair and nearest existing mechanism decision. Alternative not taken: keep an uncovered K4 violation, reject otherwise valid multi-unit typed input, add a second allocator, or change the single-producer widget behavior. Global74/170; no new agent run.
