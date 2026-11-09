@@ -49,3 +49,16 @@ Choice: retain the actual9cf source identity and treat its measurement as provis
 The same exact-input check may carry9cf fullVIS1 through docs and SEL2-only edits, saving a duplicate normal pair if its impact batch has not started. The independent actual foreign-solid production plant still needs its compiled red and actual restored fullVIS1 green on the final candidate. SEL2/SEL3 changed instruments, affected CAM1/HUD1/HUD4, all normal task gates, required plants, independent review, integration re-gate and Wave6 hosted CI remain mandatory.
 
 Evidence: root git diff9cf2363..59f2dbe lists only docs/measurements/mc.md, sel-driver.js and sel-oracle.js; runtime/design/fixture/VIS1/measurement/shared-harness input diff exits0. Existing C150/C151 source-impact carry and the CEO-approved test grouping apply. Actual fullVIS1 two0 and actualVIS2 data retain original receipts/hashes; corrected exact table has four rows. Alternative not taken: silently reorder/claim acceptance early, skip mutation restoration or final source binding, rerun unaffected renders only to change the printed commit, or carry across a runtime change.69/170runs;15/25complete.
+
+
+## C183: distinguish the initial Scout silhouette from a small HUD glyph
+
+Conflict: CAM1 recognition fails despite real Joined Scout1 at448.68,213.67. The shared recognizer already accepts warm and blue materials. Actual diagnostic PNGs show a183pixel14x16Scout plus a14pixel5x5blueHUDglyph; its old12pixel/3x3floor makes the unique-component rule ambiguous. Failure was setup, not a camera semantic red.
+
+Choice: retain both colour predicates, unique eligible-component rule and exact silhouette-foot targeting; raise the eligible initial body floor to50pixels and8x8. Both callers CAM1/CLICK9 use it only at the same Acme initial camera, before zoom. Add the named glyph regression and preserve failure screenshots. Keep all camera/selection/timing assertions and fixture/content unchanged. Run CAM1 and the shared-helper-affected CLICK9 defined viewport checks; no unrelated image matrix is added.
+
+Evidence: actual failure PNGs under t13-cam1-recognition-diagnostic-fb3d5eb-20261109; helper/callers; pure oldred1/new7pass; clean41987afa8e287c9750df436a9196351b90f004f4 CAM1two0 and CLICK9two0 independently audited. Source has no coordinate shortcut or debug input targeting. Alternative not taken: widen colours without evidence, choose the largest of two real unit-sized candidates, change the camera/content, weaken oracles, or accept a recognition failure as semantic red.69/170runs.
+
+### C182 native lint changes expire the exact VIS2 carry
+
+The later strict Clippy gate found routine lints in runtime visuals/debug source. It failed101 before subsequent gates; that is not a semantic red. Any runtime Rust source repair expires C182 exact-input VIS2 carry. Run fresh actual5000-unit measurement AFTER final gates and restored plants on final source, then finalize the record. Preserve old9cf measurement as historical. The earlier provisional capture is not relabelled. No benchmark rerun is needed merely for a record-format change, but the runtime-source change is a new reason.
