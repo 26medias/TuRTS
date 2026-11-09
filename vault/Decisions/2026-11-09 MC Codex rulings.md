@@ -354,3 +354,12 @@ Conflict: ALR1 needs the actual tick rate to measure a1s cooldown. The Task15 dr
 Choice: publish the actual Replica.tick_hz as top-level turts_debug.tick_hz and native report metadata, in all capture/rebuild paths; use null when no actual replica exists. Keep replicated_world unchanged. ALR1 reads the actual top-level rate. Add capture/rebuild consistency assertions. Root inspected the current debug.rs diff and verified no tick_hz remains under replicated_world. This avoids changing an unrelated server test or frozen value for read-only timing metadata.
 
 This is the brief section4 log-field/instrument placement decision. Alternative not taken: hardcode20Hz, update only one publication path, or expand the replicated-world DTO with observation-only metadata. Source checks pass; actual native/browser proof remains NOT TRACED until Task15 receives its runtime lease. Global74/170; no new agent run.
+
+
+## C211: Rotate the completed source-prep seat into Task17 preparation
+
+Conflict: four agent slots include root. Task15's source work is ready but cannot compile while Task10 holds the sole cache. Keeping that source-only seat idle prevents parallel preparation of Task17, whose declared Needs are already merged.
+
+Choice: RUN73 saves its98-path WIP archive/patch/hash handoff outside Git and ends uncompiled/unaccepted, with its branch/worktree unchanged and no target. Register RUN75 as Task17 builder source/test/asset preparation only in its own branch/worktree from current integration. Do not compile, create another target, start browser/server, or add the Forge HUD before the required actual baseline reds. Source preparation may write the baseline tests, drivers/oracles and asset/provenance recipes. Root retains the sole runtime lease.
+
+When Task15 gets its compiler lease, resume the preserved builder under a new ledger row before it runs; count that continuation toward Task15's estimate/cap. No new task acceptance, budget expansion or wave reordering occurs. This is the brief section4 lane/cache/concurrency decision. Alternative not taken: a second compiler/cache, losing uncommitted audio work, or leaving an available preparation slot unused. RUN73 handoff: t15-builder/run73/handoff-20261109/receipt.json. Global75/170 registered before dispatch; Task17 run1/estimate4, soft8/hard16.

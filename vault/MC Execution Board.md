@@ -8,7 +8,7 @@ source: codex
 
 # MC execution board
 
-State: ACTIVE Wave7:16/25complete;74/170buildruns. ROOT owns the sole local runtime/cache for Task10 final verification. RUN72 has an edit-only commit grant; RUN73 and RUN74 remain source-only. Wave6CI42681727530 terminal: agentsSUCCESS, check/browserFAIL exactapprovedTask21migration-window errors; allrawlogsread. C188mergeholdreleased; everylocalgate/reviewstillrequired. Mainbb611bdunchanged.
+State: ACTIVE Wave7:16/25complete;75/170buildruns. ROOT owns the sole local runtime/cache for Task10 final verification. RUN72 has an edit-only commit grant; RUN73 and RUN74 remain source-only. Wave6CI42681727530 terminal: agentsSUCCESS, check/browserFAIL exactapprovedTask21migration-window errors; allrawlogsread. C188mergeholdreleased; everylocalgate/reviewstillrequired. Mainbb611bdunchanged.
 
 Plan: `docs/superpowers/plans/2026-10-29-mc-player-control.md`.
 Design of record: `docs/superpowers/specs/2026-10-29-mc-player-control-design.md`, revision14 at mainf050e42.
@@ -84,7 +84,7 @@ CI trigger: `.github/workflows/ci.yml:2-5` runs pushes to main and pull requests
 | T13 | 6 | 4, 6, 9, 11, 19, 20 | codex/mc-t13 | COMPLETE merge60082da; candidate9ae04f4, independent0High/0Medium, normal/requiredplants/native19/actualforeignsolid closed, fresh5000VIS2record; native10integrationgates0 (1446/0/19), T7 137frames/53moving exit0; lane removed, branch/evidence retained. |
 | T10 | 7 | 5, 9, 11, 19, 20 | codex/mc-t10 | ACTIVE RUN72 builder; ownlane/solecache, native/browserHD1 redfirst. |
 | T15 | 7 | 4, 7, 12, 13 | codex/mc-t15 | ACTIVE RUN73 green source-only; compiled stub reds archived, runtimelease pending. |
-| T17 | 7 | 3, 12, 13, 19, 20 | codex/mc-t17 | NOT STARTED |
+| T17 | 7 | 3, 12, 13, 19, 20 | codex/mc-t17 | RUN75 registered source/test/asset prep only; no target/runtime. |
 | T14 | 8 | 5, 12, 13, 15 | codex/mc-t14 | NOT STARTED |
 | T16 | 8 | 7, 12, 15 | codex/mc-t16 | NOT STARTED |
 | T22 | 8 | 6, 7, 10, 11, 13, 19, 20 | codex/mc-t22 | NOT STARTED |
@@ -1815,3 +1815,8 @@ C209 explicitly defers3Low instrument notes: early malformed Content/Job-worldpo
 
 
 C210 places actual replica tick_hz at TOP-LEVEL debug/native report metadata in all capture paths; ALR1 reads that actualrate. No replicated_world schema expansion or hardcoded20Hz; no second C205-style legacy projection mismatch. Capture/rebuild source controls added; actualruntimeproof pendingTask15lease.74/170runs.
+
+
+| 75 | T17 source/test/asset preparation | ux-designer | gpt-6-luna | high | Current integration after C211 | Registered before dispatch. Task17 run1/estimate4, soft8/hard16; global75/170. Own lane/branch, SOURCEONLY; no target/compiler/browser/server or Forge HUD before actual baseline reds. |
+
+C211: RUN73 source preparation ended uncompiled/unaccepted with98owned paths archived/hashed, no target; resume later under a NEW ledger row. RUN75 uses freed slot for Task17 baseline tests/driver/asset recipes, all Needs merged. ROOT still sole runtime; no other wave or budget expansion. Task15 handoff t15-builder/run73/handoff-20261109/receipt.json.75/170registered;16/25complete.
