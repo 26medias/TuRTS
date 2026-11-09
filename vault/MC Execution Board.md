@@ -8,7 +8,7 @@ source: codex
 
 # MC execution board
 
-State: ACTIVE Wave7:16/25complete;74/170buildruns. RUN72 Task10 solelocalruntime/cache; RUN74 independentreview source-only; RUN73 Task15 redtest/fixtureprep only. Wave6CI42681727530 terminal: agentsSUCCESS, check/browserFAIL exactapprovedTask21migration-window errors; allrawlogsread. C188mergeholdreleased; everylocalgate/reviewstillrequired. Mainbb611bdunchanged.
+State: ACTIVE Wave7:16/25complete;74/170buildruns. RUN73 Task15 boundedcompiled-stub-red lease; RUN72 Task10 andRUN74review source-only. Wave6CI42681727530 terminal: agentsSUCCESS, check/browserFAIL exactapprovedTask21migration-window errors; allrawlogsread. C188mergeholdreleased; everylocalgate/reviewstillrequired. Mainbb611bdunchanged.
 
 Plan: `docs/superpowers/plans/2026-10-29-mc-player-control.md`.
 Design of record: `docs/superpowers/specs/2026-10-29-mc-player-control-design.md`, revision14 at mainf050e42.
@@ -1758,3 +1758,6 @@ C194: HD1tickoptionalperdesignexamples; missinginheritsprior effective tick(0fir
 
 
 C195HD1freshprojection: atmostoneauthoredaction perCoreAdapterframe, tickearliestdue/orderpreserved, noadditional sleep/tickincrement. ReprojectafterpriorCorecamera effects; sameactioneventsatomic. Actualdoublegrouprecall→worldtarget regression required. C194defaults andserverDET1exactticksunchanged.
+
+
+Cache interleave: RUN72explicitlyreleasedidlecompiler whilecontinuingHD1fixture/browser sourceauthoring. RootpausedRUN73writes, preserved84explicitownedWIPfilesinstashde16c846d4878c3a49b6cddb07f68eabd4b5818e, movedsolecache10→15/all5cleans0, reappliedstashandverifiedEVERYhash/statusidentical. RUN73nowhasboundedcompiledstub-redleaseonly foralerts/notices/volume_settings/audio_readiness; noproductgreen/body/audio-dependencydownload/browser/gates. Afterbatchreleaserootreturnssolecacheto10withsameWIPpreservation. Stashretained, noextraagentrun; global74. Receipt t15-root/borrowed-baseline-20261109/restoration-and-lease.json.
