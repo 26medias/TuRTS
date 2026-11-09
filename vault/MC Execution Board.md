@@ -1794,3 +1794,6 @@ C203: Task15ALR1provesactualderivation/sound/pingfeed+rule/unit/position, visibl
 
 
 Task10provisionalHD1green: rootfixture-only5centerfixes gave native0/headed2of2exit0;204results/39not_queueable each, exactreason/status/groups/selection/native, actualXvfb103 preflight0, rootrawaudit cell-center-repair/runtime-run01/root-parity-audit.json. Candidatefe5311 committed88files. FirstnormalgateClippy101 same-type id.clone().into(); narrowidentityrepair pending. C204 permits historicalbrowsercarryONLYafteractual3rebuiltruntimehashesALLidentical +unchangedactions/package/driver/oracle; originalexecutionidentityretained. Otherwiseaffectedbrowserrepeat. Allnormalgates/nativeGACC/plants/reviewremain.74/170runs;16/25complete.
+
+
+C205: native G-ACC1d7c816 fails E9 full owner report at tick241 because expected projection omits existing public unit_orders and null max_health. This is NOT approved browser-panel red window. Repair expected from existing independently validated audit/snapshot helper, keep full equality/M2 no-health invariant, never copy/drop actual fields. Focused E9 red→green then final gates/GACC. Batch C194 explicit-null rejection (native Option currently accepts null, Python rejects), actual red/green controls. C204 actual native client/test hashes differ, so headed recheck required after batch. No frozen change.74/170runs;16/25complete.

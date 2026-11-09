@@ -291,3 +291,14 @@ This is a brief section4 instrument/redundancy decision consistent with the CEO'
 
 
 C204 clarification: the exact gate-warning patch also removes equivalent len/PathBuf conversions, an unused import and test-only style warnings; preserve its fullSHA and explicitdiff. Browser carry additionally requires rebuilt WASM/glue/HTML bytes unchanged, because native executables alone are not the browser program. Root preserved a clearly labeled POST-RUN current-dist snapshot before any newTrunkbuild; it is not relabeled as at-launch capture. If directproof is not met, rerun the affected pair. No broader source cleanup is authorized.
+
+
+## C205: Update the independent E9 expected report for existing public fields
+
+Conflict: G-ACC on clean Task10 candidate1d7c816 fails the native E9 late-join test at economy.rs:1558. The client report now includes owner-public unit_orders and per-unit max_health, added for Task13 under C165, but owner_report_projection_from_audit:1487-1513 omits both. Actual tick241 data otherwise matches the independent audit. This native projection mismatch is NOT the approved Task12-to21 browser-panel red window.
+
+Choice: repair only the legacy test's expected report projection now. Include snapshot.unit_orders from the existing independent owner_unit_orders_from_audit helper (:1199). For this explicitly M2-only fixture, retain the no-M3-state invariant and expected null max_health; fail on unexpected health state rather than copy values from the client. Canonicalize the new owner rows by unit while preserving order/queue semantics. Keep full actual==expected comparison, private-owner filtering and all old fields. Never drop the new fields from actual or derive expected values from client output.
+
+Preserve the compiled E9 red and prove the focused case green. Batch the independently found native tick:null parser disagreement with this repair: reject explicit null as required by C194, retain omission semantics, and show a named malformed-tick red then restored valid/invalid controls. Commit the bounded changes, rerun final gates/G-ACC, and rerun actual HD1 native/browser acceptance because C204 runtime hashes differed. No frozen audit/stream value, wire shape or gameplay changes are needed.
+
+This is the brief section4 instrument/report-field/incomplete ownership resolution. Alternative not taken: call every legacy failure an approved window, postpone a required native gate to21, weaken full-state equality, or change the frozen baseline. Global74/170; no new agent run.
