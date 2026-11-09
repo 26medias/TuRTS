@@ -159,36 +159,41 @@ pub fn debug_json(world: &World) -> String {
         .unwrap_or_else(|| json!({"actions":{},"orders":{}}));
     let replicated_world = world
         .get_resource::<ReplicaState>()
-        .and_then(|state| state.replica.as_ref())
-        .map(|replica| {
-            let mut units: Vec<_> = replica
-                .units
-                .iter()
-                .map(|(&unit_id, unit)| {
-                    json!({
-                        "unit_id": unit_id,
-                        "content_id": unit.content_id,
-                        "owner_slot": unit.owner_slot,
-                        "facing": unit.facing,
-                        "pos": unit.samples.back().map(|(_, pos)| [pos.x, pos.y]),
+        .and_then(|state| {
+            state.replica.as_ref().map(|replica| {
+                let content = state.content.as_ref();
+                let unit_orders = unit_orders_json(&replica.unit_orders);
+                let mut units: Vec<_> = replica
+                    .units
+                    .iter()
+                    .map(|(&unit_id, unit)| {
+                        json!({
+                            "unit_id": unit_id,
+                            "content_id": unit.content_id,
+                            "owner_slot": unit.owner_slot,
+                            "facing": unit.facing,
+                            "pos": unit.samples.back().map(|(_, pos)| [pos.x, pos.y]),
+                            "max_health": unit_max_health(content, &unit.content_id),
+                        })
                     })
+                    .collect();
+                units.sort_by_key(|unit| unit["unit_id"].as_u64().unwrap_or_default());
+                let mut nodes: Vec<_> = replica.nodes.values().map(|node| json!(node)).collect();
+                nodes.sort_by_key(|node| node["id"].as_u64().unwrap_or_default());
+                json!({
+                    "tick": replica.last_applied_tick,
+                    "units": units,
+                    "nodes": nodes,
+                    "economy": replica.economy,
+                    "belts": replica.belts,
+                    "inserters": replica.inserters,
+                    "extractors": replica.extractors,
+                    "weapons": replica.weapons,
+                    "healths": replica.healths,
+                    "unit_orders": unit_orders,
+                    "research": replica.research,
+                    "health_trace": health_trace_json(&replica.health_trace),
                 })
-                .collect();
-            units.sort_by_key(|unit| unit["unit_id"].as_u64().unwrap_or_default());
-            let mut nodes: Vec<_> = replica.nodes.values().map(|node| json!(node)).collect();
-            nodes.sort_by_key(|node| node["id"].as_u64().unwrap_or_default());
-            json!({
-                "tick": replica.last_applied_tick,
-                "units": units,
-                "nodes": nodes,
-                "economy": replica.economy,
-                "belts": replica.belts,
-                "inserters": replica.inserters,
-                "extractors": replica.extractors,
-                "weapons": replica.weapons,
-                "healths": replica.healths,
-                "research": replica.research,
-                "health_trace": health_trace_json(&replica.health_trace),
             })
         })
         .unwrap_or(Value::Null);
@@ -263,6 +268,7 @@ pub fn debug_json(world: &World) -> String {
     json!({
         "phase": phase,
         "match_id": world.get_resource::<ReplicaState>().and_then(|state| state.welcome.map(|welcome| welcome.match_id)),
+        "slot": world.get_resource::<ReplicaState>().and_then(|state| state.welcome.map(|welcome| welcome.slot)),
         "units": units,
         "last_frame": last_frame,
         "trace": trace,
@@ -378,9 +384,10 @@ pub fn report_json(world: &World) -> Value {
         })
         .collect();
     let replicated_world = state.replica.as_ref().map(|replica| {
+        let unit_orders = unit_orders_json(&replica.unit_orders);
         let units = replica.units.iter().map(|(&id, unit)| {
             let pos = unit.samples.back().map(|(_, pos)| [pos.x, pos.y]);
-            json!({ "unit_id": id, "content_id": unit.content_id, "owner_slot": unit.owner_slot, "facing": unit.facing, "pos": pos })
+            json!({ "unit_id": id, "content_id": unit.content_id, "owner_slot": unit.owner_slot, "facing": unit.facing, "pos": pos, "max_health": unit_max_health(state.content.as_ref(), &unit.content_id) })
         }).collect::<Vec<_>>();
         json!({
             "tick": replica.last_applied_tick,
@@ -392,6 +399,7 @@ pub fn report_json(world: &World) -> Value {
             "extractors": replica.extractors,
             "weapons": replica.weapons,
             "healths": replica.healths,
+            "unit_orders": unit_orders,
             "research": replica.research,
             "health_trace": health_trace_json(&replica.health_trace),
         })
@@ -468,6 +476,120 @@ pub fn report_json(world: &World) -> Value {
         "held_snapshots": world.get_resource::<crate::ingest::IngestHooks>().map_or(0, |hooks| hooks.held.len()),
         "debug": debug,
     })
+}
+
+fn unit_orders_json(
+    records: &std::collections::HashMap<u32, turts_net_protocol::UnitOrderRecord>,
+) -> Vec<Value> {
+    let mut records: Vec<_> = records.values().cloned().collect();
+    records.sort_by_key(|record| record.unit.0);
+    records.into_iter().map(|record| json!(record)).collect()
+}
+
+fn unit_max_health(
+    content: Option<&crate::content::ClientContent>,
+    content_id: &str,
+) -> Option<u64> {
+    let content_id = turts_mod_api::ContentId::parse(content_id).ok()?;
+    content?
+        .catalog
+        .units
+        .get(&content_id)?
+        .health
+        .map(|health| health.max)
+}
+
+#[cfg(test)]
+mod unit_order_debug_tests {
+    use super::{DebugState, debug_json, rebuild_debug_state, unit_orders_json};
+    use crate::ingest::{ReplicaState, WelcomeInfo};
+    use crate::replica::Replica;
+    use std::collections::HashMap;
+    use turts_net_protocol::{Activity, UnitId, UnitOrderRecord};
+
+    #[test]
+    fn capture_and_report_share_sorted_received_owner_order_records() {
+        let records = HashMap::from([
+            (
+                9,
+                UnitOrderRecord {
+                    unit: UnitId(9),
+                    activity: Activity::Moving,
+                    current: None,
+                    queued: Vec::new(),
+                    last_failure: None,
+                },
+            ),
+            (
+                2,
+                UnitOrderRecord {
+                    unit: UnitId(2),
+                    activity: Activity::Idle,
+                    current: None,
+                    queued: Vec::new(),
+                    last_failure: None,
+                },
+            ),
+        ]);
+
+        let capture = unit_orders_json(&records);
+        let report = unit_orders_json(&records);
+        assert_eq!(capture, report);
+        assert_eq!(capture.len(), 2);
+        assert_eq!(capture[0]["unit"], 2);
+        assert_eq!(capture[1]["unit"], 9);
+        assert_eq!(capture[0]["activity"], "Idle");
+        assert_eq!(capture[1]["activity"], "Moving");
+    }
+
+    #[test]
+    fn debug_capture_and_rebuild_preserve_the_same_received_owner_records() {
+        let mut replica = Replica::new(20);
+        replica.unit_orders.insert(
+            8,
+            UnitOrderRecord {
+                unit: UnitId(8),
+                activity: Activity::Moving,
+                current: None,
+                queued: Vec::new(),
+                last_failure: None,
+            },
+        );
+        let state = ReplicaState {
+            replica: Some(replica),
+            welcome: Some(WelcomeInfo {
+                slot: 1,
+                tick: 8,
+                tick_hz: 20,
+                match_id: 99,
+            }),
+            ..ReplicaState::default()
+        };
+        let mut world = bevy::prelude::World::new();
+        world.insert_resource(state);
+        world.insert_resource(DebugState::default());
+
+        let captured: serde_json::Value = serde_json::from_str(&debug_json(&world)).unwrap();
+        rebuild_debug_state(&mut world);
+        let rebuilt: serde_json::Value =
+            serde_json::from_str(&world.resource::<DebugState>().0).unwrap();
+        assert_eq!(
+            captured["replicated_world"]["unit_orders"],
+            rebuilt["replicated_world"]["unit_orders"]
+        );
+        assert_eq!(
+            rebuilt["replicated_world"]["unit_orders"][0]["unit"], 8,
+            "debug captures expose only the actual Replica owner-specific DTO"
+        );
+        assert_eq!(
+            captured["slot"], 1,
+            "debug captures expose the actual Welcome slot"
+        );
+        assert_eq!(
+            rebuilt["slot"], 1,
+            "debug rebuild preserves the actual Welcome slot"
+        );
+    }
 }
 
 /// The reason of a failed join or acquisition, when the phase is `Failed`.

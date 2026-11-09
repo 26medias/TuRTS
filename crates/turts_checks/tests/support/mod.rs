@@ -284,6 +284,11 @@ pub fn derive_tokens(root: &Path) -> Result<TokenCatalog, ScanError> {
             "resource unit name is a generic accounting term",
             true,
         ),
+        (
+            "base",
+            "Bevy ExtendedMaterial uses base as a required field name",
+            true,
+        ),
     ] {
         if let Some(records) = c.records.get(word) {
             let r = &records[0];

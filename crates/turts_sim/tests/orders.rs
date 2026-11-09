@@ -7,7 +7,9 @@ use turts_mod_api::{
 };
 use turts_sim::{
     AuditTrail, Command, CommandKind, MoveTarget, Position, RejectReason, SlotId, UnitOrders,
-    UnitTypes, Vec2, apply_command, audit_state, headless_app, load_map,
+    UnitTypes, Vec2, apply_command, audit_state,
+    economy::views::{UnitOrderTargetView, world_view},
+    headless_app, load_map,
     orders::{Order, OrderCommand, OrderTargetSim, QueueMode},
 };
 
@@ -375,6 +377,230 @@ fn shift_appends_and_plain_replaces() {
         OrderTargetSim::Point(Vec2::new(40.0, 40.0))
     );
     assert!(orders.queue.is_empty());
+}
+
+#[test]
+fn accepted_plain_move_replace_and_append_project_current_waypoint() {
+    let mut app = app_with_units(1, 0, 0);
+    let replace_target = Vec2::new(20.0, 20.0);
+    let append_target = Vec2::new(30.0, 30.0);
+
+    let replaced = apply_command(
+        app.world_mut(),
+        &order_command(vec![1], replace_target, QueueMode::Replace, 2, 0),
+    );
+    assert_eq!(replaced.units.accepted, vec![1]);
+    assert_eq!(
+        app.world()
+            .resource::<turts_sim::orders::PlainMoveOrderIdentities>()
+            .0
+            .get(&1)
+            .map(|order| &order.target),
+        Some(&OrderTargetSim::Point(replace_target)),
+        "the Replace command reached the captured plain-move identity path"
+    );
+    for _ in 0..8 {
+        app.update();
+        let moving = app.world().iter_entities().any(|entity| {
+            entity
+                .get::<turts_sim::UnitId>()
+                .is_some_and(|unit| unit.0 == 1)
+                && entity.get::<MoveTarget>().is_some()
+        });
+        let captured = app
+            .world()
+            .resource::<turts_sim::orders::PlainMoveOrderIdentities>()
+            .0
+            .contains_key(&1);
+        if moving && captured {
+            break;
+        }
+    }
+    assert!(
+        app.world()
+            .resource::<turts_sim::orders::PlainMoveOrderIdentities>()
+            .0
+            .contains_key(&1)
+    );
+    assert!(app.world().iter_entities().any(|entity| {
+        entity
+            .get::<turts_sim::UnitId>()
+            .is_some_and(|unit| unit.0 == 1)
+            && entity.get::<MoveTarget>().is_some()
+    }));
+
+    let appended = apply_command(
+        app.world_mut(),
+        &order_command(vec![1], append_target, QueueMode::Append, 2, 1),
+    );
+    assert_eq!(appended.units.accepted, vec![1]);
+
+    let view = world_view(app.world_mut());
+    let unit_order = view
+        .unit_orders
+        .iter()
+        .find(|order| order.unit_id == 1)
+        .expect("accepted plain move is present in the public unit-order view");
+    assert_eq!(
+        unit_order.current.as_ref().map(|current| &current.target),
+        Some(&UnitOrderTargetView::Point(turts_mod_api::WorldPos {
+            x: replace_target.x,
+            y: replace_target.y,
+        })),
+        "accepted Replace target is the current waypoint before movement admission"
+    );
+    assert_eq!(
+        unit_order.queued.len(),
+        1,
+        "accepted Append remains queued behind the current waypoint"
+    );
+    assert_eq!(
+        unit_order.queued[0].target,
+        UnitOrderTargetView::Point(turts_mod_api::WorldPos {
+            x: append_target.x,
+            y: append_target.y,
+        })
+    );
+
+    let entity = app
+        .world()
+        .iter_entities()
+        .find(|entity| {
+            entity
+                .get::<turts_sim::UnitId>()
+                .is_some_and(|unit| unit.0 == 1)
+        })
+        .unwrap()
+        .id();
+    app.world_mut().entity_mut(entity).insert(UnitOrders {
+        current: Some(Order {
+            order: ContentId::parse("fixture:authoritative").unwrap(),
+            behaviour: turts_mod_api::Behaviour::Hold,
+            target: OrderTargetSim::None,
+            group: 0,
+        }),
+        ..UnitOrders::default()
+    });
+    let authoritative_view = world_view(app.world_mut());
+    assert_eq!(
+        authoritative_view.unit_orders[0]
+            .current
+            .as_ref()
+            .map(|current| current.order.as_str()),
+        Some("fixture:authoritative"),
+        "UnitOrders.current takes precedence over a captured plain-move identity"
+    );
+}
+
+#[test]
+fn accepted_plain_move_projects_without_unit_orders_and_legacy_move_has_no_identity() {
+    let mut app = app_with_units(1, 0, 0);
+    let target = Vec2::new(20.0, 20.0);
+    let accepted = apply_command(
+        app.world_mut(),
+        &order_command(vec![1], target, QueueMode::Replace, 2, 0),
+    );
+    assert_eq!(accepted.units.accepted, vec![1]);
+    let entity = app
+        .world()
+        .iter_entities()
+        .find(|entity| entity.get::<turts_sim::UnitId>().is_some())
+        .unwrap()
+        .id();
+    app.world_mut().entity_mut(entity).remove::<UnitOrders>();
+    assert!(app.world().entity(entity).get::<UnitOrders>().is_none());
+    assert!(
+        app.world()
+            .resource::<turts_sim::orders::PlainMoveOrderIdentities>()
+            .0
+            .contains_key(&1)
+    );
+    let view = world_view(app.world_mut());
+    assert_eq!(
+        view.unit_orders[0]
+            .current
+            .as_ref()
+            .map(|current| &current.target),
+        Some(&UnitOrderTargetView::Point(turts_mod_api::WorldPos {
+            x: target.x,
+            y: target.y,
+        }))
+    );
+
+    let mut legacy = app_with_units(1, 0, 0);
+    let target = Vec2::new(25.0, 25.0);
+    let result = apply_command(
+        legacy.world_mut(),
+        &Command {
+            slot: SlotId(0),
+            seq: 1,
+            kind: CommandKind::MoveTo {
+                unit_ids: vec![1],
+                target,
+            },
+        },
+    );
+    assert!(result.outcome.is_ok());
+    assert!(
+        legacy
+            .world()
+            .get_resource::<turts_sim::orders::PlainMoveOrderIdentities>()
+            .is_none_or(|identities| identities.0.is_empty())
+    );
+    let view = world_view(legacy.world_mut());
+    assert_eq!(view.unit_orders[0].current, None);
+}
+
+#[test]
+fn stopped_or_removed_plain_move_identity_does_not_leak_into_the_view() {
+    for despawn in [false, true] {
+        let mut app = app_with_units(1, 0, 0);
+        let accepted = apply_command(
+            app.world_mut(),
+            &order_command(vec![1], Vec2::new(20.0, 20.0), QueueMode::Replace, 2, 0),
+        );
+        assert_eq!(accepted.units.accepted, vec![1]);
+
+        if despawn {
+            let entity = app
+                .world()
+                .iter_entities()
+                .find(|entity| entity.get::<turts_sim::UnitId>().is_some())
+                .unwrap()
+                .id();
+            app.world_mut().despawn(entity);
+        } else {
+            let mut stop = order_command(vec![1], Vec2::new(0.0, 0.0), QueueMode::Replace, 2, 1);
+            let CommandKind::Order(order) = &mut stop.kind else {
+                unreachable!();
+            };
+            order.behaviour = turts_mod_api::Behaviour::Stop;
+            order.target_kind = turts_mod_api::TargetKind::None;
+            order.target = OrderTargetSim::None;
+            let result = apply_command(app.world_mut(), &stop);
+            assert_eq!(result.units.accepted, vec![1]);
+        }
+
+        if !despawn {
+            assert!(
+                app.world()
+                    .get_resource::<turts_sim::orders::PlainMoveOrderIdentities>()
+                    .is_none_or(|identities| !identities.0.contains_key(&1))
+            );
+        }
+        let view = world_view(app.world_mut());
+        if despawn {
+            assert!(view.unit_orders.iter().all(|order| order.unit_id != 1));
+        } else {
+            let stopped = view
+                .unit_orders
+                .iter()
+                .find(|order| order.unit_id == 1)
+                .expect("stopped unit may retain an empty order record");
+            assert!(stopped.current.is_none());
+            assert!(stopped.queued.is_empty());
+        }
+    }
 }
 
 #[test]

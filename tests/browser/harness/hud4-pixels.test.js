@@ -3,7 +3,7 @@
 
 const assert = require("node:assert/strict");
 const test = require("node:test");
-const { classify, foot, isOpenGround, readTargets } = require("./hud4-pixels.js");
+const { classify, findOpenGround, foot, isOpenGround, readTargets } = require("./hud4-pixels.js");
 
 function syntheticHud() {
     const image = { width: 400, height: 300, rgba: new Uint8Array(400 * 300 * 4) };
@@ -61,6 +61,20 @@ test("HUD4 open-ground pixels accept visible floor and reject backdrop, targets,
     assert.equal(isOpenGround(image, { x: 355, y: 105 }, []), false, "white text or UI is not ground");
     rectangle(image, 365, 100, 10, 10, [200, 160, 100, 255]);
     assert.equal(isOpenGround(image, { x: 370, y: 105 }, []), false, "resource-node colors are not ground");
+});
+
+test("HUD4 open-ground search exposes a second screenshot-derived floor point", () => {
+    const image = syntheticHud();
+    const first = readTargets(image);
+    const avoid = Object.values(first.targets).map((target) => ({
+        minX: target.bounds[0], minY: target.bounds[1],
+        maxX: target.bounds[0] + target.bounds[2], maxY: target.bounds[1] + target.bounds[3],
+    }));
+    avoid.push({ minX: first.ground.x - 2, minY: first.ground.y - 2, maxX: first.ground.x + 2, maxY: first.ground.y + 2 });
+    const second = findOpenGround(image, avoid);
+    assert.ok(second, "the existing PNG helper returns another open floor point");
+    assert.notDeepEqual(second, first.ground);
+    assert.ok(isOpenGround(image, second, avoid), "the second point remains visible open ground");
 });
 
 test("HUD4 roles match the actual perspective-rendered fixture component sizes", () => {

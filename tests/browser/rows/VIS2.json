@@ -1,0 +1,12 @@
+{
+  "row": "VIS2",
+  "package": "mods/muster",
+  "driver": "tests/browser/vis-driver.js",
+  "oracle": "tests/browser/vis-oracle.js",
+  "runs": "headed",
+  "capture_scene_checkpoints": true,
+  "viewports": ["1280x720"],
+  "synthetic_units": 4485,
+  "required_visible_units": 5000,
+  "measurement": "docs/measurements/mc.md#vis2"
+}

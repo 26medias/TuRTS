@@ -36,6 +36,25 @@ PYWINDOWS
 fi
 [[ "$SERVE_ONLY" == true || ( -n "$DRIVER" && -n "$ORACLE" ) ]] || { echo "driver and oracle are required" >&2; exit 2; }
 [[ "$BUILD_JOBS" =~ ^[1-4]$ ]] || { echo "CARGO_BUILD_JOBS must be between 1 and 4" >&2; exit 2; }
+SYNTHETIC_UNITS=""
+SYNTHETIC_SET=false
+if [[ -n "$ROW_FILE" ]]; then
+    [[ -f "$ROW_FILE" ]] || { echo "missing row file: $ROW_FILE" >&2; exit 2; }
+    SYNTHETIC_UNITS="$(python3 - "$ROOT" "$ROW_FILE" <<'PYSYNTHETIC'
+import json, pathlib, sys
+sys.dont_write_bytecode = True
+sys.path.insert(0, str(pathlib.Path(sys.argv[1]) / "scripts"))
+from mc_browser_params import synthetic_units
+try:
+    value = synthetic_units(json.loads(pathlib.Path(sys.argv[2]).read_text()))
+except (ValueError, json.JSONDecodeError) as error:
+    print(f"invalid row synthetic_units: {error}", file=sys.stderr)
+    raise SystemExit(2)
+print("" if value is None else value)
+PYSYNTHETIC
+)" || exit 2
+    [[ -z "$SYNTHETIC_UNITS" ]] || SYNTHETIC_SET=true
+fi
 DIST="$ROOT/crates/turts_client_web/dist"
 mkdir -p "$OUT_ROOT"
 OUT="$(mktemp -d "$OUT_ROOT/run-$(date -u +%Y%m%dT%H%M%SZ)-XXXXXX")"
@@ -73,7 +92,18 @@ cat >"$OUT/server.ron" <<EOF_RON
     static_dir: "$DIST",
 )
 EOF_RON
-"$TARGET/release/turts_server" "$OUT/server.ron" --tick-log "$OUT/server-tick.log" >"$OUT/server.log" 2>&1 &
+SERVER_ARGS=("$TARGET/release/turts_server" "$OUT/server.ron")
+if [[ "$SYNTHETIC_SET" == true ]]; then
+    SERVER_ARGS+=(--synthetic-units "$SYNTHETIC_UNITS")
+fi
+if [[ "$SYNTHETIC_SET" == false || "$SYNTHETIC_UNITS" == 0 ]]; then
+    SERVER_ARGS+=(--tick-log "$OUT/server-tick.log")
+fi
+python3 - "$OUT/server-argv.json" "${SERVER_ARGS[@]}" <<'PYSERVERARGV'
+import json, pathlib, sys
+pathlib.Path(sys.argv[1]).write_text(json.dumps(sys.argv[2:], indent=2) + "\n")
+PYSERVERARGV
+"${SERVER_ARGS[@]}" >"$OUT/server.log" 2>&1 &
 SERVER_PID=$!
 python3 -m http.server "$STATIC_PORT" --bind 127.0.0.1 --directory "$DIST" >"$OUT/static.log" 2>&1 &
 STATIC_PID=$!
@@ -112,9 +142,12 @@ echo "Evidence: $OUT"
 if [[ "$SERVE_ONLY" == true ]]; then wait; fi
 
 PARAMS="$OUT/params.json"
-python3 - "$PACKAGE_NAME" "$URL" "http://127.0.0.1:$HTTP_PORT" "ws://127.0.0.1:$WS_PORT" "$ROW_FILE" "$PARAMS" "$VIEWPORT" "$WINDOWS" <<'PYPARAMS'
+python3 - "$ROOT" "$PACKAGE_NAME" "$URL" "http://127.0.0.1:$HTTP_PORT" "ws://127.0.0.1:$WS_PORT" "$ROW_FILE" "$PARAMS" "$VIEWPORT" "$WINDOWS" <<'PYPARAMS'
 import json, pathlib, re, sys
-package,url,http,ws,row,out,viewport,windows=sys.argv[1:]
+sys.dont_write_bytecode = True
+root,package,url,http,ws,row,out,viewport,windows=sys.argv[1:]
+sys.path.insert(0, str(pathlib.Path(root) / "scripts"))
+from mc_browser_params import add_synthetic_param
 match=re.fullmatch(r"(\d+)x(\d+)(?:@([0-9]+(?:\.[0-9]+)?))?",viewport)
 if not match: raise SystemExit("invalid viewport: "+viewport)
 data={"package":package,"url":url,"server_url":http,"ws_url":ws,"windows":1,"device_scale_factor":float(match.group(3) or 1)}
@@ -128,6 +161,7 @@ if row:
     capture=row_data.get("capture_scene_checkpoints",False)
     if not isinstance(capture,bool): raise SystemExit("capture_scene_checkpoints must be a boolean")
     data["capture_scene_checkpoints"]=capture
+    data=add_synthetic_param(data,row_data)
 if windows: data["windows"]=int(windows)
 data["viewport"]={"width":int(match.group(1)),"height":int(match.group(2)),"device_scale_factor":data["device_scale_factor"]}
 pathlib.Path(out).write_text(json.dumps(data,sort_keys=True)+"\n")

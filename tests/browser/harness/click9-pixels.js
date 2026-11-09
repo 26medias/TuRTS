@@ -45,7 +45,7 @@ function findScout(image) {
         }
         const width = maxX - minX + 1;
         const height = maxY - minY + 1;
-        if (tail < 12 || width < 3 || height < 3 || width > 80 || height > 80) continue;
+        if (tail < 50 || width < 8 || height < 8 || width > 80 || height > 80) continue;
         // Ground-plane picking uses the foot of the visible cuboid, not its elevated bright top.
         const desiredX = (minX + maxX) / 2;
         const desiredY = maxY - Math.max(1, height * 0.1);

@@ -1,0 +1,16 @@
+{
+  "row": "SEL2",
+  "package": "mods/muster",
+  "driver": "tests/browser/sel-driver.js",
+  "oracle": "tests/browser/sel-oracle.js",
+  "runs": "ci",
+  "capture_scene_checkpoints": true,
+  "viewports": ["1280x720"],
+  "stages": [
+    { "label": "sel2-500-slot0", "gesture": "box", "selector": "500-mobile-clusters", "owner_slot": 0, "expected_selection": 500, "expected_rings": 500 },
+    { "label": "sel2-static-only", "gesture": "box", "selector": "static-footprints", "owner_slot": 0, "expected_selection": 2, "expected_rings": 2, "expected_content_ids": ["muster:post", "muster:depot"] },
+    { "label": "sel2-shift-add", "gesture": "box", "selector": "mobile-slot0", "modifiers": ["Shift"], "owner_slot": 0, "expected_selection": 3, "expected_rings": 3 },
+    { "label": "sel2-shift-remove", "gesture": "click", "selector": "mobile-slot0", "modifiers": ["Shift"], "owner_slot": 0, "expected_selection": 2, "expected_rings": 2 },
+    { "label": "sel2-mixed-owner", "gesture": "box", "selector": "500-mobile-plus-visible-foreign", "owner_slot": 0, "expected_selection": 500, "expected_rings": 500 }
+  ]
+}

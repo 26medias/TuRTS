@@ -1,0 +1,13 @@
+{
+  "row": "SEL3",
+  "package": "mods/muster",
+  "driver": "tests/browser/sel-driver.js",
+  "oracle": "tests/browser/sel-oracle.js",
+  "runs": "ci",
+  "capture_scene_checkpoints": true,
+  "viewports": ["1280x720"],
+  "stages": [
+    { "label": "sel3-ctrl-type", "gesture": "click", "selector": "trooper-column-slot0", "modifiers": ["Control"], "owner_slot": 0, "expected_unit_content_id": "muster:trooper" },
+    { "label": "sel3-double-type", "gesture": "double-click", "selector": "trooper-column-slot0", "owner_slot": 0, "expected_unit_content_id": "muster:trooper" }
+  ]
+}

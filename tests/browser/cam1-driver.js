@@ -11,8 +11,10 @@ async function capture(io, name) {
 }
 
 async function findScoutFromPixels(io, stage) {
+    let lastScreenshot = null;
     for (let attempt = 0; attempt < 80; attempt += 1) {
         const bytes = await io.screenshot();
+        lastScreenshot = bytes;
         const image = decodePng(bytes);
         const scout = findScout(image);
         if (scout) {
@@ -22,6 +24,7 @@ async function findScoutFromPixels(io, stage) {
         }
         await io.wait(100);
     }
+    if (lastScreenshot) await io.save(`${stage}-recognition-failure.png`, lastScreenshot);
     throw new Error("CAM1 could not find the rendered scout from screenshot pixels");
 }
 

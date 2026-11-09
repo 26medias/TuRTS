@@ -16,7 +16,7 @@ use turts_interaction::{
     WorldView, camera::CameraOptions,
 };
 use turts_mod_api::{
-    Binding, Capability, Footprint, InputMapDef, OrderDef, OrderRulesDef, SlotRelation,
+    Binding, Capability, ContentId, Footprint, InputMapDef, OrderDef, OrderRulesDef, SlotRelation,
 };
 use turts_net_protocol::{SlotId, UnitId};
 
@@ -95,6 +95,7 @@ pub struct CoreRuntime {
     pending_sequences: Vec<u32>,
     last_effects: Vec<ValueEffect>,
     markers: Vec<serde_json::Value>,
+    next_order_intent_id: u64,
 }
 
 #[derive(Resource, Debug, Clone, Default)]
@@ -120,6 +121,14 @@ impl CoreRuntime {
     pub fn camera_pan_context(&self) -> Option<&str> {
         self.core.as_ref()?.camera_pan_context()
     }
+    /// Whether world-space hover is allowed at the pointer's current physical location.
+    pub fn pointer_world_hover_allowed(&self) -> bool {
+        world_hover_allowed(self.pointer_over_widget, self.window_focused)
+    }
+}
+
+fn world_hover_allowed(pointer_over_widget: Option<bool>, window_focused: Option<bool>) -> bool {
+    pointer_over_widget != Some(true) && window_focused != Some(false)
 }
 
 #[derive(Clone, Debug)]
@@ -494,6 +503,7 @@ struct AdapterOutputs<'w> {
     selection_requests: ResMut<'w, crate::ui_shared::SelectionRequests>,
     input_events: ResMut<'w, CoreInputQueue>,
     core_effects: ResMut<'w, CoreEffects>,
+    order_marker_feed: ResMut<'w, crate::commands::OrderMarkerFeed>,
     status: Res<'w, crate::commands::CommandSendStatus>,
     selection_feed: ResMut<'w, SelectionFeed>,
     groups_feed: ResMut<'w, GroupsFeed>,
@@ -513,6 +523,9 @@ fn drive_core_adapter(
     mut input: AdapterInputs,
     mut output: AdapterOutputs,
 ) {
+    // A no-world, focus, or session early return must not let last frame's intent
+    // masquerade as a click produced by this frame when visuals observe a reset.
+    output.order_marker_feed.begin_interaction_frame();
     if runtime.content_index.is_none() && (state.content.is_some() || acquired.is_some()) {
         runtime.content_index = Some(content_index(&state, acquired.as_deref()));
     }
@@ -705,7 +718,42 @@ fn drive_core_adapter(
     for effect in effects {
         match effect {
             Effect::Send(order) if !output.status.reconnect_required => {
-                submit_order(&mut output.pending, order)
+                let marker_kind = state
+                    .content
+                    .as_ref()
+                    .and_then(|content| {
+                        ContentId::parse(&order.order)
+                            .ok()
+                            .and_then(|id| content.catalog.orders.get(&id))
+                    })
+                    .and_then(|order_def| match order_def.behaviour {
+                        turts_mod_api::Behaviour::Move => Some("move"),
+                        turts_mod_api::Behaviour::Attack => Some("attack"),
+                        turts_mod_api::Behaviour::Gather => Some("gather"),
+                        _ => None,
+                    });
+                if let Some(kind) = marker_kind {
+                    let intent_id = runtime.next_order_intent_id;
+                    runtime.next_order_intent_id = intent_id.wrapping_add(1);
+                    output
+                        .order_marker_feed
+                        .intents
+                        .push(crate::commands::OrderMarkerIntent {
+                            id: intent_id,
+                            kind: kind.to_owned(),
+                            order: order.clone(),
+                        });
+                    runtime.markers.push(serde_json::json!({
+                        "intent_id": intent_id,
+                        "kind": kind,
+                        "order": &order.order,
+                        "units": order.units.iter().map(|unit| unit.0).collect::<Vec<_>>(),
+                        "target": &order.target,
+                    }));
+                    crate::commands::submit_visual_order(&mut output.pending, order, intent_id);
+                } else {
+                    submit_order(&mut output.pending, order)
+                }
             }
             Effect::SelectionChanged => {}
             Effect::Marker { point, kind } => {
@@ -894,6 +942,7 @@ impl Plugin for CoreAdapterPlugin {
         app.init_resource::<CoreRuntime>()
             .init_resource::<CorePreferences>()
             .init_resource::<CoreEffects>()
+            .init_resource::<crate::commands::OrderMarkerFeed>()
             .init_resource::<crate::camera::CameraConfiguration>()
             .init_resource::<crate::feedback::FrameFeedback>()
             .init_resource::<CoreInputQueue>()
@@ -961,6 +1010,28 @@ mod adapter_tests {
         ADAPTER_TEST_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    #[test]
+    fn world_hover_respects_ui_pointer_capture_and_focus_loss() {
+        let cases = [
+            (Some(true), Some(true), false, "captured by UI"),
+            (Some(false), Some(false), false, "window focus lost"),
+            (Some(false), Some(true), true, "uncaptured focused pointer"),
+            (
+                None,
+                None,
+                true,
+                "initial pointer state before capture is known",
+            ),
+        ];
+        for (pointer_over_widget, focused, expected, context) in cases {
+            assert_eq!(
+                world_hover_allowed(pointer_over_widget, focused),
+                expected,
+                "world hover eligibility when {context}"
+            );
+        }
     }
 
     fn fixture_app() -> (App, Entity, Vec2) {
@@ -1342,7 +1413,7 @@ mod adapter_tests {
             .0
             .iter()
             .find_map(|pending| match pending {
-                crate::commands::PendingCommand::Order { order } => Some(order),
+                crate::commands::PendingCommand::Order { order, .. } => Some(order),
                 _ => None,
             })
             .expect("catalog Ground smart rule plus actual right-click must submit an order");
@@ -1352,6 +1423,21 @@ mod adapter_tests {
             order.target,
             turts_net_protocol::OrderTarget::Point(_)
         ));
+
+        let markers = &app.world().resource::<CoreRuntime>().markers;
+        assert_eq!(
+            markers.len(),
+            1,
+            "the clicked order marker exists before any server result"
+        );
+        assert_eq!(markers[0]["kind"], "move");
+        assert_eq!(markers[0]["order"], order.order);
+        assert_eq!(markers[0]["units"], serde_json::json!([1]));
+        assert_eq!(
+            markers[0]["target"],
+            serde_json::to_value(&order.target).unwrap()
+        );
+        assert_eq!(markers[0]["intent_id"], 0);
 
         app.world_mut().resource_mut::<PendingCommands>().0.clear();
         {
@@ -1391,7 +1477,7 @@ mod adapter_tests {
             .0
             .iter()
             .find_map(|pending| match pending {
-                crate::commands::PendingCommand::Order { order } => Some(order),
+                crate::commands::PendingCommand::Order { order, .. } => Some(order),
                 _ => None,
             })
             .expect("catalog KeyM hotkey must resolve the package-qualified OrderDef id");
@@ -1419,7 +1505,7 @@ mod adapter_tests {
             .0
             .iter()
             .filter_map(|pending| match pending {
-                crate::commands::PendingCommand::Order { order } => Some(order),
+                crate::commands::PendingCommand::Order { order, .. } => Some(order),
                 _ => None,
             })
             .collect::<Vec<_>>();
@@ -1444,7 +1530,7 @@ mod adapter_tests {
             .0
             .iter()
             .filter_map(|pending| match pending {
-                crate::commands::PendingCommand::Order { order } => Some(order),
+                crate::commands::PendingCommand::Order { order, .. } => Some(order),
                 _ => None,
             })
             .collect::<Vec<_>>();
@@ -1497,7 +1583,7 @@ mod adapter_tests {
             .0
             .iter()
             .find_map(|pending| match pending {
-                crate::commands::PendingCommand::Order { order } => Some(order),
+                crate::commands::PendingCommand::Order { order, .. } => Some(order),
                 _ => None,
             })
             .expect("runtime KeyN binding resolves the authored Move order");

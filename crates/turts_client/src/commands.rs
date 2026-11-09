@@ -49,11 +49,49 @@ pub enum PendingCommand {
     },
     Order {
         order: OrderEnvelope,
+        visual_intent: Option<u64>,
     },
     Repeat {
         envelope: PlayerCommand,
         trace_step: usize,
     },
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct OrderMarkerIntent {
+    pub id: u64,
+    pub kind: String,
+    pub order: OrderEnvelope,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct SentOrderFragment {
+    pub intent_id: u64,
+    pub seq: u32,
+    pub order: OrderEnvelope,
+}
+
+#[derive(Resource, Debug, Default)]
+pub(crate) struct OrderMarkerFeed {
+    /// Intents generated in the current interaction frame; consumed by Task13 before rendering.
+    pub intents: Vec<OrderMarkerIntent>,
+    /// Actual sequence-assigned fragments, bounded if no renderer is installed to consume them.
+    pub sent: VecDeque<SentOrderFragment>,
+}
+
+impl OrderMarkerFeed {
+    /// Start a CoreAdapter interaction frame before any early return can bypass `core.step`.
+    pub(crate) fn begin_interaction_frame(&mut self) {
+        self.intents.clear();
+    }
+
+    fn record_sent(&mut self, fragment: SentOrderFragment) {
+        const MAX_RETAINED_FRAGMENTS: usize = 512;
+        self.sent.push_back(fragment);
+        while self.sent.len() > MAX_RETAINED_FRAGMENTS {
+            self.sent.pop_front();
+        }
+    }
 }
 
 #[derive(Debug, Default, Resource)]
@@ -98,7 +136,21 @@ pub fn submit(pending: &mut PendingCommands, kind: ClientCommand) {
 }
 
 pub fn submit_order(pending: &mut PendingCommands, order: OrderEnvelope) {
-    pending.0.push_back(PendingCommand::Order { order });
+    pending.0.push_back(PendingCommand::Order {
+        order,
+        visual_intent: None,
+    });
+}
+
+pub(crate) fn submit_visual_order(
+    pending: &mut PendingCommands,
+    order: OrderEnvelope,
+    visual_intent: u64,
+) {
+    pending.0.push_back(PendingCommand::Order {
+        order,
+        visual_intent: Some(visual_intent),
+    });
 }
 
 pub(crate) fn submit_trace(pending: &mut PendingCommands, kind: ClientCommand, trace_step: usize) {
@@ -248,6 +300,7 @@ pub(crate) fn send_commands_traced(
     mut witnesses: ResMut<ReceiptWitnesses>,
     mut scenario: ResMut<ScenarioState>,
     results: Res<CommandResults>,
+    mut order_marker_feed: Option<ResMut<OrderMarkerFeed>>,
     #[cfg(test)] mut sent_capture: Option<ResMut<SentCommandCapture>>,
 ) {
     if !matches!(*phase, Phase::Joined { .. }) || senders.is_empty() || status.reconnect_required {
@@ -256,7 +309,7 @@ pub(crate) fn send_commands_traced(
     for (entity, mut sender) in &mut senders {
         let epoch = witnesses.epoch_for(entity.to_bits());
         while let Some(command) = pending.0.pop_front() {
-            let (envelopes, trace_step, submitted) = match command {
+            let (envelopes, trace_step, submitted, visual_intent) = match command {
                 PendingCommand::Submit { kind, trace_step } => {
                     let submitted = kind.clone();
                     let Some(content) = replica_state.content.as_ref() else {
@@ -278,9 +331,12 @@ pub(crate) fn send_commands_traced(
                             break;
                         }
                     };
-                    (split_order(order, seq), trace_step, Some(submitted))
+                    (split_order(order, seq), trace_step, Some(submitted), None)
                 }
-                PendingCommand::Order { order } => {
+                PendingCommand::Order {
+                    order,
+                    visual_intent,
+                } => {
                     let count = order.units.len().max(1).div_ceil(MAX_ORDER_UNITS);
                     let seq = match sequence.allocate_many(count) {
                         Ok(seq) => seq,
@@ -291,15 +347,24 @@ pub(crate) fn send_commands_traced(
                             break;
                         }
                     };
-                    (split_order(order, seq), None, None)
+                    (split_order(order, seq), None, None, visual_intent)
                 }
                 PendingCommand::Repeat {
                     envelope,
                     trace_step,
-                } => (vec![envelope], Some(trace_step), None),
+                } => (vec![envelope], Some(trace_step), None, None),
             };
             let last_index = envelopes.len().saturating_sub(1);
             for (index, envelope) in envelopes.into_iter().enumerate() {
+                if let (Some(intent_id), Some(feed)) =
+                    (visual_intent, order_marker_feed.as_deref_mut())
+                {
+                    feed.record_sent(SentOrderFragment {
+                        intent_id,
+                        seq: envelope.seq,
+                        order: envelope.order.clone(),
+                    });
+                }
                 sender.send::<ReliableChannel>(envelope.clone());
                 #[cfg(test)]
                 if let Some(capture) = sent_capture.as_deref_mut() {
@@ -370,6 +435,7 @@ mod tests {
 
         let mut app = App::new();
         app.insert_resource(PendingCommands::default())
+            .insert_resource(OrderMarkerFeed::default())
             .insert_resource(CommandSequence {
                 next: next_sequence,
             })
@@ -545,6 +611,40 @@ mod tests {
             ["acme:order_move", "acme:order_move", "acme:order_move"]
         );
         assert_eq!(app.world().resource::<CommandSequence>().next, Some(4));
+    }
+
+    #[test]
+    fn visual_intent_survives_sequence_assignment_and_k4_fragmentation() {
+        let order = OrderEnvelope {
+            order: "acme:order_move".into(),
+            units: (0..4097).map(UnitId).collect(),
+            target: OrderTarget::Point(Pos { x: 8.0, y: 9.0 }),
+            queue: QueueMode::Append,
+            group: 77,
+        };
+        let mut app = sender_test_app(Some(50));
+        {
+            let mut pending = app.world_mut().resource_mut::<PendingCommands>();
+            submit_visual_order(&mut pending, order.clone(), 901);
+        }
+
+        app.update();
+
+        let sent = &app.world().resource::<OrderMarkerFeed>().sent;
+        assert_eq!(sent.len(), 2);
+        assert_eq!(
+            sent.iter().map(|entry| entry.intent_id).collect::<Vec<_>>(),
+            [901, 901]
+        );
+        assert_eq!(
+            sent.iter().map(|entry| entry.seq).collect::<Vec<_>>(),
+            [50, 51]
+        );
+        assert_eq!(sent[0].order.units.len(), 4096);
+        assert_eq!(sent[1].order.units, [UnitId(4096)]);
+        assert!(sent.iter().all(|entry| entry.order.order == order.order));
+        assert!(sent.iter().all(|entry| entry.order.group == order.group));
+        assert!(sent.iter().all(|entry| entry.order.target == order.target));
     }
 
     #[test]
