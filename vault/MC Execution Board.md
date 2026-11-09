@@ -1761,3 +1761,6 @@ C195HD1freshprojection: atmostoneauthoredaction perCoreAdapterframe, tickearlies
 
 
 Cache interleave: RUN72explicitlyreleasedidlecompiler whilecontinuingHD1fixture/browser sourceauthoring. RootpausedRUN73writes, preserved84explicitownedWIPfilesinstashde16c846d4878c3a49b6cddb07f68eabd4b5818e, movedsolecache10→15/all5cleans0, reappliedstashandverifiedEVERYhash/statusidentical. RUN73nowhasboundedcompiledstub-redleaseonly foralerts/notices/volume_settings/audio_readiness; noproductgreen/body/audio-dependencydownload/browser/gates. Afterbatchreleaserootreturnssolecacheto10withsameWIPpreservation. Stashretained, noextraagentrun; global74. Receipt t15-root/borrowed-baseline-20261109/restoration-and-lease.json.
+
+
+C196HD1actualparity: trustedlauncher copiesboundrealnative--out+receipt intoeachbrowserevidencedir, oracle.serverFile only, nodriverresults/capability. Separatefreshservers/samefixture; reuseONEprovennativeexecutionfor2browserattemptsifruntime/action/package identitiesmatch. Exactper-envelopeaccepted/refused inclmissing/extra/emptyopposites. Sharedfixtureordinarygroups/staticcamera; C195double-recallstress focusednativeonly.
