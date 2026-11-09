@@ -8,7 +8,7 @@ source: codex
 
 # MC execution board
 
-State: ACTIVE after CEO resume2026-11-09.15/25complete;69/170runs registered. Task13 clean4dfe0b3 provisional; C178 next. RUN67 builder registered before dispatch and owns sole target/mc-t13 compiler/runtime. Previous RUN62/RUN66 interrupted at travel pause; no live handles. Main nowbb611bd from external documentation-only changes; no main merge/push by Codex.
+State: ACTIVE Wave6.15/25complete;69/170runs. Task13 actual fullVIS1 2/2 green at9cf2363, actual5000-unit VIS2 record verified, strengthened SEL2 2/2 green at59f2dbe. RUN67 owns final impact rows/gates/plants; RUN69 independent review stays source-only until lease. C1-C182. Task13 not accepted; no main merge/push.
 
 Plan: `docs/superpowers/plans/2026-10-29-mc-player-control.md`.
 Design of record: `docs/superpowers/specs/2026-10-29-mc-player-control-design.md`, revision14 at mainf050e42.
@@ -81,7 +81,7 @@ CI trigger: `.github/workflows/ci.yml:2-5` runs pushes to main and pull requests
 | T11 | 5 | 9, 19, 20 | codex/mc-t11 | COMPLETE c996463; merge aff4d63; independent 0H/0M/0L, 11 probes, CAM1 2/2 and both plants restored; integration 12/12 gates0,1266/0/19; completed artifacts archived and lane removed, branch retained. |
 | T12 | 5 | 3, 9, 19, 20 | codex/mc-t12 | COMPLETE candidate77ca599; mergeaf567c4. Independent0High/0remaining,7probes and own production101→0. FreshHUD1six/HUD4two pass; required runtime-default mutation1→restore0. Integration11/11gates0,1306/0/19,frozen,T7. All28removed tests mapped; registered3panelplants remain planned-window NOT CHECKED. Lane removed, evidence/cache/branch preserved. |
 | T5 | 6 | 4, 6, 19 | codex/mc-t5 | COMPLETE mergee214ccc from98147ae. RUN65 PASS0High,15independentprobes/ownplant0-101-0; alltaskgates/19GREF/2requiredplants; integration11/11gates0,1419/0/19,T7 137frames/53moving. Lane removed after provenance/hold checks; branch retained. |
-| T13 | 6 | 4, 6, 9, 11, 19, 20 | codex/mc-t13 | ACTIVE RUN67 sole runtime/cache target/mc-t13; RUN68 source-only review. Both baseline reds verified; SEL2/SEL3/basicVIS1 historical headed2/2 green. C178 current-order projection repair has corrected native red/green; final fullVIS1/gates/plants/VIS2/review remain. Last4dfe browser attempt interrupted, notPASS. |
+| T13 | 6 | 4, 6, 9, 11, 19, 20 | codex/mc-t13 | ACTIVE RUN67 runtime/RUN69 review. C178 native19/19; fullVIS1 actual2/2 at9cf, actual5000-unit VIS2 record, final static-sensitive SEL2 actual2/2 at59f2. Remaining impact rows, fullgates, requiredplants, independent actualplant/runtime and source-bound final record. Not accepted. |
 | T10 | 7 | 5, 9, 11, 19, 20 | codex/mc-t10 | NOT STARTED |
 | T15 | 7 | 4, 7, 12, 13 | codex/mc-t15 | NOT STARTED |
 | T17 | 7 | 3, 12, 13, 19, 20 | codex/mc-t17 | NOT STARTED |
@@ -1699,3 +1699,5 @@ C180: imported external documentation-only mainbb611bd INTO integration, preserv
 
 
 C181: actual1b649dc two-headed row fails the waypoint oracle because it chooses retained moveintent1 instead of newqueuedintent2; C178 records now contain both correct targets. Gather physical stage still executed with actualworker2/node1/intent3. Root unchanged Gather pixel helper on real images fails observed0changedpixels (focusedexit1, NOT full-rowGatherfailure), and manualPNGshowsnodot. Authorize one shared markeroverlay with existingexactgeometry/target/colour, immediate+unobscured proof and corrected click-specific marker binding; freshfullrow mandatory. See today's Codex rulings and t13-root/resume-20261109/gather-actual-pixel-red.json.68/170runs.
+
+C182 carries exact unchanged-input9cf VIS1/VIS2 evidence through docs/SEL2-only edits, with originalsource attribution. Final post-plant source/record validation and actual restored independentfullVIS1 remain required; any runtime change expires carry. No normal gate/requiredplant is dropped. See today's rulings.69/170runs.
