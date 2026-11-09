@@ -8,7 +8,7 @@ source: codex
 
 # MC execution board
 
-State: ACTIVE after CEO resume2026-11-09.15/25complete;67/170runs registered. Task13 clean4dfe0b3 provisional; C178 next. RUN67 builder registered before dispatch and owns sole target/mc-t13 compiler/runtime. Previous RUN62/RUN66 interrupted at travel pause; no live handles. Main nowbb611bd from external documentation-only changes; no main merge/push by Codex.
+State: ACTIVE after CEO resume2026-11-09.15/25complete;68/170runs registered. Task13 clean4dfe0b3 provisional; C178 next. RUN67 builder registered before dispatch and owns sole target/mc-t13 compiler/runtime. Previous RUN62/RUN66 interrupted at travel pause; no live handles. Main nowbb611bd from external documentation-only changes; no main merge/push by Codex.
 
 Plan: `docs/superpowers/plans/2026-10-29-mc-player-control.md`.
 Design of record: `docs/superpowers/specs/2026-10-29-mc-player-control-design.md`, revision14 at mainf050e42.
@@ -259,6 +259,7 @@ One row per builder/reviewer dispatch or resumed agent work turn. Register befor
 | 65 | T5 independent recheck after O13 | qa-lead | gpt-6.1-sol | high | O13-rebased Task5 plus WIP | COMPLETE PASS0High on98147ae. Original15independentprobes0; ownfocus-preferenceplant0/101/0, exactrestore+all16sourcehashes; allnormal/GREF/requiredplant evidence raw/hashrechecked. Allholdsreleased; merged/regated/laneremoved. Task5run4/estimate4. |
 | 66 | T13 independent visual/acceptance source review | ux-designer | gpt-6.1-sol | high | T13 prep2bcb9ae plus off-lane candidate | Registered BEFORE dispatch. Task13run2/estimate5; soft10/hard20. SOURCE-ONLY until explicit root lease. Review design14/O13/C161/C163/C167; full VIS1 pixels+first-frame state, SEL2/3, palette thresholds, shared assets, hover/bar/marker/blocked lifetimes and actual VIS2 instrumentation. Candidate not yet compiled/applied; prepare finite independent probes/own four-gap visual plant outside lane. T5 RUN65 owns sole runtime. |
 | 67 | T13 resume, C178 projection and final visuals proof | bevy-rendering-engineer | gpt-6-luna | high | 4dfe0b3, integration640fa20 | Registered BEFORE dispatch2026-11-09. Task13run3/estimate5, soft10/hard20. Resume C178 real-command regression red then read-only view repair; fresh fullVIS1, final gates/plants/VIS2. Sole compiler/browser/cache owner target/mc-t13. Prior interrupted4dfe wrapper is notPASS. Preserve full scope and frozen values; independent review remains required. |
+| 68 | T13 resumed independent visual and projection review | ux-designer | gpt-6.1-sol | high | 4dfe0b3 plus RUN67 C178 | Registered BEFORE dispatch2026-11-09. Task13run4/estimate5. SOURCE-ONLY until explicit runtime lease. Rebind historical RUN66 evidence/probes to actual final source; review C175-C178, actual pixel/first-frame/waypoint proofs, final native initialize and own foreign-solid plant. No compiler/cache/browser/lane edits until handoff. |
 
 ## 9. Preflight ledger and stop
 
