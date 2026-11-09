@@ -104,7 +104,7 @@ Human usability amendment1354e33: catalog-derived principal labels/named local s
 
 ## Current MC status
 
-PAUSED by CEO for laptop transfer.15/25complete;66/170runs. Task13 provisional4dfe0b3; C178 next. Full remaining scope preserved in [[Reports/2026-11-01 MC laptop handoff]]. No main merge/push.
+ACTIVE MC Wave6 after CEO resume2026-11-09.15/25complete;68/170runs. RUN67 Task13 builder owns sole target/mc-t13 runtime; RUN68 reviews source independently. C178 regression/projection repair is next, then remaining Task13 gates/plants/VIS2 and Wave6 integration/CI. Design14/O13 remains in force; main externalbb611bd has only later documentation changes. No main merge/push. [[MC Execution Board]].
 
 ## Historical MC checkpoints
 
