@@ -1704,3 +1704,6 @@ C182 carries exact unchanged-input9cf VIS1/VIS2 evidence through docs/SEL2-only 
 
 
 C183: actual CAM1 failure was a14pixelHUDglyph competing with183pixelScout. Initial-only body floor50pixels/8x8 preserveswarm/blue/footgeometry/ambiguity rejection; nativecamera/content unchanged. CAM1twoheaded0 and affectedCLICK9two0 verified byRUN69. Normal native gate then stopped at strictClippy101 in Task13-owned visuals/debug, no semantic red and no later gatecredit. Narrowrepairs underway; runtime-source change expires exactVIS2carry, so freshpostgate/postplantmeasurement is required perC182.69/170runs.
+
+
+C184: required external ExtendedMaterial.base collides with derived base package identifier. Existing provenance-backed generic exception may allow identifiers_only:true; all bare string/bytes/fullIDs/paths remain scanned, replaceable locals renamed. Explicit bare-literal controls + true→false boundary plant/restoration and newlyaffected registered E1-derived-scan required. O10ShellAction decision is unchanged; thisnewexternalAPIcollision is separatelyreported. Native203 gate failedscanner, ae6030a native/QA/frozen gates all0 provisional; finaltest/localrename patch and finalgate rerun remain.69/170runs.
