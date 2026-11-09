@@ -13,6 +13,8 @@ async function judge(view, params) {
     assertSelectionCameraPans(input, params, actions[0]);
     const checkpoints = JSON.parse(await view.serverFile("scene-checkpoints.json"));
     assert(Array.isArray(checkpoints), "SEL needs actual C84 scene checkpoints");
+    const initialCheckpoint = screenshotCheckpoint(input, checkpoints, "sel-initial.png");
+    const initialImage = decodePng(Buffer.from(await view.serverFile("sel-initial.png.b64"), "base64"));
     let actionIndex = 0;
     for (const stage of params.stages || []) {
         const count = stage.gesture === "double-click" ? 2 : 1;
@@ -53,7 +55,11 @@ async function judge(view, params) {
         assertFrameSelectionIsOwn(frame, debug, stage);
         assertModifiers(action, stage);
         if (stage.gesture === "box") assertBoxSelectionCenters(action, frame, scene, stage);
-        if (stage.label === "sel2-static-only") assertStaticOnlySelection(frame, debug, stage);
+        if (stage.label === "sel2-static-only") {
+            assertStaticOnlySelection(frame, debug, stage);
+            const encoded = await view.serverFile(`${stage.label}.png.b64`);
+            assertStaticRingAppears(initialImage, initialCheckpoint, decodePng(Buffer.from(encoded, "base64")), checkpoint, frame, debug, stage);
+        }
         if (stage.label === "sel2-mixed-owner") assertMixedOwnerBox(action, scene, debug);
         if (frame.selection.length > 0) {
             const encoded = await view.serverFile(`${stage.label}.png.b64`);
@@ -64,6 +70,84 @@ async function judge(view, params) {
         }
         if (stage.expected_unit_content_id) assertTypeSelectionIsVisible(frame, debug, scene, stage);
     }
+}
+
+function screenshotCheckpoint(input, checkpoints, filename) {
+    const saveIndex = input.findIndex((entry) => entry.call === "save" && entry.args?.[0] === filename);
+    assert(saveIndex > 0, `SEL ${filename} must be saved from an actual screenshot`);
+    let screenshotIndex = saveIndex - 1;
+    while (screenshotIndex >= 0 && input[screenshotIndex].call !== "screenshot") screenshotIndex -= 1;
+    assert(screenshotIndex >= 0, `SEL ${filename} has no screenshot input`);
+    const checkpoint = checkpoints.find((entry) => entry.input_call === screenshotIndex && entry.window === 1);
+    assert(checkpoint?.debug && checkpoint?.scene, `SEL ${filename} has no actual C84 scene/debug checkpoint`);
+    return checkpoint;
+}
+
+function assertStaticRingAppears(initialImage, initialCheckpoint, selectedImage, selectedCheckpoint, frame, debug, stage) {
+    const initialScene = initialCheckpoint.scene;
+    const selectedScene = selectedCheckpoint.scene;
+    assert.deepEqual(selectedScene.clip_from_world, initialScene.clip_from_world,
+        "SEL2 static ring visibility comparison must keep the actual camera matrix fixed");
+    assert.deepEqual(selectedScene.viewport_logical_rect, initialScene.viewport_logical_rect,
+        "SEL2 static ring visibility comparison must keep the actual viewport fixed");
+    const selectedIds = new Set(frame.selection);
+    const selectedPublic = new Map((debug.replicated_world.units || []).map((unit) => [unit.unit_id, unit]));
+    const initialPublic = new Map((initialCheckpoint.debug.replicated_world?.units || []).map((unit) => [unit.unit_id, unit]));
+    const initialSceneUnits = new Map((initialScene.units || []).map((unit) => [unit.unit_id, unit]));
+    const selectedSceneUnits = new Map((selectedScene.units || []).map((unit) => [unit.unit_id, unit]));
+    const expectedColor = SLOT_RGB[stage.owner_slot ?? 0];
+    const contents = [...stage.expected_content_ids].sort();
+    for (const contentId of contents) {
+        const unit = [...selectedPublic.values()].find((entry) => selectedIds.has(entry.unit_id) && entry.content_id === contentId);
+        assert(unit, `SEL2 static ring check must resolve the selected public ${contentId}`);
+        const initialUnit = initialPublic.get(unit.unit_id);
+        const selectedSceneUnit = selectedSceneUnits.get(unit.unit_id);
+        const initialSceneUnit = initialSceneUnits.get(unit.unit_id);
+        assert(initialUnit && selectedSceneUnit && initialSceneUnit,
+            `SEL2 static ring check must resolve ${contentId} in both actual replica and scene captures`);
+        assert.equal(unit.owner_slot, debug.slot, `SEL2 ${contentId} must remain owned by the local slot`);
+        assert.equal(initialUnit.owner_slot, unit.owner_slot, `SEL2 ${contentId} owner must stay fixed across captures`);
+        assert.deepEqual(selectedSceneUnit.translation, initialSceneUnit.translation,
+            `SEL2 ${contentId} world pose must stay fixed across captures`);
+        assert.equal(selectedSceneUnit.pick_radius, initialSceneUnit.pick_radius,
+            `SEL2 ${contentId} pick radius must stay fixed across captures`);
+        assert.equal(changedRingColorPixels(initialImage, initialImage, initialScene, unit.unit_id, expectedColor), 0,
+            `SEL2 ${contentId} unchanged-initial negative control must show no changed ring pixels`);
+        const changed = changedRingColorPixels(initialImage, selectedImage, selectedScene, unit.unit_id, expectedColor);
+        assert(changed >= 1,
+            `SEL2 selected ${contentId} must add a changed slot-colour circumference pixel over the same-pose initial PNG; observed ${changed}`);
+    }
+}
+
+function changedRingColorPixels(before, after, scene, unitId, expected) {
+    const unit = scene?.units?.find((entry) => entry.unit_id === unitId);
+    const radius = unit?.pick_radius;
+    const world = unit?.translation;
+    const matrix = scene?.clip_from_world;
+    const viewport = scene?.viewport_logical_rect;
+    if (!Array.isArray(world) || world.length !== 3 || !Number.isFinite(radius) || radius <= 0 ||
+        !Array.isArray(matrix) || matrix.length !== 16 || !Array.isArray(viewport) || viewport.length !== 4) return 0;
+    const changed = new Set();
+    for (let step = 0; step < 16; step += 1) {
+        const angle = Math.PI * 2 * step / 16;
+        const point = project(matrix, viewport, [
+            world[0] + Math.cos(angle) * radius * 0.94,
+            0.025,
+            world[2] + Math.sin(angle) * radius * 0.94,
+        ]);
+        if (!point) continue;
+        for (let dy = -2; dy <= 2; dy += 1) for (let dx = -2; dx <= 2; dx += 1) {
+            const x = Math.round(point[0] + dx);
+            const y = Math.round(point[1] + dy);
+            const afterPixel = pixelAt(after, x, y);
+            const beforePixel = pixelAt(before, x, y);
+            if (!afterPixel || !beforePixel || afterPixel[3] < 245 ||
+                Math.hypot(afterPixel[0] - expected[0], afterPixel[1] - expected[1], afterPixel[2] - expected[2]) > 85 ||
+                Math.hypot(afterPixel[0] - beforePixel[0], afterPixel[1] - beforePixel[1], afterPixel[2] - beforePixel[2]) < 25) continue;
+            changed.add(`${x},${y}`);
+        }
+    }
+    return changed.size;
 }
 
 function assertSelectionCameraPans(input, params, firstSelectionAction) {

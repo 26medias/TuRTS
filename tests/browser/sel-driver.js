@@ -37,6 +37,7 @@ async function drive(io, params) {
     const targets = deriveTargets(before);
     targets.trooper_target_point = sel3TargetPoint;
     await io.save("sel-initial.png", initialPng);
+    await io.save("sel-initial.png.b64", Buffer.from(initialPng.toString("base64")));
     await io.save("sel-pixel-targets.json", encodeJson(targets));
     for (const stage of params.stages) {
         const points = selectorPoints(stage.selector, targets, before, stage.gesture);
