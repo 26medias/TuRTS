@@ -374,3 +374,14 @@ Choice: authorize only a test-only turts_interaction path dependency in crates/t
 For guide pages1-4, retain whole-word multi-character/special-key checks. A bare article A/a remains ordinary prose. A single-letter label used as an explicit key instruction or chord, such as Press R, is a key mention and must fail. Include article-positive and imperative-negative controls. Keep the required Press R plant and the page5 real Bindings source; do not weaken or retire it. This resolves the instrument contradiction in favour of the design's key-free first pages while preserving the plan's article safeguard.
 
 This is the brief section4 omitted dependency and test-instrument choice. Alternative not taken: duplicate the binding resolver, ban ordinary articles, allow explicit Press R through the guide check, or remove a required plant. Global75/170; no new agent run.
+
+
+## C213: Correct only the production-button palette and reuse unchanged native gates
+
+Conflict: C208's actual headed pair stops at the production button because root supplied the Dummy portrait colour. The controlled make_dummy definition actually outputs muster:beacon and names Build Beacon. Both saved pre-click PNGs show the real Beacon button; actual RGB128,212,255 matches413 interior pixels in each, while the wrong Dummy colour matches0. This is root's calibration error, not an absent/disabled control or a changed gameplay result.
+
+Choice: change only the pure helper's producer colour/name and its unit-test label to Beacon. Keep action/order ids, click points, package, threshold5, tolerance3, native code and oracle outcomes unchanged. Preserve both failed attempts and the actual pixel calibration in final-e349/beacon-palette-calibration.json.
+
+To avoid repeating the197.81s native suite and447.22s G-ACC for two JS-only calibration edits, carry the e349 native results only after verifying the complete diff is those two pure-JS files, all native source/test/build/config/package/action inputs are byte-identical, and freshly rebuilt native executable bytes still match. Keep original e349 execution identity. Run current G-QA and pure controls, fresh actual native binding, and a new headed pair with every pre-click check. All plants/reviewer and full integration re-gates after merge remain required. Any other change or native byte difference cancels carry and requires affected gates.
+
+This is the brief section4 instrument-detail/test-grouping decision under the CEO's speed instruction. Alternative not taken: weaken colour checks, infer content from its id, call the wrong portrait correct, relabel old execution as new, or rerun unchanged native programs without a new concern. Conditional carry is NOT TRACED until measured. Global75/170; no new agent run.

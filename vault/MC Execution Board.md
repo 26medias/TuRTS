@@ -1823,3 +1823,6 @@ C211: RUN73 source preparation ended uncompiled/unaccepted with98owned paths arc
 
 
 C212 authorizes only test dev-dependency turts_interaction for actual effective key labels; minimal Cargo.lock resolution remains pending before Task17 baseline. Bare A/a prose allowed; explicit single-key instruction Press R must fail, preserving the required plant. No duplicate resolver or relaxed guide requirement. RUN75 branch/worktree created from integration0bee132; SOURCEONLY.75/170runs.
+
+
+C213 fixes root producer-colour calibration: make_dummy actually builds Beacon. Both real pre-click17 PNGs show413pixels atRGB128,212,255; wrongDummyRGB0. Only purepalette/testlabel maychange; no input/package/Rust/oracleexpectation change. Carry e349native/GACC onlyifexactnativeinputs+freshbinariesidentical; currentGQA/purecontrols/freshnativebinding/actualheadedpair andplants/review/fullintegrationregates required. Preservefailedpixel attempts.75/170runs.
