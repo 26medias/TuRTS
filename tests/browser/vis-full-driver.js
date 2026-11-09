@@ -172,6 +172,17 @@ async function drive(io) {
     stopped.record.marker_clear_seen = markerCleared;
     updateTargets(stopped.image);
 
+    const gatherer = targets.worker;
+    await act("select-worker-for-gather", "click", gatherer.x, gatherer.y, "left");
+    await capture("vis1-gather-worker-selected", gatherer);
+    await act("move-away-before-gather", "move", targets.ground2.x, targets.ground2.y);
+    await capture("vis1-gather-before", targets.node);
+    actionCall = await act("gather-node", "click", targets.node.x, targets.node.y, "right");
+    const gatherImmediate = await capture("vis1-gather-immediate", targets.node);
+    updateTargets(gatherImmediate.image);
+    await act("move-away-after-gather", "move", targets.ground2.x, targets.ground2.y);
+    await capture("vis1-gather-after-pointer-away", targets.node);
+
     await io.save("vis1-full-steps.json", Buffer.from(JSON.stringify({ targets, actions, shots }, null, 2) + "\n"));
 }
 

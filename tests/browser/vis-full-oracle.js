@@ -164,6 +164,26 @@ async function judge(view) {
     assert.equal(stoppedShot?.marker_clear_seen, true, "VIS1 driver must observe marker clearance in actual PNG pixels");
     assert(!(stopped.checkpoint.debug.markers_shown || []).some((marker) => marker.kind === "move"),
         "VIS1 move marker must clear after the selected unit rests from the stopped order");
+
+    const gatherBefore = requireStage(checkpointsByLabel, "vis1-gather-before");
+    const gatherImmediate = requireStage(checkpointsByLabel, "vis1-gather-immediate");
+    const gatherAfterPointerAway = requireStage(checkpointsByLabel, "vis1-gather-after-pointer-away");
+    assert.deepEqual(gatherBefore.checkpoint.scene.clip_from_world, gatherImmediate.checkpoint.scene.clip_from_world,
+        "VIS1 Gather dot comparison must keep the actual camera pose fixed");
+    assert.deepEqual(gatherBefore.checkpoint.scene.clip_from_world, gatherAfterPointerAway.checkpoint.scene.clip_from_world,
+        "VIS1 unobscured Gather dot capture must keep the actual camera pose fixed");
+    const gatherClick = precedingInput(input, gatherImmediate.screenshotIndex, (entry) =>
+        entry.call === "click" && entry.args?.[2] === "right" && nearPoint(entry.args, target.node));
+    const gatherMarker = assertFirstFrameMarker(gatherClick, gatherImmediate, "gather");
+    const node = resolveNode(gatherImmediate.checkpoint, target.node);
+    assert.equal(gatherMarker.units.length, 1, "VIS1 Gather marker must preserve the selected worker only");
+    assert(Math.hypot(gatherMarker.x - node.translation[0], gatherMarker.y - node.translation[2]) <= 0.1,
+        "VIS1 Gather marker target must match the actual rendered resource node position");
+    assert(Math.hypot(gatherMarker.x - node.position.x, gatherMarker.y - node.position.y) <= 0.1,
+        "VIS1 Gather marker target must match the actual public replica node position");
+    const beforeGatherImage = await screenshot(view, "vis1-gather-before");
+    const afterGatherImage = await screenshot(view, "vis1-gather-after-pointer-away");
+    assertGatherDotPixels(afterGatherImage, beforeGatherImage, gatherAfterPointerAway.checkpoint.scene, gatherMarker);
 }
 
 function requireStage(stages, label) {
@@ -342,7 +362,8 @@ function assertFirstFrameMarker(action, stage, kind, unitId = null) {
     const frame = applied[0];
     const marker = (frame.markers || []).find((entry) => entry.kind === kind && (!unitId || entry.units?.includes(unitId)));
     assert(marker, `VIS1 ${kind} marker must be current in the first applied pointer-release frame`);
-    const expectedOrder = kind === "attack" ? "muster:order_attack" : "muster:order_move";
+    const expectedOrder = kind === "attack" ? "muster:order_attack" :
+        kind === "gather" ? "muster:order_gather" : "muster:order_move";
     assert.equal(marker.order, expectedOrder, `VIS1 ${kind} marker must preserve the exact sent order`);
     const localSlot = stage.checkpoint.debug.slot;
     const owners = new Map((stage.checkpoint.debug.replicated_world?.units || []).map((unit) => [unit.unit_id, unit.owner_slot]));
@@ -351,6 +372,53 @@ function assertFirstFrameMarker(action, stage, kind, unitId = null) {
     assert.deepEqual([...marker.units].sort((left, right) => left - right), [...frame.selection].sort((left, right) => left - right),
         `VIS1 ${kind} marker units must equal the actual selected units in the first applied frame`);
     return marker;
+}
+
+function resolveNode(stage, target) {
+    const sceneNodes = stage.scene.nodes || [];
+    const node = sceneNodes.map((entry) => ({ entry, distance: Math.hypot(
+        entry.ground_screen_center?.[0] - target.x, entry.ground_screen_center?.[1] - target.y) }))
+        .filter(({ entry, distance }) => Number.isFinite(distance) && distance <= 40 &&
+            Array.isArray(entry.translation) && entry.translation.length === 3)
+        .sort((left, right) => left.distance - right.distance)[0];
+    assert(node, "VIS1 PNG-derived Gather click must identify an actual rendered node");
+    const publicNode = (stage.debug.replicated_world?.nodes || []).find((entry) =>
+        numericId(entry.id) === node.entry.node_id);
+    assert(publicNode, "VIS1 Gather target node must exist in the actual public replica");
+    assert(publicNode.pos && Number.isFinite(publicNode.pos.x) && Number.isFinite(publicNode.pos.y),
+        "VIS1 Gather target must carry its actual replicated world position");
+    return { ...node.entry, position: publicNode.pos };
+}
+
+function numericId(value) {
+    if (Number.isInteger(value)) return value;
+    if (Array.isArray(value) && Number.isInteger(value[0])) return value[0];
+    if (value && Number.isInteger(value[0])) return value[0];
+    return null;
+}
+
+function assertGatherDotPixels(image, before, scene, marker) {
+    const expected = RANGE_RGB;
+    const changedSamples = new Set();
+    for (const dx of [-0.04, 0, 0.04]) {
+        for (const dz of [-0.04, 0, 0.04]) {
+            const point = project(scene.clip_from_world, scene.viewport_logical_rect,
+                [marker.x + dx, 0.035, marker.y + dz]);
+            if (!point) continue;
+            for (let py = Math.round(point[1]) - 1; py <= Math.round(point[1]) + 1; py += 1) {
+                for (let px = Math.round(point[0]) - 1; px <= Math.round(point[0]) + 1; px += 1) {
+                    const afterPixel = pixelAt(image, px, py);
+                    const beforePixel = pixelAt(before, px, py);
+                    if (!nearColor(afterPixel, expected, 85) || !beforePixel) continue;
+                    const delta = Math.hypot(afterPixel[0] - beforePixel[0],
+                        afterPixel[1] - beforePixel[1], afterPixel[2] - beforePixel[2]);
+                    if (delta >= 25) changedSamples.add(`${px},${py}`);
+                }
+            }
+        }
+    }
+    assert(changedSamples.size >= 3,
+        `VIS1 Gather marker must change at least three actual dot pixels over the same-pose pre-Gather image; observed ${changedSamples.size}`);
 }
 
 function assertMarkerPixels(image, scene, marker) {

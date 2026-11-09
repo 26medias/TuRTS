@@ -225,7 +225,9 @@ fn sync_app() -> App {
 }
 
 fn set_replica_units(app: &mut App, unit_ids: &[u32]) {
-    let mut state = app.world_mut().resource_mut::<turts_client::ingest::ReplicaState>();
+    let mut state = app
+        .world_mut()
+        .resource_mut::<turts_client::ingest::ReplicaState>();
     let replica = state.replica.get_or_insert_with(|| Replica::new(20));
     replica.units.clear();
     for &unit_id in unit_ids {

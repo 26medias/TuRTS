@@ -579,8 +579,14 @@ mod unit_order_debug_tests {
             rebuilt["replicated_world"]["unit_orders"][0]["unit"], 8,
             "debug captures expose only the actual Replica owner-specific DTO"
         );
-        assert_eq!(captured["slot"], 1, "debug captures expose the actual Welcome slot");
-        assert_eq!(rebuilt["slot"], 1, "debug rebuild preserves the actual Welcome slot");
+        assert_eq!(
+            captured["slot"], 1,
+            "debug captures expose the actual Welcome slot"
+        );
+        assert_eq!(
+            rebuilt["slot"], 1,
+            "debug rebuild preserves the actual Welcome slot"
+        );
     }
 }
 
