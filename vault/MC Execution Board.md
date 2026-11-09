@@ -8,7 +8,7 @@ source: codex
 
 # MC execution board
 
-State: ACTIVE:16/25MC tasks complete;71/170buildruns. Task13 merged60082da, independent0High/0Medium; native10gates0 (1446/0/19) and headedT7exit0 (137frames/53moving). Final5000-unitVIS2record9ae verified; GCPpendingD59. Lane removed, branch/evidence retained, solecache on integration. Wave6 push/hostedCI next, then Wave7. No main merge/push.
+State: ACTIVE Wave7:16/25complete;73/170runs registered. Wave6 pushed588dcd3; CI42681727530 agents success, check/browser RUNNING (not green). RUN72 Task10 sole localruntime; RUN73 Task15 red-test/source prep only under C188. NoWave7merge before terminalWave6jobs read/classified. Main unchangedbb611bd.
 
 Plan: `docs/superpowers/plans/2026-10-29-mc-player-control.md`.
 Design of record: `docs/superpowers/specs/2026-10-29-mc-player-control-design.md`, revision14 at mainf050e42.
@@ -82,8 +82,8 @@ CI trigger: `.github/workflows/ci.yml:2-5` runs pushes to main and pull requests
 | T12 | 5 | 3, 9, 19, 20 | codex/mc-t12 | COMPLETE candidate77ca599; mergeaf567c4. Independent0High/0remaining,7probes and own production101→0. FreshHUD1six/HUD4two pass; required runtime-default mutation1→restore0. Integration11/11gates0,1306/0/19,frozen,T7. All28removed tests mapped; registered3panelplants remain planned-window NOT CHECKED. Lane removed, evidence/cache/branch preserved. |
 | T5 | 6 | 4, 6, 19 | codex/mc-t5 | COMPLETE mergee214ccc from98147ae. RUN65 PASS0High,15independentprobes/ownplant0-101-0; alltaskgates/19GREF/2requiredplants; integration11/11gates0,1419/0/19,T7 137frames/53moving. Lane removed after provenance/hold checks; branch retained. |
 | T13 | 6 | 4, 6, 9, 11, 19, 20 | codex/mc-t13 | COMPLETE merge60082da; candidate9ae04f4, independent0High/0Medium, normal/requiredplants/native19/actualforeignsolid closed, fresh5000VIS2record; native10integrationgates0 (1446/0/19), T7 137frames/53moving exit0; lane removed, branch/evidence retained. |
-| T10 | 7 | 5, 9, 11, 19, 20 | codex/mc-t10 | NOT STARTED |
-| T15 | 7 | 4, 7, 12, 13 | codex/mc-t15 | NOT STARTED |
+| T10 | 7 | 5, 9, 11, 19, 20 | codex/mc-t10 | ACTIVE RUN72 builder; ownlane/solecache, native/browserHD1 redfirst. |
+| T15 | 7 | 4, 7, 12, 13 | codex/mc-t15 | ACTIVE RUN73 sourceprep/redtests only; runtimelease pending. |
 | T17 | 7 | 3, 12, 13, 19, 20 | codex/mc-t17 | NOT STARTED |
 | T14 | 8 | 5, 12, 13, 15 | codex/mc-t14 | NOT STARTED |
 | T16 | 8 | 7, 12, 15 | codex/mc-t16 | NOT STARTED |
@@ -263,6 +263,8 @@ One row per builder/reviewer dispatch or resumed agent work turn. Register befor
 | 69 | T13 final source and runtime review continuation | ux-designer | gpt-6.1-sol | high | 1b649dc plus C179/C181 repairs | Registered BEFORE resuming completed RUN68. Task13run5/estimate5, soft10/hard20. Review stable actual repair source and raw replay, then exclusive native initialization/own actual foreign-solid plant after builder final gates. SOURCE-ONLY until explicit lease; full acceptance NOT TRACED.  PAUSED by CEO travel request2026-11-09; no active lease. Resume from laptop handoff and raw pause checkpoint; Task13 not accepted. |
 | 70 | T13 desktop continuation after CEO travel pause | bevy-rendering-engineer | gpt-6-luna | high | 40b9d90 | COMPLETE9ae04f4. C186causaldiagnostic/isolatedSEL2, no-screen/palette requiredplants, finalactual5000VIS2 redrecord/green/commit. Rootmerged60082da. Allholds released. Global71/170. |
 | 71 | T13 desktop final independent review continuation | ux-designer | gpt-6.1-sol | high | 40b9d90/9ae04f4 | COMPLETE APPROVED0High/0unresolvedMedium. Native19/19; actualfullVIS1baseline2green/ownforeignsolid2red/exactrestore2green; finalsource/rawGPU5000/docs audited. Map/filehashlabel corrected and originalreceipt preserved. Allholds released. |
+| 72 | T10 headless actions implementation | bevy-rendering-engineer | gpt-6-luna | high | currentintegration afterWave6 | Registered BEFORE dispatch. Task10run1/estimate2 soft4/hard8. Solelocalruntime/cache in target/mc-t10. Actualredfirst, HD1native/browser, gates/plants thenindependentreview. |
+| 73 | T15 feedback/audio source preparation | bevy-rendering-engineer | gpt-6-luna | high | currentintegration afterWave6 | Registered BEFORE dispatch. Task15run1/estimate5 soft10/hard20. SOURCEPREPONLY until exclusivelease; write redtests/instruments, noCargo/browser/server/productionbehavior before realred. |
 
 ## 9. Preflight ledger and stop
 
@@ -1732,3 +1734,5 @@ C186 measured update: controlled actual unsequenced Shift=false move reproduced 
 Task13 RUN70 required plants complete: no-screen actual red2/2 exit1 with candidates40/visible39/selected40 (offscreenownTrooper40 selected), exact CoreSHA c9ced2… restored then green2/2 exit0 selecting39/ID40excluded. Palette nearpair red101 with normal0.377<20/protan0.372<10; exact paletteSHA71728a… restored and4/4green0. Root raw audits saved under t13-root/desktop-resume-20261109/{no-screen-required-plant-audit,palette-required-plant-audit}.json. RUN70 released allholds/processes; root verifiedclean/no compiler and granted RUN71 exclusive samecache runtime. No duplicated palette execution needed; reviewer audits receipt.
 
 Task13 completion: ACTIVE:16/25MC tasks complete;71/170buildruns. Task13 merged60082da, independent0High/0Medium; native10gates0 (1446/0/19) and headedT7exit0 (137frames/53moving). Final5000-unitVIS2record9ae verified; GCPpendingD59. Lane removed, branch/evidence retained, solecache on integration. Wave6 push/hostedCI next, then Wave7. No main merge/push. See t13-root/desktop-resume-20261109/acceptance-audit.json and RUN71final-review.md. C186hardwareclosure: actualconfiguredGPU1 NVIDIA/Ampere, source40b, Xvfb100,5000public/rendered,89textureacquisitions,178submissions,0instrumenterrors. The2configuredContexts are configurationevents. FreshVIS2 p50133.3ms/p99199.9ms/1529calls over10s/505872384bytes; exactrecordred0/1 then fourrows4/0, docscommit9ae. Historical9cf stays narrative. Native/WEBregates on60082da all0; frozenSHAexact. Metadatareceipt had canonicalmapdigest labeled filehash; corrected fileSHA22ff1a07…/separatemapdigestcc168db7…, all916actualentries verified, oldreceipt preserved. No source/rawregeneration. C187allows same-workspace frozenproofreuse with9negativecontrols, no gate/plant removed.
+
+ACTIVE Wave7:16/25complete;73/170runs registered. Wave6 pushed588dcd3; CI42681727530 agents success, check/browser RUNNING (not green). RUN72 Task10 sole localruntime; RUN73 Task15 red-test/source prep only under C188. NoWave7merge before terminalWave6jobs read/classified. Main unchangedbb611bd. C188records overlapped preparation with hostedCI; terminalresults stillrequired. C187helperuses explicit reuse-frozen-workspace proof, allothergates remain.

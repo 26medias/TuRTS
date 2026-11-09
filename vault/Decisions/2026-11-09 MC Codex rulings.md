@@ -108,3 +108,12 @@ Choice: future native gates may use integration_gates_v2.py with reuse-frozen-wo
 Evidence: the real Task13 integration workspace log has forge_cases26/26, forge_fixed_point1/1 and m3_m2_stream1/1. The original repeated frozen command also passed. Actual positive verification plus nine negative controls reject omitted suites, zero executed tests, failed tests and ignored tests: t13-root/desktop-resume-20261109/frozen-reuse-proof-controls.json. New untracked helpers are integration_gates_v2.py and frozen_workspace_proof.py; the original helper and historical evidence stay unchanged.
 
 This is test-instrument command grouping under the CEO speed approval and brief section4. It does not change frozen values or remove a gate or plant. Alternative not taken: skip the frozen assertions, accept filtered/empty/ignored execution, defer integration gates across task merges, or rerun the same deterministic tests without a source change.
+
+
+## C188: Prepare Wave7 while hosted Wave6 checks run
+
+Conflict: Wave6 is fully merged and locally re-gated, pushed588dcd3, and actual hosted run42681727530 has been read. Agents passed; check and browser are still running. Waiting without local work would leave the sole local compiler idle.
+
+Choice: begin Wave7 in two lanes from the current integration after all Needs merged. RUN72 Task10 receives the sole local compiler/cache/runtime lease. RUN73 Task15 prepares red tests/instruments/source plans in its own worktree only, with no Cargo, browser, server or production behavior before its real red. Hosted workers are independent of the single local compiler. Read and record Wave6 terminal jobs as they finish; do not call pending jobs green. Do not merge any Wave7 lane before the terminal Wave6 results are read and classified. A new failure outside the approved Task12-to21 window gets priority repair and dependent rebasing. No gate, dependency, task, or wave push/read is omitted.
+
+Evidence: Task13 merge60082da passed all10native gates and headedT7; push588dcd3 contains the identical runtime source plus vault records and a C157-pattern empty CI trigger. Live jobs were read at19:18UTC: agents success, check/browser in progress (target/mc-evidence/wave6-ci/initial-read.json). The brief section4 permits lane/cache layout decisions; the CEO approved safe concurrency and avoiding redundant waits. Alternative not taken: claim hosted green early, merge later-wave work before reading terminal results, or run parallel local compilers/caches.
