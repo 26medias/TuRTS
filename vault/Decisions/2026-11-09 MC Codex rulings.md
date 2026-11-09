@@ -156,3 +156,12 @@ Use a controlled copy under tests/browser/fixtures/hd1/muster when actual produc
 Order ids follow the actual accepted public catalogue, not an illustrative example spelling. Muster currently declares order_attack in orders/order_attack.ron; validate and use its actual qualified public id rather than rename protected content or invent an alias for the prose muster:attack example. The API remains id-based and supports any accepted mod order.
 
 This is the brief section4 same-player-shape existing-mechanism/instrument resolution; no new key, player control, removed acceptance or frozen value. Root owns the small cross-task composition seam. Alternative not taken: require an extra key absent from the design, leave the id unused, silently skip Produce/Cancel, call an unrelated dispatch helper outside the core, or fake empty parity/result arrays. Require real tests for this seam and rerun affected widget/core checks before final acceptance.
+
+
+## C192: Pass the shared HD1 action fixture through runner params
+
+Conflict: HD1 needs the same action list in the headless file and pixel driver, but mc-browser currently allows stages and not an external action fixture in params. A driver must not read source/JSON files directly. Duplicating the list in stages creates drift risk.
+
+Choice: add the narrow optional row field actions_file. The runner/parameter helper resolves a JSON file strictly within tests/browser/fixtures (including resolved-path containment), validates that it is an action list, and passes it as immutable params.actions. Native --actions reads the same file. Reject conflicting inline actions plus actions_file. Keep existing rows unchanged and record the fixture path/hash in run provenance. This is permitted shared-runner/test-parameter plumbing, not a driver capability expansion. Native/schema validation remains responsible for action semantics; drivers remain io-only. Add real positive and invalid-path/conflicting-field/invalid-list controls to the existing parameter contract tests.
+
+Alternative not taken: duplicate the actions in stages, add driver filesystem/debug access, or silently omit actions. Root authorizes the narrow scripts/mc-browser.sh and mc_browser_params.py/parameter-test seam outside Task10's incomplete file list under brief section4. No player-visible behavior or acceptance row changes.

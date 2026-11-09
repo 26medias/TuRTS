@@ -1743,3 +1743,6 @@ C189resolvesTask15 AUD1 dependency: advanceonlydesignedvolume-menu/persistence s
 
 
 C191resolvesHD1id-only/publicorder and Content/Job gaps: existingsemanticUiAction forordinaryorders, narrowtypedUIorder/corecomposition sharedbyrealProduce/Cancel widgets andheadlesshook; preserveUIguards/playerbehavior, no directenvelopebypass. ControlledHD1Muster-copyfixture permitted foractualall-behavior coverage, exactaccepted/refusedsets andrealgroups. Actualpublicorderidspreserved; proseexampledoesnotrenamecontent. RUN74earlyreviewcaughtmissingkeysemantics/fullcoverage andqueue/groupmodifierdefects; RUN72repairs beforegreen.
+
+
+C192: HD1rowactions_file resolvesonevalidatedfixturesJSON intoimmutableparams.actions; nativeandbrowser sharethefile. No driverfilesystem/debug access or duplicatedstages. Narrowexistingrunner/parameterhelper/testedit authorized; requirecontainment/type/conflictcontrols andfixturehashprovenance.
