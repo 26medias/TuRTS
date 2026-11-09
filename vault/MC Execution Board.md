@@ -1788,3 +1788,6 @@ C201 corrects root earlierTask10-existing-menu assumption: actualclient_shell.rs
 
 
 C202: actualHD1headedChromeBevymetadata BrowserWebGpu/Other/emptyname defeats an extraunplannednonempty-nameassertion, not HD1gameplay. Recordvalues/hardwareidentityNOTTRACED; noflag/process-arg hardwareclaim. Removeextrapredicate, keeprealheaded/parity/sourcebindings; Task13VIS2actualhardwaremeasurementunchanged. Firstphase-mismatchpairandsecondadapter-mismatchpairretainedasfailedinstruments, no parityacceptance.74/170runs.
+
+
+C203: Task15ALR1provesactualderivation/sound/pingfeed+rule/unit/position, visiblealertline andrealwithin1shealthdrops/frame-emissioncooldown; nottotalretainedlistafter7s. OPEN acceptanceobligation: actualMINIMAPpingpixels ownedTask14(needs15AlertPings), thenrerunfullALR1+MM1. Task24mustrequirefullALR1visibleping; no permanent skip/fullrowgreenclaimnow. MinimapTask14stub cannotcountasdrawn.74/170runs.
