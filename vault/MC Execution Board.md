@@ -1779,3 +1779,6 @@ C198 binds required realerroraudio via existing authored UnitPresentation.respon
 
 
 C199 allows RUN73 one bounded two-target cargo fetch to resolve plannedaudio Cargo.lock/dependencies during sourceprep. Preserveoldlock/actualargv-env-log-exit/lockdiff/no-targetproof; no update/generate-lockfile/compiler/test/server/browser. RUN72 sole compiler/cache unchanged. ThenRUN73 returnsSOURCEONLY.74/170runs.
+
+
+C200 resolves ORD6physicalburst instrument: optional bounded count1..100 on existingio.click, samepixel/realtrustedCDPevents/per-release trace. Trustedharness may holdonlyapplicationRAFcallbacks duringboundedburst, thenrealflush/finallyrelease, no driverpauseAPI/game-state setter/newchannel. Requireactual100releases→100realcoreenvelopes/serverresults and separatelybound101stacceptedafter1s; actualrefusaltext/error timing remains. K25bucket/refill/tickrate unchanged. No realbrowsercredit fromhelperunit tests. See Nov9rulings.74/170runs.
