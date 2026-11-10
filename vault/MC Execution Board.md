@@ -1919,3 +1919,6 @@ C232: actualK27immediateWelcomeorobservedretry/countdownbothvalid; draftoracleex
 
 
 C233: real15s window startsFIRSTactualstoredtransport; actualHello cadence separate/noreset; absoluteTime<Real>guardbeforePreUpdateConnected/ingest cannotuseoldUpdateclock. Currentnative165pass0+a569/WASM0+c1a27517arepartialbeforefinalschedulefix. RootC232JSf42855f3/2db4faddindependentsourcePASS0H/M, exactactualauthoredreasonandcausalstaticeffect corrected; native/offlineproofNOTbrowseracceptance.80/170;17/25.
+
+
+C234: actualC233headedAUD1pair2fails1 atINITIALsolidblackPNGs despiteJoined/515units/7UIrows/suspendedcontext/nogesture; causeNOTTRACED, noaudio/rejoincredit. NewAUD1-onlyscreenshotpoll≤10s waitsactualownbodypixelswithoutgesture, preservesfirstnegative/exactpositive;79sourcePASS8ebec6e6, Rust/oracleunchanged. FreshpairGO; no redundantnativeWASMJS-onlyrerun. C233finalnative167+WASM0+1515sourcehashidentity rootverified. ExtraC233postjoin-deadline nativeplant reservedAFTERcommit/gates, requiredallotherplantsremain.80/170;17/25.
