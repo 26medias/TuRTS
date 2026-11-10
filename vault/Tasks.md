@@ -104,7 +104,7 @@ Human usability amendment1354e33: catalog-derived principal labels/named local s
 
 ## Current MC status
 
-MC is active on this desktop. 18 of 25 lanes are complete; 80 of 170 build runs are registered. Task15 merged at731273e after final review with0High/0unresolvedMedium. All required post-merge integration Rust, QA, frozen and web gates passed, exit0. Task17 has102 archived pending paths and five source QA passes; its rebase and compiler work are next. Root owns the single cache. Wave7 push and CI follow Task17. C203 minimap pixels and full Task16 acceptance remain open. Mainbb611bd is unchanged. Task23 stops for CEO PT1/PT2, logged not blind.
+MC is active on this desktop. 18 of25 lanes are complete;81 of170 build runs are registered. Task15 merged731273e and all integration Rust, QA, frozen and web gates passed0. Its idle worktree is retired; evidence and branch are preserved. RUN81 owns the only cache in Task17. Its rebased source preserves both snapshot tests and all867 dependency identities; focused guide3/3 and widgets43/43 pass0. HUD syntax and one test fixture type were repaired; these setup failures have no red credit. Task17 browser greens, committed gates, five builder plants and RUN80 final health-row plant/review remain. Wave7 push/CI follows Task17. C203 minimap pixels and full Task16 rows remain open. Mainbb611bd is unchanged; Task23 stops for CEO PT1/PT2, not blind.
 
 ## Historical MC checkpoints
 
@@ -166,7 +166,7 @@ ACTIVE Wave7:16/25complete;74/170buildruns. RUN72 Task10 solelocalruntime/cache;
 
 ## MC current desktop checkpoint
 
-ACTIVE on the desktop: 17/25 MC lanes complete; 80/170 build runs registered. Task10 is merged at ea943bf and fully re-gated. Task15 passed all six owned browser rows twice in actual headed Chrome:12/12, raw07239158, content-bound to candidate ce554f3. The full Clippy gate then found Task15 lint issues; RUN78 is repairing the batch while RUN79 independently checks the source. The original matrix keeps its original identity. Final repaired candidate, all normal gates, required mutation cycles, current restored-row greens and independent runtime review remain. C238 records the actual three bucket tests and actual pack CLI unknown-sound exit2/exact-restore exit0. C239 groups current restored-row verification without duplicate matrix runs. Task17 RUN80 source review passes C227/C231; its native/browser work waits for the sole cache. RUN78 owns that cache/compiler/runtime. Wave7 push and CI follow Tasks15/17. Main bb611bd is unchanged. CEO PT1/PT2 stop remains at Task23.
+MC is active on this desktop. 18 of25 lanes are complete;81 of170 build runs are registered. Task15 merged731273e and all integration Rust, QA, frozen and web gates passed0. Its idle worktree is retired; evidence and branch are preserved. RUN81 owns the only cache in Task17. Its rebased source preserves both snapshot tests and all867 dependency identities; focused guide3/3 and widgets43/43 pass0. HUD syntax and one test fixture type were repaired; these setup failures have no red credit. Task17 browser greens, committed gates, five builder plants and RUN80 final health-row plant/review remain. Wave7 push/CI follows Task17. C203 minimap pixels and full Task16 rows remain open. Mainbb611bd is unchanged; Task23 stops for CEO PT1/PT2, not blind.
 
 
 ## MC final native gate and current QA repair
