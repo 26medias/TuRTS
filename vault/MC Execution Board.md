@@ -8,7 +8,7 @@ source: codex
 
 # MC execution board
 
-State: MC is active on this desktop. 19 of 25 lanes are complete; 88 of 170 build runs are registered. Wave7 is pushed at2c11383. Hosted CI42789795527 is terminal: agents succeeds; check and browser have only the two approved O13 legacy migration failures, owner21. No new regression was found; this is not three-job green. Task14 RUN82 owns the sole cache and is correcting original-stub MM1 baseline plumbing under C267; RUN83 independently reviews it. Task16 RUN84 source prep and RUN85 readiness review are finished; four High instrument findings need repair before runtime. Main bb611bd is unchanged. Task23 stops for CEO PT1/PT2, logged not blind.
+State: MC is active on this desktop. 19 of 25 lanes are complete; 88 of 170 build runs are registered. Wave7 at2c11383 is pushed; terminal CI42789795527 has agents success and the two approved O13 legacy migration failures, owner21. Task14 RUN82 builder owns the sole cache; RUN88 independently reviews its feature/order instruments. The latest full minimap diagnostic passes camera/drag/right/zoom/dot/frame checks but has no damage stimulus because an interior trooper jammed; C277 repairs the physical actor choice. Task16 RUN86 repairs source instruments; Task22 RUN87 source prep is finished with runtime NOT TRACED. Tasks14,16,22,21,23,24 remain. Mainbb611bd is unchanged. Before Task23, provide the CEO URL and wait for PT1/PT2, logged not blind.
 
 Plan: `docs/superpowers/plans/2026-10-29-mc-player-control.md`.
 Design of record: `docs/superpowers/specs/2026-10-29-mc-player-control-design.md`, revision14 at mainf050e42.
@@ -2319,3 +2319,12 @@ Conflict: the grid's sparse HashMap iteration is followed by an unconditional un
 Choice: preserve exact grid.within membership in the plant, route it through a fresh HashMap with RandomState at the group-avoidance consumer in movement.rs:2132, then iterate directly into the existing order-sensitive velocity accumulation without a following sort. Leave other grid callers and the independent hard projection query unchanged. Normal production code stays canonical. At runtime require actual two-process tick projections through400 to differ, complete tick/unit coverage, nonzero >=2-neighbor work, and exact-restored equality/order logs. The geometry self-check alone is insufficient. This is a source proposal only: sensitivity remains NOT TRACED until executed; no plant retires or changes failure class.
 
 Evidence: grid.rs:61-109 canonical sort; movement.rs:2132-2171 avoidance accumulation,2194 separate projection; RUN87 source-phase.md:52 traces callers. Alternative not taken: plant a cancelled HashMap reorder, infer sensitivity from neighbor counts, edit unrelated queries, or claim a source proposal as red. This is brief4 nearest equivalent test-fault mechanism.88/170registered after new Task14 reviewer;19/25complete.
+
+
+## C279: Require the server result for each physical minimap command
+
+Conflict: RUN88 finds that MM1 assertOrderFromInput only joins a physical pointer release to a client-emitted order. A request can be emitted then rejected, so that is insufficient smart-command acceptance. Root actual candidate showed an accepted attack, but the oracle itself did not require it.
+
+Choice: bind the actual retained emitted sequence and unit to the real per-unit accepted server result, with exact intended order/target from the same intent and actual current-order/movement effect when applicable. Reject missing/rejected/wrong-sequence/wrong-unit controls. Keep real attack movement/damage/ping causality underC277. Use existing actual producer fields: emitted_orders has intent_id,seq,order,units,target, not group/queue. Do not require invented fields or add a bridge merely to fit a draft. If later full order clauses need unavailable envelope data, propose a minimal actual observation export at the owning producer. Preserve failure/success chronology and existing guards.
+
+Evidence: tests/browser/mm1-oracle.js:242-258 emitted-only assertion; core_adapter.rs emitted_order_values actual producer; RUN88 Medium instrument finding; run1 retained seq1/unit21 accepted attick98. Alternative not taken: accept intent as execution, match unrelated accepted results, weaken real damage, or fabricate metadata. This is brief4 Medium instrument repair.88/170runs;19/25complete.
