@@ -8,7 +8,7 @@ source: codex
 
 # MC execution board
 
-State: ACTIVE on the desktop: 17/25 MC lanes complete; 80/170 build runs registered. Task10 merged at ea943bf and all integration native/QA/frozen/web gates passed. The actual HD1 process also passed in the assigned integration cache; no duplicate cache. Task15 RUN78 owns the sole compiler/cache for focused native checks; Task17 RUN76 is source-only on HUD/assets/guide after verified baseline reds. RUN79 reviews Task15 source only. Wave7 push/CI follows Tasks15 and17. Main bb611bd is unchanged. CEO PT1/PT2 stop remains at Task23.
+State: ACTIVE on the desktop: 17/25 MC lanes complete; 80/170 build runs registered. Task10 merged at ea943bf and all integration native/QA/frozen/web gates passed. The actual HD1 process also passed in the assigned integration cache; no duplicate cache. Task15 RUN78 owns the sole compiler/cache/browser and starts the six headed row pairs after RUN79 source PASS. Task17 RUN76 ended with uncompiled source; RUN80 reviews it independently with no runtime. Root repairs all six RUN80 source findings. RUN79 remains source-only until its later runtime lease. Wave7 push/CI follows Tasks15 and17. Main bb611bd is unchanged. CEO PT1/PT2 stop remains at Task23.
 
 Plan: `docs/superpowers/plans/2026-10-29-mc-player-control.md`.
 Design of record: `docs/superpowers/specs/2026-10-29-mc-player-control-design.md`, revision14 at mainf050e42.
@@ -1889,3 +1889,6 @@ C226: learnedlab/turretcoords are localPNGcolour/shape searchseeds ONLY, no blin
 
 
 RUN76 ended SOURCEPREP at102WIPpaths, stilluncompiled/unaccepted andtargetabsent. Source-green receipt t17-builder/run76-source-green.json, SEL1clone63files/62identical/oneapprovedmapdelta. Any builderresume needsnewledgerrow. RUN80 registeredbefore independentmod-builder source-to-finalreview, usefulwhileTask15exclusiveactualruntimepending. C225canonicalCargoofflinefetchresolvedONLYexistingclient→wasm-bindgen edge; earliermanualedgecheckwasreverted andnotfinalcredit, freshlockednative/WASMchecks0. HD1A/Boriginalmapandshiftedbothpack0; unneeded460-beaconshiftrevertedexactHEAD, authorizedHUDButtonmirrorretained/currentpack0. Task15latestPID/ALRproofsourcefrozenawaitquick79readbackbeforeheaded.80/170;17/25complete.
+
+
+C227 repairs RUN80 oneHigh/fiveMedium source findings before Task17 runtime: required Bindings scrollingList/all51actions, factual droneguide, actualselectedhealth and reserved-awareinventoryoracle, exactSEL1HUDclone, correctslot/radius/colour+reference ringproof. Root boundedsourcepatch archived; reviewer80 recheckpending. RUN79 finalC225sourcePASS0H/M; RUN78 GO sixheadedpairsAUD1first, sole runtime.80/170;17/25complete.

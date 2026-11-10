@@ -536,3 +536,14 @@ Conflict: Task17's component finder merges/misses the central blue lab/turret cl
 Choice: the learned positions may seed a small local screenshot search. Require current PNG slot-colour/shape pixels before emitting each candidate, preserve the observed sample/region, and fail setup if none exists. Never click the literal unconditionally or read runtime semantic geometry in the driver. The oracle must still verify the actual selected lab/turret and physical input against its C84 checkpoint. Split components or use local image regions where the connected blue cluster needs it.
 
 This is the brief section4 instrument detail/nearest image-search choice. Alternative not taken: exempt HUD2 from the unit rule, call a semantic-oracle check a pixel driver, or discard required lab/turret coverage. Global79/170; no new agent run.
+
+
+## C227: Repair all Task17 source review findings before runtime
+
+Conflict: RUN80 found one High and five Medium findings in the uncompiled Task17 candidate. The Controls Grid at mods/forge/interface/hud.ron:170 caps 51 effective bindings at 48 and fails the required List guard (forge_guide.rs:196-203,242-248). The drone guide at hud.ron:167 claims a weapon absent from units/drone.ron. HUD2 oracle:69-101 omits selected-row health and compares inventory/shortage to fixed zero. SEL1 fixture HUD:77 differs from the production HUD. SEL1 oracle:149-176 accepts wrong slot/radius metadata and arbitrary pixel change without the slot colour.
+
+Choice: repair every finding. Use the design12.1 scrolling List on Bindings, existing List ScrollArea mechanism (widgets/mod.rs:725-749), max_items64 with readable24px rows. Keep all effective actions; later actual wheel/pixel proof must reach the last binding. Teach movement, inspection and enemy turret range accurately. Compare selected-row health and same-checkpoint reserved-aware inventory/shortage against actual public state, paired with text pixels. Copy final production HUD to the controlled clone and require fresh63-file equality except its one approved map addition. Require real ring unit/slot/ownership/radius and both correct slot-colour and reference-difference samples. Keep the cleared-ring reference check.
+
+Root made bounded source repairs while RUN78 owned runtime. Before/after bytes and SHA256 are in target/mc-evidence/t17-root/run80-source-repairs/. Node syntax/diff checks passed0; no native/browser acceptance is claimed. Independent RUN80 re-check, pure wrong-colour control, fresh clone parity, actual headed rows and the reviewer's distinct selected-health plant remain required. No new run is spent:80/170;17/25 complete.
+
+This is the brief section4 review-finding repair decision; the design and player-visible actions stay as written. Alternative not taken: defer these findings, weaken the List guard, truncate help, change Forge weapons, accept stale inventory or let an unrelated pixel change prove a ring. No named refutation plant retires.
