@@ -385,7 +385,7 @@ async function judgeAud1(view, input, checkpoints, final) {
     assert(reloaded.context_states?.length > 0
         && reloaded.context_states.every((state) => state === "running" || state === "suspended"),
     "AUD1 observes the fresh actual post-reload AudioContext objects before the next physical gesture");
-    assert.equal(reloaded.gesture_seen, false, "AUD1 reload has not reused a prior page's gesture authorization");
+    assert.equal(reloaded.gesture_seen, false, "AUD1 reload has not reused a prior gesture authorization");
     assert.equal(reloaded.player_entities, 0, "AUD1 has no actual audio player before its new post-reload gesture");
     const reloadCall = input.find((entry) => entry.call === "reload");
     assert(reloadCall && Number.isFinite(reloadCall.wall_time_ms) &&
@@ -449,7 +449,7 @@ async function judgeAud1(view, input, checkpoints, final) {
         && resumedAfterReloadGesture.debug.audio.context_states.every((state) => state === "running"),
     "AUD1 records a new physical post-reload gesture resuming every live AudioContext");
     assertLiveVoiceCount(volume, "AUD1 never has more than one live voice player");
-    assert(input.some((entry) => entry.call === "reload"), "AUD1 performs the actual same-tab page reload");
+    assert(input.some((entry) => entry.call === "reload"), "AUD1 performs the actual same-tab reload");
     const serverLog = await view.serverFile("server.log");
     const joinedPlayers = [...serverLog.matchAll(/turts_server: player ([0-9]+) took slot ([0-9]+)/g)]
         .filter((match) => match[2] === "0")

@@ -1,3 +1,4 @@
+// turts-test-role: harness
 // Runs as a trusted harness init script before the WASM application starts.
 function installBoundedRafHold() {
     const nativeRequestAnimationFrame = window.requestAnimationFrame?.bind(window);
