@@ -734,3 +734,14 @@ If this becomes a game-fixture candidate, independently review per-page session 
 Evidence: tests/browser/harness/run.js creates context inside the per-window loop. Design10.4 states same-origin localStorage and window-scoped sessionStorage; K27 duplicated-tab semantics require genuine opener copy. Root external browser-canvas-shared-context.js is prepared/syntax0 only; no execution or fixture change at this ruling.
 
 Alternative not taken: silently change storage scope, stack three context init scripts, copy bytes to fake an opener, claim context topology is the cause without a control, or waive K27 checks. Brief4 instrument/nearest-existing-mechanism detail;96/170runs;20/25complete.
+
+
+## C318: Bind headed runs and tie the GPU lease to actual processes
+
+Conflict: a post-calibration KM2 command omitted headed environment and launched headless, so it was rightly setup-only. Separately, an agent waited for a root browser experiment that was merely prepared, despite an earlier release. Reconstructing launch environment and reserving GPU by prose invites wasted work.
+
+Choice: prepare an external bound physical runner at primary target/mc-evidence/gate-runner/mc_headed_v1.sh, SHA1c890c7b04ff2ba455ed91e95e0a1adf2ece73978f317989f1b7ad8b79b5953a. It pins headed/fullVulkan/noSwiftShader arguments, bytecode-off, isolated1280x720Xvfb, ALSA through the unchanged enforcing exec_in_lane runner, and durable primary per-label output. It acquires primary target/mc-evidence/gpu-runtime.lock only for the real process lifetime with flock. Root external GPU commands use the same lock. Prepared files/proposals never reserve GPU. Adopt after the current already-launched row closes; no overlapping old/manual/new runs. Native compiler/cache/source ownership rules still stand. Final canonical wrappers with the same enforced profile remain valid.
+
+Evidence: helper bash syntax/help exit0; unsafe-label preflight exits2 before launch. First actual row through it is NOT TRACED and must verify actual profile, source immutability and exit metadata. Existing Native runner is unchanged, preserving all prior receipt hashes. This is tooling only, not a fresh product proof. Current valid KM2 cycle sourceunchanged/rawb2512ce4/fullheaded0 remains one accepted cycle, separate from the earlier wiring/headless setup failure.
+
+Alternative not taken: count headless as headed, weaken receipts, silently re-use a prior output label, reserve GPU during source preparation, create another Cargo cache or alter global/user configuration. Brief4 command/cache scheduling decision;96/170runs;20/25complete.
