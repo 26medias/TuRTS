@@ -1922,3 +1922,6 @@ C233: real15s window startsFIRSTactualstoredtransport; actualHello cadence separ
 
 
 C234: actualC233headedAUD1pair2fails1 atINITIALsolidblackPNGs despiteJoined/515units/7UIrows/suspendedcontext/nogesture; causeNOTTRACED, noaudio/rejoincredit. NewAUD1-onlyscreenshotpoll≤10s waitsactualownbodypixelswithoutgesture, preservesfirstnegative/exactpositive;79sourcePASS8ebec6e6, Rust/oracleunchanged. FreshpairGO; no redundantnativeWASMJS-onlyrerun. C233finalnative167+WASM0+1515sourcehashidentity rootverified. ExtraC233postjoin-deadline nativeplant reservedAFTERcommit/gates, requiredallotherplantsremain.80/170;17/25.
+
+
+C235profileauditCORRECTION: C233andC234pairsALLactualheaded0/headlessTRUE, despiteartifactlabels. FOURfailuresareheadlesssetup/readinessonly; noaudio/rejoinheadedacceptance. ForceMC_BROWSER_HEADED1/MC_PIXELS_HEADED1 OUTERdedicatedxvfb-run/actualxdpyinfo/inheritedDISPLAY, verifyactualfirstprofileheadlessFALSE+headed1. Onephysical:1headedattemptinterrupted/incompletepreserved; ownedprocesscleanupthenoneproperpairGO. Sourceunchanged8ebec6e6/2db4fadd; native167/WASM/sourcePASS stillvalid.80/170;17/25.
