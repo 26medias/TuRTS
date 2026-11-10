@@ -1895,3 +1895,6 @@ C227 repairs RUN80 oneHigh/fiveMedium source findings before Task17 runtime: req
 
 
 C228: AUD1 firstheadedpair bothactual1 beforeplayback/reload, sourceunchanged. RootactualPNG proves authoredorange tolerance48 rejects shadedorange(bestdistance57.56;1086pixelswithin70). Calibrateonlypixelinstrument withsamePNGoldfail/newpass controls; preservebothfailures. No audio/reloadacceptanceclaimed; RUN78solelease continues. Task17 C227 allsixsourcefindingsindependentlyrecheckedPASS; freshcloneparity63/62oneapprovedmap, wrongredpixelcontrol1/slotcolourcontrol0, Controlsphysicalscrollproofsourceprepared.80/170;17/25.
+
+
+C229: freshAUD1pair2fails1/sourceimmutable nowreachesreload andTRACESoldlive-sessionrefusal forSAMEexactPID. AdvanceonlydesignedK27one-secondHello/15scountdown/retry subsetfrom16; noSlots/serverreplacement change. Meaningfulnative lifecycleRED→GREEN thenactualimmutableAUD1pairrequired. FullTask16SLOT1threewindows/otherrowsremainopen. Actualpre-reloadsinks7/gains106arepartialaudioevidence, notrowgreen.80/170;17/25complete.
