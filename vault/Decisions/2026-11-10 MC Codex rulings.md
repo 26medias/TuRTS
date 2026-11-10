@@ -591,3 +591,12 @@ Conflict: Task16 must verify the real engine menu. Current widgets/snapshot.rs e
 Choice: extend only the existing UiSnapshotFeed snapshot path with a bounded record for the actual SettingsMenuOverlay component and its real descendants' Text and computed layout/visibility/capture state. Make the existing marker crate-visible if required. Keep actual existing physical-pixel rectangle semantics; missing ComputedNode/transform means null/false, not invented geometry. Bound traversal and report overflow explicitly for fail-closed evaluation; preserve all current authored-widget/notice rows. No new endpoint, semantic driver read, synthetic menu flag, product UI behavior or acceptance change. A menu action or OS focus feed alone cannot satisfy the browser menu/overlay clauses.
 
 Evidence: T16 widgets/snapshot.rs:11 real ComputedNode/UiGlobalTransform export and :40 AuthoredWidgetId-only filter; client_shell.rs:20 SettingsMenuOverlay and :229 actual root/capture components; debug.rs:105 existing UiSnapshotFeed bridge. Alternative not taken: fabricate visible labels/rectangles from settings data, add another bridge, treat native tree tests as browser pixels or drop the actual menu checks. This is brief4 instrument detail continuing C292/C299.94/170runs,19/25complete.
+
+
+## C305: Compare the saved audio value at its actual f32 precision
+
+Conflict: the new native settings-preservation contract compares the JSON master-volume number with exact f64 literal0.6. Actual unchanged Task15 behavior starts from f32 volume0.6 and saves0.6000000238418579. This is a test precision mismatch, not lost volume or settings.
+
+Choice: compare with exact `f64::from(0.6_f32)` while retaining exact unknown-field and other-category assertions. Do not change serialization, add an arbitrary tolerance, or count the old mismatch as a product red. Preserve original source/raw; rerun the same persist target. It now has5pass/9genuine missing-feature failures instead of4pass/10fail. No product behavior changed.
+
+Evidence: crates/turts_client/tests/persist.rs:105 actual SettingsStore.set_volume and :111 corrected numeric assertion; initial native persist raw under t16-persist-baseline-run94-v1, rerunv2 rawac9aa4e621cbd323e906fea51492d1af73597fb4352931dbc5971d5a9f7dffd0. Alternative not taken: manufacture a Task15 regression, hide the old result, round stored data or loosen the acceptance values. This is brief4 instrument numeric precision detail, same volume behavior.95/170runs,20/25complete.
