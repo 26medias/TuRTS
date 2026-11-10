@@ -3051,3 +3051,14 @@ Alternative not taken: defer known Medium evidence defects, count malformed setu
 ## Task16 source-only mutation preparation
 
 Root prepares eight full external fault candidates from frozen7ce13a40/base51170cb4, with original/mutant/diff/SHA manifests at PRIMARY/t16-root/plant-preparation. P1reclaim/P2retry/P3default-prevention/P4logical-letter/P5dead-group/P7scroll/P8double-DPR/P9corrupt-panic. P6cursor awaits actual implementation. All formatting checks0 using skip_children=true for isolated modules; initial missing child module lookup is setup only. Zero application/compiler/runtime/independent review/semantic acceptance. Rebind final exact committed source and obtain review after required normal gates before any plant. DPR2 and actual panic evidence obligations are explicit in plant-preflight-handoff.md; no data/guard failure counts. No new run or cache.100/170runs;20/25complete.
+
+
+## C331: Observe SEL4 reload after the existing transport timeout
+
+Conflict: SEL4 first reload capture at650ms is Joining; the next at5s is still Joining with four real duplicate refusals and countdown11. Neither contains the required current match/slot/world. The second run has only --tick-log, so missing private Session removal records cannot establish that no removal occurred. Design10.5 already documents the old session netcode timeout10s; these observations are earlier than that bound.
+
+Choice: use one bounded12s physical wait after reload, then capture actual current Joined frame/match/slot/document and send the real recall key before checking live groups. The oracle must reject missing readiness as setup/instrument before the group persistence predicate. Do not change product timers or the separate strict15s SLOT1 rejoin bound. If the actual existing15s window ends without Joined, preserve its real terminal/lifecycle outcome and report the appropriate owner failure. Do not repeat progressively longer short guesses or infer a Session event from an observer that was never enabled.
+
+Evidence: RUN94 retained actual SEL4 baseline observations pass assign/recall/add/centre/same-frame worker41 death pruning; post-reload has same playerID but null match/slot and Joining. Actual argv only tick-log; no session-observer stream was requested. Design10.5:998-1003 specifies10s old session timeout and15s rejoin window. Existing wait/capture fields are physical plan instrumentation, not player behavior.
+
+Alternative not taken: call empty pre-join groups a persistence red, assume immediate WebSocket close, claim absent private data as ownership proof, raise a timeout or discard genuine already-observed group behavior. Brief4 fixture/readiness detail under C310;100/170runs;20/25complete.
