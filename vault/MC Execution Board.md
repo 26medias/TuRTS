@@ -1876,3 +1876,6 @@ C220 addendum: keep actual ORD7 result-bearing causal frames in existing4096boun
 
 
 C223 resolves knownemptyturretammo: actualownammo definition+presentmainInventoryState withnomatchingitem→0; missing/unknown/foreignremainNull. Task17sourceonlygenericresolver, actualHUD2proofrequired; no frozenForgecontentchange. RUN78 C220batch nowinsource, RUN79 independentreadbackbeforegates.79/170.
+
+
+C224: HUD2tooltipkey proof reuses actualvisibleAuthoredWidgetId owner::tooltip Text/rect alreadypublished; no newowner-intent tooltip_textfield. Pairphysicalhover/glyphpixels withactualrenderedkey andrequiredkey-dropplant. C218WorldTooltip observation remainsseparateengineentity.79/170.

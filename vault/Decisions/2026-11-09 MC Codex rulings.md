@@ -503,3 +503,12 @@ Conflict: actual Forge turret7 has an ammo definition and a replicated main inve
 Choice: Task17 may resolve absent matching ammo item to available0 only when the own unit, ammo definition and actual main inventory state all exist. Keep null for an unknown/missing state or absent definition; keep the foreign guard and reserved-aware quantities. Do not change authored Forge contents or any unit definition. Add empty-versus-unknown/foreign source guards and verify actual empty-turret ammo0 in HUD2.
 
 This is the brief section4 nearest existing source/presentation mechanism choice. Alternative not taken: fabricate an inventory, expose private ammo, change frozen unit data, or show blank for a known empty state. Global79/170; no new agent run.
+
+
+## C224: Check the existing rendered tooltip view, not its source intent
+
+Conflict: Task17 proposed adding tooltip_text from the owner WidgetTooltip component to prove HUD2 keys. That would observe resolved intent and could miss a renderer that drops the key. The actual existing tooltip view already has AuthoredWidgetId(owner_id::tooltip), Text and Node (widgets/tooltip.rs:45-65), and update_tooltips:89-111 updates that real Text/Visibility. Existing turts_ui observes all authored Text entities, not only buttons.
+
+Choice: no new field or source extension. After physical hover and layout settle, the oracle reads the visible owner_id::tooltip row's actual rendered Text and computed rectangle through turts_ui, compares its key to the actual effective binding, and pairs it with bubble/glyph pixels. The required key-drop plant must fail that actual view assertion. This uses the existing authored child identity; it does not mark an engine-only world tooltip as authored (C218 remains separate).
+
+This is the brief section4 nearest existing instrument mechanism choice. Alternative not taken: expose intent instead of rendered text, add an unnecessary field/channel, or use OCR. Global79/170; no new agent run.
