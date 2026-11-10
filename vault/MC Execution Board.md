@@ -8,7 +8,7 @@ source: codex
 
 # MC execution board
 
-State: ACTIVE on the desktop: 17/25 MC lanes complete; 80/170 build runs registered. Task10 merged at ea943bf and all integration native/QA/frozen/web gates passed. The actual HD1 process also passed in the assigned integration cache; no duplicate cache. Task15 RUN78 owns the sole compiler/cache/browser and starts the six headed row pairs after RUN79 source PASS. Task17 RUN76 ended with uncompiled source; RUN80 reviews it independently with no runtime. Root repairs all six RUN80 source findings. RUN79 remains source-only until its later runtime lease. Wave7 push/CI follows Tasks15 and17. Main bb611bd is unchanged. CEO PT1/PT2 stop remains at Task23.
+State: ACTIVE on the desktop: 17/25 MC lanes complete; 80/170 build runs registered. Task10 merged at ea943bf and all integration native/QA/frozen/web gates passed. The actual HD1 process also passed in the assigned integration cache; no duplicate cache. Task15 RUN78 owns the sole compiler/cache/runtime. Two actual AUD1 pairs expose corrected detector calibration and the designed old-session rejoin race; C229 advances bounded retry/countdown from Task16, with native red-first controls next. Actual alert playback remains unproved and the driver route is being repaired. Task17 RUN80 independently passed all C227 source repairs; native/browser gates wait for the cache. RUN79 remains source-only until its later runtime lease. Wave7 push/CI follows Tasks15 and17. Main bb611bd is unchanged. CEO PT1/PT2 stop remains at Task23.
 
 Plan: `docs/superpowers/plans/2026-10-29-mc-player-control.md`.
 Design of record: `docs/superpowers/specs/2026-10-29-mc-player-control-design.md`, revision14 at mainf050e42.
@@ -83,10 +83,10 @@ CI trigger: `.github/workflows/ci.yml:2-5` runs pushes to main and pull requests
 | T5 | 6 | 4, 6, 19 | codex/mc-t5 | COMPLETE mergee214ccc from98147ae. RUN65 PASS0High,15independentprobes/ownplant0-101-0; alltaskgates/19GREF/2requiredplants; integration11/11gates0,1419/0/19,T7 137frames/53moving. Lane removed after provenance/hold checks; branch retained. |
 | T13 | 6 | 4, 6, 9, 11, 19, 20 | codex/mc-t13 | COMPLETE merge60082da; candidate9ae04f4, independent0High/0Medium, normal/requiredplants/native19/actualforeignsolid closed, fresh5000VIS2record; native10integrationgates0 (1446/0/19), T7 137frames/53moving exit0; lane removed, branch/evidence retained. |
 | T10 | 7 | 5, 9, 11, 19, 20 | codex/mc-t10 | COMPLETE b051e04, merged ea943bf; RUN77 0High/0unresolvedMedium; all integration gates and actual non10 native proof0; lane retired. |
-| T15 | 7 | 4, 7, 12, 13 | codex/mc-t15 | ACTIVE RUN73 green source-only; compiled stub reds archived, runtimelease pending. |
-| T17 | 7 | 3, 12, 13, 19, 20 | codex/mc-t17 | RUN75 registered source/test/asset prep only; no target/runtime. |
+| T15 | 7 | 4, 7, 12, 13 | codex/mc-t15 | ACTIVE RUN78 sole runtime; focused native green; AUD1 pair2samePIDreloadfail; C229 boundedretry/redfirst and lawfulpixel/audio-route repairs pending. RUN79 independent source review; no candidate/fullrowgreen yet. |
+| T17 | 7 | 3, 12, 13, 19, 20 | codex/mc-t17 | SOURCE READY UNCOMPILED; RUN76 ended102WIP, root C227 bounded repairs/RUN80 sourcePASS; no target. New builder row needed after15merge/rebase/cachehandoff. |
 | T14 | 8 | 5, 12, 13, 15 | codex/mc-t14 | NOT STARTED |
-| T16 | 8 | 7, 12, 15 | codex/mc-t16 | NOT STARTED |
+| T16 | 8 | 7, 12, 15 | codex/mc-t16 | OPEN; volume/id subsets advanced underC189/C225; C229 retry/countdown advanced forAUD1. FullTask16rows/threewindows/backendreview remain unstarted. |
 | T22 | 8 | 6, 7, 10, 11, 13, 19, 20 | codex/mc-t22 | NOT STARTED |
 | T21 | 9 | 14, 16, 17, 18, 20 | codex/mc-t21 | NOT STARTED |
 | T23 | 10 | 14, 15, 21, 22 | codex/mc-t23 | NOT STARTED |

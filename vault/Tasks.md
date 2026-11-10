@@ -104,7 +104,7 @@ Human usability amendment1354e33: catalog-derived principal labels/named local s
 
 ## Current MC status
 
-ACTIVE on the desktop: 17/25 MC lanes complete; 80/170 build runs registered. Task10 merged at ea943bf and all integration native/QA/frozen/web gates passed. The actual HD1 process also passed in the assigned integration cache; no duplicate cache. Task15 RUN78 owns the sole compiler/cache/browser and starts the six headed row pairs after RUN79 source PASS. Task17 RUN76 ended with uncompiled source; RUN80 reviews it independently with no runtime. Root repairs all six RUN80 source findings. RUN79 remains source-only until its later runtime lease. Wave7 push/CI follows Tasks15 and17. Main bb611bd is unchanged. CEO PT1/PT2 stop remains at Task23.
+ACTIVE on the desktop: 17/25 MC lanes complete; 80/170 build runs registered. Task10 merged at ea943bf and all integration native/QA/frozen/web gates passed. The actual HD1 process also passed in the assigned integration cache; no duplicate cache. Task15 RUN78 owns the sole compiler/cache/runtime. Two actual AUD1 pairs expose corrected detector calibration and the designed old-session rejoin race; C229 advances bounded retry/countdown from Task16, with native red-first controls next. Actual alert playback remains unproved and the driver route is being repaired. Task17 RUN80 independently passed all C227 source repairs; native/browser gates wait for the cache. RUN79 remains source-only until its later runtime lease. Wave7 push/CI follows Tasks15 and17. Main bb611bd is unchanged. CEO PT1/PT2 stop remains at Task23.
 
 ## Historical MC checkpoints
 
