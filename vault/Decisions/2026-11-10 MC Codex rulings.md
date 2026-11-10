@@ -767,3 +767,14 @@ Choice: permit one actual guarded SLOT1 baseline under an external experimental 
 Evidence: primary t16-root/c308-helper/browser-canvas-disable-vulkan-surface-v1/result.json SHA8aff29db351e3f3d489b88e7ffe5230cebe4a4061a8407749508b5d178779b9a; root-audit.json independently asserts three distinct native IDs, all fulfilled/matched and final frames>20. Full original profile and source helper remain retained. Current SLOT1 row has startup_raf_probe:true at tests/browser/rows/SLOT1.json:29 from C314; retain original and remove only that diagnostic before this real attempt.
 
 Alternative not taken: call a minimal demo SLOT1 green, mask a product refusal/rejoin failure, alter game capabilities/visual quality/storage identity, loosen deadlines or silently adopt an untested profile. Brief4 instrument/command choice;96/170runs;20/25complete.
+
+
+## C321: Correct the Task22 mutation checklist count
+
+Conflict: RUN95/source handoff prose counted nine Task22 builder plants, but the plan Acceptance ownership table and Task22step4 require ten: DET1x1, GM40x1, GMAx2, GMUx3, EL1x3. The source proposal table omitted the distinct GMA Blocked-rest-overlap fault. This is a checklist error, not permission to drop a required fault.
+
+Choice: retain all ten required mechanisms. Keep existing P1-P9 labels stable and add P10 for the separate Blocked-rest-overlap case. The complete P10 mutation and actual sensitivity remain NOT TRACED; prepare and independently review before use. Current full external candidates are P1/P2/P3/P4/P5/P6/P7/P8, with P9 historical reference only. P3 disables actual cross-group separation plus its redundant hard projection. P6 disables the existing mobile destination reservation check while retaining static footprints, map bounds and new-pool uniqueness. Both have complete original/mutant/diff/hash manifests and rustfmt0 only; no application, compiler, runtime or semantic acceptance. Runtime masking by physical avoidance/spares remains possible and must be measured.
+
+Evidence: docs/superpowers/plans/2026-10-29-mc-player-control.md:256-260 records GMA plantx2 and EL1plantx3; Task22step4:665 lists both GMA faults. PRIMARY/t22-builder/run95/source-phase.md:34-44 has nine proposal rows and lacks the second GMA mechanism. Root candidates P3-gma-cross-group-avoidance-off/mutant.rs SHA949b37d2417189a522e4ae2116eb5517d8d47a92b73e79e30e69b84495a6afb1 and P6-gmu-ignore-existing-reservations/mutant.rs SHAb5a96c9ec64e745b6f59deb0afc7803a84427384d76713fe389eee22bd571c72 use exact movement source69e4e6a9 atfd369dc2. Recheck after rebase.
+
+Alternative not taken: claim nine covers ten, combine two independent failure classes under one fault, renumber retained evidence or credit formatting as sensitivity. This corrects implementation tracking under the written plan; no design/acceptance change or new agent dispatch.97/170runs;20/25complete.
