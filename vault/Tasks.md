@@ -104,7 +104,7 @@ Human usability amendment1354e33: catalog-derived principal labels/named local s
 
 ## Current MC status
 
-ACTIVE on the desktop: 17/25 MC lanes complete; 80/170 build runs registered. Task10 merged at ea943bf and all integration native/QA/frozen/web gates passed. The actual HD1 process also passed in the assigned integration cache; no duplicate cache. Task15 RUN78 owns the sole compiler/cache/runtime. Current167 focused native tests and locked WASM check pass; C236 actual dedicated-Xvfb headed AUD1 passes both attempts, including real gains, persisted volumes and same-ID/slot reload. The remaining ORD7/ORD6/ORD2/ALR1/NOORD pairs are running on frozen source. Candidate commit, full gates, plants and final independent runtime review still remain. Task17 RUN80 independently passed all C227/C231 source repairs; native/browser gates wait for the cache. RUN79 remains source-only until its later runtime lease. Wave7 push/CI follows Tasks15 and17. Main bb611bd is unchanged. CEO PT1/PT2 stop remains at Task23.
+MC is active on this desktop. 18 of 25 lanes are complete; 80 of 170 build runs are registered. Task15 merged at731273e after final review with0High/0unresolvedMedium. All required post-merge integration Rust, QA, frozen and web gates passed, exit0. Task17 has102 archived pending paths and five source QA passes; its rebase and compiler work are next. Root owns the single cache. Wave7 push and CI follow Task17. C203 minimap pixels and full Task16 acceptance remain open. Mainbb611bd is unchanged. Task23 stops for CEO PT1/PT2, logged not blind.
 
 ## Historical MC checkpoints
 
