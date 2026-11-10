@@ -471,3 +471,26 @@ RUN79 found one High and five Medium gaps. Root read the relevant source and cho
 Also accept two bounded instrument corrections: distinguish simultaneously legal ResearchReady/Complete technologies in the forced fixture, and compare only f32 persistence numbers within1e-6 while preserving exact unrelated-field/object checks. The ORD2 controlled map overlap is fixture setup, not an order-policy red; space placements using real footprints without editing production units/maps, then obtain the actual300-unit result/movement proof.
 
 This is the brief section4 review/instrument/nearest existing mechanism choice. The typed action, fallback observation and field ownership extensions fill existing design9.4/11.4 behavior; no K/frozen/player-visible design rule changes. Alternative not taken: defer a High, call blank feed values visible, drop click-to-centre/no-interface notice, invent a key, use fake playback evidence, or credit compile/fixture failures. Global79/170; no new agent run.
+
+
+C220 ORD7 retention addendum: retain causal result-bearing frames as well as physical-input frames in the existing bounded retained_input history, with the same4096 total cap and clear semantics. Document the historical field name; recent64 alone cannot prove a later result after1000ms at high FPS. Match the actual emitted command sequence to that result, not an arbitrary result frame. Test retention beyond64idleframes.
+
+Actual sink evidence must likewise be stable by playback identity: record one real onset per actual player entity, preserving its first observed/request/core frame in bounded history. Keep current actual sink/gain observations separately for volume checks. Do not increment play_id every frame or evict onset because an unchanged sink was sampled96times. Verify retention beyond96frames; real browser onset proof and playback-delay plant remain. No fake AudioSink or change to audio behavior is implied.
+
+## C221: Put the atomic-return plant on the actual mixed-unit contract
+
+Conflict: Task15 step4 says the whole-list-return ORD2 plant must fail both halves. Design revision7 section14:1237 explicitly makes the browser box drop static/foreign units, yielding40valid mobile units. Atomic and per-unit validation are equivalent for that envelope; only the300mixed-unit headless case distinguishes them. Further, command.rs:516 is the legacy validator; typed Order delegates via command.rs:187-218 to orders::apply_order and sim/orders.rs:2653onward. Planting the old validator would not exercise this contract.
+
+Choice: preserve the whole-list atomic-return mutation and retarget it to the real typed ownership/applicability path. Require the actual300-unit headless case to fail semantically (rather than290/5/5), exact restore and same native green. Run the40valid browser case under the mutation as a positive green control, because the design explicitly excludes invalid units there. Record the plan's both-halves-red expectation as a conflict resolved in favor of the design. Do not manufacture a browser failure by changing its selection or fixture.
+
+No named G-REF refutation plant is retired, and no acceptance row is weakened: the same atomic mutation is refuted on the design's capable mixed-unit clause; the valid-only clause stays checked. This is a brief section4 test/plant-target instrument decision. A genuinely required named G-REF plant retirement would still stop to the CEO. Alternative not taken: mutate a dead path, claim an impossible pixel red, add invalid units to the box, or change per-unit behavior. Global79/170; no new agent run.
+
+## C222: Render generic inventory and shortage values as player text
+
+Conflict: Forge HUD2 requires Needs10Shell(n/10), while affordability_reason returns Shell n/10; SelectionPrimary.Inventory returns useful typed array data but Text display_value prints raw JSON. Data-only Format would duplicate fragments and cannot turn inventory arrays into readable lines. These adapter presentations omit required design8.6/14 behavior.
+
+Choice: authorize Task17's narrow generic presentation changes in widgets/sources.rs and the Text display formatter in widgets/mod.rs. Affordability wording uses the actual resolved cost/name and reserved-aware available count to produce Needs <required> <name> (<available>/<required>), with no Forge ids/names/count literals. Preserve cost aggregation and eligibility logic.
+
+Keep SelectionPrimary.Inventory's typed array/ownership guards unchanged. Format its actual inventory rows into readable Text lines using existing port/name/on_hand/reserved/count/capacity fields; do not expose JSON or change unrelated value kinds. Share the display helper across direct Bind and Format paths rather than duplicate it. No new SelectionInventory schema/source is needed. Verify the actual lab UI text/values in HUD2 and retain structured-source tests; do not edit Forge frozen units/maps.
+
+This is the brief section4 nearest existing presentation mechanism/instrument choice. Source ownership overlaps Task15's alert source changes in a separate worktree; root will preserve both at rebase/merge. Alternative not taken: content-specific strings in the engine, raw JSON in the product, a redundant nested reason phrase, or a larger schema extension. Global79/170; no new agent run.
