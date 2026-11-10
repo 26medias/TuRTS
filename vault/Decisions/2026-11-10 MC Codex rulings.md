@@ -387,3 +387,12 @@ Conflict: RUN82 proposed adding Rush-to-point before damage because authored Uni
 Choice: reject the Rush substitution for this trial and keep C277 exposed frontier actor40 plus ordinary target Attack. Design behavior table says Unit Attack approaches weapon range; engage StopAndFire applies to point targets. Current unit-attack branch calls attack_goal and inserts MoveTarget out of range regardless of engage. Synchronize driver/oracle back to that stimulus. If actual exposed target Attack still fails, preserve and diagnose the real result, then repair under existing rules; full ORD4 out-of-range chase remains mandatory. Do not infer no-chase from None, fabricate successful movement, weaken the row or use pre-attack damage as target-attack causality.
 
 Evidence: design5 behavior table:498, ORD4:1239; orders.rs:2184-2210 attack_goal,2537-2564 UnitAttack start,945 run_unit_attack; actual authored order_attack.ron targetUnit/engageNone; only failed actor21 history underC277. Alternative not taken: silently add Rush to bypass an untested valid chase, change content/engine policy, or request CEO input for an incorrect source assumption. This is brief4 fixture/mechanism interpretation using the specific design rule; no player change.88/170runs;19/25complete.
+
+
+## C284: Handle valid subpixel minimap dimensions without a panic
+
+Conflict: RUN88 finds sync_minimap accepts finite positive widget dimensions such as0.5, but map_local clamps to an upper bound widget_size-1. A0.5dimension gives-0.5 and f32::clamp(0,-0.5) panics. Existing placement permits this finite nonnegative authored size.
+
+Choice: bound the maximum local coordinate at zero for dimensions below one, or use equivalent total finite mapping, so valid small widgets render/clip safely. Keep normal200px mapping, world bounds and invalid/nonfinite guards unchanged. Add a meaningful subpixel regression and observe the actual former panic then restored passing check; no extra browser matrix for this pure numeric edge. Do not reject otherwise valid content or loosen bounds.
+
+Evidence: minimap.rs sync positive-size guard and map_local max=widget_size-1/clamp; placement.rs:197-208 allows finite nonnegative Px/Frac; RUN88 Medium finding. Alternative not taken: leave a legal-layout crash, change schema acceptance, or clamp to an invalid interval. This is brief4 Medium implementation repair.88/170runs;19/25complete.
