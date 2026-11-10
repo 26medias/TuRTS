@@ -1879,3 +1879,6 @@ C223 resolves knownemptyturretammo: actualownammo definition+presentmainInventor
 
 
 C224: HUD2tooltipkey proof reuses actualvisibleAuthoredWidgetId owner::tooltip Text/rect alreadypublished; no newowner-intent tooltip_textfield. Pairphysicalhover/glyphpixels withactualrenderedkey andrequiredkey-dropplant. C218WorldTooltip observation remainsseparateengineentity.79/170.
+
+
+C220browserproof: actualPNGbytes/losslessbase64, noUTF8binarydecode; causalhistoryalsoalertframes, exactpingrule/unit/tick/pre-attackidentity andclickedactualrect/action/targetcenter; controlledpackagegeometrypreflightoutsideGit, no setupcredit, freshHD1bindingafterfixturechange; still2attempts/viewport. C225advancesONLYdesignedsessionStorageturts.v1.player_id/fullu64 stringstoreatJoinneededforAUD1reload. NativeCLI/slotownershipunchanged;16stillownsretry/countdown/secondwindows. Actualsameid/slotserverdecimalproofrequired; immediateSocketClose NOTTRACEDuntilmeasured.79/170.
