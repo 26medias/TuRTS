@@ -721,3 +721,16 @@ Choice: expose only the existing FocusOverlay marker within the crate as needed 
 Evidence: crates/turts_client/src/client_shell.rs:28,263-286 owns actual FocusOverlay; widgets/snapshot.rs currently exports settings menus/client notices/authored widgets/tooltips, not this marker. Actual bare focus control confirms(-5,-5) delivers native CANVAS blur with BODY active while document.hasFocus stays true. Existing fields cannot substitute for the missing UI observation.
 
 Alternative not taken: fabricate a UI flag, infer visibility from a default bool, add a semantic driver read, modify focus behavior to satisfy an oracle, or claim a preparation error as product red. This is brief4 instrument detail continuing C304;96/170runs;20/25complete.
+
+
+## C317: Compare a same-context three-page browser fixture
+
+Conflict: current SLOT1 harness creates a separate BrowserContext for every window. That is isolated storage/profile state; it does not exercise the ordinary same-profile same-origin localStorage sharing discussed in design10.4, while fresh pages in one context still have separate sessionStorage. The minimal rendering reproducer so far also uses three isolated contexts. Context topology may affect this platform failure, but that is NOT TRACED.
+
+Choice: permit an external minimal comparison with one shared BrowserContext and three independent pages, same exact12features/31limits/full headed hardware profile/continuous clear passes. Install private audit hooks once per page before navigation, not repeated context hooks that stack across pages. Record actual context count and all per-page device/requirement/render observations; bounded cleanup and no acceptance credit. Do not change production or the game harness merely from this proposal.
+
+If this becomes a game-fixture candidate, independently review per-page session identity seeding, true popup/opener sessionStorage copying, shared localStorage, exactly-once generic observer initialization, document epochs and owner continuity before adoption. Separate-profile fixtures are not themselves product bugs; this comparison adds the normal same-profile case rather than making an unsupported global claim about browser profiles. All final rows/gates remain required.
+
+Evidence: tests/browser/harness/run.js creates context inside the per-window loop. Design10.4 states same-origin localStorage and window-scoped sessionStorage; K27 duplicated-tab semantics require genuine opener copy. Root external browser-canvas-shared-context.js is prepared/syntax0 only; no execution or fixture change at this ruling.
+
+Alternative not taken: silently change storage scope, stack three context init scripts, copy bytes to fake an opener, claim context topology is the cause without a control, or waive K27 checks. Brief4 instrument/nearest-existing-mechanism detail;96/170runs;20/25complete.
