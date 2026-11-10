@@ -8,7 +8,7 @@ source: codex
 
 # MC execution board
 
-State: MC is active on this desktop. 18 of25 lanes are complete;81 of170 build runs are registered. Task15 merged731273e and all integration Rust, QA, frozen and web gates passed0. Its idle worktree is retired; evidence and branch are preserved. RUN81 owns the only cache in Task17. Its rebased source preserves both snapshot tests and all867 dependency identities; focused guide3/3 and widgets43/43 pass0. HUD syntax and one test fixture type were repaired; these setup failures have no red credit. Task17 browser greens, committed gates, five builder plants and RUN80 final health-row plant/review remain. Wave7 push/CI follows Task17. C203 minimap pixels and full Task16 rows remain open. Mainbb611bd is unchanged; Task23 stops for CEO PT1/PT2, not blind.
+State: MC is active on this desktop.18/25 lanes complete;81/170 runs. Task15 merged731273e and all integration gates passed0; lane retired with evidence preserved. RUN81 owns sole cache in Task17; RUN80 independently reviews. Guide3tests and widgets44tests pass after actual hidden-ancestor visibility repair (H8). Current SEL1 and Muster headed pairs each pass2/2. HUD2 now reaches a short-error-sound sampling defect: actual playback is verified at the exact right-click frame; C253 binds retained real onset identity/frame/gain instead of only currently-live sinks. C248-C253 instrument fixes are recorded; C251 drone-identity correction is explicit. Complete offline oracle replay precedes the next actual HUD2 pair. Candidate commit, full gates, five causal builder plants and separate reviewer health-row plant remain. Wave7 push/CI follows Task17. Mainbb611bd unchanged; Task23 stops for CEO PT1/PT2, not blind.
 
 Plan: `docs/superpowers/plans/2026-10-29-mc-player-control.md`.
 Design of record: `docs/superpowers/specs/2026-10-29-mc-player-control-design.md`, revision14 at mainf050e42.
@@ -84,7 +84,7 @@ CI trigger: `.github/workflows/ci.yml:2-5` runs pushes to main and pull requests
 | T13 | 6 | 4, 6, 9, 11, 19, 20 | codex/mc-t13 | COMPLETE merge60082da; candidate9ae04f4, independent0High/0Medium, normal/requiredplants/native19/actualforeignsolid closed, fresh5000VIS2record; native10integrationgates0 (1446/0/19), T7 137frames/53moving exit0; lane removed, branch/evidence retained. |
 | T10 | 7 | 5, 9, 11, 19, 20 | codex/mc-t10 | COMPLETE b051e04, merged ea943bf; RUN77 0High/0unresolvedMedium; all integration gates and actual non10 native proof0; lane retired. |
 | T15 | 7 | 4, 7, 12, 13 | codex/mc-t15 | COMPLETE at merge731273e. Final0High/0unresolvedMedium; all task gates, nine builder plants, separate reviewer voice plant and12current headed row passes verified. All mandatory integration gates passed0. |
-| T17 | 7 | 3, 12, 13, 19, 20 | codex/mc-t17 | SOURCE READY UNCOMPILED; RUN76 ended102WIP, root C227 bounded repairs/RUN80 sourcePASS; no target. New builder row needed after15merge/rebase/cachehandoff. |
+| T17 | 7 | 3, 12, 13, 19, 20 | codex/mc-t17 | ACTIVE RUN81 sole cache; guide3/widgets44 pass, actual SEL1/Muster2+2 headed passes. HUD2 C253 audio instrument repair and full offline replay next; commit/gates/fiveplants/RUN80 health plant and final review pending. |
 | T14 | 8 | 5, 12, 13, 15 | codex/mc-t14 | NOT STARTED |
 | T16 | 8 | 7, 12, 15 | codex/mc-t16 | OPEN; volume/id subsets advanced underC189/C225; C229 retry/countdown advanced forAUD1. FullTask16rows/threewindows/backendreview remain unstarted. |
 | T22 | 8 | 6, 7, 10, 11, 13, 19, 20 | codex/mc-t22 | NOT STARTED |
