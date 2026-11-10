@@ -288,3 +288,12 @@ Conflict: the Task16 private observer draft opens the fixed stats sibling with c
 Choice: append to a validated regular private sibling, enforce mode0600, preserve previous records, and scope every record/alias/epoch to the actual new run nonce. Reject unsafe file kinds and do not truncate/delete old evidence. Harness/oracle must select the exact current boot and reject cross-boot timing/identity joins. Create owner snapshots only with diagnostics present. Keep event-driven bounded writes and unchanged public stats/authority. Add source controls and later actual observer tests under the runtime lease; no compile/runtime success is inferred now.
 
 Evidence: crates/turts_server/src/session_diagnostics.rs:47-56 create_new draft; session.rs:223-228 unconditional owner snapshot; RUN86 agreed source correction. Alternative not taken: fail normal restarts on an old optional trace, silently erase evidence, mix boots, or add idle per-tick logs. This is brief4 instrument/mechanism handling within C268.87/170runs;19/25complete.
+
+
+## C273: Keep minimap local coordinates top-down and release capture safely
+
+Conflict: the first C271 adapter draft inverted local Y before passing it to the core, which already converts top-down widget Y to world Y. Bevy UI local Y is negative at the top. That draft would send a click at75%,25% to the wrong map half. A release without a current cursor could also leave minimap drag capture set.
+
+Choice: normalize actual UI-local coordinates to top-down fractions without a second inversion, using the actual Bevy0.20 transform/normalize contract. Retain the core world conversion. Assert an asymmetric adapter-to-core example: local(.75,.25) on80x40 maps to world(60,30). Cover cursor-left/release-without-position/focus-loss cleanup so re-entry cannot continue a released minimap drag. Preserve actual event order and no duplicate world input. Repair/recheck before another candidate pair; runtime remains unproven until executed.
+
+Evidence: cached bevy_ui0.20 ui_node.rs:211-242 chooses top for local_point.y<0 and exposes normalize_point; widgets/snapshot.rs:145-154 uses center-size/2 as top-left; interaction/minimap.rs:34 converts1-localY. RUN82 confirms corrected normalization and asymmetric control. Alternative not taken: change the oracle to expect mirrored clicks, flip the core/renderer to fit an adapter error, or ignore stuck capture. This is brief4 geometry/instrument and implementation repair within C271.87/170runs;19/25complete.
