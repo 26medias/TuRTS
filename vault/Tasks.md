@@ -104,7 +104,7 @@ Human usability amendment1354e33: catalog-derived principal labels/named local s
 
 ## Current MC status
 
-MC is active on this desktop.18/25 lanes complete;81/170 runs. Task15 merged731273e and all integration gates passed0; its idle worktree is retired with evidence preserved. Task17 final candidate749f3c6 is clean. C258 final headed browser batch passed all6attempts (HUD2/SEL1/Muster twice each), actual raw0c58ea59,1611input bytes bound to3d22996. C259 follow-up changes only3cfg(test) visibility expectations; all1610other inputs and production prefix are exact, so browser identities are retained. Final fmt/workspaceClippy pass0; full workspace tests and remaining QA/acceptance/frozen gates are in progress. Five causal builder plants and RUN80 separate health-row plant/final review remain. RUN81 owns the sole cache. Wave7 push/CI follows Task17 integration re-gates. Mainbb611bd unchanged; Task23 stops for CEO PT1/PT2, not blind.
+MC is active on this desktop. 18 of 25 lanes are complete; 81 of 170 build runs are registered. Task 17 at 749f3c6 is accepted for integration after review with 0 High and 0 unresolved Medium findings. All normal gates pass: 1,519 native tests, 18 process acceptance tests, QA, wasm, boundaries and the 28 frozen tests. Six final headed browser attempts pass. All five builder mutation cycles and the independent health-row cycle have actual semantic reds, exact restoration and passing reruns. Root is merging and re-gating next; Task 17 is not counted complete until those gates pass. The sole cache is idle in Task 17. Wave 7 push and CI follow integration checks. Main bb611bd is unchanged. Task 23 stops for CEO PT1/PT2, logged not blind.
 
 ## Historical MC checkpoints
 
@@ -166,7 +166,7 @@ ACTIVE Wave7:16/25complete;74/170buildruns. RUN72 Task10 solelocalruntime/cache;
 
 ## MC current desktop checkpoint
 
-MC is active on this desktop.18/25 lanes complete;81/170 runs. Task15 merged731273e and all integration gates passed0; its idle worktree is retired with evidence preserved. Task17 final candidate749f3c6 is clean. C258 final headed browser batch passed all6attempts (HUD2/SEL1/Muster twice each), actual raw0c58ea59,1611input bytes bound to3d22996. C259 follow-up changes only3cfg(test) visibility expectations; all1610other inputs and production prefix are exact, so browser identities are retained. Final fmt/workspaceClippy pass0; full workspace tests and remaining QA/acceptance/frozen gates are in progress. Five causal builder plants and RUN80 separate health-row plant/final review remain. RUN81 owns the sole cache. Wave7 push/CI follows Task17 integration re-gates. Mainbb611bd unchanged; Task23 stops for CEO PT1/PT2, not blind.
+MC is active on this desktop. 18 of 25 lanes are complete; 81 of 170 build runs are registered. Task 17 at 749f3c6 is accepted for integration after review with 0 High and 0 unresolved Medium findings. All normal gates pass: 1,519 native tests, 18 process acceptance tests, QA, wasm, boundaries and the 28 frozen tests. Six final headed browser attempts pass. All five builder mutation cycles and the independent health-row cycle have actual semantic reds, exact restoration and passing reruns. Root is merging and re-gating next; Task 17 is not counted complete until those gates pass. The sole cache is idle in Task 17. Wave 7 push and CI follow integration checks. Main bb611bd is unchanged. Task 23 stops for CEO PT1/PT2, logged not blind.
 
 
 ## MC final native gate and current QA repair
