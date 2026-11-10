@@ -1955,3 +1955,5 @@ Root audits: target/mc-evidence/t15-root/final-committed-g-rust-audit.json, c240
 ## C241: Correct mutation targets before runtime
 
 Root and RUN79 independently reject draft observation-only C220/AUD1 and client-arrival-only execution plants. Use actual AudioPlayer spawn delay with preserved original request frame→ORD7 same-frame sink red; actual simulation Movement-before-Orders→one-tick-new-movement red while accepted tick stays real. Marker delay guards actualmesh+metadata; bucket u32MAX stays hz-scaled u64; atomicnative loses290accepts. All seven+extras still required, correctedmanifest/sourcecheck and actual red/restore/green pending. NormalGACC continues on immutable52ecf3c; no task acceptance or extra run.80/170;17/25.
+
+C241 resume refinement: mutate only actual context.resume() call (index.html:36), preserve contextobserver/gesture/input-seq instrumentation so AUD1 gives a real suspended-after-gesture red. Deleting the whole shared script is not a valid resume plant. RUN79 finalmanifest readback pending; source/runtime remain52ecf3c unchanged duringGACC.
