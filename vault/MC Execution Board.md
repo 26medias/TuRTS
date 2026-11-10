@@ -1882,3 +1882,6 @@ C224: HUD2tooltipkey proof reuses actualvisibleAuthoredWidgetId owner::tooltip T
 
 
 C220browserproof: actualPNGbytes/losslessbase64, noUTF8binarydecode; causalhistoryalsoalertframes, exactpingrule/unit/tick/pre-attackidentity andclickedactualrect/action/targetcenter; controlledpackagegeometrypreflightoutsideGit, no setupcredit, freshHD1bindingafterfixturechange; still2attempts/viewport. C225advancesONLYdesignedsessionStorageturts.v1.player_id/fullu64 stringstoreatJoinneededforAUD1reload. NativeCLI/slotownershipunchanged;16stillownsretry/countdown/secondwindows. Actualsameid/slotserverdecimalproofrequired; immediateSocketClose NOTTRACEDuntilmeasured.79/170.
+
+
+C226: learnedlab/turretcoords are localPNGcolour/shape searchseeds ONLY, no blindunitclick. Requireactualcurrentpixels/sampleproof plusactualC84selection; no driversemantics. RUN76source81pathreadybutthisinstrumentcorrectionpendingreceiptrefresh; stilluncompiled.79/170.

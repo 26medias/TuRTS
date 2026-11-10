@@ -527,3 +527,12 @@ Choice: advance only the designed K10/K27 per-tab player-id persistence subset n
 Prove actual AUD1 reload keeps the exact same player identity and slot using lossless identity evidence/server-log decimals; do not rely only on a rounded JavaScript number or blue pixels. Existing Task7 judge_hello already reclaims a held slot when no live session uses it (session.rs:138-155). The immediate WebSocket-close path is NOT TRACED until this actual reload runs. If a live-old-session race prevents that case, report it for a further bounded decision; do not retry until pass or claim full SLOT1.
 
 This is the brief section4 task ordering/nearest existing designed mechanism choice. It fills existing design10.4/10.5 with the same player-visible reload, not a new K choice or slot rule. Alternative not taken: choose a foreign unit after reload, invent a fixed-id browser option, modify Slots ownership, weaken AUD1, or claim the future retry/countdown implemented. Global79/170; no new agent run.
+
+
+## C226: Use learned unit positions as image-search seeds only
+
+Conflict: Task17's component finder merges/misses the central blue lab/turret cluster, so source preparation added learned screen coordinates as fallback candidates. Design13.4 requires units to be found by screenshot slot colour/ring shape; an oracle's later true selection does not make a blind driver click pixel-based.
+
+Choice: the learned positions may seed a small local screenshot search. Require current PNG slot-colour/shape pixels before emitting each candidate, preserve the observed sample/region, and fail setup if none exists. Never click the literal unconditionally or read runtime semantic geometry in the driver. The oracle must still verify the actual selected lab/turret and physical input against its C84 checkpoint. Split components or use local image regions where the connected blue cluster needs it.
+
+This is the brief section4 instrument detail/nearest image-search choice. Alternative not taken: exempt HUD2 from the unit rule, call a semantic-oracle check a pixel driver, or discard required lab/turret coverage. Global79/170; no new agent run.
