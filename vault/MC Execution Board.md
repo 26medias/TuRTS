@@ -2641,3 +2641,10 @@ RUN88 finalsource/6patchapproval e308d009 and gateaudit09ed5c42 bind3ab; origina
 P1 actual compiled named native red7adb64ac exit101 at current55,8 versus51,8; both headed red attempts reject the matching actual-current-A clause, raw1bb088cf exit1. Exact committed orders bytes restored to daa197e09789d34be9563857567426fe0574328d15999d6d68b50a49d3031dd4. Same native02180392 exit0 and both headed restored attempts ba31362c exit0 pass. Root independently reads actual logs, hashes all receipts/raw/sourcebefore-after and derives original bytes from gitshow3ab; auditd64de2ad. Historical restoration is verified even when the next mutant is live.
 
 P2 Stop-keeps-queue native now fails semantically at queue.is_empty(), raw897976d8 exit101; headed red is running. P1 is one of six closed builder cycles; final independent own cycle and merge/re-gate still remain.94/170runs,19/25complete.
+
+
+## Task14 P2 closed; P3 active; T7 profile provenance closed
+
+P2 compiled named native queue-clear red897976d8 exit101; both headed attempts reject `Stop clears current order`, raw08d928cc exit1. Exact committed ordersdaa restored; same nativea1d49bb6 exit0 and both headed10727354 exit0 pass. Root independently checks raw hashes, full before/after manifests, sole mutated orders path and exact committed restoration; audit214e469b. Two of six builder cycles now close. P3 native actual phase test a3a57d76 exit101 rejects missing immediately-following Orders B activation; browser red is active. No new run dispatch;94/170,19/25complete.
+
+T7 launch profile provenance resolved without rerun: RUN88 ac321562 extracts actual executed Codex toolcall3965917e from its already authorized builder session line13533; retained payload binds M2_HEADLESS=false, exact Vulkan args and unsafe-swiftshader default removal to label/raw90c3. Root independently reads only that exact line, verifies line SHA96dbff8f and payload equality/hash. Actual headed profile is traced; numeric browser-inner Xvfb display stillNOTTRACED and not required/inferred from outerDISPLAY1. Earlier genericreceipt profile limitation is resolved.
