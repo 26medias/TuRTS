@@ -8,7 +8,7 @@ source: codex
 
 # MC execution board
 
-State: ACTIVE on the desktop: 17/25 MC lanes complete; 79/170 build runs registered. Task10 merged at ea943bf and all integration native/QA/frozen/web gates passed. The actual HD1 process also passed in the assigned integration cache; no duplicate cache. Task15 RUN78 owns the sole compiler/cache for focused native checks; Task17 RUN76 is source-only on HUD/assets/guide after verified baseline reds. RUN79 reviews Task15 source only. Wave7 push/CI follows Tasks15 and17. Main bb611bd is unchanged. CEO PT1/PT2 stop remains at Task23.
+State: ACTIVE on the desktop: 17/25 MC lanes complete; 80/170 build runs registered. Task10 merged at ea943bf and all integration native/QA/frozen/web gates passed. The actual HD1 process also passed in the assigned integration cache; no duplicate cache. Task15 RUN78 owns the sole compiler/cache for focused native checks; Task17 RUN76 is source-only on HUD/assets/guide after verified baseline reds. RUN79 reviews Task15 source only. Wave7 push/CI follows Tasks15 and17. Main bb611bd is unchanged. CEO PT1/PT2 stop remains at Task23.
 
 Plan: `docs/superpowers/plans/2026-10-29-mc-player-control.md`.
 Design of record: `docs/superpowers/specs/2026-10-29-mc-player-control-design.md`, revision14 at mainf050e42.
@@ -271,6 +271,7 @@ One row per builder/reviewer dispatch or resumed agent work turn. Register befor
 | 77 | T10 independent cache-routing repair re-check | qa-lead | gpt-6.1-sol | high | Approved311d486 plus C216 bounded instrument repair | Registered BEFORE continuation. Task10 run3/estimate2, soft4/hard8; global77/170. Re-check only assigned-cache repair and affected HD1 proof. Original RUN74 approval/plants preserved for unchanged product source; no new broad matrix. | COMPLETE b051e04 approval0High/0unresolvedMedium;3LowC209. Root merged/regated/actualnon10proof0.
 | 78 | T15 source and runtime continuation | bevy-rendering-engineer | gpt-6-luna | high | Preserved RUN73 WIP rebased to ea943bf | Registered BEFORE dispatch. Task15 run2/estimate5, soft10/hard20; global78/170. SOURCEONLY compatibility audit while Task17 has baseline lease; no Cargo/target/server/browser until explicit sole-cache handoff. Then compile/gates/actual browser acceptance on the existing scope. |
 | 79 | T15 independent source-to-final review | ux-designer | gpt-6.1-sol | high | ea943bf plus RUN78 preserved implementation | Registered BEFORE dispatch. Task15 run3/estimate5, soft10/hard20; global79/170. SOURCEONLY until explicit final runtime lease. Consolidate feedback/audio/real-input acceptance findings before costly final gates, then independent own plant/final review after builder gates/plants. |
+| 80 | T17 independent source-to-final review | mod-builder | gpt-6.1-sol | high | ea943bf plus RUN76 102-path source candidate | Registered BEFORE dispatch. Task17 run3/estimate4, soft8/hard16; global80/170. SOURCEONLY schema/content/actual-adapter/pixel-instrument review until root lease; no compiler/target/runtime. Independent final own plant/review after later builder continuation and gates. |
 
 ## 9. Preflight ledger and stop
 
@@ -1885,3 +1886,6 @@ C220browserproof: actualPNGbytes/losslessbase64, noUTF8binarydecode; causalhisto
 
 
 C226: learnedlab/turretcoords are localPNGcolour/shape searchseeds ONLY, no blindunitclick. Requireactualcurrentpixels/sampleproof plusactualC84selection; no driversemantics. RUN76source81pathreadybutthisinstrumentcorrectionpendingreceiptrefresh; stilluncompiled.79/170.
+
+
+RUN76 ended SOURCEPREP at102WIPpaths, stilluncompiled/unaccepted andtargetabsent. Source-green receipt t17-builder/run76-source-green.json, SEL1clone63files/62identical/oneapprovedmapdelta. Any builderresume needsnewledgerrow. RUN80 registeredbefore independentmod-builder source-to-finalreview, usefulwhileTask15exclusiveactualruntimepending. C225canonicalCargoofflinefetchresolvedONLYexistingclient→wasm-bindgen edge; earliermanualedgecheckwasreverted andnotfinalcredit, freshlockednative/WASMchecks0. HD1A/Boriginalmapandshiftedbothpack0; unneeded460-beaconshiftrevertedexactHEAD, authorizedHUDButtonmirrorretained/currentpack0. Task15latestPID/ALRproofsourcefrozenawaitquick79readbackbeforeheaded.80/170;17/25complete.
