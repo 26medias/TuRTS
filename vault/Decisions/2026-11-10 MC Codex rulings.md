@@ -949,3 +949,14 @@ Choice: implement an app-owned locked virtual pointer derived from actual Bevy M
 Evidence: actual CAM2 run94-cam2-current-menu-v1 raw b3f3473952aaf5ad2dff8d1aca0435e4099311abffe0b7450adef76b8ee16663 has named missing Keep the cursor in the game opt-in. Current widgets/cursor.rs reads actual Window.cursor_position; no app-owned locked delta pointer exists. Design3.2:335 explicitly says engine cursor sums MouseMotion deltas; K9 chooses opt-in engine cursor. RUN94 identifies this precise internal seam before implementation.
 
 Alternative not taken: fabricate actual Window coordinates, infer actual lock from a requested flag, add driver read/set APIs, skip the engine cursor or block the already-authorized feature on another permission question. Brief4 nearest-existing instrument/mechanism detail;103/170runs;20/25complete.
+
+
+## C337: Perform the CAM2 opt-in before checking acquired lock
+
+Conflict: the current CAM2 physical sequence captures the top of the scrollable menu. The lock control is below the fold. The actual run stops before opt-in, so its missing-visible-label result cannot establish a missing product control.
+
+Choice: use ordinary physical wheel input to reach the settings controls, capture the visible opt-in, enable it, close the menu as needed, and click the canvas. Require actual acquired lock before relative motion, engine cursor, edge pan and F10 checks. Preserve every CAM2 clause and the P1 Esc attachment. Coordinates must come from actual screenshots. This corrects setup order and does not change player behavior or acceptance.
+
+Evidence: design 3.2 at docs/superpowers/specs/2026-10-29-mc-player-control-design.md:335 requires opt-in followed by a click; CAM2 at line1249 states the same order. Actual run94-cam2-after-lock-v1 raw1045c01f shows the top menu, with settings below the fold. RUN94 native client171/171, persist18/18 and locked WASM pass at their current source checkpoints; browser acceptance remains open.
+
+Alternative not taken: count a clipped control as a genuine missing-control failure, bypass opt-in, or infer acquired lock from the request. Brief4 permits instrument and fixture corrections.103/170 runs;20/25 lanes complete.
