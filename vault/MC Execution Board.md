@@ -1898,3 +1898,6 @@ C228: AUD1 firstheadedpair bothactual1 beforeplayback/reload, sourceunchanged. R
 
 
 C229: freshAUD1pair2fails1/sourceimmutable nowreachesreload andTRACESoldlive-sessionrefusal forSAMEexactPID. AdvanceonlydesignedK27one-secondHello/15scountdown/retry subsetfrom16; noSlots/serverreplacement change. Meaningfulnative lifecycleRED→GREEN thenactualimmutableAUD1pairrequired. FullTask16SLOT1threewindows/otherrowsremainopen. Actualpre-reloadsinks7/gains106arepartialaudioevidence, notrowgreen.80/170;17/25complete.
+
+
+C229mechanism: rejectedHello connection kicks300ms/ignoresresends; useactualreconnect andcurrentattemptguards. CountdownneedsactualprejoinUIcamera/Text becauseallcurrentHUD/camerasJoined-only. RUN79actualvoice/effects7onsets106/101gains, alerts0; combatblocked+statictargetwrong. Batchlawfulpixel/controlledfixturefixeswithretrybeforeanotherfullbrowserpair; noenginepathfinding/palettechange. Still80/170;17/25.
