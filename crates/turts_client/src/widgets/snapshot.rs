@@ -11,6 +11,31 @@ use crate::{debug_feed::UiSnapshotFeed, ui_shared::UiCaptureRoot};
 pub fn snapshot(world: &World) -> Value {
     let mut rows = Vec::new();
     for entity in world.iter_entities() {
+        if entity.contains::<crate::client_shell::ClientNotice>() {
+            let (Some(node), Some(transform)) = (
+                entity.get::<ComputedNode>(),
+                entity.get::<UiGlobalTransform>(),
+            ) else {
+                rows.push(json!({"kind":"client_notice","id":"client_notice","rect":null,"visible":false,"text":entity.get::<Text>().map(|text| text.0.as_str())}));
+                continue;
+            };
+            let center = transform.to_scale_angle_translation().2;
+            let size = node.size();
+            let rect = [
+                center.x - size.x / 2.0,
+                center.y - size.y / 2.0,
+                size.x,
+                size.y,
+            ];
+            rows.push(json!({
+                "kind":"client_notice",
+                "id":"client_notice",
+                "rect":rect,
+                "visible":layout_visible(world, entity.id(), node, transform),
+                "text":entity.get::<Text>().map(|text| text.0.as_str()),
+            }));
+            continue;
+        }
         let Some(id) = entity.get::<AuthoredWidgetId>() else {
             continue;
         };
@@ -224,5 +249,30 @@ mod tests {
         assert_eq!(button[0]["button_pressed"], true);
         assert_eq!(button[0]["widget_action"]["kind"], "input");
         assert_eq!(button[0]["widget_action"]["name"], "toggle_guide");
+    }
+
+    #[test]
+    fn engine_notice_publishes_its_real_text_without_an_authored_widget_id() {
+        let mut world = World::new();
+        world.spawn((
+            crate::client_shell::ClientNotice,
+            Text::new("This game defines no orders"),
+            ComputedNode {
+                size: Vec2::new(240.0, 28.0),
+                ..default()
+            },
+            UiGlobalTransform::from_translation(Vec2::new(120.0, 14.0)),
+            InheritedVisibility::VISIBLE,
+        ));
+        let rows = snapshot(&world);
+        let rows = rows.as_array().expect("snapshot rows are an array");
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0]["kind"], "client_notice");
+        assert_eq!(rows[0]["id"], "client_notice");
+        assert_eq!(rows[0]["text"], "This game defines no orders");
+        assert_eq!(
+            rows[0]["visible"], false,
+            "layout without a real active camera is not claimed as visible"
+        );
     }
 }

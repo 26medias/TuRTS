@@ -1,0 +1,1 @@
+(id: "order_stop", name: "Stop selected units", behaviour: Stop, target: None, fire: None, engage: None, icon: "muster_icon_stop", hotkey: "key_stop", cursor: None, card: Some((row: 0, column: 1)), units: ["muster:trooper", "muster:worker", "muster:beacon", "muster:dummy"], description: "Stop the selected units and clear their queued orders.")

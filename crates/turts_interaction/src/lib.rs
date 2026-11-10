@@ -150,6 +150,14 @@ impl Core {
                         self.dispatch_named_action(name, world, now_ms, &mut effects);
                     }
                 }
+                InputEvent::UiCameraCenter { position } => {
+                    if self
+                        .camera_controller
+                        .centre_world(&mut self.camera, *position, world)
+                    {
+                        effects.push(Effect::CameraChanged);
+                    }
+                }
                 InputEvent::UiOrder {
                     order,
                     units,
@@ -1010,6 +1018,10 @@ pub enum InputEvent {
     FocusLost,
     UiAction {
         name: String,
+    },
+    /// Internal typed camera action from a rendered client widget.
+    UiCameraCenter {
+        position: Vec2,
     },
     /// Typed content/job order from an authored UI control or deterministic fixture.
     /// The supplied unit set is validated against ownership, order eligibility, and target facts.

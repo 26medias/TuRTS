@@ -57,7 +57,7 @@ test("production runner overwrites driver-saved checkpoint forgeries before judg
             if (name === oraclePath) return oracle;
             return localRequire(name);
         };
-        const sandbox = { require: requireForRun, module: { exports: {} }, process: { env: {} }, console: { log() {}, error() {} } };
+        const sandbox = { __dirname: path.dirname(filename), require: requireForRun, module: { exports: {} }, process: { env: {} }, console: { log() {}, error() {} } };
         vm.runInNewContext((await fs.readFile(filename, "utf8")) + "\nmodule.exports.runForTest = run;", sandbox, { filename });
         await sandbox.module.exports.runForTest({ paramsPath, driverPath, oraclePath, outDir: output, url: "http://fixture.invalid", width: 1280, height: 720, deviceScaleFactor: 1 });
         assert.equal(sandbox.process.exitCode, undefined, "the production runner must not fail");

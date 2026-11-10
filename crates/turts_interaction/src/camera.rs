@@ -33,6 +33,15 @@ pub(crate) struct CameraController {
 }
 
 impl CameraController {
+    pub(crate) fn centre_world(
+        &mut self,
+        camera: &mut CameraState,
+        centre: Vec2,
+        world: &dyn WorldView,
+    ) -> bool {
+        self.centre_on(camera, Some(centre), world)
+    }
+
     pub(crate) fn pan_context(&self) -> Option<&str> {
         self.pan_context.as_deref()
     }

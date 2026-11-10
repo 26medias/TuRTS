@@ -15,7 +15,7 @@ turts_net_protocol = { path = "../turts_net_protocol" }
 bevy = { workspace = true, features = ["3d", "webgpu"] }
 wasm-bindgen = { workspace = true }
 js-sys = { workspace = true }
-web-sys = { workspace = true, features = ["Window", "Location"] }
+web-sys = { workspace = true, features = ["Window", "Location", "Storage"] }
 
 [dev-dependencies]
 turts_mod_runtime = { path = "../turts_mod_runtime" }

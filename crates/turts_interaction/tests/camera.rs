@@ -17,6 +17,61 @@ fn camera() -> CameraState {
     }
 }
 
+#[test]
+fn ui_camera_center_uses_the_map_clamp_without_changing_selection_or_groups() {
+    let world = world();
+    let mut core = Core::new(camera());
+    step(
+        &mut core,
+        &world,
+        &[
+            InputEvent::UiAction {
+                name: "ui_select:1".into(),
+            },
+            InputEvent::UiAction {
+                name: "group_assign_1".into(),
+            },
+        ],
+        0,
+    );
+    let selected = core.selected_units().to_vec();
+    let group = core.group_members(1).to_vec();
+
+    let effects = core.step(
+        &[InputEvent::UiCameraCenter {
+            position: vec2(-100.0, 100.0),
+        }],
+        &world,
+        &VIEW,
+        1,
+    );
+    assert!(
+        effects
+            .iter()
+            .any(|effect| matches!(effect, turts_interaction::Effect::CameraChanged))
+    );
+    assert_eq!(
+        core.camera_state().look_at,
+        vec2(-5.0, 69.0),
+        "the existing five-unit map margin clamps the typed action"
+    );
+    assert_eq!(
+        core.selected_units(),
+        selected,
+        "centering preserves the current selection"
+    );
+    assert_eq!(
+        core.group_members(1),
+        group,
+        "centering preserves saved groups"
+    );
+    assert!(
+        effects
+            .iter()
+            .all(|effect| !matches!(effect, turts_interaction::Effect::Send(_)))
+    );
+}
+
 fn camera_def() -> CameraDef {
     CameraDef {
         pitch: 0.7,

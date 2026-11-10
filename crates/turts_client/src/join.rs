@@ -30,6 +30,7 @@ use crate::acquire::{
 };
 use crate::fetch::{FetchTask, fetch_bytes, poll};
 use crate::ingest::{IngestHooks, ReplicaState};
+use crate::rejoin::RejoinController;
 use crate::{ClientOpts, PlayerId};
 
 /// Where the client is in the join.
@@ -241,20 +242,30 @@ fn next_package(acquisition: &mut Acquisition, commands: &mut Commands) -> Phase
     }
 }
 
-/// `Update`: in `Phase::Connecting`, spawn the client entity once and connect (the Task 6a
-/// shape). The 10 s timeout is in the connect token (design 4.3).
+/// `Update`: spawn the first client in `Connecting`, or a bounded stored-identity retry after the
+/// rejected transport has disconnected and the one-second cadence has elapsed.
 pub fn start_connection(
     mut commands: Commands,
     mut phase: ResMut<Phase>,
+    time: Res<Time<Real>>,
     opts: Res<ClientOpts>,
-    mut started: Local<bool>,
+    mut rejoin: ResMut<RejoinController>,
 ) {
-    if *started || *phase != Phase::Connecting {
+    let initial = *phase == Phase::Connecting && rejoin.attempts_started() == 0;
+    let retry = *phase == Phase::Joining && rejoin.retry_ready();
+    if !initial && !retry {
         return;
     }
-    *started = true;
-    if let Err(error) = spawn_client(&mut commands, &opts.0.ws_url) {
-        *phase = Phase::Failed(error);
+    match spawn_client(&mut commands, &opts.0.ws_url) {
+        Ok(entity) => {
+            if !rejoin.start_attempt_at(entity.to_bits(), time.elapsed_secs_f64()) {
+                commands.entity(entity).despawn();
+            }
+        }
+        Err(error) => {
+            rejoin.terminate(error.clone());
+            *phase = Phase::Failed(error);
+        }
     }
 }
 
@@ -270,7 +281,7 @@ fn websocket_config() -> ClientConfig {
     ClientConfig::builder().with_no_encryption().disable_nagle()
 }
 
-fn spawn_client(commands: &mut Commands, ws: &str) -> Result<(), String> {
+fn spawn_client(commands: &mut Commands, ws: &str) -> Result<Entity, String> {
     let server_addr = ws_socket_addr(ws)?;
     let netcode = NetcodeClient::new(
         Authentication::Manual {
@@ -298,7 +309,7 @@ fn spawn_client(commands: &mut Commands, ws: &str) -> Result<(), String> {
         ))
         .id();
     commands.trigger(Connect { entity });
-    Ok(())
+    Ok(entity)
 }
 
 /// On `Connected`: send `Hello`. `--hello-hash` and `--protocol-version` replace the real values.
@@ -308,6 +319,8 @@ pub fn on_connected(
     mut hello: Query<&mut MessageSender<Hello>>,
     mut join: ResMut<JoinState>,
     mut phase: ResMut<Phase>,
+    mut rejoin: ResMut<RejoinController>,
+    time: Res<Time<Real>>,
     player: Res<PlayerId>,
     opts: Res<ClientOpts>,
     acquired: Res<AcquiredPackages>,
@@ -315,38 +328,55 @@ pub fn on_connected(
     mut send_status: ResMut<CommandSendStatus>,
     mut witnesses: ResMut<ReceiptWitnesses>,
 ) {
+    let Ok(mut sender) = hello.get_mut(trigger.entity) else {
+        return;
+    };
+    let real_now_secs = time.elapsed_secs_f64();
+    if matches!(*phase, Phase::Failed(_) | Phase::Joined { .. })
+        || !rejoin.on_connected_at(trigger.entity.to_bits(), real_now_secs)
+    {
+        return;
+    }
     join.on_connected();
     sequence.next = Some(1);
     send_status.reconnect_required = false;
     let epoch = witnesses.start_epoch(trigger.entity.to_bits());
     witnesses.reliable_counts.insert(epoch, 0);
-    if let Ok(mut sender) = hello.get_mut(trigger.entity) {
-        sender.send::<ReliableChannel>(Hello {
-            player_id: player.0,
-            protocol_version: opts.0.protocol_version.unwrap_or(NET_PROTOCOL_VERSION),
-            lockfile_hash: opts
-                .0
-                .hello_hash
-                .clone()
-                .unwrap_or_else(|| acquired.0.lockfile_hash.clone()),
-        });
-        witnesses.record_message(epoch, true);
-    }
+    sender.send::<ReliableChannel>(Hello {
+        player_id: player.0,
+        protocol_version: opts.0.protocol_version.unwrap_or(NET_PROTOCOL_VERSION),
+        lockfile_hash: opts
+            .0
+            .hello_hash
+            .clone()
+            .unwrap_or_else(|| acquired.0.lockfile_hash.clone()),
+    });
+    rejoin.on_hello_sent_at(trigger.entity.to_bits(), real_now_secs);
+    witnesses.record_message(epoch, true);
     if *phase == Phase::Connecting {
         *phase = Phase::Joining;
     }
 }
 
-pub fn on_disconnected(_trigger: On<Add<Disconnected>>, mut join: ResMut<JoinState>) {
-    join.on_disconnected();
+pub fn on_disconnected(
+    trigger: On<Add<Disconnected>>,
+    mut join: ResMut<JoinState>,
+    mut rejoin: ResMut<RejoinController>,
+) {
+    if rejoin.on_disconnected(trigger.entity.to_bits()) {
+        join.on_disconnected();
+    }
 }
 
 /// `PreUpdate`: `JoinRejected` ends the join with the server's reason.
 pub fn receive_rejection(
     mut rejected: Query<(Entity, &mut MessageReceiver<JoinRejected>)>,
     mut phase: ResMut<Phase>,
+    mut rejoin: ResMut<RejoinController>,
     mut witnesses: ResMut<ReceiptWitnesses>,
+    time: Res<Time<Real>>,
 ) {
+    let real_now_secs = time.elapsed_secs_f64();
     for (entity, mut receiver) in &mut rejected {
         let epoch = witnesses.epoch_for(entity.to_bits());
         for received in receiver.receive_with_tick() {
@@ -354,10 +384,48 @@ pub fn receive_rejection(
                 epoch,
                 received.channel_kind == ChannelKind::of::<ReliableChannel>(),
             );
-            if !matches!(*phase, Phase::Failed(_)) {
-                *phase = Phase::Failed(received.data.reason);
-            }
+            apply_join_rejection(
+                &mut phase,
+                &mut rejoin,
+                entity.to_bits(),
+                received.data.reason,
+                real_now_secs,
+            );
         }
+    }
+}
+
+fn apply_join_rejection(
+    phase: &mut Phase,
+    rejoin: &mut RejoinController,
+    attempt: u64,
+    reason: String,
+    real_now_secs: f64,
+) {
+    if matches!(*phase, Phase::Failed(_) | Phase::Joined { .. }) {
+        return;
+    }
+    let _ = rejoin.on_rejection_at(attempt, reason, real_now_secs);
+}
+
+/// `Update`: apply Welcome before the retry deadline, or advance the designed 15-second window.
+pub fn advance_rejoin(
+    time: Res<Time<Real>>,
+    state: Res<ReplicaState>,
+    mut phase: ResMut<Phase>,
+    mut rejoin: ResMut<RejoinController>,
+) {
+    let joined = state.welcome.is_some() && matches!(*phase, Phase::Joined { .. });
+    if joined {
+        rejoin.advance_to(time.elapsed_secs_f64(), true);
+        return;
+    }
+    if let Some(text) = rejoin.terminal_text().map(str::to_owned) {
+        *phase = Phase::Failed(text);
+        return;
+    }
+    if let Some(text) = rejoin.advance_to(time.elapsed_secs_f64(), false) {
+        *phase = Phase::Failed(text);
     }
 }
 
@@ -421,4 +489,140 @@ fn move_release_ready(path: &std::path::Path) -> bool {
 #[cfg(target_family = "wasm")]
 fn move_release_ready(_path: &std::path::Path) -> bool {
     true
+}
+
+#[cfg(test)]
+mod rejoin_control_tests {
+    use super::{Phase, apply_join_rejection};
+    use crate::rejoin::{DUPLICATE_PLAYER_REASON, RejoinController};
+
+    #[test]
+    fn marked_stored_identity_keeps_duplicate_window_rejection_transient() {
+        let mut phase = Phase::Joining;
+        let mut rejoin = RejoinController::for_stored_identity();
+        assert!(rejoin.start_attempt(1));
+        assert!(rejoin.on_connected(1));
+        assert!(rejoin.on_hello_sent(1));
+        apply_join_rejection(
+            &mut phase,
+            &mut rejoin,
+            1,
+            DUPLICATE_PLAYER_REASON.to_owned(),
+            0.0,
+        );
+        assert_eq!(
+            phase,
+            Phase::Joining,
+            "the same stored browser identity must remain in its bounded rejoin phase after the live-session refusal"
+        );
+        assert!(rejoin.on_disconnected(1));
+        rejoin.advance(1.0, false);
+        assert!(
+            rejoin.retry_ready(),
+            "the marked duplicate refusal releases one new transport attempt at the next cadence"
+        );
+    }
+
+    #[test]
+    fn stored_transport_without_a_hello_still_shows_and_expires_the_real_deadline() {
+        use std::time::Duration;
+
+        use crate::ingest::ReplicaState;
+        use bevy::{app::App, prelude::*, time::TimeUpdateStrategy};
+
+        let mut rejoin = RejoinController::for_stored_identity();
+        assert!(rejoin.start_attempt(71));
+        let mut app = App::new();
+        app.add_plugins(MinimalPlugins)
+            .insert_resource(TimeUpdateStrategy::ManualDuration(Duration::ZERO))
+            .insert_resource(Phase::Joining)
+            .insert_resource(ReplicaState::default())
+            .insert_resource(rejoin)
+            .add_systems(Update, super::advance_rejoin);
+        // Bevy's first real-time update establishes its clock and has a zero delta.
+        app.update();
+        app.insert_resource(TimeUpdateStrategy::ManualDuration(Duration::from_millis(
+            14_999,
+        )));
+        app.update();
+        assert_eq!(*app.world().resource::<Phase>(), Phase::Joining);
+        assert_eq!(
+            app.world()
+                .resource::<RejoinController>()
+                .visible_text()
+                .as_deref(),
+            Some("Reconnecting to your game\n1 s"),
+            "the first actual transport attempt shows countdown before Connected or Hello"
+        );
+        app.insert_resource(TimeUpdateStrategy::ManualDuration(Duration::from_millis(1)));
+        app.update();
+        assert_eq!(
+            *app.world().resource::<Phase>(),
+            Phase::Failed(crate::rejoin::REJOIN_FINAL_TEXT.to_owned()),
+            "the scheduled client phase publishes the exact design text at 15 seconds"
+        );
+    }
+
+    #[test]
+    fn pre_update_connected_after_the_real_deadline_cannot_send_hello() {
+        use std::time::Duration;
+
+        use crate::ingest::ReplicaState;
+        use bevy::{app::App, prelude::*, time::TimeUpdateStrategy};
+
+        #[derive(Resource, Default)]
+        struct Probe {
+            attempted: bool,
+            connected: bool,
+            hello_sent: bool,
+        }
+
+        fn late_connected(
+            time: Res<Time<Real>>,
+            mut rejoin: ResMut<RejoinController>,
+            mut probe: ResMut<Probe>,
+        ) {
+            let now = time.elapsed_secs_f64();
+            if !probe.attempted && now >= crate::rejoin::REJOIN_WINDOW_SECS {
+                probe.attempted = true;
+                probe.connected = rejoin.on_connected_at(72, now);
+                if probe.connected {
+                    probe.hello_sent = rejoin.on_hello_sent_at(72, now);
+                }
+            }
+        }
+
+        let mut rejoin = RejoinController::for_stored_identity();
+        assert!(rejoin.start_attempt_at(72, 0.0));
+        let mut app = App::new();
+        app.add_plugins(MinimalPlugins)
+            .insert_resource(TimeUpdateStrategy::ManualDuration(Duration::ZERO))
+            .insert_resource(Phase::Joining)
+            .insert_resource(ReplicaState::default())
+            .insert_resource(rejoin)
+            .init_resource::<Probe>()
+            .add_systems(PreUpdate, late_connected)
+            .add_systems(Update, super::advance_rejoin);
+        app.update();
+        app.insert_resource(TimeUpdateStrategy::ManualDuration(Duration::from_secs(15)));
+        app.update();
+
+        let probe = app.world().resource::<Probe>();
+        assert!(
+            probe.attempted,
+            "the simulated Lightyear event ran in PreUpdate"
+        );
+        assert!(
+            !probe.connected,
+            "the deadline guard rejects late Connected"
+        );
+        assert!(
+            !probe.hello_sent,
+            "a late Connected event cannot send Hello"
+        );
+        assert_eq!(
+            *app.world().resource::<Phase>(),
+            Phase::Failed(crate::rejoin::REJOIN_FINAL_TEXT.to_owned())
+        );
+    }
 }

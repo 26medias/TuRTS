@@ -32,6 +32,9 @@ pub fn debug_json(world: &World) -> String {
     let phase = world
         .get_resource::<Phase>()
         .map_or_else(|| "unknown".to_string(), |phase| format!("{phase:?}"));
+    let tick_hz = world
+        .get_resource::<ReplicaState>()
+        .and_then(|state| state.replica.as_ref().map(|replica| replica.tick_hz));
     let presented = world.get_resource::<Presented>();
     let visuals = world.get_resource::<AcquiredPackages>();
     let units: Vec<Value> = presented
@@ -119,6 +122,9 @@ pub fn debug_json(world: &World) -> String {
     let player_id = world
         .get_resource::<crate::debug_feed::PlayerIdFeed>()
         .and_then(|feed| feed.0);
+    let player_id_decimal = world
+        .get_resource::<crate::PlayerId>()
+        .map(|player_id| player_id.0.to_string());
     let alert_pings = world
         .get_resource::<crate::debug_feed::AlertPingsFeed>()
         .map_or_else(Vec::new, |feed| feed.0.clone());
@@ -265,8 +271,26 @@ pub fn debug_json(world: &World) -> String {
                 .collect::<Vec<_>>()
         })
         .unwrap_or_default();
+    let rejoin = world
+        .get_resource::<crate::rejoin::RejoinController>()
+        .map(|state| {
+            json!({
+                "stored_identity": state.stored_identity(),
+                "elapsed_secs": state.elapsed_secs(),
+                "attempts_started": state.attempts_started(),
+                "hellos_sent": state.hellos_sent(),
+                "duplicate_rejections": state.duplicate_rejections(),
+                "hello_elapsed_secs": state.hello_elapsed_secs(),
+                "current_attempt_present": state.current_attempt().is_some(),
+                "retry_ready": state.retry_ready(),
+                "text": state.visible_text(),
+            })
+        })
+        .unwrap_or(Value::Null);
     json!({
         "phase": phase,
+        "rejoin": rejoin,
+        "tick_hz": tick_hz,
         "match_id": world.get_resource::<ReplicaState>().and_then(|state| state.welcome.map(|welcome| welcome.match_id)),
         "slot": world.get_resource::<ReplicaState>().and_then(|state| state.welcome.map(|welcome| welcome.slot)),
         "units": units,
@@ -289,6 +313,7 @@ pub fn debug_json(world: &World) -> String {
         "contextmenu": context_menu,
         "focus": focus,
         "player_id": player_id,
+        "player_id_decimal": player_id_decimal,
         "alert_pings": alert_pings,
         "markers_shown": markers_shown,
         "rings_shown": rings_shown,
@@ -374,6 +399,9 @@ pub fn report_json(world: &World) -> Value {
         Phase::Failed(reason) => Some(reason.clone()),
         _ => None,
     };
+    let player_id_decimal = world
+        .get_resource::<crate::PlayerId>()
+        .map(|player_id| player_id.0.to_string());
     let final_positions: BTreeMap<u32, [f32; 2]> = state
         .replica
         .iter()
@@ -433,6 +461,8 @@ pub fn report_json(world: &World) -> Value {
     let debug = serde_json::from_str(&debug_json(world)).unwrap_or(Value::Null);
     json!({
         "welcomed": state.welcome.is_some(),
+        "tick_hz": state.replica.as_ref().map(|replica| replica.tick_hz),
+        "player_id_decimal": player_id_decimal,
         "match_id": state.welcome.map(|welcome| welcome.match_id),
         "rejected_reason": rejected_reason,
         "slot": state.welcome.map(|welcome| welcome.slot),
@@ -578,6 +608,18 @@ mod unit_order_debug_tests {
             rebuilt["replicated_world"]["unit_orders"]
         );
         assert_eq!(
+            captured["tick_hz"], 20,
+            "debug exposes the replica rate as a top-level observation"
+        );
+        assert_eq!(
+            rebuilt["tick_hz"], 20,
+            "rebuild publishes the same top-level rate"
+        );
+        assert!(
+            captured["replicated_world"].get("tick_hz").is_none(),
+            "observation-only tick rate does not change the replicated-world DTO"
+        );
+        assert_eq!(
             rebuilt["replicated_world"]["unit_orders"][0]["unit"], 8,
             "debug captures expose only the actual Replica owner-specific DTO"
         );
@@ -660,8 +702,13 @@ pub fn exit_when_done(world: &mut World) {
 
 #[cfg(test)]
 mod command_result_json_tests {
-    use super::command_result_json;
-    use crate::ingest::CommandResult;
+    use super::{command_result_json, debug_json, rebuild_debug_state, report_json};
+    use crate::{
+        ClientOpts, PlayerId,
+        ingest::{CommandResult, CommandResults, IngestCounters, ReplicaState},
+        join::{JoinState, Phase},
+        options::ClientOptions,
+    };
     use turts_net_protocol::{CommandRejectReason, UnitId, UnitRefusal};
 
     #[test]
@@ -671,13 +718,27 @@ mod command_result_json_tests {
         world.insert_resource(crate::debug_feed::AudioFeed::default());
         world.insert_resource(crate::debug_feed::ContextMenuFeed::default());
         let debug: serde_json::Value = serde_json::from_str(&super::debug_json(&world)).unwrap();
+        assert_eq!(debug["player_id"], serde_json::Value::Null);
+        assert_eq!(debug["player_id_decimal"], serde_json::Value::Null);
         assert_eq!(
             debug["cursor"],
             serde_json::json!({"context":null,"image_id":null,"applied_icon":null})
         );
         assert_eq!(
             debug["audio"],
-            serde_json::json!({"context_state":null,"started":[],"categories":{}})
+            serde_json::json!({
+                "context_state":null,
+                "context_states":[],
+                "gesture_seen":false,
+                "started":[],
+                "categories":{},
+                "player_entities":0,
+                "active_by_category":{},
+                "peak_active_by_category":{},
+                "sink_observations":[],
+                "current_sinks":[],
+                "gain_samples":[],
+            })
         );
         assert_eq!(
             debug["contextmenu"],
@@ -720,5 +781,34 @@ mod command_result_json_tests {
         assert!(value.get("rejected").is_none());
         assert_eq!(value["accepted"], serde_json::json!([1]));
         assert_eq!(value["refused"][0]["reason"], "not_owner");
+    }
+
+    #[test]
+    fn player_id_decimal_is_lossless_in_capture_and_native_report() {
+        let mut world = bevy::prelude::World::new();
+        world.insert_resource(PlayerId(u64::MAX));
+        let debug: serde_json::Value = serde_json::from_str(&debug_json(&world)).unwrap();
+        assert_eq!(debug["player_id"], serde_json::Value::Null);
+        assert_eq!(debug["player_id_decimal"], u64::MAX.to_string());
+        world.insert_resource(super::DebugState::default());
+        rebuild_debug_state(&mut world);
+        let rebuilt: serde_json::Value =
+            serde_json::from_str(&world.resource::<super::DebugState>().0).unwrap();
+        assert_eq!(rebuilt["player_id_decimal"], u64::MAX.to_string());
+
+        world.insert_resource(ReplicaState::default());
+        world.insert_resource(IngestCounters::default());
+        world.insert_resource(CommandResults::default());
+        world.insert_resource(Phase::Connecting);
+        world.insert_resource(JoinState::default());
+        world.insert_resource(ClientOpts(ClientOptions::default()));
+        let report = report_json(&world);
+        assert_eq!(report["player_id_decimal"], u64::MAX.to_string());
+        assert_eq!(report["debug"]["player_id_decimal"], u64::MAX.to_string());
+        assert!(
+            report["replicated_world"]
+                .get("player_id_decimal")
+                .is_none()
+        );
     }
 }

@@ -1505,6 +1505,13 @@ fn activate_widget(
         primitives::WidgetAction::Order { id } => queue
             .0
             .push(turts_interaction::InputEvent::UiAction { name: id.clone() }),
+        primitives::WidgetAction::CenterCamera { x, y } => {
+            if x.is_finite() && y.is_finite() {
+                queue.0.push(turts_interaction::InputEvent::UiCameraCenter {
+                    position: Vec2::new(*x, *y),
+                });
+            }
+        }
         primitives::WidgetAction::Select { unit } => {
             queue.0.push(turts_interaction::InputEvent::UiAction {
                 name: format!("ui_select:{unit}"),

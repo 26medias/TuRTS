@@ -2,10 +2,12 @@
 "use strict";
 
 const fs = require("node:fs/promises");
+const crypto = require("node:crypto");
 const path = require("node:path");
 const { createDriverIo } = require("./driver-io.js");
 const { createView } = require("./view.js");
 const { createSceneCheckpoints } = require("./scene-checkpoints.js");
+const { installBoundedRafHold } = require("./bounded-raf.js");
 
 function deepFreeze(value) {
     if (value && typeof value === "object" && !Object.isFrozen(value)) {
@@ -78,11 +80,13 @@ async function run(options) {
     const baseChromeArgs = JSON.parse(process.env.MC_CHROME_ARGS_JSON || '["--enable-gpu","--use-angle=vulkan","--enable-features=Vulkan","--enable-unsafe-webgpu"]');
     const chromeArgs = launchArgsForDpr(baseChromeArgs, effectiveDpr);
     const headless = process.env.MC_BROWSER_HEADED !== "1";
+    const boundedRafSource = await fs.readFile(path.join(__dirname, "bounded-raf.js"));
     await fs.writeFile(path.join(options.outDir, "browser-profile.json"), JSON.stringify({
         args: chromeArgs,
         device_scale_factor: effectiveDpr,
         headless,
         viewport_css: [options.width, options.height],
+        bounded_raf_hook_sha256: crypto.createHash("sha256").update(boundedRafSource).digest("hex"),
     }, null, 2) + "\n");
     const { chromium } = require("playwright-core");
     const driver = require(path.resolve(options.driverPath));
@@ -102,6 +106,7 @@ async function run(options) {
         const windows = Number(params.windows || 1);
         for (let n = 0; n < windows; n += 1) {
             const context = await browser.newContext({ viewport: { width: options.width, height: options.height }, deviceScaleFactor: effectiveDpr });
+            await context.addInitScript(installBoundedRafHold);
             await context.addInitScript(() => {
                 window.__turts_io_actual_events = [];
                 window.__turts_io_dispatching = false;

@@ -11,6 +11,14 @@ fn archive_with_order(order: &str) -> PackageArchive {
 }
 
 fn archive_with_order_rules(order: &str, rules: &str) -> PackageArchive {
+    archive_with_order_rules_and_alert_sound(order, rules, None)
+}
+
+fn archive_with_order_rules_and_alert_sound(
+    order: &str,
+    rules: &str,
+    alert_sound: Option<&str>,
+) -> PackageArchive {
     let manifest = r#"(id:"hud",version:"1.0.0",kind:Game,engine_api:"^0.2.3",dependencies:{},exports:(units:[],maps:["maps/map.ron"],visuals:[],resources:[],nodes:[],production:[],orders:["orders/rush.ron","orders/rules.ron"],interface:["interface/main.ron"],input:["input/main.ron"],assets:["assets/main.ron"]),context:Shared,capabilities:[],license:"test")"#;
     let mut files = BTreeMap::new();
     files.insert("manifest.ron".into(), manifest.as_bytes().to_vec());
@@ -74,12 +82,22 @@ fn archive_with_order_rules(order: &str, rules: &str) -> PackageArchive {
     png.extend_from_slice(&32u32.to_be_bytes());
     png.extend_from_slice(&[8, 6, 0, 0, 0, 0, 0, 0]);
     files.insert("assets/icon.png".into(), png);
+    if let Some(sound) = alert_sound {
+        let interface = files.get_mut("interface/main.ron").unwrap();
+        let interface_text = String::from_utf8(std::mem::take(interface)).unwrap();
+        *interface = interface_text
+            .replace(
+                "id:\"damaged\",trigger:OwnUnitDamaged,sound:None",
+                &format!("id:\"damaged\",trigger:OwnUnitDamaged,sound:Some(\"{sound}\")"),
+            )
+            .into_bytes();
+    }
     PackageArchive::parse(&pack_files(&files).unwrap()).unwrap()
 }
 
 fn archive() -> PackageArchive {
     archive_with_order(
-        r#"(id:"rush",name:"Rush",behaviour:Attack,target:Unit,fire:None,engage:None,icon:"rush-icon",hotkey:"rush",cursor:None,card:Some((row:0,column:0)),units:["hud:trooper"],description:"Rush the target")"#,
+        r#"(id:"rush",name:"Rush",behaviour:Attack,target:Unit,fire:None,engage:None,icon:"rush-icon",hotkey:"rush",cursor:None,card:Some((row:0,column:0)),units:[],description:"Rush the target")"#,
     )
 }
 
@@ -263,6 +281,20 @@ fn order_rules_detection_ignores_raw_string_field_names() {
     );
     let error = archive.orders().unwrap_err().to_string();
     assert!(error.contains("unknown field `bogus`"), "{error}");
+}
+
+#[test]
+fn validator_rejects_an_alert_that_names_an_unknown_sound_asset() {
+    let archive = archive_with_order_rules_and_alert_sound(
+        r#"(id:"rush",name:"Rush",behaviour:Attack,target:Unit,fire:None,engage:None,icon:"rush-icon",hotkey:"rush",cursor:None,card:Some((row:0,column:0)),units:[],description:"Rush the target")"#,
+        r#"(queue_depth:16,smart:[])"#,
+        Some("missing_alert_sound"),
+    );
+    let error = archive.content().unwrap_err().to_string();
+    assert!(
+        error.contains("unknown sound asset `missing_alert_sound`"),
+        "the pack content validator reports the unregistered alert sound: {error}"
+    );
 }
 
 #[test]

@@ -2,7 +2,9 @@
 
 use std::path::PathBuf;
 
-use turts_client::options::{ClientOptions, options_from_query, parse_cli, random_player_id};
+use turts_client::options::{
+    ClientOptions, options_from_query, parse_cli, parse_session_player_id, random_player_id,
+};
 
 fn args(list: &[&str]) -> Vec<String> {
     list.iter().map(|arg| arg.to_string()).collect()
@@ -218,6 +220,22 @@ fn parse_cli_defaults_and_errors() {
 #[test]
 fn random_player_ids_differ() {
     assert_ne!(random_player_id(), random_player_id());
+}
+
+#[test]
+fn session_player_id_keeps_full_u64_decimal_precision_and_rejects_corrupt_values() {
+    assert_eq!(
+        parse_session_player_id("18446744073709551615"),
+        Some(u64::MAX)
+    );
+    assert_eq!(parse_session_player_id("42"), Some(42));
+    for corrupt in ["", "-1", "+1", " 42", "42 ", "1.0", "18446744073709551616"] {
+        assert_eq!(
+            parse_session_player_id(corrupt),
+            None,
+            "invalid session id {corrupt:?} is rejected"
+        );
+    }
 }
 
 /// B5, the other direction: every flag that the usage text lists is a flag that `parse_cli`

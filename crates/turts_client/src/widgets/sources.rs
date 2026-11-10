@@ -935,10 +935,10 @@ fn alert_rows(alerts: &[serde_json::Value]) -> SourceData {
             .rev()
             .map(|alert| {
                 let mut item = ItemData::default();
-                let text = alert
-                    .get("text")
-                    .or_else(|| alert.get("message"))
-                    .and_then(serde_json::Value::as_str)
+                let text = ["text", "message"]
+                    .iter()
+                    .filter_map(|key| alert.get(*key).and_then(serde_json::Value::as_str))
+                    .find(|text| !text.trim().is_empty())
                     .unwrap_or("");
                 item.set(ItemField::Name, text);
                 item.set(
@@ -946,9 +946,32 @@ fn alert_rows(alerts: &[serde_json::Value]) -> SourceData {
                     alert
                         .get("title")
                         .and_then(serde_json::Value::as_str)
-                        .unwrap_or(""),
+                        .filter(|title| !title.trim().is_empty())
+                        .unwrap_or(text),
                 );
                 item.set(ItemField::Body, text);
+                if let (Some(x), Some(y)) = (
+                    alert
+                        .get("position")
+                        .and_then(|position| position.get("x"))
+                        .and_then(serde_json::Value::as_f64),
+                    alert
+                        .get("position")
+                        .and_then(|position| position.get("y"))
+                        .and_then(serde_json::Value::as_f64),
+                ) && x.is_finite()
+                    && y.is_finite()
+                    && x.abs() <= f32::MAX as f64
+                    && y.abs() <= f32::MAX as f64
+                {
+                    item.set(
+                        ItemField::Action,
+                        WidgetAction::CenterCamera {
+                            x: x as f32,
+                            y: y as f32,
+                        },
+                    );
+                }
                 item
             })
             .collect(),
@@ -1163,6 +1186,27 @@ mod tests {
         OrderDef, PaymentPolicy, RefundRatio, ResolvedProduction, ResolvedTechnology, TargetKind,
         UnitPresentation,
     };
+
+    #[test]
+    fn alert_rows_put_the_real_player_text_in_the_rendered_title_field() {
+        let rows = alert_rows(&[
+            serde_json::json!({"id":"damage","text":"Unit under attack","position":{"x":-4.0,"y":80.0}}),
+        ]);
+        assert_eq!(
+            rows.items[0]
+                .get(ItemField::Title)
+                .and_then(serde_json::Value::as_str),
+            Some("Unit under attack"),
+            "Muster renders Item(Title), so the actual row must populate that field"
+        );
+        assert_eq!(
+            rows.items[0]
+                .get(ItemField::Action)
+                .and_then(|action| serde_json::from_value::<WidgetAction>(action.clone()).ok()),
+            Some(WidgetAction::CenterCamera { x: -4.0, y: 80.0 }),
+            "the visible alert button carries its finite position through the typed camera action"
+        );
+    }
     use turts_net_protocol::{
         BalanceState, HealthRecord, JobId, JobStage, Pos, QueueState, UnitId,
     };

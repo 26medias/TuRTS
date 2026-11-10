@@ -19,6 +19,8 @@ function fakePage(name, trace) {
         name,
         evaluate: async (fn, value) => {
             const source = String(fn);
+            if (source.includes("__turts_begin_bounded_input")) { trace.push([name, "frames-hold"]); return undefined; }
+            if (source.includes("__turts_end_bounded_input")) { trace.push([name, "frames-release"]); return { held_callbacks: 1, released: true, release_batch: 1 }; }
             if (source.includes("__turts_io_seq")) { trace.push([name, "seq", typeof value === "object" ? value.value : value]); return undefined; }
             if (source.includes("__turts_io_actual_events") && source.includes("__turts_io_downstream_events")) return { actual: 0, downstream: 0 };
             if (source.includes("__turts_io_actual_events")) return value === undefined ? 0 : [];
@@ -84,6 +86,39 @@ test("DOM event sequences start at one in each window and have no gaps", async (
     for (const entry of inputLog) assert.equal(Number.isFinite(entry.wall_time_ms), true);
     const sequenceValues = trace.filter((row) => row[1] === "seq" && row[2] > 0).map((row) => [row[0], row[2]]);
     assert.deepEqual(sequenceValues, Array.from({ length: 15 }, (_, index) => ["a", index + 1]).concat([["b", 1]]));
+});
+
+test("bounded repeated click keeps trusted down/up events sequenced under one released frame hold", async () => {
+    const trace = [];
+    const { io, inputLog } = createDriverIo([fakePage("a", trace)]);
+    await io.click(10, 20, "right", { count: 3 });
+
+    const entry = inputLog[0];
+    assert.deepEqual(entry.args, [10, 20, "right", { count: 3 }]);
+    assert.deepEqual(entry.event_types, ["pointermove", "pointerdown", "pointerup", "pointerdown", "pointerup", "pointerdown", "pointerup"]);
+    assert.deepEqual(entry.event_seq, [1, 2, 3, 4, 5, 6, 7]);
+    assert.deepEqual(trace.filter((row) => ["down", "up"].includes(row[1])).map((row) => row[1]), ["down", "up", "down", "up", "down", "up"]);
+    assert.deepEqual(trace.filter((row) => ["frames-hold", "frames-release"].includes(row[1])).map((row) => row[1]), ["frames-hold", "frames-release"]);
+    assert.deepEqual(entry.frame_hold, { requested: true, count: 3, held_callbacks: 1, released: true, release_batch: 1 });
+});
+
+test("bounded repeated click releases the frame hold when a physical dispatch fails", async () => {
+    const trace = [];
+    const page = fakePage("a", trace);
+    page.mouse.down = async () => { throw new Error("pointer dispatch failed"); };
+    const { io, inputLog } = createDriverIo([page]);
+    await assert.rejects(io.click(12, 14, "right", { count: 2 }), /pointer dispatch failed/);
+    assert.deepEqual(trace.filter((row) => ["frames-hold", "frames-release"].includes(row[1])).map((row) => row[1]), ["frames-hold", "frames-release"]);
+    assert.deepEqual(inputLog[0].frame_hold, { requested: true, count: 2, held_callbacks: 1, released: true, release_batch: 1 });
+});
+
+test("bounded repeated click rejects noninteger and over-limit counts before dispatch", async () => {
+    const trace = [];
+    const { io, inputLog } = createDriverIo([fakePage("a", trace)]);
+    await assert.rejects(io.click(1, 2, "right", { count: 1.5 }), /click count must be an integer from 1 to 100/);
+    await assert.rejects(io.click(1, 2, "right", { count: 101 }), /click count must be an integer from 1 to 100/);
+    assert.equal(inputLog.length, 0);
+    assert.equal(trace.some((row) => row[1] === "down" || row[1] === "up"), false);
 });
 
 test("opts.key is sent only through CDP Input.dispatchKeyEvent", async () => {

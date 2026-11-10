@@ -1,0 +1,22 @@
+(
+    id: "muster",
+    version: "0.1.0",
+    kind: Game,
+    engine_api: "^0.2.3",
+    dependencies: {},
+    exports: (
+        units: ["units/beacon.ron", "units/trooper.ron", "units/worker.ron", "units/depot.ron", "units/post.ron", "units/dummy.ron"],
+        maps: ["maps/field.ron"],
+        visuals: ["visuals/beacon.ron", "visuals/trooper.ron", "visuals/worker.ron", "visuals/depot.ron", "visuals/post.ron", "visuals/dummy.ron", "visuals/ore_node.ron"],
+        resources: ["resources/ore.ron", "resources/ore_chunk.ron"],
+        nodes: ["nodes/ore_node.ron"],
+        production: [], recipes: [], technologies: [],
+        orders: [],
+        interface: [],
+        input: ["input/bindings.ron"],
+        assets: ["assets/assets.ron"],
+    ),
+    context: Shared,
+    capabilities: [],
+    license: "LicenseRef-TBD",
+)
