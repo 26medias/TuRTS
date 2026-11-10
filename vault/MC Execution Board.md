@@ -1916,3 +1916,6 @@ C229draftnativeGREEN actual9pass0/sourceimmutable/raw3f03702c independentlyroota
 
 
 C232: actualK27immediateWelcomeorobservedretry/countdownbothvalid; draftoracleextra2ndcountdown/mandatoryrefusal/prepaintHelloassertionsremovedinboundedJSbatch, keepingactualsamePIDslot/15s/Hello cadence/realUIwhenwaiting/allcategorygains. RootownsJSwhile78finishesRust; sourcefreezeand79recheckbeforecommands.80/170.
+
+
+C233: real15s window startsFIRSTactualstoredtransport; actualHello cadence separate/noreset; absoluteTime<Real>guardbeforePreUpdateConnected/ingest cannotuseoldUpdateclock. Currentnative165pass0+a569/WASM0+c1a27517arepartialbeforefinalschedulefix. RootC232JSf42855f3/2db4faddindependentsourcePASS0H/M, exactactualauthoredreasonandcausalstaticeffect corrected; native/offlineproofNOTbrowseracceptance.80/170;17/25.
