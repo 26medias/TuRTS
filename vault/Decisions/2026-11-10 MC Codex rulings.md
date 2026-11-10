@@ -833,3 +833,14 @@ Choice: repair now in the shared native/web stored-binding parser with the exist
 Evidence: frozen31505 persist.rs:56-69 serde-parses actions and checks nonempty action names only; native353-362/web595-604 only filter known action names. turts_mod_api/src/input.rs:23-26 represents key code as String; :51-69 defines reserved/known physical codes. Existing mod-runtime content_mc_validation.rs:1394-1433 checks known code, repeated modifiers and reserved chords. Design10.2 forbids reserved player bindings,10.4 gives defaults/one notice for unreadable data.
 
 Alternative not taken: defer a known unusable persisted menu, accept arbitrary key names silently, add a second independent key list, change valid binding semantics or label static reasoning an executed red. Brief4 Medium repair decision/nearest existing input rule;97/170runs;20/25complete.
+
+
+## C327: Measure actual rest over forty tick intervals
+
+Conflict: Task22 native/browser GM40 rest helpers use40samples at20Hz (39intervals=1.95s) and compare only adjacent positions, so drift0.0005per tick passes while cumulative motion exceeds0.001. GMA terminal loops check only nonoverlap and never prove actual rest. Design14GM40 defines no position change above0.001 for2s; GMA requires terminal nonoverlap at rest. These draft instruments have not been compiled/run as process acceptance.
+
+Choice: use41consecutive actual samples spanning40intervals at20Hz, and compare each selected position against the first actual position in that rest interval. Preserve exact selected-ID/tick coverage, finite parsing, radius/near-target/overlap checks. Add a shared native stationary/disjoint check to both GMA terminal cases and GM40, without imposing zeroBlocked on GMA. The browser helper gets the same elapsed-window semantics. Add meaningful interval/drift negative controls; native execution waits for the assigned cache. This repairs instrument coverage to the same written row, not a new player-visible timing limit.
+
+Evidence: t22 draft support/mc.rs:250-289 uses first=end-rest_ticks+1 and prior-adjacent comparison; gm40-oracle.js:130-155 mirrors this; mc_group.rs:107-112,166-170 only tests tail nonoverlap. Root actual pure-instrument controls under PRIMARY/t22-root/rest-window-contract/red.log exit1: twofalseacceptances, stationary-positive/missing-tick controls pass. Exact full3file originals/SHAmanifest retained before edits. No compiler/process/GPU/cache or Task22Step1stubred credit.
+
+Alternative not taken: call39intervals2seconds, accept cumulative slow drift as rest, claim moving terminal formations are stationary, waive GMA Blocked limitations, or claim source controls as real server acceptance. Brief4 instrument detail under design14;97/170runs;20/25complete.
