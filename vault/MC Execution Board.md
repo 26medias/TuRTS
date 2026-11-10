@@ -8,7 +8,7 @@ source: codex
 
 # MC execution board
 
-State: MC is active on this desktop.18/25 lanes complete;81/170 runs. Task15 merged731273e and all integration gates passed0; its idle worktree is retired with evidence preserved. Task17 final candidate749f3c6 is clean. C258 final headed browser batch passed all6attempts (HUD2/SEL1/Muster twice each), actual raw0c58ea59,1611input bytes bound to3d22996. C259 follow-up changes only3cfg(test) visibility expectations; all1610other inputs and production prefix are exact, so browser identities are retained. Final fmt/workspaceClippy pass0; full workspace tests and remaining QA/acceptance/frozen gates are in progress. Five causal builder plants and RUN80 separate health-row plant/final review remain. RUN81 owns the sole cache. Wave7 push/CI follows Task17 integration re-gates. Mainbb611bd unchanged; Task23 stops for CEO PT1/PT2, not blind.
+State: MC is active on this desktop.18/25 lanes complete;81/170 runs. Task15 merged731273e and all integration gates passed0. Task17 final candidate749f3c6 has all normal gates verified: workspace1519/0/21,8Rust/QAcommands0, actual acceptance18/0/0, same-run frozen26+1+1 and unchanged stream. Final C258 browser rows passed6/6actual headed attempts, with C259 cfg(test)-only follow-up binding and original identities preserved. RUN81 owns the sole cache/runtime and is executing5builder plants. Plant1 has2intended selected-row semantic reds; exact source restored and current green pair is rebuilding. RUN80 reviews artifacts read-only; its distinct health-row plant/final review waits for later exclusive lease. Merge/integration re-gates then Wave7 push/CI remain. Mainbb611bd unchanged; Task23 stops for CEO PT1/PT2, not blind.
 
 Plan: `docs/superpowers/plans/2026-10-29-mc-player-control.md`.
 Design of record: `docs/superpowers/specs/2026-10-29-mc-player-control-design.md`, revision14 at mainf050e42.
@@ -84,7 +84,7 @@ CI trigger: `.github/workflows/ci.yml:2-5` runs pushes to main and pull requests
 | T13 | 6 | 4, 6, 9, 11, 19, 20 | codex/mc-t13 | COMPLETE merge60082da; candidate9ae04f4, independent0High/0Medium, normal/requiredplants/native19/actualforeignsolid closed, fresh5000VIS2record; native10integrationgates0 (1446/0/19), T7 137frames/53moving exit0; lane removed, branch/evidence retained. |
 | T10 | 7 | 5, 9, 11, 19, 20 | codex/mc-t10 | COMPLETE b051e04, merged ea943bf; RUN77 0High/0unresolvedMedium; all integration gates and actual non10 native proof0; lane retired. |
 | T15 | 7 | 4, 7, 12, 13 | codex/mc-t15 | COMPLETE at merge731273e. Final0High/0unresolvedMedium; all task gates, nine builder plants, separate reviewer voice plant and12current headed row passes verified. All mandatory integration gates passed0. |
-| T17 | 7 | 3, 12, 13, 19, 20 | codex/mc-t17 | ACTIVE749f3c6 clean; final6headedgreens, C259test-only binding. Final fmt/Clippy0; workspace/QA/ACC/frozen gates in progress, then5builderplants and RUN80healthplant/finalreview. |
+| T17 | 7 | 3, 12, 13, 19, 20 | codex/mc-t17 | ACTIVE749f3c6; all normal gates0,1519/0/21 andACC18/0; final6headed0. Plant1 intended reds2, exactrestore/currentgreens pending. Remaining4builderplants+RUN80healthplant/finalreview, then merge/regates. |
 | T14 | 8 | 5, 12, 13, 15 | codex/mc-t14 | NOT STARTED |
 | T16 | 8 | 7, 12, 15 | codex/mc-t16 | OPEN; volume/id subsets advanced underC189/C225; C229 retry/countdown advanced forAUD1. FullTask16rows/threewindows/backendreview remain unstarted. |
 | T22 | 8 | 6, 7, 10, 11, 13, 19, 20 | codex/mc-t22 | NOT STARTED |
