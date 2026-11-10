@@ -1037,3 +1037,14 @@ Choice: Root prepares a bounded external proposal that extends the existing one-
 Evidence: K10(a) at design:107 and table10.4:969 store settings; 3.1:324 identifies both double-click thresholds as player settings. Existing audio.rs:102-145 bootstraps/snapshots only VolumeSettings; volume_settings.rs decode only recognizes audio. ClientSettings has five existing fields; HealthDisplay and CorePreferences own the remaining actual values. The existing JSON volume writer already preserves unknown fields, so extending that document is the nearest mechanism.
 
 Alternative not taken: persist only audio, add a new namespace or UI control, read corrupt JSON twice with duplicate notices, or overwrite unrelated settings. Brief4 nearest-existing implementation rights, full authorized design unchanged. Root source preparation is not an agent dispatch;106/170 runs, Task16run17/hard24,20/25 lanes complete.
+
+
+## C345: Use the real input batch boundary for capture
+
+Conflict: independent RUN107 finds RUN106 remains not source ready. H1: PointerClick must precede PointerRelease with command flushes; its fixture reversed them and never activates Change. H2: WindowEvent is Clone, not Copy. H3: live BindingLabels borrow prevents mutable widget world access. H4: get_cursor_current at Activate skips the whole Winit batch, including the next intended chord already queued after the opening click. H5: a local context value shadows a test helper function. A secondary-window modifier also leaks into primary capture.
+
+Choice: register source-only repair108 on the same Luna/high source seat, keep reviewer107 active, and preserve all prior packets. Fix the five blockers and source-window isolation. Correlate actual pointer/keyboard activation to its input event within the ordered raw batch, rather than cutting after every already-buffered event. A narrow ordered primary-window timeline with per-event modifiers and activation correlation is permitted; no public bridge or semantic driver API. Test the whole opening click plus CtrlDown/RightPressed/CtrlUp batch BEFORE one update, following actual framework event order and asserting activation before the named pointer result. Root separately assigns the existing Core pressed-key-release capture bug to RUN94.
+
+Evidence: RUN107 review.md and source-controls receipt. Actual winit0.30 state.rs forwards the full raw batch before app.update; bevy_picking processes input during PreUpdate. Button requires Pressed on PointerClick and removes it on release. WindowEvent derives Clone only. These are source-backed correctness defects, not product choices or runtime reds.
+
+Alternative not taken: send the known source blockers to the compiler, drop same-batch intended input, treat manual post-Activate injection as actual runner proof, or merge before independent recheck. Brief4 requires High repairs/recheck; C329 continuation remains. Task16run19/estimate6 below hard24; global108/170,20/25 lanes complete.
