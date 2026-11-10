@@ -1892,3 +1892,6 @@ RUN76 ended SOURCEPREP at102WIPpaths, stilluncompiled/unaccepted andtargetabsent
 
 
 C227 repairs RUN80 oneHigh/fiveMedium source findings before Task17 runtime: required Bindings scrollingList/all51actions, factual droneguide, actualselectedhealth and reserved-awareinventoryoracle, exactSEL1HUDclone, correctslot/radius/colour+reference ringproof. Root boundedsourcepatch archived; reviewer80 recheckpending. RUN79 finalC225sourcePASS0H/M; RUN78 GO sixheadedpairsAUD1first, sole runtime.80/170;17/25complete.
+
+
+C228: AUD1 firstheadedpair bothactual1 beforeplayback/reload, sourceunchanged. RootactualPNG proves authoredorange tolerance48 rejects shadedorange(bestdistance57.56;1086pixelswithin70). Calibrateonlypixelinstrument withsamePNGoldfail/newpass controls; preservebothfailures. No audio/reloadacceptanceclaimed; RUN78solelease continues. Task17 C227 allsixsourcefindingsindependentlyrecheckedPASS; freshcloneparity63/62oneapprovedmap, wrongredpixelcontrol1/slotcolourcontrol0, Controlsphysicalscrollproofsourceprepared.80/170;17/25.
