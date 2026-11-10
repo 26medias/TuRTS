@@ -8,7 +8,7 @@ source: codex
 
 # MC execution board
 
-State: MC is active on this desktop. 20 of25 lanes are complete;97 of170 build runs are registered. Task14 is complete at merge51170cb4 with all fresh integration gates green. Task16 RUN94 owns the sole cache/runtime. Actual SH1, CAM2 and KM1 baselines have named missing-control/persistence failures; KM2 has an actual headed oracle PASS with real overlay pixels, but RUN97 found join-focus chronology unqualified; C323 repairs that observation before acceptance. The KM1 web binding fix is active; SEL4/PER1 initial browser outcomes remain pending, and their web storage behavior stays unactivated. SLOT1 third-window device startup remains platform-blocked: a minimal outside-game three-native-window draw loop reproduces it; three configured canvases without draws fulfill. A bounded launch-flag comparison is queued, no permanent profile change. Task22 source prep and six external mutant candidates are saved; no runtime or metrics yet. Wave7 CI retains only two approved O13 legacy failures, owner21. Next push/read follows Tasks16/22. Mainbb611bd is unchanged. Disk630GiB free. Before Task23 send CEO the actual page URL and wait; PT1/PT2 are logged not blind.
+State: MC is active on this desktop. 20 of25 lanes are complete;98 of170 build runs are registered. Task14 is complete at merge51170cb4 with all fresh integration gates green. Task16 RUN94 owns the sole cache/runtime. Actual SH1, CAM2 and KM1 baselines have named missing-control/persistence failures; KM2 has an actual headed oracle PASS with real overlay pixels, but RUN97 found join-focus chronology unqualified; C323 repairs that observation before acceptance. The KM1 web binding fix is active; SEL4/PER1 initial browser outcomes remain pending, and their web storage behavior stays unactivated. SLOT1 third-window device startup remains platform-blocked: a minimal outside-game three-native-window draw loop reproduces it; three configured canvases without draws fulfill. A bounded launch-flag comparison is queued, no permanent profile change. Task22 source prep and six external mutant candidates are saved; no runtime or metrics yet. Wave7 CI retains only two approved O13 legacy failures, owner21. Next push/read follows Tasks16/22. Mainbb611bd is unchanged. Disk630GiB free. Before Task23 send CEO the actual page URL and wait; PT1/PT2 are logged not blind.
 
 Plan: `docs/superpowers/plans/2026-10-29-mc-player-control.md`.
 Design of record: `docs/superpowers/specs/2026-10-29-mc-player-control-design.md`, revision14 at mainf050e42.
@@ -150,7 +150,7 @@ Tasks in one wave share no file, except the refutation registries (merge in task
 
 ## 7. Budget and seats
 
-CEO approved about 212 total runs. Build stop line: 170 (106 planned task runs plus 64 repairs). Gate estimate: 42 spent before this build. Build dispatches used: 97/170. Root preflight is recorded separately and is not a builder/reviewer dispatch. Twice a task estimate requires a recorded continuation decision; four times is a hard stop. T18 estimate2: soft4, hard8. No dispatch at global170 or a task hard limit.
+CEO approved about 212 total runs. Build stop line: 170 (106 planned task runs plus 64 repairs). Gate estimate: 42 spent before this build. Build dispatches used: 98/170. Root preflight is recorded separately and is not a builder/reviewer dispatch. Twice a task estimate requires a recorded continuation decision; four times is a hard stop. T18 estimate2: soft4, hard8. No dispatch at global170 or a task hard limit.
 
 One run is one agent dispatch (builder or reviewer). Count every run on the board.
 
@@ -292,6 +292,8 @@ One row per builder/reviewer dispatch or resumed agent work turn. Register befor
 | 96 | T16 independent backend/browser source review and later final review | backend-engineer with web-platform duties | gpt-6.1-sol | high | codex/mc-t16 HEAD51170cb4 plus root frozen106-path packet5925dadc/5d38a9da | Registered BEFORE dispatch. Task16run10/estimate6,soft12/hard24;global96/170. Initial SOURCE/DATA READ ONLY: investigate actual headed third-window startup timeout using frozen harness/current diagnostics, audit native persistence and C294 session/clock/epoch semantics from real baselines. No edits/compiler/cache/server/browser until later explicit exclusive lease. Reuse unchanged prior43controls/source proofs; do not invent full acceptance. Later full7rows/9plants/finalownreview0High/0unresolvedMedium mandatory. |
 
 | 97 | T16 independent current native/web persistence and shell source recheck | backend-engineer with web-platform duties | gpt-6.1-sol | high | HEAD51170cb4 plus immutable55-path packet31505a8a/manifestd7e31ab7 | Registered BEFORE dispatch. Task16run11/estimate6,soft12/hard24;global97/170. READ ONLY frozen source/data: verify actual web bindings fix, reserved-notice failure, stale capture-event and focus/audio-lock leads, current seven-row coverage. No source/cache/compiler/server/browser. C320 real SLOT1 runtime remains RUN94 exclusive. Final full review/own plant still later. |
+
+| 98 | T22 independent source/instrument/ten-plant/cost readiness review | simulation-core-engineer | gpt-6.1-sol | high | HEADfd369dc2 plus immutable16-path packet93015657/manifest2eaac120 | Registered BEFORE dispatch. Task22run3/estimate3,soft6/hard12;global98/170. READ ONLY frozen source and ten complete external mutation candidates; verify real geometry, DET1 nonvacuity, audit replay, C282 actual work and C327 rest interval. No source edit/compiler/cache/server/browser/metrics/acceptance. Runtime/final own plant remains later. |
 
 ## 9. Preflight ledger and stop
 
@@ -3000,3 +3002,8 @@ Alternative not taken: call39intervals2seconds, accept cumulative slow drift as 
 
 
 C327 pure instrument regression closes: root actual JS exported-helper controls first2falsepasses/4cases(exit1), repaired4/4(exit0). Native3equivalent interval/drift contracts saved but uncompiled/unrun while Task16 owns cache. Full original/current/diff/SHA proof at PRIMARY/t22-root/rest-window-contract/result.json; native shared stationary/disjoint helper now covers GM40 and both GMA rest outcomes, preserving GMA Blocked allowance. No Task22 process baseline/green, compiler/cache/GPU or newdispatch. RUN97 finished source-only reportc0755ff7,3High/4Medium plus popup-epoch gap; builder receives all, no acceptance and later independent recheck/ownplant required.97/170runs;20/25complete.
+
+
+## RUN98 registered: independent Task22 source readiness
+
+Register Sol/high simulation-core reviewer before dispatch, Task22run3/estimate3, global98/170. Root frozen16paths atfd369dc2, tar93015657/manifest2eaac120, includes C282 cost arity/aggregation and C327 actual rest-window source corrections. Ten full external fault candidates are source-only; reviewer must reject insensitive/mis-targeted shapes before runtime. No cache/compiler/GPU/source edit/metric. Task16 RUN94 keeps sole actual runtime; no extra target. RUN97 source-only finished reportc0755ff7, all55hashes/rootreportverified; findings/known gaps sent for fixes and later independent recheck.
