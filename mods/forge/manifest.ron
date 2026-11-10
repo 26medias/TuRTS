@@ -31,6 +31,7 @@
         recipes: ["recipes/make_shells.ron"],
         technologies: ["technologies/hardened_shells.ron"],
         orders: ["orders/order_move.ron", "orders/order_stop.ron", "orders/order_hold.ron", "orders/order_research.ron", "orders/order_cancel.ron", "orders/order_enable.ron", "orders/order_disable.ron", "orders/order_remove.ron", "orders/rules.ron"],
+        interface: ["interface/hud.ron"],
         input: ["input/bindings.ron"],
         assets: ["assets/assets.ron"],
     ),

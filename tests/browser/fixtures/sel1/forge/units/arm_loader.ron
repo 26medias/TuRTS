@@ -1,0 +1,12 @@
+(
+    id: "arm_loader",
+    name: "Arm Loader",
+    footprint: Circle(radius: 0.4),
+    movement: None,
+    inventory: Some((capacity: 1, accepts: ["forge:ore", "forge:shell"])),
+    gatherer: None,
+    drop_off: None,
+    producer: None,
+    inserter: Some((reach: 1.0, swing_ms: 250, return_ms: 250)),
+    removal: Some((by_command: true, contents: Destroy)),
+)

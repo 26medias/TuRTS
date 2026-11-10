@@ -1,0 +1,11 @@
+{
+  "row": "SEL1",
+  "package": "tests/browser/fixtures/sel1/forge",
+  "driver": "tests/browser/sel1-driver.js",
+  "oracle": "tests/browser/sel1-oracle.js",
+  "runs": "ci",
+  "capture_scene_checkpoints": true,
+  "viewports": [
+    "1280x720"
+  ]
+}

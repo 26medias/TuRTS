@@ -5,6 +5,7 @@ use bevy::ui_widgets::Button;
 use serde_json::{Value, json};
 
 use super::primitives::{AuthoredWidgetId, WidgetButtonAction, WidgetEnabled};
+use crate::visuals::WorldTooltip;
 use crate::{debug_feed::UiSnapshotFeed, ui_shared::UiCaptureRoot};
 
 /// Build the bridge rows from computed Bevy UI geometry, never from the authored declaration.
@@ -69,6 +70,41 @@ pub fn snapshot(world: &World) -> Value {
             "text":text,
             "button_pressed":button && entity.contains::<bevy::ui::Pressed>(),
             "capture_root":entity.contains::<UiCaptureRoot>(),
+        }));
+    }
+    for entity in world.iter_entities() {
+        let Some(tooltip) = entity.get::<WorldTooltip>() else {
+            continue;
+        };
+        let text = entity.get::<Text>().map(|text| text.0.as_str());
+        let (rect, visible) = match (
+            entity.get::<ComputedNode>(),
+            entity.get::<UiGlobalTransform>(),
+        ) {
+            (Some(node), Some(transform)) => {
+                // Use the actual viewport-pixel node geometry and visibility of the world label.
+                let center = transform.to_scale_angle_translation().2;
+                let size = node.size();
+                let rect = [
+                    center.x - size.x / 2.0,
+                    center.y - size.y / 2.0,
+                    size.x,
+                    size.y,
+                ];
+                (
+                    json!(rect),
+                    layout_visible(world, entity.id(), node, transform),
+                )
+            }
+            _ => (Value::Null, false),
+        };
+        rows.push(json!({
+            "kind":"world_tooltip",
+            "id":format!("world.tooltip.{}", tooltip.0),
+            "unit_id":tooltip.0,
+            "rect":rect,
+            "visible":visible,
+            "text":text,
         }));
     }
     rows.sort_by(|left, right| left["id"].as_str().cmp(&right["id"].as_str()));
@@ -273,6 +309,40 @@ mod tests {
         assert_eq!(
             rows[0]["visible"], false,
             "layout without a real active camera is not claimed as visible"
+        );
+    }
+
+    #[test]
+    fn snapshot_observes_world_tooltip_text_from_its_real_marker_and_layout() {
+        let mut world = World::new();
+        world.spawn((
+            WorldTooltip(42),
+            Text::new("Shell Turret · Slot 2"),
+            ComputedNode {
+                size: Vec2::new(140.0, 24.0),
+                ..default()
+            },
+            UiGlobalTransform::from_translation(Vec2::new(90.0, 42.0)),
+            InheritedVisibility::VISIBLE,
+        ));
+
+        let rows = snapshot(&world);
+        let tooltip = rows
+            .as_array()
+            .expect("snapshot must return a JSON array")
+            .iter()
+            .find(|row| row["kind"] == "world_tooltip")
+            .expect("turts_ui must include actual world tooltip entities");
+        assert_eq!(tooltip["id"], "world.tooltip.42");
+        assert_eq!(tooltip["unit_id"], 42);
+        assert_eq!(tooltip["text"], "Shell Turret · Slot 2");
+        assert_eq!(
+            tooltip["rect"],
+            serde_json::json!([20.0, 30.0, 140.0, 24.0])
+        );
+        assert_eq!(
+            tooltip["visible"], false,
+            "no camera means no rendered proof"
         );
     }
 }

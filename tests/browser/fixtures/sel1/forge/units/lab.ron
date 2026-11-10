@@ -1,0 +1,11 @@
+(
+    id: "lab",
+    name: "Proving Lab",
+    footprint: Circle(radius: 1.2),
+    movement: None,
+    inventory: Some((capacity: 10, accepts: ["forge:shell"])),
+    gatherer: None,
+    drop_off: None,
+    producer: None,
+    research: Some((technologies: ["forge:hardened_shells"], queue_capacity: 1)),
+)

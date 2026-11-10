@@ -1786,7 +1786,7 @@ mod adapter_tests {
             .expect("the test-authored guide toggle is installed")
             .id();
         let initial_visibility = *app.world().get::<Visibility>(guide_button).unwrap();
-        assert_eq!(initial_visibility, Visibility::Visible);
+        assert_eq!(initial_visibility, Visibility::Inherited);
         assert_eq!(
             app.world().get::<Text>(guide_button).unwrap().0,
             "Guide [F1]",
@@ -1840,7 +1840,7 @@ mod adapter_tests {
         );
         assert_eq!(
             app.world().get::<Visibility>(guide_button),
-            Some(&Visibility::Visible)
+            Some(&Visibility::Inherited)
         );
         assert!(
             app.world().get_entity(guide_button).is_ok(),
@@ -1860,7 +1860,7 @@ mod adapter_tests {
         );
         assert_eq!(
             app.world().get::<Visibility>(guide_button),
-            Some(&Visibility::Visible)
+            Some(&Visibility::Inherited)
         );
     }
 
