@@ -866,3 +866,16 @@ Choice: continue within the approved allowance. Register one Luna/high web-platf
 Evidence: board Task16 estimate6; registered runs84,85,86,89,90,91,92,93,94,96,97 total11. RUN94 says PER1 has no substantial work yet, while SEL4 is its next baseline. Current SEL4/PER1 row actions/captures/checks remain guarded/empty. RUN97 reportc0755ff7 names genuine Swap and capture/focus/binding issues and KM2/SLOT1 proof gaps. All remaining checks remain required.
 
 Alternative not taken: stop at the superseded twice-estimate policy, waive a row/plant, run two compilers/GPU jobs, let two agents edit the same live lane, or hide the extra dispatch. RUN99 is registered before dispatch below; Task16run12/estimate6, global99/170.20/25complete.
+
+
+## C330: Repair all Task22 source-review findings before runtime
+
+Conflict: independent RUN98 on frozen93015657 is NOT SOURCE READY: two High findings (shared fixture JSON newtype shapes; missing configured-end/contiguous selected-unit log coverage) and three Medium findings (uncoupled GMA scenario witness, EL1 component-row denominator, unawaited/invalid PNG evidence). These are source/instrument failures, not actual process gameplay reds. All ten plant source shapes qualify conditionally; no runtime sensitivity exists.
+
+Choice: repair all five now in a counted Luna source continuation. Use scalar serde newtype IDs and a real typed fixture-serialization contract for later native execution. Require complete selected-ID/tick coverage through configured endpoints, allowing legitimate extra ticks; do not mistake a good early tail for the configured terminal state. Couple GMA I to a complete real stationary window before the second command plus an actual crossing while that formation is stationary; prove two actually moving groups in crossing/F. Fixture scheduling can change only to stage the same written case, with actual settling still required. Union measured unit IDs per captured AuditState for the per-unit byte denominator. Await PNG validation, require declared viewport/nonflat rendered evidence and preserve designed C84 geometry; do not invent another ring-layout acceptance rule.
+
+Native compiler/server/process and metrics remain unavailable until the exclusive cache lease. Archive all sixteen current paths before edits; preserve C282/C327 source work and the unexecuted green draft. Mandatory real process instrument-stub baseline still comes first under the later lease. Root/RUN98 pure controls are instrument proof only. All repaired High findings need independent recheck; final runtime/own plant still later.
+
+Evidence: RUN98 report PRIMARY/t22-review/run98/source-review.md SHA7680d37932fd98dad8f033e88bcec0d5a798b78f9eed101fc34092a69e34b63d, exact source paths/lines and causal counterexamples; hash index7bd47142. Pure Node full judge resolves before PNG data and helper accepts flat100x100, actual control exit0; source fixture UnitId is [[1]] although typed UnitId(pub u32) is scalar. No compiler or server was used.
+
+Alternative not taken: defer known Medium evidence defects, count malformed setup as a semantic red, accept missing late hazard ticks, label component means per-unit cost, create a new pixel row, or waive a plant. Brief4 Medium/instrument scheduling choice; next RUN100 is Task22run4/estimate3, below soft6/hard12. Global100/170;20/25complete.
