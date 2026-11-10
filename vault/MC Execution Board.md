@@ -1901,3 +1901,6 @@ C229: freshAUD1pair2fails1/sourceimmutable nowreachesreload andTRACESoldlive-ses
 
 
 C229mechanism: rejectedHello connection kicks300ms/ignoresresends; useactualreconnect andcurrentattemptguards. CountdownneedsactualprejoinUIcamera/Text becauseallcurrentHUD/camerasJoined-only. RUN79actualvoice/effects7onsets106/101gains, alerts0; combatblocked+statictargetwrong. Batchlawfulpixel/controlledfixturefixeswithretrybeforeanotherfullbrowserpair; noenginepathfinding/palettechange. Still80/170;17/25.
+
+
+C230: keepstrictAUD1firstloadallSuspended→realgesture/allRunning; actualbrowserreloadC40isRunning/noGesture/zeroPlayers inbothpairs. Removeextraunsupportedreload-must-suspendassert; observeactualrunning/suspendedcontexts+noNewGesture/zeroPlayersthenNEWrealcategorysinks/gainsaftergesture. Designrowunchanged; C229rejoinfailurestillfails.80/170.
