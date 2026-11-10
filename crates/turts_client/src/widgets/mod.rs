@@ -54,6 +54,14 @@ struct WidgetListRow {
     index: usize,
 }
 
+fn widget_visibility(visible: bool) -> Visibility {
+    if visible {
+        Visibility::Inherited
+    } else {
+        Visibility::Hidden
+    }
+}
+
 /// Retained widget runtime. All visible nodes and sources come from the accepted interface.
 pub struct WidgetsPlugin;
 impl Plugin for WidgetsPlugin {
@@ -456,15 +464,12 @@ fn spawn_widget(
                 tooltip_style: tooltip_style.clone(),
             },
             BackgroundColor(Color::NONE),
-            if widget
-                .visible
-                .iter()
-                .all(|predicate| predicate_matches(predicate, source_context))
-            {
-                Visibility::Visible
-            } else {
-                Visibility::Hidden
-            },
+            widget_visibility(
+                widget
+                    .visible
+                    .iter()
+                    .all(|predicate| predicate_matches(predicate, source_context)),
+            ),
         ))
         .id();
     configure_scroll_area(world, id, &widget.widget);
@@ -886,11 +891,7 @@ fn refresh_bound_widgets(world: &mut World, context: &sources::SourceContext<'_>
             .iter()
             .all(|predicate| predicate_matches(predicate, context));
         if let Some(mut current) = world.get_mut::<Visibility>(entity) {
-            *current = if visible {
-                Visibility::Visible
-            } else {
-                Visibility::Hidden
-            };
+            *current = widget_visibility(visible);
         }
     }
 }
@@ -1355,11 +1356,7 @@ fn numeric_value(
 }
 
 fn display_value(value: &serde_json::Value) -> String {
-    match value {
-        serde_json::Value::Null => String::new(),
-        serde_json::Value::String(text) => text.clone(),
-        _ => value.to_string(),
-    }
+    sources::display_text_value(value)
 }
 
 fn value_uses_item(value: &Value) -> bool {
@@ -1673,6 +1670,147 @@ mod tests {
             font: None,
             size: 12,
         }
+    }
+
+    #[test]
+    fn hidden_widget_ancestor_hides_child_and_removes_its_world_capture() {
+        let mut app = App::new();
+        app.add_plugins((
+            MinimalPlugins,
+            bevy::asset::AssetPlugin::default(),
+            bevy::mesh::MeshPlugin,
+            bevy::transform::TransformPlugin,
+            bevy::camera::visibility::VisibilityPlugin,
+        ));
+        let replica = crate::replica::Replica::new(20);
+        let content = crate::content::ClientContent::default();
+        let selection = Vec::new();
+        let groups = BTreeMap::new();
+        let alerts = Vec::new();
+        let bindings = BTreeMap::new();
+        let input_map = turts_mod_api::InputMapDef {
+            actions: Vec::new(),
+            engine_overrides: Vec::new(),
+        };
+        let guide = Vec::new();
+        let context = sources::SourceContext {
+            replica: &replica,
+            content: &content,
+            selection: &selection,
+            owner_slot: 0,
+            interface: None,
+            interface_package: Some("test"),
+            control_groups: &groups,
+            alerts: &alerts,
+            bindings: &bindings,
+            input_map: &input_map,
+            guide: &guide,
+            guide_open: false,
+            last_notice: None,
+        };
+        let child = Widget {
+            id: "guide.close".into(),
+            at: None,
+            size: Size {
+                w: turts_mod_api::Dimension::Px(80.0),
+                h: turts_mod_api::Dimension::Px(24.0),
+            },
+            layer: 1,
+            visible: Vec::new(),
+            tooltip: None,
+            widget: Primitive::Button {
+                icon: None,
+                label: Some(TextValue::Literal("Close".into())),
+                action: ButtonAction::Input("toggle_guide".into()),
+                hotkey_label: false,
+            },
+        };
+        let parent = Widget {
+            id: "guide".into(),
+            at: None,
+            size: Size {
+                w: turts_mod_api::Dimension::Px(200.0),
+                h: turts_mod_api::Dimension::Px(100.0),
+            },
+            layer: 0,
+            visible: vec![Predicate::GuideOpen],
+            tooltip: None,
+            widget: Primitive::Box {
+                fill: None,
+                border: None,
+                children: vec![child],
+            },
+        };
+        let parent_id = spawn_widget(
+            app.world_mut(),
+            None,
+            &parent,
+            Vec2::new(200.0, 100.0),
+            &context,
+            "test",
+            &test_tooltip_style(),
+            None,
+        );
+        let child_id = app
+            .world()
+            .get::<Children>(parent_id)
+            .and_then(|children| children.iter().next())
+            .expect("guide parent has its authored close button");
+
+        app.update();
+
+        assert_eq!(
+            app.world().get::<InheritedVisibility>(child_id),
+            Some(&InheritedVisibility::HIDDEN),
+            "a hidden guide child must not remain visible in the hierarchy"
+        );
+        assert!(
+            !app.world().iter_entities().any(|entity| {
+                entity.contains::<UiCaptureRoot>()
+                    && entity
+                        .get::<InheritedVisibility>()
+                        .is_some_and(|visibility| visibility.get())
+            }),
+            "a hidden guide close button must not capture world input"
+        );
+
+        let open_context = sources::SourceContext {
+            guide_open: true,
+            ..context
+        };
+        refresh_bound_widgets(app.world_mut(), &open_context);
+        app.update();
+        assert_eq!(
+            app.world().get::<InheritedVisibility>(child_id),
+            Some(&InheritedVisibility::VISIBLE),
+            "opening the guide must make its inherited child visible"
+        );
+        assert!(
+            app.world().iter_entities().any(|entity| {
+                entity.contains::<UiCaptureRoot>()
+                    && entity
+                        .get::<InheritedVisibility>()
+                        .is_some_and(|visibility| visibility.get())
+            }),
+            "an open guide button must capture world input"
+        );
+
+        refresh_bound_widgets(app.world_mut(), &context);
+        app.update();
+        assert_eq!(
+            app.world().get::<InheritedVisibility>(child_id),
+            Some(&InheritedVisibility::HIDDEN),
+            "closing the guide must hide the inherited child again"
+        );
+        assert!(
+            !app.world().iter_entities().any(|entity| {
+                entity.contains::<UiCaptureRoot>()
+                    && entity
+                        .get::<InheritedVisibility>()
+                        .is_some_and(|visibility| visibility.get())
+            }),
+            "a closed guide button must not capture world input"
+        );
     }
 
     #[test]

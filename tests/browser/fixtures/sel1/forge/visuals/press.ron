@@ -1,0 +1,1 @@
+(target: Unit("forge:press"), shape: Capsule(radius: 1.2, height: 1.0))

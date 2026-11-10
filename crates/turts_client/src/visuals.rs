@@ -230,7 +230,7 @@ struct RingMetadata {
 }
 
 #[derive(Component)]
-struct WorldTooltip(u32);
+pub(crate) struct WorldTooltip(pub(crate) u32);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HealthMode {

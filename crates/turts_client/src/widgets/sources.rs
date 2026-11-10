@@ -219,6 +219,7 @@ fn primary_value(field: PrimaryField, context: SourceContext<'_>) -> serde_json:
             .and_then(|def| def.weapon.as_ref())
             .and_then(|weapon| weapon.ammo.as_ref())
             .and_then(|ammo| {
+                let resource = ammo.item.to_string();
                 context
                     .replica
                     .economy
@@ -228,13 +229,15 @@ fn primary_value(field: PrimaryField, context: SourceContext<'_>) -> serde_json:
                         inventory.unit.0 == *id
                             && inventory.port == turts_net_protocol::InventoryPort::Main
                     })
-                    .and_then(|inventory| {
-                        inventory
-                            .items
-                            .iter()
-                            .find(|item| item.resource == ammo.item.to_string())
+                    .map(|inventory| {
+                        serde_json::json!(
+                            inventory
+                                .items
+                                .iter()
+                                .find(|item| item.resource == resource)
+                                .map_or(0, |item| item.on_hand.saturating_sub(item.reserved))
+                        )
                     })
-                    .map(|item| serde_json::json!(item.on_hand.saturating_sub(item.reserved)))
             })
             .unwrap_or(serde_json::Value::Null),
         PrimaryField::Ammo => serde_json::Value::Null,
@@ -817,7 +820,9 @@ fn format_value(
             if has_digit && j < chars.len() && chars[j].1 == '}' {
                 output.push_str(&pattern[cursor..start]);
                 if let Some(value) = values.get(index) {
-                    output.push_str(&display_value(&read_value_for_item(value, context, item)));
+                    output.push_str(&display_text_value(&read_value_for_item(
+                        value, context, item,
+                    )));
                 } else {
                     output.push_str(&pattern[start..chars[j].0 + 1]);
                 }
@@ -875,14 +880,13 @@ fn affordability_reason(
             .unwrap_or(0);
             (u128::from(available) < amount).then(|| {
                 format!(
-                    "{} {available}/{}",
+                    "Needs {amount} {} ({available}/{amount})",
                     resource_name(&resource, context.content),
-                    amount
                 )
             })
         })
         .collect::<Vec<_>>()
-        .join(", ");
+        .join("; ");
     if shortages.is_empty() {
         "Insufficient resources".to_owned()
     } else {
@@ -1128,12 +1132,55 @@ fn unit_name(id: &str, content: &ClientContent) -> String {
         .map_or_else(|| id.to_string(), |unit| unit.name.clone())
 }
 
-fn display_value(value: &serde_json::Value) -> String {
+/// Render values used by authored text widgets. Selection inventory remains a typed JSON
+/// array for consumers that need its fields; only its text representation becomes readable.
+pub fn display_text_value(value: &serde_json::Value) -> String {
     match value {
         serde_json::Value::Null => String::new(),
         serde_json::Value::String(value) => value.clone(),
+        serde_json::Value::Array(rows)
+            if !rows.is_empty() && rows.iter().all(is_inventory_text_row) =>
+        {
+            rows.iter()
+                .map(inventory_text_row)
+                .collect::<Vec<_>>()
+                .join("\n")
+        }
         _ => value.to_string(),
     }
+}
+
+fn is_inventory_text_row(value: &serde_json::Value) -> bool {
+    let Some(row) = value.as_object() else {
+        return false;
+    };
+    row.contains_key("port")
+        && row.contains_key("name")
+        && row.contains_key("count")
+        && row.contains_key("capacity")
+}
+
+fn inventory_text_row(value: &serde_json::Value) -> String {
+    let Some(row) = value.as_object() else {
+        return value.to_string();
+    };
+    let port = display_text_value(row.get("port").unwrap_or(&serde_json::Value::Null));
+    let name = display_text_value(row.get("name").unwrap_or(&serde_json::Value::Null));
+    let count = display_text_value(row.get("count").unwrap_or(&serde_json::Value::Null));
+    let mut line = format!("{port}: {name} {count} available");
+    if let Some(on_hand) = row.get("on_hand") {
+        line.push_str(&format!(" ({on_hand} on hand"));
+        if let Some(reserved) = row.get("reserved")
+            && reserved.as_u64().is_some_and(|amount| amount > 0)
+        {
+            line.push_str(&format!(", {reserved} reserved"));
+        }
+        line.push(')');
+    }
+    if let Some(capacity) = row.get("capacity").filter(|value| !value.is_null()) {
+        line.push_str(&format!(" (capacity {capacity})"));
+    }
+    line
 }
 
 fn source_items_value(source: Source, context: SourceContext<'_>) -> serde_json::Value {
@@ -1465,7 +1512,10 @@ mod tests {
             },
         ];
         assert!(!costs_affordable(ctx, 7, &costs));
-        assert_eq!(affordability_reason(ctx, 7, &costs), "muster:ore 34/35");
+        assert_eq!(
+            affordability_reason(ctx, 7, &costs),
+            "Needs 35 muster:ore (34/35)"
+        );
         let wrong_source = [turts_mod_api::ResolvedCost {
             resource: ContentId::parse("muster:ore").unwrap(),
             amount: 1,
@@ -1663,6 +1713,97 @@ mod tests {
                 {"port":"Output","name":"muster:shell","count":2,"on_hand":3,"reserved":1,"capacity":7}
             ]),
             "inventory values are keyed by port, never by replica row order"
+        );
+        assert_eq!(
+            display_text_value(&rows),
+            "Main: muster:ore 3 available (5 on hand, 2 reserved) (capacity 12)\nOutput: muster:shell 2 available (3 on hand, 1 reserved) (capacity 7)"
+        );
+        assert_eq!(
+            read_value(
+                &Value::Format(
+                    "{0}".into(),
+                    vec![Value::SelectionPrimary(PrimaryField::Inventory)]
+                ),
+                ctx,
+            ),
+            serde_json::json!(
+                "Main: muster:ore 3 available (5 on hand, 2 reserved) (capacity 12)\nOutput: muster:shell 2 available (3 on hand, 1 reserved) (capacity 7)"
+            )
+        );
+        assert_eq!(display_text_value(&serde_json::json!([])), "[]");
+        assert_eq!(
+            display_text_value(&serde_json::json!([{"arbitrary": 1}])),
+            "[{\"arbitrary\":1}]"
+        );
+    }
+
+    #[test]
+    fn selected_turret_ammo_distinguishes_known_empty_from_unknown_or_foreign() {
+        let mut replica = Replica::new(20);
+        replica.units.insert(7, unit("muster:turret", 1));
+        replica
+            .economy
+            .inventories
+            .push(turts_net_protocol::InventoryState {
+                unit: UnitId(7),
+                port: turts_net_protocol::InventoryPort::Main,
+                items: vec![],
+            });
+        let mut content = ClientContent::default();
+        let mut turret = resolved_unit("muster:turret", None);
+        turret.weapon = Some(turts_mod_api::ResolvedWeapon {
+            range: 8.0,
+            cooldown_ms: 1000,
+            damage: 10,
+            ammo: Some(turts_mod_api::ResolvedAmmo {
+                item: turts_mod_api::ContentId::parse("muster:shell").expect("content id"),
+                per_shot: 1,
+            }),
+            targets: turts_mod_api::TargetFilter {
+                slots: turts_mod_api::SlotRelation::Other,
+            },
+        });
+        content.catalog.units.insert(turret.id.clone(), turret);
+        let selection = [7];
+        let groups = BTreeMap::new();
+        let bindings = BTreeMap::new();
+        let alerts = [];
+        let input = InputMapDef {
+            actions: vec![],
+            engine_overrides: vec![],
+        };
+        let guide = [];
+        let ctx = context(
+            &replica, &content, &selection, &groups, &alerts, &bindings, &input, &guide,
+        );
+        assert_eq!(read_primary(PrimaryField::Ammo, ctx), serde_json::json!(0));
+
+        replica.economy.inventories.clear();
+        let unknown_inventory = context(
+            &replica, &content, &selection, &groups, &alerts, &bindings, &input, &guide,
+        );
+        assert_eq!(
+            read_primary(PrimaryField::Ammo, unknown_inventory),
+            serde_json::Value::Null,
+            "missing main inventory must remain unknown, not fabricated as zero"
+        );
+
+        replica
+            .economy
+            .inventories
+            .push(turts_net_protocol::InventoryState {
+                unit: UnitId(7),
+                port: turts_net_protocol::InventoryPort::Main,
+                items: vec![],
+            });
+        replica.units.get_mut(&7).unwrap().owner_slot = 2;
+        let foreign = context(
+            &replica, &content, &selection, &groups, &alerts, &bindings, &input, &guide,
+        );
+        assert_eq!(
+            read_primary(PrimaryField::Ammo, foreign),
+            serde_json::Value::Null,
+            "foreign ammo remains private"
         );
     }
 
@@ -2103,7 +2244,7 @@ mod tests {
         );
         assert_eq!(
             recipe.get(ItemField::Reason),
-            Some(&serde_json::json!("muster:ore 34/35"))
+            Some(&serde_json::json!("Needs 35 muster:ore (34/35)"))
         );
         assert_eq!(
             recipe.get(ItemField::Cost),

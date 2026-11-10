@@ -21,6 +21,7 @@ serde = { workspace = true }
 ron = { workspace = true }
 bevy_app = { workspace = true }
 bevy_math = { workspace = true }
+turts_interaction = { path = "../turts_interaction" }
 
 [[test]]
 name = "economy_accounting"

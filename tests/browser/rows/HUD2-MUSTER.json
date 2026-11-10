@@ -1,0 +1,9 @@
+{
+  "row": "HUD2-MUSTER",
+  "package": "mods/muster",
+  "driver": "tests/browser/hud2-driver.js",
+  "oracle": "tests/browser/hud2-oracle.js",
+  "runs": "ci",
+  "capture_scene_checkpoints": true,
+  "viewports": ["1280x720"]
+}

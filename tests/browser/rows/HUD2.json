@@ -1,0 +1,10 @@
+{
+  "row": "HUD2",
+  "package": "mods/forge",
+  "driver": "tests/browser/hud2-driver.js",
+  "oracle": "tests/browser/hud2-oracle.js",
+  "runs": "ci",
+  "scenario": "forge",
+  "capture_scene_checkpoints": true,
+  "viewports": ["1280x720"]
+}
