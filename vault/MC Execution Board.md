@@ -8,7 +8,7 @@ source: codex
 
 # MC execution board
 
-State: ACTIVE on the desktop: 17/25 MC lanes complete; 80/170 build runs registered. Task10 merged at ea943bf and all integration native/QA/frozen/web gates passed. The actual HD1 process also passed in the assigned integration cache; no duplicate cache. Task15 RUN78 owns the sole compiler/cache/runtime. Two actual AUD1 pairs expose corrected detector calibration and the designed old-session rejoin race; C229 advances bounded retry/countdown from Task16: the compiled named red101 is followed by9 draft native passes0. Final ingest/driver controls, WASM check and browser validation remain. Actual alert playback remains unproved and the driver route is being repaired. Task17 RUN80 independently passed all C227/C231 source repairs; native/browser gates wait for the cache. RUN79 remains source-only until its later runtime lease. Wave7 push/CI follows Tasks15 and17. Main bb611bd is unchanged. CEO PT1/PT2 stop remains at Task23.
+State: ACTIVE on the desktop: 17/25 MC lanes complete; 80/170 build runs registered. Task10 merged at ea943bf and all integration native/QA/frozen/web gates passed. The actual HD1 process also passed in the assigned integration cache; no duplicate cache. Task15 RUN78 owns the sole compiler/cache/runtime. Current167 focused native tests and locked WASM check pass; C236 actual dedicated-Xvfb headed AUD1 passes both attempts, including real gains, persisted volumes and same-ID/slot reload. The remaining ORD7/ORD6/ORD2/ALR1/NOORD pairs are running on frozen source. Candidate commit, full gates, plants and final independent runtime review still remain. Task17 RUN80 independently passed all C227/C231 source repairs; native/browser gates wait for the cache. RUN79 remains source-only until its later runtime lease. Wave7 push/CI follows Tasks15 and17. Main bb611bd is unchanged. CEO PT1/PT2 stop remains at Task23.
 
 Plan: `docs/superpowers/plans/2026-10-29-mc-player-control.md`.
 Design of record: `docs/superpowers/specs/2026-10-29-mc-player-control-design.md`, revision14 at mainf050e42.
@@ -83,7 +83,7 @@ CI trigger: `.github/workflows/ci.yml:2-5` runs pushes to main and pull requests
 | T5 | 6 | 4, 6, 19 | codex/mc-t5 | COMPLETE mergee214ccc from98147ae. RUN65 PASS0High,15independentprobes/ownplant0-101-0; alltaskgates/19GREF/2requiredplants; integration11/11gates0,1419/0/19,T7 137frames/53moving. Lane removed after provenance/hold checks; branch retained. |
 | T13 | 6 | 4, 6, 9, 11, 19, 20 | codex/mc-t13 | COMPLETE merge60082da; candidate9ae04f4, independent0High/0Medium, normal/requiredplants/native19/actualforeignsolid closed, fresh5000VIS2record; native10integrationgates0 (1446/0/19), T7 137frames/53moving exit0; lane removed, branch/evidence retained. |
 | T10 | 7 | 5, 9, 11, 19, 20 | codex/mc-t10 | COMPLETE b051e04, merged ea943bf; RUN77 0High/0unresolvedMedium; all integration gates and actual non10 native proof0; lane retired. |
-| T15 | 7 | 4, 7, 12, 13 | codex/mc-t15 | ACTIVE RUN78 sole runtime; focused native green; AUD1 pair2samePIDreloadfail; C229 boundedretry/redfirst and lawfulpixel/audio-route repairs pending. RUN79 independent source review; no candidate/fullrowgreen yet. |
+| T15 | 7 | 4, 7, 12, 13 | codex/mc-t15 | ACTIVE RUN78 sole runtime; native167/WASM0, actual C236 headed AUD1 2/2green0; otherfivepairs running. Fullcommit/gates/plants/independent runtime review stillpending. |
 | T17 | 7 | 3, 12, 13, 19, 20 | codex/mc-t17 | SOURCE READY UNCOMPILED; RUN76 ended102WIP, root C227 bounded repairs/RUN80 sourcePASS; no target. New builder row needed after15merge/rebase/cachehandoff. |
 | T14 | 8 | 5, 12, 13, 15 | codex/mc-t14 | NOT STARTED |
 | T16 | 8 | 7, 12, 15 | codex/mc-t16 | OPEN; volume/id subsets advanced underC189/C225; C229 retry/countdown advanced forAUD1. FullTask16rows/threewindows/backendreview remain unstarted. |
@@ -1928,3 +1928,6 @@ C235profileauditCORRECTION: C233andC234pairsALLactualheaded0/headlessTRUE, despi
 
 
 C236: validheadedC235pair actualsamePIDslot0rejoin10.509s/12.638s PARTIAL; fullAUD1failedwrongsliderstatesfirst/falseundefinedvoicecountsecond. Realpeak1/nooverlap, no mixervoicebugproved. RootJSvisibleper-sliderpre/postthumbackbeforeNEXTmove+actualframeproof; actualmaprequired/missingvoicekey0/null2reject. SamePNGcontrols0/79sourcePASSc08c7e83+16780932; Rust167/WASM0unchanged. FreshproperheadedXvfbpairGO; no redundantnative/WASMJS-onlyreruns.80/170;17/25.
+
+
+AUD1FIRSTVALIDGREEN: C236 wrapper/run078edb1e actual0/sourceunchanged/defaultcachesabsent169.344s; bothprofilesheadlessFALSE/display106/flags1. Completion0both, sameexactclient/serverPIDslot0twice, actualcontrols.9/.8/.7/.6/restoredrealcategorysinks. Rootauditedrawhash/headers/profiles/receipts. FullTask15unaccepted. Remainingfivepairbatch currentlyrunning inexactORD7/ORD6/ORD2/ALR1/NOORDorder; artifactlabelC237isbatchidentifier, notanewruling.80/170;17/25.
