@@ -3080,3 +3080,14 @@ Alternative not taken: block an independently authorized repair behind unrelated
 ## RUN101 registered: Task22 repaired-source independent recheck
 
 Root verifies all sixteen RUN100 source-v2 hashes and SHA256SUMS e8a47c51 plus source reportc8da53a4 before dispatch. New Sol/high source-only recheck is Task22run5, global101/170. No source/compiler/cache/GPU/runtime handoff. RUN100 finished five repairs with pure controls/format/syntax only; none is native/process green. RUN98 remains completed NOT SOURCE READY on its original packet; final runtime/own-plant review remains mandatory.
+
+
+## C333: Repair the final GMA witness coupling during active source recheck
+
+Conflict: RUN101 finds a High uncompiled GMU key-reference typo in RUN100 (integer last still passed as a reference/dereferenced), plus residual Medium GMA witness coupling: arbitrary moving units and unrelated stationary close actors can satisfy independent any predicates. R3 requires the same close actors to be the moving actors. RUN100's source-only success never claimed native compilation.
+
+Choice: root makes a bounded single-file source repair while RUN101 continues independent review. Correct get(&last)/last value and couple each near unit's own prior/current movement to proximity in both GMA cases. Retain the complete pre-command stationary first group and existing full-run data preflight. Save two meaningful native negative/positive cases for stationary-close actors plus unrelated movers; all native tests remain uncompiled/unrun until cache lease. Do not spend another builder dispatch for this bounded already-reviewed correction. Active RUN101 must recheck exact new immutable bytes before source readiness.
+
+Evidence: RUN101 current-source lines324-329 type mismatch; lines274-283 and526-540 uncoupled predicates. Full exact reviewed original46a1e55a, repaired dceebf17f794c2a05b16fd34232079ac912c9e80ac42acadd69a945a0c36b989, diff/result and new16-path source-v3 manifest7a190eebef0fb161a3020d7f3f7e4fd9caf6d4046182ed446d9572de05d3e678 under PRIMARY/t22-root/run101-bounded-repair. Other fifteen source hashes match RUN100. rustfmt/diff0, no compiler/server/browser/GPU.
+
+Alternative not taken: call formatter success a native compile, accept a stationary close pair as concurrent crossing, drop the scenario witness, mislabel a compile issue as a process red, or waive independent recheck. Brief4 Medium/source correction and scheduling detail;101/170runs;20/25complete.
