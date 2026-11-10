@@ -1986,3 +1986,8 @@ The canonical marker pair passed profile checks and gave the required two semant
 ## C245: Test the actual singleton movement path
 
 The first schedule-only draft missed the direct singleton MoveTarget path and was not run. The reviewed replacement moves actual integration into FixedPreUpdate before Commands, with one registration and unchanged result ticks. Exact mutant3abf973a and patch9fa41b6f are source-approved; actual ORD7 red and exact-restored green are still required. Four other remaining mutants also passed source review. Root owns the runtime; the marker restored pair is active. No new run, product change or plant retirement.
+
+
+## C246: Verify actual cooldown cadence without weakening the row
+
+The effective-zero fault gives two actual headed browser failures. First stops at camera-centre; second reaches the designed cooldown-spacing assertion. Exact unchanged spacing and five-part suppression predicates reject both actual captures:2tick/0.1s repeated alerts at20Hz versus the required20ticks/1s. Full errors remain separate. Exact source restored; the unchanged complete ALR1 pair is active. No oracle/row change or browser rerun. Five earlier builder cycles have completed; final cooldown credit waits for full restored greens and independent review.
