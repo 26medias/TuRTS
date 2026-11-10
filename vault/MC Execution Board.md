@@ -62,7 +62,7 @@ CI trigger: `.github/workflows/ci.yml:2-5` runs pushes to main and pull requests
 
 ## 4. Tasks
 
-24 numbered tasks; task2 has two branches, for25lanes. Waves1–5 complete14lanes; Task5 adds the15th complete lane. Task13 RUN67 owns the sole cache/runtime, with RUN68 independent source review. Wave6 push/read follows Task13 acceptance and integration re-gate.
+24 numbered tasks; task2 has two branches, for25lanes. Waves1–7 complete19lanes. Wave8 is active: Task14 RUN82 owns the sole cache/runtime, RUN88 independently reviews it, Task16 RUN94 prepares source contracts, and Task22 source prep is frozen. Wave8 push/read follows all three merges and integration gates.
 
 | Task | Wave | Needs | Branch | State |
 | --- | --- | --- | --- | --- |
@@ -86,7 +86,7 @@ CI trigger: `.github/workflows/ci.yml:2-5` runs pushes to main and pull requests
 | T15 | 7 | 4, 7, 12, 13 | codex/mc-t15 | COMPLETE at merge731273e. Final0High/0unresolvedMedium; all task gates, nine builder plants, separate reviewer voice plant and12current headed row passes verified. All mandatory integration gates passed0. |
 | T17 | 7 | 3, 12, 13, 19, 20 | codex/mc-t17 | COMPLETE at merge 8ecfe4f. Final review 0 High/0 unresolved Medium; normal gates, five builder cycles, separate health cycle and six headed row passes verified. All integration gates pass; lane retired. |
 | T14 | 8 | 5, 12, 13, 15 | codex/mc-t14 | ACTIVE RUN82/RUN88; full MM1 and ALR1 two-headed pairs verified; C203 closed; native full6 approved; ORD5 C296 full-replay carry accepted439; ORD3/4 browser/gates/plants/finalreview pending; solecache |
-| T16 | 8 | 7, 12, 15 | codex/mc-t16 | OPEN; volume/id subsets advanced underC189/C225; C229 retry/countdown advanced forAUD1. FullTask16rows/threewindows/backendreview remain unstarted. |
+| T16 | 8 | 7, 12, 15 | codex/mc-t16 | ACTIVE SOURCE ONLY RUN94; bounded RUN93 source readiness verified. Native IO contracts/signature stubs prepared; real baseline, full implementation, seven rows, nine plants and final review remain. No cache/runtime lease. |
 | T22 | 8 | 6, 7, 10, 11, 13, 19, 20 | codex/mc-t22 | SOURCE PREP RUN87 underC269; no runtime/cache |
 | T21 | 9 | 14, 16, 17, 18, 20 | codex/mc-t21 | NOT STARTED |
 | T23 | 10 | 14, 15, 21, 22 | codex/mc-t23 | NOT STARTED |
@@ -2552,3 +2552,10 @@ Evidence: RUN88 actual candidate2 input timings and worker/node/gather definitio
 RUN93 independently verifies final oracle722a0b2e plus35unchangedf6paths. Root's final complete tuple and fixed-server-MatchId/accepted-new-Hello repairs close the reproduced source false-positive chains in the bounded FIRST native/guarded-diagnostic scope: full actual private-helper positive and43negative controls pass. Report3b03cff8, final36source tarf34969a9, snapshot14e8cda1. Real pixels, native compile, timing, storage and all7row acceptance remain unproven; canonical rows remain guarded. This is not fullTask16Highclosure or product acceptance.
 
 RUN94 Luna/high registered BEFORE continuation, Task16run9/estimate6 (below twice12/hard24),global94/170. Source-only remaining baseline/evaluator preparation whileTask14owns cache, then actual native/diagnostic baseline under explicit sole lease before relevant feature behavior changes. Preserve advanced Task15 menu/volume/ID/rejoin and every mandatory row/plant; no obsolete manufactured baseline.19/25complete; desktopworkcontinues.
+
+
+## Task14 ORD3 actual pair3f: modifier lookup failure retained
+
+Two actual headed Vulkan attempts completed the full physical driver through Gather/depletion, then the oracle failed its modifier bracket check. Wrapper raw0fa29bce exit1/sourceunchanged, DISPLAY116; pair audit875b5059 retains both completions. Actual input has Shift down94, Append release97 with shift_key true, Shift up98 in both runs. The oracle selected earlier unconsumed identical Shift keys instead. This is an instrument failure; no product red or row pass is credited.
+
+External candidate4 oracle6ba4271c binds all modifier actions in driver order; driver0f07dc29 and ORD3 row472a3822 remain unchanged. RUN88 reviews the frozen correction and executes the complete public judge against both retained actual runs with negative controls. Existing C296 permits semantic replay carry only if every current guard and artifact passes; otherwise report the exact failure and obtain missing physical evidence. No extra browser pair is authorized merely to repeat intact evidence. ORD4 source review remains active. Task16 RUN94 prepares real IO contracts and missing row semantics without compiler/runtime or feature acceptance.94/170runs;19/25complete.
