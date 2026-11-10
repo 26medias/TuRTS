@@ -2754,3 +2754,12 @@ Choice: authorize a default-off, bounded harness diagnostic around the actual GP
 Evidence: tests/browser/harness/run.js:180-195 creates the actual windows and waits for typed startup. Current C306 diagnostics collect real console/pageerror/requestfailed events at:356-364 and setup-failure pages at:438-449. Actual run t16-builder/run94/physical-slot1-headed-v2/run-20261110T170016Z-8oU4Hl retains C white pixels and empty bridge reads, 27console events/no overflow/no pageerror/requestfailed, server A/B only. Unchanged crates/turts_client_web/src/lib.rs first publication occurs in Last; installed Bevy renderer logs adapter selection before awaiting request_device. This is a causal hypothesis to measure, not a product verdict.
 
 Alternative not taken: raise readiness or reconnect bounds, guess a shader/network repair, add promise handlers that alter rejection observation, change device selection, or count setup failure as K27/product red. Brief4 instrument detail.96/170runs;20/25complete.
+
+
+## Task16 actual plugin and group integration progress
+
+Root independently verifies raw hashes, exit codes and source_unchanged receipts for native plugin baseline ec9e6d2e exit101 and same binding-load contract green107a4cbf exit0. This is actual PersistPlugin loading saved key_move=KeyQ from the verified mod namespace, beyond the isolated14helper tests. Root cold review of the in-progress filter finds engine defaults omitted unless authored; builder is adding full effective_actions validation and an engine-default reload contract. No full native/browser acceptance claim.
+
+Actual CoreAdapter snapshot/group integration test green4e1eff6a exit0: wait for accepted first Core frame, restore groups before subsequent Core.step, keep owned1/prune absent999, save match1/slot0. Its first run is green; restore-disabled4ad3a495 exit101 is a focused implementation sensitivity control, not a retroactive baseline and not one of the nine required post-commit/post-gate plants. Agent reports exact original restore; restored green rerun remains pending at this entry.
+
+Root prepares complete P1 DET1 RandomState and P2 all-slots-at-P mutant byte sets outside Git at primary target/mc-evidence/t22-root/plant-preparation. Both external rustfmt checks0 only. No Task22 source mutation, compiler or runtime; no sensitivity credit. Later exact-source recheck, independent review, actual named red/restored green remain required; other seven full byte sets remain unprepared.20/25complete;96/170runs; no new dispatch, cache or CEO stop.
