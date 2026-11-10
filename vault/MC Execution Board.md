@@ -8,7 +8,7 @@ source: codex
 
 # MC execution board
 
-State: MC is active on this desktop. 18 of 25 lanes are complete; 81 of 170 build runs are registered. Task 17 at 749f3c6 is accepted for integration after review with 0 High and 0 unresolved Medium findings. All normal gates pass: 1,519 native tests, 18 process acceptance tests, QA, wasm, boundaries and the 28 frozen tests. Six final headed browser attempts pass. All five builder mutation cycles and the independent health-row cycle have actual semantic reds, exact restoration and passing reruns. Root is merging and re-gating next; Task 17 is not counted complete until those gates pass. The sole cache is idle in Task 17. Wave 7 push and CI follow integration checks. Main bb611bd is unchanged. Task 23 stops for CEO PT1/PT2, logged not blind.
+State: MC is active on this desktop. 19 of 25 lanes are complete; 81 of 170 build runs are registered. Task 17 merged at 8ecfe4f after final review with 0 High and 0 unresolved Medium findings. All 11 integration gate records pass: native 1,519/0/21, QA, wasm, boundaries, unchanged frozen stream and headed T7 with 137 checked frames and 54 moving. The idle Task 17 worktree is retired; branch, WIP archives, exact final source archive and all runtime evidence are preserved. Root owns the sole cache in integration. Wave 7 push and hosted CI read are next, then Wave 8. Minimap/order rows, full shell/persistence/focus, group/performance instruments, legacy migration, human playtests and closeout remain. Main bb611bd is unchanged. Task 23 stops for CEO PT1/PT2, logged not blind.
 
 Plan: `docs/superpowers/plans/2026-10-29-mc-player-control.md`.
 Design of record: `docs/superpowers/specs/2026-10-29-mc-player-control-design.md`, revision14 at mainf050e42.
@@ -84,7 +84,7 @@ CI trigger: `.github/workflows/ci.yml:2-5` runs pushes to main and pull requests
 | T13 | 6 | 4, 6, 9, 11, 19, 20 | codex/mc-t13 | COMPLETE merge60082da; candidate9ae04f4, independent0High/0Medium, normal/requiredplants/native19/actualforeignsolid closed, fresh5000VIS2record; native10integrationgates0 (1446/0/19), T7 137frames/53moving exit0; lane removed, branch/evidence retained. |
 | T10 | 7 | 5, 9, 11, 19, 20 | codex/mc-t10 | COMPLETE b051e04, merged ea943bf; RUN77 0High/0unresolvedMedium; all integration gates and actual non10 native proof0; lane retired. |
 | T15 | 7 | 4, 7, 12, 13 | codex/mc-t15 | COMPLETE at merge731273e. Final0High/0unresolvedMedium; all task gates, nine builder plants, separate reviewer voice plant and12current headed row passes verified. All mandatory integration gates passed0. |
-| T17 | 7 | 3, 12, 13, 19, 20 | codex/mc-t17 | READY FOR INTEGRATION at 749f3c6. All normal gates, six headed passes, five builder cycles and independent health-row cycle pass. Review 0 High/0 unresolved Medium. Merge and integration gates remain. |
+| T17 | 7 | 3, 12, 13, 19, 20 | codex/mc-t17 | COMPLETE at merge 8ecfe4f. Final review 0 High/0 unresolved Medium; normal gates, five builder cycles, separate health cycle and six headed row passes verified. All integration gates pass; lane retired. |
 | T14 | 8 | 5, 12, 13, 15 | codex/mc-t14 | NOT STARTED |
 | T16 | 8 | 7, 12, 15 | codex/mc-t16 | OPEN; volume/id subsets advanced underC189/C225; C229 retry/countdown advanced forAUD1. FullTask16rows/threewindows/backendreview remain unstarted. |
 | T22 | 8 | 6, 7, 10, 11, 13, 19, 20 | codex/mc-t22 | NOT STARTED |
@@ -2129,3 +2129,7 @@ C259 count correction: the complete function has three open-state enum assertion
 ## Task 17 accepted for integration
 
 MC is active on this desktop. 18 of 25 lanes are complete; 81 of 170 build runs are registered. Task 17 at 749f3c6 is accepted for integration after review with 0 High and 0 unresolved Medium findings. All normal gates pass: 1,519 native tests, 18 process acceptance tests, QA, wasm, boundaries and the 28 frozen tests. Six final headed browser attempts pass. All five builder mutation cycles and the independent health-row cycle have actual semantic reds, exact restoration and passing reruns. Root is merging and re-gating next; Task 17 is not counted complete until those gates pass. The sole cache is idle in Task 17. Wave 7 push and CI follow integration checks. Main bb611bd is unchanged. Task 23 stops for CEO PT1/PT2, logged not blind.
+
+## Task 17 integration complete
+
+MC is active on this desktop. 19 of 25 lanes are complete; 81 of 170 build runs are registered. Task 17 merged at 8ecfe4f after final review with 0 High and 0 unresolved Medium findings. All 11 integration gate records pass: native 1,519/0/21, QA, wasm, boundaries, unchanged frozen stream and headed T7 with 137 checked frames and 54 moving. The idle Task 17 worktree is retired; branch, WIP archives, exact final source archive and all runtime evidence are preserved. Root owns the sole cache in integration. Wave 7 push and hosted CI read are next, then Wave 8. Minimap/order rows, full shell/persistence/focus, group/performance instruments, legacy migration, human playtests and closeout remain. Main bb611bd is unchanged. Task 23 stops for CEO PT1/PT2, logged not blind.

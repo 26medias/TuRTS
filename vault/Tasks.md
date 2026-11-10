@@ -104,7 +104,7 @@ Human usability amendment1354e33: catalog-derived principal labels/named local s
 
 ## Current MC status
 
-MC is active on this desktop. 18 of 25 lanes are complete; 81 of 170 build runs are registered. Task 17 at 749f3c6 is accepted for integration after review with 0 High and 0 unresolved Medium findings. All normal gates pass: 1,519 native tests, 18 process acceptance tests, QA, wasm, boundaries and the 28 frozen tests. Six final headed browser attempts pass. All five builder mutation cycles and the independent health-row cycle have actual semantic reds, exact restoration and passing reruns. Root is merging and re-gating next; Task 17 is not counted complete until those gates pass. The sole cache is idle in Task 17. Wave 7 push and CI follow integration checks. Main bb611bd is unchanged. Task 23 stops for CEO PT1/PT2, logged not blind.
+MC is active on this desktop. 19 of 25 lanes are complete; 81 of 170 build runs are registered. Task 17 merged at 8ecfe4f after final review with 0 High and 0 unresolved Medium findings. All 11 integration gate records pass: native 1,519/0/21, QA, wasm, boundaries, unchanged frozen stream and headed T7 with 137 checked frames and 54 moving. The idle Task 17 worktree is retired; branch, WIP archives, exact final source archive and all runtime evidence are preserved. Root owns the sole cache in integration. Wave 7 push and hosted CI read are next, then Wave 8. Minimap/order rows, full shell/persistence/focus, group/performance instruments, legacy migration, human playtests and closeout remain. Main bb611bd is unchanged. Task 23 stops for CEO PT1/PT2, logged not blind.
 
 ## Historical MC checkpoints
 
@@ -166,7 +166,7 @@ ACTIVE Wave7:16/25complete;74/170buildruns. RUN72 Task10 solelocalruntime/cache;
 
 ## MC current desktop checkpoint
 
-MC is active on this desktop. 18 of 25 lanes are complete; 81 of 170 build runs are registered. Task 17 at 749f3c6 is accepted for integration after review with 0 High and 0 unresolved Medium findings. All normal gates pass: 1,519 native tests, 18 process acceptance tests, QA, wasm, boundaries and the 28 frozen tests. Six final headed browser attempts pass. All five builder mutation cycles and the independent health-row cycle have actual semantic reds, exact restoration and passing reruns. Root is merging and re-gating next; Task 17 is not counted complete until those gates pass. The sole cache is idle in Task 17. Wave 7 push and CI follow integration checks. Main bb611bd is unchanged. Task 23 stops for CEO PT1/PT2, logged not blind.
+MC is active on this desktop. 19 of 25 lanes are complete; 81 of 170 build runs are registered. Task 17 merged at 8ecfe4f after final review with 0 High and 0 unresolved Medium findings. All 11 integration gate records pass: native 1,519/0/21, QA, wasm, boundaries, unchanged frozen stream and headed T7 with 137 checked frames and 54 moving. The idle Task 17 worktree is retired; branch, WIP archives, exact final source archive and all runtime evidence are preserved. Root owns the sole cache in integration. Wave 7 push and hosted CI read are next, then Wave 8. Minimap/order rows, full shell/persistence/focus, group/performance instruments, legacy migration, human playtests and closeout remain. Main bb611bd is unchanged. Task 23 stops for CEO PT1/PT2, logged not blind.
 
 
 ## MC final native gate and current QA repair
