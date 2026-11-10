@@ -1981,3 +1981,8 @@ The old21fc9d2c fault only clears reported accepted units after queue/applicatio
 MC is active on this desktop. 17 of 25 lanes are complete; 80 of 170 build runs are registered. Task15 normal gates at52ecf3c pass. Corrected atomic, readable-refusal and bucket cycles have passed independent artifact review; the old reporting-only atomic fault remains uncredited. The marker fault has two valid headed semantic reds and is restored byte-for-byte; its current green pair is next. Root now owns the sole compiler/browser/lane-source lease (C244). RUN78 prepares five remaining mutant sets outside Git; RUN79 reviews source and artifacts, with its independent runtime plant still pending. Task17 source QA passes with102pending paths unchanged; runtime waits for the cache. Wave7 push/CI follows Tasks15/17. Mainbb611bd is unchanged. Task23 stops for CEO PT1/PT2, not blind.
 
 The canonical marker pair passed profile checks and gave the required two semantic reds. The earlier headless pair is preserved as setup evidence only. Root restored the exact committed preimage before its current green pair. All runtime launches now use the approved helper; no new run is spent.
+
+
+## C245: Test the actual singleton movement path
+
+The first schedule-only draft missed the direct singleton MoveTarget path and was not run. The reviewed replacement moves actual integration into FixedPreUpdate before Commands, with one registration and unchanged result ticks. Exact mutant3abf973a and patch9fa41b6f are source-approved; actual ORD7 red and exact-restored green are still required. Four other remaining mutants also passed source review. Root owns the runtime; the marker restored pair is active. No new run, product change or plant retirement.
