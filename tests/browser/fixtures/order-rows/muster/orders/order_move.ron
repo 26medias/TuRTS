@@ -1,0 +1,1 @@
+(id: "order_move", name: "Move selected units", behaviour: Move, target: PointOrUnit, fire: Some(Never), engage: None, icon: "muster_icon_move", hotkey: "key_move", cursor: Some("muster_cursor_move"), card: Some((row: 0, column: 0)), units: ["muster:trooper", "muster:worker", "muster:beacon", "muster:dummy"], description: "Move the selected units to a point or another unit.")

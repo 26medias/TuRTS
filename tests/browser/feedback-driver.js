@@ -49,7 +49,7 @@ async function drive(io, params) {
         const origin = selectAttackOrigin(image, SLOT_RGB[0], COLOR_TOLERANCE, enemy);
         await io.click(origin.x, origin.y, "left");
         await io.wait(100);
-        await savePng(io, "alr1-attack-origin.png");
+        await savePngWithBase64(io, "alr1-attack-origin.png");
         await io.click(enemy.x, enemy.y, "right");
         const alert = await waitForAlr1VisibleRow(io);
         await io.save("alr1-first.png", alert.screenshot);

@@ -31,6 +31,14 @@ pub struct WidgetEnabled(pub bool);
 #[derive(Component, Debug, Clone, PartialEq)]
 pub struct WidgetFill(pub Option<Fill>);
 
+/// Render-only metadata for the authored minimap widget root.
+#[derive(Component, Debug, Clone, Copy, PartialEq)]
+pub struct MinimapViewConfig {
+    pub unit_size: f32,
+    pub frame_colour: Option<Color>,
+    pub ping_colour: Option<Color>,
+}
+
 #[derive(Component, Debug, Clone, Copy, PartialEq, Eq)]
 pub struct WidgetText;
 

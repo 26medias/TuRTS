@@ -93,6 +93,38 @@ test("launcher carries HUD fixture and stage metadata into readonly oracle param
     assert.deepEqual(params.stages, stages);
 });
 
+test("launcher carries explicit MM1 public map and pixel-oracle parameters", () => {
+    const minimapParams = {
+        map_size: [64, 48],
+        camera_vertical_fov_degrees: 60,
+        slot_colours: ["#0072B2", "#E69F00"],
+        ping_colour: "#ffcc00",
+        frame_colour: "#ffffff",
+        background_colour: "#17232f",
+        minimap_inset: 8,
+        minimap_size: 200,
+    };
+    const { params } = launchParams({ row: "MM1", ...minimapParams });
+    for (const [key, value] of Object.entries(minimapParams)) assert.deepEqual(params[key], value);
+});
+
+test("the actual MM1 row produces finite authored viewport and minimap camera targets", () => {
+    const rowPath = path.join(__dirname, "../rows/MM1.json");
+    const row = JSON.parse(fs.readFileSync(rowPath, "utf8"));
+    const { params } = launchParams(row, "1280x720");
+    assert.deepEqual(params.map_size, [64, 48]);
+    assert.deepEqual(params.viewport, { width: 1280, height: 720, device_scale_factor: 1 });
+    assert.deepEqual([params.minimap_inset, params.minimap_size], [8, 200]);
+    assert.deepEqual(params.slot_colours, ["#0072B2", "#E69F00"]);
+    assert.deepEqual([params.ping_colour, params.frame_colour, params.background_colour], ["#ffcc00", "#ffffff", "#17232f"]);
+    const rect = { x: params.viewport.width - params.minimap_inset - params.minimap_size,
+        y: params.viewport.height - params.minimap_inset - params.minimap_size, size: params.minimap_size };
+    for (const [u, v] of [[0.87, 0.28], [0.18, 0.22], [0.28, 0.72], [0.72, 0.32], [0.95, 0.95]]) {
+        assert(Number.isFinite(rect.x + rect.size * u));
+        assert(Number.isFinite(rect.y + rect.size * v));
+    }
+});
+
 test("ordinary rows keep checkpoint capture disabled", () => {
     assert.notEqual(launchParams({ row: "CLICK9" }).params.capture_scene_checkpoints, true);
     assert.equal(launchParams({ row: "CAM1", capture_scene_checkpoints: false }).params.capture_scene_checkpoints, false);

@@ -2,7 +2,7 @@
 "use strict";
 
 const assert = require("node:assert/strict");
-const { decodePng } = require("./harness/png.js");
+const { decodePng, pixelAt } = require("./harness/png.js");
 
 async function judge(view, params) {
     const row = params.row;
@@ -225,6 +225,8 @@ async function judgeAlr1(view, input, checkpoints, params) {
     const actualPing = (first.debug.alert_pings || []).find((ping) => ping.alert_id === "muster_unit_damaged"
         && ping.text === visibleAlert.text && ping.x === action?.x && ping.y === action?.y);
     assert(actualPing, "the physically clicked visible row action resolves to its matching real alert ping");
+    assert.equal(actualPing.unit, ownUnit,
+        "ALR1 minimap pixels and cooldown evidence must identify the same selected unit that received damage");
     const matchingAlertFrame = causalFrames.find((frame) => frame.replica_tick === actualPing.tick
         && frame.feedback?.alerts?.some((alert) => alert.id === actualPing.alert_id
             && alert.unit === actualPing.unit && alert.position?.x === actualPing.x && alert.position?.y === actualPing.y));
@@ -232,6 +234,18 @@ async function judgeAlr1(view, input, checkpoints, params) {
     assert(Number.isInteger(actualPing.unit), "the clicked row ping identifies its actual source unit");
     assert.equal(action.x, actualPing.x, "the clicked visible row action uses its matching ping's player-unit x position");
     assert.equal(action.y, actualPing.y, "the clicked visible row action uses its matching ping's player-unit y position");
+    const firstImage = decodePng(Buffer.from((await view.serverFile("alr1-first.png.b64")).trim(), "base64"));
+    const noPingImage = decodePng(Buffer.from((await view.serverFile("alr1-attack-origin.png.b64")).trim(), "base64"));
+    assertAlr1MinimapPixels({
+        positiveImage: firstImage,
+        negativeImage: noPingImage,
+        scene: first.scene,
+        noPingScene: attackOrigin.scene,
+        noPingDebug: attackOrigin.debug,
+        debug: first.debug,
+        ping: actualPing,
+        params,
+    });
     const clickFrame = frameForSequence(afterAlertClick.debug, clickSequence);
     assert.deepEqual(clickFrame.selection, selectionBeforeAlertClick, "alert centering preserves the live selection from immediately before the click");
     assert.equal(clickFrame.emitted_orders?.length, 0, "alert centering does not emit a network order");
@@ -279,22 +293,40 @@ async function judgeAlr1(view, input, checkpoints, params) {
     const emittedPing = pingFrame.feedback.alerts.find((alert) => alert.id === ping.alert_id && alert.unit === ping.unit && pingFrame.replica_tick === ping.tick);
     assert.equal(emittedPing.position?.x, ping.x, "ALR1 ping uses the alert's actual unit x position");
     assert.equal(emittedPing.position?.y, ping.y, "ALR1 ping uses the alert's actual unit y position");
+    const acceptedAttackResult = acceptedAttack.results.find((result) => result.seq === attackOrder.seq
+        && result.unit === ownUnit && result.status === "accepted");
+    assert(Number.isSafeInteger(acceptedAttackResult?.tick), "ALR1 binds damage to the actual accepted Unit Attack tick");
+    const baselineTick = attackOrigin.debug.replicated_world?.tick;
+    const baselineHealth = attackOrigin.debug.replicated_world?.healths?.find((entry) => entry.unit === ownUnit)?.current;
+    assert(Number.isSafeInteger(baselineTick) && Number.isFinite(baselineHealth),
+        "ALR1 captures the real selected-unit health and replica tick before the attack stimulus");
+    const sourceHistory = world.health_trace?.find((entry) => entry.unit_id === ownUnit)?.entries || [];
+    const samplesAtPing = sourceHistory.filter((sample) => Number.isSafeInteger(sample.tick)
+        && sample.tick > baselineTick && sample.tick >= acceptedAttackResult.tick && sample.tick <= pingFrame.replica_tick)
+        .sort((left, right) => left.tick - right.tick);
+    const firstDrop = samplesAtPing.find((sample) => sample.current < baselineHealth);
+    const precedingSample = firstDrop && sourceHistory.filter((sample) => sample.tick < firstDrop.tick)
+        .sort((left, right) => left.tick - right.tick).at(-1);
+    const latestAtPing = samplesAtPing.at(-1);
+    assert(firstDrop && precedingSample && firstDrop.current < precedingSample.current
+        && precedingSample.current >= baselineHealth && latestAtPing?.current < baselineHealth,
+    "ALR1 ping observer follows an adjacent same-unit health drop after the pre-attack baseline and accepted attack");
+    const finalOwnHealth = world.healths?.find((entry) => entry.unit === ownUnit)?.current;
+    assert(Number.isFinite(finalOwnHealth) && finalOwnHealth < baselineHealth,
+        "ALR1 final capture retains the same surviving ping source at lower health than before the attack");
     assert((late.debug.audio.sink_observations || []).some((sample) =>
         sample.sound_id === "muster:muster_alert" && sample.category === "alerts"
             && sample.request_frame_index === pingFrame.frame_index),
     "ALR1 observed the real alert OGG sink requested in the ping's actual frame");
-    const suppressedPair = damageTicks.slice(1).some((secondTick, index) => {
-        const firstTick = damageTicks[index];
-        const matchingPing = pings.some((candidate) => candidate.tick === firstTick);
-        const withinCooldown = secondTick > firstTick && secondTick - firstTick < cooldownTicks;
-        const noRepeatPing = !pings.some((candidate) => candidate.tick > firstTick && candidate.tick <= secondTick);
-        const firstAlertFrame = retainedFrames.some((frame) => frame.replica_tick === firstTick
-            && frame.feedback?.alerts?.some((alert) => alert.id === "muster_unit_damaged" && alert.unit === ownUnit));
-        const noRepeatAlertFrame = !retainedFrames.some((frame) => frame.replica_tick > firstTick && frame.replica_tick <= secondTick
-            && frame.feedback?.alerts?.some((alert) => alert.id === "muster_unit_damaged" && alert.unit === ownUnit));
-        return matchingPing && withinCooldown && noRepeatPing && firstAlertFrame && noRepeatAlertFrame;
-    });
-    assert(suppressedPair, "ALR1 has two actual damage transitions within the one-second cooldown and no second ping");
+    const suppressedDrop = damageTicks.find((dropTick) => dropTick > pingFrame.replica_tick
+        && dropTick - pingFrame.replica_tick < cooldownTicks);
+    const noRepeatPing = suppressedDrop && !pings.some((candidate) =>
+        candidate.tick > pingFrame.replica_tick && candidate.tick <= suppressedDrop);
+    const noRepeatAlertFrame = suppressedDrop && !retainedFrames.some((frame) =>
+        frame.replica_tick > pingFrame.replica_tick && frame.replica_tick <= suppressedDrop
+        && frame.feedback?.alerts?.some((alert) => alert.id === "muster_unit_damaged" && alert.unit === ownUnit));
+    assert(suppressedDrop && noRepeatPing && noRepeatAlertFrame,
+        "ALR1 has a second actual health drop after the emitted ping within the one-second cooldown, with no repeated alert");
     assertObservedSound(first.debug.audio, "muster:muster_alert", "alerts",
         "ALR1 observed the real alert OGG sink in the alerts category");
 }
@@ -325,6 +357,86 @@ function whitePixelsInRect(image, rect, scale) {
         }
     }
     return count;
+}
+
+function assertAlr1MinimapPixels({ positiveImage, negativeImage, scene, noPingScene, noPingDebug, debug, ping, params }) {
+    const mapSize = params.map_size;
+    assert(Array.isArray(mapSize) && mapSize.length === 2 && mapSize.every((value) => Number.isFinite(value) && value > 0),
+        "ALR1 needs the authored map dimensions to project the real alert position");
+    const widget = (scene.widgets || []).find((entry) => entry.id === "minimap");
+    const noPingWidget = (noPingScene.widgets || []).find((entry) => entry.id === "minimap");
+    assert(widget && Array.isArray(widget.rect) && widget.rect.length === 4 && widget.rect.every(Number.isFinite),
+        "ALR1 uses the actual C84 minimap widget rectangle");
+    assert(widget.rect[2] > 0 && widget.rect[3] > 0,
+        "ALR1 minimap widget has positive actual rendered dimensions");
+
+    const pingColour = parseFeedbackHex(params.ping_colour);
+    const orange = parseFeedbackHex(params.slot_colours?.[1]);
+    assert(Math.hypot(orange[0] - pingColour[0], orange[1] - pingColour[1], orange[2] - pingColour[2]) > 28,
+        "ALR1 ping threshold separates the configured ping from slot 1 orange");
+    assert(!((noPingDebug.alert_pings || []).some((candidate) =>
+        candidate.alert_id === ping.alert_id && candidate.unit === ping.unit)),
+    "ALR1 orange/no-ping image precedes the same unit's actual damage ping");
+    assert(noPingWidget && Array.isArray(noPingWidget.rect),
+        "ALR1 pre-attack C84 checkpoint exposes the actual minimap widget rectangle");
+    assert.deepEqual(noPingWidget.rect, widget.rect,
+        "ALR1 no-ping and ping screenshots use the same authored minimap rectangle");
+
+    const rect = widget.rect;
+    const point = [rect[0] + ping.x / mapSize[0] * rect[2], rect[1] + (1 - ping.y / mapSize[1]) * rect[3]];
+    const pingPixels = pixelsNearColour(positiveImage, point, 7, pingColour, 28);
+    const noPingPixels = pixelsNearColour(negativeImage, point, 7, pingColour, 28);
+    assert(noPingPixels.length < 2,
+        "ALR1 pre-attack screenshot has no configured ping-colour pixels at the actual future alert position");
+    assert(pingPixels.length >= 4,
+        "ALR1 actual alert must add rendered minimap pixels at its event-bound unit and world position");
+    const bounds = pixelBounds(pingPixels);
+    assert(bounds.width >= 2 && bounds.height >= 2 && bounds.width <= 15 && bounds.height <= 15,
+        "ALR1 minimap ping pixels form a compact visible cross at the actual alert position");
+
+    const owner = new Map((debug.replicated_world?.units || []).map((unit) => [unit.unit_id, unit.owner_slot]));
+    const foreign = (debug.replicated_world?.units || []).filter((unit) => owner.get(unit.unit_id) === 1
+        && Array.isArray(unit.pos) && unit.pos.length === 2 && unit.pos.every(Number.isFinite))
+        .sort((left, right) => feedbackDistance(right.pos, [ping.x, ping.y])
+            - feedbackDistance(left.pos, [ping.x, ping.y]));
+    const orangeControl = foreign.map((unit) => {
+        const center = [rect[0] + unit.pos[0] / mapSize[0] * rect[2],
+            rect[1] + (1 - unit.pos[1] / mapSize[1]) * rect[3]];
+        return { center, pixels: pixelsNearColour(positiveImage, center, 3, orange, 38) };
+    }).find((candidate) => candidate.pixels.length >= 2);
+    assert(orangeControl,
+        "ALR1 screenshot must show a real slot 1 orange minimap marker for the negative colour control");
+    assert(pixelsNearColour(positiveImage, orangeControl.center, 3, pingColour, 28).length < 2,
+        "ALR1 configured ping pixels do not falsely match the real orange slot 1 marker");
+}
+
+function pixelsNearColour(image, [cx, cy], radius, colour, tolerance) {
+    const matches = [];
+    for (let y = Math.max(0, Math.floor(cy - radius)); y <= Math.min(image.height - 1, Math.ceil(cy + radius)); y += 1) {
+        for (let x = Math.max(0, Math.floor(cx - radius)); x <= Math.min(image.width - 1, Math.ceil(cx + radius)); x += 1) {
+            const pixel = pixelAt(image, x, y);
+            if (pixel && pixel[3] >= 245 && Math.hypot(pixel[0] - colour[0], pixel[1] - colour[1], pixel[2] - colour[2]) <= tolerance) {
+                matches.push([x, y]);
+            }
+        }
+    }
+    return matches;
+}
+
+function pixelBounds(points) {
+    assert(points.length > 0, "pixel bounds require a visible component");
+    const xs = points.map((point) => point[0]);
+    const ys = points.map((point) => point[1]);
+    return { width: Math.max(...xs) - Math.min(...xs) + 1, height: Math.max(...ys) - Math.min(...ys) + 1 };
+}
+
+function feedbackDistance(left, right) {
+    return Math.hypot(left[0] - right[0], left[1] - right[1]);
+}
+
+function parseFeedbackHex(value) {
+    assert(/^#[0-9a-fA-F]{6}$/.test(value), `ALR1 invalid colour parameter ${value}`);
+    return [1, 3, 5].map((index) => Number.parseInt(value.slice(index, index + 2), 16));
 }
 
 async function judgeAud1(view, input, checkpoints, final) {
@@ -665,4 +777,4 @@ function assertClose(actual, expected, message) {
         `${message}: expected ${expected}, got ${actual}`);
 }
 
-module.exports = { judge };
+module.exports = { judge, assertAlr1MinimapPixels };
