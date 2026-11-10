@@ -2328,3 +2328,12 @@ Conflict: RUN88 finds that MM1 assertOrderFromInput only joins a physical pointe
 Choice: bind the actual retained emitted sequence and unit to the real per-unit accepted server result, with exact intended order/target from the same intent and actual current-order/movement effect when applicable. Reject missing/rejected/wrong-sequence/wrong-unit controls. Keep real attack movement/damage/ping causality underC277. Use existing actual producer fields: emitted_orders has intent_id,seq,order,units,target, not group/queue. Do not require invented fields or add a bridge merely to fit a draft. If later full order clauses need unavailable envelope data, propose a minimal actual observation export at the owning producer. Preserve failure/success chronology and existing guards.
 
 Evidence: tests/browser/mm1-oracle.js:242-258 emitted-only assertion; core_adapter.rs emitted_order_values actual producer; RUN88 Medium instrument finding; run1 retained seq1/unit21 accepted attick98. Alternative not taken: accept intent as execution, match unrelated accepted results, weaken real damage, or fabricate metadata. This is brief4 Medium instrument repair.88/170runs;19/25complete.
+
+
+## C280: Clip all minimap glyphs to the authored widget
+
+Conflict: RUN88 finds that clipping camera centerlines to map bounds does not clip the actual child glyph rectangles. A2x2 frame point at boundary0 has a negative left/top; dots and ping crosses can likewise draw outside a root with default Overflow::Visible.
+
+Choice: use the existing Overflow::clip() on the authored MinimapView root so unit/node/ping/frame children obey its real widget boundary, with the authored border and inherited visibility preserved. Add a focused boundary control and retain full real MM1 pixels. Make changes only after any active immutable run ends. This does not change production maps, keys, alert source, authored style or acceptance row.
+
+Evidence: widgets/mod.rs MinimapView setup; minimap.rs:428-430 frame glyph offset and cross/square placement helpers; RUN88 Medium source finding. Alternative not taken: allow glyphs to escape, weaken the interior frame/ping checks, or clamp only the center while ignoring glyph extent. This is brief4 Medium presentation repair using existing layout clipping.88/170runs;19/25complete.
