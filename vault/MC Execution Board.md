@@ -1873,3 +1873,6 @@ C220 records RUN79 consolidated source batch: H blank rendered alertTitle; M slo
 
 
 C220 addendum: keep actual ORD7 result-bearing causal frames in existing4096bounded retained_input history and preserve actual sink onset perentity, with separately observed currentgains; recent64/rolling96same-sink samples are FPS-flaky. C221 resolves plant conflict: actualtypedatomic-return mutation mustREDthe300mixednativecase;40validpixelcase isGREENcontrol asdesignrequires, notfictitiousred. No namedGREFplantretired. C222 authorizes genericNeeds<required><name>(available/required) and inventoryTextformatting whilepreservingtypedarrays/ownership/eligibility; noForgehardcodes/schemaaddition.79/170.
+
+
+C223 resolves knownemptyturretammo: actualownammo definition+presentmainInventoryState withnomatchingitem→0; missing/unknown/foreignremainNull. Task17sourceonlygenericresolver, actualHUD2proofrequired; no frozenForgecontentchange. RUN78 C220batch nowinsource, RUN79 independentreadbackbeforegates.79/170.

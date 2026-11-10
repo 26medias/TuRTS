@@ -494,3 +494,12 @@ Choice: authorize Task17's narrow generic presentation changes in widgets/source
 Keep SelectionPrimary.Inventory's typed array/ownership guards unchanged. Format its actual inventory rows into readable Text lines using existing port/name/on_hand/reserved/count/capacity fields; do not expose JSON or change unrelated value kinds. Share the display helper across direct Bind and Format paths rather than duplicate it. No new SelectionInventory schema/source is needed. Verify the actual lab UI text/values in HUD2 and retain structured-source tests; do not edit Forge frozen units/maps.
 
 This is the brief section4 nearest existing presentation mechanism/instrument choice. Source ownership overlaps Task15's alert source changes in a separate worktree; root will preserve both at rebase/merge. Alternative not taken: content-specific strings in the engine, raw JSON in the product, a redundant nested reason phrase, or a larger schema extension. Global79/170; no new agent run.
+
+
+## C223: Distinguish empty ammunition from unknown inventory
+
+Conflict: actual Forge turret7 has an ammo definition and a replicated main inventory state with an empty items array. PrimaryField.Ammo currently returns null when no matching item row exists, so the required HUD2 ammo quantity is blank instead of the known zero. This is not absent/private state.
+
+Choice: Task17 may resolve absent matching ammo item to available0 only when the own unit, ammo definition and actual main inventory state all exist. Keep null for an unknown/missing state or absent definition; keep the foreign guard and reserved-aware quantities. Do not change authored Forge contents or any unit definition. Add empty-versus-unknown/foreign source guards and verify actual empty-turret ammo0 in HUD2.
+
+This is the brief section4 nearest existing source/presentation mechanism choice. Alternative not taken: fabricate an inventory, expose private ammo, change frozen unit data, or show blank for a known empty state. Global79/170; no new agent run.
