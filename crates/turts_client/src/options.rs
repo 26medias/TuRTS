@@ -281,6 +281,14 @@ pub fn options_from_query(query: &str) -> Result<ClientOptions, String> {
     Ok(options)
 }
 
+/// Parse a browser sessionStorage player identity without losing u64 precision.
+pub fn parse_session_player_id(value: &str) -> Option<u64> {
+    if value.is_empty() || !value.bytes().all(|byte| byte.is_ascii_digit()) {
+        return None;
+    }
+    value.parse().ok()
+}
+
 /// A random player id for one session. It is a placeholder identity (design 5, `Hello`).
 /// It needs no `getrandom` dependency: native uses the random keys of the std `RandomState`;
 /// the browser uses `Math.random`.

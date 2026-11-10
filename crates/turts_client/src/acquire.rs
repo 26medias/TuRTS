@@ -37,6 +37,7 @@ pub struct PresentationContent {
     pub interface_package: Option<String>,
     pub images: BTreeMap<String, PresentationImage>,
     pub fonts: BTreeMap<String, Vec<u8>>,
+    pub sounds: BTreeMap<String, Vec<u8>>,
     pub cursor_assets: BTreeMap<String, (String, (u16, u16))>,
     pub cursors: BTreeMap<String, (String, (u16, u16))>,
 }
@@ -206,6 +207,15 @@ fn merge_asset_bytes(
             .ok_or_else(|| format!("{}: missing font asset {}", archive.id().0, font.path))?;
         presentation.fonts.insert(
             qualified_asset_id(&archive.id().0, &font.id),
+            bytes.to_vec(),
+        );
+    }
+    for sound in assets.sounds {
+        let bytes = archive
+            .file(&sound.path)
+            .ok_or_else(|| format!("{}: missing sound asset {}", archive.id().0, sound.path))?;
+        presentation.sounds.insert(
+            qualified_asset_id(&archive.id().0, &sound.id),
             bytes.to_vec(),
         );
     }

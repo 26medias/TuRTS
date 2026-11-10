@@ -10,6 +10,34 @@
 <body><div id="wrap"><canvas id="turts"></canvas></div>
 <script>
     window.__turts_seq_queue = [];
+    // Observe the real contexts Bevy creates before the WASM bundle initializes. A resume
+    // request is only a request: readiness is derived later from each context's actual state.
+    window.__turts_audio_contexts = [];
+    window.__turts_audio_gesture_seen = false;
+    const NativeAudioContext = window.AudioContext || window.webkitAudioContext;
+    if (NativeAudioContext) {
+        const ObservedAudioContext = function (...args) {
+            const context = new NativeAudioContext(...args);
+            window.__turts_audio_contexts.push(context);
+            return context;
+        };
+        ObservedAudioContext.prototype = NativeAudioContext.prototype;
+        Object.setPrototypeOf(ObservedAudioContext, NativeAudioContext);
+        window.AudioContext = ObservedAudioContext;
+    }
+    window.__turts_audio_context_states = () => window.__turts_audio_contexts.map(context => context.state);
+    window.__turts_audio_snapshot = () => ({
+        states: window.__turts_audio_context_states(),
+        gesture_seen: window.__turts_audio_gesture_seen,
+    });
+    const activateTurtsAudio = () => {
+        window.__turts_audio_gesture_seen = true;
+        for (const context of window.__turts_audio_contexts) {
+            if (context.state === "suspended") Promise.resolve(context.resume()).catch(() => {});
+        }
+    };
+    document.addEventListener("pointerdown", activateTurtsAudio, true);
+    document.addEventListener("keydown", activateTurtsAudio, true);
     const turtsCanvas = document.getElementById("turts");
     for (const type of ["pointerdown", "pointerup", "pointermove", "keydown", "keyup", "wheel"]) {
         document.addEventListener(type, event => {

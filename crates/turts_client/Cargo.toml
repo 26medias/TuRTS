@@ -11,7 +11,7 @@ turts_mod_api = { path = "../turts_mod_api" }
 turts_mod_runtime = { path = "../turts_mod_runtime" }
 turts_interaction = { path = "../turts_interaction" }
 turts_net_lightyear = { path = "../turts_net_lightyear", features = ["client"] }
-bevy = { workspace = true, features = ["3d", "ui", "default_font"] }
+bevy = { workspace = true, features = ["3d", "ui", "default_font", "bevy_audio", "vorbis"] }
 lightyear = { workspace = true, features = ["client"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
@@ -24,8 +24,10 @@ ureq = { workspace = true }
 
 [target.'cfg(target_family = "wasm")'.dependencies]
 gloo-net = { workspace = true }
+wasm-bindgen = { workspace = true }
 wasm-bindgen-futures = { workspace = true }
 js-sys = { workspace = true }
+web-sys = { workspace = true, features = ["Window", "Storage"] }
 
 [[bin]]
 name = "turts_client"

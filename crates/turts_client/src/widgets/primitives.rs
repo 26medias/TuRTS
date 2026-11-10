@@ -8,7 +8,7 @@ use super::placement;
 #[derive(Component, Debug, Clone, PartialEq, Eq)]
 pub struct AuthoredWidgetId(pub String);
 
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum WidgetAction {
     Input { name: String },
@@ -16,9 +16,10 @@ pub enum WidgetAction {
     Select { unit: u32 },
     Produce { producer: u32, content_id: String },
     CancelProduction { producer: u32, job: u64 },
+    CenterCamera { x: f32, y: f32 },
 }
 
-#[derive(Component, Debug, Clone, PartialEq, Eq)]
+#[derive(Component, Debug, Clone, PartialEq)]
 pub struct WidgetButtonAction(pub WidgetAction);
 
 #[derive(Component, Debug, Clone, PartialEq, Eq)]

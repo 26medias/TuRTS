@@ -22,11 +22,13 @@ pub mod options;
 pub mod palette;
 pub mod persist;
 pub mod present;
+pub mod rejoin;
 pub mod render;
 pub mod replica;
 mod scenario;
 pub mod ui_shared;
 pub mod visuals;
+pub mod volume_settings;
 pub mod widgets;
 
 #[cfg(not(target_family = "wasm"))]
@@ -53,8 +55,8 @@ use crate::ingest::{
     arm_drop_world_changes, ingest_messages,
 };
 use crate::join::{
-    Acquisition, JoinState, Phase, auto_move, drive_acquisition, on_connected, on_disconnected,
-    receive_rejection, start_connection, update_phase,
+    Acquisition, JoinState, Phase, advance_rejoin, auto_move, drive_acquisition, on_connected,
+    on_disconnected, receive_rejection, start_connection, update_phase,
 };
 use crate::options::{ClientOptions, random_player_id};
 use crate::present::{Presented, update_presented};
@@ -104,6 +106,7 @@ impl Plugin for ClientPlugin {
             .init_resource::<ReplicaState>()
             .init_resource::<CommandResults>()
             .init_resource::<JoinState>()
+            .init_resource::<crate::rejoin::RejoinController>()
             .init_resource::<Acquisition>()
             .init_resource::<Presented>()
             .init_resource::<DebugState>()
@@ -120,8 +123,9 @@ impl Plugin for ClientPlugin {
             Update,
             (
                 drive_acquisition,
-                start_connection,
                 update_phase,
+                advance_rejoin,
+                start_connection,
                 update_presented,
                 write_frame_log,
             )

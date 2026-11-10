@@ -1,0 +1,1 @@
+(id: "order_hold", name: "Hold this position", behaviour: Hold, target: None, fire: Some(InRange), engage: None, icon: "muster_icon_hold", hotkey: "key_hold", cursor: None, card: Some((row: 0, column: 2)), units: ["muster:trooper", "muster:worker", "muster:beacon", "muster:dummy"], description: "Keep the selected units at their current positions.")

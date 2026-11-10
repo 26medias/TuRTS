@@ -873,7 +873,7 @@ fn request_resync(hooks: &mut IngestHooks, counters: &mut IngestCounters) -> Opt
 pub fn ingest_messages(
     mut welcomes: Query<(Entity, &mut MessageReceiver<Welcome>)>,
     mut snapshots: Query<(Entity, &mut MessageReceiver<Snapshot>)>,
-    mut deltas: Query<&mut MessageReceiver<WorldDelta>>,
+    mut deltas: Query<(Entity, &mut MessageReceiver<WorldDelta>)>,
     mut acks: Query<(Entity, &mut MessageReceiver<CommandAck>)>,
     mut order_results: Query<(Entity, &mut MessageReceiver<OrderResult>)>,
     mut requests: Query<(Entity, &mut MessageSender<ResyncRequest>)>,
@@ -884,7 +884,10 @@ pub fn ingest_messages(
     mut witnesses: ResMut<ReceiptWitnesses>,
     acquired: Option<Res<AcquiredPackages>>,
     options: Res<ClientOpts>,
+    attempt: Option<Res<crate::rejoin::RejoinController>>,
+    time: Res<Time<Real>>,
 ) {
+    let real_now_secs = time.elapsed_secs_f64();
     state.config.max_buffered_batches = options.0.resync_buffer_batches.max(1);
     if state.content.is_none()
         && state.replica.is_none()
@@ -894,6 +897,10 @@ pub fn ingest_messages(
     }
     let mut messages = Vec::new();
     for (entity, mut receiver) in &mut welcomes {
+        if !is_current_attempt_at(attempt.as_deref(), entity, real_now_secs) {
+            receiver.receive().for_each(drop);
+            continue;
+        }
         let epoch = witnesses.epoch_for(entity.to_bits());
         for received in receiver.receive_with_tick() {
             witnesses.record_message(
@@ -904,6 +911,10 @@ pub fn ingest_messages(
         }
     }
     for (entity, mut receiver) in &mut snapshots {
+        if !is_current_attempt_at(attempt.as_deref(), entity, real_now_secs) {
+            receiver.receive().for_each(drop);
+            continue;
+        }
         let epoch = witnesses.epoch_for(entity.to_bits());
         for received in receiver.receive_with_tick() {
             append_raw_world_dto(
@@ -918,7 +929,11 @@ pub fn ingest_messages(
             messages.push(Incoming::Snapshot(received.data));
         }
     }
-    for mut receiver in deltas.iter_mut() {
+    for (entity, mut receiver) in &mut deltas {
+        if !is_current_attempt_at(attempt.as_deref(), entity, real_now_secs) {
+            receiver.receive().for_each(drop);
+            continue;
+        }
         for delta in receiver.receive() {
             append_raw_world_dto(options.0.raw_world_log.as_deref(), "world_delta", &delta);
             messages.push(Incoming::Deltas(delta));
@@ -926,6 +941,10 @@ pub fn ingest_messages(
     }
     // Acks before rejections: the server sends the ack at once.
     for (entity, mut receiver) in &mut acks {
+        if !is_current_attempt_at(attempt.as_deref(), entity, real_now_secs) {
+            receiver.receive().for_each(drop);
+            continue;
+        }
         let epoch = witnesses.epoch_for(entity.to_bits());
         for received in receiver.receive_with_tick() {
             witnesses.record_message(
@@ -947,6 +966,10 @@ pub fn ingest_messages(
         }
     }
     for (entity, mut receiver) in &mut order_results {
+        if !is_current_attempt_at(attempt.as_deref(), entity, real_now_secs) {
+            receiver.receive().for_each(drop);
+            continue;
+        }
         let epoch = witnesses.epoch_for(entity.to_bits());
         for received in receiver.receive_with_tick() {
             witnesses.record_message(
@@ -990,12 +1013,90 @@ pub fn ingest_messages(
         match message {
             Outgoing::ResyncRequest => {
                 for (entity, mut sender) in &mut requests {
+                    if !is_current_attempt_at(attempt.as_deref(), entity, real_now_secs) {
+                        continue;
+                    }
                     sender.send::<ReliableChannel>(ResyncRequest);
                     let epoch = witnesses.epoch_for(entity.to_bits());
                     witnesses.record_message(epoch, true);
                 }
             }
         }
+    }
+}
+
+fn is_current_attempt_at(
+    attempt: Option<&crate::rejoin::RejoinController>,
+    entity: Entity,
+    real_now_secs: f64,
+) -> bool {
+    attempt.is_none_or(|attempt| {
+        !attempt.stored_identity()
+            || attempt.accepts_messages_from_at(entity.to_bits(), real_now_secs)
+    })
+}
+
+#[cfg(test)]
+mod current_attempt_tests {
+    use super::is_current_attempt_at;
+    use crate::rejoin::{DUPLICATE_PLAYER_REASON, RejoinController};
+    use bevy::prelude::Entity;
+
+    #[test]
+    fn stored_identity_ingest_accepts_only_the_live_nonterminal_attempt() {
+        let entity = Entity::from_bits(7);
+        let mut state = RejoinController::for_stored_identity();
+        assert!(
+            !is_current_attempt_at(Some(&state), entity, 0.0),
+            "unowned messages are not a source of a Welcome"
+        );
+        assert!(state.start_attempt(entity.to_bits()));
+        assert!(state.on_connected(entity.to_bits()));
+        assert!(state.on_hello_sent(entity.to_bits()));
+        assert!(is_current_attempt_at(Some(&state), entity, 0.0));
+
+        state.on_rejection(entity.to_bits(), DUPLICATE_PLAYER_REASON.to_owned());
+        state.on_disconnected(entity.to_bits());
+        assert!(
+            !is_current_attempt_at(Some(&state), entity, 1.0),
+            "a disconnected transport cannot revive the replica"
+        );
+
+        state.advance(1.0, false);
+        let next = Entity::from_bits(8);
+        assert!(state.start_attempt(next.to_bits()));
+        assert!(state.on_connected(next.to_bits()));
+        assert!(state.on_hello_sent(next.to_bits()));
+        state.advance(14.0, false);
+        assert!(
+            !is_current_attempt_at(Some(&state), next, 15.0),
+            "a late Welcome after the terminal deadline is discarded"
+        );
+    }
+
+    #[test]
+    fn successful_stored_rejoin_keeps_live_authority_after_the_original_deadline() {
+        let current = Entity::from_bits(17);
+        let stale = Entity::from_bits(18);
+        let mut state = RejoinController::for_stored_identity();
+        assert!(state.start_attempt_at(current.to_bits(), 0.0));
+        assert!(state.on_connected_at(current.to_bits(), 0.0));
+        assert!(state.on_hello_sent_at(current.to_bits(), 0.0));
+        assert!(state.advance_to(10.0, true).is_none());
+
+        assert!(
+            is_current_attempt_at(Some(&state), current, 30.0),
+            "the successful live session remains authoritative beyond the bounded retry window"
+        );
+        assert!(
+            !is_current_attempt_at(Some(&state), stale, 30.0),
+            "success does not grant authority to a stale transport"
+        );
+        assert!(state.on_disconnected(current.to_bits()));
+        assert!(
+            !is_current_attempt_at(Some(&state), current, 30.0),
+            "a disconnected successful transport no longer supplies replica messages"
+        );
     }
 }
 

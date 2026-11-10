@@ -1,0 +1,13 @@
+{
+  "row": "ALR1",
+  "package": "tests/browser/fixtures/feedback/muster",
+  "driver": "tests/browser/feedback-driver.js",
+  "oracle": "tests/browser/feedback-oracle.js",
+  "runs": "ci",
+  "capture_scene_checkpoints": true,
+  "viewports": ["1280x720"],
+  "expected_alert_id": "muster_unit_damaged",
+  "expected_alert_text": "Unit under attack",
+  "cooldown_seconds": 1,
+  "expected_ping": true
+}

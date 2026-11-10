@@ -26,6 +26,21 @@ pub struct CursorFeed {
 pub struct StartedSound {
     pub id: String,
     pub category: String,
+    pub priority: i16,
+}
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct AudioSinkObservation {
+    pub play_id: u64,
+    pub player_entity: u64,
+    pub sound_id: String,
+    pub category: String,
+    pub gain: f32,
+    /// Core frame that requested this actual player entity.
+    pub request_frame_index: u64,
+    /// Core frame in which the real Bevy sink was observed.
+    pub observed_core_frame_index: u64,
+    /// Audio owner's monotonically increasing observation frame.
+    pub frame_index: u64,
 }
 #[derive(Resource, Default, Debug, Clone, Serialize)]
 pub struct UiSnapshotFeed(pub serde_json::Value);
@@ -36,8 +51,24 @@ pub struct AlertsFeed(pub Vec<serde_json::Value>);
 #[derive(Resource, Default, Debug, Clone, Serialize)]
 pub struct AudioFeed {
     pub context_state: Option<String>,
+    /// Actual states of every browser AudioContext captured by the pre-WASM hook.
+    pub context_states: Vec<String>,
+    /// True only after a real pointer/key activation reported by the page hook.
+    pub gesture_seen: bool,
     pub started: Vec<StartedSound>,
     pub categories: BTreeMap<String, f32>,
+    /// Count measured from real Bevy audio-player entities by the audio owner.
+    pub player_entities: usize,
+    /// Live player count per category, measured from real Bevy audio-player entities.
+    pub active_by_category: BTreeMap<String, usize>,
+    /// Peak live player count by category, sampled from real entities since the feed was reset.
+    pub peak_active_by_category: BTreeMap<String, usize>,
+    /// Bounded observations of real Bevy sinks, retained through despawn for browser evidence.
+    pub sink_observations: VecDeque<AudioSinkObservation>,
+    /// Current real sink/gain samples, refreshed after Bevy audio playback each frame.
+    pub current_sinks: Vec<AudioSinkObservation>,
+    /// Bounded per-frame real sink/gain history for post-playback volume checks.
+    pub gain_samples: VecDeque<AudioSinkObservation>,
 }
 #[derive(Resource, Default, Debug, Clone, Serialize)]
 pub struct ContextMenuFeed {

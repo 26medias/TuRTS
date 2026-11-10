@@ -40,7 +40,7 @@ function createDriverIo(pages, { outputDir, inputLog = [], initialCursor = { x: 
             try { return await operation(); }
             finally { await page().evaluate(() => { window.__turts_io_dispatching = false; window.__turts_io_seq = null; window.__turts_io_expected_event = null; }); }
         };
-        try { return await action(send); }
+        try { return await action(send, entry); }
         catch (error) {
             entry.error = String(error);
             throw error;
@@ -48,15 +48,42 @@ function createDriverIo(pages, { outputDir, inputLog = [], initialCursor = { x: 
             const trace = await page().evaluate((offset) => ({ actual: (window.__turts_io_actual_events || []).slice(offset.actual), downstream: (window.__turts_io_downstream_events || []).slice(offset.downstream) }), traceStart);
             entry.actual_events = trace.actual;
             entry.downstream_events = trace.downstream;
+            entry.completed_wall_time_ms = wallTime();
         }
     }
     const noEvent = (operation) => async () => operation();
     const io = {
-        async click(x, y, button = "left") {
-            return record("click", [x, y, button], ["pointermove", "pointerdown", "pointerup"], async (send) => {
+        async click(x, y, button = "left", options = undefined) {
+            if (options !== undefined && (!options || typeof options !== "object" || Array.isArray(options) || Object.keys(options).some((key) => key !== "count"))) {
+                throw new TypeError("click options may contain only count");
+            }
+            const count = options === undefined ? 1 : options?.count ?? 1;
+            if (!Number.isInteger(count) || count < 1 || count > 100) throw new RangeError("click count must be an integer from 1 to 100");
+            const args = options === undefined ? [x, y, button] : [x, y, button, structuredClone(options)];
+            return record("click", args, ["pointermove", "pointerdown", "pointerup"], async (send, entry) => {
                 await movePointer(x, y, send);
-                await send("pointerdown", () => page().mouse.down({ button }), { client_x: cursor[state.selected].x, client_y: cursor[state.selected].y });
-                await send("pointerup", () => page().mouse.up({ button }), { client_x: cursor[state.selected].x, client_y: cursor[state.selected].y });
+                let frameHold = false;
+                if (count > 1) {
+                    await page().evaluate(() => {
+                        if (typeof window.__turts_begin_bounded_input !== "function" || typeof window.__turts_end_bounded_input !== "function") {
+                            throw new Error("bounded input frame hook is unavailable");
+                        }
+                        window.__turts_begin_bounded_input();
+                    });
+                    frameHold = true;
+                    entry.frame_hold = { requested: true, count };
+                }
+                try {
+                    for (let index = 0; index < count; index += 1) {
+                        await send("pointerdown", () => page().mouse.down({ button }), { client_x: cursor[state.selected].x, client_y: cursor[state.selected].y });
+                        await send("pointerup", () => page().mouse.up({ button }), { client_x: cursor[state.selected].x, client_y: cursor[state.selected].y });
+                    }
+                } finally {
+                    if (frameHold) {
+                        const released = await page().evaluate(() => window.__turts_end_bounded_input());
+                        entry.frame_hold = { requested: true, count, ...released };
+                    }
+                }
             });
         },
         async drag(x0, y0, x1, y1, button = "left") {

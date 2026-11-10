@@ -21,7 +21,7 @@ use turts_mod_api::{
 use turts_net_protocol::{SlotId, UnitId};
 
 use crate::{
-    commands::{PendingCommands, submit_order},
+    commands::PendingCommands,
     debug_feed::{
         AudioFeed, ContextMenuFeed, CursorFeed, FocusFeed, GroupsFeed, MarkersShown, NoticesFeed,
         PlayerIdFeed, ResultsFeed, RingsShown, SelectionFeed,
@@ -93,6 +93,7 @@ pub struct CoreRuntime {
     last_ui_selection: Option<u32>,
     last_core_primary: Option<u32>,
     pending_sequences: Vec<u32>,
+    order_intents_this_frame: Vec<u64>,
     last_effects: Vec<ValueEffect>,
     markers: Vec<serde_json::Value>,
     next_order_intent_id: u64,
@@ -142,10 +143,13 @@ pub struct FrameRecord {
     pub frame_index: u64,
     pub wall_ms: u128,
     pub tick: u32,
+    pub replica_tick: Option<u32>,
     pub applied_seq: Vec<u32>,
     pub selection: Vec<u32>,
     pub positions: Vec<(u32, f32, f32)>,
     pub results: Vec<serde_json::Value>,
+    /// Actual sequence-assigned orders emitted by this frame's core intents.
+    pub emitted_orders: Vec<serde_json::Value>,
     pub markers: Vec<serde_json::Value>,
     pub rings: Vec<serde_json::Value>,
     pub feedback: crate::feedback::FrameFeedback,
@@ -573,6 +577,7 @@ fn drive_core_adapter(
     // A no-world, focus, or session early return must not let last frame's intent
     // masquerade as a click produced by this frame when visuals observe a reset.
     output.order_marker_feed.begin_interaction_frame();
+    runtime.order_intents_this_frame.clear();
     if runtime.content_index.is_none() && (state.content.is_some() || acquired.is_some()) {
         runtime.content_index = Some(content_index(&state, acquired.as_deref()));
     }
@@ -765,6 +770,10 @@ fn drive_core_adapter(
     for effect in effects {
         match effect {
             Effect::Send(order) if !output.status.reconnect_required => {
+                runtime.last_effects.push(ValueEffect {
+                    kind: "order_intent".into(),
+                    value: serde_json::json!({"units":order.units.iter().map(|unit| unit.0).collect::<Vec<_>>() }),
+                });
                 let marker_kind = state
                     .content
                     .as_ref()
@@ -779,9 +788,10 @@ fn drive_core_adapter(
                         turts_mod_api::Behaviour::Gather => Some("gather"),
                         _ => None,
                     });
+                let intent_id = runtime.next_order_intent_id;
+                runtime.next_order_intent_id = intent_id.wrapping_add(1);
+                runtime.order_intents_this_frame.push(intent_id);
                 if let Some(kind) = marker_kind {
-                    let intent_id = runtime.next_order_intent_id;
-                    runtime.next_order_intent_id = intent_id.wrapping_add(1);
                     output
                         .order_marker_feed
                         .intents
@@ -797,10 +807,8 @@ fn drive_core_adapter(
                         "units": order.units.iter().map(|unit| unit.0).collect::<Vec<_>>(),
                         "target": &order.target,
                     }));
-                    crate::commands::submit_visual_order(&mut output.pending, order, intent_id);
-                } else {
-                    submit_order(&mut output.pending, order)
                 }
+                crate::commands::submit_visual_order(&mut output.pending, order, intent_id);
             }
             Effect::SelectionChanged => {}
             Effect::Marker { point, kind } => {
@@ -912,6 +920,7 @@ fn close_core_frame(
     results: Res<CommandResults>,
     state: Res<ReplicaState>,
     mut results_feed: ResMut<ResultsFeed>,
+    order_marker_feed: Res<crate::commands::OrderMarkerFeed>,
     markers: Res<MarkersShown>,
     rings: Res<RingsShown>,
     feedback: Res<crate::feedback::FrameFeedback>,
@@ -929,10 +938,16 @@ fn close_core_frame(
     let result_records = result_values(new_results);
     results_feed.0.extend(result_records.iter().cloned());
     feeds.last_result_count = results.0.len();
+    let current_intents = std::mem::take(&mut runtime.order_intents_this_frame);
+    let emitted_orders = emitted_order_values(&order_marker_feed, &current_intents);
     let record = FrameRecord {
         frame_index: feeds.frame_index,
         wall_ms: presented.frame_ns / 1_000_000,
         tick: presented.latest_tick,
+        replica_tick: state
+            .replica
+            .as_ref()
+            .and_then(|replica| replica.last_applied_tick),
         applied_seq: std::mem::take(&mut runtime.pending_sequences),
         selection,
         positions: presented
@@ -941,6 +956,7 @@ fn close_core_frame(
             .map(|unit| (unit.unit_id, unit.pos.x, unit.pos.y))
             .collect(),
         results: result_records,
+        emitted_orders,
         markers: markers.0.clone(),
         rings: rings.0.clone(),
         feedback: feedback.clone(),
@@ -949,12 +965,38 @@ fn close_core_frame(
     while feeds.recent.len() > 64 {
         feeds.recent.pop_front();
     }
-    if !record.applied_seq.is_empty() {
+    // Historical name: this bounded causal history retains physical-input
+    // frames and later result-bearing frames needed to connect outcomes back
+    // to their emitted command sequence.
+    if !record.applied_seq.is_empty()
+        || !record.results.is_empty()
+        || !record.feedback.alerts.is_empty()
+    {
         feeds.retained_input.push_back(record);
         while feeds.retained_input.len() > 4096 {
             feeds.retained_input.pop_front();
         }
     }
+}
+
+fn emitted_order_values(
+    feed: &crate::commands::OrderMarkerFeed,
+    current_intents: &[u64],
+) -> Vec<serde_json::Value> {
+    let current_intents: HashSet<_> = current_intents.iter().copied().collect();
+    feed.sent
+        .iter()
+        .filter(|fragment| current_intents.contains(&fragment.intent_id))
+        .map(|fragment| {
+            serde_json::json!({
+                "intent_id": fragment.intent_id,
+                "seq": fragment.seq,
+                "order": &fragment.order.order,
+                "units": fragment.order.units.iter().map(|unit| unit.0).collect::<Vec<_>>(),
+                "target": &fragment.order.target,
+            })
+        })
+        .collect()
 }
 
 #[cfg(target_family = "wasm")]
@@ -1033,7 +1075,11 @@ impl Plugin for CoreAdapterPlugin {
 mod adapter_tests {
     use super::*;
     use crate::{
-        acquire::Acquired, commands::CommandSendStatus, ingest::WelcomeInfo, replica::UnitReplica,
+        acquire::Acquired,
+        commands::{CommandSendStatus, OrderMarkerFeed, SentOrderFragment},
+        feedback::FrameFeedback,
+        ingest::WelcomeInfo,
+        replica::UnitReplica,
     };
     use bevy::{
         input::{
@@ -1049,7 +1095,7 @@ mod adapter_tests {
     };
     use turts_mod_api::{CameraDef, CameraStart};
     use turts_mod_runtime::{archive::PackageArchive, pack::pack_dir};
-    use turts_net_protocol::Pos;
+    use turts_net_protocol::{OrderEnvelope, OrderTarget, Pos, QueueMode, UnitId};
 
     static ADAPTER_TEST_LOCK: Mutex<()> = Mutex::new(());
 
@@ -1057,6 +1103,36 @@ mod adapter_tests {
         ADAPTER_TEST_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    #[test]
+    fn frame_order_evidence_uses_only_sequence_assigned_fragments_for_this_core_intent() {
+        let order = OrderEnvelope {
+            order: "muster:move".into(),
+            units: vec![UnitId(7)],
+            target: OrderTarget::Point(Pos { x: 8.0, y: 9.0 }),
+            queue: QueueMode::Replace,
+            group: 0,
+        };
+        let mut feed = OrderMarkerFeed::default();
+        feed.sent.push_back(SentOrderFragment {
+            intent_id: 41,
+            seq: 101,
+            order: order.clone(),
+        });
+        feed.sent.push_back(SentOrderFragment {
+            intent_id: 40,
+            seq: 100,
+            order,
+        });
+
+        let emitted = emitted_order_values(&feed, &[41]);
+
+        assert_eq!(emitted.len(), 1);
+        assert_eq!(emitted[0]["intent_id"], 41);
+        assert_eq!(emitted[0]["seq"], 101);
+        assert_eq!(emitted[0]["units"], serde_json::json!([7]));
+        assert_eq!(emitted[0]["order"], "muster:move");
     }
 
     #[test]
@@ -2268,6 +2344,72 @@ mod adapter_tests {
         );
     }
 
+    #[test]
+    fn retained_input_keeps_causal_command_and_result_beyond_recent_frames() {
+        let _guard = test_lock();
+        let (mut app, _, _) = fixture_app();
+        app.world_mut()
+            .resource_mut::<CoreRuntime>()
+            .pending_sequences
+            .push(44);
+        app.update();
+        for _ in 0..100 {
+            app.update();
+        }
+        app.world_mut()
+            .resource_mut::<CommandResults>()
+            .0
+            .push(CommandResult::Order {
+                seq: 44,
+                tick: 2,
+                accepted: vec![UnitId(1)],
+                refused: vec![],
+                envelope: None,
+                job_id: None,
+            });
+        app.update();
+
+        let frames = &app.world().resource::<FrameFeeds>().retained_input;
+        let emitted = frames
+            .iter()
+            .find(|frame| frame.applied_seq.contains(&44))
+            .expect("physical input frame remains in the causal history");
+        let result = frames
+            .iter()
+            .find(|frame| frame.results.iter().any(|result| result["seq"] == 44))
+            .expect("later matching result remains after 100 intervening idle frames");
+        assert!(result.frame_index.saturating_sub(emitted.frame_index) > 64);
+        assert_eq!(result.results[0]["seq"], emitted.applied_seq[0]);
+    }
+
+    #[test]
+    fn retained_input_keeps_alert_frames_after_the_recent_window_rolls_over() {
+        let _guard = test_lock();
+        let (mut app, _, _) = fixture_app();
+        for _ in 0..100 {
+            app.update();
+        }
+        app.world_mut()
+            .resource_mut::<FrameFeedback>()
+            .alerts
+            .push(serde_json::json!({"id":"muster_unit_damaged","unit":7,"tick":31}));
+        app.update();
+
+        let frames = &app.world().resource::<FrameFeeds>().retained_input;
+        let alert_frame = frames
+            .iter()
+            .find(|frame| {
+                frame.feedback.alerts.iter().any(|alert| {
+                    alert["id"] == "muster_unit_damaged"
+                        && alert["unit"] == 7
+                        && alert["tick"] == 31
+                })
+            })
+            .expect("actual alert-bearing causal frame remains retained");
+        assert!(alert_frame.frame_index > 64);
+        assert_eq!(alert_frame.feedback.alerts[0]["unit"], 7);
+    }
+
     fn add_test_sequence(mut runtime: ResMut<CoreRuntime>) {
         runtime.pending_sequences.push(72);
     }
@@ -2303,6 +2445,7 @@ mod adapter_tests {
             feed.started.push(crate::debug_feed::StartedSound {
                 id: "owner:started".into(),
                 category: "ui".into(),
+                priority: 0,
             });
             feed.categories.insert("ui".into(), 0.5);
             world.resource_mut::<CursorFeed>().applied_icon = Some("owner:cursor".into());
@@ -2321,6 +2464,7 @@ mod adapter_tests {
                     audio_started: vec![crate::debug_feed::StartedSound {
                         id: "owner:frame-started".into(),
                         category: "orders".into(),
+                        priority: 0,
                     }],
                     notices: vec![serde_json::json!({"owner":"frame-notice"})],
                     alerts: vec![serde_json::json!({"owner":"frame-alert"})],

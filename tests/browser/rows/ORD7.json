@@ -1,0 +1,11 @@
+{
+  "row": "ORD7",
+  "package": "tests/browser/fixtures/feedback/muster",
+  "driver": "tests/browser/feedback-driver.js",
+  "oracle": "tests/browser/feedback-oracle.js",
+  "runs": "ci",
+  "capture_scene_checkpoints": true,
+  "viewports": ["1280x720"],
+  "expected_marker_kind": "move",
+  "expected_sound_category": "voice"
+}

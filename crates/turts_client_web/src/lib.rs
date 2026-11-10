@@ -30,19 +30,21 @@ use bevy::prelude::*;
 use bevy::render::renderer::RenderAdapterInfo;
 use bevy::ui::{CalculatedClip, ComputedNode, ComputedUiTargetCamera, UiGlobalTransform};
 use bevy::window::{PrimaryWindow, WindowRef};
-use turts_client::ClientOpts;
 use turts_client::build_app;
 use turts_client::commands::{CommandSendStatus, PendingCommands, owned_mobile_ids, submit_order};
 use turts_client::debug::{DebugState, rebuild_debug_state};
+use turts_client::debug_feed::NoticesFeed;
 use turts_client::ingest::{
     BrowserIngestConfig, IngestCounters, IngestHooks, ReplicaState, apply_browser_ingest_config,
     ingest_messages,
 };
+use turts_client::join::Phase;
 use turts_client::options::options_from_query;
 use turts_client::render::{
     PresentedNode as SceneNode, PresentedUnit as SceneUnit, declared_node_pick_radius,
     declared_unit_pick_radius, projected_ground_center,
 };
+use turts_client::{ClientOpts, PlayerId};
 use turts_net_protocol::{OrderEnvelope, Pos};
 use wasm_bindgen::JsCast;
 use wasm_bindgen::prelude::*;
@@ -66,13 +68,16 @@ pub fn start() {
         return;
     };
     let query = window.location().search().unwrap_or_default();
-    let options = match options_from_query(&query) {
+    let mut options = match options_from_query(&query) {
         Ok(options) => options,
         Err(message) => {
             set_global(&window, "turts_error", &JsValue::from_str(&message));
             return;
         }
     };
+    let (stored_player_id, corrupt_player_id) = read_session_player_id(&window);
+    let stored_identity_rejoin = stored_player_id.is_some();
+    options.player_id = stored_player_id;
     let debug = Closure::<dyn Fn() -> String>::new(|| DEBUG.lock().unwrap().clone());
     let clear_frames = Closure::<dyn Fn()>::new(|| {
         turts_client::core_adapter::clear_frames();
@@ -131,7 +136,22 @@ pub fn start() {
     memory.forget();
 
     let mut app = build_app(options);
+    if stored_identity_rejoin {
+        *app.world_mut()
+            .resource_mut::<turts_client::rejoin::RejoinController>() =
+            turts_client::rejoin::RejoinController::for_stored_identity();
+    }
+    if corrupt_player_id {
+        app.world_mut()
+            .resource_mut::<NoticesFeed>()
+            .0
+            .push(serde_json::json!({
+                "text":"Saved player identity was invalid; a new session identity will be used",
+                "message":"Saved player identity was invalid; a new session identity will be used"
+            }));
+    }
     app.add_systems(Update, drain_moves)
+        .add_systems(Last, persist_session_player_id)
         .add_systems(
             PreUpdate,
             apply_queued_ingest_config.before(ingest_messages),
@@ -145,6 +165,39 @@ pub fn start() {
             ),
         );
     app.run();
+}
+
+const SESSION_PLAYER_ID_KEY: &str = "turts.v1.player_id";
+
+fn read_session_player_id(window: &web_sys::Window) -> (Option<u64>, bool) {
+    let Ok(Some(storage)) = window.session_storage() else {
+        return (None, false);
+    };
+    let Ok(Some(value)) = storage.get_item(SESSION_PLAYER_ID_KEY) else {
+        return (None, false);
+    };
+    match turts_client::options::parse_session_player_id(&value) {
+        Some(player_id) => (Some(player_id), false),
+        None => (None, true),
+    }
+}
+
+fn persist_session_player_id(
+    phase: Res<Phase>,
+    player_id: Res<PlayerId>,
+    mut persisted: Local<bool>,
+) {
+    if *persisted || !matches!(*phase, Phase::Joined { .. }) {
+        return;
+    }
+    *persisted = true;
+    let Some(window) = web_sys::window() else {
+        return;
+    };
+    let Ok(Some(storage)) = window.session_storage() else {
+        return;
+    };
+    let _ = storage.set_item(SESSION_PLAYER_ID_KEY, &player_id.0.to_string());
 }
 
 fn apply_queued_ingest_config(
