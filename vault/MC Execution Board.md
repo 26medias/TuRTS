@@ -2851,3 +2851,14 @@ If the game owner-hold probe is still needed, its trigger must be actual C reque
 Evidence: primary t16-root/c308-helper/browser-canvas-replay-c312-v1/result.json has A/B fulfilled/continuous actual render counts and Cpending after30s, all descriptors matched; bare devices without canvases/draw all3fulfill under same request data. C314 package t16-builder/run94/c314-startup-raf-attempt-v1 manifest17343bef, immutable commandrawc67a98fd; actual A/B callbacks1each released/resumed, but host-aligned C call after release, B admission between checkpoints. Root preserves these as limited diagnostics only.
 
 Alternative not taken: blame game code on a platform reproducer, lower render quality/features on a guess, claim C314 disproved rendering, skip ownership proof, adopt flags without actual game evidence or count setup as semantic red. Brief4 instrument/command/cache decision;96/170runs;20/25complete.
+
+
+## C316: Publish the actual focus overlay in the existing UI snapshot
+
+Conflict: KM2 must prove a real Click to play overlay after actual canvas blur. The production FocusOverlay entity/label already exists, but its private marker is not exported by widgets/snapshot.rs. debug.focus defaults false when absent and cannot prove an overlay. Declaring a product red from that boolean or a guessed UI path would be false evidence.
+
+Choice: expose only the existing FocusOverlay marker within the crate as needed and add a bounded focus-overlay row to existing UiSnapshotFeed. Report actual root count, positive computed rectangle/visibility, actual capture-root/focus-policy and bounded real descendant text. Absent/not-laid/zero-size geometry stays null/false; retain explicit root overflow and descendant/text truncation. Reuse the existing C304 actual-UI pattern. No new bridge, driver method, synthetic producer or product behavior. Fixed KM2 checks can judge actual post-blur overlay presence after physical/DOM focus prerequisites; real PNG and contrasting negative controls remain mandatory. Add meaningful native absent/zero-layout/text/overflow contracts as appropriate.
+
+Evidence: crates/turts_client/src/client_shell.rs:28,263-286 owns actual FocusOverlay; widgets/snapshot.rs currently exports settings menus/client notices/authored widgets/tooltips, not this marker. Actual bare focus control confirms(-5,-5) delivers native CANVAS blur with BODY active while document.hasFocus stays true. Existing fields cannot substitute for the missing UI observation.
+
+Alternative not taken: fabricate a UI flag, infer visibility from a default bool, add a semantic driver read, modify focus behavior to satisfy an oracle, or claim a preparation error as product red. This is brief4 instrument detail continuing C304;96/170runs;20/25complete.
