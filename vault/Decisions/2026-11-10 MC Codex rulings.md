@@ -811,3 +811,14 @@ Choice: accept the actual engine-owned binding feedback notice as the designed n
 Evidence: frozen31505 client_shell.rs:764-769 handles Reserved by editor.status, BindingFeedbackText is the actual menu status; current shell-oracle.js:519-548 overconstrains it to kind=client_notice and debug.notices. Retained run94-km1-bindings-green-v1/run-20261110T194207Z-XNBzVA capture47 has actual status rectangle and KeyQ binding; command/raw72b3a828 stays retained. RUN97 source/data review reports this correction.
 
 Alternative not taken: duplicate visible UI solely for an internal enum expectation, weaken refusal into a bare guessed string, accept arbitrary content text, call an instrument constraint a product red, or waive physical input/actual UI proof. Brief4 instrument-detail/nearest-existing mechanism decision;97/170runs;20/25complete.
+
+
+## C325: Initialize the real popup document epoch when its Page arrives
+
+Conflict: actual C320 retained fixture records oldC epoch3 and copiedA epoch3. The private popup callback only attaches framenavigated after BrowserContext page event, so it can miss the initial commit and retain the closed C value. Public replay correctly rejects this; it is a lifecycle instrument defect, not a player/session failure.
+
+Choice: initialize a new positive monotonic epoch when the actual distinct browser-authentic popup Page is first observed, then track its subsequent real main-frame navigations. Retain bounded identity/one-hook/duplicate-event contracts and genuine opener/session copy proof. Never relabel the old artifacts or relax monotonic/unique-document checks. Add a real late-initial-navigation observer control. Use retained pixels only for source calibration/negative controls; a fresh actual row is now required to obtain correct popup chronology. It may combine other required row proof improvements before that next run. Product behavior/timers/keys remain unchanged.
+
+Evidence: actual slot1-fixture-private.json under run94-slot1-surface-experiment-v1 records A1/B2/C3/copiedA3. Current public replayv2 rejects replacement must advance handle3 epoch. harness/run.js:877-879 attaches only the future navigation listener. Installed primary Playwright types types.d.ts:1125-1127 documents that page becomes available once its initial URL response has begun loading. This explains why that event need not precede first framenavigated.
+
+Alternative not taken: rewrite failed data, reuse a closed document identity, count bad epochs as product red, weaken authentic-popup proof, change player identity/storage or add another browser attempt before repairing the instrument. Brief4 lifecycle observation detail continuing C294/C322.97/170runs;20/25complete.
