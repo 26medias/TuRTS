@@ -8,7 +8,7 @@ source: codex
 
 # MC execution board
 
-State: ACTIVE on the desktop: 17/25 MC lanes complete; 80/170 build runs registered. Task10 merged at ea943bf and all integration native/QA/frozen/web gates passed. The actual HD1 process also passed in the assigned integration cache; no duplicate cache. Task15 RUN78 owns the sole compiler/cache/runtime. Two actual AUD1 pairs expose corrected detector calibration and the designed old-session rejoin race; C229 advances bounded retry/countdown from Task16, with native red-first controls next. Actual alert playback remains unproved and the driver route is being repaired. Task17 RUN80 independently passed all C227 source repairs; native/browser gates wait for the cache. RUN79 remains source-only until its later runtime lease. Wave7 push/CI follows Tasks15 and17. Main bb611bd is unchanged. CEO PT1/PT2 stop remains at Task23.
+State: ACTIVE on the desktop: 17/25 MC lanes complete; 80/170 build runs registered. Task10 merged at ea943bf and all integration native/QA/frozen/web gates passed. The actual HD1 process also passed in the assigned integration cache; no duplicate cache. Task15 RUN78 owns the sole compiler/cache/runtime. Two actual AUD1 pairs expose corrected detector calibration and the designed old-session rejoin race; C229 advances bounded retry/countdown from Task16, with native red-first controls next. Actual alert playback remains unproved and the driver route is being repaired. Task17 RUN80 independently passed all C227/C231 source repairs; native/browser gates wait for the cache. RUN79 remains source-only until its later runtime lease. Wave7 push/CI follows Tasks15 and17. Main bb611bd is unchanged. CEO PT1/PT2 stop remains at Task23.
 
 Plan: `docs/superpowers/plans/2026-10-29-mc-player-control.md`.
 Design of record: `docs/superpowers/specs/2026-10-29-mc-player-control-design.md`, revision14 at mainf050e42.
@@ -1907,3 +1907,6 @@ C230: keepstrictAUD1firstloadallSuspended→realgesture/allRunning; actualbrowse
 
 
 C231: RUN80 currentTask17groundpickeractualofflineoutput1232,216 isvoidRGBA43,44,47 andC84outside32x16floor. Rootrepairs withcurrentPNGopaquegreen25sample17x17patch plusoriginalHUD/bodyexclusions; nocoordinates/semanticreadsindriver. Preimage/sourcehasharchived, reviewer80recheckpending. Historicalbaselinevoidtarget32,568preserved/labeled; missingpanel/tooltipobserverredsunaffected; nobrowsergreenclaimed. C229actualnativecompiledred101 rootauditedexactsource21769d73/raw5254d4f3; broadergreenpending.80/170;17/25.
+
+
+C231closedsource: actualwholeoldhelper/SAMEPNG/C84floornegative named1; currentca65ac7ehelper/SAMEPNGinsidefloorpositive0, historicalvoidpatchesfalse. Rootverifiedall9currentreviewhashes/exactpreimage/rawcontrols andupdatednextbuilderhandoff. NO Task17native/browsergreenclaimed. C229firstnativeactualcompilednamedred101 andexactpreimage21769d73/raw5254d4f3 rootverified; broaderlifecycle/sourceGREENpending.80/170;17/25.
