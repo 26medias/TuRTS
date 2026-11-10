@@ -789,3 +789,14 @@ Choice: qualify only the fixed unchanged physical plan and complete the missing 
 Evidence: original C320 receipt run94-slot1-surface-experiment-v1/raw3f24c2a2ced71ca45012cc24953af5721ca870d9b23caaa3ec3234d56454ac31, command1/wrapper1/sourceunchanged/full five-flag experimental profile. Actual slot1-startup-results.json and gpu-device-audit.json retain typed startup/device evidence. Frozen31505 source shell-oracle.js:64 lists C physical clause; :1262 omits its expected entry; :1269 rejects. RUN97 public replay is PRIMARY/t16-review/run97/replay-slot1.js and slot1-public-replay-result.json, instrumentexit1.
 
 Alternative not taken: drop the physical clause, call an internal evaluator only, weaken C refusal/identity, rerun86inputs to change a static map, count a guard as semantic red or mark uncalibrated pixels green. Brief4 instrument detail continuing C296/C310.97/170runs;20/25complete.
+
+
+## C323: Observe KM2 join focus before the first click
+
+Conflict: RUN97 source review finds that KM2 first clicks(500,430), waits250ms, then captures joined-focused. judgeKm2 reads that capture as focus-after-join. The click can repair missing automatic join focus, so the prior actual six-clause oracle PASS does not establish the join-focus clause. The prior command and real overlay/pixel results stay preserved; this is an instrument coverage defect, not a production failure yet.
+
+Choice: add an actual Joined capture before any physical input, and bind join-focus to its actual canvas focus/document/owner frame. Retain the later click/unlock, right-click prevention, physical blur, stopped-key and overlay pixel clauses. Require a missing-preinput/click-repaired negative control. Reuse retained pre-input data only if its actual source/epoch/timing exists; otherwise the next required actual browser cycle obtains it. Never invent the missing historical observation or drop join-focus. Final complete current two headed cycles and required plants remain.
+
+Evidence: frozen31505 tests/browser/rows/KM2.json actions0-1 are click/wait; joined-focused has after_action2. shell-oracle.js:881-885 selects that first Joined screenshot. Design3.2 and14KM2 require canvas focus after join. Historical run94-km2-pixelheaded-v2/rawb2512ce4 is actual command0/sourceunchanged/fullheaded, but its join-focus proof is now explicitly UNQUALIFIED; other independently bound observations remain scoped evidence.
+
+Alternative not taken: equate post-click focus with automatic join focus, manufacture a product red, discard genuine existing pixel evidence or spend an extra browser cycle before checking whether actual pre-input data exists. Brief4 instrument chronology detail;97/170runs;20/25complete.
