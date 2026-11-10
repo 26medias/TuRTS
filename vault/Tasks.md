@@ -202,3 +202,8 @@ MC is active on this desktop. 17 of 25 lanes are complete; 80 of 170 build runs 
 ## MC final Task15 mutation work
 
 MC is active on this desktop. 17 of 25 lanes are complete; 80 of 170 build runs are registered. Task15 at52ecf3c has all normal gates green and seven of nine builder mutation cycles independently verified. The first reporting-only atomic fault remains uncredited; the corrected pre-application fault passed. Root is running the actual AudioPlayer spawn-delay pair; the joined-deadline native regression follows. Fresh NOORD and RUN79’s separate voice-replacement plant remain required. Root owns the sole cache/compiler/browser/lane-source lease. RUN78 finished the source handoff; all remaining mutant bytes and patches have independent source approval. Task17 passed five pure source QA checks with102pending paths unchanged; its native/browser work waits for the cache. Wave7 push and CI follow Tasks15 and17. Mainbb611bd is unchanged. Task23 stops for CEO PT1/PT2, not blind.
+
+
+## MC Task15 pre-merge acceptance
+
+MC is active on this desktop. Task15 code at52ecf3c is accepted for integration: all normal gates, nine causal builder mutation cycles, the independent voice plant and current12headed row passes are verified; final review has0High/0unresolvedMedium. Root is merging and re-gating it next. The completed count remains17/25 until integration gates pass;80/170 runs. C203 minimap pixels and full Task16 rows remain future work. RUN78/RUN79 have ended clean handoffs. Root owns the only cache/runtime. Task17 has102preserved pending paths and five source QA passes; its rebase/compiler run follows Task15. Wave7 push/CI follows Tasks15/17. Mainbb611bd stays unchanged; no main merge or push.
