@@ -1925,3 +1925,6 @@ C234: actualC233headedAUD1pair2fails1 atINITIALsolidblackPNGs despiteJoined/515u
 
 
 C235profileauditCORRECTION: C233andC234pairsALLactualheaded0/headlessTRUE, despiteartifactlabels. FOURfailuresareheadlesssetup/readinessonly; noaudio/rejoinheadedacceptance. ForceMC_BROWSER_HEADED1/MC_PIXELS_HEADED1 OUTERdedicatedxvfb-run/actualxdpyinfo/inheritedDISPLAY, verifyactualfirstprofileheadlessFALSE+headed1. Onephysical:1headedattemptinterrupted/incompletepreserved; ownedprocesscleanupthenoneproperpairGO. Sourceunchanged8ebec6e6/2db4fadd; native167/WASM/sourcePASS stillvalid.80/170;17/25.
+
+
+C236: validheadedC235pair actualsamePIDslot0rejoin10.509s/12.638s PARTIAL; fullAUD1failedwrongsliderstatesfirst/falseundefinedvoicecountsecond. Realpeak1/nooverlap, no mixervoicebugproved. RootJSvisibleper-sliderpre/postthumbackbeforeNEXTmove+actualframeproof; actualmaprequired/missingvoicekey0/null2reject. SamePNGcontrols0/79sourcePASSc08c7e83+16780932; Rust167/WASM0unchanged. FreshproperheadedXvfbpairGO; no redundantnative/WASMJS-onlyreruns.80/170;17/25.
