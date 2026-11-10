@@ -3153,3 +3153,14 @@ Choice: use ordinary physical wheel input to reach the settings controls, captur
 Evidence: design 3.2 at docs/superpowers/specs/2026-10-29-mc-player-control-design.md:335 requires opt-in followed by a click; CAM2 at line1249 states the same order. Actual run94-cam2-after-lock-v1 raw1045c01f shows the top menu, with settings below the fold. RUN94 native client171/171, persist18/18 and locked WASM pass at their current source checkpoints; browser acceptance remains open.
 
 Alternative not taken: count a clipped control as a genuine missing-control failure, bypass opt-in, or infer acquired lock from the request. Brief4 permits instrument and fixture corrections.103/170 runs;20/25 lanes complete.
+
+
+## C338: Align settings evidence with the actual designed controls
+
+Conflict: SH1's label inventory requires literal Cursor lock and Health bar mode, while the real menu uses Keep the cursor in the game and Health bars with their actual values. Design3.2 explicitly quotes the first name; design10.1 names health-bar mode as a control category. Treating generic category names as additional exact headings would require cosmetic product changes solely for the instrument. The earlier Edge scroll On combined text also contains the real control; its combined-node failure is an instrument overconstraint, not a missing-feature baseline.
+
+Choice: use the actual K9 quoted opt-in text and the real health control label/value in SH1, with actual visible laid-out controls and typed state. Preserve all eleven SH1 clauses and actual control behavior. Top and bottom evidence remains in one continuous menu episode with real wheel input. Do not add duplicate visible headings to satisfy invented evaluator names. The already implemented static label/state split may stay; it improves stable control structure but does not establish a missing feature. The original missing Scroll speed baseline remains a genuine missing-control result.
+
+Evidence: docs/superpowers/specs/2026-10-29-mc-player-control-design.md:335 names Keep the cursor in the game; section10.1 at945 lists the control categories. Current tests/browser/shell-oracle.js SH1 requiredLabels includes Cursor lock/Health bar mode. Actual CAM2 scrolled menu PNG at run94-cam2-actual-lock-v3 shows Keep the cursor in the game On and Health bars Damaged or selected. Earlier run94-sh1-menu-post-controls-v1 raw2705d726 stopped on a combined Edge scroll On node. No product behavior or acceptance ID changes.
+
+Alternative not taken: count a naming/DOM-node split as a missing feature, add redundant headings, weaken control state checks, or spend a new build on an evaluator-only naming mismatch. Brief4 instrument conflict rights;103/170 runs,20/25 lanes complete.
