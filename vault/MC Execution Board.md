@@ -3046,3 +3046,8 @@ Native compiler/server/process and metrics remain unavailable until the exclusiv
 Evidence: RUN98 report PRIMARY/t22-review/run98/source-review.md SHA7680d37932fd98dad8f033e88bcec0d5a798b78f9eed101fc34092a69e34b63d, exact source paths/lines and causal counterexamples; hash index7bd47142. Pure Node full judge resolves before PNG data and helper accepts flat100x100, actual control exit0; source fixture UnitId is [[1]] although typed UnitId(pub u32) is scalar. No compiler or server was used.
 
 Alternative not taken: defer known Medium evidence defects, count malformed setup as a semantic red, accept missing late hazard ticks, label component means per-unit cost, create a new pixel row, or waive a plant. Brief4 Medium/instrument scheduling choice; next RUN100 is Task22run4/estimate3, below soft6/hard12. Global100/170;20/25complete.
+
+
+## Task16 source-only mutation preparation
+
+Root prepares eight full external fault candidates from frozen7ce13a40/base51170cb4, with original/mutant/diff/SHA manifests at PRIMARY/t16-root/plant-preparation. P1reclaim/P2retry/P3default-prevention/P4logical-letter/P5dead-group/P7scroll/P8double-DPR/P9corrupt-panic. P6cursor awaits actual implementation. All formatting checks0 using skip_children=true for isolated modules; initial missing child module lookup is setup only. Zero application/compiler/runtime/independent review/semantic acceptance. Rebind final exact committed source and obtain review after required normal gates before any plant. DPR2 and actual panic evidence obligations are explicit in plant-preflight-handoff.md; no data/guard failure counts. No new run or cache.100/170runs;20/25complete.
