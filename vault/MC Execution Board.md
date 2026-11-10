@@ -2948,3 +2948,8 @@ Choice: add an actual Joined capture before any physical input, and bind join-fo
 Evidence: frozen31505 tests/browser/rows/KM2.json actions0-1 are click/wait; joined-focused has after_action2. shell-oracle.js:881-885 selects that first Joined screenshot. Design3.2 and14KM2 require canvas focus after join. Historical run94-km2-pixelheaded-v2/rawb2512ce4 is actual command0/sourceunchanged/fullheaded, but its join-focus proof is now explicitly UNQUALIFIED; other independently bound observations remain scoped evidence.
 
 Alternative not taken: equate post-click focus with automatic join focus, manufacture a product red, discard genuine existing pixel evidence or spend an extra browser cycle before checking whether actual pre-input data exists. Brief4 instrument chronology detail;97/170runs;20/25complete.
+
+
+## Task22 source preparation complete for all ten candidate mechanisms
+
+Root prepares P9 exact historical straight-line predicate restoration and P10 genuine-Blocked wrong-rest kernel output, separate from P3 avoidance-off. All ten full external candidate sets now exist at PRIMARY/target/mc-evidence/t22-root/plant-preparation/candidate-index.json, each with full original/mutant/diff/SHA manifest and rustfmt0. None was applied, compiled, independently reviewed or executed. P9 must be reviewed against the written old-validator shape; P10 requires a real nonempty authoritative Blocked F/I workload and actual terminal overlap. Runtime masking/missing witness never counts as a semantic red. Handoff updated; later source rebase/hash check still required. No new target/cache/dispatch;97/170runs;20/25complete.
