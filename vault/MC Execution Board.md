@@ -1931,3 +1931,6 @@ C236: validheadedC235pair actualsamePIDslot0rejoin10.509s/12.638s PARTIAL; fullA
 
 
 AUD1FIRSTVALIDGREEN: C236 wrapper/run078edb1e actual0/sourceunchanged/defaultcachesabsent169.344s; bothprofilesheadlessFALSE/display106/flags1. Completion0both, sameexactclient/serverPIDslot0twice, actualcontrols.9/.8/.7/.6/restoredrealcategorysinks. Rootauditedrawhash/headers/profiles/receipts. FullTask15unaccepted. Remainingfivepairbatch currentlyrunning inexactORD7/ORD6/ORD2/ALR1/NOORDorder; artifactlabelC237isbatchidentifier, notanewruling.80/170;17/25.
+
+
+C237: firstremainingbatchactualheadedORD7/ORD6/NOORD2eachgreen, ORD2actual343wrongdriverboxincludesmobilebeacons/workers, ALR1undefinedcooldownparam→NaNfalsefailure. Noenginebugproved. Currentimage8troopcolumns+postpredict40+post only; normative1s+ALLactualemitspacing retains5suppressionpredicates. OldcapturedALR1oracle1/new0both; sourcePASSfadaa8ed/35994689. Fullfinal6×2headedmatrix (artifactC238)runningonXvfb106/currentSourcefrozen. No row/fullTask15acceptanceyet. EffectiveENGINEcooldown0plant stillrequired; authored0alonecorrectlyclamps1perdesign.80/170;17/25.
