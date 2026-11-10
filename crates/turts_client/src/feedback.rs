@@ -111,6 +111,9 @@ pub fn format_notice(unit_name: &str, reason_text: &str, count: usize) -> String
     }
 }
 
+// Keep each optional Bevy resource explicit: the feedback plugin also runs in
+// partial client harnesses where some app resources are intentionally absent.
+#[allow(clippy::too_many_arguments)]
 fn update_feedback(
     time: Res<Time>,
     state: Option<Res<ReplicaState>>,
@@ -132,16 +135,16 @@ fn update_feedback(
     frame.audio_started.clear();
     let now = time.elapsed_secs_f64();
     if let (Some(state), Some(acquired)) = (state.as_deref(), acquired.as_deref()) {
-        if let Some(welcome) = state.welcome {
-            if runtime.joined_match != Some(welcome.match_id) {
-                runtime.joined_match = Some(welcome.match_id);
-                runtime.previous = None;
-                runtime.no_orders_notice_sent = false;
-                runtime.cooldowns.clear();
-                runtime.wait_started.clear();
-                runtime.previous_selection.clear();
-                runtime.result_cursor = results.as_deref().map_or(0, |results| results.0.len());
-            }
+        if let Some(welcome) = state.welcome
+            && runtime.joined_match != Some(welcome.match_id)
+        {
+            runtime.joined_match = Some(welcome.match_id);
+            runtime.previous = None;
+            runtime.no_orders_notice_sent = false;
+            runtime.cooldowns.clear();
+            runtime.wait_started.clear();
+            runtime.previous_selection.clear();
+            runtime.result_cursor = results.as_deref().map_or(0, |results| results.0.len());
         }
         if phase
             .as_deref()
@@ -167,37 +170,32 @@ fn update_feedback(
                     refused, envelope, ..
                 } = result
                 {
-                    if let Some(interface) = acquired.0.presentation.interface.as_ref() {
-                        if !refused.is_empty() || envelope.is_some() {
-                            if let Some(sound) = refused
-                                .first()
-                                .and_then(|refusal| {
-                                    state
-                                        .replica
-                                        .as_ref()
-                                        .and_then(|replica| replica.units.get(&refusal.unit.0))
-                                        .and_then(|unit| interface.units.get(&unit.content_id))
-                                        .and_then(|unit| unit.responses.get("error"))
+                    if let Some(interface) = acquired.0.presentation.interface.as_ref()
+                        && (!refused.is_empty() || envelope.is_some())
+                        && let Some(sound) = refused
+                            .first()
+                            .and_then(|refusal| {
+                                state
+                                    .replica
+                                    .as_ref()
+                                    .and_then(|replica| replica.units.get(&refusal.unit.0))
+                                    .and_then(|unit| interface.units.get(&unit.content_id))
+                                    .and_then(|unit| unit.responses.get("error"))
+                                    .and_then(|sounds| sounds.first())
+                            })
+                            .or_else(|| {
+                                interface.units.values().find_map(|unit| {
+                                    unit.responses
+                                        .get("error")
                                         .and_then(|sounds| sounds.first())
                                 })
-                                .or_else(|| {
-                                    interface.units.values().find_map(|unit| {
-                                        unit.responses
-                                            .get("error")
-                                            .and_then(|sounds| sounds.first())
-                                    })
-                                })
-                            {
-                                frame.audio_started.push(StartedSound {
-                                    id: qualify_sound(
-                                        &acquired.0.presentation.interface_package,
-                                        sound,
-                                    ),
-                                    category: "effects".into(),
-                                    priority: 0,
-                                });
-                            }
-                        }
+                            })
+                    {
+                        frame.audio_started.push(StartedSound {
+                            id: qualify_sound(&acquired.0.presentation.interface_package, sound),
+                            category: "effects".into(),
+                            priority: 0,
+                        });
                     }
                     let mut grouped = Vec::<(String, CommandRejectReason, String, usize)>::new();
                     for refusal in refused {
@@ -287,20 +285,19 @@ fn update_feedback(
                 } else {
                     failures.push((unit.content_id.clone(), failure.reason, 1));
                 }
-                if !failure_sound_started {
-                    if let Some(sound) = interface
+                if !failure_sound_started
+                    && let Some(sound) = interface
                         .units
                         .get(&unit.content_id)
                         .and_then(|presentation| presentation.responses.get("error"))
                         .and_then(|sounds| sounds.first())
-                    {
-                        frame.audio_started.push(StartedSound {
-                            id: qualify_sound(&acquired.0.presentation.interface_package, sound),
-                            category: "effects".into(),
-                            priority: 0,
-                        });
-                        failure_sound_started = true;
-                    }
+                {
+                    frame.audio_started.push(StartedSound {
+                        id: qualify_sound(&acquired.0.presentation.interface_package, sound),
+                        category: "effects".into(),
+                        priority: 0,
+                    });
+                    failure_sound_started = true;
                 }
             }
             for (content_id, reason, count) in failures {
@@ -320,87 +317,80 @@ fn update_feedback(
             selection.as_deref(),
             state.replica.as_ref(),
             acquired.0.presentation.interface.as_ref(),
-        ) {
-            if selection.0 != runtime.previous_selection {
-                for id in selection
-                    .0
-                    .iter()
-                    .filter(|id| !runtime.previous_selection.contains(id))
+        ) && selection.0 != runtime.previous_selection
+        {
+            for id in selection
+                .0
+                .iter()
+                .filter(|id| !runtime.previous_selection.contains(id))
+            {
+                let Some(unit) = replica.units.get(id) else {
+                    continue;
+                };
+                if unit.owner_slot != state.welcome.map(|welcome| welcome.slot).unwrap_or(0) {
+                    continue;
+                }
+                if let Some(sound) = interface
+                    .units
+                    .get(&unit.content_id)
+                    .and_then(|presentation| presentation.responses.get("select"))
+                    .and_then(|sounds| sounds.first())
                 {
-                    let Some(unit) = replica.units.get(id) else {
-                        continue;
-                    };
-                    if unit.owner_slot != state.welcome.map(|welcome| welcome.slot).unwrap_or(0) {
-                        continue;
-                    }
-                    if let Some(sound) = interface
-                        .units
-                        .get(&unit.content_id)
-                        .and_then(|presentation| presentation.responses.get("select"))
-                        .and_then(|sounds| sounds.first())
-                    {
-                        frame.audio_started.push(StartedSound {
-                            id: qualify_sound(&acquired.0.presentation.interface_package, sound),
-                            category: "voice".into(),
-                            priority: 0,
-                        });
-                        break;
-                    }
+                    frame.audio_started.push(StartedSound {
+                        id: qualify_sound(&acquired.0.presentation.interface_package, sound),
+                        category: "voice".into(),
+                        priority: 0,
+                    });
+                    break;
                 }
-                runtime.previous_selection.clone_from(&selection.0);
             }
+            runtime.previous_selection.clone_from(&selection.0);
         }
-        if let Some(interface) = acquired.0.presentation.interface.as_ref() {
-            if let Some(replica) = state.replica.as_ref() {
-                let FeedbackRuntime {
-                    previous,
-                    cooldowns,
-                    wait_started,
-                    ..
-                } = &mut *runtime;
-                let events = collect_alert_events(
-                    replica,
-                    previous.as_ref(),
-                    state.welcome.map(|welcome| welcome.slot).unwrap_or(0),
-                    &acquired.0.content,
-                    interface.alerts.as_slice(),
-                    now,
-                    cooldowns,
-                    wait_started,
-                );
-                for event in events {
-                    frame.alerts.push(serde_json::json!({"id":event.rule_id,"text":event.text,"unit":event.unit,"position":event.position}));
-                    alert_feed.0.push(serde_json::json!({"id":event.rule_id,"text":event.text,"message":event.text,"unit":event.unit,"position":event.position}));
-                    if let Some(position) = event.position {
-                        if event.minimap_ping {
-                            runtime.next_ping_id = runtime.next_ping_id.saturating_add(1);
-                            pings.0.push(serde_json::json!({
-                                "id":runtime.next_ping_id,
-                                "alert_id":&event.rule_id,
-                                "tick":replica.last_applied_tick,
-                                "unit":event.unit,
-                                "x":position.x,
-                                "y":position.y,
-                                "text":&event.text,
-                            }));
-                        }
-                    }
-                    if let Some(sound) = event.sound {
-                        frame.audio_started.push(StartedSound {
-                            id: qualify_sound(&acquired.0.presentation.interface_package, &sound),
-                            category: "alerts".into(),
-                            priority: event.priority,
-                        });
-                    }
+        if let Some(interface) = acquired.0.presentation.interface.as_ref()
+            && let Some(replica) = state.replica.as_ref()
+        {
+            let previous = runtime.previous.take();
+            let events = collect_alert_events(
+                replica,
+                previous.as_ref(),
+                state.welcome.map(|welcome| welcome.slot).unwrap_or(0),
+                &acquired.0.content,
+                interface.alerts.as_slice(),
+                now,
+                &mut runtime,
+            );
+            for event in events {
+                frame.alerts.push(serde_json::json!({"id":event.rule_id,"text":event.text,"unit":event.unit,"position":event.position}));
+                alert_feed.0.push(serde_json::json!({"id":event.rule_id,"text":event.text,"message":event.text,"unit":event.unit,"position":event.position}));
+                if let Some(position) = event.position
+                    && event.minimap_ping
+                {
+                    runtime.next_ping_id = runtime.next_ping_id.saturating_add(1);
+                    pings.0.push(serde_json::json!({
+                        "id":runtime.next_ping_id,
+                        "alert_id":&event.rule_id,
+                        "tick":replica.last_applied_tick,
+                        "unit":event.unit,
+                        "x":position.x,
+                        "y":position.y,
+                        "text":&event.text,
+                    }));
                 }
-                while alert_feed.0.len() > 5 {
-                    alert_feed.0.remove(0);
+                if let Some(sound) = event.sound {
+                    frame.audio_started.push(StartedSound {
+                        id: qualify_sound(&acquired.0.presentation.interface_package, &sound),
+                        category: "alerts".into(),
+                        priority: event.priority,
+                    });
                 }
-                while pings.0.len() > 64 {
-                    pings.0.remove(0);
-                }
-                runtime.previous = Some(replica.clone());
             }
+            while alert_feed.0.len() > 5 {
+                alert_feed.0.remove(0);
+            }
+            while pings.0.len() > 64 {
+                pings.0.remove(0);
+            }
+            runtime.previous = Some(replica.clone());
         }
         if let Some(core) = core.as_deref() {
             for effect in core.effects() {
@@ -622,8 +612,7 @@ fn collect_alert_events(
     content: &crate::content::ClientContent,
     rules: &[turts_mod_api::AlertDef],
     now: f64,
-    cooldowns: &mut BTreeMap<String, f64>,
-    wait_started: &mut BTreeMap<(String, u32), u32>,
+    runtime: &mut FeedbackRuntime,
 ) -> Vec<AlertEvent> {
     let mut events = Vec::new();
     for rule in rules {
@@ -674,14 +663,13 @@ fn collect_alert_events(
                                         .find(|record| record.slot == research.slot)
                                 })
                                 .is_some_and(|old| old.completed.contains(completed));
-                            if previous.is_some() && !was_completed {
-                                if let Some(previous) = previous {
-                                    if let Some(id) = research_completion_producer(
-                                        current, previous, slot, completed, content,
-                                    ) {
-                                        units.push(id);
-                                    }
-                                }
+                            if !was_completed
+                                && let Some(previous) = previous
+                                && let Some(id) = research_completion_producer(
+                                    current, previous, slot, completed, content,
+                                )
+                            {
+                                units.push(id);
                             }
                         }
                     }
@@ -767,16 +755,16 @@ fn collect_alert_events(
                             .is_some_and(|unit| unit.owner_slot == slot)
                     {
                         waiting_units.insert(record.unit.0);
-                        let started = *wait_started.entry(key).or_insert(tick);
+                        let started = *runtime.wait_started.entry(key).or_insert(tick);
                         let waited_ticks = tick.saturating_sub(started);
                         if waited_ticks as f64 / current.tick_hz.max(1) as f64 > *seconds as f64 {
                             units.push(record.unit.0);
                         }
                     } else {
-                        wait_started.remove(&key);
+                        runtime.wait_started.remove(&key);
                     }
                 }
-                wait_started.retain(|(rule_id, unit), _| {
+                runtime.wait_started.retain(|(rule_id, unit), _| {
                     rule_id != &rule.id || waiting_units.contains(unit)
                 });
             }
@@ -833,16 +821,16 @@ fn collect_alert_events(
                     let key = (rule.id.clone(), order.unit.0);
                     if owned && matches!(order.stage, GatherStage::Waiting { .. }) {
                         waiting_units.insert(order.unit.0);
-                        let started = *wait_started.entry(key).or_insert(tick);
+                        let started = *runtime.wait_started.entry(key).or_insert(tick);
                         let waited_ticks = tick.saturating_sub(started);
                         if waited_ticks as f64 / current.tick_hz.max(1) as f64 > *seconds as f64 {
                             units.push(order.unit.0);
                         }
                     } else {
-                        wait_started.remove(&key);
+                        runtime.wait_started.remove(&key);
                     }
                 }
-                wait_started.retain(|(rule_id, unit), _| {
+                runtime.wait_started.retain(|(rule_id, unit), _| {
                     rule_id != &rule.id || waiting_units.contains(unit)
                 });
             }
@@ -858,11 +846,11 @@ fn collect_alert_events(
         if units.is_empty() {
             continue;
         }
-        let last = cooldowns.get(&rule.id).copied();
+        let last = runtime.cooldowns.get(&rule.id).copied();
         if last.is_some_and(|last| now - last < rule.cooldown.max(1.0) as f64) {
             continue;
         }
-        cooldowns.insert(rule.id.clone(), now);
+        runtime.cooldowns.insert(rule.id.clone(), now);
         let mut seen = BTreeSet::new();
         for unit in units {
             if unit != 0 && !seen.insert(unit) {

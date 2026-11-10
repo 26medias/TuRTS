@@ -46,6 +46,19 @@ struct SettingsPersistence {
     snapshot: Option<VolumeSettings>,
 }
 
+type RealAudioPlayers<'w, 's> = Query<
+    'w,
+    's,
+    (
+        Entity,
+        &'static AudioCategoryPlayer,
+        &'static AudioIdentity,
+        &'static AudioRequestFrame,
+        Option<&'static AudioSink>,
+        Option<&'static SpatialAudioSink>,
+    ),
+>;
+
 /// Audio owner. Browser context readiness comes only from the pre-WASM observation hook.
 pub struct AudioPlugin;
 impl Plugin for AudioPlugin {
@@ -307,14 +320,7 @@ fn update_live_gains(
 }
 
 fn observe_real_sinks(
-    players: Query<(
-        Entity,
-        &AudioCategoryPlayer,
-        &AudioIdentity,
-        &AudioRequestFrame,
-        Option<&AudioSink>,
-        Option<&SpatialAudioSink>,
-    )>,
+    players: RealAudioPlayers<'_, '_>,
     replica: Option<Res<ReplicaState>>,
     frames: Option<Res<crate::core_adapter::FrameFeeds>>,
     mut state: ResMut<AudioObservationState>,

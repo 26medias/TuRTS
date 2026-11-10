@@ -228,9 +228,11 @@ pub fn alert_state() -> (ReplicaState, AcquiredPackages) {
         content: Some(content.clone()),
         config: Default::default(),
     };
-    let mut presentation = PresentationContent::default();
-    presentation.interface = Some(interface());
-    presentation.interface_package = Some("muster".into());
+    let presentation = PresentationContent {
+        interface: Some(interface()),
+        interface_package: Some("muster".into()),
+        ..Default::default()
+    };
     let acquired = AcquiredPackages(Acquired {
         lockfile_hash: "test".into(),
         visuals: HashMap::new(),
@@ -267,6 +269,9 @@ pub fn feedback_app(state: ReplicaState, acquired: AcquiredPackages) -> App {
     app
 }
 
+// Shared fixture module: this helper is used by the alerts integration target,
+// while sibling targets compile the module without needing every helper.
+#[allow(dead_code)]
 pub fn unit(content_id: &str, owner_slot: u8) -> UnitReplica {
     UnitReplica {
         content_id: content_id.into(),
@@ -276,6 +281,8 @@ pub fn unit(content_id: &str, owner_slot: u8) -> UnitReplica {
     }
 }
 
+// Shared fixture module: only the alerts integration target uses this setup.
+#[allow(dead_code)]
 pub fn force_all_alert_sources(state: &mut ReplicaState) {
     let replica = state.replica.as_mut().expect("test replica exists");
     replica.last_applied_tick = Some(2);
@@ -310,6 +317,8 @@ pub fn force_all_alert_sources(state: &mut ReplicaState) {
     }];
 }
 
+// Shared fixture module: only the alerts integration target clears these feeds.
+#[allow(dead_code)]
 pub fn clear_feedback(app: &mut App) {
     app.world_mut()
         .resource_mut::<FrameFeedback>()
@@ -325,6 +334,8 @@ pub fn clear_feedback(app: &mut App) {
         .clear();
 }
 
+// Shared fixture module: only the notices integration target needs overrides.
+#[allow(dead_code)]
 pub fn reason_overrides() -> BTreeMap<String, String> {
     interface().reasons
 }

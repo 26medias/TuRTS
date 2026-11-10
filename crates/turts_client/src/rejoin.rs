@@ -240,9 +240,12 @@ impl RejoinController {
         if self.joined || self.terminal_text.is_some() {
             return;
         }
-        self.elapsed_secs = (real_now_secs - started_at)
-            .max(0.0)
-            .min(REJOIN_WINDOW_SECS);
+        let elapsed = real_now_secs - started_at;
+        self.elapsed_secs = if elapsed.is_nan() {
+            0.0
+        } else {
+            elapsed.clamp(0.0, REJOIN_WINDOW_SECS)
+        };
         if self.elapsed_secs >= REJOIN_WINDOW_SECS {
             self.terminal_text = Some(REJOIN_FINAL_TEXT.to_owned());
             self.retry_after_disconnect = false;

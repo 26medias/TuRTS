@@ -429,6 +429,68 @@ pub fn advance_rejoin(
     }
 }
 
+/// `PostUpdate`: `--move X,Y` sends one `MoveTo` (seq 1) after `auto_move_after_ticks` delta
+/// ticks since `Welcome`, once the `Snapshot` has told the client which units it owns.
+pub fn auto_move(
+    opts: Res<ClientOpts>,
+    state: Res<ReplicaState>,
+    hooks: Res<IngestHooks>,
+    mut pending: ResMut<PendingCommands>,
+    mut sent: Local<bool>,
+    status: Res<CommandSendStatus>,
+) {
+    if status.reconnect_required {
+        return;
+    }
+    let Some((x, y)) = opts.0.auto_move else {
+        return;
+    };
+    let (Some(welcome), Some(replica), Some(high)) = (
+        state.welcome,
+        state.replica.as_ref(),
+        hooks.highest_delta_tick,
+    ) else {
+        return;
+    };
+    if *sent
+        || replica.snapshot_tick.is_none()
+        || high < welcome.tick + opts.0.auto_move_after_ticks
+        || opts
+            .0
+            .move_release_file
+            .as_ref()
+            .is_some_and(|path| !move_release_ready(path))
+    {
+        return;
+    }
+    let mut unit_ids: Vec<UnitId> = match opts.0.move_unit {
+        Some(id) => vec![UnitId(id)],
+        None => owned_mobile_ids(&state),
+    };
+    if unit_ids.is_empty() {
+        return;
+    }
+    unit_ids.sort_by_key(|id| id.0);
+    submit(
+        &mut pending,
+        ClientCommand::MoveTo {
+            unit_ids,
+            target: Pos { x, y },
+        },
+    );
+    *sent = true;
+}
+
+#[cfg(not(target_family = "wasm"))]
+fn move_release_ready(path: &std::path::Path) -> bool {
+    path.is_file()
+}
+
+#[cfg(target_family = "wasm")]
+fn move_release_ready(_path: &std::path::Path) -> bool {
+    true
+}
+
 #[cfg(test)]
 mod rejoin_control_tests {
     use super::{Phase, apply_join_rejection};
@@ -563,66 +625,4 @@ mod rejoin_control_tests {
             Phase::Failed(crate::rejoin::REJOIN_FINAL_TEXT.to_owned())
         );
     }
-}
-
-/// `PostUpdate`: `--move X,Y` sends one `MoveTo` (seq 1) after `auto_move_after_ticks` delta
-/// ticks since `Welcome`, once the `Snapshot` has told the client which units it owns.
-pub fn auto_move(
-    opts: Res<ClientOpts>,
-    state: Res<ReplicaState>,
-    hooks: Res<IngestHooks>,
-    mut pending: ResMut<PendingCommands>,
-    mut sent: Local<bool>,
-    status: Res<CommandSendStatus>,
-) {
-    if status.reconnect_required {
-        return;
-    }
-    let Some((x, y)) = opts.0.auto_move else {
-        return;
-    };
-    let (Some(welcome), Some(replica), Some(high)) = (
-        state.welcome,
-        state.replica.as_ref(),
-        hooks.highest_delta_tick,
-    ) else {
-        return;
-    };
-    if *sent
-        || replica.snapshot_tick.is_none()
-        || high < welcome.tick + opts.0.auto_move_after_ticks
-        || opts
-            .0
-            .move_release_file
-            .as_ref()
-            .is_some_and(|path| !move_release_ready(path))
-    {
-        return;
-    }
-    let mut unit_ids: Vec<UnitId> = match opts.0.move_unit {
-        Some(id) => vec![UnitId(id)],
-        None => owned_mobile_ids(&state),
-    };
-    if unit_ids.is_empty() {
-        return;
-    }
-    unit_ids.sort_by_key(|id| id.0);
-    submit(
-        &mut pending,
-        ClientCommand::MoveTo {
-            unit_ids,
-            target: Pos { x, y },
-        },
-    );
-    *sent = true;
-}
-
-#[cfg(not(target_family = "wasm"))]
-fn move_release_ready(path: &std::path::Path) -> bool {
-    path.is_file()
-}
-
-#[cfg(target_family = "wasm")]
-fn move_release_ready(_path: &std::path::Path) -> bool {
-    true
 }
