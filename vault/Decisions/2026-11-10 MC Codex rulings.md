@@ -1004,3 +1004,14 @@ Choice: register source-only Luna/high run105 outside Git from frozen current pa
 Evidence: design10.1:942-946 requires all three screens. Current client_shell.rs sync_client_notice only displays rejoin/fallback notices; Phase at join.rs:38-47 has FetchAdvertisement/FetchLockfile/FetchPackages/Connecting/Joining/Joined/Failed but no verification display stage. No load or Connection lost text exists in current product source. This is an implementation gap in the authorized task, not a new product rule.
 
 Alternative not taken: omit the screens, fabricate load phases in the test, change transport timeout, or serialize unrelated source work behind browser execution. Brief4 scheduling rights and C329 continuation. Task16run16/estimate6 remains below hard24; global105/170.20/25 lanes complete; no second target or compiler.
+
+
+## C342: Keep reload a real action in the native client
+
+Conflict: the design requires a reload button, but the native entry has no reload action. Exiting without restarting would not preserve the action. Rebuilding a new application inside the same event loop requires resetting unrelated renderer/network state.
+
+Choice: the shared screen emits a reload intent. The web entry calls actual location.reload. The native main entry alone launches the current executable with its existing CLI arguments and current PlayerId through the existing --player-id option, then exits the old app only on successful launch. A launch failure keeps the current app alive and displays useful failure guidance. Native main uses the existing stored-identity RejoinController for retained explicit identity, preserving first-transport15s and1s Hello cadence. Generic build_app/headless tests never install the process launcher, preventing test-binary recursion. Test intent and argument/identity composition separately; actual native process relaunch remains NOT TRACED until executed.
+
+Evidence: design10.1:946 requires Connection lost and reload on reconnect_required; design10.4:964 gives native identity through existing --player-id. crates/turts_client/src/main.rs:11-33 parses options and runs build_app with AppExit handling; options.rs:187 parses --player-id. Web entry already installs stored-identity rejoin via RejoinController::for_stored_identity. No current native restart consumer exists. This supplies the nearest real platform mechanism for the same designed button, not a new key or public API.
+
+Alternative not taken: label exit as reload, spawn during headless contracts, add a new CLI switch, reset the transport deadline, lose the player identity, or silently drop native behavior. Brief4 nearest-existing mechanism and scheduling rights; RUN105 prepares source only, RUN94 retains live/runtime ownership.105/170 runs;20/25 lanes complete.
