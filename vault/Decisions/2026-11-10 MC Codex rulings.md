@@ -982,3 +982,14 @@ Choice: when the actual document.pointerLockElement is the actual game canvas, m
 Evidence: actual run94-cam2-actual-lock-v4/input-log.json has move entry25 requested1,360, downstream client640,360/seqnull and empty actual_events. Scene checkpoint for edge-move records actual DOM lock true, requested/active true and engine position1,360. Entry20 move640,360 emits no event because driver-io.js movePointer returns for unchanged coordinates. tests/browser/harness/run.js:183-184 supplies the absolute-only constraint. Root external locked-input-collector extracts the real callback: old callback loses fixed-client locked motion; candidate passes14 controls for actual locked deltas, normal absolute input, wrong target/other lock/type/outside-dispatch/nonfinite/repeated events and keyboard matching. This is instrument qualification only; actual complete CAM2 remains pending.
 
 Alternative not taken: treat lost logger receipts as a feature red, alter observed client coordinates, trust a requested lock flag, accept wrong-target/unbounded events, or repeat the unchanged instrument run. Brief4 instrument rights, design3.2 and K9 unchanged.103/170 runs;20/25 lanes complete.
+
+
+## C340: Prepare remaining input producers in parallel without a second build lane
+
+Conflict: Task16 still lacks the Chrome getLayoutMap producer and pointer-button capture required by design3.1 and10.2. Serial implementation behind the current browser rows would keep the sole compiler owner busy with unrelated source work.
+
+Choice: register one source-only Luna/high builder run104 outside Git from the frozen RUN94 packet. Prepare only those two missing producer paths, meaningful test-only baseline deltas and implementation deltas. RUN94 retains the sole live source writer/compiler/cache/runtime and later applies reviewed local seams in its next necessary source batch. Root reviews the source proposal and the final independent task review still runs. No extra target, browser or semantic driver API. Existing bindings stay physical; layout affects display only. Pointer capture excludes the opening click and uses actual modifiers.
+
+Evidence: design3.1:317-320 requires navigator.keyboard.getLayoutMap once at Chrome load with fallback; design10.2:954 requires next key or pointer button plus modifiers. Current web lib lacks a layout-map producer; client_shell.rs capture_physical_binding matches only KeyboardInput. Frozen current source archive7c64535f96cdbe6cc0432c0d6950402d8212173781b6e4c3cef29ec042574b9a is the input. All real baselines/greens/gates/plants remain owner work.
+
+Alternative not taken: leave either feature out, introduce a second cache/compiler, or serialize source preparation behind browser startup. Brief4 scheduling rights and C329 soft continuation. Task16run15/estimate6 below hard24; global104/170.20/25 lanes complete.
