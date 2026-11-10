@@ -1048,3 +1048,14 @@ Choice: register source-only repair108 on the same Luna/high source seat, keep r
 Evidence: RUN107 review.md and source-controls receipt. Actual winit0.30 state.rs forwards the full raw batch before app.update; bevy_picking processes input during PreUpdate. Button requires Pressed on PointerClick and removes it on release. WindowEvent derives Clone only. These are source-backed correctness defects, not product choices or runtime reds.
 
 Alternative not taken: send the known source blockers to the compiler, drop same-batch intended input, treat manual post-Activate injection as actual runner proof, or merge before independent recheck. Brief4 requires High repairs/recheck; C329 continuation remains. Task16run19/estimate6 below hard24; global108/170,20/25 lanes complete.
+
+
+## C346: Recover the stalled workers and give Root the runtime lease
+
+Conflict: authoritative agent status reports RUN94 and RUN105 pending_init, while actual process inventory has no Cargo/rustc/Trunk/Xvfb/client/server process. The last RUN94 replay file is timestamp22:33 UTC; current clock23:26 UTC. Source preparation progressed, but the runtime lane did not. Both pending workers were interrupted before any ownership transfer.
+
+Choice: Root takes the sole Task16 source/compiler/cache/GPU/runtime lease and preserves the complete current WIP before edits. Continue current browser acceptance and then owner-controlled source adoption/baseline/green work with the same C318 wrapper and target/mc-t16. Register counted continuation109 to resume the interrupted screen source seat with refreshed instructions; it stays external/source-only. Input source108 remains active outside Git. Do not infer that pending_init is productive execution or start a second compiler/cache.
+
+Evidence: collaboration.list_agents and interrupt_agent return pending_init for both; ps name inventory has no build/browser-runtime executables. Native cache36GiB and live branch51170cb4 remain intact, primary main clean. Current source helpers and actual recorded row artifacts are preserved.
+
+Alternative not taken: leave the critical runtime lane idle, restart an unverified live process, delete dirty work, or hide the initialization stall as completed testing. Brief4 runtime/scheduling rights. Screen continuation109 is Task16run20/estimate6 below hard24; global109/170.20/25 lanes complete.
