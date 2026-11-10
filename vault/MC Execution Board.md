@@ -3279,3 +3279,24 @@ Root added three real-system regression tests under the exclusive C346 runtime l
 Root repaired physical key maintenance while suppressing only captured KeyDown actions, normalized and clamped each slider using its actual SliderRange and inverse layout scale, and kept the engine cursor in window-logical pixels across UI/device scales. The same three tests pass in `root-t16-controls-regressions-green-v1`, command/wrapper exit0, source unchanged, raw SHA256 `65124ffc33c5d0f31814e04b5747c8fee9fbc967b5c979de31e5cbcae24540cf`. Menu height is now bounded to 95 percent of its viewport parent; actual scaled browser geometry remains NOT TRACED.
 
 Root adopted only the reviewed RUN103-v2 private preboot fixture/run.js seams, preserving C328 and the real input observer, then connected the SEL4 stale-key receiver and calibrated group-centering pixel helper. Actual adopted-source pure controls pass for opaque/wrong origins, one-shot reload seeding, successful target-origin set/readback lineage, private receipt permissions, and initializer-to-collector-to-public-SEL4 receiver behavior. These controls are not browser acceptance. A fresh full headed SEL4 row is running under the same sole cache/profile. No new agent run was spent; global110/170, Task16run21/hard24,20/25 lanes complete. RUN110 is registered but the agent service currently reports pending_init; source review has no verdict yet.
+
+
+## C348: Keep physical fixture preconditions separate from product results
+
+Conflict: the fresh headed SEL4 run retained a full-screen focus overlay at its initial checkpoint; its first drag was the focus gesture, selection stayed empty, and the old oracle reported the empty fixture selection as a group-assignment semantic failure. Input108 also supplied tests that expected unmodified Right/Left to become overrides despite existing Forge engine command/selection bindings.
+
+Choice: keep every acceptance row and gameplay binding unchanged. Add a real canvas focus click and 250 ms wait before SEL4 selection, retain a post-focus checkpoint, and validate the exact two owned fixture workers before judging group assignment. Classify the original empty-selection episode as setup-invalid, with no product-red credit. Use unbound Back for simple pointer-capture red/green and foreign-window-modifier tests; make repeated Left capture assert the real selection-action conflict. Keep the original invalid-contract runs as evidence, without acceptance credit.
+
+Evidence: `root-t16-sel4-full-v1`, command/wrapper1/source unchanged/raw `46df50dc10a9008178710c168bf1f92962c6240d0a258de53a2349a01784c466`; initial typed `focus_overlay` covers [0,0,1280,720], selected-before-assignment is empty, both actual workers project inside the planned drag. Forge unchanged engine defaults in `crates/turts_interaction/src/input_map.rs:27-33` own the unmodified pointer chords. Corrected native baseline `root-t16-settings-input-baseline-red-v2` compiles:174 pass,5 named failures,exit101/raw `b18566e85cf98de07d3f5bf3b9af81f3ee39afd7621ab762acb97cd0f8dd8301`; four control persistence failures and unbound Back capture, not an impossible collision-free Right override.
+
+Alternative not taken: weaken group membership checks, change player keys, count a UI-covered gesture as a product defect, or bypass actual binding conflicts. Brief4 instrument-detail and nearest-existing-mechanism rights.
+
+## C349: Install product screens through the existing shell plugin
+
+Conflict: RUN109 proposed installing ClientScreensPlugin only from graphical build_app, while its old-API baseline tests correctly exercise existing ClientShellPlugin. Those identical tests would not observe the new screen owner after implementation.
+
+Choice: install ClientScreensPlugin through ClientShellPlugin, the existing common shell owner, and remove the separate graphical-only and duplicate candidate-test registrations. The same old-API baseline fixture then exercises actual production registration before and after implementation. Headless apps may own screen ECS data without a renderer; native process relaunch remains installed ONLY from graphical main. Actual native/headless tests must verify the composition. Screen content, reload behavior, and rejoin clocks are unchanged.
+
+Evidence: live `crates/turts_client/src/lib.rs:308-316` already installs ClientShellPlugin for both modes. Frozen109 `baseline-tests.patch` uses only that existing plugin; candidate module owns the new screen systems. RUN110 independently agreed the common-owner composition and reported the missing type declarations/native MessageWriter return mismatch as setup blockers to repair before compilation, with no product red credit.
+
+Alternative not taken: change the baseline fixture after its red to add a new plugin, run a separate test-only UI implementation, or allow headless/test process relaunch. Brief4 mechanism and implementation-order rights. Global110/170;Task16run21/hard24;20/25 lanes complete.
