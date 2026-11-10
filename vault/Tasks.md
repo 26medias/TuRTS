@@ -104,7 +104,7 @@ Human usability amendment1354e33: catalog-derived principal labels/named local s
 
 ## Current MC status
 
-MC is active on this desktop. 19 of 25 lanes are complete; 81 of 170 build runs are registered. Task 17 merged at 8ecfe4f after final review with 0 High and 0 unresolved Medium findings. All 11 integration gate records pass: native 1,519/0/21, QA, wasm, boundaries, unchanged frozen stream and headed T7 with 137 checked frames and 54 moving. The idle Task 17 worktree is retired; branch, WIP archives, exact final source archive and all runtime evidence are preserved. Root owns the sole cache in integration. Wave 7 push and hosted CI read are next, then Wave 8. Minimap/order rows, full shell/persistence/focus, group/performance instruments, legacy migration, human playtests and closeout remain. Main bb611bd is unchanged. Task 23 stops for CEO PT1/PT2, logged not blind.
+MC is active on this desktop. 19 of 25 lanes are complete; 86 of 170 build runs are registered. Wave7 at2c11383 is pushed; terminal CI42789795527 has agents success and the two approved O13 legacy migration failures, owner21. Task14 RUN82/RUN83 has a verified original-stub camera semantic red and is implementing minimap/order rows; RUN82 owns the sole cache. Task16 RUN86 repairs source instruments after RUN85 found four High readiness issues; no second runtime or feature acceptance is claimed. Tasks14,16,22,21,23,24 remain. Mainbb611bd is unchanged; no main merge or push. Before Task23, provide the CEO URL and wait for PT1/PT2, logged not blind.
 
 ## Historical MC checkpoints
 
@@ -166,7 +166,7 @@ ACTIVE Wave7:16/25complete;74/170buildruns. RUN72 Task10 solelocalruntime/cache;
 
 ## MC current desktop checkpoint
 
-MC is active on this desktop. 19 of 25 lanes are complete; 81 of 170 build runs are registered. Task 17 merged at 8ecfe4f after final review with 0 High and 0 unresolved Medium findings. All 11 integration gate records pass: native 1,519/0/21, QA, wasm, boundaries, unchanged frozen stream and headed T7 with 137 checked frames and 54 moving. The idle Task 17 worktree is retired; branch, WIP archives, exact final source archive and all runtime evidence are preserved. Root owns the sole cache in integration. Wave 7 push and hosted CI read are next, then Wave 8. Minimap/order rows, full shell/persistence/focus, group/performance instruments, legacy migration, human playtests and closeout remain. Main bb611bd is unchanged. Task 23 stops for CEO PT1/PT2, logged not blind.
+MC is active on this desktop. 19 of 25 lanes are complete; 86 of 170 build runs are registered. Wave7 at2c11383 is pushed; terminal CI42789795527 has agents success and the two approved O13 legacy migration failures, owner21. Task14 RUN82/RUN83 has a verified original-stub camera semantic red and is implementing minimap/order rows; RUN82 owns the sole cache. Task16 RUN86 repairs source instruments after RUN85 found four High readiness issues; no second runtime or feature acceptance is claimed. Tasks14,16,22,21,23,24 remain. Mainbb611bd is unchanged; no main merge or push. Before Task23, provide the CEO URL and wait for PT1/PT2, logged not blind.
 
 
 ## MC final native gate and current QA repair
