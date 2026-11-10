@@ -424,7 +424,7 @@ function pixelsNearColour(image, [cx, cy], radius, colour, tolerance) {
 }
 
 function pixelBounds(points) {
-    assert(points.length > 0, "pixel bounds require a visible component");
+    assert(points.length > 0, "pixel bounds need a visible component");
     const xs = points.map((point) => point[0]);
     const ys = points.map((point) => point[1]);
     return { width: Math.max(...xs) - Math.min(...xs) + 1, height: Math.max(...ys) - Math.min(...ys) + 1 };
