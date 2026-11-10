@@ -822,3 +822,14 @@ Choice: initialize a new positive monotonic epoch when the actual distinct brows
 Evidence: actual slot1-fixture-private.json under run94-slot1-surface-experiment-v1 records A1/B2/C3/copiedA3. Current public replayv2 rejects replacement must advance handle3 epoch. harness/run.js:877-879 attaches only the future navigation listener. Installed primary Playwright types types.d.ts:1125-1127 documents that page becomes available once its initial URL response has begun loading. This explains why that event need not precede first framenavigated.
 
 Alternative not taken: rewrite failed data, reuse a closed document identity, count bad epochs as product red, weaken authentic-popup proof, change player identity/storage or add another browser attempt before repairing the instrument. Brief4 lifecycle observation detail continuing C294/C322.97/170runs;20/25complete.
+
+
+## C326: Validate stored binding chords through the existing key contract
+
+Conflict: RUN97 finds loaded_bindings accepts any serde-valid Binding::Key.code string and filters action names only. A stored known action menu with NotARealCode, reservedF12 or repeated modifiers can override reachable defaults without a notice, unlike the existing authored input validator/editor. This can make the menu unreachable after reload. Runtime reproduction is NOT TRACED; it is a source-supported Medium, not a claimed existing red.
+
+Choice: repair now in the shared native/web stored-binding parser with the existing KNOWN_KEY_CODES and reserved-chord/unique-modifier contract. Treat invalid persisted chords as unreadable binding data: use defaults and one existing deduplicated notice for that namespace/read episode. Preserve valid physical keys, pointer/wheel types, valid action filtering and compatibility/mod namespaces. Do not invent a new list of keys or new UI. First obtain an actual file/plugin/parser behavior failure with the malformed accepted action, then restore usable defaults and one notice; verify valid overrides remain valid. Final native/web reload tests and PER1 actual corrupt-data proof remain required.
+
+Evidence: frozen31505 persist.rs:56-69 serde-parses actions and checks nonempty action names only; native353-362/web595-604 only filter known action names. turts_mod_api/src/input.rs:23-26 represents key code as String; :51-69 defines reserved/known physical codes. Existing mod-runtime content_mc_validation.rs:1394-1433 checks known code, repeated modifiers and reserved chords. Design10.2 forbids reserved player bindings,10.4 gives defaults/one notice for unreadable data.
+
+Alternative not taken: defer a known unusable persisted menu, accept arbitrary key names silently, add a second independent key list, change valid binding semantics or label static reasoning an executed red. Brief4 Medium repair decision/nearest existing input rule;97/170runs;20/25complete.
