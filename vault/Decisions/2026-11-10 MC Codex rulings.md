@@ -938,3 +938,14 @@ Browser predicates must execute from valid actual data before the optional nativ
 Evidence: RUN102 review.md/e52583da and executed actual evaluator/initializer/public controls; original packet all86hashes aef497c8 verified. Source initializer mechanism itself passes wrong-origin/one-shot/exclusion controls; integration/semantic receiver needs repair. Current real settings notice is Settings were unreadable; default settings are in use.; binding notice is Player settings were unreadable; defaults are in use. C326 valid audio seed must be nested audio object. Native path producer remains unimplemented.
 
 Alternative not taken: serialize fixture repair behind product work, copy stale snapshots over C328, call source mocks acceptance, skip a fixed clause, fabricate native receipts or run another compiler/browser. Brief4 instrument/scheduling and C329 continuation; RUN103 is Task16run14/estimate6, below hard24, global103/170.20/25complete.
+
+
+## C336: Keep the locked virtual pointer distinct from the actual Window cursor
+
+Conflict: K9/design3.2 requires the mod cursor drawn from summed MouseMotion under pointer lock. The existing CursorFeed.position means actual Window.cursor_position, which is correctly absent while locked. Reusing that field for a derived engine pointer would falsify its observation semantics and would not supply the missing internal Core/renderer path. The real CAM2 baseline already lacks the opt-in control.
+
+Choice: implement an app-owned locked virtual pointer derived from actual Bevy MouseMotion, gated by actual acquired lock and initialized from the actual available canvas pointer/defined canvas fallback. Use the same derived position for Core hover/hit tests, edge pan and the drawn mod cursor. Preserve actual Window cursor position and distinguish requested/actual lock. Add clearly named optional derived observations through the existing typed CursorFeed/debug path, with actual source/frame identity; no new bridge or semantic driver IO. Keep opt-in plus real click acquisition, F10 behavior and the designed keys/8logical-pixel band. Source/native behavior tests and actual CAM2 positive/pixel/causal checks still required.
+
+Evidence: actual CAM2 run94-cam2-current-menu-v1 raw b3f3473952aaf5ad2dff8d1aca0435e4099311abffe0b7450adef76b8ee16663 has named missing Keep the cursor in the game opt-in. Current widgets/cursor.rs reads actual Window.cursor_position; no app-owned locked delta pointer exists. Design3.2:335 explicitly says engine cursor sums MouseMotion deltas; K9 chooses opt-in engine cursor. RUN94 identifies this precise internal seam before implementation.
+
+Alternative not taken: fabricate actual Window coordinates, infer actual lock from a requested flag, add driver read/set APIs, skip the engine cursor or block the already-authorized feature on another permission question. Brief4 nearest-existing instrument/mechanism detail;103/170runs;20/25complete.
