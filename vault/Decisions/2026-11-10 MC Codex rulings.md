@@ -631,3 +631,14 @@ Choice: authorize a default-off, bounded harness diagnostic around the actual GP
 Evidence: tests/browser/harness/run.js:180-195 creates the actual windows and waits for typed startup. Current C306 diagnostics collect real console/pageerror/requestfailed events at:356-364 and setup-failure pages at:438-449. Actual run t16-builder/run94/physical-slot1-headed-v2/run-20261110T170016Z-8oU4Hl retains C white pixels and empty bridge reads, 27console events/no overflow/no pageerror/requestfailed, server A/B only. Unchanged crates/turts_client_web/src/lib.rs first publication occurs in Last; installed Bevy renderer logs adapter selection before awaiting request_device. This is a causal hypothesis to measure, not a product verdict.
 
 Alternative not taken: raise readiness or reconnect bounds, guess a shader/network repair, add promise handlers that alter rejection observation, change device selection, or count setup failure as K27/product red. Brief4 instrument detail.96/170runs;20/25complete.
+
+
+## C309: Keep the complete menu snapshot bounded at 256 text nodes
+
+Conflict: the complete engine-and-mod action list makes the actual menu exceed the original C304 snapshot cap of128 text nodes. A native check exposes the truncation. Omitting engine actions would violate design10.2; an unbounded bridge would violate the evidence contract.
+
+Choice: raise only MAX_SETTINGS_MENU_TEXT_NODES to256. Keep the four-root and512-descendant bounds, per-node actual layout/visibility, explicit text_truncated/descendants_truncated and root overflow records. The menu remains one screen with a bounded normal ScrollArea; every effective action remains present. No new driver method, product bridge, acceptance condition, key or tab.
+
+Evidence: crates/turts_client/src/widgets/snapshot.rs:11-13 and:43-55; actual cap128 intermediate failure retained by RUN94, then current native library160/160 passes raw8e83bbecffe993fb7c983c9842feb083dbd759700afa887995f88121e9a3dbbc exit0, including root-overflow, full-list, first-snapshot and capture isolation checks. Native persistence15/15 raw0bd689c7 exit0, locked wasm check95b2358b exit0. Root verifies all three raw hashes/source_unchanged/default-cache-absent receipts. Browser geometry/scrolling and full Task16 acceptance remain NOT TRACED.
+
+Alternative not taken: remove engine defaults, hide truncation, publish unbounded descendants, fabricate positive layout, or add menu tabs/keys. This is brief4 instrument-detail/nearest-design implementation choice continuing C304.96/170runs;20/25complete.
