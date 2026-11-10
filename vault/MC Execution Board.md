@@ -1904,3 +1904,6 @@ C229mechanism: rejectedHello connection kicks300ms/ignoresresends; useactualreco
 
 
 C230: keepstrictAUD1firstloadallSuspended→realgesture/allRunning; actualbrowserreloadC40isRunning/noGesture/zeroPlayers inbothpairs. Removeextraunsupportedreload-must-suspendassert; observeactualrunning/suspendedcontexts+noNewGesture/zeroPlayersthenNEWrealcategorysinks/gainsaftergesture. Designrowunchanged; C229rejoinfailurestillfails.80/170.
+
+
+C231: RUN80 currentTask17groundpickeractualofflineoutput1232,216 isvoidRGBA43,44,47 andC84outside32x16floor. Rootrepairs withcurrentPNGopaquegreen25sample17x17patch plusoriginalHUD/bodyexclusions; nocoordinates/semanticreadsindriver. Preimage/sourcehasharchived, reviewer80recheckpending. Historicalbaselinevoidtarget32,568preserved/labeled; missingpanel/tooltipobserverredsunaffected; nobrowsergreenclaimed. C229actualnativecompiledred101 rootauditedexactsource21769d73/raw5254d4f3; broadergreenpending.80/170;17/25.
