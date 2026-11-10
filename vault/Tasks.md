@@ -104,7 +104,7 @@ Human usability amendment1354e33: catalog-derived principal labels/named local s
 
 ## Current MC status
 
-MC is active on this desktop. 19 of 25 lanes are complete; 88 of 170 build runs are registered. Wave7 at2c11383 is pushed; terminal CI42789795527 has agents success and the two approved O13 legacy migration failures, owner21. Task14 RUN82 builder owns the sole cache; RUN88 independently reviews its feature/order instruments. The latest full minimap diagnostic passes camera/drag/right/zoom/dot/frame checks but has no damage stimulus because an interior trooper jammed; C277 repairs the physical actor choice. Task16 RUN86 repairs source instruments; Task22 RUN87 source prep is finished with runtime NOT TRACED. Tasks14,16,22,21,23,24 remain. Mainbb611bd is unchanged. Before Task23, provide the CEO URL and wait for PT1/PT2, logged not blind.
+MC is active on this desktop. 19 of 25 lanes are complete; 90 of 170 build runs are registered. Wave7 at2c11383 is pushed; terminal CI42789795527 has agents success and only the two approved O13 legacy migration failures, owner21. Task14 RUN82 owns the sole cache; RUN88 independently reviews it. Full MM1 now passes two actual headed attempts at rawf04e765f with real approach, accepted commands, damage and slot1 ping pixels. C203 pixel-evidence portion is complete; full ALR1 follow-up, ORD3/4/5, gates, six plants and final own review remain. Task16 RUN90 repairs four remaining High source-instrument areas after RUN89 NOTREADY; no runtime/feature acceptance yet. Task22 RUN87 source prep is finished; C282 cost fixes and all runtime evidence remain. Mainbb611bd is unchanged. Before Task23, give the CEO URL and wait for PT1/PT2, logged not blind.
 
 ## Historical MC checkpoints
 
@@ -166,7 +166,7 @@ ACTIVE Wave7:16/25complete;74/170buildruns. RUN72 Task10 solelocalruntime/cache;
 
 ## MC current desktop checkpoint
 
-MC is active on this desktop. 19 of 25 lanes are complete; 88 of 170 build runs are registered. Wave7 at2c11383 is pushed; terminal CI42789795527 has agents success and the two approved O13 legacy migration failures, owner21. Task14 RUN82 builder owns the sole cache; RUN88 independently reviews its feature/order instruments. The latest full minimap diagnostic passes camera/drag/right/zoom/dot/frame checks but has no damage stimulus because an interior trooper jammed; C277 repairs the physical actor choice. Task16 RUN86 repairs source instruments; Task22 RUN87 source prep is finished with runtime NOT TRACED. Tasks14,16,22,21,23,24 remain. Mainbb611bd is unchanged. Before Task23, provide the CEO URL and wait for PT1/PT2, logged not blind.
+MC is active on this desktop. 19 of 25 lanes are complete; 90 of 170 build runs are registered. Wave7 at2c11383 is pushed; terminal CI42789795527 has agents success and only the two approved O13 legacy migration failures, owner21. Task14 RUN82 owns the sole cache; RUN88 independently reviews it. Full MM1 now passes two actual headed attempts at rawf04e765f with real approach, accepted commands, damage and slot1 ping pixels. C203 pixel-evidence portion is complete; full ALR1 follow-up, ORD3/4/5, gates, six plants and final own review remain. Task16 RUN90 repairs four remaining High source-instrument areas after RUN89 NOTREADY; no runtime/feature acceptance yet. Task22 RUN87 source prep is finished; C282 cost fixes and all runtime evidence remain. Mainbb611bd is unchanged. Before Task23, give the CEO URL and wait for PT1/PT2, logged not blind.
 
 
 ## MC final native gate and current QA repair
