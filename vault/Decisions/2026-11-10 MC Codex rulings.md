@@ -993,3 +993,14 @@ Choice: register one source-only Luna/high builder run104 outside Git from the f
 Evidence: design3.1:317-320 requires navigator.keyboard.getLayoutMap once at Chrome load with fallback; design10.2:954 requires next key or pointer button plus modifiers. Current web lib lacks a layout-map producer; client_shell.rs capture_physical_binding matches only KeyboardInput. Frozen current source archive7c64535f96cdbe6cc0432c0d6950402d8212173781b6e4c3cef29ec042574b9a is the input. All real baselines/greens/gates/plants remain owner work.
 
 Alternative not taken: leave either feature out, introduce a second cache/compiler, or serialize source preparation behind browser startup. Brief4 scheduling rights and C329 soft continuation. Task16run15/estimate6 below hard24; global104/170.20/25 lanes complete.
+
+
+## C341: Prepare the remaining shell screens in a separate source-only seat
+
+Conflict: SH1 still needs actual load/rejection/connection-lost screens as well as fixtures. Current shell implements menu/focus/rejoin notices, but has no fetch/verify/join progress/package-version display or reconnect_required reload screen. Current phase enum has no observable verification stage. These features need product work while RUN94 is busy with acquired-lock, persistence and full physical rows.
+
+Choice: register source-only Luna/high run105 outside Git from frozen current packetadabf902. Prepare actual load progress derived from acquisition, rejection guidance derived from the real failure reason, and connection-lost/reload behavior from reconnect_required. Keep the existing first-transport rejoin clock and frozen values unchanged. Use a separate engine screen module and bounded source/test baseline and green deltas. A verification phase must describe actual verification work, not a fixture-written claim. RUN94 retains all live writes/compiler/runtime; apply local seams after source review and execute actual missing-screen baselines before their corresponding repair.
+
+Evidence: design10.1:942-946 requires all three screens. Current client_shell.rs sync_client_notice only displays rejoin/fallback notices; Phase at join.rs:38-47 has FetchAdvertisement/FetchLockfile/FetchPackages/Connecting/Joining/Joined/Failed but no verification display stage. No load or Connection lost text exists in current product source. This is an implementation gap in the authorized task, not a new product rule.
+
+Alternative not taken: omit the screens, fabricate load phases in the test, change transport timeout, or serialize unrelated source work behind browser execution. Brief4 scheduling rights and C329 continuation. Task16run16/estimate6 remains below hard24; global105/170.20/25 lanes complete; no second target or compiler.
