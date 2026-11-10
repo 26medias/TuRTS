@@ -1,0 +1,57 @@
+{
+  "row": "ORD4",
+  "package": "mods/muster",
+  "driver": "tests/browser/orders-driver.js",
+  "oracle": "tests/browser/orders-oracle.js",
+  "runs": "headed",
+  "capture_scene_checkpoints": true,
+  "windows": 1,
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "map_size": [
+    64,
+    48
+  ],
+  "slot_colours": [
+    "#0072B2",
+    "#E69F00"
+  ],
+  "minimap_inset": 8,
+  "minimap_size": 200,
+  "stages": {
+    "attack_view": [
+      55.2,
+      34
+    ],
+    "attack_target": [
+      55.2,
+      34
+    ],
+    "attack_wait_ms": 18000,
+    "rush_view": [
+      55.2,
+      34
+    ],
+    "rush_target": [
+      60,
+      24
+    ],
+    "rush_wait_ms": 16000,
+    "force_point": [
+      58.8,
+      35.2
+    ],
+    "force_wait_ms": 18000,
+    "weapon_cooldown_ticks": 20,
+    "force_safe_point": [
+      48,
+      28
+    ],
+    "force_safe_wait_ms": 8000
+  },
+  "viewports": [
+    "1280x720"
+  ]
+}

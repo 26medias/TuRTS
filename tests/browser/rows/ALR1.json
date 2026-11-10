@@ -9,5 +9,8 @@
   "expected_alert_id": "muster_unit_damaged",
   "expected_alert_text": "Unit under attack",
   "cooldown_seconds": 1,
-  "expected_ping": true
+  "expected_ping": true,
+  "map_size": [64, 48],
+  "slot_colours": ["#0072B2", "#E69F00"],
+  "ping_colour": "#ffcc00"
 }

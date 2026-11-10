@@ -1,0 +1,1 @@
+(target: Unit("muster:dummy"), shape: Capsule(radius: 0.5, height: 1.0))

@@ -8722,6 +8722,7 @@ dependencies = [
  "turts_interaction",
  "turts_mod_api",
  "turts_mod_runtime",
+ "turts_net_protocol",
  "turts_sim",
 ]
 

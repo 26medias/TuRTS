@@ -704,8 +704,23 @@ fn spawn_widget(
             world.entity_mut(id).insert(Visibility::Hidden);
         }
         Primitive::MinimapView {
-            background, frame, ..
+            background,
+            frame,
+            unit_size,
+            ping,
         } => {
+            if let Some(mut node) = world.get_mut::<Node>(id) {
+                node.overflow = Overflow::clip();
+            }
+            world.entity_mut(id).insert(primitives::MinimapViewConfig {
+                unit_size: if unit_size.is_finite() && *unit_size > 0.0 {
+                    *unit_size
+                } else {
+                    2.0
+                },
+                frame_colour: primitives::parse_colour(frame),
+                ping_colour: ping.as_deref().and_then(primitives::parse_colour),
+            });
             if let Some(color) = primitives::fill_colour(background.as_ref()) {
                 world.entity_mut(id).insert(BackgroundColor(color));
             }
@@ -1670,6 +1685,71 @@ mod tests {
             font: None,
             size: 12,
         }
+    }
+
+    #[test]
+    fn authored_minimap_root_clips_marker_extents_to_its_widget_rect() {
+        let mut world = World::new();
+        let replica = crate::replica::Replica::new(20);
+        let content = crate::content::ClientContent::default();
+        let selection = Vec::new();
+        let groups = BTreeMap::new();
+        let alerts = Vec::new();
+        let bindings = BTreeMap::new();
+        let input_map = turts_mod_api::InputMapDef {
+            actions: Vec::new(),
+            engine_overrides: Vec::new(),
+        };
+        let guide = Vec::new();
+        let context = sources::SourceContext {
+            replica: &replica,
+            content: &content,
+            selection: &selection,
+            owner_slot: 0,
+            interface: None,
+            interface_package: Some("test"),
+            control_groups: &groups,
+            alerts: &alerts,
+            bindings: &bindings,
+            input_map: &input_map,
+            guide: &guide,
+            guide_open: false,
+            last_notice: None,
+        };
+        let widget = Widget {
+            id: "minimap".into(),
+            at: None,
+            size: Size {
+                w: turts_mod_api::Dimension::Px(200.0),
+                h: turts_mod_api::Dimension::Px(200.0),
+            },
+            layer: 1,
+            visible: Vec::new(),
+            tooltip: None,
+            widget: Primitive::MinimapView {
+                background: None,
+                frame: "#ffffff".into(),
+                unit_size: 4.0,
+                ping: Some("#ffcc00".into()),
+            },
+        };
+
+        let root = spawn_widget(
+            &mut world,
+            None,
+            &widget,
+            Vec2::splat(400.0),
+            &context,
+            "test",
+            &test_tooltip_style(),
+            None,
+        );
+
+        assert_eq!(
+            world.get::<Node>(root).unwrap().overflow,
+            Overflow::clip(),
+            "the authored minimap root must clip frame, unit, node, and ping pixels to its rectangle"
+        );
     }
 
     #[test]

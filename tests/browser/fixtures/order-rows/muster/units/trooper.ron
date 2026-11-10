@@ -1,0 +1,1 @@
+(id: "trooper", name: "Trooper", footprint: Circle(radius: 0.5), movement: Some((speed: 3.0)), inventory: None, gatherer: None, drop_off: None, producer: None, health: Some((max: 50)), weapon: Some((range: 4.0, cooldown_ms: 1000, damage: 5, ammo: None, targets: (slots: Other))), removal: Some((by_command: true, contents: Destroy)))

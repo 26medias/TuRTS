@@ -39,13 +39,29 @@ type CapturePanelQuery<'w, 's> = Query<
     'w,
     's,
     (
+        Entity,
+        &'static ComputedNode,
+        &'static UiGlobalTransform,
+        &'static InheritedVisibility,
+        &'static ComputedUiTargetCamera,
+        Option<&'static CalculatedClip>,
+        &'static bevy::ui::ComputedStackIndex,
+    ),
+    With<UiCaptureRoot>,
+>;
+
+type MinimapInputQuery<'w, 's> = Query<
+    'w,
+    's,
+    (
+        Entity,
         &'static ComputedNode,
         &'static UiGlobalTransform,
         &'static InheritedVisibility,
         &'static ComputedUiTargetCamera,
         Option<&'static CalculatedClip>,
     ),
-    With<UiCaptureRoot>,
+    With<crate::widgets::primitives::MinimapViewConfig>,
 >;
 
 #[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
@@ -89,6 +105,7 @@ pub struct CoreRuntime {
     pressed_keys: HashSet<String>,
     cursor: Option<Vec2>,
     pointer_over_widget: Option<bool>,
+    minimap_pointer: Option<turts_mod_api::Button>,
     window_focused: Option<bool>,
     last_ui_selection: Option<u32>,
     last_core_primary: Option<u32>,
@@ -506,35 +523,107 @@ fn over_widget(
     panels: &CapturePanelQuery<'_, '_>,
     cameras: &Query<(Entity, &Camera), With<Camera3d>>,
 ) -> bool {
+    capture_stack_at(cursor, panels, cameras, None).is_some()
+}
+
+fn capture_stack_at(
+    cursor: Vec2,
+    panels: &CapturePanelQuery<'_, '_>,
+    cameras: &Query<(Entity, &Camera), With<Camera3d>>,
+    target_camera: Option<Entity>,
+) -> Option<(Entity, u32)> {
     panels
         .iter()
-        .any(|(node, transform, visible, target, clip)| {
+        .filter_map(|(entity, node, transform, visible, target, clip, stack)| {
             if !visible.get() || node.size().min_element() <= 0.0 {
-                return false;
+                return None;
             }
-            let Some(camera_id) = target.get() else {
-                return false;
-            };
-            let Some((_, camera)) = cameras.iter().find(|(entity, _)| *entity == camera_id) else {
-                return false;
-            };
+            let camera_id = target.get()?;
+            if target_camera.is_some_and(|expected| expected != camera_id) {
+                return None;
+            }
+            let (_, camera) = cameras.iter().find(|(entity, _)| *entity == camera_id)?;
             if !camera.is_active {
-                return false;
+                return None;
             }
-            let Some(point) = cursor_in_ui_viewport(cursor, camera) else {
-                return false;
-            };
+            let point = cursor_in_ui_viewport(cursor, camera)?;
             if !node.contains_point(*transform, point) {
-                return false;
+                return None;
             }
-            match clip {
+            let inside_clip = match clip {
                 Some(CalculatedClip::FullyClipped) => false,
                 Some(CalculatedClip::Rects(clips)) => clips.iter().all(|clip| {
                     clip.rect
                         .contains(clip.world_to_clip_local.transform_point2(point))
                 }),
                 None => true,
+            };
+            inside_clip.then_some((entity, stack.0))
+        })
+        .max_by_key(|(_, stack)| *stack)
+}
+
+fn minimap_local_point(
+    node: &ComputedNode,
+    transform: UiGlobalTransform,
+    visible: bool,
+    clip: Option<&CalculatedClip>,
+    point: Vec2,
+) -> Option<[f32; 2]> {
+    if !visible || node.size().min_element() <= 0.0 || !node.contains_point(transform, point) {
+        return None;
+    }
+    if let Some(clip) = clip {
+        match clip {
+            CalculatedClip::FullyClipped => return None,
+            CalculatedClip::Rects(rects)
+                if !rects.iter().all(|rect| {
+                    rect.rect
+                        .contains(rect.world_to_clip_local.transform_point2(point))
+                }) =>
+            {
+                return None;
             }
+            CalculatedClip::Rects(_) => {}
+        }
+    }
+    let local = transform.try_inverse()?.transform_point2(point);
+    let half = node.size() * 0.5;
+    let normalized = Vec2::new(
+        (local.x + half.x) / node.size().x,
+        (local.y + half.y) / node.size().y,
+    );
+    (normalized.is_finite()
+        && normalized.x >= 0.0
+        && normalized.y >= 0.0
+        && normalized.x <= 1.0
+        && normalized.y <= 1.0)
+        .then_some([normalized.x, normalized.y])
+}
+
+fn minimap_at(
+    cursor: Vec2,
+    minimaps: &MinimapInputQuery<'_, '_>,
+    panels: &CapturePanelQuery<'_, '_>,
+    cameras: &Query<(Entity, &Camera), With<Camera3d>>,
+) -> Option<[f32; 2]> {
+    minimaps
+        .iter()
+        .find_map(|(entity, node, transform, visible, target, clip)| {
+            if !visible.get() {
+                return None;
+            }
+            let camera_id = target.get()?;
+            let (_, camera) = cameras.iter().find(|(entity, _)| *entity == camera_id)?;
+            if !camera.is_active {
+                return None;
+            }
+            let (topmost, _) = capture_stack_at(cursor, panels, cameras, Some(camera_id))?;
+            if entity != topmost {
+                return None;
+            }
+            let point = cursor_in_ui_viewport(cursor, camera)?;
+            minimap_local_point(node, *transform, visible.get(), clip, point)
         })
 }
 
@@ -543,6 +632,7 @@ struct AdapterInputs<'w, 's> {
     windows: Query<'w, 's, (Entity, &'static Window), With<PrimaryWindow>>,
     window_events: MessageReader<'w, 's, WindowEvent>,
     panels: CapturePanelQuery<'w, 's>,
+    minimaps: MinimapInputQuery<'w, 's>,
     cameras: Query<'w, 's, (Entity, &'static Camera), With<Camera3d>>,
     camera_query: Query<'w, 's, (&'static mut Transform, &'static mut Projection), With<Camera3d>>,
 }
@@ -638,11 +728,25 @@ fn drive_core_adapter(
                         px: value.position,
                         over_widget: over,
                     });
+                    if runtime.minimap_pointer == Some(turts_mod_api::Button::Left)
+                        && let Some(local) = minimap_at(
+                            value.position,
+                            &input.minimaps,
+                            &input.panels,
+                            &input.cameras,
+                        )
+                    {
+                        events.push(InputEvent::Minimap {
+                            button: turts_mod_api::Button::Left,
+                            local,
+                        });
+                    }
                 }
             }
             WindowEvent::CursorLeft(value) if Some(value.window) == primary => {
                 current_cursor = None;
                 runtime.pointer_over_widget = None;
+                runtime.minimap_pointer = None;
                 events.push(InputEvent::PointerLeft);
             }
             WindowEvent::KeyboardInput(value) if Some(value.window) == primary && !value.repeat => {
@@ -662,8 +766,30 @@ fn drive_core_adapter(
                 }
             }
             WindowEvent::MouseButtonInput(value) if Some(value.window) == primary => {
+                if value.state == ButtonState::Released
+                    && current_cursor.is_none()
+                    && pointer_button(value.button) == runtime.minimap_pointer
+                {
+                    runtime.minimap_pointer = None;
+                }
                 if let (Some(button), Some(px)) = (pointer_button(value.button), current_cursor) {
                     let over = over_widget(px, &input.panels, &input.cameras);
+                    let minimap = minimap_at(px, &input.minimaps, &input.panels, &input.cameras);
+                    if value.state == ButtonState::Pressed {
+                        if let Some(local) = minimap {
+                            runtime.minimap_pointer = Some(button);
+                            if button == turts_mod_api::Button::Left {
+                                events.push(InputEvent::Minimap { button, local });
+                            }
+                            continue;
+                        }
+                    } else if runtime.minimap_pointer == Some(button) {
+                        runtime.minimap_pointer = None;
+                        if let Some(local) = minimap {
+                            events.push(InputEvent::Minimap { button, local });
+                        }
+                        continue;
+                    }
                     match value.state {
                         ButtonState::Pressed => events.push(InputEvent::PointerDown {
                             button,
@@ -695,6 +821,7 @@ fn drive_core_adapter(
                 runtime.window_focused = Some(value.focused);
                 if !value.focused {
                     runtime.pressed_keys.clear();
+                    runtime.minimap_pointer = None;
                     current_cursor = None;
                     runtime.pointer_over_widget = None;
                     events.push(InputEvent::FocusLost);
@@ -703,6 +830,7 @@ fn drive_core_adapter(
             WindowEvent::KeyboardFocusLost(_) => {
                 output.focus_feed.0 = false;
                 runtime.pressed_keys.clear();
+                runtime.minimap_pointer = None;
                 current_cursor = None;
                 runtime.pointer_over_widget = None;
                 events.push(InputEvent::FocusLost);
@@ -1096,6 +1224,63 @@ mod adapter_tests {
     use turts_mod_api::{CameraDef, CameraStart};
     use turts_mod_runtime::{archive::PackageArchive, pack::pack_dir};
     use turts_net_protocol::{OrderEnvelope, OrderTarget, Pos, QueueMode, UnitId};
+
+    #[test]
+    fn minimap_pointer_uses_transformed_visible_widget_coordinates_and_clips() {
+        let node = ComputedNode {
+            size: Vec2::new(200.0, 100.0),
+            ..default()
+        };
+        let transform = UiGlobalTransform::from(bevy::math::Affine2::from_scale_angle_translation(
+            Vec2::splat(2.0),
+            0.0,
+            Vec2::new(500.0, 400.0),
+        ));
+
+        assert_eq!(
+            minimap_local_point(&node, transform, true, None, Vec2::new(500.0, 400.0)),
+            Some([0.5, 0.5])
+        );
+        assert_eq!(
+            minimap_local_point(&node, transform, true, None, Vec2::new(600.0, 350.0)),
+            Some([0.75, 0.25]),
+            "screen top-down coordinates must pass through to the core's asymmetric world mapping"
+        );
+        assert_eq!(
+            minimap_local_point(&node, transform, false, None, Vec2::new(500.0, 400.0)),
+            None,
+            "hidden authored widgets must not capture pointer input"
+        );
+        assert_eq!(
+            minimap_local_point(
+                &node,
+                transform,
+                true,
+                Some(&CalculatedClip::FullyClipped),
+                Vec2::new(500.0, 400.0),
+            ),
+            None,
+            "fully clipped authored widgets must not capture pointer input"
+        );
+        let partial_clip = CalculatedClip::Rects(
+            vec![CalculatedClipRect {
+                rect: Rect::from_corners(Vec2::ZERO, Vec2::new(450.0, 800.0)),
+                world_to_clip_local: bevy::math::Affine2::IDENTITY,
+            }]
+            .into(),
+        );
+        assert_eq!(
+            minimap_local_point(
+                &node,
+                transform,
+                true,
+                Some(&partial_clip),
+                Vec2::new(500.0, 400.0),
+            ),
+            None,
+            "the visible clip chain must constrain minimap pointer input"
+        );
+    }
 
     static ADAPTER_TEST_LOCK: Mutex<()> = Mutex::new(());
 
@@ -2087,12 +2272,12 @@ mod adapter_tests {
     fn window_input_over_computed_visible_panel_is_consumed_by_actual_adapter() {
         let _guard = test_lock();
         let (mut app, window, _) = fixture_app_with_ui(true);
-        let camera = app
+        let camera_entity = app
             .world_mut()
             .spawn((Camera3d::default(), IsDefaultUiCamera))
             .id();
         app.world_mut()
-            .get_mut::<Camera>(camera)
+            .get_mut::<Camera>(camera_entity)
             .unwrap()
             .computed
             .target_info = Some(bevy::camera::RenderTargetInfo {
@@ -2110,7 +2295,7 @@ mod adapter_tests {
                     height: Val::Px(220.0),
                     ..Default::default()
                 },
-                bevy::ui::UiTargetCamera(camera),
+                bevy::ui::UiTargetCamera(camera_entity),
                 Visibility::Visible,
                 bevy::camera::visibility::InheritedVisibility::VISIBLE,
                 UiCaptureRoot,
@@ -2188,6 +2373,272 @@ mod adapter_tests {
         }
         app.update();
         assert_eq!(app.world().resource::<SelectionFeed>().0, vec![2]);
+    }
+
+    #[test]
+    fn authored_minimap_input_routes_to_core_and_cursor_exit_releases_capture() {
+        let _guard = test_lock();
+        let (mut app, window, _) = fixture_app_with_ui(true);
+        app.world_mut()
+            .resource_mut::<AcquiredPackages>()
+            .0
+            .map_size = (80.0, 40.0);
+        let camera_entity = app
+            .world_mut()
+            .spawn((Camera3d::default(), IsDefaultUiCamera))
+            .id();
+        app.world_mut()
+            .get_mut::<Camera>(camera_entity)
+            .unwrap()
+            .computed
+            .target_info = Some(bevy::camera::RenderTargetInfo {
+            physical_size: UVec2::new(1280, 720),
+            scale_factor: 1.0,
+        });
+        let minimap = app
+            .world_mut()
+            .spawn((
+                Node {
+                    position_type: PositionType::Absolute,
+                    left: Val::Px(100.0),
+                    top: Val::Px(100.0),
+                    width: Val::Px(200.0),
+                    height: Val::Px(100.0),
+                    ..default()
+                },
+                bevy::ui::UiTargetCamera(camera_entity),
+                Visibility::Visible,
+                bevy::camera::visibility::InheritedVisibility::VISIBLE,
+                UiCaptureRoot,
+                crate::widgets::primitives::MinimapViewConfig {
+                    unit_size: 4.0,
+                    frame_colour: Some(Color::WHITE),
+                    ping_colour: Some(Color::srgb_u8(255, 204, 0)),
+                },
+            ))
+            .id();
+        app.update();
+        app.update();
+
+        let transform = *app.world().get::<UiGlobalTransform>(minimap).unwrap();
+        let camera = app.world().get::<Camera>(camera_entity).unwrap();
+        let ui_camera_origin = camera.physical_viewport_rect().unwrap().min.as_vec2();
+        let minimap_cursor = transform * Vec2::new(50.0, -25.0);
+        let minimap_cursor = minimap_cursor + ui_camera_origin;
+        {
+            let mut events = app.world_mut().resource_mut::<Messages<WindowEvent>>();
+            events.write(WindowEvent::CursorMoved(bevy::window::CursorMoved {
+                window,
+                position: minimap_cursor,
+                delta: None,
+            }));
+            events.write(mouse(window, ButtonState::Pressed));
+            events.write(mouse(window, ButtonState::Released));
+        }
+        app.update();
+        assert_eq!(
+            app.world()
+                .resource::<CoreRuntime>()
+                .core()
+                .unwrap()
+                .camera_state()
+                .look_at,
+            Vec2::new(60.0, 30.0),
+            "actual transformed (.75,.25) widget input must preserve top-down Y mapping"
+        );
+        assert!(app.world().resource::<SelectionFeed>().0.is_empty());
+        assert!(app.world().resource::<PendingCommands>().0.is_empty());
+
+        let overlay = app
+            .world_mut()
+            .spawn((
+                Node {
+                    position_type: PositionType::Absolute,
+                    left: Val::Px(0.0),
+                    top: Val::Px(0.0),
+                    width: Val::Percent(100.0),
+                    height: Val::Percent(100.0),
+                    ..default()
+                },
+                bevy::ui::UiTargetCamera(camera_entity),
+                Visibility::Visible,
+                UiCaptureRoot,
+                ZIndex(i32::MAX - 1),
+                bevy::ui::FocusPolicy::Block,
+                BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.72)),
+            ))
+            .id();
+        app.update();
+        app.update();
+        assert!(
+            app.world()
+                .get::<bevy::ui::ComputedStackIndex>(overlay)
+                .unwrap()
+                .0
+                > app
+                    .world()
+                    .get::<bevy::ui::ComputedStackIndex>(minimap)
+                    .unwrap()
+                    .0,
+            "the modal overlay fixture must be above the minimap in actual Bevy UI stack order"
+        );
+        let camera_before_modal_click = app
+            .world()
+            .resource::<CoreRuntime>()
+            .core()
+            .unwrap()
+            .camera_state();
+        {
+            let mut events = app.world_mut().resource_mut::<Messages<WindowEvent>>();
+            events.write(WindowEvent::CursorMoved(bevy::window::CursorMoved {
+                window,
+                position: minimap_cursor,
+                delta: None,
+            }));
+            events.write(mouse(window, ButtonState::Pressed));
+            events.write(mouse(window, ButtonState::Released));
+        }
+        app.update();
+        assert_eq!(
+            app.world()
+                .resource::<CoreRuntime>()
+                .core()
+                .unwrap()
+                .camera_state(),
+            camera_before_modal_click,
+            "a topmost blocking capture must prevent the covered minimap from moving the camera"
+        );
+        assert!(app.world().resource::<PendingCommands>().0.is_empty());
+        app.world_mut().despawn(overlay);
+        app.update();
+        app.update();
+
+        let other_camera = app
+            .world_mut()
+            .spawn((
+                Camera3d::default(),
+                Camera {
+                    computed: bevy::camera::ComputedCameraValues {
+                        target_info: Some(bevy::camera::RenderTargetInfo {
+                            physical_size: UVec2::new(1280, 720),
+                            scale_factor: 1.0,
+                        }),
+                        ..default()
+                    },
+                    ..default()
+                },
+                bevy::camera::RenderTarget::Window(bevy::window::WindowRef::Entity(window)),
+                Transform::default(),
+            ))
+            .id();
+        let other_camera_overlay = app
+            .world_mut()
+            .spawn((
+                Node {
+                    position_type: PositionType::Absolute,
+                    left: Val::Px(0.0),
+                    top: Val::Px(0.0),
+                    width: Val::Percent(100.0),
+                    height: Val::Percent(100.0),
+                    ..default()
+                },
+                bevy::ui::UiTargetCamera(other_camera),
+                Visibility::Visible,
+                UiCaptureRoot,
+                ZIndex(i32::MAX - 1),
+                bevy::ui::FocusPolicy::Block,
+                BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.72)),
+            ))
+            .id();
+        app.update();
+        app.update();
+        assert!(
+            app.world()
+                .get::<bevy::ui::ComputedStackIndex>(other_camera_overlay)
+                .unwrap()
+                .0
+                > app
+                    .world()
+                    .get::<bevy::ui::ComputedStackIndex>(minimap)
+                    .unwrap()
+                    .0,
+            "the overlapping second-camera fixture must have a globally higher computed stack index"
+        );
+        let other_camera_point = transform * Vec2::new(-60.0, 30.0) + ui_camera_origin;
+        {
+            let mut events = app.world_mut().resource_mut::<Messages<WindowEvent>>();
+            events.write(WindowEvent::CursorMoved(bevy::window::CursorMoved {
+                window,
+                position: other_camera_point,
+                delta: None,
+            }));
+            events.write(mouse(window, ButtonState::Pressed));
+            events.write(mouse(window, ButtonState::Released));
+        }
+        app.update();
+        let target_camera_state = app
+            .world()
+            .resource::<CoreRuntime>()
+            .core()
+            .unwrap()
+            .camera_state()
+            .look_at;
+        assert!(
+            target_camera_state.distance(Vec2::new(16.0, 8.0)) < 1.0e-4,
+            "a second camera's independent UI stack must not block the actual minimap target camera: {target_camera_state:?}"
+        );
+        app.world_mut().despawn(other_camera_overlay);
+        app.world_mut().despawn(other_camera);
+        app.update();
+
+        {
+            let mut events = app.world_mut().resource_mut::<Messages<WindowEvent>>();
+            events.write(WindowEvent::CursorMoved(bevy::window::CursorMoved {
+                window,
+                position: minimap_cursor,
+                delta: None,
+            }));
+            events.write(mouse(window, ButtonState::Pressed));
+        }
+        app.update();
+        assert_eq!(
+            app.world().resource::<CoreRuntime>().minimap_pointer,
+            Some(turts_mod_api::Button::Left)
+        );
+        app.world_mut()
+            .resource_mut::<Messages<WindowEvent>>()
+            .write(WindowEvent::CursorLeft(bevy::window::CursorLeft { window }));
+        app.update();
+        assert_eq!(app.world().resource::<CoreRuntime>().minimap_pointer, None);
+
+        let world_cursor = app
+            .world()
+            .resource::<CoreRuntime>()
+            .core()
+            .unwrap()
+            .project_world_to_screen(
+                Vec2::new(32.0, 32.0),
+                &Viewport {
+                    size: Vec2::new(1280.0, 720.0),
+                    scale_factor: 1.0,
+                },
+            );
+        {
+            let mut events = app.world_mut().resource_mut::<Messages<WindowEvent>>();
+            events.write(WindowEvent::CursorMoved(bevy::window::CursorMoved {
+                window,
+                position: world_cursor,
+                delta: None,
+            }));
+            events.write(mouse(window, ButtonState::Pressed));
+            events.write(mouse(window, ButtonState::Released));
+        }
+        app.update();
+        assert_eq!(
+            app.world().resource::<SelectionFeed>().0,
+            vec![1],
+            "after CursorLeft, a new world click must still deliver its ordinary down/up pair"
+        );
     }
 
     #[test]

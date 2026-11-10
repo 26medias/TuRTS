@@ -1,0 +1,19 @@
+{
+  "row": "MM1",
+  "package": "mods/muster",
+  "driver": "tests/browser/mm1-driver.js",
+  "oracle": "tests/browser/mm1-oracle.js",
+  "windows": 2,
+  "runs": "headed",
+  "capture_scene_checkpoints": true,
+  "viewport": {"width": 1280, "height": 720},
+  "map_size": [64, 48],
+  "camera_vertical_fov_degrees": 60,
+  "slot_colours": ["#0072B2", "#E69F00"],
+  "ping_colour": "#ffcc00",
+  "frame_colour": "#ffffff",
+  "background_colour": "#17232f",
+  "minimap_inset": 8,
+  "minimap_size": 200,
+  "viewports": ["1280x720"]
+}

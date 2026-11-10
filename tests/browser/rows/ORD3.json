@@ -1,0 +1,100 @@
+{
+  "row": "ORD3",
+  "package": "tests/browser/fixtures/order-rows/muster",
+  "driver": "tests/browser/orders-driver.js",
+  "oracle": "tests/browser/orders-oracle.js",
+  "runs": "headed",
+  "capture_scene_checkpoints": true,
+  "windows": 1,
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "map_size": [
+    64,
+    48
+  ],
+  "slot_colours": [
+    "#0072B2",
+    "#E69F00"
+  ],
+  "minimap_inset": 8,
+  "minimap_size": 200,
+  "stages": {
+    "worker_pixel": [
+      426,
+      288
+    ],
+    "node": [
+      7,
+      9
+    ],
+    "route": [
+      [
+        36,
+        26
+      ],
+      [
+        40,
+        30
+      ],
+      [
+        44,
+        26
+      ]
+    ],
+    "route_wait_ms": 19000,
+    "replace": [
+      [
+        48,
+        40
+      ],
+      [
+        52,
+        40
+      ],
+      [
+        56,
+        40
+      ]
+    ],
+    "stop": [
+      [
+        12,
+        40
+      ],
+      [
+        14,
+        40
+      ],
+      [
+        54,
+        32
+      ]
+    ],
+    "hold_point": [
+      53,
+      34
+    ],
+    "hold_approach_wait_ms": 5000,
+    "hold_fire_wait_ms": 5000,
+    "queue": [
+      [
+        6,
+        43
+      ],
+      [
+        7,
+        42
+      ]
+    ],
+    "gather_worker_pixel": [
+      426,
+      288
+    ],
+    "gather_wait_ms": 6000
+  },
+  "viewports": [
+    "1280x720"
+  ]
+}
