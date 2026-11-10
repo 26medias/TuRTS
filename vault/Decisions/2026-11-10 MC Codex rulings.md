@@ -890,3 +890,14 @@ Choice: use one bounded12s physical wait after reload, then capture actual curre
 Evidence: RUN94 retained actual SEL4 baseline observations pass assign/recall/add/centre/same-frame worker41 death pruning; post-reload has same playerID but null match/slot and Joining. Actual argv only tick-log; no session-observer stream was requested. Design10.5:998-1003 specifies10s old session timeout and15s rejoin window. Existing wait/capture fields are physical plan instrumentation, not player behavior.
 
 Alternative not taken: call empty pre-join groups a persistence red, assume immediate WebSocket close, claim absent private data as ownership proof, raise a timeout or discard genuine already-observed group behavior. Brief4 fixture/readiness detail under C310;100/170runs;20/25complete.
+
+
+## C332: Apply browser group persistence after its own genuine baseline
+
+Conflict: an earlier sequencing note held the group-store fix until PER1's initial baseline. SEL4 now has its own valid real persistence failure, while independent RUN99 is still preparing PER1. Waiting would leave the only runtime lane unable to advance a fully authorized corresponding repair. C310 requires the relevant baseline, not every unrelated baseline before any fix.
+
+Choice: allow the browser group-store repair now from the actual SEL4 red. Retain native restoration before the first Core.step, exact match/slot/live-own-ID rules and other-match pruning. Do not activate unrelated web settings behavior before its corresponding baseline. RUN94 remains the sole mutable lane/compiler/runtime owner; RUN99 only proposes PER1 externally. PER1 must later judge its actual current source, including legitimate inherited group behavior, without manufacturing the earlier missing-group failure. Bundle appropriate native/WASM checks and actual green runs after the source work.
+
+Evidence: run94-sel4-rejoin-window-v3 command1/wrapper1/sourceunchanged/defaultcachesabsent, raw a5563966020ba37df1b2c5b55d6699ed35d230834215f45d14f19ec1385c581d. Root directly verifies actual capture-index/checkpoint data: group[41,42] assigned; after worker41 dies group[42]; actual reload epoch2 is Joined with Last frame, same exact player12602943911029444439/match17450494013087693838/slot0, but group[] after physical recall. Empty localStorage is retained. Root audit PRIMARY/t16-root/sel4-baseline-v3-audit.json; original source tar5ab2c2dd retained. Five earlier actual group semantic subchecks pass; old-match fixture/pixels remain unqualified.
+
+Alternative not taken: block an independently authorized repair behind unrelated source preparation, retroactively rewrite PER1's baseline, call the two earlier unready SEL4 captures reds, or waive remaining clauses/gates/plants. Brief4 scheduling detail under C310;100/170runs;20/25complete.
