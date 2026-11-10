@@ -1059,3 +1059,14 @@ Choice: Root takes the sole Task16 source/compiler/cache/GPU/runtime lease and p
 Evidence: collaboration.list_agents and interrupt_agent return pending_init for both; ps name inventory has no build/browser-runtime executables. Native cache36GiB and live branch51170cb4 remain intact, primary main clean. Current source helpers and actual recorded row artifacts are preserved.
 
 Alternative not taken: leave the critical runtime lane idle, restart an unverified live process, delete dirty work, or hide the initialization stall as completed testing. Brief4 runtime/scheduling rights. Screen continuation109 is Task16run20/estimate6 below hard24; global109/170.20/25 lanes complete.
+
+
+## C347: Keep the independent Task16 review active through source and runtime phases
+
+Conflict: separate short source reviews consumed dispatches while foundational source gaps were still being repaired. The same independent Task16 reviewer can check corrected source now and later verify the committed gates, causal fault cycles and its own distinct runtime plant, if ownership is explicit.
+
+Choice: register Sol/high review110 for the complete independent Task16 review in phases. Start read-only frozen source/control inspection of input108 and Root settings V2; receive screen109 when frozen. Keep source readiness separate from execution. Root retains live source/compiler/GPU ownership until an explicit final reviewer runtime handoff. The reviewer later rechecks exact final committed source, all seven rows/gates/nine restored builder plants, and runs its own distinct plant before a final verdict. Do not spend another automatic dispatch merely to change review phase; any finished/interrupted reviewer reactivation still counts as a new run. No gate or independent proof is waived.
+
+Evidence: source108 patch332004c0 and manifest8da3a8ab; Root controls V2 patcha8078056 and manifest15665c54; current CAM2 full headed root-t16-cam2-full-v1 completes0/sourceunchanged, rawc9cf44c5. Source109 remains pending. All remaining source/runtime acceptance stays explicit.
+
+Alternative not taken: call source precheck final acceptance, share a compiler concurrently, omit own plant, or count a finished review continuation for free. Brief3/4 review and scheduling contract. Task16run21/estimate6 remains below hard24; global110/170,20/25 lanes complete.
