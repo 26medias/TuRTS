@@ -87,3 +87,38 @@ not attributed.
 
 The whole log is not the sum of these figures: each record also carries the full prior and
 published audit state (catalog, ledger, units and the rest). No budget applies.
+
+## GMU and GMA `Blocked` counts
+
+Status: NOT MEASURED. Every value marked `NOT MEASURED` below is a placeholder. The runtime run
+of Task 22 fills it from the real logs and replaces the marker. Until then this section claims
+no figure.
+
+Rule: design revision 15 (ruling O14). A unit whose slot is behind a resting group of another
+envelope can stop `Blocked` with a reachable target (6.5). These counts are recorded and not
+gated. M4b (push, chokes) owns this limit, and its exit rows gate the `muster` reinforcement case
+at 0 `Blocked`.
+
+Method: `cargo test --release -p turts_server --test mc_group --locked -- --ignored --nocapture`
+on `muster` (map `field`, 64 x 48; trooper radius 0.5, speed 3; 20 Hz) with the fixed-tick
+`--command-script` hook. The count comes from the `Blocked` lines of `--order-log`; the rest
+position comes from the tick log at the end tick. The tests print one line
+`GMU record case=... blocked_count=...` and one line `GMU record case=... blocked unit_id=...`
+for each `Blocked` unit. GMA prints `GMA ... blocked transition ids`. The native slot check
+(`cargo test --release -p turts_sim --test gmu_same_point --locked -- --nocapture`) prints the
+nearest slot distance and its own count.
+
+Build: `NOT MEASURED` (commit, machine and runner label of the runtime run).
+
+| Case | Points and orders | End tick | `Blocked` units | Rest position of each (unit id, x, y, distance to the point) |
+| --- | --- | ---: | --- | --- |
+| GMU same point, first order (gated at 0) | troopers 21 to 40 to (40, 30) at tick 1 | 700 | `NOT MEASURED` | `NOT MEASURED` |
+| GMU same point, second order | troopers 1 to 20 to (40, 30) at tick 300 | 700 | `NOT MEASURED` | `NOT MEASURED` |
+| GMU clamped corner, first order | troopers 1 to 20 to (70, 55), clamped to (63.5, 47.5), at tick 1 | 1300 | `NOT MEASURED` | `NOT MEASURED` |
+| GMU clamped corner, second order | troopers 21 to 40 to (70, 55) at tick 300 | 1300 | `NOT MEASURED` | `NOT MEASURED` |
+| GMA crossing | troopers 1 to 20 to (29, 35) at tick 1; troopers 21 to 40 to (50, 22) at tick 20 | 600 | `NOT MEASURED` | `NOT MEASURED` |
+| GMA case I | troopers 21 to 40 to (29, 35) at tick 1; troopers 1 to 20 to (29, 44) at tick 240 | 700 | `NOT MEASURED` | `NOT MEASURED` |
+| GMU native slot check | the GMU same-point orders, native run | 700 | `NOT MEASURED` | nearest slot distance: `NOT MEASURED` |
+
+In the clamped corner, the path of the first order crosses the idle rows 21 to 40, which stand
+at spacing s and do not move for it (6.4). So that first order is not the gated same-point case.
