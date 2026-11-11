@@ -29,6 +29,16 @@ pub struct Acquired {
     pub unit_names: HashMap<String, String>,
     pub content: ClientContent,
     pub presentation: PresentationContent,
+    /// Root package identity copied from the verified lockfile. Test-only archives built without
+    /// an accepted advertisement/lockfile deliberately leave this absent.
+    pub verified_root_mod: Option<VerifiedRootMod>,
+}
+
+/// Root identity established by a hash-verified lockfile and its advertised package ID.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct VerifiedRootMod {
+    pub id: String,
+    pub version: String,
 }
 /// Authored interface and its accepted package-local image/font payloads.
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -123,6 +133,16 @@ pub fn build_acquired(
     archives: &[PackageArchive],
     lockfile_hash: String,
 ) -> Result<Acquired, String> {
+    build_acquired_with_root(archives, lockfile_hash, None)
+}
+
+/// Build acquired client data while preserving the root identity from the successfully verified
+/// lockfile entry selected by the accepted advertisement.
+pub fn build_acquired_with_root(
+    archives: &[PackageArchive],
+    lockfile_hash: String,
+    verified_root_mod: Option<VerifiedRootMod>,
+) -> Result<Acquired, String> {
     let content = ClientContent::from_archives(archives).map_err(|error| error.to_string())?;
     let presentation = presentation_from_archives(archives)?;
     let visuals = content.shapes.clone();
@@ -146,6 +166,7 @@ pub fn build_acquired(
         unit_names,
         content,
         presentation,
+        verified_root_mod,
     })
 }
 

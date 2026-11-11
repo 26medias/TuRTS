@@ -21,7 +21,9 @@ use turts_sim::{
     UnitId as SimUnitId, UnitType, UnitTypes,
 };
 
-use crate::{economylog::EconomyLogSink, export, stats::Stats};
+use crate::{
+    economylog::EconomyLogSink, export, session_diagnostics::SessionDiagnostics, stats::Stats,
+};
 
 /// How long a refused connection stays open after `JoinRejected`. A kick in the same frame
 /// loses the message, so the kick waits by time and not by frames (spike fact, plan 6a).
@@ -208,6 +210,7 @@ pub fn receive_hello(
     mut economy_log: Option<ResMut<EconomyLogSink>>,
     match_id: Res<crate::stats::MatchId>,
     live_sessions: Query<&Session>,
+    mut diagnostics: Option<ResMut<SessionDiagnostics>>,
 ) {
     let mut accepted_in_batch = BTreeSet::new();
     for (entity, mut receiver, has_session, pending_kick) in clients.iter_mut() {
@@ -222,14 +225,38 @@ pub fn receive_hello(
             let has_live_session = live_sessions
                 .iter()
                 .any(|session| session.player_id == hello.player_id);
+            let accepted_in_batch_before = accepted_in_batch.contains(&hello.player_id);
+            let owners_before = diagnostics.is_some().then(|| slots.owners());
             let already_claimed = slots.slot_of(hello.player_id).is_some();
-            match judge_hello_in_batch(
+            let result = judge_hello_in_batch(
                 &hello,
                 &advertised,
                 &mut slots,
                 has_live_session,
                 &mut accepted_in_batch,
-            ) {
+            );
+            if let (Some(diagnostics), Some(owners_before)) =
+                (diagnostics.as_deref_mut(), owners_before.as_deref())
+            {
+                let observed_result = result.as_ref().map(|slot| *slot).map_err(|reason| *reason);
+                if let Err(error) =
+                    diagnostics.hello_decision(crate::session_diagnostics::HelloObservation {
+                        entity,
+                        player_id: hello.player_id,
+                        tick: tick.0,
+                        match_id: match_id.0,
+                        has_live_session,
+                        accepted_in_batch_before,
+                        accepted_in_batch_after: accepted_in_batch.contains(&hello.player_id),
+                        result: observed_result,
+                        owners_before,
+                        owners_after: &slots.owners(),
+                    })
+                {
+                    panic!("private session observer failed: {error}");
+                }
+            }
+            match result {
                 Ok(slot) => {
                     if !already_claimed && let Some(log) = economy_log.as_mut() {
                         log.write_claim(tick.0, hello.player_id, slot.0);

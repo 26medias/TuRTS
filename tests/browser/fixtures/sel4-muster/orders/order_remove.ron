@@ -1,0 +1,1 @@
+(id: "order_remove", name: "Remove this unit", behaviour: Remove, target: None, fire: None, engage: None, icon: "muster_icon_remove", hotkey: "key_remove", cursor: None, card: Some((row: 1, column: 2)), units: ["muster:trooper"], description: "Remove the selected trooper.")

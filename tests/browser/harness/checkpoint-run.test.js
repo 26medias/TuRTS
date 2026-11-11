@@ -18,12 +18,31 @@ test("production runner overwrites driver-saved checkpoint forgeries before judg
             turts_debug: () => JSON.stringify({ phase: "Joined", last_frame: { frame_index: 7 } }),
         };
         const page = {
+            on(event, handler) { if (event === "framenavigated") this.mainNavigation = handler; },
+            mainFrame() { return this; },
             mouse: { move: async () => {} },
-            goto: async () => {},
+            goto: async () => { page.mainNavigation?.(page); },
             bringToFront: async () => {},
             waitForTimeout: async () => {},
             waitForFunction: async (fn) => assert(vm.runInNewContext(`(${fn.toString()})()`, { window })),
-            evaluate: async (fn, argument) => vm.runInNewContext(`(${fn.toString()})(argument)`, { window, argument }),
+            evaluate: async (fn, argument) => {
+                if (String(fn).includes("window.turts_scene")) {
+                    return {
+                        scene: window.turts_scene(),
+                        debug: window.turts_debug(),
+                        browser: {
+                            document_has_focus: true,
+                            active_element: null,
+                            canvas: null,
+                            canvas_focused: false,
+                            pointer_lock_element: null,
+                            canvas_pointer_locked: false,
+                        },
+                    };
+                }
+                return vm.runInNewContext(`(${fn.toString()})(argument)`, { window, argument, setTimeout, clearTimeout,
+                    performance: { timeOrigin: 1000 }, document: { URL: "http://fixture.invalid" } });
+            },
             screenshot: async () => Buffer.from("actual screenshot pixels"),
         };
         let closed = false;
@@ -57,10 +76,11 @@ test("production runner overwrites driver-saved checkpoint forgeries before judg
             if (name === oraclePath) return oracle;
             return localRequire(name);
         };
-        const sandbox = { __dirname: path.dirname(filename), require: requireForRun, module: { exports: {} }, process: { env: {} }, console: { log() {}, error() {} } };
+        const errors = [];
+        const sandbox = { __dirname: path.dirname(filename), require: requireForRun, module: { exports: {} }, process: { env: {} }, console: { log() {}, error(...args) { errors.push(args.join(" ")); } } };
         vm.runInNewContext((await fs.readFile(filename, "utf8")) + "\nmodule.exports.runForTest = run;", sandbox, { filename });
         await sandbox.module.exports.runForTest({ paramsPath, driverPath, oraclePath, outDir: output, url: "http://fixture.invalid", width: 1280, height: 720, deviceScaleFactor: 1 });
-        assert.equal(sandbox.process.exitCode, undefined, "the production runner must not fail");
+        assert.equal(sandbox.process.exitCode, undefined, `the production runner must not fail: ${errors.join("; ")}`);
         assert(judged, "the real runner must invoke the oracle after writing trusted snapshots");
         assert(closed, "the runner closes its owned browser");
     } finally {

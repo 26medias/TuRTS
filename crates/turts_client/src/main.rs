@@ -21,7 +21,28 @@ fn main() -> ExitCode {
             return ExitCode::from(2);
         }
     };
-    match turts_client::build_app(options).run() {
+    let mut app = turts_client::build_app(options);
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let retained_player_id = app
+            .world()
+            .resource::<turts_client::ClientOpts>()
+            .0
+            .player_id
+            .is_some();
+        let has_window = !app
+            .world()
+            .resource::<turts_client::ClientOpts>()
+            .0
+            .headless;
+        if has_window {
+            turts_client::client_screens::install_native_reload(&mut app);
+            if retained_player_id {
+                app.insert_resource(turts_client::rejoin::RejoinController::for_stored_identity());
+            }
+        }
+    }
+    match app.run() {
         bevy::app::AppExit::Success => ExitCode::SUCCESS,
         bevy::app::AppExit::Error(code) => ExitCode::from(code.get()),
     }

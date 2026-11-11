@@ -330,7 +330,12 @@ fn sync_widget_tree(world: &mut World) {
     let bindings = world
         .get_resource::<crate::core_adapter::CorePreferences>()
         .map_or_else(Default::default, |prefs| prefs.runtime_bindings.clone());
+    let binding_labels = world
+        .get_resource::<crate::client_shell::BindingLabels>()
+        .cloned()
+        .unwrap_or_default();
     let source_context = sources::SourceContext {
+        binding_labels: Some(&binding_labels),
         replica: &replica,
         content: &content,
         selection: &selection,
@@ -1702,6 +1707,7 @@ mod tests {
         };
         let guide = Vec::new();
         let context = sources::SourceContext {
+            binding_labels: None,
             replica: &replica,
             content: &content,
             selection: &selection,
@@ -1774,6 +1780,7 @@ mod tests {
         };
         let guide = Vec::new();
         let context = sources::SourceContext {
+            binding_labels: None,
             replica: &replica,
             content: &content,
             selection: &selection,
@@ -1913,6 +1920,7 @@ mod tests {
             engine_overrides: Vec::new(),
         };
         let context = sources::SourceContext {
+            binding_labels: None,
             replica: &replica,
             content: &content,
             selection: &selection,
@@ -2011,6 +2019,7 @@ mod tests {
             engine_overrides: Vec::new(),
         };
         let context = sources::SourceContext {
+            binding_labels: None,
             replica: &replica,
             content: &initial_content,
             selection: &selection,
@@ -2182,6 +2191,7 @@ mod tests {
             engine_overrides: Vec::new(),
         };
         let context = sources::SourceContext {
+            binding_labels: None,
             replica: &replica,
             content: &content,
             selection: &selection,
@@ -2360,6 +2370,7 @@ mod tests {
         let alerts = Vec::new();
         let bindings = Default::default();
         let context = sources::SourceContext {
+            binding_labels: None,
             replica: &replica,
             content: &content,
             selection: &selection,
@@ -2535,6 +2546,7 @@ mod tests {
             engine_overrides: Vec::new(),
         };
         let context = sources::SourceContext {
+            binding_labels: None,
             replica: &replica,
             content: &content,
             selection: &selection,
@@ -2623,6 +2635,7 @@ mod tests {
             engine_overrides: Vec::new(),
         };
         let context = sources::SourceContext {
+            binding_labels: None,
             replica: &replica,
             content: &content,
             selection: &selection,
@@ -2981,6 +2994,7 @@ mod tests {
             engine_overrides: Vec::new(),
         };
         let context = sources::SourceContext {
+            binding_labels: None,
             replica: &replica,
             content: &content,
             selection: &selection,

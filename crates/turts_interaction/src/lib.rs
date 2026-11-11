@@ -30,10 +30,34 @@ pub struct Core {
     physical_mods: Vec<Mod>,
     held_modifier_actions: HashMap<String, Vec<String>>,
     pointer_down: Option<(Button, Vec2, bool, u64)>,
+    pointer: Option<(Vec2, bool)>,
+    held_buttons: Vec<Button>,
+    key_box_gesture: Option<(String, Vec2, u64)>,
+    ui_capture: Option<bool>,
     pending_order: Option<String>,
     last_click: Option<(u64, Vec2, String)>,
     next_group: u32,
     camera_controller: camera::CameraController,
+    /// Bounded evidence of named actions that actually reached the Core dispatch branch.
+    dispatch_records: Vec<NamedDispatch>,
+    dispatch_records_truncated: usize,
+}
+
+/// One named action observed at the interaction dispatch branch.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NamedDispatch {
+    pub input_index: usize,
+    pub origin: &'static str,
+    pub code: Option<String>,
+    pub matched_action: String,
+    pub matched_order: Option<String>,
+}
+
+#[derive(Clone, Copy)]
+struct DispatchSource<'a> {
+    input_index: usize,
+    origin: &'static str,
+    code: Option<&'a str>,
 }
 
 impl Core {
@@ -47,10 +71,16 @@ impl Core {
             physical_mods: Vec::new(),
             held_modifier_actions: HashMap::new(),
             pointer_down: None,
+            pointer: None,
+            held_buttons: Vec::new(),
+            key_box_gesture: None,
+            ui_capture: None,
             pending_order: None,
             last_click: None,
             next_group: 1,
             camera_controller: camera::CameraController::default(),
+            dispatch_records: Vec::new(),
+            dispatch_records_truncated: 0,
         }
     }
 
@@ -67,6 +97,16 @@ impl Core {
     /// Read-only presentation seam for the order currently awaiting a target.
     pub fn pending_order_id(&self) -> Option<&str> {
         self.pending_order.as_deref()
+    }
+
+    /// Actual named dispatches from the most recent `step`, capped to keep evidence bounded.
+    pub fn dispatch_records(&self) -> &[NamedDispatch] {
+        &self.dispatch_records
+    }
+
+    /// Number of actual dispatches omitted from the bounded most-recent-step evidence.
+    pub fn dispatch_records_truncated(&self) -> usize {
+        self.dispatch_records_truncated
     }
 
     /// Read-only observation seam for the active unit selection.
@@ -102,9 +142,18 @@ impl Core {
         now_ms: u64,
     ) -> Vec<Effect> {
         let mut effects = Vec::new();
+        self.dispatch_records.clear();
+        self.dispatch_records_truncated = 0;
         self.prune(world);
-        for event in events {
+        self.ui_capture = events.iter().find_map(|event| match event {
+            InputEvent::UiCapture { allow_shell } => Some(*allow_shell),
+            _ => None,
+        });
+        let mut ignored_wheel_inputs = Vec::new();
+        let mut wheel_camera_actions = Vec::new();
+        for (input_index, event) in events.iter().enumerate() {
             match event {
+                InputEvent::UiCapture { allow_shell } => self.begin_ui_capture(*allow_shell),
                 InputEvent::KeyDown { code, mods } => {
                     if !self.keys.contains(code) {
                         self.keys.push(code.clone());
@@ -117,10 +166,41 @@ impl Core {
                     }
                     let action = self.action_for_key(code, world);
                     if let Some(action) = action {
-                        self.dispatch_named_action(&action, world, now_ms, &mut effects);
+                        self.dispatch_named_action(
+                            &action,
+                            DispatchSource {
+                                input_index,
+                                origin: "key",
+                                code: Some(code),
+                            },
+                            world,
+                            view,
+                            now_ms,
+                            &mut effects,
+                        );
                     }
                 }
                 InputEvent::KeyUp { code } => {
+                    if self.ui_capture.is_none()
+                        && self
+                            .key_box_gesture
+                            .as_ref()
+                            .is_some_and(|(key, _, _)| key == code)
+                    {
+                        let (_, start, down_ms) =
+                            self.key_box_gesture.take().expect("matched key gesture");
+                        if let Some((px, false)) = self.pointer {
+                            self.complete_selection_gesture(
+                                start,
+                                px,
+                                start.distance(px) > 4.0,
+                                down_ms,
+                                world,
+                                view,
+                                &mut effects,
+                            );
+                        }
+                    }
                     self.keys.retain(|key| key != code);
                     self.held_modifier_actions.remove(code);
                     self.physical_mods = physical_modifiers(&self.keys);
@@ -130,8 +210,17 @@ impl Core {
                     self.physical_mods.clear();
                     self.held_modifier_actions.clear();
                     self.pointer_down = None;
+                    self.pointer = None;
+                    self.held_buttons.clear();
+                    self.key_box_gesture = None;
                 }
                 InputEvent::UiAction { name } => {
+                    if self
+                        .ui_capture
+                        .is_some_and(|allow_shell| !allow_shell || !shell_action(name))
+                    {
+                        continue;
+                    }
                     if let Some(unit_text) = name.strip_prefix("ui_select:") {
                         if let Ok(id) = unit_text.parse::<u32>()
                             && world.units().iter().any(|unit| {
@@ -145,12 +234,27 @@ impl Core {
                     } else if let Some(order) =
                         world.orders().iter().find(|order| order.id == *name)
                     {
+                        self.record_named_dispatch(input_index, "ui", None, name, Some(&order.id));
                         self.dispatch_order(order, world, &mut effects);
                     } else {
-                        self.dispatch_named_action(name, world, now_ms, &mut effects);
+                        self.dispatch_named_action(
+                            name,
+                            DispatchSource {
+                                input_index,
+                                origin: "ui",
+                                code: None,
+                            },
+                            world,
+                            view,
+                            now_ms,
+                            &mut effects,
+                        );
                     }
                 }
                 InputEvent::UiCameraCenter { position } => {
+                    if self.ui_capture.is_some() {
+                        continue;
+                    }
                     if self
                         .camera_controller
                         .centre_world(&mut self.camera, *position, world)
@@ -163,6 +267,9 @@ impl Core {
                     units,
                     target,
                 } => {
+                    if self.ui_capture.is_some() {
+                        continue;
+                    }
                     let Some(definition) = world
                         .orders()
                         .iter()
@@ -239,11 +346,30 @@ impl Core {
                     px,
                     over_widget,
                 } => {
+                    if let Some(allow_shell) = self.ui_capture {
+                        if allow_shell && *button != Button::Left {
+                            self.pointer_down = Some((*button, *px, false, now_ms));
+                        }
+                        continue;
+                    }
+                    self.pointer = Some((*px, *over_widget));
                     if !over_widget {
+                        if !self.held_buttons.contains(button) {
+                            self.held_buttons.push(*button);
+                        }
+                        let modifiers = self.modifier_actions_for_pointer(*button, world);
+                        if !modifiers.is_empty() {
+                            self.held_modifier_actions
+                                .insert(format!("pointer:{button:?}"), modifiers);
+                        }
                         self.pointer_down = Some((*button, *px, false, now_ms));
                     }
                 }
-                InputEvent::PointerMove { px, over_widget: _ } => {
+                InputEvent::PointerMove { px, over_widget } => {
+                    if self.ui_capture.is_some() {
+                        continue;
+                    }
+                    self.pointer = Some((*px, *over_widget));
                     if let Some((button, start, dragged, down_ms)) = self.pointer_down {
                         self.pointer_down =
                             Some((button, start, dragged || start.distance(*px) > 4.0, down_ms));
@@ -254,42 +380,66 @@ impl Core {
                     px,
                     over_widget,
                 } => {
+                    if self.ui_capture.is_none() {
+                        self.pointer = Some((*px, *over_widget));
+                    }
+                    self.held_buttons.retain(|held| held != button);
+                    self.held_modifier_actions
+                        .remove(&format!("pointer:{button:?}"));
                     let Some((down_button, start, dragged, down_ms)) = self.pointer_down.take()
                     else {
                         continue;
                     };
+                    if let Some(allow_shell) = self.ui_capture {
+                        if allow_shell
+                            && down_button == *button
+                            && *button != Button::Left
+                            && let Some(action) = self.action_for_pointer(*button, world)
+                            && shell_action(&action)
+                        {
+                            self.dispatch_named_action(
+                                &action,
+                                DispatchSource {
+                                    input_index,
+                                    origin: "pointer",
+                                    code: None,
+                                },
+                                world,
+                                view,
+                                now_ms,
+                                &mut effects,
+                            );
+                        }
+                        continue;
+                    }
                     if *over_widget || down_button != *button {
                         continue;
                     }
                     let dragged = dragged || start.distance(*px) > 4.0;
                     let pointer_action = self.action_for_pointer(down_button, world);
                     if matches!(pointer_action.as_deref(), Some("select" | "box_select")) {
-                        if let Some(order_id) = self.pending_order.take() {
-                            if let Some(order) =
-                                world.orders().iter().find(|order| order.id == order_id)
-                            {
-                                if let Some(target) = self.explicit_target(order, *px, view, world)
-                                {
-                                    self.compose_explicit(order, target, world, &mut effects);
-                                }
-                                effects.push(Effect::Cursor {
-                                    context: "default".into(),
-                                });
-                            }
-                        } else if dragged {
-                            self.box_select(start, *px, view, world);
-                            effects.push(Effect::SelectionChanged);
-                        } else {
-                            self.select_click(*px, start, view, world, down_ms, &mut effects);
-                        }
-                    } else if pointer_action.as_deref() == Some("command") {
-                        if self.pending_order.take().is_some() {
-                            effects.push(Effect::Cursor {
-                                context: "default".into(),
-                            });
-                        } else {
-                            self.smart_command(*px, view, world, &mut effects);
-                        }
+                        self.complete_selection_gesture(
+                            start,
+                            *px,
+                            dragged,
+                            down_ms,
+                            world,
+                            view,
+                            &mut effects,
+                        );
+                    } else if let Some(action) = pointer_action {
+                        self.dispatch_named_action(
+                            &action,
+                            DispatchSource {
+                                input_index,
+                                origin: "pointer",
+                                code: None,
+                            },
+                            world,
+                            view,
+                            now_ms,
+                            &mut effects,
+                        );
                     } else if down_button == Button::Right && self.pending_order.take().is_some() {
                         effects.push(Effect::Cursor {
                             context: "default".into(),
@@ -298,23 +448,82 @@ impl Core {
                 }
                 InputEvent::PointerLeft => {
                     self.pointer_down = None;
+                    self.pointer = None;
+                    self.key_box_gesture = None;
+                    self.held_buttons.clear();
+                    self.held_modifier_actions
+                        .retain(|key, _| !key.starts_with("pointer:"));
                 }
-                InputEvent::Wheel { .. } => {}
+                InputEvent::Wheel { delta } => {
+                    if self.ui_capture.is_some() || self.physical_mods.contains(&Mod::Ctrl) {
+                        ignored_wheel_inputs.push(input_index);
+                    } else if delta.is_finite()
+                        && *delta != 0.0
+                        && let Some(action) = self.action_for_wheel(*delta, world)
+                    {
+                        if matches!(action.as_str(), "zoom_in" | "zoom_out") {
+                            self.record_named_dispatch(input_index, "wheel", None, &action, None);
+                        } else {
+                            if camera_pan_action(&action) {
+                                wheel_camera_actions.push(action.clone());
+                            }
+                            if logical_modifier(&action).is_some() {
+                                self.held_modifier_actions
+                                    .insert("wheel:pulse".into(), vec![action.clone()]);
+                            }
+                            self.dispatch_named_action(
+                                &action,
+                                DispatchSource {
+                                    input_index,
+                                    origin: "wheel",
+                                    code: None,
+                                },
+                                world,
+                                view,
+                                now_ms,
+                                &mut effects,
+                            );
+                        }
+                    }
+                }
                 InputEvent::Minimap { button, local } => {
+                    if self.ui_capture.is_some() {
+                        continue;
+                    }
                     minimap::handle_input(self, *button, *local, world, view, now_ms, &mut effects);
                 }
             }
         }
         self.prune(world);
-        let held_camera_actions: Vec<_> = self
+        let mut held_camera_actions: Vec<_> = self
             .keys
             .iter()
             .filter_map(|code| self.action_for_key(code, world))
-            .filter(|action| action.starts_with("camera_pan_"))
+            .filter(|action| camera_pan_action(action))
             .collect();
+        held_camera_actions.extend(
+            self.held_buttons
+                .iter()
+                .filter_map(|button| self.action_for_pointer(*button, world))
+                .filter(|action| camera_pan_action(action)),
+        );
+        held_camera_actions.extend(wheel_camera_actions);
+        if self.ui_capture.is_some() {
+            held_camera_actions.clear();
+        }
         self.camera_controller.step(
             &mut self.camera,
-            events,
+            events.iter().enumerate().filter_map(|(index, event)| {
+                (!ignored_wheel_inputs.contains(&index)
+                    && (self.ui_capture.is_none()
+                        || matches!(
+                            event,
+                            InputEvent::UiCapture { .. }
+                                | InputEvent::FocusLost
+                                | InputEvent::PointerLeft
+                        )))
+                .then_some(event)
+            }),
             world,
             view,
             now_ms,
@@ -322,32 +531,157 @@ impl Core {
             &held_camera_actions,
             &mut effects,
         );
+        self.held_modifier_actions.remove("wheel:pulse");
         effects
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn complete_selection_gesture(
+        &mut self,
+        start: Vec2,
+        px: Vec2,
+        dragged: bool,
+        down_ms: u64,
+        world: &dyn WorldView,
+        view: &Viewport,
+        effects: &mut Vec<Effect>,
+    ) {
+        if let Some(order_id) = self.pending_order.take() {
+            if let Some(order) = world.orders().iter().find(|order| order.id == order_id) {
+                if let Some(target) = self.explicit_target(order, px, view, world) {
+                    self.compose_explicit(order, target, world, effects);
+                }
+                effects.push(Effect::Cursor {
+                    context: "default".into(),
+                });
+            }
+        } else if dragged {
+            self.box_select(start, px, view, world);
+            effects.push(Effect::SelectionChanged);
+        } else {
+            self.select_click(px, start, view, world, down_ms, effects);
+        }
+    }
+
+    fn begin_ui_capture(&mut self, allow_shell: bool) {
+        self.ui_capture = Some(allow_shell);
+        self.pointer = None;
+        self.pointer_down = None;
+        self.key_box_gesture = None;
+        self.camera_controller.suspend_pointer();
+    }
+
+    fn record_named_dispatch(
+        &mut self,
+        input_index: usize,
+        origin: &'static str,
+        code: Option<&str>,
+        action: &str,
+        matched_order: Option<&str>,
+    ) {
+        const MAX_DISPATCH_RECORDS_PER_STEP: usize = 64;
+        if self.dispatch_records.len() >= MAX_DISPATCH_RECORDS_PER_STEP {
+            self.dispatch_records_truncated = self.dispatch_records_truncated.saturating_add(1);
+            return;
+        }
+        self.dispatch_records.push(NamedDispatch {
+            input_index,
+            origin,
+            code: code.map(str::to_owned),
+            matched_action: action.to_owned(),
+            matched_order: matched_order.map(str::to_owned),
+        });
     }
 
     fn dispatch_named_action(
         &mut self,
         action: &str,
+        source: DispatchSource<'_>,
         world: &dyn WorldView,
+        view: &Viewport,
         now_ms: u64,
         effects: &mut Vec<Effect>,
     ) {
-        if let Some(group) = action
-            .strip_prefix("group_assign_")
-            .and_then(|value| value.parse::<u8>().ok())
+        if self
+            .ui_capture
+            .is_some_and(|allow_shell| !allow_shell || !shell_action(action))
         {
+            return;
+        }
+        if matches!(action, "select" | "box_select" | "command") {
+            self.record_named_dispatch(
+                source.input_index,
+                source.origin,
+                source.code,
+                action,
+                None,
+            );
+            let Some((px, false)) = self.pointer else {
+                return;
+            };
+            if action == "command" {
+                if self.pending_order.take().is_some() {
+                    effects.push(Effect::Cursor {
+                        context: "default".into(),
+                    });
+                } else {
+                    self.smart_command(px, view, world, effects);
+                }
+            } else if action == "box_select" && source.origin == "key" {
+                if let Some(code) = source.code {
+                    self.key_box_gesture = Some((code.into(), px, now_ms));
+                }
+            } else {
+                self.complete_selection_gesture(px, px, false, now_ms, world, view, effects);
+            }
+        } else if matches!(action, "zoom_in" | "zoom_out") {
+            self.record_named_dispatch(
+                source.input_index,
+                source.origin,
+                source.code,
+                action,
+                None,
+            );
+            let steps = if action == "zoom_in" { 1.0 } else { -1.0 };
+            if camera::zoom_by_steps(&mut self.camera, world, steps) {
+                effects.push(Effect::CameraChanged);
+            }
+        } else if camera_pan_action(action) || logical_modifier(action).is_some() {
+            self.record_named_dispatch(
+                source.input_index,
+                source.origin,
+                source.code,
+                action,
+                None,
+            );
+        } else if let Some(group) = engine_group_action(action, "group_assign_") {
+            self.record_named_dispatch(
+                source.input_index,
+                source.origin,
+                source.code,
+                action,
+                None,
+            );
             self.assign_group(group, false, world);
             effects.push(Effect::GroupsChanged);
-        } else if let Some(group) = action
-            .strip_prefix("group_add_")
-            .and_then(|value| value.parse::<u8>().ok())
-        {
+        } else if let Some(group) = engine_group_action(action, "group_add_") {
+            self.record_named_dispatch(
+                source.input_index,
+                source.origin,
+                source.code,
+                action,
+                None,
+            );
             self.assign_group(group, true, world);
             effects.push(Effect::GroupsChanged);
-        } else if let Some(group) = action
-            .strip_prefix("group_recall_")
-            .and_then(|value| value.parse::<u8>().ok())
-        {
+        } else if let Some(group) = engine_group_action(action, "group_recall_") {
+            self.record_named_dispatch(
+                source.input_index,
+                source.origin,
+                source.code,
+                action,
+                None,
+            );
             self.recall_group(group, world);
             effects.push(Effect::SelectionChanged);
             if self.camera_controller.group_recall_centres(
@@ -361,8 +695,22 @@ impl Core {
                 effects.push(Effect::CameraChanged);
             }
         } else if let Some(order) = world.orders().iter().find(|order| order.hotkey == action) {
+            self.record_named_dispatch(
+                source.input_index,
+                source.origin,
+                source.code,
+                action,
+                Some(&order.id),
+            );
             self.dispatch_order(order, world, effects);
         } else if action == "centre_selection" {
+            self.record_named_dispatch(
+                source.input_index,
+                source.origin,
+                source.code,
+                action,
+                None,
+            );
             if self
                 .camera_controller
                 .centre_selection(&mut self.camera, &self.selected, world)
@@ -370,15 +718,33 @@ impl Core {
                 effects.push(Effect::CameraChanged);
             }
         } else if action == "menu" || action == "toggle_guide" {
+            if action == "menu" {
+                self.begin_ui_capture(true);
+            }
+            self.record_named_dispatch(
+                source.input_index,
+                source.origin,
+                source.code,
+                action,
+                None,
+            );
             effects.push(Effect::ShellAction {
                 action: action.into(),
             });
         } else if action == "cancel" {
+            self.record_named_dispatch(
+                source.input_index,
+                source.origin,
+                source.code,
+                action,
+                None,
+            );
             if self.pending_order.take().is_some() {
                 effects.push(Effect::Cursor {
                     context: "default".into(),
                 });
             } else {
+                self.begin_ui_capture(true);
                 effects.push(Effect::ShellAction {
                     action: "menu".into(),
                 });
@@ -430,7 +796,7 @@ fn physical_modifiers(keys: &[String]) -> Vec<Mod> {
     }
     modifiers
 }
-fn modifiers_before_key(code: &str, physical: &[Mod]) -> Vec<Mod> {
+fn modifiers_before_key(code: &str, physical: &[Mod], held_keys: &[String]) -> Vec<Mod> {
     let introduced = if code.starts_with("Shift") {
         Some(Mod::Shift)
     } else if code.starts_with("Control") {
@@ -440,19 +806,80 @@ fn modifiers_before_key(code: &str, physical: &[Mod]) -> Vec<Mod> {
     } else {
         None
     };
+    let opposite = match code {
+        "ShiftLeft" => Some("ShiftRight"),
+        "ShiftRight" => Some("ShiftLeft"),
+        "ControlLeft" => Some("ControlRight"),
+        "ControlRight" => Some("ControlLeft"),
+        "AltLeft" => Some("AltRight"),
+        "AltRight" => Some("AltLeft"),
+        _ => None,
+    };
+    let already_held = opposite.is_some_and(|opposite| held_keys.iter().any(|key| key == opposite));
     physical
         .iter()
         .copied()
-        .filter(|modifier| Some(*modifier) != introduced)
+        .filter(|modifier| already_held || Some(*modifier) != introduced)
+        .collect()
+}
+
+fn modifier_actions_matching(
+    world: &dyn WorldView,
+    physical: &[Mod],
+    trigger: impl Fn(&turts_mod_api::Binding) -> bool,
+) -> Vec<String> {
+    fn mods(binding: &turts_mod_api::Binding) -> &[Mod] {
+        match binding {
+            turts_mod_api::Binding::Key { mods, .. }
+            | turts_mod_api::Binding::Pointer { mods, .. } => mods,
+            turts_mod_api::Binding::Wheel(_) => &[],
+        }
+    }
+    let actions = input_map::effective_actions_with_runtime(
+        world.input_map(),
+        world.runtime_binding_overrides(),
+    );
+    let specific = actions.values().flatten().any(|binding| {
+        trigger(binding) && !mods(binding).is_empty() && modifiers_equal(mods(binding), physical)
+    });
+    actions
+        .into_iter()
+        .filter_map(|(name, bindings)| {
+            (logical_modifier(&name).is_some()
+                && bindings.iter().any(|binding| {
+                    trigger(binding)
+                        && (modifiers_equal(mods(binding), physical)
+                            || (!specific && mods(binding).is_empty()))
+                }))
+            .then_some(name)
+        })
         .collect()
 }
 
 impl Core {
     fn modifier_actions_for_key(&self, code: &str, world: &dyn WorldView) -> Vec<String> {
-        let physical = modifiers_before_key(code, &self.physical_mods);
-        input_map::effective_actions_with_runtime(world.input_map(), world.runtime_binding_overrides()).into_iter().filter_map(|(name,bindings)| {
-            (logical_modifier(&name).is_some() && bindings.iter().any(|binding|matches!(binding,turts_mod_api::Binding::Key{code:key,mods} if key==code&&modifiers_equal(mods,&physical)))).then_some(name)
-        }).collect()
+        let physical = modifiers_before_key(code, &self.physical_mods, &self.keys);
+        modifier_actions_matching(
+            world,
+            &physical,
+            |binding| matches!(binding, turts_mod_api::Binding::Key { code: bound, .. } if bound == code),
+        )
+    }
+    fn modifier_actions_for_pointer(&self, button: Button, world: &dyn WorldView) -> Vec<String> {
+        modifier_actions_matching(
+            world,
+            &self.physical_mods,
+            |binding| matches!(binding, turts_mod_api::Binding::Pointer { button: bound, .. } if *bound == button),
+        )
+    }
+    fn action_for_wheel(&self, delta: f32, world: &dyn WorldView) -> Option<String> {
+        let direction = if delta > 0.0 {
+            turts_mod_api::WheelDirection::Up
+        } else {
+            turts_mod_api::WheelDirection::Down
+        };
+        input_map::effective_actions_with_runtime(world.input_map(), world.runtime_binding_overrides()).into_iter()
+            .find_map(|(name, bindings)| bindings.iter().any(|binding| matches!(binding, turts_mod_api::Binding::Wheel(bound) if *bound == direction)).then_some(name))
     }
     fn has_modifier_action(&self, action: &str) -> bool {
         self.held_modifier_actions
@@ -464,7 +891,8 @@ impl Core {
             world.input_map(),
             world.runtime_binding_overrides(),
         );
-        let exact = actions.iter().find_map(|(name, bindings)| bindings.iter().any(|binding| matches!(binding, turts_mod_api::Binding::Key { code: key, mods } if key == code && modifiers_equal(mods, &self.physical_mods))).then_some(name.clone()));
+        let physical = modifiers_before_key(code, &self.physical_mods, &self.keys);
+        let exact = actions.iter().find_map(|(name, bindings)| bindings.iter().any(|binding| matches!(binding, turts_mod_api::Binding::Key { code: key, mods } if key == code && modifiers_equal(mods, &physical))).then_some(name.clone()));
         exact.or_else(|| {
             (self.physical_mods.len() == 1 && self.physical_mods.contains(&Mod::Shift)).then(|| actions.into_iter().find_map(|(name, bindings)| {
                 (world.orders().iter().any(|order| order.hotkey == name) && bindings.iter().any(|binding| matches!(binding, turts_mod_api::Binding::Key { code: key, mods } if key == code && mods.is_empty()))).then_some(name)
@@ -987,9 +1415,31 @@ impl Default for Core {
     }
 }
 
+fn engine_group_action(action: &str, prefix: &str) -> Option<u8> {
+    match action.strip_prefix(prefix)?.as_bytes() {
+        [digit @ b'1'..=b'9'] => Some(*digit - b'0'),
+        _ => None,
+    }
+}
+
+fn camera_pan_action(action: &str) -> bool {
+    matches!(
+        action,
+        "camera_pan_up" | "camera_pan_down" | "camera_pan_left" | "camera_pan_right"
+    )
+}
+
+fn shell_action(action: &str) -> bool {
+    matches!(action, "menu" | "cancel" | "toggle_guide")
+}
+
 /// Input observed by the client adapter during one frame.
 #[derive(Debug, Clone, PartialEq)]
 pub enum InputEvent {
+    /// Per-frame UI scope. Keep physical key bookkeeping; suspend world actions.
+    UiCapture {
+        allow_shell: bool,
+    },
     KeyDown {
         code: String,
         mods: Vec<Mod>,

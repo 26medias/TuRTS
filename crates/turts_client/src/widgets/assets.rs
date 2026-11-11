@@ -368,6 +368,7 @@ mod tests {
             unit_names: Default::default(),
             content: ClientContent::default(),
             presentation,
+            verified_root_mod: None,
         })
     }
 

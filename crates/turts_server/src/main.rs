@@ -12,6 +12,7 @@ mod orderlog;
 mod orders;
 mod outbound;
 mod session;
+mod session_diagnostics;
 mod stats;
 mod synthetic;
 mod ticklog;
@@ -98,7 +99,7 @@ fn run() -> Result<(), String> {
     outbound::install(&mut app);
     net::install(&mut app, cfg.http_addr(), ws_addr);
     ticklog::install(&mut app, &cli);
-    stats::install(&mut app, &cli);
+    stats::install(&mut app, &cli)?;
     synthetic::install(&mut app, &cli);
     initialize_completed_world(app.world_mut());
     if let Some(path) = cli.economy_log.as_ref() {

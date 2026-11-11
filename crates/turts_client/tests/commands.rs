@@ -200,6 +200,7 @@ fn disconnected_sender_preserves_fifo_and_sequence_until_connected() {
     );
     app.insert_resource(AcquiredPackages(Acquired {
         lockfile_hash: String::new(),
+        verified_root_mod: None,
         visuals: Default::default(),
         map_size: (1.0, 1.0),
         unit_names: Default::default(),

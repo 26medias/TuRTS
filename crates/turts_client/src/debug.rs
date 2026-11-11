@@ -35,6 +35,9 @@ pub fn debug_json(world: &World) -> String {
     let tick_hz = world
         .get_resource::<ReplicaState>()
         .and_then(|state| state.replica.as_ref().map(|replica| replica.tick_hz));
+    let match_id_decimal = world
+        .get_resource::<ReplicaState>()
+        .and_then(|state| state.welcome.map(|welcome| welcome.match_id.to_string()));
     let presented = world.get_resource::<Presented>();
     let visuals = world.get_resource::<AcquiredPackages>();
     let units: Vec<Value> = presented
@@ -72,6 +75,9 @@ pub fn debug_json(world: &World) -> String {
         .get_resource::<crate::debug_feed::SelectionFeed>()
         .map(|feed| feed.0.clone())
         .unwrap_or_default();
+    let pending_order_id = world
+        .get_resource::<crate::core_adapter::CoreRuntime>()
+        .and_then(|runtime| runtime.pending_order_id());
     let groups = world
         .get_resource::<crate::debug_feed::GroupsFeed>()
         .map(|feed| {
@@ -142,27 +148,12 @@ pub fn debug_json(world: &World) -> String {
                 .get_resource::<crate::core_adapter::CorePreferences>()
                 .map(|preferences| preferences.runtime_bindings.clone())
                 .unwrap_or_default();
-            let actions = turts_interaction::input_map::effective_actions_with_runtime(
-                &content.input_map,
-                &runtime,
-            );
-            let action_json: serde_json::Map<_, _> = actions
-                .iter()
-                .map(|(name, bindings)| (name.clone(), json!(bindings)))
-                .collect();
-            let order_json: serde_json::Map<_, _> = content
-                .catalog
-                .orders
-                .iter()
-                .filter_map(|(id, order)| {
-                    actions
-                        .get(&order.hotkey)
-                        .map(|bindings| (id.to_string(), json!(bindings)))
-                })
-                .collect();
-            json!({"actions":action_json,"orders":order_json})
+            binding_observation(content, &runtime)
         })
         .unwrap_or_else(|| json!({"actions":{},"orders":{}}));
+    let verified_root_mod = visuals
+        .and_then(|acquired| acquired.0.verified_root_mod.as_ref())
+        .map(|root| json!({"id":root.id,"version":root.version}));
     let replicated_world = world
         .get_resource::<ReplicaState>()
         .and_then(|state| {
@@ -277,6 +268,24 @@ pub fn debug_json(world: &World) -> String {
             json!({
                 "stored_identity": state.stored_identity(),
                 "elapsed_secs": state.elapsed_secs(),
+                "first_transport_attempt_real_secs": state.first_attempt_real_secs(),
+                "terminal_at_real_secs": state.terminal_at_real_secs(),
+                "terminal_elapsed_secs": state.terminal_elapsed_secs(),
+                "last_pending_deadline_check": state.last_pending_deadline_check().map(|check| json!({
+                    "check_index": check.check_index,
+                    "frame_index": check.frame_index,
+                    "source": check.source,
+                    "real_now_secs": check.real_now_secs,
+                    "elapsed_secs": check.elapsed_secs,
+                })),
+                "first_terminal_deadline_check": state.first_terminal_deadline_check().map(|check| json!({
+                    "check_index": check.check_index,
+                    "frame_index": check.frame_index,
+                    "source": check.source,
+                    "real_now_secs": check.real_now_secs,
+                    "elapsed_secs": check.elapsed_secs,
+                })),
+                "deadline_checks_causal": state.deadline_checks_are_causal(),
                 "attempts_started": state.attempts_started(),
                 "hellos_sent": state.hellos_sent(),
                 "duplicate_rejections": state.duplicate_rejections(),
@@ -292,6 +301,7 @@ pub fn debug_json(world: &World) -> String {
         "rejoin": rejoin,
         "tick_hz": tick_hz,
         "match_id": world.get_resource::<ReplicaState>().and_then(|state| state.welcome.map(|welcome| welcome.match_id)),
+        "match_id_decimal": match_id_decimal,
         "slot": world.get_resource::<ReplicaState>().and_then(|state| state.welcome.map(|welcome| welcome.slot)),
         "units": units,
         "last_frame": last_frame,
@@ -301,6 +311,7 @@ pub fn debug_json(world: &World) -> String {
         "command_results": command_results,
         "research_completed_tick": world.get_resource::<crate::scenario::ProduceHook>().and_then(|hook| hook.research_completed_tick),
         "selection": selected_units,
+        "pending_order_id": pending_order_id,
         "ui_selection": selection,
         "groups": groups,
         "frames": frames,
@@ -318,10 +329,52 @@ pub fn debug_json(world: &World) -> String {
         "markers_shown": markers_shown,
         "rings_shown": rings_shown,
         "effective_bindings": effective_bindings,
+        "verified_root_mod": verified_root_mod,
         "rendered_ui_nodes": rendered_ui_nodes,
         "ingest": ingest,
         "replicated_world": replicated_world,
     }).to_string()
+}
+
+fn binding_observation(
+    content: &crate::content::ClientContent,
+    runtime: &BTreeMap<String, Vec<turts_mod_api::Binding>>,
+) -> Value {
+    fn action_map(
+        actions: &BTreeMap<String, Vec<turts_mod_api::Binding>>,
+    ) -> serde_json::Map<String, Value> {
+        actions
+            .iter()
+            .map(|(name, bindings)| (name.clone(), json!(bindings)))
+            .collect()
+    }
+    fn order_map(
+        content: &crate::content::ClientContent,
+        actions: &BTreeMap<String, Vec<turts_mod_api::Binding>>,
+    ) -> serde_json::Map<String, Value> {
+        content
+            .catalog
+            .orders
+            .iter()
+            .filter_map(|(id, order)| {
+                actions
+                    .get(&order.hotkey)
+                    .map(|bindings| (id.to_string(), json!(bindings)))
+            })
+            .collect()
+    }
+    let defaults = turts_interaction::input_map::effective_actions_with_runtime(
+        &content.input_map,
+        &BTreeMap::new(),
+    );
+    let effective =
+        turts_interaction::input_map::effective_actions_with_runtime(&content.input_map, runtime);
+    json!({
+        "defaults": {"actions":action_map(&defaults),"orders":order_map(content, &defaults)},
+        "runtime_overrides": runtime,
+        "actions": action_map(&effective),
+        "orders": order_map(content, &effective),
+    })
 }
 
 fn health_trace_json(
@@ -402,6 +455,7 @@ pub fn report_json(world: &World) -> Value {
     let player_id_decimal = world
         .get_resource::<crate::PlayerId>()
         .map(|player_id| player_id.0.to_string());
+    let match_id_decimal = state.welcome.map(|welcome| welcome.match_id.to_string());
     let final_positions: BTreeMap<u32, [f32; 2]> = state
         .replica
         .iter()
@@ -464,6 +518,7 @@ pub fn report_json(world: &World) -> Value {
         "tick_hz": state.replica.as_ref().map(|replica| replica.tick_hz),
         "player_id_decimal": player_id_decimal,
         "match_id": state.welcome.map(|welcome| welcome.match_id),
+        "match_id_decimal": match_id_decimal,
         "rejected_reason": rejected_reason,
         "slot": state.welcome.map(|welcome| welcome.slot),
         "disconnected_after_connect": world.resource::<JoinState>().disconnected_after_connect,
@@ -722,7 +777,11 @@ mod command_result_json_tests {
         assert_eq!(debug["player_id_decimal"], serde_json::Value::Null);
         assert_eq!(
             debug["cursor"],
-            serde_json::json!({"context":null,"image_id":null,"applied_icon":null})
+            serde_json::json!({
+                "context":null,"image_id":null,"applied_icon":null,"position":null,
+                "engine_position":null,"lock_requested":false,"lock_active":null,
+                "relative_motion":[0.0,0.0],"frame_index":0
+            })
         );
         assert_eq!(
             debug["audio"],
@@ -784,19 +843,30 @@ mod command_result_json_tests {
     }
 
     #[test]
-    fn player_id_decimal_is_lossless_in_capture_and_native_report() {
+    fn player_and_match_ids_are_lossless_in_capture_and_native_report() {
         let mut world = bevy::prelude::World::new();
         world.insert_resource(PlayerId(u64::MAX));
+        let replica_state = ReplicaState {
+            welcome: Some(crate::ingest::WelcomeInfo {
+                slot: 1,
+                tick: 1,
+                tick_hz: 20,
+                match_id: u64::MAX,
+            }),
+            ..Default::default()
+        };
+        world.insert_resource(replica_state);
         let debug: serde_json::Value = serde_json::from_str(&debug_json(&world)).unwrap();
         assert_eq!(debug["player_id"], serde_json::Value::Null);
         assert_eq!(debug["player_id_decimal"], u64::MAX.to_string());
+        assert_eq!(debug["match_id_decimal"], u64::MAX.to_string());
         world.insert_resource(super::DebugState::default());
         rebuild_debug_state(&mut world);
         let rebuilt: serde_json::Value =
             serde_json::from_str(&world.resource::<super::DebugState>().0).unwrap();
         assert_eq!(rebuilt["player_id_decimal"], u64::MAX.to_string());
+        assert_eq!(rebuilt["match_id_decimal"], u64::MAX.to_string());
 
-        world.insert_resource(ReplicaState::default());
         world.insert_resource(IngestCounters::default());
         world.insert_resource(CommandResults::default());
         world.insert_resource(Phase::Connecting);
@@ -804,7 +874,9 @@ mod command_result_json_tests {
         world.insert_resource(ClientOpts(ClientOptions::default()));
         let report = report_json(&world);
         assert_eq!(report["player_id_decimal"], u64::MAX.to_string());
+        assert_eq!(report["match_id_decimal"], u64::MAX.to_string());
         assert_eq!(report["debug"]["player_id_decimal"], u64::MAX.to_string());
+        assert_eq!(report["debug"]["match_id_decimal"], u64::MAX.to_string());
         assert!(
             report["replicated_world"]
                 .get("player_id_decimal")

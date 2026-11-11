@@ -43,6 +43,7 @@ pub struct SourceData {
 
 #[derive(Clone, Copy)]
 pub struct SourceContext<'a> {
+    pub binding_labels: Option<&'a crate::client_shell::BindingLabels>,
     pub replica: &'a Replica,
     pub content: &'a ClientContent,
     pub selection: &'a [u32],
@@ -789,7 +790,7 @@ pub fn current_hotkey(context: SourceContext<'_>, action: &str) -> String {
     .get(action)
     .into_iter()
     .flatten()
-    .map(binding_label)
+    .map(|binding| crate::client_shell::binding_label(binding, context.binding_labels))
     .collect::<Vec<_>>()
     .join(", ")
 }
@@ -996,7 +997,9 @@ fn binding_rows(context: SourceContext<'_>) -> SourceData {
                 item.set(ItemField::Name, humanize_action(name));
                 let label = bindings
                     .iter()
-                    .map(binding_label)
+                    .map(|binding| {
+                        crate::client_shell::binding_label(binding, context.binding_labels)
+                    })
                     .collect::<Vec<_>>()
                     .join(", ");
                 item.set(ItemField::Title, label);
@@ -1006,7 +1009,7 @@ fn binding_rows(context: SourceContext<'_>) -> SourceData {
     }
 }
 
-fn humanize_action(action: &str) -> String {
+pub(crate) fn humanize_action(action: &str) -> String {
     let known = if let Some(group) = action.strip_prefix("group_assign_") {
         format!("Assign group {group}")
     } else if let Some(group) = action.strip_prefix("group_recall_") {
@@ -1070,59 +1073,6 @@ fn unit_asset(context: SourceContext<'_>, content_id: &str, icon: bool) -> Optio
         presentation.portrait.as_deref()
     }?;
     Some(qualify_asset(context.interface_package?, local))
-}
-
-fn binding_label(binding: &Binding) -> String {
-    match binding {
-        Binding::Key { code, mods } => format!("{}{}", modifier_label(mods), key_label(code)),
-        Binding::Pointer { button, mods } => format!(
-            "{}{} click",
-            modifier_label(mods),
-            match button {
-                turts_mod_api::Button::Left => "Left",
-                turts_mod_api::Button::Right => "Right",
-                turts_mod_api::Button::Middle => "Middle",
-                turts_mod_api::Button::Back => "Back",
-                turts_mod_api::Button::Forward => "Forward",
-            }
-        ),
-        Binding::Wheel(direction) => format!(
-            "Wheel {}",
-            match direction {
-                turts_mod_api::WheelDirection::Up => "up",
-                turts_mod_api::WheelDirection::Down => "down",
-            }
-        ),
-    }
-}
-
-fn modifier_label(mods: &[turts_mod_api::Mod]) -> String {
-    mods.iter()
-        .map(|modifier| {
-            format!(
-                "{}+",
-                match modifier {
-                    turts_mod_api::Mod::Shift => "Shift",
-                    turts_mod_api::Mod::Ctrl => "Ctrl",
-                    turts_mod_api::Mod::Alt => "Alt",
-                }
-            )
-        })
-        .collect()
-}
-
-fn key_label(code: &str) -> String {
-    match code {
-        code if code.starts_with("Key") && code.len() == 4 => code[3..].to_owned(),
-        code if code.starts_with("Digit") && code.len() == 6 => code[5..].to_owned(),
-        "Escape" => "Esc".to_owned(),
-        "Space" => "Space".to_owned(),
-        "ArrowUp" => "↑".to_owned(),
-        "ArrowDown" => "↓".to_owned(),
-        "ArrowLeft" => "←".to_owned(),
-        "ArrowRight" => "→".to_owned(),
-        other => other.to_owned(),
-    }
 }
 
 fn unit_name(id: &str, content: &ClientContent) -> String {
@@ -1270,6 +1220,7 @@ mod tests {
         guide: &'a [GuidePage],
     ) -> SourceContext<'a> {
         SourceContext {
+            binding_labels: None,
             replica,
             content,
             selection,
@@ -1431,6 +1382,7 @@ mod tests {
         };
         let guide = [];
         let ctx = SourceContext {
+            binding_labels: None,
             interface: Some(&interface),
             ..context(
                 &replica, &content, &selection, &groups, &alerts, &bindings, &input, &guide,
@@ -2140,6 +2092,96 @@ mod tests {
         assert_eq!(
             select.get(ItemField::Title),
             Some(&serde_json::json!("Left click"))
+        );
+    }
+
+    #[test]
+    fn binding_rows_use_layout_letters_for_display_and_keep_the_physical_code() {
+        let replica = Replica::new(20);
+        let content = ClientContent::default();
+        let selection = [];
+        let groups = BTreeMap::new();
+        let alerts = [];
+        let input = InputMapDef {
+            actions: vec![],
+            engine_overrides: vec![],
+        };
+        let runtime = BTreeMap::from([(
+            "group_assign_1".into(),
+            vec![
+                Binding::Key {
+                    code: "KeyA".into(),
+                    mods: vec![turts_mod_api::Mod::Ctrl],
+                },
+                Binding::Key {
+                    code: "ArrowLeft".into(),
+                    mods: vec![],
+                },
+                Binding::Key {
+                    code: "Space".into(),
+                    mods: vec![],
+                },
+            ],
+        )]);
+        let guide = [];
+        let labels = crate::client_shell::BindingLabels::from_layout_entries([
+            ("KeyA".into(), "q".into()),
+            ("Space".into(), " ".into()),
+        ]);
+        let localized_context = SourceContext {
+            binding_labels: Some(&labels),
+            ..context(
+                &replica, &content, &selection, &groups, &alerts, &runtime, &input, &guide,
+            )
+        };
+        let rows = read_source(&Source::Bindings, localized_context).items;
+        let assignment = rows
+            .iter()
+            .find(|row| row.get(ItemField::Name) == Some(&serde_json::json!("Assign group 1")))
+            .unwrap();
+        assert_eq!(
+            assignment.get(ItemField::Title),
+            Some(&serde_json::json!("Ctrl+Q, Left, Space"))
+        );
+        assert_eq!(
+            runtime["group_assign_1"][0],
+            Binding::Key {
+                code: "KeyA".into(),
+                mods: vec![turts_mod_api::Mod::Ctrl],
+            },
+            "layout labels affect presentation only; dispatch remains bound to KeyA"
+        );
+        let fallback = context(
+            &replica, &content, &selection, &groups, &alerts, &runtime, &input, &guide,
+        );
+        let fallback_rows = read_source(&Source::Bindings, fallback).items;
+        let fallback_assignment = fallback_rows
+            .iter()
+            .find(|row| row.get(ItemField::Name) == Some(&serde_json::json!("Assign group 1")))
+            .unwrap();
+        assert_eq!(
+            fallback_assignment.get(ItemField::Title),
+            Some(&serde_json::json!("Ctrl+A, Left, Space"))
+        );
+        let empty_labels = crate::client_shell::BindingLabels::from_layout_entries([
+            ("KeyA".into(), String::new()),
+            ("Space".into(), "\t".into()),
+        ]);
+        let empty_context = SourceContext {
+            binding_labels: Some(&empty_labels),
+            ..context(
+                &replica, &content, &selection, &groups, &alerts, &runtime, &input, &guide,
+            )
+        };
+        let empty_rows = read_source(&Source::Bindings, empty_context).items;
+        let empty_assignment = empty_rows
+            .iter()
+            .find(|row| row.get(ItemField::Name) == Some(&serde_json::json!("Assign group 1")))
+            .unwrap();
+        assert_eq!(
+            empty_assignment.get(ItemField::Title),
+            Some(&serde_json::json!("Ctrl+A, Left, Space")),
+            "empty or whitespace LayoutMap values fall back to renderable US labels"
         );
     }
 

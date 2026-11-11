@@ -10,12 +10,21 @@ function page(identity) {
         scene: { clip_from_world: [identity, 0, 0, 1] },
         debug: { selection: [identity] },
     };
+    const canvas = { tagName: "CANVAS", id: "turts" };
+    const document = {
+        hasFocus: () => true,
+        activeElement: canvas,
+        pointerLockElement: null,
+        getElementById: (id) => id === "turts" ? canvas : null,
+        querySelector: () => canvas,
+    };
     const window = {
+        devicePixelRatio: 2,
         turts_scene: () => JSON.stringify(state.scene),
         turts_debug: () => JSON.stringify(state.debug),
         get turts_move() { throw new Error("a checkpoint must never access the order bridge"); },
     };
-    return { state, evaluate: async (fn) => vm.runInNewContext(`(${fn.toString()})()`, { window }) };
+    return { state, canvas, document, evaluate: async (fn) => vm.runInNewContext(`(${fn.toString()})()`, { window, document }) };
 }
 
 const metadata = (window = 1, input_call = 0) => ({ window, input_call, wall_time_ms: 123 });
@@ -28,10 +37,40 @@ test("scene checkpoints read the selected page and retain each stage independent
     pages[1].state.debug.selection = [];
     await checkpoints.record(metadata(2, 10));
     const rows = checkpoints.snapshots();
-    assert.deepEqual(rows[0], { ...metadata(2, 7), scene: { clip_from_world: [2, 0, 0, 1] }, debug: { selection: [2] } });
+    assert.deepEqual(rows[0], {
+        ...metadata(2, 7),
+        scene: { clip_from_world: [2, 0, 0, 1] },
+        debug: { selection: [2] },
+        browser: {
+            document_has_focus: true,
+            device_pixel_ratio: 2,
+            active_element: { tag_name: "CANVAS", id: "turts" },
+            canvas: { tag_name: "CANVAS", id: "turts" },
+            canvas_focused: true,
+            pointer_lock_element: null,
+            canvas_pointer_locked: false,
+        },
+    });
     assert.deepEqual(rows[1].scene.clip_from_world, [9, 0, 0, 1]);
     rows[0].scene.clip_from_world[0] = -1;
     assert.equal(checkpoints.snapshots()[0].scene.clip_from_world[0], 2);
+});
+
+test("scene checkpoints retain actual DOM canvas focus and pointer-lock identity", async () => {
+    const observed = page(3);
+    observed.document.activeElement = { tagName: "BODY", id: "" };
+    observed.document.pointerLockElement = observed.canvas;
+    const checkpoints = createSceneCheckpoints([observed]);
+    await checkpoints.record(metadata());
+    assert.deepEqual(checkpoints.snapshots()[0].browser, {
+        document_has_focus: true,
+        device_pixel_ratio: 2,
+        active_element: { tag_name: "BODY", id: null },
+        canvas: { tag_name: "CANVAS", id: "turts" },
+        canvas_focused: false,
+        pointer_lock_element: { tag_name: "CANVAS", id: "turts" },
+        canvas_pointer_locked: true,
+    });
 });
 
 test("checkpoint failures are explicit for absent or malformed bridges", async () => {

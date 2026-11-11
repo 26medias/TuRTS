@@ -26,7 +26,7 @@ def source_identity(root: Path) -> dict[str, object]:
     files = []
     for relative in sorted(set(path for path in paths if path)):
         path = root / relative
-        if any(part.lower() == ".claude" for part in Path(relative).parts) or Path(relative).name.lower() == "claude.md":
+        if any(part.lower() == ".claude" for part in Path(relative).parts) or Path(relative).name.lower().lstrip("_") == "claude.md":
             continue
         if not path.is_file():
             continue

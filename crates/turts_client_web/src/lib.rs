@@ -22,7 +22,10 @@
 //! The page query is `?server=<http url>&ws=<ws url>`. When it is wrong, the page gets the
 //! message in `window.turts_error` and the app does not start.
 
-use std::sync::{LazyLock, Mutex};
+use std::{
+    collections::BTreeMap,
+    sync::{LazyLock, Mutex},
+};
 
 use bevy::camera::RenderTarget;
 use bevy::camera::visibility::InheritedVisibility;
@@ -48,6 +51,7 @@ use turts_client::{ClientOpts, PlayerId};
 use turts_net_protocol::{OrderEnvelope, Pos};
 use wasm_bindgen::JsCast;
 use wasm_bindgen::prelude::*;
+use wasm_bindgen_futures::JsFuture;
 
 /// The last debug JSON. The `window.turts_debug` closure reads it.
 static DEBUG: Mutex<String> = Mutex::new(String::new());
@@ -55,6 +59,7 @@ static DEBUG: Mutex<String> = Mutex::new(String::new());
 /// The last scene JSON. The `window.turts_scene` closure reads it.
 static SCENE: Mutex<String> = Mutex::new(String::new());
 static UI: Mutex<String> = Mutex::new(String::new());
+static LAYOUT_LABELS: Mutex<Option<BTreeMap<String, String>>> = Mutex::new(None);
 
 /// The targets from `window.turts_move` that no frame has taken yet.
 static MOVES: Mutex<Vec<(f32, f32)>> = Mutex::new(Vec::new());
@@ -67,6 +72,7 @@ pub fn start() {
     let Some(window) = web_sys::window() else {
         return;
     };
+    request_keyboard_layout_map();
     let query = window.location().search().unwrap_or_default();
     let mut options = match options_from_query(&query) {
         Ok(options) => options,
@@ -150,7 +156,7 @@ pub fn start() {
                 "message":"Saved player identity was invalid; a new session identity will be used"
             }));
     }
-    app.add_systems(Update, drain_moves)
+    app.add_systems(Update, (drain_moves, apply_keyboard_layout_labels))
         .add_systems(Last, persist_session_player_id)
         .add_systems(
             PreUpdate,
@@ -165,6 +171,69 @@ pub fn start() {
             ),
         );
     app.run();
+}
+
+/// Call the browser API once during entry startup. A missing API or rejected promise publishes
+/// an empty map, which keeps the engine's US physical-code labels as the fallback.
+fn request_keyboard_layout_map() {
+    let result = (|| {
+        let window = web_sys::window()?;
+        let navigator =
+            js_sys::Reflect::get(window.as_ref(), &JsValue::from_str("navigator")).ok()?;
+        let keyboard = js_sys::Reflect::get(&navigator, &JsValue::from_str("keyboard")).ok()?;
+        if keyboard.is_null() || keyboard.is_undefined() {
+            return None;
+        }
+        let method = js_sys::Reflect::get(&keyboard, &JsValue::from_str("getLayoutMap")).ok()?;
+        let method = method.dyn_into::<js_sys::Function>().ok()?;
+        method
+            .call0(&keyboard)
+            .ok()?
+            .dyn_into::<js_sys::Promise>()
+            .ok()
+    })();
+    let Some(promise) = result else {
+        *LAYOUT_LABELS.lock().unwrap() = Some(BTreeMap::new());
+        return;
+    };
+    wasm_bindgen_futures::spawn_local(async move {
+        let labels = JsFuture::from(promise)
+            .await
+            .ok()
+            .and_then(layout_map_entries)
+            .unwrap_or_default();
+        *LAYOUT_LABELS.lock().unwrap() = Some(labels);
+    });
+}
+
+fn layout_map_entries(map: JsValue) -> Option<BTreeMap<String, String>> {
+    let entries = js_sys::Reflect::get(&map, &JsValue::from_str("entries")).ok()?;
+    let entries = entries.dyn_into::<js_sys::Function>().ok()?;
+    let iterator = entries.call0(&map).ok()?;
+    let rows = js_sys::Array::from(&iterator);
+    let mut labels = BTreeMap::new();
+    for row in rows.iter() {
+        let pair = js_sys::Array::from(&row);
+        let (Some(code), Some(label)) = (pair.get(0).as_string(), pair.get(1).as_string()) else {
+            continue;
+        };
+        labels.insert(code, label);
+    }
+    Some(labels)
+}
+
+fn apply_keyboard_layout_labels(
+    mut labels: ResMut<turts_client::client_shell::BindingLabels>,
+    mut applied: Local<bool>,
+) {
+    if *applied {
+        return;
+    }
+    let Some(entries) = LAYOUT_LABELS.lock().unwrap().take() else {
+        return;
+    };
+    *labels = turts_client::client_shell::BindingLabels::from_layout_entries(entries);
+    *applied = true;
 }
 
 const SESSION_PLAYER_ID_KEY: &str = "turts.v1.player_id";

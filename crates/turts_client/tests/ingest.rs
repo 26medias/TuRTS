@@ -532,6 +532,7 @@ fn world_with_one_unit() -> World {
     world.insert_resource(Phase::Joined { slot: 0 });
     world.insert_resource(AcquiredPackages(Acquired {
         lockfile_hash: "sha256:x".to_string(),
+        verified_root_mod: None,
         visuals: HashMap::from([(
             "acme:scout".to_string(),
             Shape::Cuboid {

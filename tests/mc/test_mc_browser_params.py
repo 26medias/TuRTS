@@ -6,7 +6,7 @@ import unittest
 sys.dont_write_bytecode = True
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2] / "scripts"))
 
-from mc_browser_params import add_synthetic_param, synthetic_server_args, synthetic_units
+from mc_browser_params import add_synthetic_param, synthetic_server_args, synthetic_units, validate_task16_plan
 
 
 class McBrowserParamsTests(unittest.TestCase):
@@ -32,6 +32,38 @@ class McBrowserParamsTests(unittest.TestCase):
         for value in (True, False, "4485", 1.0, -1, 0x1_0000_0000, None, [], {}):
             with self.subTest(value=value), self.assertRaises(ValueError):
                 synthetic_units({"synthetic_units": value})
+
+    def test_gpu_device_audit_is_default_off_and_limited_to_slot1_physical_runs(self) -> None:
+        slot1 = json.loads((pathlib.Path(__file__).resolve().parents[1] / "browser/rows/SLOT1.json").read_text())
+        slot1["stages"]["task16"].pop("gpu_device_audit", None)
+        slot1["stages"]["task16"].pop("startup_raf_probe", None)
+        self.assertFalse(validate_task16_plan(slot1).get("gpu_device_audit", False))
+        slot1["stages"]["task16"]["gpu_device_audit"] = True
+        self.assertTrue(validate_task16_plan(slot1)["gpu_device_audit"])
+        candidate = json.loads((pathlib.Path(__file__).resolve().parents[1] / "browser/rows/SLOT1.json").read_text())
+        candidate["stages"]["task16"]["status"] = "candidate"
+        candidate["instrument_status"] = "SOURCE CANDIDATE ONLY; guarded SLOT1 source preparation"
+        self.assertTrue(validate_task16_plan(candidate)["gpu_device_audit"])
+        slot1["stages"]["task16"]["gpu_device_audit"] = "true"
+        with self.assertRaisesRegex(ValueError, "must be a boolean"):
+            validate_task16_plan(slot1)
+
+    def test_startup_raf_probe_is_default_off_and_requires_guarded_slot1_gpu_audit(self) -> None:
+        slot1 = json.loads((pathlib.Path(__file__).resolve().parents[1] / "browser/rows/SLOT1.json").read_text())
+        plan = slot1["stages"]["task16"]
+        plan["status"] = "candidate"
+        slot1["instrument_status"] = "SOURCE CANDIDATE ONLY; guarded SLOT1 source preparation"
+        plan.pop("gpu_device_audit", None)
+        plan.pop("startup_raf_probe", None)
+        self.assertFalse(validate_task16_plan(slot1).get("startup_raf_probe", False))
+        plan["startup_raf_probe"] = True
+        with self.assertRaisesRegex(ValueError, "GPU device audit enabled"):
+            validate_task16_plan(slot1)
+        plan["gpu_device_audit"] = True
+        self.assertTrue(validate_task16_plan(slot1)["startup_raf_probe"])
+        plan["startup_raf_probe"] = "true"
+        with self.assertRaisesRegex(ValueError, "startup_raf_probe must be a boolean"):
+            validate_task16_plan(slot1)
 
 
 if __name__ == "__main__":
