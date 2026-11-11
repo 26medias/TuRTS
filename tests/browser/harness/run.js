@@ -50,6 +50,36 @@ function parseArgs(args) {
     return { url, outDir, driverPath, oraclePath, paramsPath, width: Number(match[1]), height: Number(match[2]), deviceScaleFactor: Number(match[3] || 1), windows };
 }
 
+// PT1 (MC task 21, ruling C386): the oracle judges any player of the io contract from harness
+// records only. While a window joins, record the load screen (phase, load rows, focus overlay)
+// every 150 ms, so the load steps need no screenshot that a player chose.
+async function recordStartup(page, windowNumber, observations, waitForJoin) {
+    let joined = false;
+    const sampler = (async () => {
+        while (!joined && observations.length < 2000) {
+            try { observations.push({ window: windowNumber, wall_time_ms: Date.now(), ...(await page.evaluate(loadObservation)) }); }
+            catch { /* the page is between documents */ }
+            await page.waitForTimeout(150);
+        }
+    })();
+    try { await waitForJoin(); }
+    finally { joined = true; await sampler; }
+    observations.push({ window: windowNumber, wall_time_ms: Date.now(), ...(await page.evaluate(loadObservation)) });
+    // The layout labels that the web entry gives the client (crates/turts_client_web/src/lib.rs:187-235),
+    // so an oracle renders the same key labels (client_shell.rs BindingLabels::from_layout_entries).
+    const keyboardLayout = await page.evaluate(async () => {
+        try { return Object.fromEntries(await navigator.keyboard.getLayoutMap()); } catch { return null; }
+    });
+    observations.push({ window: windowNumber, wall_time_ms: Date.now(), keyboard_layout: keyboardLayout });
+}
+
+function loadObservation() {
+    let debug = null;
+    try { debug = typeof window.turts_debug === "function" ? JSON.parse(window.turts_debug()) : null; } catch { debug = null; }
+    const rows = (debug?.ui_snapshot ?? []).filter((row) => String(row.id ?? "").startsWith("shell.load") || row.kind === "focus_overlay");
+    return { phase: debug?.phase ?? null, rows };
+}
+
 // A long row (PT1) declares more checkpoints; the default stays 256 (harness/scene-checkpoints.js).
 function checkpointLimit(params) {
     const limit = params.checkpoint_limit ?? 256;
@@ -143,6 +173,7 @@ async function run(options) {
     let prebootFixture = null;
     let prebootOrigin = null;
     const prebootReceipts = [];
+    const startupObservations = [];
     try {
         const windows = Number(params.windows || 1);
         prebootFixture = ["PER1", "SEL4"].includes(params.row) ? per1FixtureFor(params.task16?.fixture) : null;
@@ -172,7 +203,7 @@ async function run(options) {
             await context.addInitScript(installBoundedRafHold);
             await context.addInitScript(installIoEventObserver);
             await context.addInitScript(installContextMenuObserver);
-            if (["KM1", "PER1", "SEL4", "SH1"].includes(params.row)) {
+            if (["KM1", "PER1", "SEL4", "SH1", "PT1"].includes(params.row)) {
                 await context.addInitScript(installTask16StorageAudit, {
                     fixture: prebootFixture, targetOrigin: prebootOrigin, window: n + 1,
                 });
@@ -246,6 +277,8 @@ async function run(options) {
                     }
                     throw new Error(`SLOT1 owner setup did not establish its required product precondition: ${outcome.message}`);
                 }
+            } else if (params.record_startup === true) {
+                await recordStartup(page, n + 1, startupObservations, () => waitForJoinedRole(page));
             } else {
                 await waitForJoinedRole(page);
             }
@@ -257,6 +290,9 @@ async function run(options) {
             });
         }
         initialSetupComplete = true;
+        if (params.record_startup === true) {
+            await fs.writeFile(path.join(options.outDir, "startup-observations.json"), JSON.stringify(startupObservations) + "\n");
+        }
         await pages[0].bringToFront();
         await pages[0].waitForTimeout(100);
         if (slotFixture && startupRafProbeEnabled) {
@@ -278,7 +314,7 @@ async function run(options) {
         if (!sh1Lifecycle) for (const page of pages) await page.evaluate(() => { window.__turts_io_actual_events = []; window.__turts_io_downstream_events = []; window.__turts_io_contextmenu_events = []; window.__turts_io_contextmenu_overflow = false; window.__turts_io_active_call = null; window.__turts_io_seq = null; window.__turts_io_dispatching = false; window.__turts_io_expected_event = null; });
         const checkpoints = sh1Early?.checkpoints || (params.capture_scene_checkpoints === true ? createSceneCheckpoints(pages, checkpointLimit(params), documentEpochs) : null);
         const storageAudit = params.row === "SH1" ? sh1StorageAudit :
-            (["KM1", "PER1", "SEL4"].includes(params.row) ? [] : null);
+            (["KM1", "PER1", "SEL4", "PT1"].includes(params.row) ? [] : null);
         const storageInitialState = storageAudit ? await Promise.all(pages.map(async (page, index) => {
             const snapshot = await page.evaluate(() => {
                 const entries = (storage) => Object.fromEntries(Array.from({ length: storage.length }, (_, offset) => {
@@ -297,6 +333,8 @@ async function run(options) {
             screenshotScale: params.row === "SH1" ? "device" : "css",
             documentEpochs,
             storageAudit,
+            retainScreenshots: params.retain_screenshots === true,
+            observeReloadLoad: params.record_startup === true,
             beforeReload: deviceAuditEnabled ? async (page, windowIndex) => {
                 await collectDeviceAuditForPage(page, windowIndex, documentEpochs, deviceAuditSessions, deviceAuditRecords);
             } : null,
@@ -437,7 +475,7 @@ if (require.main === module) run(parseArgs(process.argv.slice(2))).catch((error)
     process.exitCode = 1;
 });
 
-module.exports = { checkpointLimit, deepFreeze, launchArgsForDpr, parseArgs, trackMainDocumentEpoch };
+module.exports = { checkpointLimit, deepFreeze, loadObservation, recordStartup, launchArgsForDpr, parseArgs, trackMainDocumentEpoch };
 
 async function attachDeviceAudit(page, context, windowIndex, key, sessions) {
     try {

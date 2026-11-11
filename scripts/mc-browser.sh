@@ -239,7 +239,7 @@ if row:
     if "instrument_status" in row_data: data["instrument_status"]=row_data["instrument_status"]
     for key in ("fixture_tree_sha256", "fixture_catalog", "pick_world_epsilon", "stages",
                 "map_size", "camera_vertical_fov_degrees", "slot_colours", "ping_colour",
-                "frame_colour", "background_colour", "minimap_inset", "minimap_size", "checkpoint_limit"):
+                "frame_colour", "background_colour", "minimap_inset", "minimap_size", "checkpoint_limit", "record_startup", "retain_screenshots"):
         if key in row_data: data[key]=row_data[key]
     capture=row_data.get("capture_scene_checkpoints",False)
     if not isinstance(capture,bool): raise SystemExit("capture_scene_checkpoints must be a boolean")

@@ -10,7 +10,7 @@ const IO_KEYS = Object.freeze(["click", "drag", "key", "move", "wheel", "screens
 
 function wallTime() { return Date.now(); }
 
-function createDriverIo(pages, { outputDir, inputLog = [], initialCursor = { x: 0, y: 0 }, afterScreenshot, documentEpochs = [], storageAudit = null, beforeReload = null, navigationArchive = null, screenshotScale = "css" } = {}) {
+function createDriverIo(pages, { outputDir, inputLog = [], initialCursor = { x: 0, y: 0 }, afterScreenshot, documentEpochs = [], storageAudit = null, beforeReload = null, navigationArchive = null, screenshotScale = "css", retainScreenshots = false, observeReloadLoad = false } = {}) {
     if (!Array.isArray(pages) || pages.length === 0) throw new TypeError("at least one page is required");
     if (!["css", "device"].includes(screenshotScale)) throw new TypeError("invalid harness screenshot scale");
     if (!Number.isFinite(initialCursor.x) || !Number.isFinite(initialCursor.y)) throw new TypeError("initialCursor must have finite x and y");
@@ -245,6 +245,8 @@ function createDriverIo(pages, { outputDir, inputLog = [], initialCursor = { x: 
             const screenshotPage = page();
             const bytes = await record("screenshot", [], [], noEvent(async () => {
                 const bytes = await screenshotPage.screenshot({ type: "png", scale: screenshotScale });
+                // PT1 (ruling C386): the harness keeps each screenshot under its input-log index.
+                if (retainScreenshots && outputDir) await fs.writeFile(path.join(outputDir, `harness-shot-${input_call}.png`), bytes);
                 if (afterScreenshot) await afterScreenshot({ input_call, window, document_epoch, wall_time_ms: wallTime() });
                 return bytes;
             }));
@@ -279,6 +281,25 @@ function createDriverIo(pages, { outputDir, inputLog = [], initialCursor = { x: 
                 documentEpochs[state.selected] ?? 0, "before_reload");
             if (beforeReload) await beforeReload(page(), state.selected);
             await page().reload({ waitUntil: "domcontentloaded" });
+            if (observeReloadLoad) {
+                // PT1: record the load screen of the reload in the input log (at most 20 s).
+                entry.load_observations = [];
+                const deadline = wallTime() + 20000;
+                while (wallTime() < deadline) {
+                    let observed = null;
+                    try {
+                        observed = await page().evaluate(() => {
+                            let debug = null;
+                            try { debug = typeof window.turts_debug === "function" ? JSON.parse(window.turts_debug()) : null; } catch { debug = null; }
+                            const rows = (debug?.ui_snapshot ?? []).filter((row) => String(row.id ?? "").startsWith("shell.load") || row.kind === "focus_overlay");
+                            return { phase: debug?.phase ?? null, joined: typeof debug?.phase === "string" && debug.phase.startsWith("Joined") && Boolean(debug.last_frame), rows };
+                        });
+                    } catch { observed = null; }
+                    if (observed) entry.load_observations.push({ wall_time_ms: wallTime(), ...observed });
+                    if (observed?.joined) break;
+                    await page().waitForTimeout(150);
+                }
+            }
             const after = documentEpochs[state.selected] ?? 0;
             entry.document_epoch_after = after;
             if (!Number.isSafeInteger(before) || before < 1 || !Number.isSafeInteger(after) || after <= before) {

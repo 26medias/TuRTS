@@ -38,3 +38,29 @@ test("the new Stop key is the first letter that the effective map does not use",
     const busy = { actions: { ...actions, other: [{ Key: { code: "KeyA", mods: [] } }] } };
     assert.deepEqual(freeLetterKey(busy), { Key: { code: "KeyB", mods: [] } });
 });
+
+const { layoutLabels } = require("./pt1-oracle.js");
+
+test("guide sheet 5 uses the recorded keyboard layout labels, as the client does", () => {
+    const labels = layoutLabels({ KeyS: "o", KeyA: "a", Digit1: "&", Space: " " });
+    assert.deepEqual(labels, { KeyS: "O", KeyA: "A", Digit1: "&" });
+    assert.equal(playerLabel(actions.key_stop[0], labels), "O");
+    assert.equal(playerLabel(actions.group_assign_1[0], labels), "Ctrl+&");
+    const azerty = debugWith(["Key stop: O", "Assign group 1: Ctrl+&"]);
+    assert.equal(assertControlsMatch(azerty, actions, "azerty", labels).rows.length, 2);
+    assert.throws(() => assertControlsMatch(azerty, actions, "us"), /matches no binding/);
+});
+
+const { presses } = require("./pt1-oracle.js");
+
+test("a press of a binding is found in the input log with its exact modifiers, in its window", () => {
+    const input = [
+        { call: "key", window: 2, args: ["Digit1", ["Ctrl"], {}] },
+        { call: "key", window: 2, args: ["Digit1", [], {}] },
+        { call: "key", window: 1, args: ["Digit1", ["ControlLeft"], {}] },
+        { call: "key", window: 2, args: ["KeyS", [], { action: "up" }] },
+    ];
+    assert.deepEqual(presses(input, actions.group_assign_1[0], 2).map(({ index }) => index), [0]);
+    assert.deepEqual(presses(input, actions.group_assign_1[0], 1).map(({ index }) => index), [2], "ControlLeft counts as Ctrl");
+    assert.deepEqual(presses(input, actions.key_stop[0], 2), [], "a key-up is not a press");
+});
