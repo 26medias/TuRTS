@@ -25,6 +25,14 @@ use crate::{
 #[derive(Component)]
 pub(crate) struct SettingsMenuOverlay;
 
+/// The width of the action label column of the menu. An order name of up to 20 characters
+/// ("Disable this machine", 192 px in the 16 px default font) stays on one line, so each
+/// single-key row keeps the same height.
+const MENU_ACTION_LABEL_WIDTH: f32 = 200.0;
+/// The start width of the key column. It grows into the free width of the row; the label, the
+/// keys and the two buttons fit in the 476 px of the panel without a shrink.
+const MENU_BINDING_BASIS_WIDTH: f32 = 120.0;
+
 #[derive(Component)]
 pub(crate) struct RejoinOverlayCamera;
 
@@ -1128,7 +1136,18 @@ fn toggle_settings_menu(
         }
         actions
     });
-    let action_ids = effective.keys().cloned().collect::<Vec<_>>();
+    let action_ids = input_map.map_or_else(Vec::new, |input| {
+        crate::widgets::sources::controls_order(input, effective.keys())
+            .into_iter()
+            .cloned()
+            .collect::<Vec<_>>()
+    });
+    let action_label = |action: &str| {
+        acquired.as_deref().map_or_else(
+            || crate::widgets::sources::humanize_action(action),
+            |acquired| crate::widgets::sources::action_label(&acquired.0.content, action),
+        )
+    };
 
     let overlay = commands
         .spawn((
@@ -1209,9 +1228,10 @@ fn toggle_settings_menu(
                     })
                     .with_children(|row| {
                         row.spawn((
-                            Text::new(crate::widgets::sources::humanize_action(action)),
+                            Text::new(action_label(action)),
                             Node {
-                                width: Val::Px(180.0),
+                                width: Val::Px(MENU_ACTION_LABEL_WIDTH),
+                                flex_shrink: 0.0,
                                 ..default()
                             },
                             TextFont {
@@ -1225,7 +1245,7 @@ fn toggle_settings_menu(
                             },
                             Text::new(binding),
                             Node {
-                                width: Val::Px(160.0),
+                                width: Val::Px(MENU_BINDING_BASIS_WIDTH),
                                 flex_grow: 1.0,
                                 ..default()
                             },
@@ -1815,16 +1835,22 @@ fn on_binding_button_activated_at_boundary(
                 .or_else(|| timeline.last_message_id);
             editor.capturing = Some(button.action.clone());
             editor.conflict = None;
-            editor.status = Some(format!("Press a key or mouse button for {}", button.action));
+            editor.status = Some(format!(
+                "Press a key or mouse button for {}",
+                crate::widgets::sources::action_label(&acquired.0.content, &button.action)
+            ));
         }
         BindingButtonKind::Reset => {
             if reset_binding_override(&mut preferences.runtime_bindings, &defaults, &button.action)
             {
-                editor.status = Some(format!("{} restored to the package default", button.action));
+                editor.status = Some(format!(
+                    "{} restored to the package default",
+                    crate::widgets::sources::action_label(&acquired.0.content, &button.action)
+                ));
             } else if defaults.contains_key(&button.action) {
                 editor.status = Some(format!(
                     "{} already uses the package default",
-                    button.action
+                    crate::widgets::sources::action_label(&acquired.0.content, &button.action)
                 ));
             } else {
                 editor.status = Some("Action is unavailable".into());
@@ -1939,7 +1965,7 @@ fn capture_physical_binding(
         BindingEditResult::Applied => {
             editor.status = Some(format!(
                 "{} changed to {}",
-                action,
+                crate::widgets::sources::action_label(&acquired.0.content, &action),
                 binding_label(&binding, Some(&labels))
             ));
             editor.capturing = None;
@@ -1952,7 +1978,9 @@ fn capture_physical_binding(
                 binding_label(&binding, Some(&labels)),
                 conflicting
                     .iter()
-                    .map(|action| crate::widgets::sources::humanize_action(action))
+                    .map(|action| {
+                        crate::widgets::sources::action_label(&acquired.0.content, action)
+                    })
                     .collect::<Vec<_>>()
                     .join(", ")
             ));
@@ -2474,7 +2502,7 @@ pub(crate) mod tests {
         };
         assert_eq!(action_label, "Pan camera down");
         assert_eq!(label_font, FontSize::Px(16.0));
-        assert_eq!(label_node, Val::Px(180.0));
+        assert_eq!(label_node, Val::Px(MENU_ACTION_LABEL_WIDTH));
         let (action_end, audio_heading, first_audio_control) = {
             let world = app.world_mut();
             let mut rows = world.query::<(Entity, &Text)>();
@@ -4616,5 +4644,80 @@ pub(crate) mod tests {
             app.update();
             assert!(has_text(&mut app, "Connection lost"));
         }
+    }
+
+    fn packed_forge_packages() -> AcquiredPackages {
+        let dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../mods/forge");
+        let archive = turts_mod_runtime::archive::PackageArchive::parse(
+            &turts_mod_runtime::pack::pack_dir(&dir).expect("pack forge"),
+        )
+        .expect("parse forge");
+        let mut packages = forge_acquired_packages();
+        packages.0.content = ClientContent::from_archives(&[archive]).expect("resolve forge");
+        packages
+    }
+
+    /// The action labels of the open menu, in the order of the panel rows.
+    fn menu_action_labels(app: &mut App) -> Vec<String> {
+        let world = app.world_mut();
+        let panel = world
+            .query_filtered::<Entity, With<bevy::ui_widgets::ScrollArea>>()
+            .iter(world)
+            .next()
+            .expect("the open settings panel scrolls");
+        let rows = world.get::<Children>(panel).unwrap().to_vec();
+        rows.into_iter()
+            .filter_map(|row| {
+                let first = *world.get::<Children>(row)?.first()?;
+                let node = world.get::<Node>(first)?;
+                (node.width == Val::Px(MENU_ACTION_LABEL_WIDTH))
+                    .then(|| world.get::<Text>(first).unwrap().0.clone())
+            })
+            .collect()
+    }
+
+    /// Player path step 14 (PT1): a first-time player finds Stop in the menu. A mod action row
+    /// takes the name of its order; mod actions come first, then camera and selection, then groups.
+    #[test]
+    fn menu_rows_name_mod_actions_by_order_and_list_them_before_the_groups() {
+        let mut app = App::new();
+        app.add_plugins(MinimalPlugins)
+            .insert_resource(menu_action())
+            .insert_resource(VolumeSettings::default())
+            .insert_resource(packed_forge_packages())
+            .add_plugins(ClientShellPlugin);
+        app.update();
+        let labels = menu_action_labels(&mut app);
+        assert_eq!(labels.len(), 51, "{labels:?}");
+        assert!(
+            labels.contains(&"Stop selected units".to_owned()),
+            "{labels:?}"
+        );
+        assert!(
+            !labels.iter().any(|label| label.starts_with("Key ")),
+            "{labels:?}"
+        );
+        let is_group = |label: &String| {
+            ["Assign group ", "Select group ", "Add to group "]
+                .iter()
+                .any(|prefix| label.starts_with(prefix))
+        };
+        let mut orders = app
+            .world()
+            .resource::<AcquiredPackages>()
+            .0
+            .content
+            .catalog
+            .orders
+            .values()
+            .map(|order| order.name.clone())
+            .collect::<Vec<_>>();
+        orders.sort_unstable();
+        let mut first = labels[..orders.len()].to_vec();
+        first.sort_unstable();
+        assert_eq!(first, orders, "mod actions come first: {labels:?}");
+        let first_group = labels.iter().position(is_group).unwrap();
+        assert!(first_group > orders.len(), "{labels:?}");
+        assert!(labels[first_group..].iter().all(is_group), "{labels:?}");
     }
 }

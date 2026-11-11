@@ -186,7 +186,7 @@
                     "phase": "conflicts",
                     "x": 650,
                     "y": 500,
-                    "delta": 1450
+                    "delta": -10000
                 },
                 {
                     "call": "wait",
@@ -197,13 +197,20 @@
                     "call": "click",
                     "phase": "conflicts",
                     "x": 784,
-                    "y": 225,
+                    "y": 382,
                     "button": "left"
                 },
                 {
                     "call": "key",
                     "phase": "conflicts",
                     "code": "KeyM"
+                },
+                {
+                    "call": "wheel",
+                    "phase": "conflicts",
+                    "x": 650,
+                    "y": 500,
+                    "delta": 1450
                 },
                 {
                     "call": "wait",
@@ -247,7 +254,7 @@
                     "phase": "conflicts",
                     "x": 650,
                     "y": 500,
-                    "delta": 10000
+                    "delta": -10000
                 },
                 {
                     "call": "wait",
@@ -279,7 +286,7 @@
                     "phase": "conflicts",
                     "x": 650,
                     "y": 500,
-                    "delta": 1450
+                    "delta": -10000
                 },
                 {
                     "call": "wait",
@@ -290,13 +297,20 @@
                     "call": "click",
                     "phase": "conflicts",
                     "x": 784,
-                    "y": 225,
+                    "y": 382,
                     "button": "left"
                 },
                 {
                     "call": "key",
                     "phase": "conflicts",
                     "code": "KeyS"
+                },
+                {
+                    "call": "wheel",
+                    "phase": "conflicts",
+                    "x": 650,
+                    "y": 500,
+                    "delta": 1450
                 },
                 {
                     "call": "wait",
@@ -316,10 +330,22 @@
                     "ms": 200
                 },
                 {
+                    "call": "wheel",
+                    "phase": "conflicts",
+                    "x": 650,
+                    "y": 500,
+                    "delta": -10000
+                },
+                {
+                    "call": "wait",
+                    "phase": "conflicts",
+                    "ms": 150
+                },
+                {
                     "call": "click",
                     "phase": "conflicts",
                     "x": 850,
-                    "y": 225,
+                    "y": 382,
                     "button": "left"
                 },
                 {
@@ -352,7 +378,7 @@
                     "phase": "conflicts",
                     "x": 650,
                     "y": 500,
-                    "delta": 10000
+                    "delta": -10000
                 },
                 {
                     "call": "wait",
@@ -732,55 +758,55 @@
                 {
                     "name": "conflict-open",
                     "phase": "conflicts",
-                    "after_action": 7,
+                    "after_action": 8,
                     "window": 1
                 },
                 {
                     "name": "conflict-swapped",
                     "phase": "conflicts",
-                    "after_action": 9,
+                    "after_action": 10,
                     "window": 1
                 },
                 {
                     "name": "guide-swapped",
                     "phase": "conflicts",
-                    "after_action": 15,
+                    "after_action": 16,
                     "window": 1
                 },
                 {
                     "name": "conflict-cancel-edit-row",
                     "phase": "conflicts",
-                    "after_action": 21,
+                    "after_action": 22,
                     "window": 1
                 },
                 {
                     "name": "conflict-cancel-offer",
                     "phase": "conflicts",
-                    "after_action": 24,
+                    "after_action": 26,
                     "window": 1
                 },
                 {
                     "name": "conflict-cancelled",
                     "phase": "conflicts",
-                    "after_action": 26,
+                    "after_action": 30,
                     "window": 1
                 },
                 {
                     "name": "conflict-reset",
                     "phase": "conflicts",
-                    "after_action": 28,
+                    "after_action": 32,
                     "window": 1
                 },
                 {
                     "name": "guide-reset",
                     "phase": "conflicts",
-                    "after_action": 34,
+                    "after_action": 38,
                     "window": 1
                 },
                 {
                     "name": "conflict-menu-closed",
                     "phase": "conflicts",
-                    "after_action": 36,
+                    "after_action": 40,
                     "window": 1
                 },
                 {

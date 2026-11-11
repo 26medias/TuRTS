@@ -40,7 +40,7 @@ function judgeSh1ConflictOffer(captures) {
     assert(menus?.length === 1 && menus[0].descendants_truncated === false && menus[0].text_truncated === false,
         'SH1 conflict offer needs the complete actual menu observation');
     const text = menus[0].text_nodes;
-    const explanation = text.find((node) => node.visible === true && node.text === 'M is also bound to Key move');
+    const explanation = text.find((node) => node.visible === true && node.text === 'M is also bound to Move selected units');
     const swap = text.find((node) => node.visible === true && node.text === 'Swap');
     const cancel = text.find((node) => node.visible === true && node.text === 'Cancel' && node.rect[1] > 400);
     product(explanation && swap && cancel, 'conflict-swap-cancel-reset',
