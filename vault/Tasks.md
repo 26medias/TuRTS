@@ -214,3 +214,13 @@ MC is active on this desktop. Task15 code at52ecf3c is accepted for integration:
 
 - [ ] M4b exit row: the muster reinforcement case (40 troopers to one point in two orders) ends with 0 `Blocked` (ruling O14, [[2026-11-11 MC O14 GMU second order limit]]).
 - [ ] MP1: ux-designer decides the grouped failure notice and sound for a partly refused group order (O14 follow-up).
+
+## Follow-up from the MC architecture audit (RUN126)
+
+- [ ] CEO: economy log validator scope, options a/b/c ([[2026-11-11 MC architecture audit]]).
+- [ ] CEO: one movement model and one re-freeze of the M2 stream, options a/b ([[2026-11-11 MC architecture audit]]).
+- [ ] Before MP1 content: neighbour grid cell must not depend on the largest unit.
+- [ ] Next protocol change: `unit_orders` sends changes only.
+- [ ] MP2: UnitId-to-Entity index; target validation one time for each envelope.
+- [ ] Before M4: split `step_frame_preserving_resting`; choose the update model.
+- [ ] Before M7: profile the client replica clone (VIS2 p50 133.3 ms at 5,000 units).
