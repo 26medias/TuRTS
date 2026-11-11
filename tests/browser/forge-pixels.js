@@ -118,17 +118,19 @@ async function waitForResearchButton(io, seconds, label) {
 }
 
 // The guide close button (mods/forge/interface/hud.ron guide_close_fill: (1176, 12), 96 x 48,
-// "#e69f00") shows only while the guide is open.
+// "#e69f00", under the guide_close button at (1178, 14), 92 x 44) shows only while the guide is
+// open. The button draws the engine button fill over the orange box (run t21-run118-pt1-1,
+// pt1-s10-playing.png: a teal Close), so either fill counts.
 const GUIDE_CLOSE_AREA = { x: 1176, y: 12, width: 96, height: 48 };
-const GUIDE_CLOSE_FILL = [230, 159, 0];
+const GUIDE_CLOSE_FILLS = [[230, 159, 0], [33, 66, 77], [46, 102, 112], [26, 77, 92]];
 
 function guideOpen(image) {
     let count = 0;
     for (let y = GUIDE_CLOSE_AREA.y; y < GUIDE_CLOSE_AREA.y + GUIDE_CLOSE_AREA.height; y += 2) {
         for (let x = GUIDE_CLOSE_AREA.x; x < GUIDE_CLOSE_AREA.x + GUIDE_CLOSE_AREA.width; x += 2) {
             const offset = (y * image.width + x) * 4;
-            if (Math.hypot(image.rgba[offset] - GUIDE_CLOSE_FILL[0], image.rgba[offset + 1] - GUIDE_CLOSE_FILL[1],
-                image.rgba[offset + 2] - GUIDE_CLOSE_FILL[2]) <= 35) count += 1;
+            if (GUIDE_CLOSE_FILLS.some((fill) => Math.hypot(image.rgba[offset] - fill[0], image.rgba[offset + 1] - fill[1],
+                image.rgba[offset + 2] - fill[2]) <= 20)) count += 1;
         }
     }
     return count >= 200;

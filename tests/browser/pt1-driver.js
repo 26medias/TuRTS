@@ -92,6 +92,20 @@ function fillNear(image, point, fill, radius, tolerance = 14) {
 
 // Step 16: press the new Stop key once the drone has passed the first point (it is seen there,
 // then no longer there), with a bound of 8 s.
+// Guide sheet 5 (Controls) shows about 21 of its rows at once (run t21-run118-pt1-1: rows 0-20
+// at the top, 30-50 at the tail), so one wheel to the tail misses the middle rows. Scroll it in
+// steps of 300 px and take a screenshot at each step, then scroll back.
+async function scanControls(io, wheelPoint, label) {
+    await io.move(wheelPoint.x, wheelPoint.y);
+    for (let index = 0; index < 6; index += 1) {
+        await io.wait(250);
+        await shot(io, `${label}-${String(index).padStart(2, "0")}`);
+        await io.wheel(300);
+    }
+    await io.wheel(-1800);
+    await io.wait(150);
+}
+
 async function stopAfterFirstPoint(io, newStop) {
     const seed = seedFor(DRONE_START, WAYPOINT_1);
     let seen = false;
@@ -135,13 +149,8 @@ async function drive(io, params) {
     await io.click(clickToPlay.x, clickToPlay.y, "left");
     await io.wait(400);
     await shot(io, "pt1-s02-guide-open");
-    // Guide sheet 5 (Controls) shows on the right of the open guide; scroll it to its tail.
-    await io.move(controlsWheel.x, controlsWheel.y);
-    await io.wheel(controlsWheel.delta);
-    await io.wait(250);
-    await shot(io, "pt1-s02-controls-tail");
-    await io.wheel(-controlsWheel.delta);
-    await io.wait(150);
+    // Guide sheet 5 (Controls) shows on the right of the open guide; scroll through all its rows.
+    await scanControls(io, controlsWheel, "pt1-s02-controls");
     // Step 3: close the guide.
     await pressBinding(io, keys.guide, "toggle_guide");
     await io.wait(250);
@@ -269,10 +278,7 @@ async function drive(io, params) {
     await pressBinding(io, keys.menu, "menu");
     await series(io, "pt1-s14-menu-closed", 2, 250);
     await setGuide(io, keys.guide, true, "toggle_guide");
-    await io.move(controlsWheel.x, controlsWheel.y);
-    await io.wheel(controlsWheel.delta);
-    await series(io, "pt1-s14-controls-after-rebind", 2, 250);
-    await io.wheel(-controlsWheel.delta);
+    await scanControls(io, controlsWheel, "pt1-s14-controls-after-rebind");
     await setGuide(io, keys.guide, false, "toggle_guide");
 
     // Step 15: reload window B; it rejoins the same slot; group 1 and the new Stop key stay.
