@@ -1,0 +1,166 @@
+[
+  {
+    "tick": 1,
+    "slot": 0,
+    "envelope": {
+      "order": "muster:order_move",
+      "units": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        26,
+        27,
+        28,
+        29,
+        30,
+        31,
+        32,
+        33,
+        34,
+        35,
+        36,
+        37,
+        38,
+        39,
+        40
+      ],
+      "target": {
+        "Point": {
+          "x": 30.0,
+          "y": 30.0
+        }
+      },
+      "queue": "Replace",
+      "group": 10
+    }
+  },
+  {
+    "tick": 50,
+    "slot": 0,
+    "envelope": {
+      "order": "muster:order_move",
+      "units": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20
+      ],
+      "target": {
+        "Point": {
+          "x": 29.0,
+          "y": 35.0
+        }
+      },
+      "queue": "Replace",
+      "group": 11
+    }
+  },
+  {
+    "tick": 70,
+    "slot": 0,
+    "envelope": {
+      "order": "muster:order_move",
+      "units": [
+        21,
+        22,
+        23,
+        24,
+        25,
+        26,
+        27,
+        28,
+        29,
+        30,
+        31,
+        32,
+        33,
+        34,
+        35,
+        36,
+        37,
+        38,
+        39,
+        40
+      ],
+      "target": {
+        "Point": {
+          "x": 50.0,
+          "y": 22.0
+        }
+      },
+      "queue": "Replace",
+      "group": 12
+    }
+  },
+  {
+    "tick": 2,
+    "slot": 0,
+    "envelope": {
+      "order": "muster:order_move",
+      "units": [
+        41
+      ],
+      "target": {
+        "Point": {
+          "x": 12.0,
+          "y": 14.0
+        }
+      },
+      "queue": "Replace",
+      "group": 0
+    }
+  },
+  {
+    "tick": 3,
+    "slot": 0,
+    "envelope": {
+      "order": "muster:order_gather",
+      "units": [
+        41
+      ],
+      "target": {
+        "Node": 1
+      },
+      "queue": "Append",
+      "group": 0
+    }
+  }
+]

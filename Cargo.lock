@@ -8762,6 +8762,7 @@ dependencies = [
  "serde",
  "serde_json",
  "turts_mod_api",
+ "turts_mod_runtime",
 ]
 
 [[package]]

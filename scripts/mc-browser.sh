@@ -38,6 +38,7 @@ fi
 [[ "$BUILD_JOBS" =~ ^[1-4]$ ]] || { echo "CARGO_BUILD_JOBS must be between 1 and 4" >&2; exit 2; }
 SYNTHETIC_UNITS=""
 SYNTHETIC_SET=false
+ORDER_LOG_SET=false
 HD1_NATIVE_REFERENCE=""
 if [[ -n "$ROW_FILE" ]]; then
     [[ -f "$ROW_FILE" ]] || { echo "missing row file: $ROW_FILE" >&2; exit 2; }
@@ -76,6 +77,20 @@ PYROWCOUNT
         HD1_NATIVE_REFERENCE="${MC_HD1_NATIVE_REFERENCE_DIR:-}"
         [[ -n "$HD1_NATIVE_REFERENCE" && -d "$HD1_NATIVE_REFERENCE" ]] || { echo "HD1 requires an explicit MC_HD1_NATIVE_REFERENCE_DIR with a native binding" >&2; exit 2; }
     fi
+    ORDER_LOG_SET="$(python3 - "$ROOT" "$ROW_FILE" <<'PYORDERLOG'
+import json, pathlib, sys
+sys.dont_write_bytecode = True
+sys.path.insert(0, str(pathlib.Path(sys.argv[1]) / "scripts"))
+from mc_browser_params import capture_order_log
+try:
+    row = json.loads(pathlib.Path(sys.argv[2]).read_text())
+    enabled = capture_order_log(row)
+except (ValueError, json.JSONDecodeError) as error:
+    print(f"invalid row order-log option: {error}", file=sys.stderr)
+    raise SystemExit(2)
+print("true" if enabled else "false")
+PYORDERLOG
+)" || exit 2
 fi
 DIST="$ROOT/crates/turts_client_web/dist"
 mkdir -p "$OUT_ROOT"
@@ -163,6 +178,9 @@ fi
 if [[ "$SYNTHETIC_SET" == false || "$SYNTHETIC_UNITS" == 0 ]]; then
     SERVER_ARGS+=(--tick-log "$OUT/server-tick.log")
 fi
+if [[ "$ORDER_LOG_SET" == true ]]; then
+    SERVER_ARGS+=(--order-log "$OUT/server-order.log")
+fi
 python3 - "$OUT/server-argv.json" "${SERVER_ARGS[@]}" <<'PYSERVERARGV'
 import json, pathlib, sys
 pathlib.Path(sys.argv[1]).write_text(json.dumps(sys.argv[2:], indent=2) + "\n")
@@ -222,7 +240,7 @@ import json, pathlib, re, sys
 sys.dont_write_bytecode = True
 root,package,url,http,ws,row,out,viewport,windows=sys.argv[1:]
 sys.path.insert(0, str(pathlib.Path(root) / "scripts"))
-from mc_browser_params import add_actions_param, add_synthetic_param, add_task16_param
+from mc_browser_params import add_actions_param, add_synthetic_param, add_task16_param, capture_order_log
 match=re.fullmatch(r"(\d+)x(\d+)(?:@([0-9]+(?:\.[0-9]+)?))?",viewport)
 if not match: raise SystemExit("invalid viewport: "+viewport)
 data={"package":package,"url":url,"server_url":http,"ws_url":ws,"windows":1,"device_scale_factor":float(match.group(3) or 1)}
@@ -239,6 +257,10 @@ if row:
     capture=row_data.get("capture_scene_checkpoints",False)
     if not isinstance(capture,bool): raise SystemExit("capture_scene_checkpoints must be a boolean")
     data["capture_scene_checkpoints"]=capture
+    order_log=capture_order_log(row_data)
+    if order_log:
+        data["capture_order_log"]=True
+        data["order_log_file"]="server-order.log"
     data=add_synthetic_param(data,row_data)
     data=add_task16_param(data,row_data)
     if row_data.get("row") not in {"KM1", "KM2", "SEL4", "SLOT1", "CAM2", "SH1", "PER1"}:
