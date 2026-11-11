@@ -1546,3 +1546,26 @@ Alternative not taken: call setup failures product reds, count invisible status 
 ## CEO instruction: pause after current work
 
 Finish Task16 and its already active RUN110 review, save the reviewable checkpoint, then pause. Start no new task or agent run. Task22 runtime and Tasks21/23/24 stay on hold. This is a pause boundary, not Task16 acceptance.
+
+
+## C356: Bind real native persistence evidence to the current browser harness
+
+Conflict: the PER1 raw native test had actual IO assertions but no executed capsule bound to the public row. A well-shaped optional audit alone could not prove its operation fields came from the qualified native execution.
+
+Choice: scripts/per1_native_reference.py uses Cargo locked no-run JSON discovery in the assigned cache, then directly launches exactly per1_native_paths with exact/nocapture/test-threads1. Bind the observed child PID, complete argv, executable SHA before/after, actual exit/log, private create-only raw receipt and full source identity before/after/current. Validate all six actual read/write paths, method mappings, timestamps and readback hashes. Preserve raw bytes and add external process status/source binding only in a separate audit. The Rust producer emits standard64hex rather than the hash helper prefix. scripts/mc-browser.sh revalidates and generates a private seven-file hash manifest in parameters after the row allowlist. The public oracle checks every attached byte before awarding native-path-names. No row-supplied validity flag is trusted.
+
+Evidence: scripts/per1_native_reference.py, scripts/mc-browser.sh generated PYPARAMS block, tests/browser/shell-oracle.js judgePer1Storage, crates/turts_client/tests/persist.rs::per1_native_paths. Actual reference-v3 exit0/raw3c696c09; complete settings-v2 exit0/rawd5fe8c83; complete binding-v2 exit0/raw9ba5022d, each source unchanged. RUN110 native-reference-v2 review80b7c3a9 independently checks actual capsule/current source and closes the public binding Medium. Earlier reference-v2 actual test passes but validator rejects prefixed hashes; setup failure only.
+
+Pixel proof uses actual observed notice rectangle,1090 gold pixels/326x14/47components, adjacent blank0 and unrelated UI text0. Actual retained SLOT1 white terminal notice yields0 gold; its actual unrelated copy in otherwise positive PER1 data fails named defaults-and-single-notice. A shifted actual rectangle fails named notice-pixels. root-t16-per1-pixel-controls-v1 exit0/raw7a6e2785. These are bounded oracle controls, not product refutation or independent-plant credit. Final source refresh remains required.
+
+Alternative not taken: synthesize file operations, trust audit schema alone, alter raw receipts after execution, equate Cargo PID with the test child, read Claude guidance while creating source identity, or skip native proof on CI. Brief4 instrument rights.
+
+## C357: Judge effective keyboard labels and the actual settings reservation notice
+
+Conflict: the KM1 fixture still scrolled to a menu location from the older row geometry and its checker expected KeyM although the common label formatter correctly displays M. It also demanded a separate client_notice/NoticesFeed copy of a reserved key that the actual menu displays through its existing BindingFeedbackText. The former KM2 first capture followed a focus click and could not prove focus on join.
+
+Choice: use physical menu scroll1450 and the actual visible Move row/Change rectangle; require M before rebind and Q after. Require the actual F12 keydown following that visible Change hit, exactly one visible menu reservation message F12 is reserved by the browser, unchanged effective KeyQ and no effective F12. Preserve the existing feedback owner. Add bounded pixel proof that the actual same-document guide prefix stays visible while the key glyph changes M to Q, plus adjacent absence and unchanged-glyph negative controls. Capture KM2 joined-before-input at action0 and reject any earlier actual physical event.
+
+Evidence: tests/browser/rows/KM1.json, rows/KM2.json and shell-oracle.js judgeKm1/requireKm1ChangeClickHitsMoveRow/judgeKm1GuidePixels/judgeKm2. Actual KM1fullv4 passes7/exit0/rawc03489df. Guide prefix147 common points, M37/Q31,40changed points; identical actual glyph image fails named labels-guide-pixels. Actual KM2before-input-fullv1 passes6/exit0/rawd04aff02. Older KM2full0c78d77c1 remains unqualified for join-focus. Prior KM1 expectation/location failures are instrument failures; no product red credited. RUN110 source recheck remains active.
+
+Alternative not taken: duplicate a notice, change displayed physical labels to legacy code strings, claim click-established focus as initial focus, or waive guide pixels. Brief4 instrument/nearest-rule rights. No fixed row, player action, design, protected content or frozen value changes. Global110/170,Task16run21/hard24. The CEO pause boundary after current Task16/review remains in force; Task22 and Tasks21/23/24 do not start.
