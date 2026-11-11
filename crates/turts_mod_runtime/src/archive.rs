@@ -208,7 +208,11 @@ impl PackageArchive {
             recipes,
             technologies,
         )?;
-        let mc_content = crate::content_mc_validation::validate_mc(self)?;
+        let mut mc_content = crate::content_mc_validation::validate_mc(self)?;
+        mc_content.mobile_weapon_present = catalog
+            .units
+            .values()
+            .any(|unit| unit.weapon.is_some() && unit.movement.is_some());
         let order_queue_depth = mc_content
             .order_rules
             .first()
