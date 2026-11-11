@@ -92,6 +92,11 @@ fi
 env CARGO_BUILD_JOBS="$BUILD_JOBS" cargo build --release -p turts_server >"$OUT/server-build.log" 2>&1 || { cat "$OUT/server-build.log" >&2; exit 1; }
 env CARGO_BUILD_JOBS="$BUILD_JOBS" cargo build --release -p turts_pack --bin turts-pack >"$OUT/packer-build.log" 2>&1 || { cat "$OUT/packer-build.log" >&2; exit 1; }
 env CARGO_BUILD_JOBS="$BUILD_JOBS" cargo run --release -p turts_pack --bin turts-pack -- "$PACK/$PACKAGE_NAME" >"$OUT/pack.log" 2>&1 || { cat "$OUT/pack.log" >&2; exit 1; }
+# MC task 21: a row with "effective_bindings": true gets params.bindings, the effective input map
+# (engine defaults merged with the package input/bindings.ron) of the packed copy.
+if [[ -n "$ROW_FILE" ]] && python3 -c 'import json,sys; sys.exit(0 if json.load(open(sys.argv[1])).get("effective_bindings") is True else 1)' "$ROW_FILE"; then
+    env CARGO_BUILD_JOBS="$BUILD_JOBS" cargo run -q -p turts_interaction --example effective_bindings -- "$PACK/$PACKAGE_NAME" >"$OUT/effective-bindings.json" 2>"$OUT/effective-bindings.log" || { cat "$OUT/effective-bindings.log" >&2; exit 1; }
+fi
 if [[ "${ROW_NAME:-}" == "KM1" ]]; then
     RESERVED_PACKAGE="$OUT/km1-reserved-forge"
     cp -a "$PACK/$PACKAGE_NAME" "$RESERVED_PACKAGE"
@@ -234,13 +239,15 @@ if row:
     if "instrument_status" in row_data: data["instrument_status"]=row_data["instrument_status"]
     for key in ("fixture_tree_sha256", "fixture_catalog", "pick_world_epsilon", "stages",
                 "map_size", "camera_vertical_fov_degrees", "slot_colours", "ping_colour",
-                "frame_colour", "background_colour", "minimap_inset", "minimap_size"):
+                "frame_colour", "background_colour", "minimap_inset", "minimap_size", "checkpoint_limit"):
         if key in row_data: data[key]=row_data[key]
     capture=row_data.get("capture_scene_checkpoints",False)
     if not isinstance(capture,bool): raise SystemExit("capture_scene_checkpoints must be a boolean")
     data["capture_scene_checkpoints"]=capture
     data=add_synthetic_param(data,row_data)
     data=add_task16_param(data,row_data)
+    if row_data.get("effective_bindings") is True:
+        data["bindings"]=json.loads((pathlib.Path(out).parent / "effective-bindings.json").read_text())
     if row_data.get("row") not in {"KM1", "KM2", "SEL4", "SLOT1", "CAM2", "SH1", "PER1"}:
         data=add_actions_param(data,row_data,pathlib.Path(root)/"tests/browser/fixtures")
 if data.get("row") == "PER1":

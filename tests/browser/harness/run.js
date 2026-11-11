@@ -49,6 +49,13 @@ function parseArgs(args) {
     return { url, outDir, driverPath, oraclePath, paramsPath, width: Number(match[1]), height: Number(match[2]), deviceScaleFactor: Number(match[3] || 1), windows };
 }
 
+// A long row (PT1) declares more checkpoints; the default stays 256 (harness/scene-checkpoints.js).
+function checkpointLimit(params) {
+    const limit = params.checkpoint_limit ?? 256;
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 2048) throw new Error("params.checkpoint_limit must be an integer from 1 to 2048");
+    return limit;
+}
+
 function launchArgsForDpr(args, dpr) {
     if (!Array.isArray(args) || args.some((arg) => typeof arg !== "string")) {
         throw new Error("Chrome launch arguments must be an array of strings");
@@ -268,7 +275,7 @@ async function run(options) {
             });
         }
         if (!sh1Lifecycle) for (const page of pages) await page.evaluate(() => { window.__turts_io_actual_events = []; window.__turts_io_downstream_events = []; window.__turts_io_contextmenu_events = []; window.__turts_io_contextmenu_overflow = false; window.__turts_io_active_call = null; window.__turts_io_seq = null; window.__turts_io_dispatching = false; window.__turts_io_expected_event = null; });
-        const checkpoints = sh1Early?.checkpoints || (params.capture_scene_checkpoints === true ? createSceneCheckpoints(pages, 256, documentEpochs) : null);
+        const checkpoints = sh1Early?.checkpoints || (params.capture_scene_checkpoints === true ? createSceneCheckpoints(pages, checkpointLimit(params), documentEpochs) : null);
         const storageAudit = params.row === "SH1" ? sh1StorageAudit :
             (["KM1", "PER1", "SEL4"].includes(params.row) ? [] : null);
         const storageInitialState = storageAudit ? await Promise.all(pages.map(async (page, index) => {
@@ -421,7 +428,7 @@ if (require.main === module) run(parseArgs(process.argv.slice(2))).catch((error)
     process.exitCode = 1;
 });
 
-module.exports = { deepFreeze, launchArgsForDpr, parseArgs, trackMainDocumentEpoch };
+module.exports = { checkpointLimit, deepFreeze, launchArgsForDpr, parseArgs, trackMainDocumentEpoch };
 
 async function attachDeviceAudit(page, context, windowIndex, key, sessions) {
     try {

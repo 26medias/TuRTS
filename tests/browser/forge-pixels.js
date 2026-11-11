@@ -26,8 +26,10 @@ const QUEUE_CANCEL_TARGET = { x: 229, y: 658 };
 const GUIDE_CLOSE_TARGET = { x: 1224, y: 36 };
 const VIEWPORT = { width: 1280, height: 720 };
 
-function seedFor(windowNumber, worldPoint) {
-    const lookAt = OWNED_CENTRE[windowNumber - 1];
+// `where` is a window number (the camera at its first-join start) or a map point that the camera
+// looks at after the driver centred it (for example with a group key pressed twice).
+function seedFor(where, worldPoint) {
+    const lookAt = Array.isArray(where) ? where : OWNED_CENTRE[where - 1];
     const pixel = projectWorldPoint(worldPoint, { ...FORGE_CAMERA, lookAt }, VIEWPORT);
     return pixel ? { x: Math.round(pixel[0]), y: Math.round(pixel[1]) } : null;
 }
@@ -42,8 +44,8 @@ async function shot(io, label) {
 }
 
 // Find the slot-coloured body near the projected seed of a map placement.
-async function findPlacement(io, windowNumber, slot, worldPoint, label, radius = 40, attempts = 40) {
-    const seed = seedFor(windowNumber, worldPoint);
+async function findPlacement(io, where, slot, worldPoint, label, radius = 40, attempts = 10) {
+    const seed = seedFor(where, worldPoint);
     if (!seed) throw new Error(`${label}: the map point ${JSON.stringify(worldPoint)} is not in view; pixel target is NOT TRACED`);
     for (let attempt = 0; attempt < attempts; attempt += 1) {
         const { image } = await shot(io, null);
@@ -58,8 +60,8 @@ async function findPlacement(io, windowNumber, slot, worldPoint, label, radius =
 }
 
 // A ground pixel for a map point: the projected seed, moved until it is open ground.
-async function groundNear(io, windowNumber, worldPoint, label) {
-    const seed = seedFor(windowNumber, worldPoint);
+async function groundNear(io, where, worldPoint, label) {
+    const seed = seedFor(where, worldPoint);
     if (!seed) throw new Error(`${label}: the map point ${JSON.stringify(worldPoint)} is not in view`);
     const { image } = await shot(io, null);
     const bodies = [...readSlotTargets(image, 0), ...readSlotTargets(image, 1)];
@@ -79,6 +81,7 @@ async function groundNear(io, windowNumber, worldPoint, label) {
     }
     const fallback = findOpenGround(image, bodies);
     if (!fallback) throw new Error(`${label}: no open ground near ${JSON.stringify(seed)}`);
+    await io.save(`${label}-ground.json`, Buffer.from(JSON.stringify({ seed, ground: fallback, fallback: true }) + "\n"));
     return fallback;
 }
 
@@ -93,6 +96,32 @@ async function waitForResearchButton(io, seconds, label) {
         await io.wait(1000);
     }
     return false;
+}
+
+// The guide close button (mods/forge/interface/hud.ron guide_close_fill: (1176, 12), 96 x 48,
+// "#e69f00") shows only while the guide is open.
+const GUIDE_CLOSE_AREA = { x: 1176, y: 12, width: 96, height: 48 };
+const GUIDE_CLOSE_FILL = [230, 159, 0];
+
+function guideOpen(image) {
+    let count = 0;
+    for (let y = GUIDE_CLOSE_AREA.y; y < GUIDE_CLOSE_AREA.y + GUIDE_CLOSE_AREA.height; y += 2) {
+        for (let x = GUIDE_CLOSE_AREA.x; x < GUIDE_CLOSE_AREA.x + GUIDE_CLOSE_AREA.width; x += 2) {
+            const offset = (y * image.width + x) * 4;
+            if (Math.hypot(image.rgba[offset] - GUIDE_CLOSE_FILL[0], image.rgba[offset + 1] - GUIDE_CLOSE_FILL[1],
+                image.rgba[offset + 2] - GUIDE_CLOSE_FILL[2]) <= 35) count += 1;
+        }
+    }
+    return count >= 200;
+}
+
+// Open or close the guide with its key, after a screenshot shows its current state.
+async function setGuide(io, binding, open, label) {
+    const { image } = await shot(io, null);
+    if (guideOpen(image) !== open) {
+        await pressBinding(io, binding, label);
+        await io.wait(250);
+    }
 }
 
 // Press one effective binding. `binding` is one entry of an effective_bindings action list:
@@ -113,8 +142,10 @@ module.exports = {
     TURRET_RANGE,
     findPlacement,
     groundNear,
+    guideOpen,
     pressBinding,
     seedFor,
+    setGuide,
     shot,
     waitForResearchButton,
 };
