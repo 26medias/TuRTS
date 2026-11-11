@@ -1711,3 +1711,43 @@ Conflict: correcting IO wheel units and attribution did not make the real Bevy S
 Choice: keep the default SH1/DPR1 plan unchanged. Add explicit supplemental rows/SH1-dpr2.json with devicefactor2 and the same11checks, physical coordinates and steps; only the two interior conflict wheel deltas are725 rather than1450. End-stop10000 scrolls stay unchanged. This declared physical calibration gives the same visible target row through real input. Clean and scale-plant runs use the identical supplemental fixture. No hidden adaptive driver, product patch, accepted clause change or IO rescaling.
 
 Evidence: DPR2v4 raw73070a66a85fdf50dd424a3e1e024289323f7500e9ce8f938e5bb2d76e54b44b exits1 on the absent offer after the real click missed the offscreen Stop row; classify fixture setup, not product/plant red. Exact retained actual wheel1450 attribution is present. crates.io installed bevy_winit0.20state.rs and bevy_ui_widgets0.20scrollarea.rs document this path. Supplementary DPR2v5 is running; full11green remains required before the scale fault. Alternative: change product scrolling for this instrument, silently divide IO deltas or waive conflict checks atDPR2. None used. Brief4 fixture/nearest-existing-mechanism rights.
+
+
+## C374: Use a named record for the private Hello observation
+
+Conflict: committed workspace Clippy rejects private SessionDiagnostics::hello_decision with11arguments. The earlier strict client/interaction check did not include the server binary. Normal committed fmt passes; workspace Clippy exits101/raw56b115a2f693cf8be02c9dc3a16e13ae1188eacc4e762b4d244b443e15d3ff9f. Preserve the failed gate.
+
+Choice: pass a named HelloObservation record, then destructure the same fields into unchanged observer serialization. The sole session.rs call names exactly the existing values. No admission, ownership, timing, observer fields or public protocol changes. Keep strictClippy and refresh actual full SLOT1 before a repair commit; then run full committed gates. Alternative: suppress the lint or change unrelated session logic. Neither used. Brief4 implementation/Medium repair rights.
+
+Actual SLOT1 repair proof is running, no green or acceptance claimed yet. Global110/170;Task16run21/hard24. User current-task-only pause boundary unchanged.
+
+
+C374 continuation: actual full SLOT1 repair passesall7/exit0/raw062cb3ab60bdd917eab6f5fb0566ffd9b64aa2f55b5d553eb17d1d81b2a5fa14. Named-observer repair committed4503f0a9b64f7ed248397ca5a36f6f66045594b0; RUN110 source-equivalence check confirms every input expression and unchanged serialization. WorkspaceClippyv2 then reaches the binary-test target and rejects items_after_test_module/exit101/raw5228b02d2240146bbaffca3cfca2211febd0f3ffa779b287140a5f598f3a0f77. Move the unchanged cfg(test) block to EOF; production bodies remain identical. Dirty full-workspace/alltargets Clippy probe exits0/raw9775efc88e268e0f8be96feab2f34f20285fde018d7e31672f8c5ee5371cda5b. Test-only relocation committed4dcbec3d299e28a97712a86641091c68c6cdb408, now clean final review target. No redundant browser rerun for that test-only relocation. Full committed gate chainv3 is running. The original two Clippy failures remain preserved; neither is semantic-red or plant credit.
+
+
+## C375: Rename input-boundary locals that collide with Forge content
+
+Conflict: committed workspace tests find only the production local/closure identifier press at client_shell.rs1566/1575/1797/1800. The derived no-content scanner correctly matches the Forge press unit. Workspace gatev3 exits101/rawddb19338edda836da63ae745e9966d5e7644deb5ca3b6d85577d17e66e447174; no frozen or mod content must change.
+
+Choice: rename those local values to activation_boundary/boundary. Preserve their expressions, ordering, comparisons and UI input behavior; rustfmt wraps the longer closure. Do not rename Forge, relax the scanner or suppress its test. This is the expressly delegated engine-side name-collision case.
+
+Evidence: root-t16-content-name-green-v1 runs all9no_content tests and exits0/raw290e4ee81f46607876d3fb4585b3d971a166a0fe03d31c6b99210f7108a5df11/sourceunchanged. Repair committed clean4b690375e8f87f37c719909efd42f124dc528985; full committed gatesv4 now run. Earlier full runtime rows remain behavior evidence, with this exact identifier-only difference recorded rather than claimed byte-identical. No redundant browser rerun for an alpha rename; full workspace tests still rerun. No formal plant or new agent/task run; global110/170. Current-task-only pause boundary unchanged.
+
+
+## C376: Align unit fixtures with the implemented observer and UI contract
+
+Conflict: workspacev4 passes the package/frozen and other native groups, then serverbin ends115pass/1failure because stats.rs still expects one directory entry. The implemented --stats hook also creates the private stats.json.sessions.jsonl sibling. Gate exits101/raw0601d5e368e9c77171357b44409e513a39ab61058ad009db66dd98d1685ab4f6. A grouped pure browser preflight finds4stale fixture failures: two mock expectations omit actual browserDPR, the VM runner lacks document/performance identity, and SH1 mock labels omit the required Double-click range control.
+
+Choice: assert the exact sorted pair of stats paths, so every temporary or unknown file still fails. Leave all public counters/timing/content assertions intact. Model fake browserDPR2 and assert it is observed. Supply the VM's actual modeled URL/timeorigin and expose failure logs in its assertion. Add the implemented required label to the SH1 fixture and its negative-control inventory. No product behavior or acceptance weakening.
+
+Evidence: native full serverbin116/116green/exit0/raw0697232809959754486b46deaa37652e748edefc07fb6d73b570bd06c9764d56. Browser preflightv1 has154pass/4fail; v3 has158pass/0fail/exit0, rawb2e40736c4c032371f231e8a992375d369e2155f1e162e2c06f64227be4b8a5d. These are repair checks, not final committed gate acceptance. Grouped commit43cfe942f22cf17209823c1b41192cd36c9af568 includes these tests and C377's two failure-only observation fields. Full committed gatesv5 run on that clean head. The first clean-runner attempt correctly rejected an untracked bytecode cache before creating a gate receipt; root removed its one verified generated.pyc file. No failure hidden or gate credit for the rejected call. Alternative: ignore extra files, omit DPI evidence or remove the new menu requirement. None used. Brief4 test/instrument detail rights.
+
+## C377: Retain startup failure document identity for a qualified corrupt-settings panic
+
+Conflict: existing preboot fixture has URL/timeorigin and diagnostics have window/epoch/time, but captureStartupFailurePages did not retain its actual URL/timeorigin. The proposed P9 lineage join therefore lacked a required actual observation.
+
+Choice: add only document_url=document.URL and document_time_origin=performance.timeOrigin to the existing readonly startup-page state. No driver API, phase write, clock adjustment, timeout relaxation or product behavior change. The external panic consumer must use these actual fields to join a complete exact fixture and same-document actual panic/pageerror. Generic timeout/unreachable alone remains setup, never plant red.
+
+Evidence: tests/browser/harness/run.js startup failure capture, committed43cfe94. Full158browser units pass after this addition. RUN110's earlier sufficient-artifact assessment is corrected; actual P9 runtime and matching clean restored PER1 remain pending. Alternative: invent a diagnostic timeorigin, infer a panic from timeout or accept unmatched epochs. None used. Brief4 instrument rights.
+
+Checkpoint: global110/170,Task16run21/hard24. No formal plant or new task/agent run. Finish current Task16/RUN110, save and pause. Task22runtime and21/23/24 stay on hold.
