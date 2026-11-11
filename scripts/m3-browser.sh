@@ -72,18 +72,44 @@ cat > "$OUT/server.ron" <<EOF
 EOF
 python3 -m http.server "$STATIC_PORT" --bind 127.0.0.1 --directory "$DIST" > "$OUT/static.log" 2>&1 &
 STATIC_PID=$!
-"$CARGO_TARGET_DIR/release/turts_server" "$OUT/server.ron" --economy-log "$OUT/economy.jsonl" > "$OUT/server.log" 2>&1 &
+"$CARGO_TARGET_DIR/release/turts_server" "$OUT/server.ron" --economy-log "$OUT/economy.jsonl" --tick-log "$OUT/server-tick.log" > "$OUT/server.log" 2>&1 &
 SERVER_PID=$!
 for _ in $(seq 1 120); do
     if curl -fsS "http://127.0.0.1:$HTTP_PORT/advertisement.json" >/dev/null 2>&1 && curl -fsS "http://127.0.0.1:$STATIC_PORT/" >/dev/null 2>&1; then break; fi
     if ! kill -0 "$SERVER_PID" 2>/dev/null; then cat "$OUT/server.log" >&2; exit 1; fi
     sleep 0.1
 done
-BROWSER_COMMAND=(node tests/browser/m3.js "http://127.0.0.1:$STATIC_PORT/" "http://127.0.0.1:$HTTP_PORT" "ws://127.0.0.1:$WS_PORT" "$OUT")
+# MC task 21: m3-driver.js acts through the harness io only (window 1 slot 0, window 2 slot 1);
+# m3-oracle.js judges from the checkpoints, the tick log and the economy log.
+PAGE_URL="$(python3 - "http://127.0.0.1:$STATIC_PORT/" "http://127.0.0.1:$HTTP_PORT" "ws://127.0.0.1:$WS_PORT" <<'EOF'
+from urllib.parse import urlencode
+import sys
+print(sys.argv[1] + "?" + urlencode({"server": sys.argv[2], "ws": sys.argv[3]}))
+EOF
+)"
+python3 - "$OUT/params.json" "$PAGE_URL" "http://127.0.0.1:$HTTP_PORT" "ws://127.0.0.1:$WS_PORT" <<'EOF'
+import json, pathlib, sys
+out, url, http, ws = sys.argv[1:]
+pathlib.Path(out).write_text(json.dumps({
+    "row": "M3", "package": "forge", "url": url, "server_url": http, "ws_url": ws, "windows": 2,
+    "capture_scene_checkpoints": True,
+    "viewport": {"width": 1280, "height": 720, "device_scale_factor": 1},
+}, sort_keys=True) + "\n")
+EOF
+export MC_CHROME_ARGS_JSON="$M2_CHROME_ARGS_JSON" MC_CHROME_IGNORE_DEFAULT_ARGS_JSON="$M2_IGNORE_DEFAULT_ARGS_JSON"
+BROWSER_COMMAND=(node tests/browser/harness/run.js "$PAGE_URL" "$OUT" tests/browser/m3-driver.js tests/browser/m3-oracle.js
+    --params "$OUT/params.json" --viewport 1280x720)
 if [[ "$M2_HEADLESS" == false ]]; then
     command -v xvfb-run >/dev/null 2>&1 || { echo "xvfb-run is required for the private headed M3 browser" >&2; exit 1; }
-    xvfb-run --auto-servernum --server-args='-screen 0 1280x720x24' "${BROWSER_COMMAND[@]}" | tee "$OUT/browser.log"
+    MC_BROWSER_HEADED=1 xvfb-run --auto-servernum --server-args='-screen 0 1280x720x24' "${BROWSER_COMMAND[@]}" | tee "$OUT/browser.log"
 else
     "${BROWSER_COMMAND[@]}" | tee "$OUT/browser.log"
 fi
+# m3.js failed on any page error; the harness records them after the oracle runs.
+python3 - "$OUT/browser-diagnostics.json" <<'EOF'
+import json, sys
+counts = json.load(open(sys.argv[1])).get("counts_by_kind", {})
+if counts.get("pageerror", 0):
+    raise SystemExit(f"browser page error: {counts['pageerror']} pageerror events in {sys.argv[1]}")
+EOF
 printf 'M3_BROWSER_EVIDENCE %s\n' "$OUT"
