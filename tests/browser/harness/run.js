@@ -581,6 +581,8 @@ async function captureStartupFailurePages(pages, documentEpochs, outputDir, fail
                     catch (error) { return { status: "read-error", error: String(error).slice(0, 512) }; }
                 };
                 return {
+                    document_url: document.URL,
+                    document_time_origin: performance.timeOrigin,
                     ready_state: document.readyState,
                     visibility_state: document.visibilityState,
                     turts_error: typeof window.turts_error === "string" ? window.turts_error.slice(0, 2048) : null,

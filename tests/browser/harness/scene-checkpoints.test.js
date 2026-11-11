@@ -19,6 +19,7 @@ function page(identity) {
         querySelector: () => canvas,
     };
     const window = {
+        devicePixelRatio: 2,
         turts_scene: () => JSON.stringify(state.scene),
         turts_debug: () => JSON.stringify(state.debug),
         get turts_move() { throw new Error("a checkpoint must never access the order bridge"); },
@@ -42,6 +43,7 @@ test("scene checkpoints read the selected page and retain each stage independent
         debug: { selection: [2] },
         browser: {
             document_has_focus: true,
+            device_pixel_ratio: 2,
             active_element: { tag_name: "CANVAS", id: "turts" },
             canvas: { tag_name: "CANVAS", id: "turts" },
             canvas_focused: true,
@@ -62,6 +64,7 @@ test("scene checkpoints retain actual DOM canvas focus and pointer-lock identity
     await checkpoints.record(metadata());
     assert.deepEqual(checkpoints.snapshots()[0].browser, {
         document_has_focus: true,
+        device_pixel_ratio: 2,
         active_element: { tag_name: "BODY", id: null },
         canvas: { tag_name: "CANVAS", id: "turts" },
         canvas_focused: false,

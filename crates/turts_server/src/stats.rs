@@ -386,8 +386,16 @@ mod tests {
         );
         assert!(peak >= resident, "{peak} {resident}");
         assert!(json["unix_ms"].as_u64().unwrap() > 1_700_000_000_000);
-        let files: Vec<_> = fs::read_dir(&dir).unwrap().collect();
-        assert_eq!(files.len(), 1, "the temporary file is gone: {files:?}");
+        let mut files: Vec<_> = fs::read_dir(&dir)
+            .unwrap()
+            .map(|entry| entry.unwrap().path())
+            .collect();
+        files.sort();
+        assert_eq!(
+            files,
+            vec![path.clone(), dir.join("stats.json.sessions.jsonl")],
+            "only stats and its private observer remain; temporary files are gone"
+        );
         fs::remove_dir_all(&dir).unwrap();
     }
 

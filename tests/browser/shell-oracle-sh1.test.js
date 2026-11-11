@@ -7,7 +7,7 @@ const { sourceControls } = require("./shell-oracle.js");
 const required = [
     "Settings", "Key bindings", "Change", "Reset", "Audio levels",
     "Master", "Voice", "Alerts", "Effects", "Scroll speed", "Edge scroll",
-    "UI scale", "Health bars", "Keep the cursor in the game", "Double-click time",
+    "UI scale", "Health bars", "Keep the cursor in the game", "Double-click time", "Double-click range",
 ];
 
 function frame(seq, code, frameIndex, matchedAction = "menu") {
@@ -43,7 +43,7 @@ function fixture() {
     const top = menuNode(["Settings", "Key bindings", "Change", "Reset"]);
     const bottom = menuNode([
         "Audio levels", "Master", "Voice", "Alerts", "Effects", "Scroll speed", "Edge scroll", "On",
-        "UI scale", "Health bars", "Damaged or selected", "Keep the cursor in the game", "Off", "Double-click time",
+        "UI scale", "Health bars", "Damaged or selected", "Keep the cursor in the game", "Off", "Double-click time", "Double-click range",
     ]);
     const toggleY = new Map([
         ["Edge scroll", 302], ["On", 302], ["Health bars", 390], ["Damaged or selected", 390],
