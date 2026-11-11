@@ -51,3 +51,15 @@ test("frames.jsonl takes at_ms from the page clock of the bridge read, never the
     assert.equal(line.at_ms, 5000, "at_ms is page_time_ms, not wall_time_ms");
     assert.throws(() => t7FramesFromCheckpoints([{ ...shot, page_time_ms: undefined }]), /no browser clock/);
 });
+
+const { assertNoDriverStop } = require("./checkpoint-lib.js");
+
+test("a driver stop record fails the oracle with its name and reason (RUN123 L2)", async () => {
+    const save = (name) => ({ call: "save", args: [name, { saved_as: name }] });
+    const view = (input, files = {}) => ({ inputLog: () => input, serverFile: async (name) => { if (!(name in files)) throw new Error("missing"); return files[name]; } });
+    await assertNoDriverStop(view([save("t7-joined.png")]), "T7");
+    await assert.rejects(assertNoDriverStop(view([save("t7-driver-stop.json")], { "t7-driver-stop.json": '{"reason":"no unit in view"}\n' }), "T7"),
+        /T7: the driver stopped early \(t7-driver-stop\.json\): no unit in view/);
+    await assert.rejects(assertNoDriverStop(view([save("m2-producer-driver-stop.json")]), "M2"),
+        /M2: the driver stopped early \(m2-producer-driver-stop\.json\): no reason recorded/);
+});

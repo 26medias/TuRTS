@@ -5,7 +5,7 @@
 // harness checkpoints of the screenshots that m3-driver.js saved, the server tick log and the
 // trusted economy log (`--economy-log`, scripts/m3-browser.sh).
 const assert = require("node:assert/strict");
-const { checkpointForSave, readCheckpoints, replicaUnit, unitTrack, widget } = require("./checkpoint-lib.js");
+const { assertNoDriverStop, checkpointForSave, readCheckpoints, replicaUnit, unitTrack, widget } = require("./checkpoint-lib.js");
 
 const TURRET = { x: 17, y: 12, range: 8 };
 
@@ -158,7 +158,7 @@ async function assertConservationStream(lines) {
     return ticks;
 }
 
-async function judge(view) {
+async function judgeRun(view) {
     const input = view.inputLog();
     const checkpoints = await readCheckpoints(view);
     const at = (file) => checkpointForSave(input, checkpoints, `${file}.png`, "M3");
@@ -216,6 +216,13 @@ async function judge(view) {
         `the drone must move into turret range ${TURRET.range} after tick ${orderTick} (server tick log)`);
 
     await assertConservationStream(view.serverLines("economy.jsonl"));
+}
+
+// The run checks first, then the driver stop record (RUN123 L2).
+async function judge(view, params) {
+    const result = await judgeRun(view, params);
+    await assertNoDriverStop(view, "M3");
+    return result;
 }
 
 module.exports = { judge, assertConservationStream, firstPassing, portHasCapacity };

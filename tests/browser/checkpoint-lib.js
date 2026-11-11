@@ -86,7 +86,19 @@ function keyName(code) {
     return code;
 }
 
+// A driver stop record (forge-pixels.js stop, m2-driver.js stop, t7-driver.js stop) says that a
+// product fault ended the drive early. Each oracle calls this after its own checks, so the
+// named check of the fault keeps its text, and a short drive can never pass (RUN123 L2).
+async function assertNoDriverStop(view, label) {
+    const stop = view.inputLog().find((entry) => entry.call === "save" && /-driver-stop\.json$/.test(entry.args?.[0] ?? ""));
+    if (!stop) return;
+    let reason = "no reason recorded";
+    try { reason = JSON.parse(await view.serverFile(stop.args[0])).reason ?? reason; } catch { /* the record name is enough */ }
+    assert.fail(`${label}: the driver stopped early (${stop.args[0]}): ${reason}`);
+}
+
 module.exports = {
+    assertNoDriverStop,
     bindingLabel,
     checkpointAt,
     checkpointBefore,

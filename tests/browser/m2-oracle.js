@@ -8,7 +8,7 @@
 // semantic failure of the case: scripts/m2-browser.sh turns it into M2_CASE_SEMANTIC_FAIL.
 const assert = require("node:assert/strict");
 const { decodePng } = require("./harness/png.js");
-const { checkpointBefore, checkpointForSave, readCheckpoints, replicaUnit, widgets } = require("./checkpoint-lib.js");
+const { assertNoDriverStop, checkpointBefore, checkpointForSave, readCheckpoints, replicaUnit, widgets } = require("./checkpoint-lib.js");
 const { auditStateAt, projectAuditOwnerWorld, worldChangeMatchesAudit } = require("./m2-audit.js");
 const {
     appliedCommandCount,
@@ -538,7 +538,10 @@ async function judgeCase(view, params) {
 
 async function judge(view, params) {
     try {
-        return await judgeCase(view, params);
+        const result = await judgeCase(view, params);
+        // The run checks first, then the driver stop record (RUN123 L2).
+        await assertNoDriverStop(view, `M2 ${params.m2?.case_id ?? "unknown"}`);
+        return result;
     } catch (error) {
         if (error instanceof assert.AssertionError) error.task16_semantic = { row: "M2", clause: params.m2?.case_id ?? "unknown" };
         throw error;

@@ -14,7 +14,7 @@
 // texts of mods/forge/interface/hud.ron and mods/forge/units/*.ron.
 const assert = require("node:assert/strict");
 const { decodePng, pixelAt } = require("./harness/png.js");
-const { readCheckpoints, replicaUnit, unitTrack, widget, widgets } = require("./checkpoint-lib.js");
+const { assertNoDriverStop, readCheckpoints, replicaUnit, unitTrack, widget, widgets } = require("./checkpoint-lib.js");
 const { unprojectGround } = require("./hud4-oracle.js");
 const { project, visibleRingPixels } = require("./vis-full-oracle.js");
 
@@ -224,7 +224,7 @@ function clickToPlayShown(debug) {
         (row.text_nodes ?? []).some((node) => node.text === "Click to play" && node.visible === true));
 }
 
-async function judge(view, params) {
+async function judgeRun(view, params) {
     const input = view.inputLog();
     const checkpoints = await readCheckpoints(view);
     const ctx = makeContext(input, checkpoints, view);
@@ -535,6 +535,13 @@ async function judge(view, params) {
     step(19, !(gone.debug.selection ?? []).includes(droneId), "the destroyed drone stays in the selection");
     step(19, !(gone.debug.groups?.["1"] ?? []).includes(droneId), "the destroyed drone stays in group 1");
     step(19, lateShots.filter((shot) => shot.input_call >= gone.input_call).some((shot) => alertTexts(shot.debug).includes(TEXT.destroyed)), `no alert "${TEXT.destroyed}"`);
+}
+
+// The run checks first, then the driver stop record (RUN123 L2).
+async function judge(view, params) {
+    const result = await judgeRun(view, params);
+    await assertNoDriverStop(view, "PT1");
+    return result;
 }
 
 module.exports = { judge, assertControlsMatch, humanizeAction, layoutLabels, playerLabel, presses, rowText };

@@ -7,7 +7,7 @@
 // presented position. t7FramesFromCheckpoints() gives scripts/t7.sh the frames.jsonl and
 // result.json that the Rust segment oracle (crates/turts_server/tests/t7_oracle.rs) reads.
 const assert = require("node:assert/strict");
-const { checkpointBefore, readCheckpoints, unitTrack } = require("./checkpoint-lib.js");
+const { assertNoDriverStop, checkpointBefore, readCheckpoints, unitTrack } = require("./checkpoint-lib.js");
 const { unprojectGround } = require("./hud4-oracle.js");
 
 // QA0D:434-436: SCENE_TOLERANCE 0.01 (unprojection) plus POS_TOLERANCE 0.001 (arrival).
@@ -75,7 +75,7 @@ function t7FramesFromCheckpoints(checkpoints) {
     };
 }
 
-async function judge(view, params) {
+async function judgeRun(view, params) {
     const input = view.inputLog();
     const lefts = input.map((entry, index) => ({ entry, index })).filter(({ entry }) => entry.call === "click" && entry.args?.[2] === "left");
     const rights = input.map((entry, index) => ({ entry, index })).filter(({ entry }) => entry.call === "click" && entry.args?.[2] === "right");
@@ -132,6 +132,13 @@ async function judge(view, params) {
     const off = result.final_pos.map((value, index) => Math.abs(value - [rest.x, rest.y][index]));
     assert(off.every((d) => d <= POS_TOLERANCE),
         `final position ${JSON.stringify(result.final_pos)} is not within ${POS_TOLERANCE} of the server rest position ${JSON.stringify([rest.x, rest.y])}`);
+}
+
+// The run checks first, then the driver stop record (RUN123 L2).
+async function judge(view, params) {
+    const result = await judgeRun(view, params);
+    await assertNoDriverStop(view, "T7");
+    return result;
 }
 
 module.exports = { judge, sceneProblem, t7FramesFromCheckpoints };
