@@ -40,6 +40,8 @@ function labQueue(debug, labId) {
     return debug?.replicated_world?.economy?.queues?.find((row) => row.producer === labId) ?? null;
 }
 
+// Every place an item can be in the M3 audit state: balances, inventories (inserter hands
+// included), output inventories and belt slots.
 function resourceTotals(state) {
     const totals = new Map();
     const add = (resource, amount) => {
@@ -49,7 +51,31 @@ function resourceTotals(state) {
     const economy = state?.economy?.economy;
     for (const balance of economy?.balances ?? []) add(balance.resource, balance.on_hand);
     for (const inventory of economy?.inventories ?? []) for (const item of inventory.items ?? []) add(item.resource, item.on_hand);
+    const m3 = state?.economy?.m3;
+    for (const inventory of m3?.raw_output_inventories ?? []) for (const [item, amount] of inventory.items ?? []) add(item, amount.on_hand);
+    for (const belt of m3?.raw_belts ?? []) for (const slot of belt.raw_slots ?? []) if (slot.item) add(slot.item, 1);
     return totals;
+}
+
+// The item amounts that the server events of one tick create (+) or remove (-). An event kind
+// that is not in this list fails the check, so a new kind cannot move items unseen.
+const NO_ITEM_EVENTS = new Set(["ProductionQueued", "ResearchCompleted", "EnabledChanged"]);
+function eventChanges(events, tick) {
+    const changes = new Map();
+    const add = (resource, amount) => {
+        const key = `${resource?.package}:${resource?.local}`;
+        changes.set(key, (changes.get(key) ?? 0) + amount);
+    };
+    for (const event of events ?? []) {
+        const [name, body] = typeof event.kind === "string" ? [event.kind, {}] : Object.entries(event.kind ?? {})[0] ?? ["", {}];
+        if (name === "Extracted") add(body.item, body.amount);
+        else if (name === "ProductionStarted") for (const cost of body.charged ?? []) add(cost.resource, -cost.amount);
+        else if (name === "ItemsProduced") for (const output of body.outputs ?? []) add(output.resource, output.amount);
+        else if (name === "Fired") add(body.item, -body.ammo);
+        else if (name === "Destroyed") for (const lost of body.items ?? []) add(lost.item, -lost.amount);
+        else assert(NO_ITEM_EVENTS.has(name), `conservation: unknown economy event kind ${name} at tick ${tick}`);
+    }
+    return changes;
 }
 
 // The checkpoints of the series `<label>-NN` that the driver took after one action, in order.
@@ -84,21 +110,22 @@ function assertCardClick(input, checkpoints, label, orderId) {
 // The conservation checks on the trusted economy log, streamed (the M3 log reaches 1.5 GB: run
 // t21-run118-m3-2). The checks: the initial record comes first; the ticks are continuous and each
 // tick starts from the state that the last tick ended with (m2-audit.js validateAuditRecords);
-// no amount is negative; and a resource total changes only in a tick that logged at least one
-// operation (EL1: each state write goes through capture_operation). The M3 machines write
-// operations with no economy event (tick 15 of that run: ore moves, events []), so "a change
-// needs an event" was wrong. Operation lines are counted, not parsed. A torn last line is cut.
+// no amount is negative; and for each item, the change of its total over all places in one tick
+// equals the sum of the item amounts of the events of that tick (RUN123 M1). A move between
+// places (belt, hand, inventory) changes no total and needs no event (tick 15 of t21-run118-m3-2:
+// ore moves, events []). Operation lines repeat the tick states and are not parsed. A torn last
+// line is cut.
 async function assertConservationStream(lines) {
     let first = true;
     let previous = null;
     let previousTick = null;
-    let operations = 0;
     let ticks = 0;
     let pendingError = null;
     for await (const line of lines) {
         if (pendingError) throw pendingError;
         if (!line.trim()) continue;
-        if (line.startsWith('{"record":"operation"')) { operations += 1; continue; }
+        // An operation line repeats the states of its tick; the tick record holds the events.
+        if (line.startsWith('{"record":"operation"')) continue;
         let record;
         try { record = JSON.parse(line); }
         catch (error) { pendingError = new Error(`invalid economy audit line: ${error.message}`); continue; }
@@ -110,7 +137,7 @@ async function assertConservationStream(lines) {
             continue;
         }
         if (record.record !== "tick") continue;
-        const { tick, before, state } = record.data;
+        const { tick, before, state, events } = record.data;
         assert(tick === previousTick + 1, `conservation: economy audit tick ${tick} is discontinuous after ${previousTick}`);
         assert(JSON.stringify(before.economy) === previous, `conservation: economy audit tick ${tick} before-state differs from the previous completed tick`);
         const totalsBefore = resourceTotals(before);
@@ -118,11 +145,13 @@ async function assertConservationStream(lines) {
         for (const [resource, amount] of totalsAfter) {
             assert(Number.isInteger(amount) && amount >= 0, `conservation: ${resource} is ${amount} at tick ${tick}`);
         }
-        const changed = [...new Set([...totalsBefore.keys(), ...totalsAfter.keys()])].filter((key) => (totalsBefore.get(key) ?? 0) !== (totalsAfter.get(key) ?? 0));
-        assert(changed.length === 0 || operations > 0, `conservation: ${changed.join(", ")} changed at tick ${tick} with no logged operation`);
+        const explained = eventChanges(events, tick);
+        for (const key of new Set([...totalsBefore.keys(), ...totalsAfter.keys(), ...explained.keys()])) {
+            const change = (totalsAfter.get(key) ?? 0) - (totalsBefore.get(key) ?? 0);
+            assert(change === (explained.get(key) ?? 0), `conservation: ${key} changed by ${change} at tick ${tick}; its events explain ${explained.get(key) ?? 0}`);
+        }
         previous = JSON.stringify(state.economy);
         previousTick = tick;
-        operations = 0;
         ticks += 1;
     }
     assert(ticks > 0, "conservation: the economy log has no completed tick");

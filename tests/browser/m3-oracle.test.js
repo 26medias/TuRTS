@@ -13,13 +13,19 @@ function lines(records) {
     return (async function* () { for (const record of records) yield typeof record === "string" ? record : JSON.stringify(record); })();
 }
 const initial = { record: "initial", data: state(0, 2) };
-const tick = (n, before, after) => ({ record: "tick", data: { tick: n, before: state(n - 1, before), state: state(n, after), events: [] } });
+const tick = (n, before, after, events = []) => ({ record: "tick", data: { tick: n, before: state(n - 1, before), state: state(n, after), events } });
 const operation = '{"record":"operation","data":{}}';
+const extracted = (amount) => ({ tick: 1, ordinal: 0, owner_slot: 0, kind: { Extracted: { node: 1, cargo: 1, item: shell, amount } } });
+const fired = (ammo) => ({ tick: 1, ordinal: 0, owner_slot: 0, kind: { Fired: { weapon: 7, target: 9, item: shell, ammo, damage: 10, applied: 10 } } });
 
-test("streamed conservation: continuity, no negative amount, and no change without a logged operation", async () => {
-    assert.equal(await assertConservationStream(lines([initial, tick(1, 2, 2), operation, tick(2, 2, 3)])), 2);
-    await assert.rejects(assertConservationStream(lines([initial, tick(1, 2, 3)])), /forge:shell changed at tick 1 with no logged operation/);
-    await assert.rejects(assertConservationStream(lines([initial, operation, tick(1, 2, -1)])), /forge:shell is -1/);
+test("streamed conservation: each total change equals the sum of the event amounts of its tick", async () => {
+    assert.equal(await assertConservationStream(lines([initial, tick(1, 2, 2), operation, tick(2, 2, 3, [extracted(1)])])), 2);
+    assert.equal(await assertConservationStream(lines([initial, tick(1, 2, 1, [fired(1)])])), 1);
+    // A logged operation does not explain a change; only the event amounts do (RUN123 M1).
+    await assert.rejects(assertConservationStream(lines([initial, operation, tick(1, 2, 3)])), /conservation: forge:shell changed by 1 at tick 1; its events explain 0/);
+    await assert.rejects(assertConservationStream(lines([initial, tick(1, 2, 4, [extracted(1)])])), /conservation: forge:shell changed by 2 at tick 1; its events explain 1/);
+    await assert.rejects(assertConservationStream(lines([initial, tick(1, 2, 2, [{ kind: { Teleported: { amount: 1 } } }])])), /conservation: unknown economy event kind Teleported at tick 1/);
+    await assert.rejects(assertConservationStream(lines([initial, tick(1, 2, -1, [fired(3)])])), /forge:shell is -1/);
     await assert.rejects(assertConservationStream(lines([initial, tick(2, 2, 2)])), /discontinuous/);
     await assert.rejects(assertConservationStream(lines([initial, tick(1, 5, 5)])), /before-state differs/);
     await assert.rejects(assertConservationStream(lines([initial])), /no completed tick/);
