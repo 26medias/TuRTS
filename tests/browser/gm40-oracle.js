@@ -5,8 +5,8 @@ const assert = require("node:assert/strict");
 const { decodePng } = require("./harness/png.js");
 
 async function judge(view, params) {
-    assert.equal(params.capture_scene_checkpoints, true, "GM40 pixels require C84 scene checkpoints after screenshots");
-    assert.equal(params.capture_order_log, true, "GM40 pixels require the actual same-run server order-transition log");
+    assert.equal(params.capture_scene_checkpoints, true, "GM40 pixels need C84 scene checkpoints after screenshots");
+    assert.equal(params.capture_order_log, true, "GM40 pixels need the actual same-run server order-transition log");
     assert.equal(params.order_log_file, "server-order.log", "GM40 uses the fixed actual server order-log artifact name");
     const input = view.inputLog();
     const targetEvidence = JSON.parse(await view.serverFile("gm40-pixel-target.json"));
