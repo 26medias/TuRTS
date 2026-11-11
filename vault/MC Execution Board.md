@@ -3490,3 +3490,23 @@ Choice: use0.75to2.0 for the slider and saved-value validation. Add Double-click
 Evidence: client_shell.rs, client_preferences.rs, client_screens.rs and tests/persist.rs. Genuine scale red root-t16-ui-scale-design-range-red-v1 exit101/rawd2e059c6; distance/duplicate red root-t16-distance-duplicate-red-v2 exit101/rawd5082399. Combined root-t16-design-controls-native-green-v1 passes225library+20persistence/exit0/raw3db24fa61049846d94675c833ce95aaf9daa1b3fa3f0e2868914cc47100a6c55. Strict Clippy root-t16-design-controls-clippy-v1 exits0/rawe00c939a6d0a7ba00ffdd9167c0e4cbdbfb24ed075dc1c56f1a0ac59ff103d47; source unchanged. The SH1 physical coordinates move with the extra ordinary menu row and the changed scale range; fresh headed proof is running. Alternative: preserve the old cap, leave the distance uneditable, change box drag, or add a different duplicate-window flow. None used. Brief4 implementation and instrument rights; design wins.
 
 Checkpoint: no new task or agent run. Global110/170,Task16run21/hard24. Finish current Task16 and RUN110, save then pause; Task22 runtime and Tasks21/23/24 remain on hold. Full current-source rows, gates and formal plants remain pending.
+
+
+## C369: Compare the changed guide key glyphs and qualify scale before menu coordinates
+
+Conflict: whole-row white pixels can pass on an unchanged guide screenshot because the fixed label prefix supplies the pixels. A double-device-factor plant can also move the menu before its fixed physical coordinates reach the final evaluator.
+
+Choice: compare actual swapped/reset Move and Stop key regions, retain stable prefix and adjacent blank controls, and reject the same PNG supplied for both. Authored proportional-text boundaries are57logical pixels for Key move and52for Key stop. The actual StopS glyph has19bright pixels, so the minimum is15timesDPRarea, with at least15changed pixels and stable100pixel prefix/95percent overlap. Failed calibration controls are instrument setup, not product reds. Keep all actual physical Swap/Cancel/Reset and complete guide metadata checks.
+
+Extract the existing public absolute scale predicate and run that same predicate on the actual saved world-ready PNG plus current Joined C84 observation before the first menu F10. This happens for every clean and planted SH1 run; it uses no mutant flag, new IO method, setter or skipped clause. The final full11 checks remain required. Earlier actor selection is a world point outside the doubled HUD.
+
+Evidence: tests/browser/sh1-binding-oracle.js, sh1-settings-oracle.js and harness/run.js. Full headed SH1complete-controls-v1 passes11/exit0/rawc7abfd94343896156708c7a49d459457cc483142b19be987928ffd4dbd2c16a7 before this stronger instrument. Bound retained actual-data controls root-t16-sh1-complete-oracle-controls-v3 exit0/raw412cfbaffabd9c3e1c8424aa61801004aa7f3717217f1a045b3edcc7322dd69c qualify7binding/settings clauses and reject a stale guide PNG, doubled HUD bounds and missing captured keydown while retaining real keyup. Controlsv1e189c62a/v2259a8118 rejected uncalibrated Stop glyph assumptions and give no product-red credit. Actual DPR2 full row is running. RUN110 grouped Rust recheck67d084c7 confirms all3numeric/reason repairs,0High/0unresolvedMedium in that bounded group. Alternative: accept stale pixels, waive the final11 or let a mis-hit timeout stand as a named scale plant. None used.
+
+
+## C370: Match SH1 screenshots to its actual physical UI rectangles
+
+Conflict: actual DPR2 clean run had browser factor2, scene viewport2560x1440 and correct HUD physical rect[592,16,1240,80], but the existing IO screenshot forced CSS scale and returned1280x720. The public physical-pixel predicate correctly rejected this mismatched instrument before menu input.
+
+Choice: add a validated internal css/device screenshotScale option to createDriverIo, defaultcss. SH1 early and main harness IO requestdevice; other rows retain their existing capture mode. The driver still calls the same screenshot method and receives only actual PNG bytes. No new public IO, product state or acceptance change.
+
+Evidence: root-t16-sh1-qualified-dpr2-v1 exits1/raweb02f6db with pixel-dimension qualifier; classify SETUP, not product or plant red. harness/driver-io.js and harness/run.js supply the actual device PNG for physical-pixel comparisons. DPR2v2 is running. Independent RUN110 pure actual-data replay raw889e5ac65ebeec5cf404bd40f5512b00c97a8422ccacf61bc0040ee27f8528ff passes7clauses and rejects stale guide pixels, doubled bounds and missing keydown with actual keyup retained. Alternative: resample synthetic images, ignore DPR, or accept physical bounds against CSS pixels. None used. Brief4 instrument rights.
