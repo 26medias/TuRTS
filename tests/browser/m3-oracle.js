@@ -6,7 +6,6 @@
 // trusted economy log (`--economy-log`, scripts/m3-browser.sh).
 const assert = require("node:assert/strict");
 const { checkpointForSave, readCheckpoints, replicaUnit, unitTrack, widget } = require("./checkpoint-lib.js");
-const { parseCompleteAuditText } = require("./m2-oracle-lib.js");
 
 const TURRET = { x: 17, y: 12, range: 8 };
 
@@ -53,26 +52,6 @@ function resourceTotals(state) {
     return totals;
 }
 
-// A weak conservation check on the trusted log: the ticks are continuous (validateAuditRecords),
-// no amount is negative, and an amount changes only in a tick that records an economy event.
-function assertConservation(records) {
-    let ticks = 0;
-    for (const record of records) {
-        if (record.record !== "tick") continue;
-        ticks += 1;
-        const before = resourceTotals(record.data.before);
-        const after = resourceTotals(record.data.state);
-        for (const [resource, amount] of after) {
-            assert(Number.isInteger(amount) && amount >= 0, `conservation: ${resource} is ${amount} at tick ${record.data.tick}`);
-        }
-        const changed = [...new Set([...before.keys(), ...after.keys()])].filter((key) => (before.get(key) ?? 0) !== (after.get(key) ?? 0));
-        assert(changed.length === 0 || record.data.events.length > 0,
-            `conservation: ${changed.join(", ")} changed at tick ${record.data.tick} with no economy event`);
-    }
-    assert(ticks > 0, "conservation: the economy log has no completed tick");
-    return ticks;
-}
-
 // The checkpoints of the series `<label>-NN` that the driver took after one action, in order.
 function seriesOf(input, checkpoints, label) {
     return input.filter((entry) => entry.call === "save" && new RegExp(`^${label}-\\d{2}\\.png$`).test(entry.args?.[0] ?? ""))
@@ -100,6 +79,54 @@ function assertCardClick(input, checkpoints, label, orderId) {
         x * scale >= item.rect[0] && x * scale <= item.rect[0] + item.rect[2] && y * scale >= item.rect[1] && y * scale <= item.rect[1] + item.rect[3]);
     assert(row?.widget_action?.kind === "order" && row.widget_action.id === orderId, `${label}: the click is not on the ${orderId} button of the forge command card`);
     return card;
+}
+
+// The conservation checks on the trusted economy log, streamed (the M3 log reaches 1.5 GB: run
+// t21-run118-m3-2). The checks: the initial record comes first; the ticks are continuous and each
+// tick starts from the state that the last tick ended with (m2-audit.js validateAuditRecords);
+// no amount is negative; and a resource total changes only in a tick that logged at least one
+// operation (EL1: each state write goes through capture_operation). The M3 machines write
+// operations with no economy event (tick 15 of that run: ore moves, events []), so "a change
+// needs an event" was wrong. Operation lines are counted, not parsed. A torn last line is cut.
+async function assertConservationStream(lines) {
+    let first = true;
+    let previous = null;
+    let previousTick = null;
+    let operations = 0;
+    let ticks = 0;
+    let pendingError = null;
+    for await (const line of lines) {
+        if (pendingError) throw pendingError;
+        if (!line.trim()) continue;
+        if (line.startsWith('{"record":"operation"')) { operations += 1; continue; }
+        let record;
+        try { record = JSON.parse(line); }
+        catch (error) { pendingError = new Error(`invalid economy audit line: ${error.message}`); continue; }
+        if (first) {
+            assert.equal(record.record, "initial", "conservation: the first economy audit record must be initial");
+            previous = JSON.stringify(record.data.economy);
+            previousTick = record.data.economy?.tick;
+            first = false;
+            continue;
+        }
+        if (record.record !== "tick") continue;
+        const { tick, before, state } = record.data;
+        assert(tick === previousTick + 1, `conservation: economy audit tick ${tick} is discontinuous after ${previousTick}`);
+        assert(JSON.stringify(before.economy) === previous, `conservation: economy audit tick ${tick} before-state differs from the previous completed tick`);
+        const totalsBefore = resourceTotals(before);
+        const totalsAfter = resourceTotals(state);
+        for (const [resource, amount] of totalsAfter) {
+            assert(Number.isInteger(amount) && amount >= 0, `conservation: ${resource} is ${amount} at tick ${tick}`);
+        }
+        const changed = [...new Set([...totalsBefore.keys(), ...totalsAfter.keys()])].filter((key) => (totalsBefore.get(key) ?? 0) !== (totalsAfter.get(key) ?? 0));
+        assert(changed.length === 0 || operations > 0, `conservation: ${changed.join(", ")} changed at tick ${tick} with no logged operation`);
+        previous = JSON.stringify(state.economy);
+        previousTick = tick;
+        operations = 0;
+        ticks += 1;
+    }
+    assert(ticks > 0, "conservation: the economy log has no completed tick");
+    return ticks;
 }
 
 async function judge(view) {
@@ -159,8 +186,7 @@ async function judge(view) {
     assert(track.some((point) => Math.hypot(point.x - TURRET.x, point.y - TURRET.y) <= TURRET.range),
         `the drone must move into turret range ${TURRET.range} after tick ${orderTick} (server tick log)`);
 
-    const records = parseCompleteAuditText(await view.serverFile("economy.jsonl"));
-    assertConservation(records);
+    await assertConservationStream(view.serverLines("economy.jsonl"));
 }
 
-module.exports = { judge, assertConservation, firstPassing, portHasCapacity };
+module.exports = { judge, assertConservationStream, firstPassing, portHasCapacity };

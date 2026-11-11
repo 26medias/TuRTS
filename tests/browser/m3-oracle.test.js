@@ -3,21 +3,28 @@
 
 const assert = require("node:assert/strict");
 const { test } = require("node:test");
-const { assertConservation, portHasCapacity } = require("./m3-oracle.js");
+const { assertConservationStream, portHasCapacity } = require("./m3-oracle.js");
 
 const shell = { package: "forge", local: "shell" };
-function state(onHand) {
-    return { economy: { economy: { balances: [], inventories: [{ unit: 1, items: [{ resource: shell, on_hand: onHand, reserved: 0 }] }] } } };
+function state(tickValue, onHand) {
+    return { economy: { tick: tickValue, economy: { balances: [], inventories: [{ unit: 1, items: [{ resource: shell, on_hand: onHand, reserved: 0 }] }] } } };
 }
-function tick(n, before, after, events) {
-    return { record: "tick", data: { tick: n, before: state(before), state: state(after), events } };
+function lines(records) {
+    return (async function* () { for (const record of records) yield typeof record === "string" ? record : JSON.stringify(record); })();
 }
+const initial = { record: "initial", data: state(0, 2) };
+const tick = (n, before, after) => ({ record: "tick", data: { tick: n, before: state(n - 1, before), state: state(n, after), events: [] } });
+const operation = '{"record":"operation","data":{}}';
 
-test("conservation accepts a change with an event and refuses a change without one", () => {
-    assert.equal(assertConservation([tick(1, 2, 2, []), tick(2, 2, 3, [{ tick: 2 }])]), 2);
-    assert.throws(() => assertConservation([tick(1, 2, 3, [])]), /forge:shell changed at tick 1 with no economy event/);
-    assert.throws(() => assertConservation([tick(1, 2, -1, [{ tick: 1 }])]), /forge:shell is -1/);
-    assert.throws(() => assertConservation([{ record: "initial", data: {} }]), /no completed tick/);
+test("streamed conservation: continuity, no negative amount, and no change without a logged operation", async () => {
+    assert.equal(await assertConservationStream(lines([initial, tick(1, 2, 2), operation, tick(2, 2, 3)])), 2);
+    await assert.rejects(assertConservationStream(lines([initial, tick(1, 2, 3)])), /forge:shell changed at tick 1 with no logged operation/);
+    await assert.rejects(assertConservationStream(lines([initial, operation, tick(1, 2, -1)])), /forge:shell is -1/);
+    await assert.rejects(assertConservationStream(lines([initial, tick(2, 2, 2)])), /discontinuous/);
+    await assert.rejects(assertConservationStream(lines([initial, tick(1, 5, 5)])), /before-state differs/);
+    await assert.rejects(assertConservationStream(lines([initial])), /no completed tick/);
+    assert.equal(await assertConservationStream(lines([initial, tick(1, 2, 2), '{"record":"ti'])), 1, "a torn last line is cut");
+    await assert.rejects(assertConservationStream(lines([initial, '{"record":"ti', tick(1, 2, 2)])), /invalid economy audit line/);
 });
 
 test("the press panel line check needs the port name and its catalog capacity", () => {
