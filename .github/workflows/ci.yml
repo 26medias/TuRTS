@@ -6,6 +6,8 @@ on:
 jobs:
   check:
     runs-on: ubuntu-latest
+    # A hang must not hold a hosted runner for hours (RUN123 M3).
+    timeout-minutes: 60
     env:
       CARGO_BUILD_JOBS: 2
       CARGO_TARGET_DIR: ${{ github.workspace }}/target/m3-t16
@@ -58,6 +60,8 @@ jobs:
   # software Vulkan implementation; hosted CI does not require an NVIDIA GPU.
   browser:
     runs-on: ubuntu-latest
+    # A hang must not hold a hosted runner for hours (RUN123 M3).
+    timeout-minutes: 60
     env:
       CARGO_BUILD_JOBS: 2
       CARGO_TARGET_DIR: ${{ github.workspace }}/target/m3-t16
@@ -137,6 +141,8 @@ jobs:
             target/m3-evidence/t16-builder/**
   agents:
     runs-on: ubuntu-latest
+    # A hang must not hold a hosted runner for hours (RUN123 M3).
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
       - name: Agent roster checks (no claude CLI on CI)
