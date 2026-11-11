@@ -104,9 +104,11 @@ Human usability amendment1354e33: catalog-derived principal labels/named local s
 
 ## Current MC status
 
-MC is PAUSED at the CEO request. 20/25 lanes complete;110/170 build runs;Task16run21/hard24. Task16 candidate43cfe94 has all15 normal gates green, all9 Root fault cycles independently qualified, and the existing reviewer own baseline0/red1/restored fullgreen0. RUN110 agent failed with a platform safety error after launching that last cycle, before final independent approval. Root verified raw results and exact clean restoration; this is not final review approval. Task16 remains unmerged. Integration code stays51170cb4; no new task or replacement agent run starts. Task22 source is preserved and runtime is held, with21/23/24. Mainbb611bd and frozen stream remain unchanged. See [[Reports/2026-11-11]] for exact resume steps.
+MC is ACTIVE under the Claude Code orchestrator (ruling C382, 2026-11-11). 21/25 lanes complete; 121/170 build runs. Task 16 merged as d967f2a; integration re-gate 13/13 exit 0 (1665 passed/0 failed/21 ignored); its lane is retired. Task 21 (pixels-only browser tests, ledger at 0 rows) is in runtime RUN118 with the sole compiler/GPU lease. Task 22 is source ready at fd057b7 under O14 (design revision 15, row GMU) and C389; its runtime and final review wait for the lease. Tasks 23 and 24 are not started; Task 23 waits for the CEO play of PT1/PT2. Main bb611bd is unchanged. [[MC Execution Board]].
 
 ## Historical MC checkpoints
+
+MC pause checkpoint 2026-11-11 (superseded): MC is PAUSED at the CEO request. 20/25 lanes complete;110/170 build runs;Task16run21/hard24. Task16 candidate43cfe94 has all15 normal gates green, all9 Root fault cycles independently qualified, and the existing reviewer own baseline0/red1/restored fullgreen0. RUN110 agent failed with a platform safety error after launching that last cycle, before final independent approval. Root verified raw results and exact clean restoration; this is not final review approval. Task16 remains unmerged. Integration code stays51170cb4; no new task or replacement agent run starts. Task22 source is preserved and runtime is held, with21/23/24. Mainbb611bd and frozen stream remain unchanged. See [[Reports/2026-11-11]] for exact resume steps.
 
 The following entries retain earlier checkpoint records. They are not the current status.
 
@@ -207,3 +209,8 @@ MC is active on this desktop. 17 of 25 lanes are complete; 80 of 170 build runs 
 ## MC Task15 pre-merge acceptance
 
 MC is active on this desktop. Task15 code at52ecf3c is accepted for integration: all normal gates, nine causal builder mutation cycles, the independent voice plant and current12headed row passes are verified; final review has0High/0unresolvedMedium. Root is merging and re-gating it next. The completed count remains17/25 until integration gates pass;80/170 runs. C203 minimap pixels and full Task16 rows remain future work. RUN78/RUN79 have ended clean handoffs. Root owns the only cache/runtime. Task17 has102preserved pending paths and five source QA passes; its rebase/compiler run follows Task15. Wave7 push/CI follows Tasks15/17. Mainbb611bd stays unchanged; no main merge or push.
+
+## Follow-up from MC ruling O14
+
+- [ ] M4b exit row: the muster reinforcement case (40 troopers to one point in two orders) ends with 0 `Blocked` (ruling O14, [[2026-11-11 MC O14 GMU second order limit]]).
+- [ ] MP1: ux-designer decides the grouped failure notice and sound for a partly refused group order (O14 follow-up).
