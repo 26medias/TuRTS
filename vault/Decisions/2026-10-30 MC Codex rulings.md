@@ -1794,3 +1794,15 @@ Choice: preserve the original candidate manifest, raw failure and orchestration 
 Evidence: root-t16-formal-P1-v1-red actually compiles the different server binary, executes all physical phases and exits1 on named SLOT1.reload-same-id; before/after source is the exact single intended mutant. Actual before-reload is Joined/slot0; both post-reload captures retain the SAME exact identity but are Joining/slotnull. Retained public-oracle replay qualifies that exact named error with the current unchanged oracle SHA12a555fec98ad68ae9922b9b923151c195406f25ff52e2d288defacc81de1e8f. Exact old Session authority removal is observersequence75. Three actual subsequent Hellos76/78/80 are rejected with has_live_session=false while the original identity alias still owns slot0 before/after each decision. This directly proves the intended reclaim defect without guessing a future timer outcome. Qualification record root-t16-formal-P1-v1-red/retained-p1-clause-qualification.json; original preparation expected-label failure remains in formal-cycle log. Restored source is clean; no green or cycle closure claimed yet. RUN110 independently checks the tuple evidence before continuation. Brief4 instrument/test-name rights.
 
 Global110/170;Task16run21/hard24. Current-task-only pause boundary remains.
+
+## C382: Claude Code takes the orchestrator seat; seat and model mapping (2026-11-11)
+
+Conflict: the handoff `vault/Reports/2026-11-11 MC agent handoff.md` addresses a Codex orchestrator, names Codex models (Sol, Luna), forbids a read of CLAUDE.md and `.claude/`, and requires the Codex attribution line. The CEO gave the handoff to a Claude Code session (Fable 5.2) and authorized it to resume MC to completion. A Claude Code session loads CLAUDE.md and the `.claude/agents/` roster at start; it cannot obey the read ban, and a Codex attribution line would be false.
+
+Choice: the Claude Code main session is Root from RUN111. Seats stay those of the plan Budget table. Models: reviewer and validator seats run on claude-opus-5-5, effort high; builder seats run on claude-sonnet-5-5, effort xhigh (CEO model tiers, 2026-10-26). Commits by this session end with `Co-Authored-By: Claude Fable 5.2 <noreply@anthropic.com>`. All other rules of the brief, the board and the handoff stay in force: the validated external runners, the one compiler/browser/GPU lease, the stop list, the ledger, and no merge or push of main. The ban on edits of CLAUDE.md, `.claude/agents/`, the design and the product spec stays.
+
+Evidence: handoff lines 9 and 21; brief section 3 lines 26 to 33; board section 1 and section 2 line 41; plan Budget table lines 201 to 226.
+
+Alternative not taken: stop and ask the CEO for a Codex session. The CEO named this session and authorized the resume in the same message.
+
+Global111/170 at RUN111 registration; Task16run22/hard24.
