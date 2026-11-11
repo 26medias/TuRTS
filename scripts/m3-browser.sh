@@ -8,6 +8,9 @@ cd "$ROOT"
 export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-${ROOT}/target/m3-t16}"
 export CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0
 M2_HEADLESS="${M2_HEADLESS:-false}"
+# The Chrome flags: a caller's M2_* wins, then the MC_* of the gate runner (mc_headed_v3.sh), then the default.
+M3_CALLER_CHROME_ARGS="${M2_CHROME_ARGS_JSON:-${MC_CHROME_ARGS_JSON:-}}"
+M3_CALLER_IGNORE_ARGS="${M2_IGNORE_DEFAULT_ARGS_JSON:-${MC_CHROME_IGNORE_DEFAULT_ARGS_JSON:-}}"
 M2_CHROME_ARGS_JSON="${M2_CHROME_ARGS_JSON:-[\"--enable-gpu\",\"--use-angle=vulkan\",\"--enable-features=Vulkan\",\"--enable-unsafe-webgpu\"]}"
 M2_IGNORE_DEFAULT_ARGS_JSON="${M2_IGNORE_DEFAULT_ARGS_JSON:-[\"--enable-unsafe-swiftshader\"]}"
 export M2_HEADLESS M2_CHROME_ARGS_JSON M2_IGNORE_DEFAULT_ARGS_JSON
@@ -96,7 +99,7 @@ pathlib.Path(out).write_text(json.dumps({
     "viewport": {"width": 1280, "height": 720, "device_scale_factor": 1},
 }, sort_keys=True) + "\n")
 EOF
-export MC_CHROME_ARGS_JSON="$M2_CHROME_ARGS_JSON" MC_CHROME_IGNORE_DEFAULT_ARGS_JSON="$M2_IGNORE_DEFAULT_ARGS_JSON"
+export MC_CHROME_ARGS_JSON="${M3_CALLER_CHROME_ARGS:-$M2_CHROME_ARGS_JSON}" MC_CHROME_IGNORE_DEFAULT_ARGS_JSON="${M3_CALLER_IGNORE_ARGS:-$M2_IGNORE_DEFAULT_ARGS_JSON}"
 BROWSER_COMMAND=(node tests/browser/harness/run.js "$PAGE_URL" "$OUT" tests/browser/m3-driver.js tests/browser/m3-oracle.js
     --params "$OUT/params.json" --viewport 1280x720)
 if [[ "$M2_HEADLESS" == false ]]; then

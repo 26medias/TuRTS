@@ -3,7 +3,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-EXPECTED_TARGET="$(realpath -m "${M2_CARGO_TARGET_DIR:-$ROOT/target}")"
+EXPECTED_TARGET="$(realpath -m "${M2_CARGO_TARGET_DIR:-${CARGO_TARGET_DIR:-$ROOT/target}}")"
 SERVER_BIN="$EXPECTED_TARGET/release/turts_server"
 PACKER_BIN="$EXPECTED_TARGET/release/turts-pack"
 DIST="$ROOT/crates/turts_client_web/dist"
@@ -379,9 +379,10 @@ pathlib.Path(out).write_text(json.dumps({
 }, sort_keys=True) + "\n")
 PYPARAMS2
 set +e
+# The Chrome flags: a caller's M2_* wins, then the MC_* of the gate runner (mc_headed_v3.sh), then the default.
 MC_BROWSER_HEADED=1 \
-MC_CHROME_ARGS_JSON="${M2_CHROME_ARGS_JSON:-[\"--enable-gpu\",\"--use-angle=vulkan\",\"--enable-features=Vulkan\",\"--enable-unsafe-webgpu\"]}" \
-MC_CHROME_IGNORE_DEFAULT_ARGS_JSON="${M2_IGNORE_DEFAULT_ARGS_JSON:-[\"--enable-unsafe-swiftshader\"]}" \
+MC_CHROME_ARGS_JSON="${M2_CHROME_ARGS_JSON:-${MC_CHROME_ARGS_JSON:-[\"--enable-gpu\",\"--use-angle=vulkan\",\"--enable-features=Vulkan\",\"--enable-unsafe-webgpu\"]}}" \
+MC_CHROME_IGNORE_DEFAULT_ARGS_JSON="${M2_IGNORE_DEFAULT_ARGS_JSON:-${MC_CHROME_IGNORE_DEFAULT_ARGS_JSON:-[\"--enable-unsafe-swiftshader\"]}}" \
 xvfb-run --auto-servernum --server-args='-screen 0 1280x720x24' \
     node "$ROOT/tests/browser/harness/run.js" "$PAGE_URL" "$ARTIFACT_DIR" "$ROOT/tests/browser/m2-driver.js" "$ROOT/tests/browser/m2-oracle.js" \
     --params "$ARTIFACT_DIR/params.json" --viewport 1280x720 > "$ARTIFACT_DIR/harness.log" 2>&1
