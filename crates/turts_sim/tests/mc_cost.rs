@@ -39,7 +39,11 @@ fn record_spread_avoidance_and_combat_ticks_at_one_and_five_thousand_units() {
     let fixture = muster_fixture();
     let machine = machine_record();
     let commit = source_commit();
-    let profile = option_env!("PROFILE").unwrap_or("unknown");
+    let profile = if cfg!(debug_assertions) {
+        "debug-assertions"
+    } else {
+        "optimized-no-debug-assertions"
+    };
     eprintln!(
         "MC cost provenance: machine={machine}; logical_parallelism={}; commit={commit}; profile={profile}; tick_hz=20; muster_archive_sha256={}; authored_map={}; controlled_map_size={MAP_SIZE}x{MAP_SIZE}; timing_budget=OPEN",
         std::thread::available_parallelism().map_or(0, |count| count.get()),
@@ -144,6 +148,9 @@ fn app_with_units(fixture: &MusterFixture, count: usize, workload: Workload) -> 
         x: MAP_SIZE,
         y: MAP_SIZE,
     };
+    // The workload does not gather. The authored ore node at (7, 9) would overlap the unit grid,
+    // so the isolated cost map holds no node.
+    map.nodes.clear();
     map.placements = match workload {
         Workload::Moving => moving_placements(count),
         Workload::Combat => combat_placements(count),
