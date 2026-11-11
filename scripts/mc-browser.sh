@@ -275,3 +275,12 @@ ORACLE_PATH="$(resolve_script "$ORACLE")"
 RUN_ARGS=("$URL" "$OUT" "$DRIVER_PATH" "$ORACLE_PATH" --params "$PARAMS" --viewport "$VIEWPORT")
 [[ "$WINDOWS_SET" == false ]] || RUN_ARGS+=(--windows "$WINDOWS")
 node "$ROOT/tests/browser/harness/run.js" "${RUN_ARGS[@]}" | tee "$OUT/browser.log"
+# MC task 21: m3-human.js failed on any page error; PT1 keeps that check on the harness record.
+if [[ "${ROW_NAME:-}" == "PT1" ]]; then
+    python3 - "$OUT/browser-diagnostics.json" <<'PYPAGEERROR'
+import json, sys
+counts = json.load(open(sys.argv[1])).get("counts_by_kind", {})
+if counts.get("pageerror", 0):
+    raise SystemExit(f"PT1 browser page error: {counts['pageerror']} pageerror events in {sys.argv[1]}")
+PYPAGEERROR
+fi

@@ -196,6 +196,8 @@ async function judge(view, params) {
     const labShot = at("pt1-s05-lab-selected");
     const lab = own(labShot.debug, "forge:lab")[0];
     step(5, lab && labShot.debug.selection?.length === 1 && labShot.debug.selection[0] === lab.unit_id, "the click does not select the Proving Lab");
+    const beforeLab = checkpointBefore(checkpoints, labShot.screenshotIndex, 1);
+    step(5, (labShot.debug.command_results ?? []).length === (beforeLab?.debug?.command_results ?? []).length, "selecting the lab sends a command");
     step(5, widget(labShot.debug, (row) => row.id === "info_name" && row.text === TEXT.labName), `the info panel does not show "${TEXT.labName}"`);
     step(5, widget(labShot.debug, (row) => row.id === "info_inventory" && /Shell \d+ available/.test(row.text ?? "")) ||
         widget(labShot.debug, (row) => row.id === "info_inventory" && /Main inventory 0 available/.test(row.text ?? "")), "the info panel shows no shell count");
@@ -230,7 +232,12 @@ async function judge(view, params) {
     const ready = at("pt1-s07-research-ready");
     const readyShots = checkpoints.filter((shot) => shot.window === 1 && shot.input_call <= ready.screenshotIndex);
     step(7, readyShots.some((shot) => alertTexts(shot.debug).includes(TEXT.researchReady)), `no alert "${TEXT.researchReady}"`);
+    step(7, widget(ready.debug, (row) => row.id.startsWith("research_entries/") && row.enabled === true &&
+        row.widget_action?.content_id === "forge:hardened_shells"), "the research entry is not enabled when the lab can research");
     const started = at("pt1-s07-research-started");
+    const appliedBefore = (ready.debug.command_results ?? []).filter((result) => Number.isInteger(result.applied_tick)).length;
+    step(7, (started.debug.command_results ?? []).filter((result) => Number.isInteger(result.applied_tick)).length > appliedBefore,
+        "the server did not apply the research order");
     step(7, widget(started.debug, (row) => row.id === "job_progress"), "the production queue shows no bar");
     step(7, widget(started.debug, (row) => row.id === "job_seconds" && /\d+(\.\d+)?s remaining/.test(row.text ?? "")), "the production queue shows no seconds left");
 
