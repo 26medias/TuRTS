@@ -311,9 +311,12 @@ async function judgeAlr1(view, input, checkpoints, params) {
     assert(firstDrop && precedingSample && firstDrop.current < precedingSample.current
         && precedingSample.current >= baselineHealth && latestAtPing?.current < baselineHealth,
     "ALR1 ping observer follows an adjacent same-unit health drop after the pre-attack baseline and accepted attack");
-    const finalOwnHealth = world.healths?.find((entry) => entry.unit === ownUnit)?.current;
-    assert(Number.isFinite(finalOwnHealth) && finalOwnHealth < baselineHealth,
-        "ALR1 final capture retains the same surviving ping source at lower health than before the attack");
+    // The fixture unit dies about 5 s after its first damage; the last cooldown sample comes
+    // 4.1 to 6.3 s after the attack, by the screenshot speed (RUN130). The ping source must
+    // survive, at lower health, when the player clicks the alert.
+    const clickedOwnHealth = afterAlertClick.debug.replicated_world?.healths?.find((entry) => entry.unit === ownUnit)?.current;
+    assert(Number.isFinite(clickedOwnHealth) && clickedOwnHealth < baselineHealth,
+        "ALR1 the ping source survives at lower health than before the attack when the alert is clicked");
     assert((late.debug.audio.sink_observations || []).some((sample) =>
         sample.sound_id === "muster:muster_alert" && sample.category === "alerts"
             && sample.request_frame_index === pingFrame.frame_index),

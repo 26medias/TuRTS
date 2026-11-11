@@ -8,6 +8,10 @@ const COLOR_TOLERANCE = 48;
 const FOREIGN_COLOR_TOLERANCE = 64;
 const GROUND_RGB = [104, 148, 100];
 const GROUND_COLOR_TOLERANCE = 64;
+// The first-join "Click to play" overlay (client_shell.rs sync_focus_overlay, since 3d0cf2f) is
+// black at alpha 0.55. Blended in linear light, it scales each sRGB channel by 0.45^(1/2.2).
+const OVERLAY_DIM = 0.45 ** (1 / 2.2);
+const dimmed = (rgb) => rgb.map((channel) => Math.round(channel * OVERLAY_DIM));
 
 async function drive(io, params) {
     const row = params.row;
@@ -24,7 +28,18 @@ async function drive(io, params) {
         ? await waitForInitialOwnPixels(io)
         : Buffer.from(await io.screenshot());
     await io.save("feedback-initial.png", initialPng);
-    const image = decodePng(initialPng);
+    let image = decodePng(initialPng);
+    if (row === "AUD1") {
+        // The first click is the audio gesture; under the overlay the scene is dimmed (RUN130).
+        const underOverlay = findBodies(image, SLOT_RGB[0]).length === 0;
+        const resume = findGround(image, underOverlay ? dimmed(GROUND_RGB) : GROUND_RGB);
+        await io.click(resume.x, resume.y, "left");
+        await io.wait(200);
+        await io.save("aud1-after-resume.png", await io.screenshot());
+        await io.key("F1");
+        await io.wait(100);
+        image = decodePng(Buffer.from(await io.screenshot()));
+    }
     const own = selectBody(findBodies(image, SLOT_RGB[0]), image, "own slot");
     const ground = findGround(image);
 
@@ -38,12 +53,6 @@ async function drive(io, params) {
         return;
     }
 
-    if (row === "AUD1") {
-        await io.click(ground.x, ground.y, "left");
-        await io.wait(200);
-        await io.save("aud1-after-resume.png", await io.screenshot());
-        await io.key("F1");
-    }
     if (row === "ALR1") {
         const enemy = selectBody(findBodies(image, SLOT_RGB[1], FOREIGN_COLOR_TOLERANCE), image, "foreign slot");
         const origin = selectAttackOrigin(image, SLOT_RGB[0], COLOR_TOLERANCE, enemy);
@@ -170,7 +179,7 @@ async function waitForInitialOwnPixels(io) {
     while (Date.now() < deadline) {
         const screenshot = Buffer.from(await io.screenshot());
         const image = decodePng(screenshot);
-        if (findBodies(image, SLOT_RGB[0]).length > 0) return screenshot;
+        if (findBodies(image, SLOT_RGB[0]).length > 0 || findBodies(image, dimmed(SLOT_RGB[0])).length > 0) return screenshot;
         if (!savedPrepaint) {
             await io.save("aud1-prepaint.png", screenshot);
             savedPrepaint = true;
@@ -356,14 +365,14 @@ function selectBody(bodies, image, label) {
     return bodies.sort((left, right) => Math.hypot(left.x - center.x, left.y - center.y) - Math.hypot(right.x - center.x, right.y - center.y))[0];
 }
 
-function findGround(image) {
+function findGround(image, groundRgb = GROUND_RGB) {
     const anchor = { x: Math.round(image.width * 0.75), y: Math.round(image.height * 0.52) };
     let best = null;
     let distance = Infinity;
     for (let y = Math.max(80, anchor.y - 90); y < Math.min(image.height - 100, anchor.y + 90); y += 4) {
         for (let x = Math.max(330, anchor.x - 130); x < Math.min(image.width - 230, anchor.x + 130); x += 4) {
             const pixel = pixelAt(image, x, y);
-            if (!pixel || pixel[3] < 245 || Math.hypot(pixel[0] - GROUND_RGB[0], pixel[1] - GROUND_RGB[1], pixel[2] - GROUND_RGB[2]) > GROUND_COLOR_TOLERANCE) continue;
+            if (!pixel || pixel[3] < 245 || Math.hypot(pixel[0] - groundRgb[0], pixel[1] - groundRgb[1], pixel[2] - groundRgb[2]) > GROUND_COLOR_TOLERANCE) continue;
             const candidateDistance = Math.hypot(x - anchor.x, y - anchor.y);
             if (candidateDistance < distance) { best = { x, y }; distance = candidateDistance; }
         }
