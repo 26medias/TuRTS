@@ -12,6 +12,29 @@ HTTP_PORT="${M2_HTTP_PORT:-0}"
 WS_PORT="${M2_WS_PORT:-0}"
 PACKAGE="${M2_PACKAGE_NAME:-}"
 CASE_ID="${M2_CASE_ID:-}"
+ARTIFACT_ROOT="${M2_ARTIFACT_ROOT:-$ROOT/target/m2-browser/runs}"
+BUILD_JOBS="${M2_BUILD_JOBS:-2}"
+# Build the server, the packer and the web client into LOGDIR. MC task 21 (M5): a suite or a
+# package run builds once and gives each case M2_PREBUILT=1 with the logs, so the 15 cases do
+# not build 15 times; each case still gets its own server.
+m2_build() {
+    local logs="$1"
+    [[ "$BUILD_JOBS" =~ ^[1-2]$ ]] || { echo "M2_BUILD_JOBS must be 1 or 2" >&2; exit 2; }
+    mkdir -p "$logs"
+    env CARGO_TARGET_DIR="$EXPECTED_TARGET" CARGO_BUILD_JOBS="$BUILD_JOBS" CARGO_NET_OFFLINE=true \
+        cargo build --release -p turts_server > "$logs/server-build.log" 2>&1 || { cat "$logs/server-build.log" >&2; exit 1; }
+    env CARGO_TARGET_DIR="$EXPECTED_TARGET" CARGO_BUILD_JOBS="$BUILD_JOBS" CARGO_NET_OFFLINE=true \
+        cargo build --release -p turts_pack --bin turts-pack > "$logs/packer-build.log" 2>&1 || { cat "$logs/packer-build.log" >&2; exit 1; }
+    (cd "$ROOT/crates/turts_client_web" && \
+        env CARGO_TARGET_DIR="$EXPECTED_TARGET" CARGO_BUILD_JOBS="$BUILD_JOBS" CARGO_NET_OFFLINE=true \
+            trunk build --release) > "$logs/trunk-build.log" 2>&1 || { cat "$logs/trunk-build.log" >&2; exit 1; }
+}
+build_once() {
+    [[ "${M2_PREBUILT:-0}" == 1 ]] && return 0
+    M2_PREBUILT_LOGS="$ARTIFACT_ROOT/build-$(date -u +%Y%m%dT%H%M%SZ)-$$"
+    m2_build "$M2_PREBUILT_LOGS"
+    export M2_PREBUILT=1 M2_PREBUILT_LOGS
+}
 if [[ $# -eq 1 && "$1" == "--list-cases" ]]; then
     printf '%s\n' \
         E9-browser-base-selection \
@@ -38,6 +61,7 @@ if [[ $# -eq 0 && -z "$PACKAGE" && -z "$CASE_ID" ]]; then
         echo "expected 15 registered M2 browser cases, found $selected_count" >&2
         exit 1
     fi
+    build_once
     for package in base haul acme cedar; do
         "$0" --package "$package"
     done
@@ -81,6 +105,7 @@ fi
 case "$PACKAGE" in base|haul|acme|cedar) ;; *) echo "unknown package: $PACKAGE" >&2; exit 2 ;; esac
 if [[ -z "$CASE_ID" ]]; then
     # MC task 21: each case runs in its own server and harness run (tests/browser/m2-driver.js).
+    build_once
     package_status=0
     while read -r package_case; do
         [[ "$package_case" == "E9-browser-$PACKAGE-"* && "$package_case" != *"-loss-"* ]] || continue
@@ -94,8 +119,6 @@ if [[ -n "$CASE_ID" ]]; then
         *) echo "unknown browser case $CASE_ID for package $PACKAGE" >&2; exit 2 ;;
     esac
 fi
-ARTIFACT_ROOT="${M2_ARTIFACT_ROOT:-$ROOT/target/m2-browser/runs}"
-BUILD_JOBS="${M2_BUILD_JOBS:-2}"
 CHROME_BIN="${CHROME_BIN:-$(command -v google-chrome || command -v chromium || true)}"
 
 if [[ -z "$CHROME_BIN" || ! -x "$CHROME_BIN" ]]; then
@@ -159,22 +182,13 @@ printf '%s\n' "$BUILD_SOURCE_DIFF_SHA256" > "$ARTIFACT_DIR/source-diff.sha256"
 printf '%s\n' "$BUILD_SOURCE_STATUS" > "$ARTIFACT_DIR/source-status.txt"
 
 # All build outputs and compiler caches stay in the caller-selected target directory.
-env CARGO_TARGET_DIR="$EXPECTED_TARGET" CARGO_BUILD_JOBS="$BUILD_JOBS" CARGO_NET_OFFLINE=true \
-    cargo build --release -p turts_server > "$ARTIFACT_DIR/server-build.log" 2>&1 || {
-        cat "$ARTIFACT_DIR/server-build.log" >&2
-        exit 1
-    }
-env CARGO_TARGET_DIR="$EXPECTED_TARGET" CARGO_BUILD_JOBS="$BUILD_JOBS" CARGO_NET_OFFLINE=true \
-    cargo build --release -p turts_pack --bin turts-pack > "$ARTIFACT_DIR/packer-build.log" 2>&1 || {
-        cat "$ARTIFACT_DIR/packer-build.log" >&2
-        exit 1
-    }
-(cd "$ROOT/crates/turts_client_web" && \
-    env CARGO_TARGET_DIR="$EXPECTED_TARGET" CARGO_BUILD_JOBS="$BUILD_JOBS" CARGO_NET_OFFLINE=true \
-        trunk build --release) > "$ARTIFACT_DIR/trunk-build.log" 2>&1 || {
-        cat "$ARTIFACT_DIR/trunk-build.log" >&2
-        exit 1
-    }
+if [[ "${M2_PREBUILT:-0}" == 1 ]]; then
+    # One build for the suite or package run (build_once); the case keeps a copy of its logs.
+    for log in server-build.log packer-build.log trunk-build.log; do cp "$M2_PREBUILT_LOGS/$log" "$ARTIFACT_DIR/$log"; done
+    printf '{"prebuilt_logs":"%s"}\n' "$M2_PREBUILT_LOGS" > "$ARTIFACT_DIR/prebuilt.json"
+else
+    m2_build "$ARTIFACT_DIR"
+fi
 for required in "$SERVER_BIN" "$PACKER_BIN" "$DIST/index.html" "$DIST"/*.js "$DIST"/*.wasm; do
     if [[ ! -e "$required" ]]; then
         echo "required immutable server/packer or worktree Trunk artifact missing: $required" >&2

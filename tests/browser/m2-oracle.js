@@ -120,9 +120,17 @@ function judgeGather(input, checkpoints, at, joined, packageName) {
     assert(hasSingleDebugSelection(selected, worker.unit_id), `${packageName} gatherer selection`);
     const nodes = selected.debug.replicated_world.nodes ?? [];
     const command = at("m2-gather-command");
-    assert(appliedCommandCount(command) > appliedCommandCount(selected), `${packageName} real Gather command and rendered status`);
     const later = input.map((entry) => entry).filter((entry) => entry.call === "save" && /^m2-gather-\d+\.png$/.test(entry.args?.[0] ?? ""))
         .map((entry) => checkpointForSave(input, checkpoints, entry.args[0], "M2"));
+    const before = appliedCommandCount(selected);
+    const started = [command, ...later].find((shot) => appliedCommandCount(shot) > before);
+    assert(started, `${packageName} real Gather command and rendered status`);
+    // m2.js:1483-1486: the right click applies exactly one fresh command, with a non-idle order.
+    assert.equal(appliedCommandCount(started), before + 1, "the economy Gather click must apply exactly one fresh command");
+    assert((started.debug.replicated_world?.economy?.orders ?? []).some((order) => order.unit === worker.unit_id),
+        "one applied Gather command with a non-idle rendered order");
+    // m2.js:1506: no other client command follows the Gather.
+    assert(later.every((shot) => appliedCommandCount(shot) <= before + 1), "Gather did not remain the latest applied client command");
     const gathered = later.find((shot) => inventoryOf(shot.debug, worker.unit_id) > inventoryOf(selected.debug, worker.unit_id) &&
         (shot.debug.replicated_world.nodes ?? []).some((node) => {
             const initial = nodes.find((item) => item.id === node.id);
@@ -174,6 +182,11 @@ async function judgeRecovery(view, record, records, joined) {
     assert(initialNode, "recovery proof node lacks its initial actual replicated amount");
     assert(hasSingleDebugSelection(before, harvester.unit_id),
         "recovery proof requires the Harvester selected through the actual rendered UI before loss configuration");
+    // m2.js:796-797 read the panel text "Selected: Harvester"; the plain HUD shows the selection ring.
+    assert((before.debug.rings_shown ?? []).some((ring) => ring.unit === harvester.unit_id && ring.own === true),
+        "recovery proof requires the actual visible Harvester selection ring");
+    // m2.js:798.
+    assert.equal(appliedCommandCount(before), appliedCommandCount(joined), "selecting the recovery worker must not issue a PlayerCommand");
     const armed = notTimedOut(steps.armed, "the loss configuration");
     assert.equal(appliedCommandCount(armed), appliedCommandCount(before), "configuring a loss must not issue a PlayerCommand");
     assert.equal(ingestOf(armed).max_buffered_batches, 3, "browser cap must update the already joined Replica");
