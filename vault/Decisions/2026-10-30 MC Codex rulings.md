@@ -1531,3 +1531,18 @@ Choice: collect all owners before mutation. A cancelled/unresolved edit changes 
 Evidence: actual menu Stop→Left→Swap and actual initially-unbound menu action tests fail211pass2fail/exit101/rawd218617d. After repair, root-t16-shared-swap-unbound-wheel-green-v1 passes213client,20persist,24rebound and every other selected integration suite,exit0/rawf7a4e3aa. Strict native Clippy preflight subsequently passes with -Dwarnings/exit0/raw94882d00, after grouping Bevy SystemParam inputs and routine lint repairs. Formal post-commit gates/plants are not credited by preflight. RUN110 source recheck remains active for the newest exact source.
 
 Alternative not taken: hide owners, leave a surviving ambiguous binding, remove a valid action from the editor, or change the default selection gesture. Brief4 Medium repair and nearest-existing-rule rights. No protected content, frozen values, design text or main branch changed. Global110/170;Task16run21/hard24;20/25 lanes complete.
+
+
+## C355: Qualify the real PER1 physical plan without claiming unseen prompt pixels
+
+Conflict: PER1 retained a preparation guard after the actual physical plan ran. Its evaluator read wheel dy from args[2], although the existing io.wheel receipt stores args[0]. The next fresh run then expected a different capture prompt and required an offscreen status line to be visible.
+
+Choice: promote both exact allowlisted fixture plans to executable after source review and actual physical calibration. Read actual wheel args[0] and the independent wheel event delta_y. Require the physical Change hit inside the actual visible label rectangle and the real same-document armed editor status, then actual KeyZ/effective override/storage evidence. Treat offscreen status text as capture-state data only; never credit prompt pixels. Native paths and notice pixels remain separate fixed required IDs. No acceptance row or product interaction changes.
+
+Evidence: tests/browser/rows/PER1.json task16 actions and tests/browser/per1-oracle-candidate.js:165-199. Actual root-t16-per1-settings-semantic-v2 exits1/raw2e2b9e77 with source unchanged; actual armed text is Press a key or mouse button for add_modifier at y1969, outside720px. Actual subsequent binding is Z. RUN110 checks design10.1:945,10.2:954-956 and14:1260: no fixed capture-prompt placement is specified. Conflict/reserved notices still require visible usable evidence in their owning clauses. Fresh semantic-v3 remains pending.
+
+Alternative not taken: call setup failures product reds, count invisible status as pixel proof, weaken the fixed native/notice IDs, or invent new product text. Brief4 instrument-detail rights. Global110/170,Task16run21/hard24.
+
+## CEO instruction: pause after current work
+
+Finish Task16 and its already active RUN110 review, save the reviewable checkpoint, then pause. Start no new task or agent run. Task22 runtime and Tasks21/23/24 stay on hold. This is a pause boundary, not Task16 acceptance.
