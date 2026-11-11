@@ -140,6 +140,13 @@ async function gather(io, where, label, seconds) {
     }
 }
 
+// The first click of a fresh page dismisses the "Click to play" overlay (audio is locked until a
+// gesture: crates/turts_client/src/client_shell.rs sync_focus_overlay); the overlay blocks it.
+async function dismissOverlay(io) {
+    await io.click(640, 690, "left");
+    await io.wait(300);
+}
+
 const FAULT_CASES = new Set(["E9-browser-base-recovery", "E9-browser-base-loss-conversion", "E9-browser-base-loss-charge",
     "E9-browser-base-loss-refund", "E9-browser-base-loss-spawn", "E9-browser-base-loss-final_change"]);
 const WORKER_CASES = new Set(["E9-browser-base-recovery", "E9-browser-base-loss-conversion"]);
@@ -152,6 +159,7 @@ async function drive(io, params) {
     if (FAULT_CASES.has(caseId)) {
         if (phase === "select") {
             await shot(io, "m2-joined");
+            await dismissOverlay(io);
             const worker = WORKER_CASES.has(caseId);
             const target = await unitAt(io, where, 0, worker ? where.map.worker : where.map.producer, worker ? "m2-worker" : "m2-producer");
             if (!target) return;
@@ -182,9 +190,11 @@ async function drive(io, params) {
         return;
     }
     await shot(io, "m2-joined");
+    await dismissOverlay(io);
     if (caseId.endsWith("-public-convergence")) {
         await io.use(2);
         await shot(io, "m2-owner1-joined");
+        await dismissOverlay(io);
         if (where.map.foreign) {
             const target = await unitAt(io, where, 1, where.map.foreign, "m2-owner1-unit");
             if (!target) return;

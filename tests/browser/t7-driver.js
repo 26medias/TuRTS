@@ -24,7 +24,14 @@ async function stop(io, reason) {
     await io.save("t7-driver-stop.json", Buffer.from(JSON.stringify({ reason }) + "\n"));
 }
 
+// The first click of a fresh page dismisses the "Click to play" overlay (audio is locked until a
+// gesture: crates/turts_client/src/client_shell.rs sync_focus_overlay); the overlay blocks the
+// click, so it reaches no unit. The point is below the map, where a click selects nothing.
+const OVERLAY_CLICK = { x: 640, y: 690 };
+
 async function drive(io) {
+    await io.click(OVERLAY_CLICK.x, OVERLAY_CLICK.y, "left");
+    await io.wait(300);
     let targets = null;
     let shots = 0;
     for (let attempt = 0; attempt < FIND_ATTEMPTS && !targets; attempt += 1) {

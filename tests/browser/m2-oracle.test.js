@@ -60,12 +60,14 @@ function blankPng(width = 64, height = 36) {
 
 test("a product fault in the M2 driver ends the drive with a record, not a throw", async () => {
     const saved = [];
+    const clicked = [];
     const io = {
-        use: async () => {}, wait: async () => {}, move: async () => {}, click: async () => { throw new Error("no click expected"); },
+        use: async () => {}, wait: async () => {}, move: async () => {}, click: async (x, y, button) => clicked.push([x, y, button]),
         screenshot: async () => blankPng(1280, 720), save: async (name) => saved.push(name),
     };
     await drive(io, { m2: { case_id: "E9-browser-base-economy", package: "base" } });
     assert.ok(saved.includes("m2-producer-driver-stop.json"), JSON.stringify(saved));
+    assert.deepEqual(clicked, [[640, 690, "left"]], "only the Click to play overlay click");
 });
 
 test("a stopped M2 drive gives a semantic failure that names the case", async () => {

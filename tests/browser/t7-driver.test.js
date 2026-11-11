@@ -60,14 +60,14 @@ test("the T7 driver stops with a record, not a throw, when no unit is in view", 
     const fake = fakeIo(() => null);
     await drive(fake.io);
     assert.ok(fake.calls.includes("save:t7-driver-stop.json"));
-    assert.ok(!fake.calls.some((call) => call.startsWith("click")));
+    assert.deepEqual(fake.calls.filter((call) => call.startsWith("click")), ["click:left"], "only the overlay click");
 });
 
 test("the T7 driver takes at most 250 screenshots, under the 256 checkpoint limit", async () => {
     const fake = fakeIo((shot) => 20 + (shot % 50));
     await drive(fake.io);
     assert.ok(fake.shots() <= 250, `took ${fake.shots()} screenshots`);
-    assert.deepEqual(fake.calls.filter((call) => call.startsWith("click")), ["click:left", "click:right"]);
+    assert.deepEqual(fake.calls.filter((call) => call.startsWith("click")), ["click:left", "click:left", "click:right"]);
 });
 
 test("a unit that shows late and never rests still keeps the driver inside the checkpoint limit", async () => {

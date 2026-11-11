@@ -79,10 +79,15 @@ async function judge(view, params) {
     const input = view.inputLog();
     const lefts = input.map((entry, index) => ({ entry, index })).filter(({ entry }) => entry.call === "click" && entry.args?.[2] === "left");
     const rights = input.map((entry, index) => ({ entry, index })).filter(({ entry }) => entry.call === "click" && entry.args?.[2] === "right");
-    // Condition 1: one right click at (px, py) after the left click.
-    assert.equal(lefts.length, 1, "T7 condition 1: the input log must hold exactly one left click");
+    // Condition 1 (QA0D:422-425): one right click at (px, py) after the left click. The first click
+    // of a fresh page goes to the "Click to play" overlay (crates/turts_client/src/client_shell.rs
+    // sync_focus_overlay: audio locked until a gesture), so the selecting left click is the last
+    // left click before the right click; at most one more left click (the overlay) comes first.
     assert.equal(rights.length, 1, "T7 condition 1: the input log must hold exactly one right click");
-    assert(rights[0].index > lefts[0].index, "T7 condition 1: the right click must come after the left click");
+    const selecting = lefts.filter(({ index }) => index < rights[0].index);
+    assert(selecting.length >= 1, "T7 condition 1: the right click must come after the left click");
+    assert(lefts.length <= 2 && lefts.every(({ index }) => index < rights[0].index),
+        "T7 condition 1: the input log holds at most the overlay click and one left click, both before the right click");
     const [px, py] = rights[0].entry.args;
     assert(Number.isFinite(px) && Number.isFinite(py), "T7 condition 1: the right click has no pixel");
 

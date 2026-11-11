@@ -40,9 +40,17 @@ async function clickCardRow(io, index, label) {
     return true;
 }
 
+// The first click of a fresh page dismisses the "Click to play" overlay (audio is locked until a
+// gesture: crates/turts_client/src/client_shell.rs sync_focus_overlay); the overlay blocks it.
+async function dismissOverlay(io) {
+    await io.click(640, 690, "left");
+    await io.wait(300);
+}
+
 async function drive(io) {
     await io.use(1);
     await shot(io, "m3-01-joined");
+    await dismissOverlay(io);
     // The forge guide opens at the first join; F1 closes it (mods/forge/interface/hud.ron).
     await io.key("F1");
     await io.wait(200);
@@ -78,6 +86,7 @@ async function drive(io) {
 
     await io.use(2);
     await shot(io, "m3-09-drone-window");
+    await dismissOverlay(io);
     await io.key("F1");
     await io.wait(200);
     const drone = await findPlacement(io, 2, 1, FORGE_MAP.farDrone, "m3-drone");
