@@ -1569,3 +1569,40 @@ Choice: use physical menu scroll1450 and the actual visible Move row/Change rect
 Evidence: tests/browser/rows/KM1.json, rows/KM2.json and shell-oracle.js judgeKm1/requireKm1ChangeClickHitsMoveRow/judgeKm1GuidePixels/judgeKm2. Actual KM1fullv4 passes7/exit0/rawc03489df. Guide prefix147 common points, M37/Q31,40changed points; identical actual glyph image fails named labels-guide-pixels. Actual KM2before-input-fullv1 passes6/exit0/rawd04aff02. Older KM2full0c78d77c1 remains unqualified for join-focus. Prior KM1 expectation/location failures are instrument failures; no product red credited. RUN110 source recheck remains active.
 
 Alternative not taken: duplicate a notice, change displayed physical labels to legacy code strings, claim click-established focus as initial focus, or waive guide pixels. Brief4 instrument/nearest-rule rights. No fixed row, player action, design, protected content or frozen value changes. Global110/170,Task16run21/hard24. The CEO pause boundary after current Task16/review remains in force; Task22 and Tasks21/23/24 do not start.
+
+
+## C358: Focus the real copied document before terminal-notice pixels
+
+Conflict: fresh SLOT1 terminal screenshot contained the actual correct duplicate-window notice under the real Click to play dimmer, so its calibrated white-glyph predicate failed.
+
+Choice: keep all real owner rotations, actual clocks and deadline proof. After owner-end captures, run another real use1/use2/use3 rotation, click500430 and wait250 before the copied terminal capture. Require the focus overlay absent before judging the terminal notice pixels. Keep one second of trailing observation. No clock clamp or deadline slack.
+
+Evidence: SLOT1currentfullv1 exit1/rawe8bd23ad is a setup failure (actual screenshot shows dimmer); v2 fixture schema exit2/raw4b2a9e68 caught a misplaced rotation before browser startup; corrected currentfullv3 passesall7/exit0/raw71d40c53/sourceunchanged. tests/browser/rows/SLOT1.json and shell-oracle.js::assertSlot1TerminalPixels. Alternative: lower white thresholds through an obstructing overlay or fake focus; neither used. Brief4 fixture rights.
+
+## C359: Retain real acquisition and transport lifecycle through the existing IO
+
+Conflict: unconditional Joined readiness discarded initial load/rejection observations, and a healthy harness reload alone did not prove the actual Connection lost Reload button.
+
+Choice: exact SH1/one-window fixture creates the existing IO and C84 collector before initial navigation and preserves all early lineage. Gate real advertisement/lockfile/package responses. One served lockfile gets appended whitespace while the authentic advertised hash remains unchanged; retain original/served bytes hashes, sizes and corrected headers. The actual Phase hash-mismatch reason must contain both actual receiver hashes. Hold only actual completed verify/join consumer frames for screenshots; use polling20 so readiness is not itself trapped in the held RAF. Holds are disabled on fresh documents and armed only at the healthy package gate. Preserve release/cleanup receipts and keep all timed rejoin proofs in their separate unheld SLOT1 row.
+
+Close exactly the actual current Joined WebSocket proxy on both real sides; record current epoch/player and real close. Click the actual product Reload widget, then observe actual fresh document/Joined/same identity and slot. No setter, fake phase, extra public driver method or product delay. tests/browser/harness/sh1-lifecycle.js, harness/run.js and fixed physical SH1 phases. Actual lifecycle-v8 reaches all required real phases/rejection/connection-loss/reload and passes the menu baseline, then correctly exits1/raw41bd7555 because the full load evaluator is still pending. No task acceptance credited.
+
+Earlier lifecycle attempts are setup failures: v1 RAF readiness timeout64a16f6c; v2 real reload destroyed the collector context23f04580; v3 paused press/release did not activate UI, so no actual navigation; v4 recovered an explicit io.reload as if it were a click; v5/v6 recovery still missed the final active-call cleanup race. Keep every original receipt. No product red or plant credit. Alternative: mutate product phases, call a forged reload, or change normal click timing. None used. Brief4 instrument/nearest-mechanism rights.
+
+## C360: Archive actual old-document click receipts across product reload
+
+Conflict: the real Reload click starts navigation while the trusted IO still reads its DOM observer queues. A frame hold changes press/release delivery and is unsuitable for this ordinary UI click.
+
+Choice: SH1-only beforeunload archive via the harness binding records exact real old-document queues. Bind source to the expected main frame/window and exact URL; bound archive/event counts. Recover only a click context-destruction after an actual epoch increase and a fresh typed document. Pure navigation-receipt.js requires exact call/args, real observer sequence, canvas target/position/time, old URL/timeOrigin, and a different actual new-document timeOrigin. Never synthesize events or add a public IO method. Error class is checked before using a cached trace so an unrelated later error stays fatal. Use a harness afterAction callback to await the already-triggered real navigation/Joined before the next physical action.
+
+Evidence: lifecycle-v8 has actual normal click epoch2→3, same player and slot. root-t16-navigation-controls-v1 passes exit0/rawc4b90979: real positive plus missing/foreign URL/timeOrigin/wrong call/point/sequence/no epoch/same-document/oversized archive reject. RUN110 source review is active. Its v4 attribution erratum ab33d3a0 separates old live leads from frozen findings; the valid memo/error ordering finding is repaired. This instrument repair is not a product fault plant. Alternative: swallow generic errors, synthesize pointer events, force navigation or delay the product. None used. Brief4 instrument rights.
+
+## C361: Explain a real game-file mismatch in player words
+
+Conflict: design10.1:943 requires the actual rejected reason in player words and what to do. The real wrong-lock run showed generic connection advice and raw checksums. It did not explain the known file mismatch to a player.
+
+Choice: map the existing lockfile hash mismatch to Game files do not match the server and relevant Reload/server-owner guidance. Keep the technical reason in the read-only Phase evidence; omit only this raw checksum package label from the visible screen. Keep the same Reload button, keys and acceptance row. No design or protected content change.
+
+Evidence: crates/turts_client/src/client_screens.rs player_rejection/rejection_copy and actual ECS test changed_server_files_explain_the_actual_rejection_in_player_words. root-t16-rejection-player-words-red-v1 compiles and fails that actual screen assertion/exit101/raw8b5440c3; green-v1 passes214client+20persist/exit0/raw45bbb028. RUN110 independently agrees this implements design10.1 rather than changing it. Browser proof is pending the new WASM build. Alternative: call a raw hash player words, show irrelevant connection advice, or change the rejection/reload flow. None used. Brief4 design implementation/Medium repair rights.
+
+Checkpoint: six of seven Task16 rows have passed at recorded source checkpoints, including both PER1 corrupt cases, full7KM1/c03489df, full6KM2 with pre-input focus/d04aff02, full7SLOT1/71d40c53, and earlier fullCAM2/SEL4. Final-source refresh, full SH1, gates,9builder plants and reviewer own plant remain. Global110/170;Task16run21/hard24. No new task or agent run started; finish Task16/currentRUN110 then save and pause.
