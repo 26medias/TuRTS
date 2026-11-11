@@ -10,7 +10,10 @@ import sys
 ROOT = Path(__file__).resolve().parents[2]
 SAMPLES = ROOT / "tests/qa/driver"
 ROLES = {"driver", "pure", "oracle", "instrument", "unit", "legacy-bridge", "harness"}
-LEDGER_LIMIT = 5
+# The default ledger limit. MC design 13.3: the ledger has 0 rows, so it cannot grow back (DR7).
+LEDGER_LIMIT = 0
+# The self-test fixture directories keep the QA0 limit, so DR6 keeps an isolated red.
+FIXTURE_LEDGER_LIMIT = 5
 DRIVER_PART_A = {"A1", "A2", "A3", "A4", "A5", "A6", "A7"}
 CHANNEL_MODULES = {
     "child_process", "vm", "worker_threads", "inspector", "module", "net", "http",
@@ -282,7 +285,7 @@ def read_ledger(path):
     return rows, good_header
 
 
-def check_directory(directory):
+def check_directory(directory, ledger_limit=LEDGER_LIMIT):
     found = set()
     js_files = []
     for current, directories, filenames in os.walk(directory):
@@ -305,8 +308,8 @@ def check_directory(directory):
             found.add(("DR6", None, path, 1, "legacy-bridge file is not in ledger"))
         if name in ledger_names and role == "legacy-bridge" and not items:
             found.add(("DR6", None, path, 1, "ledgered legacy-bridge has no Part A item"))
-    if len(rows) > LEDGER_LIMIT:
-        found.add(("DR7", None, ledger_path, 1, "legacy bridge ledger exceeds limit " + str(LEDGER_LIMIT)))
+    if len(rows) > ledger_limit:
+        found.add(("DR7", None, ledger_path, 1, "legacy bridge ledger exceeds limit " + str(ledger_limit)))
     return found
 
 
@@ -323,9 +326,11 @@ def check_file(path):
     return set()
 
 
-def check_path(path, mode=None):
-    if mode == "dir" or (mode is None and path.is_dir()):
-        return check_directory(path)
+def check_path(path, mode=None, ledger_limit=LEDGER_LIMIT):
+    if mode == "dir":
+        return check_directory(path, FIXTURE_LEDGER_LIMIT)
+    if mode == "dir-default" or (mode is None and path.is_dir()):
+        return check_directory(path, ledger_limit)
     return check_file(path)
 
 
@@ -385,18 +390,25 @@ def self_test():
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--self-test", action="store_true")
+    parser.add_argument("--ledger-limit", type=int, default=None, metavar="N",
+                        help="maximum legacy bridge ledger rows for a directory (default %d)" % LEDGER_LIMIT)
     parser.add_argument("paths", nargs="*")
     args = parser.parse_args(argv)
     if args.self_test:
         if args.paths:
             parser.error("--self-test does not take paths")
+        if args.ledger_limit is not None:
+            parser.error("--self-test does not take --ledger-limit")
         return self_test()
     if not args.paths:
         parser.error("provide one or more files or directories")
+    if args.ledger_limit is not None and args.ledger_limit < 0:
+        parser.error("--ledger-limit must be 0 or more")
+    ledger_limit = LEDGER_LIMIT if args.ledger_limit is None else args.ledger_limit
     failed = False
     for name in args.paths:
         path = Path(name)
-        findings = check_path(path)
+        findings = check_path(path, ledger_limit=ledger_limit)
         if findings:
             failed = True
             format_findings(findings)
