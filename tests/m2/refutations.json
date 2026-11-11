@@ -971,9 +971,9 @@
     "id": "E9-browser-missing-button",
     "kind": "browser",
     "runtime": "browser",
-    "plant_path": "crates/turts_client/src/economy_ui.rs",
-    "anchor": "for recipe in &producer.recipes {",
-    "replacement": "for recipe in producer.recipes.iter().take(0) {",
+    "plant_path": "crates/turts_client/src/widgets/sources.rs",
+    "anchor": "        for recipe_id in &producer.recipes {",
+    "replacement": "        for recipe_id in producer.recipes.iter().take(0) {",
     "command": [
       "/bin/bash",
       "-c",
@@ -994,7 +994,7 @@
         "tests/browser"
       ]
     ],
-    "plant_note": "MC task 21 STOP: the case needs production through the plain M2 HUD, which has no production widget (crates/turts_interaction/src/lib.rs:1139 gives no target for a Content or Job order). Not retired; the plant waits for a ruling."
+    "plant_note": "MC task 21 (ruling C384): economy_ui.rs is removed (task 12). The plain base HUD lists the producer recipes through the BuildMenu source (crates/turts_client/src/widgets/sources.rs build_menu); the plant empties that list. m2-oracle.js judgeEconomy checks the Produce row."
   },
   {
     "id": "E9-browser-debug-only-ui",
@@ -1051,8 +1051,7 @@
         "--prefix",
         "tests/browser"
       ]
-    ],
-    "plant_note": "MC task 21 STOP: the case needs production through the plain M2 HUD, which has no production widget (crates/turts_interaction/src/lib.rs:1139 gives no target for a Content or Job order). Not retired; the plant waits for a ruling."
+    ]
   },
   {
     "id": "E9-browser-position-only-snapshot",
@@ -1064,10 +1063,10 @@
     "command": [
       "/bin/bash",
       "-c",
-      "M2_CARGO_TARGET_DIR=\"$CARGO_TARGET_DIR\" bash scripts/m2-browser.sh --case E9-browser-base-recovery"
+      "M2_CARGO_TARGET_DIR=\"$CARGO_TARGET_DIR\" bash scripts/m2-browser.sh --case E9-browser-base-loss-final_change"
     ],
     "browser_case_ids": [
-      "E9-browser-base-recovery"
+      "E9-browser-base-loss-final_change"
     ],
     "expected_selected": 1,
     "expected_failure": "owner replica mismatch at authoritative completed audit tick",
@@ -1080,8 +1079,7 @@
         "--prefix",
         "tests/browser"
       ]
-    ],
-    "plant_note": "MC task 21: the final_change case has no player path in the plain base HUD (STOP). The recovery case compares the released resync Snapshot with the economy audit (m2-oracle.js judgeRecovery, compareBrowserSnapshotToAudit), which this plant breaks."
+    ]
   },
   {
     "id": "E9-browser-unbounded-buffer",
