@@ -13,7 +13,17 @@ const path = require("node:path");
 const PLANS = {
     "E9-browser-base-recovery": "recovery",
     "E9-browser-base-loss-conversion": "conversion",
+    "E9-browser-base-loss-charge": "charge",
+    "E9-browser-base-loss-refund": "refund",
+    "E9-browser-base-loss-spawn": "spawn",
+    "E9-browser-base-loss-final_change": "final_change",
 };
+// The wait for the dropped delta of each family (tests/browser/m2.js runParameterLossProof).
+const DROP_WAIT_MS = { conversion: 60000, spawn: 20000, charge: 10000, refund: 10000, final_change: 10000 };
+
+function queueJobs(snapshotValue, producer) {
+    return snapshotValue.debug?.replicated_world?.economy?.queues?.find((queue) => queue.producer === producer)?.jobs ?? [];
+}
 
 async function snapshot(page) {
     const raw = await page.evaluate(() => ({
@@ -69,7 +79,7 @@ async function runM2Fixture({ io, driver, params, pages, outDir }) {
     const record = { case_id: params.m2.case_id, plan, steps: {} };
     const save = () => fs.writeFile(path.join(outDir, "m2-ingest-private.json"), JSON.stringify(record) + "\n", { mode: 0o600 });
     try {
-        await driver.drive(io, { ...params, fixture_phase: "select-worker" });
+        await driver.drive(io, { ...params, fixture_phase: "select" });
         record.steps.before = await snapshot(page);
         if (plan === "recovery") {
             record.steps.armed = await configure(page, { drop_world_changes: ["extraction"], hold_resync_snapshots: 512, max_buffered_batches: 3 });
@@ -92,20 +102,47 @@ async function runM2Fixture({ io, driver, params, pages, outDir }) {
                 s.debug.ingest.outstanding_request === false && s.debug.replicated_world?.tick > (redrop?.dropped_tick ?? Infinity),
             10000, "re-armed extraction loss recovers through its own successor Snapshot");
         } else {
-            record.steps.armed = await configure(page, { drop_world_changes: ["conversion"], hold_resync_snapshots: 512, max_buffered_batches: 3 });
-            await driver.drive(io, { ...params, fixture_phase: "gather" });
+            const kind = plan;
+            const producer = record.steps.before.debug?.selection?.[0];
+            if (kind === "refund" || kind === "final_change") {
+                await driver.drive(io, { ...params, fixture_phase: "produce" });
+                record.steps.queued = await waitFor(page, (s) => queueJobs(s, producer).length > 0, 5000, `${kind} real Produce application and rendered queue row`);
+                if (kind === "final_change") {
+                    record.steps.blocked = await waitFor(page, (s) => queueJobs(s, producer).some((job) => job.stage === "output_blocked"),
+                        15000, "final_change exact job reaches actual stable output_blocked stage");
+                    // Two more completed ticks give the oracle the stable audit interval of m2.js.
+                    const blockedTick = record.steps.blocked.debug?.replicated_world?.tick ?? 0;
+                    record.steps.blocked_stable = await waitFor(page, (s) => (s.debug?.replicated_world?.tick ?? 0) >= blockedTick + 3,
+                        5000, "final_change stable output_blocked interval");
+                }
+                await driver.drive(io, { ...params, fixture_phase: "show-queue" });
+            }
+            record.steps.armed = await configure(page, { drop_world_changes: [kind], hold_resync_snapshots: 512, max_buffered_batches: 3 });
+            await driver.drive(io, { ...params, fixture_phase: kind === "conversion" ? "gather" : kind === "refund" || kind === "final_change" ? "cancel" : "produce" });
             const armTick = record.steps.armed.status?.arm_tick;
             record.steps.dropped = await waitFor(page, (s) => (s.debug?.dropped_world_changes ?? [])
-                .some((drop) => drop.kind === "conversion" && drop.arm_tick === armTick), 60000, "conversion real conversion WorldDelta loss");
+                .some((drop) => drop.kind === kind && drop.arm_tick === armTick), DROP_WAIT_MS[kind], `${kind} real ${kind} WorldDelta loss`);
             record.steps.held = await waitFor(page, (s) => s.debug?.ingest?.held_snapshots === 1 && s.debug.ingest.outstanding_request === true &&
-                s.debug.ingest.buffer_overflows > 0, 20000, "conversion real resync response held while bounded delta tail overflows");
+                s.debug.ingest.buffer_overflows > 0, 20000, `${kind} real resync response held while bounded delta tail overflows`);
             record.steps.hold_window = await holdWindow(page, 200);
             record.steps.release = await configure(page, { drop_world_changes: [], hold_resync_snapshots: 0, max_buffered_batches: 3 });
             const heldTick = record.steps.held.debug?.replicated_world?.tick ?? 0;
             const successors = record.steps.held.debug?.ingest?.successor_requests ?? 0;
             record.steps.recovered = await waitFor(page, (s) => s.debug?.ingest?.held_snapshots === 0 && s.debug.ingest.outstanding_request === false &&
                 s.debug.ingest.resync_active === false && s.debug.ingest.successor_requests >= successors + 1 && s.debug.replicated_world?.tick > heldTick,
-            10000, "conversion held Snapshot, one successor and full recovery close");
+            10000, `${kind} held Snapshot, one successor and full recovery close`);
+            if (kind === "spawn") {
+                const known = new Set((record.steps.before.debug?.replicated_world?.units ?? []).map((unit) => unit.unit_id));
+                record.steps.spawn_output = await waitFor(page, (s) => (s.debug?.replicated_world?.units ?? []).some((unit) => !known.has(unit.unit_id) && unit.owner_slot === 0),
+                    15000, "spawned output is both in the recovered browser replica and actual Bevy mesh scene");
+                await driver.drive(io, { ...params, fixture_phase: "spawn-output" });
+            }
+            if (kind === "final_change") {
+                const droppedTick = (record.steps.dropped.debug?.dropped_world_changes ?? []).find((drop) => drop.kind === kind && drop.arm_tick === armTick)?.dropped_tick ?? Infinity;
+                record.steps.final = await waitFor(page, (s) => (s.debug?.replicated_world?.tick ?? 0) >= droppedTick + 8 &&
+                    s.debug?.ingest?.resync_active === false && s.debug.ingest.outstanding_request === false,
+                10000, "eight completed authoritative heartbeats after terminal final_change recovery");
+            }
         }
         record.steps.after = await snapshot(page);
         await driver.drive(io, { ...params, fixture_phase: "after" });

@@ -8,12 +8,15 @@
 // semantic failure of the case: scripts/m2-browser.sh turns it into M2_CASE_SEMANTIC_FAIL.
 const assert = require("node:assert/strict");
 const { decodePng } = require("./harness/png.js");
-const { checkpointForSave, readCheckpoints, replicaUnit, widgets } = require("./checkpoint-lib.js");
+const { checkpointBefore, checkpointForSave, readCheckpoints, replicaUnit, widgets } = require("./checkpoint-lib.js");
+const { auditStateAt, projectAuditOwnerWorld, worldChangeMatchesAudit } = require("./m2-audit.js");
 const {
     appliedCommandCount,
+    assertFinalChangeQuiescence,
     assertPublicProjectionSchema,
     compareBrowserSnapshotToAudit,
     hasSingleDebugSelection,
+    lastAuditTick,
     lossTransitionAt,
     parseCompleteAuditText,
     projectGroundPoint,
@@ -239,26 +242,207 @@ async function judgeRecovery(view, record, records, joined) {
     return { first_loss_tick: firstLoss.after.economy.tick, rearm_loss_tick: secondLoss.after.economy.tick, recoveryAudit: recoveryAudit.tick, rearmAudit: rearmAudit.tick };
 }
 
-async function judgeConversion(view, record, records, joined) {
-    const kind = "conversion";
+// Click helpers for the plain HUD lists (ruling C384). The driver saves `<label>-button.json`
+// and then clicks; the checkpoint of its last screenshot before the click holds the rows.
+function hudClick(input, checkpoints, label) {
+    const saveIndex = input.findIndex((entry) => entry.call === "save" && entry.args?.[0] === `${label}-button.json`);
+    assert(saveIndex >= 0, `${label}: the driver did not check the HUD button before the click`);
+    const clickIndex = input.findIndex((entry, index) => index > saveIndex && entry.call === "click" && entry.args?.[2] === "left");
+    assert(clickIndex > saveIndex, `${label}: no click after the HUD button check`);
+    const before = checkpointBefore(checkpoints, clickIndex, 1);
+    assert(before?.debug, `${label}: no checkpoint before the HUD click`);
+    const [x, y] = input[clickIndex].args;
+    return { before, clickIndex, x, y };
+}
+
+function rowAt(debug, x, y, predicate) {
+    const scale = 1;
+    return widgets(debug, (row) => row.kind === "button" && Array.isArray(row.rect) && predicate(row) &&
+        x * scale >= row.rect[0] && x * scale <= row.rect[0] + row.rect[2] && y * scale >= row.rect[1] && y * scale <= row.rect[1] + row.rect[3])[0] ?? null;
+}
+
+function produceRow(debug, producerId, recipe) {
+    return widgets(debug, (row) => row.kind === "button" && row.id.startsWith("m2_build_rows/") && row.enabled === true &&
+        row.widget_action?.kind === "produce" && row.widget_action.producer === producerId &&
+        (recipe === null || row.widget_action.content_id === recipe))[0] ?? null;
+}
+
+function cancelRows(debug, producerId) {
+    return widgets(debug, (row) => row.kind === "button" && row.id === "m2_job_cancel" &&
+        row.widget_action?.kind === "cancel_production" && row.widget_action.producer === producerId);
+}
+
+function newJobId(debug, appliedBefore) {
+    const applied = (debug.command_results ?? []).filter((result) => Number.isInteger(result.applied_tick));
+    return applied.length > appliedBefore ? applied.at(-1).job_id ?? null : null;
+}
+
+function queueOf(debug, producerId) {
+    return debug.replicated_world?.economy?.queues?.find((queue) => queue.producer === producerId) ?? null;
+}
+
+function credits(debug) {
+    return (debug.replicated_world?.economy?.balances ?? []).find((balance) => balance.resource === "base:credits")?.on_hand ?? null;
+}
+
+// Produce through the plain HUD: an enabled row of the recipe for the producer is under the
+// click, the server applies the order, and the job shows in the queue rows.
+// The first later snapshot (a checkpoint after the click, or a harness step) in which the server
+// applied one more order; m2.js waited 5 s for it.
+function appliedAfter(checkpoints, click, extra = []) {
+    const appliedBefore = appliedCommandCount(click.before);
+    const clickTime = click.before.wall_time_ms ?? 0;
+    const later = [...checkpoints.filter((shot) => shot.window === 1 && shot.input_call > click.clickIndex)
+        .sort((left, right) => left.input_call - right.input_call), ...extra];
+    return later.find((shot) => appliedCommandCount(shot) > appliedBefore && (shot.wall_time_ms ?? clickTime) - clickTime <= 6000) ?? null;
+}
+
+function judgeProduce(input, checkpoints, label, producerId, recipe, message, extra = []) {
+    const click = hudClick(input, checkpoints, label);
+    const row = produceRow(click.before.debug, producerId, recipe);
+    assert(row, message);
+    assert(rowAt(click.before.debug, click.x, click.y, (item) => item.id === row.id), "the real visible production control was not clicked");
+    const queued = appliedAfter(checkpoints, click, extra);
+    assert(queued, "production did not apply within 5 s of the click");
+    const jobId = newJobId(queued.debug, appliedCommandCount(click.before));
+    assert(Number.isSafeInteger(jobId), "applied production result did not expose its JobId");
+    return { click, queued, jobId };
+}
+
+function judgeCancel(input, checkpoints, label, producerId, jobId) {
+    const click = hudClick(input, checkpoints, label);
+    const control = rowAt(click.before.debug, click.x, click.y, (row) => row.id === "m2_job_cancel");
+    assert(control && control.text === "Cancel" && control.widget_action?.kind === "cancel_production" &&
+        control.widget_action.producer === producerId && control.widget_action.job === jobId,
+    `cancel must target the exact applied JobId ${jobId}`);
+    return click;
+}
+
+async function judgeEconomy(view, input, checkpoints, at, joined) {
+    const producer = unitNear(joined.debug, "base:command_center", 8 + OFFSET.base, 8);
+    const selected = at("m2-producer-selected");
+    assert(produceRow(selected.debug, producer.unit_id, "base:train_rifleman"), "no visible enabled rendered Produce control for the selected producer");
+    const first = judgeProduce(input, checkpoints, "m2-econ-first", producer.unit_id, "base:train_rifleman",
+        "no visible enabled rendered Produce control for the selected producer");
+    const initial = new Set((joined.debug.replicated_world.units ?? []).map((unit) => unit.unit_id));
+    const outputs = input.filter((entry) => entry.call === "save" && /^m2-econ-output-\d+\.png$/.test(entry.args?.[0] ?? ""))
+        .map((entry) => checkpointForSave(input, checkpoints, entry.args[0], "M2"));
+    const output = [...outputs].reverse().find((shot) => (shot.debug.replicated_world.units ?? []).some((unit) =>
+        unit.content_id === "base:rifleman" && !initial.has(unit.unit_id)));
+    assert(output, "actual completed rifleman output and rendered mesh");
+    const riflemen = output.debug.replicated_world.units.filter((unit) => unit.content_id === "base:rifleman" && !initial.has(unit.unit_id));
+    assert.equal(riflemen.length, 1, "exactly one new rifleman must appear in received state");
+    assert.equal(output.scene.units.filter((unit) => unit.unit_id === riflemen[0].unit_id).length, 1, "the completed output must have exactly one rendered mesh");
+    const before = credits(output.debug);
+    assert.equal(before, 400, "first production should have charged the declared 100-credit cost");
+    const second = judgeProduce(input, checkpoints, "m2-econ-second", producer.unit_id, "base:train_rifleman",
+        "no visible enabled rendered Produce control for the selected producer");
+    // The last screenshot before the Cancel click shows the row that the driver clicked.
+    const queueShot = hudClick(input, checkpoints, "m2-econ-cancel").before;
+    const job = queueOf(queueShot.debug, producer.unit_id)?.jobs?.find((item) => item.id === second.jobId);
+    assert(job, `second JobId ${second.jobId} is not rendered in the visible queue`);
+    assert(cancelRows(queueShot.debug, producer.unit_id).some((row) => row.widget_action.job === second.jobId),
+        `second JobId ${second.jobId} is not rendered in the visible queue`);
+    assert(["queued", "running", "output_blocked"].includes(job.stage), `unknown rendered job stage: ${job.stage}`);
+    const refund = job.stage === "running" ? 50 : 100;
+    const expected = before - 100 + refund;
+    const cancel = judgeCancel(input, checkpoints, "m2-econ-cancel", producer.unit_id, second.jobId);
+    const appliedAtCancel = appliedCommandCount(cancel.before);
+    const later = checkpoints.filter((shot) => shot.window === 1 && shot.input_call > cancel.clickIndex &&
+        shot.wall_time_ms - cancel.before.wall_time_ms <= 6000);
+    const done = later.find((shot) => appliedCommandCount(shot) > appliedAtCancel &&
+        !queueOf(shot.debug, producer.unit_id)?.jobs?.some((item) => item.id === second.jobId) &&
+        !cancelRows(shot.debug, producer.unit_id).some((row) => row.widget_action.job === second.jobId) &&
+        credits(shot.debug) === expected);
+    assert(done, `exact ${job.stage} refund should yield ${expected} Credits`);
+    const harvester = at("m2-worker-selected");
+    const selectClick = input.findIndex((entry, index) => index > at("m2-econ-cancelled").screenshotIndex && entry.call === "click" && entry.args?.[2] === "left");
+    const beforeSelect = checkpointBefore(checkpoints, selectClick, 1);
+    assert(beforeSelect && appliedCommandCount(harvester) === appliedCommandCount(beforeSelect),
+        "selecting a Harvester must not advance the applied command sequence");
+    return { first_job_id: first.jobId, output_unit: riflemen[0].unit_id, second_job_id: second.jobId, stage: job.stage, final_credits: expected };
+}
+
+function judgeProductionCancel(input, checkpoints, at, joined, packageName) {
+    const producer = unitNear(joined.debug, PRODUCER[packageName], 8 + OFFSET[packageName], 8);
+    assert(produceRow(at("m2-producer-selected").debug, producer.unit_id, null), `${packageName} producer has no visible enabled Produce control`);
+    const queued = judgeProduce(input, checkpoints, "m2-prod", producer.unit_id, null,
+        `${packageName} producer has no visible enabled Produce control`);
+    assert(cancelRows(hudClick(input, checkpoints, "m2-prod-cancel").before.debug, producer.unit_id).some((row) => row.widget_action.job === queued.jobId),
+        `${packageName} Job ${queued.jobId} is absent from actual visible queue text`);
+    const cancel = judgeCancel(input, checkpoints, "m2-prod-cancel", producer.unit_id, queued.jobId);
+    const cancelled = appliedAfter(checkpoints, cancel);
+    assert(cancelled && !queueOf(cancelled.debug, producer.unit_id)?.jobs?.some((job) => job.id === queued.jobId),
+        `${packageName} applied exact-job cancellation`);
+}
+
+// The lost-delta families of m2.js runParameterLossProof.
+async function judgeLoss(view, input, checkpoints, at, kind, record, records, joined) {
     const steps = record.steps;
-    const worker = unitNear(joined.debug, "base:harvester", 12 + OFFSET.base, 8);
-    assert(worker, `${kind} loss fixture lacks its real owner-0 target mesh`);
-    const before = notTimedOut(steps.before, "the selected Harvester");
-    assert.deepEqual(before.debug.selection, [worker.unit_id], `${kind} target selection uses actual Bevy UI`);
+    const needsGather = kind === "conversion";
+    const target = needsGather ? unitNear(joined.debug, "base:harvester", 12 + OFFSET.base, 8)
+        : unitNear(joined.debug, "base:command_center", 8 + OFFSET.base, 8);
+    assert(target, `${kind} loss fixture lacks its real owner-0 target mesh`);
+    const before = notTimedOut(steps.before, "the selected target");
+    assert.deepEqual(before.debug.selection, [target.unit_id], `${kind} target selection uses actual Bevy UI`);
     assert.equal(appliedCommandCount(before), appliedCommandCount(joined), `${kind} selection must not send a PlayerCommand`);
+    let jobId = null;
+    if (kind === "refund" || kind === "final_change") {
+        const produced = judgeProduce(input, checkpoints, "m2-loss-produce", target.unit_id, "base:train_rifleman",
+            `${kind} loss fixture Command Center has no actual enabled Produce control`, [steps.queued].filter(Boolean));
+        jobId = produced.jobId;
+        assert(Number.isSafeInteger(jobId), `${kind} actual applied Produce must identify its JobId`);
+        const queueShot = at("m2-loss-queue");
+        assert(cancelRows(queueShot.debug, target.unit_id).some((row) => row.widget_action.job === jobId), `${kind} real JobId ${jobId} must appear in rendered queue text`);
+        if (kind === "refund") {
+            const job = queueOf(queueShot.debug, target.unit_id)?.jobs?.find((item) => item.id === jobId);
+            assert(job && ["queued", "running"].includes(job.stage), "refund loss requires the exact live job to remain cancelable");
+        } else {
+            const blocked = notTimedOut(steps.blocked, "the output_blocked job");
+            notTimedOut(steps.blocked_stable, "the stable output_blocked interval");
+            assert.equal(appliedCommandCount(blocked), appliedCommandCount(produced.queued), "waiting output_blocked sends no command");
+            const blockedTick = blocked.debug.replicated_world.tick;
+            const stableA = projectAuditOwnerWorld(auditStateAt(records, blockedTick + 1), 0);
+            const stableB = projectAuditOwnerWorld(auditStateAt(records, blockedTick + 2), 0);
+            delete stableA.tick;
+            delete stableB.tick;
+            assert.deepStrictEqual(stableA, stableB, "output_blocked fixture must have a completed unchanged owner economy interval before arming");
+            assert.equal(auditStateAt(records, blockedTick + 2).economy.economy.queues.find((queue) => queue.producer === target.unit_id)?.jobs
+                .find((job) => job.id === jobId)?.stage, "OutputBlocked");
+        }
+        judgeCancel(input, checkpoints, "m2-loss-cancel", target.unit_id, jobId);
+    }
     const armed = notTimedOut(steps.armed, "the loss configuration");
-    assert.equal(appliedCommandCount(armed), appliedCommandCount(before), `${kind} loss config must not allocate a PlayerCommand`);
+    const beforeArm = notTimedOut(steps.blocked_stable ?? steps.queued ?? before, "the state before the loss configuration");
+    assert.equal(appliedCommandCount(armed), appliedCommandCount(beforeArm), `${kind} loss config must not allocate a PlayerCommand`);
     assert.equal(ingestOf(armed).max_buffered_batches, 3, `${kind} loss must set the live cap to three`);
     assert.deepEqual(ingestOf(armed).armed_drop_world_changes?.kinds, [kind]);
     assert.equal(armed.status?.state, "applied", `${kind} arm must apply on the Bevy main thread`);
     const armTick = armed.status.arm_tick;
     assert(Number.isInteger(armTick), `${kind} live ingest arm must publish its applied authoritative tick`);
-    const dropped = notTimedOut(steps.dropped, "the conversion loss");
-    assert(appliedCommandCount(dropped) > appliedCommandCount(armed), `${kind} real right-pointer Gather application`);
+    if (kind === "charge" || kind === "spawn") {
+        judgeProduce(input, checkpoints, "m2-loss-produce", target.unit_id, "base:train_rifleman",
+            `${kind} loss fixture Command Center has no actual enabled Produce control`, [steps.dropped, steps.held].filter(Boolean));
+    }
+    const dropped = notTimedOut(steps.dropped, `the ${kind} loss`);
+    if (needsGather) assert(appliedCommandCount(dropped) > appliedCommandCount(armed), `${kind} real right-pointer Gather application`);
     const matching = (dropped.debug.dropped_world_changes ?? []).filter((drop) => drop.kind === kind && drop.arm_tick === armTick);
     assert.equal(matching.length, 1, `${kind} fixture must lose exactly one matching delta`);
-    lossTransitionAt(kind, matching[0], records, 0);
+    const drop = matching[0];
+    const transition = lossTransitionAt(kind, drop, records, 0);
+    if (kind === "charge") {
+        const previousJobs = transition.before.economy.economy.queues.find((queue) => queue.producer === target.unit_id)?.jobs ?? [];
+        const chargedJobs = transition.after.economy.economy.queues.find((queue) => queue.producer === target.unit_id)?.jobs ?? [];
+        const charged = chargedJobs.filter((job) => job.charged.some((line) => line.source === "SlotBalance" && line.resource.package === "base" &&
+            line.resource.local === "credits" && line.amount === 100) && !previousJobs.some((previous) => previous.id === job.id));
+        assert.equal(charged.length, 1, "charge loss audit tick must add one actually charged owner job");
+    }
+    let spawned = null;
+    if (kind === "spawn") {
+        const beforeIds = new Set(transition.before.economy.units.map((unit) => unit.unit_id));
+        spawned = transition.after.economy.units.find((unit) => unit.owner_slot === 0 && !beforeIds.has(unit.unit_id));
+        assert(spawned, "spawn loss audit tick must contain the real new owner unit");
+    }
     const held = notTimedOut(steps.held, "the held response");
     assert.equal(ingestOf(held).max_buffered_batches, 3);
     assert(ingestOf(held).buffered_batches <= 3, "retained real delta tail exceeded configured cap=3");
@@ -275,7 +459,31 @@ async function judgeConversion(view, record, records, joined) {
     assert.equal(ingestOf(recovered).resync_requests_sent, requestsDuringHold + 1,
         `${kind} recovery must send one successor after releasing the held response`);
     assert.equal(ingestOf(recovered).max_outstanding_requests, 1);
-    compareBrowserSnapshotToAudit(recovered, records, 0, `${kind}-recovered`);
+    if (spawned) {
+        notTimedOut(steps.spawn_output, "the spawned output");
+        const outputShot = at("m2-spawn-output");
+        assert((outputShot.debug.replicated_world.units ?? []).some((unit) => unit.unit_id === spawned.unit_id) &&
+            outputShot.scene.units.some((unit) => unit.unit_id === spawned.unit_id), "spawned output did not render after recovery closed");
+    }
+    let final = recovered;
+    if (kind === "final_change") {
+        final = notTimedOut(steps.final, "the final heartbeats");
+        assert(ingestOf(final).highest_delta_tick >= final.debug.replicated_world.tick,
+            "empty-heartbeat recovery must show continuing received ticks through the applied tick");
+    }
+    compareBrowserSnapshotToAudit(final, records, 0, `${kind}-recovered`);
+    if (kind === "final_change") {
+        const actualTick = final.debug.replicated_world.tick;
+        // m2.js read the audit four ticks past the browser tick; the oracle reads it after the run.
+        const observationTick = actualTick + 4;
+        assert(lastAuditTick(records) >= observationTick, `trusted economy audit did not complete tick ${observationTick}`);
+        assertFinalChangeQuiescence(records, drop.dropped_tick, actualTick, observationTick, 0);
+        const beforeDrop = auditStateAt(records, drop.dropped_tick - 1);
+        const afterDrop = auditStateAt(records, drop.dropped_tick);
+        assert(worldChangeMatchesAudit("refund", beforeDrop, afterDrop, 0), "terminal final_change must be the actual exact-job cancellation/refund mutation");
+        assert.equal(afterDrop.economy.economy.queues.some((queue) => queue.producer === target.unit_id && queue.jobs.some((job) => job.id === jobId)), false,
+            "terminal final_change audit state must remove the exact canceled JobId");
+    }
 }
 
 async function judgeCase(view, params) {
@@ -291,14 +499,22 @@ async function judgeCase(view, params) {
     const joined = at("m2-joined");
     assertJoined(joined, packageName);
     assertPublicProjectionSchema(joined);
-    if (caseId === "E9-browser-base-recovery" || caseId === "E9-browser-base-loss-conversion") {
+    if (caseId === "E9-browser-base-recovery" || caseId.startsWith("E9-browser-base-loss-")) {
         const record = JSON.parse(await view.serverFile("m2-ingest-private.json"));
         const records = parseCompleteAuditText(await view.serverFile("economy-audit-private.jsonl"));
-        return caseId.endsWith("recovery") ? judgeRecovery(view, record, records, joined) : judgeConversion(view, record, records, joined);
+        if (caseId.endsWith("recovery")) return judgeRecovery(view, record, records, joined);
+        return judgeLoss(view, input, checkpoints, at, caseId.slice("E9-browser-base-loss-".length), record, records, joined);
     }
     if (caseId.endsWith("-public-convergence")) return judgeConvergence(view, at, joined, packageName);
     await judgeSelection(view, at, joined, packageName);
-    if (caseId === "E9-browser-haul-economy" || caseId === "E9-browser-cedar-economy") judgeGather(input, checkpoints, at, joined, packageName);
+    if (caseId === "E9-browser-base-economy") {
+        await judgeEconomy(view, input, checkpoints, at, joined);
+        judgeGather(input, checkpoints, at, joined, packageName);
+    }
+    if (caseId === "E9-browser-haul-economy" || caseId === "E9-browser-cedar-economy") {
+        judgeProductionCancel(input, checkpoints, at, joined, packageName);
+        judgeGather(input, checkpoints, at, joined, packageName);
+    }
     return null;
 }
 
@@ -311,4 +527,4 @@ async function judge(view, params) {
     }
 }
 
-module.exports = { judge, assertPickCircleClearOfHud, UNIT_NAMES };
+module.exports = { judge, appliedAfter, assertPickCircleClearOfHud, cancelRows, hudClick, produceRow, UNIT_NAMES };

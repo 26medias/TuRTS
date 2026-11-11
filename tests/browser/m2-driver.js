@@ -20,6 +20,13 @@ const PACKAGES = {
     acme: { offset: 0, size: [48, 48], producer: [4, 4], worker: null, node: null, foreign: null },
 };
 const VIEWPORT = { width: 1280, height: 720 };
+// The plain HUD lists of mods/<package>/interface/hud.ron (ruling C384): m2_build_rows at
+// (16, 190), 240 x 28 rows with a gap of 4, in the recipe order of the producer; m2_job_rows at
+// (16, 258), Cancel at offset 176 in each 28-pixel row with a gap of 4.
+const BUILD_ROW = (index) => ({ x: 136, y: 204 + index * 32, sample: { x: 252, y: 204 + index * 32 } });
+const JOB_CANCEL = (index) => ({ x: 224, y: 272 + index * 32, sample: { x: 195, y: 272 + index * 32 } });
+// Engine button fills (crates/turts_client/src/widgets/mod.rs update_widget_button_states).
+const BUTTON_FILL = { enabled: [33, 66, 77], hovered: [46, 102, 112], pressed: [26, 77, 92], disabled: [51, 51, 51] };
 
 function layout(params) {
     const name = params.m2?.package;
@@ -68,6 +75,31 @@ async function nodeAt(io, where, label) {
     return seed;
 }
 
+function buttonState(image, point) {
+    const pixel = pixelAt(image, point.x, point.y);
+    if (!pixel) return null;
+    for (const [state, fill] of Object.entries(BUTTON_FILL)) {
+        if (Math.hypot(pixel[0] - fill[0], pixel[1] - fill[1], pixel[2] - fill[2]) <= 12) return state;
+    }
+    return null;
+}
+
+// Click a HUD button only after a screenshot shows it in the enabled fill.
+async function clickButton(io, target, label) {
+    let state = null;
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+        // Away from the HUD, the units and the edge-scroll band, so the sample shows no hover fill.
+        await io.move(700, 520);
+        state = buttonState(decodePng(Buffer.from(await io.screenshot())), target.sample);
+        if (state === "enabled") break;
+        await io.wait(150);
+    }
+    await io.save(`${label}-button.json`, Buffer.from(JSON.stringify({ target, state }) + "\n"));
+    if (state !== "enabled") throw new Error(`M2 ${label}: the HUD button at ${JSON.stringify(target.sample)} is not shown enabled (${state})`);
+    await io.click(target.x, target.y, "left");
+    await io.wait(300);
+}
+
 async function selectAndHover(io, where, point, label) {
     const target = await unitAt(io, where, 0, point, label);
     await io.click(target.x, target.y, "left");
@@ -94,18 +126,33 @@ async function gather(io, where, label, seconds) {
     }
 }
 
+const FAULT_CASES = new Set(["E9-browser-base-recovery", "E9-browser-base-loss-conversion", "E9-browser-base-loss-charge",
+    "E9-browser-base-loss-refund", "E9-browser-base-loss-spawn", "E9-browser-base-loss-final_change"]);
+const WORKER_CASES = new Set(["E9-browser-base-recovery", "E9-browser-base-loss-conversion"]);
+
 async function drive(io, params) {
     const where = layout(params);
     const caseId = params.m2.case_id;
     const phase = params.fixture_phase ?? null;
     await io.use(1);
-    if (caseId === "E9-browser-base-recovery" || caseId === "E9-browser-base-loss-conversion") {
-        if (phase === "select-worker") {
+    if (FAULT_CASES.has(caseId)) {
+        if (phase === "select") {
             await shot(io, "m2-joined");
-            const worker = await unitAt(io, where, 0, where.map.worker, "m2-worker");
-            await io.click(worker.x, worker.y, "left");
+            const worker = WORKER_CASES.has(caseId);
+            const target = await unitAt(io, where, 0, worker ? where.map.worker : where.map.producer, worker ? "m2-worker" : "m2-producer");
+            await io.click(target.x, target.y, "left");
             await io.wait(250);
-            await shot(io, "m2-worker-selected");
+            await shot(io, worker ? "m2-worker-selected" : "m2-producer-selected");
+        } else if (phase === "produce") {
+            await clickButton(io, BUILD_ROW(0), "m2-loss-produce");
+            await shot(io, "m2-loss-produce");
+        } else if (phase === "show-queue") {
+            await shot(io, "m2-loss-queue");
+        } else if (phase === "cancel") {
+            await clickButton(io, JOB_CANCEL(0), "m2-loss-cancel");
+            await shot(io, "m2-loss-cancel");
+        } else if (phase === "spawn-output") {
+            await shot(io, "m2-spawn-output");
         } else if (phase === "gather") {
             const node = await nodeAt(io, where, "m2-node");
             await io.click(node.x, node.y, "right");
@@ -131,7 +178,24 @@ async function drive(io, params) {
         return;
     }
     await selectAndHover(io, where, where.map.producer, "m2-producer");
-    if (where.map.worker && (caseId === "E9-browser-haul-economy" || caseId === "E9-browser-cedar-economy")) {
+    if (caseId === "E9-browser-base-economy") {
+        // m2.js: one rifleman completes; a second is cancelled for its refund; the harvester gathers.
+        await clickButton(io, BUILD_ROW(0), "m2-econ-first");
+        await shot(io, "m2-econ-first-queued");
+        for (let second = 1; second <= 15; second += 1) {
+            await io.wait(1000);
+            await shot(io, `m2-econ-output-${String(second).padStart(2, "0")}`);
+        }
+        await clickButton(io, BUILD_ROW(0), "m2-econ-second");
+        await shot(io, "m2-econ-second-queued");
+        await clickButton(io, JOB_CANCEL(0), "m2-econ-cancel");
+        await shot(io, "m2-econ-cancelled");
+        await gather(io, where, "m2", 15);
+    } else if (caseId === "E9-browser-haul-economy" || caseId === "E9-browser-cedar-economy") {
+        await clickButton(io, BUILD_ROW(0), "m2-prod");
+        await shot(io, "m2-prod-queued");
+        await clickButton(io, JOB_CANCEL(0), "m2-prod-cancel");
+        await shot(io, "m2-prod-cancelled");
         await gather(io, where, "m2", 20);
     }
 }

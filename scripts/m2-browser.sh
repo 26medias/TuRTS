@@ -88,17 +88,6 @@ if [[ -z "$CASE_ID" ]]; then
     done < <("$0" --list-cases)
     exit "$package_status"
 fi
-# MC task 21 STOP: the plain M2 HUDs (MC design 12.2) have no production widget, and a HUD
-# order button with a Content or Job target cannot choose a recipe or a job
-# (crates/turts_interaction/src/lib.rs:1139). These cases have no player path until a ruling.
-case "$CASE_ID" in
-    E9-browser-base-economy|E9-browser-base-loss-charge|E9-browser-base-loss-refund|E9-browser-base-loss-spawn|E9-browser-base-loss-final_change)
-        printf 'M2_CASE_START %s\n' "$CASE_ID"
-        printf 'M2_CASE_INFRA_FAIL %s %s\n' "$CASE_ID" '"STOP (MC task 21): no player path for production in the plain M2 HUD; needs a ruling"'
-        printf 'M2_CASE_SUMMARY {"selected_count":1,"completed_count":1,"passed_count":0,"semantic_failed_count":0,"infrastructure_failed_count":1,"timeout_count":0}\n'
-        exit 1
-        ;;
-esac
 if [[ -n "$CASE_ID" ]]; then
     case "$PACKAGE:$CASE_ID" in
         base:E9-browser-base-selection|base:E9-browser-base-economy|base:E9-browser-base-recovery|base:E9-browser-base-public-convergence|base:E9-browser-base-loss-conversion|base:E9-browser-base-loss-charge|base:E9-browser-base-loss-refund|base:E9-browser-base-loss-spawn|base:E9-browser-base-loss-final_change|haul:E9-browser-haul-economy|haul:E9-browser-haul-public-convergence|acme:E9-browser-acme-selection|acme:E9-browser-acme-public-convergence|cedar:E9-browser-cedar-economy|cedar:E9-browser-cedar-public-convergence) ;;
