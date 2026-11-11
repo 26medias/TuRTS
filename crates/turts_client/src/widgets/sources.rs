@@ -387,6 +387,10 @@ fn build_menu(context: SourceContext<'_>) -> SourceData {
         return SourceData::default();
     };
     let producer_id = context.selection[0];
+    // Design Player path step 5: the research entry names its key from the effective bindings.
+    let produce_key = produce_order(context.content, &primary.content_id)
+        .map(|(_, order)| current_hotkey(context, &order.hotkey))
+        .unwrap_or_default();
     let mut rows = Vec::new();
     if let Some(producer) = &unit.producer {
         for recipe_id in &producer.recipes {
@@ -432,6 +436,7 @@ fn build_menu(context: SourceContext<'_>) -> SourceData {
                     },
                 );
                 row.set(ItemField::Cost, cost_label(&recipe.costs, context.content));
+                row.set(ItemField::Title, produce_key.clone());
                 row.set(ItemField::Time, recipe.duration_ms as f64 / 1000.0);
                 rows.push(row);
             }
@@ -514,6 +519,7 @@ fn build_menu(context: SourceContext<'_>) -> SourceData {
                     String::new()
                 };
                 row.set(ItemField::Reason, why);
+                row.set(ItemField::Title, produce_key.clone());
                 row.set(
                     ItemField::Cost,
                     cost_label(&technology.costs, context.content),
@@ -780,6 +786,23 @@ fn job_name(context: SourceContext<'_>, id: &str) -> String {
                 .map(|entry| entry.name.clone())
         })
         .unwrap_or_else(|| id.to_owned())
+}
+
+/// The package order that sends a `Produce` to a producer of this unit type. The widget click
+/// (`widgets/mod.rs` `activate_widget`) and the build menu key label use this one choice.
+pub fn produce_order<'a>(
+    content: &'a ClientContent,
+    unit_content_id: &str,
+) -> Option<(&'a ContentId, &'a turts_mod_api::OrderDef)> {
+    content.catalog.orders.iter().find(|(_, order)| {
+        order.behaviour == Behaviour::Produce
+            && order.target == turts_mod_api::TargetKind::Content
+            && (order.units.is_empty()
+                || order
+                    .units
+                    .iter()
+                    .any(|allowed| allowed == unit_content_id))
+    })
 }
 
 pub fn current_hotkey(context: SourceContext<'_>, action: &str) -> String {

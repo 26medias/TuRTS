@@ -1572,22 +1572,9 @@ fn activate_widget(
                     .any(|technology| technology.to_string() == *content_id)
             });
             if accepts {
-                let Some(order) = acquired
-                    .0
-                    .content
-                    .catalog
-                    .orders
-                    .iter()
-                    .find(|(_, order)| {
-                        order.behaviour == turts_mod_api::Behaviour::Produce
-                            && order.target == turts_mod_api::TargetKind::Content
-                            && (order.units.is_empty()
-                                || order
-                                    .units
-                                    .iter()
-                                    .any(|allowed| allowed == &unit.content_id))
-                    })
-                    .map(|(id, _)| id.to_string())
+                let Some(order) =
+                    sources::produce_order(&acquired.0.content, &unit.content_id)
+                        .map(|(id, _)| id.to_string())
                 else {
                     return;
                 };
