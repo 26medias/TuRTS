@@ -36,3 +36,53 @@ test("a HUD click is the click after its button check, and the applied result mu
     assert.equal(appliedAfter([before, { ...after, wall_time_ms: 9000 }], click), null, "a result later than 6 s does not count");
     assert.throws(() => hudClick(input, [before, after], "m2-econ-second"), /did not check the HUD button/);
 });
+
+const { drive } = require("./m2-driver.js");
+const { judge } = require("./m2-oracle.js");
+const { deflateSync } = require("node:zlib");
+
+function blankPng(width = 64, height = 36) {
+    const crcTable = Array.from({ length: 256 }, (_, n) => {
+        let c = n;
+        for (let k = 0; k < 8; k += 1) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+        return c >>> 0;
+    });
+    const crc = (bytes) => { let c = 0xffffffff; for (const b of bytes) c = crcTable[(c ^ b) & 255] ^ (c >>> 8); return (c ^ 0xffffffff) >>> 0; };
+    const chunk = (type, data) => {
+        const head = Buffer.alloc(4); head.writeUInt32BE(data.length);
+        const tail = Buffer.alloc(4); tail.writeUInt32BE(crc(Buffer.concat([Buffer.from(type), data])));
+        return Buffer.concat([head, Buffer.from(type), data, tail]);
+    };
+    const header = Buffer.alloc(13); header.writeUInt32BE(width, 0); header.writeUInt32BE(height, 4); header.set([8, 2, 0, 0, 0], 8);
+    const rows = Buffer.alloc((width * 3 + 1) * height);
+    return Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), chunk("IHDR", header), chunk("IDAT", deflateSync(rows)), chunk("IEND", Buffer.alloc(0))]);
+}
+
+test("a product fault in the M2 driver ends the drive with a record, not a throw", async () => {
+    const saved = [];
+    const io = {
+        use: async () => {}, wait: async () => {}, move: async () => {}, click: async () => { throw new Error("no click expected"); },
+        screenshot: async () => blankPng(1280, 720), save: async (name) => saved.push(name),
+    };
+    await drive(io, { m2: { case_id: "E9-browser-base-economy", package: "base" } });
+    assert.ok(saved.includes("m2-producer-driver-stop.json"), JSON.stringify(saved));
+});
+
+test("a stopped M2 drive gives a semantic failure that names the case", async () => {
+    const joined = {
+        input_call: 0, window: 1, wall_time_ms: 1,
+        scene: { cameras_3d: 1, clip_from_world: Array(16).fill(0), units: [{ unit_id: 1 }],
+            render_adapter: { backend: "BrowserWebGpu", name: "gpu", device_type: "DiscreteGpu" } },
+        debug: { phase: "Joined { slot: 0 }", slot: 0, units: [{ content_id: "base:command_center" }], command_results: [],
+            replicated_world: { tick: 3, belts: [], economy: { balances: [], inventories: [], orders: [], queues: [] }, extractors: [],
+                health_trace: [], healths: [], inserters: [], nodes: [], research: [], unit_orders: [], units: [], weapons: [] } },
+    };
+    const view = {
+        inputLog: () => [{ call: "screenshot" }, { call: "save", args: ["m2-joined.png"] }],
+        serverFile: async (name) => name === "scene-checkpoints.json" ? JSON.stringify([joined])
+            : JSON.stringify({ package: "base", case_id: "E9-browser-base-economy", offset_x: 18, map_relative_path: "maps/flat.ron",
+                packed_after_translation_sha256: "0".repeat(64) }),
+    };
+    await assert.rejects(judge(view, { m2: { case_id: "E9-browser-base-economy", package: "base" } }), (error) =>
+        error instanceof assert.AssertionError && error.task16_semantic?.row === "M2" && error.task16_semantic.clause === "E9-browser-base-economy");
+});

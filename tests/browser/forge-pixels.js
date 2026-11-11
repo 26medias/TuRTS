@@ -46,7 +46,7 @@ async function shot(io, label) {
 // Find the slot-coloured body near the projected seed of a map placement.
 async function findPlacement(io, where, slot, worldPoint, label, radius = 40, attempts = 10) {
     const seed = seedFor(where, worldPoint);
-    if (!seed) throw new Error(`${label}: the map point ${JSON.stringify(worldPoint)} is not in view; pixel target is NOT TRACED`);
+    if (!seed) throw new Error(`${label}: the map point ${JSON.stringify(worldPoint)} is not in the start camera view (instrument literal)`);
     for (let attempt = 0; attempt < attempts; attempt += 1) {
         const { image } = await shot(io, null);
         const found = findPaletteTargetNear(image, slot, seed, radius);
@@ -56,13 +56,20 @@ async function findPlacement(io, where, slot, worldPoint, label, radius = 40, at
         }
         await io.wait(100);
     }
-    throw new Error(`${label}: no slot ${slot} colour near the seed ${JSON.stringify(seed)}; pixel target is NOT TRACED`);
+    await stop(io, label, `no slot ${slot} colour near the seed ${JSON.stringify(seed)}`);
+    return null;
+}
+
+// A product fault (a unit or control not shown) ends the drive with a record, so the oracle
+// gives the semantic failure (MC task 21, H1). A driver throw is for a harness or setup fault only.
+async function stop(io, label, reason) {
+    await io.save(`${label}-driver-stop.json`, Buffer.from(JSON.stringify({ reason }) + "\n"));
 }
 
 // A ground pixel for a map point: the projected seed, moved until it is open ground.
 async function groundNear(io, where, worldPoint, label) {
     const seed = seedFor(where, worldPoint);
-    if (!seed) throw new Error(`${label}: the map point ${JSON.stringify(worldPoint)} is not in view`);
+    if (!seed) throw new Error(`${label}: the map point ${JSON.stringify(worldPoint)} is not in the start camera view (instrument literal)`);
     const { image } = await shot(io, null);
     const bodies = [...readSlotTargets(image, 0), ...readSlotTargets(image, 1)];
     const clear = (x, y) => !bodies.some((body) => {
@@ -80,9 +87,21 @@ async function groundNear(io, where, worldPoint, label) {
         }
     }
     const fallback = findOpenGround(image, bodies);
-    if (!fallback) throw new Error(`${label}: no open ground near ${JSON.stringify(seed)}`);
+    if (!fallback) {
+        await stop(io, label, `no open ground near ${JSON.stringify(seed)}`);
+        return null;
+    }
     await io.save(`${label}-ground.json`, Buffer.from(JSON.stringify({ seed, ground: fallback, fallback: true }) + "\n"));
     return fallback;
+}
+
+// A bounded series of screenshots after an action (the legacy m3.js waited up to 10 s for each
+// result); the oracle uses the first checkpoint of the series that passes.
+async function series(io, label, count = 20, ms = 500) {
+    for (let index = 0; index < count; index += 1) {
+        await shot(io, `${label}-${String(index).padStart(2, "0")}`);
+        if (index + 1 < count) await io.wait(ms);
+    }
 }
 
 async function waitForResearchButton(io, seconds, label) {
@@ -129,6 +148,7 @@ async function setGuide(io, binding, open, label) {
 // "Alt") are the names that the harness io accepts.
 async function pressBinding(io, binding, label) {
     const key = binding?.Key;
+    // params.bindings is setup data: a binding that is not a key is a setup fault.
     if (!key || typeof key.code !== "string") throw new Error(`${label}: the effective binding is not a key: ${JSON.stringify(binding)}`);
     await io.key(key.code, key.mods ?? []);
 }
@@ -145,7 +165,9 @@ module.exports = {
     guideOpen,
     pressBinding,
     seedFor,
+    series,
     setGuide,
     shot,
+    stop,
     waitForResearchButton,
 };

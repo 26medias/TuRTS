@@ -60,7 +60,14 @@ async function unitAt(io, where, slot, point, label) {
         }
         await io.wait(150);
     }
-    throw new Error(`M2 ${label}: no slot ${slot} colour near ${JSON.stringify(seed)}; pixel target is NOT TRACED`);
+    return stop(io, label, `no slot ${slot} colour near ${JSON.stringify(seed)}`);
+}
+
+// A product fault (a unit, node or button not shown) ends the drive with a record, so the oracle
+// gives the semantic failure (MC task 21, H1). A driver throw is for a harness or setup fault only.
+async function stop(io, label, reason) {
+    await io.save(`${label}-driver-stop.json`, Buffer.from(JSON.stringify({ reason }) + "\n"));
+    return null;
 }
 
 // A node has no slot colour. The projected node point must not be the plain ground colour.
@@ -69,7 +76,7 @@ async function nodeAt(io, where, label) {
     const image = decodePng(Buffer.from(await io.screenshot()));
     const pixel = pixelAt(image, seed.x, seed.y);
     if (!pixel || Math.max(pixel[0], pixel[1], pixel[2]) < 24) {
-        throw new Error(`M2 ${label}: the node point ${JSON.stringify(seed)} shows only ground; pixel target is NOT TRACED`);
+        return stop(io, label, `the node point ${JSON.stringify(seed)} shows only ground`);
     }
     await io.save(`${label}-target.json`, Buffer.from(JSON.stringify({ seed, pixel }) + "\n"));
     return seed;
@@ -95,13 +102,18 @@ async function clickButton(io, target, label) {
         await io.wait(150);
     }
     await io.save(`${label}-button.json`, Buffer.from(JSON.stringify({ target, state }) + "\n"));
-    if (state !== "enabled") throw new Error(`M2 ${label}: the HUD button at ${JSON.stringify(target.sample)} is not shown enabled (${state})`);
+    if (state !== "enabled") {
+        await stop(io, label, `the HUD button at ${JSON.stringify(target.sample)} is not shown enabled (${state})`);
+        return false;
+    }
     await io.click(target.x, target.y, "left");
     await io.wait(300);
+    return true;
 }
 
 async function selectAndHover(io, where, point, label) {
     const target = await unitAt(io, where, 0, point, label);
+    if (!target) return null;
     await io.click(target.x, target.y, "left");
     await io.wait(250);
     await shot(io, `${label}-selected`);
@@ -113,10 +125,12 @@ async function selectAndHover(io, where, point, label) {
 
 async function gather(io, where, label, seconds) {
     const worker = await unitAt(io, where, 0, where.map.worker, `${label}-worker`);
+    if (!worker) return false;
     await io.click(worker.x, worker.y, "left");
     await io.wait(250);
     await shot(io, `${label}-worker-selected`);
     const node = await nodeAt(io, where, `${label}-node`);
+    if (!node) return false;
     await io.click(node.x, node.y, "right");
     await io.wait(300);
     await shot(io, `${label}-gather-command`);
@@ -140,21 +154,23 @@ async function drive(io, params) {
             await shot(io, "m2-joined");
             const worker = WORKER_CASES.has(caseId);
             const target = await unitAt(io, where, 0, worker ? where.map.worker : where.map.producer, worker ? "m2-worker" : "m2-producer");
+            if (!target) return;
             await io.click(target.x, target.y, "left");
             await io.wait(250);
             await shot(io, worker ? "m2-worker-selected" : "m2-producer-selected");
         } else if (phase === "produce") {
-            await clickButton(io, BUILD_ROW(0), "m2-loss-produce");
+            if (!await clickButton(io, BUILD_ROW(0), "m2-loss-produce")) return;
             await shot(io, "m2-loss-produce");
         } else if (phase === "show-queue") {
             await shot(io, "m2-loss-queue");
         } else if (phase === "cancel") {
-            await clickButton(io, JOB_CANCEL(0), "m2-loss-cancel");
+            if (!await clickButton(io, JOB_CANCEL(0), "m2-loss-cancel")) return;
             await shot(io, "m2-loss-cancel");
         } else if (phase === "spawn-output") {
             await shot(io, "m2-spawn-output");
         } else if (phase === "gather") {
             const node = await nodeAt(io, where, "m2-node");
+            if (!node) return;
             await io.click(node.x, node.y, "right");
             await io.wait(300);
             await shot(io, "m2-gather-command");
@@ -171,33 +187,34 @@ async function drive(io, params) {
         await shot(io, "m2-owner1-joined");
         if (where.map.foreign) {
             const target = await unitAt(io, where, 1, where.map.foreign, "m2-owner1-unit");
+            if (!target) return;
             await io.click(target.x, target.y, "left");
             await io.wait(250);
             await shot(io, "m2-owner1-selected");
         }
         return;
     }
-    await selectAndHover(io, where, where.map.producer, "m2-producer");
+    if (!await selectAndHover(io, where, where.map.producer, "m2-producer")) return;
     if (caseId === "E9-browser-base-economy") {
         // m2.js: one rifleman completes; a second is cancelled for its refund; the harvester gathers.
-        await clickButton(io, BUILD_ROW(0), "m2-econ-first");
+        if (!await clickButton(io, BUILD_ROW(0), "m2-econ-first")) return;
         await shot(io, "m2-econ-first-queued");
         for (let second = 1; second <= 15; second += 1) {
             await io.wait(1000);
             await shot(io, `m2-econ-output-${String(second).padStart(2, "0")}`);
         }
-        await clickButton(io, BUILD_ROW(0), "m2-econ-second");
+        if (!await clickButton(io, BUILD_ROW(0), "m2-econ-second")) return;
         await shot(io, "m2-econ-second-queued");
-        await clickButton(io, JOB_CANCEL(0), "m2-econ-cancel");
+        if (!await clickButton(io, JOB_CANCEL(0), "m2-econ-cancel")) return;
         await shot(io, "m2-econ-cancelled");
         await gather(io, where, "m2", 15);
     } else if (caseId === "E9-browser-haul-economy" || caseId === "E9-browser-cedar-economy") {
-        await clickButton(io, BUILD_ROW(0), "m2-prod");
+        if (!await clickButton(io, BUILD_ROW(0), "m2-prod")) return;
         await shot(io, "m2-prod-queued");
-        await clickButton(io, JOB_CANCEL(0), "m2-prod-cancel");
+        if (!await clickButton(io, JOB_CANCEL(0), "m2-prod-cancel")) return;
         await shot(io, "m2-prod-cancelled");
         await gather(io, where, "m2", 20);
     }
 }
 
-module.exports = { drive, PACKAGES };
+module.exports = { drive, PACKAGES, BUILD_ROW, JOB_CANCEL };

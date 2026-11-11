@@ -73,6 +73,35 @@ function assertConservation(records) {
     return ticks;
 }
 
+// The checkpoints of the series `<label>-NN` that the driver took after one action, in order.
+function seriesOf(input, checkpoints, label) {
+    return input.filter((entry) => entry.call === "save" && new RegExp(`^${label}-\\d{2}\\.png$`).test(entry.args?.[0] ?? ""))
+        .map((entry) => checkpointForSave(input, checkpoints, entry.args[0], "M3"));
+}
+
+// The first checkpoint of a series that passes, within the bound of the series (m3.js waited
+// up to 10 s for each result).
+function firstPassing(input, checkpoints, label, predicate, message) {
+    const shots = seriesOf(input, checkpoints, label);
+    assert(shots.length > 0, `${message} (no screenshot after the action)`);
+    const found = shots.find(predicate);
+    assert(found, message);
+    return found;
+}
+
+// The click after `<label>-card.png` must land on the card row of `orderId` (ui_snapshot).
+function assertCardClick(input, checkpoints, label, orderId) {
+    const card = checkpointForSave(input, checkpoints, `${label}-card.png`, "M3");
+    const clickIndex = input.findIndex((entry, index) => index > card.screenshotIndex && entry.call === "click");
+    assert(clickIndex > 0, `${label}: no click on the command card`);
+    const [x, y] = input[clickIndex].args;
+    const scale = card.scene.scale_factor || 1;
+    const row = widget(card.debug, (item) => item.kind === "button" && item.id.startsWith("command_rows/") && Array.isArray(item.rect) &&
+        x * scale >= item.rect[0] && x * scale <= item.rect[0] + item.rect[2] && y * scale >= item.rect[1] && y * scale <= item.rect[1] + item.rect[3]);
+    assert(row?.widget_action?.kind === "order" && row.widget_action.id === orderId, `${label}: the click is not on the ${orderId} button of the forge command card`);
+    return card;
+}
+
 async function judge(view) {
     const input = view.inputLog();
     const checkpoints = await readCheckpoints(view);
@@ -83,11 +112,13 @@ async function judge(view) {
     assert.equal(joined.scene.cameras_3d, 1, "forge joined in a real WebGPU browser context");
     assert((joined.debug.units ?? []).some((unit) => unit.content_id.startsWith("forge:")), "forge joined in a real WebGPU browser context");
 
-    const pressShot = at("m3-02-press-two-port-inventory");
-    const press = selectedOwn(pressShot, "forge:press", "owner machine is absent from actual rendered state");
-    const pressLines = inventoryLines(pressShot.debug);
-    assert(portHasCapacity(pressLines, "Main", 6) && portHasCapacity(pressLines, "Output", 4),
-        `actual press panel omitted a labelled port or its catalog capacity: ${pressLines.join("\n")}`);
+    firstPassing(input, checkpoints, "m3-02-press", (shot) => {
+        try {
+            const unit = selectedOwn(shot, "forge:press", "press");
+            const lines = inventoryLines(shot.debug);
+            return unit && portHasCapacity(lines, "Main", 6) && portHasCapacity(lines, "Output", 4);
+        } catch { return false; }
+    }, "actual rendered press panel shows Main and Output inventory capacity");
 
     const ready = at("m3-03-lab-research-ready");
     const lab = selectedOwn(ready, "forge:lab", "owner research station is absent from actual rendered state");
@@ -97,35 +128,32 @@ async function judge(view) {
         row.widget_action?.content_id === "forge:hardened_shells");
     assert(shells && shells.on_hand - shells.reserved >= 10 && control, "replica inventory and visible enabled research control");
 
-    const researched = at("m3-04-research-applied");
-    const researchResults = appliedAfter(researched.debug, maxSeq(ready.debug));
-    assert(researchResults.length >= 1 && labQueue(researched.debug, lab.unit_id)?.jobs?.some((job) => job.recipe === "forge:hardened_shells"),
-        "research command Acked, Applied and present in replicated queue");
+    firstPassing(input, checkpoints, "m3-04-research", (shot) => appliedAfter(shot.debug, maxSeq(ready.debug)).length >= 1 &&
+        labQueue(shot.debug, lab.unit_id)?.jobs?.some((job) => job.recipe === "forge:hardened_shells"),
+    "research command Acked, Applied and present in replicated queue");
 
-    const disabled = at("m3-05-lab-disabled");
-    assert(appliedAfter(disabled.debug, maxSeq(researched.debug)).length >= 1 && labQueue(disabled.debug, lab.unit_id)?.enabled === false,
-        "SetEnabled control Acked and Applied with disabled replica state");
-    const enabled = at("m3-06-lab-enabled");
-    assert(appliedAfter(enabled.debug, maxSeq(disabled.debug)).length >= 1 && labQueue(enabled.debug, lab.unit_id)?.enabled === true,
-        "SetEnabled(true) Applied with the enabled replica state");
+    const disableCard = assertCardClick(input, checkpoints, "m3-05-disable", "forge:order_disable");
+    firstPassing(input, checkpoints, "m3-05-disabled", (shot) => appliedAfter(shot.debug, maxSeq(disableCard.debug)).length >= 1 &&
+        labQueue(shot.debug, lab.unit_id)?.enabled === false, "SetEnabled control Acked and Applied with disabled replica state");
+    const enableCard = assertCardClick(input, checkpoints, "m3-06-enable", "forge:order_enable");
+    firstPassing(input, checkpoints, "m3-06-enabled", (shot) => appliedAfter(shot.debug, maxSeq(enableCard.debug)).length >= 1 &&
+        labQueue(shot.debug, lab.unit_id)?.enabled === true, "SetEnabled(true) Applied with the enabled replica state");
 
-    const beltShot = at("m3-07-belt-selected");
-    const belts = beltShot.debug.replicated_world.belts ?? [];
-    assert(belts.length > 0, "replica has no belt piece to remove");
-    const piece = beltShot.debug.selection?.[0];
-    assert(beltShot.debug.selection?.length === 1 && belts.some((belt) => belt.piece === piece),
-        "belt piece selected from rendered scene");
+    const beltShot = firstPassing(input, checkpoints, "m3-07-belt", (shot) => shot.debug.selection?.length === 1 &&
+        (shot.debug.replicated_world.belts ?? []).some((belt) => belt.piece === shot.debug.selection[0]), "belt piece selected from rendered scene");
+    const piece = beltShot.debug.selection[0];
     assert(beltShot.scene.units.some((unit) => unit.unit_id === piece), "belt piece has no actual rendered mesh");
-    const removed = at("m3-08-belt-removed");
-    assert(appliedAfter(removed.debug, maxSeq(beltShot.debug)).length >= 1 &&
-        !(removed.debug.replicated_world.units ?? []).some((unit) => unit.unit_id === piece),
+    const removeCard = assertCardClick(input, checkpoints, "m3-08-remove", "forge:order_remove");
+    firstPassing(input, checkpoints, "m3-08-removed", (shot) => appliedAfter(shot.debug, maxSeq(removeCard.debug)).length >= 1 &&
+        !(shot.debug.replicated_world.units ?? []).some((unit) => unit.unit_id === piece),
     "Remove control Acked and Applied with belt removed from replica");
 
-    const droneShot = at("m3-10-drone-selected");
-    assert.equal(droneShot.window, 2, "the drone order must come from the second window");
+    const droneShot = firstPassing(input, checkpoints, "m3-10-drone", (shot) => {
+        try { return shot.window === 2 && selectedOwn(shot, "forge:drone", "drone"); } catch { return false; }
+    }, "the drone window must select its own drone");
     const drone = selectedOwn(droneShot, "forge:drone", "the drone window must select its own drone");
-    const ordered = at("m3-11-drone-ordered");
-    assert(appliedAfter(ordered.debug, maxSeq(droneShot.debug)).length >= 1, "the drone move into range must be applied");
+    firstPassing(input, checkpoints, "m3-11-drone-order", (shot) => appliedAfter(shot.debug, maxSeq(droneShot.debug)).length >= 1,
+        "the drone move into range must be applied");
     const orderTick = droneShot.debug.replicated_world.tick;
     const track = unitTrack(await view.serverFile("server-tick.log"), drone.unit_id).filter((point) => point.tick > orderTick);
     assert(track.some((point) => Math.hypot(point.x - TURRET.x, point.y - TURRET.y) <= TURRET.range),
@@ -135,4 +163,4 @@ async function judge(view) {
     assertConservation(records);
 }
 
-module.exports = { judge, assertConservation, portHasCapacity };
+module.exports = { judge, assertConservation, firstPassing, portHasCapacity };

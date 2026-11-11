@@ -383,5 +383,39 @@ class RefutationRunnerTests(unittest.TestCase):
                 self.assertEqual(source.stat().st_mtime_ns, restored_mtime)
 
 
+class M2BrowserMarkerTests(unittest.TestCase):
+    """MC task 21 (H1): a product fault on the harness path gives a semantic case marker."""
+
+    def markers(self, harness_log, status):
+        import re
+        import sys
+
+        source = (refutations.ROOT / "scripts/m2-browser.sh").read_text()
+        block = re.search(r"<<'PYMARKERS'\n([\s\S]*?)\nPYMARKERS", source).group(1)
+        with tempfile.TemporaryDirectory() as temp:
+            log = Path(temp) / "harness.log"
+            log.write_text(harness_log)
+            return subprocess.run(
+                [sys.executable, "-c", block, str(log), "E9-browser-base-economy", str(status)],
+                capture_output=True, text=True, check=True,
+            ).stdout
+
+    def test_semantic_oracle_failure_becomes_a_semantic_marker_with_the_expected_text(self):
+        registry = json.loads((refutations.ROOT / "tests/m2/refutations.json").read_text())
+        case = next(item for item in registry if item["id"] == "E9-browser-missing-button")
+        output = self.markers(
+            "FAIL nothing else\nSEMANTIC FAIL M2.E9-browser-base-economy: " + case["expected_failure"] + "\n", 1)
+        self.assertIn("M2_CASE_SEMANTIC_FAIL E9-browser-base-economy", output)
+        selected, passed, failed, failures = refutations.browser_summary(output, case)
+        self.assertEqual((selected, passed, failed), (1, 0, 1))
+        self.assertIn(case["expected_failure"], failures[0][1])
+
+    def test_a_driver_throw_stays_an_infrastructure_marker(self):
+        output = self.markers("FAIL m2-oracle.js: M2 driver has no map literals for package x\n", 1)
+        self.assertIn("M2_CASE_INFRA_FAIL E9-browser-base-economy", output)
+        with self.assertRaises(ValueError):
+            refutations.browser_summary(output, {"id": "x", "browser_case_ids": ["E9-browser-base-economy"], "expected_selected": 1})
+
+
 if __name__ == "__main__":
     unittest.main()

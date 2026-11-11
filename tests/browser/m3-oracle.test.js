@@ -27,3 +27,13 @@ test("the press panel line check needs the port name and its catalog capacity", 
     assert.equal(portHasCapacity(lines, "Output", 6), false);
     assert.equal(portHasCapacity(["Main inventory 0 available (capacity 6)"], "Main", 6), false);
 });
+
+const { firstPassing } = require("./m3-oracle.js");
+
+test("an M3 check passes on the first passing screenshot of its series and fails when none passes", () => {
+    const input = [{ call: "screenshot" }, { call: "save", args: ["m3-x-00.png"] }, { call: "screenshot" }, { call: "save", args: ["m3-x-01.png"] }];
+    const checkpoints = [{ input_call: 0, window: 1, scene: {}, debug: { done: false } }, { input_call: 2, window: 1, scene: {}, debug: { done: true } }];
+    assert.equal(firstPassing(input, checkpoints, "m3-x", (shot) => shot.debug.done, "late result").input_call, 2);
+    assert.throws(() => firstPassing(input, checkpoints, "m3-x", () => false, "no result"), /no result/);
+    assert.throws(() => firstPassing(input, checkpoints, "m3-y", () => true, "no series"), /no screenshot after the action/);
+});
