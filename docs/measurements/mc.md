@@ -86,39 +86,67 @@ not attributed.
 | Whole economy log for 420 ticks | 6,464,387,050 bytes | - |
 
 The whole log is not the sum of these figures: each record also carries the full prior and
-published audit state (catalog, ledger, units and the rest). No budget applies.
+published audit state (catalog, ledger, units and the rest). Recorded, not judged: no budget
+applies. Cost item for the performance-architect: the whole log is 6.46 GB for 420 ticks (about
+15.4 MB per tick), so a long match with `--economy-log` on needs a size decision.
 
 ## GMU and GMA `Blocked` counts
 
-Status: NOT MEASURED. Every value marked `NOT MEASURED` below is a placeholder. The runtime run
-of Task 22 fills it from the real logs and replaces the marker. Until then this section claims
-no figure.
+Measured 2026-11-11 on commit `fd057b7ccb18afddf5d52eefbeea04a6cdb6c842` (RUN122) and repeated
+on commit `145df1e5a3917e1b678b5fb959cbbe164bfe742c` (label `t22-run122-h2-plan-native`, exit 0)
+with the same 13 record lines. These are
+counts from a deterministic fixed-tick simulation, not timings, so the parallel Task 21 build
+on the same host does not change them.
 
 Rule: design revision 15 (ruling O14). A unit whose slot is behind a resting group of another
 envelope can stop `Blocked` with a reachable target (6.5). These counts are recorded and not
-gated. M4b (push, chokes) owns this limit, and its exit rows gate the `muster` reinforcement case
-at 0 `Blocked`.
+gated, except where the table says "gated". M4b (push, chokes) owns this limit, and its exit rows
+gate the `muster` reinforcement case at 0 `Blocked`.
 
-Method: `cargo test --release -p turts_server --test mc_group --locked -- --ignored --nocapture`
-on `muster` (map `field`, 64 x 48; trooper radius 0.5, speed 3; 20 Hz) with the fixed-tick
-`--command-script` hook. The count comes from the `Blocked` lines of `--order-log`; the rest
-position comes from the tick log at the end tick. The tests print one line
-`GMU record case=... blocked_count=...` and one line `GMU record case=... blocked unit_id=...`
-for each `Blocked` unit. GMA prints `GMA ... blocked transition ids`. The native slot check
-(`cargo test --release -p turts_sim --test gmu_same_point --locked -- --nocapture`) prints the
-nearest slot distance and its own count.
+Method: `cargo test --release -p turts_server --test mc_group --test det1 --test el1 --locked --
+--ignored --nocapture` (runner label `t22-run122-plan-native`, exit 0, raw log SHA-256
+`f527ee302a4133df755cc94b0ff31e26c4a586d269f62003429626cf9af325f6`) on `muster` (map `field`,
+64 x 48; trooper radius 0.5, speed 3; 20 Hz) with the fixed-tick `--command-script` hook. The
+count comes from the `Blocked` lines of `--order-log`; the rest position comes from the tick log
+at the end tick. The GMU tests print `GMU record case=...` lines; for GMA the positions come from
+the same run's tick log at the end tick (copies and hashes in
+`target/mc-evidence/t22-run122/records/`). The native slot check is
+`cargo test --release -p turts_sim --test gmu_same_point --locked -- --nocapture` (label
+`t22-run122-gmu-slot-release`, exit 0, raw log SHA-256
+`67c96473e5c5699a569d5f8335e91cfd16a3858dcadf09baaec7a8f50046ace7`).
 
-Build: `NOT MEASURED` (commit, machine and runner label of the runtime run).
+Machine: the development host of "Tick cost" above (Intel Core i9-14900K, Ubuntu 24.04.5 LTS,
+Linux 7.0.0-42-generic, rustc 1.99.1, Bevy 0.20.0, release profile).
 
-| Case | Points and orders | End tick | `Blocked` units | Rest position of each (unit id, x, y, distance to the point) |
-| --- | --- | ---: | --- | --- |
-| GMU same point, first order (gated at 0) | troopers 21 to 40 to (40, 30) at tick 1 | 700 | `NOT MEASURED` | `NOT MEASURED` |
-| GMU same point, second order | troopers 1 to 20 to (40, 30) at tick 300 | 700 | `NOT MEASURED` | `NOT MEASURED` |
-| GMU clamped corner, first order | troopers 1 to 20 to (70, 55), clamped to (63.5, 47.5), at tick 1 | 1300 | `NOT MEASURED` | `NOT MEASURED` |
-| GMU clamped corner, second order | troopers 21 to 40 to (70, 55) at tick 300 | 1300 | `NOT MEASURED` | `NOT MEASURED` |
-| GMA crossing | troopers 1 to 20 to (29, 35) at tick 1; troopers 21 to 40 to (50, 22) at tick 20 | 600 | `NOT MEASURED` | `NOT MEASURED` |
-| GMA case I | troopers 21 to 40 to (29, 35) at tick 1; troopers 1 to 20 to (29, 44) at tick 240 | 700 | `NOT MEASURED` | `NOT MEASURED` |
-| GMU native slot check | the GMU same-point orders, native run | 700 | `NOT MEASURED` | nearest slot distance: `NOT MEASURED` |
+| Case | Points and orders | End tick | `Blocked` units | Rest position of each (unit id, tick, x, y, distance to the point) |
+| --- | --- | ---: | ---: | --- |
+| GMU same point, first order (gated at 0) | troopers 21 to 40 to (40, 30) at tick 1 | 700 | 0 | - |
+| GMU same point, second order | troopers 1 to 20 to (40, 30) at tick 300 | 700 | 1 of 20 | 19, tick 599, (37.837635, 28.188488), 2.821 |
+| GMU clamped corner, first order | troopers 1 to 20 to (70, 55), clamped to (63.5, 47.5), at tick 1 | 1300 | 1 of 20 | 18, tick 179, (28.404446, 20.295242), 44.405 |
+| GMU clamped corner, second order | troopers 21 to 40 to (70, 55) at tick 300 | 1300 | 3 of 20 | 22, tick 587, (53.183846, 34.621994), 16.500; 40, tick 706, (60.22587, 45.695618), 3.738; 39, tick 745, (62.487587, 45.776867), 1.999 |
+| GMA crossing | troopers 1 to 20 to (29, 35) at tick 1; troopers 21 to 40 to (50, 22) at tick 20 | 600 | 0 of 40 | - |
+| GMA case I | troopers 21 to 40 to (29, 35) at tick 1; troopers 1 to 20 to (29, 44) at tick 240 | 700 | 3 of 20 (second order) | 18, tick 487, (27.390099, 32.234398), 11.875; 4, tick 525, (28.49244, 32.233013), 11.778; 5, tick 532, (29.586084, 32.23679), 11.778 (distances to (29, 44)) |
+| GMU native slot check | the GMU same-point orders, native run | 700 | 1 of 20 (second order) | 19 at (37.837635, 28.188488), 2.8208861. Nearest slot distance 1.0999985 (bound s - 0.00001 = 1.09999; gated) |
 
-In the clamped corner, the path of the first order crosses the idle rows 21 to 40, which stand
-at spacing s and do not move for it (6.4). So that first order is not the gated same-point case.
+The native run gives the same `Blocked` unit and the same rest position as the process run.
+
+GMU same-point deadline (gated): unit 19 starts at (27.2, 20.2), d = 16.12 to (40, 30), so its
+deadline is tick 300 + ceil(2 x (16.12 / 3) x 20) + 100 = 615. It stops `Blocked` at tick 599:
+a margin of 16 ticks (0.8 s).
+
+Clamped corner (recorded only). The second order starts at tick 300, before the first order
+rests: the first order reaches `Done` from tick 288 to tick 412 (unit 18 stops `Blocked` at
+tick 179). The cause of each `Blocked` unit, from the RUN122 tick log at its `Blocked` tick
+(`target/mc-evidence/t22-run122/records/`):
+
+| Unit | Order | `Blocked` tick | Contact at that tick (distance between centres) | Cause |
+| ---: | --- | ---: | --- | --- |
+| 18 | first | 179 | idle troopers 21 (1.000) and 28 (1.010) of the second order | idle rows on its route; idle units do not move for others (6.4) |
+| 22 | second | 587 | slot-1 dummies at (54, 35.2) (1.000) and (54, 34) (1.026), alive at that tick | idle obstacle on its route (6.4), not a slot behind the resting group |
+| 40 | second | 706 | resting first-order troopers 4 (1.000) and 12 (1.028) | a slot behind the resting group (6.5) |
+| 39 | second | 745 | resting first-order troopers 14 (1.000) and 8 (1.029) | a slot behind the resting group (6.5) |
+
+During the run the authored trooper weapons destroy slot-1 units in range: the post at
+(61, 44) after tick 355, the dummies at (54, 35.2) after tick 727 and at (54, 34) after tick
+887. So the obstacles of the corner change during the run. Unit 22 rests 16.5 from the point,
+outside R_near; R_near is not gated in the corner case.
