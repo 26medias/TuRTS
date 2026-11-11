@@ -16,6 +16,10 @@ export CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0
 cd "$ROOT"
 OUT="${M3_T7_OUT:-${ROOT}/target/m3-evidence/t16-builder/t7/run-$(date -u +%Y%m%dT%H%M%SZ)-$$}"
 DIST="$ROOT/crates/turts_client_web/dist"
+# The harness launches CHROME_BIN (tests/browser/harness/run.js); t7.js used /usr/bin/google-chrome.
+CHROME_BIN="${CHROME_BIN:-$(command -v google-chrome || command -v chromium || true)}"
+if [[ -z "$CHROME_BIN" || ! -x "$CHROME_BIN" ]]; then echo "Chrome binary unavailable; set CHROME_BIN" >&2; exit 1; fi
+export CHROME_BIN
 
 cargo build --release -p turts_server
 (cd crates/turts_client_web && trunk build --release)
@@ -112,7 +116,7 @@ else
     "${T7_COMMAND[@]}" | tee "$OUT/browser.log"
 fi
 # The segment oracle reads frames.jsonl and result.json, made from the harness checkpoints.
-node tests/browser/t7-frames.js "$OUT"
+node tests/browser/t7-frames.js "$OUT" "$("$CHROME_BIN" --version)"
 
 # The oracle reads the two logs while the server still runs: it needs a tick after the last
 # frame. T7_DIR names the folder of the logs.

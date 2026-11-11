@@ -8,19 +8,28 @@
 const { decodePng } = require("./harness/png.js");
 const { findScout, findGround, isVisibleGround } = require("./harness/click9-pixels.js");
 
-const FIND_ATTEMPTS = 80;
-const FIND_WAIT_MS = 100;
-// The harness keeps at most 256 checkpoints; the driver uses at most 200 for the move.
-const MAX_MOVE_SHOTS = 200;
+const FIND_ATTEMPTS = 40;
+const FIND_WAIT_MS = 200;
+// The harness keeps at most 256 checkpoints (harness/scene-checkpoints.js); the driver takes at
+// most 250 screenshots in all: the find shots, one selected shot, and the move shots.
+const SHOT_BUDGET = 250;
 const SHOT_WAIT_MS = 40;
 // The unit is at rest when its pixel bounds do not change for this many screenshots in a row.
 const REST_SHOTS = 12;
 const MIN_MOVE_SHOTS = 20;
 
+// A product fault (no unit in view, a covered ground pixel) ends the drive with a record, so the
+// oracle gives the semantic failure; a driver throw is for a harness fault only.
+async function stop(io, reason) {
+    await io.save("t7-driver-stop.json", Buffer.from(JSON.stringify({ reason }) + "\n"));
+}
+
 async function drive(io) {
     let targets = null;
+    let shots = 0;
     for (let attempt = 0; attempt < FIND_ATTEMPTS && !targets; attempt += 1) {
         const shot = await io.screenshot();
+        shots += 1;
         const image = decodePng(shot);
         const unit = findScout(image);
         const ground = findGround(image);
@@ -31,7 +40,7 @@ async function drive(io) {
             await io.wait(FIND_WAIT_MS);
         }
     }
-    if (!targets) throw new Error("T7 could not find the unit colour and an open ground pixel at least 120 px apart in the screenshot");
+    if (!targets) return stop(io, "no unit colour and open ground pixel at least 120 px apart in the screenshot");
     await io.save("t7-pixel-targets.json", Buffer.from(JSON.stringify({
         ...targets,
         method: "one connected unit-colour component and one ground-colour pixel, from screenshot pixels only",
@@ -40,26 +49,27 @@ async function drive(io) {
     await io.click(targets.unit.x, targets.unit.y, "left");
     await io.wait(150);
     const selected = await io.screenshot();
+    shots += 1;
     await io.save("t7-01-selected.png", selected);
-    if (!isVisibleGround(decodePng(selected), targets.ground)) throw new Error("T7 ground pixel is covered after the selection");
+    if (!isVisibleGround(decodePng(selected), targets.ground)) return stop(io, "the ground pixel is covered after the selection");
 
     await io.click(targets.ground.x, targets.ground.y, "right");
     let last = null;
     let still = 0;
-    let shots = 0;
-    for (; shots < MAX_MOVE_SHOTS; shots += 1) {
+    let moveShots = 0;
+    for (; shots < SHOT_BUDGET; shots += 1, moveShots += 1) {
         const shot = await io.screenshot();
         const unit = findScout(decodePng(shot));
         const bounds = unit ? unit.bounds.join(",") : null;
         still = bounds !== null && bounds === last ? still + 1 : 0;
         last = bounds;
-        if (shots >= MIN_MOVE_SHOTS && still >= REST_SHOTS) {
+        if (moveShots >= MIN_MOVE_SHOTS && still >= REST_SHOTS) {
             await io.save("t7-02-at-rest.png", shot);
             break;
         }
         await io.wait(SHOT_WAIT_MS);
     }
-    await io.save("t7-move-shots.json", Buffer.from(JSON.stringify({ shots: shots + 1, rest_shots: still }) + "\n"));
+    await io.save("t7-move-shots.json", Buffer.from(JSON.stringify({ move_shots: moveShots + 1, all_shots: shots + 1, rest_shots: still }) + "\n"));
 }
 
 module.exports = { drive };

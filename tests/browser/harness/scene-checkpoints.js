@@ -12,6 +12,10 @@ function createSceneCheckpoints(pages, limit = 256, documentEpochs = null) {
             documentEpochs[metadata.window - 1] !== metadata.document_epoch)) throw new Error("invalid scene checkpoint document identity");
         if (rows.length >= limit) throw new Error("scene checkpoint limit exceeded");
         const raw = await pages[metadata.window - 1].evaluate(() => ({
+            // The page clock of this read (the legacy t7.js poll read it in the same call), so a
+            // consumer gets a time that is not earlier than the frame it observes.
+            page_time_ms: typeof performance === "object" ? performance.timeOrigin + performance.now() : null,
+            client_error: window.turts_error || null,
             scene: typeof window.turts_scene === "function" ? window.turts_scene() : null,
             debug: typeof window.turts_debug === "function" ? window.turts_debug() : null,
             browser: (() => {
@@ -38,7 +42,11 @@ function createSceneCheckpoints(pages, limit = 256, documentEpochs = null) {
             if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error(`missing ${name} checkpoint bridge`);
             return parsed;
         };
-        rows.push({ ...metadata, ...(documentEpochs ? { document_epoch: documentEpochs[metadata.window - 1] } : {}), scene: parse(raw.scene, "scene"), debug: parse(raw.debug, "debug"), browser: parse(raw.browser, "browser") });
+        // A client error during the run stops it, as the legacy t7.js poll did (MC task 21, M4).
+        if (raw.client_error) throw new Error(`browser client failed: ${raw.client_error}`);
+        rows.push({ ...metadata, ...(documentEpochs ? { document_epoch: documentEpochs[metadata.window - 1] } : {}),
+            page_time_ms: Number.isFinite(raw.page_time_ms) ? raw.page_time_ms : null,
+            scene: parse(raw.scene, "scene"), debug: parse(raw.debug, "debug"), browser: parse(raw.browser, "browser") });
     }
     return { record, snapshots: () => structuredClone(rows) };
 }

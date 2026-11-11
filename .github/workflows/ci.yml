@@ -105,7 +105,7 @@ jobs:
         run: npm ci
         working-directory: tests/browser
       - name: Browser projection and audit helper tests
-        run: node --test tests/browser/m2-projection.test.js tests/browser/m2-audit.test.js tests/browser/t7-launch-options.test.js tests/browser/t7-oracle.test.js tests/browser/m3-oracle.test.js tests/browser/pt1-oracle.test.js tests/browser/m2-oracle.test.js
+        run: node --test tests/browser/m2-projection.test.js tests/browser/m2-audit.test.js tests/browser/t7-oracle.test.js tests/browser/t7-driver.test.js tests/browser/m3-oracle.test.js tests/browser/pt1-oracle.test.js tests/browser/m2-oracle.test.js
       - name: T7 browser join
         env:
           M2_HEADLESS: "false"

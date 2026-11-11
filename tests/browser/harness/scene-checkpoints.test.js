@@ -24,7 +24,8 @@ function page(identity) {
         turts_debug: () => JSON.stringify(state.debug),
         get turts_move() { throw new Error("a checkpoint must never access the order bridge"); },
     };
-    return { state, canvas, document, evaluate: async (fn) => vm.runInNewContext(`(${fn.toString()})()`, { window, document }) };
+    const performance = { timeOrigin: 1000, now: () => 5 };
+    return { state, canvas, window, document, evaluate: async (fn) => vm.runInNewContext(`(${fn.toString()})()`, { window, document, performance }) };
 }
 
 const metadata = (window = 1, input_call = 0) => ({ window, input_call, wall_time_ms: 123 });
@@ -39,6 +40,7 @@ test("scene checkpoints read the selected page and retain each stage independent
     const rows = checkpoints.snapshots();
     assert.deepEqual(rows[0], {
         ...metadata(2, 7),
+        page_time_ms: 1005,
         scene: { clip_from_world: [2, 0, 0, 1] },
         debug: { selection: [2] },
         browser: {
@@ -88,5 +90,15 @@ test("checkpoint identity and storage bound reject invalid observations", async 
     }
     await checkpoints.record(metadata());
     await assert.rejects(checkpoints.record(metadata(1, 1)), /limit/);
+    assert.equal(checkpoints.snapshots().length, 1);
+});
+
+test("a checkpoint reads the page clock in the bridge read and stops on a client error", async () => {
+    const observed = page(4);
+    const checkpoints = createSceneCheckpoints([observed]);
+    await checkpoints.record(metadata());
+    assert.equal(checkpoints.snapshots()[0].page_time_ms, 1005, "the time comes from the same evaluate as the debug read");
+    observed.window.turts_error = "panic in frame";
+    await assert.rejects(checkpoints.record(metadata(1, 1)), /browser client failed: panic in frame/);
     assert.equal(checkpoints.snapshots().length, 1);
 });

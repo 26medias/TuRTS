@@ -10,6 +10,7 @@ function checkpoint(inputCall, x, extra = {}) {
         input_call: inputCall,
         window: 1,
         wall_time_ms: 1000 + inputCall,
+        page_time_ms: 5000 + inputCall,
         debug: {
             phase: "Joined { slot: 0 }",
             last_frame: { t: inputCall, lo_tick: 1, hi_tick: 2, fraction: 0.5, latest_tick: 2 },
@@ -42,4 +43,11 @@ test("the scene check goes red on two cameras, a second entity, or an off-positi
     const out = t7FramesFromCheckpoints([good, checkpoint(1, 5, { scene: { cameras_3d: 0 } })]);
     assert.equal(out.result.scene_checked, 1);
     assert.match(out.sceneFailure, /checkpoint 1/);
+});
+
+test("frames.jsonl takes at_ms from the page clock of the bridge read, never the earlier screenshot time", () => {
+    const shot = checkpoint(0, 4);
+    const line = JSON.parse(t7FramesFromCheckpoints([shot]).frames[0]);
+    assert.equal(line.at_ms, 5000, "at_ms is page_time_ms, not wall_time_ms");
+    assert.throws(() => t7FramesFromCheckpoints([{ ...shot, page_time_ms: undefined }]), /no browser clock/);
 });

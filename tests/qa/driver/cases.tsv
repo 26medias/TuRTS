@@ -37,7 +37,6 @@ file	index-ok.js	-
 file	m2-audit-copy.js	-
 file	var-key.js	-
 file	../../browser/m2-audit.js	-
-file	../../browser/t7-launch-options.js	-
 dir-default	../../browser	-
 file	eval-alias.js	DR2,A2
 file	literal-bridge.js	DR2,A1

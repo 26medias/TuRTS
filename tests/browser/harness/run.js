@@ -355,6 +355,12 @@ async function run(options) {
                 outDir: options.outDir, runError: null });
             if (report.status !== "complete") throw new Error(`HARNESS preboot fixture ${prebootFixture.id} receipt invalid: ${report.errors.join("; ")}`);
         }
+        // The boot check (above) runs once; a client error later in the run also stops it, as the
+        // legacy t7.js poll did at each read (MC task 21, M4). Checkpoints check it at each screenshot.
+        for (const [index, page] of pages.entries()) {
+            const clientError = await page.evaluate(() => window.turts_error || null);
+            if (clientError) throw new Error(`browser client failed in window ${index + 1}: ${clientError}`);
+        }
         await oracle.judge(view, params);
         console.log(`PASS ${path.basename(options.oraclePath)}`);
     } catch (error) {

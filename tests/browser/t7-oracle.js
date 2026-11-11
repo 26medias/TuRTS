@@ -35,8 +35,9 @@ function sceneProblem(debug, scene) {
 }
 
 // One frames.jsonl line per checkpoint with a new debug record (the legacy poll recorded each
-// distinct debug string once). `at_ms` is the harness wall time after the screenshot, so it is
-// later than the frame: the lag that the Rust oracle works out stays an upper bound.
+// distinct debug string once). `at_ms` is the page clock that the checkpoint read in the same
+// evaluate as the debug record (harness/scene-checkpoints.js), as t7.js:133-137 did, so it is not
+// earlier than the frame: the lag that the Rust oracle works out stays an upper bound.
 function t7FramesFromCheckpoints(checkpoints) {
     const frames = [];
     let previous = null;
@@ -48,7 +49,10 @@ function t7FramesFromCheckpoints(checkpoints) {
         const text = JSON.stringify(debug);
         if (text === previous || !debug?.last_frame || !Array.isArray(debug.units) || debug.units.length === 0) continue;
         previous = text;
-        frames.push(JSON.stringify({ at_ms: checkpoint.wall_time_ms, last_frame: debug.last_frame, units: debug.units, scene: checkpoint.scene }));
+        if (!Number.isFinite(checkpoint.page_time_ms)) {
+            throw new Error(`checkpoint ${checkpoint.input_call} has no browser clock (page_time_ms); the frame time is NOT TRACED`);
+        }
+        frames.push(JSON.stringify({ at_ms: checkpoint.page_time_ms, last_frame: debug.last_frame, units: debug.units, scene: checkpoint.scene }));
         const problem = sceneProblem(debug, checkpoint.scene);
         if (problem === null) sceneChecked += 1;
         else if (sceneFailure === null) sceneFailure = `checkpoint ${checkpoint.input_call}: ${problem}`;
