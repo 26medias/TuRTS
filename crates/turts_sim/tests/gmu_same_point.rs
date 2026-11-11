@@ -16,8 +16,8 @@ use turts_mod_api::{ContentId, OrderDef, PackageId, SourceDef};
 use turts_mod_runtime::{archive::PackageArchive, pack::pack_dir};
 use turts_sim::movement::{MoveProgress, MovementPools};
 use turts_sim::{
-    Command, CommandKind, CommandQueue, OrderCommand, OrderTargetSim, Position, QueueMode,
-    RejectReason, SlotId, Tick, UnitId, UnitOrders, Vec2, headless_app, install_package,
+    Command, CommandKind, CommandQueue, MoveTarget, OrderCommand, OrderTargetSim, Position,
+    QueueMode, RejectReason, SlotId, Tick, UnitId, UnitOrders, Vec2, headless_app, install_package,
     stage_package,
 };
 
@@ -194,6 +194,23 @@ fn gmu_second_order_slots_keep_s_from_the_slots_of_the_resting_first_order() {
         "every first-order trooper exists before the second order"
     );
     let first_pools: BTreeSet<u64> = first_slots.values().filter_map(|(pool, _)| *pool).collect();
+    // At rest a unit holds no `MoveProgress` and no `MoveTarget`, and dispatch reserves its
+    // position (`orders.rs:1703-1715`). So the first-order slots below are the rest positions.
+    assert!(
+        first_pools.is_empty(),
+        "the first order must rest before the second order: units still hold pools {first_pools:?}"
+    );
+    let first_moving: Vec<u32> = app
+        .world_mut()
+        .query::<(&UnitId, &MoveTarget)>()
+        .iter(app.world())
+        .filter(|(id, _)| first.contains(&id.0))
+        .map(|(id, _)| id.0)
+        .collect();
+    assert!(
+        first_moving.is_empty(),
+        "the first order must rest before the second order: units still move {first_moving:?}"
+    );
 
     // The update that reaches the second-order tick drains and spreads the second order.
     step(app, &script);
@@ -209,10 +226,6 @@ fn gmu_second_order_slots_keep_s_from_the_slots_of_the_resting_first_order() {
         second_pools.len(),
         1,
         "the second order spreads into one pool: {second_pools:?}"
-    );
-    assert!(
-        first_pools.is_disjoint(&second_pools),
-        "the second order has a pool of its own: first {first_pools:?}, second {second_pools:?}"
     );
     let pool_id = *second_pools.iter().next().unwrap();
     let (pool_point, pool_spacing, primary_count, pool_slots) = {

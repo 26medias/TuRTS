@@ -212,6 +212,23 @@ fn gma_crossing_and_second_group_while_first_moves_leave_no_rest_overlap() {
     let right = id_set(&second);
     let all = left.union(&right).copied().collect::<BTreeSet<_>>();
     mc::assert_full_tick_coverage(&positions, 400, &all);
+    // Guard: the idle phase is the only part where "avoidance off" can go red (see above). A
+    // fixture change that removes it must fail here, not hide the red path.
+    assert!(
+        mc::moving_units_between(&positions, &right, 1, 19).is_empty(),
+        "GMA crossing guard: the second group must stay idle in ticks 1 to 19"
+    );
+    let crossing_ticks = mc::by_tick(&positions);
+    assert!(
+        (2..=19).any(|tick| moving_unit_near_group(
+            crossing_ticks.get(&(tick - 1)).unwrap(),
+            crossing_ticks.get(&tick).unwrap(),
+            &left,
+            &right,
+            1.05
+        )),
+        "GMA crossing guard: a moving first-group unit must come within 1.05 of the idle second group in ticks 2 to 19"
+    );
     assert_moving_transitions(&orders, &left, "GMA crossing first group");
     assert_moving_transitions(&orders, &right, "GMA crossing second group");
     let left_motion = mc::moving_units_between(&positions, &left, 1, 600);
@@ -391,11 +408,15 @@ fn gmu_second_order_to_the_same_point_rests_disjoint_within_r_near() {
     record_blocked_units("open-ground", &orders, &right, rest, target, END_TICK);
 }
 
-/// Row GMU, same point at the clamped corner: recorded only, gates overlaps only. Both orders go
-/// to (70, 55), clamped to (63.5, 47.5): troopers 1 to 20 at tick 1, troopers 21 to 40 at tick
-/// 300. The first order is not the gated same-point case: its path to the north-east crosses the
-/// idle rows 21 to 40, which stand at spacing s and do not move for it (6.4), so it can record
-/// `Blocked` units of its own.
+/// Row GMU, same point at the clamped corner: recorded only; it gates rest and overlaps only.
+/// Both orders go to (70, 55), clamped to (63.5, 47.5): troopers 1 to 20 at tick 1, troopers 21
+/// to 40 at tick 300. The second order starts before the first order rests (RUN122: first-order
+/// `Done` at ticks 288 to 412). Causes seen in RUN122, from the tick log at each `Blocked` tick:
+/// first-order unit 18 touches the idle rows 21 to 40 on its route; second-order unit 22 touches
+/// the idle slot-1 dummies at (54, 34) and (54, 35.2) on its route (idle units do not move for
+/// others, 6.4); second-order units 40 and 39 touch resting first-order units (a slot behind a
+/// resting group, 6.5). The authored weapons of the troopers also destroy slot-1 units in range
+/// during the run (the post at (61, 44) after tick 355). `docs/measurements/mc.md` records each.
 #[test]
 #[ignore = "MC Task22 process acceptance; run under the assigned compiler lease"]
 fn gmu_second_order_to_the_clamped_corner_is_recorded_and_rests_disjoint() {
@@ -415,7 +436,7 @@ fn gmu_second_order_to_the_clamped_corner_is_recorded_and_rests_disjoint() {
     let rest = ticks
         .get(&END_TICK)
         .expect("the configured end tick is present");
-    mc::assert_no_overlap(rest, &all, 0.5, END_TICK);
+    mc::assert_stationary_and_disjoint_at(&positions, &all, 0.5, 40, END_TICK);
     record_blocked_units(
         "corner-first-order",
         &orders,
