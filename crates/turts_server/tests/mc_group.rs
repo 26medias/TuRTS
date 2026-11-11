@@ -335,41 +335,128 @@ fn gmu_clamps_finite_outside_target_to_the_inset_point() {
     );
 }
 
+/// Row GMU, same point (design revision 15, ruling O14). Troopers 21 to 40 move to (40, 30) and
+/// rest with 0 `Blocked`. Then troopers 1 to 20 get a move of another group to the same point.
+/// Gated: at rest no two footprint discs overlap; each unit of both orders, `Done` or `Blocked`,
+/// stands within R_near = 4.58 of the point; each unit rests or is `Blocked` within
+/// 2 x (distance / speed) + 5 s. Recorded, not gated: the `Blocked` count of the second order and
+/// the rest position of each such unit (M4b owns this limit). The slot check of 6.3 step 2 is
+/// the native test `crates/turts_sim/tests/gmu_same_point.rs`.
 #[test]
 #[ignore = "MC Task22 process acceptance; run under the assigned compiler lease"]
-fn gmu_second_group_to_the_same_point_ends_without_overlap_or_blocked() {
-    // Same point: a second order of another group to the point of a resting group, on open
-    // ground (the shape of the native second_group_same_point case).
+fn gmu_second_order_to_the_same_point_rests_disjoint_within_r_near() {
     let first: Vec<_> = (21..=40).collect();
     let second: Vec<_> = (1..=20).collect();
     let target = (40.0, 30.0);
+    const SECOND_ORDER_TICK: u32 = 300;
+    const END_TICK: u32 = 700;
     let entries = vec![
         (1, 0, mc::point_order(first.clone(), target.0, target.1, 2)),
         (
-            300,
+            SECOND_ORDER_TICK,
             0,
             mc::point_order(second.clone(), target.0, target.1, 3),
         ),
     ];
-    let (positions, orders, _) = run("gmu-same-point", entries, 700);
+    let (positions, orders, _) = run("gmu-same-point", entries, END_TICK);
     let left = id_set(&first);
     let right = id_set(&second);
     let all = left.union(&right).copied().collect::<BTreeSet<_>>();
     let blocked = mc::blocked_ids(&orders);
     assert!(
-        blocked.is_disjoint(&all),
-        "GMU same-point groups must not finish Blocked: {:?}",
-        blocked.intersection(&all).collect::<Vec<_>>()
+        blocked.is_disjoint(&left),
+        "GMU same point: the first order (troopers 21 to 40) must rest with 0 Blocked: {:?}",
+        blocked.intersection(&left).collect::<Vec<_>>()
     );
     assert_group_done_by_deadline(&positions, &orders, &first, 1, target, 3.0);
-    assert_group_done_by_deadline(&positions, &orders, &second, 300, target, 3.0);
+    assert_group_terminal_by_deadline(&positions, &orders, &second, SECOND_ORDER_TICK, target, 3.0);
+    mc::assert_stationary_and_disjoint_at(&positions, &all, 0.5, 40, END_TICK);
     let ticks = mc::by_tick(&positions);
-    let last = 700;
-    let at_rest: BTreeMap<_, _> = all
+    let rest = ticks
+        .get(&END_TICK)
+        .expect("the configured end tick is present");
+    for id in &all {
+        let distance = mc::distance(*rest.get(id).unwrap(), target);
+        assert!(
+            distance <= 4.58,
+            "GMU same point: unit {id} rests {distance} from {target:?}, beyond R_near = 4.58"
+        );
+    }
+    record_blocked_units("open-ground", &orders, &right, rest, target, END_TICK);
+}
+
+/// Row GMU, same point at the clamped corner: recorded only, gates overlaps only. Both orders go
+/// to (70, 55), clamped to (63.5, 47.5): troopers 1 to 20 at tick 1, troopers 21 to 40 at tick
+/// 300. The first order is not the gated same-point case: its path to the north-east crosses the
+/// idle rows 21 to 40, which stand at spacing s and do not move for it (6.4), so it can record
+/// `Blocked` units of its own.
+#[test]
+#[ignore = "MC Task22 process acceptance; run under the assigned compiler lease"]
+fn gmu_second_order_to_the_clamped_corner_is_recorded_and_rests_disjoint() {
+    let first: Vec<_> = (1..=20).collect();
+    let second: Vec<_> = (21..=40).collect();
+    let clamped = (63.5, 47.5);
+    const END_TICK: u32 = 1300;
+    let entries = vec![
+        (1, 0, mc::point_order(first.clone(), 70.0, 55.0, 1)),
+        (300, 0, mc::point_order(second.clone(), 70.0, 55.0, 2)),
+    ];
+    let (positions, orders, _) = run("gmu-corner", entries, END_TICK);
+    let left = id_set(&first);
+    let right = id_set(&second);
+    let all = left.union(&right).copied().collect::<BTreeSet<_>>();
+    let ticks = mc::by_tick(&positions);
+    let rest = ticks
+        .get(&END_TICK)
+        .expect("the configured end tick is present");
+    mc::assert_no_overlap(rest, &all, 0.5, END_TICK);
+    record_blocked_units(
+        "corner-first-order",
+        &orders,
+        &left,
+        rest,
+        clamped,
+        END_TICK,
+    );
+    record_blocked_units("corner", &orders, &right, rest, clamped, END_TICK);
+}
+
+/// Print the recorded MC limit of row GMU in a form that `docs/measurements/mc.md` copies: one
+/// count line, then one line for each `Blocked` unit with its rest position.
+fn record_blocked_units(
+    case: &str,
+    transitions: &[mc::OrderTransition],
+    ids: &BTreeSet<u32>,
+    rest: &BTreeMap<u32, (f32, f32)>,
+    point: (f32, f32),
+    end_tick: u32,
+) {
+    let blocked: Vec<_> = transitions
         .iter()
-        .map(|id| (*id, *ticks.get(&last).unwrap().get(id).unwrap()))
+        .filter(|row| row.state == "Blocked" && ids.contains(&row.unit_id))
         .collect();
-    mc::assert_no_overlap(&at_rest, &all, 0.5, last);
+    println!(
+        "GMU record case={case} point=({}, {}) units={} blocked_count={} end_tick={end_tick}",
+        point.0,
+        point.1,
+        ids.len(),
+        blocked
+            .iter()
+            .map(|row| row.unit_id)
+            .collect::<BTreeSet<_>>()
+            .len()
+    );
+    for row in blocked {
+        let position = *rest.get(&row.unit_id).unwrap();
+        println!(
+            "GMU record case={case} blocked unit_id={} blocked_tick={} rest_x={} rest_y={} distance_to_point={:.3}",
+            row.unit_id,
+            row.tick,
+            position.0,
+            position.1,
+            mc::distance(position, point)
+        );
+    }
 }
 
 #[test]
