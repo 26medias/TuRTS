@@ -28,15 +28,24 @@ const RANGE_POINT = [21, 13];
 const LAB_CARD = { disable: 1, enable: 2 };
 const BELT_CARD = { remove: 0 };
 
-// Click card row `index` after a screenshot shows the rendered card rows.
+// Forge command card rows (mods/forge/interface/hud.ron command_card at TopRight (-8, 222),
+// command_rows at (8, 32), 28-pixel rows with a gap of 4; hud2-driver.js COMMAND_ROWS).
+const CARD_ROW = (index) => ({ x: 1256, y: 269 + index * 32 });
+
+// Click card row `index` after a screenshot shows that row rendered. The pointer leaves the card
+// first: a button tooltip of the last click covers the next row (run t21-run118-m3-1, where the
+// tooltip of Disable hid Enable and the third detected row was Research).
 async function clickCardRow(io, index, label) {
+    await io.move(640, 690);
+    await io.wait(400);
     const { image } = await shot(io, `${label}-card`);
+    const target = CARD_ROW(index);
     const rows = findOrderRowCenters(image);
-    if (rows.length <= index) {
-        await stop(io, label, `the command card shows ${rows.length} rows; row ${index} is not there`);
+    if (!rows.some((row) => Math.abs(row.y - target.y) <= 4)) {
+        await stop(io, label, `the command card shows no row ${index} at y ${target.y} (rows at ${rows.map((row) => row.y).join(", ")})`);
         return false;
     }
-    await io.click(rows[index].x, rows[index].y, "left");
+    await io.click(target.x, target.y, "left");
     return true;
 }
 
