@@ -1563,7 +1563,7 @@ fn on_binding_pointer_click(
         return;
     }
     let primary = windows.iter().next();
-    let press = timeline
+    let activation_boundary = timeline
         .pointer_press_causes
         .iter()
         .find(|(entity, pointer, button, _)| {
@@ -1572,7 +1572,7 @@ fn on_binding_pointer_click(
         .map(|cause| cause.3);
     let boundary = timeline.records.iter().find_map(|record| {
         let release = record.release?;
-        if press.is_none_or(|press| release.message_id <= press)
+        if activation_boundary.is_none_or(|boundary| release.message_id <= boundary)
             || timeline.claimed_releases.contains(&release.message_id)
             || release.button != trigger.button
             || Some(release.window) != primary
@@ -1794,11 +1794,13 @@ fn capture_physical_binding(
                 && input.state == bevy::input::ButtonState::Released
                 && Some(input.window) == primary
                 && is_capture_modifier(input.key_code)
-                && record.released_modifier_press.is_some_and(|press| {
-                    editor
-                        .capture_after_message
-                        .is_none_or(|boundary| press > boundary)
-                })
+                && record
+                    .released_modifier_press
+                    .is_some_and(|activation_boundary| {
+                        editor
+                            .capture_after_message
+                            .is_none_or(|boundary| activation_boundary > boundary)
+                    })
             {
                 Some(Binding::Key {
                     code: format!("{:?}", input.key_code),
