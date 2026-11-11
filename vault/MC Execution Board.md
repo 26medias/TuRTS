@@ -8,7 +8,7 @@ source: codex
 
 # MC execution board
 
-State: MC runs under Claude Code as Root (C382). 21/25 lanes complete; 125/170 build runs. Lanes run in parallel under C391 (CEO order, 2026-11-11). Task21 runtime RUN118 (PT1 step 5 product defect in repair: research tooltip has no key). Task22 runtime RUN122 at fd057b7. Tasks 23, 24 not started. Main bb611bd unchanged.
+State: MC runs under Claude Code as Root (C382). 21/25 lanes complete; 126/170 build runs. Lanes run in parallel under C391 (CEO order, 2026-11-11). Task21 runtime RUN118 (PT1 step 5 product defect in repair: research tooltip has no key). Task22 runtime RUN122 at fd057b7. Tasks 23, 24 not started. Main bb611bd unchanged.
 
 Plan: `docs/superpowers/plans/2026-10-29-mc-player-control.md`.
 Design of record: `docs/superpowers/specs/2026-10-29-mc-player-control-design.md`, revision15 on codex/mc-integration (ruling O14, 2026-11-11); revision14 is at mainf050e42.
@@ -326,6 +326,7 @@ One row per builder/reviewer dispatch or resumed agent work turn. Register befor
 | 123 | T21 independent runtime review, part 1 (commits 195bd75..1e422bc, builder receipts, own fault on the M2/M3/T7 pair, hosted CI readiness; PT1 is part 2) | web-platform-engineer | claude-opus-5-5 (Claude Code subagent, resumed RUN114 session) | high | review worktree TuRTS-mc-t21-review at 1e422bc | Task21run10/estimate8; global123/170. Parallel under C391: own cache target/mc-t21-review, runners v4, MC_JOBS=6. |
 | 124 | T22 final independent review, part 1 (task diff, GMU under O14, C389 P6-prime run, GMA fixture, R4/R5, own fault, measurements file; RUN122 evidence is part 2) | simulation-core-engineer | claude-opus-5-5 (Claude Code subagent, new session) | high | review worktree TuRTS-mc-t22-review at fd057b7 | Task22run10/estimate3, hard12 (report-only under C391); global124/170. Own cache target/mc-t22-review, runners v4, MC_JOBS=6. |
 | 125 | T24 preparation: a parallel runner for the REG1 fault sets (33 native, 17 M3, 8 browser), verdict comparison with the serial harness, a two-Chrome GPU sharing experiment | qa-lead | claude-opus-5-5 (Claude Code subagent, new session) | high | worktree TuRTS-mc-reg1 at 1e422bc | Task24run1/estimate2; global125/170. External runner under target/mc-evidence/root-regate; no repository change in this run. |
+| 126 | Architecture audit of the whole MC change before the main merge (boundaries, engine against mod policy, mod API, movement cost at scale, order log, protocol and fog readiness, client hot files, test architecture) | technical-director | claude-opus-5-5 (Claude Code subagent, new session) | high | codex/mc-integration, read-only | Global126/170; no task count (cross-task audit, CEO concern of 2026-11-11: no deep architectural defect). RUN124 result: Task 22 review part 1 PASS-WITH-FINDINGS, 0 High, 1 Medium, 5 Low; findings sent to RUN122. |
 
 ## 9. Preflight ledger and stop
 
