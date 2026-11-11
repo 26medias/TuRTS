@@ -6,6 +6,8 @@ on:
 jobs:
   check:
     runs-on: ubuntu-latest
+    # A hang must not hold a hosted runner for hours (RUN123 M3).
+    timeout-minutes: 180
     env:
       CARGO_BUILD_JOBS: 2
       CARGO_TARGET_DIR: ${{ github.workspace }}/target/m3-t16
@@ -58,6 +60,8 @@ jobs:
   # software Vulkan implementation; hosted CI does not require an NVIDIA GPU.
   browser:
     runs-on: ubuntu-latest
+    # A hang must not hold a hosted runner for hours (RUN123 M3).
+    timeout-minutes: 340
     env:
       CARGO_BUILD_JOBS: 2
       CARGO_TARGET_DIR: ${{ github.workspace }}/target/m3-t16
@@ -105,7 +109,7 @@ jobs:
         run: npm ci
         working-directory: tests/browser
       - name: Browser projection and audit helper tests
-        run: node --test tests/browser/m2-projection.test.js tests/browser/m2-audit.test.js tests/browser/t7-launch-options.test.js
+        run: node --test tests/browser/m2-projection.test.js tests/browser/m2-audit.test.js tests/browser/t7-oracle.test.js tests/browser/t7-driver.test.js tests/browser/m3-oracle.test.js tests/browser/pt1-oracle.test.js tests/browser/m2-oracle.test.js
       - name: T7 browser join
         env:
           M2_HEADLESS: "false"
@@ -137,6 +141,8 @@ jobs:
             target/m3-evidence/t16-builder/**
   agents:
     runs-on: ubuntu-latest
+    # A hang must not hold a hosted runner for hours (RUN123 M3).
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - name: Agent roster checks (no claude CLI on CI)

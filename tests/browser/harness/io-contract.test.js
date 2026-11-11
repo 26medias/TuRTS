@@ -236,7 +236,8 @@ test("view has only four read-only methods and refuses the order bridge", async 
     });
     const view = createView([makePage(1), makePage(2)], [], "/tmp");
     assert.equal(Object.isFrozen(view), true);
-    assert.deepEqual(Object.keys(view).sort(), ["bridge", "inputLog", "screenshot", "serverBytes", "serverFile"]);
+    // serverLines (MC task 21) streams a large server file, read-only, under the same path guard.
+    assert.deepEqual(Object.keys(view).sort(), ["bridge", "inputLog", "screenshot", "serverBytes", "serverFile", "serverLines"]);
     assert.deepEqual(await view.bridge("turts_debug"), { bridge: "turts_debug", window: 1 });
     assert.deepEqual(await view.bridge("turts_scene", 2), { bridge: "turts_scene", window: 2 });
     assert.equal((await view.screenshot(2)).toString(), "png-2");
@@ -315,4 +316,19 @@ test("overlapping screenshot observations retain their own input-call identities
     const pixels = await Promise.all([io.screenshot(), io.screenshot()]);
     assert.deepEqual(pixels.map((bytes) => bytes.toString()), ["png", "png"]);
     assert.deepEqual(checkpoints.map((row) => row.input_call).sort(), [0, 1]);
+});
+
+test("view.serverLines streams the lines of a server file and refuses a path outside the run", async () => {
+    const fsSync = require("node:fs");
+    const os = require("node:os");
+    const pathModule = require("node:path");
+    const dir = fsSync.mkdtempSync(pathModule.join(os.tmpdir(), "mc-view-lines-"));
+    try {
+        fsSync.writeFileSync(pathModule.join(dir, "log.jsonl"), "a\nb\n");
+        const view = createView([], [], dir);
+        const seen = [];
+        for await (const line of view.serverLines("log.jsonl")) seen.push(line);
+        assert.deepEqual(seen, ["a", "b"]);
+        await assert.rejects(async () => { for await (const _ of view.serverLines("../x")) void _; }, /escapes output directory/);
+    } finally { fsSync.rmSync(dir, { recursive: true, force: true }); }
 });

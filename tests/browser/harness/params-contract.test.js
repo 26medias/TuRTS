@@ -237,3 +237,28 @@ test("synthetic_units accepts the full unsigned 32-bit integer endpoints", () =>
     assert.deepEqual(launcherServerArgv("true", "0"), ["/fixture/target/release/turts_server", "<OUT>/server.ron", "--synthetic-units", "0", "--tick-log", "<OUT>/server-tick.log"]);
     assert.equal(launcherSyntheticUnits({ synthetic_units: 4294967295 }), "4294967295");
 });
+
+test("MC task 21: a row with effective_bindings gets params.bindings from the packed copy and keeps checkpoint_limit", () => {
+    const source = fs.readFileSync(path.join(__dirname, "../../../scripts/mc-browser.sh"), "utf8");
+    const block = source.match(/<<'PYPARAMS'\n([\s\S]*?)\nPYPARAMS/)[1];
+    const output = fs.mkdtempSync(path.join(os.tmpdir(), "mc-params-bindings-"));
+    try {
+        const root = path.resolve(__dirname, "../../..");
+        const rowPath = path.join(output, "row.json");
+        const outPath = path.join(output, "params.json");
+        const bindings = { actions: { key_stop: [{ Key: { code: "KeyS", mods: [] } }] }, orders: {} };
+        fs.writeFileSync(rowPath, JSON.stringify({ row: "PT1", windows: 2, effective_bindings: true, checkpoint_limit: 900, stages: { click_to_play: [500, 430] } }));
+        fs.writeFileSync(path.join(output, "effective-bindings.json"), JSON.stringify(bindings));
+        const run = () => execFileSync("python3", ["-c", block, root, "forge", "http://fixture", "http://server", "ws://server", rowPath, outPath, "1280x720", ""], { stdio: "pipe" });
+        run();
+        const params = JSON.parse(fs.readFileSync(outPath, "utf8"));
+        assert.deepEqual(params.bindings, bindings);
+        assert.equal(params.checkpoint_limit, 900);
+        assert.equal(params.windows, 2);
+        fs.rmSync(path.join(output, "effective-bindings.json"));
+        assert.throws(run, "a row that asks for bindings must not start without the effective map");
+        fs.writeFileSync(rowPath, JSON.stringify({ row: "PT1", windows: 2 }));
+        run();
+        assert.equal(Object.hasOwn(JSON.parse(fs.readFileSync(outPath, "utf8")), "bindings"), false);
+    } finally { fs.rmSync(output, { recursive: true, force: true }); }
+});

@@ -8,6 +8,7 @@ const { createDriverIo } = require("./driver-io.js");
 const { createView } = require("./view.js");
 const { prepareSh1Lifecycle } = require("./sh1-lifecycle.js");
 const { createSceneCheckpoints } = require("./scene-checkpoints.js");
+const { planFor, runM2Fixture } = require("./m2-ingest.js");
 const { installContextMenuObserver } = require("./contextmenu-observer.js");
 const { installBoundedRafHold } = require("./bounded-raf.js");
 const { installDeviceAudit, collectDeviceAudit } = require("./device-audit-descriptor.js");
@@ -47,6 +48,43 @@ function parseArgs(args) {
     const match = /^(\d+)x(\d+)(?:@([0-9]+(?:\.[0-9]+)?))?$/.exec(viewport);
     if (!match) throw new Error(`invalid viewport: ${viewport}`);
     return { url, outDir, driverPath, oraclePath, paramsPath, width: Number(match[1]), height: Number(match[2]), deviceScaleFactor: Number(match[3] || 1), windows };
+}
+
+// PT1 (MC task 21, ruling C386): the oracle judges any player of the io contract from harness
+// records only. While a window joins, record the load screen (phase, load rows, focus overlay)
+// every 150 ms, so the load steps need no screenshot that a player chose.
+async function recordStartup(page, windowNumber, observations, waitForJoin) {
+    let joined = false;
+    const sampler = (async () => {
+        while (!joined && observations.length < 2000) {
+            try { observations.push({ window: windowNumber, wall_time_ms: Date.now(), ...(await page.evaluate(loadObservation)) }); }
+            catch { /* the page is between documents */ }
+            await page.waitForTimeout(150);
+        }
+    })();
+    try { await waitForJoin(); }
+    finally { joined = true; await sampler; }
+    observations.push({ window: windowNumber, wall_time_ms: Date.now(), ...(await page.evaluate(loadObservation)) });
+    // The layout labels that the web entry gives the client (crates/turts_client_web/src/lib.rs:187-235),
+    // so an oracle renders the same key labels (client_shell.rs BindingLabels::from_layout_entries).
+    const keyboardLayout = await page.evaluate(async () => {
+        try { return Object.fromEntries(await navigator.keyboard.getLayoutMap()); } catch { return null; }
+    });
+    observations.push({ window: windowNumber, wall_time_ms: Date.now(), keyboard_layout: keyboardLayout });
+}
+
+function loadObservation() {
+    let debug = null;
+    try { debug = typeof window.turts_debug === "function" ? JSON.parse(window.turts_debug()) : null; } catch { debug = null; }
+    const rows = (debug?.ui_snapshot ?? []).filter((row) => String(row.id ?? "").startsWith("shell.load") || row.kind === "focus_overlay");
+    return { phase: debug?.phase ?? null, rows };
+}
+
+// A long row (PT1) declares more checkpoints; the default stays 256 (harness/scene-checkpoints.js).
+function checkpointLimit(params) {
+    const limit = params.checkpoint_limit ?? 256;
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 2048) throw new Error("params.checkpoint_limit must be an integer from 1 to 2048");
+    return limit;
 }
 
 function launchArgsForDpr(args, dpr) {
@@ -135,6 +173,7 @@ async function run(options) {
     let prebootFixture = null;
     let prebootOrigin = null;
     const prebootReceipts = [];
+    const startupObservations = [];
     try {
         const windows = Number(params.windows || 1);
         prebootFixture = ["PER1", "SEL4"].includes(params.row) ? per1FixtureFor(params.task16?.fixture) : null;
@@ -164,7 +203,7 @@ async function run(options) {
             await context.addInitScript(installBoundedRafHold);
             await context.addInitScript(installIoEventObserver);
             await context.addInitScript(installContextMenuObserver);
-            if (["KM1", "PER1", "SEL4", "SH1"].includes(params.row)) {
+            if (["KM1", "PER1", "SEL4", "SH1", "PT1"].includes(params.row)) {
                 await context.addInitScript(installTask16StorageAudit, {
                     fixture: prebootFixture, targetOrigin: prebootOrigin, window: n + 1,
                 });
@@ -238,6 +277,8 @@ async function run(options) {
                     }
                     throw new Error(`SLOT1 owner setup did not establish its required product precondition: ${outcome.message}`);
                 }
+            } else if (params.record_startup === true) {
+                await recordStartup(page, n + 1, startupObservations, () => waitForJoinedRole(page));
             } else {
                 await waitForJoinedRole(page);
             }
@@ -249,6 +290,9 @@ async function run(options) {
             });
         }
         initialSetupComplete = true;
+        if (params.record_startup === true) {
+            await fs.writeFile(path.join(options.outDir, "startup-observations.json"), JSON.stringify(startupObservations) + "\n");
+        }
         await pages[0].bringToFront();
         await pages[0].waitForTimeout(100);
         if (slotFixture && startupRafProbeEnabled) {
@@ -268,9 +312,9 @@ async function run(options) {
             });
         }
         if (!sh1Lifecycle) for (const page of pages) await page.evaluate(() => { window.__turts_io_actual_events = []; window.__turts_io_downstream_events = []; window.__turts_io_contextmenu_events = []; window.__turts_io_contextmenu_overflow = false; window.__turts_io_active_call = null; window.__turts_io_seq = null; window.__turts_io_dispatching = false; window.__turts_io_expected_event = null; });
-        const checkpoints = sh1Early?.checkpoints || (params.capture_scene_checkpoints === true ? createSceneCheckpoints(pages, 256, documentEpochs) : null);
+        const checkpoints = sh1Early?.checkpoints || (params.capture_scene_checkpoints === true ? createSceneCheckpoints(pages, checkpointLimit(params), documentEpochs) : null);
         const storageAudit = params.row === "SH1" ? sh1StorageAudit :
-            (["KM1", "PER1", "SEL4"].includes(params.row) ? [] : null);
+            (["KM1", "PER1", "SEL4", "PT1"].includes(params.row) ? [] : null);
         const storageInitialState = storageAudit ? await Promise.all(pages.map(async (page, index) => {
             const snapshot = await page.evaluate(() => {
                 const entries = (storage) => Object.fromEntries(Array.from({ length: storage.length }, (_, offset) => {
@@ -289,6 +333,8 @@ async function run(options) {
             screenshotScale: params.row === "SH1" ? "device" : "css",
             documentEpochs,
             storageAudit,
+            retainScreenshots: params.retain_screenshots === true,
+            observeReloadLoad: params.record_startup === true,
             beforeReload: deviceAuditEnabled ? async (page, windowIndex) => {
                 await collectDeviceAuditForPage(page, windowIndex, documentEpochs, deviceAuditSessions, deviceAuditRecords);
             } : null,
@@ -321,6 +367,8 @@ async function run(options) {
                 await sh1Lifecycle.disconnect(pages[0], driver, io);
                 await waitForJoinedRole(pages[0]);
                 await driver.drive(io, { ...params, fixture_phase: "connection-rejoined" });
+            } else if (params.row === "M2" && planFor(params)) {
+                await runM2Fixture({ io, driver, params, pages, outDir: options.outDir });
             } else {
                 await driver.drive(io, params);
             }
@@ -344,6 +392,12 @@ async function run(options) {
                 documentEpochs, targetOrigin: prebootOrigin, fixture: prebootFixture,
                 outDir: options.outDir, runError: null });
             if (report.status !== "complete") throw new Error(`HARNESS preboot fixture ${prebootFixture.id} receipt invalid: ${report.errors.join("; ")}`);
+        }
+        // The boot check (above) runs once; a client error later in the run also stops it, as the
+        // legacy t7.js poll did at each read (MC task 21, M4). Checkpoints check it at each screenshot.
+        for (const [index, page] of pages.entries()) {
+            const clientError = await page.evaluate(() => window.turts_error || null);
+            if (clientError) throw new Error(`browser client failed in window ${index + 1}: ${clientError}`);
         }
         await oracle.judge(view, params);
         console.log(`PASS ${path.basename(options.oraclePath)}`);
@@ -421,7 +475,7 @@ if (require.main === module) run(parseArgs(process.argv.slice(2))).catch((error)
     process.exitCode = 1;
 });
 
-module.exports = { deepFreeze, launchArgsForDpr, parseArgs, trackMainDocumentEpoch };
+module.exports = { checkpointLimit, deepFreeze, loadObservation, recordStartup, launchArgsForDpr, parseArgs, trackMainDocumentEpoch };
 
 async function attachDeviceAudit(page, context, windowIndex, key, sessions) {
     try {

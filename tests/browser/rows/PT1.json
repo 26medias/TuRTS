@@ -1,0 +1,43 @@
+{
+  "row": "PT1",
+  "package": "mods/forge",
+  "driver": "tests/browser/pt1-driver.js",
+  "oracle": "tests/browser/pt1-oracle.js",
+  "windows": 2,
+  "runs": "headed",
+  "capture_scene_checkpoints": true,
+  "checkpoint_limit": 900,
+  "effective_bindings": true,
+  "viewports": [
+    "1280x720"
+  ],
+  "stages": {
+    "click_to_play": [
+      500,
+      430
+    ],
+    "guide_controls_wheel": [
+      850,
+      500,
+      1200
+    ],
+    "menu": {
+      "stop_row_wheel": [
+        650,
+        500,
+        1450
+      ],
+      "scroll_speed_raise": [
+        768,
+        581
+      ],
+      "stop_rebind": [
+        784,
+        230
+      ]
+    },
+    "calibration_note": "The menu points come from the retained headed SH1 run target/mc-evidence/root-t16-sh1-complete-controls-v1/runs/run-20261111T025558Z-zmznpR (SH1-conflicts-conflict-edit-row.png: after F10 and a wheel of 1450 at (650, 500), the 'Key stop' Change button is at (784, 230) and the Scroll speed slider track at y 581; SH1-settings-controls-speed-high-setting.png: a click at x 768 on the track raises the speed). Re-confirm them in the first headed PT1 run (pt1-s14-menu-scrolled.png). The menu rows are not in ui_snapshot, so the oracle checks the effects: the pan distance and effective_bindings."
+  },
+  "record_startup": true,
+  "retain_screenshots": true
+}

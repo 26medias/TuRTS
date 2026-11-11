@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
 # T7 browser join (design section 7; plan Task 12): the trunk-built client joins the real
 # server in headless Chrome, and the segment oracle checks what the browser presented.
+# MC task 21: tests/browser/t7-driver.js acts through the harness io only; t7-oracle.js judges.
 #
 # Needs: cargo, trunk 0.22.0, brotli, node with `npm ci` done in tests/browser, python3, curl,
 # and Google Chrome (CHROME_BIN, default /usr/bin/google-chrome).
-# Output: target/t7/{server-tick.log,frames.jsonl,result.json,server.log,server.ron}.
+# Output: $OUT/{server-tick.log,scene-checkpoints.json,input-log.json,frames.jsonl,result.json,
+# server.log,server.ron}.
 # The script picks two free ports, so it can run beside another server.
 set -euo pipefail
 
@@ -14,6 +16,10 @@ export CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0
 cd "$ROOT"
 OUT="${M3_T7_OUT:-${ROOT}/target/m3-evidence/t16-builder/t7/run-$(date -u +%Y%m%dT%H%M%SZ)-$$}"
 DIST="$ROOT/crates/turts_client_web/dist"
+# The harness launches CHROME_BIN (tests/browser/harness/run.js); t7.js used /usr/bin/google-chrome.
+CHROME_BIN="${CHROME_BIN:-$(command -v google-chrome || command -v chromium || true)}"
+if [[ -z "$CHROME_BIN" || ! -x "$CHROME_BIN" ]]; then echo "Chrome binary unavailable; set CHROME_BIN" >&2; exit 1; fi
+export CHROME_BIN
 
 cargo build --release -p turts_server
 (cd crates/turts_client_web && trunk build --release)
@@ -79,17 +85,38 @@ for _ in $(seq 1 100); do
     sleep 0.1
 done
 
-T7_COMMAND=(node tests/browser/t7.js "http://127.0.0.1:$HTTP_PORT/" "$OUT"
-    --ws "ws://127.0.0.1:$WS_PORT" --expect-content-id acme:scout --expect-final 20,8)
+# MC task 21: the pixels-only pair t7-driver.js + t7-oracle.js runs in the harness (QA0 design
+# 4.6 option C). The page is the server's own HTTP address, as before.
+PAGE_URL="$(python3 - "http://127.0.0.1:$HTTP_PORT" "ws://127.0.0.1:$WS_PORT" <<'EOF'
+from urllib.parse import urlencode
+import sys
+print(sys.argv[1] + "/?" + urlencode({"server": sys.argv[1], "ws": sys.argv[2]}))
+EOF
+)"
+python3 - "$OUT/params.json" "$PAGE_URL" "http://127.0.0.1:$HTTP_PORT" "ws://127.0.0.1:$WS_PORT" <<'EOF'
+import json, pathlib, sys
+out, url, http, ws = sys.argv[1:]
+pathlib.Path(out).write_text(json.dumps({
+    "row": "T7", "package": "acme", "url": url, "server_url": http, "ws_url": ws, "windows": 1,
+    "capture_scene_checkpoints": True, "expect_content_id": "acme:scout",
+    "viewport": {"width": 1280, "height": 720, "device_scale_factor": 1},
+}, sort_keys=True) + "\n")
+EOF
+[[ -z "${M2_CHROME_ARGS_JSON:-}" ]] || export MC_CHROME_ARGS_JSON="$M2_CHROME_ARGS_JSON"
+[[ -z "${M2_IGNORE_DEFAULT_ARGS_JSON:-}" ]] || export MC_CHROME_IGNORE_DEFAULT_ARGS_JSON="$M2_IGNORE_DEFAULT_ARGS_JSON"
+T7_COMMAND=(node tests/browser/harness/run.js "$PAGE_URL" "$OUT"
+    tests/browser/t7-driver.js tests/browser/t7-oracle.js --params "$OUT/params.json" --viewport 1280x720)
 if [[ "${M2_HEADLESS:-true}" == "false" ]]; then
     if ! command -v xvfb-run >/dev/null 2>&1; then
         echo "xvfb-run is required when M2_HEADLESS=false" >&2
         exit 1
     fi
-    xvfb-run --auto-servernum --server-args='-screen 0 1280x720x24' "${T7_COMMAND[@]}"
+    MC_BROWSER_HEADED=1 xvfb-run --auto-servernum --server-args='-screen 0 1280x720x24' "${T7_COMMAND[@]}" | tee "$OUT/browser.log"
 else
-    "${T7_COMMAND[@]}"
+    "${T7_COMMAND[@]}" | tee "$OUT/browser.log"
 fi
+# The segment oracle reads frames.jsonl and result.json, made from the harness checkpoints.
+node tests/browser/t7-frames.js "$OUT" "$("$CHROME_BIN" --version)"
 
 # The oracle reads the two logs while the server still runs: it needs a tick after the last
 # frame. T7_DIR names the folder of the logs.

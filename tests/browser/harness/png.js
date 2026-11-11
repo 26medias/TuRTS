@@ -77,4 +77,48 @@ function pixelAt(image, x, y) {
     return Array.from(image.rgba.subarray(index, index + 4));
 }
 
-module.exports = { decodePng, pixelAt };
+// Pure screen-geometry helpers moved from the M2 legacy file (MC design 13.3). They read only
+// the numbers that a caller gives them; a driver gets no camera matrix, so only an oracle or a
+// unit test gives them a scene.
+function finitePair(value) {
+    return Array.isArray(value) && value.length === 2 && value.every(Number.isFinite);
+}
+
+function projectGroundPoint(scene, mapPoint) {
+    const matrix = scene?.clip_from_world;
+    const viewport = scene?.viewport_logical_rect;
+    if (
+        !Array.isArray(matrix) || matrix.length !== 16 || !matrix.every(Number.isFinite) ||
+        !Array.isArray(viewport) || viewport.length !== 4 || !viewport.every(Number.isFinite) ||
+        !finitePair(mapPoint) || scene.coordinate_space !== "window-logical-pixels-top-left"
+    ) {
+        return null;
+    }
+
+    const clipX = matrix[0] * mapPoint[0] + matrix[8] * mapPoint[1] + matrix[12];
+    const clipY = matrix[1] * mapPoint[0] + matrix[9] * mapPoint[1] + matrix[13];
+    const clipZ = matrix[2] * mapPoint[0] + matrix[10] * mapPoint[1] + matrix[14];
+    const clipW = matrix[3] * mapPoint[0] + matrix[11] * mapPoint[1] + matrix[15];
+    if (!Number.isFinite(clipW) || clipW <= 0 || !Number.isFinite(clipX) || !Number.isFinite(clipY) || !Number.isFinite(clipZ)) {
+        return null;
+    }
+    const ndcX = clipX / clipW;
+    const ndcY = clipY / clipW;
+    const ndcZ = clipZ / clipW;
+    if (ndcZ < 0 || ndcZ > 1) return null;
+
+    const [left, top, width, height] = viewport;
+    const screenX = left + ((ndcX + 1) / 2) * width;
+    const screenY = top + ((1 - ndcY) / 2) * height;
+    const windowSize = scene.window_logical_size;
+    if (
+        !finitePair(windowSize) || screenX < left || screenY < top ||
+        screenX >= left + width || screenY >= top + height ||
+        screenX < 0 || screenY < 0 || screenX >= windowSize[0] || screenY >= windowSize[1]
+    ) {
+        return null;
+    }
+    return [screenX, screenY];
+}
+
+module.exports = { decodePng, pixelAt, finitePair, projectGroundPoint };

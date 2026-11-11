@@ -3,7 +3,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-EXPECTED_TARGET="$(realpath -m "${M2_CARGO_TARGET_DIR:-$ROOT/target}")"
+EXPECTED_TARGET="$(realpath -m "${M2_CARGO_TARGET_DIR:-${CARGO_TARGET_DIR:-$ROOT/target}}")"
 SERVER_BIN="$EXPECTED_TARGET/release/turts_server"
 PACKER_BIN="$EXPECTED_TARGET/release/turts-pack"
 DIST="$ROOT/crates/turts_client_web/dist"
@@ -12,6 +12,29 @@ HTTP_PORT="${M2_HTTP_PORT:-0}"
 WS_PORT="${M2_WS_PORT:-0}"
 PACKAGE="${M2_PACKAGE_NAME:-}"
 CASE_ID="${M2_CASE_ID:-}"
+ARTIFACT_ROOT="${M2_ARTIFACT_ROOT:-$ROOT/target/m2-browser/runs}"
+BUILD_JOBS="${M2_BUILD_JOBS:-2}"
+# Build the server, the packer and the web client into LOGDIR. MC task 21 (M5): a suite or a
+# package run builds once and gives each case M2_PREBUILT=1 with the logs, so the 15 cases do
+# not build 15 times; each case still gets its own server.
+m2_build() {
+    local logs="$1"
+    [[ "$BUILD_JOBS" =~ ^[1-2]$ ]] || { echo "M2_BUILD_JOBS must be 1 or 2" >&2; exit 2; }
+    mkdir -p "$logs"
+    env CARGO_TARGET_DIR="$EXPECTED_TARGET" CARGO_BUILD_JOBS="$BUILD_JOBS" CARGO_NET_OFFLINE=true \
+        cargo build --release -p turts_server > "$logs/server-build.log" 2>&1 || { cat "$logs/server-build.log" >&2; exit 1; }
+    env CARGO_TARGET_DIR="$EXPECTED_TARGET" CARGO_BUILD_JOBS="$BUILD_JOBS" CARGO_NET_OFFLINE=true \
+        cargo build --release -p turts_pack --bin turts-pack > "$logs/packer-build.log" 2>&1 || { cat "$logs/packer-build.log" >&2; exit 1; }
+    (cd "$ROOT/crates/turts_client_web" && \
+        env CARGO_TARGET_DIR="$EXPECTED_TARGET" CARGO_BUILD_JOBS="$BUILD_JOBS" CARGO_NET_OFFLINE=true \
+            trunk build --release) > "$logs/trunk-build.log" 2>&1 || { cat "$logs/trunk-build.log" >&2; exit 1; }
+}
+build_once() {
+    [[ "${M2_PREBUILT:-0}" == 1 ]] && return 0
+    M2_PREBUILT_LOGS="$ARTIFACT_ROOT/build-$(date -u +%Y%m%dT%H%M%SZ)-$$"
+    m2_build "$M2_PREBUILT_LOGS"
+    export M2_PREBUILT=1 M2_PREBUILT_LOGS
+}
 if [[ $# -eq 1 && "$1" == "--list-cases" ]]; then
     printf '%s\n' \
         E9-browser-base-selection \
@@ -38,6 +61,7 @@ if [[ $# -eq 0 && -z "$PACKAGE" && -z "$CASE_ID" ]]; then
         echo "expected 15 registered M2 browser cases, found $selected_count" >&2
         exit 1
     fi
+    build_once
     for package in base haul acme cedar; do
         "$0" --package "$package"
     done
@@ -79,14 +103,22 @@ if [[ -z "$PACKAGE" ]]; then
     exit 2
 fi
 case "$PACKAGE" in base|haul|acme|cedar) ;; *) echo "unknown package: $PACKAGE" >&2; exit 2 ;; esac
+if [[ -z "$CASE_ID" ]]; then
+    # MC task 21: each case runs in its own server and harness run (tests/browser/m2-driver.js).
+    build_once
+    package_status=0
+    while read -r package_case; do
+        [[ "$package_case" == "E9-browser-$PACKAGE-"* && "$package_case" != *"-loss-"* ]] || continue
+        "$0" --case "$package_case" || package_status=1
+    done < <("$0" --list-cases)
+    exit "$package_status"
+fi
 if [[ -n "$CASE_ID" ]]; then
     case "$PACKAGE:$CASE_ID" in
         base:E9-browser-base-selection|base:E9-browser-base-economy|base:E9-browser-base-recovery|base:E9-browser-base-public-convergence|base:E9-browser-base-loss-conversion|base:E9-browser-base-loss-charge|base:E9-browser-base-loss-refund|base:E9-browser-base-loss-spawn|base:E9-browser-base-loss-final_change|haul:E9-browser-haul-economy|haul:E9-browser-haul-public-convergence|acme:E9-browser-acme-selection|acme:E9-browser-acme-public-convergence|cedar:E9-browser-cedar-economy|cedar:E9-browser-cedar-public-convergence) ;;
         *) echo "unknown browser case $CASE_ID for package $PACKAGE" >&2; exit 2 ;;
     esac
 fi
-ARTIFACT_ROOT="${M2_ARTIFACT_ROOT:-$ROOT/target/m2-browser/runs}"
-BUILD_JOBS="${M2_BUILD_JOBS:-2}"
 CHROME_BIN="${CHROME_BIN:-$(command -v google-chrome || command -v chromium || true)}"
 
 if [[ -z "$CHROME_BIN" || ! -x "$CHROME_BIN" ]]; then
@@ -150,22 +182,13 @@ printf '%s\n' "$BUILD_SOURCE_DIFF_SHA256" > "$ARTIFACT_DIR/source-diff.sha256"
 printf '%s\n' "$BUILD_SOURCE_STATUS" > "$ARTIFACT_DIR/source-status.txt"
 
 # All build outputs and compiler caches stay in the caller-selected target directory.
-env CARGO_TARGET_DIR="$EXPECTED_TARGET" CARGO_BUILD_JOBS="$BUILD_JOBS" CARGO_NET_OFFLINE=true \
-    cargo build --release -p turts_server > "$ARTIFACT_DIR/server-build.log" 2>&1 || {
-        cat "$ARTIFACT_DIR/server-build.log" >&2
-        exit 1
-    }
-env CARGO_TARGET_DIR="$EXPECTED_TARGET" CARGO_BUILD_JOBS="$BUILD_JOBS" CARGO_NET_OFFLINE=true \
-    cargo build --release -p turts_pack --bin turts-pack > "$ARTIFACT_DIR/packer-build.log" 2>&1 || {
-        cat "$ARTIFACT_DIR/packer-build.log" >&2
-        exit 1
-    }
-(cd "$ROOT/crates/turts_client_web" && \
-    env CARGO_TARGET_DIR="$EXPECTED_TARGET" CARGO_BUILD_JOBS="$BUILD_JOBS" CARGO_NET_OFFLINE=true \
-        trunk build --release) > "$ARTIFACT_DIR/trunk-build.log" 2>&1 || {
-        cat "$ARTIFACT_DIR/trunk-build.log" >&2
-        exit 1
-    }
+if [[ "${M2_PREBUILT:-0}" == 1 ]]; then
+    # One build for the suite or package run (build_once); the case keeps a copy of its logs.
+    for log in server-build.log packer-build.log trunk-build.log; do cp "$M2_PREBUILT_LOGS/$log" "$ARTIFACT_DIR/$log"; done
+    printf '{"prebuilt_logs":"%s"}\n' "$M2_PREBUILT_LOGS" > "$ARTIFACT_DIR/prebuilt.json"
+else
+    m2_build "$ARTIFACT_DIR"
+fi
 for required in "$SERVER_BIN" "$PACKER_BIN" "$DIST/index.html" "$DIST"/*.js "$DIST"/*.wasm; do
     if [[ ! -e "$required" ]]; then
         echo "required immutable server/packer or worktree Trunk artifact missing: $required" >&2
@@ -338,17 +361,53 @@ if [[ "$ready" != true ]]; then
 fi
 
 printf 'Package: %s\nArtifacts: %s\n' "$PACKAGE" "$ARTIFACT_DIR"
+WINDOWS=1
+[[ "$CASE_ID" != *-public-convergence ]] || WINDOWS=2
+PAGE_URL="$(python3 - "http://127.0.0.1:$STATIC_PORT/" "http://127.0.0.1:$HTTP_PORT" "ws://127.0.0.1:$WS_PORT" <<'PYURL'
+from urllib.parse import urlencode
+import sys
+print(sys.argv[1] + "?" + urlencode({"server": sys.argv[2], "ws": sys.argv[3]}))
+PYURL
+)"
+python3 - "$ARTIFACT_DIR/params.json" "$PAGE_URL" "http://127.0.0.1:$HTTP_PORT" "ws://127.0.0.1:$WS_PORT" "$PACKAGE" "$CASE_ID" "$WINDOWS" <<'PYPARAMS2'
+import json, pathlib, sys
+out, url, http, ws, package, case_id, windows = sys.argv[1:]
+pathlib.Path(out).write_text(json.dumps({
+    "row": "M2", "package": package, "url": url, "server_url": http, "ws_url": ws, "windows": int(windows),
+    "capture_scene_checkpoints": True, "m2": {"case_id": case_id, "package": package},
+    "viewport": {"width": 1280, "height": 720, "device_scale_factor": 1},
+}, sort_keys=True) + "\n")
+PYPARAMS2
 set +e
-M2_PACKAGE_NAME="$PACKAGE" \
-M2_CASE_ID="$CASE_ID" \
-M2_FIXTURE_X_OFFSET="$FIXTURE_X_OFFSET" \
-M2_FIXTURE_TRANSLATION_RECEIPT="$ARTIFACT_DIR/map-fixture-translation.json" \
-M2_HEADLESS=false \
-M2_CHROME_ARGS_JSON="${M2_CHROME_ARGS_JSON:-[\"--enable-gpu\",\"--use-angle=vulkan\",\"--enable-features=Vulkan\",\"--enable-unsafe-webgpu\"]}" \
-M2_IGNORE_DEFAULT_ARGS_JSON="${M2_IGNORE_DEFAULT_ARGS_JSON:-[\"--enable-unsafe-swiftshader\"]}" \
+# The Chrome flags: a caller's M2_* wins, then the MC_* of the gate runner (mc_headed_v3.sh), then the default.
+MC_BROWSER_HEADED=1 \
+MC_CHROME_ARGS_JSON="${M2_CHROME_ARGS_JSON:-${MC_CHROME_ARGS_JSON:-[\"--enable-gpu\",\"--use-angle=vulkan\",\"--enable-features=Vulkan\",\"--enable-unsafe-webgpu\"]}}" \
+MC_CHROME_IGNORE_DEFAULT_ARGS_JSON="${M2_IGNORE_DEFAULT_ARGS_JSON:-${MC_CHROME_IGNORE_DEFAULT_ARGS_JSON:-[\"--enable-unsafe-swiftshader\"]}}" \
 xvfb-run --auto-servernum --server-args='-screen 0 1280x720x24' \
-    node "$ROOT/tests/browser/m2.js" "http://127.0.0.1:$STATIC_PORT/" "http://127.0.0.1:$HTTP_PORT" "ws://127.0.0.1:$WS_PORT" "$ARTIFACT_DIR" > "$ARTIFACT_DIR/browser.log" 2>&1
+    node "$ROOT/tests/browser/harness/run.js" "$PAGE_URL" "$ARTIFACT_DIR" "$ROOT/tests/browser/m2-driver.js" "$ROOT/tests/browser/m2-oracle.js" \
+    --params "$ARTIFACT_DIR/params.json" --viewport 1280x720 > "$ARTIFACT_DIR/harness.log" 2>&1
 BROWSER_STATUS=$?
 set -e
+# The case markers that tests/m2/refutations.py reads (M2_CASE_SUMMARY handling, :130-134).
+python3 - "$ARTIFACT_DIR/harness.log" "$CASE_ID" "$BROWSER_STATUS" > "$ARTIFACT_DIR/browser.log" <<'PYMARKERS'
+import json, re, sys
+log, case_id, status = sys.argv[1], sys.argv[2], int(sys.argv[3])
+text = open(log, encoding="utf-8", errors="replace").read()
+print(text, end="" if text.endswith("\n") else "\n")
+print(f"M2_CASE_START {case_id}")
+semantic = re.search(r"^SEMANTIC FAIL M2\.(\S+): (.*)$", text, re.M)
+counts = {"passed_count": 0, "semantic_failed_count": 0, "infrastructure_failed_count": 0}
+if status == 0 and re.search(r"^PASS m2-oracle\.js$", text, re.M):
+    print(f"M2_CASE_PASS {case_id}")
+    counts["passed_count"] = 1
+elif semantic and semantic.group(1) == case_id:
+    print(f"M2_CASE_SEMANTIC_FAIL {case_id} {json.dumps(semantic.group(2))}")
+    counts["semantic_failed_count"] = 1
+else:
+    failure = re.search(r"^FAIL .*$", text, re.M)
+    print(f"M2_CASE_INFRA_FAIL {case_id} {json.dumps(failure.group(0) if failure else f'harness exit {status}')}")
+    counts["infrastructure_failed_count"] = 1
+print("M2_CASE_SUMMARY " + json.dumps({"selected_count": 1, "completed_count": 1, **counts, "timeout_count": 0}, separators=(",", ":")))
+PYMARKERS
 cat "$ARTIFACT_DIR/browser.log"
 exit "$BROWSER_STATUS"

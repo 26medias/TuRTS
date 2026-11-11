@@ -2,7 +2,9 @@
 "use strict";
 
 const fs = require("node:fs/promises");
+const { createReadStream } = require("node:fs");
 const path = require("node:path");
+const readline = require("node:readline");
 
 const BRIDGES = new Set(["turts_debug", "turts_scene", "turts_ui", "turts_memory_bytes"]);
 
@@ -30,6 +32,16 @@ function createView(pages, inputLog, serverDir, state = { selected: 0 }) {
             const target = path.resolve(base, file);
             if (target !== base && !target.startsWith(base + path.sep)) throw new Error("server file path escapes output directory");
             return fs.readFile(target, "utf8");
+        },
+        // The lines of a large server file, one at a time (the M3 economy log reaches 1.5 GB, past
+        // the largest string that serverFile can return: run t21-run118-m3-2).
+        async *serverLines(file) {
+            if (typeof file !== "string" || !file || file.includes("\0")) throw new TypeError("server file path must be non-empty");
+            const base = path.resolve(serverDir);
+            const target = path.resolve(base, file);
+            if (target !== base && !target.startsWith(base + path.sep)) throw new Error("server file path escapes output directory");
+            const lines = readline.createInterface({ input: createReadStream(target), crlfDelay: Infinity });
+            for await (const line of lines) yield line;
         },
         async serverBytes(file) {
             if (typeof file !== "string" || !file || file.includes("\0")) throw new TypeError("server artifact path must be non-empty");
