@@ -18,7 +18,7 @@ const {
     hasSingleDebugSelection,
     lastAuditTick,
     lossTransitionAt,
-    parseCompleteAuditText,
+    readAuditRecords,
     projectGroundPoint,
     publicProjection,
 } = require("./m2-oracle-lib.js");
@@ -514,7 +514,7 @@ async function judgeCase(view, params) {
     assertPublicProjectionSchema(joined);
     if (caseId === "E9-browser-base-recovery" || caseId.startsWith("E9-browser-base-loss-")) {
         const record = JSON.parse(await view.serverFile("m2-ingest-private.json"));
-        const records = parseCompleteAuditText(await view.serverFile("economy-audit-private.jsonl"));
+        const records = await readAuditRecords(view.serverLines("economy-audit-private.jsonl"));
         if (caseId.endsWith("recovery")) return judgeRecovery(view, record, records, joined);
         return judgeLoss(view, input, checkpoints, at, caseId.slice("E9-browser-base-loss-".length), record, records, joined);
     }

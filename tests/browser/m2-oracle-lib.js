@@ -128,6 +128,22 @@ function parseCompleteAuditText(text) {
     }));
 }
 
+// The complete records of a server JSONL audit log, streamed (view.serverLines). Operation
+// records are skipped unparsed: validateAuditRecords and auditStateAt read only the initial and
+// tick records, and the operations are most of the bytes (an M3 log reached 1.5 GB in run
+// t21-run118-m3-2). A torn last line is cut; a torn line before another is an error.
+async function readAuditRecords(lines) {
+    const records = [];
+    let pendingError = null;
+    for await (const line of lines) {
+        if (pendingError) throw pendingError;
+        if (!line.trim() || line.startsWith('{"record":"operation"')) continue;
+        try { records.push(JSON.parse(line)); }
+        catch (error) { pendingError = new Error(`invalid complete economy audit line ${records.length + 1}: ${error.message}`); }
+    }
+    return validateAuditRecords(records);
+}
+
 function lastAuditTick(records) {
     return records.filter((entry) => entry.record === "tick").reduce((latest, entry) => Math.max(latest, entry.data.tick),
         records[0]?.data?.economy?.tick ?? -1);
@@ -205,6 +221,7 @@ module.exports = {
     lastAuditTick,
     lossTransitionAt,
     parseCompleteAuditText,
+    readAuditRecords,
     projectGroundPoint,
     projectRenderedEntity,
     publicProjection,
