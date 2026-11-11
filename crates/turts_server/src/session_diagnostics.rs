@@ -357,17 +357,6 @@ impl SessionDiagnostics {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::exact_u64_decimal;
-
-    #[test]
-    fn private_observer_u64_fields_have_exact_decimal_text() {
-        assert_eq!(exact_u64_decimal(9_007_199_254_740_993), "9007199254740993");
-        assert_eq!(exact_u64_decimal(u64::MAX), "18446744073709551615");
-    }
-}
-
 pub fn on_session_added(
     event: On<Add<Session>>,
     sessions: Query<&Session>,
@@ -411,5 +400,16 @@ pub fn on_session_removed(
         tick.0,
     ) {
         panic!("private session observer failed: {error}");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::exact_u64_decimal;
+
+    #[test]
+    fn private_observer_u64_fields_have_exact_decimal_text() {
+        assert_eq!(exact_u64_decimal(9_007_199_254_740_993), "9007199254740993");
+        assert_eq!(exact_u64_decimal(u64::MAX), "18446744073709551615");
     }
 }
