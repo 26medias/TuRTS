@@ -816,6 +816,14 @@ impl Plugin for ClientShellPlugin {
                 .after(sync_focus_overlay)
                 .before(UiPresentationSet),
         );
+        app.init_resource::<SoundLockTimer>().add_systems(
+            Update,
+            (
+                sync_sound_off_notice.after(sync_focus_overlay),
+                sync_sound_status_label.after(toggle_settings_menu),
+            )
+                .before(UiPresentationSet),
+        );
     }
 }
 
@@ -832,11 +840,12 @@ fn sync_focus_overlay(
     let Some(window_focused) = windows.iter().next().map(|window| window.focused) else {
         return;
     };
-    let audio_locked = audio.as_deref().is_some_and(|feed| {
-        !feed.context_states.is_empty()
-            && !crate::audio::browser_contexts_ready(&feed.context_states, feed.gesture_seen)
+    // Ruling O15: the overlay waits for the first gesture, not for running audio. A browser can
+    // keep its context suspended after the gesture; the sound notice covers that case.
+    let awaiting_gesture = audio.as_deref().is_some_and(|feed| {
+        crate::audio::BrowserAudio::from_feed(feed) == crate::audio::BrowserAudio::AwaitingGesture
     });
-    if focus.0 && window_focused && !audio_locked {
+    if focus.0 && window_focused && !awaiting_gesture {
         for entity in &overlays {
             commands.entity(entity).despawn();
         }
@@ -875,6 +884,97 @@ fn sync_focus_overlay(
                 TextColor(Color::WHITE),
             ));
         });
+}
+
+/// The shell text that shows when audio stays locked after the first gesture.
+pub(crate) const SOUND_OFF_NOTICE: &str = "Sound is off. Click or press a key to turn it on.";
+/// The resume request of a gesture needs some frames. The notice waits this long first.
+const SOUND_NOTICE_DELAY_SECS: f32 = 0.5;
+const SOUND_NOTICE_SECS: f32 = 8.0;
+
+/// The shell row of `SOUND_OFF_NOTICE`. It does not capture input.
+#[derive(Component)]
+pub(crate) struct SoundOffNotice;
+
+/// The time that the current locked period started, from `Time<Real>`.
+#[derive(Resource, Default)]
+struct SoundLockTimer(Option<std::time::Duration>);
+
+/// Show `SOUND_OFF_NOTICE` for 8 s when audio stays locked after the first gesture. Each later
+/// gesture asks the browser to resume audio through the page hook (index.html).
+fn sync_sound_off_notice(
+    audio: Option<Res<crate::debug_feed::AudioFeed>>,
+    time: Res<Time<Real>>,
+    mut timer: ResMut<SoundLockTimer>,
+    notices: Query<Entity, With<SoundOffNotice>>,
+    mut commands: Commands,
+) {
+    let locked = audio.as_deref().is_some_and(|feed| {
+        crate::audio::BrowserAudio::from_feed(feed) == crate::audio::BrowserAudio::Locked
+    });
+    let now = time.elapsed();
+    let visible = if locked {
+        let since = *timer.0.get_or_insert(now);
+        let age = now.saturating_sub(since).as_secs_f32();
+        (SOUND_NOTICE_DELAY_SECS..SOUND_NOTICE_DELAY_SECS + SOUND_NOTICE_SECS).contains(&age)
+    } else {
+        timer.0 = None;
+        false
+    };
+    if !visible {
+        for entity in &notices {
+            commands.entity(entity).despawn();
+        }
+        return;
+    }
+    if !notices.is_empty() {
+        return;
+    }
+    commands.spawn((
+        SoundOffNotice,
+        Node {
+            position_type: PositionType::Absolute,
+            top: Val::Px(16.0),
+            left: Val::Percent(50.0),
+            width: Val::Px(440.0),
+            margin: UiRect::left(Val::Px(-220.0)),
+            padding: UiRect::all(Val::Px(8.0)),
+            justify_content: JustifyContent::Center,
+            ..default()
+        },
+        ZIndex(i32::MAX - 2),
+        BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.72)),
+        bevy::picking::Pickable::IGNORE,
+        Text::new(SOUND_OFF_NOTICE),
+        TextFont {
+            font_size: FontSize::Px(16.0),
+            ..default()
+        },
+        TextColor(Color::WHITE),
+        TextLayout::new(Justify::Center, LineBreak::WordBoundary),
+    ));
+}
+
+/// Keep the menu sound label equal to the browser audio state.
+fn sync_sound_status_label(
+    audio: Option<Res<crate::debug_feed::AudioFeed>>,
+    mut labels: Query<&mut Text, With<crate::volume_settings::SoundStatusText>>,
+) {
+    let label = sound_status_label(audio.as_deref());
+    for mut text in &mut labels {
+        if text.0 != label {
+            text.0 = label.to_owned();
+        }
+    }
+}
+
+fn sound_status_label(audio: Option<&crate::debug_feed::AudioFeed>) -> &'static str {
+    audio
+        .map_or(
+            crate::audio::BrowserAudio::NotObserved,
+            crate::audio::BrowserAudio::from_feed,
+        )
+        .menu_label()
 }
 
 pub(crate) fn sync_client_notice(
@@ -979,6 +1079,7 @@ struct SettingsMenuSources<'w> {
     acquired: Option<Res<'w, AcquiredPackages>>,
     preferences: Res<'w, CorePreferences>,
     labels: Res<'w, BindingLabels>,
+    audio: Option<Res<'w, crate::debug_feed::AudioFeed>>,
 }
 
 fn toggle_settings_menu(
@@ -996,6 +1097,7 @@ fn toggle_settings_menu(
         acquired,
         preferences,
         labels,
+        audio,
     } = sources;
     if !effects.is_changed()
         || !effects.0.iter().any(
@@ -1228,7 +1330,12 @@ fn toggle_settings_menu(
             1.0,
         );
     });
-    spawn_volume_controls(&mut commands, panel, *volumes);
+    spawn_volume_controls(
+        &mut commands,
+        panel,
+        *volumes,
+        sound_status_label(audio.as_deref()),
+    );
 }
 
 fn spawn_settings_toggle(
@@ -2505,6 +2612,129 @@ pub(crate) mod tests {
             0,
             "a real running, gesture-unlocked audio context removes the overlay"
         );
+    }
+
+    const SOUND_OFF_NOTICE: &str = "Sound is off. Click or press a key to turn it on.";
+
+    /// A shell app with a focused canvas and a fixed frame step of 250 ms.
+    fn start_gate_app(audio: crate::debug_feed::AudioFeed) -> App {
+        let mut app = App::new();
+        app.add_plugins(MinimalPlugins)
+            .insert_resource(CoreEffects::default())
+            .insert_resource(VolumeSettings::default())
+            .insert_resource(FocusFeed(true))
+            .insert_resource(audio)
+            .insert_resource(bevy::time::TimeUpdateStrategy::ManualDuration(
+                std::time::Duration::from_millis(250),
+            ))
+            .add_plugins(ClientShellPlugin);
+        app.world_mut().spawn((
+            Window {
+                focused: true,
+                ..default()
+            },
+            PrimaryWindow,
+        ));
+        app
+    }
+
+    fn focus_overlays(app: &mut App) -> usize {
+        let mut overlays = app
+            .world_mut()
+            .query_filtered::<Entity, With<FocusOverlay>>();
+        overlays.iter(app.world()).count()
+    }
+
+    fn shows_text(app: &mut App, wanted: &str) -> bool {
+        let mut texts = app.world_mut().query::<&Text>();
+        texts.iter(app.world()).any(|text| text.0 == wanted)
+    }
+
+    /// Design 10.1 with ruling O15: the start overlay waits for the first gesture only. When
+    /// audio stays locked after it, input works and a notice shows for 8 s.
+    #[test]
+    fn locked_audio_after_the_first_gesture_removes_the_overlay_and_shows_the_sound_notice() {
+        let mut app = start_gate_app(crate::debug_feed::AudioFeed {
+            context_states: vec!["suspended".into()],
+            gesture_seen: false,
+            ..default()
+        });
+        app.update();
+        assert_eq!(focus_overlays(&mut app), 1, "no gesture yet: Click to play");
+        assert!(!shows_text(&mut app, SOUND_OFF_NOTICE));
+
+        app.world_mut()
+            .resource_mut::<crate::debug_feed::AudioFeed>()
+            .gesture_seen = true;
+        app.update();
+        assert_eq!(
+            focus_overlays(&mut app),
+            0,
+            "the first gesture removes the overlay, also when audio stays locked"
+        );
+        let mut first_shown = None;
+        let mut last_shown = None;
+        for frame in 0..48 {
+            app.update();
+            assert_eq!(
+                focus_overlays(&mut app),
+                0,
+                "input works while audio is locked"
+            );
+            if shows_text(&mut app, SOUND_OFF_NOTICE) {
+                first_shown.get_or_insert(frame);
+                last_shown = Some(frame);
+            }
+        }
+        let (first, last) = (first_shown.unwrap(), last_shown.unwrap());
+        assert!(first <= 4, "the notice shows within 1 s: frame {first}");
+        let frames = last - first + 1;
+        assert!(
+            (31..=33).contains(&frames),
+            "the notice shows for 8 s (32 frames of 250 ms): {frames}"
+        );
+
+        *app.world_mut().resource_mut::<CoreEffects>() = menu_action();
+        app.update();
+        assert!(
+            shows_text(&mut app, "Sound: off"),
+            "the menu says Sound: off"
+        );
+        app.world_mut().resource_mut::<CoreEffects>().0.clear();
+        app.world_mut()
+            .resource_mut::<crate::debug_feed::AudioFeed>()
+            .context_states = vec!["running".into()];
+        app.update();
+        assert!(
+            shows_text(&mut app, "Sound: on"),
+            "the menu follows the audio"
+        );
+        assert!(!shows_text(&mut app, "Sound: off"));
+
+        *app.world_mut().resource_mut::<FocusFeed>() = FocusFeed(false);
+        app.update();
+        assert_eq!(
+            focus_overlays(&mut app),
+            1,
+            "a focus loss shows the overlay again"
+        );
+    }
+
+    #[test]
+    fn running_audio_after_the_first_gesture_shows_no_sound_notice() {
+        let mut app = start_gate_app(crate::debug_feed::AudioFeed {
+            context_states: vec!["running".into()],
+            gesture_seen: true,
+            ..default()
+        });
+        for _ in 0..12 {
+            app.update();
+            assert_eq!(focus_overlays(&mut app), 0);
+            assert!(!shows_text(&mut app, SOUND_OFF_NOTICE));
+        }
+        *app.world_mut().resource_mut::<CoreEffects>() = menu_action();
+        app.update();
+        assert!(shows_text(&mut app, "Sound: on"));
     }
 
     #[test]
