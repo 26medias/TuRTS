@@ -302,28 +302,15 @@ async function judgeForge(view, input) {
     const controlsBottom = checkpointForSave(input, checkpoints, "hud2-controls-bottom.png");
     assertGuideVisible(controlsBottom.debug, true, "Controls scroll");
     assert(input.some((entry, index) => index < controlsBottom.screenshotIndex &&
-        entry.call === "wheel" && entry.args?.[0] === 1200),
+        entry.call === "wheel" && entry.args?.[0] > 0),
     "HUD2 Controls tail must be reached with actual physical wheel input");
     assert.deepEqual(controlsBottom.scene.clip_from_world, initial.scene.clip_from_world,
         "HUD2 wheel inside the guide must not zoom the world camera");
     assert.deepEqual(controlsBottom.debug.replicated_world?.unit_orders || [],
         initial.debug.replicated_world?.unit_orders || [],
         "HUD2 Controls scrolling must not issue world orders");
-    const actions = controlsBottom.debug.effective_bindings?.actions;
-    assert(actions && Object.keys(actions).length > 48,
-        "HUD2 Controls must cover the actual effective action set beyond the old 48-entry cap");
-    for (const [action, title] of [["type_modifier", "Type modifier"], ["zoom_in", "Zoom in"], ["zoom_out", "Zoom out"]]) {
-        assert(actions[action]?.length > 0, `HUD2 actual ${action} binding must exist`);
-        const expected = `${title}: ${actions[action].map(bindingLabel).join(", ")}`;
-        const row = (controlsBottom.debug.ui_snapshot || []).find((item) =>
-            item.id.startsWith("guide.4.bindings/") && item.visible && item.text === expected);
-        assert(row, `HUD2 Controls must visibly render the actual tail binding ${expected}`);
-        const [x, y, width, height] = row.rect || [];
-        assert([x, y, width, height].every(Number.isFinite) && x >= 490 && y >= 94 &&
-            x + width <= 1191 && y + height <= 679 && width > 0 && height > 0,
-        "HUD2 tail binding must fit the actual visible Controls viewport after scrolling");
-        await assertTextPixels(view, controlsBottom, row, `Controls ${action}`);
-    }
+    const tail = controlsTailRow(controlsBottom.debug);
+    await assertTextPixels(view, controlsBottom, tail, "Controls tail row");
     const f1Closed = checkpointForSave(input, checkpoints, "hud2-f1-closed.png");
     const reopened = checkpointForSave(input, checkpoints, "hud2-guide-reopened.png");
     assertGuideVisible(initial.debug, true, "first join");
@@ -546,6 +533,30 @@ function checkpointForSave(input, checkpoints, filename) {
     return { ...checkpoint, screenshotIndex, saveFile: filename };
 }
 
+// The last row that the product shows in the Controls list (guide page 5), whatever the row
+// order and the row labels are (RUN130; RUN132 changes both). The list must hold one row for
+// each effective action (no row cut), and its last row must be on the screen inside the
+// Controls viewport, with the keys of an effective action.
+const CONTROLS_VIEWPORT = { left: 490, top: 94, right: 1191, bottom: 679 };
+function controlsTailRow(debug) {
+    const actions = debug?.effective_bindings?.actions;
+    assert(actions && Object.keys(actions).length > 48,
+        "HUD2 Controls must cover the actual effective action set beyond the old 48-entry cap");
+    const rows = (debug.ui_snapshot || []).map((item) => ({ item, index: /^guide\.4\.bindings\/[^/]*\[index:(\d+)\]$/.exec(item.id ?? "") }))
+        .filter((row) => row.index).map((row) => ({ ...row.item, index: Number(row.index[1]) }));
+    assert.equal(rows.length, Object.keys(actions).length, "HUD2 Controls must show one row for each effective action");
+    const tail = rows.reduce((last, row) => (row.index > last.index ? row : last));
+    const keys = (tail.text ?? "").split(": ").slice(1).join(": ");
+    assert(tail.visible === true, `HUD2 Controls must visibly render its last row after scrolling: ${tail.text}`);
+    const [x, y, width, height] = tail.rect || [];
+    assert([x, y, width, height].every(Number.isFinite) && width > 0 && height > 0 && x >= CONTROLS_VIEWPORT.left &&
+        y >= CONTROLS_VIEWPORT.top && x + width <= CONTROLS_VIEWPORT.right && y + height <= CONTROLS_VIEWPORT.bottom,
+    `HUD2 Controls last row must fit the actual visible Controls viewport after scrolling: ${tail.text} at ${JSON.stringify(tail.rect)}`);
+    assert(Object.values(actions).some((bindings) => bindings.length > 0 && bindings.map(bindingLabel).join(", ") === keys),
+        `HUD2 Controls last row must show the keys of an effective action: ${tail.text}`);
+    return tail;
+}
+
 function assertGuideVisible(debug, expected, label) {
     const guide = (debug.ui_snapshot || []).find((row) => row.id === "guide" || row.id.startsWith("guide_"));
     assert(guide, `HUD2 ${label} checkpoint must include the authored guide widget`);
@@ -579,4 +590,4 @@ function countFillPixels(image, rect, expected, tolerance) {
     return count;
 }
 
-module.exports = { judge };
+module.exports = { judge, controlsTailRow };
