@@ -239,18 +239,20 @@ pub fn receive_hello(
                 (diagnostics.as_deref_mut(), owners_before.as_deref())
             {
                 let observed_result = result.as_ref().map(|slot| *slot).map_err(|reason| *reason);
-                if let Err(error) = diagnostics.hello_decision(
-                    entity,
-                    hello.player_id,
-                    tick.0,
-                    match_id.0,
-                    has_live_session,
-                    accepted_in_batch_before,
-                    accepted_in_batch.contains(&hello.player_id),
-                    observed_result,
-                    owners_before,
-                    &slots.owners(),
-                ) {
+                if let Err(error) =
+                    diagnostics.hello_decision(crate::session_diagnostics::HelloObservation {
+                        entity,
+                        player_id: hello.player_id,
+                        tick: tick.0,
+                        match_id: match_id.0,
+                        has_live_session,
+                        accepted_in_batch_before,
+                        accepted_in_batch_after: accepted_in_batch.contains(&hello.player_id),
+                        result: observed_result,
+                        owners_before,
+                        owners_after: &slots.owners(),
+                    })
+                {
                     panic!("private session observer failed: {error}");
                 }
             }

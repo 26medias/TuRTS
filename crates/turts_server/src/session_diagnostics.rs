@@ -16,6 +16,19 @@ use turts_sim::{SlotId, Slots, Tick};
 use crate::session::Session;
 use crate::stats::MatchId;
 
+pub struct HelloObservation<'a> {
+    pub entity: Entity,
+    pub player_id: u64,
+    pub tick: u32,
+    pub match_id: u64,
+    pub has_live_session: bool,
+    pub accepted_in_batch_before: bool,
+    pub accepted_in_batch_after: bool,
+    pub result: Result<SlotId, &'a str>,
+    pub owners_before: &'a [Option<u64>],
+    pub owners_after: &'a [Option<u64>],
+}
+
 fn exact_u64_decimal(value: u64) -> String {
     value.to_string()
 }
@@ -252,19 +265,19 @@ impl SessionDiagnostics {
         Ok(())
     }
 
-    pub fn hello_decision(
-        &mut self,
-        entity: Entity,
-        player_id: u64,
-        tick: u32,
-        match_id: u64,
-        has_live_session: bool,
-        accepted_in_batch_before: bool,
-        accepted_in_batch_after: bool,
-        result: Result<SlotId, &str>,
-        owners_before: &[Option<u64>],
-        owners_after: &[Option<u64>],
-    ) -> std::io::Result<()> {
+    pub fn hello_decision(&mut self, observation: HelloObservation<'_>) -> std::io::Result<()> {
+        let HelloObservation {
+            entity,
+            player_id,
+            tick,
+            match_id,
+            has_live_session,
+            accepted_in_batch_before,
+            accepted_in_batch_after,
+            result,
+            owners_before,
+            owners_after,
+        } = observation;
         let decision = match result {
             Ok(slot) => {
                 self.epoch(entity, player_id, Some(slot));
