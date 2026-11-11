@@ -798,10 +798,7 @@ pub fn produce_order<'a>(
         order.behaviour == Behaviour::Produce
             && order.target == turts_mod_api::TargetKind::Content
             && (order.units.is_empty()
-                || order
-                    .units
-                    .iter()
-                    .any(|allowed| allowed == unit_content_id))
+                || order.units.iter().any(|allowed| allowed == unit_content_id))
     })
 }
 

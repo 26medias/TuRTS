@@ -1572,9 +1572,8 @@ fn activate_widget(
                     .any(|technology| technology.to_string() == *content_id)
             });
             if accepts {
-                let Some(order) =
-                    sources::produce_order(&acquired.0.content, &unit.content_id)
-                        .map(|(id, _)| id.to_string())
+                let Some(order) = sources::produce_order(&acquired.0.content, &unit.content_id)
+                    .map(|(id, _)| id.to_string())
                 else {
                     return;
                 };
