@@ -3510,3 +3510,33 @@ Conflict: actual DPR2 clean run had browser factor2, scene viewport2560x1440 and
 Choice: add a validated internal css/device screenshotScale option to createDriverIo, defaultcss. SH1 early and main harness IO requestdevice; other rows retain their existing capture mode. The driver still calls the same screenshot method and receives only actual PNG bytes. No new public IO, product state or acceptance change.
 
 Evidence: root-t16-sh1-qualified-dpr2-v1 exits1/raweb02f6db with pixel-dimension qualifier; classify SETUP, not product or plant red. harness/driver-io.js and harness/run.js supply the actual device PNG for physical-pixel comparisons. DPR2v2 is running. Independent RUN110 pure actual-data replay raw889e5ac65ebeec5cf404bd40f5512b00c97a8422ccacf61bc0040ee27f8528ff passes7clauses and rejects stale guide pixels, doubled bounds and missing keydown with actual keyup retained. Alternative: resample synthetic images, ignore DPR, or accept physical bounds against CSS pixels. None used. Brief4 instrument rights.
+
+
+## C371: Bind the wheel observer to the actual transmitted delta at DPR2
+
+Conflict: DPR2v2 completed the real UI flow, but wheel10000 had no matched actual event because the IO sent20000 while its observer expected10000. The retained real downstream wheel has delta_y20000 and seqnull; UI scrolling itself occurred. This is an instrument mismatch, not a product red.
+
+Choice: calculate transmittedDelta=dy*actualDPR once, use it for both real mouse.wheel and the exact observer matcher. Retain the observed raw delta and the original logical IO argument. Keep physical delivery, matching tolerance and normal DPI1 behavior. No synthetic event or inferred sequence.
+
+Evidence: tests/browser/harness/driver-io.js wheel; DPR2v2 entry59/downstream and raw6b135ea9065b3c35f6b59013bfbcfdd1fc7f5a97816253cc2da6850861549bae exit1 on the missing-wheel qualifier. Fresh DPR2v3 is running. Alternative: fabricate a receipt or relax matching to any wheel event. Neither used. Brief4 instrument rights.
+
+
+## C372: Keep physical wheel plans in CSS units and compare Reload in physical units
+
+Conflict: DPR2v3 retained a real fresh Reload but its old hit predicate compared CSS client coordinates directly with physical UI bounds. After that fix, retained full-row replay revealed that multiplying wheel1450 byDPR2 also overscrolled the actual menu to its maximum, leaving Stop offscreen. The clean DPI1 plan reaches Stop at221logical pixels. C371 repaired attribution only; it did not repair the wrong wheel units.
+
+Choice: io.wheel(dy) sends the same CSS-pixel dy through Playwright and matches that exact rawDOMdelta. No DPR multiplier and no coordinate compensation in the driver plan. For Reload, multiply actual CSS client coordinates by the observed DPR before comparing actual physical button bounds; also require same window/epoch, canvas target and actual event sequence. Keep all physical inputs and11mandatory clauses.
+
+Evidence: DPR2v3 exit1/raw81c911c996a995945c2648d5199309f2e7889395a3850af9f78a0db6841d54fa fails the unnormalized Reload qualifier. Its retained conflict-edit-row has Stop physicaly-278 after clamped1810logical scroll; DPI1 hasy221 at1450logical scroll. Both are instrument setup evidence, not product or plant reds. driver-io.js wheel now transmits/matches dy; sh1-oracle.js Reload compares client*dpr. DPR2v4 is running. C371 scaling matcher is explicitly superseded by this complete unit correction. Alternative: secretly alter row coordinates perDPR, fabricate events, or credit a setup miss as a scale fault. None used. Brief4 instrument rights.
+
+
+## C373: Declare the actual DPR2 interior-scroll calibration in a supplemental SH1 fixture
+
+Conflict: correcting IO wheel units and attribution did not make the real Bevy ScrollArea DPI-independent. DPR2v4 observes and matches the actual1450DOMdelta, yet Stop remains above the viewport atphysicaly-278, the actual1810logical clamp. Bevy winit forwards physical PixelDelta; ScrollArea converts to pixels and subtracts into logical ScrollPosition. The expectation in C372 of identical scroll outcomes acrossDPR is superseded by this actual mechanism evidence. IO must still keep the browser CSS contract.
+
+Choice: keep the default SH1/DPR1 plan unchanged. Add explicit supplemental rows/SH1-dpr2.json with devicefactor2 and the same11checks, physical coordinates and steps; only the two interior conflict wheel deltas are725 rather than1450. End-stop10000 scrolls stay unchanged. This declared physical calibration gives the same visible target row through real input. Clean and scale-plant runs use the identical supplemental fixture. No hidden adaptive driver, product patch, accepted clause change or IO rescaling.
+
+Evidence: DPR2v4 raw73070a66a85fdf50dd424a3e1e024289323f7500e9ce8f938e5bb2d76e54b44b exits1 on the absent offer after the real click missed the offscreen Stop row; classify fixture setup, not product/plant red. Exact retained actual wheel1450 attribution is present. crates.io installed bevy_winit0.20state.rs and bevy_ui_widgets0.20scrollarea.rs document this path. Supplementary DPR2v5 is running; full11green remains required before the scale fault. Alternative: change product scrolling for this instrument, silently divide IO deltas or waive conflict checks atDPR2. None used. Brief4 fixture/nearest-existing-mechanism rights.
+
+
+Task16 checkpoint: full current-source supplemental DPR2SH1 passes all11checks/exit0 in root-t16-sh1-qualified-dpr2-v5, raw519c35e42a221419803427cfc65afb899339d837a1002edf4e377b3ecb61f281, sourceunchanged. Actual device PNGs, browserDPR2, explicit725interior wheel calibration and absolute UIscale consumer all qualify; the same fixture will judge the scale plant. The default seven-row final-source refresh plus both PER1corruption cases is now running sequentially. No product commit, formal gates or builder plants yet. No new task or agent run; global110/170. Current-task-only pause boundary remains.
