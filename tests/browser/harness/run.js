@@ -8,6 +8,7 @@ const { createDriverIo } = require("./driver-io.js");
 const { createView } = require("./view.js");
 const { prepareSh1Lifecycle } = require("./sh1-lifecycle.js");
 const { createSceneCheckpoints } = require("./scene-checkpoints.js");
+const { planFor, runM2Fixture } = require("./m2-ingest.js");
 const { installContextMenuObserver } = require("./contextmenu-observer.js");
 const { installBoundedRafHold } = require("./bounded-raf.js");
 const { installDeviceAudit, collectDeviceAudit } = require("./device-audit-descriptor.js");
@@ -328,6 +329,8 @@ async function run(options) {
                 await sh1Lifecycle.disconnect(pages[0], driver, io);
                 await waitForJoinedRole(pages[0]);
                 await driver.drive(io, { ...params, fixture_phase: "connection-rejoined" });
+            } else if (params.row === "M2" && planFor(params)) {
+                await runM2Fixture({ io, driver, params, pages, outDir: options.outDir });
             } else {
                 await driver.drive(io, params);
             }

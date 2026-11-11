@@ -14,7 +14,7 @@ const {
     projectGroundPoint,
     projectRenderedEntity,
     uiActionWindowPoint,
-} = require("./m2.js");
+} = require("./m2-oracle-lib.js");
 
 const capturedUiRows = JSON.parse(fs.readFileSync(
     path.join(__dirname, "fixtures/task16-selected-ui-raw.json"),
@@ -131,4 +131,18 @@ test("actual browser projection exposes all public rows without private DTO fiel
     assert.equal(projection.nodes.length, actualPublicDebug.replicated_world.nodes.length);
     assert.ok(projection.units.every((unit) => Number.isInteger(unit.owner_slot)));
     assert.ok(projection.nodes.every((node) => Number.isFinite(node.remaining)));
+});
+
+test("MC projection permits unit_orders and max_health and still refuses a new private field", () => {
+    const world = JSON.parse(JSON.stringify(actualPublicDebug.replicated_world));
+    world.unit_orders = [];
+    for (const unit of world.units) unit.max_health = null;
+    const debug = { ...actualPublicDebug, replicated_world: world };
+    assertPublicProjectionSchema({ debug });
+    assert.equal(publicProjection({ debug }).units.length, world.units.length);
+    assert.throws(() => assertPublicProjectionSchema({ debug: { ...debug, replicated_world: { ...world, foreign_queues: [] } } }),
+        /permitted M2\/M3 client state only/);
+    const leaky = JSON.parse(JSON.stringify(world));
+    leaky.units[0].private_inventory = [];
+    assert.throws(() => assertPublicProjectionSchema({ debug: { ...debug, replicated_world: leaky } }));
 });

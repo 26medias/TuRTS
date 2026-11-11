@@ -79,6 +79,26 @@ if [[ -z "$PACKAGE" ]]; then
     exit 2
 fi
 case "$PACKAGE" in base|haul|acme|cedar) ;; *) echo "unknown package: $PACKAGE" >&2; exit 2 ;; esac
+if [[ -z "$CASE_ID" ]]; then
+    # MC task 21: each case runs in its own server and harness run (tests/browser/m2-driver.js).
+    package_status=0
+    while read -r package_case; do
+        [[ "$package_case" == "E9-browser-$PACKAGE-"* && "$package_case" != *"-loss-"* ]] || continue
+        "$0" --case "$package_case" || package_status=1
+    done < <("$0" --list-cases)
+    exit "$package_status"
+fi
+# MC task 21 STOP: the plain M2 HUDs (MC design 12.2) have no production widget, and a HUD
+# order button with a Content or Job target cannot choose a recipe or a job
+# (crates/turts_interaction/src/lib.rs:1139). These cases have no player path until a ruling.
+case "$CASE_ID" in
+    E9-browser-base-economy|E9-browser-base-loss-charge|E9-browser-base-loss-refund|E9-browser-base-loss-spawn|E9-browser-base-loss-final_change)
+        printf 'M2_CASE_START %s\n' "$CASE_ID"
+        printf 'M2_CASE_INFRA_FAIL %s %s\n' "$CASE_ID" '"STOP (MC task 21): no player path for production in the plain M2 HUD; needs a ruling"'
+        printf 'M2_CASE_SUMMARY {"selected_count":1,"completed_count":1,"passed_count":0,"semantic_failed_count":0,"infrastructure_failed_count":1,"timeout_count":0}\n'
+        exit 1
+        ;;
+esac
 if [[ -n "$CASE_ID" ]]; then
     case "$PACKAGE:$CASE_ID" in
         base:E9-browser-base-selection|base:E9-browser-base-economy|base:E9-browser-base-recovery|base:E9-browser-base-public-convergence|base:E9-browser-base-loss-conversion|base:E9-browser-base-loss-charge|base:E9-browser-base-loss-refund|base:E9-browser-base-loss-spawn|base:E9-browser-base-loss-final_change|haul:E9-browser-haul-economy|haul:E9-browser-haul-public-convergence|acme:E9-browser-acme-selection|acme:E9-browser-acme-public-convergence|cedar:E9-browser-cedar-economy|cedar:E9-browser-cedar-public-convergence) ;;
@@ -338,17 +358,52 @@ if [[ "$ready" != true ]]; then
 fi
 
 printf 'Package: %s\nArtifacts: %s\n' "$PACKAGE" "$ARTIFACT_DIR"
+WINDOWS=1
+[[ "$CASE_ID" != *-public-convergence ]] || WINDOWS=2
+PAGE_URL="$(python3 - "http://127.0.0.1:$STATIC_PORT/" "http://127.0.0.1:$HTTP_PORT" "ws://127.0.0.1:$WS_PORT" <<'PYURL'
+from urllib.parse import urlencode
+import sys
+print(sys.argv[1] + "?" + urlencode({"server": sys.argv[2], "ws": sys.argv[3]}))
+PYURL
+)"
+python3 - "$ARTIFACT_DIR/params.json" "$PAGE_URL" "http://127.0.0.1:$HTTP_PORT" "ws://127.0.0.1:$WS_PORT" "$PACKAGE" "$CASE_ID" "$WINDOWS" <<'PYPARAMS2'
+import json, pathlib, sys
+out, url, http, ws, package, case_id, windows = sys.argv[1:]
+pathlib.Path(out).write_text(json.dumps({
+    "row": "M2", "package": package, "url": url, "server_url": http, "ws_url": ws, "windows": int(windows),
+    "capture_scene_checkpoints": True, "m2": {"case_id": case_id, "package": package},
+    "viewport": {"width": 1280, "height": 720, "device_scale_factor": 1},
+}, sort_keys=True) + "\n")
+PYPARAMS2
 set +e
-M2_PACKAGE_NAME="$PACKAGE" \
-M2_CASE_ID="$CASE_ID" \
-M2_FIXTURE_X_OFFSET="$FIXTURE_X_OFFSET" \
-M2_FIXTURE_TRANSLATION_RECEIPT="$ARTIFACT_DIR/map-fixture-translation.json" \
-M2_HEADLESS=false \
-M2_CHROME_ARGS_JSON="${M2_CHROME_ARGS_JSON:-[\"--enable-gpu\",\"--use-angle=vulkan\",\"--enable-features=Vulkan\",\"--enable-unsafe-webgpu\"]}" \
-M2_IGNORE_DEFAULT_ARGS_JSON="${M2_IGNORE_DEFAULT_ARGS_JSON:-[\"--enable-unsafe-swiftshader\"]}" \
+MC_BROWSER_HEADED=1 \
+MC_CHROME_ARGS_JSON="${M2_CHROME_ARGS_JSON:-[\"--enable-gpu\",\"--use-angle=vulkan\",\"--enable-features=Vulkan\",\"--enable-unsafe-webgpu\"]}" \
+MC_CHROME_IGNORE_DEFAULT_ARGS_JSON="${M2_IGNORE_DEFAULT_ARGS_JSON:-[\"--enable-unsafe-swiftshader\"]}" \
 xvfb-run --auto-servernum --server-args='-screen 0 1280x720x24' \
-    node "$ROOT/tests/browser/m2.js" "http://127.0.0.1:$STATIC_PORT/" "http://127.0.0.1:$HTTP_PORT" "ws://127.0.0.1:$WS_PORT" "$ARTIFACT_DIR" > "$ARTIFACT_DIR/browser.log" 2>&1
+    node "$ROOT/tests/browser/harness/run.js" "$PAGE_URL" "$ARTIFACT_DIR" "$ROOT/tests/browser/m2-driver.js" "$ROOT/tests/browser/m2-oracle.js" \
+    --params "$ARTIFACT_DIR/params.json" --viewport 1280x720 > "$ARTIFACT_DIR/harness.log" 2>&1
 BROWSER_STATUS=$?
 set -e
+# The case markers that tests/m2/refutations.py reads (M2_CASE_SUMMARY handling, :130-134).
+python3 - "$ARTIFACT_DIR/harness.log" "$CASE_ID" "$BROWSER_STATUS" > "$ARTIFACT_DIR/browser.log" <<'PYMARKERS'
+import json, re, sys
+log, case_id, status = sys.argv[1], sys.argv[2], int(sys.argv[3])
+text = open(log, encoding="utf-8", errors="replace").read()
+print(text, end="" if text.endswith("\n") else "\n")
+print(f"M2_CASE_START {case_id}")
+semantic = re.search(r"^SEMANTIC FAIL M2\.(\S+): (.*)$", text, re.M)
+counts = {"passed_count": 0, "semantic_failed_count": 0, "infrastructure_failed_count": 0}
+if status == 0 and re.search(r"^PASS m2-oracle\.js$", text, re.M):
+    print(f"M2_CASE_PASS {case_id}")
+    counts["passed_count"] = 1
+elif semantic and semantic.group(1) == case_id:
+    print(f"M2_CASE_SEMANTIC_FAIL {case_id} {json.dumps(semantic.group(2))}")
+    counts["semantic_failed_count"] = 1
+else:
+    failure = re.search(r"^FAIL .*$", text, re.M)
+    print(f"M2_CASE_INFRA_FAIL {case_id} {json.dumps(failure.group(0) if failure else f'harness exit {status}')}")
+    counts["infrastructure_failed_count"] = 1
+print("M2_CASE_SUMMARY " + json.dumps({"selected_count": 1, "completed_count": 1, **counts, "timeout_count": 0}, separators=(",", ":")))
+PYMARKERS
 cat "$ARTIFACT_DIR/browser.log"
 exit "$BROWSER_STATUS"

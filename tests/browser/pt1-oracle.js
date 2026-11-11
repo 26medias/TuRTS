@@ -181,7 +181,7 @@ async function judge(view, params) {
     const hoverLate = at("pt1-s04-hover-tooltip");
     const drill = own(hoverNow.debug, "forge:drill")[0];
     const drillScene = hoverNow.scene.units.find((unit) => unit.unit_id === drill?.unit_id);
-    step(4, drillScene && visibleRingPixels(await image(view, "pt1-s04-hover-immediate"), hoverNow.scene, drillScene, drillScene.pick_radius),
+    step(4, drillScene && visibleRingPixels(await image(view, "pt1-s04-hover-immediate"), hoverNow.scene, { ...drillScene, owner_slot: drill.owner_slot }, drillScene.pick_radius),
         "no hover ring round the drill");
     step(4, !widgets(hoverNow.debug, (row) => row.kind === "world_tooltip").length, "the world tooltip shows before 0.5 s");
     step(4, widget(hoverLate.debug, (row) => row.kind === "world_tooltip" && row.text === TEXT.drillTooltip),
