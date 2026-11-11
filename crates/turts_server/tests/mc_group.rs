@@ -198,6 +198,11 @@ fn gma_crossing_and_second_group_while_first_moves_leave_no_rest_overlap() {
     let second: Vec<_> = (21..=40).collect();
     // First group travels north. The second order begins at tick 20 and travels east; phases
     // follow the actual initial geometry and 3 units/s troop speed, so their paths intersect.
+    // Ticks 1 to 19 also walk the first group past the idle second group (a part of case I). This
+    // part stays on purpose: two groups that pass at a right angle at full speed overlap each
+    // pair for at most 1.8 units of relative path at 3 x sqrt(2) units/s, 0.42 s, so the red
+    // build "avoidance off" can break the 0.5 s rule only where one group is slow or idle (P3 of
+    // Task 22 went red at tick 12). The witness below checks the crossing with both groups moving.
     let entries = vec![
         (1, 0, mc::point_order(first.clone(), 29.0, 35.0, 1)),
         (20, 0, mc::point_order(second.clone(), 50.0, 22.0, 2)),
@@ -235,7 +240,8 @@ fn gma_crossing_and_second_group_while_first_moves_leave_no_rest_overlap() {
 #[ignore = "MC Task22 process acceptance; run under the assigned compiler lease"]
 fn gma_second_group_passes_through_a_resting_group_and_both_rest_disjoint() {
     // The north rows (21..=40) settle first on open ground north of the start, so no idle
-    // trooper stands on their slots. The south rows (1..=20) then walk north through them.
+    // trooper stands between them and their slots (idle units do not move for others, 6.4). The
+    // south rows (1..=20) then walk north through them.
     let first: Vec<_> = (21..=40).collect();
     let second: Vec<_> = (1..=20).collect();
     const SECOND_COMMAND_TICK: u32 = 240;
