@@ -199,6 +199,11 @@ async function judgeRecovery(view, record, records, joined) {
     assert(held.buffer_overflows > 0, "real cap=3 loss did not produce an observed buffer overflow");
     assert(held.buffered_batches <= 3, "retained real delta tail exceeded configured cap=3");
     assert.equal(held.max_outstanding_requests, 1, "only one actual resync request may be outstanding at a time");
+    // The time of a second request depends on the run: before the overflow (m2.js:810 in
+    // t2b-refutations-run30) or only at the release (t21-run118). One check over every
+    // recorded step gives one failure text for both cases. The later checks stay.
+    const outstandingPeak = Math.max(0, ...Object.values(steps).flat().map((sample) => ingestOf(sample).max_outstanding_requests ?? 0));
+    assert.equal(outstandingPeak, 1, "only one actual resync request may be outstanding at a time");
     assert.equal(held.held_snapshots, 1, "only one actual resync response may remain held for one outstanding request");
     assert.equal(held.max_buffered_batches, 3, "the real retained delta tail never exceeds the configured cap");
     assert.equal(held.outstanding_request, true);
