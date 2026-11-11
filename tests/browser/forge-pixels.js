@@ -117,23 +117,21 @@ async function waitForResearchButton(io, seconds, label) {
     return false;
 }
 
-// The guide close button (mods/forge/interface/hud.ron guide_close_fill: (1176, 12), 96 x 48,
-// "#e69f00", under the guide_close button at (1178, 14), 92 x 44) shows only while the guide is
-// open. The button draws the engine button fill over the orange box (run t21-run118-pt1-1,
-// pt1-s10-playing.png: a teal Close), so either fill counts.
-const GUIDE_CLOSE_AREA = { x: 1176, y: 12, width: 96, height: 48 };
-const GUIDE_CLOSE_FILLS = [[230, 159, 0], [33, 66, 77], [46, 102, 112], [26, 77, 92]];
+// The guide close button (mods/forge/interface/hud.ron guide_close at (1178, 14), 92 x 44, over
+// the orange guide_close_fill box) shows only while the guide is open. The button draws the
+// engine button fill over the orange box (run t21-run118-pt1-1, pt1-s10-playing.png: a teal
+// Close), and right after F1 the fade shows it darker (20, 44, 51). The four inner corners of the
+// button, away from the "Close" label (x 1179-1222, y 15-29), must all show it: an alert line of the Alerts panel under that area is teal too, but it
+// ends at x 1261 (run t21-run118-pt1-2, checkpoints 770-801: one teal sample, a false "open").
+const GUIDE_CLOSE_CORNERS = [[1240, 20], [1266, 20], [1190, 52], [1266, 52]];
+const GUIDE_CLOSE_FILLS = [[230, 159, 0], [33, 66, 77], [46, 102, 112], [26, 77, 92], [20, 44, 51]];
 
 function guideOpen(image) {
-    let count = 0;
-    for (let y = GUIDE_CLOSE_AREA.y; y < GUIDE_CLOSE_AREA.y + GUIDE_CLOSE_AREA.height; y += 2) {
-        for (let x = GUIDE_CLOSE_AREA.x; x < GUIDE_CLOSE_AREA.x + GUIDE_CLOSE_AREA.width; x += 2) {
-            const offset = (y * image.width + x) * 4;
-            if (GUIDE_CLOSE_FILLS.some((fill) => Math.hypot(image.rgba[offset] - fill[0], image.rgba[offset + 1] - fill[1],
-                image.rgba[offset + 2] - fill[2]) <= 20)) count += 1;
-        }
-    }
-    return count >= 200;
+    return GUIDE_CLOSE_CORNERS.every(([x, y]) => {
+        const offset = (y * image.width + x) * 4;
+        return GUIDE_CLOSE_FILLS.some((fill) => Math.hypot(image.rgba[offset] - fill[0], image.rgba[offset + 1] - fill[1],
+            image.rgba[offset + 2] - fill[2]) <= 14);
+    });
 }
 
 // Open or close the guide with its key, after a screenshot shows its current state.

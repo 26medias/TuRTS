@@ -378,13 +378,24 @@ async function judge(view, params) {
 
     // Step 10: window B: the load screen, then the own drone in the colour of slot 1.
     judgeLoad(startup.filter((item) => item.window === B), 10, "window B");
+    // The start camera of window B shows an own drone in the colour of slot 1: a window B
+    // screenshot before the first drag (step 12), with no overlay. The overlay and its fade
+    // darken the scene (run t21-run118-pt1-2: drone pixel (61, 43, 20) under it, (194, 141, 43)
+    // after), so the oracle takes the first such screenshot that shows the colour.
     const firstB = ctx.first(B, (shot) => shot.debug.phase?.startsWith("Joined"));
     step(10, firstB && firstB.debug.slot === 1, "window B did not join slot 1");
-    const imageB = await ctx.image(firstB);
-    step(10, own(firstB.debug, "forge:drone").some((drone) => {
-        const shown = firstB.scene.units.find((unit) => unit.unit_id === drone.unit_id);
-        return shown && inViewport(firstB.scene, shown.ground_screen_center) && colourNear(imageB, shown.ground_screen_center, SLOT_RGB[1], 10);
-    }), "the camera of window B does not show an own drone in the colour of slot 1");
+    const firstDragB = input.findIndex((entry) => entry.window === B && entry.call === "drag");
+    let droneShown = false;
+    for (const shot of ctx.all(B, (item) => item.debug.phase?.startsWith("Joined") &&
+        !(item.debug.ui_snapshot ?? []).some((row) => row.kind === "focus_overlay" && row.visible === true), -1, firstDragB < 0 ? Infinity : firstDragB)) {
+        const imageB = await ctx.image(shot);
+        droneShown = own(shot.debug, "forge:drone").some((drone) => {
+            const shown = shot.scene.units.find((unit) => unit.unit_id === drone.unit_id);
+            return shown && inViewport(shot.scene, shown.ground_screen_center) && colourNear(imageB, shown.ground_screen_center, SLOT_RGB[1], 10);
+        });
+        if (droneShown) break;
+    }
+    step(10, droneShown, "the camera of window B does not show an own drone in the colour of slot 1");
 
     // Step 11: the foreign turret: gapped ring, empty command card, range circle.
     const foreign = ctx.first(B, (shot) => {
