@@ -224,3 +224,9 @@ MC is active on this desktop. Task15 code at52ecf3c is accepted for integration:
 - [ ] MP2: UnitId-to-Entity index; target validation one time for each envelope.
 - [ ] Before M4: split `step_frame_preserving_resting`; choose the update model.
 - [ ] Before M7: profile the client replica clone (VIS2 p50 133.3 ms at 5,000 units).
+
+## Follow-up from MC ruling O15 (UX)
+
+- [ ] MP1: optional Button `font` field in the mod API with a version table row; "Unbound" for a BuildMenu or CommandCard row with no key.
+- [ ] MP1: Controls menu groups, search and keyboard navigation.
+- [ ] MP1 (bevy-rendering-engineer): marks above the first alert row; alert row pitch 62 px against 31 px in hud.ron:89.
