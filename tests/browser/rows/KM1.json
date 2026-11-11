@@ -1,0 +1,255 @@
+{
+    "row": "KM1",
+    "package": "mods/forge",
+    "driver": "tests/browser/shell-driver.js",
+    "oracle": "tests/browser/shell-oracle.js",
+    "runs": "ci",
+    "capture_scene_checkpoints": true,
+    "viewports": [
+        "1280x720"
+    ],
+    "windows": 1,
+    "acceptance_contract": [
+        "Action fires on physical KeyQ while logical key is a",
+        "Forge/mod default binding applies",
+        "Player binding replaces only that action and survives reload",
+        "Reserved default binding makes turts-pack exit 2",
+        "Menu refuses a reserved player binding with a notice",
+        "Displayed label is the effective physical-key label and guide page 5 agrees"
+    ],
+    "stages": {
+        "task16": {
+            "status": "executable",
+            "phases": [
+                "player-override"
+            ],
+            "actions": [
+                {
+                    "call": "click",
+                    "phase": "player-override",
+                    "x": 500,
+                    "y": 430,
+                    "button": "left"
+                },
+                {
+                    "call": "wait",
+                    "phase": "player-override",
+                    "ms": 250
+                },
+                {
+                    "call": "wheel",
+                    "phase": "player-override",
+                    "x": 650,
+                    "y": 500,
+                    "delta": 10000
+                },
+                {
+                    "call": "wait",
+                    "phase": "player-override",
+                    "ms": 200
+                },
+                {
+                    "call": "key",
+                    "phase": "player-override",
+                    "code": "F10",
+                    "modifiers": []
+                },
+                {
+                    "call": "wait",
+                    "phase": "player-override",
+                    "ms": 200
+                },
+                {
+                    "call": "wheel",
+                    "phase": "player-override",
+                    "x": 650,
+                    "y": 500,
+                    "delta": 1450
+                },
+                {
+                    "call": "wait",
+                    "phase": "player-override",
+                    "ms": 200
+                },
+                {
+                    "call": "click",
+                    "phase": "player-override",
+                    "x": 784,
+                    "y": 116,
+                    "button": "left"
+                },
+                {
+                    "call": "key",
+                    "phase": "player-override",
+                    "code": "KeyQ",
+                    "modifiers": [],
+                    "options": {
+                        "key": "a"
+                    }
+                },
+                {
+                    "call": "wait",
+                    "phase": "player-override",
+                    "ms": 200
+                },
+                {
+                    "call": "key",
+                    "phase": "player-override",
+                    "code": "F10",
+                    "modifiers": []
+                },
+                {
+                    "call": "wait",
+                    "phase": "player-override",
+                    "ms": 150
+                },
+                {
+                    "call": "key",
+                    "phase": "player-override",
+                    "code": "KeyQ",
+                    "modifiers": [],
+                    "options": {
+                        "key": "a"
+                    }
+                },
+                {
+                    "call": "wait",
+                    "phase": "player-override",
+                    "ms": 200
+                },
+                {
+                    "call": "wheel",
+                    "phase": "player-override",
+                    "x": 650,
+                    "y": 500,
+                    "delta": 10000
+                },
+                {
+                    "call": "wait",
+                    "phase": "player-override",
+                    "ms": 200
+                },
+                {
+                    "call": "key",
+                    "phase": "player-override",
+                    "code": "F10",
+                    "modifiers": []
+                },
+                {
+                    "call": "wait",
+                    "phase": "player-override",
+                    "ms": 150
+                },
+                {
+                    "call": "wheel",
+                    "phase": "player-override",
+                    "x": 650,
+                    "y": 500,
+                    "delta": 1450
+                },
+                {
+                    "call": "wait",
+                    "phase": "player-override",
+                    "ms": 200
+                },
+                {
+                    "call": "click",
+                    "phase": "player-override",
+                    "x": 784,
+                    "y": 116,
+                    "button": "left"
+                },
+                {
+                    "call": "key",
+                    "phase": "player-override",
+                    "code": "F12",
+                    "modifiers": []
+                },
+                {
+                    "call": "wait",
+                    "phase": "player-override",
+                    "ms": 200
+                },
+                {
+                    "call": "key",
+                    "phase": "player-override",
+                    "code": "F10",
+                    "modifiers": []
+                },
+                {
+                    "call": "wait",
+                    "phase": "player-override",
+                    "ms": 150
+                },
+                {
+                    "call": "reload",
+                    "phase": "player-override"
+                },
+                {
+                    "call": "wait",
+                    "phase": "player-override",
+                    "ms": 500
+                }
+            ],
+            "captures": [
+                {
+                    "name": "guide-default",
+                    "phase": "player-override",
+                    "after_action": 4,
+                    "window": 1
+                },
+                {
+                    "name": "edit-row",
+                    "phase": "player-override",
+                    "after_action": 8,
+                    "window": 1
+                },
+                {
+                    "name": "capture-result",
+                    "phase": "player-override",
+                    "after_action": 10,
+                    "window": 1
+                },
+                {
+                    "name": "keyq-order",
+                    "phase": "player-override",
+                    "after_action": 15,
+                    "window": 1
+                },
+                {
+                    "name": "guide-effective",
+                    "phase": "player-override",
+                    "after_action": 17,
+                    "window": 1
+                },
+                {
+                    "name": "reserved-edit-row",
+                    "phase": "player-override",
+                    "after_action": 21,
+                    "window": 1
+                },
+                {
+                    "name": "reserved-notice",
+                    "phase": "player-override",
+                    "after_action": 24,
+                    "window": 1
+                },
+                {
+                    "name": "reload-joined",
+                    "phase": "player-override",
+                    "after_action": 28,
+                    "window": 1
+                }
+            ],
+            "checks": [
+                "keyq-bound-action",
+                "mod-default",
+                "player-override-reload",
+                "reserved-player-notice",
+                "reserved-mod-exit",
+                "labels-guide",
+                "labels-guide-pixels"
+            ]
+        }
+    }
+}

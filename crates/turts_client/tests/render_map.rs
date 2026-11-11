@@ -190,6 +190,7 @@ fn sync_app() -> App {
         .init_resource::<turts_client::ingest::ReplicaState>()
         .insert_resource(AcquiredPackages(Acquired {
             lockfile_hash: String::new(),
+            verified_root_mod: None,
             visuals: HashMap::from([(
                 "pkg:man".to_string(),
                 Shape::Capsule {
@@ -298,6 +299,7 @@ fn setup_app(phase: Phase) -> App {
         .insert_resource(phase)
         .insert_resource(AcquiredPackages(Acquired {
             lockfile_hash: String::new(),
+            verified_root_mod: None,
             visuals: HashMap::new(),
             map_size: (64.0, 64.0),
             unit_names: HashMap::new(),
@@ -377,6 +379,7 @@ fn sync_nodes_uses_downloaded_shapes_and_stable_ids() {
         .insert_resource(state)
         .insert_resource(AcquiredPackages(Acquired {
             lockfile_hash: String::new(),
+            verified_root_mod: None,
             visuals: HashMap::new(),
             map_size: (64.0, 64.0),
             unit_names: HashMap::new(),

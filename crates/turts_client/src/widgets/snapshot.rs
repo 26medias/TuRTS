@@ -8,10 +8,130 @@ use super::primitives::{AuthoredWidgetId, WidgetButtonAction, WidgetEnabled};
 use crate::visuals::WorldTooltip;
 use crate::{debug_feed::UiSnapshotFeed, ui_shared::UiCaptureRoot};
 
+const MAX_SETTINGS_MENU_ROOTS: usize = 4;
+const MAX_SETTINGS_MENU_DESCENDANTS: usize = 512;
+const MAX_SETTINGS_MENU_TEXT_NODES: usize = 256;
+const MAX_FOCUS_OVERLAY_ROOTS: usize = 4;
+const MAX_FOCUS_OVERLAY_DESCENDANTS: usize = 512;
+const MAX_FOCUS_OVERLAY_TEXT_NODES: usize = 256;
+
 /// Build the bridge rows from computed Bevy UI geometry, never from the authored declaration.
 pub fn snapshot(world: &World) -> Value {
     let mut rows = Vec::new();
+    let mut focus_overlay_root = None;
+    let mut focus_overlay_count = 0;
     for entity in world.iter_entities() {
+        if entity.contains::<crate::client_shell::FocusOverlay>() {
+            focus_overlay_count += 1;
+            if focus_overlay_count == 1 {
+                focus_overlay_root = Some(entity.id());
+            }
+        }
+    }
+    if focus_overlay_count > MAX_FOCUS_OVERLAY_ROOTS {
+        rows.push(json!({
+            "kind": "focus_overlay_overflow",
+            "count_at_least": MAX_FOCUS_OVERLAY_ROOTS + 1,
+        }));
+    } else if focus_overlay_count > 1 {
+        rows.push(json!({
+            "kind": "focus_overlay",
+            "id": "focus_overlay",
+            "root_count": focus_overlay_count,
+            "rect": null,
+            "visible": false,
+            "capture_root": false,
+            "focus_policy_block": false,
+            "ambiguous_roots": true,
+            "text_nodes": [],
+            "descendants_visited": 0,
+            "descendants_truncated": false,
+            "text_truncated": false,
+        }));
+    } else if focus_overlay_count == 0 {
+        rows.push(json!({
+            "kind": "focus_overlay",
+            "id": "focus_overlay",
+            "root_count": 0,
+            "rect": null,
+            "visible": false,
+            "capture_root": false,
+            "focus_policy_block": false,
+            "text_nodes": [],
+            "descendants_visited": 0,
+            "descendants_truncated": false,
+            "text_truncated": false,
+        }));
+    } else if let Some(root) = focus_overlay_root {
+        let entity = world.entity(root);
+        let (rect, visible) = match (
+            entity.get::<ComputedNode>(),
+            entity.get::<UiGlobalTransform>(),
+        ) {
+            (Some(node), Some(transform)) => {
+                let rect = computed_rect(node, transform);
+                let visible = rect.is_some() && layout_visible(world, root, node, transform);
+                (rect.map_or(Value::Null, |rect| json!(rect)), visible)
+            }
+            _ => (Value::Null, false),
+        };
+        let (text_nodes, descendants_visited, descendants_truncated, text_truncated) =
+            focus_overlay_text_nodes(world, root);
+        rows.push(json!({
+            "kind": "focus_overlay",
+            "id": "focus_overlay",
+            "root_count": 1,
+            "rect": rect,
+            "visible": visible,
+            "capture_root": entity.contains::<UiCaptureRoot>(),
+            "focus_policy_block": entity.get::<bevy::ui::FocusPolicy>() == Some(&bevy::ui::FocusPolicy::Block),
+            "text_nodes": text_nodes,
+            "descendants_visited": descendants_visited,
+            "descendants_truncated": descendants_truncated,
+            "text_truncated": text_truncated,
+        }));
+    }
+    let mut settings_menu_roots = 0;
+    for entity in world.iter_entities() {
+        if entity.contains::<crate::client_shell::SettingsMenuOverlay>() {
+            settings_menu_roots += 1;
+            if settings_menu_roots > MAX_SETTINGS_MENU_ROOTS {
+                if settings_menu_roots == MAX_SETTINGS_MENU_ROOTS + 1 {
+                    rows.push(json!({
+                        "kind": "settings_menu_overflow",
+                        "count_at_least": settings_menu_roots,
+                    }));
+                }
+                continue;
+            }
+            let (rect, visible) = match (
+                entity.get::<ComputedNode>(),
+                entity.get::<UiGlobalTransform>(),
+            ) {
+                (Some(node), Some(transform)) => {
+                    let rect = computed_rect(node, transform);
+                    let visible =
+                        rect.is_some() && layout_visible(world, entity.id(), node, transform);
+                    (rect.map_or(Value::Null, |rect| json!(rect)), visible)
+                }
+                _ => (Value::Null, false),
+            };
+            let (text_nodes, descendants_visited, descendants_truncated, text_truncated) =
+                settings_menu_text_nodes(world, entity.id());
+            rows.push(json!({
+                "kind": "settings_menu",
+                "id": "settings_menu",
+                "rect": rect,
+                "visible": visible,
+                "capture_root": entity.contains::<UiCaptureRoot>(),
+                "focus_policy_block": entity.get::<bevy::ui::FocusPolicy>() == Some(&bevy::ui::FocusPolicy::Block),
+                "text_nodes": text_nodes,
+                "descendants_visited": descendants_visited,
+                "descendants_truncated": descendants_truncated,
+                "text_truncated": text_truncated,
+            }));
+            continue;
+        }
         if entity.contains::<crate::client_shell::ClientNotice>() {
             let (Some(node), Some(transform)) = (
                 entity.get::<ComputedNode>(),
@@ -56,7 +176,13 @@ pub fn snapshot(world: &World) -> Value {
             size.x,
             size.y,
         ];
-        let action = entity.get::<WidgetButtonAction>().map(|action| &action.0);
+        let action = if entity.contains::<crate::client_screens::ReloadButton>() {
+            Some(json!({"kind":"reload"}))
+        } else {
+            entity
+                .get::<WidgetButtonAction>()
+                .map(|action| json!(&action.0))
+        };
         let text = entity.get::<Text>().map(|text| text.0.as_str());
         let button = entity.contains::<Button>();
         rows.push(json!({
@@ -109,6 +235,138 @@ pub fn snapshot(world: &World) -> Value {
     }
     rows.sort_by(|left, right| left["id"].as_str().cmp(&right["id"].as_str()));
     Value::Array(rows)
+}
+
+fn settings_menu_text_nodes(world: &World, root: Entity) -> (Vec<Value>, usize, bool, bool) {
+    let mut pending = world
+        .get::<Children>(root)
+        .map(|children| children.iter().collect::<Vec<_>>())
+        .unwrap_or_default();
+    pending.reverse();
+    let mut text_nodes = Vec::new();
+    let mut descendants_visited = 0;
+    let mut descendants_truncated = false;
+    let mut text_truncated = false;
+
+    while let Some(entity) = pending.pop() {
+        if descendants_visited >= MAX_SETTINGS_MENU_DESCENDANTS {
+            descendants_truncated = true;
+            break;
+        }
+        descendants_visited += 1;
+        if let Some(text) = world.get::<Text>(entity) {
+            if text_nodes.len() >= MAX_SETTINGS_MENU_TEXT_NODES {
+                text_truncated = true;
+            } else {
+                let (rect, visible) = match (
+                    world.get::<ComputedNode>(entity),
+                    world.get::<UiGlobalTransform>(entity),
+                ) {
+                    (Some(node), Some(transform)) => {
+                        let rect = computed_rect(node, transform);
+                        let visible =
+                            rect.is_some() && layout_visible(world, entity, node, transform);
+                        (rect.map_or(Value::Null, |rect| json!(rect)), visible)
+                    }
+                    _ => (Value::Null, false),
+                };
+                let button_geometry = world
+                    .get::<ChildOf>(entity)
+                    .map(ChildOf::parent)
+                    .filter(|parent| world.get::<Button>(*parent).is_some())
+                    .and_then(|parent| {
+                        let node = world.get::<ComputedNode>(parent)?;
+                        let transform = world.get::<UiGlobalTransform>(parent)?;
+                        Some((
+                            computed_rect(node, transform)?,
+                            layout_visible(world, parent, node, transform),
+                        ))
+                    });
+                text_nodes.push(json!({
+                    "text": text.0.as_str(),
+                    "rect": rect,
+                    "visible": visible,
+                    "button_rect": button_geometry.map(|(rect, _)| rect),
+                    "button_visible": button_geometry.is_some_and(|(_, visible)| visible),
+                }));
+            }
+        }
+        if let Some(children) = world.get::<Children>(entity) {
+            pending.extend(children.iter().rev());
+        }
+    }
+    (
+        text_nodes,
+        descendants_visited,
+        descendants_truncated,
+        text_truncated,
+    )
+}
+
+fn focus_overlay_text_nodes(world: &World, root: Entity) -> (Vec<Value>, usize, bool, bool) {
+    let mut pending = world
+        .get::<Children>(root)
+        .map(|children| children.iter().collect::<Vec<_>>())
+        .unwrap_or_default();
+    pending.reverse();
+    let mut text_nodes = Vec::new();
+    let mut descendants_visited = 0;
+    let mut descendants_truncated = false;
+    let mut text_truncated = false;
+
+    while let Some(entity) = pending.pop() {
+        if descendants_visited >= MAX_FOCUS_OVERLAY_DESCENDANTS {
+            descendants_truncated = true;
+            break;
+        }
+        descendants_visited += 1;
+        if let Some(text) = world.get::<Text>(entity) {
+            if text_nodes.len() >= MAX_FOCUS_OVERLAY_TEXT_NODES {
+                text_truncated = true;
+            } else {
+                let (rect, visible) = match (
+                    world.get::<ComputedNode>(entity),
+                    world.get::<UiGlobalTransform>(entity),
+                ) {
+                    (Some(node), Some(transform)) => {
+                        let rect = computed_rect(node, transform);
+                        let visible =
+                            rect.is_some() && layout_visible(world, entity, node, transform);
+                        (rect.map_or(Value::Null, |rect| json!(rect)), visible)
+                    }
+                    _ => (Value::Null, false),
+                };
+                text_nodes.push(json!({
+                    "text": text.0.as_str(),
+                    "rect": rect,
+                    "visible": visible,
+                }));
+            }
+        }
+        if let Some(children) = world.get::<Children>(entity) {
+            pending.extend(children.iter().rev());
+        }
+    }
+    (
+        text_nodes,
+        descendants_visited,
+        descendants_truncated,
+        text_truncated,
+    )
+}
+
+fn computed_rect(node: &ComputedNode, transform: &UiGlobalTransform) -> Option<[f32; 4]> {
+    let size = node.size();
+    let center = transform.to_scale_angle_translation().2;
+    if !size.is_finite() || !center.is_finite() || size.min_element() <= 0.0 {
+        return None;
+    }
+    Some([
+        center.x - size.x / 2.0,
+        center.y - size.y / 2.0,
+        size.x,
+        size.y,
+    ])
 }
 
 /// Scene-bridge widget rectangles in window-logical/CSS coordinates, separate from turts_ui.
@@ -264,13 +522,17 @@ mod tests {
             ))
             .id();
         let nonbutton = snapshot(&world);
-        assert_eq!(nonbutton[0]["kind"], "widget");
-        assert_eq!(nonbutton[0]["text"], "queue_full");
+        let notice = nonbutton
+            .as_array()
+            .and_then(|rows| rows.iter().find(|row| row["id"] == "notice"))
+            .expect("authored notice is present beside the focus-overlay observation");
+        assert_eq!(notice["kind"], "widget");
+        assert_eq!(notice["text"], "queue_full");
         assert_eq!(
-            nonbutton[0]["visible"], false,
+            notice["visible"], false,
             "no camera means no rendered proof"
         );
-        assert_eq!(nonbutton[0]["button_pressed"], false);
+        assert_eq!(notice["button_pressed"], false);
 
         let action = WidgetAction::Input {
             name: "toggle_guide".into(),
@@ -281,10 +543,14 @@ mod tests {
             WidgetButtonAction(action.clone()),
         ));
         let button = snapshot(&world);
-        assert_eq!(button[0]["kind"], "button");
-        assert_eq!(button[0]["button_pressed"], true);
-        assert_eq!(button[0]["widget_action"]["kind"], "input");
-        assert_eq!(button[0]["widget_action"]["name"], "toggle_guide");
+        let button = button
+            .as_array()
+            .and_then(|rows| rows.iter().find(|row| row["id"] == "notice"))
+            .expect("pressed authored widget is present beside the focus-overlay observation");
+        assert_eq!(button["kind"], "button");
+        assert_eq!(button["button_pressed"], true);
+        assert_eq!(button["widget_action"]["kind"], "input");
+        assert_eq!(button["widget_action"]["name"], "toggle_guide");
     }
 
     #[test]
@@ -302,14 +568,114 @@ mod tests {
         ));
         let rows = snapshot(&world);
         let rows = rows.as_array().expect("snapshot rows are an array");
-        assert_eq!(rows.len(), 1);
-        assert_eq!(rows[0]["kind"], "client_notice");
-        assert_eq!(rows[0]["id"], "client_notice");
-        assert_eq!(rows[0]["text"], "This game defines no orders");
+        let notices: Vec<_> = rows
+            .iter()
+            .filter(|row| row["kind"] == "client_notice")
+            .collect();
+        assert_eq!(notices.len(), 1);
+        assert_eq!(notices[0]["id"], "client_notice");
+        assert_eq!(notices[0]["text"], "This game defines no orders");
         assert_eq!(
-            rows[0]["visible"], false,
+            notices[0]["visible"], false,
             "layout without a real active camera is not claimed as visible"
         );
+    }
+
+    #[test]
+    fn focus_overlay_snapshot_emits_actual_absence_and_zero_layout_without_claiming_visibility() {
+        let mut world = World::new();
+        let rows = snapshot(&world);
+        let absent = rows
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|row| row["kind"] == "focus_overlay")
+            .expect("the existing snapshot feed reports the actual focus overlay count");
+        assert_eq!(absent["root_count"], 0);
+        assert_eq!(absent["rect"], Value::Null);
+        assert_eq!(absent["visible"], false);
+        assert_eq!(absent["text_nodes"], json!([]));
+
+        let root = world.spawn(crate::client_shell::FocusOverlay).id();
+        let text = world.spawn(Text::new("Click to play")).id();
+        world.entity_mut(root).add_child(text);
+        let rows = snapshot(&world);
+        let overlay = rows
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|row| row["kind"] == "focus_overlay")
+            .unwrap();
+        assert_eq!(overlay["root_count"], 1);
+        assert_eq!(overlay["rect"], Value::Null);
+        assert_eq!(overlay["visible"], false);
+        assert_eq!(overlay["text_nodes"][0]["text"], "Click to play");
+        assert_eq!(overlay["text_nodes"][0]["rect"], Value::Null);
+        assert_eq!(overlay["text_nodes"][0]["visible"], false);
+    }
+
+    #[test]
+    fn focus_overlay_snapshot_caps_roots_and_emits_an_explicit_overflow_row() {
+        let mut world = World::new();
+        for _ in 0..=MAX_FOCUS_OVERLAY_ROOTS {
+            world.spawn(crate::client_shell::FocusOverlay);
+        }
+        let rows = snapshot(&world);
+        assert!(rows.as_array().unwrap().iter().any(|row| {
+            row["kind"] == "focus_overlay_overflow"
+                && row["count_at_least"] == MAX_FOCUS_OVERLAY_ROOTS + 1
+        }));
+    }
+
+    #[test]
+    fn focus_overlay_snapshot_bounds_actual_descendant_and_text_traversal() {
+        let mut world = World::new();
+        let root = world.spawn(crate::client_shell::FocusOverlay).id();
+        for index in 0..=MAX_FOCUS_OVERLAY_DESCENDANTS {
+            let child = world
+                .spawn(Text::new(format!("overlay label {index}")))
+                .id();
+            world.entity_mut(root).add_child(child);
+        }
+        let rows = snapshot(&world);
+        let overlay = rows
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|row| row["kind"] == "focus_overlay")
+            .unwrap();
+        assert_eq!(overlay["root_count"], 1);
+        assert_eq!(
+            overlay["text_nodes"].as_array().unwrap().len(),
+            MAX_FOCUS_OVERLAY_TEXT_NODES
+        );
+        assert_eq!(
+            overlay["descendants_visited"],
+            MAX_FOCUS_OVERLAY_DESCENDANTS
+        );
+        assert_eq!(overlay["descendants_truncated"], true);
+        assert_eq!(overlay["text_truncated"], true);
+    }
+
+    #[test]
+    fn settings_menu_snapshot_caps_roots_and_emits_an_explicit_overflow_row() {
+        let mut world = World::new();
+        for _ in 0..=MAX_SETTINGS_MENU_ROOTS {
+            world.spawn(crate::client_shell::SettingsMenuOverlay);
+        }
+
+        let rows = snapshot(&world);
+        let rows = rows.as_array().expect("snapshot rows are an array");
+        assert_eq!(
+            rows.iter()
+                .filter(|row| row["kind"] == "settings_menu")
+                .count(),
+            MAX_SETTINGS_MENU_ROOTS
+        );
+        assert!(rows.iter().any(|row| {
+            row["kind"] == "settings_menu_overflow"
+                && row["count_at_least"] == MAX_SETTINGS_MENU_ROOTS + 1
+        }));
     }
 
     #[test]

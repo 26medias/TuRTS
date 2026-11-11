@@ -8647,6 +8647,7 @@ dependencies = [
  "turts_mod_runtime",
  "turts_net_protocol",
  "wasm-bindgen",
+ "wasm-bindgen-futures",
  "wasm-bindgen-test",
  "web-sys",
 ]

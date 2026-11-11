@@ -33,6 +33,13 @@ pub(crate) struct CameraController {
 }
 
 impl CameraController {
+    pub(crate) fn suspend_pointer(&mut self) {
+        self.pointer = None;
+        self.drag_last_px = None;
+        self.last_group_recall = None;
+        self.pan_context = None;
+    }
+
     pub(crate) fn centre_world(
         &mut self,
         camera: &mut CameraState,
@@ -47,10 +54,10 @@ impl CameraController {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub(crate) fn step(
+    pub(crate) fn step<'a>(
         &mut self,
         camera: &mut CameraState,
-        events: &[InputEvent],
+        events: impl IntoIterator<Item = &'a InputEvent>,
         world: &dyn WorldView,
         view: &Viewport,
         now_ms: u64,
@@ -60,7 +67,6 @@ impl CameraController {
     ) {
         let start_camera = *camera;
         let options = world.camera_options();
-        let (minimum, maximum) = zoom_limits(&options);
 
         for event in events {
             match event {
@@ -92,23 +98,18 @@ impl CameraController {
                     self.pointer = None;
                     self.drag_last_px = None;
                 }
-                InputEvent::FocusLost => {
+                InputEvent::FocusLost | InputEvent::UiCapture { .. } => {
                     self.pointer = None;
                     self.drag_last_px = None;
                     self.last_group_recall = None;
                 }
                 InputEvent::Wheel { delta } if delta.is_finite() && *delta != 0.0 => {
                     if let Some(direction) = wheel_action(world, *delta) {
-                        let exponent = if direction { -delta.abs() } else { delta.abs() };
-                        let factor = 1.1_f32.powf(exponent);
-                        let height = camera.height * factor;
-                        camera.height = if height.is_finite() {
-                            height.clamp(minimum, maximum)
-                        } else if exponent.is_sign_positive() {
-                            maximum
-                        } else {
-                            minimum
-                        };
+                        zoom_by_steps(
+                            camera,
+                            world,
+                            if direction { delta.abs() } else { -delta.abs() },
+                        );
                     }
                 }
                 _ => {}
@@ -291,6 +292,25 @@ fn zoom_limits(options: &CameraOptions) -> (f32, f32) {
         let minimum = authored.minimum.max(0.1);
         (minimum, authored.maximum.max(minimum))
     })
+}
+
+/// Apply one resolved zoom gesture with the existing authored limits and wheel magnitude math.
+pub(crate) fn zoom_by_steps(camera: &mut CameraState, world: &dyn WorldView, steps: f32) -> bool {
+    if !steps.is_finite() || steps == 0.0 {
+        return false;
+    }
+    let before = camera.height;
+    let (minimum, maximum) = zoom_limits(&world.camera_options());
+    let exponent = -steps;
+    let height = camera.height * 1.1_f32.powf(exponent);
+    camera.height = if height.is_finite() {
+        height.clamp(minimum, maximum)
+    } else if exponent.is_sign_positive() {
+        maximum
+    } else {
+        minimum
+    };
+    camera.height != before
 }
 
 fn wheel_action(world: &dyn WorldView, delta: f32) -> Option<bool> {

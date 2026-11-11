@@ -1,7 +1,7 @@
 //! Apply the accepted interface's cursor image to the actual primary window.
 
 use bevy::prelude::*;
-use bevy::window::{CursorIcon, CustomCursor, CustomCursorImage, PrimaryWindow};
+use bevy::window::{CursorIcon, CursorOptions, CustomCursor, CustomCursorImage, PrimaryWindow};
 use turts_mod_api::{ContentId, OrderDef, TargetKind};
 
 use crate::{
@@ -46,6 +46,29 @@ pub fn update_cursor(world: &mut World) {
     let Some(presented) = world.get_resource::<Presented>().cloned() else {
         return;
     };
+    let cursor_position = world
+        .query_filtered::<&Window, With<PrimaryWindow>>()
+        .iter(world)
+        .find_map(Window::cursor_position)
+        .map(|position| [position.x, position.y]);
+    let primary_cursor = world
+        .query_filtered::<(Entity, Option<&CursorOptions>), With<PrimaryWindow>>()
+        .iter(world)
+        .next();
+    let lock_requested = primary_cursor.is_some_and(|(_, options)| {
+        options.is_some_and(|options| options.grab_mode == bevy::window::CursorGrabMode::Locked)
+    });
+    let lock_active = world
+        .get_resource::<CursorFeed>()
+        .and_then(|feed| feed.lock_active)
+        == Some(true);
+    let engine_position = if lock_active {
+        world
+            .get_resource::<CoreRuntime>()
+            .and_then(CoreRuntime::engine_cursor_position)
+    } else {
+        cursor_position.map(|position| Vec2::new(position[0], position[1]))
+    };
     let selection = world
         .get_resource::<crate::debug_feed::SelectionFeed>()
         .map_or_else(Vec::new, |feed| feed.0.clone());
@@ -54,7 +77,7 @@ pub fn update_cursor(world: &mut World) {
         .and_then(CoreRuntime::pending_order_id)
         .and_then(|id| ContentId::parse(id).ok());
 
-    let hover = current_hover(world, &replica, &content, &presented);
+    let hover = current_hover(world, &replica, &content, &presented, engine_position);
     let (context, override_asset) = if let Some(order_id) = pending_order.as_ref() {
         let order = content.catalog.orders.get(order_id);
         let valid = order.is_some_and(|order| {
@@ -108,7 +131,7 @@ pub fn update_cursor(world: &mut World) {
         .get_resource::<super::assets::WidgetAssets>()
         .and_then(|assets| assets.cursor_image_for(&image_id, hotspot));
     let mut applied = None;
-    if let Some(handle) = cursor_handle {
+    if let Some(handle) = cursor_handle.clone() {
         let usable = world
             .get_resource::<Assets<Image>>()
             .and_then(|assets| assets.get(handle.id()))
@@ -140,10 +163,77 @@ pub fn update_cursor(world: &mut World) {
             world.entity_mut(window).remove::<CursorIcon>();
         }
     }
+    update_locked_cursor(world, lock_active, engine_position, cursor_handle, hotspot);
+    let (relative_motion, frame_index) =
+        world
+            .get_resource::<CoreRuntime>()
+            .map_or(([0.0, 0.0], 0), |runtime| {
+                let motion = runtime.relative_motion_this_frame();
+                let frame_index = world
+                    .get_resource::<crate::core_adapter::FrameFeeds>()
+                    .map_or(0, |frames| frames.frame_index);
+                ([motion.x, motion.y], frame_index)
+            });
     if let Some(mut feed) = world.get_resource_mut::<CursorFeed>() {
         feed.context = Some(context);
         feed.image_id = (!image_id.is_empty()).then(|| local_image.to_owned());
         feed.applied_icon = applied;
+        feed.position = cursor_position;
+        feed.engine_position = engine_position.map(|position| [position.x, position.y]);
+        feed.lock_requested = lock_requested;
+        feed.relative_motion = relative_motion;
+        feed.frame_index = frame_index;
+    }
+}
+
+#[derive(Component)]
+struct LockedCursorSprite;
+
+fn update_locked_cursor(
+    world: &mut World,
+    locked: bool,
+    position: Option<Vec2>,
+    handle: Option<Handle<Image>>,
+    hotspot: (u16, u16),
+) {
+    let image_size = handle.as_ref().and_then(|handle| {
+        world
+            .get_resource::<Assets<Image>>()
+            .and_then(|images| images.get(handle.id()))
+            .map(|image| image.texture_descriptor.size)
+    });
+    let sprite = world
+        .query_filtered::<Entity, With<LockedCursorSprite>>()
+        .iter(world)
+        .next();
+    let (Some(position), Some(handle), Some(size)) =
+        (locked.then_some(position).flatten(), handle, image_size)
+    else {
+        if let Some(sprite) = sprite {
+            world.entity_mut(sprite).despawn();
+        }
+        return;
+    };
+    // Pointer positions and authored hotspots are window-logical pixels. UI layout
+    // applies the player's UI scale separately from the window's device scale.
+    let ui_scale = world
+        .get_resource::<bevy::ui::UiScale>()
+        .map_or(1.0, |scale| scale.0);
+    let node = Node {
+        position_type: PositionType::Absolute,
+        left: Val::Px((position.x - f32::from(hotspot.0)) / ui_scale),
+        top: Val::Px((position.y - f32::from(hotspot.1)) / ui_scale),
+        width: Val::Px(size.width as f32 / ui_scale),
+        height: Val::Px(size.height as f32 / ui_scale),
+        ..default()
+    };
+    let image = ImageNode::new(handle);
+    if let Some(sprite) = sprite {
+        world
+            .entity_mut(sprite)
+            .insert((node, image, GlobalZIndex(i32::MAX)));
+    } else {
+        world.spawn((LockedCursorSprite, node, image, GlobalZIndex(i32::MAX)));
     }
 }
 
@@ -157,6 +247,17 @@ pub fn clear_cursor(world: &mut World) {
         feed.context = None;
         feed.image_id = None;
         feed.applied_icon = None;
+        feed.position = None;
+        feed.engine_position = None;
+        feed.lock_requested = false;
+        feed.relative_motion = [0.0, 0.0];
+    }
+    let sprites = world
+        .query_filtered::<Entity, With<LockedCursorSprite>>()
+        .iter(world)
+        .collect::<Vec<_>>();
+    for sprite in sprites {
+        world.entity_mut(sprite).despawn();
     }
 }
 
@@ -172,11 +273,12 @@ fn current_hover(
     replica: &Replica,
     content: &crate::content::ClientContent,
     presented: &Presented,
+    cursor: Option<Vec2>,
 ) -> Hover {
-    let cursor = {
+    let cursor = cursor.or_else(|| {
         let mut windows = world.query_filtered::<&Window, With<PrimaryWindow>>();
         windows.iter(world).find_map(Window::cursor_position)
-    };
+    });
     let Some(cursor) = cursor else {
         return Hover::Ground;
     };
@@ -533,6 +635,48 @@ mod tests {
     };
 
     #[test]
+    fn task16_actual_locked_cursor_preserves_window_hotspot_across_ui_and_device_scales() {
+        for ui_scale in [1.0, 1.5] {
+            for device_scale in [1.0, 2.0] {
+                let mut world = World::new();
+                world.insert_resource(bevy::ui::UiScale(ui_scale));
+                let mut images = Assets::<Image>::default();
+                let mut image = Image::default();
+                image.texture_descriptor.size.width = 32;
+                image.texture_descriptor.size.height = 32;
+                let handle = images.add(image);
+                world.insert_resource(images);
+                update_locked_cursor(
+                    &mut world,
+                    true,
+                    Some(Vec2::new(640.0, 360.0)),
+                    Some(handle),
+                    (12, 12),
+                );
+                let node = world
+                    .query_filtered::<&Node, With<LockedCursorSprite>>()
+                    .single(&world)
+                    .unwrap();
+                for (value, expected) in [
+                    (node.left, 628.0),
+                    (node.top, 348.0),
+                    (node.width, 32.0),
+                    (node.height, 32.0),
+                ] {
+                    let Val::Px(logical) = value else {
+                        panic!("cursor dimensions use logical pixels")
+                    };
+                    let physical = logical * ui_scale * device_scale;
+                    assert!(
+                        (physical - expected * device_scale).abs() < 0.001,
+                        "cursor hotspot and size must stay in window pixels at UI scale {ui_scale}, device scale {device_scale}: {physical}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
     fn actual_cursor_component_and_feed_follow_each_authored_hotspot_variant() {
         let mut presentation = PresentationContent::default();
         presentation.images.insert(
@@ -570,6 +714,7 @@ mod tests {
             unit_names: Default::default(),
             content: content.clone(),
             presentation,
+            verified_root_mod: None,
         });
         let mut world = World::new();
         world.insert_resource(acquired);
@@ -595,6 +740,7 @@ mod tests {
         let first_feed = world.resource::<CursorFeed>();
         assert_eq!(first_feed.context.as_deref(), Some("default"));
         assert_eq!(first_feed.applied_icon.as_deref(), Some("icon"));
+        assert_eq!(first_feed.position, None);
         assert_eq!(
             custom_cursor(&first),
             (
@@ -622,6 +768,7 @@ mod tests {
         let second_feed = world.resource::<CursorFeed>();
         assert_eq!(second_feed.context.as_deref(), Some("default"));
         assert_eq!(second_feed.applied_icon.as_deref(), Some("icon"));
+        assert_eq!(second_feed.position, None);
         assert_eq!(
             custom_cursor(&second),
             (
@@ -648,6 +795,23 @@ mod tests {
         assert_eq!(feed.context.as_deref(), Some("default"));
         assert_eq!(feed.image_id, None);
         assert_eq!(feed.applied_icon, None);
+
+        world
+            .get_mut::<Window>(window)
+            .expect("primary window remains available")
+            .set_cursor_position(Some(Vec2::new(123.0, 234.0)));
+        update_cursor(&mut world);
+        assert_eq!(
+            world.resource::<CursorFeed>().position,
+            Some([123.0, 234.0])
+        );
+
+        world
+            .get_mut::<Window>(window)
+            .expect("primary window remains available")
+            .set_cursor_position(None);
+        update_cursor(&mut world);
+        assert_eq!(world.resource::<CursorFeed>().position, None);
     }
 
     #[test]

@@ -1,0 +1,187 @@
+{
+    "row": "PER1",
+    "package": "mods/forge",
+    "driver": "tests/browser/shell-driver.js",
+    "oracle": "tests/browser/shell-oracle.js",
+    "runs": "ci",
+    "capture_scene_checkpoints": true,
+    "viewports": [
+        "1280x720"
+    ],
+    "windows": 1,
+    "acceptance_contract": [
+        "Player id uses sessionStorage key turts.v1.player_id and equals the actual lossless decimal u64 producer value",
+        "Bindings use localStorage key turts.v1.bindings.<verified root mod id>.<design compatibility line>",
+        "Settings use localStorage key turts.v1.settings and preserve master, voice, alerts, effects",
+        "Groups use localStorage key turts.v1.groups.<actual match_id>.<actual slot>",
+        "Native paths are bound to real native persistence process/read/write receipts for design section 10.4",
+        "Foreign mod and alternate compatibility namespaces are physically preseeded, ignored, and byte-for-byte unchanged while verified root namespace is observed",
+        "Malformed known-action persisted binding is rejected; actual effective bindings equal verified mod defaults and one engine-owned visible notice is produced",
+        "A real seeded old match group is removed by a successful Storage.removeItem and is absent finally; current group key remains",
+        "Exactly one visible notice has calibrated same-epoch screenshot evidence with adjacent absence and unrelated-notice controls",
+        "All physical coordinates remain uncalibrated; invalid menu/world points are setup-only until actual same-package headed menu and selection captures validate them.",
+        "The first physical actions dismiss the join guide with F1 and wait 250ms; final notice capture occurs after F10 closes the menu and a 250ms settle."
+    ],
+    "stages": {
+        "task16": {
+            "status": "executable",
+            "phases": [
+                "task16"
+            ],
+            "actions": [
+                {
+                    "phase": "task16",
+                    "call": "click",
+                    "x": 500,
+                    "y": 430,
+                    "button": "left"
+                },
+                {
+                    "phase": "task16",
+                    "call": "wait",
+                    "ms": 250
+                },
+                {
+                    "phase": "task16",
+                    "call": "key",
+                    "code": "F1"
+                },
+                {
+                    "phase": "task16",
+                    "call": "wait",
+                    "ms": 250
+                },
+                {
+                    "phase": "task16",
+                    "call": "click",
+                    "x": 712,
+                    "y": 416
+                },
+                {
+                    "phase": "task16",
+                    "call": "key",
+                    "code": "Digit1",
+                    "modifiers": [
+                        "Control"
+                    ]
+                },
+                {
+                    "phase": "task16",
+                    "call": "key",
+                    "code": "Digit1"
+                },
+                {
+                    "phase": "task16",
+                    "call": "key",
+                    "code": "F10"
+                },
+                {
+                    "phase": "task16",
+                    "call": "click",
+                    "x": 784,
+                    "y": 127
+                },
+                {
+                    "phase": "task16",
+                    "call": "key",
+                    "code": "KeyZ"
+                },
+                {
+                    "phase": "task16",
+                    "call": "wheel",
+                    "x": 650,
+                    "y": 500,
+                    "delta": 10000
+                },
+                {
+                    "phase": "task16",
+                    "call": "wait",
+                    "ms": 250
+                },
+                {
+                    "phase": "task16",
+                    "call": "key",
+                    "code": "F10"
+                },
+                {
+                    "phase": "task16",
+                    "call": "wait",
+                    "ms": 250
+                }
+            ],
+            "captures": [
+                {
+                    "name": "joined-before-input",
+                    "after_action": 0,
+                    "window": 1,
+                    "phase": "task16"
+                },
+                {
+                    "name": "guide-dismissed-world-ready",
+                    "after_action": 4,
+                    "window": 1,
+                    "phase": "task16"
+                },
+                {
+                    "name": "selected-before-assignment",
+                    "after_action": 5,
+                    "window": 1,
+                    "phase": "task16"
+                },
+                {
+                    "name": "group-assigned",
+                    "after_action": 6,
+                    "window": 1,
+                    "phase": "task16"
+                },
+                {
+                    "name": "group-recalled",
+                    "after_action": 7,
+                    "window": 1,
+                    "phase": "task16"
+                },
+                {
+                    "name": "menu-before-binding",
+                    "after_action": 8,
+                    "window": 1,
+                    "phase": "task16"
+                },
+                {
+                    "name": "binding-editor-armed",
+                    "after_action": 9,
+                    "window": 1,
+                    "phase": "task16"
+                },
+                {
+                    "name": "binding-edited",
+                    "after_action": 10,
+                    "window": 1,
+                    "phase": "task16"
+                },
+                {
+                    "name": "menu-scrolled",
+                    "after_action": 11,
+                    "window": 1,
+                    "phase": "task16"
+                },
+                {
+                    "name": "binding-defaults-notice-final",
+                    "after_action": 14,
+                    "window": 1,
+                    "phase": "task16"
+                }
+            ],
+            "checks": [
+                "browser-key-names",
+                "native-path-names",
+                "compatibility-line",
+                "mod-isolation",
+                "defaults-and-single-notice",
+                "old-match-groups-pruned",
+                "volume-fields-preserved",
+                "notice-pixels"
+            ],
+            "fixture": "per1-invalid-binding-v1"
+        }
+    }
+}

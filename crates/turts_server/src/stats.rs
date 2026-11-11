@@ -6,6 +6,8 @@
 //! file, then a rename), so a reader never sees half a line. A kill without warning leaves the
 //! file as it was after the last write. The object also holds `gameplay_entity_count`, the
 //! number of entities with a `UnitId` (T3 reads it, M1 verify).
+//! The explicit local hook also creates a private mode-0600 sibling JSONL session observer;
+//! it is not exposed by the HTTP statistics endpoint.
 //!
 //! A tick is timed from `FixedFirst` to the end of `FixedLast`: the simulation, the change
 //! collection and the sending of the deltas. The time between two ticks does not count. The
@@ -24,6 +26,8 @@ use turts_sim::{Tick, UnitId};
 
 use crate::config::Cli;
 use crate::outbound::{send_command_results, send_deltas};
+use crate::session::Session;
+use crate::session_diagnostics::{self, SessionDiagnostics};
 use crate::synthetic::retarget;
 
 /// How often the file is rewritten.
@@ -81,11 +85,24 @@ struct TickTimer {
 
 /// Add the statistics to the app. The counters always exist. The timing and the output exist
 /// only with `--stats`.
-pub fn install(app: &mut App, cli: &Cli) {
+pub fn install(app: &mut App, cli: &Cli) -> Result<(), String> {
     app.init_resource::<Stats>();
     let Some(path) = &cli.stats else {
-        return;
+        return Ok(());
     };
+    let diagnostics = SessionDiagnostics::open(path).map_err(|error| {
+        format!(
+            "cannot create private session observer beside --stats `{}`: {error}",
+            path.display()
+        )
+    })?;
+    eprintln!(
+        "turts_server: private session observer {} (mode 0600)",
+        SessionDiagnostics::sibling_path(path).display()
+    );
+    app.insert_resource(diagnostics);
+    app.add_observer(session_diagnostics::on_session_added);
+    app.add_observer(session_diagnostics::on_session_removed);
     app.insert_resource(TickTimer {
         path: path.clone(),
         started: Instant::now(),
@@ -102,6 +119,33 @@ pub fn install(app: &mut App, cli: &Cli) {
             .after(send_deltas),
     );
     app.add_systems(Last, write_when_due);
+    app.add_systems(Last, owner_checkpoint);
+    Ok(())
+}
+
+/// Last: retain bounded private owner and active-epoch snapshots at the stats cadence.
+fn owner_checkpoint(
+    mut diagnostics: ResMut<SessionDiagnostics>,
+    slots: Res<turts_sim::Slots>,
+    match_id: Res<MatchId>,
+    tick: Res<Tick>,
+    sessions: Query<(Entity, &Session)>,
+    mut last: Local<Option<Instant>>,
+) {
+    let now = Instant::now();
+    if last
+        .as_ref()
+        .is_some_and(|previous| now.duration_since(*previous) < WRITE_EVERY)
+    {
+        return;
+    }
+    *last = Some(now);
+    let active = sessions
+        .iter()
+        .map(|(entity, session)| (entity, session.player_id, session.slot));
+    if let Err(error) = diagnostics.owner_checkpoint(&slots.owners(), active, match_id.0, tick.0) {
+        panic!("private session observer failed: {error}");
+    }
 }
 
 /// FixedFirst: note the time at which the tick began.
@@ -250,7 +294,7 @@ mod tests {
     fn stats_app(path: Option<&Path>, sleep_in_tick: bool) -> App {
         let mut app = headless_app(20);
         app.insert_resource(generate_match_id());
-        install(&mut app, &cli(path));
+        install(&mut app, &cli(path)).expect("statistics test fixture setup must succeed");
         if sleep_in_tick {
             app.add_systems(FixedUpdate, || {
                 std::thread::sleep(Duration::from_millis(2));

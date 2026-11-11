@@ -1,0 +1,899 @@
+{
+    "row": "SH1",
+    "package": "mods/forge",
+    "driver": "tests/browser/shell-driver.js",
+    "oracle": "tests/browser/shell-oracle.js",
+    "runs": "ci",
+    "capture_scene_checkpoints": true,
+    "viewports": [
+        "1280x720"
+    ],
+    "windows": 1,
+    "acceptance_contract": [
+        "Load phases and player-word lockfile rejection",
+        "First diagnostic presses F10 and captures the actual menu, then presses Esc and captures the closed state",
+        "Menu contains bindings/capture/conflict, volumes, scroll speed, edge-scroll, UI scale, health mode, cursor lock, and double-click time",
+        "Binding conflict offers swap or cancel; verify each outcome and reset to mod default",
+        "Guide page 5 displays effective rebinding",
+        "Scroll speed changes camera distance; UI scale affects HUD rectangles",
+        "Cursor lock works; connection-lost screen follows reconnect_required; F10 and Esc share menu",
+        "Camera does not change world orders"
+    ],
+    "stages": {
+        "task16": {
+            "status": "executable",
+            "phases": [
+                "fetch-advertisement",
+                "fetch-lockfile",
+                "wrong-lockfile",
+                "healthy-reload",
+                "fetch-package",
+                "load-verify",
+                "load-joining",
+                "load-settings",
+                "conflicts",
+                "settings-controls",
+                "connection-lost",
+                "connection-rejoined"
+            ],
+            "actions": [
+                {
+                    "call": "click",
+                    "x": 500,
+                    "y": 430,
+                    "button": "left",
+                    "phase": "fetch-advertisement"
+                },
+                {
+                    "call": "wait",
+                    "ms": 250,
+                    "phase": "fetch-advertisement"
+                },
+                {
+                    "call": "wait",
+                    "ms": 100,
+                    "phase": "fetch-lockfile"
+                },
+                {
+                    "call": "wait",
+                    "ms": 100,
+                    "phase": "wrong-lockfile"
+                },
+                {
+                    "call": "reload",
+                    "phase": "healthy-reload"
+                },
+                {
+                    "call": "wait",
+                    "ms": 250,
+                    "phase": "healthy-reload"
+                },
+                {
+                    "call": "click",
+                    "x": 500,
+                    "y": 430,
+                    "button": "left",
+                    "phase": "healthy-reload"
+                },
+                {
+                    "call": "wait",
+                    "ms": 250,
+                    "phase": "healthy-reload"
+                },
+                {
+                    "call": "wait",
+                    "ms": 100,
+                    "phase": "fetch-package"
+                },
+                {
+                    "call": "wait",
+                    "ms": 100,
+                    "phase": "load-verify"
+                },
+                {
+                    "call": "wait",
+                    "ms": 100,
+                    "phase": "load-joining"
+                },
+                {
+                    "call": "click",
+                    "x": 500,
+                    "y": 430,
+                    "button": "left",
+                    "phase": "load-settings"
+                },
+                {
+                    "call": "key",
+                    "code": "F1",
+                    "phase": "load-settings"
+                },
+                {
+                    "call": "wait",
+                    "ms": 250,
+                    "phase": "load-settings"
+                },
+                {
+                    "call": "click",
+                    "x": 712,
+                    "y": 416,
+                    "button": "left",
+                    "phase": "load-settings"
+                },
+                {
+                    "call": "key",
+                    "code": "KeyD",
+                    "phase": "load-settings"
+                },
+                {
+                    "call": "wait",
+                    "ms": 200,
+                    "phase": "load-settings"
+                },
+                {
+                    "call": "key",
+                    "code": "F10",
+                    "phase": "load-settings"
+                },
+                {
+                    "call": "wait",
+                    "ms": 250,
+                    "phase": "load-settings"
+                },
+                {
+                    "call": "key",
+                    "code": "KeyD",
+                    "phase": "load-settings"
+                },
+                {
+                    "call": "wait",
+                    "ms": 150,
+                    "phase": "load-settings"
+                },
+                {
+                    "call": "wheel",
+                    "x": 650,
+                    "y": 500,
+                    "delta": 10000,
+                    "phase": "load-settings"
+                },
+                {
+                    "call": "wait",
+                    "ms": 250,
+                    "phase": "load-settings"
+                },
+                {
+                    "call": "key",
+                    "code": "Escape",
+                    "phase": "load-settings"
+                },
+                {
+                    "call": "wait",
+                    "ms": 150,
+                    "phase": "load-settings"
+                },
+                {
+                    "call": "key",
+                    "phase": "conflicts",
+                    "code": "F10"
+                },
+                {
+                    "call": "wait",
+                    "phase": "conflicts",
+                    "ms": 150
+                },
+                {
+                    "call": "wheel",
+                    "phase": "conflicts",
+                    "x": 650,
+                    "y": 500,
+                    "delta": 1450
+                },
+                {
+                    "call": "wait",
+                    "phase": "conflicts",
+                    "ms": 150
+                },
+                {
+                    "call": "click",
+                    "phase": "conflicts",
+                    "x": 784,
+                    "y": 225,
+                    "button": "left"
+                },
+                {
+                    "call": "key",
+                    "phase": "conflicts",
+                    "code": "KeyM"
+                },
+                {
+                    "call": "wait",
+                    "phase": "conflicts",
+                    "ms": 200
+                },
+                {
+                    "call": "click",
+                    "phase": "conflicts",
+                    "x": 430,
+                    "y": 556,
+                    "button": "left"
+                },
+                {
+                    "call": "wait",
+                    "phase": "conflicts",
+                    "ms": 200
+                },
+                {
+                    "call": "key",
+                    "phase": "conflicts",
+                    "code": "F10"
+                },
+                {
+                    "call": "wait",
+                    "phase": "conflicts",
+                    "ms": 150
+                },
+                {
+                    "call": "key",
+                    "phase": "conflicts",
+                    "code": "F1"
+                },
+                {
+                    "call": "wait",
+                    "phase": "conflicts",
+                    "ms": 150
+                },
+                {
+                    "call": "wheel",
+                    "phase": "conflicts",
+                    "x": 650,
+                    "y": 500,
+                    "delta": 10000
+                },
+                {
+                    "call": "wait",
+                    "phase": "conflicts",
+                    "ms": 200
+                },
+                {
+                    "call": "key",
+                    "phase": "conflicts",
+                    "code": "F1"
+                },
+                {
+                    "call": "wait",
+                    "phase": "conflicts",
+                    "ms": 150
+                },
+                {
+                    "call": "key",
+                    "phase": "conflicts",
+                    "code": "F10"
+                },
+                {
+                    "call": "wait",
+                    "phase": "conflicts",
+                    "ms": 150
+                },
+                {
+                    "call": "wheel",
+                    "phase": "conflicts",
+                    "x": 650,
+                    "y": 500,
+                    "delta": 1450
+                },
+                {
+                    "call": "wait",
+                    "phase": "conflicts",
+                    "ms": 150
+                },
+                {
+                    "call": "click",
+                    "phase": "conflicts",
+                    "x": 784,
+                    "y": 225,
+                    "button": "left"
+                },
+                {
+                    "call": "key",
+                    "phase": "conflicts",
+                    "code": "KeyS"
+                },
+                {
+                    "call": "wait",
+                    "phase": "conflicts",
+                    "ms": 200
+                },
+                {
+                    "call": "click",
+                    "phase": "conflicts",
+                    "x": 495,
+                    "y": 556,
+                    "button": "left"
+                },
+                {
+                    "call": "wait",
+                    "phase": "conflicts",
+                    "ms": 200
+                },
+                {
+                    "call": "click",
+                    "phase": "conflicts",
+                    "x": 850,
+                    "y": 225,
+                    "button": "left"
+                },
+                {
+                    "call": "wait",
+                    "phase": "conflicts",
+                    "ms": 200
+                },
+                {
+                    "call": "key",
+                    "phase": "conflicts",
+                    "code": "F10"
+                },
+                {
+                    "call": "wait",
+                    "phase": "conflicts",
+                    "ms": 150
+                },
+                {
+                    "call": "key",
+                    "phase": "conflicts",
+                    "code": "F1"
+                },
+                {
+                    "call": "wait",
+                    "phase": "conflicts",
+                    "ms": 150
+                },
+                {
+                    "call": "wheel",
+                    "phase": "conflicts",
+                    "x": 650,
+                    "y": 500,
+                    "delta": 10000
+                },
+                {
+                    "call": "wait",
+                    "phase": "conflicts",
+                    "ms": 200
+                },
+                {
+                    "call": "key",
+                    "phase": "conflicts",
+                    "code": "F1"
+                },
+                {
+                    "call": "wait",
+                    "phase": "conflicts",
+                    "ms": 150
+                },
+                {
+                    "call": "key",
+                    "phase": "settings-controls",
+                    "code": "F10"
+                },
+                {
+                    "call": "wait",
+                    "phase": "settings-controls",
+                    "ms": 200
+                },
+                {
+                    "call": "wheel",
+                    "phase": "settings-controls",
+                    "x": 650,
+                    "y": 500,
+                    "delta": 10000
+                },
+                {
+                    "call": "wait",
+                    "phase": "settings-controls",
+                    "ms": 200
+                },
+                {
+                    "call": "click",
+                    "x": 663,
+                    "y": 483,
+                    "button": "left",
+                    "phase": "settings-controls"
+                },
+                {
+                    "call": "wait",
+                    "ms": 150,
+                    "phase": "settings-controls"
+                },
+                {
+                    "call": "click",
+                    "phase": "settings-controls",
+                    "x": 619,
+                    "y": 223,
+                    "button": "left"
+                },
+                {
+                    "call": "wait",
+                    "phase": "settings-controls",
+                    "ms": 200
+                },
+                {
+                    "call": "key",
+                    "phase": "settings-controls",
+                    "code": "F10"
+                },
+                {
+                    "call": "wait",
+                    "phase": "settings-controls",
+                    "ms": 200
+                },
+                {
+                    "call": "key",
+                    "phase": "settings-controls",
+                    "code": "Space"
+                },
+                {
+                    "call": "wait",
+                    "phase": "settings-controls",
+                    "ms": 200
+                },
+                {
+                    "call": "key",
+                    "phase": "settings-controls",
+                    "code": "ArrowRight",
+                    "options": {
+                        "hold_ms": 300
+                    }
+                },
+                {
+                    "call": "wait",
+                    "phase": "settings-controls",
+                    "ms": 200
+                },
+                {
+                    "call": "key",
+                    "phase": "settings-controls",
+                    "code": "Space"
+                },
+                {
+                    "call": "wait",
+                    "phase": "settings-controls",
+                    "ms": 200
+                },
+                {
+                    "call": "key",
+                    "phase": "settings-controls",
+                    "code": "F10"
+                },
+                {
+                    "call": "wait",
+                    "phase": "settings-controls",
+                    "ms": 200
+                },
+                {
+                    "call": "wheel",
+                    "phase": "settings-controls",
+                    "x": 650,
+                    "y": 500,
+                    "delta": 10000
+                },
+                {
+                    "call": "wait",
+                    "phase": "settings-controls",
+                    "ms": 200
+                },
+                {
+                    "call": "click",
+                    "phase": "settings-controls",
+                    "x": 768,
+                    "y": 223,
+                    "button": "left"
+                },
+                {
+                    "call": "wait",
+                    "phase": "settings-controls",
+                    "ms": 200
+                },
+                {
+                    "call": "key",
+                    "phase": "settings-controls",
+                    "code": "F10"
+                },
+                {
+                    "call": "wait",
+                    "phase": "settings-controls",
+                    "ms": 200
+                },
+                {
+                    "call": "key",
+                    "phase": "settings-controls",
+                    "code": "ArrowRight",
+                    "options": {
+                        "hold_ms": 300
+                    }
+                },
+                {
+                    "call": "wait",
+                    "phase": "settings-controls",
+                    "ms": 200
+                },
+                {
+                    "call": "key",
+                    "phase": "settings-controls",
+                    "code": "F10"
+                },
+                {
+                    "call": "wait",
+                    "phase": "settings-controls",
+                    "ms": 200
+                },
+                {
+                    "call": "wheel",
+                    "phase": "settings-controls",
+                    "x": 650,
+                    "y": 500,
+                    "delta": 10000
+                },
+                {
+                    "call": "wait",
+                    "phase": "settings-controls",
+                    "ms": 200
+                },
+                {
+                    "call": "click",
+                    "phase": "settings-controls",
+                    "x": 640,
+                    "y": 397,
+                    "button": "left"
+                },
+                {
+                    "call": "wait",
+                    "phase": "settings-controls",
+                    "ms": 200
+                },
+                {
+                    "call": "key",
+                    "phase": "settings-controls",
+                    "code": "F10"
+                },
+                {
+                    "call": "wait",
+                    "phase": "settings-controls",
+                    "ms": 200
+                },
+                {
+                    "call": "click",
+                    "phase": "settings-controls",
+                    "x": 640,
+                    "y": 360,
+                    "button": "left"
+                },
+                {
+                    "call": "wait",
+                    "phase": "settings-controls",
+                    "ms": 500
+                },
+                {
+                    "call": "key",
+                    "phase": "settings-controls",
+                    "code": "F10"
+                },
+                {
+                    "call": "wait",
+                    "phase": "settings-controls",
+                    "ms": 200
+                },
+                {
+                    "call": "wheel",
+                    "phase": "settings-controls",
+                    "x": 650,
+                    "y": 500,
+                    "delta": 10000
+                },
+                {
+                    "call": "wait",
+                    "phase": "settings-controls",
+                    "ms": 200
+                },
+                {
+                    "call": "click",
+                    "phase": "settings-controls",
+                    "x": 640,
+                    "y": 397,
+                    "button": "left"
+                },
+                {
+                    "call": "wait",
+                    "phase": "settings-controls",
+                    "ms": 200
+                },
+                {
+                    "call": "click",
+                    "phase": "settings-controls",
+                    "x": 758,
+                    "y": 311,
+                    "button": "left"
+                },
+                {
+                    "call": "wait",
+                    "phase": "settings-controls",
+                    "ms": 250
+                },
+                {
+                    "call": "key",
+                    "phase": "settings-controls",
+                    "code": "F10"
+                },
+                {
+                    "call": "wait",
+                    "phase": "settings-controls",
+                    "ms": 250
+                },
+                {
+                    "call": "wait",
+                    "ms": 250,
+                    "phase": "connection-lost"
+                },
+                {
+                    "call": "click",
+                    "x": 640,
+                    "y": 430,
+                    "button": "left",
+                    "phase": "connection-lost"
+                },
+                {
+                    "call": "wait",
+                    "ms": 2000,
+                    "phase": "connection-lost"
+                },
+                {
+                    "call": "wait",
+                    "ms": 500,
+                    "phase": "connection-rejoined"
+                }
+            ],
+            "captures": [
+                {
+                    "name": "fetch-advertisement",
+                    "phase": "fetch-advertisement",
+                    "after_action": 2,
+                    "window": 1
+                },
+                {
+                    "name": "fetch-lockfile",
+                    "phase": "fetch-lockfile",
+                    "after_action": 1,
+                    "window": 1
+                },
+                {
+                    "name": "wrong-lockfile",
+                    "phase": "wrong-lockfile",
+                    "after_action": 1,
+                    "window": 1
+                },
+                {
+                    "name": "healthy-reload",
+                    "phase": "healthy-reload",
+                    "after_action": 4,
+                    "window": 1
+                },
+                {
+                    "name": "fetch-package",
+                    "phase": "fetch-package",
+                    "after_action": 1,
+                    "window": 1
+                },
+                {
+                    "name": "load-verify",
+                    "phase": "load-verify",
+                    "after_action": 1,
+                    "window": 1
+                },
+                {
+                    "name": "load-joining",
+                    "phase": "load-joining",
+                    "after_action": 1,
+                    "window": 1
+                },
+                {
+                    "name": "world-ready",
+                    "phase": "load-settings",
+                    "after_action": 6,
+                    "window": 1
+                },
+                {
+                    "name": "menu-inventory-top",
+                    "phase": "load-settings",
+                    "after_action": 8,
+                    "window": 1
+                },
+                {
+                    "name": "menu-world-input-captured",
+                    "phase": "load-settings",
+                    "after_action": 10,
+                    "window": 1
+                },
+                {
+                    "name": "menu-inventory-bottom",
+                    "phase": "load-settings",
+                    "after_action": 12,
+                    "window": 1
+                },
+                {
+                    "name": "menu-inventory-closed",
+                    "phase": "load-settings",
+                    "after_action": 14,
+                    "window": 1
+                },
+                {
+                    "name": "conflict-edit-row",
+                    "phase": "conflicts",
+                    "after_action": 4,
+                    "window": 1
+                },
+                {
+                    "name": "conflict-open",
+                    "phase": "conflicts",
+                    "after_action": 7,
+                    "window": 1
+                },
+                {
+                    "name": "conflict-swapped",
+                    "phase": "conflicts",
+                    "after_action": 9,
+                    "window": 1
+                },
+                {
+                    "name": "guide-swapped",
+                    "phase": "conflicts",
+                    "after_action": 15,
+                    "window": 1
+                },
+                {
+                    "name": "conflict-cancel-edit-row",
+                    "phase": "conflicts",
+                    "after_action": 21,
+                    "window": 1
+                },
+                {
+                    "name": "conflict-cancel-offer",
+                    "phase": "conflicts",
+                    "after_action": 24,
+                    "window": 1
+                },
+                {
+                    "name": "conflict-cancelled",
+                    "phase": "conflicts",
+                    "after_action": 26,
+                    "window": 1
+                },
+                {
+                    "name": "conflict-reset",
+                    "phase": "conflicts",
+                    "after_action": 28,
+                    "window": 1
+                },
+                {
+                    "name": "guide-reset",
+                    "phase": "conflicts",
+                    "after_action": 34,
+                    "window": 1
+                },
+                {
+                    "name": "conflict-menu-closed",
+                    "phase": "conflicts",
+                    "after_action": 36,
+                    "window": 1
+                },
+                {
+                    "name": "double-click-range-setting",
+                    "phase": "settings-controls",
+                    "after_action": 6,
+                    "window": 1
+                },
+                {
+                    "name": "speed-low-setting",
+                    "phase": "settings-controls",
+                    "after_action": 8,
+                    "window": 1
+                },
+                {
+                    "name": "speed-low-before",
+                    "phase": "settings-controls",
+                    "after_action": 12,
+                    "window": 1
+                },
+                {
+                    "name": "speed-low-after",
+                    "phase": "settings-controls",
+                    "after_action": 14,
+                    "window": 1
+                },
+                {
+                    "name": "speed-high-setting",
+                    "phase": "settings-controls",
+                    "after_action": 22,
+                    "window": 1
+                },
+                {
+                    "name": "speed-high-before",
+                    "phase": "settings-controls",
+                    "after_action": 24,
+                    "window": 1
+                },
+                {
+                    "name": "speed-high-after",
+                    "phase": "settings-controls",
+                    "after_action": 26,
+                    "window": 1
+                },
+                {
+                    "name": "cursor-option-on",
+                    "phase": "settings-controls",
+                    "after_action": 32,
+                    "window": 1
+                },
+                {
+                    "name": "cursor-locked",
+                    "phase": "settings-controls",
+                    "after_action": 36,
+                    "window": 1
+                },
+                {
+                    "name": "cursor-menu-released",
+                    "phase": "settings-controls",
+                    "after_action": 38,
+                    "window": 1
+                },
+                {
+                    "name": "cursor-option-off",
+                    "phase": "settings-controls",
+                    "after_action": 42,
+                    "window": 1
+                },
+                {
+                    "name": "scale-changed-menu",
+                    "phase": "settings-controls",
+                    "after_action": 44,
+                    "window": 1
+                },
+                {
+                    "name": "scale-changed-world",
+                    "phase": "settings-controls",
+                    "after_action": 46,
+                    "window": 1
+                },
+                {
+                    "name": "connection-lost",
+                    "phase": "connection-lost",
+                    "after_action": 1,
+                    "window": 1
+                },
+                {
+                    "name": "after-reload-click",
+                    "phase": "connection-lost",
+                    "after_action": 3,
+                    "window": 1
+                },
+                {
+                    "name": "connection-rejoined",
+                    "phase": "connection-rejoined",
+                    "after_action": 1,
+                    "window": 1
+                }
+            ],
+            "checks": [
+                "load-phases",
+                "wrong-lockfile-guidance",
+                "menu-controls",
+                "conflict-swap-cancel-reset",
+                "guide-effective-label",
+                "scroll-distance-ratio",
+                "ui-scale-rects",
+                "cursor-lock",
+                "connection-lost-reload",
+                "zero-menu-world-orders",
+                "menu-pixels"
+            ],
+            "fixture": "sh1-real-acquisition-v1"
+        }
+    }
+}

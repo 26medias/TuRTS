@@ -1,0 +1,179 @@
+{
+    "row": "CAM2",
+    "package": "mods/forge",
+    "driver": "tests/browser/shell-driver.js",
+    "oracle": "tests/browser/shell-oracle.js",
+    "runs": "ci",
+    "capture_scene_checkpoints": true,
+    "viewports": [
+        "1280x720"
+    ],
+    "windows": 1,
+    "acceptance_contract": [
+        "Enable Keep the cursor in the game; click starts pointer lock",
+        "Mod cursor follows summed real mouse-motion deltas",
+        "Edge band pans at window edge while locked",
+        "F10 opens settings menu",
+        "Attach actual P1 Esc-under-lock result; never fabricate it",
+        "Compare actual cursor screenshots with same-rectangle and nearby negative controls"
+    ],
+    "stages": {
+        "task16": {
+            "status": "executable",
+            "phases": [
+                "cursor-menu"
+            ],
+            "actions": [
+                {
+                    "call": "click",
+                    "phase": "cursor-menu",
+                    "x": 500,
+                    "y": 430,
+                    "button": "left"
+                },
+                {
+                    "call": "wait",
+                    "phase": "cursor-menu",
+                    "ms": 250
+                },
+                {
+                    "call": "key",
+                    "phase": "cursor-menu",
+                    "code": "F1",
+                    "modifiers": []
+                },
+                {
+                    "call": "wait",
+                    "phase": "cursor-menu",
+                    "ms": 250
+                },
+                {
+                    "call": "key",
+                    "phase": "cursor-menu",
+                    "code": "F10",
+                    "modifiers": []
+                },
+                {
+                    "call": "wait",
+                    "phase": "cursor-menu",
+                    "ms": 200
+                },
+                {
+                    "call": "wheel",
+                    "phase": "cursor-menu",
+                    "x": 650,
+                    "y": 500,
+                    "delta": 10000
+                },
+                {
+                    "call": "wait",
+                    "phase": "cursor-menu",
+                    "ms": 250
+                },
+                {
+                    "call": "click",
+                    "phase": "cursor-menu",
+                    "x": 640,
+                    "y": 397,
+                    "button": "left"
+                },
+                {
+                    "call": "wait",
+                    "phase": "cursor-menu",
+                    "ms": 250
+                },
+                {
+                    "call": "key",
+                    "phase": "cursor-menu",
+                    "code": "F10",
+                    "modifiers": []
+                },
+                {
+                    "call": "wait",
+                    "phase": "cursor-menu",
+                    "ms": 200
+                },
+                {
+                    "call": "click",
+                    "phase": "cursor-menu",
+                    "x": 640,
+                    "y": 360,
+                    "button": "left"
+                },
+                {
+                    "call": "wait",
+                    "phase": "cursor-menu",
+                    "ms": 500
+                },
+                {
+                    "call": "move",
+                    "phase": "cursor-menu",
+                    "x": 700,
+                    "y": 360
+                },
+                {
+                    "call": "wait",
+                    "phase": "cursor-menu",
+                    "ms": 150
+                },
+                {
+                    "call": "move",
+                    "phase": "cursor-menu",
+                    "x": 1,
+                    "y": 360
+                },
+                {
+                    "call": "wait",
+                    "phase": "cursor-menu",
+                    "ms": 150
+                }
+            ],
+            "captures": [
+                {
+                    "name": "world-ready",
+                    "phase": "cursor-menu",
+                    "after_action": 4,
+                    "window": 1
+                },
+                {
+                    "name": "settings-menu-top",
+                    "phase": "cursor-menu",
+                    "after_action": 6,
+                    "window": 1
+                },
+                {
+                    "name": "settings-menu",
+                    "phase": "cursor-menu",
+                    "after_action": 10,
+                    "window": 1
+                },
+                {
+                    "name": "joined-cursor",
+                    "phase": "cursor-menu",
+                    "after_action": 14,
+                    "window": 1
+                },
+                {
+                    "name": "summed-motion",
+                    "phase": "cursor-menu",
+                    "after_action": 15,
+                    "window": 1
+                },
+                {
+                    "name": "edge-move",
+                    "phase": "cursor-menu",
+                    "after_action": 18,
+                    "window": 1
+                }
+            ],
+            "checks": [
+                "pointer-lock",
+                "summed-motion-cursor",
+                "edge-band-pan",
+                "f10-menu",
+                "p1-attachment",
+                "cursor-pixels"
+            ]
+        }
+    }
+}

@@ -1,0 +1,578 @@
+{
+    "row": "SEL4",
+    "package": "tests/browser/fixtures/sel4-muster",
+    "driver": "tests/browser/shell-driver.js",
+    "oracle": "tests/browser/shell-oracle.js",
+    "runs": "ci",
+    "capture_scene_checkpoints": true,
+    "viewports": [
+        "1280x720"
+    ],
+    "windows": 1,
+    "acceptance_contract": [
+        "Ctrl+1 assigns current selection, 1 recalls it, Shift+1 adds to it",
+        "Double tap 1 centres camera on group",
+        "Destroyed unit leaves selection and group in the same frame",
+        "After reload, 1 recalls the same live unit IDs",
+        "Join prunes groups for every other match_id",
+        "Use the isolated exact Muster copy: group workers 41/42, move worker 41 to [16,10], observe the actual enemy idle trooper death and same-frame selection/group pruning, then reload and recall worker 42"
+    ],
+    "stages": {
+        "task16": {
+            "status": "executable",
+            "phases": [
+                "group-combat"
+            ],
+            "actions": [
+                {
+                    "call": "click",
+                    "phase": "group-combat",
+                    "x": 500,
+                    "y": 430,
+                    "button": "left"
+                },
+                {
+                    "call": "wait",
+                    "phase": "group-combat",
+                    "ms": 250
+                },
+                {
+                    "call": "drag",
+                    "phase": "group-combat",
+                    "x": 416,
+                    "y": 278,
+                    "x2": 462,
+                    "y2": 300,
+                    "button": "left"
+                },
+                {
+                    "call": "wait",
+                    "phase": "group-combat",
+                    "ms": 150
+                },
+                {
+                    "call": "key",
+                    "phase": "group-combat",
+                    "code": "Digit1",
+                    "modifiers": [
+                        "Control"
+                    ]
+                },
+                {
+                    "call": "wait",
+                    "phase": "group-combat",
+                    "ms": 150
+                },
+                {
+                    "call": "click",
+                    "phase": "group-combat",
+                    "x": 427,
+                    "y": 289,
+                    "button": "left"
+                },
+                {
+                    "call": "wait",
+                    "phase": "group-combat",
+                    "ms": 100
+                },
+                {
+                    "call": "key",
+                    "phase": "group-combat",
+                    "code": "Digit1",
+                    "modifiers": []
+                },
+                {
+                    "call": "wait",
+                    "phase": "group-combat",
+                    "ms": 100
+                },
+                {
+                    "call": "click",
+                    "phase": "group-combat",
+                    "x": 450,
+                    "y": 289,
+                    "button": "left"
+                },
+                {
+                    "call": "key",
+                    "phase": "group-combat",
+                    "code": "Digit1",
+                    "modifiers": [
+                        "Shift"
+                    ]
+                },
+                {
+                    "call": "wait",
+                    "phase": "group-combat",
+                    "ms": 100
+                },
+                {
+                    "call": "key",
+                    "phase": "group-combat",
+                    "code": "Digit1",
+                    "modifiers": []
+                },
+                {
+                    "call": "key",
+                    "phase": "group-combat",
+                    "code": "Digit1",
+                    "modifiers": []
+                },
+                {
+                    "call": "wait",
+                    "phase": "group-combat",
+                    "ms": 100
+                },
+                {
+                    "call": "click",
+                    "phase": "group-combat",
+                    "x": 627,
+                    "y": 360,
+                    "button": "left"
+                },
+                {
+                    "call": "click",
+                    "phase": "group-combat",
+                    "x": 702,
+                    "y": 341,
+                    "button": "right"
+                },
+                {
+                    "call": "wait",
+                    "phase": "group-combat",
+                    "ms": 500
+                },
+                {
+                    "call": "wait",
+                    "phase": "group-combat",
+                    "ms": 250
+                },
+                {
+                    "call": "wait",
+                    "phase": "group-combat",
+                    "ms": 250
+                },
+                {
+                    "call": "wait",
+                    "phase": "group-combat",
+                    "ms": 250
+                },
+                {
+                    "call": "wait",
+                    "phase": "group-combat",
+                    "ms": 250
+                },
+                {
+                    "call": "wait",
+                    "phase": "group-combat",
+                    "ms": 250
+                },
+                {
+                    "call": "wait",
+                    "phase": "group-combat",
+                    "ms": 250
+                },
+                {
+                    "call": "wait",
+                    "phase": "group-combat",
+                    "ms": 250
+                },
+                {
+                    "call": "wait",
+                    "phase": "group-combat",
+                    "ms": 250
+                },
+                {
+                    "call": "wait",
+                    "phase": "group-combat",
+                    "ms": 250
+                },
+                {
+                    "call": "wait",
+                    "phase": "group-combat",
+                    "ms": 250
+                },
+                {
+                    "call": "wait",
+                    "phase": "group-combat",
+                    "ms": 250
+                },
+                {
+                    "call": "wait",
+                    "phase": "group-combat",
+                    "ms": 250
+                },
+                {
+                    "call": "wait",
+                    "phase": "group-combat",
+                    "ms": 250
+                },
+                {
+                    "call": "wait",
+                    "phase": "group-combat",
+                    "ms": 250
+                },
+                {
+                    "call": "wait",
+                    "phase": "group-combat",
+                    "ms": 250
+                },
+                {
+                    "call": "wait",
+                    "phase": "group-combat",
+                    "ms": 250
+                },
+                {
+                    "call": "wait",
+                    "phase": "group-combat",
+                    "ms": 250
+                },
+                {
+                    "call": "wait",
+                    "phase": "group-combat",
+                    "ms": 250
+                },
+                {
+                    "call": "wait",
+                    "phase": "group-combat",
+                    "ms": 250
+                },
+                {
+                    "call": "wait",
+                    "phase": "group-combat",
+                    "ms": 250
+                },
+                {
+                    "call": "wait",
+                    "phase": "group-combat",
+                    "ms": 250
+                },
+                {
+                    "call": "wait",
+                    "phase": "group-combat",
+                    "ms": 250
+                },
+                {
+                    "call": "wait",
+                    "phase": "group-combat",
+                    "ms": 250
+                },
+                {
+                    "call": "wait",
+                    "phase": "group-combat",
+                    "ms": 250
+                },
+                {
+                    "call": "wait",
+                    "phase": "group-combat",
+                    "ms": 250
+                },
+                {
+                    "call": "wait",
+                    "phase": "group-combat",
+                    "ms": 250
+                },
+                {
+                    "call": "wait",
+                    "phase": "group-combat",
+                    "ms": 250
+                },
+                {
+                    "call": "wait",
+                    "phase": "group-combat",
+                    "ms": 250
+                },
+                {
+                    "call": "wait",
+                    "phase": "group-combat",
+                    "ms": 250
+                },
+                {
+                    "call": "wait",
+                    "phase": "group-combat",
+                    "ms": 250
+                },
+                {
+                    "call": "reload",
+                    "phase": "group-combat"
+                },
+                {
+                    "call": "wait",
+                    "phase": "group-combat",
+                    "ms": 12000
+                },
+                {
+                    "call": "key",
+                    "phase": "group-combat",
+                    "code": "Digit1",
+                    "modifiers": []
+                },
+                {
+                    "call": "wait",
+                    "phase": "group-combat",
+                    "ms": 150
+                }
+            ],
+            "captures": [
+                {
+                    "name": "joined-before-focus",
+                    "after_action": 0,
+                    "window": 1,
+                    "phase": "group-combat"
+                },
+                {
+                    "name": "initial-world",
+                    "phase": "group-combat",
+                    "after_action": 2,
+                    "window": 1
+                },
+                {
+                    "name": "selected-pair",
+                    "phase": "group-combat",
+                    "after_action": 4,
+                    "window": 1
+                },
+                {
+                    "name": "assigned-pair",
+                    "phase": "group-combat",
+                    "after_action": 6,
+                    "window": 1
+                },
+                {
+                    "name": "recalled-pair",
+                    "phase": "group-combat",
+                    "after_action": 10,
+                    "window": 1
+                },
+                {
+                    "name": "added-pair",
+                    "phase": "group-combat",
+                    "after_action": 13,
+                    "window": 1
+                },
+                {
+                    "name": "before-double-tap",
+                    "phase": "group-combat",
+                    "after_action": 13,
+                    "window": 1
+                },
+                {
+                    "name": "centred-pair",
+                    "phase": "group-combat",
+                    "after_action": 16,
+                    "window": 1
+                },
+                {
+                    "name": "death-start",
+                    "phase": "group-combat",
+                    "after_action": 19,
+                    "window": 1
+                },
+                {
+                    "name": "death-sample-1",
+                    "phase": "group-combat",
+                    "after_action": 20,
+                    "window": 1
+                },
+                {
+                    "name": "death-sample-2",
+                    "phase": "group-combat",
+                    "after_action": 21,
+                    "window": 1
+                },
+                {
+                    "name": "death-sample-3",
+                    "phase": "group-combat",
+                    "after_action": 22,
+                    "window": 1
+                },
+                {
+                    "name": "death-sample-4",
+                    "phase": "group-combat",
+                    "after_action": 23,
+                    "window": 1
+                },
+                {
+                    "name": "death-sample-5",
+                    "phase": "group-combat",
+                    "after_action": 24,
+                    "window": 1
+                },
+                {
+                    "name": "death-sample-6",
+                    "phase": "group-combat",
+                    "after_action": 25,
+                    "window": 1
+                },
+                {
+                    "name": "death-sample-7",
+                    "phase": "group-combat",
+                    "after_action": 26,
+                    "window": 1
+                },
+                {
+                    "name": "death-sample-8",
+                    "phase": "group-combat",
+                    "after_action": 27,
+                    "window": 1
+                },
+                {
+                    "name": "death-sample-9",
+                    "phase": "group-combat",
+                    "after_action": 28,
+                    "window": 1
+                },
+                {
+                    "name": "death-sample-10",
+                    "phase": "group-combat",
+                    "after_action": 29,
+                    "window": 1
+                },
+                {
+                    "name": "death-sample-11",
+                    "phase": "group-combat",
+                    "after_action": 30,
+                    "window": 1
+                },
+                {
+                    "name": "death-sample-12",
+                    "phase": "group-combat",
+                    "after_action": 31,
+                    "window": 1
+                },
+                {
+                    "name": "death-sample-13",
+                    "phase": "group-combat",
+                    "after_action": 32,
+                    "window": 1
+                },
+                {
+                    "name": "death-sample-14",
+                    "phase": "group-combat",
+                    "after_action": 33,
+                    "window": 1
+                },
+                {
+                    "name": "death-sample-15",
+                    "phase": "group-combat",
+                    "after_action": 34,
+                    "window": 1
+                },
+                {
+                    "name": "death-sample-16",
+                    "phase": "group-combat",
+                    "after_action": 35,
+                    "window": 1
+                },
+                {
+                    "name": "death-sample-17",
+                    "phase": "group-combat",
+                    "after_action": 36,
+                    "window": 1
+                },
+                {
+                    "name": "death-sample-18",
+                    "phase": "group-combat",
+                    "after_action": 37,
+                    "window": 1
+                },
+                {
+                    "name": "death-sample-19",
+                    "phase": "group-combat",
+                    "after_action": 38,
+                    "window": 1
+                },
+                {
+                    "name": "death-sample-20",
+                    "phase": "group-combat",
+                    "after_action": 39,
+                    "window": 1
+                },
+                {
+                    "name": "death-sample-21",
+                    "phase": "group-combat",
+                    "after_action": 40,
+                    "window": 1
+                },
+                {
+                    "name": "death-sample-22",
+                    "phase": "group-combat",
+                    "after_action": 41,
+                    "window": 1
+                },
+                {
+                    "name": "death-sample-23",
+                    "phase": "group-combat",
+                    "after_action": 42,
+                    "window": 1
+                },
+                {
+                    "name": "death-sample-24",
+                    "phase": "group-combat",
+                    "after_action": 43,
+                    "window": 1
+                },
+                {
+                    "name": "death-sample-25",
+                    "phase": "group-combat",
+                    "after_action": 44,
+                    "window": 1
+                },
+                {
+                    "name": "death-sample-26",
+                    "phase": "group-combat",
+                    "after_action": 45,
+                    "window": 1
+                },
+                {
+                    "name": "death-sample-27",
+                    "phase": "group-combat",
+                    "after_action": 46,
+                    "window": 1
+                },
+                {
+                    "name": "death-sample-28",
+                    "phase": "group-combat",
+                    "after_action": 47,
+                    "window": 1
+                },
+                {
+                    "name": "death-sample-29",
+                    "phase": "group-combat",
+                    "after_action": 48,
+                    "window": 1
+                },
+                {
+                    "name": "death-sample-30",
+                    "phase": "group-combat",
+                    "after_action": 49,
+                    "window": 1
+                },
+                {
+                    "name": "reloaded",
+                    "phase": "group-combat",
+                    "after_action": 51,
+                    "window": 1
+                },
+                {
+                    "name": "reload-recall",
+                    "phase": "group-combat",
+                    "after_action": 53,
+                    "window": 1
+                }
+            ],
+            "checks": [
+                "ctrl-1-assign",
+                "1-recall",
+                "shift-1-add",
+                "double-tap-centre",
+                "same-frame-destroy-prune",
+                "reload-live-ids",
+                "old-match-prune",
+                "double-tap-pixels"
+            ],
+            "fixture": "sel4-authored-muster-death-v1"
+        }
+    },
+    "fixture_tree_sha256": "05411bc117419e5321891c807911fd9e7640715e60943a1f242a44fdd3e65230"
+}

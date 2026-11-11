@@ -41,15 +41,17 @@ SYNTHETIC_SET=false
 HD1_NATIVE_REFERENCE=""
 if [[ -n "$ROW_FILE" ]]; then
     [[ -f "$ROW_FILE" ]] || { echo "missing row file: $ROW_FILE" >&2; exit 2; }
-    SYNTHETIC_UNITS="$(python3 - "$ROOT" "$ROW_FILE" <<'PYSYNTHETIC'
+    SYNTHETIC_UNITS="$(python3 - "$ROOT" "$ROW_FILE" "$PACKAGE" <<'PYSYNTHETIC'
 import json, pathlib, sys
 sys.dont_write_bytecode = True
 sys.path.insert(0, str(pathlib.Path(sys.argv[1]) / "scripts"))
-from mc_browser_params import actions_file, synthetic_units
+from mc_browser_params import actions_file, synthetic_units, validate_task16_fixture, validate_task16_plan
 try:
     row = json.loads(pathlib.Path(sys.argv[2]).read_text())
     value = synthetic_units(row)
     actions_file(row, pathlib.Path(sys.argv[1]) / "tests/browser/fixtures")
+    validate_task16_plan(row)
+    validate_task16_fixture(row, pathlib.Path(sys.argv[1]), sys.argv[3])
 except (ValueError, json.JSONDecodeError) as error:
     print(f"invalid row synthetic_units: {error}", file=sys.stderr)
     raise SystemExit(2)
@@ -62,6 +64,14 @@ import json, pathlib, sys
 print(json.loads(pathlib.Path(sys.argv[1]).read_text()).get("row", ""))
 PYROW
 )"
+    if [[ "$ROW_NAME" =~ ^(KM1|KM2|SEL4|SLOT1|CAM2|SH1|PER1)$ && "$WINDOWS_SET" == true ]]; then
+        ROW_WINDOWS="$(python3 - "$ROW_FILE" <<'PYROWCOUNT'
+import json, pathlib, sys
+print(json.loads(pathlib.Path(sys.argv[1]).read_text()).get("windows", 1))
+PYROWCOUNT
+)"
+        [[ "$WINDOWS" == "$ROW_WINDOWS" ]] || { echo "--windows cannot override the declared Task16 window count" >&2; exit 2; }
+    fi
     if [[ "$ROW_NAME" == "HD1" ]]; then
         HD1_NATIVE_REFERENCE="${MC_HD1_NATIVE_REFERENCE_DIR:-}"
         [[ -n "$HD1_NATIVE_REFERENCE" && -d "$HD1_NATIVE_REFERENCE" ]] || { echo "HD1 requires an explicit MC_HD1_NATIVE_REFERENCE_DIR with a native binding" >&2; exit 2; }
@@ -82,11 +92,45 @@ fi
 env CARGO_BUILD_JOBS="$BUILD_JOBS" cargo build --release -p turts_server >"$OUT/server-build.log" 2>&1 || { cat "$OUT/server-build.log" >&2; exit 1; }
 env CARGO_BUILD_JOBS="$BUILD_JOBS" cargo build --release -p turts_pack --bin turts-pack >"$OUT/packer-build.log" 2>&1 || { cat "$OUT/packer-build.log" >&2; exit 1; }
 env CARGO_BUILD_JOBS="$BUILD_JOBS" cargo run --release -p turts_pack --bin turts-pack -- "$PACK/$PACKAGE_NAME" >"$OUT/pack.log" 2>&1 || { cat "$OUT/pack.log" >&2; exit 1; }
+if [[ "${ROW_NAME:-}" == "KM1" ]]; then
+    RESERVED_PACKAGE="$OUT/km1-reserved-forge"
+    cp -a "$PACK/$PACKAGE_NAME" "$RESERVED_PACKAGE"
+    PYTHONDONTWRITEBYTECODE=1 python3 - "$RESERVED_PACKAGE" "$OUT/km1-reserved-pack.json" "$TARGET/release/turts-pack" <<'PYKM1PACK'
+import hashlib, json, pathlib, subprocess, sys
+package, result_path, binary = map(pathlib.Path, sys.argv[1:])
+source = package / "input" / "bindings.ron"
+data = source.read_bytes()
+needle = b'code: "KeyM"'
+if data.count(needle) != 1:
+    raise SystemExit("KM1 copied Forge source must contain exactly one KeyM default binding")
+mutant = data.replace(needle, b'code: "F12"', 1)
+source.write_bytes(mutant)
+argv = [str(binary), str(package)]
+binary_hash = hashlib.sha256(binary.read_bytes()).hexdigest()
+completed = subprocess.run(argv, text=True, capture_output=True, check=False)
+record = {
+    "source_file": "input/bindings.ron",
+    "source_sha256": hashlib.sha256(mutant).hexdigest(),
+    "reserved_code": "F12",
+    "argv": argv,
+    "binary_sha256": binary_hash,
+    "command_sha256": hashlib.sha256(json.dumps({"argv": argv, "binary_sha256": binary_hash}, sort_keys=True, separators=(",", ":")).encode()).hexdigest(),
+    "exit_code": completed.returncode,
+    "stdout": completed.stdout,
+    "stderr": completed.stderr,
+}
+pathlib.Path(result_path).write_text(json.dumps(record, sort_keys=True) + "\n")
+PYKM1PACK
+fi
 (cd "$ROOT/crates/turts_client_web" && env CARGO_BUILD_JOBS="$BUILD_JOBS" trunk build --release) >"$OUT/trunk-build.log" 2>&1 || { cat "$OUT/trunk-build.log" >&2; exit 1; }
 if [[ -n "$HD1_NATIVE_REFERENCE" ]]; then
     PYTHONDONTWRITEBYTECODE=1 python3 "$ROOT/scripts/hd1_reference.py" validate "$ROOT" "$HD1_NATIVE_REFERENCE"
     mkdir -p "$OUT/native-reference"
     cp -a "$HD1_NATIVE_REFERENCE"/. "$OUT/native-reference"/
+fi
+
+if [[ "${ROW_NAME:-}" == "PER1" ]]; then
+    PYTHONDONTWRITEBYTECODE=1 python3 "$ROOT/scripts/per1_native_reference.py" create "$ROOT" "$OUT/native-reference"
 fi
 
 read -r STATIC_PORT HTTP_PORT WS_PORT < <(python3 - <<'PYPORTS'
@@ -110,6 +154,9 @@ cat >"$OUT/server.ron" <<EOF_RON
 )
 EOF_RON
 SERVER_ARGS=("$TARGET/release/turts_server" "$OUT/server.ron")
+if [[ "${ROW_NAME:-}" == "SLOT1" ]]; then
+    SERVER_ARGS+=(--stats "$OUT/server-stats.json")
+fi
 if [[ "$SYNTHETIC_SET" == true ]]; then
     SERVER_ARGS+=(--synthetic-units "$SYNTHETIC_UNITS")
 fi
@@ -122,6 +169,17 @@ pathlib.Path(sys.argv[1]).write_text(json.dumps(sys.argv[2:], indent=2) + "\n")
 PYSERVERARGV
 "${SERVER_ARGS[@]}" >"$OUT/server.log" 2>&1 &
 SERVER_PID=$!
+if [[ "${ROW_NAME:-}" == "SLOT1" ]]; then
+    python3 - "$OUT/server-launch.json" "$SERVER_PID" "$OUT/server-stats.json.sessions.jsonl" "${SERVER_ARGS[@]}" <<'PYSERVERLAUNCH'
+import hashlib, json, pathlib, sys
+path, pid, observer, *argv = sys.argv[1:]
+stats_arg = argv[argv.index("--stats") + 1]
+record = {"server_pid": int(pid), "stats_arg": stats_arg, "observer_path": str(pathlib.Path(observer).resolve()), "argv": argv}
+record["argv_sha256"] = hashlib.sha256(json.dumps(argv, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+pathlib.Path(path).write_text(json.dumps(record, sort_keys=True) + "\n")
+pathlib.Path(path).chmod(0o600)
+PYSERVERLAUNCH
+fi
 python3 -m http.server "$STATIC_PORT" --bind 127.0.0.1 --directory "$DIST" >"$OUT/static.log" 2>&1 &
 STATIC_PID=$!
 cleanup() {
@@ -164,7 +222,7 @@ import json, pathlib, re, sys
 sys.dont_write_bytecode = True
 root,package,url,http,ws,row,out,viewport,windows=sys.argv[1:]
 sys.path.insert(0, str(pathlib.Path(root) / "scripts"))
-from mc_browser_params import add_actions_param, add_synthetic_param
+from mc_browser_params import add_actions_param, add_synthetic_param, add_task16_param
 match=re.fullmatch(r"(\d+)x(\d+)(?:@([0-9]+(?:\.[0-9]+)?))?",viewport)
 if not match: raise SystemExit("invalid viewport: "+viewport)
 data={"package":package,"url":url,"server_url":http,"ws_url":ws,"windows":1,"device_scale_factor":float(match.group(3) or 1)}
@@ -173,6 +231,7 @@ if row:
     data["windows"]=row_data.get("windows",1)
     data["device_scale_factor"]=row_data.get("device_scale_factor",data["device_scale_factor"])
     data["row"]=row_data.get("row")
+    if "instrument_status" in row_data: data["instrument_status"]=row_data["instrument_status"]
     for key in ("fixture_tree_sha256", "fixture_catalog", "pick_world_epsilon", "stages",
                 "map_size", "camera_vertical_fov_degrees", "slot_colours", "ping_colour",
                 "frame_colour", "background_colour", "minimap_inset", "minimap_size"):
@@ -181,7 +240,19 @@ if row:
     if not isinstance(capture,bool): raise SystemExit("capture_scene_checkpoints must be a boolean")
     data["capture_scene_checkpoints"]=capture
     data=add_synthetic_param(data,row_data)
-    data=add_actions_param(data,row_data,pathlib.Path(root)/"tests/browser/fixtures")
+    data=add_task16_param(data,row_data)
+    if row_data.get("row") not in {"KM1", "KM2", "SEL4", "SLOT1", "CAM2", "SH1", "PER1"}:
+        data=add_actions_param(data,row_data,pathlib.Path(root)/"tests/browser/fixtures")
+if data.get("row") == "PER1":
+    import hashlib
+    from per1_native_reference import validate
+    reference = pathlib.Path(out).parent / "native-reference"
+    validate(pathlib.Path(root).resolve(), reference)
+    data["per1_native_reference"] = {
+        "validated_before_physical_run": True,
+        "files": {file.name: hashlib.sha256(file.read_bytes()).hexdigest()
+                  for file in sorted(reference.iterdir()) if file.is_file()},
+    }
 if windows: data["windows"]=int(windows)
 data["viewport"]={"width":int(match.group(1)),"height":int(match.group(2)),"device_scale_factor":data["device_scale_factor"]}
 pathlib.Path(out).write_text(json.dumps(data,sort_keys=True)+"\n")

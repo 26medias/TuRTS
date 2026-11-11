@@ -1,0 +1,152 @@
+{
+    "row": "KM2",
+    "package": "mods/forge",
+    "driver": "tests/browser/shell-driver.js",
+    "oracle": "tests/browser/shell-oracle.js",
+    "runs": "ci",
+    "capture_scene_checkpoints": true,
+    "viewports": [
+        "1280x720"
+    ],
+    "windows": 1,
+    "acceptance_contract": [
+        "After join the canvas has focus",
+        "Press F10 and capture the real settings menu before the focus-loss check",
+        "Real right-click contextmenu count equals defaultPrevented count",
+        "Click at (-5,-5) outside canvas and capture the real focus overlay",
+        "The next physical key outside canvas has no applied Core input in its same-call checkpoint",
+        "Attach actual headed Chrome P1 table; Firefox remains NOT TRACED per CEO decision"
+    ],
+    "stages": {
+        "task16": {
+            "status": "executable",
+            "phases": [
+                "join-focus",
+                "blur-outside"
+            ],
+            "actions": [
+                {
+                    "call": "click",
+                    "phase": "join-focus",
+                    "x": 500,
+                    "y": 430,
+                    "button": "left"
+                },
+                {
+                    "call": "wait",
+                    "phase": "join-focus",
+                    "ms": 250
+                },
+                {
+                    "call": "click",
+                    "phase": "join-focus",
+                    "x": 550,
+                    "y": 440,
+                    "button": "right"
+                },
+                {
+                    "call": "wait",
+                    "phase": "join-focus",
+                    "ms": 150
+                },
+                {
+                    "call": "key",
+                    "phase": "join-focus",
+                    "code": "F10",
+                    "modifiers": []
+                },
+                {
+                    "call": "wait",
+                    "phase": "join-focus",
+                    "ms": 200
+                },
+                {
+                    "call": "key",
+                    "phase": "join-focus",
+                    "code": "F10",
+                    "modifiers": []
+                },
+                {
+                    "call": "wait",
+                    "phase": "join-focus",
+                    "ms": 150
+                },
+                {
+                    "call": "click",
+                    "phase": "blur-outside",
+                    "x": -5,
+                    "y": -5,
+                    "button": "left"
+                },
+                {
+                    "call": "wait",
+                    "phase": "blur-outside",
+                    "ms": 250
+                },
+                {
+                    "call": "key",
+                    "phase": "blur-outside",
+                    "code": "ArrowRight",
+                    "modifiers": []
+                },
+                {
+                    "call": "wait",
+                    "phase": "blur-outside",
+                    "ms": 150
+                }
+            ],
+            "captures": [
+                {
+                    "name": "joined-before-input",
+                    "phase": "join-focus",
+                    "after_action": 0,
+                    "window": 1
+                },
+                {
+                    "name": "joined-focused",
+                    "phase": "join-focus",
+                    "after_action": 2,
+                    "window": 1
+                },
+                {
+                    "name": "contextmenu-prevented",
+                    "phase": "join-focus",
+                    "after_action": 4,
+                    "window": 1
+                },
+                {
+                    "name": "actual-menu",
+                    "phase": "join-focus",
+                    "after_action": 6,
+                    "window": 1
+                },
+                {
+                    "name": "menu-closed",
+                    "phase": "join-focus",
+                    "after_action": 8,
+                    "window": 1
+                },
+                {
+                    "name": "canvas-blurred",
+                    "phase": "blur-outside",
+                    "after_action": 2,
+                    "window": 1
+                },
+                {
+                    "name": "outside-key",
+                    "phase": "blur-outside",
+                    "after_action": 4,
+                    "window": 1
+                }
+            ],
+            "checks": [
+                "join-focus",
+                "contextmenu-prevented-delta",
+                "canvas-blur-overlay",
+                "outside-key-stopped",
+                "p1-attachment",
+                "canvas-blur-pixels"
+            ]
+        }
+    }
+}

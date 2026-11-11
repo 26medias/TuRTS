@@ -1,0 +1,573 @@
+{
+    "row": "SLOT1",
+    "package": "mods/forge",
+    "driver": "tests/browser/shell-driver.js",
+    "oracle": "tests/browser/shell-oracle.js",
+    "runs": "ci",
+    "capture_scene_checkpoints": true,
+    "viewports": [
+        "1280x720"
+    ],
+    "windows": 3,
+    "acceptance_contract": [
+        "Reload within 5 seconds reuses the same exact decimal u64 player ID",
+        "Show countdown and rejoin same slot within 15 seconds with unchanged owner",
+        "Window 3 with an unclaimed distinct stored ID receives the actual no-open-slot refusal after A and B own the slots",
+        "After C closes, a browser-created copy of live A receives the exact duplicate-window terminal result while A and B retain their original owner epochs",
+        "The terminal capture binds that exact visible engine notice and its actual post-layout rectangle to the 1280x720 PNG; opaque-white glyph pixels and contrasting edges must occur inside the observed text box",
+        "Record actual reload-to-old-session-close elapsed time; NOT TRACED until observed"
+    ],
+    "stages": {
+        "task16": {
+            "status": "executable",
+            "gpu_device_audit": true,
+            "phases": [
+                "capacity",
+                "copy-refusal",
+                "reload-rejoin"
+            ],
+            "actions": [
+                {
+                    "call": "use",
+                    "window": 3,
+                    "phase": "capacity"
+                },
+                {
+                    "call": "use",
+                    "window": 1,
+                    "phase": "copy-refusal"
+                },
+                {
+                    "call": "wait",
+                    "ms": 400,
+                    "phase": "copy-refusal"
+                },
+                {
+                    "call": "use",
+                    "window": 2,
+                    "phase": "copy-refusal"
+                },
+                {
+                    "call": "wait",
+                    "ms": 400,
+                    "phase": "copy-refusal"
+                },
+                {
+                    "call": "use",
+                    "window": 3,
+                    "phase": "copy-refusal"
+                },
+                {
+                    "call": "wait",
+                    "ms": 400,
+                    "phase": "copy-refusal"
+                },
+                {
+                    "call": "use",
+                    "window": 1,
+                    "phase": "copy-refusal"
+                },
+                {
+                    "call": "wait",
+                    "ms": 400,
+                    "phase": "copy-refusal"
+                },
+                {
+                    "call": "use",
+                    "window": 2,
+                    "phase": "copy-refusal"
+                },
+                {
+                    "call": "wait",
+                    "ms": 400,
+                    "phase": "copy-refusal"
+                },
+                {
+                    "call": "use",
+                    "window": 3,
+                    "phase": "copy-refusal"
+                },
+                {
+                    "call": "wait",
+                    "ms": 400,
+                    "phase": "copy-refusal"
+                },
+                {
+                    "call": "use",
+                    "window": 1,
+                    "phase": "copy-refusal"
+                },
+                {
+                    "call": "wait",
+                    "ms": 400,
+                    "phase": "copy-refusal"
+                },
+                {
+                    "call": "use",
+                    "window": 2,
+                    "phase": "copy-refusal"
+                },
+                {
+                    "call": "wait",
+                    "ms": 400,
+                    "phase": "copy-refusal"
+                },
+                {
+                    "call": "use",
+                    "window": 3,
+                    "phase": "copy-refusal"
+                },
+                {
+                    "call": "wait",
+                    "ms": 400,
+                    "phase": "copy-refusal"
+                },
+                {
+                    "call": "use",
+                    "window": 1,
+                    "phase": "copy-refusal"
+                },
+                {
+                    "call": "wait",
+                    "ms": 400,
+                    "phase": "copy-refusal"
+                },
+                {
+                    "call": "use",
+                    "window": 2,
+                    "phase": "copy-refusal"
+                },
+                {
+                    "call": "wait",
+                    "ms": 400,
+                    "phase": "copy-refusal"
+                },
+                {
+                    "call": "use",
+                    "window": 3,
+                    "phase": "copy-refusal"
+                },
+                {
+                    "call": "wait",
+                    "ms": 400,
+                    "phase": "copy-refusal"
+                },
+                {
+                    "call": "use",
+                    "window": 1,
+                    "phase": "copy-refusal"
+                },
+                {
+                    "call": "wait",
+                    "ms": 400,
+                    "phase": "copy-refusal"
+                },
+                {
+                    "call": "use",
+                    "window": 2,
+                    "phase": "copy-refusal"
+                },
+                {
+                    "call": "wait",
+                    "ms": 400,
+                    "phase": "copy-refusal"
+                },
+                {
+                    "call": "use",
+                    "window": 3,
+                    "phase": "copy-refusal"
+                },
+                {
+                    "call": "wait",
+                    "ms": 400,
+                    "phase": "copy-refusal"
+                },
+                {
+                    "call": "use",
+                    "window": 1,
+                    "phase": "copy-refusal"
+                },
+                {
+                    "call": "wait",
+                    "ms": 400,
+                    "phase": "copy-refusal"
+                },
+                {
+                    "call": "use",
+                    "window": 2,
+                    "phase": "copy-refusal"
+                },
+                {
+                    "call": "wait",
+                    "ms": 400,
+                    "phase": "copy-refusal"
+                },
+                {
+                    "call": "use",
+                    "window": 3,
+                    "phase": "copy-refusal"
+                },
+                {
+                    "call": "wait",
+                    "ms": 400,
+                    "phase": "copy-refusal"
+                },
+                {
+                    "call": "use",
+                    "window": 1,
+                    "phase": "copy-refusal"
+                },
+                {
+                    "call": "wait",
+                    "ms": 400,
+                    "phase": "copy-refusal"
+                },
+                {
+                    "call": "use",
+                    "window": 2,
+                    "phase": "copy-refusal"
+                },
+                {
+                    "call": "wait",
+                    "ms": 400,
+                    "phase": "copy-refusal"
+                },
+                {
+                    "call": "use",
+                    "window": 3,
+                    "phase": "copy-refusal"
+                },
+                {
+                    "call": "wait",
+                    "ms": 400,
+                    "phase": "copy-refusal"
+                },
+                {
+                    "call": "use",
+                    "window": 1,
+                    "phase": "copy-refusal"
+                },
+                {
+                    "call": "wait",
+                    "ms": 400,
+                    "phase": "copy-refusal"
+                },
+                {
+                    "call": "use",
+                    "window": 2,
+                    "phase": "copy-refusal"
+                },
+                {
+                    "call": "wait",
+                    "ms": 400,
+                    "phase": "copy-refusal"
+                },
+                {
+                    "call": "use",
+                    "window": 3,
+                    "phase": "copy-refusal"
+                },
+                {
+                    "call": "wait",
+                    "ms": 400,
+                    "phase": "copy-refusal"
+                },
+                {
+                    "call": "use",
+                    "window": 1,
+                    "phase": "copy-refusal"
+                },
+                {
+                    "call": "wait",
+                    "ms": 400,
+                    "phase": "copy-refusal"
+                },
+                {
+                    "call": "use",
+                    "window": 2,
+                    "phase": "copy-refusal"
+                },
+                {
+                    "call": "wait",
+                    "ms": 400,
+                    "phase": "copy-refusal"
+                },
+                {
+                    "call": "use",
+                    "window": 3,
+                    "phase": "copy-refusal"
+                },
+                {
+                    "call": "wait",
+                    "ms": 400,
+                    "phase": "copy-refusal"
+                },
+                {
+                    "call": "use",
+                    "window": 1,
+                    "phase": "copy-refusal"
+                },
+                {
+                    "call": "wait",
+                    "ms": 400,
+                    "phase": "copy-refusal"
+                },
+                {
+                    "call": "use",
+                    "window": 2,
+                    "phase": "copy-refusal"
+                },
+                {
+                    "call": "wait",
+                    "ms": 400,
+                    "phase": "copy-refusal"
+                },
+                {
+                    "call": "use",
+                    "window": 3,
+                    "phase": "copy-refusal"
+                },
+                {
+                    "call": "wait",
+                    "ms": 400,
+                    "phase": "copy-refusal"
+                },
+                {
+                    "call": "use",
+                    "window": 1,
+                    "phase": "copy-refusal"
+                },
+                {
+                    "call": "wait",
+                    "ms": 400,
+                    "phase": "copy-refusal"
+                },
+                {
+                    "call": "use",
+                    "window": 2,
+                    "phase": "copy-refusal"
+                },
+                {
+                    "call": "wait",
+                    "ms": 400,
+                    "phase": "copy-refusal"
+                },
+                {
+                    "call": "use",
+                    "window": 3,
+                    "phase": "copy-refusal"
+                },
+                {
+                    "call": "wait",
+                    "ms": 400,
+                    "phase": "copy-refusal"
+                },
+                {
+                    "call": "use",
+                    "window": 1,
+                    "phase": "copy-refusal"
+                },
+                {
+                    "call": "wait",
+                    "ms": 400,
+                    "phase": "copy-refusal"
+                },
+                {
+                    "call": "use",
+                    "window": 2,
+                    "phase": "copy-refusal"
+                },
+                {
+                    "call": "wait",
+                    "ms": 400,
+                    "phase": "copy-refusal"
+                },
+                {
+                    "call": "use",
+                    "window": 3,
+                    "phase": "copy-refusal"
+                },
+                {
+                    "call": "wait",
+                    "ms": 400,
+                    "phase": "copy-refusal"
+                },
+                {
+                    "call": "use",
+                    "window": 1,
+                    "phase": "copy-refusal"
+                },
+                {
+                    "call": "wait",
+                    "ms": 400,
+                    "phase": "copy-refusal"
+                },
+                {
+                    "call": "use",
+                    "window": 2,
+                    "phase": "copy-refusal"
+                },
+                {
+                    "call": "wait",
+                    "ms": 400,
+                    "phase": "copy-refusal"
+                },
+                {
+                    "call": "use",
+                    "window": 3,
+                    "phase": "copy-refusal"
+                },
+                {
+                    "call": "wait",
+                    "ms": 400,
+                    "phase": "copy-refusal"
+                },
+                {
+                    "call": "use",
+                    "window": 1,
+                    "phase": "copy-refusal"
+                },
+                {
+                    "call": "use",
+                    "window": 2,
+                    "phase": "copy-refusal"
+                },
+                {
+                    "call": "use",
+                    "window": 3,
+                    "phase": "copy-refusal"
+                },
+                {
+                    "call": "click",
+                    "x": 500,
+                    "y": 430,
+                    "button": "left",
+                    "phase": "copy-refusal"
+                },
+                {
+                    "call": "wait",
+                    "ms": 250,
+                    "phase": "copy-refusal"
+                },
+                {
+                    "call": "wait",
+                    "ms": 400,
+                    "phase": "copy-refusal"
+                },
+                {
+                    "call": "wait",
+                    "ms": 400,
+                    "phase": "copy-refusal"
+                },
+                {
+                    "call": "wait",
+                    "ms": 400,
+                    "phase": "copy-refusal"
+                },
+                {
+                    "call": "use",
+                    "window": 1,
+                    "phase": "reload-rejoin"
+                },
+                {
+                    "call": "reload",
+                    "phase": "reload-rejoin"
+                },
+                {
+                    "call": "wait",
+                    "ms": 1000,
+                    "phase": "reload-rejoin"
+                },
+                {
+                    "call": "wait",
+                    "ms": 11000,
+                    "phase": "reload-rejoin"
+                }
+            ],
+            "captures": [
+                {
+                    "name": "unclaimed-C-refusal",
+                    "after_action": 1,
+                    "window": 3,
+                    "phase": "capacity"
+                },
+                {
+                    "name": "clone-countdown-start",
+                    "after_action": 0,
+                    "window": 3,
+                    "phase": "copy-refusal"
+                },
+                {
+                    "name": "owner-A-start",
+                    "after_action": 0,
+                    "window": 1,
+                    "phase": "copy-refusal"
+                },
+                {
+                    "name": "owner-B-start",
+                    "after_action": 0,
+                    "window": 2,
+                    "phase": "copy-refusal"
+                },
+                {
+                    "name": "clone-countdown-early",
+                    "after_action": 6,
+                    "window": 3,
+                    "phase": "copy-refusal"
+                },
+                {
+                    "name": "clone-countdown-late",
+                    "after_action": 18,
+                    "window": 3,
+                    "phase": "copy-refusal"
+                },
+                {
+                    "name": "owner-A-end",
+                    "after_action": 78,
+                    "window": 1,
+                    "phase": "copy-refusal"
+                },
+                {
+                    "name": "owner-B-end",
+                    "after_action": 78,
+                    "window": 2,
+                    "phase": "copy-refusal"
+                },
+                {
+                    "name": "clone-terminal",
+                    "after_action": 83,
+                    "window": 3,
+                    "phase": "copy-refusal"
+                },
+                {
+                    "name": "original-A-before-reload",
+                    "after_action": 0,
+                    "window": 1,
+                    "phase": "reload-rejoin"
+                },
+                {
+                    "name": "original-A-reload-countdown",
+                    "after_action": 3,
+                    "window": 1,
+                    "phase": "reload-rejoin"
+                },
+                {
+                    "name": "original-A-rejoined",
+                    "after_action": 4,
+                    "window": 1,
+                    "phase": "reload-rejoin"
+                }
+            ],
+            "checks": [
+                "reload-same-id",
+                "same-slot-rejoin",
+                "unclaimed-third-refusal",
+                "copied-tab-terminal-refusal",
+                "owners-stable",
+                "reload-to-authority-removal",
+                "clone-terminal-pixels"
+            ],
+            "fixture": "slot1-authentic-copy-v1"
+        }
+    }
+}

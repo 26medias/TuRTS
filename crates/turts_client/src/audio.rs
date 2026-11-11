@@ -44,6 +44,8 @@ struct AudioObservationState {
 struct SettingsPersistence {
     loaded: bool,
     snapshot: Option<VolumeSettings>,
+    controls: Option<crate::client_preferences::ControlSettings>,
+    pending_notice: Option<String>,
 }
 
 type RealAudioPlayers<'w, 's> = Query<
@@ -72,22 +74,15 @@ impl Plugin for AudioPlugin {
             .init_resource::<SoundCatalog>()
             .init_resource::<AudioObservationState>()
             .init_resource::<SettingsPersistence>()
-            .insert_resource(GlobalVolume::new(Volume::Linear(1.0)))
-            .add_systems(
-                Update,
-                (
-                    bootstrap_volume_settings,
-                    crate::volume_settings::apply_volume_control_changes,
-                    persist_volume_settings,
-                    crate::volume_settings::sync_volume_controls,
-                    crate::volume_settings::sync_volume_thumb_positions,
-                    load_sound_assets,
-                    spawn_requested_sounds,
-                    update_live_gains,
-                )
-                    .chain()
-                    .after(FeedbackSet),
-            );
+            .insert_resource(GlobalVolume::new(Volume::Linear(1.0)));
+        register_settings_systems(app);
+        app.add_systems(
+            Update,
+            (load_sound_assets, spawn_requested_sounds, update_live_gains)
+                .chain()
+                .after(crate::volume_settings::sync_volume_thumb_positions)
+                .after(FeedbackSet),
+        );
         app.add_systems(
             Last,
             observe_real_sinks.before(crate::core_adapter::FrameCloseSet),
@@ -99,90 +94,234 @@ impl Plugin for AudioPlugin {
         );
     }
 }
+#[derive(SystemSet, Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub(crate) struct SettingsLoadSet;
+
+fn register_settings_systems(app: &mut App) {
+    app.add_systems(
+        Update,
+        load_client_settings_once
+            .in_set(SettingsLoadSet)
+            .before(crate::core_adapter::CoreAdapterSet),
+    );
+    app.add_systems(
+        Update,
+        (
+            bootstrap_volume_settings,
+            crate::volume_settings::apply_volume_control_changes,
+            persist_volume_settings.before(crate::ui_shared::UiPresentationSet),
+            crate::volume_settings::sync_volume_controls,
+            crate::volume_settings::sync_volume_thumb_positions,
+        )
+            .chain()
+            .after(FeedbackSet),
+    );
+}
+
+fn initialize_settings(
+    settings: &mut VolumeSettings,
+    state: &mut SettingsPersistence,
+    controls: Option<&mut crate::client_shell::ClientSettings>,
+    health: Option<&mut crate::visuals::HealthDisplay>,
+    preferences: Option<&mut crate::core_adapter::CorePreferences>,
+    root: Option<&crate::persist::PersistenceConfigRoot>,
+) {
+    let loaded = load_settings(root);
+    *settings = loaded.volumes;
+    loaded.controls.apply(controls, health, preferences);
+    state.controls = Some(loaded.controls);
+    state.pending_notice = loaded.notice;
+    state.snapshot = Some(*settings);
+    state.loaded = true;
+}
+
+#[derive(bevy::ecs::system::SystemParam)]
+struct RuntimeControlResources<'w> {
+    client: Option<ResMut<'w, crate::client_shell::ClientSettings>>,
+    health: Option<ResMut<'w, crate::visuals::HealthDisplay>>,
+    preferences: Option<ResMut<'w, crate::core_adapter::CorePreferences>>,
+}
+
+fn load_client_settings_once(
+    mut settings: ResMut<VolumeSettings>,
+    mut state: ResMut<SettingsPersistence>,
+    mut controls: RuntimeControlResources,
+    root: Option<Res<crate::persist::PersistenceConfigRoot>>,
+) {
+    if state.loaded {
+        return;
+    }
+    initialize_settings(
+        &mut settings,
+        &mut state,
+        controls.client.as_deref_mut(),
+        controls.health.as_deref_mut(),
+        controls.preferences.as_deref_mut(),
+        root.as_deref(),
+    );
+}
+
 fn bootstrap_volume_settings(
     mut settings: ResMut<VolumeSettings>,
     mut state: ResMut<SettingsPersistence>,
     mut frame: ResMut<FrameFeedback>,
     mut notices: ResMut<NoticesFeed>,
+    mut controls: RuntimeControlResources,
+    root: Option<Res<crate::persist::PersistenceConfigRoot>>,
 ) {
-    if state.loaded {
-        return;
+    if !state.loaded {
+        initialize_settings(
+            &mut settings,
+            &mut state,
+            controls.client.as_deref_mut(),
+            controls.health.as_deref_mut(),
+            controls.preferences.as_deref_mut(),
+            root.as_deref(),
+        );
     }
-    let loaded = load_settings();
-    *settings = loaded.volumes;
-    if let Some(notice) = loaded.notice {
+    // Publish after feedback reset, using the one parse decision made before player input.
+    if let Some(notice) = state.pending_notice.take() {
         let value = serde_json::json!({"text":notice,"message":notice});
         frame.notices.push(value.clone());
         notices.0.push(value);
     }
-    state.snapshot = Some(*settings);
-    state.loaded = true;
 }
 
 #[cfg(target_family = "wasm")]
-fn load_settings() -> LoadedSettings {
+fn load_settings(_root: Option<&crate::persist::PersistenceConfigRoot>) -> LoadedSettings {
     match crate::volume_settings::read_web_settings() {
         Ok(Some(json)) => crate::volume_settings::decode_settings_json(&json),
         Ok(None) | Err(_) => LoadedSettings {
             volumes: VolumeSettings::default(),
             notice: None,
+            ..Default::default()
         },
     }
 }
 
 #[cfg(not(target_family = "wasm"))]
-fn load_settings() -> LoadedSettings {
-    crate::volume_settings::native_user_config_dir()
+fn load_settings(root: Option<&crate::persist::PersistenceConfigRoot>) -> LoadedSettings {
+    native_settings_root(root)
         .map(|dir| {
             SettingsStore::for_path(crate::volume_settings::native_settings_path(&dir)).load()
         })
         .unwrap_or(LoadedSettings {
             volumes: VolumeSettings::default(),
             notice: None,
+            ..Default::default()
         })
 }
 
-fn persist_volume_settings(settings: Res<VolumeSettings>, mut state: ResMut<SettingsPersistence>) {
-    if !state.loaded || state.snapshot == Some(*settings) {
+#[cfg(not(target_family = "wasm"))]
+fn native_settings_root(
+    root: Option<&crate::persist::PersistenceConfigRoot>,
+) -> Option<std::path::PathBuf> {
+    match root {
+        Some(root) => root.0.clone(),
+        None => crate::volume_settings::native_user_config_dir(),
+    }
+}
+
+fn persist_volume_settings(
+    settings: Res<VolumeSettings>,
+    controls: Option<Res<crate::client_shell::ClientSettings>>,
+    health: Option<Res<crate::visuals::HealthDisplay>>,
+    preferences: Option<Res<crate::core_adapter::CorePreferences>>,
+    root: Option<Res<crate::persist::PersistenceConfigRoot>>,
+    mut state: ResMut<SettingsPersistence>,
+) {
+    if !state.loaded {
         return;
     }
-    if save_settings(*settings).is_ok() {
+    let controls = crate::client_preferences::ControlSettings::capture(
+        controls.as_deref(),
+        health.as_deref(),
+        preferences.as_deref(),
+        state.controls,
+    );
+    let audio_changed = state.snapshot != Some(*settings);
+    let controls_changed = state.controls != Some(controls);
+    if !audio_changed && !controls_changed {
+        return;
+    }
+    if save_settings(
+        *settings,
+        &controls,
+        audio_changed,
+        controls_changed,
+        root.as_deref(),
+    )
+    .is_ok()
+    {
         state.snapshot = Some(*settings);
+        state.controls = Some(controls);
     }
 }
 
 #[cfg(target_family = "wasm")]
-fn save_settings(settings: VolumeSettings) -> Result<(), String> {
+fn save_settings(
+    settings: VolumeSettings,
+    controls: &crate::client_preferences::ControlSettings,
+    audio_changed: bool,
+    controls_changed: bool,
+    _root: Option<&crate::persist::PersistenceConfigRoot>,
+) -> Result<(), String> {
+    if !audio_changed && !controls_changed {
+        return Ok(());
+    }
     let mut json = crate::volume_settings::read_web_settings()?;
-    for category in [
-        VolumeCategory::Master,
-        VolumeCategory::Voice,
-        VolumeCategory::Alerts,
-        VolumeCategory::Effects,
-    ] {
-        json = Some(crate::volume_settings::set_volume_in_json(
+    if audio_changed {
+        for category in [
+            VolumeCategory::Master,
+            VolumeCategory::Voice,
+            VolumeCategory::Alerts,
+            VolumeCategory::Effects,
+        ] {
+            json = Some(crate::volume_settings::set_volume_in_json(
+                json.as_deref(),
+                category,
+                settings.value(category),
+            )?);
+        }
+    }
+    if controls_changed {
+        json = Some(crate::volume_settings::set_controls_in_json(
             json.as_deref(),
-            category,
-            settings.value(category),
+            controls,
         )?);
     }
     crate::volume_settings::write_web_settings(
-        json.as_deref().expect("settings document is generated"),
+        json.as_deref()
+            .ok_or_else(|| "changed settings document is unavailable".to_string())?,
     )
 }
 
 #[cfg(not(target_family = "wasm"))]
-fn save_settings(settings: VolumeSettings) -> Result<(), String> {
-    let dir = crate::volume_settings::native_user_config_dir()
+fn save_settings(
+    settings: VolumeSettings,
+    controls: &crate::client_preferences::ControlSettings,
+    audio_changed: bool,
+    controls_changed: bool,
+    root: Option<&crate::persist::PersistenceConfigRoot>,
+) -> Result<(), String> {
+    if !controls.valid() {
+        return Err("client settings are outside their supported ranges".into());
+    }
+    let dir = native_settings_root(root)
         .ok_or_else(|| "user settings directory is unavailable".to_string())?;
     let store = SettingsStore::for_path(crate::volume_settings::native_settings_path(&dir));
-    for category in [
-        VolumeCategory::Master,
-        VolumeCategory::Voice,
-        VolumeCategory::Alerts,
-        VolumeCategory::Effects,
-    ] {
-        store.set_volume(category, settings.value(category))?;
+    if audio_changed {
+        for category in [
+            VolumeCategory::Master,
+            VolumeCategory::Voice,
+            VolumeCategory::Alerts,
+            VolumeCategory::Effects,
+        ] {
+            store.set_volume(category, settings.value(category))?;
+        }
+    }
+    if controls_changed {
+        store.set_controls(controls)?;
     }
     Ok(())
 }
@@ -662,4 +801,247 @@ fn refresh_browser_audio_state(mut feed: ResMut<AudioFeed>) {
         Some("closed".into())
     };
     feed.context_states = states;
+}
+
+#[cfg(all(test, not(target_family = "wasm")))]
+mod control_settings_persistence_contract {
+    use super::*;
+    use std::{
+        fs,
+        path::PathBuf,
+        sync::atomic::{AtomicU64, Ordering},
+        time::{SystemTime, UNIX_EPOCH},
+    };
+
+    static NEXT_ROOT: AtomicU64 = AtomicU64::new(0);
+
+    struct Fixture(PathBuf);
+    impl Fixture {
+        fn new(json: &str) -> Self {
+            let nonce = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos();
+            let root = std::env::temp_dir().join(format!(
+                "turts-controls-{}-{nonce}-{}",
+                std::process::id(),
+                NEXT_ROOT.fetch_add(1, Ordering::Relaxed)
+            ));
+            let path = crate::volume_settings::native_settings_path(&root);
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(path, json).unwrap();
+            Self(root)
+        }
+        fn json(&self) -> serde_json::Value {
+            serde_json::from_slice(
+                &fs::read(crate::volume_settings::native_settings_path(&self.0)).unwrap(),
+            )
+            .unwrap()
+        }
+        fn app(&self) -> App {
+            let mut app = App::new();
+            app.add_plugins(MinimalPlugins)
+                .insert_resource(crate::persist::PersistenceConfigRoot(Some(self.0.clone())))
+                .init_resource::<VolumeSettings>()
+                .init_resource::<SettingsPersistence>()
+                .init_resource::<FrameFeedback>()
+                .init_resource::<NoticesFeed>()
+                .init_resource::<crate::client_shell::ClientSettings>()
+                .init_resource::<crate::visuals::HealthDisplay>()
+                .init_resource::<crate::core_adapter::CorePreferences>();
+            register_settings_systems(&mut app);
+            app
+        }
+    }
+    impl Drop for Fixture {
+        fn drop(&mut self) {
+            fs::remove_dir_all(&self.0).unwrap();
+        }
+    }
+    fn valid_document() -> &'static str {
+        r#"{"audio":{"master":0.35,"voice":0.2,"alerts":0.6,"effects":0.8},"controls":{"scroll_speed":2.0,"edge_scroll":false,"ui_scale":1.25,"cursor_lock":true,"double_click_ms":650,"double_click_pixels":6.0,"health_mode":"always","future":"keep"},"unknown":{"keep":true}}"#
+    }
+
+    #[derive(Resource, Default)]
+    struct FirstCoreSettings(Option<(f32, f32, f32)>);
+
+    fn observe_first_core_settings(
+        controls: Res<crate::client_shell::ClientSettings>,
+        preferences: Res<crate::core_adapter::CorePreferences>,
+        volume: Res<VolumeSettings>,
+        mut seen: ResMut<FirstCoreSettings>,
+    ) {
+        if seen.0.is_none() {
+            seen.0 = Some((
+                controls.scroll_speed,
+                preferences.interaction.double_click_pixels,
+                volume.master,
+            ));
+        }
+    }
+
+    #[test]
+    fn stored_preferences_reach_the_first_core_input_before_feedback_and_save() {
+        let fixture = Fixture::new(valid_document());
+        let mut app = fixture.app();
+        app.init_resource::<FirstCoreSettings>()
+            .configure_sets(
+                Update,
+                crate::core_adapter::CoreAdapterSet.before(FeedbackSet),
+            )
+            .add_systems(
+                Update,
+                observe_first_core_settings.in_set(crate::core_adapter::CoreAdapterSet),
+            );
+        app.update();
+        assert_eq!(
+            app.world().resource::<VolumeSettings>().master,
+            0.35,
+            "isolated file was actually loaded"
+        );
+        assert_eq!(
+            app.world().resource::<FirstCoreSettings>().0,
+            Some((2.0, 6.0, 0.35)),
+            "saved preferences must reach the first Core input before feedback or save"
+        );
+    }
+
+    #[test]
+    fn existing_settings_bootstrap_restores_control_resources_from_the_isolated_native_store() {
+        let fixture = Fixture::new(valid_document());
+        let mut app = fixture.app();
+        app.update();
+        assert_eq!(
+            app.world().resource::<VolumeSettings>().master,
+            0.35,
+            "actual injected store must load before judging controls"
+        );
+        let controls = app
+            .world()
+            .resource::<crate::client_shell::ClientSettings>();
+        assert_eq!(
+            controls.scroll_speed, 2.0,
+            "stored scroll speed must survive client startup"
+        );
+        assert!(!controls.edge_scroll);
+        assert_eq!(controls.ui_scale, 1.25);
+        assert!(controls.cursor_lock);
+        assert_eq!(controls.double_click_ms, 650);
+        assert!(matches!(
+            app.world().resource::<crate::visuals::HealthDisplay>().0,
+            crate::visuals::HealthMode::Always
+        ));
+        let preferences = app
+            .world()
+            .resource::<crate::core_adapter::CorePreferences>();
+        assert_eq!(preferences.interaction.double_click_pixels, 6.0);
+        assert_eq!(preferences.interaction.double_click_ms, 650);
+        assert!(app.world().resource::<NoticesFeed>().0.is_empty());
+        assert_eq!(
+            fixture.json(),
+            serde_json::from_str::<serde_json::Value>(valid_document()).unwrap(),
+            "bootstrap does not rewrite a valid document"
+        );
+    }
+
+    #[test]
+    fn control_edits_persist_through_the_existing_settings_owner_and_preserve_other_fields() {
+        let fixture = Fixture::new(valid_document());
+        let mut app = fixture.app();
+        app.update();
+        {
+            let mut settings = app
+                .world_mut()
+                .resource_mut::<crate::client_shell::ClientSettings>();
+            settings.scroll_speed = 1.75;
+            settings.edge_scroll = true;
+            settings.ui_scale = 1.0;
+            settings.cursor_lock = false;
+            settings.double_click_ms = 450;
+        }
+        app.world_mut()
+            .resource_mut::<crate::visuals::HealthDisplay>()
+            .0 = crate::visuals::HealthMode::Selected;
+        app.world_mut()
+            .resource_mut::<crate::core_adapter::CorePreferences>()
+            .interaction
+            .double_click_pixels = 5.0;
+        app.update();
+        let saved = fixture.json();
+        assert_eq!(
+            saved["controls"]["scroll_speed"], 1.75,
+            "actual client control edits must write the existing settings document"
+        );
+        assert_eq!(saved["controls"]["health_mode"], "selected");
+        assert_eq!(saved["controls"]["double_click_pixels"], 5.0);
+        assert_eq!(saved["controls"]["future"], "keep");
+        assert_eq!(saved["unknown"]["keep"], true);
+        let original = serde_json::from_str::<serde_json::Value>(valid_document()).unwrap();
+        assert_eq!(
+            saved["audio"], original["audio"],
+            "a control edit preserves every audio field"
+        );
+        let mut reloaded = fixture.app();
+        reloaded.update();
+        assert_eq!(
+            reloaded
+                .world()
+                .resource::<crate::client_shell::ClientSettings>()
+                .scroll_speed,
+            1.75
+        );
+        assert!(
+            !reloaded
+                .world()
+                .resource::<crate::client_shell::ClientSettings>()
+                .cursor_lock
+        );
+        assert_eq!(
+            reloaded
+                .world()
+                .resource::<crate::core_adapter::CorePreferences>()
+                .interaction
+                .double_click_pixels,
+            5.0
+        );
+    }
+
+    #[test]
+    fn legacy_audio_defaults_controls_and_each_corrupt_value_emits_one_notice() {
+        for (json, corrupt) in [
+            (r#"{"audio":{"master":0.35}}"#, false),
+            (
+                r#"{"audio":{"master":0.35},"controls":{"ui_scale":"bad"}}"#,
+                true,
+            ),
+            (
+                r#"{"audio":{"master":0.35},"controls":{"health_mode":"unknown"}}"#,
+                true,
+            ),
+            ("{not-json", true),
+        ] {
+            let fixture = Fixture::new(json);
+            let mut app = fixture.app();
+            for _ in 0..3 {
+                app.update();
+            }
+            assert_eq!(
+                app.world()
+                    .resource::<crate::client_shell::ClientSettings>()
+                    .scroll_speed,
+                1.0,
+                "defaults for {json}"
+            );
+            assert_eq!(
+                app.world().resource::<NoticesFeed>().0.len(),
+                usize::from(corrupt),
+                "exactly one notice per corrupt settings value for {json}"
+            );
+            assert_eq!(
+                app.world().resource::<VolumeSettings>().master,
+                if corrupt { 1.0 } else { 0.35 },
+                "audio shares the same corrupt-value decision for {json}"
+            );
+        }
+    }
 }

@@ -10,6 +10,21 @@ pub fn engine_defaults() -> Vec<ActionDef> {
             default: vec![Binding::Key { code, mods }],
         }
     }
+    fn modifier(name: &str, left: &str, right: &str) -> ActionDef {
+        ActionDef {
+            name: name.into(),
+            default: vec![
+                Binding::Key {
+                    code: left.into(),
+                    mods: vec![],
+                },
+                Binding::Key {
+                    code: right.into(),
+                    mods: vec![],
+                },
+            ],
+        }
+    }
     let mut actions = vec![
         ActionDef {
             name: "select".into(),
@@ -32,9 +47,9 @@ pub fn engine_defaults() -> Vec<ActionDef> {
                 mods: vec![],
             }],
         },
-        key("add_modifier".into(), "ShiftLeft".into(), vec![]),
-        key("queue_modifier".into(), "ShiftLeft".into(), vec![]),
-        key("type_modifier".into(), "ControlLeft".into(), vec![]),
+        modifier("add_modifier", "ShiftLeft", "ShiftRight"),
+        modifier("queue_modifier", "ShiftLeft", "ShiftRight"),
+        modifier("type_modifier", "ControlLeft", "ControlRight"),
     ];
     for n in 1..=9 {
         actions.push(key(

@@ -235,6 +235,7 @@ pub fn alert_state() -> (ReplicaState, AcquiredPackages) {
     };
     let acquired = AcquiredPackages(Acquired {
         lockfile_hash: "test".into(),
+        verified_root_mod: None,
         visuals: HashMap::new(),
         map_size: (64.0, 48.0),
         unit_names: HashMap::from([

@@ -18,12 +18,30 @@ test("production runner overwrites driver-saved checkpoint forgeries before judg
             turts_debug: () => JSON.stringify({ phase: "Joined", last_frame: { frame_index: 7 } }),
         };
         const page = {
+            on(event, handler) { if (event === "framenavigated") this.mainNavigation = handler; },
+            mainFrame() { return this; },
             mouse: { move: async () => {} },
-            goto: async () => {},
+            goto: async () => { page.mainNavigation?.(page); },
             bringToFront: async () => {},
             waitForTimeout: async () => {},
             waitForFunction: async (fn) => assert(vm.runInNewContext(`(${fn.toString()})()`, { window })),
-            evaluate: async (fn, argument) => vm.runInNewContext(`(${fn.toString()})(argument)`, { window, argument }),
+            evaluate: async (fn, argument) => {
+                if (String(fn).includes("window.turts_scene")) {
+                    return {
+                        scene: window.turts_scene(),
+                        debug: window.turts_debug(),
+                        browser: {
+                            document_has_focus: true,
+                            active_element: null,
+                            canvas: null,
+                            canvas_focused: false,
+                            pointer_lock_element: null,
+                            canvas_pointer_locked: false,
+                        },
+                    };
+                }
+                return vm.runInNewContext(`(${fn.toString()})(argument)`, { window, argument, setTimeout, clearTimeout });
+            },
             screenshot: async () => Buffer.from("actual screenshot pixels"),
         };
         let closed = false;

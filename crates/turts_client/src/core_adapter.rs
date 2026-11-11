@@ -3,6 +3,7 @@
 use bevy::camera::{PerspectiveProjection, Projection};
 use bevy::ecs::system::SystemParam;
 use bevy::input::ButtonState;
+use bevy::input::mouse::MouseMotion;
 use bevy::platform::time::Instant;
 use bevy::prelude::IntoScheduleConfigs;
 use bevy::prelude::*;
@@ -21,6 +22,7 @@ use turts_mod_api::{
 use turts_net_protocol::{SlotId, UnitId};
 
 use crate::{
+    client_shell::BindingEditorState,
     commands::PendingCommands,
     debug_feed::{
         AudioFeed, ContextMenuFeed, CursorFeed, FocusFeed, GroupsFeed, MarkersShown, NoticesFeed,
@@ -80,6 +82,39 @@ pub fn clear_frames() {
     CLEAR_FRAMES_REQUESTED.store(true, Ordering::Release);
 }
 
+/// Record the browser's actual pointer-lock state for the real game canvas. Bevy's
+/// CursorOptions only describes a request; it does not prove that the browser granted it.
+#[cfg(target_family = "wasm")]
+fn refresh_actual_pointer_lock(mut cursor: ResMut<CursorFeed>) {
+    cursor.lock_active = actual_canvas_pointer_lock();
+}
+
+#[cfg(not(target_family = "wasm"))]
+fn refresh_actual_pointer_lock() {}
+
+#[cfg(target_family = "wasm")]
+fn actual_canvas_pointer_lock() -> Option<bool> {
+    use wasm_bindgen::JsCast;
+
+    let window = web_sys::window()?;
+    let document = js_sys::Reflect::get(window.as_ref(), &"document".into()).ok()?;
+    let canvas = js_sys::Reflect::get(&document, &"getElementById".into())
+        .ok()?
+        .dyn_into::<js_sys::Function>()
+        .ok()?
+        .call1(&document, &"turts".into())
+        .ok()?;
+    if canvas.is_null() || canvas.is_undefined() {
+        return None;
+    }
+    let locked = js_sys::Reflect::get(&document, &"pointerLockElement".into()).ok()?;
+    if locked.is_null() || locked.is_undefined() {
+        Some(false)
+    } else {
+        Some(locked == canvas)
+    }
+}
+
 /// Copy the renderer-independent camera state into Bevy's camera transform and projection.
 pub fn camera_components(camera: CameraState) -> (Transform, Projection) {
     let look_at = Vec3::new(camera.look_at.x, 0.0, camera.look_at.y);
@@ -104,6 +139,9 @@ pub struct CoreRuntime {
     started: Option<Instant>,
     pressed_keys: HashSet<String>,
     cursor: Option<Vec2>,
+    cursor_lock_requested: bool,
+    cursor_lock_active: bool,
+    relative_motion_this_frame: Vec2,
     pointer_over_widget: Option<bool>,
     minimap_pointer: Option<turts_mod_api::Button>,
     window_focused: Option<bool>,
@@ -143,6 +181,20 @@ impl CoreRuntime {
     pub fn pointer_world_hover_allowed(&self) -> bool {
         world_hover_allowed(self.pointer_over_widget, self.window_focused)
     }
+    /// Position used by actual Core pointer events; this may be relative-motion-derived while
+    /// the real window cursor position is unavailable under pointer lock.
+    pub fn engine_cursor_position(&self) -> Option<Vec2> {
+        self.cursor
+    }
+    pub fn cursor_lock_requested(&self) -> bool {
+        self.cursor_lock_requested
+    }
+    pub fn cursor_lock_active(&self) -> bool {
+        self.cursor_lock_active
+    }
+    pub fn relative_motion_this_frame(&self) -> Vec2 {
+        self.relative_motion_this_frame
+    }
 }
 
 fn world_hover_allowed(pointer_over_widget: Option<bool>, window_focused: Option<bool>) -> bool {
@@ -163,10 +215,18 @@ pub struct FrameRecord {
     pub replica_tick: Option<u32>,
     pub applied_seq: Vec<u32>,
     pub selection: Vec<u32>,
+    /// Actual Core group membership closed in the same frame as selection and dispatch.
+    pub groups: BTreeMap<u8, Vec<u32>>,
+    /// Actual Core target-order state after this frame's input dispatch.
+    pub pending_order_id: Option<String>,
     pub positions: Vec<(u32, f32, f32)>,
     pub results: Vec<serde_json::Value>,
     /// Actual sequence-assigned orders emitted by this frame's core intents.
     pub emitted_orders: Vec<serde_json::Value>,
+    /// Named actions observed at the renderer-independent Core dispatch branch.
+    pub named_dispatches: Vec<serde_json::Value>,
+    /// Dispatch observations omitted after the per-step evidence cap.
+    pub named_dispatches_truncated: usize,
     pub markers: Vec<serde_json::Value>,
     pub rings: Vec<serde_json::Value>,
     pub feedback: crate::feedback::FrameFeedback,
@@ -629,9 +689,21 @@ fn minimap_at(
 
 #[derive(SystemParam)]
 struct AdapterInputs<'w, 's> {
-    windows: Query<'w, 's, (Entity, &'static Window), With<PrimaryWindow>>,
+    windows: Query<
+        'w,
+        's,
+        (
+            Entity,
+            &'static Window,
+            Option<&'static bevy::window::CursorOptions>,
+        ),
+        With<PrimaryWindow>,
+    >,
     window_events: MessageReader<'w, 's, WindowEvent>,
+    mouse_motion: MessageReader<'w, 's, MouseMotion>,
+    cursor_feed: Res<'w, CursorFeed>,
     panels: CapturePanelQuery<'w, 's>,
+    settings_menus: Query<'w, 's, (), With<crate::client_shell::SettingsMenuOverlay>>,
     minimaps: MinimapInputQuery<'w, 's>,
     cameras: Query<'w, 's, (Entity, &'static Camera), With<Camera3d>>,
     camera_query: Query<'w, 's, (&'static mut Transform, &'static mut Projection), With<Camera3d>>,
@@ -651,6 +723,7 @@ struct AdapterOutputs<'w> {
     focus_feed: ResMut<'w, FocusFeed>,
     player_feed: ResMut<'w, PlayerIdFeed>,
     player_id: Option<Res<'w, crate::PlayerId>>,
+    binding_editor: Option<Res<'w, BindingEditorState>>,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -713,14 +786,56 @@ fn drive_core_adapter(
         runtime.core = Some(Core::new(initial_camera));
     }
     let mut events = Vec::new();
+    let (lock_requested, primary_window_size) = input
+        .windows
+        .iter()
+        .next()
+        .map(|(_, window, cursor)| {
+            (
+                cursor
+                    .is_some_and(|cursor| cursor.grab_mode == bevy::window::CursorGrabMode::Locked),
+                Vec2::new(window.width(), window.height()),
+            )
+        })
+        .unwrap_or((false, Vec2::ZERO));
+    let relative_motion = input
+        .mouse_motion
+        .read()
+        .fold(Vec2::ZERO, |sum, motion| sum + motion.delta);
+    runtime.cursor_lock_requested = lock_requested;
+    let lock_active = input.cursor_feed.lock_active == Some(true);
+    runtime.cursor_lock_active = lock_active;
+    runtime.relative_motion_this_frame = if lock_active {
+        relative_motion
+    } else {
+        Vec2::ZERO
+    };
+    let binding_capture_active = output
+        .binding_editor
+        .as_deref()
+        .is_some_and(|editor| editor.capturing.is_some());
+    if binding_capture_active || !input.settings_menus.is_empty() {
+        events.push(InputEvent::UiCapture {
+            allow_shell: !binding_capture_active,
+        });
+    }
+    let starting_cursor = if input.cursor_feed.lock_active == Some(false) {
+        input
+            .windows
+            .iter()
+            .next()
+            .and_then(|(_, window, _)| window.cursor_position())
+    } else {
+        runtime.cursor
+    };
     let mut current_cursor = (runtime.window_focused != Some(false))
-        .then_some(runtime.cursor)
+        .then_some(starting_cursor)
         .flatten();
     for event in input.window_events.read() {
-        let primary = input.windows.iter().next().map(|(entity, _)| entity);
+        let primary = input.windows.iter().next().map(|(entity, _, _)| entity);
         match event {
             WindowEvent::CursorMoved(value) if Some(value.window) == primary => {
-                if runtime.window_focused != Some(false) {
+                if runtime.window_focused != Some(false) && !lock_active {
                     current_cursor = Some(value.position);
                     let over = over_widget(value.position, &input.panels, &input.cameras);
                     runtime.pointer_over_widget = Some(over);
@@ -838,6 +953,36 @@ fn drive_core_adapter(
             _ => {}
         }
     }
+    if lock_active
+        && runtime.window_focused != Some(false)
+        && relative_motion.is_finite()
+        && relative_motion != Vec2::ZERO
+    {
+        let start = current_cursor.or_else(|| {
+            input
+                .windows
+                .iter()
+                .next()
+                .and_then(|(_, window, _)| window.cursor_position())
+        });
+        if let Some(position) = start
+            && primary_window_size.is_finite()
+            && primary_window_size.x > 0.0
+            && primary_window_size.y > 0.0
+        {
+            current_cursor = Some(
+                (position + relative_motion)
+                    .clamp(Vec2::ZERO, primary_window_size - Vec2::splat(1.0)),
+            );
+            let position = current_cursor.expect("the virtual cursor was just assigned");
+            let over = over_widget(position, &input.panels, &input.cameras);
+            runtime.pointer_over_widget = Some(over);
+            events.push(InputEvent::PointerMove {
+                px: position,
+                over_widget: over,
+            });
+        }
+    }
     events.append(&mut output.input_events.0);
     if runtime.window_focused != Some(false)
         && let Some(px) = current_cursor
@@ -876,7 +1021,7 @@ fn drive_core_adapter(
         .windows
         .iter()
         .next()
-        .map(|(_, window)| Viewport {
+        .map(|(_, window, _)| Viewport {
             size: Vec2::new(window.width(), window.height()),
             scale_factor: window.scale_factor(),
         })
@@ -1062,6 +1207,48 @@ fn close_core_frame(
         .as_ref()
         .map(|core| core.selected_units().iter().map(|unit| unit.0).collect())
         .unwrap_or_default();
+    let groups = runtime
+        .core
+        .as_ref()
+        .map(|core| {
+            (1..=9)
+                .map(|group| {
+                    (
+                        group,
+                        core.group_members(group)
+                            .iter()
+                            .map(|unit| unit.0)
+                            .collect(),
+                    )
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    let (named_dispatches, named_dispatches_truncated) = runtime
+        .core
+        .as_ref()
+        .map(|core| {
+            (
+                core.dispatch_records()
+                    .iter()
+                    .map(|dispatch| {
+                        serde_json::json!({
+                            "input_index": dispatch.input_index,
+                            "origin": dispatch.origin,
+                            "code": dispatch.code,
+                            "matched_action": dispatch.matched_action,
+                            "matched_order": dispatch.matched_order,
+                        })
+                    })
+                    .collect(),
+                core.dispatch_records_truncated(),
+            )
+        })
+        .unwrap_or_default();
+    let pending_order_id = runtime
+        .core
+        .as_ref()
+        .and_then(|core| core.pending_order_id().map(str::to_owned));
     let new_results = results.0.get(feeds.last_result_count..).unwrap_or_default();
     let result_records = result_values(new_results);
     results_feed.0.extend(result_records.iter().cloned());
@@ -1078,6 +1265,8 @@ fn close_core_frame(
             .and_then(|replica| replica.last_applied_tick),
         applied_seq: std::mem::take(&mut runtime.pending_sequences),
         selection,
+        groups,
+        pending_order_id,
         positions: presented
             .units
             .iter()
@@ -1085,6 +1274,8 @@ fn close_core_frame(
             .collect(),
         results: result_records,
         emitted_orders,
+        named_dispatches,
+        named_dispatches_truncated,
         markers: markers.0.clone(),
         rings: rings.0.clone(),
         feedback: feedback.clone(),
@@ -1099,6 +1290,7 @@ fn close_core_frame(
     if !record.applied_seq.is_empty()
         || !record.results.is_empty()
         || !record.feedback.alerts.is_empty()
+        || !record.named_dispatches.is_empty()
     {
         feeds.retained_input.push_back(record);
         while feeds.retained_input.len() > 4096 {
@@ -1154,6 +1346,9 @@ fn drain_harness_sequences() -> Vec<u32> {
 }
 
 pub struct CoreAdapterPlugin;
+#[derive(Resource, Default)]
+struct FocusFeedWindow(Option<Entity>);
+
 impl Plugin for CoreAdapterPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<CoreRuntime>()
@@ -1165,6 +1360,7 @@ impl Plugin for CoreAdapterPlugin {
             .init_resource::<CoreInputQueue>()
             .init_resource::<FrameFeeds>()
             .add_message::<WindowEvent>()
+            .add_message::<MouseMotion>()
             .init_resource::<Selection>()
             .init_resource::<crate::ui_shared::SelectionRequests>()
             .init_resource::<SelectionFeed>()
@@ -1177,11 +1373,16 @@ impl Plugin for CoreAdapterPlugin {
             .init_resource::<AudioFeed>()
             .init_resource::<ContextMenuFeed>()
             .init_resource::<FocusFeed>()
+            .init_resource::<FocusFeedWindow>()
             .init_resource::<PlayerIdFeed>()
             .init_resource::<crate::debug_feed::AlertPingsFeed>()
             .init_resource::<MarkersShown>()
             .init_resource::<RingsShown>()
             .add_systems(PreUpdate, apply_frame_clear)
+            .add_systems(
+                Update,
+                (refresh_actual_pointer_lock, update_primary_window_focus).before(CoreAdapterSet),
+            )
             .add_systems(
                 Update,
                 drive_core_adapter
@@ -1196,6 +1397,32 @@ impl Plugin for CoreAdapterPlugin {
                     .in_set(FrameCloseSet)
                     .before(crate::debug::rebuild_debug_state),
             );
+    }
+}
+
+fn update_primary_window_focus(
+    windows: Query<(Entity, &Window), With<PrimaryWindow>>,
+    mut events: MessageReader<WindowEvent>,
+    mut focus: ResMut<FocusFeed>,
+    mut focus_window: ResMut<FocusFeedWindow>,
+) {
+    let Some((primary, window)) = windows.iter().next() else {
+        events.read().for_each(drop);
+        focus_window.0 = None;
+        return;
+    };
+    if focus_window.0 != Some(primary) {
+        focus.0 = window.focused;
+        focus_window.0 = Some(primary);
+    }
+    for event in events.read() {
+        match event {
+            WindowEvent::WindowFocused(value) if value.window == primary => {
+                focus.0 = value.focused;
+            }
+            WindowEvent::KeyboardFocusLost(_) => focus.0 = false,
+            _ => {}
+        }
     }
 }
 
@@ -1343,7 +1570,11 @@ mod adapter_tests {
     }
 
     fn fixture_app() -> (App, Entity, Vec2) {
-        fixture_app_with_ui(false)
+        fixture_app_with_plugins(false, false)
+    }
+
+    fn fixture_app_with_client_shell() -> (App, Entity, Vec2) {
+        fixture_app_with_plugins(false, true)
     }
 
     fn acme_order_app() -> (App, Entity, Vec2) {
@@ -1368,6 +1599,7 @@ mod adapter_tests {
                 unit_names: HashMap::new(),
                 content,
                 presentation: Default::default(),
+                verified_root_mod: None,
             }
         };
         if include_widgets {
@@ -1482,6 +1714,25 @@ mod adapter_tests {
     }
 
     fn fixture_app_with_ui(include_ui: bool) -> (App, Entity, Vec2) {
+        fixture_app_with_plugins(include_ui, false)
+    }
+
+    fn fixture_app_with_plugins(
+        include_ui: bool,
+        include_client_shell: bool,
+    ) -> (App, Entity, Vec2) {
+        fixture_app_with_plugins_and_persist(include_ui, include_client_shell, None)
+    }
+
+    fn fixture_app_with_persistence(root: std::path::PathBuf) -> (App, Entity, Vec2) {
+        fixture_app_with_plugins_and_persist(false, false, Some(root))
+    }
+
+    fn fixture_app_with_plugins_and_persist(
+        include_ui: bool,
+        include_client_shell: bool,
+        persist_root: Option<std::path::PathBuf>,
+    ) -> (App, Entity, Vec2) {
         let package = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../mods/forge");
         let archive =
             PackageArchive::parse(&pack_dir(&package).expect("pack Forge")).expect("parse Forge");
@@ -1494,6 +1745,7 @@ mod adapter_tests {
             unit_names: HashMap::new(),
             content: content.clone(),
             presentation: Default::default(),
+            verified_root_mod: None,
         };
         let mut replica = crate::replica::Replica::new(20);
         for (id, x) in [(1, 32.0), (2, 33.0)] {
@@ -1593,6 +1845,15 @@ mod adapter_tests {
                 bevy::ui::UiPlugin,
             ));
         }
+        if include_client_shell {
+            app.insert_resource(crate::volume_settings::VolumeSettings::default())
+                .add_plugins(crate::client_shell::ClientShellPlugin);
+        }
+        if let Some(root) = persist_root {
+            app.insert_resource(crate::persist::PersistenceConfigRoot(Some(root)))
+                .insert_resource(crate::join::Phase::Joined { slot: 0 })
+                .add_plugins(crate::persist::PersistPlugin);
+        }
         let window = app
             .world_mut()
             .spawn((Window::default(), PrimaryWindow))
@@ -1677,6 +1938,344 @@ mod adapter_tests {
             vec![2],
             "Shift-down, pointer, Shift-up in one batch must preserve toggle semantics"
         );
+    }
+
+    #[test]
+    fn locked_relative_motion_sums_into_the_engine_pointer_and_clamps_to_the_window() {
+        let _guard = test_lock();
+        let (mut app, window, start) = fixture_app();
+        app.world_mut()
+            .entity_mut(window)
+            .insert(bevy::window::CursorOptions {
+                grab_mode: bevy::window::CursorGrabMode::None,
+                ..default()
+            });
+        app.world_mut()
+            .get_mut::<Window>(window)
+            .expect("primary window exists")
+            .set_cursor_position(Some(start));
+        app.world_mut()
+            .resource_mut::<Messages<WindowEvent>>()
+            .write(WindowEvent::CursorMoved(bevy::window::CursorMoved {
+                window,
+                position: start,
+                delta: None,
+            }));
+        app.update();
+        assert_eq!(
+            app.world()
+                .resource::<CoreRuntime>()
+                .engine_cursor_position(),
+            Some(start),
+            "unlocked position comes from the actual absolute cursor event"
+        );
+
+        app.world_mut()
+            .get_mut::<Window>(window)
+            .expect("primary window exists")
+            .set_cursor_position(None);
+        app.world_mut()
+            .get_mut::<bevy::window::CursorOptions>(window)
+            .expect("primary window has actual cursor options")
+            .grab_mode = bevy::window::CursorGrabMode::Locked;
+        app.world_mut().resource_mut::<CursorFeed>().lock_active = Some(false);
+        app.world_mut()
+            .get_mut::<Window>(window)
+            .expect("primary window exists")
+            .set_cursor_position(Some(start));
+        app.world_mut()
+            .resource_mut::<Messages<MouseMotion>>()
+            .write(MouseMotion {
+                delta: Vec2::new(10.0, 10.0),
+            });
+        app.update();
+        assert_eq!(
+            app.world()
+                .resource::<CoreRuntime>()
+                .relative_motion_this_frame(),
+            Vec2::ZERO,
+            "a requested lock without actual browser acquisition must ignore relative motion"
+        );
+        assert!(!app.world().resource::<CoreRuntime>().cursor_lock_active());
+        app.world_mut()
+            .get_mut::<Window>(window)
+            .expect("primary window exists")
+            .set_cursor_position(None);
+        app.world_mut().resource_mut::<CursorFeed>().lock_active = Some(true);
+        {
+            let mut motions = app.world_mut().resource_mut::<Messages<MouseMotion>>();
+            motions.write(MouseMotion {
+                delta: Vec2::new(24.0, -9.0),
+            });
+            motions.write(MouseMotion {
+                delta: Vec2::new(-4.0, 14.0),
+            });
+        }
+        app.update();
+        let expected = start + Vec2::new(20.0, 5.0);
+        assert_eq!(
+            app.world()
+                .resource::<CoreRuntime>()
+                .engine_cursor_position(),
+            Some(expected),
+            "multiple actual relative-motion messages are summed before Core pointer dispatch"
+        );
+        assert_eq!(
+            app.world()
+                .resource::<CoreRuntime>()
+                .relative_motion_this_frame(),
+            Vec2::new(20.0, 5.0)
+        );
+        assert!(
+            app.world()
+                .resource::<CoreRuntime>()
+                .cursor_lock_requested()
+        );
+        assert!(app.world().resource::<CoreRuntime>().cursor_lock_active());
+
+        app.world_mut()
+            .get_mut::<Window>(window)
+            .expect("primary window exists")
+            .set_cursor_position(None);
+        app.world_mut()
+            .resource_mut::<Messages<MouseMotion>>()
+            .write(MouseMotion {
+                delta: Vec2::new(5000.0, -5000.0),
+            });
+        app.update();
+        assert_eq!(
+            app.world()
+                .resource::<CoreRuntime>()
+                .engine_cursor_position(),
+            Some(Vec2::new(1279.0, 0.0)),
+            "the in-game pointer is clamped to the logical window bounds"
+        );
+        assert_eq!(
+            app.world()
+                .get::<Window>(window)
+                .expect("primary window exists")
+                .cursor_position(),
+            None,
+            "the app-owned virtual pointer never replaces Bevy's actual unavailable position"
+        );
+
+        app.world_mut()
+            .get_mut::<Window>(window)
+            .expect("primary window exists")
+            .set_cursor_position(Some(Vec2::new(300.0, 200.0)));
+        app.world_mut().resource_mut::<CursorFeed>().lock_active = Some(false);
+        app.world_mut()
+            .resource_mut::<Messages<MouseMotion>>()
+            .write(MouseMotion {
+                delta: Vec2::new(80.0, 90.0),
+            });
+        app.update();
+        assert!(
+            app.world()
+                .resource::<CoreRuntime>()
+                .cursor_lock_requested()
+        );
+        assert!(!app.world().resource::<CoreRuntime>().cursor_lock_active());
+        assert_eq!(
+            app.world()
+                .resource::<CoreRuntime>()
+                .relative_motion_this_frame(),
+            Vec2::ZERO,
+            "relative movement stops immediately when actual browser lock is lost"
+        );
+        assert_eq!(
+            app.world()
+                .resource::<CoreRuntime>()
+                .engine_cursor_position(),
+            Some(Vec2::new(300.0, 200.0)),
+            "after actual unlock the engine resumes from the real absolute cursor position"
+        );
+    }
+
+    #[test]
+    fn actual_f10_window_events_open_the_existing_shell_menu_tree() {
+        let _guard = test_lock();
+        let (mut app, window, _) = fixture_app_with_client_shell();
+        {
+            let mut events = app.world_mut().resource_mut::<Messages<WindowEvent>>();
+            events.write(key(
+                window,
+                KeyCode::F10,
+                ButtonState::Pressed,
+                Key::Unidentified(bevy::input::keyboard::NativeKey::Unidentified),
+            ));
+            events.write(key(
+                window,
+                KeyCode::F10,
+                ButtonState::Released,
+                Key::Unidentified(bevy::input::keyboard::NativeKey::Unidentified),
+            ));
+        }
+
+        app.update();
+
+        assert!(
+            app.world()
+                .resource::<CoreEffects>()
+                .0
+                .iter()
+                .any(|effect| matches!(effect, Effect::ShellAction { action } if action == "menu"))
+        );
+        {
+            let world = app.world_mut();
+            let mut roots = world.query_filtered::<Entity, With<UiCaptureRoot>>();
+            let root = roots
+                .single(world)
+                .expect("the physical F10 action opens the real shell capture root");
+            assert_eq!(
+                world.entity(root).get::<bevy::ui::FocusPolicy>(),
+                Some(&bevy::ui::FocusPolicy::Block)
+            );
+            let mut texts = world.query::<&Text>();
+            let visible = texts
+                .iter(world)
+                .map(|text| text.0.as_str())
+                .collect::<Vec<_>>();
+            assert!(visible.contains(&"Settings"));
+            assert!(visible.contains(&"Audio levels"));
+        }
+
+        {
+            let mut events = app.world_mut().resource_mut::<Messages<WindowEvent>>();
+            events.write(key(
+                window,
+                KeyCode::Escape,
+                ButtonState::Pressed,
+                Key::Escape,
+            ));
+            events.write(key(
+                window,
+                KeyCode::Escape,
+                ButtonState::Released,
+                Key::Escape,
+            ));
+        }
+        app.update();
+        let mut roots = app
+            .world_mut()
+            .query_filtered::<Entity, With<UiCaptureRoot>>();
+        assert_eq!(
+            roots.iter(app.world()).count(),
+            0,
+            "the same physical Escape action closes the menu tree"
+        );
+    }
+
+    #[test]
+    fn retained_frame_records_actual_group_membership_with_selection_and_dispatch() {
+        let _guard = test_lock();
+        let (mut app, window, px) = fixture_app();
+        {
+            let mut events = app.world_mut().resource_mut::<Messages<WindowEvent>>();
+            events.write(WindowEvent::CursorMoved(bevy::window::CursorMoved {
+                window,
+                position: px,
+                delta: None,
+            }));
+            events.write(mouse(window, ButtonState::Pressed));
+            events.write(mouse(window, ButtonState::Released));
+        }
+        app.update();
+        assert_eq!(app.world().resource::<SelectionFeed>().0, vec![1]);
+
+        {
+            let mut events = app.world_mut().resource_mut::<Messages<WindowEvent>>();
+            events.write(key(
+                window,
+                KeyCode::ControlLeft,
+                ButtonState::Pressed,
+                Key::Control,
+            ));
+            events.write(key(
+                window,
+                KeyCode::Digit1,
+                ButtonState::Pressed,
+                Key::Character("1".into()),
+            ));
+            events.write(key(
+                window,
+                KeyCode::Digit1,
+                ButtonState::Released,
+                Key::Character("1".into()),
+            ));
+            events.write(key(
+                window,
+                KeyCode::ControlLeft,
+                ButtonState::Released,
+                Key::Control,
+            ));
+        }
+        app.update();
+
+        let frame = app
+            .world()
+            .resource::<FrameFeeds>()
+            .recent
+            .back()
+            .expect("the completed joined frame is retained");
+        assert_eq!(frame.selection, vec![1]);
+        assert_eq!(frame.groups.get(&1), Some(&vec![1]));
+        assert!(frame.named_dispatches.iter().any(|dispatch| {
+            dispatch["origin"] == "key"
+                && dispatch["code"] == "Digit1"
+                && dispatch["matched_action"] == "group_assign_1"
+        }));
+    }
+
+    #[test]
+    fn persisted_groups_restore_after_first_snapshot_and_prune_nonowned_ids() {
+        let _guard = test_lock();
+        let unique = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("system clock is after the epoch")
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!(
+            "turts-task16-groups-{}-{unique}",
+            std::process::id()
+        ));
+        let path = crate::persist::native_groups_path(&root, 1, 0);
+        crate::persist::save_native_groups(&path, &BTreeMap::from([(1, vec![1, 999])]))
+            .expect("the isolated saved group fixture writes");
+        let (mut app, _, _) = fixture_app_with_persistence(root.clone());
+
+        app.update();
+        assert!(
+            app.world().resource::<FrameFeeds>().frame_index > 0,
+            "the fixture has completed a first actual Core frame from its accepted snapshot"
+        );
+        assert_eq!(
+            app.world()
+                .resource::<FrameFeeds>()
+                .recent
+                .back()
+                .expect("first snapshot frame is retained")
+                .groups
+                .get(&1),
+            Some(&vec![1]),
+            "restore is queued after the accepted snapshot and consumed by the first Core step"
+        );
+
+        assert_eq!(
+            app.world().resource::<SelectionFeed>().0,
+            Vec::<u32>::new(),
+            "restoring memberships does not forge a selection"
+        );
+        assert_eq!(
+            app.world().resource::<GroupsFeed>().0.get(&1),
+            Some(&vec![1]),
+            "the real Core restore path keeps the live owned unit and prunes the absent ID"
+        );
+        assert_eq!(
+            crate::persist::load_native_groups(&path).groups.get(&1),
+            Some(&vec![1]),
+            "the pruned actual group state is retained under its match-and-slot path"
+        );
+        let _ = std::fs::remove_dir_all(root);
     }
 
     #[test]
@@ -1910,6 +2509,295 @@ mod adapter_tests {
     }
 
     #[test]
+    fn task16_actual_modifier_release_during_capture_allows_the_next_wheel() {
+        let _guard = test_lock();
+        let (mut app, window, _) = acme_order_app();
+        app.insert_resource(crate::client_shell::BindingEditorState::default());
+        let keyboard = |state| {
+            WindowEvent::KeyboardInput(bevy::input::keyboard::KeyboardInput {
+                key_code: KeyCode::ControlLeft,
+                logical_key: bevy::input::keyboard::Key::Control,
+                state,
+                text: None,
+                repeat: false,
+                window,
+            })
+        };
+        app.world_mut()
+            .resource_mut::<Messages<WindowEvent>>()
+            .write(keyboard(ButtonState::Pressed));
+        app.update();
+        app.world_mut()
+            .resource_mut::<crate::client_shell::BindingEditorState>()
+            .capturing = Some("key_move".into());
+        app.world_mut()
+            .resource_mut::<Messages<WindowEvent>>()
+            .write(keyboard(ButtonState::Released));
+        app.update();
+        app.world_mut()
+            .resource_mut::<crate::client_shell::BindingEditorState>()
+            .capturing = None;
+        let before = app
+            .world()
+            .resource::<CoreRuntime>()
+            .core()
+            .unwrap()
+            .camera_state()
+            .height;
+        app.world_mut()
+            .resource_mut::<Messages<WindowEvent>>()
+            .write(WindowEvent::MouseWheel(bevy::input::mouse::MouseWheel {
+                unit: bevy::input::mouse::MouseScrollUnit::Line,
+                x: 0.0,
+                y: 1.0,
+                window,
+                phase: bevy::input::touch::TouchPhase::Moved,
+            }));
+        app.update();
+        let after = app
+            .world()
+            .resource::<CoreRuntime>()
+            .core()
+            .unwrap()
+            .camera_state()
+            .height;
+        assert!(
+            after < before,
+            "a Ctrl release during capture must allow the next unmodified wheel to zoom: {before} -> {after}"
+        );
+    }
+
+    #[test]
+    fn task16_captured_pointer_move_binding_dispatches_a_real_world_order() {
+        let _guard = test_lock();
+        let (mut app, window, _) = fixture_app_with_client_shell();
+        app.world_mut().resource_mut::<CoreInputQueue>().0 = vec![InputEvent::UiAction {
+            name: "menu".into(),
+        }];
+        app.update();
+        crate::client_shell::tests::activate_named_change(app.world_mut(), "key_move");
+        for state in [ButtonState::Pressed, ButtonState::Released] {
+            app.world_mut()
+                .resource_mut::<Messages<WindowEvent>>()
+                .write(WindowEvent::MouseButtonInput(MouseButtonInput {
+                    button: MouseButton::Back,
+                    state,
+                    window,
+                }));
+        }
+        app.update();
+        assert_eq!(
+            app.world()
+                .resource::<CorePreferences>()
+                .runtime_bindings
+                .get("key_move"),
+            Some(&vec![Binding::Pointer {
+                button: turts_mod_api::Button::Back,
+                mods: vec![]
+            }]),
+            "the actual menu producer must first capture Back for the authored Move action"
+        );
+        app.world_mut().resource_mut::<CoreInputQueue>().0 = vec![InputEvent::UiAction {
+            name: "menu".into(),
+        }];
+        app.update();
+        app.world_mut().resource_mut::<CoreInputQueue>().0 = vec![InputEvent::UiAction {
+            name: "ui_select:1".into(),
+        }];
+        app.update();
+        app.world_mut().resource_mut::<PendingCommands>().0.clear();
+        app.world_mut()
+            .resource_mut::<Messages<WindowEvent>>()
+            .write(WindowEvent::CursorMoved(bevy::window::CursorMoved {
+                window,
+                position: Vec2::new(800.0, 400.0),
+                delta: None,
+            }));
+        for state in [ButtonState::Pressed, ButtonState::Released] {
+            app.world_mut()
+                .resource_mut::<Messages<WindowEvent>>()
+                .write(WindowEvent::MouseButtonInput(MouseButtonInput {
+                    button: MouseButton::Back,
+                    state,
+                    window,
+                }));
+        }
+        app.update();
+        for state in [ButtonState::Pressed, ButtonState::Released] {
+            app.world_mut()
+                .resource_mut::<Messages<WindowEvent>>()
+                .write(WindowEvent::MouseButtonInput(MouseButtonInput {
+                    button: MouseButton::Left,
+                    state,
+                    window,
+                }));
+        }
+        app.update();
+        let order = app.world().resource::<PendingCommands>().0.iter().find_map(|pending|
+            if let crate::commands::PendingCommand::Order { order, .. } = pending { Some(order) } else { None })
+            .expect("a physically captured Back binding followed by the actual target click must send the real Move order");
+        assert_eq!(order.order, "forge:order_move");
+        assert_eq!(order.units, vec![UnitId(1)]);
+        assert!(matches!(order.target, OrderTarget::Point(_)));
+    }
+
+    #[test]
+    fn task16_binding_capture_withholds_real_pointer_actions_before_core_dispatch() {
+        let _guard = test_lock();
+        let (mut app, window, _) = fixture_app_with_client_shell();
+        app.world_mut().resource_mut::<CoreInputQueue>().0 = vec![InputEvent::UiAction {
+            name: "ui_select:1".into(),
+        }];
+        app.update();
+        app.world_mut()
+            .resource_mut::<CorePreferences>()
+            .runtime_bindings
+            .insert(
+                "key_move".into(),
+                vec![Binding::Pointer {
+                    button: turts_mod_api::Button::Back,
+                    mods: vec![],
+                }],
+            );
+        app.world_mut()
+            .resource_mut::<crate::client_shell::BindingEditorState>()
+            .capturing = Some("key_stop".into());
+        app.world_mut()
+            .resource_mut::<Messages<WindowEvent>>()
+            .write(WindowEvent::CursorMoved(bevy::window::CursorMoved {
+                window,
+                position: Vec2::new(800.0, 400.0),
+                delta: None,
+            }));
+        for button in [MouseButton::Back, MouseButton::Left] {
+            for state in [ButtonState::Pressed, ButtonState::Released] {
+                app.world_mut()
+                    .resource_mut::<Messages<WindowEvent>>()
+                    .write(WindowEvent::MouseButtonInput(MouseButtonInput {
+                        button,
+                        state,
+                        window,
+                    }));
+            }
+        }
+        app.update();
+        assert!(
+            !app.world()
+                .resource::<PendingCommands>()
+                .0
+                .iter()
+                .any(|pending| matches!(pending, crate::commands::PendingCommand::Order { .. })),
+            "binding capture must suspend pointer-bound Move and its world target click before the actual Core dispatcher"
+        );
+    }
+
+    #[test]
+    fn task16_open_menu_suspends_world_keys_and_keeps_the_real_close_action() {
+        let _guard = test_lock();
+        let (mut app, window, _) = fixture_app_with_client_shell();
+        app.world_mut().resource_mut::<CoreInputQueue>().0 = vec![InputEvent::UiAction {
+            name: "ui_select:1".into(),
+        }];
+        app.update();
+        app.world_mut().resource_mut::<CoreInputQueue>().0 = vec![InputEvent::UiAction {
+            name: "menu".into(),
+        }];
+        app.update();
+        app.world_mut().resource_mut::<PendingCommands>().0.clear();
+        app.world_mut()
+            .resource_mut::<Messages<WindowEvent>>()
+            .write(key(
+                window,
+                KeyCode::KeyS,
+                ButtonState::Pressed,
+                Key::Character("s".into()),
+            ));
+        app.update();
+        assert!(
+            !app.world()
+                .resource::<PendingCommands>()
+                .0
+                .iter()
+                .any(|pending| matches!(pending, crate::commands::PendingCommand::Order { .. })),
+            "an open settings menu must not send the pointed world's Stop order"
+        );
+        app.world_mut()
+            .resource_mut::<Messages<WindowEvent>>()
+            .write(key(window, KeyCode::F10, ButtonState::Pressed, Key::F10));
+        app.update();
+        let world = app.world_mut();
+        assert_eq!(
+            world
+                .query_filtered::<Entity, With<crate::client_shell::SettingsMenuOverlay>>()
+                .iter(world)
+                .count(),
+            0,
+            "the shell close action must still work while world input is captured"
+        );
+    }
+
+    #[test]
+    fn physical_binding_capture_suppresses_that_key_before_core_dispatch() {
+        let _guard = test_lock();
+        for (capturing, expected_orders) in [(false, 1), (true, 0)] {
+            let (mut app, window, _) = acme_order_app();
+            app.world_mut()
+                .resource_mut::<CorePreferences>()
+                .runtime_bindings
+                .insert(
+                    "key_move".into(),
+                    vec![Binding::Key {
+                        code: "KeyQ".into(),
+                        mods: vec![],
+                    }],
+                );
+            let mut binding_editor = crate::client_shell::BindingEditorState::default();
+            binding_editor.capturing = capturing.then(|| "key_move".to_owned());
+            app.insert_resource(binding_editor);
+            app.world_mut().resource_mut::<CoreInputQueue>().0 = vec![
+                InputEvent::UiAction {
+                    name: "ui_select:1".into(),
+                },
+                InputEvent::PointerDown {
+                    button: turts_interaction::Button::Left,
+                    px: Vec2::new(800.0, 400.0),
+                    over_widget: false,
+                },
+                InputEvent::PointerUp {
+                    button: turts_interaction::Button::Left,
+                    px: Vec2::new(800.0, 400.0),
+                    over_widget: false,
+                },
+            ];
+            app.world_mut()
+                .resource_mut::<Messages<WindowEvent>>()
+                .write(WindowEvent::KeyboardInput(
+                    bevy::input::keyboard::KeyboardInput {
+                        key_code: KeyCode::KeyQ,
+                        logical_key: bevy::input::keyboard::Key::Character("q".into()),
+                        state: ButtonState::Pressed,
+                        text: None,
+                        repeat: false,
+                        window,
+                    },
+                ));
+
+            app.update();
+            let orders = app
+                .world()
+                .resource::<PendingCommands>()
+                .0
+                .iter()
+                .filter(|pending| matches!(pending, crate::commands::PendingCommand::Order { .. }))
+                .count();
+            assert_eq!(
+                orders, expected_orders,
+                "the same actual key dispatches the bound move outside capture and is withheld while the shell captures it"
+            );
+        }
+    }
+
+    #[test]
     fn pending_order_cursor_seam_tracks_real_core_target_and_cancellation() {
         let _guard = test_lock();
         let (mut app, window, _) = acme_order_app();
@@ -2081,6 +2969,54 @@ mod adapter_tests {
         assert!(camera.authored.is_some());
         assert_eq!(camera.scroll_speed, 1.0);
         assert!(camera.edge_scroll);
+    }
+
+    #[test]
+    fn window_focus_received_before_snapshot_is_retained_for_the_first_core_frame() {
+        let _guard = test_lock();
+        let (mut app, window, _) = fixture_app_with_client_shell();
+        let acquired = app.world().resource::<AcquiredPackages>().0.clone();
+        {
+            let mut state = app.world_mut().resource_mut::<ReplicaState>();
+            state.content = None;
+            state.replica.as_mut().unwrap().snapshot_tick = None;
+        }
+        app.world_mut().remove_resource::<AcquiredPackages>();
+        app.world_mut()
+            .get_mut::<Window>(window)
+            .expect("fixture has a primary window")
+            .focused = true;
+        app.world_mut()
+            .resource_mut::<Messages<WindowEvent>>()
+            .write(WindowEvent::WindowFocused(bevy::window::WindowFocused {
+                window,
+                focused: true,
+            }));
+
+        app.update();
+        assert!(
+            app.world().resource::<FocusFeed>().0,
+            "the real focused primary Window must update the focus producer during loading"
+        );
+
+        app.world_mut().resource_mut::<ReplicaState>().content = Some(acquired.content.clone());
+        app.world_mut()
+            .resource_mut::<ReplicaState>()
+            .replica
+            .as_mut()
+            .unwrap()
+            .snapshot_tick = Some(1);
+        app.world_mut().insert_resource(AcquiredPackages(acquired));
+        app.update();
+        assert!(app.world().resource::<FocusFeed>().0);
+        let mut overlays = app
+            .world_mut()
+            .query_filtered::<Entity, With<crate::client_shell::FocusOverlay>>();
+        assert_eq!(
+            overlays.iter(app.world()).count(),
+            0,
+            "first Core initialization must not leave a click-to-play overlay over a focused window"
+        );
     }
 
     #[test]
@@ -2735,6 +3671,7 @@ mod adapter_tests {
             app.world().resource::<CoreRuntime>().camera_pan_context(),
             Some("pan_left")
         );
+        app.world_mut().get_mut::<Window>(window).unwrap().focused = false;
         app.world_mut()
             .resource_mut::<Messages<WindowEvent>>()
             .write(WindowEvent::WindowFocused(bevy::window::WindowFocused {
@@ -2743,11 +3680,13 @@ mod adapter_tests {
             }));
         app.update();
         app.update();
+        assert!(!app.world().resource::<FocusFeed>().0);
         assert_eq!(
             app.world().resource::<CoreRuntime>().camera_pan_context(),
             None,
             "focus loss clears edge-pan and the saved pointer"
         );
+        app.world_mut().get_mut::<Window>(window).unwrap().focused = true;
         app.world_mut()
             .resource_mut::<Messages<WindowEvent>>()
             .write(WindowEvent::WindowFocused(bevy::window::WindowFocused {
@@ -2755,10 +3694,22 @@ mod adapter_tests {
                 focused: true,
             }));
         app.update();
+        assert!(app.world().resource::<FocusFeed>().0);
         assert_eq!(
             app.world().resource::<CoreRuntime>().camera_pan_context(),
             None,
             "focus gain alone never reuses stale coordinates"
+        );
+        app.world_mut()
+            .resource_mut::<Messages<WindowEvent>>()
+            .write(WindowEvent::KeyboardFocusLost(
+                bevy::input::keyboard::KeyboardFocusLost,
+            ));
+        app.update();
+        app.update();
+        assert!(
+            !app.world().resource::<FocusFeed>().0,
+            "actual canvas keyboard-focus loss remains recorded while the OS window stays focused"
         );
     }
 
@@ -2900,6 +3851,7 @@ mod adapter_tests {
             });
             feed.categories.insert("ui".into(), 0.5);
             world.resource_mut::<CursorFeed>().applied_icon = Some("owner:cursor".into());
+            world.resource_mut::<CursorFeed>().position = Some([321.0, 123.0]);
             world.resource_mut::<ContextMenuFeed>().count = 4;
             world.resource_mut::<ContextMenuFeed>().count_prevented = 2;
             world
@@ -2930,6 +3882,10 @@ mod adapter_tests {
         assert_eq!(
             app.world().resource::<CursorFeed>().applied_icon.as_deref(),
             Some("owner:cursor")
+        );
+        assert_eq!(
+            app.world().resource::<CursorFeed>().position,
+            Some([321.0, 123.0])
         );
         assert_eq!(app.world().resource::<ContextMenuFeed>().count_prevented, 2);
         assert_eq!(app.world().resource::<MarkersShown>().0.len(), 1);

@@ -25,8 +25,8 @@ use turts_net_protocol::messages::{Hello, JoinRejected};
 use turts_net_protocol::{Advertisement, NET_PROTOCOL_VERSION, Pos, UnitId};
 
 use crate::acquire::{
-    Acquired, accept_package, build_acquired, check_advertisement, check_lockfile,
-    packages_to_fetch,
+    Acquired, VerifiedRootMod, accept_package, build_acquired_with_root, check_advertisement,
+    check_lockfile, packages_to_fetch,
 };
 use crate::fetch::{FetchTask, fetch_bytes, poll};
 use crate::ingest::{IngestHooks, ReplicaState};
@@ -39,6 +39,7 @@ pub enum Phase {
     FetchAdvertisement,
     FetchLockfile,
     FetchPackages { left: usize },
+    VerifyPackage { left: usize },
     Connecting,
     Joining,
     Joined { slot: u8 },
@@ -79,7 +80,10 @@ pub struct Acquisition {
     queue: Vec<LockEntry>,
     /// The package that `task` fetches.
     current: Option<LockEntry>,
+    pending_verification: Option<Vec<u8>>,
     archives: Vec<PackageArchive>,
+    /// Root ID/version retained only after the advertised, hash-verified lockfile is accepted.
+    verified_root_mod: Option<VerifiedRootMod>,
 }
 
 impl Acquisition {
@@ -87,6 +91,15 @@ impl Acquisition {
     /// wait for `AcquiredPackages`, which is inserted after acquisition finishes.
     pub fn accepted_archives(&self) -> &[PackageArchive] {
         &self.archives
+    }
+
+    pub(crate) fn current_package(&self) -> Option<&LockEntry> {
+        self.current.as_ref()
+    }
+
+    pub(crate) fn package_progress(&self) -> (usize, usize) {
+        let total = self.archives.len() + self.queue.len() + usize::from(self.current.is_some());
+        (self.archives.len(), total)
     }
 }
 
@@ -183,6 +196,17 @@ pub fn drive_acquisition(
             let lockfile = result.and_then(|bytes| check_lockfile(&bytes, &hash, &mod_id));
             match lockfile {
                 Ok(lockfile) => {
+                    let root_id = mod_id;
+                    let root = lockfile
+                        .packages
+                        .iter()
+                        .find(|entry| entry.id == root_id)
+                        .map(|entry| VerifiedRootMod {
+                            id: entry.id.clone(),
+                            version: entry.version.clone(),
+                        })
+                        .expect("check_lockfile verified the advertised root entry");
+                    acquisition.verified_root_mod = Some(root);
                     let mut queue: Vec<LockEntry> =
                         packages_to_fetch(&lockfile).into_iter().cloned().collect();
                     queue.reverse();
@@ -192,14 +216,27 @@ pub fn drive_acquisition(
                 Err(error) => *phase = Phase::Failed(error),
             }
         }
-        Phase::FetchPackages { .. } => {
+        Phase::FetchPackages { left } => {
             let Some(task) = acquisition.task.as_mut() else {
                 return;
             };
             let Some(result) = poll(task) else { return };
             acquisition.task = None;
+            match result {
+                Ok(bytes) => {
+                    acquisition.pending_verification = Some(bytes);
+                    *phase = Phase::VerifyPackage { left };
+                }
+                Err(error) => *phase = Phase::Failed(error),
+            }
+        }
+        Phase::VerifyPackage { .. } => {
             let entry = acquisition.current.take().expect("a package is in flight");
-            match result.and_then(|bytes| accept_package(&bytes, &entry)) {
+            let bytes = acquisition
+                .pending_verification
+                .take()
+                .expect("downloaded bytes wait for package verification");
+            match accept_package(&bytes, &entry) {
                 Ok(archive) => {
                     acquisition.archives.push(archive);
                     *phase = next_package(&mut acquisition, &mut commands);
@@ -224,7 +261,11 @@ fn advertised_lockfile_hash(acquisition: &Acquisition) -> String {
 fn next_package(acquisition: &mut Acquisition, commands: &mut Commands) -> Phase {
     let Some(entry) = acquisition.queue.pop() else {
         let hash = advertised_lockfile_hash(acquisition);
-        return match build_acquired(&acquisition.archives, hash) {
+        return match build_acquired_with_root(
+            &acquisition.archives,
+            hash,
+            acquisition.verified_root_mod.clone(),
+        ) {
             Ok(acquired) => {
                 commands.insert_resource(AcquiredPackages(acquired));
                 Phase::Connecting
@@ -248,6 +289,7 @@ pub fn start_connection(
     mut commands: Commands,
     mut phase: ResMut<Phase>,
     time: Res<Time<Real>>,
+    frame_count: Option<Res<bevy::diagnostic::FrameCount>>,
     opts: Res<ClientOpts>,
     mut rejoin: ResMut<RejoinController>,
 ) {
@@ -258,12 +300,18 @@ pub fn start_connection(
     }
     match spawn_client(&mut commands, &opts.0.ws_url) {
         Ok(entity) => {
-            if !rejoin.start_attempt_at(entity.to_bits(), time.elapsed_secs_f64()) {
+            let real_now_secs = time.elapsed_secs_f64();
+            rejoin.observe_deadline_check(
+                frame_count.as_deref().map(|frame| frame.0),
+                "start_connection",
+                real_now_secs,
+            );
+            if !rejoin.start_attempt_at(entity.to_bits(), real_now_secs) {
                 commands.entity(entity).despawn();
             }
         }
         Err(error) => {
-            rejoin.terminate(error.clone());
+            rejoin.terminate_at(error.clone(), time.elapsed_secs_f64());
             *phase = Phase::Failed(error);
         }
     }
@@ -321,6 +369,7 @@ pub fn on_connected(
     mut phase: ResMut<Phase>,
     mut rejoin: ResMut<RejoinController>,
     time: Res<Time<Real>>,
+    frame_count: Option<Res<bevy::diagnostic::FrameCount>>,
     player: Res<PlayerId>,
     opts: Res<ClientOpts>,
     acquired: Res<AcquiredPackages>,
@@ -332,9 +381,11 @@ pub fn on_connected(
         return;
     };
     let real_now_secs = time.elapsed_secs_f64();
-    if matches!(*phase, Phase::Failed(_) | Phase::Joined { .. })
-        || !rejoin.on_connected_at(trigger.entity.to_bits(), real_now_secs)
-    {
+    let frame_index = frame_count.as_deref().map(|frame| frame.0);
+    if matches!(*phase, Phase::Failed(_) | Phase::Joined { .. }) || {
+        rejoin.observe_deadline_check(frame_index, "connected", real_now_secs);
+        !rejoin.on_connected_at(trigger.entity.to_bits(), real_now_secs)
+    } {
         return;
     }
     join.on_connected();
@@ -351,6 +402,7 @@ pub fn on_connected(
             .clone()
             .unwrap_or_else(|| acquired.0.lockfile_hash.clone()),
     });
+    rejoin.observe_deadline_check(frame_index, "hello_sent", real_now_secs);
     rejoin.on_hello_sent_at(trigger.entity.to_bits(), real_now_secs);
     witnesses.record_message(epoch, true);
     if *phase == Phase::Connecting {
@@ -362,9 +414,14 @@ pub fn on_disconnected(
     trigger: On<Add<Disconnected>>,
     mut join: ResMut<JoinState>,
     mut rejoin: ResMut<RejoinController>,
+    phase: Res<Phase>,
+    mut send_status: ResMut<CommandSendStatus>,
 ) {
     if rejoin.on_disconnected(trigger.entity.to_bits()) {
         join.on_disconnected();
+        if matches!(*phase, Phase::Joined { .. }) {
+            send_status.reconnect_required = true;
+        }
     }
 }
 
@@ -375,8 +432,10 @@ pub fn receive_rejection(
     mut rejoin: ResMut<RejoinController>,
     mut witnesses: ResMut<ReceiptWitnesses>,
     time: Res<Time<Real>>,
+    frame_count: Option<Res<bevy::diagnostic::FrameCount>>,
 ) {
     let real_now_secs = time.elapsed_secs_f64();
+    let frame_index = frame_count.as_deref().map(|frame| frame.0);
     for (entity, mut receiver) in &mut rejected {
         let epoch = witnesses.epoch_for(entity.to_bits());
         for received in receiver.receive_with_tick() {
@@ -384,6 +443,7 @@ pub fn receive_rejection(
                 epoch,
                 received.channel_kind == ChannelKind::of::<ReliableChannel>(),
             );
+            rejoin.observe_deadline_check(frame_index, "join_rejection", real_now_secs);
             apply_join_rejection(
                 &mut phase,
                 &mut rejoin,
@@ -411,6 +471,7 @@ fn apply_join_rejection(
 /// `Update`: apply Welcome before the retry deadline, or advance the designed 15-second window.
 pub fn advance_rejoin(
     time: Res<Time<Real>>,
+    frame_count: Option<Res<bevy::diagnostic::FrameCount>>,
     state: Res<ReplicaState>,
     mut phase: ResMut<Phase>,
     mut rejoin: ResMut<RejoinController>,
@@ -424,7 +485,13 @@ pub fn advance_rejoin(
         *phase = Phase::Failed(text);
         return;
     }
-    if let Some(text) = rejoin.advance_to(time.elapsed_secs_f64(), false) {
+    let real_now_secs = time.elapsed_secs_f64();
+    rejoin.observe_deadline_check(
+        frame_count.as_deref().map(|frame| frame.0),
+        "advance_rejoin",
+        real_now_secs,
+    );
+    if let Some(text) = rejoin.advance_to(real_now_secs, false) {
         *phase = Phase::Failed(text);
     }
 }

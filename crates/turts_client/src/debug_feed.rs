@@ -21,6 +21,21 @@ pub struct CursorFeed {
     pub context: Option<String>,
     pub image_id: Option<String>,
     pub applied_icon: Option<String>,
+    /// Actual window-logical cursor position at the same cursor observation.
+    /// `None` is retained when the platform reports no position, including pointer lock.
+    pub position: Option<[f32; 2]>,
+    /// Engine pointer used for Core hover and the in-game cursor. While locked this is derived
+    /// from the retained pre-lock position plus real relative MouseMotion samples.
+    pub engine_position: Option<[f32; 2]>,
+    /// Requested grab state from the actual primary-window CursorOptions component.
+    pub lock_requested: bool,
+    /// Actual browser pointer-lock state for the game canvas. None means the platform did not
+    /// expose a readable lock state; this is separate from Bevy's requested grab state.
+    pub lock_active: Option<bool>,
+    /// Sum of actual Bevy relative-motion messages consumed for this Core frame.
+    pub relative_motion: [f32; 2],
+    /// Core frame that produced the engine position and relative-motion sum.
+    pub frame_index: u64,
 }
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct StartedSound {

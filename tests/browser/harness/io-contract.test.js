@@ -236,7 +236,7 @@ test("view has only four read-only methods and refuses the order bridge", async 
     });
     const view = createView([makePage(1), makePage(2)], [], "/tmp");
     assert.equal(Object.isFrozen(view), true);
-    assert.deepEqual(Object.keys(view).sort(), ["bridge", "inputLog", "screenshot", "serverFile"]);
+    assert.deepEqual(Object.keys(view).sort(), ["bridge", "inputLog", "screenshot", "serverBytes", "serverFile"]);
     assert.deepEqual(await view.bridge("turts_debug"), { bridge: "turts_debug", window: 1 });
     assert.deepEqual(await view.bridge("turts_scene", 2), { bridge: "turts_scene", window: 2 });
     assert.equal((await view.screenshot(2)).toString(), "png-2");
@@ -260,7 +260,10 @@ test("failed calls retain their original arguments and error metadata", async ()
 });
 
 test("reload discards the Playwright response and cannot leak its Page handle", async () => {
-    const { io } = createDriverIo([fakePage("a", [])]);
+    const page = fakePage("a", []);
+    const documentEpochs = [1];
+    page.reload = async () => { documentEpochs[0] += 1; };
+    const { io } = createDriverIo([page], { documentEpochs });
     assert.equal(await io.reload(), undefined);
 });
 

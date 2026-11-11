@@ -4,6 +4,8 @@ pub mod acquire;
 pub mod actions;
 pub mod audio;
 pub mod camera;
+pub(crate) mod client_preferences;
+pub mod client_screens;
 pub mod client_shell;
 pub mod commands;
 pub mod content;

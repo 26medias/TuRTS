@@ -39,7 +39,8 @@ Options:
                   Write one line for each unit and tick to PATH: tick,wall_ns,unit_id,x,y.
                   This option is a test hook. It is off when --synthetic-units is above 0.
   --stats PATH    Rewrite PATH with one line of JSON statistics every second and at exit.
-                  This option is a test hook.
+                  Also enable private session observations in the sibling PATH.sessions.jsonl (mode 0600).
+                  This option is a local test hook; the file is not served over HTTP.
   --economy-log PATH
                   Write trusted economy audit JSONL to PATH. The file contains private data
                   for all players and is intended only for local test evidence.

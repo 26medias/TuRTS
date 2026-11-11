@@ -4,13 +4,15 @@
 const fs = require("node:fs/promises");
 const path = require("node:path");
 const crypto = require("node:crypto");
+const { qualifyNavigationReceipt } = require("./navigation-receipt.js");
 
 const IO_KEYS = Object.freeze(["click", "drag", "key", "move", "wheel", "screenshot", "save", "wait", "reload", "use"]);
 
 function wallTime() { return Date.now(); }
 
-function createDriverIo(pages, { outputDir, inputLog = [], initialCursor = { x: 0, y: 0 }, afterScreenshot } = {}) {
+function createDriverIo(pages, { outputDir, inputLog = [], initialCursor = { x: 0, y: 0 }, afterScreenshot, documentEpochs = [], storageAudit = null, beforeReload = null, navigationArchive = null, screenshotScale = "css" } = {}) {
     if (!Array.isArray(pages) || pages.length === 0) throw new TypeError("at least one page is required");
+    if (!["css", "device"].includes(screenshotScale)) throw new TypeError("invalid harness screenshot scale");
     if (!Number.isFinite(initialCursor.x) || !Number.isFinite(initialCursor.y)) throw new TypeError("initialCursor must have finite x and y");
     const state = { selected: 0 };
     const nextSeq = pages.map(() => 0);
@@ -28,9 +30,33 @@ function createDriverIo(pages, { outputDir, inputLog = [], initialCursor = { x: 
     };
     async function record(call, args, events, action) {
         const started = wallTime();
-        const entry = { call, args: structuredClone(args), wall_time_ms: started, window: state.selected + 1, event_types: [], event_seq: [], actual_events: [] };
+        const entry = { call, args: structuredClone(args), wall_time_ms: started, window: state.selected + 1,
+            document_epoch: documentEpochs[state.selected] ?? 0, event_types: [], event_seq: [], actual_events: [] };
         inputLog.push(entry);
-        const traceStart = await page().evaluate(() => ({ actual: window.__turts_io_actual_events?.length || 0, downstream: window.__turts_io_downstream_events?.length || 0 }));
+        await page().evaluate(({ call, args, callIndex }) => {
+            window.__turts_io_active_call = { call, args, call_index: callIndex };
+        }, { call, args: entry.args, callIndex: inputLog.length - 1 });
+        const callIndex = inputLog.length - 1;
+        const traceStart = await page().evaluate(() => ({ document_time_origin: performance.timeOrigin, document_url: document.URL, actual: window.__turts_io_actual_events?.length || 0,
+            downstream: window.__turts_io_downstream_events?.length || 0, contextmenu: window.__turts_io_contextmenu_events?.length || 0 }));
+        if (storageAudit) await collectStorageAudit(page(), storageAudit, state.selected + 1,
+            documentEpochs[state.selected] ?? 0, "before_physical_action");
+        let navigationTrace = null;
+        const recoverNavigation = async (error) => {
+            if (!Array.isArray(navigationArchive) || entry.call !== "click" ||
+                (error && !/Execution context was destroyed|Cannot find context with specified id/.test(String(error)))) throw error || new Error("unqualified navigation");
+            if (navigationTrace) return navigationTrace;
+            await page().waitForLoadState("domcontentloaded");
+            await page().waitForFunction(() => typeof window.turts_debug === "function", null,
+                { timeout: 30000, polling: 20 });
+            const nextDocument = await page().evaluate(() => ({ document_url: document.URL,
+                document_time_origin: performance.timeOrigin }));
+            const qualified = qualifyNavigationReceipt({ archives: navigationArchive, entry, traceStart, callIndex,
+                afterEpoch: documentEpochs[state.selected] ?? 0, nextDocument });
+            entry.navigation = qualified.navigation;
+            navigationTrace = qualified.trace;
+            return navigationTrace;
+        };
         const send = async (kind, operation, expected = {}) => {
             if (!events.includes(kind)) throw new TypeError(`${call} cannot send ${kind}`);
             const seq = ++nextSeq[state.selected];
@@ -38,17 +64,46 @@ function createDriverIo(pages, { outputDir, inputLog = [], initialCursor = { x: 
             entry.event_seq.push(seq);
             entry.event_types.push(kind);
             try { return await operation(); }
-            finally { await page().evaluate(() => { window.__turts_io_dispatching = false; window.__turts_io_seq = null; window.__turts_io_expected_event = null; }); }
+            finally {
+                try { await page().evaluate(() => { window.__turts_io_dispatching = false; window.__turts_io_seq = null; window.__turts_io_expected_event = null; }); }
+                catch (error) { await recoverNavigation(error); }
+            }
         };
         try { return await action(send, entry); }
         catch (error) {
-            entry.error = String(error);
-            throw error;
+            try { await recoverNavigation(error); }
+            catch { entry.error = String(error); throw error; }
         } finally {
-            const trace = await page().evaluate((offset) => ({ actual: (window.__turts_io_actual_events || []).slice(offset.actual), downstream: (window.__turts_io_downstream_events || []).slice(offset.downstream) }), traceStart);
+            if (storageAudit) await collectStorageAudit(page(), storageAudit, state.selected + 1,
+                documentEpochs[state.selected] ?? 0, "after_physical_action");
+            let trace;
+            try {
+                if (navigationTrace || (navigationArchive && entry.call === "click" && (documentEpochs[state.selected] ?? 0) > entry.document_epoch)) {
+                    trace = await recoverNavigation();
+                } else trace = await page().evaluate(async (offset) => {
+                await new Promise((resolve) => setTimeout(resolve, 0));
+                return {
+                    actual: (window.__turts_io_actual_events || []).slice(offset.actual),
+                    downstream: (window.__turts_io_downstream_events || []).slice(offset.downstream),
+                    contextmenu: (window.__turts_io_contextmenu_events || []).slice(offset.contextmenu),
+                    contextmenu_overflow: window.__turts_io_contextmenu_overflow === true,
+                };
+                }, traceStart);
+            } catch (error) { trace = await recoverNavigation(error); }
             entry.actual_events = trace.actual;
             entry.downstream_events = trace.downstream;
+            entry.contextmenu_events = trace.contextmenu;
+            entry.contextmenu_overflow = trace.contextmenu_overflow;
             entry.completed_wall_time_ms = wallTime();
+            try { await page().evaluate(() => { window.__turts_io_active_call = null; }); }
+            catch (error) {
+                const recovered = await recoverNavigation(error);
+                entry.actual_events = recovered.actual;
+                entry.downstream_events = recovered.downstream;
+                entry.contextmenu_events = recovered.contextmenu;
+                entry.contextmenu_overflow = recovered.contextmenu_overflow;
+                entry.completed_wall_time_ms = wallTime();
+            }
         }
     }
     const noEvent = (operation) => async () => operation();
@@ -180,19 +235,25 @@ function createDriverIo(pages, { outputDir, inputLog = [], initialCursor = { x: 
         },
         async wheel(dy) {
             return record("wheel", [dy], ["wheel"], async (send) => {
-                const scale = Number(await page().evaluate(() => window.devicePixelRatio || 1)) || 1;
-                return send("wheel", () => page().mouse.wheel(0, dy * scale), { delta_y: dy });
+                return send("wheel", () => page().mouse.wheel(0, dy), { delta_y: dy });
             });
         },
         async screenshot() {
             const input_call = inputLog.length;
             const window = state.selected + 1;
+            const document_epoch = documentEpochs[state.selected] ?? 0;
             const screenshotPage = page();
-            return record("screenshot", [], [], noEvent(async () => {
-                const bytes = await screenshotPage.screenshot({ type: "png", scale: "css" });
-                if (afterScreenshot) await afterScreenshot({ input_call, window, wall_time_ms: wallTime() });
+            const bytes = await record("screenshot", [], [], noEvent(async () => {
+                const bytes = await screenshotPage.screenshot({ type: "png", scale: screenshotScale });
+                if (afterScreenshot) await afterScreenshot({ input_call, window, document_epoch, wall_time_ms: wallTime() });
                 return bytes;
             }));
+            Object.defineProperties(bytes, {
+                input_call: { value: input_call },
+                window: { value: window },
+                document_epoch: { value: document_epoch },
+            });
+            return bytes;
         },
         async save(name, bytes) {
             const safe = safeName(name);
@@ -211,12 +272,25 @@ function createDriverIo(pages, { outputDir, inputLog = [], initialCursor = { x: 
             }));
         },
         async wait(ms) { return record("wait", [ms], [], noEvent(async () => page().waitForTimeout(ms))); },
-        async reload() { return record("reload", [], [], noEvent(async () => { await page().reload({ waitUntil: "domcontentloaded" }); })); },
+        async reload() { return record("reload", [], [], async (_send, entry) => {
+            const before = documentEpochs[state.selected] ?? 0;
+            entry.document_epoch_before = before;
+            if (storageAudit) await collectStorageAudit(page(), storageAudit, state.selected + 1,
+                documentEpochs[state.selected] ?? 0, "before_reload");
+            if (beforeReload) await beforeReload(page(), state.selected);
+            await page().reload({ waitUntil: "domcontentloaded" });
+            const after = documentEpochs[state.selected] ?? 0;
+            entry.document_epoch_after = after;
+            if (!Number.isSafeInteger(before) || before < 1 || !Number.isSafeInteger(after) || after <= before) {
+                throw new Error(`reload did not advance the actual document epoch: ${before} -> ${after}`);
+            }
+        }); },
         async use(n) {
             if (!Number.isInteger(n) || n < 1 || n > pages.length) throw new RangeError(`window must be in 1..${pages.length}`);
             state.selected = n - 1;
             const started = wallTime();
-            const entry = { call: "use", args: [n], wall_time_ms: started, window: n, event_types: [], event_seq: [], actual_events: [], downstream_events: [] };
+            const entry = { call: "use", args: [n], wall_time_ms: started, window: n,
+                document_epoch: documentEpochs[state.selected] ?? 0, event_types: [], event_seq: [], actual_events: [], downstream_events: [] };
             inputLog.push(entry);
             const downstreamStart = await page().evaluate(() => window.__turts_io_downstream_events?.length || 0);
             try {
@@ -243,7 +317,40 @@ function createDriverIo(pages, { outputDir, inputLog = [], initialCursor = { x: 
             if (present) await page().waitForTimeout(16);
         }
     }
-    return { io: Object.freeze(io), inputLog, state };
+    async function flushStorageAudit() {
+        if (!storageAudit) return null;
+        const finalState = [];
+        for (let index = 0; index < pages.length; index += 1) {
+            const snapshot = await pages[index].evaluate(() => {
+                const audit = window.__task16_storage_audit;
+                const sent = Number.isSafeInteger(window.__task16_storage_audit_sent) ? window.__task16_storage_audit_sent : 0;
+                const operations = Array.isArray(audit) ? audit.slice(sent) : [];
+                if (Array.isArray(audit)) window.__task16_storage_audit_sent = audit.length;
+                const entries = (storage) => Object.fromEntries(Array.from({ length: storage.length }, (_, i) => {
+                    const key = storage.key(i);
+                    return [key, storage.getItem(key)];
+                }));
+                return { operations, sessionStorage: entries(sessionStorage), localStorage: entries(localStorage) };
+            });
+            for (const entry of snapshot.operations) storageAudit.push({ ...entry, window: index + 1,
+                document_epoch: documentEpochs[index] ?? 0, input_call: null, flush_point: "end_of_run" });
+            finalState.push({ window: index + 1, document_epoch: documentEpochs[index] ?? 0,
+                sessionStorage: snapshot.sessionStorage, localStorage: snapshot.localStorage });
+        }
+        return finalState;
+    }
+    return { io: Object.freeze(io), inputLog, state, storageAudit, flushStorageAudit };
+}
+
+async function collectStorageAudit(page, output, window, document_epoch, flush_point) {
+    const entries = await page.evaluate(() => {
+        const audit = window.__task16_storage_audit;
+        if (!Array.isArray(audit)) return [];
+        const sent = Number.isSafeInteger(window.__task16_storage_audit_sent) ? window.__task16_storage_audit_sent : 0;
+        window.__task16_storage_audit_sent = audit.length;
+        return audit.slice(sent);
+    });
+    for (const entry of entries) output.push({ ...entry, window, document_epoch, input_call: null, flush_point });
 }
 
 function safeName(name) {

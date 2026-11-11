@@ -31,6 +31,13 @@ function createView(pages, inputLog, serverDir, state = { selected: 0 }) {
             if (target !== base && !target.startsWith(base + path.sep)) throw new Error("server file path escapes output directory");
             return fs.readFile(target, "utf8");
         },
+        async serverBytes(file) {
+            if (typeof file !== "string" || !file || file.includes("\0")) throw new TypeError("server artifact path must be non-empty");
+            const base = path.resolve(serverDir);
+            const target = path.resolve(base, file);
+            if (target !== base && !target.startsWith(base + path.sep)) throw new Error("server artifact path escapes output directory");
+            return fs.readFile(target);
+        },
     };
     return Object.freeze(view);
 }

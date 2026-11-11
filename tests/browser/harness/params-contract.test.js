@@ -48,7 +48,7 @@ function launcherSyntheticUnits(row) {
     try {
         const rowPath = path.join(directory, "row.json");
         fs.writeFileSync(rowPath, JSON.stringify(row));
-        const output = execFileSync("python3", ["-c", block[1], root, rowPath], {
+        const output = execFileSync("python3", ["-c", block[1], root, rowPath, row.package || "mods/acme"], {
             encoding: "utf8", stdio: ["pipe", "pipe", "pipe"],
         });
         return output.trim();
