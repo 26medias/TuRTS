@@ -8,7 +8,7 @@ source: codex
 
 # MC execution board
 
-State: MC runs under Claude Code as Root (C382). 21/25 lanes complete; 121/170 build runs. STOP-GMU1 is released by ruling O14 (CEO delegated it to the studio; design revision 15). Task21 has the sole compiler/GPU lease for its runtime (RUN118). Task22 source continues under O14 (RUN121) and takes the lease after Task 21. Then 23, 24. Main bb611bd and the frozen stream are unchanged.
+State: MC runs under Claude Code as Root (C382). 21/25 lanes complete; 122/170 build runs. Lanes run in parallel under C391 (CEO order, 2026-11-11). Task21 runtime RUN118 (PT1 step 5 product defect in repair: research tooltip has no key). Task22 runtime RUN122 at fd057b7. Tasks 23, 24 not started. Main bb611bd unchanged.
 
 Plan: `docs/superpowers/plans/2026-10-29-mc-player-control.md`.
 Design of record: `docs/superpowers/specs/2026-10-29-mc-player-control-design.md`, revision15 on codex/mc-integration (ruling O14, 2026-11-11); revision14 is at mainf050e42.
@@ -87,8 +87,8 @@ CI trigger: `.github/workflows/ci.yml:2-5` runs pushes to main and pull requests
 | T17 | 7 | 3, 12, 13, 19, 20 | codex/mc-t17 | COMPLETE at merge 8ecfe4f. Final review 0 High/0 unresolved Medium; normal gates, five builder cycles, separate health cycle and six headed row passes verified. All integration gates pass; lane retired. |
 | T14 | 8 | 5, 12, 13, 15 | codex/mc-t14 | COMPLETE candidate3ab6600, merge51170cb4; review0H/0unresolvedM;6builder+owncycles restored; all11integrationentries0,1538/0/21,T7 137/52,frozenhash/28tests verified; archive/retire lane next. |
 | T16 | 8 | 7, 12, 15 | codex/mc-t16 | COMPLETE candidate43cfe94; merge d967f2a. RUN111 final independent review PASS-WITH-FINDINGS 0High/1Medium/5Low, report sha80eebd31. All15 task gates, nine Root fault cycles and the reviewer own cycle verified. Integration re-gate 13/13 entries exit0, 1665/0/21, T7 exit0, frozen hash verified. Cache moved to target/mc-integration; lane retirement next. |
-| T22 | 8 | 6, 7, 10, 11, 13, 19, 20 | codex/mc-t22 | SOURCE READY at fd057b7 under O14 and C389 (RUN121). Runtime (full plan command, gates, G-ACC, P6-prime, measurement values) and the final review wait for the lease. |
-| T21 | 9 | 14, 16, 17, 18, 20 | codex/mc-t21 | RUNTIME RUN118 at 195bd75 with the sole lease (C388); merges before Task 22. |
+| T22 | 8 | 6, 7, 10, 11, 13, 19, 20 | codex/mc-t22 | RUNTIME RUN122 at fd057b7 under O14, C389, C391; parallel with Task 21. Final review follows. |
+| T21 | 9 | 14, 16, 17, 18, 20 | codex/mc-t21 | RUNTIME RUN118: gates green at d5e7cc1; PT1 red at step 5 (product defect, research tooltip has no key); first G-REF run red, repair 1e422bc, second run active. |
 | T23 | 10 | 14, 15, 21, 22 | codex/mc-t23 | NOT STARTED |
 | T24 | 11 | 23 | codex/mc-t24 | NOT STARTED |
 
@@ -322,6 +322,7 @@ One row per builder/reviewer dispatch or resumed agent work turn. Register befor
 | 119 | STOP-GMU1 decision panel, architecture and contract lens | technical-director | claude-opus-5-5 (Claude Code subagent) | high | design rev 14 lines 604-684, 1243-1245; RUN112 and RUN117 evidence | Registered BEFORE dispatch. CEO delegated STOP-GMU1 to the studio (2026-11-11: 'Use your subagents to find the best option'). Decision consult, read only, no lane, no compiler. Counted in the global total (119/170); not a Task 22 builder or reviewer run, so the Task 22 count stays 7. FINISHED RECOMMEND=4 plus a native slot check: the row is wrong, the rules are right; C2 proved one geometry; GMA already records the limit; GM07 is later:M4b; exact revision wording supplied. |
 | 120 | STOP-GMU1 decision panel, player lens | player | claude-opus-5-5 (Claude Code subagent) | high | the same evidence, in player terms | Registered BEFORE dispatch with RUN119. Decision consult, read only. Global120/170; Task 22 count stays 7. FINISHED RECOMMEND=4 with conditions: overlaps gated, first order 0 Blocked, rest position recorded and bounded, M4b gates the case; refuses option 2. |
 | 121 | T22 source continuation under O14: GMU same-point test to design revision 15, native slot check, P6 re-anchor, measurement section | qa-lead with performance-architect duties | claude-opus-5-5 (Claude Code subagent, resumed RUN112 session) | high | codex/mc-t22 da3e508 plus design revision 15 | Registered BEFORE dispatch under O14. Task22run8/estimate3, hard12; global121/170. Source only: NO cargo, trunk, browser or server while RUN118 (Task 21) holds the lease. Runtime (P6, G-ACC, records) is a later counted run. FINISHED RESULT=STOP on one item, ruled by C389. Commits 15f1315 (merge of integration, documents), 729646c, 66fe3e4, 8ec5913, fd057b7 on codex/mc-t22, pushed; lane clean (Root checked). GMU same-point process test to revision 15 (mc_group.rs:351) with a recorded corner case; native slot check crates/turts_sim/tests/gmu_same_point.rs; GMA fixture kept with reason (a clean crossing cannot make the avoidance-off plant red); measurement section with NOT MEASURED placeholders. No cycle needs a re-run except P6. Nothing compiled or run. |
+| 122 | T22 runtime under O14, C389 and C391: full plan command, G-RUST, G-QA, G-ACC, G-FROZEN, P6-prime cycle, measurement values | qa-lead with performance-architect duties | claude-opus-5-5 (Claude Code subagent, resumed RUN112 session) | high | codex/mc-t22 fd057b7 | Task22run9/estimate3, hard12; global122/170. Parallel with RUN118 under C391: own cache target/mc-t22, runners v4, headed runs queue on the GPU lock. Root native pre-check t22-root-native-gmu-same-point-1: exit 0, nearest slot distance 1.0999985, second-order Blocked 1. |
 
 ## 9. Preflight ledger and stop
 
@@ -3845,3 +3846,23 @@ Limit: exec_in_lane_v2.py refuses to start while any compiler is active (line 23
 Evidence: exec_in_lane_v2.py:23-24, 40; brief section 4 line 52 (the orchestrator decides the number of lanes, cache and disk handling); `nproc` 28, `free -g`, `df -h` on 2026-11-11.
 
 Alternative not taken: keep one lease for all work. It keeps the estimate of 20 to 28 hours and finds a compile error in the Task 22 native check hours later.
+
+### C391: process rules reviewed; lanes run in parallel (CEO order, 2026-11-11)
+
+The CEO read the single-lease rule and ordered: review every process rule; remove each rule that limits speed and does not protect quality. Root reviewed the rules of the handoff, the brief and the board.
+
+Changed:
+1. Single compiler/browser/GPU lease: removed. Each lane has its own cache and compiles in parallel. Headed browser runs stay one at a time through the existing GPU lock (`gpu-runtime.lock` in the headed wrapper). Timing measurements run only when no build is active. Runners: gate-runner/exec_in_lane_v4.py (sha256 8eefe1c0c51b5a6da95a6dad264f0dd4b82cf9ad904256e8147adaf7109da8cd) and mc_headed_v4.sh (ab0062c4f96a2030f7b060dbfba468e966d9358759892f889475c58d89937a9a). They are v2/v3 without the other-compiler check and with 10 build jobs (was 4); every receipt field stays, and `other_compilers_at_start` is added. C390 is superseded.
+2. One cache that moves between lanes: removed. Disk 528 GiB free.
+3. Local re-gate after each merge: required only when the merged tree differs from a tree that passed the full gate set. Root compares the tree hashes. Hosted CI stays for each merge.
+4. Serial task order: Tasks 21 and 22 run their runtime in parallel. The Task 24 regression (REG1) runs during the CEO play of Task 23, not after it.
+5. Hosted CI: work continues while a hosted run is active; Root reads the result when it ends.
+6. Run ledger: one row per run stays (it is the cost record). The row is written at the dispatch, not as a separate step before it.
+7. Budget stops (170 runs, 4 times a task estimate): Root keeps the count and reports when a limit is passed, but does not halt the build. The CEO can restore the halt with one word.
+8. A browser run that fails with a timing symptom during a parallel build is repeated one time before it is judged; the repeat is recorded.
+
+Kept, because they protect quality or belong to the CEO: an independent reviewer who runs the tests and one fault of its own before each merge; red, exact restore, fresh green for each fault; receipts with head, clean source and source hashes; the frozen stream hash; no design change that the player sees without the CEO; no fault retirement without a decision note; the CEO plays PT1 and PT2; no merge or push to main; explicit git paths; Simplified Technical English.
+
+Evidence: CEO messages of 2026-11-11 in the Root session; exec_in_lane_v2.py:23-24, 40; mc_headed_v3.sh (flock line).
+
+Alternative not taken: keep C390 only (native work in a second lane). It keeps all browser work and both tasks serial.

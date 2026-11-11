@@ -21,3 +21,23 @@ Limit: exec_in_lane_v2.py refuses to start while any compiler is active (line 23
 Evidence: exec_in_lane_v2.py:23-24, 40; brief section 4 line 52 (the orchestrator decides the number of lanes, cache and disk handling); `nproc` 28, `free -g`, `df -h` on 2026-11-11.
 
 Alternative not taken: keep one lease for all work. It keeps the estimate of 20 to 28 hours and finds a compile error in the Task 22 native check hours later.
+
+### C391: process rules reviewed; lanes run in parallel (CEO order, 2026-11-11)
+
+The CEO read the single-lease rule and ordered: review every process rule; remove each rule that limits speed and does not protect quality. Root reviewed the rules of the handoff, the brief and the board.
+
+Changed:
+1. Single compiler/browser/GPU lease: removed. Each lane has its own cache and compiles in parallel. Headed browser runs stay one at a time through the existing GPU lock (`gpu-runtime.lock` in the headed wrapper). Timing measurements run only when no build is active. Runners: gate-runner/exec_in_lane_v4.py (sha256 8eefe1c0c51b5a6da95a6dad264f0dd4b82cf9ad904256e8147adaf7109da8cd) and mc_headed_v4.sh (ab0062c4f96a2030f7b060dbfba468e966d9358759892f889475c58d89937a9a). They are v2/v3 without the other-compiler check and with 10 build jobs (was 4); every receipt field stays, and `other_compilers_at_start` is added. C390 is superseded.
+2. One cache that moves between lanes: removed. Disk 528 GiB free.
+3. Local re-gate after each merge: required only when the merged tree differs from a tree that passed the full gate set. Root compares the tree hashes. Hosted CI stays for each merge.
+4. Serial task order: Tasks 21 and 22 run their runtime in parallel. The Task 24 regression (REG1) runs during the CEO play of Task 23, not after it.
+5. Hosted CI: work continues while a hosted run is active; Root reads the result when it ends.
+6. Run ledger: one row per run stays (it is the cost record). The row is written at the dispatch, not as a separate step before it.
+7. Budget stops (170 runs, 4 times a task estimate): Root keeps the count and reports when a limit is passed, but does not halt the build. The CEO can restore the halt with one word.
+8. A browser run that fails with a timing symptom during a parallel build is repeated one time before it is judged; the repeat is recorded.
+
+Kept, because they protect quality or belong to the CEO: an independent reviewer who runs the tests and one fault of its own before each merge; red, exact restore, fresh green for each fault; receipts with head, clean source and source hashes; the frozen stream hash; no design change that the player sees without the CEO; no fault retirement without a decision note; the CEO plays PT1 and PT2; no merge or push to main; explicit git paths; Simplified Technical English.
+
+Evidence: CEO messages of 2026-11-11 in the Root session; exec_in_lane_v2.py:23-24, 40; mc_headed_v3.sh (flock line).
+
+Alternative not taken: keep C390 only (native work in a second lane). It keeps all browser work and both tasks serial.
