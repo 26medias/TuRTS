@@ -95,6 +95,13 @@ function assertPublicProjectionSchema(snapshot) {
     }
     assert(!Object.hasOwn(snapshot.debug, "raw_world_dtos"));
     assert(!Object.hasOwn(snapshot.debug, "foreign_economy"));
+    // MC design 5.1 (design lines 477-478): order state goes to its owner only, as the server
+    // filters it (crates/turts_server/src/export.rs:96-100 snapshot, :190-194 delta).
+    for (const order of view.unit_orders ?? []) {
+        const unit = view.units.find((item) => item.unit_id === order.unit);
+        assert(unit && unit.owner_slot === snapshot.debug.slot,
+            `browser replica holds the order state of unit ${order.unit}, which slot ${snapshot.debug.slot} does not own`);
+    }
     return view;
 }
 

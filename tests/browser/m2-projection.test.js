@@ -146,3 +146,16 @@ test("MC projection permits unit_orders and max_health and still refuses a new p
     leaky.units[0].private_inventory = [];
     assert.throws(() => assertPublicProjectionSchema({ debug: { ...debug, replicated_world: leaky } }));
 });
+
+test("MC projection refuses the order state of a unit that the client slot does not own", () => {
+    const world = JSON.parse(JSON.stringify(actualPublicDebug.replicated_world));
+    for (const unit of world.units) unit.max_health = null;
+    const own = world.units.find((unit) => unit.owner_slot === 0);
+    const foreign = world.units.find((unit) => unit.owner_slot !== 0);
+    assert(own && foreign, "the saved fixture holds units of two slots");
+    world.unit_orders = [{ unit: own.unit_id }];
+    assertPublicProjectionSchema({ debug: { ...actualPublicDebug, slot: 0, replicated_world: world } });
+    world.unit_orders = [{ unit: foreign.unit_id }];
+    assert.throws(() => assertPublicProjectionSchema({ debug: { ...actualPublicDebug, slot: 0, replicated_world: world } }),
+        /order state of unit/);
+});
