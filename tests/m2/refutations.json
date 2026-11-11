@@ -942,9 +942,9 @@
     "id": "E2-browser-hardcoded-label",
     "kind": "browser",
     "runtime": "browser",
-    "plant_path": "crates/turts_client/src/economy_ui.rs",
-    "anchor": "let name = def.map_or_else(|| unit.content_id.clone(), |d| d.name.clone());",
-    "replacement": "let name = unit.content_id.clone();",
+    "plant_path": "crates/turts_client/src/visuals.rs",
+    "anchor": ".map(|def| def.name.clone())?;",
+    "replacement": ".map(|_| shown.content_id.clone())?;",
     "command": [
       "/bin/bash",
       "-c",
@@ -954,7 +954,7 @@
       "E9-browser-cedar-economy"
     ],
     "expected_selected": 1,
-    "expected_failure": "actual rendered unit selection was not visible",
+    "expected_failure": "rendered world tooltip must show the package unit name",
     "restore_check": "planted source hash is restored and the same Chrome case returns PASS",
     "pre_commands": [
       [
@@ -964,7 +964,8 @@
         "--prefix",
         "tests/browser"
       ]
-    ]
+    ],
+    "plant_note": "MC task 21: economy_ui.rs is removed (task 12). The plain cedar HUD has no name widget, so the player sees the unit name in the world tooltip (crates/turts_client/src/visuals.rs update_world_tooltip); m2-oracle.js judgeSelection checks it."
   },
   {
     "id": "E9-browser-missing-button",
@@ -992,15 +993,16 @@
         "--prefix",
         "tests/browser"
       ]
-    ]
+    ],
+    "plant_note": "MC task 21 STOP: the case needs production through the plain M2 HUD, which has no production widget (crates/turts_interaction/src/lib.rs:1139 gives no target for a Content or Job order). Not retired; the plant waits for a ruling."
   },
   {
     "id": "E9-browser-debug-only-ui",
     "kind": "browser",
     "runtime": "browser",
-    "plant_path": "crates/turts_client/src/economy_ui.rs",
-    "anchor": "model.lines.push(format!(\"Selected: {name} \u00b7 {selected}\"));",
-    "replacement": "let _selected_text_debug_only = format!(\"Selected: {name} \u00b7 {selected}\");",
+    "plant_path": "crates/turts_client/src/visuals.rs",
+    "anchor": "    let mut ring_metadata = HashMap::new();\n    for unit_id in &selected.0 {",
+    "replacement": "    let mut ring_metadata = HashMap::new();\n    for unit_id in selected.0.iter().take(0) {",
     "command": [
       "/bin/bash",
       "-c",
@@ -1010,7 +1012,7 @@
       "E9-browser-base-selection"
     ],
     "expected_selected": 1,
-    "expected_failure": "selection must appear in actual visible Bevy Text",
+    "expected_failure": "selection must appear in actual visible Bevy rendering, not only in debug state",
     "restore_check": "planted source hash is restored and the same Chrome case returns PASS",
     "pre_commands": [
       [
@@ -1020,7 +1022,8 @@
         "--prefix",
         "tests/browser"
       ]
-    ]
+    ],
+    "plant_note": "MC task 21: economy_ui.rs is removed (task 12). The plain base HUD shows a selection only as the selection ring; the plant keeps debug.selection and removes the ring (crates/turts_client/src/visuals.rs). m2-oracle.js judgeSelection checks rings_shown and the ring pixels."
   },
   {
     "id": "E9-browser-missing-output-mesh",
@@ -1048,7 +1051,8 @@
         "--prefix",
         "tests/browser"
       ]
-    ]
+    ],
+    "plant_note": "MC task 21 STOP: the case needs production through the plain M2 HUD, which has no production widget (crates/turts_interaction/src/lib.rs:1139 gives no target for a Content or Job order). Not retired; the plant waits for a ruling."
   },
   {
     "id": "E9-browser-position-only-snapshot",
@@ -1060,10 +1064,10 @@
     "command": [
       "/bin/bash",
       "-c",
-      "M2_CARGO_TARGET_DIR=\"$CARGO_TARGET_DIR\" bash scripts/m2-browser.sh --case E9-browser-base-loss-final_change"
+      "M2_CARGO_TARGET_DIR=\"$CARGO_TARGET_DIR\" bash scripts/m2-browser.sh --case E9-browser-base-recovery"
     ],
     "browser_case_ids": [
-      "E9-browser-base-loss-final_change"
+      "E9-browser-base-recovery"
     ],
     "expected_selected": 1,
     "expected_failure": "owner replica mismatch at authoritative completed audit tick",
@@ -1076,7 +1080,8 @@
         "--prefix",
         "tests/browser"
       ]
-    ]
+    ],
+    "plant_note": "MC task 21: the final_change case has no player path in the plain base HUD (STOP). The recovery case compares the released resync Snapshot with the economy audit (m2-oracle.js judgeRecovery, compareBrowserSnapshotToAudit), which this plant breaks."
   },
   {
     "id": "E9-browser-unbounded-buffer",
@@ -1104,7 +1109,8 @@
       ]
     ],
     "anchor": "        if buffer.len() >= limit {\n            buffer.clear();\n            self.buffer_overflows = self.buffer_overflows.saturating_add(1);\n            self.gap_seen = true;\n            if self.gap_anchor.is_none() {\n                self.gap_anchor = self.last_applied_tick.or(Some(delta.base_tick));\n            }\n            // Task 12 policy: discard the triggering batch as well as the old tail.\n            return;\n        }",
-    "replacement": "        if buffer.len() > limit {\n            self.buffer_overflows = self.buffer_overflows.saturating_add(1);\n            self.gap_seen = true;\n            if self.gap_anchor.is_none() {\n                self.gap_anchor = self.last_applied_tick.or(Some(delta.base_tick));\n            }\n            // Task 12 policy: discard the triggering batch as well as the old tail.\n            return;\n        }"
+    "replacement": "        if buffer.len() > limit {\n            self.buffer_overflows = self.buffer_overflows.saturating_add(1);\n            self.gap_seen = true;\n            if self.gap_anchor.is_none() {\n                self.gap_anchor = self.last_applied_tick.or(Some(delta.base_tick));\n            }\n            // Task 12 policy: discard the triggering batch as well as the old tail.\n            return;\n        }",
+    "plant_note": "MC task 21: the plant stays; the expected failure text is an assert of m2-oracle.js judgeRecovery."
   },
   {
     "id": "E9-browser-duplicate-outstanding",
@@ -1144,7 +1150,8 @@
         "--prefix",
         "tests/browser"
       ]
-    ]
+    ],
+    "plant_note": "MC task 21: the plant stays; the expected failure text is an assert of m2-oracle.js judgeRecovery."
   },
   {
     "id": "E9-browser-ignore-midtrace-rearm",
@@ -1176,6 +1183,7 @@
         "--prefix",
         "tests/browser"
       ]
-    ]
+    ],
+    "plant_note": "MC task 21: the plant stays; the expected failure text is an assert of m2-oracle.js judgeRecovery."
   }
 ]
