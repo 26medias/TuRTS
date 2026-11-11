@@ -3739,3 +3739,7 @@ Evidence: plan lines 46, 656, 674, 693; board section 5; brief section 4 line 52
 Alternative not taken: keep Task 21 idle until Task 22 merges. It costs wall time and adds no check.
 
 Global113/170 after the two registrations.
+
+## Hosted run 43019032985 on d967f2a (after Task 16)
+
+agents: success. check: failure at "Python refutation harness tests" only: test_browser_registry_anchors_are_unique_and_install_playwright_in_scratch raises FileNotFoundError on crates/turts_client/src/economy_ui.rs (Task 12 removed the file; Task 21 re-targets the three browser plants, plan lines 680-684). browser: failure at "M2 browser proof (base, haul, acme, cedar)" only. The failed steps are the same two as in run 42789795527; both stay owned by Task 21. Hosted M2 timeout cause: NOT TRACED. This is not CI acceptance; the wave 8 read follows the Task 22 merge.
