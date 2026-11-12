@@ -1,6 +1,6 @@
 # Pre-MP1 slice: audit crate, one movement model, neighbour grid, file splits: design
 
-Date: 2026-11-12. Revision 4. Status: gate PASSED WITH FINDINGS on revision 3 (qa-lead lens, 0 High; docs/research/mp1/gate-slice-qa.md and its re-check); revision 4 takes the 7 findings in section 9. The simulation lens re-check of the ruling is open. Revision 3: the qa-lead lens FAILED revision 1 with 4 High (docs/research/mp1/gate-slice-qa.md); sections 2, 4 and 5 take its text changes; a re-check by both lenses follows. Gate round 1: the simulation lens FAILED revision 1 (one High: a third movement branch); the technical-director ruled (docs/research/mp1/ruling-td-one-step-function.md); sections 1, 2, 5 and 6 are replaced. The qa-lead lens is in progress.
+Date: 2026-11-12. Revision 5. Revision 5: gate 2 (the plan and the re-check of the ruling, simulation lens) FAILED with 2 High; section 9 items 8 to 15 take its text. Earlier status: Status: gate PASSED WITH FINDINGS on revision 3 (qa-lead lens, 0 High; docs/research/mp1/gate-slice-qa.md and its re-check); revision 4 takes the 7 findings in section 9. The simulation lens re-check of the ruling is open. Revision 3: the qa-lead lens FAILED revision 1 with 4 High (docs/research/mp1/gate-slice-qa.md); sections 2, 4 and 5 take its text changes; a re-check by both lenses follows. Gate round 1: the simulation lens FAILED revision 1 (one High: a third movement branch); the technical-director ruled (docs/research/mp1/ruling-td-one-step-function.md); sections 1, 2, 5 and 6 are replaced. The qa-lead lens is in progress.
 Author: the orchestrator, from the technical-director input `docs/research/mp1/input-technical-director.md`
 (parts A and C) and the producer input `docs/research/mp1/input-producer.md` (part 2). The inputs are agent
 output; each claim below that this design depends on carries its `path:line` and is checked again at the gate.
@@ -203,3 +203,40 @@ A difference outside P3 stops A2c. A new ruling and a new run of the self-test a
    "the streams spend 0 unit-ticks on `PlainMoveProgress`" is measured by this trace, not assumed.
 7. Definition. activity: the `MovementActivity` of the unit's `MoveProgress` (`Pending`, `Moving`, `Resting`,
    `Blocked`; `movement.rs:24-29`), or `none` when the unit has no `MoveProgress`; not the order or gather stage.
+8. A2a float rule (replaces "keep the no-progress expression" in section 2 row A2a and in the ruling). The two
+   branches compute three values with different float expressions: the start velocity (`movement.rs:1968-1972`
+   against `:2130`), the push (`:1985` against `:2163`) and the speed cap (`:2003-2004` against `:2184-2185`).
+   Gate probe, 64 seeds x 300 ticks: with the no-progress expressions, 46 of 64 pooled seeds differ; with the
+   pool expressions, 0 of 64 pooled seeds and 1 of 64 no-progress seeds differ. So: A2a selects the three
+   expressions by the presence of a pool, and the output is bit-equal on every frame. A2b removes the switch,
+   and the pool expressions win. P0 must be equal at A2b, and the Q1b count of separated no-progress ticks in
+   the stream packages is recorded with it.
+9. A2a changes no assertion. Any changed assertion stops A2a. (The words "each changed assertion has a reason"
+   in section 2 row A2a are removed: they contradict a bit-equal refactor.) No suite test pins pooled positions
+   bitwise (gate probe), so green GM40, GMA and GMU prove nothing about equality; the reference copy is the
+   proof.
+10. A2b and A2c boundary. The plain move branch (`orders.rs:2842-2900`) still calls the plain reservations and
+    identities (`:3622`, `:3115`, `:1189`) until A2c reroutes it. So the deletion of the plain reservations in
+    `orders/` moves from A2b to A2c, after the reroute.
+11. A2b is two tasks. A2b1: the fallback pool, the gather protocol and the guards. A2b2: the deletion, driven by
+    the compiler, with P0. A2b1 states the source of the pool id (`next_pool_id` is at `orders.rs:258-259`, and
+    the step function is pure); it does not collect a fallback pool while the gather stage still targets its
+    goal (as for `movement.rs:2399-2400`); and a guard counts the fallback pools of each trip, because the
+    deadline guard alone passes an oscillation that delivers in the end. The file list of A2b also holds
+    `orders.rs:745-790`, `:2044-2058`, `:2303`, `:2435`, `:2458`, `gather.rs:1246-1263` and `command.rs:494`.
+12. S2 and S3 give each `plain.rs` an item list, not line ranges. Shared items stay out of the files that A2
+    deletes: in `movement.rs` the helpers at `:907-923` and `:957-990` and `:480-516` (`angle`, `step()`); in
+    `orders.rs` `UnitMoveNeedsAllocation` (`:152`), `SpreadIndexCache` (`:178`), `record_dispatch_selection`
+    (`:1358`), `movement_envelope_capacity_available_after_replacing` (`:3151`), `unit_has_pending_move`
+    (`:3286`) and `clear_gather` (`:3661`). The reviewer fault of a pure move uses the `item_equal.py` result
+    and one behaviour plant that is first shown red; a `x 1.0001` at `movement.rs:2004` stayed green in four test
+    files, so it is not a valid plant.
+13. The one-step guard (item 5) also checks, in `movement/`: `for _ in 0..8` occurs one time (today 3) and
+    `step(&MovementInput` occurs one time (today 3).
+14. The trace (item 6) also records `was_projected` (`movement.rs:2008`), because the fallback starts on
+    `separated || was_projected` (`:2052`). The single `MoveTo` routing is at `command.rs:173-174` as well as
+    `:488-495`.
+15. Early stop points for MP1 lanes. After the pure moves and the audit crate: damage and armour, power,
+    effects and the match lifecycle can start, if every write is inside a captured operation; the lobby is on
+    the server and is independent. Construction, rally, the repair approach and automatic targeting add orders
+    and wait for the end of A1c (the validator change), not for A2c. The M4 route follower waits for A4.
