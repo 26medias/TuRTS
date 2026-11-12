@@ -96,24 +96,29 @@ impl RawDocuments {
         Ok(Self { documents })
     }
 
-    /// `true` when `path`, a list of field names from the root of the file, is written in at
-    /// least one file of `group`.
-    pub(crate) fn written(&self, group: RawGroup, path: &[&str]) -> bool {
+    /// The first file of `group` in which `path`, a list of field names from the root of the
+    /// file, is written. `None` when no file of the group writes it.
+    pub(crate) fn written(&self, group: RawGroup, path: &[&str]) -> Option<&str> {
         self.documents
             .iter()
-            .any(|(g, _, value)| *g == group && has_path(value, path))
+            .find(|(g, _, value)| *g == group && has_path(value, path))
+            .map(|(_, file, _)| file.as_str())
     }
 }
 
 /// Walk `path` from the root of `value`. A struct or a map is a `Map` of string keys; an
-/// `Option` that wraps a struct is looked through. The last name must be a key: its value can be
-/// empty (`[]`, `None`, `()`).
+/// `Option` that wraps a struct is looked through; a list is looked through to its elements
+/// (`placements[].facing` is the path `["placements", "facing"]`): the rest of the path must hold
+/// in at least one element. A list look-through is one step, not a deep walk: the next name is
+/// always a key of the value that the path has reached. The last name must be a key: its value
+/// can be empty (`[]`, `None`, `()`).
 fn has_path(value: &Value, path: &[&str]) -> bool {
     let Some((first, rest)) = path.split_first() else {
         return true;
     };
     match value {
         Value::Option(Some(inner)) => has_path(inner, path),
+        Value::Seq(items) => items.iter().any(|item| has_path(item, path)),
         Value::Map(map) => map.iter().any(|(key, child)| {
             matches!(key, Value::String(name) if name == first) && has_path(child, rest)
         }),
@@ -179,6 +184,50 @@ mod tests {
         assert!(!has_path(&parse("[\"orders\"]"), &["orders"]));
     }
 
+    /// A path looks through a list: `placements[].facing`, `alerts[].units`.
+    #[test]
+    fn a_path_looks_through_a_list_of_structs() {
+        let value = parse(
+            "(placements: [(unit: \"a\"), (unit: \"b\", facing: None)], alerts: [(id: \"x\", units: [])])",
+        );
+        assert!(has_path(&value, &["placements", "facing"]));
+        assert!(has_path(&value, &["alerts", "units"]));
+        assert!(!has_path(&value, &["placements", "owner_slot"]));
+        assert!(!has_path(
+            &parse("(placements: [])"),
+            &["placements", "facing"]
+        ));
+    }
+
+    #[test]
+    fn a_path_looks_through_a_list_inside_an_option() {
+        let value = parse("(maybe: Some([(a: 1), (b: 2)]), plain: Some((list: [(c: ())])))");
+        assert!(has_path(&value, &["maybe", "b"]));
+        assert!(has_path(&value, &["plain", "list", "c"]));
+        assert!(!has_path(&value, &["maybe", "c"]));
+    }
+
+    /// A list look-through is not a deep walk: the next name must be a key of the element
+    /// itself, and a key that is deeper down in the element does not count.
+    #[test]
+    fn a_list_look_through_is_not_a_deep_walk() {
+        let value = parse("(items: [(inner: (facing: None))], other: [[(facing: None)]])");
+        assert!(!has_path(&value, &["items", "facing"]));
+        assert!(has_path(&value, &["items", "inner", "facing"]));
+        assert!(!has_path(&value, &["facing"]));
+        // A list of lists is looked through at each level.
+        assert!(has_path(&value, &["other", "facing"]));
+    }
+
+    /// A list of strings or numbers holds no keys.
+    #[test]
+    fn a_list_of_plain_values_holds_no_key() {
+        assert!(!has_path(
+            &parse("(names: [\"facing\", \"belts\"])"),
+            &["names", "facing"]
+        ));
+    }
+
     fn manifest() -> Manifest {
         ron::from_str(
             r#"(id: "zeta", version: "0.1.0", kind: Game, engine_api: "^0.2.3", dependencies: {}, exports: (units: ["units/a.ron", "units/b.ron"], maps: [], visuals: [], resources: [], nodes: [], production: []), context: Shared, capabilities: [], license: "test")"#,
@@ -196,10 +245,13 @@ mod tests {
             _ => None,
         };
         let documents = RawDocuments::read(&manifest(), [RawGroup::Units], files).unwrap();
-        assert!(documents.written(RawGroup::Units, &["armour"]));
-        assert!(!documents.written(RawGroup::Units, &["acquire"]));
+        assert_eq!(
+            documents.written(RawGroup::Units, &["armour"]),
+            Some("units/b.ron")
+        );
+        assert_eq!(documents.written(RawGroup::Units, &["acquire"]), None);
         // A group that nobody asked to read holds no document.
-        assert!(!documents.written(RawGroup::Maps, &["armour"]));
+        assert_eq!(documents.written(RawGroup::Maps, &["armour"]), None);
     }
 
     #[test]

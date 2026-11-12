@@ -2,7 +2,6 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use serde::Deserialize;
 use turts_mod_api::content::{ContentCatalog, ResolvedEffect, ResolvedItemStack};
 use turts_mod_api::{ContentId, Manifest, ModError, PackageId};
 
@@ -496,25 +495,6 @@ pub(crate) fn validate_m3(manifest: &Manifest, catalog: &ContentCatalog) -> Resu
             .unwrap_or("content");
         return Err(error(&origin, file, "id", "item count exceeds 65535"));
     }
-    let version = semver::VersionReq::parse(&manifest.engine_api).map_err(|_| {
-        error(
-            &origin,
-            "manifest.ron",
-            "engine_api",
-            "invalid engine API requirement",
-        )
-    })?;
-    let legacy = semver::Version::new(0, 2, 0);
-    if version.matches(&legacy)
-        && (manifest_has_m3_syntax(manifest) || catalog_has_m3_content(catalog))
-    {
-        return Err(error(
-            &origin,
-            "manifest.ron",
-            "engine_api",
-            "M3 content requires an engine API requirement that excludes 0.2.0",
-        ));
-    }
     Ok(())
 }
 
@@ -575,141 +555,4 @@ fn check_prerequisite_cycles(origin: &PackageId, catalog: &ContentCatalog) -> Re
         }
     }
     Ok(())
-}
-
-fn manifest_has_m3_syntax(manifest: &Manifest) -> bool {
-    !manifest.exports.recipes.is_empty() || !manifest.exports.technologies.is_empty()
-}
-
-fn catalog_has_m3_content(catalog: &ContentCatalog) -> bool {
-    !catalog.recipes.is_empty()
-        || !catalog.technologies.is_empty()
-        || catalog.units.values().any(|u| {
-            u.output_inventory.is_some()
-                || u.extractor.is_some()
-                || u.conveyor.is_some()
-                || u.inserter.is_some()
-                || u.machine.is_some()
-                || u.research.is_some()
-                || u.health.is_some()
-                || u.weapon.is_some()
-                || u.removal.is_some()
-        })
-}
-
-/// Check original RON syntax. Typed catalogs lose the difference between an absent additive
-/// field and an explicit default such as `weapon: None` or `recipes: []`.
-pub(crate) fn validate_m3_presence(
-    manifest: &Manifest,
-    files: &BTreeMap<String, Vec<u8>>,
-) -> Result<(), ModError> {
-    let package = PackageId(manifest.id.clone());
-    let manifest_bytes = files
-        .get("manifest.ron")
-        .ok_or_else(|| error(&package, "manifest.ron", "archive", "manifest is missing"))?;
-    let exports: ExportPresence = ron::de::from_bytes(manifest_bytes)
-        .map_err(|e| error(&package, "manifest.ron", "manifest", e.to_string()))?;
-    let mut present = exports.exports.recipes || exports.exports.technologies;
-    for path in &manifest.exports.units {
-        let Some(bytes) = files.get(path) else {
-            return Err(error(
-                &package,
-                "manifest.ron",
-                "exports.units",
-                format!("exported unit file `{path}` is missing"),
-            ));
-        };
-        let fields: UnitPresence = ron::de::from_bytes(bytes)
-            .map_err(|e| error(&package, path, "content", e.to_string()))?;
-        present |= fields.any();
-    }
-    for path in &manifest.exports.maps {
-        let Some(bytes) = files.get(path) else {
-            // `content()` historically validates gameplay sources without loading map files.
-            continue;
-        };
-        let fields: MapPresence = ron::de::from_bytes(bytes)
-            .map_err(|e| error(&package, path, "content", e.to_string()))?;
-        present |= fields.belts || fields.placements.iter().any(|placement| placement.facing);
-    }
-    let requirement = semver::VersionReq::parse(&manifest.engine_api).map_err(|_| {
-        error(
-            &package,
-            "manifest.ron",
-            "engine_api",
-            "invalid engine API requirement",
-        )
-    })?;
-    if present && requirement.matches(&semver::Version::new(0, 2, 0)) {
-        return Err(error(
-            &package,
-            "manifest.ron",
-            "engine_api",
-            "M3 content requires an engine API requirement that excludes 0.2.0",
-        ));
-    }
-    Ok(())
-}
-
-fn was_present<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<bool, D::Error> {
-    serde::de::IgnoredAny::deserialize(deserializer)?;
-    Ok(true)
-}
-#[derive(serde::Deserialize, Default)]
-struct ExportPresence {
-    #[serde(default)]
-    exports: ExportListsPresence,
-}
-#[derive(serde::Deserialize, Default)]
-struct ExportListsPresence {
-    #[serde(default, deserialize_with = "was_present")]
-    recipes: bool,
-    #[serde(default, deserialize_with = "was_present")]
-    technologies: bool,
-}
-#[derive(serde::Deserialize, Default)]
-struct UnitPresence {
-    #[serde(default, deserialize_with = "was_present")]
-    output_inventory: bool,
-    #[serde(default, deserialize_with = "was_present")]
-    extractor: bool,
-    #[serde(default, deserialize_with = "was_present")]
-    conveyor: bool,
-    #[serde(default, deserialize_with = "was_present")]
-    inserter: bool,
-    #[serde(default, deserialize_with = "was_present")]
-    machine: bool,
-    #[serde(default, deserialize_with = "was_present")]
-    research: bool,
-    #[serde(default, deserialize_with = "was_present")]
-    health: bool,
-    #[serde(default, deserialize_with = "was_present")]
-    weapon: bool,
-    #[serde(default, deserialize_with = "was_present")]
-    removal: bool,
-}
-impl UnitPresence {
-    fn any(&self) -> bool {
-        self.output_inventory
-            || self.extractor
-            || self.conveyor
-            || self.inserter
-            || self.machine
-            || self.research
-            || self.health
-            || self.weapon
-            || self.removal
-    }
-}
-#[derive(serde::Deserialize, Default)]
-struct MapPresence {
-    #[serde(default, deserialize_with = "was_present")]
-    belts: bool,
-    #[serde(default)]
-    placements: Vec<PlacementPresence>,
-}
-#[derive(serde::Deserialize, Default)]
-struct PlacementPresence {
-    #[serde(default, deserialize_with = "was_present")]
-    facing: bool,
 }

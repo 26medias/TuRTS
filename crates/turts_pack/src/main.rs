@@ -30,6 +30,9 @@ client check it:
     slot is a real slot, positions inside the map, exactly one map. An error message
     gives the limit that the value broke.
   - Every unit has exactly one visual. Every visual names a unit of the package.
+  - The version rule: the manifest `engine_api` must exclude every engine API that lacks a
+    feature the package writes; a field written empty (`orders: []`) counts; leave it out
+    for an older API.
 
 On the first problem, turts-pack prints the package, the file, and the field to stderr,
 writes no archive, and exits with 2. On success it exits with 0.";

@@ -10,6 +10,7 @@ pub mod lock;
 pub mod orders;
 pub mod registry;
 pub mod schema;
+pub mod written;
 
 pub use assets::{AssetsDef, CursorAsset, FileAsset, ImageAsset};
 pub use content::{
@@ -47,6 +48,8 @@ pub use schema::{
     SlotRelation, TargetFilter, TechnologyDef, UniqueMap, UnitDef, VisualDef, VisualTarget,
     WeaponDef, WeaponStat, WorldPos,
 };
+
+pub use written::Written;
 
 /// Version of the engine API that this crate defines.
 pub const ENGINE_API_VERSION: &str = "0.2.3";
