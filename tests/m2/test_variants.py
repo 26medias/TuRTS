@@ -20,7 +20,7 @@ class VariantCliTests(unittest.TestCase):
         self.source = self.root / "source"
         self.out = self.root / "out"
         shutil.copytree(ROOT / "mods/cedar", self.source)
-        (self.source / "assets").mkdir()
+        (self.source / "assets").mkdir(exist_ok=True)
         (self.source / "assets/keep.bin").write_bytes(b"unchanged authored asset\x00\xff")
         self.env = os.environ.copy()
         self.env["CARGO_TARGET_DIR"] = str(TARGET)

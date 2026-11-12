@@ -42,7 +42,8 @@ function judgeSh1ConflictOffer(captures) {
     const text = menus[0].text_nodes;
     const explanation = text.find((node) => node.visible === true && node.text === 'M is also bound to Move selected units');
     const swap = text.find((node) => node.visible === true && node.text === 'Swap');
-    const cancel = text.find((node) => node.visible === true && node.text === 'Cancel' && node.rect[1] > 400);
+    const cancel = text.find((node) => node.visible === true && node.text === 'Cancel' &&
+        node.rect[1] < 145 * (offered.checkpoint.browser?.device_pixel_ratio || 1));
     product(explanation && swap && cancel, 'conflict-swap-cancel-reset',
         'actual conflicting Stop chord must name its owner and offer Swap and Cancel');
     const overlaps = (left, right) => left[0] < right[0] + right[2] && left[0] + left[2] > right[0] &&

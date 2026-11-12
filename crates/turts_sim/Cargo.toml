@@ -15,3 +15,4 @@ serde = { workspace = true }
 
 [dev-dependencies]
 serde_json = { workspace = true }
+turts_mod_runtime = { path = "../turts_mod_runtime" }

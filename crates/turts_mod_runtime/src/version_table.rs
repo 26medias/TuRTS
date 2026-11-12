@@ -49,6 +49,11 @@ pub(crate) const VERSION_TABLE: &[VersionTableRow] = &[
         present: assets_present,
         since_api: "0.2.3",
     },
+    VersionTableRow {
+        name: "weapon with movement",
+        present: mobile_weapon_present,
+        since_api: "0.2.3",
+    },
 ];
 
 fn orders_present(_: &Manifest, content: &ParsedMcContent) -> bool {
@@ -62,6 +67,9 @@ fn input_present(_: &Manifest, content: &ParsedMcContent) -> bool {
 }
 fn assets_present(_: &Manifest, content: &ParsedMcContent) -> bool {
     content.assets_present
+}
+fn mobile_weapon_present(_: &Manifest, content: &ParsedMcContent) -> bool {
+    content.mobile_weapon_present
 }
 
 pub(crate) fn check_version_table(

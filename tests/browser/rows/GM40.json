@@ -1,0 +1,11 @@
+{
+  "row": "GM40",
+  "package": "mods/muster",
+  "driver": "tests/browser/gm40-driver.js",
+  "oracle": "tests/browser/gm40-oracle.js",
+  "runs": "ci",
+  "viewports": ["1280x720"],
+  "windows": 1,
+  "capture_scene_checkpoints": true,
+  "capture_order_log": true
+}

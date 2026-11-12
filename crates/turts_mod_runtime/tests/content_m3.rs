@@ -335,17 +335,31 @@ fn health_requires_removal() {
         "health",
     );
 }
+fn mobile_weapon_unit() -> String {
+    weapon_unit().replace("movement: None", "movement: Some((speed: 1.0))")
+}
 #[test]
 fn mobile_weapon_is_accepted() {
-    archive(
-        &weapon_unit().replace("movement: None", "movement: Some((speed: 1.0))"),
-        RECIPE,
-        TECH,
-        "^0.2.1",
-        &[],
-    )
-    .content()
-    .expect("a moving unit may carry a weapon");
+    archive(&mobile_weapon_unit(), RECIPE, TECH, "^0.2.3", &[])
+        .content()
+        .expect("a moving unit may carry a weapon");
+}
+// API 0.2.2 and older refuse a weapon on a unit with movement ("weapons must be static").
+// A requirement that admits such an API must be refused on the server path and on the client path.
+#[test]
+fn mobile_weapon_with_api_before_0_2_3_rejected() {
+    for engine_api in ["^0.2.1", "^0.2.2", ">=0.2.1", "^0.2"] {
+        let expected = format!(
+            "forge/manifest.ron: engine_api: `weapon with movement` needs engine api 0.2.3; `{engine_api}` admits 0.2.2"
+        );
+        let package = archive(&mobile_weapon_unit(), RECIPE, TECH, engine_api, &[]);
+        let server = package.content().map(|_| ()).map_err(|err| err.to_string());
+        assert_eq!(server, Err(expected.clone()), "server path, {engine_api}");
+        let client = turts_mod_runtime::visuals::visuals_by_content(std::slice::from_ref(&package))
+            .map(|_| ())
+            .map_err(|err| err.to_string());
+        assert_eq!(client, Err(expected), "client path, {engine_api}");
+    }
 }
 #[test]
 fn weapon_ammo_item_not_accepted() {

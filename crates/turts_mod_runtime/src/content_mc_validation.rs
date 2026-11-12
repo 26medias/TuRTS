@@ -32,6 +32,9 @@ pub(crate) struct ParsedMcContent {
     pub(crate) interface_present: bool,
     pub(crate) input_present: bool,
     pub(crate) assets_present: bool,
+    /// A unit has a weapon and movement. API 0.2.2 and older refuse it ("weapons must be
+    /// static"). `PackageArchive::content` sets it from the resolved catalog.
+    pub(crate) mobile_weapon_present: bool,
 }
 
 struct ImageInfo {
@@ -63,6 +66,7 @@ pub(crate) fn validate_mc(archive: &PackageArchive) -> Result<ParsedMcContent, M
         interface_present: !interfaces.is_empty(),
         input_present: !input_maps.is_empty(),
         assets_present: !assets.is_empty(),
+        mobile_weapon_present: false,
         orders,
         order_rules,
         interfaces,

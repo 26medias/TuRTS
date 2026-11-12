@@ -22,6 +22,22 @@ def synthetic_units(row: dict[str, Any]) -> int | None:
     return value
 
 
+def capture_order_log(row: dict[str, Any]) -> bool:
+    """Enable the existing server order-transition log for the exact GM40 row only."""
+    if not isinstance(row, dict):
+        raise ValueError("row must be a JSON object")
+    if "capture_order_log" not in row:
+        return False
+    value = row["capture_order_log"]
+    if type(value) is not bool:
+        raise ValueError("row.capture_order_log must be a boolean")
+    if value and row.get("row") != "GM40":
+        raise ValueError("capture_order_log is supported only for row GM40")
+    if value and row.get("capture_scene_checkpoints") is not True:
+        raise ValueError("GM40 capture_order_log requires capture_scene_checkpoints=true")
+    return value
+
+
 def synthetic_server_args(row: dict[str, Any]) -> list[str]:
     """Build only the approved synthetic-unit server arguments."""
     value = synthetic_units(row)

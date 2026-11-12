@@ -23,7 +23,7 @@ function launchParams(row, viewport = "1280x720@2") {
     } finally { fs.rmSync(output, { recursive: true, force: true }); }
 }
 
-function launcherServerArgv(syntheticSet, syntheticUnits) {
+function launcherServerArgv(syntheticSet, syntheticUnits, orderLogSet = "false") {
     const source = fs.readFileSync(path.join(__dirname, "../../../scripts/mc-browser.sh"), "utf8");
     const start = source.indexOf("SERVER_ARGS=(");
     const end = source.indexOf("PYSERVERARGV\n", start) + "PYSERVERARGV\n".length;
@@ -31,7 +31,7 @@ function launcherServerArgv(syntheticSet, syntheticUnits) {
     const output = fs.mkdtempSync(path.join(os.tmpdir(), "mc-server-argv-"));
     try {
         execFileSync("bash", ["-c", source.slice(start, end)], {
-            env: { ...process.env, TARGET: "/fixture/target", OUT: output, SYNTHETIC_SET: syntheticSet, SYNTHETIC_UNITS: syntheticUnits },
+            env: { ...process.env, TARGET: "/fixture/target", OUT: output, SYNTHETIC_SET: syntheticSet, SYNTHETIC_UNITS: syntheticUnits, ORDER_LOG_SET: orderLogSet },
             stdio: "pipe",
         });
         return JSON.parse(fs.readFileSync(path.join(output, "server-argv.json"), "utf8"))
@@ -132,6 +132,31 @@ test("ordinary rows keep checkpoint capture disabled", () => {
 
 test("launcher rejects a non-boolean checkpoint setting instead of silently losing evidence", () => {
     assert.throws(() => launchParams({ row: "CAM1", capture_scene_checkpoints: "true" }), /must be a boolean/);
+});
+
+test("GM40 order-log opt-in forwards only the actual server log path and readonly oracle contract", () => {
+    const row = { row: "GM40", capture_scene_checkpoints: true, capture_order_log: true };
+    const { params } = launchParams(row);
+    assert.equal(params.capture_order_log, true);
+    assert.equal(params.order_log_file, "server-order.log");
+    assert.deepEqual(launcherServerArgv("false", "", "true"), [
+        "/fixture/target/release/turts_server", "<OUT>/server.ron",
+        "--tick-log", "<OUT>/server-tick.log", "--order-log", "<OUT>/server-order.log",
+    ]);
+});
+
+test("GM40 order-log opt-in rejects wrong row, wrong type, and missing scene checkpoints", () => {
+    assert.throws(() => launchParams({ row: "GMU", capture_scene_checkpoints: true, capture_order_log: true }), /only for row GM40/);
+    assert.throws(() => launchParams({ row: "GM40", capture_scene_checkpoints: true, capture_order_log: "true" }), /must be a boolean/);
+    assert.throws(() => launchParams({ row: "GM40", capture_scene_checkpoints: false, capture_order_log: true }), /requires capture_scene_checkpoints=true/);
+});
+
+test("rows without the GM40 order-log opt-in preserve the exact previous server argv and params", () => {
+    const before = launchParams({ row: "CAM1", capture_scene_checkpoints: true, windows: 1 });
+    const after = launchParams({ row: "CAM1", capture_scene_checkpoints: true, windows: 1, capture_order_log: false });
+    assert.equal(after.bytes, before.bytes);
+    assert.equal(Object.hasOwn(after.params, "order_log_file"), false);
+    assert.deepEqual(launcherServerArgv("false", ""), ["/fixture/target/release/turts_server", "<OUT>/server.ron", "--tick-log", "<OUT>/server-tick.log"]);
 });
 
 test("launcher retains a declared synthetic count in oracle params", () => {

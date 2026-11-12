@@ -43,7 +43,7 @@
             visible: [SelectionSingle, PrimaryOwned, PrimaryHas(Research)],
             widget: Box(fill: Some(Colour("#111820")), border: Some("#425463"), children: [
                 (id: "research_heading", at: Some((anchor: TopLeft, offset: (10.0, 6.0), pivot: None)), size: (w: Px(248.0), h: Px(20.0)), widget: Text(text: Literal("Research"), font: Some("forge_ui"), size: 15, colour: "#ffffff", align: Left, wrap: false)),
-                (id: "research_entries", at: Some((anchor: TopLeft, offset: (8.0, 30.0), pivot: None)), size: (w: Px(256.0), h: Px(88.0)), tooltip: Some(Format("{0}: {1}", [Item(Name), Item(Reason)])), widget: List(source: BuildMenu, direction: Vertical, gap: 4, max_items: 4, item: (id: "research_item", size: (w: Fill, h: Px(38.0)), widget: Button(icon: None, label: Some(Format("{0} — {1}", [Item(Name), Item(Reason)])), action: Item(Action), hotkey_label: false))))
+                (id: "research_entries", at: Some((anchor: TopLeft, offset: (8.0, 30.0), pivot: None)), size: (w: Px(256.0), h: Px(88.0)), tooltip: Some(Format("{0} [{1}]: {2}", [Item(Name), Item(Title), Item(Reason)])), widget: List(source: BuildMenu, direction: Vertical, gap: 4, max_items: 4, item: (id: "research_item", size: (w: Fill, h: Px(38.0)), widget: Button(icon: None, label: Some(Format("{0} — {1}", [Item(Name), Item(Reason)])), action: Item(Action), hotkey_label: false))))
             ]),
         ),
         (

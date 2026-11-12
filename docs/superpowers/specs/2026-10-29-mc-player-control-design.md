@@ -1,6 +1,6 @@
 # MC — Player control and client foundation: design
 
-Date: 2026-10-29. Revision 14. Status: DRAFT, passed gate 1 (2026-10-29): spec-rigour-reviewer,
+Date: 2026-10-29. Revision 16. Status: DRAFT, passed gate 1 (2026-10-29): spec-rigour-reviewer,
 technical-director, bevy-rendering-engineer, player, simulation-core-engineer; three repair
 passes. CEO decisions (2026-10-29): K1 to K27 as recommended (K11 stays conditional on probe P1),
 budget option 1 (the full design, about 184 runs); K20 applied in revision 5 (section 17.2).
@@ -15,6 +15,7 @@ Revision 11 (2026-10-30, build ruling O10): the effect `Shell` is `ShellAction`;
 Revision 12 (2026-10-30, build ruling O11): PT1 step 6 disables the Shell Press, not a belt piece.
 Revision 13 (2026-10-31, build ruling O12): the slot pool of 6.3 requires the N primary slots only; spares are the legal slots that fit.
 Revision 14 (2026-11-01, CEO call, ruling O13): VIS1 thresholds are 20 with no simulation and 10 under each simulation at severity 1.0; the Okabe-Ito palette stays.
+Revision 15 (2026-11-11, ruling O14, delegated by the CEO to the studio): GMU records the `Blocked` count of the second order as an MC limit (M4b). A slot check of 6.3 step 2 gates "slots reused". 6.3, 6.5, section 18 and the PF04 and GM07 coverage rows say so.
 Author seat: `ux-designer` (D65, D66, D67, client side of D70; Second on D68).
 Source of record: `RTS-Engine-Project-Specifications.md` version 0.8 (cited as S:line).
 Other sources: the QA0 design `docs/superpowers/specs/2026-10-29-qa0-instrument-design.md`
@@ -23,6 +24,7 @@ the M4 draft `docs/superpowers/specs/2026-10-28-m4-terrain-design.md` (M4D:line)
 `docs/research/review-2026-10/00-gap-register.md` (GR:line). Research is input, not contract.
 Code citations are `path:line` at HEAD `7a90f97`. Section 17 lists the gate 1 findings and their
 fixes.
+Revision 16 (ruling O15, 2026-11-11, ux-designer): the focus overlay leaves at the first gesture also when audio stays locked, with a sound notice (10.1); `BuildMenu` rows carry the key label of the Produce order (8.4); the Controls rows take order names and put mod actions first (10.1); row GMU names the true cause of each `Blocked` unit at the corner.
 
 ## 1. Contract
 
@@ -623,7 +625,9 @@ point P:
 5. Each unit moves to its slot. A shift-queued move to a point uses the same rules.
 
 A part of a group that arrives in a later tick (K4) spreads round the reserved slots of the
-earlier part. Model run C2 (section 18): 0 overlaps and 0 blocked units.
+earlier part. Model run C2 (section 18: a second group of 40, of another slot, from a block
+west of P): 0 overlaps and 0 blocked units. When the second group comes from behind the resting
+group, a unit whose slot is on the far side can stop `Blocked` (6.5, GMU; revision 15).
 
 The reserved-cell test of step 2 uses the neighbour grid of 6.4, so each slot test is O(1).
 
@@ -669,7 +673,9 @@ spreading of 8,192 units.
   passes over the slot, the unit waits on it.
 - A unit can make no progress for 1 s against units of other groups. Then it takes the nearest
   free slot of its pool, at most 3 times. After that its activity becomes `Blocked` (PF04: "gives
-  up visibly"), and its order fails with `blocked` (5.3).
+  up visibly"), and its order fails with `blocked` (5.3). This includes a slot behind a resting
+  group of another envelope: the resting units do not move for the unit (6.4). M4b owns this
+  case (GMA cases F and I, GMU; revision 15).
 - A unit leaves every overlap before it rests. A `Blocked` unit can overlap a unit of any group.
   Then it walks at most one step per tick to the nearest free point, and then it rests. Model cases F and I (section 18): 0 overlaps at rest.
 
@@ -784,7 +790,7 @@ A widget reads only these. All come from the client replica, which holds only pe
 | `SelectionPrimary.<field>` | Name, icon, portrait, owner, health, max health, inventory lines. An own unit with a weapon adds damage (from `WeaponRecord.damage`), range, ammo and cooldown. A foreign unit with a weapon adds range only (catalog). |
 | `SelectionUnits` | one item per selected unit: icon, health, count by type |
 | `CommandCard` | one item per order of the selection: icon, name, hotkey, action, enabled, reason, card cell |
-| `BuildMenu` | one item per production entry or technology of the primary producer: icon, name, cost, time, enabled, reason |
+| `BuildMenu` | one item per production entry or technology of the primary producer: icon, name, cost, time, enabled, reason, and in `Title` the current key label of the producer's Produce order (revision 16; the text "Unbound" for no key follows at MP1) |
 | `ProductionQueue` | one item per job of the primary producer: icon, progress 0 to 1, remaining seconds, cancel action |
 | `ControlGroups` | count and icon per group |
 | `Alerts` | the last 5 alert lines |
@@ -941,7 +947,9 @@ Seat: `ux-designer` (client side of D70); `backend-engineer` owns the server sid
 | --- | --- | --- |
 | Load | The phase (fetch, verify, join), a progress bar, the package name and version | shell |
 | Rejection | The reason of `rejected_reason` in player words, and what to do | shell |
-| Focus overlay | "Click to play" over a dimmed game, when the canvas has no focus or audio is locked | shell |
+| Focus overlay | "Click to play" over a dimmed game, until the first click or key. It shows again when the canvas loses focus. | shell |
+| Binding feedback | The settings frame has a fixed block of 52 px above the scrolling list, for the status line of a key change (prompt, changed, conflict, reset) and the Swap and Cancel buttons. It does not scroll with the binding rows, and the rows do not move when the text shows or clears. (Revision 16, ruling O15.) | shell |
+| Sound notice | When audio stays locked after the first gesture: "Sound is off. Click or press a key to turn it on." for 8 s, from 0.5 s after the first frame with locked audio (the delay prevents a flash when the browser resumes audio quickly); input works. Each later gesture asks the browser to resume audio. The menu shows "Sound: off" until audio runs. Alerts keep their text and minimap ping. (Revision 16, ruling O15.) | shell |
 | Menu (F10 or Esc) | One screen: key bindings with capture and a conflict notice; volumes; scroll speed; edge scroll on or off; UI scale; health bar mode; cursor lock (K9); double-click time | shell |
 | Connection lost | "Connection lost" and a reload button when `reconnect_required` is set (`input.rs:46`) | shell |
 | HUD, guide | Mod widgets | mod |
@@ -1242,7 +1250,7 @@ row with other options needs an amendment.
 | ORD7 | The marker and the response sound start in the first presented frame after the click, before `OrderResult` arrives (`turts_debug.frames` and input log). The server tick log shows the first move in the tick that drains the order. | Marker spawned on `OrderResult`; or the order waits one more tick. | pixels and headless | K7 a |
 | GM40 | `muster`: box-select the 40 troopers and right-click one point. At rest (no position change above 0.001 for 2 s), these hold. There are 0 `Blocked` units (`--order-log`). No two footprint discs overlap. The oracle takes each unit disc from `turts_scene`. The centre is `ground_screen_center`, taken back to the plane y = 0 with `clip_from_world`. The radius is `pick_radius` (world units). Two discs overlap when the distance of their ground centres is less than the sum of their radii minus 0.001. The ground plane maps one to one to the screen, so this is the overlap test of the projected discs (K17 a). The tick log gives the same test. Each unit stands within R_near = 4.58 of the target. | Spreading off: all 40 go to the point (model: 780 overlaps). | headless and pixels | K15 a, K17 a |
 | GMA | Two groups of 20 troopers cross at a right angle. No pair of different groups overlaps by more than 20 % of the smaller radius for more than 0.5 s; no pair overlaps at rest. Cases F (a second group while the first moves) and I (a second group through a resting group): 0 overlaps at rest. `Blocked` comes from `--order-log`. MC limit, recorded and not gated. In F and I, units can stop `Blocked` with a reachable target (model: 7 and 9). Two units of different groups can overlap by up to 0.92 during motion. M4b (push, chokes) owns this limit. | Avoidance off (gate 1 sim probe: red); or a `Blocked` unit rests inside another unit (re-check cases F, I). | headless | - |
-| GMU | The server accepts a move to a finite point outside the map, and the units end at the clamped point. The server refuses a NaN or infinite target with `target_not_finite`. A move onto the `post` ends on a ring round it. A second order of another group to the same point ends with 0 overlaps and 0 `Blocked` units (`--order-log`). Each unit rests or is `Blocked` within 2 x (distance / speed) + 5 s. | Clamp off (`target_outside_map`); a clamp that keeps NaN; or slots reused for the second group. | headless | K6 a |
+| GMU | The server accepts a move to a finite point outside the map, and the units end at the clamped point. The server refuses a NaN or infinite target with `target_not_finite`. A move onto the `post` ends on a ring round it. Same point (revision 15): troopers 21 to 40 move to (40, 30) and rest with 0 `Blocked`. Then troopers 1 to 20 get a move of another group to the same point. At rest, no two footprint discs overlap, and each unit of both orders, `Done` or `Blocked`, stands within R_near = 4.58 of the point. In the native run of the same orders, each slot of the second order is at least s - 0.00001 from each slot of the first order (6.3 step 2). MC limit, recorded and not gated: a unit can stop `Blocked` with a reachable target, because its slot is behind the resting group or because an idle unit stands on its route (6.4, 6.6) (`muster`: 1 of 20 at (40, 30), 3 of 20 at the clamped corner, where 2 have the first cause and 1 the second; `docs/measurements/mc.md` records the count and the rest position of each). Each unit rests or is `Blocked` within 2 x (distance / speed) + 5 s. M4b (push, chokes) owns this limit, as in GMA, and its exit rows gate this case at 0 `Blocked`. | Clamp off (`target_outside_map`); a clamp that keeps NaN; or slots reused for the second group (the slot check is red at distance 0). | headless | K6 a |
 | DET1 | Invariant 15 (S:267). A new server test hook `--command-script <path>` applies a JSON list of (tick, slot, envelope) at fixed ticks, with no client. Two server processes run the GM40 script with `--tick-log`, and the two logs are equal after the wall-clock column (`wall_ns`, column 2) is removed, compared up to tick N and no further (`--run-ticks N` may run past N; gate 2 sim and qa runs). The `--order-log` lines of the two runs are byte-equal. The plan runs DET1 on the red build first and records the red, then on the fixed build. | Neighbour iteration in `HashMap` order (a new `RandomState` in each process). | headless | K14 a |
 | EL1 | `muster` with the economy log on (GM40, GMA, a queued gather): the validator accepts each tick. It calls the same movement function as the sim. | A movement input missing from `AuditState`; a write to a position or to `UnitOrders` outside the movement function and `capture_operation`; or the validator of today (`economylog.rs:578-663`). | headless | K19 a |
 | CAM1 | Arrow keys and the edge band pan. The wheel zooms between the mod limits. The look-at point stays inside the map plus margin. Space centres on the selection. The scroll speed setting changes the pan distance per second. The pointer leaves the canvas at the top edge: the pan stops. | The `PostUpdate` fit still rewrites the camera (`render.rs:455-456`); or no `PointerLeft` handling. | pixels | K9 a |
@@ -1480,7 +1488,8 @@ completeness gate (`--enforce`) and `yardstick.py --check` are green on the resu
 | --- | --- | --- | --- |
 | Read the client, sim, protocol, mod API, server session, export and boundary sources at HEAD | Baseline 1.6 | A cited line that differs | As cited |
 | Revision 4: local R4 closure over the 181 dispositions, `in` and `done:` rows alike (Python, scratch) | Every `in` or `done:` row has its CORE dependencies `in` or `done:` | A dependency `later` | 0 violations; 62 `in`, 15 `done:`, 104 `later:` |
-| Group-movement model of 6.3 to 6.5, rules as written (Python, scratch; r 0.5, speed 3, 20 Hz) | GM40 can pass | An overlap at rest or a `Blocked` unit | A (block to P): 0 overlaps, 0 `Blocked`, farthest 3.81. B (ring to P): 0, 0, 3.81. C2 (second group to the same P): 0 overlaps of 80, 0 `Blocked`. D (new order while moving): 0, 0. Two runs equal: true |
+| Group-movement model of 6.3 to 6.5, rules as written (Python, scratch; r 0.5, speed 3, 20 Hz) | GM40 can pass | An overlap at rest or a `Blocked` unit | A (block to P): 0 overlaps, 0 `Blocked`, farthest 3.81. B (ring to P): 0, 0, 3.81. C2 (second group of 40, another slot, from a block west of P, to the same P): 0 overlaps of 80, 0 `Blocked`. D (new order while moving): 0, 0. Two runs equal: true |
+| GMU on `muster`, build da3e508 and two rule variants (native sweep, 25 points x 2 orders, RUN117; revision 15) | GMU can pass with 0 `Blocked` | A `Blocked` unit | Build: 0 overlaps; 39 `Blocked` units in all for the second order (1 when the near rows move first: unit 19 at (40, 30)). Inclusive "within s": 5, but C2 and two follow tests fail. Away-side deflection: 21, and the first order gives 93. No variant gives 0. |
 | The same model with spreading off | GM40 can go red | 0 overlaps | 780 overlaps |
 | The same model, two groups of 20 crossing | GMA can pass | A cross-group overlap above 20 % r for more than 10 ticks | 4 ticks above 20 % r, longest run 4; 0 overlaps at rest |
 | Three earlier rule variants of the model | The final rules are needed | A simpler variant passes | Contact claims: A fails (8 `Blocked`). Yield by push: B fails (7 `Blocked`). Spare-only claims: C2 fails (29 `Blocked`) |
@@ -1543,7 +1552,7 @@ names a second test only where one exists.
 | GM01 | in | GM40 | Destination spreading | - |
 | GM04 | in | GMA | Local avoidance | - |
 | GM06 | in | GMA | Unit collision size | - |
-| GM07 | later:M4b | - | Push idle friends | - |
+| GM07 | later:M4b | - | Push idle friends. MC: GMU and GMA record `Blocked` behind resting groups (revision 15) | - |
 | GM09 | in | GM40 | Arrival | - |
 | GM10 | in | GMU | Unreachable target | - |
 | GM11 | later:M4b | - | Choke traffic | - |
@@ -1620,7 +1629,7 @@ names a second test only where one exists.
 | PF01 | in | GM40 | Sensible path | ORD5 also |
 | PF02 | later:M4 | - | Repath on change | - |
 | PF03 | later:M4 | - | Movement layers | - |
-| PF04 | in | GMU | No stuck units | - |
+| PF04 | in | GMU | No stuck units: a unit rests or gives up visibly as `Blocked`. MC: GMU and GMA record `Blocked` behind resting groups; M4b removes it (revision 15) | - |
 | PF05 | in | ORD7 | Instant start | - |
 | PF10 | later:M7 | - | Mass pathing | - |
 | MF01 | later:M8 | - | Main menu | - |

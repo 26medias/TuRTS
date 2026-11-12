@@ -32,6 +32,9 @@ const MENU_ACTION_LABEL_WIDTH: f32 = 200.0;
 /// The start width of the key column. It grows into the free width of the row; the label, the
 /// keys and the two buttons fit in the 476 px of the panel without a shrink.
 const MENU_BINDING_BASIS_WIDTH: f32 = 120.0;
+/// The fixed height of the binding feedback block: one 14 px status line (20 px), the gap
+/// (8 px) and the Swap/Cancel row (24 px). The rows do not move when the text shows or clears.
+const BINDING_FEEDBACK_HEIGHT: f32 = 52.0;
 
 #[derive(Component)]
 pub(crate) struct RejoinOverlayCamera;
@@ -1171,7 +1174,10 @@ fn toggle_settings_menu(
         ))
         .id();
 
-    let panel = commands
+    // The frame holds the title and the binding feedback, which do not scroll, and the
+    // scrolling list of the settings. So the rebind prompt, the conflict text and Swap/Cancel
+    // stay in view for a Change on any row (RUN133 H1).
+    let frame = commands
         .spawn((
             Node {
                 width: Val::Px(520.0),
@@ -1180,22 +1186,17 @@ fn toggle_settings_menu(
                 padding: UiRect::all(Val::Px(22.0)),
                 flex_direction: FlexDirection::Column,
                 row_gap: Val::Px(12.0),
-                overflow: bevy::ui::Overflow {
-                    x: bevy::ui::OverflowAxis::Clip,
-                    y: bevy::ui::OverflowAxis::Scroll,
-                },
+                overflow: bevy::ui::Overflow::clip(),
                 border_radius: BorderRadius::all(Val::Px(8.0)),
                 ..default()
             },
-            bevy::ui_widgets::ScrollArea,
             BackgroundColor(Color::srgb(0.075, 0.09, 0.12)),
             BorderColor::all(Color::srgb(0.34, 0.43, 0.52)),
         ))
         .id();
-
-    commands.entity(overlay).add_child(panel);
-    commands.entity(panel).with_children(|panel| {
-        panel.spawn((
+    commands.entity(overlay).add_child(frame);
+    commands.entity(frame).with_children(|frame| {
+        frame.spawn((
             Text::new("Settings"),
             TextFont {
                 font_size: FontSize::Px(22.0),
@@ -1203,6 +1204,55 @@ fn toggle_settings_menu(
             },
             TextColor(Color::WHITE),
         ));
+        if !action_ids.is_empty() {
+            frame
+                .spawn(Node {
+                    width: Val::Percent(100.0),
+                    height: Val::Px(BINDING_FEEDBACK_HEIGHT),
+                    flex_direction: FlexDirection::Column,
+                    flex_shrink: 0.0,
+                    row_gap: Val::Px(8.0),
+                    overflow: bevy::ui::Overflow::clip(),
+                    ..default()
+                })
+                .with_children(|feedback| {
+                    feedback.spawn((
+                        BindingFeedbackText,
+                        Text::new(""),
+                        Node {
+                            width: Val::Percent(100.0),
+                            flex_shrink: 0.0,
+                            ..default()
+                        },
+                        TextFont {
+                            font_size: FontSize::Px(14.0),
+                            ..default()
+                        },
+                        TextColor(Color::srgb(0.92, 0.78, 0.36)),
+                    ));
+                });
+        }
+    });
+    let panel = commands
+        .spawn((
+            Node {
+                width: Val::Percent(100.0),
+                flex_grow: 1.0,
+                flex_basis: Val::Px(0.0),
+                min_height: Val::Px(0.0),
+                flex_direction: FlexDirection::Column,
+                row_gap: Val::Px(12.0),
+                overflow: bevy::ui::Overflow {
+                    x: bevy::ui::OverflowAxis::Clip,
+                    y: bevy::ui::OverflowAxis::Scroll,
+                },
+                ..default()
+            },
+            bevy::ui_widgets::ScrollArea,
+        ))
+        .id();
+    commands.entity(frame).add_child(panel);
+    commands.entity(panel).with_children(|panel| {
         if !action_ids.is_empty() {
             panel.spawn((
                 Text::new("Key bindings"),
@@ -1258,30 +1308,6 @@ fn toggle_settings_menu(
                         spawn_binding_button(row, "Reset", action, BindingButtonKind::Reset);
                     });
             }
-            panel
-                .spawn(Node {
-                    width: Val::Percent(100.0),
-                    flex_direction: FlexDirection::Column,
-                    flex_shrink: 0.0,
-                    row_gap: Val::Px(8.0),
-                    ..default()
-                })
-                .with_children(|feedback| {
-                    feedback.spawn((
-                        BindingFeedbackText,
-                        Text::new(""),
-                        Node {
-                            width: Val::Percent(100.0),
-                            flex_shrink: 0.0,
-                            ..default()
-                        },
-                        TextFont {
-                            font_size: FontSize::Px(14.0),
-                            ..default()
-                        },
-                        TextColor(Color::srgb(0.92, 0.78, 0.36)),
-                    ));
-                });
         }
         panel.spawn((
             Text::new("Gameplay settings"),
@@ -2712,6 +2738,21 @@ pub(crate) mod tests {
             if shows_text(&mut app, SOUND_OFF_NOTICE) {
                 first_shown.get_or_insert(frame);
                 last_shown = Some(frame);
+                // Input works: the notice takes no pointer input.
+                let world = app.world_mut();
+                let notice = world
+                    .query_filtered::<Entity, With<SoundOffNotice>>()
+                    .single(world)
+                    .expect("one sound notice");
+                assert!(
+                    world.get::<UiCaptureRoot>(notice).is_none(),
+                    "the sound notice must not capture world input"
+                );
+                assert_eq!(
+                    world.get::<bevy::picking::Pickable>(notice),
+                    Some(&bevy::picking::Pickable::IGNORE),
+                    "the sound notice lets the pointer through"
+                );
             }
         }
         let (first, last) = (first_shown.unwrap(), last_shown.unwrap());
@@ -4719,5 +4760,48 @@ pub(crate) mod tests {
         let first_group = labels.iter().position(is_group).unwrap();
         assert!(first_group > orders.len(), "{labels:?}");
         assert!(labels[first_group..].iter().all(is_group), "{labels:?}");
+    }
+
+    /// RUN133 H1: the rebind prompt, the conflict text and Swap/Cancel stay in view for a Change
+    /// on any row. The feedback block is outside the scrolling rows, above them, with a fixed
+    /// height, so the rows do not move when the text shows or clears.
+    #[test]
+    fn binding_feedback_stays_above_the_scrolling_rows_with_a_fixed_height() {
+        let mut app = App::new();
+        app.add_plugins(MinimalPlugins)
+            .insert_resource(menu_action())
+            .insert_resource(VolumeSettings::default())
+            .insert_resource(packed_forge_packages())
+            .add_plugins(ClientShellPlugin);
+        app.update();
+        let world = app.world_mut();
+        let scroll = world
+            .query_filtered::<Entity, With<bevy::ui_widgets::ScrollArea>>()
+            .single(world)
+            .expect("one scrolling area");
+        let text = world
+            .query_filtered::<Entity, With<BindingFeedbackText>>()
+            .single(world)
+            .expect("one feedback text");
+        let block = world.get::<ChildOf>(text).unwrap().parent();
+        let mut ancestor = Some(block);
+        while let Some(entity) = ancestor {
+            assert_ne!(
+                entity, scroll,
+                "the feedback block must not scroll with the rows"
+            );
+            ancestor = world.get::<ChildOf>(entity).map(ChildOf::parent);
+        }
+        let panel = world.get::<ChildOf>(scroll).unwrap().parent();
+        let siblings = world.get::<Children>(panel).unwrap().to_vec();
+        let block_index = siblings.iter().position(|entity| *entity == block);
+        let scroll_index = siblings.iter().position(|entity| *entity == scroll);
+        assert!(
+            block_index.is_some() && block_index < scroll_index,
+            "the feedback block sits above the scrolling rows in the same panel"
+        );
+        let node = world.get::<Node>(block).unwrap();
+        assert_eq!(node.height, Val::Px(BINDING_FEEDBACK_HEIGHT));
+        assert_eq!(node.flex_shrink, 0.0);
     }
 }

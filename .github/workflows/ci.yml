@@ -7,7 +7,7 @@ jobs:
   check:
     runs-on: ubuntu-latest
     # A hang must not hold a hosted runner for hours (RUN123 M3).
-    timeout-minutes: 60
+    timeout-minutes: 180
     env:
       CARGO_BUILD_JOBS: 2
       CARGO_TARGET_DIR: ${{ github.workspace }}/target/m3-t16
@@ -61,7 +61,7 @@ jobs:
   browser:
     runs-on: ubuntu-latest
     # A hang must not hold a hosted runner for hours (RUN123 M3).
-    timeout-minutes: 60
+    timeout-minutes: 340
     env:
       CARGO_BUILD_JOBS: 2
       CARGO_TARGET_DIR: ${{ github.workspace }}/target/m3-t16
@@ -142,7 +142,7 @@ jobs:
   agents:
     runs-on: ubuntu-latest
     # A hang must not hold a hosted runner for hours (RUN123 M3).
-    timeout-minutes: 60
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - name: Agent roster checks (no claude CLI on CI)

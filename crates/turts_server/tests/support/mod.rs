@@ -6,6 +6,7 @@
 #![allow(dead_code)]
 
 pub mod logs;
+pub mod mc;
 pub mod oracle;
 
 use std::fs;

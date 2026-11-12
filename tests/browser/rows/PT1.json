@@ -24,7 +24,7 @@
     "menu": {
       "stop_rebind": [
         784,
-        382
+        446
       ],
       "scroll_speed_wheel": [
         650,
@@ -33,10 +33,10 @@
       ],
       "scroll_speed_raise": [
         768,
-        581
+        633
       ]
     },
-    "calibration_note": "The menu lists the mod actions first (RUN132): at the top of the open menu the 'Stop selected units' row is row 8, so its Change button is at (784, 382): the Change button of row 1 is at y 118 to 142 (retained headed SH1 run target/mc-evidence/root-t16-sh1-complete-controls-v1/runs/run-20261111T025558Z-zmznpR, checkpoint 51) and each single-key row adds 36. The binding list keeps its 51 rows, so after a wheel of 1450 at (650, 500) the Scroll speed slider track stays at y 581 (same run, SH1-conflicts-conflict-edit-row.png) and a click at x 768 raises the speed (SH1-settings-controls-speed-high-setting.png). The driver raises the speed first, then wheels back to the top (-10000) and rebinds Stop: the status line of a rebind moves the slider down by one line (run ux-run132-pt1-v2). Re-confirm them in pt1-s14-menu-scrolled.png and pt1-s14-menu-top.png. The oracle checks the effects: the pan distance and effective_bindings."
+    "calibration_note": "RUN135: the settings frame holds the title and a fixed 52 px binding feedback block above the scrolling list, so the binding rows start 64 px lower than in RUN132 (Change button of row 1 at y 182 to 206; each single-key row adds 36): the 'Stop selected units' row is row 8, Change at (784, 446). The list lost the 12 px gap of its old feedback block, so after a wheel of 1450 at (650, 500) the Scroll speed slider track is at y 633 (581 + 64 - 12); a click at x 768 raises the speed. The driver raises the speed first, then wheels back to the top (-10000) and rebinds Stop. Re-confirm them in pt1-s14-menu-scrolled.png and pt1-s14-menu-top.png. The oracle checks the effects: the pan distance and effective_bindings."
   },
   "record_startup": true,
   "retain_screenshots": true
