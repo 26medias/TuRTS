@@ -250,7 +250,8 @@ async function waitForAud1Rejoin(io, reloadStartedAt) {
         const image = decodePng(screenshot);
         // After the reload the overlay waits for a new gesture and dims the scene (RUN130).
         connected = findBodies(image, SLOT_RGB[0]).length > 0 || findBodies(image, dimmed(SLOT_RGB[0])).length > 0;
-        if (countdownStartedAt === null && (connected || hasRejoinTextPixels(image))) {
+        if (countdownStartedAt === null && (connected || hasRejoinTextPixels(image) ||
+            hasRejoinTextPixels(image, Math.round(220 * OVERLAY_DIM)))) {
             countdownStartedAt = Date.now();
             await savePngWithBase64(io, "aud1-rejoin-start.png", screenshot);
             await io.save("aud1-reloaded.png", screenshot);
@@ -307,14 +308,16 @@ function findVisibleAlertText(image) {
     return band ? { x: Math.round((band.minX + band.maxX) / 2), y: Math.round((band.minY + band.maxY) / 2) } : null;
 }
 
-function hasRejoinTextPixels(image) {
+// Before the rejoin there is no guide, so under the "Click to play" overlay the dimmed
+// countdown is the only bright text here (RUN130): dimmed white is 220 * OVERLAY_DIM.
+function hasRejoinTextPixels(image, limit = 220) {
     let white = 0;
     const top = Math.floor(image.height * 0.68);
     const bottom = image.height - 12;
     for (let y = top; y < bottom; y += 1) {
         for (let x = 0; x < Math.min(image.width, 480); x += 1) {
             const pixel = pixelAt(image, x, y);
-            if (pixel && pixel[3] > 245 && pixel[0] > 220 && pixel[1] > 220 && pixel[2] > 220) white += 1;
+            if (pixel && pixel[3] > 245 && pixel[0] > limit && pixel[1] > limit && pixel[2] > limit) white += 1;
         }
     }
     return white >= 24;
