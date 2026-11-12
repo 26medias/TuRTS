@@ -632,12 +632,7 @@ fn append_inventory_contents(
 }
 
 fn find_unit_entity(world: &World, unit: u32) -> Option<Entity> {
-    world.iter_entities().find_map(|entity| {
-        entity
-            .get::<UnitId>()
-            .is_some_and(|id| id.0 == unit)
-            .then_some(entity.id())
-    })
+    crate::unit_index::unit_entity(world, unit)
 }
 
 // Transport phases stage only the affected line, never the whole conveyor resource.
@@ -801,5 +796,30 @@ impl Transaction<'_> {
     pub(crate) fn stage_disabled(&mut self, unit: u32, disabled: bool) {
         self.mark_m3();
         self.writes.disabled.insert(unit, disabled.then_some(()));
+    }
+}
+
+#[cfg(test)]
+mod unit_index_tests {
+    use super::find_unit_entity;
+    use crate::unit_index::{index_entry_for_test, unit_entity};
+    use crate::{UnitId, headless_app};
+
+    #[test]
+    fn find_unit_entity_reads_the_unit_index_and_does_not_scan() {
+        let mut app = headless_app(20);
+        let real = app.world_mut().spawn(UnitId(3)).id();
+        assert_eq!(find_unit_entity(app.world(), 3), Some(real));
+        assert_eq!(
+            find_unit_entity(app.world(), 3),
+            unit_entity(app.world(), 3)
+        );
+        // An entry for an id that no unit has: a scan finds nothing; the index answers.
+        let entry = index_entry_for_test(app.world_mut(), 99);
+        assert_eq!(
+            find_unit_entity(app.world(), 99),
+            Some(entry),
+            "find_unit_entity scanned the world"
+        );
     }
 }

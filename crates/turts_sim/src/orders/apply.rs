@@ -492,11 +492,7 @@ fn validate_target(
         (Behaviour::Move, OrderTargetSim::Point(point)) if point.is_finite() => Ok(()),
         (Behaviour::Move, OrderTargetSim::Point(_)) => Err(R::TargetNotFinite),
         (Behaviour::Move, OrderTargetSim::Unit(unit)) => {
-            if world.iter_entities().any(|entity| {
-                entity
-                    .get::<crate::world::UnitId>()
-                    .is_some_and(|id| id.0 == *unit)
-            }) {
+            if crate::unit_index::unit_entity(world, *unit).is_some() {
                 Ok(())
             } else {
                 Err(R::TargetGone)
@@ -521,11 +517,7 @@ fn validate_target(
         | (Behaviour::SetEnabled(_), OrderTargetSim::None) => Ok(()),
         (Behaviour::Produce, OrderTargetSim::Invalid) => Err(R::UnknownRecipe),
         (Behaviour::Attack, OrderTargetSim::Unit(unit)) => {
-            if world.iter_entities().any(|entity| {
-                entity
-                    .get::<crate::world::UnitId>()
-                    .is_some_and(|id| id.0 == *unit)
-            }) {
+            if crate::unit_index::unit_entity(world, *unit).is_some() {
                 Ok(())
             } else {
                 Err(R::TargetGone)
@@ -921,5 +913,52 @@ pub(super) fn clear_gather(world: &mut World, unit_id: u32) {
         order.receiver = None;
         order.stage = crate::economy::gather::GatherStage::Idle;
         order.carry = crate::economy::gather::RateCarry::default();
+    }
+}
+
+#[cfg(test)]
+mod unit_index_tests {
+    use super::validate_target;
+    use crate::command::RejectReason;
+    use crate::orders::{OrderCommand, OrderTargetSim, QueueMode};
+    use crate::unit_index::index_entry_for_test;
+    use crate::{UnitId, headless_app};
+    use turts_mod_api::{Behaviour, ContentId, TargetKind};
+
+    fn command(behaviour: Behaviour, target: u32) -> OrderCommand {
+        OrderCommand {
+            order: ContentId::parse("fixture:order").unwrap(),
+            behaviour,
+            target_kind: TargetKind::Unit,
+            policy: None,
+            units: Vec::new(),
+            target: OrderTargetSim::Unit(target),
+            queue: QueueMode::Replace,
+            group: 0,
+            allowed_units: Vec::new(),
+            queue_depth: 1,
+        }
+    }
+
+    #[test]
+    fn validate_target_reads_the_unit_index_and_does_not_scan() {
+        let mut app = headless_app(20);
+        app.world_mut().spawn(UnitId(8));
+        for behaviour in [Behaviour::Move, Behaviour::Attack] {
+            assert_eq!(validate_target(app.world(), &command(behaviour, 8)), Ok(()));
+            assert_eq!(
+                validate_target(app.world(), &command(behaviour, 99)),
+                Err(RejectReason::TargetGone)
+            );
+        }
+        // An entry for an id that no unit has: the index says the unit exists.
+        index_entry_for_test(app.world_mut(), 99);
+        for behaviour in [Behaviour::Move, Behaviour::Attack] {
+            assert_eq!(
+                validate_target(app.world(), &command(behaviour, 99)),
+                Ok(()),
+                "{behaviour:?} scanned the world"
+            );
+        }
     }
 }

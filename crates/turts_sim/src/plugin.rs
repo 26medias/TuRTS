@@ -9,6 +9,7 @@ use crate::SimClock;
 use crate::command::{CommandQueue, CommandResults, drain_commands};
 use crate::economy::events::{EconomyEvent, MatchStopped, StopReason};
 use crate::economy::views::{economy_changes, world_view};
+use crate::match_config::match_started;
 use crate::movement::integrate_movement;
 use crate::orders::run_orders;
 use crate::registry::UnitTypes;
@@ -28,18 +29,33 @@ use crate::{
     ids::IdAllocators,
 };
 
+/// The sets of the fixed step, in the order in which they run inside one tick:
+///
+/// `FixedPreUpdate`: `Advance`, `Commands`. `FixedUpdate`: `Supply`, `Income`, `Orders`,
+/// `Movement`, `Gather`, `Extract`, `Transport`, `Inserters`, `Construction`, `Production`,
+/// `Acquire`, `Combat`, `Outcome`. `FixedPostUpdate`: `Collect`.
+///
+/// `Supply`, `Income`, `Construction`, `Acquire` and `Outcome` are the system slots of plan task
+/// `L0-SIM`: each holds one empty system until its lane fills it, and the order above is pinned
+/// by the test `the_sets_of_one_tick_run_in_the_pinned_order`. Every set has the run condition
+/// `match_started`: with no sim `MatchConfig`, no sim system runs and the tick does not advance.
 #[derive(SystemSet, Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum SimSet {
     Advance,
     Commands,
+    Supply,
+    Income,
     Orders,
     Movement,
     Gather,
     Extract,
     Transport,
     Inserters,
+    Construction,
     Production,
+    Acquire,
     Combat,
+    Outcome,
     Collect,
 }
 
@@ -59,6 +75,7 @@ impl Plugin for SimPlugin {
         app.insert_resource(Time::<Fixed>::from_hz(f64::from(self.tick_hz)))
             .init_resource::<Tick>()
             .init_resource::<UnitTypes>()
+            .init_resource::<crate::unit_index::UnitIndex>()
             .init_resource::<IdAllocators>()
             .init_resource::<EconomyLedger>()
             .init_resource::<crate::economy::conveyor::Conveyors>()
@@ -90,22 +107,33 @@ impl Plugin for SimPlugin {
             .insert_resource(SimClock {
                 tick_hz: self.tick_hz,
             })
-            .configure_sets(FixedPreUpdate, (SimSet::Advance, SimSet::Commands).chain())
+            .configure_sets(
+                FixedPreUpdate,
+                (SimSet::Advance, SimSet::Commands)
+                    .chain()
+                    .run_if(match_started),
+            )
             .configure_sets(
                 FixedUpdate,
                 (
+                    SimSet::Supply,
+                    SimSet::Income,
                     SimSet::Orders,
                     SimSet::Movement,
                     SimSet::Gather,
                     SimSet::Extract,
                     SimSet::Transport,
                     SimSet::Inserters,
+                    SimSet::Construction,
                     SimSet::Production,
+                    SimSet::Acquire,
                     SimSet::Combat,
+                    SimSet::Outcome,
                 )
-                    .chain(),
+                    .chain()
+                    .run_if(match_started),
             )
-            .configure_sets(FixedPostUpdate, SimSet::Collect)
+            .configure_sets(FixedPostUpdate, SimSet::Collect.run_if(match_started))
             .add_systems(
                 FixedPreUpdate,
                 crate::economy::transaction::begin_tick_audit
@@ -116,6 +144,36 @@ impl Plugin for SimPlugin {
             .add_systems(
                 FixedPreUpdate,
                 drain_commands.in_set(SimSet::Commands).after(advance_tick),
+            )
+            .add_systems(
+                FixedUpdate,
+                crate::economy::power::run_supply
+                    .in_set(SimSet::Supply)
+                    .run_if(not_stopped),
+            )
+            .add_systems(
+                FixedUpdate,
+                crate::economy::income::run_income
+                    .in_set(SimSet::Income)
+                    .run_if(not_stopped),
+            )
+            .add_systems(
+                FixedUpdate,
+                crate::economy::construction::run_construction
+                    .in_set(SimSet::Construction)
+                    .run_if(not_stopped),
+            )
+            .add_systems(
+                FixedUpdate,
+                crate::economy::acquire::run_acquire
+                    .in_set(SimSet::Acquire)
+                    .run_if(not_stopped),
+            )
+            .add_systems(
+                FixedUpdate,
+                crate::outcome::run_outcome_check
+                    .in_set(SimSet::Outcome)
+                    .run_if(not_stopped),
             )
             .add_systems(
                 FixedUpdate,
@@ -246,4 +304,90 @@ fn publish_completed_tick(world: &mut World) {
     world.insert_resource(batch);
     world.insert_resource(CompletedWorld(completed));
     world.resource_mut::<NextEventOrdinal>().0 = Some(0);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::headless_app;
+
+    #[derive(Resource, Default)]
+    struct Ran(Vec<SimSet>);
+
+    /// The order of the sets inside one tick (design 6.2, 6.7.8; plan task `L0-SIM`). Two
+    /// parallel lanes that put a system in a slot depend on this list, so the test pins it.
+    /// `Supply` is the first set of the economy phase, before every removal path of the tick.
+    /// `Income` pays before any charge. `Construction` sits beside `Production`. `Acquire`
+    /// builds the grids right before `Combat`. `Outcome` runs after the death path of `Combat`
+    /// and before `Collect`.
+    const TICK_ORDER: [SimSet; 16] = [
+        SimSet::Advance,
+        SimSet::Commands,
+        SimSet::Supply,
+        SimSet::Income,
+        SimSet::Orders,
+        SimSet::Movement,
+        SimSet::Gather,
+        SimSet::Extract,
+        SimSet::Transport,
+        SimSet::Inserters,
+        SimSet::Construction,
+        SimSet::Production,
+        SimSet::Acquire,
+        SimSet::Combat,
+        SimSet::Outcome,
+        SimSet::Collect,
+    ];
+
+    fn mark(app: &mut App, set: SimSet) {
+        let system = move |mut ran: ResMut<Ran>| ran.0.push(set);
+        match set {
+            SimSet::Advance | SimSet::Commands => {
+                app.add_systems(FixedPreUpdate, system.in_set(set));
+            }
+            SimSet::Collect => {
+                app.add_systems(FixedPostUpdate, system.in_set(set));
+            }
+            _ => {
+                app.add_systems(FixedUpdate, system.in_set(set));
+            }
+        }
+    }
+
+    #[test]
+    fn the_sets_of_one_tick_run_in_the_pinned_order() {
+        let mut app = headless_app(20);
+        app.init_resource::<Ran>();
+        // The marks are added in the reverse of the pinned order, so an unordered set cannot
+        // land in the pinned place by the order of registration.
+        for set in TICK_ORDER.into_iter().rev() {
+            mark(&mut app, set);
+        }
+        app.update();
+        assert_eq!(app.world().resource::<Ran>().0, TICK_ORDER);
+    }
+
+    #[test]
+    fn each_slot_set_holds_a_system_in_the_fixed_update_schedule() {
+        use bevy_ecs::schedule::SystemSet as _;
+        let mut app = headless_app(20);
+        app.update();
+        let schedules = app.world().resource::<bevy_ecs::schedule::Schedules>();
+        let schedule = schedules.get(FixedUpdate).expect("FixedUpdate exists");
+        // One system at least: the empty system of the slot, or the system of the lane that
+        // filled it. A lane that fills a slot may add more, so the test does not pin the count.
+        for slot in [
+            SimSet::Supply,
+            SimSet::Income,
+            SimSet::Construction,
+            SimSet::Acquire,
+            SimSet::Outcome,
+        ] {
+            let systems = schedule
+                .graph()
+                .systems_in_set(slot.intern())
+                .unwrap_or_else(|error| panic!("{slot:?}: {error:?}"));
+            assert!(!systems.is_empty(), "the slot {slot:?} holds no system");
+        }
+    }
 }

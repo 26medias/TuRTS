@@ -861,12 +861,9 @@ fn inventory_transfer_inner(
 }
 
 fn inventory_owner(world: &World, id: u32) -> Result<SlotId, RejectReason> {
-    let owner = world
-        .iter_entities()
-        .find_map(|entity| {
-            (entity.get::<UnitId>().is_some_and(|unit| unit.0 == id))
-                .then(|| entity.get::<Owner>().map(|owner| owner.0))?
-        })
+    let owner = crate::unit_index::unit_entity(world, id)
+        .and_then(|entity| world.get::<Owner>(entity))
+        .map(|owner| owner.0)
         .ok_or(RejectReason::UnknownInventory)?;
     Ok(owner)
 }
@@ -2458,6 +2455,28 @@ mod m3_transaction_contract_tests {
             world
                 .iter_entities()
                 .any(|entity| entity.get::<UnitId>().map(|id| id.0) == Some(7))
+        );
+    }
+}
+
+#[cfg(test)]
+mod unit_index_tests {
+    use super::inventory_owner;
+    use crate::command::RejectReason;
+    use crate::unit_index::index_entry_for_test;
+    use crate::{Owner, SlotId, UnitId, headless_app};
+
+    #[test]
+    fn inventory_owner_reads_the_unit_index_and_does_not_scan() {
+        let mut app = headless_app(20);
+        app.world_mut().spawn((UnitId(5), Owner(SlotId(1))));
+        assert_eq!(inventory_owner(app.world(), 5), Ok(SlotId(1)));
+        // The entry of unit 5 points at an entity with no owner: the answer follows the index.
+        index_entry_for_test(app.world_mut(), 5);
+        assert_eq!(
+            inventory_owner(app.world(), 5),
+            Err(RejectReason::UnknownInventory),
+            "inventory_owner scanned the world"
         );
     }
 }

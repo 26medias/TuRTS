@@ -71,6 +71,9 @@ fn run() -> Result<(), String> {
     });
 
     let booted = boot::boot(app.world_mut(), &cfg, &bytes).map_err(|error| error.to_string())?;
+    // The sim does not tick without a `MatchConfig` (design 6.7.5, rule R17). The only start
+    // policy of this build is `Immediate`: the boot inserts the config before the first step.
+    app.insert_resource(turts_sim::MatchConfig::immediate(cfg.tick_hz));
     let server_catalog = booted
         .archive
         .content()

@@ -4,10 +4,11 @@ use crate::{
     economy::{
         events::{CostLine, EconomyEventKind, EventSource},
         ledger::{Endpoint, Reservation, ReservationLine},
-        transaction,
+        power, transaction,
     },
     ids::JobId,
     registry::UnitTypes,
+    unit_index::unit_entity,
 };
 use bevy_ecs::{prelude::Resource, world::World};
 use serde::{Deserialize, Serialize};
@@ -41,16 +42,12 @@ pub fn queue_production(
     recipe_id: ContentId,
 ) -> Result<JobId, RejectReason> {
     // Resolve ownership before recipe existence or capability so foreign catalog details stay private.
-    let (owner, unit_type) = world
-        .iter_entities()
-        .find_map(|entity| {
-            let id = entity.get::<UnitId>()?;
-            (id.0 == producer).then(|| {
-                (
-                    entity.get::<Owner>().copied(),
-                    entity.get::<UnitType>().copied(),
-                )
-            })
+    let (owner, unit_type) = unit_entity(world, producer)
+        .map(|entity| {
+            (
+                world.get::<Owner>(entity).copied(),
+                world.get::<UnitType>(entity).copied(),
+            )
         })
         .ok_or(RejectReason::UnknownUnit)?;
     let owner = owner.ok_or(RejectReason::UnknownUnit)?;
@@ -156,12 +153,9 @@ pub fn cancel_production(
     producer: u32,
     job: JobId,
 ) -> Result<(), RejectReason> {
-    let owner = world
-        .iter_entities()
-        .find_map(|e| {
-            (e.get::<UnitId>().is_some_and(|id| id.0 == producer))
-                .then(|| e.get::<Owner>().map(|o| o.0))?
-        })
+    let owner = unit_entity(world, producer)
+        .and_then(|entity| world.get::<Owner>(entity))
+        .map(|owner| owner.0)
         .ok_or(RejectReason::UnknownUnit)?;
     if owner != slot {
         return Err(RejectReason::NotOwner);
@@ -279,13 +273,20 @@ pub(crate) fn run_production(world: &mut World) {
         {
             continue;
         }
-        let Some(owner_slot) = world.iter_entities().find_map(|entity| {
-            (entity.get::<UnitId>().is_some_and(|id| id.0 == producer))
-                .then(|| entity.get::<Owner>().map(|owner| owner.0.0))?
-        }) else {
+        let Some(owner_slot) = unit_entity(world, producer)
+            .and_then(|entity| world.get::<Owner>(entity))
+            .map(|owner| owner.0.0)
+        else {
             continue;
         };
         if head_stage != Some(JobStage::OutputBlocked) {
+            // The whole units of progress of this tick: 1 at full rate (the stub of `power`).
+            let steps = turts_rules::progress::steps_at_rate(
+                world
+                    .get_resource::<crate::world::Tick>()
+                    .map_or(0, |tick| tick.0),
+                power::rate_factor(world, producer),
+            );
             let _ = transaction::transact(world, |tx| {
                 let mut queues = tx.queues();
                 let mut changed = false;
@@ -313,14 +314,14 @@ pub(crate) fn run_production(world: &mut World) {
                         JobStage::Running => {
                             let elapsed = job
                                 .elapsed_ticks
-                                .checked_add(1)
+                                .checked_add(steps)
                                 .ok_or(RejectReason::ArithmeticOverflow)?;
                             job.elapsed_ticks = elapsed.min(job.duration_ticks);
                             if job.elapsed_ticks >= job.duration_ticks {
                                 // Task 7 supplies output allocation; until then a completed head blocks FIFO.
                                 job.stage = JobStage::OutputBlocked;
                             }
-                            changed = true;
+                            changed = steps > 0;
                             None
                         }
                         JobStage::OutputBlocked => None,
@@ -365,18 +366,13 @@ fn try_output(
     producer: u32,
     job_id: JobId,
 ) -> Result<OutputAttempt, RejectReason> {
-    let (owner, pos, producer_type) = world
-        .iter_entities()
-        .find_map(|e| {
-            (e.get::<UnitId>().is_some_and(|id| id.0 == producer))
-                .then(|| {
-                    Some((
-                        e.get::<Owner>()?.0,
-                        e.get::<crate::Position>()?.0,
-                        e.get::<UnitType>()?.0,
-                    ))
-                })
-                .flatten()
+    let (owner, pos, producer_type) = unit_entity(world, producer)
+        .and_then(|entity| {
+            Some((
+                world.get::<Owner>(entity)?.0,
+                world.get::<crate::Position>(entity)?.0,
+                world.get::<UnitType>(entity)?.0,
+            ))
         })
         .ok_or(RejectReason::UnknownUnit)?;
     let catalog = world
@@ -548,8 +544,8 @@ mod m3_disabled_legacy_producer_tests {
         ResolvedProducer, ResolvedProduction, ResolvedUnit, UnitDef, UnitRegistry, WorldPos,
     };
 
-    #[test]
-    fn legacy_producer_freezes_resumes_and_can_cancel_while_disabled() {
+    /// A world with one producer (unit 7, slot 0) whose queue holds one running job.
+    fn producer_app(elapsed: u64, duration: u64) -> bevy_app::App {
         let mut app = headless_app(20);
         let package = PackageId::parse("test").unwrap();
         let producer_content = ContentId::new(&package, "producer");
@@ -705,12 +701,18 @@ mod m3_disabled_legacy_producer_tests {
                 id: JobId(1),
                 recipe: recipe_id,
                 stage: JobStage::Running,
-                elapsed_ticks: 3,
-                duration_ticks: 10,
+                elapsed_ticks: elapsed,
+                duration_ticks: duration,
                 charged: vec![],
                 reservation: None,
             }],
         );
+        app
+    }
+
+    #[test]
+    fn legacy_producer_freezes_resumes_and_can_cancel_while_disabled() {
+        let mut app = producer_app(3, 10);
 
         let set_enabled = |world: &mut bevy_ecs::world::World, enabled| {
             apply_command(
@@ -764,5 +766,93 @@ mod m3_disabled_legacy_producer_tests {
         assert_eq!(cancelled.outcome, Ok(Applied { job_id: None }));
         assert!(app.world().resource::<Disabled>().0.contains(&7));
         assert!(app.world().resource::<ProductionQueues>().0[&7].is_empty());
+    }
+
+    fn elapsed_of_job(app: &bevy_app::App) -> u64 {
+        app.world().resource::<ProductionQueues>().0[&7][0].elapsed_ticks
+    }
+
+    #[test]
+    fn a_job_advances_at_the_rate_of_the_power_stub() {
+        use crate::economy::power::PowerProbe;
+        use turts_rules::Ratio;
+        // Full rate: one unit of progress in each tick.
+        let mut full = producer_app(0, 100);
+        full.world_mut().insert_resource(PowerProbe {
+            weapon_enabled: true,
+            rate: Ratio::ONE,
+        });
+        for _ in 0..10 {
+            full.update();
+        }
+        assert_eq!(elapsed_of_job(&full), 10);
+        // Half rate: the same 10 ticks give 5 units, and each tick adds 0 or 1.
+        let mut half = producer_app(0, 100);
+        half.world_mut().insert_resource(PowerProbe {
+            weapon_enabled: true,
+            rate: Ratio::new(1, 2).unwrap(),
+        });
+        let mut previous = 0;
+        for _ in 0..10 {
+            half.update();
+            let now = elapsed_of_job(&half);
+            assert!(now - previous <= 1, "a tick added more than one unit");
+            previous = now;
+        }
+        assert_eq!(elapsed_of_job(&half), 5, "the job ignored the rate factor");
+        // No probe: the stub itself gives full rate, as the code did before the stub.
+        let mut stub = producer_app(0, 100);
+        for _ in 0..10 {
+            stub.update();
+        }
+        assert_eq!(elapsed_of_job(&stub), 10);
+    }
+
+    #[test]
+    fn the_producer_sites_read_the_unit_index_and_do_not_scan() {
+        use crate::unit_index::index_entry_for_test;
+        let recipe = ContentId::parse("test:make_product").unwrap();
+        // The advance of a job reads the owner of the producer.
+        let mut app = producer_app(3, 10);
+        run_production(app.world_mut());
+        assert_eq!(elapsed_of_job(&app), 4);
+        let mut app = producer_app(3, 10);
+        index_entry_for_test(app.world_mut(), 7);
+        run_production(app.world_mut());
+        assert_eq!(
+            elapsed_of_job(&app),
+            3,
+            "run_production scanned for the owner"
+        );
+        // The queue and cancel commands read the owner and the type.
+        assert_eq!(
+            queue_production(app.world_mut(), SlotId(0), 7, recipe),
+            Err(RejectReason::UnknownUnit),
+            "queue_production scanned"
+        );
+        assert_eq!(
+            cancel_production(app.world_mut(), SlotId(0), 7, JobId(1)),
+            Err(RejectReason::UnknownUnit),
+            "cancel_production scanned"
+        );
+        // The output step reads the owner, the position and the type. With the real unit the
+        // call goes past the lookup (it stops later, for a reason of the fixture); with an
+        // entry that has an owner and no position, the lookup itself fails.
+        let mut control = producer_app(10, 10);
+        assert_ne!(
+            try_output(control.world_mut(), 7, JobId(1)),
+            Err(RejectReason::UnknownUnit)
+        );
+        let mut indexed = producer_app(10, 10);
+        let entry = index_entry_for_test(indexed.world_mut(), 7);
+        indexed
+            .world_mut()
+            .entity_mut(entry)
+            .insert(Owner(SlotId(0)));
+        assert_eq!(
+            try_output(indexed.world_mut(), 7, JobId(1)),
+            Err(RejectReason::UnknownUnit),
+            "try_output scanned for the producer"
+        );
     }
 }

@@ -9,7 +9,14 @@ use crate::registry::UnitTypes;
 use crate::slots::SlotId;
 
 /// Marks a gameplay entity. "Gameplay entity" means an entity with this component.
+///
+/// The hooks keep `UnitIndex` equal to a full scan: one insert when a unit gets its id, one
+/// remove when it loses the id (a despawn included).
 #[derive(Component, Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[component(
+    on_insert = crate::unit_index::on_unit_id_insert,
+    on_discard = crate::unit_index::on_unit_id_discard
+)]
 pub struct UnitId(pub u32);
 
 /// The slot that owns a unit.

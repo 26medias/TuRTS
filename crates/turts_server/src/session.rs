@@ -790,6 +790,7 @@ mod tests {
         });
         app.add_plugins(turts_net_lightyear::ProtocolPlugin);
         app.add_plugins(turts_sim::SimPlugin { tick_hz: 20 });
+        app.insert_resource(turts_sim::MatchConfig::immediate(20));
         app.init_resource::<crate::stats::Stats>();
         app.insert_resource(crate::stats::MatchId(0));
         install(&mut app, advertised());
@@ -961,6 +962,7 @@ mod tests {
         });
         app.add_plugins(turts_net_lightyear::ProtocolPlugin);
         app.add_plugins(turts_sim::SimPlugin { tick_hz: 20 });
+        app.insert_resource(turts_sim::MatchConfig::immediate(20));
         app.init_resource::<crate::stats::Stats>();
         app.insert_resource(crate::stats::MatchId(0));
         install(&mut app, advertised());
@@ -1114,6 +1116,7 @@ mod admission_tests {
         });
         app.add_plugins(TimePlugin)
             .add_plugins(turts_sim::SimPlugin { tick_hz })
+            .insert_resource(turts_sim::MatchConfig::immediate(tick_hz))
             .add_systems(
                 FixedPreUpdate,
                 admit_player_commands
@@ -1745,6 +1748,7 @@ mod admission_tests {
         });
         app.add_plugins(turts_net_lightyear::ProtocolPlugin);
         app.add_plugins(turts_sim::SimPlugin { tick_hz: 20 });
+        app.insert_resource(turts_sim::MatchConfig::immediate(20));
         app.init_resource::<crate::stats::Stats>();
         app.insert_resource(crate::stats::MatchId(0));
         app.insert_resource(crate::orders::ServerCatalog(test_order_catalog()));
