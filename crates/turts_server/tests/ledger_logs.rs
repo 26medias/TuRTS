@@ -6,6 +6,12 @@
 use std::path::PathBuf;
 use std::sync::OnceLock;
 
+// The order commands of the Muster log are made by the server conversion, so they carry the
+// captured policy that the ledger orders rule compares with the catalog (A1c repair).
+#[path = "../src/orders.rs"]
+#[allow(dead_code)]
+mod server_orders;
+
 use turts_audit::EconomyLogRecord;
 use turts_sim::{AuditTrail, Command, CommandKind, CommandQueue, SlotId, audit_state};
 
@@ -364,8 +370,8 @@ fn refused_command_that_changes_pending_movement_orders_is_rejected() {
 /// pools, pending move queues and the plain move of one unit (no ledger event). The log is made
 /// one time for all the tests of this file.
 fn muster() -> &'static Captured {
-    use turts_mod_api::{ContentId, OrderDef, PackageId};
-    use turts_sim::{OrderCommand, OrderTargetSim, QueueMode, Vec2};
+    use turts_net_protocol::{OrderEnvelope, OrderTarget, PlayerCommand, Pos, QueueMode, UnitId};
+    use turts_sim::Vec2;
     static LOG: OnceLock<Captured> = OnceLock::new();
     LOG.get_or_init(|| {
         let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../mods/muster");
@@ -374,28 +380,22 @@ fn muster() -> &'static Captured {
             turts_mod_runtime::archive::PackageArchive::parse(&bytes).expect("parse Muster");
         let catalog = archive.content().expect("the Muster catalog resolves");
         let order = |units: Vec<u32>, point: Vec2, group: u32, queue: QueueMode| {
-            let (id, definition): (ContentId, &OrderDef) = catalog
-                .orders
-                .iter()
-                .find(|(id, _)| id.package.0 == "muster" && id.local == "order_move")
-                .map(|(id, definition)| (id.clone(), definition))
-                .expect("Muster order_move exists");
-            Command {
-                slot: SlotId(0),
+            let command = PlayerCommand {
                 seq: group,
-                kind: CommandKind::Order(Box::new(OrderCommand {
-                    order: id,
-                    behaviour: definition.behaviour,
-                    target_kind: definition.target,
-                    policy: None,
-                    units,
-                    target: OrderTargetSim::Point(point),
+                order: OrderEnvelope {
+                    order: "muster:order_move".into(),
+                    units: units.into_iter().map(UnitId).collect(),
+                    target: OrderTarget::Point(Pos {
+                        x: point.x,
+                        y: point.y,
+                    }),
                     queue,
                     group,
-                    allowed_units: definition.units.clone(),
-                    queue_depth: catalog.order_queue_depths[&PackageId("muster".into())],
-                })),
-            }
+                },
+            };
+            server_orders::to_sim(SlotId(0), &command, &catalog)
+                .expect("the Muster order converts")
+                .remove(0)
         };
         let mut app = package_app("muster", 20);
         record(&mut app, 60, 10, |tick, _| match tick {
