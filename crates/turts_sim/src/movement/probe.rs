@@ -38,6 +38,29 @@ pub struct FrameFlags {
     /// projection loop in the frame (no movement, a snap to the target before the
     /// loop, an escape step).
     pub was_projected: Option<bool>,
+    /// How many times each shared phase ran for this unit in this frame.
+    pub phases: PhaseCalls,
+}
+
+/// The calls of each shared phase of the free-movement step, for one unit in one frame
+/// (pre-MP1 task A2a, design 9.5). A unit that enters the step passes `arrival` once; a
+/// unit that is not snapped to its target passes `steering` and `projection` once; the
+/// end of the step passes `stall` (a unit with a pool) or `fallback` (a unit with no pool,
+/// or a pool unit that stalled to its deadline) at most once. A second branch that
+/// repeats a phase gives a count of 2 here. A unit that does not enter the step, such as
+/// an escape step or a plain-progress step, has all counts at 0.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct PhaseCalls {
+    /// The unit entered the free-movement step.
+    pub arrival: u8,
+    /// The velocity, the separation from neighbours and the step or the cap.
+    pub steering: u8,
+    /// The hard projection loop.
+    pub projection: u8,
+    /// The progress bookkeeping of a unit with a pool (`best_distance`, `stalled_ticks`).
+    pub stall: u8,
+    /// The obstacle fallback decision: the pool deadline, or the plain progress.
+    pub fallback: u8,
 }
 
 /// The flags of the last movement frame, by unit id. One entry for each unit of
@@ -114,6 +137,15 @@ pub fn was_projected(world: &World, unit: u32) -> Option<bool> {
         .get_resource::<LastFrameFlags>()
         .and_then(|flags| flags.0.get(&unit))
         .and_then(|flags| flags.was_projected)
+}
+
+/// The calls of each shared phase for a unit in the last frame (`PhaseCalls::default()` when
+/// the unit did not step or is not in the last frame).
+pub fn phase_calls(world: &World, unit: u32) -> PhaseCalls {
+    world
+        .get_resource::<LastFrameFlags>()
+        .and_then(|flags| flags.0.get(&unit))
+        .map_or_else(PhaseCalls::default, |flags| flags.phases)
 }
 
 /// The number of pools in the `MovementPools` resource.

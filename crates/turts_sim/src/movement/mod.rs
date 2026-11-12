@@ -14,6 +14,8 @@ mod plain_movement_tests;
 mod pool_index;
 #[cfg(feature = "test-probes")]
 pub mod probe;
+#[cfg(feature = "test-probes")]
+pub mod reference;
 mod search;
 mod spread;
 #[cfg(test)]
