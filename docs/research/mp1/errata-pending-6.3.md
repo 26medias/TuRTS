@@ -44,3 +44,18 @@ The orchestrator applies these in one pass when lane 0 exits. Each comes from an
 
 - Plan section 4: the slow gate runs the plants through the parallel runner set `mp1` (one worker for each command group),
   not the serial runner; a headed record never runs without the headed wrapper.
+
+## Binding notes for later tasks (from the lane-0 re-checks, 2026-11-12)
+
+- `L0-SIM` (or the next task that edits `crates/turts_checks/tests/formula_ratchet.rs`): make the count comparison exact
+  (a count that goes down is red too, with the "record N" message, because the pass output is captured and the headroom
+  would let a later copy in); add two fingerprints: a `/` whose operands are bound by a `let` with a `u128` type; and no
+  function outside `turts_rules` whose name equals a public `turts_rules` function. Today a formula copy written in u64
+  with `checked_mul`, or with a `let w: u128 = …` binding, is not seen.
+- `L-REP`: `turts_rules::repair_charge_difference` returns `Option<u64>` (None = cannot pay), or the packer refuses
+  `max x amount / per_health` above u64. Today a total above u64 saturates and the tick is undercharged with no signal.
+- `L-PAY`: remove the refund formula copy at `crates/turts_sim/src/economy/production.rs:226` (the ratchet table counts it)
+  and lower the count.
+- `L-MATCH-SRV1`: the hook ruling of `docs/research/mp1/trace-connection-end.md`; assert a notice under 1 s after SIGKILL
+  (the process test `connection_end.rs` has no lower bound and cannot tell the hook path from the timeout path).
+- Stage 2 (`L-LOBBY2-SRV`): a test for the `CountdownToLobby` edge of `room.rs` (a plant that removed it stayed green).
