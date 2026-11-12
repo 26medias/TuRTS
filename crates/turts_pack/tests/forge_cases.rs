@@ -1,10 +1,10 @@
 mod common;
 
-use common::conservation::{OracleCatalog, OracleHistory, check_operation, check_tick};
 use std::{
     fs,
     path::{Path, PathBuf},
 };
+use turts_audit::source::{OracleCatalog, OracleHistory, check_operation, check_tick};
 use turts_mod_api::ContentId;
 use turts_mod_runtime::{archive::PackageArchive, pack::pack_dir};
 use turts_pack::load_package;
@@ -294,7 +294,7 @@ fn res_fails_on_active_claim_without_job() {
     });
     let oracle = catalog(&forge_dir());
     assert_eq!(
-        common::conservation::check_reservations(&state, &oracle)
+        turts_audit::source::check_reservations(&state, &oracle)
             .unwrap_err()
             .invariant,
         "RES"
@@ -385,7 +385,7 @@ fn refund_fails_on_wrong_ratio() {
         events: vec![event],
     };
     assert_eq!(
-        common::conservation::check_refunds(&op, &oracle)
+        turts_audit::source::check_refunds(&op, &oracle)
             .unwrap_err()
             .invariant,
         "REFUND"
@@ -397,7 +397,7 @@ fn dangling_fails_on_leftover_row() {
     let mut state = audit_state(app.world_mut());
     state.removed_units.push(4);
     assert_eq!(
-        common::conservation::check_dangling(&state)
+        turts_audit::source::check_dangling(&state)
             .unwrap_err()
             .invariant,
         "DANGLING"

@@ -174,6 +174,26 @@ class RefutationRunnerTests(unittest.TestCase):
             self.assertIn(text, case["expected_failure"], case_id)
             self.assertIn("--exact", case["command"], case_id)
 
+    def test_a1d_run_constants_rows_name_their_instrument(self):
+        registry = json.loads((refutations.ROOT / "tests/m2/refutations.json").read_text())
+        by_id = {case["id"]: case for case in registry}
+        expected = {
+            "A1d-run-constants-durations": "the compiled durations changed inside the run",
+            "A1d-run-constants-unit-types": "the unit type registry changed inside the run",
+            "A1d-run-constants-resources": "the resource presence changed inside the run",
+        }
+        for case_id, text in expected.items():
+            case = by_id[case_id]
+            self.assertEqual(case["plant_path"], "crates/turts_sim/src/economy/views.rs", case_id)
+            self.assertEqual(
+                case["command"][:6],
+                ["cargo", "test", "-p", "turts_server", "--test", "economy"],
+                case_id,
+            )
+            self.assertIn("decoded_moving_gatherer_replays_frozen_command_and_automatic_effect", case["command"], case_id)
+            self.assertIn("--exact", case["command"], case_id)
+            self.assertEqual(case["expected_failure"], text, case_id)
+
     def test_runtime_selectors_are_explicit_and_nonempty(self):
         cases = [
             {"id": "E8-native", "kind": "process", "runtime": "rust"},

@@ -1,9 +1,7 @@
 mod common;
-use common::{
-    conservation::stock,
-    forge_support::{cid, command, forge_dir, inventory_amount, loaded, step},
-};
+use common::forge_support::{cid, command, forge_dir, inventory_amount, loaded, step};
 use std::collections::BTreeMap;
+use turts_audit::source::stock;
 use turts_sim::{CommandKind, EconomyEventKind, JobStage, audit_state};
 
 #[test]

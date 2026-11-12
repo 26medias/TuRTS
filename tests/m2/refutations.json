@@ -1497,5 +1497,68 @@
     "expected_failure": "the movement system changed an audited field that is not movement state",
     "restore_check": "sha256(source)==baseline and selected test is green",
     "plant_note": "A1c repair (review N12 and the wider question): the movement system writes a field outside its list (the map bounds). The sweep test compares the full audit state around the system."
+  },
+  {
+    "id": "A1d-run-constants-durations",
+    "plant_path": "crates/turts_sim/src/economy/views.rs",
+    "anchor": "                .map(|(recipe, ticks)| DurationAudit {\n                    recipe: recipe.clone(),\n                    ticks: *ticks,\n",
+    "replacement": "                .map(|(recipe, ticks)| DurationAudit {\n                    recipe: recipe.clone(),\n                    ticks: *ticks\n                        + u64::from(world.get_resource::<crate::world::Tick>().map_or(0, |tick| tick.0)),\n",
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_server",
+      "--test",
+      "economy",
+      "decoded_moving_gatherer_replays_frozen_command_and_automatic_effect",
+      "--",
+      "--exact",
+      "--nocapture"
+    ],
+    "expected_failure": "the compiled durations changed inside the run",
+    "restore_check": "sha256(source)==baseline and selected test is green",
+    "plant_note": "A1d (hand-over of A1c, finding 4): the compiled durations, a field that the log does not hold, change with the tick. The oracle on a log reads them from a template, so only assert_run_constants, which reads the live world at each tick, is red."
+  },
+  {
+    "id": "A1d-run-constants-unit-types",
+    "plant_path": "crates/turts_sim/src/economy/views.rs",
+    "anchor": "                    movement_speed: entry.movement.as_ref().map(|movement| movement.speed),\n                    radius: entry.radius,\n                })\n                .collect()\n        });\n    let mut economy = world_view(world);",
+    "replacement": "                    movement_speed: entry.movement.as_ref().map(|movement| movement.speed),\n                    radius: entry.radius\n                        + world.get_resource::<crate::world::Tick>().map_or(0, |tick| tick.0) as f32,\n                })\n                .collect()\n        });\n    let mut economy = world_view(world);",
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_server",
+      "--test",
+      "economy",
+      "decoded_moving_gatherer_replays_frozen_command_and_automatic_effect",
+      "--",
+      "--exact",
+      "--nocapture"
+    ],
+    "expected_failure": "the unit type registry changed inside the run",
+    "restore_check": "sha256(source)==baseline and selected test is green",
+    "plant_note": "A1d (hand-over of A1c, finding 4): the unit type registry, a field that the log does not hold, changes with the tick. Only assert_run_constants is red on the log path."
+  },
+  {
+    "id": "A1d-run-constants-resources",
+    "plant_path": "crates/turts_sim/src/economy/views.rs",
+    "anchor": "        durations: world.contains_resource::<crate::bootstrap::ProductionDurations>(),\n",
+    "replacement": "        durations: world.contains_resource::<crate::bootstrap::ProductionDurations>()\n            && world.get_resource::<crate::world::Tick>().is_none_or(|tick| tick.0 == 0),\n",
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_server",
+      "--test",
+      "economy",
+      "decoded_moving_gatherer_replays_frozen_command_and_automatic_effect",
+      "--",
+      "--exact",
+      "--nocapture"
+    ],
+    "expected_failure": "the resource presence changed inside the run",
+    "restore_check": "sha256(source)==baseline and selected test is green",
+    "plant_note": "A1d (hand-over of A1c, finding 4): the presence of the durations resource, a field that the log does not hold, changes after tick 0. Only assert_run_constants is red on the log path."
   }
 ]

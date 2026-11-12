@@ -1,6 +1,6 @@
 //! Economy log audit.
 //!
-//! One audit: the ledger audit (`validate_ledger`). It checks the record shape, the refusals, and
+//! One audit of a log: the ledger audit (`validate_ledger`). It checks the record shape, the refusals, and
 //! one file for each ledger domain. Each rule holds on the log alone, whatever the movement model
 //! does. No rule computes a decision of the simulation again (no path, no target choice, no
 //! timing model). The replay validator, which modeled the simulation again, was deleted in task
@@ -10,6 +10,12 @@
 //! The log holds each snapshot as `turts_sim::LedgerAudit`, the ledger view of `AuditState`
 //! (`turts_sim/src/economy/ledger_view.rs`), and the ledger audit reads only that view. A new sim
 //! structure enters the log only through an edit of `LedgerAudit`.
+//!
+//! The `source` module is the one rule set that does not read the log: the in-process oracle of
+//! the economy tests (`source::check_operation`, `source::check_tick`). It judges an operation
+//! against the source RON of the package, not against the catalog of the snapshot. A catalog
+//! that the code under test builds cannot judge that code (task A1d; `source.rs` has the
+//! reason).
 //!
 //! Rules of this file:
 //! - shape: the log has exactly one `Initial` record, and it is the first record.
@@ -35,6 +41,7 @@ mod orders;
 mod production;
 mod reservations;
 mod slots;
+pub mod source;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::{BufRead, BufReader};
