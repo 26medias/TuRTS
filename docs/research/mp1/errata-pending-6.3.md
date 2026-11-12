@@ -201,3 +201,10 @@ Probe 2, the HUD change counter on today's tree (forge HUD, 108 widget entities,
 - On this host (Xvfb, RTX 3080) most of the 12 to 14 ms of the Chrome GPU-process main thread for each presented frame is the copy of the frame to the virtual display. A clear-only page costs 7.9 to 10.7 ms at 1280x720 and 2.28 ms at 640x360; the real client 12.3 ms. The second window adds no cost for each present. One real client window at 57.7 fps uses 89 % of that thread.
 - Effect on the plan: three headed clients on this host need a frame limit (row SLOT1 stores 20); two headed clients run at about 30 to 40 fps each (E-GPU). This is a property of the test host, expected to be absent on a real desktop (NOT measured). The person run of PT1/PT2/PT3 on a real display is the check.
 - Product items to assign to `PRES-MEASURE` (owner `bevy-rendering-engineer`, lens `performance-architect`): the client writes 602 to 617 KB to the GPU each frame for a 15-unit scene, one write of 565,760 B (buffer NOT TRACED); 12 to 15 % of the GPU-thread samples of the real client are in the nvidia kernel module against 1 to 2 % for synthetic pages (cause NOT TRACED). Next probe: count `createBuffer`, `createTexture`, `createView`, `createBindGroup`, `mapAsync` and the pass attachments for each frame.
+
+## Open harness items for `qa-lead` (2026-11-12)
+
+- The M2 convergence tick check carries no load in a static world (reviewer plant B stayed green; older than L0-DBG). Use a world that changes, or compare against the server tick log.
+- The old SH1 flake "Execution context was destroyed" at `tests/browser/harness/driver-io.js:371` (red at base 51f1223 too).
+- A plant run with `mp1_plants.py --files` selected records of other lanes and a Q-PREBUILD plant was found left in `scripts/mc-browser.sh` (restored by hand; cause NOT TRACED: the runner or an interrupted run). A runner must never leave a plant in the tree: reproduce or rule out.
+- The plant runner made `target/debug` (1.4 GB) outside the lane cache wrapper: the record commands must run with the lane cache.
