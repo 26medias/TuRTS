@@ -200,6 +200,8 @@ fn base_app(content: Option<crate::content::ClientContent>, welcome: bool) -> Ap
         .init_resource::<VisualAssets>()
         .init_resource::<VisualState>()
         .init_resource::<MarkersShown>()
+        .init_resource::<placement::Feed>()
+        .init_resource::<effects::Pool>()
         .add_systems(Update, (prepare_assets, draw_world_visuals).chain());
     app.world_mut()
         .resource_mut::<ReceiptWitnesses>()

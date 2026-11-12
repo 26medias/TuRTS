@@ -65,6 +65,12 @@ pub const ENGINE_API_VERSION: &str = "0.2.4";
 /// Engine API versions released by the project, in ascending order.
 pub const RELEASED_ENGINE_APIS: &[&str] = &["0.1.0", "0.2.0", "0.2.1", "0.2.2", "0.2.3", "0.2.4"];
 
+/// The number of player slots of a match, which is the number of seats that the lobby offers
+/// (design 6.7.5, "The seat count is the player-slot count"; 2 in MP1). The simulation, the server
+/// and the packer read this one constant; a match file or map file does not declare it (design
+/// 6.10 row H15: one different colour for each seat).
+pub const SLOT_COUNT: u8 = 2;
+
 /// Capabilities that package manifests may request.
 pub const KNOWN_CAPABILITIES: &[&str] = &[];
 

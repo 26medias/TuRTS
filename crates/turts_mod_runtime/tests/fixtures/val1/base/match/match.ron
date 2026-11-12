@@ -1,0 +1,1 @@
+(start: AllSeated(countdown_secs: 0), open_sites_per_slot: Some(2), victory: Some(LastTeamStanding(defeat: [KeyUnitsLost(units: ["val1:command_center"])])))

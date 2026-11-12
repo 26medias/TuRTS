@@ -7,7 +7,8 @@
 //!   (`cedar/manifest.ron: engine_api: `<feature>` needs engine api 0.2.4; `^0.2.3` admits 0.2.3`)
 //!   and, for a feature written outside the manifest, the file and the field path;
 //! - at `engine_api: "^0.2.4"` the version table passes, and the `UNBUILT_FEATURES` list refuses it
-//!   with `cedar/<file>: <path>: `<feature>` is not built in this engine build (task `<owner>`)`,
+//!   with `cedar/<file>: <path>: `<feature>` is not built in this engine build; leave it out until
+//!   an engine build supports it` (the text names no plan task: a modder cannot act on one),
 //!   or (for a feature with no line, `owner` empty) the package loads.
 //!
 //! A case that passes on a tree with no 0.2.4 row would be a test that cannot fail: the control
@@ -105,8 +106,8 @@ fn check(case: &Case) {
         assert_eq!(
             refusal(&current, case.feature).to_string(),
             format!(
-                "cedar/{}: {}: `{}` is not built in this engine build (task `{}`)",
-                case.file, case.path, case.feature, case.owner
+                "cedar/{}: {}: `{}` is not built in this engine build; leave it out until an engine build supports it",
+                case.file, case.path, case.feature
             ),
             "{} at ^0.2.4",
             case.feature
@@ -509,7 +510,7 @@ raw_case!(
 raw_case!(
     h11_world_float_text,
     "world.float_text",
-    "",
+    "L-FX-PRES",
     HUD,
     "world.float_text",
     &[(
@@ -754,14 +755,6 @@ fn h7_value_variants_in_a_text_widget() {
             "Value::Supply",
             "UI-HUD",
         ),
-        (
-            "Bind(ConstructionQueue)",
-            "Value::ConstructionQueue",
-            "UI-HUD",
-        ),
-        ("Bind(Sites)", "Value::Sites", "UI-HUD"),
-        ("Bind(Notices)", "Value::Notices", "UI-HUD"),
-        ("Bind(SelectionTypes)", "Value::SelectionTypes", "UI-HUD"),
         ("Bind(Connection)", "Value::Connection", "UI2-CONN"),
         ("Bind(Outcome)", "Value::Outcome", "UI-RESULT"),
         ("Bind(OutcomeReason)", "Value::OutcomeReason", "UI-RESULT"),
@@ -928,7 +921,7 @@ fn h17_placeholder_is_a_use_in_the_edition_0_2_4_only() {
         .expect("edition 0.2.3: `{unit}` is text, not a placeholder");
     assert_eq!(
         refusal(&archive("^0.2.4", &case), "placeholder").to_string(),
-        "cedar/interface/hud.ron: alerts[0].text: `placeholder {unit}` is not built in this engine build (task `UI-ALERT`)"
+        "cedar/interface/hud.ron: alerts[0].text: `placeholder {unit}` is not built in this engine build; leave it out until an engine build supports it"
     );
 }
 

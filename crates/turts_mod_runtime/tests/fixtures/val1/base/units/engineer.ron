@@ -1,0 +1,7 @@
+(
+    id: "engineer", name: "Engineer", footprint: Circle(radius: 0.4),
+    movement: Some((speed: 3.0)), inventory: None, gatherer: None, drop_off: None, producer: None,
+    health: Some((max: 40)), removal: Some((by_command: false, contents: Destroy)),
+    armour: Some((class: "val1:light")),
+    repairer: Some((rate_per_second: 20, reach: 1.5, cost: [(resource: "val1:credits", amount: 1, per_health: 4)], targets: (slots: Same), classes: [], auto_range: None)),
+)

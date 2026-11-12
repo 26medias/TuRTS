@@ -39,6 +39,7 @@ fn authored_minimap_root_clips_marker_extents_to_its_widget_rect() {
         guide: &guide,
         guide_open: false,
         last_notice: None,
+        core: sources::CoreFeed::empty(),
     };
     let widget = Widget {
         id: "minimap".into(),
@@ -112,6 +113,7 @@ fn hidden_widget_ancestor_hides_child_and_removes_its_world_capture() {
         guide: &guide,
         guide_open: false,
         last_notice: None,
+        core: sources::CoreFeed::empty(),
     };
     let child = Widget {
         id: "guide.close".into(),
@@ -254,6 +256,7 @@ fn icon_only_hotkey_button_still_renders_effective_binding_and_tracks_hover() {
         guide: &[],
         guide_open: false,
         last_notice: None,
+        core: sources::CoreFeed::empty(),
     };
     let widget = Widget {
         id: "card/centre".into(),
@@ -355,6 +358,7 @@ fn dynamic_list_values_refresh_without_replacing_button_entities() {
         guide: &[],
         guide_open: false,
         last_notice: None,
+        core: sources::CoreFeed::empty(),
     };
     assert_eq!(
         text_value(
@@ -529,6 +533,7 @@ fn text_that_appears_after_an_empty_binding_keeps_authored_typography() {
         guide: &[],
         guide_open: false,
         last_notice: None,
+        core: sources::CoreFeed::empty(),
     };
     let text = Widget {
         id: "notice".into(),
@@ -708,6 +713,7 @@ fn grid_item_tooltips_inherit_context_and_template_tooltips_override_it() {
         guide: &[],
         guide_open: false,
         last_notice: None,
+        core: sources::CoreFeed::empty(),
     };
     let inherited = Value::Format(
         "{0} | {1} | {2} | {3}".into(),
@@ -886,6 +892,7 @@ fn disabled_authored_button_cannot_dispatch_an_action() {
         guide: &[],
         guide_open: false,
         last_notice: None,
+        core: sources::CoreFeed::empty(),
     };
     let item = sources::ItemData {
         fields: vec![(ItemField::Enabled, serde_json::json!(false))],
@@ -977,6 +984,7 @@ fn fit_text_and_image_use_real_asset_components_with_bevy_auto_sizing() {
         guide: &[],
         guide_open: false,
         last_notice: None,
+        core: sources::CoreFeed::empty(),
     };
     let fit = Size {
         w: turts_mod_api::Dimension::Fit,
@@ -1336,6 +1344,7 @@ fn bar_refresh_tracks_bound_progress_without_replacing_fill_entity() {
         guide: &[],
         guide_open: false,
         last_notice: None,
+        core: sources::CoreFeed::empty(),
     };
     let item = sources::ItemData {
         fields: vec![
@@ -1486,6 +1495,7 @@ fn button_labels_use_the_interface_tooltip_font() {
         guide: &[],
         guide_open: false,
         last_notice: None,
+        core: sources::CoreFeed::empty(),
     };
     let cases = [
         (
@@ -1565,4 +1575,225 @@ fn button_labels_use_the_interface_tooltip_font() {
         world.get::<TextFont>(entity).unwrap().font,
         FontSource::Handle(Handle::default())
     );
+}
+
+/// The contract of the 0.2.4 source stubs of L0-CORE (`widgets/sources/*.rs`, plan 5.3): until the
+/// owner task builds a variant, a list source has no rows, a value is null, a predicate does not
+/// hold. The context has one selected unit, so the primary field arms reach their stub. Each owner
+/// task replaces its own test here with its own.
+mod stub_contract {
+    use super::*;
+    use crate::replica::UnitReplica;
+    use std::collections::VecDeque;
+    use turts_mod_api::{OutcomeKind, OutcomeReasonKind, PrimaryField, Source, StatField};
+
+    fn with_context(check: impl FnOnce(&sources::SourceContext<'_>)) {
+        let mut replica = crate::replica::Replica::new(20);
+        replica.units.insert(
+            1,
+            UnitReplica {
+                content_id: "test:unit".into(),
+                owner_slot: 0,
+                facing: None,
+                samples: VecDeque::from([(1, turts_net_protocol::Pos { x: 0.0, y: 0.0 })]),
+            },
+        );
+        let content = crate::content::ClientContent::default();
+        let selection = vec![1];
+        let groups = BTreeMap::new();
+        let alerts = Vec::new();
+        let bindings = BTreeMap::new();
+        let input_map = turts_mod_api::InputMapDef {
+            actions: Vec::new(),
+            engine_overrides: Vec::new(),
+        };
+        let guide = Vec::new();
+        check(&sources::SourceContext {
+            binding_labels: None,
+            replica: &replica,
+            content: &content,
+            selection: &selection,
+            owner_slot: 0,
+            interface: None,
+            interface_package: Some("test"),
+            control_groups: &groups,
+            alerts: &alerts,
+            bindings: &bindings,
+            input_map: &input_map,
+            guide: &guide,
+            guide_open: false,
+            last_notice: None,
+            core: sources::CoreFeed::empty(),
+        });
+    }
+
+    fn assert_null(value: Value, context: &sources::SourceContext<'_>) {
+        assert_eq!(
+            sources::read_value(&value, *context),
+            serde_json::Value::Null,
+            "{value:?} must read null until its owner builds it"
+        );
+    }
+
+    fn assert_no_rows(source: Source, context: &sources::SourceContext<'_>) {
+        let data = sources::read_source(&source, *context);
+        assert!(
+            data.scalar.is_none() && data.items.is_empty(),
+            "{source:?} must have no rows until its owner builds it"
+        );
+    }
+
+    fn assert_does_not_hold(predicate: Predicate, context: &sources::SourceContext<'_>) {
+        assert!(
+            !predicate_matches(&predicate, context),
+            "{predicate:?} must not hold until its owner builds it"
+        );
+        assert!(
+            predicate_matches(&Predicate::Not(Box::new(predicate)), context),
+            "Not of a predicate that does not hold must hold"
+        );
+    }
+
+    #[test]
+    fn ui_hud_stubs_have_no_rows_no_value_and_no_predicate() {
+        with_context(|context| {
+            assert_no_rows(Source::ConstructionQueue, context);
+            assert_no_rows(Source::Sites, context);
+            assert_no_rows(Source::Notices, context);
+            assert_no_rows(Source::SelectionTypes, context);
+            assert_null(
+                Value::Supply("test:supply".into(), turts_mod_api::SupplySide::Provided),
+                context,
+            );
+            assert_null(
+                Value::Supply("test:supply".into(), turts_mod_api::SupplySide::Consumed),
+                context,
+            );
+            assert_does_not_hold(Predicate::SupplyShort("test:supply".into()), context);
+            assert_does_not_hold(Predicate::ItemHas(ItemField::Role), context);
+        });
+    }
+
+    #[test]
+    fn ui_result_stubs_have_no_value_and_no_predicate() {
+        with_context(|context| {
+            assert_null(Value::Outcome, context);
+            assert_null(Value::OutcomeReason, context);
+            assert_null(Value::MatchClock, context);
+            assert_does_not_hold(Predicate::MatchOver, context);
+            assert_does_not_hold(Predicate::OutcomeIs(OutcomeKind::Victory), context);
+            assert_does_not_hold(
+                Predicate::OutcomeReasonIs(OutcomeReasonKind::KeyUnitsLost),
+                context,
+            );
+        });
+    }
+
+    #[test]
+    fn ui2_result_stub_has_no_value() {
+        with_context(|context| {
+            assert_null(Value::MatchStats(StatField::UnitsTrained), context);
+        });
+    }
+
+    #[test]
+    fn ui2_conn_stub_has_no_value() {
+        with_context(|context| assert_null(Value::Connection, context));
+    }
+
+    #[test]
+    fn ui_hint_stubs_have_no_value_and_no_predicate() {
+        with_context(|context| {
+            assert_null(Value::Hint, context);
+            assert_does_not_hold(Predicate::HintShown, context);
+        });
+    }
+
+    #[test]
+    fn ui_place_stub_does_not_hold() {
+        with_context(|context| assert_does_not_hold(Predicate::Placing, context));
+    }
+
+    #[test]
+    fn ui2_hud_stubs_have_no_primary_value_and_no_predicate() {
+        with_context(|context| {
+            for field in [
+                PrimaryField::Activity,
+                PrimaryField::Cargo,
+                PrimaryField::Armour,
+            ] {
+                assert_null(Value::SelectionPrimary(field), context);
+                assert_does_not_hold(Predicate::PrimaryHasValue(field), context);
+            }
+        });
+    }
+
+    #[test]
+    fn new_widget_actions_activate_nothing_until_their_owner_builds_them() {
+        use turts_interaction::InputEvent;
+        for action in [
+            primitives::WidgetAction::Place {
+                constructor: 1,
+                content: "test:building".into(),
+            },
+            primitives::WidgetAction::FocusAlert {
+                x: 3.0,
+                y: 4.0,
+                unit: Some(1),
+            },
+            primitives::WidgetAction::FocusAlert {
+                x: 3.0,
+                y: 4.0,
+                unit: None,
+            },
+            primitives::WidgetAction::Input {
+                name: "leave_match".into(),
+            },
+        ] {
+            let mut app = App::new();
+            app.init_resource::<CoreInputQueue>();
+            app.init_resource::<ReplicaState>();
+            app.add_observer(activate_widget);
+            let button = app
+                .world_mut()
+                .spawn((
+                    Button,
+                    primitives::WidgetButtonAction(action.clone()),
+                    primitives::WidgetEnabled(true),
+                ))
+                .id();
+            app.world_mut().trigger(Activate { entity: button });
+            let queued: &Vec<InputEvent> = &app.world().resource::<CoreInputQueue>().0;
+            assert!(
+                queued.is_empty(),
+                "{action:?} must queue no input until its owner builds it: {queued:?}"
+            );
+        }
+    }
+
+    /// Control: the guard of `leave_match` leaves every other engine action to the core.
+    #[test]
+    fn other_input_actions_still_reach_the_core() {
+        let mut app = App::new();
+        app.init_resource::<CoreInputQueue>();
+        app.init_resource::<ReplicaState>();
+        app.add_observer(activate_widget);
+        let button = app
+            .world_mut()
+            .spawn((
+                Button,
+                primitives::WidgetButtonAction(primitives::WidgetAction::Input {
+                    name: "zoom_in".into(),
+                }),
+                primitives::WidgetEnabled(true),
+            ))
+            .id();
+        app.world_mut().trigger(Activate { entity: button });
+        assert_eq!(
+            app.world().resource::<CoreInputQueue>().0,
+            vec![turts_interaction::InputEvent::UiAction {
+                name: "zoom_in".into()
+            }]
+        );
+    }
 }

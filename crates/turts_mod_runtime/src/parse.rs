@@ -59,6 +59,21 @@ fn to_mod_error(package: &str, file: &str, error: SpannedError) -> ModError {
     }
 }
 
+/// The name at edit distance 2 or less from `found`, the nearest one; on a tie the first in the
+/// list (design 6.10, "Conventions for every row": the hint "did you mean").
+pub(crate) fn nearest_name<'a>(
+    found: &str,
+    names: impl IntoIterator<Item = &'a str>,
+) -> Option<&'a str> {
+    names
+        .into_iter()
+        .enumerate()
+        .map(|(index, name)| (edit_distance(found, name), index, name))
+        .filter(|(distance, _, _)| *distance <= 2)
+        .min_by_key(|(distance, index, _)| (*distance, *index))
+        .map(|(_, _, name)| name)
+}
+
 fn edit_distance(left: &str, right: &str) -> usize {
     let left: Vec<char> = left.chars().collect();
     let right: Vec<char> = right.chars().collect();

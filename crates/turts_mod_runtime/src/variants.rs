@@ -347,10 +347,6 @@ impl InterfaceWalk<'_> {
     fn value(&mut self, value: &Value, path: &str) {
         let name = match value {
             Value::Supply(..) => Some("Value::Supply"),
-            Value::ConstructionQueue => Some("Value::ConstructionQueue"),
-            Value::Sites => Some("Value::Sites"),
-            Value::Notices => Some("Value::Notices"),
-            Value::SelectionTypes => Some("Value::SelectionTypes"),
             Value::Connection => Some("Value::Connection"),
             Value::Outcome => Some("Value::Outcome"),
             Value::OutcomeReason => Some("Value::OutcomeReason"),
@@ -483,6 +479,65 @@ mod tests {
     #[test]
     fn nothing_is_a_use_in_an_empty_package() {
         assert!(found(&ParsedMcContent::default()).is_empty());
+    }
+
+    /// Row K8 (`removal with a queue`): each of the four queue capabilities makes the combination
+    /// on its own (review of `L0-API2`, M2). The old M3 rule is gone, so this list is the only guard
+    /// for an older edition: an arm that is missing is a refusal that is lost.
+    #[test]
+    fn removal_with_a_queue_is_found_for_each_queue_capability() {
+        let removal = "removal: Some((by_command: true, contents: Destroy))";
+        let queues = [
+            (
+                "producer",
+                format!(
+                    "({}, producer: Some((recipes: [], queue_capacity: 1, spawn_offsets: [])), {removal})",
+                    UNIT.replace(", producer: None", "")
+                ),
+            ),
+            (
+                "machine",
+                format!("({UNIT}, {removal}, machine: Some((recipe: \"a:r\")))"),
+            ),
+            (
+                "research",
+                format!(
+                    "({UNIT}, {removal}, research: Some((technologies: [], queue_capacity: 1)))"
+                ),
+            ),
+            (
+                "constructor",
+                format!(
+                    "({UNIT}, {removal}, constructor: Some((buildings: [], concurrent_sites: 1, queue_capacity: 1)))"
+                ),
+            ),
+        ];
+        for (queue, text) in queues {
+            let unit: UnitDef =
+                ron::from_str(&text).unwrap_or_else(|error| panic!("{queue}: {error}"));
+            let content = ParsedMcContent {
+                units: vec![("units/u.ron".into(), unit)],
+                ..ParsedMcContent::default()
+            };
+            let uses = found(&content);
+            assert!(
+                uses.iter()
+                    .any(|(name, file, path)| *name == "removal with a queue"
+                        && file == "units/u.ron"
+                        && path == "removal"),
+                "{queue}: {uses:?}"
+            );
+        }
+        // No queue, no combination.
+        let content = ParsedMcContent {
+            units: vec![("units/u.ron".into(), unit(removal))],
+            ..ParsedMcContent::default()
+        };
+        assert!(
+            found(&content)
+                .iter()
+                .all(|(name, _, _)| *name != "removal with a queue")
+        );
     }
 
     #[test]
@@ -803,14 +858,14 @@ mod tests {
             ),
             (
                 widget(
-                    r#"Button(icon: Some(Bind(Sites)), label: None, action: Input("menu"), hotkey_label: false)"#,
+                    r#"Button(icon: Some(Bind(Hint)), label: None, action: Input("menu"), hotkey_label: false)"#,
                     "",
                 ),
                 "root[w].widget.icon",
             ),
             (
                 widget(
-                    r#"Button(icon: None, label: Some(Bind(Notices)), action: Input("menu"), hotkey_label: false)"#,
+                    r#"Button(icon: None, label: Some(Bind(MatchStats(UnitsLost))), action: Input("menu"), hotkey_label: false)"#,
                     "",
                 ),
                 "root[w].widget.label",
@@ -825,18 +880,18 @@ mod tests {
             "Value::Supply",
             "Value::Hint",
             "Value::MatchClock",
-            "Value::Sites",
-            "Value::Notices",
+            "Value::Hint",
+            "Value::MatchStats",
             "Value::Connection",
         ];
         for ((root, path), name) in places.iter().zip(names) {
             one(&interface(root, ""), name, "interface/hud.ron", path);
         }
         // A tooltip on the widget.
-        let tip = r#"(id: "w", at: None, size: (w: Px(1.0), h: Px(1.0)), tooltip: Some(SelectionTypes), widget: Box(fill: None, border: None, children: []))"#;
+        let tip = r#"(id: "w", at: None, size: (w: Px(1.0), h: Px(1.0)), tooltip: Some(Outcome), widget: Box(fill: None, border: None, children: []))"#;
         one(
             &interface(tip, ""),
-            "Value::SelectionTypes",
+            "Value::Outcome",
             "interface/hud.ron",
             "root[w].tooltip",
         );

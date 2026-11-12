@@ -11,12 +11,41 @@ pub struct AuthoredWidgetId(pub String);
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum WidgetAction {
-    Input { name: String },
-    Order { id: String },
-    Select { unit: u32 },
-    Produce { producer: u32, content_id: String },
-    CancelProduction { producer: u32, job: u64 },
-    CenterCamera { x: f32, y: f32 },
+    Input {
+        name: String,
+    },
+    Order {
+        id: String,
+    },
+    Select {
+        unit: u32,
+    },
+    Produce {
+        producer: u32,
+        content_id: String,
+    },
+    CancelProduction {
+        producer: u32,
+        job: u64,
+    },
+    CenterCamera {
+        x: f32,
+        y: f32,
+    },
+    /// API 0.2.4: enter the placement mode for `content` with the constructor `constructor`
+    /// (`UI-PLACE`).
+    Place {
+        constructor: u32,
+        content: String,
+    },
+    /// API 0.2.4: the core action `FocusAlert` (`UI-ALERT`): the camera target and the optional
+    /// unit that the click also selects (design 7.9). The engine fills it from the alert row; a
+    /// mod writes no such action (design 6.10 note [9]: the row has `action: Item(Action)`).
+    FocusAlert {
+        x: f32,
+        y: f32,
+        unit: Option<u32>,
+    },
 }
 
 #[derive(Component, Debug, Clone, PartialEq)]

@@ -1,0 +1,12 @@
+(actions: [
+    (name: "key_move", default: [Key(code: "KeyM", mods: [])]),
+    (name: "key_gather", default: [Key(code: "KeyG", mods: [])]),
+    (name: "key_construct", default: [Key(code: "KeyB", mods: [])]),
+    (name: "key_cancel_site", default: [Key(code: "KeyX", mods: [])]),
+    (name: "key_rally", default: [Key(code: "KeyR", mods: [])]),
+    (name: "key_repair", default: [Key(code: "KeyE", mods: [])]),
+    (name: "key_surrender", default: [Key(code: "KeyU", mods: [])]),
+    (name: "key_train", default: [Key(code: "KeyH", mods: [])]),
+    (name: "key_build_power", default: [Key(code: "KeyP", mods: [])]),
+    (name: "key_build_turret", default: [Key(code: "KeyL", mods: [])]),
+], engine_overrides: [])

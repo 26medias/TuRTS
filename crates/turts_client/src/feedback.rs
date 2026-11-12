@@ -23,6 +23,10 @@ pub struct FrameFeedback {
     pub alerts: Vec<serde_json::Value>,
 }
 
+// One file for each task that writes alert triggers (plan 5.3, L0-CORE).
+mod alert_connection;
+mod alert_state;
+
 #[derive(Resource, Default)]
 struct FeedbackRuntime {
     previous: Option<Replica>,
@@ -834,15 +838,29 @@ fn collect_alert_events(
                     rule_id != &rule.id || waiting_units.contains(unit)
                 });
             }
-            // API 0.2.4 (row H4): triggers that `UI-ALERT` and `UI2-CONN` build later. Until
-            // then they raise no alert (the packer refuses a package that writes one).
-            AlertTrigger::ConstructionComplete
-            | AlertTrigger::SupplyShort(_)
-            | AlertTrigger::SupplyRestored(_)
-            | AlertTrigger::InsufficientFunds(_)
-            | AlertTrigger::SlotDisconnected
-            | AlertTrigger::SlotReconnected
-            | AlertTrigger::GathererIdle(_) => {}
+            // API 0.2.4 (row H4): triggers that `UI-ALERT` and `UI2-CONN` build later. Stubs:
+            // they raise no alert until then (the packer refuses a package that writes one).
+            AlertTrigger::ConstructionComplete => units.extend(alert_state::construction_complete(
+                current, previous, slot, rule, runtime,
+            )),
+            AlertTrigger::SupplyShort(_) => units.extend(alert_state::supply_short(
+                current, previous, slot, rule, runtime,
+            )),
+            AlertTrigger::SupplyRestored(_) => units.extend(alert_state::supply_restored(
+                current, previous, slot, rule, runtime,
+            )),
+            AlertTrigger::InsufficientFunds(_) => units.extend(alert_state::insufficient_funds(
+                current, previous, slot, rule, runtime,
+            )),
+            AlertTrigger::GathererIdle(_) => units.extend(alert_state::gatherer_idle(
+                current, previous, slot, rule, runtime,
+            )),
+            AlertTrigger::SlotDisconnected => units.extend(alert_connection::slot_disconnected(
+                current, previous, slot, rule, runtime,
+            )),
+            AlertTrigger::SlotReconnected => units.extend(alert_connection::slot_reconnected(
+                current, previous, slot, rule, runtime,
+            )),
         }
         if !matches!(&rule.trigger, AlertTrigger::OwnUnitDestroyed) {
             units.retain(|unit| {
@@ -1129,4 +1147,84 @@ fn output_evidence(
 
 fn distance_squared(a: turts_net_protocol::Pos, b: turts_net_protocol::Pos) -> f32 {
     (a.x - b.x).powi(2) + (a.y - b.y).powi(2)
+}
+
+/// The contract of the alert trigger stubs of L0-CORE: a rule with a 0.2.4 trigger raises no alert
+/// while its owner task has not built the trigger. The replica holds one own unit, so a stub that
+/// returns that unit raises an alert and the test is red. The owner task replaces its test.
+#[cfg(test)]
+mod stub_tests {
+    use super::*;
+    use std::collections::VecDeque;
+    use turts_mod_api::{AlertDef, AlertKind, SoundWhen};
+
+    fn rule(trigger: AlertTrigger) -> AlertDef {
+        AlertDef {
+            id: "stub".into(),
+            trigger,
+            sound: None,
+            text: "text".into(),
+            minimap_ping: false,
+            cooldown: 0.0,
+            priority: 0,
+            coalesce_radius: 0.0,
+            units: Vec::new(),
+            kind: AlertKind::Event,
+            clear_after: None,
+            select_on_click: false,
+            focus: None,
+            sound_when: SoundWhen::Always,
+        }
+    }
+
+    fn assert_raises_no_alert(trigger: AlertTrigger) {
+        let mut current = Replica::new(20);
+        current.units.insert(
+            1,
+            crate::replica::UnitReplica {
+                content_id: "test:unit".into(),
+                owner_slot: 0,
+                facing: None,
+                samples: VecDeque::from([(1, turts_net_protocol::Pos { x: 0.0, y: 0.0 })]),
+            },
+        );
+        let previous = current.clone();
+        let rules = [rule(trigger.clone())];
+        let events = collect_alert_events(
+            &current,
+            Some(&previous),
+            0,
+            &crate::content::ClientContent::default(),
+            &rules,
+            10.0,
+            &mut FeedbackRuntime::default(),
+        );
+        assert!(
+            events.is_empty(),
+            "the trigger {trigger:?} must raise no alert until its owner builds it"
+        );
+    }
+
+    #[test]
+    fn state_triggers_raise_no_alert_until_ui_alert_builds_them() {
+        for trigger in [
+            AlertTrigger::ConstructionComplete,
+            AlertTrigger::SupplyShort("test:supply".into()),
+            AlertTrigger::SupplyRestored("test:supply".into()),
+            AlertTrigger::InsufficientFunds("test:credits".into()),
+            AlertTrigger::GathererIdle(5.0),
+        ] {
+            assert_raises_no_alert(trigger);
+        }
+    }
+
+    #[test]
+    fn connection_triggers_raise_no_alert_until_ui2_conn_builds_them() {
+        for trigger in [
+            AlertTrigger::SlotDisconnected,
+            AlertTrigger::SlotReconnected,
+        ] {
+            assert_raises_no_alert(trigger);
+        }
+    }
 }

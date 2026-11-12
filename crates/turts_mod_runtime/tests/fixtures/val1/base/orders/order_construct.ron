@@ -1,0 +1,1 @@
+(id: "order_construct", name: "construct", behaviour: Construct, target: ContentAtPoint, fire: None, engage: None, icon: "icon_order_move", hotkey: "key_construct", cursor: None, card: None, units: ["val1:command_center"], description: "d")
