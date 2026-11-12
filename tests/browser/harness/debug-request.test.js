@@ -159,7 +159,9 @@ test("the join wait polls until a requested record shows Joined (a Promise resul
     const page = { waitForFunction: async (fn, argument) => {
         for (;;) {
             polls += 1;
-            const result = vm.runInNewContext(`(${fn.toString()})(argument)`, { window, argument, JSON });
+            // A string is an expression and is not called (Playwright 1.64.1); a function is called.
+            const result = typeof fn === "string" ? vm.runInNewContext(fn, { window, JSON })
+                : vm.runInNewContext(`(${fn.toString()})(argument)`, { window, argument, JSON });
             if (result) return;
             await new Promise((resolve) => setImmediate(resolve));
         }

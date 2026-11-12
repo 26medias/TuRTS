@@ -299,6 +299,48 @@ fn weapon_parameters(
     })
 }
 
+/// The one range rule of a weapon: `point` is in range of a weapon at `origin` when the squared
+/// distance is at most the squared range. Target choice (`choose_target`) and the approach of an
+/// Attack order (`weapon_stand_off`) both decide with this function, so a unit that ends its
+/// approach is in range by the same test that lets its weapon fire.
+pub(crate) fn within_weapon_range(
+    origin: bevy_math::Vec2,
+    point: bevy_math::Vec2,
+    range: f32,
+) -> bool {
+    origin.distance_squared(point) <= range * range
+}
+
+/// The point from which a weapon of `range` can fire at `target`, on the line from `target` to
+/// `from`: the ring point at distance `range` from `target`.
+///
+/// The ring point is a real number that `f32` cannot store, so its stored value can lie one
+/// rounding step outside the range, and `within_weapon_range` then refuses it (a unit that
+/// stopped there never fired). A ring point that fails the rule is moved toward `target` by the
+/// rounding bound of its own computation: the unit vector has a relative error of about one
+/// `f32::EPSILON`, and each coordinate has an error of half a step of its magnitude. The weapon
+/// range is not changed, and a ring point that passes the rule is returned unchanged.
+pub(crate) fn weapon_stand_off(
+    target: bevy_math::Vec2,
+    from: bevy_math::Vec2,
+    range: f32,
+) -> bevy_math::Vec2 {
+    let direction = (from - target).normalize_or_zero();
+    let ring = target + direction * range;
+    if within_weapon_range(ring, target, range) {
+        return ring;
+    }
+    let magnitude = ring.abs().max(target.abs()).max_element();
+    let rounding_bound = f32::EPSILON * (range + magnitude);
+    target + direction * (range - STAND_OFF_BOUNDS * rounding_bound)
+}
+
+/// How many rounding bounds a failing ring point moves in. Four bounds cover the error sources of
+/// `weapon_stand_off` and the rounding of the squared distance. The test
+/// `weapon_stand_off_is_in_range_for_random_rings` runs 2 million rings: one bound passes it and
+/// half a bound fails it, so four bounds keep a margin of four.
+const STAND_OFF_BOUNDS: f32 = 4.0;
+
 fn choose_target(
     world: &World,
     origin: bevy_math::Vec2,
@@ -306,7 +348,6 @@ fn choose_target(
     candidates: &CombatIndex<'_>,
     focus: Option<u32>,
 ) -> Option<u32> {
-    let range_squared = parameters.range * parameters.range;
     let healths = &world.resource::<Healths>().0;
     let matches = |id: u32| {
         let health = healths.get(&id)?;
@@ -321,8 +362,9 @@ fn choose_target(
         if !relation_matches {
             return None;
         }
-        let distance_squared = candidates.positions.get(&id)?.distance_squared(origin);
-        (distance_squared <= range_squared).then_some((distance_squared, id))
+        let position = *candidates.positions.get(&id)?;
+        within_weapon_range(origin, position, parameters.range)
+            .then(|| (position.distance_squared(origin), id))
     };
     if let Some(focus) = focus
         && matches(focus).is_some()
@@ -862,6 +904,103 @@ mod tests {
                 .target,
             OrderTargetSim::Unit(2),
         );
+    }
+
+    /// One mobile attacker with a weapon of range 4.0 (the Muster trooper) at `start`, one target
+    /// of 200 health at `target`. Steps until the first shot or `ticks`. Returns the tick of the
+    /// first shot and the distance between the two units at the end.
+    fn approach_and_fire(
+        start: bevy_math::Vec2,
+        target: bevy_math::Vec2,
+        ticks: u32,
+    ) -> (Option<u32>, f32) {
+        let mut attacker = weapon(1000, 5);
+        attacker.movement = Some(turts_mod_api::MovementDef { speed: 3.0 });
+        attacker.weapon.as_mut().unwrap().range = 4.0;
+        let mut app = app_with_units(
+            20,
+            vec![attacker, unit(TARGET, Some(200))],
+            vec![
+                placement(WEAPON, 0, start.x, start.y),
+                placement(TARGET, 1, target.x, target.y),
+            ],
+            BTreeMap::new(),
+        );
+        install_attack_order(&mut app);
+        set_order(&mut app, attack_order(2));
+        let mut fired = None;
+        for tick in 1..=ticks {
+            app.update();
+            if app.world().resource::<Healths>().0[&2] < 200 {
+                fired = Some(tick);
+                break;
+            }
+        }
+        let actor = app
+            .world()
+            .iter_entities()
+            .find(|entity| entity.get::<UnitId>().is_some_and(|id| id.0 == 1))
+            .unwrap();
+        (fired, actor.get::<Position>().unwrap().0.distance(target))
+    }
+
+    #[test]
+    fn attack_from_out_of_range_fires_on_every_bearing_and_distance() {
+        // The approach and the fire check share one rule: the unit that stops at the end of its
+        // approach is in range of its target, on every bearing. The bound is the walk at
+        // 3.0 per second at 20 Hz (0.15 a tick) over the longest start distance, plus slack.
+        let target = bevy_math::Vec2::new(16.0, 16.0);
+        let mut failures = Vec::new();
+        for distance in [4.5_f32, 7.3, 10.0, 13.7] {
+            for step in 0..64 {
+                let angle = step as f32 * std::f32::consts::TAU / 64.0;
+                let start = target + bevy_math::Vec2::new(angle.cos(), angle.sin()) * distance;
+                let bound = ((distance - 4.0) / 0.15).ceil() as u32 + 20;
+                let (fired, stop) = approach_and_fire(start, target, bound);
+                if fired.is_none() {
+                    failures.push((distance, step, start, stop));
+                }
+            }
+        }
+        assert!(
+            failures.is_empty(),
+            "{} of 256 approaches never fired within the walk bound; first (distance, step, start, \
+             stop distance): {:?}",
+            failures.len(),
+            failures.first()
+        );
+    }
+
+    #[test]
+    fn weapon_stand_off_is_in_range_for_random_rings() {
+        // xorshift64: a fixed seed, so a run repeats.
+        let mut state = 0x9E37_79B9_7F4A_7C15_u64;
+        let mut next = move || {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            (state >> 40) as f32 / (1_u64 << 24) as f32
+        };
+        let mut moved = 0_u32;
+        for _ in 0..2_000_000 {
+            let target = bevy_math::Vec2::new(next() * 128.0, next() * 128.0);
+            let range = 0.25 + next() * 40.0;
+            let angle = next() * std::f32::consts::TAU;
+            let from = target
+                + bevy_math::Vec2::new(angle.cos(), angle.sin()) * (range + 0.01 + next() * 30.0);
+            let ring = super::weapon_stand_off(target, from, range);
+            assert!(
+                super::within_weapon_range(ring, target, range),
+                "stand-off {ring:?} is out of range {range} of {target:?} (from {from:?})"
+            );
+            let plain = target + (from - target).normalize_or_zero() * range;
+            if super::within_weapon_range(plain, target, range) {
+                assert_eq!(ring, plain, "a ring point that is in range stays unchanged");
+            } else {
+                moved += 1;
+            }
+        }
+        assert!(moved > 0, "setup: the sample has rings that fail the rule");
     }
 
     fn attack_order(target: u32) -> Order {
@@ -1875,6 +2014,95 @@ mod tests {
         assert_eq!(
             app.world().resource::<crate::economy::combat::Weapons>().0[&2].last_target,
             None
+        );
+    }
+
+    /// The replicated weapon rows (live view and committed batch) of this tick, as
+    /// `(weapon, last_target)`, for every row that names a unit that is not alive.
+    fn weapon_rows_naming_absent_units(app: &bevy_app::App) -> Vec<(&'static str, u32, u32)> {
+        let live: std::collections::BTreeSet<u32> = app
+            .world()
+            .iter_entities()
+            .filter_map(|entity| entity.get::<UnitId>().map(|id| id.0))
+            .collect();
+        let view = crate::economy::views_m3::m3_world_view(app.world());
+        let committed = app
+            .world()
+            .resource::<crate::economy::events::CommittedTick>();
+        view.raw_weapons
+            .iter()
+            .map(|row| ("view", row))
+            .chain(committed.weapons.iter().map(|row| ("delta", row)))
+            .filter_map(|(source, row)| {
+                row.last_target
+                    .filter(|target| !live.contains(target))
+                    .map(|target| (source, row.unit, target))
+            })
+            .collect()
+    }
+
+    #[test]
+    fn ordered_attack_kill_replicates_no_reference_to_the_removed_target() {
+        // Cooldown 1000 ms at 20 Hz = 20 ticks. One shot kills the target.
+        let mut app = app_with(20, 1_000, 250);
+        install_attack_order(&mut app);
+        set_order(&mut app, attack_order(2));
+        for tick in 1..=25 {
+            app.update();
+            assert_eq!(
+                weapon_rows_naming_absent_units(&app),
+                vec![],
+                "tick {tick}: a replicated weapon row names a removed unit"
+            );
+        }
+        assert!(!app.world().resource::<Healths>().0.contains_key(&2));
+        let actor = app
+            .world()
+            .iter_entities()
+            .find(|entity| entity.get::<UnitId>().is_some_and(|id| id.0 == 1))
+            .unwrap();
+        let orders = actor.get::<UnitOrders>().unwrap();
+        assert!(orders.current.is_none(), "the attack order completes");
+        assert!(
+            orders.last_failure.is_none(),
+            "a kill by the ordered attacker is a completion, not TargetGone"
+        );
+    }
+
+    #[test]
+    fn kill_by_another_weapon_clears_the_ordered_attacker_target_reference() {
+        let mut app = app_with_units(
+            20,
+            vec![weapon(1_000, 5), unit(TARGET, Some(10))],
+            vec![
+                placement(WEAPON, 0, 5.0, 5.0),
+                placement(WEAPON, 0, 8.0, 5.0),
+                placement(TARGET, 1, 6.0, 5.0),
+            ],
+            BTreeMap::new(),
+        );
+        set_ammo(&mut app, 2, 10, 0);
+        install_attack_order(&mut app);
+        set_order(&mut app, attack_order(3));
+        for tick in 1..=25 {
+            app.update();
+            assert_eq!(
+                weapon_rows_naming_absent_units(&app),
+                vec![],
+                "tick {tick}: a replicated weapon row names a removed unit"
+            );
+        }
+        assert!(!app.world().resource::<Healths>().0.contains_key(&3));
+        let actor = app
+            .world()
+            .iter_entities()
+            .find(|entity| entity.get::<UnitId>().is_some_and(|id| id.0 == 1))
+            .unwrap();
+        let orders = actor.get::<UnitOrders>().unwrap();
+        assert!(orders.current.is_none(), "the attack order completes");
+        assert!(
+            orders.last_failure.is_none(),
+            "the ordered attacker fired at its target before the kill"
         );
     }
 

@@ -5,6 +5,7 @@ const fs = require("node:fs/promises");
 const path = require("node:path");
 const crypto = require("node:crypto");
 const { qualifyNavigationReceipt } = require("./navigation-receipt.js");
+const { waitForSync } = require("./wait-sync.js");
 
 const IO_KEYS = Object.freeze(["click", "drag", "key", "move", "wheel", "screenshot", "save", "wait", "reload", "use"]);
 
@@ -47,7 +48,7 @@ function createDriverIo(pages, { outputDir, inputLog = [], initialCursor = { x: 
                 (error && !/Execution context was destroyed|Cannot find context with specified id/.test(String(error)))) throw error || new Error("unqualified navigation");
             if (navigationTrace) return navigationTrace;
             await page().waitForLoadState("domcontentloaded");
-            await page().waitForFunction(() => typeof window.turts_debug === "function", null,
+            await waitForSync(page(), () => typeof window.turts_debug === "function", null,
                 { timeout: 30000, polling: 20 });
             const nextDocument = await page().evaluate(() => ({ document_url: document.URL,
                 document_time_origin: performance.timeOrigin }));

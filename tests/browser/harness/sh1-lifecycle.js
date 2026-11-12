@@ -4,6 +4,7 @@
 const crypto = require('node:crypto');
 const fs = require('node:fs/promises');
 const path = require('node:path');
+const { waitForDebugRecord, waitForSync } = require('./wait-sync.js');
 const sha = (bytes) => crypto.createHash('sha256').update(bytes).digest('hex');
 
 // Observe completed real application frames, and hold only the next requested
@@ -123,13 +124,12 @@ async function prepareSh1Lifecycle({ context, params, outDir, epoch, navigationA
         gates.delete(kind);
         resolve();
     };
-    // Playwright does not await a predicate, so each predicate here is sync (tests/browser/harness/wait-predicate.test.js).
-    // A poll starts a request for a record (design D 9, row DBG1) and reads the record that the
-    // last request published; an older page publishes in each frame.
-    const waitPhase = async (page, pattern) => page.waitForFunction((source) => {
+    // Every wait goes through harness/wait-sync.js: Playwright does not await a predicate, so each
+    // predicate here is sync. A poll asks for a record (design D 9, row DBG1) when no request is
+    // pending: with a held frame, a poll every 20 ms would otherwise queue a waiter each time.
+    const waitPhase = async (page, pattern) => waitForDebugRecord(page, (source) => {
         if (typeof window.turts_debug !== 'function') return false;
         try {
-            window.turts_debug_request?.().catch(() => {});
             return new RegExp(source).test(JSON.parse(window.turts_debug()).phase);
         } catch { return false; }
     }, pattern, { timeout: 30000, polling: 20 });
@@ -171,7 +171,7 @@ async function prepareSh1Lifecycle({ context, params, outDir, epoch, navigationA
             await page.evaluate(() => { window.__sh1_phase_capture.enabled = true; });
             release('package');
             for (const kind of ['verify', 'joining']) {
-                await page.waitForFunction((expected) => window.__sh1_phase_capture?.held === expected,
+                await waitForSync(page, (expected) => window.__sh1_phase_capture?.held === expected,
                     kind, { timeout: 30000, polling: 20 });
                 await drive(driver, io, `load-${kind}`);
                 await releaseFrame(page, kind);
@@ -197,10 +197,9 @@ async function prepareSh1Lifecycle({ context, params, outDir, epoch, navigationA
             target.record.joined_before_close = before;
             await save();
             await waitPhase(page, '^Joined');
-            await page.waitForFunction(() => {
+            await waitForDebugRecord(page, () => {
                 if (typeof window.turts_debug !== 'function') return false;
                 try {
-                    window.turts_debug_request?.().catch(() => {});
                     return JSON.parse(window.turts_debug()).reconnect_required === true;
                 } catch { return false; }
             }, null, { timeout: 30000, polling: 20 });

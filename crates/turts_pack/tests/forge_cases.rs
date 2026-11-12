@@ -403,6 +403,28 @@ fn dangling_fails_on_leftover_row() {
         "DANGLING"
     );
 }
+#[test]
+fn dangling_fails_on_weapon_last_target() {
+    let (mut app, _, _) = loaded(&forge_dir());
+    let mut state = audit_state(app.world_mut());
+    let gone = 9_999;
+    assert!(
+        common::conservation::check_dangling(&state).is_ok(),
+        "setup: the loaded Forge state has no dangling row"
+    );
+    state
+        .raw_weapons
+        .first_mut()
+        .expect("setup: Forge has a weapon row")
+        .last_target = Some(gone);
+    state.removed_units.push(gone);
+    assert_eq!(
+        common::conservation::check_dangling(&state)
+            .unwrap_err()
+            .invariant,
+        "DANGLING"
+    );
+}
 fn empty_audit() -> AuditState {
     let mut app = headless_app(20);
     audit_state(app.world_mut())

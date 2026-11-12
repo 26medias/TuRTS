@@ -26,8 +26,10 @@ test("production runner overwrites driver-saved checkpoint forgeries before judg
             waitForTimeout: async () => {},
             // Playwright does not await a predicate: a Promise result is true at once. The fake
             // refuses it, so an `async` predicate cannot pass here (review-l0-dbg.md, finding 1).
-            waitForFunction: async (fn) => {
-                const result = vm.runInNewContext(`(${fn.toString()})()`, { window });
+            waitForFunction: async (fn, argument) => {
+                // A string is an expression and is not called (Playwright 1.64.1); a function is called.
+                const result = typeof fn === "string" ? vm.runInNewContext(fn, { window })
+                    : vm.runInNewContext(`(${fn.toString()})(argument)`, { window, argument });
                 assert.equal(typeof result?.then, "undefined", "the predicate returned a Promise: Playwright would not await it");
                 assert(result);
             },
