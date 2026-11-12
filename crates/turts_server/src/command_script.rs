@@ -42,8 +42,14 @@ pub fn install(app: &mut App, path: Option<&Path>) -> Result<(), String> {
     app.insert_resource(Script(by_tick));
     app.add_systems(
         FixedPreUpdate,
+        // The script runs after the admission of the live commands of the tick, so a scripted
+        // entry (`seq` 0, no session, no rate limit) lands behind the commands of real clients
+        // in `CommandQueue`: a live command has the first place, as in a match with no script,
+        // and the order of the two writes is fixed. If the admission system is not installed
+        // (a test with a script only), the `after` has no effect.
         apply_script
             .after(SimSet::Construction)
+            .after(crate::session::admit_player_commands)
             .before(SimSet::Commands),
     );
     Ok(())
@@ -96,6 +102,33 @@ mod tests {
         app.add_plugins(bevy::time::TimePlugin)
             .add_plugins(turts_sim::SimPlugin { tick_hz: 20 })
             .insert_resource(turts_sim::MatchConfig::immediate(20));
+        install(&mut app, Some(&path)).unwrap();
+        crate::session::assert_fixed_pre_update_is_totally_ordered(app);
+        fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn the_script_and_the_admission_system_have_one_order_when_both_are_installed() {
+        // `main.rs` installs both with `--command-script`. Both are exclusive systems in the gap
+        // between `Construction` and `Commands`, so without an order between them the schedule
+        // is ambiguous (and the order of the two writes to `CommandQueue` is not fixed).
+        let path = std::env::temp_dir().join(format!(
+            "turts_command_script_both_{}_{}.json",
+            std::process::id(),
+            std::thread::current().name().unwrap_or("test")
+        ));
+        fs::write(&path, b"[]").unwrap();
+        let mut app = App::new();
+        app.add_plugins(bevy::time::TimePlugin)
+            .add_plugins(turts_sim::SimPlugin { tick_hz: 20 })
+            .insert_resource(turts_sim::MatchConfig::immediate(20));
+        crate::session::install(
+            &mut app,
+            crate::session::Advertised {
+                lockfile_hash: String::new(),
+                tick_hz: 20,
+            },
+        );
         install(&mut app, Some(&path)).unwrap();
         crate::session::assert_fixed_pre_update_is_totally_ordered(app);
         fs::remove_file(path).unwrap();
