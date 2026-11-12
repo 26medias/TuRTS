@@ -19,8 +19,10 @@
 // of the pixels-only rule).
 //
 // Combat: the package gives one armed slot (mods/muster/units/trooper.ron); the other slot owns
-// unarmed targets. The slot-0 window selects one trooper and orders it to attack one target about
-// every 50 s. The slot-1 window moves one of its targets about every 40 s. Both windows zoom.
+// unarmed targets. About every 50 s the slot-0 window walks one selected trooper to a point next to
+// one target and then orders it to attack that target (a combat round). The slot-1 window moves one
+// of its targets about every 40 s. Both windows zoom. The scene bridge (turts_scene) gives the unit
+// screen points and the camera matrix; the health records of turts_debug give the damage.
 //
 // Exit: 0 PASS, 1 FAIL (the task's fail condition), 3 the run could not be set up (no verdict).
 "use strict";
@@ -76,6 +78,16 @@ function minimapPoint(worldX, worldY) {
     return { x: Math.round(x0 + MINIMAP.size * (worldX / MAP.w)), y: Math.round(y0 + MINIMAP.size * (1 - worldY / MAP.h)) };
 }
 
+// World point (x, 0, y) to window-logical pixels. m is clip_from_world (16 numbers, column-major, as in turts_scene).
+function projectGround(m, win, x, y) {
+    if (!Array.isArray(m) || m.length !== 16 || !Array.isArray(win)) return null;
+    const cx = m[0] * x + m[8] * y + m[12];
+    const cy = m[1] * x + m[9] * y + m[13];
+    const cw = m[3] * x + m[11] * y + m[15];
+    if (!(cw > 0)) return null;
+    return [((cx / cw + 1) / 2) * win[0], ((1 - cy / cw) / 2) * win[1]];
+}
+
 async function readState(page) {
     return page.evaluate(() => {
         const out = { hidden: document.hidden, visibility: document.visibilityState, error: window.turts_error || null };
@@ -87,10 +99,14 @@ async function readState(page) {
             out.tick = debug.last_frame?.latest_tick ?? null;
             out.frame_index = recent.length ? recent[recent.length - 1].frame_index : null;
             out.has_last_frame = Boolean(debug.last_frame);
+            const unitKey = (value) => (Number.isSafeInteger(value) ? value : (value?.unit_id ?? value?.UnitId ?? value?.[0] ?? null));
+            out.healths = (debug.replicated_world?.healths || []).map((h) => [unitKey(h.unit), h.current]);
         } catch (error) { out.debug_error = String(error?.message || error); }
         try {
             const scene = JSON.parse(window.turts_scene());
             out.cameras_3d = scene.cameras_3d;
+            out.clip = scene.clip_from_world ?? null;
+            out.win = scene.window_logical_size ?? null;
             out.render_adapter = scene.render_adapter ?? null;
             out.units = scene.units.map((unit) => ({
                 id: unit.unit_id, x: unit.translation[0], y: unit.translation[2], screen: unit.ground_screen_center,
@@ -188,7 +204,6 @@ async function run() {
         result.sets = { foreign_ids: foreignIds, trooper_count: trooperIds.length, chosen_trooper: trooperId };
         const combat = [];
         result.combat = combat;
-        let lastTarget = null;
 
         const front = async (w) => { await w.page.bringToFront(); };
         async function focusWorld(w, wx, wy) {
@@ -210,34 +225,61 @@ async function run() {
             }
             return { state, unit: state.units.find((u) => u.id === id) };
         }
-        async function attackNext(second, reissue) {
+        const healthOf = (state, id) => state.healths?.find((h) => h[0] === id)?.[1] ?? null;
+        // One combat round. The attack order of a trooper at the edge of its range does not fire in this build (the
+        // trooper stops 2.5e-5 outside the range; smoke run egpu-smoke-3, tick log), so the round first walks the
+        // trooper to a point 1.8 from the target (a ground right click), then orders the attack from inside the range.
+        async function fightRound(second) {
             await front(attacker);
             let state = await readState(attacker.page);
             const alive = foreignIds.filter((id) => state.units.some((u) => u.id === id));
-            const entry = { second, step: reissue ? "attack_reissue" : "attack", foreign_alive_before: alive.length };
-            if (alive.length === 0 || trooperId === null) { entry.outcome = alive.length === 0 ? "no foreign unit left" : "no trooper"; combat.push(entry); return; }
-            const targetId = reissue && lastTarget !== null && alive.includes(lastTarget) ? lastTarget : alive[0];
-            if (reissue && targetId !== lastTarget) { entry.outcome = "last target already gone"; combat.push(entry); return; }
-            let { unit: target } = await settled(attacker, targetId);
-            const me = state.units.find((u) => u.id === trooperId);
-            if (reachable(me?.screen)) { await attacker.page.mouse.click(me.screen[0], me.screen[1], { button: "left" }); await sleep(150); }
+            const entry = { second, step: "fight_round", foreign_alive_before: alive.length };
+            combat.push(entry);
+            if (alive.length === 0 || trooperId === null) { entry.outcome = alive.length === 0 ? "no foreign unit left" : "no trooper"; return; }
+            const targetId = alive[0];
+            const me0 = state.units.find((u) => u.id === trooperId);
+            if (reachable(me0?.screen)) { await attacker.page.mouse.click(me0.screen[0], me0.screen[1], { button: "left" }); await sleep(150); }
             else entry.select_skipped = "trooper not on screen";
-            if (!reachable(target?.screen)) {
-                await focusWorld(attacker, target.x, target.y);
-                ({ unit: target } = await settled(attacker, targetId));
+            let { state: after, unit: target } = await settled(attacker, targetId);
+            await focusWorld(attacker, target.x, target.y);
+            ({ state: after, unit: target } = await settled(attacker, targetId));
+            if (!target) { entry.outcome = "target gone before the order"; return; }
+            const goal = { x: target.x - 1.5, y: target.y - 1.0 };
+            const goalScreen = projectGround(after.clip, after.win, goal.x, goal.y);
+            const check = projectGround(after.clip, after.win, target.x, target.y);
+            entry.projection_error_px = check && target.screen ? Math.round(Math.hypot(check[0] - target.screen[0], check[1] - target.screen[1]) * 10) / 10 : null;
+            if (!reachable(goalScreen)) { entry.outcome = "walk point not reachable on screen"; return; }
+            await attacker.page.mouse.click(goalScreen[0], goalScreen[1], { button: "right" });
+            entry.walk_to = [goal.x, goal.y].map((v) => Math.round(v * 10) / 10);
+            const walkStart = Date.now();
+            let near = false;
+            while (Date.now() - walkStart < 30000) {
+                await sleep(500);
+                const now = await readState(attacker.page);
+                const me = now.units.find((u) => u.id === trooperId);
+                const t = now.units.find((u) => u.id === targetId);
+                if (me && t && Math.hypot(me.x - t.x, me.y - t.y) <= 2.5) { near = true; break; }
+                if (!t) break;
             }
-            if (!reachable(target?.screen)) { entry.outcome = "target not reachable on screen"; combat.push(entry); return; }
-            entry.target_screen = target.screen.map((v) => Math.round(v)); entry.trooper_screen = me?.screen ? me.screen.map((v) => Math.round(v)) : null;
+            entry.walk_s = Math.round((Date.now() - walkStart) / 100) / 10;
+            if (!near) { entry.outcome = "trooper did not arrive"; return; }
+            ({ state: after, unit: target } = await settled(attacker, targetId));
+            if (!reachable(target?.screen)) { entry.outcome = "target not reachable on screen"; return; }
+            const before = healthOf(after, targetId);
             await attacker.page.mouse.click(target.screen[0], target.screen[1], { button: "right" });
-            lastTarget = targetId;
-            entry.target = targetId; entry.outcome = "attack ordered"; combat.push(entry);
+            entry.target = targetId; entry.target_health_at_order = before;
+            await sleep(4000);
+            const later = await readState(attacker.page);
+            entry.target_health_4s_later = healthOf(later, targetId);
+            entry.target_in_scene_4s_later = later.units.some((u) => u.id === targetId);
+            entry.outcome = "attack ordered";
         }
         async function moveDummy(second) {
             await front(mover);
             const state = await readState(mover.page);
             const entry = { second, step: "dummy_move", window: mover.n + 1 };
             // A dummy that is not the attacker's target (the highest id first). The post (the last id) cannot move.
-            const candidates = foreignIds.slice(0, -1).reverse().filter((id) => id !== lastTarget && state.units.some((u) => u.id === id));
+            const candidates = foreignIds.slice(0, -1).reverse().filter((id) => state.units.some((u) => u.id === id));
             const dummy = candidates.map((id) => state.units.find((u) => u.id === id)).find((u) => reachable(u.screen));
             if (!dummy) {
                 const any = candidates.length ? state.units.find((u) => u.id === candidates[0]) : null;
@@ -253,7 +295,9 @@ async function run() {
             entry.outcome = "dummy move ordered"; entry.unit = dummy.id; combat.push(entry);
         }
         async function zoom(second) {
+            // The attacker window zooms only when no combat round runs (a zoom between a read and a click moves the target).
             for (const w of windows) {
+                if (w === attacker && fightActive) continue;
                 await front(w);
                 await w.page.mouse.move(VIEW.w / 2, VIEW.h / 2);
                 await w.page.mouse.wheel(0, Math.floor(second / ZOOM_EVERY_S) % 2 === 0 ? -120 : 120);
@@ -270,8 +314,11 @@ async function run() {
             states.forEach((state, i) => {
                 const w = windows[i];
                 const foreignAlive = state.units ? foreignIds.filter((id) => state.units.some((u) => u.id === id)).length : null;
+                const foreignHealth = state.healths ? state.healths.filter((h) => foreignIds.includes(h[0])).reduce((sum, h) => sum + h[1], 0) : null;
+                if (foreignHealth !== null && w.health_baseline === undefined) w.health_baseline = foreignHealth;
                 w.samples.push({ second, phase: state.phase, tick: state.tick, frame_index: state.frame_index, hidden: state.hidden,
                     visibility: state.visibility, units: state.units ? state.units.length : null, foreign_alive: foreignAlive,
+                    foreign_health: foreignHealth, foreign_damage: foreignHealth === null ? null : w.health_baseline - foreignHealth,
                     debug_error: state.debug_error ?? null, scene_error: state.scene_error ?? null });
                 if (typeof state.phase !== "string" || !state.phase.startsWith("Joined")) {
                     events.push({ t_utc: nowIso(), window: i + 1, type: "phase_not_joined", phase: state.phase ?? null, during_measure: true });
@@ -279,25 +326,33 @@ async function run() {
             });
         }
 
-        for (let second = 0; second < secs; second += 1) {
-            const due = t0 + second * 1000;
-            const wait = due - Date.now();
-            if (wait > 0) await sleep(wait);
-            // An action that throws is recorded and the run goes on: the frame record must not stop for a combat step.
-            const guarded = async (name, action) => {
-                try { await action(second); } catch (error) { combat.push({ second, step: name, error: String(error?.message || error).slice(0, 200) }); }
-            };
-            if (second % SAMPLE_EVERY_S === 0) {
+        // An action that throws is recorded and the run goes on: the frame record must not stop for a combat step.
+        const guarded = async (name, second, action) => {
+            try { await action(second); } catch (error) { combat.push({ second, step: name, error: String(error?.message || error).slice(0, 200) }); }
+        };
+        const nextAt = { sample: 0, fight: 1, move: 21, zoom: 11 };
+        let fightActive = false;
+        let fightPromise = Promise.resolve();
+        for (;;) {
+            const second = Math.floor((Date.now() - t0) / 1000);
+            if (second >= secs) break;
+            if (second >= nextAt.sample) {
+                nextAt.sample = second + SAMPLE_EVERY_S;
                 await drain(); await sample(second);
-                console.log(`EGPU_PROGRESS second=${second} frames=${windows.map((w) => w.frames.length).join(",")} foreign_alive=${windows[0].samples.at(-1)?.foreign_alive}`);
+                console.log(`EGPU_PROGRESS second=${second} frames=${windows.map((w) => w.frames.length).join(",")} foreign_alive=${windows[0].samples.at(-1)?.foreign_alive} damage=${windows[0].samples.at(-1)?.foreign_damage}`);
             }
-            // One new target about every 50 s (a dummy has 40 health, a trooper does 5 each second); the same
-            // order again 25 s later in case the first click missed. The package has 10 dummies and 1 post.
-            if (second % ATTACK_EVERY_S === 1) await guarded("attack", (sec) => attackNext(sec, false));
-            if (second % ATTACK_EVERY_S === 26) await guarded("attack_reissue", (sec) => attackNext(sec, true));
-            if (second % DUMMY_MOVE_EVERY_S === 21) await guarded("dummy_move", moveDummy);
-            if (second % ZOOM_EVERY_S === 11) await guarded("zoom", zoom);
+            // One combat round about every 50 s, in the background (a round lasts 15 to 40 s): the package has 10 dummies
+            // (40 health) and 1 post (200 health), and a trooper does 5 damage each second.
+            if (second >= nextAt.fight && !fightActive) {
+                nextAt.fight = second + ATTACK_EVERY_S;
+                fightActive = true;
+                fightPromise = guarded("fight_round", second, fightRound).finally(() => { fightActive = false; });
+            }
+            if (second >= nextAt.move) { nextAt.move = second + DUMMY_MOVE_EVERY_S; await guarded("dummy_move", second, moveDummy); }
+            if (second >= nextAt.zoom) { nextAt.zoom = second + ZOOM_EVERY_S; await guarded("zoom", second, zoom); }
+            await sleep(250);
         }
+        await Promise.race([fightPromise, sleep(8000)]);
         const tEnd = Date.now();
         // Stop the clock first, so that the final reads do not count as frames of the period.
         await Promise.all(windows.map((w) => w.page.evaluate(() => { window.__egpu.active = false; })));
