@@ -77,3 +77,22 @@ fn a_slot_outside_the_table_is_its_own_team() {
     assert!(matches(Relation::Ally, 9, 9, teams));
     assert!(matches(Relation::Enemy, 9, 10, teams));
 }
+
+#[test]
+fn a_missing_slot_is_never_an_ally_by_its_number() {
+    // Review finding 1: the slot number was used as a team id for a slot with no entry, and
+    // it can equal a real team id. Slots 0 and 1 are team 2; slot 2 has no entry.
+    let table = [2u8, 2];
+    let teams = Teams::new(&table);
+    assert!(matches(Relation::Ally, 0, 1, teams));
+    for (a, b) in [(0u8, 2u8), (2, 0), (1, 2), (2, 1)] {
+        assert!(!matches(Relation::Ally, a, b, teams), "slots {a} and {b}");
+        assert!(matches(Relation::Enemy, a, b, teams), "slots {a} and {b}");
+        assert!(matches(Relation::Other, a, b, teams));
+    }
+    // A missing slot is allied with itself only.
+    assert!(matches(Relation::Same, 2, 2, teams) && matches(Relation::Ally, 2, 2, teams));
+    assert!(matches(Relation::Enemy, 2, 3, teams));
+    // Two missing slots are not allies, even when one number is a team id of the table.
+    assert!(!matches(Relation::Ally, 5, 2, teams));
+}

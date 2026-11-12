@@ -27,6 +27,23 @@ pub fn rate_factor(when_short: Option<WhenShort>, short: bool) -> Ratio {
     }
 }
 
+/// The rate of a capability that has several `when_short` entries.
+///
+/// The design does not say how two short supply resources combine (MP1 has one supply
+/// resource). One active `Rate` gives its ratio; none gives 1/1; two or more active `Rate`
+/// entries give `None`, so a mod with two cannot get a silent answer.
+pub fn combined_rate(entries: &[(WhenShort, bool)]) -> Option<Ratio> {
+    let mut active = entries.iter().filter_map(|(effect, short)| match effect {
+        WhenShort::Rate(ratio) if *short => Some(*ratio),
+        _ => None,
+    });
+    match (active.next(), active.next()) {
+        (None, _) => Some(Ratio::ONE),
+        (Some(ratio), None) => Some(ratio),
+        (Some(_), Some(_)) => None,
+    }
+}
+
 /// False for a weapon with a `Disable` effect while short.
 pub fn weapon_enabled(when_short: Option<WhenShort>, short: bool) -> bool {
     !(short && when_short == Some(WhenShort::Disable))

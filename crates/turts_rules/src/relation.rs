@@ -26,8 +26,8 @@ impl Relations {
     }
 }
 
-/// The team of each slot, indexed by slot number. A slot with no entry is its own team
-/// (the `Immediate` start policy, design 6.6).
+/// The team of each slot, indexed by slot number. A slot with no entry is its own team, and
+/// allied with itself only (the `Immediate` start policy gives an empty table, design 6.6).
 #[derive(Debug, Clone, Copy)]
 pub struct Teams<'a>(&'a [u8]);
 
@@ -39,15 +39,22 @@ impl<'a> Teams<'a> {
         Teams(team_of_slot)
     }
 
-    /// The team of `slot`. A slot with no entry is its own team: its team is its number.
-    pub fn team(self, slot: u8) -> u8 {
-        self.0.get(usize::from(slot)).copied().unwrap_or(slot)
+    /// The team of `slot`, or `None` for a slot with no entry.
+    pub fn team(self, slot: u8) -> Option<u8> {
+        self.0.get(usize::from(slot)).copied()
     }
 }
 
 /// The relations that `b` has to `a` (`a` is the own slot).
 pub fn relation(a: u8, b: u8, teams: Teams<'_>) -> Relations {
-    let same_team = teams.team(a) == teams.team(b);
+    // A slot is allied with itself. Two different slots are allied when both are listed and
+    // their team ids are equal. A slot with no entry is allied with nobody else, so its number
+    // can never be mistaken for a team id.
+    let same_team = a == b
+        || match (teams.team(a), teams.team(b)) {
+            (Some(team_a), Some(team_b)) => team_a == team_b,
+            _ => false,
+        };
     let held = [
         (Relation::Same, a == b),
         (Relation::Ally, same_team),

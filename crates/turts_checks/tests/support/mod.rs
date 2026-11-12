@@ -529,6 +529,21 @@ pub fn scan_rust(roots: &[PathBuf], c: &TokenCatalog) -> Result<Vec<Hit>, ScanEr
     });
     Ok(hits)
 }
+/// The production source files under `roots`, sorted: the files that `scan_rust` reads (no
+/// `tests` directory, no listed test-module file; each listed file is checked to be gated by
+/// `#[cfg(test)]` in its parent).
+pub fn production_sources(roots: &[PathBuf]) -> Result<Vec<PathBuf>, ScanError> {
+    let mut fslist = Vec::new();
+    let mut skipped = Vec::new();
+    for r in roots {
+        collect(r, &mut fslist, &mut skipped)?
+    }
+    for file in &skipped {
+        check_test_module_gate(file)?
+    }
+    fslist.sort();
+    Ok(fslist)
+}
 /// Test modules in their own file. The parent file declares each one with `#[cfg(test)] mod`,
 /// so the scan skips the file as it skips an inline `#[cfg(test)]` module.
 const TEST_MODULE_FILES: &[&str] = &[

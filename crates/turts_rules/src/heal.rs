@@ -14,14 +14,13 @@ pub fn healed_at(rate_per_second: u64, t: u64, tick_hz: NonZeroU32) -> u64 {
 
 /// The heal of tick `t`: `healed_at(t) - healed_at(t - 1)`. It is 0 for `t` = 0.
 pub fn heal_difference(rate_per_second: u64, t: u64, tick_hz: NonZeroU32) -> u64 {
-    match t.checked_sub(1) {
-        None => 0,
-        Some(before) => healed_at(rate_per_second, t, tick_hz).saturating_sub(healed_at(
-            rate_per_second,
-            before,
-            tick_hz,
-        )),
-    }
+    let Some(before) = t.checked_sub(1) else {
+        return 0;
+    };
+    // The difference of the two floors is taken in u128, and only then saturated: each floor
+    // alone can be above `u64::MAX`.
+    let hz = u64::from(tick_hz.get());
+    saturate_u64(mul_div_u64(rate_per_second, t, hz) - mul_div_u64(rate_per_second, before, hz))
 }
 
 /// `min(difference, max - health)`: the applied heal.
@@ -43,11 +42,16 @@ pub fn repair_charge_difference(
     amount: u64,
     per_health: NonZeroU64,
 ) -> u64 {
-    repair_charged(applied_now, amount, per_health).saturating_sub(repair_charged(
-        applied_before,
-        amount,
-        per_health,
-    ))
+    // Both totals in u128, then the difference, then the saturation: a total above
+    // `u64::MAX` must not make the charge of one tick 0 (a free repair).
+    let per = per_health.get();
+    saturate_u64(
+        mul_div_u64(applied_now, amount, per).saturating_sub(mul_div_u64(
+            applied_before,
+            amount,
+            per,
+        )),
+    )
 }
 
 /// The health target of a site at `done` of `total` (design 6.10 row K2): with `site_health`

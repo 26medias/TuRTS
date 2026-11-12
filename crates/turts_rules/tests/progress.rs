@@ -1,9 +1,9 @@
 //! The "value at tick" function for rate records (design 6.8; ruling R-K).
 
 use turts_rules::Ratio;
-use turts_rules::charge::{charged_at, refund};
+use turts_rules::charge::{CancelCase, CancelRefunds, charged_at, refund};
 use turts_rules::progress::{
-    RateRecord, cooldown_left, is_complete, paid_at, rate_step, refund_at, value_at,
+    RateRecord, cooldown_left, is_complete, paid_at, rate_step, refund_at, ticks_at_rate, value_at,
 };
 
 mod common;
@@ -111,14 +111,30 @@ fn paid_and_refund_equal_the_charge_and_refund_functions() {
             let share = u128::from(cost) * u128::from(run) / u128::from(total);
             assert_eq!(u128::from(paid), share);
             assert_eq!(paid_at(&r, cost, tick), paid, "Paid at {tick} of {r:?}");
-            assert_eq!(refund_at(&r, cost, ratio, tick), refund(paid, ratio));
+            let refunds = CancelRefunds {
+                running: ratio,
+                output_blocked: Ratio::ONE,
+                destroyed: Ratio::ZERO,
+            };
+            let running = refund_at(&r, cost, CancelCase::Running, &refunds, tick);
+            assert_eq!(running, refund(paid, ratio));
             let want_refund =
                 share * u128::from(ratio.numerator()) / u128::from(ratio.denominator());
+            assert_eq!(u128::from(running), want_refund.min(share));
+            // A held order or a queued job gives 0 inside the crate, whatever it is paid.
             assert_eq!(
-                u128::from(refund_at(&r, cost, ratio, tick)),
-                want_refund.min(share)
+                refund_at(&r, cost, CancelCase::HeldOrQueued, &refunds, tick),
+                0
             );
-            assert!(paid <= cost && refund_at(&r, cost, ratio, tick) <= paid);
+            assert_eq!(
+                refund_at(&r, cost, CancelCase::OutputBlocked, &refunds, tick),
+                paid
+            );
+            assert_eq!(
+                refund_at(&r, cost, CancelCase::Destroyed, &refunds, tick),
+                0
+            );
+            assert!(paid <= cost && running <= paid);
         }
     }
 }
@@ -140,4 +156,65 @@ fn cooldown_counts_down_to_zero() {
     assert_eq!(cooldown_left(100, 90), 10);
     assert_eq!(cooldown_left(100, 100), 0);
     assert_eq!(cooldown_left(100, 130), 0);
+}
+
+#[test]
+fn con3_refund_by_case_from_a_record() {
+    // CON3 (D:2449): cost 500 at 37/100 is paid 185; running 3/4 refunds 138; destroyed 1/2
+    // refunds 92; a held order refunds 0.
+    let r = record(0, 100, 1, 10);
+    let refunds = CancelRefunds {
+        running: Ratio::new(3, 4).expect("denominator above 0"),
+        output_blocked: Ratio::ONE,
+        destroyed: Ratio::new(1, 2).expect("denominator above 0"),
+    };
+    assert_eq!(refund_at(&r, 500, CancelCase::Running, &refunds, 47), 138);
+    assert_eq!(refund_at(&r, 500, CancelCase::Destroyed, &refunds, 47), 92);
+    assert_eq!(
+        refund_at(&r, 500, CancelCase::HeldOrQueued, &refunds, 47),
+        0
+    );
+}
+
+#[test]
+fn ticks_at_rate_is_the_build_time_under_low_power() {
+    // HUD6 (D:2476): "Build time 12 s (24 s now: low power)". At 20 Hz: 240 ticks, 480 ticks.
+    let rate = |n, d| Ratio::new(n, d).expect("denominator above 0");
+    assert_eq!(ticks_at_rate(240, rate(1, 2)), Some(480));
+    assert_eq!(ticks_at_rate(240, Ratio::ONE), Some(240));
+    // A time that is not whole rounds up: 7 x 3 / 2 = 10.5.
+    assert_eq!(ticks_at_rate(7, rate(2, 3)), Some(11));
+    assert_eq!(ticks_at_rate(0, rate(1, 2)), Some(0));
+    assert_eq!(ticks_at_rate(10, rate(3, 2)), Some(7)); // 6.67
+    // A zero rate never finishes: no value.
+    assert_eq!(ticks_at_rate(240, Ratio::ZERO), None);
+    // The u128 intermediate: u64::MAX x 2 / 1 does not fit in u64.
+    assert_eq!(ticks_at_rate(u64::MAX, rate(1, 2)), None);
+    assert_eq!(ticks_at_rate(u64::MAX, rate(2, 2)), Some(u64::MAX));
+    assert_eq!(ticks_at_rate(u64::MAX / 2, rate(1, 2)), Some(u64::MAX - 1));
+}
+
+#[test]
+fn ticks_at_rate_agrees_with_running_the_job() {
+    // The independent form: run a job of `duration` ticks of base time at the rate, tick by
+    // tick, with total = duration x Q and step = Q x num / den (Q = 12), and count ticks.
+    for (num, den) in [(1u64, 1u64), (1, 2), (1, 3), (2, 3), (3, 4)] {
+        let rate = Ratio::new(num, den).expect("denominator above 0");
+        for duration in [1u64, 2, 7, 20, 240, 333] {
+            let q = 12u64;
+            let step = rate_step(q, rate).expect("Q is a multiple of every denominator");
+            let total = duration * q;
+            let mut done = 0;
+            let mut ticks = 0u64;
+            while done < total {
+                done += step;
+                ticks += 1;
+            }
+            assert_eq!(
+                ticks_at_rate(duration, rate),
+                Some(ticks),
+                "duration {duration} rate {num}/{den}"
+            );
+        }
+    }
 }

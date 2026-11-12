@@ -317,6 +317,36 @@ fn the_node_clearance_is_an_edge_distance() {
 }
 
 #[test]
+fn a_hidden_static_inside_the_gap_is_site_blocked_with_no_id() {
+    // Review finding 6, design 6.1: a blocker that the viewer cannot see gives `site_blocked`
+    // with no unit id. A hidden building inside the gap blocks the site as much as an
+    // overlap does, and `site_near_building` would show that a building is there.
+    let hidden = |id: u32| id != 8;
+    let b = [building(8, 35.5, 32.0, 1.0, 0.5)];
+    assert_eq!(
+        check(&site(32.0, 32.0), &view(&[], &b, &[]), hidden),
+        Verdict::Refused {
+            reason: Reason::SiteBlocked,
+            blocker: None
+        }
+    );
+    // The same building in view is `site_near_building`.
+    assert_eq!(
+        check(&site(32.0, 32.0), &view(&[], &b, &[]), always),
+        refused(Reason::SiteNearBuilding)
+    );
+    // A visible building inside the gap comes first: the viewer sees a building that is too close.
+    let two = [
+        building(8, 35.5, 32.0, 1.0, 0.5),
+        building(9, 28.5, 32.0, 1.0, 0.5),
+    ];
+    assert_eq!(
+        check(&site(32.0, 32.0), &view(&[], &two, &[]), hidden),
+        refused(Reason::SiteNearBuilding)
+    );
+}
+
+#[test]
 fn a_hidden_blocker_is_refused_and_never_named() {
     let hidden = |id: u32| id != 5;
     let m = [mobile(5, 32.0, 32.0, 1.0)];
@@ -435,13 +465,20 @@ fn oracle(site: &Site, v: &View<'_>, visible: impl Fn(u32) -> bool) -> Verdict {
             blocker,
         };
     }
+    let mut hidden_in_gap = false;
     for o in v.obstacles {
         if let ObstacleKind::Static { gap } = o.kind {
             let edge = d(c, &o.footprint) - r - f(o.footprint.radius);
             if edge < f(gap).max(f(site.gap)) {
-                return refused(Reason::SiteNearBuilding);
+                if visible(o.id) {
+                    return refused(Reason::SiteNearBuilding);
+                }
+                hidden_in_gap = true;
             }
         }
+    }
+    if hidden_in_gap {
+        return refused(Reason::SiteBlocked);
     }
     for n in v.nodes {
         if d(c, n) - r - f(n.radius) < f(site.node_clearance) {

@@ -164,13 +164,22 @@ pub fn check(site: &Site, view: &View<'_>, visible: impl Fn(u32) -> bool) -> Ver
         };
     }
     // 4. Between two static footprints the edge distance is at least the larger gap. A mobile
-    //    unit counts by overlap only.
+    //    unit counts by overlap only. A building that the viewer cannot see blocks the site
+    //    like a hidden overlap does: the cause is `site_blocked` with no id, so that the
+    //    refusal never shows that a hidden building is there. A visible building comes first.
+    let mut hidden_in_gap = false;
     for obstacle in view.obstacles {
         if let ObstacleKind::Static { gap } = obstacle.kind
             && edge_below(footprint, &obstacle.footprint, site.gap.max(gap))
         {
-            return refuse(Reason::SiteNearBuilding);
+            if visible(obstacle.id) {
+                return refuse(Reason::SiteNearBuilding);
+            }
+            hidden_in_gap = true;
         }
+    }
+    if hidden_in_gap {
+        return refuse(Reason::SiteBlocked);
     }
     // 5. The edge distance to a resource node is at least `node_clearance`.
     for node in view.nodes {

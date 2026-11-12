@@ -1,7 +1,7 @@
 //! The damage formula, design 6.3 and row DMG1 (D:2445). Each cell is an exact number.
 
 use turts_rules::Ratio;
-use turts_rules::damage::{applied, base, hit, raw};
+use turts_rules::damage::{applied, base, hit, hit_for, raw};
 
 mod common;
 use common::Rng;
@@ -102,8 +102,9 @@ fn the_hit_equals_the_design_formula_for_random_inputs() {
         let health = rng.wide();
         let cell = ratio(num, den);
         let raw_wide = raw_oracle(base, num, den);
-        let raw_sat = u64::try_from(raw_wide).unwrap_or(u64::MAX);
-        let want = minimum.max(raw_sat.saturating_sub(flat));
+        // The flat armour comes off the wide value; only the result saturates (review finding 5).
+        let after_flat = raw_wide.saturating_sub(u128::from(flat));
+        let want = minimum.max(u64::try_from(after_flat).unwrap_or(u64::MAX));
         let got = hit(base, cell, minimum, flat);
         assert_eq!(
             got, want,
@@ -117,4 +118,31 @@ fn the_hit_equals_the_design_formula_for_random_inputs() {
             "damage is never above health or hit"
         );
     }
+}
+
+#[test]
+fn flat_armour_is_taken_off_the_wide_raw_value() {
+    // Review finding 5: `raw` saturated before `flat` was taken off, so the hit was
+    // u64::MAX - 46 where the exact value 18,502,915,224,908,506,354 is above u64::MAX.
+    let got = hit(4_625_728_806_227_126_600, ratio(12, 3), 1, 46);
+    assert_eq!(got, u64::MAX);
+    assert_eq!(applied(got, u64::MAX), u64::MAX);
+    // A flat that brings the wide value back into u64: 4 x u64::MAX / 1 - flat is still above.
+    assert_eq!(hit(u64::MAX, ratio(2, 1), 0, u64::MAX), u64::MAX);
+    // 2 x (2^63 + 5) = 2^64 + 10: minus 11 is 2^64 - 1 = u64::MAX, exactly.
+    assert_eq!(hit((1 << 63) + 5, ratio(2, 1), 0, 11), u64::MAX);
+    assert_eq!(hit((1 << 63) + 5, ratio(2, 1), 0, 12), u64::MAX - 1);
+}
+
+#[test]
+fn a_package_with_no_damage_table_keeps_the_base_whatever_the_armour() {
+    // Review finding 8 (design 6.3): no table gives `hit = base`.
+    for flat in [0, 5, u64::MAX] {
+        assert_eq!(hit_for(100, None, flat), 100);
+    }
+    assert_eq!(hit_for(u64::MAX, None, 7), u64::MAX);
+    // With a table, hit_for is the formula.
+    assert_eq!(hit_for(100, Some((ratio(29, 100), 1)), 5), 24);
+    assert_eq!(hit_for(50, Some((ratio(106, 100), 0)), 0), 53);
+    assert_eq!(hit_for(1, Some((ratio(1, 100), 1)), 0), 1);
 }

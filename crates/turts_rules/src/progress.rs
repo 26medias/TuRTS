@@ -5,7 +5,7 @@
 
 use crate::Ratio;
 use crate::arith::saturate_u64;
-use crate::charge;
+use crate::charge::{self, CancelCase, CancelRefunds};
 
 /// A rate record: `done` of `total` at `at_tick`, `per_tick` more in each following tick.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -41,9 +41,27 @@ pub fn paid_at(record: &RateRecord, cost: u64, tick: u32) -> u64 {
     charge::charged_at(cost, value_at(record, tick), record.total)
 }
 
-/// The HUD field `Refund` of one cost entry at `tick`: the refund of what is paid.
-pub fn refund_at(record: &RateRecord, cost: u64, ratio: Ratio, tick: u32) -> u64 {
-    charge::refund(paid_at(record, cost, tick), ratio)
+/// The HUD field `Refund` of one cost entry at `tick`: the refund of what is paid, for the
+/// cancel `case` (a held order or a queued job gives 0). The one way to compute a refund from a
+/// record.
+pub fn refund_at(
+    record: &RateRecord,
+    cost: u64,
+    case: CancelCase,
+    refunds: &CancelRefunds,
+    tick: u32,
+) -> u64 {
+    charge::refund_for(case, paid_at(record, cost, tick), refunds)
+}
+
+/// The ticks that `duration_ticks` of base time take at `rate`: `ceil(duration x den / num)`.
+pub fn ticks_at_rate(duration_ticks: u64, rate: Ratio) -> Option<u64> {
+    let numerator = u128::from(rate.numerator());
+    if numerator == 0 {
+        return None;
+    }
+    let product = u128::from(duration_ticks) * u128::from(rate.denominator());
+    u64::try_from(product.div_ceil(numerator)).ok()
 }
 
 /// The whole number that each tick adds at `rate`: `q x numerator / denominator`. `None`
