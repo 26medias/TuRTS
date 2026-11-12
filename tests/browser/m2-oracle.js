@@ -34,21 +34,24 @@ const UNIT_NAMES = {
 const PRODUCER = { base: "base:command_center", haul: "haul:depot", cedar: "cedar:depot", acme: "acme:scout" };
 const WORKER = { base: "base:harvester", haul: "haul:worker", cedar: "cedar:worker" };
 const OFFSET = { base: 18, haul: 18, cedar: 18, acme: 0 };
-// Public convergence has two profiles. The gate profile is the default: it waits 10 s (the
-// limit of m2.js before MC repair 82b08db) and then judges. The wide profile is opt-in: an
-// environment value TURTS_M2_CONVERGENCE_LIMIT_MS (a whole number of ms) sets a hard limit; the
-// wait then goes on past 10 s while both windows still advance their tick (no new tick for 15 s
-// ends it), up to that limit. Only the hosted software-render legs of .github/workflows/ci.yml
-// set the value: there the windows show about 1 frame per second (runs ci-run134-m2-sw-gl-1 and
-// -2). A poll reads both windows. Both profiles keep the first projection of each tick.
+// Public convergence has two profiles. The gate profile is the default. It gives the judgement
+// that was gated before MC repair 82b08db: it waits 10 s, and it compares the two windows only
+// at a tick that both windows report in the same poll (compare mode "same_poll"). The wide
+// profile is opt-in: an environment value TURTS_M2_CONVERGENCE_LIMIT_MS (a whole number of ms)
+// sets a hard limit; the wait then goes on past 10 s while both windows still advance their tick
+// (no new tick for 15 s ends it), up to that limit, and it compares at any tick that both
+// windows showed at any poll (compare mode "cross_poll"). Only the hosted software-render legs of
+// .github/workflows/ci.yml set the value: there the windows show about 1 frame per second (runs
+// ci-run134-m2-sw-gl-1 and -2) and seldom show one tick at one poll. A poll reads both windows.
+// Both profiles keep the first projection of each tick.
 const CONVERGENCE_ENV = "TURTS_M2_CONVERGENCE_LIMIT_MS";
-const CONVERGENCE_GATE = Object.freeze({ name: "gate", min_ms: 10000, stall_ms: 15000, limit_ms: 10000, poll_ms: 100 });
+const CONVERGENCE_GATE = Object.freeze({ name: "gate", min_ms: 10000, stall_ms: 15000, limit_ms: 10000, poll_ms: 100, cross_poll: false });
 
 function convergenceLimits(env = process.env) {
     const value = env[CONVERGENCE_ENV];
     if (value === undefined || value === "") return CONVERGENCE_GATE;
     if (!/^[1-9][0-9]*$/.test(value)) throw new Error(`${CONVERGENCE_ENV} must be a whole number of ms above 0, saw ${JSON.stringify(value)}`);
-    return Object.freeze({ ...CONVERGENCE_GATE, name: "wide", limit_ms: Number(value) });
+    return Object.freeze({ ...CONVERGENCE_GATE, name: "wide", limit_ms: Number(value), cross_poll: true });
 }
 
 function unitNear(debug, contentId, x, y) {
@@ -175,30 +178,33 @@ async function judgeConvergence(view, at, joined, packageName) {
 }
 
 // The judgement: at one tick that both windows show, the two public projections are equal.
-// A window shows a new tick only at a frame. On a slow renderer (hosted CI: software WebGPU,
-// 4 vCPU, about 1 frame per second for each of two windows, runs ci-run134-m2-sw-gl-1 and -2)
-// the two windows seldom show the same tick at the same poll. So the oracle keeps the first
-// projection that each window shows at each tick and compares the two windows at each tick
-// that both showed, at any poll. A window that shows a wrong projection and then a right one at
-// one tick stays wrong: only the first projection counts, in every profile. The wait ends at the
-// limit of the profile (convergenceLimits). `unstable_ticks` counts the reads at which a window
-// showed, at a tick it had shown before, a projection other than the first one. It is reported
-// in the result and in the failure text, and it is not judged: it was 0 on the one real GPU run that printed it (ci-run142-qaplant-conv-b,
-// 1316 shared ticks), and a failure rule needs data first.
+// The oracle keeps the first projection that each window shows at each tick. A window that shows
+// a wrong projection and then a right one at one tick stays wrong: only the first projection
+// counts, in every profile (the old loop compared the current projections, so it passed this).
+// limits.cross_poll false (gate): the windows are compared at a tick that both report in the
+// same poll. limits.cross_poll true (wide): at each tick that both showed, at any poll. The wait
+// ends at the limit of the profile (convergenceLimits). `unstable_ticks` counts the reads at
+// which a window showed, at a tick it had shown before, a projection other than the first one.
+// It is reported in the result and in the failure text, and it is not judged: it was 0 on the
+// one real GPU run that printed it (ci-run142-qaplant-conv-b, 1316 shared ticks), and a failure
+// rule needs data first.
 async function waitForSharedTick(view, limits = CONVERGENCE_GATE) {
     const started = Date.now();
+    const crossPoll = limits.cross_poll === true;
     const seen = [new Map(), new Map()];
+    const compared = new Set();
     const changes = [[], []];
     const progress = { polls: 0, shared_ticks: 0, shared_tick_differs: 0, unstable_ticks: 0, last_advance_ms: [started, started] };
-    const report = () => ({ profile: limits.name ?? "custom", limit_ms: limits.limit_ms, agreed_after_ms: Date.now() - started,
-        polls: progress.polls, shared_ticks: progress.shared_ticks, shared_tick_differs: progress.shared_tick_differs,
-        unstable_ticks: progress.unstable_ticks });
+    const report = () => ({ profile: limits.name ?? "custom", compare: crossPoll ? "cross_poll" : "same_poll", limit_ms: limits.limit_ms,
+        agreed_after_ms: Date.now() - started, polls: progress.polls, shared_ticks: progress.shared_ticks,
+        shared_tick_differs: progress.shared_tick_differs, unstable_ticks: progress.unstable_ticks });
     for (;;) {
         const now = Date.now();
         const stalled = progress.last_advance_ms.some((time) => now - time > limits.stall_ms);
         if (now - started >= limits.min_ms && (stalled || now - started >= limits.limit_ms)) break;
         const debugs = [await view.bridge("turts_debug", 1), await view.bridge("turts_debug", 2)];
         progress.polls += 1;
+        const fresh = new Set();
         for (const [index, debug] of debugs.entries()) {
             const tick = debug?.replicated_world?.tick;
             if (!Number.isInteger(tick)) continue;
@@ -210,17 +216,23 @@ async function waitForSharedTick(view, limits = CONVERGENCE_GATE) {
             seen[index].set(tick, projection);
             progress.last_advance_ms[index] = Date.now();
             changes[index].push([Date.now() - started, tick]);
-            const other = seen[1 - index].get(tick);
-            if (other === undefined) continue;
+            fresh.add(tick);
+        }
+        const tick0 = debugs[0]?.replicated_world?.tick;
+        const tick1 = debugs[1]?.replicated_world?.tick;
+        const candidates = crossPoll ? [...fresh] : (Number.isInteger(tick0) && tick0 === tick1 ? [tick0] : []);
+        for (const tick of candidates) {
+            if (compared.has(tick) || !seen[0].has(tick) || !seen[1].has(tick)) continue;
+            compared.add(tick);
             progress.shared_ticks += 1;
-            if (other === projection) return { tick, ...report() };
+            if (seen[0].get(tick) === seen[1].get(tick)) return { tick, ...report() };
             progress.shared_tick_differs += 1;
         }
         await new Promise((resolve) => setTimeout(resolve, limits.poll_ms));
     }
     const tail = (list) => JSON.stringify(list.slice(-8));
     assert.fail(`public world projections differ between owners at a shared coherent tick (profile ${limits.name ?? "custom"}, ` +
-        `limit ${limits.limit_ms} ms, ${Date.now() - started} ms, ` +
+        `compare ${crossPoll ? "cross_poll" : "same_poll"}, limit ${limits.limit_ms} ms, ${Date.now() - started} ms, ` +
         `${progress.polls} polls, ${progress.shared_ticks} shared ticks, ${progress.shared_tick_differs} of them different, ` +
         `${progress.unstable_ticks} unstable; [ms, tick] window 1 ${tail(changes[0])} window 2 ${tail(changes[1])})`);
 }
