@@ -138,6 +138,16 @@ pub struct OrderFailure {
     pub tick: u32,
 }
 
+/// The order record of one owned unit.
+///
+/// Removal rule (design 6.8; ruling (a), MP1 review item 4): a STATE record that the client
+/// checks against its unit table never names a unit that the same message removes (the weapon
+/// `last_target`, the site, job and queue owners, `orders_cleared`). An order TARGET is a
+/// reference, not state: `OrderSummary.target` may name a unit that is gone for about one tick, or
+/// longer for a queued order, until the sim fails the order with `TargetGone`. This is the one
+/// exception, kept on purpose. Reason: the client does not check unit targets in order records
+/// (`replica.rs` `stage_unit_orders`), and the marker lookup tolerates a missing unit
+/// (`visuals/markers.rs`). Protocol 4 held the same reference.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct UnitOrderRecord {

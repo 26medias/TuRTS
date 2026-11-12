@@ -40,6 +40,9 @@ pub struct RateRecord {
 }
 
 /// The progress of one site (a building under construction). Owner only.
+///
+/// Store rule (ruling for `L0-STORE`, MP1 review item 6): the store drops a `SiteProgress` when the
+/// unit is in `DeltaRecords::sites_completed` or in `WorldDelta::removed`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SiteProgress {
     /// The site unit. A site that leaves the world in the message that carries its record has no
@@ -49,6 +52,13 @@ pub struct SiteProgress {
 }
 
 /// The progress of one production job. Owner only. The same form as `SiteProgress`.
+///
+/// Store rule (ruling for `L0-STORE`): the store drops a `JobProgress` whose `(producer, job)` is no
+/// longer in the `QueueState` of the producer (the job completed or was cancelled), and one whose
+/// producer is removed. The replica does this today in `merge_job_progress`
+/// (`crates/turts_client/src/replica.rs`). The elapsed ticks of a job are
+/// `turts_rules::progress::value_at` of this record at the last applied tick: `JobState` has no
+/// `elapsed_ticks` since protocol 5.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct JobProgress {
     /// The producer unit.
@@ -159,6 +169,10 @@ pub enum LobbyActionKind {
 }
 
 /// A lobby action. Client to server, reliable.
+///
+/// The receiver takes the player from the connection that sent the message, never from the
+/// message: it has no slot and no player id. It has no receiver in lane 0 and costs no bucket
+/// token; owner `L-MATCH-SRV1` (limit the message there).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LobbyAction {
     pub revision: u32,
@@ -282,6 +296,10 @@ pub struct MatchResult {
 }
 
 /// A client leaves the match. Client to server, reliable.
+///
+/// The receiver takes the player from the connection that sent the message, never from the
+/// message (it has no field). It has no receiver in lane 0 and costs no bucket token; owner
+/// `L-MATCH-SRV1` (limit the message there).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LeaveMatch;
 
@@ -307,6 +325,11 @@ pub struct DeltaRecords {
 }
 
 /// The records of protocol 5 that the `Snapshot` holds next to `unit_orders`.
+///
+/// Rule (ruling for `L0-STORE`, MP1 review item 6): every `Snapshot` carries `Some(match_state)`.
+/// The lane-0 value for "no match state yet" is the empty state (no connection row, no outcome),
+/// written by `export::snapshot_for`. A reader that finds `None` reads it as that empty state. In
+/// a delta, `match_state: None` means "no change".
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 pub struct SnapshotRecords {
     pub sites: Vec<SiteProgress>,

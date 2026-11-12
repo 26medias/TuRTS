@@ -751,3 +751,93 @@ fn lowering_live_buffer_cap_clears_oversized_tail_and_records_a_gap() {
     assert_eq!(replica.buffer_overflows, 1);
     assert_eq!(replica.resync_span_ticks(), Some(4));
 }
+
+/// Protocol 5: the elapsed ticks of a job come from its progress record (design 6.8), at the tick
+/// of the last applied delta. The store drops the record when the queue no longer holds the job,
+/// and a record for a producer that the same delta removes is refused (ruling for `L0-STORE`).
+#[test]
+fn job_progress_derives_the_elapsed_ticks_and_follows_the_queue() {
+    let now = Instant::now();
+    let running = || turts_net_protocol::JobState {
+        id: JobId(44),
+        recipe: "base:train_rifleman".to_string(),
+        stage: JobStage::Running,
+        duration_ticks: 100,
+        charged: vec![Cost {
+            resource: "base:credits".to_string(),
+            amount: 100,
+            source: CostSource::SlotBalance,
+        }],
+        reserved: vec![],
+    };
+    let record = turts_net_protocol::JobProgress {
+        producer: UnitId(1),
+        job: JobId(44),
+        progress: turts_net_protocol::RateRecord {
+            done: 10,
+            total: 100,
+            per_tick: 1,
+            at_tick: 10,
+            state: turts_net_protocol::RecordState::Running,
+            charged: vec![],
+            held: false,
+            held_since_tick: 0,
+        },
+    };
+    let setup = || {
+        let mut replica = replica(3);
+        let mut initial = snapshot(10);
+        initial.economy.queues.push(QueueState {
+            producer: UnitId(1),
+            jobs: vec![running()],
+            enabled: true,
+        });
+        initial.records.jobs = vec![record.clone()];
+        assert_eq!(
+            replica.apply_snapshot(&initial, now),
+            SnapshotOutcome::Applied { replayed: 0 }
+        );
+        replica
+    };
+    let mut replica = setup();
+    assert_eq!(replica.job_elapsed_ticks(1, 44), 10);
+    // Three ticks later with no new record: the derived value is 13, never later than the tick.
+    assert_eq!(
+        replica.apply_delta(&delta(11, 10), now),
+        DeltaOutcome::Applied
+    );
+    assert_eq!(
+        replica.apply_delta(&delta(12, 11), now),
+        DeltaOutcome::Applied
+    );
+    assert_eq!(
+        replica.apply_delta(&delta(13, 12), now),
+        DeltaOutcome::Applied
+    );
+    assert_eq!(replica.job_elapsed_ticks(1, 44), 13);
+    // The job completes: the queue no longer holds it, and the record is dropped.
+    let mut done = delta(14, 13);
+    done.economy.queues.push(QueueState {
+        producer: UnitId(1),
+        jobs: vec![],
+        enabled: true,
+    });
+    assert_eq!(replica.apply_delta(&done, now), DeltaOutcome::Applied);
+    assert!(replica.job_progress.is_empty());
+    assert_eq!(replica.job_elapsed_ticks(1, 44), 0);
+    // A record for a producer that the same delta removes is refused.
+    let mut replica = setup();
+    let mut bad = delta(11, 10);
+    bad.removed = vec![UnitId(1)];
+    bad.records.jobs = vec![record.clone()];
+    assert_eq!(
+        replica.apply_delta(&bad, now),
+        DeltaOutcome::ResyncRequested
+    );
+    // The removal of the producer drops its record with the unit.
+    let mut replica = setup();
+    let mut gone = delta(11, 10);
+    gone.removed = vec![UnitId(1)];
+    assert_eq!(replica.apply_delta(&gone, now), DeltaOutcome::Applied);
+    assert!(replica.job_progress.is_empty());
+}

@@ -731,3 +731,89 @@ fn a_snapshot_at_tick_n_equals_the_tables_built_from_the_deltas() {
     }
     assert_eq!(compared, 120);
 }
+
+/// MP1 review item 5: a running production job with no other change costs 0 B in a delta. The
+/// progress is a rate record (`JobProgress`), sent when a job starts, ends or changes stage, and
+/// `QueueState` rides the delta only on such a change. Protocol 4 put the whole `QueueState` into
+/// each delta while a job ran (`elapsed_ticks` changed in each tick). Plant (25): the queue diff
+/// counts `elapsed_ticks` again.
+#[test]
+fn a_running_job_costs_no_bytes_between_its_changes() {
+    let package_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../mods/base");
+    let archive = PackageArchive::parse(&pack_dir(&package_dir).unwrap()).unwrap();
+    let mut app = headless_app(20);
+    turts_pack::load_package(app.world_mut(), &archive).unwrap();
+    initialize_completed_world(app.world_mut());
+    let producer = completed_world(app.world())
+        .units
+        .iter()
+        .find(|unit| unit.content_id == "base:command_center" && unit.owner_slot == 0)
+        .unwrap()
+        .unit_id;
+    for seq in 1..=3 {
+        app.world_mut()
+            .resource_mut::<CommandQueue>()
+            .0
+            .push_back(Command {
+                slot: SlotId(0),
+                seq,
+                kind: CommandKind::Produce {
+                    producer_id: producer,
+                    recipe_id: turts_mod_api::ContentId::parse("base:train_rifleman").unwrap(),
+                },
+            });
+    }
+    let mut busy_ticks = Vec::new();
+    let mut bytes_on_busy = 0;
+    let mut running_ticks = 0;
+    let mut snapshot_job_bytes = 0;
+    for tick in 1..=260u32 {
+        let (delta, _, view) = step(&mut app, 0);
+        let running = view.economy.queues.iter().any(|queue| {
+            queue
+                .jobs
+                .iter()
+                .any(|job| job.stage == turts_sim::JobStage::Running)
+        });
+        running_ticks += usize::from(running);
+        let bytes = record_bytes(&delta.economy.queues) + record_bytes(&delta.records.jobs);
+        if bytes > 0 {
+            busy_ticks.push(tick);
+            bytes_on_busy += bytes;
+        }
+        if tick == 50 {
+            snapshot_job_bytes =
+                record_bytes(&export::snapshot_for(&view, SlotId(0)).economy.queues)
+                    + record_bytes(&export::snapshot_for(&view, SlotId(0)).records.jobs);
+        }
+    }
+    eprintln!(
+        "ORDW1-BYTES job: 3 jobs of 100 ticks, 260 ticks: queue and job records in {} ticks ({busy_ticks:?}), {bytes_on_busy} B in all, 0 B in the other {} ticks; one queue with its job record is {snapshot_job_bytes} B (protocol 4 sent the queue in each of the {running_ticks} running ticks)",
+        busy_ticks.len(),
+        260 - busy_ticks.len()
+    );
+    assert!(
+        running_ticks >= 250,
+        "a job runs in almost every tick: {running_ticks}"
+    );
+    // The queue ticks, the starts and the ends of the three jobs: a handful of ticks, not 260.
+    assert!(
+        busy_ticks.len() <= 9,
+        "queues and job records ride only the ticks of a change: {busy_ticks:?}"
+    );
+}
+
+/// Every `Snapshot` carries `Some(match_state)` with the lane-0 value "no match state yet"
+/// (design 6.7.13, ruling for `L0-STORE`). Plant (26): the writer leaves `None`.
+#[test]
+fn every_snapshot_carries_a_match_state() {
+    let view = view_of_two_units();
+    for slot in [0, 1] {
+        let snapshot = export::snapshot_for(&view, SlotId(slot));
+        assert_eq!(
+            snapshot.records.match_state,
+            Some(wire::MatchState::default()),
+            "slot {slot}"
+        );
+    }
+}

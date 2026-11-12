@@ -108,3 +108,40 @@ fn the_five_messages_follow_resync_request_in_the_plugin_source() {
         assert!(channels.contains(name), "the channel comment names {name}");
     }
 }
+
+fn net_names(app: &App) -> Vec<&'static str> {
+    let registry = app.world().resource::<MessageRegistry>();
+    let map = &registry.kind_map;
+    (0u16..64)
+        .map_while(|id| map.kind(id).and_then(|kind| map.name(kind)))
+        .collect()
+}
+
+/// The wire index of a message is its place in the registry. Both ends must give the same index
+/// to each type, read from the lightyear `MessageRegistry` at run time and not from the plugin
+/// source. The five messages of protocol 5 follow `ResyncRequest`.
+#[test]
+fn the_message_net_ids_are_equal_on_both_ends_and_the_five_follow_resync_request() {
+    let client = client_app();
+    let server = server_app();
+    let c = net_names(&client);
+    let s = net_names(&server);
+    assert!(s.len() >= 15, "the registry holds the messages: {s:?}");
+    assert_eq!(c, s, "the message net ids differ between the ends");
+    let tail: Vec<&str> = s
+        .iter()
+        .map(|name| name.rsplit("::").next().unwrap())
+        .skip_while(|name| *name != "ResyncRequest")
+        .collect();
+    assert_eq!(
+        tail,
+        [
+            "ResyncRequest",
+            "LobbyState",
+            "LobbyAction",
+            "LobbyRefused",
+            "MatchResult",
+            "LeaveMatch"
+        ]
+    );
+}

@@ -284,3 +284,27 @@ fn a_weapon_record_that_names_a_removed_unit_must_be_replaced_in_the_same_delta(
     naming.weapons = vec![weapon(1, Some(3))];
     assert_eq!(r.apply_delta(&naming, now), DeltaOutcome::ResyncRequested);
 }
+
+/// A `ContentAtPoint` target in an order record needs a finite point, as `Point` does.
+#[test]
+fn a_content_at_point_record_needs_a_finite_point() {
+    let now = Instant::now();
+    let with_point = |x: f32| {
+        let mut r = record(1, 5.0);
+        r.current.as_mut().unwrap().target = OrderTarget::ContentAtPoint {
+            content: "muster:depot".into(),
+            point: pos(x, 2.0),
+        };
+        r
+    };
+    let mut r = running();
+    let mut good = delta(11, 10);
+    good.unit_orders = vec![with_point(3.0)];
+    assert_eq!(r.apply_delta(&good, now), DeltaOutcome::Applied);
+    for bad in [f32::NAN, f32::INFINITY] {
+        let mut r = running();
+        let mut delta = delta(11, 10);
+        delta.unit_orders = vec![with_point(bad)];
+        assert_eq!(r.apply_delta(&delta, now), DeltaOutcome::ResyncRequested);
+    }
+}

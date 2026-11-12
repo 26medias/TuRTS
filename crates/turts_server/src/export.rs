@@ -120,6 +120,9 @@ pub fn snapshot_for(view: &WorldView, slot: SlotId) -> wire::Snapshot {
         // The site, job, queue, supply and match rows have no source in the view yet: their
         // writers (`L-CON1`, `L-PAY`, `L-PWR`, `L-MATCH-SIM`) add it.
         records: wire::SnapshotRecords {
+            // Every Snapshot carries `Some` (design 6.7.13, ruling for `L0-STORE`): the empty state
+            // is the lane-0 value for "no match state yet"; `L-MATCH-SIM` fills it from the sim.
+            match_state: Some(wire::MatchState::default()),
             jobs: export_jobs::queue_job_records(
                 &owned_queues(&view.economy.queues, slot),
                 view.tick,

@@ -740,6 +740,10 @@ fn stage_unit_orders(
                 .chain(&record.queued)
                 .any(|summary| match &summary.target {
                     turts_net_protocol::OrderTarget::Point(point) => !finite_pos(*point),
+                    // A placement is a content at a point: the point must be finite too.
+                    turts_net_protocol::OrderTarget::ContentAtPoint { point, .. } => {
+                        !finite_pos(*point)
+                    }
                     _ => false,
                 })
         {
