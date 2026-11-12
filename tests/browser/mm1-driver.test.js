@@ -126,3 +126,17 @@ test("MM1 ends the ping poll without an error when no ping appears, and still sa
     assert.ok(steps.ping_poll.polls >= 20, "the poll tried more than a few shots");
     assert.ok(!io.log.some((entry) => entry === "wait:3500"), "no settle wait without a sighting");
 });
+
+test("MM1 takes a bounded series of captures after the minimap right click, before the zoom (RUN142: the replica stands still after a kill)", async () => {
+    const io = fakeIo(1);
+    await drive(io, PARAMS);
+    const rightClick = io.log.findLastIndex((entry) => /^click:.*,right$/.test(entry));
+    const saves = ["mm1-after-right.png", "mm1-after-right-2.png", "mm1-after-right-3.png", "mm1-after-right-4.png"].map((name) => io.log.indexOf(`save:${name}`));
+    assert.ok(rightClick >= 0 && saves[0] > rightClick, `the first capture follows the right click: ${saves}`);
+    assert.ok(saves.every((index, at) => index > 0 && (at === 0 || index > saves[at - 1])), `four captures in order: ${saves}`);
+    const wheel = io.log.indexOf("wheel:-20");
+    assert.ok(saves[3] < wheel, "all captures after the right click come before the zoom");
+    assert.equal(io.log.slice(saves[0], saves[3]).filter((entry) => entry === "wait:700").length, 3, "700 ms between the captures");
+    const steps = JSON.parse(Buffer.from(io.saved["mm1-driver-steps.json"]).toString("utf8"));
+    assert.deepEqual(steps.after_right_later, ["mm1-after-right-2.png", "mm1-after-right-3.png", "mm1-after-right-4.png"]);
+});
