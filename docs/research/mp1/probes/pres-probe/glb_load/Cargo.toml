@@ -1,0 +1,15 @@
+[package]
+name = "glb_load"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[workspace]
+
+[features]
+default = []
+# `pbr` adds bevy_pbr (StandardMaterial, the `Material{n}/std` labelled asset) and a render-less RenderPlugin.
+pbr = ["bevy/bevy_pbr", "bevy/bevy_render", "bevy/bevy_log"]
+
+[dependencies]
+bevy = { version = "=0.20.0", default-features = false, features = ["bevy_gltf", "bevy_asset", "bevy_world_serialization", "bevy_mesh", "debug", "reflect_auto_register"] }

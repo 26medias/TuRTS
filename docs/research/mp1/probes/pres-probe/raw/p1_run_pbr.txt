@@ -1,0 +1,43 @@
+input=/tmp/claude-1000/-home-julien-Projects-TuRTS/bf418660-b272-4bb3-8628-8d9ef2677d1d/scratchpad/pres-probe/tank.glb bytes=6628
+late_insert=false asset_path=tank.glb
+plugins=TaskPool,Asset,Transform,Mesh,WorldSerialization,Gltf pbr=true
+loaded_with_dependencies=true updates=1
+named_nodes=["hull", "muzzle", "tank", "turret"]
+named_materials=["body", "team"]
+n_nodes=4 n_meshes=2 n_materials=2 n_scenes=1
+node[0] name="tank" translation=Vec3(0.0, 0.0, 0.0) children=2 mesh=false
+node[1] name="hull" translation=Vec3(0.0, 0.0, 0.0) children=0 mesh=true
+    mesh "hull" primitive 0 tris=36 material_is_Option<Handle<GltfMaterial>>=true base_color=Some(Some(LinearRgba(LinearRgba { red: 0.45, green: 0.42, blue: 0.38, alpha: 1.0 })))
+    mesh "hull" primitive 1 tris=12 material_is_Option<Handle<GltfMaterial>>=true base_color=Some(Some(LinearRgba(LinearRgba { red: 1.0, green: 1.0, blue: 1.0, alpha: 1.0 })))
+node[2] name="turret" translation=Vec3(0.0, 0.4, 0.0) children=1 mesh=true
+    mesh "turret" primitive 0 tris=12 material_is_Option<Handle<GltfMaterial>>=true base_color=Some(Some(LinearRgba(LinearRgba { red: 1.0, green: 1.0, blue: 1.0, alpha: 1.0 })))
+    mesh "turret" primitive 1 tris=12 material_is_Option<Handle<GltfMaterial>>=true base_color=Some(Some(LinearRgba(LinearRgba { red: 0.45, green: 0.42, blue: 0.38, alpha: 1.0 })))
+node[3] name="muzzle" translation=Vec3(0.0, 0.12, 0.85) children=0 mesh=false
+triangles_total=72 (hull 36 + hull_team 12 + turret 24 = 72 expected)
+material body: gltf label=Material0 std label=Material0/std named_materials_has=true
+material team: gltf label=Material1 std label=Material1/std named_materials_has=true
+std material body: path=pkg://tank.glb#Material0/std loaded=true base_color=Some(LinearRgba(LinearRgba { red: 0.45, green: 0.42, blue: 0.38, alpha: 1.0 })) handle_id=AssetId<bevy_pbr::pbr_material::StandardMaterial>{ index: 1, generation: 0}
+std material team: path=pkg://tank.glb#Material1/std loaded=true base_color=Some(LinearRgba(LinearRgba { red: 1.0, green: 1.0, blue: 1.0, alpha: 1.0 })) handle_id=AssetId<bevy_pbr::pbr_material::StandardMaterial>{ index: 2, generation: 0}
+--- hierarchy of unit A after 4 updates (pbr) ---
+138v0 name="" components=["GlobalTransform", "Transform", "TransformTreeChanged", "Visibility", "InheritedVisibility", "ViewVisibility", "WorldAssetRoot", "Children", "WorldInstance"]
+    140v0 name="Scene0" components=["GlobalTransform", "ChildOf", "Transform", "TransformTreeChanged", "Visibility", "InheritedVisibility", "ViewVisibility", "Children", "Name"]
+        142v0 name="tank" components=["GlobalTransform", "ChildOf", "Transform", "TransformTreeChanged", "Visibility", "InheritedVisibility", "ViewVisibility", "Children", "Name"]
+            143v0 name="hull" components=["GlobalTransform", "ChildOf", "Transform", "TransformTreeChanged", "Visibility", "InheritedVisibility", "ViewVisibility", "Children", "Name"]
+                145v0 name="hull.body" components=["GlobalTransform", "ChildOf", "Transform", "TransformTreeChanged", "Visibility", "InheritedVisibility", "ViewVisibility", "Mesh3d", "VisibilityClass", "Aabb", "StandardMaterial>", "Name", "GltfMeshName", "GltfMaterialName"]
+                146v0 name="hull.team" components=["GlobalTransform", "ChildOf", "Transform", "TransformTreeChanged", "Visibility", "InheritedVisibility", "ViewVisibility", "Mesh3d", "VisibilityClass", "Aabb", "StandardMaterial>", "Name", "GltfMeshName", "GltfMaterialName"]
+            144v0 name="turret" components=["GlobalTransform", "ChildOf", "Transform", "TransformTreeChanged", "Visibility", "InheritedVisibility", "ViewVisibility", "Children", "Name"]
+                147v0 name="turret.team" components=["GlobalTransform", "ChildOf", "Transform", "TransformTreeChanged", "Visibility", "InheritedVisibility", "ViewVisibility", "Mesh3d", "VisibilityClass", "Aabb", "StandardMaterial>", "Name", "GltfMeshName", "GltfMaterialName"]
+                148v0 name="turret.body" components=["GlobalTransform", "ChildOf", "Transform", "TransformTreeChanged", "Visibility", "InheritedVisibility", "ViewVisibility", "Mesh3d", "VisibilityClass", "Aabb", "StandardMaterial>", "Name", "GltfMeshName", "GltfMaterialName"]
+                141v0 name="muzzle" components=["GlobalTransform", "ChildOf", "Transform", "TransformTreeChanged", "Visibility", "InheritedVisibility", "ViewVisibility", "Name"]
+unit A mesh entities (entity,name,std material id)=[(148v0, "body", AssetId<bevy_pbr::pbr_material::StandardMaterial>{ index: 1, generation: 0}), (147v0, "team", AssetId<bevy_pbr::pbr_material::StandardMaterial>{ index: 2, generation: 0}), (146v0, "team", AssetId<bevy_pbr::pbr_material::StandardMaterial>{ index: 2, generation: 0}), (145v0, "body", AssetId<bevy_pbr::pbr_material::StandardMaterial>{ index: 1, generation: 0})]
+unit B mesh entities=[(240v0, "body", AssetId<bevy_pbr::pbr_material::StandardMaterial>{ index: 1, generation: 0}), (239v0, "team", AssetId<bevy_pbr::pbr_material::StandardMaterial>{ index: 2, generation: 0}), (238v0, "team", AssetId<bevy_pbr::pbr_material::StandardMaterial>{ index: 2, generation: 0}), (237v0, "body", AssetId<bevy_pbr::pbr_material::StandardMaterial>{ index: 1, generation: 0})]
+StandardMaterial assets before spawn=3 after spawning 2 units=3 (equal: no material per unit)
+units A and B share the same material handle on each mesh entity=true
+after the swap: unit A (slot red)=[(148v0, "body", AssetId<bevy_pbr::pbr_material::StandardMaterial>{ index: 1, generation: 0}), (147v0, "team", AssetId<bevy_pbr::pbr_material::StandardMaterial>{ index: 0, generation: 1}), (146v0, "team", AssetId<bevy_pbr::pbr_material::StandardMaterial>{ index: 0, generation: 1}), (145v0, "body", AssetId<bevy_pbr::pbr_material::StandardMaterial>{ index: 1, generation: 0})]
+after the swap: unit B (slot blue)=[(240v0, "body", AssetId<bevy_pbr::pbr_material::StandardMaterial>{ index: 1, generation: 0}), (239v0, "team", AssetId<bevy_pbr::pbr_material::StandardMaterial>{ index: 3, generation: 0}), (238v0, "team", AssetId<bevy_pbr::pbr_material::StandardMaterial>{ index: 3, generation: 0}), (237v0, "body", AssetId<bevy_pbr::pbr_material::StandardMaterial>{ index: 1, generation: 0})]
+team entities A all on slot_red=true B all on slot_blue=true
+body entities A and B still share one handle=true
+StandardMaterial assets now=5 (before spawn 3; +2 slot materials only)
+--- flat template (no scene spawn) ---
+template parts=4 (mesh, is_team, y of part)
+flat unit: root + 4 child entities; no new StandardMaterial per unit (slot handle reused)
