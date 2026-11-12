@@ -173,6 +173,19 @@ pub enum ButtonIcon {
 pub enum ButtonAction {
     Order(String),
     Item(ActionField),
+    /// An input action by name: an action that the input map declares, or an engine action
+    /// (`menu`, `toggle_guide`, `cancel`, the camera and group actions, and from API 0.2.4
+    /// `leave_match` and `toggle_sound`).
+    ///
+    /// `Input("toggle_sound")` (API 0.2.4, row H25) switches the sound on or off. The game makes no
+    /// sound until the player turns it on, so the switch is the way back to sound. The rule for a
+    /// mod: the play screen is the mod's (D67). The engine draws its own sound switch on the play
+    /// screen only when the interface places no widget with this action. A mod that places one
+    /// owns the control and its place, and may show it or hide it with `visible`; a mod may leave the
+    /// play-screen switch out by hiding its button. Every player can always reach a switch in
+    /// the settings menu, which opens with the engine action `menu`: a package of the edition 0.2.4
+    /// keeps at least one key on `menu` (the packer refuses a package that takes them all away).
+    /// An `engine_overrides` entry can bind `toggle_sound` to a key; the key switches the sound.
     Input(String),
 }
 

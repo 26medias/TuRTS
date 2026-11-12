@@ -58,6 +58,8 @@ struct WidgetValidation<'a> {
     actions: &'a BTreeSet<&'a str>,
     balance_ids: &'a BTreeSet<ContentId>,
     dependencies: &'a BTreeSet<&'a str>,
+    /// The package is of the edition 0.2.4: a hint offers the engine actions of 0.2.4 only then.
+    edition_0_2_4: bool,
 }
 
 /// Parse and validate all API 0.2.3 content exported by one archive.
@@ -576,6 +578,7 @@ pub(crate) fn validate_mc(archive: &PackageArchive) -> Result<ParsedMcContent, M
             actions: &actions,
             balance_ids: &balance_ids,
             dependencies: &dependency_ids,
+            edition_0_2_4: crate::edition::is_edition_0_2_4(&archive.manifest.engine_api),
         };
         for (index, widget) in interface.root.iter().enumerate() {
             validate_widget(
@@ -1055,6 +1058,7 @@ fn validate_widget(
                         &format!("{path}.widget.action"),
                         name,
                         actions.iter().map(|declared| declared.to_string()),
+                        context.edition_0_2_4,
                     ));
                 }
                 _ => {}
@@ -1519,6 +1523,10 @@ fn checked_unit_reference(
 }
 
 /// The engine actions with a fixed name. The group and camera actions have their own rule below.
+/// The engine actions that API 0.2.4 added. A package of an older edition is refused when it
+/// writes one (the version table), so its hint must not offer one.
+const ENGINE_ACTIONS_SINCE_0_2_4: [&str; 2] = ["leave_match", "toggle_sound"];
+
 const ENGINE_ACTION_NAMES: &[&str] = &[
     "select",
     "box_select",
@@ -1561,12 +1569,14 @@ fn unknown_input_action(
     field: &str,
     name: &str,
     declared: impl IntoIterator<Item = String>,
+    edition_0_2_4: bool,
 ) -> ModError {
     let mut allowed: Vec<String> = declared
         .into_iter()
         .chain(
             ENGINE_ACTION_NAMES
                 .iter()
+                .filter(|engine| edition_0_2_4 || !ENGINE_ACTIONS_SINCE_0_2_4.contains(engine))
                 .map(|engine| (*engine).to_string()),
         )
         .collect();

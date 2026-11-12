@@ -1368,8 +1368,54 @@ impl Pack {
             .collect()
     }
 
+    /// The engine action `menu` keeps at least one key. The settings menu holds the sound switch that
+    /// every player can always reach (the CEO rule: silent by default, with a way back; a mod may leave
+    /// the play-screen switch out, design 6.10 row H25). The engine defaults are F10 and Escape; an
+    /// `engine_overrides` entry for `menu` replaces them, and so does an authored action named `menu`
+    /// (`turts_interaction::input_map::effective_actions` applies the overrides, then the authored actions).
+    fn menu_keeps_a_key(&self) -> Result<(), ModError> {
+        let keys = |bindings: &[Binding]| {
+            bindings
+                .iter()
+                .filter(|binding| matches!(binding, Binding::Key { .. }))
+                .count()
+        };
+        let mut last: Option<(usize, &str, String)> = None;
+        for (file, input) in &self.inputs {
+            for (index, over) in input.engine_overrides.iter().enumerate() {
+                if over.name == "menu" {
+                    last = Some((
+                        keys(&over.bindings),
+                        file,
+                        format!("engine_overrides[{index}].bindings"),
+                    ));
+                }
+            }
+        }
+        for (file, input) in &self.inputs {
+            for (index, action) in input.actions.iter().enumerate() {
+                if action.name == "menu" {
+                    last = Some((
+                        keys(&action.default),
+                        file,
+                        format!("actions[{index}].default"),
+                    ));
+                }
+            }
+        }
+        match last {
+            Some((0, file, field)) => Err(self.fail(
+                file,
+                &field,
+                "the engine action `menu` has no key; the settings menu holds the sound switch that every player must be able to reach, so `menu` keeps at least one key: bind a key to it, or leave `menu` out of `engine_overrides` (the keys are F10 and Escape)",
+            )),
+            _ => Ok(()),
+        }
+    }
+
     /// No two actions have the same default key (the check is global; there is no action scope).
     fn input_group(&self) -> Result<(), ModError> {
+        self.menu_keeps_a_key()?;
         let mut seen: BTreeMap<String, &str> = BTreeMap::new();
         for (file, input) in &self.inputs {
             for (action_index, action) in input.actions.iter().enumerate() {

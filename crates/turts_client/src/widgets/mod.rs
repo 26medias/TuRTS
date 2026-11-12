@@ -132,15 +132,22 @@ fn observe_guide_phase(phase: Res<Phase>, mut guide: ResMut<guide::GuideOpen>) {
 fn consume_shell_actions(
     effects: Res<crate::core_adapter::CoreEffects>,
     mut guide: ResMut<guide::GuideOpen>,
+    mut volumes: Option<ResMut<crate::volume_settings::VolumeSettings>>,
 ) {
     if !effects.is_changed() {
         return;
     }
     for effect in &effects.0 {
-        if let turts_interaction::Effect::ShellAction { action } = effect
-            && action == "toggle_guide"
-        {
+        let turts_interaction::Effect::ShellAction { action } = effect else {
+            continue;
+        };
+        if action == "toggle_guide" {
             guide::toggle_guide(&mut guide);
+        } else if action == "toggle_sound"
+            && let Some(volumes) = volumes.as_mut()
+        {
+            // A key that a mod bound to the engine action `toggle_sound` (`engine_overrides`).
+            volumes.sound_on = !volumes.sound_on;
         }
     }
 }

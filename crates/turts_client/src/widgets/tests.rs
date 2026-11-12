@@ -1055,6 +1055,53 @@ fn toggle_sound_button_flips_the_switch_and_its_words_and_predicate_follow_the_s
     );
 }
 
+/// A key that a mod bound to the engine action `toggle_sound` (`engine_overrides`) sends the shell
+/// action; the client flips the switch. A shell action of another name does not.
+#[test]
+fn the_shell_action_toggle_sound_flips_the_switch() {
+    let mut app = App::new();
+    app.add_plugins(MinimalPlugins)
+        .init_resource::<guide::GuideOpen>()
+        .insert_resource(crate::volume_settings::VolumeSettings::default())
+        .insert_resource(crate::core_adapter::CoreEffects(vec![
+            turts_interaction::Effect::ShellAction {
+                action: "toggle_sound".into(),
+            },
+        ]))
+        .add_systems(Update, consume_shell_actions);
+    app.update();
+    assert!(
+        app.world()
+            .resource::<crate::volume_settings::VolumeSettings>()
+            .sound_on
+    );
+    app.world_mut()
+        .insert_resource(crate::core_adapter::CoreEffects(vec![
+            turts_interaction::Effect::ShellAction {
+                action: "menu".into(),
+            },
+        ]));
+    app.update();
+    assert!(
+        app.world()
+            .resource::<crate::volume_settings::VolumeSettings>()
+            .sound_on,
+        "another shell action leaves the switch alone"
+    );
+    app.world_mut()
+        .insert_resource(crate::core_adapter::CoreEffects(vec![
+            turts_interaction::Effect::ShellAction {
+                action: "toggle_sound".into(),
+            },
+        ]));
+    app.update();
+    assert!(
+        !app.world()
+            .resource::<crate::volume_settings::VolumeSettings>()
+            .sound_on
+    );
+}
+
 #[test]
 fn fit_text_and_image_use_real_asset_components_with_bevy_auto_sizing() {
     let mut world = World::new();

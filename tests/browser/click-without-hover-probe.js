@@ -8,14 +8,19 @@
 // that record. It is not a row: it reads the debug bridge to find the buttons (it is an
 // instrument, not a driver).
 //
-// Usage: node click-without-hover-probe.js <game url> [--guide-close]
+// Pass 3 adds `--map-press-first`: before the click check, one frame with a press on the map and a
+// release over the sound switch (a box select that ends on a button inside one frame) must NOT
+// turn the sound on: a click needs a press and a release at the same button.
+//
+// Usage: node click-without-hover-probe.js <game url> [--guide-close] [--map-press-first]
 //   The url is the `URL:` line of `scripts/mc-browser.sh <package> --serve-only --prepared DIR`
 //   (`scripts/click-without-hover.sh` runs both). The probe starts its own Chrome with the browser
 //   profile of the MC scripts (`MC_CHROME_ARGS_JSON`, as `egpu-run.js`), so run it under the headed
 //   wrapper. Checks: the sound switch (the button of the package or the engine fallback) turns
 //   the sound on with one such click; with `--guide-close` the Close button of the open guide hides
 //   the guide with one such click (a second kind of engine button).
-// Output: one JSON object on stdout. Exit 0: every check acted within 500 ms; 1: one did not.
+// Output: one JSON object on stdout; each check has `expected` and `acted`. Exit 0: every check
+// came out as expected; 1: one did not.
 "use strict";
 
 const { chromium } = require("playwright-core");
@@ -47,7 +52,7 @@ function centre(row, scale) {
     return [(left + width / 2) / scale, (top + height / 2) / scale];
 }
 
-async function run(url, wantGuide) {
+async function run(url, wantGuide, mapPressFirst) {
     const chromeArgs = JSON.parse(process.env.MC_CHROME_ARGS_JSON || '["--enable-gpu","--use-angle=vulkan","--enable-features=Vulkan","--enable-unsafe-webgpu"]');
     if (!chromeArgs.some((arg) => arg.startsWith("--force-device-scale-factor"))) chromeArgs.push("--force-device-scale-factor=1");
     const browser = await chromium.launch({
@@ -75,10 +80,20 @@ async function run(url, wantGuide) {
         if (!sound) throw new Error("no visible sound switch in the ui snapshot");
         if (settled.debug.audio.sound_on !== false) throw new Error("the sound is not off at the start");
         const [sx, sy] = centre(sound, scale);
+        if (mapPressFirst) {
+            // The map point: away from every widget, in the middle of the screen.
+            const mx = 640, my = 400;
+            await page.mouse.move(2, 2);
+            await page.waitForTimeout(300);
+            await Promise.all([page.mouse.move(mx, my), page.mouse.down(), page.mouse.move(sx, sy), page.mouse.up()]);
+            await page.waitForTimeout(WAIT_MS);
+            const stayed = await record(page);
+            result.checks.push({ name: "press on the map, release over the sound switch, one frame", kind: sound.kind, expected: false, acted: stayed.audio?.sound_on === true, within_ms: WAIT_MS });
+        }
         await quickClick(page, sx, sy);
         await page.waitForTimeout(WAIT_MS);
         const on = await record(page);
-        result.checks.push({ name: "sound switch, one click with no hover frame", kind: sound.kind, acted: on.audio?.sound_on === true, within_ms: WAIT_MS });
+        result.checks.push({ name: "sound switch, one click with no hover frame", kind: sound.kind, expected: true, acted: on.audio?.sound_on === true, within_ms: WAIT_MS });
         if (wantGuide) {
             const close = (settled.debug.ui_snapshot || []).find((row) => row.id === "guide_close" && row.visible === true && Array.isArray(row.rect));
             if (!close) throw new Error("no visible guide_close button (the guide is open at the join in this package)");
@@ -86,7 +101,7 @@ async function run(url, wantGuide) {
             await quickClick(page, cx, cy);
             await page.waitForTimeout(WAIT_MS);
             const closed = await record(page);
-            result.checks.push({ name: "guide Close button, one click with no hover frame", acted: (closed.ui_snapshot || []).some((row) => row.id === "guide_close" && row.visible === false), within_ms: WAIT_MS });
+            result.checks.push({ name: "guide Close button, one click with no hover frame", expected: true, acted: (closed.ui_snapshot || []).some((row) => row.id === "guide_close" && row.visible === false), within_ms: WAIT_MS });
         }
     } finally {
         await browser.close().catch(() => {});
@@ -97,12 +112,12 @@ async function run(url, wantGuide) {
 async function main() {
     const [url, ...flags] = process.argv.slice(2);
     if (!/^http:\/\/127\.0\.0\.1:\d+\//.test(url || "")) {
-        console.error("usage: click-without-hover-probe.js <game url on 127.0.0.1> [--guide-close]");
+        console.error("usage: click-without-hover-probe.js <game url on 127.0.0.1> [--guide-close] [--map-press-first]");
         process.exit(2);
     }
-    const result = await run(url, flags.includes("--guide-close"));
+    const result = await run(url, flags.includes("--guide-close"), flags.includes("--map-press-first"));
     console.log(JSON.stringify(result));
-    process.exit(result.checks.every((check) => check.acted) ? 0 : 1);
+    process.exit(result.checks.every((check) => check.acted === check.expected) ? 0 : 1);
 }
 
 if (require.main === module) main().catch((error) => { console.error(error.stack || String(error)); process.exit(1); });

@@ -83,14 +83,33 @@ Evidence: `crates/turts_client/src/volume_settings.rs` (`VolumeSettings::sound_o
 `crates/turts_client/src/audio.rs` (`spawn_requested_sounds`, `silence_while_sound_is_off`),
 `crates/turts_client/src/client_shell/notices.rs` (`sync_sound_off_notice`). Status: Decided by the CEO.
 
-## E-SND-3. The click that the pointer reaches in one frame (review M1): not a design change
+## E-SND-3. The click that the pointer reaches in one frame (review M1, pass 3): not a design change
 
 Facts, for the design notes of 10.1 ("every engine button acts on one click"): `bevy_picking` 0.20.0 sends the press to
 this frame's hover map and the release and click to the map of the frame before, so a press and a release in the
 frame where the pointer reached a button give no click (`bevy_picking-0.20.0/src/events.rs:1060` and `:1091-1092`).
-Every `bevy_ui_widgets::Button` of the engine had it. The repair is `crates/turts_client/src/press_release.rs`. The
-test `without_the_repair_bevy_loses_the_click_and_leaves_the_button_pressed` fails when Bevy fixes the cause: the repair
-can then go.
+Every `bevy_ui_widgets::Button` of the engine had it. The repair is `crates/turts_client/src/press_release.rs`.
+
+Pass 3 changed the repair after the re-review (M1, L4). It no longer edits Bevy's previous hover map. After `pointer_events`
+it sends the click that Bevy dropped (`Click`, then `Release`) to each hovered entity, and only for one click:
+
+- the same pointer and the same button, the press and the release in the frame's input, and a press in the frame (a
+  release with no press in the frame is left to Bevy);
+- no drag by the rule of the interaction core: `CLICK_DRAG_PIXELS` = 4 px (`crates/turts_interaction/src/lib.rs`, the
+  rule that `:581` and `:632` use to tell a click from a box select; the client repair reads the same constant): no input
+  between the press and the release is farther than that from the press, and the release is not farther;
+- a hit test of the press position and of the release position on the node of the entity (the way
+  `bevy_ui-0.20.0/src/picking_backend.rs:205` hits a node), so a press on the map and a release over a button, or a
+  press on button A and a release on button B, click nothing (red tests: the three cases of the re-review).
+
+The events that a button sees for a quick click are the events of a normal hover-then-click, in the same order: `Over`,
+`Press`, `Click` (with `Activate`), `Release` (test `a_press_and_release_on_one_button_in_one_frame_activate_it_once`
+compares the two orders). The first repair (a merge into the previous hover map) dropped the `Over`. No code depends on
+`PointerOver`: a grep of `crates` for `PointerOver`, `Pointer<Over>`, `PointerEnter`, `PointerOut`, `PointerLeave`,
+`PickingInteraction` finds nothing outside the repair. The widgets, the tooltip and the cursor read the `Hovered`
+component, which Bevy sets from the hover map and not from these events (`widgets/tooltip.rs:92`,
+`widgets/activation.rs:19`). The test `without_the_repair_bevy_loses_the_click_and_leaves_the_button_pressed` fails when
+Bevy fixes the cause: the repair can then go.
 
 ## E-SND-4. Row ALR2: the acceptance sentence for `UI-ALERT` (from the review, section 5, verbatim)
 
@@ -104,3 +123,51 @@ can then go.
 The cause, in code (not repaired here): `crates/turts_client/src/feedback.rs:746-773` (`InserterWaiting`) and
 `:817-840` (`GathererWaiting`) push the waiting unit in every evaluation; only `cooldown.max(1.0)` limits it
 (`:870-880`). The state triggers of API 0.2.4 are stubs (`crates/turts_client/src/feedback/alert_state.rs`).
+
+## E-SND-5. The play-screen switch is optional for a mod; the settings menu is not (re-review M2, ruling)
+
+Rule (add to row H25 and to 6.10 "Conventions"): the game is silent until the player turns the sound on, so every player
+must be able to reach a switch. The play screen is the mod's (D67), so a mod may leave the play-screen switch out. The
+way that every player can always reach is the switch in the settings menu (a shell screen, the "Audio levels" line). The
+menu opens with the engine action `menu`.
+
+- The opt-out is stated, not a side effect: the engine draws its own play-screen switch only when the interface places no
+  `Button` with `Input("toggle_sound")`; a mod that places one owns the control and may show it or hide it with `visible`
+  (a hidden button still counts as placed). It is written in the rustdoc of `ButtonAction::Input`
+  (`crates/turts_mod_api/src/interface.rs`), in `turts-pack --help` (test `pack_cli_help_states_the_sound_switch_rule`),
+  and here.
+- `menu` keeps a key. Trace: the engine default keys of `menu` are F10 and Escape
+  (`crates/turts_interaction/src/input_map.rs:91-103`). A mod can take them away in two ways:
+  `engine_overrides: [(name: "menu", bindings: [])]`, and an authored action named `menu`
+  (`effective_actions` applies the engine defaults, then the overrides, then the authored actions, so the last one wins;
+  `input_map.rs:109-125`). Before this change no validation refused either. New 0.2.4 check
+  (`crates/turts_mod_runtime/src/mp1_validation.rs`, `menu_keeps_a_key`, in the KEY1 group): the effective bindings of
+  `menu` hold at least one `Key`. Text: `<package>/input/bindings.ron: engine_overrides[0].bindings: the engine action
+  `menu` has no key; the settings menu holds the sound switch that every player must be able to reach, so `menu` keeps at
+  least one key: bind a key to it, or leave `menu` out of `engine_overrides` (the keys are F10 and Escape)` (and the path
+  `actions[5].default` for the authored form). A check of the edition 0.2.4 only: no version-table row. Test
+  `the_engine_action_menu_keeps_a_key_in_a_package_of_the_edition_0_2_4` (an empty list, a pointer-only list, an authored
+  `menu` with no key: refused; a key F9: packs; `^0.2.3`: not checked). The player can still unbind keys in the settings
+  menu of the game (that is the player's choice, and `cancel` on Escape opens the menu when no order is pending:
+  `crates/turts_interaction/src/lib.rs:899-910`).
+- A misspelt action in a `^0.2.3` package no longer gets a hint to a name of 0.2.4: the hint and the allowed list offer the
+  names that the edition admits (`ENGINE_ACTIONS_SINCE_0_2_4`; test
+  `the_hint_for_a_misspelt_action_offers_only_the_names_of_the_edition`).
+
+## E-SND-6. A key bound to `toggle_sound` (re-review question)
+
+Fact before this change: `toggle_sound` passed the check of `engine_overrides` (it is in `is_engine_action`), but the
+interaction core knew only `menu`, `toggle_guide` and `cancel` as shell actions
+(`crates/turts_interaction/src/lib.rs:881`, `:951`), so a key bound to it did nothing. Now it works: the core sends
+`Effect::ShellAction { action: "toggle_sound" }`, and the client flips the switch (`widgets/mod.rs`,
+`consume_shell_actions`). It has no default key; a mod binds one with `engine_overrides: [(name: "toggle_sound",
+bindings: [Key(code: "F9", mods: [])])]`. Tests: `a_key_bound_to_toggle_sound_sends_the_shell_action`
+(`crates/turts_interaction/tests/rebound_actions.rs`) and `the_shell_action_toggle_sound_flips_the_switch`
+(`crates/turts_client/src/widgets/tests.rs`). `leave_match` has the same gap (a bound key does nothing: owner `UI-RESULT`).
+
+## E-SND-7. Open item, older than this task (re-review L2)
+
+Two path forms name one field in the packer's messages: a validation error uses the index form
+(`root[0].widget.children[0].widget.action`), and a version-table refusal uses the id form
+(`root[snd_quiet].widget.children[snd_quiet_btn].widget.action`). The modder reads two forms for one field. Pre-existing
+(MC validation against the version table). Status: open; no owner task. Not changed here.

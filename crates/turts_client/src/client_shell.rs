@@ -90,10 +90,9 @@ impl Plugin for ClientShellPlugin {
         // (`press_release.rs`). It needs the picking messages and maps: not in a headless test app.
         app.add_systems(
             PreUpdate,
-            crate::press_release::hover_for_a_press_and_release_in_one_frame
-                .after(bevy::picking::hover::generate_hovermap)
-                .before(bevy::picking::events::pointer_events)
-                .run_if(resource_exists::<bevy::picking::hover::PreviousHoverMap>)
+            crate::press_release::click_in_one_frame
+                .after(bevy::picking::events::pointer_events)
+                .run_if(resource_exists::<bevy::picking::hover::HoverMap>)
                 .run_if(resource_exists::<Messages<bevy::picking::pointer::PointerInput>>),
         );
         app.init_resource::<ClientSettings>()

@@ -577,8 +577,12 @@ impl Core {
         }
         self.pointer = Some((*px, *over_widget));
         if let Some((button, start, dragged, down_ms)) = self.pointer_down {
-            self.pointer_down =
-                Some((button, start, dragged || start.distance(*px) > 4.0, down_ms));
+            self.pointer_down = Some((
+                button,
+                start,
+                dragged || start.distance(*px) > CLICK_DRAG_PIXELS,
+                down_ms,
+            ));
         }
     }
 
@@ -629,7 +633,7 @@ impl Core {
         if *over_widget || down_button != *button {
             return;
         }
-        let dragged = dragged || start.distance(*px) > 4.0;
+        let dragged = dragged || start.distance(*px) > CLICK_DRAG_PIXELS;
         let pointer_action = self.action_for_pointer(down_button, world);
         if matches!(pointer_action.as_deref(), Some("select" | "box_select")) {
             self.complete_selection_gesture(start, *px, dragged, down_ms, world, view, effects);
@@ -878,7 +882,7 @@ impl Core {
             {
                 effects.push(Effect::CameraChanged);
             }
-        } else if action == "menu" || action == "toggle_guide" {
+        } else if action == "menu" || action == "toggle_guide" || action == "toggle_sound" {
             if action == "menu" {
                 self.begin_ui_capture(true);
             }
@@ -948,7 +952,7 @@ fn camera_pan_action(action: &str) -> bool {
 }
 
 fn shell_action(action: &str) -> bool {
-    matches!(action, "menu" | "cancel" | "toggle_guide")
+    matches!(action, "menu" | "cancel" | "toggle_guide" | "toggle_sound")
 }
 
 /// Input observed by the client adapter during one frame.
@@ -1020,6 +1024,11 @@ pub enum UiOrderTarget {
     Content(String),
     Job(JobId),
 }
+
+/// A pointer that moves farther than this many pixels between its press and its release made a drag,
+/// not a click (the box select, and the `UiButton` click repair of the client:
+/// `crates/turts_client/src/press_release.rs`).
+pub const CLICK_DRAG_PIXELS: f32 = 4.0;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct InteractionSettings {

@@ -716,3 +716,30 @@ fn authored_wheel_pan_is_one_actual_frame_pulse() {
         "a wheel pulse must not latch held pan into later frames"
     );
 }
+
+/// The engine action `toggle_sound` (API 0.2.4, row H25) can be bound to a key by a mod
+/// (`engine_overrides`): the key sends the shell action. It has no default key. An unbound
+/// `toggle_sound` does nothing.
+#[test]
+fn a_key_bound_to_toggle_sound_sends_the_shell_action() {
+    let mut world = TestWorld::default();
+    let mut core = Core::default();
+    let none = core.step(&[down("F9")], &world, &VIEW, 50);
+    assert!(
+        !none
+            .iter()
+            .any(|effect| matches!(effect, Effect::ShellAction { .. })),
+        "F9 is not bound: nothing happens"
+    );
+    world
+        .runtime_bindings
+        .insert("toggle_sound".into(), vec![key("F9")]);
+    let mut core = Core::default();
+    let effects = core.step(&[down("F9")], &world, &VIEW, 100);
+    assert!(
+        effects.iter().any(
+            |effect| matches!(effect, Effect::ShellAction { action } if action == "toggle_sound")
+        ),
+        "the bound key sends the shell action: {effects:?}"
+    );
+}

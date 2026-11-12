@@ -41,6 +41,15 @@ client check it:
     of `reasons`, `cursors` or `states`, a weapon `damage` of 0, and an unknown placeholder in
     a text are refused). An older edition keeps the behaviour of its API.
 
+  - The sound switch rule (API 0.2.4, row H25): the engine action `toggle_sound` switches the
+    sound, and the game is silent until the player turns it on. The engine draws its own switch on
+    the play screen only when the interface places no `Button` with `Input(\"toggle_sound\")`. A
+    package that places one owns the play-screen control: it may show it or hide it with `visible`,
+    so a package may leave the play-screen switch out. The settings menu always holds a switch and
+    opens with the engine action `menu`, so a package of the edition 0.2.4 keeps at least one key
+    on `menu` (F10 and Escape are the defaults; `engine_overrides` or an action named `menu` that
+    leaves it no key is refused).
+
 On the first problem, turts-pack prints the package, the file, and the field to stderr,
 writes no archive, and exits with 2. On success it exits with 0.";
 

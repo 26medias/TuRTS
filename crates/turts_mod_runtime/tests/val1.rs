@@ -1751,6 +1751,148 @@ fn the_shipped_packages_place_the_sound_switch_and_pack_at_0_2_4() {
     }
 }
 
+/// L3 of the re-review: the 0.2.3 baseline that `read_files` gives (`as_edition_0_2_3`) is the form of
+/// each shipped package at the base commit `54c39fdd`, byte for byte (sha256 of the two files that the
+/// strip changes). A later edit of a shipped `hud.ron` or manifest that the strip does not undo
+/// changes this test, not the baseline of 84 other tests without a sign.
+#[test]
+fn the_edition_0_2_3_baseline_is_the_base_commit_form_of_each_shipped_package() {
+    let pinned = [
+        (
+            "muster",
+            "79e532ea199cca15cbbcf0a8e5995fdcc9e1ccec8a7a32f4b00c335946888225",
+            "c4b8ab7c62a87de991827318eded350ffc4ccbf3047e926f336a6680e0829def",
+        ),
+        (
+            "forge",
+            "c8d92960f67dca3fabad400d2bca0c6e0615782ee37c0cb44cc8bbf640b29339",
+            "718a319e8297d868655cd3bae521d6a34430cfbdc46422b09e313de16ea5c378",
+        ),
+        (
+            "base",
+            "7a6e9e5316cc8236d337a73e6c6506897ef34a323e1798149f4396d2c3ce1e65",
+            "decd6332160107f103006b2d815ca7c8f7369be6398a2f9920af4aaeedc669d8",
+        ),
+        (
+            "cedar",
+            "d036dfa250abae5115a3500baabd2231a3fcd94afebf107de211ece20ccf7c39",
+            "9bff7b914e43fb5457327c14c89c8a2c1d7eb931c0e8fc342cb8dbe3c9a61599",
+        ),
+        (
+            "haul",
+            "2fec925e57ae87136d429cb54631146852086b30f430e09c9d855bdf2accc9e8",
+            "67a7808c6946b38a93da211320e6e08fc85ec8b9d46e855cd691c89a520510c4",
+        ),
+        (
+            "acme",
+            "4ee2e1c5848dbacd3ad912ea47f6dfcc9d2b94d5790547e8cde921c7d205103f",
+            "6b9b91f8855f16e970a7752ae6228bef29dfc02db0d43fa268e3d3473f11fd5c",
+        ),
+    ];
+    for (name, hud, manifest) in pinned {
+        let files = read_files(&package_dir(name));
+        assert_eq!(
+            turts_mod_runtime::hash::sha256_hex(&files["interface/hud.ron"]),
+            format!("sha256:{hud}"),
+            "{name} interface/hud.ron"
+        );
+        assert_eq!(
+            turts_mod_runtime::hash::sha256_hex(&files["manifest.ron"]),
+            format!("sha256:{manifest}"),
+            "{name} manifest.ron"
+        );
+    }
+}
+
+/// M2 of the re-review: the settings menu holds the sound switch that every player can reach, and it
+/// opens with the engine action `menu`, so a package of the edition 0.2.4 keeps at least one key on
+/// `menu`. Both ways to take the keys away are refused: an `engine_overrides` entry with no key, and
+/// an authored action named `menu` with no key. A key (F9) or a replacement is fine. An older edition
+/// is not checked (the rule is a 0.2.4 check).
+#[test]
+fn the_engine_action_menu_keeps_a_key_in_a_package_of_the_edition_0_2_4() {
+    const BINDINGS: &str = "input/bindings.ron";
+    let with_override = |bindings: &'static str| -> [Edit<'static>; 1] {
+        [(
+            BINDINGS,
+            "engine_overrides: []",
+            Box::leak(
+                format!(r#"engine_overrides: [(name: "menu", bindings: {bindings})]"#)
+                    .into_boxed_str(),
+            ),
+        )]
+    };
+    let rule = "the engine action `menu` has no key; the settings menu holds the sound switch that every player must be able to reach, so `menu` keeps at least one key: bind a key to it, or leave `menu` out of `engine_overrides` (the keys are F10 and Escape)";
+    for (what, bindings) in [
+        ("empty", "[]"),
+        ("pointer only", "[Pointer(button: Middle, mods: [])]"),
+    ] {
+        assert_eq!(
+            cedar("^0.2.4", &with_override(bindings), &[])
+                .content()
+                .unwrap_err()
+                .to_string(),
+            format!("cedar/input/bindings.ron: engine_overrides[0].bindings: {rule}"),
+            "{what}"
+        );
+        cedar("^0.2.3", &with_override(bindings), &[])
+            .content()
+            .unwrap_or_else(|error| panic!("{what} at ^0.2.3 is not checked: {error}"));
+    }
+    cedar(
+        "^0.2.4",
+        &with_override(r#"[Key(code: "F9", mods: [])]"#),
+        &[],
+    )
+    .content()
+    .expect("a key on menu is fine");
+    let authored: [Edit; 1] = [(
+        BINDINGS,
+        r#"(name: "key_cancel", default: [Key(code: "KeyC", mods: [])])]"#,
+        r#"(name: "key_cancel", default: [Key(code: "KeyC", mods: [])]), (name: "menu", default: [])]"#,
+    )];
+    assert_eq!(
+        cedar("^0.2.4", &authored, &[])
+            .content()
+            .unwrap_err()
+            .to_string(),
+        format!("cedar/input/bindings.ron: actions[5].default: {rule}")
+    );
+}
+
+/// L1 of the re-review: the hint of a misspelt action must not offer a name that the edition of the
+/// package refuses. A `^0.2.3` package gets no `toggle_sound` and no `leave_match` in the hint or the
+/// allowed list; a `^0.2.4` package gets both.
+#[test]
+fn the_hint_for_a_misspelt_action_offers_only_the_names_of_the_edition() {
+    let typo = (
+        CEDAR_HUD,
+        r#"action: Order("cedar:order_cancel")"#,
+        r#"action: Input("toggle_sond")"#,
+    );
+    let old = cedar("^0.2.3", &[typo], &[])
+        .content()
+        .unwrap_err()
+        .to_string();
+    assert!(old.starts_with("cedar/interface/hud.ron: root[4].widget.action: unknown input action `toggle_sond` (allowed: "), "{old}");
+    assert!(
+        !old.contains("toggle_sound") && !old.contains("leave_match"),
+        "{old}"
+    );
+    assert!(
+        old.contains("toggle_guide"),
+        "the names of 0.2.3 stay: {old}"
+    );
+    let new = cedar("^0.2.4", &[typo], &[])
+        .content()
+        .unwrap_err()
+        .to_string();
+    assert!(
+        new.contains("did you mean `toggle_sound`?") && new.contains("leave_match"),
+        "{new}"
+    );
+}
+
 /// H13 on the two packages that already write `font` and `size` in a `Text` widget: the detection
 /// reads a `Button` only (design 6.10, [mod M1]). A key walk of `ron::Value` would refuse the
 /// copies of `forge` and `muster`. They pack at their own requirement, on both paths.
