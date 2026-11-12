@@ -1,0 +1,30 @@
+Detail for the spec-rigour gate-1 report on the MP1 design, revision 3.
+
+F6 reds that cannot fail, with plants:
+- CON2: an equal client copy passes 1,000 points. Plant a client copy with gap 1.8; add a boundary grep that placement in turts_client comes from turts_rules.
+- DMG1: plant damage 100 x 29/100. A float multiplier gives floor(28.999999999999996)=28; integer gives 29. Also DMG1 asserts the section 5 ratios, but section 5 (:104) says the numbers stay Open until measured: say whether a failed ratio is a red or a retune.
+- DES1 "a second removal path", REP1 "a health write outside a transaction": visible state is equal; add a grep or a turts_audit check as the instrument.
+- RES1 "statistics readable before the end": a pixels driver cannot see a server read; run it headless on the export.
+- MAT1 "outcome from the unit list on the client": red only when the two differ; plant a case where they differ (a CC at health 0 still in the list).
+- Feature-absent reds: TGT1 "acquisition off", TGT2 "retaliation off", HUD5 "a missing source", GOAL1 "The MC forge start".
+
+F9 Changes column omissions:
+- P1 (a): MDL1, VIS3, MD17, AN07, section 11.
+- P3 cut: RLY1, REP1, CON3, SMT1, OR15, PR06, CO08, steps 8, 16. P3 lists four cuts; the cut order names three (charge over time missing).
+- P4 (a): PAY1, PAY2, CON1, HUD5, HUD6 ("paid while it builds"), steps 3, 9, 11, PR03, EC10.
+- P5 none: AUD2, AU03, AU07, X14 engine part.
+- P8 (a): MAT1, MF14, step 19. P8 also touches D28 (no disconnect gameplay in the engine): state that the engine gives only the disconnect time.
+- P9 (b): OBS1, 6.9.
+
+F11 terms to define:
+- player slot: the D25 slot. destination slot: a group-movement point in a slot pool (MCD 6.3). Material slot: rename to "team material".
+- team: a set of player slots; in MP1 one slot each.
+- seat (:180): use "player slot".
+- site: the server entity of 6.1. pending site: the client marker before the server result. PT3 must name which one.
+- alert: a line in the alert list (ALR2). notice: the refusal text at the pointer and the grouped failure line (O14).
+- queue: the per-producer job list. lane: one worktree and its task chain (section 10).
+- done: three meanings (disposition, exit, hint). Keep `done:` for the disposition only.
+
+STE meaning issues:
+- :179 "A defeated slot keeps its slot" -> "A defeated player keeps the slot (D25)."
+- :39 four cuts but three in the order.
