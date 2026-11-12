@@ -62,5 +62,117 @@
         "expected_red": "test the_required_dependencies_field_is_detected_on_the_parsed_value ... FAILED",
         "exit": 101,
         "commit": "2a0eab3ad0a2b65af8d8e82010eb097bb86a57c9"
+    },
+    {
+        "row": "VAL1 (review M1)",
+        "plant": "L0-RAW repair M1 (a): a path no longer looks through a list; `placements[].facing` cannot be written",
+        "files": [
+            {
+                "file": "crates/turts_mod_runtime/src/raw_presence.rs",
+                "patch": "diff --git a/crates/turts_mod_runtime/src/raw_presence.rs b/crates/turts_mod_runtime/src/raw_presence.rs\nindex 1463a72..b9d30d2 100644\n--- a/crates/turts_mod_runtime/src/raw_presence.rs\n+++ b/crates/turts_mod_runtime/src/raw_presence.rs\n@@ -118,7 +118,6 @@ fn has_path(value: &Value, path: &[&str]) -> bool {\n     };\n     match value {\n         Value::Option(Some(inner)) => has_path(inner, path),\n-        Value::Seq(items) => items.iter().any(|item| has_path(item, path)),\n         Value::Map(map) => map.iter().any(|(key, child)| {\n             matches!(key, Value::String(name) if name == first) && has_path(child, rest)\n         }),\n"
+            }
+        ],
+        "command": "cargo test -p turts_mod_runtime --locked --lib",
+        "env": {},
+        "headed": false,
+        "expected_red": "test raw_presence::tests::a_path_looks_through_a_list_of_structs ... FAILED",
+        "exit": 101,
+        "commit": "5774611c2d5905a7fd14eef07c547cde2ef256ed"
+    },
+    {
+        "row": "VAL1 (review M1)",
+        "plant": "L0-RAW repair M1 (b): the walk is a deep walk that looks at every level (reviewer plant P1)",
+        "files": [
+            {
+                "file": "crates/turts_mod_runtime/src/raw_presence.rs",
+                "patch": "diff --git a/crates/turts_mod_runtime/src/raw_presence.rs b/crates/turts_mod_runtime/src/raw_presence.rs\nindex 1463a72..9abb041 100644\n--- a/crates/turts_mod_runtime/src/raw_presence.rs\n+++ b/crates/turts_mod_runtime/src/raw_presence.rs\n@@ -120,7 +120,8 @@ fn has_path(value: &Value, path: &[&str]) -> bool {\n         Value::Option(Some(inner)) => has_path(inner, path),\n         Value::Seq(items) => items.iter().any(|item| has_path(item, path)),\n         Value::Map(map) => map.iter().any(|(key, child)| {\n-            matches!(key, Value::String(name) if name == first) && has_path(child, rest)\n+            (matches!(key, Value::String(name) if name == first) && has_path(child, rest))\n+                || has_path(child, path)\n         }),\n         _ => false,\n     }\n"
+            }
+        ],
+        "command": "cargo test -p turts_mod_runtime --locked --lib",
+        "env": {},
+        "headed": false,
+        "expected_red": "test raw_presence::tests::a_field_inside_a_variant_is_not_a_root_path ... FAILED",
+        "exit": 101,
+        "commit": "5774611c2d5905a7fd14eef07c547cde2ef256ed"
+    },
+    {
+        "row": "VAL1 (review M2)",
+        "plant": "L0-RAW repair M2: the `unit.weapon` row (API 0.2.1) is removed from VERSION_TABLE",
+        "files": [
+            {
+                "file": "crates/turts_mod_runtime/src/version_table.rs",
+                "patch": "diff --git a/crates/turts_mod_runtime/src/version_table.rs b/crates/turts_mod_runtime/src/version_table.rs\nindex 6a4498b..e2d35f2 100644\n--- a/crates/turts_mod_runtime/src/version_table.rs\n+++ b/crates/turts_mod_runtime/src/version_table.rs\n@@ -135,7 +135,6 @@ pub(crate) const VERSION_TABLE: &[VersionTableRow] = &[\n     unit_field(\"unit.machine\", &[\"machine\"]),\n     unit_field(\"unit.research\", &[\"research\"]),\n     unit_field(\"unit.health\", &[\"health\"]),\n-    unit_field(\"unit.weapon\", &[\"weapon\"]),\n     unit_field(\"unit.removal\", &[\"removal\"]),\n     raw(\"map.belts\", \"0.2.1\", RawGroup::Maps, &[\"belts\"]),\n     raw(\n"
+            }
+        ],
+        "command": "cargo test -p turts_mod_runtime --locked --test raw_presence",
+        "env": {},
+        "headed": false,
+        "expected_red": "test every_m3_field_written_empty_gets_the_table_text_and_the_file ... FAILED",
+        "exit": 101,
+        "commit": "5774611c2d5905a7fd14eef07c547cde2ef256ed"
+    },
+    {
+        "row": "VAL1 (review M3)",
+        "plant": "L0-RAW repair M3: `Written<T>` does not record that the key was written",
+        "files": [
+            {
+                "file": "crates/turts_mod_api/src/written.rs",
+                "patch": "diff --git a/crates/turts_mod_api/src/written.rs b/crates/turts_mod_api/src/written.rs\nindex 85decce..bf1aa9b 100644\n--- a/crates/turts_mod_api/src/written.rs\n+++ b/crates/turts_mod_api/src/written.rs\n@@ -44,7 +44,7 @@ impl<'de, T: Deserialize<'de>> Deserialize<'de> for Written<T> {\n     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {\n         T::deserialize(deserializer).map(|value| Self {\n             value,\n-            written: true,\n+            written: false,\n         })\n     }\n }\n"
+            }
+        ],
+        "command": "cargo test -p turts_mod_api --locked --lib",
+        "env": {},
+        "headed": false,
+        "expected_red": "test written::tests::a_key_written_with_its_default_is_written ... FAILED",
+        "exit": 101,
+        "commit": "5774611c2d5905a7fd14eef07c547cde2ef256ed"
+    },
+    {
+        "row": "VAL1 (review L4)",
+        "plant": "L0-RAW repair L4: the error does not name the file where a RAW field is written",
+        "files": [
+            {
+                "file": "crates/turts_mod_runtime/src/version_table.rs",
+                "patch": "diff --git a/crates/turts_mod_runtime/src/version_table.rs b/crates/turts_mod_runtime/src/version_table.rs\nindex 6a4498b..a3b2c24 100644\n--- a/crates/turts_mod_runtime/src/version_table.rs\n+++ b/crates/turts_mod_runtime/src/version_table.rs\n@@ -168,11 +168,8 @@ impl VersionTableRow {\n         match self.detect {\n             Detect::Raw { group, path } => {\n                 let file = raw.written(group, path)?;\n-                Some(if group == RawGroup::Manifest {\n-                    String::new()\n-                } else {\n-                    format!(\" (written in {file}: {})\", path.join(\".\"))\n-                })\n+                let _ = file;\n+                Some(String::new())\n             }\n             Detect::Parsed(present) => present(manifest, content?).then(String::new),\n         }\n"
+            }
+        ],
+        "command": "cargo test -p turts_mod_runtime --locked --test raw_presence",
+        "env": {},
+        "headed": false,
+        "expected_red": "test every_m3_field_written_empty_gets_the_table_text_and_the_file ... FAILED",
+        "exit": 101,
+        "commit": "5774611c2d5905a7fd14eef07c547cde2ef256ed"
+    },
+    {
+        "row": "VAL1 (review L5)",
+        "plant": "L0-RAW repair L5: `turts-pack --help` has no version rule",
+        "files": [
+            {
+                "file": "crates/turts_pack/src/main.rs",
+                "patch": "diff --git a/crates/turts_pack/src/main.rs b/crates/turts_pack/src/main.rs\nindex 337e295..5465516 100644\n--- a/crates/turts_pack/src/main.rs\n+++ b/crates/turts_pack/src/main.rs\n@@ -30,9 +30,6 @@ client check it:\n     slot is a real slot, positions inside the map, exactly one map. An error message\n     gives the limit that the value broke.\n   - Every unit has exactly one visual. Every visual names a unit of the package.\n-  - The version rule: the manifest `engine_api` must exclude every engine API that lacks a\n-    feature the package writes; a field written empty (`orders: []`) counts; leave it out\n-    for an older API.\n \n On the first problem, turts-pack prints the package, the file, and the field to stderr,\n writes no archive, and exits with 2. On success it exits with 0.\";\n"
+            }
+        ],
+        "command": "cargo test -p turts_pack --locked --test cli",
+        "env": {},
+        "headed": false,
+        "expected_red": "usage lacks",
+        "exit": 101,
+        "commit": "5774611c2d5905a7fd14eef07c547cde2ef256ed"
+    },
+    {
+        "row": "VAL1 (review L7)",
+        "plant": "L0-RAW repair L7: the version table runs after the content checks",
+        "files": [
+            {
+                "file": "crates/turts_mod_runtime/src/archive.rs",
+                "patch": "diff --git a/crates/turts_mod_runtime/src/archive.rs b/crates/turts_mod_runtime/src/archive.rs\nindex 9c51bc8..0d805dc 100644\n--- a/crates/turts_mod_runtime/src/archive.rs\n+++ b/crates/turts_mod_runtime/src/archive.rs\n@@ -176,12 +176,6 @@ impl PackageArchive {\n             crate::version_table::raw_groups(crate::version_table::VERSION_TABLE),\n             |path| self.file(path),\n         )?;\n-        crate::version_table::check_version_table(\n-            &self.manifest,\n-            None,\n-            &raw,\n-            crate::version_table::VERSION_TABLE,\n-        )?;\n         let origin = self.id();\n         let resources = self\n             .resources()?\n"
+            }
+        ],
+        "command": "cargo test -p turts_mod_runtime --locked --test raw_presence",
+        "env": {},
+        "headed": false,
+        "expected_red": "test the_version_table_speaks_before_the_content_checks ... FAILED",
+        "exit": 101,
+        "commit": "5774611c2d5905a7fd14eef07c547cde2ef256ed"
     }
 ]
