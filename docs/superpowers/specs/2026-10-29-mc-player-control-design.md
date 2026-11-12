@@ -948,7 +948,8 @@ Seat: `ux-designer` (client side of D70); `backend-engineer` owns the server sid
 | Load | The phase (fetch, verify, join), a progress bar, the package name and version | shell |
 | Rejection | The reason of `rejected_reason` in player words, and what to do | shell |
 | Focus overlay | "Click to play" over a dimmed game, until the first click or key. It shows again when the canvas loses focus. | shell |
-| Sound notice | When audio stays locked after the first gesture: "Sound is off. Click or press a key to turn it on." for 8 s; input works. Each later gesture asks the browser to resume audio. The menu shows "Sound: off" until audio runs. Alerts keep their text and minimap ping. (Revision 16, ruling O15.) | shell |
+| Binding feedback | The settings frame has a fixed block of 52 px above the scrolling list, for the status line of a key change (prompt, changed, conflict, reset) and the Swap and Cancel buttons. It does not scroll with the binding rows, and the rows do not move when the text shows or clears. (Revision 16, ruling O15.) | shell |
+| Sound notice | When audio stays locked after the first gesture: "Sound is off. Click or press a key to turn it on." for 8 s, from 0.5 s after the first frame with locked audio (the delay prevents a flash when the browser resumes audio quickly); input works. Each later gesture asks the browser to resume audio. The menu shows "Sound: off" until audio runs. Alerts keep their text and minimap ping. (Revision 16, ruling O15.) | shell |
 | Menu (F10 or Esc) | One screen: key bindings with capture and a conflict notice; volumes; scroll speed; edge scroll on or off; UI scale; health bar mode; cursor lock (K9); double-click time | shell |
 | Connection lost | "Connection lost" and a reload button when `reconnect_required` is set (`input.rs:46`) | shell |
 | HUD, guide | Mod widgets | mod |
