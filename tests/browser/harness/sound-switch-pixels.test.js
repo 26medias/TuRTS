@@ -72,6 +72,12 @@ test("the finder refuses a missing switch, a wrong size, a thin line, other fill
     for (let x = 744; x < 868; x += 2) sparse.rgba.set([...SOUND_SWITCH.off, 255], (684 * sparse.width + x) * 4);
     sparse.rgba.set([...SOUND_SWITCH.off, 255], (711 * sparse.width + 744) * 4);
     assert.equal(findSoundSwitch(sparse), null, "the corner pixels of a hollow outline are not a button");
+    const outline = image();
+    fill(outline, 744, 684, 124, 1, SOUND_SWITCH.off);
+    fill(outline, 744, 711, 124, 1, SOUND_SWITCH.off);
+    fill(outline, 744, 684, 1, 28, SOUND_SWITCH.off);
+    fill(outline, 867, 684, 1, 28, SOUND_SWITCH.off);
+    assert.equal(findSoundSwitch(outline), null, "a 1 px outline is not a button");
     const split = image();
     // Two blocks of the fill that together span a switch box are not one switch.
     fill(split, 744, 684, 40, 28, SOUND_SWITCH.on);
