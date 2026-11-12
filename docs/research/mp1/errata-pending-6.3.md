@@ -161,3 +161,8 @@ Probe 2, the HUD change counter on today's tree (forge HUD, 108 widget entities,
 - Not done yet: the M2 browser fault runner still builds inside one outer lock (3,545 to 4,671 s). It needs a prepare
   after each plant, the lock taken for each browser phase, a lock-only mode of the wrapper, and a no-git fallback of
   `mc_prepare.py`; the baseline folder can be used again after the restore. Size: about 4 runs. Owner: qa-lead.
+
+## From the L0-SIM review (2026-11-12, `review-l0-sim.md`)
+
+- The review failed with 2 High. Orchestrator ruling: the gated design stands for both. H1: Supply runs before the commands of the tick (6.2). H2: one payment order over sites and producers (6.4). The technical director rules the open order items (E-c income and commands, E-d site completion, E-e repair slot, `spawn_order` after Orders) in `ruling-l0-sim-order.md`; its errata go into revision 6.3.
+- **Risk for D58, not from this task (lead, measured by the reviewer; not re-run by the orchestrator):** with 5,000 synthetic units one tick takes 12.0 s at the L0-SIM head and 13.2 s at its base. perf: 41% in `UniformGrid::within`, 24% in sorts inside `within`, plus `spread_destinations` (MC movement). Owner to assign: `performance-architect` with `simulation-core-engineer`, before the first hosting benchmark.
