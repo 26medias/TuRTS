@@ -51,7 +51,10 @@ const WRITE_METHODS: [&str; 7] = [
 /// write in an allowed file changes a count, so the test is red. A write in a file with no entry is
 /// red too. A task that adds, moves out of the entry, or deletes a write updates the count here
 /// and names the line in its report. The text is the reason that the entry holds the writes.
-const PINNED: &[(&str, &str, &[(&str, &str, usize)])] = &[
+/// (kind, type, count) of one entry of the table.
+type Pin = (&'static str, &'static str, usize);
+
+const PINNED: &[(&str, &str, &[Pin])] = &[
     (
         "crates/turts_sim/src/movement/",
         "the movement step and its state",
