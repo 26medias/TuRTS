@@ -75,24 +75,24 @@ fn clicks_in_one_frame(inputs: impl IntoIterator<Item = PointerInput>) -> Vec<Dr
                 );
             }
             PointerAction::Move { .. } => {
-                if let Some(press) = down.get_mut(&input.pointer_id)
-                    && press.start.distance(at) > CLICK_DRAG_PIXELS
+                if let Some(held) = down.get_mut(&input.pointer_id)
+                    && held.start.distance(at) > CLICK_DRAG_PIXELS
                 {
-                    press.dragged = true;
+                    held.dragged = true;
                 }
             }
             PointerAction::Release(button) => {
-                let Some(press) = down.remove(&input.pointer_id) else {
+                let Some(held) = down.remove(&input.pointer_id) else {
                     continue;
                 };
-                if press.button == button
-                    && !press.dragged
-                    && press.start.distance(at) <= CLICK_DRAG_PIXELS
+                if held.button == button
+                    && !held.dragged
+                    && held.start.distance(at) <= CLICK_DRAG_PIXELS
                 {
                     found.push(DroppedClick {
                         pointer: Pointer::new(input.pointer_id, input.location.clone()),
                         button,
-                        press_at: press.start,
+                        press_at: held.start,
                         release_at: at,
                     });
                 }
