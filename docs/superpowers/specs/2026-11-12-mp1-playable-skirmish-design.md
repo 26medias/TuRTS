@@ -1,6 +1,6 @@
 # MP1: Playable skirmish for two people: design
 
-Date: 2026-11-12. Revision 1. Status: DRAFT, before gate 1.
+Date: 2026-11-12. Revision 2. Status: DRAFT, before gate 1. Revision 2: section 6.9 from probe MP1-P1.
 Author: the orchestrator, from five seat inputs under `docs/research/mp1/` (producer, game-designer,
 technical-director, ux-designer, bevy-rendering-engineer). The inputs are agent output. This design takes
 their conclusions; gate 1 checks each claim that the design depends on.
@@ -42,7 +42,7 @@ changes the named sections.
 | P6 | Names, tone, art direction | open in S:807 | Faction: the guard force of a frontier mining company (working name "Lantern Company"), a mirror match over a claim. Tone: grounded near future, no gore. Art: low-poly, clear top-down silhouettes, team colour on large surfaces. Plain function names for units | 5 |
 | P7 | The two people of the play test | two people; or the CEO and one more person | two people, one of them not the CEO, so one tester is blind | 13 |
 | P8 | A lost connection | (a) the match waits for ever; (b) a slot that stays disconnected for N seconds is defeated | (b) with N = 120 s as mod data (UX part 6); without it a two-player match cannot end | 6.7 |
-| P9 | Units and buildings in the way | depends on probe MP1-P1 (section 6.9) | open until the probe reports | 6.9 |
+| P9 | Units and buildings in the way | (a) a free drop-off point in the engine and a minimum gap between buildings as a mod rule; (b) bring the M4 route step into MP1 | (a): the probe shows single buildings pass and every gap of 2.0 gives 0 blocked units; (b) moves the first match later | 6.9 |
 
 ## 3. What exists and what MP1 adds
 
@@ -197,18 +197,33 @@ group, so M5 can share vision inside a team.
 
 ### 6.9 Units and buildings in the way (decision P9)
 
-MP1 puts static footprints on the map and the engine has no route round an obstacle (M4, M4b). Probe MP1-P1
-measures today's behaviour: one unit and twenty units against a footprint of radius 2.5, a compact base, a
-harvester trip beside a building, and a target inside a footprint. The design takes one of three forms from
-its result:
+Probe MP1-P1 measured today's behaviour (`docs/research/mp1/probe-obstacles.md`; native, deterministic, the
+same result in two runs). Result: PASSABLE WITH LIMITS.
 
-- PASSABLE: no change.
-- PASSABLE WITH LIMITS: map and placement rules reduce the problem (a minimum gap between buildings, a clear
-  lane from the main ore field to the command centre), and the limit is recorded as MC ruling O14 was.
-- BLOCKING: the smallest engine change that makes one static footprint passable (the probe names it), built
-  as the first step of M4b and not as a second movement path (TD part E2).
+- One building is passable. One unit and twenty units pass a static footprint of radius 2.5 at every offset;
+  they arrive 1.00 to 1.22 times later than on a free line. A click on a building ends on a ring round it.
+- A compact base traps units. With a gap between footprints that is smaller than a unit's diameter, 20 to
+  50 % of tanks stay `Blocked` inside the base, and a lone tank also. With the 0.5 gap of the first content
+  proposal, 7 of 20 infantry stay too. With every gap at least 2.0, 0 units are `Blocked`.
+- A building near the drop-off stops the economy. A power station 1 to 2 from the command centre on the ore
+  side gives 0 harvester trips: the harvester stops `Blocked` and its gather order is cleared
+  (`gather.rs:1126-1149`, `orders.rs:785-819`).
 
-This section is rewritten when the probe reports. Gate 1 does not close before that.
+MP1 takes two measures, and no route search:
+
+1. Engine (small, generic, stays valid at M4): the approach point of a receiver or a node is the nearest
+   ring point that no static footprint blocks. About 40 lines in one file with one test (estimate of the probe,
+   NOT TRACED).
+2. Mod placement rule, as data: the gap between two footprints is at least the largest mobile diameter plus
+   0.2 (2.0 for the tank of the proposal). The cost: bases are wider, and a player cannot build a wall.
+
+Recorded limit, as MC ruling O14: MP1 has no route round a group of obstacles. A route over the static
+footprints is the first step of M4 navigation (the M4 design, `2026-10-28-m4-terrain-design.md:178-191`), not
+of M4b. A `Blocked` unit in physical escape can walk up to 1.154 into a footprint (MC design 6.5 permits it);
+a player can see it; it stays until M4b.
+
+Decision P9 for the CEO: accept these two measures (recommended), or bring the M4 route step into MP1 (400 to
+700 lines in 5 to 7 files, estimate of the probe; it moves the first match later).
 
 ## 7. Player interface
 
@@ -348,7 +363,7 @@ checks that each red is reachable. The row list is a first draft; the plan fixes
 | FX1 | A `Fired` event reaches each client that may see the unit; an enemy turret aims; a death shows its effect | events to the owner only | headless and pixels |
 | HUD5 | The power text, the low-power state, the queue states and the credits counter show the words of section 7 | a missing source | pixels |
 | KEY1 | Each build entry has its own key; no MP1 key conflicts | one key for all entries | headless |
-| OBS1 | The result of probe MP1-P1 as a row: units pass a building under the limit that section 6.9 records | the limit is exceeded | headless |
+| OBS1 | A harvester completes 20 trips with a building 1 to 2 from the command centre on the ore side; with the minimum gap rule, 0 of 20 tanks are `Blocked` in a compact base; the site check refuses a smaller gap | the approach point ignores statics; the gap rule off | headless |
 | MDL1 | A package with a model loads in the browser from memory; a damaged model is refused at pack time; the shape shows until the model is ready | a URL fetch; no refusal | headless and pixels |
 | VIS3 | Frame time p50 and p95 at 400 units, primitives and models | recorded, not judged | pixels |
 | MCX1 | The MC items of section 7.7, one check each | each defect put back | pixels |
@@ -383,7 +398,7 @@ cause (the reason at the pointer; right click and Esc cancel).
 
 ## 15. Open points for gate 1
 
-1. Section 6.9 waits for probe MP1-P1.
+1. Section 6.9 has the probe result; the 40-line estimate of the engine measure is NOT TRACED.
 2. The pre-MP1 slice gate is in progress; its findings can change section 9.
 3. Two M2-era open decisions touch MP1 lightly and stay Open: the tick rate and the numeric budgets (S 15).
    MP1 records numbers and promises none.
