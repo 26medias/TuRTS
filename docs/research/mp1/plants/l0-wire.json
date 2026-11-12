@@ -27,7 +27,7 @@
     "headed": false,
     "expected_red": "case A: the record is gone",
     "exit": 101,
-    "commit": "7ffd4b1bc2c53c78ad67a21f3b5c1e7c58585474",
+    "commit": "c21d9462a9226d7332bc24bc1827a524aa9935ba",
     "expected_selected": "case_a_orders_cleared_removes_the_record_and_an_omitted_record_stays"
   },
   {
@@ -58,7 +58,7 @@
     "headed": false,
     "expected_red": "assertion `left == right` failed",
     "exit": 101,
-    "commit": "7ffd4b1bc2c53c78ad67a21f3b5c1e7c58585474",
+    "commit": "c21d9462a9226d7332bc24bc1827a524aa9935ba",
     "expected_selected": "orders_cleared_is_written_for_the_owner_and_skips_nothing_that_the_sim_listed"
   },
   {
@@ -89,7 +89,7 @@
     "headed": false,
     "expected_red": "an idle tick carries",
     "exit": 101,
-    "commit": "7ffd4b1bc2c53c78ad67a21f3b5c1e7c58585474",
+    "commit": "c21d9462a9226d7332bc24bc1827a524aa9935ba",
     "expected_selected": "ordw1_idle_units_cost_no_order_or_weapon_bytes"
   },
   {
@@ -120,7 +120,7 @@
     "headed": false,
     "expected_red": "case B: after the resync the client shows no order for the unit",
     "exit": 101,
-    "commit": "7ffd4b1bc2c53c78ad67a21f3b5c1e7c58585474",
+    "commit": "c21d9462a9226d7332bc24bc1827a524aa9935ba",
     "expected_selected": "case_b_a_dropped_clearing_delta_is_repaired_by_the_snapshot"
   },
   {
@@ -143,16 +143,16 @@
       "turts_server",
       "--test",
       "ordw1",
-      "ordw1_idle_units_cost_no_order_or_weapon_bytes",
+      "ordw1_weapon_records_are_sent_on_change_and_never_name_a_removed_unit",
       "--",
       "--exact"
     ],
     "env": {},
     "headed": false,
-    "expected_red": "an idle tick carries",
+    "expected_red": "repeats the previous record",
     "exit": 101,
-    "commit": "7ffd4b1bc2c53c78ad67a21f3b5c1e7c58585474",
-    "expected_selected": "ordw1_idle_units_cost_no_order_or_weapon_bytes"
+    "commit": "c21d9462a9226d7332bc24bc1827a524aa9935ba",
+    "expected_selected": "ordw1_weapon_records_are_sent_on_change_and_never_name_a_removed_unit"
   },
   {
     "row": "ORDW1",
@@ -182,7 +182,7 @@
     "headed": false,
     "expected_red": "assertion failed",
     "exit": 101,
-    "commit": "7ffd4b1bc2c53c78ad67a21f3b5c1e7c58585474",
+    "commit": "c21d9462a9226d7332bc24bc1827a524aa9935ba",
     "expected_selected": "a_cooldown_countdown_is_not_a_weapon_change"
   },
   {
@@ -220,7 +220,7 @@
     "headed": false,
     "expected_red": "Fired is",
     "exit": 101,
-    "commit": "7ffd4b1bc2c53c78ad67a21f3b5c1e7c58585474",
+    "commit": "c21d9462a9226d7332bc24bc1827a524aa9935ba",
     "expected_selected": "ordw1_a_fired_effect_is_at_most_eight_bytes"
   },
   {
@@ -251,7 +251,7 @@
     "headed": false,
     "expected_red": "one record at the accept tick and one at the arrival tick",
     "exit": 101,
-    "commit": "7ffd4b1bc2c53c78ad67a21f3b5c1e7c58585474",
+    "commit": "c21d9462a9226d7332bc24bc1827a524aa9935ba",
     "expected_selected": "ordw1_a_single_move_gives_one_record_at_accept_and_one_at_arrival"
   },
   {
@@ -282,7 +282,7 @@
     "headed": false,
     "expected_red": "a write of `UnitOrders` outside `orders/writer.rs`",
     "exit": 101,
-    "commit": "7ffd4b1bc2c53c78ad67a21f3b5c1e7c58585474",
+    "commit": "c21d9462a9226d7332bc24bc1827a524aa9935ba",
     "expected_selected": "no_production_write_of_unit_orders_outside_the_writer"
   },
   {
@@ -313,7 +313,7 @@
     "headed": false,
     "expected_red": "an export writer reads sim state other than `CommittedTick` fields",
     "exit": 101,
-    "commit": "7ffd4b1bc2c53c78ad67a21f3b5c1e7c58585474",
+    "commit": "c21d9462a9226d7332bc24bc1827a524aa9935ba",
     "expected_selected": "the_export_writers_read_only_committed_tick_fields"
   },
   {
@@ -343,7 +343,7 @@
     "headed": false,
     "expected_red": "assertion `left == right` failed",
     "exit": 101,
-    "commit": "7ffd4b1bc2c53c78ad67a21f3b5c1e7c58585474",
+    "commit": "c21d9462a9226d7332bc24bc1827a524aa9935ba",
     "expected_selected": "session::admission_tests::a_refused_envelope_costs_a_bucket_token"
   },
   {
@@ -373,7 +373,7 @@
     "headed": false,
     "expected_red": "assertion `left == right` failed",
     "exit": 101,
-    "commit": "7ffd4b1bc2c53c78ad67a21f3b5c1e7c58585474",
+    "commit": "c21d9462a9226d7332bc24bc1827a524aa9935ba",
     "expected_selected": "session::tests::protocol_4_hello_is_refused_with_the_mismatch_reason"
   },
   {
@@ -404,7 +404,7 @@
     "headed": false,
     "expected_red": "an unrequested newer Snapshot applies",
     "exit": 101,
-    "commit": "7ffd4b1bc2c53c78ad67a21f3b5c1e7c58585474",
+    "commit": "c21d9462a9226d7332bc24bc1827a524aa9935ba",
     "expected_selected": "point_14_an_unrequested_snapshot_applies_and_a_stale_one_is_ignored"
   },
   {
@@ -435,7 +435,7 @@
     "headed": false,
     "expected_red": "the weapon that named the removed unit is resent",
     "exit": 101,
-    "commit": "7ffd4b1bc2c53c78ad67a21f3b5c1e7c58585474",
+    "commit": "c21d9462a9226d7332bc24bc1827a524aa9935ba",
     "expected_selected": "a_weapon_that_names_a_removed_unit_is_resent_without_the_target"
   },
   {
@@ -466,7 +466,7 @@
     "headed": false,
     "expected_red": "assertion `left == right` failed",
     "exit": 101,
-    "commit": "7ffd4b1bc2c53c78ad67a21f3b5c1e7c58585474",
+    "commit": "c21d9462a9226d7332bc24bc1827a524aa9935ba",
     "expected_selected": "a_weapon_that_names_a_removed_unit_is_resent_without_the_target"
   },
   {
@@ -496,7 +496,7 @@
     "headed": false,
     "expected_red": "assertion failed",
     "exit": 101,
-    "commit": "7ffd4b1bc2c53c78ad67a21f3b5c1e7c58585474",
+    "commit": "c21d9462a9226d7332bc24bc1827a524aa9935ba",
     "expected_selected": "economy::combat::tests::a_removed_unit_has_no_order_record_and_is_not_cleared"
   },
   {
@@ -527,7 +527,7 @@
     "headed": false,
     "expected_red": "assertion `left == right` failed",
     "exit": 101,
-    "commit": "7ffd4b1bc2c53c78ad67a21f3b5c1e7c58585474",
+    "commit": "c21d9462a9226d7332bc24bc1827a524aa9935ba",
     "expected_selected": "a_site_job_or_queue_record_of_a_removed_unit_is_not_written"
   },
   {
@@ -558,7 +558,7 @@
     "headed": false,
     "expected_red": "assertion `left == right` failed",
     "exit": 101,
-    "commit": "7ffd4b1bc2c53c78ad67a21f3b5c1e7c58585474",
+    "commit": "c21d9462a9226d7332bc24bc1827a524aa9935ba",
     "expected_selected": "a_bad_orders_cleared_list_rejects_the_delta"
   },
   {
@@ -590,7 +590,7 @@
     "headed": false,
     "expected_red": "the order change list misses the units",
     "exit": 101,
-    "commit": "7ffd4b1bc2c53c78ad67a21f3b5c1e7c58585474",
+    "commit": "c21d9462a9226d7332bc24bc1827a524aa9935ba",
     "expected_selected": "economy::combat::tests::a_stop_order_lists_the_cleared_record"
   }
 ]
