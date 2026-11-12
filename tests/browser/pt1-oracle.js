@@ -58,7 +58,7 @@ function humanizeAction(action) {
 
 const NAMED_KEYS = { Escape: "Esc", Space: "Space", ArrowUp: "Up", ArrowDown: "Down", ArrowLeft: "Left", ArrowRight: "Right" };
 
-// Rust BindingLabels::from_layout_entries (crates/turts_client/src/client_shell.rs:52-74): the
+// Rust BindingLabels::from_layout_entries (crates/turts_client/src/client_shell/bindings_editor.rs:18-42): the
 // browser keyboard layout map that the harness records at startup (harness/run.js recordStartup).
 function layoutLabels(layout) {
     const labels = {};
@@ -69,7 +69,7 @@ function layoutLabels(layout) {
     return labels;
 }
 
-// Rust `binding_label` and `key_label` (crates/turts_client/src/client_shell.rs:80-133).
+// Rust `binding_label` and `key_label` (crates/turts_client/src/client_shell/bindings_editor.rs:45-99).
 function playerLabel(binding, labels = {}) {
     if (binding?.Key) {
         const mods = ["Ctrl", "Shift", "Alt"].filter((mod) => (binding.Key.mods ?? []).includes(mod)).map((mod) => `${mod}+`).join("");

@@ -789,7 +789,7 @@ fn job_name(context: SourceContext<'_>, id: &str) -> String {
 }
 
 /// The package order that sends a `Produce` to a producer of this unit type. The widget click
-/// (`widgets/mod.rs` `activate_widget`) and the build menu key label use this one choice.
+/// (`widgets/activation.rs` `activate_widget`) and the build menu key label use this one choice.
 pub fn produce_order<'a>(
     content: &'a ClientContent,
     unit_content_id: &str,

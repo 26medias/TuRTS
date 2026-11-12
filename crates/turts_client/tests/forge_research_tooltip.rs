@@ -100,7 +100,7 @@ fn lab_replica(shells: u64) -> Replica {
     replica
 }
 
-/// The research entry tooltip text as the live HUD binds it (widgets/mod.rs:513-519).
+/// The research entry tooltip text as the live HUD binds it (widgets/tree.rs:377-383).
 fn research_tooltip(shells: u64, bindings: &BTreeMap<String, Vec<Binding>>) -> String {
     let interface = interface();
     let entries = find_widget(&interface.root, "research_entries")
