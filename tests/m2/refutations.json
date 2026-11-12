@@ -1605,5 +1605,72 @@
     "expected_failure": "unit 2 takes the next id",
     "restore_check": "sha256(source)==baseline and selected test is green",
     "plant_note": "A2b1 step 4 (c): the fallback pool ids come from a second counter. The red instrument is fallback_pool_ids_come_from_the_order_counter_in_unit_id_order (crates/turts_sim/tests/group_movement.rs). The plan names kernel_reference or --p0; neither can see it: the harness gives the ids after its compare from its own counter, and the stream packages have no fallback (A2b1 stop ruling, plant (c))."
+  },
+  {
+    "id": "A2b1-fallback-hex-slot",
+    "plant_path": "crates/turts_sim/src/movement/fallback.rs",
+    "anchor": "    let slot = assignments\n        .first()\n        .map_or(pool.point, |(_, destination)| *destination);\n",
+    "replacement": "    let slot = pool.point;\n    let _ = &assignments;\n",
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_sim",
+      "--test",
+      "group_movement",
+      "fallback_takes_the_nearest_free_hex_slot",
+      "--",
+      "--exact",
+      "--nocapture"
+    ],
+    "expected_failure": "is the legal ring point",
+    "restore_check": "sha256(source)==baseline and selected test is green",
+    "plant_note": "A2b1 stop ruling (b): the fallback takes the pool point as its slot in place of the nearest free ring slot of MC design 6.3. The expected slot of the test comes from the ring rule."
+  },
+  {
+    "id": "A2b1-probe-pool-projection-constant",
+    "plant_path": "crates/turts_sim/src/movement/frame.rs",
+    "anchor": "                outputs[index].probe.was_projected = Some(was_projected);\n",
+    "replacement": "                outputs[index].probe.was_projected = Some(true || was_projected);\n",
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_sim",
+      "--features",
+      "test-probes",
+      "--test",
+      "probe_flags",
+      "a_unit_stepped_into_a_neighbour_reads_projected_then_plain_and_separated",
+      "--",
+      "--exact",
+      "--nocapture"
+    ],
+    "expected_failure": "never reports a step with no projection",
+    "restore_check": "sha256(source)==baseline and selected test is green",
+    "plant_note": "A2b1 stop ruling item 4: the step stores a constant was_projected. The fallback pool of the projected Muster move must report a projection and a later step with none."
+  },
+  {
+    "id": "A2b1-kernel-reference-pooled-chain",
+    "plant_path": "crates/turts_sim/tests/kernel_reference.rs",
+    "anchor": "            || (unit.physical_escape.is_some() && unit.target.is_none())\n",
+    "replacement": "            || (unit.physical_escape.is_some() && unit.target.is_none())\n            || unit.target.is_some()\n",
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_sim",
+      "--features",
+      "test-probes",
+      "--test",
+      "kernel_reference",
+      "kernel_matches_reference_bit_for_bit",
+      "--",
+      "--exact",
+      "--nocapture"
+    ],
+    "expected_failure": "a pooled chain has a fallback",
+    "restore_check": "sha256(source)==baseline and selected test is green",
+    "plant_note": "A2b1 stop ruling K2 (instrument plant): a pooled chain keeps movers with no pool, so it gets a fallback and is not compared on all ticks; the harness is red."
   }
 ]
