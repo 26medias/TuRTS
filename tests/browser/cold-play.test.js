@@ -316,6 +316,41 @@ test("session.json records the tool commit and the sha256 of each tool file (che
     assert.match(script, /build: options\.build, tool: toolRecord\(\)/, "the session writes the record into session.json");
 });
 
+test("scripts/cold-reference.sh: usage, a refusal to rebuild outside 9b3a7bd, and a new game for each serve that stops on TERM", async () => {
+    const script = path.join(REPO, "scripts/cold-reference.sh");
+    assert.equal(spawnSync("bash", ["-n", script]).status, 0, "bash syntax");
+    assert.equal(spawnSync("bash", [script], { encoding: "utf8" }).status, 2);
+    const refused = spawnSync("bash", [script, "rebuild", path.join(tempDir("refout"), "out")], { encoding: "utf8", cwd: REPO, env: { ...process.env, CARGO_TARGET_DIR: "/nonexistent" } });
+    assert.equal(refused.status, 2);
+    assert.match(refused.stderr, /run this in a worktree at commit 9b3a7bd/);
+    const bare = spawnSync("bash", [script, "serve", tempDir("noref"), path.join(tempDir("state"), "s")], { encoding: "utf8" });
+    assert.equal(bare.status, 2, "a folder with no server is refused");
+    const reference = "/home/julien/Projects/TuRTS/target/mc-evidence/q-cold-reference/9b3a7bd-forge";
+    if (!fs.existsSync(path.join(reference, "turts_server"))) return;
+    assert.equal(spawnSync("bash", [script, "verify", reference], { encoding: "utf8" }).status, 0, "the durable copy has the recorded hashes");
+    const urls = [];
+    for (let i = 0; i < 2; i += 1) {
+        const state = path.join(tempDir("serve"), "s");
+        const child = spawn("bash", [script, "serve", reference, state], { stdio: ["ignore", "pipe", "ignore"] });
+        let out = "";
+        child.stdout.on("data", (chunk) => { out += chunk; });
+        try {
+            await until(() => /PIDS: /.test(out), "the game starts", 30000);
+            const url = /URL: (\S+)/.exec(out)[1];
+            urls.push(url);
+            const server = new URL(url).searchParams.get("server");
+            const advert = await fetch(`${server}/advertisement.json`);
+            assert.equal(advert.status, 200);
+            const pids = fs.readFileSync(path.join(state, "pids.txt"), "utf8").trim().split(" ").map(Number);
+            child.kill("SIGTERM");
+            await new Promise((resolve) => child.once("exit", resolve));
+            await new Promise((resolve) => setTimeout(resolve, 500));
+            for (const pid of pids) assert.throws(() => process.kill(pid, 0), `process ${pid} is stopped`);
+        } finally { if (child.exitCode === null) child.kill("SIGKILL"); }
+    }
+    assert.notEqual(urls[0], urls[1], "each serve is a new game on new ports");
+});
+
 test("the session limit has a ceiling under the hold limit of the lock wrapper", async () => {
     assert.equal(MAX_LIMIT_S, 1500);
     assert.throws(() => new ColdSession({ page: {}, dir: "x", limitMs: 1501 * 1000 }), /1 to 1500 s/);
