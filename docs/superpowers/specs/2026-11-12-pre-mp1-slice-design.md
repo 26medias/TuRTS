@@ -240,3 +240,9 @@ A difference outside P3 stops A2c. A new ruling and a new run of the self-test a
     effects and the match lifecycle can start, if every write is inside a captured operation; the lobby is on
     the server and is independent. Construction, rally, the repair approach and automatic targeting add orders
     and wait for the end of A1c (the validator change), not for A2c. The M4 route follower waits for A4.
+16. Classifier strictness (task Q1a, accepted by Root). The classifier refuses every change of an old operation;
+    the list of allowed differences holds `added` operations only, each with its unit, phase, events, flag and
+    position in the tick. In the stream a changed operation can differ only in its flag, and a flipped flag
+    must be red. If A2c changes an old operation, the stop rule of section 5 applies. P1 never allows a
+    difference in the position bits. The "difference only on a flagged `edge_hit`" rule of section 5 item 0 is
+    built only if the G1 counter has hits.
