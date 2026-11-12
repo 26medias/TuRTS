@@ -2679,7 +2679,8 @@ fn effect_arm_notice_records_the_units_with_no_applicable_order() {
 /// nothing until its owner task builds it. The owner task replaces its test with its own.
 #[test]
 fn effect_family_stubs_record_nothing_until_their_owner_builds_them() {
-    let stubs: [(&str, fn(&mut CoreRuntime)); 4] = [
+    type Stub = fn(&mut CoreRuntime);
+    let stubs: [(&str, Stub); 4] = [
         ("Ghost (UI-PLACE)", effects::apply_ghost),
         ("hint (UI-HINT)", effects::apply_hint),
         ("alert focus (UI-ALERT)", effects::apply_alert),
