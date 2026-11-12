@@ -1406,5 +1406,120 @@
     "expected_red": "FAIL: test_a_session_with_no_input_has_no_input_log_and_that_is_not_e1b",
     "exit": 1,
     "commit": "b397d588a1a7190d6e04b8d8638a66b4bc38d584"
+  },
+  {
+    "row": "Q-COLD",
+    "plant": "silent-pulse-server-removed",
+    "files": [
+      {
+        "file": "tests/browser/harness/silent-chrome.js",
+        "edit": {
+          "old": "return { ...base, PULSE_SERVER: NO_PULSE, ALSA_CONFIG_PATH: config };",
+          "new": "return { ...base, ALSA_CONFIG_PATH: config };"
+        }
+      }
+    ],
+    "command": [
+      "node",
+      "--test",
+      "tests/browser/harness/silent-chrome-scan.test.js"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "✖ silentEnv sets a pulse server that does not exist and a null ALSA device",
+    "exit": 1,
+    "commit": "32664c5bd2a2c49af2bc476602db8a5db2fba957"
+  },
+  {
+    "row": "Q-COLD",
+    "plant": "silent-alsa-device-not-null",
+    "files": [
+      {
+        "file": "tests/browser/harness/silent-chrome.js",
+        "edit": {
+          "old": "pcm.!default { type null }",
+          "new": "pcm.!default { type hw }"
+        }
+      }
+    ],
+    "command": [
+      "node",
+      "--test",
+      "tests/browser/harness/silent-chrome-scan.test.js"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "✖ silentEnv sets a pulse server that does not exist and a null ALSA device",
+    "exit": 1,
+    "commit": "32664c5bd2a2c49af2bc476602db8a5db2fba957"
+  },
+  {
+    "row": "Q-COLD",
+    "plant": "silent-args-emptied",
+    "files": [
+      {
+        "file": "tests/browser/harness/silent-chrome.js",
+        "edit": {
+          "old": "const SILENT_ARGS = [\"--alsa-output-device=null\"];",
+          "new": "const SILENT_ARGS = [];"
+        }
+      }
+    ],
+    "command": [
+      "node",
+      "--test",
+      "tests/browser/harness/silent-chrome-scan.test.js"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "✖ silentEnv sets a pulse server that does not exist and a null ALSA device",
+    "exit": 1,
+    "commit": "32664c5bd2a2c49af2bc476602db8a5db2fba957"
+  },
+  {
+    "row": "Q-COLD",
+    "plant": "silent-scan-env-not-required",
+    "files": [
+      {
+        "file": "tests/browser/harness/silent-chrome-scan.test.js",
+        "edit": {
+          "old": "if (!/silentEnv\\(/.test(text) || !(/SILENT_ARGS/.test(text)",
+          "new": "if (!(/SILENT_ARGS/.test(text)"
+        }
+      }
+    ],
+    "command": [
+      "node",
+      "--test",
+      "tests/browser/harness/silent-chrome-scan.test.js"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "✖ the scan finds a Chrome start with no isolation, in each form",
+    "exit": 1,
+    "commit": "32664c5bd2a2c49af2bc476602db8a5db2fba957"
+  },
+  {
+    "row": "Q-COLD",
+    "plant": "silent-test-chrome-unisolated",
+    "files": [
+      {
+        "file": "tests/browser/mp1-capture.test.js",
+        "edit": {
+          "old": "...SILENT_ARGS, url], { stdio: \"ignore\", env: silentEnv(profile) });",
+          "new": "url], { stdio: \"ignore\" });"
+        }
+      }
+    ],
+    "command": [
+      "node",
+      "--test",
+      "tests/browser/harness/silent-chrome-scan.test.js"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "✖ every test that starts a Chrome gives it the sound isolation",
+    "exit": 1,
+    "commit": "32664c5bd2a2c49af2bc476602db8a5db2fba957"
   }
 ]
