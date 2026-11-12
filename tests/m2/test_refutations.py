@@ -112,6 +112,7 @@ class RefutationRunnerTests(unittest.TestCase):
                 "E9-browser-unbounded-buffer",
                 "E9-browser-duplicate-outstanding",
                 "E9-browser-ignore-midtrace-rearm",
+                "E9-browser-convergence-owner-offset",
             ],
         )
         for case in browser_cases:

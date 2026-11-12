@@ -3,7 +3,7 @@
 
 const assert = require("node:assert/strict");
 const { test } = require("node:test");
-const { appliedAfter, cancelRows, hudClick, produceRow, waitForSharedTick } = require("./m2-oracle.js");
+const { appliedAfter, cancelRows, convergenceLimits, hudClick, produceRow, waitForSharedTick } = require("./m2-oracle.js");
 
 // Row shapes of a retained headed HUD2 run (target/mc-evidence/run94-hud2-headed-v3): list rows
 // are "<list>/<item>[<key>]" buttons with a typed widget_action; row children keep their ids.
@@ -113,7 +113,14 @@ const FAST = { min_ms: 0, stall_ms: 200, limit_ms: 2000, poll_ms: 1 };
 test("the shared-tick wait compares the windows at a tick that each showed at a different poll", async () => {
     // Window 1 shows tick 20 at the third read; window 2 showed tick 20 at the first read only.
     const view = fakeView([[world(10, 4), world(15, 4), world(20, 5)], [world(20, 5), world(30, 6)]]);
-    assert.deepEqual(await waitForSharedTick(view, FAST), { tick: 20 });
+    const result = await waitForSharedTick(view, FAST);
+    assert.equal(result.tick, 20);
+    // The time to agreement and the counters are part of the result (the harness log prints them).
+    assert.equal(result.profile, "custom");
+    assert.equal(result.limit_ms, FAST.limit_ms);
+    assert.ok(Number.isInteger(result.agreed_after_ms) && result.agreed_after_ms >= 0 && result.agreed_after_ms < FAST.limit_ms, JSON.stringify(result));
+    assert.equal(result.shared_ticks, 1);
+    assert.equal(result.unstable_ticks, 0);
 });
 
 test("the shared-tick wait stays red when the projections differ at each shared tick", async () => {
@@ -124,4 +131,45 @@ test("the shared-tick wait stays red when the projections differ at each shared 
 test("the shared-tick wait stays red when the windows never show the same tick", async () => {
     const view = fakeView([[world(10, 4), world(12, 4)], [world(11, 4), world(13, 4)]]);
     await assert.rejects(waitForSharedTick(view, FAST), /0 shared ticks/);
+});
+
+// A view that never ends: each read of window n shows the next tick (the two windows share every
+// tick) and `project(n)` gives its x. It throws after `maxReads` reads, so a wait that ignores its
+// limit ends the test with an error and not with a hang.
+function endlessView(project, maxReads) {
+    const reads = [0, 0];
+    return { async bridge(name, n) {
+        assert.equal(name, "turts_debug");
+        reads[n - 1] += 1;
+        if (reads[0] + reads[1] > maxReads) throw new Error(`the wait ignored its limit: ${maxReads} reads`);
+        return world(reads[n - 1], project(n));
+    } };
+}
+
+test("the shared-tick wait ends at its limit, with the named failure, on a stream that differs for ever", { timeout: 20000 }, async () => {
+    // Both windows advance at each read, so the stall rule never ends the wait: only the limit can.
+    const limits = { name: "wide", min_ms: 0, stall_ms: 1000000, limit_ms: 300, poll_ms: 1 };
+    const started = Date.now();
+    await assert.rejects(waitForSharedTick(endlessView((n) => (n === 1 ? 4 : 9), 5000), limits),
+        /differ between owners at a shared coherent tick \(profile wide, limit 300 ms, \d+ ms, \d+ polls, [1-9]\d* shared ticks, [1-9]\d* of them different/);
+    const elapsed = Date.now() - started;
+    assert.ok(elapsed >= 300 && elapsed < 5000, `the wait took ${elapsed} ms for a limit of 300 ms`);
+});
+
+test("a window that shows a wrong projection and then a right one at one tick stays wrong", async () => {
+    // Window 1 shows tick 10 with x 4 first, then x 5. Window 2 shows tick 10 with x 5. Only the
+    // first projection of each tick counts, so the two windows differ (and the wait counts window 1 as unstable).
+    const view = fakeView([[world(10, 4), world(10, 5)], [world(10, 5)]]);
+    await assert.rejects(waitForSharedTick(view, FAST), /differ between owners at a shared coherent tick .* 1 shared ticks, 1 of them different, [1-9]\d* unstable/);
+});
+
+test("the gate profile is the default and keeps the limit of 10 s; the wide profile needs the environment value", () => {
+    const gate = convergenceLimits({});
+    assert.deepEqual([gate.name, gate.min_ms, gate.limit_ms], ["gate", 10000, 10000]);
+    assert.equal(convergenceLimits({ TURTS_M2_CONVERGENCE_LIMIT_MS: "" }), gate);
+    const wide = convergenceLimits({ TURTS_M2_CONVERGENCE_LIMIT_MS: "180000" });
+    assert.deepEqual([wide.name, wide.min_ms, wide.limit_ms], ["wide", 10000, 180000]);
+    for (const bad of ["0", "-5", "abc", "1.5", "10s", " 10"]) {
+        assert.throws(() => convergenceLimits({ TURTS_M2_CONVERGENCE_LIMIT_MS: bad }), /TURTS_M2_CONVERGENCE_LIMIT_MS must be a whole number/, bad);
+    }
 });

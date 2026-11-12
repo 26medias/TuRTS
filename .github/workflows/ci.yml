@@ -56,6 +56,10 @@ jobs:
   # run 43121618105, and the M3 set after it. Each set now runs in parallel shards
   # (`--shard K/N` of tests/m2/refutations.py and tests/m3/refutations.py: cases K, K + N, ...).
   # The shards of one set together run each case once.
+  # Run 43121618105 had a second cause, besides time: the baseline of `E9-midtrace-rearm-ignored`
+  # was red (economy.rs:2235, "operation 6744: gather state differs") from the gather-at-depletion
+  # defect of the product. The repair is on the branch codex/mc-fix-deplete. This branch lacks it:
+  # the shard with that case stays red until the repair is merged; sharding does not remove it.
   refutations:
     name: refutations ${{ matrix.set }} ${{ matrix.shard }}
     runs-on: ubuntu-latest
@@ -135,6 +139,7 @@ jobs:
           - { suite: refutation, case: E9-browser-unbounded-buffer }
           - { suite: refutation, case: E9-browser-duplicate-outstanding }
           - { suite: refutation, case: E9-browser-ignore-midtrace-rearm }
+          - { suite: refutation, case: E9-browser-convergence-owner-offset }
     env:
       CARGO_BUILD_JOBS: 2
       CARGO_TARGET_DIR: ${{ github.workspace }}/target/m3-t16
@@ -147,6 +152,10 @@ jobs:
       M2_HEADLESS: "false"
       M2_CHROME_ARGS_JSON: '["--enable-gpu","--use-angle=gl","--enable-unsafe-webgpu","--ignore-gpu-blocklist"]'
       M2_IGNORE_DEFAULT_ARGS_JSON: '["--enable-unsafe-swiftshader"]'
+      # Opt-in wide limit of the M2 public-convergence wait (tests/browser/m2-oracle.js
+      # convergenceLimits). Without this value the oracle keeps its gate limit of 10 s. On the
+      # software renderer each window shows about 1 frame per second, so the hosted legs allow 180 s.
+      TURTS_M2_CONVERGENCE_LIMIT_MS: "180000"
       TURTS_REFUTATION_EVIDENCE_DIR: ${{ github.workspace }}/target/m3-evidence/t16-builder/refutations/browser
       TURTS_REFUTATION_BUILD_ROOT: ${{ github.workspace }}/target/m3-t16/refutations/browser-build
     steps:
@@ -197,10 +206,15 @@ jobs:
         run: |
           python3 - <<'EOF'
           import json, pathlib, re
-          cases = {case["id"] for case in json.loads(pathlib.Path("tests/m2/refutations.json").read_text()) if case.get("runtime") == "browser"}
-          listed = set(re.findall(r"suite: refutation, case: ([A-Za-z0-9_.-]+) ", pathlib.Path(".github/workflows/ci.yml").read_text()))
+          cases = sorted(case["id"] for case in json.loads(pathlib.Path("tests/m2/refutations.json").read_text()) if case.get("runtime") == "browser")
+          # A leg is a whole line `- { suite: refutation, case: ID }`. A comment line is not a leg.
+          leg = re.compile(r"\s*- \{ suite: refutation, case: ([A-Za-z0-9_.-]+) \}\s*(#.*)?")
+          lines = pathlib.Path(".github/workflows/ci.yml").read_text().splitlines()
+          listed = sorted(match.group(1) for match in map(leg.fullmatch, lines) if match)
           if cases != listed:
-              raise SystemExit(f"browser refutation matrix differs from tests/m2/refutations.json: missing {sorted(cases - listed)}, extra {sorted(listed - cases)}")
+              missing, extra = sorted(set(cases) - set(listed)), sorted(set(listed) - set(cases))
+              duplicated = sorted({case for case in listed if listed.count(case) > 1})
+              raise SystemExit(f"browser refutation matrix differs from tests/m2/refutations.json: missing {missing}, extra {extra}, duplicated {duplicated}")
           print(f"{len(cases)} browser refutation cases, each in the matrix")
           EOF
       - name: M2 browser proof (base, haul, acme, cedar)
