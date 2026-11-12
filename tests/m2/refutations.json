@@ -1565,8 +1565,8 @@
   {
     "id": "A2b1-fallback-collected-on-arrival",
     "plant_path": "crates/turts_sim/src/movement/frame.rs",
-    "anchor": "                progress.activity == MovementActivity::Resting\n                    && progress.gather_goal.is_none()\n                    && progress.claim_count == 0\n",
-    "replacement": "                progress.activity == MovementActivity::Resting\n                    && (progress.gather_goal.is_none() || progress.gather_goal.is_some())\n",
+    "anchor": "                progress.activity == MovementActivity::Resting\n                    && progress.gather_goal.is_none()\n                    && progress.claim_count == 0\n                    && frame\n                        .pools\n                        .get(&progress.pool_id)\n                        .is_some_and(|pool| pool.point == progress.slot)\n",
+    "replacement": "                progress.activity == MovementActivity::Resting\n",
     "command": [
       "cargo",
       "test",
@@ -1583,7 +1583,7 @@
     ],
     "expected_failure": "fallback pools",
     "restore_check": "sha256(source)==baseline and selected test is green",
-    "plant_note": "A2b1 step 4 (b): the step collects a resting fallback pool while its gather leg still targets the goal (design 9.19). The trip makes a second fallback pool, and the per-trip counter is red."
+    "plant_note": "A2b1 step 4 (b): the step collects every resting fallback pool on arrival, also while its gather leg still targets the goal (design 9.19). The trip makes a second fallback pool, and the per-trip counter is red."
   },
   {
     "id": "A2b1-fallback-second-counter",
