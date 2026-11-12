@@ -119,14 +119,26 @@ async function judge(view, params) {
     const alert = (pingWindow.checkpoint.debug.alert_pings || []).find((ping) =>
         ping.unit === targetId && ping.alert_id === "muster_unit_damaged");
     assert(alert && Number.isSafeInteger(alert.tick), "slot 1 must observe the real OwnUnitDamaged AlertPings event");
-    const damaged = pingWindow.checkpoint.debug.replicated_world?.healths?.find((health) => unitId(health.unit) === targetId);
-    assert(damaged && damaged.current < (publicUnits.get(targetId)?.max_health ?? 40),
-        "the slot 1 ping must belong to the actually damaged dummy health record");
     const target = publicUnits.get(targetId)?.pos;
     assert(Array.isArray(target) && Math.hypot(alert.x - target[0], alert.y - target[1]) < 1,
         "the alert ping world point must match the damaged dummy's replicated position");
     const pingLocal = [alert.x / params.map_size[0], 1 - alert.y / params.map_size[1]];
     const pingPixel = minimapPixel(pingLocal, expectedRect);
+    // The ping pixels come before the health record: a ping that is not drawn must give the pixel
+    // text, not the text of a dummy that died while the shot waited (RUN130, plant mm1-no-ping).
+    const pingColor = parseHex(params.ping_colour);
+    const noPingPixels = colorPixelsNear(noPing.image, pingPixel, 7, pingColor, 28);
+    const pingPixels = colorPixelsNear(pingWindow.image, pingPixel, 7, pingColor, 28);
+    assert(noPingPixels.length < 2, "no-ping screenshot control must have no configured ping-colour pixels at the target");
+    assert(pingPixels.length >= 4, "actual OwnUnitDamaged event must add configured ping-shape pixels at its minimap world point");
+    const pingBounds = boundsOf(pingPixels);
+    assert(pingBounds.width >= 2 && pingBounds.height >= 2 && pingBounds.width <= 15 && pingBounds.height <= 15,
+        "actual ping pixels must form a compact visible minimap ping shape at the alert world point");
+    assert(!nearColor(parseHex(params.slot_colours[1]), pingColor, 28),
+        "ping pixel threshold must distinguish slot 1 orange from the configured ping colour");
+    const damaged = pingWindow.checkpoint.debug.replicated_world?.healths?.find((health) => unitId(health.unit) === targetId);
+    assert(damaged && damaged.current < (publicUnits.get(targetId)?.max_health ?? 40),
+        "the slot 1 ping must belong to the actually damaged dummy health record");
     const causalFrames = pingWindow.checkpoint.debug.frames?.retained_input || [];
     const pingFrame = causalFrames.find((frame) => frame.replica_tick === alert.tick && frame.feedback?.alerts?.some((event) =>
         event.id === alert.alert_id && event.unit === targetId && event.position?.x === alert.x && event.position?.y === alert.y));
@@ -149,16 +161,6 @@ async function judge(view, params) {
     assert(firstDrop && priorSample && firstDrop.current < priorSample.current && priorSample.current >= baseline,
         "the qualifying post-stimulus health change must be a real adjacent decrease from the pre-stimulus health level");
     assert(damaged.current < baseline, "the observer's actual health record must remain below its qualified pre-stimulus baseline");
-    const pingColor = parseHex(params.ping_colour);
-    const noPingPixels = colorPixelsNear(noPing.image, pingPixel, 7, pingColor, 28);
-    const pingPixels = colorPixelsNear(pingWindow.image, pingPixel, 7, pingColor, 28);
-    assert(noPingPixels.length < 2, "no-ping screenshot control must have no configured ping-colour pixels at the target");
-    assert(pingPixels.length >= 4, "actual OwnUnitDamaged event must add configured ping-shape pixels at its minimap world point");
-    const pingBounds = boundsOf(pingPixels);
-    assert(pingBounds.width >= 2 && pingBounds.height >= 2 && pingBounds.width <= 15 && pingBounds.height <= 15,
-        "actual ping pixels must form a compact visible minimap ping shape at the alert world point");
-    assert(!nearColor(parseHex(params.slot_colours[1]), pingColor, 28),
-        "ping pixel threshold must distinguish slot 1 orange from the configured ping colour");
 }
 
 function assertMinimapRect(scene, expected) {
