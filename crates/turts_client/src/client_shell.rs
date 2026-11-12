@@ -693,7 +693,7 @@ pub(crate) fn reset_binding_override(
     true
 }
 
-/// Settings that must reach the existing camera and Bevy UI owners.
+/// Settings that must reach the existing camera, Bevy UI and window owners.
 #[derive(Resource, Clone, Copy, Debug, PartialEq)]
 pub(crate) struct ClientSettings {
     pub scroll_speed: f32,
@@ -701,6 +701,10 @@ pub(crate) struct ClientSettings {
     pub ui_scale: f32,
     pub cursor_lock: bool,
     pub double_click_ms: u64,
+    /// The frame limit when the window has the focus (`pacing.rs`; 0 is no limit).
+    pub frame_limit: u32,
+    /// The frame limit when the window does not have the focus (`pacing.rs`).
+    pub background_frame_limit: u32,
 }
 
 impl Default for ClientSettings {
@@ -711,15 +715,19 @@ impl Default for ClientSettings {
             ui_scale: 1.0,
             cursor_lock: false,
             double_click_ms: 400,
+            frame_limit: crate::pacing::DEFAULT_FRAME_LIMIT,
+            background_frame_limit: crate::pacing::DEFAULT_BACKGROUND_FRAME_LIMIT,
         }
     }
 }
 
-/// Apply persisted player settings to the existing camera and UI runtime resources.
+/// Apply persisted player settings to the existing camera, UI and window runtime resources.
+/// The window update modes exist only with a window (`WinitSettings`, `pacing.rs`).
 pub(crate) fn apply_client_settings(
     settings: Res<ClientSettings>,
     mut camera: Option<ResMut<crate::camera::CameraConfiguration>>,
     mut ui_scale: Option<ResMut<bevy::ui::UiScale>>,
+    mut window_modes: Option<ResMut<bevy::winit::WinitSettings>>,
 ) {
     if !settings.is_changed() {
         return;
@@ -730,6 +738,10 @@ pub(crate) fn apply_client_settings(
     }
     if let Some(ui_scale) = ui_scale.as_deref_mut() {
         ui_scale.0 = settings.ui_scale;
+    }
+    if let Some(window_modes) = window_modes.as_deref_mut() {
+        *window_modes =
+            crate::pacing::winit_settings(settings.frame_limit, settings.background_frame_limit);
     }
 }
 
@@ -4583,6 +4595,35 @@ pub(crate) mod tests {
             };
             assert!(!controls.valid());
         }
+    }
+
+    #[test]
+    fn the_frame_limit_setting_reaches_the_window_update_modes() {
+        use bevy::winit::{UpdateMode, WinitSettings};
+        let mut app = App::new();
+        app.add_plugins(MinimalPlugins)
+            .insert_resource(ClientSettings {
+                frame_limit: 30,
+                ..ClientSettings::default()
+            })
+            .insert_resource(crate::pacing::default_winit_settings())
+            .add_systems(Update, apply_client_settings);
+        app.update();
+        let modes = app.world().resource::<WinitSettings>();
+        assert_eq!(
+            modes.update_mode(true),
+            UpdateMode::reactive_low_power(std::time::Duration::from_secs_f64(1.0 / 30.0))
+        );
+        assert_eq!(
+            modes.update_mode(false),
+            UpdateMode::reactive_low_power(std::time::Duration::from_millis(100))
+        );
+        app.world_mut().resource_mut::<ClientSettings>().frame_limit = 0;
+        app.update();
+        assert_eq!(
+            app.world().resource::<WinitSettings>().update_mode(true),
+            UpdateMode::Continuous
+        );
     }
 
     #[test]

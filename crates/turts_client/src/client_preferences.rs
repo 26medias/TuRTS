@@ -25,6 +25,10 @@ pub(crate) struct ControlSettings {
     pub double_click_ms: u64,
     pub double_click_pixels: f32,
     pub health_mode: StoredHealthMode,
+    /// The player setting "frame limit" when the window has the focus (`pacing.rs`).
+    pub frame_limit: u32,
+    /// The player setting "frame limit" when the window does not have the focus.
+    pub background_frame_limit: u32,
 }
 
 impl Default for ControlSettings {
@@ -39,6 +43,8 @@ impl Default for ControlSettings {
             double_click_pixels: turts_interaction::InteractionSettings::default()
                 .double_click_pixels,
             health_mode: StoredHealthMode::DamagedOrSelected,
+            frame_limit: settings.frame_limit,
+            background_frame_limit: settings.background_frame_limit,
         }
     }
 }
@@ -52,6 +58,8 @@ impl ControlSettings {
             && (100..=1000).contains(&self.double_click_ms)
             && self.double_click_pixels.is_finite()
             && self.double_click_pixels >= 0.0
+            && crate::pacing::valid_frame_limit(self.frame_limit)
+            && crate::pacing::valid_frame_limit(self.background_frame_limit)
     }
 
     pub(crate) fn apply(
@@ -67,6 +75,8 @@ impl ControlSettings {
                 ui_scale: self.ui_scale,
                 cursor_lock: self.cursor_lock,
                 double_click_ms: self.double_click_ms,
+                frame_limit: self.frame_limit,
+                background_frame_limit: self.background_frame_limit,
             };
         }
         if let Some(health) = health {
@@ -95,6 +105,8 @@ impl ControlSettings {
             value.ui_scale = settings.ui_scale;
             value.cursor_lock = settings.cursor_lock;
             value.double_click_ms = settings.double_click_ms;
+            value.frame_limit = settings.frame_limit;
+            value.background_frame_limit = settings.background_frame_limit;
         }
         if let Some(health) = health {
             value.health_mode = match health.0 {
@@ -107,5 +119,49 @@ impl ControlSettings {
             value.double_click_pixels = preferences.interaction.double_click_pixels;
         }
         value
+    }
+}
+
+#[cfg(test)]
+mod frame_limit_tests {
+    use super::ControlSettings;
+    use crate::volume_settings::{decode_settings_json, set_controls_in_json};
+
+    #[test]
+    fn a_stored_frame_limit_loads_and_saves() {
+        let loaded = decode_settings_json(r#"{"controls":{"frame_limit":30}}"#);
+        assert_eq!(loaded.notice, None);
+        assert_eq!(loaded.controls.frame_limit, 30);
+        assert_eq!(loaded.controls.background_frame_limit, 10);
+        let encoded = set_controls_in_json(None, &loaded.controls).unwrap();
+        assert_eq!(decode_settings_json(&encoded).controls, loaded.controls);
+    }
+
+    #[test]
+    fn a_document_without_the_frame_limit_keeps_the_defaults() {
+        let loaded = decode_settings_json(r#"{"controls":{"scroll_speed":1.5}}"#);
+        assert_eq!(loaded.notice, None);
+        assert_eq!(loaded.controls.frame_limit, 0);
+        assert_eq!(loaded.controls.background_frame_limit, 10);
+    }
+
+    #[test]
+    fn an_invalid_stored_frame_limit_falls_back_to_the_defaults_with_the_notice() {
+        for json in [
+            r#"{"controls":{"frame_limit":5}}"#,
+            r#"{"controls":{"frame_limit":241}}"#,
+            r#"{"controls":{"background_frame_limit":9}}"#,
+            r#"{"controls":{"frame_limit":-1}}"#,
+            r#"{"controls":{"frame_limit":"30"}}"#,
+        ] {
+            let loaded = decode_settings_json(json);
+            assert!(loaded.notice.is_some(), "{json} must give the notice");
+            assert_eq!(loaded.controls, ControlSettings::default(), "{json}");
+        }
+        let invalid = ControlSettings {
+            frame_limit: 5,
+            ..ControlSettings::default()
+        };
+        assert!(set_controls_in_json(None, &invalid).is_err());
     }
 }
