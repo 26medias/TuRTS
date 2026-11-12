@@ -2175,4 +2175,144 @@ mod tests {
             );
         }
     }
+
+    // ---- L0-WIRE: the order change list (design 6.8, ruling R19) -------------------------------
+
+    fn hold_order() -> Order {
+        Order {
+            order: cid("combat_fixture:hold"),
+            behaviour: Behaviour::Hold,
+            target: OrderTargetSim::None,
+            group: 0,
+        }
+    }
+
+    fn entity_of(app: &bevy_app::App, unit: u32) -> bevy_ecs::entity::Entity {
+        app.world()
+            .iter_entities()
+            .find(|entity| entity.get::<UnitId>().is_some_and(|id| id.0 == unit))
+            .unwrap()
+            .id()
+    }
+
+    fn listed(app: &bevy_app::App) -> Vec<u32> {
+        app.world()
+            .resource::<crate::economy::events::CommittedTick>()
+            .unit_orders
+            .iter()
+            .map(|record| record.unit_id)
+            .collect()
+    }
+
+    fn cleared(app: &bevy_app::App) -> Vec<(u32, u8)> {
+        app.world()
+            .resource::<crate::economy::events::CommittedTick>()
+            .orders_cleared
+            .clone()
+    }
+
+    /// A record is listed once, in the tick in which it changes, and not again while it is the
+    /// same. Plant: the writer notes nothing (the record is never listed).
+    #[test]
+    fn a_changed_order_record_is_listed_once() {
+        let mut app = app_with(20, 1000, 5);
+        app.update();
+        let first = entity_of(&app, 1);
+        crate::orders::writer::set_unit_orders(
+            app.world_mut(),
+            first,
+            UnitOrders {
+                current: Some(hold_order()),
+                ..Default::default()
+            },
+        );
+        app.update();
+        assert_eq!(
+            listed(&app),
+            vec![1],
+            "the tick of the write lists the record"
+        );
+        app.update();
+        assert!(
+            listed(&app).is_empty(),
+            "an unchanged record is not listed again"
+        );
+        // A write that changes nothing is not listed either (the publish step compares).
+        crate::orders::writer::edit_unit_orders(app.world_mut(), first, |_| ());
+        app.update();
+        assert!(listed(&app).is_empty());
+    }
+
+    /// A record that leaves the view is in `orders_cleared` with its owner, once. Plant:
+    /// `orders_cleared` not written (case A of ORDW1).
+    #[test]
+    fn a_record_that_leaves_the_view_is_cleared_once() {
+        let mut app = app_with(20, 1000, 5);
+        let first = entity_of(&app, 1);
+        crate::orders::writer::set_unit_orders(app.world_mut(), first, UnitOrders::default());
+        app.update();
+        app.update();
+        assert!(listed(&app).is_empty());
+        crate::orders::writer::clear_unit_orders(app.world_mut(), first);
+        app.update();
+        assert_eq!(cleared(&app), vec![(1, 0)]);
+        assert!(listed(&app).is_empty());
+        app.update();
+        assert!(cleared(&app).is_empty());
+    }
+
+    /// The removal rule of the order records: a unit that the tick removes has no record in
+    /// `unit_orders` and no entry in `orders_cleared`; `removed` is its only mention. Plant: the
+    /// removed unit is not skipped.
+    #[test]
+    fn a_removed_unit_has_no_order_record_and_is_not_cleared() {
+        let mut app = app_with(20, 0, 200);
+        set_ammo(&mut app, 1, 10, 0);
+        let target = entity_of(&app, 2);
+        crate::orders::writer::set_unit_orders(
+            app.world_mut(),
+            target,
+            UnitOrders {
+                current: Some(hold_order()),
+                ..Default::default()
+            },
+        );
+        // Tick 1: the record of unit 2 appears; the shot of unit 1 kills unit 2 in the same
+        // tick, so the record of tick 1 is not sent.
+        app.update();
+        let committed = app
+            .world()
+            .resource::<crate::economy::events::CommittedTick>();
+        assert_eq!(committed.removed, vec![2]);
+        assert!(!listed(&app).contains(&2), "no record of the removed unit");
+        assert!(!cleared(&app).iter().any(|(unit, _)| *unit == 2));
+        app.update();
+        assert!(!cleared(&app).iter().any(|(unit, _)| *unit == 2));
+    }
+
+    /// A unit that a tick spawns has its record in the delta of that tick.
+    #[test]
+    fn the_first_tick_lists_every_record_when_nothing_was_published_before() {
+        let before: Vec<crate::economy::views::UnitOrderView> = vec![];
+        let record = |unit_id: u32| crate::economy::views::UnitOrderView {
+            unit_id,
+            owner_slot: 0,
+            activity: crate::economy::views::UnitOrderActivityView::Idle,
+            current: None,
+            queued: vec![],
+            last_failure: None,
+        };
+        let after = vec![record(1), record(2), record(3)];
+        let list = crate::orders::writer::order_change_list(
+            &std::collections::BTreeSet::new(),
+            &before,
+            &after,
+            &[3],
+        );
+        assert_eq!(
+            list.records.iter().map(|r| r.unit_id).collect::<Vec<_>>(),
+            vec![1, 2],
+            "every record but the removed unit's"
+        );
+    }
 }

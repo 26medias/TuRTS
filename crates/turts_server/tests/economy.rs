@@ -1863,6 +1863,7 @@ fn owner_snapshot_from_audit(
                     y: unit.pos.y,
                 },
                 facing: unit.facing,
+                site: false,
             })
             .collect(),
         nodes: world

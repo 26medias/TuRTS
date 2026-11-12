@@ -683,6 +683,7 @@ fn own_unit_destroyed_fires_after_a_long_fight_with_a_bounded_trace() {
     let initial = Snapshot {
         tick: 4,
         units: vec![UnitSnapshot {
+            site: false,
             unit_id: UnitId(9),
             content_id: "forge:drone".into(),
             owner_slot: SlotId(0),

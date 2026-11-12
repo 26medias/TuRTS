@@ -13,11 +13,11 @@ where
 }
 
 #[test]
-fn protocol_version_is_4_and_version_3_is_old() {
-    assert_eq!(NET_PROTOCOL_VERSION, 4);
+fn protocol_version_is_5_and_version_4_is_old() {
+    assert_eq!(NET_PROTOCOL_VERSION, 5);
     let old_hello = Hello {
         player_id: 17,
-        protocol_version: 3,
+        protocol_version: 4,
         lockfile_hash: "sha256:fixture".into(),
     };
     round_trip(old_hello);

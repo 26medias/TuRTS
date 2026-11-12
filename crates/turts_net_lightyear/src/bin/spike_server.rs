@@ -324,6 +324,7 @@ mod payload_tests {
             tick: 300,
             base_tick: 299,
             spawned: vec![UnitSnapshot {
+                site: false,
                 unit_id: UnitId(9),
                 content_id: "base:worker".into(),
                 owner_slot: turts_net_protocol::SlotId(1),

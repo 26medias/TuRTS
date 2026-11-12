@@ -63,6 +63,16 @@ fn type_names_unit_orders_mut(ty: &Type) -> bool {
     }
 }
 
+/// `UnitOrders`, or a reference to it. A plain `Order` is not a binding of the component.
+fn type_is_unit_orders(ty: &Type) -> bool {
+    match ty {
+        Type::Path(path) => last_segment(&path.path) == "UnitOrders",
+        Type::Reference(reference) => type_is_unit_orders(&reference.elem),
+        Type::Paren(paren) => type_is_unit_orders(&paren.elem),
+        _ => false,
+    }
+}
+
 fn type_is_orders_type(ty: &Type) -> bool {
     match ty {
         Type::Path(path) => {
@@ -134,7 +144,7 @@ impl WriterScan {
     fn bind(&mut self, pat: &Pat, ty: Option<&Type>, init: Option<&Expr>) {
         let Pat::Ident(ident) = pat else { return };
         let name = ident.ident.to_string();
-        let typed = ty.is_some_and(|ty| type_is_orders_type(ty) || type_names_unit_orders_mut(ty));
+        let typed = ty.is_some_and(type_is_unit_orders);
         let built = init.is_some_and(|expr| {
             builds_unit_orders(expr, &self.bindings) || init_gets_unit_orders(expr)
         });
@@ -225,7 +235,10 @@ impl<'ast> Visit<'ast> for WriterScan {
             .iter()
             .any(|arg| builds_unit_orders(arg, &self.bindings))
         {
-            self.hit(format!("`{method}` of a `UnitOrders` value"));
+            self.hit(format!(
+                "`{method}` of a `UnitOrders` value (line {})",
+                call.method.span().start().line
+            ));
         }
         // A mutating call on a binding of the type: `orders.queue.push_back(..)`.
         if matches!(

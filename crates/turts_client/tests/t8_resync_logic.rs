@@ -20,6 +20,7 @@ fn snapshot(tick: u32) -> Snapshot {
             queues: vec![],
         },
         units: vec![UnitSnapshot {
+            site: false,
             unit_id: UnitId(1),
             content_id: "base:command_center".to_string(),
             owner_slot: SlotId(0),

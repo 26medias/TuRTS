@@ -59,3 +59,52 @@ fn protocol_plugin_registers_nine_messages() {
     assert!(app.is_message_registered::<OrderResult>());
     assert!(app.is_message_registered::<ResyncRequest>());
 }
+
+/// Protocol 5 registers five messages after `ResyncRequest`, on both ends.
+#[test]
+fn protocol_plugin_registers_the_five_messages_of_protocol_5() {
+    for app in [server_app(), client_app()] {
+        assert!(app.is_message_registered::<LobbyState>());
+        assert!(app.is_message_registered::<LobbyAction>());
+        assert!(app.is_message_registered::<LobbyRefused>());
+        assert!(app.is_message_registered::<MatchResult>());
+        assert!(app.is_message_registered::<LeaveMatch>());
+    }
+}
+
+/// The registration order is one order for both ends: the source of the plugin lists the five
+/// messages after `ResyncRequest`, and the channel comment names them.
+#[test]
+fn the_five_messages_follow_resync_request_in_the_plugin_source() {
+    let source = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/src/protocol_plugin.rs"
+    ))
+    .unwrap();
+    let position = |name: &str| {
+        source
+            .find(&format!("register_message::<{name}>"))
+            .unwrap_or_else(|| panic!("{name} is registered"))
+    };
+    let order = [
+        "ResyncRequest",
+        "LobbyState",
+        "LobbyAction",
+        "LobbyRefused",
+        "MatchResult",
+        "LeaveMatch",
+    ];
+    for pair in order.windows(2) {
+        assert!(
+            position(pair[0]) < position(pair[1]),
+            "{} before {}",
+            pair[0],
+            pair[1]
+        );
+    }
+    let channels =
+        std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/channels.rs")).unwrap();
+    for name in &order[1..] {
+        assert!(channels.contains(name), "the channel comment names {name}");
+    }
+}

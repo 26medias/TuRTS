@@ -100,6 +100,7 @@ fn snapshot_at(tick: u32, x: f32, y: f32) -> Incoming {
             queues: vec![],
         },
         units: vec![UnitSnapshot {
+            site: false,
             unit_id: UnitId(1),
             content_id: "base:command_center".to_string(),
             owner_slot: SlotId(0),
@@ -516,6 +517,7 @@ fn world_with_one_unit() -> World {
             queues: vec![],
         },
         units: vec![UnitSnapshot {
+            site: false,
             unit_id: UnitId(1),
             content_id: "acme:scout".to_string(),
             owner_slot: SlotId(0),
