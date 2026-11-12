@@ -347,7 +347,7 @@ function projectGround(matrix, position) {
     return point;
 }
 
-function whitePixelsInRect(image, rect, scale) {
+function whitePixelsInRect(image, rect, scale, limit = 220) {
     const left = Math.max(0, Math.floor(rect[0] / scale));
     const top = Math.max(0, Math.floor(rect[1] / scale));
     const right = Math.min(image.width, Math.ceil((rect[0] + rect[2]) / scale));
@@ -356,8 +356,8 @@ function whitePixelsInRect(image, rect, scale) {
     for (let y = top; y < bottom; y += 1) {
         for (let x = left; x < right; x += 1) {
             const offset = (y * image.width + x) * 4;
-            if (image.rgba[offset + 3] > 0 && image.rgba[offset] > 220
-                && image.rgba[offset + 1] > 220 && image.rgba[offset + 2] > 220) count += 1;
+            if (image.rgba[offset + 3] > 0 && image.rgba[offset] > limit
+                && image.rgba[offset + 1] > limit && image.rgba[offset + 2] > limit) count += 1;
         }
     }
     return count;
@@ -547,7 +547,11 @@ async function judgeAud1(view, input, checkpoints, final) {
         assert(frame.checkpoint.debug.rejoin?.stored_identity === true,
             "AUD1 rendered countdown belongs to its actual stored identity");
         const image = decodePng(Buffer.from((await view.serverFile(`${frame.name}.b64`)).trim(), "base64"));
-        assert(whitePixelsInRect(image, frame.rows[0].rect, Number(frame.checkpoint.scene.scale_factor) || 1) >= 8,
+        // After the reload the "Click to play" overlay (black at alpha 0.55) is over the countdown
+        // until the next gesture; it dims white to about 255 * 0.45^(1/2.2) (RUN130).
+        const underOverlay = (frame.checkpoint.debug.ui_snapshot || []).some((row) => row.id === "focus_overlay" && row.visible === true);
+        const glyphLimit = underOverlay ? Math.round(220 * 0.45 ** (1 / 2.2)) : 220;
+        assert(whitePixelsInRect(image, frame.rows[0].rect, Number(frame.checkpoint.scene.scale_factor) || 1, glyphLimit) >= 8,
             "AUD1 countdown has actual rendered glyphs within its computed visible shell rectangle");
     }
     if (countdownFrames.length >= 2) {
