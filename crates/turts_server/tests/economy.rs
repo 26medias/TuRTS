@@ -1991,7 +1991,37 @@ fn owner_snapshot_from_audit(
         healths: vec![],
         research: vec![],
         unit_orders: owner_unit_orders_from_audit(state, slot),
-        ..Default::default()
+        // Protocol 5: every Snapshot carries the empty match state, and the progress of each job
+        // is a rate record at the tick of the Snapshot (1 per tick while the job runs).
+        records: wire::SnapshotRecords {
+            match_state: Some(wire::MatchState::default()),
+            jobs: world
+                .economy
+                .queues
+                .iter()
+                .filter(|queue| queue.owner_slot == slot)
+                .flat_map(|queue| {
+                    queue.jobs.iter().map(move |job| wire::JobProgress {
+                        producer: wire::UnitId(queue.producer),
+                        job: wire::JobId(job.id),
+                        progress: wire::RateRecord {
+                            done: job.elapsed_ticks,
+                            total: job.duration_ticks,
+                            per_tick: u64::from(job.stage == SimJobStage::Running),
+                            at_tick: world.tick,
+                            state: match job.stage {
+                                SimJobStage::OutputBlocked => wire::RecordState::OutputBlocked,
+                                _ => wire::RecordState::Running,
+                            },
+                            charged: Vec::new(),
+                            held: false,
+                            held_since_tick: 0,
+                        },
+                    })
+                })
+                .collect(),
+            ..Default::default()
+        },
     }
 }
 
