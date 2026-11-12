@@ -1143,6 +1143,43 @@ mod tests {
     }
 
     #[test]
+    fn step_toward_reaches_the_target_coordinate_and_never_passes_it() {
+        // Across a binade boundary the gap can be below the quantum (the spacing at the larger
+        // magnitude): the step must land on the target and not pass it.
+        let below_one = 1.0_f32.next_down();
+        assert_eq!(super::step_toward(below_one, 1.0), 1.0);
+        assert_eq!(super::step_toward(1.0, below_one), below_one);
+        // A walk of 100 spacings, up and down, ends on the target and is monotone.
+        for (start, target) in [
+            (1.0_f32, 1.0 + 100.0 * f32::EPSILON),
+            (-3.0, -3.0 - 100.0 * 4.0 * f32::EPSILON),
+        ] {
+            let mut coordinate = start;
+            let mut steps = 0;
+            while coordinate != target {
+                let next = super::step_toward(coordinate, target);
+                assert!(
+                    (next - coordinate).abs() > 0.0
+                        && (target - next).abs() <= (target - coordinate).abs(),
+                    "{coordinate} to {next} does not approach {target}"
+                );
+                assert!(
+                    (next - target) * (coordinate - target) >= 0.0,
+                    "{next} is past {target}"
+                );
+                coordinate = next;
+                steps += 1;
+                assert!(
+                    steps <= 1_000,
+                    "the walk from {start} to {target} does not end"
+                );
+            }
+        }
+        // A coordinate on the target stays.
+        assert_eq!(super::step_toward(7.5, 7.5), 7.5);
+    }
+
+    #[test]
     fn weapon_stand_off_is_in_range_for_a_range_far_below_the_coordinates() {
         // The reproduction of the review of mp1/combat-fixes (performance-architect): a range of
         // 0.001 at a coordinate magnitude of 3960. A pull-in by a fixed factor of the rounding
