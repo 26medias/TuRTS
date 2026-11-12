@@ -1793,6 +1793,95 @@ mod tests {
         );
     }
 
+    /// The replicated weapon rows (live view and committed batch) of this tick, as
+    /// `(weapon, last_target)`, for every row that names a unit that is not alive.
+    fn weapon_rows_naming_absent_units(app: &bevy_app::App) -> Vec<(&'static str, u32, u32)> {
+        let live: std::collections::BTreeSet<u32> = app
+            .world()
+            .iter_entities()
+            .filter_map(|entity| entity.get::<UnitId>().map(|id| id.0))
+            .collect();
+        let view = crate::economy::views_m3::m3_world_view(app.world());
+        let committed = app
+            .world()
+            .resource::<crate::economy::events::CommittedTick>();
+        view.raw_weapons
+            .iter()
+            .map(|row| ("view", row))
+            .chain(committed.weapons.iter().map(|row| ("delta", row)))
+            .filter_map(|(source, row)| {
+                row.last_target
+                    .filter(|target| !live.contains(target))
+                    .map(|target| (source, row.unit, target))
+            })
+            .collect()
+    }
+
+    #[test]
+    fn ordered_attack_kill_replicates_no_reference_to_the_removed_target() {
+        // Cooldown 1000 ms at 20 Hz = 20 ticks. One shot kills the target.
+        let mut app = app_with(20, 1_000, 250);
+        install_attack_order(&mut app);
+        set_order(&mut app, attack_order(2));
+        for tick in 1..=25 {
+            app.update();
+            assert_eq!(
+                weapon_rows_naming_absent_units(&app),
+                vec![],
+                "tick {tick}: a replicated weapon row names a removed unit"
+            );
+        }
+        assert!(!app.world().resource::<Healths>().0.contains_key(&2));
+        let actor = app
+            .world()
+            .iter_entities()
+            .find(|entity| entity.get::<UnitId>().is_some_and(|id| id.0 == 1))
+            .unwrap();
+        let orders = actor.get::<UnitOrders>().unwrap();
+        assert!(orders.current.is_none(), "the attack order completes");
+        assert!(
+            orders.last_failure.is_none(),
+            "a kill by the ordered attacker is a completion, not TargetGone"
+        );
+    }
+
+    #[test]
+    fn kill_by_another_weapon_clears_the_ordered_attacker_target_reference() {
+        let mut app = app_with_units(
+            20,
+            vec![weapon(1_000, 5), unit(TARGET, Some(10))],
+            vec![
+                placement(WEAPON, 0, 5.0, 5.0),
+                placement(WEAPON, 0, 8.0, 5.0),
+                placement(TARGET, 1, 6.0, 5.0),
+            ],
+            BTreeMap::new(),
+        );
+        set_ammo(&mut app, 2, 10, 0);
+        install_attack_order(&mut app);
+        set_order(&mut app, attack_order(3));
+        for tick in 1..=25 {
+            app.update();
+            assert_eq!(
+                weapon_rows_naming_absent_units(&app),
+                vec![],
+                "tick {tick}: a replicated weapon row names a removed unit"
+            );
+        }
+        assert!(!app.world().resource::<Healths>().0.contains_key(&3));
+        let actor = app
+            .world()
+            .iter_entities()
+            .find(|entity| entity.get::<UnitId>().is_some_and(|id| id.0 == 1))
+            .unwrap();
+        let orders = actor.get::<UnitOrders>().unwrap();
+        assert!(orders.current.is_none(), "the attack order completes");
+        assert!(
+            orders.last_failure.is_none(),
+            "the ordered attacker fired at its target before the kill"
+        );
+    }
+
     #[test]
     fn killed_unit_has_final_health_zero_in_its_removal_tick() {
         let mut app = app_with(20, 0, 200);
