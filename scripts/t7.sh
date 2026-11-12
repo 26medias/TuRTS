@@ -8,33 +8,83 @@
 # Output: $OUT/{server-tick.log,scene-checkpoints.json,input-log.json,frames.jsonl,result.json,
 # server.log,server.ron}.
 # The script picks two free ports, so it can run beside another server.
+#
+# Q-PREBUILD: `t7.sh --prepare DIR` builds the server, the wasm client and the oracle test, and packs
+# acme, into DIR, then stops (no browser, no GPU lock). `t7.sh --prepared DIR` builds nothing: it
+# refuses (exit 66) when DIR does not match the source (scripts/mc_prepare.py). With no flag the
+# script builds inside the run, as before (CI).
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+PREPARE_DIR="" PREPARED=""
+while (($#)); do
+    case "$1" in
+        --prepare) (($# >= 2)) || { echo "--prepare requires a folder" >&2; exit 2; }; PREPARE_DIR="$(realpath -m "$2")"; shift 2 ;;
+        --prepared) (($# >= 2)) || { echo "--prepared requires a folder" >&2; exit 2; }; PREPARED="$(realpath -m "$2")"; shift 2 ;;
+        *) echo "usage: scripts/t7.sh [--prepare DIR | --prepared DIR]" >&2; exit 2 ;;
+    esac
+done
+[[ -z "$PREPARE_DIR" || -z "$PREPARED" ]] || { echo "--prepare and --prepared cannot be used together" >&2; exit 2; }
 export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-${ROOT}/target/m3-t16}"
 export CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0
 cd "$ROOT"
 OUT="${M3_T7_OUT:-${ROOT}/target/m3-evidence/t16-builder/t7/run-$(date -u +%Y%m%dT%H%M%SZ)-$$}"
 DIST="$ROOT/crates/turts_client_web/dist"
+SERVER_BIN="$CARGO_TARGET_DIR/release/turts_server"
+PACKAGE=mods/acme
 # The harness launches CHROME_BIN (tests/browser/harness/run.js); t7.js used /usr/bin/google-chrome.
 CHROME_BIN="${CHROME_BIN:-$(command -v google-chrome || command -v chromium || true)}"
 if [[ -z "$CHROME_BIN" || ! -x "$CHROME_BIN" ]]; then echo "Chrome binary unavailable; set CHROME_BIN" >&2; exit 1; fi
 export CHROME_BIN
 
-cargo build --release -p turts_server
-(cd crates/turts_client_web && trunk build --release)
-
-# Serve each big file precompressed. A .br file is made again only when its source is newer.
-for file in "$DIST"/*.wasm "$DIST"/*.js; do
-    if [ ! -e "$file.br" ] || [ "$file" -nt "$file.br" ]; then
-        brotli -q 11 -k -f "$file"
+if [[ -n "$PREPARED" ]]; then
+    # The stale check comes first. A prepared run starts no cargo and no trunk.
+    python3 -B scripts/mc_prepare.py check "$PREPARED" --root "$ROOT" --package "$PACKAGE" \
+        --need bin/turts_server --need bin/t7_oracle --need dist/index.html --need pack/acme.tar || exit $?
+    DIST="$PREPARED/dist"
+    SERVER_BIN="$PREPARED/bin/turts_server"
+    mkdir -p "$OUT/pack"
+    cp -a "$PREPARED/pack/." "$OUT/pack/"
+else
+    if [[ -n "$PREPARE_DIR" ]]; then
+        source "$ROOT/scripts/mc_prepare_lib.sh"
+        mc_prepare_begin "$PREPARE_DIR" "$ROOT" "$PACKAGE"
+        OUT="$PREPARE_DIR"
     fi
-done
+    cargo build --release -p turts_server
+    (cd crates/turts_client_web && trunk build --release)
 
-mkdir -p "$OUT/pack"
-# `turts-pack` writes `<dir>.tar` next to the directory, so pack a copy: `mods/` stays clean.
-cp -r mods/acme "$OUT/pack/acme"
-cargo run --release --quiet -p turts_pack --bin turts-pack -- "$OUT/pack/acme"
+    # Serve each big file precompressed. A .br file is made again only when its source is newer.
+    for file in "$DIST"/*.wasm "$DIST"/*.js; do
+        if [ ! -e "$file.br" ] || [ "$file" -nt "$file.br" ]; then
+            brotli -q 11 -k -f "$file"
+        fi
+    done
+
+    mkdir -p "$OUT/pack"
+    # `turts-pack` writes `<dir>.tar` next to the directory, so pack a copy: `mods/` stays clean.
+    cp -r mods/acme "$OUT/pack/acme"
+    cargo run --release --quiet -p turts_pack --bin turts-pack -- "$OUT/pack/acme"
+fi
+if [[ -n "$PREPARE_DIR" ]]; then
+    # The oracle test is built here too, so the run starts the binary and not cargo.
+    ORACLE_EXE="$(cargo test --release -p turts_server --test t7_oracle --no-run --message-format=json | python3 -c '
+import json, sys
+for line in sys.stdin:
+    if not line.startswith("{"): continue
+    entry = json.loads(line)
+    if entry.get("reason") == "compiler-artifact" and entry.get("target", {}).get("name") == "t7_oracle" and entry.get("executable"):
+        print(entry["executable"])
+')"
+    [[ -x "$ORACLE_EXE" ]] || { echo "t7 prepare: cargo gave no t7_oracle test executable" >&2; exit 1; }
+    mkdir -p "$OUT/bin" "$OUT/dist"
+    cp "$ORACLE_EXE" "$OUT/bin/t7_oracle"
+    cp "$SERVER_BIN" "$OUT/bin/turts_server"
+    cp -a "$DIST"/. "$OUT/dist"/
+    python3 -B scripts/mc_prepare.py seal --root "$ROOT" --out "$OUT" --package "$PACKAGE"
+    echo "PREPARED: $OUT"
+    exit 0
+fi
 
 read -r HTTP_PORT WS_PORT < <(python3 - <<'EOF'
 import socket
@@ -55,7 +105,7 @@ cat > "$OUT/server.ron" <<EOF
 )
 EOF
 
-"$CARGO_TARGET_DIR/release/turts_server" "$OUT/server.ron" --tick-log "$OUT/server-tick.log" \
+"$SERVER_BIN" "$OUT/server.ron" --tick-log "$OUT/server-tick.log" \
     > "$OUT/server.log" 2>&1 &
 SERVER_PID=$!
 cleanup() {
@@ -125,4 +175,8 @@ node tests/browser/t7-frames.js "$OUT" "$("$CHROME_BIN" --version)"
 
 # The oracle reads the two logs while the server still runs: it needs a tick after the last
 # frame. T7_DIR names the folder of the logs.
-T7_DIR="$OUT" cargo test --release -p turts_server --test t7_oracle -- --ignored --nocapture
+if [[ -n "$PREPARED" ]]; then
+    (cd crates/turts_server && T7_DIR="$OUT" "$PREPARED/bin/t7_oracle" --ignored --nocapture)
+else
+    T7_DIR="$OUT" cargo test --release -p turts_server --test t7_oracle -- --ignored --nocapture
+fi
