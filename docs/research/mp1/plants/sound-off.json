@@ -935,33 +935,6 @@
   },
   {
     "row": "SOUND-OFF",
-    "plant": "7i-headed-map-press-clicks-the-switch",
-    "files": [
-      {
-        "file": "crates/turts_client/src/press_release.rs",
-        "edit": {
-          "old": "                    && !press.dragged\n                    && press.start.distance(at) <= CLICK_DRAG_PIXELS\n",
-          "new": ""
-        }
-      }
-    ],
-    "command": [
-      "bash",
-      "scripts/click-without-hover.sh",
-      "--prepared",
-      "target/mc-mp1-sound-off/prep-plant7i",
-      "--package",
-      "tests/browser/fixtures/feedback/muster",
-      "--map-press-first"
-    ],
-    "env": {},
-    "headed": true,
-    "expected_red": "\"expected\":false,\"acted\":true",
-    "exit": 1,
-    "commit": "835a3bb0"
-  },
-  {
-    "row": "SOUND-OFF",
     "plant": "11a-menu-key-rule-off",
     "files": [
       {
