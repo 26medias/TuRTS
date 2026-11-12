@@ -327,16 +327,19 @@ pub(crate) fn within_weapon_range(
 /// - The rule is monotone in the offsets: the rounded difference, the square and the sum of
 ///   squares do not fall when an offset grows. So the value that the rule tests only falls
 ///   from step to step.
-/// - A step changes a coordinate by at least one quantum of `step_toward` (or reaches the
-///   target coordinate), so after finitely many steps both offsets are 0, and a distance of 0
-///   passes the rule for every range above 0 (`0 <= range * range`, also when the square
-///   rounds to 0).
+/// - A step changes a coordinate by at least one quantum of `step_toward`, or at least half a
+///   quantum when it crosses a binade upward (the sum rounds), or it reaches the target
+///   coordinate. So after finitely many steps both offsets are 0, and a distance of 0 passes
+///   the rule for every range above 0 (`0 <= range * range`, also when the square rounds to 0).
 /// - The number of steps is small. The review of `mp1/combat-fixes` bounds the offset that has
 ///   to go by about `7.5 u r + 1.5 u M` (`u` is `2^-24`, `r` the range, `M` the largest
 ///   coordinate), and a step removes about `2 u M_c` in a component with a coordinate magnitude
-///   `M_c`, where `M_c` is at least half the offset of that component. That is about 25 steps
-///   at most. `STAND_OFF_MAX_STEPS` is a hard bound over it, and the test
+///   `M_c`, where `M_c` is at least half the offset of that component (a half step at a binade
+///   crossing removes `u M_c`). That is about 15 steps, and about 30 with half steps, at most.
+///   `STAND_OFF_MAX_STEPS` is a hard bound over it, and the test
 ///   `weapon_stand_off_is_in_range_for_the_reviewed_case_classes` records the largest count.
+///   If the bound were ever reached, the result is `target` itself: a distance of 0 passes the
+///   rule, so the result is in range in every case (`stand_off_bounded`).
 pub(crate) fn weapon_stand_off(
     target: bevy_math::Vec2,
     from: bevy_math::Vec2,
@@ -345,7 +348,7 @@ pub(crate) fn weapon_stand_off(
     stand_off_steps(target, from, range).0
 }
 
-/// The hard bound of the loop of `weapon_stand_off` (about 25 steps by the derivation there).
+/// The hard bound of the loop of `weapon_stand_off` (about 30 steps by the derivation there).
 const STAND_OFF_MAX_STEPS: u32 = 64;
 
 /// `weapon_stand_off` and the number of steps that it took.
@@ -354,21 +357,38 @@ fn stand_off_steps(
     from: bevy_math::Vec2,
     range: f32,
 ) -> (bevy_math::Vec2, u32) {
+    let (point, steps, reached) = stand_off_bounded(target, from, range, STAND_OFF_MAX_STEPS);
+    debug_assert!(
+        reached,
+        "the stand-off took {steps} steps and did not reach range {range} of {target:?} (from {from:?})"
+    );
+    (point, steps)
+}
+
+/// The walk of `weapon_stand_off` with a bound of `max_steps`. Returns the point, the number of
+/// steps, and whether the walk reached the rule within the bound. When it did not, the point is
+/// `target` (a distance of 0 passes the rule), so the point is in range in every case.
+fn stand_off_bounded(
+    target: bevy_math::Vec2,
+    from: bevy_math::Vec2,
+    range: f32,
+    max_steps: u32,
+) -> (bevy_math::Vec2, u32, bool) {
     let direction = (from - target).normalize_or_zero();
     let mut point = target + direction * range;
     let mut steps = 0;
-    while steps < STAND_OFF_MAX_STEPS && !within_weapon_range(point, target, range) {
+    while steps < max_steps && !within_weapon_range(point, target, range) {
         point = bevy_math::Vec2::new(
             step_toward(point.x, target.x),
             step_toward(point.y, target.y),
         );
         steps += 1;
     }
-    debug_assert!(
-        within_weapon_range(point, target, range),
-        "stand-off {point:?} is out of range {range} of {target:?} after {steps} steps"
-    );
-    (point, steps)
+    if within_weapon_range(point, target, range) {
+        (point, steps, true)
+    } else {
+        (target, steps, false)
+    }
 }
 
 /// One step of a coordinate toward `target`: one quantum, or the target coordinate itself when it
@@ -1149,10 +1169,19 @@ mod tests {
         let below_one = 1.0_f32.next_down();
         assert_eq!(super::step_toward(below_one, 1.0), 1.0);
         assert_eq!(super::step_toward(1.0, below_one), below_one);
-        // A walk of 100 spacings, up and down, ends on the target and is monotone.
-        for (start, target) in [
-            (1.0_f32, 1.0 + 100.0 * f32::EPSILON),
-            (-3.0, -3.0 - 100.0 * 4.0 * f32::EPSILON),
+        // Across a binade boundary the step can be half a quantum (the sum rounds), and a gap of
+        // 1.5 quanta needs the target: a step of 2 quanta would pass it.
+        assert_eq!(
+            super::step_toward(1.0_f32.next_down(), 1.0 + f32::EPSILON),
+            1.0
+        );
+        // Walks of an even and an odd number of quanta, up and down, end on the target in exactly
+        // that number of steps (a step of 2 quanta ends sooner), and are monotone.
+        for (start, target, quanta) in [
+            (1.0_f32, 1.0 + 100.0 * f32::EPSILON, 100),
+            (1.0, 1.0 + 101.0 * f32::EPSILON, 101),
+            (-3.0, -3.0 - 100.0 * 2.0 * f32::EPSILON, 100),
+            (-3.0, -3.0 - 51.0 * 2.0 * f32::EPSILON, 51),
         ] {
             let mut coordinate = start;
             let mut steps = 0;
@@ -1174,9 +1203,56 @@ mod tests {
                     "the walk from {start} to {target} does not end"
                 );
             }
+            assert_eq!(
+                steps, quanta,
+                "the walk from {start} to {target} takes one step per quantum"
+            );
         }
         // A coordinate on the target stays.
         assert_eq!(super::step_toward(7.5, 7.5), 7.5);
+    }
+
+    #[test]
+    fn a_stand_off_walk_that_reaches_its_bound_returns_the_target() {
+        // The fallback of `stand_off_bounded`: with a bound of 1 step, a ring point that needs
+        // more steps ends on the target, and that point passes the rule. Find such a ring point
+        // in a fixed sample first, so the test has a case that needs 2 steps or more.
+        let mut next = xorshift(0xA5A5_1234_9876_5432);
+        let mut found = 0_u32;
+        for _ in 0..200_000 {
+            let magnitude = [64.0_f32, 4096.0, 1_048_576.0][(next() * 3.0) as usize % 3];
+            let target = bevy_math::Vec2::new(next() * magnitude, next() * magnitude);
+            let range = [0.001_f32, 0.05, 1.0, 4.0, 40.0][(next() * 5.0) as usize % 5];
+            let angle = next() * std::f32::consts::TAU;
+            let from = target
+                + bevy_math::Vec2::new(angle.cos(), angle.sin()) * range * (1.0001 + next() * 30.0);
+            let (walked, steps) = super::stand_off_steps(target, from, range);
+            if steps < 2 {
+                continue;
+            }
+            found += 1;
+            let (point, used, reached) = super::stand_off_bounded(target, from, range, 1);
+            assert!(
+                !reached && used == 1,
+                "a bound of 1 is reached ({steps} steps needed)"
+            );
+            assert_eq!(
+                point, target,
+                "the bound is reached: the result is the target"
+            );
+            assert!(
+                super::within_weapon_range(point, target, range),
+                "the fallback point passes the rule"
+            );
+            // With the production bound the same case walks and does not fall back.
+            let (point, used, reached) =
+                super::stand_off_bounded(target, from, range, super::STAND_OFF_MAX_STEPS);
+            assert!(reached && used == steps && point == walked);
+        }
+        assert!(
+            found > 0,
+            "setup: the sample has a ring point that needs 2 steps or more"
+        );
     }
 
     #[test]
@@ -1229,9 +1305,9 @@ mod tests {
         }
         assert!(moved > 0, "setup: the sample has rings that fail the rule");
         println!("most stand-off steps: {most_steps}");
-        // The derivation of `weapon_stand_off` gives at most about 25; 3 on the machine of the
-        // first run.
-        assert!(most_steps <= 25, "the largest step count is {most_steps}");
+        // The derivation of `weapon_stand_off` gives at most about 30; 3 on the machine of the
+        // first run (at most 4 in the 27.85 M cases of the review).
+        assert!(most_steps <= 30, "the largest step count is {most_steps}");
     }
 
     fn attack_order(target: u32) -> Order {
