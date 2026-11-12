@@ -188,3 +188,26 @@ What the figures do not show: the site, job, supply and match records (their sim
 in lane 0, so they cost 0 B); a fight of 200 units in a long run (the 12-trooper case has 3
 kills only; ORDW1 case C with 200 riflemen is a row of `I-HEAD`); the bytes of the whole
 `WorldDelta` at the medium workload of D57 (NOT TRACED here: no run of the medium workload).
+
+## A running production job on the wire, before and after the repair (L0-WIRE repair, item 5)
+
+Test `a_running_job_costs_no_bytes_between_its_changes` (`crates/turts_server/tests/ordw1.rs`),
+package `base`, one Command Centre, 3 `train_rifleman` jobs of 100 ticks, 260 ticks, slot 0.
+Bytes are postcard bytes of `delta.economy.queues` plus `delta.records.jobs`. Recorded, not judged.
+
+| Case | Ticks with a queue or job record | Bytes in all | Bytes in a steady running tick |
+| --- | --- | --- | --- |
+| Before: the queue diff counts `elapsed_ticks` (plant `JOBQ1/(a)`; the wire shape is already the new one, so protocol 4 was a few bytes larger) | 260 of 260 | 29,557 | about 114 (one queue, one job record) |
+| After: `JobState` has no `elapsed_ticks`, and a queue is sent on a change of the job list or of a stage | 5 of 260 (ticks 1, 101, 102, 202, 203) | 477 | 0 |
+
+The reviewer measured 106 B in 200 of 200 deltas for one producer and 3 jobs (protocol 4, 57 % of
+the delta). One queue with its job record is 155 B as a `Snapshot` part.
+
+## Browser rows that read a changed field (headed before a stage-1 lane merges)
+
+From the repair review and a grep of `tests/browser` (not run in this task): the debug state keeps
+`weapons[].cooldown` and `economy.queues[].jobs[].elapsed_ticks` as derived values
+(`crates/turts_client/src/debug.rs`), so the oracles read the same names. The rows to run headed:
+T7 (protocol 5 in wasm), the MC orders rows (`orders-oracle.js:457-459`, `weapon.cooldown`),
+HUD2 (`hud2-oracle.js`, queue progress and `weapon.damage`), SEL1, MM1, PT1 driver checks,
+VIS-full, and the M2 browser oracle (`m2-audit.js`, `elapsed_ticks`).
