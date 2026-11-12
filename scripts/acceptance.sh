@@ -2,7 +2,7 @@
 # Build both public binaries, verify the Task 15 process-test selector, then run
 # process acceptance serially in release mode. T5 is checked from that run,
 # with an exact-test fallback when a selector excludes it.
-set -euo pipefail
+set -Eeuo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-${ROOT}/target/mc-t10}"
@@ -11,6 +11,21 @@ export CARGO_BUILD_JOBS="${CARGO_BUILD_JOBS:-4}"
 
 log_dir="${M3_ACCEPTANCE_LOG_DIR:-${ROOT}/target/m3-evidence/t16-builder/acceptance/$(date -u +%Y%m%dT%H%M%SZ)}"
 mkdir -p "$log_dir"
+# A failed command must never leave the CI log empty. The ERR trap names the line, the status and
+# the command. `run_logged` prints the tail of the log of a step whose output goes to a file.
+trap 'printf "acceptance.sh: line %s: exit %s: %s\n" "$LINENO" "$?" "$BASH_COMMAND" >&2' ERR
+run_logged() {
+  local log="$1"
+  shift
+  local status=0
+  "$@" >"$log" 2>&1 || status=$?
+  if [[ "$status" != 0 ]]; then
+    printf 'step failed with exit %s: %s\n--- tail of %s ---\n' "$status" "$*" "$log" >&2
+    tail -n 60 "$log" >&2
+    printf -- '--- end of %s ---\n' "$log" >&2
+    return "$status"
+  fi
+}
 retain_f11_artifacts() {
   local source="$CARGO_TARGET_DIR/tmp/f11-m3-private-research"
   local destination="$log_dir/f11-evidence"
@@ -138,5 +153,5 @@ run_cargo_test command_script exact -p turts_server --test command_script -- --i
 run_cargo_test mc_group aggregate -p turts_server --test mc_group -- --ignored --test-threads=1
 run_cargo_test det1 exact -p turts_server --test det1 -- --ignored --test-threads=1 --exact det1_fixed_tick_muster_script_is_equal_through_tick_400_and_has_neighbour_work
 run_cargo_test el1 exact -p turts_server --test el1 -- --ignored --test-threads=1 --exact el1_muster_movement_and_queued_gather_validate_every_captured_tick
-MC_HD1_NATIVE_REFERENCE_DIR="$log_dir/hd1-native-reference-run" scripts/hd1-native-reference.sh >"$log_dir/hd1-native-reference.log" 2>&1
+MC_HD1_NATIVE_REFERENCE_DIR="$log_dir/hd1-native-reference-run" run_logged "$log_dir/hd1-native-reference.log" scripts/hd1-native-reference.sh
 run_cargo_test hd1_c195 exact -p turts_client --test hd1 -- --ignored --test-threads=1 --exact same_tick_double_group_recall_reprojects_the_following_world_target
