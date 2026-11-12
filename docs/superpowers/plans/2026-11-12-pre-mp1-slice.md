@@ -29,6 +29,16 @@ the stricter assertion rule of section 1a (21); the source counts count code onl
 (23). Root accepts refinements R10, R11 (with item 20), R12 (with item 22) and R13 (with item 17). The plan
 gate is passed for the tasks up to and including A2a. A2b1 gets a short re-check before its builder starts.
 
+**From the A1b review (2026-11-12, qa-lead, five own faults; A1b merged with 0 High open; report `docs/research/mp1/review-slice-a1b.md`).** Task A1c must do these before it deletes the replay validator:
+- Ruling (orchestrator): add `pending_movement_orders` to `LedgerAudit` (`ledger_view.rs:38-46`); the sim names it audited command state (`orders/pending.rs:32`). A refused command that changes `next_pool_id` must be red in the ledger (the reviewer's probe F4 is the plant).
+- The movement-writers allow list (`crates/turts_checks/tests/movement_writers.rs:49-98`) pins the count of each (file, kind, type) entry, so a new writer in an allowed file is red (plant: a `get_mut::<Position>` write in `combat.rs`).
+- With the replay off, three replay self-checks are red with no plant: `economylog.rs:453` (delete; other tests keep the property), `economylog.rs:331`, `economy.rs:1145`. A1c moves or replaces all three, not only the 1-ulp test.
+- The field test in `ledger_view.rs:134-198` runs on a Forge `Tick` state, so a field that is empty in the small fixture is checked.
+- Plant (b) "remove facing" moves to A1c (the sink writes `AuditState` until then).
+- Validate one time for each poll result, not the whole prefix two times (`economy.rs:2455-2470`, `:2502-2503`, `:552-553`).
+- The run receipt records `TURTS_AUDIT_REPLAY`.
+- Owed from A1b: the 8 `ci-browser` cases (headed) and EL1 and E9 in release with the replay off.
+
 **From the A1a review (2026-11-12, qa-lead, two rounds; A1a merged with 0 High open).** Task A1b must do these:
 
 - The destination check of `queued_group_attack_spreads…` (`crates/turts_server/tests/mc_orders.rs`, `first_logged_destinations`)
