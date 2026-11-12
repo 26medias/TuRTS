@@ -6,9 +6,10 @@ use std::io::Read;
 use serde::de::{DeserializeOwned, IgnoredAny, MapAccess, Visitor};
 use serde::{Deserialize, Deserializer};
 use turts_mod_api::{
-    AssetsDef, ContentCatalog, InputMapDef, InterfaceDef, LockEntry, Manifest, MapDef, MatchDef,
-    ModError, NodeDef, OrderDef, OrderRulesDef, PackageId, ProductionDef, RecipeDef, ResourceDef,
-    SmartOrder, TechnologyDef, UnitDef, VisualDef, content::SourceDef,
+    AssetsDef, CombatDef, ContentCatalog, InputMapDef, InterfaceDef, LockEntry, Manifest, MapDef,
+    MatchDef, ModError, NodeDef, OrderDef, OrderRulesDef, PackageId, ProductionDef, RecipeDef,
+    ResourceDef, SmartOrder, TechnologyDef, UnitDef, VisualDef, VisualEffectsDef,
+    content::SourceDef,
 };
 
 use crate::content::validate_content_with_m3;
@@ -168,6 +169,18 @@ impl PackageArchive {
     pub fn assets(&self) -> Result<Vec<(String, AssetsDef)>, ModError> {
         self.parse_exports("exports.assets", &self.manifest.exports.assets)
     }
+    /// The exported damage tables (API 0.2.4, `exports.combat`) as `(archive path, definition)`.
+    pub fn combat_defs(&self) -> Result<Vec<(String, CombatDef)>, ModError> {
+        self.parse_exports("exports.combat", &self.manifest.exports.combat)
+    }
+    /// The exported visual effect files (API 0.2.4, `exports.visual_effects`). Only the client
+    /// reads them.
+    pub fn visual_effect_defs(&self) -> Result<Vec<(String, VisualEffectsDef)>, ModError> {
+        self.parse_exports(
+            "exports.visual_effects",
+            &self.manifest.exports.visual_effects,
+        )
+    }
     /// The exported match files (API 0.2.4, `exports.match`) as `(archive path, definition)`.
     pub fn match_defs(&self) -> Result<Vec<(String, MatchDef)>, ModError> {
         self.parse_exports("exports.match", &self.manifest.exports.match_files)
@@ -275,8 +288,22 @@ impl PackageArchive {
             &lines,
             crate::version_table::VERSION_TABLE,
         )?;
+        // The validation column of the 0.2.4 table (`L0-API2`), after the `UNBUILT` refusal: a
+        // package that uses a feature that is not built hears that first, because nothing else
+        // about it can be used yet. The lane that builds a feature deletes its line, and the
+        // checks of the feature are already in force. A test reaches them while the line stands
+        // through `check_api_0_2_4`.
+        self.check_api_0_2_4()?;
         crate::content_m3::validate_m3(&self.manifest, &catalog)?;
         Ok(catalog)
+    }
+
+    /// The validation column of the 0.2.4 table (design 6.10) on the gameplay, order, match,
+    /// interface and input files. `Ok` for a package of an edition older than 0.2.4. `content`
+    /// calls it after the `UNBUILT_FEATURES` refusal, so a feature that is not built is refused
+    /// as not built; this method reaches the checks of such a feature.
+    pub fn check_api_0_2_4(&self) -> Result<(), ModError> {
+        crate::mp1_validation::validate(self)
     }
 
     /// The exported map definitions as `(archive path, definition)`.
@@ -288,6 +315,11 @@ impl PackageArchive {
     /// calls this.
     pub fn visuals(&self) -> Result<Vec<(String, VisualDef)>, ModError> {
         self.check_presentation_versions()?;
+        self.visuals_unchecked()
+    }
+
+    /// The visuals with no version check: the presentation checks of API 0.2.4 read them.
+    pub(crate) fn visuals_unchecked(&self) -> Result<Vec<(String, VisualDef)>, ModError> {
         self.parse_exports("exports.visuals", &self.manifest.exports.visuals)
     }
 
@@ -309,7 +341,14 @@ impl PackageArchive {
             &raw,
             &lines,
             crate::version_table::VERSION_TABLE,
-        )
+        )?;
+        crate::mp1_validation::validate_presentation(self)
+    }
+
+    /// The checks of API 0.2.4 on the visual and effect files (rows V3 and V4). `visuals` calls
+    /// them after the `UNBUILT` refusal; this method reaches them while a line stands.
+    pub fn check_api_0_2_4_presentation(&self) -> Result<(), ModError> {
+        crate::mp1_validation::validate_presentation(self)
     }
 
     /// The lock entry that describes this archive. The caller gives the download URLs.

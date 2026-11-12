@@ -139,6 +139,14 @@ fn validate_content_m2(
     let unit_sources = units;
     let node_sources = nodes;
     let production_sources = production;
+    // API 0.2.4, row K4: a production that a constructor lists as a building has a static output,
+    // so the rule "output must be mobile" (below) does not apply to it. The ids are qualified.
+    let building_ids: BTreeSet<ContentId> = unit_sources
+        .iter()
+        .filter_map(|src| src.value.constructor.as_ref())
+        .flat_map(|constructor| constructor.buildings.iter())
+        .filter_map(|id| ContentId::parse(id).ok())
+        .collect();
     let mut unit_files = BTreeMap::new();
     for src in &unit_sources {
         insert_id(origin, &src.file, &src.value.id, &mut all_ids)?;
@@ -541,6 +549,7 @@ fn validate_content_m2(
     }
     for (recipe_id, recipe) in &catalog.production {
         let file = definition_source_file(origin, recipe_id, &production_files)?;
+        let building = building_ids.contains(recipe_id);
         let output = catalog.units.get(&recipe.output_unit).ok_or_else(|| {
             error(
                 origin,
@@ -549,7 +558,7 @@ fn validate_content_m2(
                 format!("unknown unit `{}`", recipe.output_unit),
             )
         })?;
-        if output.movement.is_none() || output.producer.is_some() {
+        if !building && (output.movement.is_none() || output.producer.is_some()) {
             return Err(error(
                 origin,
                 file,

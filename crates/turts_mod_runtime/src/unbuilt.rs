@@ -32,6 +32,10 @@ pub(crate) struct UnbuiltLine {
     pub(crate) feature: &'static str,
     /// The task of plan 5.3 that removes the line. It is for the code and the tests only: the
     /// message never prints it.
+    #[allow(
+        dead_code,
+        reason = "the owner is for the reader of the code and for the tests; the message names no task"
+    )]
     pub(crate) owner: &'static str,
     /// A detector of its own, for a feature that has no row in the version table (a stricter
     /// use of a variant that a row already covers).
@@ -86,8 +90,8 @@ pub(crate) const UNBUILT_FEATURES: &[UnbuiltLine] = &[
     line("needs: Constructor", "L-CON1"),
     // L-DES: `health without removal` (K7), `removal with a queue` (K8),
     // `cancel_refunds.destroyed` (K5).
-    use_line("health without removal", "L-DES"),
-    use_line("removal with a queue", "L-DES"),
+    line("health without removal", "L-DES"),
+    line("removal with a queue", "L-DES"),
     line("cancel_refunds.destroyed", "L-DES"),
     line("technology cancel_refunds.destroyed", "L-DES"),
     // L-STO: `start_order` (M3), `spawn_order` (U8) with `ground_rally: Ignore`.

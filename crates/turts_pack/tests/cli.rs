@@ -85,6 +85,60 @@ fn pack_cli_refuses_a_directory_without_a_manifest() {
     assert!(!work.join("empty.tar").exists());
 }
 
+/// VAL1: the packer refuses a value of the 0.2.4 validation column with exit 2, the text of its row
+/// on stderr, and no archive. The control is the same package with the value corrected (a copy of
+/// `cedar` that needs `^0.2.4`): it packs with exit 0. Two rows: the key lists (H1, T2) and the
+/// unique default keys (KEY1 (b)).
+#[test]
+fn pack_cli_refuses_a_value_of_the_validation_column_with_exit_2() {
+    let cases = [
+        (
+            "interface/hud.ron",
+            "    reasons: {},",
+            r#"    reasons: {"queue_ful": "x"},"#,
+            "cedar/interface/hud.ron: reasons.queue_ful: unknown reason key `queue_ful`; did you mean `queue_full`?",
+        ),
+        (
+            "input/bindings.ron",
+            r#"(name: "key_cancel", default: [Key(code: "KeyC", mods: [])])"#,
+            r#"(name: "key_cancel", default: [Key(code: "KeyP", mods: [])])"#,
+            "cedar/input/bindings.ron: actions: KeyP is the default of key_produce and key_cancel; each default key must be unique",
+        ),
+    ];
+    for (index, (file, old, new, expected)) in cases.iter().enumerate() {
+        let work = fresh_dir(&format!("pack_cli_val1_{index}"));
+        let dir = work.join("cedar");
+        copy_dir(&package_dir("cedar"), &dir);
+        let manifest = fs::read_to_string(dir.join("manifest.ron")).unwrap();
+        fs::write(
+            dir.join("manifest.ron"),
+            manifest.replace(r#"engine_api: "^0.2.3""#, r#"engine_api: "^0.2.4""#),
+        )
+        .unwrap();
+        // The control: `cedar` at `^0.2.4` packs.
+        let control = turts_pack(&[&dir]);
+        assert_eq!(
+            control.status.code(),
+            Some(0),
+            "control {index}: {control:?}"
+        );
+        fs::remove_file(work.join("cedar.tar")).unwrap();
+        let text = fs::read_to_string(dir.join(file)).unwrap();
+        assert_eq!(
+            text.matches(old).count(),
+            1,
+            "{file}: the edit target occurs once"
+        );
+        fs::write(dir.join(file), text.replace(old, new)).unwrap();
+        let output = turts_pack(&[&dir]);
+        assert_eq!(output.status.code(), Some(2), "{index}: {output:?}");
+        assert!(output.stdout.is_empty(), "{index}: {output:?}");
+        let stderr = String::from_utf8(output.stderr).unwrap();
+        assert!(stderr.starts_with(expected), "{index}: {stderr:?}");
+        assert!(!work.join("cedar.tar").exists(), "{index}: no archive");
+    }
+}
+
 /// B5: `--help` prints the usage on stdout and exits with 0.
 #[test]
 fn pack_cli_help_lists_the_usage_and_the_checks() {
@@ -121,6 +175,24 @@ fn pack_cli_help_states_the_engine_api_rule() {
         "`engine_api` must exclude every engine API that lacks a feature the package writes",
         "a field written empty (`orders: []`) counts",
         "leave it out for an older API",
+    ] {
+        assert!(stdout.contains(text), "usage lacks `{text}`:\n{stdout}");
+    }
+}
+
+/// L2 (review of `L0-API1`): the usage lists the `UNBUILT` refusal and the edition rule, so a modder
+/// who gets either one finds the text in the help.
+#[test]
+fn pack_cli_help_lists_the_unbuilt_refusal_and_the_edition_rule() {
+    let output = turts_pack(&[Path::new("--help")]);
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    let stdout = stdout.split_whitespace().collect::<Vec<_>>().join(" ");
+    for text in [
+        // The refusal of a feature that no engine build has yet.
+        "`<feature>` is not built in this engine build; leave it out until an engine build supports it",
+        // The edition rule: the edition is the lowest API that the requirement admits.
+        "edition of a package is the lowest engine API that its `engine_api` requirement admits",
+        "older edition keeps the behaviour of its API",
     ] {
         assert!(stdout.contains(text), "usage lacks `{text}`:\n{stdout}");
     }

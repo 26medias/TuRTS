@@ -1,0 +1,8 @@
+(
+    id: "tank", name: "Tank", footprint: Circle(radius: 0.9),
+    movement: Some((speed: 3.0)), inventory: None, gatherer: None, drop_off: None, producer: None,
+    health: Some((max: 100)), removal: Some((by_command: false, contents: Destroy)),
+    weapon: Some((range: 5.0, cooldown_ms: 900, damage: 8, ammo: None, targets: (slots: Enemy), damage_type: Some("val1:rocket"))),
+    armour: Some((class: "val1:vehicle", flat: 1)),
+    acquire: Some((range: 6.0, leash: 4.0)),
+)

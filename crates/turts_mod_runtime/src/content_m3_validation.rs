@@ -370,9 +370,9 @@ pub(crate) fn validate_m3(manifest: &Manifest, catalog: &ContentCatalog) -> Resu
                 return Err(fail("machine", "machines must be static"));
             }
         }
-        if unit.health.is_some() && unit.removal.is_none() {
-            return Err(fail("health", "a unit with health requires removal"));
-        }
+        // Design 6.10 row K7 (lifted): a unit with `health` and no `removal` is the combination
+        // `health without removal` of the version table (API 0.2.4). The row refuses it for an
+        // older edition and `UNBUILT_FEATURES` holds it back until `L-DES` builds it.
         if unit.health.is_some_and(|health| health.max == 0) {
             return Err(fail("health.max", "must be positive"));
         }
@@ -413,14 +413,14 @@ pub(crate) fn validate_m3(manifest: &Manifest, catalog: &ContentCatalog) -> Resu
         if unit.weapon.is_some() {
             work.push("weapon");
         }
+        // API 0.2.4, row K1: `constructor` is not in this list, because the resolved unit does not
+        // hold it: it is allowed beside `producer` and beside nothing else, and
+        // `mp1_validation.rs` checks that on the parsed unit.
         if work.len() > 1 {
             return Err(fail(work[1], "a unit may have at most one work capability"));
         }
-        if unit.removal.is_some()
-            && (unit.producer.is_some() || unit.machine.is_some() || unit.research.is_some())
-        {
-            return Err(fail("removal", "a unit with a queue cannot be removed"));
-        }
+        // Design 6.10 row K8 (lifted): a unit with a queue and `removal` is the combination
+        // `removal with a queue` of the version table (API 0.2.4); see row K7 above.
     }
     for production in catalog.production.values() {
         let output = catalog.units.get(&production.output_unit).ok_or_else(|| {

@@ -1,0 +1,5 @@
+(
+    id: "hauler", name: "Hauler", footprint: Circle(radius: 0.5),
+    movement: Some((speed: 3.0)), inventory: None, gatherer: None, drop_off: None, producer: None,
+    spawn_order: Some((order: "val1:order_gather", target: NearestNode)),
+)
