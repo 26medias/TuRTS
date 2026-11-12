@@ -15,7 +15,11 @@ fn intercept_that_takes_the_input_sends_no_order_and_changes_no_selection() {
     for taking_input in [false, true] {
         let mut core = Core::default();
         select_world_point(&mut core, &world, UnitId(1), 10);
-        assert_eq!(ids(&core), vec![UnitId(1)]);
+        assert_eq!(
+            ids(&core),
+            vec![UnitId(1)],
+            "the setup click must select unit 1 while the hook takes nothing"
+        );
         core.placement.taking_input = taking_input;
         let foreign = core.project_world_to_screen(world.units[3].position, &VIEW);
         let order_effects = click(&mut core, &world, Button::Right, foreign, vec![], 20);
