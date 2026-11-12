@@ -555,7 +555,18 @@ pub fn step_frame_preserving_resting(
             continue;
         }
         let Some(target) = unit.target else { continue };
-        let Some(mut progress) = unit.progress.clone() else {
+        // One step for a unit that moves to its target. A unit with a pool and a unit with no
+        // pool pass the same phases in the same order: arrival, steering, projection, then the
+        // end of the step. Three values have one float expression for a unit with a pool and
+        // another for a unit with no pool; the presence of the pool selects the expression, so
+        // that the output is bit-equal to the two branches that this step replaces (design 9.8).
+        let pooled = unit.progress.is_some();
+        let mut progress = unit.progress.clone();
+        #[cfg(feature = "test-probes")]
+        {
+            outputs[index].probe.phases.arrival += 1;
+        }
+        if !pooled {
             let target_occupied =
                 plain_spread_context.conflicts_with_reserved(target, unit.radius, unit.unit_id)
                     || grid
@@ -584,6 +595,12 @@ pub fn step_frame_preserving_resting(
                     &plain_spread_context,
                 );
                 outputs[index] = output.clone();
+                // The plain step replaced the whole output: put the phase calls back.
+                #[cfg(feature = "test-probes")]
+                {
+                    outputs[index].probe.phases.arrival = 1;
+                    outputs[index].probe.phases.fallback = 1;
+                }
                 update_target_claims(&mut target_claims, unit.target, output.target);
                 units[index].position = output.position;
                 units[index].target = output.target;
@@ -606,92 +623,140 @@ pub fn step_frame_preserving_resting(
                 );
                 continue;
             }
-            let destination = target;
-            let desired = destination - unit.position;
-            let step_limit = speed * dt;
-            let destination_free = grid
-                .within(&points, destination, unit.radius + max_radius)
+        }
+        let pool_id = progress.as_ref().map(|state| state.pool_id);
+        let pass_mode = progress.as_ref().is_some_and(|state| state.pass_mode);
+        let mut movement_target = target;
+        let mut failed_blocked = false;
+        let mut position = unit.position;
+        let distance = position.distance(movement_target);
+        let step_limit = speed * dt;
+        // Another unit stands on `point`: a footprint overlap of more than 1.0e-5.
+        let occupied_at = |point: Vec2| {
+            grid.within(&points, point, unit.radius + max_radius)
                 .into_iter()
-                .all(|other_index| {
-                    other_index == index
-                        || destination.distance(units[other_index].position)
-                            >= unit.radius + units[other_index].radius - 1.0e-5
-                });
-            if (desired.length() <= step_limit || desired.length() <= 0.025) && destination_free {
-                outputs[index].position = destination;
-                outputs[index].target = None;
-                units[index].position = destination;
-                units[index].target = None;
-                units[index].progress = outputs[index].progress.clone();
-                points[index].position = destination;
-                grid.move_point(index, unit.position, destination);
-                refresh_nearby_pool_slot_clearances(
-                    unit.position,
-                    destination,
-                    unit.radius,
-                    &slot_points,
-                    &slot_refs,
-                    &slot_grid,
-                    &mut pool_indexes,
-                    &units,
-                    &points,
-                    &grid,
-                    &assigned_slots,
-                    max_radius,
-                );
-                continue;
+                .any(|other_index| {
+                    let other = &units[other_index];
+                    other_index != index
+                        && point.distance(other.position) < unit.radius + other.radius - 1.0e-5
+                })
+        };
+        // `new_target` is the target of the unit after the step; `Some` until the unit arrives
+        // or fails. The labelled block ends at the arrival, early or late, or at the end of the
+        // step.
+        let mut new_target = None;
+        'step: {
+            // Arrival: the target is within one step, or within 0.025, and free.
+            if (distance <= step_limit || distance <= 0.025) && !occupied_at(movement_target) {
+                position = movement_target;
+                if let Some(state) = progress.as_mut() {
+                    state.activity = MovementActivity::Resting;
+                }
+                break 'step;
             }
-            let desired_distance = desired.length();
-            let mut velocity = if desired_distance > 1.0e-8 {
-                desired * (step_limit / desired_distance)
+
+            // Steering: the velocity, and the separation from the neighbours.
+            #[cfg(feature = "test-probes")]
+            {
+                outputs[index].probe.phases.steering += 1;
+            }
+            let desired = movement_target - position;
+            let mut velocity = if pooled {
+                desired.try_normalize().unwrap_or(Vec2::ZERO) * speed * dt
+            } else if distance > 1.0e-8 {
+                desired * (step_limit / distance)
             } else {
                 Vec2::ZERO
             };
-            let mut separated = false;
             let reach = unit.radius + max_radius + 0.05 + max_step;
-            for other_index in grid.within(&points, unit.position, reach) {
+            let neighbours = grid.within(&points, position, reach);
+            let mut near_same_group = false;
+            let mut separated = false;
+            for other_index in neighbours {
                 if other_index == index {
                     continue;
                 }
                 let other = &units[other_index];
-                let offset = unit.position - other.position;
+                let same_group = pool_id.is_some_and(|pool_id| {
+                    unit.owner_slot == other.owner_slot
+                        && other
+                            .progress
+                            .as_ref()
+                            .is_some_and(|state| state.pool_id == pool_id)
+                });
+                let other_moving_in_group = same_group && other.target.is_some();
+                if other_moving_in_group
+                    && position.distance(other.position) < unit.radius + other.radius + 0.05
+                {
+                    near_same_group = true;
+                }
+                if same_group && (!other_moving_in_group || pass_mode) {
+                    continue;
+                }
+                let offset = position - other.position;
                 let separation = offset.length();
                 let limit = unit.radius + other.radius + 0.05;
                 if separation > 1.0e-8 && separation < limit {
                     separated = true;
-                    velocity += offset / separation * (limit - separation);
-                    if offset.dot(desired) < 0.0 {
+                    let push = if pooled {
+                        (limit - separation) * offset / separation
+                    } else {
+                        offset / separation * (limit - separation)
+                    };
+                    velocity += push;
+                    if !same_group && offset.dot(desired) < 0.0 {
                         let along = desired.try_normalize().unwrap_or(Vec2::X);
                         velocity += Vec2::new(along.y, -along.x) * (limit - separation);
                     }
                 }
             }
-            let mut position = if !separated && desired_distance > step_limit {
-                step(
+            if !separated && distance > step_limit {
+                position = step(
                     &MovementInput {
                         position: unit.position,
-                        target: destination,
+                        target: movement_target,
                         speed,
                     },
                     dt,
                 )
-                .position
+                .position;
             } else {
-                if velocity.length() > step_limit {
+                if pooled {
+                    let velocity_len = velocity.length();
+                    if velocity_len > step_limit && velocity_len > 0.0 {
+                        velocity *= step_limit / velocity_len;
+                    }
+                } else if velocity.length() > step_limit {
                     velocity = velocity.normalize() * step_limit;
                 }
-                unit.position + velocity
-            };
+                position += velocity;
+            }
+
+            // Projection: the hard projection prevents footprint overlap. Units resolve in id
+            // order. A unit does not push a unit of its own group.
+            #[cfg(feature = "test-probes")]
+            {
+                outputs[index].probe.phases.projection += 1;
+            }
+            let broad_reach = unit.radius + max_radius + max_step;
             let mut was_projected = false;
             for _ in 0..8 {
                 let mut projected = false;
-                for other_index in
-                    grid.within(&points, position, unit.radius + max_radius + max_step)
-                {
+                for other_index in grid.within(&points, position, broad_reach) {
                     if other_index == index {
                         continue;
                     }
                     let other = &units[other_index];
+                    let same_group = pool_id.is_some_and(|pool_id| {
+                        unit.owner_slot == other.owner_slot
+                            && other
+                                .progress
+                                .as_ref()
+                                .is_some_and(|state| state.pool_id == pool_id)
+                    });
+                    if same_group {
+                        continue;
+                    }
                     let offset = position - other.position;
                     let separation = offset.length();
                     let limit = unit.radius + other.radius + 1.0e-4;
@@ -718,26 +783,133 @@ pub fn step_frame_preserving_resting(
             position.y = position
                 .y
                 .clamp(unit.radius, (frame.bounds.y - unit.radius).max(unit.radius));
+            // A unit with a pool stores `separated` at the end of the step, after the arrival
+            // check below; a unit with no pool stores it here. This keeps the flags of the
+            // two branches that this step replaces.
             #[cfg(feature = "test-probes")]
             {
-                outputs[index].probe = super::probe::FrameFlags {
-                    separated,
-                    was_projected: Some(was_projected),
-                };
+                outputs[index].probe.was_projected = Some(was_projected);
+                outputs[index].probe.separated = separated && !pooled;
             }
-            // Arrival eligibility was checked before movement, so this step
-            // may end early only if it reaches the destination exactly.
-            let reached = position == destination;
-            if reached && destination_free {
-                position = destination;
+
+            // Late arrival: the step ended on the target, and the target is free. Arrival
+            // eligibility was checked before movement, so this step may end early only if it
+            // reaches the destination exactly.
+            if position == movement_target && !occupied_at(movement_target) {
+                position = movement_target;
+                if let Some(state) = progress.as_mut() {
+                    state.activity = MovementActivity::Resting;
+                }
+                break 'step;
             }
-            outputs[index].position = position;
-            outputs[index].target = (!(reached && destination_free)).then_some(destination);
-            if (separated || was_projected) && !(reached && destination_free) {
+            #[cfg(feature = "test-probes")]
+            {
+                outputs[index].probe.separated = separated;
+            }
+            new_target = Some(movement_target);
+
+            if let Some(progress) = progress.as_mut() {
+                // Stall: the progress bookkeeping of a unit with a pool.
+                #[cfg(feature = "test-probes")]
+                {
+                    outputs[index].probe.phases.stall += 1;
+                }
+                let next_distance = position.distance(movement_target);
+                let made_progress = next_distance < progress.best_distance - 0.01 * step_limit;
+                progress.stalling_on_group = near_same_group;
+                if made_progress {
+                    progress.best_distance = next_distance;
+                    progress.stalled_ticks = 0;
+                } else {
+                    progress.stalled_ticks = progress.stalled_ticks.saturating_add(1);
+                }
+                let hz = frame.tick_hz.max(1);
+                if progress.stalled_ticks >= hz {
+                    // Fallback of a unit with a pool: the pass mode, a spare slot, or `Blocked`.
+                    #[cfg(feature = "test-probes")]
+                    {
+                        outputs[index].probe.phases.fallback += 1;
+                    }
+                    if progress.stalling_on_group && !progress.pass_mode {
+                        progress.pass_mode = true;
+                        progress.stalled_ticks = 0;
+                        progress.best_distance = next_distance;
+                    } else if progress.claim_count < 3 {
+                        let old_slot_key = (
+                            progress.pool_id,
+                            progress.slot.x.to_bits(),
+                            progress.slot.y.to_bits(),
+                        );
+                        let spare = pool_indexes.get(&progress.pool_id).and_then(|pool_index| {
+                            pool_index.nearest_free(
+                                unit.unit_id,
+                                position,
+                                progress.pool_id,
+                                None,
+                                &assigned_slots,
+                                unit.radius,
+                                |slot| {
+                                    let key =
+                                        (progress.pool_id, slot.x.to_bits(), slot.y.to_bits());
+                                    key != old_slot_key
+                                        && grid
+                                            .within(&points, slot, unit.radius + max_radius)
+                                            .into_iter()
+                                            .all(|other_index| {
+                                                other_index == index
+                                                    || slot.distance(units[other_index].position)
+                                                        >= unit.radius + units[other_index].radius
+                                            })
+                                },
+                            )
+                        });
+                        if let Some(spare) = spare {
+                            if remove_pool_slot_claim(
+                                &mut slot_claim_counts,
+                                &mut pool_indexes,
+                                progress.pool_id,
+                                progress.slot,
+                            ) {
+                                assigned_slots.remove(&old_slot_key);
+                            }
+                            add_pool_slot_claim(
+                                &mut slot_claim_counts,
+                                &mut pool_indexes,
+                                progress.pool_id,
+                                spare,
+                            );
+                            assigned_slots.insert((
+                                progress.pool_id,
+                                spare.x.to_bits(),
+                                spare.y.to_bits(),
+                            ));
+                            movement_target = spare;
+                            progress.slot = spare;
+                            progress.claim_count += 1;
+                            progress.pass_mode = false;
+                            progress.stalled_ticks = 0;
+                            progress.best_distance = position.distance(movement_target);
+                        } else {
+                            progress.activity = MovementActivity::Blocked;
+                            failed_blocked = true;
+                        }
+                    } else {
+                        progress.activity = MovementActivity::Blocked;
+                        failed_blocked = true;
+                    }
+                }
+                new_target = (!failed_blocked).then_some(movement_target);
+            } else if separated || was_projected {
+                // Fallback of a unit with no pool: it was pushed or projected, so it carries
+                // a plain progress to its target.
+                #[cfg(feature = "test-probes")]
+                {
+                    outputs[index].probe.phases.fallback += 1;
+                }
                 let mut plain = make_plain_progress(&unit, target, &plain_spread_context);
-                plain.slot = destination;
-                plain.best_distance = unit.position.distance(destination);
-                let next_distance = position.distance(destination);
+                plain.slot = movement_target;
+                plain.best_distance = unit.position.distance(movement_target);
+                let next_distance = position.distance(movement_target);
                 if next_distance < plain.best_distance - 0.01 * step_limit {
                     plain.best_distance = next_distance;
                 } else {
@@ -745,304 +917,10 @@ pub fn step_frame_preserving_resting(
                 }
                 outputs[index].plain_progress = Some(plain);
             }
-            update_target_claims(&mut target_claims, unit.target, outputs[index].target);
-            units[index].position = position;
-            units[index].target = outputs[index].target;
-            units[index].progress = outputs[index].progress.clone();
-            points[index].position = position;
-            grid.move_point(index, unit.position, position);
-            refresh_nearby_pool_slot_clearances(
-                unit.position,
-                position,
-                unit.radius,
-                &slot_points,
-                &slot_refs,
-                &slot_grid,
-                &mut pool_indexes,
-                &units,
-                &points,
-                &grid,
-                &assigned_slots,
-                max_radius,
-            );
-            continue;
-        };
-        let mut movement_target = target;
-        let mut failed_blocked = false;
-        let mut position = unit.position;
-        let distance = position.distance(movement_target);
-        if distance <= speed * dt || distance <= 0.025 {
-            let occupied = grid
-                .within(&points, movement_target, unit.radius + max_radius)
-                .into_iter()
-                .any(|other_index| {
-                    let other = &units[other_index];
-                    other_index != index
-                        && movement_target.distance(other.position)
-                            < unit.radius + other.radius - 1.0e-5
-                });
-            if !occupied {
-                update_target_claims(&mut target_claims, unit.target, None);
-                outputs[index].position = movement_target;
-                outputs[index].target = None;
-                progress.activity = MovementActivity::Resting;
-                outputs[index].progress = Some(progress);
-                units[index].position = movement_target;
-                units[index].target = None;
-                units[index].progress = outputs[index].progress.clone();
-                points[index].position = movement_target;
-                grid.move_point(index, unit.position, movement_target);
-                refresh_nearby_pool_slot_clearances(
-                    unit.position,
-                    movement_target,
-                    unit.radius,
-                    &slot_points,
-                    &slot_refs,
-                    &slot_grid,
-                    &mut pool_indexes,
-                    &units,
-                    &points,
-                    &grid,
-                    &assigned_slots,
-                    max_radius,
-                );
-                continue;
-            }
         }
-
-        let desired = movement_target - position;
-        let mut velocity = desired.try_normalize().unwrap_or(Vec2::ZERO) * speed * dt;
-        let reach = unit.radius + max_radius + 0.05 + max_step;
-        let neighbours = grid.within(&points, position, reach);
-        let mut near_same_group = false;
-        let mut separated = false;
-        for other_index in neighbours {
-            if other_index == index {
-                continue;
-            }
-            let other = &units[other_index];
-            let same_group = unit.owner_slot == other.owner_slot
-                && unit
-                    .progress
-                    .as_ref()
-                    .is_some_and(|state| state.pool_id == progress.pool_id)
-                && other
-                    .progress
-                    .as_ref()
-                    .is_some_and(|state| state.pool_id == progress.pool_id);
-            let other_moving_in_group = same_group && other.target.is_some();
-            if other_moving_in_group
-                && position.distance(other.position) < unit.radius + other.radius + 0.05
-            {
-                near_same_group = true;
-            }
-            if same_group && (!other_moving_in_group || progress.pass_mode) {
-                continue;
-            }
-            let offset = position - other.position;
-            let separation = offset.length();
-            let limit = unit.radius + other.radius + 0.05;
-            if separation > 1.0e-8 && separation < limit {
-                separated = true;
-                let push = (limit - separation) * offset / separation;
-                velocity += push;
-                if !same_group && offset.dot(desired) < 0.0 {
-                    let along = desired.try_normalize().unwrap_or(Vec2::X);
-                    velocity += Vec2::new(along.y, -along.x) * (limit - separation);
-                }
-            }
-        }
-        let velocity_len = velocity.length();
-        let step_limit = speed * dt;
-        if !separated && distance > step_limit {
-            position = step(
-                &MovementInput {
-                    position: unit.position,
-                    target: movement_target,
-                    speed,
-                },
-                dt,
-            )
-            .position;
-        } else {
-            if velocity_len > step_limit && velocity_len > 0.0 {
-                velocity *= step_limit / velocity_len;
-            }
-            position += velocity;
-        }
-
-        // Hard projection prevents footprint overlap. Units resolve in id order.
-        let broad_reach = unit.radius + max_radius + max_step;
-        #[cfg(feature = "test-probes")]
-        let mut was_projected = false;
-        for _ in 0..8 {
-            let mut projected = false;
-            for other_index in grid.within(&points, position, broad_reach) {
-                if other_index == index {
-                    continue;
-                }
-                let other = &units[other_index];
-                let same_group = unit.owner_slot == other.owner_slot
-                    && other
-                        .progress
-                        .as_ref()
-                        .is_some_and(|state| state.pool_id == progress.pool_id);
-                if same_group {
-                    continue;
-                }
-                let offset = position - other.position;
-                let separation = offset.length();
-                let limit = unit.radius + other.radius + 1.0e-4;
-                if separation < limit {
-                    let direction = if separation > 1.0e-8 {
-                        offset / separation
-                    } else if unit.unit_id < other.unit_id {
-                        Vec2::X
-                    } else {
-                        -Vec2::X
-                    };
-                    position += direction * (limit - separation);
-                    projected = true;
-                }
-            }
-            if !projected {
-                break;
-            }
-            #[cfg(feature = "test-probes")]
-            {
-                was_projected = true;
-            }
-        }
-        position.x = position
-            .x
-            .clamp(unit.radius, (frame.bounds.x - unit.radius).max(unit.radius));
-        position.y = position
-            .y
-            .clamp(unit.radius, (frame.bounds.y - unit.radius).max(unit.radius));
-        #[cfg(feature = "test-probes")]
-        {
-            outputs[index].probe.was_projected = Some(was_projected);
-        }
-
-        let next_distance = position.distance(movement_target);
-        if position == movement_target {
-            let occupied = grid
-                .within(&points, movement_target, unit.radius + max_radius)
-                .into_iter()
-                .any(|other_index| {
-                    let other = &units[other_index];
-                    other_index != index
-                        && movement_target.distance(other.position)
-                            < unit.radius + other.radius - 1.0e-5
-                });
-            if !occupied {
-                update_target_claims(&mut target_claims, unit.target, None);
-                outputs[index].position = movement_target;
-                outputs[index].target = None;
-                progress.activity = MovementActivity::Resting;
-                outputs[index].progress = Some(progress);
-                units[index].position = movement_target;
-                units[index].target = None;
-                units[index].progress = outputs[index].progress.clone();
-                points[index].position = movement_target;
-                grid.move_point(index, unit.position, movement_target);
-                refresh_nearby_pool_slot_clearances(
-                    unit.position,
-                    movement_target,
-                    unit.radius,
-                    &slot_points,
-                    &slot_refs,
-                    &slot_grid,
-                    &mut pool_indexes,
-                    &units,
-                    &points,
-                    &grid,
-                    &assigned_slots,
-                    max_radius,
-                );
-                continue;
-            }
-        }
-        let made_progress = next_distance < progress.best_distance - 0.01 * step_limit;
-        progress.stalling_on_group = near_same_group;
-        if made_progress {
-            progress.best_distance = next_distance;
-            progress.stalled_ticks = 0;
-        } else {
-            progress.stalled_ticks = progress.stalled_ticks.saturating_add(1);
-        }
-        let hz = frame.tick_hz.max(1);
-        if progress.stalled_ticks >= hz {
-            if progress.stalling_on_group && !progress.pass_mode {
-                progress.pass_mode = true;
-                progress.stalled_ticks = 0;
-                progress.best_distance = next_distance;
-            } else if progress.claim_count < 3 {
-                let old_slot_key = (
-                    progress.pool_id,
-                    progress.slot.x.to_bits(),
-                    progress.slot.y.to_bits(),
-                );
-                let spare = pool_indexes.get(&progress.pool_id).and_then(|pool_index| {
-                    pool_index.nearest_free(
-                        unit.unit_id,
-                        position,
-                        progress.pool_id,
-                        None,
-                        &assigned_slots,
-                        unit.radius,
-                        |slot| {
-                            let key = (progress.pool_id, slot.x.to_bits(), slot.y.to_bits());
-                            key != old_slot_key
-                                && grid
-                                    .within(&points, slot, unit.radius + max_radius)
-                                    .into_iter()
-                                    .all(|other_index| {
-                                        other_index == index
-                                            || slot.distance(units[other_index].position)
-                                                >= unit.radius + units[other_index].radius
-                                    })
-                        },
-                    )
-                });
-                if let Some(spare) = spare {
-                    if remove_pool_slot_claim(
-                        &mut slot_claim_counts,
-                        &mut pool_indexes,
-                        progress.pool_id,
-                        progress.slot,
-                    ) {
-                        assigned_slots.remove(&old_slot_key);
-                    }
-                    add_pool_slot_claim(
-                        &mut slot_claim_counts,
-                        &mut pool_indexes,
-                        progress.pool_id,
-                        spare,
-                    );
-                    assigned_slots.insert((progress.pool_id, spare.x.to_bits(), spare.y.to_bits()));
-                    movement_target = spare;
-                    progress.slot = spare;
-                    progress.claim_count += 1;
-                    progress.pass_mode = false;
-                    progress.stalled_ticks = 0;
-                    progress.best_distance = position.distance(movement_target);
-                } else {
-                    progress.activity = MovementActivity::Blocked;
-                    failed_blocked = true;
-                }
-            } else {
-                progress.activity = MovementActivity::Blocked;
-                failed_blocked = true;
-            }
-        }
-        #[cfg(feature = "test-probes")]
-        {
-            outputs[index].probe.separated = separated;
-        }
+        update_target_claims(&mut target_claims, unit.target, new_target);
         outputs[index].position = position;
-        outputs[index].target = (!failed_blocked).then_some(movement_target);
-        update_target_claims(&mut target_claims, unit.target, outputs[index].target);
+        outputs[index].target = new_target;
         outputs[index].failed_blocked = failed_blocked;
         if failed_blocked
             && body_overlaps_position(
@@ -1057,9 +935,9 @@ pub fn step_frame_preserving_resting(
         {
             outputs[index].physical_escape = Some(PhysicalEscape { target: None });
         }
-        outputs[index].progress = Some(progress);
+        outputs[index].progress = progress;
         units[index].position = position;
-        units[index].target = outputs[index].target;
+        units[index].target = new_target;
         units[index].progress = outputs[index].progress.clone();
         points[index].position = position;
         grid.move_point(index, unit.position, position);
