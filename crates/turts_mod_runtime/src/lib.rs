@@ -13,4 +13,5 @@ pub mod parse;
 pub mod resolve;
 pub mod visuals;
 
+mod raw_presence;
 mod version_table;

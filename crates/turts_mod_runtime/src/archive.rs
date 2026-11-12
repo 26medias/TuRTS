@@ -227,9 +227,15 @@ impl PackageArchive {
             catalog.orders.insert(id.clone(), order.clone());
             catalog.source_files.insert(id, file.clone());
         }
+        let raw = crate::raw_presence::RawDocuments::read(
+            &self.manifest,
+            crate::version_table::raw_groups(crate::version_table::VERSION_TABLE),
+            |path| self.file(path),
+        )?;
         crate::version_table::check_version_table(
             &self.manifest,
             &mc_content,
+            &raw,
             crate::version_table::VERSION_TABLE,
         )?;
         crate::content_m3::validate_m3_presence(&self.manifest, &self.files)?;
