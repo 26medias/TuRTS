@@ -46,7 +46,8 @@ PREPARE_TIME_FILES = [
 ]
 BUILD_INPUTS = SOURCE_ROOTS + PREPARE_TIME_FILES
 # The build environment that can change an output. An unset variable is a value (None).
-ENV_NAMES = ["RUSTFLAGS", "CARGO_ENCODED_RUSTFLAGS"]
+# T7_SCOUT_SPEED changes the packed acme copy of a T7 prepare step (scripts/t7.sh).
+ENV_NAMES = ["RUSTFLAGS", "CARGO_ENCODED_RUSTFLAGS", "T7_SCOUT_SPEED"]
 ENV_PREFIX = "CARGO_PROFILE_"
 TOOLS = {"rustc": ("rustc", "--version"), "cargo": ("cargo", "--version"), "trunk": ("trunk", "--version")}
 # Files and folders of the prepared folder that `seal` hashes.

@@ -9,6 +9,7 @@ const { createView } = require("./view.js");
 const { prepareSh1Lifecycle } = require("./sh1-lifecycle.js");
 const { createSceneCheckpoints } = require("./scene-checkpoints.js");
 const { waitForDebugRecord } = require("./wait-sync.js");
+const { silentEnv, SILENT_ARGS } = require("./silent-chrome.js");
 const { planFor, runM2Fixture } = require("./m2-ingest.js");
 const { firstClientError, assertNoClientErrorBeforeClose } = require("./client-error.js");
 const { seedStoredClientSettings, clientSettingsSeed, assertStoredClientSettings } = require("./client-settings-seed.js");
@@ -133,7 +134,7 @@ async function run(options) {
     const startupRafProbeEnabled = params.task16?.startup_raf_probe === true;
     if (["KM2", "CAM2"].includes(params.row)) await attachAcceptedP1Reference(options.outDir);
     const effectiveDpr = Number(params.device_scale_factor ?? options.deviceScaleFactor);
-    const baseChromeArgs = JSON.parse(process.env.MC_CHROME_ARGS_JSON || '["--enable-gpu","--use-angle=vulkan","--enable-features=Vulkan","--enable-unsafe-webgpu"]');
+    const baseChromeArgs = JSON.parse(process.env.MC_CHROME_ARGS_JSON || JSON.stringify([...SILENT_ARGS, "--enable-gpu", "--use-angle=vulkan", "--enable-features=Vulkan", "--enable-unsafe-webgpu"]));
     const chromeArgs = launchArgsForDpr(baseChromeArgs, effectiveDpr);
     const headless = process.env.MC_BROWSER_HEADED !== "1";
     const boundedRafSource = await fs.readFile(path.join(__dirname, "bounded-raf.js"));
@@ -152,7 +153,9 @@ async function run(options) {
     const browser = await chromium.launch({
         executablePath: process.env.CHROME_BIN || undefined,
         headless,
-        args: chromeArgs,
+        // The sound rule (CEO, 2026-11-12): the null ALSA device always, and the silent environment.
+        args: [...SILENT_ARGS.filter((arg) => !chromeArgs.includes(arg)), ...chromeArgs],
+        env: silentEnv(options.outDir),
         ignoreDefaultArgs: JSON.parse(process.env.MC_CHROME_IGNORE_DEFAULT_ARGS_JSON || '["--enable-unsafe-swiftshader"]'),
     });
     const pages = [];

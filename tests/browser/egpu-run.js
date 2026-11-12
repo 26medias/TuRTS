@@ -32,6 +32,7 @@ const os = require("node:os");
 const path = require("node:path");
 const { chromium } = require("playwright-core");
 const { summarize, judge } = require("./egpu-stats.js");
+const { silentEnv, SILENT_ARGS } = require("./harness/silent-chrome.js");
 
 const VIEW = { w: 1280, h: 720 };
 // tests/browser/rows/MM1.json: map_size [64, 48], minimap_inset 8, minimap_size 200.
@@ -140,7 +141,9 @@ async function run() {
     const browser = await chromium.launch({
         executablePath: process.env.CHROME_BIN || undefined,
         headless,
-        args: chromeArgs,
+        // The sound rule (CEO, 2026-11-12): the null ALSA device always, and the silent environment.
+        args: [...SILENT_ARGS.filter((arg) => !chromeArgs.includes(arg)), ...chromeArgs],
+        env: silentEnv(outDir),
         ignoreDefaultArgs: JSON.parse(process.env.MC_CHROME_IGNORE_DEFAULT_ARGS_JSON || '["--enable-unsafe-swiftshader"]'),
     });
     const events = [];

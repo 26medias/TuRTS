@@ -10,6 +10,9 @@ const http = require("node:http");
 const fs = require("node:fs");
 const path = require("node:path");
 const net = require("node:net");
+// The sound isolation of the CEO sound rule (2026-11-12): the null ALSA device as an argument and the silent
+// environment, from the shared helper. Added after the measurement; the figures came from the old file.
+const { silentEnv, SILENT_ARGS } = require(path.join(__dirname, "../../../../tests/browser/harness/silent-chrome.js"));
 const { spawn, spawnSync } = require("node:child_process");
 const { chromium } = require(process.env.PW_CORE || "/home/julien/Projects/TuRTS-mc-pacing-review/tests/browser/node_modules/playwright-core");
 
@@ -153,8 +156,8 @@ async function runPhase(name) {
             url = `http://127.0.0.1:${sPort}/probe.html?w=${v.w}&h=${v.h}&mode=${v.mode}&writes=${writes}`;
         }
         const args = JSON.parse(process.env.MC_CHROME_ARGS_JSON).filter((a) => !(v.dropArgs || []).includes(a));
-        out.chrome_args = args;
-        browser = await chromium.launch({ executablePath: "/usr/bin/google-chrome", headless: false, args,
+        out.chrome_args = [...SILENT_ARGS, ...args];
+        browser = await chromium.launch({ executablePath: "/usr/bin/google-chrome", headless: false, args: [...SILENT_ARGS, ...args], env: silentEnv(work),
             ignoreDefaultArgs: JSON.parse(process.env.MC_CHROME_IGNORE_DEFAULT_ARGS_JSON || '["--enable-unsafe-swiftshader"]') });
         const pages = [];
         for (let n = 0; n < v.pages; n += 1) {

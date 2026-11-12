@@ -5,6 +5,7 @@ from here. Sources: the pacing probes of branch `codex/mc-fix-pacing` (2026-11-1
 P-A of the pacing review (`target/mc-evidence/reviews/probe-a-gpu-thread.md` in the main
 worktree; outside the repository). Both probes and their raw output are in
 `docs/measurements/probes/mc-gpu-process/` with `SHA256SUMS`.
+Change after the measurement (CEO sound rule, 2026-11-12): `probe.js` and `probe-a.js` now always give Chrome `--alsa-output-device=null` and the silent environment (`tests/browser/harness/silent-chrome.js`), and `SHA256SUMS` holds the new sums. The figures below came from the files with the old sums: `probe.js` `c395df413c46dfab8ce36284f9b66c92cfd03995dc20f4c403056184a7049868`, `probe-a.js` `4e071efaf9e6f99be1027f9cfe732b162a6fbf5c6a05c9ff3d3fce9a3df57036`.
 
 ## Conclusion in plain words
 
