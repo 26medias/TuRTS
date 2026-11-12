@@ -1666,6 +1666,8 @@ mod raw_audit_capture_tests {
                     stage: JobStage::Running,
                     elapsed_ticks: 4,
                     duration_ticks: 19,
+                    held: false,
+                    held_since_tick: 0,
                     charged: vec![line(Endpoint::Slot(3), "probe:ore", 7)],
                     reservation: Some(Reservation {
                         job_id: JobId(99),
@@ -1678,6 +1680,8 @@ mod raw_audit_capture_tests {
                     stage: JobStage::OutputBlocked,
                     elapsed_ticks: 19,
                     duration_ticks: 19,
+                    held: false,
+                    held_since_tick: 0,
                     charged: vec![],
                     reservation: Some(Reservation {
                         job_id: JobId(12),
@@ -1695,6 +1699,8 @@ mod raw_audit_capture_tests {
                 stage: JobStage::Queued,
                 elapsed_ticks: 0,
                 duration_ticks: 3,
+                held: false,
+                held_since_tick: 0,
                 charged: vec![],
                 reservation: None,
             }],
@@ -1749,6 +1755,8 @@ mod raw_audit_capture_tests {
                 stage: JobStage::Queued,
                 elapsed_ticks: 0,
                 duration_ticks: 5,
+                held: false,
+                held_since_tick: 0,
                 charged: vec![line(Endpoint::Slot(0), "probe:ore", 2)],
                 reservation: Some(Reservation {
                     job_id: JobId(1),

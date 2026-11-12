@@ -311,6 +311,8 @@ fn start_job(
         stage: JobStage::Running,
         elapsed_ticks: 0,
         duration_ticks,
+        held: false,
+        held_since_tick: 0,
         charged: charged.clone(),
         reservation: None,
     });

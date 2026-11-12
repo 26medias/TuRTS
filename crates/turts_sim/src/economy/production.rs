@@ -30,7 +30,21 @@ pub(crate) struct ProductionJob {
     pub(crate) duration_ticks: u64,
     pub(crate) charged: Vec<ReservationLine>,
     pub(crate) reservation: Option<Reservation>,
+    /// The job could not pay in full at some tick and has not paid in full on every tick for
+    /// `HOLD_CLEAR_MS` since (design 6.4, erratum E21, ruling R-Y). The shape only: `L-PAY`
+    /// writes and reads it. It stays false until then.
+    #[allow(dead_code)]
+    pub(crate) held: bool,
+    /// The first tick of the hold; 0 while `held` is false (`L-PAY`).
+    #[allow(dead_code)]
+    pub(crate) held_since_tick: u32,
 }
+
+/// The time of unbroken full payment after which a hold clears: 1,000 ms (20 ticks at 20 Hz).
+/// An engine constant, not a mod field (erratum E21, ruling R-Y). The shape only: `L-PAY` uses
+/// it.
+#[allow(dead_code)]
+pub(crate) const HOLD_CLEAR_MS: u32 = 1_000;
 #[derive(Resource, Debug, Clone, Default, PartialEq, Eq)]
 pub(crate) struct ProductionQueues(pub(crate) BTreeMap<u32, Vec<ProductionJob>>);
 
@@ -130,6 +144,8 @@ pub fn queue_production(
             stage: JobStage::Queued,
             elapsed_ticks: 0,
             duration_ticks,
+            held: false,
+            held_since_tick: 0,
             charged,
             reservation,
         });
@@ -703,6 +719,8 @@ mod m3_disabled_legacy_producer_tests {
                 stage: JobStage::Running,
                 elapsed_ticks: elapsed,
                 duration_ticks: duration,
+                held: false,
+                held_since_tick: 0,
                 charged: vec![],
                 reservation: None,
             }],
@@ -853,6 +871,20 @@ mod m3_disabled_legacy_producer_tests {
             try_output(indexed.world_mut(), 7, JobId(1)),
             Err(RejectReason::UnknownUnit),
             "try_output scanned for the producer"
+        );
+    }
+
+    #[test]
+    fn a_job_starts_with_no_hold_and_the_hold_clear_time_is_one_second() {
+        // The shape of erratum E21: lane 0 gives the fields and the constant; `L-PAY` writes them.
+        let app = producer_app(0, 100);
+        let job = &app.world().resource::<ProductionQueues>().0[&7][0];
+        assert!(!job.held);
+        assert_eq!(job.held_since_tick, 0);
+        assert_eq!(HOLD_CLEAR_MS, 1_000);
+        assert_eq!(
+            crate::boot_m3::try_ms_to_ticks(u64::from(HOLD_CLEAR_MS), 20),
+            Some(20)
         );
     }
 }

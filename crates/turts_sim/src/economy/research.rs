@@ -149,6 +149,8 @@ pub(crate) fn queue_research(
             stage: JobStage::Queued,
             elapsed_ticks: 0,
             duration_ticks,
+            held: false,
+            held_since_tick: 0,
             charged,
             reservation,
         });
@@ -827,6 +829,8 @@ mod tests {
                 stage: crate::economy::production::JobStage::Queued,
                 elapsed_ticks: 0,
                 duration_ticks: 200,
+                held: false,
+                held_since_tick: 0,
                 charged: vec![],
                 reservation: None,
             });
