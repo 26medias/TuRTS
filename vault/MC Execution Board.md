@@ -3916,3 +3916,17 @@ A headed run ended at about 20:40 local, but its `Xvfb :99` (pid 702589, parent 
 Retired after merge and push (worktree and cache removed; 136 GiB freed, 389 GiB free): TuRTS-mc-t21 (its target/m2-browser run folders, 1,116 files, are copied to target/mc-evidence/t21-lane-retired-20261111), -t21-pt1, -t21-review, -t22, -t22-review, -ux-review, -fix-ux. New worktrees: TuRTS-mc-play (the CEO play build, at the integration head) and TuRTS-mp1 (branch mp1-design, MP1 design work).
 
 The CEO does not play tonight. Root leaves play instructions in vault/Reports/2026-11-12 MC play instructions for the CEO.md and starts MP1 (runs 136 to 140).
+
+### MP1 and the pre-MP1 slice started (2026-11-11, late evening)
+
+The CEO ordered: do not wait; start MP1 so that the project progresses round the clock. Work is on branch `mp1-design` (worktree TuRTS-mp1), from the integration branch. MP1 runs are counted separately from the MC ledger from here (prefix P for the slice, M for MP1 inputs).
+
+- MP1 inputs (runs 136 to 140): producer, ux-designer, game-designer, technical-director are in and committed under docs/research/mp1/ (commit 5968a5e on mp1-design); bevy-rendering-engineer still at work.
+- Pre-MP1 slice design draft: docs/superpowers/specs/2026-11-12-pre-mp1-slice-design.md (parts S1 to S5 pure moves, A1 audit crate, A2 one movement model with the one re-freeze, A4, A3).
+- P1: slice gate, qa-lead lens (fault sets with the replay validator disabled; the re-freeze classifier; the pure-move proof).
+- P2: slice gate, simulation-core-engineer lens (a native probe of the plain path against the pooled path; the grid property test).
+- P3: lane S1, backend-engineer, branch pre-mp1/s1-audit: the `turts_audit` crate, pure move.
+- P4: lanes S4 and S5, bevy-rendering-engineer, branch pre-mp1/s45-client: client file splits, pure moves.
+- S2 and S3 (orders.rs, movement.rs) wait for the merge of codex/mc-fix-deplete.
+
+CEO play attempt, 2026-11-11: the game stopped with "Unable to find a GPU" in the CEO's Chrome, because Chrome on Linux has WebGPU off by default. The instructions now give the Chrome command with the WebGPU flags. A plain no-GPU page is an MP1 task.
