@@ -1,0 +1,118 @@
+[
+  {
+    "row": "DBG1",
+    "plant": "a",
+    "files": [
+      {
+        "file": "crates/turts_client/src/replica.rs",
+        "edit": {
+          "old": "            if history.len() > HEALTH_TRACE_WINDOW {\n                history.drain(..history.len() - HEALTH_TRACE_WINDOW);\n            }\n",
+          "new": "            history.clear();\n"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_client",
+      "--locked",
+      "--test",
+      "alerts",
+      "own_unit_destroyed_fires_after_a_long_fight_with_a_bounded_trace",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "OwnUnitDestroyed reads the last trace entry of the gone unit",
+    "exit": 101,
+    "commit": "a6781b9",
+    "expected_selected": "own_unit_destroyed_fires_after_a_long_fight_with_a_bounded_trace"
+  },
+  {
+    "row": "DBG1",
+    "plant": "b",
+    "files": [
+      {
+        "file": "crates/turts_client/src/lib.rs",
+        "edit": {
+          "old": "            (rebuild_debug_state.run_if(debug_build_due), exit_when_done).chain(),\n",
+          "new": "            (rebuild_debug_state, exit_when_done).chain(),\n"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_client",
+      "--locked",
+      "--test",
+      "debug_request",
+      "dbg1_a_client_with_no_request_builds_no_debug_state",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "debug builds with no request in 100 frames",
+    "exit": 101,
+    "commit": "a6781b9",
+    "expected_selected": "dbg1_a_client_with_no_request_builds_no_debug_state"
+  },
+  {
+    "row": "DBG1",
+    "plant": "c",
+    "files": [
+      {
+        "file": "crates/turts_client/src/replica.rs",
+        "edit": {
+          "old": "            if history.len() > HEALTH_TRACE_WINDOW {\n                history.drain(..history.len() - HEALTH_TRACE_WINDOW);\n            }\n",
+          "new": "            // plant: the trace has no window\n"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_client",
+      "--locked",
+      "--test",
+      "replica_m3",
+      "health_trace_keeps_the_newest_64_entries_for_each_unit",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "trace entries of the busy unit",
+    "exit": 101,
+    "commit": "a6781b9",
+    "expected_selected": "health_trace_keeps_the_newest_64_entries_for_each_unit"
+  },
+  {
+    "row": "DBG1",
+    "plant": "d",
+    "files": [
+      {
+        "file": "tests/browser/harness/view.js",
+        "edit": {
+          "old": "                if (bridge === \"turts_debug\" && typeof window.turts_debug_request === \"function\") {\n                    return window.turts_debug_request();\n                }\n",
+          "new": ""
+        }
+      }
+    ],
+    "command": [
+      "node",
+      "--test",
+      "tests/browser/harness/debug-request.test.js"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "record: 'stale'",
+    "exit": 1,
+    "commit": "a6781b9"
+  }
+]

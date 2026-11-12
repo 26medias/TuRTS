@@ -1,8 +1,9 @@
 //! Debug hooks.
 //!
 //! `debug_json` describes the client for a test: the phase, the presented units with the shape
-//! from the downloaded visuals, and the last frame. The browser page reads it through
-//! `window.turts_debug` (Task 11). The `--out` report embeds it.
+//! from the downloaded visuals, and the last frame. The browser page asks for it through
+//! `window.turts_debug_request` and reads it through `window.turts_debug` (Task 11, L0-DBG). The
+//! client builds it only for a request ([`DebugRequest`]). The `--out` report embeds it.
 
 use std::collections::BTreeMap;
 use std::num::NonZeroU8;
