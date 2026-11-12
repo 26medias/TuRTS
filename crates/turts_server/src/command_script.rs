@@ -42,7 +42,9 @@ pub fn install(app: &mut App, path: Option<&Path>) -> Result<(), String> {
     app.insert_resource(Script(by_tick));
     app.add_systems(
         FixedPreUpdate,
-        apply_script.after(SimSet::Advance).before(SimSet::Commands),
+        apply_script
+            .after(SimSet::Construction)
+            .before(SimSet::Commands),
     );
     Ok(())
 }
@@ -80,6 +82,23 @@ mod tests {
         tick: u32,
         slot: u8,
         envelope: &'a OrderEnvelope,
+    }
+
+    #[test]
+    fn the_script_system_is_ordered_against_every_set_before_the_commands() {
+        let path = std::env::temp_dir().join(format!(
+            "turts_command_script_order_{}_{}.json",
+            std::process::id(),
+            std::thread::current().name().unwrap_or("test")
+        ));
+        fs::write(&path, b"[]").unwrap();
+        let mut app = App::new();
+        app.add_plugins(bevy::time::TimePlugin)
+            .add_plugins(turts_sim::SimPlugin { tick_hz: 20 })
+            .insert_resource(turts_sim::MatchConfig::immediate(20));
+        install(&mut app, Some(&path)).unwrap();
+        crate::session::assert_fixed_pre_update_is_totally_ordered(app);
+        fs::remove_file(path).unwrap();
     }
 
     #[test]

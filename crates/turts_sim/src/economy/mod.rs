@@ -11,6 +11,7 @@ pub mod ledger;
 pub mod machine;
 pub mod power;
 pub mod production;
+pub mod repair;
 pub mod research;
 pub mod transaction;
 pub mod views;

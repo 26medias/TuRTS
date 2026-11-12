@@ -29,21 +29,28 @@ use crate::{
     ids::IdAllocators,
 };
 
-/// The sets of the fixed step, in the order in which they run inside one tick:
+/// The sets of the fixed step, in the order in which they run inside one tick (design 6.2, 6.4,
+/// 6.7.8; the ruling `ruling-l0-sim-order.md`):
 ///
-/// `FixedPreUpdate`: `Advance`, `Commands`. `FixedUpdate`: `Supply`, `Income`, `Orders`,
-/// `Movement`, `Gather`, `Extract`, `Transport`, `Inserters`, `Construction`, `Production`,
-/// `Acquire`, `Combat`, `Outcome`. `FixedPostUpdate`: `Collect`.
+/// `FixedPreUpdate`: `Advance`, `Supply`, `Construction`, `Commands`. `FixedUpdate`: `Income`,
+/// `Orders`, `Movement`, `Gather`, `Extract`, `Transport`, `Inserters`, `Production`, `Acquire`,
+/// `Repair`, `Combat`, `Outcome`. `FixedPostUpdate`: `Collect`.
 ///
-/// `Supply`, `Income`, `Construction`, `Acquire` and `Outcome` are the system slots of plan task
-/// `L0-SIM`: each holds one empty system until its lane fills it, and the order above is pinned
-/// by the test `the_sets_of_one_tick_run_in_the_pinned_order`. Every set has the run condition
-/// `match_started`: with no sim `MatchConfig`, no sim system runs and the tick does not advance.
+/// `Supply` runs before the commands, so a removal in tick t counts from tick t+1. `Construction`
+/// places the held orders before the commands. `Production` is the one pay pass (producers and
+/// sites, ascending unit id). `Supply`, `Income`, `Construction`, `Acquire`, `Repair` and
+/// `Outcome` are the system slots of plan task `L0-SIM`: each holds one empty system until its
+/// lane fills it, and the order above is pinned by the test
+/// `the_sets_of_one_tick_run_in_the_pinned_order`. A system that must run between `Advance` and
+/// `Commands` (the admission systems of the server) goes `.after(SimSet::Construction)`. Every
+/// set has the run condition `match_started`: with no sim `MatchConfig`, no sim system runs and
+/// the tick does not advance.
 #[derive(SystemSet, Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum SimSet {
     Advance,
-    Commands,
     Supply,
+    Construction,
+    Commands,
     Income,
     Orders,
     Movement,
@@ -51,9 +58,9 @@ pub enum SimSet {
     Extract,
     Transport,
     Inserters,
-    Construction,
     Production,
     Acquire,
+    Repair,
     Combat,
     Outcome,
     Collect,
@@ -110,14 +117,18 @@ impl Plugin for SimPlugin {
             })
             .configure_sets(
                 FixedPreUpdate,
-                (SimSet::Advance, SimSet::Commands)
+                (
+                    SimSet::Advance,
+                    SimSet::Supply,
+                    SimSet::Construction,
+                    SimSet::Commands,
+                )
                     .chain()
                     .run_if(match_started),
             )
             .configure_sets(
                 FixedUpdate,
                 (
-                    SimSet::Supply,
                     SimSet::Income,
                     SimSet::Orders,
                     SimSet::Movement,
@@ -125,9 +136,9 @@ impl Plugin for SimPlugin {
                     SimSet::Extract,
                     SimSet::Transport,
                     SimSet::Inserters,
-                    SimSet::Construction,
                     SimSet::Production,
                     SimSet::Acquire,
+                    SimSet::Repair,
                     SimSet::Combat,
                     SimSet::Outcome,
                 )
@@ -147,7 +158,7 @@ impl Plugin for SimPlugin {
                 drain_commands.in_set(SimSet::Commands).after(advance_tick),
             )
             .add_systems(
-                FixedUpdate,
+                FixedPreUpdate,
                 crate::economy::power::run_supply
                     .in_set(SimSet::Supply)
                     .run_if(not_stopped),
@@ -159,7 +170,7 @@ impl Plugin for SimPlugin {
                     .run_if(not_stopped),
             )
             .add_systems(
-                FixedUpdate,
+                FixedPreUpdate,
                 crate::economy::construction::run_construction
                     .in_set(SimSet::Construction)
                     .run_if(not_stopped),
@@ -168,6 +179,12 @@ impl Plugin for SimPlugin {
                 FixedUpdate,
                 crate::economy::acquire::run_acquire
                     .in_set(SimSet::Acquire)
+                    .run_if(not_stopped),
+            )
+            .add_systems(
+                FixedUpdate,
+                crate::economy::repair::run_repair
+                    .in_set(SimSet::Repair)
                     .run_if(not_stopped),
             )
             .add_systems(
@@ -315,16 +332,21 @@ mod tests {
     #[derive(Resource, Default)]
     struct Ran(Vec<SimSet>);
 
-    /// The order of the sets inside one tick (design 6.2, 6.7.8; plan task `L0-SIM`). Two
-    /// parallel lanes that put a system in a slot depend on this list, so the test pins it.
-    /// `Supply` is the first set of the economy phase, before every removal path of the tick.
-    /// `Income` pays before any charge. `Construction` sits beside `Production`. `Acquire`
-    /// builds the grids right before `Combat`. `Outcome` runs after the death path of `Combat`
-    /// and before `Collect`.
-    const TICK_ORDER: [SimSet; 16] = [
+    /// The order of the sets inside one tick (design 6.2, 6.7.8; plan task `L0-SIM`; ruling
+    /// `ruling-l0-sim-order.md`). Parallel lanes that put a system in a slot depend on this
+    /// list, so the test pins it.
+    /// `Supply` is the first set after the tick advance: a removal in tick t counts from tick
+    /// t+1 (6.2). `Construction` places the held orders before the commands, so a cap freed in
+    /// tick t is free for the placement of tick t+1. `Income` is the first set of the economy
+    /// phase: it pays after the commands of the tick and before every per-tick charge.
+    /// `Production` is the one pay pass, over producers and sites in ascending unit id.
+    /// `Acquire` builds the grids, `Repair` heals before `Combat` damages, and `Outcome` runs
+    /// after the death path of `Combat` and before `Collect`.
+    const TICK_ORDER: [SimSet; 17] = [
         SimSet::Advance,
-        SimSet::Commands,
         SimSet::Supply,
+        SimSet::Construction,
+        SimSet::Commands,
         SimSet::Income,
         SimSet::Orders,
         SimSet::Movement,
@@ -332,9 +354,9 @@ mod tests {
         SimSet::Extract,
         SimSet::Transport,
         SimSet::Inserters,
-        SimSet::Construction,
         SimSet::Production,
         SimSet::Acquire,
+        SimSet::Repair,
         SimSet::Combat,
         SimSet::Outcome,
         SimSet::Collect,
@@ -343,7 +365,7 @@ mod tests {
     fn mark(app: &mut App, set: SimSet) {
         let system = move |mut ran: ResMut<Ran>| ran.0.push(set);
         match set {
-            SimSet::Advance | SimSet::Commands => {
+            SimSet::Advance | SimSet::Supply | SimSet::Construction | SimSet::Commands => {
                 app.add_systems(FixedPreUpdate, system.in_set(set));
             }
             SimSet::Collect => {
@@ -369,26 +391,35 @@ mod tests {
     }
 
     #[test]
-    fn each_slot_set_holds_a_system_in_the_fixed_update_schedule() {
-        use bevy_ecs::schedule::SystemSet as _;
+    fn each_slot_set_holds_a_system_in_its_schedule() {
+        use bevy_ecs::schedule::{ScheduleLabel, SystemSet as _};
         let mut app = headless_app(20);
         app.update();
         let schedules = app.world().resource::<bevy_ecs::schedule::Schedules>();
-        let schedule = schedules.get(FixedUpdate).expect("FixedUpdate exists");
         // One system at least: the empty system of the slot, or the system of the lane that
         // filled it. A lane that fills a slot may add more, so the test does not pin the count.
-        for slot in [
-            SimSet::Supply,
-            SimSet::Income,
-            SimSet::Construction,
-            SimSet::Acquire,
-            SimSet::Outcome,
-        ] {
+        // `Supply` and `Construction` run before the commands, so they are in `FixedPreUpdate`.
+        let slots: [(SimSet, bevy_ecs::intern::Interned<dyn ScheduleLabel>); 7] = [
+            (SimSet::Supply, FixedPreUpdate.intern()),
+            (SimSet::Construction, FixedPreUpdate.intern()),
+            (SimSet::Income, FixedUpdate.intern()),
+            (SimSet::Acquire, FixedUpdate.intern()),
+            (SimSet::Repair, FixedUpdate.intern()),
+            (SimSet::Outcome, FixedUpdate.intern()),
+            (SimSet::Collect, FixedPostUpdate.intern()),
+        ];
+        for (slot, label) in slots {
+            let schedule = schedules
+                .get(label)
+                .unwrap_or_else(|| panic!("{slot:?}: no schedule {label:?}"));
             let systems = schedule
                 .graph()
                 .systems_in_set(slot.intern())
-                .unwrap_or_else(|error| panic!("{slot:?}: {error:?}"));
-            assert!(!systems.is_empty(), "the slot {slot:?} holds no system");
+                .unwrap_or_else(|error| panic!("{slot:?} in {label:?}: {error:?}"));
+            assert!(
+                !systems.is_empty(),
+                "the slot {slot:?} holds no system in {label:?}"
+            );
         }
     }
 }

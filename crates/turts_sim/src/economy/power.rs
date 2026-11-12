@@ -16,9 +16,9 @@
 use bevy_ecs::world::World;
 use turts_rules::Ratio;
 
-/// The system slot of the supply computation: the first set of the economy phase (it runs
-/// before every removal path of the tick, so a removal in tick t counts at tick t+1, design
-/// 6.2). Empty until `L-PWR`.
+/// The system slot of the supply computation: the first set after the tick advance, in
+/// `FixedPreUpdate` before the commands (it runs before every removal path of the tick, so a
+/// removal in tick t counts at tick t+1, design 6.2). Empty until `L-PWR`.
 pub(crate) fn run_supply() {}
 
 /// False when the weapon of `unit` is disabled by a supply shortage: it neither fires nor
