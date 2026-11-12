@@ -509,7 +509,14 @@ fn weapon_state(row: &RawWeaponAudit, tick: u32, view: &WorldView) -> wire::Weap
     wire::WeaponRecord {
         unit: messages::UnitId(row.unit),
         enabled: row.enabled,
-        ready_tick: tick.saturating_add(row.cooldown),
+        // A weapon that is ready has no ready tick: it is written as 0, a fixed value. `tick +
+        // 0` would be the tick of the write, so a client that joined at tick N (a Snapshot)
+        // and a client that followed the deltas would hold different records.
+        ready_tick: if row.cooldown == 0 {
+            0
+        } else {
+            tick.saturating_add(row.cooldown)
+        },
         damage: row.effective_damage.map_err(command_reject_reason),
         status: match row.status {
             S::Ready => wire::WeaponStatus::Ready,

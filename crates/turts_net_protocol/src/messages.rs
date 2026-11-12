@@ -362,8 +362,11 @@ pub struct WeaponRecord {
     pub enabled: bool,
     /// The tick at which the weapon is ready to fire (design 6.8). It replaces `cooldown`, which
     /// changed in every tick. The ticks left are `turts_rules::progress::cooldown_left`. The
-    /// server sends the record only when a field changes; it never sends `Cooling`, because the
-    /// client derives cooling from `ready_tick` and the tick of the last applied delta.
+    /// server sends the record only when a field changes. It is 0 for a weapon that is ready
+    /// (cooldown 0), so a Snapshot and a chain of deltas give the same record. The server sends
+    /// `Cooling` (the status of a weapon that waits for `ready_tick`) and the other statuses as
+    /// the sim has them; the client may derive cooling from `ready_tick` and the tick of the
+    /// last applied delta.
     pub ready_tick: u32,
     pub damage: Result<u64, CommandRejectReason>,
     pub status: WeaponStatus,

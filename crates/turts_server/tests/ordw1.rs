@@ -576,3 +576,158 @@ fn a_cooldown_countdown_is_not_a_weapon_change() {
         "a held cooldown is a change"
     );
 }
+
+/// The export filter writes `None` for a target that is not in the view, so a strict client never
+/// stalls, whatever the sim holds. That would hide a sim defect (the combat-fixes stall: the sim
+/// kept `last_target` for an ordered attacker). This test reads the SIM state that the export
+/// receives, and fails when a weapon row names a unit that is not in the committed world, so the
+/// filter cannot mask it. It runs a real ordered attack through a kill (trooper 40 at dummy 46,
+/// the MM1 pair). Plant (11): the sim clear reverted, the export filter left in place.
+#[test]
+fn the_sim_never_hands_the_export_a_weapon_that_names_a_missing_unit() {
+    let mut app = muster_app();
+    let attacker = 40u32;
+    let target = 46u32;
+    app.world_mut()
+        .resource_mut::<CommandQueue>()
+        .0
+        .push_back(Command {
+            slot: SlotId(0),
+            seq: 1,
+            kind: CommandKind::Order(Box::new(turts_sim::OrderCommand {
+                order: turts_mod_api::ContentId::parse("muster:order_attack").unwrap(),
+                behaviour: turts_mod_api::Behaviour::Attack,
+                target_kind: turts_mod_api::TargetKind::Unit,
+                policy: None,
+                units: vec![attacker],
+                target: turts_sim::OrderTargetSim::Unit(target),
+                queue: turts_sim::QueueMode::Replace,
+                group: 0,
+                allowed_units: vec!["muster:trooper".into()],
+                queue_depth: 16,
+            })),
+        });
+    let mut killed_at = None;
+    for tick in 1..=1200u32 {
+        let (delta, batch, view) = step(&mut app, 0);
+        for row in &view.m3.raw_weapons {
+            if let Some(named) = row.last_target {
+                assert!(
+                    export::unit_exists(&view, named),
+                    "tick {tick}: the sim hands the export the weapon of unit {} that names the missing unit {named}",
+                    row.unit
+                );
+            }
+        }
+        // The wire never names it either (the export filter and the resend, design 6.8).
+        for record in &delta.weapons {
+            assert!(
+                record
+                    .last_target
+                    .is_none_or(|named| export::unit_exists(&view, named.0)),
+                "tick {tick}: the wire names a missing unit"
+            );
+        }
+        if batch.removed.contains(&target) {
+            killed_at = Some(tick);
+        }
+        if killed_at.is_some_and(|at| tick > at + 40) {
+            break;
+        }
+    }
+    assert!(killed_at.is_some(), "the ordered attack kills the dummy");
+}
+
+/// A client that joins at tick N (a Snapshot) and a client that followed every delta hold the
+/// same tables (design 6.8, 6.7.12): orders, weapons and, as far as the lane-0 writers write
+/// them, the other records. A weapon with a cooldown of 0 is written with `ready_tick` 0, not
+/// with the tick of the write, so the two tables are equal as records and not only as derived
+/// ticks left. Plant (12): `tick + cooldown` for every weapon.
+#[test]
+fn a_snapshot_at_tick_n_equals_the_tables_built_from_the_deltas() {
+    let mut app = muster_app();
+    let positions: Vec<Vec2> = (0..12)
+        .map(|i| Vec2::new(51.0 + (i % 4) as f32 * 0.9, 31.0 + (i / 4) as f32 * 0.9))
+        .collect();
+    spawn_troopers(&mut app, &positions);
+    initialize_completed_world(app.world_mut());
+    let view = completed_world(app.world()).clone();
+    let mover = view
+        .units
+        .iter()
+        .find(|unit| unit.content_id == "muster:trooper" && unit.owner_slot == 0)
+        .unwrap()
+        .clone();
+    app.world_mut()
+        .resource_mut::<CommandQueue>()
+        .0
+        .push_back(Command {
+            slot: SlotId(0),
+            seq: 1,
+            kind: CommandKind::MoveTo {
+                unit_ids: vec![mover.unit_id],
+                target: Vec2::new(mover.pos.x, mover.pos.y - 6.0),
+            },
+        });
+    // The client that follows the deltas starts from the Snapshot of tick 0.
+    let first = export::snapshot_for(&view, SlotId(0));
+    let mut weapons: BTreeMap<u32, wire::WeaponRecord> = first
+        .weapons
+        .iter()
+        .map(|r| (r.unit.0, r.clone()))
+        .collect();
+    let mut orders: BTreeMap<u32, wire::UnitOrderRecord> = first
+        .unit_orders
+        .iter()
+        .map(|r| (r.unit.0, r.clone()))
+        .collect();
+    let mut compared = 0;
+    for tick in 1..=120u32 {
+        let (delta, _, view) = step(&mut app, 0);
+        for unit in &delta.removed {
+            weapons.remove(&unit.0);
+            orders.remove(&unit.0);
+        }
+        for record in &delta.weapons {
+            weapons.insert(record.unit.0, record.clone());
+        }
+        for cleared in &delta.records.orders_cleared {
+            orders.remove(&cleared.0);
+        }
+        for record in &delta.unit_orders {
+            orders.insert(record.unit.0, record.clone());
+        }
+        let snapshot = export::snapshot_for(&view, SlotId(0));
+        let snap_weapons: BTreeMap<u32, wire::WeaponRecord> = snapshot
+            .weapons
+            .iter()
+            .map(|r| (r.unit.0, r.clone()))
+            .collect();
+        let snap_orders: BTreeMap<u32, wire::UnitOrderRecord> = snapshot
+            .unit_orders
+            .iter()
+            .map(|r| (r.unit.0, r.clone()))
+            .collect();
+        assert_eq!(
+            weapons, snap_weapons,
+            "tick {tick}: the weapon tables differ"
+        );
+        assert_eq!(orders, snap_orders, "tick {tick}: the order tables differ");
+        // The other records have no sim writer in lane 0: the Snapshot form is empty and the
+        // delta form is empty, so the tables are equal. The test fails when a writer starts to
+        // write one of them without a Snapshot form.
+        assert!(
+            delta.records.sites.is_empty()
+                && delta.records.jobs.is_empty()
+                && delta.records.construction_queues.is_empty()
+                && delta.records.supply.is_empty()
+                && snapshot.records.sites.is_empty()
+                && snapshot.records.jobs.is_empty()
+                && snapshot.records.construction_queues.is_empty()
+                && snapshot.records.supply.is_empty(),
+            "tick {tick}: a new record has a writer: add its Snapshot form and its equality check"
+        );
+        compared += 1;
+    }
+    assert_eq!(compared, 120);
+}
