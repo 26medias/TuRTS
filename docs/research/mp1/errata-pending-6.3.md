@@ -186,3 +186,10 @@ Probe 2, the HUD change counter on today's tree (forge HUD, 108 widget entities,
 - Ruling (orchestrator, as the reviewer proposes): the default debug request keeps the 4 Hz cap; `min_interval_ms` 0 is a legal test-only form for the SH1 per-frame phase capture. Erratum for row DBG1: "With a request, the rate is at most 4 Hz; a harness can pass `min_interval_ms` 0 for a per-frame capture (SH1 only, test-only)."
 - Old reds at the base 51f1223, not from this task: ORD3 (same message), SH1 run 1 ("Execution context was destroyed"), SLOT1.
 - Wrapper note: a v4 headed caller bypasses the v6 ticket queue. Every lane must use v6.
+
+## The M2/M3 trace hashes on the MP1 branch (orchestrator ruling, 2026-11-12)
+
+- Fact (from the L0-SIM second repair; `repair2-l0-sim-report.md`): line 1 of each trace file is a header with `emitter_sha256`, the sha256 of `crates/turts_pack/tests/m2_trace.rs`. `L0-API1` (967a786) added five match arms to that file, so on `mp1/integration` since that merge the four whole-file trace hashes differ from the recorded slice values, while every line after line 1 is byte-equal. The frozen stream `tests/m3/m2_operation_stream.json` (bcbf72c2…) and the `probe_neutral` values are unchanged.
+- Ruling: this is not a re-freeze. On the MP1 branch the "no behaviour change" rule compares the trace body (all lines after line 1) with the body of the recorded traces; the header is reported, not compared. The body hashes get recorded at the next merge gate. On the slice branch the whole-file hashes stay the rule.
+- Owed (owner `qa-lead`, before the slice merges forward again and before Q2): the classifier pins the emitter sha256 (`tests/m3/refreeze_classify.py:585-616`); reconcile that pin with the MP1 emitter file, with a stated reason, in the forward merge.
+- Also from that pass: a rate that Q does not divide is a panic that cites design 6.4 (the packer refuses such a Q). An integrity stop with a diagnostic would need a new `StopReason` and a wire change: owner `L-PWR`, as an open item. `scripts/acceptance.sh` failed 3 of 4 runs at three different steps under host load 10 to 14 (cause beyond load NOT TRACED).
