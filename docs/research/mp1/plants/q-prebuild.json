@@ -1,0 +1,306 @@
+[
+  {
+    "row": "Q-PREBUILD",
+    "plant": "p01: the stale check call is removed from mc-browser.sh (a prepared run never compares the folder with the source). Red tests: test_changed_artefact_is_refused, test_folder_without_manifest_is_refused, test_head_change_is_refused, test_new_untracked_source_file_is_refused, test_package_change_is_refused, test_pixels_stale_folder_stops_at_once_with_exit_66, test_prepared_for_another_package_is_refused, test_source_edit_after_prepare_is_refused",
+    "files": [
+      {
+        "file": "scripts/mc-browser.sh",
+        "edit": {
+          "old": "    python3 -B \"$ROOT/scripts/mc_prepare.py\" \"${check_args[@]}\" || exit $?\n",
+          "new": "    true\n"
+        }
+      }
+    ],
+    "command": "python3 -B tests/qa/test_mc_prepare.py",
+    "env": {},
+    "headed": false,
+    "expected_red": "AssertionError: 1 != 66",
+    "exit": 1,
+    "commit": "b7ec38f3e2da64c9f87bb4c54c0aa280a8273ccc"
+  },
+  {
+    "row": "Q-PREBUILD",
+    "plant": "p02: the HEAD compare is removed from the stale check. Red tests: test_head_change_is_refused",
+    "files": [
+      {
+        "file": "scripts/mc_prepare.py",
+        "edit": {
+          "old": "    if manifest[\"head\"] != now[\"head\"]:",
+          "new": "    if False:"
+        }
+      }
+    ],
+    "command": "python3 -B tests/qa/test_mc_prepare.py",
+    "env": {},
+    "headed": false,
+    "expected_red": "AssertionError: a stale prepared run started its services: mc_prepare: OK",
+    "exit": 1,
+    "commit": "b7ec38f3e2da64c9f87bb4c54c0aa280a8273ccc"
+  },
+  {
+    "row": "Q-PREBUILD",
+    "plant": "p03: the build-source compare is removed from the stale check. Red tests: test_new_untracked_source_file_is_refused, test_pixels_stale_folder_stops_at_once_with_exit_66, test_source_edit_after_prepare_is_refused, test_t7_stale_folder_is_refused",
+    "files": [
+      {
+        "file": "scripts/mc_prepare.py",
+        "edit": {
+          "old": "    if manifest[\"source_sha256\"] != now[\"source_sha256\"]:",
+          "new": "    if False:"
+        }
+      }
+    ],
+    "command": "python3 -B tests/qa/test_mc_prepare.py",
+    "env": {},
+    "headed": false,
+    "expected_red": "AssertionError: a stale prepared run started its services: mc_prepare: OK",
+    "exit": 1,
+    "commit": "b7ec38f3e2da64c9f87bb4c54c0aa280a8273ccc"
+  },
+  {
+    "row": "Q-PREBUILD",
+    "plant": "p04: the package compare is removed from the stale check. Red tests: test_m2_stale_folder_is_refused_before_any_case, test_m3_stale_folder_is_refused, test_package_change_is_refused",
+    "files": [
+      {
+        "file": "scripts/mc_prepare.py",
+        "edit": {
+          "old": "    if manifest[\"package_sha256\"] != now[\"package_sha256\"]:",
+          "new": "    if False:"
+        }
+      }
+    ],
+    "command": "python3 -B tests/qa/test_mc_prepare.py",
+    "env": {},
+    "headed": false,
+    "expected_red": "AssertionError: 0 != 66 : mc_prepare: OK",
+    "exit": 1,
+    "commit": "b7ec38f3e2da64c9f87bb4c54c0aa280a8273ccc"
+  },
+  {
+    "row": "Q-PREBUILD",
+    "plant": "p05: the artefact digest compare is removed (a changed binary or dist passes). Red tests: test_changed_artefact_is_refused",
+    "files": [
+      {
+        "file": "scripts/mc_prepare.py",
+        "edit": {
+          "old": "        if actual != expected:",
+          "new": "        if False:"
+        }
+      }
+    ],
+    "command": "python3 -B tests/qa/test_mc_prepare.py",
+    "env": {},
+    "headed": false,
+    "expected_red": "AssertionError: 1 != 66 : mc_prepare: OK",
+    "exit": 1,
+    "commit": "b7ec38f3e2da64c9f87bb4c54c0aa280a8273ccc"
+  },
+  {
+    "row": "Q-PREBUILD",
+    "plant": "p06: a prepared run builds anyway (the build branch no longer depends on --prepared). Red tests: test_pixels_prepare_then_prepared_run_builds_nothing, test_prepared_run_starts_no_cargo_and_no_trunk, test_prepared_run_uses_the_prepared_copies",
+    "files": [
+      {
+        "file": "scripts/mc-browser.sh",
+        "edit": {
+          "old": "else\n    cp -a \"$ROOT/$PACKAGE\" \"$PACK/$PACKAGE_NAME\"\n",
+          "new": "fi\nif true; then\n    cp -a \"$ROOT/$PACKAGE\" \"$PACK/$PACKAGE_NAME\"\n"
+        }
+      }
+    ],
+    "command": "python3 -B tests/qa/test_mc_prepare.py",
+    "env": {},
+    "headed": false,
+    "expected_red": "AssertionError: 1 != 0 : ROW X viewport=1280x720 run=1/2 windows=1",
+    "exit": 1,
+    "commit": "b7ec38f3e2da64c9f87bb4c54c0aa280a8273ccc"
+  },
+  {
+    "row": "Q-PREBUILD",
+    "plant": "p07: seal no longer compares the begin state (a source change during the build is sealed). Red tests: test_source_change_while_prepare_runs_makes_no_manifest",
+    "files": [
+      {
+        "file": "scripts/mc_prepare.py",
+        "edit": {
+          "old": "        if begin[key] != now[key]:",
+          "new": "        if False:"
+        }
+      }
+    ],
+    "command": "python3 -B tests/qa/test_mc_prepare.py",
+    "env": {},
+    "headed": false,
+    "expected_red": "AssertionError: 0 != 66 : mc_prepare: sealed",
+    "exit": 1,
+    "commit": "b7ec38f3e2da64c9f87bb4c54c0aa280a8273ccc"
+  },
+  {
+    "row": "Q-PREBUILD",
+    "plant": "p08: mc-pixels.sh no longer stops with exit 66 on a refusal. Red tests: test_pixels_stale_folder_stops_at_once_with_exit_66",
+    "files": [
+      {
+        "file": "scripts/mc-pixels.sh",
+        "edit": {
+          "old": "if ((rc == 66 && ${#PREPARED_ARGS[@]} > 0)); then",
+          "new": "if false; then"
+        }
+      }
+    ],
+    "command": "python3 -B tests/qa/test_mc_prepare.py",
+    "env": {},
+    "headed": false,
+    "expected_red": "AssertionError: 1 != 66 : ROW X viewport=1280x720 run=1/2 windows=1",
+    "exit": 1,
+    "commit": "b7ec38f3e2da64c9f87bb4c54c0aa280a8273ccc"
+  },
+  {
+    "row": "Q-PREBUILD",
+    "plant": "p09: t7.sh ignores the refusal of the stale check. Red tests: test_t7_stale_folder_is_refused",
+    "files": [
+      {
+        "file": "scripts/t7.sh",
+        "edit": {
+          "old": "--need bin/t7_oracle --need dist/index.html --need pack/acme.tar || exit $?",
+          "new": "--need bin/t7_oracle --need dist/index.html --need pack/acme.tar || true"
+        }
+      }
+    ],
+    "command": "python3 -B tests/qa/test_mc_prepare.py",
+    "env": {},
+    "headed": false,
+    "expected_red": "AssertionError: 0 != 66 : mc_prepare: STALE",
+    "exit": 1,
+    "commit": "b7ec38f3e2da64c9f87bb4c54c0aa280a8273ccc"
+  },
+  {
+    "row": "Q-PREBUILD",
+    "plant": "p10: --prepare empties a folder that is not a prepared folder (the guard is removed). Red tests: test_prepare_refuses_a_folder_that_is_not_a_prepared_folder",
+    "files": [
+      {
+        "file": "scripts/mc-browser.sh",
+        "edit": {
+          "old": "if [[ -n \"$(ls -A \"$PREPARE_DIR\" 2>/dev/null)\" && ! -f \"$PREPARE_DIR/manifest.json\" && ! -f \"$PREPARE_DIR/.begin.json\" ]]; then",
+          "new": "if false; then"
+        }
+      }
+    ],
+    "command": "python3 -B tests/qa/test_mc_prepare.py",
+    "env": {},
+    "headed": false,
+    "expected_red": "AssertionError: 0 != 2 : mc_prepare: sealed",
+    "exit": 1,
+    "commit": "b7ec38f3e2da64c9f87bb4c54c0aa280a8273ccc"
+  },
+  {
+    "row": "Q-PREBUILD",
+    "plant": "p11: the crates folder is not a build input of the source hash. Red tests: test_new_untracked_source_file_is_refused, test_pixels_stale_folder_stops_at_once_with_exit_66, test_source_change_while_prepare_runs_makes_no_manifest, test_source_edit_after_prepare_is_refused, test_t7_stale_folder_is_refused",
+    "files": [
+      {
+        "file": "scripts/mc_prepare.py",
+        "edit": {
+          "old": "BUILD_INPUTS = [\"crates\", \"vendor\",",
+          "new": "BUILD_INPUTS = [\"vendor\","
+        }
+      }
+    ],
+    "command": "python3 -B tests/qa/test_mc_prepare.py",
+    "env": {},
+    "headed": false,
+    "expected_red": "AssertionError: a stale prepared run started its services: mc_prepare: OK",
+    "exit": 1,
+    "commit": "b7ec38f3e2da64c9f87bb4c54c0aa280a8273ccc"
+  },
+  {
+    "row": "Q-PREBUILD",
+    "plant": "p12: m3-browser.sh ignores the refusal of the stale check. Red tests: test_m3_stale_folder_is_refused",
+    "files": [
+      {
+        "file": "scripts/m3-browser.sh",
+        "edit": {
+          "old": "--need bin/turts_server --need dist/index.html --need pack/forge.tar || exit $?",
+          "new": "--need bin/turts_server --need dist/index.html --need pack/forge.tar || true"
+        }
+      }
+    ],
+    "command": "python3 -B tests/qa/test_mc_prepare.py",
+    "env": {},
+    "headed": false,
+    "expected_red": "AssertionError: 0 != 66 : M3_BROWSER_EVIDENCE",
+    "exit": 1,
+    "commit": "b7ec38f3e2da64c9f87bb4c54c0aa280a8273ccc"
+  },
+  {
+    "row": "Q-PREBUILD",
+    "plant": "p13: m2-browser.sh ignores the refusal of the stale check. Red tests: test_m2_stale_folder_is_refused_before_any_case",
+    "files": [
+      {
+        "file": "scripts/m2-browser.sh",
+        "edit": {
+          "old": "--need bin/turts_server --need bin/turts-pack --need dist/index.html || exit $?",
+          "new": "--need bin/turts_server --need bin/turts-pack --need dist/index.html || true"
+        }
+      }
+    ],
+    "command": "python3 -B tests/qa/test_mc_prepare.py",
+    "env": {},
+    "headed": false,
+    "expected_red": "AssertionError: 0 != 66 : E9-browser-base-selection",
+    "exit": 1,
+    "commit": "b7ec38f3e2da64c9f87bb4c54c0aa280a8273ccc"
+  },
+  {
+    "row": "Q-PREBUILD",
+    "plant": "p14: a prepared run starts the server binary of the cache, not the prepared copy. Red tests: test_prepared_run_uses_the_prepared_copies",
+    "files": [
+      {
+        "file": "scripts/mc-browser.sh",
+        "edit": {
+          "old": "    SERVER_BIN=\"$PREPARED/bin/turts_server\"\n",
+          "new": "    SERVER_BIN=\"$TARGET/release/turts_server\"\n"
+        }
+      }
+    ],
+    "command": "python3 -B tests/qa/test_mc_prepare.py",
+    "env": {},
+    "headed": false,
+    "expected_red": "AssertionError: unexpectedly None : the prepared run did not reach the page: mc_prepare: OK",
+    "exit": 1,
+    "commit": "b7ec38f3e2da64c9f87bb4c54c0aa280a8273ccc"
+  },
+  {
+    "row": "Q-PREBUILD",
+    "plant": "p15: a prepared run serves the dist of the lane, not the prepared copy. Red tests: test_prepared_run_uses_the_prepared_copies",
+    "files": [
+      {
+        "file": "scripts/mc-browser.sh",
+        "edit": {
+          "old": "    DIST=\"$PREPARED/dist\"\n",
+          "new": "    DIST=\"$DIST\"\n"
+        }
+      }
+    ],
+    "command": "python3 -B tests/qa/test_mc_prepare.py",
+    "env": {},
+    "headed": false,
+    "expected_red": "AssertionError: b'fake page' not found in b'<html>WRONG PAGE from the lane dist</html>",
+    "exit": 1,
+    "commit": "b7ec38f3e2da64c9f87bb4c54c0aa280a8273ccc"
+  },
+  {
+    "row": "Q-PREBUILD",
+    "plant": "p16: t7.sh prepared run still builds the oracle with cargo. Red tests: test_t7_prepare_then_prepared_run_builds_nothing",
+    "files": [
+      {
+        "file": "scripts/t7.sh",
+        "edit": {
+          "old": "    (cd crates/turts_server && T7_DIR=\"$OUT\" \"$PREPARED/bin/t7_oracle\" --ignored --nocapture)",
+          "new": "    T7_DIR=\"$OUT\" cargo test --release -p turts_server --test t7_oracle -- --ignored --nocapture"
+        }
+      }
+    ],
+    "command": "python3 -B tests/qa/test_mc_prepare.py",
+    "env": {},
+    "headed": false,
+    "expected_red": "AssertionError: 99 != 0 : mc_prepare: OK",
+    "exit": 1,
+    "commit": "b7ec38f3e2da64c9f87bb4c54c0aa280a8273ccc"
+  }
+]
