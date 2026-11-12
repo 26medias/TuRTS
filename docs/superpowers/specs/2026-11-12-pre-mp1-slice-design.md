@@ -1,6 +1,6 @@
 # Pre-MP1 slice: audit crate, one movement model, neighbour grid, file splits: design
 
-Date: 2026-11-12. Revision 5. Revision 5: gate 2 (the plan and the re-check of the ruling, simulation lens) FAILED with 2 High; section 9 items 8 to 15 take its text. Earlier status: Status: gate PASSED WITH FINDINGS on revision 3 (qa-lead lens, 0 High; docs/research/mp1/gate-slice-qa.md and its re-check); revision 4 takes the 7 findings in section 9. The simulation lens re-check of the ruling is open. Revision 3: the qa-lead lens FAILED revision 1 with 4 High (docs/research/mp1/gate-slice-qa.md); sections 2, 4 and 5 take its text changes; a re-check by both lenses follows. Gate round 1: the simulation lens FAILED revision 1 (one High: a third movement branch); the technical-director ruled (docs/research/mp1/ruling-td-one-step-function.md); sections 1, 2, 5 and 6 are replaced. The qa-lead lens is in progress.
+Date: 2026-11-12. Revision 6. Revision 6: the re-check of plan revision 2 closed all 12 gate 2 findings and found 2 new High in task A2b1; section 9 items 17 to 23 take its text. Revision 5: gate 2 (the plan and the re-check of the ruling, simulation lens) FAILED with 2 High; section 9 items 8 to 15 take its text. Earlier status: Status: gate PASSED WITH FINDINGS on revision 3 (qa-lead lens, 0 High; docs/research/mp1/gate-slice-qa.md and its re-check); revision 4 takes the 7 findings in section 9. The simulation lens re-check of the ruling is open. Revision 3: the qa-lead lens FAILED revision 1 with 4 High (docs/research/mp1/gate-slice-qa.md); sections 2, 4 and 5 take its text changes; a re-check by both lenses follows. Gate round 1: the simulation lens FAILED revision 1 (one High: a third movement branch); the technical-director ruled (docs/research/mp1/ruling-td-one-step-function.md); sections 1, 2, 5 and 6 are replaced. The qa-lead lens is in progress.
 Author: the orchestrator, from the technical-director input `docs/research/mp1/input-technical-director.md`
 (parts A and C) and the producer input `docs/research/mp1/input-producer.md` (part 2). The inputs are agent
 output; each claim below that this design depends on carries its `path:line` and is checked again at the gate.
@@ -246,3 +246,33 @@ A difference outside P3 stops A2c. A new ruling and a new run of the self-test a
     must be red. If A2c changes an old operation, the stop rule of section 5 applies. P1 never allows a
     difference in the position bits. The "difference only on a flagged `edge_hit`" rule of section 5 item 0 is
     built only if the G1 counter has hits.
+17. A `Blocked` pool of one that comes from a fallback or from a legacy failure keeps `Blocked` until a new
+    order or a new trip. It is not cleared at `movement.rs:1678-1697`. Reason: today a `Blocked` plain progress
+    with no target stays `Blocked` (`:718-736`), and a `Blocked` pool clears its progress in the next frame when
+    the body has no overlap (`:1670-1697`). With this rule the expected values of the tests that read
+    `PlainMoveProgress` stay the same (`group_movement.rs:2757`, `:2975`; `:2005` and `:2156` are NOT TRACED and
+    are checked first in A2b1). Option not taken: accept the pool behaviour and invert those tests.
+18. The A2b1 harness rule. The harness is bit-equal on every seed whose reference run has no fallback. It counts
+    the seeds with a fallback and lists them. Those seeds are proved by the guards of A2b1, not by bit equality:
+    after a fallback the unit has a pool, takes the pool expressions and other stall and spare logic
+    (`:856-898` against `:2272-2343`), and in a chain of 300 ticks the difference spreads to its neighbours.
+19. The collection rule has a pure input. A fallback pool is not collected while `MoveProgress.gather_goal` is
+    `Some`. `run_orders` clears `gather_goal` when the gather is reached or its endpoint changes
+    (`orders.rs:771-783`). The movement kernel needs no economy input.
+20. The `test-probes` feature changes no result (task Q1b proves it). Code under the feature only writes
+    counters and probe fields; there is no `cfg(not(...))`; no probe call is inside a condition or an expression
+    whose value the sim uses. A test `frame_hash` runs 16 seeded frame chains and prints one hash; it runs with
+    and without the feature, and `cmp` of the two outputs exits 0. The stream hash is the same in
+    `cargo test -p turts_pack` (feature on through the dev-dependency) and in a run of `m3_m2_stream` with that
+    feature removed. Note: `cargo test --workspace` unifies the feature into every test build.
+21. The assertion rule of plan section 1a, stricter. For a test whose read changes because a type goes away: the
+    scenario, the tick count, the observation tick and the message stay the same; only the read expression
+    changes; the review shows each changed hunk with its kind. An expected value comes from the design text or
+    from an independent calculation that the test states; a value from a gate probe is used only where the
+    design cites it. The hex-ring value at plan line 761 is an inversion and is labelled as one.
+22. The source counts of item 13 count code only: comments and string literals are removed first.
+23. The M4 route follower can start after A4 merges, and A4 merges only after the re-freeze commit of Q2.
+
+Gate status after revision 6 (Root): the plan gate is passed for the tasks up to and including A2a (G1, S2,
+S3, A1a to A1d, Q1a, Q1b, A2a). Task A2b1 gets a short re-check of its final text by the simulation lens
+before its builder starts; items 17 to 19 are that text.

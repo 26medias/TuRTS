@@ -20,6 +20,15 @@
 
 **Scope rule:** the slice adds no mod API. It changes one thing that a player can see (D section 1, `:30`). It changes one frozen value one time, at A2c. The items of D section 7 are not in this slice.
 
+## Binding amendments after the re-check of revision 2
+
+Design revision 6, section 9 items 17 to 23, is binding on this plan and replaces the plan lines it names:
+the `Blocked` pool of a fallback keeps `Blocked` (17); the A2b1 harness is bit-equal only on seeds with no
+fallback (18); the collection rule reads `MoveProgress.gather_goal` (19); the `test-probes` proof in Q1b (20);
+the stricter assertion rule of section 1a (21); the source counts count code only (22); the M4 start point
+(23). Root accepts refinements R10, R11 (with item 20), R12 (with item 22) and R13 (with item 17). The plan
+gate is passed for the tasks up to and including A2a. A2b1 gets a short re-check before its builder starts.
+
 ## 0. Line numbers
 
 - All `path:line` in this plan are at `431c3ad` (TuRTS-mp1), or at the commit that the line names.
