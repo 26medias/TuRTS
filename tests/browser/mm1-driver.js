@@ -135,7 +135,10 @@ async function pollForPing(io, params, rect) {
 const KILL_POLL_MS = 30000;
 const KILL_POLL_MAX = 60;
 const KILL_POLL_GAP_MS = 500;
-const KILL_BODY_SHARE = 0.1;
+// The box of the target also holds a neighbour's pixels: a saved headed run had 201 slot pixels in the box while the
+// target stood and 115 after it died (a ratio of 0.57), so a first version with a ratio of 0.1 never saw the kill and
+// waited the whole 30 s. The body is gone when the box falls below 0.7 of its first count.
+const KILL_BODY_SHARE = 0.7;
 // The dummies stand 4 to 5 pixels apart, so the box is the body box itself: with a margin of 4 or more the box takes
 // pixels of the next dummy (a saved shot: 197 pixels in the box, 210 with margin 4, 358 with margin 8).
 const KILL_BOX_MARGIN = 0;
@@ -148,7 +151,7 @@ async function pollForKill(io, foreign) {
         record.polls += 1;
         record.pixels = countSlotBody(image, foreign, 1);
         if (record.start_pixels === null) record.start_pixels = record.pixels;
-        if (record.pixels < Math.max(4, record.start_pixels * KILL_BODY_SHARE)) {
+        if (record.pixels < record.start_pixels * KILL_BODY_SHARE) {
             record.gone = true;
             break;
         }

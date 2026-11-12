@@ -58,6 +58,10 @@ const PING = [1180, 560, 3, 3, [255, 204, 0]];
 const WINDOW1 = png([OWN_COLUMN, FOREIGN]);
 const NO_PING = png([]);
 const NO_FOREIGN = png([OWN_COLUMN]);
+// The target dies but a neighbour stays in its box (half of the pixels), as in the saved run (201 pixels, then 115).
+const NEIGHBOUR_ONLY = png([OWN_COLUMN, [628, 357, 12, 12, [230, 159, 0]]]);
+// A body that is hit but stands: 80 % of the pixels.
+const STANDING = png([OWN_COLUMN, [628, 345, 12, 19, [230, 159, 0]]]);
 const WITH_PING = png([PING]);
 
 const PARAMS = {
@@ -65,7 +69,7 @@ const PARAMS = {
 };
 
 // A fake pair of windows. The window 2 shot number k shows the ping when k >= pingAtShot.
-function fakeIo(pingAtShot, killAtShot = Infinity) {
+function fakeIo(pingAtShot, killAtShot = Infinity, afterKill = NO_FOREIGN) {
     const log = [];
     let current = 1;
     const shots = { 1: 0, 2: 0 };
@@ -82,7 +86,7 @@ function fakeIo(pingAtShot, killAtShot = Infinity) {
         async screenshot() {
             const index = shots[current]; shots[current] += 1;
             log.push(`shot@w${current}#${index}`);
-            if (current === 1) return index >= killAtShot ? NO_FOREIGN : WINDOW1;
+            if (current === 1) return index >= killAtShot ? afterKill : WINDOW1;
             return index >= pingAtShot ? WITH_PING : NO_PING;
         },
         async save(name, bytes) { log.push(`save:${name}`); saved[name] = bytes; },
@@ -167,4 +171,17 @@ test("MM1 ends the kill poll at its bound with no error when the dummy never goe
     assert.equal(steps.kill_poll.gone, false);
     assert.equal(steps.kill_poll.polls, 60);
     assert.ok(io.log.includes("save:mm1-after-zoom.png"), "the drive still ends");
+});
+
+test("MM1 sees the kill when a neighbour dummy stays in the box (ratio 0.5), and does not call a standing body gone (ratio 0.8)", async () => {
+    const neighbour = fakeIo(1, 6, NEIGHBOUR_ONLY);
+    await drive(neighbour, PARAMS);
+    const steps = JSON.parse(Buffer.from(neighbour.saved["mm1-driver-steps.json"]).toString("utf8"));
+    assert.equal(steps.kill_poll.gone, true);
+    assert.equal(steps.kill_poll.polls, 2);
+    const standing = fakeIo(1, 6, STANDING);
+    await drive(standing, PARAMS);
+    const kept = JSON.parse(Buffer.from(standing.saved["mm1-driver-steps.json"]).toString("utf8"));
+    assert.equal(kept.kill_poll.gone, false, "80 % of the pixels is a body that stands");
+    assert.equal(kept.kill_poll.polls, 60);
 });
