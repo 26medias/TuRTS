@@ -106,6 +106,7 @@ pub enum GatherWaitReason {
     DestinationOverflow,
     NoDeposit,
     Depleted,
+    Blocked,
 }
 
 impl GatherWaitReason {
@@ -116,6 +117,7 @@ impl GatherWaitReason {
         Self::DestinationOverflow,
         Self::NoDeposit,
         Self::Depleted,
+        Self::Blocked,
     ];
 
     /// The stable snake_case UI and debug key.
@@ -126,6 +128,7 @@ impl GatherWaitReason {
             Self::DestinationOverflow => "destination_overflow",
             Self::NoDeposit => "no_deposit",
             Self::Depleted => "depleted",
+            Self::Blocked => "blocked",
         }
     }
 }

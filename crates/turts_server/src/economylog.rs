@@ -3055,6 +3055,60 @@ fn validate_automatic_order_operation(
             &mut expected,
         );
     }
+    let gather_approaching = matches!(
+        operation
+            .before
+            .raw_orders
+            .iter()
+            .find(|order| order.unit == unit_id)
+            .map(|order| order.stage),
+        Some(
+            turts_sim::economy::gather::GatherStage::MovingToNode
+                | turts_sim::economy::gather::GatherStage::MovingToReceiver
+        )
+    );
+    let blocked_trip = plain_before.is_some_and(|row| {
+        (row.progress.activity == turts_sim::movement::MovementActivity::Blocked
+            && !row.progress.failure_recorded)
+            || (row.progress.activity == turts_sim::movement::MovementActivity::Resting
+                && (row.progress.claim_count > 0
+                    || row.progress.slot != row.progress.original_point))
+    });
+    if blocked_trip && gather_approaching {
+        // M2 design 5 and ruling O16: a blocked gather trip waits and keeps its order, its
+        // cargo and its cycle; only the plain movement state ends.
+        expected
+            .plain_movement_progress
+            .retain(|row| row.unit_id != unit_id);
+        set_audit_move_target(&mut expected, unit_id, None)?;
+        let waiting = turts_sim::economy::gather::GatherStage::Waiting {
+            reason: turts_sim::economy::gather::WaitReason::Blocked,
+        };
+        if let Some(raw) = expected
+            .raw_orders
+            .iter_mut()
+            .find(|entry| entry.unit == unit_id)
+        {
+            raw.stage = waiting;
+            raw.receiver = None;
+            raw.rate_carry = 0;
+        }
+        if let Some(public) = expected
+            .economy
+            .orders
+            .iter_mut()
+            .find(|entry| entry.unit == unit_id)
+        {
+            public.stage = waiting;
+            public.receiver = None;
+        }
+        if expected != operation.after {
+            return Err(format!(
+                "blocked gather trip of unit {unit_id} differs from its independently replayed wait"
+            ));
+        }
+        return Ok(());
+    }
     let plain_removed = plain_before.is_some()
         && !operation
             .after

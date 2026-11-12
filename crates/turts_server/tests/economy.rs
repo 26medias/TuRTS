@@ -614,6 +614,105 @@ fn e9_base_gather_trace_replays_node_depletion_in_process() {
     );
 }
 
+/// The full ORD3 browser scene (every authored muster unit present): worker 42 stands near
+/// the depot approach of worker 41, so its last trip is blocked. The economy log validator
+/// must accept the blocked wait (Waiting(Blocked)), the retry, the delivery and the
+/// node_depleted failure.
+#[test]
+fn ord3_full_scene_blocked_gather_trip_validates() {
+    use economylog::EconomyLogRecord;
+    use turts_sim::{AuditTrail, CommandQueue, SlotId, economy::views::audit_state};
+
+    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../tests/browser/fixtures/order-rows/muster");
+    let mut files = std::collections::BTreeMap::new();
+    package_files(&root, &root, &mut files);
+    let archive_bytes = turts_mod_runtime::pack::pack_files(&files).unwrap();
+    let archive = turts_mod_runtime::archive::PackageArchive::parse(&archive_bytes).unwrap();
+    let mut app = turts_sim::headless_app(20);
+    turts_pack::load_package(app.world_mut(), &archive).unwrap();
+    let catalog = app
+        .world()
+        .resource::<turts_sim::bootstrap::InstalledCatalog>()
+        .0
+        .clone();
+    app.world_mut().resource_mut::<AuditTrail>().enable();
+    let envelope = turts_net_protocol::PlayerCommand {
+        seq: 1,
+        order: turts_net_protocol::OrderEnvelope {
+            order: "muster:order_gather".into(),
+            units: vec![turts_net_protocol::UnitId(41)],
+            target: turts_net_protocol::OrderTarget::Node(turts_net_protocol::NodeId(1)),
+            queue: turts_net_protocol::QueueMode::Replace,
+            group: 0,
+        },
+    };
+    let mut commands = server_orders::to_sim(SlotId(0), &envelope, &catalog).unwrap();
+    let command = commands.remove(0);
+    let mut records = vec![EconomyLogRecord::Initial(audit_state(app.world_mut()))];
+    let blocked = turts_sim::GatherStage::Waiting {
+        reason: turts_sim::WaitReason::Blocked,
+    };
+    let mut saw_blocked = false;
+    let mut failure = None;
+    for tick in 1..=400_u32 {
+        if tick == 1 {
+            app.world_mut()
+                .resource_mut::<CommandQueue>()
+                .0
+                .push_back(command.clone());
+        }
+        app.update();
+        let mut trail = app.world_mut().resource_mut::<AuditTrail>();
+        assert!(trail.valid);
+        records.extend(
+            trail
+                .drain_commands()
+                .into_iter()
+                .map(EconomyLogRecord::CommandBoundary),
+        );
+        for operation in trail.drain_operations() {
+            saw_blocked |= operation
+                .after
+                .raw_orders
+                .iter()
+                .any(|order| order.unit == 41 && order.stage == blocked);
+            records.push(EconomyLogRecord::Operation(operation));
+        }
+        let ticks = trail.drain_ticks();
+        for audit in &ticks {
+            failure = failure.or_else(|| {
+                audit
+                    .after
+                    .unit_orders
+                    .iter()
+                    .find(|entry| entry.unit_id == 41 && entry.orders.current.is_none())
+                    .and_then(|entry| entry.orders.last_failure.clone())
+            });
+        }
+        records.extend(ticks.into_iter().map(|audit| EconomyLogRecord::Tick {
+            tick: audit.tick,
+            before: audit.before,
+            state: audit.after,
+            events: audit.events,
+        }));
+        if failure.is_some() {
+            break;
+        }
+    }
+    assert!(
+        saw_blocked,
+        "the full scene blocks the last trip of worker 41"
+    );
+    assert_eq!(
+        failure.map(|failure| failure.reason),
+        Some(turts_sim::RejectReason::NodeDepleted),
+        "the blocked trip waits, delivers, then the order fails with node_depleted"
+    );
+    economylog::validate_records(&records)
+        .unwrap_or_else(|error| panic!("the validator rejects the blocked gather wait: {error}"));
+}
+
 #[test]
 fn initial_snapshot_round_trip_detects_a_lost_field() {
     let mut app = turts_sim::headless_app(10);
@@ -1573,6 +1672,7 @@ fn owner_snapshot_from_audit(
                                 WaitReason::DestinationOverflow => {
                                     wire::GatherWaitReason::DestinationOverflow
                                 }
+                                WaitReason::Blocked => wire::GatherWaitReason::Blocked,
                             },
                         },
                     },

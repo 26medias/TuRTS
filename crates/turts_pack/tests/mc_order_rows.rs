@@ -1077,12 +1077,30 @@ fn completed_move_starts_queued_move_in_the_next_orders_phase_without_an_idle_ti
 
 #[test]
 fn actual_worker_gather_exhausts_the_isolated_small_node_and_records_node_depleted() {
+    let (emptied_at, failed_at) = worker_gather_exhausts_the_small_node(Some(&[41, 43]));
+    eprintln!("pruned ORD3 scene: node empty at tick {emptied_at}, node_depleted at {failed_at}");
+}
+
+/// The ORD3 browser scene keeps every authored unit. Worker 42 stands near the depot
+/// approach of worker 41, so the last trip can be blocked. The blocked trip must wait and
+/// try again; the order still ends with node_depleted, and the depot converts the ore.
+#[test]
+fn actual_worker_gather_in_the_full_ord3_scene_delivers_then_records_node_depleted() {
+    let (emptied_at, failed_at) = worker_gather_exhausts_the_small_node(None);
+    eprintln!("full ORD3 scene: node empty at tick {emptied_at}, node_depleted at {failed_at}");
+}
+
+/// Return the tick the node empties and the tick the Gather order of worker 41 ends, both
+/// counted from the tick after the order.
+fn worker_gather_exhausts_the_small_node(keep: Option<&[u32]>) -> (u32, u32) {
     let fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../../tests/browser/fixtures/order-rows/muster");
     let archive = archive_at(&fixture);
     let mut app = app_with_archive(&archive);
     let worker = 41;
-    prune_units(&mut app, &[worker, 43]);
+    if let Some(keep) = keep {
+        prune_units(&mut app, keep);
+    }
     assert_eq!(
         turts_sim::node_view(app.world(), turts_sim::NodeId(1))
             .unwrap()
@@ -1178,6 +1196,7 @@ fn actual_worker_gather_exhausts_the_isolated_small_node_and_records_node_deplet
         ContentId::parse("muster:order_gather").unwrap()
     );
     assert_eq!(failure.reason, RejectReason::NodeDepleted);
+    (emptied_at, failed_at)
 }
 
 #[test]
