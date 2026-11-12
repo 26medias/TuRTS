@@ -2,7 +2,7 @@
 //!
 //! `AuditState` (`views.rs`) is the in-process test snapshot. It keeps all its fields, because the
 //! frozen M2 stream compares the full `AuditState` before and after each operation. The economy
-//! log audit (`turts_audit`) reads only `LedgerAudit`, and the log will write only `LedgerAudit`
+//! log audit (`turts_audit`) reads only `LedgerAudit`, and the log sink writes only `LedgerAudit`
 //! (task A1c). So a new sim structure enters the log format only through an edit of this file.
 //!
 //! Each field has the name, the type and the serde form of the `AuditState` field that it copies,
@@ -17,8 +17,9 @@
 //!   `plain_movement_progress`, `physical_escapes`, `unit_orders` and `movement_pools`.
 //!
 //! `AuditState` fields that the log does not need, and that `LedgerAudit` does not hold: `bounds`,
-//! `resources`, `pending_movement_orders`, `movement_dispatch`, `compiled_durations`,
-//! `unit_types` and `units`.
+//! `resources`, `movement_dispatch` (transient accounting of one tick, `orders/pending.rs`),
+//! `compiled_durations`, `unit_types` and `units`. `pending_movement_orders` is audited command
+//! state (`orders/pending.rs`), so the refusal rule of `turts_audit` reads it (A1c).
 
 use serde::{Deserialize, Serialize};
 
@@ -35,14 +36,47 @@ use crate::ids::IdAllocators;
 
 /// The `AuditState` fields that `LedgerAudit` does not copy. A test compares the JSON of both
 /// views with these keys removed.
-pub const LEDGER_DROPPED_FIELDS: [&str; 7] = [
+pub const LEDGER_DROPPED_FIELDS: [&str; 6] = [
     "bounds",
     "resources",
-    "pending_movement_orders",
     "movement_dispatch",
     "compiled_durations",
     "unit_types",
     "units",
+];
+
+/// The `AuditState` fields that `LedgerAudit` copies, in the order of the struct. A test compares
+/// this list with the fields of both structs in the source, so a new `AuditState` field is a
+/// decision: kept here, or dropped in `LEDGER_DROPPED_FIELDS`.
+pub const LEDGER_KEPT_FIELDS: [&str; 28] = [
+    "tick_hz",
+    "raw_units",
+    "movement_progress",
+    "plain_movement_progress",
+    "physical_escapes",
+    "movement_pools",
+    "pending_movement_orders",
+    "unit_orders",
+    "raw_inventories",
+    "raw_orders",
+    "raw_queues",
+    "raw_output_inventories",
+    "raw_belts",
+    "raw_inserters",
+    "raw_extractors",
+    "raw_weapons",
+    "raw_healths",
+    "research",
+    "disabled",
+    "removed_units",
+    "next_event_ordinal",
+    "pending_events",
+    "catalog",
+    "ledger_claims",
+    "nodes",
+    "economy",
+    "allocators",
+    "claims",
 ];
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -57,6 +91,11 @@ pub struct LedgerAudit {
     pub physical_escapes: Vec<RawPhysicalEscapeAudit>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub movement_pools: Vec<crate::movement::MovementPool>,
+    #[serde(
+        default,
+        skip_serializing_if = "crate::orders::PendingMovementOrders::is_empty"
+    )]
+    pub pending_movement_orders: crate::orders::PendingMovementOrders,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub unit_orders: Vec<RawUnitOrdersAudit>,
     pub raw_inventories: Vec<RawInventoryAudit>,
@@ -99,6 +138,7 @@ pub fn ledger_audit(state: &AuditState) -> LedgerAudit {
         plain_movement_progress: state.plain_movement_progress.clone(),
         physical_escapes: state.physical_escapes.clone(),
         movement_pools: state.movement_pools.clone(),
+        pending_movement_orders: state.pending_movement_orders.clone(),
         unit_orders: state.unit_orders.clone(),
         raw_inventories: state.raw_inventories.clone(),
         raw_orders: state.raw_orders.clone(),
@@ -195,5 +235,46 @@ mod tests {
             "the browser oracle reads the unit pos"
         );
         assert_eq!(ledger["raw_units"][0]["unit_id"], 4, "EL1 reads raw_units");
+    }
+
+    /// The field names of `pub struct <name>` in `source`.
+    fn struct_fields(source: &str, name: &str) -> Vec<String> {
+        let start = source
+            .find(&format!("pub struct {name} {{"))
+            .unwrap_or_else(|| panic!("struct {name} is in the source"));
+        let body = &source[start..];
+        let end = body.find("\n}\n").expect("the struct ends");
+        body[..end]
+            .lines()
+            .filter_map(|line| {
+                let field = line.strip_prefix("    pub ")?;
+                Some(field.split(':').next()?.trim().to_owned())
+            })
+            .collect()
+    }
+
+    /// `LEDGER_KEPT_FIELDS` and `LEDGER_DROPPED_FIELDS` name every field of `AuditState` one time,
+    /// and the kept list is the field list of `LedgerAudit`.
+    #[test]
+    fn ledger_field_lists_cover_every_audit_state_field() {
+        let audit = struct_fields(include_str!("views.rs"), "AuditState");
+        let ledger = struct_fields(include_str!("ledger_view.rs"), "LedgerAudit");
+        let kept: Vec<String> = super::LEDGER_KEPT_FIELDS
+            .iter()
+            .map(|f| (*f).to_owned())
+            .collect();
+        assert_eq!(
+            kept, ledger,
+            "LEDGER_KEPT_FIELDS is the field list of LedgerAudit"
+        );
+        let mut union: Vec<String> = kept;
+        union.extend(LEDGER_DROPPED_FIELDS.iter().map(|f| (*f).to_owned()));
+        union.sort();
+        let mut sorted = audit;
+        sorted.sort();
+        assert_eq!(
+            union, sorted,
+            "each AuditState field is kept or dropped, and no other field is named"
+        );
     }
 }

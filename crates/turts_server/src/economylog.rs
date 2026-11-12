@@ -1,8 +1,9 @@
-//! Task-local trusted JSONL encoding and typed replay checks for economy audits.
+//! Task-local trusted JSONL encoding and ledger audit checks for economy audits.
 //!
 //! The optional runtime sink is enabled by `main.rs` only when `--economy-log`
-//! is supplied. The Task 15 acceptance harness also includes this module for
-//! typed replay and process-level evidence checks.
+//! is supplied. The sink writes the ledger view of each snapshot (`LedgerAudit`, A1c). The
+//! Task 15 acceptance harness also includes this module for ledger audit and process-level
+//! evidence checks.
 
 use std::io::{BufWriter, Write};
 use std::path::Path;
@@ -33,7 +34,7 @@ impl<W: Write> EconomyLogWriter<W> {
         state: AuditState,
     ) -> Result<(), std::io::Error> {
         ensure_valid(trail)?;
-        self.write(&EconomyLogRecord::Initial(state))
+        self.write(&EconomyLogRecord::initial(&state))
     }
 
     #[allow(dead_code)]
@@ -43,7 +44,7 @@ impl<W: Write> EconomyLogWriter<W> {
         audit: CommandAudit,
     ) -> Result<(), std::io::Error> {
         ensure_valid(trail)?;
-        self.write(&EconomyLogRecord::CommandBoundary(audit))
+        self.write(&EconomyLogRecord::command(audit))
     }
 
     #[allow(dead_code)]
@@ -53,7 +54,7 @@ impl<W: Write> EconomyLogWriter<W> {
         audit: OperationAudit,
     ) -> Result<(), std::io::Error> {
         ensure_valid(trail)?;
-        self.write(&EconomyLogRecord::Operation(audit))
+        self.write(&EconomyLogRecord::operation(audit))
     }
 
     #[allow(dead_code)]
@@ -134,8 +135,8 @@ impl EconomyLogSink {
             reason,
             wire_format: "postcard".to_owned(),
             raw_envelope,
-            before,
-            after,
+            before: turts_sim::ledger_audit(&before),
+            after: turts_sim::ledger_audit(&after),
         });
     }
 
@@ -167,16 +168,13 @@ impl EconomyLogSink {
             return;
         }
         for command in commands {
-            if let Err(error) = self
-                .writer
-                .write(&EconomyLogRecord::CommandBoundary(command))
-            {
+            if let Err(error) = self.writer.write(&EconomyLogRecord::command(command)) {
                 self.fail(format!("write command audit: {error}"));
                 return;
             }
         }
         for operation in operations {
-            if let Err(error) = self.writer.write(&EconomyLogRecord::Operation(operation)) {
+            if let Err(error) = self.writer.write(&EconomyLogRecord::operation(operation)) {
                 self.fail(format!("write operation audit: {error}"));
                 return;
             }
@@ -234,7 +232,7 @@ fn ensure_valid(trail: &turts_sim::AuditTrail) -> Result<(), std::io::Error> {
 mod tests {
     use super::EconomyLogWriter;
     use std::io::Cursor;
-    use turts_audit::{EconomyLogRecord, read_jsonl, validate_side_by_side};
+    use turts_audit::{EconomyLogRecord, read_jsonl, validate_ledger};
     use turts_mod_api::WorldPos;
     use turts_sim::economy::views::RawUnitAudit;
     use turts_sim::{AuditState, AuditTrail, headless_app};
@@ -244,8 +242,16 @@ mod tests {
         turts_sim::audit_state(app.world_mut())
     }
 
+    /// The ledger audit has no movement model. It accepts the Orders-phase operation of a unit
+    /// order, and it reads the phase as a shape rule: a Command phase needs a command boundary.
+    /// The ledger accepts an Orders-phase operation that is relabeled `Other`: the phase of an
+    /// operation is set where the sim captures it (`economy/transaction.rs`,
+    /// `capture_unit_order_operation`), and the sim tests hold that label
+    /// (`orders/tests.rs` and `tests/orders.rs`: the phase of the captured unit-order
+    /// operations is `Orders`). The replay validator rejected the relabel because the relabeled
+    /// operation was not the movement phase that it modeled.
     #[test]
-    fn validator_accepts_an_orders_operation_before_movement() {
+    fn ledger_accepts_an_orders_operation_before_movement() {
         use turts_mod_api::{Footprint, PackageId, UnitDef, UnitRegistry};
         use turts_sim::{
             MapBounds, MoveTarget, Order, OrderTargetSim, Owner, Position, SlotId, UnitId,
@@ -319,24 +325,24 @@ mod tests {
             .unwrap();
         writer.flush().unwrap();
         let mut records = read_jsonl(Cursor::new(writer.output)).unwrap();
-        assert!(validate_side_by_side(&records).is_ok());
+        assert_eq!(validate_ledger(&records), Ok(()));
 
         if let EconomyLogRecord::Operation(operation) = &mut records[1] {
-            operation.phase = turts_sim::economy::transaction::AuditPhase::Other;
+            operation.phase = turts_sim::economy::transaction::AuditPhase::Command;
         } else {
             panic!("captured unit order did not decode as an operation");
         }
         assert!(
-            validate_side_by_side(&records)
+            validate_ledger(&records)
                 .unwrap_err()
-                .contains("movement transition changed nonmovement state")
+                .contains("operation 1 has Command phase without a command")
         );
     }
 
     #[test]
     fn initial_state_round_trips_without_field_loss() {
         let state = initial();
-        let original = EconomyLogRecord::Initial(state.clone());
+        let original = EconomyLogRecord::initial(&state);
         let mut trail = AuditTrail::default();
         trail.enable();
         let mut writer = EconomyLogWriter::new(Vec::new());
@@ -347,7 +353,7 @@ mod tests {
         let EconomyLogRecord::Initial(decoded_state) = &decoded[0] else {
             panic!("wrong variant")
         };
-        assert_eq!(decoded_state, &state);
+        assert_eq!(decoded_state, &turts_sim::ledger_audit(&state));
         assert_eq!(decoded_state.raw_units, state.raw_units);
         assert_eq!(decoded_state.raw_inventories, state.raw_inventories);
         assert_eq!(decoded_state.raw_orders, state.raw_orders);
@@ -384,6 +390,59 @@ mod tests {
         writer.flush().unwrap();
         let decoded = read_jsonl(Cursor::new(writer.output)).unwrap();
         assert_eq!(decoded[1], expected);
+    }
+
+    /// The sink writes the ledger view of each snapshot, not the full audit state: no snapshot
+    /// in the bytes holds a field that `LedgerAudit` drops, and each field of a snapshot is a
+    /// kept field (A1c; a sink that writes `AuditState` makes this test red).
+    #[test]
+    fn sink_writes_only_the_ledger_view_fields() {
+        let mut app = headless_app(10);
+        let mut trail = AuditTrail::default();
+        trail.enable();
+        app.world_mut().insert_resource(trail);
+        let initial_state = turts_sim::audit_state(app.world_mut());
+        app.update();
+        let mut trail = app.world_mut().resource_mut::<AuditTrail>();
+        let tick = trail.drain_ticks().pop().expect("completed tick audit");
+        let mut writer = EconomyLogWriter::new(Vec::new());
+        writer.write_initial(&trail, initial_state).unwrap();
+        writer.write_tick(&trail, tick).unwrap();
+        writer.flush().unwrap();
+        let text = String::from_utf8(writer.output).unwrap();
+        let mut snapshots = 0;
+        for line in text.lines() {
+            let record: serde_json::Value = serde_json::from_str(line).unwrap();
+            let data = &record["data"];
+            let views: Vec<&serde_json::Value> = match record["record"].as_str().unwrap() {
+                "initial" => vec![data],
+                "tick" => vec![&data["before"], &data["state"]],
+                other => panic!("unexpected record {other}"),
+            };
+            for view in views {
+                for field in turts_sim::LEDGER_DROPPED_FIELDS {
+                    assert!(
+                        view.get(field).is_none(),
+                        "the log holds the dropped field {field}"
+                    );
+                }
+                for key in view.as_object().unwrap().keys() {
+                    assert!(
+                        turts_sim::LEDGER_KEPT_FIELDS.contains(&key.as_str()),
+                        "the log holds the field {key}, which is not a ledger view field"
+                    );
+                }
+                assert!(
+                    view.get("economy").is_some(),
+                    "the log keeps the economy field"
+                );
+                snapshots += 1;
+            }
+        }
+        assert_eq!(
+            snapshots, 3,
+            "one Initial snapshot and the two snapshots of one Tick"
+        );
     }
 
     #[test]
@@ -445,12 +504,19 @@ mod tests {
             }
         ));
 
-        let mut wrong_slot = decoded;
-        let EconomyLogRecord::Claim { slot, .. } = &mut wrong_slot[1] else {
+        // The ledger audit rejects a claim of a slot that is not configured. The choice of the
+        // first open slot is not a ledger rule: `session.rs` tests hold it (A1c: the replay
+        // validator also rejected a claim of slot 1 while slot 0 was open).
+        let mut unknown_slot = decoded;
+        let EconomyLogRecord::Claim { slot, .. } = &mut unknown_slot[1] else {
             panic!("claim record")
         };
-        *slot = 1;
-        assert!(validate_side_by_side(&wrong_slot).is_err());
+        *slot = 9;
+        assert!(
+            validate_ledger(&unknown_slot)
+                .unwrap_err()
+                .contains("slots: player 902 claims slot 9, which is not configured")
+        );
     }
 
     #[test]
@@ -471,8 +537,8 @@ mod tests {
                 reason: turts_net_protocol::CommandRejectReason::BadSequence,
                 wire_format: "postcard".to_owned(),
                 raw_envelope: vec![1, 2, 3],
-                before: state.clone(),
-                after: state.clone(),
+                before: turts_sim::ledger_audit(&state),
+                after: turts_sim::ledger_audit(&state),
             })
             .unwrap();
         let decoded = read_jsonl(Cursor::new(writer.into_inner())).unwrap();
@@ -483,6 +549,10 @@ mod tests {
             panic!("admission record")
         };
         after.economy.tick = 1;
-        assert!(validate_side_by_side(&changed).is_err());
+        assert!(
+            validate_ledger(&changed).unwrap_err().contains(
+                "wire-only rejection for player 902, slot 0, tick 0 changed audited state"
+            )
+        );
     }
 }

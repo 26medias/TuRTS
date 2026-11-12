@@ -158,6 +158,22 @@ class RefutationRunnerTests(unittest.TestCase):
             self.assertEqual(case["command"][:6], ["cargo", "test", "-p", "turts_server", "--test", "ledger_logs"], case["id"])
             self.assertIn("--exact", case["command"], case["id"])
 
+    def test_a1c_repair_rows_name_their_instrument(self):
+        registry = json.loads((refutations.ROOT / "tests/m2/refutations.json").read_text())
+        by_id = {case["id"]: case for case in registry}
+        expected = {
+            "A1c-order-conversion-allowed-units": ("crates/turts_server/src/orders.rs", "mc_orders", "in allowed units"),
+            "A1c-order-conversion-queue-depth": ("crates/turts_server/src/orders.rs", "mc_orders", "in queue depth"),
+            "A1c-movement-resting-set": ("crates/turts_sim/src/movement/ecs.rs", "movement_resting", "no MoveProgress"),
+            "A1c-movement-writes-only-movement-state": ("crates/turts_sim/src/movement/ecs.rs", "the_movement_system_writes_only_movement_state", "not movement state"),
+        }
+        for case_id, (path, test, text) in expected.items():
+            case = by_id[case_id]
+            self.assertEqual(case["plant_path"], path, case_id)
+            self.assertIn(test, " ".join(case["command"]), case_id)
+            self.assertIn(text, case["expected_failure"], case_id)
+            self.assertIn("--exact", case["command"], case_id)
+
     def test_runtime_selectors_are_explicit_and_nonempty(self):
         cases = [
             {"id": "E8-native", "kind": "process", "runtime": "rust"},

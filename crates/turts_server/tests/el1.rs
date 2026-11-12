@@ -1,5 +1,7 @@
-//! Task22 EL1 process acceptance. The in-process JSONL reader is the production validator used
-//! by the server's `--economy-log` sink; this test validates its captured records, not a replica.
+//! Task22 EL1 process acceptance. The ledger audit (`turts_audit::read_jsonl_file`) validates the
+//! log of the server's `--economy-log` sink, and this test asserts that it accepts each tick and
+//! that the run records the log bytes (pre-MP1 A1c: the replay validator and its movement-input
+//! rows are void).
 
 mod support;
 
@@ -100,7 +102,7 @@ fn el1_muster_movement_and_queued_gather_validate_every_captured_tick() {
         "EL1 fixture must deliver the queued Muster gather through the actual command path"
     );
 
-    // Measure the serialized movement-state contribution from the actual captured AuditState
+    // Measure the serialized movement-state contribution from the actual captured LedgerAudit
     // values. This is intentionally a component-size method, not whole-log-by-unit division:
     // the latter attributes duplicated shared catalog/ledger bytes to each unit.
     let (unit_rows, unit_bytes, slot_count, slot_bytes) = movement_state_bytes(&records);
@@ -149,7 +151,7 @@ fn el1_muster_movement_and_queued_gather_validate_every_captured_tick() {
 }
 
 fn assert_economy_tick_coverage(
-    tick_records: &[(u32, &turts_sim::AuditState, &turts_sim::AuditState)],
+    tick_records: &[(u32, &turts_sim::LedgerAudit, &turts_sim::LedgerAudit)],
     configured_end: u32,
     selected_ids: &std::collections::BTreeSet<u32>,
 ) -> u32 {

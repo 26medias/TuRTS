@@ -1,19 +1,20 @@
 //! Economy log audit.
 //!
-//! Two validators run side by side until task A1c of the pre-MP1 slice deletes the second:
-//! - the ledger audit (`validate_ledger`): record shape, refusals, and one file for each ledger
-//!   domain. Each rule holds on the log alone, whatever the movement model does. No rule
-//!   computes a decision of the simulation again (no path, no target choice, no timing model);
-//! - the replay validator (`replay.rs`, `validate_records`), which models the simulation again.
+//! One audit: the ledger audit (`validate_ledger`). It checks the record shape, the refusals, and
+//! one file for each ledger domain. Each rule holds on the log alone, whatever the movement model
+//! does. No rule computes a decision of the simulation again (no path, no target choice, no
+//! timing model). The replay validator, which modeled the simulation again, was deleted in task
+//! A1c of the pre-MP1 slice. Movement is checked by the movement tests and by the writer scan
+//! (`turts_checks/tests/movement_writers.rs`), not by the audit.
 //!
-//! `validate_side_by_side` runs the ledger audit first and returns its error first.
-//!
-//! The ledger audit reads each snapshot only through `turts_sim::LedgerAudit`, the ledger view of
-//! `AuditState` (`turts_sim/src/economy/ledger_view.rs`).
+//! The log holds each snapshot as `turts_sim::LedgerAudit`, the ledger view of `AuditState`
+//! (`turts_sim/src/economy/ledger_view.rs`), and the ledger audit reads only that view. A new sim
+//! structure enters the log only through an edit of `LedgerAudit`.
 //!
 //! Rules of this file:
 //! - shape: the log has exactly one `Initial` record, and it is the first record.
 //! - shape: a command boundary result names the slot and the seq of its input.
+//! - orders: an order command equals its immutable catalog definition (`orders.rs`).
 //! - shape: each command boundary id has exactly one operation record, which starts from the
 //!   boundary snapshot (a Command-phase operation also ends on it).
 //! - shape: an operation has the Command phase only when a command boundary names its id.
@@ -30,28 +31,20 @@ mod combat;
 mod format;
 mod industry;
 mod inventories;
+mod orders;
 mod production;
-mod replay;
 mod reservations;
 mod slots;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::{BufRead, BufReader};
 
-pub use format::EconomyLogRecord;
-pub use replay::validate_records;
+pub use format::{CommandLog, EconomyLogRecord, OperationLog};
 pub use turts_sim::{LedgerAudit, ledger_audit};
 
-use turts_sim::{
-    AuditState, CommandAudit, EconomyEvent, OperationAudit, economy::transaction::AuditPhase,
-};
+use turts_sim::{EconomyEvent, economy::transaction::AuditPhase};
 
-/// Test hook: with `TURTS_AUDIT_REPLAY=off`, `validate_side_by_side` runs the ledger audit only.
-/// A fault case uses it to show that the ledger audit, and not the replay validator, finds a
-/// fault. Task A1c deletes it with the replay validator.
-pub const REPLAY_SWITCH: &str = "TURTS_AUDIT_REPLAY";
-
-/// Decode a JSONL economy log and validate it with both validators.
+/// Decode a JSONL economy log and validate it with the ledger audit.
 pub fn read_jsonl<R: BufRead>(input: R) -> Result<Vec<EconomyLogRecord>, String> {
     let mut records = Vec::new();
     for (index, line) in input.lines().enumerate() {
@@ -63,7 +56,7 @@ pub fn read_jsonl<R: BufRead>(input: R) -> Result<Vec<EconomyLogRecord>, String>
             .map_err(|error| format!("decode JSONL line {}: {error}", index + 1))?;
         records.push(record);
     }
-    validate_side_by_side(&records)?;
+    validate_ledger(&records)?;
     Ok(records)
 }
 
@@ -71,15 +64,6 @@ pub fn read_jsonl_file(path: impl AsRef<std::path::Path>) -> Result<Vec<EconomyL
     let file = std::fs::File::open(path.as_ref())
         .map_err(|error| format!("open {}: {error}", path.as_ref().display()))?;
     read_jsonl(BufReader::new(file))
-}
-
-/// Run the ledger audit, then the replay validator. The first error is returned.
-pub fn validate_side_by_side(records: &[EconomyLogRecord]) -> Result<(), String> {
-    validate_ledger(records)?;
-    if std::env::var(REPLAY_SWITCH).is_ok_and(|value| value == "off") {
-        return Ok(());
-    }
-    validate_records(records)
 }
 
 /// One state change that the domains check: an operation, the gap between two records, or the
@@ -137,7 +121,7 @@ struct OrderSpan {
     refused_command: bool,
 }
 
-fn refused_command(command: &CommandAudit) -> bool {
+fn refused_command(command: &CommandLog) -> bool {
     command.result.units.accepted.is_empty()
         && (command.result.outcome.is_err()
             || matches!(command.input.kind, turts_sim::CommandKind::Order(_)))
@@ -145,10 +129,10 @@ fn refused_command(command: &CommandAudit) -> bool {
 
 /// The ledger audit of one complete economy log.
 ///
-/// A snapshot that is equal to the previous snapshot is not converted again, and a step with no
-/// change and no events is checked by the clock only: every domain rule holds on such a step.
+/// A step with no change and no events is checked by the clock only: every domain rule holds on
+/// such a step.
 pub fn validate_ledger(records: &[EconomyLogRecord]) -> Result<(), String> {
-    let Some(EconomyLogRecord::Initial(initial_raw)) = records.first() else {
+    let Some(EconomyLogRecord::Initial(initial)) = records.first() else {
         return Err("first economy log record must be Initial".into());
     };
     if records
@@ -158,16 +142,14 @@ pub fn validate_ledger(records: &[EconomyLogRecord]) -> Result<(), String> {
     {
         return Err("economy log contains more than one Initial record".into());
     }
-    let initial = ledger_audit(initial_raw);
     let mut domains = Domains {
-        clock: clock::Clock::new(&initial),
-        slots: slots::Slots::new(&initial),
+        clock: clock::Clock::new(initial),
+        slots: slots::Slots::new(initial),
         reservations: reservations::Reservations::default(),
         production: production::Production::default(),
     };
-    let mut cursor = initial.clone();
-    let mut cursor_raw: &AuditState = initial_raw;
-    let mut commands: BTreeMap<u64, &CommandAudit> = BTreeMap::new();
+    let mut cursor: &LedgerAudit = initial;
+    let mut commands: BTreeMap<u64, &CommandLog> = BTreeMap::new();
     let mut span: Option<OrderSpan> = None;
 
     for record in records.iter().skip(1) {
@@ -182,6 +164,7 @@ pub fn validate_ledger(records: &[EconomyLogRecord]) -> Result<(), String> {
                         command.operation_id
                     ));
                 }
+                orders::check_command(command)?;
                 if commands.insert(command.operation_id, command).is_some() {
                     return Err(format!(
                         "duplicate command operation id {}",
@@ -191,50 +174,46 @@ pub fn validate_ledger(records: &[EconomyLogRecord]) -> Result<(), String> {
             }
             EconomyLogRecord::Operation(operation) => {
                 let id = operation.operation_id;
-                if cursor_raw != &operation.before {
-                    let before = ledger_audit(&operation.before);
-                    check_catalog(&initial, &before, id)?;
+                if cursor != &operation.before {
+                    check_catalog(initial, &operation.before, id)?;
                     domains.step(
                         &Step {
                             kind: StepKind::Gap,
-                            before: &cursor,
-                            after: &before,
+                            before: cursor,
+                            after: &operation.before,
                             events: &[],
                         },
-                        &initial,
+                        initial,
                     )?;
-                    cursor = before;
+                    cursor = &operation.before;
                 }
-                cursor_raw = &operation.before;
                 let command = commands.remove(&id);
                 check_span(operation, command, &mut span)?;
                 if operation.before == operation.after {
                     let unchanged = Step {
                         kind: StepKind::Operation(id),
-                        before: &cursor,
-                        after: &cursor,
+                        before: cursor,
+                        after: cursor,
                         events: &operation.events,
                     };
                     if operation.events.is_empty() {
                         domains.clock.check(&unchanged)?;
                     } else {
-                        domains.step(&unchanged, &initial)?;
+                        domains.step(&unchanged, initial)?;
                     }
                 } else {
-                    let after = ledger_audit(&operation.after);
-                    check_catalog(&initial, &after, id)?;
-                    check_refusal(operation, command, span.as_ref(), &cursor, &after)?;
+                    check_catalog(initial, &operation.after, id)?;
+                    check_refusal(operation, command, span.as_ref(), cursor, &operation.after)?;
                     domains.step(
                         &Step {
                             kind: StepKind::Operation(id),
-                            before: &cursor,
-                            after: &after,
+                            before: cursor,
+                            after: &operation.after,
                             events: &operation.events,
                         },
-                        &initial,
+                        initial,
                     )?;
-                    cursor = after;
-                    cursor_raw = &operation.after;
+                    cursor = &operation.after;
                 }
                 if span.as_ref().is_some_and(|open| open.end_id == id) {
                     span = None;
@@ -267,26 +246,24 @@ pub fn validate_ledger(records: &[EconomyLogRecord]) -> Result<(), String> {
                     *tick,
                     before.economy.tick,
                 )?;
-                let before_view = ledger_audit(before);
-                if before_view != ledger_audit(after) {
+                if before != after {
                     return Err(format!(
                         "wire-only rejection for player {player_id}, slot {slot}, tick {tick} changed audited state"
                     ));
                 }
-                if cursor_raw != before {
-                    check_catalog(&initial, &before_view, u64::from(*tick))?;
+                if cursor != before {
+                    check_catalog(initial, before, u64::from(*tick))?;
                     domains.step(
                         &Step {
                             kind: StepKind::Gap,
-                            before: &cursor,
-                            after: &before_view,
+                            before: cursor,
+                            after: before,
                             events: &[],
                         },
-                        &initial,
+                        initial,
                     )?;
-                    cursor = before_view;
+                    cursor = before;
                 }
-                cursor_raw = after;
             }
             EconomyLogRecord::Tick {
                 tick,
@@ -297,22 +274,20 @@ pub fn validate_ledger(records: &[EconomyLogRecord]) -> Result<(), String> {
                 if span.is_some() {
                     return Err("order command operation span is incomplete".into());
                 }
-                let state_view = ledger_audit(state);
-                check_catalog(&initial, &state_view, u64::from(*tick))?;
+                check_catalog(initial, state, u64::from(*tick))?;
                 domains
                     .clock
-                    .tick(*tick, before.economy.tick, &state_view, events)?;
+                    .tick(*tick, before.economy.tick, state, events)?;
                 domains.step(
                     &Step {
                         kind: StepKind::TickEnd(*tick),
-                        before: &cursor,
-                        after: &state_view,
+                        before: cursor,
+                        after: state,
                         events: &[],
                     },
-                    &initial,
+                    initial,
                 )?;
-                cursor = state_view;
-                cursor_raw = state;
+                cursor = state;
             }
         }
     }
@@ -337,8 +312,8 @@ fn check_catalog(initial: &LedgerAudit, state: &LedgerAudit, id: u64) -> Result<
 }
 
 fn check_span(
-    operation: &OperationAudit,
-    command: Option<&CommandAudit>,
+    operation: &OperationLog,
+    command: Option<&CommandLog>,
     span: &mut Option<OrderSpan>,
 ) -> Result<(), String> {
     let id = operation.operation_id;
@@ -399,8 +374,8 @@ fn check_span(
 }
 
 fn check_refusal(
-    operation: &OperationAudit,
-    command: Option<&CommandAudit>,
+    operation: &OperationLog,
+    command: Option<&CommandLog>,
     span: Option<&OrderSpan>,
     before: &LedgerAudit,
     after: &LedgerAudit,

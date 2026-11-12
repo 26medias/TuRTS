@@ -319,6 +319,124 @@ mod tests {
         ));
     }
 
+    /// Each field of a package order definition arrives in the sim command and in its captured
+    /// policy (A1c: the replay validator compared them for each order command; the ledger audit
+    /// does the same on a log, and this test holds the conversion itself). The expected values
+    /// come from the catalog read in the test, not from `to_sim`. The queue depth of each
+    /// package is set to a value that no package uses, so a default or a constant is red.
+    #[test]
+    fn to_sim_copies_every_field_of_the_order_definition() {
+        let mut checked = 0;
+        let mut with_units = 0;
+        let mut with_fire = 0;
+        let mut with_engage = 0;
+        for (package, depth) in [("muster", 7_u8), ("forge", 9_u8)] {
+            let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("../../mods")
+                .join(package);
+            let bytes = turts_mod_runtime::pack::pack_dir(&path).expect("pack the package");
+            let archive = turts_mod_runtime::archive::PackageArchive::parse(&bytes)
+                .expect("parse the package");
+            let mut catalog = archive.content().expect("the catalog resolves");
+            catalog
+                .order_queue_depths
+                .insert(turts_mod_api::PackageId(package.into()), depth);
+            for (id, definition) in &catalog.orders {
+                let command = PlayerCommand {
+                    seq: 5,
+                    order: OrderEnvelope {
+                        order: id.to_string(),
+                        units: vec![UnitId(1), UnitId(2)],
+                        target: OrderTarget::Point(turts_net_protocol::Pos { x: 2.0, y: 3.0 }),
+                        queue: turts_net_protocol::QueueMode::Append,
+                        group: 11,
+                    },
+                };
+                let converted = to_sim(SlotId(3), &command, &catalog).expect("the order maps");
+                assert_eq!(converted.len(), 1);
+                assert_eq!((converted[0].slot, converted[0].seq), (SlotId(3), 5));
+                let CommandKind::Order(order) = &converted[0].kind else {
+                    panic!("{id}: an order command")
+                };
+                assert_eq!(&order.order, id, "{id}: order id");
+                assert_eq!(order.behaviour, definition.behaviour, "{id}: behaviour");
+                assert_eq!(order.target_kind, definition.target, "{id}: target kind");
+                assert_eq!(order.allowed_units, definition.units, "{id}: allowed units");
+                assert_eq!(order.queue_depth, depth, "{id}: queue depth of its package");
+                assert_eq!(order.units, vec![1, 2], "{id}: units");
+                assert_eq!(order.group, 11, "{id}: group");
+                assert_eq!(order.queue, QueueMode::Append, "{id}: queue mode");
+                let policy = order.policy.as_ref().expect("the captured policy");
+                assert_eq!(&policy.id, id, "{id}: policy id");
+                assert_eq!(
+                    policy.behaviour, definition.behaviour,
+                    "{id}: policy behaviour"
+                );
+                assert_eq!(policy.target, definition.target, "{id}: policy target");
+                assert_eq!(policy.fire, definition.fire, "{id}: policy fire");
+                assert_eq!(policy.engage, definition.engage, "{id}: policy engage");
+                assert_eq!(policy.units, definition.units, "{id}: policy units");
+                assert_eq!(policy.queue_depth, depth, "{id}: policy queue depth");
+                let capabilities: Vec<(String, [bool; 7])> = catalog
+                    .units
+                    .iter()
+                    .map(|(unit_id, unit)| {
+                        (
+                            unit_id.to_string(),
+                            [
+                                unit.movement.is_some(),
+                                unit.weapon.is_some(),
+                                unit.gatherer.is_some(),
+                                unit.producer.is_some(),
+                                unit.research.is_some(),
+                                unit.removal
+                                    .as_ref()
+                                    .is_some_and(|removal| removal.by_command),
+                                unit.extractor.is_some()
+                                    || unit.inserter.is_some()
+                                    || unit.machine.is_some()
+                                    || unit.research.is_some()
+                                    || unit.producer.is_some()
+                                    || unit.weapon.is_some(),
+                            ],
+                        )
+                    })
+                    .collect();
+                let converted_capabilities: Vec<(String, [bool; 7])> = policy
+                    .unit_capabilities
+                    .iter()
+                    .map(|capability| {
+                        (
+                            capability.unit.clone(),
+                            [
+                                capability.movement,
+                                capability.weapon,
+                                capability.gatherer,
+                                capability.producer,
+                                capability.research,
+                                capability.removable,
+                                capability.toggleable,
+                            ],
+                        )
+                    })
+                    .collect();
+                assert_eq!(
+                    converted_capabilities, capabilities,
+                    "{id}: unit capabilities"
+                );
+                checked += 1;
+                with_units += usize::from(!definition.units.is_empty());
+                with_fire += usize::from(definition.fire.is_some());
+                with_engage += usize::from(definition.engage.is_some());
+            }
+        }
+        assert!(checked >= 10, "the packages give many orders: {checked}");
+        assert!(
+            with_units > 0 && with_fire > 0 && with_engage > 0,
+            "the fixture fills the unit list, the fire policy and the engage policy"
+        );
+    }
+
     #[test]
     fn wire_reason_covers_every_sim_reason() {
         use RejectReason as R;

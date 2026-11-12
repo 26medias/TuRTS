@@ -1081,13 +1081,13 @@ mod tests {
             "the one Claim record names the tick of the Hello, player 7 and the slot that its \
              session holds"
         );
-        turts_audit::validate_side_by_side(&records).unwrap();
+        turts_audit::validate_ledger(&records).unwrap();
         drop(app);
         std::fs::remove_file(path).unwrap();
     }
 
     /// Two players claim the two slots. The economy log that the session writes holds one Claim
-    /// record for each, and both validators accept it (the ledger slots rule: a Claim names an
+    /// record for each, and the ledger audit accepts it (the ledger slots rule: a Claim names an
     /// open slot, and a claimed slot is never given to another player).
     #[test]
     fn two_players_claim_two_slots_in_the_economy_log() {

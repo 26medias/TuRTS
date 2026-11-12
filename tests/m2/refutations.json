@@ -765,7 +765,7 @@
       "--exact",
       "--nocapture"
     ],
-    "expected_failure": "refused unit 1 changed state inside its order operation",
+    "expected_failure": "rejected seq 5 is write neutral",
     "runtime": "rust"
   },
   {
@@ -1196,14 +1196,14 @@
       "turts_server",
       "--test",
       "ledger_logs",
-      "base_log_passes_both_validators",
+      "base_log_passes_the_ledger_audit",
       "--",
       "--exact",
       "--nocapture"
     ],
     "expected_failure": "clock: operation 3 holds event ordinal 1 where the next ordinal is Some(0)",
     "restore_check": "sha256(source)==baseline and selected test is green",
-    "plant_note": "A1b ledger audit: clock: operation events and ordinals. The ledger audit runs first, so the red is its message."
+    "plant_note": "A1b ledger audit: clock: operation events and ordinals. The ledger audit is the one audit, so the red is its message."
   },
   {
     "id": "A1b-ledger-slots-owner",
@@ -1217,14 +1217,14 @@
       "turts_server",
       "--test",
       "ledger_logs",
-      "base_log_passes_both_validators",
+      "base_log_passes_the_ledger_audit",
       "--",
       "--exact",
       "--nocapture"
     ],
     "expected_failure": "slots: unit 2 changed its owner slot from 0 to 1",
     "restore_check": "sha256(source)==baseline and selected test is green",
-    "plant_note": "A1b ledger audit: slots: a unit keeps its owner. The ledger audit runs first, so the red is its message."
+    "plant_note": "A1b ledger audit: slots: a unit keeps its owner. The ledger audit is the one audit, so the red is its message."
   },
   {
     "id": "A1b-ledger-balances-conversion",
@@ -1238,14 +1238,14 @@
       "turts_server",
       "--test",
       "ledger_logs",
-      "base_log_passes_both_validators",
+      "base_log_passes_the_ledger_audit",
       "--",
       "--exact",
       "--nocapture"
     ],
     "expected_failure": "balances: slot 0 base:credits on_hand changed by 4",
     "restore_check": "sha256(source)==baseline and selected test is green",
-    "plant_note": "A1b ledger audit: balances: on_hand change equals its events. The ledger audit runs first, so the red is its message."
+    "plant_note": "A1b ledger audit: balances: on_hand change equals its events. The ledger audit is the one audit, so the red is its message."
   },
   {
     "id": "A1b-ledger-inventories-item-loss",
@@ -1259,14 +1259,14 @@
       "turts_server",
       "--test",
       "ledger_logs",
-      "forge_log_passes_both_validators",
+      "forge_log_passes_the_ledger_audit",
       "--",
       "--exact",
       "--nocapture"
     ],
     "expected_failure": "inventories: the count of forge:ore changed by -1",
     "restore_check": "sha256(source)==baseline and selected test is green",
-    "plant_note": "A1b ledger audit: inventories: item count changes by its events. The ledger audit runs first, so the red is its message."
+    "plant_note": "A1b ledger audit: inventories: item count changes by its events. The ledger audit is the one audit, so the red is its message."
   },
   {
     "id": "A1b-ledger-reservations-token",
@@ -1280,14 +1280,14 @@
       "turts_server",
       "--test",
       "ledger_logs",
-      "forge_log_passes_both_validators",
+      "forge_log_passes_the_ledger_audit",
       "--",
       "--exact",
       "--nocapture"
     ],
     "expected_failure": "reservations: active claim 27 holds the token of job 28",
     "restore_check": "sha256(source)==baseline and selected test is green",
-    "plant_note": "A1b ledger audit: reservations: an active claim names its own queued job. The ledger audit runs first, so the red is its message."
+    "plant_note": "A1b ledger audit: reservations: an active claim names its own queued job. The ledger audit is the one audit, so the red is its message."
   },
   {
     "id": "A1b-ledger-production-refund",
@@ -1301,14 +1301,14 @@
       "turts_server",
       "--test",
       "ledger_logs",
-      "base_log_passes_both_validators",
+      "base_log_passes_the_ledger_audit",
       "--",
       "--exact",
       "--nocapture"
     ],
     "expected_failure": "production: job 2 refunds",
     "restore_check": "sha256(source)==baseline and selected test is green",
-    "plant_note": "A1b ledger audit: production: refund = charge x catalog ratio. The ledger audit runs first, so the red is its message."
+    "plant_note": "A1b ledger audit: production: refund = charge x catalog ratio. The ledger audit is the one audit, so the red is its message."
   },
   {
     "id": "A1b-ledger-industry-node",
@@ -1322,14 +1322,14 @@
       "turts_server",
       "--test",
       "ledger_logs",
-      "base_log_passes_both_validators",
+      "base_log_passes_the_ledger_audit",
       "--",
       "--exact",
       "--nocapture"
     ],
     "expected_failure": "industry: node 1 remaining changed by -2",
     "restore_check": "sha256(source)==baseline and selected test is green",
-    "plant_note": "A1b ledger audit: industry: node remaining falls by its Extracted events. The ledger audit runs first, so the red is its message."
+    "plant_note": "A1b ledger audit: industry: node remaining falls by its Extracted events. The ledger audit is the one audit, so the red is its message."
   },
   {
     "id": "A1b-ledger-combat-health",
@@ -1343,14 +1343,14 @@
       "turts_server",
       "--test",
       "ledger_logs",
-      "forge_log_passes_both_validators",
+      "forge_log_passes_the_ledger_audit",
       "--",
       "--exact",
       "--nocapture"
     ],
     "expected_failure": "combat: the health of unit",
     "restore_check": "sha256(source)==baseline and selected test is green",
-    "plant_note": "A1b ledger audit: combat: health falls by applied damage. The ledger audit runs first, so the red is its message."
+    "plant_note": "A1b ledger audit: combat: health falls by applied damage. The ledger audit is the one audit, so the red is its message."
   },
   {
     "id": "A1b-ledger-refusal-command",
@@ -1364,13 +1364,138 @@
       "turts_server",
       "--test",
       "ledger_logs",
-      "base_log_passes_both_validators",
+      "base_log_passes_the_ledger_audit",
       "--",
       "--exact",
       "--nocapture"
     ],
     "expected_failure": "refused command of slot 1 seq 2 changed the logged view",
     "restore_check": "sha256(source)==baseline and selected test is green",
-    "plant_note": "A1b ledger audit: lib refusal: a refused command leaves the view unchanged. The ledger audit runs first, so the red is its message."
+    "plant_note": "A1b ledger audit: lib refusal: a refused command leaves the view unchanged. The ledger audit is the one audit, so the red is its message."
+  },
+  {
+    "id": "A1c-ledger-refusal-pending-orders",
+    "plant_path": "crates/turts_sim/src/economy/transaction.rs",
+    "anchor": "            < line.amount\n        {\n            return Err(match line.endpoint {\n                Endpoint::Slot(_) => RejectReason::InsufficientBalance,\n                Endpoint::Inventory(_) => RejectReason::InsufficientItems,\n                Endpoint::Output(_) => RejectReason::InsufficientItems,\n            });\n        }\n        updates.insert(\n            (line.endpoint, line.resource),",
+    "replacement": "            < line.amount\n        {\n            tx.world.resource_mut::<crate::orders::PendingMovementOrders>().next_pool_id += 1;\n            return Err(match line.endpoint {\n                Endpoint::Slot(_) => RejectReason::InsufficientBalance,\n                Endpoint::Inventory(_) => RejectReason::InsufficientItems,\n                Endpoint::Output(_) => RejectReason::InsufficientItems,\n            });\n        }\n        updates.insert(\n            (line.endpoint, line.resource),",
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_server",
+      "--test",
+      "ledger_logs",
+      "base_log_passes_the_ledger_audit",
+      "--",
+      "--exact",
+      "--nocapture"
+    ],
+    "expected_failure": "refused command of slot 1 seq 2 changed the logged view",
+    "restore_check": "sha256(source)==baseline and selected test is green",
+    "plant_note": "A1c: a refused command changes the pending move queues (audited command state, orders/pending.rs). LedgerAudit keeps pending_movement_orders, so the refusal rule finds it (A1b review, probe F4). The A1b row ledger-refusal-command changes a balance; this row changes only the pending queues."
+  },
+  {
+    "id": "A1c-movement-writer-count",
+    "plant_path": "crates/turts_sim/src/economy/combat.rs",
+    "anchor": "        let _ = transaction::transact(world, |tx| {\n            tx.mark_m3();\n            let mut state = tx.weapon_state(weapon)?;\n            // Attack-move needs acquisition state",
+    "replacement": "        if target.is_some()\n            && let Some(mut position) = world.get_mut::<crate::world::Position>(entity)\n        {\n            position.0.x += 0.25;\n        }\n        let _ = transaction::transact(world, |tx| {\n            tx.mark_m3();\n            let mut state = tx.weapon_state(weapon)?;\n            // Attack-move needs acquisition state",
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_checks",
+      "--test",
+      "movement_writers",
+      "movement_state_writers_match_the_pinned_multiset",
+      "--",
+      "--exact",
+      "--nocapture"
+    ],
+    "expected_failure": "pinned 0, found 1 at [\"crates/turts_sim/src/economy/combat.rs:",
+    "restore_check": "sha256(source)==baseline and selected test is green",
+    "plant_note": "A1c: a new Position write in an allowed file (combat.rs) changes a pinned count, so the writer scan is red. The ledger audit has no movement model; this scan holds the cover of the replay validator for a unit that moves with no order (A1b review, fault F2)."
+  },
+  {
+    "id": "A1c-order-conversion-allowed-units",
+    "plant_path": "crates/turts_server/src/orders.rs",
+    "anchor": "        group: order.group,\n        allowed_units: definition.units.clone(),\n",
+    "replacement": "        group: order.group,\n        allowed_units: Vec::new(),\n",
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_server",
+      "--test",
+      "mc_orders",
+      "queued_group_attack_spreads_and_strictly_replays",
+      "--",
+      "--exact",
+      "--nocapture"
+    ],
+    "expected_failure": "orders: order command 1 differs from its immutable catalog definition in allowed units",
+    "restore_check": "sha256(source)==baseline and selected test is green",
+    "plant_note": "A1c repair (review N10): the server drops the unit list of the order definition. The sim checks the unit list only when it is not empty. The ledger orders rule (turts_audit/src/orders.rs) finds it on the log; the conversion test to_sim_copies_every_field_of_the_order_definition (turts_server, orders.rs) finds it at the source."
+  },
+  {
+    "id": "A1c-order-conversion-queue-depth",
+    "plant_path": "crates/turts_server/src/orders.rs",
+    "anchor": "        allowed_units: definition.units.clone(),\n        queue_depth,\n    };\n",
+    "replacement": "        allowed_units: definition.units.clone(),\n        queue_depth: u8::MAX,\n    };\n",
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_server",
+      "--test",
+      "mc_orders",
+      "queued_group_attack_spreads_and_strictly_replays",
+      "--",
+      "--exact",
+      "--nocapture"
+    ],
+    "expected_failure": "orders: order command 1 differs from its immutable catalog definition in queue depth",
+    "restore_check": "sha256(source)==baseline and selected test is green",
+    "plant_note": "A1c repair (review N13): the server gives every order a queue depth of 255. Red in the ledger orders rule and in the conversion test."
+  },
+  {
+    "id": "A1c-movement-resting-set",
+    "plant_path": "crates/turts_sim/src/movement/ecs.rs",
+    "anchor": "                    order.behaviour == turts_mod_api::Behaviour::Attack\n",
+    "replacement": "                    order.behaviour == turts_mod_api::Behaviour::Move\n",
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_sim",
+      "--test",
+      "movement_resting",
+      "a_member_that_lands_after_a_point_attack_keeps_its_resting_progress",
+      "--",
+      "--exact",
+      "--nocapture"
+    ],
+    "expected_failure": "landed after an attack-move with no MoveProgress",
+    "restore_check": "sha256(source)==baseline and selected test is green",
+    "plant_note": "A1c repair (review N3): the resting set of the movement system is built for Move orders. The replay validator was red here; the outcome test movement_resting.rs holds it."
+  },
+  {
+    "id": "A1c-movement-writes-only-movement-state",
+    "plant_path": "crates/turts_sim/src/movement/ecs.rs",
+    "anchor": "        .map_or(Vec2::ZERO, |bounds| bounds.size);\n    let tick_hz = world\n",
+    "replacement": "        .map_or(Vec2::ZERO, |bounds| bounds.size);\n    if let Some(mut grown) = world.get_resource_mut::<crate::world::MapBounds>() {\n        grown.size.y += 1.0;\n    }\n    let tick_hz = world\n",
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_sim",
+      "--lib",
+      "movement::ecs::tests::the_movement_system_writes_only_movement_state",
+      "--",
+      "--exact",
+      "--nocapture"
+    ],
+    "expected_failure": "the movement system changed an audited field that is not movement state",
+    "restore_check": "sha256(source)==baseline and selected test is green",
+    "plant_note": "A1c repair (review N12 and the wider question): the movement system writes a field outside its list (the map bounds). The sweep test compares the full audit state around the system."
   }
 ]
