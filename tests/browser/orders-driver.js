@@ -31,11 +31,11 @@ async function drive(io, params) {
         steps.actions.push({ label, call: "key", code, modifiers, options });
         await io.wait(100);
     }
-    async function minimap(label, world, button = "right") {
+    async function minimap(label, world, button = "right", settleMs = 150) {
         const point = screen(world);
         steps.actions.push({ label, call: "click", world, point, button, local: [world[0] / params.map_size[0], 1 - world[1] / params.map_size[1]] });
         await io.click(point[0], point[1], button);
-        await io.wait(150);
+        if (settleMs > 0) await io.wait(settleMs);
         return point;
     }
     // The first join shows the "Click to play" overlay, which dims the scene until a gesture
@@ -113,7 +113,9 @@ async function driveOrd3(io, params, steps, minimap, shot, click, key) {
     await minimap("queue-start", queueBase);
     await io.wait(200);
     await key("overflow-shift-down", "ShiftLeft", [], { action: "down" });
-    for (let i = 0; i < 17; i += 1) await minimap(`queue-overflow-${i + 1}`, targets.queue[1 + (i % (targets.queue.length - 1))]);
+    // No wait between the 17 appends: each click already takes 0.3 to 0.9 s on a loaded host, and the
+    // active point must stay unreached until the last of them (RUN130: 17.8 s against a 15.9 s walk).
+    for (let i = 0; i < 17; i += 1) await minimap(`queue-overflow-${i + 1}`, targets.queue[1 + (i % (targets.queue.length - 1))], "right", 0);
     await key("overflow-shift-up", "ShiftLeft", [], { action: "up" });
     await shot("queue-overflow-final");
 
