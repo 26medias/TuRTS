@@ -288,9 +288,13 @@ function createDriverIo(pages, { outputDir, inputLog = [], initialCursor = { x: 
                 while (wallTime() < deadline) {
                     let observed = null;
                     try {
-                        observed = await page().evaluate(() => {
+                        observed = await page().evaluate(async () => {
                             let debug = null;
-                            try { debug = typeof window.turts_debug === "function" ? JSON.parse(window.turts_debug()) : null; } catch { debug = null; }
+                            // Ask for one record (design D 9, row DBG1); an older page publishes in each frame.
+                            try {
+                                debug = typeof window.turts_debug !== "function" ? null : JSON.parse(
+                                    await (window.turts_debug_request?.() ?? window.turts_debug()));
+                            } catch { debug = null; }
                             const rows = (debug?.ui_snapshot ?? []).filter((row) => String(row.id ?? "").startsWith("shell.load") || row.kind === "focus_overlay");
                             return { phase: debug?.phase ?? null, joined: typeof debug?.phase === "string" && debug.phase.startsWith("Joined") && Boolean(debug.last_frame), rows };
                         });

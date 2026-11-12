@@ -67,3 +67,20 @@ test("a press of a binding is found in the input log with its exact modifiers, i
     assert.deepEqual(presses(input, actions.group_assign_1[0], 1).map(({ index }) => index), [2], "ControlLeft counts as Ctrl");
     assert.deepEqual(presses(input, actions.key_stop[0], 2), [], "a key-up is not a press");
 });
+
+const { judgeLoad } = require("./pt1-oracle.js");
+
+const loadRow = { id: "shell.load.progress.track", visible: true };
+const observation = (phase) => ({ window: 1, phase, rows: phase.startsWith("Joined") ? [] : [loadRow] });
+
+test("the load step needs the final startup observation of the window to be Joined", () => {
+    const joined = [observation("FetchPackages"), observation("VerifyPackage"), observation("Joined { slot: 0 }"),
+        { window: 1, keyboard_layout: {} }];
+    judgeLoad(joined, 1, "window A");
+    // The join wait passed at once (review-l0-dbg.md, finding 1): every observation is of a load phase.
+    const neverJoined = [observation("FetchPackages"), observation("VerifyPackage"), observation("Connecting"),
+        { window: 1, keyboard_layout: {} }];
+    assert.throws(() => judgeLoad(neverJoined, 1, "window A"), /PT1 step 1: window A ends at Connecting, not Joined/);
+    assert.throws(() => judgeLoad([...joined.slice(0, 2), observation("Joining")], 1, "window A"), /ends at Joining, not Joined/);
+    assert.throws(() => judgeLoad([...joined.slice(0, 2), { window: 1, phase: null, rows: [] }], 1, "window A"), /ends at no phase, not Joined/);
+});

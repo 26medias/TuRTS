@@ -24,7 +24,13 @@ test("production runner overwrites driver-saved checkpoint forgeries before judg
             goto: async () => { page.mainNavigation?.(page); },
             bringToFront: async () => {},
             waitForTimeout: async () => {},
-            waitForFunction: async (fn) => assert(vm.runInNewContext(`(${fn.toString()})()`, { window })),
+            // Playwright does not await a predicate: a Promise result is true at once. The fake
+            // refuses it, so an `async` predicate cannot pass here (review-l0-dbg.md, finding 1).
+            waitForFunction: async (fn) => {
+                const result = vm.runInNewContext(`(${fn.toString()})()`, { window });
+                assert.equal(typeof result?.then, "undefined", "the predicate returned a Promise: Playwright would not await it");
+                assert(result);
+            },
             evaluate: async (fn, argument) => {
                 if (String(fn).includes("window.turts_scene")) {
                     return {

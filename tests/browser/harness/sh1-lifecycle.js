@@ -15,6 +15,11 @@ function installSh1PhaseCapture() {
     window.requestAnimationFrame = (callback) => request((timestamp) => {
         callback(timestamp);
         if (!window.__sh1_phase_capture.enabled || typeof window.turts_debug !== 'function' || window.__sh1_phase_capture.held) return;
+        // The client builds the debug state only when asked (design D 9, row DBG1). This capture
+        // must see the phase of each frame, so it asks for the record of the next frame with no
+        // wait (the one use of the request that passes 0), and it reads the record that the
+        // request of the frame before served. That record is of this frame.
+        if (typeof window.turts_debug_request === 'function') window.turts_debug_request(0).catch(() => {});
         let debug;
         try { debug = JSON.parse(window.turts_debug()); } catch { return; }
         const kind = debug.phase?.startsWith('VerifyPackage') ? 'verify' :
@@ -118,9 +123,15 @@ async function prepareSh1Lifecycle({ context, params, outDir, epoch, navigationA
         gates.delete(kind);
         resolve();
     };
+    // Playwright does not await a predicate, so each predicate here is sync (tests/browser/harness/wait-predicate.test.js).
+    // A poll starts a request for a record (design D 9, row DBG1) and reads the record that the
+    // last request published; an older page publishes in each frame.
     const waitPhase = async (page, pattern) => page.waitForFunction((source) => {
         if (typeof window.turts_debug !== 'function') return false;
-        try { return new RegExp(source).test(JSON.parse(window.turts_debug()).phase); } catch { return false; }
+        try {
+            window.turts_debug_request?.().catch(() => {});
+            return new RegExp(source).test(JSON.parse(window.turts_debug()).phase);
+        } catch { return false; }
     }, pattern, { timeout: 30000, polling: 20 });
     const drive = (driver, io, phase) => driver.drive(io, { ...params, fixture_phase: phase });
     const releaseFrame = async (page, kind) => {
@@ -168,9 +179,9 @@ async function prepareSh1Lifecycle({ context, params, outDir, epoch, navigationA
         },
         async disconnect(page, driver, io) {
             if (!liveSocket || liveSocket.record.closed_by_fixture) throw new Error('HARNESS SH1 real live socket is absent');
-            const before = await page.evaluate(() => {
+            const before = await page.evaluate(async () => {
                 if (typeof window.turts_debug !== 'function') return null;
-                const debug = JSON.parse(window.turts_debug());
+                const debug = JSON.parse(await (window.turts_debug_request?.() ?? window.turts_debug()));
                 return { phase: debug.phase, player_id_decimal: debug.player_id_decimal,
                     reconnect_required: debug.reconnect_required };
             });
@@ -186,8 +197,13 @@ async function prepareSh1Lifecycle({ context, params, outDir, epoch, navigationA
             target.record.joined_before_close = before;
             await save();
             await waitPhase(page, '^Joined');
-            await page.waitForFunction(() => typeof window.turts_debug === 'function' &&
-                JSON.parse(window.turts_debug()).reconnect_required === true, null, { timeout: 30000, polling: 20 });
+            await page.waitForFunction(() => {
+                if (typeof window.turts_debug !== 'function') return false;
+                try {
+                    window.turts_debug_request?.().catch(() => {});
+                    return JSON.parse(window.turts_debug()).reconnect_required === true;
+                } catch { return false; }
+            }, null, { timeout: 30000, polling: 20 });
             let actualNavigation;
             await driver.drive(io, { ...params, fixture_phase: 'connection-lost' }, {
                 beforeAction: async (action) => {

@@ -31,7 +31,7 @@ function launcherServerArgv(syntheticSet, syntheticUnits, orderLogSet = "false")
     const output = fs.mkdtempSync(path.join(os.tmpdir(), "mc-server-argv-"));
     try {
         execFileSync("bash", ["-c", source.slice(start, end)], {
-            env: { ...process.env, TARGET: "/fixture/target", OUT: output, SYNTHETIC_SET: syntheticSet, SYNTHETIC_UNITS: syntheticUnits, ORDER_LOG_SET: orderLogSet },
+            env: { ...process.env, TARGET: "/fixture/target", SERVER_BIN: "/fixture/target/release/turts_server", OUT: output, SYNTHETIC_SET: syntheticSet, SYNTHETIC_UNITS: syntheticUnits, ORDER_LOG_SET: orderLogSet },
             stdio: "pipe",
         });
         return JSON.parse(fs.readFileSync(path.join(output, "server-argv.json"), "utf8"))

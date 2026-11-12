@@ -3,8 +3,15 @@
 //! All client logic lives in `turts_client`. This crate reads the page query, builds the app,
 //! and installs three test hooks on `window`:
 //!
-//! - `window.turts_debug()` returns the debug JSON of `turts_client::debug::debug_json`. It
-//!   returns an empty string until the first frame has run.
+//! - `window.turts_debug_request(min_interval_ms?)` asks for the debug state and returns a
+//!   `Promise` of the debug JSON string (`turts_client::debug::debug_json`). The client builds
+//!   the state only on a request, at the end of the next frame that the 4 Hz cap allows (design
+//!   D 9, row DBG1), and resolves every waiting promise with that one snapshot, so the
+//!   snapshot, `window.turts_scene()` and `window.turts_ui()` come from one frame. The promise
+//!   rejects after 10 s with no frame (a hidden tab). `min_interval_ms` lowers the cap for one
+//!   request; only the SH1 per-frame phase capture passes it (a test-only form).
+//! - `window.turts_debug()` returns the last published debug JSON and asks for nothing. It
+//!   returns an empty string until the first request has been served. The page posts nothing.
 //! - `window.turts_move(x, y)` queues a move order for the units of this player. The order is
 //!   sent only when the client is joined.
 //! - `window.turts_memory_bytes()` returns the size of the wasm linear memory in bytes. Wasm
@@ -23,6 +30,7 @@
 //! message in `window.turts_error` and the app does not start.
 
 use std::{
+    cell::RefCell,
     collections::BTreeMap,
     sync::{LazyLock, Mutex},
 };
@@ -35,7 +43,7 @@ use bevy::ui::{CalculatedClip, ComputedNode, ComputedUiTargetCamera, UiGlobalTra
 use bevy::window::{PrimaryWindow, WindowRef};
 use turts_client::build_app;
 use turts_client::commands::{CommandSendStatus, PendingCommands, owned_mobile_ids, submit_order};
-use turts_client::debug::{DebugState, rebuild_debug_state};
+use turts_client::debug::{DEBUG_MIN_INTERVAL_SECS, DebugRequest, DebugState, rebuild_debug_state};
 use turts_client::debug_feed::NoticesFeed;
 use turts_client::ingest::{
     BrowserIngestConfig, IngestCounters, IngestHooks, ReplicaState, apply_browser_ingest_config,
@@ -55,6 +63,19 @@ use wasm_bindgen_futures::JsFuture;
 
 /// The last debug JSON. The `window.turts_debug` closure reads it.
 static DEBUG: Mutex<String> = Mutex::new(String::new());
+
+/// The least interval of the `window.turts_debug_request` calls that no frame has taken yet, in
+/// seconds. `None` when no call waits.
+static DEBUG_ASK: Mutex<Option<f64>> = Mutex::new(None);
+
+/// How long a `window.turts_debug_request` promise waits for a frame, in milliseconds.
+const DEBUG_REQUEST_TIMEOUT_MS: i32 = 10_000;
+
+thread_local! {
+    /// The `resolve` functions of the promises that wait for the next published debug state.
+    /// The wasm module has one thread, so a thread-local is the right place for JS values.
+    static DEBUG_WAITERS: RefCell<Vec<js_sys::Function>> = const { RefCell::new(Vec::new()) };
+}
 
 /// The last scene JSON. The `window.turts_scene` closure reads it.
 static SCENE: Mutex<String> = Mutex::new(String::new());
@@ -101,6 +122,9 @@ pub fn start() {
     clear_frames.forget();
     set_global(&window, "turts_debug", debug.as_ref());
     debug.forget();
+    let debug_request = Closure::<dyn Fn(JsValue) -> js_sys::Promise>::new(request_debug);
+    set_global(&window, "turts_debug_request", debug_request.as_ref());
+    debug_request.forget();
     let move_to = Closure::<dyn Fn(f32, f32)>::new(|x, y| MOVES.lock().unwrap().push((x, y)));
     set_global(&window, "turts_move", move_to.as_ref());
     move_to.forget();
@@ -156,20 +180,27 @@ pub fn start() {
                 "message":"Saved player identity was invalid; a new session identity will be used"
             }));
     }
-    app.add_systems(Update, (drain_moves, apply_keyboard_layout_labels))
-        .add_systems(Last, persist_session_player_id)
-        .add_systems(
-            PreUpdate,
-            apply_queued_ingest_config.before(ingest_messages),
-        )
-        .add_systems(
-            Last,
-            (
-                publish_debug.after(rebuild_debug_state),
-                publish_scene,
-                publish_ui.after(turts_client::core_adapter::FrameCloseSet),
-            ),
-        );
+    app.add_systems(
+        Update,
+        (
+            drain_moves,
+            apply_keyboard_layout_labels,
+            take_debug_request,
+        ),
+    )
+    .add_systems(Last, persist_session_player_id)
+    .add_systems(
+        PreUpdate,
+        apply_queued_ingest_config.before(ingest_messages),
+    )
+    .add_systems(
+        Last,
+        (
+            publish_debug.after(rebuild_debug_state),
+            publish_scene,
+            publish_ui.after(turts_client::core_adapter::FrameCloseSet),
+        ),
+    );
     app.run();
 }
 
@@ -369,8 +400,68 @@ fn drain_moves(
     }
 }
 
-fn publish_debug(state: Res<DebugState>) {
+/// `window.turts_debug_request`: note the request for the next frame, and return a promise that
+/// `publish_debug` resolves with the snapshot that serves it.
+///
+/// Ruling (orchestrator, 2026-11-12, row DBG1): the 4 Hz cap stays for every default request.
+/// `min_interval_ms` 0 is a legal test-only form for the SH1 per-frame phase capture only
+/// (`tests/browser/harness/sh1-lifecycle.js`); a grep test
+/// (`tests/browser/harness/debug-request-use.test.js`) fails when any other caller passes a value.
+fn request_debug(min_interval_ms: JsValue) -> js_sys::Promise {
+    let wanted = min_interval_ms
+        .as_f64()
+        .filter(|ms| ms.is_finite() && *ms >= 0.0)
+        .map_or(DEBUG_MIN_INTERVAL_SECS, |ms| ms / 1000.0);
+    {
+        let mut ask = DEBUG_ASK.lock().unwrap();
+        *ask = Some(ask.map_or(wanted, |pending| pending.min(wanted)));
+    }
+    js_sys::Promise::new(&mut |resolve, reject| {
+        DEBUG_WAITERS.with(|waiters| waiters.borrow_mut().push(resolve));
+        let timeout = Closure::once_into_js(move || {
+            let _ = reject.call1(
+                &JsValue::NULL,
+                &JsValue::from_str("turts_debug_request: no frame served the request"),
+            );
+        });
+        if let Some(window) = web_sys::window() {
+            let _ = window.set_timeout_with_callback_and_timeout_and_arguments_0(
+                timeout.unchecked_ref(),
+                DEBUG_REQUEST_TIMEOUT_MS,
+            );
+        }
+    })
+}
+
+/// `Update`: hand the calls of `window.turts_debug_request` to the client, which builds the
+/// state at the end of this frame (`turts_client::debug::debug_build_due`).
+fn take_debug_request(mut request: ResMut<DebugRequest>) {
+    if let Some(min_interval_secs) = DEBUG_ASK.lock().unwrap().take() {
+        request.request(Some(min_interval_secs));
+    }
+}
+
+/// `Last`: copy the debug state to the bridge only when the client built a new one, and resolve
+/// the waiting promises with it. Every waiter asked before this frame began, so the snapshot
+/// is newer than its request.
+fn publish_debug(
+    state: Res<DebugState>,
+    request: Res<DebugRequest>,
+    mut published_builds: Local<u64>,
+) {
+    if request.builds() == *published_builds {
+        return;
+    }
+    *published_builds = request.builds();
     DEBUG.lock().unwrap().clone_from(&state.0);
+    let waiters = DEBUG_WAITERS.with(|waiters| std::mem::take(&mut *waiters.borrow_mut()));
+    if waiters.is_empty() {
+        return;
+    }
+    let text = JsValue::from_str(&state.0);
+    for resolve in waiters {
+        let _ = resolve.call1(&JsValue::NULL, &text);
+    }
 }
 
 /// `Last`: list the rendered units and count the active 3D cameras for the page.

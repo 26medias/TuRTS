@@ -88,3 +88,63 @@ test("a stopped M2 drive gives a semantic failure that names the case", async ()
     await assert.rejects(judge(view, { m2: { case_id: "E9-browser-base-economy", package: "base" } }), (error) =>
         error instanceof assert.AssertionError && error.task16_semantic?.row === "M2" && error.task16_semantic.clause === "E9-browser-base-economy");
 });
+
+// ---- The convergence sampler under the 4 Hz cap of the debug request (L0-DBG, row DBG1) ----------
+const { sampleSharedTick } = require("./m2-oracle.js");
+
+// A virtual clock and two windows. A window builds its record in the first frame of its own 16 ms
+// frame grid (window 2 is `skew` ms off) that comes at least 250 ms after its last build; the
+// request resolves 3 ms later. The tick is 50 ms long (20 Hz). A call made at the same virtual
+// time as another one sees the same clock: the clock moves when a promise resolves.
+function virtualWindows(skew) {
+    const clock = { t: 0 };
+    const last = [-1e9, -1e9];
+    const view = { bridge: (_name, windowNumber) => {
+        const offset = windowNumber === 2 ? skew : 0;
+        const ready = Math.max(clock.t, last[windowNumber - 1] + 250);
+        const build = Math.ceil((ready - offset) / 16) * 16 + offset;
+        last[windowNumber - 1] = build;
+        const record = { replicated_world: { tick: Math.floor(build / 50) } };
+        return Promise.resolve().then(() => { clock.t = Math.max(clock.t, build + 3); return record; });
+    } };
+    return { clock, view, now: () => clock.t, sleep: async (ms) => { clock.t += ms; } };
+}
+
+const SKEWS = Array.from({ length: 17 }, (_, index) => index * 3);
+const sameProjection = () => ({});
+
+test("the shared-tick sampler finds one tick in both windows for every phase of the frame grids", async () => {
+    for (const skew of SKEWS) {
+        const windows = virtualWindows(skew);
+        const shared = await sampleSharedTick(windows.view, { now: windows.now, sleep: windows.sleep, project: sameProjection });
+        assert.ok(shared, `no shared tick with window 2 ${skew} ms off`);
+        assert.ok(windows.clock.t < 10000, "inside the 10 s limit");
+    }
+});
+
+test("the sampler waits longer than the 250 ms cap between rounds, and not by the same time in each round", async () => {
+    const waits = [];
+    const windows = virtualWindows(0);
+    // Two windows that never agree, so that the sampler keeps asking.
+    const never = { bridge: (name, windowNumber) => windows.view.bridge(name, windowNumber).then((record) => ({ replicated_world: { tick: windowNumber } })) };
+    await sampleSharedTick(never, { now: windows.now, sleep: async (ms) => { waits.push(ms); windows.clock.t += ms; }, project: sameProjection });
+    assert.ok(waits.length >= 10, `rounds: ${waits.length}`);
+    assert.ok(waits.every((ms) => ms > 250), "each wait is longer than the 250 ms cap");
+    assert.ok(new Set(waits).size > 2, "the wait changes from round to round");
+});
+
+test("the two windows are asked at once, not one after the other", async () => {
+    const order = [];
+    const view = { bridge: (_name, windowNumber) => { order.push(`ask${windowNumber}`); return Promise.resolve().then(() => { order.push(`got${windowNumber}`); return { replicated_world: { tick: 1 } }; }); } };
+    await sampleSharedTick(view, { sleep: async () => {}, project: sameProjection });
+    assert.deepEqual(order, ["ask1", "ask2", "got1", "got2"]);
+});
+
+test("the sampler needs one projection: equal ticks with different public worlds do not count", async () => {
+    const windows = virtualWindows(0);
+    let rounds = 0;
+    const result = await sampleSharedTick(windows.view, { now: windows.now, sleep: async (ms) => { rounds += 1; windows.clock.t += ms; },
+        project: (() => { let calls = 0; return () => ({ n: calls++ }); })(), deadlineMs: 3000 });
+    assert.equal(result, null);
+    assert.ok(rounds > 3);
+});

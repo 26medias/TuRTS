@@ -26,8 +26,11 @@ function queueJobs(snapshotValue, producer) {
 }
 
 async function snapshot(page) {
-    const raw = await page.evaluate(() => ({
-        debug: typeof window.turts_debug === "function" ? window.turts_debug() : null,
+    // The client builds the debug state only when asked (design D 9, row DBG1): ask and wait for one
+    // record. A page with no request bridge is an older build that publishes in each frame.
+    const raw = await page.evaluate(async () => ({
+        debug: typeof window.turts_debug !== "function" ? null
+            : await (window.turts_debug_request?.() ?? window.turts_debug()),
         status: typeof window.turts_ingest_config_status === "function" ? window.turts_ingest_config_status() : null,
         error: window.turts_error || null,
     }));

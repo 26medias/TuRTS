@@ -16,8 +16,18 @@ function createView(pages, inputLog, serverDir, state = { selected: 0 }) {
             if (name === "turts_move") throw new Error("view.bridge refuses turts_move");
             if (!BRIDGES.has(name)) throw new Error(`unknown read-only bridge: ${name}`);
             const selected = checkedWindow(windowNumber, pages.length);
-            const raw = await pages[selected].evaluate((bridge) => {
+            // The client builds the debug state only when asked (design D 9, row DBG1). The
+            // request is made here, in one place, for every oracle: it waits for one fresh record
+            // (the 4 Hz cap of the client applies). A page with no request bridge is an older
+            // build that publishes in each frame, so the plain read is right for it. A held frame
+            // (the SH1 phase capture) runs no callback, so a request would wait 10 s and reject: the
+            // record that the held frame published is read as it is (harness/scene-checkpoints.js).
+            const raw = await pages[selected].evaluate(async (bridge) => {
                 const getter = window[bridge];
+                const held = typeof window.__turts_input_held === "function" && window.__turts_input_held();
+                if (bridge === "turts_debug" && !held && typeof window.turts_debug_request === "function") {
+                    return window.turts_debug_request();
+                }
                 return typeof getter === "function" ? getter() : null;
             }, name);
             if (name === "turts_memory_bytes") return raw;

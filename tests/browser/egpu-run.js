@@ -89,10 +89,12 @@ function projectGround(m, win, x, y) {
 }
 
 async function readState(page) {
-    return page.evaluate(() => {
+    return page.evaluate(async () => {
         const out = { hidden: document.hidden, visibility: document.visibilityState, error: window.turts_error || null };
         try {
-            const debug = JSON.parse(window.turts_debug());
+            // The client builds the debug state only when asked (design D 9, row DBG1): ask and wait
+            // for one record (the 4 Hz cap applies). An older page publishes in each frame.
+            const debug = JSON.parse(await (window.turts_debug_request?.() ?? window.turts_debug()));
             const recent = debug.frames?.recent || [];
             out.phase = debug.phase ?? null;
             out.slot = Number.isSafeInteger(debug.slot) ? debug.slot : null;

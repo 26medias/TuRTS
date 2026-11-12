@@ -748,6 +748,86 @@ fn health_trace_includes_killing_hit() {
     assert!(replica.healths.iter().all(|record| record.unit.0 != 9));
 }
 
+/// Row DBG1: the health trace keeps the newest `HEALTH_TRACE_WINDOW` entries of each unit, so it
+/// does not grow in a long fight; a unit with few changes keeps all of them.
+#[test]
+fn health_trace_keeps_the_newest_64_entries_for_each_unit() {
+    use turts_client::replica::HEALTH_TRACE_WINDOW;
+    assert_eq!(
+        HEALTH_TRACE_WINDOW, 64,
+        "design D 9: the last 64 entries for each unit"
+    );
+    let now = Instant::now();
+    let mut initial = snapshot(
+        4,
+        vec![unit(9, "forge:drone", 1), unit(10, "forge:drone", 1)],
+    );
+    initial.healths = vec![
+        HealthRecord {
+            unit: UnitId(9),
+            current: 100,
+        },
+        HealthRecord {
+            unit: UnitId(10),
+            current: 100,
+        },
+    ];
+    let mut replica = replica(0);
+    assert_eq!(
+        replica.apply_snapshot(&initial, now),
+        SnapshotOutcome::Applied { replayed: 0 }
+    );
+    // Unit 9 changes in each of 300 ticks (each value differs from the one before). Unit 10
+    // changes two times.
+    for index in 0..300u32 {
+        let mut hit = delta(5 + index, 4 + index);
+        hit.healths = vec![HealthRecord {
+            unit: UnitId(9),
+            current: 1 + u64::from(index % 90),
+        }];
+        if index == 100 || index == 200 {
+            hit.healths.push(HealthRecord {
+                unit: UnitId(10),
+                current: 90 - u64::from(index / 100),
+            });
+        }
+        assert_eq!(replica.apply_delta(&hit, now), DeltaOutcome::Applied);
+    }
+    let busy = &replica.health_trace[&9];
+    assert_eq!(
+        busy.len(),
+        HEALTH_TRACE_WINDOW,
+        "trace entries of the busy unit"
+    );
+    assert_eq!(busy.last().unwrap().tick, 304, "the newest entry stays");
+    assert_eq!(
+        busy.first().unwrap().tick,
+        304 - 63,
+        "the oldest kept entry is 63 ticks older"
+    );
+    assert!(busy.windows(2).all(|pair| pair[0].tick + 1 == pair[1].tick));
+    assert_eq!(
+        replica.health_trace[&10].len(),
+        3,
+        "a quiet unit keeps all its entries"
+    );
+    // The killing hit stays the last entry: the alert OwnUnitDestroyed reads it (feedback.rs).
+    let mut killing = delta(305, 304);
+    killing.healths = vec![HealthRecord {
+        unit: UnitId(9),
+        current: 0,
+    }];
+    killing.removed = vec![UnitId(9)];
+    assert_eq!(replica.apply_delta(&killing, now), DeltaOutcome::Applied);
+    let trace = &replica.health_trace[&9];
+    assert_eq!(trace.len(), HEALTH_TRACE_WINDOW);
+    assert_eq!(
+        trace.last().unwrap().current,
+        0,
+        "the killing hit is the last entry"
+    );
+}
+
 #[test]
 fn late_join_replica_matches_server_view() {
     let now = Instant::now();

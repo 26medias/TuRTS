@@ -38,6 +38,10 @@ function installBoundedRafHold() {
         if (ticket.nativeId !== null) nativeCancelAnimationFrame(ticket.nativeId);
     };
 
+    // A held frame runs no application callback, so a debug request made now waits for the
+    // release. The checkpoint reads the record that the held frame published (harness/scene-checkpoints.js).
+    window.__turts_input_held = () => held;
+
     window.__turts_begin_bounded_input = () => {
         if (held) throw new Error("bounded input frame hold is already active");
         held = true;
