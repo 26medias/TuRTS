@@ -618,3 +618,35 @@ test("with a real Chrome: a click that the page takes changes the +200 ms pictur
         server.close();
     }
 });
+
+test("mp1-play.sh --url starts a Chrome that answers on the printed port, and ends it with the profile on TERM", { skip: !CHROME && "no Chrome binary" }, async () => {
+    // A headless Chrome stands in for the headed one: the start logic is the same.
+    const folder = tempDir("playreal");
+    const shim = path.join(folder, "chrome");
+    fs.writeFileSync(shim, `#!/bin/sh\nexec '${CHROME}' --headless=new --disable-gpu "$@"\n`, { mode: 0o755 });
+    const server = http.createServer((_request, response) => { response.setHeader("content-type", "text/html"); response.end("<!doctype html><title>game</title>"); });
+    await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const url = `http://127.0.0.1:${server.address().port}/?a=1`;
+    const play = spawn("bash", [path.join(REPO, "scripts/mp1-play.sh"), "--url", url], { env: { ...process.env, CHROME_BIN: shim, TMPDIR: folder }, stdio: ["ignore", "pipe", "pipe"] });
+    let stdout = "";
+    let stderr = "";
+    play.stdout.on("data", (chunk) => { stdout += chunk; });
+    play.stderr.on("data", (chunk) => { stderr += chunk; });
+    try {
+        await until(() => /DEBUG_PORT: \d+/.test(stdout) && /PROFILE: /.test(stdout), `the start lines (stderr: ${stderr})`, 45000);
+        const lines = Object.fromEntries(stdout.split("\n").filter(Boolean).map((line) => [line.slice(0, line.indexOf(":")), line.slice(line.indexOf(": ") + 2)]));
+        assert.equal(lines.URL, url);
+        const version = await (await fetch(`http://127.0.0.1:${lines.DEBUG_PORT}/json/version`)).json();
+        assert.match(version.Browser, /Chrome/, "the printed port is the debugging port of the Chrome that was started");
+        assert.ok(fs.existsSync(lines.PROFILE), "the profile folder exists while Chrome runs");
+        assert.ok(lines.PROFILE.startsWith(folder), "a new profile folder, not a default one");
+        play.kill("SIGTERM");
+        const code = await new Promise((resolve) => play.once("exit", resolve));
+        assert.equal(code, 143);
+        assert.equal(fs.existsSync(lines.PROFILE), false, "the profile folder is removed");
+        await assert.rejects(fetch(`http://127.0.0.1:${lines.DEBUG_PORT}/json/version`), "Chrome is gone");
+    } finally {
+        play.kill("SIGKILL");
+        server.close();
+    }
+});

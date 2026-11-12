@@ -125,14 +125,21 @@ PORT="$(free_port)"
 mapfile -t ARGS < <(chrome_args "$PORT" "$PROFILE")
 "$CHROME_BIN" "${ARGS[@]}" "$URL" >"$PROFILE.chrome.log" 2>&1 &
 CHROME_PID=$!
-# Chrome writes the port that it listens on to <profile>/DevToolsActivePort.
+# Ask the port itself. Chrome writes <profile>/DevToolsActivePort only when the port is 0 (an ephemeral
+# port), so with a port that this script picked the file never exists: the first version of this wait read
+# that file and failed on every start (Q-COLD, found by a real start).
+chrome_ready() {
+    local reply
+    reply="$(curl -fsS --max-time 1 "http://127.0.0.1:$PORT/json/version" 2>/dev/null)" || return 1
+    [[ "$reply" == *'"Browser"'* ]]
+}
 # A headed Chrome with the GPU flags can need more than 10 s on a busy host: wait up to 60 s.
 for _ in $(seq 1 600); do
-    [[ -s "$PROFILE/DevToolsActivePort" ]] && break
+    chrome_ready && break
     kill -0 "$CHROME_PID" 2>/dev/null || break
     sleep 0.1
 done
-if [[ "$(head -1 "$PROFILE/DevToolsActivePort" 2>/dev/null || true)" != "$PORT" ]]; then
+if ! chrome_ready; then
     echo "mp1-play: Chrome did not listen on port $PORT (see $PROFILE.chrome.log)" >&2
     # The cleanup removes the log: show its end now.
     tail -n 20 "$PROFILE.chrome.log" >&2 2>/dev/null || true
