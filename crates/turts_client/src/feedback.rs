@@ -104,6 +104,17 @@ pub fn reason_text(reason: CommandRejectReason, overrides: &BTreeMap<String, Str
         CommandRejectReason::RateLimited => "Too many orders".into(),
         CommandRejectReason::NotQueueable => "This order cannot be queued".into(),
         CommandRejectReason::Blocked => "The unit cannot reach that place".into(),
+        // The engine fallback of the protocol 5 keys (design 6.1, 6.7.7). A mod `reasons` map
+        // gives its own text; the `frontier` texts are mod content (`UI-PLACE` wires them).
+        CommandRejectReason::SiteOutsideMap => "Outside the map".into(),
+        CommandRejectReason::SiteOutOfArea => "Too far from your base".into(),
+        CommandRejectReason::SiteBlocked => "Something is in the way".into(),
+        CommandRejectReason::SiteNearBuilding => "Too close to a building".into(),
+        CommandRejectReason::SiteNearResource => "Too close to a resource".into(),
+        CommandRejectReason::ConstructionQueueFull => "The construction queue is full".into(),
+        CommandRejectReason::MatchNotStarted => "The match has not started".into(),
+        CommandRejectReason::SlotDefeated => "You have been defeated".into(),
+        CommandRejectReason::MatchOver => "The match is over".into(),
     }
 }
 

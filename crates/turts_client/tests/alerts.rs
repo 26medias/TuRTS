@@ -265,7 +265,6 @@ fn research_ready_uses_the_same_catalog_cost_for_both_sides_of_the_transition() 
                 id: turts_net_protocol::JobId(9),
                 recipe: "muster:other_job".into(),
                 stage: turts_net_protocol::JobStage::Running,
-                elapsed_ticks: 1,
                 duration_ticks: 20,
                 charged: Vec::new(),
                 reserved: Vec::new(),
@@ -344,7 +343,6 @@ fn research_ready_is_blocked_by_the_same_slot_station_in_progress_elsewhere() {
                 id: turts_net_protocol::JobId(2),
                 recipe: "muster:test_research".into(),
                 stage: turts_net_protocol::JobStage::Running,
-                elapsed_ticks: 1,
                 duration_ticks: 20,
                 charged: Vec::new(),
                 reserved: Vec::new(),
@@ -399,7 +397,6 @@ fn research_in_progress_at_another_slot_does_not_block_own_research_ready() {
                 id: turts_net_protocol::JobId(2),
                 recipe: "muster:test_research".into(),
                 stage: turts_net_protocol::JobStage::Running,
-                elapsed_ticks: 1,
                 duration_ticks: 20,
                 charged: Vec::new(),
                 reserved: Vec::new(),
@@ -455,7 +452,6 @@ fn research_completion_ping_uses_the_station_that_queued_the_completed_technolog
             id: turts_net_protocol::JobId(2),
             recipe: technology.to_string(),
             stage: turts_net_protocol::JobStage::Running,
-            elapsed_ticks: 19,
             duration_ticks: 20,
             charged: Vec::new(),
             reserved: Vec::new(),
@@ -581,7 +577,6 @@ fn production_completion_needs_output_evidence_and_does_not_treat_job_removal_as
                 id: turts_net_protocol::JobId(2),
                 recipe: "muster:test_recipe".into(),
                 stage: turts_net_protocol::JobStage::Running,
-                elapsed_ticks: 1,
                 duration_ticks: 20,
                 charged: Vec::new(),
                 reserved: Vec::new(),
@@ -675,6 +670,7 @@ fn own_unit_destroyed_fires_after_a_long_fight_with_a_bounded_trace() {
         healths: vec![],
         research: vec![],
         unit_orders: vec![],
+        ..Default::default()
     };
     let now = Instant::now();
     let mut replica = Replica::new(20);
@@ -682,6 +678,7 @@ fn own_unit_destroyed_fires_after_a_long_fight_with_a_bounded_trace() {
     let initial = Snapshot {
         tick: 4,
         units: vec![UnitSnapshot {
+            site: false,
             unit_id: UnitId(9),
             content_id: "forge:drone".into(),
             owner_slot: SlotId(0),
@@ -700,6 +697,7 @@ fn own_unit_destroyed_fires_after_a_long_fight_with_a_bounded_trace() {
         }],
         research: vec![],
         unit_orders: vec![],
+        ..Default::default()
     };
     assert_eq!(
         replica.apply_snapshot(&initial, now),
@@ -729,6 +727,7 @@ fn own_unit_destroyed_fires_after_a_long_fight_with_a_bounded_trace() {
         }),
         content: Some(content),
         config: Default::default(),
+        match_start: None,
     };
     let mut app = feedback_app(state, acquired);
     app.update();

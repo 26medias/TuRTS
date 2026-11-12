@@ -225,6 +225,7 @@ fn acme_order_app_with_widgets(include_widgets: bool) -> (App, Entity, Vec2) {
         }),
         content: Some(content.clone()),
         config: Default::default(),
+        match_start: None,
     };
     let camera = content.camera.as_ref().map_or(
         CameraState {
@@ -338,6 +339,7 @@ fn fixture_app_with_plugins_and_persist(
         }),
         content: Some(content.clone()),
         config: Default::default(),
+        match_start: None,
     };
     let camera = content.camera.as_ref().map_or(
         CameraState {

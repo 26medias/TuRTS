@@ -48,6 +48,10 @@ pub fn to_sim(
         OrderTarget::Content(content) => ContentId::parse(content)
             .map(OrderTargetSim::Content)
             .unwrap_or(OrderTargetSim::Invalid),
+        // The placement target of design 6.8 is on the wire in lane 0, and the sim has no such
+        // target yet: `L-CON1` adds `OrderTargetSim::ContentAtPoint` and replaces this arm. Until
+        // then the order is refused like any other target that does not fit.
+        OrderTarget::ContentAtPoint { .. } => OrderTargetSim::Invalid,
     };
     let order_package = order_id.package.clone();
     let queue_depth = catalog
@@ -316,6 +320,49 @@ mod tests {
         assert!(matches!(
             &converted[0].kind,
             CommandKind::Order(order) if order.units.is_empty()
+        ));
+    }
+
+    /// The placement target is on the wire in protocol 5 and the sim has no such target until
+    /// `L-CON1`: it reaches the sim as `Invalid` and the validator refuses it.
+    #[test]
+    fn a_content_at_point_target_reaches_the_sim_as_an_invalid_target() {
+        let mut catalog = empty_catalog();
+        let id = ContentId::parse("test:move").unwrap();
+        catalog.orders.insert(
+            id.clone(),
+            turts_mod_api::OrderDef {
+                id: id.local.clone(),
+                name: "Move".into(),
+                behaviour: Behaviour::Move,
+                target: turts_mod_api::TargetKind::Point,
+                fire: None,
+                engage: None,
+                icon: String::new(),
+                hotkey: String::new(),
+                cursor: None,
+                card: None,
+                units: Vec::new(),
+                description: String::new(),
+            },
+        );
+        let command = PlayerCommand {
+            seq: 3,
+            order: OrderEnvelope {
+                order: id.to_string(),
+                units: vec![UnitId(1)],
+                target: OrderTarget::ContentAtPoint {
+                    content: "test:depot".into(),
+                    point: turts_net_protocol::Pos { x: 2.0, y: 3.0 },
+                },
+                queue: turts_net_protocol::QueueMode::Replace,
+                group: 0,
+            },
+        };
+        let converted = to_sim(SlotId(0), &command, &catalog).expect("the envelope converts");
+        assert!(matches!(
+            &converted[0].kind,
+            CommandKind::Order(order) if order.target == OrderTargetSim::Invalid
         ));
     }
 

@@ -10,6 +10,7 @@ use crate::orders::pending::{
     queue_unallocated_move_orders,
 };
 use crate::orders::plain::{PlainMoveOrderIdentities, forget_plain_move_identity};
+use crate::orders::writer::{edit_unit_orders, set_unit_orders};
 use crate::orders::{OrderFailure, OrderTargetSim, UnitOrders};
 use crate::world::MoveTarget;
 use bevy_ecs::prelude::World;
@@ -179,18 +180,17 @@ pub(crate) fn run_orders(world: &mut World) {
                     .or_else(|| identity.as_ref().map(|order| order.order.clone()));
                 if let Some(order) = failure_order {
                     let tick = world.resource::<crate::world::Tick>().0;
-                    let mut entity_mut = world.entity_mut(entity);
-                    if entity_mut.get::<UnitOrders>().is_none() {
-                        entity_mut.insert(UnitOrders::default());
+                    if world.entity(entity).get::<UnitOrders>().is_none() {
+                        set_unit_orders(world, entity, UnitOrders::default());
                     }
-                    if let Some(mut orders) = entity_mut.get_mut::<UnitOrders>() {
+                    edit_unit_orders(world, entity, |orders| {
                         orders.last_failure = Some(OrderFailure {
                             order,
                             reason: crate::command::RejectReason::Blocked,
                             tick,
                         });
                         orders.current = None;
-                    }
+                    });
                 }
                 if let Some(mut progress) = world
                     .entity_mut(entity)
@@ -225,17 +225,14 @@ pub(crate) fn run_orders(world: &mut World) {
                 .map_or(SlotId(0), |owner| owner.0);
             let tick = world.resource::<crate::world::Tick>().0;
             crate::economy::transaction::capture_unit_order_operation(world, unit_id, |world| {
-                {
-                    let mut entity_mut = world.entity_mut(entity);
-                    if let Some(mut orders) = entity_mut.get_mut::<UnitOrders>() {
-                        orders.last_failure = Some(OrderFailure {
-                            order: current.order.clone(),
-                            reason: crate::command::RejectReason::Blocked,
-                            tick,
-                        });
-                        orders.current = None;
-                    }
-                }
+                edit_unit_orders(world, entity, |orders| {
+                    orders.last_failure = Some(OrderFailure {
+                        order: current.order.clone(),
+                        reason: crate::command::RejectReason::Blocked,
+                        tick,
+                    });
+                    orders.current = None;
+                });
                 if !unit_has_pending_move(world, unit_id) {
                     start_next_queued_order(world, slot, entity, unit_id);
                 }
@@ -375,9 +372,7 @@ pub(crate) fn run_orders(world: &mut World) {
             .map_or(SlotId(0), |owner| owner.0);
         let tick = world.resource::<crate::world::Tick>().0;
         crate::economy::transaction::capture_unit_order_operation(world, unit_id, |world| {
-            let next = {
-                let mut entity_mut = world.entity_mut(entity);
-                let mut orders = entity_mut.get_mut::<UnitOrders>().unwrap();
+            let next = edit_unit_orders(world, entity, |orders| {
                 if depleted_gather {
                     orders.last_failure = Some(OrderFailure {
                         order: current.order.clone(),
@@ -391,17 +386,14 @@ pub(crate) fn run_orders(world: &mut World) {
                 } else {
                     orders.queue.pop_front()
                 }
-            };
+            })
+            .expect("a unit with a current order has orders");
             if depleted_gather {
                 let _ = crate::economy::gather::interrupt_order(world, slot, unit_id);
             }
             if next.is_some() {
                 if let Some(next) = next {
-                    world
-                        .entity_mut(entity)
-                        .get_mut::<UnitOrders>()
-                        .unwrap()
-                        .current = Some(next);
+                    edit_unit_orders(world, entity, |orders| orders.current = Some(next));
                 }
                 if !unit_has_pending_move(world, unit_id) {
                     start_next_queued_order(world, slot, entity, unit_id);

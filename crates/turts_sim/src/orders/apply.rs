@@ -11,6 +11,7 @@ use crate::orders::plain::{
     plain_move_reservation_capacity_available, plain_move_reservation_exists,
     record_plain_move_reservation, remember_plain_move_identity, restore_plain_move_prior,
 };
+use crate::orders::writer::{edit_unit_orders, set_unit_orders};
 use crate::orders::{
     Order, OrderCommand, OrderTargetSim, PendingMovementOrder, QueueMode, UnitOrders, UnitOutcomes,
 };
@@ -327,9 +328,7 @@ pub(crate) fn apply_order(
                 movement.remove::<crate::movement::PlainMoveProgress>();
                 crate::command::apply_legacy_move_to(world, slot, &[*unit_id], target)
                     .expect("order validation precedes legacy move application");
-                if let Some(mut orders) = world.entity_mut(entity).get_mut::<UnitOrders>() {
-                    *orders = UnitOrders::default();
-                }
+                edit_unit_orders(world, entity, |orders| *orders = UnitOrders::default());
                 clear_gather(world, *unit_id);
                 remember_plain_move_identity(world, *unit_id, order.clone());
             });
@@ -437,9 +436,7 @@ pub(crate) fn apply_order(
                                 "capacity was preflighted before captured envelope admission"
                             );
                         }
-                        if let Some(mut orders) = world.entity_mut(entity).get_mut::<UnitOrders>() {
-                            orders.queue.clear();
-                        }
+                        edit_unit_orders(world, entity, |orders| orders.queue.clear());
                         let canceled_plain = world
                             .get_resource_mut::<PlainMoveReservations>()
                             .and_then(|mut reservations| reservations.remove(unit_id));
@@ -668,8 +665,7 @@ fn apply_unit_order(
                     .get::<crate::world::MoveTarget>()
                     .is_some();
                 let pending_move = unit_has_pending_move(world, unit_id);
-                let mut entity_mut = world.entity_mut(entity);
-                if let Some(mut orders) = entity_mut.get_mut::<UnitOrders>() {
+                let appended = edit_unit_orders(world, entity, |orders| {
                     if orders.current.is_none() && (existing_move || pending_move) {
                         orders.queue.push_back(order.clone());
                         false
@@ -680,18 +676,27 @@ fn apply_unit_order(
                         orders.queue.push_back(order.clone());
                         false
                     }
-                } else {
-                    world.entity_mut(entity).insert(UnitOrders {
-                        current: Some(order.clone()),
-                        ..Default::default()
-                    });
-                    true
-                }
-            } else {
-                world.entity_mut(entity).insert(UnitOrders {
-                    current: Some(order),
-                    ..Default::default()
                 });
+                appended.unwrap_or_else(|| {
+                    set_unit_orders(
+                        world,
+                        entity,
+                        UnitOrders {
+                            current: Some(order.clone()),
+                            ..Default::default()
+                        },
+                    );
+                    true
+                })
+            } else {
+                set_unit_orders(
+                    world,
+                    entity,
+                    UnitOrders {
+                        current: Some(order),
+                        ..Default::default()
+                    },
+                );
                 true
             };
             if starts_now {
@@ -755,26 +760,29 @@ fn apply_unit_order(
         },
         Behaviour::Stop => {
             clear_replaced_movement(world, slot, entity, unit_id);
-            world.entity_mut(entity).insert(UnitOrders::default());
+            set_unit_orders(world, entity, UnitOrders::default());
             clear_gather(world, unit_id);
             Ok(None)
         }
         Behaviour::Hold => {
             if command.queue == QueueMode::Append {
-                let mut entity_mut = world.entity_mut(entity);
-                let Some(mut orders) = entity_mut.get_mut::<UnitOrders>() else {
+                if edit_unit_orders(world, entity, |orders| orders.queue.push_back(order)).is_none()
+                {
                     return Err(R::NotQueueable);
-                };
-                orders.queue.push_back(order);
+                }
             } else {
                 clear_replaced_movement(world, slot, entity, unit_id);
                 world
                     .entity_mut(entity)
                     .remove::<crate::world::MoveTarget>();
-                world.entity_mut(entity).insert(UnitOrders {
-                    current: Some(order),
-                    ..Default::default()
-                });
+                set_unit_orders(
+                    world,
+                    entity,
+                    UnitOrders {
+                        current: Some(order),
+                        ..Default::default()
+                    },
+                );
             }
             clear_gather(world, unit_id);
             Ok(None)
@@ -806,12 +814,16 @@ fn apply_unit_order(
                     } else {
                         crate::economy::gather::assign_gather(world, slot, unit_id, node)?;
                     }
-                    world.entity_mut(entity).insert(UnitOrders {
-                        current: Some(order),
-                        ..Default::default()
-                    });
-                } else if let Some(mut orders) = world.entity_mut(entity).get_mut::<UnitOrders>() {
-                    orders.queue.push_back(order);
+                    set_unit_orders(
+                        world,
+                        entity,
+                        UnitOrders {
+                            current: Some(order),
+                            ..Default::default()
+                        },
+                    );
+                } else {
+                    edit_unit_orders(world, entity, |orders| orders.queue.push_back(order));
                 }
             } else {
                 if depleted {
@@ -824,10 +836,14 @@ fn apply_unit_order(
                     crate::economy::gather::assign_gather(world, slot, unit_id, node)?;
                     clear_replaced_movement(world, slot, entity, unit_id);
                 }
-                world.entity_mut(entity).insert(UnitOrders {
-                    current: Some(order),
-                    ..Default::default()
-                });
+                set_unit_orders(
+                    world,
+                    entity,
+                    UnitOrders {
+                        current: Some(order),
+                        ..Default::default()
+                    },
+                );
             }
             Ok(None)
         }

@@ -201,6 +201,7 @@ fn order_record(activity: Activity) -> UnitOrderRecord {
         current: None,
         queued: Vec::new(),
         last_failure: None,
+        rally: None,
     }
 }
 

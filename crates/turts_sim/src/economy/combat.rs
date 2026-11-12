@@ -754,10 +754,14 @@ mod tests {
             .find(|entity| entity.get::<UnitId>().is_some_and(|id| id.0 == 1))
             .unwrap()
             .id();
-        app.world_mut().entity_mut(entity).insert(UnitOrders {
-            current: Some(order),
-            ..Default::default()
-        });
+        crate::orders::writer::set_unit_orders(
+            app.world_mut(),
+            entity,
+            UnitOrders {
+                current: Some(order),
+                ..Default::default()
+            },
+        );
     }
 
     #[test]
@@ -2709,5 +2713,485 @@ mod tests {
                 170
             );
         }
+    }
+
+    // ---- L0-WIRE: the order change list (design 6.8, ruling R19) -------------------------------
+
+    fn hold_order() -> Order {
+        Order {
+            order: cid("combat_fixture:hold"),
+            behaviour: Behaviour::Hold,
+            target: OrderTargetSim::None,
+            group: 0,
+        }
+    }
+
+    fn entity_of(app: &bevy_app::App, unit: u32) -> bevy_ecs::entity::Entity {
+        app.world()
+            .iter_entities()
+            .find(|entity| entity.get::<UnitId>().is_some_and(|id| id.0 == unit))
+            .unwrap()
+            .id()
+    }
+
+    fn listed(app: &bevy_app::App) -> Vec<u32> {
+        app.world()
+            .resource::<crate::economy::events::CommittedTick>()
+            .unit_orders
+            .iter()
+            .map(|record| record.unit_id)
+            .collect()
+    }
+
+    fn cleared(app: &bevy_app::App) -> Vec<(u32, u8)> {
+        app.world()
+            .resource::<crate::economy::events::CommittedTick>()
+            .orders_cleared
+            .clone()
+    }
+
+    /// A record is listed once, in the tick in which it changes, and not again while it is the
+    /// same. Plant: the writer notes nothing (the record is never listed).
+    #[test]
+    fn a_changed_order_record_is_listed_once() {
+        let mut app = app_with(20, 1000, 5);
+        app.update();
+        let first = entity_of(&app, 1);
+        crate::orders::writer::set_unit_orders(
+            app.world_mut(),
+            first,
+            UnitOrders {
+                current: Some(hold_order()),
+                ..Default::default()
+            },
+        );
+        app.update();
+        assert_eq!(
+            listed(&app),
+            vec![1],
+            "the tick of the write lists the record"
+        );
+        app.update();
+        assert!(
+            listed(&app).is_empty(),
+            "an unchanged record is not listed again"
+        );
+        // A write that changes nothing is not listed either (the publish step compares).
+        crate::orders::writer::edit_unit_orders(app.world_mut(), first, |_| ());
+        app.update();
+        assert!(listed(&app).is_empty());
+    }
+
+    /// A record that leaves the view is in `orders_cleared` with its owner, once. Plant:
+    /// `orders_cleared` not written (case A of ORDW1).
+    #[test]
+    fn a_record_that_leaves_the_view_is_cleared_once() {
+        let mut app = app_with(20, 1000, 5);
+        let first = entity_of(&app, 1);
+        crate::orders::writer::set_unit_orders(app.world_mut(), first, UnitOrders::default());
+        app.update();
+        app.update();
+        assert!(listed(&app).is_empty());
+        crate::orders::writer::clear_unit_orders(app.world_mut(), first);
+        app.update();
+        assert_eq!(cleared(&app), vec![(1, 0)]);
+        assert!(listed(&app).is_empty());
+        app.update();
+        assert!(cleared(&app).is_empty());
+    }
+
+    /// The removal rule of the order records: a unit that the tick removes has no record in
+    /// `unit_orders` and no entry in `orders_cleared`; `removed` is its only mention. Plant: the
+    /// removed unit is not skipped.
+    #[test]
+    fn a_removed_unit_has_no_order_record_and_is_not_cleared() {
+        let mut app = app_with(20, 0, 200);
+        set_ammo(&mut app, 1, 0, 0);
+        let target = entity_of(&app, 2);
+        crate::orders::writer::set_unit_orders(
+            app.world_mut(),
+            target,
+            UnitOrders {
+                current: Some(hold_order()),
+                ..Default::default()
+            },
+        );
+        // Tick 1: no ammo, so no shot; the record of unit 2 is published.
+        app.update();
+        assert!(listed(&app).contains(&2));
+        // Tick 2: the shot kills unit 2. Its record left the view, and it is not cleared, also
+        // when something noted the unit in the same tick (a moving unit that dies loses its
+        // movement components, which notes it).
+        set_ammo(&mut app, 1, 10, 0);
+        crate::orders::writer::edit_unit_orders(app.world_mut(), target, |_| ());
+        app.update();
+        let committed = app
+            .world()
+            .resource::<crate::economy::events::CommittedTick>();
+        assert_eq!(committed.removed, vec![2]);
+        assert!(!listed(&app).contains(&2), "no record of the removed unit");
+        assert!(!cleared(&app).iter().any(|(unit, _)| *unit == 2));
+        app.update();
+        assert!(!cleared(&app).iter().any(|(unit, _)| *unit == 2));
+    }
+
+    /// A `Stop` that comes through the command queue clears the current order and lists the
+    /// record in the tick of the command. The probe `check_order_changes` (feature
+    /// `test-probes`) also panics when a writer that the scan cannot see (an alias of the type)
+    /// leaves the record out of the list.
+    #[test]
+    fn a_stop_order_lists_the_cleared_record() {
+        let mut app = app_with(20, 1000, 5);
+        install_order(
+            &mut app,
+            "combat_fixture:stop",
+            Behaviour::Stop,
+            TargetKind::None,
+            None,
+            None,
+        );
+        set_order(&mut app, hold_order());
+        app.update();
+        assert!(listed(&app).contains(&1));
+        app.world_mut()
+            .resource_mut::<crate::command::CommandQueue>()
+            .0
+            .push_back(crate::command::Command {
+                slot: SlotId(0),
+                seq: 1,
+                kind: crate::command::CommandKind::Order(Box::new(crate::orders::OrderCommand {
+                    order: cid("combat_fixture:stop"),
+                    behaviour: Behaviour::Stop,
+                    target_kind: TargetKind::None,
+                    policy: None,
+                    units: vec![1],
+                    target: OrderTargetSim::None,
+                    queue: crate::orders::QueueMode::Replace,
+                    group: 0,
+                    allowed_units: Vec::new(),
+                    queue_depth: 16,
+                })),
+            });
+        app.update();
+        let entity = entity_of(&app, 1);
+        assert!(
+            app.world()
+                .entity(entity)
+                .get::<UnitOrders>()
+                .unwrap()
+                .current
+                .is_none(),
+            "the stop cleared the current order"
+        );
+        assert_eq!(
+            listed(&app),
+            vec![1],
+            "the record changed in the tick of the stop"
+        );
+    }
+
+    /// A unit that a tick spawns has its record in the delta of that tick.
+    #[test]
+    fn the_first_tick_lists_every_record_when_nothing_was_published_before() {
+        let before: Vec<crate::economy::views::UnitOrderView> = vec![];
+        let record = |unit_id: u32| crate::economy::views::UnitOrderView {
+            unit_id,
+            owner_slot: 0,
+            activity: crate::economy::views::UnitOrderActivityView::Idle,
+            current: None,
+            queued: vec![],
+            last_failure: None,
+        };
+        let after = vec![record(1), record(2), record(3)];
+        let list = crate::orders::writer::order_change_list(
+            &std::collections::BTreeSet::new(),
+            &before,
+            &after,
+            &[3],
+        );
+        assert_eq!(
+            list.records.iter().map(|r| r.unit_id).collect::<Vec<_>>(),
+            vec![1, 2],
+            "every record but the removed unit's"
+        );
+    }
+
+    // ---- L0-WIRE repair: one red test for each input of the change list ----------------------
+    //
+    // The record of a unit reads more than `UnitOrders`: `MoveTarget`, `MoveProgress`,
+    // `PlainMoveProgress`, `PhysicalEscape`, the pending move table and the gather order. Each
+    // test changes ONE of these directly (no writer of `UnitOrders` is called), and the record
+    // changes by that input only. A plant that drops the input from `orders::writer` turns the
+    // test red (plants (13) to (24) of `l0-wire.json`).
+
+    /// An app whose unit 1 has a published, empty order record and no pending change.
+    fn quiet_orders_app() -> bevy_app::App {
+        let mut app = app_with(20, 1000, 5);
+        let first = entity_of(&app, 1);
+        crate::orders::writer::set_unit_orders(app.world_mut(), first, UnitOrders::default());
+        app.update();
+        app.update();
+        assert!(listed(&app).is_empty(), "the app is quiet");
+        app
+    }
+
+    fn move_progress(activity: crate::movement::MovementActivity) -> crate::movement::MoveProgress {
+        crate::movement::MoveProgress {
+            pool_id: 0,
+            slot: bevy_math::Vec2::new(30.0, 30.0),
+            activity,
+            pass_mode: false,
+            stalling_on_group: false,
+            stalled_ticks: 0,
+            best_distance: 0.0,
+            claim_count: 0,
+            follow_origin: None,
+        }
+    }
+
+    fn plain_progress(
+        activity: crate::movement::MovementActivity,
+    ) -> crate::movement::PlainMoveProgress {
+        crate::movement::PlainMoveProgress {
+            original_point: bevy_math::Vec2::new(30.0, 30.0),
+            slot: bevy_math::Vec2::new(30.0, 30.0),
+            pool_slots: Vec::new(),
+            gather_goal: None,
+            activity,
+            stalled_ticks: 0,
+            best_distance: 0.0,
+            claim_count: 0,
+            failure_recorded: false,
+        }
+    }
+
+    fn activity_of(app: &bevy_app::App, unit: u32) -> crate::economy::views::UnitOrderActivityView {
+        app.world()
+            .resource::<crate::economy::events::CommittedTick>()
+            .unit_orders
+            .iter()
+            .find(|record| record.unit_id == unit)
+            .expect("the record is listed")
+            .activity
+    }
+
+    #[test]
+    fn input_move_target_added_is_listed() {
+        let mut app = quiet_orders_app();
+        let entity = entity_of(&app, 1);
+        app.world_mut()
+            .entity_mut(entity)
+            .insert(crate::world::MoveTarget(bevy_math::Vec2::new(30.0, 30.0)));
+        app.update();
+        assert_eq!(listed(&app), vec![1]);
+        assert_eq!(
+            activity_of(&app, 1),
+            crate::economy::views::UnitOrderActivityView::Moving
+        );
+    }
+
+    #[test]
+    fn input_move_target_removed_is_listed() {
+        let mut app = quiet_orders_app();
+        let entity = entity_of(&app, 1);
+        app.world_mut()
+            .entity_mut(entity)
+            .insert(crate::world::MoveTarget(bevy_math::Vec2::new(30.0, 30.0)));
+        app.update();
+        app.update();
+        assert!(listed(&app).is_empty(), "the move is steady");
+        app.world_mut()
+            .entity_mut(entity)
+            .remove::<crate::world::MoveTarget>();
+        app.update();
+        assert_eq!(listed(&app), vec![1]);
+        assert_eq!(
+            activity_of(&app, 1),
+            crate::economy::views::UnitOrderActivityView::Idle
+        );
+    }
+
+    #[test]
+    fn input_move_progress_added_is_listed() {
+        let mut app = quiet_orders_app();
+        let entity = entity_of(&app, 1);
+        app.world_mut()
+            .entity_mut(entity)
+            .insert(move_progress(crate::movement::MovementActivity::Blocked));
+        app.update();
+        assert_eq!(listed(&app), vec![1]);
+        assert_eq!(
+            activity_of(&app, 1),
+            crate::economy::views::UnitOrderActivityView::Blocked
+        );
+    }
+
+    #[test]
+    fn input_move_progress_removed_is_listed() {
+        let mut app = quiet_orders_app();
+        let entity = entity_of(&app, 1);
+        app.world_mut()
+            .entity_mut(entity)
+            .insert(move_progress(crate::movement::MovementActivity::Blocked));
+        app.update();
+        app.update();
+        app.world_mut()
+            .entity_mut(entity)
+            .remove::<crate::movement::MoveProgress>();
+        app.update();
+        assert_eq!(listed(&app), vec![1]);
+    }
+
+    #[test]
+    fn input_plain_move_progress_added_is_listed() {
+        let mut app = quiet_orders_app();
+        let entity = entity_of(&app, 1);
+        app.world_mut()
+            .entity_mut(entity)
+            .insert(plain_progress(crate::movement::MovementActivity::Blocked));
+        app.update();
+        assert_eq!(listed(&app), vec![1]);
+    }
+
+    #[test]
+    fn input_plain_move_progress_removed_is_listed() {
+        let mut app = quiet_orders_app();
+        let entity = entity_of(&app, 1);
+        app.world_mut()
+            .entity_mut(entity)
+            .insert(plain_progress(crate::movement::MovementActivity::Blocked));
+        app.update();
+        app.update();
+        app.world_mut()
+            .entity_mut(entity)
+            .remove::<crate::movement::PlainMoveProgress>();
+        app.update();
+        assert_eq!(listed(&app), vec![1]);
+    }
+
+    #[test]
+    fn input_physical_escape_added_is_listed() {
+        let mut app = quiet_orders_app();
+        let entity = entity_of(&app, 1);
+        app.world_mut()
+            .entity_mut(entity)
+            .insert(crate::movement::PhysicalEscape { target: None });
+        app.update();
+        assert_eq!(listed(&app), vec![1]);
+        assert_eq!(
+            activity_of(&app, 1),
+            crate::economy::views::UnitOrderActivityView::Blocked
+        );
+    }
+
+    #[test]
+    fn input_physical_escape_removed_is_listed() {
+        let mut app = quiet_orders_app();
+        let entity = entity_of(&app, 1);
+        app.world_mut()
+            .entity_mut(entity)
+            .insert(crate::movement::PhysicalEscape { target: None });
+        app.update();
+        app.update();
+        app.world_mut()
+            .entity_mut(entity)
+            .remove::<crate::movement::PhysicalEscape>();
+        app.update();
+        assert_eq!(listed(&app), vec![1]);
+    }
+
+    #[test]
+    fn input_pending_table_entry_is_listed_in_both_directions() {
+        let mut app = quiet_orders_app();
+        app.world_mut()
+            .resource_mut::<crate::orders::PendingMovementOrders>()
+            .pending_member_counts
+            .insert(1, 1);
+        app.update();
+        assert_eq!(listed(&app), vec![1]);
+        assert_eq!(
+            activity_of(&app, 1),
+            crate::economy::views::UnitOrderActivityView::Pending
+        );
+        app.world_mut()
+            .resource_mut::<crate::orders::PendingMovementOrders>()
+            .pending_member_counts
+            .remove(&1);
+        app.update();
+        assert_eq!(
+            listed(&app),
+            vec![1],
+            "the end of the pending state is listed too"
+        );
+    }
+
+    /// A unit with no `UnitOrders` has a record from its gather order only: the record changes by
+    /// the gather stage and by nothing else (this is the `gather_changed` input).
+    #[test]
+    fn input_gather_stage_is_listed() {
+        let mut app = quiet_orders_app();
+        let unit = entity_of(&app, 2);
+        assert!(app.world().entity(unit).get::<UnitOrders>().is_none());
+        let gather = |stage| crate::economy::GatherOrder {
+            node: Some(crate::ids::NodeId(7)),
+            deposit: None,
+            receiver: None,
+            stage,
+            carry: crate::economy::gather::RateCarry::default(),
+        };
+        app.world_mut()
+            .resource_mut::<crate::economy::EconomyOrders>()
+            .0
+            .insert(2, gather(crate::economy::gather::GatherStage::Gathering));
+        app.update();
+        assert_eq!(listed(&app), vec![2]);
+        assert_eq!(
+            activity_of(&app, 2),
+            crate::economy::views::UnitOrderActivityView::Gathering
+        );
+        app.update();
+        app.world_mut()
+            .resource_mut::<crate::economy::EconomyOrders>()
+            .0
+            .insert(2, gather(crate::economy::gather::GatherStage::Idle));
+        app.update();
+        assert!(
+            cleared(&app).contains(&(2, 1)),
+            "the record leaves the view when the stage goes to Idle: {:?}",
+            cleared(&app)
+        );
+    }
+
+    /// A unit that a transaction spawns in a tick has its record in that tick, also when no writer
+    /// noted it (this is the `SpawnedThisTick` input).
+    #[test]
+    fn input_a_spawned_unit_is_listed() {
+        let mut app = quiet_orders_app();
+        let state = crate::world::UnitState {
+            unit_id: 9,
+            content_id: WEAPON.into(),
+            owner_slot: 0,
+            facing: None,
+            pos: bevy_math::Vec2::new(9.0, 9.0),
+        };
+        let kind = app
+            .world()
+            .entity(entity_of(&app, 1))
+            .get::<crate::world::UnitType>()
+            .unwrap()
+            .0;
+        let mut spawn = app.world_mut().spawn((
+            UnitId(9),
+            crate::world::UnitType(kind),
+            crate::world::Owner(SlotId(0)),
+            crate::world::Position(bevy_math::Vec2::new(9.0, 9.0)),
+        ));
+        spawn.insert(UnitOrders::default());
+        app.world_mut()
+            .resource_mut::<crate::economy::events::SpawnedThisTick>()
+            .0
+            .push(state);
+        app.update();
+        assert!(listed(&app).contains(&9));
     }
 }

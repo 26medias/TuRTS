@@ -240,9 +240,11 @@ fn apply_command_inner(world: &mut World, command: &Command) -> CommandResult {
                         .find(|entity| entity.get::<UnitId>().is_some_and(|id| id.0 == *unit_id))
                         .map(|entity| entity.id());
                     if let Some(entity) = entity {
-                        world
-                            .entity_mut(entity)
-                            .insert(crate::UnitOrders::default());
+                        crate::orders::writer::set_unit_orders(
+                            world,
+                            entity,
+                            crate::UnitOrders::default(),
+                        );
                     }
                     Applied { job_id: None }
                 },

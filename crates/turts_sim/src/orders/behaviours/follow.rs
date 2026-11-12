@@ -3,7 +3,8 @@
 use crate::SlotId;
 use crate::orders::apply::{clamp_target, unit_has_pending_move, unit_radius};
 use crate::orders::behaviours::queue::start_next_queued_order;
-use crate::orders::{Order, OrderFailure, UnitOrders};
+use crate::orders::writer::edit_unit_orders;
+use crate::orders::{Order, OrderFailure};
 use crate::world::MoveTarget;
 use bevy_ecs::prelude::World;
 use std::collections::BTreeMap;
@@ -33,16 +34,15 @@ pub(in crate::orders) fn run_unit_follow_move(
             .map_or(SlotId(0), |owner| owner.0);
         let tick = world.resource::<crate::world::Tick>().0;
         crate::economy::transaction::capture_unit_order_operation(world, unit_id, |world| {
-            {
-                let mut entity_mut = world.entity_mut(entity);
-                let mut orders = entity_mut.get_mut::<UnitOrders>().unwrap();
+            edit_unit_orders(world, entity, |orders| {
                 orders.last_failure = Some(OrderFailure {
                     order: current.order.clone(),
                     reason: crate::command::RejectReason::TargetGone,
                     tick,
                 });
                 orders.current = None;
-            }
+            })
+            .unwrap();
             world
                 .entity_mut(entity)
                 .remove::<crate::world::MoveTarget>();
@@ -118,11 +118,7 @@ pub(in crate::orders) fn run_unit_follow_move(
             .get::<crate::world::Owner>()
             .map_or(SlotId(0), |owner| owner.0);
         crate::economy::transaction::capture_unit_order_operation(world, unit_id, |world| {
-            {
-                let mut entity_mut = world.entity_mut(entity);
-                let mut orders = entity_mut.get_mut::<UnitOrders>().unwrap();
-                orders.current = None;
-            }
+            edit_unit_orders(world, entity, |orders| orders.current = None).unwrap();
             world
                 .entity_mut(entity)
                 .remove::<crate::world::MoveTarget>();

@@ -32,6 +32,12 @@ pub(crate) fn weapon_enabled(world: &World, unit: u32) -> bool {
     turts_rules::supply::weapon_enabled(None, false)
 }
 
+/// The full rate (1/1): the rate of a machine, of a research station and of a producer with no
+/// shortage. The view-level rate of the wire uses it until `L-PWR`.
+pub(crate) fn full_rate() -> Ratio {
+    turts_rules::supply::rate_factor(None, false)
+}
+
 /// The rate at which a job of the producer `unit` (or a site of the constructor `unit`)
 /// advances: 1/1 at full rate, the `Rate(ratio)` of its `when_short` entry in a shortage
 /// (design 6.2). The stub says "full rate".

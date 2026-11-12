@@ -29,6 +29,7 @@ fn snapshot(tick: u32, units: &[(u32, Pos)]) -> Snapshot {
         units: units
             .iter()
             .map(|&(id, p)| UnitSnapshot {
+                site: false,
                 unit_id: UnitId(id),
                 content_id: "base:command_center".to_string(),
                 owner_slot: SlotId(0),
@@ -44,6 +45,7 @@ fn snapshot(tick: u32, units: &[(u32, Pos)]) -> Snapshot {
         healths: vec![],
         research: vec![],
         unit_orders: Vec::new(),
+        ..Default::default()
     }
 }
 
@@ -74,6 +76,7 @@ fn delta(tick: u32, base_tick: u32, positions: &[(u32, Pos)]) -> WorldDelta {
         healths: vec![],
         research: vec![],
         unit_orders: Vec::new(),
+        ..Default::default()
     }
 }
 
@@ -87,6 +90,7 @@ fn owner_move_record(id: u32, target: OrderTarget) -> UnitOrderRecord {
         }),
         queued: Vec::new(),
         last_failure: None,
+        rally: None,
     }
 }
 
@@ -150,17 +154,27 @@ fn owner_unit_orders_stage_snapshot_delta_clear_removal_and_recovery_atomically(
         current: None,
         queued: Vec::new(),
         last_failure: None,
+        rally: None,
     }];
     assert_eq!(r.apply_delta(&clear, now), DeltaOutcome::Applied);
     assert!(
         r.unit_orders[&1].current.is_none(),
         "an authored idle record clears the current owner order"
     );
+    // ORDW1 (design 6.8): a delta carries only the records that changed, so a delta that omits
+    // the unit keeps its record, and `orders_cleared` removes it.
     let omit = delta(12, 11, &[(1, pos(2.0, 0.0))]);
     assert_eq!(r.apply_delta(&omit, now), DeltaOutcome::Applied);
     assert!(
+        r.unit_orders.contains_key(&1),
+        "a delta that omits a unit leaves its record"
+    );
+    let mut cleared = delta(13, 12, &[(1, pos(3.0, 0.0))]);
+    cleared.records.orders_cleared = vec![UnitId(1)];
+    assert_eq!(r.apply_delta(&cleared, now), DeltaOutcome::Applied);
+    assert!(
         r.unit_orders.is_empty(),
-        "a complete owner table without the prior record removes it"
+        "`orders_cleared` removes the record of the unit"
     );
 
     let mut restored = snapshot(20, &[(1, pos(0.0, 0.0))]);

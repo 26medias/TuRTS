@@ -256,6 +256,7 @@ fn a_new_replicated_last_failure_is_noticed_and_sounded_once() {
                     reason: CommandRejectReason::OutOfRange,
                     tick: 2,
                 }),
+                rally: None,
             },
         );
     app.update();

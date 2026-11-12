@@ -19,6 +19,7 @@ use crate::ingest::{
 };
 use crate::join::{AcquiredPackages, JoinState, Phase};
 use crate::present::Presented;
+use crate::replica::Replica;
 use crate::scenario::ScenarioState;
 
 /// The debug JSON of the last build. It is empty until the first request is served.
@@ -251,11 +252,11 @@ pub fn debug_json(world: &World) -> String {
                     "tick": replica.last_applied_tick,
                     "units": units,
                     "nodes": nodes,
-                    "economy": replica.economy,
+                    "economy": economy_json(replica),
                     "belts": replica.belts,
                     "inserters": replica.inserters,
                     "extractors": replica.extractors,
-                    "weapons": replica.weapons,
+                    "weapons": weapons_json(replica),
                     "healths": replica.healths,
                     "unit_orders": unit_orders,
                     "research": replica.research,
@@ -553,11 +554,11 @@ pub fn report_json(world: &World) -> Value {
             "tick": replica.last_applied_tick,
             "units": units,
             "nodes": replica.nodes.values().collect::<Vec<_>>(),
-            "economy": replica.economy,
+            "economy": economy_json(replica),
             "belts": replica.belts,
             "inserters": replica.inserters,
             "extractors": replica.extractors,
-            "weapons": replica.weapons,
+            "weapons": weapons_json(replica),
             "healths": replica.healths,
             "unit_orders": unit_orders,
             "research": replica.research,
@@ -681,6 +682,7 @@ mod unit_order_debug_tests {
                     current: None,
                     queued: Vec::new(),
                     last_failure: None,
+                    rally: None,
                 },
             ),
             (
@@ -691,6 +693,7 @@ mod unit_order_debug_tests {
                     current: None,
                     queued: Vec::new(),
                     last_failure: None,
+                    rally: None,
                 },
             ),
         ]);
@@ -716,6 +719,7 @@ mod unit_order_debug_tests {
                 current: None,
                 queued: Vec::new(),
                 last_failure: None,
+                rally: None,
             },
         );
         let state = ReplicaState {
@@ -960,5 +964,77 @@ mod command_result_json_tests {
                 .get("player_id_decimal")
                 .is_none()
         );
+    }
+}
+
+/// The economy of the replica for the debug state. Each job also gets `elapsed_ticks`, derived
+/// from its progress record at the last applied tick (`Replica::job_elapsed_ticks`): the wire
+/// `JobState` has no such field since protocol 5, and the browser oracles (`m2-audit.js`) read it.
+fn economy_json(replica: &Replica) -> Value {
+    let mut value = serde_json::to_value(&replica.economy).unwrap_or(Value::Null);
+    if let Some(queues) = value.get_mut("queues").and_then(Value::as_array_mut) {
+        for queue in queues {
+            let producer = queue["producer"].as_u64().unwrap_or(0) as u32;
+            if let Some(jobs) = queue.get_mut("jobs").and_then(Value::as_array_mut) {
+                for job in jobs {
+                    let id = job["id"].as_u64().unwrap_or(0);
+                    job["elapsed_ticks"] = json!(replica.job_elapsed_ticks(producer, id));
+                }
+            }
+        }
+    }
+    value
+}
+
+/// The weapon records of the replica for the debug state. Each record also gets `cooldown`, the
+/// ticks left at the tick of the last applied delta (`turts_rules::progress::cooldown_left`): the
+/// wire record carries `ready_tick`, and the browser oracles read the count.
+fn weapons_json(replica: &Replica) -> Value {
+    let tick = replica.last_applied_tick.unwrap_or(0);
+    Value::Array(
+        replica
+            .weapons
+            .iter()
+            .map(|record| {
+                let mut value = serde_json::to_value(record).unwrap_or(Value::Null);
+                if let Some(map) = value.as_object_mut() {
+                    map.insert(
+                        "cooldown".into(),
+                        json!(turts_rules::progress::cooldown_left(
+                            record.ready_tick,
+                            tick
+                        )),
+                    );
+                }
+                value
+            })
+            .collect(),
+    )
+}
+
+#[cfg(test)]
+mod weapon_debug_tests {
+    use super::*;
+    use turts_net_protocol::{UnitId, WeaponRecord, WeaponStatus};
+
+    /// The browser oracles read `weapons[].cooldown` (`orders-oracle.js`). The wire record has
+    /// `ready_tick`; the debug state derives the ticks left at the last applied tick.
+    #[test]
+    fn the_debug_weapon_has_a_cooldown_derived_from_ready_tick() {
+        let mut replica = Replica::new(20);
+        replica.last_applied_tick = Some(10);
+        replica.weapons = vec![WeaponRecord {
+            unit: UnitId(1),
+            enabled: true,
+            ready_tick: 30,
+            damage: Ok(5),
+            status: WeaponStatus::Cooling,
+            last_target: None,
+        }];
+        let value = weapons_json(&replica);
+        assert_eq!(value[0]["cooldown"], 20, "ready_tick 30 at tick 10");
+        assert_eq!(value[0]["ready_tick"], 30);
+        replica.last_applied_tick = Some(45);
+        assert_eq!(weapons_json(&replica)[0]["cooldown"], 0, "never below 0");
     }
 }

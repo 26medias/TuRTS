@@ -301,9 +301,18 @@ pub(crate) fn run_research(world: &mut World) {
                 )?;
                 return Ok(());
             }
+            // The one function of the rate (`production::job_step_per_tick`): a research station
+            // reads no rate and is not frozen here (a disabled station was skipped above).
+            let step = super::production::job_step_per_tick(
+                head.stage,
+                false,
+                super::power::full_rate(),
+                1,
+            )
+            .unwrap_or(0);
             let elapsed = head
                 .elapsed_ticks
-                .checked_add(1)
+                .checked_add(step)
                 .ok_or(RejectReason::ArithmeticOverflow)?
                 .min(head.duration_ticks);
             if elapsed == head.duration_ticks {

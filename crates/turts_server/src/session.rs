@@ -134,6 +134,19 @@ pub fn install(app: &mut App, advertised: Advertised) {
     app.add_systems(Update, kick_pending);
 }
 
+/// The `MatchStart` of a `Welcome` under `Immediate` (design 6.7.5): the start tick is 1; each
+/// slot is its own team; the colour of a slot is its default palette index, which is the slot
+/// index (a stage-1 seat never has another colour, design 6.7.6). The lobby start step
+/// (`L-MATCH-SRV1`) builds the same record from the room.
+pub fn immediate_match_start() -> turts_net_protocol::MatchStart {
+    let slots: Vec<u8> = (0..turts_sim::slots::SLOT_COUNT).collect();
+    turts_net_protocol::MatchStart {
+        start_tick: 1,
+        teams: slots.clone(),
+        colours: slots,
+    }
+}
+
 /// Decide a `Hello`. The order of the checks fixes the reason when several fail: protocol
 /// version, lockfile hash, then the slot claim. The claim runs last, so a refused `Hello`
 /// takes no slot.
@@ -279,6 +292,7 @@ pub fn receive_hello(
                             tick: tick.0,
                             tick_hz: advertised.tick_hz,
                             match_id: match_id.0,
+                            start: immediate_match_start(),
                         });
                         traffic.record(entity);
                     }
@@ -386,6 +400,15 @@ pub fn admit_player_commands(world: &mut World) {
         if world.contains_resource::<turts_sim::economy::events::MatchStopped>() {
             continue;
         }
+        // The rate-limit bucket runs first for every envelope (design 6.8, [net 5]): a refused
+        // envelope costs a token, so a flood of bad sequences or bad targets is limited too.
+        let tick_hz = world.resource::<Advertised>().tick_hz;
+        let admitted = world.resource_mut::<RateLimitBuckets>().admit(
+            staged.slot.0,
+            tick,
+            tick_hz,
+            staged.envelope.order.units.len(),
+        );
         let newer = if let Some(mut session) = world.get_mut::<Session>(staged.connection) {
             if session.slot != staged.slot
                 || session
@@ -400,6 +423,17 @@ pub fn admit_player_commands(world: &mut World) {
         } else {
             false
         };
+        if !admitted {
+            let result = crate::orders::refusal(&staged.envelope, CommandRejectReason::RateLimited);
+            record_admission_rejection(
+                world,
+                staged,
+                tick,
+                result,
+                CommandRejectReason::RateLimited,
+            );
+            continue;
+        }
         if !newer {
             let result = crate::orders::refusal(&staged.envelope, CommandRejectReason::BadSequence);
             record_admission_rejection(
@@ -414,23 +448,6 @@ pub fn admit_player_commands(world: &mut World) {
         if let Some(reason) = production_precheck(world, &staged) {
             let result = crate::orders::refusal(&staged.envelope, reason);
             record_admission_rejection(world, staged, tick, result, reason);
-            continue;
-        }
-        let tick_hz = world.resource::<Advertised>().tick_hz;
-        if !world.resource_mut::<RateLimitBuckets>().admit(
-            staged.slot.0,
-            tick,
-            tick_hz,
-            staged.envelope.order.units.len(),
-        ) {
-            let result = crate::orders::refusal(&staged.envelope, CommandRejectReason::RateLimited);
-            record_admission_rejection(
-                world,
-                staged,
-                tick,
-                result,
-                CommandRejectReason::RateLimited,
-            );
             continue;
         }
         let resolved = {
@@ -872,6 +889,30 @@ mod tests {
             Err("protocol version mismatch")
         );
         assert_eq!(slots.slot_of(7), None, "a refused Hello takes no slot");
+    }
+
+    /// Protocol 5 refuses a client of protocol 4 with the clear reason, and the client of 4 sees
+    /// "protocol version mismatch" (`client_screens.rs` maps it to a text).
+    #[test]
+    fn protocol_4_hello_is_refused_with_the_mismatch_reason() {
+        assert_eq!(turts_net_protocol::NET_PROTOCOL_VERSION, 5);
+        let mut slots = Slots::new(2);
+        assert_eq!(
+            judge_hello(&hello(7, 4, HASH), &advertised(), &mut slots, false),
+            Err("protocol version mismatch")
+        );
+        assert_eq!(slots.slot_of(7), None, "a refused Hello takes no slot");
+    }
+
+    /// Under `Immediate` the `Welcome` carries the `MatchStart` (design 6.7.5): start tick 1, one
+    /// team and one default colour for each slot.
+    #[test]
+    fn the_immediate_welcome_carries_the_match_start() {
+        let start = immediate_match_start();
+        assert_eq!(start.start_tick, 1);
+        assert_eq!(start.teams, vec![0, 1]);
+        assert_eq!(start.colours, vec![0, 1]);
+        assert_eq!(start.teams.len(), usize::from(turts_sim::slots::SLOT_COUNT));
     }
 
     #[test]
@@ -1396,6 +1437,40 @@ mod admission_tests {
         assert_eq!(records[0].seq, 65);
         assert_eq!(records[0].reason, CommandRejectReason::RateLimited);
         assert_eq!(records[0].envelope.order.units, vec![UnitId(1)]);
+    }
+
+    /// The bucket runs first for every envelope (design 6.8, [net 5]): an envelope that
+    /// `BadSequence` refuses still costs a token. 1 envelope is accepted and 63 repeat its
+    /// sequence, so the 64 tokens are spent and a valid 65th envelope is `RateLimited`. Before
+    /// protocol 5 the 63 refusals cost nothing and the 65th envelope was accepted.
+    #[test]
+    fn a_refused_envelope_costs_a_bucket_token() {
+        let (mut app, connection) = app();
+        let mut staged_commands: Vec<_> = (0..64)
+            .map(|_| move_for(connection, 1, vec![UnitId(1)]))
+            .collect();
+        staged_commands.push(move_for(connection, 2, vec![UnitId(1)]));
+        app.world_mut()
+            .resource_mut::<StagedPlayerCommands>()
+            .0
+            .extend(staged_commands);
+
+        admit_player_commands(app.world_mut());
+
+        let records = &app.world().resource::<CommandAdmissionDiagnostics>().0;
+        assert_eq!(records.len(), 64, "63 bad sequences and the 65th envelope");
+        assert!(
+            records[..63]
+                .iter()
+                .all(|record| record.reason == CommandRejectReason::BadSequence)
+        );
+        assert_eq!(records[63].seq, 2);
+        assert_eq!(records[63].reason, CommandRejectReason::RateLimited);
+        assert_eq!(
+            app.world().get::<Session>(connection).unwrap().last_seq,
+            Some(2),
+            "the sequence of a rate-limited envelope still counts, as before"
+        );
     }
 
     #[test]

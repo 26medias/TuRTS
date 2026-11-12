@@ -171,6 +171,7 @@ fn two_slots_receive_only_own_economy_snapshot_and_delta_and_every_field_roundtr
                 owner_slot: turts_net_protocol::messages::SlotId(0),
                 pos: Pos { x: 3., y: 4. },
                 facing: None,
+                site: false,
             },
             UnitSnapshot {
                 unit_id: UnitId(2),
@@ -178,6 +179,7 @@ fn two_slots_receive_only_own_economy_snapshot_and_delta_and_every_field_roundtr
                 owner_slot: turts_net_protocol::messages::SlotId(1),
                 pos: Pos { x: 900., y: 901. },
                 facing: None,
+                site: false,
             }
         ]
     );
@@ -226,7 +228,6 @@ fn two_slots_receive_only_own_economy_snapshot_and_delta_and_every_field_roundtr
                 id: wire::JobId(20),
                 recipe: "acme:worker".into(),
                 stage: wire::JobStage::Queued,
-                elapsed_ticks: 7,
                 duration_ticks: 11,
                 charged: vec![],
                 reserved: vec![turts_mod_api::Cost {
@@ -239,7 +240,6 @@ fn two_slots_receive_only_own_economy_snapshot_and_delta_and_every_field_roundtr
                 id: wire::JobId(21),
                 recipe: "acme:worker".into(),
                 stage: wire::JobStage::Running,
-                elapsed_ticks: 7,
                 duration_ticks: 11,
                 charged: vec![turts_mod_api::Cost {
                     source: CostSource::ProducerInventory,
@@ -252,7 +252,6 @@ fn two_slots_receive_only_own_economy_snapshot_and_delta_and_every_field_roundtr
                 id: wire::JobId(22),
                 recipe: "acme:worker".into(),
                 stage: wire::JobStage::OutputBlocked,
-                elapsed_ticks: 7,
                 duration_ticks: 11,
                 charged: vec![],
                 reserved: vec![]
@@ -410,6 +409,7 @@ fn delta_filters_before_projection_keeps_public_lifecycle_and_empty_replacements
         research: vec![],
         enabled: vec![],
         events: vec![],
+        ..Default::default()
     };
     let before = batch.clone();
     let d = export::delta_for(&batch, &fixture(), SlotId(0));

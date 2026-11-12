@@ -6,7 +6,7 @@ use turts_mod_api::ContentId;
 
 use crate::{
     economy::{
-        views::{EconomyChangesView, WorldView},
+        views::{EconomyChangesView, UnitOrderView, WorldView},
         views_m3::{
             RawBeltAudit, RawEnabledAudit, RawExtractorAudit, RawHealthAudit, RawInserterAudit,
             RawOutputInventoryAudit, RawResearchAudit, RawWeaponAudit,
@@ -134,6 +134,70 @@ pub enum EventSource {
     Output(u32),
 }
 
+/// The job state of a site or a job record (design 1.1). The shape is frozen in lane 0; the
+/// writers are empty until `L-PAY`, `L-CON1` and `L-PWR`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RecordStateRow {
+    Running,
+    Slowed,
+    WaitingForFunds(ContentId),
+    OutputBlocked,
+    Held,
+}
+
+/// One rate record of a site or a production job (design 6.8). `unit` is the site, or the
+/// producer when `job` is `Some`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RateRecordRow {
+    pub unit: u32,
+    pub owner_slot: u8,
+    pub job: Option<u64>,
+    pub done: u64,
+    pub total: u64,
+    pub per_tick: u64,
+    pub at_tick: u32,
+    pub state: RecordStateRow,
+    pub charged: Vec<crate::economy::views::CostView>,
+    pub held: bool,
+    pub held_since_tick: u32,
+}
+
+/// The held `Construct` orders of one constructor (design 6.1), complete.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ConstructionQueueRow {
+    pub constructor: u32,
+    pub owner_slot: u8,
+    pub orders: Vec<(ContentId, bevy_math::Vec2)>,
+}
+
+/// The supply of one slot and one resource (design 6.2).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SupplyRow {
+    pub slot: u8,
+    pub resource: ContentId,
+    pub provided: u64,
+    pub consumed: u64,
+}
+
+/// One effect of the tick (design 6.8). `Credited` belongs to the slot `owner_slot`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum EffectRow {
+    Fired {
+        unit: u32,
+        target: u32,
+        weapon: u8,
+    },
+    Destroyed {
+        unit: u32,
+    },
+    Credited {
+        unit: u32,
+        owner_slot: u8,
+        resource: ContentId,
+        amount: u64,
+    },
+}
+
 #[derive(Resource, Debug, Clone, Default, PartialEq)]
 pub struct CommittedTick {
     pub tick: u32,
@@ -151,6 +215,24 @@ pub struct CommittedTick {
     pub research: Vec<RawResearchAudit>,
     pub enabled: Vec<RawEnabledAudit>,
     pub events: Vec<EconomyEvent>,
+    /// The complete record of each unit whose order record changed in this tick, in unit id
+    /// order (design 6.8, `unit_orders` as changes). The writer is `orders::writer`.
+    pub unit_orders: Vec<UnitOrderView>,
+    /// The units whose order record left the view, with their owner slot. A unit that this tick
+    /// removes is not listed.
+    pub orders_cleared: Vec<(u32, u8)>,
+    /// Sites that completed in this tick. The writer is `L-CON1`; it is empty in lane 0.
+    pub sites_completed: Vec<u32>,
+    /// The site records that changed. Empty in lane 0 (`L-CON1`).
+    pub site_progress: Vec<RateRecordRow>,
+    /// The job records that changed. Empty in lane 0 (`L-PAY`).
+    pub job_progress: Vec<RateRecordRow>,
+    /// The constructor queues that changed. Empty in lane 0 (`L-CON1`).
+    pub construction_queues: Vec<ConstructionQueueRow>,
+    /// The supply rows that changed. Empty in lane 0 (`L-PWR`).
+    pub supply: Vec<SupplyRow>,
+    /// The effects of this tick. Empty in lane 0 (`L-FX-WIRE`).
+    pub effects: Vec<EffectRow>,
 }
 
 pub fn committed_tick(world: &bevy_ecs::world::World) -> &CommittedTick {

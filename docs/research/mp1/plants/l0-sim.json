@@ -549,8 +549,8 @@
       {
         "file": "crates/turts_sim/src/economy/production.rs",
         "edit": {
-          "old": "                            let steps = job_step(job, rate);\n",
-          "new": "                            let steps = if rate.denominator() > 1 && job.elapsed_ticks % 2 == 1 {\n                                0\n                            } else {\n                                job_step(job, rate)\n                            };\n"
+          "old": "                            let steps = job_step(job, frozen, rate);\n",
+          "new": "                            let steps = if rate.denominator() > 1 && job.elapsed_ticks % 2 == 1 {\n                                0\n                            } else {\n                                job_step(job, frozen, rate)\n                            };\n"
         }
       }
     ],
@@ -579,7 +579,7 @@
       {
         "file": "crates/turts_sim/src/economy/production.rs",
         "edit": {
-          "old": "                            let steps = job_step(job, rate);\n",
+          "old": "                            let steps = job_step(job, frozen, rate);\n",
           "new": "                            let steps = 1;\n"
         }
       }
@@ -909,8 +909,8 @@
       {
         "file": "crates/turts_sim/src/economy/production.rs",
         "edit": {
-          "old": "    turts_rules::progress::rate_step(q, rate).unwrap_or_else(|| {\n        panic!(",
-          "new": "    turts_rules::progress::rate_step(q, rate).unwrap_or_else(|| {\n        return 0;\n        #[allow(unreachable_code)]\n        panic!("
+          "old": "    job_step_per_tick(job.stage, frozen, rate, q).unwrap_or_else(|| {\n        panic!(",
+          "new": "    job_step_per_tick(job.stage, frozen, rate, q).unwrap_or_else(|| {\n        return 0;\n        #[allow(unreachable_code)]\n        panic!("
         }
       }
     ],

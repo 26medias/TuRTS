@@ -5,7 +5,8 @@ use crate::orders::apply::{clamp_target, unit_radius};
 use crate::orders::behaviours::attack::attack_goal;
 use crate::orders::pending::UnitMoveNeedsAllocation;
 use crate::orders::plain::forget_plain_move_identity;
-use crate::orders::{Order, OrderFailure, OrderTargetSim, UnitOrders};
+use crate::orders::writer::edit_unit_orders;
+use crate::orders::{Order, OrderFailure, OrderTargetSim};
 use bevy_ecs::prelude::World;
 use turts_mod_api::Behaviour;
 
@@ -16,25 +17,25 @@ pub(in crate::orders) fn start_next_queued_order(
     unit: u32,
 ) {
     loop {
-        let next = {
-            let mut entity_mut = world.entity_mut(entity);
-            let mut orders = entity_mut.get_mut::<UnitOrders>().unwrap();
-            let Some(next) = orders.current.take().or_else(|| orders.queue.pop_front()) else {
-                return;
-            };
+        let Some(next) = edit_unit_orders(world, entity, |orders| {
+            let next = orders.current.take().or_else(|| orders.queue.pop_front())?;
             orders.current = Some(next.clone());
-            next
+            Some(next)
+        })
+        .unwrap() else {
+            return;
         };
         if let Err(reason) = start_order(world, slot, entity, unit, &next) {
             let tick = world.resource::<crate::world::Tick>().0;
-            let mut entity_mut = world.entity_mut(entity);
-            let mut orders = entity_mut.get_mut::<UnitOrders>().unwrap();
-            orders.current = None;
-            orders.last_failure = Some(OrderFailure {
-                order: next.order,
-                reason,
-                tick,
-            });
+            edit_unit_orders(world, entity, |orders| {
+                orders.current = None;
+                orders.last_failure = Some(OrderFailure {
+                    order: next.order,
+                    reason,
+                    tick,
+                });
+            })
+            .unwrap();
             continue;
         }
         break;
