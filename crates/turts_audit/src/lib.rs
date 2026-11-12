@@ -14,6 +14,7 @@
 //! Rules of this file:
 //! - shape: the log has exactly one `Initial` record, and it is the first record.
 //! - shape: a command boundary result names the slot and the seq of its input.
+//! - orders: an order command equals its immutable catalog definition (`orders.rs`).
 //! - shape: each command boundary id has exactly one operation record, which starts from the
 //!   boundary snapshot (a Command-phase operation also ends on it).
 //! - shape: an operation has the Command phase only when a command boundary names its id.
@@ -30,6 +31,7 @@ mod combat;
 mod format;
 mod industry;
 mod inventories;
+mod orders;
 mod production;
 mod reservations;
 mod slots;
@@ -162,6 +164,7 @@ pub fn validate_ledger(records: &[EconomyLogRecord]) -> Result<(), String> {
                         command.operation_id
                     ));
                 }
+                orders::check_command(command)?;
                 if commands.insert(command.operation_id, command).is_some() {
                     return Err(format!(
                         "duplicate command operation id {}",
