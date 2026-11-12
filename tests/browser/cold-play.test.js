@@ -15,7 +15,7 @@ const net = require("node:net");
 const os = require("node:os");
 const path = require("node:path");
 const test = require("node:test");
-const { ColdSession, listen, parseArgs, parseStatement, readSounds, MAX_LIMIT_S } = require("./cold-session.js");
+const { ColdSession, listen, parseArgs, parseStatement, parseReport, toolRecord, FINDING_CLASSES, readSounds, MAX_LIMIT_S } = require("./cold-session.js");
 const { readWorld } = require("./cold-probe.js");
 const { silentEnv, SILENT_ARGS } = require("./harness/silent-chrome.js");
 const play = require("./cold-play.js");
@@ -281,12 +281,47 @@ test("the probe options: --probe first-click|buttons, --control close-layer only
     assert.equal(run("--control", "close-layer").status, 2);
 });
 
+test("the report: after the statement, one time, in the fixed form; a yes or no line, a wrong class or a long text is refused", async () => {
+    const ctx = await makeSession();
+    await ctx.call("click", "100", "100", "left");
+    const form = "FINDING 1: no-response | 0001-click-p200.png | 1 | a panel opens | nothing changes\nSTUCK: none\n";
+    assert.match((await ctx.session.handle({ cmd: "report", text: form })).lines[0], /store the statement first/);
+    await ctx.call("wait", "30");
+    await ctx.call("wait", "30");
+    assert.equal((await ctx.session.handle({ cmd: "statement", text: STATEMENT("0001-click-p200.png") })).exit, 0);
+    for (const bad of ["Yes, a person can play it\nSTUCK: none\n", "FINDING 1: confusing | 0001-click-p200.png | 1 | a | b\nSTUCK: none\n",
+        `FINDING 1: other | 0001-click-p200.png | 1 | ${"word ".repeat(13)} | b\nSTUCK: none\n`, "FINDING 1: other | 0001-click-p200.png | 1 | a | b\n", "FINDING 1: other | 0009-click-p200.png | 1 | a | b\nSTUCK: none\n",
+        "FINDING 1: other | 0001-click-p200.png | 99 | a | b\nSTUCK: none\n"]) {
+        const refused = await ctx.session.handle({ cmd: "report", text: bad });
+        assert.equal(refused.exit, 3, bad);
+        assert.equal(fs.existsSync(path.join(ctx.dir, "report.txt")), false, "a refused report stores nothing");
+    }
+    const ok = await ctx.session.handle({ cmd: "report", text: form });
+    assert.equal(ok.exit, 0, ok.lines.join("\n"));
+    assert.equal(fs.readFileSync(path.join(ctx.dir, "report.txt"), "utf8"), form);
+    assert.ok(events(ctx.dir).some((event) => event.kind === "report_stored"));
+    assert.equal((await ctx.session.handle({ cmd: "report", text: form })).exit, 3, "a second report is refused");
+    assert.deepEqual(FINDING_CLASSES, ["no-response", "wrong-response", "stale-text", "hidden-control", "covered-control", "unclear-text", "too-much-text", "sound", "other"]);
+    assert.equal(parseReport("STUCK: 1 | 0001-click-p200.png | no idea what to press\n", new Set(["0001-click-p200.png"]), 2).problems.length, 0);
+});
+
+test("session.json records the tool commit and the sha256 of each tool file (check C5 compares them)", () => {
+    const record = toolRecord();
+    assert.match(record.commit, /^[0-9a-f]{40}$/);
+    assert.equal(typeof record.dirty, "boolean");
+    for (const name of ["tests/browser/cold-probe.js", "tests/browser/cold-pixels.js", "tests/browser/cold-session.js", "scripts/qa/cold_play_check.py"]) {
+        assert.equal(record.files[name], require("node:crypto").createHash("sha256").update(fs.readFileSync(path.join(REPO, name))).digest("hex"), name);
+    }
+    const script = fs.readFileSync(SESSION_JS, "utf8");
+    assert.match(script, /build: options\.build, tool: toolRecord\(\)/, "the session writes the record into session.json");
+});
+
 test("the session limit has a ceiling under the hold limit of the lock wrapper", async () => {
     assert.equal(MAX_LIMIT_S, 1500);
     assert.throws(() => new ColdSession({ page: {}, dir: "x", limitMs: 1501 * 1000 }), /1 to 1500 s/);
     assert.throws(() => new ColdSession({ page: {}, dir: "x", limitMs: 0 }), /1 to 1500 s/);
     assert.throws(() => parseArgs(["--port", "5000", "--session", "x", "--limit-secs", "1501"]), /1 to 1500/);
-    assert.equal(parseArgs(["--port", "5000", "--session", "x"]).limitSecs, 600, "the default is 10 minutes");
+    assert.equal(parseArgs(["--port", "5000", "--session", "x"]).limitSecs, 300, "the default is 5 minutes");
     assert.equal(parseArgs(["--port", "5000", "--session", "x"]).viewport.width, 1280);
     assert.equal(parseArgs(["--port", "5000", "--session", "x", "--viewport", "none"]).viewport, null);
     assert.throws(() => parseArgs(["--session", "x"]), /--port/);
@@ -398,6 +433,7 @@ async function cleanSession(setup) {
     await ctx.call("wait", "30");
     const stored = await ctx.session.handle({ cmd: "statement", text: STATEMENT("0002-click-p200.png") });
     assert.equal(stored.exit, 0, stored.lines.join("\n"));
+    await ctx.session.handle({ cmd: "report", text: "FINDING 1: no-response | 0002-click-p200.png | 2 | a panel opens | nothing changes\nSTUCK: none\n" });
     await ctx.call("wait", "2");
     await ctx.session.finish("end");
     return ctx;
@@ -429,7 +465,7 @@ test("round trip: the checker goes red on a session with no statement", async ()
     assert.equal(result.status, 1, result.out);
     assert.match(result.out, /FAIL C3a /);
     assert.match(result.out, /FAIL C3c /);
-    assert.match(result.out, /RESULT: NOT-READY \(failed: C3a\[agent\], C3c\[agent\]\)/);
+    assert.match(result.out, /RESULT: NOT-READY \(failed: C3a\[agent\], C3c\[agent\], C6\[agent\]\)/);
 });
 
 test("round trip: the checker goes red when one sound id plays 4 times in 60 s, and not for 3", async () => {
@@ -469,6 +505,7 @@ test("round trip: the checker goes red on an alert sound before the first input,
     await late.call("wait", "30");
     await late.call("wait", "30");
     await late.session.handle({ cmd: "statement", text: STATEMENT("0002-click-p200.png") });
+    await late.session.handle({ cmd: "report", text: "FINDING 1: no-response | 0002-click-p200.png | 2 | a panel opens | nothing changes\nSTUCK: none\n" });
     await late.session.finish("end");
     assert.equal(check(late.dir).status, 0, check(late.dir).out);
 });

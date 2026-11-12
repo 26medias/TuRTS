@@ -20,7 +20,7 @@ const test = require("node:test");
 const { changeStats, nonflatShare } = require("./cold-pixels.js");
 const { decodePng } = require("./harness/png.js");
 const { ColdSession } = require("./cold-session.js");
-const { SETTLE_MS, runProbe, wordCount, ownUnitsOnScreen, visibleButtons, normalisedUi } = require("./cold-probe.js");
+const { SETTLE_MS, BUTTONS_SETTLE_MS, runProbe, wordCount, ownUnitsOnScreen, visibleButtons, buttonsOutsidePage, orderButtons, normalisedUi, medianShift, boxHalf, openGround } = require("./cold-probe.js");
 const { fixtureGame } = require("./cold-fixture.js");
 const { silentEnv, SILENT_ARGS } = require("./harness/silent-chrome.js");
 
@@ -89,8 +89,40 @@ test("nonflatShare: an opaque layer with text is flat, a see-through layer is no
     assert.equal(nonflatShare(opaque, [500, 500, 10, 10]), 0, "a rect outside the page");
 });
 
-test("the probes wait 8 s for a person's first look by default", () => {
+test("the probes wait 8 s (first click) and watch 20 s (buttons, F6) by default", () => {
     assert.equal(SETTLE_MS, 8000);
+    assert.equal(BUTTONS_SETTLE_MS, 20000);
+});
+
+test("orderButtons: visible enabled order buttons, the destructive ones last; boxHalf scales with the unit; medianShift sees a moved camera, not one walker", () => {
+    const view = { width: 1280, height: 720 };
+    const button = (id, text, y, kind = "order", extra = {}) => ({ id, kind: "button", visible: true, enabled: true, rect: [1000, y, 200, 28], text, action: { kind, id: `p:${id}` }, ...extra });
+    const ui = [button("remove", "Remove this machine [X]", 300), button("disable", "Disable [D]", 255), button("move", "Camera", 100, "center_camera"), button("off", "Off", 400, "order", { enabled: false }),
+        button("hold", "Hold [H]", 330), button("out", "Out", 900)];
+    assert.deepEqual(orderButtons(ui, view).map((entry) => entry.id), ["disable", "hold", "remove"], "order kind only, on the page, enabled; Remove last");
+    assert.deepEqual(buttonsOutsidePage(ui, view).map((entry) => entry.id), ["out"]);
+    assert.equal(boxHalf(0), 48);
+    assert.equal(boxHalf(30), 48, "1.5 x 30 = 45: the minimum holds");
+    assert.equal(boxHalf(100), 150, "a large object gets a box 1.5 times its size");
+    const a = { units: [1, 2, 3, 4].map((id) => ({ unit_id: id, center: [id * 100, 100] })) };
+    const camera = { units: a.units.map((unit) => ({ unit_id: unit.unit_id, center: [unit.center[0] + 40, unit.center[1]] })) };
+    const walker = { units: a.units.map((unit) => ({ unit_id: unit.unit_id, center: unit.unit_id === 1 ? [unit.center[0] + 90, 100] : unit.center })) };
+    assert.equal(medianShift(a, camera), 40);
+    assert.equal(medianShift(a, walker), 0);
+    assert.equal(medianShift(a, { units: [] }), 0);
+});
+
+test("openGround: a point near the own units, away from every unit and node and under no panel; none when there is no room", () => {
+    const view = { width: 1280, height: 720 };
+    const world = { slot: 0, units: [{ unit_id: 1, owner_slot: 0, center: [600, 300], pick_radius: 30 }, { unit_id: 2, owner_slot: 1, center: [640, 340], pick_radius: 30 }],
+        nodes: [{ node_id: 5, center: [560, 300], pick_radius: 30 }], ui: [{ id: "panel", visible: true, rect: [0, 0, 300, 700], kind: "widget" }, { id: "big", visible: true, rect: [0, 0, 1280, 720], kind: "widget" }] };
+    const point = openGround(world, view);
+    assert.ok(point, "a point is found");
+    for (const thing of [...world.units, ...world.nodes]) assert.ok(Math.hypot(thing.center[0] - point[0], thing.center[1] - point[1]) >= 60, `away from ${thing.center}`);
+    assert.ok(point[0] >= 300, "not under the panel; a full-size widget does not block");
+    assert.notDeepEqual(openGround(world, view, [point]), point, "a point that is used is avoided");
+    assert.equal(openGround({ slot: 0, units: [], ui: [] }, view), null);
+    assert.equal(openGround({ ...world, ui: [{ id: "all", visible: true, rect: [0, 0, 1280, 720], kind: "widget" }, ...[0, 1, 2, 3].flatMap((i) => [0, 1, 2, 3].map((j) => ({ id: `t${i}${j}`, visible: true, kind: "widget", rect: [i * 320, j * 180, 320, 180] })))] }, view), null, "covered everywhere");
 });
 
 test("wordCount, visibleButtons, ownUnitsOnScreen and normalisedUi", () => {
@@ -174,9 +206,10 @@ async function probe(kind, options, probeOptions = {}) {
     const page = await browser.contexts()[0].newPage();
     try {
         await page.goto(`${base}?${encodeURIComponent(JSON.stringify(options))}`);
-        await page.setViewportSize({ width: 1280, height: 720 });
+        const viewport = probeOptions.viewport ?? { width: 1280, height: 720 };
+        await page.setViewportSize(viewport);
         const dir = path.join(tempDir(`run-${kind}`), "evidence");
-        const session = new ColdSession({ page, dir, viewport: { width: 1280, height: 720 }, limitMs: 120000, mode: `probe-${kind}`, control: probeOptions.control ?? null,
+        const session = new ColdSession({ page, dir, viewport, limitMs: 240000, mode: `probe-${kind}`, control: probeOptions.control ?? null,
             meta: { build: "fixture" } });
         await session.start();
         // The sampler of the sound records runs on a timer in a real session (cold-session.js main).
@@ -195,65 +228,74 @@ function check(dirs, extra = []) {
     return { status: run.status, out: run.stdout, err: run.stderr };
 }
 
-const GREEN = { startOverlay: true, guide: null, alerts: 0 };
-const GUIDE = { startOverlay: true, guide: "seethrough", guideWords: 80, alerts: 2 };
+const GREEN = { startOverlay: true, guide: null, alerts: 0, units: 1 };
+const FULL = { ...GREEN, units: 3 };
+const GUIDE = { startOverlay: true, guide: "seethrough", guideWords: 80, alerts: 2, units: 1 };
+const T = { skip, timeout: 240000 };
+const inputsOf = (dir) => fs.readFileSync(path.join(dir, "inputs.jsonl"), "utf8").trim().split("\n").map((line) => JSON.parse(line));
 
-test("first-click probe, green page: every own unit click selects it and changes the picture", { skip, timeout: 120000 }, async () => {
-    const { dir, record } = await probe("first-click", GREEN);
+// ---- The first-click probe: P1 (units), P3 (orders), P4 (extra clicks) ----------------------------------------
+
+test("first-click probe, green page: units, orders and extra clicks all answer; one start click, no key", T, async () => {
+    const { dir, record } = await probe("first-click", FULL);
     assert.equal(record.summary.verdict, "PASS", JSON.stringify(record.summary));
     assert.equal(record.clicks.length, 3, "the three own units, not the enemy");
     for (const click of record.clicks) {
         assert.ok(click.selection.includes(click.unit_id), JSON.stringify(click));
         assert.ok(click.visible_change && click.ok, JSON.stringify(click));
-        assert.ok(click.box_changed > 40, `box ${click.box_changed}`);
     }
     assert.deepEqual(record.start, { found: "focus_overlay", point: [640, 360] }, "the start click goes to the start overlay");
-    const inputs = fs.readFileSync(path.join(dir, "inputs.jsonl"), "utf8").trim().split("\n").map((line) => JSON.parse(line));
-    assert.deepEqual(inputs.map((input) => input.cmd), ["click", "click", "click", "click"], "the start click and one click for each unit: no key, no other input");
-    assert.ok(inputs.every((input) => input.args.button === "left"));
+    assert.equal(record.summary.orders.verdict, "PASS", JSON.stringify(record.summary.orders));
+    assert.deepEqual(record.orders.map((order) => order.text), ["Disable [D]", "Hold [H]", "Remove [X]"], "one unit of the content id; the destructive order last");
+    assert.equal(record.summary.extras.verdict, "PASS", JSON.stringify(record.extras));
+    assert.deepEqual(Object.keys(record.extras), ["enemy", "node", "ground_clear", "right_click"]);
+    assert.equal(record.extras.ground_clear.selection_after.length, 0);
+    const inputs = inputsOf(dir);
+    assert.ok(inputs.every((input) => input.cmd !== "key"), "no key");
+    assert.equal(inputs[0].cmd, "click", "the first input is the start click");
+    assert.deepEqual(inputs.filter((input) => input.cmd === "click" && input.args.button === "right").length, 1, "one right click");
     assert.deepEqual(read(dir, "probe-first-click.json").summary, record.summary, "the record is on the disk");
 });
 
-test("first-click probe, page with a see-through full-size guide: it FAILS at the first unit (the layer takes the click)", { skip, timeout: 120000 }, async () => {
+test("first-click probe, see-through full-size guide: it FAILS at the first unit; orders and extras are skipped", T, async () => {
     const { record } = await probe("first-click", GUIDE);
     assert.equal(record.summary.verdict, "FAIL");
-    assert.equal(record.summary.failed, 3, "every click fails");
     assert.equal(record.summary.first_failure.unit_id, record.clicks[0].unit_id);
-    for (const click of record.clicks) {
-        assert.deepEqual(click.selection, [], "no selection");
-        assert.equal(click.visible_change, false);
-        assert.equal(click.selection_ok, false);
-    }
-    assert.match(record.summary.reason, /first click on unit \d+ \(fixture:own\d\): selection \[\], no visible change/);
+    for (const click of record.clicks) assert.deepEqual([click.selection, click.visible_change, click.selection_ok], [[], false, false]);
+    assert.match(record.summary.reason, /first click on unit \d+ \(fixture:own\): selection \[\], no visible change/);
+    assert.equal(record.summary.orders.verdict, "SKIPPED");
+    assert.equal(record.summary.extras.verdict, "SKIPPED");
 });
 
-test("first-click probe, opaque guide: still FAILS (the click is taken), but it is not a see-through layer", { skip, timeout: 120000 }, async () => {
-    const { record } = await probe("first-click", { startOverlay: true, guide: "opaque", guideWords: 12, alerts: 0 });
+test("first-click probe, opaque guide: still FAILS (the click is taken), but it is not a see-through layer", T, async () => {
+    const { record } = await probe("first-click", { startOverlay: true, guide: "opaque", guideWords: 12, alerts: 0, units: 1 });
     assert.equal(record.summary.verdict, "FAIL");
 });
 
-test("first-click probe, positive control: after the tool closes the guide the probe passes", { skip, timeout: 120000 }, async () => {
+test("first-click probe, positive control: after the tool closes the guide the probe passes, with orders and extras", T, async () => {
     const { dir, record } = await probe("first-click", GUIDE, { control: "close-layer" });
     assert.equal(record.summary.verdict, "PASS", JSON.stringify(record.summary));
     assert.equal(record.layer_close.closed, true);
     assert.ok(record.layer_close.clicks >= 1 && record.layer_close.clicks <= 3);
+    assert.equal(record.summary.orders.verdict, "PASS");
     assert.equal(read(dir, "session.json").control, "close-layer");
 });
 
-test("first-click probe: a ring around the unit alone (no panel) is a visible change, by the box rule", { skip, timeout: 120000 }, async () => {
-    const { record } = await probe("first-click", { ...GREEN, noPanel: true });
+test("first-click probe: a ring around the unit alone is a visible change by the box rule, and the orders may be missing (P3 FAIL)", T, async () => {
+    const { record } = await probe("first-click", { ...GREEN, noPanel: true, orders: false });
     assert.equal(record.summary.verdict, "PASS", JSON.stringify(record.clicks[0]));
-    assert.ok(record.clicks[0].page_changed < 2000, `the first ring alone is under the page rule: ${record.clicks[0].page_changed}`);
-    for (const click of record.clicks) assert.ok(click.box_changed >= 40, `box ${click.box_changed}`);
+    for (const click of record.clicks) assert.ok(click.box_seen && !click.panel_seen && click.box_changed >= 40, JSON.stringify(click));
+    assert.equal(record.summary.orders.verdict, "FAIL");
+    assert.match(record.summary.orders.reason, /no order button was visible after any selection/);
 });
 
-test("first-click probe on a page with no own unit on screen is a FAIL, not a pass", { skip, timeout: 120000 }, async () => {
+test("first-click probe on a page with no own unit on screen is a FAIL, not a pass", T, async () => {
     const { record } = await probe("first-click", { ...GREEN, units: 0 });
     assert.equal(record.summary.verdict, "FAIL");
     assert.match(record.summary.reason, /no own unit on screen/);
 });
 
-test("first-click probe: a click that selects but shows nothing is a FAIL; a visible change with no selection is a FAIL", { skip, timeout: 120000 }, async () => {
+test("first-click probe: a click that selects but shows nothing is a FAIL; a visible change with no selection is a FAIL", T, async () => {
     const quiet = (await probe("first-click", { ...GREEN, selectShows: false })).record;
     assert.equal(quiet.summary.verdict, "FAIL");
     assert.ok(quiet.clicks.every((click) => click.selection_ok && !click.visible_change));
@@ -262,9 +304,51 @@ test("first-click probe: a click that selects but shows nothing is a FAIL; a vis
     assert.ok(wrong.clicks.every((click) => click.visible_change && !click.selection_ok), JSON.stringify(wrong.clicks[0]));
 });
 
-// ---- UI-record checks (F9, F3, F6) and the buttons probe (F8) -----------------------------------------------
+test("a change elsewhere on the page does not make a click seen: a block and an alert line that appear by themselves are noise", T, async () => {
+    const { record } = await probe("first-click", { ...GREEN, selectShows: false, noise: true });
+    assert.equal(record.summary.verdict, "FAIL", "the selection shows nothing; the noise is far from the unit");
+    const click = record.clicks[0];
+    assert.ok(click.selection_ok && !click.box_seen && !click.panel_seen && !click.visible_change, JSON.stringify(click));
+});
 
-test("the UI records are taken before the first input and after the first click, and are not on the disk before the release", { skip, timeout: 120000 }, async () => {
+test("an order button with no visible result is a P3 FAIL; the other orders still pass", T, async () => {
+    const { record } = await probe("first-click", { ...GREEN, ordersDead: true });
+    assert.equal(record.summary.verdict, "PASS");
+    assert.equal(record.summary.orders.verdict, "FAIL");
+    assert.deepEqual(record.orders.filter((order) => !order.acted).map((order) => order.text), ["Disable [D]"]);
+    assert.match(record.summary.orders.reason, /no visible result within 1 s for Disable \[D\] \(fixture:own\)/);
+    assert.ok(record.orders.filter((order) => order.acted).every((order) => order.notice), "Hold and Remove answer with a notice within 1 s");
+});
+
+test("each extra click has a red case: an enemy with no panel, a node with no name, ground that keeps the selection, a right click that shows nothing", { skip, timeout: 400000 }, async () => {
+    for (const [option, name] of [["enemyShows", "enemy"], ["nodeShows", "node"], ["groundKeeps", "ground_clear"], ["rightDead", "right_click"]]) {
+        const { record } = await probe("first-click", { ...GREEN, [option]: option === "groundKeeps" || option === "rightDead" });
+        assert.equal(record.summary.extras.verdict, "FAIL", `${option}: ${JSON.stringify(record.extras)}`);
+        assert.deepEqual(record.summary.extras.failed, [name], option);
+    }
+});
+
+test("a second window size: at 1024x768 the Close control of the guide is outside the page (P5), and the control cannot close the layer", T, async () => {
+    const viewport = { width: 1024, height: 768 };
+    const plain = (await probe("first-click", GUIDE, { viewport })).record;
+    assert.deepEqual(plain.viewport, viewport);
+    assert.ok(plain.buttons_outside_page.includes("guide_close"), JSON.stringify(plain.buttons_outside_page));
+    const control = await probe("first-click", GUIDE, { viewport, control: "close-layer" });
+    assert.equal(control.record.layer_close.found, false);
+    assert.equal(control.record.layer_close.closed, false);
+    assert.deepEqual(control.record.layer_close.off_page, ["guide_close"]);
+    const out = check([control.dir]);
+    assert.equal(out.status, 1, out.out);
+    assert.match(out.out, /FAIL PC .*the close control is outside the page: \['guide_close'\]/);
+    assert.match(out.out, /CONTROL-FAIL/);
+    const ok = await probe("first-click", GREEN, { viewport });
+    assert.deepEqual(ok.record.buttons_outside_page, []);
+    assert.equal(read(ok.dir, "session.json").viewport.width, 1024);
+});
+
+// ---- UI-record checks (F9, F9b, F3, F6) --------------------------------------------------------------------
+
+test("the UI records are taken before the first input and after the first click, and are not on the disk before the release", T, async () => {
     const { browser, base } = await chrome();
     const page = await browser.contexts()[0].newPage();
     try {
@@ -280,33 +364,30 @@ test("the UI records are taken before the first input and after the first click,
         await session.finish("end");
         const records = read(dir, "ui-records.json").records;
         assert.deepEqual(records.map((record) => record.label), ["before_first_input", "after_first_click_p200", "after_first_click_p1000"]);
-        const before = records[0];
-        assert.equal(before.alert_lines, 2, "two alert lines before the first input");
-        assert.ok(before.widgets.some((widget) => widget.id === "guide"));
-        const after = records[1];
-        assert.ok(after.widgets.some((widget) => widget.id === "guide_copy" && wordCount(widget.text) === 80));
-        const big = after.big_widgets.find((widget) => widget.id === "guide");
+        assert.equal(records[0].alert_lines, 2, "two alert lines before the first input");
+        assert.ok(records[0].widgets.some((widget) => widget.id === "guide"));
+        assert.ok(records[1].widgets.some((widget) => widget.id === "guide_copy" && wordCount(widget.text) === 80));
+        const big = records[1].big_widgets.find((widget) => widget.id === "guide");
         assert.ok(big.area_share > 0.9 && big.nonflat_share > 0.05 && big.capture_root, JSON.stringify(big));
     } finally { await page.close(); }
 });
 
-test("checker, UI records: a long text (F9), a see-through blocking layer (F3) and an alert line before input (F6) are FAILS; the green page is not", { skip, timeout: 120000 }, async () => {
+test("checker, UI records: a long text (F9), a long text split in pieces (F9b), a see-through layer (F3) and an alert line (F6) are FAILS; the green page is not", T, async () => {
     const green = await probe("first-click", GREEN);
     const buttons = await probe("buttons", { ...GREEN, startOverlay: false, helpButton: true });
     const ok = check([green.dir, buttons.dir], ["--partial"]);
-    assert.doesNotMatch(ok.out, /FAIL (F9|F3|F6)/, ok.out);
-    assert.match(ok.out, /PASS F9 /);
-    assert.match(ok.out, /PASS F3 /);
-    assert.match(ok.out, /PASS F6 /);
+    assert.doesNotMatch(ok.out, /FAIL (F9|F9b|F3|F6)/, ok.out);
+    for (const id of ["F9", "F9b", "F3", "F6"]) assert.match(ok.out, new RegExp(`PASS ${id} `));
+    assert.match(ok.out, /INFO G1 .*no visible text that states a goal/);
     const guide = await probe("first-click", GUIDE);
     const bad = check([guide.dir], ["--partial"]);
     assert.equal(bad.status, 1, bad.out);
     assert.match(bad.out, /FAIL F9 .*guide_copy: 80 words/);
+    assert.match(bad.out, /FAIL F9b /);
     assert.match(bad.out, /FAIL F3 .*guide/);
     assert.match(bad.out, /FAIL F6 .*2 alert lines/);
     assert.match(bad.out, /FAIL P1 .*first click on unit/);
     assert.match(bad.out, /NOT-READY/);
-    // Each fact alone: a long text on an opaque layer; a see-through layer with little text; alerts only.
     const longText = check([(await probe("first-click", { ...GREEN, guide: "opaque", guideWords: 90, alerts: 0 })).dir], ["--partial"]);
     assert.match(longText.out, /FAIL F9 /);
     assert.match(longText.out, /PASS F3 /, "an opaque layer is not see-through");
@@ -318,32 +399,41 @@ test("checker, UI records: a long text (F9), a see-through blocking layer (F3) a
     assert.match(alerts.out, /PASS F3 /);
 });
 
-test("buttons probe: a button that the start overlay covers loses its first click (F8); a button that acts passes", { skip, timeout: 120000 }, async () => {
-    const lost = await probe("buttons", { ...GREEN, helpButton: true });
-    assert.equal(lost.record.summary.verdict, "FAIL");
-    assert.equal(lost.record.buttons.length, 1);
-    assert.equal(lost.record.buttons[0].acted, false);
-    assert.equal(lost.record.buttons[0].id, "help");
-    const inputs = fs.readFileSync(path.join(lost.dir, "inputs.jsonl"), "utf8").trim().split("\n").map((line) => JSON.parse(line));
-    assert.deepEqual(inputs.map((input) => input.cmd), ["move", "click"], "the pointer rests on the button, then one click; no start click first");
-    const acts = await probe("buttons", { ...GREEN, startOverlay: false, helpButton: true });
-    assert.equal(acts.record.summary.verdict, "PASS", JSON.stringify(acts.record));
-    assert.equal(acts.record.buttons[0].acted, true);
-    assert.ok(acts.record.buttons[0].changed_ids.includes("help_panel"));
-    const failed = check([lost.dir, ], ["--partial"]);
-    assert.match(failed.out, /FAIL F8 .*help/);
+// ---- The buttons probe: F8-start and F8 ---------------------------------------------------------------------
+
+test("buttons probe: a button under the start overlay loses its first click (F8-start, a finding of its own); after the start it acts (F8 passes)", T, async () => {
+    const { dir, record } = await probe("buttons", { ...GREEN, helpButton: true });
+    assert.equal(record.summary.start.verdict, "FAIL");
+    assert.equal(record.f8_start.id, "help");
+    assert.equal(record.f8_start.acted, false);
+    assert.equal(record.f8_start.overlay_left, true, "the overlay took the click and left");
+    assert.equal(record.summary.verdict, "PASS", "after the start the same button acts");
+    assert.equal(record.buttons[0].acted, true);
+    assert.deepEqual(inputsOf(dir).map((input) => input.cmd), ["move", "click", "move", "click"], "the pointer rests, one click under the overlay; then the same for the F8 list");
+    const failed = check([dir], ["--partial"]);
+    assert.match(failed.out, /FAIL F8s .*help/);
+    assert.doesNotMatch(failed.out, /FAIL F8 /);
     assert.match(failed.out, /NOT-READY/);
-    const passed = check([acts.dir], ["--partial"]);
+});
+
+test("buttons probe: with no start overlay a button that acts passes both; the checker says so", T, async () => {
+    const { dir, record } = await probe("buttons", { ...GREEN, startOverlay: false, helpButton: true });
+    assert.equal(record.summary.start.verdict, "PASS");
+    assert.equal(record.summary.verdict, "PASS", JSON.stringify(record));
+    assert.ok(record.buttons[0].changed_ids.includes("help_panel"));
+    const passed = check([dir], ["--partial"]);
     assert.match(passed.out, /PASS F8 /);
+    assert.match(passed.out, /PASS F8s /);
 });
 
-test("buttons probe: a start overlay that vanishes on the first click does not count as the button acting", { skip, timeout: 120000 }, async () => {
+test("buttons probe: a start overlay that vanishes on the first click does not count as the button acting", T, async () => {
     const { record } = await probe("buttons", { ...GREEN, helpButton: true, helpDead: true });
-    assert.equal(record.buttons[0].acted, false, "the overlay left, the button did nothing");
-    assert.deepEqual(record.buttons[0].changed_ids, []);
+    assert.equal(record.f8_start.acted, false);
+    assert.deepEqual(record.f8_start.changed_ids, []);
+    assert.equal(record.summary.verdict, "FAIL", "the dead button does nothing after the start either");
 });
 
-test("buttons probe: what the pointer resting on a button shows (a tooltip, a glow) is not the click acting", { skip, timeout: 120000 }, async () => {
+test("buttons probe: what the pointer resting on a button shows (a tooltip, a glow) is not the click acting", T, async () => {
     const { record } = await probe("buttons", { ...GREEN, startOverlay: false, helpButton: true, helpDead: true, hover: true });
     assert.equal(record.buttons[0].acted, false, JSON.stringify(record.buttons[0]));
     assert.deepEqual(record.buttons[0].changed_ids, []);
@@ -352,23 +442,24 @@ test("buttons probe: what the pointer resting on a button shows (a tooltip, a gl
     assert.deepEqual(live.record.buttons[0].changed_ids, ["help_panel"]);
 });
 
-test("the probes wait for a person's first look: an alert line that comes in that time is F6; with no wait it is missed", { skip, timeout: 120000 }, async () => {
+test("the probes watch the page with no input: an alert line that comes in that time is F6; with no wait it is missed", T, async () => {
     const options = { ...GREEN, alerts: 2, alertsLateMs: 1500 };
     const hasty = await probe("first-click", options, { settleMs: 0 });
+    assert.deepEqual(hasty.record.watch, []);
     assert.equal(read(hasty.dir, "ui-records.json").records[0].alert_lines, 0, "the first input came before the alerts");
     const patient = await probe("first-click", options, { settleMs: 2500 });
-    const before = read(patient.dir, "ui-records.json").records[0];
-    assert.equal(before.label, "before_first_input");
-    assert.equal(before.alert_lines, 2, "after the wait the two alert lines are there");
+    assert.ok(patient.record.watch.length >= 2 && patient.record.watch[0].alert_lines === 0, JSON.stringify(patient.record.watch));
+    assert.equal(patient.record.watch.at(-1).alert_lines, 2, "the alerts are seen by the watch");
     assert.equal(patient.record.settle_ms, 2500);
-    assert.match(check([patient.dir], ["--partial"]).out, /FAIL F6 .*2 alert lines/);
+    assert.match(check([patient.dir], ["--partial"]).out, /FAIL F6 .*first at [\d.]+ s: 2 alert lines/);
     const buttons = await probe("buttons", { ...GREEN, startOverlay: false, helpButton: true, alerts: 1, alertsLateMs: 1500 }, { settleMs: 2500 });
-    assert.ok(buttons.record.buttons.some((button) => /alert_line/.test(button.id)), "the button list is read after the wait");
+    assert.ok(buttons.record.buttons.some((button) => /alert_line/.test(button.id)), "the button list is read after the watch");
+    assert.match(check([buttons.dir], ["--partial"]).out, /FAIL F6 /);
 });
 
 // ---- The verdict line ----------------------------------------------------------------------------------
 
-test("checker verdict: NOT-READY when a probe fails or is missing; MACHINE-PASS (manual checks open) only with all of them", { skip, timeout: 120000 }, async () => {
+test("checker verdict: NOT-READY when a probe fails or a part is missing; a control is judged on its probe", T, async () => {
     const green = await probe("first-click", GREEN);
     const buttons = await probe("buttons", { ...GREEN, startOverlay: false, helpButton: true });
     const both = check([green.dir, buttons.dir], ["--partial"]);
@@ -376,7 +467,7 @@ test("checker verdict: NOT-READY when a probe fails or is missing; MACHINE-PASS 
     assert.match(both.out, /RESULT: PARTIAL-PASS/);
     const missing = check([green.dir]);
     assert.equal(missing.status, 1, missing.out);
-    assert.match(missing.out, /NOT-READY \(missing: buttons probe, agent session\)/);
+    assert.match(missing.out, /NOT-READY \(missing: first-click probe 1024x768, buttons probe, agent session, reference run \(C5\)\)/);
     assert.doesNotMatch(missing.out, /MACHINE-PASS/);
     const control = (await probe("first-click", GUIDE, { control: "close-layer" })).dir;
     const ctl = check([control]);

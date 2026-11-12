@@ -42,7 +42,8 @@ const { decodePng } = require("./harness/png.js");
 const STATEMENT_AFTER_MS = 60000;
 const SHOT_OFFSETS_MS = [200, 1000];
 const SAMPLE_MS = 500;
-const DEFAULT_LIMIT_S = 600;
+// 300 s: the faults of the first cold session came in its first 60 s (docs/qa/cold-play.md).
+const DEFAULT_LIMIT_S = 300;
 // The headed wrapper holds the GPU lock for 1,800 s at most (mc_headed_v6.sh); the session must end first.
 const MAX_LIMIT_S = 1500;
 const MAX_WAIT_S = 30;
@@ -51,6 +52,8 @@ const INPUT_KINDS = new Set(["move", "click", "drag", "wheel", "key"]);
 const STATEMENT_KEYS = ["GOAL", "GOAL_SHOT", "FIRST_ACTION", "FIRST_ACTION_SHOT", "WORKED", "WORKED_SHOT"];
 const SHOT_NAME = /^(?:0000-start|\d{4}-[a-z]+-p(?:200|1000))\.png$/;
 const KEY_NAME = /^[A-Za-z0-9]{1,24}$/;
+const FINDING_CLASSES = ["no-response", "wrong-response", "stale-text", "hidden-control", "covered-control", "unclear-text", "too-much-text", "sound", "other"];
+const REPORT_WORDS = 12;
 
 const USAGE = [
     "inputs (one for each call):",
@@ -64,6 +67,7 @@ const USAGE = [
     "other calls:",
     "  status                   the clocks",
     "  statement FILE           store your statement (see below); it opens after 60 s from your first click",
+    "  report FILE              store your report (the form below) after the statement",
     "  end                      end the session",
     "statement file, six lines, each KEY: value on one line:",
     "  GOAL: what you think the goal is",
@@ -73,6 +77,11 @@ const USAGE = [
     "  WORKED: how you know that the action worked",
     "  WORKED_SHOT: the screenshot file that shows it",
     "At 60 s after your first click or drag you must store the statement. No input is accepted before that.",
+    "report file, after the statement (no yes or no line; the form is fixed):",
+    "  FINDING 1: CLASS | SHOT | INPUT | EXPECTED | SEEN      one line for each finding, numbered from 1",
+    `    CLASS is one of: ${FINDING_CLASSES.join(", ")}`,
+    `    SHOT a screenshot file; INPUT the number of the call that caused it, or none; EXPECTED and SEEN ${REPORT_WORDS} words or fewer`,
+    "  STUCK: CALL | SHOT | TEXT     the call and the screenshot where you did not know what to do, or: STUCK: none",
 ].join("\n");
 
 // Runs in the page: the sound onsets of the debug state. The page publishes them; the tool keeps
@@ -117,6 +126,63 @@ function parseStatement(text, shotNames) {
     return { fields, problems };
 }
 
+// The report of an agent session in its fixed form. Each problem is one sentence. `calls` is the number of calls made.
+function parseReport(text, shotNames, calls) {
+    const problems = [];
+    const findings = [];
+    let stuck = null;
+    text.split(/\r?\n/).forEach((line, index) => {
+        if (!line.trim()) return;
+        const where = `line ${index + 1}`;
+        if (/^\s*(yes|no|answer|verdict|ready|not ready)\b/i.test(line)) { problems.push(`${where}: the form has no yes or no line`); return; }
+        let match = /^FINDING (\d+): (.*)$/.exec(line);
+        if (match) {
+            const parts = match[2].split("|").map((part) => part.trim());
+            if (Number(match[1]) !== findings.length + 1) problems.push(`${where}: findings are numbered 1, 2, 3 in order`);
+            if (parts.length !== 5) { problems.push(`${where}: a finding has five parts: CLASS | SHOT | INPUT | EXPECTED | SEEN`); return; }
+            const [cls, shot, input, expected, seen] = parts;
+            if (!FINDING_CLASSES.includes(cls)) problems.push(`${where}: CLASS ${cls} is not one of ${FINDING_CLASSES.join(", ")}`);
+            if (!SHOT_NAME.test(path.basename(shot)) || !shotNames.has(path.basename(shot))) problems.push(`${where}: SHOT ${shot} is not a screenshot file of this session`);
+            if (input !== "none" && !(/^\d+$/.test(input) && Number(input) >= 1 && Number(input) <= calls)) problems.push(`${where}: INPUT is a call number from 1 to ${calls}, or none`);
+            for (const [name, value] of [["EXPECTED", expected], ["SEEN", seen]]) {
+                if (!value) problems.push(`${where}: ${name} is empty`);
+                else if (value.split(/\s+/).length > REPORT_WORDS) problems.push(`${where}: ${name} has more than ${REPORT_WORDS} words`);
+            }
+            findings.push({ cls, shot, input, expected, seen });
+            return;
+        }
+        match = /^STUCK: (.*)$/.exec(line);
+        if (match) {
+            if (stuck !== null) problems.push(`${where}: STUCK is given two times`);
+            else if (match[1].trim() === "none") stuck = "none";
+            else {
+                const parts = match[1].split("|").map((part) => part.trim());
+                if (parts.length !== 3 || !/^\d+$/.test(parts[0]) || Number(parts[0]) < 1 || Number(parts[0]) > calls || !shotNames.has(path.basename(parts[1])) || !parts[2]) problems.push(`${where}: STUCK is "none" or CALL | SHOT | TEXT (a call number, a screenshot of this session, a text)`);
+                stuck = parts;
+            }
+            return;
+        }
+        problems.push(`${where} is not FINDING n: ... or STUCK: ...`);
+    });
+    if (stuck === null) problems.push("STUCK is missing (write STUCK: none when you were not stuck)");
+    return { findings, stuck, problems };
+}
+
+// The tool commit and the sha256 of each tool file, for session.json (check C5 compares them with the tool under review).
+const TOOL_FILES = ["tests/browser/cold-probe.js", "tests/browser/cold-pixels.js", "tests/browser/cold-session.js", "tests/browser/cold-play.js",
+    "tests/browser/harness/png.js", "scripts/qa/cold_play_check.py"];
+function toolRecord(root = path.resolve(__dirname, "../..")) {
+    const git = (...args) => require("node:child_process").spawnSync("git", ["-C", root, ...args], { encoding: "utf8" });
+    const files = {};
+    for (const name of TOOL_FILES) {
+        const file = path.join(root, name);
+        if (fs.existsSync(file)) files[name] = crypto.createHash("sha256").update(fs.readFileSync(file)).digest("hex");
+    }
+    const commit = git("rev-parse", "HEAD");
+    const dirty = git("status", "--porcelain", "--", ...TOOL_FILES);
+    return { commit: commit.status === 0 ? commit.stdout.trim() : null, dirty: dirty.status === 0 ? dirty.stdout.trim().length > 0 : null, files };
+}
+
 function refuse(exit, ...lines) { return { exit, lines }; }
 
 class ColdSession {
@@ -134,6 +200,7 @@ class ColdSession {
         this.calls = 0;
         this.firstClickMs = null;
         this.statementMs = null;
+        this.reportMs = null;
         this.dueRecorded = false;
         this.pointer = null;
         this.ended = null;
@@ -297,6 +364,7 @@ class ColdSession {
             if (cmd === "status") return this.reply(0, ["status"]);
             if (cmd === "end") { await this.finish("end"); return refuse(0, "the session is over. The evidence folder is complete."); }
             if (cmd === "statement") return await this.storeStatement(text ?? "");
+            if (cmd === "report") return await this.storeReport(text ?? "");
             if (cmd === "wait") return await this.wait(args);
             if (!INPUT_KINDS.has(cmd)) return refuse(2, `unknown call "${cmd}"`, USAGE);
             return await this.input(cmd, args, hook);
@@ -422,6 +490,22 @@ class ColdSession {
         return this.reply(0, ["statement stored.", `sound records: ${path.join(this.dir, "sound-records.json")} (they are released now; they grow until the session ends)`]);
     }
 
+    // The report: the fixed form, after the statement, one time. It is read by the reviewer; the answer of the agent is not.
+    async storeReport(text) {
+        if (this.mode !== "agent") return this.reply(3, ["refused: a probe session has no report."]);
+        if (this.statementMs === null) return this.reply(3, ["refused: store the statement first."]);
+        if (this.reportMs !== null) return this.reply(3, ["refused: the report is stored already. It is not changed."]);
+        const { problems } = parseReport(text, new Set(fs.readdirSync(this.shotsDir)), this.calls);
+        if (problems.length) {
+            this.record("report_refused", { problems: problems.length });
+            return this.reply(3, ["refused: the report is not stored.", ...problems.map((problem) => `  - ${problem}`)]);
+        }
+        fs.writeFileSync(path.join(this.dir, "report.txt"), text, { flag: "wx" });
+        this.reportMs = this.t();
+        this.record("report_stored", { sha256: crypto.createHash("sha256").update(text).digest("hex"), bytes: Buffer.byteLength(text) });
+        return this.reply(0, ["report stored."]);
+    }
+
     // End the session: one more read of the sounds, the release if the gate has not opened, end.json.
     finish(reason) {
         if (!this.finishing) {
@@ -502,7 +586,7 @@ async function main(argv) {
     const session = new ColdSession({
         page, dir: options.session, limitMs: options.limitSecs * 1000, viewport: options.viewport,
         mode: options.probe ? `probe-${options.probe}` : "agent", control: options.control,
-        meta: { url: options.url ?? page.url(), build: options.build, chrome: browser.version(), lock_marker: process.env.MC_LOCK_RUN ?? null, node: process.version },
+        meta: { url: options.url ?? page.url(), build: options.build, tool: toolRecord(), chrome: browser.version(), lock_marker: process.env.MC_LOCK_RUN ?? null, node: process.version },
     });
     if (options.viewport) await page.setViewportSize(options.viewport);
     await session.start();
@@ -541,4 +625,4 @@ if (require.main === module) {
         (error) => { console.error(`cold-session: ${error.stack || error}`); process.exit(1); });
 }
 
-module.exports = { ColdSession, listen, parseArgs, parseStatement, readSounds, USAGE, STATEMENT_KEYS, SHOT_OFFSETS_MS, STATEMENT_AFTER_MS, MAX_LIMIT_S, DEFAULT_LIMIT_S };
+module.exports = { ColdSession, listen, parseArgs, parseStatement, parseReport, toolRecord, FINDING_CLASSES, readSounds, USAGE, STATEMENT_KEYS, SHOT_OFFSETS_MS, STATEMENT_AFTER_MS, MAX_LIMIT_S, DEFAULT_LIMIT_S };

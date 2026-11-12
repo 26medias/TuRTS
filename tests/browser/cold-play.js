@@ -19,7 +19,7 @@ const path = require("node:path");
 const { USAGE } = require("./cold-session.js");
 
 const MAX_STATEMENT_BYTES = 16384;
-const CALLS = new Set(["move", "click", "drag", "wheel", "key", "wait", "status", "statement", "end"]);
+const CALLS = new Set(["move", "click", "drag", "wheel", "key", "wait", "status", "statement", "report", "end"]);
 
 // Ask the session. `timeoutMs` bounds the wait for the reply.
 function ask(port, request, timeoutMs) {
@@ -44,14 +44,14 @@ async function main(argv, out = process.stdout, err = process.stderr) {
         return 2;
     }
     const request = { cmd, args };
-    if (cmd === "statement") {
-        if (args.length !== 1) { err.write("usage: statement FILE\n"); return 2; }
+    if (cmd === "statement" || cmd === "report") {
+        if (args.length !== 1) { err.write(`usage: ${cmd} FILE\n`); return 2; }
         let text;
         try {
             const size = fs.statSync(args[0]).size;
             if (size > MAX_STATEMENT_BYTES) throw new Error(`the file is larger than ${MAX_STATEMENT_BYTES} bytes`);
             text = fs.readFileSync(args[0], "utf8");
-        } catch (error) { err.write(`cannot read the statement file: ${error.message}\n`); return 2; }
+        } catch (error) { err.write(`cannot read the file: ${error.message}\n`); return 2; }
         request.text = text;
         request.args = [];
     }

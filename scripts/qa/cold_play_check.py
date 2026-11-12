@@ -52,7 +52,7 @@ import sys
 from pathlib import Path
 
 STATEMENT_KEYS = ("GOAL", "GOAL_SHOT", "FIRST_ACTION", "FIRST_ACTION_SHOT", "WORKED", "WORKED_SHOT")
-SHOT_NAME = re.compile(r"^(?:0000-start|\d{4}-[a-z]+-p(?:200|1000)|probe-\d{3}-[ab])\.png$")
+SHOT_NAME = re.compile(r"^(?:0000-start|\d{4}-[a-z]+-p(?:200|1000)|probe-(?:[a-z]+-)?\d{3}-[ab])\.png$")
 KEY_NAME = re.compile(r"^[A-Za-z0-9]{1,24}$")
 # "do not know" anywhere in a part is a fail (protocol check C3); an empty-answer word fails when it starts the part.
 NO_ANSWER = re.compile(r"\b(?:do not know|don['\u2019]?t know|no idea)\b|^(?:unknown|none|n/a|not sure|unsure|unclear|nothing)\b", re.IGNORECASE)
@@ -62,6 +62,12 @@ WRAPPER_HOLD_S = 1800
 # The slack for a screenshot: it is taken after the wait; late is the fault.
 SHOT_LATE_MS = {200: 500, 1000: 700}
 MAX_WORDS = 40
+MAX_TOTAL_WORDS = 60
+GOAL_LINE = re.compile(r"\b(goal|objective|mission|destroy|win|capture|defend|survive|research)\b", re.IGNORECASE)
+# The files of the tool: their sha256 is written to session.json and compared by check C5.
+TOOL_FILES = ("tests/browser/cold-probe.js", "tests/browser/cold-pixels.js", "tests/browser/cold-session.js", "tests/browser/cold-play.js",
+              "tests/browser/harness/png.js", "scripts/qa/cold_play_check.py")
+REQUIRED_SIZES = ("1280x720", "1024x768")
 SEE_THROUGH_SHARE = 0.05
 # The times are whole milliseconds, so a screenshot can start 1 ms before its mark; more than that is early.
 EARLY_JITTER_MS = 3
@@ -118,6 +124,49 @@ class Report:
         return [row["check"] if not row["folder"] else f"{row['check']}[{row['folder'].split()[0]}]" for row in self.rows if row["status"] == "FAIL"]
 
 
+FINDING_CLASSES = ("no-response", "wrong-response", "stale-text", "hidden-control", "covered-control", "unclear-text", "too-much-text", "sound", "other")
+
+
+def parse_report(text, calls, shots):
+    """The fixed report form of an agent session. Returns (findings, stuck, problems); a yes or no line is a problem."""
+    findings, problems, stuck = [], [], None
+    for number, line in enumerate(text.splitlines(), 1):
+        if not line.strip():
+            continue
+        if re.match(r"^\s*(yes|no|answer|verdict|ready|not ready)\b", line, re.IGNORECASE):
+            problems.append(f"line {number}: the form has no yes or no line")
+            continue
+        match = re.match(r"^FINDING (\d+): (.*)$", line)
+        if match:
+            parts = [part.strip() for part in match.group(2).split("|")]
+            if int(match.group(1)) != len(findings) + 1:
+                problems.append(f"line {number}: findings are numbered in order")
+            if len(parts) != 5:
+                problems.append(f"line {number}: a finding has five parts")
+                continue
+            cls, shot, call, expected, seen = parts
+            if cls not in FINDING_CLASSES:
+                problems.append(f"line {number}: unknown class {cls}")
+            if Path(shot).name not in shots:
+                problems.append(f"line {number}: {shot} is not a screenshot of the session")
+            if call != "none" and not (call.isdigit() and 1 <= int(call) <= calls):
+                problems.append(f"line {number}: INPUT is a call number or none")
+            if not expected or not seen or len(expected.split()) > 12 or len(seen.split()) > 12:
+                problems.append(f"line {number}: EXPECTED and SEEN are 1 to 12 words")
+            findings.append(parts)
+            continue
+        match = re.match(r"^STUCK: (.*)$", line)
+        if match:
+            if stuck is not None:
+                problems.append(f"line {number}: STUCK twice")
+            stuck = "none" if match.group(1).strip() == "none" else [part.strip() for part in match.group(1).split("|")]
+            continue
+        problems.append(f"line {number} is not FINDING or STUCK")
+    if stuck is None:
+        problems.append("STUCK is missing")
+    return findings, stuck, problems
+
+
 def parse_statement(text):
     fields, problems = {}, []
     for number, line in enumerate(text.splitlines(), 1):
@@ -141,7 +190,7 @@ def parse_statement(text):
 
 
 def probe_checks(folder, mode, control, report):
-    """P1 (first-click probe), PC (its control), F8 (buttons probe): the verdict of a probe record."""
+    """P1, P3, P4, P5 (first-click probe), PC (its control), F8s and F8 (buttons probe): the verdict of a probe record."""
     if mode not in ("probe-first-click", "probe-buttons"):
         return
     name = "probe-first-click.json" if mode == "probe-first-click" else "probe-buttons.json"
@@ -153,12 +202,27 @@ def probe_checks(folder, mode, control, report):
     summary = record.get("summary", {})
     ok = summary.get("verdict") == "PASS"
     if mode == "probe-first-click":
+        outside = record.get("buttons_outside_page", [])
         if control:
-            closed = (record.get("layer_close") or {}).get("closed")
-            report.add("PC", ok and bool(closed), f"control ({control}): {summary.get('verdict')}; layer closed by the tool: {closed}; {summary.get('reason')}")
-        else:
-            report.add("P1", ok and summary.get("clicks", 0) >= 1, f"first-click probe {summary.get('verdict')}: {summary.get('reason')}")
+            layer = record.get("layer_close") or {}
+            report.add("PC", ok and bool(layer.get("closed")), f"control ({control}): {summary.get('verdict')}; layer closed by the tool: {layer.get('closed')}"
+                       + (f"; the close control is outside the page: {layer.get('off_page')}" if layer.get("off_page") else "") + f"; {summary.get('reason')}")
+            # The order and extra clicks are shown, not judged: a control is judged on the layer only.
+            for key, label in (("orders", "P3"), ("extras", "P4")):
+                part = summary.get(key, {})
+                report.info(label, f"control, not judged: {part.get('verdict')}: {part.get('reason')}")
+            return
+        report.add("P1", ok and summary.get("clicks", 0) >= 1, f"first-click probe {summary.get('verdict')}: {summary.get('reason')}")
+        for key, label in (("orders", "P3"), ("extras", "P4")):
+            part = summary.get(key, {"verdict": "SKIPPED"})
+            if part.get("verdict") == "SKIPPED":
+                report.info(label, f"skipped: {part.get('reason', 'the first-click part failed')}")
+            else:
+                report.add(label, part.get("verdict") == "PASS", f"{part.get('verdict')}: {part.get('reason')}")
+        report.add("P5", not outside, "no visible button outside the page at this size" + (f"; outside: {outside}" if outside else ""))
     else:
+        start = summary.get("start", {})
+        report.add("F8s", start.get("verdict") in ("PASS", "SKIPPED"), f"a button under the start overlay: {start.get('verdict')}: {start.get('reason')}")
         lost = [button for button in record.get("buttons", []) if not button.get("acted")]
         report.add("F8", ok and not lost, f"buttons probe {summary.get('verdict')}: {summary.get('reason')}")
 
@@ -168,7 +232,7 @@ def words(text):
 
 
 def ui_checks(folder, mode, report, by_kind):
-    """U0, F9, F3, F6 from ui-records.json: the UI record before the first input and after the first click."""
+    """U0, F9, F9b, G1, F3, F6 from ui-records.json and the watch of the probe: the UI record before the first input and after the first click."""
     path = folder / "ui-records.json"
     if not path.is_file():
         report.add("U0", False, "ui-records.json is missing")
@@ -183,15 +247,29 @@ def ui_checks(folder, mode, report, by_kind):
     report.add("U0", ok, f"UI records: {[r.get('label') for r in records]}" + (f"; the debug bridge did not answer for {unavailable}" if unavailable else ""))
     if not records or unavailable:
         return
-    # F9: a visible text block of more than 40 words that no input opened.
-    long_texts = {}
+    # F9: a visible text block of more than 40 words; F9b: more than 60 words in all (a long text split into small widgets).
+    long_texts, total = {}, 0
     for record in after:
+        sum_now = 0
         for widget in record.get("widgets", []):
             count = words(widget.get("text"))
-            if widget.get("kind") != "focus_overlay" and count > MAX_WORDS:
+            if widget.get("kind") == "focus_overlay" or "tooltip" in str(widget.get("id")) or str(widget.get("id")).startswith("world"):
+                continue
+            sum_now += count
+            if count > MAX_WORDS:
                 long_texts[widget["id"]] = count
+        total = max(total, sum_now)
     report.add("F9", not long_texts, f"no visible text of more than {MAX_WORDS} words after the first click"
                + (f"; {', '.join(f'{k}: {v} words' for k, v in sorted(long_texts.items()))}" if long_texts else ""))
+    report.add("F9b", total <= MAX_TOTAL_WORDS, f"at most {MAX_TOTAL_WORDS} words of visible text in all after the first click ({total} words)")
+    # The words of the first text that states a goal: recorded, not a verdict yet.
+    goal = None
+    for record in after[-1:]:
+        for widget in record.get("widgets", []):
+            if isinstance(widget.get("text"), str) and GOAL_LINE.search(widget["text"]) and widget.get("kind") != "focus_overlay":
+                goal = widget
+                break
+    report.info("G1", f"goal line (recorded, not judged): {words(goal['text'])} words in {goal['id']}" if goal else "goal line (recorded, not judged): no visible text that states a goal")
     # F3: a layer of more than half of the page that takes pointer input and lets the world show through.
     layers = {}
     for record in after:
@@ -203,14 +281,60 @@ def ui_checks(folder, mode, report, by_kind):
                 layers[widget["id"]] = (widget.get("area_share"), share)
     report.add("F3", not layers, "no layer of more than half of the page takes input and shows the world through, after the first click"
                + (f"; {', '.join(f'{k} (area {a:.0%}, see-through ' + ('unmeasured' if s is None else f'{s:.0%}') + ')' for k, (a, s) in sorted(layers.items()))}" if layers else ""))
-    # F6: an alert line before the first input.
+    # F6: an alert line before the first input, at any second of the watch.
     before = by_label.get("before_first_input")
+    watch = []
+    for name in ("probe-first-click.json", "probe-buttons.json"):
+        if (folder / name).is_file():
+            watch = load_json(folder / name).get("watch", [])
+    seen = [(w["t_ms"], w.get("alert_lines", 0), w.get("alerts", 0)) for w in watch if w.get("alert_lines", 0) or w.get("alerts", 0)]
     if before is not None:
         lines, alerts = before.get("alert_lines", 0), before.get("alerts", 0)
-        report.add("F6", lines == 0 and alerts == 0, "no alert line before the first input"
-                   + (f"; {lines} alert line{'s' if lines != 1 else ''} (debug alerts: {alerts})" if lines or alerts else ""))
+        if lines or alerts:
+            seen.append((before.get("t_ms"), lines, alerts))
+        report.add("F6", not seen, f"no alert line before the first input (watched {len(watch)} s + the record before the input)"
+                   + (f"; first at {seen[0][0] / 1000:.1f} s: {seen[0][1]} alert line{'s' if seen[0][1] != 1 else ''} (debug alerts: {seen[0][2]})" if seen else ""))
     else:
         report.info("F6", "no input in the session: nothing to compare")
+
+
+def size_of(session):
+    view = session.get("viewport") or {}
+    return f"{view.get('width')}x{view.get('height')}"
+
+
+def tool_hashes_now():
+    """The sha256 of each file of the tool under review (the repository that holds this checker)."""
+    root = Path(__file__).resolve().parents[2]
+    return {name: hashlib.sha256((root / name).read_bytes()).hexdigest() for name in TOOL_FILES if (root / name).is_file()}
+
+
+def reference_checks(folders, report):
+    """C5: the reference red, repeated for THIS tool version. The folders are runs on the reference build (9b3a7bd forge).
+    Each must record the sha256 of the tool files that are here now; the probe must FAIL and the control must PASS."""
+    now = tool_hashes_now()
+    report.label = "reference " + ", ".join(str(f) for f in folders)
+    stale, probe_fail, control_pass, builds = [], False, False, set()
+    for folder in folders:
+        session = load_json(folder / "session.json")
+        tool = session.get("tool") or {}
+        recorded = tool.get("files") or {}
+        differ = sorted(name for name in now if recorded.get(name) != now[name])
+        if differ or not recorded or tool.get("dirty"):
+            stale.append(f"{folder.name}: " + ("no tool record" if not recorded else f"differs: {', '.join(Path(n).name for n in differ)}" if differ else "tool tree was dirty"))
+        builds.add(str(session.get("build")))
+        probe_path = folder / "probe-first-click.json"
+        if probe_path.is_file():
+            summary = load_json(probe_path).get("summary", {})
+            if session.get("control"):
+                layer = load_json(probe_path).get("layer_close") or {}
+                control_pass = control_pass or (summary.get("verdict") == "PASS" and bool(layer.get("closed")))
+            else:
+                probe_fail = probe_fail or summary.get("verdict") == "FAIL"
+    report.add("C5a", not stale, "every reference run was made with the tool files that are here (sha256 in session.json); otherwise run the reference again for this tool version"
+               + (f"; {stale}" if stale else ""))
+    report.add("C5b", probe_fail and control_pass, f"on the reference build the first-click probe FAILS ({probe_fail}) and its control PASSES ({control_pass})")
+    report.add("C5c", bool(builds) and all("9b3a7bd" in b for b in builds), f"the reference runs name the build 9b3a7bd: {sorted(builds)}")
 
 
 def check(folder, receipt=None, lock_check=True, report=None):
@@ -291,7 +415,7 @@ def check(folder, receipt=None, lock_check=True, report=None):
 
     if control:
         probe_checks(folder, mode, control, report)
-        return {"mode": mode, "control": control}
+        return {"mode": mode, "control": control, "size": size_of(session)}
     if mode == "agent":
         # C2a: keys.
         keys = [event for event in input_events if event["cmd"] == "key"]
@@ -337,6 +461,17 @@ def check(folder, receipt=None, lock_check=True, report=None):
             report.add("C3h", not shot_problems, "each part names a screenshot file of the session, taken before the statement" + (f"; PROBLEMS: {shot_problems}" if shot_problems else ""))
         else:
             report.add("C3c", False, "no statement: the sound records opened with no statement before them")
+        # C6: the report in its fixed form. The reviewer reads the findings; no yes or no is read.
+        report_path = folder / "report.txt"
+        if report_path.is_file() and by_kind.get("report_stored"):
+            findings, stuck, problems = parse_report(report_path.read_text(encoding="utf-8"), len(input_events), set(shot_events))
+            report.add("C6", not problems, f"report.txt has the fixed form: {len(findings)} findings, stuck: {'no' if stuck == 'none' else 'yes'}" + (f"; PROBLEMS: {problems}" if problems else ""))
+            for index, parts in enumerate(findings, 1):
+                report.info("C6", f"FINDING {index}: {' | '.join(parts)}")
+            if stuck not in (None, "none"):
+                report.info("C6", f"STUCK: {' | '.join(stuck)}")
+        else:
+            report.add("C6", False, "no report.txt in the fixed form (the session call: report FILE)")
 
     # S1, F5: the sound records.
     records_path = folder / "sound-records.json"
@@ -345,7 +480,7 @@ def check(folder, receipt=None, lock_check=True, report=None):
         report.add("S1", False, "sound-records.json is missing")
         probe_checks(folder, mode, control, report)
         ui_checks(folder, mode, report, by_kind)
-        return {"mode": mode, "control": control}
+        return {"mode": mode, "control": control, "size": size_of(session)}
     sampling = sound.get("sampling", {})
     expected = (end_t or 0) / sampling.get("interval_ms", 500) * 0.5
     samples = sampling.get("samples", 0)
@@ -374,16 +509,22 @@ def check(folder, receipt=None, lock_check=True, report=None):
     report.add("F5b", not early, "no alert sound before the first input" + (f"; {early}" if early else ""))
     probe_checks(folder, mode, control, report)
     ui_checks(folder, mode, report, by_kind)
-    return {"mode": mode, "control": control}
+    return {"mode": mode, "control": control, "size": size_of(session)}
 
 
-def verdict(report, infos, partial):
+def verdict(report, infos, partial, reference_given=False):
     """The result word. It never depends on an answer of an agent."""
     failed = report.failed
     if infos and all(info["control"] for info in infos):
         return ("CONTROL-FAIL: " + ", ".join(failed)) if failed else "CONTROL-PASS (the probe can pass: it is not a readiness run)"
-    modes = {info["mode"] for info in infos if not info["control"]}
-    missing = [] if partial else [name for name, key in (("first-click probe", "probe-first-click"), ("buttons probe", "probe-buttons"), ("agent session", "agent")) if key not in modes]
+    have = {(info["mode"], info["size"]) for info in infos if not info["control"]}
+    modes = {mode for mode, _ in have}
+    missing = []
+    if not partial:
+        missing += [f"first-click probe {size}" for size in REQUIRED_SIZES if ("probe-first-click", size) not in have]
+        missing += [name for name, key in (("buttons probe", "probe-buttons"), ("agent session", "agent")) if key not in modes]
+        if not reference_given:
+            missing.append("reference run (C5)")
     if failed or missing:
         parts = ([f"failed: {', '.join(failed)}"] if failed else []) + ([f"missing: {', '.join(missing)}"] if missing else [])
         return f"NOT-READY ({'; '.join(parts)})"
@@ -411,6 +552,7 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description="Check cold-play evidence folders (no browser).")
     parser.add_argument("folder")
     parser.add_argument("--also", action="append", default=[], help="another folder of the same readiness run (a probe or the agent session)")
+    parser.add_argument("--reference", action="append", default=[], help="a folder of a run on the reference build (probe or control), made with this tool version (C5)")
     parser.add_argument("--receipt", help="lock-receipt.json of the headed wrapper (for the first folder)")
     parser.add_argument("--no-lock-check", action="store_true", help="the session did not run under the headed wrapper (a test)")
     parser.add_argument("--partial", action="store_true", help="do not require all three parts of a readiness run")
@@ -428,7 +570,9 @@ def main(argv=None):
     except (KeyError, TypeError, AttributeError) as error:
         print(f"cold_play_check: a folder has an unexpected shape ({type(error).__name__}: {error})", file=sys.stderr)
         return 2
-    result = verdict(report, infos, args.partial)
+    if args.reference:
+        reference_checks([Path(f) for f in args.reference], report)
+    result = verdict(report, infos, args.partial, bool(args.reference))
     if args.json:
         print(json.dumps({"machine": report.rows, "manual": [{"check": c, "text": t} for c, t in MANUAL], "failed": report.failed, "result": result}, indent=2))
     else:

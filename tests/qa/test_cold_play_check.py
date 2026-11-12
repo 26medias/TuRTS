@@ -18,6 +18,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 CHECKER = ROOT / "scripts/qa/cold_play_check.py"
+sys.path.insert(0, str(ROOT / "scripts/qa"))
+import cold_play_check  # noqa: E402  (the module under test: its tool_hashes_now() gives the hashes that a reference run must record)
 STATEMENT = "\n".join([
     "GOAL: win the match", "GOAL_SHOT: 0002-click-p200.png",
     "FIRST_ACTION: click the big button", "FIRST_ACTION_SHOT: 0002-click-p200.png",
@@ -39,6 +41,7 @@ class Folder:
                       "context_states": [], "records": []}
         self.end = {"reason": "end", "t_ms": 80000, "limit_ms": 600000, "calls": 3, "first_click_ms": 2140, "statement_stored": True}
         self.write_statement = True
+        self.report = "FINDING 1: no-response | 0002-click-p200.png | 2 | a panel opens | nothing changes\nSTUCK: none\n"
         self.skip_files = set()
         self.ui = [
             {"label": "before_first_input", "t_ms": 2000, "available": True, "alerts": 0, "alert_lines": 0, "widgets": [], "big_widgets": []},
@@ -71,6 +74,7 @@ class Folder:
         self.inp(3, "key", {"code": "KeyF"}, 3300, 3420, down=None)
         self.timeline.append((70000, "statement_stored", {}))  # sha256 is set in write()
         self.timeline.append((70001, "sounds_released", {"reason": "statement", "final": False, "records": 0}))
+        self.timeline.append((70500, "report_stored", {}))
         self.timeline.append((80000, "sounds_released", {"reason": "end", "final": True, "records": 0}))
         self.timeline.append((80001, "end", {"reason": "end"}))
 
@@ -93,6 +97,8 @@ class Folder:
                     (directory / "shots" / fields["file"]).write_bytes(data)
             if kind == "statement_stored":
                 event.update(sha256=hashlib.sha256(self.statement.encode()).hexdigest(), bytes=len(self.statement))
+            if kind == "report_stored":
+                event.update(sha256=hashlib.sha256(self.report.encode()).hexdigest(), bytes=len(self.report))
             events.append(event)
             if kind == "input":
                 inputs.append(event)
@@ -100,6 +106,8 @@ class Folder:
         (directory / "inputs.jsonl").write_text("".join(json.dumps(event) + "\n" for event in inputs))
         if self.write_statement:
             (directory / "statement.txt").write_text(self.statement)
+        if self.report is not None and any(item[1] == "report_stored" for item in self.timeline):
+            (directory / "report.txt").write_text(self.report)
         if self.sound is not None:
             (directory / "sound-records.json").write_text(json.dumps(self.sound))
         if self.end is not None:
@@ -110,10 +118,21 @@ class Folder:
             (directory / self.probe_name).write_text(json.dumps(self.probe))
         return directory
 
+    def with_size(self, width, height):
+        self.session["viewport"] = {"width": width, "height": height}
+        return self
+
+    def as_reference(self, control=False, build="MC 9b3a7bd forge (reference)", files=None):
+        """A run on the reference build, with the tool hashes of the tool that is here."""
+        record = {**PASS_CLICKS, "layer_close": {"found": True, "clicks": 1, "closed": True}} if control else FAIL_CLICKS
+        self.as_probe("first-click", record, control="close-layer" if control else None)
+        self.session.update(build=build, tool={"commit": "x", "dirty": False, "files": files if files is not None else cold_play_check.tool_hashes_now()})
+        return self
+
     def as_probe(self, kind, record, control=None):
         """A probe folder: the same log with no statement, ended by the probe; `record` is probe-<kind>.json."""
         self.session.update(mode=f"probe-{kind}", control=control)
-        self.timeline = [item for item in self.timeline if item[1] != "statement_stored"]
+        self.timeline = [item for item in self.timeline if item[1] not in ("statement_stored", "report_stored")]
         self.timeline = [(t, k, {**f, "reason": "probe"} if k == "sounds_released" else f) for t, k, f in self.timeline]
         self.write_statement = False
         self.end.update(reason="probe-done", statement_stored=False)
@@ -478,11 +497,14 @@ class CheckerTest(unittest.TestCase):
         self.assertNotRegex(out, r"RESULT: PERSON-READY")
 
 
-PASS_CLICKS = {"kind": "first-click", "summary": {"verdict": "PASS", "clicks": 3, "failed": 0, "reason": "3 of 3 clicks selected the unit and changed the picture"}, "layer_close": None}
+OK_PART = {"verdict": "PASS", "reason": "all answered"}
+PASS_CLICKS = {"kind": "first-click", "summary": {"verdict": "PASS", "clicks": 3, "failed": 0, "reason": "3 of 3 clicks selected the unit and changed the picture",
+               "orders": OK_PART, "extras": OK_PART}, "layer_close": None, "buttons_outside_page": [], "watch": []}
 FAIL_CLICKS = {"kind": "first-click", "summary": {"verdict": "FAIL", "clicks": 3, "failed": 3, "first_failure": {"n": 1, "unit_id": 1, "content_id": "forge:drill"},
-               "reason": "first click on unit 1 (forge:drill): selection [], no visible change; 3 of 3 clicks failed"}}
-PASS_BUTTONS = {"kind": "buttons", "buttons": [{"id": "help", "acted": True}], "summary": {"verdict": "PASS", "buttons": 1, "failed": 0, "reason": "1 of 1 buttons acted on the first click"}}
-FAIL_BUTTONS = {"kind": "buttons", "buttons": [{"id": "guide_close", "acted": False}], "summary": {"verdict": "FAIL", "buttons": 1, "failed": 1, "reason": "the first click on guide_close changed nothing"}}
+               "reason": "first click on unit 1 (forge:drill): selection [], no visible change; 3 of 3 clicks failed",
+               "orders": {"verdict": "SKIPPED", "reason": "no unit was selected"}, "extras": {"verdict": "SKIPPED", "reason": "no unit was selected"}}, "buttons_outside_page": [], "watch": []}
+PASS_BUTTONS = {"kind": "buttons", "buttons": [{"id": "help", "acted": True}], "summary": {"verdict": "PASS", "buttons": 1, "failed": 0, "reason": "1 of 1 buttons acted on the first click", "start": {"verdict": "PASS", "reason": "no start overlay"}}, "watch": []}
+FAIL_BUTTONS = {"kind": "buttons", "buttons": [{"id": "guide_close", "acted": False}], "summary": {"verdict": "FAIL", "buttons": 1, "failed": 1, "reason": "the first click on guide_close changed nothing", "start": {"verdict": "PASS", "reason": "no start overlay"}}, "watch": []}
 
 
 def long_text(count):
@@ -613,15 +635,19 @@ class ProbeAndUiTest(unittest.TestCase):
 
     # ---- The verdict ----------------------------------------------------------------------------------
 
-    def run_all(self, folders, *extra):
+    def run_all(self, folders, *extra, references=None):
         with tempfile.TemporaryDirectory() as tmp:
             dirs = [folder.write(Path(tmp) / f"f{i}") for i, folder in enumerate(folders)]
-            args = [str(dirs[0])] + [x for d in dirs[1:] for x in ("--also", str(d))]
+            refs = [folder.write(Path(tmp) / f"r{i}") for i, folder in enumerate(self.references() if references is None else references)]
+            args = [str(dirs[0])] + [x for d in dirs[1:] for x in ("--also", str(d))] + [x for r in refs for x in ("--reference", str(r))]
             result = subprocess.run([sys.executable, "-I", "-B", str(CHECKER), *args, *extra], capture_output=True, text=True)
         return result.returncode, result.stdout, result.stderr
 
+    def references(self):
+        return [Folder().as_reference(), Folder().as_reference(control=True)]
+
     def readiness(self, probe=PASS_CLICKS, buttons=PASS_BUTTONS):
-        return [Folder().as_probe("first-click", probe), Folder().as_probe("buttons", buttons), Folder()]
+        return [Folder().as_probe("first-click", probe), Folder().as_probe("first-click", probe).with_size(1024, 768), Folder().as_probe("buttons", buttons), Folder()]
 
     def test_all_three_parts_that_pass_give_machine_pass_with_the_manual_checks_open(self):
         code, out, err = self.run_all(self.readiness())
@@ -632,7 +658,7 @@ class ProbeAndUiTest(unittest.TestCase):
     def test_a_failed_probe_gives_not_ready_whatever_the_agent_session_says(self):
         code, out, err = self.run_all(self.readiness(probe=FAIL_CLICKS))
         self.assertEqual(code, 1, out)
-        self.assertIn("RESULT: NOT-READY (failed: P1[probe-first-click])", out)
+        self.assertRegex(out, r"RESULT: NOT-READY \(failed: P1\[probe-first-click\], P1\[probe-first-click\]\)")
         code, out, err = self.run_all(self.readiness(buttons=FAIL_BUTTONS))
         self.assertIn("RESULT: NOT-READY (failed: F8[probe-buttons])", out)
 
@@ -640,18 +666,202 @@ class ProbeAndUiTest(unittest.TestCase):
         folders = self.readiness()
         code, out, err = self.run_all(folders[:1])
         self.assertEqual(code, 1, out)
-        self.assertIn("RESULT: NOT-READY (missing: buttons probe, agent session)", out)
-        code, out, err = self.run_all(folders[:2])
+        self.assertIn("RESULT: NOT-READY (missing: first-click probe 1024x768, buttons probe, agent session)", out)
+        code, out, err = self.run_all(folders[:3])
         self.assertIn("RESULT: NOT-READY (missing: agent session)", out)
-        code, out, err = self.run_all([folders[2], folders[1]])
-        self.assertIn("RESULT: NOT-READY (missing: first-click probe)", out)
+        code, out, err = self.run_all([folders[3], folders[2], folders[1]])
+        self.assertIn("RESULT: NOT-READY (missing: first-click probe 1280x720)", out)
+        code, out, err = self.run_all(folders, references=[])
+        self.assertIn("RESULT: NOT-READY (missing: reference run (C5))", out)
 
     def test_the_agent_session_that_fails_gives_not_ready_even_when_both_probes_pass(self):
         folders = self.readiness()
-        folders[2].sound["records"] = [{"sound_id": "a", "category": "effects", "play_id": i, "player_entity": i, "request_frame_index": i, "first_seen_ms": 1000 * i} for i in range(1, 5)]
+        folders[3].sound["records"] = [{"sound_id": "a", "category": "effects", "play_id": i, "player_entity": i, "request_frame_index": i, "first_seen_ms": 1000 * i} for i in range(1, 5)]
         code, out, err = self.run_all(folders)
         self.assertEqual(code, 1)
         self.assertIn("NOT-READY (failed: F5a[agent])", out)
+
+
+class PassThreeTest(unittest.TestCase):
+    """The pass-3 rules: F9b, G1, F6 from the watch, P3, P4, P5, F8s, C5 and the tool hashes."""
+
+    def failed(self, folder, *extra):
+        with tempfile.TemporaryDirectory() as tmp:
+            directory = folder.write(Path(tmp) / "evidence")
+            code, out, err = run(directory, *extra)
+        return code, [line.split()[1] for line in out.splitlines() if line.startswith("  FAIL")], out
+
+    def after(self, folder, widgets):
+        for record in folder.ui:
+            if record["label"].startswith("after_first_click"):
+                record["widgets"] = list(widgets)
+
+    # ---- M1: F9b and G1 -------------------------------------------------------------------------------
+
+    def test_a_long_text_split_into_small_widgets_fails_f9b_and_not_f9(self):
+        folder = Folder()
+        self.after(folder, [{"id": f"guide_part{i}", "kind": "widget", "rect": [0, 0, 1, 1], "text": long_text(38)} for i in range(5)])
+        code, failed, out = self.failed(folder)
+        self.assertEqual((code, failed), (1, ["F9b"]), out)
+        self.assertIn("(190 words)", out)
+
+    def test_60_words_in_all_pass_and_61_fail_f9b(self):
+        for count, expected in ((60, 0), (61, 1)):
+            folder = Folder()
+            self.after(folder, [{"id": "a", "kind": "widget", "rect": [0, 0, 1, 1], "text": long_text(30)}, {"id": "b", "kind": "widget", "rect": [0, 0, 1, 1], "text": long_text(count - 30)}])
+            self.assertEqual(self.failed(folder)[0], expected, count)
+
+    def test_tooltips_the_start_overlay_and_world_labels_are_not_counted_in_f9b(self):
+        folder = Folder()
+        self.after(folder, [{"id": "x::tooltip", "kind": "widget", "rect": [0, 0, 1, 1], "text": long_text(30)}, {"id": "focus_overlay", "kind": "focus_overlay", "rect": [0, 0, 1, 1], "text": long_text(30)},
+                            {"id": "world_label_1", "kind": "widget", "rect": [0, 0, 1, 1], "text": long_text(30)}, {"id": "hud", "kind": "widget", "rect": [0, 0, 1, 1], "text": long_text(30)}])
+        self.assertEqual(self.failed(folder)[0], 0)
+
+    def test_the_goal_line_is_recorded_with_its_word_count_and_never_a_verdict(self):
+        folder = Folder()
+        self.after(folder, [{"id": "hint", "kind": "widget", "rect": [0, 0, 1, 1], "text": "Your goal: destroy the enemy command centre"}])
+        code, failed, out = self.failed(folder)
+        self.assertEqual(code, 0, out)
+        self.assertIn("INFO G1   goal line (recorded, not judged): 7 words in hint", out)
+        code, failed, out = self.failed(Folder())
+        self.assertIn("no visible text that states a goal", out)
+        self.assertEqual(code, 0)
+
+    # ---- F6 from the watch ------------------------------------------------------------------------------
+
+    def test_an_alert_line_at_any_second_of_the_watch_fails_f6(self):
+        folder = Folder().as_probe("buttons", {**PASS_BUTTONS, "watch": [{"t_ms": 1000, "alert_lines": 0, "alerts": 0}, {"t_ms": 13000, "alert_lines": 1, "alerts": 1}]})
+        code, failed, out = self.failed(folder)
+        self.assertEqual((code, failed), (1, ["F6"]), out)
+        self.assertIn("first at 13.0 s", out)
+        folder = Folder().as_probe("buttons", {**PASS_BUTTONS, "watch": [{"t_ms": 1000, "alert_lines": 0, "alerts": 0}] * 20})
+        self.assertEqual(self.failed(folder)[0], 0)
+
+    # ---- P3, P4, P5, F8s -------------------------------------------------------------------------------
+
+    def probe_with(self, **parts):
+        record = {**PASS_CLICKS, "summary": {**PASS_CLICKS["summary"], **parts}}
+        return Folder().as_probe("first-click", record)
+
+    def test_an_order_button_with_no_visible_result_fails_p3(self):
+        folder = self.probe_with(orders={"verdict": "FAIL", "buttons": 3, "failed": 1, "reason": "no visible result within 1 s for Disable this machine [D] (forge:press)"})
+        code, failed, out = self.failed(folder)
+        self.assertEqual((code, failed), (1, ["P3"]), out)
+        self.assertIn("Disable this machine", out)
+
+    def test_a_failed_extra_click_fails_p4(self):
+        folder = self.probe_with(extras={"verdict": "FAIL", "failed": ["enemy"], "reason": "no visible response: enemy"})
+        code, failed, out = self.failed(folder)
+        self.assertEqual((code, failed), (1, ["P4"]), out)
+
+    def test_a_button_outside_the_page_fails_p5(self):
+        record = {**PASS_CLICKS, "buttons_outside_page": ["guide_close"]}
+        code, failed, out = self.failed(Folder().as_probe("first-click", record).with_size(1024, 768))
+        self.assertEqual((code, failed), (1, ["P5"]), out)
+        self.assertIn("outside: ['guide_close']", out)
+
+    def test_a_control_whose_close_button_is_outside_the_page_fails(self):
+        record = {**PASS_CLICKS, "layer_close": {"found": False, "clicks": 0, "closed": False, "off_page": ["guide_close"]}}
+        folder = Folder().as_probe("first-click", record, control="close-layer").with_size(1024, 768)
+        code, failed, out = self.failed(folder)
+        self.assertEqual((code, failed), (1, ["PC"]), out)
+        self.assertIn("the close control is outside the page: ['guide_close']", out)
+        self.assertIn("CONTROL-FAIL", out)
+
+    def test_the_orders_and_extras_of_a_control_are_shown_and_not_judged(self):
+        record = {**PASS_CLICKS, "layer_close": {"found": True, "clicks": 1, "closed": True},
+                  "summary": {**PASS_CLICKS["summary"], "orders": {"verdict": "FAIL", "reason": "no visible result within 1 s for Disable"}}}
+        code, failed, out = self.failed(Folder().as_probe("first-click", record, control="close-layer"))
+        self.assertEqual(code, 0, out)
+        self.assertIn("INFO P3   control, not judged: FAIL: no visible result within 1 s for Disable", out)
+
+    def test_a_first_click_lost_under_the_start_overlay_is_a_finding_of_its_own_f8s(self):
+        record = {**PASS_BUTTONS, "summary": {**PASS_BUTTONS["summary"], "start": {"verdict": "FAIL", "button": "guide_close", "reason": "the first click on guide_close changed nothing: the start overlay took it"}}}
+        code, failed, out = self.failed(Folder().as_probe("buttons", record))
+        self.assertEqual((code, failed), (1, ["F8s"]), out)
+
+    # ---- C5 and the tool hashes ------------------------------------------------------------------------
+
+    def run_reference(self, references, folders=None):
+        folders = folders or [Folder().as_probe("first-click", PASS_CLICKS)]
+        with tempfile.TemporaryDirectory() as tmp:
+            dirs = [f.write(Path(tmp) / f"f{i}") for i, f in enumerate(folders)]
+            refs = [f.write(Path(tmp) / f"r{i}") for i, f in enumerate(references)]
+            args = [str(dirs[0])] + [x for r in refs for x in ("--reference", str(r))] + ["--partial"]
+            result = subprocess.run([sys.executable, "-I", "-B", str(CHECKER), *args], capture_output=True, text=True)
+        return result.returncode, result.stdout
+
+    def test_a_reference_made_with_this_tool_version_passes_c5(self):
+        code, out = self.run_reference([Folder().as_reference(), Folder().as_reference(control=True)])
+        self.assertEqual(code, 0, out)
+        for check_id in ("C5a", "C5b", "C5c"):
+            self.assertIn(f"PASS {check_id}", out)
+
+    def test_a_reference_made_with_another_tool_version_fails_c5a(self):
+        hashes = cold_play_check.tool_hashes_now()
+        hashes["tests/browser/cold-probe.js"] = "0" * 64
+        code, out = self.run_reference([Folder().as_reference(files=hashes), Folder().as_reference(control=True)])
+        self.assertEqual(code, 1, out)
+        self.assertIn("FAIL C5a", out)
+        self.assertIn("differs: cold-probe.js", out)
+
+    def test_a_reference_with_no_tool_record_fails_c5a(self):
+        code, out = self.run_reference([Folder().as_reference(files={}), Folder().as_reference(control=True)])
+        self.assertIn("FAIL C5a", out)
+        self.assertIn("no tool record", out)
+
+    def test_a_reference_where_the_probe_does_not_fail_or_the_control_does_not_pass_fails_c5b(self):
+        code, out = self.run_reference([Folder().as_reference(control=True)])
+        self.assertIn("FAIL C5b", out)
+        code, out = self.run_reference([Folder().as_reference()])
+        self.assertIn("FAIL C5b", out)
+
+    def test_a_reference_of_another_build_fails_c5c(self):
+        code, out = self.run_reference([Folder().as_reference(build="muster"), Folder().as_reference(control=True)])
+        self.assertIn("FAIL C5c", out)
+
+    def test_the_tool_hashes_cover_the_files_of_the_tool(self):
+        hashes = cold_play_check.tool_hashes_now()
+        for name in ("tests/browser/cold-probe.js", "tests/browser/cold-pixels.js", "tests/browser/cold-session.js", "scripts/qa/cold_play_check.py"):
+            self.assertRegex(hashes[name], r"^[0-9a-f]{64}$", name)
+
+
+class ReportTest(unittest.TestCase):
+    def failed(self, folder):
+        with tempfile.TemporaryDirectory() as tmp:
+            code, out, err = run(folder.write(Path(tmp) / "evidence"))
+        return code, [line.split()[1] for line in out.splitlines() if line.startswith("  FAIL")], out
+
+    def test_a_report_in_the_fixed_form_passes_and_its_findings_are_listed(self):
+        folder = Folder()
+        folder.report = ("FINDING 1: no-response | 0002-click-p200.png | 2 | a panel opens | nothing changes\n"
+                         "FINDING 2: stale-text | 0003-key-p1000.png | 3 | the notice goes | the notice stays\nSTUCK: 3 | 0003-key-p200.png | I did not know what to press\n")
+        code, failed, out = self.failed(folder)
+        self.assertEqual(code, 0, out)
+        self.assertIn("INFO C6   FINDING 2: stale-text | 0003-key-p1000.png | 3 | the notice goes | the notice stays", out)
+        self.assertIn("INFO C6   STUCK: 3 | 0003-key-p200.png | I did not know what to press", out)
+
+    def test_a_yes_or_no_line_a_wrong_class_a_long_text_or_a_missing_stuck_fail_c6(self):
+        bad = {
+            "yes line": "Yes, a person can play it\nSTUCK: none\n",
+            "class": "FINDING 1: confusing | 0002-click-p200.png | 2 | a | b\nSTUCK: none\n",
+            "long": "FINDING 1: other | 0002-click-p200.png | 2 | " + long_text(13) + " | b\nSTUCK: none\n",
+            "no stuck": "FINDING 1: other | 0002-click-p200.png | 2 | a | b\n",
+            "shot": "FINDING 1: other | 9999-click-p200.png | 2 | a | b\nSTUCK: none\n",
+            "call": "FINDING 1: other | 0002-click-p200.png | 99 | a | b\nSTUCK: none\n",
+            "number": "FINDING 2: other | 0002-click-p200.png | 2 | a | b\nSTUCK: none\n",
+        }
+        for name, text in bad.items():
+            folder = Folder()
+            folder.report = text
+            code, failed, out = self.failed(folder)
+            self.assertEqual((code, failed), (1, ["C6"]), f"{name}\n{out}")
+
+    def test_no_report_fails_c6(self):
+        folder = Folder()
+        folder.timeline = [item for item in folder.timeline if item[1] != "report_stored"]
+        code, failed, out = self.failed(folder)
+        self.assertEqual((code, failed), (1, ["C6"]), out)
 
 
 if __name__ == "__main__":
