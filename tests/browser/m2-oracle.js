@@ -34,6 +34,9 @@ const UNIT_NAMES = {
 const PRODUCER = { base: "base:command_center", haul: "haul:depot", cedar: "cedar:depot", acme: "acme:scout" };
 const WORKER = { base: "base:harvester", haul: "haul:worker", cedar: "cedar:worker" };
 const OFFSET = { base: 18, haul: 18, cedar: 18, acme: 0 };
+// Public convergence waits at least 10 s (m2.js), then while both windows still advance their
+// tick (no new tick for 15 s ends it), up to a hard limit of 180 s. A poll reads both windows.
+const CONVERGENCE = Object.freeze({ min_ms: 10000, stall_ms: 15000, limit_ms: 180000, poll_ms: 100 });
 
 function unitNear(debug, contentId, x, y) {
     return (debug.replicated_world?.units ?? []).find((unit) => unit.content_id === contentId && unit.owner_slot === 0 &&
@@ -152,19 +155,50 @@ async function judgeConvergence(view, at, joined, packageName) {
         const mesh = selected.scene.units.find((unit) => unit.unit_id === unitId);
         assertPickCircleClearOfHud(selected.scene, selected.debug, mesh);
     }
-    const deadline = Date.now() + 10000;
-    while (Date.now() < deadline) {
-        const debug0 = await view.bridge("turts_debug", 1);
-        const debug1 = await view.bridge("turts_debug", 2);
-        const world0 = debug0?.replicated_world;
-        const world1 = debug1?.replicated_world;
-        if (world0?.tick === world1?.tick && world0?.tick !== null && world0?.tick !== undefined &&
-            JSON.stringify(publicProjection({ debug: debug0 })) === JSON.stringify(publicProjection({ debug: debug1 }))) {
-            return { tick: world0.tick };
+    return waitForSharedTick(view);
+}
+
+// The judgement: at one tick that both windows show, the two public projections are equal.
+// A window shows a new tick only at a frame. On a slow renderer (hosted CI: software WebGPU,
+// 4 vCPU, about 1 frame per second for each of two windows, runs ci-run134-m2-sw-gl-1 and -2)
+// the two windows seldom show the same tick at the same poll. So the oracle keeps the first
+// projection that each window shows at each tick and compares the two windows at each tick
+// that both showed, at any poll. The wait goes on while both windows still advance their
+// tick, up to a hard limit.
+async function waitForSharedTick(view, limits = CONVERGENCE) {
+    const started = Date.now();
+    const seen = [new Map(), new Map()];
+    const changes = [[], []];
+    const progress = { polls: 0, shared_ticks: 0, shared_tick_differs: 0, unstable_ticks: 0, last_advance_ms: [started, started] };
+    for (;;) {
+        const now = Date.now();
+        const stalled = progress.last_advance_ms.some((time) => now - time > limits.stall_ms);
+        if (now - started >= limits.min_ms && (stalled || now - started >= limits.limit_ms)) break;
+        const debugs = [await view.bridge("turts_debug", 1), await view.bridge("turts_debug", 2)];
+        progress.polls += 1;
+        for (const [index, debug] of debugs.entries()) {
+            const tick = debug?.replicated_world?.tick;
+            if (!Number.isInteger(tick)) continue;
+            const projection = JSON.stringify(publicProjection({ debug }));
+            if (seen[index].has(tick)) {
+                if (seen[index].get(tick) !== projection) progress.unstable_ticks += 1;
+                continue;
+            }
+            seen[index].set(tick, projection);
+            progress.last_advance_ms[index] = Date.now();
+            changes[index].push([Date.now() - started, tick]);
+            const other = seen[1 - index].get(tick);
+            if (other === undefined) continue;
+            progress.shared_ticks += 1;
+            if (other === projection) return { tick };
+            progress.shared_tick_differs += 1;
         }
-        await new Promise((resolve) => setTimeout(resolve, 50));
+        await new Promise((resolve) => setTimeout(resolve, limits.poll_ms));
     }
-    assert.fail("public world projections differ between owners at a shared coherent tick");
+    const tail = (list) => JSON.stringify(list.slice(-8));
+    assert.fail(`public world projections differ between owners at a shared coherent tick (${Date.now() - started} ms, ` +
+        `${progress.polls} polls, ${progress.shared_ticks} shared ticks, ${progress.shared_tick_differs} of them different, ` +
+        `${progress.unstable_ticks} unstable; [ms, tick] window 1 ${tail(changes[0])} window 2 ${tail(changes[1])})`);
 }
 
 function ingestOf(step) {
@@ -548,4 +582,4 @@ async function judge(view, params) {
     }
 }
 
-module.exports = { judge, appliedAfter, assertPickCircleClearOfHud, cancelRows, hudClick, produceRow, UNIT_NAMES };
+module.exports = { judge, appliedAfter, assertPickCircleClearOfHud, cancelRows, hudClick, produceRow, waitForSharedTick, UNIT_NAMES };

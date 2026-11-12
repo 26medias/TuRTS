@@ -3,7 +3,7 @@
 
 const assert = require("node:assert/strict");
 const { test } = require("node:test");
-const { appliedAfter, cancelRows, hudClick, produceRow } = require("./m2-oracle.js");
+const { appliedAfter, cancelRows, hudClick, produceRow, waitForSharedTick } = require("./m2-oracle.js");
 
 // Row shapes of a retained headed HUD2 run (target/mc-evidence/run94-hud2-headed-v3): list rows
 // are "<list>/<item>[<key>]" buttons with a typed widget_action; row children keep their ids.
@@ -87,4 +87,41 @@ test("a stopped M2 drive gives a semantic failure that names the case", async ()
     };
     await assert.rejects(judge(view, { m2: { case_id: "E9-browser-base-economy", package: "base" } }), (error) =>
         error instanceof assert.AssertionError && error.task16_semantic?.row === "M2" && error.task16_semantic.clause === "E9-browser-base-economy");
+});
+
+// A replicated world with the permitted keys only (m2-oracle-lib.js PUBLIC_WORLD_KEYS) and one unit.
+function world(tick, x) {
+    return { slot: 0, replicated_world: { belts: [], economy: { balances: [], inventories: [], orders: [], queues: [] }, extractors: [],
+        health_trace: [], healths: [], inserters: [], nodes: [], research: [], tick, unit_orders: [], weapons: [],
+        units: [{ content_id: "acme:scout", facing: 0, max_health: 10, owner_slot: 0, pos: [x, 4], unit_id: 1 }] } };
+}
+
+// A fake view: window `n` shows the next entry of `frames[n - 1]` at each read (the last entry stays).
+function fakeView(frames) {
+    const reads = [0, 0];
+    return { async bridge(name, n) {
+        assert.equal(name, "turts_debug");
+        const list = frames[n - 1];
+        const entry = list[Math.min(reads[n - 1], list.length - 1)];
+        reads[n - 1] += 1;
+        return entry;
+    } };
+}
+
+const FAST = { min_ms: 0, stall_ms: 200, limit_ms: 2000, poll_ms: 1 };
+
+test("the shared-tick wait compares the windows at a tick that each showed at a different poll", async () => {
+    // Window 1 shows tick 20 at the third read; window 2 showed tick 20 at the first read only.
+    const view = fakeView([[world(10, 4), world(15, 4), world(20, 5)], [world(20, 5), world(30, 6)]]);
+    assert.deepEqual(await waitForSharedTick(view, FAST), { tick: 20 });
+});
+
+test("the shared-tick wait stays red when the projections differ at each shared tick", async () => {
+    const view = fakeView([[world(10, 4), world(20, 5)], [world(10, 9), world(20, 9)]]);
+    await assert.rejects(waitForSharedTick(view, FAST), /differ between owners at a shared coherent tick .* 2 shared ticks, 2 of them different/);
+});
+
+test("the shared-tick wait stays red when the windows never show the same tick", async () => {
+    const view = fakeView([[world(10, 4), world(12, 4)], [world(11, 4), world(13, 4)]]);
+    await assert.rejects(waitForSharedTick(view, FAST), /0 shared ticks/);
 });
