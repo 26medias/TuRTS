@@ -1512,10 +1512,9 @@ fn t1_the_edition_refuses_nothing() {
 }
 
 /// KEY1 (b): two actions on one default key are refused (the check is global; there is no action
-/// scope). KEY1 (c): a default on a key that the browser reserves is refused. Both through
-/// `content`, on `cedar`, at `^0.2.4`; the check (b) does not run for `^0.2.3`.
+/// scope). Through `content`, on `cedar`, at `^0.2.4`; the check does not run for `^0.2.3`.
 #[test]
-fn key1_unique_default_keys_and_reserved_browser_keys() {
+fn key1_b_unique_default_keys() {
     let same = [(
         "input/bindings.ron",
         r#"(name: "key_cancel", default: [Key(code: "KeyC", mods: [])])"#,
@@ -1531,6 +1530,12 @@ fn key1_unique_default_keys_and_reserved_browser_keys() {
             .to_string(),
         "cedar/input/bindings.ron: actions: KeyP is the default of key_produce and key_cancel; each default key must be unique"
     );
+}
+
+/// KEY1 (c): a default on a key that the browser reserves is refused, at both editions (the check
+/// is the one of today).
+#[test]
+fn key1_c_reserved_browser_keys() {
     let reserved = [(
         "input/bindings.ron",
         r#"(name: "key_cancel", default: [Key(code: "KeyC", mods: [])])"#,
