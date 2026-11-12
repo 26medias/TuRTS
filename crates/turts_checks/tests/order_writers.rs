@@ -133,7 +133,10 @@ impl WriterScan {
         self.hits.push(what.into());
     }
 
-    fn turbofish_names_unit_orders(&self, args: &Option<syn::AngleBracketedGenericArguments>) -> bool {
+    fn turbofish_names_unit_orders(
+        &self,
+        args: &Option<syn::AngleBracketedGenericArguments>,
+    ) -> bool {
         args.as_ref().is_some_and(|args| {
             args.args.iter().any(|arg| {
                 matches!(arg, syn::GenericArgument::Type(Type::Path(path)) if names_unit_orders(&path.path))
@@ -243,12 +246,24 @@ impl<'ast> Visit<'ast> for WriterScan {
         // A mutating call on a binding of the type: `orders.queue.push_back(..)`.
         if matches!(
             method.as_str(),
-            "push_back" | "push_front" | "pop_front" | "pop_back" | "clear" | "take" | "insert"
-                | "remove" | "retain" | "drain" | "append" | "truncate"
+            "push_back"
+                | "push_front"
+                | "pop_front"
+                | "pop_back"
+                | "clear"
+                | "take"
+                | "insert"
+                | "remove"
+                | "retain"
+                | "drain"
+                | "append"
+                | "truncate"
         ) && root_ident(&call.receiver).is_some_and(|root| self.bindings.contains(&root))
             && matches!(&*call.receiver, Expr::Field(_))
         {
-            self.hit(format!("`.{method}()` on a field of a `UnitOrders` binding"));
+            self.hit(format!(
+                "`.{method}()` on a field of a `UnitOrders` binding"
+            ));
         }
         syn::visit::visit_expr_method_call(self, call);
     }
@@ -463,6 +478,13 @@ fn the_inferred_write_is_not_seen_by_the_scan() {
         writer_hits(source).is_empty(),
         "an inferred `get_mut()` has no name to match"
     );
+    // The same limit for an alias of the type (plant (10) of `l0-wire.json` writes the stop
+    // through one; the scan stays green and the `test-probes` check panics).
+    let alias = "fn f(world: &mut World, e: Entity) { type Alias = UnitOrders; world.entity_mut(e).insert(Alias::default()); }";
+    assert!(
+        writer_hits(alias).is_empty(),
+        "an alias of the type has no name to match"
+    );
 }
 
 // ---- 2. The export writers ------------------------------------------------------------------
@@ -498,8 +520,13 @@ impl<'ast> Visit<'ast> for ExportScan {
         let name = call.method.to_string();
         if matches!(
             name.as_str(),
-            "query" | "query_filtered" | "iter_entities" | "get_resource" | "resource"
-                | "get_entity" | "entity"
+            "query"
+                | "query_filtered"
+                | "iter_entities"
+                | "get_resource"
+                | "resource"
+                | "get_entity"
+                | "entity"
         ) {
             self.hits.push(format!("the call `.{name}()`"));
         }
