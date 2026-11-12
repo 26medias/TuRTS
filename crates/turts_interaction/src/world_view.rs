@@ -68,4 +68,16 @@ pub trait WorldView {
     }
     /// Returns whether this unit's weapon can target this foreign unit.
     fn can_weapon_target(&self, unit: &UnitView, target: &UnitView) -> bool;
+    /// The world data of the placement rule (`UI-PLACE` fills `placement::Facts`).
+    fn placement_facts(&self) -> &placement::Facts {
+        static EMPTY: std::sync::LazyLock<placement::Facts> =
+            std::sync::LazyLock::new(placement::Facts::default);
+        &EMPTY
+    }
+    /// The world data of the hint conditions (`UI-HINT` fills `hints::Facts`).
+    fn hint_facts(&self) -> &hints::Facts {
+        static EMPTY: std::sync::LazyLock<hints::Facts> =
+            std::sync::LazyLock::new(hints::Facts::default);
+        &EMPTY
+    }
 }

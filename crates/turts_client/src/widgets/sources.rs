@@ -15,6 +15,16 @@ use turts_net_protocol::UnitId;
 use super::primitives::WidgetAction;
 use crate::{content::ClientContent, replica::Replica};
 
+// The stub sources of the tasks that build the 0.2.4 variants (plan 5.3). Each file holds the
+// functions of one owner task; the arms below call them (L0-CORE).
+pub(super) mod connection;
+pub(super) mod hint;
+pub(super) mod hud;
+pub(super) mod match_stats;
+pub(super) mod place;
+pub(super) mod result;
+pub(super) mod unit_hud;
+
 #[derive(Clone, Debug, Default, PartialEq, serde::Serialize)]
 pub struct ItemData {
     pub fields: Vec<(ItemField, serde_json::Value)>,
@@ -57,6 +67,33 @@ pub struct SourceContext<'a> {
     pub guide: &'a [GuidePage],
     pub guide_open: bool,
     pub last_notice: Option<&'a str>,
+    /// The state of the interaction core that the sources read (one part for each owner task).
+    pub core: &'a CoreFeed,
+}
+
+/// What the interaction core gives to the sources: one part for each owner task, each type in the
+/// file of its owner (`place::Feed`, `hint::Feed`). Built from the core at the start of
+/// `sync_widget_tree`. L0-CORE wired it once; an owner edits its own part and its own `feed`.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct CoreFeed {
+    pub placement: place::Feed,
+    pub hint: hint::Feed,
+}
+
+impl CoreFeed {
+    /// The feed of a core (`None` before the core exists).
+    pub fn from_core(core: Option<&turts_interaction::Core>) -> Self {
+        Self {
+            placement: place::feed(core),
+            hint: hint::feed(core),
+        }
+    }
+
+    /// An empty feed, for a context that has no core.
+    pub fn empty() -> &'static CoreFeed {
+        static EMPTY: std::sync::LazyLock<CoreFeed> = std::sync::LazyLock::new(CoreFeed::default);
+        &EMPTY
+    }
 }
 
 /// Read one of the sources listed in design 8.4.
@@ -105,14 +142,11 @@ pub fn read_source(source: &Source, context: SourceContext<'_>) -> SourceData {
         Source::Alerts => alert_rows(context.alerts),
         Source::Bindings => binding_rows(context),
         Source::Guide => guide_rows(context),
-        // API 0.2.4 (row H7): the list sources of `UI-HUD`. Until then they are empty, as a
-        // source that has no rows.
-        Source::ConstructionQueue | Source::Sites | Source::Notices | Source::SelectionTypes => {
-            SourceData {
-                scalar: None,
-                items: Vec::new(),
-            }
-        }
+        // API 0.2.4 (row H7): the list sources of `UI-HUD` (stubs: no rows until it builds them).
+        Source::ConstructionQueue => hud::source_construction_queue(context),
+        Source::Sites => hud::source_sites(context),
+        Source::Notices => hud::source_notices(context),
+        Source::SelectionTypes => hud::source_selection_types(context),
     }
 }
 
@@ -166,18 +200,19 @@ pub fn read_value_for_item(
             serde_json::Value::String(format_value(pattern, values, context, item))
         }
         // API 0.2.4 (row H7): the values of `UI-HUD`, `UI-RESULT`, `UI-HINT`, `UI2-CONN` and
-        // `UI2-RESULT` (plan 5.3). Until then a widget that binds one shows nothing (null).
-        Value::Supply(..)
-        | Value::ConstructionQueue
-        | Value::Sites
-        | Value::Notices
-        | Value::SelectionTypes
-        | Value::Connection
-        | Value::Outcome
-        | Value::OutcomeReason
-        | Value::MatchStats(_)
-        | Value::MatchClock
-        | Value::Hint => serde_json::Value::Null,
+        // `UI2-RESULT` (plan 5.3). Stubs: a widget that binds one shows nothing (null) until
+        // its owner builds it.
+        Value::Supply(resource, side) => hud::value_supply(resource, *side, context),
+        Value::ConstructionQueue => hud::value_construction_queue(context),
+        Value::Sites => hud::value_sites(context),
+        Value::Notices => hud::value_notices(context),
+        Value::SelectionTypes => hud::value_selection_types(context),
+        Value::Connection => connection::value_connection(context),
+        Value::Outcome => result::value_outcome(context),
+        Value::OutcomeReason => result::value_outcome_reason(context),
+        Value::MatchStats(field) => match_stats::value_match_stats(field, context),
+        Value::MatchClock => result::value_match_clock(context),
+        Value::Hint => hint::value_hint(context),
     }
 }
 
@@ -272,10 +307,10 @@ fn primary_value(field: PrimaryField, context: SourceContext<'_>) -> serde_json:
                 serde_json::json!(weapon.cooldown as f64 / context.replica.tick_hz.max(1) as f64)
             }),
         PrimaryField::Cooldown => serde_json::Value::Null,
-        // API 0.2.4 (row H8): `UI2-HUD` reads these. Until then they are null.
-        PrimaryField::Activity | PrimaryField::Cargo | PrimaryField::Armour => {
-            serde_json::Value::Null
-        }
+        // API 0.2.4 (row H8): `UI2-HUD` reads these (stubs: null until it builds them).
+        PrimaryField::Activity => unit_hud::primary_activity(context),
+        PrimaryField::Cargo => unit_hud::primary_cargo(context),
+        PrimaryField::Armour => unit_hud::primary_armour(context),
     }
 }
 
@@ -1334,6 +1369,7 @@ mod tests {
             guide,
             guide_open: false,
             last_notice: None,
+            core: CoreFeed::empty(),
         }
     }
 

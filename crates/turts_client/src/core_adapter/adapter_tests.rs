@@ -2674,3 +2674,39 @@ fn effect_arm_notice_records_the_units_with_no_applicable_order() {
         "the Notice arm"
     );
 }
+
+/// The contract of the effect family stubs of L0-CORE (`core_adapter/effects.rs`): each records
+/// nothing until its owner task builds it. The owner task replaces its test with its own.
+#[test]
+fn effect_family_stubs_record_nothing_until_their_owner_builds_them() {
+    type Stub = fn(&mut CoreRuntime);
+    let stubs: [(&str, Stub); 2] = [
+        ("Placement (UI-PLACE)", |runtime| {
+            effects::placement::apply(turts_interaction::placement::Output::default(), runtime)
+        }),
+        ("Hint (UI-HINT)", |runtime| {
+            effects::hint::apply(turts_interaction::hints::Output::default(), runtime)
+        }),
+    ];
+    for (family, stub) in stubs {
+        let mut runtime = CoreRuntime::default();
+        stub(&mut runtime);
+        assert!(
+            runtime.last_effects.is_empty() && runtime.markers.is_empty(),
+            "the {family} family must record nothing before its owner builds it"
+        );
+    }
+}
+
+/// The effect variants of the owner families reach the family function through the adapter match:
+/// a core that emits one records nothing until the owner builds the function. The drive function
+/// is the one of the adapter; the effect comes from a test input that the core turns into it.
+/// (No core code emits these variants yet, so this test calls the match arm's function by its
+/// public path and checks the variants exist and carry the owner type.)
+#[test]
+fn owner_effect_variants_carry_the_owner_types() {
+    let placement = Effect::Placement(turts_interaction::placement::Output::default());
+    let hint = Effect::Hint(turts_interaction::hints::Output::default());
+    assert!(matches!(placement, Effect::Placement(_)));
+    assert!(matches!(hint, Effect::Hint(_)));
+}

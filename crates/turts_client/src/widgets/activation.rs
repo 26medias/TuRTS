@@ -3,6 +3,14 @@
 
 use super::*;
 
+// One file for each task that writes an activation (plan 3.4, L0-CORE): `place` (`UI-PLACE`),
+// `alert` (`UI-ALERT`), `cancel` (`UI-HUD`, the arm of `CancelProduction` moved as it was) and
+// `leave` (`UI-RESULT`). Each task fills its own file; the arm that calls it exists.
+mod alert;
+mod cancel;
+mod leave;
+mod place;
+
 type ButtonVisualQuery<'w, 's> = Query<
     'w,
     's,
@@ -54,6 +62,11 @@ pub(super) fn activate_widget(
         return;
     }
     match &action.0 {
+        // The engine action `leave_match` (API 0.2.4, row H23) is `UI-RESULT`'s; every other input
+        // goes to the core as before.
+        primitives::WidgetAction::Input { name } if name == "leave_match" => {
+            leave::activate(&mut queue, &state, acquired.as_deref())
+        }
         primitives::WidgetAction::Input { name } => {
             queue
                 .0
@@ -127,54 +140,19 @@ pub(super) fn activate_widget(
         primitives::WidgetAction::CancelProduction {
             producer,
             job: job_id,
-        } => {
-            let Some(acquired) = acquired.as_ref() else {
-                return;
-            };
-            let Some(slot) = state.welcome.map(|welcome| welcome.slot) else {
-                return;
-            };
-            let Some(replica) = state.replica.as_ref() else {
-                return;
-            };
-            if let Some(unit) = replica
-                .units
-                .get(producer)
-                .filter(|unit| unit.owner_slot == slot)
-                .filter(|_| {
-                    replica.economy.queues.iter().any(|queue| {
-                        queue.producer.0 == *producer
-                            && queue.jobs.iter().any(|job| job.id.0 == *job_id)
-                    })
-                })
-            {
-                let Some(order) = acquired
-                    .0
-                    .content
-                    .catalog
-                    .orders
-                    .iter()
-                    .find(|(_, order)| {
-                        order.behaviour == turts_mod_api::Behaviour::CancelProduction
-                            && order.target == turts_mod_api::TargetKind::Job
-                            && (order.units.is_empty()
-                                || order
-                                    .units
-                                    .iter()
-                                    .any(|allowed| allowed == &unit.content_id))
-                    })
-                    .map(|(id, _)| id.to_string())
-                else {
-                    return;
-                };
-                queue.0.push(turts_interaction::InputEvent::UiOrder {
-                    order,
-                    units: vec![turts_net_protocol::UnitId(*producer)],
-                    target: turts_interaction::UiOrderTarget::Job(turts_net_protocol::JobId(
-                        *job_id,
-                    )),
-                });
-            }
+        } => cancel::activate(producer, job_id, &mut queue, &state, acquired.as_deref()),
+        primitives::WidgetAction::Place {
+            constructor,
+            content,
+        } => place::activate(
+            *constructor,
+            content,
+            &mut queue,
+            &state,
+            acquired.as_deref(),
+        ),
+        primitives::WidgetAction::FocusAlert { x, y, unit } => {
+            alert::activate(*x, *y, *unit, &mut queue, &state, acquired.as_deref())
         }
     }
 }
