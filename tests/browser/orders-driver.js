@@ -126,9 +126,10 @@ async function driveOrd3(io, params, steps, minimap, shot, click, key) {
         await key("gather-order", "KeyG");
         const node = oreNodePixel(image);
         steps.pixels.node = node;
-        // The Gather order lasts 2.5 s (a short walk, then 2 ore at 1 a second). The held-Shift Append
-        // must reach the server inside that time, so no wait sits between the node click and it
-        // (RUN130: 2.05 s on a loaded host, with the waits).
+        // The Gather order lasts about 5.3 s in the full ORD3 scene: 106 ticks at 20 Hz until node_depleted
+        // (crates/turts_pack/tests/mc_order_rows.rs:1088-1091, the full-scene test; 105 ticks in the browser
+        // run hud2-review-ord3-a). The held-Shift Append must reach the server inside that time, so no wait
+        // sits between the node click and it (RUN130: 2.05 s on a loaded host, with the waits).
         await click("gather-node", [node.x, node.y], "left", 0);
         await key("gather-shift-down", "ShiftLeft", [], { action: "down" }, 0);
         await minimap("append-behind-gather", targets.queue[0]);
