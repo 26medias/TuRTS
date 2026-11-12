@@ -683,13 +683,17 @@ impl Replica {
     /// The value of an own site in raw units of 1/Q tick at the last applied tick.
     pub fn site_value(&self, unit: u32) -> Option<u64> {
         let record = self.store.site_progress(unit)?;
-        Some(replica_store::value_at(record, self.applied_tick()))
+        Some(replica_store::record_value(record, self.applied_tick()))
     }
 
     /// The item field `Paid` of a site: `turts_rules::progress::paid_at`.
     pub fn site_paid(&self, unit: u32, cost: u64) -> Option<u64> {
         let record = self.store.site_progress(unit)?;
-        Some(replica_store::paid_at(record, cost, self.applied_tick()))
+        Some(replica_store::record_paid(
+            record,
+            cost,
+            self.applied_tick(),
+        ))
     }
 
     /// The item field `Refund` of a site: `turts_rules::progress::refund_at`.
@@ -701,7 +705,7 @@ impl Replica {
         refunds: &CancelRefunds,
     ) -> Option<u64> {
         let record = self.store.site_progress(unit)?;
-        Some(replica_store::refund_at(
+        Some(replica_store::record_refund(
             record,
             cost,
             case,
@@ -718,7 +722,7 @@ impl Replica {
     /// The value of a job in raw units of 1/Q tick at the last applied tick.
     pub fn job_value(&self, producer: u32, job: u64) -> Option<u64> {
         let record = self.store.job_progress(producer, job)?;
-        Some(replica_store::value_at(record, self.applied_tick()))
+        Some(replica_store::record_value(record, self.applied_tick()))
     }
 
     /// The elapsed ticks of a job at the tick of the last applied delta, from its progress record:
@@ -742,7 +746,7 @@ impl Replica {
         else {
             return 0;
         };
-        let raw = replica_store::value_at(record, self.applied_tick());
+        let raw = replica_store::record_value(record, self.applied_tick());
         if duration == 0 || record.total % duration != 0 {
             return raw;
         }
@@ -752,7 +756,11 @@ impl Replica {
     /// The item field `Paid` of a job: `turts_rules::progress::paid_at`.
     pub fn job_paid(&self, producer: u32, job: u64, cost: u64) -> Option<u64> {
         let record = self.store.job_progress(producer, job)?;
-        Some(replica_store::paid_at(record, cost, self.applied_tick()))
+        Some(replica_store::record_paid(
+            record,
+            cost,
+            self.applied_tick(),
+        ))
     }
 
     /// The item field `Refund` of a job: `turts_rules::progress::refund_at`.
@@ -765,7 +773,7 @@ impl Replica {
         refunds: &CancelRefunds,
     ) -> Option<u64> {
         let record = self.store.job_progress(producer, job)?;
-        Some(replica_store::refund_at(
+        Some(replica_store::record_refund(
             record,
             cost,
             case,

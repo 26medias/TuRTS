@@ -231,3 +231,45 @@ Before the repair, a disabled producer's job kept the wire rate 1, so the client
 (re-review: at tick 119 the sim held 58 and the client 100, 180 differences in 3,114
 comparisons). After: 0 differences in 3,123 comparisons (base) and 0 in 778 (forge, machines and
 research stations), for a continuous, a late-join and a lossy client.
+
+## The client store of the 6.8 records, clone cost before and after the move (L0-STORE)
+
+Task `L0-STORE`, 2026-11-12. Recorded, not judged: MP1 sets no limit here (spec 15). Test
+`crates/turts_client/tests/mp1_store_cost.rs` (`cargo test -p turts_client --locked --test
+mp1_store_cost -- --nocapture --test-threads=1`, the `STORECOST` lines). Machine: the local lane host
+(Intel Core i9-14900K), debug build, rustc 1.99.1; the counts do not depend on the build. Not the
+4-vCPU target of D58.
+
+What is counted: a clone of the table that holds the job progress records, in the apply path of
+`Replica::apply_delta`. Before the move the table was a field of the candidate, so it was cloned
+twice for each applied delta (`candidate_at` and the `current.clone()` of `stage_delta`). After the
+move it is a table of the side store, and the store has a clone counter
+(`replica_store::store_clone_count`, one count for each `Clone` of the store). A bytes figure is the
+entries cloned times 104 B (`size_of` of a key and a `RateRecord`; the heap parts of `charged` are
+empty in these scenarios).
+
+- Scenario `base`: the real sim and the real export, package `base`, one Command Centre, 4 `train_rifleman`
+  jobs, 300 deltas applied to one real `Replica` with no resync.
+- Scenario `scale`: a hand-built world with 40 producers of 4 jobs (160 progress records) and 100 deltas that
+  change nothing, so only the clone cost shows.
+
+| Scenario | Build | Deltas | Table clones | Entries cloned | Bytes cloned | Bytes for each delta |
+| --- | --- | --- | --- | --- | --- | --- |
+| `base` | before (`0f8bd72e` with a temporary counter at the two clone sites) | 300 | 600 | 1,798 | 186,992 | 623 |
+| `base` | after (`ba7c07c1` and the rename that follows) | 300 | 0 | 0 | 0 | 0 |
+| `scale` | before | 100 | 200 | 32,000 | 3,328,000 | 33,280 |
+| `scale` | after | 100 | 0 | 0 | 0 | 0 |
+
+The "before" run printed 244 and 736 clones at first: the two tests share one process-wide counter
+and ran in parallel. The figures above come from a run with `--test-threads=1` (600 and 200 clones, 2
+for each delta). After the move the test takes a lock, so the counter is not shared.
+
+What the move does not change: the candidate is still cloned twice for each applied delta (design D:2257
+keeps that cost in MP1; `docs/research/mp1/regate-performance.md:16` measured 0.029 ms at 400 units and
+0.363 ms at 5,000 units for one clone). A delta now costs the store the clones of its own changed
+records (one clone for each record in `DeltaRecords`), and a `Snapshot` costs one store replacement. The
+size of the candidate clone is smaller by the job table (160 entries, 16,640 B in `scale`).
+
+Not measured: the apply time of a delta with the store (`apply_delta` p50 and p99 are recorded by
+`MEAS-EXIT`, R13); the sites, supply, construction queue and match state tables with a writer (their
+sim rows are empty in lane 0).

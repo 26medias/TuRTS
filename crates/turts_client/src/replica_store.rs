@@ -233,17 +233,17 @@ pub(crate) fn rate_record(record: &RateRecord) -> progress::RateRecord {
 }
 
 /// The value of `record` in raw units of 1/Q tick at `tick` (`progress::value_at`).
-pub(crate) fn value_at(record: &RateRecord, tick: u32) -> u64 {
+pub(crate) fn record_value(record: &RateRecord, tick: u32) -> u64 {
     progress::value_at(&rate_record(record), tick)
 }
 
 /// The HUD field `Paid` of one cost entry at `tick` (`progress::paid_at`).
-pub(crate) fn paid_at(record: &RateRecord, cost: u64, tick: u32) -> u64 {
+pub(crate) fn record_paid(record: &RateRecord, cost: u64, tick: u32) -> u64 {
     progress::paid_at(&rate_record(record), cost, tick)
 }
 
 /// The HUD field `Refund` of one cost entry at `tick` (`progress::refund_at`).
-pub(crate) fn refund_at(
+pub(crate) fn record_refund(
     record: &RateRecord,
     cost: u64,
     case: CancelCase,

@@ -336,7 +336,11 @@ fn a_record_that_is_not_a_whole_q_shows_its_raw_value() {
     first.records.jobs[0].progress = rate(30, 150, 0, 10);
     applied(&mut replica, &first);
     assert_eq!(replica.job_value(OWN, 44), Some(30));
-    assert_eq!(replica.job_elapsed_ticks(OWN, 44), 30);
+    assert_eq!(
+        replica.job_elapsed_ticks(OWN, 44),
+        30,
+        "a record that is not a whole Q shows its raw value"
+    );
 }
 
 /// A record for a job that no queue holds is dropped as the message applies, and so is a record
@@ -390,7 +394,11 @@ fn a_waiting_or_held_job_keeps_its_value() {
                 DeltaOutcome::Applied
             );
         }
-        assert_eq!(replica.job_elapsed_ticks(OWN, 44), 10);
+        assert_eq!(
+            replica.job_elapsed_ticks(OWN, 44),
+            10,
+            "a waiting or held job keeps its value"
+        );
     }
 }
 
