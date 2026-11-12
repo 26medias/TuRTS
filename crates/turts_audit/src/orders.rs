@@ -253,6 +253,9 @@ mod tests {
         }
     }
 
+    /// A change of a logged command (a plain function, so a case is a (field, change) pair).
+    type Mutation = fn(&mut CommandLog);
+
     fn order(command: &mut CommandLog) -> &mut OrderCommand {
         let CommandKind::Order(order) = &mut command.input.kind else {
             unreachable!()
@@ -288,7 +291,7 @@ mod tests {
     /// definition makes the audit red with the name of the field.
     #[test]
     fn each_field_that_differs_from_the_catalog_definition_is_named() {
-        let cases: Vec<(&str, fn(&mut CommandLog))> = vec![
+        let cases: Vec<(&str, Mutation)> = vec![
             ("behaviour", |c| order(c).behaviour = Behaviour::Move),
             ("target kind", |c| order(c).target_kind = TargetKind::Unit),
             ("allowed units", |c| order(c).allowed_units = Vec::new()),
