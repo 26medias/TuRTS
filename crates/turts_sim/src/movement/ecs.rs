@@ -8,8 +8,12 @@
 //! It reads `UnitOrders` (for the resting set only), `UnitType`, `Owner`, `UnitId`, `MapBounds`,
 //! `SimClock` and `Time<Fixed>`. It writes nothing else: no order state, no owner, no map
 //! bound, no inventory, no clock. The test `the_movement_system_writes_only_movement_state`
-//! calls the system on the installed world and between ticks of a real scenario and compares the
-//! full audit state, so a write to any other audited field is red. Known gap: a write of a
+//! calls the system on the installed world and between ticks of two real scenarios (the Muster
+//! field, and a blocked plain move that ends in a physical escape) and compares the full audit
+//! state, so a write to any other audited field is red. The test also counts each arm of the
+//! write loop (insert and remove of each movement component) and fails if one arm never runs
+//! (the A1c re-check: plant S2 in the escape arm was green with the Muster scenario alone).
+//! Known gap: a write of a
 //! constant that already holds at every snapshot after tick 0 is not seen; the outcome tests of
 //! the orders and of the group movement hold those values. The writer scan (`turts_checks/tests/
 //! movement_writers.rs`) pins the writes of the movement files by count.
@@ -169,6 +173,211 @@ mod tests {
         state
     }
 
+    /// How often each arm of the write loop of `integrate_movement` ran: for each movement
+    /// component, the arm that inserts it and the arm that removes it. Each unit row of a call
+    /// runs exactly one arm of each pair, and after the call the unit holds the component exactly
+    /// when the insert arm ran, so the counts come from the components after each call.
+    #[derive(Debug, Default)]
+    struct WriteArms {
+        target_set: usize,
+        target_removed: usize,
+        progress_set: usize,
+        progress_removed: usize,
+        plain_set: usize,
+        plain_removed: usize,
+        escape_set: usize,
+        escape_removed: usize,
+    }
+
+    impl WriteArms {
+        /// Count the arms of the call that has just ended.
+        fn count(&mut self, world: &mut bevy_ecs::world::World) {
+            for entity in world.iter_entities() {
+                if entity.get::<crate::world::UnitType>().is_none()
+                    || entity.get::<crate::world::Position>().is_none()
+                {
+                    continue;
+                }
+                let pairs = [
+                    (
+                        entity.contains::<crate::world::MoveTarget>(),
+                        &mut self.target_set,
+                        &mut self.target_removed,
+                    ),
+                    (
+                        entity.contains::<crate::movement::MoveProgress>(),
+                        &mut self.progress_set,
+                        &mut self.progress_removed,
+                    ),
+                    (
+                        entity.contains::<crate::movement::PlainMoveProgress>(),
+                        &mut self.plain_set,
+                        &mut self.plain_removed,
+                    ),
+                    (
+                        entity.contains::<crate::movement::PhysicalEscape>(),
+                        &mut self.escape_set,
+                        &mut self.escape_removed,
+                    ),
+                ];
+                for (held, set, removed) in pairs {
+                    if held {
+                        *set += 1;
+                    } else {
+                        *removed += 1;
+                    }
+                }
+            }
+        }
+
+        fn arms(&self) -> [(&'static str, usize); 8] {
+            [
+                ("target set", self.target_set),
+                ("target removed", self.target_removed),
+                ("progress set", self.progress_set),
+                ("progress removed", self.progress_removed),
+                ("plain progress set", self.plain_set),
+                ("plain progress removed", self.plain_removed),
+                ("escape set", self.escape_set),
+                ("escape removed", self.escape_removed),
+            ]
+        }
+    }
+
+    /// Run a scenario and call the movement system once more after each tick. Each extra call
+    /// must leave the audit state unchanged, except the movement state. Returns the count of
+    /// calls that changed the movement state.
+    fn sweep(
+        app: &mut bevy_app::App,
+        label: &str,
+        script: &[(u32, Command)],
+        ticks: u32,
+        arms: &mut WriteArms,
+    ) -> usize {
+        let mut changed_movement_state = 0;
+        // The first call runs on the world as the package installed it, before any update. A
+        // write of a constant (for example an owner) that the movement system makes in each
+        // call is then seen as a change; between two ticks it would already be in the state.
+        let installed = without_movement_state(app.world_mut());
+        integrate_movement(app.world_mut());
+        arms.count(app.world_mut());
+        assert_eq!(
+            installed,
+            without_movement_state(app.world_mut()),
+            "{label} tick 0: the movement system changed an audited field that is not movement \
+             state"
+        );
+        for tick in 1..=ticks {
+            for (at, command) in script {
+                if *at == tick {
+                    app.world_mut()
+                        .resource_mut::<CommandQueue>()
+                        .0
+                        .push_back(command.clone());
+                }
+            }
+            app.update();
+            let before_full = serde_json::to_value(crate::audit_state(app.world_mut())).unwrap();
+            let before = without_movement_state(app.world_mut());
+            integrate_movement(app.world_mut());
+            arms.count(app.world_mut());
+            let after_full = serde_json::to_value(crate::audit_state(app.world_mut())).unwrap();
+            let after = without_movement_state(app.world_mut());
+            assert_eq!(
+                before, after,
+                "{label} tick {tick}: the movement system changed an audited field that is not \
+                 movement state"
+            );
+            changed_movement_state += usize::from(before_full != after_full);
+        }
+        changed_movement_state
+    }
+
+    /// The blocked plain move of `group_movement.rs` (`full_width_post_app`, the test at `:2156`):
+    /// a 7 x 5 map, a mover of radius 0.5 at (0.5, 2.5), a static post of radius 2 at (3.5, 2.5),
+    /// and a one-unit move to (6.5, 2.5). The post leaves a gap of 0.5 to each map edge, so the
+    /// move fails as `Blocked` while the body overlaps the post: the physical escape arm of the
+    /// write loop runs (the A1c re-check: the Muster scenario alone makes no escape).
+    fn blocked_post_app() -> (bevy_app::App, Vec<(u32, Command)>) {
+        use turts_mod_api::{
+            Footprint, MapDef, MapSize, MovementDef, Placement, UnitDef, UnitRegistry, WorldPos,
+        };
+        let unit = |id: &str, movement: Option<MovementDef>, radius: f32| UnitDef {
+            id: id.into(),
+            name: id.into(),
+            movement,
+            inventory: None,
+            gatherer: None,
+            drop_off: None,
+            producer: None,
+            footprint: Footprint::Circle { radius },
+            output_inventory: None,
+            extractor: None,
+            conveyor: None,
+            inserter: None,
+            machine: None,
+            research: None,
+            health: None,
+            weapon: None,
+            removal: None,
+        };
+        let mut app = crate::headless_app(20);
+        let origin = PackageId("fixture_pkg".to_owned());
+        app.world_mut()
+            .resource_mut::<crate::UnitTypes>()
+            .register_unit_type(
+                &origin,
+                unit("walker", Some(MovementDef { speed: 3.0 }), 0.5),
+            )
+            .unwrap();
+        let post_type = app
+            .world_mut()
+            .resource_mut::<crate::UnitTypes>()
+            .register_unit_type(&origin, unit("wide-post", None, 2.0))
+            .unwrap();
+        let map = MapDef {
+            id: "field".into(),
+            size: MapSize { x: 7.0, y: 5.0 },
+            placements: vec![Placement {
+                unit: "fixture_pkg:walker".into(),
+                owner_slot: 0,
+                pos: WorldPos { x: 0.5, y: 2.5 },
+                contents: Vec::new(),
+                facing: None,
+            }],
+            nodes: Vec::new(),
+            slot_economy: Vec::new(),
+            belts: Vec::new(),
+        };
+        crate::load_map(app.world_mut(), &origin, &map).unwrap();
+        app.world_mut().spawn((
+            crate::world::UnitId(2),
+            crate::world::UnitType(post_type),
+            crate::world::Owner(SlotId(0)),
+            crate::world::Position(Vec2::new(3.5, 2.5)),
+        ));
+        let script = vec![(
+            1,
+            Command {
+                slot: SlotId(0),
+                seq: 1,
+                kind: CommandKind::Order(Box::new(OrderCommand {
+                    order: ContentId::parse("fixture_pkg:move").unwrap(),
+                    behaviour: turts_mod_api::Behaviour::Move,
+                    target_kind: turts_mod_api::TargetKind::PointOrUnit,
+                    policy: None,
+                    units: vec![1],
+                    target: OrderTargetSim::Point(Vec2::new(6.5, 2.5)),
+                    queue: QueueMode::Replace,
+                    group: 0,
+                    allowed_units: Vec::new(),
+                    queue_depth: 16,
+                })),
+            },
+        )];
+        (app, script)
+    }
+
     #[test]
     fn the_movement_system_writes_only_movement_state() {
         let package_dir =
@@ -234,41 +443,27 @@ mod tests {
                 },
             ),
         ];
-        let mut changed_movement_state = 0;
-        // The first call runs on the world as the package installed it, before any update. A
-        // write of a constant (for example an owner) that the movement system makes in each
-        // call is then seen as a change; between two ticks it would already be in the state.
-        let installed = without_movement_state(app.world_mut());
-        integrate_movement(app.world_mut());
-        assert_eq!(
-            installed,
-            without_movement_state(app.world_mut()),
-            "tick 0: the movement system changed an audited field that is not movement state"
-        );
-        for tick in 1..=130_u32 {
-            for (at, command) in &script {
-                if *at == tick {
-                    app.world_mut()
-                        .resource_mut::<CommandQueue>()
-                        .0
-                        .push_back(command.clone());
-                }
-            }
-            app.update();
-            let before_full = serde_json::to_value(crate::audit_state(app.world_mut())).unwrap();
-            let before = without_movement_state(app.world_mut());
-            integrate_movement(app.world_mut());
-            let after_full = serde_json::to_value(crate::audit_state(app.world_mut())).unwrap();
-            let after = without_movement_state(app.world_mut());
-            assert_eq!(
-                before, after,
-                "tick {tick}: the movement system changed an audited field that is not movement state"
-            );
-            changed_movement_state += usize::from(before_full != after_full);
-        }
+        let mut arms = WriteArms::default();
+        let changed_movement_state = sweep(&mut app, "muster", &script, 130, &mut arms);
         assert!(
             changed_movement_state > 5,
             "the scenario moves units, so the movement state changes: {changed_movement_state}"
         );
+        // A blocked plain move: the only scenario that reaches the physical escape arm.
+        let (mut blocked, script) = blocked_post_app();
+        let changed_movement_state = sweep(&mut blocked, "blocked post", &script, 200, &mut arms);
+        assert!(
+            changed_movement_state > 5,
+            "the blocked move moves its unit, so the movement state changes: \
+             {changed_movement_state}"
+        );
+        // Each arm of the write loop must run, else a write in an arm that the scenarios never
+        // reach stays green (the A1c re-check, plant S2 in the escape arm).
+        for (arm, count) in arms.arms() {
+            assert!(
+                count > 0,
+                "the arm {arm:?} of the write loop never ran: {arms:?}"
+            );
+        }
     }
 }

@@ -898,7 +898,8 @@ fn kernel_matches_reference_bit_for_bit() {
 /// reference (`movement/reference.rs` or a sibling file), then updates the pin here. I chose the
 /// pin and not a copy of the helpers: the helpers are 1,300 lines of private types (`pool_index`,
 /// `search`, `spread`, `plain`) and `grid.rs`, and a pin costs one line and still stops the
-/// silent case. `angle` and the types in `movement/mod.rs` are not pinned (NOT covered).
+/// silent case. `angle` and `step` in `movement/mod.rs` are pinned by item
+/// (`reference_items_are_unchanged`); the types in `movement/mod.rs` are not pinned.
 const REFERENCE_HELPERS: [(&str, &str); 5] = [
     (
         "src/movement/plain.rs",
@@ -933,6 +934,61 @@ fn reference_helpers_are_unchanged() {
             actual, pinned,
             "{file} changed, and the reference copy calls it. Copy the old text into \
              movement/reference.rs first, then update the pin in tests/kernel_reference.rs"
+        );
+    }
+}
+
+/// The shared items of `movement/mod.rs` that the live kernel and the reference copy both call
+/// (the qa-lead re-check of A2a, finding 1): `angle` (through `spread.rs`) and `step`. A negated
+/// `angle` stayed green in `kernel_matches_reference_bit_for_bit` and in `group_movement`, because
+/// both kernels call the live text. Each pin is the sha256 of the item text: from the line that
+/// starts with the given text (column 0) to the first line that is only `}`, the lines joined
+/// with `\n`. The pin is on the item, not on the file, because `movement/mod.rs` also holds the
+/// movement types, and task A2b1 adds fields to `MoveProgress`. A task that must edit one of these
+/// items first copies the old text into `movement/reference*` and points the reference at it,
+/// then updates the pin.
+const REFERENCE_ITEMS: [(&str, &str, &str); 2] = [
+    (
+        "src/movement/mod.rs",
+        "fn angle(",
+        "a4f35c42715445f8a6d8b3263b3aae9699e8f14693ffd94cc2a080c56e292258",
+    ),
+    (
+        "src/movement/mod.rs",
+        "pub fn step(",
+        "ea11fc371110b416da92e16b6e702ad0eb40db7d31ae98b2f4c4e1fbed6aad56",
+    ),
+];
+
+/// The text of the one item of `source` that starts at a line that begins with `start`.
+fn item_text(source: &str, start: &str) -> String {
+    let lines: Vec<&str> = source.split('\n').collect();
+    let starts: Vec<usize> = (0..lines.len())
+        .filter(|index| lines[*index].starts_with(start))
+        .collect();
+    assert_eq!(
+        starts.len(),
+        1,
+        "exactly one line starts with {start:?}: lines {starts:?}"
+    );
+    let end = (starts[0]..lines.len())
+        .find(|index| lines[*index] == "}")
+        .unwrap_or_else(|| panic!("the item {start:?} has no closing line"));
+    lines[starts[0]..=end].join("\n")
+}
+
+#[test]
+fn reference_items_are_unchanged() {
+    for (file, start, pinned) in REFERENCE_ITEMS {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(file);
+        let source = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {file}: {e}"));
+        let digest = turts_mod_runtime::hash::sha256_hex(item_text(&source, start).as_bytes());
+        let actual = digest.strip_prefix("sha256:").unwrap_or(&digest);
+        assert_eq!(
+            actual, pinned,
+            "the item {start:?} of {file} changed, and the live kernel and the reference copy \
+             both call it. Copy the old text into movement/reference* first, point the reference \
+             at it, then update the pin in tests/kernel_reference.rs"
         );
     }
 }
