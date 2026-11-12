@@ -76,3 +76,31 @@ unit targets in order records, and the marker lookup tolerates a missing unit.
 
 `LobbyAction` and `LeaveMatch` take the player from the connection, never from the message, have no
 receiver in lane 0 and cost no bucket token. Owner `L-MATCH-SRV1`.
+
+## 8. The wire rate of a job equals the rate that the sim applies (repair 2)
+
+Rule: `JobProgress.progress.per_tick` is the rate that the sim applies to the job in that tick. One
+function gives it: `turts_sim::economy::production::job_step_per_tick(stage, frozen, rate, q)`. The
+advance steps (`run_production`, `run_machines`, `run_research`) call it, and the wire calls it through
+`view_job_per_tick` (the view holds the disabled set). The table, from the sim code:
+
+| Condition | What the sim does | Wire `per_tick` |
+| --- | --- | --- |
+| stage `Running`, producer enabled | advances by `rate_step(Q, rate)` (1 at Q = 1) | 1 |
+| producer, machine or station disabled | skips it, stage stays `Running`, no progress | 0 |
+| stage `Queued` (behind the head job, or the tick in which the head starts) | no progress | 0 |
+| stage `OutputBlocked` | no progress, tries the output | 0 |
+| machine with a missing input | has no job (it starts one when the input is there) | no record |
+| producer without power (`L-PWR`) | `rate_factor` gives `Rate(ratio)` | the function reads it: the view must carry the rate and Q (raw units) |
+| held job (`L-PAY`) | not written yet | `L-PAY` adds `held` to the function |
+
+A record is written for each producer whose enabled state changed in the tick (`batch.enabled`), in
+the delta, and the Snapshot form reads the same function. Limit, for `L-PWR`: the wire `done`,
+`total` and `per_tick` are in base ticks (Q = 1). At Q above 1 the view needs the raw progress.
+
+## 9. Notes accepted by the re-check
+
+- `JobState.charged` stays: it changes at a charge event only. `L-PAY` moves the two client readers
+  (`replica.rs` job validation, `ingest.rs` charge feedback) to `RateRecord.charged`.
+- `Replica::job_progress` stays in the candidate. `L0-STORE` moves it into the side store and counts it
+  in the store-clone counter.

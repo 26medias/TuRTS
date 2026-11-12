@@ -211,3 +211,23 @@ From the repair review and a grep of `tests/browser` (not run in this task): the
 T7 (protocol 5 in wasm), the MC orders rows (`orders-oracle.js:457-459`, `weapon.cooldown`),
 HUD2 (`hud2-oracle.js`, queue progress and `weapon.damage`), SEL1, MM1, PT1 driver checks,
 VIS-full, and the M2 browser oracle (`m2-audit.js`, `elapsed_ticks`).
+
+## Job progress while a producer is disabled and enabled (L0-WIRE repair 2)
+
+Test `base_producer_jobs_equal_the_sim_through_disable_enable_cancel`
+(`crates/turts_server/tests/job_progress_clients.rs`), package `base`, one Command Centre, 4
+`train_rifleman` jobs, disabled at tick 30, enabled at tick 90, a cancel at tick 120. Bytes are
+postcard bytes of `delta.economy.queues` plus `delta.records.jobs` (0 when both lists are empty).
+Recorded, not judged.
+
+| Tick or range | What the delta carries | Bytes |
+| --- | --- | --- |
+| 30 (the disable) | the queue (4 jobs) and the 4 job records, `per_tick` 0 | 205 |
+| 31 to 89 (disabled, a `Running` job frozen) | nothing | 0 |
+| 90 (the enable) | the queue and the 4 job records, `per_tick` 1 for the head | 205 |
+| 125 to 158 (a job running, no other change) | nothing | 0 |
+
+Before the repair, a disabled producer's job kept the wire rate 1, so the client value ran on
+(re-review: at tick 119 the sim held 58 and the client 100, 180 differences in 3,114
+comparisons). After: 0 differences in 3,123 comparisons (base) and 0 in 778 (forge, machines and
+research stations), for a continuous, a late-join and a lossy client.

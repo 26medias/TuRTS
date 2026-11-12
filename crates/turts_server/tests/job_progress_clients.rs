@@ -272,6 +272,37 @@ fn base_producer_jobs_equal_the_sim_through_disable_enable_cancel() {
         frozen > 100,
         "the test compares ticks in which a disabled producer holds a Running job: {frozen}"
     );
+    // Bytes of the queue and job records in a delta (0 when the lists are empty).
+    let bytes = |tick: u32| {
+        let delta = &run.ticks[tick as usize - 1].delta;
+        let size = |len: usize, encoded: usize| if len == 0 { 0 } else { encoded };
+        size(
+            delta.economy.queues.len(),
+            postcard::to_vec::<_, 4096>(&delta.economy.queues)
+                .unwrap()
+                .len(),
+        ) + size(
+            delta.records.jobs.len(),
+            postcard::to_vec::<_, 4096>(&delta.records.jobs)
+                .unwrap()
+                .len(),
+        )
+    };
+    let steady: Vec<usize> = (31..90).map(bytes).collect();
+    assert!(
+        steady.iter().all(|b| *b == 0),
+        "a frozen job costs no bytes between the disable and the enable: {steady:?}"
+    );
+    let steady_running: Vec<usize> = (125..159).map(bytes).collect();
+    assert!(
+        steady_running.iter().all(|b| *b == 0),
+        "a running job costs no bytes between its changes: {steady_running:?}"
+    );
+    eprintln!(
+        "JOBPROGRESS bytes: disable tick 30 {} B, enable tick 90 {} B, ticks 31..89 (disabled) 0 B, ticks 125..158 (running) 0 B",
+        bytes(30),
+        bytes(90)
+    );
     eprintln!(
         "JOBPROGRESS base: {compared} comparisons, {frozen} of them with a frozen Running job"
     );
