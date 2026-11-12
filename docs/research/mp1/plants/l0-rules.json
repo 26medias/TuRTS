@@ -1,0 +1,272 @@
+[
+  {
+    "row": "DMG1",
+    "plant": "(a) float multiplier in damage.rs (DMG1 plant 1): the 29/100 cell gives 28",
+    "files": [
+      {
+        "file": "crates/turts_rules/src/damage.rs",
+        "patch": "diff --git a/crates/turts_rules/src/damage.rs b/crates/turts_rules/src/damage.rs\nindex 101a127..b3c6784 100644\n--- a/crates/turts_rules/src/damage.rs\n+++ b/crates/turts_rules/src/damage.rs\n@@ -19,3 +19,3 @@ pub fn base(weapon_damage: u64, modifier: u64) -> Option<u64> {\n pub fn raw(base: u64, cell: Ratio) -> u64 {\n-    saturate_u64(mul_div_u64(base, cell.numerator(), cell.denominator()))\n+    (base as f64 * (cell.numerator() as f64 / cell.denominator() as f64)).floor() as u64\n }\n"
+      }
+    ],
+    "command": "cargo test -p turts_rules --locked --test damage",
+    "env": {
+      "MC_JOBS": "6"
+    },
+    "headed": false,
+    "expected_red": "test the_dmg1_cells_are_exact ... FAILED\ntest the_hit_equals_the_design_formula_for_random_inputs ... FAILED\ncrates/turts_rules/tests/damage.rs:40:9:\nassertion `left == right` failed: hit(base 100, 29/100, minimum 0, flat 0)\n  left: 28\n right: 29\nexit=101",
+    "exit": 101,
+    "commit": "cb4b802ebb0b4838d44801cade08cc1b46618b4a"
+  },
+  {
+    "row": "L0-RULES",
+    "plant": "(b) relation gives Enemy for Other: a same-team other slot is an enemy",
+    "files": [
+      {
+        "file": "crates/turts_rules/src/relation.rs",
+        "patch": "diff --git a/crates/turts_rules/src/relation.rs b/crates/turts_rules/src/relation.rs\nindex 1bfdab1..16f0400 100644\n--- a/crates/turts_rules/src/relation.rs\n+++ b/crates/turts_rules/src/relation.rs\n@@ -53,3 +53,3 @@ pub fn relation(a: u8, b: u8, teams: Teams<'_>) -> Relations {\n         (Relation::Ally, same_team),\n-        (Relation::Enemy, !same_team),\n+        (Relation::Enemy, a != b),\n         (Relation::Other, a != b),\n"
+      }
+    ],
+    "command": "cargo test -p turts_rules --locked --test relation",
+    "env": {
+      "MC_JOBS": "6"
+    },
+    "headed": false,
+    "expected_red": "test an_ally_of_another_slot_is_other_and_never_enemy ... FAILED\ntest the_relation_table_with_two_slots_in_each_team ... FAILED\ncrates/turts_rules/tests/relation.rs:44:5:\nassertion failed: !matches(Relation::Enemy, 0, 1, teams)\nnote: run with `RUST_BACKTRACE=1` environment variable to display a backtrace\n\nexit=101",
+    "exit": 101,
+    "commit": "cb4b802ebb0b4838d44801cade08cc1b46618b4a"
+  },
+  {
+    "row": "L0-RULES",
+    "plant": "(c) progress::value_at without the clamp at total",
+    "files": [
+      {
+        "file": "crates/turts_rules/src/progress.rs",
+        "patch": "diff --git a/crates/turts_rules/src/progress.rs b/crates/turts_rules/src/progress.rs\nindex 4a77917..3b2a397 100644\n--- a/crates/turts_rules/src/progress.rs\n+++ b/crates/turts_rules/src/progress.rs\n@@ -30,3 +30,3 @@ pub fn value_at(record: &RateRecord, tick: u32) -> u64 {\n     };\n-    saturate_u64(u128::from(record.done).saturating_add(gained)).min(record.total)\n+    saturate_u64(u128::from(record.done).saturating_add(gained))\n }\n"
+      }
+    ],
+    "command": "cargo test -p turts_rules --locked --test progress",
+    "env": {
+      "MC_JOBS": "6"
+    },
+    "headed": false,
+    "expected_red": "test the_value_is_monotone_and_matches_a_tick_by_tick_run ... FAILED\ntest the_value_never_passes_the_end_value ... FAILED\ncrates/turts_rules/tests/progress.rs:81:13:\nassertion `left == right` failed: tick 362 of RateRecord { done: 398, total: 729, per_tick: 216, at_tick: 360, stalled: false }\n  left: 830\n right: 729\nexit=101",
+    "exit": 101,
+    "commit": "cb4b802ebb0b4838d44801cade08cc1b46618b4a"
+  },
+  {
+    "row": "DMG1",
+    "plant": "(d) flat taken before the ratio (DMG1 plant 3): the flat 5 cell gives 27, not 24",
+    "files": [
+      {
+        "file": "crates/turts_rules/src/damage.rs",
+        "patch": "diff --git a/crates/turts_rules/src/damage.rs b/crates/turts_rules/src/damage.rs\nindex 101a127..fe7f670 100644\n--- a/crates/turts_rules/src/damage.rs\n+++ b/crates/turts_rules/src/damage.rs\n@@ -26,3 +26,3 @@ pub fn raw(base: u64, cell: Ratio) -> u64 {\n pub fn hit(base: u64, cell: Ratio, minimum: u64, flat_armour: u64) -> u64 {\n-    minimum.max(raw(base, cell).saturating_sub(flat_armour))\n+    minimum.max(raw(base.saturating_sub(flat_armour), cell))\n }\n"
+      }
+    ],
+    "command": "cargo test -p turts_rules --locked --test damage",
+    "env": {
+      "MC_JOBS": "6"
+    },
+    "headed": false,
+    "expected_red": "test the_dmg1_cells_are_exact ... FAILED\ntest the_hit_equals_the_design_formula_for_random_inputs ... FAILED\ncrates/turts_rules/tests/damage.rs:40:9:\nassertion `left == right` failed: hit(base 100, 29/100, minimum 1, flat 5)\n  left: 27\n right: 24\nexit=101",
+    "exit": 101,
+    "commit": "cb4b802ebb0b4838d44801cade08cc1b46618b4a"
+  },
+  {
+    "row": "L0-RULES",
+    "plant": "(e) a square root in the placement distance test",
+    "files": [
+      {
+        "file": "crates/turts_rules/src/placement.rs",
+        "patch": "diff --git a/crates/turts_rules/src/placement.rs b/crates/turts_rules/src/placement.rs\nindex 202b4b6..a52093b 100644\n--- a/crates/turts_rules/src/placement.rs\n+++ b/crates/turts_rules/src/placement.rs\n@@ -206,3 +206,3 @@ fn distance_squared(a: Point, b: Point) -> f32 {\n fn within(a: Point, b: Point, limit: f32) -> bool {\n-    distance_squared(a, b) <= limit * limit\n+    distance_squared(a, b).sqrt() <= limit\n }\n"
+      }
+    ],
+    "command": "cargo test -p turts_rules --locked --test placement",
+    "env": {
+      "MC_JOBS": "6"
+    },
+    "headed": false,
+    "expected_red": "test placement_arithmetic_uses_squared_distances_only ... FAILED\ncrates/turts_rules/tests/placement.rs:386:5:\nassertion `left == right` failed\n  left: [\"sqrt\"]\n right: []\nexit=101",
+    "exit": 101,
+    "commit": "cb4b802ebb0b4838d44801cade08cc1b46618b4a"
+  },
+  {
+    "row": "L0-RULES",
+    "plant": "(f) check 6 (queue full) runs before check 5 (node clearance)",
+    "files": [
+      {
+        "file": "crates/turts_rules/src/placement.rs",
+        "patch": "diff --git a/crates/turts_rules/src/placement.rs b/crates/turts_rules/src/placement.rs\nindex 202b4b6..fe00020 100644\n--- a/crates/turts_rules/src/placement.rs\n+++ b/crates/turts_rules/src/placement.rs\n@@ -174,9 +174,2 @@ pub fn check(site: &Site, view: &View<'_>, visible: impl Fn(u32) -> bool) -> Ver\n     }\n-    // 5. The edge distance to a resource node is at least `node_clearance`.\n-    for node in view.nodes {\n-        if edge_below(footprint, node, site.node_clearance) {\n-            return refuse(Reason::SiteNearResource);\n-        }\n-    }\n-    // 6. The constructor queue is not full. A held order that is placed again skips this.\n     if let Some(queue) = site.queue\n@@ -186,2 +179,7 @@ pub fn check(site: &Site, view: &View<'_>, visible: impl Fn(u32) -> bool) -> Ver\n     }\n+    for node in view.nodes {\n+        if edge_below(footprint, node, site.node_clearance) {\n+            return refuse(Reason::SiteNearResource);\n+        }\n+    }\n     Verdict::Valid\n"
+      }
+    ],
+    "command": "cargo test -p turts_rules --locked --test placement",
+    "env": {
+      "MC_JOBS": "6"
+    },
+    "headed": false,
+    "expected_red": "test two_failing_causes_give_the_first_in_design_order ... FAILED\ntest the_first_failing_check_in_design_order_is_the_reported_reason ... FAILED\ncrates/turts_rules/tests/placement.rs:183:5:\nassertion `left == right` failed\n  left: Refused { reason: ConstructionQueueFull, blocker: None }\n right: Refused { reason: SiteNearResource, blocker: None }\nexit=101",
+    "exit": 101,
+    "commit": "cb4b802ebb0b4838d44801cade08cc1b46618b4a"
+  },
+  {
+    "row": "L0-RULES",
+    "plant": "(g) the gap rule takes the smaller gap, not the larger",
+    "files": [
+      {
+        "file": "crates/turts_rules/src/placement.rs",
+        "patch": "diff --git a/crates/turts_rules/src/placement.rs b/crates/turts_rules/src/placement.rs\nindex 202b4b6..14d5bcd 100644\n--- a/crates/turts_rules/src/placement.rs\n+++ b/crates/turts_rules/src/placement.rs\n@@ -169,3 +169,3 @@ pub fn check(site: &Site, view: &View<'_>, visible: impl Fn(u32) -> bool) -> Ver\n         if let ObstacleKind::Static { gap } = obstacle.kind\n-            && edge_below(footprint, &obstacle.footprint, site.gap.max(gap))\n+            && edge_below(footprint, &obstacle.footprint, site.gap.min(gap))\n         {\n"
+      }
+    ],
+    "command": "cargo test -p turts_rules --locked --test placement",
+    "env": {
+      "MC_JOBS": "6"
+    },
+    "headed": false,
+    "expected_red": "test each_check_alone_gives_its_reason ... FAILED\ntest the_gap_is_the_larger_of_the_two_and_a_mobile_unit_never_counts_in_it ... FAILED\ntest the_first_failing_check_in_design_order_is_the_reported_reason ... FAILED\ncrates/turts_rules/tests/placement.rs:124:5:\nassertion `left == right` failed\n  left: Valid\n right: Refused { reason: SiteNearBuilding, blocker: None }\nexit=101",
+    "exit": 101,
+    "commit": "cb4b802ebb0b4838d44801cade08cc1b46618b4a"
+  },
+  {
+    "row": "L0-RULES",
+    "plant": "(h) a hidden blocker is named in the verdict",
+    "files": [
+      {
+        "file": "crates/turts_rules/src/placement.rs",
+        "patch": "diff --git a/crates/turts_rules/src/placement.rs b/crates/turts_rules/src/placement.rs\nindex 202b4b6..13ddfe8 100644\n--- a/crates/turts_rules/src/placement.rs\n+++ b/crates/turts_rules/src/placement.rs\n@@ -154,3 +154,3 @@ pub fn check(site: &Site, view: &View<'_>, visible: impl Fn(u32) -> bool) -> Ver\n             overlaps = true;\n-            if visible(obstacle.id) {\n+            if visible(obstacle.id) || true {\n                 blocker = Some(blocker.map_or(obstacle.id, |best| best.min(obstacle.id)));\n"
+      }
+    ],
+    "command": "cargo test -p turts_rules --locked --test placement",
+    "env": {
+      "MC_JOBS": "6"
+    },
+    "headed": false,
+    "expected_red": "test a_hidden_blocker_is_refused_and_never_named ... FAILED\ntest the_first_failing_check_in_design_order_is_the_reported_reason ... FAILED\ncrates/turts_rules/tests/placement.rs:323:5:\nassertion `left == right` failed\n  left: Refused { reason: SiteBlocked, blocker: Some(5) }\n right: Refused { reason: SiteBlocked, blocker: None }\nexit=101",
+    "exit": 101,
+    "commit": "cb4b802ebb0b4838d44801cade08cc1b46618b4a"
+  },
+  {
+    "row": "DMG1",
+    "plant": "(i) the shared integer division rounds to nearest, not down",
+    "files": [
+      {
+        "file": "crates/turts_rules/src/arith.rs",
+        "patch": "diff --git a/crates/turts_rules/src/arith.rs b/crates/turts_rules/src/arith.rs\nindex 54c191c..e20ffa6 100644\n--- a/crates/turts_rules/src/arith.rs\n+++ b/crates/turts_rules/src/arith.rs\n@@ -4,3 +4,3 @@\n pub(crate) fn mul_div_u64(a: u64, b: u64, d: u64) -> u128 {\n-    u128::from(a) * u128::from(b) / u128::from(d)\n+    (u128::from(a) * u128::from(b) + u128::from(d) / 2) / u128::from(d)\n }\n"
+      }
+    ],
+    "command": "cargo test -p turts_rules --locked --no-fail-fast",
+    "env": {
+      "MC_JOBS": "6"
+    },
+    "headed": false,
+    "expected_red": "test arith::tests::u64_products_use_a_u128_intermediate ... FAILED\ntest charged_at_is_the_floor_of_the_share ... FAILED\ntest con3_cancel_at_37_of_100_on_a_cost_of_500 ... FAILED\ntest the_refund_is_the_floor_for_random_ratios_up_to_one ... FAILED\ntest the_dmg1_cells_are_exact ... FAILED\ntest the_hit_equals_the_design_formula_for_random_inputs ... FAILED\ntest heal_follows_the_floor_of_the_rate ... FAILED\ntest the_heal_differences_add_up_to_the_total ... FAILED\ntest the_repair_charge_is_by_applied_health ... FAILED\ntest paid_and_refund_equal_the_charge_and_refund_functions ... FAILED\ncrates/turts_rules/src/arith.rs:63:9:\nassertion `left == right` failed\n  left: 11\n right: 10\nexit=101",
+    "exit": 101,
+    "commit": "cb4b802ebb0b4838d44801cade08cc1b46618b4a"
+  },
+  {
+    "row": "L0-RULES",
+    "plant": "(j) site health target with a wrapping u128 product (no 256-bit fallback)",
+    "files": [
+      {
+        "file": "crates/turts_rules/src/heal.rs",
+        "patch": "diff --git a/crates/turts_rules/src/heal.rs b/crates/turts_rules/src/heal.rs\nindex ee10b5d..c5d50a9 100644\n--- a/crates/turts_rules/src/heal.rs\n+++ b/crates/turts_rules/src/heal.rs\n@@ -66,3 +66,3 @@ pub fn site_health_target(max: u64, site_health: Ratio, done: u64, total: u64) -\n     let part = numerator * total + (denominator - numerator) * done;\n-    mul_div_wide(u128::from(max), part, denominator * total)\n+    Some(u128::from(max).wrapping_mul(part) / (denominator * total))\n         .map_or(max, |target| saturate_u64(target).min(max))\n"
+      }
+    ],
+    "command": "cargo test -p turts_rules --locked --test heal",
+    "env": {
+      "MC_JOBS": "6"
+    },
+    "headed": false,
+    "expected_red": "test the_site_health_target_does_not_overflow_u128 ... FAILED\ncrates/turts_rules/tests/heal.rs:112:5:\nassertion `left == right` failed\n  left: 0\n right: 9223372036854775807\nexit=101",
+    "exit": 101,
+    "commit": "cb4b802ebb0b4838d44801cade08cc1b46618b4a"
+  },
+  {
+    "row": "L0-RULES",
+    "plant": "(k) charged_at without the clamp of done at total",
+    "files": [
+      {
+        "file": "crates/turts_rules/src/charge.rs",
+        "patch": "diff --git a/crates/turts_rules/src/charge.rs b/crates/turts_rules/src/charge.rs\nindex 7f13f2a..2a05485 100644\n--- a/crates/turts_rules/src/charge.rs\n+++ b/crates/turts_rules/src/charge.rs\n@@ -13,3 +13,3 @@ pub fn charged_at(cost: u64, done: u64, total: u64) -> u64 {\n     // `done <= total`, so the result is at most `cost` and fits in `u64`.\n-    saturate_u64(mul_div_u64(cost, done.min(total), total))\n+    saturate_u64(mul_div_u64(cost, done, total))\n }\n"
+      }
+    ],
+    "command": "cargo test -p turts_rules --locked --test charge",
+    "env": {
+      "MC_JOBS": "6"
+    },
+    "headed": false,
+    "expected_red": "test done_above_total_counts_as_total_and_a_zero_total_is_complete ... FAILED\ncrates/turts_rules/tests/charge.rs:28:5:\nassertion `left == right` failed\n  left: 505\n right: 500\nexit=101",
+    "exit": 101,
+    "commit": "cb4b802ebb0b4838d44801cade08cc1b46618b4a"
+  },
+  {
+    "row": "L0-RULES",
+    "plant": "(m) boundary.sh row: turts_sim missing from RULES_FORBIDDEN",
+    "files": [
+      {
+        "file": "scripts/boundary.sh",
+        "patch": "diff --git a/scripts/boundary.sh b/scripts/boundary.sh\nindex 3e85f43..0e3cb07 100755\n--- a/scripts/boundary.sh\n+++ b/scripts/boundary.sh\n@@ -87,3 +87,3 @@ forbid turts_interaction wasm32-unknown-unknown \"\" turts_audit\n # a crate is added and this list is not.\n-RULES_FORBIDDEN=(turts_audit turts_checks turts_client turts_client_web turts_interaction turts_mod_api turts_mod_runtime turts_net_lightyear turts_net_protocol turts_pack turts_server turts_sim wgpu winit)\n+RULES_FORBIDDEN=(turts_audit turts_checks turts_client turts_client_web turts_interaction turts_mod_api turts_mod_runtime turts_net_lightyear turts_net_protocol turts_pack turts_server wgpu winit)\n nobevy turts_rules $HOST \"\"\n"
+      }
+    ],
+    "command": "cargo test -p turts_checks --locked --test boundary --no-fail-fast",
+    "env": {
+      "MC_JOBS": "6"
+    },
+    "headed": false,
+    "expected_red": "test t1x_rules_forbidden_list_is_every_workspace_crate ... FAILED\ntest t1_boundary_script_passes ... FAILED\ncrates/turts_checks/tests/boundary.rs:456:5:\nassertion `left == right` failed\n  left: [\"turts_audit\", \"turts_checks\", \"turts_client\", \"turts_client_web\", \"turts_interaction\", \"turts_mod_api\", \"turts_mod_runtime\", \"turts_net_lightyear\", \"turts_net_protocol\", \"turts_pack\", \"turts_server\", \"wgpu\", \"winit\"]\n right: [\"turts_audit\", \"turts_checks\", \"turts_client\", \"turts_client_web\", \"turts_interaction\", \"turts_mod_api\", \"turts_mod_runtime\", \"turts_net_lightyear\", \"turts_net_protocol\", \"turts_pack\", \"turts_server\", \"turts_sim\", \"wgpu\", \"winit\"]\nexit=101",
+    "exit": 101,
+    "commit": "cb4b802ebb0b4838d44801cade08cc1b46618b4a"
+  },
+  {
+    "row": "L0-RULES",
+    "plant": "(n) boundary.sh: the wasm32 forbid row of turts_rules deleted",
+    "files": [
+      {
+        "file": "scripts/boundary.sh",
+        "patch": "diff --git a/scripts/boundary.sh b/scripts/boundary.sh\nindex 3e85f43..7d6f71e 100755\n--- a/scripts/boundary.sh\n+++ b/scripts/boundary.sh\n@@ -91,3 +91,2 @@ nobevy turts_rules wasm32-unknown-unknown \"\"\n forbid turts_rules $HOST \"\" \"${RULES_FORBIDDEN[@]}\"\n-forbid turts_rules wasm32-unknown-unknown \"\" \"${RULES_FORBIDDEN[@]}\"\n workspace lightyear_prediction bevy_replicon\n"
+      }
+    ],
+    "command": "cargo test -p turts_checks --locked --test boundary --no-fail-fast",
+    "env": {
+      "MC_JOBS": "6"
+    },
+    "headed": false,
+    "expected_red": "test t1_boundary_script_passes ... FAILED\ncrates/turts_checks/tests/boundary.rs:126:9:\nmissing \"checked: turts_rules wasm32-unknown-unknown: no turts_audit turts_checks turts_client turts_client_web turts_interaction turts_mod_api turts_mod_runtime turts_net_lightyear turts_net_protocol turts_pack turts_server turts_sim wgpu winit\" in stdout: \"checked: turts_sim x86_64-unknown-linux-gnu: no bevy_render bevy_winit bevy_pbr turts_mod_runtime\\nchecked: turts_server x86_64-unknown-linux-gnu: no bevy_render bevy_winit bevy_pbr\\nchecked: turts_mod_api x86_64-unknown-linux-gnu: no bevy*\\nchecked: turts_mod_runtime x86_64-unknown-linux-gnu: no bevy*\\nchecked: turts_net_protocol x86_64-unknown-linux-gnu: no bevy*\\nchecked: turts_interaction x86_64-unknown-linux-gnu: no bevy*\\nchecked: turts_interaction wasm32-unknown-unknown: no bevy*\\nchecked: turts_interaction x86_64-unknown-linux-gnu: no turts_sim wgpu winit\\nchecked: turts_interaction wasm32-unknown-unknown: no turts_sim wgpu winit\\nchecked: turts_client x86_64-unknown-linux-gnu: no turts_sim\\nchecked: turts_client wasm32-unknown-unknown: no turts_sim\\nchecked: turts_client_web x86_64-unknown-linux-gnu: no turts_sim\\nchecked: turts_client_web wasm32-unknown-unknown: no turts_sim\\nchecked: turts_net_lightyear x86_64-unknown-linux-gnu: no turts_sim turts_mod_runtime\\nchecked: turts_audit x86_64-unknown-linux-gnu: no bevy_render bevy_winit bevy_pbr turts_client turts_client_web turts_interaction turts_server turts_pack turts_mod_runtime turts_net_lightyear\\nchecked: turts_audit wasm32-unknown-unknown: no bevy_render bevy_winit bevy_pbr turts_client turts_client_web turts_interaction turts_server turts_pack turts_mod_runtime turts_net_lightyear\\nchecked: turts_sim x86_64-unknown-linux-gnu: no turts_audit\\nchecked: turts_client x86_64-unknown-linux-gnu: no turts_audit\\nchecked: turts_client wasm32-unknown-unknown: no turts_audit\\nchecked: turts_client_web x86_64-unknown-linux-gnu: no turts_audit\\nchecked: turts_client_web wasm32-unknown-unknown: no turts_audit\\nchecked: turts_interaction x86_64-unknown-linux-gnu: no turts_audit\\nchecked: turts_interaction wasm32-unknown-unknown: no turts_audit\\nchecked: turts_rules x86_64-unknown-linux-gnu: no bevy*\\nchecked: turts_rules wasm32-unknown-unknown: no bevy*\\nchecked: turts_rules x86_64-unknown-linux-gnu: no turts_audit turts_checks turts_client turts_client_web turts_interaction turts_mod_api turts_mod_runtime turts_net_lightyear turts_net_protocol turts_pack turts_server turts_sim wgpu winit\\nchecked: workspace: no lightyear_prediction bevy_replicon\\nchecked: turts_server: no test-probes (normal,build edges, absent)\\nchecked: turts_client: no test-probes (normal,build edges, unreachable)\\nchecked: turts_client_web: no test-probes (normal,build edges, unreachable)\\nchecked: self-check: test-probes found on the dev edge of turts_pack\\nboundary ok\\n\"\nnote: run with `RUST_BACKTRACE=1` environment variable to display a backtrace\n\nexit=101",
+    "exit": 101,
+    "commit": "cb4b802ebb0b4838d44801cade08cc1b46618b4a"
+  },
+  {
+    "row": "L0-RULES",
+    "plant": "(o) boundary.sh: the bevy* grep of nobevy is blind ('^bevyx')",
+    "files": [
+      {
+        "file": "scripts/boundary.sh",
+        "patch": "diff --git a/scripts/boundary.sh b/scripts/boundary.sh\nindex 3e85f43..d39e6ad 100755\n--- a/scripts/boundary.sh\n+++ b/scripts/boundary.sh\n@@ -22,3 +22,3 @@ forbid() { local c=$1 t=$2 m=$3; shift 3; local l; l=$(tree \"$c\" \"$t\" \"$m\"); for\n checked() { if [ -z \"$RULE_MODE\" ]; then echo \"checked: $1\"; fi; }\n-nobevy() { local l b; l=$(tree \"$1\" \"$2\" \"$3\"); b=$(grep -m1 '^bevy' <<<\"$l\" || true); if [ -n \"$b\" ]; then echo \"forbidden edge: $1 -> $b\" >&2; exit 1; fi; checked \"$1 $2: no bevy*\"; }\n+nobevy() { local l b; l=$(tree \"$1\" \"$2\" \"$3\"); b=$(grep -m1 '^bevyx' <<<\"$l\" || true); if [ -n \"$b\" ]; then echo \"forbidden edge: $1 -> $b\" >&2; exit 1; fi; checked \"$1 $2: no bevy*\"; }\n workspace() { local out rc=0 l; out=$(cargo tree --workspace -e normal --prefix none 2>\"$TMPERR\") || { rc=$?; out=$(cat \"$TMPERR\"); }; if [ \"$rc\" -ne 0 ]; then echo \"cargo tree failed for workspace: $out\" >&2; exit 1; fi; l=$(sed 's/ .*//' <<<\"$out\" | sort -u); for n in \"$@\"; do if names_has \"$l\" \"$n\"; then echo \"forbidden edge: workspace -> $n\" >&2; exit 1; fi; done; checked \"workspace: no $*\"; }\n"
+      }
+    ],
+    "command": "cargo test -p turts_checks --locked --test boundary --no-fail-fast",
+    "env": {
+      "MC_JOBS": "6"
+    },
+    "headed": false,
+    "expected_red": "test t1_rule_no_bevy_prefix_is_red_on_fixture ... FAILED\ntest t1x_copy_with_bevy_render_is_red ... FAILED\ntest t1x_rules_copy_with_a_bevy_crate_is_red ... FAILED\ncrates/turts_checks/tests/boundary.rs:62:5:\nassertion `left == right` failed: stdout: \"rule ok\\n\" stderr: \"\"\n  left: Some(0)\n right: Some(1)\nexit=101",
+    "exit": 101,
+    "commit": "cb4b802ebb0b4838d44801cade08cc1b46618b4a"
+  },
+  {
+    "row": "L0-RULES",
+    "plant": "(p) the fixture test list lacks turts_mod_api: the planted workspace edge passes",
+    "files": [
+      {
+        "file": "crates/turts_checks/tests/boundary.rs",
+        "patch": "diff --git a/crates/turts_checks/tests/boundary.rs b/crates/turts_checks/tests/boundary.rs\nindex 7c2b66f..f36fc4b 100644\n--- a/crates/turts_checks/tests/boundary.rs\n+++ b/crates/turts_checks/tests/boundary.rs\n@@ -309,3 +309,3 @@ fn t1x_audit_copy_with_mod_runtime_is_red() {\n /// every other workspace crate, `wgpu` and `winit`. The `bevy*` crates have their own row.\n-const RULES_FORBIDDEN: [&str; 14] = [\n+const RULES_FORBIDDEN: [&str; 13] = [\n     \"turts_audit\",\n@@ -315,3 +315,2 @@ const RULES_FORBIDDEN: [&str; 14] = [\n     \"turts_interaction\",\n-    \"turts_mod_api\",\n     \"turts_mod_runtime\",\n"
+      }
+    ],
+    "command": "cargo test -p turts_checks --locked --test boundary --no-fail-fast",
+    "env": {
+      "MC_JOBS": "6"
+    },
+    "headed": false,
+    "expected_red": "test t1x_rules_copy_with_a_workspace_crate_is_red ... FAILED\ntest t1x_rules_forbidden_list_is_every_workspace_crate ... FAILED\ntest t1_boundary_script_passes ... FAILED\ncrates/turts_checks/tests/boundary.rs:51:5:\nassertion `left == right` failed: stdout: \"rule ok\\n\" stderr: \"\"\n  left: Some(0)\n right: Some(1)\nexit=101",
+    "exit": 101,
+    "commit": "cb4b802ebb0b4838d44801cade08cc1b46618b4a"
+  }
+]
