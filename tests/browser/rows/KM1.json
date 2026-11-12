@@ -75,7 +75,7 @@
                     "call": "click",
                     "phase": "player-override",
                     "x": 784,
-                    "y": 274,
+                    "y": 338,
                     "button": "left"
                 },
                 {
@@ -156,7 +156,7 @@
                     "call": "click",
                     "phase": "player-override",
                     "x": 784,
-                    "y": 274,
+                    "y": 338,
                     "button": "left"
                 },
                 {
@@ -164,13 +164,6 @@
                     "phase": "player-override",
                     "code": "F12",
                     "modifiers": []
-                },
-                {
-                    "call": "wheel",
-                    "phase": "player-override",
-                    "x": 650,
-                    "y": 500,
-                    "delta": 1450
                 },
                 {
                     "call": "wait",
@@ -238,13 +231,13 @@
                 {
                     "name": "reserved-notice",
                     "phase": "player-override",
-                    "after_action": 25,
+                    "after_action": 24,
                     "window": 1
                 },
                 {
                     "name": "reload-joined",
                     "phase": "player-override",
-                    "after_action": 29,
+                    "after_action": 28,
                     "window": 1
                 }
             ],

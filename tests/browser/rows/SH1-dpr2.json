@@ -197,20 +197,13 @@
                     "call": "click",
                     "phase": "conflicts",
                     "x": 784,
-                    "y": 382,
+                    "y": 446,
                     "button": "left"
                 },
                 {
                     "call": "key",
                     "phase": "conflicts",
                     "code": "KeyM"
-                },
-                {
-                    "call": "wheel",
-                    "phase": "conflicts",
-                    "x": 650,
-                    "y": 500,
-                    "delta": 725
                 },
                 {
                     "call": "wait",
@@ -221,7 +214,7 @@
                     "call": "click",
                     "phase": "conflicts",
                     "x": 430,
-                    "y": 556,
+                    "y": 121,
                     "button": "left"
                 },
                 {
@@ -297,20 +290,13 @@
                     "call": "click",
                     "phase": "conflicts",
                     "x": 784,
-                    "y": 382,
+                    "y": 446,
                     "button": "left"
                 },
                 {
                     "call": "key",
                     "phase": "conflicts",
                     "code": "KeyS"
-                },
-                {
-                    "call": "wheel",
-                    "phase": "conflicts",
-                    "x": 650,
-                    "y": 500,
-                    "delta": 725
                 },
                 {
                     "call": "wait",
@@ -321,7 +307,7 @@
                     "call": "click",
                     "phase": "conflicts",
                     "x": 495,
-                    "y": 556,
+                    "y": 121,
                     "button": "left"
                 },
                 {
@@ -330,22 +316,10 @@
                     "ms": 200
                 },
                 {
-                    "call": "wheel",
-                    "phase": "conflicts",
-                    "x": 650,
-                    "y": 500,
-                    "delta": -10000
-                },
-                {
-                    "call": "wait",
-                    "phase": "conflicts",
-                    "ms": 150
-                },
-                {
                     "call": "click",
                     "phase": "conflicts",
                     "x": 850,
-                    "y": 382,
+                    "y": 446,
                     "button": "left"
                 },
                 {
@@ -758,55 +732,55 @@
                 {
                     "name": "conflict-open",
                     "phase": "conflicts",
-                    "after_action": 8,
+                    "after_action": 7,
                     "window": 1
                 },
                 {
                     "name": "conflict-swapped",
                     "phase": "conflicts",
-                    "after_action": 10,
+                    "after_action": 9,
                     "window": 1
                 },
                 {
                     "name": "guide-swapped",
                     "phase": "conflicts",
-                    "after_action": 16,
+                    "after_action": 15,
                     "window": 1
                 },
                 {
                     "name": "conflict-cancel-edit-row",
                     "phase": "conflicts",
-                    "after_action": 22,
+                    "after_action": 21,
                     "window": 1
                 },
                 {
                     "name": "conflict-cancel-offer",
                     "phase": "conflicts",
-                    "after_action": 26,
+                    "after_action": 24,
                     "window": 1
                 },
                 {
                     "name": "conflict-cancelled",
                     "phase": "conflicts",
-                    "after_action": 30,
+                    "after_action": 26,
                     "window": 1
                 },
                 {
                     "name": "conflict-reset",
                     "phase": "conflicts",
-                    "after_action": 32,
+                    "after_action": 28,
                     "window": 1
                 },
                 {
                     "name": "guide-reset",
                     "phase": "conflicts",
-                    "after_action": 38,
+                    "after_action": 34,
                     "window": 1
                 },
                 {
                     "name": "conflict-menu-closed",
                     "phase": "conflicts",
-                    "after_action": 40,
+                    "after_action": 36,
                     "window": 1
                 },
                 {
