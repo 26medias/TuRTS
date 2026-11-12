@@ -898,8 +898,8 @@
       {
         "file": "tests/browser/cold-probe.js",
         "edit": {
-          "old": "const visible = change.box_changed >= Math.max(MIN_BOX_PIXELS, 3 * idle.box_changed)\n            || (change.page_share >= PAGE_SHARE",
-          "new": "const visible = true\n            || (change.page_share >= PAGE_SHARE"
+          "old": "const visible = change.box_changed >= Math.max(MIN_BOX_PIXELS, 3 * idle.box_changed)\n            || change.page_changed",
+          "new": "const visible = true\n            || change.page_changed"
         }
       }
     ],
@@ -913,7 +913,7 @@
     "headed": false,
     "expected_red": "✖ first-click probe, page with a see-through full-size guide: it FAILS at the first unit",
     "exit": 1,
-    "commit": "5fe6f811bc94aaa3410e2475fcb9267631ed6e84"
+    "commit": "b397d588a1a7190d6e04b8d8638a66b4bc38d584"
   },
   {
     "row": "Q-COLD",
@@ -1360,5 +1360,51 @@
     "expected_red": "✖ the probes wait 8 s for a person's first look by default",
     "exit": 1,
     "commit": "3d9bff0495b330bedb5ed113f66839be811363f1"
+  },
+  {
+    "row": "Q-COLD",
+    "plant": "checker-f5a-judged-in-probes",
+    "files": [
+      {
+        "file": "scripts/qa/cold_play_check.py",
+        "edit": {
+          "old": "    if mode == \"agent\":  # the sounds of a probe",
+          "new": "    if True:  # the sounds of a probe"
+        }
+      }
+    ],
+    "command": [
+      "python3",
+      "-B",
+      "tests/qa/test_cold_play_check.py"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "FAIL: test_a_probe_is_not_judged_on_the_sounds_of_its_own_clicks_but_on_alerts_before_input",
+    "exit": 1,
+    "commit": "b397d588a1a7190d6e04b8d8638a66b4bc38d584"
+  },
+  {
+    "row": "Q-COLD",
+    "plant": "checker-no-input-log-is-e1b",
+    "files": [
+      {
+        "file": "scripts/qa/cold_play_check.py",
+        "edit": {
+          "old": "        inputs_lines = []  # a session with no input writes no file",
+          "new": "        inputs_lines = None"
+        }
+      }
+    ],
+    "command": [
+      "python3",
+      "-B",
+      "tests/qa/test_cold_play_check.py"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "FAIL: test_a_session_with_no_input_has_no_input_log_and_that_is_not_e1b",
+    "exit": 1,
+    "commit": "b397d588a1a7190d6e04b8d8638a66b4bc38d584"
   }
 ]
