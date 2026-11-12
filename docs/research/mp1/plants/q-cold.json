@@ -2230,5 +2230,172 @@
     "expected_red": "✖ scripts/cold-reference.sh: usage, a refusal to rebuild outside 9b3a7bd",
     "exit": 1,
     "commit": "cbebebd4adb9dbee8423157c3e2ed966616bccad"
+  },
+  {
+    "row": "Q-COLD",
+    "plant": "silent-play-arg-missing",
+    "files": [
+      {
+        "file": "scripts/mp1-play.sh",
+        "edit": {
+          "old": "    [[ \"$SOUND\" != silent ]] || printf '%s\\n' --alsa-output-device=null\n",
+          "new": ""
+        }
+      }
+    ],
+    "command": [
+      "node",
+      "--test",
+      "--test-name-pattern=SILENT by default",
+      "tests/browser/cold-play.test.js"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "✖ mp1-play.sh --url starts a Chrome that answers on the printed port, SILENT by default",
+    "exit": 1,
+    "commit": "71b58ed0215be57f245d6ceac3f3c7d862a334c2"
+  },
+  {
+    "row": "Q-COLD",
+    "plant": "silent-play-env-missing",
+    "files": [
+      {
+        "file": "scripts/mp1-play.sh",
+        "edit": {
+          "old": "    export PULSE_SERVER=\"unix:/nonexistent/mc-tests-no-pulse\"\n",
+          "new": ""
+        }
+      }
+    ],
+    "command": [
+      "node",
+      "--test",
+      "--test-name-pattern=SILENT by default",
+      "tests/browser/cold-play.test.js"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "✖ mp1-play.sh --url starts a Chrome that answers on the printed port, SILENT by default",
+    "exit": 1,
+    "commit": "71b58ed0215be57f245d6ceac3f3c7d862a334c2"
+  },
+  {
+    "row": "Q-COLD",
+    "plant": "silent-play-url-not-default",
+    "files": [
+      {
+        "file": "scripts/mp1-play.sh",
+        "edit": {
+          "old": "if [[ -n \"${MC_LOCK_RUN:-}\" || \"$mode\" == --url ]]; then SOUND=silent;",
+          "new": "if [[ -n \"${MC_LOCK_RUN:-}\" ]]; then SOUND=silent;"
+        }
+      }
+    ],
+    "command": [
+      "node",
+      "--test",
+      "--test-name-pattern=SILENT by default",
+      "tests/browser/cold-play.test.js"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "✖ mp1-play.sh --url starts a Chrome that answers on the printed port, SILENT by default",
+    "exit": 1,
+    "commit": "71b58ed0215be57f245d6ceac3f3c7d862a334c2"
+  },
+  {
+    "row": "Q-COLD",
+    "plant": "silent-play-wrapper-not-default",
+    "files": [
+      {
+        "file": "scripts/mp1-play.sh",
+        "edit": {
+          "old": "if [[ -n \"${MC_LOCK_RUN:-}\" || \"$mode\" == --url ]]; then SOUND=silent;",
+          "new": "if [[ \"$mode\" == --url ]]; then SOUND=silent;"
+        }
+      }
+    ],
+    "command": [
+      "node",
+      "--test",
+      "--test-name-pattern=person form",
+      "tests/browser/cold-play.test.js"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "✖ mp1-play.sh --url --with-sound is the person form",
+    "exit": 1,
+    "commit": "71b58ed0215be57f245d6ceac3f3c7d862a334c2"
+  },
+  {
+    "row": "Q-COLD",
+    "plant": "silent-play-person-form-silenced",
+    "files": [
+      {
+        "file": "scripts/mp1-play.sh",
+        "edit": {
+          "old": "--with-sound) SOUND=person; shift ;;",
+          "new": "--with-sound) SOUND=silent; shift ;;"
+        }
+      }
+    ],
+    "command": [
+      "node",
+      "--test",
+      "--test-name-pattern=person form",
+      "tests/browser/cold-play.test.js"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "✖ mp1-play.sh --url --with-sound is the person form",
+    "exit": 1,
+    "commit": "71b58ed0215be57f245d6ceac3f3c7d862a334c2"
+  },
+  {
+    "row": "Q-COLD",
+    "plant": "silent-cold-play-no-flag",
+    "files": [
+      {
+        "file": "scripts/cold-play.sh",
+        "edit": {
+          "old": "\"${play_args[@]}\" --silent >",
+          "new": "\"${play_args[@]}\" >"
+        }
+      }
+    ],
+    "command": [
+      "node",
+      "--test",
+      "--test-name-pattern=start script ends its game",
+      "tests/browser/cold-play.test.js"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "✖ the start script ends its game and Chrome with the session",
+    "exit": 1,
+    "commit": "71b58ed0215be57f245d6ceac3f3c7d862a334c2"
+  },
+  {
+    "row": "Q-COLD",
+    "plant": "silent-script-scan-blind",
+    "files": [
+      {
+        "file": "tests/browser/harness/silent-chrome-scan.test.js",
+        "edit": {
+          "old": "    const starts = /\"\\$CHROME_BIN\"\\s+\"\\$\\{|",
+          "new": "    const starts = /NEVERMATCH|"
+        }
+      }
+    ],
+    "command": [
+      "node",
+      "--test",
+      "tests/browser/harness/silent-chrome-scan.test.js"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "✖ the script scan finds a Chrome start with no silent form",
+    "exit": 1,
+    "commit": "71b58ed0215be57f245d6ceac3f3c7d862a334c2"
   }
 ]
