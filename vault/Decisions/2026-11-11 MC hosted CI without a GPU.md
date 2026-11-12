@@ -26,3 +26,11 @@ tags: [turts, mc, ci, ceo]
 ## Recommendation (Root, with the web-platform-engineer result; the qa-lead review RUN142 gives the trade-offs)
 
 Option b for MC, with the honest wording of the done condition: "hosted `check` and `agents` green; hosted `browser` green for T7; the M2 and M3 browser proofs and the browser fault set green on the local GPU gate with receipts". Then a for the long term, when the cost is known, and c as a product question for a later milestone (it is the player without a GPU). The CEO decides, because it changes the MC done condition.
+
+## Correction, 2026-11-12 (orchestrator)
+
+The premise of this decision was wrong for the 11 red browser jobs of hosted runs 43174011989 and 43195887161. Their cause was not the missing GPU. Each job failed at its first cargo build, before a browser started: the browser scripts build with `CARGO_NET_OFFLINE=true`, and the job had no step that fetched the crates (`no matching package named ron found`). Evidence: the job logs and the `server-build.log` artifacts; a local reproduction with a clean cargo home (red, exit 101; green after `cargo fetch --locked`).
+
+Repair: one step `cargo fetch --locked` in the `browser` job (commit 8fb2aa4, merged at 851b39d). No hosted run has reached a browser case of the m2 leg or of the refutation legs before this repair, so the question "do the two-window cases need a GPU" has no hosted evidence yet. The single-window T7 and M3 oracles are green on the software renderer.
+
+This decision stays open, but do not decide it now. The hosted run on 851b39d gives the first real evidence. The orchestrator reports the result and, only if a GPU-related red remains, brings the options back.
