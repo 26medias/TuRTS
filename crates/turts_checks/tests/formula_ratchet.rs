@@ -70,7 +70,9 @@ const BASELINE: &[(&str, Counts)] = &[
     ("crates/turts_client/src/relation.rs", [0, 5, 0, 0, 0]),
     ("crates/turts_interaction/src/camera.rs", [0, 0, 1, 0, 0]),
     ("crates/turts_sim/src/boot_m3.rs", [1, 0, 5, 0, 0]),
-    ("crates/turts_sim/src/economy/combat.rs", [0, 0, 4, 0, 0]),
+    // The range rule `within_weapon_range` (1) and the distance that orders the targets (1). Before
+    // the repair of the approach of an Attack order (combat-fixes) the file had 4 copies of the rule.
+    ("crates/turts_sim/src/economy/combat.rs", [0, 0, 2, 0, 0]),
     // `wide_let_div` 1: `RateCarry::take_budget` (`numerator / hz`), the per-second budget of a
     // gatherer for one tick. It is a rate rule of the gather loop, not a rule of `turts_rules`;
     // fingerprint 4 found it when it was added (L0-SIM) and the record keeps it.
@@ -88,10 +90,6 @@ const BASELINE: &[(&str, Counts)] = &[
     ("crates/turts_sim/src/grid.rs", [0, 0, 2, 0, 0]),
     ("crates/turts_sim/src/map.rs", [0, 0, 1, 0, 0]),
     ("crates/turts_sim/src/movement/spread.rs", [0, 0, 2, 0, 0]),
-    (
-        "crates/turts_sim/src/orders/behaviours/attack.rs",
-        [0, 0, 1, 0, 0],
-    ),
     // L0-API1: the same mapping in the simulation (the client cannot depend on it).
     ("crates/turts_sim/src/rules_adapter.rs", [0, 5, 0, 0, 0]),
 ];
