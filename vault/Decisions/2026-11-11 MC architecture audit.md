@@ -42,7 +42,7 @@ The audit log (341.6 bytes for each unit, 6.46 GB) is the EL1 economy audit log.
 
 ## CEO decision 2026-11-11
 
-Source: relayed to the MC Root session by the session `turts-b3` on 2026-11-11, which states that the CEO agreed with the recommendations. The MC Root session did not hear this from the CEO directly; Root asked the CEO to confirm in the Root session. Until then, treat the re-freeze approval as reported, not as heard.
+Source: relayed to the MC Root session by the session `turts-b3` on 2026-11-11, and confirmed by the CEO in the Root session on the same day ("Yes correct").
 
 1. Economy log validator scope: options b and c are DECIDED. b: the validator checks ledger conservation only; the acceptance rows and the order log prove orders and movement. c: the validator moves to a `turts_audit` crate, with one file for each domain. When: before MP1.
 2. Movement models: option b is DECIDED. One movement model; a plain move is a pool of one. The M2 stream is re-frozen one time; the CEO approves this frozen-value change. When: before MP1 adds tests that pin plain moves; at the latest before M4.

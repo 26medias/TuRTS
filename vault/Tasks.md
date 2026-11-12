@@ -217,8 +217,8 @@ MC is active on this desktop. Task15 code at52ecf3c is accepted for integration:
 
 ## Follow-up from the MC architecture audit (RUN126)
 
-- [x] CEO: economy log validator scope, options a/b/c ([[2026-11-11 MC architecture audit]]). DECIDED 2026-11-11 (relayed by session turts-b3; see the note).
-- [x] CEO: one movement model and one re-freeze of the M2 stream, options a/b ([[2026-11-11 MC architecture audit]]). DECIDED 2026-11-11 (relayed by session turts-b3; see the note).
+- [x] CEO: economy log validator scope, options a/b/c ([[2026-11-11 MC architecture audit]]). DECIDED by the CEO 2026-11-11 (see the note).
+- [x] CEO: one movement model and one re-freeze of the M2 stream, options a/b ([[2026-11-11 MC architecture audit]]). DECIDED by the CEO 2026-11-11 (see the note).
 - [ ] Before MP1: economy log validator checks ledger conservation only, and moves to a `turts_audit` crate with one file for each domain (CEO decision 2026-11-11, options b and c).
 - [ ] Before MP1 pins plain moves (at the latest before M4): one movement model (a plain move is a pool of one) and one re-freeze of the M2 stream (CEO decision 2026-11-11, option b). Not during MC.
 - [ ] Before gate 1 of MP1: the producer estimates MP1 and MP2 again at the MC rate (early estimate 95 to 150 runs; MC used about 176 against 60 to 100), and decides if the two items above are a pre-MP1 slice or part of the MP1 plan.
