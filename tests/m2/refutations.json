@@ -1489,7 +1489,7 @@
       "-p",
       "turts_sim",
       "--lib",
-      "the_movement_system_writes_only_movement_state",
+      "movement::ecs::tests::the_movement_system_writes_only_movement_state",
       "--",
       "--exact",
       "--nocapture"
