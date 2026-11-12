@@ -2,8 +2,20 @@
 # F10 acceptance against a real Forge server and rendered browser controls.
 # Linux defaults to a private headed Chromium context under Xvfb with Vulkan; callers may set
 # M2_HEADLESS=true or override the Chrome profile variables without changing their desktop DISPLAY.
+# Q-PREBUILD: `m3-browser.sh --prepare DIR` builds the server, the packer and the wasm client, and packs
+# forge, into DIR, then stops. `m3-browser.sh --prepared DIR` builds nothing; it refuses (exit 66) when DIR
+# does not match the source (scripts/mc_prepare.py). With no flag the script builds inside the run (CI).
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+PREPARE_DIR="" PREPARED=""
+while (($#)); do
+    case "$1" in
+        --prepare) (($# >= 2)) || { echo "--prepare requires a folder" >&2; exit 2; }; PREPARE_DIR="$(realpath -m "$2")"; shift 2 ;;
+        --prepared) (($# >= 2)) || { echo "--prepared requires a folder" >&2; exit 2; }; PREPARED="$(realpath -m "$2")"; shift 2 ;;
+        *) echo "usage: scripts/m3-browser.sh [--prepare DIR | --prepared DIR]" >&2; exit 2 ;;
+    esac
+done
+[[ -z "$PREPARE_DIR" || -z "$PREPARED" ]] || { echo "--prepare and --prepared cannot be used together" >&2; exit 2; }
 cd "$ROOT"
 export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-${ROOT}/target/m3-t16}"
 export CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0
@@ -52,17 +64,47 @@ PY
 )"
 read -r STATIC_PORT HTTP_PORT WS_PORT <<<"$PORTS"
 DIST="$ROOT/crates/turts_client_web/dist"
-# Keep each build serial: the server binary and packer do not share mutable build invocations.
-env CARGO_BUILD_JOBS="$BUILD_JOBS" CARGO_NET_OFFLINE=true cargo build --release -p turts_server > "$OUT/server-build.log" 2>&1 || { cat "$OUT/server-build.log" >&2; exit 1; }
-env CARGO_BUILD_JOBS="$BUILD_JOBS" CARGO_NET_OFFLINE=true cargo build --release -p turts_pack --bin turts-pack > "$OUT/packer-build.log" 2>&1 || { cat "$OUT/packer-build.log" >&2; exit 1; }
-(cd crates/turts_client_web && env CARGO_BUILD_JOBS="$BUILD_JOBS" CARGO_NET_OFFLINE=true trunk build --release) > "$OUT/trunk-build.log" 2>&1 || { cat "$OUT/trunk-build.log" >&2; exit 1; }
-for file in "$DIST"/*.wasm "$DIST"/*.js; do
-    [[ -e "$file.br" && "$file" -nt "$file.br" ]] || brotli -q 11 -k -f "$file"
-done
-(cd tests/browser && npm ci --offline) > "$OUT/npm.log" 2>&1 || { cat "$OUT/npm.log" >&2; exit 1; }
+SERVER_BIN="$CARGO_TARGET_DIR/release/turts_server"
 mkdir -p "$OUT/pack"
-cp -a mods/forge "$OUT/pack/forge"
-"$CARGO_TARGET_DIR/release/turts-pack" "$OUT/pack/forge" > "$OUT/pack.log" 2>&1 || { cat "$OUT/pack.log" >&2; exit 1; }
+if [[ -n "$PREPARED" ]]; then
+    # The stale check comes first. A prepared run starts no cargo, no trunk, no brotli and no npm.
+    python3 -B scripts/mc_prepare.py check "$PREPARED" --root "$ROOT" --package mods/forge \
+        --need bin/turts_server --need dist/index.html --need pack/forge.tar || exit $?
+    (cd tests/browser && node -e 'require.resolve("playwright-core")') >/dev/null 2>&1 \
+        || { echo "prepared run: tests/browser has no node_modules; the prepare step runs npm ci" >&2; exit 66; }
+    DIST="$PREPARED/dist"
+    SERVER_BIN="$PREPARED/bin/turts_server"
+    cp -a "$PREPARED/pack/." "$OUT/pack/"
+else
+    if [[ -n "$PREPARE_DIR" ]]; then
+        if [[ -n "$(ls -A "$PREPARE_DIR" 2>/dev/null)" && ! -f "$PREPARE_DIR/manifest.json" && ! -f "$PREPARE_DIR/.begin.json" ]]; then
+            echo "--prepare: $PREPARE_DIR is not empty and is not a prepared folder" >&2
+            exit 2
+        fi
+        rm -rf "$PREPARE_DIR"
+        mkdir -p "$PREPARE_DIR"
+        python3 -B scripts/mc_prepare.py begin --root "$ROOT" --out "$PREPARE_DIR" --package mods/forge
+    fi
+    # Keep each build serial: the server binary and packer do not share mutable build invocations.
+    env CARGO_BUILD_JOBS="$BUILD_JOBS" CARGO_NET_OFFLINE=true cargo build --release -p turts_server > "$OUT/server-build.log" 2>&1 || { cat "$OUT/server-build.log" >&2; exit 1; }
+    env CARGO_BUILD_JOBS="$BUILD_JOBS" CARGO_NET_OFFLINE=true cargo build --release -p turts_pack --bin turts-pack > "$OUT/packer-build.log" 2>&1 || { cat "$OUT/packer-build.log" >&2; exit 1; }
+    (cd crates/turts_client_web && env CARGO_BUILD_JOBS="$BUILD_JOBS" CARGO_NET_OFFLINE=true trunk build --release) > "$OUT/trunk-build.log" 2>&1 || { cat "$OUT/trunk-build.log" >&2; exit 1; }
+    for file in "$DIST"/*.wasm "$DIST"/*.js; do
+        [[ -e "$file.br" && "$file" -nt "$file.br" ]] || brotli -q 11 -k -f "$file"
+    done
+    (cd tests/browser && npm ci --offline) > "$OUT/npm.log" 2>&1 || { cat "$OUT/npm.log" >&2; exit 1; }
+    cp -a mods/forge "$OUT/pack/forge"
+    "$CARGO_TARGET_DIR/release/turts-pack" "$OUT/pack/forge" > "$OUT/pack.log" 2>&1 || { cat "$OUT/pack.log" >&2; exit 1; }
+    if [[ -n "$PREPARE_DIR" ]]; then
+        mkdir -p "$PREPARE_DIR/bin"
+        cp "$SERVER_BIN" "$CARGO_TARGET_DIR/release/turts-pack" "$PREPARE_DIR/bin/"
+        cp -a "$DIST" "$PREPARE_DIR/dist"
+        cp -a "$OUT/pack" "$PREPARE_DIR/pack"
+        python3 -B scripts/mc_prepare.py seal --root "$ROOT" --out "$PREPARE_DIR" --package mods/forge
+        echo "PREPARED: $PREPARE_DIR"
+        exit 0
+    fi
+fi
 cat > "$OUT/server.ron" <<EOF
 (
     game_package: "$OUT/pack/forge.tar",
@@ -75,7 +117,7 @@ cat > "$OUT/server.ron" <<EOF
 EOF
 python3 -m http.server "$STATIC_PORT" --bind 127.0.0.1 --directory "$DIST" > "$OUT/static.log" 2>&1 &
 STATIC_PID=$!
-"$CARGO_TARGET_DIR/release/turts_server" "$OUT/server.ron" --economy-log "$OUT/economy.jsonl" --tick-log "$OUT/server-tick.log" > "$OUT/server.log" 2>&1 &
+"$SERVER_BIN" "$OUT/server.ron" --economy-log "$OUT/economy.jsonl" --tick-log "$OUT/server-tick.log" > "$OUT/server.log" 2>&1 &
 SERVER_PID=$!
 for _ in $(seq 1 120); do
     if curl -fsS "http://127.0.0.1:$HTTP_PORT/advertisement.json" >/dev/null 2>&1 && curl -fsS "http://127.0.0.1:$STATIC_PORT/" >/dev/null 2>&1; then break; fi

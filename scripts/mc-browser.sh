@@ -12,13 +12,18 @@ CHROME_BIN="${CHROME_BIN:-$(command -v google-chrome || command -v chromium || t
 if [[ -z "$CHROME_BIN" || ! -x "$CHROME_BIN" ]]; then echo "Chrome binary unavailable; set CHROME_BIN" >&2; exit 1; fi
 export CHROME_BIN
 PACKAGE="${1:-}"
-[[ -n "$PACKAGE" ]] || { echo "usage: scripts/mc-browser.sh <package-dir> [driver.js oracle.js viewport [--params row.json] [--windows N]] [--serve-only]" >&2; exit 2; }
+[[ -n "$PACKAGE" ]] || { echo "usage: scripts/mc-browser.sh <package-dir> [driver.js oracle.js viewport [--params row.json] [--windows N]] [--serve-only] [--prepare DIR | --prepared DIR]" >&2; exit 2; }
 shift
 SERVE_ONLY=false
+# Q-PREBUILD: --prepare DIR builds and packs into DIR and stops (no browser, no GPU lock needed).
+# --prepared DIR builds nothing: it refuses (exit 66) when DIR does not match the source.
+PREPARE_DIR="" PREPARED=""
 DRIVER="" ORACLE="" VIEWPORT="1280x720" ROW_FILE="" WINDOWS="" WINDOWS_SET=false
 while (($#)); do
     case "$1" in
         --serve-only) SERVE_ONLY=true; shift ;;
+        --prepare) (($# >= 2)) || { echo "--prepare requires a folder" >&2; exit 2; }; PREPARE_DIR="$2"; shift 2 ;;
+        --prepared) (($# >= 2)) || { echo "--prepared requires a folder" >&2; exit 2; }; PREPARED="$2"; shift 2 ;;
         --params) (($# >= 2)) || { echo "--params requires a row file" >&2; exit 2; }; ROW_FILE="$2"; shift 2 ;;
         --windows) (($# >= 2)) || { echo "--windows requires a positive integer" >&2; exit 2; }; [[ "$WINDOWS_SET" == false ]] || { echo "--windows may be specified only once" >&2; exit 2; }; WINDOWS="$2"; WINDOWS_SET=true; shift 2 ;;
         *)
@@ -34,7 +39,8 @@ if not re.fullmatch(r"[1-9][0-9]*", value) or int(value) > 9007199254740991:
     raise SystemExit(1)
 PYWINDOWS
 fi
-[[ "$SERVE_ONLY" == true || ( -n "$DRIVER" && -n "$ORACLE" ) ]] || { echo "driver and oracle are required" >&2; exit 2; }
+[[ -z "$PREPARE_DIR" || -z "$PREPARED" ]] || { echo "--prepare and --prepared cannot be used together" >&2; exit 2; }
+[[ "$SERVE_ONLY" == true || -n "$PREPARE_DIR" || ( -n "$DRIVER" && -n "$ORACLE" ) ]] || { echo "driver and oracle are required" >&2; exit 2; }
 [[ "$BUILD_JOBS" =~ ^[1-4]$ ]] || { echo "CARGO_BUILD_JOBS must be between 1 and 4" >&2; exit 2; }
 SYNTHETIC_UNITS=""
 SYNTHETIC_SET=false
@@ -93,29 +99,66 @@ PYORDERLOG
 )" || exit 2
 fi
 DIST="$ROOT/crates/turts_client_web/dist"
+SERVER_BIN="$TARGET/release/turts_server"
+PACKAGE_NAME="$(basename "$PACKAGE")"
+row_wants_effective_bindings() {
+    [[ -n "$ROW_FILE" ]] && python3 -c 'import json,sys; sys.exit(0 if json.load(open(sys.argv[1])).get("effective_bindings") is True else 1)' "$ROW_FILE"
+}
+if [[ -n "$PREPARED" ]]; then
+    # Q-PREBUILD: the stale check comes first. It runs before the run folder exists and before any
+    # service starts. A prepared run starts no cargo and no trunk (the Python test proves it).
+    check_args=(check "$PREPARED" --root "$ROOT" --package "$PACKAGE" --need bin/turts_server --need dist/index.html --need "pack/$PACKAGE_NAME.tar")
+    [[ -z "$ROW_FILE" ]] || check_args+=(--row "$ROW_FILE")
+    python3 -B "$ROOT/scripts/mc_prepare.py" "${check_args[@]}" || exit $?
+    PREPARED="$(cd "$PREPARED" && pwd)"
+    DIST="$PREPARED/dist"
+    SERVER_BIN="$PREPARED/bin/turts_server"
+    if ! (cd "$ROOT/tests/browser" && node -e 'require.resolve("playwright-core")') >/dev/null 2>&1; then
+        echo "prepared run: tests/browser has no node_modules (playwright-core); the prepare step runs npm ci" >&2
+        exit 66
+    fi
+fi
 mkdir -p "$OUT_ROOT"
-OUT="$(mktemp -d "$OUT_ROOT/run-$(date -u +%Y%m%dT%H%M%SZ)-XXXXXX")"
+if [[ -n "$PREPARE_DIR" ]]; then
+    if [[ -n "$(ls -A "$PREPARE_DIR" 2>/dev/null)" && ! -f "$PREPARE_DIR/manifest.json" && ! -f "$PREPARE_DIR/.begin.json" ]]; then
+        echo "--prepare: $PREPARE_DIR is not empty and is not a prepared folder" >&2
+        exit 2
+    fi
+    rm -rf "$PREPARE_DIR"
+    mkdir -p "$PREPARE_DIR"
+    OUT="$(cd "$PREPARE_DIR" && pwd)"
+    PREPARE_ARGS=(--root "$ROOT" --out "$OUT" --package "$PACKAGE")
+    [[ -z "$ROW_FILE" ]] || PREPARE_ARGS+=(--row "$ROW_FILE")
+    python3 -B "$ROOT/scripts/mc_prepare.py" begin "${PREPARE_ARGS[@]}"
+else
+    OUT="$(mktemp -d "$OUT_ROOT/run-$(date -u +%Y%m%dT%H%M%SZ)-XXXXXX")"
+fi
 PACK="$OUT/pack"
 mkdir -p "$PACK"
-PACKAGE_NAME="$(basename "$PACKAGE")"
-cp -a "$ROOT/$PACKAGE" "$PACK/$PACKAGE_NAME"
-if ! (cd "$ROOT/tests/browser" && node -e 'require.resolve("playwright-core")') >"$OUT/node-check.log" 2>&1; then
-    (cd "$ROOT/tests/browser" && npm ci) >"$OUT/npm-ci.log" 2>&1 || { cat "$OUT/npm-ci.log" >&2; exit 1; }
-fi
+if [[ -n "$PREPARED" ]]; then
+    cp -a "$PREPARED/pack/." "$PACK/"
+    if row_wants_effective_bindings; then cp "$PREPARED/effective-bindings.json" "$OUT/effective-bindings.json"; fi
+    if [[ "${ROW_NAME:-}" == "KM1" ]]; then cp "$PREPARED/km1-reserved-pack.json" "$OUT/km1-reserved-pack.json"; fi
+    if [[ "${ROW_NAME:-}" == "PER1" ]]; then cp -a "$PREPARED/native-reference" "$OUT/native-reference"; fi
+else
+    cp -a "$ROOT/$PACKAGE" "$PACK/$PACKAGE_NAME"
+    if ! (cd "$ROOT/tests/browser" && node -e 'require.resolve("playwright-core")') >"$OUT/node-check.log" 2>&1; then
+        (cd "$ROOT/tests/browser" && npm ci) >"$OUT/npm-ci.log" 2>&1 || { cat "$OUT/npm-ci.log" >&2; exit 1; }
+    fi
 
-# Keep each cargo invocation sequential; this runner never starts a second compiler.
-env CARGO_BUILD_JOBS="$BUILD_JOBS" cargo build --release -p turts_server >"$OUT/server-build.log" 2>&1 || { cat "$OUT/server-build.log" >&2; exit 1; }
-env CARGO_BUILD_JOBS="$BUILD_JOBS" cargo build --release -p turts_pack --bin turts-pack >"$OUT/packer-build.log" 2>&1 || { cat "$OUT/packer-build.log" >&2; exit 1; }
-env CARGO_BUILD_JOBS="$BUILD_JOBS" cargo run --release -p turts_pack --bin turts-pack -- "$PACK/$PACKAGE_NAME" >"$OUT/pack.log" 2>&1 || { cat "$OUT/pack.log" >&2; exit 1; }
-# MC task 21: a row with "effective_bindings": true gets params.bindings, the effective input map
-# (engine defaults merged with the package input/bindings.ron) of the packed copy.
-if [[ -n "$ROW_FILE" ]] && python3 -c 'import json,sys; sys.exit(0 if json.load(open(sys.argv[1])).get("effective_bindings") is True else 1)' "$ROW_FILE"; then
-    env CARGO_BUILD_JOBS="$BUILD_JOBS" cargo run -q -p turts_interaction --example effective_bindings -- "$PACK/$PACKAGE_NAME" >"$OUT/effective-bindings.json" 2>"$OUT/effective-bindings.log" || { cat "$OUT/effective-bindings.log" >&2; exit 1; }
-fi
-if [[ "${ROW_NAME:-}" == "KM1" ]]; then
-    RESERVED_PACKAGE="$OUT/km1-reserved-forge"
-    cp -a "$PACK/$PACKAGE_NAME" "$RESERVED_PACKAGE"
-    PYTHONDONTWRITEBYTECODE=1 python3 - "$RESERVED_PACKAGE" "$OUT/km1-reserved-pack.json" "$TARGET/release/turts-pack" <<'PYKM1PACK'
+    # Keep each cargo invocation sequential; this runner never starts a second compiler.
+    env CARGO_BUILD_JOBS="$BUILD_JOBS" cargo build --release -p turts_server >"$OUT/server-build.log" 2>&1 || { cat "$OUT/server-build.log" >&2; exit 1; }
+    env CARGO_BUILD_JOBS="$BUILD_JOBS" cargo build --release -p turts_pack --bin turts-pack >"$OUT/packer-build.log" 2>&1 || { cat "$OUT/packer-build.log" >&2; exit 1; }
+    env CARGO_BUILD_JOBS="$BUILD_JOBS" cargo run --release -p turts_pack --bin turts-pack -- "$PACK/$PACKAGE_NAME" >"$OUT/pack.log" 2>&1 || { cat "$OUT/pack.log" >&2; exit 1; }
+    # MC task 21: a row with "effective_bindings": true gets params.bindings, the effective input map
+    # (engine defaults merged with the package input/bindings.ron) of the packed copy.
+    if row_wants_effective_bindings; then
+        env CARGO_BUILD_JOBS="$BUILD_JOBS" cargo run -q -p turts_interaction --example effective_bindings -- "$PACK/$PACKAGE_NAME" >"$OUT/effective-bindings.json" 2>"$OUT/effective-bindings.log" || { cat "$OUT/effective-bindings.log" >&2; exit 1; }
+    fi
+    if [[ "${ROW_NAME:-}" == "KM1" ]]; then
+        RESERVED_PACKAGE="$OUT/km1-reserved-forge"
+        cp -a "$PACK/$PACKAGE_NAME" "$RESERVED_PACKAGE"
+        PYTHONDONTWRITEBYTECODE=1 python3 - "$RESERVED_PACKAGE" "$OUT/km1-reserved-pack.json" "$TARGET/release/turts-pack" <<'PYKM1PACK'
 import hashlib, json, pathlib, subprocess, sys
 package, result_path, binary = map(pathlib.Path, sys.argv[1:])
 source = package / "input" / "bindings.ron"
@@ -141,16 +184,28 @@ record = {
 }
 pathlib.Path(result_path).write_text(json.dumps(record, sort_keys=True) + "\n")
 PYKM1PACK
+    fi
+    (cd "$ROOT/crates/turts_client_web" && env CARGO_BUILD_JOBS="$BUILD_JOBS" trunk build --release) >"$OUT/trunk-build.log" 2>&1 || { cat "$OUT/trunk-build.log" >&2; exit 1; }
+
+    if [[ -n "$PREPARE_DIR" ]]; then
+        mkdir -p "$OUT/bin"
+        cp "$TARGET/release/turts_server" "$TARGET/release/turts-pack" "$OUT/bin/"
+        cp -a "$DIST" "$OUT/dist"
+    fi
 fi
-(cd "$ROOT/crates/turts_client_web" && env CARGO_BUILD_JOBS="$BUILD_JOBS" trunk build --release) >"$OUT/trunk-build.log" 2>&1 || { cat "$OUT/trunk-build.log" >&2; exit 1; }
-if [[ -n "$HD1_NATIVE_REFERENCE" ]]; then
+if [[ -z "$PREPARE_DIR" && -n "$HD1_NATIVE_REFERENCE" ]]; then
     PYTHONDONTWRITEBYTECODE=1 python3 "$ROOT/scripts/hd1_reference.py" validate "$ROOT" "$HD1_NATIVE_REFERENCE"
     mkdir -p "$OUT/native-reference"
     cp -a "$HD1_NATIVE_REFERENCE"/. "$OUT/native-reference"/
 fi
 
-if [[ "${ROW_NAME:-}" == "PER1" ]]; then
+if [[ "${ROW_NAME:-}" == "PER1" && -z "$PREPARED" ]]; then
     PYTHONDONTWRITEBYTECODE=1 python3 "$ROOT/scripts/per1_native_reference.py" create "$ROOT" "$OUT/native-reference"
+fi
+if [[ -n "$PREPARE_DIR" ]]; then
+    python3 -B "$ROOT/scripts/mc_prepare.py" seal "${PREPARE_ARGS[@]}"
+    echo "PREPARED: $OUT"
+    exit 0
 fi
 
 read -r STATIC_PORT HTTP_PORT WS_PORT < <(python3 - <<'PYPORTS'
@@ -173,7 +228,7 @@ cat >"$OUT/server.ron" <<EOF_RON
     static_dir: "$DIST",
 )
 EOF_RON
-SERVER_ARGS=("$TARGET/release/turts_server" "$OUT/server.ron")
+SERVER_ARGS=("$SERVER_BIN" "$OUT/server.ron")
 if [[ "${ROW_NAME:-}" == "SLOT1" ]]; then
     SERVER_ARGS+=(--stats "$OUT/server-stats.json")
 fi
