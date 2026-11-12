@@ -117,75 +117,6 @@
   },
   {
     "row": "L0-DBG",
-    "plant": "h1-scan",
-    "files": [
-      {
-        "file": "tests/browser/harness/run.js",
-        "edit": {
-          "old": "    await page.waitForFunction(() => {\n        if (window.turts_error) return true;",
-          "new": "    await page.waitForFunction(async () => {\n        if (window.turts_error) return true;"
-        }
-      }
-    ],
-    "command": [
-      "node",
-      "--test",
-      "tests/browser/harness/wait-predicate.test.js"
-    ],
-    "env": {},
-    "headed": false,
-    "expected_red": "harness/run.js:809 async predicate",
-    "exit": 1,
-    "commit": "77d4296"
-  },
-  {
-    "row": "L0-DBG",
-    "plant": "h1-fake",
-    "files": [
-      {
-        "file": "tests/browser/harness/run.js",
-        "edit": {
-          "old": "    await page.waitForFunction(() => {\n        if (window.turts_error) return true;",
-          "new": "    await page.waitForFunction(async () => {\n        if (window.turts_error) return true;"
-        }
-      }
-    ],
-    "command": [
-      "node",
-      "--test",
-      "tests/browser/harness/checkpoint-run.test.js"
-    ],
-    "env": {},
-    "headed": false,
-    "expected_red": "the predicate returned a Promise: Playwright would not await it",
-    "exit": 1,
-    "commit": "77d4296"
-  },
-  {
-    "row": "L0-DBG",
-    "plant": "h1-wait",
-    "files": [
-      {
-        "file": "tests/browser/harness/run.js",
-        "edit": {
-          "old": "    await page.waitForFunction(() => {\n        if (window.turts_error) return true;",
-          "new": "    await page.waitForFunction(async () => {\n        if (window.turts_error) return true;"
-        }
-      }
-    ],
-    "command": [
-      "node",
-      "--test",
-      "tests/browser/harness/debug-request.test.js"
-    ],
-    "env": {},
-    "headed": false,
-    "expected_red": "the wait polled 1 times; it must wait for the Joined record",
-    "exit": 1,
-    "commit": "77d4296"
-  },
-  {
-    "row": "L0-DBG",
     "plant": "h2",
     "files": [
       {
@@ -367,5 +298,235 @@
     "expected_red": "+   'got1',",
     "exit": 1,
     "commit": "08be01d"
+  },
+  {
+    "row": "L0-DBG",
+    "plant": "m1-scan-call",
+    "files": [
+      {
+        "file": "tests/browser/harness/run.js",
+        "edit": {
+          "old": "    await waitForDebugRecord(page, () => {\n        if (window.turts_error) return true;\n        if (typeof window.turts_debug !== \"function\" || typeof window.turts_scene !== \"function\") return false;\n        try {\n            const debug = JSON.parse(window.turts_debug());\n            const scene = JSON.parse(window.turts_scene());\n            return typeof debug.phase === \"string\" && debug.phase.startsWith(\"Joined\")",
+          "new": "    await page.waitForFunction(() => {\n        if (window.turts_error) return true;\n        if (typeof window.turts_debug !== \"function\" || typeof window.turts_scene !== \"function\") return false;\n        try {\n            const debug = JSON.parse(window.turts_debug());\n            const scene = JSON.parse(window.turts_scene());\n            return typeof debug.phase === \"string\" && debug.phase.startsWith(\"Joined\")"
+        }
+      }
+    ],
+    "command": [
+      "node",
+      "--test",
+      "tests/browser/harness/wait-sync-scan.test.js"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "tests/browser/harness/run.js:",
+    "exit": 1,
+    "commit": "2600b9bd"
+  },
+  {
+    "row": "L0-DBG",
+    "plant": "m1-async-fake",
+    "files": [
+      {
+        "file": "tests/browser/harness/run.js",
+        "edit": {
+          "old": "    await waitForDebugRecord(page, () => {\n        if (window.turts_error) return true;\n        if (typeof window.turts_debug !== \"function\" || typeof window.turts_scene !== \"function\") return false;\n        try {\n            const debug = JSON.parse(window.turts_debug());\n            const scene = JSON.parse(window.turts_scene());\n            return typeof debug.phase === \"string\" && debug.phase.startsWith(\"Joined\")",
+          "new": "    await waitForDebugRecord(page, async () => {\n        if (window.turts_error) return true;\n        if (typeof window.turts_debug !== \"function\" || typeof window.turts_scene !== \"function\") return false;\n        try {\n            const debug = JSON.parse(window.turts_debug());\n            const scene = JSON.parse(window.turts_scene());\n            return typeof debug.phase === \"string\" && debug.phase.startsWith(\"Joined\")"
+        }
+      }
+    ],
+    "command": [
+      "node",
+      "--test",
+      "tests/browser/harness/checkpoint-run.test.js"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "the predicate is an async function",
+    "exit": 1,
+    "commit": "2600b9bd"
+  },
+  {
+    "row": "L0-DBG",
+    "plant": "m1-async-wait",
+    "files": [
+      {
+        "file": "tests/browser/harness/run.js",
+        "edit": {
+          "old": "    await waitForDebugRecord(page, () => {\n        if (window.turts_error) return true;\n        if (typeof window.turts_debug !== \"function\" || typeof window.turts_scene !== \"function\") return false;\n        try {\n            const debug = JSON.parse(window.turts_debug());\n            const scene = JSON.parse(window.turts_scene());\n            return typeof debug.phase === \"string\" && debug.phase.startsWith(\"Joined\")",
+          "new": "    await waitForDebugRecord(page, async () => {\n        if (window.turts_error) return true;\n        if (typeof window.turts_debug !== \"function\" || typeof window.turts_scene !== \"function\") return false;\n        try {\n            const debug = JSON.parse(window.turts_debug());\n            const scene = JSON.parse(window.turts_scene());\n            return typeof debug.phase === \"string\" && debug.phase.startsWith(\"Joined\")"
+        }
+      }
+    ],
+    "command": [
+      "node",
+      "--test",
+      "tests/browser/harness/debug-request.test.js"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "the predicate is an async function",
+    "exit": 1,
+    "commit": "2600b9bd"
+  },
+  {
+    "row": "L0-DBG",
+    "plant": "m1-helper-then",
+    "files": [
+      {
+        "file": "tests/browser/harness/wait-sync.js",
+        "edit": {
+          "old": "if (result && typeof result.then === \"function\") {",
+          "new": "if (false) {"
+        }
+      }
+    ],
+    "command": [
+      "node",
+      "--test",
+      "tests/browser/harness/wait-sync.test.js"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "Missing expected rejection",
+    "exit": 1,
+    "commit": "2600b9bd"
+  },
+  {
+    "row": "L0-DBG",
+    "plant": "m1-helper-async",
+    "files": [
+      {
+        "file": "tests/browser/harness/wait-sync.js",
+        "edit": {
+          "old": "if (Object.prototype.toString.call(predicate) === \"[object AsyncFunction]\") throw",
+          "new": "if (false) throw"
+        }
+      }
+    ],
+    "command": [
+      "node",
+      "--test",
+      "tests/browser/harness/wait-sync.test.js"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "ERR_ASSERTION]: arrow",
+    "exit": 1,
+    "commit": "2600b9bd"
+  },
+  {
+    "row": "L0-DBG",
+    "plant": "l3-pending",
+    "files": [
+      {
+        "file": "tests/browser/harness/wait-sync.js",
+        "edit": {
+          "old": " && !asked.__turts_wait_request_pending",
+          "new": ""
+        }
+      }
+    ],
+    "command": [
+      "node",
+      "--test",
+      "tests/browser/harness/wait-sync.test.js"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "the frame is held, so the first request never resolves",
+    "exit": 1,
+    "commit": "2600b9bd"
+  },
+  {
+    "row": "L0-DBG",
+    "plant": "m1-scan-weak",
+    "files": [
+      {
+        "file": "tests/browser/harness/wait-sync-scan.test.js",
+        "edit": {
+          "old": "line.replace(/[\\s\"'`+]/g, \"\")",
+          "new": "line.replace(/\\s/g, \"\")"
+        }
+      }
+    ],
+    "command": [
+      "node",
+      "--test",
+      "tests/browser/harness/wait-sync-scan.test.js"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "the scan must find the bracket key",
+    "exit": 1,
+    "commit": "2600b9bd"
+  },
+  {
+    "row": "L0-DBG",
+    "plant": "l1-target",
+    "files": [
+      {
+        "file": "scripts/mc-browser.sh",
+        "edit": {
+          "old": "SERVER_BIN=\"$TARGET/release/turts_server\"",
+          "new": "SERVER_BIN=\"$TARGET/debug/turts_server\""
+        }
+      }
+    ],
+    "command": [
+      "node",
+      "--test",
+      "tests/browser/harness/params-contract.test.js"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "ERR_ASSERTION]: target",
+    "exit": 1,
+    "commit": "2600b9bd"
+  },
+  {
+    "row": "L0-DBG",
+    "plant": "l1-prepared",
+    "files": [
+      {
+        "file": "scripts/mc-browser.sh",
+        "edit": {
+          "old": "    SERVER_BIN=\"$PREPARED/bin/turts_server\"",
+          "new": "    SERVER_BIN=\"$PREPARED/turts_server\""
+        }
+      }
+    ],
+    "command": [
+      "node",
+      "--test",
+      "tests/browser/harness/params-contract.test.js"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "ERR_ASSERTION]: prepared",
+    "exit": 1,
+    "commit": "2600b9bd"
+  },
+  {
+    "row": "L0-DBG",
+    "plant": "l1-ci-list",
+    "files": [
+      {
+        "file": ".github/workflows/ci.yml",
+        "edit": {
+          "old": " tests/browser/harness/params-contract.test.js",
+          "new": ""
+        }
+      }
+    ],
+    "command": [
+      "node",
+      "--test",
+      "tests/browser/harness/ci-node-list.test.js"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "+   'tests/browser/harness/params-contract.test.js'",
+    "exit": 1,
+    "commit": "2600b9bd"
   }
 ]
