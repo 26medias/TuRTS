@@ -75,6 +75,8 @@ pub struct ReplicaState {
     /// Cloned once from accepted packages before the first Welcome is processed.
     pub content: Option<ClientContent>,
     pub config: ReplicaConfig,
+    /// From `--reorder-grace-ticks` (test hook). `None`: the catch-up limit of one server frame.
+    pub reorder_grace_override: Option<u32>,
 }
 
 /// A strictly validated browser-only ingest control. It changes the existing replica hooks;
@@ -411,7 +413,11 @@ fn on_welcome(hooks: &mut IngestHooks, state: &mut ReplicaState, welcome: &Welco
     }
     let mut replica = Replica::with_config(welcome.tick_hz, state.config);
     // The reorder grace is the most ticks one server frame can run (`max_catchup_ticks`).
-    replica.set_reorder_grace_ticks(max_catchup_ticks(welcome.tick_hz));
+    replica.set_reorder_grace_ticks(
+        state
+            .reorder_grace_override
+            .unwrap_or_else(|| max_catchup_ticks(welcome.tick_hz)),
+    );
     if let Some(content) = state.content.clone() {
         replica.set_context(ReplicaContext::new(content, welcome.slot_id.0));
     }
@@ -927,6 +933,7 @@ pub fn ingest_messages(
 ) {
     let real_now_secs = time.elapsed_secs_f64();
     state.config.max_buffered_batches = options.0.resync_buffer_batches.max(1);
+    state.reorder_grace_override = options.0.reorder_grace_ticks;
     if state.content.is_none()
         && state.replica.is_none()
         && let Some(acquired) = acquired

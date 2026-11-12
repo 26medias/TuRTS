@@ -3856,6 +3856,12 @@ fn run_replay_spawn_window_subcase() {
             raw_arg,
             "--resync-buffer-batches",
             "32",
+            // This subcase needs the answer Snapshot (tick 11 with the grace) to PREDATE the
+            // output (tick 10): the spawn then reaches the replica by the replay of retained
+            // deltas. The reorder grace (5 ticks) would delay the request past the output, so the
+            // subcase asks at the first chain break (the M1 rule), which is the path it pins.
+            "--reorder-grace-ticks",
+            "0",
             "--hold-resync-snapshots",
             "12",
             "--hold-resync-snapshot-count",
