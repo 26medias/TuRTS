@@ -14,13 +14,14 @@
 //   alerts        the number of alert lines (and of debug alerts) that exist at the start
 //   units         the number of own units (default 3)
 //   selectShows   false: a click selects but draws nothing
+//   noPanel       true: a selection draws the ring only (about 1,600 pixels), no name panel
 //   selectsNothing true: a click draws the ring but selects nothing
 //   helpButton    true: a "Help" button that opens a "help_panel" widget; helpDead true: it does nothing
 //   alertsLateMs  the alert lines appear this long after the page loaded (default 0: at once)
 //   hover         true: resting the pointer on the Help button shows a "help::tooltip" and a "help_glow" widget
 
 function fixtureGame(options = {}) {
-    const opts = { startOverlay: false, guide: null, guideWords: 12, alerts: 0, units: 3, selectShows: true, selectsNothing: false, helpButton: false, helpDead: false, hover: false, alertsLateMs: 0, ...options };
+    const opts = { startOverlay: false, guide: null, guideWords: 12, alerts: 0, units: 3, selectShows: true, selectsNothing: false, noPanel: false, helpButton: false, helpDead: false, hover: false, alertsLateMs: 0, ...options };
     return `<!doctype html><meta charset="utf-8"><title>fixture game</title>
 <body style="margin:0;background:#1c1f26;font:16px sans-serif;color:#fff;overflow:hidden">
 <style>
@@ -65,6 +66,7 @@ for (const unit of units) {
             const ring = document.getElementById("ring");
             ring.style.display = "block"; ring.style.left = (unit.x - 42) + "px"; ring.style.top = (unit.y - 42) + "px";
             const panel = document.getElementById("selection_panel");
+            if (OPTS.noPanel) return;
             panel.style.display = "block"; panel.textContent = "Selected: own" + unit.id; selectedName = panel.textContent;
         }
     });

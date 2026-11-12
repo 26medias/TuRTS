@@ -240,6 +240,13 @@ test("first-click probe, positive control: after the tool closes the guide the p
     assert.equal(read(dir, "session.json").control, "close-layer");
 });
 
+test("first-click probe: a ring around the unit alone (no panel) is a visible change, by the box rule", { skip, timeout: 120000 }, async () => {
+    const { record } = await probe("first-click", { ...GREEN, noPanel: true });
+    assert.equal(record.summary.verdict, "PASS", JSON.stringify(record.clicks[0]));
+    assert.ok(record.clicks[0].page_changed < 2000, `the first ring alone is under the page rule: ${record.clicks[0].page_changed}`);
+    for (const click of record.clicks) assert.ok(click.box_changed >= 40, `box ${click.box_changed}`);
+});
+
 test("first-click probe on a page with no own unit on screen is a FAIL, not a pass", { skip, timeout: 120000 }, async () => {
     const { record } = await probe("first-click", { ...GREEN, units: 0 });
     assert.equal(record.summary.verdict, "FAIL");
