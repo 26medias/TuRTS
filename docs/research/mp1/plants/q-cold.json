@@ -841,7 +841,7 @@
     ],
     "env": {},
     "headed": false,
-    "expected_red": "✖ first-click probe, green page: every own unit click selects it and changes the picture",
+    "expected_red": "✖ first-click probe, green page: units, orders and extra clicks all answer",
     "exit": 1,
     "commit": "cbebebd4adb9dbee8423157c3e2ed966616bccad"
   },
@@ -889,7 +889,7 @@
     ],
     "env": {},
     "headed": false,
-    "expected_red": "✖ first-click probe: a ring around the unit alone (no panel) is a visible change",
+    "expected_red": "✖ first-click probe: a ring around the unit alone is a visible change by the box rule",
     "exit": 1,
     "commit": "05e30db1c8560124ddb105d457cfdab3557d71a2"
   },
@@ -913,7 +913,7 @@
     ],
     "env": {},
     "headed": false,
-    "expected_red": "✖ first-click probe, page with a see-through full-size guide: it FAILS at the first unit",
+    "expected_red": "✖ first-click probe, see-through full-size guide: it FAILS at the first unit",
     "exit": 1,
     "commit": "cbebebd4adb9dbee8423157c3e2ed966616bccad"
   },
