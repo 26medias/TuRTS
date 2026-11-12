@@ -243,6 +243,63 @@ fn guide_pages_1_to_4_name_no_key() {
     }
 }
 
+fn goal_box_text(interface: &InterfaceDef) -> Vec<String> {
+    let goal = interface
+        .root
+        .iter()
+        .find(|widget| widget.id == "objective")
+        .expect("Forge HUD must have the goal box widget `objective`");
+    let mut text = Vec::new();
+    widget_text(goal, &mut text);
+    text
+}
+
+#[test]
+fn goal_box_names_no_key_and_names_each_side() {
+    let interface = interface();
+    let labels = effective_key_labels();
+    let text = goal_box_text(&interface);
+    assert!(
+        text.iter().any(|line| line.starts_with("You are blue.")),
+        "goal box must tell the blue side its colour: {text:?}"
+    );
+    assert!(
+        text.iter().any(|line| line.starts_with("You are orange.")),
+        "goal box must tell the orange side its colour: {text:?}"
+    );
+    for line in &text {
+        let lower = line.to_ascii_lowercase();
+        assert!(
+            !guide_has_key_mention(line, &labels),
+            "goal box names a key: {line:?}"
+        );
+        assert!(
+            !contains_coordinate_pair(line),
+            "goal box contains a coordinate: {line:?}"
+        );
+        assert!(
+            !["studio", "developer", "modder", "debug", "ticks", "applied"]
+                .iter()
+                .any(|word| lower.contains(word)),
+            "goal box uses an engine or studio word: {line:?}"
+        );
+    }
+}
+
+#[test]
+fn guide_has_no_last_page_reference() {
+    let interface = interface();
+    for page in &interface.guide {
+        for text in guide_text(page) {
+            assert!(
+                !text.to_ascii_lowercase().contains("last page"),
+                "the guide is one block; page {:?} says \"last page\": {text:?}",
+                page.id
+            );
+        }
+    }
+}
+
 #[test]
 fn guide_page_5_lists_bindings() {
     let interface = interface();

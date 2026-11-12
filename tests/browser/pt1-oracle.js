@@ -24,7 +24,7 @@ const TURRET_RANGE = 8;
 const TEXT = {
     drillTooltip: "Bore Drill · Slot 1",
     labName: "Proving Lab",
-    loaderWaiting: "An Arm Loader is waiting for an item",
+    loaderWaiting: "Arm Loader: waiting for items. This is normal.",
     researchReady: "Proving Lab can research Hardened Shells",
     researchComplete: "Hardened Shells done: the turret hits harder",
     cannotMove: "Shell Turret: Cannot move",

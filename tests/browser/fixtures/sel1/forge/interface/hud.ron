@@ -45,7 +45,8 @@
             visible: [SelectionSingle, PrimaryOwned, PrimaryHas(Research)],
             widget: Box(fill: Some(Colour("#111820")), border: Some("#425463"), children: [
                 (id: "research_heading", at: Some((anchor: TopLeft, offset: (10.0, 6.0), pivot: None)), size: (w: Px(248.0), h: Px(20.0)), widget: Text(text: Literal("Research"), font: Some("forge_ui"), size: 15, colour: "#ffffff", align: Left, wrap: false)),
-                (id: "research_entries", at: Some((anchor: TopLeft, offset: (8.0, 30.0), pivot: None)), size: (w: Px(256.0), h: Px(88.0)), tooltip: Some(Format("{0} [{1}]: {2}", [Item(Name), Item(Title), Item(Reason)])), widget: List(source: BuildMenu, direction: Vertical, gap: 4, max_items: 4, item: (id: "research_item", size: (w: Fill, h: Px(38.0)), widget: Button(icon: None, label: Some(Format("{0} — {1}", [Item(Name), Item(Reason)])), action: Item(Action), hotkey_label: false))))
+                (id: "research_entries", at: Some((anchor: TopLeft, offset: (8.0, 30.0), pivot: None)), size: (w: Px(256.0), h: Px(42.0)), tooltip: Some(Format("{0} [{1}]: {2}", [Item(Name), Item(Title), Item(Reason)])), widget: List(source: BuildMenu, direction: Vertical, gap: 4, max_items: 4, item: (id: "research_item", size: (w: Fill, h: Px(38.0)), widget: Button(icon: None, label: Some(Format("{0} — {1}", [Item(Name), Item(Reason)])), action: Item(Action), hotkey_label: false)))),
+                (id: "research_note", at: Some((anchor: TopLeft, offset: (10.0, 76.0), pivot: None)), size: (w: Px(250.0), h: Px(46.0)), widget: Text(text: Literal("Shells arrive by themselves. This opens at 10 shells, in about 1 minute."), font: Some("forge_ui"), size: 12, colour: "#c8d5dc", align: Left, wrap: true))
             ]),
         ),
         (
@@ -100,10 +101,11 @@
         (
             id: "objective",
             at: Some((anchor: Bottom, offset: (0.0, -8.0), pivot: None)),
-            size: (w: Px(700.0), h: Px(76.0)),
+            size: (w: Px(700.0), h: Px(168.0)),
             visible: [Not(GuideOpen)],
             widget: Box(fill: Some(Colour("#111820e0")), border: Some("#e69f00"), children: [
-                (id: "objective_text", at: Some((anchor: TopLeft, offset: (10.0, 6.0), pivot: None)), size: (w: Px(680.0), h: Px(64.0)), widget: Text(text: Literal("Blue side: make your Shell Turret hit harder. Click the Proving Lab (the top big blue building), then research Hardened Shells.\nOrange side: click your orange drone, then find the blue Shell Turret and its range."), font: Some("forge_ui"), size: 15, colour: "#ffffff", align: Left, wrap: true)),
+                (id: "objective_blue", at: Some((anchor: TopLeft, offset: (10.0, 6.0), pivot: None)), size: (w: Px(680.0), h: Px(76.0)), widget: Text(text: Literal("You are blue. Shells arrive by themselves: Research opens at 10 shells, in about 1 minute. Meanwhile: 1. Point at each building to read its name. 2. Click the Shell Press: Disable this machine, then Enable it. 3. Click the Shell Turret, right-click the ground, read the reason. 4. Click the Proving Lab, then Hardened Shells. 5. Click the Shell Turret: damage 10 to 20."), font: Some("forge_ui"), size: 15, colour: "#8fd0f5", align: Left, wrap: true)),
+                (id: "objective_orange", at: Some((anchor: TopLeft, offset: (10.0, 86.0), pivot: None)), size: (w: Px(680.0), h: Px(76.0)), widget: Text(text: Literal("You are orange. The blue turret destroyed one drone before you joined: this is expected. Tasks: 1. Click your drone, then the blue Shell Turret: see its range. 2. Put the drone in group 1. 3. In Settings, scroll faster and change the Stop key. 4. Queue two points for the drone, then stop it. 5. Send it into the turret range."), font: Some("forge_ui"), size: 15, colour: "#ffc266", align: Left, wrap: true)),
             ]),
         ),
         (
@@ -141,9 +143,9 @@
     alerts: [
         (id: "forge_research_ready", trigger: ResearchReady, sound: Some("forge_alert"), text: "Proving Lab can research Hardened Shells", minimap_ping: true, cooldown: 1.0, priority: 10, coalesce_radius: 5.0),
         (id: "forge_research_complete", trigger: ResearchComplete, sound: Some("forge_alert"), text: "Hardened Shells done: the turret hits harder", minimap_ping: true, cooldown: 1.0, priority: 12, coalesce_radius: 5.0),
-        (id: "forge_out_of_ammo", trigger: OutOfAmmo, sound: Some("forge_alert"), text: "Shell Turret is out of shells", minimap_ping: true, cooldown: 60.0, priority: 15, coalesce_radius: 5.0),
+        (id: "forge_out_of_ammo", trigger: OutOfAmmo, sound: Some("forge_alert"), text: "Shell Turret: waiting for shells.", minimap_ping: true, cooldown: 60.0, priority: 15, coalesce_radius: 5.0),
         (id: "forge_output_blocked", trigger: OutputBlocked, sound: Some("forge_alert"), text: "Shell Press is full: no room for its shells", minimap_ping: true, cooldown: 60.0, priority: 11, coalesce_radius: 5.0),
-        (id: "forge_loader_waiting", trigger: InserterWaiting(5.0), sound: Some("forge_alert"), text: "An Arm Loader is waiting for an item", minimap_ping: true, cooldown: 1.0, priority: 8, coalesce_radius: 5.0),
+        (id: "forge_loader_waiting", trigger: InserterWaiting(5.0), sound: Some("forge_alert"), text: "Arm Loader: waiting for items. This is normal.", minimap_ping: true, cooldown: 1.0, priority: 8, coalesce_radius: 5.0),
         (id: "forge_unit_damaged", trigger: OwnUnitDamaged, sound: Some("forge_alert"), text: "A unit is under attack", minimap_ping: true, cooldown: 5.0, priority: 10, coalesce_radius: 5.0),
         (id: "forge_unit_destroyed", trigger: OwnUnitDestroyed, sound: Some("forge_alert"), text: "A unit was destroyed", minimap_ping: true, cooldown: 1.0, priority: 18, coalesce_radius: 5.0),
     ],
@@ -176,7 +178,7 @@
         (id: "goal", title: "Your goal", body: "Blue side: make your Shell Turret hit harder. Research Hardened Shells in the Proving Lab, the top big blue building.\nOrange side: find the blue Shell Turret and see how far it shoots."),
         (id: "research", title: "Research Hardened Shells", body: "Click the Proving Lab. Shells come to it by themselves. When it holds 10, click Hardened Shells. Then click the turret: its damage goes from 10 to 20."),
         (id: "pause", title: "Disable and enable", body: "Click the Shell Press, then click Disable this machine. It stops. Click Enable this machine to start it again."),
-        (id: "drones", title: "Your drone (orange side)", body: "Click your drone. Right-click the ground to move it. To queue a second point, use the queue key on the last page. Click a blue building to see its name and range."),
+        (id: "drones", title: "Your drone (orange side)", body: "Click your drone. Right-click the ground to move it. To queue a second point, hold the queue key from the key list. Click a blue building to see its name and range. The blue turret destroyed one drone before you joined. This is expected."),
         (id: "controls", title: "Keys", body: "Point at anything to see its name. Left click selects; drag to select many. Right click gives an order; hold Shift to queue it. Click an alert to go to its place. The list shows every key, with the keys for this guide and for Settings, where you can change any key.", widgets: [
             (id: "controls_heading", at: Some((anchor: TopLeft, offset: (490.0, 64.0), pivot: None)), size: (w: Px(700.0), h: Px(24.0)), layer: 60, widget: Text(text: Literal("Controls"), font: Some("forge_ui"), size: 18, colour: "#ffffff", align: Left, wrap: false)),
             (id: "bindings", at: Some((anchor: TopLeft, offset: (490.0, 94.0), pivot: None)), size: (w: Px(700.0), h: Px(584.0)), layer: 60, widget: List(source: Bindings, direction: Vertical, gap: 4, max_items: 64, item: (id: "binding", size: (w: Fill, h: Px(24.0)), widget: Text(text: Format("{0}: {1}", [Item(Name), Item(Title)]), font: Some("forge_ui"), size: 12, colour: "#ffffff", align: Left, wrap: false)))),
