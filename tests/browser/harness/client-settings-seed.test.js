@@ -56,6 +56,20 @@ test("the stored check reads the real document and refuses another value", async
     await assert.rejects(assertStoredClientSettings(fakePage(null, applied), seed, 3), /window 3 stored frame_limit null/);
 });
 
+// A client that builds its debug state only on a request (design D 9, row DBG1): `turts_debug()`
+// is empty until a request, so the check must ask for the record.
+test("the stored check asks for a debug record when the page has the request bridge", async () => {
+    const seed = clientSettingsSeed({ client_settings: { frame_limit: 20, reason: "three clients" } });
+    const applied = { focused: 20, background: 60 };
+    const stored = JSON.stringify({ controls: { frame_limit: 20 } });
+    const page = { evaluate: async (fn, key) => withWindow({
+        localStorage: fakeStorage({ [key]: stored }),
+        turts_debug: () => "",
+        turts_debug_request: async () => JSON.stringify({ frame_limits: applied }),
+    }, () => fn(key)) };
+    assert.deepEqual(await assertStoredClientSettings(page, seed, 1), { window: 1, key: SETTINGS_KEY, frame_limit: 20, applied });
+});
+
 test("the check goes red when the client ignores the stored frame limit", async () => {
     const seed = clientSettingsSeed({ client_settings: { frame_limit: 20, reason: "three clients" } });
     const stored = JSON.stringify({ controls: { frame_limit: 20 } });

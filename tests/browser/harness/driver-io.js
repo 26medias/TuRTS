@@ -5,7 +5,7 @@ const fs = require("node:fs/promises");
 const path = require("node:path");
 const crypto = require("node:crypto");
 const { qualifyNavigationReceipt } = require("./navigation-receipt.js");
-const { waitForSync } = require("./wait-sync.js");
+const { waitForSync, waitForDebugRecord } = require("./wait-sync.js");
 
 // The longest wait for the page bridges after a reload that has scene checkpoints.
 const BRIDGES_READY_MS = 20000;
@@ -313,7 +313,9 @@ function createDriverIo(pages, { outputDir, inputLog = [], initialCursor = { x: 
                 // in the driver, and it is bounded. A page that stays without bridges after the bound
                 // fails the reload with a text that names the fault (see below), so the red does not
                 // blame a later wait that already used its time on the dead page.
-                entry.bridges_ready_after_reload = await page().waitForFunction(() => {
+                // The client builds its debug state only on a request (design D 9, row DBG1), so the
+                // wait asks for a record while it polls (harness/wait-sync.js, waitForDebugRecord).
+                entry.bridges_ready_after_reload = await waitForDebugRecord(page(), () => {
                     try {
                         return typeof window.turts_scene === "function" && typeof window.turts_debug === "function" &&
                             Boolean(window.turts_scene()) && Boolean(window.turts_debug());

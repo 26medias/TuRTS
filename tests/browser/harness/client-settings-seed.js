@@ -31,14 +31,14 @@ function clientSettingsSeed(task16) {
 
 // Read the stored document of one window and the limits that its client applied; check both.
 async function assertStoredClientSettings(page, seed, windowNumber) {
-    const stored = await page.evaluate((key) => {
+    const stored = await page.evaluate(async (key) => {
+        const value = window.localStorage.getItem(key);
+        const error = window.__turts_settings_seed_error || null;
         let applied = null;
-        try { applied = JSON.parse(window.turts_debug()).frame_limits ?? null; } catch {}
-        return {
-            value: window.localStorage.getItem(key),
-            error: window.__turts_settings_seed_error || null,
-            applied,
-        };
+        // Ask for one record (design D 9, row DBG1): the client builds its debug state only on a
+        // request. An older page with no request bridge publishes in each frame.
+        try { applied = JSON.parse(await (window.turts_debug_request?.() ?? window.turts_debug())).frame_limits ?? null; } catch {}
+        return { value, error, applied };
     }, seed.key);
     if (stored.error) throw new Error(`HARNESS settings seed failed in window ${windowNumber}: ${stored.error}`);
     let frameLimit = null;
