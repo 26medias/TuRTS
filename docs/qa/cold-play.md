@@ -213,3 +213,28 @@ One thing the first attempts showed: `scripts/mp1-play.sh` (L0-DBG) waited for `
 Chrome writes only for port 0, so it failed on every start with a port that it picked itself; and its cleanup returned 1
 for 4 stops in 12 when Chrome still wrote into the profile. Both are fixed in this task, with a test that starts
 Chrome through the script.
+
+### Pass 2: the reference red is the first-click probe (2026-11-12, tool 2688aa6e)
+
+After the cold agent said "yes" on this build (see the first paragraph), the reference red of check C5 is the
+first-click probe, not an agent session. Evidence folders (in the scratch folder
+`/tmp/claude-1000/-home-julien-Projects-TuRTS/bf418660-b272-4bb3-8628-8d9ef2677d1d/scratchpad/q-cold/`), each on a fresh
+server of the same packed build, each under the headed wrapper (labels `qcold2-*-5`, hold 33 to 37 s):
+
+| Folder | Result |
+| --- | --- |
+| `final-fc/` (`--probe first-click`) | **FAIL**: "first click on unit 1 (forge:drill): selection [], no visible change; 14 of 14 clicks failed". The start click (the centre of "Click to play") is taken by the overlay; the guide then takes every building click. |
+| `final-ctl/` (`--control close-layer`) | **PASS**, 14 of 14: the tool closed the guide by its "Close" button (1 click), and every own unit then gave a selection and a visible change. The probe can pass. |
+| `final-btn/` (`--probe buttons`) | **FAIL (F8)**: the first click on "Close" changed nothing (the start overlay took it); the 3 alert lines did nothing either. |
+| UI record, both probe folders | F9 `guide_copy: 189 words`; F3 `guide (area 100 %, see-through 15 %)`; F6 1 to 3 alert lines before the first input (the number depends on the time: at 8 s it is 1 to 3). |
+
+`ref/check-final-ref.txt` of that folder: `RESULT: NOT-READY (failed: P1, F9, F3, F6, F8 ...; missing: agent session)`.
+
+The same probes on the MP1 `muster` package of this branch (prepared; 60 own units on screen, the cap): first-click
+**PASS 60 of 60**; buttons PASS with no visible button (nothing to click: a pass with no content, and the reason says so);
+F9 FAIL: `guide: 66 words` (the guide opens at the join).
+
+The first runs of pass 2 found three faults in the probes, all fixed with tests: the hover tooltip of a button was read as
+the click acting (the pointer now rests on the button first); the buttons probe read the UI at 0.5 s, so alert lines that a
+person sees were missed (the probes now wait 8 s); a name panel far from the point was not a "visible change" (the 1 %
+page rule is gone; the idle noise of the 200 ms before is subtracted).
