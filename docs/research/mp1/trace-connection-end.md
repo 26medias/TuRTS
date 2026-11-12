@@ -8,8 +8,8 @@ Task `L-ROOM0`, backend-engineer, 2026-11-12. Lane head `d7d7e6d`. Design: MP1 d
 2. **Schedule.** Both are in `PreUpdate`. The transport signal is in the `aeronet_io::IoSystems::Poll` set, before `LinkSystems::Receive`. The despawn is in `ConnectionSystems::Receive`, after `LinkSystems::Receive` (probe, below).
 3. **Today's only handler** is the observer `on_session_removed` on `On<Remove<Session>>` (`crates/turts_server/src/session_diagnostics.rs:383-384`, added only with `--stats` at `crates/turts_server/src/stats.rs:105`). It fires at the despawn, so it sees the 10 s signal and not the 2 ms signal.
 4. **Measured L (release, native):** 9995.7 to 9998.9 ms for SIGKILL and for a clean exit; 10000.3 ms for a frozen client (SIGSTOP). `docs/measurements/mp1.md`, section "Disconnect notice L, native release".
-5. **Hook for `L-MATCH-SRV1`:** an observer `On<Add<Disconnected>>` on entities `With<ClientOf>` (it covers the transport path and the netcode path). It queues the entity; one room system in `PreUpdate`, before `receive_hello`, calls `Room::connection_ended`.
-6. **A second change is needed with the hook:** `receive_hello` decides "a live session" from `Query<&Session>` (`crates/turts_server/src/session.rs:225-227`), and the `Session` component stays on the entity until the despawn. The hook must remove the `Session` component, or the 10 s remains for the reload.
+5. **Hook for `L-MATCH-SRV1` (review ruling, section below):** an observer `On<Add<lightyear Disconnected>>` with `With<ClientOf>` that queues the entity and its slot (read inside the observer); one `PreUpdate` system before `receive_hello` calls `Room::connection_ended` (and, under `Immediate`, writes the slot change from the queued slot).
+6. **Do not remove `Session`.** The liveness test at `session.rs:212` becomes `Query<&Session, Without<Disconnected>>`; the `Session` of an ended entity stays until the despawn, so today a reload still gets "This game is open in another window" for 10 s.
 
 ## Facts, with the lines that show them
 
@@ -50,17 +50,39 @@ What the table says: for a closed transport, the end is known in `PreUpdate` at 
 
 ## Recommended hook for `L-MATCH-SRV1` (release the seat on connection end)
 
-- Observe `On<Add<Disconnected>>` and keep the entities that are `With<ClientOf>`. Do not use `Remove<Session>`: it is 10 s late in every measured case. Do not use `Add<Unlinked>`: it misses the frozen client.
-- The observer only queues the entity into a resource (`ConnectionEnds(Vec<Entity>)`). A system in `PreUpdate` drains it before `receive_hello` (`session.rs:123-133` is the receive chain) and calls `Room::connection_ended(ConnectionKey(entity.to_bits()))` (`crates/turts_server/src/room.rs`). The observer runs inside `PreUpdate` (segments above), so a connection end and the `Hello` of the same frame arrive in the order that design 6.7.5 needs ("a seat whose connection ended in that frame is released first").
-- The same system removes the `Session` component from the ended entity (a command), so that `session.rs:225-227` no longer counts it as a live session. Or `receive_hello` asks `Room` for liveness (`Seat::connection`) in place of `Query<&Session>`. Without one of these, the reload of a player still gets "This game is open in another window" for 10 s, although the room released the seat. The `Remove<Session>` observer of `--stats` then fires at that removal and not at the despawn; the observer file records change, so `connection_end.rs` and the `session_authority_removed` readers need a second look (`L-MATCH-SRV1` decides).
-- Filter: the observer must ignore connections that have no seat and no `Session` (a refused connection that gets a kick, `session.rs:712-720`, also becomes `Disconnected`). `Room::connection_ended` returns `ConnectionEnd::Unknown` for them.
-- `ConnectionEnd::SlotDisconnected` in Running is the value that `L-MATCH-SRV1` turns into `SlotConnection { slot, connected: false }` (design 6.7.8).
+Ruling of the network-engineer review of `L-ROOM0`, accepted by the orchestrator for the wiring task. It replaces the first version of this section (which advised removing `Session`).
 
-What this changes in the design: the 10 s "L" of 6.7.8 is the netcode timeout of the entity, and it is the notice time only for a silent loss (frozen process, cable pulled, as far as TCP does not report it). For a closed transport the notice can be 2 to 3 ms if the hook above is used. That is a design input, not a decision: the 6.7.14 item 4 ("keep the 10 s netcode timeout") is not touched. Needs the owner of 6.7.8 to say whether LOB1 and MAT1 keep their 11 s allowance (it still holds).
+(a) **The observer.** `On<Add<lightyear::prelude::Disconnected>>` with `With<ClientOf>`. Name the lightyear type in full: `aeronet_io` has an event with the same name (`aeronet_io::connection::Disconnected`, `aeronet_io-0.22.0-rc.1/src/connection.rs:206`), and `lightyear_aeronet-0.31.0/src/lib.rs:137` observes that one. The lightyear component fires on the transport path (through `Unlinked`, `lightyear_connection-0.31.0/src/client.rs:205-218`) and on the netcode path (`server_plugin.rs:397-401`). It fires in all three measured cases. The observer queues `(entity, Option<SlotId> read from Session)` and reads the slot **inside the observer**: on the netcode path the entity is despawned in the same flush (`server_plugin.rs:397-401`), so a later system cannot read the `Session`. Do not use `Add<Unlinked>` (it misses SIGSTOP) and do not use `Remove<Session>` (10 s late).
+
+(b) **One `PreUpdate` system before `receive_hello`** (`session.rs:123-133`). It drains the queue. For each entry it calls `Room::connection_ended(ConnectionKey(entity.to_bits()))`. Under `Immediate` the room has no seat (review sequence R9: `Unknown`; test `r9_under_immediate_the_room_has_no_seat_and_names_no_slot`), so the system writes the slot connection change (`SlotConnection { slot, connected: false }`, design 6.7.8) from the slot that the observer queued. Under a lobby policy the slot comes from `ConnectionEnd::SlotDisconnected`. The observer runs inside `PreUpdate` (segments above), so a connection end and a `Hello` of the same frame arrive in the order that design 6.7.5 needs.
+
+(c) **Do not remove `Session`.** Make the liveness test at `session.rs:212` one filter: `Query<&Session, Without<Disconnected>>` (lightyear type). Removing `Session` has three costs: staged commands of the closed connection then fail as `BadSequence` with player id 0 (`session.rs:389-412`, `:583-585`: both read `Session` from the connection entity); the `--stats` removal record moves from the despawn to the removal; and it needs a command on an entity that the netcode path may already have despawned.
+
+Filter: a connection with no seat and no `Session` also becomes `Disconnected`, for example a kicked connection (`session.rs:712-720`, `kick_pending` triggers `Unlink`, measured: `PROBE add_unlinked` and `add_disconnected` with reason `User requested` +1022.8 ms in the reload case). `Room::connection_ended` returns `Unknown` for such a key; the observer queues `None` for the slot.
+
+A transport stall cannot release a seat by mistake: the WebSocket backend ends a session only on a close frame, the end of the stream or an error; there is no idle timer in it (review reading of `vendor/aeronet_websocket/src/session/backend.rs`), and a reconnect is a new entity, so an old key never names the new connection (`r5_unknown_key_double_end_and_the_old_key_after_a_reconnect`).
+
+### The review probe: transport signal and reload
+
+Source: the network-engineer review probe of `L-ROOM0` (not a committed test): `/tmp/claude-1000/-home-julien-Projects-TuRTS/bf418660-b272-4bb3-8628-8d9ef2677d1d/scratchpad/l-room0-review/` (`probe-net.diff`, `drive.py`, `probe-drive.log`). Times are from the end of the client.
+
+| Case | `Add<Unlinked>` | `Add<Disconnected>` (reason) | `Remove<Session>` |
+| --- | --- | --- | --- |
+| SIGKILL of the headless client | +4.2 ms | +4.3 ms (`ResetWithoutClosingHandshake`) | +9998.1 ms |
+| Clean exit of the headless client | -3.9 ms | -3.9 ms (`ResetWithoutClosingHandshake`: the client sends no close frame) | +9994.3 ms |
+| SIGSTOP of the headless client | none | +9998.7 ms (`Disconnected by peer`, netcode) | +9998.8 ms |
+| Raw WebSocket: close frame, then FIN | +0.3 ms | +0.4 ms (`Disconnected by peer`) | not a `ClientOf` |
+| Raw WebSocket: close frame, TCP held open | +0.8 ms | +0.9 ms (`Disconnected by peer`) | not a `ClientOf` |
+| Raw WebSocket: FIN, no close frame | +1.0 ms | +1.0 ms (`ResetWithoutClosingHandshake`) | not a `ClientOf` |
+| Raw WebSocket: RST | +0.9 ms | +0.9 ms (`ConnectionReset`) | not a `ClientOf` |
+
+Reload: a client with the same id that starts 500 ms after a SIGKILL gets "This game is open in another window" and is not welcomed (the `Session` of the dead entity still counts, `session.rs:225-227`, until +9999.1 ms). This is today's code, and it is why (c) is needed.
+
+The first version of this note measured the same two signals with an own probe (table above, section "The run that proves it"); the two probes agree within about 1 ms.
 
 ## What stays NOT TRACED
 
-- The browser: whether a tab close or a reload sends a WebSocket close frame or a TCP FIN to the server before the page is gone (D:2534 "The browser lag is NOT TRACED"). The path above starts from the end of the TCP session, so a close that the server sees should give the 2 to 3 ms signal; a page that is frozen or a network that drops silently should give 10 s. Not run in a browser.
+- The browser (NOT RUN in a real browser): the WHATWG WebSockets standard says that an unloading page starts the closing handshake with code 1001, so a tab close or reload should give a close frame; a crash or a lost network gives no close frame, and then the signal is the transport error or the 10 s netcode timeout. The raw WebSocket rows above show that every one of these server-side endings is seen within 1 ms of the packet. No browser measured L (D:2534 "The browser lag is NOT TRACED").
 - A client that sends the netcode `Disconnect` packet (the headless `turts_client` did not: its clean exit gave 9995.7 ms and a transport signal first). Lightyear client code that sends it on `Disconnect` was not traced.
 - A server under load, a release build on the 4-vCPU target, and other operating systems.
 - The case of an `Unlinked` that is followed by a new link on the same entity: `Linked::on_insert` removes `Unlinked` (`lightyear_link-0.31.0/src/lib.rs:436-447`), but no run made a `ClientOf` link again.

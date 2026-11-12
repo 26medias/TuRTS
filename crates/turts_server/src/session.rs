@@ -32,8 +32,8 @@ pub const KICK_DELAY: Duration = Duration::from_millis(300);
 const REASON_PROTOCOL: &str = "protocol version mismatch";
 const REASON_LOCKFILE: &str = "lockfile hash mismatch";
 const REASON_ALREADY_IN_MATCH: &str = "player already in match";
-const REASON_NO_OPEN_SLOT: &str = "no open slot";
-const REASON_DUPLICATE_WINDOW: &str = "This game is open in another window";
+pub(crate) const REASON_NO_OPEN_SLOT: &str = "no open slot";
+pub(crate) const REASON_DUPLICATE_WINDOW: &str = "This game is open in another window";
 
 /// A connection that sent an accepted `Hello`.
 #[derive(Component)]

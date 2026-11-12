@@ -25,3 +25,19 @@ The runs with `probe` in the label carried a temporary logging patch that is not
 What the figures show: L is the 10 s netcode timeout in every case, including a clean process exit. The transport signal on the same connection entity comes about 2 to 3 ms after the end (see the trace note). The record of this table is the despawn, not the transport signal.
 
 Not measured: the browser (a tab close or reload), a release build on the 4-vCPU target, a server under load (the gate 1 probe ran at load 13 in a debug build, design 6.7.8).
+
+## Transport signal on the connection entity, native release
+
+Source: the network-engineer review probe of `L-ROOM0` (a temporary logging patch and a driver script, not a committed test): `/tmp/claude-1000/-home-julien-Projects-TuRTS/bf418660-b272-4bb3-8628-8d9ef2677d1d/scratchpad/l-room0-review/` (`probe-drive.log`). Time from the end of the client to `Add<Disconnected>` (lightyear) on the connection entity. The author probe of the first version (`docs/research/mp1/trace-connection-end.md`) agrees within about 1 ms.
+
+| Case | Time to `Add<Disconnected>` | Reason text |
+| --- | --- | --- |
+| SIGKILL of the headless client | +4.3 ms | `ResetWithoutClosingHandshake` |
+| Clean exit of the headless client | -3.9 ms (before the exit was read) | `ResetWithoutClosingHandshake` |
+| SIGSTOP of the headless client | +9998.7 ms | `Disconnected by peer` (netcode timeout) |
+| Raw WebSocket: close frame, then FIN | +0.4 ms | `Disconnected by peer` |
+| Raw WebSocket: close frame, TCP held open | +0.9 ms | `Disconnected by peer` |
+| Raw WebSocket: FIN, no close frame | +1.0 ms | `ResetWithoutClosingHandshake` |
+| Raw WebSocket: RST | +0.9 ms | `ConnectionReset` |
+
+A reload with the same id 500 ms after a SIGKILL is refused with "This game is open in another window" (today's code). Not measured: a real browser.

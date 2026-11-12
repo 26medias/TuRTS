@@ -16,12 +16,12 @@
 
 use turts_sim::{ClaimError, SlotId, Slots};
 
-/// The refusal text of a connection that has no open slot (same text as `session.rs`).
-pub const REASON_NO_OPEN_SLOT: &str = "no open slot";
-/// The refusal text of an id that has a live connection (same text as `session.rs`).
-pub const REASON_DUPLICATE_WINDOW: &str = "This game is open in another window";
+use crate::session::{REASON_DUPLICATE_WINDOW, REASON_NO_OPEN_SLOT};
+
 /// The refusal text after the end of the match (design 6.7.5, state table, row Ended).
 pub const REASON_MATCH_OVER: &str = "The match is over";
+/// The refusal text of a join that the state table does not allow (design erratum of L-ROOM0).
+pub const REASON_STATE_NOT_ALLOWED: &str = "the server state does not allow this join";
 
 /// The phases of one process (design 6.7.2).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -123,7 +123,8 @@ pub enum JoinVerdict {
     ReconnectEnded,
     Refuse(Refusal),
     /// The table says "not possible" (a seat is released when its connection ends), or the
-    /// state has no row (Boot). The caller logs it and refuses the connection.
+    /// state has no row (Boot). The caller logs it and sends `REASON_STATE_NOT_ALLOWED`
+    /// (`refusal_text`).
     Impossible,
 }
 
@@ -364,6 +365,28 @@ pub enum JoinOutcome {
     NotRoomPolicy,
     /// The table has no live cell here (see `JoinVerdict::Impossible`).
     Impossible,
+}
+
+impl JoinVerdict {
+    /// The `JoinRejected` text for a verdict that refuses, or `None`.
+    pub fn refusal_text(self) -> Option<&'static str> {
+        match self {
+            JoinVerdict::Refuse(refusal) => Some(refusal.reason()),
+            JoinVerdict::Impossible => Some(REASON_STATE_NOT_ALLOWED),
+            _ => None,
+        }
+    }
+}
+
+impl JoinOutcome {
+    /// The `JoinRejected` text for an outcome that refuses, or `None`.
+    pub fn refusal_text(&self) -> Option<&'static str> {
+        match self {
+            JoinOutcome::Refused(refusal) => Some(refusal.reason()),
+            JoinOutcome::Impossible => Some(REASON_STATE_NOT_ALLOWED),
+            _ => None,
+        }
+    }
 }
 
 /// What `Room::connection_ended` decided.
@@ -608,8 +631,13 @@ impl Room {
         }
     }
 
-    /// Record `LeaveMatch` of an owner. `false` when the id holds no claim.
+    /// Record `LeaveMatch` of an owner. Before Ended the server ignores `LeaveMatch` (design
+    /// 6.7.7 step 6): the call returns `false` and changes nothing in any other state, and
+    /// when the id holds no claim.
     pub fn leave_match(&mut self, player_id: u64) -> bool {
+        if self.state != RoomState::Ended {
+            return false;
+        }
         let Some(index) = self.seats.seat_of_player(player_id) else {
             return false;
         };
@@ -944,17 +972,6 @@ mod tests {
         );
     }
 
-    #[test]
-    fn the_refusal_texts_are_the_texts_of_session_rs() {
-        let source = include_str!("session.rs");
-        for text in [REASON_NO_OPEN_SLOT, REASON_DUPLICATE_WINDOW] {
-            assert!(
-                source.contains(&format!("\"{text}\"")),
-                "session.rs has no `{text}`"
-            );
-        }
-    }
-
     // ---- The seat table (design 6.7.3, 6.7.6) ----
 
     #[test]
@@ -1223,5 +1240,205 @@ mod tests {
         let mut room = lobby();
         assert!(!room.end_match());
         assert_eq!(room.state(), RoomState::Lobby);
+    }
+
+    // ---- Review sequences (network-engineer review of L-ROOM0) ----
+
+    #[test]
+    fn r1_a_ends_b_joins_a_reloads_takes_the_lowest_free_seat() {
+        let mut room = lobby();
+        room.join(A, ID_A);
+        assert!(matches!(
+            room.connection_ended(A),
+            ConnectionEnd::SeatReleased { seat: 0, .. }
+        ));
+        assert!(matches!(
+            room.join(B, ID_B),
+            JoinOutcome::Seated {
+                seat: 0,
+                colour: 0,
+                ..
+            }
+        ));
+        assert!(matches!(
+            room.join(C, ID_A),
+            JoinOutcome::Seated {
+                seat: 1,
+                colour: 1,
+                ..
+            }
+        ));
+        let plan = room.start().unwrap();
+        let order: Vec<_> = plan.claims.iter().map(|c| (c.slot, c.player_id)).collect();
+        assert_eq!(order, vec![(SlotId(0), ID_B), (SlotId(1), ID_A)]);
+    }
+
+    #[test]
+    fn r2_the_end_of_a_connection_in_the_start_frame_blocks_the_start() {
+        let mut room = lobby();
+        room.join(A, ID_A);
+        room.join(B, ID_B);
+        room.connection_ended(B);
+        assert!(!room.start_due());
+        assert_eq!(room.start(), Err(StartError::NotAllSeated));
+        assert_eq!(room.state(), RoomState::Lobby);
+    }
+
+    #[test]
+    fn r3_a_third_client_gets_no_open_slot_and_changes_no_seat() {
+        let mut room = lobby();
+        room.join(A, ID_A);
+        room.join(B, ID_B);
+        assert_eq!(
+            room.join(C, ID_C),
+            JoinOutcome::Refused(Refusal::NoOpenSlot)
+        );
+        assert_eq!(
+            room.join(C, ID_A),
+            JoinOutcome::Refused(Refusal::OpenInAnotherWindow)
+        );
+        let revision = room.seats().revision();
+        room.start().unwrap();
+        assert_eq!(
+            room.join(ConnectionKey(4), ID_C),
+            JoinOutcome::Refused(Refusal::NoOpenSlot)
+        );
+        assert_eq!(room.seats().revision(), revision);
+    }
+
+    #[test]
+    fn r4_a_stored_id_from_an_earlier_process_is_a_new_id() {
+        let mut fresh = lobby();
+        assert!(matches!(
+            fresh.join(A, 999),
+            JoinOutcome::Seated { seat: 0, .. }
+        ));
+        let mut running = started();
+        assert_eq!(
+            running.join(C, 999),
+            JoinOutcome::Refused(Refusal::NoOpenSlot)
+        );
+        running.end_match();
+        assert_eq!(
+            running.join(C, 999),
+            JoinOutcome::Refused(Refusal::MatchOver)
+        );
+    }
+
+    #[test]
+    fn r5_unknown_key_double_end_and_the_old_key_after_a_reconnect() {
+        let mut room = lobby();
+        room.join(A, ID_A);
+        let revision = room.seats().revision();
+        assert_eq!(
+            room.connection_ended(ConnectionKey(42)),
+            ConnectionEnd::Unknown
+        );
+        assert_eq!(room.seats().revision(), revision);
+        assert!(matches!(
+            room.connection_ended(A),
+            ConnectionEnd::SeatReleased { .. }
+        ));
+        assert_eq!(room.connection_ended(A), ConnectionEnd::Unknown);
+
+        let mut running = started();
+        assert_eq!(
+            running.connection_ended(A),
+            ConnectionEnd::SlotDisconnected { slot: SlotId(0) }
+        );
+        assert_eq!(running.connection_ended(A), ConnectionEnd::Unknown);
+        assert!(matches!(
+            running.join(C, ID_A),
+            JoinOutcome::Reconnected {
+                slot: SlotId(0),
+                ..
+            }
+        ));
+        assert_eq!(running.connection_ended(A), ConnectionEnd::Unknown);
+        assert_eq!(running.seats().seat(0).unwrap().connection, Some(C));
+    }
+
+    #[test]
+    fn r6_a_second_start_and_a_second_claim_in_change_nothing() {
+        let mut room = lobby();
+        room.join(A, ID_A);
+        room.join(B, ID_B);
+        let plan = room.start().unwrap();
+        assert_eq!(room.start(), Err(StartError::NotInLobby));
+        let mut slots = Slots::new(2);
+        plan.claim_in(&mut slots).unwrap();
+        assert!(plan.claim_in(&mut slots).is_err());
+        assert_eq!(slots.owner_of(SlotId(0)), Some(ID_A));
+    }
+
+    #[test]
+    fn r7_no_path_releases_a_claim_after_the_start() {
+        let mut room = started();
+        room.connection_ended(A);
+        // LeaveMatch before Ended is ignored (design 6.7.7 step 6).
+        assert!(!room.leave_match(ID_A));
+        assert!(!room.seats.release(0));
+        assert_eq!(
+            room.join(C, ID_C),
+            JoinOutcome::Refused(Refusal::NoOpenSlot)
+        );
+        assert!(matches!(
+            room.join(C, ID_A),
+            JoinOutcome::Reconnected {
+                slot: SlotId(0),
+                ..
+            }
+        ));
+        assert_eq!(room.seats().seat(0).unwrap().player_id, ID_A);
+        assert!(room.seats().seat(0).unwrap().claimed);
+    }
+
+    #[test]
+    fn r8_leave_match_is_ignored_before_ended_and_the_owner_reconnects_in_ended() {
+        // Design 6.7.7 step 6: before Ended the server ignores `LeaveMatch`.
+        let mut room = started();
+        assert!(!room.leave_match(ID_A));
+        assert!(!room.seats().seat(0).unwrap().left_match);
+        room.end_match();
+        room.connection_ended(A);
+        assert_eq!(
+            room.join(C, ID_A),
+            JoinOutcome::Reconnected {
+                slot: SlotId(0),
+                ended: true
+            }
+        );
+        // In Ended the leave counts.
+        assert!(room.leave_match(ID_B));
+        assert!(room.seats().seat(1).unwrap().left_match);
+    }
+
+    #[test]
+    fn r9_under_immediate_the_room_has_no_seat_and_names_no_slot() {
+        let mut room = Room::boot(StartPolicy::Immediate, false, 2, 2);
+        assert_eq!(room.join(A, ID_A), JoinOutcome::NotRoomPolicy);
+        // The caller reads the slot from its `Session` (the room has no seat).
+        assert_eq!(room.connection_ended(A), ConnectionEnd::Unknown);
+    }
+
+    // ---- The text of a join that the table does not allow ----
+
+    #[test]
+    fn an_impossible_join_has_one_refusal_text() {
+        let text = "the server state does not allow this join";
+        assert_eq!(REASON_STATE_NOT_ALLOWED, text);
+        assert_eq!(JoinVerdict::Impossible.refusal_text(), Some(text));
+        assert_eq!(JoinOutcome::Impossible.refusal_text(), Some(text));
+        assert_eq!(
+            JoinVerdict::Refuse(Refusal::MatchOver).refusal_text(),
+            Some("The match is over")
+        );
+        assert_eq!(
+            JoinOutcome::Refused(Refusal::NoOpenSlot).refusal_text(),
+            Some("no open slot")
+        );
+        assert_eq!(JoinVerdict::TakeSeat.refusal_text(), None);
+        assert_eq!(JoinOutcome::Ignored.refusal_text(), None);
+        assert_eq!(JoinOutcome::NotRoomPolicy.refusal_text(), None);
     }
 }
