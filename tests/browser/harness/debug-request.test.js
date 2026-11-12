@@ -11,7 +11,7 @@ const { createView } = require("./view.js");
 const { createSceneCheckpoints } = require("./scene-checkpoints.js");
 const { installBoundedRafHold } = require("./bounded-raf.js");
 const { installSh1PhaseCapture } = require("./sh1-lifecycle.js");
-const { recordStartup } = require("./run.js");
+const { recordStartup, waitForJoinedRole } = require("./run.js");
 
 // A page whose `evaluate` runs the function in a sandbox with the given window.
 function pageWith(window, extra = {}) {
@@ -45,6 +45,14 @@ test("view.bridge asks for one fresh debug record and returns it, not the stale 
     assert.equal(calls.reads, 0, "the stale record is not read");
     assert.deepEqual(await view.bridge("turts_scene"), { scene: true });
     assert.equal(calls.requests.length, 1, "another bridge asks for nothing");
+});
+
+test("view.bridge in a held frame reads the published record and does not wait for a frame", async () => {
+    const { window, calls } = requestingWindow();
+    window.__turts_input_held = () => true;
+    const view = createView([pageWith(window)], [], "/tmp");
+    assert.deepEqual(await view.bridge("turts_debug"), { record: "stale" });
+    assert.deepEqual(calls.requests, [], "a held frame runs no callback, so a request would wait 10 s and reject");
 });
 
 test("view.bridge reads the record as before from a page with no request bridge", async () => {
@@ -128,4 +136,35 @@ test("the SH1 phase capture asks for the record of the next frame, with no wait,
     }
     assert.deepEqual(requests, [0, 0], "one request with no wait for each enabled frame");
     assert.equal(window.__sh1_phase_capture.held, "verify", "the frame of the phase is held");
+});
+
+// A page whose record is empty until a request has been served, and whose request resolves one
+// turn later. The fake `waitForFunction` is Playwright's: it polls a predicate and, as Playwright
+// does, tests the result as it is, so a Promise result passes at once.
+test("the join wait polls until a requested record shows Joined (a Promise result would pass at once)", async () => {
+    let record = "";
+    let requests = 0;
+    const window = {
+        turts_scene: () => JSON.stringify({ cameras_3d: 1 }),
+        turts_debug: () => record,
+        turts_debug_request: () => {
+            requests += 1;
+            return new Promise((resolve) => setImmediate(() => {
+                record = JSON.stringify({ phase: requests < 3 ? "Connecting" : "Joined { slot: 0 }", last_frame: { frame_index: 1 } });
+                resolve(record);
+            }));
+        },
+    };
+    let polls = 0;
+    const page = { waitForFunction: async (fn, argument) => {
+        for (;;) {
+            polls += 1;
+            const result = vm.runInNewContext(`(${fn.toString()})(argument)`, { window, argument, JSON });
+            if (result) return;
+            await new Promise((resolve) => setImmediate(resolve));
+        }
+    } };
+    await waitForJoinedRole(page);
+    assert.ok(polls >= 3, `the wait polled ${polls} times; it must wait for the Joined record`);
+    assert.match(record, /Joined/);
 });

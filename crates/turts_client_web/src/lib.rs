@@ -9,7 +9,7 @@
 //!   D 9, row DBG1), and resolves every waiting promise with that one snapshot, so the
 //!   snapshot, `window.turts_scene()` and `window.turts_ui()` come from one frame. The promise
 //!   rejects after 10 s with no frame (a hidden tab). `min_interval_ms` lowers the cap for one
-//!   request; only a test harness passes it.
+//!   request; only the SH1 per-frame phase capture passes it (a test-only form).
 //! - `window.turts_debug()` returns the last published debug JSON and asks for nothing. It
 //!   returns an empty string until the first request has been served. The page posts nothing.
 //! - `window.turts_move(x, y)` queues a move order for the units of this player. The order is
@@ -402,6 +402,11 @@ fn drain_moves(
 
 /// `window.turts_debug_request`: note the request for the next frame, and return a promise that
 /// `publish_debug` resolves with the snapshot that serves it.
+///
+/// Ruling (orchestrator, 2026-11-12, row DBG1): the 4 Hz cap stays for every default request.
+/// `min_interval_ms` 0 is a legal test-only form for the SH1 per-frame phase capture only
+/// (`tests/browser/harness/sh1-lifecycle.js`); a grep test
+/// (`tests/browser/harness/debug-request-use.test.js`) fails when any other caller passes a value.
 fn request_debug(min_interval_ms: JsValue) -> js_sys::Promise {
     let wanted = min_interval_ms
         .as_f64()

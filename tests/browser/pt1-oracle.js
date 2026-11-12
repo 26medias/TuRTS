@@ -229,6 +229,11 @@ function judgeLoad(observations, number, label) {
         item.rows.some((row) => row.id === "shell.load.progress.track" && row.visible === true)), `${label} shows no load screen with a progress bar`);
     const phases = new Set(observations.filter((item) => item.phase && !item.phase.startsWith("Joined")).map((item) => item.phase.split(/[ {(]/)[0]));
     step(number, phases.size >= 2, `${label} shows fewer than two load phases (${[...phases].join(", ")})`);
+    // The wait for the join must have waited: the last observation of a phase is a Joined one (the
+    // layout-label record has no `phase` key and is skipped). L0-DBG review, finding 2.
+    const last = observations.filter((item) => "phase" in item).at(-1);
+    const lastPhase = last?.phase ? String(last.phase).split(/[ {(]/)[0] : "no phase";
+    step(number, String(last?.phase ?? "").startsWith("Joined"), `${label} ends at ${lastPhase}, not Joined`);
 }
 
 function clickToPlayShown(debug) {
@@ -556,4 +561,4 @@ async function judge(view, params) {
     return result;
 }
 
-module.exports = { judge, actionLabel, assertControlsMatch, humanizeAction, layoutLabels, playerLabel, presses, rowText };
+module.exports = { judge, judgeLoad, actionLabel, assertControlsMatch, humanizeAction, layoutLabels, playerLabel, presses, rowText };

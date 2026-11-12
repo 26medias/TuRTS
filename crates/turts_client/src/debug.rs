@@ -45,8 +45,13 @@ pub struct DebugRequest {
 
 impl DebugRequest {
     /// Ask for one build of the debug state. `min_interval_secs` is the least time since the
-    /// last build; `None` gives [`DEBUG_MIN_INTERVAL_SECS`]. Only a test harness passes a lower
-    /// value (the SH1 phase capture asks for each frame).
+    /// last build; `None` gives [`DEBUG_MIN_INTERVAL_SECS`].
+    ///
+    /// Ruling (orchestrator, 2026-11-12, row DBG1): the 4 Hz cap stays for every default
+    /// request. `min_interval_ms` 0 is a legal test-only form for the SH1 per-frame phase
+    /// capture only (`tests/browser/harness/sh1-lifecycle.js`); a grep test
+    /// (`tests/browser/harness/debug-request-use.test.js`) fails when any other caller passes a
+    /// value.
     pub fn request(&mut self, min_interval_secs: Option<f64>) {
         let wanted = min_interval_secs
             .filter(|secs| secs.is_finite())

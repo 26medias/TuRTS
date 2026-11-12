@@ -481,7 +481,8 @@ if (require.main === module) run(parseArgs(process.argv.slice(2))).catch((error)
     process.exitCode = 1;
 });
 
-module.exports = { checkpointLimit, deepFreeze, loadObservation, recordStartup, launchArgsForDpr, parseArgs, trackMainDocumentEpoch };
+module.exports = { checkpointLimit, deepFreeze, loadObservation, recordStartup, launchArgsForDpr, parseArgs, trackMainDocumentEpoch,
+    waitForJoinedRole, waitForTask16Role };
 
 async function attachDeviceAudit(page, context, windowIndex, key, sessions) {
     try {
@@ -802,12 +803,15 @@ function installTask16StorageAudit({ fixture = null, targetOrigin = null, window
 }
 
 async function waitForJoinedRole(page) {
-    // Each poll asks for one record (design D 9, row DBG1) and waits for it; an older page publishes in each frame.
-    await page.waitForFunction(async () => {
+    // Playwright does not await a predicate, so this one is sync (tests/browser/harness/wait-predicate.test.js).
+    // Each poll starts a request for a record (design D 9, row DBG1) and reads the record that
+    // the last request published; an older page publishes in each frame.
+    await page.waitForFunction(() => {
         if (window.turts_error) return true;
         if (typeof window.turts_debug !== "function" || typeof window.turts_scene !== "function") return false;
         try {
-            const debug = JSON.parse(await (window.turts_debug_request?.() ?? window.turts_debug()));
+            window.turts_debug_request?.().catch(() => {});
+            const debug = JSON.parse(window.turts_debug());
             const scene = JSON.parse(window.turts_scene());
             return typeof debug.phase === "string" && debug.phase.startsWith("Joined") && Boolean(debug.last_frame) && scene.cameras_3d === 1;
         } catch { return false; }
@@ -815,11 +819,13 @@ async function waitForJoinedRole(page) {
 }
 
 async function waitForTask16Role(page, role) {
-    await page.waitForFunction(async (expectedRole) => {
+    // A sync predicate, as in waitForJoinedRole: it starts a request and reads the last record.
+    await page.waitForFunction((expectedRole) => {
         if (window.turts_error) return true;
         if (typeof window.turts_debug !== "function" || typeof window.turts_scene !== "function") return false;
         try {
-            const debug = JSON.parse(await (window.turts_debug_request?.() ?? window.turts_debug()));
+            window.turts_debug_request?.().catch(() => {});
+            const debug = JSON.parse(window.turts_debug());
             const scene = JSON.parse(window.turts_scene());
             const terminal = typeof debug.phase === "string" && (debug.phase.startsWith("Failed") ||
                 (debug.phase.startsWith("Joined") && Boolean(debug.last_frame) && scene?.cameras_3d === 1));

@@ -123,12 +123,14 @@ async function prepareSh1Lifecycle({ context, params, outDir, epoch, navigationA
         gates.delete(kind);
         resolve();
     };
-    // Each poll asks for one record (design D 9, row DBG1) and waits for it; an older page publishes in each frame.
-    const waitPhase = async (page, pattern) => page.waitForFunction(async (source) => {
+    // Playwright does not await a predicate, so each predicate here is sync (tests/browser/harness/wait-predicate.test.js).
+    // A poll starts a request for a record (design D 9, row DBG1) and reads the record that the
+    // last request published; an older page publishes in each frame.
+    const waitPhase = async (page, pattern) => page.waitForFunction((source) => {
         if (typeof window.turts_debug !== 'function') return false;
         try {
-            const text = await (window.turts_debug_request?.() ?? window.turts_debug());
-            return new RegExp(source).test(JSON.parse(text).phase);
+            window.turts_debug_request?.().catch(() => {});
+            return new RegExp(source).test(JSON.parse(window.turts_debug()).phase);
         } catch { return false; }
     }, pattern, { timeout: 30000, polling: 20 });
     const drive = (driver, io, phase) => driver.drive(io, { ...params, fixture_phase: phase });
@@ -195,9 +197,13 @@ async function prepareSh1Lifecycle({ context, params, outDir, epoch, navigationA
             target.record.joined_before_close = before;
             await save();
             await waitPhase(page, '^Joined');
-            await page.waitForFunction(async () => typeof window.turts_debug === 'function' &&
-                JSON.parse(await (window.turts_debug_request?.() ?? window.turts_debug())).reconnect_required === true,
-                null, { timeout: 30000, polling: 20 });
+            await page.waitForFunction(() => {
+                if (typeof window.turts_debug !== 'function') return false;
+                try {
+                    window.turts_debug_request?.().catch(() => {});
+                    return JSON.parse(window.turts_debug()).reconnect_required === true;
+                } catch { return false; }
+            }, null, { timeout: 30000, polling: 20 });
             let actualNavigation;
             await driver.drive(io, { ...params, fixture_phase: 'connection-lost' }, {
                 beforeAction: async (action) => {
