@@ -5,6 +5,15 @@
 //! is owner-only and its `last_target` names the target. If the server keeps that reference
 //! after the target is removed, the client rejects every delta and snapshot until the reference
 //! clears (one weapon cooldown), and the owner's view stands still for about 1 s.
+//!
+//! This test guards one half of the repair: `last_target` never names a removed unit. The other
+//! half is that `ordered_target_fired` stays for the ordered attacker, so the Attack order
+//! completes and does not fail with `TargetGone`. That marker is sim-internal and is not on the
+//! wire, so this process test cannot see it. These sim tests own that half (they go red when the
+//! marker is cleared for the ordered attacker, and this process test stays green):
+//! `economy::combat::tests::attack_target_gone_after_a_shot_completes_normally`,
+//! `ordered_attack_kill_replicates_no_reference_to_the_removed_target` and
+//! `kill_by_another_weapon_clears_the_ordered_attacker_target_reference` (`last_failure.is_none()`).
 
 mod support;
 
