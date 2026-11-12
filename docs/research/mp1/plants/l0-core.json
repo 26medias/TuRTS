@@ -790,5 +790,86 @@
         "exit": 101,
         "expected_selected": "visuals::scene_tests::scene_oracle_matches_the_committed_fixture",
         "commit": "2c188c1079b9c1a5452863ae183360ea8ffaa316"
+    },
+    {
+        "row": "L0-CORE",
+        "plant": "f-owner-facts-are-new-for-each-frame",
+        "files": [
+            {
+                "file": "crates/turts_client/src/core_adapter.rs",
+                "edit": {
+                    "old": "        std::mem::take(&mut runtime.facts),\n",
+                    "new": "        Default::default(),\n"
+                }
+            }
+        ],
+        "command": [
+            "cargo",
+            "test",
+            "-p",
+            "turts_client",
+            "--locked",
+            "--lib",
+            "--",
+            "--exact",
+            "core_adapter::adapter_tests::owner_facts_are_kept_from_frame_to_frame"
+        ],
+        "env": {},
+        "headed": false,
+        "expected_red": "the owner facts must be kept: each frame builds the same value once",
+        "exit": 101,
+        "expected_selected": "core_adapter::adapter_tests::owner_facts_are_kept_from_frame_to_frame",
+        "commit": "2b228562bb566d3b3e0b752881e9ff7efb1cea20"
+    },
+    {
+        "row": "L0-CORE",
+        "plant": "t-taking-input-default-true-is-refused-by-the-script",
+        "files": [
+            {
+                "file": "crates/turts_interaction/src/placement.rs",
+                "edit": {
+                    "old": "#[derive(Debug, Clone, Default, PartialEq)]\npub struct State {\n    pub taking_input: bool,\n}",
+                    "new": "#[derive(Debug, Clone, PartialEq)]\npub struct State {\n    pub taking_input: bool,\n}\n\nimpl Default for State {\n    fn default() -> Self {\n        Self { taking_input: true }\n    }\n}"
+                }
+            }
+        ],
+        "command": [
+            "bash",
+            "docs/research/mp1/l0-core/taking_input.sh"
+        ],
+        "env": {},
+        "headed": false,
+        "expected_red": "TAKING-INPUT-USED",
+        "exit": 1,
+        "commit": "2b228562bb566d3b3e0b752881e9ff7efb1cea20"
+    },
+    {
+        "row": "L0-CORE",
+        "plant": "t-taking-input-default-true-is-red-in-the-test",
+        "files": [
+            {
+                "file": "crates/turts_interaction/src/placement.rs",
+                "edit": {
+                    "old": "#[derive(Debug, Clone, Default, PartialEq)]\npub struct State {\n    pub taking_input: bool,\n}",
+                    "new": "#[derive(Debug, Clone, PartialEq)]\npub struct State {\n    pub taking_input: bool,\n}\n\nimpl Default for State {\n    fn default() -> Self {\n        Self { taking_input: true }\n    }\n}"
+                }
+            }
+        ],
+        "command": [
+            "cargo",
+            "test",
+            "-p",
+            "turts_interaction",
+            "--locked",
+            "--lib",
+            "--",
+            "hook_tests"
+        ],
+        "env": {},
+        "headed": false,
+        "expected_red": "hook_tests::intercept_stub_takes_no_event_in_a_fresh_core",
+        "exit": 101,
+        "expected_selected": 2,
+        "commit": "2b228562bb566d3b3e0b752881e9ff7efb1cea20"
     }
 ]
