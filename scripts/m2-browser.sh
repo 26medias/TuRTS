@@ -54,6 +54,14 @@ if [[ $# -eq 1 && "$1" == "--list-cases" ]]; then
         E9-browser-cedar-public-convergence
     exit 0
 fi
+# M2_LOCAL_ONLY_CASES and M2_RECIPE_DURATION_SCALE belong to the hosted job (ci.yml sets them, and the runner sets
+# GITHUB_ACTIONS=true). A local gate run must run every case with the true recipe times, so it refuses to start
+# when one of them is set: it would skip a case or change the package with no sign in the result.
+if [[ "${GITHUB_ACTIONS:-}" != "true" && ( -n "${M2_LOCAL_ONLY_CASES:-}" || -n "${M2_RECIPE_DURATION_SCALE:-}" ) ]]; then
+    echo "scripts/m2-browser.sh: M2_LOCAL_ONLY_CASES or M2_RECIPE_DURATION_SCALE is set and GITHUB_ACTIONS is not 'true'." >&2
+    echo "These two values are for the hosted job only. Unset them for a local gate run, which runs every case with the true recipe times." >&2
+    exit 2
+fi
 if [[ $# -eq 0 && -z "$PACKAGE" && -z "$CASE_ID" ]]; then
     case_list=$("$0" --list-cases)
     selected_count=$(wc -l <<<"$case_list" | tr -d ' ')
@@ -62,22 +70,33 @@ if [[ $# -eq 0 && -z "$PACKAGE" && -z "$CASE_ID" ]]; then
         exit 1
     fi
     build_once
-    # A red case must not hide the others (hosted run 43214215645 showed 4 of 15 cases).
+    # A red case must not hide the others (hosted run 43214215645 showed 4 of 15 cases). The case lines go to a
+    # log, so the summary below counts what the cases printed, also when a case is red.
+    suite_log=$(mktemp)
+    trap 'rm -f "$suite_log"' EXIT
     suite_status=0
     for package in base haul acme cedar; do
-        "$0" --package "$package" || suite_status=1
+        "$0" --package "$package" 2>&1 | tee -a "$suite_log" || suite_status=1
     done
     for loss_family in conversion charge refund spawn final_change; do
-        "$0" --case "E9-browser-base-loss-$loss_family" || suite_status=1
+        "$0" --case "E9-browser-base-loss-$loss_family" 2>&1 | tee -a "$suite_log" || suite_status=1
     done
+    count_lines() { grep -c "$1" "$suite_log" || true; }
+    passed_count=$(count_lines '^M2_CASE_PASS ')
+    semantic_count=$(count_lines '^M2_CASE_SEMANTIC_FAIL ')
+    infrastructure_count=$(count_lines '^M2_CASE_INFRA_FAIL ')
+    local_only_count=$(count_lines '^M2_CASE_LOCAL_ONLY ')
+    completed_count=$((passed_count + semantic_count + infrastructure_count))
+    printf 'M2_DEFAULT_SUITE_SUMMARY {"selected_count":%s,"completed_count":%s,"passed_count":%s,"semantic_failed_count":%s,"infrastructure_failed_count":%s,"timeout_count":0,"local_only_count":%s}\n' \
+        "$selected_count" "$completed_count" "$passed_count" "$semantic_count" "$infrastructure_count" "$local_only_count"
     if [[ "$suite_status" != 0 ]]; then
         echo "M2_DEFAULT_SUITE_FAILED: at least one case is red; read the M2_CASE_* lines above" >&2
         exit 1
     fi
-    local_only_count=$(python3 "$ROOT/tests/m2/local_only.py" --count <<<"$case_list")
-    ran_count=$((selected_count - local_only_count))
-    printf 'M2_DEFAULT_SUITE_SUMMARY {"selected_count":%s,"completed_count":%s,"passed_count":%s,"semantic_failed_count":0,"infrastructure_failed_count":0,"timeout_count":0,"local_only_count":%s}\n' \
-        "$selected_count" "$ran_count" "$ran_count" "$local_only_count"
+    if [[ "$passed_count" != "$((selected_count - local_only_count))" ]]; then
+        echo "M2_DEFAULT_SUITE_FAILED: $passed_count cases passed and $local_only_count are local-only, but $selected_count are registered" >&2
+        exit 1
+    fi
     exit 0
 fi
 while [[ $# -gt 0 ]]; do
