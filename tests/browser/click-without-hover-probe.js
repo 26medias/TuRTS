@@ -72,7 +72,12 @@ async function run(url, wantGuide, mapPressFirst) {
         const context = await browser.newContext({ viewport: { width: 1280, height: 720 }, deviceScaleFactor: 1 });
         const page = await context.newPage();
         await page.goto(url);
-        await page.waitForFunction(() => typeof window.turts_debug === "function", null, { timeout: 60000 });
+        // Wait for the debug bridge (a poll: the ruling of the debug request test bans `waitForFunction`).
+        for (let waited = 0; ; waited += 200) {
+            if (await page.evaluate(() => typeof window.turts_debug === "function")) break;
+            if (waited > 60000) throw new Error("the debug bridge did not appear in 60 s");
+            await page.waitForTimeout(200);
+        }
         const ready = await until(page, (debug) => typeof debug.phase === "string" && debug.phase.startsWith("Joined") &&
             (debug.ui_snapshot || []).some((row) => row.kind === "focus_overlay" && row.root_count === 1), 60000);
         if (ready.ms === null) throw new Error("the game did not join and show its start overlay in 60 s");
