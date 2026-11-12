@@ -568,6 +568,77 @@ fn queued_group_attack_spreads_and_strictly_replays() {
         "queued Point Attack shared-spread operations strictly replay: {:?}",
         turts_audit::validate_records(&records)
     );
+
+    // The outcome from the order log, with no help from the replay validator. Each member
+    // first has the order as its current order at some completed tick. At that tick the unit
+    // has a destination (`move_target`). The Move goes to the order point (6,6) and the queued
+    // Attack goes to its order point (20,5). The group spread puts each member on its own
+    // slot of a hex pool around the order point. The pool holds `members + max(6,
+    // ceil(members/4))` slots, which is 8 slots for 2 members. So every slot is within two
+    // rings of the order point (`crates/turts_sim/src/movement.rs:274-276`: spacing is
+    // `2 * radius + 0.1`, and the slot count; `:293`: slot zero is the order point).
+    let Footprint::Circle { radius } =
+        catalog.units[&ContentId::parse("audit:shooter").unwrap()].footprint;
+    let spread_reach = 2.0 * (2.0 * radius + 0.1);
+    for (order, point) in [
+        ("audit:move", bevy_math::Vec2::new(6.0, 6.0)),
+        ("audit:rush", bevy_math::Vec2::new(20.0, 5.0)),
+    ] {
+        let destinations = first_logged_destinations(&records, &members, order);
+        assert_eq!(
+            destinations.len(),
+            members.len(),
+            "{order} gives every member a destination: {destinations:?}"
+        );
+        for (unit, destination) in &destinations {
+            assert!(
+                destination.distance(point) <= spread_reach,
+                "{order} sends unit {unit} to {destination:?}, more than {spread_reach} from \
+                 the order point {point:?}"
+            );
+        }
+        assert_ne!(
+            destinations[0].1, destinations[1].1,
+            "{order} spreads its members to different destinations: {destinations:?}"
+        );
+    }
+}
+
+/// For each unit, the destination (`move_target`) at the first completed tick of the order log
+/// where the unit has the current order `order` and a destination. A unit with no such tick is
+/// left out.
+fn first_logged_destinations(
+    records: &[turts_audit::EconomyLogRecord],
+    units: &[u32],
+    order: &str,
+) -> Vec<(u32, bevy_math::Vec2)> {
+    units
+        .iter()
+        .filter_map(|unit_id| {
+            records.iter().find_map(|record| {
+                let turts_audit::EconomyLogRecord::Tick { state, .. } = record else {
+                    return None;
+                };
+                let current = state
+                    .unit_orders
+                    .iter()
+                    .find(|row| row.unit_id == *unit_id)?
+                    .orders
+                    .current
+                    .as_ref()?;
+                if current.order.to_string() != order {
+                    return None;
+                }
+                let target = state
+                    .raw_units
+                    .iter()
+                    .find(|row| row.unit_id == *unit_id)?
+                    .move_target
+                    .as_ref()?;
+                Some((*unit_id, bevy_math::Vec2::new(target.x, target.y)))
+            })
+        })
+        .collect()
 }
 
 #[test]

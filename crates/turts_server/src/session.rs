@@ -1029,12 +1029,18 @@ mod tests {
         app.world_mut()
             .resource_mut::<turts_sim::AuditTrail>()
             .enable();
+        // A start tick that is not zero, so a Claim with a fixed or default tick is red.
+        app.world_mut().resource_mut::<turts_sim::Tick>().0 = 3;
         let initial = turts_sim::audit_state(app.world_mut());
         let trail = app.world().resource::<turts_sim::AuditTrail>();
         app.insert_resource(
             crate::economylog::EconomyLogSink::create(&path, trail, initial).unwrap(),
         );
 
+        // The test clock does not move (`TimeUpdateStrategy::ManualDuration(ZERO)` in
+        // `hello_test_app`), so the tick of the Claim is known with no race: it is the sim tick
+        // before the first Hello, and the test checks that the tick did not move.
+        let hello_tick = app.world().resource::<turts_sim::Tick>().0;
         let (source_a, client_a) = spawn_hello_peers(&mut app, 1);
         deliver_hello(&mut app, source_a, client_a, good(7));
         assert_eq!(
@@ -1056,6 +1062,25 @@ mod tests {
             .filter(|record| matches!(record, turts_audit::EconomyLogRecord::Claim { .. }))
             .count();
         assert_eq!(claims, 1, "a rejoin must not emit a second Claim record");
+        assert_eq!(
+            app.world().resource::<turts_sim::Tick>().0,
+            hello_tick,
+            "the sim tick did not move during the test"
+        );
+        let claim = records.iter().find_map(|record| match record {
+            turts_audit::EconomyLogRecord::Claim {
+                tick,
+                player_id,
+                slot,
+            } => Some((*tick, *player_id, *slot)),
+            _ => None,
+        });
+        assert_eq!(
+            claim,
+            Some((hello_tick, 7, 0)),
+            "the one Claim record names the tick of the Hello, player 7 and the slot that its \
+             session holds"
+        );
         turts_audit::validate_records(&records).unwrap();
         drop(app);
         std::fs::remove_file(path).unwrap();
