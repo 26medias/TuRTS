@@ -21,15 +21,15 @@ async function drive(io, params) {
         steps.actions.push({ label, call: "screenshot", window: 1 });
         return decodePng(bytes);
     }
-    async function click(label, point, button = "right") {
+    async function click(label, point, button = "right", settleMs = 150) {
         await io.click(point[0], point[1], button);
         steps.actions.push({ label, call: "click", point, button });
-        await io.wait(150);
+        if (settleMs > 0) await io.wait(settleMs);
     }
-    async function key(label, code, modifiers = [], options = {}) {
+    async function key(label, code, modifiers = [], options = {}, settleMs = 100) {
         await io.key(code, modifiers, options);
         steps.actions.push({ label, call: "key", code, modifiers, options });
-        await io.wait(100);
+        if (settleMs > 0) await io.wait(settleMs);
     }
     async function minimap(label, world, button = "right", settleMs = 150) {
         const point = screen(world);
@@ -126,8 +126,11 @@ async function driveOrd3(io, params, steps, minimap, shot, click, key) {
         await key("gather-order", "KeyG");
         const node = oreNodePixel(image);
         steps.pixels.node = node;
-        await click("gather-node", [node.x, node.y], "left");
-        await key("gather-shift-down", "ShiftLeft", [], { action: "down" });
+        // The Gather order lasts 2.5 s (a short walk, then 2 ore at 1 a second). The held-Shift Append
+        // must reach the server inside that time, so no wait sits between the node click and it
+        // (RUN130: 2.05 s on a loaded host, with the waits).
+        await click("gather-node", [node.x, node.y], "left", 0);
+        await key("gather-shift-down", "ShiftLeft", [], { action: "down" }, 0);
         await minimap("append-behind-gather", targets.queue[0]);
         await key("gather-shift-up", "ShiftLeft", [], { action: "up" });
         await shot("gather-accepted");

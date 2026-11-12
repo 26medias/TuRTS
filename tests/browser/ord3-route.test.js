@@ -126,3 +126,49 @@ test("the ORD3 driver sends the 17 queue-overflow appends with no wait between t
     }
     assert(longest >= 17, `17 right clicks run back to back; the longest run is ${longest}`);
 });
+
+// RUN130, evidence hud2-fix4-ord3-b run 1: the Gather was accepted at tick 1692 and its held-Shift
+// Append reached the server at tick 1733: 2.05 s at 20 ticks a second. With the waits kept the
+// Gather must still be active at 1.2 times that time.
+const LOADED_GATHER_APPEND_SECONDS = 2.05;
+const GATHER_MARGIN = 1.2;
+
+test("the ORD3 Gather order lasts longer than the held-Shift Append needs on a loaded host", () => {
+    const worker = read("tests/browser/fixtures/order-rows/muster/units/worker.ron");
+    const number = (pattern) => Number(pattern.exec(worker)[1]);
+    const rate = number(/gather_per_second:\s*(\d+)/);
+    const speed = number(/speed:\s*([0-9.]+)/);
+    const range = number(/interaction_range:\s*([0-9.]+)/);
+    const workerRadius = number(/footprint:\s*Circle\(radius:\s*([0-9.]+)\)/);
+    const nodeRadius = Number(/radius:\s*([0-9.]+)\)/.exec(read("tests/browser/fixtures/order-rows/muster/nodes/ore_node.ron"))[1]);
+    const field = read("tests/browser/fixtures/order-rows/muster/maps/field.ron");
+    const node = /node: "muster:ore_node", pos: \(x: ([0-9.]+), y: ([0-9.]+)\), remaining: (\d+)/.exec(field);
+    const nodeAt = [Number(node[1]), Number(node[2])];
+    const remaining = Number(node[3]);
+    const workers = [...field.matchAll(/unit: "muster:worker", owner_slot: 0, pos: \(x: ([0-9.]+), y: ([0-9.]+)\)/g)];
+    assert(workers.length >= 1, "the map has own workers");
+    const lifetimes = workers.map((match) => {
+        const walk = Math.max(0, Math.hypot(Number(match[1]) - nodeAt[0], Number(match[2]) - nodeAt[1]) - (range + nodeRadius + workerRadius)) / speed;
+        return walk + remaining / rate;
+    });
+    const shortest = Math.min(...lifetimes);
+    assert(shortest >= LOADED_GATHER_APPEND_SECONDS * GATHER_MARGIN,
+        `the shortest Gather lasts ${shortest.toFixed(2)} s; at least ${(LOADED_GATHER_APPEND_SECONDS * GATHER_MARGIN).toFixed(2)} s are needed`);
+});
+
+test("the ORD3 driver sends the Gather node click, the Shift down and the Append click with no wait between them", async () => {
+    const image = scenePng();
+    const calls = [];
+    const io = {
+        async key(code, mods, options) { calls.push(`key:${code}:${options?.action || "press"}`); },
+        async click(x, y, button) { calls.push(`click:${button}`); },
+        async wait(ms) { calls.push(`wait:${ms}`); },
+        async screenshot() { return image; },
+        async save() {},
+    };
+    await drive(io, { ...row(), row: "ORD3" });
+    const gather = calls.indexOf("key:KeyG:press");
+    assert(gather >= 0, "the driver presses G");
+    assert.deepEqual(calls.slice(gather + 1, gather + 5), ["wait:100", "click:left", "key:ShiftLeft:down", "click:right"],
+        "after the node click come the Shift down and the Append click with no wait");
+});
