@@ -853,7 +853,10 @@ pub fn check_dangling(state: &AuditState) -> Result<(), CheckFailure> {
                 .iter()
                 .any(|r| r.unit == *id || r.source == Some(*id) || r.destination == Some(*id))
             || state.raw_extractors.iter().any(|r| r.unit == *id)
-            || state.raw_weapons.iter().any(|r| r.unit == *id)
+            || state
+                .raw_weapons
+                .iter()
+                .any(|r| r.unit == *id || r.last_target == Some(*id))
             || state.raw_healths.iter().any(|r| r.unit == *id)
             || state.disabled.contains(id)
             || state
