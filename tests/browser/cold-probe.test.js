@@ -22,6 +22,7 @@ const { decodePng } = require("./harness/png.js");
 const { ColdSession } = require("./cold-session.js");
 const { SETTLE_MS, runProbe, wordCount, ownUnitsOnScreen, visibleButtons, normalisedUi } = require("./cold-probe.js");
 const { fixtureGame } = require("./cold-fixture.js");
+const { silentEnv, SILENT_ARGS } = require("./harness/silent-chrome.js");
 
 const REPO = path.resolve(__dirname, "../..");
 const CHECKER = path.join(REPO, "scripts/qa/cold_play_check.py");
@@ -153,7 +154,7 @@ async function chrome() {
     await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
     const port = await freePort();
     const profile = tempDir("chrome");
-    const child = spawn(CHROME, [`--user-data-dir=${profile}`, `--remote-debugging-port=${port}`, "--no-first-run", "--no-default-browser-check", "--headless=new", "--disable-gpu", "about:blank"], { stdio: "ignore" });
+    const child = spawn(CHROME, [`--user-data-dir=${profile}`, `--remote-debugging-port=${port}`, "--no-first-run", "--no-default-browser-check", "--headless=new", "--disable-gpu", ...SILENT_ARGS, "about:blank"], { stdio: "ignore", env: silentEnv(tempDir("quiet")) });
     await until(async () => (await fetch(`http://127.0.0.1:${port}/json/version`)).json(), "the debugging port");
     const browser = await chromium.connectOverCDP(`http://127.0.0.1:${port}`);
     shared = { browser, server, child, base: `http://127.0.0.1:${server.address().port}/` };

@@ -17,6 +17,7 @@ const path = require("node:path");
 const test = require("node:test");
 const { ColdSession, listen, parseArgs, parseStatement, readSounds, MAX_LIMIT_S } = require("./cold-session.js");
 const { readWorld } = require("./cold-probe.js");
+const { silentEnv, SILENT_ARGS } = require("./harness/silent-chrome.js");
 const play = require("./cold-play.js");
 
 const REPO = path.resolve(__dirname, "../..");
@@ -598,7 +599,7 @@ test("with a real Chrome: a click that the page takes changes the +200 ms pictur
     await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
     const port = await freePort();
     const profile = tempDir("chrome");
-    const chrome = spawn(CHROME, [`--user-data-dir=${profile}`, `--remote-debugging-port=${port}`, "--no-first-run", "--no-default-browser-check", "--headless=new", "--disable-gpu", "about:blank"], { stdio: "ignore" });
+    const chrome = spawn(CHROME, [`--user-data-dir=${profile}`, `--remote-debugging-port=${port}`, "--no-first-run", "--no-default-browser-check", "--headless=new", "--disable-gpu", ...SILENT_ARGS, "about:blank"], { stdio: "ignore", env: silentEnv(tempDir("quiet")) });
     let browser;
     try {
         await until(async () => (await fetch(`http://127.0.0.1:${port}/json/version`)).json(), "the debugging port");
@@ -647,11 +648,11 @@ test("mp1-play.sh --url starts a Chrome that answers on the printed port, and en
     // A headless Chrome stands in for the headed one: the start logic is the same.
     const folder = tempDir("playreal");
     const shim = path.join(folder, "chrome");
-    fs.writeFileSync(shim, `#!/bin/sh\nexec '${CHROME}' --headless=new --disable-gpu "$@"\n`, { mode: 0o755 });
+    fs.writeFileSync(shim, `#!/bin/sh\necho "$PULSE_SERVER|$ALSA_CONFIG_PATH" > '${path.join(folder, "chrome-env.txt")}'\nexec '${CHROME}' --headless=new --disable-gpu --alsa-output-device=null "$@"\n`, { mode: 0o755 });
     const server = http.createServer((_request, response) => { response.setHeader("content-type", "text/html"); response.end("<!doctype html><title>game</title>"); });
     await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
     const url = `http://127.0.0.1:${server.address().port}/?a=1`;
-    const play = spawn("bash", [path.join(REPO, "scripts/mp1-play.sh"), "--url", url], { env: { ...process.env, CHROME_BIN: shim, TMPDIR: folder }, stdio: ["ignore", "pipe", "pipe"] });
+    const play = spawn("bash", [path.join(REPO, "scripts/mp1-play.sh"), "--url", url], { env: silentEnv(folder, { ...process.env, CHROME_BIN: shim, TMPDIR: folder }), stdio: ["ignore", "pipe", "pipe"] });
     let stdout = "";
     let stderr = "";
     play.stdout.on("data", (chunk) => { stdout += chunk; });
@@ -662,6 +663,11 @@ test("mp1-play.sh --url starts a Chrome that answers on the printed port, and en
         assert.equal(lines.URL, url);
         const version = await (await fetch(`http://127.0.0.1:${lines.DEBUG_PORT}/json/version`)).json();
         assert.match(version.Browser, /Chrome/, "the printed port is the debugging port of the Chrome that was started");
+        // The Chrome that the script starts gets the environment of the test: no sound reaches the desktop (the shim wrote what it saw).
+        const seen = fs.readFileSync(path.join(folder, "chrome-env.txt"), "utf8").trim().split("|");
+        assert.equal(seen[0], "unix:/nonexistent/mc-tests-no-pulse");
+        assert.match(seen[1], /alsa-null\.conf$/);
+        assert.equal(fs.readFileSync(seen[1], "utf8"), "</usr/share/alsa/alsa.conf>\npcm.!default { type null }\n");
         assert.ok(fs.existsSync(lines.PROFILE), "the profile folder exists while Chrome runs");
         assert.ok(lines.PROFILE.startsWith(folder), "a new profile folder, not a default one");
         play.kill("SIGTERM");
