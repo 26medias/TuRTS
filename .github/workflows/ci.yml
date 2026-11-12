@@ -37,10 +37,6 @@ jobs:
         run: bash scripts/boundary.sh
       - name: Python refutation harness tests
         run: python3 tests/m2/test_refutations.py
-      - name: M2 native-only semantic refutations
-        run: bash scripts/m2-refutations.sh --case ci-native
-      - name: M3 semantic refutations (all 17 plants)
-        run: bash scripts/m3-refutations.sh --case all
       - name: Acceptance (M2 and M3 process tests, release, serial)
         run: bash scripts/acceptance.sh
       - name: Upload native and acceptance diagnostics
@@ -56,12 +52,94 @@ jobs:
             target/task15-evidence/**
             target/m2-public-proof/**
             target/m3-evidence/t16-builder/**
-  # T7 and M2 browser proof need a real browser process, Trunk, wasm and a
-  # software Vulkan implementation; hosted CI does not require an NVIDIA GPU.
+  # The native fault sets ran serially in `check`: 89.6 minutes for 21 of the 33 M2 cases in
+  # run 43121618105, and the M3 set after it. Each set now runs in parallel shards
+  # (`--shard K/N` of tests/m2/refutations.py and tests/m3/refutations.py: cases K, K + N, ...).
+  # The shards of one set together run each case once.
+  # Run 43121618105 had a second cause, besides time: the baseline of `E9-midtrace-rearm-ignored`
+  # was red (economy.rs:2235, "operation 6744: gather state differs") from the gather-at-depletion
+  # defect of the product. The repair is merged into codex/mc-integration (113e380), so the shard
+  # with that case (m2-native 4/4) must pass at its baseline. Sharding alone did not remove that red.
+  refutations:
+    name: refutations ${{ matrix.set }} ${{ matrix.shard }}
+    runs-on: ubuntu-latest
+    # A hang must not hold a hosted runner for hours (RUN123 M3).
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { set: m2-native, runner: tests/m2/refutations.py, case: ci-native, shard: 1/4 }
+          - { set: m2-native, runner: tests/m2/refutations.py, case: ci-native, shard: 2/4 }
+          - { set: m2-native, runner: tests/m2/refutations.py, case: ci-native, shard: 3/4 }
+          - { set: m2-native, runner: tests/m2/refutations.py, case: ci-native, shard: 4/4 }
+          - { set: m3, runner: tests/m3/refutations.py, case: all, shard: 1/3 }
+          - { set: m3, runner: tests/m3/refutations.py, case: all, shard: 2/3 }
+          - { set: m3, runner: tests/m3/refutations.py, case: all, shard: 3/3 }
+    env:
+      CARGO_BUILD_JOBS: 2
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target/m3-t16
+      CARGO_PROFILE_DEV_DEBUG: 0
+      CARGO_PROFILE_TEST_DEBUG: 0
+      CARGO_INCREMENTAL: 0
+      TURTS_REFUTATION_EVIDENCE_DIR: ${{ github.workspace }}/target/m3-evidence/t16-builder/refutations/native
+      TURTS_REFUTATION_BUILD_ROOT: ${{ github.workspace }}/target/m3-t16/refutations/native-build
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+      - name: Bevy system libraries
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends pkg-config libx11-dev libasound2-dev libudev-dev libxkbcommon-x11-0 libwayland-dev libxkbcommon-dev
+      - name: Semantic refutations ${{ matrix.set }} shard ${{ matrix.shard }}
+        run: python3 ${{ matrix.runner }} --case ${{ matrix.case }} --shard ${{ matrix.shard }}
+      - name: Upload refutation diagnostics
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: refutations-${{ matrix.set }}-${{ strategy.job-index }}-${{ github.run_id }}
+          if-no-files-found: warn
+          retention-days: 14
+          path: |
+            target/m2-refutations/**
+            target/m3-evidence/t16-builder/refutations/**
+            !target/**/economy.jsonl
+  # T7, M2 and M3 need a real browser process, Trunk and wasm. The hosted runner has no GPU.
+  # Chrome blocks the software GL and Vulkan drivers, and with `--use-angle=vulkan` the WebGPU
+  # canvas is not in the compositor output: every screenshot is blank (run 43121618105, local
+  # ci-run134-t7-sw-base-1 with lavapipe). With ANGLE on Mesa GL (llvmpipe) and the blocklist off,
+  # the canvas shows (ci-run134-t7-sw-gl-1). WebGPU then runs on the SwiftShader adapter of Chrome.
+  # Known limits of this software path (4 cores, local runs): about 1 frame per second for each
+  # of two windows, and the Chrome GPU process grows to about 1.1 GB and stops with exit code 133
+  # after 4 to 5 minutes of M3 (ci-run134-m3-sw-gl-3 and -5).
+  #
+  # The browser work runs as parallel jobs of one matrix, so a red step does not hide the result
+  # of the next suite. Hosted run 43121618105 spent 27 minutes on the T7 step alone (trunk install
+  # 8 min, server 4.5 min, wasm 10.7 min, wasm-opt 4.4 min). Each browser refutation case builds
+  # the planted and the restored client again, so each case has its own job: in one job the eight
+  # cases cannot fit the 360-minute limit of GitHub. The `m2` job checks that this matrix lists
+  # every browser case of tests/m2/refutations.json.
   browser:
+    name: browser ${{ matrix.suite }} ${{ matrix.case }}
     runs-on: ubuntu-latest
     # A hang must not hold a hosted runner for hours (RUN123 M3).
     timeout-minutes: 340
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - suite: t7-m3
+          - suite: m2
+          - { suite: refutation, case: E2-browser-hardcoded-label }
+          - { suite: refutation, case: E9-browser-missing-button }
+          - { suite: refutation, case: E9-browser-debug-only-ui }
+          - { suite: refutation, case: E9-browser-missing-output-mesh }
+          - { suite: refutation, case: E9-browser-position-only-snapshot }
+          - { suite: refutation, case: E9-browser-unbounded-buffer }
+          - { suite: refutation, case: E9-browser-duplicate-outstanding }
+          - { suite: refutation, case: E9-browser-ignore-midtrace-rearm }
+          - { suite: refutation, case: E9-browser-convergence-owner-offset }
     env:
       CARGO_BUILD_JOBS: 2
       CARGO_TARGET_DIR: ${{ github.workspace }}/target/m3-t16
@@ -72,8 +150,12 @@ jobs:
       M2_CARGO_TARGET_DIR: ${{ github.workspace }}/target/m3-t16
       M2_BUILD_JOBS: "2"
       M2_HEADLESS: "false"
-      M2_CHROME_ARGS_JSON: '["--enable-gpu","--use-angle=vulkan","--enable-features=Vulkan","--enable-unsafe-webgpu"]'
+      M2_CHROME_ARGS_JSON: '["--enable-gpu","--use-angle=gl","--enable-unsafe-webgpu","--ignore-gpu-blocklist"]'
       M2_IGNORE_DEFAULT_ARGS_JSON: '["--enable-unsafe-swiftshader"]'
+      # Opt-in wide limit of the M2 public-convergence wait (tests/browser/m2-oracle.js
+      # convergenceLimits). Without this value the oracle keeps its gate limit of 10 s. On the
+      # software renderer each window shows about 1 frame per second, so the hosted legs allow 180 s.
+      TURTS_M2_CONVERGENCE_LIMIT_MS: "180000"
       TURTS_REFUTATION_EVIDENCE_DIR: ${{ github.workspace }}/target/m3-evidence/t16-builder/refutations/browser
       TURTS_REFUTATION_BUILD_ROOT: ${{ github.workspace }}/target/m3-t16/refutations/browser-build
     steps:
@@ -101,7 +183,7 @@ jobs:
           path: ~/.cache/trunk
           key: trunk-tools-${{ runner.os }}-${{ hashFiles('crates/turts_client_web/Trunk.toml') }}
       - name: Install browser and Bevy system libraries
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends pkg-config libx11-dev libasound2-dev libudev-dev libxkbcommon-x11-0 libwayland-dev libxkbcommon-dev brotli xvfb mesa-vulkan-drivers libvulkan1
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends pkg-config libx11-dev libasound2-dev libudev-dev libxkbcommon-x11-0 libwayland-dev libxkbcommon-dev brotli xvfb libgl1-mesa-dri mesa-vulkan-drivers libvulkan1
       - uses: actions/setup-node@v4
         with:
           node-version: 20
@@ -109,36 +191,56 @@ jobs:
         run: npm ci
         working-directory: tests/browser
       - name: Browser projection and audit helper tests
+        if: matrix.suite == 't7-m3'
         run: node --test tests/browser/m2-projection.test.js tests/browser/m2-audit.test.js tests/browser/t7-oracle.test.js tests/browser/t7-driver.test.js tests/browser/m3-oracle.test.js tests/browser/pt1-oracle.test.js tests/browser/m2-oracle.test.js
+      # The browser steps use the Chrome profile of the job env.
       - name: T7 browser join
-        env:
-          M2_HEADLESS: "false"
-          M2_CHROME_ARGS_JSON: '["--enable-gpu","--use-angle=vulkan","--enable-features=Vulkan","--enable-unsafe-webgpu"]'
-          M2_IGNORE_DEFAULT_ARGS_JSON: '["--enable-unsafe-swiftshader"]'
+        if: matrix.suite == 't7-m3'
         run: bash scripts/t7.sh
-      - name: M2 browser proof (base, haul, acme, cedar)
-        run: bash scripts/m2-browser.sh
-      - name: M3 browser controls (F10, private Xvfb/Vulkan)
-        env:
-          M2_HEADLESS: "false"
-          M2_CHROME_ARGS_JSON: '["--enable-gpu","--use-angle=vulkan","--enable-features=Vulkan","--enable-unsafe-webgpu"]'
-          M2_IGNORE_DEFAULT_ARGS_JSON: '["--enable-unsafe-swiftshader"]'
+      # M3 runs also after a red T7, so one run shows both results.
+      - name: M3 browser controls (F10, private Xvfb, software WebGPU)
+        if: ${{ matrix.suite == 't7-m3' && !cancelled() }}
         run: bash scripts/m3-browser.sh
-      - name: M2 browser-only semantic refutations
-        run: bash scripts/m2-refutations.sh --case ci-browser
+      - name: The refutation matrix lists every browser refutation case
+        if: matrix.suite == 'm2'
+        run: |
+          python3 - <<'EOF'
+          import json, pathlib, re
+          cases = sorted(case["id"] for case in json.loads(pathlib.Path("tests/m2/refutations.json").read_text()) if case.get("runtime") == "browser")
+          # A leg is a whole line `- { suite: refutation, case: ID }`. A comment line is not a leg.
+          leg = re.compile(r"\s*- \{ suite: refutation, case: ([A-Za-z0-9_.-]+) \}\s*(#.*)?")
+          lines = pathlib.Path(".github/workflows/ci.yml").read_text().splitlines()
+          listed = sorted(match.group(1) for match in map(leg.fullmatch, lines) if match)
+          if cases != listed:
+              missing, extra = sorted(set(cases) - set(listed)), sorted(set(listed) - set(cases))
+              duplicated = sorted({case for case in listed if listed.count(case) > 1})
+              raise SystemExit(f"browser refutation matrix differs from tests/m2/refutations.json: missing {missing}, extra {extra}, duplicated {duplicated}")
+          print(f"{len(cases)} browser refutation cases, each in the matrix")
+          EOF
+      - name: M2 browser proof (base, haul, acme, cedar)
+        if: matrix.suite == 'm2'
+        run: bash scripts/m2-browser.sh
+      - name: M2 browser-only semantic refutation ${{ matrix.case }}
+        if: matrix.suite == 'refutation'
+        run: bash scripts/m2-refutations.sh --case ${{ matrix.case }}
       - name: Upload browser, T7, and refutation diagnostics
         if: ${{ always() }}
         uses: actions/upload-artifact@v4
         with:
-          name: m2-browser-and-refutations-${{ github.run_id }}
+          name: browser-${{ matrix.suite }}${{ matrix.case && format('-{0}', matrix.case) || '' }}-${{ github.run_id }}
           if-no-files-found: warn
           retention-days: 14
+          # Every run folder of the browser steps: T7 and M3 under t16-builder, M2 under
+          # m2-browser/runs, the refutations under t16-builder/refutations. The M3 economy log
+          # is 1.5 to 3.3 GB (ci-run134-m3-sw-gl-1), so the upload leaves out the economy logs.
           path: |
             target/m2-browser/runs/**
             target/m2-refutations/**
             target/t7/**
             target/task16-evidence/**
             target/m3-evidence/t16-builder/**
+            !target/**/economy.jsonl
+            !target/**/economy-audit-private.jsonl
   agents:
     runs-on: ubuntu-latest
     # A hang must not hold a hosted runner for hours (RUN123 M3).
