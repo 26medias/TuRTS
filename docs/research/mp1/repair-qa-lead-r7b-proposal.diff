@@ -1,0 +1,11 @@
+--- tree/scripts/qa/completeness.py	2026-11-11 23:19:03.000000000 -0500
++++ completeness_proposed.py	2026-11-11 23:22:01.951962846 -0500
+@@ -121,6 +121,8 @@
+                 target = ROOT / disposition.split(":", 1)[1]
+                 if not target.exists():
+                     red.append(diagnostic("R7", file_name, item, "done path does not exist: {}".format(disposition.split(":", 1)[1])))
++                elif not target.is_file() or test in ("", "-", "none") or test not in target.read_text(encoding="utf-8", errors="replace"):
++                    red.append(diagnostic("R7", file_name, item, "done evidence {} does not name test {!r}".format(disposition.split(":", 1)[1], test)))
+         for item in sorted(core):
+             if item not in rows:
+                 red.append(diagnostic("R1", file_name, item, "CORE item has no coverage row"))
