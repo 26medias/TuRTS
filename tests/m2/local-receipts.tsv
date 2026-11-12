@@ -1,0 +1,19 @@
+# Receipts of local GPU runs of the local-only cases (tests/m2/local-only.tsv). Lines that start with # are comments.
+# Check: python3 tests/m2/local_only.py --receipts --head <sha>, run at the checked-out commit <sha>.
+# It is a step of the local gate and of the final MC regression. It is never a step of hosted CI: a hosted runner has no
+# GPU, so no receipt can come from it, and the check would be red there by design.
+#
+# Freshness is by unchanged inputs. A row is stale when `git diff --name-only <head_sha>..<head>` lists a file under:
+#   tests/m2/ (except this file)   tests/browser/   scripts/m2-*.sh   mods/
+#   crates/turts_client/  crates/turts_sim/  crates/turts_net_protocol/  crates/turts_net_lightyear/
+#   crates/turts_server/  crates/turts_pack/  crates/turts_mod_runtime/  crates/turts_mod_api/
+# A change outside that list (docs, vault, other crates, ci.yml) does not make a row stale.
+# The latest row of a case counts. Every row of tests/m2/local-only.tsv needs one.
+#
+# Columns: case; head_sha (40 hex digits, the commit that the run used); label (the folder target/mc-evidence/<label>/ of the run);
+# result (`pass`, or for the refutation leg `red-and-restored-green`); date (YYYY-MM-DD); receipt_sha256 (sha256 of
+# target/mc-evidence/<label>/receipt.json). When that folder exists on the machine, the check recomputes the hash, compares
+# expected_head and command_exit, and looks for the pass lines in command.log (`M2_CASE_PASS <case>`; for the leg
+# `<case>: RED assertion=` and `<case>: RESTORED GREEN`).
+# There is no local run for any case at this head yet, so the file has no rows and the check is red. That is correct.
+case	head_sha	label	result	date	receipt_sha256

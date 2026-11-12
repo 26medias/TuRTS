@@ -607,7 +607,9 @@ async function judgeCase(view, params) {
         const record = JSON.parse(await view.serverFile("m2-ingest-private.json"));
         const records = await readAuditRecords(view.serverLines("economy-audit-private.jsonl"));
         if (caseId.endsWith("recovery")) return judgeRecovery(view, record, records, joined);
-        return judgeLoss(view, input, checkpoints, at, caseId.slice("E9-browser-base-loss-".length), record, records, joined);
+        const lossResult = await judgeLoss(view, input, checkpoints, at, caseId.slice("E9-browser-base-loss-".length), record, records, joined);
+        if (recipe) checkRecipeDuration();
+        return lossResult;
     }
     if (caseId.endsWith("-public-convergence")) return judgeConvergence(view, at, joined, packageName);
     await judgeSelection(view, at, joined, packageName);

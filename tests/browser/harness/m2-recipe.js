@@ -11,6 +11,8 @@ const RECIPE_FILES = {
     "E9-browser-base-economy": { package: "base", file: "production/rifleman.ron" },
     "E9-browser-haul-economy": { package: "haul", file: "production/worker.ron" },
     "E9-browser-cedar-economy": { package: "cedar", file: "production/hire.ron" },
+    // A loss case with a per-case factor (tests/m2/recipe_duration.py PER_CASE_RECIPES).
+    "E9-browser-base-loss-refund": { package: "base", file: "production/rifleman.ron" },
 };
 
 function recipeFor(caseId) {

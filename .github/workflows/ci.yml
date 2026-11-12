@@ -137,7 +137,16 @@ jobs:
   #   oracle needs every job of the received world to have the packed duration (tests/m2/recipe_duration.py,
   #   tests/browser/harness/m2-recipe.js). The local GPU run does not set it and keeps the true times.
   #   The base case waits 15 shots (about 60 s hosted) for the first rifleman, so 20 s fits in that wait.
-  #   Whether these cases pass on the hosted runner is NOT TRACED until a run after this change.
+  #   Result in hosted run 43228094477 (first run with the x4 recipe): the three cases pass. Gaps from the second
+  #   Produce click to the Cancel click: base 8.2 s (recipe 20 s, margin 2.4), haul 6.7 s (24 s, 3.6), cedar 9.2 s
+  #   (24 s, 2.6). The plants of missing-output-mesh, missing-button and hardcoded-label fail for their own reason.
+  # - Loss case E9-browser-base-loss-refund (same run: red, `refund real JobId 1 must appear in rendered queue text`).
+  #   The loss cases keep the true recipe, and the 5 s job was gone first: Produce click 15.2 s, job done at about
+  #   21.4 s (elapsed 47 of 100 ticks at 19.2 s), queue shot at 22.5 s (7.3 s after the click, queue empty), first
+  #   enabled Cancel screenshot at 27.3 s to 27.8 s (12.1 s to 12.6 s after the click; 13.5 s is the need with the click).
+  #   M2_RECIPE_DURATION_SCALE_CASES=E9-browser-base-loss-refund=5 gives that one case a 25 s recipe (margin 1.9; x4
+  #   would give 1.5). The general factor never applies to it, and no other loss case or recovery case is scaled. The
+  #   50 % refund of a running job and the 10 s drop wait are unchanged. Hosted result of this factor: NOT TRACED.
   # - Public-convergence cases (base, haul, acme, cedar; the refutation leg E9-browser-convergence-owner-offset
   #   uses the base one). Each window shows a new tick only every 28 ticks and the two windows are 16 ticks out
   #   of phase, so they share no tick (0 shared ticks in 1651 and 1656 polls, 180 s). A longer limit cannot
@@ -179,6 +188,8 @@ jobs:
       M2_IGNORE_DEFAULT_ARGS_JSON: '["--enable-unsafe-swiftshader"]'
       # Economy cases only: 4 times the recipe time in the packed copy (see the comment above the job).
       M2_RECIPE_DURATION_SCALE: "4"
+      # One loss case, same method, own factor (see the comment above the job).
+      M2_RECIPE_DURATION_SCALE_CASES: "E9-browser-base-loss-refund=5"
       # Cases that need a real GPU and are not run here (see the comment above the job). Each one needs
       # a row in tests/m2/local-only.tsv. Keep this a plain quoted comma list.
       M2_LOCAL_ONLY_CASES: "E9-browser-base-public-convergence,E9-browser-haul-public-convergence,E9-browser-acme-public-convergence,E9-browser-cedar-public-convergence,E9-browser-convergence-owner-offset"
