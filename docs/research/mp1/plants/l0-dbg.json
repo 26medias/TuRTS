@@ -260,7 +260,7 @@
       {
         "file": "tests/browser/m2-oracle.js",
         "edit": {
-          "old": "await sleep(DEBUG_CAP_MS + 20 + (round * 17) % 50);",
+          "old": "await sleep(limits.poll_ms + (round * 17) % 50);",
           "new": "await sleep(50);"
         }
       }
@@ -274,7 +274,7 @@
     "headed": false,
     "expected_red": "each wait is longer than the 250 ms cap",
     "exit": 1,
-    "commit": "08be01d"
+    "commit": "961357e"
   },
   {
     "row": "L0-DBG",
@@ -283,8 +283,8 @@
       {
         "file": "tests/browser/m2-oracle.js",
         "edit": {
-          "old": "const [debug0, debug1] = await Promise.all([view.bridge(\"turts_debug\", 1), view.bridge(\"turts_debug\", 2)]);",
-          "new": "const debug0 = await view.bridge(\"turts_debug\", 1);\n        const debug1 = await view.bridge(\"turts_debug\", 2);"
+          "old": "const debugs = await Promise.all([view.bridge(\"turts_debug\", 1), view.bridge(\"turts_debug\", 2)]);",
+          "new": "const debugs = [await view.bridge(\"turts_debug\", 1), await view.bridge(\"turts_debug\", 2)];"
         }
       }
     ],
@@ -297,7 +297,7 @@
     "headed": false,
     "expected_red": "+   'got1',",
     "exit": 1,
-    "commit": "08be01d"
+    "commit": "961357e"
   },
   {
     "row": "L0-DBG",
