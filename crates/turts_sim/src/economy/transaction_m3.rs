@@ -551,15 +551,17 @@ pub(crate) fn remove_unit(
         if let Some(state) = state
             && (state.last_target == Some(unit) || state.ordered_target_fired == Some(unit))
         {
+            // `last_target` goes to the owner as `WeaponRecord.last_target`, so it never names
+            // a removed unit, also for an ordered attacker (M3 design, check DANGLING). The
+            // order-completion evidence `ordered_target_fired` is sim-internal. It stays for an
+            // ordered attacker until `run_unit_attack` reads it on the next tick.
             let retained_for_order = ordered_attackers.contains(&id);
             let mut updated = state.clone();
-            if !retained_for_order {
-                if updated.last_target == Some(unit) {
-                    updated.last_target = None;
-                }
-                if updated.ordered_target_fired == Some(unit) {
-                    updated.ordered_target_fired = None;
-                }
+            if updated.last_target == Some(unit) {
+                updated.last_target = None;
+            }
+            if !retained_for_order && updated.ordered_target_fired == Some(unit) {
+                updated.ordered_target_fired = None;
             }
             if updated != *state {
                 tx.writes.weapons.insert(id, Some(updated));
