@@ -1,12 +1,11 @@
 //! Economy log audit.
 //!
-//! Two validators run side by side until task A1c of the pre-MP1 slice deletes the second:
-//! - the ledger audit (`validate_ledger`): record shape, refusals, and one file for each ledger
-//!   domain. Each rule holds on the log alone, whatever the movement model does. No rule
-//!   computes a decision of the simulation again (no path, no target choice, no timing model);
-//! - the replay validator (`replay.rs`, `validate_records`), which models the simulation again.
-//!
-//! `validate_side_by_side` runs the ledger audit first and returns its error first.
+//! One audit: the ledger audit (`validate_ledger`). It checks the record shape, the refusals, and
+//! one file for each ledger domain. Each rule holds on the log alone, whatever the movement model
+//! does. No rule computes a decision of the simulation again (no path, no target choice, no
+//! timing model). The replay validator, which modeled the simulation again, was deleted in task
+//! A1c of the pre-MP1 slice. Movement is checked by the movement tests and by the writer scan
+//! (`turts_checks/tests/movement_writers.rs`), not by the audit.
 //!
 //! The ledger audit reads each snapshot only through `turts_sim::LedgerAudit`, the ledger view of
 //! `AuditState` (`turts_sim/src/economy/ledger_view.rs`).
@@ -31,7 +30,6 @@ mod format;
 mod industry;
 mod inventories;
 mod production;
-mod replay;
 mod reservations;
 mod slots;
 
@@ -39,19 +37,13 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::io::{BufRead, BufReader};
 
 pub use format::EconomyLogRecord;
-pub use replay::validate_records;
 pub use turts_sim::{LedgerAudit, ledger_audit};
 
 use turts_sim::{
     AuditState, CommandAudit, EconomyEvent, OperationAudit, economy::transaction::AuditPhase,
 };
 
-/// Test hook: with `TURTS_AUDIT_REPLAY=off`, `validate_side_by_side` runs the ledger audit only.
-/// A fault case uses it to show that the ledger audit, and not the replay validator, finds a
-/// fault. Task A1c deletes it with the replay validator.
-pub const REPLAY_SWITCH: &str = "TURTS_AUDIT_REPLAY";
-
-/// Decode a JSONL economy log and validate it with both validators.
+/// Decode a JSONL economy log and validate it with the ledger audit.
 pub fn read_jsonl<R: BufRead>(input: R) -> Result<Vec<EconomyLogRecord>, String> {
     let mut records = Vec::new();
     for (index, line) in input.lines().enumerate() {
@@ -63,7 +55,7 @@ pub fn read_jsonl<R: BufRead>(input: R) -> Result<Vec<EconomyLogRecord>, String>
             .map_err(|error| format!("decode JSONL line {}: {error}", index + 1))?;
         records.push(record);
     }
-    validate_side_by_side(&records)?;
+    validate_ledger(&records)?;
     Ok(records)
 }
 
@@ -71,15 +63,6 @@ pub fn read_jsonl_file(path: impl AsRef<std::path::Path>) -> Result<Vec<EconomyL
     let file = std::fs::File::open(path.as_ref())
         .map_err(|error| format!("open {}: {error}", path.as_ref().display()))?;
     read_jsonl(BufReader::new(file))
-}
-
-/// Run the ledger audit, then the replay validator. The first error is returned.
-pub fn validate_side_by_side(records: &[EconomyLogRecord]) -> Result<(), String> {
-    validate_ledger(records)?;
-    if std::env::var(REPLAY_SWITCH).is_ok_and(|value| value == "off") {
-        return Ok(());
-    }
-    validate_records(records)
 }
 
 /// One state change that the domains check: an operation, the gap between two records, or the

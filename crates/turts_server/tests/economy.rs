@@ -690,7 +690,7 @@ fn decoded_moving_gatherer_replays_frozen_command_and_automatic_effect() {
         })
         .unwrap();
     tick_record.economy.tick += 1;
-    assert!(turts_audit::validate_side_by_side(&bad_tick_state).is_err());
+    assert!(turts_audit::validate_ledger(&bad_tick_state).is_err());
     let ledger = turts_audit::validate_ledger(&bad_tick_state).unwrap_err();
     assert!(
         ledger.starts_with("clock:"),
@@ -710,7 +710,7 @@ fn decoded_moving_gatherer_replays_frozen_command_and_automatic_effect() {
         })
         .unwrap();
     worker_inventory.items[0].on_hand += 1;
-    assert!(turts_audit::validate_side_by_side(&bad_economy_state).is_err());
+    assert!(turts_audit::validate_ledger(&bad_economy_state).is_err());
     let ledger = turts_audit::validate_ledger(&bad_economy_state).unwrap_err();
     assert!(
         ledger.starts_with("inventories:"),
@@ -726,7 +726,7 @@ fn decoded_moving_gatherer_replays_frozen_command_and_automatic_effect() {
         })
         .unwrap();
     tick_record.clear();
-    assert!(turts_audit::validate_side_by_side(&missing_event).is_err());
+    assert!(turts_audit::validate_ledger(&missing_event).is_err());
     let ledger = turts_audit::validate_ledger(&missing_event).unwrap_err();
     assert!(
         ledger.starts_with("clock: tick 24 publishes 0 events"),
@@ -904,7 +904,7 @@ fn e9_base_gather_trace_replays_node_depletion_in_process() {
         .and_then(|inventory| inventory.items.first_mut())
         .expect("the harvester has a cargo row");
     cargo.on_hand += 5;
-    let error = turts_audit::validate_side_by_side(&held).unwrap_err();
+    let error = turts_audit::validate_ledger(&held).unwrap_err();
     assert!(
         error.starts_with(
             "industry: unit 2 fails its gather order with node_depleted while it holds 5 cargo"
@@ -1046,7 +1046,7 @@ fn ord3_full_scene_blocked_gather_trip_validates() {
         balance_start + node_start,
         "no ore is created or destroyed: the balance gains the node start amount"
     );
-    turts_audit::validate_side_by_side(&records)
+    turts_audit::validate_ledger(&records)
         .unwrap_or_else(|error| panic!("the validator rejects the blocked gather wait: {error}"));
 }
 
@@ -1474,8 +1474,8 @@ fn order_input_matches_frozen(
         && order.group == 0
 }
 
-/// The records come from `read_complete_economy_log`, which validates the log one time; this
-/// function does not validate them again.
+/// The records are validated one time by the caller (`read_complete_economy_log` or
+/// `validate_ledger`); this function does not validate them again.
 fn replay_task4_order_log(
     records: &[turts_audit::EconomyLogRecord],
     expected_initial: &turts_sim::AuditState,
@@ -2419,14 +2419,23 @@ fn complete_prefix_end(records: &[turts_audit::EconomyLogRecord]) -> usize {
         .map_or(records.len(), |first| tail_start + first)
 }
 
-/// Read the complete prefix of a live economy log and validate it. The reader finds the
+/// Read the complete prefix of a live economy log, with no validation. The reader finds the
 /// incomplete tail from the record kinds; it reads no validator text.
-fn read_live_complete_tick_prefix(
+fn decode_live_complete_tick_prefix(
     path: &std::path::Path,
 ) -> Result<Vec<turts_audit::EconomyLogRecord>, String> {
     let mut records = decode_complete_jsonl_lines(path)?;
     records.truncate(complete_prefix_end(&records));
-    turts_audit::validate_side_by_side(&records)?;
+    Ok(records)
+}
+
+/// Read the complete prefix of a live economy log and validate it one time with the ledger
+/// audit.
+fn read_live_complete_tick_prefix(
+    path: &std::path::Path,
+) -> Result<Vec<turts_audit::EconomyLogRecord>, String> {
+    let records = decode_live_complete_tick_prefix(path)?;
+    turts_audit::validate_ledger(&records)?;
     Ok(records)
 }
 
@@ -3789,8 +3798,12 @@ fn run_e8_public_variant_process() {
         }
     }
 
+    // The log is decoded and not validated yet: the checks of this test come first, so the
+    // red of a refused command that writes state is the message of this test (E8 row
+    // `E8-mixed-cost-partial-commit`), and the ledger audit validates the same records after
+    // them.
     let log = economy_log_path(&server);
-    let records = read_complete_economy_log(log).unwrap();
+    let records = decode_live_complete_tick_prefix(log).unwrap();
     for frozen_command in frozen.iter().skip(1).take(5) {
         let audit = records
             .iter()
@@ -3826,6 +3839,8 @@ fn run_e8_public_variant_process() {
         );
         assert!(operation.events.is_empty());
     }
+    turts_audit::validate_ledger(&records)
+        .unwrap_or_else(|error| panic!("the ledger audit rejects the E8 process log: {error}"));
     replay_task4_order_log(&records, &initial, &frozen, &[(slot, player_id)]);
     let _economic_oracle = replay_public_log_with_model(
         log,
@@ -3898,15 +3913,11 @@ fn run_e8_public_variant_process() {
             .expect("captured zero-cost job exists");
         job.reservation = None;
     });
-    assert!(
-        turts_audit::validate_records(&missing_reservation)
-            .unwrap_err()
-            .contains("Produce changed state outside the catalog-derived job"),
-        "captured Produce without its empty reservation token is rejected"
-    );
     let ledger = turts_audit::validate_ledger(&missing_reservation).unwrap_err();
     assert!(
-        ledger.starts_with("reservations:"),
+        ledger.starts_with(&format!(
+            "reservations: job {job_id} holds the reservation token None and the active claim Some({job_id})"
+        )),
         "the ledger reservations rule rejects a claim with no reservation token: {ledger}"
     );
 
@@ -3929,15 +3940,12 @@ fn run_e8_public_variant_process() {
             lines: vec![],
         };
     });
-    assert!(
-        turts_audit::validate_records(&mismatched_token)
-            .unwrap_err()
-            .contains("Produce changed state outside the catalog-derived job"),
-        "captured claim with a token for another JobId is rejected"
-    );
     let ledger = turts_audit::validate_ledger(&mismatched_token).unwrap_err();
     assert!(
-        ledger.starts_with("reservations:"),
+        ledger.starts_with(&format!(
+            "reservations: active claim {job_id} holds the token of job {}",
+            job_id + 1
+        )),
         "the ledger reservations rule rejects a claim token of another job: {ledger}"
     );
 
@@ -3960,15 +3968,11 @@ fn run_e8_public_variant_process() {
             lines: vec![],
         };
     });
-    assert!(
-        turts_audit::validate_records(&leaked_claim)
-            .unwrap_err()
-            .contains("Cancel changed state outside requested job removal"),
-        "captured Cancel that leaks the empty claim is rejected"
-    );
     let ledger = turts_audit::validate_ledger(&leaked_claim).unwrap_err();
     assert!(
-        ledger.starts_with("reservations:"),
+        ledger.starts_with(&format!(
+            "reservations: active claim {job_id} names no queued job after"
+        )),
         "the ledger reservations rule rejects a claim that stays active after Cancel: {ledger}"
     );
 }

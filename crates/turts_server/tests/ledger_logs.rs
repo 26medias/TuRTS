@@ -1,6 +1,6 @@
 //! Real economy logs for the ledger audit (pre-MP1 task A1b). Each test runs a package in
 //! process, captures every record that the server sink writes (`Initial`, command boundaries,
-//! operations, `Tick`), and gives the log to the validators. The fault cases of
+//! operations, `Tick`), and gives the log to the ledger audit. The fault cases of
 //! `tests/m2/refutations.json` plant a defect in the simulation and run these tests.
 
 use std::path::PathBuf;
@@ -204,12 +204,6 @@ fn forge_log_passes_the_ledger_audit() {
         .unwrap_or_else(|error| panic!("the ledger audit rejects the Forge log: {error}"));
 }
 
-#[test]
-fn forge_log_passes_both_validators() {
-    turts_audit::validate_side_by_side(forge_log())
-        .unwrap_or_else(|error| panic!("a validator rejects the Forge log: {error}"));
-}
-
 /// The base package: both harvesters gather, slot 0 trains two riflemen (a slot balance charge
 /// on queue) and cancels the second while it waits (a full refund), and slot 1 asks for a
 /// harvester that it cannot pay (a refused command). The first rifleman spawns. The log is made
@@ -310,9 +304,9 @@ fn base_log_holds_charges_refunds_refusals_and_a_spawn() {
 }
 
 #[test]
-fn base_log_passes_both_validators() {
-    turts_audit::validate_side_by_side(base_log())
-        .unwrap_or_else(|error| panic!("a validator rejects the base log: {error}"));
+fn base_log_passes_the_ledger_audit() {
+    turts_audit::validate_ledger(base_log())
+        .unwrap_or_else(|error| panic!("the ledger audit rejects the base log: {error}"));
 }
 
 /// A refused command must leave the pending move queues unchanged. The sim names them "audited

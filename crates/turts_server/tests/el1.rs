@@ -1,5 +1,7 @@
-//! Task22 EL1 process acceptance. The in-process JSONL reader is the production validator used
-//! by the server's `--economy-log` sink; this test validates its captured records, not a replica.
+//! Task22 EL1 process acceptance. The ledger audit (`turts_audit::read_jsonl_file`) validates the
+//! log of the server's `--economy-log` sink, and this test asserts that it accepts each tick and
+//! that the run records the log bytes (pre-MP1 A1c: the replay validator and its movement-input
+//! rows are void).
 
 mod support;
 

@@ -564,12 +564,12 @@ fn queued_group_attack_spreads_and_strictly_replays() {
         .map(|line| serde_json::from_slice(line).expect("parse audit log record"))
         .collect::<Vec<turts_audit::EconomyLogRecord>>();
     assert!(
-        turts_audit::validate_side_by_side(&records).is_ok(),
+        turts_audit::validate_ledger(&records).is_ok(),
         "queued Point Attack shared-spread operations strictly replay: {:?}",
-        turts_audit::validate_side_by_side(&records)
+        turts_audit::validate_ledger(&records)
     );
 
-    // The outcome from the order log, with no help from the replay validator. Each member
+    // The outcome from the order log, with no help from the ledger audit. Each member
     // first has the order as its current order at some completed tick. At that tick the unit
     // has a destination (`move_target`). The Move goes to the order point (6,6) and the queued
     // Attack goes to its order point (20,5). The group spread puts each member on its own
@@ -789,9 +789,9 @@ fn queued_unit_attack_activates_and_strictly_replays() {
         .map(|line| serde_json::from_slice(line).expect("parse audit log record"))
         .collect::<Vec<turts_audit::EconomyLogRecord>>();
     assert!(
-        turts_audit::validate_side_by_side(&records).is_ok(),
+        turts_audit::validate_ledger(&records).is_ok(),
         "queued Unit Attack activation and target completion strictly replay: {:?}",
-        turts_audit::validate_side_by_side(&records)
+        turts_audit::validate_ledger(&records)
     );
 
     // Pursuit and range, from the order log with no validator: every shot of unit 1 at its focus
@@ -952,9 +952,9 @@ fn point_attack_switches_to_another_eligible_target_and_strictly_replays() {
         .map(|line| serde_json::from_slice(line).expect("parse audit log record"))
         .collect::<Vec<turts_audit::EconomyLogRecord>>();
     assert!(
-        turts_audit::validate_side_by_side(&records).is_ok(),
+        turts_audit::validate_ledger(&records).is_ok(),
         "target switch remains paused and strictly replays: {:?}",
-        turts_audit::validate_side_by_side(&records)
+        turts_audit::validate_ledger(&records)
     );
 }
 
@@ -1069,9 +1069,9 @@ fn suppressed_order_cooldowns_advance_and_strictly_replay() {
         .map(|line| serde_json::from_slice(line).expect("parse audit log record"))
         .collect::<Vec<turts_audit::EconomyLogRecord>>();
     assert!(
-        turts_audit::validate_side_by_side(&records).is_ok(),
+        turts_audit::validate_ledger(&records).is_ok(),
         "suppressed authored cooldowns and prompt re-enable strictly replay: {:?}",
-        turts_audit::validate_side_by_side(&records)
+        turts_audit::validate_ledger(&records)
     );
 }
 
@@ -1217,9 +1217,9 @@ fn empty_ammo_attack_move_pause_replays(group: u32) {
         .map(|line| serde_json::from_slice(line).expect("parse audit log record"))
         .collect::<Vec<turts_audit::EconomyLogRecord>>();
     assert!(
-        turts_audit::validate_side_by_side(&records).is_ok(),
+        turts_audit::validate_ledger(&records).is_ok(),
         "no-ammo acquisition and attack-move pause strictly replay: {:?}",
-        turts_audit::validate_side_by_side(&records)
+        turts_audit::validate_ledger(&records)
     );
 }
 
