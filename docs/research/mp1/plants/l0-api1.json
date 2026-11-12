@@ -1,0 +1,290 @@
+[
+    {
+        "row": "VAL1 plant (1)",
+        "plant": "a: the `armour` row is removed from VERSION_TABLE; a ^0.2.3 package with armour packs",
+        "files": [
+            {
+                "file": "crates/turts_mod_runtime/src/version_table.rs",
+                "edit": {
+                    "old": "    raw_0_2_4(\"armour\", RawGroup::Units, &[\"armour\"]),\n",
+                    "new": ""
+                }
+            }
+        ],
+        "command": [
+            "cargo",
+            "test",
+            "-p",
+            "turts_mod_runtime",
+            "--locked",
+            "--test",
+            "api_0_2_4",
+            "u1_armour"
+        ],
+        "env": {},
+        "headed": false,
+        "expected_red": "armour: the package packs, a refusal was expected",
+        "exit": 101,
+        "expected_selected": 1,
+        "commit": "967a786"
+    },
+    {
+        "row": "VAL1 plant (6)",
+        "plant": "b: the API bump is removed (ENGINE_API_VERSION 0.2.3); a ^0.2.4 package is refused for the API",
+        "files": [
+            {
+                "file": "crates/turts_mod_api/src/lib.rs",
+                "edit": {
+                    "old": "pub const ENGINE_API_VERSION: &str = \"0.2.4\";",
+                    "new": "pub const ENGINE_API_VERSION: &str = \"0.2.3\";"
+                }
+            }
+        ],
+        "command": [
+            "cargo",
+            "test",
+            "-p",
+            "turts_mod_runtime",
+            "--locked",
+            "--test",
+            "api_0_2_4",
+            "a_package_with_no_new_feature_is_accepted_at_both_requirements"
+        ],
+        "env": {},
+        "headed": false,
+        "expected_red": "does not accept engine `0.2.3`",
+        "exit": 101,
+        "expected_selected": 1,
+        "commit": "967a786"
+    },
+    {
+        "row": "L0-API1",
+        "plant": "c: Written font loses its skip_serializing_if; the flag does not survive a round trip",
+        "files": [
+            {
+                "file": "crates/turts_mod_api/src/interface.rs",
+                "edit": {
+                    "old": "        #[serde(default, skip_serializing_if = \"Written::is_unwritten\")]\n        font: Written<Option<String>>,",
+                    "new": "        #[serde(default)]\n        font: Written<Option<String>>,"
+                }
+            }
+        ],
+        "command": [
+            "cargo",
+            "test",
+            "-p",
+            "turts_mod_api",
+            "--locked",
+            "--test",
+            "api_0_2_4",
+            "h13_button_font_and_size"
+        ],
+        "env": {},
+        "headed": false,
+        "expected_red": "the value changed in a round trip",
+        "exit": 101,
+        "expected_selected": 1,
+        "commit": "967a786"
+    },
+    {
+        "row": "L0-API1",
+        "plant": "d: the L-CON1 `constructor` line is removed from UNBUILT_FEATURES; a ^0.2.4 package with constructor packs",
+        "files": [
+            {
+                "file": "crates/turts_mod_runtime/src/unbuilt.rs",
+                "edit": {
+                    "old": "    line(\"constructor\", \"L-CON1\"),\n",
+                    "new": ""
+                }
+            }
+        ],
+        "command": [
+            "cargo",
+            "test",
+            "-p",
+            "turts_mod_runtime",
+            "--locked",
+            "--test",
+            "api_0_2_4",
+            "k1_constructor"
+        ],
+        "env": {},
+        "headed": false,
+        "expected_red": "constructor: the package packs, a refusal was expected",
+        "exit": 101,
+        "expected_selected": 1,
+        "commit": "967a786"
+    },
+    {
+        "row": "L0-API1",
+        "plant": "e: the edition gate of check_unbuilt is removed; a ^0.2.3 package with {unit} is refused as unbuilt",
+        "files": [
+            {
+                "file": "crates/turts_mod_runtime/src/unbuilt.rs",
+                "edit": {
+                    "old": "    if !is_edition_0_2_4(&manifest.engine_api) {\n        return Ok(());\n    }\n",
+                    "new": ""
+                }
+            }
+        ],
+        "command": [
+            "cargo",
+            "test",
+            "-p",
+            "turts_mod_runtime",
+            "--locked",
+            "--test",
+            "api_0_2_4",
+            "h17_placeholder_is_a_use_in_the_edition_0_2_4_only"
+        ],
+        "env": {},
+        "headed": false,
+        "expected_red": "edition 0.2.3: `{unit}` is text, not a placeholder",
+        "exit": 101,
+        "expected_selected": 1,
+        "commit": "967a786"
+    },
+    {
+        "row": "L0-API1",
+        "plant": "f: the server path reads the visual files (rows_for ignores the presentation split)",
+        "files": [
+            {
+                "file": "crates/turts_mod_runtime/src/version_table.rs",
+                "edit": {
+                    "old": "        .filter(|row| row.detect.is_presentation() == presentation)\n",
+                    "new": "        .filter(|row| row.detect.is_presentation() == presentation || !presentation)\n"
+                }
+            }
+        ],
+        "command": [
+            "cargo",
+            "test",
+            "-p",
+            "turts_pack",
+            "--locked",
+            "--test",
+            "economy_boot",
+            "server_boot_ignores_visual_bytes_while_client_validation_rejects_them"
+        ],
+        "env": {},
+        "headed": false,
+        "expected_red": "server does not read visuals",
+        "exit": 101,
+        "expected_selected": 1,
+        "commit": "967a786"
+    },
+    {
+        "row": "L0-API1",
+        "plant": "g: the sim adapter maps Ally to the Enemy relation",
+        "files": [
+            {
+                "file": "crates/turts_sim/src/rules_adapter.rs",
+                "edit": {
+                    "old": "        SlotRelation::Ally => relation::Relation::Ally,\n",
+                    "new": "        SlotRelation::Ally => relation::Relation::Enemy,\n"
+                }
+            }
+        ],
+        "command": [
+            "cargo",
+            "test",
+            "-p",
+            "turts_sim",
+            "--locked",
+            "--lib",
+            "rules_adapter::tests::every_filter_maps_to_its_own_relation_and_holds_as_the_rule_says"
+        ],
+        "env": {},
+        "headed": false,
+        "expected_red": "left: Enemy",
+        "exit": 101,
+        "expected_selected": 1,
+        "commit": "967a786"
+    },
+    {
+        "row": "L0-API1",
+        "plant": "h: gather.waiting.blocked is removed from STATE_KEYS",
+        "files": [
+            {
+                "file": "crates/turts_mod_api/src/keys.rs",
+                "edit": {
+                    "old": "    \"gather.waiting.blocked\",\n];",
+                    "new": "];"
+                }
+            }
+        ],
+        "command": [
+            "cargo",
+            "test",
+            "-p",
+            "turts_mod_api",
+            "--locked",
+            "--lib",
+            "keys::tests::the_lists_have_the_counts_of_the_design"
+        ],
+        "env": {},
+        "headed": false,
+        "expected_red": "design 6.10: 22 listed + gather.waiting.blocked",
+        "exit": 101,
+        "expected_selected": 1,
+        "commit": "967a786"
+    },
+    {
+        "row": "L0-API1",
+        "plant": "i: the `*` (any key of a map) step of the raw path walk is removed; `units.*.role` is not found",
+        "files": [
+            {
+                "file": "crates/turts_mod_runtime/src/raw_presence.rs",
+                "edit": {
+                    "old": "            if *first == ANY_KEY {\n                return has_path(child, rest);\n            }\n",
+                    "new": ""
+                }
+            }
+        ],
+        "command": [
+            "cargo",
+            "test",
+            "-p",
+            "turts_mod_runtime",
+            "--locked",
+            "--test",
+            "api_0_2_4",
+            "h19_role"
+        ],
+        "env": {},
+        "headed": false,
+        "expected_red": "role: the package packs, a refusal was expected",
+        "exit": 101,
+        "expected_selected": 1,
+        "commit": "967a786"
+    },
+    {
+        "row": "L0-API1",
+        "plant": "j: the raw order rules type drops the rally list",
+        "files": [
+            {
+                "file": "crates/turts_mod_runtime/src/archive.rs",
+                "edit": {
+                    "old": "        rally: raw.rally,\n",
+                    "new": "        rally: None,\n"
+                }
+            }
+        ],
+        "command": [
+            "cargo",
+            "test",
+            "-p",
+            "turts_mod_runtime",
+            "--locked",
+            "--test",
+            "api_0_2_4",
+            "the_order_rules_reader_keeps_the_rally_list"
+        ],
+        "env": {},
+        "headed": false,
+        "expected_red": "right: Some(1)",
+        "exit": 101,
+        "expected_selected": 1,
+        "commit": "967a786"
+    }
+]
