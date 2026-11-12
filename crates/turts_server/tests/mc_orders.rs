@@ -569,40 +569,49 @@ fn queued_group_attack_spreads_and_strictly_replays() {
         turts_audit::validate_records(&records)
     );
 
-    // The outcome from the order log, with no help from the replay validator. The Move
-    // dispatches both members into one pool with two different slots. After the Move, the
-    // queued Attack dispatches each member again, to a new pool and to different slots.
-    let move_slots = first_logged_pool_slots(&records, &members, "audit:move");
-    let rush_slots = first_logged_pool_slots(&records, &members, "audit:rush");
-    for (order, slots) in [("audit:move", &move_slots), ("audit:rush", &rush_slots)] {
+    // The outcome from the order log, with no help from the replay validator. Each member
+    // first has the order as its current order at some completed tick. At that tick the unit
+    // has a destination (`move_target`). The Move goes to the order point (6,6) and the queued
+    // Attack goes to its order point (20,5). The group spread puts each member on its own
+    // slot of a hex pool around the order point. The pool holds `members + max(6,
+    // ceil(members/4))` slots, which is 8 slots for 2 members. So every slot is within two
+    // rings of the order point (`crates/turts_sim/src/movement.rs:274-276`: spacing is
+    // `2 * radius + 0.1`, and the slot count; `:293`: slot zero is the order point).
+    let Footprint::Circle { radius } =
+        catalog.units[&ContentId::parse("audit:shooter").unwrap()].footprint;
+    let spread_reach = 2.0 * (2.0 * radius + 0.1);
+    for (order, point) in [
+        ("audit:move", bevy_math::Vec2::new(6.0, 6.0)),
+        ("audit:rush", bevy_math::Vec2::new(20.0, 5.0)),
+    ] {
+        let destinations = first_logged_destinations(&records, &members, order);
         assert_eq!(
-            slots.len(),
+            destinations.len(),
             members.len(),
-            "{order} dispatches every member into a pool: {slots:?}"
+            "{order} gives every member a destination: {destinations:?}"
         );
+        for (unit, destination) in &destinations {
+            assert!(
+                destination.distance(point) <= spread_reach,
+                "{order} sends unit {unit} to {destination:?}, more than {spread_reach} from \
+                 the order point {point:?}"
+            );
+        }
         assert_ne!(
-            slots[0].1, slots[1].1,
-            "{order} spreads its members to different slots: {slots:?}"
+            destinations[0].1, destinations[1].1,
+            "{order} spreads its members to different destinations: {destinations:?}"
         );
     }
-    assert_eq!(
-        move_slots[0].0, move_slots[1].0,
-        "the Move puts both members into one pool: {move_slots:?}"
-    );
-    assert!(
-        rush_slots.iter().all(|(pool, _)| *pool != move_slots[0].0),
-        "the queued Attack takes a new pool after the Move: {move_slots:?} {rush_slots:?}"
-    );
 }
 
-/// For each unit, the pool id and the slot at the first completed tick of the order log where
-/// the unit has the current order `order` and a movement pool. A unit with no such tick is
+/// For each unit, the destination (`move_target`) at the first completed tick of the order log
+/// where the unit has the current order `order` and a destination. A unit with no such tick is
 /// left out.
-fn first_logged_pool_slots(
+fn first_logged_destinations(
     records: &[turts_audit::EconomyLogRecord],
     units: &[u32],
     order: &str,
-) -> Vec<(u64, bevy_math::Vec2)> {
+) -> Vec<(u32, bevy_math::Vec2)> {
     units
         .iter()
         .filter_map(|unit_id| {
@@ -620,11 +629,13 @@ fn first_logged_pool_slots(
                 if current.order.to_string() != order {
                     return None;
                 }
-                state
-                    .movement_progress
+                let target = state
+                    .raw_units
                     .iter()
-                    .find(|row| row.unit_id == *unit_id)
-                    .map(|row| (row.progress.pool_id, row.progress.slot))
+                    .find(|row| row.unit_id == *unit_id)?
+                    .move_target
+                    .as_ref()?;
+                Some((*unit_id, bevy_math::Vec2::new(target.x, target.y)))
             })
         })
         .collect()

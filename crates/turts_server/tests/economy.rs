@@ -50,49 +50,209 @@ fn advanced_clock(state: &turts_sim::AuditState, tick: u32) -> turts_sim::AuditS
     advanced
 }
 
-#[test]
-fn live_audit_reader_ignores_only_unterminated_tail_and_waits_for_tick() {
-    use economylog::EconomyLogWriter;
-    use std::io::Write;
-    use std::time::{Duration, SystemTime, UNIX_EPOCH};
-    use turts_audit::EconomyLogRecord;
+/// The bytes of a three-tick economy log that the real server sink writes
+/// (`EconomyLogSink::create` and `capture_completed_tick`, `economylog.rs`). A change of the
+/// order that the sink writes its records in changes these bytes, so a test that reads them
+/// goes red. Tick 2 holds one command. Tick 3 holds two commands.
+fn sink_fixture_log_bytes(label: &str) -> Vec<u8> {
     use turts_sim::{AuditTrail, economy::views::audit_state};
 
+    let path = std::env::temp_dir().join(format!(
+        "turts-sink-fixture-{label}-{}-{}.jsonl",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
     let mut app = economy_fixture_app_at(5);
     app.world_mut().resource_mut::<AuditTrail>().enable();
-    let mut writer = EconomyLogWriter::new(Vec::new());
     let initial = audit_state(app.world_mut());
-    writer
-        .write_initial(app.world().resource::<AuditTrail>(), initial)
-        .unwrap();
-    for tick_number in 1..=3 {
-        if tick_number == 2 {
-            // Tick 2 holds a command, so the log has a CommandBoundary before its Operation.
+    let sink =
+        economylog::EconomyLogSink::create(&path, app.world().resource::<AuditTrail>(), initial)
+            .unwrap();
+    app.insert_resource(sink);
+    let gather = |seq| turts_sim::Command {
+        slot: turts_sim::SlotId(0),
+        seq,
+        kind: turts_sim::CommandKind::Gather {
+            unit_id: 3,
+            node_id: turts_sim::NodeId(1),
+        },
+    };
+    let commands = [
+        vec![],
+        vec![gather(71)],
+        vec![
+            gather(72),
+            turts_sim::Command {
+                slot: turts_sim::SlotId(0),
+                seq: 73,
+                kind: turts_sim::CommandKind::MoveTo {
+                    unit_ids: vec![1],
+                    target: bevy_math::Vec2::new(2.0, 2.0),
+                },
+            },
+        ],
+    ];
+    for tick_commands in commands {
+        for command in tick_commands {
             app.world_mut()
                 .resource_mut::<turts_sim::CommandQueue>()
                 .0
-                .push_back(turts_sim::Command {
-                    slot: turts_sim::SlotId(0),
-                    seq: 71,
-                    kind: turts_sim::CommandKind::Gather {
-                        unit_id: 3,
-                        node_id: turts_sim::NodeId(1),
-                    },
-                });
+                .push_back(command);
         }
         app.update();
-        let mut trail = app.world_mut().resource_mut::<AuditTrail>();
-        for command in trail.drain_commands() {
-            writer.write_command(&trail, command).unwrap();
-        }
-        for operation in trail.drain_operations() {
-            writer.write_operation(&trail, operation).unwrap();
-        }
-        let tick = trail.drain_ticks().pop().expect("one completed test tick");
-        writer.write_tick(&trail, tick).unwrap();
+        economylog::capture_completed_tick(app.world_mut());
     }
-    writer.flush().unwrap();
-    let complete = writer.into_inner();
+    let error = app
+        .world()
+        .resource::<economylog::EconomyLogSink>()
+        .error
+        .clone();
+    assert_eq!(error, None, "the sink wrote every tick of the fixture log");
+    let bytes = std::fs::read(&path).unwrap();
+    std::fs::remove_file(path).unwrap();
+    assert_sink_record_order(&bytes);
+    bytes
+}
+
+/// The record order that the reader depends on: in each batch the command boundaries come
+/// before the operations (`economylog.rs`, `capture_completed_tick`). The check reads the
+/// record kinds only, with no help from the replay validator. The `Tick` record ends a batch.
+fn assert_sink_record_order(bytes: &[u8]) {
+    use turts_audit::EconomyLogRecord as R;
+
+    let mut seen_operation = false;
+    for line in bytes.split_inclusive(|byte| *byte == b'\n') {
+        match serde_json::from_slice::<R>(line).unwrap() {
+            R::CommandBoundary(_) => assert!(
+                !seen_operation,
+                "the sink writes a command boundary after an operation of the same batch"
+            ),
+            R::Operation(_) => seen_operation = true,
+            R::Tick { .. } => seen_operation = false,
+            _ => {}
+        }
+    }
+}
+
+/// The seven cases of `complete_prefix_end`. Each case cuts the fixture log of the real sink
+/// at a different place and names the expected prefix length. A case that fails is named in the
+/// message.
+#[test]
+fn complete_prefix_end_cuts_every_part_batch_of_the_tail() {
+    use turts_audit::EconomyLogRecord as R;
+
+    let bytes = sink_fixture_log_bytes("prefix-cases");
+    let records = bytes
+        .split_inclusive(|byte| *byte == b'\n')
+        .map(|line| serde_json::from_slice::<R>(line).unwrap())
+        .collect::<Vec<_>>();
+    let tick_at = records
+        .iter()
+        .enumerate()
+        .filter(|(_, record)| matches!(record, R::Tick { .. }))
+        .map(|(index, _)| index)
+        .collect::<Vec<_>>();
+    assert_eq!(tick_at.len(), 3, "the fixture log has three Tick records");
+    // The records of the tick-3 batch, before its Tick record.
+    let batch = &records[tick_at[1] + 1..tick_at[2]];
+    let boundaries = batch
+        .iter()
+        .filter(|record| matches!(record, R::CommandBoundary(_)))
+        .cloned()
+        .collect::<Vec<_>>();
+    let operations = batch
+        .iter()
+        .filter(|record| matches!(record, R::Operation(_)))
+        .cloned()
+        .collect::<Vec<_>>();
+    assert_eq!(boundaries.len(), 2, "tick 3 holds two command boundaries");
+    let R::CommandBoundary(first_boundary) = &boundaries[0] else {
+        unreachable!()
+    };
+    let first_id = first_boundary.operation_id;
+    let operations_of_first = operations
+        .iter()
+        .filter(|record| matches!(record, R::Operation(operation) if operation.operation_id == first_id))
+        .cloned()
+        .collect::<Vec<_>>();
+    assert_eq!(
+        operations_of_first.len(),
+        1,
+        "the first command has one Operation"
+    );
+    let through_tick_2 = records[..=tick_at[1]].to_vec();
+    let kept = through_tick_2.len();
+    let with = |extra: &[&[R]]| {
+        let mut log = through_tick_2.clone();
+        for part in extra {
+            log.extend(part.iter().cloned());
+        }
+        log
+    };
+
+    let mut span_boundary = first_boundary.clone();
+    span_boundary.operation_end_id = Some(first_id + 1);
+    let claim = R::Claim {
+        tick: 2,
+        player_id: 5,
+        slot: 0,
+    };
+    let cases = [
+        // A: two open boundaries.
+        ("A two open boundaries", with(&[&boundaries]), kept),
+        // B: the first boundary has its Operation, the second has none.
+        (
+            "B first closed, second open",
+            with(&[&boundaries, &operations_of_first]),
+            kept,
+        ),
+        // C: the whole batch is there, and the Tick record is not.
+        (
+            "C full batch, no Tick",
+            with(&[&boundaries, &operations]),
+            kept,
+        ),
+        // D: the tail is one Claim record: it stays.
+        (
+            "D claim only",
+            with(&[std::slice::from_ref(&claim)]),
+            kept + 1,
+        ),
+        // E: no Tick record at all: the prefix is the Initial record.
+        (
+            "E no Tick, open boundary",
+            [vec![records[0].clone()], boundaries.clone()].concat(),
+            1,
+        ),
+        // F: Operation records with no boundary in the tail.
+        ("F operations only", with(&[&operations]), kept),
+        // G: a span boundary and the first Operation, without the end Operation.
+        (
+            "G partial span",
+            with(&[&[R::CommandBoundary(span_boundary)], &operations_of_first]),
+            kept,
+        ),
+    ];
+    let wrong = cases
+        .iter()
+        .filter_map(|(name, log, expected)| {
+            let end = complete_prefix_end(log);
+            (end != *expected).then(|| format!("{name}: got {end}, expected {expected}"))
+        })
+        .collect::<Vec<_>>();
+    assert!(wrong.is_empty(), "wrong prefix ends: {wrong:?}");
+}
+
+#[test]
+fn live_audit_reader_ignores_only_unterminated_tail_and_waits_for_tick() {
+    use std::io::Write;
+    use std::time::{Duration, SystemTime, UNIX_EPOCH};
+    use turts_audit::EconomyLogRecord;
+
+    let complete = sink_fixture_log_bytes("reader");
 
     let mut prefixes = Vec::new();
     let mut prefix = Vec::new();
@@ -150,9 +310,11 @@ fn live_audit_reader_ignores_only_unterminated_tail_and_waits_for_tick() {
     let planted = whole_tail_reader(&open_command_path);
     assert!(
         planted.as_ref() != Ok(&complete_first),
-        "a reader that returns the whole tail keeps the open CommandBoundary: {:?}",
+        "fixture check (not a reader check): a reader that returns the whole tail must differ \
+         from the expected prefix, or this log has no open CommandBoundary: {:?}",
         planted.map(|records| records.len())
     );
+    // The reader check: a reader fault makes this assertion red.
     let read = read_live_complete_tick_prefix(&open_command_path);
     assert!(
         read.as_ref() == Ok(&complete_first),
@@ -1887,10 +2049,10 @@ fn whole_tail_reader(path: &std::path::Path) -> Result<Vec<turts_audit::EconomyL
 /// The server sink writes the batch of one tick after the tick completes: the command
 /// boundaries, then the operations, then the `Tick` record (`economylog.rs`,
 /// `capture_completed_tick`). A reader can see part of that batch. The tail is the records
-/// after the last `Tick` record. When the tail holds a command boundary whose operation is not
-/// in the log yet, the batch is incomplete, and the prefix ends at the first boundary or
-/// operation of the tail. The `Claim` and `Admission` records before the batch stay, so the
-/// validator sees them.
+/// after the last `Tick` record. A tail with any command boundary or operation is part of a
+/// batch that has no `Tick` record yet, so the prefix ends at the first boundary or operation
+/// of the tail. A tail with none of them (it holds `Claim` or `Admission` records only, or
+/// nothing) stays, so the validator sees those records.
 fn complete_prefix_end(records: &[turts_audit::EconomyLogRecord]) -> usize {
     use turts_audit::EconomyLogRecord;
 
@@ -1898,34 +2060,15 @@ fn complete_prefix_end(records: &[turts_audit::EconomyLogRecord]) -> usize {
         .iter()
         .rposition(|record| matches!(record, EconomyLogRecord::Tick { .. }))
         .map_or(0, |index| index + 1);
-    let tail = &records[tail_start..];
-    let operations = tail
+    records[tail_start..]
         .iter()
-        .filter_map(|record| match record {
-            EconomyLogRecord::Operation(operation) => Some(operation.operation_id),
-            _ => None,
+        .position(|record| {
+            matches!(
+                record,
+                EconomyLogRecord::CommandBoundary(_) | EconomyLogRecord::Operation(_)
+            )
         })
-        .collect::<std::collections::BTreeSet<_>>();
-    let open_command = tail.iter().any(|record| {
-        matches!(
-            record,
-            EconomyLogRecord::CommandBoundary(command)
-                if !operations.contains(&command.operation_id)
-        )
-    });
-    if !open_command {
-        return records.len();
-    }
-    tail_start
-        + tail
-            .iter()
-            .position(|record| {
-                matches!(
-                    record,
-                    EconomyLogRecord::CommandBoundary(_) | EconomyLogRecord::Operation(_)
-                )
-            })
-            .expect("an open command boundary is a record of the batch")
+        .map_or(records.len(), |first| tail_start + first)
 }
 
 /// Read the complete prefix of a live economy log and validate it. The reader finds the
