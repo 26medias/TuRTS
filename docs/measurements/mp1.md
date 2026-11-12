@@ -28,7 +28,7 @@ Not measured: the browser (a tab close or reload), a release build on the 4-vCPU
 
 ## Transport signal on the connection entity, native release
 
-Source: the network-engineer review probe of `L-ROOM0` (a temporary logging patch and a driver script, not a committed test): `/tmp/claude-1000/-home-julien-Projects-TuRTS/bf418660-b272-4bb3-8628-8d9ef2677d1d/scratchpad/l-room0-review/` (`probe-drive.log`). Time from the end of the client to `Add<Disconnected>` (lightyear) on the connection entity. The author probe of the first version (`docs/research/mp1/trace-connection-end.md`) agrees within about 1 ms.
+Source: the network-engineer review probe of `L-ROOM0` (a temporary logging patch and a driver script, not a committed test): `target/mc-evidence/mp1-lroom0-review-probe-drive/command.log` (in the main worktree; the same log) (`probe-drive.log`). Time from the end of the client to `Add<Disconnected>` (lightyear) on the connection entity. The author probe of the first version (`docs/research/mp1/trace-connection-end.md`) agrees within about 1 ms.
 
 | Case | Time to `Add<Disconnected>` | Reason text |
 | --- | --- | --- |

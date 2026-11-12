@@ -64,7 +64,7 @@ A transport stall cannot release a seat by mistake: the WebSocket backend ends a
 
 ### The review probe: transport signal and reload
 
-Source: the network-engineer review probe of `L-ROOM0` (not a committed test): `/tmp/claude-1000/-home-julien-Projects-TuRTS/bf418660-b272-4bb3-8628-8d9ef2677d1d/scratchpad/l-room0-review/` (`probe-net.diff`, `drive.py`, `probe-drive.log`). Times are from the end of the client.
+Source: the network-engineer review probe of `L-ROOM0` (not a committed test): `target/mc-evidence/mp1-lroom0-review-probe-drive/command.log` (in the main worktree; the same log) (`probe-net.diff`, `drive.py`, `probe-drive.log`). Times are from the end of the client.
 
 | Case | `Add<Unlinked>` | `Add<Disconnected>` (reason) | `Remove<Session>` |
 | --- | --- | --- | --- |
