@@ -31,7 +31,7 @@ const fs = require("node:fs/promises");
 const os = require("node:os");
 const path = require("node:path");
 const { chromium } = require("playwright-core");
-const { summarize } = require("./egpu-stats.js");
+const { summarize, judge } = require("./egpu-stats.js");
 
 const VIEW = { w: 1280, h: 720 };
 // tests/browser/rows/MM1.json: map_size [64, 48], minimap_inset 8, minimap_size 200.
@@ -423,10 +423,9 @@ async function run() {
     result.console_notes = consoleNotes;
     result.host = { cpu_model: os.cpus()[0]?.model, cpus: os.cpus().length, mem_gb: Math.round(os.totalmem() / 2 ** 30), os: `${os.type()} ${os.release()}` };
     result.ended_utc = nowIso();
-    const disconnects = events.filter((e) => e.during_measure && ["websocket_close", "page_close", "page_crash", "phase_not_joined"].includes(e.type));
-    result.disconnect_events = disconnects.length;
-    const judged = result.windows.length === 2;
-    result.verdict = !judged || result.setup_error ? "NO_VERDICT" : (result.windows.some((w) => w.summary.starved) || disconnects.length > 0 ? "FAIL" : "PASS");
+    const judged = judge({ summaries: result.windows.map((w) => w.summary), events, setupError: result.setup_error });
+    result.disconnect_events = judged.disconnects;
+    result.verdict = judged.verdict;
     await fs.writeFile(path.join(outDir, "egpu-result.json"), JSON.stringify(result, null, 2) + "\n");
     await browser.close().catch(() => {});
     const line = { verdict: result.verdict, disconnect_events: result.disconnect_events, windows: result.windows.map((w) => ({ window: w.window, frames: w.summary.frames, p50: w.summary.interval_ms.p50, p95: w.summary.interval_ms.p95, lowest_5s_fps: w.summary.lowest_5s_fps })) };

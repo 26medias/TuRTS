@@ -5,7 +5,7 @@
 // Each case names the build that makes it fail: the stats code with the named change.
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { summarize, secondBins, minWindowFrames, percentile } = require("./egpu-stats.js");
+const { summarize, secondBins, minWindowFrames, percentile, judge } = require("./egpu-stats.js");
 
 // A steady 60 frames each second for `seconds` seconds, as timestamps in ms.
 function steady(seconds, fps = 60) {
@@ -75,4 +75,43 @@ test("secondBins ignores timestamps outside the period, minWindowFrames slides b
 test("percentile is the sorted value at floor(p * (n - 1))", () => {
     assert.equal(percentile([1, 2, 3, 4, 5, 6, 7, 8, 9, 10], 0.95), 9);
     assert.equal(percentile([], 0.5), null);
+});
+
+// judge(): the verdict of the task. Each case names the change that makes it red.
+const GOOD = summarize(steady(30), 30);
+const STARVED = summarize([], 30);
+const close = (extra = {}) => ({ window: 1, type: "websocket_close", during_measure: true, ...extra });
+
+test("judge: two good windows and no event is PASS", () => {
+    assert.deepEqual(judge({ summaries: [GOOD, GOOD], events: [], setupError: undefined }), { verdict: "PASS", disconnects: 0, starved: [false, false] });
+});
+
+test("judge: one starved window is FAIL (red if the frame rule is dropped)", () => {
+    assert.equal(judge({ summaries: [GOOD, STARVED], events: [], setupError: undefined }).verdict, "FAIL");
+});
+
+test("judge: a websocket close in the measured period is FAIL with count 1 (red if events are ignored)", () => {
+    const result = judge({ summaries: [GOOD, GOOD], events: [close()], setupError: undefined });
+    assert.equal(result.verdict, "FAIL");
+    assert.equal(result.disconnects, 1);
+});
+
+test("judge: a close after the end of the period is not a disconnect (red if during_measure is ignored)", () => {
+    assert.equal(judge({ summaries: [GOOD, GOOD], events: [close({ during_measure: false })], setupError: undefined }).verdict, "PASS");
+});
+
+test("judge: a page crash, a page close and a phase that left Joined each count (red if a type is missing)", () => {
+    for (const type of ["page_crash", "page_close", "phase_not_joined"]) {
+        assert.equal(judge({ summaries: [GOOD, GOOD], events: [close({ type })], setupError: undefined }).disconnects, 1, type);
+    }
+});
+
+test("judge: a pageerror is not a disconnect", () => {
+    assert.equal(judge({ summaries: [GOOD, GOOD], events: [close({ type: "pageerror" })], setupError: undefined }).verdict, "PASS");
+});
+
+test("judge: a setup error or one window gives NO_VERDICT, never PASS (red if an empty run passes)", () => {
+    assert.equal(judge({ summaries: [GOOD, GOOD], events: [], setupError: "not joined" }).verdict, "NO_VERDICT");
+    assert.equal(judge({ summaries: [GOOD], events: [], setupError: undefined }).verdict, "NO_VERDICT");
+    assert.equal(judge({ summaries: [], events: [], setupError: undefined }).verdict, "NO_VERDICT");
 });

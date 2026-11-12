@@ -81,4 +81,16 @@ function summarize(timestamps, durationS) {
     };
 }
 
-module.exports = { FAIL_WINDOW_S, percentile, intervals, secondBins, minWindowFrames, longestZeroRun, summarize };
+// Event types that count as a client disconnect when they happen in the measured period.
+const DISCONNECT_TYPES = ["websocket_close", "page_close", "page_crash", "phase_not_joined"];
+
+// The verdict of the task: FAIL if a window is under 1 frame each second for 5 s, or a client disconnects.
+// NO_VERDICT when the run did not set up both windows (nothing was measured).
+function judge({ summaries, events, setupError }) {
+    const disconnects = events.filter((e) => e.during_measure === true && DISCONNECT_TYPES.includes(e.type)).length;
+    if (setupError || summaries.length !== 2) return { verdict: "NO_VERDICT", disconnects };
+    const starved = summaries.map((summary) => summary.starved);
+    return { verdict: starved.some(Boolean) || disconnects > 0 ? "FAIL" : "PASS", disconnects, starved };
+}
+
+module.exports = { FAIL_WINDOW_S, DISCONNECT_TYPES, judge, percentile, intervals, secondBins, minWindowFrames, longestZeroRun, summarize };
