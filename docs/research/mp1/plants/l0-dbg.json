@@ -321,5 +321,51 @@
     "expected_red": "tests/browser/mp1-capture.js names a fixed port",
     "exit": 1,
     "commit": "77d4296"
+  },
+  {
+    "row": "L0-DBG",
+    "plant": "h8",
+    "files": [
+      {
+        "file": "tests/browser/m2-oracle.js",
+        "edit": {
+          "old": "await sleep(DEBUG_CAP_MS + 20 + (round * 17) % 50);",
+          "new": "await sleep(50);"
+        }
+      }
+    ],
+    "command": [
+      "node",
+      "--test",
+      "tests/browser/m2-oracle.test.js"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "each wait is longer than the 250 ms cap",
+    "exit": 1,
+    "commit": "08be01d"
+  },
+  {
+    "row": "L0-DBG",
+    "plant": "h9",
+    "files": [
+      {
+        "file": "tests/browser/m2-oracle.js",
+        "edit": {
+          "old": "const [debug0, debug1] = await Promise.all([view.bridge(\"turts_debug\", 1), view.bridge(\"turts_debug\", 2)]);",
+          "new": "const debug0 = await view.bridge(\"turts_debug\", 1);\n        const debug1 = await view.bridge(\"turts_debug\", 2);"
+        }
+      }
+    ],
+    "command": [
+      "node",
+      "--test",
+      "tests/browser/m2-oracle.test.js"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "+   'got1',",
+    "exit": 1,
+    "commit": "08be01d"
   }
 ]
