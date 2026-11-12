@@ -15,6 +15,7 @@ const os = require("node:os");
 const path = require("node:path");
 const test = require("node:test");
 const { capture, parseArgs, parsePort } = require("./mp1-capture.js");
+const { silentEnv, SILENT_ARGS } = require("./harness/silent-chrome.js");
 
 const REPO = path.resolve(__dirname, "../..");
 const CAPTURE = path.join(__dirname, "mp1-capture.js");
@@ -180,7 +181,7 @@ test("a capture through the port of a real Chrome window returns the three recor
     const profile = fs.mkdtempSync(path.join(os.tmpdir(), "mp1-capture-profile-"));
     const headed = process.env.MP1_CAPTURE_HEADED === "1";
     const chrome = spawn(CHROME, [`--user-data-dir=${profile}`, `--remote-debugging-port=${port}`, "--no-first-run",
-        "--no-default-browser-check", ...(headed ? [] : ["--headless=new", "--disable-gpu"]), url], { stdio: "ignore" });
+        "--no-default-browser-check", ...(headed ? [] : ["--headless=new", "--disable-gpu"]), ...SILENT_ARGS, url], { stdio: "ignore", env: silentEnv(profile) });
     try {
         const version = await until(async () => (await fetch(`http://127.0.0.1:${port}/json/version`)).json(), "the debugging port");
         assert.match(version.Browser, /Chrome/);

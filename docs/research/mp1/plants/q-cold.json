@@ -1,0 +1,2403 @@
+[
+  {
+    "row": "Q-COLD",
+    "plant": "release-before-statement",
+    "files": [
+      {
+        "file": "tests/browser/cold-session.js",
+        "edit": {
+          "old": "        fs.writeFileSync(path.join(this.dir, \"statement.txt\"), text, { flag: \"wx\" });\n        this.statementMs = this.t();\n        this.record(\"statement_stored\", { sha256: crypto.createHash(\"sha256\").update(text).digest(\"hex\"), bytes: Buffer.byteLength(text) });\n        this.releaseSounds(\"statement\", false);\n",
+          "new": "        this.releaseSounds(\"statement\", false);\n        fs.writeFileSync(path.join(this.dir, \"statement.txt\"), text, { flag: \"wx\" });\n        this.statementMs = this.t();\n        this.record(\"statement_stored\", { sha256: crypto.createHash(\"sha256\").update(text).digest(\"hex\"), bytes: Buffer.byteLength(text) });\n"
+        }
+      }
+    ],
+    "command": [
+      "node",
+      "--test",
+      "tests/browser/cold-play.test.js"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "✖ the sound records are not on the disk before the statement is stored",
+    "exit": 1,
+    "commit": "4d5514cac02acc458affab6777432a408c1c4160"
+  },
+  {
+    "row": "Q-COLD",
+    "plant": "statement-opens-early",
+    "files": [
+      {
+        "file": "tests/browser/cold-session.js",
+        "edit": {
+          "old": "        if (left > 0) return this.reply(3, [`refused: too early.",
+          "new": "        if (false) return this.reply(3, [`refused: too early."
+        }
+      }
+    ],
+    "command": [
+      "node",
+      "--test",
+      "tests/browser/cold-play.test.js"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "✖ the sound records are not on the disk before the statement is stored",
+    "exit": 1,
+    "commit": "4d5514cac02acc458affab6777432a408c1c4160"
+  },
+  {
+    "row": "Q-COLD",
+    "plant": "statement-before-click",
+    "files": [
+      {
+        "file": "tests/browser/cold-session.js",
+        "edit": {
+          "old": "        if (this.firstClickMs === null) return this.reply(3, [\"refused: you have made no click or drag yet.",
+          "new": "        if (false) return this.reply(3, [\"refused: you have made no click or drag yet."
+        }
+      }
+    ],
+    "command": [
+      "node",
+      "--test",
+      "tests/browser/cold-play.test.js"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "✖ a statement before any click is refused",
+    "exit": 1,
+    "commit": "4d5514cac02acc458affab6777432a408c1c4160"
+  },
+  {
+    "row": "Q-COLD",
+    "plant": "statement-problems-ignored",
+    "files": [
+      {
+        "file": "tests/browser/cold-session.js",
+        "edit": {
+          "old": "        if (problems.length) {\n            this.record(\"statement_refused\"",
+          "new": "        if (false) {\n            this.record(\"statement_refused\""
+        }
+      }
+    ],
+    "command": [
+      "node",
+      "--test",
+      "tests/browser/cold-play.test.js"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "✖ the sound records are not on the disk before the statement is stored",
+    "exit": 1,
+    "commit": "4d5514cac02acc458affab6777432a408c1c4160"
+  },
+  {
+    "row": "Q-COLD",
+    "plant": "release-in-every-sample",
+    "files": [
+      {
+        "file": "tests/browser/cold-session.js",
+        "edit": {
+          "old": "            for (const o of result.observations) {\n                const key",
+          "new": "            this.releaseSounds(\"sample\", false);\n            for (const o of result.observations) {\n                const key"
+        }
+      }
+    ],
+    "command": [
+      "node",
+      "--test",
+      "tests/browser/cold-play.test.js"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "✖ the sound records are not on the disk before the statement is stored",
+    "exit": 1,
+    "commit": "4d5514cac02acc458affab6777432a408c1c4160"
+  },
+  {
+    "row": "Q-COLD",
+    "plant": "due-gate-removed",
+    "files": [
+      {
+        "file": "tests/browser/cold-session.js",
+        "edit": {
+          "old": "        if (this.isDue()) {\n            this.record(\"refused\"",
+          "new": "        if (false) {\n            this.record(\"refused\""
+        }
+      }
+    ],
+    "command": [
+      "node",
+      "--test",
+      "tests/browser/cold-play.test.js"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "✖ after 60 s from the first click every input is refused until the statement",
+    "exit": 1,
+    "commit": "4d5514cac02acc458affab6777432a408c1c4160"
+  },
+  {
+    "row": "Q-COLD",
+    "plant": "limit-ceiling-raised",
+    "files": [
+      {
+        "file": "tests/browser/cold-session.js",
+        "edit": [
+          {
+            "old": "const MAX_LIMIT_S = 1500;",
+            "new": "const MAX_LIMIT_S = 1800;"
+          },
+          {
+            "old": "if (!(limitMs >= 1000 && limitMs <= MAX_LIMIT_S * 1000))",
+            "new": "if (!(limitMs >= 1000 && limitMs <= 1800 * 1000))"
+          }
+        ]
+      }
+    ],
+    "command": [
+      "node",
+      "--test",
+      "tests/browser/cold-play.test.js"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "✖ the session limit has a ceiling under the hold limit of the lock wrapper",
+    "exit": 1,
+    "commit": "4d5514cac02acc458affab6777432a408c1c4160"
+  },
+  {
+    "row": "Q-COLD",
+    "plant": "first-click-not-recorded",
+    "files": [
+      {
+        "file": "tests/browser/cold-session.js",
+        "edit": {
+          "old": "            if (this.firstClickMs === null) { this.firstClickMs = downMs; this.record(\"first_click\", { t_down_ms: downMs }); }\n",
+          "new": ""
+        }
+      }
+    ],
+    "command": [
+      "node",
+      "--test",
+      "tests/browser/cold-play.test.js"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "✖ after 60 s from the first click every input is refused until the statement",
+    "exit": 1,
+    "commit": "4d5514cac02acc458affab6777432a408c1c4160"
+  },
+  {
+    "row": "Q-COLD",
+    "plant": "shot-offsets-changed",
+    "files": [
+      {
+        "file": "tests/browser/cold-session.js",
+        "edit": {
+          "old": "const SHOT_OFFSETS_MS = [200, 1000];",
+          "new": "const SHOT_OFFSETS_MS = [200, 2000];"
+        }
+      }
+    ],
+    "command": [
+      "node",
+      "--test",
+      "tests/browser/cold-play.test.js"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "✖ each call returns two screenshots",
+    "exit": 1,
+    "commit": "4d5514cac02acc458affab6777432a408c1c4160"
+  },
+  {
+    "row": "Q-COLD",
+    "plant": "reply-leaks-bridge",
+    "files": [
+      {
+        "file": "tests/browser/cold-session.js",
+        "edit": {
+          "old": "        return { exit, lines: [...lines, ...this.clockLines()] };",
+          "new": "        return { exit, lines: [...lines, ...this.clockLines(), `audio ${this.contextStates.map((c) => c.state)}`] };"
+        }
+      }
+    ],
+    "command": [
+      "node",
+      "--test",
+      "tests/browser/cold-play.test.js"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "✖ the replies hold no bridge value",
+    "exit": 1,
+    "commit": "4d5514cac02acc458affab6777432a408c1c4160"
+  },
+  {
+    "row": "Q-COLD",
+    "plant": "input-end-time-wrong",
+    "files": [
+      {
+        "file": "tests/browser/cold-session.js",
+        "edit": {
+          "old": "t_down_ms: downMs, t_end_ms: endMs, counts_as_input: true",
+          "new": "t_down_ms: downMs, t_end_ms: startMs, counts_as_input: true"
+        }
+      }
+    ],
+    "command": [
+      "node",
+      "--test",
+      "tests/browser/cold-play.test.js"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "✖ each input is done with real mouse and keyboard calls and is logged with its times",
+    "exit": 1,
+    "commit": "4d5514cac02acc458affab6777432a408c1c4160"
+  },
+  {
+    "row": "Q-COLD",
+    "plant": "session-never-ends",
+    "files": [
+      {
+        "file": "tests/browser/cold-session.js",
+        "edit": {
+          "old": "                this.ended = reason;\n",
+          "new": ""
+        }
+      }
+    ],
+    "command": [
+      "node",
+      "--test",
+      "tests/browser/cold-play.test.js"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "✖ a session ends at its limit with the evidence complete",
+    "exit": 1,
+    "commit": "4d5514cac02acc458affab6777432a408c1c4160"
+  },
+  {
+    "row": "Q-COLD",
+    "plant": "no-release-at-end",
+    "files": [
+      {
+        "file": "tests/browser/cold-session.js",
+        "edit": {
+          "old": "                this.releaseSounds(this.mode !== \"agent\" ? \"probe\" : this.statementMs === null ? \"end-without-statement\" : \"end\", true);\n",
+          "new": ""
+        }
+      }
+    ],
+    "command": [
+      "node",
+      "--test",
+      "tests/browser/cold-play.test.js"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "✖ a statement before any click is refused",
+    "exit": 1,
+    "commit": "5fe6f811bc94aaa3410e2475fcb9267631ed6e84"
+  },
+  {
+    "row": "Q-COLD",
+    "plant": "wait-counts-as-input",
+    "files": [
+      {
+        "file": "tests/browser/cold-session.js",
+        "edit": {
+          "old": "t_end_ms: endMs, counts_as_input: false",
+          "new": "t_end_ms: endMs, counts_as_input: true"
+        }
+      }
+    ],
+    "command": [
+      "node",
+      "--test",
+      "tests/browser/cold-play.test.js"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "✖ each input is done with real mouse and keyboard calls and is logged with its times",
+    "exit": 1,
+    "commit": "4d5514cac02acc458affab6777432a408c1c4160"
+  },
+  {
+    "row": "Q-COLD",
+    "plant": "screenshot-in-device-pixels",
+    "files": [
+      {
+        "file": "tests/browser/cold-session.js",
+        "edit": {
+          "old": "await this.page.screenshot({ path: full, scale: \"css\" });",
+          "new": "await this.page.screenshot({ path: full });"
+        }
+      }
+    ],
+    "command": [
+      "node",
+      "--test",
+      "tests/browser/cold-play.test.js"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "✖ each call returns two screenshots",
+    "exit": 1,
+    "commit": "4d5514cac02acc458affab6777432a408c1c4160"
+  },
+  {
+    "row": "Q-COLD",
+    "plant": "control-port-on-all-interfaces",
+    "files": [
+      {
+        "file": "tests/browser/cold-session.js",
+        "edit": {
+          "old": ".listen(0, \"127.0.0.1\", () => resolve(server))",
+          "new": ".listen(0, \"0.0.0.0\", () => resolve(server))"
+        }
+      }
+    ],
+    "command": [
+      "node",
+      "--test",
+      "tests/browser/cold-play.test.js"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "✖ the agent's command talks to the session over the loopback port",
+    "exit": 1,
+    "commit": "4d5514cac02acc458affab6777432a408c1c4160"
+  },
+  {
+    "row": "Q-COLD",
+    "plant": "start-limit-ceiling-raised",
+    "files": [
+      {
+        "file": "scripts/cold-play.sh",
+        "edit": {
+          "old": "((LIMIT >= 1 && LIMIT <= 1500))",
+          "new": "((LIMIT >= 1 && LIMIT <= 15000))"
+        }
+      }
+    ],
+    "command": [
+      "node",
+      "--test",
+      "tests/browser/cold-play.test.js"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "✖ the session limit has a ceiling under the hold limit of the lock wrapper",
+    "exit": 1,
+    "commit": "4d5514cac02acc458affab6777432a408c1c4160"
+  },
+  {
+    "row": "Q-COLD",
+    "plant": "start-leaves-play-script",
+    "files": [
+      {
+        "file": "scripts/cold-play.sh",
+        "edit": {
+          "old": "    for pid in \"$NODE_PID\" \"$PLAY_PID\"; do\n        [[ -n \"$pid\" ]] && kill -0",
+          "new": "    for pid in \"$NODE_PID\"; do\n        [[ -n \"$pid\" ]] && kill -0"
+        }
+      }
+    ],
+    "command": [
+      "node",
+      "--test",
+      "tests/browser/cold-play.test.js"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "✖ the start script ends its game and Chrome with the session",
+    "exit": 1,
+    "commit": "4d5514cac02acc458affab6777432a408c1c4160"
+  },
+  {
+    "row": "Q-COLD",
+    "plant": "start-writes-into-old-folder",
+    "files": [
+      {
+        "file": "scripts/cold-play.sh",
+        "edit": {
+          "old": "[[ ! -e \"$SESSION\" ]] || {",
+          "new": "true || {"
+        }
+      }
+    ],
+    "command": [
+      "node",
+      "--test",
+      "tests/browser/cold-play.test.js"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "✖ the start script ends its game and Chrome with the session",
+    "exit": 1,
+    "commit": "4d5514cac02acc458affab6777432a408c1c4160"
+  },
+  {
+    "row": "Q-COLD",
+    "plant": "play-url-any-address",
+    "files": [
+      {
+        "file": "scripts/mp1-play.sh",
+        "edit": {
+          "old": "    [[ \"$dir\" =~ ^https?://(127",
+          "new": "    [[ \"$dir\" =~ ^.*(127"
+        }
+      }
+    ],
+    "command": [
+      "node",
+      "--test",
+      "tests/browser/cold-play.test.js"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "✖ mp1-play.sh --url takes only a loopback game address",
+    "exit": 1,
+    "commit": "4d5514cac02acc458affab6777432a408c1c4160"
+  },
+  {
+    "row": "Q-COLD",
+    "plant": "checker-order-not-checked",
+    "files": [
+      {
+        "file": "scripts/qa/cold_play_check.py",
+        "edit": {
+          "old": "first_release is not None and stored[\"seq\"] < first_release[\"seq\"]",
+          "new": "first_release is not None"
+        }
+      }
+    ],
+    "command": [
+      "python3",
+      "-B",
+      "tests/qa/test_cold_play_check.py"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "FAIL: test_statement_after_release_fails_c3c",
+    "exit": 1,
+    "commit": "4d5514cac02acc458affab6777432a408c1c4160"
+  },
+  {
+    "row": "Q-COLD",
+    "plant": "checker-f5a-window-zero",
+    "files": [
+      {
+        "file": "scripts/qa/cold_play_check.py",
+        "edit": {
+          "old": "if seen[i + 3] - seen[i] <= 60000:",
+          "new": "if seen[i + 3] - seen[i] <= 0:"
+        }
+      }
+    ],
+    "command": [
+      "python3",
+      "-B",
+      "tests/qa/test_cold_play_check.py"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "FAIL: test_four_equal_sound_ids_in_60_s_fail_f5a",
+    "exit": 1,
+    "commit": "4d5514cac02acc458affab6777432a408c1c4160"
+  },
+  {
+    "row": "Q-COLD",
+    "plant": "checker-f5b-never-early",
+    "files": [
+      {
+        "file": "scripts/qa/cold_play_check.py",
+        "edit": {
+          "old": "and r[\"first_seen_ms\"] < first_input]",
+          "new": "and r[\"first_seen_ms\"] < 0]"
+        }
+      }
+    ],
+    "command": [
+      "python3",
+      "-B",
+      "tests/qa/test_cold_play_check.py"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "FAIL: test_an_alert_sound_before_the_first_input_fails_f5b",
+    "exit": 1,
+    "commit": "4d5514cac02acc458affab6777432a408c1c4160"
+  },
+  {
+    "row": "Q-COLD",
+    "plant": "checker-no-answer-blind",
+    "files": [
+      {
+        "file": "scripts/qa/cold_play_check.py",
+        "edit": {
+          "old": "\\b(?:do not know|don['\\u2019]?t know|no idea)\\b|",
+          "new": "\\b(?:do not knowx)\\b|"
+        }
+      }
+    ],
+    "command": [
+      "python3",
+      "-B",
+      "tests/qa/test_cold_play_check.py"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "FAIL: test_do_not_know_fails_c3g",
+    "exit": 1,
+    "commit": "4d5514cac02acc458affab6777432a408c1c4160"
+  },
+  {
+    "row": "Q-COLD",
+    "plant": "checker-60s-not-checked",
+    "files": [
+      {
+        "file": "scripts/qa/cold_play_check.py",
+        "edit": {
+          "old": "report.add(\"C3d\", stored[\"t_ms\"] >= due,",
+          "new": "report.add(\"C3d\", True,"
+        }
+      }
+    ],
+    "command": [
+      "python3",
+      "-B",
+      "tests/qa/test_cold_play_check.py"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "FAIL: test_statement_before_60_s_fails_c3d",
+    "exit": 1,
+    "commit": "4d5514cac02acc458affab6777432a408c1c4160"
+  },
+  {
+    "row": "Q-COLD",
+    "plant": "checker-limit-ceiling-gone",
+    "files": [
+      {
+        "file": "scripts/qa/cold_play_check.py",
+        "edit": {
+          "old": "0 < limit_ms <= MAX_LIMIT_MS and clean",
+          "new": "0 < limit_ms and clean"
+        }
+      }
+    ],
+    "command": [
+      "python3",
+      "-B",
+      "tests/qa/test_cold_play_check.py"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "FAIL: test_a_limit_above_1500_s_fails_l1",
+    "exit": 1,
+    "commit": "4d5514cac02acc458affab6777432a408c1c4160"
+  },
+  {
+    "row": "Q-COLD",
+    "plant": "checker-sha-not-checked",
+    "files": [
+      {
+        "file": "scripts/qa/cold_play_check.py",
+        "edit": {
+          "old": "elif hashlib.sha256(path.read_bytes()).hexdigest() != event.get(\"sha256\") or path.stat().st_size != event.get(\"bytes\"):",
+          "new": "elif False:"
+        }
+      }
+    ],
+    "command": [
+      "python3",
+      "-B",
+      "tests/qa/test_cold_play_check.py"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "FAIL: test_a_changed_screenshot_fails_e2",
+    "exit": 1,
+    "commit": "4d5514cac02acc458affab6777432a408c1c4160"
+  },
+  {
+    "row": "Q-COLD",
+    "plant": "checker-input-after-due-allowed",
+    "files": [
+      {
+        "file": "scripts/qa/cold_play_check.py",
+        "edit": {
+          "old": "if e[\"counts_as_input\"] and due < e[\"t_start_ms\"] < stored[\"t_ms\"]]",
+          "new": "if False]"
+        }
+      }
+    ],
+    "command": [
+      "python3",
+      "-B",
+      "tests/qa/test_cold_play_check.py"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "FAIL: test_input_between_the_60_s_mark_and_the_statement_fails_c3e",
+    "exit": 1,
+    "commit": "4d5514cac02acc458affab6777432a408c1c4160"
+  },
+  {
+    "row": "Q-COLD",
+    "plant": "checker-statement-shot-not-checked",
+    "files": [
+      {
+        "file": "scripts/qa/cold_play_check.py",
+        "edit": {
+          "old": "            if shot is None or not (shots_dir / name).is_file():",
+          "new": "            if False:"
+        }
+      }
+    ],
+    "command": [
+      "python3",
+      "-B",
+      "tests/qa/test_cold_play_check.py"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "FAIL: test_a_part_with_no_screenshot_file_fails_c3h",
+    "exit": 1,
+    "commit": "4d5514cac02acc458affab6777432a408c1c4160"
+  },
+  {
+    "row": "Q-COLD",
+    "plant": "checker-exit-always-0",
+    "files": [
+      {
+        "file": "scripts/qa/cold_play_check.py",
+        "edit": {
+          "old": "    return 0 if result.split()[0] in (\"MACHINE-PASS\", \"PARTIAL-PASS\", \"CONTROL-PASS\") else 1",
+          "new": "    return 0"
+        }
+      }
+    ],
+    "command": [
+      "python3",
+      "-B",
+      "tests/qa/test_cold_play_check.py"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "FAIL: test_a_key_with_no_name_fails_c2a",
+    "exit": 1,
+    "commit": "5fe6f811bc94aaa3410e2475fcb9267631ed6e84"
+  },
+  {
+    "row": "Q-COLD",
+    "plant": "play-chrome-never-ready",
+    "files": [
+      {
+        "file": "scripts/mp1-play.sh",
+        "edit": {
+          "old": "    [[ \"$reply\" == *'\"Browser\"'* ]]\n",
+          "new": "    false\n"
+        }
+      }
+    ],
+    "command": [
+      "node",
+      "--test",
+      "--test-name-pattern=SILENT by default",
+      "tests/browser/cold-play.test.js"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "✖ mp1-play.sh --url starts a Chrome that answers on the printed port",
+    "exit": 1,
+    "commit": "1bc54499a3c1010d6f4b186924c4e212d2860224"
+  },
+  {
+    "row": "Q-COLD",
+    "plant": "play-profile-kept",
+    "files": [
+      {
+        "file": "scripts/mp1-play.sh",
+        "edit": [
+          {
+            "old": "        rm -rf \"$PROFILE\" 2>/dev/null && break\n",
+            "new": "        false && break\n"
+          },
+          {
+            "old": "    rm -rf \"$PROFILE\" \"$PROFILE.chrome.log\" \"$PROFILE.alsa-null.conf\" \"$SERVE_LOG\" 2>/dev/null || true\n",
+            "new": "    true\n"
+          }
+        ]
+      }
+    ],
+    "command": [
+      "node",
+      "--test",
+      "--test-name-pattern=SILENT by default",
+      "tests/browser/cold-play.test.js"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "✖ mp1-play.sh --url starts a Chrome that answers on the printed port",
+    "exit": 1,
+    "commit": "1bc54499a3c1010d6f4b186924c4e212d2860224"
+  },
+  {
+    "row": "Q-COLD",
+    "plant": "probe-selection-not-required",
+    "files": [
+      {
+        "file": "tests/browser/cold-probe.js",
+        "edit": {
+          "old": "ok: selectionOk && result.visible_change });",
+          "new": "ok: result.visible_change });"
+        }
+      }
+    ],
+    "command": [
+      "node",
+      "--test",
+      "--test-name-pattern=selects but shows nothing",
+      "tests/browser/cold-probe.test.js"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "✖ first-click probe: a click that selects but shows nothing is a FAIL",
+    "exit": 1,
+    "commit": "cbebebd4adb9dbee8423157c3e2ed966616bccad"
+  },
+  {
+    "row": "Q-COLD",
+    "plant": "probe-change-not-required",
+    "files": [
+      {
+        "file": "tests/browser/cold-probe.js",
+        "edit": {
+          "old": "ok: selectionOk && result.visible_change });",
+          "new": "ok: selectionOk });"
+        }
+      }
+    ],
+    "command": [
+      "node",
+      "--test",
+      "--test-name-pattern=selects but shows nothing",
+      "tests/browser/cold-probe.test.js"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "✖ first-click probe: a click that selects but shows nothing is a FAIL",
+    "exit": 1,
+    "commit": "cbebebd4adb9dbee8423157c3e2ed966616bccad"
+  },
+  {
+    "row": "Q-COLD",
+    "plant": "probe-empty-world-passes",
+    "files": [
+      {
+        "file": "tests/browser/cold-probe.js",
+        "edit": {
+          "old": "const fail = (reason) => { record.summary = { verdict: \"FAIL\",",
+          "new": "const fail = (reason) => { record.summary = { verdict: \"PASS\","
+        }
+      }
+    ],
+    "command": [
+      "node",
+      "--test",
+      "--test-name-pattern=no own unit on screen",
+      "tests/browser/cold-probe.test.js"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "✖ first-click probe on a page with no own unit on screen is a FAIL, not a pass",
+    "exit": 1,
+    "commit": "cbebebd4adb9dbee8423157c3e2ed966616bccad"
+  },
+  {
+    "row": "Q-COLD",
+    "plant": "probe-clicks-the-enemy-too",
+    "files": [
+      {
+        "file": "tests/browser/cold-probe.js",
+        "edit": {
+          "old": "unit.owner_slot === world.slot && inside(unit.center, viewport)).sort(",
+          "new": "true && inside(unit.center, viewport)).sort("
+        }
+      }
+    ],
+    "command": [
+      "node",
+      "--test",
+      "--test-name-pattern=first-click probe, green page",
+      "tests/browser/cold-probe.test.js"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "✖ first-click probe, green page: units, orders and extra clicks all answer",
+    "exit": 1,
+    "commit": "cbebebd4adb9dbee8423157c3e2ed966616bccad"
+  },
+  {
+    "row": "Q-COLD",
+    "plant": "probe-control-does-not-close",
+    "files": [
+      {
+        "file": "tests/browser/cold-probe.js",
+        "edit": {
+          "old": "    if (options.control === \"close-layer\") record.layer_close = await closeLayer(session);\n",
+          "new": ""
+        }
+      }
+    ],
+    "command": [
+      "node",
+      "--test",
+      "--test-name-pattern=positive control",
+      "tests/browser/cold-probe.test.js"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "✖ first-click probe, positive control: after the tool closes the guide the probe passes",
+    "exit": 1,
+    "commit": "5fe6f811bc94aaa3410e2475fcb9267631ed6e84"
+  },
+  {
+    "row": "Q-COLD",
+    "plant": "probe-box-needs-too-many-pixels",
+    "files": [
+      {
+        "file": "tests/browser/cold-probe.js",
+        "edit": {
+          "old": "const MIN_BOX_PIXELS = 40;",
+          "new": "const MIN_BOX_PIXELS = 4000000;"
+        }
+      }
+    ],
+    "command": [
+      "node",
+      "--test",
+      "--test-name-pattern=ring around the unit alone",
+      "tests/browser/cold-probe.test.js"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "✖ first-click probe: a ring around the unit alone is a visible change by the box rule",
+    "exit": 1,
+    "commit": "05e30db1c8560124ddb105d457cfdab3557d71a2"
+  },
+  {
+    "row": "Q-COLD",
+    "plant": "probe-page-change-passes-all",
+    "files": [
+      {
+        "file": "tests/browser/cold-probe.js",
+        "edit": {
+          "old": "box_seen: boxSeen, panel_seen: changed.length > 0, visible_change: boxSeen || changed.length > 0 };",
+          "new": "box_seen: boxSeen, panel_seen: changed.length > 0, visible_change: true };"
+        }
+      }
+    ],
+    "command": [
+      "node",
+      "--test",
+      "--test-name-pattern=see-through full-size guide",
+      "tests/browser/cold-probe.test.js"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "✖ first-click probe, see-through full-size guide: it FAILS at the first unit",
+    "exit": 1,
+    "commit": "cbebebd4adb9dbee8423157c3e2ed966616bccad"
+  },
+  {
+    "row": "Q-COLD",
+    "plant": "pixels-noise-threshold-removed",
+    "files": [
+      {
+        "file": "tests/browser/cold-pixels.js",
+        "edit": {
+          "old": "const CHANGE_THRESHOLD = 24;",
+          "new": "const CHANGE_THRESHOLD = -1;"
+        }
+      }
+    ],
+    "command": [
+      "node",
+      "--test",
+      "--test-name-pattern=changeStats counts",
+      "tests/browser/cold-probe.test.js"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "✖ changeStats counts the changed pixels in a box and in the page",
+    "exit": 1,
+    "commit": "5fe6f811bc94aaa3410e2475fcb9267631ed6e84"
+  },
+  {
+    "row": "Q-COLD",
+    "plant": "pixels-nonflat-always-flat",
+    "files": [
+      {
+        "file": "tests/browser/cold-pixels.js",
+        "edit": {
+          "old": "    return Math.round((off / count) * 10000) / 10000;",
+          "new": "    return 0;"
+        }
+      }
+    ],
+    "command": [
+      "node",
+      "--test",
+      "--test-name-pattern=nonflatShare",
+      "tests/browser/cold-probe.test.js"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "✖ nonflatShare: an opaque layer with text is flat, a see-through layer is not",
+    "exit": 1,
+    "commit": "5fe6f811bc94aaa3410e2475fcb9267631ed6e84"
+  },
+  {
+    "row": "Q-COLD",
+    "plant": "buttons-overlay-leaving-counts",
+    "files": [
+      {
+        "file": "tests/browser/cold-probe.js",
+        "edit": {
+          "old": "        if (widget.kind === \"focus_overlay\" || id.startsWith(\"focus_overlay\")) continue;\n",
+          "new": ""
+        }
+      }
+    ],
+    "command": [
+      "node",
+      "--test",
+      "--test-name-pattern=start overlay that vanishes",
+      "tests/browser/cold-probe.test.js"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "✖ buttons probe: a start overlay that vanishes on the first click does not count",
+    "exit": 1,
+    "commit": "cbebebd4adb9dbee8423157c3e2ed966616bccad"
+  },
+  {
+    "row": "Q-COLD",
+    "plant": "buttons-overlay-dimming-counts",
+    "files": [
+      {
+        "file": "tests/browser/cold-probe.js",
+        "edit": {
+          "old": "const actedBox = !overlayLeft && changeStats(",
+          "new": "const actedBox = changeStats("
+        }
+      }
+    ],
+    "command": [
+      "node",
+      "--test",
+      "--test-name-pattern=buttons probe: a button under the start overlay",
+      "tests/browser/cold-probe.test.js"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "✖ buttons probe: a button under the start overlay loses its first click",
+    "exit": 1,
+    "commit": "cbebebd4adb9dbee8423157c3e2ed966616bccad"
+  },
+  {
+    "row": "Q-COLD",
+    "plant": "session-ui-record-before-input-missing",
+    "files": [
+      {
+        "file": "tests/browser/cold-session.js",
+        "edit": {
+          "old": "        if (!this.uiBeforeDone && cmd !== \"wait\") { this.uiBeforeDone = true; await this.captureUi(\"before_first_input\"); }\n",
+          "new": ""
+        }
+      }
+    ],
+    "command": [
+      "node",
+      "--test",
+      "--test-name-pattern=UI records are taken before",
+      "tests/browser/cold-probe.test.js"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "✖ the UI records are taken before the first input and after the first click",
+    "exit": 1,
+    "commit": "5fe6f811bc94aaa3410e2475fcb9267631ed6e84"
+  },
+  {
+    "row": "Q-COLD",
+    "plant": "session-ui-records-not-held-back",
+    "files": [
+      {
+        "file": "tests/browser/cold-session.js",
+        "edit": {
+          "old": "        this.uiRecords.push({\n            label, t_ms: this.t(), available: true,",
+          "new": "        fs.writeFileSync(path.join(this.dir, \"ui-records.json\"), \"{}\");\n        this.uiRecords.push({\n            label, t_ms: this.t(), available: true,"
+        }
+      }
+    ],
+    "command": [
+      "node",
+      "--test",
+      "--test-name-pattern=UI records are taken before",
+      "tests/browser/cold-probe.test.js"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "✖ the UI records are taken before the first input and after the first click",
+    "exit": 1,
+    "commit": "5fe6f811bc94aaa3410e2475fcb9267631ed6e84"
+  },
+  {
+    "row": "Q-COLD",
+    "plant": "session-ui-after-click-not-taken",
+    "files": [
+      {
+        "file": "tests/browser/cold-session.js",
+        "edit": {
+          "old": "            if (firstClick) await this.captureUi(`after_first_click_p${offset}`, file);\n",
+          "new": ""
+        }
+      }
+    ],
+    "command": [
+      "node",
+      "--test",
+      "--test-name-pattern=UI records are taken before",
+      "tests/browser/cold-probe.test.js"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "✖ the UI records are taken before the first input and after the first click",
+    "exit": 1,
+    "commit": "5fe6f811bc94aaa3410e2475fcb9267631ed6e84"
+  },
+  {
+    "row": "Q-COLD",
+    "plant": "checker-f9-limit-raised",
+    "files": [
+      {
+        "file": "scripts/qa/cold_play_check.py",
+        "edit": {
+          "old": "MAX_WORDS = 40",
+          "new": "MAX_WORDS = 4000"
+        }
+      }
+    ],
+    "command": [
+      "python3",
+      "-B",
+      "tests/qa/test_cold_play_check.py"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "FAIL: test_a_text_of_more_than_40_words_fails_f9_and_40_words_pass",
+    "exit": 1,
+    "commit": "5fe6f811bc94aaa3410e2475fcb9267631ed6e84"
+  },
+  {
+    "row": "Q-COLD",
+    "plant": "checker-f3-never-see-through",
+    "files": [
+      {
+        "file": "scripts/qa/cold_play_check.py",
+        "edit": {
+          "old": "SEE_THROUGH_SHARE = 0.05",
+          "new": "SEE_THROUGH_SHARE = 5"
+        }
+      }
+    ],
+    "command": [
+      "python3",
+      "-B",
+      "tests/qa/test_cold_play_check.py"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "FAIL: test_a_see_through_blocking_layer_fails_f3",
+    "exit": 1,
+    "commit": "5fe6f811bc94aaa3410e2475fcb9267631ed6e84"
+  },
+  {
+    "row": "Q-COLD",
+    "plant": "checker-f3-opaque-flagged",
+    "files": [
+      {
+        "file": "scripts/qa/cold_play_check.py",
+        "edit": {
+          "old": "if share is None or share >= SEE_THROUGH_SHARE:",
+          "new": "if True:"
+        }
+      }
+    ],
+    "command": [
+      "python3",
+      "-B",
+      "tests/qa/test_cold_play_check.py"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "FAIL: test_an_opaque_layer_a_layer_that_takes_no_input_and_a_small_one_are_not_f3",
+    "exit": 1,
+    "commit": "5fe6f811bc94aaa3410e2475fcb9267631ed6e84"
+  },
+  {
+    "row": "Q-COLD",
+    "plant": "checker-f6-ignored",
+    "files": [
+      {
+        "file": "scripts/qa/cold_play_check.py",
+        "edit": {
+          "old": "report.add(\"F6\", not seen,",
+          "new": "report.add(\"F6\", True,"
+        }
+      }
+    ],
+    "command": [
+      "python3",
+      "-B",
+      "tests/qa/test_cold_play_check.py"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "FAIL: test_an_alert_line_before_the_first_input_fails_f6",
+    "exit": 1,
+    "commit": "cbebebd4adb9dbee8423157c3e2ed966616bccad"
+  },
+  {
+    "row": "Q-COLD",
+    "plant": "checker-p1-fail-ignored",
+    "files": [
+      {
+        "file": "scripts/qa/cold_play_check.py",
+        "edit": {
+          "old": "report.add(\"P1\", ok and summary.get(\"clicks\", 0) >= 1,",
+          "new": "report.add(\"P1\", True,"
+        }
+      }
+    ],
+    "command": [
+      "python3",
+      "-B",
+      "tests/qa/test_cold_play_check.py"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "FAIL: test_a_first_click_probe_that_failed_is_a_p1_fail",
+    "exit": 1,
+    "commit": "5fe6f811bc94aaa3410e2475fcb9267631ed6e84"
+  },
+  {
+    "row": "Q-COLD",
+    "plant": "checker-f8-lost-ignored",
+    "files": [
+      {
+        "file": "scripts/qa/cold_play_check.py",
+        "edit": {
+          "old": "report.add(\"F8\", ok and not lost,",
+          "new": "report.add(\"F8\", True,"
+        }
+      }
+    ],
+    "command": [
+      "python3",
+      "-B",
+      "tests/qa/test_cold_play_check.py"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "FAIL: test_the_buttons_probe_fails_f8_when_a_first_click_is_lost",
+    "exit": 1,
+    "commit": "5fe6f811bc94aaa3410e2475fcb9267631ed6e84"
+  },
+  {
+    "row": "Q-COLD",
+    "plant": "checker-missing-parts-ignored",
+    "files": [
+      {
+        "file": "scripts/qa/cold_play_check.py",
+        "edit": {
+          "old": "    if not partial:\n        missing += [f\"first-click probe {size}\"",
+          "new": "    if False:\n        missing += [f\"first-click probe {size}\""
+        }
+      }
+    ],
+    "command": [
+      "python3",
+      "-B",
+      "tests/qa/test_cold_play_check.py"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "FAIL: test_a_missing_part_gives_not_ready",
+    "exit": 1,
+    "commit": "cbebebd4adb9dbee8423157c3e2ed966616bccad"
+  },
+  {
+    "row": "Q-COLD",
+    "plant": "checker-control-judged-as-a-run",
+    "files": [
+      {
+        "file": "scripts/qa/cold_play_check.py",
+        "edit": {
+          "old": "    if infos and all(info[\"control\"] for info in infos):",
+          "new": "    if False:"
+        }
+      }
+    ],
+    "command": [
+      "python3",
+      "-B",
+      "tests/qa/test_cold_play_check.py"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "FAIL: test_a_control_folder_is_judged_on_its_probe_only",
+    "exit": 1,
+    "commit": "5fe6f811bc94aaa3410e2475fcb9267631ed6e84"
+  },
+  {
+    "row": "Q-COLD",
+    "plant": "checker-u0-skipped",
+    "files": [
+      {
+        "file": "scripts/qa/cold_play_check.py",
+        "edit": {
+          "old": "    report.add(\"U0\", ok, f\"UI records:",
+          "new": "    report.add(\"U0\", True, f\"UI records:"
+        }
+      }
+    ],
+    "command": [
+      "python3",
+      "-B",
+      "tests/qa/test_cold_play_check.py"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "FAIL: test_missing_or_unanswered_ui_records_fail_u0",
+    "exit": 1,
+    "commit": "5fe6f811bc94aaa3410e2475fcb9267631ed6e84"
+  },
+  {
+    "row": "Q-COLD",
+    "plant": "checker-f9-reads-only-the-record-before-input",
+    "files": [
+      {
+        "file": "scripts/qa/cold_play_check.py",
+        "edit": {
+          "old": "    for record in after:\n        sum_now = 0",
+          "new": "    for record in [by_label.get(\"before_first_input\", {})]:\n        sum_now = 0"
+        }
+      }
+    ],
+    "command": [
+      "python3",
+      "-B",
+      "tests/qa/test_cold_play_check.py"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "FAIL: test_a_text_of_more_than_40_words_fails_f9_and_40_words_pass",
+    "exit": 1,
+    "commit": "cbebebd4adb9dbee8423157c3e2ed966616bccad"
+  },
+  {
+    "row": "Q-COLD",
+    "plant": "buttons-no-hover-rest",
+    "files": [
+      {
+        "file": "tests/browser/cold-probe.js",
+        "edit": {
+          "old": "        await session.handle({ cmd: \"move\", args: [String(x), String(y)] });\n        await session.sleep(300);\n",
+          "new": ""
+        }
+      }
+    ],
+    "command": [
+      "node",
+      "--test",
+      "--test-name-pattern=what the pointer resting on a button shows",
+      "tests/browser/cold-probe.test.js"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "✖ buttons probe: what the pointer resting on a button shows",
+    "exit": 1,
+    "commit": "3d9bff0495b330bedb5ed113f66839be811363f1"
+  },
+  {
+    "row": "Q-COLD",
+    "plant": "probe-no-settle",
+    "files": [
+      {
+        "file": "tests/browser/cold-probe.js",
+        "edit": {
+          "old": "const SETTLE_MS = 8000;",
+          "new": "const SETTLE_MS = 0;"
+        }
+      }
+    ],
+    "command": [
+      "node",
+      "--test",
+      "--test-name-pattern=the probes wait 8 s",
+      "tests/browser/cold-probe.test.js"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "✖ the probes wait 8 s (first click) and watch 20 s",
+    "exit": 1,
+    "commit": "3d9bff0495b330bedb5ed113f66839be811363f1"
+  },
+  {
+    "row": "Q-COLD",
+    "plant": "checker-f5a-judged-in-probes",
+    "files": [
+      {
+        "file": "scripts/qa/cold_play_check.py",
+        "edit": {
+          "old": "    if mode == \"agent\":  # the sounds of a probe",
+          "new": "    if True:  # the sounds of a probe"
+        }
+      }
+    ],
+    "command": [
+      "python3",
+      "-B",
+      "tests/qa/test_cold_play_check.py"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "FAIL: test_a_probe_is_not_judged_on_the_sounds_of_its_own_clicks_but_on_alerts_before_input",
+    "exit": 1,
+    "commit": "b397d588a1a7190d6e04b8d8638a66b4bc38d584"
+  },
+  {
+    "row": "Q-COLD",
+    "plant": "checker-no-input-log-is-e1b",
+    "files": [
+      {
+        "file": "scripts/qa/cold_play_check.py",
+        "edit": {
+          "old": "        inputs_lines = []  # a session with no input writes no file",
+          "new": "        inputs_lines = None"
+        }
+      }
+    ],
+    "command": [
+      "python3",
+      "-B",
+      "tests/qa/test_cold_play_check.py"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "FAIL: test_a_session_with_no_input_has_no_input_log_and_that_is_not_e1b",
+    "exit": 1,
+    "commit": "b397d588a1a7190d6e04b8d8638a66b4bc38d584"
+  },
+  {
+    "row": "Q-COLD",
+    "plant": "silent-pulse-server-removed",
+    "files": [
+      {
+        "file": "tests/browser/harness/silent-chrome.js",
+        "edit": {
+          "old": "return { ...base, PULSE_SERVER: NO_PULSE, ALSA_CONFIG_PATH: config };",
+          "new": "return { ...base, ALSA_CONFIG_PATH: config };"
+        }
+      }
+    ],
+    "command": [
+      "node",
+      "--test",
+      "tests/browser/harness/silent-chrome-scan.test.js"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "✖ silentEnv sets a pulse server that does not exist and a null ALSA device",
+    "exit": 1,
+    "commit": "32664c5bd2a2c49af2bc476602db8a5db2fba957"
+  },
+  {
+    "row": "Q-COLD",
+    "plant": "silent-alsa-device-not-null",
+    "files": [
+      {
+        "file": "tests/browser/harness/silent-chrome.js",
+        "edit": {
+          "old": "pcm.!default { type null }",
+          "new": "pcm.!default { type hw }"
+        }
+      }
+    ],
+    "command": [
+      "node",
+      "--test",
+      "tests/browser/harness/silent-chrome-scan.test.js"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "✖ silentEnv sets a pulse server that does not exist and a null ALSA device",
+    "exit": 1,
+    "commit": "32664c5bd2a2c49af2bc476602db8a5db2fba957"
+  },
+  {
+    "row": "Q-COLD",
+    "plant": "silent-args-emptied",
+    "files": [
+      {
+        "file": "tests/browser/harness/silent-chrome.js",
+        "edit": {
+          "old": "const SILENT_ARGS = [\"--alsa-output-device=null\"];",
+          "new": "const SILENT_ARGS = [];"
+        }
+      }
+    ],
+    "command": [
+      "node",
+      "--test",
+      "tests/browser/harness/silent-chrome-scan.test.js"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "✖ silentEnv sets a pulse server that does not exist and a null ALSA device",
+    "exit": 1,
+    "commit": "32664c5bd2a2c49af2bc476602db8a5db2fba957"
+  },
+  {
+    "row": "Q-COLD",
+    "plant": "silent-scan-env-not-required",
+    "files": [
+      {
+        "file": "tests/browser/harness/silent-chrome-scan.test.js",
+        "edit": {
+          "old": "if (!/silentEnv\\(/.test(text) || !(/SILENT_ARGS/.test(text)",
+          "new": "if (!(/SILENT_ARGS/.test(text)"
+        }
+      }
+    ],
+    "command": [
+      "node",
+      "--test",
+      "tests/browser/harness/silent-chrome-scan.test.js"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "✖ the scan finds a Chrome start with no isolation, in each form",
+    "exit": 1,
+    "commit": "32664c5bd2a2c49af2bc476602db8a5db2fba957"
+  },
+  {
+    "row": "Q-COLD",
+    "plant": "silent-test-chrome-unisolated",
+    "files": [
+      {
+        "file": "tests/browser/mp1-capture.test.js",
+        "edit": {
+          "old": "...SILENT_ARGS, url], { stdio: \"ignore\", env: silentEnv(profile) });",
+          "new": "url], { stdio: \"ignore\" });"
+        }
+      }
+    ],
+    "command": [
+      "node",
+      "--test",
+      "tests/browser/harness/silent-chrome-scan.test.js"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "✖ every test that starts a Chrome gives it the sound isolation",
+    "exit": 1,
+    "commit": "32664c5bd2a2c49af2bc476602db8a5db2fba957"
+  },
+  {
+    "row": "Q-COLD",
+    "plant": "p3-box-not-scaled",
+    "files": [
+      {
+        "file": "tests/browser/cold-probe.js",
+        "edit": {
+          "old": "const boxHalf = (radius) => Math.max(BOX_MIN_HALF, Math.round(BOX_SCALE * (radius || 0)));",
+          "new": "const boxHalf = (radius) => BOX_MIN_HALF;"
+        }
+      }
+    ],
+    "command": [
+      "node",
+      "--test",
+      "--test-name-pattern=orderButtons",
+      "tests/browser/cold-probe.test.js"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "✖ orderButtons: visible enabled order buttons",
+    "exit": 1,
+    "commit": "cbebebd4adb9dbee8423157c3e2ed966616bccad"
+  },
+  {
+    "row": "Q-COLD",
+    "plant": "p3-alert-noise-counts",
+    "files": [
+      {
+        "file": "tests/browser/cold-probe.js",
+        "edit": {
+          "old": "const before = normalisedUi(look.worldB.ui, { tooltips, alerts: false });\n    const after = normalisedUi(afterWorld.ui, { tooltips, alerts: false });\n    const idleIds = new Set(changedIds(normalisedUi(look.worldA.ui, { tooltips, alerts: false }), before));",
+          "new": "const before = normalisedUi(look.worldB.ui, { tooltips });\n    const after = normalisedUi(afterWorld.ui, { tooltips });\n    const idleIds = new Set(changedIds(normalisedUi(look.worldA.ui, { tooltips }), before));"
+        }
+      }
+    ],
+    "command": [
+      "node",
+      "--test",
+      "--test-name-pattern=a change elsewhere on the page",
+      "tests/browser/cold-probe.test.js"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "✖ a change elsewhere on the page does not make a click seen",
+    "exit": 1,
+    "commit": "cbebebd4adb9dbee8423157c3e2ed966616bccad"
+  },
+  {
+    "row": "Q-COLD",
+    "plant": "p3-orders-not-clicked",
+    "files": [
+      {
+        "file": "tests/browser/cold-probe.js",
+        "edit": {
+          "old": "    await orderPass(session, record, [...selected.values()]);\n",
+          "new": ""
+        }
+      }
+    ],
+    "command": [
+      "node",
+      "--test",
+      "--test-name-pattern=green page: units, orders",
+      "tests/browser/cold-probe.test.js"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "✖ first-click probe, green page: units, orders and extra clicks all answer",
+    "exit": 1,
+    "commit": "cbebebd4adb9dbee8423157c3e2ed966616bccad"
+  },
+  {
+    "row": "Q-COLD",
+    "plant": "p3-order-result-not-required",
+    "files": [
+      {
+        "file": "tests/browser/cold-probe.js",
+        "edit": {
+          "old": "acted: result.visible_change || result.notice !== null,",
+          "new": "acted: true,"
+        }
+      }
+    ],
+    "command": [
+      "node",
+      "--test",
+      "--test-name-pattern=an order button with no visible result",
+      "tests/browser/cold-probe.test.js"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "✖ an order button with no visible result is a P3 FAIL",
+    "exit": 1,
+    "commit": "cbebebd4adb9dbee8423157c3e2ed966616bccad"
+  },
+  {
+    "row": "Q-COLD",
+    "plant": "p3-destructive-not-last",
+    "files": [
+      {
+        "file": "tests/browser/cold-probe.js",
+        "edit": {
+          "old": "    return [...list.filter((w) => !DESTRUCTIVE.test(`${w.text} ${w.action.id}`)), ...list.filter((w) => DESTRUCTIVE.test(`${w.text} ${w.action.id}`))];",
+          "new": "    return list;"
+        }
+      }
+    ],
+    "command": [
+      "node",
+      "--test",
+      "--test-name-pattern=orderButtons",
+      "tests/browser/cold-probe.test.js"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "✖ orderButtons: visible enabled order buttons",
+    "exit": 1,
+    "commit": "cbebebd4adb9dbee8423157c3e2ed966616bccad"
+  },
+  {
+    "row": "Q-COLD",
+    "plant": "p4-extras-not-clicked",
+    "files": [
+      {
+        "file": "tests/browser/cold-probe.js",
+        "edit": {
+          "old": "    await extraClicks(session, record, [...selected.values()][0]);\n",
+          "new": ""
+        }
+      }
+    ],
+    "command": [
+      "node",
+      "--test",
+      "--test-name-pattern=green page: units, orders",
+      "tests/browser/cold-probe.test.js"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "✖ first-click probe, green page: units, orders and extra clicks all answer",
+    "exit": 1,
+    "commit": "cbebebd4adb9dbee8423157c3e2ed966616bccad"
+  },
+  {
+    "row": "Q-COLD",
+    "plant": "p4-enemy-not-judged",
+    "files": [
+      {
+        "file": "tests/browser/cold-probe.js",
+        "edit": {
+          "old": "ok: result.visible_change, ...result };\n    } else results.enemy",
+          "new": "ok: true, ...result };\n    } else results.enemy"
+        }
+      }
+    ],
+    "command": [
+      "node",
+      "--test",
+      "--test-name-pattern=extra click red case: enemy",
+      "tests/browser/cold-probe.test.js"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "✖ extra click red case: enemy",
+    "exit": 1,
+    "commit": "cbebebd4adb9dbee8423157c3e2ed966616bccad"
+  },
+  {
+    "row": "Q-COLD",
+    "plant": "p4-node-not-judged",
+    "files": [
+      {
+        "file": "tests/browser/cold-probe.js",
+        "edit": {
+          "old": "results.node = { node_id: nodeNow.node_id, point: [x, y], ok: result.visible_change, ...result };",
+          "new": "results.node = { node_id: nodeNow.node_id, point: [x, y], ok: true, ...result };"
+        }
+      }
+    ],
+    "command": [
+      "node",
+      "--test",
+      "--test-name-pattern=extra click red case: node",
+      "tests/browser/cold-probe.test.js"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "✖ extra click red case: node",
+    "exit": 1,
+    "commit": "cbebebd4adb9dbee8423157c3e2ed966616bccad"
+  },
+  {
+    "row": "Q-COLD",
+    "plant": "p4-ground-clear-not-judged",
+    "files": [
+      {
+        "file": "tests/browser/cold-probe.js",
+        "edit": {
+          "old": "selection_after: after.selection, ok: after.selection.length === 0 };",
+          "new": "selection_after: after.selection, ok: true };"
+        }
+      }
+    ],
+    "command": [
+      "node",
+      "--test",
+      "--test-name-pattern=extra click red case: ground_clear",
+      "tests/browser/cold-probe.test.js"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "✖ extra click red case: ground_clear",
+    "exit": 1,
+    "commit": "cbebebd4adb9dbee8423157c3e2ed966616bccad"
+  },
+  {
+    "row": "Q-COLD",
+    "plant": "p4-right-click-not-judged",
+    "files": [
+      {
+        "file": "tests/browser/cold-probe.js",
+        "edit": {
+          "old": "ok: result.notice !== null || markShown || result.box_seen,",
+          "new": "ok: true,"
+        }
+      }
+    ],
+    "command": [
+      "node",
+      "--test",
+      "--test-name-pattern=extra click red case: right_click",
+      "tests/browser/cold-probe.test.js"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "✖ extra click red case: right_click",
+    "exit": 1,
+    "commit": "cbebebd4adb9dbee8423157c3e2ed966616bccad"
+  },
+  {
+    "row": "Q-COLD",
+    "plant": "f8s-start-not-tried",
+    "files": [
+      {
+        "file": "tests/browser/cold-probe.js",
+        "edit": {
+          "old": "    if (overlay && under.length) {\n        record.f8_start",
+          "new": "    if (false) {\n        record.f8_start"
+        }
+      }
+    ],
+    "command": [
+      "node",
+      "--test",
+      "--test-name-pattern=buttons probe: a button under the start overlay",
+      "tests/browser/cold-probe.test.js"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "✖ buttons probe: a button under the start overlay loses its first click",
+    "exit": 1,
+    "commit": "cbebebd4adb9dbee8423157c3e2ed966616bccad"
+  },
+  {
+    "row": "Q-COLD",
+    "plant": "p5-hidden-close-not-found",
+    "files": [
+      {
+        "file": "tests/browser/cold-probe.js",
+        "edit": {
+          "old": "        && (widget.visible || CLOSE_TEXT.test((widget.text ?? \"\").trim())));",
+          "new": "        && widget.visible);"
+        }
+      }
+    ],
+    "command": [
+      "node",
+      "--test",
+      "--test-name-pattern=orderButtons",
+      "tests/browser/cold-probe.test.js"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "✖ orderButtons: visible enabled order buttons",
+    "exit": 1,
+    "commit": "cbebebd4adb9dbee8423157c3e2ed966616bccad"
+  },
+  {
+    "row": "Q-COLD",
+    "plant": "f8-camera-move-ignored",
+    "files": [
+      {
+        "file": "tests/browser/cold-probe.js",
+        "edit": {
+          "old": "acted: changed.length > 0 || actedBox || cameraMoved,",
+          "new": "acted: changed.length > 0 || actedBox,"
+        }
+      }
+    ],
+    "command": [
+      "node",
+      "--test",
+      "--test-name-pattern=a button whose effect is a moved camera",
+      "tests/browser/cold-probe.test.js"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "✖ buttons probe: a button whose effect is a moved camera acts",
+    "exit": 1,
+    "commit": "cbebebd4adb9dbee8423157c3e2ed966616bccad"
+  },
+  {
+    "row": "Q-COLD",
+    "plant": "f6-watch-empty",
+    "files": [
+      {
+        "file": "tests/browser/cold-probe.js",
+        "edit": {
+          "old": "if (world.available) record.watch.push({",
+          "new": "if (false) record.watch.push({"
+        }
+      }
+    ],
+    "command": [
+      "node",
+      "--test",
+      "--test-name-pattern=the probes watch the page",
+      "tests/browser/cold-probe.test.js"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "✖ the probes watch the page with no input",
+    "exit": 1,
+    "commit": "cbebebd4adb9dbee8423157c3e2ed966616bccad"
+  },
+  {
+    "row": "Q-COLD",
+    "plant": "f6-buttons-watch-short",
+    "files": [
+      {
+        "file": "tests/browser/cold-probe.js",
+        "edit": {
+          "old": "const BUTTONS_SETTLE_MS = 20000;",
+          "new": "const BUTTONS_SETTLE_MS = 8000;"
+        }
+      }
+    ],
+    "command": [
+      "node",
+      "--test",
+      "--test-name-pattern=wait 8 s",
+      "tests/browser/cold-probe.test.js"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "✖ the probes wait 8 s (first click) and watch 20 s",
+    "exit": 1,
+    "commit": "cbebebd4adb9dbee8423157c3e2ed966616bccad"
+  },
+  {
+    "row": "Q-COLD",
+    "plant": "c6-checker-f9b-total-ignored",
+    "files": [
+      {
+        "file": "scripts/qa/cold_play_check.py",
+        "edit": {
+          "old": "MAX_TOTAL_WORDS = 60",
+          "new": "MAX_TOTAL_WORDS = 6000"
+        }
+      }
+    ],
+    "command": [
+      "python3",
+      "-B",
+      "tests/qa/test_cold_play_check.py"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "FAIL: test_a_long_text_split_into_small_widgets_fails_f9b_and_not_f9",
+    "exit": 1,
+    "commit": "cbebebd4adb9dbee8423157c3e2ed966616bccad"
+  },
+  {
+    "row": "Q-COLD",
+    "plant": "c6-checker-f6-watch-ignored",
+    "files": [
+      {
+        "file": "scripts/qa/cold_play_check.py",
+        "edit": {
+          "old": "seen = [(w[\"t_ms\"], w.get(\"alert_lines\", 0), w.get(\"alerts\", 0)) for w in watch if w.get(\"alert_lines\", 0) or w.get(\"alerts\", 0)]",
+          "new": "seen = []"
+        }
+      }
+    ],
+    "command": [
+      "python3",
+      "-B",
+      "tests/qa/test_cold_play_check.py"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "FAIL: test_an_alert_line_at_any_second_of_the_watch_fails_f6",
+    "exit": 1,
+    "commit": "cbebebd4adb9dbee8423157c3e2ed966616bccad"
+  },
+  {
+    "row": "Q-COLD",
+    "plant": "c6-checker-p3-not-judged",
+    "files": [
+      {
+        "file": "scripts/qa/cold_play_check.py",
+        "edit": {
+          "old": "                report.add(label, part.get(\"verdict\") == \"PASS\",",
+          "new": "                report.add(label, True,"
+        }
+      }
+    ],
+    "command": [
+      "python3",
+      "-B",
+      "tests/qa/test_cold_play_check.py"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "FAIL: test_an_order_button_with_no_visible_result_fails_p3",
+    "exit": 1,
+    "commit": "cbebebd4adb9dbee8423157c3e2ed966616bccad"
+  },
+  {
+    "row": "Q-COLD",
+    "plant": "c6-checker-p5-ignored",
+    "files": [
+      {
+        "file": "scripts/qa/cold_play_check.py",
+        "edit": {
+          "old": "report.add(\"P5\", not outside,",
+          "new": "report.add(\"P5\", True,"
+        }
+      }
+    ],
+    "command": [
+      "python3",
+      "-B",
+      "tests/qa/test_cold_play_check.py"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "FAIL: test_a_button_outside_the_page_fails_p5",
+    "exit": 1,
+    "commit": "cbebebd4adb9dbee8423157c3e2ed966616bccad"
+  },
+  {
+    "row": "Q-COLD",
+    "plant": "c6-checker-f8s-ignored",
+    "files": [
+      {
+        "file": "scripts/qa/cold_play_check.py",
+        "edit": {
+          "old": "report.add(\"F8s\", start.get(\"verdict\") in (\"PASS\", \"SKIPPED\"),",
+          "new": "report.add(\"F8s\", True,"
+        }
+      }
+    ],
+    "command": [
+      "python3",
+      "-B",
+      "tests/qa/test_cold_play_check.py"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "FAIL: test_a_first_click_lost_under_the_start_overlay_is_a_finding_of_its_own_f8s",
+    "exit": 1,
+    "commit": "cbebebd4adb9dbee8423157c3e2ed966616bccad"
+  },
+  {
+    "row": "Q-COLD",
+    "plant": "c6-checker-control-orders-judged",
+    "files": [
+      {
+        "file": "scripts/qa/cold_play_check.py",
+        "edit": {
+          "old": "                report.info(label, f\"control, not judged:",
+          "new": "                report.add(label, False, f\"control, not judged:"
+        }
+      }
+    ],
+    "command": [
+      "python3",
+      "-B",
+      "tests/qa/test_cold_play_check.py"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "FAIL: test_the_orders_and_extras_of_a_control_are_shown_and_not_judged",
+    "exit": 1,
+    "commit": "cbebebd4adb9dbee8423157c3e2ed966616bccad"
+  },
+  {
+    "row": "Q-COLD",
+    "plant": "c5-hash-not-compared",
+    "files": [
+      {
+        "file": "scripts/qa/cold_play_check.py",
+        "edit": {
+          "old": "if differ or not recorded or tool.get(\"dirty\"):",
+          "new": "if not recorded or tool.get(\"dirty\"):"
+        }
+      }
+    ],
+    "command": [
+      "python3",
+      "-B",
+      "tests/qa/test_cold_play_check.py"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "FAIL: test_a_reference_made_with_another_tool_version_fails_c5a",
+    "exit": 1,
+    "commit": "cbebebd4adb9dbee8423157c3e2ed966616bccad"
+  },
+  {
+    "row": "Q-COLD",
+    "plant": "c5-probe-fail-not-required",
+    "files": [
+      {
+        "file": "scripts/qa/cold_play_check.py",
+        "edit": {
+          "old": "report.add(\"C5b\", probe_fail and control_pass,",
+          "new": "report.add(\"C5b\", control_pass,"
+        }
+      }
+    ],
+    "command": [
+      "python3",
+      "-B",
+      "tests/qa/test_cold_play_check.py"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "FAIL: test_a_reference_where_the_probe_does_not_fail_or_the_control_does_not_pass_fails_c5b",
+    "exit": 1,
+    "commit": "cbebebd4adb9dbee8423157c3e2ed966616bccad"
+  },
+  {
+    "row": "Q-COLD",
+    "plant": "c5-reference-not-required",
+    "files": [
+      {
+        "file": "scripts/qa/cold_play_check.py",
+        "edit": {
+          "old": "        if not reference_given:\n            missing.append(\"reference run (C5)\")",
+          "new": "        if False:\n            missing.append(\"reference run (C5)\")"
+        }
+      }
+    ],
+    "command": [
+      "python3",
+      "-B",
+      "tests/qa/test_cold_play_check.py"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "FAIL: test_a_missing_part_gives_not_ready",
+    "exit": 1,
+    "commit": "cbebebd4adb9dbee8423157c3e2ed966616bccad"
+  },
+  {
+    "row": "Q-COLD",
+    "plant": "c5-second-size-not-required",
+    "files": [
+      {
+        "file": "scripts/qa/cold_play_check.py",
+        "edit": {
+          "old": "REQUIRED_SIZES = (\"1280x720\", \"1024x768\")",
+          "new": "REQUIRED_SIZES = (\"1280x720\",)"
+        }
+      }
+    ],
+    "command": [
+      "python3",
+      "-B",
+      "tests/qa/test_cold_play_check.py"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "FAIL: test_a_missing_part_gives_not_ready",
+    "exit": 1,
+    "commit": "cbebebd4adb9dbee8423157c3e2ed966616bccad"
+  },
+  {
+    "row": "Q-COLD",
+    "plant": "c6-report-not-judged",
+    "files": [
+      {
+        "file": "scripts/qa/cold_play_check.py",
+        "edit": {
+          "old": "report.add(\"C6\", not problems,",
+          "new": "report.add(\"C6\", True,"
+        }
+      }
+    ],
+    "command": [
+      "python3",
+      "-B",
+      "tests/qa/test_cold_play_check.py"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "FAIL: test_a_yes_or_no_line_a_wrong_class_a_long_text_or_a_missing_stuck_fail_c6",
+    "exit": 1,
+    "commit": "cbebebd4adb9dbee8423157c3e2ed966616bccad"
+  },
+  {
+    "row": "Q-COLD",
+    "plant": "c5-tool-record-missing",
+    "files": [
+      {
+        "file": "tests/browser/cold-session.js",
+        "edit": {
+          "old": "build: options.build, tool: toolRecord(),",
+          "new": "build: options.build,"
+        }
+      }
+    ],
+    "command": [
+      "node",
+      "--test",
+      "--test-name-pattern=session.json records the tool commit",
+      "tests/browser/cold-play.test.js"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "✖ session.json records the tool commit and the sha256 of each tool file",
+    "exit": 1,
+    "commit": "cbebebd4adb9dbee8423157c3e2ed966616bccad"
+  },
+  {
+    "row": "Q-COLD",
+    "plant": "report-before-statement",
+    "files": [
+      {
+        "file": "tests/browser/cold-session.js",
+        "edit": {
+          "old": "        if (this.statementMs === null) return this.reply(3, [\"refused: store the statement first.\"]);\n",
+          "new": ""
+        }
+      }
+    ],
+    "command": [
+      "node",
+      "--test",
+      "--test-name-pattern=the report: after the statement",
+      "tests/browser/cold-play.test.js"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "✖ the report: after the statement, one time, in the fixed form",
+    "exit": 1,
+    "commit": "cbebebd4adb9dbee8423157c3e2ed966616bccad"
+  },
+  {
+    "row": "Q-COLD",
+    "plant": "session-limit-default-600",
+    "files": [
+      {
+        "file": "tests/browser/cold-session.js",
+        "edit": {
+          "old": "const DEFAULT_LIMIT_S = 300;",
+          "new": "const DEFAULT_LIMIT_S = 600;"
+        }
+      }
+    ],
+    "command": [
+      "node",
+      "--test",
+      "--test-name-pattern=session limit has a ceiling",
+      "tests/browser/cold-play.test.js"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "✖ the session limit has a ceiling under the hold limit",
+    "exit": 1,
+    "commit": "cbebebd4adb9dbee8423157c3e2ed966616bccad"
+  },
+  {
+    "row": "Q-COLD",
+    "plant": "reference-rebuild-any-commit",
+    "files": [
+      {
+        "file": "scripts/cold-reference.sh",
+        "edit": {
+          "old": "        [[ \"$(git rev-parse HEAD 2>/dev/null)\" == 9b3a7bdd* ]] || { echo \"cold-reference: run this in a worktree at commit 9b3a7bd\" >&2; exit 2; }\n",
+          "new": ""
+        }
+      }
+    ],
+    "command": [
+      "node",
+      "--test",
+      "--test-name-pattern=cold-reference.sh",
+      "tests/browser/cold-play.test.js"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "✖ scripts/cold-reference.sh: usage, a refusal to rebuild outside 9b3a7bd",
+    "exit": 1,
+    "commit": "cbebebd4adb9dbee8423157c3e2ed966616bccad"
+  },
+  {
+    "row": "Q-COLD",
+    "plant": "silent-play-arg-missing",
+    "files": [
+      {
+        "file": "scripts/mp1-play.sh",
+        "edit": {
+          "old": "    [[ \"$SOUND\" != silent ]] || printf '%s\\n' --alsa-output-device=null\n",
+          "new": ""
+        }
+      }
+    ],
+    "command": [
+      "node",
+      "--test",
+      "--test-name-pattern=SILENT by default",
+      "tests/browser/cold-play.test.js"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "✖ mp1-play.sh --url starts a Chrome that answers on the printed port, SILENT by default",
+    "exit": 1,
+    "commit": "71b58ed0215be57f245d6ceac3f3c7d862a334c2"
+  },
+  {
+    "row": "Q-COLD",
+    "plant": "silent-play-env-missing",
+    "files": [
+      {
+        "file": "scripts/mp1-play.sh",
+        "edit": {
+          "old": "    export PULSE_SERVER=\"unix:/nonexistent/mc-tests-no-pulse\"\n",
+          "new": ""
+        }
+      }
+    ],
+    "command": [
+      "node",
+      "--test",
+      "--test-name-pattern=SILENT by default",
+      "tests/browser/cold-play.test.js"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "✖ mp1-play.sh --url starts a Chrome that answers on the printed port, SILENT by default",
+    "exit": 1,
+    "commit": "71b58ed0215be57f245d6ceac3f3c7d862a334c2"
+  },
+  {
+    "row": "Q-COLD",
+    "plant": "silent-play-url-not-default",
+    "files": [
+      {
+        "file": "scripts/mp1-play.sh",
+        "edit": {
+          "old": "if [[ -n \"${MC_LOCK_RUN:-}\" || \"$mode\" == --url ]]; then SOUND=silent;",
+          "new": "if [[ -n \"${MC_LOCK_RUN:-}\" ]]; then SOUND=silent;"
+        }
+      }
+    ],
+    "command": [
+      "node",
+      "--test",
+      "--test-name-pattern=SILENT by default",
+      "tests/browser/cold-play.test.js"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "✖ mp1-play.sh --url starts a Chrome that answers on the printed port, SILENT by default",
+    "exit": 1,
+    "commit": "71b58ed0215be57f245d6ceac3f3c7d862a334c2"
+  },
+  {
+    "row": "Q-COLD",
+    "plant": "silent-play-wrapper-not-default",
+    "files": [
+      {
+        "file": "scripts/mp1-play.sh",
+        "edit": {
+          "old": "if [[ -n \"${MC_LOCK_RUN:-}\" || \"$mode\" == --url ]]; then SOUND=silent;",
+          "new": "if [[ \"$mode\" == --url ]]; then SOUND=silent;"
+        }
+      }
+    ],
+    "command": [
+      "node",
+      "--test",
+      "--test-name-pattern=person form",
+      "tests/browser/cold-play.test.js"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "✖ mp1-play.sh --url --with-sound is the person form",
+    "exit": 1,
+    "commit": "71b58ed0215be57f245d6ceac3f3c7d862a334c2"
+  },
+  {
+    "row": "Q-COLD",
+    "plant": "silent-play-person-form-silenced",
+    "files": [
+      {
+        "file": "scripts/mp1-play.sh",
+        "edit": {
+          "old": "--with-sound) SOUND=person; shift ;;",
+          "new": "--with-sound) SOUND=silent; shift ;;"
+        }
+      }
+    ],
+    "command": [
+      "node",
+      "--test",
+      "--test-name-pattern=person form",
+      "tests/browser/cold-play.test.js"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "✖ mp1-play.sh --url --with-sound is the person form",
+    "exit": 1,
+    "commit": "71b58ed0215be57f245d6ceac3f3c7d862a334c2"
+  },
+  {
+    "row": "Q-COLD",
+    "plant": "silent-cold-play-no-flag",
+    "files": [
+      {
+        "file": "scripts/cold-play.sh",
+        "edit": {
+          "old": "\"${play_args[@]}\" --silent >",
+          "new": "\"${play_args[@]}\" >"
+        }
+      }
+    ],
+    "command": [
+      "node",
+      "--test",
+      "--test-name-pattern=start script ends its game",
+      "tests/browser/cold-play.test.js"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "✖ the start script ends its game and Chrome with the session",
+    "exit": 1,
+    "commit": "71b58ed0215be57f245d6ceac3f3c7d862a334c2"
+  },
+  {
+    "row": "Q-COLD",
+    "plant": "silent-script-scan-blind",
+    "files": [
+      {
+        "file": "tests/browser/harness/silent-chrome-scan.test.js",
+        "edit": {
+          "old": "    const starts = /\"\\$CHROME_BIN\"\\s+\"\\$\\{|",
+          "new": "    const starts = /NEVERMATCH|"
+        }
+      }
+    ],
+    "command": [
+      "node",
+      "--test",
+      "tests/browser/harness/silent-chrome-scan.test.js"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "✖ the script scan finds a Chrome start with no silent form",
+    "exit": 1,
+    "commit": "71b58ed0215be57f245d6ceac3f3c7d862a334c2"
+  }
+]

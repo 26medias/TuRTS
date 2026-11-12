@@ -9,6 +9,10 @@ const assert = require("node:assert/strict");
 const test = require("node:test");
 const vm = require("node:vm");
 const { waitForSync, waitForDebugRecord } = require("./wait-sync.js");
+const { silentEnv, SILENT_ARGS } = require("./silent-chrome.js");
+const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
 
 function fakePage(window, { maxPolls = 1000 } = {}) {
     const page = { calls: [], polls: 0 };
@@ -140,7 +144,8 @@ const CHROME = process.env.CHROME_BIN || ["google-chrome", "chromium"].map((name
 
 test("in a real Chrome: a sync wait polls, a Promise predicate throws, a held request is asked once", { skip: !CHROME && "no Chrome binary" }, async () => {
     const { chromium } = require("playwright-core");
-    const browser = await chromium.launch({ executablePath: CHROME, headless: true });
+    const quiet = fs.mkdtempSync(path.join(os.tmpdir(), "wait-sync-quiet-"));
+    const browser = await chromium.launch({ executablePath: CHROME, headless: true, args: SILENT_ARGS, env: silentEnv(quiet) });
     try {
         const page = await browser.newPage();
         await page.setContent("<title>wait</title>");
@@ -156,5 +161,5 @@ test("in a real Chrome: a sync wait polls, a Promise predicate throws, a held re
         await assert.rejects(waitForSync(page, async () => true, null, { timeout: 5000 }), /async function/);
         await assert.rejects(waitForDebugRecord(page, () => window.turts_debug() !== "", null, { timeout: 600, polling: 20 }), /Timeout/);
         assert.equal(await page.evaluate(() => window.asked), 1, "about 30 polls with the frame held ask once");
-    } finally { await browser.close(); }
+    } finally { await browser.close(); fs.rmSync(quiet, { recursive: true, force: true }); }
 });
