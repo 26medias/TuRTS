@@ -57,10 +57,16 @@ class VariantCliTests(unittest.TestCase):
         paths = mapping["paths"]
         self.assertTrue(all(row["old_export_path"] != row["new_export_path"] for row in paths))
         self.assertTrue(all(row["old_package_path"] and row["new_package_path"] and row["old_archive_path"] and row["new_archive_path"] for row in paths))
-        asset = mapping["unchanged_assets"][0]
-        self.assertTrue(asset["unchanged"])
-        self.assertEqual(asset["old_path"], asset["new_path"])
-        self.assertEqual((self.out / renamed / asset["new_path"]).read_bytes(), b"unchanged authored asset\x00\xff")
+        # Cedar has had its own assets since MC task 18 (icons, assets.ron), so the test asset is not the
+        # first record. Every unchanged asset must be byte-equal to its source, and the test asset is one.
+        assets = mapping["unchanged_assets"]
+        self.assertIn("assets/keep.bin", [asset["old_path"] for asset in assets])
+        for asset in assets:
+            self.assertTrue(asset["unchanged"], asset)
+            self.assertEqual(asset["old_path"], asset["new_path"], asset)
+            self.assertEqual((self.out / renamed / asset["new_path"]).read_bytes(), (self.source / asset["old_path"]).read_bytes(), asset)
+        keep = next(asset for asset in assets if asset["old_path"] == "assets/keep.bin")
+        self.assertEqual((self.out / renamed / keep["new_path"]).read_bytes(), b"unchanged authored asset\x00\xff")
 
     def test_same_seed_has_identical_bytes_independent_of_output_path(self):
         first = self.invoke()
@@ -273,7 +279,10 @@ class VariantCliTests(unittest.TestCase):
         manifest.write_text(manifest.read_text().replace("dependencies: {},", 'dependencies: {"other": "^0.2"},'))
         result = self.invoke()
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn("dependencies", result.stderr)
+        # Until QA0 (9fc246c0) manifest.rs refused any dependency with a "dependencies" field error, and this
+        # test read that word. The manifest now accepts dependencies, so the refusal is the variant tool's own
+        # (crates/turts_checks/examples/m2_variants.rs:286).
+        self.assertIn("dependency-bearing package cedar is unsupported", result.stderr)
         manifest.write_text(manifest.read_text().replace('dependencies: {"other": "^0.2"},', "dependencies: {},"))
         (self.source / "hidden.ron").write_text("()")
         result = self.invoke()

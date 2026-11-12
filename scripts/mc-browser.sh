@@ -173,10 +173,9 @@ cat >"$OUT/server.ron" <<EOF_RON
     static_dir: "$DIST",
 )
 EOF_RON
-SERVER_ARGS=("$TARGET/release/turts_server" "$OUT/server.ron")
-if [[ "${ROW_NAME:-}" == "SLOT1" ]]; then
-    SERVER_ARGS+=(--stats "$OUT/server-stats.json")
-fi
+# Every row starts the server with --stats: the oracles read tick_max_us (the longest compute time of one tick) to tell a
+# slow server tick from a host stall (checkpoint-lib.js assertConnectionHeld). SLOT1 also reads the session observer.
+SERVER_ARGS=("$TARGET/release/turts_server" "$OUT/server.ron" --stats "$OUT/server-stats.json")
 if [[ "$SYNTHETIC_SET" == true ]]; then
     SERVER_ARGS+=(--synthetic-units "$SYNTHETIC_UNITS")
 fi
