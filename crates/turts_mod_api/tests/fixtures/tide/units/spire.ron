@@ -1,0 +1,6 @@
+(id: "spire", name: "Spire", footprint: Circle(radius: 1.2), movement: None, inventory: None, gatherer: None, drop_off: None, producer: None,
+ health: Some((max: 700)), armour: Some((class: "tide:plating")),
+ weapon: Some((range: 7.5, cooldown_ms: 1200, damage: 30, ammo: None, targets: (slots: Enemy), damage_type: Some("tide:bolt"),
+     when_short: [(resource: "tide:current", effect: Disable)])),
+ acquire: Some((range: 7.5, leash: 0.0)), consumes: [(resource: "tide:current", amount: 20)],
+ placement: Some((gap: 2.2, node_clearance: 2.0, in_build_area: true, site_health: (numerator: 1, denominator: 10))))

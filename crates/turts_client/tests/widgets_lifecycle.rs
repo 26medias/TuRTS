@@ -151,6 +151,8 @@ fn authored_list(id: &str, source: Source, item_action: ActionField, max_items: 
                     label: Some(TextValue::Item(ItemField::Name)),
                     action: ButtonAction::Item(item_action),
                     hotkey_label: false,
+                    font: Default::default(),
+                    size: Default::default(),
                 },
             }),
         },

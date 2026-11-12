@@ -39,12 +39,14 @@ const ROOTS: [&str; 4] = [
 /// in the commit message.
 const BASELINE: &[(&str, u32, u32, u32)] = &[
     ("crates/turts_client/src/camera.rs", 0, 0, 1),
-    ("crates/turts_client/src/core_adapter.rs", 0, 3, 0),
     ("crates/turts_client/src/feedback.rs", 0, 0, 2),
-    ("crates/turts_client/src/widgets/cursor.rs", 0, 6, 0),
+    // L0-API1: the one mapping of the schema filter to the rule relation, an exhaustive match of
+    // five paths. The five copies of the relation match (core_adapter 3, cursor 6, combat 3,
+    // run 3: 15 paths) are gone; they call `turts_rules::relation` through this mapping.
+    ("crates/turts_client/src/relation.rs", 0, 5, 0),
     ("crates/turts_interaction/src/camera.rs", 0, 0, 1),
     ("crates/turts_sim/src/boot_m3.rs", 1, 0, 5),
-    ("crates/turts_sim/src/economy/combat.rs", 0, 3, 4),
+    ("crates/turts_sim/src/economy/combat.rs", 0, 0, 4),
     ("crates/turts_sim/src/economy/gather.rs", 0, 0, 4),
     ("crates/turts_sim/src/economy/machine.rs", 1, 0, 0),
     ("crates/turts_sim/src/economy/production.rs", 1, 0, 0),
@@ -54,7 +56,8 @@ const BASELINE: &[(&str, u32, u32, u32)] = &[
     ("crates/turts_sim/src/map.rs", 0, 0, 1),
     ("crates/turts_sim/src/movement/spread.rs", 0, 0, 2),
     ("crates/turts_sim/src/orders/behaviours/attack.rs", 0, 0, 1),
-    ("crates/turts_sim/src/orders/run.rs", 0, 3, 0),
+    // L0-API1: the same mapping in the simulation (the client cannot depend on it).
+    ("crates/turts_sim/src/rules_adapter.rs", 0, 5, 0),
 ];
 
 fn repo() -> PathBuf {

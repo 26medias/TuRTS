@@ -128,6 +128,8 @@ fn hidden_widget_ancestor_hides_child_and_removes_its_world_capture() {
             label: Some(TextValue::Literal("Close".into())),
             action: ButtonAction::Input("toggle_guide".into()),
             hotkey_label: false,
+            font: Default::default(),
+            size: Default::default(),
         },
     };
     let parent = Widget {
@@ -268,6 +270,8 @@ fn icon_only_hotkey_button_still_renders_effective_binding_and_tracks_hover() {
             label: None,
             action: ButtonAction::Input("centre_selection".into()),
             hotkey_label: true,
+            font: Default::default(),
+            size: Default::default(),
         },
     };
     let entity = spawn_widget(
@@ -392,6 +396,8 @@ fn dynamic_list_values_refresh_without_replacing_button_entities() {
                     label: Some(TextValue::Item(ItemField::Name)),
                     action: ButtonAction::Item(turts_mod_api::ActionField::Action),
                     hotkey_label: false,
+                    font: Default::default(),
+                    size: Default::default(),
                 },
             }],
         },
@@ -743,6 +749,8 @@ fn grid_item_tooltips_inherit_context_and_template_tooltips_override_it() {
                     label: Some(TextValue::Item(ItemField::Name)),
                     action: ButtonAction::Item(turts_mod_api::ActionField::Action),
                     hotkey_label: false,
+                    font: Default::default(),
+                    size: Default::default(),
                 },
             }),
         },
@@ -897,6 +905,8 @@ fn disabled_authored_button_cannot_dispatch_an_action() {
             label: Some(TextValue::Literal("Disabled".into())),
             action: ButtonAction::Input("toggle_guide".into()),
             hotkey_label: false,
+            font: Default::default(),
+            size: Default::default(),
         },
     };
     let entity = spawn_widget(

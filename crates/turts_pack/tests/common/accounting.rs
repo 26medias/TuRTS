@@ -1034,6 +1034,10 @@ impl AccountingOracle {
                 )
                 .map_err(|_| "recipe duration exceeds u64")?;
                 let (charged, reserved) = match recipe.payment {
+                    // API 0.2.4: the packer refuses `ChargeOverTime` until `L-PAY` builds it.
+                    PaymentPolicy::ChargeOverTime => {
+                        return Err("ChargeOverTime has no accounting rule yet (L-PAY)".into());
+                    }
                     PaymentPolicy::ChargeOnQueue => (
                         recipe
                             .costs
@@ -1114,6 +1118,10 @@ impl AccountingOracle {
                 }
                 for cost in &recipe.costs {
                     match recipe.payment {
+                        // API 0.2.4: the packer refuses `ChargeOverTime` until `L-PAY` builds it.
+                        PaymentPolicy::ChargeOverTime => {
+                            return Err("ChargeOverTime has no accounting rule yet (L-PAY)".into());
+                        }
                         PaymentPolicy::ChargeOnQueue => apply_cost(
                             &mut expected_state,
                             cost.source,
@@ -1219,6 +1227,10 @@ impl AccountingOracle {
                     let reserved_after =
                         endpoint_reserved(a, cost.source, c.slot.0, *producer_id, &cost.resource);
                     match recipe.payment {
+                        // API 0.2.4: the packer refuses `ChargeOverTime` until `L-PAY` builds it.
+                        PaymentPolicy::ChargeOverTime => {
+                            return Err("ChargeOverTime has no accounting rule yet (L-PAY)".into());
+                        }
                         PaymentPolicy::ChargeOnQueue => {
                             if amount_before.checked_sub(cost.amount) != Some(amount_after)
                                 || reserved_before != reserved_after

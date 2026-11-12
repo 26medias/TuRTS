@@ -13,6 +13,7 @@ pub mod movement;
 pub mod orders;
 pub mod plugin;
 pub mod registry;
+pub mod rules_adapter;
 pub mod slots;
 pub mod world;
 

@@ -186,6 +186,7 @@ fn moving_placements(count: usize) -> Vec<Placement> {
                 },
                 contents: Vec::new(),
                 facing: None,
+                start_order: None,
             }
         })
         .collect()
@@ -205,6 +206,7 @@ fn combat_placements(count: usize) -> Vec<Placement> {
                     pos: WorldPos { x, y },
                     contents: Vec::new(),
                     facing: None,
+                    start_order: None,
                 },
                 Placement {
                     unit: "muster:dummy".into(),
@@ -212,6 +214,7 @@ fn combat_placements(count: usize) -> Vec<Placement> {
                     pos: WorldPos { x: x + 1.5, y },
                     contents: Vec::new(),
                     facing: None,
+                    start_order: None,
                 },
             ]
         })

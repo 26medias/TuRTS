@@ -121,6 +121,7 @@ fn add_data_order_fixture_inputs(path: &Path, manifest: &mut Manifest) {
             fonts: Vec::new(),
             sounds: Vec::new(),
             cursors: Vec::new(),
+            models: Vec::new(),
         }
     };
     assets.images.push(ImageAsset {
@@ -212,6 +213,7 @@ fn version_row_fixture(row: &str) -> PathBuf {
                 ron::ser::to_string(&OrderRulesDef {
                     queue_depth: 16,
                     smart: Vec::new(),
+                    rally: None,
                 })
                 .expect("serialize order rules"),
             )
@@ -246,6 +248,7 @@ fn version_row_fixture(row: &str) -> PathBuf {
                     fonts: Vec::new(),
                     sounds: Vec::new(),
                     cursors: Vec::new(),
+                    models: Vec::new(),
                 })
                 .expect("serialize empty assets"),
             )

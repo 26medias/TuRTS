@@ -177,10 +177,12 @@ impl WorldView for SmartMusterWorld {
             .units
             .get(&unit_id)
             .and_then(|definition| definition.weapon.as_ref())
-            .is_some_and(|weapon| match weapon.targets.slots {
-                turts_mod_api::SlotRelation::Other => target.owner_slot != unit.owner_slot,
-                turts_mod_api::SlotRelation::Same => target.owner_slot == unit.owner_slot,
-                turts_mod_api::SlotRelation::Any => true,
+            .is_some_and(|weapon| {
+                turts_sim::rules_adapter::holds_own_team(
+                    weapon.targets.slots,
+                    unit.owner_slot.0,
+                    target.owner_slot.0,
+                )
             })
     }
 }

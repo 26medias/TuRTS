@@ -3,8 +3,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use turts_mod_api::{
-    AssetsDef, Behaviour, ButtonAction, ButtonIcon, ContentId, InterfaceDef, ModError, OrderDef,
-    OrderRulesDef, PackageId, Primitive, Source, Value,
+    AssetsDef, Behaviour, ButtonAction, ButtonIcon, ContentId, InterfaceDef, MatchDef, ModError,
+    OrderDef, OrderRulesDef, PackageId, Primitive, ProductionDef, ResourceDef, Source,
+    TechnologyDef, UnitDef, Value,
 };
 
 use crate::{
@@ -28,6 +29,13 @@ pub(crate) struct ParsedMcContent {
     pub(crate) interfaces: Vec<(String, InterfaceDef)>,
     pub(crate) input_maps: Vec<(String, turts_mod_api::InputMapDef)>,
     pub(crate) assets: Vec<(String, AssetsDef)>,
+    // The parsed gameplay files of the package (API 0.2.4: the rows of the version table that read
+    // a variant or a combination, `variants.rs`). `PackageArchive::content` sets them.
+    pub(crate) units: Vec<(String, UnitDef)>,
+    pub(crate) resources: Vec<(String, ResourceDef)>,
+    pub(crate) production: Vec<(String, ProductionDef)>,
+    pub(crate) technologies: Vec<(String, TechnologyDef)>,
+    pub(crate) matches: Vec<(String, MatchDef)>,
     // Presence of a field is not read here: this is the parsed value, and an explicit empty
     // field looks like an absent one. The version table reads the source file (`raw_presence`).
     /// A unit has a weapon and movement. API 0.2.2 and older refuse it ("weapons must be
@@ -66,6 +74,7 @@ pub(crate) fn validate_mc(archive: &PackageArchive) -> Result<ParsedMcContent, M
         interfaces,
         input_maps,
         assets,
+        ..ParsedMcContent::default()
     };
     let package = PackageId(archive.manifest.id.clone());
     let dependency_ids: BTreeSet<&str> = archive
@@ -1293,6 +1302,12 @@ fn validate_order_target(
         B::Gather => order.target == T::Node,
         B::Produce => order.target == T::Content,
         B::CancelProduction => order.target == T::Job,
+        // API 0.2.4: the target of each new behaviour (design 6.10 rows O1 to O4 and O9). The
+        // rest of their checks (listed units, capabilities) is the validation of L0-API2.
+        B::Construct => order.target == T::ContentAtPoint,
+        B::CancelConstruction | B::Surrender => order.target == T::None,
+        B::SetRally => matches!(order.target, T::Point | T::Unit | T::PointOrUnit | T::Node),
+        B::Repair => order.target == T::Unit,
     };
     if !allowed {
         let expected = match order.behaviour {
@@ -1301,6 +1316,10 @@ fn validate_order_target(
             B::Gather => "Node",
             B::Stop | B::Hold | B::Remove | B::SetEnabled(_) => "None",
             B::Move | B::Attack => "Point, Unit or PointOrUnit",
+            B::Construct => "ContentAtPoint",
+            B::CancelConstruction | B::Surrender => "None",
+            B::SetRally => "Point, Unit, PointOrUnit or Node",
+            B::Repair => "Unit",
         };
         return Err(error(
             package,
@@ -1350,31 +1369,43 @@ fn validate_smart_rule(
     order: &OrderDef,
 ) -> Result<(), ModError> {
     use Behaviour as B;
-    use turts_mod_api::{SmartTarget as S, TargetKind as T};
-    let valid = match smart.target {
-        S::Ground | S::OwnUnit | S::ForeignUnit | S::Node => {
-            smart.needs == turts_mod_api::Capability::Movement
-                && order.behaviour == B::Move
-                && matches!(order.target, T::Point | T::Unit | T::PointOrUnit)
+    use turts_mod_api::{Capability as C, SmartTarget as S, TargetKind as T};
+    // API 0.2.4 (design 6.10 row O6): the combinations that the new variants add. The old
+    // combinations below are unchanged. The texts and the rest of the checks are L0-API2.
+    let new_combination = match (smart.target, smart.needs) {
+        (S::OwnDamaged, C::Repairer) => order.behaviour == B::Repair && order.target == T::Unit,
+        (S::Ground, C::Producer) => order.behaviour == B::SetRally,
+        (S::Ground, C::Constructor) => {
+            order.behaviour == B::Construct && order.target == T::ContentAtPoint
         }
-        S::ForeignUnitWeaponTarget => {
-            smart.needs == turts_mod_api::Capability::Weapon
-                && order.behaviour == B::Attack
-                && matches!(order.target, T::Unit | T::PointOrUnit)
-        }
-        S::ResourceNodeAccepted => {
-            smart.needs == turts_mod_api::Capability::Gatherer
-                && order.behaviour == B::Gather
-                && order.target == T::Node
-        }
-        S::Content => {
-            matches!(
-                smart.needs,
-                turts_mod_api::Capability::Producer | turts_mod_api::Capability::Research
-            ) && order.behaviour == B::Produce
-                && order.target == T::Content
-        }
+        _ => false,
     };
+    let valid = new_combination
+        || match smart.target {
+            S::Ground | S::OwnUnit | S::ForeignUnit | S::Node => {
+                smart.needs == turts_mod_api::Capability::Movement
+                    && order.behaviour == B::Move
+                    && matches!(order.target, T::Point | T::Unit | T::PointOrUnit)
+            }
+            S::ForeignUnitWeaponTarget => {
+                smart.needs == turts_mod_api::Capability::Weapon
+                    && order.behaviour == B::Attack
+                    && matches!(order.target, T::Unit | T::PointOrUnit)
+            }
+            S::ResourceNodeAccepted => {
+                smart.needs == turts_mod_api::Capability::Gatherer
+                    && order.behaviour == B::Gather
+                    && order.target == T::Node
+            }
+            S::Content => {
+                matches!(
+                    smart.needs,
+                    turts_mod_api::Capability::Producer | turts_mod_api::Capability::Research
+                ) && order.behaviour == B::Produce
+                    && order.target == T::Content
+            }
+            S::OwnDamaged => false,
+        };
     if !valid {
         return Err(error(
             package,

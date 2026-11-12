@@ -75,6 +75,7 @@ fn extractor_runs_in_fixed_extract_set() {
             pos: WorldPos { x: 12.0, y: 10.0 },
             contents: vec![],
             facing: None,
+            start_order: None,
         }],
         nodes: vec![NodePlacement {
             node: "probe:deposit".into(),

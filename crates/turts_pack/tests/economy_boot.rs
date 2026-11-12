@@ -15,6 +15,7 @@ fn direct_map(unit: &str, x: f32, y: f32) -> MapDef {
             pos: WorldPos { x, y },
             contents: Vec::new(),
             facing: None,
+            start_order: None,
         }],
         nodes: Vec::new(),
         slot_economy: Vec::new(),

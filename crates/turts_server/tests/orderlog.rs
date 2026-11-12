@@ -252,6 +252,16 @@ fn installed_logger_tracks_real_failed_then_appended_move_to_completion() {
                 health: None,
                 weapon: None,
                 removal: None,
+                armour: None,
+                acquire: None,
+                provides: Vec::new(),
+                consumes: Vec::new(),
+                income: None,
+                spawn_order: None,
+                constructor: None,
+                placement: None,
+                build_area: None,
+                repairer: None,
             },
         )
         .unwrap();
@@ -268,6 +278,7 @@ fn installed_logger_tracks_real_failed_then_appended_move_to_completion() {
                     pos: WorldPos { x: 2.0, y: 2.0 },
                     contents: Vec::new(),
                     facing: None,
+                    start_order: None,
                 },
                 Placement {
                     unit: "fixture:walker".into(),
@@ -275,6 +286,7 @@ fn installed_logger_tracks_real_failed_then_appended_move_to_completion() {
                     pos: WorldPos { x: 5.0, y: 2.0 },
                     contents: Vec::new(),
                     facing: None,
+                    start_order: None,
                 },
             ],
             nodes: Vec::new(),
