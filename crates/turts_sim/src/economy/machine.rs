@@ -1,6 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use bevy_ecs::world::{EntityRef, World};
+use bevy_ecs::world::World;
 use turts_mod_api::{ContentId, ResolvedRecipe};
 
 use crate::{
@@ -15,6 +15,7 @@ use crate::{
     },
     ids::JobId,
     registry::UnitTypes,
+    unit_index::unit_entity,
 };
 
 /// Return machine subjects in explicit, ascending unit-id order.
@@ -244,9 +245,9 @@ fn inputs_available(world: &World, machine: u32, recipe_id: &ContentId) -> bool 
 }
 
 fn machine_recipe(world: &World, machine: u32) -> Option<(u8, ContentId, u64)> {
-    let entity = find_unit(world, machine)?;
-    let owner = entity.get::<Owner>()?.0.0;
-    let unit_type = entity.get::<UnitType>()?.0;
+    let entity = unit_entity(world, machine)?;
+    let owner = world.get::<Owner>(entity)?.0.0;
+    let unit_type = world.get::<UnitType>(entity)?.0;
     let type_entry = world.get_resource::<UnitTypes>()?.get(unit_type)?;
     let unit_id = ContentId::parse(&type_entry.content_id).ok()?;
     let recipe_id = world
@@ -264,12 +265,6 @@ fn machine_recipe(world: &World, machine: u32) -> Option<(u8, ContentId, u64)> {
         .get(&recipe_id)
         .copied()?;
     Some((owner, recipe_id, duration))
-}
-
-fn find_unit(world: &World, unit: u32) -> Option<EntityRef<'_>> {
-    world
-        .iter_entities()
-        .find(|entity| entity.get::<UnitId>().is_some_and(|id| id.0 == unit))
 }
 
 fn start_job(
@@ -640,6 +635,20 @@ mod tests {
             .values()
             .map(|account| account.on_hand)
             .sum()
+    }
+
+    #[test]
+    fn the_machine_recipe_lookup_reads_the_unit_index_and_does_not_scan() {
+        use crate::unit_index::index_entry_for_test;
+        let mut app = app_with_machine(2, 0);
+        assert!(super::machine_recipe(app.world(), 1).is_some());
+        // The entry points at a bare entity (no owner): a scan still finds the real machine.
+        index_entry_for_test(app.world_mut(), 1);
+        assert_eq!(
+            super::machine_recipe(app.world(), 1),
+            None,
+            "machine_recipe scanned the world"
+        );
     }
 
     #[test]

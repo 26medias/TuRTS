@@ -18,6 +18,7 @@ use crate::{
     bootstrap::InstalledCatalog,
     ids::NodeId,
     registry::UnitTypes,
+    unit_index::unit_entity,
     world::{MapBounds, MoveTarget, Position, UnitType},
 };
 
@@ -102,7 +103,7 @@ pub fn assign_gather(
     unit: u32,
     node: NodeId,
 ) -> Result<(), RejectReason> {
-    let entity = find_unit(world, unit).ok_or(RejectReason::UnknownUnit)?;
+    let entity = unit_entity(world, unit).ok_or(RejectReason::UnknownUnit)?;
     if world.get::<Owner>(entity).map(|owner| owner.0) != Some(slot) {
         return Err(RejectReason::NotOwner);
     }
@@ -189,7 +190,7 @@ pub fn assign_gather(
 }
 
 pub fn interrupt_order(world: &mut World, slot: SlotId, unit: u32) -> Result<(), RejectReason> {
-    let entity = find_unit(world, unit).ok_or(RejectReason::UnknownUnit)?;
+    let entity = unit_entity(world, unit).ok_or(RejectReason::UnknownUnit)?;
     if world.get::<Owner>(entity).map(|owner| owner.0) != Some(slot) {
         return Err(RejectReason::NotOwner);
     }
@@ -248,7 +249,7 @@ fn process_gatherer(world: &mut World, unit: u32, catalog: &turts_mod_api::Conte
     if order.stage == GatherStage::Idle {
         return;
     }
-    let Some(entity) = find_unit(world, unit) else {
+    let Some(entity) = unit_entity(world, unit) else {
         return;
     };
     let Some(owner) = world.get::<Owner>(entity).map(|owner| owner.0) else {
@@ -598,7 +599,7 @@ fn move_or_arrive_node(
     };
     let reach = unit_radius + node_def.radius + gatherer.interaction_range;
     if position.distance(node.position.0) <= reach + 1.0e-4 {
-        if let Some(entity) = find_unit(world, unit) {
+        if let Some(entity) = unit_entity(world, unit) {
             world.entity_mut(entity).remove::<MoveTarget>();
         }
         set_stage(world, unit, GatherStage::Gathering, None);
@@ -656,7 +657,7 @@ fn gather_one_tick(
         else {
             return;
         };
-        let current_position = find_unit(world, unit)
+        let current_position = unit_entity(world, unit)
             .and_then(|entity| world.get::<Position>(entity).map(|position| position.0))
             .unwrap_or(Vec2::ZERO);
         let replacement =
@@ -796,7 +797,7 @@ fn move_or_arrive_receiver(
         set_stage(world, unit, GatherStage::Waiting { reason }, None);
         return;
     };
-    let Some(entity) = find_unit(world, unit) else {
+    let Some(entity) = unit_entity(world, unit) else {
         return;
     };
     let Some(gatherer_pos) = world.get::<Position>(entity).map(|pos| pos.0) else {
@@ -812,7 +813,7 @@ fn move_or_arrive_receiver(
     }
     let receiver_range = unit_radius + receiver_radius + gatherer.interaction_range;
     if gatherer_pos.distance(receiver_pos) <= receiver_range + 1.0e-4 {
-        if let Some(entity) = find_unit(world, unit) {
+        if let Some(entity) = unit_entity(world, unit) {
             world.entity_mut(entity).remove::<MoveTarget>();
         }
         set_stage(world, unit, GatherStage::Unloading, Some(receiver));
@@ -863,7 +864,7 @@ fn unload_one_tick(
         set_stage(world, unit, GatherStage::MovingToReceiver, Some(receiver));
         return;
     }
-    let Some(entity) = find_unit(world, unit) else {
+    let Some(entity) = unit_entity(world, unit) else {
         return;
     };
     let Some(unit_type) = world.get::<UnitType>(entity).map(|kind| kind.0) else {
@@ -1168,7 +1169,7 @@ fn receiver_rule(
     catalog: &turts_mod_api::ContentCatalog,
 ) -> Option<(ResolvedDropOffEffect, u64)> {
     let types = world.get_resource::<UnitTypes>()?;
-    let entity = find_unit(world, receiver)?;
+    let entity = unit_entity(world, receiver)?;
     let type_id = world.get::<UnitType>(entity)?.0;
     let type_entry = types.get(type_id)?;
     let content = ContentId::parse(&type_entry.content_id).ok()?;
@@ -1366,19 +1367,12 @@ fn cargo_available(world: &World, unit: u32, item: &ContentId) -> u64 {
         })
 }
 fn owner_of(world: &World, unit: u32) -> Result<SlotId, RejectReason> {
-    let entity = find_unit(world, unit).ok_or(RejectReason::UnknownUnit)?;
+    let entity = unit_entity(world, unit).ok_or(RejectReason::UnknownUnit)?;
     world
         .get::<Owner>(entity)
         .map(|owner| owner.0)
         .ok_or(RejectReason::UnknownUnit)
 }
-fn find_unit(world: &World, unit: u32) -> Option<Entity> {
-    world
-        .iter_entities()
-        .find(|entity| entity.get::<UnitId>().is_some_and(|id| id.0 == unit))
-        .map(|entity| entity.id())
-}
-
 fn set_stage(world: &mut World, unit: u32, stage: GatherStage, receiver: Option<u32>) {
     let changed = {
         let mut orders = world.resource_mut::<EconomyOrders>();
@@ -1401,7 +1395,7 @@ fn set_stage(world: &mut World, unit: u32, stage: GatherStage, receiver: Option<
         changed
     };
     if (changed || matches!(stage, GatherStage::Waiting { .. } | GatherStage::Idle))
-        && let Some(entity) = find_unit(world, unit)
+        && let Some(entity) = unit_entity(world, unit)
     {
         world.entity_mut(entity).remove::<MoveTarget>();
     }
@@ -1410,12 +1404,12 @@ fn set_deposit(world: &mut World, unit: u32, deposit: NodeId) {
     if let Some(order) = world.resource_mut::<EconomyOrders>().0.get_mut(&unit) {
         order.deposit = Some(deposit);
     }
-    if let Some(entity) = find_unit(world, unit) {
+    if let Some(entity) = unit_entity(world, unit) {
         world.entity_mut(entity).remove::<MoveTarget>();
     }
 }
 fn set_target(world: &mut World, unit: u32, target: Vec2, goal: crate::movement::PlainGatherGoal) {
-    if let Some(entity) = find_unit(world, unit) {
+    if let Some(entity) = unit_entity(world, unit) {
         if let Some(mut progress) = world.get_mut::<crate::movement::PlainMoveProgress>(entity) {
             match progress.gather_goal {
                 None => {
@@ -1438,6 +1432,21 @@ fn set_target(world: &mut World, unit: u32, target: Vec2, goal: crate::movement:
 mod tests {
     use super::*;
     use crate::economy::GatherOrder;
+
+    #[test]
+    fn the_owner_lookup_reads_the_unit_index_and_does_not_scan() {
+        use crate::unit_index::index_entry_for_test;
+        let mut app = crate::headless_app(20);
+        app.world_mut().spawn((UnitId(5), Owner(SlotId(2))));
+        assert_eq!(owner_of(app.world(), 5), Ok(SlotId(2)));
+        // An entry that points at a bare entity: a scan still finds the real unit.
+        index_entry_for_test(app.world_mut(), 5);
+        assert_eq!(
+            owner_of(app.world(), 5),
+            Err(RejectReason::UnknownUnit),
+            "the gather lookup scanned the world"
+        );
+    }
 
     #[test]
     fn carry_accumulates_fractional_budget_at_each_rate() {
