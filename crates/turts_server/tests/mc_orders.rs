@@ -496,12 +496,14 @@ fn queued_group_attack_spreads_and_strictly_replays() {
     assert_eq!(members.len(), 2);
 
     app.world_mut().resource_mut::<AuditTrail>().enable();
-    let initial = audit_state(app.world_mut());
+    // The log holds the ledger view, which has no unit type table: the footprint radius of
+    // the other units comes from the full audit state of the same moment.
+    let audit_initial = audit_state(app.world_mut());
     let mut writer = economylog::EconomyLogWriter::new(Vec::new());
     {
         let trail = app.world().resource::<AuditTrail>();
         writer
-            .write_initial(trail, initial)
+            .write_initial(trail, audit_initial.clone())
             .expect("write initial audit snapshot");
     }
 
@@ -595,7 +597,7 @@ fn queued_group_attack_spreads_and_strictly_replays() {
             .iter()
             .filter(|unit| !members.contains(&unit.unit_id))
         {
-            let other = initial
+            let other = audit_initial
                 .unit_types
                 .iter()
                 .find(|kind| kind.type_id == unit.unit_type)

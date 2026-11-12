@@ -47,6 +47,83 @@ fn economy_fixture_app_at(tick_hz: u16) -> bevy_app::App {
     app
 }
 
+/// The audit state that the accounting oracle models, rebuilt from a logged ledger view. The log
+/// holds only `LedgerAudit` (A1c), and the oracle (`turts_pack/tests/common/accounting.rs`)
+/// reads six fields that the view drops. The immutable ones (`bounds`, `resources`,
+/// `compiled_durations`, `unit_types`) come from `template`, the independent model of the
+/// package. `units` is rebuilt from `economy.units`, which holds the same rows. `movement_dispatch`
+/// is the default value, as in `template`. The test `full_state_rebuilds_the_audit_state` shows
+/// that the rebuild is exact on real states.
+fn full_state(
+    ledger: &turts_sim::LedgerAudit,
+    template: &turts_sim::AuditState,
+) -> turts_sim::AuditState {
+    turts_sim::AuditState {
+        tick_hz: ledger.tick_hz,
+        bounds: template.bounds.clone(),
+        resources: template.resources.clone(),
+        raw_units: ledger.raw_units.clone(),
+        movement_progress: ledger.movement_progress.clone(),
+        plain_movement_progress: ledger.plain_movement_progress.clone(),
+        physical_escapes: ledger.physical_escapes.clone(),
+        movement_pools: ledger.movement_pools.clone(),
+        pending_movement_orders: ledger.pending_movement_orders.clone(),
+        movement_dispatch: Default::default(),
+        unit_orders: ledger.unit_orders.clone(),
+        raw_inventories: ledger.raw_inventories.clone(),
+        raw_orders: ledger.raw_orders.clone(),
+        raw_queues: ledger.raw_queues.clone(),
+        raw_output_inventories: ledger.raw_output_inventories.clone(),
+        raw_belts: ledger.raw_belts.clone(),
+        raw_inserters: ledger.raw_inserters.clone(),
+        raw_extractors: ledger.raw_extractors.clone(),
+        raw_weapons: ledger.raw_weapons.clone(),
+        raw_healths: ledger.raw_healths.clone(),
+        research: ledger.research.clone(),
+        disabled: ledger.disabled.clone(),
+        removed_units: ledger.removed_units.clone(),
+        compiled_durations: template.compiled_durations.clone(),
+        next_event_ordinal: ledger.next_event_ordinal,
+        pending_events: ledger.pending_events.clone(),
+        catalog: ledger.catalog.clone(),
+        ledger_claims: ledger.ledger_claims.clone(),
+        unit_types: template.unit_types.clone(),
+        units: ledger
+            .economy
+            .units
+            .iter()
+            .map(|unit| turts_sim::economy::views::UnitView {
+                unit_id: unit.unit_id,
+                content_id: unit.content_id.clone(),
+                owner_slot: unit.owner_slot,
+                pos: turts_mod_api::WorldPos {
+                    x: unit.pos.x,
+                    y: unit.pos.y,
+                },
+            })
+            .collect(),
+        nodes: ledger.nodes.clone(),
+        economy: ledger.economy.clone(),
+        allocators: ledger.allocators,
+        claims: ledger.claims.clone(),
+    }
+}
+
+/// A logged command boundary as the oracle reads it (`full_state` for both snapshots).
+fn full_command(
+    command: &turts_audit::CommandLog,
+    template: &turts_sim::AuditState,
+) -> turts_sim::CommandAudit {
+    turts_sim::CommandAudit {
+        operation_id: command.operation_id,
+        operation_end_id: command.operation_end_id,
+        input: command.input.clone(),
+        result: command.result.clone(),
+        before: full_state(&command.before, template),
+        after: full_state(&command.after, template),
+    }
+}
+
 fn advanced_clock(state: &turts_sim::AuditState, tick: u32) -> turts_sim::AuditState {
     assert_eq!(state.economy.tick.checked_add(1), Some(tick));
     let mut advanced = state.clone();
@@ -417,7 +494,7 @@ fn live_audit_reader_ignores_only_unterminated_tail_and_waits_for_tick() {
             target: bevy_math::Vec2::new(2.0, 2.0),
         },
     };
-    let open_boundary = EconomyLogRecord::CommandBoundary(turts_sim::CommandAudit {
+    let open_boundary = EconomyLogRecord::CommandBoundary(turts_audit::CommandLog {
         operation_id: 900,
         operation_end_id: None,
         result: turts_sim::CommandResult {
@@ -483,6 +560,59 @@ fn live_audit_reader_ignores_only_unterminated_tail_and_waits_for_tick() {
     std::fs::remove_file(open_command_path).unwrap();
     std::fs::remove_file(semantic_path).unwrap();
     std::fs::remove_file(initial_only_path).unwrap();
+}
+
+/// The oracle tests rebuild the full audit state from the logged ledger view with `full_state`.
+/// The rebuild is exact on every snapshot of a moving gatherer: both snapshots of each command,
+/// operation and tick. A rebuild that drops or changes a field (`units`, the immutable fields)
+/// makes this test red.
+#[test]
+fn full_state_rebuilds_the_audit_state() {
+    use turts_sim::{AuditTrail, Command, CommandKind, CommandQueue, SlotId};
+
+    let mut app = economy_fixture_app_at(5);
+    app.world_mut().resource_mut::<AuditTrail>().enable();
+    let initial = turts_sim::audit_state(app.world_mut());
+    let mut checked = 0;
+    let mut moved = false;
+    for tick in 1..=24 {
+        if tick == 1 {
+            app.world_mut()
+                .resource_mut::<CommandQueue>()
+                .0
+                .push_back(Command {
+                    slot: SlotId(0),
+                    seq: 71,
+                    kind: CommandKind::Gather {
+                        unit_id: 3,
+                        node_id: turts_sim::NodeId(1),
+                    },
+                });
+        }
+        app.update();
+        let mut trail = app.world_mut().resource_mut::<AuditTrail>();
+        let mut states = Vec::new();
+        for command in trail.drain_commands() {
+            states.extend([command.before, command.after]);
+        }
+        for operation in trail.drain_operations() {
+            states.extend([operation.before, operation.after]);
+        }
+        for audit in trail.drain_ticks() {
+            states.extend([audit.before, audit.after]);
+        }
+        for state in &states {
+            let rebuilt = full_state(&turts_sim::ledger_audit(state), &initial);
+            assert_eq!(
+                &rebuilt, state,
+                "tick {tick}: the rebuilt audit state differs from the captured one"
+            );
+            moved |= state.units != initial.units;
+            checked += 1;
+        }
+    }
+    assert!(checked > 40, "the run checks many snapshots: {checked}");
+    assert!(moved, "the run moves a unit, so `units` is checked");
 }
 
 #[test]
@@ -555,7 +685,9 @@ fn decoded_moving_gatherer_replays_frozen_command_and_automatic_effect() {
         turts_audit::EconomyLogRecord::Initial(state) => state.clone(),
         _ => panic!("first record must be Initial"),
     };
-    assert_eq!(decoded_initial, initial);
+    assert_eq!(decoded_initial, turts_sim::ledger_audit(&initial));
+    // The log holds the ledger view; the oracle models the full audit state (`full_state`).
+    let full = |state: &turts_sim::LedgerAudit| full_state(state, &initial);
     let decoded_command = decoded
         .iter()
         .find_map(|record| match record {
@@ -565,7 +697,7 @@ fn decoded_moving_gatherer_replays_frozen_command_and_automatic_effect() {
         .expect("decoded command boundary");
     assert_eq!(decoded_command.input, expected_command);
 
-    let mut tick_start = decoded_initial;
+    let mut tick_start = full(&decoded_initial);
     let mut modeled_extraction = 0;
     for tick_number in 1..=24 {
         // R14 anchors TickAudit.before at t-1 while command/operation.before is at t.
@@ -594,12 +726,12 @@ fn decoded_moving_gatherer_replays_frozen_command_and_automatic_effect() {
             if operation.operation_id == decoded_command.operation_id {
                 assert_eq!(tick_number, 1);
                 assert!(!found_command, "one frozen command is recorded once");
-                assert_eq!(operation.before, modeled_start);
+                assert_eq!(full(&operation.before), modeled_start);
                 oracle
                     .observe(
                         &accounting::ExpectedOperation::Command(expected_command.clone()),
-                        &operation.before,
-                        &operation.after,
+                        &full(&operation.before),
+                        &full(&operation.after),
                         &operation.events,
                         Some(&decoded_command.result),
                     )
@@ -635,8 +767,8 @@ fn decoded_moving_gatherer_replays_frozen_command_and_automatic_effect() {
                             phase: accounting::AutomaticPhase::Gather,
                             subject: accounting::AutomaticSubject::Gatherer(gatherer),
                         },
-                        &operation.before,
-                        &operation.after,
+                        &full(&operation.before),
+                        &full(&operation.after),
                         &operation.events,
                         None,
                     )
@@ -646,7 +778,7 @@ fn decoded_moving_gatherer_replays_frozen_command_and_automatic_effect() {
         if tick_number == 1 {
             assert!(found_command);
             oracle
-                .assert_command_records(std::slice::from_ref(&decoded_command))
+                .assert_command_records(&[full_command(&decoded_command, &initial)])
                 .unwrap();
         }
         assert_eq!(automatic_index, expected_gatherers.len());
@@ -663,14 +795,14 @@ fn decoded_moving_gatherer_replays_frozen_command_and_automatic_effect() {
                 _ => None,
             })
             .expect("decoded completed tick");
-        assert_eq!(tick_before, &tick_start);
+        assert_eq!(full(tick_before), tick_start);
         let mut expected_published = oracle.modeled_state().pending_events.clone();
         expected_published.sort_by_key(|event| event.ordinal);
         assert_eq!(tick_events, &expected_published);
         let mut expected_tick_state = oracle.modeled_state().clone();
         expected_tick_state.pending_events.clear();
         expected_tick_state.next_event_ordinal = Some(0);
-        assert_eq!(tick_state, &expected_tick_state);
+        assert_eq!(full(tick_state), expected_tick_state);
         modeled_extraction += oracle.extraction;
         tick_start = expected_tick_state;
     }
@@ -948,7 +1080,7 @@ fn ord3_full_scene_blocked_gather_trip_validates() {
     };
     let mut commands = server_orders::to_sim(SlotId(0), &envelope, &catalog).unwrap();
     let command = commands.remove(0);
-    let mut records = vec![EconomyLogRecord::Initial(audit_state(app.world_mut()))];
+    let mut records = vec![EconomyLogRecord::initial(&audit_state(app.world_mut()))];
     let ore_balance = |app: &bevy_app::App| {
         turts_sim::balance_view(
             app.world(),
@@ -981,7 +1113,7 @@ fn ord3_full_scene_blocked_gather_trip_validates() {
             trail
                 .drain_commands()
                 .into_iter()
-                .map(EconomyLogRecord::CommandBoundary),
+                .map(EconomyLogRecord::command),
         );
         for operation in trail.drain_operations() {
             saw_blocked |= operation
@@ -989,7 +1121,7 @@ fn ord3_full_scene_blocked_gather_trip_validates() {
                 .raw_orders
                 .iter()
                 .any(|order| order.unit == 41 && order.stage == blocked);
-            records.push(EconomyLogRecord::Operation(operation));
+            records.push(EconomyLogRecord::operation(operation));
         }
         let ticks = trail.drain_ticks();
         for audit in &ticks {
@@ -1002,12 +1134,7 @@ fn ord3_full_scene_blocked_gather_trip_validates() {
                     .and_then(|entry| entry.orders.last_failure.clone())
             });
         }
-        records.extend(ticks.into_iter().map(|audit| EconomyLogRecord::Tick {
-            tick: audit.tick,
-            before: audit.before,
-            state: audit.after,
-            events: audit.events,
-        }));
+        records.extend(ticks.into_iter().map(EconomyLogRecord::from_tick));
         if failure.is_some() {
             break;
         }
@@ -1492,7 +1619,8 @@ fn replay_task4_order_log(
         })
         .expect("process log has its captured initial state");
     assert_eq!(
-        initial, expected_initial,
+        initial,
+        &turts_sim::ledger_audit(expected_initial),
         "process boot matches public catalog"
     );
 
@@ -1553,7 +1681,7 @@ fn replay_task4_order_log(
 fn mutate_order_command_after(
     records: &mut [turts_audit::EconomyLogRecord],
     seq: u32,
-    mut mutate: impl FnMut(&mut turts_sim::AuditState),
+    mut mutate: impl FnMut(&mut turts_sim::LedgerAudit),
 ) {
     use turts_audit::EconomyLogRecord;
     let operation_id = records
@@ -1733,7 +1861,7 @@ fn wait_for_owner_rifle_output(path: &std::path::Path) -> (u32, u32) {
     }
 }
 
-fn audit_state_at(path: &std::path::Path, tick: u32) -> turts_sim::AuditState {
+fn audit_state_at(path: &std::path::Path, tick: u32) -> turts_sim::LedgerAudit {
     use turts_audit::EconomyLogRecord;
     let records = wait_for_audit_tick(path, tick);
     let matching: Vec<_> = records
@@ -1767,7 +1895,7 @@ fn audit_last_tick(path: &std::path::Path) -> u32 {
 }
 
 fn owner_unit_orders_from_audit(
-    state: &turts_sim::AuditState,
+    state: &turts_sim::LedgerAudit,
     slot: u8,
 ) -> Vec<turts_net_protocol::UnitOrderRecord> {
     use turts_mod_api::Behaviour;
@@ -1838,10 +1966,14 @@ fn owner_unit_orders_from_audit(
         .iter()
         .filter(|unit| unit.owner_slot == slot)
         .filter_map(|unit| {
-            let unit_type = state
-                .unit_types
+            // The content id of the unit type: the view of the unit in `economy.units` holds it
+            // (the unit type table is not in the ledger view).
+            let content_id = &state
+                .economy
+                .units
                 .iter()
-                .find(|kind| kind.type_id == unit.unit_type)?;
+                .find(|row| row.unit_id == unit.unit_id)?
+                .content_id;
             let orders = state
                 .unit_orders
                 .iter()
@@ -1852,7 +1984,7 @@ fn owner_unit_orders_from_audit(
                 || state.catalog.as_ref().is_some_and(|catalog| {
                     catalog.order_definitions.iter().any(|definition| {
                         definition.unit_capabilities.iter().any(|capability| {
-                            capability.unit == unit_type.content_id
+                            capability.unit == *content_id
                                 && (capability.movement || capability.weapon)
                         })
                     })
@@ -1901,7 +2033,7 @@ fn owner_unit_orders_from_audit(
 }
 
 fn owner_snapshot_from_audit(
-    state: &turts_sim::AuditState,
+    state: &turts_sim::LedgerAudit,
     slot: u8,
 ) -> turts_net_protocol::Snapshot {
     use turts_mod_api::Cost;
@@ -2056,7 +2188,7 @@ fn owner_snapshot_from_audit(
 }
 
 fn owner_report_projection_from_audit(
-    state: &turts_sim::AuditState,
+    state: &turts_sim::LedgerAudit,
     slot: u8,
 ) -> serde_json::Value {
     let snapshot = owner_snapshot_from_audit(state, slot);
@@ -2495,12 +2627,15 @@ fn replay_public_log_with_model(
     use std::collections::BTreeMap;
     use turts_audit::EconomyLogRecord;
     let records = read_complete_economy_log(path).unwrap();
+    // The log holds the ledger view; the oracle models the full audit state (`full_state`).
+    let full = |state: &turts_sim::LedgerAudit| full_state(state, &public_initial);
     let decoded_initial = match &records[0] {
         EconomyLogRecord::Initial(state) => state.clone(),
         _ => unreachable!(),
     };
     assert_eq!(
-        decoded_initial, public_initial,
+        decoded_initial,
+        turts_sim::ledger_audit(&public_initial),
         "process boot matches the frozen public package"
     );
     let claim_records = records
@@ -2614,7 +2749,7 @@ fn replay_public_log_with_model(
                         operation.operation_id
                     );
                     if let turts_sim::CommandKind::MoveTo { target, .. } = &mut expected_input.kind
-                        && let Some(bounds) = &operation.before.bounds
+                        && let Some(bounds) = &public_initial.bounds
                     {
                         target.x = target.x.clamp(0.0, bounds.x);
                         target.y = target.y.clamp(0.0, bounds.y);
@@ -2651,7 +2786,7 @@ fn replay_public_log_with_model(
                             })
                             .map(|unit_type| unit_type.radius);
                         radius.and_then(|radius| {
-                            let bounds = operation.before.bounds.as_ref()?;
+                            let bounds = public_initial.bounds.as_ref()?;
                             let turts_sim::OrderTargetSim::Point(point) = order.target else {
                                 unreachable!()
                             };
@@ -2682,15 +2817,15 @@ fn replay_public_log_with_model(
                 oracle
                     .observe(
                         &expected_operation,
-                        &operation.before,
-                        &operation.after,
+                        &full(&operation.before),
+                        &full(&operation.after),
                         &operation.events,
                         Some(&command_audit.result),
                     )
                     .unwrap_or_else(|error| {
                         panic!("command operation {}: {error}", operation.operation_id)
                     });
-                let mut projected_audit = (*command_audit).clone();
+                let mut projected_audit = full_command(command_audit, &public_initial);
                 projected_audit.input = projected_input;
                 command_records.push(projected_audit);
                 continue;
@@ -2712,8 +2847,8 @@ fn replay_public_log_with_model(
                 oracle
                     .observe(
                         &accounting::ExpectedOperation::GatherDepletion { tick, unit },
-                        &operation.before,
-                        &operation.after,
+                        &full(&operation.before),
+                        &full(&operation.after),
                         &operation.events,
                         None,
                     )
@@ -2802,7 +2937,7 @@ fn replay_public_log_with_model(
                         if *event_producer == producer && *event_job == job_id
                 ))
             {
-                let mut forged_after = operation.after.clone();
+                let mut forged_after = full(&operation.after);
                 forged_after
                     .raw_queues
                     .iter_mut()
@@ -2823,7 +2958,7 @@ fn replay_public_log_with_model(
                     corrupted_oracle
                         .observe(
                             &expected,
-                            &operation.before,
+                            &full(&operation.before),
                             &forged_after,
                             &operation.events,
                             None,
@@ -2835,8 +2970,8 @@ fn replay_public_log_with_model(
             oracle
                 .observe(
                     &expected,
-                    &operation.before,
-                    &operation.after,
+                    &full(&operation.before),
+                    &full(&operation.after),
                     &operation.events,
                     None,
                 )
@@ -2887,19 +3022,21 @@ fn replay_public_log_with_model(
             })
             .expect("completed tick record");
         assert_eq!(
-            tick_before, &tick_start,
+            full(tick_before),
+            tick_start,
             "tick {tick} before is prior modeled state"
         );
+        let tick_state = full(state);
         oracle
             .observe(
                 &accounting::ExpectedOperation::TickBoundary { tick },
-                tick_before,
-                state,
+                &full(tick_before),
+                &tick_state,
                 published,
                 None,
             )
             .unwrap_or_else(|error| panic!("completed tick {tick}: {error}"));
-        tick_start = state.clone();
+        tick_start = tick_state;
     }
     oracle.assert_command_records(&command_records).unwrap();
     assert!(

@@ -31,7 +31,7 @@ fn record(
     sample_every: u32,
     mut commands: impl FnMut(u32, &mut bevy::prelude::World) -> Vec<Command>,
 ) -> Captured {
-    let mut records = vec![EconomyLogRecord::Initial(audit_state(app.world_mut()))];
+    let mut records = vec![EconomyLogRecord::initial(&audit_state(app.world_mut()))];
     let mut states = Vec::new();
     for tick in 1..=ticks {
         for command in commands(tick, app.world_mut()) {
@@ -47,13 +47,13 @@ fn record(
             trail
                 .drain_commands()
                 .into_iter()
-                .map(EconomyLogRecord::CommandBoundary),
+                .map(EconomyLogRecord::command),
         );
         records.extend(
             trail
                 .drain_operations()
                 .into_iter()
-                .map(EconomyLogRecord::Operation),
+                .map(EconomyLogRecord::operation),
         );
         for audit in trail.drain_ticks() {
             if audit.tick % sample_every == 0 || audit.tick == ticks {

@@ -112,9 +112,9 @@ pub(crate) fn check_admission(
 mod tests {
     use crate::{EconomyLogRecord, validate_ledger};
 
-    fn initial() -> turts_sim::AuditState {
+    fn initial() -> turts_sim::LedgerAudit {
         let mut app = turts_sim::headless_app(10);
-        turts_sim::audit_state(app.world_mut())
+        turts_sim::ledger_audit(&turts_sim::audit_state(app.world_mut()))
     }
 
     fn claim_then_tick(claimed: Option<u64>) -> Vec<EconomyLogRecord> {

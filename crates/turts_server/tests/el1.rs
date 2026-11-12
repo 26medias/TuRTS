@@ -102,7 +102,7 @@ fn el1_muster_movement_and_queued_gather_validate_every_captured_tick() {
         "EL1 fixture must deliver the queued Muster gather through the actual command path"
     );
 
-    // Measure the serialized movement-state contribution from the actual captured AuditState
+    // Measure the serialized movement-state contribution from the actual captured LedgerAudit
     // values. This is intentionally a component-size method, not whole-log-by-unit division:
     // the latter attributes duplicated shared catalog/ledger bytes to each unit.
     let (unit_rows, unit_bytes, slot_count, slot_bytes) = movement_state_bytes(&records);
@@ -151,7 +151,7 @@ fn el1_muster_movement_and_queued_gather_validate_every_captured_tick() {
 }
 
 fn assert_economy_tick_coverage(
-    tick_records: &[(u32, &turts_sim::AuditState, &turts_sim::AuditState)],
+    tick_records: &[(u32, &turts_sim::LedgerAudit, &turts_sim::LedgerAudit)],
     configured_end: u32,
     selected_ids: &std::collections::BTreeSet<u32>,
 ) -> u32 {
