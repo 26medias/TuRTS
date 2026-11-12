@@ -2,6 +2,7 @@
 
 use super::materials::world_units_for_pixels;
 use super::*;
+use crate::{content::ClientContent, present::PresentedUnit, replica::Replica};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HealthMode {
@@ -111,5 +112,49 @@ pub(super) fn sync_health_bars(
         };
         let _ = fill;
         fractions.insert(health.unit.0, fraction);
+    }
+}
+
+/// Collect the health-bar visuals of the replicated healths into `desired` and `health_fractions`.
+#[allow(clippy::too_many_arguments)]
+pub(super) fn collect_health_bars(
+    replica: &Replica,
+    presented_by_id: &HashMap<u32, &PresentedUnit>,
+    content: &ClientContent,
+    selected_ids: &HashSet<u32>,
+    display: &HealthDisplay,
+    assets: &VisualAssets,
+    camera: &Camera,
+    camera_transform: &GlobalTransform,
+    visuals: &VisualState,
+    desired: &mut DesiredVisuals,
+    health_fractions: &mut HashMap<u32, f32>,
+) {
+    sync_health_bars(
+        HealthBarSync {
+            healths: &replica.healths,
+            presented: presented_by_id,
+            catalog: &content.catalog,
+            selected: selected_ids,
+            mode: display.0,
+            assets,
+            camera,
+            camera_transform,
+            generation: visuals.generation,
+        },
+        desired,
+        health_fractions,
+    );
+}
+
+/// Move each retained health-bar fill to the fraction of its unit.
+pub(super) fn update_health_fills(
+    fills: &mut Query<(Entity, &HealthFill, &mut Transform), Without<VisualId>>,
+    health_fractions: &HashMap<u32, f32>,
+) {
+    for (_, fill, mut transform) in &mut *fills {
+        if let Some(fraction) = health_fractions.get(&fill.0) {
+            update_health_fill_transform(&mut transform, *fraction);
+        }
     }
 }

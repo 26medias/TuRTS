@@ -4,9 +4,15 @@
 //! are written only when geometry or presentation state changes. The meshes are shared across all
 //! units; owner colours come from the same palette material handles as the unit bodies.
 
+mod blocked;
 mod health;
+mod hover;
 mod markers;
 mod materials;
+mod order_markers;
+mod queued;
+mod rings;
+mod session;
 mod world_tooltip;
 
 use std::collections::{HashMap, HashSet, VecDeque};
@@ -26,8 +32,10 @@ use bevy::{
     },
     window::PrimaryWindow,
 };
+use blocked::{draw_blocked_marks, track_blocked};
 pub use health::{HealthDisplay, HealthMode};
-use health::{sync_health_bars, update_health_fill_transform};
+use health::{collect_health_bars, update_health_fills};
+use hover::{draw_hover_ring, resolve_hover};
 use markers::{
     marker_is_live, marker_kind, refresh_blocked_marks, reset_marker_session, retained_marker,
 };
@@ -49,6 +57,10 @@ use crate::{
     present::Presented,
     render::{SlotMaterials, world_to_scene},
 };
+use order_markers::{draw_order_markers, intake_markers};
+use queued::draw_queued_targets;
+use rings::draw_selection_rings;
+use session::sync_session;
 pub(crate) use world_tooltip::WorldTooltip;
 use world_tooltip::update_world_tooltip;
 
@@ -145,6 +157,9 @@ struct VisualSession {
     connection_epoch: u64,
     local_slot: u8,
 }
+
+/// The visuals that one frame wants, by stable identity: mesh, material and transform.
+type DesiredVisuals = HashMap<VisualId, (Handle<Mesh>, VisualMaterial, Transform)>;
 
 #[derive(Resource, Default)]
 struct VisualState {
@@ -306,24 +321,14 @@ fn draw_world_visuals(
         mut markers_shown,
     } = inputs;
     markers_shown.0.clear();
-    let visual_session = state
-        .welcome
-        .map(|welcome| VisualSession {
-            match_id: welcome.match_id,
-            connection_epoch: receipts.next_epoch,
-            local_slot: welcome.slot,
-        })
-        .filter(|_| state.replica.is_some() && state.content.is_some());
-    let session_changed = reset_marker_session(&mut visuals, &mut marker_feed, visual_session);
-    if session_changed {
-        for (entity, _, _) in fills.iter_mut() {
-            commands.entity(entity).despawn();
-        }
-    }
-    if visual_session.is_none() {
-        marker_feed.intents.clear();
-        marker_feed.sent.clear();
-    }
+    sync_session(
+        &state,
+        &receipts,
+        &mut visuals,
+        &mut marker_feed,
+        &mut commands,
+        &mut fills,
+    );
     visuals.active = false;
     let (Some(replica), Some(content), Some(welcome), Some(camera_pair)) = (
         state.replica.as_ref(),
@@ -353,432 +358,89 @@ fn draw_world_visuals(
         .collect();
     let now = Instant::now();
 
-    let hovered = runtime
-        .pointer_world_hover_allowed()
-        .then(|| window.iter().next().and_then(Window::cursor_position))
-        .flatten()
-        .and_then(|cursor| {
-            let ray = camera.viewport_to_world(camera_transform, cursor).ok()?;
-            let distance = ray.intersect_plane(Vec3::ZERO, InfinitePlane3d::new(Dir3::Y))?;
-            let point = ray.get_point(distance);
-            presented
-                .units
-                .iter()
-                .filter_map(|unit| {
-                    let def = ContentId::parse(&unit.content_id)
-                        .ok()
-                        .and_then(|id| content.catalog.units.get(&id))?;
-                    let turts_mod_api::Footprint::Circle { radius } = &def.footprint;
-                    let dx = point.x - unit.pos.x;
-                    let dz = point.z - unit.pos.y;
-                    (dx * dx + dz * dz <= radius * radius).then_some(unit.unit_id)
-                })
-                .min()
-        });
-    if visuals.hover_unit != hovered {
-        visuals.hover_unit = hovered;
-        visuals.hover_started = hovered.map(|_| now);
-    }
-
-    for intent in marker_feed.intents.drain(..) {
-        if let Some(marker) = retained_marker(intent, replica, now) {
-            visuals.markers.push_back(marker);
-        }
-    }
-    for fragment in marker_feed.sent.drain(..) {
-        if let Some(marker) = visuals
-            .markers
-            .iter_mut()
-            .find(|marker| marker.id == fragment.intent_id)
-        {
-            marker.fragments.push(fragment);
-        }
-    }
-    for marker in &mut visuals.markers {
-        for fragment in &marker.fragments {
-            if marker.seen_results.contains(&fragment.seq) {
-                continue;
-            }
-            if let Some(result) = results.0.iter().find_map(|result| match result {
-                CommandResult::Order {
-                    seq,
-                    tick,
-                    accepted,
-                    ..
-                } if *seq == fragment.seq => Some(MarkerOrderResult {
-                    tick: *tick,
-                    accepted: accepted.iter().map(|unit| unit.0).collect(),
-                }),
-                _ => None,
-            }) {
-                marker.seen_results.insert(fragment.seq);
-                marker.results.insert(fragment.seq, result);
-            }
-        }
-    }
-    let replica_tick = replica.last_applied_tick.unwrap_or(0);
-    visuals
-        .markers
-        .retain(|marker| marker_is_live(marker, replica, replica_tick, now));
-
-    let blocked_now = replica
-        .unit_orders
-        .iter()
-        .filter_map(|(&unit_id, order)| (order.activity == Activity::Blocked).then_some(unit_id))
-        .collect();
-    let visuals_state = &mut *visuals;
-    refresh_blocked_marks(
-        blocked_now,
-        &mut visuals_state.blocked_active,
-        &mut visuals_state.blocked_since,
+    let hovered = resolve_hover(
+        &runtime,
+        &window,
+        camera,
+        camera_transform,
+        &presented,
+        content,
+        &mut visuals,
         now,
     );
 
+    intake_markers(&mut marker_feed, &mut visuals, replica, &results, now);
+    track_blocked(replica, &mut visuals, now);
+
     let mut desired = HashMap::<VisualId, (Handle<Mesh>, VisualMaterial, Transform)>::new();
     let mut ring_metadata = HashMap::new();
-    for unit_id in &selected.0 {
-        let Some(shown_unit) = presented_by_id.get(unit_id) else {
-            continue;
-        };
-        let Some(unit) = replica.units.get(unit_id) else {
-            continue;
-        };
-        let Some(def) = ContentId::parse(&shown_unit.content_id)
-            .ok()
-            .and_then(|id| content.catalog.units.get(&id))
-        else {
-            continue;
-        };
-        let turts_mod_api::Footprint::Circle { radius } = &def.footprint;
-        let slot = usize::from(unit.owner_slot).min(palette.0.len().saturating_sub(1));
-        let Some(body_material) = palette.0.get(slot).cloned() else {
-            continue;
-        };
-        let Some(material) = assets.ring_overlay_materials.get(slot).cloned() else {
-            continue;
-        };
-        let own = unit.owner_slot == local_slot;
-        let mesh = if own {
-            assets.ring.clone()
-        } else {
-            assets.foreign_ring.clone()
-        };
-        let Some(mesh) = mesh else { continue };
-        let position = world_to_scene(shown_unit.pos) + Vec3::Y * 0.025;
-        let id = VisualId {
-            kind: VisualKind::Selected,
-            unit: *unit_id,
-            ordinal: 0,
-            generation: visuals.generation,
-            identity: 0,
-        };
-        if !own
-            && let (Some(underlay), Some(neutral_index)) =
-                (assets.ring.clone(), assets.ring_underlay_indices.get(slot))
-            && let Some(neutral) = assets.neutral_ring_overlays.get(*neutral_index).cloned()
-        {
-            desired.insert(
-                VisualId {
-                    kind: VisualKind::RingUnderlay,
-                    unit: *unit_id,
-                    ordinal: 0,
-                    generation: visuals.generation,
-                    identity: 0,
-                },
-                (
-                    underlay,
-                    VisualMaterial::RingOverlay(neutral),
-                    Transform {
-                        translation: world_to_scene(shown_unit.pos) + Vec3::Y * 0.021,
-                        scale: Vec3::splat(*radius),
-                        ..default()
-                    },
-                ),
-            );
-        }
-        desired.insert(
-            id,
-            (
-                mesh,
-                VisualMaterial::RingOverlay(material),
-                Transform {
-                    translation: position,
-                    scale: Vec3::splat(*radius),
-                    ..default()
-                },
-            ),
-        );
-        ring_metadata.insert(
-            *unit_id,
-            RingMetadata {
-                unit: *unit_id,
-                slot: unit.owner_slot,
-                own,
-                radius: *radius,
-            },
-        );
+    draw_selection_rings(
+        &mut desired,
+        &mut ring_metadata,
+        &selected,
+        &presented_by_id,
+        replica,
+        content,
+        &palette,
+        &assets,
+        local_slot,
+        &visuals,
+    );
 
-        if assets.range_enabled
-            && let Some(weapon) = def.weapon.as_ref()
-        {
-            let range_id = VisualId {
-                kind: VisualKind::Range,
-                unit: *unit_id,
-                ordinal: 0,
-                generation: visuals.generation,
-                identity: 0,
-            };
-            let range_position = world_to_scene(shown_unit.pos) + Vec3::Y * 0.018;
-            if let Some(range_mesh) = assets.ring.clone() {
-                desired.insert(
-                    range_id,
-                    (
-                        range_mesh,
-                        assets
-                            .range_material
-                            .clone()
-                            .unwrap_or(body_material)
-                            .into(),
-                        Transform {
-                            translation: range_position,
-                            scale: Vec3::splat(weapon.range),
-                            ..default()
-                        },
-                    ),
-                );
-            }
-        }
-    }
-
-    if let Some(unit_id) = hovered
-        && let (Some(shown_unit), Some(unit)) =
-            (presented_by_id.get(&unit_id), replica.units.get(&unit_id))
-        && let Some(material) = assets
-            .ring_overlay_materials
-            .get(usize::from(unit.owner_slot))
-            .cloned()
-    {
-        let mesh = if unit.owner_slot == local_slot {
-            assets.ring.clone()
-        } else {
-            assets.foreign_ring.clone()
-        };
-        if let Some(mesh) = mesh {
-            let radius = ContentId::parse(&shown_unit.content_id)
-                .ok()
-                .and_then(|id| content.catalog.units.get(&id))
-                .map(|unit| {
-                    let turts_mod_api::Footprint::Circle { radius } = &unit.footprint;
-                    *radius
-                })
-                .unwrap_or(0.5);
-            let slot = usize::from(unit.owner_slot);
-            if unit.owner_slot != local_slot
-                && let (Some(underlay), Some(neutral_index)) =
-                    (assets.ring.clone(), assets.ring_underlay_indices.get(slot))
-                && let Some(neutral) = assets.neutral_ring_overlays.get(*neutral_index).cloned()
-            {
-                desired.insert(
-                    VisualId {
-                        kind: VisualKind::RingUnderlay,
-                        unit: unit_id,
-                        ordinal: 1,
-                        generation: visuals.generation,
-                        identity: 0,
-                    },
-                    (
-                        underlay,
-                        VisualMaterial::RingOverlay(neutral),
-                        Transform {
-                            translation: world_to_scene(shown_unit.pos) + Vec3::Y * 0.028,
-                            scale: Vec3::splat(radius * 0.96),
-                            ..default()
-                        },
-                    ),
-                );
-            }
-            desired.insert(
-                VisualId {
-                    kind: VisualKind::Hover,
-                    unit: unit_id,
-                    ordinal: 0,
-                    generation: visuals.generation,
-                    identity: 0,
-                },
-                (
-                    mesh,
-                    VisualMaterial::RingOverlay(material),
-                    Transform {
-                        translation: world_to_scene(shown_unit.pos) + Vec3::Y * 0.032,
-                        scale: Vec3::splat(radius * 0.96),
-                        ..default()
-                    },
-                ),
-            );
-        }
-    }
+    draw_hover_ring(
+        &mut desired,
+        hovered,
+        &presented_by_id,
+        replica,
+        content,
+        &assets,
+        local_slot,
+        &visuals,
+    );
 
     let mut health_fractions = HashMap::new();
-    sync_health_bars(
-        HealthBarSync {
-            healths: &replica.healths,
-            presented: &presented_by_id,
-            catalog: &content.catalog,
-            selected: &selected_ids,
-            mode: display.0,
-            assets: &assets,
-            camera,
-            camera_transform,
-            generation: visuals.generation,
-        },
+    collect_health_bars(
+        replica,
+        &presented_by_id,
+        content,
+        &selected_ids,
+        &display,
+        &assets,
+        camera,
+        camera_transform,
+        &visuals,
         &mut desired,
         &mut health_fractions,
     );
 
-    for marker in &visuals.markers {
-        let material = assets.marker_overlay_material.clone();
-        if let Some(material) = material {
-            let kind = marker_kind(&marker.kind);
-            let position = Vec3::new(marker.position.x, 0.035, marker.position.y);
-            let id = VisualId {
-                kind: VisualKind::OrderMarker,
-                unit: 0,
-                ordinal: 0,
-                generation: visuals.generation,
-                identity: marker.id,
-            };
-            match kind {
-                "move" => {
-                    if let Some(mesh) = assets.ring.clone() {
-                        desired.insert(
-                            id,
-                            (
-                                mesh,
-                                VisualMaterial::RingOverlay(material.clone()),
-                                Transform {
-                                    translation: position,
-                                    scale: Vec3::splat(0.38),
-                                    ..default()
-                                },
-                            ),
-                        );
-                    }
-                }
-                "attack" => {
-                    marker_gizmos.line(
-                        position + Vec3::new(-0.3, 0.04, -0.3),
-                        position + Vec3::new(0.3, 0.04, 0.3),
-                        Color::srgb(0.96, 0.88, 0.2),
-                    );
-                    marker_gizmos.line(
-                        position + Vec3::new(-0.3, 0.04, 0.3),
-                        position + Vec3::new(0.3, 0.04, -0.3),
-                        Color::srgb(0.96, 0.88, 0.2),
-                    );
-                }
-                "gather" => {
-                    if let Some(mesh) = assets.bar.clone() {
-                        desired.insert(
-                            id,
-                            (
-                                mesh,
-                                VisualMaterial::RingOverlay(material.clone()),
-                                Transform {
-                                    translation: position,
-                                    scale: Vec3::splat(0.16),
-                                    ..default()
-                                },
-                            ),
-                        );
-                    }
-                }
-                _ => {}
-            }
-            markers_shown.0.push(serde_json::json!({
-                "kind": kind,
-                "intent_id": marker.id,
-                "order": &marker.order.order,
-                "units": marker.order.units.iter().map(|unit| unit.0).collect::<Vec<_>>(),
-                "x": marker.position.x,
-                "y": marker.position.y
-            }));
-        }
-    }
+    draw_order_markers(
+        &mut desired,
+        &mut markers_shown,
+        &mut marker_gizmos,
+        &assets,
+        &visuals,
+    );
 
-    for (&unit_id, start) in &visuals.blocked_since {
-        if now.duration_since(*start).as_secs_f32() >= 2.0 {
-            continue;
-        }
-        if let Some(unit) = presented_by_id.get(&unit_id)
-            && let Some(material) = assets.blocked_material.clone()
-            && let Some(mesh) = assets.bar.clone()
-        {
-            let id = VisualId {
-                kind: VisualKind::Blocked,
-                unit: unit_id,
-                ordinal: 0,
-                generation: visuals.generation,
-                identity: 0,
-            };
-            let point = world_to_scene(unit.pos) + Vec3::Y * 1.5;
-            desired.insert(
-                id,
-                (
-                    mesh,
-                    material.clone().into(),
-                    Transform {
-                        translation: point,
-                        scale: Vec3::new(0.7, 0.08, 0.08),
-                        ..default()
-                    },
-                ),
-            );
-            marker_gizmos.line(
-                point + Vec3::new(-0.3, 0.07, -0.3),
-                point + Vec3::new(0.3, 0.07, 0.3),
-                Color::srgb(0.9, 0.12, 0.08),
-            );
-            marker_gizmos.line(
-                point + Vec3::new(-0.3, 0.07, 0.3),
-                point + Vec3::new(0.3, 0.07, -0.3),
-                Color::srgb(0.9, 0.12, 0.08),
-            );
-            markers_shown
-                .0
-                .push(serde_json::json!({"kind":"blocked","unit":unit_id}));
-        }
-    }
+    draw_blocked_marks(
+        &mut desired,
+        &mut markers_shown,
+        &mut marker_gizmos,
+        &presented_by_id,
+        &assets,
+        &visuals,
+        now,
+    );
 
     // Selected own units show queued point targets in queue order.
-    for unit_id in &selected.0 {
-        let Some(record) = replica.unit_orders.get(unit_id) else {
-            continue;
-        };
-        let Some(unit) = presented_by_id.get(unit_id) else {
-            continue;
-        };
-        if replica
-            .units
-            .get(unit_id)
-            .is_none_or(|unit| unit.owner_slot != local_slot)
-        {
-            continue;
-        }
-        let mut previous = Vec3::new(unit.pos.x, 0.04, unit.pos.y);
-        for order in record.current.iter().chain(record.queued.iter()) {
-            if let OrderTarget::Point(Pos { x, y }) = &order.target {
-                let next = Vec3::new(*x, 0.04, *y);
-                gizmos.line(previous, next, Color::srgb(0.9, 0.9, 0.85));
-                previous = next;
-            }
-        }
-    }
+    draw_queued_targets(
+        &mut gizmos,
+        &selected,
+        replica,
+        &presented_by_id,
+        local_slot,
+    );
 
-    for (_, fill, mut transform) in &mut fills {
-        if let Some(fraction) = health_fractions.get(&fill.0) {
-            update_health_fill_transform(&mut transform, *fraction);
-        }
-    }
+    update_health_fills(&mut fills, &health_fractions);
     reconcile_visual_entities(
         &mut commands,
         &mut shown,
@@ -930,5 +592,7 @@ fn spawn_visual(
     }
 }
 
+#[cfg(test)]
+mod scene_tests;
 #[cfg(test)]
 mod tests;

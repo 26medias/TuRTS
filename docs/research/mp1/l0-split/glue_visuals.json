@@ -1,0 +1,14 @@
+{
+  "sync_session": [
+    {"new": "reset_marker_session(visuals, marker_feed, visual_session)", "old": "reset_marker_session(&mut visuals, &mut marker_feed, visual_session)"}
+  ],
+  "collect_health_bars": [
+    {"new": "presented: presented_by_id,", "old": "presented: &presented_by_id,"},
+    {"new": "selected: selected_ids,", "old": "selected: &selected_ids,"},
+    {"new": "display.0, assets, camera,", "old": "display.0, assets: &assets, camera,"},
+    {"new": "}, desired, health_fractions, );", "old": "}, &mut desired, &mut health_fractions, );"}
+  ],
+  "update_health_fills": [
+    {"new": "in &mut *fills {", "old": "in &mut fills {"}
+  ]
+}

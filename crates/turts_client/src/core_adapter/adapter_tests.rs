@@ -2510,3 +2510,165 @@ fn full_headless_build_app_can_step_without_window_resources() {
     assert!(app.world().contains_resource::<FrameFeeds>());
     assert!(app.world().contains_resource::<SelectionFeed>());
 }
+
+fn value_effects(app: &App) -> Vec<(String, serde_json::Value)> {
+    app.world()
+        .resource::<CoreRuntime>()
+        .effects()
+        .iter()
+        .map(|effect| (effect.kind.clone(), effect.value.clone()))
+        .collect()
+}
+
+fn queue_inputs(app: &mut App, events: Vec<InputEvent>) {
+    app.world_mut().resource_mut::<CoreInputQueue>().0 = events;
+    app.update();
+}
+
+fn left_click(px: Vec2) -> Vec<InputEvent> {
+    vec![
+        InputEvent::PointerDown {
+            button: turts_interaction::Button::Left,
+            px,
+            over_widget: false,
+        },
+        InputEvent::PointerUp {
+            button: turts_interaction::Button::Left,
+            px,
+            over_widget: false,
+        },
+    ]
+}
+
+fn ui_action(name: &str) -> InputEvent {
+    InputEvent::UiAction { name: name.into() }
+}
+
+/// L0-SPLIT oracle for the Effect match of `drive_core_adapter`: the arms that the real Core
+/// can produce write `last_effects`, `markers`, the marker feed and the pending commands.
+/// `Effect::Marker` and `Effect::Sound` have no producer in `turts_interaction`, so no input
+/// can reach those two arms (grep `Effect::Marker`, `Effect::Sound` at the slice head).
+#[test]
+fn effect_arms_cursor_send_and_shell_action_write_their_records() {
+    let _guard = test_lock();
+    let (mut app, window, _) = acme_order_app();
+    app.world_mut().despawn(window);
+    app.update();
+    assert!(value_effects(&app).is_empty());
+
+    queue_inputs(
+        &mut app,
+        vec![ui_action("ui_select:1"), ui_action("acme:order_move")],
+    );
+    assert_eq!(
+        value_effects(&app),
+        vec![(
+            "cursor".to_string(),
+            serde_json::json!({"context": "target"})
+        )],
+        "the Cursor arm"
+    );
+
+    queue_inputs(&mut app, left_click(Vec2::new(800.0, 400.0)));
+    let effects = value_effects(&app);
+    assert_eq!(
+        effects.first(),
+        Some(&(
+            "order_intent".to_string(),
+            serde_json::json!({"units": [1]})
+        )),
+        "the Send arm records the order intent first: {effects:?}"
+    );
+    assert_eq!(effects.len(), 2, "{effects:?}");
+    assert_eq!(effects[1].0, "cursor");
+    let runtime = app.world().resource::<CoreRuntime>();
+    assert_eq!(runtime.markers.len(), 1);
+    assert_eq!(runtime.markers[0]["kind"], "move");
+    assert_eq!(runtime.markers[0]["intent_id"], 0);
+    let feed = app.world().resource::<OrderMarkerFeed>();
+    assert_eq!(feed.intents.len(), 1);
+    assert_eq!(feed.intents[0].kind, "move");
+    assert_eq!(feed.intents[0].id, 0);
+    let pending = app.world().resource::<PendingCommands>();
+    assert_eq!(pending.0.len(), 1);
+
+    queue_inputs(&mut app, vec![ui_action("toggle_guide")]);
+    assert_eq!(
+        value_effects(&app),
+        vec![(
+            "shell_action".to_string(),
+            serde_json::json!({"action": "toggle_guide"})
+        )],
+        "the ShellAction arm"
+    );
+    let runtime = app.world().resource::<CoreRuntime>();
+    assert!(runtime.markers.is_empty(), "markers are cleared each frame");
+}
+
+#[test]
+fn effect_arm_send_is_dropped_while_a_reconnect_is_required() {
+    let _guard = test_lock();
+    let (mut app, window, _) = acme_order_app();
+    app.world_mut().despawn(window);
+    app.update();
+    queue_inputs(
+        &mut app,
+        vec![ui_action("ui_select:1"), ui_action("acme:order_move")],
+    );
+    app.world_mut()
+        .resource_mut::<CommandSendStatus>()
+        .reconnect_required = true;
+    queue_inputs(&mut app, left_click(Vec2::new(800.0, 400.0)));
+    let effects = value_effects(&app);
+    assert!(
+        effects.iter().all(|(kind, _)| kind != "order_intent"),
+        "the guarded Send arm does not run: {effects:?}"
+    );
+    assert!(app.world().resource::<CoreRuntime>().markers.is_empty());
+    assert!(app.world().resource::<OrderMarkerFeed>().intents.is_empty());
+    assert!(app.world().resource::<PendingCommands>().0.is_empty());
+}
+
+#[test]
+fn effect_arm_notice_records_the_units_with_no_applicable_order() {
+    let _guard = test_lock();
+    let (mut app, window, _) = fixture_app();
+    app.world_mut().despawn(window);
+    {
+        let mut state = app.world_mut().resource_mut::<ReplicaState>();
+        state
+            .replica
+            .as_mut()
+            .unwrap()
+            .units
+            .get_mut(&1)
+            .unwrap()
+            .content_id = "forge:turret".into();
+    }
+    app.world_mut().resource_mut::<Presented>().units[0].content_id = "forge:turret".into();
+    app.update();
+    queue_inputs(&mut app, vec![ui_action("ui_select:1")]);
+    queue_inputs(
+        &mut app,
+        vec![
+            InputEvent::PointerDown {
+                button: turts_interaction::Button::Right,
+                px: Vec2::new(800.0, 400.0),
+                over_widget: false,
+            },
+            InputEvent::PointerUp {
+                button: turts_interaction::Button::Right,
+                px: Vec2::new(800.0, 400.0),
+                over_widget: false,
+            },
+        ],
+    );
+    assert_eq!(
+        value_effects(&app),
+        vec![(
+            "notice".to_string(),
+            serde_json::json!({"text_key": "no_applicable_order", "units": [1]})
+        )],
+        "the Notice arm"
+    );
+}

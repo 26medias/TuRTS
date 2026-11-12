@@ -1,0 +1,258 @@
+[
+  {
+    "row": "L0-SPLIT/SCENE",
+    "plant": "exit-without-label-despawn",
+    "description": "the early exit of draw_world_visuals stops removing the tooltip labels",
+    "files": [
+      {
+        "file": "crates/turts_client/src/visuals.rs",
+        "patch": "--- a/crates/turts_client/src/visuals.rs\n+++ b/crates/turts_client/src/visuals.rs\n@@ -342,9 +342,6 @@\n         for (entity, _, _) in fills.iter_mut() {\n             commands.entity(entity).despawn();\n         }\n-        for (entity, _, _, _, _) in labels.iter_mut() {\n-            commands.entity(entity).despawn();\n-        }\n         return;\n     };\n     visuals.active = true;\n"
+      }
+    ],
+    "command": "cargo test -p turts_client --locked --lib scene_tests",
+    "env": {},
+    "headed": false,
+    "expected_red": "visuals::scene_tests::every_early_exit_removes_all_visuals_labels_and_fills:\nassertion `left == right` failed: false true true\n  left: 1\n right: 0\nvisuals::scene_tests::scene_oracle_matches_the_committed_fixture:\nthe scene record differs from the fixture at line Some(3)\n  now:     tooltip unit=9 text=\"stale\" left=Auto top=Auto\n  fixture: state active=false hover=None hover_started=false generation=1 session=Some(VisualSession { match_id: 7, connection_epoch: 1, local_slot: 0 }) retained_markers=[] blocked_active=[] blocked_since=[] feed_intents=5 feed_sent=1",
+    "exit": 101,
+    "commit": "f6692d6",
+    "receipt": "target/mc-evidence/mp1-l0split-head-plant-exit/receipt.json (outside the repository)"
+  },
+  {
+    "row": "L0-SPLIT/SCENE",
+    "plant": "order-calls-swapped",
+    "description": "draw_blocked_marks runs before draw_order_markers",
+    "files": [
+      {
+        "file": "crates/turts_client/src/visuals.rs",
+        "patch": "--- a/crates/turts_client/src/visuals.rs\n+++ b/crates/turts_client/src/visuals.rs\n@@ -413,14 +413,6 @@\n         &mut health_fractions,\n     );\n \n-    draw_order_markers(\n-        &mut desired,\n-        &mut markers_shown,\n-        &mut marker_gizmos,\n-        &assets,\n-        &visuals,\n-    );\n-\n     draw_blocked_marks(\n         &mut desired,\n         &mut markers_shown,\n@@ -429,6 +421,14 @@\n         &assets,\n         &visuals,\n         now,\n+    );\n+\n+    draw_order_markers(\n+        &mut desired,\n+        &mut markers_shown,\n+        &mut marker_gizmos,\n+        &assets,\n+        &visuals,\n     );\n \n     // Selected own units show queued point targets in queue order.\n"
+      }
+    ],
+    "command": "cargo test -p turts_client --locked --lib scene_tests",
+    "env": {},
+    "headed": false,
+    "expected_red": "visuals::scene_tests::scene_oracle_matches_the_committed_fixture:\nthe scene record differs from the fixture at line Some(38)\n  now:     markers_shown {\"kind\":\"blocked\",\"unit\":4}\n  fixture: markers_shown {\"intent_id\":1,\"kind\":\"move\",\"order\":\"muster:order_move\",\"units\":[1],\"x\":5.0,\"y\":5.0}",
+    "exit": 101,
+    "commit": "f6692d6",
+    "receipt": "target/mc-evidence/mp1-l0split-head-plant-ordercalls/receipt.json (outside the repository)"
+  },
+  {
+    "row": "L0-SPLIT/SCENE",
+    "plant": "accumulator-not-passed",
+    "description": "collect_health_bars gets a fresh health_fractions map (blind spot of the statement proof)",
+    "files": [
+      {
+        "file": "crates/turts_client/src/visuals.rs",
+        "patch": "--- a/crates/turts_client/src/visuals.rs\n+++ b/crates/turts_client/src/visuals.rs\n@@ -410,7 +410,7 @@\n         camera_transform,\n         &visuals,\n         &mut desired,\n-        &mut health_fractions,\n+        &mut HashMap::new(),\n     );\n \n     draw_order_markers(\n"
+      }
+    ],
+    "command": "cargo test -p turts_client --locked --lib scene_tests",
+    "env": {},
+    "headed": false,
+    "expected_red": "visuals::scene_tests::scene_oracle_matches_the_committed_fixture:\nthe scene record differs from the fixture at line Some(13)\n  now:     fill unit=2 mesh=bar material=bar_health t=[0.0000 0.0000 0.0800] s=[1.0000 1.0000 1.0000] parent=Some(VisualId { kind: HealthBackground, unit: 2, ordinal: 0, generation: 1, identity: 0 })\n  fixture: fill unit=2 mesh=bar material=bar_health t=[-0.2250 0.0000 0.0800] s=[0.5000 1.0000 1.0000] parent=Some(VisualId { kind: HealthBackground, unit: 2, ordinal: 0, generation: 1, identity: 0 })",
+    "exit": 101,
+    "commit": "f6692d6",
+    "receipt": "target/mc-evidence/mp1-l0split-head-plant-accum/receipt.json (outside the repository)"
+  },
+  {
+    "row": "L0-SPLIT/SCENE",
+    "plant": "health-fill-call-dropped",
+    "description": "update_health_fills is not called",
+    "files": [
+      {
+        "file": "crates/turts_client/src/visuals.rs",
+        "patch": "--- a/crates/turts_client/src/visuals.rs\n+++ b/crates/turts_client/src/visuals.rs\n@@ -440,7 +440,6 @@\n         local_slot,\n     );\n \n-    update_health_fills(&mut fills, &health_fractions);\n     reconcile_visual_entities(\n         &mut commands,\n         &mut shown,\n"
+      }
+    ],
+    "command": "cargo test -p turts_client --locked --lib scene_tests",
+    "env": {},
+    "headed": false,
+    "expected_red": "visuals::scene_tests::scene_oracle_matches_the_committed_fixture:\nthe scene record differs from the fixture at line Some(47)\n  now:     fill unit=3 mesh=bar material=bar_health t=[-0.2700 0.0000 0.0800] s=[0.4000 1.0000 1.0000] parent=Some(VisualId { kind: HealthBackground, unit: 3, ordinal: 0, generation: 1, identity: 0 })\n  fixture: fill unit=3 mesh=bar material=bar_health t=[-0.3600 0.0000 0.0800] s=[0.2000 1.0000 1.0000] parent=Some(VisualId { kind: HealthBackground, unit: 3, ordinal: 0, generation: 1, identity: 0 })",
+    "exit": 101,
+    "commit": "f6692d6",
+    "receipt": "target/mc-evidence/mp1-l0split-head-plant-healthcall/receipt.json (outside the repository)"
+  },
+  {
+    "row": "L0-SPLIT/SCENE",
+    "plant": "hover-ring-scale",
+    "description": "the hover ring scale 0.96 becomes 0.95",
+    "files": [
+      {
+        "file": "crates/turts_client/src/visuals/hover.rs",
+        "patch": "--- a/crates/turts_client/src/visuals/hover.rs\n+++ b/crates/turts_client/src/visuals/hover.rs\n@@ -116,7 +116,7 @@\n                     VisualMaterial::RingOverlay(material),\n                     Transform {\n                         translation: world_to_scene(shown_unit.pos) + Vec3::Y * 0.032,\n-                        scale: Vec3::splat(radius * 0.96),\n+                        scale: Vec3::splat(radius * 0.95),\n                         ..default()\n                     },\n                 ),\n"
+      }
+    ],
+    "command": "cargo test -p turts_client --locked --lib scene_tests",
+    "env": {},
+    "headed": false,
+    "expected_red": "visuals::scene_tests::scene_oracle_matches_the_committed_fixture:\nthe scene record differs from the fixture at line Some(26)\n  now:     visual VisualId { kind: Hover, unit: 4, ordinal: 0, generation: 1, identity: 0 } mesh=foreign_ring material=ring_overlay[1] t=[14.0000 0.0320 14.0000] s=[0.4750 0.4750 0.4750] r=[0.0000 0.0000 0.0000 1.0000] vis=None ring=None\n  fixture: visual VisualId { kind: Hover, unit: 4, ordinal: 0, generation: 1, identity: 0 } mesh=foreign_ring material=ring_overlay[1] t=[14.0000 0.0320 14.0000] s=[0.4800 0.4800 0.4800] r=[0.0000 0.0000 0.0000 1.0000] vis=None ring=None",
+    "exit": 101,
+    "commit": "f6692d6",
+    "receipt": "target/mc-evidence/mp1-l0split-head-plant-hoverscale/receipt.json (outside the repository)"
+  },
+  {
+    "row": "L0-SPLIT/EFFECTS",
+    "plant": "effect-cursor-call-dropped",
+    "description": "apply_cursor is not called",
+    "files": [
+      {
+        "file": "crates/turts_client/src/core_adapter.rs",
+        "patch": "--- a/crates/turts_client/src/core_adapter.rs\n+++ b/crates/turts_client/src/core_adapter.rs\n@@ -1061,7 +1061,7 @@\n                 apply_sound(id, category, &mut runtime);\n             }\n             Effect::Cursor { context } => {\n-                apply_cursor(context, &mut runtime);\n+                let _ = context;\n             }\n             Effect::ShellAction { action } => {\n                 apply_shell_action(action, &mut runtime);\n"
+      }
+    ],
+    "command": "cargo test -p turts_client --locked --lib effect_arm",
+    "env": {},
+    "headed": false,
+    "expected_red": "core_adapter::adapter_tests::effect_arms_cursor_send_and_shell_action_write_their_records:\nassertion `left == right` failed: the Cursor arm\n  left: []\n right: [(\"cursor\", Object {\"context\": String(\"target\")})]",
+    "exit": 101,
+    "commit": "f6692d6",
+    "receipt": "target/mc-evidence/mp1-l0split-head-plant-cursor/receipt.json (outside the repository)"
+  },
+  {
+    "row": "L0-SPLIT/EFFECTS",
+    "plant": "effect-notice-call-dropped",
+    "description": "apply_notice is not called",
+    "files": [
+      {
+        "file": "crates/turts_client/src/core_adapter.rs",
+        "patch": "--- a/crates/turts_client/src/core_adapter.rs\n+++ b/crates/turts_client/src/core_adapter.rs\n@@ -1055,7 +1055,7 @@\n                 apply_marker(point, kind, &mut runtime);\n             }\n             Effect::Notice { text_key, units } => {\n-                apply_notice(text_key, units, &mut runtime);\n+                let _ = (text_key, units);\n             }\n             Effect::Sound { id, category } => {\n                 apply_sound(id, category, &mut runtime);\n"
+      }
+    ],
+    "command": "cargo test -p turts_client --locked --lib effect_arm",
+    "env": {},
+    "headed": false,
+    "expected_red": "core_adapter::adapter_tests::effect_arm_notice_records_the_units_with_no_applicable_order:\nassertion `left == right` failed: the Notice arm\n  left: []\n right: [(\"notice\", Object {\"text_key\": String(\"no_applicable_order\"), \"units\": Array [Number(1)]})]",
+    "exit": 101,
+    "commit": "f6692d6",
+    "receipt": "target/mc-evidence/mp1-l0split-head-plant-notice/receipt.json (outside the repository)"
+  },
+  {
+    "row": "L0-SPLIT/EFFECTS",
+    "plant": "effect-send-call-dropped",
+    "description": "apply_send is not called",
+    "files": [
+      {
+        "file": "crates/turts_client/src/core_adapter.rs",
+        "patch": "--- a/crates/turts_client/src/core_adapter.rs\n+++ b/crates/turts_client/src/core_adapter.rs\n@@ -1048,7 +1048,7 @@\n     for effect in effects {\n         match effect {\n             Effect::Send(order) if !output.status.reconnect_required => {\n-                apply_send(order, &mut runtime, &state, &mut output);\n+                let _ = order;\n             }\n             Effect::SelectionChanged => {}\n             Effect::Marker { point, kind } => {\n"
+      }
+    ],
+    "command": "cargo test -p turts_client --locked --lib effect_arm",
+    "env": {},
+    "headed": false,
+    "expected_red": "core_adapter::adapter_tests::effect_arms_cursor_send_and_shell_action_write_their_records:\nassertion `left == right` failed: the Send arm records the order intent first: [(\"cursor\", Object {\"context\": String(\"default\")})]\n  left: Some((\"cursor\", Object {\"context\": String(\"default\")}))\n right: Some((\"order_intent\", Object {\"units\": Array [Number(1)]}))",
+    "exit": 101,
+    "commit": "f6692d6",
+    "receipt": "target/mc-evidence/mp1-l0split-head-plant-sendcall/receipt.json (outside the repository)"
+  },
+  {
+    "row": "L0-SPLIT/EFFECTS",
+    "plant": "effect-shell-action-call-dropped",
+    "description": "apply_shell_action is not called",
+    "files": [
+      {
+        "file": "crates/turts_client/src/core_adapter.rs",
+        "patch": "--- a/crates/turts_client/src/core_adapter.rs\n+++ b/crates/turts_client/src/core_adapter.rs\n@@ -1064,7 +1064,7 @@\n                 apply_cursor(context, &mut runtime);\n             }\n             Effect::ShellAction { action } => {\n-                apply_shell_action(action, &mut runtime);\n+                let _ = action;\n             }\n             Effect::GroupsChanged | Effect::CameraChanged => {}\n             Effect::Send(_) => {}\n"
+      }
+    ],
+    "command": "cargo test -p turts_client --locked --lib effect_arm",
+    "env": {},
+    "headed": false,
+    "expected_red": "core_adapter::adapter_tests::effect_arms_cursor_send_and_shell_action_write_their_records:\nassertion `left == right` failed: the ShellAction arm\n  left: []\n right: [(\"shell_action\", Object {\"action\": String(\"toggle_guide\")})]",
+    "exit": 101,
+    "commit": "f6692d6",
+    "receipt": "target/mc-evidence/mp1-l0split-head-plant-shell/receipt.json (outside the repository)"
+  },
+  {
+    "row": "L0-SPLIT/EFFECTS",
+    "plant": "effect-send-guard-removed",
+    "description": "the reconnect guard of the Send arm is removed",
+    "files": [
+      {
+        "file": "crates/turts_client/src/core_adapter.rs",
+        "patch": "--- a/crates/turts_client/src/core_adapter.rs\n+++ b/crates/turts_client/src/core_adapter.rs\n@@ -1047,7 +1047,7 @@\n     runtime.markers.clear();\n     for effect in effects {\n         match effect {\n-            Effect::Send(order) if !output.status.reconnect_required => {\n+            Effect::Send(order) => {\n                 apply_send(order, &mut runtime, &state, &mut output);\n             }\n             Effect::SelectionChanged => {}\n"
+      }
+    ],
+    "command": "cargo test -p turts_client --locked --lib effect_arm",
+    "env": {},
+    "headed": false,
+    "expected_red": "core_adapter::adapter_tests::effect_arm_send_is_dropped_while_a_reconnect_is_required:\nthe guarded Send arm does not run: [(\"order_intent\", Object {\"units\": Array [Number(1)]}), (\"cursor\", Object {\"context\": String(\"default\")})]",
+    "exit": 101,
+    "commit": "f6692d6",
+    "receipt": "target/mc-evidence/mp1-l0split-head-plant-guard/receipt.json (outside the repository)"
+  },
+  {
+    "row": "L0-SPLIT/SCENE",
+    "plant": "exit-after-full-update-keeps-active",
+    "description": "the caller does not reset visuals.active before the early exit (review fault F1)",
+    "files": [
+      {
+        "file": "crates/turts_client/src/visuals.rs",
+        "patch": "--- a/crates/turts_client/src/visuals.rs\n+++ b/crates/turts_client/src/visuals.rs\n@@ -329,7 +329,6 @@\n         &mut commands,\n         &mut fills,\n     );\n-    visuals.active = false;\n     let (Some(replica), Some(content), Some(welcome), Some(camera_pair)) = (\n         state.replica.as_ref(),\n         state.content.as_ref(),\n"
+      }
+    ],
+    "command": "cargo test -p turts_client --locked --lib scene_tests",
+    "env": {},
+    "headed": false,
+    "expected_red": "visuals::scene_tests::exit_after_a_full_update_clears_active_and_every_visual:\nremove_camera=true\nvisuals::scene_tests::scene_oracle_matches_the_committed_fixture:\nthe scene record differs from the fixture at line Some(162)\n  now:     state active=true hover=Some(4) hover_started=true generation=1 session=Some(VisualSession { match_id: 7, connection_epoch: 1, local_slot: 0 }) retained_markers=[1, 2, 3, 4] blocked_active=[4] blocked_since=[4] feed_intents=0 feed_sent=0\n  fixture: state active=false hover=Some(4) hover_started=true generation=1 session=Some(VisualSession { match_id: 7, connection_epoch: 1, local_slot: 0 }) retained_markers=[1, 2, 3, 4] blocked_active=[4] blocked_since=[4] feed_intents=0 feed_sent=0",
+    "exit": 101,
+    "commit": "e0569d1",
+    "receipt": "target/mc-evidence/mp1-l0split-rep-plant-active/receipt.json (outside the repository)",
+    "note": "run on the tree of this commit plus the repair commit's scene_tests.rs and scene_oracle.txt (uncommitted at run time)"
+  },
+  {
+    "row": "L0-SPLIT/SCENE",
+    "plant": "hover-own-unit-uses-foreign-ring",
+    "description": "the hover ring of an own unit uses the foreign ring mesh",
+    "files": [
+      {
+        "file": "crates/turts_client/src/visuals/hover.rs",
+        "patch": "--- a/crates/turts_client/src/visuals/hover.rs\n+++ b/crates/turts_client/src/visuals/hover.rs\n@@ -64,7 +64,7 @@\n             .get(usize::from(unit.owner_slot))\n             .cloned()\n     {\n-        let mesh = if unit.owner_slot == local_slot {\n+        let mesh = if unit.owner_slot == local_slot && false {\n             assets.ring.clone()\n         } else {\n             assets.foreign_ring.clone()\n"
+      }
+    ],
+    "command": "cargo test -p turts_client --locked --lib scene_tests",
+    "env": {},
+    "headed": false,
+    "expected_red": "visuals::scene_tests::scene_oracle_matches_the_committed_fixture:\nthe scene record differs from the fixture at line Some(175)\n  now:     visual VisualId { kind: Hover, unit: 3, ordinal: 0, generation: 1, identity: 0 } mesh=foreign_ring material=ring_overlay[0] t=[10.0000 0.0320 14.0000] s=[0.4800 0.4800 0.4800] r=[0.0000 0.0000 0.0000 1.0000] vis=None ring=None\n  fixture: visual VisualId { kind: Hover, unit: 3, ordinal: 0, generation: 1, identity: 0 } mesh=ring material=ring_overlay[0] t=[10.0000 0.0320 14.0000] s=[0.4800 0.4800 0.4800] r=[0.0000 0.0000 0.0000 1.0000] vis=None ring=None",
+    "exit": 101,
+    "commit": "e0569d1",
+    "receipt": "target/mc-evidence/mp1-l0split-rep-plant-ownhover2/receipt.json (outside the repository)",
+    "note": "run on the tree of this commit plus the repair commit's scene_tests.rs and scene_oracle.txt (uncommitted at run time)"
+  },
+  {
+    "row": "L0-SPLIT/SCENE",
+    "plant": "blocked-mark-expiry-removed",
+    "description": "the 2 s blocked-mark expiry becomes 20 s",
+    "files": [
+      {
+        "file": "crates/turts_client/src/visuals/blocked.rs",
+        "patch": "--- a/crates/turts_client/src/visuals/blocked.rs\n+++ b/crates/turts_client/src/visuals/blocked.rs\n@@ -31,7 +31,7 @@\n     now: Instant,\n ) {\n     for (&unit_id, start) in &visuals.blocked_since {\n-        if now.duration_since(*start).as_secs_f32() >= 2.0 {\n+        if now.duration_since(*start).as_secs_f32() >= 20.0 {\n             continue;\n         }\n         if let Some(unit) = presented_by_id.get(&unit_id)\n"
+      }
+    ],
+    "command": "cargo test -p turts_client --locked --lib scene_tests",
+    "env": {},
+    "headed": false,
+    "expected_red": "visuals::scene_tests::scene_oracle_matches_the_committed_fixture:\nthe scene record differs from the fixture at line Some(204)\n  now:     gizmo order_marker [13.7000 1.5700 13.7000] -> [14.3000 1.5700 14.3000] colour=[0.7874 0.0134 0.0072]\n  fixture: visual VisualId { kind: HealthBackground, unit: 2, ordinal: 0, generation: 1, identity: 0 } mesh=bar material=bar_background t=[14.0000 2.2000 10.0000] s=[1.0602 0.3925 0.1000] r=[0.0000 0.0000 0.0000 1.0000] vis=None ring=None",
+    "exit": 101,
+    "commit": "e0569d1",
+    "receipt": "target/mc-evidence/mp1-l0split-rep-plant-blockedexpiry/receipt.json (outside the repository)",
+    "note": "run on the tree of this commit plus the repair commit's scene_tests.rs and scene_oracle.txt (uncommitted at run time)"
+  },
+  {
+    "row": "L0-SPLIT/SCENE",
+    "plant": "order-marker-expiry-removed",
+    "description": "the 60 s order-marker expiry becomes 600 s",
+    "files": [
+      {
+        "file": "crates/turts_client/src/visuals/markers.rs",
+        "patch": "--- a/crates/turts_client/src/visuals/markers.rs\n+++ b/crates/turts_client/src/visuals/markers.rs\n@@ -49,7 +49,7 @@\n     replica_tick: u32,\n     now: Instant,\n ) -> bool {\n-    if now.duration_since(marker.started).as_secs_f32() >= 60.0 {\n+    if now.duration_since(marker.started).as_secs_f32() >= 600.0 {\n         return false;\n     }\n     if marker.fragments.is_empty()\n"
+      }
+    ],
+    "command": "cargo test -p turts_client --locked --lib scene_tests",
+    "env": {},
+    "headed": false,
+    "expected_red": "visuals::scene_tests::scene_oracle_matches_the_committed_fixture:\nthe scene record differs from the fixture at line Some(213)\n  now:     gizmo order_marker [5.7000 0.0750 5.7000] -> [6.3000 0.0750 6.3000] colour=[0.9114 0.7484 0.0331]\n  fixture: visual VisualId { kind: Blocked, unit: 4, ordinal: 0, generation: 1, identity: 0 } mesh=bar material=blocked t=[14.0000 1.5000 14.0000] s=[0.7000 0.0800 0.0800] r=[0.0000 0.0000 0.0000 1.0000] vis=None ring=None",
+    "exit": 101,
+    "commit": "e0569d1",
+    "receipt": "target/mc-evidence/mp1-l0split-rep-plant-markerexpiry/receipt.json (outside the repository)",
+    "note": "run on the tree of this commit plus the repair commit's scene_tests.rs and scene_oracle.txt (uncommitted at run time)"
+  }
+]

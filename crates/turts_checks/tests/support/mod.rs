@@ -549,6 +549,7 @@ pub fn production_sources(roots: &[PathBuf]) -> Result<Vec<PathBuf>, ScanError> 
 const TEST_MODULE_FILES: &[&str] = &[
     "crates/turts_client/src/client_shell/tests.rs",
     "crates/turts_client/src/core_adapter/adapter_tests.rs",
+    "crates/turts_client/src/visuals/scene_tests.rs",
     "crates/turts_client/src/visuals/tests.rs",
     "crates/turts_client/src/widgets/tests.rs",
 ];
