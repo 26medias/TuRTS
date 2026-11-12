@@ -3,7 +3,8 @@
 use turts_rules::Ratio;
 use turts_rules::charge::{CancelCase, CancelRefunds, charged_at, refund};
 use turts_rules::progress::{
-    RateRecord, cooldown_left, is_complete, paid_at, rate_step, refund_at, ticks_at_rate, value_at,
+    RateRecord, base_ticks_done, cooldown_left, is_complete, paid_at, rate_step, refund_at,
+    ticks_at_rate, value_at,
 };
 
 mod common;
@@ -217,4 +218,20 @@ fn ticks_at_rate_agrees_with_running_the_job() {
             );
         }
     }
+}
+
+#[test]
+fn base_ticks_done_is_the_progress_in_ticks_of_a_job_with_a_total() {
+    // Q = 1: the total is the duration, and the value is the progress itself.
+    for done in [0, 1, 7, 100] {
+        assert_eq!(base_ticks_done(done, 100, 100), done);
+    }
+    // Q = 2, duration 4, total 8: 4 units are 2 ticks, 5 units are 2 ticks (floor), 8 are 4.
+    assert_eq!(base_ticks_done(4, 4, 8), 2);
+    assert_eq!(base_ticks_done(5, 4, 8), 2);
+    assert_eq!(base_ticks_done(8, 4, 8), 4);
+    // A job with no total shows its progress.
+    assert_eq!(base_ticks_done(3, 0, 0), 3);
+    // A product above u64 saturates and does not wrap.
+    assert_eq!(base_ticks_done(u64::MAX, u64::MAX, 1), u64::MAX);
 }

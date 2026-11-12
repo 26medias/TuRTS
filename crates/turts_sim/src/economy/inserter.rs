@@ -12,8 +12,8 @@ use super::{
     transaction::{Transaction, transact},
 };
 use crate::{
-    RejectReason, SimClock, UnitId, bootstrap::InstalledCatalog, registry::UnitTypes,
-    world::UnitType,
+    RejectReason, SimClock, bootstrap::InstalledCatalog, registry::UnitTypes,
+    unit_index::unit_entity, world::UnitType,
 };
 
 /// Current arm phase.
@@ -170,7 +170,7 @@ fn arm_parameters(
     unit: u32,
     tick_hz: u32,
 ) -> Option<(u32, u32, BTreeSet<ContentId>)> {
-    let entity = find_unit(world, unit)?;
+    let entity = unit_entity(world, unit)?;
     let unit_type = world.get::<UnitType>(entity)?;
     let type_entry = world.resource::<UnitTypes>().get(unit_type.0)?;
     let content = ContentId::parse(&type_entry.content_id).ok()?;
@@ -183,7 +183,7 @@ fn arm_parameters(
 }
 
 fn endpoint_kind(world: &World, unit: u32, source: bool) -> Option<EndpointKind> {
-    let entity = find_unit(world, unit)?;
+    let entity = unit_entity(world, unit)?;
     let unit_type = world.get::<UnitType>(entity)?;
     let type_entry = world.resource::<UnitTypes>().get(unit_type.0)?;
     let content = ContentId::parse(&type_entry.content_id).ok()?;
@@ -201,12 +201,6 @@ fn endpoint_kind(world: &World, unit: u32, source: bool) -> Option<EndpointKind>
     } else {
         None
     }
-}
-
-fn find_unit(world: &World, id: u32) -> Option<bevy_ecs::entity::Entity> {
-    world
-        .iter_entities()
-        .find_map(|entity| (entity.get::<UnitId>()?.0 == id).then_some(entity.id()))
 }
 
 fn pick_item(
@@ -754,6 +748,26 @@ mod tests {
             .items
             .get(item)
             .map_or(0, |account| account.on_hand)
+    }
+
+    #[test]
+    fn the_arm_lookups_read_the_unit_index_and_do_not_scan() {
+        use crate::unit_index::index_entry_for_test;
+        let mut app = fixture(20, 10, 5, 10, 0);
+        assert!(arm_parameters(app.world(), ARM, 20).is_some());
+        assert!(endpoint_kind(app.world(), SOURCE, true).is_some());
+        // The entries point at bare entities (no unit type): a scan still finds the real units.
+        index_entry_for_test(app.world_mut(), ARM);
+        index_entry_for_test(app.world_mut(), SOURCE);
+        assert_eq!(
+            arm_parameters(app.world(), ARM, 20),
+            None,
+            "arm_parameters scanned"
+        );
+        assert!(
+            endpoint_kind(app.world(), SOURCE, true).is_none(),
+            "endpoint_kind scanned"
+        );
     }
 
     #[test]
