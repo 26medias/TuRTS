@@ -22,7 +22,7 @@
         "headed": false,
         "expected_red": "SELFTEST FAIL exit_only_wrong_text_is_a_failure",
         "exit": 1,
-        "commit": "244d69d"
+        "commit": "38c6ea2"
     },
     {
         "row": "Q-PLANTS",
@@ -47,7 +47,7 @@
         "headed": false,
         "expected_red": "SELFTEST FAIL sigint_restores_the_source",
         "exit": 1,
-        "commit": "244d69d"
+        "commit": "38c6ea2"
     },
     {
         "row": "Q-PLANTS",
@@ -72,7 +72,7 @@
         "headed": false,
         "expected_red": "SELFTEST FAIL h3_sigkill_during_the_plant_run_is_recovered_by_the_next_run",
         "exit": 1,
-        "commit": "244d69d"
+        "commit": "38c6ea2"
     },
     {
         "row": "Q-PLANTS",
@@ -97,7 +97,7 @@
         "headed": false,
         "expected_red": "SELFTEST FAIL h1_text_printed_by_the_green_run_is_no_red",
         "exit": 1,
-        "commit": "244d69d"
+        "commit": "38c6ea2"
     },
     {
         "row": "Q-PLANTS",
@@ -122,7 +122,7 @@
         "headed": false,
         "expected_red": "SELFTEST FAIL m1_headed_record_never_runs_in_the_serial_runner",
         "exit": 1,
-        "commit": "244d69d"
+        "commit": "38c6ea2"
     },
     {
         "row": "Q-PLANTS",
@@ -147,17 +147,17 @@
         "headed": false,
         "expected_red": "SELFTEST FAIL m4_second_runner_in_one_tree_is_refused",
         "exit": 1,
-        "commit": "244d69d"
+        "commit": "38c6ea2"
     },
     {
         "row": "Q-PLANTS",
-        "plant": "no-grouping",
+        "plant": "no-green-after-restore",
         "files": [
             {
                 "file": "scripts/qa/mp1_plants.py",
                 "edit": {
-                    "old": "return json.dumps([rec[\"command\"], rec[\"env\"]], sort_keys=True)",
-                    "new": "return json.dumps([rec[\"command\"], rec[\"env\"], rec[\"plant\"]], sort_keys=True)"
+                    "old": "        code, green_out = execute(rec)   # the green run after the restore: the baseline of the next plant",
+                    "new": "        code, green_out = 0, green_out"
                 }
             }
         ],
@@ -170,8 +170,58 @@
         ],
         "env": {},
         "headed": false,
-        "expected_red": "SELFTEST FAIL m5_one_baseline_for_each_command_group",
+        "expected_red": "SELFTEST FAIL m5_a_green_run_follows_each_restore",
         "exit": 1,
-        "commit": "244d69d"
+        "commit": "38c6ea2"
+    },
+    {
+        "row": "Q-PLANTS",
+        "plant": "overwrites-hand-edit",
+        "files": [
+            {
+                "file": "scripts/qa/mp1_plants.py",
+                "edit": {
+                    "old": "        if have != entry[\"planted_sha256\"]:",
+                    "new": "        if False:"
+                }
+            }
+        ],
+        "command": [
+            "python3",
+            "-B",
+            "-I",
+            "scripts/qa/mp1_plants.py",
+            "--self-test"
+        ],
+        "env": {},
+        "headed": false,
+        "expected_red": "SELFTEST FAIL j_hand_edit_after_a_kill_is_never_overwritten",
+        "exit": 1,
+        "commit": "38c6ea2"
+    },
+    {
+        "row": "Q-PLANTS",
+        "plant": "cargo-test-not-required",
+        "files": [
+            {
+                "file": "scripts/qa/mp1_plants.py",
+                "edit": {
+                    "old": "    return bool(CARGO_TEST.search(\" \".join(command)))",
+                    "new": "    return False"
+                }
+            }
+        ],
+        "command": [
+            "python3",
+            "-B",
+            "-I",
+            "scripts/qa/mp1_plants.py",
+            "--self-test"
+        ],
+        "env": {},
+        "headed": false,
+        "expected_red": "SELFTEST FAIL m2_cargo_test_record_needs_expected_selected",
+        "exit": 1,
+        "commit": "38c6ea2"
     }
 ]

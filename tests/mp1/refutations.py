@@ -4,8 +4,9 @@
 The cases come from the plant records in docs/research/mp1/plants/*.json, not from one registry
 file. parallel_refutations_v2.py loads this module and calls `load_cases`, `select_cases`,
 `group_key`, `copy_source_tree` and `run_group`. A worker runs one command group: the plants that
-share a command run one after the other in one scratch copy with one cargo target folder, with one
-baseline and one final green run for the group (the engine is run_group of
+share a command run one after the other in one scratch copy with one cargo target folder, with a
+baseline and a green run after each restore; the runner splits a group of more than 3 plants over
+several workers (the engine is run_group of
 scripts/qa/mp1_plants.py, the same code as the serial runner, but in a scratch copy with no .git).
 
 From tests/m2/refutations.py this harness reuses `run` (cargo environment and source receipts),
