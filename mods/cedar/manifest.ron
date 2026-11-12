@@ -1,5 +1,5 @@
 (
-    id: "cedar", version: "0.3.0", kind: Game, engine_api: "^0.2.3",
+    id: "cedar", version: "0.3.0", kind: Game, engine_api: "^0.2.4",
     dependencies: {},
     exports: (
         units: ["units/depot.ron", "units/worker.ron"],

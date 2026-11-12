@@ -1049,11 +1049,12 @@ fn validate_widget(
                 ButtonAction::Input(name)
                     if !actions.contains(name.as_str()) && !is_engine_action(name) =>
                 {
-                    return Err(error(
+                    return Err(unknown_input_action(
                         package,
                         file,
                         &format!("{path}.widget.action"),
-                        format!("unknown input action `{name}`"),
+                        name,
+                        actions.iter().map(|declared| declared.to_string()),
                     ));
                 }
                 _ => {}
@@ -1517,32 +1518,70 @@ fn checked_unit_reference(
     Ok(reference)
 }
 
+/// The engine actions with a fixed name. The group and camera actions have their own rule below.
+const ENGINE_ACTION_NAMES: [&str; 14] = [
+    "select",
+    "box_select",
+    "command",
+    "add_modifier",
+    "queue_modifier",
+    "type_modifier",
+    "zoom_in",
+    "zoom_out",
+    "centre_selection",
+    "cancel",
+    "menu",
+    "toggle_guide",
+    // API 0.2.4, row H23: sends `LeaveMatch`; enabled only when the match is over.
+    "leave_match",
+    // API 0.2.4, row H25: switches the sound on or off (a client preference).
+    "toggle_sound",
+];
+
 fn is_engine_action(name: &str) -> bool {
-    matches!(
-        name,
-        "select"
-            | "box_select"
-            | "command"
-            | "add_modifier"
-            | "queue_modifier"
-            | "type_modifier"
-            | "zoom_in"
-            | "zoom_out"
-            | "centre_selection"
-            | "cancel"
-            | "menu"
-            | "toggle_guide"
-            // API 0.2.4, row H23: sends `LeaveMatch`; enabled only when the match is over.
-            | "leave_match"
-    ) || name
-        .strip_prefix("group_recall_")
-        .or_else(|| name.strip_prefix("group_assign_"))
-        .or_else(|| name.strip_prefix("group_add_"))
-        .is_some_and(|suffix| matches!(suffix, "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9"))
+    ENGINE_ACTION_NAMES.contains(&name)
+        || name
+            .strip_prefix("group_recall_")
+            .or_else(|| name.strip_prefix("group_assign_"))
+            .or_else(|| name.strip_prefix("group_add_"))
+            .is_some_and(|suffix| {
+                matches!(suffix, "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9")
+            })
         || matches!(
             name,
             "camera_pan_up" | "camera_pan_down" | "camera_pan_left" | "camera_pan_right"
         )
+}
+
+/// The error of an unknown input action of a button: the hint for the nearest name and the allowed
+/// list (design 6.10, "Conventions for every row"), the declared actions and the engine actions.
+fn unknown_input_action(
+    package: &PackageId,
+    file: &str,
+    field: &str,
+    name: &str,
+    declared: impl IntoIterator<Item = String>,
+) -> ModError {
+    let mut allowed: Vec<String> = declared
+        .into_iter()
+        .chain(
+            ENGINE_ACTION_NAMES
+                .iter()
+                .map(|engine| (*engine).to_string()),
+        )
+        .collect();
+    allowed.sort();
+    allowed.dedup();
+    let hint = crate::parse::nearest_name(name, allowed.iter().map(String::as_str))
+        .map(|near| format!("; did you mean `{near}`?"))
+        .unwrap_or_default();
+    error(
+        package,
+        file,
+        field,
+        format!("unknown input action `{name}`{hint}"),
+    )
+    .with_allowed(allowed)
 }
 
 fn validate_local_id(

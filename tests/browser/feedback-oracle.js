@@ -3,7 +3,7 @@
 
 const assert = require("node:assert/strict");
 const { decodePng, pixelAt } = require("./harness/png.js");
-const { assertSwitchClickByLabel } = require("./harness/sound-switch-proof.js");
+const { assertSwitchClickByLabel, switchRow } = require("./harness/sound-switch-proof.js");
 
 async function judge(view, params) {
     const row = params.row;
@@ -17,7 +17,7 @@ async function judge(view, params) {
     if (row === "ORD7") return judgeOrd7(view, input, checkpoints, final);
     if (row === "ALR1") return judgeAlr1(view, input, checkpoints, params);
     if (row === "AUD1") return judgeAud1(view, input, checkpoints, final);
-    if (row === "SND1") return judgeSnd1(input, checkpoints, final);
+    if (row === "SND1" || row === "SND2") return judgeSnd1(input, checkpoints, final, row);
     throw new Error(`feedback oracle has no route for ${row}`);
 }
 
@@ -354,15 +354,18 @@ function assertSoundTurnedOn(input, checkpoints, label) {
 // SND1: the sound is off at the start. A select and an order make their sound requests and no sink
 // starts. One click on the switch turns it on and the next order plays. One more click turns it
 // off and the next order is silent again.
-function judgeSnd1(input, checkpoints, final) {
+function judgeSnd1(input, checkpoints, final, row) {
     const named = (name) => checkpointForSave(input, checkpoints, name);
-    const wordsOf = (checkpoint) => (checkpoint.debug.ui_snapshot || []).find((row) => row.kind === "sound_switch")?.text;
+    const wordsOf = (checkpoint) => switchRow(checkpoint.debug).text;
     const requested = (debug, category, id) => (debug.frames?.retained_input || []).some((frame) =>
         (frame.feedback?.audio_started || []).some((sound) => sound.category === category && sound.id === id));
 
     const start = named("snd1-default-off.png");
     assert.equal(start.debug.audio.sound_on, false, "SND1 the sound is off by default");
-    assert.equal(wordsOf(start), "Sound: off", "SND1 the switch says Sound: off at the start");
+    assert.equal(wordsOf(start), "Sound: off", `${row} the switch says Sound: off at the start`);
+    assert.equal(switchRow(start.debug).kind, row === "SND2" ? "button" : "sound_switch",
+        row === "SND2" ? "SND2 the switch is the button of the package layout (D67), the engine draws none"
+            : "SND1 the package has no switch, so the engine draws its fallback");
     assert(start.debug.audio.gesture_seen === true && start.debug.audio.context_states?.length > 0 &&
         start.debug.audio.context_states.every((state) => state === "running"),
     "SND1 every browser audio context runs, so the silence below is the switch and not a locked browser");

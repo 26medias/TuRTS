@@ -308,6 +308,12 @@ impl InterfaceWalk<'_> {
                         &format!("{path}.widget.action"),
                     );
                 }
+                if matches!(action, ButtonAction::Input(name) if name == "toggle_sound") {
+                    self.push(
+                        "engine action toggle_sound",
+                        &format!("{path}.widget.action"),
+                    );
+                }
                 if font.is_written() {
                     self.push("Button.font", &format!("{path}.widget.font"));
                 }
@@ -353,6 +359,7 @@ impl InterfaceWalk<'_> {
             Value::MatchStats(_) => Some("Value::MatchStats"),
             Value::MatchClock => Some("Value::MatchClock"),
             Value::Hint => Some("Value::Hint"),
+            Value::SoundState => Some("Value::SoundState"),
             _ => None,
         };
         if let Some(name) = name {
@@ -423,6 +430,7 @@ impl InterfaceWalk<'_> {
             Predicate::OutcomeReasonIs(_) => Some("Predicate::OutcomeReasonIs"),
             Predicate::Placing => Some("Predicate::Placing"),
             Predicate::HintShown => Some("Predicate::HintShown"),
+            Predicate::SoundOn => Some("Predicate::SoundOn"),
             _ => None,
         };
         if let Some(name) = name {

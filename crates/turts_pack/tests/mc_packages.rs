@@ -169,7 +169,7 @@ fn five_packages_load_with_0_2_3() {
             }),
             "{id} exports a Move order usable by a unit with movement"
         );
-        assert_eq!(archive.manifest.engine_api, "^0.2.3", "{id} engine API");
+        assert_eq!(archive.manifest.engine_api, "^0.2.4", "{id} engine API");
     }
 }
 
@@ -289,7 +289,7 @@ fn a_new_order_binds_a_behaviour_by_data() {
     let path = unique_temp_dir("data-order");
     copy_tree(&package_dir("acme"), &path);
     let mut manifest = read_manifest(&path);
-    manifest.engine_api = "^0.2.3".into();
+    manifest.engine_api = "^0.2.4".into();
     manifest.exports.orders.push("orders/dash.ron".into());
     add_data_order_fixture_inputs(&path, &mut manifest);
     write_manifest(&path, &manifest);

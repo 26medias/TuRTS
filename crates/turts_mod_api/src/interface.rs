@@ -40,6 +40,26 @@ pub struct InterfaceDef {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub alert_sound_gap_secs: Option<f32>,
 }
+impl InterfaceDef {
+    /// True when the interface places a widget (at any depth) that is a button with the action
+    /// `Input(name)`. The engine asks it with `toggle_sound`: it draws its own sound switch only
+    /// when the answer is false.
+    pub fn places_input_button(&self, name: &str) -> bool {
+        fn walk(widget: &Widget, name: &str) -> bool {
+            match &widget.widget {
+                Primitive::Button {
+                    action: ButtonAction::Input(action),
+                    ..
+                } => action == name,
+                Primitive::Box { children, .. } => children.iter().any(|child| walk(child, name)),
+                Primitive::List { item, .. } | Primitive::Grid { item, .. } => walk(item, name),
+                _ => false,
+            }
+        }
+        self.root.iter().any(|widget| walk(widget, name))
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Widget {
@@ -213,6 +233,12 @@ pub enum Value {
     MatchStats(StatField),
     MatchClock,
     Hint,
+    /// API 0.2.4, row H25: the words of the sound switch, `Sound: on` or `Sound: off`. It reads
+    /// `Sound: on` only when the player has switched the sound on and the browser lets audio run.
+    /// Put it in a `Button` label with the action `Input("toggle_sound")`. Engine fallback: a game
+    /// whose interface places no widget with the action `toggle_sound` gets the engine's own switch
+    /// (design 6.10, row H25), so the silent default always has a way back to sound.
+    SoundState,
 }
 
 /// API 0.2.4, row H7.
@@ -324,6 +350,9 @@ pub enum Predicate {
     OutcomeReasonIs(OutcomeReasonKind),
     Placing,
     HintShown,
+    /// API 0.2.4, row H25: true when `Value::SoundState` reads `Sound: on`. Use it to style the
+    /// switch (for example one widget with `SoundOn` and one with `Not(SoundOn)`).
+    SoundOn,
 }
 
 /// API 0.2.4, row H10.

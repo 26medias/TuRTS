@@ -182,6 +182,14 @@ pub(super) fn sync_widget_tree(world: &mut World) {
     ))
     .unwrap_or_default();
     let guide_open = world.resource::<guide::GuideOpen>().is_open;
+    let sound_on = world
+        .get_resource::<crate::volume_settings::VolumeSettings>()
+        .is_some_and(|volumes| {
+            crate::client_shell::sound_shown_on(
+                world.get_resource::<crate::debug_feed::AudioFeed>(),
+                volumes,
+            )
+        });
     let groups = world
         .get_resource::<GroupsFeed>()
         .map_or_else(Default::default, |feed| feed.0.clone());
@@ -217,6 +225,7 @@ pub(super) fn sync_widget_tree(world: &mut World) {
         input_map: &content.input_map,
         guide: &interface.guide,
         guide_open,
+        sound_on,
         last_notice: notices
             .last()
             .and_then(|notice| notice.get("text").or_else(|| notice.get("message")))

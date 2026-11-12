@@ -38,6 +38,7 @@ fn authored_minimap_root_clips_marker_extents_to_its_widget_rect() {
         input_map: &input_map,
         guide: &guide,
         guide_open: false,
+        sound_on: false,
         last_notice: None,
         core: sources::CoreFeed::empty(),
     };
@@ -112,6 +113,7 @@ fn hidden_widget_ancestor_hides_child_and_removes_its_world_capture() {
         input_map: &input_map,
         guide: &guide,
         guide_open: false,
+        sound_on: false,
         last_notice: None,
         core: sources::CoreFeed::empty(),
     };
@@ -255,6 +257,7 @@ fn icon_only_hotkey_button_still_renders_effective_binding_and_tracks_hover() {
         input_map: &input_map,
         guide: &[],
         guide_open: false,
+        sound_on: false,
         last_notice: None,
         core: sources::CoreFeed::empty(),
     };
@@ -357,6 +360,7 @@ fn dynamic_list_values_refresh_without_replacing_button_entities() {
         input_map: &input_map,
         guide: &[],
         guide_open: false,
+        sound_on: false,
         last_notice: None,
         core: sources::CoreFeed::empty(),
     };
@@ -532,6 +536,7 @@ fn text_that_appears_after_an_empty_binding_keeps_authored_typography() {
         input_map: &input_map,
         guide: &[],
         guide_open: false,
+        sound_on: false,
         last_notice: None,
         core: sources::CoreFeed::empty(),
     };
@@ -712,6 +717,7 @@ fn grid_item_tooltips_inherit_context_and_template_tooltips_override_it() {
         input_map: &content.input_map,
         guide: &[],
         guide_open: false,
+        sound_on: false,
         last_notice: None,
         core: sources::CoreFeed::empty(),
     };
@@ -891,6 +897,7 @@ fn disabled_authored_button_cannot_dispatch_an_action() {
         input_map: &input_map,
         guide: &[],
         guide_open: false,
+        sound_on: false,
         last_notice: None,
         core: sources::CoreFeed::empty(),
     };
@@ -935,6 +942,117 @@ fn disabled_authored_button_cannot_dispatch_an_action() {
     app.world_mut().trigger(Activate { entity });
     assert!(app.world().resource::<CoreInputQueue>().0.is_empty());
     assert!(!app.world().resource::<guide::GuideOpen>().is_open);
+}
+
+/// API 0.2.4, row H25: a mod button with the action `toggle_sound` flips the sound switch and sends
+/// nothing to the interaction core; `Bind(SoundState)` reads the words of the state in the context
+/// (the same rule as the engine switch); `SoundOn` follows the same state.
+#[test]
+fn toggle_sound_button_flips_the_switch_and_its_words_and_predicate_follow_the_state() {
+    let mut app = App::new();
+    app.add_plugins((MinimalPlugins, WidgetsPlugin))
+        .init_resource::<CoreInputQueue>()
+        .init_resource::<crate::ingest::ReplicaState>()
+        .init_resource::<crate::commands::PendingCommands>()
+        .insert_resource(crate::volume_settings::VolumeSettings::default());
+    let replica = crate::replica::Replica::new(20);
+    let content = crate::content::ClientContent::default();
+    let selection = Vec::new();
+    let groups = Default::default();
+    let alerts = Vec::new();
+    let bindings = Default::default();
+    let input_map = turts_mod_api::InputMapDef {
+        actions: Vec::new(),
+        engine_overrides: Vec::new(),
+    };
+    let off = sources::SourceContext {
+        binding_labels: None,
+        replica: &replica,
+        content: &content,
+        selection: &selection,
+        owner_slot: 0,
+        interface: None,
+        interface_package: Some("test"),
+        control_groups: &groups,
+        alerts: &alerts,
+        bindings: &bindings,
+        input_map: &input_map,
+        guide: &[],
+        guide_open: false,
+        sound_on: false,
+        last_notice: None,
+        core: sources::CoreFeed::empty(),
+    };
+    let on = sources::SourceContext {
+        sound_on: true,
+        ..off
+    };
+    assert!(!values::predicate_matches(&Predicate::SoundOn, &off));
+    assert!(values::predicate_matches(&Predicate::SoundOn, &on));
+    assert!(values::predicate_matches(
+        &Predicate::Not(Box::new(Predicate::SoundOn)),
+        &off
+    ));
+    assert_eq!(
+        sources::read_value(&Value::SoundState, off),
+        serde_json::json!("Sound: off")
+    );
+    assert_eq!(
+        sources::read_value(&Value::SoundState, on),
+        serde_json::json!("Sound: on")
+    );
+
+    let button = Widget {
+        id: "test.sound".into(),
+        at: None,
+        size: Size {
+            w: turts_mod_api::Dimension::Px(124.0),
+            h: turts_mod_api::Dimension::Px(28.0),
+        },
+        layer: 0,
+        visible: Vec::new(),
+        tooltip: None,
+        widget: Primitive::Button {
+            icon: None,
+            label: Some(TextValue::Bind(Value::SoundState)),
+            action: ButtonAction::Input("toggle_sound".into()),
+            hotkey_label: false,
+            font: Default::default(),
+            size: Default::default(),
+        },
+    };
+    let entity = spawn_widget(
+        app.world_mut(),
+        None,
+        &button,
+        Vec2::new(200.0, 200.0),
+        &off,
+        "test",
+        &test_tooltip_style(),
+        None,
+    );
+    refresh_bound_widgets(app.world_mut(), &off);
+    assert_eq!(app.world().get::<Text>(entity).unwrap().0, "Sound: off");
+
+    app.world_mut().trigger(Activate { entity });
+    assert!(
+        app.world()
+            .resource::<crate::volume_settings::VolumeSettings>()
+            .sound_on,
+        "the button turns the sound on"
+    );
+    assert!(
+        app.world().resource::<CoreInputQueue>().0.is_empty(),
+        "the action is a client preference: nothing goes to the interaction core"
+    );
+    refresh_bound_widgets(app.world_mut(), &on);
+    assert_eq!(app.world().get::<Text>(entity).unwrap().0, "Sound: on");
+    app.world_mut().trigger(Activate { entity });
+    assert!(
+        !app.world()
+            .resource::<crate::volume_settings::VolumeSettings>()
+            .sound_on
+    );
 }
 
 #[test]
@@ -983,6 +1101,7 @@ fn fit_text_and_image_use_real_asset_components_with_bevy_auto_sizing() {
         input_map: &input_map,
         guide: &[],
         guide_open: false,
+        sound_on: false,
         last_notice: None,
         core: sources::CoreFeed::empty(),
     };
@@ -1343,6 +1462,7 @@ fn bar_refresh_tracks_bound_progress_without_replacing_fill_entity() {
         input_map: &input_map,
         guide: &[],
         guide_open: false,
+        sound_on: false,
         last_notice: None,
         core: sources::CoreFeed::empty(),
     };
@@ -1494,6 +1614,7 @@ fn button_labels_use_the_interface_tooltip_font() {
         input_map: &input_map,
         guide: &[],
         guide_open: false,
+        sound_on: false,
         last_notice: None,
         core: sources::CoreFeed::empty(),
     };
@@ -1622,6 +1743,7 @@ mod stub_contract {
             input_map: &input_map,
             guide: &guide,
             guide_open: false,
+            sound_on: false,
             last_notice: None,
             core: sources::CoreFeed::empty(),
         });

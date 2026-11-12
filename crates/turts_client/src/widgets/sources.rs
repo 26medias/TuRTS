@@ -66,6 +66,9 @@ pub struct SourceContext<'a> {
     pub input_map: &'a InputMapDef,
     pub guide: &'a [GuidePage],
     pub guide_open: bool,
+    /// True when the player can hear sound now (`client_shell::sound_shown_on`): the sound switch
+    /// is on and the browser lets audio run. `Value::SoundState` and `Predicate::SoundOn` read it.
+    pub sound_on: bool,
     pub last_notice: Option<&'a str>,
     /// The state of the interaction core that the sources read (one part for each owner task).
     pub core: &'a CoreFeed,
@@ -188,6 +191,10 @@ pub fn read_value_for_item(
                 .join("\n"),
         ),
         Value::GuideOpen => serde_json::Value::Bool(context.guide_open),
+        // API 0.2.4 (row H25): the words of the sound switch.
+        Value::SoundState => serde_json::Value::String(
+            crate::volume_settings::sound_label(context.sound_on).to_owned(),
+        ),
         Value::LastNotice => context
             .last_notice
             .map_or(serde_json::Value::Null, |text| serde_json::json!(text)),
@@ -1364,6 +1371,7 @@ mod tests {
             input_map,
             guide,
             guide_open: false,
+            sound_on: false,
             last_notice: None,
             core: CoreFeed::empty(),
         }

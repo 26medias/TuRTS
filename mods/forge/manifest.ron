@@ -2,7 +2,7 @@
     id: "forge",
     version: "0.2.0",
     kind: Game,
-    engine_api: "^0.2.3",
+    engine_api: "^0.2.4",
     dependencies: {},
     exports: (
         units: [

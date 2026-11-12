@@ -44,7 +44,23 @@ test("the finder scales with the device pixel ratio", () => {
     assert.equal(findSoundSwitch(shot, 1), null, "a block twice the size is not a switch at ratio 1");
 });
 
-test("the finder refuses a missing switch, a wrong size, a thin block, other fills and a block above the bottom band", () => {
+function frame(target, left, top, colour) {
+    fill(target, left, top, 124, 28, colour);
+    fill(target, left + 2, top + 2, 120, 24, [33, 66, 77]);
+}
+
+test("the finder reads the frame of a package switch at any place", () => {
+    for (const [state, left, top] of [["off", 744, 684], ["on", 20, 300], ["off", 1100, 5]]) {
+        const shot = image();
+        frame(shot, left, top, SOUND_SWITCH[state]);
+        fill(shot, left + 30, top + 7, 60, 12, [255, 255, 255]);
+        const found = findSoundSwitch(shot);
+        assert.equal(found.state, state);
+        assert.deepEqual([found.x, found.y], [left + 62, top + 14]);
+    }
+});
+
+test("the finder refuses a missing switch, a wrong size, a thin line, other fills and a lookalike", () => {
     assert.equal(findSoundSwitch(image()), null);
     const wrongSize = image();
     fill(wrongSize, 744, 684, 60, 28, SOUND_SWITCH.off);
@@ -52,13 +68,15 @@ test("the finder refuses a missing switch, a wrong size, a thin block, other fil
     const otherFill = image();
     fill(otherFill, 744, 684, 124, 28, [104, 148, 100]);
     assert.equal(findSoundSwitch(otherFill), null, "the ground colour is not a switch");
-    const high = image();
-    fill(high, 744, 200, 124, 28, SOUND_SWITCH.on);
-    assert.equal(findSoundSwitch(high), null, "the search is limited to the bottom band");
     const sparse = image();
     for (let x = 744; x < 868; x += 2) sparse.rgba.set([...SOUND_SWITCH.off, 255], (684 * sparse.width + x) * 4);
     sparse.rgba.set([...SOUND_SWITCH.off, 255], (711 * sparse.width + 744) * 4);
     assert.equal(findSoundSwitch(sparse), null, "the corner pixels of a hollow outline are not a button");
+    const split = image();
+    // Two blocks of the fill that together span a switch box are not one switch.
+    fill(split, 744, 684, 40, 28, SOUND_SWITCH.on);
+    fill(split, 828, 684, 40, 28, SOUND_SWITCH.on);
+    assert.equal(findSoundSwitch(split), null);
     assert.throws(() => findSoundSwitch({ width: 2, height: 2, rgba: new Uint8Array(3) }), /decoded RGBA/);
 });
 
@@ -75,6 +93,22 @@ test("the pixel constants are the values that the client draws", () => {
     }
     assert.equal(Number(notices.match(/SOUND_SWITCH_WIDTH: f32 = ([0-9.]+);/)[1]), SOUND_SWITCH.width);
     assert.equal(Number(notices.match(/SOUND_SWITCH_HEIGHT: f32 = ([0-9.]+);/)[1]), SOUND_SWITCH.height);
+});
+
+test("the six packages place the switch with the fills and the size that the finder reads", () => {
+    const hex = (colour) => `#${colour.map((channel) => channel.toString(16).padStart(2, "0")).join("")}`;
+    for (const name of ["muster", "forge", "base", "cedar", "haul", "acme"]) {
+        const text = fs.readFileSync(path.join(REPO, "mods", name, "interface/hud.ron"), "utf8");
+        for (const [id, state] of [["sound_switch_off", "off"], ["sound_switch_on", "on"]]) {
+            const line = text.split("\n").find((candidate) => candidate.includes(`id: "${id}"`));
+            assert(line, `${name} places ${id}`);
+            assert(line.includes(`size: (w: Px(${SOUND_SWITCH.width}.0), h: Px(${SOUND_SWITCH.height}.0))`), `${name} ${id} size`);
+            assert(line.includes(`Colour("${hex(SOUND_SWITCH[state])}")`), `${name} ${id} fill ${hex(SOUND_SWITCH[state])}`);
+        }
+        assert.equal((text.match(/Input\("toggle_sound"\)/g) || []).length, 2, `${name} has the two buttons`);
+        const manifest = fs.readFileSync(path.join(REPO, "mods", name, "manifest.ron"), "utf8");
+        assert(manifest.includes('engine_api: "^0.2.4"'), `${name} needs the API that has the switch names`);
+    }
 });
 
 // A fake `io`: each screenshot is a token, and `decode` turns a token into a synthetic image.
@@ -161,4 +195,18 @@ test("the proof accepts one click that flips the switch and refuses the usual fa
     const ordered = checkpoint(true, "Sound: on", { frames: { retained_input: [{ applied_seq: [7], emitted_orders: [{ seq: 1 }] }] } });
     assert.throws(() => assertSwitchClick({ label: "t", before, after: ordered, click: CLICK, fromOn: false }), /no world order/);
     assert.throws(() => assertSwitchClick({ label: "t", before: checkpoint(true, "Sound: on"), after, click: CLICK, fromOn: false }), /before the click/);
+});
+
+test("the proof reads the button of a package as the switch, and refuses two switches or none", () => {
+    const placed = (text, visible = true) => ({ kind: "button", id: "sound_off_button", rect: [744, 684, 124, 28], visible, capture_root: true, text, widget_action: { kind: "input", name: "toggle_sound" } });
+    const make = (soundOn, rows) => ({
+        ...checkpoint(soundOn, soundOn ? "Sound: on" : "Sound: off"),
+        debug: { ...checkpoint(soundOn, "").debug, ui_snapshot: rows },
+    });
+    const before = make(false, [placed("Sound: off"), placed("Sound: on", false)]);
+    const after = make(true, [placed("Sound: off", false), placed("Sound: on")]);
+    assertSwitchClick({ label: "p", before, after, click: CLICK, fromOn: false });
+    assert.throws(() => assertSwitchClick({ label: "p", before: make(false, []), after, click: CLICK, fromOn: false }), /exactly one sound switch/);
+    const both = make(false, [placed("Sound: off"), { kind: "sound_switch", id: "sound_switch", rect: [1, 1, 1, 1], visible: true, capture_root: true, text: "Sound: off" }]);
+    assert.throws(() => assertSwitchClick({ label: "p", before: both, after, click: CLICK, fromOn: false }), /exactly one sound switch/);
 });

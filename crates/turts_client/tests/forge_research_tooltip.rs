@@ -127,6 +127,7 @@ fn research_tooltip(shells: u64, bindings: &BTreeMap<String, Vec<Binding>>) -> S
         input_map: &content.input_map,
         guide: &interface.guide,
         guide_open: false,
+        sound_on: false,
         last_notice: None,
         core: turts_client::widgets::sources::CoreFeed::empty(),
     };

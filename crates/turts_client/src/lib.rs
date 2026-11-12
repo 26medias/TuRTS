@@ -24,6 +24,7 @@ pub mod options;
 pub mod palette;
 pub mod persist;
 pub mod present;
+pub mod press_release;
 pub mod rejoin;
 mod relation;
 pub mod render;

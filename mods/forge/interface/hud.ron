@@ -112,6 +112,12 @@
                 (id: "guide_close", at: Some((anchor: TopLeft, offset: (1178.0, 14.0), pivot: None)), size: (w: Px(92.0), h: Px(44.0)), layer: 3, tooltip: Some(Literal("Close the guide")), widget: Button(icon: None, label: Some(Literal("Close")), action: Input("toggle_guide"), hotkey_label: false)),
             ]),
         ),
+        (id: "sound_switch_off", at: Some((anchor: Bottom, offset: (166.0, -8.0), pivot: None)), size: (w: Px(124.0), h: Px(28.0)), layer: 50, visible: [Not(SoundOn)], widget: Box(fill: Some(Colour("#4d1f1f")), border: None, children: [
+            (id: "sound_off_button", at: Some((anchor: TopLeft, offset: (2.0, 2.0), pivot: None)), size: (w: Px(120.0), h: Px(24.0)), widget: Button(icon: None, label: Some(Bind(SoundState)), action: Input("toggle_sound"), hotkey_label: false)),
+        ])),
+        (id: "sound_switch_on", at: Some((anchor: Bottom, offset: (166.0, -8.0), pivot: None)), size: (w: Px(124.0), h: Px(28.0)), layer: 50, visible: [SoundOn], widget: Box(fill: Some(Colour("#1f6138")), border: None, children: [
+            (id: "sound_on_button", at: Some((anchor: TopLeft, offset: (2.0, 2.0), pivot: None)), size: (w: Px(120.0), h: Px(24.0)), widget: Button(icon: None, label: Some(Bind(SoundState)), action: Input("toggle_sound"), hotkey_label: false)),
+        ])),
     ],
     tooltip_style: (background: "#111820", colour: "#ffffff", font: Some("forge_ui"), size: 14),
     cursors: {

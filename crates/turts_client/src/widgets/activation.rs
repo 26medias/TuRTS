@@ -54,6 +54,7 @@ pub(super) fn activate_widget(
     mut queue: ResMut<CoreInputQueue>,
     state: Res<ReplicaState>,
     acquired: Option<Res<AcquiredPackages>>,
+    mut volumes: Option<ResMut<crate::volume_settings::VolumeSettings>>,
 ) {
     let Ok((action, enabled, interaction_disabled)) = actions.get(trigger.entity) else {
         return;
@@ -66,6 +67,13 @@ pub(super) fn activate_widget(
         // goes to the core as before.
         primitives::WidgetAction::Input { name } if name == "leave_match" => {
             leave::activate(&mut queue, &state, acquired.as_deref())
+        }
+        // The engine action `toggle_sound` (API 0.2.4, row H25) flips the sound switch. It is a
+        // client preference, so it never goes to the interaction core.
+        primitives::WidgetAction::Input { name } if name == "toggle_sound" => {
+            if let Some(volumes) = volumes.as_mut() {
+                volumes.sound_on = !volumes.sound_on;
+            }
         }
         primitives::WidgetAction::Input { name } => {
             queue

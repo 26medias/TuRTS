@@ -2,7 +2,7 @@
     id: "muster",
     version: "0.1.0",
     kind: Game,
-    engine_api: "^0.2.3",
+    engine_api: "^0.2.4",
     dependencies: {},
     exports: (
         units: ["units/beacon.ron", "units/trooper.ron", "units/worker.ron", "units/depot.ron", "units/post.ron", "units/dummy.ron"],

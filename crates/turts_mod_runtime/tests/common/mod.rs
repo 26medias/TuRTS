@@ -29,7 +29,42 @@ pub fn read_files(dir: &Path) -> BTreeMap<String, Vec<u8>> {
     }
     let mut out = BTreeMap::new();
     walk(dir, dir, &mut out);
+    as_edition_0_2_3(&mut out);
     out
+}
+
+/// The shipped packages place the sound switch of API 0.2.4, row H25, so they need `^0.2.4`. The
+/// tests of the older editions use a shipped package as the 0.2.3 baseline and edit its manifest
+/// and its files by text. This gives them that baseline: the two switch widgets are removed and the
+/// requirement is `^0.2.3` again. A package that has no switch is not changed. The tests of the
+/// shipped form read the files by hand (`the_shipped_packages_place_the_sound_switch...` in
+/// `val1.rs`).
+pub fn as_edition_0_2_3(files: &mut BTreeMap<String, Vec<u8>>) {
+    let Some(hud) = files.get("interface/hud.ron") else {
+        return;
+    };
+    let text = String::from_utf8(hud.clone()).expect("utf-8 hud");
+    let Some(start) = text.find("        (id: \"sound_switch_off\"") else {
+        return;
+    };
+    let on = text[start..]
+        .find("        (id: \"sound_switch_on\"")
+        .expect("both switch widgets")
+        + start;
+    let end = text[on..]
+        .find("        ])),\n")
+        .expect("the end of the switch")
+        + on
+        + "        ])),\n".len();
+    let stripped = format!("{}{}", &text[..start], &text[end..]);
+    files.insert("interface/hud.ron".into(), stripped.into_bytes());
+    let manifest = String::from_utf8(files["manifest.ron"].clone()).expect("utf-8 manifest");
+    files.insert(
+        "manifest.ron".into(),
+        manifest
+            .replace("engine_api: \"^0.2.4\"", "engine_api: \"^0.2.3\"")
+            .into_bytes(),
+    );
 }
 
 /// The `acme` package with one text edit. Panics when the edit changes nothing, so a

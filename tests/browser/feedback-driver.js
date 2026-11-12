@@ -18,7 +18,7 @@ async function drive(io, params) {
         await savePngWithBase64(io, "noorders-visible.png");
         return;
     }
-    if (!new Set(["ORD2", "ORD6", "ORD7", "ALR1", "AUD1", "SND1"]).has(row)) {
+    if (!new Set(["ORD2", "ORD6", "ORD7", "ALR1", "AUD1", "SND1", "SND2"]).has(row)) {
         throw new Error(`feedback driver has no route for ${row}`);
     }
     if (row !== "AUD1") await io.key("F1");
@@ -34,8 +34,10 @@ async function drive(io, params) {
 
     // The game makes no sound until the player turns it on (CEO decision, 2026-11-12). Rows that
     // judge a sound turn it on first, with one physical click on the visible switch. SND1 judges
-    // the silence and the switch itself. AUD1 does it after its first click (below).
-    if (row === "SND1") {
+    // the silence and the switch itself: SND1 on the package of the fixture (no switch of its own,
+    // so the engine draws the fallback), SND2 on `mods/muster` (the switch is in its layout). AUD1 does
+    // it after its first click (below).
+    if (row === "SND1" || row === "SND2") {
         await driveSnd1(io, own, ground);
         return;
     }

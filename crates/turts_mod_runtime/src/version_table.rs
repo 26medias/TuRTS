@@ -441,6 +441,11 @@ pub(crate) const VERSION_TABLE: &[VersionTableRow] = &[
     variant_0_2_4("Button.size"),
     // H23: the engine input action `leave_match`.
     variant_0_2_4("engine action leave_match"),
+    // H25: the sound switch of a mod: the engine action `toggle_sound`, the value `SoundState`
+    // and the predicate `SoundOn`. They are built (no `UNBUILT` line).
+    variant_0_2_4("engine action toggle_sound"),
+    variant_0_2_4("Value::SoundState"),
+    variant_0_2_4("Predicate::SoundOn"),
     // API 0.2.1 (M3), last in the order: a field that the file writes, with any value. The meaning is the same as the
     // check that these rows replace: `exports.recipes` and `exports.technologies`, the nine unit
     // fields, the map field `belts`, and `facing` in a placement. They come after the rows of the later APIs so
@@ -769,7 +774,7 @@ mod tests {
                 assert_eq!(row.since_api, "0.2.4");
             }
         }
-        assert_eq!(tested, 57, "the number of VAR and COMBO rows of 0.2.4");
+        assert_eq!(tested, 60, "the number of VAR and COMBO rows of 0.2.4");
     }
 
     /// With no parsed value yet, a parsed row is skipped and a RAW row still fires. With the

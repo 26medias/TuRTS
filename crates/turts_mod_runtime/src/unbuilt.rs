@@ -376,6 +376,11 @@ mod tests {
             "SlotRelation::Enemy",
             // K1: the combination needs `constructor`, whose line comes first.
             "constructor beside producer",
+            // H25: the sound switch of a mod is built with the rule that the engine draws its own
+            // switch when no widget has the action (task `mp1/sound-off-default`).
+            "engine action toggle_sound",
+            "Value::SoundState",
+            "Predicate::SoundOn",
         ]);
         assert_eq!(without, want);
     }

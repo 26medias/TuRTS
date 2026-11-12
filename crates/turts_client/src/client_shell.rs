@@ -30,7 +30,7 @@ pub(crate) use bindings_editor::binding_label;
 use bindings_editor::*;
 use notices::*;
 pub(crate) use notices::{
-    ClientNotice, PlayScreenSoundSwitch, sync_client_notice, sync_rejoin_camera,
+    ClientNotice, PlayScreenSoundSwitch, sound_shown_on, sync_client_notice, sync_rejoin_camera,
 };
 pub(crate) use settings::ClientSettings;
 use settings::*;
@@ -86,6 +86,16 @@ impl Plugin for ClientShellPlugin {
             app.add_plugins(bevy::ui_widgets::ScrollAreaPlugin);
         }
         app.add_plugins(crate::client_screens::ClientScreensPlugin);
+        // A press and a release in one frame on a button that the pointer reached in that frame
+        // (`press_release.rs`). It needs the picking messages and maps: not in a headless test app.
+        app.add_systems(
+            PreUpdate,
+            crate::press_release::hover_for_a_press_and_release_in_one_frame
+                .after(bevy::picking::hover::generate_hovermap)
+                .before(bevy::picking::events::pointer_events)
+                .run_if(resource_exists::<bevy::picking::hover::PreviousHoverMap>)
+                .run_if(resource_exists::<Messages<bevy::picking::pointer::PointerInput>>),
+        );
         app.init_resource::<ClientSettings>()
             .init_resource::<CorePreferences>()
             .init_resource::<BindingEditorState>()

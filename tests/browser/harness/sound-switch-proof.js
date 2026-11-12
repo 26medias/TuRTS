@@ -6,10 +6,14 @@
 // `<label>-after.png`); `click` is the io log entry of the click between them.
 const assert = require("node:assert/strict");
 
+// The switch of the page: the engine fallback (a `sound_switch` row) or the button of a package
+// (a visible `button` row with the action `toggle_sound`). Exactly one shows.
 function switchRow(debug) {
-    const rows = (debug?.ui_snapshot || []).filter((row) => row.kind === "sound_switch");
-    assert.equal(rows.length, 1, "the debug ui snapshot has exactly one sound_switch row");
-    return rows[0];
+    const rows = debug?.ui_snapshot || [];
+    const engine = rows.filter((row) => row.kind === "sound_switch");
+    const placed = rows.filter((row) => row.kind === "button" && row.widget_action?.name === "toggle_sound" && row.visible === true);
+    assert.equal(engine.length + placed.length, 1, "the debug ui snapshot shows exactly one sound switch (engine fallback or package button)");
+    return engine[0] || placed[0];
 }
 
 // The words that the switch must show for a debug state: on only when the player switched the

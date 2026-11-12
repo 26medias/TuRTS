@@ -130,6 +130,8 @@ fn value_text(value: &Value, output: &mut Vec<String>) {
         | Value::Guide
         | Value::GuideOpen
         | Value::Bindings => {}
+        // API 0.2.4, row H25: the sound switch words are no guide text.
+        Value::SoundState => {}
         // API 0.2.4: values that no 0.2.3 guide page holds.
         Value::Supply(..)
         | Value::Connection

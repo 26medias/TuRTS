@@ -234,6 +234,8 @@ pub(super) fn predicate_matches(
                 }
             }),
         Predicate::GuideOpen => context.guide_open,
+        // API 0.2.4 (row H25).
+        Predicate::SoundOn => context.sound_on,
         Predicate::Not(inner) => !predicate_matches(inner, context),
         // API 0.2.4 (row H10): the predicates of `UI-HUD`, `UI-PLACE`, `UI-RESULT`, `UI-HINT`
         // and `UI2-HUD`. Stubs: none holds (a widget behind one stays hidden) until its owner

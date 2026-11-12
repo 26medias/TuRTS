@@ -1608,6 +1608,149 @@ fn h23_leave_match_is_an_engine_action() {
     );
 }
 
+/// H25: the sound switch of a mod. Its three names (the engine action `toggle_sound`, the value
+/// `SoundState`, the predicate `SoundOn`) need engine api 0.2.4: at `^0.2.3` the version table
+/// refuses each with its path. They are built, so at `^0.2.4` the package packs (no `UNBUILT` line).
+/// A misspelt action gets the hint and the allowed list.
+#[test]
+fn h25_the_sound_switch_names_need_api_0_2_4_and_pack_at_0_2_4() {
+    let cases: [(&str, Edit<'_>, &str); 3] = [
+        (
+            "engine action toggle_sound",
+            (
+                CEDAR_HUD,
+                r#"action: Order("cedar:order_cancel")"#,
+                r#"action: Input("toggle_sound")"#,
+            ),
+            "root[hud_order_cancel_button].widget.action",
+        ),
+        (
+            "Value::SoundState",
+            (
+                CEDAR_HUD,
+                r#"Literal("Move selected units")"#,
+                "Bind(SoundState)",
+            ),
+            "root[hud_order_move_button].widget.label",
+        ),
+        (
+            "Predicate::SoundOn",
+            (
+                CEDAR_HUD,
+                r#"size: (w: Px(128.0), h: Px(28.0)), widget: Button(icon: None, label: Some(Literal("Stop selected units"))"#,
+                r#"size: (w: Px(128.0), h: Px(28.0)), visible: [SoundOn], widget: Button(icon: None, label: Some(Literal("Stop selected units"))"#,
+            ),
+            "root[hud_order_stop_button].visible",
+        ),
+    ];
+    for (name, edit, path) in cases {
+        assert_eq!(
+            cedar("^0.2.3", &[edit], &[])
+                .content()
+                .unwrap_err()
+                .to_string(),
+            format!(
+                "cedar/manifest.ron: engine_api: `{name}` needs engine api 0.2.4; `^0.2.3` admits 0.2.3 (written in interface/hud.ron: {path})"
+            ),
+            "{name} at ^0.2.3"
+        );
+        cedar("^0.2.4", &[edit], &[])
+            .content()
+            .unwrap_or_else(|error| panic!("{name} at ^0.2.4: {error}"));
+    }
+    let typo = (
+        CEDAR_HUD,
+        r#"action: Order("cedar:order_cancel")"#,
+        r#"action: Input("toggle_sond")"#,
+    );
+    let message = cedar("^0.2.4", &[typo], &[])
+        .content()
+        .unwrap_err()
+        .to_string();
+    assert!(
+        message.starts_with(
+            "cedar/interface/hud.ron: root[4].widget.action: unknown input action `toggle_sond`; did you mean `toggle_sound`? (allowed: "
+        ),
+        "{message}"
+    );
+    assert!(
+        message.contains("toggle_sound"),
+        "the allowed list holds the engine actions"
+    );
+}
+
+/// H25: the six shipped packages place the sound switch in their own layout and so need `^0.2.4`.
+/// Each packs as shipped (the files are read by hand, not through the 0.2.3 baseline of `read_files`),
+/// on the server path and the client path, and its interface places the action `toggle_sound` in a
+/// button. Control: the 0.2.3 baseline of the same package has no switch and packs at `^0.2.3`.
+#[test]
+fn the_shipped_packages_place_the_sound_switch_and_pack_at_0_2_4() {
+    for name in ["muster", "forge", "base", "cedar", "haul", "acme"] {
+        let mut files = BTreeMap::new();
+        fn walk(
+            root: &std::path::Path,
+            dir: &std::path::Path,
+            out: &mut BTreeMap<String, Vec<u8>>,
+        ) {
+            for entry in std::fs::read_dir(dir).unwrap() {
+                let path = entry.unwrap().path();
+                if path.is_dir() {
+                    walk(root, &path, out);
+                } else {
+                    let key = path
+                        .strip_prefix(root)
+                        .unwrap()
+                        .to_str()
+                        .unwrap()
+                        .replace('\\', "/");
+                    out.insert(key, std::fs::read(&path).unwrap());
+                }
+            }
+        }
+        let dir = package_dir(name);
+        walk(&dir, &dir, &mut files);
+        let manifest = String::from_utf8(files["manifest.ron"].clone()).unwrap();
+        assert!(
+            manifest.contains(r#"engine_api: "^0.2.4""#),
+            "{name} needs ^0.2.4"
+        );
+        let package = archive(&files);
+        package
+            .content()
+            .unwrap_or_else(|error| panic!("{name}: {error}"));
+        package
+            .visuals()
+            .unwrap_or_else(|error| panic!("{name}: {error}"));
+        let interfaces = package.interfaces().unwrap();
+        assert!(
+            interfaces
+                .iter()
+                .any(|(_, interface)| interface.places_input_button("toggle_sound")),
+            "{name} places a button with the action toggle_sound"
+        );
+        // The control: the baseline of the same package.
+        let baseline = read_files(&dir);
+        assert!(
+            String::from_utf8(baseline["manifest.ron"].clone())
+                .unwrap()
+                .contains(r#"engine_api: "^0.2.3""#),
+            "{name} baseline"
+        );
+        let baseline = archive(&baseline);
+        baseline
+            .content()
+            .unwrap_or_else(|error| panic!("{name} baseline: {error}"));
+        assert!(
+            !baseline
+                .interfaces()
+                .unwrap()
+                .iter()
+                .any(|(_, interface)| interface.places_input_button("toggle_sound")),
+            "{name} baseline has no switch"
+        );
+    }
+}
+
 /// H13 on the two packages that already write `font` and `size` in a `Text` widget: the detection
 /// reads a `Button` only (design 6.10, [mod M1]). A key walk of `ron::Value` would refuse the
 /// copies of `forge` and `muster`. They pack at their own requirement, on both paths.

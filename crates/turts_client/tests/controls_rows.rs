@@ -43,6 +43,7 @@ fn binding_rows() -> Vec<(String, String)> {
         input_map: &content.input_map,
         guide: &[],
         guide_open: false,
+        sound_on: false,
         last_notice: None,
         core: turts_client::widgets::sources::CoreFeed::empty(),
     };

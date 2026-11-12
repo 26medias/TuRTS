@@ -1,11 +1,15 @@
 // turts-test-role: pure
 "use strict";
 
-// The sound switch of the play screen, found and used from screenshot pixels only. The client
-// draws it at the bottom, right of the centre, as a filled button (`client_shell/notices.rs`:
-// SOUND_SWITCH_WIDTH, SOUND_SWITCH_HEIGHT; `volume_settings.rs`: `sound_fill`). The two fills and the
-// size below are the same values: change both together. A fill says the state: dark red is
-// "Sound: off", dark green is "Sound: on". The words come from the debug state, not from here.
+// The sound switch of the play screen, found and used from screenshot pixels only. A switch is a
+// 124 x 28 block of one of two fills: dark red is "Sound: off", dark green is "Sound: on". Two kinds
+// of switch have that look. The engine fallback is a solid block (`client_shell/notices.rs`:
+// SOUND_SWITCH_WIDTH, SOUND_SWITCH_HEIGHT; `volume_settings.rs`: `sound_fill`). The switch of a
+// package is a frame of 2 px of the fill round a button (`mods/<package>/interface/hud.ron`:
+// `sound_switch_off` and `sound_switch_on`). The finder does not know the place: it takes the
+// connected block of a fill that has the size, anywhere on the screen. The words come from the
+// debug state, not from here. The fills and the size are the same values as in the Rust and the
+// RON: change them together.
 const { decodePng } = require("./png.js");
 
 const SOUND_SWITCH = Object.freeze({
@@ -15,8 +19,8 @@ const SOUND_SWITCH = Object.freeze({
     height: 28,
     colourTolerance: 8,
     sizeTolerance: 4,
-    bandHeight: 90,
-    minimumFill: 0.55,
+    // A solid block fills all of its box; a frame of 2 px fills about a sixth of it.
+    minimumFill: 0.12,
 });
 
 function matches(image, offset, colour) {
@@ -24,27 +28,50 @@ function matches(image, offset, colour) {
         colour.every((channel, index) => Math.abs(image.rgba[offset + index] - channel) <= SOUND_SWITCH.colourTolerance);
 }
 
-// The bounding box of one fill in the bottom band, or null when it is not a switch-sized block.
-function blockOf(image, colour, scale) {
-    const top = Math.max(0, image.height - Math.ceil(SOUND_SWITCH.bandHeight * scale));
-    let minX = image.width, minY = image.height, maxX = -1, maxY = -1, count = 0;
-    for (let y = top; y < image.height; y += 1) {
-        for (let x = 0; x < image.width; x += 1) {
-            if (!matches(image, (y * image.width + x) * 4, colour)) continue;
+// The connected blocks (8 neighbours) of one fill, as boxes with their pixel count.
+function blocksOf(image, colour) {
+    const size = image.width * image.height;
+    const mask = new Uint8Array(size);
+    for (let index = 0; index < size; index += 1) mask[index] = matches(image, index * 4, colour) ? 1 : 0;
+    const blocks = [];
+    const stack = [];
+    for (let start = 0; start < size; start += 1) {
+        if (mask[start] !== 1) continue;
+        let minX = image.width, minY = image.height, maxX = -1, maxY = -1, count = 0;
+        mask[start] = 2;
+        stack.push(start);
+        while (stack.length) {
+            const at = stack.pop();
+            const x = at % image.width, y = (at - x) / image.width;
             count += 1;
             if (x < minX) minX = x;
             if (x > maxX) maxX = x;
             if (y < minY) minY = y;
             if (y > maxY) maxY = y;
+            for (let dy = -1; dy <= 1; dy += 1) {
+                for (let dx = -1; dx <= 1; dx += 1) {
+                    const nx = x + dx, ny = y + dy;
+                    if (nx < 0 || ny < 0 || nx >= image.width || ny >= image.height) continue;
+                    const next = ny * image.width + nx;
+                    if (mask[next] === 1) { mask[next] = 2; stack.push(next); }
+                }
+            }
         }
+        blocks.push({ minX, minY, maxX, maxY, count });
     }
-    if (!count) return null;
-    const width = maxX - minX + 1, height = maxY - minY + 1;
+    return blocks;
+}
+
+function switchBlock(image, colour, scale) {
     const tolerance = SOUND_SWITCH.sizeTolerance * scale;
-    if (Math.abs(width - SOUND_SWITCH.width * scale) > tolerance ||
-        Math.abs(height - SOUND_SWITCH.height * scale) > tolerance) return null;
-    if (count < SOUND_SWITCH.minimumFill * width * height) return null;
-    return { minX, minY, maxX, maxY, count, x: Math.round((minX + maxX) / 2), y: Math.round((minY + maxY) / 2) };
+    for (const block of blocksOf(image, colour)) {
+        const width = block.maxX - block.minX + 1, height = block.maxY - block.minY + 1;
+        if (Math.abs(width - SOUND_SWITCH.width * scale) > tolerance ||
+            Math.abs(height - SOUND_SWITCH.height * scale) > tolerance) continue;
+        if (block.count < SOUND_SWITCH.minimumFill * width * height) continue;
+        return { ...block, x: Math.round((block.minX + block.maxX) / 2), y: Math.round((block.minY + block.maxY) / 2) };
+    }
+    return null;
 }
 
 // { state: "off" | "on", x, y, bounds } for a decoded screenshot, or null. `scale` is the device
@@ -54,7 +81,7 @@ function findSoundSwitch(image, scale = 1) {
         throw new TypeError("findSoundSwitch needs decoded RGBA screenshot pixels");
     }
     for (const state of ["off", "on"]) {
-        const block = blockOf(image, SOUND_SWITCH[state], scale);
+        const block = switchBlock(image, SOUND_SWITCH[state], scale);
         if (block) return { state, x: block.x, y: block.y, bounds: [block.minX, block.minY, block.maxX, block.maxY] };
     }
     return null;

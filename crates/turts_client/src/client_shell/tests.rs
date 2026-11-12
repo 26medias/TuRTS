@@ -2889,3 +2889,68 @@ fn the_debug_ui_snapshot_lists_the_sound_switch_with_its_words() {
         .unwrap();
     assert_eq!(row["text"], "Sound: on");
 }
+
+fn packages_with_interface(ron_text: &str) -> AcquiredPackages {
+    let mut packages = forge_acquired_packages();
+    packages.0.presentation.interface =
+        Some(ron::from_str(ron_text).expect("the interface fixture parses"));
+    packages
+}
+
+/// D67 (Decided): the play screen is the mod's. The engine draws its own sound switch only when the
+/// active interface places no widget with the action `toggle_sound`: with no interface, and with an
+/// interface that has none. A shipped package that places one hides the engine switch.
+#[test]
+fn the_engine_draws_its_switch_only_when_the_interface_places_no_toggle_sound_button() {
+    let fixture =
+        include_str!("../../../../tests/browser/fixtures/feedback/muster/interface/hud.ron");
+    assert!(
+        !fixture.contains("toggle_sound"),
+        "the fixture places no switch"
+    );
+    let mut with_none = start_gate_app_with(running_audio(), VolumeSettings::default());
+    with_none.insert_resource(forge_acquired_packages());
+    with_none.update();
+    assert_eq!(
+        switches(&mut with_none).len(),
+        1,
+        "no interface: the engine switch"
+    );
+
+    let mut without = start_gate_app_with(running_audio(), VolumeSettings::default());
+    without.insert_resource(packages_with_interface(fixture));
+    without.update();
+    assert_eq!(
+        switches(&mut without).len(),
+        1,
+        "an interface with no switch: the engine switch"
+    );
+
+    for package in ["muster", "forge", "base", "cedar", "haul", "acme"] {
+        let text = std::fs::read_to_string(format!(
+            "{}/../../mods/{package}/interface/hud.ron",
+            env!("CARGO_MANIFEST_DIR")
+        ))
+        .unwrap();
+        assert!(
+            text.contains(r#"Input("toggle_sound")"#),
+            "{package} places the switch"
+        );
+        let mut app = start_gate_app_with(running_audio(), VolumeSettings::default());
+        app.insert_resource(packages_with_interface(&text));
+        app.update();
+        assert!(
+            switches(&mut app).is_empty(),
+            "{package}: its own switch is in its layout, the engine draws none"
+        );
+    }
+    // The engine switch goes when the mod switch arrives (the interface is acquired after the join).
+    let mut late = start_gate_app_with(running_audio(), VolumeSettings::default());
+    late.update();
+    assert_eq!(switches(&mut late).len(), 1);
+    late.insert_resource(packages_with_interface(include_str!(
+        "../../../../mods/muster/interface/hud.ron"
+    )));
+    late.update();
+    assert!(switches(&mut late).is_empty());
+}

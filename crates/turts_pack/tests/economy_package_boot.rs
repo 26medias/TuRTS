@@ -456,7 +456,7 @@ fn cedar_matches_the_public_ten_file_authoring_example() {
     }
     assert_eq!(archive.manifest.id, "cedar");
     assert_eq!(archive.manifest.kind, PackageKind::Game);
-    assert_eq!(archive.manifest.engine_api, "^0.2.3");
+    assert_eq!(archive.manifest.engine_api, "^0.2.4");
     assert_eq!(archive.manifest.dependencies, UniqueMap(Default::default()));
     assert_eq!(archive.manifest.context, ExecutionContext::Shared);
     assert!(archive.manifest.capabilities.is_empty());

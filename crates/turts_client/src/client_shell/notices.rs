@@ -142,7 +142,7 @@ pub(super) fn sync_sound_off_notice(
 
 /// True when the player can hear sound now: the sound switch is on, and the browser lets audio
 /// run. The switch text, its fill and the menu label all follow this one value.
-pub(super) fn sound_shown_on(
+pub(crate) fn sound_shown_on(
     audio: Option<&crate::debug_feed::AudioFeed>,
     volumes: &VolumeSettings,
 ) -> bool {
@@ -178,9 +178,10 @@ pub(super) fn sync_sound_status_label(
     }
 }
 
-/// The sound switch of the play screen: one visible button, bottom centre, with the state in
-/// words. It exists while the player is in the game. The engine owns it like the other shell
-/// controls (the focus overlay, the settings menu): it is a client preference, not mod content.
+/// The fallback sound switch of the play screen: one visible button, bottom, right of the centre,
+/// with the state in words. It exists while the player is in the game and the active interface
+/// places no widget with the action `toggle_sound`. A mod that places one owns the control and
+/// its place (D67); the engine then draws nothing here.
 #[derive(Component)]
 pub(crate) struct PlayScreenSoundSwitch;
 
@@ -195,6 +196,7 @@ const SOUND_SWITCH_FROM_BOTTOM: f32 = 8.0;
 
 pub(super) fn sync_sound_switch(
     phase: Option<Res<Phase>>,
+    acquired: Option<Res<AcquiredPackages>>,
     audio: Option<Res<crate::debug_feed::AudioFeed>>,
     volumes: Res<VolumeSettings>,
     existing: Query<Entity, With<PlayScreenSoundSwitch>>,
@@ -203,7 +205,14 @@ pub(super) fn sync_sound_switch(
     let joined = phase
         .as_deref()
         .is_some_and(|phase| matches!(phase, Phase::Joined { .. }));
-    if !joined {
+    // The engine draws its own switch only when the active interface places no widget with the
+    // action `toggle_sound` (design 6.10, row H25; D67: the play screen is the mod's). Then the
+    // silent default has a way back to sound in every mod.
+    let mod_places_one = acquired
+        .as_deref()
+        .and_then(|packages| packages.0.presentation.interface.as_ref())
+        .is_some_and(|interface| interface.places_input_button("toggle_sound"));
+    if !joined || mod_places_one {
         for entity in &existing {
             commands.entity(entity).despawn();
         }

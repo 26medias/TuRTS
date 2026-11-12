@@ -658,6 +658,78 @@ fn h23_leave_match_button() {
     });
 }
 
+/// H25: the sound switch of a mod. The action `Input("toggle_sound")`, the words `Bind(SoundState)` and
+/// the predicate `SoundOn` (with `Not`) parse and survive a round trip. `places_input_button` finds
+/// the button at any depth, and only for its own action name.
+#[test]
+fn h25_sound_switch_names_and_the_placement_question() {
+    let button = |id: &str, text: &str, action: &str, visible: &str| {
+        format!(
+            r#"(id: "{id}", at: Some((anchor: TopLeft, offset: (0.0, 0.0), pivot: None)), size: (w: Px(124.0), h: Px(28.0)), visible: [{visible}], widget: Button(icon: None, label: Some({text}), action: {action}, hotkey_label: false))"#
+        )
+    };
+    let switch = button(
+        "sound",
+        "Bind(SoundState)",
+        r#"Input("toggle_sound")"#,
+        "SoundOn",
+    );
+    let off = button(
+        "sound_off",
+        "Bind(SoundState)",
+        r#"Input("toggle_sound")"#,
+        "Not(SoundOn)",
+    );
+    let found = interface(Parts {
+        root: &format!("{switch}, {off}"),
+        ..Parts::default()
+    });
+    assert!(found.places_input_button("toggle_sound"));
+    assert!(!found.places_input_button("toggle_guide"));
+
+    // A button in a Box, and a button as the item of a List, count as placed.
+    let boxed = format!(
+        r##"(id: "b", at: None, size: (w: Px(200.0), h: Px(40.0)), visible: [], widget: Box(fill: Some(Colour("#101010")), border: None, children: [{switch}]))"##
+    );
+    assert!(
+        interface(Parts {
+            root: &boxed,
+            ..Parts::default()
+        })
+        .places_input_button("toggle_sound")
+    );
+
+    // A Text that only shows the words places no switch, and a button with another action does not.
+    let words = text_widget("Bind(SoundState)");
+    let other = button(
+        "other",
+        "Literal(\"Guide\")",
+        r#"Input("toggle_guide")"#,
+        "",
+    );
+    let none = interface(Parts {
+        root: &format!("{words}, {other}"),
+        ..Parts::default()
+    });
+    assert!(!none.places_input_button("toggle_sound"));
+    assert!(!interface(Parts::default()).places_input_button("toggle_sound"));
+
+    // A misspelt name is a parse error, not another value.
+    for bad in ["Bind(SoundStat)", "Bind(Sound)"] {
+        let text = INTERFACE
+            .replace("@ROOT@", &text_widget(bad))
+            .replace("@TOP@", "")
+            .replace("@ALERTS@", "alerts: [],")
+            .replace("@WORLD@", "")
+            .replace("@HEALTH_BAR@", "")
+            .replace("@UNITS@", "");
+        assert!(
+            ron::from_str::<InterfaceDef>(&text).is_err(),
+            "{bad} must be refused"
+        );
+    }
+}
+
 /// H13: `Button.font` and `Button.size`, written, written with `None`, and absent.
 #[test]
 fn h13_button_font_and_size() {
