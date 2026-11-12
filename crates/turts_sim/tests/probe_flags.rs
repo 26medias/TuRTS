@@ -106,9 +106,12 @@ fn has_move_target(app: &mut bevy_app::App, unit: u32) -> bool {
 /// reservation limit of the point (60, 18) (the test checks this on the installed world). From
 /// tick 2 on, the pool branch runs its own projection loop. The line from the unit to (60, 18)
 /// runs through the row of troopers at y = 18 (trooper 2 at (26.1, 18) to trooper 8 at
-/// (32.7, 18)) and is clear of them after x = 33.2, so the pool branch must report a projection
-/// on one or more ticks and no projection on a later tick: a branch that stores a constant reads
-/// wrong on one of the two. The unit keeps its pool until it stands on the point.
+/// (32.7, 18)) and is clear of them after x = 33.2. The geometry makes a contact likely, but it
+/// does not prove one: the steering can turn the unit away before the hard projection acts. So
+/// "a projection on a tick of 2 to 200, then a tick with no projection" is an observed property of
+/// this scenario, not a derived value (the A2b1 review, finding L3). It still catches a branch
+/// that stores a constant, which reads wrong on one of the two. The unit keeps its pool until it
+/// stands on the point.
 #[test]
 fn a_unit_stepped_into_a_neighbour_reads_projected_then_plain_and_separated() {
     let mut fixture = muster();
