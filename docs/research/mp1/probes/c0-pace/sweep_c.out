@@ -1,0 +1,30 @@
+-- start credits
+start 1200                     R3 once  7.0 worst  7.0 | RRT once 14.4 worst 14.4 | tank 98.7 4u(R3) 71.7
+start 1300                     R3 once  0.0 worst  0.0 | RRT once  2.8 worst  3.6 | tank 82.6 4u(R3) 66.1
+start 1400                     R3 once  0.0 worst  0.0 | RRT once  0.7 worst  0.7 | tank 79.7 4u(R3) 66.1
+start 1500                     R3 once  0.0 worst  0.0 | RRT once  0.0 worst  0.0 | tank 79.1 4u(R3) 66.1
+start 1600                     R3 once  0.0 worst  0.0 | RRT once  0.0 worst  0.0 | tank 79.1 4u(R3) 66.1
+start 1700                     R3 once  0.0 worst  0.0 | RRT once  0.0 worst  0.0 | tank 79.1 4u(R3) 66.1
+start 1800                     R3 once  0.0 worst  0.0 | RRT once  0.0 worst  0.0 | tank 79.1 4u(R3) 66.1
+-- free income per second
+income 3/s                     R3 once  7.0 worst  7.0 | RRT once 14.4 worst 14.4 | tank 98.7 4u(R3) 71.7
+income 4/s                     R3 once  1.4 worst  1.4 | RRT once  4.0 worst  4.0 | tank 83.3 4u(R3) 67.1
+income 5/s                     R3 once  0.0 worst  0.0 | RRT once  1.9 worst  1.9 | tank 81.2 4u(R3) 66.1
+income 6/s                     R3 once  0.0 worst  0.0 | RRT once  0.0 worst  0.0 | tank 79.1 4u(R3) 66.1
+income 8/s                     R3 once  0.0 worst  0.0 | RRT once  0.0 worst  0.0 | tank 79.1 4u(R3) 66.1
+-- hauler cost
+haul cost 500                  R3 once  7.0 worst  7.0 | RRT once 14.4 worst 14.4 | tank 98.7 4u(R3) 71.7
+haul cost 450                  R3 once  2.5 worst  2.5 | RRT once  4.4 worst  4.4 | tank 84.0 4u(R3) 68.1
+haul cost 400                  R3 once  0.0 worst  0.0 | RRT once  2.8 worst  3.6 | tank 82.6 4u(R3) 66.1
+haul cost 350                  R3 once  0.0 worst  0.0 | RRT once  1.1 worst  2.0 | tank 81.2 4u(R3) 66.1
+haul cost 300                  R3 once  0.0 worst  0.0 | RRT once  0.7 worst  0.7 | tank 79.7 4u(R3) 66.1
+-- rifleman cost
+rifle cost 100                 R3 once  7.0 worst  7.0 | RRT once 14.4 worst 14.4 | tank 98.7 4u(R3) 71.7
+rifle cost 80                  R3 once  0.3 worst  0.3 | RRT once  4.0 worst  4.0 | tank 83.7 4u(R3) 66.4
+rifle cost 70                  R3 once  0.0 worst  0.0 | RRT once  3.0 worst  3.9 | tank 82.9 4u(R3) 66.1
+rifle cost 60                  R3 once  0.0 worst  0.0 | RRT once  2.2 worst  2.9 | tank 82.0 4u(R3) 66.1
+rifle cost 50                  R3 once  0.0 worst  0.0 | RRT once  1.1 worst  2.0 | tank 81.2 4u(R3) 66.1
+-- turret cost (info only: not on the list of the task)
+turret cost 600                R3 once  7.0 worst  7.0 | RRT once 14.4 worst 14.4 | tank 98.7 4u(R3) 71.7
+turret cost 500                R3 once  0.0 worst  0.0 | RRT once  2.8 worst  3.6 | tank 82.6 4u(R3) 66.1
+turret cost 400                R3 once  0.0 worst  0.0 | RRT once  0.7 worst  0.7 | tank 79.7 4u(R3) 66.1

@@ -1,0 +1,9 @@
+start 1200 A H1-H5 only, haul at 15             longest  0.0 s, spans [], tank done [], rifle done [28.0]
+start 1200 B + F riflemen x3 at 40              longest  7.2 s, spans [(57, 64)], tank done [], rifle done [28.0, 52.0, 64.7, 71.7]
+start 1200 C + F rifle x2 and a tank at 42      longest 14.5 s, spans [(57, 64), (84, 99)], tank done [98.7], rifle done [28.0, 52.0, 64.7]
+start 1200 D rev-4 order, haul at 30, same F    longest  4.0 s, spans [(95, 99)], tank done [98.7], rifle done [28.0, 67.0, 74.0]
+start 1400 A H1-H5 only, haul at 15             longest  0.0 s, spans [], tank done [], rifle done [28.0]
+start 1400 B + F riflemen x3 at 40              longest  0.0 s, spans [], tank done [], rifle done [28.0, 52.0, 59.0, 66.0]
+start 1400 C + F rifle x2 and a tank at 42      longest  0.6 s, spans [], tank done [79.6], rifle done [28.0, 52.0, 59.0]
+start 1400 D rev-4 order, haul at 30, same F    longest  0.0 s, spans [], tank done [95.0], rifle done [28.0, 67.0, 74.0]
+worst at 1400: (7.700000000000088, 'T', {'H1': 8.5, 'H2': 6.5, 'H4': 2.9, 'H5': 4.4, 'H6': 5.6, 'F': 10.6}, [(57, 64)])

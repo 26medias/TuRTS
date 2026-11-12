@@ -1,0 +1,24 @@
+0 rev6 as is                                
+    F=R3  once   7.0 | +10s   0.0 | worst(0..20)   7.0 @ 0 | tank None (+10: None) | 4 units 71.7 (+10: 94.4) | spans0 [(57, 64)]
+    F=RRT once  14.4 | +10s   0.0 | worst(0..20)  14.4 @ 0 | tank 98.7 (+10: 107.4) | 4 units 98.7 (+10: 107.4) | spans0 [(57, 64), (84, 99)]
+0b rev6, F only after H5 (hold5 rule)       
+    F=R3  once   7.0 | +10s   0.0 | worst(0..20)   7.0 @ 0 | tank None (+10: None) | 4 units 71.7 (+10: 94.4) | spans0 [(57, 64)]
+    F=RRT once  14.4 | +10s   0.0 | worst(0..20)  14.4 @ 0 | tank 98.7 (+10: 107.4) | 4 units 98.7 (+10: 107.4) | spans0 [(57, 64), (84, 99)]
+a H4 needs PS complete                      
+    F=R3  once   1.6 | +10s   0.0 | worst(0..20)   1.6 @ 0 | tank None (+10: None) | 4 units 51.1 (+10: 102.2) | spans0 []
+    F=RRT once  25.1 | +10s   0.0 | worst(0..20)  25.3 @ 4 | tank 70.3 (+10: 115.2) | 4 units 70.3 (+10: 115.2) | spans0 [(58, 64), (74, 99)]
+a2 H4 needs PS + F after H5 only            
+    F=R3  once   3.4 | +10s   0.0 | worst(0..20)   3.4 @ 0 | tank None (+10: None) | 4 units 71.7 (+10: 102.2) | spans0 [(61, 64)]
+    F=RRT once  11.5 | +10s   0.0 | worst(0..20)  11.5 @ 0 | tank 98.7 (+10: 115.2) | 4 units 98.7 (+10: 115.2) | spans0 [(61, 64), (74, 78), (87, 99)]
+b1 F after 2nd hauler complete              
+    F=R3  once   0.0 | +10s   0.0 | worst(0..20)   0.0 @ 0 | tank None (+10: None) | 4 units 72.1 (+10: 97.2) | spans0 []
+    F=RRT once  14.4 | +10s   0.0 | worst(0..20)  14.4 @ 0 | tank 98.7 (+10: 110.2) | 4 units 98.7 (+10: 110.2) | spans0 [(84, 99)]
+b2 F after 2nd hauler delivered [new cond]  
+    F=R3  once   0.0 | +10s   0.0 | worst(0..20)   0.0 @ 0 | tank None (+10: None) | 4 units 101.8 (+10: 126.9) | spans0 []
+    F=RRT once   0.0 | +10s   0.0 | worst(0..20)   0.0 @ 0 | tank 114.8 (+10: 139.9) | 4 units 114.8 (+10: 139.9) | spans0 []
+b3 F after Turret complete                  
+    F=R3  once   0.0 | +10s   0.0 | worst(0..20)   0.0 @ 0 | tank None (+10: None) | 4 units 81.0 (+10: 114.3) | spans0 []
+    F=RRT once   5.1 | +10s   0.0 | worst(0..20)   5.1 @ 0 | tank 98.7 (+10: 127.3) | 4 units 98.7 (+10: 127.3) | spans0 [(93, 99)]
+b4 F when credits >= 700 [new cond]         
+    F=R3  once   7.0 | +10s   0.0 | worst(0..20)   7.0 @ 0 | tank None (+10: None) | 4 units 71.7 (+10: 127.0) | spans0 [(57, 64)]
+    F=RRT once  14.4 | +10s   0.0 | worst(0..20)  14.4 @ 0 | tank 98.7 (+10: 140.0) | 4 units 98.7 (+10: 140.0) | spans0 [(57, 64), (84, 99)]
