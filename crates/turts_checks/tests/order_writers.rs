@@ -12,6 +12,22 @@
 //!    no `Query`, no `World`, no resource access (regate-performance M5, rigour L3).
 //!
 //! Each scan has fixtures that must be red: a scan that finds nothing in a fixture is a failure.
+//!
+//! What the scan sees: the names above in `turts_sim/src`, `turts_server/src` and
+//! `turts_pack/src` (production code only), also `query::<&mut UnitOrders>()`, `take`, `entry`,
+//! `try_insert`, a bundle struct with a `UnitOrders` field, a binding from `if let` or a typed
+//! closure parameter, and the arguments of a macro that parses as a list of expressions.
+//!
+//! What the scan still cannot see (a syn scan reads names, not types): a write through an inferred
+//! `get_mut()`; a write through an alias of the type (`type A = UnitOrders`); a binding that comes
+//! from a `for` loop or a `match` arm over an iterator of mutable references; a macro whose
+//! arguments are not expressions; a write in a crate that this scan does not read (`turts_audit`,
+//! `turts_client`, test code); a removal that must send `orders_cleared` with no name in the
+//! source. The `test-probes` check `check_order_changes` (`crates/turts_sim/src/orders/writer.rs`)
+//! covers those at run time. THE FAST GATE FOR THAT CHECK IS
+//! `cargo test -p turts_sim --locked --features test-probes` (the plain `cargo test -p turts_sim`
+//! runs none of it). `cargo test --workspace` also builds `turts_sim` with the feature, through
+//! the dev edge of `turts_pack`.
 
 mod support;
 
@@ -73,6 +89,25 @@ fn type_is_unit_orders(ty: &Type) -> bool {
     }
 }
 
+/// The type tree names `UnitOrders` anywhere (path, reference, tuple, generic argument).
+fn type_mentions_unit_orders(ty: &Type) -> bool {
+    match ty {
+        Type::Path(path) => {
+            names_unit_orders(&path.path)
+                || path.path.segments.iter().any(|segment| match &segment.arguments {
+                    syn::PathArguments::AngleBracketed(args) => args.args.iter().any(|arg| {
+                        matches!(arg, syn::GenericArgument::Type(inner) if type_mentions_unit_orders(inner))
+                    }),
+                    _ => false,
+                })
+        }
+        Type::Reference(reference) => type_mentions_unit_orders(&reference.elem),
+        Type::Tuple(tuple) => tuple.elems.iter().any(type_mentions_unit_orders),
+        Type::Paren(paren) => type_mentions_unit_orders(&paren.elem),
+        _ => false,
+    }
+}
+
 fn type_is_orders_type(ty: &Type) -> bool {
     match ty {
         Type::Path(path) => {
@@ -87,7 +122,13 @@ fn type_is_orders_type(ty: &Type) -> bool {
 /// True when the expression builds a `UnitOrders` value.
 fn builds_unit_orders(expr: &Expr, bindings: &BTreeSet<String>) -> bool {
     match expr {
-        Expr::Struct(literal) => names_unit_orders(&literal.path),
+        Expr::Struct(literal) => {
+            names_unit_orders(&literal.path)
+                || literal
+                    .fields
+                    .iter()
+                    .any(|field| builds_unit_orders(&field.expr, bindings))
+        }
         Expr::Call(call) => {
             matches!(&*call.func, Expr::Path(path) if names_unit_orders(&path.path))
         }
@@ -133,13 +174,23 @@ impl WriterScan {
         self.hits.push(what.into());
     }
 
+    /// The turbofish of the call names `UnitOrders`: a path (`get_mut::<UnitOrders>`) or, for a
+    /// query, a mutable reference (`query::<&mut UnitOrders>`).
     fn turbofish_names_unit_orders(
         &self,
+        method: &str,
         args: &Option<syn::AngleBracketedGenericArguments>,
     ) -> bool {
         args.as_ref().is_some_and(|args| {
-            args.args.iter().any(|arg| {
-                matches!(arg, syn::GenericArgument::Type(Type::Path(path)) if names_unit_orders(&path.path))
+            args.args.iter().any(|arg| match arg {
+                syn::GenericArgument::Type(ty) => {
+                    if method.starts_with("query") {
+                        type_names_unit_orders_mut(ty)
+                    } else {
+                        type_mentions_unit_orders(ty)
+                    }
+                }
+                _ => false,
             })
         })
     }
@@ -157,11 +208,29 @@ impl WriterScan {
     }
 }
 
+fn bind_pattern_idents(pat: &Pat, bindings: &mut BTreeSet<String>) {
+    match pat {
+        Pat::Ident(ident) => {
+            bindings.insert(ident.ident.to_string());
+        }
+        Pat::TupleStruct(tuple) => tuple
+            .elems
+            .iter()
+            .for_each(|inner| bind_pattern_idents(inner, bindings)),
+        Pat::Tuple(tuple) => tuple
+            .elems
+            .iter()
+            .for_each(|inner| bind_pattern_idents(inner, bindings)),
+        Pat::Reference(reference) => bind_pattern_idents(&reference.pat, bindings),
+        _ => {}
+    }
+}
+
 /// `x.get_mut::<UnitOrders>()` anywhere in the initialiser (also behind `.unwrap()`).
 fn init_gets_unit_orders(expr: &Expr) -> bool {
     match expr {
         Expr::MethodCall(call) => {
-            (call.method == "get_mut"
+            (matches!(call.method.to_string().as_str(), "get_mut" | "take" | "entry")
                 && call.turbofish.as_ref().is_some_and(|args| {
                     args.args.iter().any(|arg| {
                         matches!(arg, syn::GenericArgument::Type(Type::Path(path)) if names_unit_orders(&path.path))
@@ -209,6 +278,35 @@ impl<'ast> Visit<'ast> for WriterScan {
             syn::visit::visit_expr(self, expr);
         }
     }
+    /// `if let Some(mut orders) = x.get_mut::<UnitOrders>()` binds `orders`.
+    fn visit_expr_let(&mut self, expr: &'ast syn::ExprLet) {
+        if init_gets_unit_orders(&expr.expr) || builds_unit_orders(&expr.expr, &self.bindings) {
+            bind_pattern_idents(&expr.pat, &mut self.bindings);
+        }
+        syn::visit::visit_expr_let(self, expr);
+    }
+    /// A closure parameter typed `&mut UnitOrders` or `UnitOrders` is a binding.
+    fn visit_expr_closure(&mut self, closure: &'ast syn::ExprClosure) {
+        for input in &closure.inputs {
+            if let Pat::Type(typed) = input {
+                if type_names_unit_orders_mut(&typed.ty) {
+                    self.hit("a closure that takes a mutable `UnitOrders` or `Order`");
+                }
+                self.bind(&typed.pat, Some(&typed.ty), None);
+            }
+        }
+        syn::visit::visit_expr_closure(self, closure);
+    }
+    /// The arguments of a macro that parse as a list of expressions are scanned.
+    fn visit_macro(&mut self, mac: &'ast syn::Macro) {
+        if let Ok(args) = mac
+            .parse_body_with(syn::punctuated::Punctuated::<Expr, syn::Token![,]>::parse_terminated)
+        {
+            for expr in &args {
+                self.visit_expr(expr);
+            }
+        }
+    }
     fn visit_signature(&mut self, signature: &'ast syn::Signature) {
         for input in &signature.inputs {
             if let syn::FnArg::Typed(typed) = input {
@@ -225,14 +323,16 @@ impl<'ast> Visit<'ast> for WriterScan {
     }
     fn visit_expr_method_call(&mut self, call: &'ast syn::ExprMethodCall) {
         let method = call.method.to_string();
-        if (method == "get_mut" || method == "remove")
-            && self.turbofish_names_unit_orders(&call.turbofish)
+        if matches!(
+            method.as_str(),
+            "get_mut" | "remove" | "take" | "entry" | "query" | "query_filtered" | "try_insert"
+        ) && self.turbofish_names_unit_orders(&method, &call.turbofish)
         {
             self.hit(format!("`{method}::<UnitOrders>()`"));
         }
         if matches!(
             method.as_str(),
-            "insert" | "insert_if_new" | "spawn" | "insert_bundle"
+            "insert" | "insert_if_new" | "try_insert" | "spawn" | "insert_bundle"
         ) && call
             .args
             .iter()
@@ -343,7 +443,12 @@ fn scan_item(scan: &mut WriterScan, item: &syn::Item) {
 
 fn sim_sources() -> Vec<PathBuf> {
     let root = repo();
-    support::production_sources(&[root.join("crates/turts_sim/src")]).expect("sources read")
+    support::production_sources(&[
+        root.join("crates/turts_sim/src"),
+        root.join("crates/turts_server/src"),
+        root.join("crates/turts_pack/src"),
+    ])
+    .expect("sources read")
 }
 
 fn relative(path: &Path) -> String {
@@ -620,4 +725,67 @@ fn every_export_read_pattern_has_a_fixture_that_the_scan_finds() {
         export_hits("pub fn rows(batch: &CommittedTick) -> usize { batch.sites_completed.len() }")
             .is_empty()
     );
+}
+
+/// The repair of L0-WIRE widened the scan: each added pattern has a fixture that must be red.
+#[test]
+fn the_widened_write_patterns_have_fixtures_that_the_scan_finds() {
+    let fixtures: [(&str, &str); 8] = [
+        (
+            "a mutable query",
+            "fn f(world: &mut World) { let mut q = world.query::<&mut UnitOrders>(); for mut o in q.iter_mut(world) { o.current = None; } }",
+        ),
+        (
+            "a filtered mutable query",
+            "fn f(world: &mut World) { let _ = world.query_filtered::<&mut UnitOrders, With<UnitId>>(); }",
+        ),
+        (
+            "take",
+            "fn f(world: &mut World, e: Entity) { let _ = world.entity_mut(e).take::<UnitOrders>(); }",
+        ),
+        (
+            "try_insert of a value",
+            "fn f(world: &mut World, e: Entity) { world.entity_mut(e).try_insert(UnitOrders::default()); }",
+        ),
+        (
+            "a bundle struct with a UnitOrders field",
+            "fn f(world: &mut World, e: Entity) { world.entity_mut(e).insert(Bundle { orders: UnitOrders::default(), id: 1 }); }",
+        ),
+        (
+            "a binding from if let",
+            "fn f(world: &mut World, e: Entity) { if let Some(mut o) = world.entity_mut(e).get_mut::<UnitOrders>() { o.current = None; } }",
+        ),
+        (
+            "a closure that takes &mut UnitOrders",
+            "fn f() { let g = |o: &mut UnitOrders| { o.current = None; }; let _ = g; }",
+        ),
+        (
+            "a write in a macro argument",
+            "fn f(world: &mut World, e: Entity) { assert!(world.entity_mut(e).remove::<UnitOrders>().is_some()); }",
+        ),
+    ];
+    for (name, source) in fixtures {
+        assert!(
+            !writer_hits(source).is_empty(),
+            "the scan must find the write pattern `{name}`: {source}"
+        );
+    }
+    // A read through a query is not a write.
+    assert!(
+        writer_hits("fn f(world: &mut World) { let _ = world.query::<&UnitOrders>(); }").is_empty()
+    );
+}
+
+#[test]
+fn the_server_and_pack_sources_are_scanned() {
+    let sources = sim_sources();
+    for expected in [
+        "crates/turts_server/src/session.rs",
+        "crates/turts_pack/src/lib.rs",
+    ] {
+        assert!(
+            sources.iter().any(|p| relative(p) == expected),
+            "{expected} is a scan root file"
+        );
+    }
 }
