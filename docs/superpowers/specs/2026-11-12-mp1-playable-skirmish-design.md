@@ -1,6 +1,22 @@
 # MP1: Playable skirmish for two people: design
 
-Date: 2026-11-12. Revision 4 (repair pass in progress: section 6.7 and the lifecycle rows are repaired; the other parts follow). Status: DRAFT. Gate 1 ran on revision 3 with six lenses: 23 High findings (docs/research/mp1/gate1-*.md). Revision 2: section 6.9 from probe MP1-P1. Revision 3: the Yardstick coverage and Player path sections (qa-lead; the completeness gate passes), 12 new acceptance rows, section 16.
+Date: 2026-11-12. Revision 4. Status: DRAFT, for the gate-1 re-check. Gate 1 ran on revision 3 with six lenses: 23 High findings (docs/research/mp1/gate1-*.md).
+
+Revision history:
+
+- Revision 2: section 6.9 from probe MP1-P1.
+- Revision 3: the Yardstick coverage and Player path sections (qa-lead; the completeness gate passes), 12 new
+  acceptance rows, section 16.
+- Revision 4, the gate-1 repair in five parts (inputs `docs/research/mp1/repair-*.md`):
+    - part 1 (backend-engineer): section 6.7 and the rows LOB1, LOB2, MAT1, RES1, SUR1, IMM1, LEAVE1;
+    - part 2 (technical-director): sections 3, 6.1 to 6.6, 6.8, 6.9, the new 6.10, 9, 10 and row ORDW1;
+    - part 3 (ux-designer): sections 5, 7, 8, 13, 16, the Player path and 17 rows;
+    - part 4 (qa-lead): sections 1, 2, 4, 11, 12, 14, 15 and the Yardstick coverage section;
+    - part 5, the reconcile pass (technical-director): one term list (1.1); one list of placement reason keys
+      (6.1, 7.2); the site caps make an order wait (6.1, CON1, CON3, PRD1); one match-file shape (6.7.4, 6.10);
+      one wire record list (6.7.13, 6.8); the interface rows of 6.10 aligned with section 7; the plants of STO1;
+      the stage of TGT2 and of the statistics (10, 12); the gate-1 findings that no part repaired, repaired or
+      moved to section 15.
 Author: the orchestrator, from five seat inputs under `docs/research/mp1/` (producer, game-designer,
 technical-director, ux-designer, bevy-rendering-engineer). The inputs are agent output. This design takes
 their conclusions; gate 1 checks each claim that the design depends on.
@@ -23,7 +39,8 @@ Section 4 marks each item with its stage, and section 12 lists the rows of each 
 
 - Stage 1, the thin playable loop: build power, harvest, train, fight, win, and see the result screen, with
   simple shapes. Stage 1 is done when its rows of section 12 are green, each with its recorded red; REG2 is
-  green; and the `player` agent plays the loop from the goals text of section 13 to the result screen.
+  green; and the `player` agent plays the loop from the goals text of section 13 to the result screen. Then a
+  person plays the loop at checkpoint C1 (section 10), and stage 2 starts only after C1 passes.
 - Stage 2, the breadth: the lobby, cancel, repair, rally, surrender and disconnect, models, sound, the MC
   items, and the person play test.
 
@@ -53,31 +70,87 @@ MP1 is done when:
     - the result of each balance duel of DMG1 and the end time of the scripted headless match.
    The D57 and D58 hosting benchmarks are not part of MP1.
 
+### 1.1 Terms
+
+Each term has one meaning in the whole design [rigour 11]. Sections 6.7.1 and 7.0 point to this list and add no
+term.
+
+- Player slot (slot): the D25 slot, one entry of `Slots` (`crates/turts_sim/src/slots.rs:22-25`). The start step
+  claims it (decision D-B); under the start policy `Immediate` the claim happens at the accepted `Hello`, as today.
+  A claimed slot is never released or reassigned in the match. The lobby screen words "Slot 1" and "Slot 2" (7.6)
+  name the seat with that index.
+- Lobby seat (seat): the reservation of one player-slot index in the lobby, before the start. The room can release
+  it. A seat is not a claim. After the start, this design says "player slot" only.
+- Claim: a player id recorded as the owner of a player slot in `Slots`. A claim is terminal for the match.
+- Team: a set of player slots. MP1 has two teams of one slot (decision P2 a).
+- Connection: one transport link (`ClientOf`) that sent an accepted `Hello`. Disconnected: the server ended the
+  connection (a transport timeout, a kick or a clean close); the server knows nothing else about a player who is
+  gone (6.7.8).
+- Room: the lobby and lifecycle state machine in the new file `crates/turts_server/src/room.rs`. In MP1 each
+  process has one room and one match (decision D-C).
+- Start step, start tick, end tick: 6.7.5 and 6.7.8. The start tick is 1. Tick 0 is the world before the start
+  tick (the `Snapshot` of tick 0); "from tick 0" in sections 4, 5, 7, 12 and the Player path means "from the start
+  tick, with no input".
+- Stage 1, stage 2: the two delivery stages of MP1 (this section). "Stage" has no other meaning in this design. A
+  `stage` in a quoted MC oracle name (for example `sel2-500-slot0`) is the name of a test step.
+- Job state: the condition of a production job or a site: running, slowed, `WaitingForFunds(resource)`, output
+  blocked, or held. The words on the screen are the `states` texts of the mod (6.10 row H3).
+- Constructor queue: the queue of a unit with `constructor`. It holds `Construct` orders only. Producer queue: the
+  queue of a unit with `producer`. It holds jobs. Neither queue has an id (decision Q1). A lane (section 10) is a
+  worktree and its task chain, not a queue.
+- Held order: a `Construct` order, with its content and its point, in a constructor queue, that waits for an open
+  site (6.1). It has charged nothing and holds no ground.
+- Site: the server entity of a building under construction. It owns its progress, its charge and its job, it has
+  health and a footprint, and it can be attacked (6.1, decision D-E). An open site is a site that is not complete.
+- Pending site: the client marker from the left click until the server result. It is not a site and charges
+  nothing.
+- Engine order: an order that the engine gives through `apply_order` with the source `Engine` (6.5): the follow
+  order of a rally, the start order of a map placement, and the placement of a held order.
+- Edition: the lowest released engine API that the `engine_api` requirement of the root package admits (6.10).
+- Team material: the material that a model names in `team_material` (8.1). The client replaces it with the slot
+  material. (Revision 3 called it a "material slot".)
+- Alert: a line in the alert list that an alert rule makes (7.9). It can have a sound, a minimap ping and a place.
+  Notice: the text of a refused order, at the pointer, at a site, or the grouped failure line of ruling O14. A
+  notice is not an alert.
+- Hint: the one hint line of 7.8. A hint is done in the first client update in which its done condition holds. A
+  done that holds only through a pending site ends when the server refuses that order (7.8) [rigour 10].
+- Click to play: the button that ends the start screen. The clock of the 60 s rule (7.1) starts when the player
+  presses it, and it ends at the first client update in which an own Power Station site or a complete own Power
+  Station exists (a pending site does not end it) [rigour 10].
+- `done:`: the Yardstick disposition only. "MP1 is done" is the exit of this section.
+- Ids. Some ids occur in two lists, so the text always names the list. A row of the API table is written
+  "6.10 row X" (for example 6.10 row P1, the payment row; 6.10 row H1, the reason keys). Alone, P1 to P9, Q1, S1,
+  N1 and Y1 are decisions of section 2; X0 to X26 are scope items of section 4; H1 to H7, F and X1 to X3 in the
+  form "hint H1" or in the Player path are hints.
+
 ## 2. Decisions for the CEO
 
 Each line quotes the specification line that it touches and the status of that line. "Choice" is the
 recommendation of the team or the call of the orchestrator after gate 1; the CEO can overrule each one. The
 design below is written on the choice. "Changes" names, for each other option, every section, row of section
-12, Yardstick coverage item and Player path step (numbered as in revision 3) that changes [rigour 9]. A line
-marked "needs decision" has no choice yet.
+12, Yardstick coverage item and Player path step (numbered as in revision 3) that changes [rigour 9]. Every
+line is "CEO to confirm": the design applies its Choice (or, where the Choice cell says "needs decision", the
+recommendation) as the working text, and a different CEO answer changes the places that the last column
+names. Y1 is the one exception: QA0 K6 lets only the CEO change a dependency edge, so the working text keeps
+option (a) until the CEO answers.
 
 | Id | Question | Specification line and status | Options | Choice | Changes for each other option |
 | --- | --- | --- | --- | --- | --- |
-| P1 | Real models in MP1? | S:247 (Baseline): "glTF is the preferred interchange candidate; exact supported features" stay to be selected; S:750 (Open): importer features | (a) simple shapes; (b) one static model and one texture set for each unit and building, from the package, with the shape as fallback; (c) wait for M13 | (b), with a cap of 9 models, in stage 2; stage 1 uses shapes (RE part 1) | (a) or (c): sections 4 (X16), 8.1, 8.5, 11 (minus 8 to 16 runs); rows MDL1 out, VIS3 primitives only; coverage MD17 and AN07 to `later:M13`; Player path: no step |
-| D-M | Model caps (RE:24; mod M9) | S:247 (Baseline): the supported features stay to be selected | (a) the caps of section 8.1 now: 8,000 triangles for one model, 4 MiB for one model, 16 MiB for all models, at most 2 materials; (b) the X16 task sets the caps after the measurement of section 8.5 | needs decision (CEO; section 8.1 names it D-M). qa-lead recommendation: (a) as an upper bound that the 8.5 measurement can only lower, because the MDL1 red packages need fixed numbers | (b): MDL1 gets its cap cases in stage 2; section 8.1 numbers become provisional. No coverage item; no Player path step |
+| P1 | Real models in MP1? | S:247 (Baseline): "glTF is the preferred interchange candidate; exact supported features" stay to be selected; S:750 (Open): importer features | (a) simple shapes; (b) one static model and one texture set for each unit and building, from the package, with the shape as fallback; (c) wait for M13 | (b), with a cap of 9 models, in stage 2; stage 1 uses shapes (RE part 1) | (a) or (c): sections 4 (X16), 6.10 (rows V1, V2), 8.1, 8.5, 11 (minus 8 to 16 runs); rows MDL1 out, VIS3 primitives only; coverage MD17 and AN07 to `later:M13`; Player path: no step |
+| D-M | Model caps (RE:24; mod M9) | S:247 (Baseline): the supported features stay to be selected | (a) the caps of section 8.1 now: 8,000 triangles for one model, 4 MiB for one model, 16 MiB for all models, at most 2 materials; (b) the X16 task sets the caps after the measurement of section 8.5 | needs decision (CEO; section 8.1 names it D-M); the working text applies (a). qa-lead recommendation: (a) as an upper bound that the 8.5 measurement can only lower, because the MDL1 red packages need fixed numbers | (b): MDL1 gets its cap cases in stage 2; section 8.1 numbers become provisional. No coverage item; no Player path step |
 | P2 | Lobby | S:723 (Proposed until gate 1): "a minimal two-slot lobby (team, colour, ready)"; S:335 (Decided): readiness is a suggestion only | (a) two slots, ready and colour choice, team = slot; (b) two slots, ready only, team = slot; (c) team and colour choice | (a). Revision 3 wrote option (a) as "ready only", but its recommendation kept colour choice (LOB2, L4, TM03); the option text now says what the design builds, so every "P2 (a)" in the design keeps its meaning [rigour 9]. Stage 2 | (b): row LOB2 out; Player path L3 (default colours stay), L4 out; coverage TM03 to `done:` with the MC VIS1 slot colours. (c): sections 6.6, 6.7, 7.6; rows LOB1, MAT1 team cases; coverage TM01, TM02, MF10 stay `later` by R4 (MF02 needs MD12, `later:M9`) |
 | P3 | Scope cuts if the schedule slips | S:798 (Decided, 16.2 rules): "Engineer: Repairs buildings and vehicles"; S:723 (Proposed): repair, rally, charge-over-time payment, cancel | (a) keep all; (b) cut rally; (c) also cut cancel of construction; (d) also cut repair: this changes the Decided S:798 and needs the CEO [rigour 2]. Charge over time is not a cut: it is decision P4 | (a). If the schedule slips: (b), then (c). (d) only by a CEO decision | (b): sections 4 (X9), 6.5; rows RLY1 out, SMT1 rally part out; coverage OR15, PR06 to `later:MP2`; Player path step 8 out. (c): X4b; row CON3 cancel part out (the destroyed-site part stays); coverage CO08 to `later:MP2`. (d): X8; rows REP1 out, SMT1 repair part out; Player path step 16 out; the specification line S:798 changes |
 | P4 | Payment | S:801 (Decided, 16.2 rules): "Construction: Pay credits, select a valid site, then construction progresses over time"; S:434 (Baseline): "consume over time" is a valid policy | (a) pay at the order; (b) pay over time while the job runs | (b) (D-A, orchestrator). This changes the Decided order of S:801, so the CEO decides, and the specification line changes to "Select a valid site; construction progresses over time and charges credits as it progresses" [rigour 2] | (a): sections 4 (X7), 6.4, 7.3; rows PAY1, PAY2 (refund base becomes the paid cost), CON1 (charge clause), CON3, HUD5 ("On hold: no credits"), HUD6 ("paid while it builds"), ALR2 (no-credits state); coverage PR03, EC10, PR02, CO08 notes; Player path steps 3, 4, 9, 11 |
 | D-A | Charge model of P4 (b) | S:434 (Baseline): "Cancellation, refunds, interrupted production ... must be explicit" | (a) each tick charges the difference of `floor(cost x progress)`, with a u128 intermediate; ledger events coalesced: one event when the job completes, is cancelled or stalls; (b) charge in progress steps of a mod-data size (TD:199-200); (c) as (a) with one ledger event for each tick | (a) (orchestrator) [perf M3] | (b): rows PAY1 (totals at step bounds), PAY2, HUD5 (the credits fall in steps); Player path step 3. (c): row PAY1 event-count case out; the ledger grows to about 400 events for a 20 s tank (perf M3). No coverage item |
-| P5 | Sound | D69 (Proposed): audio | none; a minimal set (fire, hit, death, built, low power, ready, error); voices | the minimal set, in stage 2, with the engine part of X14 (an effect names a sound; the engine plays it at the place, with a cap) | none: sections 4 (X14 sound part, X17), 8.4; row AUD2 out; coverage AU03, AU07 to `later:M13`; Player path steps 3, 13, 15 lose their sound clauses. Voices: X17 grows; no row change |
+| P5 | Sound | D69 (Proposed): audio | none; a minimal set (fire, hit, death, built, low power, ready, error); voices | the minimal set, in stage 2, with the engine part of X14 (an effect names a sound; the engine plays it at the place, with a cap) | none: sections 4 (X14 sound part, X17), 6.10 (row H16, the `sound` of V3), 8.4; row AUD2 out; coverage AU03, AU07 to `later:M13`; Player path steps 3, 13, 15 lose their sound clauses. Voices: X17 grows; no row change |
 | P6 | Names, tone, art direction | S:807 (16.2, Decided section): "Names/art ... remain to be specified during implementation" | as revision 3 | Faction "Lantern Company" (working name), a mirror match over a claim; grounded near future, no gore; low-poly, clear top-down silhouettes, team colour on large surfaces; plain function names for units | Another choice: section 5 names; the words of Player path steps 2, 6, 7 and of section 13. No row; no coverage item |
 | P7 | The two people of the play test | S:703 (Decided, G12): a person signs off | two people; or the CEO and one more person | two people, one of them not the CEO, so one tester is blind | The CEO as a tester: section 13 and row PT3 (one tester is not blind); exit item 2 |
-| P8 | A lost connection | D28 (Decided): "Do not impose ... disconnect gameplay through the engine"; S:327 (Baseline): everyone disconnects is server policy | (a) the match waits for ever; (b) a slot that stays disconnected for N seconds is defeated, by a victory clause that the mod declares; with no clause, nothing happens [mod L11] | (b), N = 120 s in the `frontier` victory data, counted in ticks (D-D), in stage 2 | (a): sections 6.7, 4 (X11); row MAT1 disconnect cases out; coverage MF14 to `later:M10`; Player path step 19 out |
+| P8 | A lost connection | D28 (Decided): "Do not impose ... disconnect gameplay through the engine"; S:327 (Baseline): everyone disconnects is server policy | (a) the match waits for ever; (b) a slot that stays disconnected for N seconds is defeated, by a victory clause that the mod declares; with no clause, nothing happens [mod L11] | (b), N = 120 s in the `frontier` victory data, counted in ticks (D-D), in stage 2 | (a): sections 6.7, 6.10 (row M1, `DisconnectedFor`), 4 (X11); row MAT1 disconnect cases out; coverage MF14 to `later:M10`; Player path step 19 out |
 | P9 | Units and buildings in the way | none (MC ruling O14 records the limit) | (a) a free approach point in the engine and a placement gap as mod data; (b) the M4 route step in MP1 | (a), in stage 1 | (b): sections 6.9, 11 (400 to 700 lines, 5 to 7 files, estimate of the probe); row OBS1 becomes a route row; coverage PF04 stays `in`. No Player path step |
 | D-B | Claim boundary | D25 (Decided): "A claimed player slot ... cannot be reassigned"; S:308 (Baseline): "the exact claim boundary" needs design; S:350 (Baseline): open to claimed only by atomic admission | (1) a lobby seat is a reservation that the room can release; the match start claims every seated slot in one step, and D25 holds from that tick; a package with no start policy starts at once (`Immediate`), and the claim stays at Hello, as today (`crates/turts_server/src/session.rs:152`); (2) the claim stays at Hello, and a leave closes the slot | (1) (orchestrator) [rigour 3, backend H2, net 1] | (2): sections 6.7, 7.6; rows LOB1 (the leave closes the room), LOB2; coverage MF07 note; Player path L2 to L5 (a leave ends the lobby) |
 | D-C | One match for each process | S:296 (recommendation): "Separate worker processes per active match are a recommendation" | (a) the server runs Boot, Lobby, Countdown, Running, Ended, then exits with 0; a supervisor starts the next process; (b) the process resets the world in place (about 30 resources, `crates/turts_sim/src/plugin.rs:60-90`) | (a) (orchestrator); no world reset in place [backend H1, net 12] | (b): sections 4 (X11b), 6.7; a new reset row; rows MAT1, RES1; Player path steps 17, 18, 19 (a next match with no reload) |
 | D-D | Disconnect, reconnect, surrender | S:267 and S:392 (Decided, G9): replays are a command log; D28 (Decided) | (a) the room writes each as a sim input into the command log at a tick; the sim counts the 120 s in ticks; the rule is a clause of the mod victory data; (b) a server timer on the wall clock | (a) (orchestrator). (b) breaks invariant 15 (S:581), so it is not a valid option [net 2, backend H4] | (b): row MAT1 loses its replay case. No coverage item; no Player path step |
-| D-E | Where construction progress lives | S:801 (Decided); S:434 (Baseline) | (a) the structures queue of the constructor holds the order until the player places it; then the site entity owns the progress, the charge and the job; `constructor` is a work capability beside `producer`; (b) the progress stays in the producer queue, and the site is a marker | (a) (orchestrator) [rigour 1, mod H2] | (b): sections 6.1, 7.3; rows CON1 (its red becomes the green), PRD1; coverage OR16, CO04, CO07 notes; Player path step 7 |
+| D-E | Where construction progress lives | S:801 (Decided); S:434 (Baseline) | (a) the constructor queue holds the `Construct` order, with its point, until the engine places its site; then the site entity owns the progress, the charge and the job; `constructor` is a work capability beside `producer`; (b) the progress stays in the producer queue, and the site is a marker | (a) (orchestrator) [rigour 1, mod H2] | (b): sections 6.1, 7.3; rows CON1 (its red becomes the green), PRD1; coverage OR16, CO04, CO07 notes; Player path step 7 |
 | D-E2 | A cap on open sites for each slot | none (net 5: a site at progress 0 is free) | (a) a cap as mod data; (b) no cap; (c) an engine constant | (a) (orchestrator). The `frontier` value is content (GD:141 proposes 1; S:807 keeps numbers open) | (b): row CON1 cap case out; the free-site grief of net 5 stays. (c): a private engine number. No coverage item; no Player path step |
 | D-F | The harvester at the start | S:805 (Decided): "One command center, one harvester, and enough credits to establish power" | (a) a map placement can carry a start order (an engine mechanism, 6.10 row M3); the `frontier` harvester gathers from tick 0; the first hint names the power station; (b) no mechanism; the first hint is "Send your Ore Hauler to the ore" | (a) (orchestrator) [player H1] | (b): section 4 (X24); row STO1 out; GOAL1 first hint; coverage MF06 note; Player path steps 2 and 6 change order |
 | D-G | A unit that is attacked | S:803 (Decided): "Move, attack, attack-move, stop, hold, and automatic targeting" | (a) an idle unit targets its attacker inside its leash; a holding unit fires back only inside its weapon range and never moves; (b) a holding unit chases inside its leash (revision 3) | (a) (orchestrator) [rigour 5] | (b): rows TGT1 (hold never moves) and TGT2 contradict; coverage OR08, OR26 notes; Player path step 12 |
@@ -85,8 +158,8 @@ marked "needs decision" has no choice yet.
 | D-I | The public mod API 0.2.4 | D15 (Baseline): a versioned mod API | (a) a full table in the design: for each item the export group or file, field, type, default when absent, validation, error text and version-table row; presence means "written in the source", read from the raw file; (b) lane 0 defines the fields | (a) (orchestrator) [mod H1, mod M4] | (b): row VAL1 has no list of red packages before lane 0. Coverage MD01 note |
 | D-J | Performance rules | S 13 (Baseline); budgets Open (S 15) | (a) the UnitId index and the debug-state gate in lane 0; acquisition from a grid for each relation, only when the weapon is ready and has no valid target, at most every K ticks, staggered by unit id; wire records with a start tick and a rate, sent on change; slice part A3 before content with a footprint above the mobile radius; (b) leave them to later milestones | (a) (orchestrator) [perf H1 to H4] | (b): sections 4 (lane 0), 10, 11 (minus 4 to 7 runs); rows TGT1 (query counter), DBG1, DES1 (index), OBS1 (A3); coverage CB03 note |
 | D-K | A rematch | S:296: "A room may exist ... afterward for results or rematches" | (a) no rematch button in MP1; the result screen names the reason of the result; "Leave" says how to start the next match; (b) a rematch button (the room outlives the match, against D-C) | (a) (orchestrator) [player 9] | (b): sections 4 (X13), 6.7; rows RES1, LOB1; coverage MF12 note; Player path step 17 |
-| D-L | A free income of the Command Centre | S:799 (Decided, 16.2 rules): "Harvester collects ore and delivers it to the command center for credits"; S:807: these policies are mod-owned | (a) an engine capability `income` as mod data; `frontier` gives 3 credits each second while the Command Centre is complete (section 5, row INC1); (b) no income; the floor comes only from a cheaper hauler | (a) (part-3 repair; the call is NOT TRACED in the orchestrator's brief). qa-lead: it adds a second credit source beside the Decided harvesting line; it does not contradict that line, but the CEO should see it [player 5] | (b): section 5 table, row INC1 out; Player path steps that count credits (3, 6, 11) lose the income; the 166 s floor of section 5 goes. No coverage item |
-| D-N | The VIS3 floor before the play test | S 15 (Open): numeric budgets | (a) p95 at or below 50 ms and p50 at or below 33 ms at 400 units on the play-test machine, as a start condition of PT3 (Proposed, not a budget); (b) no floor | needs decision (section 8.5 names it D-N) [perf L2] | (b): row VIS3 and PT3 lose the start condition. No coverage item; no Player path step |
+| D-L | A free income of the Command Centre | S:799 (Decided, 16.2 rules): "Harvester collects ore and delivers it to the command center for credits"; S:807: these policies are mod-owned | (a) an engine capability `income` as mod data; `frontier` gives 3 credits each second while the Command Centre is complete (section 5, row INC1); (b) no income; the floor comes only from a cheaper hauler | (a) (part-3 repair; the call is NOT TRACED in the orchestrator's brief). qa-lead: it adds a second credit source beside the Decided harvesting line; it does not contradict that line, but the CEO should see it [player 5] | (b): section 5 table, 6.10 row U7, row INC1 out; Player path steps that count credits (3, 6, 11) lose the income; the 166 s floor of section 5 goes. No coverage item |
+| D-N | The VIS3 floor before the play test | S 15 (Open): numeric budgets | (a) p95 at or below 50 ms and p50 at or below 33 ms at 400 units on the play-test machine, as a start condition of PT3 (Proposed, not a budget); (b) no floor | needs decision (section 8.5 names it D-N); the working text applies (a), the recommendation of the performance and UX seats [perf L2] | (b): row VIS3 and PT3 lose the start condition. No coverage item; no Player path step |
 | Q1 | Named producer queues | none (6.1; GD:272 asked for `lanes`) | (a) no named producer queues in 0.2.4: the command centre has the producer queue and the constructor queue (D-E); (b) named queues for each producer | (a) (part-2 repair, 6.1) | (b): sections 6.1, 6.10, 7.3; rows PRD1, VAL1; coverage PR04 note |
 | S1 | Specification text edits after MP1 | S:723 and S:809 ("three" M3 rules; MC lifted one); S:801 (D-A); S:727 ("Needs teams (MP1)") | edit the lines; or keep them | edit: S:723 and S:809 say "two"; S:801 as in P4; S:727 says what MP1 gives (two teams of one, the `Ally` and `Enemy` relations) | No row; no coverage item; no Player path step |
 | 6.7.14 | Four server policy points of section 6.7 | see 6.7.14 | see 6.7.14 (the `all_disconnected` default; `AllSeated`; when Ended exits; the disconnect notice timeout) | the recommendations of 6.7.14 | the changes that 6.7.14 names |
@@ -145,11 +218,11 @@ playable loop (build power, harvest, train, fight, win, result screen, with simp
 | X0e | Entry condition: slice part A3 (the neighbour grid) is merged before any MP1 content with a footprint above the mobile radius (D-J) [perf H4] | E | 1 |
 | X1 | Lift the two M3 rules; destruction of a unit with a queue through the one death path, with an explicit `on_destroy` policy for its jobs | E | 1 |
 | X2 | Damage types and armour classes as mod data; automatic targeting with an acquire range and a leash; retaliation: an idle unit targets its attacker inside its leash, a holding unit fires back only inside its weapon range and never moves (D-G, TGT2); acquisition from a grid for each relation, at most every K ticks, staggered by unit id (D-J) | E | 1 |
-| X4 | Construction (D-E): `constructor` is a work capability beside `producer`; a `Construct` order with content and a point; the structures queue holds the order until placement; a site check; a site entity that owns its progress, charge and job and can be attacked; the limits `concurrent_sites` for each constructor and `open_sites_per_slot` for each slot as mod data; no named producer queues (Q1); a footprint that blocks | E | 1 |
+| X4 | Construction (D-E): `constructor` is a work capability beside `producer`; a `Construct` order with content and a point; the constructor queue holds the order, with its point, until the engine places its site; a site check; a site entity that owns its progress, charge and job and can be attacked; the limits `concurrent_sites` for each constructor and `open_sites_per_slot` for each slot as mod data; no named producer queues (Q1); a footprint that blocks | E | 1 |
 | X4b | Cancel of construction with refund of what the site charged | E | 2 |
 | X5 | Placement mode and ghost | UI + E (interaction core) | 1 |
 | X6 | Power: supply and demand for each slot, a shortage rule for each capability | E + C + UI | 1 |
-| X7 | Charge over time (D-A): each tick charges the difference of `floor(cost x progress)` with a u128 intermediate; the stage "waiting for funds"; coalesced ledger events | E | 1 |
+| X7 | Charge over time (D-A): each tick charges the difference of `floor(cost x progress)` with a u128 intermediate; the job state `WaitingForFunds`; coalesced ledger events | E | 1 |
 | X8 | Repair: a `repairer` capability and a `Repair` behaviour, charged over time | E + C | 2 |
 | X9 | Rally: `SetRally` on a producer; the engine sends the follow order through `apply_order` with the source `Engine`: no seq, no token, no `OrderResult` (net 8) | E + UI | 2 |
 | X10 | Relations: `Ally` and `Enemy` beside the present slot filter; MP1 uses two teams of one | E | 1 |
@@ -157,7 +230,7 @@ playable loop (build power, harvest, train, fight, win, result screen, with simp
 | X11c | Surrender, disconnect and reconnect as sim inputs in the command log; the disconnect rule as a clause of the mod victory data, counted in ticks (D-D, P8) | E + C | 2 |
 | X11b | One match for each server process (D-C): Boot, Running, Ended, exit 0 (stage 1); Lobby and Countdown (stage 2, with X12); a client that connects after the end: the owner gets the result, a new id gets "The match is over" (LEAVE1) | E | 1, 2 |
 | X12 | Lobby for two slots (D-B): lobby seats are reservations; the match start claims every seated slot in one step; the lobby states Lobby and Countdown; ready and colour (P2 a); the browser keeps the player id in sessionStorage from the lobby seat (D-H) | UI + E (server room) | 2 |
-| X13 | Result screen, owned by the mod, from engine sources; it names the reason of the result; no rematch; "Leave" says how to start the next match (D-K) | UI | 1 |
+| X13 | Result screen, owned by the mod, from engine sources; it names the reason of the result; no rematch; "Leave" says how to start the next match (D-K) (stage 1); the statistics (stage 2) | UI | 1, 2 |
 | X14 | Effects: `Fired` and `Destroyed` on the wire (stage 1); flash and death effect (stage 1); the other effects and the sound engine part: an effect names a sound, and the engine plays it at the place of the effect with a cap (stage 2, P5) | UI + E (wire event) | 1, 2 |
 | X15 | The mod `frontier`: the 8 types as shapes, ore, the map "Twin Fields", the HUD layout, the numbers of section 5 (stage 1); the guide and the tuned numbers (stage 2) | C | 1, 2 |
 | X26 | Free income of the Command Centre: an engine capability `income` as mod data (D-L, INC1) | E + C | 1 |
@@ -168,7 +241,7 @@ playable loop (build power, harvest, train, fight, win, result screen, with simp
 | X18 | MC items handed to MP1: Button `font`, "Unbound", Controls groups and keyboard navigation, the alert list defects, a value predicate for labels, the grouped failure notice (O14), the no-GPU page | UI | 2 |
 | X19 | One protocol step (4 to 5) and one mod API step (0.2.3 to 0.2.4) for all of MP1, both frozen in lane 0 (X0) | E | 1 |
 | X20 | Instruments: the headless two-client match and the stage-1 rows (stage 1); the stage-2 rows, the fault plants and the pixels-only two-player driver (stage 2) | I | 1, 2 |
-| X21 | The play test: the `player` agent on the stage-1 loop (stage 1); two people (stage 2) | I | 1, 2 |
+| X21 | The play test: the `player` agent on the stage-1 loop and the person of checkpoint C1 (stage 1); two people (stage 2) | I | 1, 2 |
 | X22 | Final regression (REG2) and CI; REG2 also runs at the end of stage 1 | I | 1, 2 |
 | X23 | Architecture audit before the merge to main | I | 2 |
 
@@ -187,7 +260,7 @@ The content is in a new package `frontier`, not in `base`, because the frozen M2
 identifiers (`light` and `shell` collide and are not used).
 
 Display names: Rifleman, Launcher, Engineer, Ore Hauler, Tank, Guard Turret, Command Centre, Power Station. Resources:
-ore (an item), credits (a balance), power (a capacity, section 6.2). The screen, the hints, the alerts and the
+ore (an item), credits (a balance), power (a `Supply` resource, section 6.2). The screen, the hints, the alerts and the
 play-test texts use these names only. The word "harvester" does not show to a player [player 8].
 
 Status: the roster and the rules of S:782-805 are Decided. Names, statistics, timings, costs, repair accounting,
@@ -204,7 +277,7 @@ Numbers after gate 1 (game-designer pen, repair pass; the scripts are listed aft
 | Starting credits | 1,200 | 1,200 | S:805 ("enough credits to establish power"); the other changes remove the holds |
 | Ore Hauler cost, build time | 800, 20 s | 500, 15 s | a lost hauler can be replaced [player 5] |
 | Ore Hauler load, gather, unload, speed | 200, 10/s, 40/s, 2.0 | 300, 15/s, 60/s, 2.4 | income on the main field 332 to 519 credits a minute [player H3] |
-| Ore Hauler at the start | waits for an order | gathers from tick 0: the map placement carries a start order (decision D-F; engine mechanism: a placement `order`, sent through `apply_order` with the source `Engine`, row STO1). Today a placement has no order field (`crates/turts_mod_api/src/schema.rs:440-447`) | the first "+300" at about 30 s with no input [player H1] |
+| Ore Hauler at the start | waits for an order | gathers from tick 0: the map placement carries a start order (decision D-F; engine mechanism: a placement `start_order`, 6.10 row M3, sent through `apply_order` with the source `Engine`, row STO1). Today a placement has no order field (`crates/turts_mod_api/src/schema.rs:440-447`) | the first "+300" at about 30 s with no input [player H1] |
 | Free income of the Command Centre | none | 3 credits each second while it is complete (decision D-L, engine capability `income`, row INC1) | the floor: a slot with 0 credits and no hauler gets a hauler in 166 s [player 5] |
 | Rifleman build time | 6 s | 7 s | the spend rate of one unit queue (14.3 credits/s) is near one hauler plus the free income |
 | Launcher build time | 9 s | 10 s | the same |
@@ -217,7 +290,7 @@ Numbers after gate 1 (game-designer pen, repair pass; the scripts are listed aft
 | Ore nodes | main 3 x 1,500; side 2 x 1,500; centre 8 x 2,000 | main 3 x 5,000; side 2 x 3,000; centre 8 x 3,000 | the defended main field lasts 9.6 min with 3 haulers, 14.5 min with 2 |
 | Placement gap | 0.5 (GD) or 2.0 (6.9) | `placement.gap` 2.0 as data; the packer refuses a gap below the largest mobile diameter + 0.2 (1.8 + 0.2 for the Tank and the Ore Hauler); units count for overlap, not for the gap | [mod L10] |
 | Ore clearance | 2.0 from the node edge | 2.0, data `placement.node_clearance` | unchanged |
-| Open sites for each slot | GD: 1 | 1, mod data (decision D-E); the structures queue holds up to 5 placed orders | [net 5] |
+| Open sites for each slot | GD: 1 | 1, mod data `open_sites_per_slot` (decision D-E2); a further `Construct` order waits in the constructor queue of the Command Centre, which holds up to 5 held orders (6.1) | [net 5] |
 | Unit queue capacity | 5 | 5 | unchanged |
 | Power | station makes 100; Command Centre uses 40; turret uses 30 | unchanged; build time of the Power Station 12 s (24 s at the start, because the start is in low power) | the tooltip shows the time at the current power (7.10) [player 7] |
 
@@ -302,14 +375,23 @@ Status: S:178 (4.3, Decided principle) puts placement, footprints, progress and 
 - A constructor is a unit with the `constructor` capability (6.10 row K1): `buildings` (the production entries
   that it can build), `concurrent_sites` (the number of open sites that it can have at one time),
   `queue_capacity` (the number of held orders), `progress` and `when_short`.
-- The player places a building with a `Construct` order (content and point). The constructor's structure
-  queue holds each `Construct` order until the engine places its site. The queue holds orders only. It never
-  holds progress or charge.
+- The player places a building with a `Construct` order (content and point). The constructor queue holds each
+  `Construct` order until the engine places its site. The queue holds orders only. It never holds progress or
+  charge. There is no order without a point, so there is no "ready to place" state: the left click of 7.2 gives
+  the point.
 - The engine places a site at once when the constructor has fewer than `concurrent_sites` open sites and the
   slot has fewer than `open_sites_per_slot` open sites (6.10 row K6). Otherwise the order waits in the queue,
-  in order. The engine checks the site when the order arrives (a refusal goes to the player in the
-  `OrderResult`, per unit, D65) and again when it places the site (a refusal then is an engine-order failure,
-  section 6.5).
+  in order, as a held order. The engine checks the site when the order arrives (a refusal goes to the player in
+  the `OrderResult`, per unit, D65) and again when it places the site (a refusal then is an engine-order
+  failure, section 6.5).
+- **The two caps make an order wait. They never refuse it.** An order that arrives when the constructor is at
+  `concurrent_sites`, or when the slot is at `open_sites_per_slot`, waits in the constructor queue. The engine
+  refuses an order at arrival only when the constructor queue already holds `queue_capacity` held orders
+  (`queue_full`). When a site completes, is cancelled or is destroyed, the engine places held orders in the next
+  tick while both caps allow, in ascending constructor unit id, then in queue order. There is no `site_cap`
+  reason. Reason: `frontier` has one constructor and the slot cap 1 (section 5), and 7.2, 7.3, row PRD1 and
+  Player path step 8 show a second order that waits ("Waiting to start"); a refusal at the slot cap makes the
+  queue of 5 useless. A held order has charged 0 and holds no ground, so the wait keeps the closure of net 5.
 - The site is an entity. It owns its progress, its charge and its job. Its footprint blocks from the tick it
   appears. It can be attacked. It neither provides nor consumes supply (6.2). Its weapon, producer and
   constructor capabilities are off until it is complete.
@@ -330,7 +412,7 @@ schema change.
 
 **Free sites are a grief path** [net 5]. Under charge over time (6.4), a site at progress 0 has charged 0, and
 it holds ground. Two limits close this: `concurrent_sites` for each constructor and `open_sites_per_slot` for
-each slot. Both are mod data. `open_sites_per_slot` is required when a package has a constructor, so no
+each slot. Both are mod data. An order above a limit waits as a held order, which holds no ground (above). `open_sites_per_slot` is required when a package has a constructor, so no
 engine default hides it (6.10 row K6).
 
 **Placement rules are data** (6.10 rows K2 and K3) [mod L10]:
@@ -348,11 +430,25 @@ engine default hides it (6.10 row K6).
   smallest legal gap is 2.0, so the GD value 0.5 is refused.
 - Footprints stay circles (`schema.rs:28-30`).
 
-**Refusal causes** (reason keys, validated, 6.10 row H1) [player H4]: `site_outside_map`, `site_out_of_area`
-("Too far from your base"), `site_blocked` (an overlap: "Something is in the way"), `site_too_close` (only the
-gap blocks: "Too close to a building"), `site_near_resource` ("Too close to ore"), `site_cap` (the slot is at
-`open_sites_per_slot`), `queue_full`. The texts are mod content. The checks run in this order, and the first
-failure is the cause.
+**Refusal causes** (reason keys, validated, 6.10 row H1) [player H4]. This is the one list of the design; 7.2,
+6.8, 6.10 and the rows CON1 and GHO1 use it. The checks run in this order, and the first failure is the cause:
+
+1. `site_outside_map`: a part of the footprint is outside the map ("Outside the map").
+2. `site_out_of_area`: `placement.in_build_area` is true, and the centre is farther than `build_area` from the
+   footprint edge of every completed own unit that declares `build_area` ("Too far from your base").
+3. `site_blocked`: the footprint overlaps a footprint, a unit included ("Something is in the way").
+4. `site_near_building`: no overlap, but the edge distance to a static footprint is below the gap ("Too close to
+   a building").
+5. `site_near_resource`: the edge distance to a resource node is below `placement.node_clearance` ("Too close to
+   ore").
+6. `queue_full`: the constructor queue holds `queue_capacity` held orders (an existing wire key,
+   `crates/turts_net_protocol/src/messages.rs:241`; "Construction queue is full (5/5)").
+
+The texts in brackets are the `frontier` texts; the texts are mod content. Why these names: revision 4 part 2
+wrote `site_too_close`, which does not say "close to what" (the gap and the node clearance are both "too
+close"); part 3 wrote `site_near_ore`, but `ore` is a `frontier` id, and no engine name uses a `frontier` word
+(6.2); `site_out_of_area` names the `build_area` field that the check reads. The placement of a held order (an
+engine order) runs checks 1 to 5 again; a failure there shows in `last_failure` (6.5).
 
 **One pure function, with visibility** [net 6]. `turts_rules::placement::check(site, view, visible)` gives the
 verdict and the cause. `visible` is the viewer's visibility predicate. In MP1 it is always true. When a hidden
@@ -410,7 +506,8 @@ targeting restrictions in the mod. Decisions D-G and D-J apply.
 
 **One damage formula.** The design (`max(min, floor(d x ratio) - flat)`) and GD:68 (`max(1, floor(d x percent /
 100))`) disagree [mod H1]. This design takes the design form, because it holds the GD form as a case (flat 0,
-minimum 1, ratio = percent/100) and also covers flat armour:
+minimum 1, ratio = percent/100) and also covers flat armour. In 6.3 and 6.4, `combat.rs` is
+`crates/turts_sim/src/economy/combat.rs` [rigour 12, the path]:
 
     base = weapon.damage + modifier          (the research modifier of today, combat.rs:371-374, checked add)
     raw  = floor(base x num / den)           (num/den: the cell of (weapon damage type, target armour class))
@@ -491,7 +588,7 @@ It is in the CEO list of section 2, with the specification edit, and the CEO can
   u128 intermediate. `cost x done` is a product of two u64 values, so it always fits in u128, and the result is at
   most `cost`. Each tick charges the difference to the previous total [perf M3].
 - **All costs or none.** For a job with more than one cost entry, a tick charges every difference or none. If
-  any source cannot pay its difference, the tick charges nothing and the job does not advance. Its stage is
+  any source cannot pay its difference, the tick charges nothing and the job does not advance. Its job state is
   `WaitingForFunds(resource)`, with the first resource in cost order that cannot pay. It resumes on its own.
   The balance never goes below 0.
 - **Order inside a tick.** Jobs pay in ascending unit id of their owner (producer or site), then in queue order.
@@ -518,7 +615,7 @@ intermediate, from the job's `cancel_refunds`:
 Each refund is one `Refunded{job, resource, amount}` ledger event.
 
 **Destruction (X1).** It goes through the one death path (`crates/turts_sim/src/economy/transaction_m3.rs:354`,
-called from `combat.rs:405`). In one captured operation it:
+called from `crates/turts_sim/src/economy/combat.rs:405`). In one captured operation it:
 
 1. cancels the running and queued jobs of a destroyed producer and refunds each by `cancel_refunds.destroyed`;
 2. refunds a destroyed site by the `cancel_refunds.destroyed` of its production entry;
@@ -541,7 +638,7 @@ the explicit job policy above (S:434: destruction policies are explicit, not sid
 - Heal for each tick: `floor(rate x t / tick_hz)` minus the same value at `t - 1`, where `t` counts the ticks of
   this repair order. Applied heal is at most `max - health`. Charge is by applied health: the total charged after
   `H` applied points is `floor(H x amount / per_health)`, and each tick charges the difference. A tick that cannot
-  pay heals nothing, and `t` does not advance (stage `WaitingForFunds(resource)`). Several repairers on one
+  pay heals nothing, and `t` does not advance (job state `WaitingForFunds(resource)`). Several repairers on one
   target are independent, and the health cap stops all of them.
 - Repair writes health only inside a transaction (`stage_health`) and charges as coalesced ledger events (6.4).
 - The repairer approaches to `reach` of the target footprint edge through the one movement model; it adds no
@@ -608,16 +705,10 @@ The claim boundary needs design (S:308). D70 (who owns the result screen) is Pro
 
 #### 6.7.1 Terms
 
-- Player slot: the D25 slot, one entry of `Slots` (`crates/turts_sim/src/slots.rs:22-25`).
-- Seat: the reservation of one player-slot index in the lobby, before the start. A seat is not a claim. After
-  the start, this design uses "player slot" only [rigour 11].
-- Claim: a player id recorded as the owner of a player slot in `Slots`. A claim is terminal for the match.
-- Connection: one transport link (`ClientOf`) that sent an accepted `Hello`.
-- Disconnected: the server ended the connection (a transport timeout, a kick, or a clean close). The server
-  knows nothing else about a player who is gone (section 6.7.8).
-- Room: the lobby and lifecycle state machine in the new file `crates/turts_server/src/room.rs`. In MP1 each
-  process has one room and one match.
-- Start step, start tick, end tick: defined in sections 6.7.3 and 6.7.9.
+The terms of this section (player slot, seat, claim, team, connection, disconnected, room, start step, start
+tick, end tick) are in the one list of section 1.1 [rigour 11]. The wire records of this section are the
+authority for their rows in the table of 6.8, and the match-file fields of 6.7.4 are the authority for rows A2,
+K6, M1, M2 and O9 of 6.10.
 
 #### 6.7.2 One match for each process (decision D-C)
 
@@ -671,31 +762,37 @@ The server test hook `--start-now` starts the match at boot as if the policy wer
 package. Every `frontier` headless row that uses `--command-script` with no client (DMG1, CON1, PWR1, PAY1,
 OBS1, MAT1 script cases) uses it [backend H3].
 
-The match data, for the 0.2.4 table of section 6.10 (the field list there is the authority; these are the
-names that this section depends on) [mod H1, the match part]:
+The match data. This list is the authority for the rows A2, K6, M1, M2 and O9 of the 0.2.4 table of section
+6.10, which copy its names (the reconcile pass replaced the earlier 6.10 forms `start_policy`, `AllReady`,
+`DisconnectDefeat` and `match/rules.ron`) [mod H1, the match part]:
 
 - Export group `exports.match`, at most one file, for example `match/match.ron`. Version-table row
   `exports.match`, since 0.2.4. Presence: the key `match` is written in `exports` in the raw manifest (D-I).
   A `^0.2.3` package that writes it gets the existing text (`crates/turts_mod_runtime/src/version_table.rs:101-108`):
   "`exports.match` needs engine api 0.2.4; `^0.2.3` admits 0.2.3".
-- `MatchDef { start: StartPolicy, victory: Option<VictoryRule> }`. Absent `start` gives `Immediate`.
-  Absent `victory` gives no outcome, ever (D28) [mod L11].
+- `MatchDef { start: StartPolicy, victory: Option<VictoryRule>, open_sites_per_slot: Option<u16> }`. Absent
+  `start` gives `Immediate`. Absent `victory` gives no outcome, ever (D28) [mod L11]. `open_sites_per_slot` is
+  the site cap of 6.1; it is required when a unit of the package set has `constructor` (6.10 row K6).
 - `VictoryRule::LastTeamStanding { defeat: Vec<DefeatClause> }`. The trait behind it lets MS add a script
   form later.
 - `DefeatClause::KeyUnitsLost { units: Vec<ContentRef> }` and `DefeatClause::DisconnectedFor { secs: u32 }`.
 - The order behaviour `Surrender` (a new `Behaviour` variant, `crates/turts_mod_api/src/orders.rs:32-42`):
-  version-table row "behaviour Surrender", since 0.2.4, presence from the raw order file. Orders exist since
-  0.2.3, so `exports.match` does not cover this row.
+  version-table row "behaviour Surrender", since 0.2.4, detected from the parsed variant (VAR, 6.10 row O9;
+  `ron::Value` drops variant names, so the raw file cannot show it). Orders exist since 0.2.3, so
+  `exports.match` does not cover this row.
 - The colour palette is the existing `slot_colours` list of the interface (`crates/turts_mod_api/src/interface.rs:14`).
   A colour on the wire and in the room is an index into that list. The server reads only the length of the
   list, at boot. NOT TRACED: whether `turts_pack::load_package` parses the interface file today.
 
-Pack-time checks and their texts:
+Pack-time checks and their texts (the form of 6.10, with the package prefix `frontier/` left out):
 
 - `exports.match: at most one file, found 2`
 - `match/match.ron: start: countdown_secs must be 0 to 30, found 45`
-- `match/match.ron: start: AllSeatedReady needs 2 slot colours in the interface, found 0` (one colour for
-  each player slot; a package with a lobby policy and fewer colours is refused)
+- `match/match.ron: start: AllSeatedReady needs 2 different slot colours in the interface, found 1` (one
+  different colour for each player slot; a package with a lobby policy and fewer different colours is refused;
+  6.10 row H15)
+- `match/match.ron: start: AllSeated is reserved for a later engine API`
+- `match/match.ron: open_sites_per_slot: a package with a constructor needs open_sites_per_slot` (6.10 row K6)
 - `match/match.ron: victory.defeat[0]: KeyUnitsLost needs at least one unit`
 - `match/match.ron: victory.defeat[0].units[0]: unknown unit `frontier:comand_center`; did you mean `frontier:command_center`?`
 - `match/match.ron: victory.defeat[1]: DisconnectedFor secs must be above 0`
@@ -740,7 +837,7 @@ Each event of the lens list, defined:
   status "Waiting for a second player" (7.6). The engine has no minimum-player rule, no auto-fill and no
   deadline (S:333, S:337, D23). The operator stops the process.
 - A player leaves in the lobby. The seat goes to `Open`, the revision goes up, and the other seats keep their
-  ready flags. The other player sees the leave text of 7.6 ("Player 2 left. Waiting for a player to join.").
+  ready flags. The other player sees the leave text of 7.6 ("Player 2 left. Waiting for a second player.").
   The text comes when the server notices the leave, at most about 10 s after the loss (section 6.7.8).
 - A player leaves, or clears ready, during the countdown. Countdown to Lobby. The countdown starts again from
   its full length when the policy holds again.
@@ -858,9 +955,10 @@ The engine supplies facts. The mod data decides what they do. With no clause, no
 - What the lag bounds. Call it L (at most about 10 s):
   - The lobby leave text shows at most L after the real loss. LOB1 allows 11 s.
   - The disconnect count starts when the server notices. The defeat comes at most L + N after the real loss
-    (130 s for `frontier`). The text "Player 2 lost connection. Waiting 2:00 for them to return." shows from the
-    tick of `connected: false`, and the client counts down from the record tick, so both windows show the same
-    count.
+    (130 s for `frontier`). The alert "Player 2 lost connection." and the banner "Waiting 1:59 for Player 2 to
+    return." (the words of 7.6; the count starts at 2:00) show from the tick of `connected: false` (`MatchState.connections[].since_tick`,
+    6.7.13), and the client counts the banner down in match time from that tick, so every window that shows it
+    shows the same count.
   - A reload before the server notices gets `This game is open in another window`. The browser retries every
     1 s for 15 s (`rejoin.rs:5-6`). 15 s is more than L + 1 s, so the reload gets its slot. If a later change
     makes L larger than 13 s, step 19 breaks. LOB1 and MAT1 record L.
@@ -1032,9 +1130,9 @@ effects. In MP1 the set holds every unit [net 6].
 | Record | Message and channel | Who gets it | Sent |
 | --- | --- | --- | --- |
 | Site existence and footprint: `UnitSnapshot.site: bool`; `sites_completed: Vec<UnitId>` | Snapshot, WorldDelta (state) | Public | at spawn and at completion |
-| `SiteProgress{unit, done, total, per_tick, at_tick, stage, charged}` | WorldDelta | Owner | on change of rate or stage |
-| Production job records, the same form as `SiteProgress` | WorldDelta | Owner | on change of rate or stage |
-| `ConstructionQueue{constructor, orders: [(content, point)]}` | WorldDelta | Owner | on change |
+| `SiteProgress{unit, done, total, per_tick, at_tick, state, charged}` (`state`: the job state of 1.1) | WorldDelta | Owner | on change of rate or job state |
+| Production job records, the same form as `SiteProgress` | WorldDelta | Owner | on change of rate or job state |
+| `ConstructionQueue{constructor, orders: [(content, point)]}`: the held orders | WorldDelta | Owner | on change |
 | `SupplyRecord{slot, resource, provided, consumed}` | WorldDelta | Owner | on change |
 | `WeaponRecord` with `ready_tick` in place of `cooldown` | WorldDelta | Owner (as today, `export.rs:174-177`) | on change |
 | `UnitOrderRecord.rally: Option<RallyTarget>` | WorldDelta `unit_orders` | Owner (order record, `export.rs:96-100`) | on change |
@@ -1043,13 +1141,18 @@ effects. In MP1 the set holds every unit [net 6].
 | `effects`: `Credited{unit, resource, amount}` (a delivery or a refund at a unit, for the "+N" text) | WorldDelta | Owner | at the tick |
 | `healths` | WorldDelta (as today) | Public in MP1 (`export.rs:180`) | on change |
 | `LobbyState{revision, you, seats, settings, start}`; a seat is `{index, occupant: Open, Human{label} or Bot{content}, ready, colour}` | reliable | room members | on change |
-| `Welcome` gains `teams`, `colours`, `match_id` | reliable | the joining player | once |
-| `MatchStart{start_tick, teams, colours}` | reliable | all | once |
-| `MatchState{phase, outcomes: [(slot, outcome, reason)], end_tick}` | reliable | Public | on change |
-| `SlotConnection{slot, connected, since_tick}` | reliable | Public | on change |
-| `MatchStats` | reliable | Public, and only after the end tick | once |
+| `LobbyRefused{revision, reason}` (`colour_taken`, `colour_unknown`, `lobby_changed`, `not_in_lobby`) | reliable | the sender | for each refused lobby action |
+| `Welcome` gains `start: MatchStart{start_tick, teams, colours}` (today it has `slot_id`, `tick`, `tick_hz`, `match_id`: `crates/turts_net_protocol/src/messages.rs:26-31`) | reliable | the slot owner | at each `Welcome` |
+| `MatchState{connections: [{slot, connected, since_tick}], outcomes: [Option<{outcome, reason, tick}>]}` | WorldDelta, on change (the Snapshot holds it) | Public | on change |
+| `MatchResult{end_tick, slots, stats, duration_ticks}`: the statistics | reliable, once | Public, and only after the end tick | once |
+| `JoinRejected` with the new reason `The match is over` | reliable | the sender | at each refused `Hello` |
 | New refusal reasons: the `site_*` keys of 6.1, `match_not_started`, `slot_defeated`, `match_over` | reliable `OrderResult` | the sender | for each envelope |
-| Client to server: the order target `ContentAtPoint{content, point}`; `LobbyAction`; `Surrender` | reliable | the server | for each action |
+| Client to server: the order target `ContentAtPoint{content, point}`; `LobbyAction{revision, action}`; `LeaveMatch` | reliable | the server | for each action |
+
+The fields of the lifecycle records are in 6.7.13, which is the authority for them. There is no `MatchStart`
+message of its own (it is a part of `Welcome`), no `SlotConnection` on the wire (it is a sim input in the
+command log, 6.7.8; clients see the connection state in `MatchState.connections`), and no `Surrender` message
+(surrender is an order envelope with a mod order of behaviour `Surrender`, 6.7.8).
 
 - A seat never carries a `player_id`. The id is a bearer value (`session.rs:152-156` gives a held slot to any
   `Hello` with the id), and today only `Hello` carries it (`messages.rs:21`) [backend M5].
@@ -1058,8 +1161,8 @@ effects. In MP1 the set holds every unit [net 6].
   (decisions D-B, D-C, D-D) [backend M6] [net 1].
 - `MatchState.outcomes` names the reason of each outcome (key units lost, surrender, disconnect, draw), so the
   result screen can show "Player 2 surrendered" (decision D-K) [player M9].
-- `MatchStats` is in no message before the end tick. A wire check asserts it, because a pixels driver cannot see
-  data that the client holds and does not show [net 10].
+- The statistics are in no message before the end tick: only `MatchResult` carries them. A wire check asserts it
+  (row RES1), because a pixels driver cannot see data that the client holds and does not show [net 10].
 
 **`Fired`** [net 7] [perf M1] [mod M6]. `Fired{unit, target, weapon}` has the weapon index on the unit and no
 string. It drops the `damage`, `ammo` and `applied` fields of the sim event (`economy/events.rs:85-92`), and it
@@ -1067,7 +1170,7 @@ leaves out any id that the viewer may not see. Measured by the network lens: 6 B
 content id.
 
 **Records with a start tick and a rate** [perf M1]. A site, job or weapon record carries a value at a tick
-(`done` at `at_tick`, or `ready_tick`) and a rate (`per_tick`). It is sent only when the rate or the stage
+(`done` at `at_tick`, or `ready_tick`) and a rate (`per_tick`). It is sent only when the rate or the job state
 changes, not each tick. The client evaluates it at the tick of its last applied delta, never later, so this is not
 prediction. Measured by the performance lens: `WeaponRecord.cooldown` changes every tick, about 500 records for
 each tick at 1,000 units in combat.
@@ -1087,8 +1190,10 @@ each tick at 1,000 units in combat.
 **Effects are never replayed.** Effects ride the unreliable state channel
 (`crates/turts_net_lightyear/src/protocol_plugin.rs:20-25`). After a resync the client applies the kept deltas in
 one commit. The client presents an effect only from a delta that it applies in normal order; a delta that it
-applies in a resync batch gives no effect. Nothing in the state depends on an effect: removal and health are the
-state.
+applies in a resync batch gives no effect, and the client also drops an effect whose tick is older than the
+presentation tick minus K (8.3; K = 4 ticks, Proposed) [net 7]. Nothing in the state depends on an effect:
+removal and health are the state. A `Credited` effect gives only the "+N" text (7.10); the credits counter reads
+the replicated balance.
 
 **The rate-limit bucket runs first for every envelope** [net 5]. Today a `BadSequence` refusal and
 `production_precheck` come before the bucket (`crates/turts_server/src/session.rs:403-418`, bucket at `:419-424`),
@@ -1186,7 +1291,7 @@ content id, a list or an enum of these. No Bevy type crosses the boundary.
   An ED row selects a behaviour for edition 0.2.4 and refuses nothing. A `^0.2.3` package keeps the 0.2.3
   behaviour.
 - A package with no 0.2.4 field keeps the 0.2.3 behaviour. The changed behaviours with no field are listed in rows
-  T1 to T3; idle acquisition and retaliation (TGT2) are not among them, because they need the `acquire` field
+  T1 to T4; idle acquisition and retaliation (TGT2) are not among them, because they need the `acquire` field
   (row U4).
 - VAL1 needs one red package for each RAW row (with an explicit `None` or `[]`), for each VAR row and for each COMBO
   row, and one `^0.2.3` and `^0.2.4` pair for each ED row.
@@ -1196,7 +1301,7 @@ content id, a list or an enum of these. No Bevy type crosses the boundary.
 | # | File | Field | Type | Default when absent | Validation | Error text | Version row and detection |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | A1 | `manifest.ron` | `exports.combat` | list of paths | `[]` | each file exists and parses; one damage table in the resolved package set | `frontier/manifest.ron: exports.combat[1]: a match has one damage table; combat/damage.ron already declares it` | `exports.combat` since 0.2.4, RAW |
-| A2 | `manifest.ron` | `exports.match` | list of paths | `[]`: no victory clause, start policy `Immediate`, no site cap | at most one file in the resolved package set; the root Game package owns it | `frontier/manifest.ron: exports.match[1]: a match has one match file` | `exports.match`, RAW |
+| A2 | `manifest.ron` | `exports.match` | list of paths | `[]`: no victory clause, start policy `Immediate`, no site cap | at most one file in the resolved package set; the root Game package owns it; the file type is `MatchDef` (6.7.4) | `frontier/manifest.ron: exports.match: at most one file, found 2` (6.7.4) | `exports.match`, RAW |
 | A3 | `manifest.ron` | `exports.visual_effects` | list of paths | `[]` | each file exists and parses | as A1 | `exports.visual_effects`, RAW |
 
 **Damage table** (file of `exports.combat`, type `CombatDef`)
@@ -1219,6 +1324,7 @@ content id, a list or an enum of these. No Bevy type crosses the boundary.
 | U5 | `provides`, `consumes` | list of `(resource: ContentRef, amount: u64)` | `[]` | resource is a `Supply` resource; amount above 0; one entry for each resource in each list | `frontier/units/power_station.ron: provides[0].resource: frontier:credits is not a Supply resource` | `provides`, `consumes`, RAW |
 | U6 | `weapon.when_short`, `producer.when_short`, `constructor.when_short` | list of `(resource: ContentRef, effect: Rate(Ratio) or Disable or BlockStart)` | `[]`: not affected | `Supply` resource; `Rate` with 0 < numerator <= denominator, on producer and constructor only; `Disable` on weapon only; `BlockStart` reserved | `frontier/units/guard_turret.ron: weapon.when_short[0].effect: Rate applies to producer and constructor only`; `...: BlockStart is reserved for a later engine API` | `*.when_short`, RAW |
 | S1 | resource `kind` | new variant `Supply(scope: Slot, counts: Completed or Queued)` | none | `scope` is `Slot` (M6 adds `Network`); `counts: Queued` reserved | `frontier/resources/power.ron: kind.counts: Queued is reserved for a later engine API` | `kind: Supply`, VAR |
+| U7 | `income` (decision D-L, CEO to confirm) | `Option<(resource: ContentRef, amount: u64, period_ms: u32)>` | `None`: no income | `resource` is a `Balance` resource; `amount` above 0; `period_ms` above 0 and a whole number of ticks (the conversion of `try_ms_to_ticks`, `crates/turts_sim/src/boot_m3.rs:591`); the unit has `health`. The unit adds `amount` once in each period while it is complete and its health is above 0, as one ledger event (section 5, row INC1) | `frontier/units/command_center.ron: income.resource: frontier:ore is not a Balance resource` | `income`, RAW |
 
 **Construction and payment**
 
@@ -1229,7 +1335,7 @@ content id, a list or an enum of these. No Bevy type crosses the boundary.
 | K3 | units | `build_area` | `Option<f32>` | `None` | finite and above 0; if a `placement` has `in_build_area: true`, some unit has `build_area` | `frontier/units/power_station.ron: placement.in_build_area: no unit declares build_area, so no site can be placed` | `build_area`, RAW |
 | K4 | production | `output_unit` of a building | existing | none | for a production id in `constructor.buildings`: the output is static and has `placement` (it lifts `content.rs:557` for these ids only) | `frontier/production/build_guard_turret.ron: output_unit: a building output needs placement` | `production with a static output`, COMBO |
 | K5 | production | `cancel_refunds.destroyed` | `Ratio` | 0/1: no refund | numerator <= denominator | `frontier/production/build_guard_turret.ron: cancel_refunds.destroyed: the numerator is above the denominator` | `cancel_refunds.destroyed`, RAW |
-| K6 | match file | `open_sites_per_slot` | u16 | required when a unit in the package set has `constructor` | at least 1 | `frontier/manifest.ron: exports.match: a package with a constructor needs open_sites_per_slot in its match file` | covered by A2 |
+| K6 | match file | `open_sites_per_slot` (field of `MatchDef`, 6.7.4) | `Option<u16>` | required when a unit in the package set has `constructor`; else `None`: no slot cap | at least 1; an order above the cap waits as a held order (6.1) | `frontier/match/match.ron: open_sites_per_slot: a package with a constructor needs open_sites_per_slot` | covered by A2 |
 | K7 | units | lifted rule: `health` without `removal` | combination | death destroys the contents (`ContentsPolicy::Destroy`) | none | none | `health without removal`, COMBO |
 | K8 | units | lifted rule: `removal` with a queue (producer, machine, research, constructor) | combination | destruction refunds by `cancel_refunds.destroyed` (6.4) | none | none | `removal with a queue`, COMBO |
 | P1 | production | `payment: ChargeOverTime` | new variant of `PaymentPolicy` (`schema.rs:398`) | none | production entries only | `frontier/technologies/armour.ron: payment: ChargeOverTime is not supported for technologies` | `payment: ChargeOverTime`, VAR |
@@ -1246,6 +1352,8 @@ content id, a list or an enum of these. No Bevy type crosses the boundary.
 | O6 | `orders/rules.ron` | smart target `OwnDamaged`; `needs: Constructor` and `needs: Repairer` | new variants of `SmartTarget` and `Capability` | none | `OwnDamaged` with a `Repair` order; `Ground` with `needs: Producer` only for a `SetRally` order | `frontier/orders/rules.ron: smart[5].order: Ground with needs Producer needs a SetRally order` | each variant, VAR |
 | O7 | `orders/rules.ron` | `rally` | `Option<[SmartOrder]>` | `None`: the follow order comes from `smart` | each order resolves | as the smart list of today | `rally`, RAW |
 | O8 | production | `hotkey` | `Option<String>` (an action name) | `None`: the key of the producer's Produce order (today, `sources.rs:391-393`) | the action exists in the input map; the default keys of all actions are unique across all cards (the check is global today, UX F1) | `frontier/production/train_rifleman.ron: hotkey: unknown action key_rifelman; did you mean key_rifleman?` | `hotkey`, RAW |
+| O9 | order | `behaviour: Surrender` (6.7.4, 6.7.8) | variant | none | target `None`; `units: []` | `frontier/orders/order_surrender.ron: units: a Surrender order lists no units` | `behaviour Surrender`, VAR |
+| O10 | production | `card` | `Option<CardCell>` (the existing `CardCell{row, column}`, `crates/turts_mod_api/src/orders.rs:25-28`) | `None`: the entry is a row of the build-menu list, in `producer.recipes` order, as today (`crates/turts_client/src/widgets/sources.rs:395-397`) | two entries of one constructor or producer in one cell are refused (UX F2: two items in one cell overlap) | `frontier/production/build_guard_turret.ron: card: cell (0, 1) is also the cell of frontier:build_power_station` | `card`, RAW |
 | R1 | units | `repairer` | `Option<(rate_per_second: u64, reach: f32, cost: [(resource, amount: u64, per_health: u64)], targets: TargetFilter, classes: [ContentRef], auto_range: Option<f32>)>` | `None` | `rate_per_second` > 0; `reach` finite > 0; `per_health` > 0; `amount` >= 0 and `cost: []` legal (free repair); `classes` resolve to armour classes, `[]` means all; `auto_range` finite and at least `reach`; not a work capability | `frontier/units/engineer.ron: repairer.cost[0].per_health: must be positive` | `repairer`, RAW |
 | L1 | any target filter | `slots: Ally`, `slots: Enemy` | new variants of `SlotRelation` | none | none | none | each variant, VAR |
 
@@ -1253,13 +1361,14 @@ content id, a list or an enum of these. No Bevy type crosses the boundary.
 
 | # | Field | Type | Default | Validation | Error text | Row |
 | --- | --- | --- | --- | --- | --- | --- |
-| M1 | `victory` | list of clauses: `LastTeamStanding(key_units: [ContentRef])`, `Surrender`, `DisconnectDefeat(after_seconds: u32)` | `[]`: the engine never ends the match (today) | `key_units` at least 1, resolve, have `health`; `after_seconds` > 0; each clause at most once | `frontier/match/rules.ron: victory[0].key_units[0]: unknown unit frontier:comand_center; did you mean frontier:command_center?` | covered by A2 |
-| M2 | `start_policy` | `Immediate` or `AllReady(countdown_seconds: u32)` | `Immediate`, as today (claim at `Hello`) [backend H3] | `countdown_seconds` <= 60 | `frontier/match/rules.ron: start_policy.countdown_seconds: must be 60 or less` | covered by A2 |
+| M1 | `victory` | `Option<VictoryRule>`; `VictoryRule::LastTeamStanding { defeat: [DefeatClause] }`; `DefeatClause::KeyUnitsLost { units: [ContentRef] }` or `DefeatClause::DisconnectedFor { secs: u32 }` | `None`: the engine never ends the match (today, D28) | `units` at least 1, resolve, have `health`; `secs` above 0; `DisconnectedFor` at most once. Surrender is an order (row O9), not a clause | `frontier/match/match.ron: victory.defeat[0].units[0]: unknown unit frontier:comand_center; did you mean frontier:command_center?`; the other texts in 6.7.4 | covered by A2 |
+| M2 | `start` | `StartPolicy`: `Immediate`, `AllSeatedReady(countdown_secs: u32)`, `AllSeated(countdown_secs: u32)` | `Immediate`, as today (claim at `Hello`) [backend H3] | `countdown_secs` 0 to 30; `AllSeated` reserved (6.7.14 item 2); `AllSeatedReady` needs one different `slot_colours` entry for each player slot (row H15) | `frontier/match/match.ron: start: countdown_secs must be 0 to 30, found 45` | covered by A2 |
 | M3 | map `placements[].start_order` | `Option<(order: ContentRef, target: Node(u32) or Point(WorldPos))>` (decision D-F) [player H1] | `None` | the order exists and lists the unit; the target kind matches the order; the node index is below the number of map nodes | `frontier/maps/twin_fields.ron: placements[1].start_order.target: node index 40 is outside the 18 map nodes` | `start_order`, RAW |
 
-- With no `DisconnectDefeat` clause, a disconnect changes nothing: D28 (Decided) keeps disconnect gameplay out of
+- With no `DisconnectedFor` clause, a disconnect changes nothing: D28 (Decided) keeps disconnect gameplay out of
   the engine; the engine gives only the connection facts (decision D-D) [mod L11] [backend H4].
-- With no `Surrender` clause, the engine refuses `Surrender` with `not_applicable`.
+- A mod with no order of behaviour `Surrender` cannot surrender: an envelope with an order id that the package
+  does not define gets the existing reason `unknown_order` (6.7.8; `crates/turts_net_protocol/src/messages.rs:256`).
 - No lobby settings schema is in 0.2.4: MD12 is `later:M9`, and S:314 (Baseline) stays for M9 [rigour 12]. The lobby
   colour is an index into `slot_colours` (row H15). Team choice is not in MP1 (decision P2 a).
 
@@ -1270,28 +1379,31 @@ content id, a list or an enum of these. No Bevy type crosses the boundary.
 | H1 | `reasons` keys | strings | — | each key is in `REASON_KEYS`: the wire reason keys (`turts_net_protocol/src/messages.rs`, `as_str`), the client keys of today (`no_applicable_order`, `queue_disabled`, `already_researching`) and the new keys of 6.1 and 6.8 | `frontier/interface/hud.ron: reasons.queue_ful: unknown reason key; did you mean queue_full?` [mod M8] | T2, ED |
 | H2 | `cursors` keys | strings | — | each key is in `CURSOR_CONTEXTS`: `default`, `select`, `move`, `attack`, `gather`, `forbidden`, `place`, `repair`, `rally` | `frontier/interface/hud.ron: cursors.plcae: unknown cursor context; did you mean place?` [mod M8] | T2, ED; the keys `place`, `repair`, `rally`, RAW |
 | H3 | `states` | map from state key to text | `{}`: the engine English text | keys in `STATE_KEYS`: `waiting_for_funds`, `slowed`, `disabled`, `output_blocked`, `held`, and `activity.<name>` for each wire `Activity`; a text can hold `{resource}` | as H1 | `states`, RAW; keys T2, ED |
-| H4 | `alerts[].trigger` | new variants `ConstructionComplete`, `SupplyShort(ContentRef)`, `SupplyRestored(ContentRef)`, `InsufficientFunds(ContentRef)`, `GathererIdle(f32)`, `SlotDisconnected` | none | `Supply*` names a `Supply` resource; `InsufficientFunds` names a `Balance` or `Item`; seconds finite > 0. A unit is ready: the existing `ProductionComplete` | `frontier/interface/hud.ron: alerts[2].trigger: frontier:ore is not a Supply resource` | each variant, VAR |
+| H4 | `alerts[].trigger` | new variants `ConstructionComplete`, `SupplyShort(ContentRef)`, `SupplyRestored(ContentRef)`, `InsufficientFunds(ContentRef)`, `SlotDisconnected`, `SlotReconnected`. Existing variants that 7.9 uses: `ProductionComplete` (a unit is ready), `GathererWaiting(f32)` (an idle gatherer), `OwnUnitDamaged`, `OwnUnitDestroyed` (`crates/turts_mod_api/src/interface.rs:387-399`) | none | `Supply*` names a `Supply` resource; `InsufficientFunds` names a `Balance` or `Item` | `frontier/interface/hud.ron: alerts[2].trigger: frontier:ore is not a Supply resource` | each new variant, VAR |
 | H5 | `alerts[].units` | list of `ContentRef` | `[]`: all units | resolve | as M1 | `alerts.units`, RAW |
-| H6 | `alerts[].rearm` | `Option<f32>` seconds | required for the state triggers `SupplyShort`, `InsufficientFunds`, `GathererIdle` | finite and at least `cooldown`. A state alert sounds when the state starts, and again only after the state stayed clear for `rearm` seconds [player H3] | `frontier/interface/hud.ron: alerts[3].rearm: a state trigger needs rearm` | `alerts.rearm`, RAW |
-| H7 | `Value` and `Source` | new variants `Supply(ContentRef, Provided or Consumed)`, `ConstructionQueue`, `Sites`, `Notices`, `SelectionTypes`, `Outcome`, `MatchStats`, `MatchClock`, `Hint` | none | references resolve | as M1 | each variant, VAR (walk of the parsed widget tree) |
+| H6 | `alerts[].kind`, `alerts[].clear_after` | `kind: Event or State`; `clear_after: Option<f32>` seconds | `Event`, the 0.2.3 behaviour (`crates/turts_client/src/feedback.rs:849-853`); `clear_after` 10 | `State` only with a state trigger (`SupplyShort`, `InsufficientFunds`, `GathererWaiting`, `SlotDisconnected`); `clear_after` finite and at least 0, and only with `State`. The rule of each kind is in 7.9 [player H3] | `frontier/interface/hud.ron: alerts[1].kind: State needs a state trigger; ProductionComplete is an event` | `alerts.kind`, `alerts.clear_after`, RAW |
+| H7 | `Value` and `Source` | new variants `Supply(ContentRef, Provided or Consumed)`, `ConstructionQueue`, `Sites`, `Notices`, `SelectionTypes`, `Connection`, `Outcome`, `OutcomeReason`, `MatchStats`, `MatchClock`, `Hint` | none | references resolve | as M1 | each variant, VAR (walk of the parsed widget tree) |
 | H8 | `PrimaryField` | `Activity`, `Cargo`, `Armour` | none | none | none | each, VAR |
-| H9 | `ItemField` | `State`, `Paid`, `Refund`, `Badge`, `SupplyChange`; `Time` shows the time at the current rate [player M7] | none | none | none | each, VAR |
-| H10 | `Predicate` | `ItemHas(ItemField)`, `PrimaryHasValue(PrimaryField)`, `SupplyShort(ContentRef)`, `MatchOver`, `OutcomeIs(Victory or Defeat or Draw)`, `Placing` | none | references resolve | as M1 | each, VAR |
-| H11 | `world.placement`, `world.progress_bar`, `world.cargo_bar`, `world.rally`, `world.float_text` | optional styles (colours `#RRGGBB`, sizes, font id; `placement` has `valid`, `invalid`, `gap_ring`, `area_ring`) [player H4] | `None`: the engine style (valid `#56B4E9`, invalid `#D55E00` with stripes, white rings) | colours parse; font exists | `frontier/interface/hud.ron: world.placement.invalid: not a #RRGGBB colour` | each, RAW |
+| H9 | `ItemField` | `Role`, `BuildTimeNow` (the time at the current rate [player M7]), `SupplyChange`, `CausesShortage`, `State`, `Paid`, `Refund`, `Badge`. The existing `Time` keeps the base time, so no 0.2.3 layout changes | none | none | none | each, VAR |
+| H10 | `Predicate` | `ItemHas(ItemField)`, `PrimaryHasValue(PrimaryField)`, `SupplyShort(ContentRef)`, `MatchOver`, `OutcomeIs(Victory or Defeat or Draw)`, `Placing`, `HintShown` | none | references resolve | as M1 | each, VAR |
+| H11 | `world.placement`, `world.build_area_ring`, `world.gap_ring`, `world.progress_bar`, `world.cargo_bar`, `world.rally`, `world.float_text` | optional styles (colours `#RRGGBB`, sizes, font id). `placement` has `valid`, `invalid` and `stripes`; `gap_ring` also draws the clearance ring of a node; `float_text` has a `sound` id [player H4] | `None`: the engine style (valid `#56B4E9`, invalid `#D55E00` with stripes, white rings) | colours parse; font and sound exist | `frontier/interface/hud.ron: world.placement.invalid: not a #RRGGBB colour` | each, RAW |
 | H12 | `world.health_bar.scale_to_footprint` | bool | `false` | none | none | RAW |
 | H13 | `Button` `font`, `size` (X18) | `Option<String>`, `Option<u16>` | `None`: the tooltip font at 14 px (today, `widgets/mod.rs:627-633`) | font exists; size 8 to 64 | as the font check of today | `Button.font`, `Button.size`, RAW |
-| H14 | `hints` | list of `(id, text, starts: MatchStarted or After(id) or event, ends: event)`; events: `Placed(ContentRef)`, `Completed(ContentRef)`, `Trained(ContentRef)`, `Delivered`, `SupplyShort(ContentRef)`, `SupplyRestored(ContentRef)`, `Ordered(ContentRef)` (decision D-F) | `[]` | ids unique; `After` names an earlier hint; references resolve. The `Hint` value shows the first hint that started and did not end | `frontier/interface/hud.ron: hints[2].starts: After(build_power) names no earlier hint` | `hints`, RAW |
-| H15 | `slot_colours` (exists) | list of colours | required | with `AllReady`, at least as many different colours as slots; the server refuses a colour index that another seat holds | `frontier/interface/hud.ron: slot_colours: the lobby needs 2 different colours; it has 1` | none (existing field) |
-| H16 | `effect_voices` | `Option<u16>` | `None`: 8 | 1 to 64; the cap of weapon sounds that play at one time (AUD2) | `frontier/interface/hud.ron: effect_voices: must be 1 to 64` | `effect_voices`, RAW |
+| H14 | `hints`, `hint_fallback` | `hints`: list of `(id, kind: Step or Situation, text, starts: HintCondition, done: HintCondition)`; `hint_fallback: Option<String>`. `HintCondition` (the condition list of 7.8): `MatchStarted`, `OwnUnits(units: [ContentRef], state: Pending or Site or Complete or Any, at_least: u16)`, `OwnJob(production: ContentRef)`, `OwnRally(unit: ContentRef)`, `OrderAccepted(order: ContentRef, target: Point or Unit or Any)`, `SupplyShort(ContentRef)`, `JobOnHold(secs: f32)`, `HintDone(id)`, `HintShownFor(id, secs: f32)`, `All([HintCondition])`, `Any([HintCondition])`, `Not(HintCondition)` | `[]`; `None`: no fallback line | ids unique; `HintDone` and `HintShownFor` name a hint of the list; references resolve; `secs` finite and above 0. The selection and done rules are in 7.8 (decision D-F) | `frontier/interface/hud.ron: hints[2].starts: HintDone(build_powr) names no hint; did you mean build_power?` | `hints`, `hint_fallback`, RAW |
+| H15 | `slot_colours` (exists) | list of colours | required | with `AllSeatedReady`, at least one different colour for each player slot (the check and its text are in 6.7.4); the server refuses a colour index that another seat holds (`colour_taken`, 6.7.6) | `frontier/match/match.ron: start: AllSeatedReady needs 2 different slot colours in the interface, found 1` | none (existing field) |
+| H16 | `effects_voices`, `audible_range` | `Option<u16>`, `Option<f32>` | `None`: 8 voices; `None`: no fall-off with distance | `effects_voices` 1 to 64: the cap of effect sounds that play at one time in the effects category; `audible_range` finite and above 0: the gain falls to 0 at this distance from the camera look-at point (8.4, AUD2) | `frontier/interface/hud.ron: effects_voices: must be 1 to 64` | `effects_voices`, `audible_range`, RAW |
+| H17 | `alerts[].select_on_click`; the placeholders `{unit}` and `{slot}` in `alerts[].text` | `bool`; text | `false`; no placeholder | an unknown placeholder is refused | `frontier/interface/hud.ron: alerts[4].text: unknown placeholder {units}; did you mean {unit}?` | `alerts.select_on_click`, RAW; placeholders T4, ED |
+| H18 | `start_selection` | `Option<ContentRef>` | `None`: no selection at the start (today) | resolves to a unit (7.8) | `frontier/interface/hud.ron: start_selection: unknown unit frontier:comand_center; did you mean frontier:command_center?` | `start_selection`, RAW |
+| H19 | `UnitPresentation.role` (today `icon`, `portrait`, `responses`: `crates/turts_mod_api/src/interface.rs:410-415`) | `Option<String>` | `None`: no role line | none | none | `role`, RAW |
 
 **Assets, visuals and effects** (RE parts 1 and 4; semantics in 8.1 and 8.3)
 
 | # | File | Field | Type | Default | Validation | Error text | Row |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| V1 | assets | `models` | list of `(id, path)` | `[]` | GLB version 2; no `uri`; no `extensionsRequired`; no skins, animations, cameras or lights; the triangle cap of the unit class and the byte caps (CEO list) | `frontier/assets/assets.ron: models[2]: 9,412 triangles exceed the 3,000 vehicle cap` | `models`, RAW |
+| V1 | assets | `models` | list of `(id, path)` | `[]` | GLB version 2; no `uri`; no `extensionsRequired`; no skins, animations, cameras or lights; at most 2 materials; the triangle and byte caps of decision D-M (8.1; one cap for each model, no class caps) | `assets/models/tank.glb: 9,412 triangles; maximum is 8,000 for one model` (8.1) | `models`, RAW |
 | V2 | visuals | `model` | `Option<(asset, team_material: Option<String>, turret_node: Option<String>, muzzle_node: Option<String>)>` | `None`: the shape only | the asset exists; the named material and nodes exist in the GLB | `frontier/visuals/tank.ron: model.turret_node: the model has no node turet; did you mean turret?` | `model`, RAW |
 | V3 | visual effects file | each effect | `(id, kind: Flash or Spark or Tracer or Burst or Smoke, colour, size: f32, ms: u32, sound: Option<String>)` | none | ids unique; sound exists | `frontier/fx/effects.ron: effects[1].sound: unknown sound asset fx_shot` | covered by A3 |
-| V4 | visuals | `effects` | `Option<(fire, hit, death: Option<String>, damaged: Option<(effect, below: Ratio)>)>` | `None`: no effect | ids exist | as V3 | `effects`, RAW |
+| V4 | visuals | `effects` | `Option<(fire, hit, hit_reduced, death: Option<String>, damaged: Option<(effect, below: Ratio)>)>`; `hit_reduced` is the hit of a table ratio below 1/2 (7.10, 8.3) | `None`: no effect; `hit_reduced` absent: `hit` | ids exist | as V3 | `effects`, RAW |
 
 - S:247 (5.8, Baseline) keeps the exact supported glTF features Open. Rows V1 and V2 are the MP1 subset only,
   Proposed for MP1 [rigour 12]. The byte and triangle caps are a CEO decision (section 2, RE:24) [mod M9].
@@ -1305,6 +1417,7 @@ content id, a list or an enum of these. No Bevy type crosses the boundary.
 | T1 | The approach point of a receiver or a node (6.9) | today | the nearest ring point that no static footprint blocks |
 | T2 | Unknown `reasons`, `cursors` and `states` keys | pack (today) | refused (H1 to H3) |
 | T3 | Weapon damage 0 | packs (today) | refused (U3) |
+| T4 | `{unit}` and `{slot}` in an alert text | shown as written (today) | replaced; an unknown placeholder is refused (H17) |
 
 **What this table chose where the inputs disagree** [mod H1]:
 
@@ -1321,6 +1434,12 @@ content id, a list or an enum of these. No Bevy type crosses the boundary.
 | Alert names | `LowPower`, `NoCredits` (UX) | `SupplyShort(res)`, `SupplyRestored(res)`, `InsufficientFunds(res)` | no frontier words in the engine |
 | Unit ready | `UnitReady` or `ProductionComplete` (UX) | `ProductionComplete` (exists) | no duplicate |
 | Lobby palette | `slot_colours` (UX); "mod palette" (design) | `slot_colours` index | one list of colours |
+| Match file shape (reconcile pass) | `victory` list with `DisconnectDefeat`, `start_policy: AllReady` (part 2); `MatchDef` with `DefeatClause` and `AllSeatedReady` (6.7.4, part 1) | 6.7.4 | the lifecycle seat owns the semantics; surrender is an order, not a clause |
+| Placement reason keys (reconcile pass) | `site_too_close` (part 2); `site_too_far`, `site_near_building`, `site_near_ore` (part 3) | the list of 6.1 | `ore` is a `frontier` id; "too close" does not say to what |
+| A state alert that repeats (reconcile pass) | `rearm` (part 2); `kind` and `clear_after` (7.9, part 3) | `kind` and `clear_after` | rows ALR2 and GOAL1 test the 7.9 rule |
+| Idle gatherer trigger (reconcile pass) | `GathererIdle` (part 2); `GathererWaiting` (7.9) | `GathererWaiting(f32)` | it exists today (`interface.rs:398`) |
+| Build time at the current power (reconcile pass) | `Time` changed (part 2); `BuildTimeNow` (7.5) | `BuildTimeNow` | a changed `Time` changes a 0.2.3 layout with no field |
+| Power in the tooltip (reconcile pass) | `PowerChange` (7.5); `SupplyChange` (part 2) | `SupplyChange` | no `frontier` word in an engine name |
 
 **Additive later, recorded now** [mod L12]: square footprints (a new `Footprint` variant), batches, a hold-a-point
 victory clause, `counts: Queued`, `BlockStart`, `NeedsBuilder`, `Network` scope, named producer queues,
@@ -1336,28 +1455,10 @@ version-table row; 7.5 is the interface input to that table.
 
 ### 7.0 Terms
 
-- Player slot (slot): the D25 slot. The match start claims it (decision D-B); under the start policy `Immediate` the
-  claim stays at Hello. A claimed slot is never released in the match.
-- Lobby seat (seat): a reservation in the lobby that the room can release. It becomes a claimed slot at the match
-  start. A claimed slot is never called a seat.
-- Team: a set of player slots. MP1 has two teams of one slot (decision P2 a).
-- Team material: the material that a model names in `team_material` (8.1). The client replaces it with the slot
-  material. (Rev 3 called it a "material slot".)
-- Site: the server entity of a building under construction. It owns its progress, its charge and its job, it has
-  health and a footprint, and it can be attacked (6.1, decision D-E).
-- Pending site: the client marker from the left click until the server result. It is not a site and charges nothing.
-- Placed order: a `Construct` order with its point in the structures queue that waits for an open site.
-- Queue: the list of jobs or placed orders of one producer, named by a queue id (`structures`, `units`). A lane
-  (section 10) is a worktree and its task chain, not a queue.
-- Alert: a line in the alert list that an alert rule makes (7.9); it can have a sound, a minimap ping and a place.
-- Notice: the text of a refused order: at the pointer, at a site, or the grouped failure line (ruling O14). A notice
-  is not an alert.
-- Hint: the one hint line of 7.8.
-- Done, for a hint: its done condition held in one client update (7.8). `done:` is used only as the yardstick
-  disposition; "MP1 is done" (section 1) is the exit.
-- Click to play: the button that ends the start screen. The clock of the 60 s rule starts when the player presses it.
-
-[rigour 11]
+The terms of this section (player slot, lobby seat, team, team material, site, pending site, held order,
+constructor queue, producer queue, job state, alert, notice, hint, done, Click to play) are in the one list of
+section 1.1 [rigour 11]. The reconcile pass removed two leftovers of revision 3 from this list: the "placed order"
+is now the held order of 6.1, and the queues have no ids (`structures` and `units` were queue ids; decision Q1).
 
 ### 7.1 The player path
 
@@ -1367,8 +1468,9 @@ the lesson of the CEO play of MC on 2026-11-11: the goal is on the screen in one
 action and its key, the screen shows a reward when the action is done, and nothing sounds before the player acts.
 
 The 60 s rule of PT3: the clock starts when the player presses "Click to play" in that window. It ends at the first
-client update in which a site of an own Power Station exists (a server entity; a pending site does not end it). PT3
-is red when the end comes later than 60.0 s, or never. The client records both times in `turts_debug.hints`
+client update in which a site of an own Power Station exists, or a complete own Power Station (a server entity; a
+pending site does not end it, and the hint H1 can be done before the clock ends, 1.1). PT3 is red when the end
+comes later than 60.0 s, or never. The client records both times in `turts_debug.hints`
 (`click_ms`, and for each hint `shown_ms`, `done_ms`, and for H1 also `site_ms`) [rigour 10].
 
 ### 7.2 Construction
@@ -1378,23 +1480,25 @@ is red when the end comes later than 60.0 s, or never. The client records both t
 - Ghost: the unit's own visual, translucent, with its footprint ring, in the slot colour.
 - Rings while the player places [player H4]:
     - the build-area ring of the own Command Centre: a solid line in the slot colour at radius 12.5 (footprint 2.5
-      plus `extends_area` 10);
+      plus `build_area` 10, 6.10 row K3);
     - a gap ring round each building and site within 15 of the pointer: a thin dashed line at its footprint plus
       `placement.gap`;
     - a clearance ring round each ore node within 15 of the pointer: a thin dashed line at its radius plus
       `placement.node_clearance`.
-- The site check runs in this order. The first check that fails gives the reason; the ghost shows one reason only.
-  Each reason is a reason key with a mod text (keys are checked at pack time: an unknown key is refused with a "did you
-  mean" hint [mod M8]):
+- The site check runs in the order of 6.1, with the reason keys of 6.1 (the one list). The first check that fails
+  gives the reason; the ghost shows one reason only. Each reason is a reason key with a mod text (keys are checked at
+  pack time: an unknown key is refused with a "did you mean" hint [mod M8]):
 
 | Check | Reason key | Text at the pointer | What the ghost shows |
 | --- | --- | --- | --- |
 | A part of the footprint is outside the map | `site_outside_map` | "Outside the map" | stripes |
-| The centre is farther than `extends_area` from the edge of the own Command Centre | `site_too_far` | "Too far from your base" | stripes; the build-area ring |
+| The centre is farther than `build_area` from the edge of the own Command Centre | `site_out_of_area` | "Too far from your base" | stripes; the build-area ring |
 | The footprint overlaps a unit, a building or a site | `site_blocked` | "Something is in the way" | stripes |
 | No overlap, but the gap to a building or a site is below `placement.gap` | `site_near_building` | "Too close to a building" | stripes; the gap ring of the ghost and of that building turn vermilion, so the missing distance shows between them |
-| The distance to the edge of an ore node is below `node_clearance` | `site_near_ore` | "Too close to ore" | stripes; the clearance ring of that node turns vermilion |
-| The structures queue holds 5 placed orders | `queue_full` | "Construction queue is full (5/5)" | stripes |
+| The distance to the edge of an ore node is below `placement.node_clearance` | `site_near_resource` | "Too close to ore" | stripes; the clearance ring of that node turns vermilion |
+| The constructor queue holds 5 held orders (`queue_capacity`) | `queue_full` | "Construction queue is full (5/5)" | stripes |
+
+  An order above the site caps is not refused: it waits as a held order (6.1), so this table has no cap row.
 
 - Valid: a solid ghost ring in the slot colour. Invalid: Okabe vermilion `#D55E00`, diagonal stripes, the `forbidden`
   cursor and the text. Colour is never the only signal.
@@ -1408,7 +1512,7 @@ is red when the end comes later than 60.0 s, or never. The client records both t
   server result (D18).
 - Fog (M5): a reason never names a hidden blocker; the placement rule takes the visibility predicate of the target
   queries, which is always true in MP1 [net 6].
-- A placed order that waits for an open site shows a ghost outline with its number at its point ("2"); its queue row
+- A held order that waits for an open site shows a ghost outline with its number at its point ("2"); its queue row
   says "Waiting to start".
 - Progress: a world progress bar on the site; the site model rises (8.2).
 - Cancel: select the site and press C ("Cancel construction"), or right-click its queue row. The tooltip shows
@@ -1417,12 +1521,13 @@ is red when the end comes later than 60.0 s, or never. The client records both t
 
 ### 7.3 Production
 
-- The Command Centre has two named queues that run at the same time: `structures` (placed orders, capacity 5; one open
-  site for each slot, mod data) and `units` (jobs, capacity 5). The left click of 7.2 carries the point, so a
-  structures entry waits only for an open site; then the site owns progress, charge and job (decision D-E).
+- The Command Centre has two queues that run at the same time, and neither has an id (decision Q1): the constructor
+  queue (held orders, `queue_capacity` 5; one open site for each slot, `open_sites_per_slot` 1, mod data) and the
+  producer queue (jobs, capacity 5). The left click of 7.2 carries the point, so a held order waits only for an open
+  site; then the site owns progress, charge and job (decision D-E). There is no "ready to place" state.
 - Each entry shows a count badge and a fill on its icon. A queue row shows the icon, a bar and the seconds left at the
   current power.
-- Row states, each in words: "On hold: no credits" (a striped bar); "Slowed: low power"; "Waiting to start" (a placed
+- Row states, each in words: "On hold: no credits" (a striped bar); "Slowed: low power"; "Waiting to start" (a held
   order); "Waiting: exit blocked" (a complete unit job with no free exit point). "On hold: no credits" shows from the
   first tick in which the job cannot pay until the job pays in every tick for 1 s, so it does not flicker under the free
   income.
@@ -1466,29 +1571,35 @@ stay as in MC; KEY1 checks the full list against them (the MC defaults: NOT TRAC
 
 ### 7.5 HUD sources and schema items
 
-Input for the table of section 6.10 (decision D-I). Each item is additive in API 0.2.4. Presence for the version table
-means that the field is written in the source file (decision D-I). When an item is absent, the 0.2.3 behaviour stays.
+Input for the table of section 6.10 (decision D-I). The names below are the names of 6.10 (rows H4 to H19, O8, O10, M3,
+U7); where the two differed, the reconcile pass took one name and changed both places (the table "What this table chose"
+of 6.10). Each item is additive in API 0.2.4. Presence for the version table means that the field is written in the
+source file (decision D-I). When an item is absent, the 0.2.3 behaviour stays.
 
 - Start: `InterfaceDef.start_selection: Option<ContentRef>` (default none: no selection, as today). The camera keeps
   `CameraStart::OwnedCentre` (`crates/turts_mod_api/src/interface.rs:327`).
 - Hints (7.8): `InterfaceDef.hints: Vec<HintDef>` (default empty), `hint_fallback: Option<String>`, `Value::Hint`,
-  `Predicate::HintShown`. Today `Source` and `Predicate` have no hint (`interface.rs:216-240`).
+  `Predicate::HintShown` (6.10 rows H14, H7, H10). Today `Source` and `Predicate` have no hint (`interface.rs:216-240`).
 - Alerts (7.9): `AlertDef.kind: Event | State` (default `Event`, the 0.2.3 behaviour), `clear_after: f32` (default 10,
   `State` only, at least 0), `units: Vec<ContentRef>` (default empty: all units), `select_on_click: bool` (default
   false); the placeholders `{unit}` and `{slot}` in `text` (an unknown placeholder is refused); triggers
   `SupplyShort(res)`, `SupplyRestored(res)`, `InsufficientFunds(res)`, `ConstructionComplete`, `SlotDisconnected`,
-  `SlotReconnected` [mod M5]; the alert row as a button with the core action `FocusAlert` (D74: an agent drives it
-  headless).
-- Power and match: `Value::Supply(res, Used | Made)`, `Predicate::SupplyShort(res)`, `Value::Connection` (the banner
-  of a disconnected slot), `Value::Outcome`, `Value::OutcomeReason`, `Value::MatchStats`, `Predicate::MatchOver`.
-- Fields: primary `Armour`, `Activity`, `Cargo`; item `Role`, `BuildTimeNow`, `PowerChange`, `CausesShortage`,
-  `State`, `Paid`, `Refund`, `Badge`; predicates `ItemHas(field)` and `PrimaryHasValue(field)` (MCX1).
+  `SlotReconnected` [mod M5], and the existing `GathererWaiting(secs)`; the alert row as a button with the core action
+  `FocusAlert` (D74: an agent drives it headless) (6.10 rows H4 to H6, H17).
+- Power and match: `Value::Supply(res, Provided | Consumed)`, `Predicate::SupplyShort(res)`, `Value::Connection` (the
+  banner of a disconnected slot), `Value::Outcome`, `Value::OutcomeReason`, `Value::MatchStats`, `Value::MatchClock`,
+  `Predicate::MatchOver` (6.10 rows H7, H10).
+- Fields: primary `Armour`, `Activity`, `Cargo`; item `Role`, `BuildTimeNow`, `SupplyChange`, `CausesShortage`,
+  `State`, `Paid`, `Refund`, `Badge`; predicates `ItemHas(field)` and `PrimaryHasValue(field)` (MCX1) (6.10 rows H8 to
+  H10).
 - Content: `UnitPresentation.role: Option<String>` (today `icon`, `portrait`, `responses` only:
-  `interface.rs:410-415`); production entry `hotkey` and `card`; Button `font` and `size`.
+  `interface.rs:410-415`); production entry `hotkey` and `card`; Button `font` and `size` (6.10 rows H19, O8, O10,
+  H13).
 - World styles: `placement` (valid, invalid, stripes), `build_area_ring`, `gap_ring`, `progress_bar`, `cargo_bar`,
-  `rally`, `float_text` (with a sound id).
-- Cursor contexts `place`, `forbidden`, `repair`, `rally`, and the reason keys of 7.2 plus `match_not_started` and
-  `slot_defeated`: an unknown key is refused at pack time with a "did you mean" hint [mod M8].
+  `rally`, `float_text` (with a sound id) (6.10 row H11).
+- Cursor contexts `place`, `repair`, `rally` (new) and `forbidden` (exists), and the reason keys of 6.1 plus
+  `match_not_started`, `slot_defeated` and `match_over` (6.8): an unknown key is refused at pack time with a "did you
+  mean" hint [mod M8] (6.10 rows H1, H2).
 - Core (D74): placement mode and the effect `Ghost{content, point, valid, reason}`; the hint state; `FocusAlert`. All
   run with no renderer.
 
@@ -1520,24 +1631,24 @@ and "Player 2" are slot labels (the `{slot}` text).
 | A new player id after the end | shell screen: "The match is over. Reload this page in a few seconds to join the next match." | none |
 | The page cannot reach the server (the next process is not up yet, D-C) | shell screen: "The server does not answer. It can be starting the next match. Reload this page in a few seconds." | none |
 
-Notes: the session end comes up to about 15 s after a close (backend M7, native probe; the browser lag is NOT TRACED),
-so the banner can start late; the 2:00 is counted in ticks from the logged disconnect (decision D-D). A lobby timeout is
-a 6.7 choice; if 6.7 sets one, the shell screen says "The room closed: no second player came. Reload this page to open
-it again."
+Notes: the session end comes at most about 10 s after a close (the netcode timeout; the native probe of 6.7.8 gave
+9.1 to 10.0 s; the browser lag is NOT TRACED, section 15), so the banner can start late; the 2:00 is counted in ticks
+from the logged disconnect (decision D-D). 6.7.5 sets no lobby timeout (the room waits with no time limit), so the
+lobby has no "room closed" screen.
 
 Result reasons (decision D-K). The engine gives an outcome and a reason code for each slot (MAT1); the mod gives the
 words:
 
 | Reason | Winner | Loser |
 | --- | --- | --- |
-| The key units of the other team are lost | "Victory. You destroyed the enemy Command Centre." | "Defeat. Your Command Centre was destroyed." |
-| No team alive in the same tick | "Draw. Both Command Centres were destroyed at the same moment." | the same |
-| Surrender | "Victory. Player 1 surrendered." | "Defeat. You surrendered." |
-| The disconnect clause | "Victory. Player 2 left the match and did not return within 2:00." | (on a later connect) "Defeat. You were away for more than 2:00." |
+| The key units of the other team are lost (winner `OpponentsDefeated`, loser `KeyUnitsLost`, 6.7.9) | "Victory. You destroyed the enemy Command Centre." | "Defeat. Your Command Centre was destroyed." |
+| No team alive in the same tick (`Draw` with `KeyUnitsLost`) | "Draw. Both Command Centres were destroyed at the same moment." | the same |
+| Surrender (`OpponentsDefeated`, `Surrendered`) | "Victory. Player 1 surrendered." | "Defeat. You surrendered." |
+| The disconnect clause (`OpponentsDefeated`, `Disconnected`) | "Victory. Player 2 left the match and did not return within 2:00." | (on a later connect) "Defeat. You were away for more than 2:00." |
 
 The result screen (mod layout): a dim full canvas, the headline, the reason line, the match time, one row for each
-slot (colour, label, outcome, credits gathered, credits spent, units trained, units lost, enemy units destroyed,
-buildings built, buildings lost), and one button "Leave" (`Input("leave_match")`). There is no rematch button in MP1
+slot (colour, label, outcome, and the statistics of `MatchResult`, 6.7.13: credits gathered, units trained, units
+lost, enemy units destroyed, buildings built, buildings lost), and one button "Leave" (`Input("leave_match")`). There is no rematch button in MP1
 (decision D-K) [player 9]. "Leave" opens the shell screen: "The match is over. This server starts a new match. Reload
 this page to join it. If the page shows an error, wait a few seconds and reload again."
 
@@ -1573,7 +1684,8 @@ Chrome."
   but if the server refuses that order, the step is not done and its line shows again [player H2, rigour 10].
 - Conditions are client facts from the replica and the own order results: own units of a type (pending, site,
   complete or any), an own job of a type, no own unit of a type, a rally of the own producer, an accepted own order of
-  a type, a supply short, a job on hold for N s, another hint done, a hint shown for N s, and `Not`. The interaction
+  a type, a supply short, a job on hold for N s, another hint done, a hint shown for N s, and `Not` (with `All` and
+  `Any` to join them). Their names in the package are the `HintCondition` variants of 6.10 row H14. The interaction
   core evaluates them, so an agent reads the hint state headless (D74).
 - The client records the times in `turts_debug.hints` (7.1).
 
@@ -1624,9 +1736,10 @@ on a line moves the camera to its place (`FocusAlert`); "Ore Hauler idle" also s
   class of the target and the damage table of the package; a ratio below 1/2 picks `hit_reduced` (8.3) [player 6].
 - The tooltip of a build entry shows the build time at the current power: "Build time 12 s", or under a shortage
   "Build time 12 s (24 s now: low power)" [player 7].
-- Each delivery shows "+N" at the receiver with the delivery sound (8.4). N comes from the hauler's load that the
-  replica shows before and after the unload (owner-visible); the export of the receiver id is NOT TRACED. The free
-  income shows no float; it shows only in the credits counter.
+- Each delivery shows "+N" at the receiver with the delivery sound (8.4). N and the receiver come from the owner
+  effect `Credited{unit, resource, amount}` of 6.8, which the server sends for a delivery and for a refund; the
+  client derives nothing from the hauler's load. The free income shows no float; it shows only in the credits
+  counter.
 
 ## 8. Presentation
 
@@ -1694,8 +1807,8 @@ the ground with its progress.
 
 Effect sounds need a small engine part, as section 16 says: an effect definition names a sound id; the engine plays it
 at the place of the effect; the gain falls with the distance from the camera look-at point (to 0 at the mod
-`audible_range`); the effects category plays at most the mod cap at once (`effects_voices`, default 8), and a sound
-beyond the cap is dropped. X14 takes this engine part [rigour 12]. The audio engine and its categories exist (D69,
+`audible_range`); the effects category plays at most the mod cap at once (`effects_voices`, default 8; both fields
+are 6.10 row H16), and a sound beyond the cap is dropped. X14 takes this engine part [rigour 12]. The audio engine and its categories exist (D69,
 Proposed; the alert cap of two at `crates/turts_client/src/audio.rs:795`). The sound set is mod content: the minimal
 set of decision P5 (fire, hit, death, construction complete, low power, unit ready, error), plus the reduced hit and
 the delivery sound with the "+N" [player answer 5].
@@ -1703,7 +1816,10 @@ the delivery sound with the "+N" [player answer 5].
 ### 8.5 Measurement first
 
 - The first presentation task measures the frame time at 400 units with primitives and with models, in the browser on
-  the real GPU (RE part 5: 10.7 to 43 ms is an estimate, not a measurement).
+  the real GPU (RE part 5: 10.7 to 43 ms is an estimate, not a measurement). Before any art exists, it uses placeholder
+  models at the triangle and byte caps of decision D-M (with 512 px and 1024 px textures, the sizes of 8.1), and it records the wasm memory high-water with them
+  (exit item 5): the performance lens estimated about 16 MiB of textures and a heap growth of about 35 MiB that never
+  shrinks (perf L3, an estimate, NOT TRACED).
 - The debug state is built only when the harness asks for it, at most 4 times a second, and for the last presented
   frame. Today the client rebuilds it in each frame (`crates/turts_client/src/lib.rs:147`,
   `crates/turts_client/src/debug.rs:441`); at 400 units that costs 4.4 to 5.1 ms native (gate1-performance.md:15).
@@ -1776,7 +1892,9 @@ and its client task S45 is a pure move; the debug state touches the harness brid
 - After lane 0 it is built only when the harness asks for it, at most 4 times each second. VIS3 records the frame
   time with the debug state off and on. Every MC browser row stays green (REG2).
 - `health_trace` (`crates/turts_client/src/replica.rs:1182`) is pruned to a window. MP1 adds no field to the
-  replica candidate.
+  replica candidate [perf M2]. The other replica costs of perf M2 stay as they are in MP1: each delta clones the
+  candidate (`replica.rs:432-443`, `:451`), and `replace_keyed` (`:1029`) is O(changes x records). Exit item 5
+  records native `apply_delta` p50 and p99; section 15 point 12 holds the open part.
 
 **Behaviour handler table.** After the pure moves of the slice: a table in `turts_sim/src/orders/`, so a new
 behaviour (Construct, CancelConstruction, SetRally, Repair) is one new file and one table line.
@@ -1829,14 +1947,17 @@ with simple shapes.
 | --- | --- |
 | X19 | all of it, in lanes 0a and 0b |
 | X1 | the two lifted rules and destruction |
-| X2 | the damage table, armour and idle acquisition (retaliation, TGT2, is stage 2) |
+| X0, X0e | lane 0 and the entry condition A3 |
+| X2 | the damage table, armour, idle acquisition, and retaliation with the hold rule (TGT2; sections 4, 11, 12 and 16 put it in stage 1: the hold case of D-G needs it, and the reconcile pass removed the stage-2 note of revision 4 part 2) |
 | X4 | construction with held orders and sites (cancel, X4b, is stage 2) |
 | X5 | the ghost with valid and invalid styles and the reason at the pointer |
 | X6 | supply, the shortage effects, the power text |
 | X7 | charge over time for jobs and sites |
 | X10 | `Ally`, `Enemy`, team = slot |
 | X11 | `LastTeamStanding`, defeat and draw (surrender and disconnect are stage 2) |
+| X11b | Boot, Running, Ended, exit 0, and the supervisor script (LEAVE1 without the lobby seat) |
 | X13 | the outcome and its reason (statistics are stage 2) |
+| X24, X25, X26 | the start order of a placement (STO1), the hint list (GOAL1), the free income (INC1) |
 | X14 | the `Fired` record and one tracer line for each shot; death by removal |
 | X15 | the 8 types, Twin Fields, the credits and power HUD, the goal line and the hint list, the start gather order of decision D-F, simple shapes |
 | X20 | the headless two-client match and the pixels driver of the stage 1 path |
@@ -1846,11 +1967,10 @@ Stage 1 runs with the start policy `Immediate`; the lobby lane can land earlier,
 **Checkpoint C1.** A person plays one full match in two browser windows with simple shapes: the hauler gathers
 from tick 0, the person places a power station from the first hint, trains units, fights, destroys the other
 command centre, and both windows show the outcome with its reason. Conditions: lanes 0a and 0b, the stage 1 lanes
-and slice part A3 are merged; the stage 1 rows are green (VAL1 and NC1 for the stage 1 rows, DMG1, TGT1, CON1, CON2,
-PWR1, PAY1, DES1, OBS1, MAT1 for victory and draw, GOAL1, GHO1 without the cancel part, HUD5, ORDW1). The person signs
-off C1 in the vault. When C1 fails, stage 2 does not start until its cause is fixed.
+and slice part A3 are merged; the stage 1 rows of section 12 (the one list, "Stage 1 rows") are green, each with its
+recorded red, and REG2 is green. The person signs off C1 in the vault. When C1 fails, stage 2 does not start until its cause is fixed.
 
-**Stage 2: the breadth.** X4b, X8, X9, X12, the rest of X2 (TGT2), X11 (surrender, the disconnect clause,
+**Stage 2: the breadth.** X4b, X8, X9, X11c, X12, X11b (the lobby states), X11 (surrender, the disconnect clause,
 statistics), X13 (statistics), the rest of X14, X16, X17, X18; then X21 (the play test), X22 (the final regression)
 and X23 (the architecture audit).
 
@@ -1892,33 +2012,34 @@ Runs: `headless` is a `cargo test` or a process test with no window and no rende
 section 4.1); `pixels` is a pixels-only driver with a bridge oracle; `people` is the play test. The plan fixes
 the commands. A headless row that needs a match uses `--command-script`, with a test package that has no
 start policy (`Immediate`, D-B) or with `frontier` and `--start-now` (IMM1), so it needs no client that presses
-ready. The rows PAY1, PAY2, CON3, DES1 and REP1 need
+ready. The rows PAY1, PAY2, CON3, DES1, REP1 and INC1 need
 `turts_audit`, which slice part P1 adds (it is not in today's tree).
 
 Stage 1 rows: NC1, VAL1, IMM1, DMG1, TGT1, TGT2, CON1, CON2, PWR1, PAY1, INC1, DES1, OBS1, STO1, DBG1, ORDW1,
-MAT1 (victory, defeat and draw), RES1, LEAVE1 (the exit after the end and the restart), GOAL1, GHO1, PRD1,
-HUD5, KEY1, ALR2, FX1 (the wire event, the flash and the death effect), REG2. Stage 2 rows: CON3, PAY2, REP1,
-RLY1, LOB1, LOB2, SUR1, MAT1 (surrender and disconnect), LEAVE1 (the lobby seat of the next match), HUD6,
-SMT1, AUD2, MDL1, VIS3, MCX1, NOGPU1, FX1 (the rest), PT3 (people), and REG2 again.
+MAT1 (victory, defeat and draw), RES1 (the outcome and the reason line), LEAVE1 (the exit after the end and the
+restart), GOAL1, GHO1, PRD1, HUD5, KEY1, ALR2, FX1 (the wire event, the flash and the death effect), REG2. Stage 2
+rows: CON3, PAY2, REP1, RLY1, LOB1, LOB2, SUR1, MAT1 (surrender and disconnect), RES1 (the statistics and the wire
+check), LEAVE1 (the lobby seat of the next match), HUD6, SMT1, AUD2, MDL1, VIS3, MCX1, NOGPU1, FX1 (the rest), PT3
+(people), and REG2 again. Section 10 (the stage tables and checkpoint C1) uses this list.
 
 | Row | Check | Red build | Runs |
 | --- | --- | --- | --- |
-| NC1 | The no-content scan (`crates/turts_checks/tests/no_content.rs`, `real_source_scan_is_clean`, :166) derives a token for every content kind of API 0.2.4: the kinds of today's list (`crates/turts_checks/tests/support/mod.rs:86-99` and the loops to :267) and each new kind of the 0.2.4 table (D-I), for example damage types, armour classes, capacity resources, queue ids, victory clauses, start policies, hint lines, effects and models, and the interface kinds (alerts and widgets) that today's list does not hold. For each kind the scan keeps the qualified id and the bare local id (`add_id`, support/mod.rs:449-456; decision N1). A bare id that equals an engine word is red and names the package, the definition path and the field; the repository package renames the id, or the scan gets an exception row (the table at support/mod.rs:272-292) with a reason and `identifiers_only: true`, so that a string literal of the word stays red. The modder guide states this rule; a mod outside `mods/` is never scanned [mod H3]. No 0.2.4 engine field name equals a `frontier` local id (for example a field `power` while `frontier` has a resource `power`) | For each new kind, one planted string literal in a scanned crate (for example `"frontier:cannon"` as a damage type and `"structures"` as a queue id, in `crates/turts_net_protocol/src/lib.rs`): a derivation that misses the kind gives 0 hits for its plant, and the row is red on that plant. The gap is real today (qa-lead run on d729a97; the code of 1b15402 is the same): the literal `"muster_unit_damaged"` (an alert id, `mods/muster/interface/hud.ron:19`) gives 0 hits and exit 0, while `"muster:trooper"` gives 48 hits and exit 101 | headless |
-| VAL1 | The two M3 rules are lifted (`crates/turts_mod_runtime/src/content_m3_validation.rs:374-376` and `:420-424`; 6.10 rows K7, K8), and the work-capability exemption of `constructor` beside `producer` (`:418`, D-E) has its row. Each row of the 0.2.4 table (6.10, D-I) has its red packages, by its detection kind: for a RAW row, a `^0.2.3` package that writes the field, and a second one that writes it with an empty value, an explicit `None` (for example `armour: None`) or an explicit `[]` (for example `orders: []`) [mod M4]; for a VAR row, a `^0.2.3` package with the variant; for a COMBO row, a `^0.2.3` package with the combination; for an ED row, a `^0.2.3` and `^0.2.4` pair that shows the two behaviours. Each refusal has the form `` `<row name>` needs engine api 0.2.4; `^0.2.3` admits 0.2.3 `` (`crates/turts_mod_runtime/src/version_table.rs:101-108`). A reserved variant (`NeedsBuilder`, `counts: Queued`, `BlockStart`) is refused with "reserved for a later engine API". A package with a constructor and no `open_sites_per_slot` is refused (6.10 row K6). An unknown reason key or cursor key is refused with a `did you mean` hint [mod M8] | (1) A table row missing: its red package packs with exit 0. (2) Presence read from the parsed value, the form of today (`orders_present: !orders.is_empty()`, `crates/turts_mod_runtime/src/content_mc_validation.rs:65`): the explicit-empty packages pack with exit 0; this red exists today (`^0.2.2` with `orders: []` packs with exit 0, mod-builder probe at gate 1). (3) A reserved variant accepted. (4) Key check off: `queue_ful` and `plcae` pack with exit 0 (today's behaviour, mod-builder probe) | headless |
+| NC1 | The no-content scan (`crates/turts_checks/tests/no_content.rs`, `real_source_scan_is_clean`, :166) derives a token for every content kind of API 0.2.4: the kinds of today's list (`crates/turts_checks/tests/support/mod.rs:86-99` and the loops to :267) and each new kind of the 0.2.4 table (D-I), for example damage types, armour classes, supply resources, victory clauses, start policies, hint lines, effects and models (the queues have no ids, decision Q1), and the interface kinds (alerts and widgets) that today's list does not hold. For each kind the scan keeps the qualified id and the bare local id (`add_id`, support/mod.rs:449-456; decision N1). A bare id that equals an engine word is red and names the package, the definition path and the field; the repository package renames the id, or the scan gets an exception row (the table at support/mod.rs:272-292) with a reason and `identifiers_only: true`, so that a string literal of the word stays red. The modder guide states this rule; a mod outside `mods/` is never scanned [mod H3]. No 0.2.4 engine field name equals a `frontier` local id (for example a field `power` while `frontier` has a resource `power`) | For each new kind, one planted string literal in a scanned crate (for example `"frontier:cannon"` as a damage type and `"frontier:structure"` as an armour class, in `crates/turts_net_protocol/src/lib.rs`): a derivation that misses the kind gives 0 hits for its plant, and the row is red on that plant. The gap is real today (qa-lead run on d729a97; the code of 1b15402 is the same): the literal `"muster_unit_damaged"` (an alert id, `mods/muster/interface/hud.ron:19`) gives 0 hits and exit 0, while `"muster:trooper"` gives 48 hits and exit 101 | headless |
+| VAL1 | The two M3 rules are lifted (`crates/turts_mod_runtime/src/content_m3_validation.rs:374-376` and `:420-424`; 6.10 rows K7, K8), and the work-capability exemption of `constructor` beside `producer` (`:418`, D-E) has its row. Each row of the 0.2.4 table (6.10, D-I) has its red packages, by its detection kind: for a RAW row, a `^0.2.3` package that writes the field, and a second one that writes it with an empty value, an explicit `None` (for example `armour: None`) or an explicit `[]` (for example `orders: []`) [mod M4]; for a VAR row, a `^0.2.3` package with the variant; for a COMBO row, a `^0.2.3` package with the combination; for an ED row, a `^0.2.3` and `^0.2.4` pair that shows the two behaviours. Each refusal has the form `` `<row name>` needs engine api 0.2.4; `^0.2.3` admits 0.2.3 `` (`crates/turts_mod_runtime/src/version_table.rs:101-108`). A reserved variant (`NeedsBuilder`, `counts: Queued`, `BlockStart`, `AllSeated`) is refused with "reserved for a later engine API". A package with a constructor and no `open_sites_per_slot` is refused (6.10 row K6). An unknown reason key or cursor key is refused with a `did you mean` hint [mod M8] | (1) A table row missing: its red package packs with exit 0. (2) Presence read from the parsed value, the form of today (`orders_present: !orders.is_empty()`, `crates/turts_mod_runtime/src/content_mc_validation.rs:65`): the explicit-empty packages pack with exit 0; this red exists today (`^0.2.2` with `orders: []` packs with exit 0, mod-builder probe at gate 1). (3) A reserved variant accepted. (4) Key check off: `queue_ful` and `plcae` pack with exit 0 (today's behaviour, mod-builder probe) | headless |
 | DMG1 | Damage is `hit = max(minimum, floor(base x num / den) saturating_sub flat)` with a u128 intermediate, `minimum` on the damage table, `flat` on the unit armour, and the cell (damage type, armour class) of the table (6.3); no float takes part. A test package, not `frontier`, holds two cells where the integer form and a float form differ: damage 100 with 29/100 gives 29, and damage 50 with 106/100 gives 53; and a 2 x 2 table whose transpose differs: (bullet, light) 100/100, (bullet, heavy) 10/100, (rocket, light) 25/100, (rocket, heavy) 150/100; each shot asserts its exact damage. A package with no damage table keeps the damage of today (`hit = base`; REG2 and the M3 fault set show it). Each balance ratio of section 5 is a headless duel with the `frontier` numbers; a duel that fails is a content defect and a retune (S:807 keeps the numbers Open), not a red of the engine; the duel results go to `docs/measurements/mp1.md` [rigour 6] | (1) A float multiplier (`damage as f64 * (num as f64 / den as f64)`): the cell 100 x 29/100 gives 28; with f32 the cell 50 x 106/100 gives 52. The qa-lead probe found 146 differing cells among 80,000 (damage 1 to 400, ratio n/100 for n 1 to 200) and no cell that differs for both f64 and f32, so the row needs both cells. (2) The table read with its axes swapped: the shot (bullet, heavy) gives 25, not 10. (3) `flat` taken before the ratio: the case with flat 5 on 100 x 29/100 gives 27, not 24 | headless |
 | TGT1 | An idle unit with `acquire` (6.3; on the unit, 6.10 row U4) and a ready weapon acquires the nearest enemy (distance, then unit id) inside `acquire.range` within K = `ACQUIRE_PERIOD_TICKS` (4 at the MP1 tick rate) ticks after the enemy enters the range (D-J); it chases while its distance from its idle point is at most `leash`, then goes back to the idle point. An ordered target comes first. A holding unit never moves: its position bits are equal on every tick of the scenario; it fires only at an enemy inside its weapon range. A query runs only when the weapon is ready and has no valid target, and a unit queries only in a tick t with `(t + unit_id) mod K = 0`: a query counter (the `cfg(test)` counter pattern of `crates/turts_sim/src/movement.rs:13-21`) shows 0 queries for a unit that keeps a valid target, and no unit queries twice in K consecutive ticks [perf H3]. Candidates come only from the grids of `Enemy` teams: a `turts_rules` unit test with a teams map of two slots for each team shows that an ally inside the range is never a candidate. A unit without `acquire` keeps the behaviour of today (REG2) | (1) Hold handled as idle: the holding unit chases inside its leash, and the position check fails at the first tick that it moves (`unit U on hold moved at tick T`). (2) A query in each tick, or before the readiness check as today (`choose_target` before the cooldown test, `crates/turts_sim/src/economy/combat.rs:201`, `:229`): the counter shows a query in each tick. (3) The leash ignored: the unit follows past the leash. (4) A grid built with the relation `Other`: the ally of the unit test becomes a candidate | headless |
-| CON1 | The structures queue of the constructor holds each `Construct` order, never progress or charge (D-E, 6.1). A placement is refused for each cause with its reason key of 6.1, one case each, and the first failing check gives the cause: outside the map, out of the build area, an overlap with any footprint (a unit included), a gap below `placement.gap` to a static footprint, inside `placement.node_clearance` of a node, the slot at `open_sites_per_slot`, and a full queue [player H4, net 5]. A valid placement creates a site entity in the tick of the order. From that tick the site owns the progress, the charge (PAY1) and the job, and the constructor counts only its open sites. With `concurrent_sites` 2, two sites of one constructor progress in the same ticks; a third order waits in the queue, and the engine places its site (an engine order, 6.5) in the tick after one of the two ends. The site completes, and the building has full health [rigour 1, mod H2] | (1) Progress advances in the constructor's queue after placement (the site is only a marker): after the placement tick the queue holds a job with progress, and the second site stays at progress 0 while the first progresses (`site S2 progress 0 at tick T`). (2) For each cause, the check of that cause off: its case is accepted. (3) The check order changed: the case with two failing causes gives the second cause. (4) The site check off: every case is accepted | headless |
+| CON1 | The constructor queue holds each `Construct` order, never progress or charge (D-E, 6.1). A placement is refused for each cause with its reason key of 6.1, one case each, and the first failing check gives the cause: `site_outside_map`, `site_out_of_area`, `site_blocked` (an overlap with any footprint, a unit included), `site_near_building` (a gap below `placement.gap` to a static footprint), `site_near_resource` (inside `placement.node_clearance` of a node), and `queue_full` (the queue holds `queue_capacity` held orders) [player H4, net 5]. A valid placement creates a site entity in the tick of the order. From that tick the site owns the progress, the charge (PAY1) and the job, and the constructor counts only its open sites. The two caps make an order wait and never refuse it (6.1): with `concurrent_sites` 2, two sites of one constructor progress in the same ticks; a third order waits in the queue, and the engine places its site (an engine order, 6.5) in the tick after one of the two ends. With two constructors of one slot and `open_sites_per_slot` 1, the order of the second constructor waits while the site of the first is open, gets no `OrderResult` refusal, and the engine places its site in the tick after that site ends. The site completes, and the building has full health [rigour 1, mod H2] | (1) Progress advances in the constructor's queue after placement (the site is only a marker): after the placement tick the queue holds a job with progress, and the second site stays at progress 0 while the first progresses (`site S2 progress 0 at tick T`). (2) For each cause, the check of that cause off: its case is accepted. (3) The check order changed: the case with two failing causes gives the second cause. (4) The site check off: every case is accepted. (5) The slot cap refuses in place of the wait: the order of the second constructor gets a refusal, and no site appears after the first site ends | headless |
 | CON2 | For a scene with no motion and no new site between the client frame and the server tick, the client verdict from its replica equals the server verdict for 1,000 seeded points [net 9]. The seeds put at least 20 points in each band where a wrong rule changes the verdict: a gap from 1.8 to 2.0 from a footprint, over a unit, inside the node clearance, and at the edge of the build area. The test counts the points in each band and fails when a band has fewer than 20, so that a new seed cannot make the row unable to go red. The client gets its verdict from `turts_rules` (section 9); `scripts/boundary.sh` refuses a placement function in `turts_client` other than the call | (1) The client uses its own copy of the rule with the gap 1.8: the band points differ (`point P: client valid, server refused`). (2) The client leaves out the unit blocker class: the points over a unit differ. (3) A copy of the placement function in `turts_client`: the boundary check is red | headless |
-| CON3 | `CancelConstruction` on a site refunds `floor(charged x num / den)` with `cancel_refunds.running` (6.4). The case cancels at progress 37/100 of a cost of 500 with the ratio 3/4: the charge is 185 and the refund is 138. A cancel of a held order refunds 0. A destroyed site refunds by `cancel_refunds.destroyed`, which is 0/1 when absent: one case with it absent (refund 0) and one with 1/2 (refund 92). After the cancel and after the destruction, the claims are released in the same tick: a new site on the point passes the site check, and the open-site count goes down by 1 (a placement at the cap is then accepted). The ledger (`turts_audit`) balances after each case | (1) Refund of the full cost: 375 or 500, not 138. (2) The running ratio used for a destruction: 138 for the destroyed site, not 0 or 92. (3) The open-site count kept: the next placement is refused with the cap reason | headless |
+| CON3 | `CancelConstruction` on a site refunds `floor(charged x num / den)` with `cancel_refunds.running` (6.4). The case cancels at progress 37/100 of a cost of 500 with the ratio 3/4: the charge is 185 and the refund is 138. A cancel of a held order refunds 0. A destroyed site refunds by `cancel_refunds.destroyed`, which is 0/1 when absent: one case with it absent (refund 0) and one with 1/2 (refund 92). After the cancel and after the destruction, the claims are released in the same tick: a new site on the point passes the site check, and the open-site count goes down by 1 (a held order that waits at the cap gets its site in the next tick, 6.1). The ledger (`turts_audit`) balances after each case | (1) Refund of the full cost: 375 or 500, not 138. (2) The running ratio used for a destruction: 138 for the destroyed site, not 0 or 92. (3) The open-site count kept: the held order at the cap never gets its site (`held order H1 not placed at tick T`) | headless |
 | PWR1 | Supply (`Supply(scope: Slot, counts: Completed)`, 6.2) counts units that exist and are not sites: `provides` and `consumes`, once for each tick at the start of the economy phase. In a shortage each capability applies its own `when_short`: `Rate(1/2)` on the producer and the constructor, `Disable` on the turret weapon (it neither fires nor acquires); a capability with no entry (the rifleman weapon, repair) is not affected. Recovery restores both at the first computation after the supply returns. A weapon that the player disabled stays disabled after recovery (a shortage is not `SetEnabled`). The rule reads only mod data: a second test package names its supply resource `zeta:steam` and puts `Rate(1/3)` on a different capability, and the same checks pass | (1) A check keyed on the `frontier` resource id or on the word power: the `zeta:steam` package shows no slowdown (`rate 1/1 under shortage`); NC1 is also red on the literal. (2) Sites counted: a station that is still a site adds supply. (3) The shortage implemented with `SetEnabled`: the weapon that the player disabled is enabled after recovery. (4) `Disable` that stops fire but not acquisition: the disabled turret records a target | headless |
-| PAY1 | Charge over time (P4, D-A, 6.4): a job has `done` and `total = duration_ticks x Q`; the total charged at `done` is `floor(cost x done / total)` for each cost entry, with a u128 intermediate; each tick charges the difference. At completion the total equals the cost; the balance never goes below 0. A tick that cannot pay every difference charges nothing and does not advance (stage `WaitingForFunds(resource)`, the first resource in cost order that cannot pay), and the job resumes in the tick after the next delivery. The ledger has one `Charged` event for each job end (completion, cancel, entry into `WaitingForFunds`) with the sum since the last event, not one for each tick. Cases: a cost that the duration does not divide (500 over 240 ticks); a stall at 0 credits; two cost entries where only the second cannot pay; a product `cost x done` above the u64 range (cost 2^40, `total` 2^25) [perf M3] | (1) Charge at the order: the balance falls by the cost in the order tick. (2) A fixed amount `cost / duration` in each tick: the total at completion is 480, not 500. (3) A u64 intermediate: the large case overflows (an error or a wrong total). (4) One charge for each cost entry on its own: the first entry is charged while the job does not advance. (5) One ledger event for each tick: 240 events for the job, not 1 | headless |
-| REP1 | Repair (6.5): the heal of each tick is `floor(rate x t / tick_hz)` minus the same value at `t - 1`, at most `max - health`; the total charged after H applied points is `floor(H x amount / per_health)`, and each tick charges the difference; a tick that cannot pay heals nothing (stage `WaitingForFunds`); a cost of 0 heals with no charge; nothing is charged at full health. Health changes only inside a transaction: (a) static: the only production writers of the health table in `turts_sim` are `crates/turts_sim/src/boot_m3.rs:110` and `crates/turts_sim/src/economy/transaction_m3.rs:218` (a `turts_checks` test with the syn scanner and its production filter); (b) at run time: an audit rule says that for each unit and tick the health change equals the `Fired` damage plus the repair heal of that tick | (1) A repair system that writes `world.resource_mut::<Healths>()` directly: the static check names the file and line (qa-lead probe: a plant in `economy/combat.rs` gives `RED health writer economy/combat.rs:83`), and the audit rule finds a health change with no event. (2) Repair at 0 credits: health rises while the balance is 0. (3) A charge at full health, or a charge for the requested heal and not the applied heal | headless |
+| PAY1 | Charge over time (P4, D-A, 6.4): a job has `done` and `total = duration_ticks x Q`; the total charged at `done` is `floor(cost x done / total)` for each cost entry, with a u128 intermediate; each tick charges the difference. At completion the total equals the cost; the balance never goes below 0. A tick that cannot pay every difference charges nothing and does not advance (job state `WaitingForFunds(resource)`, the first resource in cost order that cannot pay), and the job resumes in the tick after the next delivery. The ledger has one `Charged` event for each job end (completion, cancel, entry into `WaitingForFunds`) with the sum since the last event, not one for each tick. Cases: a cost that the duration does not divide (500 over 240 ticks); a stall at 0 credits; two cost entries where only the second cannot pay; a product `cost x done` above the u64 range (cost 2^40, `total` 2^25) [perf M3] | (1) Charge at the order: the balance falls by the cost in the order tick. (2) A fixed amount `cost / duration` in each tick: the total at completion is 480, not 500. (3) A u64 intermediate: the large case overflows (an error or a wrong total). (4) One charge for each cost entry on its own: the first entry is charged while the job does not advance. (5) One ledger event for each tick: 240 events for the job, not 1 | headless |
+| REP1 | Repair (6.5): the heal of each tick is `floor(rate x t / tick_hz)` minus the same value at `t - 1`, at most `max - health`; the total charged after H applied points is `floor(H x amount / per_health)`, and each tick charges the difference; a tick that cannot pay heals nothing (job state `WaitingForFunds`); a cost of 0 heals with no charge; nothing is charged at full health. Health changes only inside a transaction: (a) static: the only production writers of the health table in `turts_sim` are `crates/turts_sim/src/boot_m3.rs:110` and `crates/turts_sim/src/economy/transaction_m3.rs:218` (a `turts_checks` test with the syn scanner and its production filter); (b) at run time: an audit rule says that for each unit and tick the health change equals the `Fired` damage plus the repair heal of that tick | (1) A repair system that writes `world.resource_mut::<Healths>()` directly: the static check names the file and line (qa-lead probe: a plant in `economy/combat.rs` gives `RED health writer economy/combat.rs:83`), and the audit rule finds a health change with no event. (2) Repair at 0 credits: health rises while the balance is 0. (3) A charge at full health, or a charge for the requested heal and not the applied heal | headless |
 | RLY1 | A new unit follows the rally through `apply_order` (`crates/turts_sim/src/orders.rs:2610`) with the source `Engine` [net 8]. The follow order is the smart rule of the rally target (`orders/rules.ron` `rally`, else `smart`, 6.5): a rally on ground gives the mod's ground order, a rally on a node gives a hauler its gather order. The order log (`--order-log`) records the order with the source `Engine` and no seq; it costs no token and gives no `OrderResult`; a refusal shows in `last_failure`. Two runs of the same `--command-script` give identical order logs and economy logs (`cmp`), and the economy-log replay validator (`validate_records`, `crates/turts_server/src/economylog.rs:371`) passes | A fake player envelope: the server injects the follow order as a player envelope with a seq of the slot. The order log shows the source `Player`; the client report has an `OrderResult` for a seq that the client never sent; the token count of the slot falls in the spawn tick | headless |
 | MAT1 | Outcomes (X11, D-D), package `standoff` (limit 100 ticks at 20 Hz). Scripts, `--start-now --command-script`: (a) attack orders kill B's key unit at tick T: A `Victory`/`OpponentsDefeated`, B `Defeat`/`KeyUnitsLost`, `match_over_tick` T, and the tick log has no tick after T; (b) both key units die in one tick: `Draw` for both; (c) `connection: false` for both slots at tick 10: `Draw`/`Disconnected` at tick 110; at ticks 10 and 20: slot 0 `Defeat` at 110 and slot 1 `Victory` at 110; (d) slot 0 false at 10 and true at 60: no outcome at 110. Two headless clients: (e) B `surrender` at tick 40: both reports have the outcome with the reason `Surrendered` and the same `match_over_tick`, and B's key unit is alive at the end; (f) B killed: the input log has `connection: false` for slot 1 at tick D, at most 11 s after the kill, and B gets `Defeat`/`Disconnected` at D + 100; (g) B killed, then B with `--rejoin` before the limit: `connection: true`, and no outcome by D + 200; (h) the `--input-log` of (e) and of (f), replayed with `--start-now --command-script`, gives the same outcomes and `match_over_tick`; (i) `muster` (no victory data), one client killed: no outcome after 300 ticks; (j) after the end, a new id gets `The match is over`, and B (an owner that did not leave) gets `welcome` and the same `match_result`. A sim test with three slots: an order from a defeated slot gets `slot_defeated` | the client works out the outcome from the unit list ((e) and (f): `outcome` is null, because B's key unit is alive; in case (a) the two agree, so only (e) and (f) can show this red); the disconnect count is a wall-clock timer in the server ((h): the replay has no connections, so it gives no outcome); a defeat with no clause ((i), D28); a draw rule that gives `Victory` to the lower slot index ((b), (c)) | headless, two clients, and scripts |
 | LOB1 | Lobby start and claim boundary (D-B), package `standoff`. Run 1, headless clients A, B, C: A seats: A's first `lobby_states` entry has `you: 0`, seat 1 `Open`, start `Waiting`, and A has no `welcome`; server `--stats` `ticks` stays 0 for 3 s. B seats: both reports show two `Human` seats with different colours. Only A is ready for 3 s: start stays `Waiting`, no `welcome`. B ready: start `Countdown`; B's `lobby_move` in the countdown gets `match_not_started`. Both `welcome` records have `tick` 0, `start_tick` 1, and equal `teams` and `colours`; the first snapshot tick is 0 for both; the tick log starts at tick 1. After the start, C (new id) gets `no open slot`; B killed, then B with `--rejoin` gets slot 1 again. Run 2: B sends `unready` in the countdown: start goes back to `Waiting` and no `welcome` comes; B `ready` again: the match starts. Run 3: A and B seated, B killed: within 11 s A's lobby state shows seat 1 `Open` (the time is recorded as L), and C gets seat 1. Pixels, two windows: the words of L2 to L5, "Match starts in 3", "2", "1", and both windows show "Click to play" | the sim claims at `Hello` (run 3: C gets `no open slot`); the sim ticks in the lobby (the `welcome` ticks are above 0 and differ, as today: 76 and 171 in the gate 1 probe); a start with one ready (run 1); an order admitted before the start (run 1: `lobby_move` gets another result); `unready` does not stop the countdown (run 2) | headless, three clients; pixels, two windows |
 | RES1 | Result (D-K). Pixels, two windows: within 1 s of the end tick both windows show the outcome and the reason line (7.6 words, for example "Player 2 surrendered"); within 3 s more, the result screen shows both slots, their outcomes and reasons, and the statistics; the oracle compares each number on the screen with the `match_result` of that client. Wire check (net 10), headless, two clients: in each report `stats_first_seen_tick` equals `match_over_tick`, and each client got exactly one `MatchResult`; an export unit test in `turts_server` builds the per-slot export at each tick of a scripted `standoff` match and finds no statistics before the end tick | the sim view gives the statistics at each tick (headless: `stats_first_seen_tick` is 1; the export test is red at tick 1); a result screen without the reason (pixels); a pixels driver alone cannot show the first red, because a client can hold a value and not show it | headless, two clients; pixels, two windows |
 | FX1 | A `Fired{unit, target}` event, with the weapon as an index (net 7, perf M1), reaches each client that may see the shooter or the target (both clients in MP1). In window B an enemy turret turns to its target and its muzzle flash shows; a death shows its effect; a reduced hit (table ratio below 1/2, for example a bullet on a tank) shows `hit_reduced` and a full hit shows `hit` (`turts_debug.effects.recent`). With 400 riflemen that fire, the effect pool stays at 256 and the effect entity count does not grow. After a T8 resync, no effect older than the presentation tick minus K plays | (a) today's event path: the event is staged for the shooter's slot only (`crates/turts_sim/src/economy/combat.rs:393-395`), so window B sees no enemy fire; (b) the pool grows past 256, or one entity spawns for each shot; (c) `hit_reduced` never chosen; (d) the kept deltas of a resync replay their effects: a burst after the resync | headless and pixels |
-| HUD5 | Forced states in a scenario, each read as exact text: "Credits 1200"; "Power 40 used / 100 made"; under a shortage "Low power: 130 used / 100 made" with the mark; queue rows "On hold: no credits" with a striped bar, "Slowed: low power", "Waiting to start", "Waiting: exit blocked"; a disabled entry "Queue is full (5/5)". A starved job under the free income (it pays in some ticks and not in others) shows "On hold: no credits" in each of 10 frames sampled over 1 s | (a) the `Supply` fields `Used` and `Made` swapped: "Power 100 used / 40 made"; (b) the row state without its 1 s hold: the words are absent in some of the 10 frames; (c) the job stage `WaitingForFunds` mapped to the low-power words | pixels |
+| HUD5 | Forced states in a scenario, each read as exact text: "Credits 1200"; "Power 40 used / 100 made"; under a shortage "Low power: 130 used / 100 made" with the mark; queue rows "On hold: no credits" with a striped bar, "Slowed: low power", "Waiting to start", "Waiting: exit blocked"; a disabled entry "Queue is full (5/5)". A starved job under the free income (it pays in some ticks and not in others) shows "On hold: no credits" in each of 10 frames sampled over 1 s | (a) the `Supply` fields `Consumed` and `Provided` swapped: "Power 100 used / 40 made"; (b) the row state without its 1 s hold: the words are absent in some of the 10 frames; (c) the job state `WaitingForFunds` mapped to the low-power words | pixels |
 | KEY1 | Each build entry has its own key, shown in its tooltip and its build-menu row (the table of 7.4); no two MP1 default bindings are equal (the check is global; there is no action scope); no default key is in `RESERVED_BROWSER_KEYS` (`crates/turts_mod_api/src/input.rs:51-68`); in a pixels run each key starts the placement or the job of its entry | (a) today's build menu: every row shows the key of the producer's Produce order (`crates/turts_client/src/widgets/sources.rs:391-393`); (b) a package with two actions on KeyP: the packer refuses with `input/input.ron: actions: KeyP is the default of build_power_station and pause; each default key must be unique`; (c) a default on Ctrl and KeyT: refused as a browser key | headless and pixels |
 | OBS1 | A harvester completes 20 trips with a building 1 to 2 from the command centre on the ore side. The placement gap is a mod number (`placement.gap`), and the packer refuses a gap below the largest mobile diameter plus 0.2 [mod L10]. With the gap of the mod, 0 of 20 tanks are `Blocked` in a compact base, and the site check refuses a smaller gap. The row runs after slice part A3 (X0e) and records the movement tick time with the command-centre footprint in `docs/measurements/mp1.md` | Today's tree is the red build (probe MP1-P1, `docs/research/mp1/probe-obstacles.md`): 0 harvester trips with a station 1 to 2 from the command centre. (1) The approach point ignores statics: 0 trips. (2) The gap rule off: 7 of 20 infantry stay `Blocked` at the gap 0.5. (3) A package with a gap below the largest diameter plus 0.2 packs with exit 0 | headless |
 | DBG1 | The client builds its debug state only when the harness asks for it, at most 4 Hz (D-J) [perf H1]. With no request, a headless client at 400 units builds 0 debug states in 600 frames (a build counter in the debug module). With a request, the rate is at most 4 Hz. REG2 shows that the MC oracles still get their debug state. VIS3 records the frame time with the debug state off and on | Today's tree is the red build: `rebuild_debug_state` (`crates/turts_client/src/debug.rs:441`) runs in `Last` on every frame (`crates/turts_client/src/lib.rs:147`); the counter shows 600. Gate 1 measured 4.4 ms (min) and 5.1 ms (p50) a frame and 148 KB at 400 units (native, loaded host) | headless |
@@ -1929,9 +2050,9 @@ SMT1, AUD2, MDL1, VIS3, MCX1, NOGPU1, FX1 (the rest), PT3 (people), and REG2 aga
 | PT3 | The two-person play test of section 13, on a play-test machine that passes the VIS3 floor. The clock starts when the player presses "Click to play" in that window; the 60 s rule ends at the first client update with an own Power Station site (7.1), not at a pending site. A person signs off | Red when a tester cannot find an object, an action or a reason (the tester says so aloud, or the observer sees no progress for 60 s), or when no Power Station site exists 60.0 s after the press. The timing instrument can go red: GOAL1 plant (b) moves `H1.done_ms` late and plant (d) leaves it absent, and the PT3 timing script reports red on both | people |
 | REG2 | All MC rows, the fault sets, and the frozen values after the one re-freeze, on the MP1 tree, at the end of stage 1 and at the end of stage 2. Each `done:` row of the Yardstick coverage section runs with the test that its `test` cell names | Any regression. The plant that shows that REG2 can go red: `clamp_to_map` returns at once (`crates/turts_interaction/src/camera.rs:358`), and `bounds_hold` fails with `ArrowRight must reach and stop at the authored map margin: Vec2(78.50007, 32.0)` at `crates/turts_interaction/tests/camera.rs:345` (qa-lead mutation run on d729a97; the code of 1b15402 is the same; green before, red, green after the restore). The plan adds one browser-row plant (NOT RUN) | all |
 | GOAL1 | In the first presented frame after the press of "Click to play", in each window: the own Command Centre is inside the viewport; it is selected (the selection panel shows "Command Centre"); the goal line says "Destroy the enemy Command Centre"; the hint line shows the H1 text of the Player path. No alert line and no alert sound come before the first input of the player. With no input, the Ore Hauler drives to the ore and the first "+300" shows before 40 s. A pixels-only driver that does only what the hint lines say presses P and left-clicks inside the build-area ring: the hint line shows the H2 text within 2 presented frames of the frame with the pending site, and a Power Station site exists before 60 s from the press (`turts_debug.hints.H1.site_ms` at most 60,000) | Plants, each red: (a) `start_selection` ignored: no unit selected; (b) the done condition of H1 wired to `Complete` instead of `Pending` or `Site`: H1 stays about 24 s after the click; (c) a state alert that counts the state of the first replica as a start: "Low power" sounds at tick 0; (d) the hint source evaluated only at the start: H2 never shows; (e) the map placement without its start order: no "+300" before 40 s | pixels, two windows |
-| STO1 | A map placement with a start order (`order: Gather`, decision D-F) gathers from tick 0 with no client input: the first delivery comes within 1 s of the first-trip time of the model (29.7 s, `pacing.py new`); the command log records the order at tick 0 with the source `Engine`; a replay of the log gives the same delivery tick; the order has no seq, costs no token and gives no `OrderResult` | (a) the field parsed and not used: no delivery in 60 s; (b) the start order sent as a player envelope: it shows in the admission evidence with a seq | headless |
+| STO1 | A map placement with a `start_order` (a mod order of behaviour `Gather` with a node target, 6.10 row M3, decision D-F) gathers from the start tick with no client input. Two runs: (1) `--start-now` with no client; (2) `--start-now` with one headless client whose `Hello` comes at tick 100 or later. In both runs: the unit moves toward its node from the start tick (`--tick-log`: its position at tick 2 differs from its map placement; the tick log holds positions only); the first delivery comes within 1 s of the first-trip time of the model (29.7 s, `pacing.py new`); the order log (`--order-log`) has exactly one line for the start order, at the start tick, with the source `Engine`, and no line for it has a seq; the start order is not an input of the command log (6.5), and a replay of the `--input-log` (`--start-now --command-script`) gives the same delivery tick; the order costs no token and gives no `OrderResult` | (a) the field parsed and not used: no delivery in 60 s in run 1. (b) The start order sent as a player envelope: its order-log line has the source `Player` and a seq, and it shows in the admission evidence. (c) The start order applied at the first `Welcome`, not at the start tick: run 1 has no delivery in 60 s, and in run 2 the unit keeps its placement position until the `Welcome` tick (100 or later). (d) The gather state written outside `apply_order` (a boot system sets the unit's gather order directly): the unit gathers, but the order log has no `Engine` line for the start order, so the check of one `Engine` line fails | headless |
 | GHO1 | P, or a click on the build entry, starts placement; the server order log has no new line. The ghost follows the pointer, and the build-area ring of the own Command Centre shows (radius 12.5). Over a valid point: a solid ghost ring in the slot colour. At one fixed point for each cause on a test map: stripes, the `forbidden` cursor, and the exact text of 7.2 at the pointer: "Outside the map", "Too far from your base", "Something is in the way" (over a unit, and over a building), "Too close to a building" (the gap only: the gap rings of the ghost and of the building show in vermilion), "Too close to ore" (the clearance ring shows). Right click and Esc end placement: no new order line, and the credits do not change. Left click places: a pending site shows in the same frame; after the server result a world progress bar grows on the site until it is complete. Shift and left click places and keeps the ghost. Mismatch case (a scenario unit walks onto the point after the client verdict): the pending site goes, "Something is in the way" shows at the site point, one error sound plays, the credits do not change, and the hint does not advance | (a) the gap folded into the overlap check (the rev-3 text): the gap-only point shows "Something is in the way"; (b) the old ore text "Cannot build on ore"; (c) the world style `build_area_ring` or `gap_ring` not drawn: no ring pixels at radius 12.5, or none round the building at the gap-only point; (d) the smart path runs before the placement mode: a right click in placement sends a move (an order line); (e) the client reads a fixed gap of 0.5, not `placement.gap`: the ghost is valid at the gap-only point and the server refuses | pixels |
-| PRD1 | The Command Centre runs one site from its structures queue and one job from its units queue at the same time (decision D-E). A second placed order waits ("Waiting to start") while one site is open (open-site cap 1, mod data) and opens when that site completes. A sixth placed order is refused with `queue_full`. A new unit appears at an exit point of the producer. With every exit point blocked, the complete job waits ("Waiting: exit blocked"), charges nothing more, and the unit appears when an exit point is free | (a) the producer advances only its first queue with an active job: the unit job stops while a site progresses; (b) the open-site cap not counted: two sites progress at once; (c) the exit check ignores static footprints: a unit appears inside the footprint of the Command Centre | headless |
+| PRD1 | The Command Centre runs one site from its constructor queue and one job from its producer queue at the same time (decision D-E). A second `Construct` order waits as a held order ("Waiting to start") while one site is open (open-site cap 1, mod data) and gets its site when that site completes. With one open site and 5 held orders (`queue_capacity` 5), the next `Construct` order is refused with `queue_full` (the open site has left the queue, 6.1). A new unit appears at an exit point of the producer. With every exit point blocked, the complete job waits ("Waiting: exit blocked"), charges nothing more, and the unit appears when an exit point is free | (a) the producer advances only its first queue with an active job: the unit job stops while a site progresses; (b) the open-site cap not counted: two sites progress at once; (c) the exit check ignores static footprints: a unit appears inside the footprint of the Command Centre | headless |
 | INC1 | The Command Centre adds 3 credits each second (mod data `income`, decision D-L) only while it is complete and has health above 0; each period is one ledger event, so `turts_audit` balances; a slot with 0 credits and no Ore Hauler that queues a hauler gets it in at most 170 s (section 5: 166 s); a destroyed Command Centre stops the income in the same tick | (a) the income added outside a ledger event: the audit is red; (b) income from a site or from a destroyed Command Centre; (c) a float rate: the total after 600 s is not 1,800 | headless |
 | PAY2 | Cancel of production under charge over time (D-A, 6.4): a cancel of the running job refunds `floor(charged x num / den)` with `cancel_refunds.running` (cancel at 37/100 of a cost of 500 with the ratio 3/4: refund 138); a cancel of a queued job refunds 0, because it charged 0; a cancel of a complete job that waits for a free exit refunds by `cancel_refunds.output_blocked` of the full cost. Each refund is one `Refunded` ledger event, and the ledger (`turts_audit`) balances after each cancel | (1) A refund base of the full cost: the running cancel refunds 375, and the queued cancel refunds 375. (2) A refund for a job that charged nothing | headless |
 | DES1 | The one death path (`remove_unit`, `crates/turts_sim/src/economy/transaction_m3.rs:354`, called from `crates/turts_sim/src/economy/combat.rs:405`) removes a destroyed unit that has health and a queue (VAL1). In one operation in the tick of the death (6.4): it cancels the running and queued jobs of a producer and refunds each by `cancel_refunds.destroyed`; it drops the held `Construct` orders of a constructor (refund 0), and the open sites of that constructor continue; it releases every claim; it removes the unit from the UnitId index (section 9) [perf H2]; and it frees the footprint, so a site on the same point passes the site check and a unit moves across the point. The ledger balances. The test package has different `destroyed` and `running` ratios (1/2 and 3/4). Static: the only production despawn in `turts_sim` is `crates/turts_sim/src/economy/transaction.rs:747` | (1) A second removal path, a death system that despawns the entity: the static check names it (qa-lead probe: `RED despawn writer economy/combat.rs:86`). (2) Jobs left on a removed unit: the queue table holds a job for the removed id. (3) The open sites removed with their constructor. (4) The footprint kept: the site on the point is refused with the overlap cause. (5) The index not updated: a lookup of the removed id gives an entity. (6) The running ratio used for a death: the refund is 3/4 of the charge, not 1/2 | headless |
@@ -1995,7 +2116,7 @@ Updated with what gate 1 measured. "Early" is the first two days of the stage th
 | The hosted runner has no GPU (decision note of 2026-11-11, open). The browser client runs at about 1 to 4 frames a second without a GPU | The MP1 pixel rows run on the local GPU gate with receipts until the CEO decides. Test: one MP1 pixel row on the hosted runner, to record the result |
 | One GPU for a two-client match | Two headed clients for 10 minutes with combat; frame p95 and the wait for the GPU lock |
 | The numbers do not end a match, or end it too fast. With two harvesters the own fields last 11.4 min; two players that defend can stall until the ore runs out at about 20 to 25 min (player 10) | A scripted headless match with the draft numbers; record the end time and the ore-out time. A stall is a retune of the numbers (S:807), not an engine defect [player 10] |
-| The server detects a disconnect late: it refused the same id until +14.5 s and accepted it at +15.8 s (debug build; backend M7) | MAT1 counts the 120 s from the end of the server session. Test: the same probe on a release build |
+| The server detects a disconnect late. Gate 1 saw +14.5 s, which was not a clean measure; the repair probe of 6.7.8 gives 9.1 to 10.0 s (native, debug build; the netcode timeout is 10 s). The browser lag is NOT TRACED (backend M7) | MAT1 counts the 120 s from the end of the server session, and LOB1 and MAT1 record L. Test: the same probe on a release build, and a browser measure of L before the step-19 test (section 15 point 10) |
 | The lobby and screens overrun, as the client shell did in MC (22 runs against 6) | Stage 2. A pixels-only stub: two clients reach the lobby, press ready, the match starts; red if the stub needs more than 4 runs |
 | Models cost too much frame time | Stage 2: the 400-unit measurement of section 8.5 |
 | Art production has no natural end | The cap of decision P1 and the shape fallback |
@@ -2017,7 +2138,7 @@ Only points that are truly open. The decisions with options are in section 2.
 5. The MP2 row asks for remembered sightings, but fog comes at M5 (PR part 3): a question for the MP2 design.
 6. MC is not closed (PT1 person run 1 failed; Tasks 23 and 24 are open). MP1 starts from the MC integration
    tree, and REG2 runs on that base. A fix in MC can move the base.
-7. S:727 says M5 "Needs teams (MP1)"; with P2 (b) MP1 gives two teams of one, not team choice. The
+7. S:727 says M5 "Needs teams (MP1)"; with P2 (a) MP1 gives two teams of one, not team choice. The
    specification text needs an update after MP1, or the M5 spec brings team choice.
 8. The second mod (mod L12) meets limits that MP1 records as additive later: square footprints, batches, and hold
    a point. Sections 6.4 and 6.5 decide the others: "a tick charges all costs or none", a repair cost of 0 is
@@ -2031,6 +2152,52 @@ Only points that are truly open. The decisions with options are in section 2.
    rows of `tests/qa/completeness/`, and adds case 22 (`mut-r7-token.md`: a `done:` path to a file that does
    not hold the named token; expected R7). Scratch proof: self-test 22/22 and `--enforce` exit 0 with the
    fill; today's script fails case 22.
+10. The disconnect notice L in the browser (backend M7, browser part): whether a reload or a tab close sends a
+    clean close is NOT TRACED; the native probe of 6.7.8 gives 9.1 to 10.0 s. Owner: `backend-engineer`, with
+    `web-platform-engineer`. It must close in stage 2, before the step-19 test: the plan adds a browser measure of
+    L, and step 19 breaks if L is above 13 s (6.7.8).
+11. A pack check that each building of a map can be placed at one point at least (mod M7, proposed text (c):
+    "no point of map `twin_fields` satisfies build_area 10 and gap 2.0"). Today K3 refuses only a package in
+    which no unit declares `build_area`. Owner: `mod-runtime-engineer`. It must close at gate 2: the plan takes it
+    as a stage-1 task of lane 0a, or drops it with a reason.
+12. The replica cost of perf M2 beyond `health_trace`: the clone of the candidate for each delta
+    (`crates/turts_client/src/replica.rs:432-443`, `:451`; the third site that perf M2 names, `:1090`, is NOT
+    TRACED as a clone) and `replace_keyed` (`:1029`), O(changes x records). MP1 records `apply_delta` p50 and p99
+    (exit item 5) and prunes `health_trace` (section 9). Owner: `network-engineer` (the client replica). It must
+    close at gate 2: lane 0a takes the fix, or the plan moves it to M7 with the recorded numbers.
+13. The texture and heap estimate of perf L3 (about 16 MiB of textures, a heap growth of about 35 MiB): an
+    estimate, NOT TRACED. Owner: `bevy-rendering-engineer`. It closes in stage 2, at the first presentation task
+    of 8.5, before row MDL1 runs.
+
+The sweep of the gate-1 Medium and Low findings that sit in sections that no repair part owned (reconcile pass).
+Each one is repaired in the text or is an open point above:
+
+| Finding | Disposition |
+| --- | --- |
+| player 5 (the loss of the only hauler) | repaired: 7.9 "Ore Hauler under attack" and "Ore Hauler destroyed", hint X1, the free income (D-L, INC1), ALR2 case B |
+| player 6 (who beats whom) | repaired: the role lines of 7.10, `hit_reduced` (8.3, 6.10 row V4), rows HUD6 and FX1 |
+| player 7 (the tooltip time under low power) | repaired: 7.10, `BuildTimeNow` (6.10 row H9), HUD6 plant (a) |
+| player 8 (the goals text) | repaired: section 13 (goal and test rules only; the words of the screen) |
+| player 11 (matches 2 and 3) | repaired: section 13, one instruction for each match |
+| mod M5 (`Supply` shaped to `frontier`) | repaired: 6.2 (`counts`, `when_short`, `BlockStart` reserved), 6.10 rows S1, U5, U6, H4 |
+| mod M6 (weapon identity) | repaired: `acquire` on the unit (6.3, 6.10 row U4), `Fired.weapon` as an index (6.8), a missing cell is a pack error (C3) |
+| mod M7 (error texts) | repaired: the error-text column and the "did you mean" rule of 6.10, U3 (damage 0); proposed check (c) is open point 11 |
+| mod M9 (the asset brief) | repaired: 8.1 (pack checks with texts and advice), 6.10 rows V1 and V2 aligned with 8.1 |
+| net 6 (visibility class of each record) | repaired: the table of 6.8, and the visibility predicate of the placement check (6.1) |
+| net 7 (an effect burst after a lost delta) | repaired: 6.8 (no effect from a resync batch, and the age bound K of 8.3), FX1 plant (d) |
+| net 11 (no client prediction) | repaired: 6.8 "No client prediction" |
+| backend M5 (no player id on the wire) | repaired: 6.7.7, 6.7.13, 6.8 |
+| backend M6 (the message order; the browser keeps the id from the seat) | repaired: 6.7.7, 6.8 |
+| backend M7 (late disconnect notice; no headless rejoin) | repaired: 6.7.8 (L, the probe), `--rejoin` (6.7.12), 7.6 and section 14 aligned; the browser part is open point 10 |
+| backend M8 (hooks and instrument reds) | repaired: 6.7.12, rows LOB1, LOB2, MAT1 |
+| backend L9 (persistence) | repaired: 6.7.11 |
+| backend L10 (hosting; boot time) | repaired: 6.7.10, 6.7.11, exit item 5 |
+| perf M1 (wire) | repaired: 6.8 (`unit_orders` as changes, records with a start tick and a rate, `Fired` with an index), ORDW1 |
+| perf M2 (the replica cost) | repaired in part: `health_trace` pruned (section 9); the rest is open point 12 |
+| perf M4 (string parsing per tick) | repaired: section 9 "String ids become indices at install" |
+| perf M5 (a full view and diff each tick) | repaired: section 9 "New records enter the committed tick from their writer" |
+| perf L1 (the effect pool) | repaired: 8.3, FX1 plant (b) |
+| perf L3 (memory) | repaired in part: 8.5 (placeholder models at the D-M caps; the wasm high-water, exit item 5); the estimate is open point 13 |
 
 ## 16. Cover that the yardstick does not ask for (from the coverage work)
 
@@ -2170,7 +2337,7 @@ choice changes the rows that the Changes column of section 2 lists.
 | PR10 | in | HUD6 | Unavailable reason | MC HUD2. MP1: queue full and no-credit causes |
 | PR15 | done:crates/turts_pack/tests/forge_cases.rs | c15_research_completion_tick_shot_uses_new_damage | Modifier application | M3 c15 (:1057); REG2 runs it again |
 | PR17 | later:MB | - | Asymmetric factions | as MC |
-| EC01 | in | PWR1 | Resource types | MC done. MP1: a capacity resource kind for power |
+| EC01 | in | PWR1 | Resource types | MC done. MP1: a Supply resource kind for power |
 | EC02 | in | OBS1 | Gather cycle | P9 a, D-F: free approach point at the receiver; the harvester gathers from tick 0 |
 | EC03 | done:crates/turts_pack/tests/economy_gather.rs | nearest_receiver_wins_before_id_tie_break | Drop-off choice | M2 test (:471); seen red under mutation (qa-lead, 2026-11-11); REG2 runs it again |
 | EC04 | done:tests/browser/orders-oracle.js | gather-depleted | Node depletion | MC ORD3 (:273-277, remaining 0); REG2 runs it again |
@@ -2289,7 +2456,7 @@ The hint list (mod data of `frontier`; the rules are in 7.8). One line shows at 
 | Id | Kind | Text on the screen | Starts when | Done when |
 | --- | --- | --- | --- | --- |
 | H1 | step | "Build a Power Station: press P, then left-click inside the ring around your Command Centre." | the first client update after "Click to play" | an own Power Station is pending (not refused), a site, or complete |
-| H2 | step | "While it builds, train a Rifleman: press I." | H1 is done | an own Rifleman job is in the units queue, or an own Rifleman exists |
+| H2 | step | "While it builds, train a Rifleman: press I." | H1 is done | an own Rifleman job is in the producer queue, or an own Rifleman exists |
 | H3 | step | "Select your Command Centre, then right-click the ground: new units walk there." | H2 is done | the own Command Centre has a rally point |
 | H4 | step | "Train a second Ore Hauler for more credits: press O." | H3 is done | an own Ore Hauler job is in the queue, or 2 own Ore Haulers exist |
 | H5 | step | "Build a Guard Turret near your ore field: press T." | H4 is done, and an own Power Station is complete | an own Guard Turret is pending (not refused), a site, or complete |
@@ -2326,8 +2493,8 @@ The steps:
 7. The tester presses O (H4). The tester selects the Ore Hauler: the info panel shows "Harvesting" and the load goes
    up. A right click on another ore node shows the gather cursor, then the gather marker (SMT1, HUD6).
 8. The tester places a Guard Turret near the ore field (H5). With the Command Centre selected, the tester presses I
-   three times. The entry shows the badge "3". The first row of the units queue shows its progress and the seconds
-   left. The site in the structures queue progresses at the same time (HUD5, PRD1).
+   three times. The entry shows the badge "3". The first row of the producer queue shows its progress and the seconds
+   left. The site of the Guard Turret progresses at the same time (HUD5, PRD1).
 9. The tester right-clicks the active job in the queue. The job goes, "+N" rises at the Command Centre, and the
    credits go up by N, the amount that the job paid. A cancel of a waiting job gives back nothing, because it paid
    nothing (PAY2, HUD5).
