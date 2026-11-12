@@ -1497,5 +1497,113 @@
     "expected_failure": "the movement system changed an audited field that is not movement state",
     "restore_check": "sha256(source)==baseline and selected test is green",
     "plant_note": "A1c repair (review N12 and the wider question): the movement system writes a field outside its list (the map bounds). The sweep test compares the full audit state around the system."
+  },
+  {
+    "id": "A2b1-angle-item-pin",
+    "plant_path": "crates/turts_sim/src/movement/mod.rs",
+    "anchor": "    (point.y - origin.y).atan2(point.x - origin.x)\n",
+    "replacement": "    -(point.y - origin.y).atan2(point.x - origin.x)\n",
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_sim",
+      "--features",
+      "test-probes",
+      "--test",
+      "kernel_reference",
+      "reference_items_are_unchanged",
+      "--",
+      "--exact",
+      "--nocapture"
+    ],
+    "expected_failure": "the item \"fn angle(\" of src/movement/mod.rs changed",
+    "restore_check": "sha256(source)==baseline and selected test is green",
+    "plant_note": "A2b1 step 1 (A2a re-check finding 1): a negated angle stayed green in kernel_reference and group_movement, because the live kernel and the reference copy both call the live text. The item pin of fn angle is red."
+  },
+  {
+    "id": "A2b1-sweep-escape-owner",
+    "plant_path": "crates/turts_sim/src/movement/ecs.rs",
+    "anchor": "            entity_mut.insert(escape);\n",
+    "replacement": "            entity_mut.insert(escape);\n            entity_mut.insert(crate::world::Owner(crate::SlotId(1)));\n",
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_sim",
+      "--lib",
+      "movement::ecs::tests::the_movement_system_writes_only_movement_state",
+      "--",
+      "--exact",
+      "--nocapture"
+    ],
+    "expected_failure": "blocked post tick",
+    "restore_check": "sha256(source)==baseline and selected test is green",
+    "plant_note": "A2b1 step 1 (A1c re-check finding 1, plant S2): a unit in a physical escape is given to slot 1. The blocked plain move of the sweep reaches the escape arm of the write loop."
+  },
+  {
+    "id": "A2b1-fallback-no-destination",
+    "plant_path": "crates/turts_sim/src/movement/fallback.rs",
+    "anchor": "    let slot = assignments\n        .first()\n        .map_or(pool.point, |(_, destination)| *destination);\n",
+    "replacement": "    let slot = unit.position;\n    let _ = &assignments;\n",
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_sim",
+      "--test",
+      "group_movement",
+      "two_gatherers_deliver_to_one_receiver_in_one_tick",
+      "--",
+      "--exact",
+      "--nocapture"
+    ],
+    "expected_failure": "never delivered",
+    "restore_check": "sha256(source)==baseline and selected test is green",
+    "plant_note": "A2b1 step 4 (a): the fallback pool of one gives no destination (the slot is where the unit stands). The deadline guard of the two gatherers is red."
+  },
+  {
+    "id": "A2b1-fallback-collected-on-arrival",
+    "plant_path": "crates/turts_sim/src/movement/frame.rs",
+    "anchor": "                progress.activity == MovementActivity::Resting\n                    && progress.gather_goal.is_none()\n                    && progress.claim_count == 0\n",
+    "replacement": "                progress.activity == MovementActivity::Resting\n                    && (progress.gather_goal.is_none() || progress.gather_goal.is_some())\n",
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_sim",
+      "--features",
+      "test-probes",
+      "--test",
+      "group_movement",
+      "each_trip_makes_at_most_one_fallback_pool",
+      "--",
+      "--exact",
+      "--nocapture"
+    ],
+    "expected_failure": "fallback pools",
+    "restore_check": "sha256(source)==baseline and selected test is green",
+    "plant_note": "A2b1 step 4 (b): the step collects a resting fallback pool while its gather leg still targets the goal (design 9.19). The trip makes a second fallback pool, and the per-trip counter is red."
+  },
+  {
+    "id": "A2b1-fallback-second-counter",
+    "plant_path": "crates/turts_sim/src/movement/ecs.rs",
+    "anchor": "        assign_fallback_pools(&mut outputs, fallbacks, &mut pending.next_pool_id)\n",
+    "replacement": "        let _ = &mut pending;\n        assign_fallback_pools(&mut outputs, fallbacks, &mut 0)\n",
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_sim",
+      "--test",
+      "group_movement",
+      "fallback_pool_ids_come_from_the_order_counter_in_unit_id_order",
+      "--",
+      "--exact",
+      "--nocapture"
+    ],
+    "expected_failure": "unit 2 takes the next id",
+    "restore_check": "sha256(source)==baseline and selected test is green",
+    "plant_note": "A2b1 step 4 (c): the fallback pool ids come from a second counter. The id test is red (the plan names kernel_reference or --p0; neither can see it: the harness keeps its own counter, and the stream has no fallback)."
   }
 ]
