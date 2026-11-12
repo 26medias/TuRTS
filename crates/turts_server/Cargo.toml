@@ -7,6 +7,7 @@ publish.workspace = true
 
 [dependencies]
 turts_sim = { path = "../turts_sim" }
+turts_audit = { path = "../turts_audit" }
 turts_mod_runtime = { path = "../turts_mod_runtime" }
 turts_mod_api = { path = "../turts_mod_api" }
 turts_pack = { path = "../turts_pack" }

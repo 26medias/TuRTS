@@ -1050,13 +1050,13 @@ mod tests {
             turts_sim::SlotId(0)
         );
 
-        let records = crate::economylog::read_jsonl_file(&path).unwrap();
+        let records = turts_audit::read_jsonl_file(&path).unwrap();
         let claims = records
             .iter()
-            .filter(|record| matches!(record, crate::economylog::EconomyLogRecord::Claim { .. }))
+            .filter(|record| matches!(record, turts_audit::EconomyLogRecord::Claim { .. }))
             .count();
         assert_eq!(claims, 1, "a rejoin must not emit a second Claim record");
-        crate::economylog::validate_records(&records).unwrap();
+        turts_audit::validate_records(&records).unwrap();
         drop(app);
         std::fs::remove_file(path).unwrap();
     }

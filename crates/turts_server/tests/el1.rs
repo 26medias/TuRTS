@@ -3,10 +3,6 @@
 
 mod support;
 
-#[path = "../src/economylog.rs"]
-#[allow(dead_code)]
-mod economylog;
-
 use std::fs;
 use std::time::{Duration, Instant};
 
@@ -62,13 +58,13 @@ fn el1_muster_movement_and_queued_gather_validate_every_captured_tick() {
         std::thread::sleep(Duration::from_millis(20));
     }
 
-    let records = economylog::read_jsonl_file(&economy_log).unwrap_or_else(|error| {
+    let records = turts_audit::read_jsonl_file(&economy_log).unwrap_or_else(|error| {
         panic!("EL1 actual economy log failed its production validator: {error}")
     });
     let tick_records: Vec<_> = records
         .iter()
         .filter_map(|record| match record {
-            economylog::EconomyLogRecord::Tick {
+            turts_audit::EconomyLogRecord::Tick {
                 tick,
                 before,
                 state,
@@ -94,7 +90,7 @@ fn el1_muster_movement_and_queued_gather_validate_every_captured_tick() {
     }
     assert!(
         records.iter().any(|record| matches!(record,
-            economylog::EconomyLogRecord::CommandBoundary(command)
+            turts_audit::EconomyLogRecord::CommandBoundary(command)
                 if matches!(&command.input.kind, CommandKind::Order(order)
                     if order.behaviour == Behaviour::Gather
                         && order.queue == turts_sim::QueueMode::Append
@@ -185,13 +181,13 @@ fn assert_economy_tick_coverage(
     actual_end
 }
 
-fn movement_state_bytes(records: &[economylog::EconomyLogRecord]) -> (usize, usize, usize, usize) {
+fn movement_state_bytes(records: &[turts_audit::EconomyLogRecord]) -> (usize, usize, usize, usize) {
     let mut unit_state_count = 0;
     let mut unit_bytes = 0;
     let mut slot_count = 0;
     let mut slot_bytes = 0;
     for record in records {
-        let economylog::EconomyLogRecord::Tick { before, state, .. } = record else {
+        let turts_audit::EconomyLogRecord::Tick { before, state, .. } = record else {
             continue;
         };
         for audit in [before, state] {

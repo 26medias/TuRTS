@@ -8602,6 +8602,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "turts_audit"
+version = "0.2.0"
+dependencies = [
+ "bevy",
+ "bevy_app",
+ "bevy_math",
+ "serde",
+ "serde_json",
+ "turts_mod_api",
+ "turts_net_protocol",
+ "turts_sim",
+]
+
+[[package]]
 name = "turts_checks"
 version = "0.2.0"
 dependencies = [
@@ -8742,6 +8756,7 @@ dependencies = [
  "serde_json",
  "tokio",
  "tower-http",
+ "turts_audit",
  "turts_mod_api",
  "turts_mod_runtime",
  "turts_net_lightyear",

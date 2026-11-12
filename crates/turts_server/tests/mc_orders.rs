@@ -562,11 +562,11 @@ fn queued_group_attack_spreads_and_strictly_replays() {
         .split(|byte| *byte == b'\n')
         .filter(|line| !line.is_empty())
         .map(|line| serde_json::from_slice(line).expect("parse audit log record"))
-        .collect::<Vec<economylog::EconomyLogRecord>>();
+        .collect::<Vec<turts_audit::EconomyLogRecord>>();
     assert!(
-        economylog::validate_records(&records).is_ok(),
+        turts_audit::validate_records(&records).is_ok(),
         "queued Point Attack shared-spread operations strictly replay: {:?}",
-        economylog::validate_records(&records)
+        turts_audit::validate_records(&records)
     );
 }
 
@@ -682,11 +682,11 @@ fn queued_unit_attack_activates_and_strictly_replays() {
         .split(|byte| *byte == b'\n')
         .filter(|line| !line.is_empty())
         .map(|line| serde_json::from_slice(line).expect("parse audit log record"))
-        .collect::<Vec<economylog::EconomyLogRecord>>();
+        .collect::<Vec<turts_audit::EconomyLogRecord>>();
     assert!(
-        economylog::validate_records(&records).is_ok(),
+        turts_audit::validate_records(&records).is_ok(),
         "queued Unit Attack activation and target completion strictly replay: {:?}",
-        economylog::validate_records(&records)
+        turts_audit::validate_records(&records)
     );
 }
 
@@ -812,11 +812,11 @@ fn point_attack_switches_to_another_eligible_target_and_strictly_replays() {
         .split(|byte| *byte == b'\n')
         .filter(|line| !line.is_empty())
         .map(|line| serde_json::from_slice(line).expect("parse audit log record"))
-        .collect::<Vec<economylog::EconomyLogRecord>>();
+        .collect::<Vec<turts_audit::EconomyLogRecord>>();
     assert!(
-        economylog::validate_records(&records).is_ok(),
+        turts_audit::validate_records(&records).is_ok(),
         "target switch remains paused and strictly replays: {:?}",
-        economylog::validate_records(&records)
+        turts_audit::validate_records(&records)
     );
 }
 
@@ -929,11 +929,11 @@ fn suppressed_order_cooldowns_advance_and_strictly_replay() {
         .split(|byte| *byte == b'\n')
         .filter(|line| !line.is_empty())
         .map(|line| serde_json::from_slice(line).expect("parse audit log record"))
-        .collect::<Vec<economylog::EconomyLogRecord>>();
+        .collect::<Vec<turts_audit::EconomyLogRecord>>();
     assert!(
-        economylog::validate_records(&records).is_ok(),
+        turts_audit::validate_records(&records).is_ok(),
         "suppressed authored cooldowns and prompt re-enable strictly replay: {:?}",
-        economylog::validate_records(&records)
+        turts_audit::validate_records(&records)
     );
 }
 
@@ -1077,11 +1077,11 @@ fn empty_ammo_attack_move_pause_replays(group: u32) {
         .split(|byte| *byte == b'\n')
         .filter(|line| !line.is_empty())
         .map(|line| serde_json::from_slice(line).expect("parse audit log record"))
-        .collect::<Vec<economylog::EconomyLogRecord>>();
+        .collect::<Vec<turts_audit::EconomyLogRecord>>();
     assert!(
-        economylog::validate_records(&records).is_ok(),
+        turts_audit::validate_records(&records).is_ok(),
         "no-ammo acquisition and attack-move pause strictly replay: {:?}",
-        economylog::validate_records(&records)
+        turts_audit::validate_records(&records)
     );
 }
 
