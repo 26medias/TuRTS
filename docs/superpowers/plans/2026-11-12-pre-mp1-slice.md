@@ -74,73 +74,122 @@
     - the classifier finds a difference outside P3 (D `:146`);
     - the turts_audit compile check of R2 fails.
 
-## 2. Plan refinements of D (Root accepts or refuses each one at gate 2)
+## 1a. Rule for assertions and expected values
+
+A builder never changes an assertion or an expected value on his own decision. There are four permitted kinds of change, and this plan names each one.
+
+1. **Inversion.** A design decision changes the behaviour. The plan names the test and its new expected value. The source of the value is D, or a gate probe.
+2. **Observation change.** The type that the test reads is deleted. The test reads the replacement field. The expected value stays the same.
+3. **Deletion.** The tested item no longer exists. The plan names the test, and D or TDI gives the reason.
+4. **Registry re-pin.** D names the new text.
+
+Any other assertion change, and any extra red test, stops the task. The builder reports it to Root.
+
+Each place in this plan where an assertion or an expected value can change:
+
+| Place | Kind | Why it stays, or how it is tightened |
+| --- | --- | --- |
+| S1 step 1, test names | tightened | The builder lists the seven writer tests that stay in `economylog.rs` by name on the board before the compare. The compare must give exactly those seven names, and no other difference. |
+| A1c: E8-mixed `expected_failure` to "rejected seq 5 is write neutral" | re-pin | D section 9 item 2 names the text (`economy.rs:3197-3201`). |
+| A1c: delete `economy.rs:486-564` (a position moved by 1 ulp) | deletion | TDI `:67`. The movement tests own positions. |
+| A1c: `el1.rs`, the two void EL1 faults | deletion | D section 4 item 5. |
+| A1d: a changed M3 failure text | tightened | No registry edit in A1d. If a text would change, A1d stops. |
+| A2a: "each changed assertion has a reason" | removed | D 9.9: A2a changes no assertion. |
+| A2b1: eight tests that read `PlainMoveProgress` | observation change | The mapping is in Task A2b1. A pinned fallback slot gets a new value only from an independent calculation in the test (MC design 6.3 hex ring), never from a run. |
+| A2b2: `plain_movement_tests` (`movement.rs:3471-3700`) | deletion, plus two ports | The tested model is gone. The two ported tests keep their expected values. |
+| A2c: four tests on the audit shape of a single move | inversion | The new values come from D section 5 P3 and the gate probe (operations at ticks 1, 1 and 124; GSIM `:61`). |
+| A2c: tests that read `PlainMoveOrderIdentities` | observation change | They read `UnitOrders`. The order id stays the same. |
+| A2c: `orders_plain.rs:118` | no change | Both paths take the pool path, so their counts stay equal. A red stops A2c. |
+| A2c: the `MoveTo` users in `economy_ordering.rs` and `economy_accounting.rs` | no change | A red stops A2c. |
+| A2c: renames of `group_movement.rs:2005` and `:2156` | removed | No rename. Then the test-name compare in REG stays clean. |
+
+## 2. Plan refinements of D
+
+Root accepted R1 to R9 after gate 2. R2 carries the gate condition. R10 to R13 are new. They need Root's acceptance at the re-check.
 
 | # | Refinement | Reason (evidence) | Cost if refused |
 | --- | --- | --- | --- |
-| R1 | G1 starts now. It runs in parallel with S1, S2 and S3. Its stream counter run (step 4) waits for D0p. | G1 edits `grid.rs` only (`grid.rs:61-70`). S1, S2 and S3 do not edit `grid.rs`. The counter must see the trips of the depletion repair (GSIM L2). | none on the path (G1 is not on the critical path) |
-| R2 | A2a runs in parallel with A1b and A1c. A2b waits for A1c. | The replay validator uses only these movement items: `step_frame_preserving_resting`, `MovementFrame`, `MovementFrameUnit`, `MoveProgress`, `PlainMoveProgress`, `PlainGatherGoal`, `spread_destinations`, `FollowMoveOrigin`, `MovementActivity` (grep of `turts_sim::movement::` in `economylog.rs` below `:8084`). A2a keeps their signatures, and its output is bit-equal (D `:43`). D section 8 item 4 says only A2b touches what the validator reads. Condition: `cargo check -p turts_audit --locked` passes on the A2a branch. If it fails, A2a waits for A1c. | +4 runs on the critical path (24 to 28; scratch model) |
-| R3 | A4 starts after A2b, in parallel with A2c and Q2. A4 and A3 merge only after the Q2 re-freeze commit. Each runs G-FROZEN again with the new hash. | A4 edits `movement/frame.rs`. A2c edits the dispatch (`orders.rs:2822-2900`, `command.rs:488-495`). The rule keeps the classified pair of Q2 free of A4 and A3. | +5 runs on the critical path |
-| R4 | A1 is four tasks: A1a (live reader, outcome assertions), A1b (TDI step 2 and the side-by-side exit commit), A1c (TDI step 3), A1d (TDI step 4). A1d is not an input of A2b. | TDI `:77-81`; D section 4 items 1 to 7; D section 9 items 1 and 2. | +2 runs |
-| R5 | New task D0p: port the validator hunks of the depletion repair into `crates/turts_audit/src/replay.rs`. | The repair edits `economylog.rs` in the validator at `:3470` and `:5541` (`git diff -U0 8d6902c 43282fe`). S1 moved those lines to `replay.rs` (`c1ebb23`: `economylog.rs` −18,880 lines). | the merge of D0 into the slice has no owner |
-| R6 | Q1b commits the list of allowed differences, `tests/m3/refreeze_allowed.json`, before the A2c commit. | D section 5 item 3 P1: "committed before A2c". | none |
-| R7 | The "CI grep" of D section 9 item 5 is a `turts_checks` test. So it runs in `cargo test --workspace` (`.github/workflows/ci.yml:33`), with no `ci.yml` edit. | `ci.yml` stays out of the hot files. | none |
-| R8 | Q2 is the lane of `qa-lead` on top of the A2c branch. A2c and Q2 merge together, after the CEO approval. | A2c alone is red at G-FROZEN by design (D section 5 item 2). | none |
-| R9 | A2a builds the bit-equal reference harness. A4 and A3 use it again, each with a reference copy taken from its own base. | D `:54-59`. | +2 runs |
+| R1 | G1 starts now and runs in parallel with S1, S2 and S3. Its stream counter run (step 4) waits for D0p. | G1 edits only `grid.rs` (`grid.rs:61-70`). The counter must see the trips of the depletion repair (GSIM L2). | none on the path |
+| R2 | A2a runs in parallel with A1b and A1c. A2b1 waits for A1c. Condition (gate 2 L2): `cargo test -p turts_audit --locked` and EL1 pass on the A2a branch. If either fails, A2a waits for A1c. | The replay validator uses `step_frame_preserving_resting`, `MovementFrame`, `MovementFrameUnit`, `MoveProgress`, `PlainMoveProgress`, `PlainGatherGoal`, `spread_destinations`, `FollowMoveOrigin` and `MovementActivity` (grep of `turts_sim::movement::` in `economylog.rs` before `:8084`). A2a keeps their signatures, and its output is bit-equal. | +4 runs (path 27 to 31) |
+| R3 | A4 starts after A2b2, in parallel with A2c and Q2. A4 and A3 merge only after the Q2 commit. Each runs G-FROZEN again with the new hash. | A4 edits only `movement/frame.rs`. The A2c file list holds no `movement/` file. If A2c must edit a `movement/` file, A4 rebases after A2c. | +5 runs |
+| R4 | A1 is four tasks: A1a to A1d. | TDI `:77-81`; D section 4; D section 9 items 1 and 2. | +2 runs |
+| R5 | Task D0p ports the validator hunks of the depletion repair into `turts_audit/src/replay.rs`. | `git diff -U0 8d6902c 43282fe`: hunks at `economylog.rs:3470` and `:5541`. | the merge has no owner |
+| R6 | Q1b commits `tests/m3/refreeze_allowed.json` before the A2c commit. | D section 5 item 3. | none |
+| R7 | The source checks of D section 9 items 5 and 13 are tests in `crates/turts_sim/tests/one_step_function.rs`, so `cargo test --workspace` runs them (`.github/workflows/ci.yml:33`). | `ci.yml` stays out of the hot files. | none |
+| R8 | Q2 is the lane of `qa-lead` on top of the A2c branch. A2c and Q2 merge together. | A2c alone is red at G-FROZEN by design. | none |
+| R9 | A2a builds the bit-equal harness. A2b1, A2b2, A4 and A3 use it again, each with a reference copy from its own base. After A2b2, the harness has no plain-progress frames (gate 2, on R9). | D `:54-59`. | +2 runs |
+| R10 | A2b1 also replaces the second creator of `PlainMoveProgress`: the failure of a legacy envelope (`orders.rs:2044-2058`, `request.plain`). Then A2b2 deletes a type that no code creates. | D 9.11 lists `:2044-2058` in the A2b file list but does not say which part owns it. If A2b2 owned it, A2b2 would change behaviour (a legacy envelope that fails would no longer show `Blocked`; `group_movement.rs:3027`). | A2b2 is not a pure deletion |
+| R11 | The trace emitter and the reference harness read the movement state only through `turts_sim::movement::probe` (feature `test-probes`). They never name `PlainMoveProgress`. | A2b2 deletes the type. An emitter that names it would change between the two runs of a P0 pair, and the rule "the emitter sha256 is equal" (D `:140`) would fail. | the P0 pair at A2b2 cannot be compared |
+| R12 | The counts of D 9.13 are checked in two stages. At A2a: one `for _ in 0..8` and one call `step(` + `&MovementInput` in `movement/` outside `movement/plain.rs`, `movement/reference.rs` and `movement/tests/`. At A2b2: one of each in `movement/`, outside `reference.rs` and `tests/`. | Today the count is 3 of each (`movement.rs:807, 2009, 2192`; calls at `:793, 1993, 2174`). One of each is in `step_plain_progress`, which stays until A2b2. The reference copy holds the old kernel. The text `step(&MovementInput` occurs 0 times as written, because rustfmt puts the argument on the next line. So the check uses the regex `\bstep\(\s*&MovementInput` (python probe: 3 hits today). | the D 9.13 check cannot go green at A2a |
+| R13 | The tests that read `PlainMoveProgress` go red at A2b1, not at A2b2. So A2b1 lists them and gives each one its new observation (section 1a). | A2b1 removes the creators of `PlainMoveProgress`. Eight tests in `group_movement.rs` read it (list in Task A2b1). | the builder changes assertions with no rule |
 
 ## 3. Dependency graph
 
-Model: scratch file `slice.py`. Cycle check: no cycle.
-- Run estimates come from the MC actuals of the most similar MC task (MC board ledger, 135 runs).
-- Lane hours = runs × 2 h. The MC range per run is 1.4 to 2.9 h (MC T6: 8 runs, about 23 h; MC T16: 22 runs, about 30 h; from the merge commit times).
+Model: scratch file `slice.py`, revision 2. Cycle check: no cycle.
+
+- Run estimates come from the MC actuals of the most similar MC task.
+- Lane hours = runs × 2 h. The MC range per run is 1.4 to 2.9 h.
 - "In work" counts only the remaining runs.
+- MP1-E1, MP1-E2 and MP1-M4 are start markers for MP1 lanes (section 5). They take 0 runs.
 
 | Task | What | Builder seat | Reviewer seat | Branch | Inputs (merged first) | Hot files (shared with) | GPU | Runs | Lane h |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| S1 | `turts_audit` crate, replay validator moved unchanged (in work: `c1ebb23`, `5ce21d2`) | backend-engineer | qa-lead | `pre-mp1/s1-audit` | none | `crates/turts_audit/*` (D0p, A1b-A1d), `economy.rs` (D0p, A1a-A1c) | no | 2 | 4 |
-| S45 | Client splits S4 and S5 (in work: 6 commits to `d047433`) | bevy-rendering-engineer | ux-designer | `pre-mp1/s45-client` | none | `tests/m2/refutations.json` (S2, A1b, A1c) | slow set only | 2 | 4 |
+| S1 | `turts_audit` crate, validator moved unchanged (in work) | backend-engineer | qa-lead | `pre-mp1/s1-audit` | none | `turts_audit/*` (D0p, A1b-A1d), `economy.rs` (D0p, A1a-A1c) | no | 2 | 4 |
+| S45 | Client splits (in work) | bevy-rendering-engineer | ux-designer | `pre-mp1/s45-client` | none | `tests/m2/refutations.json` (S2, A1b, A1c) | slow set only | 2 | 4 |
 | G1 | `within` finds every point inside `reach` | simulation-core-engineer | qa-lead | `pre-mp1/g1-grid` | none (step 4: D0p) | `grid.rs` (A3) | no | 3 | 6 |
-| Q1a | Classifier and its self-test | qa-lead | simulation-core-engineer | `pre-mp1/q1a-classifier` | none | `tests/m3/refreeze_classify.py` (Q1b, Q2) | no | 2 | 4 |
-| D0 | Depletion repair merged into `codex/mc-integration` (MC, not a slice task) | (MC) | (MC) | `codex/mc-fix-deplete` | MC | — | — | 0 | — |
-| D0p | `codex/mc-integration` merged into `pre-mp1/integration`; repair hunks ported into `replay.rs` | backend-engineer | simulation-core-engineer | `pre-mp1/d0-port` | D0, S1 | `replay.rs`, `economy.rs`, `orders.rs`, `gather.rs` | no | 2 | 4 |
-| S2 | `orders.rs` to `orders/` | simulation-core-engineer | technical-director | `pre-mp1/s2-orders` | D0p | `orders/` (A2b, A2c, A3), `refutations.json` | no | 2 | 4 |
-| S3 | `movement.rs` to `movement/` | simulation-core-engineer | technical-director | `pre-mp1/s3-movement` | D0p | `movement/` (Q1b, A2a, A2b, A4, A3) | no | 2 | 4 |
-| A1a | Live reader; outcome assertions for the "strictly replays" tests | backend-engineer | qa-lead | `pre-mp1/a1a-reader` | S1 | `economy.rs` (D0p: other hunks), `mc_orders.rs`, `session.rs` | no | 3 | 6 |
-| Q1b | Trace emitter, `separated` source, the counts, the allowed list | qa-lead | simulation-core-engineer | `pre-mp1/q1b-trace` | S3, G1, Q1a | `movement/frame.rs`, `turts_sim/Cargo.toml` | no | 2 | 4 |
-| A1b | `LedgerAudit`, domain files, both validators side by side, domain plants, writer scan, exit commit | backend-engineer | qa-lead | `pre-mp1/a1b-ledger` | A1a, D0p, S2, S3 | `turts_audit/*`, `economy/ledger_view.rs` (new), `refutations.json`, `economy.rs`, `el1.rs`, `mc_orders.rs` | yes (ci-browser 8) | 4 | 8 |
-| A2a | One step function (bit-equal), phase counters | simulation-core-engineer | qa-lead | `pre-mp1/a2a-step` | Q1b, G1, S3 | `movement/frame.rs` | no | 4 | 8 |
-| A1c | Replay validator deleted; E8 re-pin; self-checks become plants; sink writes `LedgerAudit` | backend-engineer | qa-lead | `pre-mp1/a1c-delete` | A1b | `turts_audit/*`, `economy.rs`, `el1.rs`, `refutations.json` | yes (ci-browser 8) | 2 | 4 |
-| A1d | `common/conservation.rs` replaced by `turts_audit` | backend-engineer | qa-lead | `pre-mp1/a1d-conservation` | A1c | `crates/turts_pack/tests/common/*`, `tests/m3/refutations.json` | no | 2 | 4 |
-| A2b | Fallback makes a pool of one; plain model deleted | simulation-core-engineer | qa-lead | `pre-mp1/a2b-fallback` | A2a, A1c, S2 | `movement/*`, `orders/plain.rs`, `views.rs`, `ledger_view.rs`, `el1.rs` | no | 3 | 6 |
-| A2c | The plain move and `MoveTo` take the pool path | simulation-core-engineer | qa-lead | `pre-mp1/a2c-pool` | A2b, Q1b | `orders/apply.rs`, `command.rs` | no | 3 | 6 |
-| Q2 | Re-freeze classification, technical-director review, CEO approval, fixture commit | qa-lead (technical-director reviews the difference) | technical-director | `pre-mp1/q2-refreeze` (on `pre-mp1/a2c-pool`) | A2c | `tests/m3/m2_operation_stream.json`, `tests/m3/refutations.py:18` | no | 3 | 6 + CEO wait |
-| A4 | Rest of the frame as functions on `&mut FrameState` | simulation-core-engineer | performance-architect | `pre-mp1/a4-frame` | A2b (merge after Q2) | `movement/frame.rs` (A3) | no | 2 | 4 |
-| A3 | Two neighbour grids; combat cell from the smallest weapon range | simulation-core-engineer | performance-architect | `pre-mp1/a3-grids` | A4, G1 (merge after Q2) | `movement/*`, `grid.rs`, `economy/combat.rs`, `orders/run.rs` | no | 3 | 6 |
-| REG | Slice regression on the final merged tree | qa-lead | (Root reads) | `pre-mp1/reg` (evidence only) | Q2, A3, S45, A1d | — | yes | 2 | 4 |
-| TDN | Architecture note before MP1 lanes start on the slice tree | technical-director | (Root reads) | none (text to Root) | REG | — | no | 1 | 2 |
-| | **Total (remaining)** | | | | | | | **49** | **98 lane h** |
+| Q1a | Classifier and self-test | qa-lead | simulation-core-engineer | `pre-mp1/q1a-classifier` | none | `tests/m3/refreeze_classify.py` (Q1b, Q2) | no | 2 | 4 |
+| D0 | Depletion repair in `codex/mc-integration` (MC) | (MC) | (MC) | `codex/mc-fix-deplete` | MC | — | — | 0 | — |
+| D0p | Repair ported into the slice | backend-engineer | simulation-core-engineer | `pre-mp1/d0-port` | D0, S1 | `replay.rs`, `economy.rs`, `orders.rs`, `gather.rs` | no | 2 | 4 |
+| S2 | `orders.rs` to `orders/` | simulation-core-engineer | technical-director | `pre-mp1/s2-orders` | D0p | `orders/` (A2b1, A2c, A3), `refutations.json` | no | 2 | 4 |
+| S3 | `movement.rs` to `movement/` | simulation-core-engineer | technical-director | `pre-mp1/s3-movement` | D0p | `movement/` (Q1b, A2a, A2b1, A2b2, A4, A3) | no | 2 | 4 |
+| A1a | Live reader; outcome assertions | backend-engineer | qa-lead | `pre-mp1/a1a-reader` | S1 | `economy.rs`, `mc_orders.rs`, `session.rs` | no | 3 | 6 |
+| Q1b | Trace emitter, probe API, counts, allowed list | qa-lead | simulation-core-engineer | `pre-mp1/q1b-trace` | S3, G1, Q1a | `movement/` (probe module), `turts_sim/Cargo.toml` | no | 2 | 4 |
+| A1b | `LedgerAudit`, domains, side by side, exit commit | backend-engineer | qa-lead | `pre-mp1/a1b-ledger` | A1a, D0p, S2, S3 | `turts_audit/*`, `ledger_view.rs`, `refutations.json`, `economy.rs`, `el1.rs` | yes | 4 | 8 |
+| A2a | One step function, bit-equal | simulation-core-engineer | qa-lead | `pre-mp1/a2a-step` | Q1b, G1, S3 | `movement/frame.rs` | no | 4 | 8 |
+| A1c | Replay validator deleted | backend-engineer | qa-lead | `pre-mp1/a1c-delete` | A1b | `turts_audit/*`, `economy.rs`, `el1.rs` | yes | 2 | 4 |
+| A1d | One ledger oracle | backend-engineer | qa-lead | `pre-mp1/a1d-conservation` | A1c | `turts_pack/tests/common/*` | no | 2 | 4 |
+| A2b1 | The fallback pool, the gather protocol, the guards | simulation-core-engineer | qa-lead | `pre-mp1/a2b1-fallback` | A2a, A1c, S2 | `movement/*`, `orders/run.rs`, `orders/pending.rs`, `orders/behaviours/follow.rs`, `economy/gather.rs` | no | 3 | 6 |
+| A2b2 | The switch goes; the plain movement model is deleted | simulation-core-engineer | qa-lead | `pre-mp1/a2b2-delete` | A2b1 | `movement/*`, `orders/*`, `views.rs`, `ledger_view.rs`, `el1.rs`, `command.rs`, `gather.rs` | no | 2 | 4 |
+| A2c | Single moves take the pool path; plain reservations deleted | simulation-core-engineer | qa-lead | `pre-mp1/a2c-pool` | A2b2, Q1b | `orders/*`, `command.rs`, `economy/combat.rs:154`, `economy/transaction.rs:736`, `views.rs:512` | no | 4 | 8 |
+| Q2 | The one re-freeze | qa-lead (technical-director reviews) | technical-director | `pre-mp1/q2-refreeze` | A2c | the fixture, `refutations.py:18` | no | 3 | 6 + CEO wait |
+| A4 | The frame as functions on `&mut FrameState` | simulation-core-engineer | performance-architect | `pre-mp1/a4-frame` | A2b2 (merge after Q2) | `movement/frame.rs` | no | 2 | 4 |
+| A3 | Two grids; combat cell | simulation-core-engineer | performance-architect | `pre-mp1/a3-grids` | A4, G1 (merge after Q2) | `movement/*`, `grid.rs`, `combat.rs:111-117`, `orders/run.rs` | no | 3 | 6 |
+| REG | Slice regression | qa-lead | (Root) | `pre-mp1/reg` | Q2, A3, S45, A1d | — | yes | 2 | 4 |
+| TDN | Architecture note | technical-director | (Root) | none | REG | — | no | 1 | 2 |
+| | **Total (remaining)** | | | | | | | **52** | **104 lane h** |
 
-**Critical path** (scratch `slice.py`): S1 → D0p → S3 → Q1b → A2a → A2b → A2c → Q2 → REG → TDN = **24 runs**.
-- That is 48 h at 2 h per run (range 34 to 70 h).
-- Two waits come on top: the depletion repair (D0, MC) and the CEO approval in Q2.
-- A second path of equal length ends at A2b: S1 → D0p → S2 → A1b → A1c → A2b. A slip on either path delays A2b.
-- If R2 is refused, the path is 28 runs.
+**Critical path:** S1 → D0p → S3 → Q1b → A2a → A2b1 → A2b2 → A2c → Q2 → REG → TDN = **27 runs**.
+- That is 54 h at 2 h per run (range 38 to 78 h). The D0 wait and the CEO wait in Q2 come on top.
+- A second path reaches A2b1 at the same offset: S1 → D0p → S2 → A1b → A1c.
+- If R2 fails, the path is 31 runs.
 
-**Lanes at each stage** (offset in runs from now; D0 assumed at once):
+**What changed against revision 1 of this plan:**
+- A2b (3 runs) is now A2b1 (3) and A2b2 (2).
+- A2c grows from 3 to 4 runs, because it takes the deletion of the plain reservations and their callers.
+- The path grows from 24 to 27 runs. The total grows from 49 to 52 runs.
+- A4 now starts after A2b2.
 
-| Offset | Lanes | Tasks | Headed GPU need |
+**Lanes at each stage** (offset in runs; D0 assumed at once):
+
+| Offset | Slice lanes | Tasks | MP1 lanes that can start |
 | --- | --- | --- | --- |
-| 0-2 | 4 | S1, S45, G1, Q1a | S45 slow rows only |
-| 2-4 | 3 | G1, D0p, A1a | no |
-| 4-6 | 3 | S2, S3, A1a | no |
-| 6-8 | 2 | Q1b, A1b | A1b (8 browser faults) |
-| 8-12 | 2 | A2a, then A1b / A1c | A1b, A1c |
-| 12-15 | 2 | A2b, A1d | no |
-| 15-18 | 2 | A2c, A4 / A3 | no |
-| 18-21 | 2 | Q2, A3 | no |
-| 21-24 | 1 | REG, TDN | REG |
+| 0-2 | 4 | S1, S45, G1, Q1a | lobby (server; D 9.15) |
+| 2-4 | 3 | G1, D0p, A1a | — |
+| 4-6 | 3 | S2, S3, A1a | — |
+| 6 | — | — | MP1-E1: damage and armour, power, effects, match lifecycle |
+| 6-8 | 2 | Q1b, A1b | |
+| 8-12 | 2 | A2a, A1b / A1c | |
+| 12 | — | — | MP1-E2: construction, rally, repair approach, automatic targeting |
+| 12-14 | 2 | A2b1, A1d | |
+| 14-15 | 1 | A2b1 | |
+| 15-17 | 1 | A2b2 | |
+| 17-19 | 2 | A2c, A4 | |
+| 19 | — | — | MP1-M4: the M4 route follower (after A4) |
+| 19-21 | 2 | A2c, A3 | |
+| 21-24 | 2 | Q2, A3 | |
+| 24-27 | 1 | REG, TDN | |
 
-The peak is 4 lanes. Headed work queues on the one GPU lock. Only S45, A1b, A1c and REG need it.
+The slice uses at most 4 lanes. From offset 6, MP1 lanes add to that count. Headed GPU work queues on the one lock: S45, A1b, A1c, REG, and the pixel rows of the MP1 lanes.
 
 ## 4. Gate sets
 
@@ -195,13 +244,22 @@ Root runs this set one time for each merged tree that differs from a tree that p
 8. From the merge of A1a on: E9 loss green five times in a row (A1a step 4 command).
 9. Hosted CI on each push of `pre-mp1/integration`. Root reads the result when it ends (C391 item 5).
 
-## 5. Points where the slice can stop early with value
+## 5. Start points for MP1 lanes, and early stops
 
-| Stop | After | Value for MP1 | What stays open, and its deadline |
-| --- | --- | --- | --- |
-| E1 | S1, S45, G1, D0p, S2, S3 (about 6 runs on the path) | Split files, so MP1 lanes stop queueing on them. The audit crate exists. The grid defect is repaired. | The replay validator is still a second model. An MP1 behaviour would need a validator branch (TDI E1 refuses it). So MP1 lanes that add orders or movement must wait. |
-| E2 | A1a to A1c (about 12 runs) | The validator checks conservation only. MP1 behaviours need no validator branch. | Two step branches and the plain model stay. MP1 must add no test that pins a plain move (audit `:48`: at the latest before M4). |
-| E3 | A2c and Q2 (about 21 runs) | One movement model. The one re-freeze is done. | A4 (audit `:36`: split before M4). A3 (audit `:33`: before MP1 content adds a command centre or a long-range tank). |
+D section 9 item 15 is binding. GSIM gate 2, "Answer to 3": the replay validator lets only movement change the state between operations. It checks an Other-phase operation for phase continuity only (`economylog.rs:540-556` at `8d6902c`).
+
+| Point | After (offset) | MP1 work that can start | Condition | Open debt and its deadline |
+| --- | --- | --- | --- | --- |
+| Lobby | now (0) | the two-slot lobby (`turts_server` room) | It is on the server and does not touch the sim. | — |
+| E1 | S1, S2, S3, S45, D0p (6) | damage and armour, power, effects, match lifecycle | Every sim write is inside a captured operation (`capture_operation`, `economy/transaction.rs:90`). Put new code in new files (TDI B: `economy/damage.rs`, `economy/power.rs`, `match_state.rs`). An MP1 edit of `economy/combat.rs` rebases on A2c (`:154`) and A3 (`:111-117`). | The replay validator is still the second model. Until E2, no MP1 lane adds an order or writes `MoveTarget`. |
+| E2 | A1c (12) | construction, rally, the repair approach, automatic targeting | These add orders. They write `MoveTarget` in the same way before and after A2, so they need no rework. | Two exceptions (gate 2): a test that pins a blocked engine trip changes at A2b1, and a test that pins the operations of a single move, or case S12, changes at A2c. Until A2c, MP1 adds no test of either kind (audit `:48`). |
+| E3 | Q2 (24) | everything in MP1 | — | A4 (audit `:36`: before M4). A3 (audit `:33`: before MP1 content adds a command centre or a long-range tank). |
+| M4 | A4 (19) | the M4 route follower | It goes into the one step function only (D section 1). | — |
+
+Early stops with value, if MP1 must take the lanes:
+- **Stop after E1:** the files are split and the audit crate exists. MP1 lanes that add orders wait.
+- **Stop after E2:** the validator checks conservation only, and all MP1 lanes can run. Two step branches remain until A2b2.
+- **Stop after Q2:** one movement model. A4 and A3 stay open with the deadlines above.
 
 ## 6. CEO touch points (no others)
 
@@ -223,52 +281,36 @@ Root runs this set one time for each merged tree that differs from a tree that p
 
 **Seat:** `backend-engineer`. Review: `qa-lead`: is the move pure, and does each boundary row go red?
 
-**Branch / inputs:** `pre-mp1/s1-audit` (worktree `../TuRTS-pre-s1-audit`, target `target/mc-pre-s1-audit`); none. **Design:** D section 3; TDI A1 step 1 (`:78`). **Done so far:**
-- `c1ebb23`: `crates/turts_audit/src/{lib.rs,format.rs,replay.rs}`. `economylog.rs` keeps the writer and the sink.
-- `5ce21d2`: `scripts/boundary.sh:51-60` has the `turts_audit` rows.
+**Branch / inputs:** `pre-mp1/s1-audit` (worktree `../TuRTS-pre-s1-audit`, target `target/mc-pre-s1-audit`); none. **Design:** D section 3; TDI A1 step 1 (`:78`). **Done so far:** `c1ebb23` (the crate: `lib.rs`, `format.rs`, `replay.rs`) and `5ce21d2` (`scripts/boundary.sh:51-60`). Root has the review report (`f7e7ccb`). Each step below that the review already ran is recorded, not run again.
 
 - [ ] **Step 1: Pure-move proof.** F-MOVE.
-    - Old file: `economylog.rs` at `8d6902c`, lines 1 to 19,082.
+    - Old file: `economylog.rs` at `8d6902c`.
     - New files: `crates/turts_audit/src/format.rs`, `crates/turts_audit/src/replay.rs` and `crates/turts_server/src/economylog.rs`.
-    - Expected: `RESULT EQUAL` and `exit=0`.
-    - Test names: compare after the map `economylog::tests::` → `replay::tests::` for the tests that moved. Write the map as `sed 's/^economylog::tests::/replay::tests::/'` on the base list, before `sort`.
-    - Expected: `cmp` gives `exit=0`, or only the names of the seven writer tests that stay in `economylog.rs` differ. Those seven are listed in the commit message.
-- [ ] **Step 2: Boundary reds.** For each new row, run `bash scripts/boundary.sh --rule forbid --crate <crate> --target <target> --manifest <fixture manifest> --names turts_audit; echo exit=$?` (`scripts/boundary.sh:25-31`) against a fixture that has the edge.
-    - Expected: the forbid message and `exit=1`.
-    - How `tests/boundary-fixture` selects its rows is NOT TRACED by the producer (D `:70`). The builder records it.
-- [ ] **Step 3: Gate.** F-RUST, F-QA, F-FROZEN, F-REF.
-    - Plant files of this change: `turts_server/src/session.rs` (M2 E7, E8 cases).
-    - Expected: `"failed": []`.
-- [ ] **Step 4: Reviewer fault.** Plant one: in `replay.rs`, change a validator comparison (for example `!=` to `==` in the refusal rule, text "refused unit {unit_id} changed state inside its order operation", `economylog.rs:2349` at `8d6902c`).
-    - Run: `cargo test -p turts_audit --locked; echo exit=$?`.
-    - Expected: red, `exit=101`. Restore, then green.
+    - Expected: `RESULT EQUAL`, `exit=0`.
+    - Test names: first write the seven writer tests that stay in `economylog.rs` on the board, by name. Then compare after the map `sed 's/^economylog::tests::/replay::tests::/'` on the base list.
+    - Expected: `cmp` gives `exit=0`, or a difference of exactly the seven named tests (section 1a).
+- [ ] **Step 2: Boundary reds.** For each new row, run `bash scripts/boundary.sh --rule forbid --crate <crate> --target <target> --manifest <fixture manifest> --names turts_audit; echo exit=$?` (`scripts/boundary.sh:25-31`). Expected: the forbid message, `exit=1`. How the fixture selects its rows is NOT TRACED by the producer.
+- [ ] **Step 3: Gate.** F-RUST, F-QA, F-FROZEN, F-REF (the M2 E7 and E8 cases of `session.rs`). Expected: `"failed": []`.
+- [ ] **Step 4: Reviewer fault** (D 9.12).
+    - (a) Swap two statements in one moved function. `item_equal.py` prints `RESULT DIFFERENT`, `exit=1`.
+    - (b) Behaviour plant: invert the comparison of the refusal rule (text "refused unit {unit_id} changed state inside its order operation", `economylog.rs:2349` at `8d6902c`). First show it red on the base build with `cargo test -p turts_server --locked --bin turts_server economylog::tests; echo exit=$?`. Then show it red on the moved build with `cargo test -p turts_audit --locked; echo exit=$?`. Each gives `exit=101`. Restore each and get a fresh green.
 
-**Exit:** both proofs are EQUAL. All boundary rows are red on their fixtures. **Runs left: 2.**
+**Exit:** both proofs are EQUAL, the boundary rows are red on their fixtures, and the plant is red on both builds. **Runs left: 2.**
 
 ### Task S45: client splits (in work)
 
 **Seat:** `bevy-rendering-engineer`. Review: `ux-designer`.
 
-**Branch / inputs:** `pre-mp1/s45-client` (worktree `../TuRTS-pre-s45-client`); none. **Design:** D revision 1 rows S4 and S5; TDI C4 to C7 (`:269-287`). **Done so far** (commits `34b7c4f` to `d047433`):
-- core_adapter tests out;
-- visuals tests out;
-- `turts_interaction` `lib.rs` split;
-- `visuals.rs` split into materials, markers, health and world_tooltip;
-- `client_shell.rs` split;
-- `widgets/mod.rs` split.
+**Branch / inputs:** `pre-mp1/s45-client` (worktree `../TuRTS-pre-s45-client`); none. **Design:** D revision 1 rows S4 and S5; TDI C4 to C7. **Done so far:** commits `34b7c4f` to `d047433`. Case `E2-browser-hardcoded-label` now plants `crates/turts_client/src/visuals/world_tooltip.rs`.
 
-`tests/m2/refutations.json` changed 2 lines. Case `E2-browser-hardcoded-label` now plants `crates/turts_client/src/visuals/world_tooltip.rs`.
+- [ ] **Step 1: Pure-move proof for each commit.** F-MOVE: `item_equal.py` on each split, and the test-list `cmp`. `Core::step` is not split (D `:167`). Expected: `RESULT EQUAL` six times, and `cmp` `exit=0`.
+- [ ] **Step 2: Registry anchors.** Each moved browser plant has its anchor exactly once in its new `plant_path` (MC plan `:72`). Case `E9-browser-debug-only-ui` still names `crates/turts_client/src/visuals.rs`. Check that its anchor is still there.
+- [ ] **Step 3: Gate.** F-RUST, F-WASM, F-QA. The browser cases run in the slow set.
+- [ ] **Step 4: Reviewer fault** (D 9.12).
+    - (a) Swap two statements in a moved function: `RESULT DIFFERENT`, `exit=1`.
+    - (b) Behaviour plant: the plant of the registry case `E2-browser-hardcoded-label`. First show it red on the base build. Then show it red on the split build, through the slow set (`--set ci-browser --cases E2-browser-hardcoded-label`, the GPU lock). Expected: `"failed": []`.
 
-- [ ] **Step 1: Pure-move proof for each commit.** F-MOVE: `item_equal.py` on the old and new files of each split, and the test list `cmp`.
-    - `Core::step` (`turts_interaction/src/lib.rs:137`) is not split (D `:167`).
-    - Expected: `RESULT EQUAL` six times, and `cmp` `exit=0`.
-- [ ] **Step 2: Registry anchors.** For each browser case whose plant file moved, run `python3 -c` with the selector of MC plan `:70`. Then check that the anchor occurs exactly once in the new `plant_path` (`tests/m2/refutations.py:270-280`, MC plan `:72`; **verify first**).
-    - Case `E9-browser-debug-only-ui` still names `crates/turts_client/src/visuals.rs`. Check that its anchor is still in that file.
-- [ ] **Step 3: Gate.** F-RUST, F-WASM, F-QA.
-    - The browser cases of the changed files run in the slow set. They are "not checked" in the lane, not a pass.
-- [ ] **Step 4: Reviewer fault.** Move one statement in a moved function (a swap of two lines). `item_equal.py` must print `RESULT DIFFERENT` and `exit=1`. Restore.
-
-**Exit:** all proofs are EQUAL. The slow set on the merged tree is green, with the pixel rows that read the shell and the HUD (SH1, SH1-dpr2, KM1, KM2, PER1, SEL4, HUD1, HUD2, HUD4, VIS1). **Runs left: 2.**
+**Exit:** all proofs are EQUAL, the plant is red on both builds, and the slow set is green with the pixel rows SH1, SH1-dpr2, KM1, KM2, PER1, SEL4, HUD1, HUD2, HUD4 and VIS1. **Runs left: 2.**
 
 ### Task G1: `within` finds every point inside `reach`
 
@@ -381,56 +423,84 @@ Modes:
 
 ### Task S2: `orders.rs` to `orders/`
 
-**Seat:** `simulation-core-engineer`. Review: `technical-director`: are the module paths kept, and is the move pure?
+**Seat:** `simulation-core-engineer`. Review: `technical-director`.
 
-**Branch / inputs:** `pre-mp1/s2-orders`; D0p. **Design:** D revision 1 row S2; TDI C2 (`:254-261`).
+**Branch / inputs:** `pre-mp1/s2-orders`; D0p. **Design:** D revision 1 row S2; D 9.12; TDI C2.
 
-**Files:** `crates/turts_sim/src/orders.rs` (7,036 lines at `431c3ad`; tests from `:3673`) becomes `crates/turts_sim/src/orders/`. All ranges are **verify first**: they move by +6 lines after the repair, and items, not line numbers, decide.
+**Files:** `crates/turts_sim/src/orders.rs` becomes `crates/turts_sim/src/orders/`. Each file gets a list of items, not line ranges (D 9.12). The line numbers below are the item starts at `bfd5097`. D0p moves them by up to +6 lines. **Verify first** each item by its name.
 
-| New file | TDI range |
-| --- | --- |
-| `mod.rs` | types `:417-507`; `pub(crate) use` re-exports, so callers keep `crate::orders::*` |
-| `pending.rs` | `:49-416`, `:1134-1189`, `:1358-1416`, `:1652-2185` |
-| `plain.rs` | the plain code, which A2b deletes: `:96-178`, `:1189-1358`, `:3101-3286`, `:3614-3660` (TDI A2 `:92`) |
-| `run.rs` | `:697-1134` |
-| `apply.rs` | `:2610-3101`, `:3331-3673` |
-| `behaviours/attack.rs`, `follow.rs`, `queue.rs` | `:2185-2610` |
-| `tests.rs` | the test module, declared as `#[cfg(test)] mod tests;` in `mod.rs`, so the test names stay `orders::tests::*` |
-
-`crates/turts_sim/src/lib.rs` keeps `mod orders;`, so it needs no edit. Registry: `E8-foreign-gather-owner-check` gets its `plant_path` for `orders.rs` changed to the new file. The anchor text does not change.
+- **`plain.rs`:** only the items that A2c deletes.
+    - `PlainMoveOrderIdentities` (`:96`), `PlainMoveReservations` (`:99`) and its `impl` (`:109`), `decrement_slot_count` (`:140`; used only by that impl, `:112`, `:122`), `PlainMoveReservation` (`:155`), `PlainMovePriorState` (`:167`).
+    - `arbitrate_plain_move_reservations` (`:1189`), `record_plain_dispatch_selection` (`:1390`), `reservation_precedes_request` (`:1406`).
+    - `plain_move_has_no_prior_order_state` (`:3101`), `plain_move_reservation_exists` (`:3115`), `plain_move_reservation_capacity_available` (`:3121`), `capture_plain_move_prior` (`:3198`), `restore_plain_move_prior` (`:3221`).
+    - `remember_plain_move_identity` (`:3614`), `record_plain_move_reservation` (`:3622`), `forget_plain_move_identity` (`:3652`).
+- **Shared items that stay out of `plain.rs`** (D 9.12):
+    - `UnitMoveNeedsAllocation` (`:152`), `SpreadIndexCache` (`:178`), `record_dispatch_selection` (`:1358`);
+    - `movement_envelope_capacity_available_after_replacing` (`:3151`; A2c needs it, `:559`);
+    - `unit_has_pending_move` (`:3286`), `clear_gather` (`:3661`);
+    - the test counters `:22-47` (`count_plain_candidate_index_step` is called at `:1743` and `:1763` in the shared dispatch).
+- **`mod.rs`:** the counters `:22-47`, the types (`PendingMovementOrder` `:49` to `OrderUnitCapabilitiesAudit` `:490`, `UnitOutcomes` `:503`, `MovementEnvelopeRequest` `:642`), and `pub(crate) use` re-exports, so that callers keep the `crate::orders::*` paths.
+- **`pending.rs`:**
+    - `PendingMovementOrders` and its impls (`:75`, `:191`), `MovementDispatchState` (`:86`, `:185`), `UnitMoveNeedsAllocation`, `SpreadIndexCache`;
+    - `decrement_member_count` (`:380`), `pending_member_target_is_live` (`:389`), `pending_live_member_count` (`:401`);
+    - `queue_movement_envelope` (`:533`), `queue_legacy_move_to_envelope` (`:551`), `prepare_legacy_move_to_waiters` (`:590`), `reset_legacy_move_to_unit` (`:617`);
+    - `PromotionHeaderIndex` (`:654`), `insert_promoted_request` (`:679`), `finish_movement_dispatch_tick` (`:1134`), `dispatch_start_slot` (`:1174`), `record_dispatch_selection` (`:1358`), `queue_unallocated_move_orders` (`:1416`), `resolved_move_point` (`:1595`), `refresh_spread_reservation` (`:1616`), `dispatch_pending_movement` (`:1652`).
+- **`run.rs`:** `run_orders` (`:697`), `attack_point_has_target_in_range` (`:1076`).
+- **`behaviours/attack.rs`:** `attack_goal` (`:2185`), `run_unit_attack` (`:2213`).
+- **`behaviours/follow.rs`:** `run_unit_follow_move` (`:2309`).
+- **`behaviours/queue.rs`:** `start_next_queued_order` (`:2465`), `start_order` (`:2497`).
+- **`apply.rs`:**
+    - `unit_order_capable` (`:508`), `unit_toggleable` (`:524`), `apply_order` (`:2610`), `validate_target` (`:3028`);
+    - `movement_envelope_capacity_available_after_replacing` (`:3151`), `unit_has_pending_move` (`:3286`), `unit_orders_empty` (`:3294`), `unit_radius` (`:3312`), `clamp_target` (`:3320`), `apply_unit_order` (`:3331`), `clear_replaced_movement` (`:3596`), `clear_gather` (`:3661`).
+- **`tests.rs`:** the test module (`:3673`), declared as `#[cfg(test)] mod tests;` in `mod.rs`, so the test names stay `orders::tests::*`.
+- **Registry:** case `E8-foreign-gather-owner-check` changes its `plant_path` for `orders.rs` to the file that now holds its anchor. The anchor text does not change.
 
 - [ ] **Step 1: Move.** One commit. No item body changes.
-- [ ] **Step 2: Proof.** F-MOVE (old: `orders.rs` at the base; new: every file under `orders/`). Expected: `RESULT EQUAL`, and `cmp` `exit=0`.
-- [ ] **Step 3: Gate.** F-RUST, F-FROZEN, F-REF (`E8-foreign-gather-owner-check`; expected `"failed": []`).
-- [ ] **Step 4: Reviewer fault.** Swap two statements in `run.rs`. `item_equal.py` must print `RESULT DIFFERENT`. Restore.
+- [ ] **Step 2: Proof.** F-MOVE. Expected: `RESULT EQUAL`, `cmp` `exit=0`. Also check that `plain.rs` holds exactly the items of the list above: `grep -cE '^(pub(\(crate\))? )?(fn|struct|impl)' crates/turts_sim/src/orders/plain.rs` against the count of the list (17 items, with the impl).
+- [ ] **Step 3: Gate.** F-RUST, F-FROZEN, F-REF (`E8-foreign-gather-owner-check`). Expected: `"failed": []`.
+- [ ] **Step 4: Reviewer fault** (D 9.12).
+    - (a) Swap two statements in `run.rs`: `RESULT DIFFERENT`, `exit=1`.
+    - (b) Behaviour plant: make `start_next_queued_order` (`behaviours/queue.rs`; `orders.rs:2465` on the base) return at once.
+    - First show it red on the base build: `cargo test -p turts_sim --locked --test orders queued_order_starts_in_the_tick_after_landing; echo exit=$?` gives `exit=101` (`crates/turts_sim/tests/orders.rs:939`).
+    - Then show it red on the moved build: `exit=101`.
+    - Restore each and get a fresh green.
 
-**Exit:** EQUAL, the same test names, and the stream unchanged. **Runs: 2.**
+**Exit:** EQUAL, the same test names, the plain.rs list exact, the plant red on both builds, and the stream unchanged. **Runs: 2.**
 
 ### Task S3: `movement.rs` to `movement/`
 
 **Seat:** `simulation-core-engineer`. Review: `technical-director`.
 
-**Branch / inputs:** `pre-mp1/s3-movement`; D0p. It runs in parallel with S2. The second to merge rebases. They share no file. **Design:** D revision 1 row S3; TDI C3 (`:262-268`).
+**Branch / inputs:** `pre-mp1/s3-movement`; D0p. It runs in parallel with S2. **Design:** D revision 1 row S3; D 9.12; TDI C3.
 
-**Files:** `crates/turts_sim/src/movement.rs` (3,873 lines; test modules from `:2511`) becomes `movement/`. All ranges are **verify first**.
+**Files:** `crates/turts_sim/src/movement.rs` becomes `movement/`. Each file gets a list of items. **Verify first** each item by its name.
 
-| New file | TDI range |
-| --- | --- |
-| `spread.rs` | `:116-480` |
-| `search.rs` | `:517-666` |
-| `plain.rs` | `:671-990` |
-| `pool_index.rs` | `:995-1345` |
-| `frame.rs` | `:1346-2408` (`step_frame` `:1382`, `step_frame_preserving_resting` `:1388`) |
-| `ecs.rs` | `:2409-2512` (`integrate_movement` `:2410`) |
-| `mod.rs` | types (`:24-115`; `MovementActivity` `:24-29`, `PlainMoveProgress` `:58`, `PlainGatherGoal` `:79-82`); the test counter of `:13-21`; re-exports |
-| `tests/` | `spread_tests` (`:2512`), `plain_movement_tests` (`:3471`) and the other modules, each at its old module path |
+- **`plain.rs`:** only `step_plain_progress` (`:671`) and `make_plain_progress` (`:925`), with `PlainMoveProgress` (`:58`) and its derives. All three go at A2b2.
+- **Shared items that stay out of `plain.rs`** (D 9.12):
+    - `minimum_unseen_hex_radius` (`:907`), `finite_hex_ring_limit` (`:913`), `nearest_angle_order` (`:957`), `target_key` (`:969`), `update_target_claims` (`:973`). These go to `spread.rs`.
+    - `angle` (`:480`), `MovementInput` (`:486`), `MovementOutput` (`:494`) and `step` (`:500`). These go to `mod.rs`.
+- **`mod.rs`:**
+    - the test counter `:13-21`;
+    - `MovementActivity` (`:24`), `PlainGatherGoal` (`:79`; A2b1 moves it into `MoveProgress`), `MoveProgress` (`:34`), `PhysicalEscape`, `MovementPool`, `MovementPools`, `SpreadMember`, `StaticFootprint` and the other type items before `:116`;
+    - `angle`, `MovementInput`, `MovementOutput`, `step`;
+    - re-exports that keep every `crate::movement::*` path.
+- **`spread.rs`:** the items from `:116` to `:480` (before `angle`), and the five shared helpers above.
+- **`search.rs`:** `MovementSearch` (`:517`) and its impl (`:525`), `body_overlaps_position` (`:650`).
+- **`pool_index.rs`:** `MovementPoolIndex` (`:995`) up to the item before `:1346`.
+- **`frame.rs`:** `:1346` up to `integrate_movement`, which includes `step_frame` (`:1382`) and `step_frame_preserving_resting` (`:1388`).
+- **`ecs.rs`:** `integrate_movement` (`:2410`) up to the first test module.
+- **`tests/`:** `spread_tests` (`:2512`), `plain_movement_tests` (`:3471`) and the other test modules, each at its old module path.
 
 - [ ] **Step 1: Move.** One commit.
-- [ ] **Step 2: Proof.** F-MOVE. Expected: `RESULT EQUAL`, `cmp` `exit=0`.
-- [ ] **Step 3: Gate.** F-RUST, F-FROZEN, F-REF. No registry case plants `movement.rs` (JSON scan at `431c3ad`). Run the selector again and record "0 cases".
-- [ ] **Step 4: Reviewer fault.** Change `normalize() * step_limit` (`:2003-2004`) to `* step_limit * 1.0001`. `cargo test -p turts_sim --locked --test group_movement; echo exit=$?` must go red. Restore.
+- [ ] **Step 2: Proof.** F-MOVE: `RESULT EQUAL`, `cmp` `exit=0`. `plain.rs` holds exactly 3 items with bodies (`grep -cE '^(pub )?(fn|struct) '` gives 3).
+- [ ] **Step 3: Gate.** F-RUST, F-FROZEN, F-REF (the selector lists 0 cases for `movement/`; record it).
+- [ ] **Step 4: Reviewer fault** (D 9.12; the `× 1.0001` plant of the old text stayed green in four test files, gate 2 M3).
+    - (a) Swap two statements in `frame.rs`: `RESULT DIFFERENT`, `exit=1`.
+    - (b) Behaviour plant: set the push of the pool branch to zero (`let push = (limit - separation) * offset / separation;`, `movement.rs:2163`; change it to `let push = Vec2::ZERO;`).
+    - First show it red on the base build: `cargo test -p turts_sim --locked --test group_movement forty_units_rest_with_no_overlap_and_no_blocked; echo exit=$?` gives `exit=101` (`group_movement.rs:1283`).
+    - Then show it red on the moved build. Restore each.
 
-**Exit:** EQUAL, the same test names, and the stream unchanged. **Runs: 2.**
+**Exit:** EQUAL, the same test names, the plant red on both builds, and the stream unchanged. **Runs: 2.**
 
 ### Task A1a: live reader and outcome assertions
 
@@ -550,166 +620,264 @@ Modes:
 
 **Seat:** `backend-engineer`. Review: `qa-lead`.
 
-**Branch / inputs:** `pre-mp1/a1d-conservation`; A1c. **Design:** D `:73-74`; TDI step 4 (`:81`).
+**Branch / inputs:** `pre-mp1/a1d-conservation`; A1c. **Design:** D `:73-74`; TDI step 4.
+
+**Files:** `crates/turts_pack/tests/common/conservation.rs` (1,088 lines) is replaced by calls to `turts_audit`, which becomes a dev-dependency of `turts_pack`. `tests/m3/refutations.json` is not edited.
+
+- [ ] **Step 1: Text check first.** For each M3 case, `grep -F` its `expected_failure` in `conservation.rs`. Record the source line of each one. Each text must come out of `turts_audit` with the same bytes. If a text cannot keep its bytes, stop and report. A1d does not edit the registry (section 1a).
+- [ ] **Step 2: Replace.** `cargo test -p turts_pack --locked; echo exit=$?` gives `exit=0`.
+- [ ] **Step 3: Gate.** F-RUST, F-FROZEN, then `--set m3-all --workers 9 --alsa`. Expected: 17 of 17 red, `"failed": []`.
+
+**Exit:** one oracle, and the same 17 texts. **Runs: 2.**
+
+### Task Q1b: trace emitter, probe API and allowed list
+
+**Seat:** `qa-lead`. Review: `simulation-core-engineer`.
+
+**Branch / inputs:** `pre-mp1/q1b-trace`; S3, G1 (the counter result), Q1a. **Design:** D section 5 item 1; D 9.6, 9.7 and 9.14; R11.
 
 **Files:**
-- `crates/turts_pack/tests/common/conservation.rs` (1,088 lines) is replaced by calls to `turts_audit`, which becomes a dev-dependency of `turts_pack`.
-- `tests/m3/refutations.json`: no edit if every `expected_failure` text keeps its bytes.
-
-- [ ] **Step 1: Text check first.** For each M3 case, `grep -F` its `expected_failure` in `conservation.rs` and in `turts_audit`. Record which text comes from where. A text that would change needs a registry edit, and `qa-lead` reviews it (MC plan `:72`).
-- [ ] **Step 2: Replace.** Rerun: `cargo test -p turts_pack --locked; echo exit=$?`, `exit=0`.
-- [ ] **Step 3: Gate.** F-RUST, F-FROZEN. `--set m3-all --workers 9 --alsa`. Expected: 17 of 17 red, `"failed": []` (TDI `:81`; GQA `:63`).
-
-**Exit:** one oracle. M3 C1 to C17 are red. **Runs: 2.**
-
-### Task Q1b: trace emitter and allowed list
-
-**Seat:** `qa-lead`. Review: `simulation-core-engineer`: does each trace field come from the state the design names?
-
-**Branch / inputs:** `pre-mp1/q1b-trace`; S3, G1 (the counter result), Q1a. **Design:** D section 5 item 1 and section 9 items 6 and 7; RUL `:140-144`.
-
-**Files:**
-- `crates/turts_sim/Cargo.toml`: a feature `test-probes = []`. `turts_sim` has no `[features]` section at `431c3ad`.
-- `crates/turts_sim/src/movement/frame.rs`: `MovementFrameOutput` gets `separated: bool` behind `#[cfg(feature = "test-probes")]`. It is filled from the local `separated` of each branch (`movement.rs:770`, `:1973`, `:2134` at `431c3ad`; **verify first** after S3). When G1 lands in A2c, it also gets `edge_hit`.
+- `crates/turts_sim/Cargo.toml`: a feature `test-probes = []`. There is no `[features]` section at `bfd5097`.
+- Create `crates/turts_sim/src/movement/probe.rs` (`#[cfg(feature = "test-probes")]`). It is the only API that the emitter and the harness read (R11).
+    - `unit_state(world, unit) -> &'static str`: `"none"`, `"pool"` (a `MoveProgress`) or `"plain"` (a `PlainMoveProgress`).
+    - `activity(world, unit)`: the `MovementActivity` of the `MoveProgress`, or `none` (D 9.7).
+    - The last frame flags of each unit:
+        - `separated`, from the local of each branch (`movement.rs:770`, `:1973`, `:2134`);
+        - `was_projected`, only for a unit with no pool (`movement.rs:2008`, set at `:2036`). It is `null` for a pool unit, because the pool branch has no such local. So a P0 pair across A2a compares the same field;
+        - `edge_hit`, only when G1 is held for A2c.
+    - The flags reach the probe through a `#[cfg(feature = "test-probes")]` field on `MovementFrameOutput`.
+    - Other code can call the probe; A2b2 changes only its body.
 - `crates/turts_pack/Cargo.toml`: dev-dependency `turts_sim` with `features = ["test-probes"]`.
-- Create `crates/turts_pack/tests/m2_trace.rs`: `#[ignore] m2_trace_writes_four_packages`. It uses the run loop of `m3_m2_stream.rs` (`TICKS` `:15`, `PACKAGES` `:16`, `run_package` `:240`) and writes `<dir>/<package>.jsonl` in the Q1a format to `TURTS_M2_TRACE_OUT`.
-- Create `tests/m3/refreeze_allowed.json`: the acme differences that D allows.
-    - The scout's `state` becomes `pool` from the accept tick.
-    - The scout operations: one added at tick 1, and one at the tick after arrival. The gate probe gave arrival 123 and an operation at 124 (D `:126`).
-    - Positions do not change.
+- Create `crates/turts_pack/tests/m2_trace.rs` with `#[ignore] m2_trace_writes_four_packages`. It uses the run loop of `m3_m2_stream.rs` (`TICKS` `:15`, `PACKAGES` `:16`, `run_package` `:240`). It writes `<dir>/<package>.jsonl` in the Q1a format to `TURTS_M2_TRACE_OUT`. It adds two fields:
+    - `state` can be `plain`;
+    - each `MoveTo` command operation gets `move_to_route`: `per_unit` when `unit_ids.len() > 1` (`command.rs:173-174`), and `direct` otherwise (`:488-495`).
+- Extend `tests/m3/refreeze_classify.py` (Q1a) to read `plain`, `was_projected` and `move_to_route`. The self-test gains plant 13, a flipped `was_projected`, which must give red.
+- Create `tests/m3/refreeze_allowed.json` with the acme differences that D allows:
+    - the scout `state` goes from `none` to `pool` from the accept tick;
+    - `move_to_route` goes from `direct` to the envelope route (the scout command, `m3_m2_stream.rs:263`);
+    - one scout operation is added at tick 1, and one at the tick after arrival (gate probe: 124; D `:126`);
+    - no position changes.
 
-- [ ] **Step 1: Run on the base.** `TURTS_M2_TRACE_OUT=target/pre-q1b/evidence/base cargo test -p turts_pack --locked --test m2_trace -- --ignored --exact m2_trace_writes_four_packages; echo exit=$?`. Run it two times, into `base` and `base2`. `cmp` each package pair: `exit=0`. That proves the trace is deterministic. `sha256sum` each file into the board record.
-- [ ] **Step 2: Counts** (D `:202-203`; measured, not assumed). For each package, record the unit-ticks on `PlainMoveProgress`, `MoveProgress` and no progress, and the count of `separated = true`. GSIM measured acme 122, base 256, haul 230, cedar 289 unit-ticks with no progress, and 0 on the others. If a stream unit spends any tick on `PlainMoveProgress`, stop and report: the A2b claim of D `:44` fails.
-- [ ] **Step 3: Feature leak check.** `cargo tree -p turts_server -e features -i turts_sim; echo exit=$?`. Expected: no `test-probes` in the normal build (resolver 3, `Cargo.toml:2`). This is NOT TRACED until this run.
-- [ ] **Step 4: Commit, gate.** Commit the emitter, the feature and `refreeze_allowed.json`. Log the sha256 of `refreeze_allowed.json` on the board before A2c (R6). F-RUST, F-FROZEN.
-- [ ] **Step 5: Plant.** Set `separated` to `false` in all branches. The step 2 count changes, or `--p0` against `base` goes red. Restore.
+- [ ] **Step 1: Run on the base.** `TURTS_M2_TRACE_OUT=target/pre-q1b/evidence/base cargo test -p turts_pack --locked --test m2_trace -- --ignored --exact m2_trace_writes_four_packages; echo exit=$?`. Run it again into `base2`. `cmp` each package pair: `exit=0`. Log each sha256 on the board.
+- [ ] **Step 2: Counts** (D 9.6 and 9.8). For each package, record:
+    - (a) the unit-ticks with state `none`, `pool` and `plain`;
+    - (b) the unit-ticks with `state == none` and `separated == true`. A2b2 records this count with its P0;
+    - (c) the unit-ticks with `was_projected == true`;
+    - (d) the `move_to_route` of each `MoveTo`.
 
-**Exit:** a deterministic base trace, the counts recorded, and the allowed list committed and hashed. **Runs: 2.**
+    GSIM saw 122 / 256 / 230 / 289 unit-ticks with no progress, and 0 with plain progress. If any stream unit has state `plain`, or if (b) or (c) is above 0, stop and report: P0 at A2b2 would then not be equal (D 9.8).
+- [ ] **Step 3: Feature leak check.** `cargo tree -p turts_server -e features -i turts_sim; echo exit=$?`. Expected: no `test-probes` in the normal build. This is NOT TRACED until this run.
+- [ ] **Step 4: Commit, gate.** Commit the probe, the feature, the emitter, the classifier extension and `refreeze_allowed.json`. Log the sha256 of the allowed list and the emitter on the board before A2c (R6).
+    - F-RUST, F-FROZEN.
+    - `python3 tests/m3/refreeze_classify.py --self-test; echo exit=$?` prints `13/13 plants red; clean pair green`, `exit=0`.
+- [ ] **Step 5: Plant.** Make `separated` always `false` in the probe. The step 2 count (b) changes, or `--p0` against `base` goes red. First show it red, then restore.
+
+**Exit:** a deterministic base trace, the four counts recorded, the probe API in use, and the allowed list committed and hashed. **Runs: 2.**
 
 ### Task A2a: one step function
 
-**Seat:** `simulation-core-engineer`. Review: `qa-lead`: can the counter go red, and is the reference copy the old kernel?
+**Seat:** `simulation-core-engineer`. Review: `qa-lead`.
 
-**Branch / inputs:** `pre-mp1/a2a-step`; Q1b, G1, S3 (R2). **Design:** D section 2 row A2a, `:54-59`, section 6 (the one-step guard), section 9 item 5; RUL ruling 1.
+**Branch / inputs:** `pre-mp1/a2a-step`; Q1b, G1, S3 (R2). **Design:** D row A2a; D `:54-59`; D 9.5, 9.8, 9.9 and 9.13; R12.
 
-**Files** (after S3; ranges at `431c3ad`, **verify first**):
+**Float rule (D 9.8, binding).** The two branches compute three values with different float expressions:
+- the start velocity: `movement.rs:1968-1972` against `:2130`;
+- the push: `:1985` against `:2163`;
+- the speed cap: `:2003-2004` against `:2184-2185`.
+
+The merged step selects each of the three expressions by the presence of a pool. A unit with a pool takes the pool expression. A unit with no pool takes the no-progress expression. The output is bit-equal on every frame. The gate probe proved that one expression for all units cannot be bit-equal: with the no-progress expressions, 46 of 64 pooled seeds differ.
+
+**Assertions (D 9.9).** A2a changes no assertion and no expected value. A changed assertion, or a red suite test, stops A2a. A green GM40, GMA or GMU proves nothing about equality, because no suite test pins pooled positions bitwise. The reference copy is the proof.
+
+**Files** (at `bfd5097`; **verify first** after S3):
 - `movement/frame.rs`:
-    - the plain-progress branch `:1843-1879` stays until A2b;
-    - the no-progress branch `:1880-2085`;
-    - the pool branch `:2086-2380`.
-- The no-progress and pool branches become one step function for one unit.
-- Where one value has two float expressions, keep the no-progress expression. Example: `velocity.normalize() * step_limit` (`:2003-2004`) against `velocity *= step_limit / velocity_len` (pool branch, RUL `:25`).
-- No writer changes. `step_frame_preserving_resting`, `MovementFrame`, `MovementFrameUnit`, `PlainMoveProgress`, `PlainGatherGoal` and `spread_destinations` keep their signatures (R2).
-- Phase counters behind `test-probes`: arrival, steering, projection, stall, fallback; for each unit and tick (the pattern of `:13-21`).
+    - the no-progress branch (`:1880-2085`) and the pool branch (`:2086-2380`) become one step function for one unit, with the switch of the float rule;
+    - the plain-progress branch (`:1843-1879`) and `step_plain_progress` stay until A2b2;
+    - no writer changes. The R2 items keep their signatures.
+- Phase counters behind `test-probes`: arrival, steering, projection, stall, fallback; for each unit and tick.
 - Create:
-    - `crates/turts_sim/src/movement/reference.rs` (`#[cfg(feature = "test-probes")]`): a copy of the kernel at the A2a base.
-    - `crates/turts_sim/tests/kernel_reference.rs`.
+    - `movement/reference.rs` (`test-probes`): the kernel at the A2a base, through the probe API (R11);
+    - `crates/turts_sim/tests/kernel_reference.rs`;
     - `crates/turts_sim/tests/one_step_function.rs`.
 
-- [ ] **Step 1: Red (counter).**
-    - `one_step_function.rs::each_moving_unit_passes_each_shared_phase_once`. The scenario: a gather trip, a queued start, an attack approach, a follow, a resume, a single envelope move, a group move and a synthetic unit (D `:155`).
-    - It asserts one count for each moving unit, phase and tick, with the message `unit {id} tick {t} phase {p}: {n} calls`.
-    - Put the counters in the code of the pool branch only. Then units on the no-progress branch show 0.
+- [ ] **Step 1: Red (counter and source counts).**
+    - (a) `each_moving_unit_passes_each_shared_phase_once`. The scenario holds a gather trip, a queued start, an attack approach, a follow, a resume, a single envelope move, a group move and a synthetic unit (D `:155`). The counters are in the pool-branch code only. Message: `unit {id} tick {t} phase {p}: {n} calls`.
+    - (b) `step_loop_and_step_call_occur_once_outside_plain` (R12). The test reads the production files of `crates/turts_sim/src/movement/`, except `plain.rs`, `reference.rs` and `tests/`. It counts `for _ in 0..8` and the regex `\bstep\(\s*&MovementInput`, and expects 1 of each. Message: `{pattern}: {n} occurrences, expected 1`.
     - Run: `cargo test -p turts_sim --locked --features test-probes --test one_step_function; echo exit=$?`.
-    - Expected: red (`0 calls` for the gather unit), `exit=101`. Record the run (D `:197-198`).
-- [ ] **Step 2: Red (harness smoke).**
-    - `kernel_reference.rs::kernel_matches_reference_bit_for_bit`:
-        - 64 seeds, each chained for 300 ticks;
-        - 1 to 5,000 movers, 0 to 20 statics of radius 0.5 to 8;
-        - a `preserve_resting` set that is not empty;
-        - frames that hold no-progress, plain-progress, pooled, escape, `Blocked`, follow and Attack-Point units (RUL `:75`);
-        - every f32 compared with `to_bits`;
-        - a counter for each phase, which must be above 0.
-    - Plant a `-0.0` in the real kernel (a sign flip of a zero velocity).
-    - Run: `cargo test --release -p turts_sim --locked --features test-probes --test kernel_reference; echo exit=$?`.
-    - Expected: red on the bit compare, `exit=101`. Restore.
-    - Then run the harness with the merged step on the pooled seeds only. Record the count of seeds that differ (risk 5). If the count is above 0, stop and report.
-- [ ] **Step 3: Green.** Merge the two branches. Rerun steps 1 and 2: `exit=0`.
+    - Expected: (a) red with `0 calls` for the gather unit; (b) red with `2 occurrences` (the no-progress and pool branches; python probe at `bfd5097`); `exit=101`. Record the run (D 9.5).
+- [ ] **Step 2: Red (harness).** `kernel_reference.rs::kernel_matches_reference_bit_for_bit` runs:
+    - 64 seeds × 300 ticks;
+    - 1 to 5,000 movers, 0 to 20 statics of radius 0.5 to 8, and a `preserve_resting` set that is not empty;
+    - frames with no-progress, plain-progress, pooled, escape, `Blocked`, follow and Attack-Point units (D row A2a; RUL `:75`);
+    - every f32 compared with `to_bits`;
+    - a counter for each phase, which must be above 0.
+
+    Plant a `-0.0` (a zero velocity with its sign flipped). Run `cargo test --release -p turts_sim --locked --features test-probes --test kernel_reference; echo exit=$?`. Expected: red on the bit compare, `exit=101`. Restore.
+- [ ] **Step 3: Green.** Merge the two branches with the switch. Rerun steps 1 and 2: `exit=0`. A seed that differs stops A2a.
 - [ ] **Step 4: Commit, gate.**
     - Commit. F-RUST, F-FROZEN.
-    - Q1a `--p0` on all four packages: run the emitter on the A2a base and on A2a, then `python3 tests/m3/refreeze_classify.py --p0 <base dir> <a2a dir>; echo exit=$?`, `exit=0` (D `:200-201`).
-    - `cargo test -p turts_sim --locked --test group_movement --test gmu_same_point; echo exit=$?` and `cargo test --release -p turts_server --locked --test mc_group -- --ignored; echo exit=$?`. These hold GM40, GMA and GMU; which test holds which row is **verify first**. Each `exit=0`. Each changed assertion has a reason in the commit message (D `:43`).
-    - `cargo check -p turts_audit --locked; echo exit=$?` is `exit=0` (R2).
-- [ ] **Step 5: Plants.** Each goes red, then restore:
-    - (a) speed `Some(0.0)` in the merged step: `kernel_reference` goes red.
-    - (b) swap arrival and steering in the merged step: `kernel_reference` goes red.
-    - (c) the counter call in a second copy of the steering code: `one_step_function` goes red with `2 calls`.
+    - `--p0` on all four packages, base against A2a: `python3 tests/m3/refreeze_classify.py --p0 <base dir> <a2a dir>; echo exit=$?`, `exit=0`.
+    - `cargo test -p turts_sim --locked --test group_movement --test gmu_same_point; echo exit=$?` and `cargo test --release -p turts_server --locked --test mc_group -- --ignored; echo exit=$?`. Each `exit=0`, with no assertion edit.
+    - R2 condition: `cargo test -p turts_audit --locked; echo exit=$?` and EL1 (`cargo test --release -p turts_server --locked --test el1 -- --ignored --test-threads=1 --exact el1_muster_movement_and_queued_gather_validate_every_captured_tick; echo exit=$?`). Each `exit=0`.
+- [ ] **Step 5: Plants.** First show each red, then restore:
+    - (a) speed `Some(0.0)`: `kernel_reference` goes red;
+    - (b) arrival and steering swapped: `kernel_reference` goes red;
+    - (c) the switch gives the no-progress expressions to a pool unit: `kernel_reference` goes red on a pooled seed;
+    - (d) a second copy of the steering loop (`for _ in 0..8`) outside `plain.rs`: test (b) of step 1 goes red with `2 occurrences`.
 
-**Exit:** one step function. Bit-equal. P0 equal on four packages. The counter is red before A2a and green after; both runs are recorded. **Runs: 4.**
+**Exit:** one step function with the switch, bit-equal on every frame, P0 equal on four packages, both counters red before and green after (both runs recorded), and the R2 condition green. **Runs: 4.**
 
-### Task A2b: the fallback makes a pool of one; the plain model goes
+### Task A2b1: the fallback pool, the gather protocol and the guards
 
-**Seat:** `simulation-core-engineer`. Review: `qa-lead`.
+**Seat:** `simulation-core-engineer`. Review: `qa-lead`: can each guard go red, and is the pool-id source deterministic?
 
-**Branch / inputs:** `pre-mp1/a2b-fallback`; A2a, A1c, S2. **CEO touch point 1 comes before this task starts.** **Design:** D section 2 row A2b, section 6 (blocked engine trip, writer table); RUL ruling 1.
+**Branch / inputs:** `pre-mp1/a2b1-fallback`; A2a, A1c, S2. **CEO touch point 1 comes before this task starts** (section 6). **Design:** D row A2b; D 9.10, 9.11; R10, R13; gate 2 M1.
 
-**Files** (at `431c3ad`, **verify first**):
-- The fallback calls (`movement.rs:1893`, `:2053`) make a pool of one with `spread_destinations_with_context`.
-- Delete:
-    - `step_plain_progress` (`:671-905`);
-    - `make_plain_progress` (`:925`);
-    - `PlainMoveProgress` (`:58`);
-    - the plain branch (`:1843-1879`);
-    - `orders/plain.rs` (the plain reservations and identities; TDI `:92`). The plain spread context at `:1885-1960` is NOT in the delete list (RUL `:88`).
-- `PlainGatherGoal` (`:63`, `:79-82`) moves into `MoveProgress`.
-- `AuditState.plain_movement_progress` (`views.rs`) goes. `LedgerAudit` and `el1.rs:188-215` drop it (D `:178-179`).
-- Unit tests `movement.rs:3471-3700` (`plain_movement_tests`) are deleted. The reason: the model is gone. Two cases move to the pool-of-one path and are kept as tests:
-    - `unobstructed_step_keeps_the_legacy_target_until_within_one_step` (`:3527`);
-    - `plain_move_respects_reserved_spacing_before_using_a_zero_primary_point` (`:3618`).
-- Add `crates/turts_sim/tests/one_step_function.rs::no_second_step_model`: the source of `crates/turts_sim/src` holds no `fn step_plain_progress` and no `PlainMoveProgress` (R7).
+**What A2b1 does.** It replaces every creator of `PlainMoveProgress` with a pool of one. It deletes nothing. After A2b1, no code creates a `PlainMoveProgress`. The creators today:
+- `make_plain_progress`, called at `movement.rs:1893` and `:2053`;
+- the failure of a legacy envelope, `orders.rs:2044-2058` (R10).
+
+Neither the pool expression switch nor the plain types change in A2b1.
+
+**Pool-id source.** The step function is pure, and `next_pool_id` lives in `PendingMovementOrders` (`orders.rs:258-259`). So:
+- the step returns a fallback request for each unit (unit id, the point, the spread result of `spread_destinations_with_context`);
+- `integrate_movement` (`movement/ecs.rs`) takes the ids from `PendingMovementOrders::next_pool_id`, in unit-id order, after the step;
+- the legacy failure path takes its id from the same counter.
+
+There is one id space and one order.
+
+**Collection rule.** A fallback pool is not collected while the gather stage of its unit still targets the goal of the pool (`MovingToNode` or `MovingToReceiver`). This is the same rule as for `follow_origin` and `preserve_resting` at `movement.rs:2399-2400`. The gather protocol in `run_orders` clears the pool when the gather is reached or the endpoint changes. Today this protocol does the same for plain progress (`orders.rs:771-783`).
+
+**Files** (at `bfd5097`; **verify first** after S2 and S3):
+- `movement/frame.rs` `:1893`, `:2053`: the fallback request in place of `make_plain_progress`.
+- `movement/ecs.rs`: the id allocation.
+- `movement/mod.rs`: `MoveProgress` (`:34`) gains `gather_goal: Option<PlainGatherGoal>` (`:79`), and `failure_recorded` if the legacy failure needs it (**verify first**: `PlainMoveProgress` has it, `orders.rs:2056`).
+- The collection at `movement.rs:2383-2404` and `:2497-2508`.
+- `orders/run.rs` (`orders.rs:734-860`): the gather protocol reads the fallback `MoveProgress`.
+- `orders/pending.rs` (`orders.rs:2044-2058`): the legacy failure writes a `Blocked` pool of one.
+- `orders/behaviours/follow.rs` (`orders.rs:2389-2458`, `same_goal_fallback`): the same protocol for a follow trip.
+- `economy/gather.rs:1246-1263` (`set_target`; it reads `PlainMoveProgress` at `:1248`): it writes `MoveProgress.gather_goal`.
+- The probe (`unit_state`) is unchanged.
+- **Tests that read `PlainMoveProgress` (R13; section 1a, observation change).** Each test reads the same property from the fallback `MoveProgress` and its `MovementPool`. The expected value stays the same. Map: `activity` → `MoveProgress.activity`; `original_point` → the pool point; `slot` → `MoveProgress.slot`; `is_some()` / `is_none()` of the fallback → the same on `MoveProgress`. A pinned exact slot of a fallback unit gets its new value only from an independent hex-ring calculation in the test (MC design 6.3), never from a run.
+    - `unit_target_move_waits_for_cap_and_samples_live_target_at_activation` (`group_movement.rs:373`; it reads at `:482`, `:491`);
+    - `pending_replace_allows_prior_completion_without_advancing_append` (`:858`; `:929`);
+    - `plain_singleton_blocked_by_a_full_width_post_reports_failure_by_gmu_deadline` (`:2005`; `:2077`, `:2083`);
+    - `blocked_plain_move_escape_survives_queued_and_pre_ack_holds` (`:2156`; `:2193`);
+    - `unit_follow_move_completes_at_its_reached_legal_fallback` (`:2298`; `:2323`, `:2383`);
+    - `moved_follow_target_reopens_motion_instead_of_consuming_old_fallback` (`:2653`; `:2678`, `:2751`);
+    - `idless_legacy_move_reports_blocked_without_inventing_an_order_id` (`:2757`; `:2817`);
+    - `insufficient_primary_slots_block_the_whole_envelope_without_movement` (`:2975`; `:3027`).
+
+    `crates/turts_sim/tests/orders.rs:383`, `:496` and `:555` read `PlainMoveOrderIdentities` or `PlainMoveProgress` (**verify first** which type each one reads). Lines that read `PlainMoveProgress` belong here. Lines that read identities belong to A2c.
+
+    A red test outside this list stops A2b1.
 
 - [ ] **Step 1: Red.**
-    - `no_second_step_model`: red on the base, with the message `step_plain_progress still defined at <path>`.
-    - `group_movement.rs::two_gatherers_deliver_to_one_receiver_in_one_tick`: both deliver; no footprints overlap; each delivers within `2 × (distance / speed) + 5 s`. Add a second case: a delivery after node depletion (D `:158`).
-    - Run: `cargo test -p turts_sim --locked --test one_step_function --test group_movement; echo exit=$?`. Expected: `no_second_step_model` red, `exit=101`. The gatherer guard can be green on the base; its red is by plant (step 4).
-- [ ] **Step 2: Green.** Make the edits. Rerun: `exit=0`.
+    - `group_movement.rs::two_gatherers_deliver_to_one_receiver_in_one_tick`: both deliver, no footprints overlap, and each delivers within `2 × (distance / speed) + 5 s`. A second case covers a delivery after node depletion (D `:158`).
+    - `group_movement.rs::each_trip_makes_at_most_one_fallback_pool`. A test-probes counter counts the fallback pools of each trip. A trip ends when the `MoveTarget` of its unit is removed or replaced, or when its gather leg ends. The test asserts at most 1 for each trip, in the two-gatherer scenario and in a crowd of 20 gatherers on one receiver. Message: `unit {id} trip {k}: {n} fallback pools`. The deadline guard alone passes an oscillation that delivers in the end (gate 2 M1).
+    - `one_step_function.rs::no_plain_progress_is_created`: over the scenario of A2a step 1, `unit_state` is never `plain`.
+    - Run: `cargo test -p turts_sim --locked --features test-probes --test group_movement --test one_step_function; echo exit=$?`.
+    - Expected: `no_plain_progress_is_created` red (the fallback makes plain progress today); the fallback counter red on its stub (signature first); `exit=101`. The deadline guard can be green on the base; its red comes by plant (step 4).
+- [ ] **Step 2: Green.** Make the edits. Apply the observation changes of the list. Rerun: `exit=0`.
 - [ ] **Step 3: Commit, gate.**
-    - Commit. F-RUST, F-FROZEN. The stream must stay unchanged: Q1b counted 0 unit-ticks on `PlainMoveProgress`. A red stops the task (D `:146`).
-    - `--p0` on four packages against the A2b base: `exit=0` (D `:200-201`).
-    - EL1 (A1b command): `exit=0`.
-- [ ] **Step 4: Plant.** The fallback returns no destination (the unit stays `Blocked`). `two_gatherers_deliver_to_one_receiver_in_one_tick` goes red on the deadline. Restore.
+    - Commit. F-RUST, F-FROZEN. A stream red stops the task: Q1b counted 0 plain-progress unit-ticks, so no stream unit reaches a fallback.
+    - `--p0` on four packages, A2b1 base against A2b1: `exit=0`.
+    - `kernel_reference` against the A2b1 base copy: bit-equal on every frame with no fallback. A frame where a fallback fires differs only in `unit_state` (`plain` to `pool`) and in the slot that the pool index chooses. The harness asserts both rules.
+    - EL1 (A2a command): `exit=0`.
+- [ ] **Step 4: Plants.** First show each red, then restore:
+    - (a) the fallback returns no destination: the deadline of `two_gatherers…` goes red;
+    - (b) collect the fallback pool on arrival while the gather stage still targets the goal: `each_trip_makes_at_most_one_fallback_pool` goes red;
+    - (c) take the fallback pool id from a second counter: `kernel_reference` goes red, or `--p0` on a seed with a fallback goes red, because the ids depend on the order.
 
-**Exit:** no plain model. The stream and P0 are unchanged. **Runs: 3.**
+**Exit:** no creator of `PlainMoveProgress`, the three guards green, P0 equal, and the eight tests changed by observation only. **Runs: 3.**
 
-### Task A2c: the plain move and `MoveTo` take the pool path
+### Task A2b2: the switch goes; the plain movement model is deleted
 
 **Seat:** `simulation-core-engineer`. Review: `qa-lead`.
 
-**Branch / inputs:** `pre-mp1/a2c-pool`; A2b, Q1b (the allowed list committed). If G1 held its commit (G1 step 5), cherry-pick it here. **Design:** D section 2 row A2c, section 6 (guards); GSIM M3 (the cap).
+**Branch / inputs:** `pre-mp1/a2b2-delete`; A2b1. **Design:** D row A2b; D 9.8 (the switch), 9.11 (the deletion is driven by the compiler, with P0), 9.13; R11, R12.
 
-**Files:**
-- `orders/apply.rs`: the plain branch (`orders.rs:2822-2900` at `431c3ad`) takes the deferred path (`:2772-2820`).
-- `command.rs:488-495`: `CommandKind::MoveTo` maps to an envelope with a pool of one (`queue_legacy_move_to_envelope`, `orders.rs:551`).
-- Tests (dispositions; each one **verify first**, and each reason goes in the commit message):
+**Commit 1: the switch goes.** The merged step uses the pool expressions for every unit (D 9.8).
+- The harness compares against the A2b1 copy. A difference is allowed only on a unit-tick where, in the reference, the unit has no pool and is `separated`. The harness asserts this rule. The gate probe saw 1 of 64 no-progress seeds differ, always on the first contact tick, which enters the fallback (`movement.rs:2052`).
+- `--p0` on four packages, A2b1 against commit 1: `exit=0`. Record it next to the Q1b count (b) of separated no-progress unit-ticks in the stream packages (D 9.8).
+- If P0 differs while the count is 0, stop.
 
-| Test | Disposition |
-| --- | --- |
-| `crates/turts_sim/tests/orders.rs:496` `accepted_plain_move_projects_without_unit_orders_and_legacy_move_has_no_identity` | Invert: the pool path writes order operations (`orders.rs:2874`) |
-| `orders.rs:988` `plain_move_writes_no_order_operation` | Invert (TDI `:123`) |
-| `group_movement.rs:282` `unopposed_authored_singleton_keeps_its_command_only_audit_shape` | Invert |
-| `orders.rs:555` `stopped_or_removed_plain_move_identity_does_not_leak_into_the_view` | Rewrite for the pool collection. Plain identities are gone since A2b |
-| `orders.rs:330`, `:383`, `:607` | Keep (queue rules) |
-| `group_movement.rs:109`, `:325`, `:1895`, `:2005`, `:2156`, `:2757`, `:2876` | Keep. `:2005` and `:2156` are renamed (no "plain") |
-| `crates/turts_server/tests/orders_plain.rs:118` `plain_move_envelope_has_the_moveto_operation_count` | TDI says "inverts". If both paths gain the same operations, the test stays. Record which |
-| `command.rs:341` `legacy_move_to_clamps_each_edge_and_corner` | Keep |
-| The `MoveTo` users in `crates/turts_pack/tests/economy_ordering.rs` and `economy_accounting.rs` | Keep. A red is a difference that the classifier must explain |
+**Commit 2: the deletion.** Delete `PlainMoveProgress` and let the compiler list each user. After A2b1, every user is dead code. Grep at `bfd5097`:
+- `PlainMoveProgress`: 36 references in `orders.rs`, 16 in `movement.rs`, 12 in `group_movement.rs` (now gone through A2b1), 5 in `economy/views.rs`, 1 in `economy/gather.rs`, 1 in `command.rs` (`:494`);
+- `plain_progress`: 61 in `movement.rs` and 12 in `orders.rs`.
+
+Delete:
+- `step_plain_progress` and `make_plain_progress` (`movement/plain.rs`), and the plain branch (`movement.rs:1843-1879`);
+- the `plain_progress` field of `MovementFrameUnit` and of its outputs;
+- `AuditState.plain_movement_progress` and `RawPlainMovementProgressAudit` (`views.rs:442`, `:530-549`, `:1110`), and their reader in `el1.rs:188-215` and in `LedgerAudit`;
+- the field `PlainMovePriorState.plain_progress` (`orders.rs:171`) and its two uses (`:3208`, `:3249`). It is always `None` after A2b1;
+- the `.remove::<PlainMoveProgress>()` lines in `orders/` and `command.rs:494`;
+- the `PlainMoveProgress` arm of `probe::unit_state` (R11).
+
+Also:
+- `PlainGatherGoal` stays as the type of `MoveProgress.gather_goal`;
+- the reference copy loses its plain branch in the same commit;
+- the harness drops the plain-progress frames (R9);
+- `plain_movement_tests` (`movement.rs:3471-3700`) are deleted (section 1a, deletion). Two tests move to the pool-of-one path with their expected values unchanged: `unobstructed_step_keeps_the_legacy_target_until_within_one_step` (`:3527`) and `plain_move_respects_reserved_spacing_before_using_a_zero_primary_point` (`:3618`).
+
+Not in A2b2: `orders/plain.rs` (the reservations and identities). A2c deletes it after the reroute (D 9.10).
+
+- [ ] **Step 1: Red.** `one_step_function.rs::no_second_step_model`:
+    - the production source of `crates/turts_sim/src` holds no `fn step_plain_progress` and no `PlainMoveProgress`;
+    - in `movement/`, except `reference.rs` and `tests/`, `for _ in 0..8` and `\bstep\(\s*&MovementInput` each occur 1 time (R12; D 9.13);
+    - messages: `step_plain_progress still defined at {path}` and `{pattern}: {n} occurrences, expected 1`.
+
+    Run: `cargo test -p turts_sim --locked --features test-probes --test one_step_function no_second_step_model; echo exit=$?`. Expected: red with `2 occurrences`, `exit=101`.
+- [ ] **Step 2: Commit 1 (the switch).** Harness rule and P0 as above. `cargo test -p turts_sim --locked; echo exit=$?`: `exit=0`, with no assertion edit.
+- [ ] **Step 3: Commit 2 (the deletion).** `cargo build -p turts_sim --locked` until it is clean. Then F-RUST. `no_second_step_model` is green. `--p0` on four packages, commit 1 against commit 2: `exit=0`. `kernel_reference`: bit-equal on every remaining frame.
+- [ ] **Step 4: Gate.** F-FROZEN (unchanged hash), and EL1 (A2a command). Each `exit=0`.
+- [ ] **Step 5: Plant.** Restore one `for _ in 0..8` copy in a new function in `frame.rs`. `no_second_step_model` goes red. Restore.
+
+**Exit:** one step function with no switch, no plain movement model, P0 equal on four packages for both commits, and the count recorded. **Runs: 2.**
+
+### Task A2c: single moves take the pool path; the plain reservations go
+
+**Seat:** `simulation-core-engineer`. Review: `qa-lead`.
+
+**Branch / inputs:** `pre-mp1/a2c-pool`; A2b2, Q1b (the allowed list committed). If G1 held its commit (G1 step 5), cherry-pick it here. **Design:** D row A2c; D 9.10, 9.14; section 6 guards of D; GSIM M3.
+
+**Commit 1: the reroute.**
+- `orders/apply.rs`: the plain branch (`orders.rs:2822-2900`) takes the deferred path (`:2772-2820`).
+- `command.rs:173-174` (`unit_ids.len() > 1`) and `:488-495`: a single `CommandKind::MoveTo` takes the envelope path (`queue_legacy_move_to_envelope`, `orders.rs:551`) with a pool of one.
+- `PendingMovementOrder.plain` (`orders.rs:60`) stays. It marks the legacy idless envelope (`:2017`, `:2122`, `:2161`, `:2171`), whose behaviour `group_movement.rs:2757` pins.
+
+**Commit 2: the deletion, after the reroute** (D 9.10). Delete `orders/plain.rs` (the 17 items of the S2 list), and fix each user that the compiler lists. Grep at `bfd5097`; **verify first**:
+- `PlainMoveReservations` at `orders.rs:603`, `:1141`, `:1197-1397`, `:1669`, `:1737`, `:1783`, `:2124`, `:2795`, `:2917`, `:2998`, `:3117-3176`, `:3633-3656`;
+- `reservation_precedes_request` at `:1773`;
+- `forget_plain_move_identity` at 16 places in `orders.rs` and 1 in `command.rs`;
+- `plain_move_reservation_exists` and `plain_move_has_no_prior_order_state` in `command.rs`;
+- `PlainMoveOrderIdentities` at `economy/combat.rs:154`, `economy/transaction.rs:736`, `economy/views.rs:512` and `command.rs:268`.
+
+The identity removal at `views.rs:512` changes `AuditState`. The Q2 classifier sees it.
+
+**Tests** (section 1a). A red test that is not in this table stops A2c.
+
+| Test | Kind | New expected value |
+| --- | --- | --- |
+| `crates/turts_sim/tests/orders.rs:988` `plain_move_writes_no_order_operation` | inversion | The command operation and one order operation at the accept tick; one order operation at the tick after arrival (D section 5 P3; gate probe at ticks 1, 1, 124). |
+| `orders.rs:496` `accepted_plain_move_projects_without_unit_orders_and_legacy_move_has_no_identity` | inversion of the plain-move half only | `UnitOrders.current` holds the order from the accept tick to arrival. The legacy half is unchanged. |
+| `group_movement.rs:282` `unopposed_authored_singleton_keeps_its_command_only_audit_shape` | inversion | As for `:988`. |
+| `orders.rs:555` `stopped_or_removed_plain_move_identity_does_not_leak_into_the_view` | observation change | A stopped or removed single move leaves 0 `MoveProgress` and 0 pools in the view. |
+| `orders.rs:383`, `crates/turts_pack/tests/mc_order_rows.rs:650`, `crates/turts_server/tests/mc_orders.rs:459` (they read `PlainMoveOrderIdentities`) | observation change | They read `UnitOrders.current`. The order id is the same. |
+| `orders.rs:330`, `:607`; `group_movement.rs:109`, `:325`, `:1895`, `:2005`, `:2156`, `:2757`, `:2876`; `command.rs:341`; `crates/turts_server/tests/orders_plain.rs:118`; the `MoveTo` users in `economy_ordering.rs` and `economy_accounting.rs` | no change | Not renamed. A red stops A2c. |
 
 - [ ] **Step 1: Red.** In `group_movement.rs`:
-    - `second_move_to_a_held_point_keeps_the_first_unit_on_it` (gate case S12). Unit 1 rests on P, bitwise. Unit 2 rests at least `s - 0.00001` from P (`s = 2 × r_max + 0.1`). No footprints overlap.
+    - `second_move_to_a_held_point_keeps_the_first_unit_on_it` (S12): unit 1 rests on P, bitwise. Unit 2 rests at least `s - 0.00001` from P. No footprints overlap.
     - `one_unit_alone_takes_the_point` (`:1309`) gains four cases: through `MoveTo`; through an envelope with group 0; with a static unit of radius 4 far away; to a point off the map (the clamped point, bitwise).
-    - `single_move_pool_is_collected_on_arrival`: 0 `MoveProgress` and 0 pools after arrival (`movement.rs:2383-2404`, `:2497-2508`).
-    - `three_thousand_single_moves_spread_over_two_ticks`: 2,048 units start at T and 952 at T+1 (GSIM M3).
-    - Run: `cargo test -p turts_sim --locked --test group_movement; echo exit=$?`.
-    - Expected: S12 red (the first unit gives up P, GSIM `:78`); the cap test red; `exit=101`. Record the run (D `:153`).
-- [ ] **Step 2: Green.** Make the edits. Rerun: `exit=0`.
-- [ ] **Step 3: Commit, gate.**
-    - Commit. Do not touch the fixture (D `:121`).
-    - F-RUST, without the stream test.
-    - G-FROZEN is red by design: `m2_operation_stream_matches_baseline` fails. Record its first difference and hand over to Q2.
-    - G-WEB is not run in the lane. T7 runs in the slow set after Q2.
-- [ ] **Step 4: Plant.** `free_slot_grid` always false. `one_unit_alone_takes_the_point` goes red. Restore.
+    - `single_move_pool_is_collected_on_arrival`: 0 `MoveProgress` and 0 pools after arrival.
+    - `three_thousand_single_moves_spread_over_two_ticks`: 2,048 at T and 952 at T+1.
+    - Run: `cargo test -p turts_sim --locked --test group_movement; echo exit=$?`. Expected: S12 red and the cap test red, `exit=101`. Record the run.
+- [ ] **Step 2: Commit 1 (the reroute).** Rerun step 1: `exit=0`. Apply the three inversions and the observation changes of the table. `--p0` for `base`, `haul` and `cedar` against the A2c base: `exit=0` (D 9.6).
+- [ ] **Step 3: Commit 2 (the deletion).** Compiler-driven. F-RUST, without the stream test. Do not touch the fixture. Then run `grep -rnE 'PlainMove(Reservation|OrderIdentities|PriorState)|plain_move_(reservation|identity)' crates/turts_sim/src; echo exit=$?`. Expected: `exit=1` (no hit).
+- [ ] **Step 4: Gate.** G-FROZEN is red by design. Record its first difference and hand over to Q2. G-WEB runs in the slow set after Q2.
+- [ ] **Step 5: Plant.** Make `free_slot_grid` always false. `one_unit_alone_takes_the_point` goes red. Restore.
 
-**Exit:** the guards are green. The stream is red only at the stream test. Hand-over to Q2. **Runs: 3.**
+**Exit:** the guards are green, there are no plain reservations, the table is applied exactly, and only the stream test is red. Hand-over to Q2. **Runs: 4.**
 
 ### Task Q2: the one re-freeze
 
@@ -746,36 +914,33 @@ Modes:
 
 **Seat:** `simulation-core-engineer`. Review: `performance-architect`.
 
-**Branch / inputs:** `pre-mp1/a4-frame`; A2b. Merge only after Q2 (R3). **Design:** D row A4; GSIM L1; RUL `:71`.
+**Branch / inputs:** `pre-mp1/a4-frame`; A2b2. It merges only after Q2 (R3). If A2c edits a `movement/` file, A4 rebases after A2c. **Design:** D row A4; GSIM L1; RUL `:71`.
 
-**Files:** `movement/frame.rs`. The rest of `step_frame_preserving_resting` (index build, escapes, write-back, resting collection) becomes functions on `&mut FrameState`, called in one loop in unit-id order. TDI phase ranges `:165`: **verify first**.
+**Files:** `movement/frame.rs`. The rest of `step_frame_preserving_resting` (the index build, the escapes, the write-back, the resting collection) becomes functions on `&mut FrameState`, called in one loop in unit-id order. The phase ranges of TDI `:165` are **verify first**, because A2a and A2b2 changed this function.
 
 - [ ] **Step 1: Reference.** Refresh `movement/reference.rs` from the A4 base.
-- [ ] **Step 2: Red by plant before the change.** Swap two phases in the real kernel. `kernel_reference` goes red. Restore.
-- [ ] **Step 3: Change, then green.** `cargo test --release -p turts_sim --locked --features test-probes --test kernel_reference; echo exit=$?` gives `exit=0`.
-- [ ] **Step 4: Commit, gate.** F-RUST, F-FROZEN (after the rebase onto Q2), `--p0` on four packages.
-- [ ] **Step 5: Plant.** Reset one `FrameState` field between units. `kernel_reference` goes red. Restore.
+- [ ] **Step 2: Red by plant before the change.** Swap two phases in the real kernel: `kernel_reference` goes red. Restore.
+- [ ] **Step 3: Change, then green.** `cargo test --release -p turts_sim --locked --features test-probes --test kernel_reference; echo exit=$?` gives `exit=0`. No assertion edit (section 1a).
+- [ ] **Step 4: Commit, gate.** F-RUST, `--p0` on four packages, and `no_second_step_model`. After the rebase onto Q2: F-FROZEN with the new hash.
+- [ ] **Step 5: Plant.** Reset one `FrameState` field between units: `kernel_reference` goes red. Restore.
 
-**Exit:** bit-equal, and the stream unchanged at the new hash. **Runs: 2.**
+**Exit:** bit-equal, the stream unchanged at the new hash, and one step function. **Runs: 2.**
 
 ### Task A3: two neighbour grids, combat cell
 
 **Seat:** `simulation-core-engineer`. Review: `performance-architect`.
 
-**Branch / inputs:** `pre-mp1/a3-grids`; A4, G1. Merge only after Q2. **Design:** D row A3; TDI A3 (`:138-160`); audit `:33`.
+**Branch / inputs:** `pre-mp1/a3-grids`; A4, G1. It merges only after Q2. It rebases on A2c, because both edit `economy/combat.rs` (A2c at `:154`, A3 at `:111-117`). **Design:** D row A3; TDI A3; audit `:33`.
 
 **Files:**
-- `movement/frame.rs`: movers and statics grids (`speed` None, `movement.rs:1414`), with `within_pair` merged and sorted by `(id, index)`.
-- `economy/combat.rs:111-117`: cell = the smallest weapon range.
-- `orders/run.rs` (engagement grid `orders.rs:722-728`; today `fold(f32::EPSILON, f32::max)`): cell = the smallest weapon range.
-- `refresh_slot_clearance` (`movement.rs:1110-1117`) caps at the largest mover radius (TDI `:144-146`).
+- `movement/frame.rs`: a movers grid and a statics grid (`speed` None, `movement.rs:1414`), with `within_pair` merged and sorted by `(id, index)`.
+- `economy/combat.rs:111-117` and `orders/run.rs` (`orders.rs:722-728`; today `fold(f32::EPSILON, f32::max)`): the cell is the smallest weapon range.
+- `refresh_slot_clearance` (`movement.rs:1110-1117`): the cap is the largest mover radius.
 
-- [ ] **Step 1: Before.** Run the RUN126 probe (1 static of radius 4; 5,000 movers; audit `:33`: 16.7 ms to 56.2 ms) and record the time. Where the probe source is, is NOT TRACED. If it is not in the tree, A3 builds it again from audit `:33` and records it.
-- [ ] **Step 2: Reference.** Refresh it from the A3 base. Change, then green: `kernel_reference` (1,000 to 5,000 movers) `exit=0`; `within_matches_brute_force_scan` `exit=0`.
-- [ ] **Step 3: Commit, gate.** F-RUST, F-FROZEN (new hash). GM40, GMA, GMU (A2a step 4 commands). `--p0` on four packages. Run the probe again and record the time; it is not judged.
-- [ ] **Step 4: Plants.** Each goes red, then restore:
-    - (a) query the statics with reach `r` only: `kernel_reference` goes red;
-    - (b) a merge that is not sorted: `kernel_reference` goes red.
+- [ ] **Step 1: Before.** Run the RUN126 probe (1 static of radius 4 and 5,000 movers; audit `:33`) and record the time. Where its source is, is NOT TRACED. If it is not in the tree, build it again from audit `:33`.
+- [ ] **Step 2: Reference, change, green.** Refresh the reference from the A3 base. `kernel_reference` (1,000 to 5,000 movers) and `within_matches_brute_force_scan` give `exit=0`. No assertion edit.
+- [ ] **Step 3: Commit, gate.** F-RUST, F-FROZEN (new hash), the GM tests (A2a step 4 commands), and `--p0` on four packages. Run the probe again and record the time. It is not judged.
+- [ ] **Step 4: Plants.** First show each red, then restore: (a) the statics are queried with reach `r` only; (b) the merge is not sorted. In each case `kernel_reference` goes red.
 
 **Exit:** bit-equal and the probe time recorded. **Runs: 3.**
 
@@ -800,21 +965,24 @@ It writes the note text for Root, who saves it as `docs/research/mp1/arch-note-p
 
 ## 8. Risks and early checks
 
-| # | Risk | Early check (day 1) |
+| # | Risk | Early check |
 | --- | --- | --- |
-| 1 | The merge of the depletion repair conflicts with the S1 move. The repair edits validator code that S1 moved. | D0p step 1 trial merge in a scratch worktree, as soon as D0 lands. |
-| 2 | An orphan display holds the GPU lock and blocks every headed run. It happened at c667b08 for 36 minutes. | Before each headed batch, confirm that no headed run is active. Root asks the CEO to stop an orphan; Root does not go round a permission refusal. |
-| 3 | The stream units are not all on the no-progress branch, so the A2b claim "stream unchanged" fails. | Q1b step 2 counts on the base build. |
-| 4 | The G1 counter has hits on the stream, so G1 moves into A2c and the trace needs `edge_hit`. | G1 step 4, right after D0p. |
-| 5 | A2a is not bit-equal for pooled units, because of the float expression (`:2003-2004` against `:2183-2185`). Many GM tests would change. | A2a step 2: the count of differing pooled seeds, before the rest of A2a. |
-| 6 | A1d changes an M3 failure text, so an M3 fault stops being red for its text. | A1d step 1 `grep -F` of each text, before the replacement. |
-| 7 | R2 fails: A2a must change a movement item that the replay validator uses. | `cargo check -p turts_audit --locked` at the first A2a commit. |
+| 1 | The depletion repair conflicts with the S1 move. | D0p step 1: a trial merge as soon as D0 lands. |
+| 2 | An orphan display holds the GPU lock (c667b08: 36 minutes). | Before each headed batch, confirm that no headed run is active. Root asks the CEO to stop an orphan. |
+| 3 | A stream unit is on plain progress, or is separated or projected with no pool. Then P0 at A2b2 cannot be equal (D 9.8). | Q1b step 2, counts (a) to (c), on the base build. |
+| 4 | The G1 counter has hits on the stream. | G1 step 4, right after D0p. |
+| 5 | The switch of A2a is not bit-equal on some frame type (for example escape or Attack-Point). | A2a step 3: the full seed set, before the commit. |
+| 6 | The fallback pool oscillates: it is collected and made again on each leg. Gate 2 M1; NOT TRACED whether this happens today. | A2b1 step 1: the counter test on a crowd of 20 gatherers. |
+| 7 | More suite tests than the A2b1 and A2c lists go red. | At the start of each task: build with the first edit only, run `cargo test -p turts_sim -p turts_pack -p turts_server --locked --no-fail-fast; echo exit=$?`, and compare the red names with the list. |
+| 8 | An MP1 lane started at E1 edits `economy/combat.rs` and conflicts with A2c and A3. | MP1 code goes in new files (section 5). Root checks `git diff --name-only` of each MP1 lane against the A2c and A3 file lists. |
+| 9 | A1d changes an M3 failure text. | A1d step 1. |
+| 10 | The R2 condition fails at A2a. | A2a step 4, at the first commit. |
 
 ## 9. Budget
 
-- Remaining: **49 runs** in total (section 3 table); 24 runs on the critical path. Root counts each dispatch.
-- The early producer input estimated the slice at 11 to 18 runs (`docs/research/mp1/input-producer.md`, part 3).
-- The design grew after that: G1, four splits, the trace, the classifier, A4 and the A1 amendments. So 49 is the estimate at the MC rate. It is not a promise.
+- Remaining: **52 runs**, and **27 runs** on the critical path (54 h at 2 h per run; range 38 to 78 h), plus the D0 and CEO waits.
+- Revision 1 of this plan had 49 runs and a path of 24. The changes: A2b (3 runs) is now A2b1 (3) and A2b2 (2), and A2c grows from 3 to 4.
+- Root counts each dispatch. A task that uses twice its estimate is reported (C391 item 7).
 
 ## 10. Not traced by the producer
 
@@ -823,8 +991,12 @@ It writes the note text for Root, who saves it as `docs/research/mp1/arch-note-p
 - Where the speed and `dt` of the arrival-tick check are defined.
 - The source of the RUN126 probe.
 - Whether the `mc_orders.rs` tests are `#[ignore]`.
-- The flags of the headed wrapper beyond its `--help` text.
+- The headed wrapper flags beyond its `--help` text.
 - Whether `vault/Pre-MP1 Execution Board.md` exists.
+- Whether `MoveProgress` needs a `failure_recorded` field for the legacy failure.
+- Whether `UnitOrders.current` holds the order of a single move after A2c.
+- Whether the fallback oscillation of gate 2 M1 occurs.
+- Which type each of `crates/turts_sim/tests/orders.rs:383`, `:496` and `:555` reads.
 
 ## 11. Doc updates for the orchestrator
 
@@ -846,9 +1018,30 @@ None. Scratchpad: /tmp/claude-1000/-home-julien-Projects-TuRTS/bf418660-b272-4bb
 | `sed -n` on the line anchors at `431c3ad` | D and TDI line numbers | Another item at the line | Match. One drift: `UPDATE_M3_BASELINE` is at `:386` |
 | `git merge-base`, `git log` on the lanes | The lanes start from `codex/mc-integration` | Another base | Both at `8d6902c` |
 | `git diff -U0 8d6902c 43282fe` | The repair touches the moved validator | No hunk in the validator | Hunks at `:3470` and `:5541` |
-| grep of `turts_sim::movement::` in `economylog.rs` | R2: the validator uses a small API | It uses the step branches directly | 9 items, listed in R2 |
-| JSON scan of both registries | Which plants S2 and S45 must move | No plant in the moved files | `orders.rs` 1 (E8-foreign); `visuals.rs` 2 |
-| `slice.py` | The graph has no cycle; critical path | A cycle | No cycle; 24 runs, 28 if R2 is refused |
+| grep of `turts_sim::movement::` in `economylog.rs` | The validator uses a small API | It uses the step branches directly | 9 items |
+| JSON scan of both registries | Which plants S2 and S45 must move | None | `orders.rs` 1; `visuals.rs` 2 |
+| `sed -n` on the gate 2 anchors at `bfd5097` (`movement.rs:480, 907, 957, 1968, 1985, 2003, 2008, 2130, 2163, 2184, 2399`; `orders.rs:152, 178, 258, 1358, 2044, 2842, 3115, 3151, 3286, 3622, 3661`; `command.rs:173, 494`; `gather.rs:1246`) | The gate lines | Another item at a line | All match |
+| grep of each plain symbol in `crates` and `tests`, with counts for each file | Ordering defect: a step deletes something that a later step still calls | — | Six defects found; see the table below |
+| python regex count of `\bstep\(\s*&MovementInput` and `for _ in 0..8` in production `movement.rs` | D 9.13 "today 3" | Another count | 3 and 3 (`:793, 1993, 2174`; `:807, 2009, 2192`). The plain text `step(&MovementInput` gives 0, because rustfmt puts the argument on the next line |
+| grep `PlainMoveProgress` and `PlainMoveOrderIdentities` by test function | Which tests change, and in which part | — | 8 tests in `group_movement.rs` (A2b1); `orders.rs` 3; `mc_order_rows.rs:650`; `mc_orders.rs:459` |
+| `slice.py` revision 2 | No cycle; the path | A cycle | No cycle; 27 runs; 31 if R2 fails |
+
+Ordering checks (Root's item 3). A "defect" is a step that deletes something that a later step still calls, or a check that cannot go green at its step.
+
+| Item | Used later by | Result |
+| --- | --- | --- |
+| The plain reservations and identities (`orders/plain.rs`) | The plain move branch `:2842-2900`, until A2c | Defect, the gate's H2. Fixed: deleted in A2c commit 2. |
+| `PlainMoveProgress`, created at `orders.rs:2044-2058` (legacy failure) | The live legacy envelope path | Defect, new. Fixed: A2b1 replaces the creator (R10). |
+| `PlainMovePriorState.plain_progress` (`:171`, `:3208`, `:3249`) | The plain move code, which A2c deletes | No defect after A2b1 (the value is always `None`). A2b2 deletes the field. |
+| `PlainMoveProgress` read by the trace emitter | The P0 pair at A2b2 and the pair of Q2 | Defect, new. Fixed: the probe API (R11). |
+| `PlainMoveProgress` in the reference copy | The harness at A2b2 | Defect, new. Fixed: the copy changes in the same commit (A2b2). |
+| One `for _ in 0..8` and one `step(` call in `step_plain_progress` | The D 9.13 guard at A2a | Defect, new. Fixed: the count in two stages (R12). |
+| Eight suite tests read `PlainMoveProgress` | They go red when A2b1 removes the creators | Defect, new. Fixed: listed in A2b1 (R13). |
+| `PlainMoveOrderIdentities` at `combat.rs:154`, `transaction.rs:736`, `views.rs:512`, `command.rs:268`, and in 3 test files | A2c commit 2 | No defect. Added to the A2c file list. A3 rebases on A2c for `combat.rs`. |
+| `PlainGatherGoal` (replay validator 8 times, `gather.rs`, `orders.rs`) | A2b1 | No defect. The validator is gone at A1c, and A2b1 waits for A1c. The type survives inside `MoveProgress`. |
+| `command.rs:494` `.remove::<PlainMoveProgress>()` on the direct `MoveTo` path | A2c reroute | No defect. A2b2 deletes the line; the path is dead after A2b1. |
+| The `movement_envelope_capacity_available_after_replacing` call at `:559` | A2c | No defect. The item is kept out of `plain.rs` (S2). |
+| The A2a counter and the harness need `test-probes` | A2b1, A2b2, A4, A3 | No defect. Q1b adds the feature first. |
 
 ## 14. Open questions for Root
 
