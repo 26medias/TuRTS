@@ -28,6 +28,16 @@ fn app_with_one_unit() -> bevy_app::App {
         health: None,
         weapon: None,
         removal: None,
+        armour: None,
+        acquire: None,
+        provides: Vec::new(),
+        consumes: Vec::new(),
+        income: None,
+        spawn_order: None,
+        constructor: None,
+        placement: None,
+        build_area: None,
+        repairer: None,
     };
     app.world_mut()
         .resource_mut::<UnitTypes>()
@@ -43,6 +53,7 @@ fn app_with_one_unit() -> bevy_app::App {
             contents: Vec::new(),
 
             facing: None,
+            start_order: None,
         }],
         nodes: Vec::new(),
         slot_economy: Vec::new(),

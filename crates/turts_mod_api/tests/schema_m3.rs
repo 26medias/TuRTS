@@ -159,6 +159,9 @@ fn old_packages_omit_m3_defaults_when_serialized_and_nonempty_fields_remain() {
         interface: vec![],
         input: vec![],
         assets: vec![],
+        combat: Vec::new(),
+        match_files: Vec::new(),
+        visual_effects: Vec::new(),
     })
     .unwrap();
     assert!(exports["recipes"].is_array());
@@ -313,11 +316,23 @@ fn m3_unit() -> UnitDef {
             targets: TargetFilter {
                 slots: SlotRelation::Other,
             },
+            damage_type: None,
+            when_short: Vec::new(),
         }),
         removal: Some(RemovalDef {
             by_command: true,
             contents: ContentsPolicy::Destroy,
         }),
+        acquire: None,
+        armour: None,
+        build_area: None,
+        provides: Vec::new(),
+        consumes: Vec::new(),
+        income: None,
+        spawn_order: None,
+        constructor: None,
+        placement: None,
+        repairer: None,
     }
 }
 
@@ -331,6 +346,7 @@ fn m3_map() -> MapDef {
             pos: WorldPos { x: 8.0, y: 8.0 },
             contents: vec![],
             facing: Some(Facing::PosX),
+            start_order: None,
         }],
         nodes: vec![],
         slot_economy: vec![],

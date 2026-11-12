@@ -105,6 +105,14 @@ pub fn read_source(source: &Source, context: SourceContext<'_>) -> SourceData {
         Source::Alerts => alert_rows(context.alerts),
         Source::Bindings => binding_rows(context),
         Source::Guide => guide_rows(context),
+        // API 0.2.4 (row H7): the list sources of `UI-HUD`. Until then they are empty, as a
+        // source that has no rows.
+        Source::ConstructionQueue | Source::Sites | Source::Notices | Source::SelectionTypes => {
+            SourceData {
+                scalar: None,
+                items: Vec::new(),
+            }
+        }
     }
 }
 
@@ -157,6 +165,19 @@ pub fn read_value_for_item(
         Value::Format(pattern, values) => {
             serde_json::Value::String(format_value(pattern, values, context, item))
         }
+        // API 0.2.4 (row H7): the values of `UI-HUD`, `UI-RESULT`, `UI-HINT`, `UI2-CONN` and
+        // `UI2-RESULT` (plan 5.3). Until then a widget that binds one shows nothing (null).
+        Value::Supply(..)
+        | Value::ConstructionQueue
+        | Value::Sites
+        | Value::Notices
+        | Value::SelectionTypes
+        | Value::Connection
+        | Value::Outcome
+        | Value::OutcomeReason
+        | Value::MatchStats(_)
+        | Value::MatchClock
+        | Value::Hint => serde_json::Value::Null,
     }
 }
 
@@ -251,6 +272,10 @@ fn primary_value(field: PrimaryField, context: SourceContext<'_>) -> serde_json:
                 serde_json::json!(weapon.cooldown as f64 / context.replica.tick_hz.max(1) as f64)
             }),
         PrimaryField::Cooldown => serde_json::Value::Null,
+        // API 0.2.4 (row H8): `UI2-HUD` reads these. Until then they are null.
+        PrimaryField::Activity | PrimaryField::Cargo | PrimaryField::Armour => {
+            serde_json::Value::Null
+        }
     }
 }
 
@@ -618,6 +643,12 @@ fn capability_matches(order: &turts_mod_api::OrderDef, unit: &turts_mod_api::Res
                 || unit.weapon.is_some()
         }
         Behaviour::Stop | Behaviour::Hold => unit.movement.is_some() || unit.weapon.is_some(),
+        // API 0.2.4: no unit is capable of a new behaviour until its lane builds it.
+        Behaviour::Construct
+        | Behaviour::CancelConstruction
+        | Behaviour::SetRally
+        | Behaviour::Repair
+        | Behaviour::Surrender => false,
     }
 }
 
@@ -1228,6 +1259,15 @@ fn item_field_key(field: ItemField) -> &'static str {
         ItemField::CancelAction => "cancel_action",
         ItemField::Title => "title",
         ItemField::Body => "body",
+        // API 0.2.4 (row H9): the keys of the new item fields; the sources fill them later.
+        ItemField::Role => "role",
+        ItemField::BuildTimeNow => "build_time_now",
+        ItemField::SupplyChange => "supply_change",
+        ItemField::CausesShortage => "causes_shortage",
+        ItemField::State => "state",
+        ItemField::Paid => "paid",
+        ItemField::Refund => "refund",
+        ItemField::Badge => "badge",
     }
 }
 
@@ -1342,6 +1382,7 @@ mod tests {
                 numerator: 1,
                 denominator: 1,
             },
+            destroyed: turts_mod_api::RefundRatio::ZERO,
         }
     }
 
@@ -1407,7 +1448,16 @@ mod tests {
                     height: 1,
                     background: "#000".into(),
                     health: "#fff".into(),
+                    scale_to_footprint: false,
                 },
+                placement: None,
+                build_area_ring: None,
+                gap_ring: None,
+                progress_bar: None,
+                cargo_bar: None,
+                rally: None,
+                float_text: None,
+                unit_labels: None,
             },
             alerts: vec![],
             reasons: BTreeMap::new(),
@@ -1418,6 +1468,7 @@ mod tests {
                         icon: Some("scout.png".into()),
                         portrait: None,
                         responses: BTreeMap::new(),
+                        role: None,
                     },
                 ),
                 (
@@ -1426,11 +1477,19 @@ mod tests {
                         icon: Some("worker.png".into()),
                         portrait: None,
                         responses: BTreeMap::new(),
+                        role: None,
                     },
                 ),
             ]),
             selection_priority: vec![],
             guide: vec![],
+            hints: Vec::new(),
+            hint_fallback: None,
+            start_selection: None,
+            states: Default::default(),
+            effects_voices: None,
+            audible_range: None,
+            alert_sound_gap_secs: None,
         };
         let selection = [7, 8, 9];
         let groups = BTreeMap::new();

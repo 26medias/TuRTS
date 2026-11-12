@@ -63,12 +63,14 @@ const ROOTS: [&str; 4] = [
 /// Raise one only with a reason in the commit message.
 const BASELINE: &[(&str, Counts)] = &[
     ("crates/turts_client/src/camera.rs", [0, 0, 1, 0, 0]),
-    ("crates/turts_client/src/core_adapter.rs", [0, 3, 0, 0, 0]),
     ("crates/turts_client/src/feedback.rs", [0, 0, 2, 0, 0]),
-    ("crates/turts_client/src/widgets/cursor.rs", [0, 6, 0, 0, 0]),
+    // L0-API1: the one mapping of the schema filter to the rule relation, an exhaustive match of
+    // five paths. The five copies of the relation match (core_adapter 3, cursor 6, combat 3,
+    // run 3: 15 paths) are gone; they call `turts_rules::relation` through this mapping.
+    ("crates/turts_client/src/relation.rs", [0, 5, 0, 0, 0]),
     ("crates/turts_interaction/src/camera.rs", [0, 0, 1, 0, 0]),
     ("crates/turts_sim/src/boot_m3.rs", [1, 0, 5, 0, 0]),
-    ("crates/turts_sim/src/economy/combat.rs", [0, 3, 4, 0, 0]),
+    ("crates/turts_sim/src/economy/combat.rs", [0, 0, 4, 0, 0]),
     // `wide_let_div` 1: `RateCarry::take_budget` (`numerator / hz`), the per-second budget of a
     // gatherer for one tick. It is a rate rule of the gather loop, not a rule of `turts_rules`;
     // fingerprint 4 found it when it was added (L0-SIM) and the record keeps it.
@@ -90,7 +92,8 @@ const BASELINE: &[(&str, Counts)] = &[
         "crates/turts_sim/src/orders/behaviours/attack.rs",
         [0, 0, 1, 0, 0],
     ),
-    ("crates/turts_sim/src/orders/run.rs", [0, 3, 0, 0, 0]),
+    // L0-API1: the same mapping in the simulation (the client cannot depend on it).
+    ("crates/turts_sim/src/rules_adapter.rs", [0, 5, 0, 0, 0]),
 ];
 
 fn repo() -> PathBuf {

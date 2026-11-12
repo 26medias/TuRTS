@@ -53,6 +53,16 @@ fn app_with_units() -> bevy_app::App {
         health: None,
         weapon: None,
         removal: None,
+        armour: None,
+        acquire: None,
+        provides: Vec::new(),
+        consumes: Vec::new(),
+        income: None,
+        spawn_order: None,
+        constructor: None,
+        placement: None,
+        build_area: None,
+        repairer: None,
     };
     app.world_mut()
         .resource_mut::<UnitTypes>()
@@ -80,6 +90,16 @@ fn app_with_units() -> bevy_app::App {
                 health: None,
                 weapon: None,
                 removal: None,
+                armour: None,
+                acquire: None,
+                provides: Vec::new(),
+                consumes: Vec::new(),
+                income: None,
+                spawn_order: None,
+                constructor: None,
+                placement: None,
+                build_area: None,
+                repairer: None,
             },
         )
         .unwrap();
@@ -90,6 +110,7 @@ fn app_with_units() -> bevy_app::App {
         contents: Vec::new(),
 
         facing: None,
+        start_order: None,
     };
     load_map(
         app.world_mut(),

@@ -1,0 +1,7 @@
+(id: "reef", size: (x: 96.0, y: 96.0),
+ placements: [(unit: "tide:dock", owner_slot: 0, pos: (x: 16.0, y: 16.0), contents: []),
+   (unit: "tide:skimmer", owner_slot: 0, pos: (x: 21.0, y: 16.0), contents: [], start_order: Some((order: "tide:order_gather", target: Node(0)))),
+   (unit: "tide:dock", owner_slot: 1, pos: (x: 80.0, y: 80.0), contents: []),
+   (unit: "tide:skimmer", owner_slot: 1, pos: (x: 75.0, y: 80.0), contents: [], start_order: Some((order: "tide:order_gather", target: Node(1))))],
+ nodes: [(node: "tide:bed", pos: (x: 26.0, y: 20.0), remaining: 4000), (node: "tide:bed", pos: (x: 70.0, y: 76.0), remaining: 4000)],
+ slot_economy: [(slot: 0, balances: [(balance: "tide:pearls", amount: 900)]), (slot: 1, balances: [(balance: "tide:pearls", amount: 900)])])

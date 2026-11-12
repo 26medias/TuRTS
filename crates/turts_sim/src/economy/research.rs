@@ -142,6 +142,9 @@ pub(crate) fn queue_research(
                 let reservation = transaction::reserve_costs(tx, job_id, &costs)?;
                 (Vec::new(), Some(reservation))
             }
+            // API 0.2.4 (row P1): the packer refuses `ChargeOverTime` until `L-PAY` builds it
+            // (`UNBUILT_FEATURES`), so a packed package never reaches this arm.
+            PaymentPolicy::ChargeOverTime => return Err(RejectReason::NotApplicable),
         };
         queue.push(ProductionJob {
             id: job_id,
@@ -539,6 +542,7 @@ mod tests {
                                 numerator: 1,
                                 denominator: 2,
                             },
+                            destroyed: turts_mod_api::RefundRatio::ZERO,
                         },
                         effects: vec![ResolvedEffect::WeaponModifier {
                             unit: turret.clone(),
@@ -573,6 +577,7 @@ mod tests {
                                 numerator: 1,
                                 denominator: 2,
                             },
+                            destroyed: turts_mod_api::RefundRatio::ZERO,
                         },
                         effects: vec![ResolvedEffect::WeaponModifier {
                             unit: turret.clone(),
@@ -635,6 +640,7 @@ mod tests {
             pos: WorldPos { x, y: 8.0 },
             contents: vec![],
             facing: None,
+            start_order: None,
         }
     }
 

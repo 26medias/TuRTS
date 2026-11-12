@@ -396,6 +396,8 @@ fn hover_context(
                         && matches!(order.target, TargetKind::Point | TargetKind::PointOrUnit)
                 }
                 turts_mod_api::SmartTarget::Content => false,
+                // API 0.2.4 (row O6): a repair cursor is `UI2-HUD`; until then it is no match.
+                turts_mod_api::SmartTarget::OwnDamaged => false,
             };
             if !compatible {
                 continue;
@@ -426,11 +428,8 @@ fn actor_target_kinds(
         Hover::Unit { owner, .. } if owner == slot => vec![SmartTarget::OwnUnit],
         Hover::Unit { id, owner } => {
             let weapon_target = definition.weapon.as_ref().is_some_and(|weapon| {
-                let relation_matches = match weapon.targets.slots {
-                    turts_mod_api::SlotRelation::Other => owner != slot,
-                    turts_mod_api::SlotRelation::Same => owner == slot,
-                    turts_mod_api::SlotRelation::Any => true,
-                };
+                let relation_matches =
+                    crate::relation::holds_own_team(weapon.targets.slots, slot, owner);
                 relation_matches
                     && replica
                         .units
@@ -479,6 +478,9 @@ fn has_capability(
         turts_mod_api::Capability::Gatherer => unit.gatherer.is_some(),
         turts_mod_api::Capability::Producer => unit.producer.is_some(),
         turts_mod_api::Capability::Research => unit.research.is_some(),
+        // API 0.2.4 (row O6): the resolved unit has no constructor or repairer yet
+        // (`L-CON1`, `L-REP` add them); no unit has the capability until then.
+        turts_mod_api::Capability::Constructor | turts_mod_api::Capability::Repairer => false,
     }
 }
 
@@ -548,7 +550,8 @@ fn order_target_valid(
             }
             _ => false,
         },
-        TargetKind::Job | TargetKind::Content => false,
+        // `ContentAtPoint` (API 0.2.4, row O5) is the target of a placement: `UI-PLACE`.
+        TargetKind::Job | TargetKind::Content | TargetKind::ContentAtPoint => false,
     }
 }
 
@@ -581,6 +584,12 @@ fn order_capability(order: &OrderDef, unit: &turts_mod_api::ResolvedUnit) -> boo
                 || unit.weapon.is_some()
         }
         Behaviour::Stop | Behaviour::Hold => unit.movement.is_some() || unit.weapon.is_some(),
+        // API 0.2.4: no unit is capable of a new behaviour until its lane builds it.
+        Behaviour::Construct
+        | Behaviour::CancelConstruction
+        | Behaviour::SetRally
+        | Behaviour::Repair
+        | Behaviour::Surrender => false,
     }
 }
 
@@ -615,10 +624,8 @@ fn order_unit_target_relation(
                 .ok()
                 .and_then(|id| content.catalog.units.get(&id))
                 .and_then(|unit| unit.weapon.as_ref())
-                .is_some_and(|weapon| match weapon.targets.slots {
-                    turts_mod_api::SlotRelation::Other => target_owner != slot,
-                    turts_mod_api::SlotRelation::Same => target_owner == slot,
-                    turts_mod_api::SlotRelation::Any => true,
+                .is_some_and(|weapon| {
+                    crate::relation::holds_own_team(weapon.targets.slots, slot, target_owner)
                 })
         })
 }

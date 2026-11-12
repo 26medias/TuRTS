@@ -15,6 +15,7 @@ pub mod orders;
 mod outcome;
 pub mod plugin;
 pub mod registry;
+pub mod rules_adapter;
 pub mod slots;
 pub mod unit_index;
 pub mod world;

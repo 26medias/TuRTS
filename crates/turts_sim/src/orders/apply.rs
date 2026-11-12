@@ -149,6 +149,13 @@ pub(crate) fn apply_order(
                 .and_then(|unit| unit.removal.as_ref())
                 .is_some_and(|removal| removal.by_command),
             Behaviour::SetEnabled(_) => definition.is_some_and(unit_toggleable),
+            // API 0.2.4: no unit is capable of a new behaviour until its lane builds it (the
+            // packer refuses these orders with `UNBUILT_FEATURES` until then).
+            Behaviour::Construct
+            | Behaviour::CancelConstruction
+            | Behaviour::SetRally
+            | Behaviour::Repair
+            | Behaviour::Surrender => false,
         };
         if !capable {
             let reason = match command.behaviour {
@@ -883,6 +890,13 @@ fn apply_unit_order(
             }
             Ok(job_id)
         }
+        // API 0.2.4: the behaviours that their lanes build later. `capable` above refuses them
+        // first, so this arm is not reached.
+        Behaviour::Construct
+        | Behaviour::CancelConstruction
+        | Behaviour::SetRally
+        | Behaviour::Repair
+        | Behaviour::Surrender => Err(R::NotApplicable),
     }
 }
 

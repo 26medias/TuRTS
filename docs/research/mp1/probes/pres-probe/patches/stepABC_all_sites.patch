@@ -1,0 +1,130 @@
+diff --git a/crates/turts_client/src/widgets/tooltip.rs b/crates/turts_client/src/widgets/tooltip.rs
+index 9fce5e1..efa76c3 100644
+--- a/crates/turts_client/src/widgets/tooltip.rs
++++ b/crates/turts_client/src/widgets/tooltip.rs
+@@ -93,15 +93,17 @@ pub fn update_tooltips(world: &mut World) {
+             && world
+                 .get::<InheritedVisibility>(owner)
+                 .is_none_or(|visibility| visibility.get());
+-        if let Some(mut current) = world.get_mut::<Text>(view) {
++        if let Some(mut current) = world.get_mut::<Text>(view)
++            && current.0 != text
++        {
+             current.0 = text;
+         }
+         if let Some(mut visibility) = world.get_mut::<Visibility>(view) {
+-            *visibility = if visible {
++            visibility.set_if_neq(if visible {
+                 Visibility::Visible
+             } else {
+                 Visibility::Hidden
+-            };
++            });
+         }
+         if visible {
+             clamp_to_viewport(world, owner, view);
+diff --git a/crates/turts_client/src/widgets/tree.rs b/crates/turts_client/src/widgets/tree.rs
+index 6f5ce1d..7260c36 100644
+--- a/crates/turts_client/src/widgets/tree.rs
++++ b/crates/turts_client/src/widgets/tree.rs
+@@ -69,12 +69,14 @@ pub(super) fn update_fit_layout(world: &mut World) {
+             continue;
+         }
+         if let Some(mut node) = world.get_mut::<Node>(entity) {
++            let mut next = (*node).clone();
+             if fit_x {
+-                node.width = placement::pixel(needed.x);
++                next.width = placement::pixel(needed.x);
+             }
+             if fit_y {
+-                node.height = placement::pixel(needed.y);
++                next.height = placement::pixel(needed.y);
+             }
++            node.set_if_neq(next);
+         }
+         let base_extent = placement::authored_extent(binding.parent_size, binding.size);
+         let fitted_extent = Vec2::new(
+@@ -101,7 +103,7 @@ pub(super) fn update_fit_layout(world: &mut World) {
+                     );
+                 }
+                 if let Some(mut current) = world.get_mut::<UiTransform>(child) {
+-                    *current = transform;
++                    current.set_if_neq(transform);
+                 }
+             }
+             if let Some(mut child_binding) = world.get_mut::<WidgetBinding>(child) {
+@@ -845,7 +847,7 @@ pub(super) fn reconcile_list_rows(world: &mut World, context: &sources::SourceCo
+                     );
+                 }
+                 if let Some(mut current) = world.get_mut::<UiTransform>(row_entity) {
+-                    *current = transform;
++                    current.set_if_neq(transform);
+                 }
+             }
+             if grid.is_none() {
+@@ -867,22 +869,24 @@ pub(super) fn reconcile_list_rows(world: &mut World, context: &sources::SourceCo
+ /// Update only authored geometry while keeping primitive-owned style such as borders,
+ /// overflow, padding, and image layout intact.
+ fn apply_node_placement(
+-    current: &mut Node,
++    current: &mut Mut<Node>,
+     placement: Node,
+     preserve_fit_width: bool,
+     preserve_fit_height: bool,
+ ) {
+-    current.position_type = placement.position_type;
+-    current.left = placement.left;
+-    current.right = placement.right;
+-    current.top = placement.top;
+-    current.bottom = placement.bottom;
++    let mut next = (**current).clone();
++    next.position_type = placement.position_type;
++    next.left = placement.left;
++    next.right = placement.right;
++    next.top = placement.top;
++    next.bottom = placement.bottom;
+     if !preserve_fit_width {
+-        current.width = placement.width;
++        next.width = placement.width;
+     }
+     if !preserve_fit_height {
+-        current.height = placement.height;
++        next.height = placement.height;
+     }
++    current.set_if_neq(next);
+ }
+ 
+ pub(super) fn grid_item_included(
+diff --git a/crates/turts_client/src/widgets/values.rs b/crates/turts_client/src/widgets/values.rs
+index 29949eb..38ae472 100644
+--- a/crates/turts_client/src/widgets/values.rs
++++ b/crates/turts_client/src/widgets/values.rs
+@@ -36,7 +36,7 @@ pub(super) fn refresh_bound_widgets(world: &mut World, context: &sources::Source
+             if let Some(child) = child
+                 && let Some(mut node) = world.get_mut::<Node>(child)
+             {
+-                *node = primitives::bar_fill_node(*direction, ratio);
++                node.set_if_neq(primitives::bar_fill_node(*direction, ratio));
+             }
+         }
+         let text = match &binding.primitive {
+@@ -62,7 +62,9 @@ pub(super) fn refresh_bound_widgets(world: &mut World, context: &sources::Source
+                     world.entity_mut(entity).remove::<Text>();
+                 }
+             } else if let Some(mut current) = world.get_mut::<Text>(entity) {
+-                current.0 = text;
++                if current.0 != text {
++                    current.0 = text;
++                }
+             } else {
+                 world.entity_mut(entity).insert(Text::new(text));
+             }
+@@ -121,7 +123,7 @@ pub(super) fn refresh_bound_widgets(world: &mut World, context: &sources::Source
+             .iter()
+             .all(|predicate| predicate_matches(predicate, context));
+         if let Some(mut current) = world.get_mut::<Visibility>(entity) {
+-            *current = widget_visibility(visible);
++            current.set_if_neq(widget_visibility(visible));
+         }
+     }
+ }

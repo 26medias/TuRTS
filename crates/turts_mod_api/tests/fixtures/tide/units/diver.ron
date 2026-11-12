@@ -1,0 +1,4 @@
+(id: "diver", name: "Diver", footprint: Circle(radius: 0.4), movement: Some((speed: 3.0)), inventory: None, gatherer: None, drop_off: None, producer: None,
+ health: Some((max: 80)), armour: Some((class: "tide:light_hull", flat: 0)),
+ weapon: Some((range: 5.0, cooldown_ms: 900, damage: 8, ammo: None, targets: (slots: Enemy), damage_type: Some("tide:spear"))),
+ acquire: Some((range: 6.0, leash: 4.0)), removal: Some((by_command: true, contents: Destroy)))

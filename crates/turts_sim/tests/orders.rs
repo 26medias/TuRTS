@@ -39,6 +39,16 @@ fn app_with_units(mobile: usize, static_units: usize, foreign: usize) -> bevy_ap
                     health: None,
                     weapon: None,
                     removal: None,
+                    armour: None,
+                    acquire: None,
+                    provides: Vec::new(),
+                    consumes: Vec::new(),
+                    income: None,
+                    spawn_order: None,
+                    constructor: None,
+                    placement: None,
+                    build_area: None,
+                    repairer: None,
                 },
             )
             .unwrap();
@@ -60,6 +70,7 @@ fn app_with_units(mobile: usize, static_units: usize, foreign: usize) -> bevy_ap
                 },
                 contents: Vec::new(),
                 facing: None,
+                start_order: None,
             }
         })
         .collect();

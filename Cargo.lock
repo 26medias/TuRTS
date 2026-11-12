@@ -8644,6 +8644,7 @@ dependencies = [
  "turts_mod_runtime",
  "turts_net_lightyear",
  "turts_net_protocol",
+ "turts_rules",
  "ureq",
  "wasm-bindgen",
  "wasm-bindgen-futures",

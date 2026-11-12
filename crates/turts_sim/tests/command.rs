@@ -37,6 +37,16 @@ fn app_with_two_units_on(size: MapSize) -> bevy_app::App {
         health: None,
         weapon: None,
         removal: None,
+        armour: None,
+        acquire: None,
+        provides: Vec::new(),
+        consumes: Vec::new(),
+        income: None,
+        spawn_order: None,
+        constructor: None,
+        placement: None,
+        build_area: None,
+        repairer: None,
     };
     app.world_mut()
         .resource_mut::<UnitTypes>()
@@ -49,6 +59,7 @@ fn app_with_two_units_on(size: MapSize) -> bevy_app::App {
         contents: Vec::new(),
 
         facing: None,
+        start_order: None,
     };
     let map = MapDef {
         id: "field".to_string(),
@@ -187,6 +198,16 @@ fn map_owner_slot_decides_who_may_move_a_unit() {
         health: None,
         weapon: None,
         removal: None,
+        armour: None,
+        acquire: None,
+        provides: Vec::new(),
+        consumes: Vec::new(),
+        income: None,
+        spawn_order: None,
+        constructor: None,
+        placement: None,
+        build_area: None,
+        repairer: None,
     };
     app.world_mut()
         .resource_mut::<UnitTypes>()
@@ -199,6 +220,7 @@ fn map_owner_slot_decides_who_may_move_a_unit() {
         contents: Vec::new(),
 
         facing: None,
+        start_order: None,
     };
     let map = MapDef {
         id: "field".to_string(),
@@ -426,6 +448,16 @@ fn move_to_mixed_mobile_and_static_units_move_per_unit() {
         health: None,
         weapon: None,
         removal: None,
+        armour: None,
+        acquire: None,
+        provides: Vec::new(),
+        consumes: Vec::new(),
+        income: None,
+        spawn_order: None,
+        constructor: None,
+        placement: None,
+        build_area: None,
+        repairer: None,
     };
     let static_def = UnitDef {
         id: "yard".into(),
@@ -445,6 +477,16 @@ fn move_to_mixed_mobile_and_static_units_move_per_unit() {
         health: None,
         weapon: None,
         removal: None,
+        armour: None,
+        acquire: None,
+        provides: Vec::new(),
+        consumes: Vec::new(),
+        income: None,
+        spawn_order: None,
+        constructor: None,
+        placement: None,
+        build_area: None,
+        repairer: None,
     };
     let mut types = app.world_mut().resource_mut::<UnitTypes>();
     types.register_unit_type(&origin, mobile).unwrap();
@@ -460,6 +502,7 @@ fn move_to_mixed_mobile_and_static_units_move_per_unit() {
                 contents: vec![],
 
                 facing: None,
+                start_order: None,
             },
             Placement {
                 unit: format!("{ORIGIN}:yard"),
@@ -468,6 +511,7 @@ fn move_to_mixed_mobile_and_static_units_move_per_unit() {
                 contents: vec![],
 
                 facing: None,
+                start_order: None,
             },
         ],
         nodes: vec![],

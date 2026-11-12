@@ -38,6 +38,8 @@ fn target_for(kind: TargetKind) -> OrderTarget {
         TargetKind::Node => OrderTarget::Node(turts_net_protocol::NodeId(1)),
         TargetKind::Job => OrderTarget::Job(turts_net_protocol::JobId(1)),
         TargetKind::Content => OrderTarget::Content("muster:trooper".into()),
+        // API 0.2.4: no 0.2.3 package has an order with this target.
+        TargetKind::ContentAtPoint => unreachable!("no API 0.2.3 order targets a content point"),
     }
 }
 
@@ -51,6 +53,8 @@ fn sim_target_for(kind: TargetKind) -> OrderTargetSim {
         TargetKind::Content => {
             OrderTargetSim::Content(turts_mod_api::ContentId::parse("muster:trooper").unwrap())
         }
+        // API 0.2.4: no 0.2.3 package has an order with this target.
+        TargetKind::ContentAtPoint => unreachable!("no API 0.2.3 order targets a content point"),
     }
 }
 
@@ -154,6 +158,7 @@ fn audit_fixture_at_enemy(
                 pos: WorldPos { x: 5.0, y: 5.0 },
                 contents: vec![],
                 facing: None,
+                start_order: None,
             },
             Placement {
                 unit: "audit:shooter".into(),
@@ -161,6 +166,7 @@ fn audit_fixture_at_enemy(
                 pos: WorldPos { x: 5.0, y: 7.0 },
                 contents: vec![],
                 facing: None,
+                start_order: None,
             },
             Placement {
                 unit: "audit:enemy".into(),
@@ -168,6 +174,7 @@ fn audit_fixture_at_enemy(
                 pos: enemy_position,
                 contents: vec![],
                 facing: None,
+                start_order: None,
             },
         ],
         nodes: vec![],
@@ -223,6 +230,12 @@ fn every_behaviour_has_an_envelope() {
             Behaviour::CancelProduction => 6,
             Behaviour::Remove => 7,
             Behaviour::SetEnabled(_) => 8,
+            // API 0.2.4: `muster` has no order of the new behaviours.
+            Behaviour::Construct
+            | Behaviour::CancelConstruction
+            | Behaviour::SetRally
+            | Behaviour::Repair
+            | Behaviour::Surrender => unreachable!("muster has no API 0.2.4 order"),
         };
         if !behaviours.contains(&category) {
             behaviours.push(category);
@@ -782,6 +795,7 @@ fn point_attack_switches_to_another_eligible_target_and_strictly_replays() {
                 pos: WorldPos { x: 5.0, y: 5.0 },
                 contents: vec![],
                 facing: None,
+                start_order: None,
             },
             Placement {
                 unit: "audit:enemy".into(),
@@ -789,6 +803,7 @@ fn point_attack_switches_to_another_eligible_target_and_strictly_replays() {
                 pos: WorldPos { x: 6.0, y: 5.0 },
                 contents: vec![],
                 facing: None,
+                start_order: None,
             },
             Placement {
                 unit: "audit:enemy".into(),
@@ -796,6 +811,7 @@ fn point_attack_switches_to_another_eligible_target_and_strictly_replays() {
                 pos: WorldPos { x: 7.0, y: 5.0 },
                 contents: vec![],
                 facing: None,
+                start_order: None,
             },
         ],
         nodes: vec![],

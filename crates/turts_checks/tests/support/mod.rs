@@ -297,6 +297,11 @@ pub fn derive_tokens(root: &Path) -> Result<TokenCatalog, ScanError> {
             "Bevy ExtendedMaterial uses base as a required field name",
             true,
         ),
+        (
+            "flat",
+            "the armour schema names its flat reduction `flat` (design 6.10 row U1)",
+            true,
+        ),
     ] {
         if let Some(records) = c.records.get(word) {
             let r = &records[0];

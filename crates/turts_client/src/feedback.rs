@@ -834,6 +834,15 @@ fn collect_alert_events(
                     rule_id != &rule.id || waiting_units.contains(unit)
                 });
             }
+            // API 0.2.4 (row H4): triggers that `UI-ALERT` and `UI2-CONN` build later. Until
+            // then they raise no alert (the packer refuses a package that writes one).
+            AlertTrigger::ConstructionComplete
+            | AlertTrigger::SupplyShort(_)
+            | AlertTrigger::SupplyRestored(_)
+            | AlertTrigger::InsufficientFunds(_)
+            | AlertTrigger::SlotDisconnected
+            | AlertTrigger::SlotReconnected
+            | AlertTrigger::GathererIdle(_) => {}
         }
         if !matches!(&rule.trigger, AlertTrigger::OwnUnitDestroyed) {
             units.retain(|unit| {

@@ -51,6 +51,7 @@ fn group_order_uses_muster_unit_types_and_moves_all_eligible_mobile_owners() {
             },
             contents: Vec::new(),
             facing: None,
+            start_order: None,
         })
         .chain((0..5).map(|index| Placement {
             unit: "muster:post".into(),
@@ -61,6 +62,7 @@ fn group_order_uses_muster_unit_types_and_moves_all_eligible_mobile_owners() {
             },
             contents: Vec::new(),
             facing: None,
+            start_order: None,
         }))
         .chain((0..5).map(|index| Placement {
             unit: "muster:trooper".into(),
@@ -71,6 +73,7 @@ fn group_order_uses_muster_unit_types_and_moves_all_eligible_mobile_owners() {
             },
             contents: Vec::new(),
             facing: None,
+            start_order: None,
         }))
         .collect();
 

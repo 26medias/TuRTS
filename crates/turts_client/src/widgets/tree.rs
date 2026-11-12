@@ -457,6 +457,9 @@ pub(super) fn spawn_widget(
             label,
             action: action_def,
             hotkey_label,
+            // `font` and `size` (API 0.2.4, row H13) are read by `UI2-MC`; until then a button
+            // keeps the tooltip font of 0.2.3.
+            ..
         } => {
             world
                 .entity_mut(id)

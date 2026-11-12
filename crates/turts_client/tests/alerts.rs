@@ -522,6 +522,7 @@ fn production_completion_needs_output_evidence_and_does_not_treat_job_removal_as
                     numerator: 0,
                     denominator: 1,
                 },
+                destroyed: turts_mod_api::RefundRatio::ZERO,
             },
         },
     );
@@ -541,6 +542,12 @@ fn production_completion_needs_output_evidence_and_does_not_treat_job_removal_as
             cooldown: 1.0,
             priority: 1,
             coalesce_radius: 0.0,
+            units: Vec::new(),
+            kind: turts_mod_api::AlertKind::Event,
+            clear_after: None,
+            select_on_click: false,
+            focus: None,
+            sound_when: turts_mod_api::SoundWhen::Always,
         });
     let mut app = feedback_app(state, acquired);
     app.update();

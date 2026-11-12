@@ -187,6 +187,16 @@ mod tests {
                         by_command,
                         contents: ContentsPolicy::Destroy,
                     }),
+                    armour: None,
+                    acquire: None,
+                    provides: Vec::new(),
+                    consumes: Vec::new(),
+                    income: None,
+                    spawn_order: None,
+                    constructor: None,
+                    placement: None,
+                    build_area: None,
+                    repairer: None,
                 },
             )
             .unwrap();

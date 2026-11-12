@@ -149,6 +149,12 @@ fn behaviour_name(behaviour: Behaviour) -> &'static str {
         Behaviour::CancelProduction => "CancelProduction",
         Behaviour::Remove => "Remove",
         Behaviour::SetEnabled(_) => "SetEnabled",
+        // API 0.2.4: no packed package orders these yet.
+        Behaviour::Construct => "Construct",
+        Behaviour::CancelConstruction => "CancelConstruction",
+        Behaviour::SetRally => "SetRally",
+        Behaviour::Repair => "Repair",
+        Behaviour::Surrender => "Surrender",
     }
 }
 
