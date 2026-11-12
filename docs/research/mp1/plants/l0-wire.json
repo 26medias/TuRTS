@@ -1,0 +1,564 @@
+[
+  {
+    "row": "ORDW1",
+    "plant": "(1) no orders_cleared: the replica leaves the cleared record (case A)",
+    "files": [
+      {
+        "file": "crates/turts_client/src/replica.rs",
+        "edit": {
+          "old": "        table.remove(&unit.0);\n",
+          "new": ""
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "--locked",
+      "-p",
+      "turts_client",
+      "--test",
+      "ordw1_replica",
+      "case_a_orders_cleared_removes_the_record_and_an_omitted_record_stays",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "case A: the record is gone",
+    "exit": 101,
+    "commit": "f07c9d11c8aa49110d5e205334fcd75dd60a35dd",
+    "expected_selected": "case_a_orders_cleared_removes_the_record_and_an_omitted_record_stays"
+  },
+  {
+    "row": "ORDW1",
+    "plant": "(1b) no orders_cleared: the export writes none",
+    "files": [
+      {
+        "file": "crates/turts_server/src/export.rs",
+        "edit": {
+          "old": "            orders_cleared: batch\n                .orders_cleared\n                .iter()\n                .filter(|(_, owner)| *owner == slot.0)\n                .map(|(unit, _)| messages::UnitId(*unit))\n                .collect(),",
+          "new": "            orders_cleared: Vec::new(),"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "--locked",
+      "-p",
+      "turts_server",
+      "--test",
+      "ordw1",
+      "orders_cleared_is_written_for_the_owner_and_skips_nothing_that_the_sim_listed",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "assertion `left == right` failed",
+    "exit": 101,
+    "commit": "f07c9d11c8aa49110d5e205334fcd75dd60a35dd",
+    "expected_selected": "orders_cleared_is_written_for_the_owner_and_skips_nothing_that_the_sim_listed"
+  },
+  {
+    "row": "ORDW1",
+    "plant": "(2) the full owner table in each delta: the idle bytes are above 0",
+    "files": [
+      {
+        "file": "crates/turts_server/src/export.rs",
+        "edit": {
+          "old": "        unit_orders: batch\n            .unit_orders\n            .iter()\n            .filter(|record| record.owner_slot == slot.0)\n            .map(unit_order_state)\n            .collect(),",
+          "new": "        unit_orders: view\n            .unit_orders\n            .iter()\n            .filter(|record| record.owner_slot == slot.0)\n            .map(unit_order_state)\n            .collect(),"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "--locked",
+      "-p",
+      "turts_server",
+      "--test",
+      "ordw1",
+      "ordw1_idle_units_cost_no_order_or_weapon_bytes",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "an idle tick carries",
+    "exit": 101,
+    "commit": "f07c9d11c8aa49110d5e205334fcd75dd60a35dd",
+    "expected_selected": "ordw1_idle_units_cost_no_order_or_weapon_bytes"
+  },
+  {
+    "row": "ORDW1",
+    "plant": "(3) the replica merges the Snapshot table into the old table (case B)",
+    "files": [
+      {
+        "file": "crates/turts_client/src/replica.rs",
+        "edit": {
+          "old": "        candidate.unit_orders =\n            stage_unit_orders(context, &snapshot.unit_orders, &candidate.units)?;",
+          "new": "        candidate.unit_orders = self.unit_orders.clone();\n        candidate\n            .unit_orders\n            .extend(stage_unit_orders(context, &snapshot.unit_orders, &candidate.units)?);"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "--locked",
+      "-p",
+      "turts_client",
+      "--test",
+      "ordw1_replica",
+      "case_b_a_dropped_clearing_delta_is_repaired_by_the_snapshot",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "case B: after the resync the client shows no order for the unit",
+    "exit": 101,
+    "commit": "f07c9d11c8aa49110d5e205334fcd75dd60a35dd",
+    "expected_selected": "case_b_a_dropped_clearing_delta_is_repaired_by_the_snapshot"
+  },
+  {
+    "row": "ORDW1",
+    "plant": "(4) WeaponRecord in each tick: the cooldown countdown is a change (case C weapon part)",
+    "files": [
+      {
+        "file": "crates/turts_sim/src/economy/views_m3.rs",
+        "edit": {
+          "old": "            old.get(&row.unit).is_none_or(|previous| {\n                let countdown_only = RawWeaponAudit {\n                    cooldown: previous.cooldown.saturating_sub(1),\n                    ..(*previous).clone()\n                };\n                countdown_only != **row\n            })",
+          "new": "            old.get(&row.unit).is_none_or(|previous| *previous != row)"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "--locked",
+      "-p",
+      "turts_server",
+      "--test",
+      "ordw1",
+      "ordw1_idle_units_cost_no_order_or_weapon_bytes",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "an idle tick carries",
+    "exit": 101,
+    "commit": "f07c9d11c8aa49110d5e205334fcd75dd60a35dd",
+    "expected_selected": "ordw1_idle_units_cost_no_order_or_weapon_bytes"
+  },
+  {
+    "row": "ORDW1",
+    "plant": "(4b) the countdown is a change: the m3 change test",
+    "files": [
+      {
+        "file": "crates/turts_sim/src/economy/views_m3.rs",
+        "edit": {
+          "old": "            old.get(&row.unit).is_none_or(|previous| {\n                let countdown_only = RawWeaponAudit {\n                    cooldown: previous.cooldown.saturating_sub(1),\n                    ..(*previous).clone()\n                };\n                countdown_only != **row\n            })",
+          "new": "            old.get(&row.unit).is_none_or(|previous| *previous != row)"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "--locked",
+      "-p",
+      "turts_server",
+      "--test",
+      "ordw1",
+      "a_cooldown_countdown_is_not_a_weapon_change",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "assertion failed",
+    "exit": 101,
+    "commit": "f07c9d11c8aa49110d5e205334fcd75dd60a35dd",
+    "expected_selected": "a_cooldown_countdown_is_not_a_weapon_change"
+  },
+  {
+    "row": "ORDW1",
+    "plant": "(5) a string weapon field in Fired: more than 8 B",
+    "files": [
+      {
+        "file": "crates/turts_net_protocol/src/records.rs",
+        "edit": {
+          "old": "        target: UnitId,\n        weapon: u8,\n    },",
+          "new": "        target: UnitId,\n        weapon: String,\n    },"
+        }
+      },
+      {
+        "file": "crates/turts_server/src/export_effects.rs",
+        "edit": {
+          "old": "                weapon: *weapon,",
+          "new": "                weapon: weapon.to_string(),"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "--locked",
+      "-p",
+      "turts_server",
+      "--test",
+      "ordw1",
+      "ordw1_a_fired_effect_is_at_most_eight_bytes",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "Fired is",
+    "exit": 101,
+    "commit": "f07c9d11c8aa49110d5e205334fcd75dd60a35dd",
+    "expected_selected": "ordw1_a_fired_effect_is_at_most_eight_bytes"
+  },
+  {
+    "row": "ORDW1",
+    "plant": "(6) the arrival write bypasses the change list: the single-move case is red",
+    "files": [
+      {
+        "file": "crates/turts_sim/src/orders/writer.rs",
+        "edit": {
+          "old": "    for unit in &changed {\n        changes.note(unit.0);\n    }\n    for entity in moved\n        .read()\n        .chain(progress.read())\n        .chain(plain.read())\n        .chain(escape.read())\n    {\n        if let Ok(unit) = ids.get(entity) {\n            changes.note(unit.0);\n        }\n    }",
+          "new": "    let _ = (&mut changes, &changed, &mut moved, &mut progress, &mut plain, &mut escape, &ids);"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "--locked",
+      "-p",
+      "turts_server",
+      "--test",
+      "ordw1",
+      "ordw1_a_single_move_gives_one_record_at_accept_and_one_at_arrival",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "one record at the accept tick and one at the arrival tick",
+    "exit": 101,
+    "commit": "f07c9d11c8aa49110d5e205334fcd75dd60a35dd",
+    "expected_selected": "ordw1_a_single_move_gives_one_record_at_accept_and_one_at_arrival"
+  },
+  {
+    "row": "ORDW1",
+    "plant": "(7) a direct write of UnitOrders: the writer scan is red",
+    "files": [
+      {
+        "file": "crates/turts_sim/src/orders/run.rs",
+        "edit": {
+          "old": "                    edit_unit_orders(world, entity, |orders| orders.current = Some(next));",
+          "new": "                    world.entity_mut(entity).get_mut::<UnitOrders>().unwrap().current = Some(next);"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "--locked",
+      "-p",
+      "turts_checks",
+      "--test",
+      "order_writers",
+      "no_production_write_of_unit_orders_outside_the_writer",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "a write of `UnitOrders` outside `orders/writer.rs`",
+    "exit": 101,
+    "commit": "f07c9d11c8aa49110d5e205334fcd75dd60a35dd",
+    "expected_selected": "no_production_write_of_unit_orders_outside_the_writer"
+  },
+  {
+    "row": "ORDW1",
+    "plant": "(8) a Query<&Health> in export_sites.rs: the export scan is red",
+    "files": [
+      {
+        "file": "crates/turts_server/src/export_sites.rs",
+        "edit": {
+          "old": "use super::export_jobs::rate_record;\n",
+          "new": "use super::export_jobs::rate_record;\n\nfn _peek(_health: bevy::prelude::Query<&turts_sim::economy::combat::Healths>) {}\n"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "--locked",
+      "-p",
+      "turts_checks",
+      "--test",
+      "order_writers",
+      "the_export_writers_read_only_committed_tick_fields",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "an export writer reads sim state other than `CommittedTick` fields",
+    "exit": 101,
+    "commit": "f07c9d11c8aa49110d5e205334fcd75dd60a35dd",
+    "expected_selected": "the_export_writers_read_only_committed_tick_fields"
+  },
+  {
+    "row": "BUCKET1",
+    "plant": "(a) the bucket after the sequence check: a refused envelope costs no token",
+    "files": [
+      {
+        "file": "crates/turts_server/src/session.rs",
+        "edit": {
+          "old": "        let admitted = world.resource_mut::<RateLimitBuckets>().admit(\n            staged.slot.0,\n            tick,\n            tick_hz,\n            staged.envelope.order.units.len(),\n        );",
+          "new": "        let stale = world\n            .get::<Session>(staged.connection)\n            .is_some_and(|session| {\n                session.last_seq.is_some_and(|last| staged.envelope.seq <= last)\n            });\n        let admitted = stale\n            || world.resource_mut::<RateLimitBuckets>().admit(\n                staged.slot.0,\n                tick,\n                tick_hz,\n                staged.envelope.order.units.len(),\n            );"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "--locked",
+      "-p",
+      "turts_server",
+      "--bins",
+      "session::admission_tests::a_refused_envelope_costs_a_bucket_token",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "assertion `left == right` failed",
+    "exit": 101,
+    "commit": "f07c9d11c8aa49110d5e205334fcd75dd60a35dd",
+    "expected_selected": "session::admission_tests::a_refused_envelope_costs_a_bucket_token"
+  },
+  {
+    "row": "VER5",
+    "plant": "(a) the version stays 4: a client of protocol 4 is not refused",
+    "files": [
+      {
+        "file": "crates/turts_net_protocol/src/lib.rs",
+        "edit": {
+          "old": "NET_PROTOCOL_VERSION: u32 = 5;",
+          "new": "NET_PROTOCOL_VERSION: u32 = 4;"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "--locked",
+      "-p",
+      "turts_server",
+      "--bins",
+      "session::tests::protocol_4_hello_is_refused_with_the_mismatch_reason",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "assertion `left == right` failed",
+    "exit": 101,
+    "commit": "f07c9d11c8aa49110d5e205334fcd75dd60a35dd",
+    "expected_selected": "session::tests::protocol_4_hello_is_refused_with_the_mismatch_reason"
+  },
+  {
+    "row": "P14",
+    "plant": "(a) a Snapshot that was not requested is ignored",
+    "files": [
+      {
+        "file": "crates/turts_client/src/replica.rs",
+        "edit": {
+          "old": "            return SnapshotOutcome::IgnoredStale;\n        }\n\n        let Some(mut candidate) = self.stage_snapshot(snapshot) else {",
+          "new": "            return SnapshotOutcome::IgnoredStale;\n        }\n        if self.resync.is_none() {\n            return SnapshotOutcome::IgnoredStale;\n        }\n\n        let Some(mut candidate) = self.stage_snapshot(snapshot) else {"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "--locked",
+      "-p",
+      "turts_client",
+      "--test",
+      "ordw1_replica",
+      "point_14_an_unrequested_snapshot_applies_and_a_stale_one_is_ignored",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "an unrequested newer Snapshot applies",
+    "exit": 101,
+    "commit": "f07c9d11c8aa49110d5e205334fcd75dd60a35dd",
+    "expected_selected": "point_14_an_unrequested_snapshot_applies_and_a_stale_one_is_ignored"
+  },
+  {
+    "row": "REMOVE1",
+    "plant": "(a) the weapon of an ordered attacker is not resent when its target leaves",
+    "files": [
+      {
+        "file": "crates/turts_server/src/export.rs",
+        "edit": {
+          "old": "    if !batch.removed.is_empty() {\n        for row in &view.m3.raw_weapons {",
+          "new": "    if false {\n        for row in &view.m3.raw_weapons {"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "--locked",
+      "-p",
+      "turts_server",
+      "--test",
+      "ordw1",
+      "a_weapon_that_names_a_removed_unit_is_resent_without_the_target",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "the weapon that named the removed unit is resent",
+    "exit": 101,
+    "commit": "f07c9d11c8aa49110d5e205334fcd75dd60a35dd",
+    "expected_selected": "a_weapon_that_names_a_removed_unit_is_resent_without_the_target"
+  },
+  {
+    "row": "REMOVE1",
+    "plant": "(b) the weapon record names a unit that is not in the view",
+    "files": [
+      {
+        "file": "crates/turts_server/src/export.rs",
+        "edit": {
+          "old": "            .last_target\n            .filter(|target| unit_exists(view, *target))\n            .map(messages::UnitId),",
+          "new": "            .last_target\n            .map(messages::UnitId),"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "--locked",
+      "-p",
+      "turts_server",
+      "--test",
+      "ordw1",
+      "a_weapon_that_names_a_removed_unit_is_resent_without_the_target",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "assertion `left == right` failed",
+    "exit": 101,
+    "commit": "f07c9d11c8aa49110d5e205334fcd75dd60a35dd",
+    "expected_selected": "a_weapon_that_names_a_removed_unit_is_resent_without_the_target"
+  },
+  {
+    "row": "REMOVE1",
+    "plant": "(c) a removed unit is not skipped: its record is cleared in the message that removes it",
+    "files": [
+      {
+        "file": "crates/turts_sim/src/orders/writer.rs",
+        "edit": {
+          "old": "        if removed.binary_search(&unit).is_ok() {\n            continue;\n        }\n",
+          "new": ""
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "--locked",
+      "-p",
+      "turts_sim",
+      "--lib",
+      "economy::combat::tests::a_removed_unit_has_no_order_record_and_is_not_cleared",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "assertion failed",
+    "exit": 101,
+    "commit": "f07c9d11c8aa49110d5e205334fcd75dd60a35dd",
+    "expected_selected": "economy::combat::tests::a_removed_unit_has_no_order_record_and_is_not_cleared"
+  },
+  {
+    "row": "REMOVE1",
+    "plant": "(d) a site record of a removed site is written",
+    "files": [
+      {
+        "file": "crates/turts_server/src/export_sites.rs",
+        "edit": {
+          "old": ".filter(|row| row.owner_slot == slot.0 && batch.removed.binary_search(&row.unit).is_err())",
+          "new": ".filter(|row| row.owner_slot == slot.0)"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "--locked",
+      "-p",
+      "turts_server",
+      "--test",
+      "ordw1",
+      "a_site_job_or_queue_record_of_a_removed_unit_is_not_written",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "assertion `left == right` failed",
+    "exit": 101,
+    "commit": "f07c9d11c8aa49110d5e205334fcd75dd60a35dd",
+    "expected_selected": "a_site_job_or_queue_record_of_a_removed_unit_is_not_written"
+  },
+  {
+    "row": "ORDW1",
+    "plant": "(9) the replica accepts orders_cleared that names a unit the delta removes",
+    "files": [
+      {
+        "file": "crates/turts_client/src/replica.rs",
+        "edit": {
+          "old": "            || removed.contains(&unit.0)\n",
+          "new": ""
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "--locked",
+      "-p",
+      "turts_client",
+      "--test",
+      "ordw1_replica",
+      "a_bad_orders_cleared_list_rejects_the_delta",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "assertion `left == right` failed",
+    "exit": 101,
+    "commit": "f07c9d11c8aa49110d5e205334fcd75dd60a35dd",
+    "expected_selected": "a_bad_orders_cleared_list_rejects_the_delta"
+  }
+]
