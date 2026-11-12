@@ -16,10 +16,11 @@
 //   selectShows   false: a click selects but draws nothing
 //   selectsNothing true: a click draws the ring but selects nothing
 //   helpButton    true: a "Help" button that opens a "help_panel" widget; helpDead true: it does nothing
+//   alertsLateMs  the alert lines appear this long after the page loaded (default 0: at once)
 //   hover         true: resting the pointer on the Help button shows a "help::tooltip" and a "help_glow" widget
 
 function fixtureGame(options = {}) {
-    const opts = { startOverlay: false, guide: null, guideWords: 12, alerts: 0, units: 3, selectShows: true, selectsNothing: false, helpButton: false, helpDead: false, hover: false, ...options };
+    const opts = { startOverlay: false, guide: null, guideWords: 12, alerts: 0, units: 3, selectShows: true, selectsNothing: false, helpButton: false, helpDead: false, hover: false, alertsLateMs: 0, ...options };
     return `<!doctype html><meta charset="utf-8"><title>fixture game</title>
 <body style="margin:0;background:#1c1f26;font:16px sans-serif;color:#fff;overflow:hidden">
 <style>
@@ -69,12 +70,17 @@ for (const unit of units) {
     });
     document.getElementById("units").appendChild(el);
 }
-const alertTexts = Array.from({ length: OPTS.alerts }, (_, k) => "Alert " + k + ": something is waiting");
-alertTexts.forEach((text, k) => {
-    const el = document.createElement("div");
-    el.className = "abs alert"; el.style.top = (38 + 31 * k) + "px"; el.textContent = text;
-    document.getElementById("alerts").appendChild(el);
-});
+const alertTexts = [];
+function addAlerts() {
+    for (let k = 0; k < OPTS.alerts; k += 1) {
+        const text = "Alert " + k + ": something is waiting";
+        alertTexts.push(text);
+        const el = document.createElement("div");
+        el.className = "abs alert"; el.style.top = (38 + 31 * k) + "px"; el.textContent = text;
+        document.getElementById("alerts").appendChild(el);
+    }
+}
+if (OPTS.alertsLateMs > 0) setTimeout(addAlerts, OPTS.alertsLateMs); else addAlerts();
 const copy = document.getElementById("guide_copy");
 if (copy) copy.textContent = Array.from({ length: OPTS.guideWords }, (_, k) => "word" + k).join(" ");
 const overlay = document.getElementById("overlay");

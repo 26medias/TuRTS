@@ -20,7 +20,7 @@ const test = require("node:test");
 const { changeStats, nonflatShare } = require("./cold-pixels.js");
 const { decodePng } = require("./harness/png.js");
 const { ColdSession } = require("./cold-session.js");
-const { runProbe, wordCount, ownUnitsOnScreen, visibleButtons, normalisedUi } = require("./cold-probe.js");
+const { SETTLE_MS, runProbe, wordCount, ownUnitsOnScreen, visibleButtons, normalisedUi } = require("./cold-probe.js");
 const { fixtureGame } = require("./cold-fixture.js");
 
 const REPO = path.resolve(__dirname, "../..");
@@ -86,6 +86,10 @@ test("nonflatShare: an opaque layer with text is flat, a see-through layer is no
     assert.ok(nonflatShare(opaque, [0, 0, 200, 200]) < 0.01, `opaque ${nonflatShare(opaque, [0, 0, 200, 200])}`);
     assert.ok(nonflatShare(seeThrough, [0, 0, 200, 200]) > 0.15, `see-through ${nonflatShare(seeThrough, [0, 0, 200, 200])}`);
     assert.equal(nonflatShare(opaque, [500, 500, 10, 10]), 0, "a rect outside the page");
+});
+
+test("the probes wait 8 s for a person's first look by default", () => {
+    assert.equal(SETTLE_MS, 8000);
 });
 
 test("wordCount, visibleButtons, ownUnitsOnScreen and normalisedUi", () => {
@@ -177,7 +181,7 @@ async function probe(kind, options, probeOptions = {}) {
         // The sampler of the sound records runs on a timer in a real session (cold-session.js main).
         const timer = setInterval(() => { session.sample(); }, 500);
         let record;
-        try { record = await runProbe(session, kind, probeOptions); } finally { clearInterval(timer); }
+        try { record = await runProbe(session, kind, { settleMs: 0, ...probeOptions }); } finally { clearInterval(timer); }
         await session.finish("probe-done");
         return { dir, record, session };
     } finally { await page.close(); }
@@ -338,6 +342,20 @@ test("buttons probe: what the pointer resting on a button shows (a tooltip, a gl
     const live = await probe("buttons", { ...GREEN, startOverlay: false, helpButton: true, hover: true });
     assert.equal(live.record.buttons[0].acted, true, "a button that acts is still seen to act");
     assert.deepEqual(live.record.buttons[0].changed_ids, ["help_panel"]);
+});
+
+test("the probes wait for a person's first look: an alert line that comes in that time is F6; with no wait it is missed", { skip, timeout: 120000 }, async () => {
+    const options = { ...GREEN, alerts: 2, alertsLateMs: 1500 };
+    const hasty = await probe("first-click", options, { settleMs: 0 });
+    assert.equal(read(hasty.dir, "ui-records.json").records[0].alert_lines, 0, "the first input came before the alerts");
+    const patient = await probe("first-click", options, { settleMs: 2500 });
+    const before = read(patient.dir, "ui-records.json").records[0];
+    assert.equal(before.label, "before_first_input");
+    assert.equal(before.alert_lines, 2, "after the wait the two alert lines are there");
+    assert.equal(patient.record.settle_ms, 2500);
+    assert.match(check([patient.dir], ["--partial"]).out, /FAIL F6 .*2 alert lines/);
+    const buttons = await probe("buttons", { ...GREEN, startOverlay: false, helpButton: true, alerts: 1, alertsLateMs: 1500 }, { settleMs: 2500 });
+    assert.ok(buttons.record.buttons.some((button) => /alert_line/.test(button.id)), "the button list is read after the wait");
 });
 
 // ---- The verdict line ----------------------------------------------------------------------------------

@@ -25,6 +25,9 @@ const { changeStats } = require("./cold-pixels.js");
 const { decodePng } = require("./harness/png.js");
 
 const READY_TIMEOUT_MS = 90000;
+// A person looks at the page for a few seconds before the first input; alert lines that come in that time are
+// "before the first input" (F6). The probes wait this long after the page is ready (options.settleMs).
+const SETTLE_MS = 8000;
 const UNIT_CAP = 60;
 const BUTTON_CAP = 20;
 const BOX_HALF = 48;
@@ -141,6 +144,8 @@ async function firstClick(session, options) {
     const record = { kind: "first-click", control: options.control ?? null, ready_ms: null, start: null, layer_close: null, clicks: [], summary: null };
     const ready = await waitReady(session);
     record.ready_ms = ready.waited_ms;
+    record.settle_ms = options.settleMs ?? SETTLE_MS;
+    if (ready.world && record.settle_ms > 0) { await session.sleep(record.settle_ms); ready.world = await session.readWorld(); }
     if (!ready.world) {
         record.summary = { verdict: "FAIL", clicks: 0, failed: 0, first_failure: null, reason: `the page was not ready within ${READY_TIMEOUT_MS / 1000} s` };
         return record;
@@ -203,6 +208,8 @@ async function buttons(session, options) {
     const record = { kind: "buttons", ready_ms: null, idle_changed_ids: [], buttons: [], summary: null };
     const ready = await waitReady(session);
     record.ready_ms = ready.waited_ms;
+    record.settle_ms = options.settleMs ?? SETTLE_MS;
+    if (ready.world && record.settle_ms > 0) { await session.sleep(record.settle_ms); ready.world = await session.readWorld(); }
     if (!ready.world) {
         record.summary = { verdict: "FAIL", failed: 0, reason: `the page was not ready within ${READY_TIMEOUT_MS / 1000} s` };
         return record;
@@ -256,4 +263,4 @@ async function runProbe(session, kind, options = {}) {
     return record;
 }
 
-module.exports = { runProbe, readWorld, wordCount, ownUnitsOnScreen, visibleButtons, normalisedUi, bigLayers, center };
+module.exports = { SETTLE_MS, runProbe, readWorld, wordCount, ownUnitsOnScreen, visibleButtons, normalisedUi, bigLayers, center };
