@@ -27,6 +27,9 @@ pub enum WaitReason {
     NoReceiver,
     DestinationFull,
     DestinationOverflow,
+    /// A unit footprint blocks the trip to the node or the receiver. The cycle tries the
+    /// approach again after `BLOCKED_RETRY_TICKS` (M2 design 5: wait visibly; ruling O16).
+    Blocked,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -59,9 +62,17 @@ impl GatherStage {
             Self::Waiting {
                 reason: WaitReason::DestinationOverflow,
             } => "Waiting(DestinationOverflow)",
+            Self::Waiting {
+                reason: WaitReason::Blocked,
+            } => "Waiting(Blocked)",
         }
     }
 }
+
+/// Ticks that a gather cycle waits in `Waiting(Blocked)` before it tries the approach again.
+/// The wait counts in `GatherOrder::carry`, which holds no rate remainder outside the
+/// Gathering and Unloading stages.
+pub(crate) const BLOCKED_RETRY_TICKS: u16 = 10;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct RateCarry(u16);
@@ -277,6 +288,18 @@ fn process_gatherer(world: &mut World, unit: u32, catalog: &turts_mod_api::Conte
             catalog,
         ),
         GatherStage::Gathering => gather_one_tick(world, unit, owner, gatherer, node_id, catalog),
+        GatherStage::Waiting {
+            reason: WaitReason::Blocked,
+        } => retry_blocked_trip(
+            world,
+            unit,
+            owner,
+            position,
+            type_entry.radius,
+            node_id,
+            gatherer,
+            catalog,
+        ),
         GatherStage::MovingToReceiver | GatherStage::Waiting { .. }
             if cargo_amount(world, unit) > 0 =>
         {
@@ -301,6 +324,144 @@ fn process_gatherer(world: &mut World, unit: u32, catalog: &turts_mod_api::Conte
             resume_after_delivery(world, unit, position, node_id, gatherer, catalog);
         }
     }
+}
+
+/// The Orders phase found that a unit footprint blocks the trip of this cycle to its node or
+/// receiver. The cycle keeps its cargo and its order, and waits visibly (M2 design 5: "the
+/// order waits visibly if movement cannot reach range"; ruling O16 extension).
+pub(crate) fn wait_after_blocked_trip(world: &mut World, unit: u32) {
+    set_stage(
+        world,
+        unit,
+        GatherStage::Waiting {
+            reason: WaitReason::Blocked,
+        },
+        None,
+    );
+}
+
+/// Count the blocked wait. After `BLOCKED_RETRY_TICKS`, start the trip again: to a receiver
+/// when the cycle holds cargo, else to the node. The new approach point is the nearest point
+/// on the reach ring that no unit footprint covers.
+#[allow(clippy::too_many_arguments)]
+fn retry_blocked_trip(
+    world: &mut World,
+    unit: u32,
+    owner: SlotId,
+    position: Vec2,
+    unit_radius: f32,
+    node_id: NodeId,
+    gatherer: &turts_mod_api::ResolvedGatherer,
+    catalog: &turts_mod_api::ContentCatalog,
+) {
+    {
+        let mut orders = world.resource_mut::<EconomyOrders>();
+        let Some(order) = orders.0.get_mut(&unit) else {
+            return;
+        };
+        let waited = order.carry.0.saturating_add(1);
+        if waited < BLOCKED_RETRY_TICKS {
+            order.carry = RateCarry(waited);
+            return;
+        }
+    }
+    if let Some(item) = lowest_cargo(world, unit) {
+        let Some((receiver, receiver_pos, receiver_radius)) =
+            choose_receiver(world, unit, owner, position, &item, catalog)
+        else {
+            let reason = receiver_wait_reason(world, unit, owner, &item, catalog);
+            set_stage(world, unit, GatherStage::Waiting { reason }, None);
+            return;
+        };
+        set_stage(world, unit, GatherStage::MovingToReceiver, Some(receiver));
+        let reach = unit_radius + receiver_radius + gatherer.interaction_range;
+        if position.distance(receiver_pos) > reach + 1.0e-4 {
+            let target = free_approach(world, unit, position, receiver_pos, reach, unit_radius);
+            set_target(
+                world,
+                unit,
+                target,
+                crate::movement::PlainGatherGoal::Receiver(receiver),
+            );
+        }
+        return;
+    }
+    resume_after_delivery(world, unit, position, node_id, gatherer, catalog);
+    let Some(order) = world.resource::<EconomyOrders>().0.get(&unit).cloned() else {
+        return;
+    };
+    let (GatherStage::MovingToNode, Some(deposit)) = (order.stage, order.deposit) else {
+        return;
+    };
+    let Some(node) = world
+        .resource::<SurfaceNodes>()
+        .0
+        .iter()
+        .find(|node| node.id == deposit)
+        .cloned()
+    else {
+        return;
+    };
+    let Some(node_def) = catalog.nodes.get(&node.content_id) else {
+        return;
+    };
+    let reach = unit_radius + node_def.radius + gatherer.interaction_range;
+    if position.distance(node.position.0) > reach + 1.0e-4 {
+        let target = free_approach(world, unit, position, node.position.0, reach, unit_radius);
+        set_target(
+            world,
+            unit,
+            target,
+            crate::movement::PlainGatherGoal::Node(deposit.0),
+        );
+    }
+}
+
+/// The approach point on the reach ring around `center`, nearest in angle to the line from
+/// `center` to `from`, that no footprint of another unit covers. It tries the direct point,
+/// then 16 ring points in steps of 22.5 degrees, alternating sides. When every point is
+/// covered, it returns the direct point.
+fn free_approach(
+    world: &World,
+    unit: u32,
+    from: Vec2,
+    center: Vec2,
+    reach: f32,
+    unit_radius: f32,
+) -> Vec2 {
+    let bounds = world.get_resource::<MapBounds>().map(|bounds| bounds.size);
+    let direct = approach_position(from, center, reach, unit_radius, bounds);
+    let types = world.resource::<UnitTypes>();
+    let footprints: Vec<(Vec2, f32)> = world
+        .iter_entities()
+        .filter(|entity| entity.get::<UnitId>().is_some_and(|id| id.0 != unit))
+        .filter_map(|entity| {
+            let position = entity.get::<Position>()?.0;
+            let radius = types.get(entity.get::<UnitType>()?.0)?.radius;
+            Some((position, radius))
+        })
+        .collect();
+    let free = |point: Vec2| {
+        footprints
+            .iter()
+            .all(|(position, radius)| point.distance(*position) >= radius + unit_radius)
+    };
+    if free(direct) {
+        return direct;
+    }
+    let offset = direct - center;
+    let base = offset.y.atan2(offset.x);
+    for step in 1..=8_u8 {
+        for side in [1.0_f32, -1.0] {
+            let angle = base + side * f32::from(step) * std::f32::consts::FRAC_PI_8;
+            let toward = center + Vec2::new(angle.cos(), angle.sin()) * reach;
+            let candidate = approach_position(toward, center, reach, unit_radius, bounds);
+            if free(candidate) {
+                return candidate;
+            }
+        }
+    }
+    direct
 }
 
 fn resume_after_delivery(
@@ -1169,6 +1330,16 @@ fn lowest_cargo(world: &World, unit: u32) -> Option<ContentId> {
         .filter(|(_, account)| account.on_hand > account.reserved)
         .map(|(item, _)| item.clone())
         .next()
+}
+
+/// True when the gather cycle of `unit` is active and holds cargo to deliver. Then the cycle
+/// moves to a receiver and unloads before it stops (M2 design 5: never discard cargo).
+pub(crate) fn delivers_cargo(world: &World, unit: u32) -> bool {
+    world
+        .get_resource::<EconomyOrders>()
+        .and_then(|orders| orders.0.get(&unit))
+        .is_some_and(|order| order.stage != GatherStage::Idle)
+        && cargo_amount(world, unit) > 0
 }
 
 fn cargo_amount(world: &World, unit: u32) -> u64 {

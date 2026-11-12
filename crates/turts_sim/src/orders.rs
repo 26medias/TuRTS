@@ -817,6 +817,19 @@ pub(crate) fn run_orders(world: &mut World) {
                     && !progress.failure_recorded)
                     || (completed_plain_fallback && gather_still_approaching)
             });
+        if plain_blocked && gather_still_approaching {
+            // M2 design 5: a gather order waits visibly if movement cannot reach range, and
+            // the cycle never discards cargo. So a blocked trip of a gather cycle does not
+            // fail and does not clear the cycle: it waits, then tries the approach again
+            // (gather.rs, ruling O16 extension). The order keeps its own end rules.
+            crate::economy::transaction::capture_unit_order_operation(world, unit_id, |world| {
+                world
+                    .entity_mut(entity)
+                    .remove::<crate::movement::PlainMoveProgress>();
+                crate::economy::gather::wait_after_blocked_trip(world, unit_id);
+            });
+            continue;
+        }
         if plain_blocked {
             let slot = world
                 .entity(entity)
@@ -1024,7 +1037,11 @@ pub(crate) fn run_orders(world: &mut World) {
                             .any(|record| record.id == node && record.remaining == 0)
                     }),
                 _ => false,
-            };
+            }
+            // Design 5.3 with M2 design 5: a depleted node starts the delivery of the cargo
+            // that the gatherer holds, and the gather cycle never discards cargo. So the order
+            // fails only when the cycle holds no cargo to deliver.
+            && !crate::economy::gather::delivers_cargo(world, unit_id);
         if !completed_move && !depleted_gather {
             continue;
         }

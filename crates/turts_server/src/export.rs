@@ -266,6 +266,7 @@ fn order_state(order: &OrderView) -> wire::OrderState {
                     WaitReason::NoDeposit => wire::GatherWaitReason::NoDeposit,
                     WaitReason::DestinationFull => wire::GatherWaitReason::DestinationFull,
                     WaitReason::DestinationOverflow => wire::GatherWaitReason::DestinationOverflow,
+                    WaitReason::Blocked => wire::GatherWaitReason::Blocked,
                 },
             },
         },

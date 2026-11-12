@@ -48,6 +48,7 @@ function wireGatherStage(stage) {
             NoReceiver: "no_drop_off",
             DestinationFull: "destination_full",
             DestinationOverflow: "destination_overflow",
+            Blocked: "blocked",
         };
         const reason = reasons[stage.Waiting.reason];
         if (!reason) throw new Error(`unknown audit gather wait reason: ${JSON.stringify(stage)}`);
