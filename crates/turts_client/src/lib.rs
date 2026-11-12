@@ -28,6 +28,7 @@ pub mod rejoin;
 mod relation;
 pub mod render;
 pub mod replica;
+pub mod replica_store;
 mod scenario;
 pub mod ui_shared;
 pub mod visuals;

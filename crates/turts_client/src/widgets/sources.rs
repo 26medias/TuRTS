@@ -2532,8 +2532,9 @@ mod tests {
                 reserved: vec![],
             });
         // The job ran past its duration: its progress record says 120 of 80 (design 6.8).
-        replica.job_progress.insert(
-            (6, 55),
+        replica.store_for_tests().seed_job_progress(
+            6,
+            55,
             turts_net_protocol::RateRecord {
                 // The record says 120 of 200 while the job says 80 ticks: the progress is above 1
                 // and the display clamps it (the clamp in `production_queue` has this test).

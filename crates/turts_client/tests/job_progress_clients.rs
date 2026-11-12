@@ -185,9 +185,15 @@ fn check(run: &Run, late: u32, lost: std::ops::RangeInclusive<u32>) -> (usize, u
                 Some(tick),
                 "{name} at tick {tick}"
             );
+            // The store commits with the candidate: the same tick, for each of the three clients.
+            assert_eq!(
+                client.store().tick(),
+                tick,
+                "{name} at tick {tick}: the store tick"
+            );
             // The tables hold a record for exactly the jobs of the sim: none missing, none stale.
             assert_eq!(
-                client.job_progress.keys().copied().collect::<Vec<_>>(),
+                client.store().job_keys().collect::<Vec<_>>(),
                 entry
                     .truth
                     .keys()

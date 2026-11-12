@@ -823,7 +823,7 @@ fn job_progress_derives_the_elapsed_ticks_and_follows_the_queue() {
         enabled: true,
     });
     assert_eq!(replica.apply_delta(&done, now), DeltaOutcome::Applied);
-    assert!(replica.job_progress.is_empty());
+    assert!(replica.store().job_keys().next().is_none());
     assert_eq!(replica.job_elapsed_ticks(1, 44), 0);
     // A record for a producer that the same delta removes is refused.
     let mut replica = setup();
@@ -839,5 +839,5 @@ fn job_progress_derives_the_elapsed_ticks_and_follows_the_queue() {
     let mut gone = delta(11, 10);
     gone.removed = vec![UnitId(1)];
     assert_eq!(replica.apply_delta(&gone, now), DeltaOutcome::Applied);
-    assert!(replica.job_progress.is_empty());
+    assert!(replica.store().job_keys().next().is_none());
 }

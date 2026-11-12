@@ -767,8 +767,9 @@ fn held_cancel_button_keeps_identity_through_progress_and_retired_rows_are_prune
             queue.jobs[0].id.0,
             queue.jobs[0].duration_ticks,
         );
-        replica.job_progress.insert(
-            (producer, job),
+        replica.store_for_tests().seed_job_progress(
+            producer,
+            job,
             turts_net_protocol::RateRecord {
                 done: 1,
                 total,

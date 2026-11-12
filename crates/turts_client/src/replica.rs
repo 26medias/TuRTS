@@ -7,15 +7,17 @@
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 
 use bevy::platform::time::Instant;
-use turts_mod_api::{ContentId, CostSource, ResourceKind};
+use turts_mod_api::{ContentId, CostSource, ResourceKind, SupplySide};
 use turts_net_protocol::{
-    BeltPieceRecord, EconomyChanges, EconomyState, ExtractorRecord, HealthRecord, InserterRecord,
-    InventoryPort, JobId, NodeId, NodeState, Pos, ResearchRecord, Snapshot, UnitId,
-    UnitOrderRecord, UnitSnapshot, WeaponRecord, WorldDelta,
+    BeltPieceRecord, EconomyChanges, EconomyState, ExtractorRecord, HealthRecord, HeldOrder,
+    InserterRecord, InventoryPort, JobId, MatchState, NodeId, NodeState, Outcome, OutcomeReason,
+    Pos, RateRecord, ResearchRecord, SlotOutcome, Snapshot, UnitId, UnitOrderRecord, UnitSnapshot,
+    WeaponRecord, WorldDelta,
 };
-use turts_net_protocol::{JobProgress, RateRecord};
+use turts_rules::charge::{CancelCase, CancelRefunds};
 
-use crate::{content::ClientContent, interp};
+use crate::replica_store::{RecordStore, StoreStep, StoreUpdate};
+use crate::{content::ClientContent, interp, replica_store};
 
 /// One unit on the client.
 #[derive(Debug, Clone, PartialEq)]
@@ -95,7 +97,6 @@ struct Candidate {
     healths: Vec<HealthRecord>,
     research: Vec<ResearchRecord>,
     unit_orders: HashMap<u32, UnitOrderRecord>,
-    job_progress: BTreeMap<(u32, u64), RateRecord>,
     health_trace: std::collections::BTreeMap<u32, Vec<HealthTraceEntry>>,
     tick: u32,
 }
@@ -122,10 +123,9 @@ pub struct Replica {
     pub research: Vec<ResearchRecord>,
     /// Owner-specific orders staged atomically with their unit snapshot and tick.
     pub unit_orders: HashMap<u32, UnitOrderRecord>,
-    /// The progress record of each job in `economy.queues`, by (producer, job). A record is
-    /// dropped when its producer's `QueueState` no longer holds the job, or when the producer is
-    /// removed. `L0-STORE` may move it to the side store of the 6.8 records.
-    pub job_progress: BTreeMap<(u32, u64), RateRecord>,
+    /// The side store of the 6.8 records (`replica_store`): it commits with the candidate and is
+    /// read through the getters below. It is not a field of the candidate.
+    store: RecordStore,
     /// The recent health changes of each unit: at most [`HEALTH_TRACE_WINDOW`] entries, the
     /// newest last (row DBG1). The alert `OwnUnitDestroyed` reads the last entry of a unit that
     /// is gone, so the window always keeps the newest entry.
@@ -165,7 +165,7 @@ impl Replica {
             healths: Vec::new(),
             research: Vec::new(),
             unit_orders: HashMap::new(),
-            job_progress: BTreeMap::new(),
+            store: RecordStore::default(),
             health_trace: std::collections::BTreeMap::new(),
             snapshot_tick: None,
             last_applied_tick: None,
@@ -235,7 +235,7 @@ impl Replica {
             return SnapshotOutcome::IgnoredStale;
         }
 
-        let Some(mut candidate) = self.stage_snapshot(snapshot) else {
+        let Some((mut candidate, mut staged_store)) = self.stage_snapshot(snapshot) else {
             self.mark_gap(snapshot.tick);
             self.resync.get_or_insert_with(Vec::new);
             return SnapshotOutcome::Invalid;
@@ -257,13 +257,15 @@ impl Replica {
                 remaining.push(delta);
                 continue;
             }
-            let Some(next) = self.stage_delta(&candidate, &delta) else {
+            // The store step applies to the staged store of the Snapshot, never to the live store.
+            let Some((next, step)) = self.stage_delta(&candidate, &staged_store, &delta) else {
                 self.mark_gap(delta.tick);
                 replay_failed = true;
                 remaining.push(delta);
                 continue;
             };
             candidate = next;
+            staged_store.apply(step);
             replayed += 1;
         }
 
@@ -281,7 +283,7 @@ impl Replica {
             return SnapshotOutcome::ResyncRequested { replayed: 0 };
         }
 
-        self.commit(candidate, now);
+        self.commit(candidate, StoreUpdate::Replace(staged_store), now);
         self.snapshot_tick = Some(snapshot.tick);
         self.resync = None;
         self.gap_anchor = None;
@@ -317,13 +319,13 @@ impl Replica {
             return DeltaOutcome::ResyncRequested;
         }
         let current = self.candidate_at(tick);
-        let Some(candidate) = self.stage_delta(&current, delta) else {
+        let Some((candidate, step)) = self.stage_delta(&current, &self.store, delta) else {
             self.mark_gap(delta.tick);
             self.resync = Some(Vec::new());
             self.buffer_delta(delta.clone());
             return DeltaOutcome::ResyncRequested;
         };
-        self.commit(candidate, now);
+        self.commit(candidate, StoreUpdate::Step(step), now);
         DeltaOutcome::Applied
     }
 
@@ -390,7 +392,7 @@ impl Replica {
         }
     }
 
-    fn stage_snapshot(&self, snapshot: &Snapshot) -> Option<Candidate> {
+    fn stage_snapshot(&self, snapshot: &Snapshot) -> Option<(Candidate, RecordStore)> {
         let context = self.context.as_ref()?;
         let mut units = HashMap::new();
         for unit in &snapshot.units {
@@ -425,17 +427,16 @@ impl Replica {
             healths: Vec::new(),
             research: snapshot.research.clone(),
             unit_orders: HashMap::new(),
-            job_progress: BTreeMap::new(),
             health_trace: self.health_trace.clone(),
             tick: snapshot.tick,
         };
         candidate.unit_orders =
             stage_unit_orders(context, &snapshot.unit_orders, &candidate.units)?;
-        candidate.job_progress = merge_job_progress(
-            BTreeMap::new(),
-            &snapshot.records.jobs,
+        let store = replica_store::stage_snapshot_store(
+            context,
+            snapshot,
+            &candidate.units,
             &candidate.economy,
-            &HashSet::new(),
         )?;
         if !valid_economy(
             context,
@@ -447,7 +448,7 @@ impl Replica {
         {
             return None;
         }
-        Some(candidate)
+        Some((candidate, store))
     }
 
     fn candidate_at(&self, tick: u32) -> Candidate {
@@ -462,13 +463,17 @@ impl Replica {
             healths: self.healths.clone(),
             research: self.research.clone(),
             unit_orders: self.unit_orders.clone(),
-            job_progress: self.job_progress.clone(),
             health_trace: self.health_trace.clone(),
             tick,
         }
     }
 
-    fn stage_delta(&self, current: &Candidate, delta: &WorldDelta) -> Option<Candidate> {
+    fn stage_delta(
+        &self,
+        current: &Candidate,
+        store: &RecordStore,
+        delta: &WorldDelta,
+    ) -> Option<(Candidate, StoreStep)> {
         let context = self.context.as_ref()?;
         let mut next = current.clone();
         let removed: HashSet<u32> = delta.removed.iter().map(|id| id.0).collect();
@@ -553,10 +558,14 @@ impl Replica {
             &next.units,
             &removed,
         )?;
-        next.job_progress = merge_job_progress(
-            std::mem::take(&mut next.job_progress),
-            &delta.records.jobs,
+        // The store change is staged next to the candidate: its step is applied by `commit` only
+        // (or to the staged store of a resync), never here.
+        let step = replica_store::stage_delta_step(
+            context,
+            store,
+            &next.units,
             &next.economy,
+            delta,
             &removed,
         )?;
         for id in &removed {
@@ -583,10 +592,10 @@ impl Replica {
             return None;
         }
         next.tick = delta.tick;
-        Some(next)
+        Some((next, step))
     }
 
-    fn commit(&mut self, candidate: Candidate, now: Instant) {
+    fn commit(&mut self, candidate: Candidate, store: StoreUpdate, now: Instant) {
         self.units = candidate.units;
         self.nodes = candidate.nodes;
         self.economy = candidate.economy;
@@ -597,7 +606,10 @@ impl Replica {
         self.healths = candidate.healths;
         self.research = candidate.research;
         self.unit_orders = candidate.unit_orders;
-        self.job_progress = candidate.job_progress;
+        match store {
+            StoreUpdate::Replace(staged) => self.store = staged,
+            StoreUpdate::Step(step) => self.store.apply(step),
+        }
         self.health_trace = candidate.health_trace;
         self.last_applied_tick = Some(candidate.tick);
         self.latest_receipt = Some(now);
@@ -618,23 +630,175 @@ impl Replica {
         }
     }
 
-    /// The elapsed ticks of a job at the tick of the last applied delta, from its progress record
-    /// (`turts_rules::progress::value_at`): never later than the last applied tick, so this is not
-    /// prediction. 0 when the replica holds no record of the job.
+    // The getters of the side store (`L0-STORE`): the one source of each value that reads a 6.8
+    // record. The interface reads these and keeps no storage of its own. A record is evaluated at
+    // the tick of the last applied message, never later, so this is not prediction.
+
+    /// The side store of the 6.8 records.
+    pub fn store(&self) -> &RecordStore {
+        &self.store
+    }
+
+    /// A test seam: the store, for a test that seeds a record with no message. Production code
+    /// never calls it.
+    #[doc(hidden)]
+    pub fn store_for_tests(&mut self) -> &mut RecordStore {
+        &mut self.store
+    }
+
+    fn applied_tick(&self) -> u32 {
+        self.last_applied_tick.unwrap_or(0)
+    }
+
+    /// `Value::Supply`: the own supply of `resource`, provided or consumed. `None` when the
+    /// replica holds no record of it.
+    pub fn supply(&self, resource: &str, side: SupplySide) -> Option<u64> {
+        let slot = self.context.as_ref()?.slot;
+        let record = self.store.supply_record(slot, resource)?;
+        Some(match side {
+            SupplySide::Provided => record.provided,
+            SupplySide::Consumed => record.consumed,
+        })
+    }
+
+    /// `Source::ConstructionQueue`: the held orders of an own constructor.
+    pub fn construction_queue(&self, constructor: u32) -> &[HeldOrder] {
+        self.store.construction_queue(constructor)
+    }
+
+    /// `Source::Sites`: the sites that exist, by unit id.
+    pub fn sites(&self) -> impl Iterator<Item = u32> + '_ {
+        self.store.sites()
+    }
+
+    pub fn is_site(&self, unit: u32) -> bool {
+        self.store.is_site(unit)
+    }
+
+    /// The progress record of an own site.
+    pub fn site_progress(&self, unit: u32) -> Option<&RateRecord> {
+        self.store.site_progress(unit)
+    }
+
+    /// The value of an own site in raw units of 1/Q tick at the last applied tick.
+    pub fn site_value(&self, unit: u32) -> Option<u64> {
+        let record = self.store.site_progress(unit)?;
+        Some(replica_store::value_at(record, self.applied_tick()))
+    }
+
+    /// The item field `Paid` of a site: `turts_rules::progress::paid_at`.
+    pub fn site_paid(&self, unit: u32, cost: u64) -> Option<u64> {
+        let record = self.store.site_progress(unit)?;
+        Some(replica_store::paid_at(record, cost, self.applied_tick()))
+    }
+
+    /// The item field `Refund` of a site: `turts_rules::progress::refund_at`.
+    pub fn site_refund(
+        &self,
+        unit: u32,
+        cost: u64,
+        case: CancelCase,
+        refunds: &CancelRefunds,
+    ) -> Option<u64> {
+        let record = self.store.site_progress(unit)?;
+        Some(replica_store::refund_at(
+            record,
+            cost,
+            case,
+            refunds,
+            self.applied_tick(),
+        ))
+    }
+
+    /// The progress record of a job (the item field `State` reads its `state` and `held`).
+    pub fn job_progress(&self, producer: u32, job: u64) -> Option<&RateRecord> {
+        self.store.job_progress(producer, job)
+    }
+
+    /// The value of a job in raw units of 1/Q tick at the last applied tick.
+    pub fn job_value(&self, producer: u32, job: u64) -> Option<u64> {
+        let record = self.store.job_progress(producer, job)?;
+        Some(replica_store::value_at(record, self.applied_tick()))
+    }
+
+    /// The elapsed ticks of a job at the tick of the last applied delta, from its progress record:
+    /// the value in raw units of 1/Q tick (`turts_rules::progress::value_at`), as ticks of base
+    /// time (`turts_rules::progress::base_ticks_done`). The `total` of a record is the duration of
+    /// the job times Q, so a record whose `total` is not a whole multiple of the duration of the
+    /// job in the queue is not a record of any Q: its value shows as it is (the same reading as
+    /// before the ruling, and the same for Q = 1). Never later than the last applied tick, so this
+    /// is not prediction. 0 when the replica holds no record of the job, or no queue holds the job.
     pub fn job_elapsed_ticks(&self, producer: u32, job: u64) -> u64 {
-        let Some(record) = self.job_progress.get(&(producer, job)) else {
+        let Some(record) = self.store.job_progress(producer, job) else {
             return 0;
         };
-        turts_rules::progress::value_at(
-            &turts_rules::progress::RateRecord {
-                done: record.done,
-                total: record.total,
-                per_tick: record.per_tick,
-                at_tick: record.at_tick,
-                stalled: false,
-            },
-            self.last_applied_tick.unwrap_or(0),
-        )
+        let Some(duration) = self
+            .economy
+            .queues
+            .iter()
+            .find(|queue| queue.producer.0 == producer)
+            .and_then(|queue| queue.jobs.iter().find(|held| held.id.0 == job))
+            .map(|held| held.duration_ticks)
+        else {
+            return 0;
+        };
+        let raw = replica_store::value_at(record, self.applied_tick());
+        if duration == 0 || record.total % duration != 0 {
+            return raw;
+        }
+        turts_rules::progress::base_ticks_done(raw, duration, record.total)
+    }
+
+    /// The item field `Paid` of a job: `turts_rules::progress::paid_at`.
+    pub fn job_paid(&self, producer: u32, job: u64, cost: u64) -> Option<u64> {
+        let record = self.store.job_progress(producer, job)?;
+        Some(replica_store::paid_at(record, cost, self.applied_tick()))
+    }
+
+    /// The item field `Refund` of a job: `turts_rules::progress::refund_at`.
+    pub fn job_refund(
+        &self,
+        producer: u32,
+        job: u64,
+        cost: u64,
+        case: CancelCase,
+        refunds: &CancelRefunds,
+    ) -> Option<u64> {
+        let record = self.store.job_progress(producer, job)?;
+        Some(replica_store::refund_at(
+            record,
+            cost,
+            case,
+            refunds,
+            self.applied_tick(),
+        ))
+    }
+
+    /// The public match state (the empty state until a message brings one).
+    pub fn match_state(&self) -> &MatchState {
+        self.store.match_state()
+    }
+
+    /// The outcome record of the receiving slot.
+    pub fn own_outcome(&self) -> Option<SlotOutcome> {
+        let slot = self.context.as_ref()?.slot;
+        replica_store::outcome_of(self.store.match_state(), slot)
+    }
+
+    /// `Value::Outcome`.
+    pub fn outcome(&self) -> Option<Outcome> {
+        self.own_outcome().map(|outcome| outcome.outcome)
+    }
+
+    /// `Value::OutcomeReason`.
+    pub fn outcome_reason(&self) -> Option<OutcomeReason> {
+        self.own_outcome().map(|outcome| outcome.reason)
+    }
+
+    /// `Value::MatchClock`: the ticks from `start_tick` (`Welcome.start.start_tick`) to the last
+    /// applied tick. 0 before the start.
+    pub fn match_clock_ticks(&self, start_tick: u32) -> u32 {
+        self.applied_tick().saturating_sub(start_tick)
     }
 
     /// `None` before the first snapshot.
@@ -782,33 +946,6 @@ fn merge_unit_orders(
         table.remove(&unit.0);
     }
     table.extend(changed);
-    Some(table)
-}
-
-/// Merge the job progress records of a delta (or a Snapshot) into the table. A record names a job
-/// that the economy of this candidate holds, and a producer that the same message does not remove;
-/// a record of a job that the queues no longer hold is dropped (the job completed or was
-/// cancelled). `None` rejects the message.
-fn merge_job_progress(
-    mut table: BTreeMap<(u32, u64), RateRecord>,
-    records: &[JobProgress],
-    economy: &EconomyState,
-    removed: &HashSet<u32>,
-) -> Option<BTreeMap<(u32, u64), RateRecord>> {
-    let mut seen = HashSet::new();
-    for record in records {
-        let key = (record.producer.0, record.job.0);
-        if removed.contains(&key.0) || !seen.insert(key) {
-            return None;
-        }
-        table.insert(key, record.progress.clone());
-    }
-    table.retain(|(producer, job), _| {
-        !removed.contains(producer)
-            && economy.queues.iter().any(|queue| {
-                queue.producer.0 == *producer && queue.jobs.iter().any(|held| held.id.0 == *job)
-            })
-    });
     Some(table)
 }
 
@@ -1231,7 +1368,6 @@ fn validate_delta_m3(
         healths: vec![],
         research: vec![],
         unit_orders: HashMap::new(),
-        job_progress: BTreeMap::new(),
         health_trace: Default::default(),
         tick: delta.tick,
     };
