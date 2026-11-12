@@ -122,3 +122,23 @@ Probe 2, the HUD change counter on today's tree (forge HUD, 108 widget entities,
 - NOT TRACED: other systems that write `Text`, `Node` or `Visibility` each frame outside the test app
   (`client_screens.rs:256`, `settings.rs:558`, `bindings_editor.rs:1042/1065`, `notices.rs:141/166`,
   `volume_settings.rs:227`, `visuals/world_tooltip.rs:21`). `UI-HUD` or `PRES-MEASURE` checks them.
+
+## The headed wrapper is in use (Q-LOCK: review FAIL with 2 High, repair, re-check PASS with 0 High; 2026-11-12)
+
+- File: `target/mc-evidence/gate-runner/mc_headed_v6.sh` in the main worktree (outside the repository), sha256
+  `1d3a0000e37cd7d001827cb32843807c45c5824a71640cccc323c2d090ebb675`. Daily read: `gpu_receipts_today.sh` next to it,
+  sha256 `f1660fee4dc54f09ed909c3ec7c47fc8f55e05c02ef4be9bfac80ccc53e2574a`. The plan section 1 takes both hashes.
+- Limits, interim until the builds leave the lock (task Q-PREBUILD): table 1,500 s, pre-merge 1,800 s. After Q-PREBUILD
+  merges, the proposal to verify on the first prepared headed runs: table 600 s for a row and 1,700 s for PT1 only;
+  pre-merge 900 s for a session without PT1 and 1,800 s with PT1.
+- The text that every headed task prompt carries: "Call `mc_headed_v6.sh --mode pre-merge|table` with `--mode` first and
+  a new `--label` for each call. Make one call for each row in table mode. Build every server, package and wasm before
+  the call. Exit 124 or 137 is the wrapper's hold limit, not a test red. Exit 76 means the caller died: run again with a
+  new label. Exit 4 means the queue folder is not writable: stop and report. Exit 2 or 3 is a wrapper fault. Exit 75
+  never reaches you, so do not retry for it. Never kill the wrapper's process group; send TERM to the wrapper pid."
+- Rule for the old wrapper (v4): a v4 call takes the same lock with no limit, no ticket and no receipt, so it can block
+  every v6 call and nothing records it. Every lane uses v6 from its next headed run. A run that needs more than the
+  limit (the M2 browser fault set held 3,545 to 4,671 s under v4) is split into one call for each case.
+- Low items for the next edit of the wrapper: the self-check watchdog leaves a `sleep 200` that holds stdout (a piped
+  self-check takes 166 s); a child with a cleared environment in a new session is not found by the marker scan (scan by
+  the session id too); the daily read selects by start date (select by end).
