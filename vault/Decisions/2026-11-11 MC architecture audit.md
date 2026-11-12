@@ -1,7 +1,7 @@
 ---
 type: decision
 date: 2026-11-11
-status: open
+status: decided
 tags: [turts, mc, architecture, ceo]
 ---
 
@@ -39,3 +39,13 @@ Server authority; crate boundaries (`scripts/boundary.sh` exit 0, 15 rows); no B
 | VIS2 p50 133.3 ms at 5,000 units; the client clones the replica for each delta | docs/measurements/mc.md:11; replica.rs:451 | Profile before M7 |
 
 The audit log (341.6 bytes for each unit, 6.46 GB) is the EL1 economy audit log. It costs nothing when it is off and it is not the replay log of M11.
+
+## CEO decision 2026-11-11
+
+Source: relayed to the MC Root session by the session `turts-b3` on 2026-11-11, which states that the CEO agreed with the recommendations. The MC Root session did not hear this from the CEO directly; Root asked the CEO to confirm in the Root session. Until then, treat the re-freeze approval as reported, not as heard.
+
+1. Economy log validator scope: options b and c are DECIDED. b: the validator checks ledger conservation only; the acceptance rows and the order log prove orders and movement. c: the validator moves to a `turts_audit` crate, with one file for each domain. When: before MP1.
+2. Movement models: option b is DECIDED. One movement model; a plain move is a pool of one. The M2 stream is re-frozen one time; the CEO approves this frozen-value change. When: before MP1 adds tests that pin plain moves; at the latest before M4.
+3. MP1 and MP2 budget: the producer estimates MP1 and MP2 again at the MC rate before gate 1 of MP1. The early estimate was 95 to 150 runs. MC used about 176 runs against an early estimate of 60 to 100.
+
+Scope rule: these decisions do not change the MC scope. During MC the frozen stream sha256 bcbf72c2206251f635a7c7f5b6c8f573d69a5fc05a5bd77716e98ebfb08e370b stays as it is. The re-freeze and the validator change are work for after the MC merge and before MP1, as a pre-MP1 slice or as part of the MP1 plan; the producer decides which.
