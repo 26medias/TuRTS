@@ -57,7 +57,8 @@ type Pin = (&'static str, &'static str, usize);
 const PINNED: &[(&str, &str, &[Pin])] = &[
     (
         "crates/turts_sim/src/movement/",
-        "the movement step and its state; the fallback pools of one (A2b1)",
+        "the movement step and its state; the fallback pools of one (A2b1); the frame takes the pools \
+         out of the resource and gives them back (A2b1 review H1)",
         &[
             ("construct", "MoveProgress", 1),
             ("construct", "MoveTarget", 1),
@@ -66,7 +67,7 @@ const PINNED: &[(&str, &str, &[Pin])] = &[
             ("construct", "Position", 1),
             ("method", "MoveProgress", 1),
             ("method", "MoveTarget", 1),
-            ("method", "MovementPools", 2),
+            ("method", "MovementPools", 4),
             ("method", "PlainMoveProgress", 1),
             ("method", "Position", 1),
         ],
