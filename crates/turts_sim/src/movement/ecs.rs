@@ -8,8 +8,10 @@
 //! It reads `UnitOrders` (for the resting set only), `UnitType`, `Owner`, `UnitId`, `MapBounds`,
 //! `SimClock` and `Time<Fixed>`. It writes nothing else: no order state, no owner, no map
 //! bound, no inventory, no clock. The test `the_movement_system_writes_only_movement_state`
-//! calls the system between ticks of a real scenario and compares the full audit state, so a
-//! write to any other audited field is red. The writer scan (`turts_checks/tests/
+//! calls the system on the installed world and between ticks of a real scenario and compares the
+//! full audit state, so a write to any other audited field is red. Known gap: a write of a
+//! constant that already holds at every snapshot after tick 0 is not seen; the outcome tests of
+//! the orders and of the group movement hold those values. The writer scan (`turts_checks/tests/
 //! movement_writers.rs`) pins the writes of the movement files by count.
 
 use bevy_ecs::prelude::*;
@@ -233,6 +235,16 @@ mod tests {
             ),
         ];
         let mut changed_movement_state = 0;
+        // The first call runs on the world as the package installed it, before any update. A
+        // write of a constant (for example an owner) that the movement system makes in each
+        // call is then seen as a change; between two ticks it would already be in the state.
+        let installed = without_movement_state(app.world_mut());
+        integrate_movement(app.world_mut());
+        assert_eq!(
+            installed,
+            without_movement_state(app.world_mut()),
+            "tick 0: the movement system changed an audited field that is not movement state"
+        );
         for tick in 1..=130_u32 {
             for (at, command) in &script {
                 if *at == tick {
