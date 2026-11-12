@@ -138,13 +138,17 @@ function serverTickAt(index, wallMs) {
 // The replica of one window must not stand behind the server by more than `maxLag` ticks at a
 // checkpoint. The oracle knows the server tick from the tick log and the browser clock, so a replica
 // that stands still (RUN142: the stall after a kill) is red at once, whatever the order state shows.
-function assertReplicaLag(checkpoint, index, maxLag, label) {
+function replicaLag(checkpoint, index, label) {
     const replica = checkpoint?.debug?.replicated_world?.tick;
     assert(Number.isSafeInteger(replica), `${label}: the checkpoint has no replica tick`);
     assert(Number.isFinite(checkpoint.page_time_ms), `${label}: the checkpoint has no browser clock (page_time_ms)`);
     const server = serverTickAt(index, checkpoint.page_time_ms);
     assert(Number.isSafeInteger(server), `${label}: the server tick log has no tick at or before the checkpoint`);
-    const lag = server - replica;
+    return { lag: server - replica, replica, server };
+}
+
+function assertReplicaLag(checkpoint, index, maxLag, label) {
+    const { lag, replica, server } = replicaLag(checkpoint, index, label);
     assert(lag <= maxLag, `${label}: the replica stands ${lag} ticks behind the server (replica tick ${replica}, server tick ${server}); the bound is ${maxLag}`);
     return lag;
 }
@@ -208,6 +212,7 @@ module.exports = {
     checkpointsBetween,
     longestTickGap,
     readCheckpoints,
+    replicaLag,
     replicaUnit,
     saved,
     screenshotIndexForSave,

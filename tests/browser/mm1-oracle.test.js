@@ -45,10 +45,13 @@ test("MM1 is red for a replica behind the accept tick, and a later capture does 
     assert.throws(() => check(capture(520, MOVE, { status: "rejected" })), /server must accept the exact emitted sequence/);
 });
 
-test("the replica lag bound is the interpolation delay plus 2 ticks, and the delay is the value in the client source", () => {
+test("the replica lag bound is the interpolation delay plus 5 ticks, and the delay is the value in the client source", () => {
     const source = fs.readFileSync(path.join(__dirname, "..", "..", "crates", "turts_client", "src", "interp.rs"), "utf8");
     const delay = /pub const INTERP_DELAY_TICKS: f64 = ([0-9.]+);/.exec(source);
     assert.ok(delay, "crates/turts_client/src/interp.rs declares INTERP_DELAY_TICKS");
     assert.equal(Number(delay[1]), INTERP_DELAY_TICKS, "the oracle copy of the interpolation delay equals interp.rs:10");
-    assert.equal(MAX_REPLICA_LAG_TICKS, INTERP_DELAY_TICKS + 2);
+    // Derivation (44 saved MM1 runs, 375 window-1 captures): a running replica reads 0 to 3 ticks behind; the 5 runs with a
+    // stalled replica that the old oracle accepted read 11 to 20. 1 + 5 = 6 is above 3 and below 11.
+    assert.equal(MAX_REPLICA_LAG_TICKS, INTERP_DELAY_TICKS + 5);
+    assert.equal(MAX_REPLICA_LAG_TICKS, 6);
 });

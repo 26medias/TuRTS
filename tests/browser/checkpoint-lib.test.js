@@ -5,6 +5,7 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 const { test } = require("node:test");
+const { MAX_REPLICA_LAG_TICKS } = require("./mm1-oracle.js");
 const { NETCODE_TIMEOUT_MS, assertConnectionHeld, assertNoResync, assertReplicaLag, longestTickGap, serverTickAt, serverTickIndex } = require("./checkpoint-lib.js");
 
 const T0 = 1794490000000; // a wall clock in ms
@@ -74,4 +75,14 @@ test("a resync request anywhere in a local run is red, also when no capture fell
         /MM1: the replica of window 1 asked the server for 12 resyncs by checkpoint 3 \(replica tick 100\)/);
     assert.throws(() => assertNoResync([ok(1, 0), ok(2, 1)], "MM1"), /window 2 asked the server for 1 resyncs/);
     assert.throws(() => assertNoResync([{ input_call: 4, window: 1, debug: {} }], "MM1"), /has no ingest\.resync_requests_sent/);
+});
+
+test("the MM1 lag bound of 6 is green at a lag of 6 and red at a lag of 7 (clean captures read 0 to 3, stalled runs 11 to 20)", () => {
+    const index = serverTickIndex(tickLog(600));
+    const at = T0 + 50 * 500 + 10; // the server is at tick 500
+    assert.equal(MAX_REPLICA_LAG_TICKS, 6);
+    assert.equal(assertReplicaLag(checkpoint(494, at), index, MAX_REPLICA_LAG_TICKS, "MM1 x"), 6);
+    assert.throws(() => assertReplicaLag(checkpoint(493, at), index, MAX_REPLICA_LAG_TICKS, "MM1 x"), /stands 7 ticks behind the server .* the bound is 6/);
+    assert.equal(assertReplicaLag(checkpoint(497, at), index, MAX_REPLICA_LAG_TICKS, "MM1 x"), 3, "the largest clean lag is inside the bound");
+    assert.throws(() => assertReplicaLag(checkpoint(489, at), index, MAX_REPLICA_LAG_TICKS, "MM1 x"), /stands 11 ticks behind/, "the smallest stalled lag is outside it");
 });

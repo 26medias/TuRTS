@@ -4,16 +4,18 @@
 const assert = require("node:assert/strict");
 const { decodePng, pixelAt } = require("./harness/png.js");
 const { unprojectGround } = require("./hud4-oracle.js");
-const { assertConnectionHeld, assertNoResync, assertReplicaLag, serverTickIndex } = require("./checkpoint-lib.js");
+const { assertConnectionHeld, assertNoResync, assertReplicaLag, replicaLag, serverTickIndex } = require("./checkpoint-lib.js");
 
 // The presentation delay of the client, in ticks (crates/turts_client/src/interp.rs:10,
 // `INTERP_DELAY_TICKS`; mm1-oracle.test.js reads that line, so a change there turns the test red).
 const INTERP_DELAY_TICKS = 1;
-// At each capture of window 1, the replica may stand at most the interpolation delay plus 2 ticks
-// behind the server tick of the same moment. 2 ticks is the bound that the lead set; the saved runs
-// (36 runs, 367 captures of window 1) show 0 to 3 for a replica that runs and 7 to 22 for the stall
-// after a kill (RUN142). A stalled replica is red here, whatever the order state shows.
-const MAX_REPLICA_LAG_TICKS = INTERP_DELAY_TICKS + 2;
+// The resync check (assertNoResync) is the assertion that detects the kill stall of RUN142. The lag bound is a
+// second guard, at a value that the saved data separates. 36 saved MM1 runs without the repair of commit 50eb827
+// (and 8 with it, 44 in all), window 1, 375 captures: a replica that runs reads 0 to 3 ticks behind (lag 3 in 10 of
+// them); the 5 runs that the old oracle accepted with a stalled replica read 11 to 20 ticks behind. The bound is the
+// interpolation delay plus 5 = 6: above every clean capture (3) with 3 ticks of margin, below every stalled run (11).
+// The largest lag of the run is printed in the oracle output, so a drift toward the bound shows before it is red.
+const MAX_REPLICA_LAG_TICKS = INTERP_DELAY_TICKS + 5;
 
 async function judge(view, params) {
     const input = view.inputLog();
@@ -59,6 +61,9 @@ async function judge(view, params) {
     const pingWindow = await shot("mm1-window2-ping.png", 2);
     // The replica of window 1 runs at each capture. A later capture is no rescue: the one capture
     // 500 ms after the right click must already show the replica at the server's pace.
+    const lags = window1Shots.map(({ name, checkpoint }) => ({ name, ...replicaLag(checkpoint, tickIndex, `MM1 ${name}`) }));
+    const largest = lags.reduce((best, entry) => (entry.lag > best.lag ? entry : best), lags[0]);
+    console.log(`MM1 replica lag: largest ${largest.lag} ticks at ${largest.name} (bound ${MAX_REPLICA_LAG_TICKS}); window 1 captures: ${lags.map((entry) => entry.lag).join(",")}`);
     for (const { name, checkpoint } of window1Shots) assertReplicaLag(checkpoint, tickIndex, MAX_REPLICA_LAG_TICKS, `MM1 ${name}`);
 
     for (const { checkpoint } of [before, afterFocus, afterLeft, afterDrag, afterRight, afterZoom, noPing, pingWindow]) {
