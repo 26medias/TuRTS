@@ -11,13 +11,17 @@
 //!   next animation frame after each update, so the window draws at the display refresh rate.
 //!   A paced mode at 1/60 s is not the same for a player: it stops at about 60 frames per second
 //!   on a display that refreshes faster.
-//! - Not focused: 10 frames per second. Measured on the MC host (two headed clients, Chrome,
-//!   window canvas blurred): 9.7 to 9.8 frames per second, and the replica of each window still
-//!   advanced 19.7 to 20.1 ticks per second with no tick gap between the windows. Each update
-//!   reads all the messages that arrived (`ingest.rs`) and the presentation time comes from the
-//!   wall clock (`present.rs`), so a paced client does not fall behind the server. The 100 ms
-//!   period stays below the 250 ms that Bevy accepts as one time step (`Time<Virtual>` maximum
-//!   delta), so the fixed ticks of the link do not drop.
+//! - Not focused: 60 frames per second. This is the behaviour before this setting: the Bevy
+//!   default `WinitSettings::game()` updates a window with no focus each 1/60 s
+//!   (`bevy_winit-0.20.0/src/winit_config.rs:18-23`, `:72-75`), and `update_mode(60)` gives the
+//!   same mode. A lower value is a player choice. Measured on the MC host with 10 (two headed
+//!   clients, Chrome, canvas blurred, `pacing-probe-cand-a`): 9.7 to 9.8 frames per second, and
+//!   the replica of each window still advanced 19.7 to 20.0 ticks per second with no tick gap
+//!   between the windows. Each update reads all the messages that arrived (`ingest.rs`) and the
+//!   presentation time comes from the wall clock (`present.rs`), so a paced client does not
+//!   fall behind the server. A period of 100 ms stays below the 250 ms that Bevy accepts as one
+//!   time step (`Time<Virtual>` maximum delta); the native test `tests/background_pace.rs`
+//!   drives the client at that period against a real server.
 //!
 //! A limited window uses `reactive_low_power`: it updates when its wait has elapsed, or on a
 //! window or user event (input still gets a frame at the next display refresh); it ignores
@@ -31,8 +35,8 @@ use bevy::winit::{UpdateMode, WinitSettings};
 /// The default limit when the window has the focus: no limit.
 pub const DEFAULT_FRAME_LIMIT: u32 = 0;
 
-/// The default limit when the window does not have the focus.
-pub const DEFAULT_BACKGROUND_FRAME_LIMIT: u32 = 10;
+/// The default limit when the window does not have the focus: the 60 Hz of `game()`.
+pub const DEFAULT_BACKGROUND_FRAME_LIMIT: u32 = 60;
 
 /// The smallest limit a player can store; 0 (no limit) is also valid.
 pub const MIN_FRAME_LIMIT: u32 = 10;
@@ -67,6 +71,34 @@ pub fn default_winit_settings() -> WinitSettings {
     winit_settings(DEFAULT_FRAME_LIMIT, DEFAULT_BACKGROUND_FRAME_LIMIT)
 }
 
+/// The limit that one applied update mode gives: 0 for `Continuous`, else the rounded
+/// frames per second of its wait.
+pub fn applied_limit(mode: UpdateMode) -> u32 {
+    match mode {
+        UpdateMode::Continuous => 0,
+        UpdateMode::Reactive { wait, .. } => {
+            let secs = wait.as_secs_f64();
+            if secs > 0.0 {
+                (1.0 / secs).round() as u32
+            } else {
+                0
+            }
+        }
+    }
+}
+
+/// The applied limits for the debug state (`turts_debug.frame_limits`): read from the
+/// `WinitSettings` that the window loop uses, not from the stored setting. `null` without a
+/// window (headless).
+pub fn frame_limits_json(settings: Option<&WinitSettings>) -> serde_json::Value {
+    settings.map_or(serde_json::Value::Null, |settings| {
+        serde_json::json!({
+            "focused": applied_limit(settings.update_mode(true)),
+            "background": applied_limit(settings.update_mode(false)),
+        })
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -80,10 +112,10 @@ mod tests {
                 react_to_window_events,
             } => {
                 assert!(!react_to_device_events, "device events must not add frames");
-                assert!(
-                    react_to_user_events,
-                    "the web keepalive wake-up must still update"
-                );
+                // On wasm, lightyear's WebKeepalivePlugin sends `WinitUserEvent::WakeUp` while
+                // the page is hidden (lightyear-0.31.0/src/client.rs:63-66,
+                // lightyear_web-0.31.0/src/background_worker.rs).
+                assert!(react_to_user_events, "a wake-up event must still update");
                 assert!(react_to_window_events, "input must still get a frame");
                 wait
             }
@@ -92,11 +124,32 @@ mod tests {
     }
 
     #[test]
-    fn default_is_no_limit_when_focused_and_ten_when_not() {
+    fn default_is_no_limit_when_focused_and_the_game_default_when_not() {
         let settings = default_winit_settings();
         assert_eq!(settings.update_mode(true), UpdateMode::Continuous);
-        let unfocused = wait_of(settings.update_mode(false));
-        assert_eq!(unfocused, Duration::from_millis(100));
+        assert_eq!(
+            settings.update_mode(false),
+            WinitSettings::game().update_mode(false),
+            "the default with no focus must be the behaviour before the setting"
+        );
+        assert_eq!(
+            wait_of(settings.update_mode(false)),
+            Duration::from_secs_f64(1.0 / 60.0)
+        );
+    }
+
+    #[test]
+    fn the_debug_state_reads_the_applied_modes() {
+        assert_eq!(frame_limits_json(None), serde_json::Value::Null);
+        let applied = winit_settings(20, 60);
+        assert_eq!(
+            frame_limits_json(Some(&applied)),
+            serde_json::json!({"focused": 20, "background": 60})
+        );
+        assert_eq!(
+            frame_limits_json(Some(&default_winit_settings())),
+            serde_json::json!({"focused": 0, "background": 60})
+        );
     }
 
     #[test]

@@ -136,6 +136,7 @@ retain_f11_artifacts || f11_status=1
 if [[ "$f11_status" != 0 ]]; then exit "$f11_status"; fi
 run_cargo_test command_script exact -p turts_server --test command_script -- --ignored --test-threads=1 --exact command_script_moves_acme_unit_at_fixed_tick_without_a_client
 run_cargo_test mc_group aggregate -p turts_server --test mc_group -- --ignored --test-threads=1
+run_cargo_test background_pace exact -p turts_client --test background_pace -- --ignored --test-threads=1 --exact a_client_updated_each_100_ms_keeps_pace_with_the_server
 run_cargo_test det1 exact -p turts_server --test det1 -- --ignored --test-threads=1 --exact det1_fixed_tick_muster_script_is_equal_through_tick_400_and_has_neighbour_work
 run_cargo_test el1 exact -p turts_server --test el1 -- --ignored --test-threads=1 --exact el1_muster_movement_and_queued_gather_validate_every_captured_tick
 MC_HD1_NATIVE_REFERENCE_DIR="$log_dir/hd1-native-reference-run" scripts/hd1-native-reference.sh >"$log_dir/hd1-native-reference.log" 2>&1

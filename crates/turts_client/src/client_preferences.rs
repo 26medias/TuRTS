@@ -132,7 +132,7 @@ mod frame_limit_tests {
         let loaded = decode_settings_json(r#"{"controls":{"frame_limit":30}}"#);
         assert_eq!(loaded.notice, None);
         assert_eq!(loaded.controls.frame_limit, 30);
-        assert_eq!(loaded.controls.background_frame_limit, 10);
+        assert_eq!(loaded.controls.background_frame_limit, 60);
         let encoded = set_controls_in_json(None, &loaded.controls).unwrap();
         assert_eq!(decode_settings_json(&encoded).controls, loaded.controls);
     }
@@ -142,7 +142,7 @@ mod frame_limit_tests {
         let loaded = decode_settings_json(r#"{"controls":{"scroll_speed":1.5}}"#);
         assert_eq!(loaded.notice, None);
         assert_eq!(loaded.controls.frame_limit, 0);
-        assert_eq!(loaded.controls.background_frame_limit, 10);
+        assert_eq!(loaded.controls.background_frame_limit, 60);
     }
 
     #[test]

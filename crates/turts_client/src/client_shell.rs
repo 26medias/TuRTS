@@ -4598,6 +4598,28 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn a_stored_frame_limit_reaches_the_debug_state_through_the_applied_window_modes() {
+        let loaded =
+            crate::volume_settings::decode_settings_json(r#"{"controls":{"frame_limit":20}}"#);
+        assert_eq!(loaded.notice, None);
+        let mut client = ClientSettings::default();
+        loaded.controls.apply(Some(&mut client), None, None);
+        let mut app = App::new();
+        app.add_plugins(MinimalPlugins)
+            .insert_resource(client)
+            .insert_resource(crate::pacing::default_winit_settings())
+            .add_systems(Update, apply_client_settings);
+        app.update();
+        let debug: serde_json::Value =
+            serde_json::from_str(&crate::debug::debug_json(app.world())).unwrap();
+        assert_eq!(
+            debug["frame_limits"],
+            serde_json::json!({"focused": 20, "background": 60}),
+            "turts_debug must show the limits that the window loop applies"
+        );
+    }
+
+    #[test]
     fn the_frame_limit_setting_reaches_the_window_update_modes() {
         use bevy::winit::{UpdateMode, WinitSettings};
         let mut app = App::new();
@@ -4616,7 +4638,7 @@ pub(crate) mod tests {
         );
         assert_eq!(
             modes.update_mode(false),
-            UpdateMode::reactive_low_power(std::time::Duration::from_millis(100))
+            UpdateMode::reactive_low_power(std::time::Duration::from_secs_f64(1.0 / 60.0))
         );
         app.world_mut().resource_mut::<ClientSettings>().frame_limit = 0;
         app.update();
