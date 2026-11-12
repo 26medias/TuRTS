@@ -1,5 +1,14 @@
 # Cold play: the step tool for the person-readiness protocol (Q-COLD)
 
+**The answer of an agent, "yes" or "no", is never the verdict.** An agent reads every text and obeys it; a person clicks
+what they see. On 2026-11-12 a fresh agent with no project memory played the MC `9b3a7bd` forge build with this tool
+(session `scratchpad/c5-cold/session-1`, 24 inputs, statement stored at 62 s). It clicked "Click to play", then
+"Close", read the guide, finished the research goal in 54 s and answered "Yes, a person can play it". The CEO, a person,
+clicked the buildings first on the same build and got no response. The verdict of a readiness run therefore comes only
+from checks that do not depend on the agent: two scripted probes that the tool runs by itself, and the UI record. The
+order of a readiness run is: **probe first** (a fresh game); if it fails, stop: no agent session and no request to a
+person. The checker never reads the agent's answer.
+
 Source: the second play test of the CEO (`docs/research/mp1/input-ceo-second-play-test.md`, section 5). The `player`
 agent had judged screenshots that a driver made. The driver closed the guide with a key that it read from the bindings.
 So the agent never met the first click that a person makes. This tool lets an agent that has only a URL play one
@@ -13,8 +22,10 @@ input at a time, from pixels, and leaves evidence that a reviewer can check.
 | `tests/browser/cold-session.js` | The session process. It holds the Chrome connection, does the inputs with real mouse and keyboard events, takes the screenshots, keeps the sound records back, and writes the evidence folder. |
 | `scripts/cold-play.sh` | Starts the game and a headed Chrome (`scripts/mp1-play.sh`), then the session process. Ends both at the session limit. |
 | `scripts/mp1-play.sh --url URL` | The play script in its "Chrome only" form: for a game that another command serves. |
+| `tests/browser/cold-probe.js`, `cold-pixels.js` | The probes (first click, buttons) and the two pixel measures. Role `instrument`: they read the bridges; nothing of this goes to an agent. |
+| `tests/browser/cold-fixture.js` | A small game page for the tests of the probes. |
 | `scripts/qa/cold_play_check.py` | The checker for the reviewer. No browser. |
-| `tests/browser/cold-play.test.js`, `tests/qa/test_cold_play_check.py` | The tests. Plants: `docs/research/mp1/plants/q-cold.json`. |
+| `tests/browser/cold-play.test.js`, `cold-probe.test.js`, `tests/qa/test_cold_play_check.py` | The tests. Plants: `docs/research/mp1/plants/q-cold.json`. |
 
 ## The calls of the agent
 
@@ -59,6 +70,42 @@ memory of the session process. They reach the disk only in `releaseSounds`, whic
 - The wait in one call is 30 s at most. The agent can end the session with `end`.
 - The tool has no idle limit: an agent that stops holds the lock until the session limit.
 
+## The probes (no agent)
+
+Each probe is a session of its own, started with `scripts/cold-play.sh --probe <kind>` on a **fresh game** (a slot is
+permanent). The session runs the probe and ends; the folder holds `probe-<kind>.json`, `ui-records.json`, the screenshots
+and the input log. The tool reads the scene, debug and UI bridges for this; the agent never sees them.
+
+- **`--probe first-click`** (condition M1). The page is ready when the UI record, the replica and the scene have content.
+  The probe waits 8 s (a person looks first), then one click to start: the centre of the text of the start control that
+  the UI record shows (`focus_overlay`), or the page centre when there is none. Then one left click at the screen
+  centre of each own unit that is on screen (one of each content id first, at most 60), with no key and no other
+  input. For each click it records the selection after the click and the pixel change at +200 ms in a box of 96 px
+  around the point and in the whole page (a picture taken 200 ms before gives the idle noise). The probe PASSES only when
+  every click gives a selection that holds the clicked unit AND a visible change; a page with no own unit on screen
+  FAILS. A layer that takes the click (F2, F3) is a FAIL whatever an agent does later.
+- **`--probe first-click --control close-layer`** (the positive control). After the start click the tool closes the
+  layer that met it, by the visible button whose text is Close, Dismiss, OK or the like, then probes as above. It must
+  PASS on the build where the plain probe fails: this shows that the probe can pass. A control is not a readiness run.
+- **`--probe buttons`** (F8). No start click. For each button that the UI record shows as visible, top to bottom: the
+  pointer moves onto it and rests 300 ms (a tooltip or a glow is hover feedback, not the click), then one left click.
+  The button **acted** when the UI record changed (the start overlay and tooltips are left out; what changed by itself
+  in 200 ms is left out) or the page changed by more than 1 % (not counted when the start overlay left on this click).
+  A button whose first click changed nothing is a FAIL: a layer took it.
+
+The session also keeps a **UI record** before the first input and after the first click (+200 ms and +1000 ms), in agent
+sessions too. It is held back like the sound records and released with them. The checker derives from it:
+
+| Check | Fact (FAIL when true) |
+| --- | --- |
+| F9 | after the first click a visible widget text of more than 40 words that no input opened |
+| F3 | after the first click a widget of more than half of the page that takes pointer input (`capture_root` or `focus_policy_block`) and lets the world show through: at least 5 % of its pixels, text and its 2 px margin left out, are not its own fill colour; or it could not be measured |
+| F6 | before the first input an alert line (a visible `alert_line` widget with text) or a debug alert |
+| F5b | an alert sound before the first input (as before) |
+
+The UI record has no fill colour, so F3 reads the picture. F3 and F9 look at the first click only: a text that the
+player opens later is not F9.
+
 ## Run a session (the orchestrator)
 
 1. Outside the lock: `(cd tests/browser && npm ci)`, then `bash scripts/mp1-play.sh --prepare PREP --package mods/<package>`
@@ -71,7 +118,11 @@ memory of the session process. They reach the disk only in `releaseSounds`, whic
 
    For a game that another command serves (an old build, for example), use `--url URL` (a loopback address) in place of
    `--prepared`.
-3. Wait for `SESSION/internal/control.json`. Then start the agent.
+   A probe uses the same command with `--probe first-click`, `--probe first-click --control close-layer` or
+   `--probe buttons` added, and a fresh game for each. There is no control file: the probe ends the session, and the
+   folder is complete when the wrapper command ends (a probe of a small page takes 10 to 40 s of the lock).
+3. For an agent session: wait for `SESSION/internal/control.json`. Then start the agent. Do this only when both probes
+   passed.
 4. When the wrapper command ends (exit 0), the evidence folder is complete. A wrapper exit of 124 or 137 is the hold
    limit, not a test red.
 
@@ -94,7 +145,11 @@ sees "This game is full". Start a new server (a new `--prepared` start, or a new
 
     python3 -I -B scripts/qa/cold_play_check.py SESSION [--receipt <label dir>/lock-receipt.json] [--json]
 
-Exit 0 when every machine check passes, 1 when one fails, 2 when the folder cannot be read. The output has two lists.
+Give the three folders of a readiness run: `cold_play_check.py <first-click probe> --also <buttons probe> --also <agent
+session>`. The result line is `NOT-READY (...)` when any machine check or probe fails or a part is missing, and
+`MACHINE-PASS (manual checks open)` otherwise. A folder of a control run is judged on its probe only (`CONTROL-PASS`).
+`--partial` (tests, a look at one folder) prints `PARTIAL-PASS` instead. Exit 0 for a pass, 1 for NOT-READY, 2 when a
+folder cannot be read. The output has two lists.
 
 Machine-checked: E1 the event log is complete and in order; E2 every screenshot file is there with its recorded sha256,
 and every call has its +200 ms and +1000 ms pictures, taken in time; L1 the session limit (at most 1500 s, ended
@@ -104,11 +159,12 @@ C3 the statement exists, was stored before the sound records were released, was 
 click, with no input between the 60 s mark and the statement, has the six parts, none of them "do not know" (or
 `unknown`, `none`, `not sure`, ...), and each part names a screenshot of the session that was taken before the
 statement; S1 the sound records are final and the debug bridge answered; F5a no sound id more than 3 times in 60 s;
-F5b no alert sound before the first input.
+F5b no alert sound before the first input; P1 the first-click probe passed; U0 the UI records exist; F9, F3, F6 from the UI
+record (above); F8 the buttons probe passed.
 
 Manual (listed as `TODO`; the tool does not check them): C0 the prompt; C1 no repository file read; C2 each point and
-key was seen in an earlier screenshot; C3m the three parts are true to the screenshots that they name; C4 F1 to F4 and
-F6 to F10 (F6 is the alert line; F5b is the alert sound); C5 the reference red. The checker never says PERSON-READY.
+key was seen in an earlier screenshot; C3m the three parts are true to the screenshots that they name; C4 the failure signs that a
+machine cannot see (F1, F4, F7, F10 and the look of F2); C5 the reference red. The checker never says PERSON-READY.
 
 The evidence folder: `session.json`, `events.jsonl`, `inputs.jsonl`, `shots/`, `statement.txt`, `sound-records.json`,
 `end.json`, `internal/`. The time of a sound is the time of the first read in which it appears (a resolution of 0.5 s).

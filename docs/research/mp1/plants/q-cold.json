@@ -1312,5 +1312,53 @@
     "expected_red": "FAIL: test_a_text_of_more_than_40_words_fails_f9_and_40_words_pass",
     "exit": 1,
     "commit": "5fe6f811bc94aaa3410e2475fcb9267631ed6e84"
+  },
+  {
+    "row": "Q-COLD",
+    "plant": "buttons-no-hover-rest",
+    "files": [
+      {
+        "file": "tests/browser/cold-probe.js",
+        "edit": {
+          "old": "        await session.handle({ cmd: \"move\", args: [String(x), String(y)] });\n        await session.sleep(300);\n",
+          "new": ""
+        }
+      }
+    ],
+    "command": [
+      "node",
+      "--test",
+      "--test-name-pattern=what the pointer resting on a button shows",
+      "tests/browser/cold-probe.test.js"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "✖ buttons probe: what the pointer resting on a button shows",
+    "exit": 1,
+    "commit": "3d9bff0495b330bedb5ed113f66839be811363f1"
+  },
+  {
+    "row": "Q-COLD",
+    "plant": "probe-no-settle",
+    "files": [
+      {
+        "file": "tests/browser/cold-probe.js",
+        "edit": {
+          "old": "const SETTLE_MS = 8000;",
+          "new": "const SETTLE_MS = 0;"
+        }
+      }
+    ],
+    "command": [
+      "node",
+      "--test",
+      "--test-name-pattern=wait 8 s for a person",
+      "tests/browser/cold-probe.test.js"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "✖ the probes wait 8 s for a person's first look by default",
+    "exit": 1,
+    "commit": "3d9bff0495b330bedb5ed113f66839be811363f1"
   }
 ]

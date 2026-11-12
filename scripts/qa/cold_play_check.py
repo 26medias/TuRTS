@@ -71,8 +71,8 @@ MANUAL = (
     ("C1", "the agent read no repository file, memory note or earlier report before the statement (the transcript)"),
     ("C2", "each click, drag and wheel point and each key above was seen in an earlier screenshot (match inputs.jsonl to shots/)"),
     ("C3m", "the goal, the first action and the proof are true to the screenshots that they name (read the three files)"),
-    ("C4", "none of F1 to F4 and F6 to F10 is seen (read the screenshots; F6 is the alert LINE, F5b above is the alert SOUND)"),
-    ("C5", "the reference red: the same tool on the 9b3a7bd forge build shows F2 and F3 at the first building click (run once for each tool version)"),
+    ("C4", "the failure signs that no machine check covers: F1, F4, F7, F10, and F2 by eye (F3, F5, F6, F8, F9 are machine-checked above when the probes and the UI records are in the run)"),
+    ("C5", "the reference red: on the 9b3a7bd forge build the first-click probe FAILS and its control (--control close-layer) PASSES (run once for each tool version)"),
 )
 
 
