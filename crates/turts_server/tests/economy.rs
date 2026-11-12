@@ -650,6 +650,19 @@ fn ord3_full_scene_blocked_gather_trip_validates() {
     let mut commands = server_orders::to_sim(SlotId(0), &envelope, &catalog).unwrap();
     let command = commands.remove(0);
     let mut records = vec![EconomyLogRecord::Initial(audit_state(app.world_mut()))];
+    let ore_balance = |app: &bevy_app::App| {
+        turts_sim::balance_view(
+            app.world(),
+            SlotId(0),
+            &turts_mod_api::ContentId::parse("muster:ore").unwrap(),
+        )
+        .unwrap()
+        .on_hand
+    };
+    let node_start = turts_sim::node_view(app.world(), turts_sim::NodeId(1))
+        .unwrap()
+        .remaining;
+    let balance_start = ore_balance(&app);
     let blocked = turts_sim::GatherStage::Waiting {
         reason: turts_sim::WaitReason::Blocked,
     };
@@ -708,6 +721,31 @@ fn ord3_full_scene_blocked_gather_trip_validates() {
         failure.map(|failure| failure.reason),
         Some(turts_sim::RejectReason::NodeDepleted),
         "the blocked trip waits, delivers, then the order fails with node_depleted"
+    );
+    // Conservation, read from the sim state and not through the validator: the depot converts
+    // each delivered item into one ore balance, so the whole node start amount must be in the
+    // balance, and the harvester must hold nothing.
+    assert_eq!(
+        turts_sim::node_view(app.world(), turts_sim::NodeId(1))
+            .unwrap()
+            .remaining,
+        0,
+        "the node is empty"
+    );
+    assert_eq!(
+        turts_sim::inventory_view(app.world(), SlotId(0), 41)
+            .unwrap()
+            .items
+            .iter()
+            .map(|item| item.on_hand)
+            .sum::<u64>(),
+        0,
+        "the harvester delivered all its cargo"
+    );
+    assert_eq!(
+        ore_balance(&app),
+        balance_start + node_start,
+        "no ore is created or destroyed: the balance gains the node start amount"
     );
     economylog::validate_records(&records)
         .unwrap_or_else(|error| panic!("the validator rejects the blocked gather wait: {error}"));
