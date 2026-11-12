@@ -104,6 +104,10 @@ deniedHarness.refuseResume();
 deniedHarness.dispatch("pointerdown");
 assert.equal(deniedContext.state, "suspended", "a resume request does not prove the actual context changed state");
 assert.deepEqual(deniedHarness.contextStates(), ["suspended"], "the observer keeps a denied context locked");
+// Ruling O15: while audio stays locked, each later gesture asks the browser again.
+deniedHarness.dispatch("keydown");
+deniedHarness.dispatch("pointerdown");
+assert.equal(deniedContext.resumeCalls, 3, "each later gesture asks a still suspended context to resume");
 
 const lateContextHarness = createHarness();
 lateContextHarness.dispatch("pointerdown");

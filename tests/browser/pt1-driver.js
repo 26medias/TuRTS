@@ -139,9 +139,9 @@ async function drive(io, params) {
     const clickToPlay = requirePoint(stages.click_to_play, "click_to_play");
     const controlsWheel = requirePoint(stages.guide_controls_wheel, "guide_controls_wheel");
     const menu = stages.menu ?? {};
-    const stopWheel = requirePoint(menu.stop_row_wheel, "menu.stop_row_wheel");
-    const raise = requirePoint(menu.scroll_speed_raise, "menu.scroll_speed_raise");
     const rebind = requirePoint(menu.stop_rebind, "menu.stop_rebind");
+    const speedWheel = requirePoint(menu.scroll_speed_wheel, "menu.scroll_speed_wheel");
+    const raise = requirePoint(menu.scroll_speed_raise, "menu.scroll_speed_raise");
 
     // Steps 1 and 2: window A after its join; "Click to play" opens the guide.
     await io.use(1);
@@ -254,22 +254,28 @@ async function drive(io, params) {
     // Step 14: the menu; a faster scroll speed and a new Stop key; the guide Controls list.
     await pressBinding(io, keys.menu, "menu");
     await io.wait(300);
-    // One wheel puts the "Key stop" row and the Scroll speed slider in view together. The menu
-    // has no text that the driver can read (design 13.4: no OCR); the driver holds the layout as
-    // literals and checks the control fill before each click; the oracle checks the target row.
-    await io.move(stopWheel.x, stopWheel.y);
-    await io.wheel(stopWheel.delta);
+    // One wheel brings the Scroll speed slider into view; a wheel back to the top shows the
+    // "Stop selected units" row (the menu lists the mod actions first). The slider comes first:
+    // the binding status line that a rebind adds moves the slider down. The menu has no text
+    // that the driver can read (design 13.4: no OCR); the driver holds the layout as literals
+    // and checks the control fill before each click; the oracle checks the effects.
+    await io.move(speedWheel.x, speedWheel.y);
+    await io.wheel(speedWheel.delta);
     await io.wait(250);
     const { image: menuImage } = await shot(io, "pt1-s14-menu-scrolled");
     if (!fillNear(menuImage, { x: raise.x, y: raise.y }, MENU_KNOB_FILL, 0) && !findKnobRow(menuImage, raise)) {
         return stop(io, "pt1-s14-scroll-speed", `no slider at ${JSON.stringify(raise)}`);
     }
-    if (!fillNear(menuImage, { x: rebind.x - 24, y: rebind.y }, MENU_BUTTON_FILL, 2)) {
-        return stop(io, "pt1-s14-rebind", `no Change button at ${JSON.stringify(rebind)}`);
-    }
     await io.click(raise.x, raise.y, "left");
     await io.wait(250);
     await shot(io, "pt1-s14-scroll-speed");
+    await io.move(speedWheel.x, speedWheel.y);
+    await io.wheel(-10000);
+    await io.wait(250);
+    const { image: menuTop } = await shot(io, "pt1-s14-menu-top");
+    if (!fillNear(menuTop, { x: rebind.x - 24, y: rebind.y }, MENU_BUTTON_FILL, 2)) {
+        return stop(io, "pt1-s14-rebind", `no Change button at ${JSON.stringify(rebind)}`);
+    }
     await io.click(rebind.x, rebind.y, "left");
     await io.wait(250);
     const newStop = freeLetterKey(bindings);

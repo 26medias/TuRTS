@@ -13,7 +13,7 @@ function guide(capture,expected,decoded){const list=capture.checkpoint.debug.ui_
 function judgeSh1GuideChange(before,after,decoded){
  assert(before.window===after.window&&before.document_epoch===after.document_epoch&&before.input_call<after.input_call,
   'SH1 guide glyph comparison needs one ordered actual document');
- for(const [label,oldKey,newKey,prefixWidth]of [['Key move','S','M',57],['Key stop','M','S',52]]){
+ for(const [label,oldKey,newKey,prefixWidth]of [['Move selected units','S','M',112],['Stop selected units','M','S',107]]){
   const samples=[[before,oldKey],[after,newKey]].map(([capture,key])=>{
    const node=capture.checkpoint.debug.ui_snapshot.find(n=>n.id?.startsWith('guide.4.')&&n.visible&&n.text===`${label}: ${key}`);
    assert(node,'SH1 changed key label lacks its actual guide rectangle');
@@ -45,16 +45,16 @@ function judgeSh1GuideChange(before,after,decoded){
 function judgeSh1Bindings(input,captures,decoded,evaluated){
  const initial=get(captures,'world-ready'),edit=get(captures,'conflict-edit-row'),offer=get(captures,'conflict-open'),swapped=get(captures,'conflict-swapped');
  product(has(initial.checkpoint.debug,'key_stop','KeyS')&&has(initial.checkpoint.debug,'key_move','KeyM'),'conflict-swap-cancel-reset','actual verified defaults must start StopS and MoveM');
- physical(input,edit,offer,buttonForRow(edit,'Change','Key stop'));actualKey(input,edit,offer,'KeyM');
+ physical(input,edit,offer,buttonForRow(edit,'Change','Stop selected units'));actualKey(input,edit,offer,'KeyM');
  product(has(offer.checkpoint.debug,'key_stop','KeyS')&&has(offer.checkpoint.debug,'key_move','KeyM'),'conflict-swap-cancel-reset','an unresolved offer changed an existing action');
  physical(input,offer,swapped,button(offer,'Swap'));
  product(has(swapped.checkpoint.debug,'key_stop','KeyM')&&has(swapped.checkpoint.debug,'key_move','KeyS'),'conflict-swap-cancel-reset','actual Swap did not move Move to the old Stop chord');
  const cancelEdit=get(captures,'conflict-cancel-edit-row'),cancelOffer=get(captures,'conflict-cancel-offer'),cancelled=get(captures,'conflict-cancelled'),reset=get(captures,'conflict-reset');
- physical(input,cancelEdit,cancelOffer,buttonForRow(cancelEdit,'Change','Key stop'));actualKey(input,cancelEdit,cancelOffer,'KeyS');
- product(menu(cancelOffer).some(node=>node.visible&&node.text==='S is also bound to Key move'),'conflict-swap-cancel-reset','second real conflict did not identify Move');
+ physical(input,cancelEdit,cancelOffer,buttonForRow(cancelEdit,'Change','Stop selected units'));actualKey(input,cancelEdit,cancelOffer,'KeyS');
+ product(menu(cancelOffer).some(node=>node.visible&&node.text==='S is also bound to Move selected units'),'conflict-swap-cancel-reset','second real conflict did not identify Move');
  physical(input,cancelOffer,cancelled,button(cancelOffer,'Cancel'));
  product(JSON.stringify(cancelled.checkpoint.debug.effective_bindings.actions)===JSON.stringify(swapped.checkpoint.debug.effective_bindings.actions),'conflict-swap-cancel-reset','actual Cancel changed either effective action');
- physical(input,cancelled,reset,buttonForRow(cancelled,'Reset','Key stop'));
+ physical(input,cancelled,reset,buttonForRow(cancelled,'Reset','Stop selected units'));
  product(has(reset.checkpoint.debug,'key_stop','KeyS')&&has(reset.checkpoint.debug,'key_move','KeyM'),'conflict-swap-cancel-reset','actual Reset did not restore executable, conflict-free defaults');
  for(const[action,value]of Object.entries(initial.checkpoint.debug.effective_bindings.actions)){
   if(action==='key_stop'||action==='key_move')continue;
@@ -63,7 +63,7 @@ function judgeSh1Bindings(input,captures,decoded,evaluated){
  evaluated.add('conflict-swap-cancel-reset');
  const swappedGuide=get(captures,'guide-swapped'),resetGuide=get(captures,'guide-reset');
  actualKey(input,swapped,swappedGuide,'F1');actualKey(input,reset,resetGuide,'F1');
- guide(swappedGuide,['Key stop: M','Key move: S'],decoded);guide(resetGuide,['Key stop: S','Key move: M'],decoded);
+ guide(swappedGuide,['Stop selected units: M','Move selected units: S'],decoded);guide(resetGuide,['Stop selected units: S','Move selected units: M'],decoded);
  judgeSh1GuideChange(swappedGuide,resetGuide,decoded);
  const end=get(captures,'conflict-menu-closed');product(!end.checkpoint.debug.ui_snapshot.some(node=>(node.kind==='settings_menu'||node.id==='guide')&&node.visible===true),'guide-effective-label','actual guide/menu remained open after their physical close');
  evaluated.add('guide-effective-label');return evaluated;

@@ -191,7 +191,7 @@ function evaluatePer1BrowserEvidence({ audit, fixture, debug, initialDebug, expe
     const bindingArmed = captures.find((capture) => capture.name === 'binding-editor-armed');
     const armedMenu = bindingArmed?.checkpoint?.debug?.ui_snapshot?.find((node) => node.kind === 'settings_menu' && node.visible === true);
     setup(bindingArmed && bindingArmed.document_epoch === initial.document_epoch &&
-        armedMenu?.text_nodes?.some((node) => node.text?.startsWith('Press a key or ') && node.text.endsWith(' button for add_modifier')) &&
+        armedMenu?.text_nodes?.some((node) => node.text?.startsWith('Press a key or ') && node.text.endsWith(' button for Add modifier')) &&
         menuBeforeNode.text_nodes.some((node) => node.visible === true && node.text === 'Change' &&
             Array.isArray(node.rect) && node.rect.length === 4 &&
             changeClick.args?.[0] >= node.rect[0] && changeClick.args?.[0] <= node.rect[0] + node.rect[2] &&

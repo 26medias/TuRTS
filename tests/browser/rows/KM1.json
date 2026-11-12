@@ -41,7 +41,7 @@
                     "phase": "player-override",
                     "x": 650,
                     "y": 500,
-                    "delta": 10000
+                    "delta": -10000
                 },
                 {
                     "call": "wait",
@@ -64,7 +64,7 @@
                     "phase": "player-override",
                     "x": 650,
                     "y": 500,
-                    "delta": 1450
+                    "delta": -10000
                 },
                 {
                     "call": "wait",
@@ -75,7 +75,7 @@
                     "call": "click",
                     "phase": "player-override",
                     "x": 784,
-                    "y": 116,
+                    "y": 274,
                     "button": "left"
                 },
                 {
@@ -122,7 +122,7 @@
                     "phase": "player-override",
                     "x": 650,
                     "y": 500,
-                    "delta": 10000
+                    "delta": -10000
                 },
                 {
                     "call": "wait",
@@ -145,7 +145,7 @@
                     "phase": "player-override",
                     "x": 650,
                     "y": 500,
-                    "delta": 1450
+                    "delta": -10000
                 },
                 {
                     "call": "wait",
@@ -156,7 +156,7 @@
                     "call": "click",
                     "phase": "player-override",
                     "x": 784,
-                    "y": 116,
+                    "y": 274,
                     "button": "left"
                 },
                 {
@@ -164,6 +164,13 @@
                     "phase": "player-override",
                     "code": "F12",
                     "modifiers": []
+                },
+                {
+                    "call": "wheel",
+                    "phase": "player-override",
+                    "x": 650,
+                    "y": 500,
+                    "delta": 1450
                 },
                 {
                     "call": "wait",
@@ -231,13 +238,13 @@
                 {
                     "name": "reserved-notice",
                     "phase": "player-override",
-                    "after_action": 24,
+                    "after_action": 25,
                     "window": 1
                 },
                 {
                     "name": "reload-joined",
                     "phase": "player-override",
-                    "after_action": 28,
+                    "after_action": 29,
                     "window": 1
                 }
             ],

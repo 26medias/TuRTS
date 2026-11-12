@@ -92,18 +92,46 @@ fn normalized(value: f32) -> f32 {
     }
 }
 
+/// The menu row "Sound: off" or "Sound: on" (design 10.1, ruling O15).
+#[derive(Component, Clone, Copy, Debug)]
+pub struct SoundStatusText;
+
 /// Add the Task15 volume controls as children of the existing F10/Esc settings overlay.
-/// Task16 can append its settings controls to the same parent entity.
-pub fn spawn_volume_controls(commands: &mut Commands, parent: Entity, settings: VolumeSettings) {
+/// Task16 can append its settings controls to the same parent entity. `sound_status` is the
+/// first text of the sound state label; the shell keeps it current. The label is on the line of
+/// the "Audio levels" heading, so the menu layout keeps its height.
+pub fn spawn_volume_controls(
+    commands: &mut Commands,
+    parent: Entity,
+    settings: VolumeSettings,
+    sound_status: &str,
+) {
     commands.entity(parent).with_children(|parent| {
-        parent.spawn((
-            Text::new("Audio levels"),
-            TextFont {
-                font_size: FontSize::Px(16.0),
+        parent
+            .spawn(Node {
+                flex_direction: FlexDirection::Row,
+                column_gap: Val::Px(16.0),
                 ..default()
-            },
-            TextColor(Color::srgb(0.78, 0.84, 0.9)),
-        ));
+            })
+            .with_children(|heading| {
+                heading.spawn((
+                    Text::new("Audio levels"),
+                    TextFont {
+                        font_size: FontSize::Px(16.0),
+                        ..default()
+                    },
+                    TextColor(Color::srgb(0.78, 0.84, 0.9)),
+                ));
+                heading.spawn((
+                    SoundStatusText,
+                    Text::new(sound_status),
+                    TextFont {
+                        font_size: FontSize::Px(16.0),
+                        ..default()
+                    },
+                    TextColor(Color::WHITE),
+                ));
+            });
         for (label, category) in [
             ("Master", VolumeCategory::Master),
             ("Voice", VolumeCategory::Voice),

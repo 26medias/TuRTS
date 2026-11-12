@@ -3,7 +3,7 @@
 
 const assert = require("node:assert/strict");
 const { test } = require("node:test");
-const { assertControlsMatch, humanizeAction, playerLabel } = require("./pt1-oracle.js");
+const { actionLabel, assertControlsMatch, humanizeAction, playerLabel } = require("./pt1-oracle.js");
 const { freeLetterKey } = require("./pt1-driver.js");
 
 const actions = {
@@ -18,6 +18,8 @@ function debugWith(texts) {
 }
 
 test("the Controls rows mirror the Rust labels", () => {
+    assert.equal(actionLabel("key_stop"), "Stop selected units", "a mod action row takes the name of its order");
+    assert.equal(actionLabel("menu"), "Menu");
     assert.equal(humanizeAction("key_stop"), "Key stop");
     assert.equal(humanizeAction("group_assign_1"), "Assign group 1");
     assert.equal(humanizeAction("camera_pan_left"), "Pan camera left");
@@ -27,9 +29,10 @@ test("the Controls rows mirror the Rust labels", () => {
 });
 
 test("guide sheet 5 goes red when a rendered row differs from params.bindings", () => {
-    const good = debugWith(["Key stop: S", "Assign group 1: Ctrl+1", "Menu: F10, Esc", "Zoom in: Wheel up"]);
+    const good = debugWith(["Stop selected units: S", "Assign group 1: Ctrl+1", "Menu: F10, Esc", "Zoom in: Wheel up"]);
     assert.equal(assertControlsMatch(good, actions, "good").rows.length, 4);
-    assert.throws(() => assertControlsMatch(debugWith(["Key stop: A"]), actions, "stale"), /guide-sheet-5: stale: the rendered Controls row "Key stop: A"/);
+    assert.throws(() => assertControlsMatch(debugWith(["Stop selected units: A"]), actions, "stale"), /guide-sheet-5: stale: the rendered Controls row "Stop selected units: A"/);
+    assert.throws(() => assertControlsMatch(debugWith(["Key stop: S"]), actions, "old label"), /matches no binding/);
     assert.throws(() => assertControlsMatch(debugWith([]), actions, "empty"), /shows no binding row/);
 });
 
@@ -46,7 +49,7 @@ test("guide sheet 5 uses the recorded keyboard layout labels, as the client does
     assert.deepEqual(labels, { KeyS: "O", KeyA: "A", Digit1: "&" });
     assert.equal(playerLabel(actions.key_stop[0], labels), "O");
     assert.equal(playerLabel(actions.group_assign_1[0], labels), "Ctrl+&");
-    const azerty = debugWith(["Key stop: O", "Assign group 1: Ctrl+&"]);
+    const azerty = debugWith(["Stop selected units: O", "Assign group 1: Ctrl+&"]);
     assert.equal(assertControlsMatch(azerty, actions, "azerty", labels).rows.length, 2);
     assert.throws(() => assertControlsMatch(azerty, actions, "us"), /matches no binding/);
 });

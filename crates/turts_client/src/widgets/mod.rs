@@ -624,10 +624,12 @@ fn spawn_widget(
                     item,
                 );
                 if !text.is_empty() {
+                    let font = tooltip::style_font(world, tooltip_style, interface_package);
                     world.entity_mut(id).insert((
                         Text::new(text),
                         TextFont {
                             font_size: FontSize::Px(14.0),
+                            font: FontSource::Handle(font),
                             ..default()
                         },
                         TextColor(Color::WHITE),
@@ -958,9 +960,21 @@ fn ensure_widget_text_style(world: &mut World, entity: Entity, binding: &WidgetB
             }
         }
         Primitive::Button { .. } => {
-            if world.get::<TextFont>(entity).is_none() {
+            // `Text` requires `TextFont` (bevy_ui-0.20.0/src/widget/text.rs:116-119), so a label
+            // that the refresh adds has the default font. Compare first; set only on a change.
+            let font = FontSource::Handle(tooltip::style_font(
+                world,
+                &binding.tooltip_style,
+                &binding.package,
+            ));
+            let size = FontSize::Px(14.0);
+            let current = world
+                .get::<TextFont>(entity)
+                .map(|text_font| (text_font.font.clone(), text_font.font_size));
+            if current.as_ref() != Some(&(font.clone(), size)) {
                 world.entity_mut(entity).insert(TextFont {
-                    font_size: FontSize::Px(14.0),
+                    font_size: size,
+                    font,
                     ..default()
                 });
             }
@@ -3081,6 +3095,147 @@ mod tests {
         assert!(
             grid_item_included(&turts_mod_api::Source::Balances, true, &unplaced),
             "generic grids retain sequential flow"
+        );
+    }
+
+    fn forge_interface() -> turts_mod_api::InterfaceDef {
+        let dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../mods/forge");
+        let manifest: turts_mod_api::Manifest =
+            ron::from_str(&std::fs::read_to_string(dir.join("manifest.ron")).unwrap()).unwrap();
+        ron::from_str(&std::fs::read_to_string(dir.join(&manifest.exports.interface[0])).unwrap())
+            .unwrap()
+    }
+
+    fn find_item_template<'a>(widgets: &'a [Widget], id: &str) -> Option<&'a Widget> {
+        widgets.iter().find_map(|widget| match &widget.widget {
+            Primitive::List { item, .. } | Primitive::Grid { item, .. } if widget.id == id => {
+                Some(item.as_ref())
+            }
+            Primitive::Box { children, .. } => find_item_template(children, id),
+            _ => None,
+        })
+    }
+
+    /// PT1 step 5: button labels with "×" and "—" use the interface font, not the Bevy default
+    /// font. The default font has only U+0020 to U+007E, so these glyphs show as boxes.
+    #[test]
+    fn button_labels_use_the_interface_tooltip_font() {
+        let interface = forge_interface();
+        assert_eq!(interface.tooltip_style.font.as_deref(), Some("forge_ui"));
+        let mut world = World::new();
+        let mut font_store = Assets::<Font>::default();
+        let forge_font = font_store.add(Font::from_bytes(
+            include_bytes!("../../../../mods/forge/assets/fonts/Roboto-Regular.ttf").to_vec(),
+        ));
+        let mut widget_assets = assets::WidgetAssets::default();
+        widget_assets
+            .fonts
+            .insert("forge:forge_ui".into(), forge_font.clone());
+        world.insert_resource(widget_assets);
+
+        let replica = crate::replica::Replica::new(20);
+        let content = crate::content::ClientContent::default();
+        let selection = Vec::new();
+        let groups = Default::default();
+        let alerts = Vec::new();
+        let bindings = Default::default();
+        let input_map = turts_mod_api::InputMapDef {
+            actions: Vec::new(),
+            engine_overrides: Vec::new(),
+        };
+        let context = sources::SourceContext {
+            binding_labels: None,
+            replica: &replica,
+            content: &content,
+            selection: &selection,
+            owner_slot: 0,
+            interface: Some(&interface),
+            interface_package: Some("forge"),
+            control_groups: &groups,
+            alerts: &alerts,
+            bindings: &bindings,
+            input_map: &input_map,
+            guide: &[],
+            guide_open: false,
+            last_notice: None,
+        };
+        let cases = [
+            (
+                "selection_units",
+                sources::ItemData {
+                    fields: vec![
+                        (ItemField::Name, serde_json::json!("Proving Lab")),
+                        (ItemField::Count, serde_json::json!(1)),
+                        (ItemField::Health, serde_json::json!(300)),
+                    ],
+                },
+                "Proving Lab ×1 — 300 HP",
+            ),
+            (
+                "research_entries",
+                sources::ItemData {
+                    fields: vec![
+                        (ItemField::Name, serde_json::json!("Hardened Shells")),
+                        (
+                            ItemField::Reason,
+                            serde_json::json!("Needs 10 Shell (0/10)"),
+                        ),
+                    ],
+                },
+                "Hardened Shells — Needs 10 Shell (0/10)",
+            ),
+        ];
+        for (list, item, expected) in cases {
+            let template = find_item_template(&interface.root, list).unwrap();
+            let entity = spawn_widget(
+                &mut world,
+                None,
+                template,
+                Vec2::new(256.0, 40.0),
+                &context,
+                "forge",
+                &interface.tooltip_style,
+                Some(&item),
+            );
+            assert_eq!(world.get::<Text>(entity).unwrap().0, expected);
+            let font = world.get::<TextFont>(entity).unwrap();
+            assert_eq!(
+                font.font,
+                FontSource::Handle(forge_font.clone()),
+                "{list}: the label must use the interface font"
+            );
+            assert_eq!(font.font_size, FontSize::Px(14.0));
+
+            // A label that the refresh adds later takes the same font.
+            world.entity_mut(entity).remove::<(Text, TextFont)>();
+            refresh_bound_widgets(&mut world, &context);
+            assert_eq!(world.get::<Text>(entity).unwrap().0, expected);
+            assert_eq!(
+                world.get::<TextFont>(entity).unwrap().font,
+                FontSource::Handle(forge_font.clone()),
+                "{list}: the refreshed label must use the interface font"
+            );
+        }
+
+        // With no interface font, the label keeps the default font.
+        let mut plain = interface.tooltip_style.clone();
+        plain.font = None;
+        let template = find_item_template(&interface.root, "research_entries").unwrap();
+        let entity = spawn_widget(
+            &mut world,
+            None,
+            template,
+            Vec2::new(256.0, 40.0),
+            &context,
+            "forge",
+            &plain,
+            Some(&sources::ItemData {
+                fields: vec![(ItemField::Name, serde_json::json!("Plain"))],
+            }),
+        );
+        assert_eq!(
+            world.get::<TextFont>(entity).unwrap().font,
+            FontSource::Handle(Handle::default())
         );
     }
 }
