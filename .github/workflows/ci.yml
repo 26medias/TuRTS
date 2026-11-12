@@ -37,10 +37,6 @@ jobs:
         run: bash scripts/boundary.sh
       - name: Python refutation harness tests
         run: python3 tests/m2/test_refutations.py
-      - name: M2 native-only semantic refutations
-        run: bash scripts/m2-refutations.sh --case ci-native
-      - name: M3 semantic refutations (all 17 plants)
-        run: bash scripts/m3-refutations.sh --case all
       - name: Acceptance (M2 and M3 process tests, release, serial)
         run: bash scripts/acceptance.sh
       - name: Upload native and acceptance diagnostics
@@ -56,6 +52,55 @@ jobs:
             target/task15-evidence/**
             target/m2-public-proof/**
             target/m3-evidence/t16-builder/**
+  # The native fault sets ran serially in `check`: 89.6 minutes for 21 of the 33 M2 cases in
+  # run 43121618105, and the M3 set after it. Each set now runs in parallel shards
+  # (`--shard K/N` of tests/m2/refutations.py and tests/m3/refutations.py: cases K, K + N, ...).
+  # The shards of one set together run each case once.
+  refutations:
+    name: refutations ${{ matrix.set }} ${{ matrix.shard }}
+    runs-on: ubuntu-latest
+    # A hang must not hold a hosted runner for hours (RUN123 M3).
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { set: m2-native, runner: tests/m2/refutations.py, case: ci-native, shard: 1/4 }
+          - { set: m2-native, runner: tests/m2/refutations.py, case: ci-native, shard: 2/4 }
+          - { set: m2-native, runner: tests/m2/refutations.py, case: ci-native, shard: 3/4 }
+          - { set: m2-native, runner: tests/m2/refutations.py, case: ci-native, shard: 4/4 }
+          - { set: m3, runner: tests/m3/refutations.py, case: all, shard: 1/3 }
+          - { set: m3, runner: tests/m3/refutations.py, case: all, shard: 2/3 }
+          - { set: m3, runner: tests/m3/refutations.py, case: all, shard: 3/3 }
+    env:
+      CARGO_BUILD_JOBS: 2
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target/m3-t16
+      CARGO_PROFILE_DEV_DEBUG: 0
+      CARGO_PROFILE_TEST_DEBUG: 0
+      CARGO_INCREMENTAL: 0
+      TURTS_REFUTATION_EVIDENCE_DIR: ${{ github.workspace }}/target/m3-evidence/t16-builder/refutations/native
+      TURTS_REFUTATION_BUILD_ROOT: ${{ github.workspace }}/target/m3-t16/refutations/native-build
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+      - name: Bevy system libraries
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends pkg-config libx11-dev libasound2-dev libudev-dev libxkbcommon-x11-0 libwayland-dev libxkbcommon-dev
+      - name: Semantic refutations ${{ matrix.set }} shard ${{ matrix.shard }}
+        run: python3 ${{ matrix.runner }} --case ${{ matrix.case }} --shard ${{ matrix.shard }}
+      - name: Upload refutation diagnostics
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: refutations-${{ matrix.set }}-${{ strategy.job-index }}-${{ github.run_id }}
+          if-no-files-found: warn
+          retention-days: 14
+          path: |
+            target/m2-refutations/**
+            target/m3-evidence/t16-builder/refutations/**
+            !target/**/economy.jsonl
   # T7, M2 and M3 need a real browser process, Trunk and wasm. The hosted runner has no GPU.
   # Chrome blocks the software GL and Vulkan drivers, and with `--use-angle=vulkan` the WebGPU
   # canvas is not in the compositor output: every screenshot is blank (run 43121618105, local
