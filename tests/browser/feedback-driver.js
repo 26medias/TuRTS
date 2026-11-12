@@ -2,6 +2,7 @@
 "use strict";
 
 const { decodePng, pixelAt } = require("./harness/png.js");
+const { findVolumeTracks, volumeClickPoint } = require("./volume-tracks.js");
 
 const SLOT_RGB = [[0, 114, 178], [230, 159, 0]];
 const COLOR_TOLERANCE = 48;
@@ -95,14 +96,16 @@ async function drive(io, params) {
         await io.wait(250);
         await io.key("F10");
         await io.wait(150);
-        const trackX = 498;
-        const trackWidth = 370;
-        const categoryY = { master: 319, voice: 365, alerts: 411, effects: 457 };
+        // The volume sliders are the last controls of the scrolling settings panel (since
+        // 3d0cf2f): scroll to the end, then find each track by pixels (RUN130).
+        await io.move(640, 400);
+        await scrollMenuToEnd(io);
         const volume = { master: 0.9, voice: 0.8, alerts: 0.7, effects: 0.6 };
         for (const [category, value] of Object.entries(volume)) {
-            const x = Math.round(trackX + trackWidth * value), y = categoryY[category];
+            const { tracks } = await waitForVolumeMenuPixels(io, category);
+            const { x, y } = volumeClickPoint(tracks[category], value);
             await io.move(x, y);
-            const beforeClick = await waitForVolumeMenuPixels(io, category);
+            const { screenshot: beforeClick } = await waitForVolumeMenuPixels(io, category);
             await savePngWithBase64(io, `aud1-volume-before-${category}.png`, beforeClick);
             await io.click(x, y, "left");
             const afterClick = await waitForVolumeThumbPixels(io, category, x, y);
@@ -130,8 +133,9 @@ async function waitForVolumeMenuPixels(io, category) {
     let previousReady = false, savedNegative = false;
     while (Date.now() < deadline) {
         const screenshot = Buffer.from(await io.screenshot());
-        const ready = volumeTracksVisible(decodePng(screenshot));
-        if (ready && previousReady) return screenshot;
+        const tracks = findVolumeTracks(decodePng(screenshot));
+        const ready = Boolean(tracks);
+        if (ready && previousReady) return { screenshot, tracks };
         if (!ready && !savedNegative) {
             await io.save(`aud1-volume-unready-${category}.png`, screenshot);
             savedNegative = true;
@@ -148,7 +152,7 @@ async function waitForVolumeThumbPixels(io, category, x, y) {
     while (Date.now() < deadline) {
         const screenshot = Buffer.from(await io.screenshot());
         const image = decodePng(screenshot);
-        const ready = volumeTracksVisible(image) && volumeThumbVisible(image, x, y);
+        const ready = Boolean(findVolumeTracks(image)) && volumeThumbVisible(image, x, y);
         if (ready && previousReady) return screenshot;
         previousReady = ready;
         await io.wait(Math.min(100, Math.max(1, deadline - Date.now())));
@@ -164,13 +168,30 @@ function volumeThumbVisible(image, x, y) {
     }));
 }
 
-function volumeTracksVisible(image) {
-    return [319, 365, 411, 457].every((y) => [-2, 0, 2].every((dy) =>
-        [-2, 0, 2].every((dx) => {
-            const pixel = pixelAt(image, 500 + dx, y + dy);
-            return pixel && pixel[3] >= 245 &&
-                Math.hypot(pixel[0] - 51, pixel[1] - 61, pixel[2] - 77) <= 10;
-        })));
+// Wheel steps inside the menu until two steps in a row leave the panel unchanged.
+const MENU_PANEL = { x: 400, y: 40, width: 480, height: 640 };
+async function scrollMenuToEnd(io) {
+    let previous = decodePng(Buffer.from(await io.screenshot()));
+    let still = 0;
+    for (let step = 0; step < 40 && still < 2; step += 1) {
+        await io.wheel(300);
+        await io.wait(200);
+        const current = decodePng(Buffer.from(await io.screenshot()));
+        still = samePanel(previous, current) ? still + 1 : 0;
+        previous = current;
+    }
+}
+
+function samePanel(left, right) {
+    for (let y = MENU_PANEL.y; y < MENU_PANEL.y + MENU_PANEL.height; y += 2) {
+        for (let x = MENU_PANEL.x; x < MENU_PANEL.x + MENU_PANEL.width; x += 2) {
+            const offset = (y * left.width + x) * 4;
+            for (let channel = 0; channel < 3; channel += 1) {
+                if (Math.abs(left.rgba[offset + channel] - right.rgba[offset + channel]) > 24) return false;
+            }
+        }
+    }
+    return true;
 }
 
 async function waitForInitialOwnPixels(io) {

@@ -3,6 +3,7 @@
 
 const assert = require("node:assert/strict");
 const { decodePng, pixelAt } = require("./harness/png.js");
+const { findVolumeTracks, volumeClickPoint } = require("./volume-tracks.js");
 
 async function judge(view, params) {
     const row = params.row;
@@ -681,10 +682,9 @@ async function assertMenuSliderClicksWereCaptured(view, input, checkpoints, debu
     const menuOpenIndex = input.findLastIndex((entry, index) => index < saveIndex && entry.call === "key" && entry.args?.[0] === "F10");
     assert(menuOpenIndex >= 0, "AUD1 opens the existing settings menu with its real F10 key");
     const clicks = input.slice(menuOpenIndex + 1, saveIndex).filter((entry) => entry.call === "click");
-    const expected = [[831, 319], [794, 365], [757, 411], [720, 457]];
-    assert.equal(clicks.length, expected.length, "AUD1 physically uses the four visible volume sliders");
+    const values = [0.9, 0.8, 0.7, 0.6];
+    assert.equal(clicks.length, values.length, "AUD1 physically uses the four visible volume sliders");
     for (let index = 0; index < clicks.length; index += 1) {
-        assert.deepEqual(clicks[index].args.slice(0, 2), expected[index], "AUD1 slider click uses its visible track");
         const category = ["master", "voice", "alerts", "effects"][index];
         const beforeName = `aud1-volume-before-${category}.png`;
         const before = checkpointForSave(input, checkpoints, beforeName);
@@ -692,7 +692,12 @@ async function assertMenuSliderClicksWereCaptured(view, input, checkpoints, debu
         assert(beforeSave > menuOpenIndex && beforeSave < input.indexOf(clicks[index]),
             `AUD1 ${category} current menu pixels precede its physical click`);
         const image = decodePng(Buffer.from((await view.serverFile(`${beforeName}.b64`)).trim(), "base64"));
-        const x = expected[index][0], y = expected[index][1];
+        // The click point of the requested value on the track that this screenshot shows (RUN130).
+        const tracks = findVolumeTracks(image);
+        assert(tracks, `AUD1 ${category} screenshot before the click shows the four volume tracks`);
+        const point = volumeClickPoint(tracks[category], values[index]);
+        assert.deepEqual(clicks[index].args.slice(0, 2), [point.x, point.y], "AUD1 slider click uses its visible track");
+        const x = point.x, y = point.y;
         const offset = (y * image.width + x) * 4;
         assert(x >= 0 && y >= 0 && x < image.width && y < image.height && image.rgba[offset + 3] >= 245,
             `AUD1 ${category} physical click point is an actual opaque captured pixel`);
