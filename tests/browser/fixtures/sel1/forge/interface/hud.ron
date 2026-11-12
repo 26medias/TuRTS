@@ -100,10 +100,10 @@
         (
             id: "objective",
             at: Some((anchor: Bottom, offset: (0.0, -8.0), pivot: None)),
-            size: (w: Px(700.0), h: Px(58.0)),
+            size: (w: Px(700.0), h: Px(76.0)),
             visible: [Not(GuideOpen)],
             widget: Box(fill: Some(Colour("#111820e0")), border: Some("#e69f00"), children: [
-                (id: "objective_text", at: Some((anchor: TopLeft, offset: (10.0, 6.0), pivot: None)), size: (w: Px(680.0), h: Px(48.0)), widget: Text(text: Literal("Blue side: make your Shell Turret hit harder. Click the Proving Lab (the top big blue building), then research Hardened Shells.\nOrange side: click your orange drone, then find the blue Shell Turret and its range."), font: Some("forge_ui"), size: 15, colour: "#ffffff", align: Left, wrap: true)),
+                (id: "objective_text", at: Some((anchor: TopLeft, offset: (10.0, 6.0), pivot: None)), size: (w: Px(680.0), h: Px(64.0)), widget: Text(text: Literal("Blue side: make your Shell Turret hit harder. Click the Proving Lab (the top big blue building), then research Hardened Shells.\nOrange side: click your orange drone, then find the blue Shell Turret and its range."), font: Some("forge_ui"), size: 15, colour: "#ffffff", align: Left, wrap: true)),
             ]),
         ),
         (
