@@ -99,3 +99,9 @@ pub(super) fn apply_shell_action(action: String, runtime: &mut CoreRuntime) {
         value: value.clone(),
     });
 }
+
+// One file for each effect family that a later task adds (plan 3.4, L0-CORE): the `Effect` variant
+// exists, and `drive_core_adapter` calls `<family>::apply` for it. The owner fills `apply` and the
+// family file only.
+pub(super) mod hint;
+pub(super) mod placement;

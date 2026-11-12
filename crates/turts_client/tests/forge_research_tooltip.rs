@@ -128,6 +128,7 @@ fn research_tooltip(shells: u64, bindings: &BTreeMap<String, Vec<Binding>>) -> S
         guide: &interface.guide,
         guide_open: false,
         last_notice: None,
+        core: turts_client::widgets::sources::CoreFeed::empty(),
     };
     let rows = sources::read_source(&Source::BuildMenu, context).items;
     let row = rows

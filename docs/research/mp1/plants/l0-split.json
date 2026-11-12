@@ -86,7 +86,7 @@
         "files": [
             {
                 "file": "crates/turts_client/src/visuals.rs",
-                "patch": "--- a/crates/turts_client/src/visuals.rs\n+++ b/crates/turts_client/src/visuals.rs\n@@ -440,7 +440,6 @@\n         local_slot,\n     );\n \n-    update_health_fills(&mut fills, &health_fractions);\n     reconcile_visual_entities(\n         &mut commands,\n         &mut shown,\n"
+                "patch": "--- a/crates/turts_client/src/visuals.rs\n+++ b/crates/turts_client/src/visuals.rs\n@@ -455,7 +455,6 @@\n     placement::draw(&mut desired, &placement_feed);\n     effects::draw(&mut desired, &mut effects_pool);\n \n-    update_health_fills(&mut fills, &health_fractions);\n     reconcile_visual_entities(\n         &mut commands,\n         &mut shown,\n"
             }
         ],
         "command": [
@@ -105,7 +105,7 @@
         "expected_red": "the scene record differs from the fixture at line Some(47)",
         "exit": 101,
         "expected_selected": "visuals::scene_tests::scene_oracle_matches_the_committed_fixture",
-        "commit": "b6e7e566c4826e48ce954f3fd7132c87ec3d8082"
+        "commit": "2b228562bb566d3b3e0b752881e9ff7efb1cea20"
     },
     {
         "row": "L0-SPLIT/SCENE",
@@ -221,7 +221,7 @@
         "files": [
             {
                 "file": "crates/turts_client/src/core_adapter.rs",
-                "patch": "--- a/crates/turts_client/src/core_adapter.rs\n+++ b/crates/turts_client/src/core_adapter.rs\n@@ -1064,7 +1064,7 @@\n                 apply_cursor(context, &mut runtime);\n             }\n             Effect::ShellAction { action } => {\n-                apply_shell_action(action, &mut runtime);\n+                let _ = action;\n             }\n             Effect::GroupsChanged | Effect::CameraChanged => {}\n             Effect::Send(_) => {}\n"
+                "patch": "--- a/crates/turts_client/src/core_adapter.rs\n+++ b/crates/turts_client/src/core_adapter.rs\n@@ -1080,7 +1080,7 @@\n                 apply_cursor(context, &mut runtime);\n             }\n             Effect::ShellAction { action } => {\n-                apply_shell_action(action, &mut runtime);\n+                let _ = action;\n             }\n             Effect::Placement(output) => effects::placement::apply(output, &mut runtime),\n             Effect::Hint(output) => effects::hint::apply(output, &mut runtime),\n"
             }
         ],
         "command": [
@@ -240,7 +240,7 @@
         "expected_red": "assertion `left == right` failed: the ShellAction arm\n  left: []\n right: [(\"shell_action\", Object {\"action\": String(\"toggle_guide\")})]",
         "exit": 101,
         "expected_selected": "core_adapter::adapter_tests::effect_arms_cursor_send_and_shell_action_write_their_records",
-        "commit": "b6e7e566c4826e48ce954f3fd7132c87ec3d8082"
+        "commit": "2b228562bb566d3b3e0b752881e9ff7efb1cea20"
     },
     {
         "row": "L0-SPLIT/EFFECTS",

@@ -198,6 +198,11 @@ pub(super) fn sync_widget_tree(world: &mut World) {
         .get_resource::<crate::client_shell::BindingLabels>()
         .cloned()
         .unwrap_or_default();
+    let core_feed = sources::CoreFeed::from_core(
+        world
+            .get_resource::<crate::core_adapter::CoreRuntime>()
+            .and_then(|runtime| runtime.core()),
+    );
     let source_context = sources::SourceContext {
         binding_labels: Some(&binding_labels),
         replica: &replica,
@@ -216,6 +221,7 @@ pub(super) fn sync_widget_tree(world: &mut World) {
             .last()
             .and_then(|notice| notice.get("text").or_else(|| notice.get("message")))
             .and_then(serde_json::Value::as_str),
+        core: &core_feed,
     };
     if world.resource::<WidgetTree>().key == key {
         refresh_bound_widgets(world, &source_context);

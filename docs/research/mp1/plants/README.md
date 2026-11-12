@@ -45,7 +45,7 @@ For each selected record (a failure at any step names the record `row/plant`):
    This check covers all the records, in every mode, also the ones that `--files` does not select.
 2. Every file of every record exists. A moved or deleted file gives `REFUSED <row>/<plant> [<json file>[<index>]]: ... re-pin the record` and exit 2.
 3. A file must be tracked and clean (`git status` shows no change in it). This check comes before the anchor check.
-4. Each anchor occurs exactly once. A patch that does not apply, or an anchor that occurs 0 or 2 times, gives `REFUSED` and exit 2. No command runs if any selected record is refused.
+4. Each anchor occurs exactly once. A patch that does not apply, or an anchor that occurs 0 or 2 times, gives `REFUSED` and exit 2. So does a record whose edits cancel each other (the planted text equals the original in every file). No command runs if any selected record is refused.
 5. The command is green (exit 0) on the clean source. The plants that share a command, an `env` and an `expected_selected` form a command group: one baseline for the group.
 6. For each plant: the edit, then the red (see above), then the restore (`git checkout HEAD -- <file>`). Every byte is equal to the byte before the run, and `git status --porcelain -uall` shows the same lines as before the group. A new file that the command wrote (untracked) is a `PLANT-FAIL` that names the file; the runner does not delete it.
 7. A green run after each restore (a group of N plants: N red runs and N + 1 green runs). The green run after a restore is the baseline of the next plant, so a flaky command or a residue in an ignored folder cannot give a red to a plant with no effect. A green run that fails after a restore fails that plant and stops the group: the plants that did not run fail with `not run`.
@@ -69,12 +69,30 @@ The serial runner never runs a record with `headed: true`. In every mode it skip
     python3 -I scripts/qa/mp1_plants.py --files <changed paths> --native-only; echo exit=$?
     python3 -I scripts/qa/mp1_plants.py --all --native-only; echo exit=$?
     python3 -I scripts/qa/mp1_plants.py --list --all          # select, run nothing
+    python3 -I scripts/qa/mp1_plants.py --check --all         # fast: do the records apply? run nothing
 
 Exit codes: 0 all selected plants are red and restored (or none is selected); 1 a plant failed;
 2 a record is refused or another runner holds the lock; 130 or 143 interrupted. `--files` selects the
 records that have the path in `files[].file`. A path under the root may be absolute. A path that is
 neither a tracked file, nor a path that a change deleted (in the index or in a commit), nor in a record is refused (exit 2): it is a mistake, not "nothing to run". A deleted path is accepted, so the raw output of `git diff --name-only` works as the argument list. `--timeout S` bounds each command run (default 1200 s). `--out P` writes the results
 as JSON. `--root` and `--plants-dir` select another worktree or folder (used by the self-test).
+
+## The fast check
+
+`--check` (with `--all` or `--files`) tells in seconds whether the records still apply to the tree.
+It runs no build and no test, writes no file (its `git` calls use `--no-optional-locks`, so `.git/index`
+keeps its bytes), takes no lock and does not recover the journal. It uses the same function as the
+run mode (`prepare`, steps 2 to 4 above: the file exists, is tracked and clean, each anchor and each
+patch applies, and the edits of a record do not cancel each other), so the two modes cannot differ.
+When a journal exists or the lock is held, it prints one `NOTE` line first: a plant of a killed run
+or of a run in flight can make a `not clean` line false. Run the run mode once to recover, or wait
+for the run in flight, and check again. Exit 0: every
+selected record applies. Exit 2: one line `STALE <row>/<plant> [<json file>[<index>]]: <file>:
+<reason>` for each stale record, then a count line. A record of a file that is gone is stale even
+when `--files` does not select it (the run mode refuses it too). `--check` does not run the
+plants: a record can apply and still be green. `--list` still selects and checks nothing. The `agents` CI job
+runs `--check --all` after the self-test, so a forward merge that leaves a stale record goes red at
+once, before the slow gate (`--all`) runs.
 
 ## Forward merges
 

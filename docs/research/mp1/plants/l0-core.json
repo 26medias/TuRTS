@@ -1,0 +1,875 @@
+[
+    {
+        "row": "L0-CORE",
+        "plant": "a-swap-pointer-down-and-up-handlers",
+        "files": [
+            {
+                "file": "crates/turts_interaction/src/lib.rs",
+                "edit": {
+                    "old": "                InputEvent::PointerDown {\n                    button,\n                    px,\n                    over_widget,\n                } => {\n                    self.on_pointer_down(button, px, over_widget, world, now_ms);\n                }\n                InputEvent::PointerMove { px, over_widget } => {\n                    self.on_pointer_move(px, over_widget);\n                }\n                InputEvent::PointerUp {\n                    button,\n                    px,\n                    over_widget,\n                } => {\n                    self.on_pointer_up(\n                        input_index,\n                        button,\n                        px,\n                        over_widget,\n                        world,\n                        view,\n                        now_ms,\n                        &mut effects,\n                    );\n                }\n",
+                    "new": "                InputEvent::PointerDown {\n                    button,\n                    px,\n                    over_widget,\n                } => {\n                    self.on_pointer_up(\n                        input_index,\n                        button,\n                        px,\n                        over_widget,\n                        world,\n                        view,\n                        now_ms,\n                        &mut effects,\n                    );\n                }\n                InputEvent::PointerMove { px, over_widget } => {\n                    self.on_pointer_move(px, over_widget);\n                }\n                InputEvent::PointerUp {\n                    button,\n                    px,\n                    over_widget,\n                } => {\n                    self.on_pointer_down(button, px, over_widget, world, now_ms);\n                }\n"
+                }
+            }
+        ],
+        "command": [
+            "cargo",
+            "test",
+            "-p",
+            "turts_interaction",
+            "--locked",
+            "--test",
+            "km3",
+            "--",
+            "--exact",
+            "shift_click_toggles"
+        ],
+        "env": {},
+        "headed": false,
+        "expected_red": "toggle baseline must contain the clicked unit before Shift+click",
+        "exit": 101,
+        "expected_selected": "shift_click_toggles",
+        "commit": "2c188c1079b9c1a5452863ae183360ea8ffaa316"
+    },
+    {
+        "row": "L0-CORE",
+        "plant": "c-step-proof-sees-a-dropped-return",
+        "files": [
+            {
+                "file": "crates/turts_interaction/src/lib.rs",
+                "edit": {
+                    "old": "        if *over_widget || down_button != *button {\n            return;\n        }\n",
+                    "new": "        if *over_widget || down_button != *button {}\n"
+                }
+            }
+        ],
+        "command": [
+            "bash",
+            "-c",
+            "d=$(mktemp -d) && git show 9044820:crates/turts_interaction/src/lib.rs > \"$d/old.rs\" && python3 -I -B docs/research/mp1/l0-core/step_equal.py --old \"$d/old.rs\" --new crates/turts_interaction/src/lib.rs --hook placement::update=crates/turts_interaction/src/placement.rs --hook hints::update=crates/turts_interaction/src/hints.rs --hook alerts::update=crates/turts_interaction/src/alerts.rs --intercept placement::intercept=crates/turts_interaction/src/placement.rs --arm-hook Placement=placement::on_input=crates/turts_interaction/src/placement.rs --arm-hook Hint=hints::on_input=crates/turts_interaction/src/hints.rs --arm-hook Alert=alerts::on_input=crates/turts_interaction/src/alerts.rs; r=$?; rm -rf \"$d\"; exit $r"
+        ],
+        "env": {},
+        "headed": false,
+        "expected_red": "RESULT DIFFERENT",
+        "exit": 1,
+        "commit": "2c188c1079b9c1a5452863ae183360ea8ffaa316"
+    },
+    {
+        "row": "L0-CORE",
+        "plant": "c-step-proof-sees-an-argument-changed-to-0",
+        "files": [
+            {
+                "file": "crates/turts_interaction/src/lib.rs",
+                "edit": {
+                    "old": "self.on_ui_action(input_index, name, world, view, now_ms, &mut effects);",
+                    "new": "self.on_ui_action(0, name, world, view, now_ms, &mut effects);"
+                }
+            }
+        ],
+        "command": [
+            "bash",
+            "-c",
+            "d=$(mktemp -d) && git show 9044820:crates/turts_interaction/src/lib.rs > \"$d/old.rs\" && python3 -I -B docs/research/mp1/l0-core/step_equal.py --old \"$d/old.rs\" --new crates/turts_interaction/src/lib.rs --hook placement::update=crates/turts_interaction/src/placement.rs --hook hints::update=crates/turts_interaction/src/hints.rs --hook alerts::update=crates/turts_interaction/src/alerts.rs --intercept placement::intercept=crates/turts_interaction/src/placement.rs --arm-hook Placement=placement::on_input=crates/turts_interaction/src/placement.rs --arm-hook Hint=hints::on_input=crates/turts_interaction/src/hints.rs --arm-hook Alert=alerts::on_input=crates/turts_interaction/src/alerts.rs; r=$?; rm -rf \"$d\"; exit $r"
+        ],
+        "env": {},
+        "headed": false,
+        "expected_red": "argument `0` for parameter `input_index`",
+        "exit": 1,
+        "commit": "2c188c1079b9c1a5452863ae183360ea8ffaa316"
+    },
+    {
+        "row": "L0-CORE",
+        "plant": "c-step-proof-sees-the-intercept-removed",
+        "files": [
+            {
+                "file": "crates/turts_interaction/src/lib.rs",
+                "edit": {
+                    "old": "            if placement::intercept(self, input_index, event, world, view, now_ms, &mut effects) {\n                continue;\n            }\n",
+                    "new": ""
+                }
+            }
+        ],
+        "command": [
+            "bash",
+            "-c",
+            "d=$(mktemp -d) && git show 9044820:crates/turts_interaction/src/lib.rs > \"$d/old.rs\" && python3 -I -B docs/research/mp1/l0-core/step_equal.py --old \"$d/old.rs\" --new crates/turts_interaction/src/lib.rs --hook placement::update=crates/turts_interaction/src/placement.rs --hook hints::update=crates/turts_interaction/src/hints.rs --hook alerts::update=crates/turts_interaction/src/alerts.rs --intercept placement::intercept=crates/turts_interaction/src/placement.rs --arm-hook Placement=placement::on_input=crates/turts_interaction/src/placement.rs --arm-hook Hint=hints::on_input=crates/turts_interaction/src/hints.rs --arm-hook Alert=alerts::on_input=crates/turts_interaction/src/alerts.rs; r=$?; rm -rf \"$d\"; exit $r"
+        ],
+        "env": {},
+        "headed": false,
+        "expected_red": "intercept calls found [], expected ['placement::intercept']",
+        "exit": 1,
+        "commit": "2c188c1079b9c1a5452863ae183360ea8ffaa316"
+    },
+    {
+        "row": "L0-CORE",
+        "plant": "m1-intercept-ignores-the-flag",
+        "files": [
+            {
+                "file": "crates/turts_interaction/src/placement.rs",
+                "edit": {
+                    "old": ") -> bool {\n    core.placement.taking_input\n}",
+                    "new": ") -> bool {\n    false\n}"
+                }
+            }
+        ],
+        "command": [
+            "cargo",
+            "test",
+            "-p",
+            "turts_interaction",
+            "--locked",
+            "--lib",
+            "--",
+            "hook_tests"
+        ],
+        "env": {},
+        "headed": false,
+        "expected_red": "a right click in the placement mode must send no order",
+        "exit": 101,
+        "expected_selected": 2,
+        "commit": "b08a8f9ea45bec59aa1da22bca16a06cbae9bf63"
+    },
+    {
+        "row": "L0-CORE",
+        "plant": "m1-intercept-always-takes-the-input",
+        "files": [
+            {
+                "file": "crates/turts_interaction/src/placement.rs",
+                "edit": {
+                    "old": ") -> bool {\n    core.placement.taking_input\n}",
+                    "new": ") -> bool {\n    true\n}"
+                }
+            }
+        ],
+        "command": [
+            "cargo",
+            "test",
+            "-p",
+            "turts_interaction",
+            "--locked",
+            "--lib",
+            "--",
+            "hook_tests"
+        ],
+        "env": {},
+        "headed": false,
+        "expected_red": "the setup click must select unit 1 while the hook takes nothing",
+        "exit": 101,
+        "expected_selected": 2,
+        "commit": "b08a8f9ea45bec59aa1da22bca16a06cbae9bf63"
+    },
+    {
+        "row": "L0-CORE",
+        "plant": "g-placement-update-adds-an-effect",
+        "files": [
+            {
+                "file": "crates/turts_interaction/src/placement.rs",
+                "edit": {
+                    "old": "pub fn update(\n    _core: &mut Core,\n    _events: &[InputEvent],\n    _world: &dyn WorldView,\n    _view: &Viewport,\n    _now_ms: u64,\n    _effects: &mut Vec<Effect>,\n) {\n}",
+                    "new": "pub fn update(\n    _core: &mut Core,\n    _events: &[InputEvent],\n    _world: &dyn WorldView,\n    _view: &Viewport,\n    _now_ms: u64,\n    effects: &mut Vec<Effect>,\n) {\n    effects.push(Effect::SelectionChanged);\n}"
+                }
+            }
+        ],
+        "command": [
+            "cargo",
+            "test",
+            "-p",
+            "turts_interaction",
+            "--locked",
+            "--test",
+            "l0_core_stubs"
+        ],
+        "env": {},
+        "headed": false,
+        "expected_red": "placement::update must add no effect: [SelectionChanged]",
+        "exit": 101,
+        "expected_selected": 6,
+        "commit": "2c188c1079b9c1a5452863ae183360ea8ffaa316"
+    },
+    {
+        "row": "L0-CORE",
+        "plant": "g-placement-on-input-adds-an-effect",
+        "files": [
+            {
+                "file": "crates/turts_interaction/src/placement.rs",
+                "edit": {
+                    "old": "pub fn on_input(\n    _core: &mut Core,\n    _input: &Input,\n    _world: &dyn WorldView,\n    _view: &Viewport,\n    _now_ms: u64,\n    _effects: &mut Vec<Effect>,\n) {\n}",
+                    "new": "pub fn on_input(\n    _core: &mut Core,\n    _input: &Input,\n    _world: &dyn WorldView,\n    _view: &Viewport,\n    _now_ms: u64,\n    effects: &mut Vec<Effect>,\n) {\n    effects.push(Effect::SelectionChanged);\n}"
+                }
+            }
+        ],
+        "command": [
+            "cargo",
+            "test",
+            "-p",
+            "turts_interaction",
+            "--locked",
+            "--test",
+            "l0_core_stubs"
+        ],
+        "env": {},
+        "headed": false,
+        "expected_red": "the owner handlers must add no effect",
+        "exit": 101,
+        "expected_selected": 6,
+        "commit": "2c188c1079b9c1a5452863ae183360ea8ffaa316"
+    },
+    {
+        "row": "L0-CORE",
+        "plant": "g-hints-update-adds-an-effect",
+        "files": [
+            {
+                "file": "crates/turts_interaction/src/hints.rs",
+                "edit": {
+                    "old": "pub fn update(\n    _core: &mut Core,\n    _events: &[InputEvent],\n    _world: &dyn WorldView,\n    _view: &Viewport,\n    _now_ms: u64,\n    _effects: &mut Vec<Effect>,\n) {\n}",
+                    "new": "pub fn update(\n    _core: &mut Core,\n    _events: &[InputEvent],\n    _world: &dyn WorldView,\n    _view: &Viewport,\n    _now_ms: u64,\n    effects: &mut Vec<Effect>,\n) {\n    effects.push(Effect::SelectionChanged);\n}"
+                }
+            }
+        ],
+        "command": [
+            "cargo",
+            "test",
+            "-p",
+            "turts_interaction",
+            "--locked",
+            "--test",
+            "l0_core_stubs"
+        ],
+        "env": {},
+        "headed": false,
+        "expected_red": "hints::update must add no effect: [SelectionChanged]",
+        "exit": 101,
+        "expected_selected": 6,
+        "commit": "2c188c1079b9c1a5452863ae183360ea8ffaa316"
+    },
+    {
+        "row": "L0-CORE",
+        "plant": "g-hints-on-input-adds-an-effect",
+        "files": [
+            {
+                "file": "crates/turts_interaction/src/hints.rs",
+                "edit": {
+                    "old": "pub fn on_input(\n    _core: &mut Core,\n    _input: &Input,\n    _world: &dyn WorldView,\n    _view: &Viewport,\n    _now_ms: u64,\n    _effects: &mut Vec<Effect>,\n) {\n}",
+                    "new": "pub fn on_input(\n    _core: &mut Core,\n    _input: &Input,\n    _world: &dyn WorldView,\n    _view: &Viewport,\n    _now_ms: u64,\n    effects: &mut Vec<Effect>,\n) {\n    effects.push(Effect::SelectionChanged);\n}"
+                }
+            }
+        ],
+        "command": [
+            "cargo",
+            "test",
+            "-p",
+            "turts_interaction",
+            "--locked",
+            "--test",
+            "l0_core_stubs"
+        ],
+        "env": {},
+        "headed": false,
+        "expected_red": "the owner handlers must add no effect",
+        "exit": 101,
+        "expected_selected": 6,
+        "commit": "2c188c1079b9c1a5452863ae183360ea8ffaa316"
+    },
+    {
+        "row": "L0-CORE",
+        "plant": "g-alerts-update-adds-an-effect",
+        "files": [
+            {
+                "file": "crates/turts_interaction/src/alerts.rs",
+                "edit": {
+                    "old": "pub fn update(\n    _core: &mut Core,\n    _events: &[InputEvent],\n    _world: &dyn WorldView,\n    _view: &Viewport,\n    _now_ms: u64,\n    _effects: &mut Vec<Effect>,\n) {\n}",
+                    "new": "pub fn update(\n    _core: &mut Core,\n    _events: &[InputEvent],\n    _world: &dyn WorldView,\n    _view: &Viewport,\n    _now_ms: u64,\n    effects: &mut Vec<Effect>,\n) {\n    effects.push(Effect::SelectionChanged);\n}"
+                }
+            }
+        ],
+        "command": [
+            "cargo",
+            "test",
+            "-p",
+            "turts_interaction",
+            "--locked",
+            "--test",
+            "l0_core_stubs"
+        ],
+        "env": {},
+        "headed": false,
+        "expected_red": "alerts::update must add no effect: [SelectionChanged]",
+        "exit": 101,
+        "expected_selected": 6,
+        "commit": "2c188c1079b9c1a5452863ae183360ea8ffaa316"
+    },
+    {
+        "row": "L0-CORE",
+        "plant": "g-alerts-on-input-adds-an-effect",
+        "files": [
+            {
+                "file": "crates/turts_interaction/src/alerts.rs",
+                "edit": {
+                    "old": "pub fn on_input(\n    _core: &mut Core,\n    _input: &Input,\n    _world: &dyn WorldView,\n    _view: &Viewport,\n    _now_ms: u64,\n    _effects: &mut Vec<Effect>,\n) {\n}",
+                    "new": "pub fn on_input(\n    _core: &mut Core,\n    _input: &Input,\n    _world: &dyn WorldView,\n    _view: &Viewport,\n    _now_ms: u64,\n    effects: &mut Vec<Effect>,\n) {\n    effects.push(Effect::SelectionChanged);\n}"
+                }
+            }
+        ],
+        "command": [
+            "cargo",
+            "test",
+            "-p",
+            "turts_interaction",
+            "--locked",
+            "--test",
+            "l0_core_stubs"
+        ],
+        "env": {},
+        "headed": false,
+        "expected_red": "the owner handlers must add no effect",
+        "exit": 101,
+        "expected_selected": 6,
+        "commit": "2c188c1079b9c1a5452863ae183360ea8ffaa316"
+    },
+    {
+        "row": "L0-CORE",
+        "plant": "b-widget-list-source-stub-returns-a-value",
+        "files": [
+            {
+                "file": "crates/turts_client/src/widgets/sources/hud.rs",
+                "edit": {
+                    "old": "pub(in crate::widgets) fn source_sites(_context: SourceContext<'_>) -> SourceData {\n    no_rows()\n}",
+                    "new": "pub(in crate::widgets) fn source_sites(_context: SourceContext<'_>) -> SourceData {\n    SourceData {\n        scalar: Some(serde_json::json!(1)),\n        items: Vec::new(),\n    }\n}"
+                }
+            }
+        ],
+        "command": [
+            "cargo",
+            "test",
+            "-p",
+            "turts_client",
+            "--locked",
+            "--lib",
+            "--",
+            "stub_contract",
+            "stub_tests",
+            "effect_family_stubs",
+            "owner_effect"
+        ],
+        "env": {},
+        "headed": false,
+        "expected_red": "Sites must have no rows until its owner builds it",
+        "exit": 101,
+        "expected_selected": 13,
+        "commit": "2c188c1079b9c1a5452863ae183360ea8ffaa316"
+    },
+    {
+        "row": "L0-CORE",
+        "plant": "b-widget-predicate-stub-holds",
+        "files": [
+            {
+                "file": "crates/turts_client/src/widgets/sources/place.rs",
+                "edit": {
+                    "old": "predicate_placing(_context: &SourceContext<'_>) -> bool {\n    false\n}",
+                    "new": "predicate_placing(_context: &SourceContext<'_>) -> bool {\n    true\n}"
+                }
+            }
+        ],
+        "command": [
+            "cargo",
+            "test",
+            "-p",
+            "turts_client",
+            "--locked",
+            "--lib",
+            "--",
+            "stub_contract",
+            "stub_tests",
+            "effect_family_stubs",
+            "owner_effect"
+        ],
+        "env": {},
+        "headed": false,
+        "expected_red": "Placing must not hold until its owner builds it",
+        "exit": 101,
+        "expected_selected": 13,
+        "commit": "2c188c1079b9c1a5452863ae183360ea8ffaa316"
+    },
+    {
+        "row": "L0-CORE",
+        "plant": "b-widget-primary-stub-returns-a-value",
+        "files": [
+            {
+                "file": "crates/turts_client/src/widgets/sources/unit_hud.rs",
+                "edit": {
+                    "old": "primary_cargo(_context: SourceContext<'_>) -> serde_json::Value {\n    serde_json::Value::Null\n}",
+                    "new": "primary_cargo(_context: SourceContext<'_>) -> serde_json::Value {\n    serde_json::json!(1)\n}"
+                }
+            }
+        ],
+        "command": [
+            "cargo",
+            "test",
+            "-p",
+            "turts_client",
+            "--locked",
+            "--lib",
+            "--",
+            "stub_contract",
+            "stub_tests",
+            "effect_family_stubs",
+            "owner_effect"
+        ],
+        "env": {},
+        "headed": false,
+        "expected_red": "SelectionPrimary(Cargo) must read null until its owner builds it",
+        "exit": 101,
+        "expected_selected": 13,
+        "commit": "2c188c1079b9c1a5452863ae183360ea8ffaa316"
+    },
+    {
+        "row": "L0-CORE",
+        "plant": "b-widget-activation-stub-queues-an-input",
+        "files": [
+            {
+                "file": "crates/turts_client/src/widgets/activation/place.rs",
+                "edit": {
+                    "old": "    _queue: &mut CoreInputQueue,\n    _state: &ReplicaState,\n    _acquired: Option<&AcquiredPackages>,\n) {\n}",
+                    "new": "    queue: &mut CoreInputQueue,\n    _state: &ReplicaState,\n    _acquired: Option<&AcquiredPackages>,\n) {\n    queue\n        .0\n        .push(turts_interaction::InputEvent::UiAction { name: \"place\".into() });\n}"
+                }
+            }
+        ],
+        "command": [
+            "cargo",
+            "test",
+            "-p",
+            "turts_client",
+            "--locked",
+            "--lib",
+            "--",
+            "stub_contract",
+            "stub_tests",
+            "effect_family_stubs",
+            "owner_effect"
+        ],
+        "env": {},
+        "headed": false,
+        "expected_red": "must queue no input until its owner builds it",
+        "exit": 101,
+        "expected_selected": 13,
+        "commit": "2c188c1079b9c1a5452863ae183360ea8ffaa316"
+    },
+    {
+        "row": "L0-CORE",
+        "plant": "h1-focus-alert-stub-queues-an-input",
+        "files": [
+            {
+                "file": "crates/turts_client/src/widgets/activation/alert.rs",
+                "edit": {
+                    "old": "    _queue: &mut CoreInputQueue,\n    _state: &ReplicaState,\n    _acquired: Option<&AcquiredPackages>,\n) {\n}",
+                    "new": "    queue: &mut CoreInputQueue,\n    _state: &ReplicaState,\n    _acquired: Option<&AcquiredPackages>,\n) {\n    queue\n        .0\n        .push(turts_interaction::InputEvent::UiAction { name: \"focus\".into() });\n}"
+                }
+            }
+        ],
+        "command": [
+            "cargo",
+            "test",
+            "-p",
+            "turts_client",
+            "--locked",
+            "--lib",
+            "--",
+            "stub_contract",
+            "stub_tests",
+            "effect_family_stubs",
+            "owner_effect"
+        ],
+        "env": {},
+        "headed": false,
+        "expected_red": "FocusAlert { x: 3.0, y: 4.0, unit: Some(1) } must queue no input until its owner builds it",
+        "exit": 101,
+        "expected_selected": 13,
+        "commit": "2c188c1079b9c1a5452863ae183360ea8ffaa316"
+    },
+    {
+        "row": "L0-CORE",
+        "plant": "l1-leave-stub-queues-an-input",
+        "files": [
+            {
+                "file": "crates/turts_client/src/widgets/activation/leave.rs",
+                "edit": {
+                    "old": "    _queue: &mut CoreInputQueue,\n    _state: &ReplicaState,\n    _acquired: Option<&AcquiredPackages>,\n) {\n}",
+                    "new": "    queue: &mut CoreInputQueue,\n    _state: &ReplicaState,\n    _acquired: Option<&AcquiredPackages>,\n) {\n    queue\n        .0\n        .push(turts_interaction::InputEvent::UiAction { name: \"leave\".into() });\n}"
+                }
+            }
+        ],
+        "command": [
+            "cargo",
+            "test",
+            "-p",
+            "turts_client",
+            "--locked",
+            "--lib",
+            "--",
+            "stub_contract",
+            "stub_tests",
+            "effect_family_stubs",
+            "owner_effect"
+        ],
+        "env": {},
+        "headed": false,
+        "expected_red": "Input { name: \"leave_match\" } must queue no input until its owner builds it",
+        "exit": 101,
+        "expected_selected": 13,
+        "commit": "2c188c1079b9c1a5452863ae183360ea8ffaa316"
+    },
+    {
+        "row": "L0-CORE",
+        "plant": "l1-leave-guard-swallows-other-inputs",
+        "files": [
+            {
+                "file": "crates/turts_client/src/widgets/activation.rs",
+                "edit": {
+                    "old": "primitives::WidgetAction::Input { name } if name == \"leave_match\" => {",
+                    "new": "primitives::WidgetAction::Input { name } if name.len() > 0 => {"
+                }
+            }
+        ],
+        "command": [
+            "cargo",
+            "test",
+            "-p",
+            "turts_client",
+            "--locked",
+            "--lib",
+            "--",
+            "stub_contract",
+            "stub_tests",
+            "effect_family_stubs",
+            "owner_effect"
+        ],
+        "env": {},
+        "headed": false,
+        "expected_red": "left: []",
+        "exit": 101,
+        "expected_selected": 13,
+        "commit": "2c188c1079b9c1a5452863ae183360ea8ffaa316"
+    },
+    {
+        "row": "L0-CORE",
+        "plant": "e-alert-trigger-stub-raises-an-alert",
+        "files": [
+            {
+                "file": "crates/turts_client/src/feedback/alert_state.rs",
+                "edit": {
+                    "old": "pub(super) fn supply_short(\n    _current: &Replica,\n    _previous: Option<&Replica>,\n    _slot: u8,\n    _rule: &AlertDef,\n    _runtime: &mut FeedbackRuntime,\n) -> Vec<u32> {\n    Vec::new()\n}",
+                    "new": "pub(super) fn supply_short(\n    current: &Replica,\n    _previous: Option<&Replica>,\n    _slot: u8,\n    _rule: &AlertDef,\n    _runtime: &mut FeedbackRuntime,\n) -> Vec<u32> {\n    current.units.keys().copied().collect()\n}"
+                }
+            }
+        ],
+        "command": [
+            "cargo",
+            "test",
+            "-p",
+            "turts_client",
+            "--locked",
+            "--lib",
+            "--",
+            "stub_contract",
+            "stub_tests",
+            "effect_family_stubs",
+            "owner_effect"
+        ],
+        "env": {},
+        "headed": false,
+        "expected_red": "must raise no alert until its owner builds it",
+        "exit": 101,
+        "expected_selected": 13,
+        "commit": "2c188c1079b9c1a5452863ae183360ea8ffaa316"
+    },
+    {
+        "row": "L0-CORE",
+        "plant": "e-connection-trigger-stub-raises-an-alert",
+        "files": [
+            {
+                "file": "crates/turts_client/src/feedback/alert_connection.rs",
+                "edit": {
+                    "old": "pub(super) fn slot_reconnected(\n    _current: &Replica,\n    _previous: Option<&Replica>,\n    _slot: u8,\n    _rule: &AlertDef,\n    _runtime: &mut FeedbackRuntime,\n) -> Vec<u32> {\n    Vec::new()\n}",
+                    "new": "pub(super) fn slot_reconnected(\n    current: &Replica,\n    _previous: Option<&Replica>,\n    _slot: u8,\n    _rule: &AlertDef,\n    _runtime: &mut FeedbackRuntime,\n) -> Vec<u32> {\n    current.units.keys().copied().collect()\n}"
+                }
+            }
+        ],
+        "command": [
+            "cargo",
+            "test",
+            "-p",
+            "turts_client",
+            "--locked",
+            "--lib",
+            "--",
+            "stub_contract",
+            "stub_tests",
+            "effect_family_stubs",
+            "owner_effect"
+        ],
+        "env": {},
+        "headed": false,
+        "expected_red": "must raise no alert until its owner builds it",
+        "exit": 101,
+        "expected_selected": 13,
+        "commit": "2c188c1079b9c1a5452863ae183360ea8ffaa316"
+    },
+    {
+        "row": "L0-CORE",
+        "plant": "d-effect-family-placement-records",
+        "files": [
+            {
+                "file": "crates/turts_client/src/core_adapter/effects/placement.rs",
+                "edit": {
+                    "old": "pub(in crate::core_adapter) fn apply(\n    _output: turts_interaction::placement::Output,\n    _runtime: &mut CoreRuntime,\n) {\n}",
+                    "new": "pub(in crate::core_adapter) fn apply(\n    _output: turts_interaction::placement::Output,\n    runtime: &mut CoreRuntime,\n) {\n    runtime.markers.push(serde_json::Value::Null);\n}"
+                }
+            }
+        ],
+        "command": [
+            "cargo",
+            "test",
+            "-p",
+            "turts_client",
+            "--locked",
+            "--lib",
+            "--",
+            "stub_contract",
+            "stub_tests",
+            "effect_family_stubs",
+            "owner_effect"
+        ],
+        "env": {},
+        "headed": false,
+        "expected_red": "the Placement (UI-PLACE) family must record nothing before its owner builds it",
+        "exit": 101,
+        "expected_selected": 13,
+        "commit": "2c188c1079b9c1a5452863ae183360ea8ffaa316"
+    },
+    {
+        "row": "L0-CORE",
+        "plant": "d-effect-family-hint-records",
+        "files": [
+            {
+                "file": "crates/turts_client/src/core_adapter/effects/hint.rs",
+                "edit": {
+                    "old": "pub(in crate::core_adapter) fn apply(\n    _output: turts_interaction::hints::Output,\n    _runtime: &mut CoreRuntime,\n) {\n}",
+                    "new": "pub(in crate::core_adapter) fn apply(\n    _output: turts_interaction::hints::Output,\n    runtime: &mut CoreRuntime,\n) {\n    runtime.markers.push(serde_json::Value::Null);\n}"
+                }
+            }
+        ],
+        "command": [
+            "cargo",
+            "test",
+            "-p",
+            "turts_client",
+            "--locked",
+            "--lib",
+            "--",
+            "stub_contract",
+            "stub_tests",
+            "effect_family_stubs",
+            "owner_effect"
+        ],
+        "env": {},
+        "headed": false,
+        "expected_red": "the Hint (UI-HINT) family must record nothing before its owner builds it",
+        "exit": 101,
+        "expected_selected": 13,
+        "commit": "2c188c1079b9c1a5452863ae183360ea8ffaa316"
+    },
+    {
+        "row": "L0-CORE",
+        "plant": "l1-cancel-move-proof-and-test",
+        "files": [
+            {
+                "file": "crates/turts_client/src/widgets/activation/cancel.rs",
+                "edit": {
+                    "old": ".filter(|unit| unit.owner_slot == slot)",
+                    "new": ".filter(|unit| unit.owner_slot != slot)"
+                }
+            }
+        ],
+        "command": [
+            "cargo",
+            "test",
+            "-p",
+            "turts_client",
+            "--locked",
+            "--test",
+            "widgets_lifecycle",
+            "--",
+            "--exact",
+            "installed_cancel_activation_skips_foreign_first_job_order_and_keeps_job_identity"
+        ],
+        "env": {},
+        "headed": false,
+        "expected_red": "the installed queue button sends the qualified job order allowed for its producer",
+        "exit": 101,
+        "expected_selected": "installed_cancel_activation_skips_foreign_first_job_order_and_keeps_job_identity",
+        "commit": "2c188c1079b9c1a5452863ae183360ea8ffaa316"
+    },
+    {
+        "row": "L0-CORE",
+        "plant": "l1-cancel-move-proof-is-red-on-a-changed-body",
+        "files": [
+            {
+                "file": "crates/turts_client/src/widgets/activation/cancel.rs",
+                "edit": {
+                    "old": ".filter(|unit| unit.owner_slot == slot)",
+                    "new": ".filter(|unit| unit.owner_slot != slot)"
+                }
+            }
+        ],
+        "command": [
+            "bash",
+            "-c",
+            "d=$(mktemp -d) && git show 9044820:crates/turts_client/src/widgets/activation.rs > \"$d/old.rs\" && python3 -I -B docs/research/mp1/l0-core/move_equal.py \"$d/old.rs\" crates/turts_client/src/widgets/activation/cancel.rs; r=$?; rm -rf \"$d\"; exit $r"
+        ],
+        "env": {},
+        "headed": false,
+        "expected_red": "RESULT DIFFERENT",
+        "exit": 1,
+        "commit": "2c188c1079b9c1a5452863ae183360ea8ffaa316"
+    },
+    {
+        "row": "L0-CORE",
+        "plant": "v-placement-draw-adds-a-visual",
+        "files": [
+            {
+                "file": "crates/turts_client/src/visuals/placement.rs",
+                "edit": {
+                    "old": "pub(super) fn draw(_desired: &mut DesiredVisuals, _feed: &Feed) {}",
+                    "new": "pub(super) fn draw(desired: &mut DesiredVisuals, _feed: &Feed) {\n    desired.insert(\n        VisualId {\n            kind: VisualKind::Hover,\n            unit: 1,\n            ordinal: 0,\n            generation: 0,\n            identity: 0,\n        },\n        (\n            Handle::default(),\n            VisualMaterial::Standard(Handle::default()),\n            Transform::default(),\n        ),\n    );\n}"
+                }
+            }
+        ],
+        "command": [
+            "cargo",
+            "test",
+            "-p",
+            "turts_client",
+            "--locked",
+            "--lib",
+            "--",
+            "--exact",
+            "visuals::scene_tests::scene_oracle_matches_the_committed_fixture"
+        ],
+        "env": {},
+        "headed": false,
+        "expected_red": "the scene record differs from the fixture",
+        "exit": 101,
+        "expected_selected": "visuals::scene_tests::scene_oracle_matches_the_committed_fixture",
+        "commit": "2c188c1079b9c1a5452863ae183360ea8ffaa316"
+    },
+    {
+        "row": "L0-CORE",
+        "plant": "v-effects-draw-adds-a-visual",
+        "files": [
+            {
+                "file": "crates/turts_client/src/visuals/effects.rs",
+                "edit": {
+                    "old": "pub(super) fn draw(_desired: &mut DesiredVisuals, _pool: &mut Pool) {}",
+                    "new": "pub(super) fn draw(desired: &mut DesiredVisuals, _pool: &mut Pool) {\n    desired.insert(\n        VisualId {\n            kind: VisualKind::Hover,\n            unit: 1,\n            ordinal: 0,\n            generation: 0,\n            identity: 0,\n        },\n        (\n            Handle::default(),\n            VisualMaterial::Standard(Handle::default()),\n            Transform::default(),\n        ),\n    );\n}"
+                }
+            }
+        ],
+        "command": [
+            "cargo",
+            "test",
+            "-p",
+            "turts_client",
+            "--locked",
+            "--lib",
+            "--",
+            "--exact",
+            "visuals::scene_tests::scene_oracle_matches_the_committed_fixture"
+        ],
+        "env": {},
+        "headed": false,
+        "expected_red": "the scene record differs from the fixture",
+        "exit": 101,
+        "expected_selected": "visuals::scene_tests::scene_oracle_matches_the_committed_fixture",
+        "commit": "2c188c1079b9c1a5452863ae183360ea8ffaa316"
+    },
+    {
+        "row": "L0-CORE",
+        "plant": "f-owner-facts-are-new-for-each-frame",
+        "files": [
+            {
+                "file": "crates/turts_client/src/core_adapter.rs",
+                "edit": {
+                    "old": "        std::mem::take(&mut runtime.facts),\n",
+                    "new": "        Default::default(),\n"
+                }
+            }
+        ],
+        "command": [
+            "cargo",
+            "test",
+            "-p",
+            "turts_client",
+            "--locked",
+            "--lib",
+            "--",
+            "--exact",
+            "core_adapter::adapter_tests::owner_facts_are_kept_from_frame_to_frame"
+        ],
+        "env": {},
+        "headed": false,
+        "expected_red": "the owner facts must be kept: each frame builds the same value once",
+        "exit": 101,
+        "expected_selected": "core_adapter::adapter_tests::owner_facts_are_kept_from_frame_to_frame",
+        "commit": "2b228562bb566d3b3e0b752881e9ff7efb1cea20"
+    },
+    {
+        "row": "L0-CORE",
+        "plant": "t-taking-input-default-true-is-refused-by-the-script",
+        "files": [
+            {
+                "file": "crates/turts_interaction/src/placement.rs",
+                "edit": {
+                    "old": "#[derive(Debug, Clone, Default, PartialEq)]\npub struct State {\n    pub taking_input: bool,\n}",
+                    "new": "#[derive(Debug, Clone, PartialEq)]\npub struct State {\n    pub taking_input: bool,\n}\n\nimpl Default for State {\n    fn default() -> Self {\n        Self { taking_input: true }\n    }\n}"
+                }
+            }
+        ],
+        "command": [
+            "bash",
+            "docs/research/mp1/l0-core/taking_input.sh"
+        ],
+        "env": {},
+        "headed": false,
+        "expected_red": "TAKING-INPUT-USED",
+        "exit": 1,
+        "commit": "2b228562bb566d3b3e0b752881e9ff7efb1cea20"
+    },
+    {
+        "row": "L0-CORE",
+        "plant": "t-taking-input-default-true-is-red-in-the-test",
+        "files": [
+            {
+                "file": "crates/turts_interaction/src/placement.rs",
+                "edit": {
+                    "old": "#[derive(Debug, Clone, Default, PartialEq)]\npub struct State {\n    pub taking_input: bool,\n}",
+                    "new": "#[derive(Debug, Clone, PartialEq)]\npub struct State {\n    pub taking_input: bool,\n}\n\nimpl Default for State {\n    fn default() -> Self {\n        Self { taking_input: true }\n    }\n}"
+                }
+            }
+        ],
+        "command": [
+            "cargo",
+            "test",
+            "-p",
+            "turts_interaction",
+            "--locked",
+            "--lib",
+            "--",
+            "hook_tests"
+        ],
+        "env": {},
+        "headed": false,
+        "expected_red": "assertion `left == right` failed: the setup click must select unit 1 while the hook takes nothing",
+        "exit": 101,
+        "expected_selected": 2,
+        "commit": "2b228562bb566d3b3e0b752881e9ff7efb1cea20"
+    }
+]

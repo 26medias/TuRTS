@@ -326,13 +326,23 @@ fn production_output_inserter_without_facing_is_rejected() {
     );
 }
 
+/// Design 6.10 row K7: the M3 rule "a unit with health requires removal" is lifted. It is now the
+/// combination `health without removal` of the version table, so an older edition is refused by
+/// the table (observation change of `L0-API2`: the text and the file are the table's).
 #[test]
 fn health_requires_removal() {
-    rejected(
+    let error = archive(
         &UNIT.replace("health: None", "health: Some((max: 100))"),
         RECIPE,
         TECH,
-        "health",
+        "^0.2.1",
+        &[],
+    )
+    .content()
+    .unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        "forge/manifest.ron: engine_api: `health without removal` needs engine api 0.2.4; `^0.2.1` admits 0.2.3 (written in units/turret.ron: health)"
     );
 }
 fn mobile_weapon_unit() -> String {
@@ -549,16 +559,25 @@ fn two_work_capabilities_on_one_unit() {
     );
     rejected(&unit, RECIPE, TECH, "extractor");
 }
+/// Design 6.10 row K8: the M3 rule "a unit with a queue cannot be removed" is lifted; the
+/// combination `removal with a queue` is a row of the version table (observation change).
 #[test]
 fn removal_on_unit_with_queue() {
-    rejected(
+    let error = archive(
         &UNIT.replace(
             "removal: None",
             "removal: Some((by_command: true, contents: Destroy))",
         ),
         RECIPE,
         TECH,
-        "removal",
+        "^0.2.1",
+        &[],
+    )
+    .content()
+    .unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        "forge/manifest.ron: engine_api: `removal with a queue` needs engine api 0.2.4; `^0.2.1` admits 0.2.3 (written in units/turret.ron: removal)"
     );
 }
 #[test]

@@ -36,6 +36,7 @@ use crate::{
 };
 
 mod effects;
+mod facts;
 use effects::{
     apply_cursor, apply_marker, apply_notice, apply_send, apply_shell_action, apply_sound,
 };
@@ -157,6 +158,8 @@ pub struct CoreRuntime {
     last_effects: Vec<ValueEffect>,
     markers: Vec<serde_json::Value>,
     next_order_intent_id: u64,
+    /// The facts of the owner tasks, kept from frame to frame (`facts.rs`).
+    facts: facts::OwnerFacts,
 }
 
 #[derive(Resource, Debug, Clone, Default)]
@@ -275,6 +278,7 @@ struct FrameWorld {
     index: ContentIndex,
     producible: HashSet<(u32, String)>,
     jobs: HashSet<(u32, u64)>,
+    facts: facts::OwnerFacts,
 }
 impl WorldView for FrameWorld {
     fn units(&self) -> &[UnitView] {
@@ -316,6 +320,12 @@ impl WorldView for FrameWorld {
             .get(content_id)
             .copied()
             .unwrap_or(usize::MAX)
+    }
+    fn placement_facts(&self) -> &turts_interaction::placement::Facts {
+        &self.facts.placement
+    }
+    fn hint_facts(&self) -> &turts_interaction::hints::Facts {
+        &self.facts.hints
     }
     fn can_gather(&self, unit: &UnitView, node: &NodeView) -> bool {
         self.index
@@ -449,6 +459,7 @@ fn frame_world(
     index: ContentIndex,
     preferences: &CorePreferences,
     camera_options: CameraOptions,
+    mut facts: facts::OwnerFacts,
 ) -> Option<FrameWorld> {
     let (welcome, replica, content) = (
         state.welcome?,
@@ -555,6 +566,10 @@ fn frame_world(
         index,
         producible,
         jobs,
+        facts: {
+            facts.build(replica, content);
+            facts
+        },
     })
 }
 
@@ -766,6 +781,7 @@ fn drive_core_adapter(
         runtime.content_index.clone().unwrap_or_default(),
         &preferences,
         camera_configuration.options.clone(),
+        std::mem::take(&mut runtime.facts),
     ) else {
         return;
     };
@@ -1065,6 +1081,8 @@ fn drive_core_adapter(
             Effect::ShellAction { action } => {
                 apply_shell_action(action, &mut runtime);
             }
+            Effect::Placement(output) => effects::placement::apply(output, &mut runtime),
+            Effect::Hint(output) => effects::hint::apply(output, &mut runtime),
             Effect::GroupsChanged | Effect::CameraChanged => {}
             Effect::Send(_) => {}
         }
@@ -1093,6 +1111,9 @@ fn drive_core_adapter(
         *current_transform = transform;
         *current_projection = projection.clone();
     }
+    // The owner facts go back to the runtime, so the next frame's `build` sees what this one left.
+    // (An early return above drops them: the next frame then starts from the default.)
+    runtime.facts = world.facts;
 }
 
 fn apply_frame_clear(mut feeds: ResMut<FrameFeeds>, mut runtime: ResMut<CoreRuntime>) {

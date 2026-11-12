@@ -1,8 +1,11 @@
 //! `UNBUILT_FEATURES`: the 0.2.4 features whose engine behaviour no lane has merged yet (plan
 //! 5.3; design 6.8, "One mod API step"). The packer refuses a package that uses one, with the
-//! text `<package>/<file>: <field path>: `<feature>` is not built in this engine build (task
-//! `<owner>`)`. So the packages `frontier` and `standoff` cannot pack before their mechanisms
-//! exist, and a half-built feature can never run.
+//! text `<package>/<file>: <field path>: `<feature>` is not built in this engine build; leave it
+//! out until an engine build supports it`. The text names no plan task: a modder cannot act on
+//! one, so the owner stays in a comment on each line (orchestrator ruling M1 on the review of
+//! `L0-API1`; design 6.8, "One mod API step", gives the first half of the text). So the packages
+//! `frontier` and `standoff` cannot pack before their mechanisms exist, and a half-built feature
+//! can never run.
 //!
 //! Each feature lane deletes its own lines when it merges, and only those lines (the owner is
 //! in each line). A line with no detector of its own finds its feature in the version table by
@@ -27,7 +30,12 @@ pub(crate) struct UnbuiltLine {
     /// The name in the message. For a line with no `detect` it is the name of a row of the
     /// version table.
     pub(crate) feature: &'static str,
-    /// The task of plan 5.3 that removes the line.
+    /// The task of plan 5.3 that removes the line. It is for the code and the tests only: the
+    /// message never prints it.
+    #[allow(
+        dead_code,
+        reason = "the owner is for the reader of the code and for the tests; the message names no task"
+    )]
     pub(crate) owner: &'static str,
     /// A detector of its own, for a feature that has no row in the version table (a stricter
     /// use of a variant that a row already covers).
@@ -82,8 +90,8 @@ pub(crate) const UNBUILT_FEATURES: &[UnbuiltLine] = &[
     line("needs: Constructor", "L-CON1"),
     // L-DES: `health without removal` (K7), `removal with a queue` (K8),
     // `cancel_refunds.destroyed` (K5).
-    use_line("health without removal", "L-DES"),
-    use_line("removal with a queue", "L-DES"),
+    line("health without removal", "L-DES"),
+    line("removal with a queue", "L-DES"),
     line("cancel_refunds.destroyed", "L-DES"),
     line("technology cancel_refunds.destroyed", "L-DES"),
     // L-STO: `start_order` (M3), `spawn_order` (U8) with `ground_rally: Ignore`.
@@ -148,17 +156,14 @@ pub(crate) const UNBUILT_FEATURES: &[UnbuiltLine] = &[
     line("Predicate::Placing", "UI-PLACE"),
     // UI-LABEL: `world.unit_labels` (H24, errata E10, E22).
     line("world.unit_labels", "UI-LABEL"),
-    // UI-HUD: `role` (H19), `hotkey` (O8), `card` (O10), `Value::Supply`, `ConstructionQueue`,
-    // `Sites`, `SelectionTypes`, `Notices`, `Predicate::SupplyShort`, `ItemHas`, the item fields
-    // `Role`, `State`, `Paid`, `Refund`, `Badge`.
+    // UI-HUD: `role` (H19), `hotkey` (O8), `card` (O10), `Value::Supply`, the list sources
+    // `ConstructionQueue`, `Sites`, `SelectionTypes`, `Notices` (in `Source` only: orchestrator
+    // ruling M3), `Predicate::SupplyShort`, `ItemHas`, the item fields `Role`, `State`, `Paid`,
+    // `Refund`, `Badge`.
     line("role", "UI-HUD"),
     line("hotkey", "UI-HUD"),
     line("card", "UI-HUD"),
     line("Value::Supply", "UI-HUD"),
-    line("Value::ConstructionQueue", "UI-HUD"),
-    line("Value::Sites", "UI-HUD"),
-    line("Value::SelectionTypes", "UI-HUD"),
-    line("Value::Notices", "UI-HUD"),
     line("Source::ConstructionQueue", "UI-HUD"),
     line("Source::Sites", "UI-HUD"),
     line("Source::SelectionTypes", "UI-HUD"),
@@ -199,9 +204,14 @@ pub(crate) const UNBUILT_FEATURES: &[UnbuiltLine] = &[
     line("cursors.repair", "UI2-HUD"),
     line("cursors.rally", "UI2-HUD"),
     // L-FX-PRES: `exports.visual_effects` (A3), the visual `effects` with `fire` and `death`
-    // (V3, V4).
+    // (V3, V4), and `world.float_text` (H11). L3 of the review of `L0-API1`: no plan task reads the
+    // `float_text` style. Plan 5.3 gives only its `sound` to `FX2`, and the block of `L-FX-PRES`
+    // (plan "Task L-FX-PRES") renders the "+N" float (X14, R14) but names no style. So the line
+    // goes to `L-FX-PRES`, the task that draws the float, until the orchestrator gives the style to
+    // another task; the task that reads the style deletes the line.
     line("exports.visual_effects", "L-FX-PRES"),
     line("effects", "L-FX-PRES"),
+    line("world.float_text", "L-FX-PRES"),
     // FX2: `hit`, `hit_reduced`, `damaged` (V4), the effect `sound` (V3), the `world.float_text`
     // sound (H11), `effects_voices`, `audible_range` (H16).
     line("effects.hit", "FX2"),
@@ -271,8 +281,8 @@ pub(crate) fn check_unbuilt(
                 &manifest.id,
                 &found.path,
                 format!(
-                    "`{}` is not built in this engine build (task `{}`)",
-                    line.feature, line.owner
+                    "`{}` is not built in this engine build; leave it out until an engine build supports it",
+                    line.feature
                 ),
             )
             .with_file(file));
@@ -330,11 +340,11 @@ mod tests {
             ("UI2-CONN", 3),
             ("UI-PLACE", 6),
             ("UI-LABEL", 1),
-            ("UI-HUD", 19),
+            ("UI-HUD", 15),
             ("UI-RESULT", 8),
             ("UI2-RESULT", 1),
             ("UI2-HUD", 12),
-            ("L-FX-PRES", 2),
+            ("L-FX-PRES", 3),
             ("FX2", 7),
             ("UI2-MC", 2),
             ("PRES-MODELS", 2),
@@ -344,7 +354,7 @@ mod tests {
             *got.entry(line.owner).or_default() += 1;
         }
         assert_eq!(got, want);
-        assert_eq!(UNBUILT_FEATURES.len(), 120);
+        assert_eq!(UNBUILT_FEATURES.len(), 117);
     }
 
     /// Each row of 0.2.4 either has an `UNBUILT` line, or is in this list of the rows that the
@@ -361,8 +371,6 @@ mod tests {
         let want = BTreeSet::from([
             // H3: the `states` texts are data, read by nobody yet.
             "states",
-            // H11: `world.float_text` without a sound is plain data (plan 5.3 lists its `sound`).
-            "world.float_text",
             // L1: `Ally` and `Enemy` are served by `turts_rules::relation` in this task.
             "SlotRelation::Ally",
             "SlotRelation::Enemy",
@@ -397,14 +405,10 @@ mod tests {
             // (`constructor` before `constructor.when_short`): the text names the line.
             let text = error.to_string();
             let first = text.split('`').nth(1).unwrap_or_else(|| panic!("{text}"));
-            let first_line = UNBUILT_FEATURES
-                .iter()
-                .find(|l| l.feature == first)
-                .unwrap();
             assert_eq!(
                 text,
                 format!(
-                    "zeta/{file}: {}: `{first}` is not built in this engine build (task `{}`)",
+                    "zeta/{file}: {}: `{first}` is not built in this engine build; leave it out until an engine build supports it",
                     if first == line.feature {
                         path.join(".")
                     } else {
@@ -418,8 +422,7 @@ mod tests {
                             Detect::Raw { path, .. } => path.join("."),
                             _ => panic!("{text}"),
                         }
-                    },
-                    first_line.owner
+                    }
                 ),
                 "line {}",
                 line.feature
@@ -433,7 +436,7 @@ mod tests {
             check_unbuilt(&manifest, None, &raw, UNBUILT_FEATURES, VERSION_TABLE)
                 .unwrap_or_else(|error| panic!("{}, absent: {error}", line.feature));
         }
-        assert_eq!(tested, 55, "the RAW lines");
+        assert_eq!(tested, 56, "the RAW lines");
         let _ = RawDocuments::default();
     }
 

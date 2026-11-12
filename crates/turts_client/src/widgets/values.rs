@@ -236,15 +236,20 @@ pub(super) fn predicate_matches(
         Predicate::GuideOpen => context.guide_open,
         Predicate::Not(inner) => !predicate_matches(inner, context),
         // API 0.2.4 (row H10): the predicates of `UI-HUD`, `UI-PLACE`, `UI-RESULT`, `UI-HINT`
-        // and `UI2-HUD`. Until then none holds (a widget behind one stays hidden).
-        Predicate::ItemHas(_)
-        | Predicate::PrimaryHasValue(_)
-        | Predicate::SupplyShort(_)
-        | Predicate::MatchOver
-        | Predicate::OutcomeIs(_)
-        | Predicate::OutcomeReasonIs(_)
-        | Predicate::Placing
-        | Predicate::HintShown => false,
+        // and `UI2-HUD`. Stubs: none holds (a widget behind one stays hidden) until its owner
+        // builds it.
+        Predicate::ItemHas(field) => sources::hud::predicate_item_has(*field, context),
+        Predicate::PrimaryHasValue(field) => {
+            sources::unit_hud::predicate_primary_has_value(*field, context)
+        }
+        Predicate::SupplyShort(resource) => sources::hud::predicate_supply_short(resource, context),
+        Predicate::MatchOver => sources::result::predicate_match_over(context),
+        Predicate::OutcomeIs(kind) => sources::result::predicate_outcome_is(*kind, context),
+        Predicate::OutcomeReasonIs(kind) => {
+            sources::result::predicate_outcome_reason_is(*kind, context)
+        }
+        Predicate::Placing => sources::place::predicate_placing(context),
+        Predicate::HintShown => sources::hint::predicate_hint_shown(context),
     }
 }
 

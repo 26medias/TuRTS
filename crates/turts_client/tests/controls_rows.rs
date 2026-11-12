@@ -44,6 +44,7 @@ fn binding_rows() -> Vec<(String, String)> {
         guide: &[],
         guide_open: false,
         last_notice: None,
+        core: turts_client::widgets::sources::CoreFeed::empty(),
     };
     sources::read_source(&Source::Bindings, context)
         .items

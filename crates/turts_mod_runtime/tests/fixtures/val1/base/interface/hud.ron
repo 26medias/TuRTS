@@ -1,0 +1,30 @@
+(
+    id: "hud_main",
+    root: [
+        (id: "title", at: Some((anchor: TopLeft, offset: (16.0, 16.0), pivot: None)), size: (w: Px(200.0), h: Px(28.0)), widget: Text(text: Literal("Val1"), font: None, size: 14, colour: "#ffffff", align: Left, wrap: false)),
+    ],
+    tooltip_style: (background: "#000000", colour: "#ffffff", font: None, size: 12),
+    cursors: {},
+    camera: (pitch: 0.7, yaw: 0.0, field_of_view: 60.0, minimum: 10.0, maximum: 100.0, start: MapCentre, height: 40.0, margin: 0.0, pan_speed: 1.0, edge_band: true),
+    light: None,
+    slot_colours: ["#56B4E9", "#D55E00"],
+    world: (ground: "#000000", grid: "#ffffff", selection: "#ffffff", health: "#00ff00", range: "#ffffff", show_range: true,
+        tooltip: (background: "#000000", colour: "#ffffff", font: None, size: 12),
+        health_bar: (width: 32, height: 4, background: "#000000", health: "#00ff00"),
+        placement: Some((valid: "#56B4E9", invalid: "#D55E00", stripes: true)),
+        unit_labels: Some((show: Always, own_only: false, colour: "#ffffff", font: None, size: 14))),
+    alerts: [
+        (id: "a_short", trigger: SupplyShort("val1:power"), kind: State, clear_after: Some(8.0), sound: None, text: "Low power: {unit} is off for {slot}.", minimap_ping: true, cooldown: 45.0, priority: 2, coalesce_radius: 0.0),
+        (id: "a_done", trigger: ProductionComplete, sound_when: QueueEmpty, sound: None, text: "Unit ready", minimap_ping: false, cooldown: 1.0, priority: 0, coalesce_radius: 0.0),
+    ],
+    reasons: {"queue_full": "The queue is full"},
+    units: {},
+    selection_priority: [],
+    guide: [],
+    hints: [
+        (id: "h_build", kind: Step, text: "Select your Command Center, press B.", starts: MatchStarted, done: OwnUnits(units: ["val1:power_station"], state: Any, at_least: 1)),
+        (id: "h_wait", kind: Situation, text: "Waiting.", starts: JobOnHold(secs: 2.0), done: HintDone("h_build")),
+    ],
+    start_selection: Some("val1:command_center"),
+    states: {"slowed": "Slowed"},
+)

@@ -1,15 +1,28 @@
 //! Renderer-independent input and interaction contracts for a player client.
 
+pub mod alerts;
 mod bindings;
 pub mod camera;
 pub mod compose;
 pub mod groups;
+pub mod hints;
 pub mod input_map;
 pub mod minimap;
+pub mod placement;
 pub mod projection;
 pub mod selection;
 pub mod smart;
 mod world_view;
+
+// The integration-test world, shared with the unit tests of the hooks (`hook_tests.rs`).
+#[cfg(test)]
+extern crate self as turts_interaction;
+#[cfg(test)]
+mod hook_tests;
+#[cfg(test)]
+#[allow(dead_code)]
+#[path = "../tests/common/mod.rs"]
+mod test_common;
 
 use bindings::{logical_modifier, physical_modifiers};
 use compose::{intended_units, send_explicit_units};
@@ -47,6 +60,10 @@ pub struct Core {
     /// Bounded evidence of named actions that actually reached the Core dispatch branch.
     dispatch_records: Vec<NamedDispatch>,
     dispatch_records_truncated: usize,
+    /// The state of the tasks that add interaction state: each type is in the file of its owner.
+    placement: placement::State,
+    hints: hints::State,
+    alerts: alerts::State,
 }
 
 /// One named action observed at the interaction dispatch branch.
@@ -87,6 +104,9 @@ impl Core {
             camera_controller: camera::CameraController::default(),
             dispatch_records: Vec::new(),
             dispatch_records_truncated: 0,
+            placement: placement::State::default(),
+            hints: hints::State::default(),
+            alerts: alerts::State::default(),
         }
     }
 
@@ -158,349 +178,96 @@ impl Core {
         let mut ignored_wheel_inputs = Vec::new();
         let mut wheel_camera_actions = Vec::new();
         for (input_index, event) in events.iter().enumerate() {
+            if placement::intercept(self, input_index, event, world, view, now_ms, &mut effects) {
+                continue;
+            }
             match event {
                 InputEvent::UiCapture { allow_shell } => self.begin_ui_capture(*allow_shell),
                 InputEvent::KeyDown { code, mods } => {
-                    if !self.keys.contains(code) {
-                        self.keys.push(code.clone());
-                    }
-                    self.physical_mods = mods.clone();
-                    let modifier_actions = self.modifier_actions_for_key(code, world);
-                    if !modifier_actions.is_empty() {
-                        self.held_modifier_actions
-                            .insert(code.clone(), modifier_actions);
-                    }
-                    let action = self.action_for_key(code, world);
-                    if let Some(action) = action {
-                        self.dispatch_named_action(
-                            &action,
-                            DispatchSource {
-                                input_index,
-                                origin: "key",
-                                code: Some(code),
-                            },
-                            world,
-                            view,
-                            now_ms,
-                            &mut effects,
-                        );
-                    }
+                    self.on_key_down(input_index, code, mods, world, view, now_ms, &mut effects);
                 }
                 InputEvent::KeyUp { code } => {
-                    if self.ui_capture.is_none()
-                        && self
-                            .key_box_gesture
-                            .as_ref()
-                            .is_some_and(|(key, _, _)| key == code)
-                    {
-                        let (_, start, down_ms) =
-                            self.key_box_gesture.take().expect("matched key gesture");
-                        if let Some((px, false)) = self.pointer {
-                            self.complete_selection_gesture(
-                                start,
-                                px,
-                                start.distance(px) > 4.0,
-                                down_ms,
-                                world,
-                                view,
-                                &mut effects,
-                            );
-                        }
-                    }
-                    self.keys.retain(|key| key != code);
-                    self.held_modifier_actions.remove(code);
-                    self.physical_mods = physical_modifiers(&self.keys);
+                    self.on_key_up(code, world, view, &mut effects);
                 }
                 InputEvent::FocusLost => {
-                    self.keys.clear();
-                    self.physical_mods.clear();
-                    self.held_modifier_actions.clear();
-                    self.pointer_down = None;
-                    self.pointer = None;
-                    self.held_buttons.clear();
-                    self.key_box_gesture = None;
+                    self.on_focus_lost();
                 }
                 InputEvent::UiAction { name } => {
-                    if self
-                        .ui_capture
-                        .is_some_and(|allow_shell| !allow_shell || !shell_action(name))
-                    {
-                        continue;
-                    }
-                    if let Some(unit_text) = name.strip_prefix("ui_select:") {
-                        if let Ok(id) = unit_text.parse::<u32>()
-                            && world.units().iter().any(|unit| {
-                                unit.id == UnitId(id) && unit.owner_slot == world.own_slot()
-                            })
-                        {
-                            self.selected.clear();
-                            self.selected.push(UnitId(id));
-                            effects.push(Effect::SelectionChanged);
-                        }
-                    } else if let Some(order) =
-                        world.orders().iter().find(|order| order.id == *name)
-                    {
-                        self.record_named_dispatch(input_index, "ui", None, name, Some(&order.id));
-                        self.dispatch_order(order, world, &mut effects);
-                    } else {
-                        self.dispatch_named_action(
-                            name,
-                            DispatchSource {
-                                input_index,
-                                origin: "ui",
-                                code: None,
-                            },
-                            world,
-                            view,
-                            now_ms,
-                            &mut effects,
-                        );
-                    }
+                    self.on_ui_action(input_index, name, world, view, now_ms, &mut effects);
                 }
                 InputEvent::UiCameraCenter { position } => {
-                    if self.ui_capture.is_some() {
-                        continue;
-                    }
-                    if self
-                        .camera_controller
-                        .centre_world(&mut self.camera, *position, world)
-                    {
-                        effects.push(Effect::CameraChanged);
-                    }
+                    self.on_ui_camera_center(position, world, &mut effects);
                 }
                 InputEvent::UiOrder {
                     order,
                     units,
                     target,
                 } => {
-                    if self.ui_capture.is_some() {
-                        continue;
-                    }
-                    let Some(definition) = world
-                        .orders()
-                        .iter()
-                        .find(|definition| definition.id == *order)
-                    else {
-                        continue;
-                    };
-                    let (target_kind, protocol_target) = match target {
-                        UiOrderTarget::Content(id) => {
-                            (TargetKind::Content, OrderTarget::Content(id.clone()))
-                        }
-                        UiOrderTarget::Job(id) => (TargetKind::Job, OrderTarget::Job(*id)),
-                    };
-                    if definition.target != target_kind {
-                        continue;
-                    }
-                    let Some(valid_units) = intended_units(definition, units, world) else {
-                        continue;
-                    };
-                    let valid_units: Vec<_> = valid_units
-                        .into_iter()
-                        .filter(|id| {
-                            world
-                                .units()
-                                .iter()
-                                .find(|unit| unit.id == *id)
-                                .is_some_and(|unit| match target {
-                                    UiOrderTarget::Content(content) => {
-                                        world.can_produce(unit, content)
-                                    }
-                                    UiOrderTarget::Job(job) => world.has_job(unit, *job),
-                                })
-                        })
-                        .collect();
-                    if valid_units.is_empty() {
-                        continue;
-                    }
-                    let group = if valid_units.len() > 1 {
-                        self.alloc_group()
-                    } else {
-                        0
-                    };
-                    send_explicit_units(
-                        definition,
-                        &valid_units,
-                        protocol_target,
-                        QueueMode::Replace,
-                        group,
-                        &mut effects,
-                    );
+                    self.on_ui_order(order, units, target, world, &mut effects);
                 }
                 InputEvent::RestoreGroups { groups } => {
-                    self.groups = vec![Vec::new(); 10];
-                    for (group, members) in groups {
-                        if !(1..=9).contains(group) {
-                            continue;
-                        }
-                        let mut seen = std::collections::HashSet::new();
-                        self.groups[*group as usize] = members
-                            .iter()
-                            .copied()
-                            .filter(|id| {
-                                seen.insert(*id)
-                                    && world.units().iter().any(|unit| {
-                                        unit.id == *id && unit.owner_slot == world.own_slot()
-                                    })
-                            })
-                            .collect();
-                    }
-                    effects.push(Effect::GroupsChanged);
+                    self.on_restore_groups(groups, world, &mut effects);
                 }
                 InputEvent::PointerDown {
                     button,
                     px,
                     over_widget,
                 } => {
-                    if let Some(allow_shell) = self.ui_capture {
-                        if allow_shell && *button != Button::Left {
-                            self.pointer_down = Some((*button, *px, false, now_ms));
-                        }
-                        continue;
-                    }
-                    self.pointer = Some((*px, *over_widget));
-                    if !over_widget {
-                        if !self.held_buttons.contains(button) {
-                            self.held_buttons.push(*button);
-                        }
-                        let modifiers = self.modifier_actions_for_pointer(*button, world);
-                        if !modifiers.is_empty() {
-                            self.held_modifier_actions
-                                .insert(format!("pointer:{button:?}"), modifiers);
-                        }
-                        self.pointer_down = Some((*button, *px, false, now_ms));
-                    }
+                    self.on_pointer_down(button, px, over_widget, world, now_ms);
                 }
                 InputEvent::PointerMove { px, over_widget } => {
-                    if self.ui_capture.is_some() {
-                        continue;
-                    }
-                    self.pointer = Some((*px, *over_widget));
-                    if let Some((button, start, dragged, down_ms)) = self.pointer_down {
-                        self.pointer_down =
-                            Some((button, start, dragged || start.distance(*px) > 4.0, down_ms));
-                    }
+                    self.on_pointer_move(px, over_widget);
                 }
                 InputEvent::PointerUp {
                     button,
                     px,
                     over_widget,
                 } => {
-                    if self.ui_capture.is_none() {
-                        self.pointer = Some((*px, *over_widget));
-                    }
-                    self.held_buttons.retain(|held| held != button);
-                    self.held_modifier_actions
-                        .remove(&format!("pointer:{button:?}"));
-                    let Some((down_button, start, dragged, down_ms)) = self.pointer_down.take()
-                    else {
-                        continue;
-                    };
-                    if let Some(allow_shell) = self.ui_capture {
-                        if allow_shell
-                            && down_button == *button
-                            && *button != Button::Left
-                            && let Some(action) = self.action_for_pointer(*button, world)
-                            && shell_action(&action)
-                        {
-                            self.dispatch_named_action(
-                                &action,
-                                DispatchSource {
-                                    input_index,
-                                    origin: "pointer",
-                                    code: None,
-                                },
-                                world,
-                                view,
-                                now_ms,
-                                &mut effects,
-                            );
-                        }
-                        continue;
-                    }
-                    if *over_widget || down_button != *button {
-                        continue;
-                    }
-                    let dragged = dragged || start.distance(*px) > 4.0;
-                    let pointer_action = self.action_for_pointer(down_button, world);
-                    if matches!(pointer_action.as_deref(), Some("select" | "box_select")) {
-                        self.complete_selection_gesture(
-                            start,
-                            *px,
-                            dragged,
-                            down_ms,
-                            world,
-                            view,
-                            &mut effects,
-                        );
-                    } else if let Some(action) = pointer_action {
-                        self.dispatch_named_action(
-                            &action,
-                            DispatchSource {
-                                input_index,
-                                origin: "pointer",
-                                code: None,
-                            },
-                            world,
-                            view,
-                            now_ms,
-                            &mut effects,
-                        );
-                    } else if down_button == Button::Right && self.pending_order.take().is_some() {
-                        effects.push(Effect::Cursor {
-                            context: "default".into(),
-                        });
-                    }
+                    self.on_pointer_up(
+                        input_index,
+                        button,
+                        px,
+                        over_widget,
+                        world,
+                        view,
+                        now_ms,
+                        &mut effects,
+                    );
                 }
                 InputEvent::PointerLeft => {
-                    self.pointer_down = None;
-                    self.pointer = None;
-                    self.key_box_gesture = None;
-                    self.held_buttons.clear();
-                    self.held_modifier_actions
-                        .retain(|key, _| !key.starts_with("pointer:"));
+                    self.on_pointer_left();
                 }
                 InputEvent::Wheel { delta } => {
-                    if self.ui_capture.is_some() || self.physical_mods.contains(&Mod::Ctrl) {
-                        ignored_wheel_inputs.push(input_index);
-                    } else if delta.is_finite()
-                        && *delta != 0.0
-                        && let Some(action) = self.action_for_wheel(*delta, world)
-                    {
-                        if matches!(action.as_str(), "zoom_in" | "zoom_out") {
-                            self.record_named_dispatch(input_index, "wheel", None, &action, None);
-                        } else {
-                            if camera_pan_action(&action) {
-                                wheel_camera_actions.push(action.clone());
-                            }
-                            if logical_modifier(&action).is_some() {
-                                self.held_modifier_actions
-                                    .insert("wheel:pulse".into(), vec![action.clone()]);
-                            }
-                            self.dispatch_named_action(
-                                &action,
-                                DispatchSource {
-                                    input_index,
-                                    origin: "wheel",
-                                    code: None,
-                                },
-                                world,
-                                view,
-                                now_ms,
-                                &mut effects,
-                            );
-                        }
-                    }
+                    self.on_wheel(
+                        input_index,
+                        delta,
+                        world,
+                        view,
+                        now_ms,
+                        &mut ignored_wheel_inputs,
+                        &mut wheel_camera_actions,
+                        &mut effects,
+                    );
                 }
                 InputEvent::Minimap { button, local } => {
-                    if self.ui_capture.is_some() {
-                        continue;
-                    }
-                    minimap::handle_input(self, *button, *local, world, view, now_ms, &mut effects);
+                    self.on_minimap(button, local, world, view, now_ms, &mut effects);
+                }
+                InputEvent::Placement(input) => {
+                    placement::on_input(self, input, world, view, now_ms, &mut effects);
+                }
+                InputEvent::Hint(input) => {
+                    hints::on_input(self, input, world, view, now_ms, &mut effects);
+                }
+                InputEvent::Alert(input) => {
+                    alerts::on_input(self, input, world, view, now_ms, &mut effects);
                 }
             }
         }
         self.prune(world);
+        // The hooks of the tasks that add interaction state (stubs of L0-CORE; each is empty).
+        placement::update(self, events, world, view, now_ms, &mut effects);
+        hints::update(self, events, world, view, now_ms, &mut effects);
+        alerts::update(self, events, world, view, now_ms, &mut effects);
         let mut held_camera_actions: Vec<_> = self
             .keys
             .iter()
@@ -539,6 +306,422 @@ impl Core {
         );
         self.held_modifier_actions.remove("wheel:pulse");
         effects
+    }
+
+    /// The `InputEvent::KeyDown` arm of `step`, moved out of it with its body unchanged (L0-CORE).
+    #[allow(clippy::too_many_arguments, clippy::ptr_arg)] // the arm's bindings, as the arm used them
+    fn on_key_down(
+        &mut self,
+        input_index: usize,
+        code: &String,
+        mods: &Vec<Mod>,
+        world: &dyn WorldView,
+        view: &Viewport,
+        now_ms: u64,
+        effects: &mut Vec<Effect>,
+    ) {
+        if !self.keys.contains(code) {
+            self.keys.push(code.clone());
+        }
+        self.physical_mods = mods.clone();
+        let modifier_actions = self.modifier_actions_for_key(code, world);
+        if !modifier_actions.is_empty() {
+            self.held_modifier_actions
+                .insert(code.clone(), modifier_actions);
+        }
+        let action = self.action_for_key(code, world);
+        if let Some(action) = action {
+            self.dispatch_named_action(
+                &action,
+                DispatchSource {
+                    input_index,
+                    origin: "key",
+                    code: Some(code),
+                },
+                world,
+                view,
+                now_ms,
+                effects,
+            );
+        }
+    }
+
+    /// The `InputEvent::KeyUp` arm of `step`, moved out of it with its body unchanged (L0-CORE).
+    fn on_key_up(
+        &mut self,
+        code: &String,
+        world: &dyn WorldView,
+        view: &Viewport,
+        effects: &mut Vec<Effect>,
+    ) {
+        if self.ui_capture.is_none()
+            && self
+                .key_box_gesture
+                .as_ref()
+                .is_some_and(|(key, _, _)| key == code)
+        {
+            let (_, start, down_ms) = self.key_box_gesture.take().expect("matched key gesture");
+            if let Some((px, false)) = self.pointer {
+                self.complete_selection_gesture(
+                    start,
+                    px,
+                    start.distance(px) > 4.0,
+                    down_ms,
+                    world,
+                    view,
+                    effects,
+                );
+            }
+        }
+        self.keys.retain(|key| key != code);
+        self.held_modifier_actions.remove(code);
+        self.physical_mods = physical_modifiers(&self.keys);
+    }
+
+    /// The `InputEvent::FocusLost` arm of `step`, moved out of it with its body unchanged (L0-CORE).
+    fn on_focus_lost(&mut self) {
+        self.keys.clear();
+        self.physical_mods.clear();
+        self.held_modifier_actions.clear();
+        self.pointer_down = None;
+        self.pointer = None;
+        self.held_buttons.clear();
+        self.key_box_gesture = None;
+    }
+
+    /// The `InputEvent::UiAction` arm of `step`, moved out of it with its body unchanged (L0-CORE).
+    fn on_ui_action(
+        &mut self,
+        input_index: usize,
+        name: &String,
+        world: &dyn WorldView,
+        view: &Viewport,
+        now_ms: u64,
+        effects: &mut Vec<Effect>,
+    ) {
+        if self
+            .ui_capture
+            .is_some_and(|allow_shell| !allow_shell || !shell_action(name))
+        {
+            return;
+        }
+        if let Some(unit_text) = name.strip_prefix("ui_select:") {
+            if let Ok(id) = unit_text.parse::<u32>()
+                && world
+                    .units()
+                    .iter()
+                    .any(|unit| unit.id == UnitId(id) && unit.owner_slot == world.own_slot())
+            {
+                self.selected.clear();
+                self.selected.push(UnitId(id));
+                effects.push(Effect::SelectionChanged);
+            }
+        } else if let Some(order) = world.orders().iter().find(|order| order.id == *name) {
+            self.record_named_dispatch(input_index, "ui", None, name, Some(&order.id));
+            self.dispatch_order(order, world, effects);
+        } else {
+            self.dispatch_named_action(
+                name,
+                DispatchSource {
+                    input_index,
+                    origin: "ui",
+                    code: None,
+                },
+                world,
+                view,
+                now_ms,
+                effects,
+            );
+        }
+    }
+
+    /// The `InputEvent::UiCameraCenter` arm of `step`, moved out of it with its body unchanged (L0-CORE).
+    fn on_ui_camera_center(
+        &mut self,
+        position: &Vec2,
+        world: &dyn WorldView,
+        effects: &mut Vec<Effect>,
+    ) {
+        if self.ui_capture.is_some() {
+            return;
+        }
+        if self
+            .camera_controller
+            .centre_world(&mut self.camera, *position, world)
+        {
+            effects.push(Effect::CameraChanged);
+        }
+    }
+
+    /// The `InputEvent::UiOrder` arm of `step`, moved out of it with its body unchanged (L0-CORE).
+    fn on_ui_order(
+        &mut self,
+        order: &String,
+        units: &[UnitId],
+        target: &UiOrderTarget,
+        world: &dyn WorldView,
+        effects: &mut Vec<Effect>,
+    ) {
+        if self.ui_capture.is_some() {
+            return;
+        }
+        let Some(definition) = world
+            .orders()
+            .iter()
+            .find(|definition| definition.id == *order)
+        else {
+            return;
+        };
+        let (target_kind, protocol_target) = match target {
+            UiOrderTarget::Content(id) => (TargetKind::Content, OrderTarget::Content(id.clone())),
+            UiOrderTarget::Job(id) => (TargetKind::Job, OrderTarget::Job(*id)),
+        };
+        if definition.target != target_kind {
+            return;
+        }
+        let Some(valid_units) = intended_units(definition, units, world) else {
+            return;
+        };
+        let valid_units: Vec<_> = valid_units
+            .into_iter()
+            .filter(|id| {
+                world
+                    .units()
+                    .iter()
+                    .find(|unit| unit.id == *id)
+                    .is_some_and(|unit| match target {
+                        UiOrderTarget::Content(content) => world.can_produce(unit, content),
+                        UiOrderTarget::Job(job) => world.has_job(unit, *job),
+                    })
+            })
+            .collect();
+        if valid_units.is_empty() {
+            return;
+        }
+        let group = if valid_units.len() > 1 {
+            self.alloc_group()
+        } else {
+            0
+        };
+        send_explicit_units(
+            definition,
+            &valid_units,
+            protocol_target,
+            QueueMode::Replace,
+            group,
+            effects,
+        );
+    }
+
+    /// The `InputEvent::RestoreGroups` arm of `step`, moved out of it with its body unchanged (L0-CORE).
+    fn on_restore_groups(
+        &mut self,
+        groups: &Vec<(u8, Vec<UnitId>)>,
+        world: &dyn WorldView,
+        effects: &mut Vec<Effect>,
+    ) {
+        self.groups = vec![Vec::new(); 10];
+        for (group, members) in groups {
+            if !(1..=9).contains(group) {
+                continue;
+            }
+            let mut seen = std::collections::HashSet::new();
+            self.groups[*group as usize] = members
+                .iter()
+                .copied()
+                .filter(|id| {
+                    seen.insert(*id)
+                        && world
+                            .units()
+                            .iter()
+                            .any(|unit| unit.id == *id && unit.owner_slot == world.own_slot())
+                })
+                .collect();
+        }
+        effects.push(Effect::GroupsChanged);
+    }
+
+    /// The `InputEvent::PointerDown` arm of `step`, moved out of it with its body unchanged (L0-CORE).
+    fn on_pointer_down(
+        &mut self,
+        button: &Button,
+        px: &Vec2,
+        over_widget: &bool,
+        world: &dyn WorldView,
+        now_ms: u64,
+    ) {
+        if let Some(allow_shell) = self.ui_capture {
+            if allow_shell && *button != Button::Left {
+                self.pointer_down = Some((*button, *px, false, now_ms));
+            }
+            return;
+        }
+        self.pointer = Some((*px, *over_widget));
+        if !over_widget {
+            if !self.held_buttons.contains(button) {
+                self.held_buttons.push(*button);
+            }
+            let modifiers = self.modifier_actions_for_pointer(*button, world);
+            if !modifiers.is_empty() {
+                self.held_modifier_actions
+                    .insert(format!("pointer:{button:?}"), modifiers);
+            }
+            self.pointer_down = Some((*button, *px, false, now_ms));
+        }
+    }
+
+    /// The `InputEvent::PointerMove` arm of `step`, moved out of it with its body unchanged (L0-CORE).
+    fn on_pointer_move(&mut self, px: &Vec2, over_widget: &bool) {
+        if self.ui_capture.is_some() {
+            return;
+        }
+        self.pointer = Some((*px, *over_widget));
+        if let Some((button, start, dragged, down_ms)) = self.pointer_down {
+            self.pointer_down =
+                Some((button, start, dragged || start.distance(*px) > 4.0, down_ms));
+        }
+    }
+
+    /// The `InputEvent::PointerUp` arm of `step`, moved out of it with its body unchanged (L0-CORE).
+    #[allow(clippy::too_many_arguments)] // the arm's bindings, as the arm used them
+    fn on_pointer_up(
+        &mut self,
+        input_index: usize,
+        button: &Button,
+        px: &Vec2,
+        over_widget: &bool,
+        world: &dyn WorldView,
+        view: &Viewport,
+        now_ms: u64,
+        effects: &mut Vec<Effect>,
+    ) {
+        if self.ui_capture.is_none() {
+            self.pointer = Some((*px, *over_widget));
+        }
+        self.held_buttons.retain(|held| held != button);
+        self.held_modifier_actions
+            .remove(&format!("pointer:{button:?}"));
+        let Some((down_button, start, dragged, down_ms)) = self.pointer_down.take() else {
+            return;
+        };
+        if let Some(allow_shell) = self.ui_capture {
+            if allow_shell
+                && down_button == *button
+                && *button != Button::Left
+                && let Some(action) = self.action_for_pointer(*button, world)
+                && shell_action(&action)
+            {
+                self.dispatch_named_action(
+                    &action,
+                    DispatchSource {
+                        input_index,
+                        origin: "pointer",
+                        code: None,
+                    },
+                    world,
+                    view,
+                    now_ms,
+                    effects,
+                );
+            }
+            return;
+        }
+        if *over_widget || down_button != *button {
+            return;
+        }
+        let dragged = dragged || start.distance(*px) > 4.0;
+        let pointer_action = self.action_for_pointer(down_button, world);
+        if matches!(pointer_action.as_deref(), Some("select" | "box_select")) {
+            self.complete_selection_gesture(start, *px, dragged, down_ms, world, view, effects);
+        } else if let Some(action) = pointer_action {
+            self.dispatch_named_action(
+                &action,
+                DispatchSource {
+                    input_index,
+                    origin: "pointer",
+                    code: None,
+                },
+                world,
+                view,
+                now_ms,
+                effects,
+            );
+        } else if down_button == Button::Right && self.pending_order.take().is_some() {
+            effects.push(Effect::Cursor {
+                context: "default".into(),
+            });
+        }
+    }
+
+    /// The `InputEvent::PointerLeft` arm of `step`, moved out of it with its body unchanged (L0-CORE).
+    fn on_pointer_left(&mut self) {
+        self.pointer_down = None;
+        self.pointer = None;
+        self.key_box_gesture = None;
+        self.held_buttons.clear();
+        self.held_modifier_actions
+            .retain(|key, _| !key.starts_with("pointer:"));
+    }
+
+    /// The `InputEvent::Wheel` arm of `step`, moved out of it with its body unchanged (L0-CORE).
+    #[allow(clippy::too_many_arguments)] // the arm's bindings, as the arm used them
+    fn on_wheel(
+        &mut self,
+        input_index: usize,
+        delta: &f32,
+        world: &dyn WorldView,
+        view: &Viewport,
+        now_ms: u64,
+        ignored_wheel_inputs: &mut Vec<usize>,
+        wheel_camera_actions: &mut Vec<String>,
+        effects: &mut Vec<Effect>,
+    ) {
+        if self.ui_capture.is_some() || self.physical_mods.contains(&Mod::Ctrl) {
+            ignored_wheel_inputs.push(input_index);
+        } else if delta.is_finite()
+            && *delta != 0.0
+            && let Some(action) = self.action_for_wheel(*delta, world)
+        {
+            if matches!(action.as_str(), "zoom_in" | "zoom_out") {
+                self.record_named_dispatch(input_index, "wheel", None, &action, None);
+            } else {
+                if camera_pan_action(&action) {
+                    wheel_camera_actions.push(action.clone());
+                }
+                if logical_modifier(&action).is_some() {
+                    self.held_modifier_actions
+                        .insert("wheel:pulse".into(), vec![action.clone()]);
+                }
+                self.dispatch_named_action(
+                    &action,
+                    DispatchSource {
+                        input_index,
+                        origin: "wheel",
+                        code: None,
+                    },
+                    world,
+                    view,
+                    now_ms,
+                    effects,
+                );
+            }
+        }
+    }
+
+    /// The `InputEvent::Minimap` arm of `step`, moved out of it with its body unchanged (L0-CORE).
+    fn on_minimap(
+        &mut self,
+        button: &Button,
+        local: &[f32; 2],
+        world: &dyn WorldView,
+        view: &Viewport,
+        now_ms: u64,
+        effects: &mut Vec<Effect>,
+    ) {
+        if self.ui_capture.is_some() {
+            return;
+        }
+        minimap::handle_input(self, *button, *local, world, view, now_ms, effects);
     }
 
     fn begin_ui_capture(&mut self, allow_shell: bool) {
@@ -824,6 +1007,12 @@ pub enum InputEvent {
         button: Button,
         local: [f32; 2],
     },
+    /// An input of the placement mode (`UI-PLACE`; the type is in `placement.rs`).
+    Placement(placement::Input),
+    /// An input of the hint engine (`UI-HINT`; the type is in `hints.rs`).
+    Hint(hints::Input),
+    /// The core action `FocusAlert` (`UI-ALERT`; the type is in `alerts.rs`).
+    Alert(alerts::Input),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -902,4 +1091,8 @@ pub enum Effect {
     ShellAction {
         action: String,
     },
+    /// An effect of the placement mode (`UI-PLACE`; the type is in `placement.rs`).
+    Placement(placement::Output),
+    /// An effect of the hint engine (`UI-HINT`; the type is in `hints.rs`).
+    Hint(hints::Output),
 }

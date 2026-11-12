@@ -33,6 +33,13 @@ client check it:
   - The version rule: the manifest `engine_api` must exclude every engine API that lacks a
     feature the package writes; a field written empty (`orders: []`) counts; leave it out
     for an older API.
+  - The unbuilt rule: a feature of the newest engine API that no engine build supports yet is
+    refused with `<package>/<file>: <field path>: `<feature>` is not built in this engine
+    build; leave it out until an engine build supports it`.
+  - The edition rule: the edition of a package is the lowest engine API that its `engine_api`
+    requirement admits. A package of the edition 0.2.4 gets the checks of 0.2.4 (an unknown key
+    of `reasons`, `cursors` or `states`, a weapon `damage` of 0, and an unknown placeholder in
+    a text are refused). An older edition keeps the behaviour of its API.
 
 On the first problem, turts-pack prints the package, the file, and the field to stderr,
 writes no archive, and exits with 2. On success it exits with 0.";

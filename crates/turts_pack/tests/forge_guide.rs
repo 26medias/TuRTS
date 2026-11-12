@@ -132,10 +132,6 @@ fn value_text(value: &Value, output: &mut Vec<String>) {
         | Value::Bindings => {}
         // API 0.2.4: values that no 0.2.3 guide page holds.
         Value::Supply(..)
-        | Value::ConstructionQueue
-        | Value::Sites
-        | Value::Notices
-        | Value::SelectionTypes
         | Value::Connection
         | Value::Outcome
         | Value::OutcomeReason

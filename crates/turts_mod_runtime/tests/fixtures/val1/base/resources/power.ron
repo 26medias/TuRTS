@@ -1,0 +1,1 @@
+(id: "power", name: "Power", unit_name: "power", kind: Supply(scope: Slot, counts: Completed))

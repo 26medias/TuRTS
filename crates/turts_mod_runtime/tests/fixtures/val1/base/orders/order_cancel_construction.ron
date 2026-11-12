@@ -1,0 +1,1 @@
+(id: "order_cancel_construction", name: "cancel_construction", behaviour: CancelConstruction, target: None, fire: None, engage: None, icon: "icon_order_move", hotkey: "key_cancel_site", cursor: None, card: None, units: ["val1:power_station", "val1:guard_turret"], description: "d")

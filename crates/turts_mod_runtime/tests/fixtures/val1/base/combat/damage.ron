@@ -1,0 +1,13 @@
+(
+    damage_types: ["bullet", "rocket"],
+    armour_classes: ["light", "vehicle", "structure"],
+    minimum: 1,
+    cells: [
+        (damage: "val1:bullet", armour: "val1:light", ratio: (numerator: 1, denominator: 1)),
+        (damage: "val1:bullet", armour: "val1:vehicle", ratio: (numerator: 1, denominator: 2)),
+        (damage: "val1:bullet", armour: "val1:structure", ratio: (numerator: 1, denominator: 4)),
+        (damage: "val1:rocket", armour: "val1:light", ratio: (numerator: 1, denominator: 2)),
+        (damage: "val1:rocket", armour: "val1:vehicle", ratio: (numerator: 1, denominator: 1)),
+        (damage: "val1:rocket", armour: "val1:structure", ratio: (numerator: 1, denominator: 1)),
+    ],
+)

@@ -1,0 +1,9 @@
+(
+    id: "guard_turret", name: "Guard Turret", footprint: Circle(radius: 1.0),
+    movement: None, inventory: None, gatherer: None, drop_off: None, producer: None,
+    health: Some((max: 150)), removal: Some((by_command: false, contents: Destroy)),
+    weapon: Some((range: 7.0, cooldown_ms: 500, damage: 4, ammo: None, targets: (slots: Enemy), damage_type: Some("val1:bullet"), when_short: [(resource: "val1:power", effect: Disable)])),
+    armour: Some((class: "val1:structure")),
+    consumes: [(resource: "val1:power", amount: 10)],
+    placement: Some((gap: 2.2, node_clearance: 1.0)),
+)

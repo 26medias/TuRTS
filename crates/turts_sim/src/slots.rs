@@ -3,8 +3,9 @@
 use bevy_ecs::prelude::Resource;
 use serde::{Deserialize, Serialize};
 
-/// Default player-slot count in a match (design 6).
-pub(crate) const SLOT_COUNT: u8 = 2;
+/// Default player-slot count in a match (design 6). The constant lives in `turts_mod_api`, because
+/// the packer checks the slot colours against it (row H15); the simulation re-exports it.
+pub use turts_mod_api::SLOT_COUNT;
 
 /// Index of a player slot. A claimed slot belongs to its player for the whole match (D25).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]

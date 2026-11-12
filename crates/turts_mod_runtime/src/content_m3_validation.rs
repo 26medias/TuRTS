@@ -370,9 +370,9 @@ pub(crate) fn validate_m3(manifest: &Manifest, catalog: &ContentCatalog) -> Resu
                 return Err(fail("machine", "machines must be static"));
             }
         }
-        if unit.health.is_some() && unit.removal.is_none() {
-            return Err(fail("health", "a unit with health requires removal"));
-        }
+        // Design 6.10 row K7 (lifted): a unit with `health` and no `removal` is the combination
+        // `health without removal` of the version table (API 0.2.4). The row refuses it for an
+        // older edition and `UNBUILT_FEATURES` holds it back until `L-DES` builds it.
         if unit.health.is_some_and(|health| health.max == 0) {
             return Err(fail("health.max", "must be positive"));
         }
@@ -413,14 +413,14 @@ pub(crate) fn validate_m3(manifest: &Manifest, catalog: &ContentCatalog) -> Resu
         if unit.weapon.is_some() {
             work.push("weapon");
         }
+        // API 0.2.4, row K1: `constructor` is not in this list, because the resolved unit does not
+        // hold it: it is allowed beside `producer` and beside nothing else, and
+        // `mp1_validation.rs` checks that on the parsed unit.
         if work.len() > 1 {
             return Err(fail(work[1], "a unit may have at most one work capability"));
         }
-        if unit.removal.is_some()
-            && (unit.producer.is_some() || unit.machine.is_some() || unit.research.is_some())
-        {
-            return Err(fail("removal", "a unit with a queue cannot be removed"));
-        }
+        // Design 6.10 row K8 (lifted): a unit with a queue and `removal` is the combination
+        // `removal with a queue` of the version table (API 0.2.4); see row K7 above.
     }
     for production in catalog.production.values() {
         let output = catalog.units.get(&production.output_unit).ok_or_else(|| {
@@ -555,4 +555,70 @@ fn check_prerequisite_cycles(origin: &PackageId, catalog: &ContentCatalog) -> Re
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeMap;
+    use std::path::Path;
+
+    use crate::archive::PackageArchive;
+    use crate::content::validate_content_with_m3;
+    use crate::pack::pack_files;
+    use turts_mod_api::SourceDef;
+
+    fn read(root: &Path, dir: &Path, files: &mut BTreeMap<String, Vec<u8>>) {
+        for entry in std::fs::read_dir(dir).unwrap() {
+            let path = entry.unwrap().path();
+            if path.is_dir() {
+                read(root, &path, files);
+            } else {
+                let name = path.strip_prefix(root).unwrap().to_str().unwrap();
+                files.insert(name.to_string(), std::fs::read(&path).unwrap());
+            }
+        }
+    }
+
+    fn sources<T>(files: Vec<(String, T)>) -> Vec<SourceDef<T>> {
+        files
+            .into_iter()
+            .map(|(file, value)| SourceDef { file, value })
+            .collect()
+    }
+
+    /// The M3 rules `health requires removal` and `a unit with a queue cannot be removed` are
+    /// lifted (design 6.10 rows K7 and K8, `L0-API2`). The package `val1` holds both cases: the
+    /// `hauler` has no `health`, the `command_center` has a queue and a `removal`; the edit takes
+    /// the `removal` from the `tank`, which has `health`. `PackageArchive::content` refuses the
+    /// package before it reaches this validation (the version rows and the `UNBUILT` lines come
+    /// first), so the test calls the validation on the parsed files: it is red when either rule is
+    /// back.
+    #[test]
+    fn the_two_lifted_m3_rules_are_gone() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/val1/base");
+        let mut files = BTreeMap::new();
+        read(&root, &root, &mut files);
+        let tank = String::from_utf8(files["units/tank.ron"].clone()).unwrap();
+        let without_removal =
+            tank.replace("removal: Some((by_command: false, contents: Destroy)),", "");
+        assert_ne!(tank, without_removal, "the edit takes the removal away");
+        files.insert("units/tank.ron".into(), without_removal.into_bytes());
+        let package = PackageArchive::parse(&pack_files(&files).unwrap()).unwrap();
+        let catalog = validate_content_with_m3(
+            &package.id(),
+            sources(package.resources().unwrap()),
+            sources(package.units().unwrap()),
+            sources(package.nodes().unwrap()),
+            sources(package.production().unwrap()),
+            sources(package.recipes().unwrap()),
+            sources(package.technologies().unwrap()),
+        )
+        .unwrap_or_else(|error| panic!("{error}"));
+        let tank = &catalog.units[&turts_mod_api::ContentId::new(&package.id(), "tank")];
+        assert!(tank.health.is_some() && tank.removal.is_none());
+        let centre =
+            &catalog.units[&turts_mod_api::ContentId::new(&package.id(), "command_center")];
+        assert!(centre.producer.is_some() && centre.removal.is_some());
+        super::validate_m3(&package.manifest, &catalog).unwrap_or_else(|error| panic!("{error}"));
+    }
 }
