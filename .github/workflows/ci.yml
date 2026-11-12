@@ -176,6 +176,12 @@ jobs:
       - name: Install trunk 0.22.0
         if: steps.trunk-cache.outputs.cache-hit != 'true'
         run: cargo install --locked trunk --version 0.22.0
+      # The browser scripts build with CARGO_NET_OFFLINE=true (scripts/m2-browser.sh, m2_build;
+      # scripts/m3-browser.sh). A fresh runner has only the crates of the trunk install, so the
+      # first offline build of the m2 and refutation legs failed with "no matching package named
+      # ron found" (hosted run 43195887161). Fetch every locked crate while the network is on.
+      - name: Fetch the locked crates (the browser scripts build offline)
+        run: cargo fetch --locked
       # Trunk downloads wasm-bindgen and wasm-opt at versions pinned by Trunk.toml.
       - name: Cache the tools that trunk downloads
         uses: actions/cache@v4
