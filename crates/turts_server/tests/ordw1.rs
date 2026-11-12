@@ -217,6 +217,8 @@ fn ordw1_weapon_records_are_sent_on_change_and_never_name_a_removed_unit() {
         .map(|i| Vec2::new(51.0 + (i % 4) as f32 * 0.9, 31.0 + (i / 4) as f32 * 0.9))
         .collect();
     let spawned = spawn_troopers(&mut app, &positions);
+    // The units were spawned outside a tick: publish them as the first completed world.
+    initialize_completed_world(app.world_mut());
     let mut last: BTreeMap<u32, (bool, u32, wire::WeaponStatus, Option<wire::UnitId>)> =
         BTreeMap::new();
     let mut total_records = 0;

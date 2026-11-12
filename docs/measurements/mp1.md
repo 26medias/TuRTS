@@ -166,3 +166,25 @@ MC_JOBS=4 bash .../gate-runner/mc_headed_v6.sh --mode pre-merge --lane .../TuRTS
 ```
 
 Wrapper `mc_headed_v6.sh` sha256 `1d3a0000e37cd7d001827cb32843807c45c5824a71640cccc323c2d090ebb675` (checked). The run exited 0 (`VERDICT=PASS`), `source_unchanged: true`.
+
+## Order and weapon records on the wire, protocol 5 (L0-WIRE)
+
+Task `L0-WIRE`, 2026-11-12. Recorded, not judged: MP1 sets no byte limit here (spec 15). The figures
+come from the real sim (`headless_app`, package `muster`, 20 Hz) projected by `export::delta_for`,
+the function that the server calls for each slot. The sizes are postcard bytes, the encoding of the
+wire (`postcard` 1.1.3). They are the bytes of the named list inside one `WorldDelta`, not of the
+whole message. Tool: `cargo test --locked -p turts_server --test ordw1 -- --nocapture` (the
+`ORDW1-BYTES` lines). Machine: the local lane host (Intel Core i9-14900K), debug build; the byte
+counts do not depend on the build. Not the 4-vCPU target of D58.
+
+| Scenario | What the run printed |
+| --- | --- |
+| Idle: 702 idle units of slot 0 (200 spawned, the rest from the map), 100 ticks | `unit_orders`, `orders_cleared` and weapon records: 0 B in every delta (the first delta carries one weapon record for each unit, the status goes Ready to NoTarget once, and it is not counted). The full table is 702 records and 4,802 B: that is the `Snapshot` size, and the size of each delta before protocol 5. |
+| One `MoveTo` on one unit | 1 changed record at the accept tick (tick 1, 6 B) and 1 at the arrival tick (tick 41, 6 B). 0 records in the other ticks, 0 records for any other unit. |
+| 12 troopers that fire at the dummies for 100 ticks (3 kills) | 81 weapon records in 100 ticks, 627 B in all, 6 B for each tick on average; 95 of the 100 ticks carry 0 weapon bytes. No record repeats the previous record of its unit. |
+| `Fired{unit, target, weapon}` | 6 B with two unit ids below 16,384 and weapon index 200 (limit of ORDW1 case C: 8 B). The writer is empty in lane 0 (the sim has no `Fired` rows yet): this is the size of the shape. |
+
+What the figures do not show: the site, job, supply and match records (their sim rows are empty
+in lane 0, so they cost 0 B); a fight of 200 units in a long run (the 12-trooper case has 3
+kills only; ORDW1 case C with 200 riflemen is a row of `I-HEAD`); the bytes of the whole
+`WorldDelta` at the medium workload of D57 (NOT TRACED here: no run of the medium workload).
