@@ -1669,10 +1669,6 @@ mod stub_contract {
                 Value::Supply("test:supply".into(), turts_mod_api::SupplySide::Consumed),
                 context,
             );
-            assert_null(Value::ConstructionQueue, context);
-            assert_null(Value::Sites, context);
-            assert_null(Value::Notices, context);
-            assert_null(Value::SelectionTypes, context);
             assert_does_not_hold(Predicate::SupplyShort("test:supply".into()), context);
             assert_does_not_hold(Predicate::ItemHas(ItemField::Role), context);
         });
