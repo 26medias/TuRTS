@@ -1759,5 +1759,36 @@
     "exit": 101,
     "expected_selected": 1,
     "commit": "a274957"
+  },
+  {
+    "row": "VAL1 plant (5)",
+    "plant": "a: H13 is detected by a key walk of ron::Value: the Text keys font and size of forge are refused as Button.font",
+    "files": [
+      {
+        "file": "crates/turts_mod_runtime/src/version_table.rs",
+        "edit": {
+          "old": "    variant_0_2_4(\"Button.font\"),\n",
+          "new": "    raw_0_2_4(\n        \"Button.font\",\n        RawGroup::Interface,\n        &[\"root\", \"widget\", \"font\"],\n    ),\n"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_mod_runtime",
+      "--locked",
+      "--test",
+      "val1",
+      "h13_forge_and_muster_copies_pack",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "`Button.font` needs engine api 0.2.4",
+    "exit": 101,
+    "expected_selected": 1,
+    "commit": "318e5a4"
   }
 ]
