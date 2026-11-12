@@ -5,8 +5,8 @@
 //! visibility, ring metadata), every health-bar fill, every tooltip label, every gizmo line
 //! and the debug feed `markers_shown`. The scenes are compared with the committed fixture
 //! `scene_oracle.txt`. The fixture was recorded on the code before the function was split, so
-//! a pure move keeps it green. Set `TURTS_BLESS_SCENES=<path>` to write a new record to
-//! `<path>`; the test never writes into the source tree by itself.
+//! a pure move keeps it green. The ignored test `bless_scene_fixture` writes a new record to
+//! `TURTS_BLESS_SCENES=<path>`; the normal test panics when that variable is set.
 
 use super::*;
 use crate::{
@@ -648,16 +648,93 @@ fn all_scenes() -> String {
     app.update();
     let _ = writeln!(out, "=== health mode always, nothing selected");
     out += &record(&mut app, "update 1");
+
+    // A full update, then the camera goes: `active` must fall back to false and every visual,
+    // fill and label must go (the ring collector reads `active`).
+    let mut app = full_scene();
+    app.update();
+    app.update();
+    despawn_camera(&mut app);
+    app.update();
+    let _ = writeln!(out, "=== exit after a full update: camera removed");
+    out += &record(&mut app, "update 3");
+
+    // The same with the Welcome removed.
+    let mut app = full_scene();
+    app.update();
+    app.update();
+    app.world_mut().resource_mut::<ReplicaState>().welcome = None;
+    app.update();
+    let _ = writeln!(out, "=== exit after a full update: welcome removed");
+    out += &record(&mut app, "update 3");
+
+    // Hover on an own unit: the solid ring and no underlay; then the hover leaves.
+    let mut app = base_app(None, true);
+    let camera = spawn_camera(&mut app);
+    spawn_window_over(&mut app, camera, Pos { x: 10.0, y: 14.0 });
+    let _ = writeln!(out, "=== hover on an own unit, then the hover leaves");
+    app.update();
+    out += &record(&mut app, "update 1");
+    app.world_mut().resource_mut::<VisualState>().hover_started =
+        Some(Instant::now() - Duration::from_secs(1));
+    app.update();
+    out += &record(&mut app, "update 2 (tooltip)");
+    set_cursor(&mut app, None);
+    app.update();
+    out += &record(&mut app, "update 3 (no hover)");
+
+    // A blocked mark that is 3 s old is past its 2 s lifetime and is not drawn, although the
+    // unit is still blocked.
+    let mut app = base_app(None, true);
+    spawn_camera(&mut app);
+    app.update();
+    app.world_mut()
+        .resource_mut::<VisualState>()
+        .blocked_since
+        .insert(4, Instant::now() - Duration::from_secs(3));
+    app.update();
+    let _ = writeln!(out, "=== blocked mark past its 2 s lifetime");
+    out += &record(&mut app, "update 2");
+
+    // Order markers past their 60 s lifetime are retired.
+    let mut app = base_app(None, true);
+    spawn_camera(&mut app);
+    push_intents(&mut app);
+    app.update();
+    for marker in &mut app.world_mut().resource_mut::<VisualState>().markers {
+        marker.started = Instant::now() - Duration::from_secs(61);
+    }
+    app.update();
+    let _ = writeln!(out, "=== order markers past their 60 s lifetime");
+    out += &record(&mut app, "update 2");
     out
+}
+
+fn despawn_camera(app: &mut App) {
+    let world = app.world_mut();
+    let camera = world
+        .query_filtered::<Entity, With<Camera3d>>()
+        .single(world)
+        .expect("one camera");
+    world.despawn(camera);
+}
+
+fn set_cursor(app: &mut App, cursor: Option<Vec2>) {
+    let world = app.world_mut();
+    let mut windows = world.query_filtered::<&mut Window, With<PrimaryWindow>>();
+    windows
+        .single_mut(world)
+        .expect("one primary window")
+        .set_cursor_position(cursor);
 }
 
 #[test]
 fn scene_oracle_matches_the_committed_fixture() {
+    assert!(
+        std::env::var_os("TURTS_BLESS_SCENES").is_none(),
+        "TURTS_BLESS_SCENES is set: run the ignored bless test; this test never passes with it set"
+    );
     let scenes = all_scenes();
-    if let Some(path) = std::env::var_os("TURTS_BLESS_SCENES") {
-        std::fs::write(path, &scenes).expect("write the scene record");
-        return;
-    }
     if scenes != FIXTURE {
         let first = scenes
             .lines()
@@ -673,6 +750,39 @@ fn scene_oracle_matches_the_committed_fixture() {
             "the scene record differs from the fixture at line {:?}\n  now:     {new}\n  fixture: {old}",
             first.map(|at| at + 1)
         );
+    }
+}
+
+/// Writes a new scene record to the path in `TURTS_BLESS_SCENES`. It compares nothing.
+/// Run: `TURTS_BLESS_SCENES=<path> cargo test -p turts_client --lib bless_scene_fixture -- --ignored`.
+#[test]
+#[ignore = "writes the scene record; needs TURTS_BLESS_SCENES"]
+fn bless_scene_fixture() {
+    let path = std::env::var_os("TURTS_BLESS_SCENES").expect("set TURTS_BLESS_SCENES to a path");
+    std::fs::write(path, all_scenes()).expect("write the scene record");
+}
+
+#[test]
+fn exit_after_a_full_update_clears_active_and_every_visual() {
+    for remove_camera in [true, false] {
+        let mut app = full_scene();
+        app.update();
+        assert!(app.world().resource::<VisualState>().active);
+        assert!(count::<VisualId>(&mut app) > 0);
+        if remove_camera {
+            despawn_camera(&mut app);
+        } else {
+            app.world_mut().resource_mut::<ReplicaState>().welcome = None;
+        }
+        app.update();
+        assert!(
+            !app.world().resource::<VisualState>().active,
+            "remove_camera={remove_camera}"
+        );
+        assert_eq!(count::<VisualId>(&mut app), 0);
+        assert_eq!(count::<HealthFill>(&mut app), 0);
+        assert_eq!(count::<WorldTooltip>(&mut app), 0);
+        assert!(app.world().resource::<MarkersShown>().0.is_empty());
     }
 }
 

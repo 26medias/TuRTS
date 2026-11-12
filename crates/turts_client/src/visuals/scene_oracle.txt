@@ -157,3 +157,61 @@ markers_shown {"intent_id":3,"kind":"gather","order":"muster:order_gather","unit
 markers_shown {"intent_id":4,"kind":"move","order":"muster:order_rush","units":[1],"x":8.0,"y":8.0}
 markers_shown {"kind":"blocked","unit":4}
 state active=true hover=Some(4) hover_started=true generation=1 session=Some(VisualSession { match_id: 7, connection_epoch: 1, local_slot: 0 }) retained_markers=[1, 2, 3, 4] blocked_active=[4] blocked_since=[4] feed_intents=0 feed_sent=0
+=== exit after a full update: camera removed
+--- update 3
+state active=false hover=Some(4) hover_started=true generation=1 session=Some(VisualSession { match_id: 7, connection_epoch: 1, local_slot: 0 }) retained_markers=[1, 2, 3, 4] blocked_active=[4] blocked_since=[4] feed_intents=0 feed_sent=0
+=== exit after a full update: welcome removed
+--- update 3
+state active=false hover=None hover_started=false generation=2 session=None retained_markers=[] blocked_active=[] blocked_since=[] feed_intents=0 feed_sent=0
+=== hover on an own unit, then the hover leaves
+--- update 1
+fill unit=2 mesh=bar material=bar_health t=[-0.2250 0.0000 0.0800] s=[0.5000 1.0000 1.0000] parent=Some(VisualId { kind: HealthBackground, unit: 2, ordinal: 0, generation: 1, identity: 0 })
+fill unit=3 mesh=bar material=bar_health t=[-0.2700 0.0000 0.0800] s=[0.4000 1.0000 1.0000] parent=Some(VisualId { kind: HealthBackground, unit: 3, ordinal: 0, generation: 1, identity: 0 })
+gizmo order_marker [13.7000 1.5700 13.7000] -> [14.3000 1.5700 14.3000] colour=[0.7874 0.0134 0.0072]
+gizmo order_marker [13.7000 1.5700 14.3000] -> [14.3000 1.5700 13.7000] colour=[0.7874 0.0134 0.0072]
+visual VisualId { kind: Blocked, unit: 4, ordinal: 0, generation: 1, identity: 0 } mesh=bar material=blocked t=[14.0000 1.5000 14.0000] s=[0.7000 0.0800 0.0800] r=[0.0000 0.0000 0.0000 1.0000] vis=None ring=None
+visual VisualId { kind: HealthBackground, unit: 2, ordinal: 0, generation: 1, identity: 0 } mesh=bar material=bar_background t=[14.0000 2.2000 10.0000] s=[1.0602 0.3925 0.1000] r=[0.0000 0.0000 0.0000 1.0000] vis=None ring=None
+visual VisualId { kind: HealthBackground, unit: 3, ordinal: 0, generation: 1, identity: 0 } mesh=bar material=bar_background t=[10.0000 2.2000 14.0000] s=[0.9963 0.4301 0.1000] r=[0.0000 0.0000 0.0000 1.0000] vis=None ring=None
+visual VisualId { kind: Hover, unit: 3, ordinal: 0, generation: 1, identity: 0 } mesh=ring material=ring_overlay[0] t=[10.0000 0.0320 14.0000] s=[0.4800 0.4800 0.4800] r=[0.0000 0.0000 0.0000 1.0000] vis=None ring=None
+markers_shown {"kind":"blocked","unit":4}
+state active=true hover=Some(3) hover_started=true generation=1 session=Some(VisualSession { match_id: 7, connection_epoch: 1, local_slot: 0 }) retained_markers=[] blocked_active=[4] blocked_since=[4] feed_intents=0 feed_sent=0
+--- update 2 (tooltip)
+fill unit=2 mesh=bar material=bar_health t=[-0.2250 0.0000 0.0800] s=[0.5000 1.0000 1.0000] parent=Some(VisualId { kind: HealthBackground, unit: 2, ordinal: 0, generation: 1, identity: 0 })
+fill unit=3 mesh=bar material=bar_health t=[-0.2700 0.0000 0.0800] s=[0.4000 1.0000 1.0000] parent=Some(VisualId { kind: HealthBackground, unit: 3, ordinal: 0, generation: 1, identity: 0 })
+gizmo order_marker [13.7000 1.5700 13.7000] -> [14.3000 1.5700 14.3000] colour=[0.7874 0.0134 0.0072]
+gizmo order_marker [13.7000 1.5700 14.3000] -> [14.3000 1.5700 13.7000] colour=[0.7874 0.0134 0.0072]
+tooltip unit=3 text="Trooper · Slot 1" left=556.1555px top=366.4917px
+visual VisualId { kind: Blocked, unit: 4, ordinal: 0, generation: 1, identity: 0 } mesh=bar material=blocked t=[14.0000 1.5000 14.0000] s=[0.7000 0.0800 0.0800] r=[0.0000 0.0000 0.0000 1.0000] vis=None ring=None
+visual VisualId { kind: HealthBackground, unit: 2, ordinal: 0, generation: 1, identity: 0 } mesh=bar material=bar_background t=[14.0000 2.2000 10.0000] s=[1.0602 0.3925 0.1000] r=[0.0000 0.0000 0.0000 1.0000] vis=None ring=None
+visual VisualId { kind: HealthBackground, unit: 3, ordinal: 0, generation: 1, identity: 0 } mesh=bar material=bar_background t=[10.0000 2.2000 14.0000] s=[0.9963 0.4301 0.1000] r=[0.0000 0.0000 0.0000 1.0000] vis=None ring=None
+visual VisualId { kind: Hover, unit: 3, ordinal: 0, generation: 1, identity: 0 } mesh=ring material=ring_overlay[0] t=[10.0000 0.0320 14.0000] s=[0.4800 0.4800 0.4800] r=[0.0000 0.0000 0.0000 1.0000] vis=None ring=None
+markers_shown {"kind":"blocked","unit":4}
+state active=true hover=Some(3) hover_started=true generation=1 session=Some(VisualSession { match_id: 7, connection_epoch: 1, local_slot: 0 }) retained_markers=[] blocked_active=[4] blocked_since=[4] feed_intents=0 feed_sent=0
+--- update 3 (no hover)
+fill unit=2 mesh=bar material=bar_health t=[-0.2250 0.0000 0.0800] s=[0.5000 1.0000 1.0000] parent=Some(VisualId { kind: HealthBackground, unit: 2, ordinal: 0, generation: 1, identity: 0 })
+fill unit=3 mesh=bar material=bar_health t=[-0.2700 0.0000 0.0800] s=[0.4000 1.0000 1.0000] parent=Some(VisualId { kind: HealthBackground, unit: 3, ordinal: 0, generation: 1, identity: 0 })
+gizmo order_marker [13.7000 1.5700 13.7000] -> [14.3000 1.5700 14.3000] colour=[0.7874 0.0134 0.0072]
+gizmo order_marker [13.7000 1.5700 14.3000] -> [14.3000 1.5700 13.7000] colour=[0.7874 0.0134 0.0072]
+visual VisualId { kind: Blocked, unit: 4, ordinal: 0, generation: 1, identity: 0 } mesh=bar material=blocked t=[14.0000 1.5000 14.0000] s=[0.7000 0.0800 0.0800] r=[0.0000 0.0000 0.0000 1.0000] vis=None ring=None
+visual VisualId { kind: HealthBackground, unit: 2, ordinal: 0, generation: 1, identity: 0 } mesh=bar material=bar_background t=[14.0000 2.2000 10.0000] s=[1.0602 0.3925 0.1000] r=[0.0000 0.0000 0.0000 1.0000] vis=None ring=None
+visual VisualId { kind: HealthBackground, unit: 3, ordinal: 0, generation: 1, identity: 0 } mesh=bar material=bar_background t=[10.0000 2.2000 14.0000] s=[0.9963 0.4301 0.1000] r=[0.0000 0.0000 0.0000 1.0000] vis=None ring=None
+markers_shown {"kind":"blocked","unit":4}
+state active=true hover=None hover_started=false generation=1 session=Some(VisualSession { match_id: 7, connection_epoch: 1, local_slot: 0 }) retained_markers=[] blocked_active=[4] blocked_since=[4] feed_intents=0 feed_sent=0
+=== blocked mark past its 2 s lifetime
+--- update 2
+fill unit=2 mesh=bar material=bar_health t=[-0.2250 0.0000 0.0800] s=[0.5000 1.0000 1.0000] parent=Some(VisualId { kind: HealthBackground, unit: 2, ordinal: 0, generation: 1, identity: 0 })
+fill unit=3 mesh=bar material=bar_health t=[-0.2700 0.0000 0.0800] s=[0.4000 1.0000 1.0000] parent=Some(VisualId { kind: HealthBackground, unit: 3, ordinal: 0, generation: 1, identity: 0 })
+visual VisualId { kind: HealthBackground, unit: 2, ordinal: 0, generation: 1, identity: 0 } mesh=bar material=bar_background t=[14.0000 2.2000 10.0000] s=[1.0602 0.3925 0.1000] r=[0.0000 0.0000 0.0000 1.0000] vis=None ring=None
+visual VisualId { kind: HealthBackground, unit: 3, ordinal: 0, generation: 1, identity: 0 } mesh=bar material=bar_background t=[10.0000 2.2000 14.0000] s=[0.9963 0.4301 0.1000] r=[0.0000 0.0000 0.0000 1.0000] vis=None ring=None
+state active=true hover=None hover_started=false generation=1 session=Some(VisualSession { match_id: 7, connection_epoch: 1, local_slot: 0 }) retained_markers=[] blocked_active=[4] blocked_since=[4] feed_intents=0 feed_sent=0
+=== order markers past their 60 s lifetime
+--- update 2
+fill unit=2 mesh=bar material=bar_health t=[-0.2250 0.0000 0.0800] s=[0.5000 1.0000 1.0000] parent=Some(VisualId { kind: HealthBackground, unit: 2, ordinal: 0, generation: 1, identity: 0 })
+fill unit=3 mesh=bar material=bar_health t=[-0.2700 0.0000 0.0800] s=[0.4000 1.0000 1.0000] parent=Some(VisualId { kind: HealthBackground, unit: 3, ordinal: 0, generation: 1, identity: 0 })
+gizmo order_marker [13.7000 1.5700 13.7000] -> [14.3000 1.5700 14.3000] colour=[0.7874 0.0134 0.0072]
+gizmo order_marker [13.7000 1.5700 14.3000] -> [14.3000 1.5700 13.7000] colour=[0.7874 0.0134 0.0072]
+visual VisualId { kind: Blocked, unit: 4, ordinal: 0, generation: 1, identity: 0 } mesh=bar material=blocked t=[14.0000 1.5000 14.0000] s=[0.7000 0.0800 0.0800] r=[0.0000 0.0000 0.0000 1.0000] vis=None ring=None
+visual VisualId { kind: HealthBackground, unit: 2, ordinal: 0, generation: 1, identity: 0 } mesh=bar material=bar_background t=[14.0000 2.2000 10.0000] s=[1.0602 0.3925 0.1000] r=[0.0000 0.0000 0.0000 1.0000] vis=None ring=None
+visual VisualId { kind: HealthBackground, unit: 3, ordinal: 0, generation: 1, identity: 0 } mesh=bar material=bar_background t=[10.0000 2.2000 14.0000] s=[0.9963 0.4301 0.1000] r=[0.0000 0.0000 0.0000 1.0000] vis=None ring=None
+markers_shown {"kind":"blocked","unit":4}
+state active=true hover=None hover_started=false generation=1 session=Some(VisualSession { match_id: 7, connection_epoch: 1, local_slot: 0 }) retained_markers=[] blocked_active=[4] blocked_since=[4] feed_intents=0 feed_sent=0

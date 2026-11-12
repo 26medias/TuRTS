@@ -178,5 +178,81 @@
     "exit": 101,
     "commit": "f6692d6",
     "receipt": "target/mc-evidence/mp1-l0split-head-plant-guard/receipt.json (outside the repository)"
+  },
+  {
+    "row": "L0-SPLIT/SCENE",
+    "plant": "exit-after-full-update-keeps-active",
+    "description": "the caller does not reset visuals.active before the early exit (review fault F1)",
+    "files": [
+      {
+        "file": "crates/turts_client/src/visuals.rs",
+        "patch": "--- a/crates/turts_client/src/visuals.rs\n+++ b/crates/turts_client/src/visuals.rs\n@@ -329,7 +329,6 @@\n         &mut commands,\n         &mut fills,\n     );\n-    visuals.active = false;\n     let (Some(replica), Some(content), Some(welcome), Some(camera_pair)) = (\n         state.replica.as_ref(),\n         state.content.as_ref(),\n"
+      }
+    ],
+    "command": "cargo test -p turts_client --locked --lib scene_tests",
+    "env": {},
+    "headed": false,
+    "expected_red": "visuals::scene_tests::exit_after_a_full_update_clears_active_and_every_visual:\nremove_camera=true\nvisuals::scene_tests::scene_oracle_matches_the_committed_fixture:\nthe scene record differs from the fixture at line Some(162)\n  now:     state active=true hover=Some(4) hover_started=true generation=1 session=Some(VisualSession { match_id: 7, connection_epoch: 1, local_slot: 0 }) retained_markers=[1, 2, 3, 4] blocked_active=[4] blocked_since=[4] feed_intents=0 feed_sent=0\n  fixture: state active=false hover=Some(4) hover_started=true generation=1 session=Some(VisualSession { match_id: 7, connection_epoch: 1, local_slot: 0 }) retained_markers=[1, 2, 3, 4] blocked_active=[4] blocked_since=[4] feed_intents=0 feed_sent=0",
+    "exit": 101,
+    "commit": "e0569d1",
+    "receipt": "target/mc-evidence/mp1-l0split-rep-plant-active/receipt.json (outside the repository)",
+    "note": "run on the tree of this commit plus the repair commit's scene_tests.rs and scene_oracle.txt (uncommitted at run time)"
+  },
+  {
+    "row": "L0-SPLIT/SCENE",
+    "plant": "hover-own-unit-uses-foreign-ring",
+    "description": "the hover ring of an own unit uses the foreign ring mesh",
+    "files": [
+      {
+        "file": "crates/turts_client/src/visuals/hover.rs",
+        "patch": "--- a/crates/turts_client/src/visuals/hover.rs\n+++ b/crates/turts_client/src/visuals/hover.rs\n@@ -64,7 +64,7 @@\n             .get(usize::from(unit.owner_slot))\n             .cloned()\n     {\n-        let mesh = if unit.owner_slot == local_slot {\n+        let mesh = if unit.owner_slot == local_slot && false {\n             assets.ring.clone()\n         } else {\n             assets.foreign_ring.clone()\n"
+      }
+    ],
+    "command": "cargo test -p turts_client --locked --lib scene_tests",
+    "env": {},
+    "headed": false,
+    "expected_red": "visuals::scene_tests::scene_oracle_matches_the_committed_fixture:\nthe scene record differs from the fixture at line Some(175)\n  now:     visual VisualId { kind: Hover, unit: 3, ordinal: 0, generation: 1, identity: 0 } mesh=foreign_ring material=ring_overlay[0] t=[10.0000 0.0320 14.0000] s=[0.4800 0.4800 0.4800] r=[0.0000 0.0000 0.0000 1.0000] vis=None ring=None\n  fixture: visual VisualId { kind: Hover, unit: 3, ordinal: 0, generation: 1, identity: 0 } mesh=ring material=ring_overlay[0] t=[10.0000 0.0320 14.0000] s=[0.4800 0.4800 0.4800] r=[0.0000 0.0000 0.0000 1.0000] vis=None ring=None",
+    "exit": 101,
+    "commit": "e0569d1",
+    "receipt": "target/mc-evidence/mp1-l0split-rep-plant-ownhover2/receipt.json (outside the repository)",
+    "note": "run on the tree of this commit plus the repair commit's scene_tests.rs and scene_oracle.txt (uncommitted at run time)"
+  },
+  {
+    "row": "L0-SPLIT/SCENE",
+    "plant": "blocked-mark-expiry-removed",
+    "description": "the 2 s blocked-mark expiry becomes 20 s",
+    "files": [
+      {
+        "file": "crates/turts_client/src/visuals/blocked.rs",
+        "patch": "--- a/crates/turts_client/src/visuals/blocked.rs\n+++ b/crates/turts_client/src/visuals/blocked.rs\n@@ -31,7 +31,7 @@\n     now: Instant,\n ) {\n     for (&unit_id, start) in &visuals.blocked_since {\n-        if now.duration_since(*start).as_secs_f32() >= 2.0 {\n+        if now.duration_since(*start).as_secs_f32() >= 20.0 {\n             continue;\n         }\n         if let Some(unit) = presented_by_id.get(&unit_id)\n"
+      }
+    ],
+    "command": "cargo test -p turts_client --locked --lib scene_tests",
+    "env": {},
+    "headed": false,
+    "expected_red": "visuals::scene_tests::scene_oracle_matches_the_committed_fixture:\nthe scene record differs from the fixture at line Some(204)\n  now:     gizmo order_marker [13.7000 1.5700 13.7000] -> [14.3000 1.5700 14.3000] colour=[0.7874 0.0134 0.0072]\n  fixture: visual VisualId { kind: HealthBackground, unit: 2, ordinal: 0, generation: 1, identity: 0 } mesh=bar material=bar_background t=[14.0000 2.2000 10.0000] s=[1.0602 0.3925 0.1000] r=[0.0000 0.0000 0.0000 1.0000] vis=None ring=None",
+    "exit": 101,
+    "commit": "e0569d1",
+    "receipt": "target/mc-evidence/mp1-l0split-rep-plant-blockedexpiry/receipt.json (outside the repository)",
+    "note": "run on the tree of this commit plus the repair commit's scene_tests.rs and scene_oracle.txt (uncommitted at run time)"
+  },
+  {
+    "row": "L0-SPLIT/SCENE",
+    "plant": "order-marker-expiry-removed",
+    "description": "the 60 s order-marker expiry becomes 600 s",
+    "files": [
+      {
+        "file": "crates/turts_client/src/visuals/markers.rs",
+        "patch": "--- a/crates/turts_client/src/visuals/markers.rs\n+++ b/crates/turts_client/src/visuals/markers.rs\n@@ -49,7 +49,7 @@\n     replica_tick: u32,\n     now: Instant,\n ) -> bool {\n-    if now.duration_since(marker.started).as_secs_f32() >= 60.0 {\n+    if now.duration_since(marker.started).as_secs_f32() >= 600.0 {\n         return false;\n     }\n     if marker.fragments.is_empty()\n"
+      }
+    ],
+    "command": "cargo test -p turts_client --locked --lib scene_tests",
+    "env": {},
+    "headed": false,
+    "expected_red": "visuals::scene_tests::scene_oracle_matches_the_committed_fixture:\nthe scene record differs from the fixture at line Some(213)\n  now:     gizmo order_marker [5.7000 0.0750 5.7000] -> [6.3000 0.0750 6.3000] colour=[0.9114 0.7484 0.0331]\n  fixture: visual VisualId { kind: Blocked, unit: 4, ordinal: 0, generation: 1, identity: 0 } mesh=bar material=blocked t=[14.0000 1.5000 14.0000] s=[0.7000 0.0800 0.0800] r=[0.0000 0.0000 0.0000 1.0000] vis=None ring=None",
+    "exit": 101,
+    "commit": "e0569d1",
+    "receipt": "target/mc-evidence/mp1-l0split-rep-plant-markerexpiry/receipt.json (outside the repository)",
+    "note": "run on the tree of this commit plus the repair commit's scene_tests.rs and scene_oracle.txt (uncommitted at run time)"
   }
 ]
