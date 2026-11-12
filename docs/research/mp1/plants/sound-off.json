@@ -141,7 +141,7 @@
     "expected_red": "no sink starts while the sound is off",
     "exit": 101,
     "commit": "67a0bae5",
-    "expected_selected": "with_the_sound_off_no_player_starts_and_a_request_is_not_queued_for_later"
+    "expected_selected": "audio::control_settings_persistence_contract::with_the_sound_off_no_player_starts_and_a_request_is_not_queued_for_later"
   },
   {
     "row": "SOUND-OFF",
@@ -169,7 +169,7 @@
     "expected_red": "off removes the live player",
     "exit": 101,
     "commit": "67a0bae5",
-    "expected_selected": "turning_the_sound_off_stops_a_sound_that_is_playing"
+    "expected_selected": "audio::control_settings_persistence_contract::turning_the_sound_off_stops_a_sound_that_is_playing"
   },
   {
     "row": "SOUND-OFF",
@@ -197,7 +197,7 @@
     "expected_red": "assertion failed: !app.world().resource::<AudioFeed>().sound_on",
     "exit": 101,
     "commit": "67a0bae5",
-    "expected_selected": "the_debug_audio_state_shows_the_sound_flag"
+    "expected_selected": "audio::control_settings_persistence_contract::the_debug_audio_state_shows_the_sound_flag"
   },
   {
     "row": "SOUND-OFF",
@@ -225,7 +225,7 @@
     "expected_red": "the switch is saved",
     "exit": 101,
     "commit": "67a0bae5",
-    "expected_selected": "the_switch_is_saved_with_the_levels_and_survives_a_new_session"
+    "expected_selected": "audio::control_settings_persistence_contract::the_switch_is_saved_with_the_levels_and_survives_a_new_session"
   },
   {
     "row": "SOUND-OFF",
@@ -253,7 +253,7 @@
     "expected_red": "the sound is off on purpose",
     "exit": 101,
     "commit": "67a0bae5",
-    "expected_selected": "no_sound_notice_shows_while_the_player_keeps_the_sound_off"
+    "expected_selected": "client_shell::tests::no_sound_notice_shows_while_the_player_keeps_the_sound_off"
   },
   {
     "row": "SOUND-OFF",
@@ -281,7 +281,7 @@
     "expected_red": "the default says off, in words",
     "exit": 101,
     "commit": "67a0bae5",
-    "expected_selected": "the_play_screen_has_one_sound_switch_that_says_off_by_default_and_one_click_turns_it_on"
+    "expected_selected": "client_shell::tests::the_play_screen_has_one_sound_switch_that_says_off_by_default_and_one_click_turns_it_on"
   },
   {
     "row": "SOUND-OFF",
@@ -309,7 +309,7 @@
     "expected_red": "no switch before the join",
     "exit": 101,
     "commit": "67a0bae5",
-    "expected_selected": "the_play_screen_switch_waits_for_the_join"
+    "expected_selected": "client_shell::tests::the_play_screen_switch_waits_for_the_join"
   },
   {
     "row": "SOUND-OFF",
@@ -337,7 +337,7 @@
     "expected_red": "the sound switch never writes a level",
     "exit": 101,
     "commit": "67a0bae5",
-    "expected_selected": "the_switch_keeps_the_four_levels_across_off_and_on"
+    "expected_selected": "client_shell::tests::the_switch_keeps_the_four_levels_across_off_and_on"
   },
   {
     "row": "SOUND-OFF",
@@ -404,7 +404,7 @@
     ],
     "env": {},
     "headed": false,
-    "expected_red": "the physical release lands inside the rectangle of the switch",
+    "expected_red": "expected: /inside the rectangle/",
     "exit": 1,
     "commit": "67a0bae5"
   },
