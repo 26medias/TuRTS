@@ -48,6 +48,7 @@ async function drive(io, params) {
     const foreign = selectBody(findBodies(focusImage, 1), focusImage);
     let attackSkipped = !foreign;
     let pingPoll = null;
+    let killPoll = null;
     if (foreign) {
         await io.click(foreign.x, foreign.y, "right");
         // The trooper walks 3 units a second: the window 1 shot shows its approach.
@@ -59,6 +60,11 @@ async function drive(io, params) {
         pingPoll = await pollForPing(io, params, rect);
         await capture(2, "mm1-window2-ping.png");
         await io.use(1);
+        // The minimap right click later replaces the attack order. The kill comes about 14.7 s after the attack
+        // order (8 hits and the cooldowns), and the steps so far take 11 to 15 s, so in 12 of 15 saved clean runs the
+        // move came one or two hits before the kill and the run never ran the kill path (the oracle calls such a run
+        // void). The driver waits, from the pixels of window 1, until the body of the target dummy is gone.
+        killPoll = await pollForKill(io, foreign);
     } else {
         // The original stub leaves the enemy off-screen. Keep driving so the oracle records the
         // named physical camera red instead of stopping at a setup error.
@@ -88,7 +94,7 @@ async function drive(io, params) {
         await io.wait(200);
         await capture(2, "mm1-window2-ping.png");
     }
-    await io.save("mm1-driver-steps.json", Buffer.from(JSON.stringify({ rect, local, screen, pixel_targets: { own, foreign }, attack_skipped: attackSkipped, ping_poll: pingPoll, shots }, null, 2) + "\n"));
+    await io.save("mm1-driver-steps.json", Buffer.from(JSON.stringify({ rect, local, screen, pixel_targets: { own, foreign }, attack_skipped: attackSkipped, ping_poll: pingPoll, kill_poll: killPoll, shots }, null, 2) + "\n"));
     // The driver records only screenshot-derived coordinates and uses the public input harness.
 }
 
@@ -121,6 +127,49 @@ async function pollForPing(io, params, rect) {
         await io.wait(250);
     }
     return record;
+}
+
+// Wait in window 1 until the pixels of the slot 1 body at the target are gone (the dummy died). The poll takes
+// screenshots only, with no click and no save, so it changes no state. It ends without an error when the body never
+// goes: the oracle then names the run void from the server tick log.
+const KILL_POLL_MS = 30000;
+const KILL_POLL_MAX = 60;
+const KILL_POLL_GAP_MS = 500;
+const KILL_BODY_SHARE = 0.1;
+// The dummies stand 4 to 5 pixels apart, so the box is the body box itself: with a margin of 4 or more the box takes
+// pixels of the next dummy (a saved shot: 197 pixels in the box, 210 with margin 4, 358 with margin 8).
+const KILL_BOX_MARGIN = 0;
+
+async function pollForKill(io, foreign) {
+    const record = { gone: false, polls: 0, start_pixels: null, pixels: null, waited_ms: 0 };
+    const started = Date.now();
+    for (let poll = 0; poll < KILL_POLL_MAX && Date.now() - started < KILL_POLL_MS; poll += 1) {
+        const image = decodePng(Buffer.from(await io.screenshot()));
+        record.polls += 1;
+        record.pixels = countSlotBody(image, foreign, 1);
+        if (record.start_pixels === null) record.start_pixels = record.pixels;
+        if (record.pixels < Math.max(4, record.start_pixels * KILL_BODY_SHARE)) {
+            record.gone = true;
+            break;
+        }
+        await io.wait(KILL_POLL_GAP_MS);
+    }
+    record.waited_ms = Date.now() - started;
+    return record;
+}
+
+// The pixels of the slot colour inside the box of a body (as findBodies measured it) plus a margin.
+function countSlotBody(image, body, slot) {
+    const color = SLOT_RGB[slot];
+    const tolerance = SLOT_TOLERANCE[slot];
+    let count = 0;
+    for (let y = Math.max(0, body.minY - KILL_BOX_MARGIN); y <= Math.min(image.height - 1, body.maxY + KILL_BOX_MARGIN); y += 1) {
+        for (let x = Math.max(0, body.minX - KILL_BOX_MARGIN); x <= Math.min(image.width - 1, body.maxX + KILL_BOX_MARGIN); x += 1) {
+            const pixel = pixelAt(image, x, y);
+            if (pixel && pixel[3] >= 245 && Math.hypot(pixel[0] - color[0], pixel[1] - color[1], pixel[2] - color[2]) <= tolerance) count += 1;
+        }
+    }
+    return count;
 }
 
 function countColour(image, rect, colour, tolerance) {
@@ -215,4 +264,4 @@ function isHud(x, y, image) {
         (x > image.width - 220 && y > image.height - 220) || y > image.height - 40;
 }
 
-module.exports = { drive, findBodies, selectBody, selectOuterComponent, countColour };
+module.exports = { drive, findBodies, selectBody, selectOuterComponent, countColour, countSlotBody };

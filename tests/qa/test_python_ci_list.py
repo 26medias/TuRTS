@@ -48,6 +48,8 @@ def ci_listed(workflow_text):
     """The `.py` paths that a `python3` command of the workflow names."""
     listed = set()
     for line in workflow_text.splitlines():
+        if line.lstrip().startswith("#"):
+            continue  # a commented-out step does not run
         for command in re.finditer(r"python3\s+((?:-\S+\s+)*)((?:tests|scripts)/[\w./-]+\.py)", line):
             listed.add(command.group(2))
     return listed
@@ -124,6 +126,14 @@ class PythonCiListTests(unittest.TestCase):
                          ["tests/a/gone.py: a NOT_IN_CI entry for a file that does not exist"])
         self.assertEqual(problems(root, {"tests/a/test_two.py": reason, "tests/a/test_one.py": reason}),
                          ["tests/a/test_one.py: a NOT_IN_CI entry for a file that CI runs"])
+
+    def test_a_commented_out_step_is_not_listed(self):
+        files = {"tests/a/test_one.py": ""}
+        root = self.repo("steps:\n  - run: python3 tests/a/test_one.py\n", files)
+        self.assertEqual(problems(root, {}), [])
+        root = self.repo("steps:\n  # - run: python3 tests/a/test_one.py\n    #   python3 tests/a/test_one.py\n", files)
+        self.assertEqual(problems(root, {}), ["tests/a/test_one.py: no CI step runs it and it has no NOT_IN_CI entry"])
+        self.assertEqual(ci_listed("      # python3 tests/m2/test_x.py\n      python3 tests/m2/test_y.py\n"), {"tests/m2/test_y.py"})
 
     def test_a_step_that_names_a_missing_file_is_red(self):
         root = self.repo("steps:\n  - run: python3 tests/a/test_gone.py\n", {})

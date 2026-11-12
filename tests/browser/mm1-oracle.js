@@ -4,7 +4,7 @@
 const assert = require("node:assert/strict");
 const { decodePng, pixelAt } = require("./harness/png.js");
 const { unprojectGround } = require("./hud4-oracle.js");
-const { assertConnectionHeld, assertNoResync, assertReplicaLag, replicaLag, serverTickIndex } = require("./checkpoint-lib.js");
+const { assertConnectionHeld, assertKillPathRan, assertNoResync, assertReplicaLag, readServerEvidence, replicaLag } = require("./checkpoint-lib.js");
 
 // The presentation delay of the client, in ticks (crates/turts_client/src/interp.rs:10,
 // `INTERP_DELAY_TICKS`; mm1-oracle.test.js reads that line, so a change there turns the test red).
@@ -30,10 +30,11 @@ async function judge(view, params) {
     assert.deepEqual(params.map_size, [64, 48], "MM1 must use the actual authored 64 by 48 map dimensions");
 
     const checkpoints = JSON.parse(await view.serverFile("scene-checkpoints.json"));
-    const tickIndex = serverTickIndex(await view.serverFile("server-tick.log"));
-    assertConnectionHeld(checkpoints, tickIndex, "MM1");
+    const evidence = await readServerEvidence(view);
+    const tickIndex = evidence.index;
+    assertConnectionHeld(checkpoints, evidence, "MM1");
     // The stall leaves a count in the replica: red whether or not a capture fell inside the stall.
-    assertNoResync(checkpoints, "MM1");
+    assertNoResync(checkpoints, "MM1", evidence);
     const window1Shots = [];
     const shot = async (name, window) => {
         const saveIndex = input.findIndex((entry) => entry.call === "save" && entry.args?.[0] === name);
@@ -65,6 +66,11 @@ async function judge(view, params) {
     const largest = lags.reduce((best, entry) => (entry.lag > best.lag ? entry : best), lags[0]);
     console.log(`MM1 replica lag: largest ${largest.lag} ticks at ${largest.name} (bound ${MAX_REPLICA_LAG_TICKS}); window 1 captures: ${lags.map((entry) => entry.lag).join(",")}`);
     for (const { name, checkpoint } of window1Shots) assertReplicaLag(checkpoint, tickIndex, MAX_REPLICA_LAG_TICKS, `MM1 ${name}`);
+    // The run must have run the kill path: an enemy unit left the server before the after-right capture. Without a
+    // kill the two checks above had no stall to see (run wAYdrM of the re-check: the minimap right click came one hit
+    // before the kill and replaced the attack order).
+    const enemyIds = new Set((afterFocus.checkpoint.debug.replicated_world?.units || []).filter((unit) => unit.owner_slot === 1).map((unit) => unit.unit_id));
+    assertKillPathRan(enemyIds, evidence.removals, tickIndex, afterRight.checkpoint, "MM1");
 
     for (const { checkpoint } of [before, afterFocus, afterLeft, afterDrag, afterRight, afterZoom, noPing, pingWindow]) {
         assertMinimapRect(checkpoint.scene, expectedRect);

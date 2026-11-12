@@ -57,6 +57,7 @@ const FOREIGN = [628, 345, 12, 24, [230, 159, 0]];
 const PING = [1180, 560, 3, 3, [255, 204, 0]];
 const WINDOW1 = png([OWN_COLUMN, FOREIGN]);
 const NO_PING = png([]);
+const NO_FOREIGN = png([OWN_COLUMN]);
 const WITH_PING = png([PING]);
 
 const PARAMS = {
@@ -64,7 +65,7 @@ const PARAMS = {
 };
 
 // A fake pair of windows. The window 2 shot number k shows the ping when k >= pingAtShot.
-function fakeIo(pingAtShot) {
+function fakeIo(pingAtShot, killAtShot = Infinity) {
     const log = [];
     let current = 1;
     const shots = { 1: 0, 2: 0 };
@@ -81,7 +82,7 @@ function fakeIo(pingAtShot) {
         async screenshot() {
             const index = shots[current]; shots[current] += 1;
             log.push(`shot@w${current}#${index}`);
-            if (current === 1) return WINDOW1;
+            if (current === 1) return index >= killAtShot ? NO_FOREIGN : WINDOW1;
             return index >= pingAtShot ? WITH_PING : NO_PING;
         },
         async save(name, bytes) { log.push(`save:${name}`); saved[name] = bytes; },
@@ -141,4 +142,29 @@ test("MM1 takes one capture 500 ms after the minimap right click and none later 
     assert.ok(!between.includes("wait:700"), "no 700 ms wait between captures");
     const steps = JSON.parse(Buffer.from(io.saved["mm1-driver-steps.json"]).toString("utf8"));
     assert.equal(steps.after_right_later, undefined, "the steps file lists no later capture");
+});
+
+test("MM1 waits in window 1, from the pixels, until the target dummy is gone before the minimap steps (the kill path must run)", async () => {
+    // Window 1 shots 0 to 4 are before, selected, before-focus, after-focus and attack. The body is gone at shot 7.
+    const io = fakeIo(1, 7);
+    await drive(io, PARAMS);
+    const steps = JSON.parse(Buffer.from(io.saved["mm1-driver-steps.json"]).toString("utf8"));
+    assert.equal(steps.kill_poll.gone, true);
+    assert.equal(steps.kill_poll.polls, 3, "shots 5 and 6 still show the body, shot 7 does not");
+    assert.ok(steps.kill_poll.start_pixels > 100 && steps.kill_poll.pixels < 10);
+    const poll = io.log.indexOf("shot@w1#5");
+    const gone = io.log.indexOf("shot@w1#7");
+    const leftClick = io.log.findIndex((entry, index) => index > gone && entry.startsWith("click:") && entry.endsWith(",left"));
+    assert.ok(poll > io.log.indexOf("save:mm1-window2-ping.png") && gone > poll && leftClick > gone, "the poll comes after the ping shot and before the left click");
+    assert.equal(io.log.slice(poll, gone).filter((entry) => entry === "wait:500").length, 2, "500 ms between polls");
+    assert.ok(!io.log.slice(poll, gone + 1).some((entry) => entry.startsWith("save:") || entry.startsWith("click:")), "the poll saves nothing and clicks nothing");
+});
+
+test("MM1 ends the kill poll at its bound with no error when the dummy never goes (the oracle names the void run)", async () => {
+    const io = fakeIo(1);
+    await drive(io, PARAMS);
+    const steps = JSON.parse(Buffer.from(io.saved["mm1-driver-steps.json"]).toString("utf8"));
+    assert.equal(steps.kill_poll.gone, false);
+    assert.equal(steps.kill_poll.polls, 60);
+    assert.ok(io.log.includes("save:mm1-after-zoom.png"), "the drive still ends");
 });
