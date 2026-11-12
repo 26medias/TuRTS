@@ -920,17 +920,15 @@ fn hud3_older_engine_requirement_is_refused_for_interface_export() {
                 "engine_api: \"^0.2.3\"",
                 "engine_api: \"^0.2\"",
             ),
+            // The groups are left out, not written empty: the version table reads the source
+            // file, so `orders: []` is a use of API 0.2.3 (L0-RAW, design 6.10).
             (
                 "manifest.ron",
-                "orders: [\"orders/rush.ron\", \"orders/hold.ron\", \"orders/rules.ron\"]",
-                "orders: []",
+                "orders: [\"orders/rush.ron\", \"orders/hold.ron\", \"orders/rules.ron\"],",
+                "",
             ),
-            ("manifest.ron", "input: [\"input/main.ron\"]", "input: []"),
-            (
-                "manifest.ron",
-                "assets: [\"assets/main.ron\"]",
-                "assets: []",
-            ),
+            ("manifest.ron", "input: [\"input/main.ron\"],", ""),
+            ("manifest.ron", "assets: [\"assets/main.ron\"],", ""),
             (
                 "interface/main.ron",
                 "font: Some(\"default\")",

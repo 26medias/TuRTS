@@ -168,6 +168,20 @@ impl PackageArchive {
 
     /// Parse and resolve all gameplay content. Presentation files are never read here.
     pub fn content(&self) -> Result<ContentCatalog, ModError> {
+        // The version table speaks first: the RAW rows need only the raw documents. A package
+        // that writes a field of a newer API is told so before a content cross-check fails
+        // for the same reason (an old API has no `input` group, so "unknown input action").
+        let raw = crate::raw_presence::RawDocuments::read(
+            &self.manifest,
+            crate::version_table::raw_groups(crate::version_table::VERSION_TABLE),
+            |path| self.file(path),
+        )?;
+        crate::version_table::check_version_table(
+            &self.manifest,
+            None,
+            &raw,
+            crate::version_table::VERSION_TABLE,
+        )?;
         let origin = self.id();
         let resources = self
             .resources()?
@@ -229,10 +243,10 @@ impl PackageArchive {
         }
         crate::version_table::check_version_table(
             &self.manifest,
-            &mc_content,
+            Some(&mc_content),
+            &raw,
             crate::version_table::VERSION_TABLE,
         )?;
-        crate::content_m3::validate_m3_presence(&self.manifest, &self.files)?;
         crate::content_m3::validate_m3(&self.manifest, &catalog)?;
         Ok(catalog)
     }

@@ -349,9 +349,15 @@ fn mobile_weapon_is_accepted() {
 #[test]
 fn mobile_weapon_with_api_before_0_2_3_rejected() {
     for engine_api in ["^0.2.1", "^0.2.2", ">=0.2.1", "^0.2"] {
-        let expected = format!(
-            "forge/manifest.ron: engine_api: `weapon with movement` needs engine api 0.2.3; `{engine_api}` admits 0.2.2"
-        );
+        // `^0.2` also admits 0.2.0, which has no M3 content: the package is refused for its first
+        // RAW row (`exports.recipes`, API 0.2.1) before the parsed row for the weapon (L0-RAW).
+        let expected = if engine_api == "^0.2" {
+            "forge/manifest.ron: engine_api: `exports.recipes` needs engine api 0.2.1; `^0.2` admits 0.2.0".to_string()
+        } else {
+            format!(
+                "forge/manifest.ron: engine_api: `weapon with movement` needs engine api 0.2.3; `{engine_api}` admits 0.2.2"
+            )
+        };
         let package = archive(&mobile_weapon_unit(), RECIPE, TECH, engine_api, &[]);
         let server = package.content().map(|_| ()).map_err(|err| err.to_string());
         assert_eq!(server, Err(expected.clone()), "server path, {engine_api}");

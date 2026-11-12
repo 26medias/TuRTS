@@ -28,10 +28,8 @@ pub(crate) struct ParsedMcContent {
     pub(crate) interfaces: Vec<(String, InterfaceDef)>,
     pub(crate) input_maps: Vec<(String, turts_mod_api::InputMapDef)>,
     pub(crate) assets: Vec<(String, AssetsDef)>,
-    pub(crate) orders_present: bool,
-    pub(crate) interface_present: bool,
-    pub(crate) input_present: bool,
-    pub(crate) assets_present: bool,
+    // Presence of a field is not read here: this is the parsed value, and an explicit empty
+    // field looks like an absent one. The version table reads the source file (`raw_presence`).
     /// A unit has a weapon and movement. API 0.2.2 and older refuse it ("weapons must be
     /// static"). `PackageArchive::content` sets it from the resolved catalog.
     pub(crate) mobile_weapon_present: bool,
@@ -62,10 +60,6 @@ pub(crate) fn validate_mc(archive: &PackageArchive) -> Result<ParsedMcContent, M
     let input_maps = archive.input_maps()?;
     let assets = archive.assets()?;
     let parsed = ParsedMcContent {
-        orders_present: !orders.is_empty() || !order_rules.is_empty(),
-        interface_present: !interfaces.is_empty(),
-        input_present: !input_maps.is_empty(),
-        assets_present: !assets.is_empty(),
         mobile_weapon_present: false,
         orders,
         order_rules,

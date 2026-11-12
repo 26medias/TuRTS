@@ -109,6 +109,23 @@ fn pack_cli_help_lists_the_usage_and_the_checks() {
     }
 }
 
+/// L5: the usage tells the modder the version rule: a field that is written, also empty, needs
+/// its API.
+#[test]
+fn pack_cli_help_states_the_engine_api_rule() {
+    let output = turts_pack(&[Path::new("--help")]);
+    // The usage wraps its lines: compare the text with the line breaks collapsed.
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    let stdout = stdout.split_whitespace().collect::<Vec<_>>().join(" ");
+    for text in [
+        "`engine_api` must exclude every engine API that lacks a feature the package writes",
+        "a field written empty (`orders: []`) counts",
+        "leave it out for an older API",
+    ] {
+        assert!(stdout.contains(text), "usage lacks `{text}`:\n{stdout}");
+    }
+}
+
 #[test]
 fn pack_cli_without_a_directory_or_with_an_unknown_option_prints_the_usage() {
     let none = turts_pack(&[]);
