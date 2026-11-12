@@ -102,6 +102,40 @@ rulings R-W and R-I).** Tasks A3, A2b1, A2b2 and A2c must do these:
   a write of `UnitOrders` names each such line (`path:line`) in its report. At the forward merge, the MP1 owner
   (`network-engineer`) routes it through `set_unit_orders` (about 1 run for each of A2b1, A2b2 and A2c).
 
+**From the D0p and S2 reviews (2026-11-12; both merged, 0 High).**
+
+- D0p: the plan block was out of date (three validator hunks, eleven test hunks, nine `economy.rs` hunks; one semantic
+  conflict that git merged without a mark: two names in `crates/turts_server/tests/economy.rs` that S1 had moved). The
+  port is verified hunk by hunk (16 of 16 found in `crates/turts_audit/src/replay.rs`; no extra edit). E9 was green six
+  times in a row after the repair, so the moved A1a exit is met.
+- A1b: the guard `!audited_gather_delivers_cargo` at `crates/turts_audit/src/replay.rs:3251` has no negative test: with
+  its helper forced to `false`, every test stays green. Add one test that edits a real depletion log so the order fails
+  while cargo is held, and assert that the audit rejects it. Keep this property in the ledger audit.
+- The base traces after D0p (and unchanged by S2), to compare before A2a: `base.jsonl`
+  d4c73ebee90e0aef84e58df4e31787ef3756b7e5d3a589ffdde2224ccfcdd7b2, `haul.jsonl`
+  805309b26e717dfe3daa0e5597ebd6f21adde7ef3f93ec71a3610bd97bff3148, `acme.jsonl`
+  19dcf9a3759096c312c11a8e89c2c0ac272dd3ccd868aacf9ac8a4357b91d1d2, `cedar.jsonl`
+  0db10e012cd1c3a41c68fb054a7ab39ec325451f4db4fb912f72dbddd5f33718. The 400-tick traces never reach a node depletion,
+  so they do not test the depletion repair; its own tests do.
+- S2 layout, for A2b1, A2b2 and A2c: the files are `orders/{mod, plain, pending, run, apply, tests}.rs` and
+  `orders/behaviours/{attack, follow, queue, mod}.rs`. `plain.rs` is what A2c deletes. Four functions are the meeting
+  points of the later tasks: `run_orders` (`run.rs:21-416`), `dispatch_pending_movement` (`pending.rs:775-1306`),
+  `apply_order` and `apply_unit_order` (`apply.rs`), `start_order` (`behaviours/queue.rs`). The use graph has one cycle
+  group {apply, pending, plain, queue, attack}: the A2c deletion of `plain.rs` edits pending, apply and queue together;
+  count it as one change.
+- S2, the review fault for later tasks: `return;` as the first statement of `start_next_queued_order`
+  (`orders/behaviours/queue.rs`) turns 12 tests of `turts_sim` red on both builds (4 in `orders::tests`, 6 in
+  `group_movement`, 2 in `tests/orders.rs`, with `queued_order_starts_in_the_tick_after_landing`).
+- S2, Low: `queue_movement_envelope` (`orders/pending.rs:295`) is `pub(crate)` with no re-export; the next task that
+  edits `pending.rs` makes it `pub(super)`. Stale comment citations of `orders.rs` stay in
+  `crates/turts_sim/tests/gmu_same_point.rs:198`, `crates/turts_sim/src/movement/probe.rs:127`, `tests/m3/README.md:103`,
+  `tests/m3/refreeze_classify.py:171`, `tests/m3/test_refreeze_classify.py:175`.
+- The MP1 branch carries a formula ratchet (`crates/turts_checks/tests/formula_ratchet.rs`) with a per-file table. A slice
+  task that moves or splits a counted file names the new rows in its report; the forward merge writes them.
+- The writer rule of MP1 lane 0 (one function `set_unit_orders` for order-state changes and a static check that forbids a
+  direct write of `UnitOrders` outside it) lands on the MP1 branch, not on the slice. A2b1, A2b2 and A2c keep their
+  direct writes on the slice; the MP1 owner of each forward merge moves the new writes into the writer function.
+
 ## 0. Line numbers
 
 - All `path:line` in this plan are at `431c3ad` (TuRTS-mp1), or at the commit that the line names.
