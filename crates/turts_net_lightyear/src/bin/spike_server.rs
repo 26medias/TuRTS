@@ -36,6 +36,17 @@ struct Cfg {
     units: u32,
     stats: Option<PathBuf>,
     reverse_command_results: bool,
+    /// `--burst-units a,b,c`: once, 20 ticks after the first `Welcome`, send one delta with `a`
+    /// units, one with `b` units and one with `c` units in the same fixed tick (one flush).
+    /// A unit adds 9 bytes to the payload. Used by the P8 test (delta order inside one flush).
+    burst_units: Vec<u32>,
+}
+
+/// State of the `--burst-units` burst.
+#[derive(Resource, Default)]
+struct Burst {
+    armed_at_tick: Option<u32>,
+    done: bool,
 }
 
 /// The simulation tick. The first tick is 1; `WorldDelta.base_tick` is the tick before.
@@ -75,6 +86,7 @@ fn main() {
     app.add_plugins(ProtocolPlugin);
     app.insert_resource(cfg);
     app.init_resource::<SimTick>();
+    app.init_resource::<Burst>();
     app.init_resource::<DelayedCommandAcks>();
     app.insert_resource(Stats {
         frame_start: Instant::now(),
@@ -116,6 +128,11 @@ fn parse_args() -> Cfg {
         units: value("--units").map_or(1, |v| v.parse().expect("--units: integer")),
         stats: value("--stats").map(PathBuf::from),
         reverse_command_results: args.iter().any(|arg| arg == "--reverse-command-results"),
+        burst_units: value("--burst-units").map_or_else(Vec::new, |v| {
+            v.split(',')
+                .map(|n| n.parse().expect("--burst-units: integers"))
+                .collect()
+        }),
     }
 }
 
@@ -155,6 +172,7 @@ fn receive_hello(
     mut welcome: Query<&mut MessageSender<Welcome>>,
     mut rejected: Query<&mut MessageSender<JoinRejected>>,
     tick: Res<SimTick>,
+    mut burst: ResMut<Burst>,
 ) {
     for (entity, mut receiver) in hellos.iter_mut() {
         for hello in receiver.receive() {
@@ -168,6 +186,7 @@ fn receive_hello(
                     });
                 }
                 commands.entity(entity).insert(Welcomed);
+                burst.armed_at_tick.get_or_insert(tick.0 + 20);
                 println!("spike_server welcomed player {}", hello.player_id);
             } else {
                 if let Ok(mut sender) = rejected.get_mut(entity) {
@@ -261,22 +280,46 @@ fn send_deltas(
     mut tick: ResMut<SimTick>,
     mut senders: Query<&mut MessageSender<WorldDelta>, With<Welcomed>>,
     mut stats: ResMut<Stats>,
+    mut burst: ResMut<Burst>,
     cfg: Res<Cfg>,
 ) {
-    tick.0 += 1;
     stats.ticked = true;
-    let changes: Vec<UnitDelta> = (0..cfg.units)
+    let is_burst = !burst.done
+        && !cfg.burst_units.is_empty()
+        && burst.armed_at_tick.is_some_and(|at| tick.0 + 1 >= at);
+    let sizes: Vec<u32> = if is_burst {
+        burst.done = true;
+        cfg.burst_units.clone()
+    } else {
+        vec![cfg.units]
+    };
+    for units in sizes {
+        tick.0 += 1;
+        let deltas = make_delta(tick.0, units);
+        let payload = postcard_len(&deltas) as u64;
+        for mut sender in senders.iter_mut() {
+            sender.send::<StateChannel>(deltas.clone());
+            stats.delta_payload_bytes_total += payload;
+        }
+        if is_burst {
+            println!("spike_server burst delta tick {} bytes {payload}", tick.0);
+        }
+    }
+}
+
+fn make_delta(tick: u32, units: u32) -> WorldDelta {
+    let changes: Vec<UnitDelta> = (0..units)
         .map(|i| UnitDelta {
             unit_id: UnitId(i),
             pos: Pos {
-                x: tick.0 as f32 * UNIT_STEP,
+                x: tick as f32 * UNIT_STEP,
                 y: i as f32,
             },
         })
         .collect();
-    let deltas = WorldDelta {
-        tick: tick.0,
-        base_tick: tick.0 - 1,
+    WorldDelta {
+        tick,
+        base_tick: tick - 1,
         spawned: vec![],
         removed: vec![],
         positions: changes,
@@ -287,7 +330,6 @@ fn send_deltas(
             orders: vec![],
             queues: vec![],
         },
-
         belts: vec![],
         inserters: vec![],
         extractors: vec![],
@@ -295,11 +337,6 @@ fn send_deltas(
         healths: vec![],
         research: vec![],
         unit_orders: Vec::new(),
-    };
-    let payload = postcard_len(&deltas) as u64;
-    for mut sender in senders.iter_mut() {
-        sender.send::<StateChannel>(deltas.clone());
-        stats.delta_payload_bytes_total += payload;
     }
 }
 

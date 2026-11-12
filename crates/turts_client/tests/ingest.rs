@@ -199,15 +199,19 @@ fn drop_offsets_resolve_against_welcome_tick() {
     // Delta 110 is dropped: nothing is returned yet.
     assert!(rig.feed(delta(110, 109)).is_empty());
     assert_eq!(rig.counters.deltas_dropped, vec![110]);
-    // Delta 111 names base 110, which the replica never applied: one request.
+    // Deltas 111 to 114 name chains that the replica never applied: it holds them (the grace is
+    // 5 ticks). Delta 115 makes the observed progress 6 ticks past 109: one request.
+    for tick in 111..=114 {
+        assert!(rig.feed(delta(tick, tick - 1)).is_empty(), "delta {tick}");
+    }
     assert_eq!(
-        rig.feed(delta(111, 110)),
+        rig.feed(delta(115, 114)),
         vec![Outgoing::ResyncRequest],
-        "delta 111 must start the resync"
+        "delta 115 must start the resync"
     );
     // The request is outstanding: later deltas are buffered and send nothing.
-    assert!(rig.feed(delta(112, 111)).is_empty());
-    assert!(rig.feed(delta(113, 112)).is_empty());
+    assert!(rig.feed(delta(116, 115)).is_empty());
+    assert!(rig.feed(delta(117, 116)).is_empty());
 }
 
 #[test]
@@ -226,18 +230,25 @@ fn arrival_delta_is_dropped_once_and_recorded() {
         rig.state.replica.as_ref().unwrap().last_applied_tick,
         Some(101)
     );
-    // The next delta has no change, because the unit stopped. Its base is the dropped tick.
+    // The next deltas have no change, because the unit stopped. Their chain starts at the dropped
+    // tick: they are held for the grace (5 ticks), and tick 107 (6 past 101) asks once.
+    for tick in 103..=106 {
+        assert!(
+            rig.feed(empty_delta(tick, tick - 1)).is_empty(),
+            "delta {tick}"
+        );
+    }
     assert_eq!(
-        rig.feed(empty_delta(103, 102)),
+        rig.feed(empty_delta(107, 106)),
         vec![Outgoing::ResyncRequest]
     );
     // The answer applies at once (hold is 0).
-    assert!(rig.feed(snapshot_at(103, 20.0, 8.0)).is_empty());
+    assert!(rig.feed(snapshot_at(107, 20.0, 8.0)).is_empty());
     // A later delta with the same position is applied: the hook fires once.
-    assert!(rig.feed(delta_at(104, 103, 20.0, 8.0)).is_empty());
+    assert!(rig.feed(delta_at(108, 107, 20.0, 8.0)).is_empty());
     assert_eq!(rig.counters.deltas_dropped, vec![102]);
     let replica = rig.state.replica.as_ref().unwrap();
-    assert_eq!(replica.last_applied_tick, Some(104));
+    assert_eq!(replica.last_applied_tick, Some(108));
     assert!(!replica.in_resync());
 }
 
@@ -252,27 +263,31 @@ fn held_snapshot_releases_after_n_delta_ticks() {
         all.extend(rig.feed(delta(tick, tick - 1)));
     }
     assert!(all.is_empty());
-    // Delta 111 is lost. Delta 112 names base 111: one request.
-    let out = rig.feed(delta(112, 111));
+    // Delta 111 is lost. Deltas 112 to 115 are held (grace 5). Delta 116: one request.
+    for tick in 112..=115 {
+        all.extend(rig.feed(delta(tick, tick - 1)));
+    }
+    assert!(all.is_empty());
+    let out = rig.feed(delta(116, 115));
     assert_eq!(out, vec![Outgoing::ResyncRequest]);
     all.extend(out);
-    // The answer snapshot (tick 112) arrives and is held until the delta of tick 115.
-    all.extend(rig.feed(snapshot(112)));
+    // The answer snapshot (tick 116) arrives and is held until the delta of tick 119.
+    all.extend(rig.feed(snapshot(116)));
     assert_eq!(rig.hooks.held.len(), 1);
-    all.extend(rig.feed(delta(113, 112)));
-    all.extend(rig.feed(delta(114, 113)));
+    all.extend(rig.feed(delta(117, 116)));
+    all.extend(rig.feed(delta(118, 117)));
     {
         let replica = rig.state.replica.as_ref().unwrap();
-        assert!(replica.in_resync(), "held: still in resync at tick 114");
+        assert!(replica.in_resync(), "held: still in resync at tick 118");
         assert_eq!(replica.last_applied_tick, Some(110));
         assert_eq!(replica.snapshot_tick, Some(100));
     }
-    // Delta 115 is buffered, then the held snapshot is released and the replay applies 113..=115.
-    all.extend(rig.feed(delta(115, 114)));
+    // Delta 119 is buffered, then the held snapshot is released and the replay applies 117..=119.
+    all.extend(rig.feed(delta(119, 118)));
     let replica = rig.state.replica.as_ref().unwrap();
     assert!(!replica.in_resync());
-    assert_eq!(replica.snapshot_tick, Some(112));
-    assert_eq!(replica.last_applied_tick, Some(115));
+    assert_eq!(replica.snapshot_tick, Some(116));
+    assert_eq!(replica.last_applied_tick, Some(119));
     assert!(rig.hooks.held.is_empty());
     assert!(!rig.hooks.outstanding_request);
     // One request in the whole run.
@@ -381,6 +396,13 @@ fn overflow_discards_trigger_coalesces_request_and_converges_on_successor() {
     rig.state.config.max_buffered_batches = 3;
     rig.hooks.hold_resync_snapshots = 4;
     assert!(rig.feed(welcome(100)).is_empty());
+    // These two tests pin the overflow and successor mechanics of the resync path itself. They
+    // use the strict chain rule (grace 0), so the request starts at the first chain break.
+    rig.state
+        .replica
+        .as_mut()
+        .unwrap()
+        .set_reorder_grace_ticks(0);
     assert!(rig.feed(snapshot(100)).is_empty());
 
     assert_eq!(rig.feed(delta(102, 101)), vec![Outgoing::ResyncRequest]);
@@ -427,6 +449,12 @@ fn overflow_discards_trigger_coalesces_request_and_converges_on_successor() {
 fn held_stale_response_does_not_rollback_and_requests_one_successor() {
     let mut rig = Rig::new();
     assert!(rig.feed(welcome(100)).is_empty());
+    // Strict chain rule (grace 0): see the overflow test above.
+    rig.state
+        .replica
+        .as_mut()
+        .unwrap()
+        .set_reorder_grace_ticks(0);
     assert!(rig.feed(snapshot(100)).is_empty());
     assert!(rig.feed(delta(101, 100)).is_empty());
     assert_eq!(rig.feed(delta(103, 102)), vec![Outgoing::ResyncRequest]);
@@ -626,4 +654,94 @@ fn frame_log_lines_match_the_format() {
         summary_line(None, None, 0, &[]),
         "# welcome_tick=none first_present_tick=none resync_requests_sent=0 deltas_dropped="
     );
+}
+
+// ---- Reorder window (R1) through the ingest path ----
+
+#[test]
+fn reordered_batch_12_then_11_sends_no_request() {
+    let mut rig = Rig::new();
+    assert!(rig.feed(welcome(100)).is_empty());
+    assert!(rig.feed(snapshot(100)).is_empty());
+    // One frame: delta 102 arrives before delta 101 (the sender sorts one flush by size).
+    let out = rig.feed_batch(vec![delta(102, 101), delta(101, 100)]);
+    assert!(out.is_empty(), "{out:?}");
+    assert_eq!(rig.counters.resync_requests_sent, 0);
+    let replica = rig.state.replica.as_ref().unwrap();
+    assert_eq!(replica.last_applied_tick, Some(102));
+    assert!(!replica.in_resync());
+}
+
+#[test]
+fn a_catchup_flush_of_five_in_reverse_sends_no_request() {
+    let mut rig = Rig::new();
+    assert!(rig.feed(welcome(100)).is_empty());
+    assert!(rig.feed(snapshot(100)).is_empty());
+    let batch = (101..=105).rev().map(|t| delta(t, t - 1)).collect();
+    assert!(rig.feed_batch(batch).is_empty());
+    assert_eq!(rig.counters.resync_requests_sent, 0);
+    assert_eq!(
+        rig.state.replica.as_ref().unwrap().last_applied_tick,
+        Some(105)
+    );
+}
+
+#[test]
+fn a_lost_predecessor_sends_one_request_at_the_grace_with_its_reason() {
+    let mut rig = Rig::new();
+    assert!(rig.feed(welcome(100)).is_empty());
+    assert!(rig.feed(snapshot(100)).is_empty());
+    // 101 is lost. 102 to 105 only make the replica wait.
+    for tick in 102..=105 {
+        let out = rig.feed(delta(tick, tick - 1));
+        assert!(out.is_empty(), "delta {tick} returned {out:?}");
+    }
+    assert_eq!(rig.feed(delta(106, 105)), vec![Outgoing::ResyncRequest]);
+    assert_eq!(rig.counters.resync_requests_sent, 1);
+    assert_eq!(rig.counters.resync_by_chain_break, 1);
+    assert_eq!(
+        (
+            rig.counters.resync_by_validation,
+            rig.counters.resync_by_idle_span,
+            rig.counters.resync_by_successor
+        ),
+        (0, 0, 0)
+    );
+    for tick in 107..=130 {
+        let out = rig.feed(delta(tick, tick - 1));
+        assert!(out.is_empty(), "delta {tick} returned {out:?}");
+    }
+    assert_eq!(rig.counters.resync_requests_sent, 1);
+    assert!(rig.feed(snapshot(110)).is_empty());
+    assert_eq!(
+        rig.state.replica.as_ref().unwrap().last_applied_tick,
+        Some(130)
+    );
+}
+
+#[test]
+fn idle_span_request_counts_as_idle_span() {
+    let mut rig = Rig::new();
+    assert!(rig.feed(welcome(100)).is_empty());
+    feed_quiet_chain(&mut rig, 101, 109);
+    assert_eq!(rig.feed(delta(111, 110)), vec![Outgoing::ResyncRequest]);
+    assert_eq!(rig.counters.resync_by_idle_span, 1);
+    assert_eq!(rig.counters.resync_requests_sent, 1);
+}
+
+#[test]
+fn a_delta_that_fails_validation_counts_as_validation() {
+    let mut rig = Rig::new();
+    assert!(rig.feed(welcome(100)).is_empty());
+    assert!(rig.feed(snapshot(100)).is_empty());
+    let Incoming::Deltas(mut bad) = delta(101, 100) else {
+        unreachable!()
+    };
+    bad.positions[0].unit_id = UnitId(9);
+    assert_eq!(
+        rig.feed(Incoming::Deltas(bad)),
+        vec![Outgoing::ResyncRequest]
+    );
+    assert_eq!(rig.counters.resync_by_validation, 1);
+    assert_eq!(rig.counters.resync_requests_sent, 1);
 }
