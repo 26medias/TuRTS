@@ -192,7 +192,7 @@ function check(dirs, extra = []) {
 const GREEN = { startOverlay: true, guide: null, alerts: 0 };
 const GUIDE = { startOverlay: true, guide: "seethrough", guideWords: 80, alerts: 2 };
 
-test("first-click probe, green page: every own unit click selects it and changes the picture", { skip }, async () => {
+test("first-click probe, green page: every own unit click selects it and changes the picture", { skip, timeout: 120000 }, async () => {
     const { dir, record } = await probe("first-click", GREEN);
     assert.equal(record.summary.verdict, "PASS", JSON.stringify(record.summary));
     assert.equal(record.clicks.length, 3, "the three own units, not the enemy");
@@ -208,7 +208,7 @@ test("first-click probe, green page: every own unit click selects it and changes
     assert.deepEqual(read(dir, "probe-first-click.json").summary, record.summary, "the record is on the disk");
 });
 
-test("first-click probe, page with a see-through full-size guide: it FAILS at the first unit (the layer takes the click)", { skip }, async () => {
+test("first-click probe, page with a see-through full-size guide: it FAILS at the first unit (the layer takes the click)", { skip, timeout: 120000 }, async () => {
     const { record } = await probe("first-click", GUIDE);
     assert.equal(record.summary.verdict, "FAIL");
     assert.equal(record.summary.failed, 3, "every click fails");
@@ -221,12 +221,12 @@ test("first-click probe, page with a see-through full-size guide: it FAILS at th
     assert.match(record.summary.reason, /first click on unit \d+ \(fixture:own\d\): selection \[\], no visible change/);
 });
 
-test("first-click probe, opaque guide: still FAILS (the click is taken), but it is not a see-through layer", { skip }, async () => {
+test("first-click probe, opaque guide: still FAILS (the click is taken), but it is not a see-through layer", { skip, timeout: 120000 }, async () => {
     const { record } = await probe("first-click", { startOverlay: true, guide: "opaque", guideWords: 12, alerts: 0 });
     assert.equal(record.summary.verdict, "FAIL");
 });
 
-test("first-click probe, positive control: after the tool closes the guide the probe passes", { skip }, async () => {
+test("first-click probe, positive control: after the tool closes the guide the probe passes", { skip, timeout: 120000 }, async () => {
     const { dir, record } = await probe("first-click", GUIDE, { control: "close-layer" });
     assert.equal(record.summary.verdict, "PASS", JSON.stringify(record.summary));
     assert.equal(record.layer_close.closed, true);
@@ -234,13 +234,13 @@ test("first-click probe, positive control: after the tool closes the guide the p
     assert.equal(read(dir, "session.json").control, "close-layer");
 });
 
-test("first-click probe on a page with no own unit on screen is a FAIL, not a pass", { skip }, async () => {
+test("first-click probe on a page with no own unit on screen is a FAIL, not a pass", { skip, timeout: 120000 }, async () => {
     const { record } = await probe("first-click", { ...GREEN, units: 0 });
     assert.equal(record.summary.verdict, "FAIL");
     assert.match(record.summary.reason, /no own unit on screen/);
 });
 
-test("first-click probe: a click that selects but shows nothing is a FAIL; a visible change with no selection is a FAIL", { skip }, async () => {
+test("first-click probe: a click that selects but shows nothing is a FAIL; a visible change with no selection is a FAIL", { skip, timeout: 120000 }, async () => {
     const quiet = (await probe("first-click", { ...GREEN, selectShows: false })).record;
     assert.equal(quiet.summary.verdict, "FAIL");
     assert.ok(quiet.clicks.every((click) => click.selection_ok && !click.visible_change));
@@ -251,7 +251,7 @@ test("first-click probe: a click that selects but shows nothing is a FAIL; a vis
 
 // ---- UI-record checks (F9, F3, F6) and the buttons probe (F8) -----------------------------------------------
 
-test("the UI records are taken before the first input and after the first click, and are not on the disk before the release", { skip }, async () => {
+test("the UI records are taken before the first input and after the first click, and are not on the disk before the release", { skip, timeout: 120000 }, async () => {
     const { browser, base } = await chrome();
     const page = await browser.contexts()[0].newPage();
     try {
@@ -277,7 +277,7 @@ test("the UI records are taken before the first input and after the first click,
     } finally { await page.close(); }
 });
 
-test("checker, UI records: a long text (F9), a see-through blocking layer (F3) and an alert line before input (F6) are FAILS; the green page is not", { skip }, async () => {
+test("checker, UI records: a long text (F9), a see-through blocking layer (F3) and an alert line before input (F6) are FAILS; the green page is not", { skip, timeout: 120000 }, async () => {
     const green = await probe("first-click", GREEN);
     const buttons = await probe("buttons", { ...GREEN, startOverlay: false, helpButton: true });
     const ok = check([green.dir, buttons.dir], ["--partial"]);
@@ -305,7 +305,7 @@ test("checker, UI records: a long text (F9), a see-through blocking layer (F3) a
     assert.match(alerts.out, /PASS F3 /);
 });
 
-test("buttons probe: a button that the start overlay covers loses its first click (F8); a button that acts passes", { skip }, async () => {
+test("buttons probe: a button that the start overlay covers loses its first click (F8); a button that acts passes", { skip, timeout: 120000 }, async () => {
     const lost = await probe("buttons", { ...GREEN, helpButton: true });
     assert.equal(lost.record.summary.verdict, "FAIL");
     assert.equal(lost.record.buttons.length, 1);
@@ -324,7 +324,7 @@ test("buttons probe: a button that the start overlay covers loses its first clic
     assert.match(passed.out, /PASS F8 /);
 });
 
-test("buttons probe: a start overlay that vanishes on the first click does not count as the button acting", { skip }, async () => {
+test("buttons probe: a start overlay that vanishes on the first click does not count as the button acting", { skip, timeout: 120000 }, async () => {
     const { record } = await probe("buttons", { ...GREEN, helpButton: true, helpDead: true });
     assert.equal(record.buttons[0].acted, false, "the overlay left, the button did nothing");
     assert.deepEqual(record.buttons[0].changed_ids, []);
@@ -332,7 +332,7 @@ test("buttons probe: a start overlay that vanishes on the first click does not c
 
 // ---- The verdict line ----------------------------------------------------------------------------------
 
-test("checker verdict: NOT-READY when a probe fails or is missing; MACHINE-PASS (manual checks open) only with all of them", { skip }, async () => {
+test("checker verdict: NOT-READY when a probe fails or is missing; MACHINE-PASS (manual checks open) only with all of them", { skip, timeout: 120000 }, async () => {
     const green = await probe("first-click", GREEN);
     const buttons = await probe("buttons", { ...GREEN, startOverlay: false, helpButton: true });
     const both = check([green.dir, buttons.dir], ["--partial"]);
