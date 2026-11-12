@@ -143,5 +143,156 @@
     "exit": 101,
     "commit": "9ff4f9c7a624cc5e7d83bcc806bcda59431815ba",
     "expected_selected": "dangling_fails_on_weapon_last_target"
+  },
+  {
+    "row": "COMBAT-FIXES",
+    "plant": "2a (stand-off returns the unchecked ring point: the old approach, sim sweep)",
+    "files": [
+      {
+        "file": "crates/turts_sim/src/economy/combat.rs",
+        "edit": {
+          "old": "    if within_weapon_range(ring, target, range) {\n",
+          "new": "    if true {\n"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_sim",
+      "--locked",
+      "--lib",
+      "economy::combat::tests::attack_from_out_of_range_fires_on_every_bearing_and_distance",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "approaches never fired within the walk bound",
+    "exit": 101,
+    "commit": "9ff4f9c7a624cc5e7d83bcc806bcda59431815ba",
+    "expected_selected": "economy::combat::tests::attack_from_out_of_range_fires_on_every_bearing_and_distance"
+  },
+  {
+    "row": "COMBAT-FIXES",
+    "plant": "2b (stand-off returns the unchecked ring point, random rings)",
+    "files": [
+      {
+        "file": "crates/turts_sim/src/economy/combat.rs",
+        "edit": {
+          "old": "    if within_weapon_range(ring, target, range) {\n",
+          "new": "    if true {\n"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_sim",
+      "--locked",
+      "--lib",
+      "economy::combat::tests::weapon_stand_off_is_in_range_for_random_rings",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "is out of range",
+    "exit": 101,
+    "commit": "9ff4f9c7a624cc5e7d83bcc806bcda59431815ba",
+    "expected_selected": "economy::combat::tests::weapon_stand_off_is_in_range_for_random_rings"
+  },
+  {
+    "row": "COMBAT-FIXES",
+    "plant": "2c (stand-off returns the unchecked ring point, real Muster package)",
+    "files": [
+      {
+        "file": "crates/turts_sim/src/economy/combat.rs",
+        "edit": {
+          "old": "    if within_weapon_range(ring, target, range) {\n",
+          "new": "    if true {\n"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_pack",
+      "--locked",
+      "--test",
+      "mc_order_rows",
+      "--",
+      "--exact",
+      "actual_muster_attack_from_out_of_range_fires_from_every_bearing"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "attacks from out of range never fired",
+    "exit": 101,
+    "commit": "9ff4f9c7a624cc5e7d83bcc806bcda59431815ba",
+    "expected_selected": "actual_muster_attack_from_out_of_range_fires_from_every_bearing"
+  },
+  {
+    "row": "COMBAT-FIXES",
+    "plant": "2d (the pull is half a bound: too small for the rounding)",
+    "files": [
+      {
+        "file": "crates/turts_sim/src/economy/combat.rs",
+        "edit": {
+          "old": "const STAND_OFF_BOUNDS: f32 = 4.0;\n",
+          "new": "const STAND_OFF_BOUNDS: f32 = 0.5;\n"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_sim",
+      "--locked",
+      "--lib",
+      "economy::combat::tests::weapon_stand_off_is_in_range_for_random_rings",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "is out of range",
+    "exit": 101,
+    "commit": "9ff4f9c7a624cc5e7d83bcc806bcda59431815ba",
+    "expected_selected": "economy::combat::tests::weapon_stand_off_is_in_range_for_random_rings"
+  },
+  {
+    "row": "COMBAT-FIXES",
+    "plant": "2e (the stand-off always pulls in: a passing ring point moves)",
+    "files": [
+      {
+        "file": "crates/turts_sim/src/economy/combat.rs",
+        "edit": {
+          "old": "    if within_weapon_range(ring, target, range) {\n",
+          "new": "    if false {\n"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_sim",
+      "--locked",
+      "--lib",
+      "economy::combat::tests::weapon_stand_off_is_in_range_for_random_rings",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "a ring point that is in range stays unchanged",
+    "exit": 101,
+    "commit": "9ff4f9c7a624cc5e7d83bcc806bcda59431815ba",
+    "expected_selected": "economy::combat::tests::weapon_stand_off_is_in_range_for_random_rings"
   }
 ]
