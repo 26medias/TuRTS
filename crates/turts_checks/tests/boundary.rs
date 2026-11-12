@@ -112,6 +112,16 @@ fn t1_boundary_script_passes() {
         "checked: turts_client_web wasm32-unknown-unknown: no turts_audit".to_string(),
         format!("checked: turts_interaction {host}: no turts_audit"),
         "checked: turts_interaction wasm32-unknown-unknown: no turts_audit".to_string(),
+        format!("checked: turts_rules {host}: no bevy*"),
+        "checked: turts_rules wasm32-unknown-unknown: no bevy*".to_string(),
+        format!(
+            "checked: turts_rules {host}: no {}",
+            RULES_FORBIDDEN.join(" ")
+        ),
+        format!(
+            "checked: turts_rules wasm32-unknown-unknown: no {}",
+            RULES_FORBIDDEN.join(" ")
+        ),
     ] {
         assert!(
             out_of(&output).lines().any(|got| got == line),
@@ -293,6 +303,160 @@ fn t1x_audit_copy_with_mod_runtime_is_red() {
     for output in &outputs {
         assert_red(output, "forbidden edge: turts_audit -> turts_mod_runtime\n");
     }
+}
+
+/// The names that the `turts_rules` rows of `scripts/boundary.sh` forbid, in the script order:
+/// every other workspace crate, `wgpu` and `winit`. The `bevy*` crates have their own row.
+const RULES_FORBIDDEN: [&str; 14] = [
+    "turts_audit",
+    "turts_checks",
+    "turts_client",
+    "turts_client_web",
+    "turts_interaction",
+    "turts_mod_api",
+    "turts_mod_runtime",
+    "turts_net_lightyear",
+    "turts_net_protocol",
+    "turts_pack",
+    "turts_server",
+    "turts_sim",
+    "wgpu",
+    "winit",
+];
+
+/// Write a standalone manifest for a copy of `turts_rules` with the extra `[dependencies]`
+/// lines, and run the boundary rule on both targets. Returns the two outputs (host, wasm32).
+fn rules_copy_outputs(extra_dependencies: &str, rule: &[&str]) -> Vec<Output> {
+    // The fixture crate cannot prove these rows: `tree` selects the package by name
+    // (`cargo tree -p turts_rules`). A standalone copy of `turts_rules` with one planted edge
+    // proves each row on both targets.
+    let root = repo_root();
+    let (temp, manifest) = standalone_copy("turts_rules");
+    let text = format!(
+        "[workspace]\nresolver = \"3\"\n\n[package]\nname = \"turts_rules\"\nversion = \"0.2.0\"\nedition = \"2024\"\nlicense = \"LicenseRef-TBD\"\npublish = false\n\n[dependencies]\n{extra_dependencies}"
+    );
+    std::fs::write(&manifest, text).expect("write standalone manifest");
+    let outputs: Vec<Output> = [host_triple().as_str(), "wasm32-unknown-unknown"]
+        .into_iter()
+        .map(|target| {
+            Command::new("bash")
+                .arg("scripts/boundary.sh")
+                .args(rule)
+                .args(["--target", target])
+                .arg("--manifest")
+                .arg(&manifest)
+                .env("CARGO_NET_OFFLINE", "true")
+                .current_dir(&root)
+                .output()
+                .expect("boundary script starts")
+        })
+        .collect();
+    let _ = std::fs::remove_dir_all(temp);
+    outputs
+}
+
+#[test]
+fn t1x_rules_copy_with_a_workspace_crate_is_red() {
+    let root = repo_root();
+    let dependencies = format!(
+        "turts_mod_api = {{ path = \"{}\" }}\n",
+        root.join("crates/turts_mod_api").display()
+    );
+    let names = RULES_FORBIDDEN.join(",");
+    let outputs = rules_copy_outputs(
+        &dependencies,
+        &[
+            "--rule",
+            "forbid",
+            "--crate",
+            "turts_rules",
+            "--names",
+            &names,
+        ],
+    );
+    for output in &outputs {
+        assert_red(output, "forbidden edge: turts_rules -> turts_mod_api\n");
+    }
+}
+
+#[test]
+fn t1x_rules_copy_with_a_bevy_crate_is_red() {
+    let outputs = rules_copy_outputs(
+        "bevy_math = \"=0.20.0\"\n",
+        &["--rule", "no-bevy-prefix", "--crate", "turts_rules"],
+    );
+    for output in &outputs {
+        assert_red_prefix(output, "forbidden edge: turts_rules -> bevy");
+    }
+}
+
+#[test]
+fn t1x_rules_copy_with_no_planted_edge_is_green() {
+    // The copy with no extra edge passes both rows, so the two red tests above are red
+    // because of the planted edge and not because of the copy.
+    let names = RULES_FORBIDDEN.join(",");
+    for rule in [
+        vec![
+            "--rule",
+            "forbid",
+            "--crate",
+            "turts_rules",
+            "--names",
+            &names,
+        ],
+        vec!["--rule", "no-bevy-prefix", "--crate", "turts_rules"],
+    ] {
+        for output in &rules_copy_outputs("", &rule) {
+            assert_eq!(
+                output.status.code(),
+                Some(0),
+                "stderr: {:?}",
+                err_of(output)
+            );
+            assert_eq!(out_of(output), "rule ok\n");
+        }
+    }
+}
+
+#[test]
+fn t1x_rules_forbidden_list_is_every_workspace_crate() {
+    // The row names every other workspace crate. When a crate is added and the row is not
+    // changed, this test is red. The names come from the `crates` directory, and the list
+    // that the script runs comes from its own "checked:" line.
+    let mut crates: Vec<String> = std::fs::read_dir(repo_root().join("crates"))
+        .expect("read crates")
+        .map(|entry| {
+            entry
+                .expect("crate entry")
+                .file_name()
+                .into_string()
+                .expect("crate name is text")
+        })
+        .filter(|name| name != "turts_rules")
+        .collect();
+    crates.extend(["wgpu".to_string(), "winit".to_string()]);
+    crates.sort();
+    let output = run(&[]);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stderr: {:?}",
+        err_of(&output)
+    );
+    let host = host_triple();
+    let prefix = format!("checked: turts_rules {host}: no ");
+    let stdout = out_of(&output);
+    let line = stdout
+        .lines()
+        .filter_map(|line| line.strip_prefix(prefix.as_str()))
+        .find(|rest| *rest != "bevy*")
+        .expect("the full run prints the turts_rules row");
+    let mut in_script: Vec<String> = line.split(' ').map(str::to_string).collect();
+    in_script.sort();
+    assert_eq!(in_script, crates);
+    let mut in_test: Vec<String> = RULES_FORBIDDEN.iter().map(|n| n.to_string()).collect();
+    in_test.sort();
+    assert_eq!(in_test, crates);
 }
 
 #[test]

@@ -1,0 +1,11 @@
+[package]
+name = "turts_rules"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+# Pure rules. No dependency of any kind: not a `bevy*` crate, not a workspace crate, not
+# `wgpu`, not `winit` (design section 9, crate table). `scripts/boundary.sh` checks this on
+# host and wasm32.
+[dependencies]

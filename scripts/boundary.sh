@@ -81,6 +81,15 @@ forbid turts_client_web $HOST "" turts_audit
 forbid turts_client_web wasm32-unknown-unknown "" turts_audit
 forbid turts_interaction $HOST "" turts_audit
 forbid turts_interaction wasm32-unknown-unknown "" turts_audit
+# The pure rules crate (MP1 design section 9). It takes plain values: no `bevy*` crate, no
+# workspace crate, no `wgpu`, no `winit`, on host and on wasm32. The list names every other
+# workspace crate; the T1 test `t1x_rules_forbidden_list_is_every_workspace_crate` fails when
+# a crate is added and this list is not.
+RULES_FORBIDDEN=(turts_audit turts_checks turts_client turts_client_web turts_interaction turts_mod_api turts_mod_runtime turts_net_lightyear turts_net_protocol turts_pack turts_server turts_sim wgpu winit)
+nobevy turts_rules $HOST ""
+nobevy turts_rules wasm32-unknown-unknown ""
+forbid turts_rules $HOST "" "${RULES_FORBIDDEN[@]}"
+forbid turts_rules wasm32-unknown-unknown "" "${RULES_FORBIDDEN[@]}"
 workspace lightyear_prediction bevy_replicon
 # The probe feature must not reach a shipped build (normal and build edges; the dev edge of
 # turts_pack and the test builds turn it on on purpose).
