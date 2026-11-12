@@ -39,6 +39,7 @@ fn volume_changes_update_existing_sinks_with_master_times_category_gain() {
         voice: 0.8,
         alerts: 0.7,
         effects: 0.6,
+        ..Default::default()
     };
     let mut voice_sink_gain = 1.0;
     let mut alert_sink_gain = 1.0;

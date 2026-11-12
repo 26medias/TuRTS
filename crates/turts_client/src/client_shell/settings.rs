@@ -363,7 +363,7 @@ pub(super) fn toggle_settings_menu(
         &mut commands,
         panel,
         *volumes,
-        sound_status_label(audio.as_deref()),
+        sound_shown_on(audio.as_deref(), &volumes),
     );
 }
 

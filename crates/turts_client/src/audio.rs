@@ -78,7 +78,12 @@ impl Plugin for AudioPlugin {
         register_settings_systems(app);
         app.add_systems(
             Update,
-            (load_sound_assets, spawn_requested_sounds, update_live_gains)
+            (
+                load_sound_assets,
+                silence_while_sound_is_off,
+                spawn_requested_sounds,
+                update_live_gains,
+            )
                 .chain()
                 .after(crate::volume_settings::sync_volume_thumb_positions)
                 .after(FeedbackSet),
@@ -283,6 +288,10 @@ fn save_settings(
                 settings.value(category),
             )?);
         }
+        json = Some(crate::volume_settings::set_sound_on_in_json(
+            json.as_deref(),
+            settings.sound_on,
+        )?);
     }
     if controls_changed {
         json = Some(crate::volume_settings::set_controls_in_json(
@@ -319,6 +328,7 @@ fn save_settings(
         ] {
             store.set_volume(category, settings.value(category))?;
         }
+        store.set_sound_on(settings.sound_on)?;
     }
     if controls_changed {
         store.set_controls(controls)?;
@@ -359,12 +369,15 @@ impl BrowserAudio {
         }
     }
 
-    /// The menu label: "Sound: off" until audio runs.
+    /// True when the browser lets audio play (or there is no browser to ask).
+    pub fn lets_audio_play(self) -> bool {
+        matches!(self, Self::NotObserved | Self::Running)
+    }
+
+    /// The menu label of the browser state alone: "Sound: off" until audio runs. The shell label
+    /// also needs the sound switch of the player: see `client_shell::sound_shown_on`.
     pub fn menu_label(self) -> &'static str {
-        match self {
-            Self::NotObserved | Self::Running => "Sound: on",
-            Self::AwaitingGesture | Self::Locked => "Sound: off",
-        }
+        crate::volume_settings::sound_label(self.lets_audio_play())
     }
 }
 
@@ -404,6 +417,13 @@ fn spawn_requested_sounds(
     frames: Option<Res<crate::core_adapter::FrameFeeds>>,
     active: Query<(Entity, &AudioCategoryPlayer)>,
 ) {
+    // The sound switch is off by default (CEO decision). A request that comes while it is off is
+    // dropped here, not queued: the sound is not requested later, and no sink exists to play it
+    // when the player turns the switch on. The alert line and the minimap ping are not affected:
+    // they come from the feedback owner.
+    if !settings.sound_on {
+        return;
+    }
     #[cfg(target_family = "wasm")]
     if !browser_contexts_ready(&_feed.context_states, _feed.gesture_seen) {
         return;
@@ -464,6 +484,21 @@ fn spawn_requested_sounds(
     }
 }
 
+/// While the sound switch is off no sound plays: a sound that started before the switch went
+/// off ends now. Its player is removed, so it cannot start to be heard when the switch comes on.
+fn silence_while_sound_is_off(
+    settings: Res<VolumeSettings>,
+    players: Query<Entity, With<AudioCategoryPlayer>>,
+    mut commands: Commands,
+) {
+    if settings.sound_on {
+        return;
+    }
+    for entity in &players {
+        commands.entity(entity).despawn();
+    }
+}
+
 fn parse_category(category: &str) -> Option<VolumeCategory> {
     match category {
         "voice" => Some(VolumeCategory::Voice),
@@ -499,10 +534,12 @@ fn observe_real_sinks(
     players: RealAudioPlayers<'_, '_>,
     replica: Option<Res<ReplicaState>>,
     frames: Option<Res<crate::core_adapter::FrameFeeds>>,
+    settings: Res<VolumeSettings>,
     mut state: ResMut<AudioObservationState>,
     mut feed: ResMut<AudioFeed>,
 ) {
     state.frame = state.frame.saturating_add(1);
+    feed.sound_on = settings.sound_on;
     let joined = replica
         .as_deref()
         .is_some_and(|state| state.welcome.is_some() && state.replica.is_some());
@@ -603,14 +640,69 @@ fn category_name(category: VolumeCategory) -> &'static str {
     }
 }
 
-#[cfg(test)]
+/// An isolated native settings root for tests that run the real audio plugin. The plugin loads
+/// the stored settings at the first frame, so a test that needs a known switch state writes it
+/// into a document of this kind and never reads the user's own settings.
+#[cfg(all(test, not(target_family = "wasm")))]
+mod isolated_settings {
+    use std::{
+        fs,
+        path::PathBuf,
+        sync::atomic::{AtomicU64, Ordering},
+        time::{SystemTime, UNIX_EPOCH},
+    };
+
+    static NEXT_ROOT: AtomicU64 = AtomicU64::new(0);
+
+    pub(super) struct Fixture(pub(super) PathBuf);
+    impl Fixture {
+        pub(super) fn new(json: &str) -> Self {
+            let nonce = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos();
+            let root = std::env::temp_dir().join(format!(
+                "turts-controls-{}-{nonce}-{}",
+                std::process::id(),
+                NEXT_ROOT.fetch_add(1, Ordering::Relaxed)
+            ));
+            let path = crate::volume_settings::native_settings_path(&root);
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(path, json).unwrap();
+            Self(root)
+        }
+        pub(super) fn json(&self) -> serde_json::Value {
+            serde_json::from_slice(
+                &fs::read(crate::volume_settings::native_settings_path(&self.0)).unwrap(),
+            )
+            .unwrap()
+        }
+    }
+    impl Drop for Fixture {
+        fn drop(&mut self) {
+            fs::remove_dir_all(&self.0).unwrap();
+        }
+    }
+}
+
+#[cfg(all(test, not(target_family = "wasm")))]
 mod audio_policy_tests {
+    use super::isolated_settings::Fixture;
     use super::*;
+
+    /// The documents of these tests start with the sound switch on: they test the playing path.
+    const SOUND_ON: &str = r#"{"audio":{"sound_on":true}}"#;
+
+    fn sound_on_root(fixture: &Fixture) -> crate::persist::PersistenceConfigRoot {
+        crate::persist::PersistenceConfigRoot(Some(fixture.0.clone()))
+    }
 
     #[test]
     fn a_queued_player_without_a_real_sink_is_not_reported_as_started_audio() {
+        let fixture = Fixture::new(SOUND_ON);
         let mut app = App::new();
         app.add_plugins(MinimalPlugins)
+            .insert_resource(sound_on_root(&fixture))
             .add_plugins(AudioPlugin)
             .insert_resource(AudioFeed::default())
             .insert_resource(NoticesFeed::default())
@@ -692,8 +784,10 @@ mod audio_policy_tests {
 
     #[test]
     fn a_new_voice_response_replaces_the_existing_voice_entity() {
+        let fixture = Fixture::new(SOUND_ON);
         let mut app = App::new();
-        app.add_plugins(AudioPlugin)
+        app.insert_resource(sound_on_root(&fixture))
+            .add_plugins(AudioPlugin)
             .insert_resource(AudioFeed::default())
             .insert_resource(NoticesFeed::default())
             .insert_resource(FrameFeedback {
@@ -747,8 +841,10 @@ mod audio_policy_tests {
 
     #[test]
     fn higher_priority_alert_replaces_the_lowest_of_two_live_alerts() {
+        let fixture = Fixture::new(SOUND_ON);
         let mut app = App::new();
-        app.add_plugins(AudioPlugin)
+        app.insert_resource(sound_on_root(&fixture))
+            .add_plugins(AudioPlugin)
             .insert_resource(AudioFeed::default())
             .insert_resource(NoticesFeed::default())
             .insert_resource(FrameFeedback {
@@ -842,39 +938,10 @@ fn refresh_browser_audio_state(mut feed: ResMut<AudioFeed>) {
 
 #[cfg(all(test, not(target_family = "wasm")))]
 mod control_settings_persistence_contract {
+    use super::isolated_settings::Fixture;
     use super::*;
-    use std::{
-        fs,
-        path::PathBuf,
-        sync::atomic::{AtomicU64, Ordering},
-        time::{SystemTime, UNIX_EPOCH},
-    };
 
-    static NEXT_ROOT: AtomicU64 = AtomicU64::new(0);
-
-    struct Fixture(PathBuf);
     impl Fixture {
-        fn new(json: &str) -> Self {
-            let nonce = SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_nanos();
-            let root = std::env::temp_dir().join(format!(
-                "turts-controls-{}-{nonce}-{}",
-                std::process::id(),
-                NEXT_ROOT.fetch_add(1, Ordering::Relaxed)
-            ));
-            let path = crate::volume_settings::native_settings_path(&root);
-            fs::create_dir_all(path.parent().unwrap()).unwrap();
-            fs::write(path, json).unwrap();
-            Self(root)
-        }
-        fn json(&self) -> serde_json::Value {
-            serde_json::from_slice(
-                &fs::read(crate::volume_settings::native_settings_path(&self.0)).unwrap(),
-            )
-            .unwrap()
-        }
         fn app(&self) -> App {
             let mut app = App::new();
             app.add_plugins(MinimalPlugins)
@@ -888,11 +955,6 @@ mod control_settings_persistence_contract {
                 .init_resource::<crate::core_adapter::CorePreferences>();
             register_settings_systems(&mut app);
             app
-        }
-    }
-    impl Drop for Fixture {
-        fn drop(&mut self) {
-            fs::remove_dir_all(&self.0).unwrap();
         }
     }
     fn valid_document() -> &'static str {
@@ -1080,5 +1142,196 @@ mod control_settings_persistence_contract {
                 "audio shares the same corrupt-value decision for {json}"
             );
         }
+    }
+
+    const LEVELS_NO_FLAG: &str =
+        r#"{"audio":{"master":0.35,"voice":0.2,"alerts":0.6,"effects":0.8},"future":{"keep":1}}"#;
+    const LEVELS_ON: &str = r#"{"audio":{"master":0.35,"voice":0.2,"alerts":0.6,"effects":0.8,"sound_on":true},"future":{"keep":1}}"#;
+    const ALERT: &str = "muster:muster_alert";
+
+    /// The real audio plugin on an isolated settings root, with one sound in the catalog.
+    fn audio_app(fixture: &Fixture) -> App {
+        let mut app = App::new();
+        app.add_plugins(MinimalPlugins)
+            .insert_resource(crate::persist::PersistenceConfigRoot(Some(
+                fixture.0.clone(),
+            )))
+            .insert_resource(AudioFeed::default())
+            .insert_resource(NoticesFeed::default())
+            .insert_resource(FrameFeedback::default())
+            .add_plugins(AudioPlugin);
+        let handle = app
+            .world_mut()
+            .resource_mut::<Assets<AudioSource>>()
+            .add(AudioSource {
+                bytes: Arc::from(Vec::<u8>::new()),
+            });
+        app.world_mut()
+            .resource_mut::<SoundCatalog>()
+            .0
+            .insert(ALERT.into(), handle);
+        app
+    }
+
+    fn request_alert(app: &mut App) {
+        app.world_mut()
+            .resource_mut::<FrameFeedback>()
+            .audio_started = vec![StartedSound {
+            id: ALERT.into(),
+            category: "alerts".into(),
+            priority: 10,
+        }];
+    }
+
+    fn clear_requests(app: &mut App) {
+        app.world_mut()
+            .resource_mut::<FrameFeedback>()
+            .audio_started
+            .clear();
+    }
+
+    fn player_count(app: &mut App) -> usize {
+        let world = app.world_mut();
+        world.query::<&AudioCategoryPlayer>().iter(world).count()
+    }
+
+    fn set_sound(app: &mut App, on: bool) {
+        app.world_mut().resource_mut::<VolumeSettings>().sound_on = on;
+    }
+
+    #[test]
+    fn with_the_sound_off_no_player_starts_and_a_request_is_not_queued_for_later() {
+        let fixture = Fixture::new(LEVELS_NO_FLAG);
+        let mut app = audio_app(&fixture);
+        request_alert(&mut app);
+        app.update();
+        assert!(
+            !app.world().resource::<VolumeSettings>().sound_on,
+            "a stored profile with no flag loads with the sound off"
+        );
+        assert_eq!(
+            player_count(&mut app),
+            0,
+            "no sink starts while the sound is off"
+        );
+        for _ in 0..3 {
+            app.update();
+        }
+        assert_eq!(
+            player_count(&mut app),
+            0,
+            "a held request still starts nothing"
+        );
+
+        // The alert is over. Turn the sound on. The alert that came while the sound was off
+        // must not start now.
+        clear_requests(&mut app);
+        set_sound(&mut app, true);
+        for _ in 0..3 {
+            app.update();
+        }
+        assert_eq!(
+            player_count(&mut app),
+            0,
+            "the alert from the silent period is not queued"
+        );
+        request_alert(&mut app);
+        app.update();
+        assert_eq!(
+            player_count(&mut app),
+            1,
+            "a new alert plays with the sound on"
+        );
+    }
+
+    #[test]
+    fn a_stored_sound_on_flag_starts_the_requested_sound_at_the_slider_gain() {
+        let fixture = Fixture::new(LEVELS_ON);
+        let mut app = audio_app(&fixture);
+        request_alert(&mut app);
+        app.update();
+        assert!(app.world().resource::<VolumeSettings>().sound_on);
+        assert_eq!(player_count(&mut app), 1);
+        let world = app.world_mut();
+        let mut query = world.query::<&PlaybackSettings>();
+        let gain = query.single(world).unwrap().volume.to_linear();
+        assert!(
+            (gain - 0.35 * 0.6).abs() < 1e-6,
+            "the sound keeps the slider gain (master times alerts), not a hidden zero: {gain}"
+        );
+    }
+
+    #[test]
+    fn turning_the_sound_off_stops_a_sound_that_is_playing() {
+        let fixture = Fixture::new(LEVELS_ON);
+        let mut app = audio_app(&fixture);
+        request_alert(&mut app);
+        app.update();
+        clear_requests(&mut app);
+        assert_eq!(player_count(&mut app), 1);
+        set_sound(&mut app, false);
+        app.update();
+        assert_eq!(
+            player_count(&mut app),
+            0,
+            "off removes the live player, so it cannot be heard when the sound comes back"
+        );
+        set_sound(&mut app, true);
+        app.update();
+        assert_eq!(player_count(&mut app), 0);
+    }
+
+    #[test]
+    fn the_debug_audio_state_shows_the_sound_flag() {
+        let fixture = Fixture::new(LEVELS_ON);
+        let mut app = audio_app(&fixture);
+        app.update();
+        assert!(app.world().resource::<AudioFeed>().sound_on);
+        set_sound(&mut app, false);
+        app.update();
+        assert!(!app.world().resource::<AudioFeed>().sound_on);
+        let json = serde_json::to_value(app.world().resource::<AudioFeed>()).unwrap();
+        assert_eq!(json["sound_on"], false);
+    }
+
+    #[test]
+    fn the_switch_is_saved_with_the_levels_and_survives_a_new_session() {
+        let fixture = Fixture::new(LEVELS_NO_FLAG);
+        let mut app = audio_app(&fixture);
+        app.update();
+        set_sound(&mut app, true);
+        app.update();
+        let saved = fixture.json();
+        assert_eq!(saved["audio"]["sound_on"], true, "the switch is saved");
+        assert_eq!(saved["future"]["keep"], 1, "other fields stay");
+        assert_eq!(
+            saved["audio"]["master"]
+                .as_f64()
+                .map(|v| (v * 100.0).round()),
+            Some(35.0)
+        );
+        set_sound(&mut app, false);
+        app.update();
+        assert_eq!(fixture.json()["audio"]["sound_on"], false);
+        set_sound(&mut app, true);
+        app.update();
+
+        let mut next = audio_app(&fixture);
+        next.update();
+        let volumes = *next.world().resource::<VolumeSettings>();
+        assert!(
+            volumes.sound_on,
+            "the next session starts with the sound on"
+        );
+        assert_eq!(
+            (
+                volumes.master,
+                volumes.voice,
+                volumes.alerts,
+                volumes.effects
+            ),
+            (0.35, 0.2, 0.6, 0.8),
+            "the slider values are kept across off and on"
+        );
     }
 }

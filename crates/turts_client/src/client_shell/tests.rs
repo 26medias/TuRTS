@@ -554,12 +554,24 @@ fn focus_feed_loss_shows_a_capturing_click_to_play_overlay_and_recovery_removes_
 
 const SOUND_OFF_NOTICE: &str = "Sound is off. Click or press a key to turn it on.";
 
-/// A shell app with a focused canvas and a fixed frame step of 250 ms.
+/// A shell app with a focused canvas and a fixed frame step of 250 ms. The sound switch is on,
+/// so these tests keep their meaning: they test the browser audio state, not the switch.
 fn start_gate_app(audio: crate::debug_feed::AudioFeed) -> App {
+    start_gate_app_with(
+        audio,
+        VolumeSettings {
+            sound_on: true,
+            ..default()
+        },
+    )
+}
+
+fn start_gate_app_with(audio: crate::debug_feed::AudioFeed, volumes: VolumeSettings) -> App {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins)
         .insert_resource(CoreEffects::default())
-        .insert_resource(VolumeSettings::default())
+        .insert_resource(volumes)
+        .insert_resource(Phase::Joined { slot: 0 })
         .insert_resource(FocusFeed(true))
         .insert_resource(audio)
         .insert_resource(bevy::time::TimeUpdateStrategy::ManualDuration(
@@ -2678,4 +2690,202 @@ fn binding_feedback_stays_above_the_scrolling_rows_with_a_fixed_height() {
     let node = world.get::<Node>(block).unwrap();
     assert_eq!(node.height, Val::Px(BINDING_FEEDBACK_HEIGHT));
     assert_eq!(node.flex_shrink, 0.0);
+}
+
+fn switches(app: &mut App) -> Vec<(Entity, String)> {
+    let world = app.world_mut();
+    let found = world
+        .query_filtered::<(Entity, &Children), With<crate::volume_settings::SoundSwitch>>()
+        .iter(world)
+        .map(|(entity, children)| (entity, children.to_vec()))
+        .collect::<Vec<_>>();
+    found
+        .into_iter()
+        .map(|(entity, children)| {
+            let text = children
+                .iter()
+                .find_map(|child| world.get::<Text>(*child).map(|text| text.0.clone()))
+                .expect("each sound switch holds its state text");
+            (entity, text)
+        })
+        .collect()
+}
+
+fn click_switch(app: &mut App, entity: Entity) {
+    app.world_mut().trigger(Activate { entity });
+    app.world_mut().flush();
+    app.update();
+}
+
+fn running_audio() -> crate::debug_feed::AudioFeed {
+    crate::debug_feed::AudioFeed {
+        context_states: vec!["running".into()],
+        gesture_seen: true,
+        ..default()
+    }
+}
+
+/// CEO decision: the game makes no sound by default, and the player turns it on with one visible
+/// control that says its state in words.
+#[test]
+fn the_play_screen_has_one_sound_switch_that_says_off_by_default_and_one_click_turns_it_on() {
+    let mut app = start_gate_app_with(running_audio(), VolumeSettings::default());
+    app.update();
+    let found = switches(&mut app);
+    assert_eq!(found.len(), 1, "one switch on the play screen");
+    assert_eq!(found[0].1, "Sound: off", "the default says off, in words");
+    let switch = found[0].0;
+    assert!(
+        app.world().entity(switch).contains::<UiCaptureRoot>(),
+        "a click on the switch does not reach the world"
+    );
+
+    click_switch(&mut app, switch);
+    assert!(app.world().resource::<VolumeSettings>().sound_on);
+    assert_eq!(switches(&mut app)[0].1, "Sound: on");
+
+    click_switch(&mut app, switch);
+    assert!(!app.world().resource::<VolumeSettings>().sound_on);
+    assert_eq!(switches(&mut app)[0].1, "Sound: off");
+}
+
+#[test]
+fn the_switch_keeps_the_four_levels_across_off_and_on() {
+    let levels = VolumeSettings {
+        sound_on: false,
+        master: 0.35,
+        voice: 0.2,
+        alerts: 0.6,
+        effects: 0.8,
+    };
+    let mut app = start_gate_app_with(running_audio(), levels);
+    app.update();
+    let switch = switches(&mut app)[0].0;
+    click_switch(&mut app, switch);
+    click_switch(&mut app, switch);
+    click_switch(&mut app, switch);
+    let now = *app.world().resource::<VolumeSettings>();
+    assert!(now.sound_on);
+    assert_eq!(
+        VolumeSettings {
+            sound_on: false,
+            ..now
+        },
+        VolumeSettings {
+            sound_on: false,
+            ..levels
+        },
+        "the sound switch never writes a level"
+    );
+}
+
+#[test]
+fn a_switch_that_is_on_still_says_off_while_the_browser_keeps_audio_locked() {
+    let locked = crate::debug_feed::AudioFeed {
+        context_states: vec!["suspended".into()],
+        gesture_seen: true,
+        ..default()
+    };
+    let mut app = start_gate_app(locked);
+    app.update();
+    assert_eq!(switches(&mut app)[0].1, "Sound: off");
+    app.world_mut()
+        .resource_mut::<crate::debug_feed::AudioFeed>()
+        .context_states = vec!["running".into()];
+    app.update();
+    assert_eq!(switches(&mut app)[0].1, "Sound: on");
+}
+
+#[test]
+fn no_sound_notice_shows_while_the_player_keeps_the_sound_off() {
+    let locked = crate::debug_feed::AudioFeed {
+        context_states: vec!["suspended".into()],
+        gesture_seen: true,
+        ..default()
+    };
+    let mut app = start_gate_app_with(locked, VolumeSettings::default());
+    for _ in 0..48 {
+        app.update();
+        assert!(
+            !shows_text(&mut app, SOUND_OFF_NOTICE),
+            "the sound is off on purpose; the notice \"click to turn it on\" would be wrong"
+        );
+    }
+}
+
+#[test]
+fn the_settings_menu_holds_the_same_switch_beside_the_volume_sliders() {
+    let mut app = start_gate_app_with(running_audio(), VolumeSettings::default());
+    app.update();
+    *app.world_mut().resource_mut::<CoreEffects>() = menu_action();
+    app.update();
+    app.world_mut().resource_mut::<CoreEffects>().0.clear();
+    let found = switches(&mut app);
+    assert_eq!(found.len(), 2, "one on the play screen and one in the menu");
+    assert!(found.iter().all(|(_, text)| text == "Sound: off"));
+    let in_menu = {
+        let world = app.world_mut();
+        let overlay = world
+            .query_filtered::<Entity, With<SettingsMenuOverlay>>()
+            .single(world)
+            .unwrap();
+        found
+            .iter()
+            .map(|(entity, _)| *entity)
+            .find(|entity| {
+                let mut at = Some(*entity);
+                while let Some(current) = at {
+                    if current == overlay {
+                        return true;
+                    }
+                    at = world.get::<ChildOf>(current).map(|parent| parent.parent());
+                }
+                false
+            })
+            .expect("one switch sits inside the settings overlay")
+    };
+    click_switch(&mut app, in_menu);
+    assert!(app.world().resource::<VolumeSettings>().sound_on);
+    assert!(
+        switches(&mut app)
+            .iter()
+            .all(|(_, text)| text == "Sound: on"),
+        "both switches show the one state"
+    );
+}
+
+#[test]
+fn the_play_screen_switch_waits_for_the_join() {
+    let mut app = start_gate_app_with(running_audio(), VolumeSettings::default());
+    *app.world_mut().resource_mut::<Phase>() = Phase::Joining;
+    app.update();
+    assert!(switches(&mut app).is_empty(), "no switch before the join");
+    *app.world_mut().resource_mut::<Phase>() = Phase::Joined { slot: 0 };
+    app.update();
+    assert_eq!(switches(&mut app).len(), 1);
+}
+
+#[test]
+fn the_debug_ui_snapshot_lists_the_sound_switch_with_its_words() {
+    let mut app = start_gate_app_with(running_audio(), VolumeSettings::default());
+    app.update();
+    let rows = crate::widgets::snapshot::snapshot(app.world());
+    let row = rows
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| row["kind"] == "sound_switch")
+        .expect("the ui snapshot has one sound_switch row");
+    assert_eq!(row["text"], "Sound: off");
+    assert_eq!(row["capture_root"], true);
+    let switch = switches(&mut app)[0].0;
+    click_switch(&mut app, switch);
+    let rows = crate::widgets::snapshot::snapshot(app.world());
+    let row = rows
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| row["kind"] == "sound_switch")
+        .unwrap();
+    assert_eq!(row["text"], "Sound: on");
 }

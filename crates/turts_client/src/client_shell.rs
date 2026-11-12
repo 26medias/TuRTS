@@ -29,7 +29,9 @@ pub use bindings_editor::BindingLabels;
 pub(crate) use bindings_editor::binding_label;
 use bindings_editor::*;
 use notices::*;
-pub(crate) use notices::{ClientNotice, sync_client_notice, sync_rejoin_camera};
+pub(crate) use notices::{
+    ClientNotice, PlayScreenSoundSwitch, sync_client_notice, sync_rejoin_camera,
+};
 pub(crate) use settings::ClientSettings;
 use settings::*;
 
@@ -123,7 +125,8 @@ impl Plugin for ClientShellPlugin {
             .add_observer(on_binding_pointer_click)
             .add_observer(on_binding_keyboard_activation)
             .add_observer(on_binding_button_activated);
-        app.add_observer(on_settings_toggle_activated);
+        app.add_observer(on_settings_toggle_activated)
+            .add_observer(crate::volume_settings::on_sound_switch_activated);
         app.add_systems(
             Update,
             toggle_settings_menu
@@ -166,7 +169,10 @@ impl Plugin for ClientShellPlugin {
             Update,
             (
                 sync_sound_off_notice.after(sync_focus_overlay),
-                sync_sound_status_label.after(toggle_settings_menu),
+                sync_sound_switch.after(sync_focus_overlay),
+                sync_sound_status_label
+                    .after(toggle_settings_menu)
+                    .after(sync_sound_switch),
             )
                 .before(UiPresentationSet),
         );

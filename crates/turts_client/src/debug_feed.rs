@@ -70,6 +70,8 @@ pub struct AudioFeed {
     pub context_states: Vec<String>,
     /// True only after a real pointer/key activation reported by the page hook.
     pub gesture_seen: bool,
+    /// The sound switch of the player (`VolumeSettings::sound_on`). No sink starts while it is off.
+    pub sound_on: bool,
     pub started: Vec<StartedSound>,
     pub categories: BTreeMap<String, f32>,
     /// Count measured from real Bevy audio-player entities by the audio owner.

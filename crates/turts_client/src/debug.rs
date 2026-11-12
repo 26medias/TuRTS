@@ -867,6 +867,7 @@ mod command_result_json_tests {
                 "context_state":null,
                 "context_states":[],
                 "gesture_seen":false,
+                "sound_on":false,
                 "started":[],
                 "categories":{},
                 "player_entities":0,

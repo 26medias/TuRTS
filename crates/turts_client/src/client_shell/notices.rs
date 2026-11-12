@@ -1,5 +1,5 @@
-//! Shell notices and overlays: the focus overlay, the sound-off notice, the client notice
-//! row, and the rejoin camera.
+//! Shell notices and overlays: the focus overlay, the sound-off notice, the sound switch of the
+//! play screen, the client notice row, and the rejoin camera.
 
 use super::*;
 
@@ -84,14 +84,19 @@ pub(super) struct SoundLockTimer(Option<std::time::Duration>);
 /// gesture asks the browser to resume audio through the page hook (index.html).
 pub(super) fn sync_sound_off_notice(
     audio: Option<Res<crate::debug_feed::AudioFeed>>,
+    volumes: Option<Res<VolumeSettings>>,
     time: Res<Time<Real>>,
     mut timer: ResMut<SoundLockTimer>,
     notices: Query<Entity, With<SoundOffNotice>>,
     mut commands: Commands,
 ) {
-    let locked = audio.as_deref().is_some_and(|feed| {
-        crate::audio::BrowserAudio::from_feed(feed) == crate::audio::BrowserAudio::Locked
-    });
+    // The notice says "click to turn it on". It is true only when the player switched the sound
+    // on and the browser still keeps audio locked. With the switch off the sound is off on
+    // purpose, and the switch itself shows that.
+    let locked = volumes.as_deref().is_some_and(|volumes| volumes.sound_on)
+        && audio.as_deref().is_some_and(|feed| {
+            crate::audio::BrowserAudio::from_feed(feed) == crate::audio::BrowserAudio::Locked
+        });
     let now = time.elapsed();
     let visible = if locked {
         let since = *timer.0.get_or_insert(now);
@@ -135,26 +140,97 @@ pub(super) fn sync_sound_off_notice(
     ));
 }
 
-/// Keep the menu sound label equal to the browser audio state.
+/// True when the player can hear sound now: the sound switch is on, and the browser lets audio
+/// run. The switch text, its fill and the menu label all follow this one value.
+pub(super) fn sound_shown_on(
+    audio: Option<&crate::debug_feed::AudioFeed>,
+    volumes: &VolumeSettings,
+) -> bool {
+    volumes.sound_on
+        && audio
+            .map_or(
+                crate::audio::BrowserAudio::NotObserved,
+                crate::audio::BrowserAudio::from_feed,
+            )
+            .lets_audio_play()
+}
+
+/// Keep every sound switch (the one on the play screen and the one in the settings menu) equal to
+/// the sound state: its words and its fill.
 pub(super) fn sync_sound_status_label(
     audio: Option<Res<crate::debug_feed::AudioFeed>>,
+    volumes: Res<VolumeSettings>,
     mut labels: Query<&mut Text, With<crate::volume_settings::SoundStatusText>>,
+    mut fills: Query<&mut BackgroundColor, With<crate::volume_settings::SoundSwitch>>,
 ) {
-    let label = sound_status_label(audio.as_deref());
+    let shown_on = sound_shown_on(audio.as_deref(), &volumes);
+    let label = crate::volume_settings::sound_label(shown_on);
     for mut text in &mut labels {
         if text.0 != label {
             text.0 = label.to_owned();
         }
     }
+    let fill = crate::volume_settings::sound_fill(shown_on);
+    for mut background in &mut fills {
+        if background.0 != fill {
+            background.0 = fill;
+        }
+    }
 }
 
-pub(super) fn sound_status_label(audio: Option<&crate::debug_feed::AudioFeed>) -> &'static str {
-    audio
-        .map_or(
-            crate::audio::BrowserAudio::NotObserved,
-            crate::audio::BrowserAudio::from_feed,
-        )
-        .menu_label()
+/// The sound switch of the play screen: one visible button, bottom centre, with the state in
+/// words. It exists while the player is in the game. The engine owns it like the other shell
+/// controls (the focus overlay, the settings menu): it is a client preference, not mod content.
+#[derive(Component)]
+pub(crate) struct PlayScreenSoundSwitch;
+
+/// The place of the switch. The browser pixel tests find it by its fill and size
+/// (`tests/browser/harness/sound-switch-pixels.js`: change both together). It sits at the bottom,
+/// right of the centre: the shipped layouts leave this strip free (Muster puts its ore text at the
+/// centre, left of it).
+pub(crate) const SOUND_SWITCH_WIDTH: f32 = 124.0;
+pub(crate) const SOUND_SWITCH_HEIGHT: f32 = 28.0;
+const SOUND_SWITCH_OFFSET_FROM_CENTRE: f32 = 104.0;
+const SOUND_SWITCH_FROM_BOTTOM: f32 = 8.0;
+
+pub(super) fn sync_sound_switch(
+    phase: Option<Res<Phase>>,
+    audio: Option<Res<crate::debug_feed::AudioFeed>>,
+    volumes: Res<VolumeSettings>,
+    existing: Query<Entity, With<PlayScreenSoundSwitch>>,
+    mut commands: Commands,
+) {
+    let joined = phase
+        .as_deref()
+        .is_some_and(|phase| matches!(phase, Phase::Joined { .. }));
+    if !joined {
+        for entity in &existing {
+            commands.entity(entity).despawn();
+        }
+        return;
+    }
+    if !existing.is_empty() {
+        return;
+    }
+    commands.spawn((
+        PlayScreenSoundSwitch,
+        UiCaptureRoot,
+        ZIndex(i32::MAX - 3),
+        crate::volume_settings::sound_switch(
+            Node {
+                position_type: PositionType::Absolute,
+                left: Val::Percent(50.0),
+                margin: UiRect::left(Val::Px(SOUND_SWITCH_OFFSET_FROM_CENTRE)),
+                bottom: Val::Px(SOUND_SWITCH_FROM_BOTTOM),
+                width: Val::Px(SOUND_SWITCH_WIDTH),
+                height: Val::Px(SOUND_SWITCH_HEIGHT),
+                justify_content: JustifyContent::Center,
+                align_items: AlignItems::Center,
+                ..default()
+            },
+            sound_shown_on(audio.as_deref(), &volumes),
+        ),
+    ));
 }
 
 pub(crate) fn sync_client_notice(

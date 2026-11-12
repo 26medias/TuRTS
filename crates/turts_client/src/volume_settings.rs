@@ -1,7 +1,9 @@
 //! Task15 volume controls and their share of the client settings document.
 
 use bevy::prelude::*;
-use bevy::ui_widgets::{Slider, SliderRange, SliderStep, SliderThumb, SliderValue};
+use bevy::ui_widgets::{
+    Activate, Button as UiButton, Slider, SliderRange, SliderStep, SliderThumb, SliderValue,
+};
 use std::{
     fs,
     path::{Path, PathBuf},
@@ -40,6 +42,9 @@ impl VolumeCategory {
 
 #[derive(Resource, Clone, Copy, Debug, PartialEq)]
 pub struct VolumeSettings {
+    /// The sound switch. It is off until the player turns it on. It is kept apart from the four
+    /// levels, so the levels keep their values while the sound is off.
+    pub sound_on: bool,
     pub master: f32,
     pub voice: f32,
     pub alerts: f32,
@@ -49,6 +54,7 @@ pub struct VolumeSettings {
 impl Default for VolumeSettings {
     fn default() -> Self {
         Self {
+            sound_on: false,
             master: 1.0,
             voice: 1.0,
             alerts: 1.0,
@@ -96,15 +102,73 @@ fn normalized(value: f32) -> f32 {
 #[derive(Component, Clone, Copy, Debug)]
 pub struct SoundStatusText;
 
+/// A button that switches the sound on or off. The shell has two: one in the settings menu and
+/// one on the play screen.
+#[derive(Component, Clone, Copy, Debug)]
+pub struct SoundSwitch;
+
+pub const SOUND_ON_LABEL: &str = "Sound: on";
+pub const SOUND_OFF_LABEL: &str = "Sound: off";
+
+/// The state of the switch in words.
+pub fn sound_label(shown_on: bool) -> &'static str {
+    if shown_on {
+        SOUND_ON_LABEL
+    } else {
+        SOUND_OFF_LABEL
+    }
+}
+
+/// The fill of a sound switch. The browser tests read these two colours from screenshot pixels
+/// (`tests/browser/harness/sound-switch-pixels.js` holds the same values: change both together).
+pub fn sound_fill(shown_on: bool) -> Color {
+    if shown_on {
+        Color::srgb(0.12, 0.38, 0.22)
+    } else {
+        Color::srgb(0.30, 0.12, 0.12)
+    }
+}
+
+/// One sound switch: a button with the state text inside. `shown_on` is what the player hears
+/// now (the switch is on and the browser lets audio run), not only the stored flag.
+pub fn sound_switch(node: Node, shown_on: bool) -> impl Bundle {
+    (
+        SoundSwitch,
+        UiButton,
+        node,
+        BackgroundColor(sound_fill(shown_on)),
+        children![(
+            SoundStatusText,
+            Text::new(sound_label(shown_on)),
+            TextFont {
+                font_size: FontSize::Px(16.0),
+                ..default()
+            },
+            TextColor(Color::WHITE),
+        )],
+    )
+}
+
+/// A click on a sound switch flips `VolumeSettings::sound_on`. It never writes a level.
+pub fn on_sound_switch_activated(
+    trigger: On<Activate>,
+    switches: Query<(), With<SoundSwitch>>,
+    mut settings: ResMut<VolumeSettings>,
+) {
+    if switches.contains(trigger.entity) {
+        settings.sound_on = !settings.sound_on;
+    }
+}
+
 /// Add the Task15 volume controls as children of the existing F10/Esc settings overlay.
-/// Task16 can append its settings controls to the same parent entity. `sound_status` is the
-/// first text of the sound state label; the shell keeps it current. The label is on the line of
+/// Task16 can append its settings controls to the same parent entity. `sound_shown_on` is the
+/// first state of the sound switch; the shell keeps it current. The switch is on the line of
 /// the "Audio levels" heading, so the menu layout keeps its height.
 pub fn spawn_volume_controls(
     commands: &mut Commands,
     parent: Entity,
     settings: VolumeSettings,
-    sound_status: &str,
+    sound_shown_on: bool,
 ) {
     commands.entity(parent).with_children(|parent| {
         parent
@@ -122,14 +186,12 @@ pub fn spawn_volume_controls(
                     },
                     TextColor(Color::srgb(0.78, 0.84, 0.9)),
                 ));
-                heading.spawn((
-                    SoundStatusText,
-                    Text::new(sound_status),
-                    TextFont {
-                        font_size: FontSize::Px(16.0),
+                heading.spawn(sound_switch(
+                    Node {
+                        padding: UiRect::horizontal(Val::Px(8.0)),
                         ..default()
                     },
-                    TextColor(Color::WHITE),
+                    sound_shown_on,
                 ));
             });
         for (label, category) in [
@@ -269,6 +331,12 @@ impl SettingsStore {
             },
         }
     }
+    pub fn set_sound_on(&self, on: bool) -> Result<(), String> {
+        let current = self.read_document()?;
+        let updated = set_sound_on_in_json(current.as_deref(), on)?;
+        self.write_document(&updated)
+    }
+
     pub fn set_volume(&self, category: VolumeCategory, value: f32) -> Result<(), String> {
         let current = self.read_document()?;
         let updated = set_volume_in_json(current.as_deref(), category, value)?;
@@ -307,6 +375,15 @@ impl SettingsStore {
     }
 }
 
+/// The sound switch is a JSON boolean. Anything else is a corrupt value, as a bad level is.
+fn parse_flag(value: Option<&serde_json::Value>, fallback: bool) -> Result<bool, ()> {
+    match value {
+        None => Ok(fallback),
+        Some(serde_json::Value::Bool(flag)) => Ok(*flag),
+        Some(_) => Err(()),
+    }
+}
+
 fn parse_volume(value: Option<&serde_json::Value>, fallback: f32) -> Result<f32, ()> {
     let Some(value) = value else {
         return Ok(fallback);
@@ -335,6 +412,7 @@ pub fn decode_settings_json(json: &str) -> LoadedSettings {
         let volumes = match value.get("audio") {
             None => defaults,
             Some(audio) if audio.is_object() => VolumeSettings {
+                sound_on: parse_flag(audio.get("sound_on"), defaults.sound_on)?,
                 master: parse_volume(audio.get("master"), defaults.master)?,
                 voice: parse_volume(audio.get("voice"), defaults.voice)?,
                 alerts: parse_volume(audio.get("alerts"), defaults.alerts)?,
@@ -397,10 +475,23 @@ pub(crate) fn set_controls_in_json(
     serde_json::to_string(&root).map_err(|error| format!("serialize settings: {error}"))
 }
 
+/// Write the sound switch into the `audio` object. The levels and the other fields stay.
+pub fn set_sound_on_in_json(json: Option<&str>, on: bool) -> Result<String, String> {
+    set_audio_field_in_json(json, "sound_on", serde_json::json!(on))
+}
+
 pub fn set_volume_in_json(
     json: Option<&str>,
     category: VolumeCategory,
     value: f32,
+) -> Result<String, String> {
+    set_audio_field_in_json(json, category.key(), serde_json::json!(normalized(value)))
+}
+
+fn set_audio_field_in_json(
+    json: Option<&str>,
+    key: &str,
+    value: serde_json::Value,
 ) -> Result<String, String> {
     let mut root = match json {
         Some(json) => serde_json::from_str::<serde_json::Value>(json)
@@ -426,7 +517,7 @@ pub fn set_volume_in_json(
         .get_mut("audio")
         .and_then(serde_json::Value::as_object_mut)
         .expect("corrupt audio settings are replaced with an empty object");
-    audio.insert(category.key().into(), serde_json::json!(normalized(value)));
+    audio.insert(key.into(), value);
     serde_json::to_string(&root).map_err(|error| format!("serialize settings: {error}"))
 }
 
@@ -554,6 +645,7 @@ mod tests {
             voice: 0.3,
             alerts: 0.4,
             effects: 0.5,
+            ..Default::default()
         };
         let mut app = App::new();
         app.add_plugins(MinimalPlugins)
@@ -571,6 +663,7 @@ mod tests {
                 voice: 0.65,
                 alerts: 0.4,
                 effects: 0.5,
+                ..Default::default()
             },
             "editing voice must preserve master, alerts, and effects"
         );
@@ -583,6 +676,7 @@ mod tests {
             voice: 0.3,
             alerts: 0.4,
             effects: 0.5,
+            ..Default::default()
         };
         let mut app = App::new();
         app.add_plugins(MinimalPlugins)

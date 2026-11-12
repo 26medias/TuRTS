@@ -3,6 +3,7 @@
 
 const assert = require("node:assert/strict");
 const { decodePng, pixelAt } = require("./harness/png.js");
+const { assertSwitchClickByLabel } = require("./harness/sound-switch-proof.js");
 
 async function judge(view, params) {
     const row = params.row;
@@ -16,6 +17,7 @@ async function judge(view, params) {
     if (row === "ORD7") return judgeOrd7(view, input, checkpoints, final);
     if (row === "ALR1") return judgeAlr1(view, input, checkpoints, params);
     if (row === "AUD1") return judgeAud1(view, input, checkpoints, final);
+    if (row === "SND1") return judgeSnd1(input, checkpoints, final);
     throw new Error(`feedback oracle has no route for ${row}`);
 }
 
@@ -85,8 +87,13 @@ function judgeOrd6(input, checkpoints, debug) {
     assert.equal(releases.length, 100, "ORD6 observed all 100 trusted canvas pointer releases");
     assert.equal(new Set(releases.map((event) => event.seq)).size, 100, "each physical release has a distinct recorded sequence");
 
+    // The sound is off at the start. The row judges the error sounds, so it turns the sound on
+    // first with one click on the visible switch, before the burst.
+    const soundOn = assertSoundTurnedOn(input, checkpoints, "ord6-sound");
+    assert(input.indexOf(burstEntry) > soundOn.clickIndex, "ORD6 turns the sound on before the burst");
     const before = checkpointForSave(input, checkpoints, "feedback-initial.png").debug;
     const burst = checkpointForSave(input, checkpoints, "ord6-burst.png").debug;
+    assert.equal(burst.audio.sound_on, true, "ORD6 the sound switch is on at the burst");
     const priorSeq = Math.max(0, ...(before.results || []).map((entry) => entry.seq).filter(Number.isInteger));
     const expectedBurstSeqs = Array.from({ length: 100 }, (_, index) => priorSeq + index + 1);
     const appliedFrames = releases.map((event) => frameForSequence(burst, event.seq));
@@ -151,6 +158,10 @@ function judgeOrd6(input, checkpoints, debug) {
 async function judgeOrd7(view, input, checkpoints, debug) {
     const order = input.find((entry) => entry.call === "click" && entry.args?.[2] === "right");
     assert(order, "ORD7 uses a physical ground right-click");
+    // The sound is off at the start. The row judges the response sound, so it turns the sound on
+    // first with one click on the visible switch, before the order.
+    const soundOn = assertSoundTurnedOn(input, checkpoints, "ord7-sound");
+    assert(input.indexOf(order) > soundOn.clickIndex, "ORD7 turns the sound on before the order");
     const mouseUp = pointerEvent(order, "pointerup");
     const result = checkpointForSave(input, checkpoints, "ord7-result.png");
     const clickFrame = frameForSequence(result.debug, mouseUp.seq);
@@ -192,6 +203,11 @@ async function judgeAlr1(view, input, checkpoints, params) {
     const ownUnit = firstDamageFrame.feedback.alerts.find((alert) => alert.id === "muster_unit_damaged").unit;
     assert(Number.isInteger(ownUnit), "ALR1 retains the actual selected own-unit identity");
     const attackClick = input.find((entry) => entry.call === "click" && entry.args?.[2] === "right");
+    // The sound is off at the start. The row judges the alert sound, so it turns the sound on
+    // first with one click on the visible switch, before the attack.
+    const soundOn = assertSoundTurnedOn(input, checkpoints, "alr1-sound");
+    assert(input.indexOf(attackClick) > soundOn.clickIndex, "ALR1 turns the sound on before the attack");
+    assert.equal(late.debug.audio.sound_on, true, "ALR1 the sound switch is on at the alert");
     assert(attackClick, "ALR1 physically targets the visible foreign unit after selecting a current screenshot troop column");
     const attackIndex = input.indexOf(attackClick);
     const selectionClick = input.slice(0, attackIndex).reverse().find((entry) => entry.call === "click" && entry.args?.[2] === "left");
@@ -331,6 +347,53 @@ async function judgeAlr1(view, input, checkpoints, params) {
         "ALR1 observed the real alert OGG sink in the alerts category");
 }
 
+function assertSoundTurnedOn(input, checkpoints, label) {
+    return assertSwitchClickByLabel(input, (name) => checkpointForSave(input, checkpoints, name), label, false);
+}
+
+// SND1: the sound is off at the start. A select and an order make their sound requests and no sink
+// starts. One click on the switch turns it on and the next order plays. One more click turns it
+// off and the next order is silent again.
+function judgeSnd1(input, checkpoints, final) {
+    const named = (name) => checkpointForSave(input, checkpoints, name);
+    const wordsOf = (checkpoint) => (checkpoint.debug.ui_snapshot || []).find((row) => row.kind === "sound_switch")?.text;
+    const requested = (debug, category, id) => (debug.frames?.retained_input || []).some((frame) =>
+        (frame.feedback?.audio_started || []).some((sound) => sound.category === category && sound.id === id));
+
+    const start = named("snd1-default-off.png");
+    assert.equal(start.debug.audio.sound_on, false, "SND1 the sound is off by default");
+    assert.equal(wordsOf(start), "Sound: off", "SND1 the switch says Sound: off at the start");
+    assert(start.debug.audio.gesture_seen === true && start.debug.audio.context_states?.length > 0 &&
+        start.debug.audio.context_states.every((state) => state === "running"),
+    "SND1 every browser audio context runs, so the silence below is the switch and not a locked browser");
+
+    const silent = named("snd1-silent.png").debug;
+    assert.equal(silent.audio.sound_on, false);
+    assert(requested(silent, "voice", "muster:muster_voice_select"), "SND1 the select made its sound request while the switch was off");
+    assert(requested(silent, "voice", "muster:muster_voice_order"), "SND1 the order made its sound request while the switch was off");
+    assert.equal(silent.audio.player_entities, 0, "SND1 no sound player exists while the switch is off");
+    assert.deepEqual(silent.audio.sink_observations, [], "SND1 no sink started while the switch was off");
+    assert.deepEqual(silent.audio.peak_active_by_category, {}, "SND1 no sound was live at any time while the switch was off");
+
+    const on = assertSoundTurnedOn(input, checkpoints, "snd1-on");
+    const playing = named("snd1-playing.png").debug.audio;
+    assert.equal(playing.sound_on, true);
+    const onFrame = on.frame.frame_index;
+    const sinks = playing.sink_observations || [];
+    assert(sinks.some((sink) => sink.sound_id === "muster:muster_voice_order" && sink.category === "voice" && sink.gain > 0),
+        "SND1 the order after the click plays a real voice sink at a positive gain");
+    assert(sinks.every((sink) => sink.request_frame_index > onFrame),
+        "SND1 every sink was requested after the click: no sound from the silent period was queued");
+
+    const off = assertSwitchClickByLabel(input, named, "snd1-off", true);
+    const after = named("snd1-off-again.png").debug.audio;
+    assert.equal(after.sound_on, false, "SND1 the second click turns the sound off again");
+    assert.equal(after.sink_observations.length, sinks.length, "SND1 the order after the second click starts no new sink");
+    assert.equal(after.player_entities, 0, "SND1 no sound player exists after the second click");
+    assert(off.clickIndex > on.clickIndex);
+    assert.equal(final.audio.sound_on, false, "SND1 the sound switch is off at the end");
+}
+
 function projectGround(matrix, position) {
     const x = position.x;
     const z = position.y;
@@ -463,6 +526,15 @@ async function judgeAud1(view, input, checkpoints, final) {
     const expectedLocalRefusal = `${postName}: ${localReason}`;
     assertAud1CombatProof(input, checkpoints, "category-scan.png", "live-alert-sink.png", "after-combat-scan.png", "live-effects-sink.png", expectedLocalRefusal);
     assertAud1CombatProof(input, checkpoints, "after-reload-category-scan.png", "after-reload-live-alert-sink.png", "after-reload-after-combat-scan.png", "after-reload-live-effects-sink.png", expectedLocalRefusal);
+    // The sound is off by default, also after the first gesture has resumed every context: no sink
+    // before the switch. One click on the visible switch turns it on. It is still on after the reload.
+    assert.equal(initial.sound_on, false, "AUD1 the sound switch is off at the start");
+    assert.equal(resumed.sound_on, false, "AUD1 the sound switch is still off after the first gesture");
+    assert.equal(resumed.player_entities, 0, "AUD1 no sound player exists after the first gesture while the switch is off");
+    assert.deepEqual(resumed.sink_observations, [], "AUD1 no sink started before the player turned the sound on");
+    assertSoundTurnedOn(input, checkpoints, "aud1-sound");
+    assert.equal(final.audio.sound_on, true, "AUD1 the sound switch stays on after the reload (it is stored)");
+    assert.equal(reloaded.sound_on, true, "AUD1 the stored switch loads after the reload");
     assert(initial.context_states?.length > 0, "AUD1 observes each actual browser AudioContext object");
     assert(initial.context_states.every((state) => state === "suspended"),
         "AUD1 every actual AudioContext starts suspended before the first click");

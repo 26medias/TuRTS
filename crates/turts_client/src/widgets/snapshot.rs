@@ -132,6 +132,36 @@ pub fn snapshot(world: &World) -> Value {
             }));
             continue;
         }
+        if entity.contains::<crate::client_shell::PlayScreenSoundSwitch>() {
+            // The sound switch of the play screen: its words and its physical rectangle, so a
+            // browser check can see that a click lands on it.
+            let text = world.get::<Children>(entity.id()).and_then(|children| {
+                children
+                    .iter()
+                    .find_map(|child| world.get::<Text>(child).map(|text| text.0.as_str()))
+            });
+            let (rect, visible) = match (
+                entity.get::<ComputedNode>(),
+                entity.get::<UiGlobalTransform>(),
+            ) {
+                (Some(node), Some(transform)) => {
+                    let rect = computed_rect(node, transform);
+                    let visible =
+                        rect.is_some() && layout_visible(world, entity.id(), node, transform);
+                    (rect.map_or(Value::Null, |rect| json!(rect)), visible)
+                }
+                _ => (Value::Null, false),
+            };
+            rows.push(json!({
+                "kind":"sound_switch",
+                "id":"sound_switch",
+                "rect":rect,
+                "visible":visible,
+                "text":text,
+                "capture_root":entity.contains::<UiCaptureRoot>(),
+            }));
+            continue;
+        }
         if entity.contains::<crate::client_shell::ClientNotice>() {
             let (Some(node), Some(transform)) = (
                 entity.get::<ComputedNode>(),

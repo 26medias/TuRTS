@@ -3,6 +3,7 @@
 
 const { decodePng } = require("./harness/png.js");
 const { readOwnTarget, readSlotTargets, findOpenGround, findPaletteTargetNear } = require("./sel1-driver.js");
+const { turnSoundOn } = require("./harness/sound-switch-pixels.js");
 
 // HUD2 keeps its authored layout literal in the test. The driver captures pixels
 // before it sends any HUD input, as required for pixel-only UI tests.
@@ -71,6 +72,11 @@ async function drive(io, params) {
         await io.wait(150);
         await saveScreenshot(io, "hud2-close-button-closed", Buffer.from(await io.screenshot()));
     }
+
+    // The game makes no sound until the player turns it on (CEO decision, 2026-11-12). The
+    // turret refusal below is judged by its sound, so turn the sound on with one physical click on
+    // the visible switch. The guide is closed here (by F1, and by its close button when found).
+    await turnSoundOn(io, "hud2-sound");
 
     let target = null;
     let selectableScreenshot = null;

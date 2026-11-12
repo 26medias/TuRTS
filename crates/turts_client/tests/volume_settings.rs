@@ -6,7 +6,7 @@ use std::{
 
 use turts_client::volume_settings::{
     SettingsStore, VolumeCategory, VolumeSettings, WEB_SETTINGS_KEY, decode_settings_json,
-    native_settings_path, set_volume_in_json,
+    native_settings_path, set_sound_on_in_json, set_volume_in_json,
 };
 
 static NEXT_STORE: AtomicU64 = AtomicU64::new(0);
@@ -241,9 +241,127 @@ fn volume_controls_produce_the_actual_master_times_category_gain() {
         voice: 0.8,
         alerts: 0.7,
         effects: 0.6,
+        ..Default::default()
     };
     assert_eq!(levels.gain(VolumeCategory::Master), 0.9);
     assert!((levels.gain(VolumeCategory::Voice) - 0.72).abs() < f32::EPSILON);
     assert!((levels.gain(VolumeCategory::Alerts) - 0.63).abs() < f32::EPSILON);
     assert!((levels.gain(VolumeCategory::Effects) - 0.54).abs() < f32::EPSILON);
+}
+
+const LEVELS: &str = r#"{"audio":{"master":0.35,"voice":0.2,"alerts":0.6,"effects":0.8}}"#;
+
+#[test]
+fn the_sound_is_off_by_default_and_a_stored_profile_with_no_flag_reads_as_off() {
+    assert!(
+        !VolumeSettings::default().sound_on,
+        "the default settings make no sound"
+    );
+    let isolated = IsolatedStore::new();
+    assert!(
+        !isolated.store().load().volumes.sound_on,
+        "a client with no stored document makes no sound"
+    );
+    // A document from before the flag existed has levels and no flag. It reads as the default:
+    // the sound is off. The CEO decision (the game makes no sound by default) wants this.
+    let old = decode_settings_json(LEVELS);
+    assert!(!old.volumes.sound_on, "an old stored profile turns off");
+    assert_eq!(old.volumes.master, 0.35, "its levels stay");
+    assert_eq!(old.volumes.alerts, 0.6);
+    assert!(old.notice.is_none(), "an old document is not corrupt");
+    assert!(!decode_settings_json("{}").volumes.sound_on);
+    assert!(!decode_settings_json(r#"{"audio":{}}"#).volumes.sound_on);
+}
+
+#[test]
+fn a_stored_sound_on_flag_gives_sound_and_keeps_the_levels() {
+    let loaded = decode_settings_json(
+        r#"{"audio":{"master":0.35,"voice":0.2,"alerts":0.6,"effects":0.8,"sound_on":true}}"#,
+    );
+    assert!(
+        loaded.volumes.sound_on,
+        "the stored flag turns the sound on"
+    );
+    assert_eq!(loaded.volumes.master, 0.35);
+    assert_eq!(loaded.volumes.voice, 0.2);
+    assert!(loaded.notice.is_none());
+    let off = decode_settings_json(r#"{"audio":{"master":0.35,"sound_on":false}}"#);
+    assert!(!off.volumes.sound_on);
+    assert_eq!(off.volumes.master, 0.35);
+}
+
+#[test]
+fn an_invalid_stored_sound_flag_falls_back_like_an_invalid_level() {
+    for bad in [r#""yes""#, "1", "0", "null", "[]", r#"{"on":true}"#, "0.5"] {
+        let loaded = decode_settings_json(&format!(
+            r#"{{"audio":{{"master":0.35,"sound_on":{bad}}}}}"#
+        ));
+        assert_eq!(
+            loaded.volumes,
+            VolumeSettings::default(),
+            "a flag {bad} resets the audio settings to the defaults, as a bad level does"
+        );
+        assert!(!loaded.volumes.sound_on);
+        assert!(
+            loaded
+                .notice
+                .as_deref()
+                .is_some_and(|text| !text.trim().is_empty()),
+            "a flag {bad} gives one notice"
+        );
+    }
+}
+
+#[test]
+fn the_flag_is_written_into_the_audio_object_and_the_levels_and_other_fields_stay() {
+    let before = r#"{"future":{"keep":true},"controls":{"ui_scale":1.25},"audio":{"master":0.35,"voice":0.2,"alerts":0.6,"effects":0.8}}"#;
+    let on = set_sound_on_in_json(Some(before), true).unwrap();
+    let saved: serde_json::Value = serde_json::from_str(&on).unwrap();
+    assert_eq!(saved["audio"]["sound_on"], true);
+    assert_eq!(saved["future"]["keep"], true);
+    assert_eq!(saved["controls"]["ui_scale"], 1.25);
+    for (key, value) in [
+        ("master", 0.35),
+        ("voice", 0.2),
+        ("alerts", 0.6),
+        ("effects", 0.8),
+    ] {
+        assert_saved_volume(&saved["audio"][key], value);
+    }
+    let off = set_sound_on_in_json(Some(&on), false).unwrap();
+    let reloaded = decode_settings_json(&off);
+    assert!(!reloaded.volumes.sound_on);
+    assert_eq!(
+        (
+            reloaded.volumes.master,
+            reloaded.volumes.voice,
+            reloaded.volumes.alerts,
+            reloaded.volumes.effects
+        ),
+        (0.35, 0.2, 0.6, 0.8),
+        "the slider values are kept across off and on"
+    );
+    let on_again = decode_settings_json(&set_sound_on_in_json(Some(&off), true).unwrap());
+    assert!(on_again.volumes.sound_on);
+    assert_eq!(on_again.volumes.alerts, 0.6);
+    // A missing or damaged document becomes a document with the flag.
+    let fresh: serde_json::Value =
+        serde_json::from_str(&set_sound_on_in_json(None, true).unwrap()).unwrap();
+    assert_eq!(fresh["audio"]["sound_on"], true);
+    let damaged: serde_json::Value =
+        serde_json::from_str(&set_sound_on_in_json(Some("{not json"), true).unwrap()).unwrap();
+    assert_eq!(damaged["audio"]["sound_on"], true);
+}
+
+#[test]
+fn the_native_store_keeps_the_flag_between_sessions() {
+    let isolated = IsolatedStore::new();
+    fs::write(&isolated.0, LEVELS).unwrap();
+    isolated.store().set_sound_on(true).unwrap();
+    let reloaded = isolated.store().load();
+    assert!(reloaded.volumes.sound_on);
+    assert_eq!(reloaded.volumes.voice, 0.2);
+    isolated.store().set_sound_on(false).unwrap();
+    assert!(!isolated.store().load().volumes.sound_on);
+    assert_eq!(isolated.store().load().volumes.effects, 0.8);
 }

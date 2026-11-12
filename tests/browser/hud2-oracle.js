@@ -3,6 +3,7 @@
 
 const assert = require("node:assert/strict");
 const { decodePng } = require("./harness/png.js");
+const { assertSwitchClickByLabel } = require("./harness/sound-switch-proof.js");
 
 const SELECTION_PANEL = { x: 8, y: 8, width: 272, height: 180 };
 const PANEL_FILL = [17, 24, 32];
@@ -30,6 +31,9 @@ async function judgeForge(view, input) {
     const panelShotIndex = screenshotIndexForSave(input, "hud2-selected-own.png");
     assert(panelShotIndex > clickIndex, "HUD2 panel pixels must be captured after own-unit selection");
     const checkpoints = JSON.parse(await view.serverFile("scene-checkpoints.json"));
+    // The sound is off at the start and one click on the visible switch turns it on, before the
+    // refusal that this row judges by its sound.
+    const soundOn = assertSwitchClickByLabel(input, (name) => checkpointForSave(input, checkpoints, name), "hud2-sound", false);
     const checkpoint = checkpoints.find((entry) => entry.input_call === panelShotIndex && entry.window === 1);
     assert(checkpoint?.debug && checkpoint?.scene,
         "HUD2 selected screenshot needs its actual C84 scene/debug checkpoint");
@@ -185,6 +189,7 @@ async function judgeForge(view, input) {
         entry.args?.[2] === "right" && entry.event_seq?.length >= 1);
     assert(refusalClick > turretTarget.checkpoint.screenshotIndex,
         "HUD2 turret refusal must follow its actual selected screenshot and physical right click");
+    assert(refusalClick > soundOn.clickIndex, "HUD2 turns the sound on before the refusal that it judges by sound");
     const refusal = checkpointForSave(input, checkpoints, "hud2-turret-cannot-move.png");
     const refusalInput = input[refusalClick];
     const refusalPointerUp = refusalInput.actual_events?.find((event) =>
@@ -221,6 +226,7 @@ async function judgeForge(view, input) {
     assert(configuredError && turretTarget.checkpoint.debug.replicated_world?.units?.some((unit) =>
         unit.unit_id === refusalFrame.selection?.[0] && unit.content_id === "forge:turret"),
     "HUD2 exact refusal frame must configure the authored Forge turret UnitPresentation error response");
+    assert.equal(refusal.debug.audio?.sound_on, true, "HUD2 the sound switch is on at the refusal");
     const sinkObservations = refusal.debug.audio?.sink_observations || [];
     const errorSound = sinkObservations.find((sound) =>
         sound.sound_id === configuredError.id && sound.category === "effects" &&

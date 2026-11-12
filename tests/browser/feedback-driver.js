@@ -2,6 +2,7 @@
 "use strict";
 
 const { decodePng, pixelAt } = require("./harness/png.js");
+const { waitForSoundSwitch, turnSoundOn, turnSoundOff } = require("./harness/sound-switch-pixels.js");
 
 const SLOT_RGB = [[0, 114, 178], [230, 159, 0]];
 const COLOR_TOLERANCE = 48;
@@ -16,7 +17,7 @@ async function drive(io, params) {
         await savePngWithBase64(io, "noorders-visible.png");
         return;
     }
-    if (!new Set(["ORD2", "ORD6", "ORD7", "ALR1", "AUD1"]).has(row)) {
+    if (!new Set(["ORD2", "ORD6", "ORD7", "ALR1", "AUD1", "SND1"]).has(row)) {
         throw new Error(`feedback driver has no route for ${row}`);
     }
     if (row !== "AUD1") await io.key("F1");
@@ -27,6 +28,17 @@ async function drive(io, params) {
     const image = decodePng(initialPng);
     const own = selectBody(findBodies(image, SLOT_RGB[0]), image, "own slot");
     const ground = findGround(image);
+
+    // The game makes no sound until the player turns it on (CEO decision, 2026-11-12). Rows that
+    // judge a sound turn it on first, with one physical click on the visible switch. SND1 judges
+    // the silence and the switch itself. AUD1 does it after its first click (below).
+    if (row === "SND1") {
+        await driveSnd1(io, own, ground);
+        return;
+    }
+    if (row === "ORD6" || row === "ORD7" || row === "ALR1") {
+        await turnSoundOn(io, `${row.toLowerCase()}-sound`);
+    }
 
     if (row === "ORD2") {
         const box = ord2SelectionBounds(image);
@@ -43,6 +55,7 @@ async function drive(io, params) {
         await io.wait(200);
         await io.save("aud1-after-resume.png", await io.screenshot());
         await io.key("F1");
+        await turnSoundOn(io, "aud1-sound");
     }
     if (row === "ALR1") {
         const enemy = selectBody(findBodies(image, SLOT_RGB[1], FOREIGN_COLOR_TOLERANCE), image, "foreign slot");
@@ -112,6 +125,27 @@ async function drive(io, params) {
         await savePng(io, "after-reload-context-resumed.png");
         await driveAud1SoundCategories(io, SLOT_RGB, COLOR_TOLERANCE, "after-reload-");
     }
+}
+
+// SND1: the sound is off at the start. A select and an order make their sound requests and no
+// sink starts. One click on the switch turns it on and the next order plays. One more click turns
+// it off and the next order is silent again.
+async function driveSnd1(io, own, ground) {
+    const first = await waitForSoundSwitch(io, "off", "SND1 default");
+    await io.save("snd1-default-off.png", first.screenshot);
+    await io.click(own.x, own.y, "left");
+    await io.wait(150);
+    await io.click(ground.x, ground.y, "right");
+    await io.wait(700);
+    await savePng(io, "snd1-silent.png");
+    await turnSoundOn(io, "snd1-on");
+    await io.click(ground.x, ground.y, "right");
+    await io.wait(700);
+    await savePng(io, "snd1-playing.png");
+    await turnSoundOff(io, "snd1-off");
+    await io.click(ground.x, ground.y, "right");
+    await io.wait(700);
+    await savePng(io, "snd1-off-again.png");
 }
 
 // Literal slider coordinates are usable only after the current screenshot shows all four
