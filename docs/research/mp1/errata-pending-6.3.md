@@ -142,3 +142,22 @@ Probe 2, the HUD change counter on today's tree (forge HUD, 108 widget entities,
 - Low items for the next edit of the wrapper: the self-check watchdog leaves a `sleep 200` that holds stdout (a piped
   self-check takes 166 s); a child with a cleared environment in a new session is not found by the marker scan (scan by
   the session id too); the daily read selects by start date (select by end).
+
+## Prepared headed runs (Q-PREBUILD: review 1 High, repair, re-check PASS with 0 High; 2026-11-12)
+
+- Every headed MP1 run uses the prepared form: `bash scripts/mc-pixels.sh --prepare <DIR> <one row file>` outside the lock,
+  then under the wrapper `bash scripts/mc-pixels.sh --prepared <DIR> <row files>`; the same options exist for
+  `mc-browser.sh`, `t7.sh`, `m3-browser.sh` and `m2-browser.sh`. A prepared run builds nothing and exits 66 when the
+  source, the package, a prepare-time script, a tool version, a build flag or an artefact does not match its manifest.
+  HEAD is strict: re-prepare after each commit (24 to 101 s, outside the lock). Notes: `docs/qa/prepared-runs.md`.
+- Measured: time to "page served" 40 to 51 s with the builds inside the run, 0.5 to 1.1 s prepared.
+- Hold limits to verify on the first prepared headed runs: table mode 600 s for a row and 1,700 s for PT1 only; pre-merge
+  mode 900 s for a session without PT1 and 1,800 s with PT1.
+- A pixel plant: one scratch checkout for each plant with the plant left as a dirty edit; prepare there only when the
+  plant touches a hashed root; a plant in a driver or oracle file needs no prepare.
+- Low items for the next edit: `tool_version` must run with `cwd` at the repository root (a run started elsewhere can
+  give a false 66); `m2-browser.sh` does not export `CARGO_PROFILE_DEV_DEBUG` and `CARGO_PROFILE_TEST_DEBUG` (a false 66
+  outside the lane runner); the ALSA `PKG_CONFIG_*` variables of the native PER1 build are not compared.
+- Not done yet: the M2 browser fault runner still builds inside one outer lock (3,545 to 4,671 s). It needs a prepare
+  after each plant, the lock taken for each browser phase, a lock-only mode of the wrapper, and a no-git fallback of
+  `mc_prepare.py`; the baseline folder can be used again after the restore. Size: about 4 runs. Owner: qa-lead.
