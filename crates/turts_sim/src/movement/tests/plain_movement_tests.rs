@@ -1,6 +1,6 @@
 use super::{
     MovementActivity, MovementFrame, MovementFrameUnit, MovementInput, PlainMoveProgress, step,
-    step_frame,
+    step_frame, step_frame_with_fallbacks,
 };
 use bevy_math::Vec2;
 use std::collections::BTreeMap;
@@ -177,16 +177,27 @@ fn plain_move_respects_reserved_spacing_before_using_a_zero_primary_point() {
         pools: BTreeMap::new(),
     };
 
-    let output = step_frame(&frame, 0.05);
+    // A2b1 (ruling item 1, observation change): the fallback is a pool of one. The progress is the
+    // fallback `MoveProgress`; the spares of the old plain progress were the pool slots after the
+    // first (base `plain.rs:297`), so "no spare" is a request pool of at most one slot.
+    let step = step_frame_with_fallbacks(&frame, 0.05, &std::collections::BTreeSet::new());
+    let output = &step.outputs;
 
     assert_eq!(output[0].position, Vec2::new(0.5, 0.5));
     assert_eq!(output[0].target, None);
     let progress = output[0]
-        .plain_progress
+        .progress
         .as_ref()
+        .filter(|progress| progress.is_fallback())
         .expect("reserved spacing activates the plain fallback");
     assert_eq!(progress.activity, MovementActivity::Blocked);
-    assert!(progress.pool_slots.is_empty());
+    let pool = &step
+        .fallbacks
+        .iter()
+        .find(|request| request.unit_id == 1)
+        .expect("reserved spacing activates the plain fallback")
+        .pool;
+    assert!(pool.slots.len() <= 1);
 }
 
 #[test]
@@ -390,11 +401,26 @@ fn plain_move_with_zero_legal_primary_slots_blocks_before_moving() {
         pools: BTreeMap::new(),
     };
 
-    let output = step_frame(&frame, 0.05).remove(0);
-    let progress = output.plain_progress.unwrap();
+    // A2b1 (ruling item 1, observation change): the fallback pool of one, as in the test above.
+    let step = step_frame_with_fallbacks(&frame, 0.05, &std::collections::BTreeSet::new());
+    let output = step.outputs[0].clone();
+    let progress = output
+        .progress
+        .clone()
+        .filter(|progress| progress.is_fallback())
+        .unwrap();
     assert_eq!(progress.activity, MovementActivity::Blocked);
     assert_eq!(progress.slot, Vec2::new(1.0, 1.0));
-    assert!(progress.pool_slots.is_empty());
+    assert!(
+        step.fallbacks
+            .iter()
+            .find(|request| request.unit_id == 1)
+            .unwrap()
+            .pool
+            .slots
+            .len()
+            <= 1
+    );
     assert_eq!(output.position, start);
     assert_eq!(output.target, None);
 }

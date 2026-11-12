@@ -476,6 +476,7 @@ const MUSTER_EMPTY: &[&str] = &[
     "ledger_claims",
     "pending_events",
     "physical_escapes",
+    "plain_movement_progress",
     "raw_belts",
     "raw_extractors",
     "raw_inserters",
@@ -484,10 +485,17 @@ const MUSTER_EMPTY: &[&str] = &[
     "removed_units",
     "research",
 ];
-/// The kept fields that no fixture fills, in the order of `LEDGER_KEPT_FIELDS`: `physical_escapes`
-/// (a unit that pushes out of a crowd), `disabled` (a power outage) and `pending_events` (events
-/// that wait inside a tick). Only the equality of their JSON is checked here.
-const NEVER_FILLED: &[&str] = &["physical_escapes", "disabled", "pending_events"];
+/// The kept fields that no fixture fills, in the order of `LEDGER_KEPT_FIELDS`:
+/// `plain_movement_progress` (no creator after A2b1; A2b2 deletes the field, plan `:949`),
+/// `physical_escapes` (a unit that pushes out of a crowd), `disabled` (a power outage) and
+/// `pending_events` (events that wait inside a tick). Only the equality of their JSON is checked
+/// here.
+const NEVER_FILLED: &[&str] = &[
+    "plain_movement_progress",
+    "physical_escapes",
+    "disabled",
+    "pending_events",
+];
 
 /// The ledger view of real `Tick` states keeps every field of the audit state, with the same
 /// JSON, and each kept field that a fixture can fill is not empty in at least one sampled state.
@@ -540,6 +548,26 @@ fn ledger_view_keeps_every_field_of_real_tick_states() {
     assert_eq!(
         never, NEVER_FILLED,
         "the kept fields that no fixture fills differ from the exact list"
+    );
+    // A2b1 (the A2b1 stop ruling, item 5): the obstacle fallback of a Muster trip is a pool of one,
+    // so a sampled Muster state holds a `movement_progress` row with the key `fallback` (serde
+    // leaves it out when it is `None`). Then the field test above checks the new fields of
+    // `MoveProgress` too.
+    let with_fallback = muster()
+        .states
+        .iter()
+        .filter(|state| {
+            serde_json::to_value(turts_sim::ledger_audit(state)).unwrap()["movement_progress"]
+                .as_array()
+                .is_some_and(|rows| {
+                    rows.iter()
+                        .any(|row| row["progress"].get("fallback").is_some())
+                })
+        })
+        .count();
+    assert!(
+        with_fallback > 0,
+        "muster: no sampled Tick state holds a fallback pool of one"
     );
 }
 

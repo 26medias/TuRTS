@@ -1604,6 +1604,6 @@
     ],
     "expected_failure": "unit 2 takes the next id",
     "restore_check": "sha256(source)==baseline and selected test is green",
-    "plant_note": "A2b1 step 4 (c): the fallback pool ids come from a second counter. The id test is red (the plan names kernel_reference or --p0; neither can see it: the harness keeps its own counter, and the stream has no fallback)."
+    "plant_note": "A2b1 step 4 (c): the fallback pool ids come from a second counter. The red instrument is fallback_pool_ids_come_from_the_order_counter_in_unit_id_order (crates/turts_sim/tests/group_movement.rs). The plan names kernel_reference or --p0; neither can see it: the harness gives the ids after its compare from its own counter, and the stream packages have no fallback (A2b1 stop ruling, plant (c))."
   }
 ]

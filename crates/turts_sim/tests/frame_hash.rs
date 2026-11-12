@@ -23,7 +23,7 @@ use turts_mod_api::{ContentId, OrderDef, PackageId, SourceDef};
 use turts_mod_runtime::{archive::PackageArchive, pack::pack_dir};
 use turts_sim::movement::{
     MoveProgress, MovementActivity, MovementFrame, MovementFrameOutput, MovementFrameUnit,
-    MovementPool, step_frame,
+    MovementPool, MovementStep, assign_fallback_pools, step_frame_with_fallbacks,
 };
 use turts_sim::{
     Command, CommandKind, CommandQueue, OrderCommand, OrderTargetSim, Position, QueueMode, SlotId,
@@ -177,46 +177,56 @@ fn feed_output(hash: &mut Fnv, output: &MovementFrameOutput) {
     hash.bytes(&[u8::from(output.failed_blocked)]);
 }
 
-/// 16 seeded chains of 300 frames of the shared kernel `step_frame`.
+/// 16 seeded chains of 300 frames of the shared kernel. Since task A2b1 the kernel can give a
+/// unit a fallback pool of one; the chain gives each such pool its id from a chain counter and
+/// adds it to the pools of the next frame, as the movement system does (`assign_fallback_pools`;
+/// the A2b1 stop ruling, item 3). Returns the hash, the fallback pools and the pooled unit frames.
 fn frame_chains_hash() -> (u64, usize, usize) {
     let mut hash = Fnv::new();
-    let mut plain_frames = 0;
+    let mut fallback_pools = 0;
     let mut pooled_frames = 0;
     for seed in 1..=SEEDS {
         let mut rng = Rng(seed.wrapping_mul(0x1234_5678_9abc_def1) | 1);
         let mut frame = start_frame(seed);
+        let mut next_pool_id = frame.pools.keys().copied().max().unwrap_or(0);
         for _ in 0..FRAMES {
-            let outputs = step_frame(&frame, 0.05);
+            let MovementStep {
+                mut outputs,
+                fallbacks,
+            } = step_frame_with_fallbacks(&frame, 0.05, &std::collections::BTreeSet::new());
+            fallback_pools += fallbacks.len();
+            let pools = assign_fallback_pools(&mut outputs, fallbacks, &mut next_pool_id);
             for output in &outputs {
                 feed_output(&mut hash, output);
-                plain_frames += usize::from(output.plain_progress.is_some());
                 pooled_frames += usize::from(output.progress.is_some());
             }
             frame = next_frame(&frame, &outputs, &mut rng);
+            frame
+                .pools
+                .extend(pools.into_iter().map(|pool| (pool.pool_id, pool)));
         }
     }
-    (hash.0, plain_frames, pooled_frames)
+    (hash.0, fallback_pools, pooled_frames)
 }
 
 #[test]
 fn frame_chains() {
-    let (first, plain, pooled) = frame_chains_hash();
+    let (first, fallback_pools, pooled) = frame_chains_hash();
     let (second, _, _) = frame_chains_hash();
     assert_eq!(
         first, second,
         "the same seeds give the same hash in one process"
     );
-    // The chains must reach both the pool branch and the plain fallback, else the
-    // hash proves nothing about them.
-    assert!(
-        plain > 0,
-        "no unit reached a plain progress: the chains miss that branch"
-    );
+    // The chains must reach both the pool branch and the obstacle fallback, else the
+    // hash proves nothing about them. Since A2b1 the fallback makes a pool of one.
+    assert!(fallback_pools > 0, "no unit reached a fallback pool");
     assert!(
         pooled > 0,
         "no unit held a pool: the chains miss that branch"
     );
-    println!("\nframe_chains={first:016x} plain_unit_frames={plain} pooled_unit_frames={pooled}");
+    println!(
+        "\nframe_chains={first:016x} fallback_pools={fallback_pools} pooled_unit_frames={pooled}"
+    );
 }
 
 /// The authored `muster` world through the ECS movement system: a group order and a

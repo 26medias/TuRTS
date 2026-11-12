@@ -3899,3 +3899,107 @@ fn fallback_pool_ids_come_from_the_order_counter_in_unit_id_order() {
         "the fallback pool is rooted at the goal of its trip"
     );
 }
+
+/// A trip with no pool whose goal is occupied takes the free slot of the hex ring nearest to the
+/// goal (MC design 6.3, `2026-10-29-mc-player-control-design.md:611-616`; the A2b1 stop ruling,
+/// condition (b)). The goal P = (20, 20) holds a resting unit. Static units stand on five of the
+/// six points of the first ring, so one ring point is legal and the angle rule does not decide.
+/// The expected slot comes from the ring rule in this test, never from the code under test:
+/// the spacing is s = 2 x r_max + 0.1 = 1.1 (all radii 0.5); the ring point at angle 0 is
+/// P + (s, 0). P itself is not legal (the resting unit is a reserved cell within s), and each
+/// ring point with a static on it is not legal. The mover starts at (30, 20) on the line to the
+/// legal point, writes its target as an engine trip does (a `MoveTarget`, no order), and must end
+/// `Resting` with its position on that slot.
+#[test]
+fn fallback_takes_the_nearest_free_hex_slot() {
+    let p = Vec2::new(20.0, 20.0);
+    let radius = 0.5_f32;
+    let s = 2.0 * radius + 0.1;
+    let ring: Vec<Vec2> = (0..6)
+        .map(|k| {
+            let angle = std::f32::consts::FRAC_PI_3 * k as f32;
+            p + Vec2::new(angle.cos(), angle.sin()) * s
+        })
+        .collect();
+    let expected = p + Vec2::new(s, 0.0);
+    let mut app = app_with_units_on(
+        &[(30.0, 20.0), (p.x, p.y)],
+        &[0, 0],
+        MapSize { x: 64.0, y: 64.0 },
+        radius,
+    );
+    let post = app
+        .world_mut()
+        .resource_mut::<UnitTypes>()
+        .register_unit_type(
+            &PackageId(ORIGIN.to_owned()),
+            UnitDef {
+                id: "ring-post".into(),
+                name: "Ring post".into(),
+                movement: None,
+                inventory: None,
+                gatherer: None,
+                drop_off: None,
+                producer: None,
+                footprint: Footprint::Circle { radius },
+                output_inventory: None,
+                extractor: None,
+                conveyor: None,
+                inserter: None,
+                machine: None,
+                research: None,
+                health: None,
+                weapon: None,
+                removal: None,
+            },
+        )
+        .unwrap();
+    for (offset, point) in ring.iter().enumerate().skip(1) {
+        app.world_mut().spawn((
+            turts_sim::UnitId(10 + offset as u32),
+            turts_sim::UnitType(post),
+            turts_sim::Owner(SlotId(0)),
+            turts_sim::Position(*point),
+        ));
+    }
+    let mover = app
+        .world_mut()
+        .iter_entities()
+        .find(|entity| {
+            entity
+                .get::<turts_sim::UnitId>()
+                .is_some_and(|id| id.0 == 1)
+        })
+        .unwrap()
+        .id();
+    app.world_mut().entity_mut(mover).insert(MoveTarget(p));
+    let mut rested = None;
+    for _ in 0..200 {
+        app.update();
+        let entity = app.world().entity(mover);
+        if let Some(progress) = entity
+            .get::<turts_sim::movement::MoveProgress>()
+            .filter(|progress| progress.is_fallback())
+        {
+            let pool = &app
+                .world()
+                .resource::<turts_sim::movement::MovementPools>()
+                .0[&progress.pool_id];
+            assert_eq!(pool.point, p, "the fallback pool is rooted at the goal");
+            assert!(
+                progress.slot.distance(expected) <= 1.0e-4,
+                "the fallback slot {:?} is the legal ring point {expected:?}",
+                progress.slot
+            );
+            if progress.activity == turts_sim::movement::MovementActivity::Resting {
+                rested = Some((
+                    progress.slot,
+                    entity.get::<turts_sim::Position>().unwrap().0,
+                ));
+                break;
+            }
+        }
+    }
+    let (slot, position) = rested.expect("the mover rests on its fallback slot");
+    assert_eq!(position, slot, "the mover stands on its slot");
+}

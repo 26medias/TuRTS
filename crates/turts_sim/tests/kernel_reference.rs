@@ -40,8 +40,14 @@
 //! tick on, the seed is not compared: after a fallback the unit has a pool, takes the pool
 //! expressions and the pool stall and spare logic, and the difference spreads to its neighbours
 //! in the chain. The guards of A2b1 prove those seeds (`group_movement.rs`,
-//! `one_step_function.rs`). The test lists each seed with a fallback and its first tick, and it
-//! fails if no random seed is free of a fallback.
+//! `one_step_function.rs`). The test lists each seed with a fallback and its first tick.
+//!
+//! The counts of each kind of unit and each phase come from compared unit frames only (the A2b1
+//! stop ruling, K1): a frame that the cut-off leaves out does not count. The fallback count comes
+//! from the live run. Each random seed has a fallback (55 of 64 at tick 0 in release), so the
+//! test does not ask for a random seed with no fallback (K2). It asks that no pooled chain
+//! (`pooled_frame`: no unit that moves with no pool) has a fallback, so that each of them is
+//! compared on all its ticks; a pooled chain that gets a mover with no pool is red.
 //!
 //! The exact release command that every later task of the slice (A2b1, A2b2, A4, A3) and the
 //! slice regression must run, until A3 has merged:
@@ -528,14 +534,17 @@ struct Seen {
 }
 
 impl Seen {
+    /// Count the first `compared` unit frames of one tick: the unit frames that the harness
+    /// compared (K1). `frames` counts every tick that ran.
     fn count(
         &mut self,
         frame: &MovementFrame,
         outputs: &[MovementFrameOutput],
         keep: &BTreeSet<u32>,
+        compared: usize,
     ) {
         self.frames += 1;
-        for (unit, output) in frame.units.iter().zip(outputs) {
+        for (unit, output) in frame.units.iter().zip(outputs).take(compared) {
             self.unit_frames += 1;
             let is_pool = output.progress.is_some();
             if unit.speed.is_some() && unit.target.is_some() && unit.progress.is_none() {
@@ -901,6 +910,7 @@ fn run_chain(
             reference.len(),
             "{label} tick {tick}: the output count differs"
         );
+        let mut compared_now = 0;
         if first_fallback.is_none() {
             // The first unit that the reference gave a new plain progress: its fallback.
             let reference_first = frame
@@ -930,6 +940,7 @@ fn run_chain(
                     _ => difference(new, old),
                 };
                 compared += 1;
+                compared_now += 1;
                 if let Some(text) = text {
                     panic!("{label} tick {tick} unit {}: {text}", new.unit_id);
                 }
@@ -938,7 +949,7 @@ fn run_chain(
         }
         seen.fallback += fallbacks.len();
         let pools = assign_fallback_pools(&mut live, fallbacks, &mut next_pool_id);
-        seen.count(&frame, &live, keep);
+        seen.count(&frame, &live, keep, compared_now);
         frame = next_frame(&frame, &live, rng, retarget);
         frame
             .pools
@@ -997,16 +1008,17 @@ fn kernel_matches_reference_bit_for_bit() {
     }
     println!(
         "\nkernel_reference: {} of {} seeds have a fallback (seed, first tick, unit): \
-         {fallback_seeds:?}; {} of {} pooled chains have a fallback: {fallback_pooled:?}",
+         {fallback_seeds:?}; {} random seeds are compared on all ticks; {} of {} pooled chains \
+         have a fallback: {fallback_pooled:?}",
         fallback_seeds.len(),
         seeds(),
+        seeds() as usize - fallback_seeds.len(),
         fallback_pooled.len(),
         seeds()
     );
     assert!(
-        fallback_seeds.len() + fallback_pooled.len() < 2 * seeds() as usize,
-        "every chain has a fallback, so no chain is compared on all its ticks: \
-         {fallback_seeds:?} {fallback_pooled:?}"
+        fallback_pooled.is_empty(),
+        "a pooled chain has a fallback, so it is not compared on all its ticks: {fallback_pooled:?}"
     );
     // The anchor frames reach the branches that the random seeds do not. Each raises its own
     // count in its own run, so that a random seed cannot stand in for it.

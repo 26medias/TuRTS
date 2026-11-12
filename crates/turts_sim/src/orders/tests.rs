@@ -2641,18 +2641,44 @@ fn authored_plain_blocked_identity_is_acknowledged_while_legacy_multi_waits() {
         target: OrderTargetSim::Point(Vec2::new(20.0, 20.0)),
         group: 0,
     };
+    // A2b1 (ruling item 2, observation change): the state that production makes for a trip whose
+    // fallback ended `Blocked`: a fallback `MoveProgress` whose pool id comes from the order pool
+    // counter, and its pool of one in `MovementPools` at the original point (20, 20) with no spare
+    // (the slot that the unit holds only).
+    let pool_id = {
+        let mut pending = app.world_mut().resource_mut::<PendingMovementOrders>();
+        pending.next_pool_id += 1;
+        pending.next_pool_id
+    };
+    app.world_mut()
+        .resource_mut::<crate::movement::MovementPools>()
+        .0
+        .insert(
+            pool_id,
+            crate::movement::MovementPool {
+                pool_id,
+                point: Vec2::new(20.0, 20.0),
+                spacing: 1.1,
+                primary_count: 1,
+                slots: vec![Vec2::new(8.0, 8.0)],
+            },
+        );
     app.world_mut().entity_mut(first).insert((
         UnitOrders::default(),
-        crate::movement::PlainMoveProgress {
-            original_point: Vec2::new(20.0, 20.0),
+        crate::movement::MoveProgress {
+            pool_id,
             slot: Vec2::new(8.0, 8.0),
-            pool_slots: Vec::new(),
-            gather_goal: None,
             activity: crate::movement::MovementActivity::Blocked,
+            pass_mode: false,
+            stalling_on_group: false,
             stalled_ticks: 20,
             best_distance: Vec2::new(20.0, 20.0).distance(Vec2::new(8.0, 8.0)),
             claim_count: 3,
-            failure_recorded: false,
+            follow_origin: None,
+            gather_goal: None,
+            fallback: Some(crate::movement::MoveFallback {
+                failure_recorded: false,
+            }),
         },
     ));
     app.world_mut().init_resource::<PlainMoveOrderIdentities>();
@@ -2696,8 +2722,9 @@ fn authored_plain_blocked_identity_is_acknowledged_while_legacy_multi_waits() {
     assert!(
         app.world()
             .entity(first)
-            .get::<crate::movement::PlainMoveProgress>()
-            .is_some_and(|progress| progress.failure_recorded)
+            .get::<crate::movement::MoveProgress>()
+            .and_then(|progress| progress.fallback)
+            .is_some_and(|fallback| fallback.failure_recorded)
     );
     assert!(unit_has_pending_move(app.world(), 1));
     assert!(unit_has_pending_move(app.world(), 2));

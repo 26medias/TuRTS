@@ -3,9 +3,9 @@
 //! The four packages of the frozen M2 stream never set `separated` or `was_projected` to true and
 //! never use a pool or a plain progress (the counts of `refreeze_classify.py --counts`), so
 //! the stream cannot show that the probe works. These cases do: each probe value that the
-//! trace emitter reads is made non-trivial here, on the authored `muster` package. The three
-//! movement branches (no pool, pool, plain) each store their own `was_projected`; each branch
-//! has an assertion that reads both values.
+//! trace emitter reads is made non-trivial here, on the authored `muster` package. The movement
+//! branches each store their own `was_projected`; each branch has an assertion that reads both
+//! values. Since task A2b1 no code makes a plain progress, so the plain branch has no case here.
 #![cfg(feature = "test-probes")]
 
 use turts_mod_api::{ContentId, OrderDef, PackageId, SourceDef};
@@ -97,15 +97,41 @@ fn has_move_target(app: &mut bevy_app::App, unit: u32) -> bool {
 /// Trooper 1 stands at (25, 18) with trooper 2 at (26.1, 18): a gap of 1.1, which is more than
 /// the separation limit 1.05, so the unit is not `separated` on its first step. The step of 0.15
 /// puts it at 0.95 from trooper 2, inside the footprint limit 1.0001, so the hard projection
-/// moves it back: `was_projected` (no-pool branch). A moved and projected unit gets a plain
-/// progress. The plain branch then runs its own projection loop: the unit is projected on each
-/// of the ticks 2 to 11 (the loop in `plain.rs` stores its real value) and no longer from tick
-/// 12 on, so a plain branch that stores a constant reads wrong on one of the two spans.
+/// moves it back: `was_projected` (the step with no pool). A moved and projected unit that does
+/// not arrive gets the obstacle fallback.
+///
+/// Task A2b1 (the A2b1 stop ruling, item 4; an inversion that design `:21` and row A2b `:44`
+/// allow): the fallback is a pool of one, not a plain progress. Tick 1 reads `pool` and
+/// `Moving`: the pool has a primary slot, because no unit stands within the footprint and
+/// reservation limit of the point (60, 18) (the test checks this on the installed world). From
+/// tick 2 on, the pool branch runs its own projection loop. The line from the unit to (60, 18)
+/// runs through the row of troopers at y = 18 (trooper 2 at (26.1, 18) to trooper 8 at
+/// (32.7, 18)) and is clear of them after x = 33.2, so the pool branch must report a projection
+/// on one or more ticks and no projection on a later tick: a branch that stores a constant reads
+/// wrong on one of the two. The unit keeps its pool until it stands on the point.
 #[test]
 fn a_unit_stepped_into_a_neighbour_reads_projected_then_plain_and_separated() {
     let mut fixture = muster();
     let app = &mut fixture.app;
-    queue(app, move_to(vec![1], Vec2::new(60.0, 18.0)));
+    let point = Vec2::new(60.0, 18.0);
+    {
+        // The point is a free primary slot of a pool of one of radius 0.5: every unit is at least
+        // 0.5 + its radius + 0.1 from it (the reservation limit of the spread, which is larger
+        // than the footprint limit).
+        let world = app.world_mut();
+        let types = world.resource::<turts_sim::UnitTypes>().clone();
+        let mut query = world.query::<(&UnitId, &turts_sim::Position, &turts_sim::UnitType)>();
+        for (id, position, unit_type) in query.iter(world) {
+            let radius = types.get(unit_type.0).map_or(0.0, |entry| entry.radius);
+            assert!(
+                position.0.distance(point) >= 0.5 + radius + 0.1,
+                "unit {} at {:?} blocks the point (60, 18)",
+                id.0,
+                position.0
+            );
+        }
+    }
+    queue(app, move_to(vec![1], point));
     app.update();
     let world = app.world();
     assert_eq!(
@@ -116,49 +142,48 @@ fn a_unit_stepped_into_a_neighbour_reads_projected_then_plain_and_separated() {
     assert!(!probe::separated(world, 1), "tick 1: not separated");
     assert_eq!(
         probe::unit_state(world, 1),
-        "plain",
-        "tick 1: plain progress"
+        "pool",
+        "tick 1: the fallback is a pool of one"
     );
     assert_eq!(
         probe::activity(world, 1),
-        "none",
-        "a plain progress is no pool"
+        "Moving",
+        "tick 1: the pool of one has a primary slot"
     );
-    app.update();
-    let world = app.world();
-    assert!(
-        probe::separated(world, 1),
-        "tick 2: separated (plain branch)"
-    );
-    assert_eq!(
-        probe::was_projected(world, 1),
-        Some(true),
-        "tick 2: projected (plain branch)"
-    );
-    assert_eq!(
-        probe::unit_state(world, 1),
-        "plain",
-        "tick 2: plain progress"
-    );
-    for tick in 3..=11 {
+    let mut first_projected = None;
+    let mut later_free = None;
+    for tick in 2..=200_u32 {
         app.update();
-        assert_eq!(
-            probe::was_projected(app.world(), 1),
-            Some(true),
-            "tick {tick}: projected (plain branch)"
-        );
+        let world = app.world();
+        let at_point = world.iter_entities().any(|entity| {
+            entity.get::<UnitId>().is_some_and(|id| id.0 == 1)
+                && entity
+                    .get::<turts_sim::Position>()
+                    .is_some_and(|position| position.0 == point)
+        });
+        if !at_point {
+            assert_eq!(
+                probe::unit_state(world, 1),
+                "pool",
+                "tick {tick}: the trip keeps its pool of one until it stands on the point"
+            );
+        }
+        match probe::was_projected(world, 1) {
+            Some(true) if first_projected.is_none() => first_projected = Some(tick),
+            Some(false) if first_projected.is_some() && later_free.is_none() => {
+                later_free = Some(tick)
+            }
+            _ => {}
+        }
     }
-    app.update();
-    let world = app.world();
-    assert_eq!(
-        probe::unit_state(world, 1),
-        "plain",
-        "tick 12: still a plain progress"
+    assert!(
+        first_projected.is_some(),
+        "ticks 2 to 200: the pool branch never reports a projection through the trooper row"
     );
-    assert_eq!(
-        probe::was_projected(world, 1),
-        Some(false),
-        "tick 12: the plain branch ran and the hard projection did not move the unit"
+    assert!(
+        later_free.is_some(),
+        "ticks 2 to 200: the pool branch never reports a step with no projection after the row \
+         (first projection at tick {first_projected:?})"
     );
 }
 
