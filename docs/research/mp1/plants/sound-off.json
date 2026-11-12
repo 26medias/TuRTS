@@ -25,7 +25,7 @@
     "headed": false,
     "expected_red": "the default settings make no sound",
     "exit": 101,
-    "commit": "815ef626",
+    "commit": "acd26d04",
     "expected_selected": "the_sound_is_off_by_default_and_a_stored_profile_with_no_flag_reads_as_off"
   },
   {
@@ -54,7 +54,7 @@
     "headed": false,
     "expected_red": "the stored flag turns the sound on",
     "exit": 101,
-    "commit": "815ef626",
+    "commit": "acd26d04",
     "expected_selected": "a_stored_sound_on_flag_gives_sound_and_keeps_the_levels"
   },
   {
@@ -83,7 +83,7 @@
     "headed": false,
     "expected_red": "resets the audio settings to the defaults, as a bad level does",
     "exit": 101,
-    "commit": "815ef626",
+    "commit": "acd26d04",
     "expected_selected": "an_invalid_stored_sound_flag_falls_back_like_an_invalid_level"
   },
   {
@@ -112,7 +112,7 @@
     "headed": false,
     "expected_red": "left: Bool(false)",
     "exit": 101,
-    "commit": "815ef626",
+    "commit": "acd26d04",
     "expected_selected": "the_flag_is_written_into_the_audio_object_and_the_levels_and_other_fields_stay"
   },
   {
@@ -140,7 +140,7 @@
     "headed": false,
     "expected_red": "no sink starts while the sound is off",
     "exit": 101,
-    "commit": "815ef626",
+    "commit": "acd26d04",
     "expected_selected": "audio::control_settings_persistence_contract::with_the_sound_off_no_player_starts_and_a_request_is_not_queued_for_later"
   },
   {
@@ -168,7 +168,7 @@
     "headed": false,
     "expected_red": "off removes the live player",
     "exit": 101,
-    "commit": "815ef626",
+    "commit": "acd26d04",
     "expected_selected": "audio::control_settings_persistence_contract::turning_the_sound_off_stops_a_sound_that_is_playing"
   },
   {
@@ -196,7 +196,7 @@
     "headed": false,
     "expected_red": "assertion failed: !app.world().resource::<AudioFeed>().sound_on",
     "exit": 101,
-    "commit": "815ef626",
+    "commit": "acd26d04",
     "expected_selected": "audio::control_settings_persistence_contract::the_debug_audio_state_shows_the_sound_flag"
   },
   {
@@ -224,7 +224,7 @@
     "headed": false,
     "expected_red": "the switch is saved",
     "exit": 101,
-    "commit": "815ef626",
+    "commit": "acd26d04",
     "expected_selected": "audio::control_settings_persistence_contract::the_switch_is_saved_with_the_levels_and_survives_a_new_session"
   },
   {
@@ -252,7 +252,7 @@
     "headed": false,
     "expected_red": "the sound is off on purpose",
     "exit": 101,
-    "commit": "815ef626",
+    "commit": "acd26d04",
     "expected_selected": "client_shell::tests::no_sound_notice_shows_while_the_player_keeps_the_sound_off"
   },
   {
@@ -280,7 +280,7 @@
     "headed": false,
     "expected_red": "the default says off, in words",
     "exit": 101,
-    "commit": "815ef626",
+    "commit": "acd26d04",
     "expected_selected": "client_shell::tests::the_play_screen_has_one_sound_switch_that_says_off_by_default_and_one_click_turns_it_on"
   },
   {
@@ -308,7 +308,7 @@
     "headed": false,
     "expected_red": "no switch before the join",
     "exit": 101,
-    "commit": "815ef626",
+    "commit": "acd26d04",
     "expected_selected": "client_shell::tests::the_play_screen_switch_waits_for_the_join"
   },
   {
@@ -336,7 +336,7 @@
     "headed": false,
     "expected_red": "the sound switch never writes a level",
     "exit": 101,
-    "commit": "815ef626",
+    "commit": "acd26d04",
     "expected_selected": "client_shell::tests::the_switch_keeps_the_four_levels_across_off_and_on"
   },
   {
@@ -360,7 +360,7 @@
     "headed": false,
     "expected_red": "on fill channel 1",
     "exit": 1,
-    "commit": "815ef626"
+    "commit": "acd26d04"
   },
   {
     "row": "SOUND-OFF",
@@ -383,7 +383,7 @@
     "headed": false,
     "expected_red": "a 1 px outline is not a button",
     "exit": 1,
-    "commit": "815ef626"
+    "commit": "acd26d04"
   },
   {
     "row": "SOUND-OFF",
@@ -406,7 +406,7 @@
     "headed": false,
     "expected_red": "expected: /inside the rectangle/",
     "exit": 1,
-    "commit": "815ef626"
+    "commit": "acd26d04"
   },
   {
     "row": "SOUND-OFF",
@@ -429,7 +429,7 @@
     "headed": true,
     "expected_red": "SND1 no sink started while the switch was off",
     "exit": 1,
-    "commit": "815ef626"
+    "commit": "acd26d04"
   },
   {
     "row": "SOUND-OFF",
@@ -452,7 +452,7 @@
     "headed": true,
     "expected_red": "ORD7 observes the matching real response sink",
     "exit": 1,
-    "commit": "815ef626"
+    "commit": "acd26d04"
   },
   {
     "row": "SOUND-OFF",
@@ -479,7 +479,7 @@
     "headed": false,
     "expected_red": "its own switch is in its layout, the engine draws none",
     "exit": 101,
-    "commit": "815ef626",
+    "commit": "acd26d04",
     "expected_selected": "client_shell::tests::the_engine_draws_its_switch_only_when_the_interface_places_no_toggle_sound_button"
   },
   {
@@ -508,7 +508,7 @@
     "headed": false,
     "expected_red": "assertion failed: interface(Parts {",
     "exit": 101,
-    "commit": "815ef626",
+    "commit": "acd26d04",
     "expected_selected": "h25_sound_switch_names_and_the_placement_question"
   },
   {
@@ -537,7 +537,7 @@
     "headed": false,
     "expected_red": "called `Result::unwrap_err()` on an `Ok` value",
     "exit": 101,
-    "commit": "815ef626",
+    "commit": "acd26d04",
     "expected_selected": "h25_the_sound_switch_names_need_api_0_2_4_and_pack_at_0_2_4"
   },
   {
@@ -566,7 +566,7 @@
     "headed": false,
     "expected_red": "unknown input action `toggle_sond`",
     "exit": 101,
-    "commit": "815ef626",
+    "commit": "acd26d04",
     "expected_selected": "h25_the_sound_switch_names_need_api_0_2_4_and_pack_at_0_2_4"
   },
   {
@@ -594,7 +594,7 @@
     "headed": false,
     "expected_red": "the button turns the sound on",
     "exit": 101,
-    "commit": "815ef626",
+    "commit": "acd26d04",
     "expected_selected": "widgets::tests::toggle_sound_button_flips_the_switch_and_its_words_and_predicate_follow_the_state"
   },
   {
@@ -622,7 +622,7 @@
     "headed": false,
     "expected_red": "left: String(\"Sound: on\")",
     "exit": 101,
-    "commit": "815ef626",
+    "commit": "acd26d04",
     "expected_selected": "widgets::tests::toggle_sound_button_flips_the_switch_and_its_words_and_predicate_follow_the_state"
   },
   {
@@ -657,7 +657,7 @@
     "headed": false,
     "expected_red": "acme places a button with the action toggle_sound",
     "exit": 101,
-    "commit": "815ef626",
+    "commit": "acd26d04",
     "expected_selected": "the_shipped_packages_place_the_sound_switch_and_pack_at_0_2_4"
   },
   {
@@ -681,17 +681,17 @@
     "headed": false,
     "expected_red": "forge sound_switch_on fill #1f6138",
     "exit": 1,
-    "commit": "815ef626"
+    "commit": "acd26d04"
   },
   {
     "row": "SOUND-OFF",
-    "plant": "7a-repair-does-nothing",
+    "plant": "7a-press-not-required",
     "files": [
       {
         "file": "crates/turts_client/src/press_release.rs",
         "edit": {
-          "old": "                    before.entry(*entity).or_insert_with(|| hit.clone());\n",
-          "new": "                    let _ = (entity, hit);\n"
+          "old": "                let Some(press) = down.remove(&input.pointer_id) else {\n                    continue;\n                };\n",
+          "new": "                let press = down.remove(&input.pointer_id).unwrap_or(Press {\n                    button,\n                    start: at,\n                    dragged: false,\n                });\n"
         }
       }
     ],
@@ -702,14 +702,182 @@
       "turts_client",
       "--locked",
       "--lib",
-      "a_press_and_release_with_no_earlier_hover_frame_activates_the_button"
+      "a_release_with_no_press_in_the_frame_is_left_to_bevy"
     ],
     "env": {},
     "headed": false,
-    "expected_red": "one activation",
+    "expected_red": "Bevy gives no click for this release",
     "exit": 101,
-    "commit": "815ef626",
-    "expected_selected": "press_release::tests::a_press_and_release_with_no_earlier_hover_frame_activates_the_button"
+    "commit": "acd26d04",
+    "expected_selected": "press_release::tests::a_release_with_no_press_in_the_frame_is_left_to_bevy"
+  },
+  {
+    "row": "SOUND-OFF",
+    "plant": "7c-press-hit-test-removed",
+    "files": [
+      {
+        "file": "crates/turts_client/src/press_release.rs",
+        "edit": {
+          "old": "            if !node_hit(*entity, click.press_at, &nodes, &cameras)\n                || !node_hit(*entity, click.release_at, &nodes, &cameras)\n",
+          "new": "            if !node_hit(*entity, click.release_at, &nodes, &cameras)\n"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_client",
+      "--locked",
+      "--lib",
+      "a_press_on_one_button_and_a_release_on_the_button_next_to_it_click_neither"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "assertion `left == right` failed",
+    "exit": 101,
+    "commit": "acd26d04",
+    "expected_selected": "press_release::tests::a_press_on_one_button_and_a_release_on_the_button_next_to_it_click_neither"
+  },
+  {
+    "row": "SOUND-OFF",
+    "plant": "7d-drag-flag-ignored",
+    "files": [
+      {
+        "file": "crates/turts_client/src/press_release.rs",
+        "edit": {
+          "old": "                    && !press.dragged\n",
+          "new": ""
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_client",
+      "--locked",
+      "--lib",
+      "a_drag_that_comes_back_to_the_button_in_one_frame_is_not_a_click"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "assertion `left == right` failed",
+    "exit": 101,
+    "commit": "acd26d04",
+    "expected_selected": "press_release::tests::a_drag_that_comes_back_to_the_button_in_one_frame_is_not_a_click"
+  },
+  {
+    "row": "SOUND-OFF",
+    "plant": "7e-release-distance-ignored",
+    "files": [
+      {
+        "file": "crates/turts_client/src/press_release.rs",
+        "edit": {
+          "old": "                    && press.start.distance(at) <= CLICK_DRAG_PIXELS\n",
+          "new": ""
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_client",
+      "--locked",
+      "--lib",
+      "a_press_on_the_map_and_a_release_over_a_button_in_one_frame_activate_nothing"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "assertion `left == right` failed",
+    "exit": 101,
+    "commit": "acd26d04",
+    "expected_selected": "press_release::tests::a_press_on_the_map_and_a_release_over_a_button_in_one_frame_activate_nothing"
+  },
+  {
+    "row": "SOUND-OFF",
+    "plant": "7f-button-not-compared",
+    "files": [
+      {
+        "file": "crates/turts_client/src/press_release.rs",
+        "edit": {
+          "old": "                if press.button == button\n",
+          "new": "                if true\n"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_client",
+      "--locked",
+      "--lib",
+      "a_press_and_a_release_of_two_different_buttons_are_not_a_click"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "assertion `left == right` failed",
+    "exit": 101,
+    "commit": "acd26d04",
+    "expected_selected": "press_release::tests::a_press_and_a_release_of_two_different_buttons_are_not_a_click"
+  },
+  {
+    "row": "SOUND-OFF",
+    "plant": "7g-pressed-not-given-back",
+    "files": [
+      {
+        "file": "crates/turts_client/src/press_release.rs",
+        "edit": {
+          "old": "            if buttons.contains(*entity) {\n                commands.entity(*entity).insert(Pressed);\n            }\n",
+          "new": ""
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_client",
+      "--locked",
+      "--lib",
+      "a_drag_that_comes_back_to_the_button_in_one_frame_is_not_a_click"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "assertion `left == right` failed",
+    "exit": 101,
+    "commit": "acd26d04",
+    "expected_selected": "press_release::tests::a_drag_that_comes_back_to_the_button_in_one_frame_is_not_a_click"
+  },
+  {
+    "row": "SOUND-OFF",
+    "plant": "7h-threshold-huge",
+    "files": [
+      {
+        "file": "crates/turts_interaction/src/lib.rs",
+        "edit": {
+          "old": "pub const CLICK_DRAG_PIXELS: f32 = 4.0;",
+          "new": "pub const CLICK_DRAG_PIXELS: f32 = 4000.0;"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_client",
+      "--locked",
+      "--lib",
+      "a_drag_that_comes_back_to_the_button_in_one_frame_is_not_a_click"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "assertion `left == right` failed",
+    "exit": 101,
+    "commit": "acd26d04",
+    "expected_selected": "press_release::tests::a_drag_that_comes_back_to_the_button_in_one_frame_is_not_a_click"
   },
   {
     "row": "SOUND-OFF",
@@ -718,8 +886,8 @@
       {
         "file": "crates/turts_client/src/client_shell.rs",
         "edit": {
-          "old": "                .before(bevy::picking::events::pointer_events)\n",
-          "new": "                .before(bevy::picking::events::pointer_events)\n                .run_if(|| false)\n"
+          "old": "                .after(bevy::picking::events::pointer_events)\n",
+          "new": "                .after(bevy::picking::events::pointer_events)\n                .run_if(|| false)\n"
         }
       }
     ],
@@ -735,6 +903,235 @@
     "headed": true,
     "expected_red": "\"acted\":false",
     "exit": 1,
-    "commit": "815ef626"
+    "commit": "acd26d04"
+  },
+  {
+    "row": "SOUND-OFF",
+    "plant": "7i-headed-map-press-clicks-the-switch",
+    "files": [
+      {
+        "file": "crates/turts_client/src/press_release.rs",
+        "edit": {
+          "old": "                    && !press.dragged\n                    && press.start.distance(at) <= CLICK_DRAG_PIXELS\n",
+          "new": ""
+        }
+      }
+    ],
+    "command": [
+      "bash",
+      "scripts/click-without-hover.sh",
+      "--prepared",
+      "target/mc-mp1-sound-off/prep-plant7i",
+      "--package",
+      "tests/browser/fixtures/feedback/muster",
+      "--map-press-first"
+    ],
+    "env": {},
+    "headed": true,
+    "expected_red": "\"expected\":false,\"acted\":true",
+    "exit": 1,
+    "commit": "acd26d04"
+  },
+  {
+    "row": "SOUND-OFF",
+    "plant": "11a-menu-key-rule-off",
+    "files": [
+      {
+        "file": "crates/turts_mod_runtime/src/mp1_validation.rs",
+        "edit": {
+          "old": "        self.menu_keeps_a_key()?;\n",
+          "new": ""
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_mod_runtime",
+      "--locked",
+      "--test",
+      "val1",
+      "the_engine_action_menu_keeps_a_key_in_a_package_of_the_edition_0_2_4"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "the engine action `menu` has no key",
+    "exit": 101,
+    "commit": "acd26d04",
+    "expected_selected": "the_engine_action_menu_keeps_a_key_in_a_package_of_the_edition_0_2_4"
+  },
+  {
+    "row": "SOUND-OFF",
+    "plant": "11b-authored-menu-not-read",
+    "files": [
+      {
+        "file": "crates/turts_mod_runtime/src/mp1_validation.rs",
+        "edit": {
+          "old": "                if action.name == \"menu\" {",
+          "new": "                if action.name == \"menu_\" {"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_mod_runtime",
+      "--locked",
+      "--test",
+      "val1",
+      "the_engine_action_menu_keeps_a_key_in_a_package_of_the_edition_0_2_4"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "actions[5].default",
+    "exit": 101,
+    "commit": "acd26d04",
+    "expected_selected": "the_engine_action_menu_keeps_a_key_in_a_package_of_the_edition_0_2_4"
+  },
+  {
+    "row": "SOUND-OFF",
+    "plant": "12a-hint-offers-0-2-4-names",
+    "files": [
+      {
+        "file": "crates/turts_mod_runtime/src/content_mc_validation.rs",
+        "edit": {
+          "old": "                .filter(|engine| edition_0_2_4 || !ENGINE_ACTIONS_SINCE_0_2_4.contains(engine))\n",
+          "new": ""
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_mod_runtime",
+      "--locked",
+      "--test",
+      "val1",
+      "the_hint_for_a_misspelt_action_offers_only_the_names_of_the_edition"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "unknown input action `toggle_sond`",
+    "exit": 101,
+    "commit": "acd26d04",
+    "expected_selected": "the_hint_for_a_misspelt_action_offers_only_the_names_of_the_edition"
+  },
+  {
+    "row": "SOUND-OFF",
+    "plant": "13a-baseline-drifts",
+    "files": [
+      {
+        "file": "crates/turts_mod_runtime/tests/common/mod.rs",
+        "edit": {
+          "old": "            .replace(\"engine_api: \\\"^0.2.4\\\"\", \"engine_api: \\\"^0.2.3\\\"\")",
+          "new": "            .replace(\"engine_api: \\\"^0.2.4\\\"\", \"engine_api: \\\"^0.2.3\\\" \")"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_mod_runtime",
+      "--locked",
+      "--test",
+      "val1",
+      "the_edition_0_2_3_baseline_is_the_base_commit_form_of_each_shipped_package"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "muster manifest.ron",
+    "exit": 101,
+    "commit": "acd26d04",
+    "expected_selected": "the_edition_0_2_3_baseline_is_the_base_commit_form_of_each_shipped_package"
+  },
+  {
+    "row": "SOUND-OFF",
+    "plant": "14a-core-ignores-toggle-sound",
+    "files": [
+      {
+        "file": "crates/turts_interaction/src/lib.rs",
+        "edit": {
+          "old": " || action == \"toggle_guide\" || action == \"toggle_sound\" {",
+          "new": " || action == \"toggle_guide\" {"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_interaction",
+      "--locked",
+      "--test",
+      "rebound_actions",
+      "a_key_bound_to_toggle_sound_sends_the_shell_action"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "the bound key sends the shell action",
+    "exit": 101,
+    "commit": "acd26d04",
+    "expected_selected": "a_key_bound_to_toggle_sound_sends_the_shell_action"
+  },
+  {
+    "row": "SOUND-OFF",
+    "plant": "14b-client-ignores-toggle-sound",
+    "files": [
+      {
+        "file": "crates/turts_client/src/widgets/mod.rs",
+        "edit": {
+          "old": "            volumes.sound_on = !volumes.sound_on;\n",
+          "new": ""
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_client",
+      "--locked",
+      "--lib",
+      "the_shell_action_toggle_sound_flips_the_switch"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "assertion failed",
+    "exit": 101,
+    "commit": "acd26d04",
+    "expected_selected": "widgets::tests::the_shell_action_toggle_sound_flips_the_switch"
+  },
+  {
+    "row": "SOUND-OFF",
+    "plant": "15a-help-without-the-optout",
+    "files": [
+      {
+        "file": "crates/turts_pack/src/main.rs",
+        "edit": {
+          "old": "so a package may leave the play-screen switch out",
+          "new": "so a package keeps the switch"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_pack",
+      "--locked",
+      "--test",
+      "cli",
+      "pack_cli_help_states_the_sound_switch_rule"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "usage lacks `so a package may leave the play-screen switch out`",
+    "exit": 101,
+    "commit": "acd26d04",
+    "expected_selected": "pack_cli_help_states_the_sound_switch_rule"
   }
 ]
