@@ -146,14 +146,24 @@
   },
   {
     "row": "COMBAT-FIXES",
-    "plant": "2a (stand-off returns the unchecked ring point: the old approach, sim sweep)",
+    "plant": "2a (the stand-off loop, its debug_assert and its fallback removed: the unchecked ring point: the old approach, sim sweep)",
     "files": [
       {
         "file": "crates/turts_sim/src/economy/combat.rs",
-        "edit": {
-          "old": "    if within_weapon_range(ring, target, range) {\n",
-          "new": "    if true {\n"
-        }
+        "edit": [
+          {
+            "old": "    while steps < max_steps && !within_weapon_range(point, target, range) {\n",
+            "new": "    while steps < max_steps && false {\n"
+          },
+          {
+            "old": "    debug_assert!(\n        reached,\n",
+            "new": "    debug_assert!(\n        true,\n"
+          },
+          {
+            "old": "        (target, steps, false)\n",
+            "new": "        (point, steps, false)\n"
+          }
+        ]
       }
     ],
     "command": [
@@ -176,14 +186,24 @@
   },
   {
     "row": "COMBAT-FIXES",
-    "plant": "2b (stand-off returns the unchecked ring point, random rings)",
+    "plant": "2b (the stand-off loop, its debug_assert and its fallback removed: the unchecked ring point, random rings)",
     "files": [
       {
         "file": "crates/turts_sim/src/economy/combat.rs",
-        "edit": {
-          "old": "    if within_weapon_range(ring, target, range) {\n",
-          "new": "    if true {\n"
-        }
+        "edit": [
+          {
+            "old": "    while steps < max_steps && !within_weapon_range(point, target, range) {\n",
+            "new": "    while steps < max_steps && false {\n"
+          },
+          {
+            "old": "    debug_assert!(\n        reached,\n",
+            "new": "    debug_assert!(\n        true,\n"
+          },
+          {
+            "old": "        (target, steps, false)\n",
+            "new": "        (point, steps, false)\n"
+          }
+        ]
       }
     ],
     "command": [
@@ -206,14 +226,24 @@
   },
   {
     "row": "COMBAT-FIXES",
-    "plant": "2c (stand-off returns the unchecked ring point, real Muster package)",
+    "plant": "2c (the stand-off loop, its debug_assert and its fallback removed: the unchecked ring point, real Muster package)",
     "files": [
       {
         "file": "crates/turts_sim/src/economy/combat.rs",
-        "edit": {
-          "old": "    if within_weapon_range(ring, target, range) {\n",
-          "new": "    if true {\n"
-        }
+        "edit": [
+          {
+            "old": "    while steps < max_steps && !within_weapon_range(point, target, range) {\n",
+            "new": "    while steps < max_steps && false {\n"
+          },
+          {
+            "old": "    debug_assert!(\n        reached,\n",
+            "new": "    debug_assert!(\n        true,\n"
+          },
+          {
+            "old": "        (target, steps, false)\n",
+            "new": "        (point, steps, false)\n"
+          }
+        ]
       }
     ],
     "command": [
@@ -237,43 +267,13 @@
   },
   {
     "row": "COMBAT-FIXES",
-    "plant": "2d (the pull is half a bound: too small for the rounding)",
+    "plant": "2e (the stand-off always takes one step: a passing ring point moves)",
     "files": [
       {
         "file": "crates/turts_sim/src/economy/combat.rs",
         "edit": {
-          "old": "const STAND_OFF_BOUNDS: f32 = 4.0;\n",
-          "new": "const STAND_OFF_BOUNDS: f32 = 0.5;\n"
-        }
-      }
-    ],
-    "command": [
-      "cargo",
-      "test",
-      "-p",
-      "turts_sim",
-      "--locked",
-      "--lib",
-      "economy::combat::tests::weapon_stand_off_is_in_range_for_random_rings",
-      "--",
-      "--exact"
-    ],
-    "env": {},
-    "headed": false,
-    "expected_red": "is out of range",
-    "exit": 101,
-    "commit": "9ff4f9c7a624cc5e7d83bcc806bcda59431815ba",
-    "expected_selected": "economy::combat::tests::weapon_stand_off_is_in_range_for_random_rings"
-  },
-  {
-    "row": "COMBAT-FIXES",
-    "plant": "2e (the stand-off always pulls in: a passing ring point moves)",
-    "files": [
-      {
-        "file": "crates/turts_sim/src/economy/combat.rs",
-        "edit": {
-          "old": "    if within_weapon_range(ring, target, range) {\n",
-          "new": "    if false {\n"
+          "old": "    while steps < max_steps && !within_weapon_range(point, target, range) {\n",
+          "new": "    while steps < max_steps && (steps == 0 || !within_weapon_range(point, target, range)) {\n"
         }
       }
     ],
@@ -294,5 +294,265 @@
     "exit": 101,
     "commit": "9ff4f9c7a624cc5e7d83bcc806bcda59431815ba",
     "expected_selected": "economy::combat::tests::weapon_stand_off_is_in_range_for_random_rings"
+  },
+  {
+    "row": "COMBAT-FIXES-FU",
+    "plant": "3a (no step: the unchecked ring point, reviewer reproduction)",
+    "files": [
+      {
+        "file": "crates/turts_sim/src/economy/combat.rs",
+        "edit": [
+          {
+            "old": "    while steps < max_steps && !within_weapon_range(point, target, range) {\n",
+            "new": "    while steps < max_steps && false {\n"
+          },
+          {
+            "old": "    debug_assert!(\n        reached,\n",
+            "new": "    debug_assert!(\n        true,\n"
+          },
+          {
+            "old": "        (target, steps, false)\n",
+            "new": "        (point, steps, false)\n"
+          }
+        ]
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_sim",
+      "--locked",
+      "--lib",
+      "economy::combat::tests::weapon_stand_off_is_in_range_for_a_range_far_below_the_coordinates",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "is out of range 0.001 of",
+    "exit": 101,
+    "commit": "315d5c743175d07fdb03a46426553687cc7fc5ce",
+    "expected_selected": "economy::combat::tests::weapon_stand_off_is_in_range_for_a_range_far_below_the_coordinates"
+  },
+  {
+    "row": "COMBAT-FIXES-FU",
+    "plant": "3b (no step: the unchecked ring point, case classes)",
+    "files": [
+      {
+        "file": "crates/turts_sim/src/economy/combat.rs",
+        "edit": [
+          {
+            "old": "    while steps < max_steps && !within_weapon_range(point, target, range) {\n",
+            "new": "    while steps < max_steps && false {\n"
+          },
+          {
+            "old": "    debug_assert!(\n        reached,\n",
+            "new": "    debug_assert!(\n        true,\n"
+          },
+          {
+            "old": "        (target, steps, false)\n",
+            "new": "        (point, steps, false)\n"
+          }
+        ]
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_sim",
+      "--locked",
+      "--lib",
+      "economy::combat::tests::weapon_stand_off_is_in_range_for_the_reviewed_case_classes",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "is out of range",
+    "exit": 101,
+    "commit": "315d5c743175d07fdb03a46426553687cc7fc5ce",
+    "expected_selected": "economy::combat::tests::weapon_stand_off_is_in_range_for_the_reviewed_case_classes"
+  },
+  {
+    "row": "COMBAT-FIXES-FU",
+    "plant": "3c (quantum of the coordinate itself: more steps near 0)",
+    "files": [
+      {
+        "file": "crates/turts_sim/src/economy/combat.rs",
+        "edit": {
+          "old": "    let magnitude = coordinate.abs().max(target.abs());\n",
+          "new": "    let magnitude = coordinate.abs();\n"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_sim",
+      "--locked",
+      "--lib",
+      "economy::combat::tests::weapon_stand_off_is_in_range_for_the_reviewed_case_classes",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "the largest step count is",
+    "exit": 101,
+    "commit": "315d5c743175d07fdb03a46426553687cc7fc5ce",
+    "expected_selected": "economy::combat::tests::weapon_stand_off_is_in_range_for_the_reviewed_case_classes"
+  },
+  {
+    "row": "COMBAT-FIXES-FU",
+    "plant": "3d (a step may pass the target coordinate)",
+    "files": [
+      {
+        "file": "crates/turts_sim/src/economy/combat.rs",
+        "edit": {
+          "old": "    if gap.abs() <= quantum {\n",
+          "new": "    if gap.abs() <= 0.0 {\n"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_sim",
+      "--locked",
+      "--lib",
+      "economy::combat::tests::step_toward_reaches_the_target_coordinate_and_never_passes_it",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "assertion `left == right` failed",
+    "exit": 101,
+    "commit": "315d5c743175d07fdb03a46426553687cc7fc5ce",
+    "expected_selected": "economy::combat::tests::step_toward_reaches_the_target_coordinate_and_never_passes_it"
+  },
+  {
+    "row": "COMBAT-FIXES-FU",
+    "plant": "3e (bound of 1 step)",
+    "files": [
+      {
+        "file": "crates/turts_sim/src/economy/combat.rs",
+        "edit": {
+          "old": "const STAND_OFF_MAX_STEPS: u32 = 64;\n",
+          "new": "const STAND_OFF_MAX_STEPS: u32 = 1;\n"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_sim",
+      "--locked",
+      "--lib",
+      "economy::combat::tests::weapon_stand_off_is_in_range_for_the_reviewed_case_classes",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "steps",
+    "exit": 101,
+    "commit": "315d5c743175d07fdb03a46426553687cc7fc5ce",
+    "expected_selected": "economy::combat::tests::weapon_stand_off_is_in_range_for_the_reviewed_case_classes"
+  },
+  {
+    "row": "COMBAT-FIXES-FU",
+    "plant": "3f (the range rule counts the two radii: the pin test goes red)",
+    "files": [
+      {
+        "file": "crates/turts_sim/src/economy/combat.rs",
+        "edit": {
+          "old": "    origin.distance_squared(point) <= range * range\n",
+          "new": "    origin.distance_squared(point) <= (range + 1.5) * (range + 1.5)\n"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_sim",
+      "--locked",
+      "--lib",
+      "economy::combat::tests::a_range_below_the_two_radii_never_fires_and_the_unit_rests_beside_the_target",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "the weapon never fires",
+    "exit": 101,
+    "commit": "315d5c743175d07fdb03a46426553687cc7fc5ce",
+    "expected_selected": "economy::combat::tests::a_range_below_the_two_radii_never_fires_and_the_unit_rests_beside_the_target"
+  },
+  {
+    "row": "COMBAT-FIXES-FU2",
+    "plant": "4a (a step of 2 quanta: the step_toward test goes red)",
+    "files": [
+      {
+        "file": "crates/turts_sim/src/economy/combat.rs",
+        "edit": {
+          "old": "        coordinate + quantum.copysign(gap)\n",
+          "new": "        coordinate + 2.0 * quantum.copysign(gap)\n"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_sim",
+      "--locked",
+      "--lib",
+      "economy::combat::tests::step_toward_reaches_the_target_coordinate_and_never_passes_it",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "assertion `left == right` failed",
+    "exit": 101,
+    "commit": "315d5c743175d07fdb03a46426553687cc7fc5ce",
+    "expected_selected": "economy::combat::tests::step_toward_reaches_the_target_coordinate_and_never_passes_it"
+  },
+  {
+    "row": "COMBAT-FIXES-FU2",
+    "plant": "4b (no fallback at the bound: the result is not the target)",
+    "files": [
+      {
+        "file": "crates/turts_sim/src/economy/combat.rs",
+        "edit": {
+          "old": "        (target, steps, false)\n",
+          "new": "        (point, steps, false)\n"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_sim",
+      "--locked",
+      "--lib",
+      "economy::combat::tests::a_stand_off_walk_that_reaches_its_bound_returns_the_target",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "the bound is reached: the result is the target",
+    "exit": 101,
+    "commit": "315d5c743175d07fdb03a46426553687cc7fc5ce",
+    "expected_selected": "economy::combat::tests::a_stand_off_walk_that_reaches_its_bound_returns_the_target"
   }
 ]
