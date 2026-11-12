@@ -1,0 +1,517 @@
+[
+  {
+    "row": "L0-SIM",
+    "plant": "(a) headless_app without the Immediate insert: no config, 0 ticks (IMM1 red build 1, sim form)",
+    "files": [
+      {
+        "file": "crates/turts_sim/src/harness.rs",
+        "edit": {
+          "old": "    app.insert_resource(MatchConfig::immediate(tick_hz));\n",
+          "new": ""
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_sim",
+      "--locked",
+      "--lib",
+      "match_config::tests::headless_app_inserts_the_immediate_config_and_ticks",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "assertion `left == right` failed: headless_app must insert the Immediate config",
+    "exit": 101,
+    "commit": "d81be23f8668de6751f2441cbc96b5b879fc037b",
+    "expected_selected": "match_config::tests::headless_app_inserts_the_immediate_config_and_ticks"
+  },
+  {
+    "row": "L0-SIM",
+    "plant": "(b) the index is not updated at removal: the lookup of a removed id still gives an entity",
+    "files": [
+      {
+        "file": "crates/turts_sim/src/world.rs",
+        "edit": {
+          "old": "    on_insert = crate::unit_index::on_unit_id_insert,\n    on_discard = crate::unit_index::on_unit_id_discard\n)]",
+          "new": "    on_insert = crate::unit_index::on_unit_id_insert\n)]"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_sim",
+      "--locked",
+      "--lib",
+      "unit_index::tests::a_lookup_of_a_removed_id_gives_no_entity",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "assertion `left == right` failed: the index kept a removed unit",
+    "exit": 101,
+    "commit": "d81be23f8668de6751f2441cbc96b5b879fc037b",
+    "expected_selected": "unit_index::tests::a_lookup_of_a_removed_id_gives_no_entity"
+  },
+  {
+    "row": "L0-SIM",
+    "plant": "(c) weapon_enabled called at fire only: the targeting step still chooses a target with the stub false",
+    "files": [
+      {
+        "file": "crates/turts_sim/src/economy/combat.rs",
+        "edit": {
+          "old": "            || suppressed_by_engage\n            || !power::weapon_enabled(world, weapon)\n        {",
+          "new": "            || suppressed_by_engage\n        {"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_sim",
+      "--locked",
+      "--lib",
+      "economy::combat::tests::a_weapon_that_the_power_stub_disables_does_not_acquire_and_does_not_fire",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "the weapon chose a target: acquisition does not call weapon_enabled",
+    "exit": 101,
+    "commit": "d81be23f8668de6751f2441cbc96b5b879fc037b",
+    "expected_selected": "economy::combat::tests::a_weapon_that_the_power_stub_disables_does_not_acquire_and_does_not_fire"
+  },
+  {
+    "row": "L0-SIM",
+    "plant": "(d) the rate_factor call removed from production.rs: a job at stub rate 1/2 advances at full rate",
+    "files": [
+      {
+        "file": "crates/turts_sim/src/economy/production.rs",
+        "edit": {
+          "old": "                power::rate_factor(world, producer),\n",
+          "new": "                turts_rules::Ratio::ONE,\n"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_sim",
+      "--locked",
+      "--lib",
+      "economy::production::m3_disabled_legacy_producer_tests::a_job_advances_at_the_rate_of_the_power_stub",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "assertion `left == right` failed: the job ignored the rate factor",
+    "exit": 101,
+    "commit": "d81be23f8668de6751f2441cbc96b5b879fc037b",
+    "expected_selected": "economy::production::m3_disabled_legacy_producer_tests::a_job_advances_at_the_rate_of_the_power_stub"
+  },
+  {
+    "row": "L0-SIM",
+    "plant": "(e1) the outcome slot before combat: the pinned set order is red",
+    "files": [
+      {
+        "file": "crates/turts_sim/src/plugin.rs",
+        "edit": {
+          "old": "                    SimSet::Acquire,\n                    SimSet::Combat,\n                    SimSet::Outcome,\n",
+          "new": "                    SimSet::Acquire,\n                    SimSet::Outcome,\n                    SimSet::Combat,\n"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_sim",
+      "--locked",
+      "--lib",
+      "plugin::tests::the_sets_of_one_tick_run_in_the_pinned_order",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "  left: [Advance, Commands, Supply, Income, Orders, Movement, Gather, Extract, Transport, Inserters, Construction, Production, Acquire, Outcome, Combat, Collect]",
+    "exit": 101,
+    "commit": "d81be23f8668de6751f2441cbc96b5b879fc037b",
+    "expected_selected": "plugin::tests::the_sets_of_one_tick_run_in_the_pinned_order"
+  },
+  {
+    "row": "L0-SIM",
+    "plant": "(e2) the outcome slot before combat: the outcome check does not see the unit that the death path removed",
+    "files": [
+      {
+        "file": "crates/turts_sim/src/plugin.rs",
+        "edit": {
+          "old": "                    SimSet::Acquire,\n                    SimSet::Combat,\n                    SimSet::Outcome,\n",
+          "new": "                    SimSet::Acquire,\n                    SimSet::Outcome,\n                    SimSet::Combat,\n"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_sim",
+      "--locked",
+      "--lib",
+      "economy::combat::tests::the_outcome_slot_sees_a_unit_that_the_death_path_removed_in_the_same_tick",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "assertion `left == right` failed: the outcome check ran before the removal of the killed unit",
+    "exit": 101,
+    "commit": "d81be23f8668de6751f2441cbc96b5b879fc037b",
+    "expected_selected": "economy::combat::tests::the_outcome_slot_sees_a_unit_that_the_death_path_removed_in_the_same_tick"
+  },
+  {
+    "row": "L0-SIM",
+    "plant": "(g1) the run condition of the FixedUpdate sets removed: a SimSet system runs with no config",
+    "files": [
+      {
+        "file": "crates/turts_sim/src/plugin.rs",
+        "edit": {
+          "old": "                    SimSet::Outcome,\n                )\n                    .chain()\n                    .run_if(match_started),\n",
+          "new": "                    SimSet::Outcome,\n                )\n                    .chain(),\n"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_sim",
+      "--locked",
+      "--lib",
+      "match_config::tests::with_no_config_the_tick_does_not_advance_and_no_system_runs",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "a SimSet system ran with no config",
+    "exit": 101,
+    "commit": "d81be23f8668de6751f2441cbc96b5b879fc037b",
+    "expected_selected": "match_config::tests::with_no_config_the_tick_does_not_advance_and_no_system_runs"
+  },
+  {
+    "row": "L0-SIM",
+    "plant": "(g2) the run condition of the Advance set removed: the tick advances with no config",
+    "files": [
+      {
+        "file": "crates/turts_sim/src/plugin.rs",
+        "edit": {
+          "old": "                (SimSet::Advance, SimSet::Commands)\n                    .chain()\n                    .run_if(match_started),\n",
+          "new": "                (SimSet::Advance, SimSet::Commands).chain(),\n"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_sim",
+      "--locked",
+      "--lib",
+      "match_config::tests::with_no_config_the_tick_does_not_advance_and_no_system_runs",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "assertion `left == right` failed: the tick advanced",
+    "exit": 101,
+    "commit": "d81be23f8668de6751f2441cbc96b5b879fc037b",
+    "expected_selected": "match_config::tests::with_no_config_the_tick_does_not_advance_and_no_system_runs"
+  },
+  {
+    "row": "L0-SIM",
+    "plant": "(s1) validate_target scans the world again for a Move target",
+    "files": [
+      {
+        "file": "crates/turts_sim/src/orders/apply.rs",
+        "edit": {
+          "old": "        (Behaviour::Move, OrderTargetSim::Unit(unit)) => {\n            if crate::unit_index::unit_entity(world, *unit).is_some() {",
+          "new": "        (Behaviour::Move, OrderTargetSim::Unit(unit)) => {\n            if world.iter_entities().any(|entity| {\n                entity\n                    .get::<crate::world::UnitId>()\n                    .is_some_and(|id| id.0 == *unit)\n            }) {"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_sim",
+      "--locked",
+      "--lib",
+      "orders::apply::unit_index_tests::validate_target_reads_the_unit_index_and_does_not_scan",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "assertion `left == right` failed: Move scanned the world",
+    "exit": 101,
+    "commit": "d81be23f8668de6751f2441cbc96b5b879fc037b",
+    "expected_selected": "orders::apply::unit_index_tests::validate_target_reads_the_unit_index_and_does_not_scan"
+  },
+  {
+    "row": "L0-SIM",
+    "plant": "(s2) run_production scans the world again for the owner of each producer",
+    "files": [
+      {
+        "file": "crates/turts_sim/src/economy/production.rs",
+        "edit": {
+          "old": "        let Some(owner_slot) = unit_entity(world, producer)\n            .and_then(|entity| world.get::<Owner>(entity))\n            .map(|owner| owner.0.0)\n        else {",
+          "new": "        let Some(owner_slot) = world.iter_entities().find_map(|entity| {\n            (entity.get::<UnitId>().is_some_and(|id| id.0 == producer))\n                .then(|| entity.get::<Owner>().map(|owner| owner.0.0))?\n        }) else {"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_sim",
+      "--locked",
+      "--lib",
+      "economy::production::m3_disabled_legacy_producer_tests::the_producer_sites_read_the_unit_index_and_do_not_scan",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "assertion `left == right` failed: run_production scanned for the owner",
+    "exit": 101,
+    "commit": "d81be23f8668de6751f2441cbc96b5b879fc037b",
+    "expected_selected": "economy::production::m3_disabled_legacy_producer_tests::the_producer_sites_read_the_unit_index_and_do_not_scan"
+  },
+  {
+    "row": "L0-SIM",
+    "plant": "(s3) find_unit_entity scans the world again",
+    "files": [
+      {
+        "file": "crates/turts_sim/src/economy/transaction_m3.rs",
+        "edit": {
+          "old": "fn find_unit_entity(world: &World, unit: u32) -> Option<Entity> {\n    crate::unit_index::unit_entity(world, unit)\n}",
+          "new": "fn find_unit_entity(world: &World, unit: u32) -> Option<Entity> {\n    world.iter_entities().find_map(|entity| {\n        entity\n            .get::<UnitId>()\n            .is_some_and(|id| id.0 == unit)\n            .then_some(entity.id())\n    })\n}"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_sim",
+      "--locked",
+      "--lib",
+      "economy::transaction::transaction_m3::unit_index_tests::find_unit_entity_reads_the_unit_index_and_does_not_scan",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "assertion `left == right` failed: find_unit_entity scanned the world",
+    "exit": 101,
+    "commit": "d81be23f8668de6751f2441cbc96b5b879fc037b",
+    "expected_selected": "economy::transaction::transaction_m3::unit_index_tests::find_unit_entity_reads_the_unit_index_and_does_not_scan"
+  },
+  {
+    "row": "L0-SIM",
+    "plant": "(s4) inventory_owner scans the world again",
+    "files": [
+      {
+        "file": "crates/turts_sim/src/economy/transaction.rs",
+        "edit": {
+          "old": "    let owner = crate::unit_index::unit_entity(world, id)\n        .and_then(|entity| world.get::<Owner>(entity))\n        .map(|owner| owner.0)\n        .ok_or(RejectReason::UnknownInventory)?;",
+          "new": "    let owner = world\n        .iter_entities()\n        .find_map(|entity| {\n            (entity.get::<UnitId>().is_some_and(|unit| unit.0 == id))\n                .then(|| entity.get::<Owner>().map(|owner| owner.0))?\n        })\n        .ok_or(RejectReason::UnknownInventory)?;"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_sim",
+      "--locked",
+      "--lib",
+      "economy::transaction::unit_index_tests::inventory_owner_reads_the_unit_index_and_does_not_scan",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "assertion `left == right` failed: inventory_owner scanned the world",
+    "exit": 101,
+    "commit": "d81be23f8668de6751f2441cbc96b5b879fc037b",
+    "expected_selected": "economy::transaction::unit_index_tests::inventory_owner_reads_the_unit_index_and_does_not_scan"
+  },
+  {
+    "row": "L0-SIM",
+    "plant": "(h1) a session test builder without the MatchConfig insert: its sim does not tick",
+    "files": [
+      {
+        "file": "crates/turts_server/src/session.rs",
+        "edit": {
+          "old": "            .insert_resource(turts_sim::MatchConfig::immediate(tick_hz))\n",
+          "new": ""
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_server",
+      "--locked",
+      "--bin",
+      "turts_server",
+      "session::admission_tests::scheduled_admission_uses_advanced_tick_and_rejects_before_domain_audit",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "assertion `left == right` failed\n  left: 40\n right: 41",
+    "exit": 101,
+    "commit": "d81be23f8668de6751f2441cbc96b5b879fc037b",
+    "expected_selected": "session::admission_tests::scheduled_admission_uses_advanced_tick_and_rejects_before_domain_audit"
+  },
+  {
+    "row": "L0-SIM",
+    "plant": "(r1) steps_at_rate gives a step in every tick: the rate is ignored below 1/1",
+    "files": [
+      {
+        "file": "crates/turts_rules/src/progress.rs",
+        "edit": {
+          "old": "    saturate_u64(now - before)\n}",
+          "new": "    let _ = now - before;\n    1\n}"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_rules",
+      "--locked",
+      "--test",
+      "progress",
+      "steps_at_rate_is_one_at_full_rate_and_a_floor_sum_below_it",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "assertion `left == right` failed: 1/2 after 1",
+    "exit": 101,
+    "commit": "d81be23f8668de6751f2441cbc96b5b879fc037b",
+    "expected_selected": "steps_at_rate_is_one_at_full_rate_and_a_floor_sum_below_it"
+  },
+  {
+    "row": "L0-SIM",
+    "plant": "(k1) the record has headroom: a count that went down is red and names the number to record",
+    "files": [
+      {
+        "file": "crates/turts_checks/tests/formula_ratchet.rs",
+        "edit": {
+          "old": "        \"crates/turts_sim/src/economy/production.rs\",\n        [1, 0, 0, 0, 0],",
+          "new": "        \"crates/turts_sim/src/economy/production.rs\",\n        [2, 0, 0, 0, 0],"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_checks",
+      "--locked",
+      "--test",
+      "formula_ratchet",
+      "--",
+      "--exact",
+      "formula_copies_do_not_grow_and_the_record_is_exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "crates/turts_sim/src/economy/production.rs: u128_div went down from 2 to 1: record 1 in BASELINE",
+    "exit": 101,
+    "commit": "d81be23f8668de6751f2441cbc96b5b879fc037b",
+    "expected_selected": "formula_copies_do_not_grow_and_the_record_is_exact"
+  },
+  {
+    "row": "L0-SIM",
+    "plant": "(k2) a u64 copy with checked_mul and / under the name of a turts_rules function (fingerprint same_name_fn)",
+    "files": [
+      {
+        "file": "crates/turts_sim/src/economy/income.rs",
+        "edit": {
+          "old": "pub(crate) fn run_income() {}\n",
+          "new": "pub(crate) fn run_income() {}\n\npub(crate) fn charged_at(cost: u64, done: u64, total: u64) -> u64 {\n    cost.checked_mul(done)\n        .map_or(u64::MAX, |product| product / total)\n}\n"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_checks",
+      "--locked",
+      "--test",
+      "formula_ratchet",
+      "--",
+      "--exact",
+      "formula_copies_do_not_grow_and_the_record_is_exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "crates/turts_sim/src/economy/income.rs: same_name_fn: a file with no record has a count of 1",
+    "exit": 101,
+    "commit": "d81be23f8668de6751f2441cbc96b5b879fc037b",
+    "expected_selected": "formula_copies_do_not_grow_and_the_record_is_exact"
+  },
+  {
+    "row": "L0-SIM",
+    "plant": "(k3) a copy with let w: u128 = cost.into(); w * n / d (fingerprint wide_let_div)",
+    "files": [
+      {
+        "file": "crates/turts_sim/src/economy/income.rs",
+        "edit": {
+          "old": "pub(crate) fn run_income() {}\n",
+          "new": "pub(crate) fn run_income() {}\n\npub(crate) fn charge_now(cost: u64, n: u64, d: u64) -> u64 {\n    let w: u128 = cost.into();\n    let n: u128 = n.into();\n    let d: u128 = d.into();\n    (w * n / d) as u64\n}\n"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_checks",
+      "--locked",
+      "--test",
+      "formula_ratchet",
+      "--",
+      "--exact",
+      "formula_copies_do_not_grow_and_the_record_is_exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "crates/turts_sim/src/economy/income.rs: wide_let_div: a file with no record has a count of 1",
+    "exit": 101,
+    "commit": "d81be23f8668de6751f2441cbc96b5b879fc037b",
+    "expected_selected": "formula_copies_do_not_grow_and_the_record_is_exact"
+  }
+]
