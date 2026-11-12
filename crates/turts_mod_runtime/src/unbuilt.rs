@@ -1,8 +1,11 @@
 //! `UNBUILT_FEATURES`: the 0.2.4 features whose engine behaviour no lane has merged yet (plan
 //! 5.3; design 6.8, "One mod API step"). The packer refuses a package that uses one, with the
-//! text `<package>/<file>: <field path>: `<feature>` is not built in this engine build (task
-//! `<owner>`)`. So the packages `frontier` and `standoff` cannot pack before their mechanisms
-//! exist, and a half-built feature can never run.
+//! text `<package>/<file>: <field path>: `<feature>` is not built in this engine build; leave it
+//! out until an engine build supports it`. The text names no plan task: a modder cannot act on
+//! one, so the owner stays in a comment on each line (orchestrator ruling M1 on the review of
+//! `L0-API1`; design 6.8, "One mod API step", gives the first half of the text). So the packages
+//! `frontier` and `standoff` cannot pack before their mechanisms exist, and a half-built feature
+//! can never run.
 //!
 //! Each feature lane deletes its own lines when it merges, and only those lines (the owner is
 //! in each line). A line with no detector of its own finds its feature in the version table by
@@ -27,7 +30,8 @@ pub(crate) struct UnbuiltLine {
     /// The name in the message. For a line with no `detect` it is the name of a row of the
     /// version table.
     pub(crate) feature: &'static str,
-    /// The task of plan 5.3 that removes the line.
+    /// The task of plan 5.3 that removes the line. It is for the code and the tests only: the
+    /// message never prints it.
     pub(crate) owner: &'static str,
     /// A detector of its own, for a feature that has no row in the version table (a stricter
     /// use of a variant that a row already covers).
@@ -271,8 +275,8 @@ pub(crate) fn check_unbuilt(
                 &manifest.id,
                 &found.path,
                 format!(
-                    "`{}` is not built in this engine build (task `{}`)",
-                    line.feature, line.owner
+                    "`{}` is not built in this engine build; leave it out until an engine build supports it",
+                    line.feature
                 ),
             )
             .with_file(file));
@@ -397,14 +401,10 @@ mod tests {
             // (`constructor` before `constructor.when_short`): the text names the line.
             let text = error.to_string();
             let first = text.split('`').nth(1).unwrap_or_else(|| panic!("{text}"));
-            let first_line = UNBUILT_FEATURES
-                .iter()
-                .find(|l| l.feature == first)
-                .unwrap();
             assert_eq!(
                 text,
                 format!(
-                    "zeta/{file}: {}: `{first}` is not built in this engine build (task `{}`)",
+                    "zeta/{file}: {}: `{first}` is not built in this engine build; leave it out until an engine build supports it",
                     if first == line.feature {
                         path.join(".")
                     } else {
@@ -418,8 +418,7 @@ mod tests {
                             Detect::Raw { path, .. } => path.join("."),
                             _ => panic!("{text}"),
                         }
-                    },
-                    first_line.owner
+                    }
                 ),
                 "line {}",
                 line.feature
