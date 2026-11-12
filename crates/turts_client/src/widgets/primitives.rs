@@ -11,12 +11,35 @@ pub struct AuthoredWidgetId(pub String);
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum WidgetAction {
-    Input { name: String },
-    Order { id: String },
-    Select { unit: u32 },
-    Produce { producer: u32, content_id: String },
-    CancelProduction { producer: u32, job: u64 },
-    CenterCamera { x: f32, y: f32 },
+    Input {
+        name: String,
+    },
+    Order {
+        id: String,
+    },
+    Select {
+        unit: u32,
+    },
+    Produce {
+        producer: u32,
+        content_id: String,
+    },
+    CancelProduction {
+        producer: u32,
+        job: u64,
+    },
+    CenterCamera {
+        x: f32,
+        y: f32,
+    },
+    /// API 0.2.4: enter the placement mode for `content` with the constructor `constructor`
+    /// (`UI-PLACE`).
+    Place {
+        constructor: u32,
+        content: String,
+    },
+    /// API 0.2.4: the core action `FocusAlert` (`UI-ALERT`).
+    FocusAlert,
 }
 
 #[derive(Component, Debug, Clone, PartialEq)]

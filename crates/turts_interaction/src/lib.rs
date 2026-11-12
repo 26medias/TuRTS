@@ -1,11 +1,14 @@
 //! Renderer-independent input and interaction contracts for a player client.
 
+pub mod alerts;
 mod bindings;
 pub mod camera;
 pub mod compose;
 pub mod groups;
+pub mod hints;
 pub mod input_map;
 pub mod minimap;
+pub mod placement;
 pub mod projection;
 pub mod selection;
 pub mod smart;
@@ -232,6 +235,10 @@ impl Core {
             }
         }
         self.prune(world);
+        // The hooks of the tasks that add interaction state (stubs of L0-CORE; each is empty).
+        placement::update(self, events, world, view, now_ms, &mut effects);
+        hints::update(self, events, world, view, now_ms, &mut effects);
+        alerts::update(self, events, world, view, now_ms, &mut effects);
         let mut held_camera_actions: Vec<_> = self
             .keys
             .iter()

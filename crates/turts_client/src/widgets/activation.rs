@@ -3,6 +3,14 @@
 
 use super::*;
 
+// One file for each task that writes an activation (plan 3.4, L0-CORE). Each task fills its own
+// file and adds at most one arm to `activate_widget`.
+mod alert;
+mod cancel;
+mod leave;
+mod place;
+mod rally;
+
 type ButtonVisualQuery<'w, 's> = Query<
     'w,
     's,
@@ -175,6 +183,19 @@ pub(super) fn activate_widget(
                     )),
                 });
             }
+        }
+        primitives::WidgetAction::Place {
+            constructor,
+            content,
+        } => place::activate(
+            *constructor,
+            content,
+            &mut queue,
+            &state,
+            acquired.as_deref(),
+        ),
+        primitives::WidgetAction::FocusAlert => {
+            alert::activate(&mut queue, &state, acquired.as_deref())
         }
     }
 }

@@ -2674,3 +2674,23 @@ fn effect_arm_notice_records_the_units_with_no_applicable_order() {
         "the Notice arm"
     );
 }
+
+/// The contract of the effect family stubs of L0-CORE (`core_adapter/effects.rs`): each records
+/// nothing until its owner task builds it. The owner task replaces its test with its own.
+#[test]
+fn effect_family_stubs_record_nothing_until_their_owner_builds_them() {
+    let stubs: [(&str, fn(&mut CoreRuntime)); 4] = [
+        ("Ghost (UI-PLACE)", effects::apply_ghost),
+        ("hint (UI-HINT)", effects::apply_hint),
+        ("alert focus (UI-ALERT)", effects::apply_alert),
+        ("match result (UI-RESULT)", effects::apply_result),
+    ];
+    for (family, stub) in stubs {
+        let mut runtime = CoreRuntime::default();
+        stub(&mut runtime);
+        assert!(
+            runtime.last_effects.is_empty() && runtime.markers.is_empty(),
+            "the {family} family must record nothing before its owner builds it"
+        );
+    }
+}
