@@ -69,12 +69,26 @@ The serial runner never runs a record with `headed: true`. In every mode it skip
     python3 -I scripts/qa/mp1_plants.py --files <changed paths> --native-only; echo exit=$?
     python3 -I scripts/qa/mp1_plants.py --all --native-only; echo exit=$?
     python3 -I scripts/qa/mp1_plants.py --list --all          # select, run nothing
+    python3 -I scripts/qa/mp1_plants.py --check --all         # fast: do the records apply? run nothing
 
 Exit codes: 0 all selected plants are red and restored (or none is selected); 1 a plant failed;
 2 a record is refused or another runner holds the lock; 130 or 143 interrupted. `--files` selects the
 records that have the path in `files[].file`. A path under the root may be absolute. A path that is
 neither a tracked file, nor a path that a change deleted (in the index or in a commit), nor in a record is refused (exit 2): it is a mistake, not "nothing to run". A deleted path is accepted, so the raw output of `git diff --name-only` works as the argument list. `--timeout S` bounds each command run (default 1200 s). `--out P` writes the results
 as JSON. `--root` and `--plants-dir` select another worktree or folder (used by the self-test).
+
+## The fast check
+
+`--check` (with `--all` or `--files`) tells in seconds whether the records still apply to the tree.
+It runs no build and no test, writes no file, takes no lock and does not read the journal. It uses
+the same function as the run mode (`prepare`, steps 2 to 4 above: the file exists, is tracked and
+clean, and each anchor and each patch applies), so the two modes cannot differ. Exit 0: every
+selected record applies. Exit 2: one line `STALE <row>/<plant> [<json file>[<index>]]: <file>:
+<reason>` for each stale record, then a count line. A record of a file that is gone is stale even
+when `--files` does not select it (the run mode refuses it too). `--check` does not run the
+plants: a record can apply and still be green. `--list` still selects and checks nothing. The `agents` CI job
+runs `--check --all` after the self-test, so a forward merge that leaves a stale record goes red at
+once, before the slow gate (`--all`) runs.
 
 ## Forward merges
 
