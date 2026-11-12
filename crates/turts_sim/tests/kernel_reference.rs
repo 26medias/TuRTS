@@ -25,7 +25,7 @@
 //! back to the same bits (`-0.0` is distinct from `0.0`).
 //!
 //! Run it in release: `cargo test --release -p turts_sim --features test-probes --test
-//! kernel_reference`. A debug build runs the same seeds with at most 300 movers.
+//! kernel_reference`. A debug build runs the first 16 seeds with at most 30 movers.
 #![cfg(feature = "test-probes")]
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -37,6 +37,7 @@ use turts_sim::movement::{
     MovementFrameUnit, MovementPool, PhysicalEscape, step_frame_preserving_resting,
 };
 
+/// The seeds of a release run. A debug build runs the first 16 (see `seeds`).
 const SEEDS: u64 = 64;
 const TICKS: usize = 300;
 const DT: f32 = 0.05;
@@ -69,7 +70,12 @@ impl Rng {
     }
 }
 
-/// The number of random movers of a seed: 1 to 5,000. A debug build caps it at 300.
+fn seeds() -> u64 {
+    if cfg!(debug_assertions) { 16 } else { SEEDS }
+}
+
+/// The number of random movers of a seed: 1 to 5,000. A debug build caps it at 30 and runs 16
+/// seeds: a debug run of 64 seeds with a cap of 300 took 168 s, with a cap of 30 it took 71 s.
 fn movers_for(seed: u64) -> usize {
     let n = match seed {
         1..=8 => seed as usize,
@@ -79,11 +85,7 @@ fn movers_for(seed: u64) -> usize {
         63 => 2500,
         _ => 5000,
     };
-    if cfg!(debug_assertions) {
-        n.min(300)
-    } else {
-        n
-    }
+    if cfg!(debug_assertions) { n.min(30) } else { n }
 }
 
 /// The frame of a seed, and the `preserve_resting` set.
@@ -549,7 +551,7 @@ impl Seen {
 fn kernel_matches_reference_bit_for_bit() {
     let mut seen = Seen::default();
     let mut compared = 0usize;
-    for seed in 1..=SEEDS {
+    for seed in 1..=seeds() {
         let (mut frame, keep) = start_frame(seed);
         let mut rng = Rng::new(seed ^ 0xa5a5_5a5a);
         for tick in 0..TICKS {
@@ -572,7 +574,7 @@ fn kernel_matches_reference_bit_for_bit() {
     }
     println!("\nkernel_reference compared {compared} unit frames: {seen:?}");
     // Each kind of unit and each phase must be reached, else the comparison proves nothing.
-    assert_eq!(seen.frames, SEEDS as usize * TICKS);
+    assert_eq!(seen.frames, seeds() as usize * TICKS);
     for (name, n) in [
         ("no-progress moving", seen.no_progress_moving),
         ("pooled moving", seen.pooled_moving),
