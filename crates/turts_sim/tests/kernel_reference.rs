@@ -210,13 +210,13 @@ fn start_frame(seed: u64) -> (MovementFrame, BTreeSet<u32>) {
                     false,
                 );
                 unit.progress.as_mut().unwrap().slot = at;
-                if kind % 3 == 0 {
+                if kind.is_multiple_of(3) {
                     unit.progress.as_mut().unwrap().follow_origin = Some(FollowMoveOrigin {
                         target_unit_id: 1 + rng.below(unit_id as u64) as u32,
                         goal: at,
                     });
                 }
-                if kind % 2 == 0 {
+                if kind.is_multiple_of(2) {
                     preserve.insert(unit_id);
                 }
                 unit
@@ -249,7 +249,7 @@ fn start_frame(seed: u64) -> (MovementFrame, BTreeSet<u32>) {
             82..=85 => {
                 let mut unit = free_unit(&mut rng, unit_id, position, bounds, false);
                 unit.physical_escape = Some(PhysicalEscape {
-                    target: (kind % 2 == 0).then(|| free_position(&mut rng)),
+                    target: (kind.is_multiple_of(2)).then(|| free_position(&mut rng)),
                 });
                 if let Some(other) = units.last() {
                     unit.position = other.position + Vec2::new(0.3, 0.2);
