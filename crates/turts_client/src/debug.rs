@@ -19,6 +19,7 @@ use crate::ingest::{
 };
 use crate::join::{AcquiredPackages, JoinState, Phase};
 use crate::present::Presented;
+use crate::replica::Replica;
 use crate::scenario::ScenarioState;
 
 /// The debug JSON of the last build. It is empty until the first request is served.
@@ -255,7 +256,7 @@ pub fn debug_json(world: &World) -> String {
                     "belts": replica.belts,
                     "inserters": replica.inserters,
                     "extractors": replica.extractors,
-                    "weapons": replica.weapons,
+                    "weapons": weapons_json(replica),
                     "healths": replica.healths,
                     "unit_orders": unit_orders,
                     "research": replica.research,
@@ -557,7 +558,7 @@ pub fn report_json(world: &World) -> Value {
             "belts": replica.belts,
             "inserters": replica.inserters,
             "extractors": replica.extractors,
-            "weapons": replica.weapons,
+            "weapons": weapons_json(replica),
             "healths": replica.healths,
             "unit_orders": unit_orders,
             "research": replica.research,
@@ -963,5 +964,58 @@ mod command_result_json_tests {
                 .get("player_id_decimal")
                 .is_none()
         );
+    }
+}
+
+/// The weapon records of the replica for the debug state. Each record also gets `cooldown`, the
+/// ticks left at the tick of the last applied delta (`turts_rules::progress::cooldown_left`): the
+/// wire record carries `ready_tick`, and the browser oracles read the count.
+fn weapons_json(replica: &Replica) -> Value {
+    let tick = replica.last_applied_tick.unwrap_or(0);
+    Value::Array(
+        replica
+            .weapons
+            .iter()
+            .map(|record| {
+                let mut value = serde_json::to_value(record).unwrap_or(Value::Null);
+                if let Some(map) = value.as_object_mut() {
+                    map.insert(
+                        "cooldown".into(),
+                        json!(turts_rules::progress::cooldown_left(
+                            record.ready_tick,
+                            tick
+                        )),
+                    );
+                }
+                value
+            })
+            .collect(),
+    )
+}
+
+#[cfg(test)]
+mod weapon_debug_tests {
+    use super::*;
+    use turts_net_protocol::{UnitId, WeaponRecord, WeaponStatus};
+
+    /// The browser oracles read `weapons[].cooldown` (`orders-oracle.js`). The wire record has
+    /// `ready_tick`; the debug state derives the ticks left at the last applied tick.
+    #[test]
+    fn the_debug_weapon_has_a_cooldown_derived_from_ready_tick() {
+        let mut replica = Replica::new(20);
+        replica.last_applied_tick = Some(10);
+        replica.weapons = vec![WeaponRecord {
+            unit: UnitId(1),
+            enabled: true,
+            ready_tick: 30,
+            damage: Ok(5),
+            status: WeaponStatus::Cooling,
+            last_target: None,
+        }];
+        let value = weapons_json(&replica);
+        assert_eq!(value[0]["cooldown"], 20, "ready_tick 30 at tick 10");
+        assert_eq!(value[0]["ready_tick"], 30);
+        replica.last_applied_tick = Some(45);
+        assert_eq!(weapons_json(&replica)[0]["cooldown"], 0, "never below 0");
     }
 }

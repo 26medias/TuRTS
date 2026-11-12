@@ -131,7 +131,7 @@
         "file": "crates/turts_sim/src/economy/views_m3.rs",
         "edit": {
           "old": "            old.get(&row.unit).is_none_or(|previous| {\n                let countdown_only = RawWeaponAudit {\n                    cooldown: previous.cooldown.saturating_sub(1),\n                    ..(*previous).clone()\n                };\n                countdown_only != **row\n            })",
-          "new": "            old.get(&row.unit).is_none_or(|previous| *previous != row)"
+          "new": "            old.get(&row.unit).is_none_or(|previous| *previous != *row)"
         }
       }
     ],
@@ -162,7 +162,7 @@
         "file": "crates/turts_sim/src/economy/views_m3.rs",
         "edit": {
           "old": "            old.get(&row.unit).is_none_or(|previous| {\n                let countdown_only = RawWeaponAudit {\n                    cooldown: previous.cooldown.saturating_sub(1),\n                    ..(*previous).clone()\n                };\n                countdown_only != **row\n            })",
-          "new": "            old.get(&row.unit).is_none_or(|previous| *previous != row)"
+          "new": "            old.get(&row.unit).is_none_or(|previous| *previous != *row)"
         }
       }
     ],

@@ -2280,8 +2280,11 @@ mod tests {
         // Tick 1: no ammo, so no shot; the record of unit 2 is published.
         app.update();
         assert!(listed(&app).contains(&2));
-        // Tick 2: the shot kills unit 2. Its record left the view, and it is not cleared.
+        // Tick 2: the shot kills unit 2. Its record left the view, and it is not cleared, also
+        // when something noted the unit in the same tick (a moving unit that dies loses its
+        // movement components, which notes it).
         set_ammo(&mut app, 1, 10, 0);
+        crate::orders::writer::edit_unit_orders(app.world_mut(), target, |_| ());
         app.update();
         let committed = app
             .world()
@@ -2291,6 +2294,61 @@ mod tests {
         assert!(!cleared(&app).iter().any(|(unit, _)| *unit == 2));
         app.update();
         assert!(!cleared(&app).iter().any(|(unit, _)| *unit == 2));
+    }
+
+    /// A `Stop` that comes through the command queue clears the current order and lists the
+    /// record in the tick of the command. The probe `check_order_changes` (feature
+    /// `test-probes`) also panics when a writer that the scan cannot see (an alias of the type)
+    /// leaves the record out of the list.
+    #[test]
+    fn a_stop_order_lists_the_cleared_record() {
+        let mut app = app_with(20, 1000, 5);
+        install_order(
+            &mut app,
+            "combat_fixture:stop",
+            Behaviour::Stop,
+            TargetKind::None,
+            None,
+            None,
+        );
+        set_order(&mut app, hold_order());
+        app.update();
+        assert!(listed(&app).contains(&1));
+        app.world_mut()
+            .resource_mut::<crate::command::CommandQueue>()
+            .0
+            .push_back(crate::command::Command {
+                slot: SlotId(0),
+                seq: 1,
+                kind: crate::command::CommandKind::Order(Box::new(crate::orders::OrderCommand {
+                    order: cid("combat_fixture:stop"),
+                    behaviour: Behaviour::Stop,
+                    target_kind: TargetKind::None,
+                    policy: None,
+                    units: vec![1],
+                    target: OrderTargetSim::None,
+                    queue: crate::orders::QueueMode::Replace,
+                    group: 0,
+                    allowed_units: Vec::new(),
+                    queue_depth: 16,
+                })),
+            });
+        app.update();
+        let entity = entity_of(&app, 1);
+        assert!(
+            app.world()
+                .entity(entity)
+                .get::<UnitOrders>()
+                .unwrap()
+                .current
+                .is_none(),
+            "the stop cleared the current order"
+        );
+        assert_eq!(
+            listed(&app),
+            vec![1],
+            "the record changed in the tick of the stop"
+        );
     }
 
     /// A unit that a tick spawns has its record in the delta of that tick.
