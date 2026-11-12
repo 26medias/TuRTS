@@ -577,7 +577,13 @@ fn check_test_module_gate(file: &Path) -> Result<(), ScanError> {
     }
     Ok(())
 }
-fn collect(p: &Path, out: &mut Vec<PathBuf>, skipped: &mut Vec<PathBuf>) -> Result<(), ScanError> {
+/// The Rust files under `p`, with no `tests` directory. A file of `TEST_MODULE_FILES` goes to
+/// `skipped`.
+pub fn collect(
+    p: &Path,
+    out: &mut Vec<PathBuf>,
+    skipped: &mut Vec<PathBuf>,
+) -> Result<(), ScanError> {
     if p.is_file() {
         if p.extension().is_some_and(|x| x == "rs")
             && !p.components().any(|x| x.as_os_str() == "tests")
