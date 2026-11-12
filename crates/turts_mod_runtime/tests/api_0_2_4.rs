@@ -68,9 +68,16 @@ fn archive(engine_api: &str, case: &Case) -> PackageArchive {
     PackageArchive::parse(&pack_files(&files).expect("pack in memory")).expect("package parses")
 }
 
+/// The server path and the client path: `content` never reads a visual, and `visuals` does.
+fn load(archive: &PackageArchive) -> Result<(), ModError> {
+    archive.content()?;
+    archive.visuals()?;
+    Ok(())
+}
+
 fn refusal(archive: &PackageArchive, what: &str) -> ModError {
-    match archive.content() {
-        Ok(_) => panic!("{what}: the package packs, a refusal was expected"),
+    match load(archive) {
+        Ok(()) => panic!("{what}: the package packs, a refusal was expected"),
         Err(error) => error,
     }
 }
@@ -93,9 +100,7 @@ fn check(case: &Case) {
     );
     let current = archive("^0.2.4", case);
     if case.owner.is_empty() {
-        current
-            .content()
-            .unwrap_or_else(|error| panic!("{} at ^0.2.4: {error}", case.feature));
+        load(&current).unwrap_or_else(|error| panic!("{} at ^0.2.4: {error}", case.feature));
     } else {
         assert_eq!(
             refusal(&current, case.feature).to_string(),
@@ -119,7 +124,6 @@ const HIRE: &str = "production/hire.ron";
 const HIRE_TAIL: &str = "payment: ReserveThenCharge,";
 const HUD: &str = "interface/hud.ron";
 const RULES: &str = "orders/rules.ron";
-const RULES_LAST: &str = r#"(target: Content, needs: Producer, order: "cedar:order_produce")"#;
 const MAP: &str = "maps/clearing.ron";
 const MAP_ANCHOR: &str =
     r#"(unit: "cedar:worker", owner_slot: 0, pos: (x: 12.0, y: 8.0), contents: []),"#;
@@ -562,14 +566,6 @@ raw_case!(
     "effects",
     &[(VISUAL, "shape:", "effects: None, shape:")]
 );
-raw_case!(
-    v4_effects_hit,
-    "effects.hit",
-    "FX2",
-    VISUAL,
-    "effects.hit",
-    &[(VISUAL, "shape:", "effects: Some((hit: None)), shape:")]
-);
 
 // ---- VAR rows: the parsed value holds the new variant ----
 
@@ -653,28 +649,24 @@ var_case!(
     )]
 );
 
-// O1 to O5, O9: a new order file with a new behaviour or target.
+// O2 to O5, O9: a new order file with a new behaviour or target. `behaviour Construct` and the
+// rows of the smart rules cannot be isolated on a whole package (a `Construct` order needs the
+// target `ContentAtPoint`, and a smart rule needs its order): the unit tests of
+// `version_table.rs` and `variants.rs` test them one by one.
 macro_rules! order_case {
-    ($name:ident, $feature:expr, $owner:expr, $behaviour:expr, $target:expr, $path:expr) => {
+    ($name:ident, $feature:expr, $owner:expr, $behaviour:expr, $target:expr, $units:expr, $path:expr) => {
         var_case!($name, $feature, $owner, ORDER_FILE, $path,
             &[(MANIFEST, ORDERS_EXPORT, r#""orders/rules.ron", "orders/order_new.ron"],"#)],
-            &[(ORDER_FILE, concat!(r#"(id: "order_new", name: "N", behaviour: "#, $behaviour, ", target: ", $target, r#", fire: None, engage: None, icon: "icon_order_move", hotkey: "key_move", cursor: None, card: None, units: ["cedar:worker"], description: "d")"#))]);
+            &[(ORDER_FILE, concat!(r#"(id: "order_new", name: "N", behaviour: "#, $behaviour, ", target: ", $target, r#", fire: None, engage: None, icon: "icon_order_move", hotkey: "key_move", cursor: None, card: None, units: "#, $units, r#", description: "d")"#))]);
     };
 }
-order_case!(
-    o1_construct,
-    "behaviour Construct",
-    "L-CON1",
-    "Construct",
-    "None",
-    "behaviour"
-);
 order_case!(
     o2_cancel_construction,
     "behaviour CancelConstruction",
     "L-CON3",
     "CancelConstruction",
     "None",
+    r#"["cedar:depot"]"#,
     "behaviour"
 );
 order_case!(
@@ -683,6 +675,7 @@ order_case!(
     "L-RLY",
     "SetRally",
     "Point",
+    r#"["cedar:depot"]"#,
     "behaviour"
 );
 order_case!(
@@ -691,6 +684,7 @@ order_case!(
     "L-REP",
     "Repair",
     "Unit",
+    r#"["cedar:worker"]"#,
     "behaviour"
 );
 order_case!(
@@ -699,62 +693,24 @@ order_case!(
     "L-MATCH-SIM2",
     "Surrender",
     "None",
+    "[]",
     "behaviour"
 );
+// `Construct` with its target: the row of the target comes first in the table.
 order_case!(
     o5_content_at_point,
     "target: ContentAtPoint",
     "L-CON1",
-    "Move",
+    "Construct",
     "ContentAtPoint",
+    r#"["cedar:depot"]"#,
     "target"
-);
-
-// O6: smart targets and capabilities.
-var_case!(
-    o6_own_damaged,
-    "smart target OwnDamaged",
-    "L-REP",
-    RULES,
-    "smart.target",
-    &[(
-        RULES,
-        RULES_LAST,
-        r#"(target: Content, needs: Producer, order: "cedar:order_produce"), (target: OwnDamaged, needs: Movement, order: "cedar:order_move")"#
-    )],
-    &[]
-);
-var_case!(
-    o6_needs_constructor,
-    "needs: Constructor",
-    "L-CON1",
-    RULES,
-    "smart.needs",
-    &[(
-        RULES,
-        RULES_LAST,
-        r#"(target: Content, needs: Producer, order: "cedar:order_produce"), (target: Ground, needs: Constructor, order: "cedar:order_move")"#
-    )],
-    &[]
-);
-var_case!(
-    o6_needs_repairer,
-    "needs: Repairer",
-    "L-REP",
-    RULES,
-    "smart.needs",
-    &[(
-        RULES,
-        RULES_LAST,
-        r#"(target: Content, needs: Producer, order: "cedar:order_produce"), (target: Ground, needs: Repairer, order: "cedar:order_move")"#
-    )],
-    &[]
 );
 
 // H4: the new alert triggers.
 macro_rules! trigger_case {
     ($name:ident, $trigger:expr, $feature:expr, $owner:expr) => {
-        var_case!($name, $feature, $owner, HUD, "alerts.trigger",
+        var_case!($name, $feature, $owner, HUD, "alerts[0].trigger",
             &[(HUD, ALERTS, concat!(r#"    alerts: [(id: "a", trigger: "#, $trigger, r#", sound: None, text: "t", minimap_ping: false, cooldown: 1.0, priority: 0, coalesce_radius: 0.0)],
 "#))], &[]);
     };
@@ -869,9 +825,9 @@ fn h10_predicates_in_a_visible_list() {
             "Predicate::SupplyShort",
             "UI-HUD",
         ),
-        ("ItemHas(Role)", "Predicate::ItemHas", "UI-HUD"),
+        ("ItemHas(Count)", "Predicate::ItemHas", "UI-HUD"),
         (
-            "PrimaryHasValue(Cargo)",
+            "PrimaryHasValue(Health)",
             "Predicate::PrimaryHasValue",
             "UI2-HUD",
         ),
@@ -963,7 +919,7 @@ fn h17_placeholder_is_a_use_in_the_edition_0_2_4_only() {
         feature: "placeholder {unit}",
         owner: "UI-ALERT",
         file: HUD,
-        path: "alerts.text",
+        path: "alerts[0].text",
         edits: Box::leak(Box::new([edit])),
         adds: &[],
     };
@@ -972,7 +928,7 @@ fn h17_placeholder_is_a_use_in_the_edition_0_2_4_only() {
         .expect("edition 0.2.3: `{unit}` is text, not a placeholder");
     assert_eq!(
         refusal(&archive("^0.2.4", &case), "placeholder").to_string(),
-        "cedar/interface/hud.ron: alerts.text: `placeholder {unit}` is not built in this engine build (task `UI-ALERT`)"
+        "cedar/interface/hud.ron: alerts[0].text: `placeholder {unit}` is not built in this engine build (task `UI-ALERT`)"
     );
 }
 
@@ -1002,4 +958,34 @@ fn the_engine_api_is_0_2_4() {
     assert_eq!(ENGINE_API_VERSION, "0.2.4");
     assert_eq!(RELEASED_ENGINE_APIS.last(), Some(&"0.2.4"));
     assert_eq!(RELEASED_ENGINE_APIS.len(), 6);
+}
+
+/// The order rules keep their `rally` list on the way through the archive reader (the raw rules
+/// type of `archive.rs` had to learn the field, or the list was lost or refused).
+#[test]
+fn the_order_rules_reader_keeps_the_rally_list() {
+    let case = Case {
+        feature: "rally",
+        owner: "L-RLY",
+        file: RULES,
+        path: "rally",
+        edits: &[(
+            RULES,
+            "    ])",
+            r#"    ], rally: Some([(target: Ground, needs: Movement, order: "cedar:order_move")]))"#,
+        )],
+        adds: &[],
+    };
+    let rules = archive("^0.2.4", &case)
+        .order_rules()
+        .expect("the rules file parses");
+    let [(_, definition)] = rules.as_slice() else {
+        panic!("one rules file: {rules:?}");
+    };
+    assert_eq!(definition.rally.as_ref().map(Vec::len), Some(1));
+    // The control: a rules file with no `rally` has `None`.
+    let plain = archive("^0.2.4", &Case { edits: &[], ..case })
+        .order_rules()
+        .unwrap();
+    assert_eq!(plain[0].1.rally, None);
 }

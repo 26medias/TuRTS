@@ -197,6 +197,8 @@ fn acme_order_app_with_widgets(include_widgets: bool) -> (App, Entity, Vec2) {
                     label: Some(turts_mod_api::TextValue::Literal("Guide".into())),
                     action: turts_mod_api::ButtonAction::Input("toggle_guide".into()),
                     hotkey_label: true,
+                    font: Default::default(),
+                    size: Default::default(),
                 },
             });
     }

@@ -8644,6 +8644,7 @@ dependencies = [
  "turts_mod_runtime",
  "turts_net_lightyear",
  "turts_net_protocol",
+ "turts_rules",
  "ureq",
  "wasm-bindgen",
  "wasm-bindgen-futures",
@@ -8782,6 +8783,7 @@ dependencies = [
  "serde_json",
  "turts_mod_api",
  "turts_mod_runtime",
+ "turts_rules",
 ]
 
 [[package]]

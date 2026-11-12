@@ -2,17 +2,110 @@
 //! these names in its interface file (`reasons`, `cursors`, `states`); the packer refuses a name
 //! that is not here and prints the list in its `(allowed: ...)` text.
 //!
-//! RED-PHASE SHELL: the lists are empty. The next commit fills them.
+/// Reason keys: the 37 wire keys of `CommandRejectReason::as_str` in its order, the 3 keys that
+/// only the client writes, then the 9 new wire keys of protocol 5 (design 6.1, 6.7.7). The lobby
+/// refusals (`colour_taken`, `colour_unknown`, `lobby_changed`, `not_in_lobby`) are shell texts,
+/// not `reasons` keys. `crates/turts_client/tests/api_keys.rs` checks the wire part against the
+/// protocol crate.
+pub const REASON_KEYS: &[&str] = &[
+    "empty_command",
+    "too_many_units",
+    "duplicate_unit",
+    "unknown_unit",
+    "not_owner",
+    "not_mobile",
+    "target_not_finite",
+    "target_outside_map",
+    "missing_capability",
+    "unknown_node",
+    "incompatible_item",
+    "node_depleted",
+    "unknown_recipe",
+    "recipe_not_enabled",
+    "queue_full",
+    "insufficient_balance",
+    "insufficient_items",
+    "unknown_job",
+    "refund_destination_full",
+    "refund_destination_overflow",
+    "arithmetic_overflow",
+    "id_exhausted",
+    "bad_sequence",
+    "not_removable",
+    "not_toggleable",
+    "prerequisites_missing",
+    "already_researched",
+    "research_in_progress",
+    "internal",
+    "unknown_order",
+    "not_applicable",
+    "target_invalid",
+    "target_gone",
+    "out_of_range",
+    "rate_limited",
+    "not_queueable",
+    "blocked",
+    // The client keys of today.
+    "no_applicable_order",
+    "queue_disabled",
+    "already_researching",
+    // The new wire keys of protocol 5.
+    "site_outside_map",
+    "site_out_of_area",
+    "site_blocked",
+    "site_near_building",
+    "site_near_resource",
+    "construction_queue_full",
+    "match_not_started",
+    "slot_defeated",
+    "match_over",
+];
 
-/// Reason keys: the wire keys of `CommandRejectReason::as_str`, the client keys, then the new
-/// wire keys of protocol 5.
-pub const REASON_KEYS: &[&str] = &[];
+/// Cursor contexts of the `cursors` map of an interface file (design 6.10 row H2). `place`,
+/// `repair` and `rally` are new in 0.2.4.
+pub const CURSOR_CONTEXTS: &[&str] = &[
+    "default",
+    "select",
+    "move",
+    "attack",
+    "gather",
+    "forbidden",
+    "place",
+    "repair",
+    "rally",
+];
 
-/// Cursor contexts of the `cursors` map of an interface file.
-pub const CURSOR_CONTEXTS: &[&str] = &[];
-
-/// State keys of the `states` map of an interface file.
-pub const STATE_KEYS: &[&str] = &[];
+/// State keys of the `states` map of an interface file (design 6.10 row H3): the job states of
+/// design 1.1, the wire `Activity` values and the wire `GatherStage` values.
+///
+/// The design lists 22 keys. This list has 23: `gather.waiting.blocked` is the
+/// `GatherWaitReason::Blocked` of the wire (the simulation sends it), and the design list left
+/// it out.
+pub const STATE_KEYS: &[&str] = &[
+    "waiting_for_funds",
+    "slowed",
+    "disabled",
+    "output_blocked",
+    "held",
+    "activity.idle",
+    "activity.pending",
+    "activity.moving",
+    "activity.attacking",
+    "activity.holding",
+    "activity.gathering",
+    "activity.blocked",
+    "gather.to_node",
+    "gather.gathering",
+    "gather.to_drop_off",
+    "gather.unloading",
+    "gather.idle",
+    "gather.waiting.no_drop_off",
+    "gather.waiting.destination_full",
+    "gather.waiting.destination_overflow",
+    "gather.waiting.no_deposit",
+    "gather.waiting.depleted",
+    "gather.waiting.blocked",
+];
 
 #[cfg(test)]
 mod tests {

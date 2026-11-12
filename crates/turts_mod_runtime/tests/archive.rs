@@ -195,7 +195,18 @@ fn parse_ron_rewrites_errors_without_type_names() {
             "research".to_string(),
             "health".to_string(),
             "weapon".to_string(),
-            "removal".to_string()
+            "removal".to_string(),
+            // API 0.2.4 (L0-API1): the allowed names grow with the new unit fields.
+            "armour".to_string(),
+            "acquire".to_string(),
+            "provides".to_string(),
+            "consumes".to_string(),
+            "income".to_string(),
+            "spawn_order".to_string(),
+            "constructor".to_string(),
+            "placement".to_string(),
+            "build_area".to_string(),
+            "repairer".to_string()
         ])
     );
     assert!(!error.message.contains("UnitDef"), "{}", error.message);

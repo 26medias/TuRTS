@@ -126,6 +126,9 @@ pub fn queue_production(
                 let reservation = transaction::reserve_costs(tx, job_id, &lines)?;
                 (Vec::new(), Some(reservation))
             }
+            // API 0.2.4 (row P1): the packer refuses `ChargeOverTime` until `L-PAY` builds it
+            // (`UNBUILT_FEATURES`), so a packed package never reaches this arm.
+            PaymentPolicy::ChargeOverTime => return Err(RejectReason::NotApplicable),
         };
         queue.push(ProductionJob {
             id: job_id,
@@ -560,6 +563,7 @@ mod m3_disabled_legacy_producer_tests {
             recipes: vec!["test:make_product".into()],
             queue_capacity: 2,
             spawn_offsets: offsets.clone(),
+            when_short: Vec::new(),
         };
         let mut types = UnitTypes::default();
         let producer_type = types
@@ -583,6 +587,16 @@ mod m3_disabled_legacy_producer_tests {
                     health: None,
                     weapon: None,
                     removal: None,
+                    armour: None,
+                    acquire: None,
+                    provides: Vec::new(),
+                    consumes: Vec::new(),
+                    income: None,
+                    spawn_order: None,
+                    constructor: None,
+                    placement: None,
+                    build_area: None,
+                    repairer: None,
                 },
             )
             .unwrap();
@@ -607,6 +621,16 @@ mod m3_disabled_legacy_producer_tests {
                     health: None,
                     weapon: None,
                     removal: None,
+                    armour: None,
+                    acquire: None,
+                    provides: Vec::new(),
+                    consumes: Vec::new(),
+                    income: None,
+                    spawn_order: None,
+                    constructor: None,
+                    placement: None,
+                    build_area: None,
+                    repairer: None,
                 },
             )
             .unwrap();
@@ -687,6 +711,7 @@ mod m3_disabled_legacy_producer_tests {
                         numerator: 0,
                         denominator: 1,
                     },
+                    destroyed: turts_mod_api::RefundRatio::ZERO,
                 },
             },
         );

@@ -37,6 +37,16 @@ fn unit_def(id: &str, speed: f32, radius: f32) -> UnitDef {
         health: None,
         weapon: None,
         removal: None,
+        armour: None,
+        acquire: None,
+        provides: Vec::new(),
+        consumes: Vec::new(),
+        income: None,
+        spawn_order: None,
+        constructor: None,
+        placement: None,
+        build_area: None,
+        repairer: None,
     }
 }
 
@@ -47,6 +57,7 @@ fn placement(unit: &str, owner_slot: u8, x: f32, y: f32) -> Placement {
         pos: WorldPos { x, y },
         contents: Vec::new(),
         facing: None,
+        start_order: None,
     }
 }
 

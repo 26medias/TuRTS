@@ -341,12 +341,11 @@ impl WorldView for FrameWorld {
             .units
             .get(&unit.content_id)
             .and_then(|facts| facts.target_slots);
-        match relation {
-            Some(SlotRelation::Any) => true,
-            Some(SlotRelation::Same) => unit.owner_slot == target.owner_slot,
-            Some(SlotRelation::Other) => unit.owner_slot != target.owner_slot,
-            None => false,
-        }
+        // One rule for every relation (`turts_rules::relation`); the team of a slot is the slot
+        // itself until the match config gives teams.
+        relation.is_some_and(|relation| {
+            crate::relation::holds_own_team(relation, unit.owner_slot.0, target.owner_slot.0)
+        })
     }
 }
 

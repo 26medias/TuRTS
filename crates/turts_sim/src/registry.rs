@@ -50,6 +50,16 @@ impl UnitTypes {
                 health: None,
                 weapon: None,
                 removal: None,
+                acquire: None,
+                armour: None,
+                build_area: None,
+                provides: Vec::new(),
+                consumes: Vec::new(),
+                income: None,
+                spawn_order: None,
+                constructor: None,
+                placement: None,
+                repairer: None,
             };
             let origin = unit.id.package.clone();
             candidate.register_unit_type(&origin, def)?;

@@ -6,9 +6,9 @@ use std::io::Read;
 use serde::de::{DeserializeOwned, IgnoredAny, MapAccess, Visitor};
 use serde::{Deserialize, Deserializer};
 use turts_mod_api::{
-    AssetsDef, ContentCatalog, InputMapDef, InterfaceDef, LockEntry, Manifest, MapDef, ModError,
-    NodeDef, OrderDef, OrderRulesDef, PackageId, ProductionDef, RecipeDef, ResourceDef, SmartOrder,
-    TechnologyDef, UnitDef, VisualDef, content::SourceDef,
+    AssetsDef, ContentCatalog, InputMapDef, InterfaceDef, LockEntry, Manifest, MapDef, MatchDef,
+    ModError, NodeDef, OrderDef, OrderRulesDef, PackageId, ProductionDef, RecipeDef, ResourceDef,
+    SmartOrder, TechnologyDef, UnitDef, VisualDef, content::SourceDef,
 };
 
 use crate::content::validate_content_with_m3;
@@ -24,6 +24,8 @@ pub const MANIFEST_PATH: &str = "manifest.ron";
 struct RawOrderRulesDef {
     queue_depth: u16,
     smart: Vec<SmartOrder>,
+    #[serde(default)]
+    rally: Option<Vec<SmartOrder>>,
 }
 
 fn parse_order_rules(package: &str, path: &str, text: &str) -> Result<OrderRulesDef, ModError> {
@@ -39,6 +41,7 @@ fn parse_order_rules(package: &str, path: &str, text: &str) -> Result<OrderRules
     Ok(OrderRulesDef {
         queue_depth: raw.queue_depth as u8,
         smart: raw.smart,
+        rally: raw.rally,
     })
 }
 
@@ -165,32 +168,49 @@ impl PackageArchive {
     pub fn assets(&self) -> Result<Vec<(String, AssetsDef)>, ModError> {
         self.parse_exports("exports.assets", &self.manifest.exports.assets)
     }
+    /// The exported match files (API 0.2.4, `exports.match`) as `(archive path, definition)`.
+    pub fn match_defs(&self) -> Result<Vec<(String, MatchDef)>, ModError> {
+        self.parse_exports("exports.match", &self.manifest.exports.match_files)
+    }
 
     /// Parse and resolve all gameplay content. Presentation files are never read here.
     pub fn content(&self) -> Result<ContentCatalog, ModError> {
         // The version table speaks first: the RAW rows need only the raw documents. A package
         // that writes a field of a newer API is told so before a content cross-check fails
         // for the same reason (an old API has no `input` group, so "unknown input action").
+        // The rows and lines of the files that only the client reads (visuals, visual effects)
+        // run in `visuals`: this path never reads a presentation file.
+        let rows = crate::version_table::rows_for(false);
+        let lines = crate::unbuilt::lines_for(false, crate::version_table::VERSION_TABLE);
         let raw = crate::raw_presence::RawDocuments::read(
             &self.manifest,
-            crate::version_table::raw_groups(crate::version_table::VERSION_TABLE),
+            crate::version_table::raw_groups(&rows),
             |path| self.file(path),
         )?;
-        crate::version_table::check_version_table(
+        crate::version_table::check_version_table(&self.manifest, None, &raw, &rows)?;
+        // A feature of the API that its lane has not built yet is refused here, after the
+        // version: a `^0.2.3` package hears about the version first.
+        crate::unbuilt::check_unbuilt(
             &self.manifest,
             None,
             &raw,
+            &lines,
             crate::version_table::VERSION_TABLE,
         )?;
         let origin = self.id();
-        let resources = self
-            .resources()?
-            .into_iter()
+        let resource_files = self.resources()?;
+        let unit_files = self.units()?;
+        let production_files = self.production()?;
+        let technology_files = self.technologies()?;
+        let match_files = self.match_defs()?;
+        let resources = resource_files
+            .iter()
+            .cloned()
             .map(|(file, value)| SourceDef { file, value })
             .collect();
-        let units = self
-            .units()?
-            .into_iter()
+        let units = unit_files
+            .iter()
+            .cloned()
             .map(|(file, value)| SourceDef { file, value })
             .collect();
         let nodes = self
@@ -198,9 +218,9 @@ impl PackageArchive {
             .into_iter()
             .map(|(file, value)| SourceDef { file, value })
             .collect();
-        let production = self
-            .production()?
-            .into_iter()
+        let production = production_files
+            .iter()
+            .cloned()
             .map(|(file, value)| SourceDef { file, value })
             .collect();
         let recipes = self
@@ -208,9 +228,9 @@ impl PackageArchive {
             .into_iter()
             .map(|(file, value)| SourceDef { file, value })
             .collect();
-        let technologies = self
-            .technologies()?
-            .into_iter()
+        let technologies = technology_files
+            .iter()
+            .cloned()
             .map(|(file, value)| SourceDef { file, value })
             .collect();
         let mut catalog = validate_content_with_m3(
@@ -223,6 +243,12 @@ impl PackageArchive {
             technologies,
         )?;
         let mut mc_content = crate::content_mc_validation::validate_mc(self)?;
+        // The parsed gameplay files, for the rows of the version table that read a variant.
+        mc_content.units = unit_files;
+        mc_content.resources = resource_files;
+        mc_content.production = production_files;
+        mc_content.technologies = technology_files;
+        mc_content.matches = match_files;
         mc_content.mobile_weapon_present = catalog
             .units
             .values()
@@ -241,10 +267,12 @@ impl PackageArchive {
             catalog.orders.insert(id.clone(), order.clone());
             catalog.source_files.insert(id, file.clone());
         }
-        crate::version_table::check_version_table(
+        crate::version_table::check_version_table(&self.manifest, Some(&mc_content), &raw, &rows)?;
+        crate::unbuilt::check_unbuilt(
             &self.manifest,
             Some(&mc_content),
             &raw,
+            &lines,
             crate::version_table::VERSION_TABLE,
         )?;
         crate::content_m3::validate_m3(&self.manifest, &catalog)?;
@@ -259,7 +287,29 @@ impl PackageArchive {
     /// The exported visual definitions as `(archive path, definition)`. Only the client
     /// calls this.
     pub fn visuals(&self) -> Result<Vec<(String, VisualDef)>, ModError> {
+        self.check_presentation_versions()?;
         self.parse_exports("exports.visuals", &self.manifest.exports.visuals)
+    }
+
+    /// The version rows and the `UNBUILT` lines of the files that only the client reads (visuals
+    /// and visual effects, API 0.2.4): the same two steps as `content`, on the raw documents of
+    /// those groups. `content` never reads them.
+    fn check_presentation_versions(&self) -> Result<(), ModError> {
+        let rows = crate::version_table::rows_for(true);
+        let lines = crate::unbuilt::lines_for(true, crate::version_table::VERSION_TABLE);
+        let raw = crate::raw_presence::RawDocuments::read(
+            &self.manifest,
+            crate::version_table::raw_groups(&rows),
+            |path| self.file(path),
+        )?;
+        crate::version_table::check_version_table(&self.manifest, None, &raw, &rows)?;
+        crate::unbuilt::check_unbuilt(
+            &self.manifest,
+            None,
+            &raw,
+            &lines,
+            crate::version_table::VERSION_TABLE,
+        )
     }
 
     /// The lock entry that describes this archive. The caller gives the download URLs.

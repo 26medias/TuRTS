@@ -11,7 +11,6 @@ pub mod lock;
 pub mod orders;
 pub mod registry;
 pub mod schema;
-mod shells_red;
 pub mod written;
 
 pub use assets::{AssetsDef, CursorAsset, FileAsset, ImageAsset};
@@ -29,10 +28,13 @@ pub use input::{
     RESERVED_BROWSER_KEYS, WheelDirection,
 };
 pub use interface::{
-    ActionField, AlertDef, AlertTrigger, Anchor, At, ButtonAction, ButtonIcon, CameraDef,
-    CameraStart, Dimension, Direction, Fill, GuidePage, IconField, InterfaceDef, ItemField,
-    LightDef, Placement as WidgetPlacement, Predicate, PrimaryField, Primitive, Size, Source,
-    TextAlign, TextValue, TooltipStyle, UnitPresentation, Value, Widget, WorldPoint, WorldStyle,
+    ActionField, AlertDef, AlertKind, AlertTrigger, Anchor, At, BarStyle, ButtonAction, ButtonIcon,
+    CameraDef, CameraStart, Dimension, Direction, Fill, FloatTextStyle, GuidePage, HintCondition,
+    HintDef, HintKind, HintTarget, IconField, InterfaceDef, ItemField, LabelShow, LabelStyle,
+    LightDef, LineStyle, OutcomeKind, OutcomeReasonKind, OwnUnitState,
+    Placement as WidgetPlacement, PlacementStyle, Predicate, PrimaryField, Primitive, Size,
+    SoundWhen, Source, StatField, SupplySide, TextAlign, TextValue, TooltipStyle, UnitPresentation,
+    Value, Widget, WorldPoint, WorldStyle,
 };
 pub use lock::{LockEntry, Lockfile};
 pub use orders::{
@@ -41,24 +43,27 @@ pub use orders::{
 };
 pub use registry::UnitRegistry;
 pub use schema::{
-    AmmoDef, BalanceAmount, BeltLinePlacement, CancelRefunds, ContentsPolicy, ConveyorDef, Cost,
-    CostSource, DropOffDef, DropOffEffect, DropOffRule, EffectDef, ExecutionContext, Exports,
-    ExtractorDef, Facing, Footprint, GathererDef, HealthDef, InserterDef, InventoryDef, ItemStack,
-    MachineDef, Manifest, MapDef, MapSize, MovementDef, NodeDef, NodePlacement, PackageKind,
-    PaymentPolicy, Placement, ProducerDef, ProductionDef, RecipeDef, RefundRatio, RemovalDef,
-    ResearchStationDef, ResourceDef, ResourceKind, RunRefunds, Shape, SlotEconomyInit,
-    SlotRelation, TargetFilter, TechnologyDef, UniqueMap, UnitDef, VisualDef, VisualTarget,
-    WeaponDef, WeaponStat, WorldPos,
+    AcquireDef, AmmoDef, ArmourDef, BalanceAmount, BeltLinePlacement, CancelRefunds, CombatDef,
+    ConstructProgress, ConstructorDef, ContentsPolicy, ConveyorDef, Cost, CostSource, DamageCell,
+    DamagedEffect, DefeatClause, DropOffDef, DropOffEffect, DropOffRule, EffectDef, EffectKind,
+    ExecutionContext, Exports, ExtractorDef, Facing, Footprint, GathererDef, GroundRally,
+    HealthDef, IncomeDef, InserterDef, InventoryDef, ItemStack, MachineDef, Manifest, MapDef,
+    MapSize, MatchDef, ModelDef, MovementDef, NodeDef, NodePlacement, PackageKind, PaymentPolicy,
+    Placement, ProducerDef, ProductionDef, Ratio, RecipeDef, RefundRatio, RemovalDef, RepairCost,
+    RepairerDef, ResearchStationDef, ResourceDef, ResourceKind, RunRefunds, Shape, ShortEffect,
+    SitePlacementDef, SlotEconomyInit, SlotRelation, StartOrder, StartPolicy, StartTarget,
+    SupplyAmount, SupplyCounts, SupplyScope, TargetFilter, TechnologyDef, UniqueMap, UnitDef,
+    VictoryRule, VisualDef, VisualEffectDef, VisualEffectRefs, VisualEffectsDef, VisualTarget,
+    WeaponDef, WeaponStat, WhenShort, WorldPos,
 };
 
-pub use shells_red::{CombatDef, MatchDef, VisualEffectsDef};
 pub use written::Written;
 
 /// Version of the engine API that this crate defines.
-pub const ENGINE_API_VERSION: &str = "0.2.3";
+pub const ENGINE_API_VERSION: &str = "0.2.4";
 
 /// Engine API versions released by the project, in ascending order.
-pub const RELEASED_ENGINE_APIS: &[&str] = &["0.1.0", "0.2.0", "0.2.1", "0.2.2", "0.2.3"];
+pub const RELEASED_ENGINE_APIS: &[&str] = &["0.1.0", "0.2.0", "0.2.1", "0.2.2", "0.2.3", "0.2.4"];
 
 /// Capabilities that package manifests may request.
 pub const KNOWN_CAPABILITIES: &[&str] = &[];

@@ -1183,6 +1183,12 @@ fn expected_order_refusal(
         }
         turts_mod_api::Behaviour::Remove => capability.is_some_and(|entry| entry.removable),
         turts_mod_api::Behaviour::SetEnabled(_) => capability.is_some_and(|entry| entry.toggleable),
+        // API 0.2.4: no unit has a capability for a behaviour that its lane has not built.
+        turts_mod_api::Behaviour::Construct
+        | turts_mod_api::Behaviour::CancelConstruction
+        | turts_mod_api::Behaviour::SetRally
+        | turts_mod_api::Behaviour::Repair
+        | turts_mod_api::Behaviour::Surrender => false,
     };
     if !has_capability {
         return Ok(Some(match order.behaviour {
@@ -1937,6 +1943,12 @@ fn validate_order_policy(command: &CommandAudit) -> Result<(), String> {
         turts_mod_api::Behaviour::CancelProduction => {
             policy.target == turts_mod_api::TargetKind::Job
         }
+        // API 0.2.4: a policy for a new behaviour is not accepted until its lane builds it.
+        turts_mod_api::Behaviour::Construct
+        | turts_mod_api::Behaviour::CancelConstruction
+        | turts_mod_api::Behaviour::SetRally
+        | turts_mod_api::Behaviour::Repair
+        | turts_mod_api::Behaviour::Surrender => false,
     };
     if !target_allowed {
         return Err(format!(
@@ -2272,6 +2284,17 @@ fn validate_order_operation(
             }
         }
         turts_mod_api::Behaviour::Remove => expected_orders = Default::default(),
+        // API 0.2.4: no replay rule until the lane of the behaviour builds one.
+        turts_mod_api::Behaviour::Construct
+        | turts_mod_api::Behaviour::CancelConstruction
+        | turts_mod_api::Behaviour::SetRally
+        | turts_mod_api::Behaviour::Repair
+        | turts_mod_api::Behaviour::Surrender => {
+            return Err(format!(
+                "accepted order operation {} uses the behaviour {:?}, which has no replay rule yet",
+                operation.operation_id, order.behaviour
+            ));
+        }
     }
     if after_orders != expected_orders {
         return Err(format!(
@@ -6010,6 +6033,10 @@ fn validate_produce_order(
             duration,
             false,
         )?,
+        // API 0.2.4: the packer refuses `ChargeOverTime` until `L-PAY` builds it.
+        turts_mod_api::PaymentPolicy::ChargeOverTime => {
+            return Err("ChargeOverTime has no replay rule yet (L-PAY)".into());
+        }
     };
     let expected_event = event_for_order(
         before,
@@ -6167,6 +6194,7 @@ fn captured_order_job_policy(
                 },
                 running: recipe.refunds.running,
                 output_blocked: recipe.refunds.output_blocked,
+                destroyed: turts_mod_api::RefundRatio::ZERO,
             },
         })
     } else {
@@ -7349,11 +7377,11 @@ fn audit_attack_point_target_in_range(state: &AuditState, unit_id: u32) -> Resul
         {
             return false;
         }
-        let relation_matches = match targets {
-            turts_mod_api::SlotRelation::Other => candidate.owner_slot != actor.owner_slot,
-            turts_mod_api::SlotRelation::Same => candidate.owner_slot == actor.owner_slot,
-            turts_mod_api::SlotRelation::Any => true,
-        };
+        let relation_matches = turts_sim::rules_adapter::holds_own_team(
+            targets,
+            actor.owner_slot,
+            candidate.owner_slot,
+        );
         relation_matches
             && origin.distance_squared(bevy::math::Vec2::new(candidate.pos.x, candidate.pos.y))
                 <= range_squared
@@ -8237,6 +8265,16 @@ mod tests {
                     health: None,
                     weapon: None,
                     removal: None,
+                    armour: None,
+                    acquire: None,
+                    provides: Vec::new(),
+                    consumes: Vec::new(),
+                    income: None,
+                    spawn_order: None,
+                    constructor: None,
+                    placement: None,
+                    build_area: None,
+                    repairer: None,
                 },
             )
             .unwrap();
@@ -8508,6 +8546,16 @@ mod tests {
                     health: None,
                     weapon: None,
                     removal: None,
+                    armour: None,
+                    acquire: None,
+                    provides: Vec::new(),
+                    consumes: Vec::new(),
+                    income: None,
+                    spawn_order: None,
+                    constructor: None,
+                    placement: None,
+                    build_area: None,
+                    repairer: None,
                 },
             )
             .unwrap();
@@ -8599,6 +8647,16 @@ mod tests {
                     health: None,
                     weapon: None,
                     removal: None,
+                    armour: None,
+                    acquire: None,
+                    provides: Vec::new(),
+                    consumes: Vec::new(),
+                    income: None,
+                    spawn_order: None,
+                    constructor: None,
+                    placement: None,
+                    build_area: None,
+                    repairer: None,
                 },
             )
             .unwrap();
@@ -8785,6 +8843,7 @@ mod tests {
                     pos: WorldPos { x: 2.0, y: 2.0 },
                     contents: vec![],
                     facing: None,
+                    start_order: None,
                 },
                 Placement {
                     unit: depot.to_string(),
@@ -8792,6 +8851,7 @@ mod tests {
                     pos: WorldPos { x: 2.0, y: 5.0 },
                     contents: vec![],
                     facing: None,
+                    start_order: None,
                 },
             ],
             nodes: vec![NodePlacement {
@@ -9003,6 +9063,7 @@ mod tests {
                     pos: WorldPos { x: 2.0, y: 8.0 },
                     contents: vec![],
                     facing: None,
+                    start_order: None,
                 },
                 Placement {
                     unit: worker.to_string(),
@@ -9010,6 +9071,7 @@ mod tests {
                     pos: WorldPos { x: 10.0, y: 8.0 },
                     contents: vec![],
                     facing: None,
+                    start_order: None,
                 },
             ],
             nodes: vec![NodePlacement {
@@ -9390,6 +9452,7 @@ mod tests {
                         numerator: 1,
                         denominator: 1,
                     },
+                    destroyed: turts_mod_api::RefundRatio::ZERO,
                 },
             }],
             order_definitions: vec![],
@@ -9837,6 +9900,7 @@ mod tests {
                     amount: 4,
                 }],
                 facing: None,
+                start_order: None,
             }],
             nodes: vec![],
             slot_economy: vec![SlotEconomyInit {
@@ -10067,6 +10131,7 @@ mod tests {
                     amount: 4,
                 }],
                 facing: None,
+                start_order: None,
             }],
             nodes: vec![],
             slot_economy: vec![],
@@ -10228,6 +10293,7 @@ mod tests {
                 numerator: 1,
                 denominator: 1,
             },
+            destroyed: turts_mod_api::RefundRatio::ZERO,
         };
         let catalog = ContentCatalog {
             resources: BTreeMap::from([
@@ -10350,6 +10416,7 @@ mod tests {
                 pos: WorldPos { x: 2.0, y: 2.0 },
                 contents: vec![],
                 facing: None,
+                start_order: None,
             }],
             nodes: vec![],
             slot_economy: vec![SlotEconomyInit {
@@ -10556,6 +10623,7 @@ mod tests {
                 pos: WorldPos { x: 2.0, y: 2.0 },
                 contents: vec![],
                 facing: None,
+                start_order: None,
             }],
             nodes: vec![NodePlacement {
                 node: deposit.to_string(),
@@ -10662,6 +10730,7 @@ mod tests {
                         queued: ratio,
                         running: ratio,
                         output_blocked: ratio,
+                        destroyed: turts_mod_api::RefundRatio::ZERO,
                     },
                     effects: vec![],
                 },
@@ -10749,6 +10818,7 @@ mod tests {
                     pos: WorldPos { x: 2.0, y: 2.0 },
                     contents: vec![],
                     facing: None,
+                    start_order: None,
                 },
                 Placement {
                     unit: lab.to_string(),
@@ -10756,6 +10826,7 @@ mod tests {
                     pos: WorldPos { x: 5.0, y: 2.0 },
                     contents: vec![],
                     facing: None,
+                    start_order: None,
                 },
             ],
             nodes: vec![],
@@ -11837,6 +11908,16 @@ mod tests {
                     health: None,
                     weapon: None,
                     removal: None,
+                    armour: None,
+                    acquire: None,
+                    provides: Vec::new(),
+                    consumes: Vec::new(),
+                    income: None,
+                    spawn_order: None,
+                    constructor: None,
+                    placement: None,
+                    build_area: None,
+                    repairer: None,
                 },
             )
             .unwrap();
@@ -12168,6 +12249,16 @@ mod tests {
                     health: None,
                     weapon: None,
                     removal: None,
+                    armour: None,
+                    acquire: None,
+                    provides: Vec::new(),
+                    consumes: Vec::new(),
+                    income: None,
+                    spawn_order: None,
+                    constructor: None,
+                    placement: None,
+                    build_area: None,
+                    repairer: None,
                 },
             )
             .unwrap();
@@ -12253,6 +12344,16 @@ mod tests {
                     health: None,
                     weapon: None,
                     removal: None,
+                    armour: None,
+                    acquire: None,
+                    provides: Vec::new(),
+                    consumes: Vec::new(),
+                    income: None,
+                    spawn_order: None,
+                    constructor: None,
+                    placement: None,
+                    build_area: None,
+                    repairer: None,
                 },
             )
             .unwrap();
@@ -13474,6 +13575,7 @@ mod tests {
                 pos: WorldPos { x, y },
                 contents: vec![],
                 facing: None,
+                start_order: None,
             })
             .collect(),
             nodes: vec![],
@@ -18517,6 +18619,16 @@ mod tests {
                     health: None,
                     weapon: None,
                     removal: None,
+                    armour: None,
+                    acquire: None,
+                    provides: Vec::new(),
+                    consumes: Vec::new(),
+                    income: None,
+                    spawn_order: None,
+                    constructor: None,
+                    placement: None,
+                    build_area: None,
+                    repairer: None,
                 },
             )
             .unwrap();

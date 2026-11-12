@@ -37,9 +37,23 @@ pub(crate) enum RawGroup {
     Interface,
     Input,
     Assets,
+    /// The files of `exports.combat` (API 0.2.4).
+    Combat,
+    /// The files of `exports.match` (API 0.2.4).
+    Match,
+    /// The files of `exports.visual_effects` (API 0.2.4).
+    VisualEffects,
 }
 
 impl RawGroup {
+    /// True for the groups whose files only the client reads: the visuals and the visual effects.
+    /// The server path (`PackageArchive::content`) never reads them (the server does not read
+    /// presentation files, M1 verify), so their rows run on the client path
+    /// (`PackageArchive::visuals`).
+    pub(crate) fn is_presentation(self) -> bool {
+        matches!(self, Self::Visuals | Self::VisualEffects)
+    }
+
     /// The archive paths of the files of this group.
     fn files(self, manifest: &Manifest) -> Vec<&str> {
         let exports = &manifest.exports;
@@ -57,6 +71,9 @@ impl RawGroup {
             Self::Interface => &exports.interface,
             Self::Input => &exports.input,
             Self::Assets => &exports.assets,
+            Self::Combat => &exports.combat,
+            Self::Match => &exports.match_files,
+            Self::VisualEffects => &exports.visual_effects,
         };
         list.iter().map(String::as_str).collect()
     }
@@ -106,12 +123,17 @@ impl RawDocuments {
     }
 }
 
+/// The name in a path that stands for any key of a map (`units.*.role`: the `role` of each
+/// entry of the `units` map of an interface file).
+pub(crate) const ANY_KEY: &str = "*";
+
 /// Walk `path` from the root of `value`. A struct or a map is a `Map` of string keys; an
 /// `Option` that wraps a struct is looked through; a list is looked through to its elements
 /// (`placements[].facing` is the path `["placements", "facing"]`): the rest of the path must hold
 /// in at least one element. A list look-through is one step, not a deep walk: the next name is
-/// always a key of the value that the path has reached. The last name must be a key: its value
-/// can be empty (`[]`, `None`, `()`).
+/// always a key of the value that the path has reached. The name `*` matches any key of a map
+/// (a map from ids to structs). The last name must be a key: its value can be empty (`[]`,
+/// `None`, `()`).
 fn has_path(value: &Value, path: &[&str]) -> bool {
     let Some((first, rest)) = path.split_first() else {
         return true;
@@ -120,6 +142,9 @@ fn has_path(value: &Value, path: &[&str]) -> bool {
         Value::Option(Some(inner)) => has_path(inner, path),
         Value::Seq(items) => items.iter().any(|item| has_path(item, path)),
         Value::Map(map) => map.iter().any(|(key, child)| {
+            if *first == ANY_KEY {
+                return has_path(child, rest);
+            }
             matches!(key, Value::String(name) if name == first) && has_path(child, rest)
         }),
         _ => false,
@@ -217,6 +242,17 @@ mod tests {
         assert!(!has_path(&value, &["facing"]));
         // A list of lists is looked through at each level.
         assert!(has_path(&value, &["other", "facing"]));
+    }
+
+    /// `*` matches any key of a map: the `role` of each entry of `units`.
+    #[test]
+    fn a_wildcard_looks_through_the_values_of_a_map() {
+        let value = parse(r#"(units: {"a:b": (role: None), "a:c": (icon: None)}, role: None)"#);
+        assert!(has_path(&value, &["units", "*", "role"]));
+        assert!(!has_path(&value, &["units", "*", "portrait"]));
+        // The wildcard is one step, and it needs a map: a list is looked through as before.
+        assert!(!has_path(&parse("(units: {})"), &["units", "*", "role"]));
+        assert!(!has_path(&parse(r#"(units: "x")"#), &["units", "*"]));
     }
 
     /// A list of strings or numbers holds no keys.

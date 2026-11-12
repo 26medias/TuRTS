@@ -227,7 +227,7 @@ fn a_field_typo_is_refused() {
             "movenment: Some((speed: 8.0))",
         )],
         "zeta/units/runner.ron: unknown field `movenment` at line 1 column 64; did you mean `movement`? \
-         (allowed: id, name, footprint, movement, inventory, gatherer, drop_off, producer, output_inventory, extractor, conveyor, inserter, machine, research, health, weapon, removal)",
+         (allowed: id, name, footprint, movement, inventory, gatherer, drop_off, producer, output_inventory, extractor, conveyor, inserter, machine, research, health, weapon, removal, armour, acquire, provides, consumes, income, spawn_order, constructor, placement, build_area, repairer)",
     );
 }
 
@@ -448,7 +448,7 @@ fn hud3_unknown_widget_field_is_refused_by_strict_schema() {
     assert_hud3_refused(
         "hud3_unknown_widget_field",
         &[("interface/main.ron", "hotkey_label", "hotkey_lable")],
-        "zeta/interface/main.ron: unknown field `hotkey_lable` at line 4 column 235; did you mean `hotkey_label`? (allowed: icon, label, action, hotkey_label)",
+        "zeta/interface/main.ron: unknown field `hotkey_lable` at line 4 column 235; did you mean `hotkey_label`? (allowed: icon, label, action, hotkey_label, font, size)",
     );
 }
 
@@ -461,7 +461,7 @@ fn hud3_unknown_source_is_refused() {
             "source: CommandCard",
             "source: SecretSource",
         )],
-        "zeta/interface/main.ron: unknown variant `SecretSource` at line 5 column 153 (allowed: Balance, Balances, SelectionUnits, CommandCard, BuildMenu, ProductionQueue, ControlGroups, Alerts, Bindings, Guide)",
+        "zeta/interface/main.ron: unknown variant `SecretSource` at line 5 column 153 (allowed: Balance, Balances, SelectionUnits, CommandCard, BuildMenu, ProductionQueue, ControlGroups, Alerts, Bindings, Guide, ConstructionQueue, Sites, Notices, SelectionTypes)",
     );
 }
 
@@ -695,7 +695,7 @@ fn hud3_order_rules_typo_reports_rules_schema() {
     assert_eq!(output.status.code(), Some(2), "{output:?}");
     let stderr = String::from_utf8(output.stderr).unwrap();
     assert!(stderr.contains("zeta/orders/rules.ron: unknown field `queue_dept`"));
-    assert!(stderr.contains("(allowed: queue_depth, smart)"));
+    assert!(stderr.contains("(allowed: queue_depth, smart, rally)"));
 }
 
 #[test]
@@ -718,7 +718,7 @@ fn hud3_order_rules_classification_allows_comments_before_colon() {
     assert_eq!(output.status.code(), Some(2), "{output:?}");
     let stderr = String::from_utf8(output.stderr).unwrap();
     assert!(stderr.contains("zeta/orders/rules.ron: unknown field `typo`"));
-    assert!(stderr.contains("(allowed: queue_depth, smart)"));
+    assert!(stderr.contains("(allowed: queue_depth, smart, rally)"));
 }
 
 #[test]

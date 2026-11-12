@@ -463,11 +463,10 @@ fn attack_point_has_target_in_range(
             if !healths.0.get(&target).is_some_and(|health| *health > 0) {
                 return false;
             }
-            let relation_matches = match weapon.targets.slots {
-                turts_mod_api::SlotRelation::Other => target_owner != owner,
-                turts_mod_api::SlotRelation::Same => target_owner == owner,
-                turts_mod_api::SlotRelation::Any => true,
-            };
+            // One rule for every relation: `turts_rules::relation` (design 6.6). The team of a
+            // slot is the slot itself until the match config gives teams (`L-MATCH-SIM`).
+            let relation_matches =
+                crate::rules_adapter::holds_own_team(weapon.targets.slots, owner, target_owner);
             relation_matches && positions.contains_key(&target)
         })
 }
