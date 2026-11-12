@@ -865,7 +865,8 @@ fn p7_with_relay_args(relay_args: &[&str]) {
 /// The test sends 3 deltas in one tick: ticks T, T+1, T+2 of about 300, 100 and 2,000 bytes.
 /// It asserts the arrival order as it is on lightyear 0.31.0. If a library update keeps the send
 /// order, this test goes red: then the reorder window of `Replica::apply_delta` may be
-/// re-checked (docs/measurements/m1-network-spike.md, "Reorder in one flush").
+/// re-checked. The errata for the design and the spike notes are in
+/// `docs/research/mc-reorder-errata.md`.
 #[test]
 #[ignore]
 fn p8_one_flush_reorders_deltas_by_size() {
