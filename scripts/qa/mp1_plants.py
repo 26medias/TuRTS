@@ -25,6 +25,9 @@ and after (:284-296). The parallel runner reaches the same code through tests/mp
 
 Exit codes: 0 all selected plants are red and restored (or none selected); 1 a plant failed;
 2 a record or an edit is refused (no command ran); 130 or 143 interrupted.
+`--check` (with --all or --files) is the fast mode: it runs the `prepare` step of every selected
+record and nothing else (no command, no file written). Exit 0 all apply; 2 one STALE line for each
+stale record.
 Python 3 standard library only.
 """
 
@@ -621,14 +624,20 @@ def refusal(rec, text):
     return Refused(f"{label_of(rec)} [{where_of(rec)}]: {text}")
 
 
-def check_files_exist(root, records):
-    """Every record of every file, in every mode: a moved or deleted file is a stale record."""
+def missing_files(root, records):
+    """One refusal text for each record that names a file that is not there."""
     errors = []
     for rec in records:
         for entry in rec["files"]:
             if not (Path(root) / entry["file"]).is_file():
                 errors.append(str(refusal(rec, f"{entry['file']} is missing: the file was moved or "
                                                "deleted; re-pin the record")))
+    return errors
+
+
+def check_files_exist(root, records):
+    """Every record of every file, in every mode: a moved or deleted file is a stale record."""
+    errors = missing_files(root, records)
     if errors:
         raise Refused("\n".join(errors))
 
@@ -682,9 +691,10 @@ def prepare(root, rec, use_git):
         if not path.is_file():
             raise refusal(rec, f"{name} is missing: the file was moved or deleted; re-pin the record")
         if use_git:
-            if git(root, "ls-files", "--error-unmatch", "--", name).returncode != 0:
+            # --no-optional-locks: a read-only check must not refresh the stat cache in .git/index.
+            if git(root, "--no-optional-locks", "ls-files", "--error-unmatch", "--", name).returncode != 0:
                 raise refusal(rec, f"{name} is not tracked by git")
-            if git(root, "status", "--porcelain", "--", name).stdout.strip():
+            if git(root, "--no-optional-locks", "status", "--porcelain", "--", name).stdout.strip():
                 raise refusal(rec, f"{name} is not clean: git status shows a change in it")
         originals[name] = path.read_bytes()
         try:
@@ -694,7 +704,11 @@ def prepare(root, rec, use_git):
         try:
             planted[name] = apply_replacements(name, text, replacements_of(entry))
         except Refused as exc:
-            raise refusal(rec, f"{exc}; when the file changed, re-pin the record") from None
+            reason = str(exc) if name in str(exc) else f"{name}: {exc}"
+            raise refusal(rec, f"{reason}; when the file changed, re-pin the record") from None
+    if all(planted[name].encode("utf-8") == originals[name] for name in originals):
+        raise refusal(rec, "the plant changes nothing: the edits of the record cancel each other, so "
+                           "the plant would stay green")
     return originals, planted
 
 
@@ -808,14 +822,59 @@ def public(result):
 
 # ---------------------------------------------------------------------------- the command line
 
-def run_selected(root, records, args):
-    use_git = (Path(root) / ".git").exists()
+def refusals_of(root, records, use_git):
+    """One refusal text for each record that does not apply to the tree: `prepare` is the one
+    check of the run mode and of --check. It reads files and runs `git ls-files` and `git status`;
+    it writes no file and runs no command of a record."""
     refused = []
     for rec in records:
         try:
             prepare(root, rec, use_git)
         except Refused as exc:
             refused.append(str(exc))
+    return refused
+
+
+def run_state_notes(root, use_git):
+    """Why a "not clean" line of --check can be false: a journal that a killed run left (the next run
+    mode recovers it), or a run in flight (it holds the lock; its plant is in the tree). Read-only:
+    the lock file is opened for reading and tried with a shared, non-blocking flock; nothing is
+    created, recovered or deleted."""
+    directory = git_dir(root) if use_git else None
+    if directory is None:
+        return []
+    notes = []
+    if (directory / JOURNAL_NAME).exists():
+        notes.append(f"{directory / JOURNAL_NAME} exists: a killed run left a plant, so a \"not clean\" "
+                     "line below can be false. Run the run mode once to recover it (the run mode does "
+                     "that first); --check does not recover.")
+    try:
+        handle = os.open(directory / LOCK_NAME, os.O_RDONLY)
+    except OSError:
+        return notes
+    try:
+        fcntl.flock(handle, fcntl.LOCK_SH | fcntl.LOCK_NB)
+    except BlockingIOError:
+        notes.append(f"{directory / LOCK_NAME} is held: a run in flight has a plant in the tree, so a "
+                     "\"not clean\" line below can be false. Wait for that run to end, then check again.")
+    finally:
+        os.close(handle)
+    return notes
+
+
+def stale_records(root, records, chosen, use_git):
+    """--check: return (the number of records of `chosen` that apply, one text for each stale
+    record). A record that --files did not select but whose file is gone is stale too: the run mode
+    refuses it in every mode (`check_files_exist`)."""
+    stale = refusals_of(root, chosen, use_git)
+    chosen_where = {rec["_where"] for rec in chosen}
+    unselected = [r for r in records if r["_where"] not in chosen_where]
+    return len(chosen) - len(stale), stale + missing_files(root, unselected)
+
+
+def run_selected(root, records, args):
+    use_git = (Path(root) / ".git").exists()
+    refused = refusals_of(root, records, use_git)
     if refused:
         for message in refused:
             print(f"REFUSED {message}", flush=True)
@@ -856,6 +915,9 @@ def parse(argv):
     parser.add_argument("--native-only", action="store_true",
                         help="kept for old command lines: this runner never runs headed records")
     parser.add_argument("--list", action="store_true", help="print the selected records and run nothing")
+    parser.add_argument("--check", action="store_true",
+                        help="fast: apply the same checks as the run mode, run no command and change no "
+                             "file; exit 2 with one STALE line for each record that does not apply")
     parser.add_argument("--root", type=Path, default=ROOT, help="the git worktree (default: this one)")
     parser.add_argument("--plants-dir", type=Path, help="default: <root>/" + str(PLANTS_DIR))
     parser.add_argument("--timeout", type=int, default=DEFAULT_TIMEOUT, help="seconds for each command run")
@@ -863,12 +925,15 @@ def parse(argv):
     args = parser.parse_args(argv)
     if not args.self_test and (args.all == (args.files is not None)):
         parser.error("give exactly one of --all or --files")
+    if args.check and (args.list or args.self_test):
+        parser.error("--check cannot be used with --list or --self-test")
     return args
 
 
-def select_from(root, plants_dir, args, use_git):
+def select_from(root, plants_dir, args, use_git, require_files=True):
     records = load_records(plants_dir)
-    check_files_exist(root, records)
+    if require_files:
+        check_files_exist(root, records)
     files = None if args.all else normalize_files(root, args.files, records, use_git)
     return records, select_records(records, files, args.native_only)
 
@@ -898,6 +963,15 @@ def main(argv=None):
                 print(f"{label_of(rec)} headed={rec['headed']} "
                       f"files={','.join(e['file'] for e in rec['files'])}")
             return 0
+        if args.check:
+            records, chosen = select_from(root, plants_dir, args, use_git, require_files=False)
+            applying, stale = stale_records(root, records, chosen, use_git)
+            for note in run_state_notes(root, use_git):
+                print(f"NOTE {note}", flush=True)
+            for message in stale:
+                print(f"STALE {message}", flush=True)
+            print(f"mp1_plants: --check: {applying} record(s) apply, {len(stale)} stale", flush=True)
+            return 2 if stale else 0
         with run_lock(root, use_git):
             if use_git:
                 for line in recover_journal(root):
@@ -1696,6 +1770,210 @@ def l_deleted_path_is_accepted_in_files(fx):
     expect(code == 0 and "T2/b" in out, f"committed delete: exit {code}\n{out}")
     code, out = fx.cli("--list", "--files", "never-existed.txt")
     expect(code == 2, f"a path that never existed: exit {code}, wanted 2\n{out}")
+
+
+def tree_snapshot(fx):
+    """Every file under the repository folder (the git folder excluded) with its bytes, the names
+    that sit in the git folder that the runner could write (journal, lock), and the sha256 of
+    .git/index (`git status` refreshes the stat cache there unless it runs with no optional locks)."""
+    files = {str(p.relative_to(fx.root)): p.read_bytes()
+             for p in sorted(fx.root.rglob("*")) if p.is_file() and ".git" not in p.relative_to(fx.root).parts}
+    git_dir_path = Path(fx.git("rev-parse", "--absolute-git-dir").strip())
+    index = hashlib.sha256((git_dir_path / "index").read_bytes()).hexdigest()
+    return files, sorted(n for n in (JOURNAL_NAME, LOCK_NAME) if (git_dir_path / n).exists()), index
+
+
+def stale_a(**over):
+    """A record whose anchor does not occur in a.txt."""
+    return make_record(row="T9", plant="stale", command=[sys.executable, "-c", CHECK_FLAG],
+                       files=[{"file": "a.txt", "edit": {"old": "MISSING", "new": "x"}}], **over)
+
+
+@case
+def q3_check_clean_set_exits_0_and_runs_nothing(fx):
+    fx.write_records([make_record(command=[sys.executable, "-c", CHECK_FLAG]),
+                      make_record(plant="b", command=[sys.executable, "-c", CHECK_FLAG],
+                                  files=[{"file": "b.txt", "edit": {"old": "two", "new": "2"}}])])
+    before = tree_snapshot(fx)
+    code, out = fx.cli("--check", "--all")
+    expect(code == 0, f"clean set: exit {code}, wanted 0\n{out}")
+    expect("2 record(s) apply, 0 stale" in out, f"no summary line\n{out}")
+    expect(not (fx.root / "ran.flag").exists(), "--check ran a command")
+    expect(tree_snapshot(fx) == before, "--check changed a file")
+
+
+@case
+def q3_check_stale_anchor_exits_2_and_names_the_record(fx):
+    fx.write_records([make_record(), stale_a()])
+    code, out = fx.cli("--check", "--all")
+    expect(code == 2, f"stale anchor: exit {code}, wanted 2\n{out}")
+    stale = [line for line in out.splitlines() if line.startswith("STALE ")]
+    expect(len(stale) == 1, f"wanted one STALE line\n{out}")
+    expect("1 record(s) apply, 1 stale" in out, f"the count line is wrong\n{out}")
+    for part in ("T9/stale", "t.json[1]", "a.txt", "occurs 0 times"):
+        expect(part in stale[0], f"STALE line lacks {part!r}: {stale[0]}")
+    expect("T1/a" not in out.replace("STALE", ""), f"the clean record is named\n{out}")
+
+
+@case
+def q3_check_anchor_that_occurs_twice_exits_2(fx):
+    fx.write_records([make_record(plant="two", files=[{"file": "b.txt", "edit": {"old": "o", "new": "y"}}])])
+    code, out = fx.cli("--check", "--all")
+    expect(code == 2, f"two occurrences: exit {code}, wanted 2\n{out}")
+    expect("STALE T1/two" in out and "occurs 2 times" in out, f"STALE line lacks the reason\n{out}")
+
+
+@case
+def q3_check_stale_patch_exits_2(fx):
+    patch = "--- a/a.txt\n+++ b/a.txt\n@@ -1,2 +1,2 @@\n alpha MISSING\n-beta\n+gamma\n"
+    fx.write_records([make_record(plant="p", files=[{"file": "a.txt", "patch": patch}])])
+    code, out = fx.cli("--check", "--all")
+    expect(code == 2, f"stale patch: exit {code}, wanted 2\n{out}")
+    expect("STALE T1/p" in out and "occurs 0 times" in out, f"STALE line lacks the reason\n{out}")
+    good = "--- a/a.txt\n+++ b/a.txt\n@@ -1,2 +1,2 @@\n-alpha GOOD\n+alpha BAD\n beta\n"
+    fx.write_records([make_record(plant="p", files=[{"file": "a.txt", "patch": good}])])
+    code, out = fx.cli("--check", "--all")
+    expect(code == 0, f"a patch that applies: exit {code}, wanted 0\n{out}")
+
+
+@case
+def q3_check_leaves_every_file_byte_equal_also_after_a_failure(fx):
+    fx.write_records([make_record(command=[sys.executable, "-c", CHECK_FLAG]), stale_a()])
+    before = tree_snapshot(fx)
+    code, out = fx.cli("--check", "--all")
+    expect(code == 2 and "STALE T9/stale" in out, f"exit {code}, wanted 2 with a STALE line\n{out}")
+    expect(tree_snapshot(fx) == before, "--check changed a file or wrote a journal or a lock after a failure")
+    expect(not (fx.root / "ran.flag").exists(), "--check ran a command")
+    fx.assert_restored()
+
+
+@case
+def q3_check_and_run_mode_refuse_the_same_records(fx):
+    """The two modes share one code path: the stale set of --check is the refused set of --all."""
+    patch = "--- a/a.txt\n+++ b/a.txt\n@@ -1,2 +1,1 @@\n alpha MISSING\n-beta\n"
+    (fx.root / "c.txt").write_text("GOOD\n")                    # untracked: the run mode refuses it
+    fx.write_records([
+        make_record(plant="ok"), stale_a(),
+        make_record(plant="two", files=[{"file": "b.txt", "edit": {"old": "o", "new": "y"}}]),
+        make_record(plant="patch", files=[{"file": "a.txt", "patch": patch}]),
+        make_record(plant="untracked", files=[{"file": "c.txt", "edit": {"old": "GOOD", "new": "BAD"}}])])
+    code_check, out_check = fx.cli("--check", "--all")
+    code_run, out_run = fx.cli("--all")
+    expect(code_check == 2 and code_run == 2, f"exit codes {code_check} and {code_run}, wanted 2 and 2")
+    stale = [line[len("STALE "):] for line in out_check.splitlines() if line.startswith("STALE ")]
+    refused = [line[len("REFUSED "):] for line in out_run.splitlines() if line.startswith("REFUSED ")]
+    expect(len(stale) == 4 and stale == refused, f"STALE:\n{stale}\nREFUSED:\n{refused}")
+    expect(not any("T1/ok" in line for line in stale), "the clean record is stale")
+
+
+@case
+def q3_check_missing_file_is_stale_with_the_text_of_the_run_mode(fx):
+    gone = make_record(plant="gone", files=[{"file": "gone.txt", "edit": {"old": "a", "new": "b"}}])
+    fx.write_records([make_record(), gone])
+    code_check, out_check = fx.cli("--check", "--all")
+    code_run, out_run = fx.cli("--all")
+    expect(code_check == 2 and code_run == 2, f"exit codes {code_check} and {code_run}, wanted 2 and 2")
+    stale = [line[len("STALE "):] for line in out_check.splitlines() if line.startswith("STALE ")]
+    refused = [line[len("REFUSED "):] for line in out_run.splitlines() if line.startswith("REFUSED ")]
+    expect(len(stale) == 1 and stale == refused and "gone.txt is missing" in stale[0],
+           f"STALE:\n{stale}\nREFUSED:\n{refused}")
+    # A record that --files does not select still counts: the run mode refuses it in every mode too.
+    code, out = fx.cli("--check", "--files", "a.txt")
+    expect(code == 2 and "STALE T1/gone" in out, f"--files a.txt must report the moved file\n{out}")
+
+
+@case
+def q3_check_with_files_selects_like_the_run_mode(fx):
+    fx.write_records([make_record(), make_record(plant="b", files=[
+        {"file": "b.txt", "edit": {"old": "zzz", "new": "y"}}])])
+    code, out = fx.cli("--check", "--files", "a.txt")
+    expect(code == 0 and "1 record(s) apply, 0 stale" in out, f"--files a.txt: exit {code}\n{out}")
+    code, out = fx.cli("--check", "--files", "b.txt")
+    expect(code == 2 and "STALE T1/b" in out and "0 record(s) apply, 1 stale" in out,
+           f"--files b.txt: exit {code}\n{out}")
+    code, out = fx.cli("--check", "--files", "zzz.txt")
+    expect(code == 2, f"a mistyped path: exit {code}, wanted 2\n{out}")
+
+
+@case
+def q3_check_does_not_mix_with_list_and_list_stays_as_it_is(fx):
+    fx.write_records([stale_a()])
+    code, out = fx.cli("--check", "--list", "--all")
+    expect(code == 2 and "--check cannot be used with --list" in out,
+           f"--check with --list: exit {code}, wanted 2\n{out}")
+    code, out = fx.cli("--list", "--all")
+    expect(code == 0 and "T9/stale" in out and "STALE" not in out, f"--list changed: exit {code}\n{out}")
+
+
+@case
+def q3_check_names_a_leftover_journal_and_does_not_recover(fx):
+    fx.write_records([make_record(command=[sys.executable, "-c", CHECK_FLAG])])
+    (fx.root / "a.txt").write_text("alpha BAD\nbeta\n")        # looks like a plant that a kill left
+    journal = fx.journal()
+    journal.write_text("[]")
+    before = tree_snapshot(fx)
+    code, out = fx.cli("--check", "--all")
+    expect(code == 2 and "STALE T1/a" in out, f"exit {code}\n{out}")
+    notes = [line for line in out.splitlines() if line.startswith("NOTE ")]
+    expect(len(notes) == 1 and JOURNAL_NAME in notes[0] and "run mode" in notes[0], f"journal note: {notes}\n{out}")
+    expect(tree_snapshot(fx) == before, "--check recovered or changed a file")
+    expect((fx.root / "a.txt").read_text() == "alpha BAD\nbeta\n", "--check restored a.txt")
+    journal.unlink()
+    (fx.root / "a.txt").write_text(Fixture.FILES["a.txt"])
+    code, out = fx.cli("--check", "--all")
+    expect(code == 0 and "NOTE" not in out, f"no journal: exit {code}\n{out}")
+
+
+@case
+def q3_check_names_a_run_in_flight_and_not_a_free_lock_file(fx):
+    fx.write_records([make_record(plant="g", files=[{"file": "a.txt", "edit": {"old": "beta", "new": "gamma"}}])])
+    fx.cli("--all")                                           # the run mode leaves a free lock file
+    lock = Path(fx.git("rev-parse", "--absolute-git-dir").strip()) / LOCK_NAME
+    expect(lock.exists(), "the run mode left no lock file: the case tests nothing")
+    code, out = fx.cli("--check", "--all")
+    expect(code == 0 and "NOTE" not in out, f"free lock file: exit {code}\n{out}")
+    handle = os.open(lock, os.O_RDWR)
+    try:
+        fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        (fx.root / "a.txt").write_text("alpha GOOD\nbeta\nplanted by the other run\n")
+        code, out = fx.cli("--check", "--all")
+    finally:
+        os.close(handle)
+    notes = [line for line in out.splitlines() if line.startswith("NOTE ")]
+    expect(code == 2 and len(notes) == 1 and "run in flight" in notes[0] and "wait" in notes[0].lower(),
+           f"lock note: exit {code}, {notes}\n{out}")
+
+
+@case
+def q3_net_zero_plant_is_refused_in_both_modes(fx):
+    net_zero = make_record(plant="zero", command=[sys.executable, "-c", CHECK_FLAG], files=[
+        {"file": "a.txt", "edit": [{"old": "GOOD", "new": "GOOD2"}, {"old": "GOOD2", "new": "GOOD"}]}])
+    fx.write_records([net_zero])
+    code_check, out_check = fx.cli("--check", "--all")
+    code_run, out_run = fx.cli("--all")
+    expect(code_check == 2 and code_run == 2, f"exit codes {code_check} and {code_run}, wanted 2 and 2\n{out_run}")
+    stale = [l[len("STALE "):] for l in out_check.splitlines() if l.startswith("STALE ")]
+    refused = [l[len("REFUSED "):] for l in out_run.splitlines() if l.startswith("REFUSED ")]
+    expect(len(stale) == 1 and stale == refused and "changes nothing" in stale[0], f"{stale}\n{refused}")
+    expect(not (fx.root / "ran.flag").exists(), "a command ran")
+    # A record that changes one file and leaves the other as it was still applies.
+    two = make_record(files=[{"file": "a.txt", "edit": {"old": "GOOD", "new": "BAD"}},
+                             {"file": "b.txt", "edit": [{"old": "two", "new": "2"}, {"old": "2", "new": "two"}]}])
+    fx.write_records([two])
+    code, out = fx.cli("--check", "--all")
+    expect(code == 0, f"one file changed, one not: exit {code}\n{out}")
+
+
+@case
+def q3_check_does_not_write_the_git_index(fx):
+    fx.write_records([make_record(command=[sys.executable, "-c", CHECK_FLAG])])
+    for name in Fixture.FILES:
+        os.utime(fx.root / name, (1_000_000_000, 1_000_000_000))   # same bytes, other stat: status wants to refresh
+    index = Path(fx.git("rev-parse", "--absolute-git-dir").strip()) / "index"
+    before = hashlib.sha256(index.read_bytes()).hexdigest()
+    code, out = fx.cli("--check", "--all")
+    expect(code == 0, f"exit {code}\n{out}")
+    expect(hashlib.sha256(index.read_bytes()).hexdigest() == before, ".git/index changed during --check")
 
 
 def self_test():
