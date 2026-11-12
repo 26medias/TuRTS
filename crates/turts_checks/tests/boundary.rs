@@ -97,6 +97,21 @@ fn t1_boundary_script_passes() {
         "checked: turts_interaction wasm32-unknown-unknown: no bevy*".to_string(),
         format!("checked: turts_interaction {host}: no turts_sim wgpu winit"),
         "checked: turts_interaction wasm32-unknown-unknown: no turts_sim wgpu winit".to_string(),
+        format!(
+            "checked: turts_audit {host}: no {}",
+            AUDIT_FORBIDDEN.join(" ")
+        ),
+        format!(
+            "checked: turts_audit wasm32-unknown-unknown: no {}",
+            AUDIT_FORBIDDEN.join(" ")
+        ),
+        format!("checked: turts_sim {host}: no turts_audit"),
+        format!("checked: turts_client {host}: no turts_audit"),
+        "checked: turts_client wasm32-unknown-unknown: no turts_audit".to_string(),
+        format!("checked: turts_client_web {host}: no turts_audit"),
+        "checked: turts_client_web wasm32-unknown-unknown: no turts_audit".to_string(),
+        format!("checked: turts_interaction {host}: no turts_audit"),
+        "checked: turts_interaction wasm32-unknown-unknown: no turts_audit".to_string(),
     ] {
         assert!(
             out_of(&output).lines().any(|got| got == line),
@@ -149,20 +164,22 @@ fn t1x_real_crate_wasm32_is_red_for_mod_api() {
     );
 }
 
-#[test]
-fn t1x_copy_with_bevy_render_is_red() {
+/// Copy the sources of the workspace crate `name` and the repository lockfile into a new
+/// directory under the system temporary directory. The caller writes a standalone manifest at
+/// the returned manifest path. Returns the temporary directory and the manifest path.
+fn standalone_copy(name: &str) -> (PathBuf, PathBuf) {
     let root = repo_root();
     let stamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .expect("system time after epoch")
         .as_nanos();
-    let temp = std::env::temp_dir().join(format!(
-        "turts-interaction-t1x-{}-{stamp}",
-        std::process::id()
-    ));
-    let copied_crate = temp.join("crates/turts_interaction");
+    let short = name.trim_start_matches("turts_");
+    let temp =
+        std::env::temp_dir().join(format!("turts-{short}-t1x-{}-{stamp}", std::process::id()));
+    let copied_crate = temp.join("crates").join(name);
     std::fs::create_dir_all(copied_crate.join("src")).expect("create copied crate");
-    for entry in std::fs::read_dir(root.join("crates/turts_interaction/src")).expect("read sources")
+    for entry in
+        std::fs::read_dir(root.join("crates").join(name).join("src")).expect("read sources")
     {
         let entry = entry.expect("source entry");
         std::fs::copy(
@@ -172,7 +189,7 @@ fn t1x_copy_with_bevy_render_is_red() {
         .expect("copy source");
     }
     std::fs::copy(
-        root.join("crates/turts_interaction/Cargo.toml"),
+        root.join("crates").join(name).join("Cargo.toml"),
         copied_crate.join("Cargo.toml"),
     )
     .expect("copy package manifest");
@@ -187,8 +204,13 @@ fn t1x_copy_with_bevy_render_is_red() {
             == std::fs::read(root.join("Cargo.lock")).expect("read source lockfile"),
         "standalone workspace must start with the repository lockfile"
     );
+    (temp, copied_crate.join("Cargo.toml"))
+}
 
-    let manifest = copied_crate.join("Cargo.toml");
+#[test]
+fn t1x_copy_with_bevy_render_is_red() {
+    let root = repo_root();
+    let (temp, manifest) = standalone_copy("turts_interaction");
     let text = format!(
         "[workspace]\nresolver = \"3\"\n\n[package]\nname = \"turts_interaction\"\nversion = \"0.2.0\"\nedition = \"2024\"\nlicense = \"LicenseRef-TBD\"\npublish = false\n\n[dependencies]\nglam = \"=0.33.12\"\nturts_mod_api = {{ path = \"{}\" }}\nturts_net_protocol = {{ path = \"{}\" }}\nbevy_render = \"=0.20.0\"\n",
         root.join("crates/turts_mod_api").display(),
@@ -212,6 +234,80 @@ fn t1x_copy_with_bevy_render_is_red() {
         .expect("boundary script starts");
     let _ = std::fs::remove_dir_all(temp);
     assert_red(&output, "forbidden edge: turts_interaction -> bevy_app\n");
+}
+
+/// The names that the `turts_audit` rows of `scripts/boundary.sh` forbid, in the script order.
+const AUDIT_FORBIDDEN: [&str; 10] = [
+    "bevy_render",
+    "bevy_winit",
+    "bevy_pbr",
+    "turts_client",
+    "turts_client_web",
+    "turts_interaction",
+    "turts_server",
+    "turts_pack",
+    "turts_mod_runtime",
+    "turts_net_lightyear",
+];
+
+#[test]
+fn t1x_audit_copy_with_mod_runtime_is_red() {
+    // The fixture crate cannot prove this row: `tree` selects the package by name
+    // (`cargo tree -p turts_audit`), and the fixture package is `turts_boundary_fixture`.
+    // A standalone copy of `turts_audit` with one planted edge proves the row on both targets.
+    let root = repo_root();
+    let (temp, manifest) = standalone_copy("turts_audit");
+    let text = format!(
+        "[workspace]\nresolver = \"3\"\n\n[package]\nname = \"turts_audit\"\nversion = \"0.2.0\"\nedition = \"2024\"\nlicense = \"LicenseRef-TBD\"\npublish = false\n\n[dependencies]\nturts_sim = {{ path = \"{}\" }}\nturts_net_protocol = {{ path = \"{}\" }}\nturts_mod_api = {{ path = \"{}\" }}\nturts_mod_runtime = {{ path = \"{}\" }}\nbevy = {{ version = \"=0.20.0\", default-features = false }}\nserde = {{ version = \"=1.0.229\", features = [\"derive\"] }}\nserde_json = \"=1.0.154\"\n",
+        root.join("crates/turts_sim").display(),
+        root.join("crates/turts_net_protocol").display(),
+        root.join("crates/turts_mod_api").display(),
+        root.join("crates/turts_mod_runtime").display(),
+    );
+    std::fs::write(&manifest, text).expect("write standalone manifest");
+
+    let names = AUDIT_FORBIDDEN.join(",");
+    let outputs: Vec<Output> = [host_triple().as_str(), "wasm32-unknown-unknown"]
+        .into_iter()
+        .map(|target| {
+            Command::new("bash")
+                .arg("scripts/boundary.sh")
+                .args([
+                    "--rule",
+                    "forbid",
+                    "--crate",
+                    "turts_audit",
+                    "--target",
+                    target,
+                ])
+                .arg("--manifest")
+                .arg(&manifest)
+                .args(["--names", &names])
+                .env("CARGO_NET_OFFLINE", "true")
+                .current_dir(&root)
+                .output()
+                .expect("boundary script starts")
+        })
+        .collect();
+    let _ = std::fs::remove_dir_all(temp);
+    for output in &outputs {
+        assert_red(output, "forbidden edge: turts_audit -> turts_mod_runtime\n");
+    }
+}
+
+#[test]
+fn t1_rule_no_audit_is_red_on_server() {
+    // turts_server depends on turts_audit, so the rule "no turts_audit" that the full run
+    // applies to turts_sim and the client crates must be red on it.
+    let output = run(&[
+        "--rule",
+        "forbid",
+        "--crate",
+        "turts_server",
+        "--names",
+        "turts_audit",
+    ]);
+    assert_red(&output, "forbidden edge: turts_server -> turts_audit\n");
 }
 
 #[test]

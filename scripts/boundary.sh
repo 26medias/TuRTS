@@ -45,6 +45,19 @@ forbid turts_client wasm32-unknown-unknown "" turts_sim
 forbid turts_client_web $HOST "" turts_sim
 forbid turts_client_web wasm32-unknown-unknown "" turts_sim
 forbid turts_net_lightyear $HOST "" turts_sim turts_mod_runtime
+# The audit crate reads the economy log. It must not reach a renderer, a client, the server,
+# the packer, the mod runtime, or the transport (pre-MP1 slice design section 3).
+AUDIT_FORBIDDEN=(bevy_render bevy_winit bevy_pbr turts_client turts_client_web turts_interaction turts_server turts_pack turts_mod_runtime turts_net_lightyear)
+forbid turts_audit $HOST "" "${AUDIT_FORBIDDEN[@]}"
+forbid turts_audit wasm32-unknown-unknown "" "${AUDIT_FORBIDDEN[@]}"
+# The simulation and the client crates must not read the economy log.
+forbid turts_sim $HOST "" turts_audit
+forbid turts_client $HOST "" turts_audit
+forbid turts_client wasm32-unknown-unknown "" turts_audit
+forbid turts_client_web $HOST "" turts_audit
+forbid turts_client_web wasm32-unknown-unknown "" turts_audit
+forbid turts_interaction $HOST "" turts_audit
+forbid turts_interaction wasm32-unknown-unknown "" turts_audit
 workspace lightyear_prediction bevy_replicon
 FIX=${BOUNDARY_FIXTURE_MANIFEST:-tests/boundary-fixture/Cargo.toml}
 PKG=${BOUNDARY_FIXTURE_PACKAGE:-turts_boundary_fixture}
