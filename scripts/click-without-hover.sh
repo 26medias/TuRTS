@@ -2,8 +2,9 @@
 # Review M1 of mp1/sound-off-default: the probe tests/browser/click-without-hover-probe.js on a
 # prepared package. Run it under the headed wrapper (mc_headed_v6.sh), never on your own Chrome:
 #   mc_headed_v6.sh --mode pre-merge ... -- bash scripts/click-without-hover.sh --prepared DIR [--package P] [--guide-close]
-# It starts scripts/mp1-play.sh (its own Chrome with its own profile), runs the probe on the
-# debug port, and stops the play script. The exit code is the probe's.
+# It serves the prepared package (scripts/mc-browser.sh --serve-only --prepared DIR), runs the probe
+# on the URL (the probe starts its own Chrome with the MC browser profile), and stops the server.
+# The exit code is the probe's.
 set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 [[ "${1:-}" == --prepared && -n "${2:-}" ]] || { echo "usage: $0 --prepared DIR [--package P] [--guide-close]" >&2; exit 2; }
@@ -17,19 +18,19 @@ while (($#)); do
     esac
 done
 LOG="$(mktemp "${TMPDIR:-/tmp}/click-without-hover.XXXXXX")"
-bash "$ROOT/scripts/mp1-play.sh" --prepared "$DIR" --package "$PACKAGE" >"$LOG" 2>&1 &
-PLAY=$!
-PORT=""
-for _ in $(seq 1 600); do
-    PORT="$(sed -n 's/^DEBUG_PORT: //p' "$LOG" | head -1)"
-    [[ -n "$PORT" ]] && break
-    kill -0 "$PLAY" 2>/dev/null || break
+bash "$ROOT/scripts/mc-browser.sh" "$PACKAGE" --serve-only --prepared "$DIR" >"$LOG" 2>&1 &
+SERVE=$!
+URL=""
+for _ in $(seq 1 300); do
+    URL="$(sed -n 's/^URL: //p' "$LOG" | head -1)"
+    [[ -n "$URL" ]] && break
+    kill -0 "$SERVE" 2>/dev/null || break
     sleep 0.2
 done
-if [[ -z "$PORT" ]]; then echo "no debug port"; cat "$LOG"; rm -f "$LOG"; exit 1; fi
-(cd "$ROOT/tests/browser" && node click-without-hover-probe.js "$PORT" "${GUIDE[@]}")
+if [[ -z "$URL" ]]; then echo "the server did not start"; cat "$LOG"; rm -f "$LOG"; exit 1; fi
+(cd "$ROOT/tests/browser" && node click-without-hover-probe.js "$URL" ${GUIDE[@]+"${GUIDE[@]}"})
 rc=$?
-kill -TERM "$PLAY" 2>/dev/null
-wait "$PLAY" 2>/dev/null
+kill -TERM "$SERVE" 2>/dev/null
+wait "$SERVE" 2>/dev/null
 rm -f "$LOG"
 exit "$rc"

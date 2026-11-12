@@ -8,9 +8,11 @@
 // that record. It is not a row: it reads the debug bridge to find the buttons (it is an
 // instrument, not a driver).
 //
-// Usage: node click-without-hover-probe.js <debug port> [--guide-close]
-//   The port is the `DEBUG_PORT` that `scripts/mp1-play.sh` printed (`scripts/click-without-hover.sh`
-//   runs both). Checks: the sound switch (the button of the package or the engine fallback) turns
+// Usage: node click-without-hover-probe.js <game url> [--guide-close]
+//   The url is the `URL:` line of `scripts/mc-browser.sh <package> --serve-only --prepared DIR`
+//   (`scripts/click-without-hover.sh` runs both). The probe starts its own Chrome with the browser
+//   profile of the MC scripts (`MC_CHROME_ARGS_JSON`, as `egpu-run.js`), so run it under the headed
+//   wrapper. Checks: the sound switch (the button of the package or the engine fallback) turns
 //   the sound on with one such click; with `--guide-close` the Close button of the open guide hides
 //   the guide with one such click (a second kind of engine button).
 // Output: one JSON object on stdout. Exit 0: every check acted within 500 ms; 1: one did not.
@@ -45,17 +47,25 @@ function centre(row, scale) {
     return [(left + width / 2) / scale, (top + height / 2) / scale];
 }
 
-async function run(port, wantGuide) {
-    const browser = await chromium.connectOverCDP(`http://127.0.0.1:${port}`);
-    const page = browser.contexts().flatMap((context) => context.pages()).find((candidate) => /^https?:/.test(candidate.url()));
-    if (!page) throw new Error("no game page on the debug port");
+async function run(url, wantGuide) {
+    const chromeArgs = JSON.parse(process.env.MC_CHROME_ARGS_JSON || '["--enable-gpu","--use-angle=vulkan","--enable-features=Vulkan","--enable-unsafe-webgpu"]');
+    if (!chromeArgs.some((arg) => arg.startsWith("--force-device-scale-factor"))) chromeArgs.push("--force-device-scale-factor=1");
+    const browser = await chromium.launch({
+        executablePath: process.env.CHROME_BIN || "/usr/bin/google-chrome",
+        headless: process.env.MC_BROWSER_HEADED !== "1",
+        args: chromeArgs,
+        ignoreDefaultArgs: JSON.parse(process.env.MC_CHROME_IGNORE_DEFAULT_ARGS_JSON || '["--enable-unsafe-swiftshader"]'),
+    });
     const result = { checks: [] };
     try {
+        const context = await browser.newContext({ viewport: { width: 1280, height: 720 }, deviceScaleFactor: 1 });
+        const page = await context.newPage();
+        await page.goto(url);
         const ready = await until(page, (debug) => typeof debug.phase === "string" && debug.phase.startsWith("Joined") &&
             (debug.ui_snapshot || []).some((row) => row.kind === "focus_overlay" && row.root_count === 1), 60000);
         if (ready.ms === null) throw new Error("the game did not join and show its start overlay in 60 s");
-        // A key is a gesture: it removes the start overlay and resumes the audio contexts.
-        await page.keyboard.press("F1");
+        // A key is a gesture: it removes the start overlay and resumes the audio contexts. Shift: F1 would toggle the guide.
+        await page.keyboard.press("ShiftLeft");
         const scale = await page.evaluate(() => window.devicePixelRatio || 1);
         const settled = await until(page, (debug) => (debug.ui_snapshot || []).some((row) => row.kind === "focus_overlay" && row.root_count === 0) &&
             debug.audio?.context_states?.every((state) => state === "running"), 10000);
@@ -85,12 +95,12 @@ async function run(port, wantGuide) {
 }
 
 async function main() {
-    const [port, ...flags] = process.argv.slice(2);
-    if (!/^\d+$/.test(port || "")) {
-        console.error("usage: click-without-hover-probe.js <debug port> [--guide-close]");
+    const [url, ...flags] = process.argv.slice(2);
+    if (!/^http:\/\/127\.0\.0\.1:\d+\//.test(url || "")) {
+        console.error("usage: click-without-hover-probe.js <game url on 127.0.0.1> [--guide-close]");
         process.exit(2);
     }
-    const result = await run(Number(port), flags.includes("--guide-close"));
+    const result = await run(url, flags.includes("--guide-close"));
     console.log(JSON.stringify(result));
     process.exit(result.checks.every((check) => check.acted) ? 0 : 1);
 }
