@@ -1,9 +1,10 @@
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
-use std::io::{BufRead, BufReader};
 
 use turts_sim::{AuditState, CommandAudit, EconomyEvent, OperationAudit};
 
 use crate::EconomyLogRecord;
+#[cfg(test)]
+use crate::read_jsonl;
 
 struct ActiveOrderSpan {
     command: CommandAudit,
@@ -68,28 +69,6 @@ fn accepted_plain_candidate_context(
                 .map(|candidate| (*unit_id, candidate.clone()))
         })
         .collect()
-}
-
-pub fn read_jsonl<R: BufRead>(input: R) -> Result<Vec<EconomyLogRecord>, String> {
-    let mut records = Vec::new();
-    for (index, line) in input.lines().enumerate() {
-        let line = line.map_err(|error| format!("read JSONL line {}: {error}", index + 1))?;
-        if line.trim().is_empty() {
-            return Err(format!("JSONL line {} is empty", index + 1));
-        }
-        let record = serde_json::from_str(&line)
-            .map_err(|error| format!("decode JSONL line {}: {error}", index + 1))?;
-        records.push(record);
-    }
-    validate_records(&records)?;
-    Ok(records)
-}
-
-#[allow(dead_code)]
-pub fn read_jsonl_file(path: impl AsRef<std::path::Path>) -> Result<Vec<EconomyLogRecord>, String> {
-    let file = std::fs::File::open(path.as_ref())
-        .map_err(|error| format!("open {}: {error}", path.as_ref().display()))?;
-    read_jsonl(BufReader::new(file))
 }
 
 /// Check record shape, R14 clock transitions, command-operation association, and

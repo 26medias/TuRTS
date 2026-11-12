@@ -234,7 +234,7 @@ fn ensure_valid(trail: &turts_sim::AuditTrail) -> Result<(), std::io::Error> {
 mod tests {
     use super::EconomyLogWriter;
     use std::io::Cursor;
-    use turts_audit::{EconomyLogRecord, read_jsonl, validate_records};
+    use turts_audit::{EconomyLogRecord, read_jsonl, validate_side_by_side};
     use turts_mod_api::WorldPos;
     use turts_sim::economy::views::RawUnitAudit;
     use turts_sim::{AuditState, AuditTrail, headless_app};
@@ -319,7 +319,7 @@ mod tests {
             .unwrap();
         writer.flush().unwrap();
         let mut records = read_jsonl(Cursor::new(writer.output)).unwrap();
-        assert!(validate_records(&records).is_ok());
+        assert!(validate_side_by_side(&records).is_ok());
 
         if let EconomyLogRecord::Operation(operation) = &mut records[1] {
             operation.phase = turts_sim::economy::transaction::AuditPhase::Other;
@@ -327,7 +327,7 @@ mod tests {
             panic!("captured unit order did not decode as an operation");
         }
         assert!(
-            validate_records(&records)
+            validate_side_by_side(&records)
                 .unwrap_err()
                 .contains("movement transition changed nonmovement state")
         );
@@ -450,7 +450,7 @@ mod tests {
             panic!("claim record")
         };
         *slot = 1;
-        assert!(validate_records(&wrong_slot).is_err());
+        assert!(validate_side_by_side(&wrong_slot).is_err());
     }
 
     #[test]
@@ -483,6 +483,6 @@ mod tests {
             panic!("admission record")
         };
         after.economy.tick = 1;
-        assert!(validate_records(&changed).is_err());
+        assert!(validate_side_by_side(&changed).is_err());
     }
 }

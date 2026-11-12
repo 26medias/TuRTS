@@ -122,20 +122,44 @@ fn sink_fixture_log_bytes(label: &str) -> Vec<u8> {
 }
 
 /// The record order that the reader depends on: in each batch the command boundaries come
-/// before the operations (`economylog.rs`, `capture_completed_tick`). The check reads the
-/// record kinds only, with no help from the replay validator. The `Tick` record ends a batch.
+/// before the operations, and the boundaries and the operations come before the `Tick` record of
+/// their batch (`economylog.rs`, `capture_completed_tick`). The check reads the record kinds and
+/// clocks only, with no help from a validator. In this fixture every command reaches the queue
+/// before its tick, so each boundary and operation is at the clock of its batch: a record after
+/// `Tick t` is at a clock above `t`.
 fn assert_sink_record_order(bytes: &[u8]) {
     use turts_audit::EconomyLogRecord as R;
 
     let mut seen_operation = false;
+    let mut last_tick = None;
+    let after_its_tick =
+        |clock: u32, last_tick: Option<u32>| last_tick.is_some_and(|tick| clock <= tick);
     for line in bytes.split_inclusive(|byte| *byte == b'\n') {
         match serde_json::from_slice::<R>(line).unwrap() {
-            R::CommandBoundary(_) => assert!(
-                !seen_operation,
-                "the sink writes a command boundary after an operation of the same batch"
-            ),
-            R::Operation(_) => seen_operation = true,
-            R::Tick { .. } => seen_operation = false,
+            R::CommandBoundary(command) => {
+                assert!(
+                    !seen_operation,
+                    "the sink writes a command boundary after an operation of the same batch"
+                );
+                assert!(
+                    !after_its_tick(command.before.economy.tick, last_tick),
+                    "the sink writes the command boundary of tick {} after its Tick record",
+                    command.before.economy.tick
+                );
+            }
+            R::Operation(operation) => {
+                seen_operation = true;
+                assert!(
+                    !after_its_tick(operation.before.economy.tick, last_tick),
+                    "the sink writes operation {} of tick {} after its Tick record",
+                    operation.operation_id,
+                    operation.before.economy.tick
+                );
+            }
+            R::Tick { tick, .. } => {
+                seen_operation = false;
+                last_tick = Some(tick);
+            }
             _ => {}
         }
     }
@@ -526,7 +550,7 @@ fn decoded_moving_gatherer_replays_frozen_command_and_automatic_effect() {
     // Replay only decoded JSONL. The expected command and automatic subjects are
     // frozen from the fixture inputs; observed audit fields are only evidence.
     let decoded = turts_audit::read_jsonl(Cursor::new(writer.into_inner())).unwrap();
-    turts_audit::validate_records(&decoded).unwrap();
+    turts_audit::validate_side_by_side(&decoded).unwrap();
     let decoded_initial = match &decoded[0] {
         turts_audit::EconomyLogRecord::Initial(state) => state.clone(),
         _ => panic!("first record must be Initial"),
@@ -666,7 +690,12 @@ fn decoded_moving_gatherer_replays_frozen_command_and_automatic_effect() {
         })
         .unwrap();
     tick_record.economy.tick += 1;
-    assert!(turts_audit::validate_records(&bad_tick_state).is_err());
+    assert!(turts_audit::validate_side_by_side(&bad_tick_state).is_err());
+    let ledger = turts_audit::validate_ledger(&bad_tick_state).unwrap_err();
+    assert!(
+        ledger.starts_with("clock:"),
+        "the ledger clock rule rejects a Tick state at the wrong clock: {ledger}"
+    );
 
     let mut bad_economy_state = decoded.clone();
     let worker_inventory = bad_economy_state
@@ -681,7 +710,12 @@ fn decoded_moving_gatherer_replays_frozen_command_and_automatic_effect() {
         })
         .unwrap();
     worker_inventory.items[0].on_hand += 1;
-    assert!(turts_audit::validate_records(&bad_economy_state).is_err());
+    assert!(turts_audit::validate_side_by_side(&bad_economy_state).is_err());
+    let ledger = turts_audit::validate_ledger(&bad_economy_state).unwrap_err();
+    assert!(
+        ledger.starts_with("inventories:"),
+        "the ledger inventories rule rejects an item that no event explains: {ledger}"
+    );
 
     let mut missing_event = decoded.clone();
     let tick_record = missing_event
@@ -692,7 +726,12 @@ fn decoded_moving_gatherer_replays_frozen_command_and_automatic_effect() {
         })
         .unwrap();
     tick_record.clear();
-    assert!(turts_audit::validate_records(&missing_event).is_err());
+    assert!(turts_audit::validate_side_by_side(&missing_event).is_err());
+    let ledger = turts_audit::validate_ledger(&missing_event).unwrap_err();
+    assert!(
+        ledger.starts_with("clock: tick 24 publishes 0 events"),
+        "the ledger clock rule rejects a Tick that drops the events of its operations: {ledger}"
+    );
 }
 
 /// E9 base gather trace, in process: the same package, the same protocol Gather envelope
@@ -835,6 +874,43 @@ fn e9_base_gather_trace_replays_node_depletion_in_process() {
             .is_some_and(|inventory| inventory.items.iter().all(|item| item.on_hand == 0)),
         "the idle harvester holds no cargo"
     );
+
+    // The negative test of the cargo guard (D0p review): edit the real log so that the order
+    // fails while the harvester still holds cargo. The audit rejects it, with the ledger
+    // industry rule first.
+    let mut held = decode_complete_jsonl_lines(&log).unwrap();
+    let failing = held
+        .iter_mut()
+        .find_map(|record| match record {
+            turts_audit::EconomyLogRecord::Operation(operation)
+                if operation.after.unit_orders.iter().any(|row| {
+                    row.unit_id == 2
+                        && row.orders.last_failure.as_ref().is_some_and(|failure| {
+                            failure.reason == turts_sim::RejectReason::NodeDepleted
+                        })
+                }) =>
+            {
+                Some(operation)
+            }
+            _ => None,
+        })
+        .expect("the log holds the operation where the Gather order fails");
+    let cargo = failing
+        .after
+        .economy
+        .inventories
+        .iter_mut()
+        .find(|inventory| inventory.unit == 2)
+        .and_then(|inventory| inventory.items.first_mut())
+        .expect("the harvester has a cargo row");
+    cargo.on_hand += 5;
+    let error = turts_audit::validate_side_by_side(&held).unwrap_err();
+    assert!(
+        error.starts_with(
+            "industry: unit 2 fails its gather order with node_depleted while it holds 5 cargo"
+        ),
+        "the audit rejects a node_depleted failure while cargo is held: {error}"
+    );
 }
 
 /// The full ORD3 browser scene (every authored muster unit present): worker 42 stands near
@@ -970,7 +1046,7 @@ fn ord3_full_scene_blocked_gather_trip_validates() {
         balance_start + node_start,
         "no ore is created or destroyed: the balance gains the node start amount"
     );
-    turts_audit::validate_records(&records)
+    turts_audit::validate_side_by_side(&records)
         .unwrap_or_else(|error| panic!("the validator rejects the blocked gather wait: {error}"));
 }
 
@@ -1066,7 +1142,7 @@ fn decoded_fractional_movement_uses_captured_fixed_timestep() {
         })
         .unwrap();
     moved.pos.x = f32::from_bits(moved.pos.x.to_bits() + 1);
-    assert!(turts_audit::validate_records(&corrupted).is_err());
+    assert!(turts_audit::validate_side_by_side(&corrupted).is_err());
 }
 
 #[derive(Clone)]
@@ -1419,7 +1495,7 @@ fn replay_task4_order_log(
 ) {
     use turts_audit::EconomyLogRecord;
 
-    turts_audit::validate_records(records).unwrap_or_else(|error| {
+    turts_audit::validate_side_by_side(records).unwrap_or_else(|error| {
         panic!("Task4 catalog-derived order replay rejected the process log: {error}")
     });
     let initial = records
@@ -2364,7 +2440,7 @@ fn read_live_complete_tick_prefix(
 ) -> Result<Vec<turts_audit::EconomyLogRecord>, String> {
     let mut records = decode_complete_jsonl_lines(path)?;
     records.truncate(complete_prefix_end(&records));
-    turts_audit::validate_records(&records)?;
+    turts_audit::validate_side_by_side(&records)?;
     Ok(records)
 }
 
@@ -2424,7 +2500,7 @@ fn replay_public_log_with_model(
     use std::collections::BTreeMap;
     use turts_audit::EconomyLogRecord;
     let records = read_complete_economy_log(path).unwrap();
-    turts_audit::validate_records(&records).unwrap();
+    turts_audit::validate_side_by_side(&records).unwrap();
     let decoded_initial = match &records[0] {
         EconomyLogRecord::Initial(state) => state.clone(),
         _ => unreachable!(),
@@ -3843,6 +3919,11 @@ fn run_e8_public_variant_process() {
             .contains("Produce changed state outside the catalog-derived job"),
         "captured Produce without its empty reservation token is rejected"
     );
+    let ledger = turts_audit::validate_ledger(&missing_reservation).unwrap_err();
+    assert!(
+        ledger.starts_with("reservations:"),
+        "the ledger reservations rule rejects a claim with no reservation token: {ledger}"
+    );
 
     let mut mismatched_token = records.clone();
     mutate_order_command_after(&mut mismatched_token, 7, |state| {
@@ -3869,6 +3950,11 @@ fn run_e8_public_variant_process() {
             .contains("Produce changed state outside the catalog-derived job"),
         "captured claim with a token for another JobId is rejected"
     );
+    let ledger = turts_audit::validate_ledger(&mismatched_token).unwrap_err();
+    assert!(
+        ledger.starts_with("reservations:"),
+        "the ledger reservations rule rejects a claim token of another job: {ledger}"
+    );
 
     let mut leaked_claim = records.clone();
     mutate_order_command_after(&mut leaked_claim, 8, |state| {
@@ -3894,6 +3980,11 @@ fn run_e8_public_variant_process() {
             .unwrap_err()
             .contains("Cancel changed state outside requested job removal"),
         "captured Cancel that leaks the empty claim is rejected"
+    );
+    let ledger = turts_audit::validate_ledger(&leaked_claim).unwrap_err();
+    assert!(
+        ledger.starts_with("reservations:"),
+        "the ledger reservations rule rejects a claim that stays active after Cancel: {ledger}"
     );
 }
 

@@ -564,9 +564,9 @@ fn queued_group_attack_spreads_and_strictly_replays() {
         .map(|line| serde_json::from_slice(line).expect("parse audit log record"))
         .collect::<Vec<turts_audit::EconomyLogRecord>>();
     assert!(
-        turts_audit::validate_records(&records).is_ok(),
+        turts_audit::validate_side_by_side(&records).is_ok(),
         "queued Point Attack shared-spread operations strictly replay: {:?}",
-        turts_audit::validate_records(&records)
+        turts_audit::validate_side_by_side(&records)
     );
 
     // The outcome from the order log, with no help from the replay validator. Each member
@@ -575,20 +575,54 @@ fn queued_group_attack_spreads_and_strictly_replays() {
     // Attack goes to its order point (20,5). The group spread puts each member on its own
     // slot of a hex pool around the order point. The pool holds `members + max(6,
     // ceil(members/4))` slots, which is 8 slots for 2 members. So every slot is within two
-    // rings of the order point (`crates/turts_sim/src/movement.rs:274-276`: spacing is
-    // `2 * radius + 0.1`, and the slot count; `:293`: slot zero is the order point).
+    // rings of the order point (`crates/turts_sim/src/movement/spread.rs:170-172`: spacing is
+    // `2 * radius + 0.1`, and the slot count). When no other footprint covers the order point,
+    // slot zero is the order point (`spread.rs:178-189`), and the nearest member goes there.
     let Footprint::Circle { radius } =
         catalog.units[&ContentId::parse("audit:shooter").unwrap()].footprint;
     let spread_reach = 2.0 * (2.0 * radius + 0.1);
+    let turts_audit::EconomyLogRecord::Initial(initial) = &records[0] else {
+        panic!("the order log starts with its Initial record");
+    };
     for (order, point) in [
         ("audit:move", bevy_math::Vec2::new(6.0, 6.0)),
         ("audit:rush", bevy_math::Vec2::new(20.0, 5.0)),
     ] {
+        // Slot zero is free in this fixture: no unit that is not a member covers the order point
+        // with its footprint (`spread.rs:340-355`, the static footprint test).
+        for unit in initial
+            .raw_units
+            .iter()
+            .filter(|unit| !members.contains(&unit.unit_id))
+        {
+            let other = initial
+                .unit_types
+                .iter()
+                .find(|kind| kind.type_id == unit.unit_type)
+                .map_or(0.5, |kind| kind.radius);
+            assert!(
+                bevy_math::Vec2::new(unit.pos.x, unit.pos.y).distance(point) >= radius + other,
+                "unit {} covers the {order} point {point:?}, so slot zero is not free",
+                unit.unit_id
+            );
+        }
         let destinations = first_logged_destinations(&records, &members, order);
         assert_eq!(
             destinations.len(),
             members.len(),
-            "{order} gives every member a destination: {destinations:?}"
+            "{order} gives every member a destination: {destinations:?}. The destination is \
+             `raw_units.move_target` of the first logged Tick state with this current order. \
+             A change of the movement model (part A2) means an update of \
+             `first_logged_destinations`, not a sim defect"
+        );
+        let nearest = destinations
+            .iter()
+            .map(|(_, destination)| destination.distance(point))
+            .fold(f32::INFINITY, f32::min);
+        assert_eq!(
+            nearest, 0.0,
+            "{order} sends its nearest member to slot zero, the order point {point:?}: \
+             {destinations:?}"
         );
         for (unit, destination) in &destinations {
             assert!(
@@ -755,10 +789,43 @@ fn queued_unit_attack_activates_and_strictly_replays() {
         .map(|line| serde_json::from_slice(line).expect("parse audit log record"))
         .collect::<Vec<turts_audit::EconomyLogRecord>>();
     assert!(
-        turts_audit::validate_records(&records).is_ok(),
+        turts_audit::validate_side_by_side(&records).is_ok(),
         "queued Unit Attack activation and target completion strictly replay: {:?}",
-        turts_audit::validate_records(&records)
+        turts_audit::validate_side_by_side(&records)
     );
+
+    // Pursuit and range, from the order log with no validator: every shot of unit 1 at its focus
+    // target 3 is fired from within the weapon range (3.0) plus the two footprint radii (0.25
+    // each), at the positions of the operation snapshot that holds the shot. The target starts
+    // at (35, 5), far out of range of the Move point (6, 5), so the shooter must pursue it.
+    let mut shots = 0;
+    for record in &records {
+        let turts_audit::EconomyLogRecord::Operation(operation) = record else {
+            continue;
+        };
+        for event in &operation.events {
+            let turts_sim::EconomyEventKind::Fired { weapon, target, .. } = event.kind else {
+                continue;
+            };
+            assert_eq!((weapon, target), (1, 3), "only unit 1 fires, at unit 3");
+            let position = |unit: u32| {
+                operation
+                    .before
+                    .raw_units
+                    .iter()
+                    .find(|row| row.unit_id == unit)
+                    .map(|row| bevy_math::Vec2::new(row.pos.x, row.pos.y))
+                    .expect("the shooter and the target are in the shot snapshot")
+            };
+            let distance = position(1).distance(position(3));
+            assert!(
+                distance <= 3.0 + 0.25 + 0.25,
+                "unit 1 hits unit 3 from {distance}, out of its weapon range"
+            );
+            shots += 1;
+        }
+    }
+    assert!(shots > 0, "the log holds the shots at the focus target");
 }
 
 #[test]
@@ -885,9 +952,9 @@ fn point_attack_switches_to_another_eligible_target_and_strictly_replays() {
         .map(|line| serde_json::from_slice(line).expect("parse audit log record"))
         .collect::<Vec<turts_audit::EconomyLogRecord>>();
     assert!(
-        turts_audit::validate_records(&records).is_ok(),
+        turts_audit::validate_side_by_side(&records).is_ok(),
         "target switch remains paused and strictly replays: {:?}",
-        turts_audit::validate_records(&records)
+        turts_audit::validate_side_by_side(&records)
     );
 }
 
@@ -1002,9 +1069,9 @@ fn suppressed_order_cooldowns_advance_and_strictly_replay() {
         .map(|line| serde_json::from_slice(line).expect("parse audit log record"))
         .collect::<Vec<turts_audit::EconomyLogRecord>>();
     assert!(
-        turts_audit::validate_records(&records).is_ok(),
+        turts_audit::validate_side_by_side(&records).is_ok(),
         "suppressed authored cooldowns and prompt re-enable strictly replay: {:?}",
-        turts_audit::validate_records(&records)
+        turts_audit::validate_side_by_side(&records)
     );
 }
 
@@ -1150,9 +1217,9 @@ fn empty_ammo_attack_move_pause_replays(group: u32) {
         .map(|line| serde_json::from_slice(line).expect("parse audit log record"))
         .collect::<Vec<turts_audit::EconomyLogRecord>>();
     assert!(
-        turts_audit::validate_records(&records).is_ok(),
+        turts_audit::validate_side_by_side(&records).is_ok(),
         "no-ammo acquisition and attack-move pause strictly replay: {:?}",
-        turts_audit::validate_records(&records)
+        turts_audit::validate_side_by_side(&records)
     );
 }
 

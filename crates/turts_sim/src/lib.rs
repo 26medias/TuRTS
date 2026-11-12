@@ -42,6 +42,7 @@ pub use economy::events::{
 };
 pub use economy::gather::{GatherStage, RateCarry, WaitReason, assign_gather, interrupt_order};
 pub use economy::ledger::EconomyLedger;
+pub use economy::ledger_view::{LEDGER_DROPPED_FIELDS, LedgerAudit, ledger_audit};
 pub use economy::production::JobStage;
 pub use economy::transaction::{AuditTrail, CommandAudit, OperationAudit, TickAudit};
 pub use economy::views::{

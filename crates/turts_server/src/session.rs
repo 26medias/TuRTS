@@ -1081,7 +1081,52 @@ mod tests {
             "the one Claim record names the tick of the Hello, player 7 and the slot that its \
              session holds"
         );
-        turts_audit::validate_records(&records).unwrap();
+        turts_audit::validate_side_by_side(&records).unwrap();
+        drop(app);
+        std::fs::remove_file(path).unwrap();
+    }
+
+    /// Two players claim the two slots. The economy log that the session writes holds one Claim
+    /// record for each, and both validators accept it (the ledger slots rule: a Claim names an
+    /// open slot, and a claimed slot is never given to another player).
+    #[test]
+    fn two_players_claim_two_slots_in_the_economy_log() {
+        let mut app = hello_test_app();
+        let path = std::env::temp_dir().join(format!(
+            "turts_hello_two_players_{}_{}.jsonl",
+            std::process::id(),
+            std::thread::current().name().unwrap_or("test")
+        ));
+        let _ = std::fs::remove_file(&path);
+        app.world_mut()
+            .resource_mut::<turts_sim::AuditTrail>()
+            .enable();
+        let initial = turts_sim::audit_state(app.world_mut());
+        let trail = app.world().resource::<turts_sim::AuditTrail>();
+        app.insert_resource(
+            crate::economylog::EconomyLogSink::create(&path, trail, initial).unwrap(),
+        );
+        let (source_a, client_a) = spawn_hello_peers(&mut app, 1);
+        deliver_hello(&mut app, source_a, client_a, good(7));
+        let (source_b, client_b) = spawn_hello_peers(&mut app, 2);
+        deliver_hello(&mut app, source_b, client_b, good(8));
+
+        let records = turts_audit::read_jsonl_file(&path)
+            .unwrap_or_else(|error| panic!("the two-player economy log is rejected: {error}"));
+        let claims: Vec<_> = records
+            .iter()
+            .filter_map(|record| match record {
+                turts_audit::EconomyLogRecord::Claim {
+                    player_id, slot, ..
+                } => Some((*player_id, *slot)),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            claims,
+            vec![(7, 0), (8, 1)],
+            "each player claims one open slot, in the order of the Hello messages"
+        );
         drop(app);
         std::fs::remove_file(path).unwrap();
     }

@@ -125,6 +125,39 @@ class RefutationRunnerTests(unittest.TestCase):
                 self.assertEqual(source.count(item["anchor"]), 1, case["id"])
                 source = source.replace(item["anchor"], item["replacement"], 1)
 
+    def test_every_registry_anchor_occurs_exactly_once(self):
+        registry = json.loads((refutations.ROOT / "tests/m2/refutations.json").read_text())
+        for case in registry:
+            plants = case.get("plants") or [{
+                "path": case["plant_path"],
+                "anchor": case.get("anchor"),
+                "replacement": case.get("replacement"),
+                "replacements": case.get("replacements"),
+            }]
+            for plant in plants:
+                source = (refutations.ROOT / plant["path"]).read_text()
+                replacements = plant.get("replacements") or [
+                    {"anchor": plant["anchor"], "replacement": plant["replacement"]}
+                ]
+                for item in replacements:
+                    self.assertEqual(source.count(item["anchor"]), 1, case["id"])
+                    source = source.replace(item["anchor"], item["replacement"], 1)
+
+    def test_ledger_rows_cover_each_domain_and_the_refusal_rule(self):
+        registry = json.loads((refutations.ROOT / "tests/m2/refutations.json").read_text())
+        rows = [case for case in registry if case["id"].startswith("A1b-ledger-")]
+        self.assertEqual(
+            sorted(case["id"].removeprefix("A1b-ledger-").split("-")[0] for case in rows),
+            sorted([
+                "balances", "clock", "combat", "industry", "inventories",
+                "production", "refusal", "reservations", "slots",
+            ]),
+        )
+        for case in rows:
+            self.assertTrue(case["plant_path"].startswith("crates/turts_sim/src/"), case["id"])
+            self.assertEqual(case["command"][:6], ["cargo", "test", "-p", "turts_server", "--test", "ledger_logs"], case["id"])
+            self.assertIn("--exact", case["command"], case["id"])
+
     def test_runtime_selectors_are_explicit_and_nonempty(self):
         cases = [
             {"id": "E8-native", "kind": "process", "runtime": "rust"},
