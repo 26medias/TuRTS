@@ -867,7 +867,7 @@
         ],
         "env": {},
         "headed": false,
-        "expected_red": "hook_tests::intercept_stub_takes_no_event_in_a_fresh_core",
+        "expected_red": "assertion `left == right` failed: the setup click must select unit 1 while the hook takes nothing",
         "exit": 101,
         "expected_selected": 2,
         "commit": "2b228562bb566d3b3e0b752881e9ff7efb1cea20"
