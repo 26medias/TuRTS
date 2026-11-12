@@ -3,11 +3,6 @@
 
 const { decodePng, pixelAt } = require("./harness/png.js");
 
-// The later captures after the minimap right click: three captures 700 ms apart, so the last one comes
-// about 2.8 s after the click (the longest replica stand-still that was measured is 24 ticks, 1.2 s).
-const AFTER_RIGHT_LATER = 3;
-const AFTER_RIGHT_GAP_MS = 700;
-
 const SLOT_RGB = [[0, 114, 178], [230, 159, 0]];
 const SLOT_TOLERANCE = [48, 64];
 
@@ -80,18 +75,9 @@ async function drive(io, params) {
     await io.click(screen.right.x, screen.right.y, "right");
     await io.wait(500);
     await capture(1, "mm1-after-right.png");
-    // The replica of window 1 can stand still for about 1.1 s after the kill of the target dummy (the
-    // client rejects a weapon record whose last_target left the world; RUN142), so the one capture
-    // may show a replica that is behind the tick at which the server accepted the move. The driver
-    // cannot read the replica tick from pixels. It takes a bounded series of later captures, and the
-    // oracle reads the order from the first capture whose replica tick has reached the accept tick.
-    const afterRightLater = [];
-    for (let index = 0; index < AFTER_RIGHT_LATER; index += 1) {
-        await io.wait(AFTER_RIGHT_GAP_MS);
-        const name = `mm1-after-right-${index + 2}.png`;
-        await capture(1, name);
-        afterRightLater.push(name);
-    }
+    // One capture only, 500 ms after the click. The replica of window 1 stood still for about 1.1 s after the
+    // kill of the target dummy (RUN142); that stall is repaired in the product (commit 50eb827), so a
+    // later capture would only hide it. The oracle bounds the replica lag at this capture.
     await io.move(Math.round(width / 2), Math.round(height / 2));
     await io.wheel(-20);
     await io.wait(200);
@@ -102,7 +88,7 @@ async function drive(io, params) {
         await io.wait(200);
         await capture(2, "mm1-window2-ping.png");
     }
-    await io.save("mm1-driver-steps.json", Buffer.from(JSON.stringify({ rect, local, screen, pixel_targets: { own, foreign }, attack_skipped: attackSkipped, ping_poll: pingPoll, after_right_later: afterRightLater, shots }, null, 2) + "\n"));
+    await io.save("mm1-driver-steps.json", Buffer.from(JSON.stringify({ rect, local, screen, pixel_targets: { own, foreign }, attack_skipped: attackSkipped, ping_poll: pingPoll, shots }, null, 2) + "\n"));
     // The driver records only screenshot-derived coordinates and uses the public input harness.
 }
 

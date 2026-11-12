@@ -97,17 +97,105 @@ async function assertNoDriverStop(view, label) {
     assert.fail(`${label}: the driver stopped early (${stop.args[0]}): ${reason}`);
 }
 
+// The server tick clock. The tick log (`tick,wall_ns,unit_id,x,y`) holds one line for each unit and
+// tick, and `wall_ns` is the server time of day at the end of the tick. The index keeps the first
+// line of each tick: `{ tick, wall_ms }`. A checkpoint carries `page_time_ms`, the browser clock of
+// the same read of `turts_debug` (harness/scene-checkpoints.js). Both clocks are the clock of one
+// host, so `serverTickAt(index, checkpoint.page_time_ms)` is the last tick that the server had
+// finished when the replica reported its own tick.
+function serverTickIndex(tickLog) {
+    const index = [];
+    let previous = null;
+    let from = 0;
+    while (from < tickLog.length) {
+        let end = tickLog.indexOf("\n", from);
+        if (end < 0) end = tickLog.length;
+        const first = tickLog.indexOf(",", from);
+        const second = first < 0 || first >= end ? -1 : tickLog.indexOf(",", first + 1);
+        if (first >= 0 && first < end && second > first && second <= end) {
+            const tick = Number(tickLog.slice(from, first));
+            const wall = Number(tickLog.slice(first + 1, second));
+            assert(Number.isSafeInteger(tick) && Number.isFinite(wall), `the server tick log has a bad row: ${tickLog.slice(from, end)}`);
+            if (tick !== previous) { index.push({ tick, wall_ms: wall / 1e6 }); previous = tick; }
+        }
+        from = end + 1;
+    }
+    return index;
+}
+
+// The last tick of `index` that ended at or before `wallMs`, or null when none did.
+function serverTickAt(index, wallMs) {
+    let low = 0;
+    let high = index.length - 1;
+    let found = null;
+    while (low <= high) {
+        const middle = (low + high) >> 1;
+        if (index[middle].wall_ms <= wallMs) { found = index[middle].tick; low = middle + 1; } else high = middle - 1;
+    }
+    return found;
+}
+
+// The replica of one window must not stand behind the server by more than `maxLag` ticks at a
+// checkpoint. The oracle knows the server tick from the tick log and the browser clock, so a replica
+// that stands still (RUN142: the stall after a kill) is red at once, whatever the order state shows.
+function assertReplicaLag(checkpoint, index, maxLag, label) {
+    const replica = checkpoint?.debug?.replicated_world?.tick;
+    assert(Number.isSafeInteger(replica), `${label}: the checkpoint has no replica tick`);
+    assert(Number.isFinite(checkpoint.page_time_ms), `${label}: the checkpoint has no browser clock (page_time_ms)`);
+    const server = serverTickAt(index, checkpoint.page_time_ms);
+    assert(Number.isSafeInteger(server), `${label}: the server tick log has no tick at or before the checkpoint`);
+    const lag = server - replica;
+    assert(lag <= maxLag, `${label}: the replica stands ${lag} ticks behind the server (replica tick ${replica}, server tick ${server}); the bound is ${maxLag}`);
+    return lag;
+}
+
+// The netcode timeout of the client (crates/turts_client/src/join.rs:345, client_timeout_secs).
+const NETCODE_TIMEOUT_MS = 10000;
+
+// The longest gap between two ticks of the server, and the tick that ends it.
+function longestTickGap(index) {
+    let longest = { gap_ms: 0, before_tick: null };
+    for (let at = 1; at < index.length; at += 1) {
+        const gap = index[at].wall_ms - index[at - 1].wall_ms;
+        if (gap > longest.gap_ms) longest = { gap_ms: gap, before_tick: index[at].tick };
+    }
+    return longest;
+}
+
+// A lost connection is a host fault, not a fault of the row: the client reports `reconnect_required`
+// after the transport ended (crates/turts_client/src/join.rs:416-424), and its replica stands still
+// from then on. The text names the longest stall of the server tick log, which is the usual cause
+// (a stall longer than the netcode timeout ends the connection on both sides; run
+// rereview-2df2393-hold-a: stalls of 11.0 s and 17.9 s under three other heavy jobs). Rows that
+// disconnect on purpose do not call this.
+function assertConnectionHeld(checkpoints, index, label) {
+    const lost = checkpoints.find((entry) => entry.debug?.reconnect_required === true);
+    if (!lost) return;
+    const { gap_ms: gap, before_tick: before } = longestTickGap(index);
+    const stall = gap > NETCODE_TIMEOUT_MS
+        ? `the server tick log has a stall of ${(gap / 1000).toFixed(1)} s before tick ${before}, longer than the netcode timeout of ${NETCODE_TIMEOUT_MS / 1000} s`
+        : `the longest gap of the server tick log is ${(gap / 1000).toFixed(1)} s (before tick ${before})`;
+    assert.fail(`${label}: host fault, the client lost its connection (reconnect_required) at checkpoint ${lost.input_call}, replica tick ` +
+        `${lost.debug?.replicated_world?.tick}; ${stall}; the run is not a fault of the row`);
+}
+
 module.exports = {
+    NETCODE_TIMEOUT_MS,
+    assertConnectionHeld,
     assertNoDriverStop,
+    assertReplicaLag,
     bindingLabel,
     checkpointAt,
     checkpointBefore,
     checkpointForSave,
     checkpointsBetween,
+    longestTickGap,
     readCheckpoints,
     replicaUnit,
     saved,
     screenshotIndexForSave,
+    serverTickAt,
+    serverTickIndex,
     unitTrack,
     widget,
     widgets,

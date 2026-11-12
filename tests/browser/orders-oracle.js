@@ -4,10 +4,15 @@
 const assert = require("node:assert/strict");
 const { decodePng, pixelAt } = require("./harness/png.js");
 const { unprojectGround } = require("./hud4-oracle.js");
+const { assertConnectionHeld, serverTickIndex } = require("./checkpoint-lib.js");
 
 async function judge(view, params) {
     const input = view.inputLog();
     const checkpoints = JSON.parse(await view.serverFile("scene-checkpoints.json"));
+    // A run whose client lost its connection (the server stalled longer than the netcode timeout) is a
+    // host fault. It is red here with that name, not at a later order check that shows a stale replica
+    // (run rereview-2df2393-hold-a: ORD4 red 2 of 2 at two different checks after stalls of 11 s and 18 s).
+    assertConnectionHeld(checkpoints, serverTickIndex(await view.serverFile("server-tick.log")), params.row);
     const steps = JSON.parse(await view.serverFile(`${params.row.toLowerCase()}-driver-steps.json`));
     const context = makeContext(view, input, checkpoints, steps, params);
     const before = await context.shot("before");

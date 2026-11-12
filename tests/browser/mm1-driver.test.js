@@ -127,16 +127,18 @@ test("MM1 ends the ping poll without an error when no ping appears, and still sa
     assert.ok(!io.log.some((entry) => entry === "wait:3500"), "no settle wait without a sighting");
 });
 
-test("MM1 takes a bounded series of captures after the minimap right click, before the zoom (RUN142: the replica stands still after a kill)", async () => {
+test("MM1 takes one capture 500 ms after the minimap right click and none later before the zoom (the repaired replica stall must show)", async () => {
     const io = fakeIo(1);
     await drive(io, PARAMS);
     const rightClick = io.log.findLastIndex((entry) => /^click:.*,right$/.test(entry));
-    const saves = ["mm1-after-right.png", "mm1-after-right-2.png", "mm1-after-right-3.png", "mm1-after-right-4.png"].map((name) => io.log.indexOf(`save:${name}`));
-    assert.ok(rightClick >= 0 && saves[0] > rightClick, `the first capture follows the right click: ${saves}`);
-    assert.ok(saves.every((index, at) => index > 0 && (at === 0 || index > saves[at - 1])), `four captures in order: ${saves}`);
+    const capture = io.log.indexOf("save:mm1-after-right.png");
     const wheel = io.log.indexOf("wheel:-20");
-    assert.ok(saves[3] < wheel, "all captures after the right click come before the zoom");
-    assert.equal(io.log.slice(saves[0], saves[3]).filter((entry) => entry === "wait:700").length, 3, "700 ms between the captures");
+    assert.ok(rightClick >= 0 && capture > rightClick, `the capture follows the right click: ${capture}`);
+    assert.equal(io.log[rightClick + 1], "wait:500", "the capture waits 500 ms after the click");
+    const between = io.log.slice(rightClick, wheel);
+    assert.equal(between.filter((entry) => entry.startsWith("save:") && entry.endsWith(".png")).length, 1, `one capture between the click and the zoom: ${between}`);
+    assert.ok(!io.log.some((entry) => /^save:mm1-after-right-\d/.test(entry)), "no later capture after the right click");
+    assert.ok(!between.includes("wait:700"), "no 700 ms wait between captures");
     const steps = JSON.parse(Buffer.from(io.saved["mm1-driver-steps.json"]).toString("utf8"));
-    assert.deepEqual(steps.after_right_later, ["mm1-after-right-2.png", "mm1-after-right-3.png", "mm1-after-right-4.png"]);
+    assert.equal(steps.after_right_later, undefined, "the steps file lists no later capture");
 });

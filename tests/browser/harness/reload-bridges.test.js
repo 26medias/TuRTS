@@ -63,32 +63,49 @@ test("reload waits for the page bridges before the first checkpointed screenshot
     assert.equal(checkpoints.snapshots().length, 1, "the first screenshot after the reload has its checkpoint");
 });
 
-test("reload does not hide a page that never gets its bridges: bounded, no throw, and the screenshot stays red", async () => {
+test("reload throws a text that names the fault when the page bridges stay absent for 20 s (the build that never throws)", async () => {
     const page = lateBridgePage(1e9);
     const { io, inputLog } = rig(page);
     // Short bound for the test: the harness bound is read from the call options of the fake page.
     page.waitForFunction = async (_fn, _arg, options) => { page.state.waits.push(options); throw new Error("timeout"); };
-    await io.reload();
+    await assert.rejects(io.reload(), /^Error: reload: page bridges absent after 20 s$/);
     assert.equal(inputLog.find((entry) => entry.call === "reload").bridges_ready_after_reload, false);
-    await assert.rejects(io.screenshot(), /missing scene checkpoint bridge/);
+    assert.equal(page.state.waits.length, 1, "one bounded wait");
     assert.equal(page.state.waits[0].timeout, 20000, "the wait is bounded at 20 s");
+    assert.equal(page.state.reloads, 1, "the page was reloaded once");
 });
 
-test("reload with no scene checkpoints, or with the load observation on, does not wait for bridges", async () => {
+test("a page that gets its bridges inside the bound does not throw, so the new text cannot hide a slow start", async () => {
+    const page = lateBridgePage(60);
+    const { io } = rig(page);
+    await io.reload();
+    assert.equal(page.state.ready, true);
+});
+
+test("reload with no scene checkpoints, or with the load observation on, does not wait for bridges (it never calls waitForFunction)", async () => {
     const plain = lateBridgePage(1);
-    plain.waitForFunction = async () => { throw new Error("must not be called"); };
+    let plainCalls = 0;
+    plain.waitForFunction = async () => { plainCalls += 1; throw new Error("must not be called"); };
     const documentEpochs = [1];
     const original = plain.reload;
     plain.reload = async () => { await original(); documentEpochs[0] = plain.state.epoch; };
     const { io } = createDriverIo([plain], { documentEpochs });
     await io.reload();
+    assert.equal(plainCalls, 0, "no scene checkpoints: no wait for bridges");
     const observed = lateBridgePage(1);
     const observedEpochs = [1];
     const originalObserved = observed.reload;
     observed.reload = async () => { await originalObserved(); observedEpochs[0] = observed.state.epoch; };
-    observed.waitForFunction = async () => { throw new Error("must not be called"); };
+    let observedCalls = 0;
+    observed.waitForFunction = async () => { observedCalls += 1; throw new Error("must not be called"); };
     const checkpoints = createSceneCheckpoints([observed], 4, observedEpochs);
     const withLoad = createDriverIo([observed], { documentEpochs: observedEpochs, afterScreenshot: checkpoints.record, observeReloadLoad: true });
     observed.evaluate = async () => ({ phase: "Joined", joined: true, rows: [] });
     await withLoad.io.reload();
+    assert.equal(observedCalls, 0, "load observation on: no wait for bridges");
+    // The control: with scene checkpoints and no load observation the wait is called, so the counter can count.
+    const waited = lateBridgePage(1);
+    const { io: waitingIo } = rig(waited);
+    await waitingIo.reload();
+    assert.equal(waited.state.waits.length, 1, "scene checkpoints on: exactly one wait for bridges");
 });
