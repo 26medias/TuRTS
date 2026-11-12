@@ -1024,7 +1024,11 @@ pub(crate) fn run_orders(world: &mut World) {
                             .any(|record| record.id == node && record.remaining == 0)
                     }),
                 _ => false,
-            };
+            }
+            // Design 5.3 with M2 design 5: a depleted node starts the delivery of the cargo
+            // that the gatherer holds, and the gather cycle never discards cargo. So the order
+            // fails only when the cycle holds no cargo to deliver.
+            && !crate::economy::gather::delivers_cargo(world, unit_id);
         if !completed_move && !depleted_gather {
             continue;
         }

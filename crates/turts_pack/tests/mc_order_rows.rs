@@ -1103,17 +1103,61 @@ fn actual_worker_gather_exhausts_the_isolated_small_node_and_records_node_deplet
         ),
     );
     assert_eq!(result.units.accepted, vec![worker]);
-    for _ in 0..160 {
-        app.update();
-        if turts_sim::node_view(app.world(), turts_sim::NodeId(1))
+    let ore = ContentId::parse("muster:ore").unwrap();
+    let cargo = |app: &App| -> u64 {
+        turts_sim::inventory_view(app.world(), turts_sim::SlotId(0), worker)
             .unwrap()
-            .remaining
-            == 0
+            .items
+            .iter()
+            .map(|item| item.on_hand)
+            .sum()
+    };
+    let credits = |app: &App| {
+        turts_sim::balance_view(app.world(), turts_sim::SlotId(0), &ore)
+            .unwrap()
+            .on_hand
+    };
+    let credits_at_start = credits(&app);
+    let mut emptied_at = None;
+    let mut failed_at = None;
+    for tick in 1..=400_u32 {
+        app.update();
+        if emptied_at.is_none()
+            && turts_sim::node_view(app.world(), turts_sim::NodeId(1))
+                .unwrap()
+                .remaining
+                == 0
         {
-            app.update(); // the next Orders phase observes depletion and records the owner-facing failure
+            emptied_at = Some(tick);
+            assert_eq!(
+                cargo(&app),
+                2,
+                "the worker holds the last load when the node empties"
+            );
+        }
+        let current = app
+            .world()
+            .entity(entity_for(&app, worker))
+            .get::<UnitOrders>()
+            .unwrap()
+            .current
+            .is_some();
+        if emptied_at.is_some() && !current {
+            failed_at = Some(tick);
             break;
         }
     }
+    let (emptied_at, failed_at) = (emptied_at.unwrap(), failed_at.unwrap());
+    assert!(
+        failed_at > emptied_at + 1,
+        "the worker delivers its last load before its order fails"
+    );
+    assert_eq!(cargo(&app), 0, "the failed worker holds no cargo");
+    assert_eq!(
+        credits(&app),
+        credits_at_start + 2,
+        "the depot converts the last load"
+    );
     let depleted = turts_sim::node_view(app.world(), turts_sim::NodeId(1)).unwrap();
     assert_eq!(
         depleted.remaining, 0,

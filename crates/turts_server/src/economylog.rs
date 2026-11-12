@@ -3467,7 +3467,8 @@ fn validate_automatic_order_operation(
                     .before
                     .nodes
                     .iter()
-                    .any(|entry| entry.id == node && entry.remaining == 0) =>
+                    .any(|entry| entry.id == node && entry.remaining == 0)
+                && !audited_gather_delivers_cargo(&operation.before, unit_id) =>
         {
             orders_after.current = None;
             orders_after.last_failure = Some(turts_sim::OrderFailure {
@@ -5537,6 +5538,27 @@ fn set_audited_gather_cycle(
     public.receiver = None;
     public.stage = raw.stage;
     Ok(())
+}
+
+/// The audited form of the depletion rule (design 5.3 with M2 design 5): a gather cycle that
+/// is active and holds unreserved cargo delivers it before its order fails with
+/// `node_depleted`.
+fn audited_gather_delivers_cargo(state: &AuditState, unit_id: u32) -> bool {
+    let active = state.raw_orders.iter().any(|entry| {
+        entry.unit == unit_id && entry.stage != turts_sim::economy::gather::GatherStage::Idle
+    });
+    let cargo = state
+        .economy
+        .inventories
+        .iter()
+        .find(|inventory| inventory.unit == unit_id)
+        .is_some_and(|inventory| {
+            inventory
+                .items
+                .iter()
+                .any(|item| item.on_hand > item.reserved)
+        });
+    active && cargo
 }
 
 fn clear_audited_gather_cycle(state: &mut AuditState, unit_id: u32) -> Result<(), String> {
@@ -8857,8 +8879,9 @@ mod tests {
         use std::collections::BTreeMap;
         use turts_mod_api::{
             ContentCatalog, ContentId, Footprint, MapDef, MapSize, NodePlacement, OrderDef,
-            Placement, ResolvedGatherer, ResolvedInventory, ResolvedNode, ResolvedUnit,
-            ResourceDef, ResourceKind, SourceDef, TargetKind, WorldPos,
+            Placement, ResolvedDropOff, ResolvedDropOffEffect, ResolvedDropOffRule,
+            ResolvedGatherer, ResolvedInventory, ResolvedNode, ResolvedUnit, ResourceDef,
+            ResourceKind, SourceDef, TargetKind, WorldPos,
         };
 
         let mut app = headless_app(20);
@@ -8867,7 +8890,7 @@ mod tests {
         let node = ContentId::new(&package, "deposit");
         let worker = ContentId::new(&package, "worker");
         let gather = ContentId::new(&package, "gather");
-        let catalog = ContentCatalog {
+        let mut catalog = ContentCatalog {
             resources: BTreeMap::from([(
                 item.clone(),
                 ResourceDef {
@@ -8939,16 +8962,58 @@ mod tests {
             order_queue_depths: BTreeMap::new(),
             source_files: BTreeMap::new(),
         };
+        // A Store receiver: the worker delivers its last load, then the order fails
+        // with node_depleted (MC design 5.3 with M2 design 5).
+        let depot = ContentId::new(&package, "depot");
+        catalog.units.insert(
+            depot.clone(),
+            ResolvedUnit {
+                id: depot.clone(),
+                name: "Depot".into(),
+                footprint: Footprint::Circle { radius: 0.5 },
+                movement: None,
+                inventory: Some(ResolvedInventory {
+                    capacity: 10,
+                    accepts: vec![item.clone()],
+                }),
+                gatherer: None,
+                drop_off: Some(ResolvedDropOff {
+                    rules: vec![ResolvedDropOffRule {
+                        item: item.clone(),
+                        effect: ResolvedDropOffEffect::Store,
+                    }],
+                }),
+                producer: None,
+                output_inventory: None,
+                extractor: None,
+                conveyor: None,
+                inserter: None,
+                machine: None,
+                research: None,
+                health: None,
+                weapon: None,
+                removal: None,
+            },
+        );
         let map = MapDef {
             id: "field".into(),
             size: MapSize { x: 20.0, y: 20.0 },
-            placements: vec![Placement {
-                unit: worker.to_string(),
-                owner_slot: 0,
-                pos: WorldPos { x: 2.0, y: 2.0 },
-                contents: vec![],
-                facing: None,
-            }],
+            placements: vec![
+                Placement {
+                    unit: worker.to_string(),
+                    owner_slot: 0,
+                    pos: WorldPos { x: 2.0, y: 2.0 },
+                    contents: vec![],
+                    facing: None,
+                },
+                Placement {
+                    unit: depot.to_string(),
+                    owner_slot: 0,
+                    pos: WorldPos { x: 2.0, y: 5.0 },
+                    contents: vec![],
+                    facing: None,
+                },
+            ],
             nodes: vec![NodePlacement {
                 node: node.to_string(),
                 pos: WorldPos { x: 3.1, y: 2.0 },

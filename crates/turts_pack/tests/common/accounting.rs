@@ -33,6 +33,31 @@ pub fn advance_accounted_tick(
     );
     let operations = trail(app).drain_operations();
     let mut cursor = 0usize;
+    // The Orders phase runs before Gather: first the modeled node_depleted failures.
+    for unit in oracle.predicted_depletion_failures() {
+        let op = operations
+            .get(cursor)
+            .unwrap_or_else(|| panic!("missing gather depletion for {unit} on tick {tick}"))
+            .clone();
+        cursor += 1;
+        assert_eq!(
+            (op.phase, op.unit_id),
+            (
+                turts_sim::economy::transaction::AuditPhase::Orders,
+                Some(unit)
+            ),
+            "tick {tick}: the modeled gather depletion is the next operation"
+        );
+        oracle
+            .observe(
+                &ExpectedOperation::GatherDepletion { tick, unit },
+                &op.before,
+                &op.after,
+                &op.events,
+                None,
+            )
+            .unwrap_or_else(|e| panic!("gather depletion {unit} tick {tick}: {e}"));
+    }
     let starting = oracle.modeled_state().clone();
     for order in &starting.raw_orders {
         let op = operations
@@ -219,6 +244,12 @@ pub enum ExpectedOperation {
     TickBoundary {
         tick: u32,
     },
+    /// The Orders-phase failure of a Gather order whose named node is empty, when the
+    /// gather cycle holds no cargo to deliver (MC design 5.3 with M2 design 5).
+    GatherDepletion {
+        tick: u32,
+        unit: u32,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -365,6 +396,13 @@ impl AccountingOracle {
         }
         if let ExpectedOperation::TickBoundary { tick } = expected {
             self.tick_boundary(*tick, before, after, events)?;
+            self.operations += 1;
+            self.last = after.clone();
+            return Ok(());
+        }
+        if let ExpectedOperation::GatherDepletion { tick, unit } = expected {
+            self.gather_depletion(*tick, *unit, before, after, events)?;
+            self.check_conservation(after)?;
             self.operations += 1;
             self.last = after.clone();
             return Ok(());
@@ -523,7 +561,7 @@ impl AccountingOracle {
                     _ => return Err("automatic phase and subject are incompatible".into()),
                 }
             }
-            ExpectedOperation::TickBoundary { .. } => {
+            ExpectedOperation::TickBoundary { .. } | ExpectedOperation::GatherDepletion { .. } => {
                 unreachable!("handled before operation continuity")
             }
         }
@@ -716,6 +754,131 @@ impl AccountingOracle {
 
     pub fn modeled_state(&self) -> &AuditState {
         &self.last
+    }
+
+    /// The units whose Gather order the next Orders phase must end with `node_depleted`, in
+    /// unit id order. The rule comes from MC design 5.3 and M2 design 5, not from the sim:
+    /// the named node is empty, and the gather cycle is idle or holds no unreserved cargo.
+    /// A cycle that holds cargo delivers it first, because M2 never discards cargo.
+    pub fn predicted_depletion_failures(&self) -> Vec<u32> {
+        let state = &self.last;
+        let mut units = state
+            .unit_orders
+            .iter()
+            .filter_map(|entry| {
+                let current = entry.orders.current.as_ref()?;
+                if current.behaviour != turts_mod_api::Behaviour::Gather {
+                    return None;
+                }
+                let turts_sim::OrderTargetSim::Node(node) = current.target else {
+                    return None;
+                };
+                let empty = state
+                    .nodes
+                    .iter()
+                    .any(|candidate| candidate.id == node && candidate.remaining == 0);
+                let active = state.raw_orders.iter().any(|order| {
+                    order.unit == entry.unit_id && order.stage != turts_sim::GatherStage::Idle
+                });
+                let cargo = state
+                    .economy
+                    .inventories
+                    .iter()
+                    .find(|inventory| inventory.unit == entry.unit_id)
+                    .is_some_and(|inventory| {
+                        inventory
+                            .items
+                            .iter()
+                            .any(|item| item.on_hand > item.reserved)
+                    });
+                (empty && !(active && cargo)).then_some(entry.unit_id)
+            })
+            .collect::<Vec<_>>();
+        units.sort_unstable();
+        units
+    }
+
+    /// Model one Orders-phase Gather failure. Orders runs after commands and before
+    /// Movement, so the clock advances here when no command did it in this tick.
+    fn gather_depletion(
+        &mut self,
+        tick: u32,
+        unit: u32,
+        before: &AuditState,
+        after: &AuditState,
+        events: &[EconomyEvent],
+    ) -> Result<(), String> {
+        if !events.is_empty() {
+            return Err("gather depletion emitted economy events".into());
+        }
+        if self.movement_checked_this_tick {
+            return Err("gather depletion follows the movement of its tick".into());
+        }
+        if !self.command_tick_advanced {
+            if self.last.economy.tick.checked_add(1) != Some(tick) {
+                return Err("gather depletion is not in the next modeled tick".into());
+            }
+            self.last.economy.tick = tick;
+            self.command_tick_advanced = true;
+        }
+        if self.last.economy.tick != tick || *before != self.last {
+            return Err(
+                "gather depletion before snapshot differs from the modeled pre-movement state"
+                    .into(),
+            );
+        }
+        if !self.predicted_depletion_failures().contains(&unit) {
+            return Err(format!(
+                "unit {unit} has no Gather order that the depletion rule ends"
+            ));
+        }
+        let mut expected = before.clone();
+        let entry = expected
+            .unit_orders
+            .iter_mut()
+            .find(|entry| entry.unit_id == unit)
+            .ok_or("depleted gather unit has no order record")?;
+        if !entry.orders.queue.is_empty() {
+            return Err("a queued order after a depleted gather is not modeled".into());
+        }
+        let current = entry
+            .orders
+            .current
+            .take()
+            .ok_or("depleted gather unit has no current order")?;
+        entry.orders.last_failure = Some(turts_sim::OrderFailure {
+            order: current.order,
+            reason: turts_sim::RejectReason::NodeDepleted,
+            tick,
+        });
+        let raw = expected
+            .raw_orders
+            .iter_mut()
+            .find(|order| order.unit == unit)
+            .ok_or("depleted gather unit has no gather cycle")?;
+        raw.node = None;
+        raw.deposit = None;
+        raw.receiver = None;
+        raw.stage = turts_sim::GatherStage::Idle;
+        raw.rate_carry = 0;
+        if let Some(view) = expected.economy.orders.iter_mut().find(|o| o.unit == unit) {
+            view.node = None;
+            view.receiver = None;
+            view.stage = turts_sim::GatherStage::Idle;
+        }
+        expected
+            .raw_units
+            .iter_mut()
+            .find(|raw_unit| raw_unit.unit_id == unit)
+            .ok_or("depleted gather unit is absent")?
+            .move_target = None;
+        project_raw_queues(&mut expected)?;
+        if expected != *after {
+            return Err(
+                "gather depletion state differs from the modeled node_depleted failure".into(),
+            );
+        }
+        Ok(())
     }
 
     fn command(

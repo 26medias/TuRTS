@@ -1171,6 +1171,16 @@ fn lowest_cargo(world: &World, unit: u32) -> Option<ContentId> {
         .next()
 }
 
+/// True when the gather cycle of `unit` is active and holds cargo to deliver. Then the cycle
+/// moves to a receiver and unloads before it stops (M2 design 5: never discard cargo).
+pub(crate) fn delivers_cargo(world: &World, unit: u32) -> bool {
+    world
+        .get_resource::<EconomyOrders>()
+        .and_then(|orders| orders.0.get(&unit))
+        .is_some_and(|order| order.stage != GatherStage::Idle)
+        && cargo_amount(world, unit) > 0
+}
+
 fn cargo_amount(world: &World, unit: u32) -> u64 {
     world
         .resource::<crate::EconomyLedger>()
