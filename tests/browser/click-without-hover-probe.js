@@ -82,14 +82,20 @@ async function run(url, wantGuide, mapPressFirst) {
         if (settled.debug.audio.sound_on !== false) throw new Error("the sound is not off at the start");
         const [sx, sy] = centre(sound, scale);
         if (mapPressFirst) {
-            // The map point: away from every widget, in the middle of the screen.
+            // The map point: away from every widget, in the middle of the screen. The browser can split
+            // the batch over two frames, and then Bevy is right by itself; so the batch is sent 12 times.
+            // With a repair that clicks a press-then-release at two places, one of them lands in one
+            // frame and turns the sound on (plant 7i of `sound-off.json`).
             const mx = 640, my = 400;
-            await page.mouse.move(2, 2);
-            await page.waitForTimeout(300);
-            await Promise.all([page.mouse.move(mx, my), page.mouse.down(), page.mouse.move(sx, sy), page.mouse.up()]);
-            await page.waitForTimeout(WAIT_MS);
-            const stayed = await record(page);
-            result.checks.push({ name: "press on the map, release over the sound switch, one frame", kind: sound.kind, expected: false, acted: stayed.audio?.sound_on === true, within_ms: WAIT_MS });
+            let acted = false;
+            for (let attempt = 0; attempt < 12 && !acted; attempt += 1) {
+                await page.mouse.move(2, 2);
+                await page.waitForTimeout(300);
+                await Promise.all([page.mouse.move(mx, my), page.mouse.down(), page.mouse.move(sx, sy), page.mouse.up()]);
+                await page.waitForTimeout(300);
+                acted = (await record(page)).audio?.sound_on === true;
+            }
+            result.checks.push({ name: "press on the map, release over the sound switch, one frame (12 tries)", kind: sound.kind, expected: false, acted, within_ms: WAIT_MS });
         }
         await quickClick(page, sx, sy);
         await page.waitForTimeout(WAIT_MS);
