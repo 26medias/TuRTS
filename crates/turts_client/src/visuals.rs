@@ -4,6 +4,11 @@
 //! are written only when geometry or presentation state changes. The meshes are shared across all
 //! units; owner colours come from the same palette material handles as the unit bodies.
 
+mod health;
+mod markers;
+mod materials;
+mod world_tooltip;
+
 use std::collections::{HashMap, HashSet, VecDeque};
 
 use bevy::ecs::system::SystemParam;
@@ -21,6 +26,17 @@ use bevy::{
     },
     window::PrimaryWindow,
 };
+pub use health::{HealthDisplay, HealthMode};
+use health::{sync_health_bars, update_health_fill_transform};
+use markers::{
+    marker_is_live, marker_kind, refresh_blocked_marks, reset_marker_session, retained_marker,
+};
+use materials::{
+    OrderMarkerGizmoConfigGroup, RingOverlayMaterial, VisualMaterial,
+    create_marker_overlay_material, create_neutral_ring_overlay_materials,
+    create_ring_overlay_materials, create_shared_meshes, neutral_ring_overlay_index,
+    order_marker_gizmo_config, parse_hex, unlit,
+};
 use turts_mod_api::ContentId;
 use turts_net_protocol::{Activity, OrderTarget, Pos, UnitOrderRecord};
 
@@ -33,6 +49,8 @@ use crate::{
     present::Presented,
     render::{SlotMaterials, world_to_scene},
 };
+pub(crate) use world_tooltip::WorldTooltip;
+use world_tooltip::update_world_tooltip;
 
 #[derive(Resource, Default)]
 struct VisualAssets {
@@ -53,132 +71,6 @@ struct VisualAssets {
     tooltip_size: u16,
     tooltip_font: Option<String>,
     health_bar_size: Vec2,
-}
-
-type RingOverlayMaterial = ExtendedMaterial<StandardMaterial, RingOverlayExtension>;
-
-#[derive(Clone, Default, Reflect, GizmoConfigGroup)]
-struct OrderMarkerGizmoConfigGroup;
-
-fn order_marker_gizmo_config() -> GizmoConfig {
-    GizmoConfig {
-        depth_bias: -1.0,
-        ..default()
-    }
-}
-
-/// Keeps footprint rings visible over larger unit silhouettes without changing their ground size.
-#[derive(Asset, AsBindGroup, TypePath, Clone, Debug)]
-struct RingOverlayExtension {}
-
-impl MaterialExtension for RingOverlayExtension {
-    fn alpha_mode() -> Option<AlphaMode> {
-        Some(AlphaMode::Blend)
-    }
-
-    fn enable_prepass() -> bool {
-        false
-    }
-
-    fn enable_shadows() -> bool {
-        false
-    }
-
-    fn specialize(
-        _pipeline: &MaterialExtensionPipeline,
-        descriptor: &mut RenderPipelineDescriptor,
-        _layout: &bevy::mesh::MeshVertexBufferLayoutRef,
-        _key: bevy::pbr::MaterialExtensionKey<Self>,
-    ) -> Result<(), bevy::render::render_resource::SpecializedMeshPipelineError> {
-        let depth = descriptor
-            .depth_stencil
-            .as_mut()
-            .expect("3D ring overlay pipeline has depth state");
-        configure_ring_overlay_depth(depth);
-        Ok(())
-    }
-}
-
-fn configure_ring_overlay_depth(depth: &mut DepthStencilState) {
-    depth.depth_compare = Some(CompareFunction::Always);
-    depth.depth_write_enabled = Some(false);
-}
-
-fn create_ring_overlay_materials(
-    palette: &[Handle<StandardMaterial>],
-    materials: &Assets<StandardMaterial>,
-    overlays: &mut Assets<RingOverlayMaterial>,
-) -> Option<Vec<Handle<RingOverlayMaterial>>> {
-    let bases = palette
-        .iter()
-        .map(|handle| materials.get(handle).cloned())
-        .collect::<Option<Vec<_>>>()?;
-    Some(
-        bases
-            .into_iter()
-            .map(|slot_material| {
-                overlays.add(ExtendedMaterial {
-                    base: StandardMaterial {
-                        alpha_mode: AlphaMode::Blend,
-                        ..slot_material
-                    },
-                    extension: RingOverlayExtension {},
-                })
-            })
-            .collect(),
-    )
-}
-
-fn create_neutral_ring_overlay_materials(
-    overlays: &mut Assets<RingOverlayMaterial>,
-) -> Vec<Handle<RingOverlayMaterial>> {
-    [Color::srgb(0.96, 0.96, 0.96), Color::BLACK]
-        .into_iter()
-        .map(|base_color| {
-            overlays.add(ExtendedMaterial {
-                base: StandardMaterial {
-                    base_color,
-                    alpha_mode: AlphaMode::Blend,
-                    unlit: true,
-                    ..default()
-                },
-                extension: RingOverlayExtension {},
-            })
-        })
-        .collect()
-}
-
-fn create_marker_overlay_material(
-    colour: Color,
-    overlays: &mut Assets<RingOverlayMaterial>,
-) -> Handle<RingOverlayMaterial> {
-    overlays.add(ExtendedMaterial {
-        base: StandardMaterial {
-            base_color: colour,
-            alpha_mode: AlphaMode::Blend,
-            unlit: true,
-            ..default()
-        },
-        extension: RingOverlayExtension {},
-    })
-}
-
-fn neutral_ring_overlay_index(slot_colour: Color) -> usize {
-    let colour = slot_colour.to_srgba();
-    let luminance = 0.2126 * colour.red + 0.7152 * colour.green + 0.0722 * colour.blue;
-    usize::from(luminance >= 0.82)
-}
-
-#[derive(Clone)]
-enum VisualMaterial {
-    Standard(Handle<StandardMaterial>),
-    RingOverlay(Handle<RingOverlayMaterial>),
-}
-
-impl From<Handle<StandardMaterial>> for VisualMaterial {
-    fn from(material: Handle<StandardMaterial>) -> Self {
-        Self::Standard(material)
-    }
 }
 
 #[derive(SystemParam)]
@@ -229,26 +121,6 @@ struct RingMetadata {
     radius: f32,
 }
 
-#[derive(Component)]
-pub(crate) struct WorldTooltip(pub(crate) u32);
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum HealthMode {
-    Selected,
-    DamagedOrSelected,
-    Always,
-}
-
-/// Player-facing health-bar visibility. Task16 settings can write this resource directly.
-#[derive(Resource, Debug, Clone, Copy)]
-pub struct HealthDisplay(pub HealthMode);
-
-impl Default for HealthDisplay {
-    fn default() -> Self {
-        Self(HealthMode::DamagedOrSelected)
-    }
-}
-
 #[derive(Debug, Clone)]
 struct RetainedMarker {
     id: u64,
@@ -272,158 +144,6 @@ struct VisualSession {
     match_id: u64,
     connection_epoch: u64,
     local_slot: u8,
-}
-
-fn retained_marker(
-    intent: OrderMarkerIntent,
-    replica: &crate::replica::Replica,
-    now: Instant,
-) -> Option<RetainedMarker> {
-    let position = match &intent.order.target {
-        OrderTarget::Point(Pos { x, y }) => Vec2::new(*x, *y),
-        OrderTarget::Unit(unit) => replica
-            .units
-            .get(&unit.0)?
-            .samples
-            .back()
-            .map(|(_, pos)| Vec2::new(pos.x, pos.y))?,
-        OrderTarget::Node(node) => {
-            let pos = replica.nodes.get(node)?.pos;
-            Vec2::new(pos.x, pos.y)
-        }
-        OrderTarget::None | OrderTarget::Job(_) | OrderTarget::Content(_) => return None,
-    };
-    Some(RetainedMarker {
-        id: intent.id,
-        position,
-        kind: intent.kind,
-        order: intent.order,
-        fragments: Vec::new(),
-        results: HashMap::new(),
-        seen_results: HashSet::new(),
-        started: now,
-    })
-}
-
-fn marker_is_live(
-    marker: &RetainedMarker,
-    replica: &crate::replica::Replica,
-    replica_tick: u32,
-    now: Instant,
-) -> bool {
-    marker_is_live_for_orders(marker, &replica.unit_orders, replica_tick, now)
-}
-
-fn marker_is_live_for_orders(
-    marker: &RetainedMarker,
-    unit_orders: &HashMap<u32, UnitOrderRecord>,
-    replica_tick: u32,
-    now: Instant,
-) -> bool {
-    if now.duration_since(marker.started).as_secs_f32() >= 60.0 {
-        return false;
-    }
-    if marker.fragments.is_empty()
-        || marker
-            .fragments
-            .iter()
-            .any(|fragment| !marker.results.contains_key(&fragment.seq))
-    {
-        return true;
-    }
-
-    let accepted: Vec<_> = marker
-        .fragments
-        .iter()
-        .flat_map(|fragment| {
-            marker.results[&fragment.seq]
-                .accepted
-                .iter()
-                .map(move |unit| (*unit, marker.results[&fragment.seq].tick))
-        })
-        .collect();
-    if accepted.is_empty() {
-        return false;
-    }
-    !accepted.into_iter().all(|(unit, result_tick)| {
-        replica_tick >= result_tick
-            && unit_orders
-                .get(&unit)
-                .is_some_and(|record| matches!(record.activity, Activity::Idle | Activity::Blocked))
-    })
-}
-
-fn refresh_blocked_marks(
-    blocked_now: HashSet<u32>,
-    blocked_active: &mut HashSet<u32>,
-    blocked_since: &mut HashMap<u32, Instant>,
-    now: Instant,
-) {
-    for unit in &blocked_now {
-        if !blocked_active.contains(unit) {
-            blocked_since.insert(*unit, now);
-        }
-    }
-    blocked_since.retain(|unit, start| {
-        blocked_now.contains(unit) || now.duration_since(*start).as_secs_f32() < 2.0
-    });
-    *blocked_active = blocked_now;
-}
-
-fn health_bar_visible(mode: HealthMode, selected: bool, current: u64, max: u64) -> bool {
-    match mode {
-        HealthMode::Selected => selected,
-        HealthMode::DamagedOrSelected => selected || current < max,
-        HealthMode::Always => true,
-    }
-}
-
-fn health_fraction(current: u64, max: u64) -> Option<f32> {
-    (max > 0).then(|| (current as f32 / max as f32).clamp(0.0, 1.0))
-}
-
-fn update_health_fill_transform(transform: &mut Mut<'_, Transform>, fraction: f32) -> bool {
-    // Read through `Deref` first; the first mutable field access below marks the Bevy component
-    // changed, so it must only happen after the geometry comparison succeeds.
-    if (transform.scale.x - fraction).abs() <= f32::EPSILON {
-        return false;
-    }
-    transform.scale.x = fraction;
-    transform.translation.x = -(1.0 - fraction) * 0.45;
-    true
-}
-
-fn reset_marker_session(
-    visuals: &mut VisualState,
-    marker_feed: &mut OrderMarkerFeed,
-    session: Option<VisualSession>,
-) -> bool {
-    if visuals.session != session {
-        visuals.markers.clear();
-        visuals.hover_unit = None;
-        visuals.hover_started = None;
-        visuals.blocked_since.clear();
-        visuals.blocked_active.clear();
-        if session.is_none() {
-            marker_feed.intents.clear();
-            marker_feed.sent.clear();
-        } else {
-            // CoreAdapter clears intents at the beginning of every frame, before
-            // any early return. Anything left here therefore belongs to the new
-            // session's current input frame, including a click before its ACK.
-            let current_ids: HashSet<_> =
-                marker_feed.intents.iter().map(|intent| intent.id).collect();
-            marker_feed
-                .sent
-                .retain(|fragment| current_ids.contains(&fragment.intent_id));
-        }
-        visuals.generation = visuals.generation.wrapping_add(1);
-        visuals.session = session;
-        visuals.active = false;
-        true
-    } else {
-        false
-    }
 }
 
 #[derive(Resource, Default)]
@@ -1122,74 +842,6 @@ struct HealthBarSync<'a> {
     generation: u64,
 }
 
-fn sync_health_bars(
-    input: HealthBarSync<'_>,
-    desired: &mut HashMap<VisualId, (Handle<Mesh>, VisualMaterial, Transform)>,
-    fractions: &mut HashMap<u32, f32>,
-) {
-    let HealthBarSync {
-        healths,
-        presented,
-        catalog,
-        selected,
-        mode,
-        assets,
-        camera,
-        camera_transform,
-        generation,
-    } = input;
-    let (Some(mesh), Some(background), Some(fill)) =
-        (&assets.bar, &assets.bar_background, &assets.bar_health)
-    else {
-        return;
-    };
-    for health in healths {
-        let Some(unit) = presented.get(&health.unit.0) else {
-            continue;
-        };
-        let Some(def) = ContentId::parse(&unit.content_id)
-            .ok()
-            .and_then(|id| catalog.units.get(&id))
-        else {
-            continue;
-        };
-        let Some(max) = def.health.map(|health| health.max).filter(|max| *max > 0) else {
-            continue;
-        };
-        let is_selected = selected.contains(&health.unit.0);
-        if !health_bar_visible(mode, is_selected, health.current, max) {
-            continue;
-        }
-        let position = world_to_scene(unit.pos) + Vec3::Y * 2.2;
-        let size =
-            world_units_for_pixels(camera, camera_transform, position, assets.health_bar_size);
-        let id = VisualId {
-            kind: VisualKind::HealthBackground,
-            unit: health.unit.0,
-            ordinal: 0,
-            generation,
-            identity: 0,
-        };
-        desired.insert(
-            id,
-            (
-                mesh.clone(),
-                background.clone().into(),
-                Transform {
-                    translation: position,
-                    scale: Vec3::new(size.x, size.y, 0.1),
-                    ..default()
-                },
-            ),
-        );
-        let Some(fraction) = health_fraction(health.current, max) else {
-            continue;
-        };
-        let _ = fill;
-        fractions.insert(health.unit.0, fraction);
-    }
-}
-
 fn reconcile_visual_entities(
     commands: &mut Commands,
     shown: &mut Query<
@@ -1276,207 +928,6 @@ fn spawn_visual(
             entity.id()
         }
     }
-}
-
-#[allow(clippy::too_many_arguments)]
-fn update_world_tooltip(
-    commands: &mut Commands,
-    hovered: Option<u32>,
-    started: Option<Instant>,
-    now: Instant,
-    camera: &Camera,
-    camera_transform: &GlobalTransform,
-    presented: &HashMap<u32, &crate::present::PresentedUnit>,
-    replica: &crate::replica::Replica,
-    catalog: &turts_mod_api::ContentCatalog,
-    assets: &VisualAssets,
-    widget_assets: Option<&crate::widgets::assets::WidgetAssets>,
-    labels: &mut Query<(Entity, &WorldTooltip, &mut Node, &mut Text, &mut TextFont)>,
-) {
-    let text = hovered
-        .filter(|_| started.is_some_and(|time| now.duration_since(time).as_secs_f32() >= 0.5))
-        .and_then(|id| {
-            let shown = presented.get(&id)?;
-            let unit = replica.units.get(&id)?;
-            let name = ContentId::parse(&shown.content_id)
-                .ok()
-                .and_then(|content| catalog.units.get(&content))
-                .map(|def| def.name.clone())?;
-            let point = camera
-                .world_to_viewport(camera_transform, world_to_scene(shown.pos) + Vec3::Y * 2.0)
-                .ok()?;
-            Some((id, tooltip_text(&name, unit.owner_slot), point))
-        });
-    let font = assets
-        .tooltip_font
-        .as_deref()
-        .and_then(|id| widget_assets.and_then(|assets| assets.font(id)))
-        .unwrap_or_default();
-    let mut matching_tooltip_exists = false;
-    for (entity, tooltip, mut node, mut label, mut font_style) in labels.iter_mut() {
-        if let Some((id, text, point)) = &text
-            && tooltip.0 == *id
-        {
-            matching_tooltip_exists = true;
-            *label = Text::new(text.clone());
-            node.left = px(point.x + 12.0);
-            node.top = px(point.y - 12.0);
-            if font_style.font != FontSource::Handle(font.clone()) {
-                font_style.font = FontSource::Handle(font.clone());
-            }
-            let size = f32::from(assets.tooltip_size);
-            if !matches!(font_style.font_size, FontSize::Px(current) if current == size) {
-                font_style.font_size = FontSize::Px(size);
-            }
-        } else {
-            commands.entity(entity).despawn();
-        }
-    }
-    if let Some((id, text, point)) = text
-        && !matching_tooltip_exists
-    {
-        commands.spawn((
-            WorldTooltip(id),
-            Text::new(text),
-            TextFont {
-                font_size: FontSize::Px(f32::from(assets.tooltip_size)),
-                font: FontSource::Handle(font),
-                ..default()
-            },
-            TextColor(assets.tooltip_colour),
-            BackgroundColor(assets.tooltip_background.with_alpha(0.92)),
-            Node {
-                position_type: PositionType::Absolute,
-                left: px(point.x + 12.0),
-                top: px(point.y - 12.0),
-                padding: UiRect::axes(px(6), px(3)),
-                ..default()
-            },
-            bevy::picking::Pickable::IGNORE,
-        ));
-    }
-}
-
-fn tooltip_text(name: &str, owner_slot: u8) -> String {
-    format!("{name} · Slot {}", owner_slot + 1)
-}
-
-fn marker_kind(kind: &str) -> &str {
-    match kind {
-        "attack" => "attack",
-        "gather" => "gather",
-        _ => "move",
-    }
-}
-
-fn unlit(color: Color) -> StandardMaterial {
-    StandardMaterial {
-        base_color: color,
-        unlit: true,
-        ..default()
-    }
-}
-
-fn parse_hex(value: &str) -> Color {
-    let raw = value.strip_prefix('#').unwrap_or(value);
-    if raw.len() != 6 {
-        return Color::WHITE;
-    }
-    let Ok(red) = u8::from_str_radix(&raw[0..2], 16) else {
-        return Color::WHITE;
-    };
-    let Ok(green) = u8::from_str_radix(&raw[2..4], 16) else {
-        return Color::WHITE;
-    };
-    let Ok(blue) = u8::from_str_radix(&raw[4..6], 16) else {
-        return Color::WHITE;
-    };
-    Color::srgb_u8(red, green, blue)
-}
-
-fn world_units_for_pixels(
-    camera: &Camera,
-    transform: &GlobalTransform,
-    point: Vec3,
-    size: Vec2,
-) -> Vec2 {
-    let Some(center) = camera.world_to_viewport(transform, point).ok() else {
-        return Vec2::new(0.9, 0.09);
-    };
-    let Some(x_step) = camera
-        .world_to_viewport(transform, point + Vec3::X * 0.5)
-        .ok()
-    else {
-        return Vec2::new(0.9, 0.09);
-    };
-    let Some(y_step) = camera
-        .world_to_viewport(transform, point + Vec3::Y * 0.5)
-        .ok()
-    else {
-        return Vec2::new(0.9, 0.09);
-    };
-    let px_per_x = center.distance(x_step) / 0.5;
-    let px_per_y = center.distance(y_step) / 0.5;
-    if px_per_x <= 0.0 || px_per_y <= 0.0 || !px_per_x.is_finite() || !px_per_y.is_finite() {
-        return Vec2::new(0.9, 0.09);
-    }
-    Vec2::new(size.x / px_per_x, size.y / px_per_y)
-}
-
-fn annulus_mesh(gaps: bool) -> Mesh {
-    let segments = 192_u32;
-    let mut positions = Vec::with_capacity((segments as usize + 1) * 2);
-    let mut normals = Vec::with_capacity((segments as usize + 1) * 2);
-    let mut uvs = Vec::with_capacity((segments as usize + 1) * 2);
-    let mut indices = Vec::new();
-    for index in 0..=segments {
-        let angle = index as f32 / segments as f32 * std::f32::consts::TAU;
-        let inner = 0.88;
-        let outer = 1.0;
-        for radius in [inner, outer] {
-            positions.push([radius * angle.cos(), 0.0, radius * angle.sin()]);
-            normals.push([0.0, 1.0, 0.0]);
-            uvs.push([index as f32 / segments as f32, radius]);
-        }
-    }
-    for index in 0..segments {
-        let angle = (index as f32 + 0.5) / segments as f32 * std::f32::consts::TAU;
-        let in_gap = gaps
-            && (0..4).any(|gap| {
-                let center = gap as f32 * std::f32::consts::FRAC_PI_2;
-                let delta = (angle - center + std::f32::consts::PI)
-                    .rem_euclid(std::f32::consts::TAU)
-                    - std::f32::consts::PI;
-                delta.abs() < 0.09
-            });
-        if in_gap {
-            continue;
-        }
-        let first_vertex = index * 2;
-        indices.extend_from_slice(&[
-            first_vertex,
-            first_vertex + 2,
-            first_vertex + 1,
-            first_vertex + 1,
-            first_vertex + 2,
-            first_vertex + 3,
-        ]);
-    }
-    let mut mesh = Mesh::new(
-        PrimitiveTopology::TriangleList,
-        RenderAssetUsages::default(),
-    );
-    mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions);
-    mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
-    mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, uvs);
-    mesh.insert_indices(Indices::U32(indices));
-    mesh
-}
-
-fn create_shared_meshes(assets: &mut VisualAssets, meshes: &mut Assets<Mesh>) {
-    assets.ring = Some(meshes.add(annulus_mesh(false)));
-    assets.foreign_ring = Some(meshes.add(annulus_mesh(true)));
-    assets.bar = Some(meshes.add(Cuboid::new(1.0, 1.0, 0.12)));
 }
 
 #[cfg(test)]

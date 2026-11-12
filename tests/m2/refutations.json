@@ -942,7 +942,7 @@
     "id": "E2-browser-hardcoded-label",
     "kind": "browser",
     "runtime": "browser",
-    "plant_path": "crates/turts_client/src/visuals.rs",
+    "plant_path": "crates/turts_client/src/visuals/world_tooltip.rs",
     "anchor": ".map(|def| def.name.clone())?;",
     "replacement": ".map(|_| shown.content_id.clone())?;",
     "command": [
@@ -965,7 +965,7 @@
         "tests/browser"
       ]
     ],
-    "plant_note": "MC task 21: economy_ui.rs is removed (task 12). The plain cedar HUD has no name widget, so the player sees the unit name in the world tooltip (crates/turts_client/src/visuals.rs update_world_tooltip); m2-oracle.js judgeSelection checks it."
+    "plant_note": "MC task 21: economy_ui.rs is removed (task 12). The plain cedar HUD has no name widget, so the player sees the unit name in the world tooltip (crates/turts_client/src/visuals/world_tooltip.rs update_world_tooltip); m2-oracle.js judgeSelection checks it."
   },
   {
     "id": "E9-browser-missing-button",
