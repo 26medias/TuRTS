@@ -335,7 +335,7 @@
     ],
     "env": {},
     "headed": false,
-    "expected_red": "the store differs from the store of a Snapshot of the truth",
+    "expected_red": "the store differs from the store of the continuous client",
     "exit": 101,
     "commit": "b1c22351d7031d0ed8e44f4d98cfd62e1e880873",
     "expected_selected": "a_late_join_and_a_lossy_client_end_with_the_store_of_a_continuous_client"
@@ -459,7 +459,7 @@
     ],
     "env": {},
     "headed": false,
-    "expected_red": "the store differs from the store of a Snapshot of the truth",
+    "expected_red": "the sites",
     "exit": 101,
     "commit": "b1c22351d7031d0ed8e44f4d98cfd62e1e880873",
     "expected_selected": "a_late_join_and_a_lossy_client_end_with_the_store_of_a_continuous_client"
@@ -618,5 +618,377 @@
     "exit": 101,
     "commit": "b1c22351d7031d0ed8e44f4d98cfd62e1e880873",
     "expected_selected": "a_record_that_names_a_gone_or_wrong_unit_is_refused"
+  },
+  {
+    "row": "STORE5",
+    "plant": "(a) the Snapshot keeps an empty construction record (review F1)",
+    "files": [
+      {
+        "file": "crates/turts_client/src/replica_store.rs",
+        "edit": {
+          "old": "            .into_iter()\n            .filter(|(_, orders)| !orders.is_empty())\n            .collect();\n",
+          "new": "            .into_iter()\n            .collect();\n"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "--locked",
+      "-p",
+      "turts_client",
+      "--test",
+      "mp1_store",
+      "a_snapshot_with_an_empty_construction_record_stores_no_entry",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "the Snapshot kept an empty construction record",
+    "exit": 101,
+    "commit": "c92e6c28fc55803b7a17e015cf69444ac5d0a752",
+    "expected_selected": "a_snapshot_with_an_empty_construction_record_stores_no_entry"
+  },
+  {
+    "row": "STORE5",
+    "plant": "(b) a replayed delta is staged against the live store, not the staged store (review F3)",
+    "files": [
+      {
+        "file": "crates/turts_client/src/replica.rs",
+        "edit": {
+          "old": "self.stage_delta(&candidate, &staged_store, &delta)",
+          "new": "self.stage_delta(&candidate, &self.store, &delta)"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "--locked",
+      "-p",
+      "turts_client",
+      "--test",
+      "mp1_store",
+      "a_replayed_delta_stages_against_the_store_of_its_snapshot",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "the replay is staged against the store of the Snapshot",
+    "exit": 101,
+    "commit": "c92e6c28fc55803b7a17e015cf69444ac5d0a752",
+    "expected_selected": "a_replayed_delta_stages_against_the_store_of_its_snapshot"
+  },
+  {
+    "row": "STORE5",
+    "plant": "(c) values are evaluated at the highest observed tick: client prediction (review F4)",
+    "files": [
+      {
+        "file": "crates/turts_client/src/replica.rs",
+        "edit": {
+          "old": "    fn applied_tick(&self) -> u32 {\n        self.last_applied_tick.unwrap_or(0)\n",
+          "new": "    fn applied_tick(&self) -> u32 {\n        self.highest_observed_tick.or(self.last_applied_tick).unwrap_or(0)\n"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "--locked",
+      "-p",
+      "turts_client",
+      "--test",
+      "mp1_store",
+      "values_are_not_evaluated_past_the_applied_tick",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "a value is evaluated past the last applied tick",
+    "exit": 101,
+    "commit": "c92e6c28fc55803b7a17e015cf69444ac5d0a752",
+    "expected_selected": "values_are_not_evaluated_past_the_applied_tick"
+  },
+  {
+    "row": "STORE5",
+    "plant": "(d) a stale retained delta writes the staged store (review F6)",
+    "files": [
+      {
+        "file": "crates/turts_client/src/replica.rs",
+        "edit": {
+          "old": "            if delta.tick <= candidate.tick {\n                continue;\n            }\n",
+          "new": "            if delta.tick <= candidate.tick {\n                if let Some((_, step)) = self.stage_delta(&candidate, &staged_store, &delta) {\n                    staged_store.apply(step);\n                }\n                continue;\n            }\n"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "--locked",
+      "-p",
+      "turts_client",
+      "--test",
+      "mp1_store",
+      "a_retained_delta_that_is_not_newer_than_the_snapshot_does_not_write_the_staged_store",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "a stale retained delta wrote the staged store",
+    "exit": 101,
+    "commit": "c92e6c28fc55803b7a17e015cf69444ac5d0a752",
+    "expected_selected": "a_retained_delta_that_is_not_newer_than_the_snapshot_does_not_write_the_staged_store"
+  },
+  {
+    "row": "STORE5",
+    "plant": "(e) the replay does not apply its steps to the staged store: the lossy client of the model test",
+    "files": [
+      {
+        "file": "crates/turts_client/src/replica.rs",
+        "edit": {
+          "old": "            staged_store.apply(step);\n",
+          "new": ""
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "--locked",
+      "-p",
+      "turts_client",
+      "--test",
+      "mp1_store",
+      "a_late_join_and_a_lossy_client_end_with_the_store_of_a_continuous_client",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "lossy: store tick",
+    "exit": 101,
+    "commit": "c92e6c28fc55803b7a17e015cf69444ac5d0a752",
+    "expected_selected": "a_late_join_and_a_lossy_client_end_with_the_store_of_a_continuous_client"
+  },
+  {
+    "row": "STORE5",
+    "plant": "(f) a helper that the Snapshot path and the delta path share loses a held order: the truth oracle sees it",
+    "files": [
+      {
+        "file": "crates/turts_client/src/replica_store.rs",
+        "edit": {
+          "old": "        rows.push((record.constructor.0, record.orders.clone()));",
+          "new": "        rows.push((record.constructor.0, record.orders.iter().take(1).cloned().collect()));"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "--locked",
+      "-p",
+      "turts_client",
+      "--test",
+      "mp1_store",
+      "a_late_join_and_a_lossy_client_end_with_the_store_of_a_continuous_client",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "the held orders of unit 2",
+    "exit": 101,
+    "commit": "c92e6c28fc55803b7a17e015cf69444ac5d0a752",
+    "expected_selected": "a_late_join_and_a_lossy_client_end_with_the_store_of_a_continuous_client"
+  },
+  {
+    "row": "STORE5",
+    "plant": "(g) the replay does not apply its steps to the staged store: the lossy client of the real sim",
+    "files": [
+      {
+        "file": "crates/turts_client/src/replica.rs",
+        "edit": {
+          "old": "            staged_store.apply(step);\n",
+          "new": ""
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "--locked",
+      "-p",
+      "turts_client",
+      "--test",
+      "job_progress_clients",
+      "base_producer_jobs_equal_the_sim_through_disable_enable_cancel",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "the store tick",
+    "exit": 101,
+    "commit": "c92e6c28fc55803b7a17e015cf69444ac5d0a752",
+    "expected_selected": "base_producer_jobs_equal_the_sim_through_disable_enable_cancel"
+  },
+  {
+    "row": "STORE5",
+    "plant": "(h) the match clock ignores the start tick",
+    "files": [
+      {
+        "file": "crates/turts_client/src/replica.rs",
+        "edit": {
+          "old": "        self.applied_tick().saturating_sub(self.start_tick)\n",
+          "new": "        self.applied_tick()\n"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "--locked",
+      "-p",
+      "turts_client",
+      "--test",
+      "mp1_store",
+      "the_match_clock_counts_from_the_start_tick_and_stops_at_the_end_tick",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "the match clock counts from the start tick",
+    "exit": 101,
+    "commit": "c92e6c28fc55803b7a17e015cf69444ac5d0a752",
+    "expected_selected": "the_match_clock_counts_from_the_start_tick_and_stops_at_the_end_tick"
+  },
+  {
+    "row": "STORE5",
+    "plant": "(i) Welcome does not give the replica the start tick",
+    "files": [
+      {
+        "file": "crates/turts_client/src/ingest.rs",
+        "edit": {
+          "old": "    replica.set_match_start(welcome.start.start_tick);\n",
+          "new": ""
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "--locked",
+      "-p",
+      "turts_client",
+      "--test",
+      "ingest",
+      "welcome_gives_the_replica_the_start_tick_of_the_match_clock",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "the match clock counts from the start tick of Welcome",
+    "exit": 101,
+    "commit": "c92e6c28fc55803b7a17e015cf69444ac5d0a752",
+    "expected_selected": "welcome_gives_the_replica_the_start_tick_of_the_match_clock"
+  },
+  {
+    "row": "STORE5",
+    "plant": "(j) a supply that equals the provided amount is short",
+    "files": [
+      {
+        "file": "crates/turts_client/src/replica.rs",
+        "edit": {
+          "old": "turts_rules::supply::is_short(record.provided, record.consumed)",
+          "new": "record.consumed >= record.provided"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "--locked",
+      "-p",
+      "turts_client",
+      "--test",
+      "mp1_store",
+      "supply_short_is_consumed_above_provided_and_has_one_getter",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "100 used of 100 made",
+    "exit": 101,
+    "commit": "c92e6c28fc55803b7a17e015cf69444ac5d0a752",
+    "expected_selected": "supply_short_is_consumed_above_provided_and_has_one_getter"
+  },
+  {
+    "row": "STORE5",
+    "plant": "(k) a site progress record for a non-site is accepted: a delta with a valid position and a store refusal",
+    "files": [
+      {
+        "file": "crates/turts_client/src/replica_store.rs",
+        "edit": {
+          "old": "        if !own_unit(context, units, removed, unit) || !is_site(unit) {",
+          "new": "        if !own_unit(context, units, removed, unit) {"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "--locked",
+      "-p",
+      "turts_client",
+      "--test",
+      "mp1_store",
+      "a_store_refusal_keeps_the_old_tick_and_asks_one_resync",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "a delta with a record that a store rule refuses asks for a resync",
+    "exit": 101,
+    "commit": "c92e6c28fc55803b7a17e015cf69444ac5d0a752",
+    "expected_selected": "a_store_refusal_keeps_the_old_tick_and_asks_one_resync"
+  },
+  {
+    "row": "STORE5",
+    "plant": "(l) a supply record of a non-Supply resource is accepted: a replayed delta that a store rule refuses",
+    "files": [
+      {
+        "file": "crates/turts_client/src/replica_store.rs",
+        "edit": {
+          "old": "            .is_some_and(|resource| matches!(resource.kind, ResourceKind::Supply { .. }))",
+          "new": "            .is_some()"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "--locked",
+      "-p",
+      "turts_client",
+      "--test",
+      "mp1_store",
+      "a_replayed_delta_refused_by_a_store_rule_changes_nothing",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "a replayed delta that a store rule refuses fails the resync",
+    "exit": 101,
+    "commit": "c92e6c28fc55803b7a17e015cf69444ac5d0a752",
+    "expected_selected": "a_replayed_delta_refused_by_a_store_rule_changes_nothing"
   }
 ]
