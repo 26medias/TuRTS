@@ -7,6 +7,7 @@ const { waitForSoundSwitch, turnSoundOn, turnSoundOff } = require("./harness/sou
 const SLOT_RGB = [[0, 114, 178], [230, 159, 0]];
 const COLOR_TOLERANCE = 48;
 const FOREIGN_COLOR_TOLERANCE = 64;
+const DIMMED_OWN_RGB = [0, 77, 121];
 const GROUND_RGB = [104, 148, 100];
 const GROUND_COLOR_TOLERANCE = 64;
 
@@ -26,8 +27,10 @@ async function drive(io, params) {
         : Buffer.from(await io.screenshot());
     await io.save("feedback-initial.png", initialPng);
     const image = decodePng(initialPng);
-    const own = selectBody(findBodies(image, SLOT_RGB[0]), image, "own slot");
-    const ground = findGround(image);
+    // AUD1 takes its first screenshot before any gesture, under the dimmed "Click to play" overlay:
+    // it takes its targets from a current screenshot after the first click (below).
+    let own = row === "AUD1" ? null : selectBody(findBodies(image, SLOT_RGB[0]), image, "own slot");
+    let ground = row === "AUD1" ? null : findGround(image);
 
     // The game makes no sound until the player turns it on (CEO decision, 2026-11-12). Rows that
     // judge a sound turn it on first, with one physical click on the visible switch. SND1 judges
@@ -51,11 +54,15 @@ async function drive(io, params) {
     }
 
     if (row === "AUD1") {
-        await io.click(ground.x, ground.y, "left");
+        // The first click is the player's gesture: it lands on the "Click to play" overlay.
+        await io.click(Math.round(image.width / 2), Math.round(image.height / 2), "left");
         await io.wait(200);
         await io.save("aud1-after-resume.png", await io.screenshot());
         await io.key("F1");
         await turnSoundOn(io, "aud1-sound");
+        const current = decodePng(Buffer.from(await io.screenshot()));
+        own = selectBody(findBodies(current, SLOT_RGB[0]), current, "own slot");
+        ground = findGround(current);
     }
     if (row === "ALR1") {
         const enemy = selectBody(findBodies(image, SLOT_RGB[1], FOREIGN_COLOR_TOLERANCE), image, "foreign slot");
@@ -204,7 +211,9 @@ async function waitForInitialOwnPixels(io) {
     while (Date.now() < deadline) {
         const screenshot = Buffer.from(await io.screenshot());
         const image = decodePng(screenshot);
-        if (findBodies(image, SLOT_RGB[0]).length > 0) return screenshot;
+        // Before the first gesture the "Click to play" overlay dims the scene: the own slot colour
+        // shows at about 0.68 of its value (measured: (26,110,166) becomes (15,75,115)).
+        if (findBodies(image, SLOT_RGB[0]).length > 0 || findBodies(image, DIMMED_OWN_RGB).length > 0) return screenshot;
         if (!savedPrepaint) {
             await io.save("aud1-prepaint.png", screenshot);
             savedPrepaint = true;
