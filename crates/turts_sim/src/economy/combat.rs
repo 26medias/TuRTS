@@ -639,10 +639,14 @@ mod tests {
             .find(|entity| entity.get::<UnitId>().is_some_and(|id| id.0 == 1))
             .unwrap()
             .id();
-        app.world_mut().entity_mut(entity).insert(UnitOrders {
-            current: Some(order),
-            ..Default::default()
-        });
+        crate::orders::writer::set_unit_orders(
+            app.world_mut(),
+            entity,
+            UnitOrders {
+                current: Some(order),
+                ..Default::default()
+            },
+        );
     }
 
     #[test]

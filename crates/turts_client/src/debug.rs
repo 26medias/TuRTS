@@ -681,6 +681,7 @@ mod unit_order_debug_tests {
                     current: None,
                     queued: Vec::new(),
                     last_failure: None,
+                    rally: None,
                 },
             ),
             (
@@ -691,6 +692,7 @@ mod unit_order_debug_tests {
                     current: None,
                     queued: Vec::new(),
                     last_failure: None,
+                    rally: None,
                 },
             ),
         ]);
@@ -716,6 +718,7 @@ mod unit_order_debug_tests {
                 current: None,
                 queued: Vec::new(),
                 last_failure: None,
+                rally: None,
             },
         );
         let state = ReplicaState {

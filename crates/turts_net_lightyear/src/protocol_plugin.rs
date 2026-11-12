@@ -41,5 +41,17 @@ impl Plugin for ProtocolPlugin {
             .add_direction(NetworkDirection::ServerToClient);
         app.register_message::<ResyncRequest>()
             .add_direction(NetworkDirection::ClientToServer);
+        // Protocol 5 (design 6.8): five messages after `ResyncRequest`, in one order for both
+        // ends. They all travel on the reliable channel. Never move one above `ResyncRequest`.
+        app.register_message::<LobbyState>()
+            .add_direction(NetworkDirection::ServerToClient);
+        app.register_message::<LobbyAction>()
+            .add_direction(NetworkDirection::ClientToServer);
+        app.register_message::<LobbyRefused>()
+            .add_direction(NetworkDirection::ServerToClient);
+        app.register_message::<MatchResult>()
+            .add_direction(NetworkDirection::ServerToClient);
+        app.register_message::<LeaveMatch>()
+            .add_direction(NetworkDirection::ClientToServer);
     }
 }

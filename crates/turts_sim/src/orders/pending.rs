@@ -19,6 +19,7 @@ use crate::orders::plain::{
     forget_plain_move_identity, record_plain_dispatch_selection, reservation_precedes_request,
     restore_plain_move_prior,
 };
+use crate::orders::writer::{edit_unit_orders, set_unit_orders};
 use crate::orders::{
     MovementEnvelopeRequest, Order, OrderFailure, OrderTargetSim, PendingMovementOrder, UnitOrders,
 };
@@ -358,9 +359,7 @@ pub(crate) fn prepare_legacy_move_to_waiters(
         #[cfg(test)]
         count_legacy_waiter_entity_lookup();
         if let Some(entity) = entity_by_unit.get(unit_id).copied() {
-            if let Some(mut orders) = world.entity_mut(entity).get_mut::<UnitOrders>() {
-                orders.queue.clear();
-            }
+            edit_unit_orders(world, entity, |orders| orders.queue.clear());
             let candidate = world
                 .get_resource_mut::<PlainMoveReservations>()
                 .and_then(|mut reservations| reservations.remove(unit_id));
@@ -392,11 +391,11 @@ pub(crate) fn reset_legacy_move_to_unit(
     let mut actor = world.entity_mut(entity);
     actor.remove::<crate::movement::MoveProgress>();
     actor.remove::<crate::movement::PlainMoveProgress>();
-    if actor
+    let has_orders = actor
         .get::<UnitOrders>()
-        .is_some_and(|orders| *orders != UnitOrders::default())
-    {
-        actor.insert(UnitOrders::default());
+        .is_some_and(|orders| *orders != UnitOrders::default());
+    if has_orders {
+        set_unit_orders(world, entity, UnitOrders::default());
     }
     clear_gather(world, unit_id);
 }
@@ -689,8 +688,7 @@ pub(super) fn queue_unallocated_move_orders(world: &mut World) {
                             .entity_mut(entity)
                             .remove::<crate::movement::PlainMoveProgress>();
                         forget_plain_move_identity(world, unit_id);
-                        let mut entity_mut = world.entity_mut(entity);
-                        if let Some(mut orders) = entity_mut.get_mut::<UnitOrders>() {
+                        edit_unit_orders(world, entity, |orders| {
                             if let Some(order) = failure_order {
                                 orders.last_failure = Some(OrderFailure {
                                     order: order.order,
@@ -699,7 +697,7 @@ pub(super) fn queue_unallocated_move_orders(world: &mut World) {
                                 });
                             }
                             orders.current = None;
-                        }
+                        });
                         clear_gather(world, unit_id);
                         start_next_queued_order(world, SlotId(slot), entity, unit_id);
                     },
@@ -968,17 +966,19 @@ pub(super) fn dispatch_pending_movement(world: &mut World) {
                         actor.remove::<MoveTarget>();
                         actor.remove::<MoveProgress>();
                         actor.remove::<crate::movement::PlainMoveProgress>();
-                        if failure_order.is_some() && actor.get::<UnitOrders>().is_none() {
-                            actor.insert(UnitOrders::default());
+                        let needs_orders =
+                            failure_order.is_some() && actor.get::<UnitOrders>().is_none();
+                        if needs_orders {
+                            set_unit_orders(world, entity, UnitOrders::default());
                         }
-                        if let (Some(order), Some(mut orders)) =
-                            (failure_order.clone(), actor.get_mut::<UnitOrders>())
-                        {
-                            orders.current = None;
-                            orders.last_failure = Some(OrderFailure {
-                                order: order.order,
-                                reason: crate::command::RejectReason::TargetGone,
-                                tick,
+                        if let Some(order) = failure_order.clone() {
+                            edit_unit_orders(world, entity, |orders| {
+                                orders.current = None;
+                                orders.last_failure = Some(OrderFailure {
+                                    order: order.order,
+                                    reason: crate::command::RejectReason::TargetGone,
+                                    tick,
+                                });
                             });
                         }
                         forget_plain_move_identity(world, unit_id);
@@ -1145,22 +1145,22 @@ pub(super) fn dispatch_pending_movement(world: &mut World) {
                                 entity_mut.remove::<MoveTarget>();
                                 entity_mut.remove::<MoveProgress>();
                                 entity_mut.remove::<crate::movement::PlainMoveProgress>();
-                                if idless_legacy
-                                    && let Some(mut orders) = entity_mut.get_mut::<UnitOrders>()
-                                {
+                            }
+                            if idless_legacy {
+                                edit_unit_orders(world, entity, |orders| {
                                     orders.current = None;
                                     orders.last_failure = None;
-                                }
-                                if let (Some(order), Some(mut orders)) =
-                                    (failure_order.clone(), entity_mut.get_mut::<UnitOrders>())
-                                {
+                                });
+                            }
+                            if let Some(order) = failure_order.clone() {
+                                edit_unit_orders(world, entity, |orders| {
                                     orders.current = None;
                                     orders.last_failure = Some(OrderFailure {
                                         order: order.order,
                                         reason: crate::command::RejectReason::Blocked,
                                         tick,
                                     });
-                                }
+                                });
                             }
                             if failure_order.is_some() {
                                 clear_gather(world, member.id);
@@ -1276,20 +1276,20 @@ pub(super) fn dispatch_pending_movement(world: &mut World) {
                                 claim_count: 0,
                                 follow_origin,
                             });
-                            if let Some(order) = order
-                                && let Some(mut orders) = entity_mut.get_mut::<UnitOrders>()
-                            {
+                        }
+                        let has_orders = world.entity(entity).get::<UnitOrders>().is_some();
+                        if has_orders && let Some(order) = order {
+                            edit_unit_orders(world, entity, |orders| {
                                 orders.last_failure = None;
                                 orders.current = Some(order);
-                            } else if request.plain
-                                && request.member_orders.is_empty()
-                                && let Some(mut orders) = entity_mut.get_mut::<UnitOrders>()
-                            {
-                                // A legacy MoveTo Replace keeps only Appends accepted while
-                                // this envelope waited, not the replaced current order.
+                            });
+                        } else if has_orders && request.plain && request.member_orders.is_empty() {
+                            // A legacy MoveTo Replace keeps only Appends accepted while
+                            // this envelope waited, not the replaced current order.
+                            edit_unit_orders(world, entity, |orders| {
                                 orders.last_failure = None;
                                 orders.current = None;
-                            }
+                            });
                         }
                         if replace_order || (request.plain && request.member_orders.is_empty()) {
                             forget_plain_move_identity(world, member.id);

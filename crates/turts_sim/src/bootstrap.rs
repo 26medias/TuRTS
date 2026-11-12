@@ -459,7 +459,7 @@ pub fn install_package(world: &mut World, staged: StagedPackage) {
             Position(position),
         ));
         if order_capable {
-            entity.insert(crate::orders::UnitOrders::default());
+            crate::orders::writer::insert_default_unit_orders(&mut entity);
         }
         if let Some(facing) = staged.m3.facings.get(&id).copied() {
             entity.insert(UnitFacing(facing));
@@ -469,7 +469,7 @@ pub fn install_package(world: &mut World, staged: StagedPackage) {
         let order_capable = crate::orders::unit_order_capable(world, kind.0);
         let mut entity = world.spawn((UnitId(id), kind, Owner(SlotId(owner)), Position(position)));
         if order_capable {
-            entity.insert(crate::orders::UnitOrders::default());
+            crate::orders::writer::insert_default_unit_orders(&mut entity);
         }
         if let Some(facing) = staged.m3.facings.get(&id).copied() {
             entity.insert(UnitFacing(facing));

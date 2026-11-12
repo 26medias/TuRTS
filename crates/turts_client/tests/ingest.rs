@@ -84,6 +84,7 @@ fn welcome(tick: u32) -> Incoming {
         tick,
         tick_hz: 20,
         match_id: 0,
+        start: Default::default(),
     })
 }
 
@@ -114,6 +115,7 @@ fn snapshot_at(tick: u32, x: f32, y: f32) -> Incoming {
         healths: vec![],
         research: vec![],
         unit_orders: Vec::new(),
+        ..Default::default()
     })
 }
 
@@ -147,6 +149,7 @@ fn delta_at(tick: u32, base_tick: u32, x: f32, y: f32) -> Incoming {
         healths: vec![],
         research: vec![],
         unit_orders: Vec::new(),
+        ..Default::default()
     })
 }
 
@@ -177,6 +180,7 @@ fn empty_delta(tick: u32, base_tick: u32) -> Incoming {
         healths: vec![],
         research: vec![],
         unit_orders: Vec::new(),
+        ..Default::default()
     })
 }
 
@@ -527,6 +531,7 @@ fn world_with_one_unit() -> World {
         healths: vec![],
         research: vec![],
         unit_orders: Vec::new(),
+        ..Default::default()
     }));
     world.insert_resource(rig.state);
     world.insert_resource(Phase::Joined { slot: 0 });

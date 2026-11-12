@@ -1,10 +1,28 @@
-//! Pure projection of immutable simulation views into protocol 3 public state.
+//! Pure projection of immutable simulation views into protocol 5 public state.
 //!
-//! Private economy records are filtered by owner before any wire values are built.
+//! Private economy records are filtered by owner before any wire values are built. The
+//! visibility filter is in one place: [`unit_exists`] and the owner filters below (design 6.8).
+//! In MP1 every existing unit is visible to every viewer.
+//!
+//! Removal rule (design 6.8): a record in a delta never names a unit that the same delta
+//! removes. `unit_orders` records and `orders_cleared` skip a removed unit; the weapon record
+//! drops a `last_target` that does not exist and is resent when its target leaves
+//! ([`weapon_records`]); the site, job and queue writers skip a removed owner.
 
 use turts_mod_api::Cost;
 use turts_net_protocol::messages as wire;
 use turts_net_protocol::messages;
+#[path = "export_effects.rs"]
+mod export_effects;
+#[path = "export_jobs.rs"]
+mod export_jobs;
+#[path = "export_match.rs"]
+mod export_match;
+#[path = "export_sites.rs"]
+mod export_sites;
+#[path = "export_supply.rs"]
+mod export_supply;
+
 use turts_sim::{
     CommittedTick, SlotId, WorldView,
     economy::{
@@ -89,7 +107,7 @@ pub fn snapshot_for(view: &WorldView, slot: SlotId) -> wire::Snapshot {
             .raw_weapons
             .iter()
             .filter(|record| owner_of(view, record.unit) == Some(slot.0))
-            .map(weapon_state)
+            .map(|record| weapon_state(record, view.tick, view))
             .collect(),
         healths: view.m3.raw_healths.iter().map(health_state).collect(),
         research: research_records(&view.m3.research, Some(slot)),
@@ -99,6 +117,9 @@ pub fn snapshot_for(view: &WorldView, slot: SlotId) -> wire::Snapshot {
             .filter(|record| record.owner_slot == slot.0)
             .map(unit_order_state)
             .collect(),
+        // The site, job, queue, supply and match rows have no source in the view yet: their
+        // writers (`L-CON1`, `L-PAY`, `L-PWR`, `L-MATCH-SIM`) add it.
+        records: wire::SnapshotRecords::default(),
     }
 }
 
@@ -171,12 +192,7 @@ pub fn delta_for(batch: &CommittedTick, view: &WorldView, slot: SlotId) -> wire:
             .filter(|record| owner_of(view, record.unit) == Some(slot.0))
             .map(extractor_state)
             .collect(),
-        weapons: batch
-            .weapons
-            .iter()
-            .filter(|record| owner_of(view, record.unit) == Some(slot.0))
-            .map(weapon_state)
-            .collect(),
+        weapons: weapon_records(batch, view, slot),
         healths: batch.healths.iter().map(health_state).collect(),
         research: research_records(&view.m3.research, Some(slot))
             .into_iter()
@@ -187,12 +203,28 @@ pub fn delta_for(batch: &CommittedTick, view: &WorldView, slot: SlotId) -> wire:
                     .any(|changed| changed.slot == record.slot.0)
             })
             .collect(),
-        unit_orders: view
+        // Only the units whose record changed (design 6.8); the Snapshot keeps the full table.
+        unit_orders: batch
             .unit_orders
             .iter()
             .filter(|record| record.owner_slot == slot.0)
             .map(unit_order_state)
             .collect(),
+        records: wire::DeltaRecords {
+            sites_completed: export_sites::sites_completed(batch),
+            sites: export_sites::site_progress(batch, slot),
+            jobs: export_jobs::job_progress(batch, slot),
+            construction_queues: export_sites::construction_queues(batch, slot),
+            supply: export_supply::supply(batch, slot),
+            orders_cleared: batch
+                .orders_cleared
+                .iter()
+                .filter(|(_, owner)| *owner == slot.0)
+                .map(|(unit, _)| messages::UnitId(*unit))
+                .collect(),
+            effects: export_effects::effects(batch, slot),
+            match_state: export_match::match_state(batch),
+        },
     }
 }
 
@@ -210,6 +242,8 @@ fn unit_snapshot(unit: &UnitState) -> messages::UnitSnapshot {
             x: unit.pos.x,
             y: unit.pos.y,
         },
+        // A site is a unit with a site flag; `L-CON1` writes it. No unit is a site in lane 0.
+        site: false,
     }
 }
 
@@ -297,11 +331,23 @@ fn job_state(job: &JobView) -> wire::JobState {
     }
 }
 
-fn owner_of(view: &WorldView, unit: u32) -> Option<u8> {
+/// The row of `unit`. `view.units` is sorted by unit id (`turts_sim::world::snapshot`), so this
+/// is a binary search, not a scan for each record and slot.
+fn unit_row(view: &WorldView, unit: u32) -> Option<&UnitState> {
     view.units
-        .iter()
-        .find(|row| row.unit_id == unit)
-        .map(|row| row.owner_slot)
+        .binary_search_by_key(&unit, |row| row.unit_id)
+        .ok()
+        .map(|index| &view.units[index])
+}
+
+fn owner_of(view: &WorldView, unit: u32) -> Option<u8> {
+    unit_row(view, unit).map(|row| row.owner_slot)
+}
+
+/// True when the unit exists in the view. This is the per-viewer visible set of design 6.8: in
+/// MP1 it holds every unit. A record never names a unit for which this is false.
+pub(crate) fn unit_exists(view: &WorldView, unit: u32) -> bool {
+    unit_row(view, unit).is_some()
 }
 
 fn is_enabled(view: &WorldView, unit: u32) -> bool {
@@ -420,12 +466,50 @@ fn extractor_state(row: &RawExtractorAudit) -> wire::ExtractorRecord {
     }
 }
 
-fn weapon_state(row: &RawWeaponAudit) -> wire::WeaponRecord {
+/// The weapon records of one delta (design 6.8, "Records with a start tick and a rate").
+///
+/// `batch.weapons` holds a row only when something other than the cooldown countdown changed
+/// (`views_m3::changed_weapons`), so an idle or cooling weapon costs no bytes. Removal rule: a
+/// record never names a unit that the same delta removes. A weapon whose `last_target` leaves in
+/// this tick may have no change row (an ordered attack keeps `last_target` inside the sim), so
+/// the owner's weapons that name a removed unit are resent, and `weapon_state` writes `None`
+/// for a target that does not exist.
+fn weapon_records(
+    batch: &CommittedTick,
+    view: &WorldView,
+    slot: SlotId,
+) -> Vec<wire::WeaponRecord> {
+    let mut rows: std::collections::BTreeMap<u32, &RawWeaponAudit> = batch
+        .weapons
+        .iter()
+        .filter(|row| owner_of(view, row.unit) == Some(slot.0))
+        .map(|row| (row.unit, row))
+        .collect();
+    if !batch.removed.is_empty() {
+        for row in &view.m3.raw_weapons {
+            if row
+                .last_target
+                .is_some_and(|target| batch.removed.binary_search(&target).is_ok())
+                && owner_of(view, row.unit) == Some(slot.0)
+            {
+                rows.entry(row.unit).or_insert(row);
+            }
+        }
+    }
+    rows.into_values()
+        .map(|row| weapon_state(row, batch.tick, view))
+        .collect()
+}
+
+/// One weapon record at `tick`. `ready_tick` is the tick at which the weapon can fire again; it
+/// changes only when the weapon fires, so it is not sent in each tick. A `last_target` that is
+/// not in the view is sent as `None`.
+fn weapon_state(row: &RawWeaponAudit, tick: u32, view: &WorldView) -> wire::WeaponRecord {
     use turts_sim::economy::views_m3::RawWeaponStatusAudit as S;
     wire::WeaponRecord {
         unit: messages::UnitId(row.unit),
         enabled: row.enabled,
-        cooldown: row.cooldown,
+        ready_tick: tick.saturating_add(row.cooldown),
         damage: row.effective_damage.map_err(command_reject_reason),
         status: match row.status {
             S::Ready => wire::WeaponStatus::Ready,
@@ -433,7 +517,10 @@ fn weapon_state(row: &RawWeaponAudit) -> wire::WeaponRecord {
             S::NoTarget => wire::WeaponStatus::NoTarget,
             S::OutOfAmmo => wire::WeaponStatus::OutOfAmmo,
         },
-        last_target: row.last_target.map(messages::UnitId),
+        last_target: row
+            .last_target
+            .filter(|target| unit_exists(view, *target))
+            .map(messages::UnitId),
     }
 }
 
@@ -523,6 +610,7 @@ fn unit_order_state(record: &turts_sim::economy::views::UnitOrderView) -> wire::
                 reason: command_reject_reason(failure.reason),
                 tick: failure.tick,
             }),
+        rally: None,
     }
 }
 
@@ -556,7 +644,7 @@ fn research_records(
         .collect()
 }
 
-fn cost(line: &CostView) -> Cost {
+pub(crate) fn cost(line: &CostView) -> Cost {
     Cost {
         source: line.source,
         resource: line.resource.to_string(),

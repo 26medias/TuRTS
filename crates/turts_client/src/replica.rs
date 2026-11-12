@@ -10,8 +10,8 @@ use bevy::platform::time::Instant;
 use turts_mod_api::{ContentId, CostSource, ResourceKind};
 use turts_net_protocol::{
     BeltPieceRecord, EconomyChanges, EconomyState, ExtractorRecord, HealthRecord, InserterRecord,
-    InventoryPort, JobId, NodeId, NodeState, Pos, ResearchRecord, Snapshot, UnitOrderRecord,
-    UnitSnapshot, WeaponRecord, WorldDelta,
+    InventoryPort, JobId, NodeId, NodeState, Pos, ResearchRecord, Snapshot, UnitId,
+    UnitOrderRecord, UnitSnapshot, WeaponRecord, WorldDelta,
 };
 
 use crate::{content::ClientContent, interp};
@@ -527,9 +527,17 @@ impl Replica {
         {
             return None;
         }
-        // WorldDelta carries the current complete owner order table, including explicit idle
-        // records, so replacement also clears records omitted by a later delta.
-        next.unit_orders = stage_unit_orders(context, &delta.unit_orders, &next.units)?;
+        // A delta carries the complete record of each unit whose record changed, and
+        // `orders_cleared` for each unit whose record left the view (design 6.8). The table is
+        // merged in chain order; only a `Snapshot` replaces it (`stage_snapshot`).
+        next.unit_orders = merge_unit_orders(
+            context,
+            std::mem::take(&mut next.unit_orders),
+            &delta.unit_orders,
+            &delta.records.orders_cleared,
+            &next.units,
+            &removed,
+        )?;
         for id in &removed {
             next.units.remove(id);
             next.economy
@@ -699,6 +707,37 @@ fn stage_unit_orders(
         staged.insert(record.unit.0, record.clone());
     }
     Some(staged)
+}
+
+/// Merge the order records of one delta into the table, in chain order. `None` rejects the
+/// delta: a record that is not valid (`stage_unit_orders`), a unit in both lists, or a cleared
+/// unit that is unknown, not owned or removed by the same delta (the server never names a
+/// removed unit in `orders_cleared`).
+fn merge_unit_orders(
+    context: &ReplicaContext,
+    mut table: HashMap<u32, UnitOrderRecord>,
+    records: &[UnitOrderRecord],
+    cleared: &[UnitId],
+    units: &HashMap<u32, UnitReplica>,
+    removed: &HashSet<u32>,
+) -> Option<HashMap<u32, UnitOrderRecord>> {
+    let changed = stage_unit_orders(context, records, units)?;
+    let mut seen_cleared = HashSet::new();
+    for unit in cleared {
+        let known = units
+            .get(&unit.0)
+            .is_some_and(|replica| replica.owner_slot == context.slot);
+        if !known
+            || removed.contains(&unit.0)
+            || changed.contains_key(&unit.0)
+            || !seen_cleared.insert(unit.0)
+        {
+            return None;
+        }
+        table.remove(&unit.0);
+    }
+    table.extend(changed);
+    Some(table)
 }
 
 fn valid_node(context: &ReplicaContext, node: &NodeState) -> bool {

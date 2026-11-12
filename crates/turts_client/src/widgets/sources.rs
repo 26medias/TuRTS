@@ -300,7 +300,15 @@ fn primary_value(field: PrimaryField, context: SourceContext<'_>) -> serde_json:
             .iter()
             .find(|weapon| weapon.unit.0 == *id)
             .map_or(serde_json::Value::Null, |weapon| {
-                serde_json::json!(weapon.cooldown as f64 / context.replica.tick_hz.max(1) as f64)
+                serde_json::json!(
+                    // `ready_tick` is a tick: the ticks left are counted at the tick of the
+                    // last applied delta, never later (design 6.8, no prediction).
+                    turts_rules::progress::cooldown_left(
+                        weapon.ready_tick,
+                        context.replica.last_applied_tick.unwrap_or(0),
+                    ) as f64
+                        / context.replica.tick_hz.max(1) as f64
+                )
             }),
         PrimaryField::Cooldown => serde_json::Value::Null,
         // API 0.2.4 (row H8): `UI2-HUD` reads these (stubs: null until it builds them).

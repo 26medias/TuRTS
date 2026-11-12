@@ -171,6 +171,7 @@ fn two_slots_receive_only_own_economy_snapshot_and_delta_and_every_field_roundtr
                 owner_slot: turts_net_protocol::messages::SlotId(0),
                 pos: Pos { x: 3., y: 4. },
                 facing: None,
+                site: false,
             },
             UnitSnapshot {
                 unit_id: UnitId(2),
@@ -178,6 +179,7 @@ fn two_slots_receive_only_own_economy_snapshot_and_delta_and_every_field_roundtr
                 owner_slot: turts_net_protocol::messages::SlotId(1),
                 pos: Pos { x: 900., y: 901. },
                 facing: None,
+                site: false,
             }
         ]
     );
@@ -410,6 +412,7 @@ fn delta_filters_before_projection_keeps_public_lifecycle_and_empty_replacements
         research: vec![],
         enabled: vec![],
         events: vec![],
+        ..Default::default()
     };
     let before = batch.clone();
     let d = export::delta_for(&batch, &fixture(), SlotId(0));

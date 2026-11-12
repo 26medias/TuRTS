@@ -1833,6 +1833,7 @@ fn owner_unit_orders_from_audit(
                         reason: reject_reason(failure.reason),
                         tick: failure.tick,
                     }),
+                rally: None,
             })
         })
         .collect()
@@ -1990,6 +1991,7 @@ fn owner_snapshot_from_audit(
         healths: vec![],
         research: vec![],
         unit_orders: owner_unit_orders_from_audit(state, slot),
+        ..Default::default()
     }
 }
 

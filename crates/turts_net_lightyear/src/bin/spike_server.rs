@@ -165,6 +165,7 @@ fn receive_hello(
                         tick: tick.0,
                         tick_hz: 20,
                         match_id: 0,
+                        start: Default::default(),
                     });
                 }
                 commands.entity(entity).insert(Welcomed);
@@ -295,6 +296,7 @@ fn send_deltas(
         healths: vec![],
         research: vec![],
         unit_orders: Vec::new(),
+        ..Default::default()
     };
     let payload = postcard_len(&deltas) as u64;
     for mut sender in senders.iter_mut() {
@@ -381,6 +383,7 @@ mod payload_tests {
                 }],
             },
             unit_orders: Vec::new(),
+            ..Default::default()
         };
         let mut buffer = [0; 4096];
         let encoded = postcard::to_slice(&delta, &mut buffer).unwrap();

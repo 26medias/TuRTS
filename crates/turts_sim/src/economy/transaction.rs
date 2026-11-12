@@ -699,7 +699,7 @@ impl Transaction<'_> {
                 crate::world::Position(spawn.position),
             ));
             if order_capable {
-                entity.insert(crate::orders::UnitOrders::default());
+                crate::orders::writer::insert_default_unit_orders(&mut entity);
             }
             if let Some(inventory) = spawn.inventory {
                 world

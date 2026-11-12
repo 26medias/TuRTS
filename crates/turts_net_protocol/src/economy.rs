@@ -134,7 +134,7 @@ impl GatherWaitReason {
 }
 
 /// The complete player-visible economy state in a snapshot.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct EconomyState {
     pub balances: Vec<BalanceState>,
     pub inventories: Vec<InventoryState>,
@@ -143,7 +143,7 @@ pub struct EconomyState {
 }
 
 /// Absolute replacements for economy records changed in a world delta.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct EconomyChanges {
     pub balances: Vec<BalanceState>,
     pub inventories: Vec<InventoryState>,

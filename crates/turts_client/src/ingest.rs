@@ -71,6 +71,9 @@ pub struct WelcomeInfo {
 pub struct ReplicaState {
     pub replica: Option<Replica>,
     pub welcome: Option<WelcomeInfo>,
+    /// The `MatchStart` of the `Welcome` (design 6.7.13): the start tick, the team and the colour
+    /// of each slot. `None` before the `Welcome`. `WelcomeInfo` stays `Copy`, so it is kept here.
+    pub match_start: Option<turts_net_protocol::MatchStart>,
     /// Cloned once from accepted packages before the first Welcome is processed.
     pub content: Option<ClientContent>,
     pub config: ReplicaConfig,
@@ -396,6 +399,7 @@ fn on_welcome(hooks: &mut IngestHooks, state: &mut ReplicaState, welcome: &Welco
         replica.set_context(ReplicaContext::new(content, welcome.slot_id.0));
     }
     state.replica = Some(replica);
+    state.match_start = Some(welcome.start.clone());
     state.welcome = Some(WelcomeInfo {
         slot: welcome.slot_id.0,
         tick: welcome.tick,
@@ -1157,6 +1161,7 @@ mod world_change_tests {
             healths: vec![],
             research: vec![],
             unit_orders: Vec::new(),
+            ..Default::default()
         }
     }
 
@@ -1448,6 +1453,7 @@ mod browser_config_tests {
                     healths: vec![],
                     research: vec![],
                     unit_orders: Vec::new(),
+                    ..Default::default()
                 },
                 99,
             )],
@@ -1507,6 +1513,7 @@ mod browser_config_tests {
                 healths: vec![],
                 research: vec![],
                 unit_orders: Vec::new(),
+                ..Default::default()
             },
             WorldDelta {
                 tick: 12,
@@ -1528,6 +1535,7 @@ mod browser_config_tests {
                 healths: vec![],
                 research: vec![],
                 unit_orders: Vec::new(),
+                ..Default::default()
             },
             WorldDelta {
                 tick: 13,
@@ -1549,6 +1557,7 @@ mod browser_config_tests {
                 healths: vec![],
                 research: vec![],
                 unit_orders: Vec::new(),
+                ..Default::default()
             },
         ]);
         let mut state = ReplicaState {

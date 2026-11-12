@@ -675,6 +675,7 @@ fn own_unit_destroyed_fires_after_a_long_fight_with_a_bounded_trace() {
         healths: vec![],
         research: vec![],
         unit_orders: vec![],
+        ..Default::default()
     };
     let now = Instant::now();
     let mut replica = Replica::new(20);
@@ -700,6 +701,7 @@ fn own_unit_destroyed_fires_after_a_long_fight_with_a_bounded_trace() {
         }],
         research: vec![],
         unit_orders: vec![],
+        ..Default::default()
     };
     assert_eq!(
         replica.apply_snapshot(&initial, now),
@@ -729,6 +731,7 @@ fn own_unit_destroyed_fires_after_a_long_fight_with_a_bounded_trace() {
         }),
         content: Some(content),
         config: Default::default(),
+        match_start: None,
     };
     let mut app = feedback_app(state, acquired);
     app.update();

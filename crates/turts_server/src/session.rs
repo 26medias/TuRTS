@@ -134,6 +134,19 @@ pub fn install(app: &mut App, advertised: Advertised) {
     app.add_systems(Update, kick_pending);
 }
 
+/// The `MatchStart` of a `Welcome` under `Immediate` (design 6.7.5): the start tick is 1; each
+/// slot is its own team; the colour of a slot is its default palette index, which is the slot
+/// index (a stage-1 seat never has another colour, design 6.7.6). The lobby start step
+/// (`L-MATCH-SRV1`) builds the same record from the room.
+pub fn immediate_match_start() -> turts_net_protocol::MatchStart {
+    let slots: Vec<u8> = (0..turts_sim::slots::SLOT_COUNT).collect();
+    turts_net_protocol::MatchStart {
+        start_tick: 1,
+        teams: slots.clone(),
+        colours: slots,
+    }
+}
+
 /// Decide a `Hello`. The order of the checks fixes the reason when several fail: protocol
 /// version, lockfile hash, then the slot claim. The claim runs last, so a refused `Hello`
 /// takes no slot.
@@ -279,6 +292,7 @@ pub fn receive_hello(
                             tick: tick.0,
                             tick_hz: advertised.tick_hz,
                             match_id: match_id.0,
+                            start: immediate_match_start(),
                         });
                         traffic.record(entity);
                     }
@@ -386,6 +400,15 @@ pub fn admit_player_commands(world: &mut World) {
         if world.contains_resource::<turts_sim::economy::events::MatchStopped>() {
             continue;
         }
+        // The rate-limit bucket runs first for every envelope (design 6.8, [net 5]): a refused
+        // envelope costs a token, so a flood of bad sequences or bad targets is limited too.
+        let tick_hz = world.resource::<Advertised>().tick_hz;
+        let admitted = world.resource_mut::<RateLimitBuckets>().admit(
+            staged.slot.0,
+            tick,
+            tick_hz,
+            staged.envelope.order.units.len(),
+        );
         let newer = if let Some(mut session) = world.get_mut::<Session>(staged.connection) {
             if session.slot != staged.slot
                 || session
@@ -400,6 +423,17 @@ pub fn admit_player_commands(world: &mut World) {
         } else {
             false
         };
+        if !admitted {
+            let result = crate::orders::refusal(&staged.envelope, CommandRejectReason::RateLimited);
+            record_admission_rejection(
+                world,
+                staged,
+                tick,
+                result,
+                CommandRejectReason::RateLimited,
+            );
+            continue;
+        }
         if !newer {
             let result = crate::orders::refusal(&staged.envelope, CommandRejectReason::BadSequence);
             record_admission_rejection(
@@ -414,23 +448,6 @@ pub fn admit_player_commands(world: &mut World) {
         if let Some(reason) = production_precheck(world, &staged) {
             let result = crate::orders::refusal(&staged.envelope, reason);
             record_admission_rejection(world, staged, tick, result, reason);
-            continue;
-        }
-        let tick_hz = world.resource::<Advertised>().tick_hz;
-        if !world.resource_mut::<RateLimitBuckets>().admit(
-            staged.slot.0,
-            tick,
-            tick_hz,
-            staged.envelope.order.units.len(),
-        ) {
-            let result = crate::orders::refusal(&staged.envelope, CommandRejectReason::RateLimited);
-            record_admission_rejection(
-                world,
-                staged,
-                tick,
-                result,
-                CommandRejectReason::RateLimited,
-            );
             continue;
         }
         let resolved = {

@@ -44,6 +44,7 @@ fn snapshot(tick: u32, units: &[(u32, Pos)]) -> Snapshot {
         healths: vec![],
         research: vec![],
         unit_orders: Vec::new(),
+        ..Default::default()
     }
 }
 
@@ -74,6 +75,7 @@ fn delta(tick: u32, base_tick: u32, positions: &[(u32, Pos)]) -> WorldDelta {
         healths: vec![],
         research: vec![],
         unit_orders: Vec::new(),
+        ..Default::default()
     }
 }
 
@@ -87,6 +89,7 @@ fn owner_move_record(id: u32, target: OrderTarget) -> UnitOrderRecord {
         }),
         queued: Vec::new(),
         last_failure: None,
+        rally: None,
     }
 }
 
@@ -150,6 +153,7 @@ fn owner_unit_orders_stage_snapshot_delta_clear_removal_and_recovery_atomically(
         current: None,
         queued: Vec::new(),
         last_failure: None,
+        rally: None,
     }];
     assert_eq!(r.apply_delta(&clear, now), DeltaOutcome::Applied);
     assert!(

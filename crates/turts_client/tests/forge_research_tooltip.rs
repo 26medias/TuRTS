@@ -58,6 +58,7 @@ fn lab_replica(shells: u64) -> Replica {
     let snapshot = Snapshot {
         tick: 10,
         units: vec![UnitSnapshot {
+            site: false,
             unit_id: UnitId(LAB),
             content_id: "forge:lab".into(),
             owner_slot: SlotId(0),
@@ -90,6 +91,7 @@ fn lab_replica(shells: u64) -> Replica {
         healths: vec![],
         research: vec![],
         unit_orders: Vec::new(),
+        ..Default::default()
     };
     let mut replica = Replica::new(20);
     replica.set_context(ReplicaContext::new(content().clone(), 0));

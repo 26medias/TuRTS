@@ -33,6 +33,7 @@ fn unit(id: u32, content_id: &str, owner: u8) -> UnitSnapshot {
             x: id as f32,
             y: 0.0,
         },
+        site: false,
     }
 }
 fn snapshot(tick: u32, units: Vec<UnitSnapshot>) -> Snapshot {
@@ -53,6 +54,7 @@ fn snapshot(tick: u32, units: Vec<UnitSnapshot>) -> Snapshot {
         healths: vec![],
         research: vec![],
         unit_orders: Vec::new(),
+        ..Default::default()
     }
 }
 fn delta(tick: u32, base_tick: u32) -> WorldDelta {
@@ -76,6 +78,7 @@ fn delta(tick: u32, base_tick: u32) -> WorldDelta {
         healths: vec![],
         research: vec![],
         unit_orders: Vec::new(),
+        ..Default::default()
     }
 }
 fn replica_with_content(acquired: ClientContent, slot: u8) -> Replica {
@@ -551,7 +554,7 @@ fn replica_merges_new_records_through_one_helper() {
     initial.weapons = vec![WeaponRecord {
         unit: UnitId(5),
         enabled: true,
-        cooldown: 2,
+        ready_tick: 2,
         damage: Ok(10),
         status: WeaponStatus::Ready,
         last_target: Some(UnitId(6)),
@@ -583,7 +586,7 @@ fn replica_merges_new_records_through_one_helper() {
     update.weapons = vec![WeaponRecord {
         unit: UnitId(5),
         enabled: false,
-        cooldown: 2,
+        ready_tick: 2,
         damage: Err(turts_net_protocol::CommandRejectReason::MissingCapability),
         status: WeaponStatus::NoTarget,
         last_target: None,
@@ -655,7 +658,7 @@ fn removed_unit_clears_all_records() {
     initial.weapons.push(WeaponRecord {
         unit: UnitId(6),
         enabled: true,
-        cooldown: 0,
+        ready_tick: 0,
         damage: Ok(10),
         status: WeaponStatus::Ready,
         last_target: None,
@@ -863,7 +866,7 @@ fn late_join_replica_matches_server_view() {
     view.weapons = vec![WeaponRecord {
         unit: UnitId(4),
         enabled: true,
-        cooldown: 3,
+        ready_tick: 3,
         damage: Err(turts_net_protocol::CommandRejectReason::ArithmeticOverflow),
         status: WeaponStatus::Cooling,
         last_target: Some(UnitId(5)),

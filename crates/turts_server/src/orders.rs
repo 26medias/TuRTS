@@ -48,6 +48,10 @@ pub fn to_sim(
         OrderTarget::Content(content) => ContentId::parse(content)
             .map(OrderTargetSim::Content)
             .unwrap_or(OrderTargetSim::Invalid),
+        // The placement target of design 6.8 is on the wire in lane 0, and the sim has no such
+        // target yet: `L-CON1` adds `OrderTargetSim::ContentAtPoint` and replaces this arm. Until
+        // then the order is refused like any other target that does not fit.
+        OrderTarget::ContentAtPoint { .. } => OrderTargetSim::Invalid,
     };
     let order_package = order_id.package.clone();
     let queue_depth = catalog

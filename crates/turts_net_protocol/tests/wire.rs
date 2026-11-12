@@ -34,6 +34,7 @@ fn wire_v4_roundtrips_existing_fields_and_reasons() {
         tick: 99,
         tick_hz: 20,
         match_id: 0x1234,
+        start: Default::default(),
     });
     round_trip(JoinRejected {
         reason: "player already in match".into(),
@@ -44,6 +45,7 @@ fn wire_v4_roundtrips_existing_fields_and_reasons() {
         owner_slot: SlotId(0),
         pos: Pos { x: 10.0, y: 20.0 },
         facing: None,
+        site: false,
     };
     round_trip(unit.clone());
     let balance = BalanceState {
@@ -113,6 +115,7 @@ fn wire_v4_roundtrips_existing_fields_and_reasons() {
         healths: vec![],
         research: vec![],
         unit_orders: vec![],
+        ..Default::default()
     });
     round_trip(WorldDelta {
         tick: 8,
@@ -138,6 +141,7 @@ fn wire_v4_roundtrips_existing_fields_and_reasons() {
         healths: vec![],
         research: vec![],
         unit_orders: Vec::new(),
+        ..Default::default()
     });
     round_trip(PlayerCommand {
         seq: 12,

@@ -37,6 +37,7 @@ fn snapshot(tick: u32) -> Snapshot {
     Snapshot {
         tick,
         units: vec![UnitSnapshot {
+            site: false,
             unit_id: UnitId(1),
             content_id: "base:command_center".to_string(),
             owner_slot: SlotId(0),
@@ -66,6 +67,7 @@ fn snapshot(tick: u32) -> Snapshot {
         healths: vec![],
         research: vec![],
         unit_orders: Vec::new(),
+        ..Default::default()
     }
 }
 
@@ -90,6 +92,7 @@ fn delta(tick: u32, base_tick: u32) -> WorldDelta {
         healths: vec![],
         research: vec![],
         unit_orders: Vec::new(),
+        ..Default::default()
     }
 }
 
@@ -147,6 +150,7 @@ fn non_finite_geometry_rejects_snapshot_and_delta_atomically() {
         },
 
         facing: None,
+        site: false,
     });
     assert_eq!(
         spawn_replica.apply_delta(&invalid_spawn, now),
@@ -316,6 +320,7 @@ fn rich_snapshot(tick: u32) -> Snapshot {
         owner_slot: SlotId(0),
         pos: Pos { x: 12.0, y: 8.0 },
         facing: None,
+        site: false,
     });
     state.economy.inventories.push(InventoryState {
         unit: UnitId(2),
@@ -365,6 +370,7 @@ fn spawn_position_and_private_records_apply_atomically() {
         owner_slot: SlotId(0),
         pos: Pos { x: 12.0, y: 8.0 },
         facing: None,
+        site: false,
     });
     spawn.economy.inventories.push(InventoryState {
         unit: UnitId(2),
@@ -401,6 +407,7 @@ fn spawn_position_and_private_records_apply_atomically() {
         owner_slot: SlotId(0),
         pos: Pos { x: 9.0, y: 8.0 },
         facing: None,
+        site: false,
     });
     malformed.positions.push(UnitDelta {
         unit_id: UnitId(1),
@@ -593,6 +600,7 @@ fn lost_extraction_conversion_charge_refund_and_spawn_converge_from_snapshot() {
         owner_slot: SlotId(0),
         pos: Pos { x: 8.0, y: 12.0 },
         facing: None,
+        site: false,
     });
     spawn.economy.queues[0].jobs.clear();
     let mut spawned = delta(11, 10);

@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 pub use turts_mod_api::Facing;
 
 pub use crate::economy::*;
+pub use crate::records::*;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct UnitId(pub u32);
@@ -28,6 +29,9 @@ pub struct Welcome {
     pub tick: u32,
     pub tick_hz: u16,
     pub match_id: u64,
+    /// The start of the match (design 6.7.13). `Welcome` carries it, so there is no message of
+    /// its own.
+    pub start: MatchStart,
 }
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct JoinRejected {
@@ -40,6 +44,9 @@ pub struct UnitSnapshot {
     pub owner_slot: SlotId,
     pub facing: Option<Facing>,
     pub pos: Pos,
+    /// The unit is a site: a building under construction (design 6.8). Public. A site completes
+    /// when its id is in `DeltaRecords::sites_completed`.
+    pub site: bool,
 }
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct UnitDelta {
@@ -74,6 +81,11 @@ pub enum OrderTarget {
     Node(NodeId),
     Job(JobId),
     Content(ContentRef),
+    /// A placement (design 6.8, client to server): a building content at a point.
+    ContentAtPoint {
+        content: ContentRef,
+        point: Pos,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -134,6 +146,8 @@ pub struct UnitOrderRecord {
     pub current: Option<OrderSummary>,
     pub queued: Vec<OrderSummary>,
     pub last_failure: Option<OrderFailure>,
+    /// The rally of a producer (design 6.5, 6.8). `None` until `L-RLY` writes it.
+    pub rally: Option<RallyTarget>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -181,6 +195,15 @@ pub enum CommandRejectReason {
     RateLimited,
     NotQueueable,
     Blocked,
+    SiteOutsideMap,
+    SiteOutOfArea,
+    SiteBlocked,
+    SiteNearBuilding,
+    SiteNearResource,
+    ConstructionQueueFull,
+    MatchNotStarted,
+    SlotDefeated,
+    MatchOver,
 }
 impl CommandRejectReason {
     pub const ALL: &'static [Self] = &[
@@ -221,6 +244,15 @@ impl CommandRejectReason {
         Self::RateLimited,
         Self::NotQueueable,
         Self::Blocked,
+        Self::SiteOutsideMap,
+        Self::SiteOutOfArea,
+        Self::SiteBlocked,
+        Self::SiteNearBuilding,
+        Self::SiteNearResource,
+        Self::ConstructionQueueFull,
+        Self::MatchNotStarted,
+        Self::SlotDefeated,
+        Self::MatchOver,
     ];
     pub const fn as_str(self) -> &'static str {
         match self {
@@ -261,6 +293,15 @@ impl CommandRejectReason {
             Self::RateLimited => "rate_limited",
             Self::NotQueueable => "not_queueable",
             Self::Blocked => "blocked",
+            Self::SiteOutsideMap => "site_outside_map",
+            Self::SiteOutOfArea => "site_out_of_area",
+            Self::SiteBlocked => "site_blocked",
+            Self::SiteNearBuilding => "site_near_building",
+            Self::SiteNearResource => "site_near_resource",
+            Self::ConstructionQueueFull => "construction_queue_full",
+            Self::MatchNotStarted => "match_not_started",
+            Self::SlotDefeated => "slot_defeated",
+            Self::MatchOver => "match_over",
         }
     }
 }
@@ -319,9 +360,15 @@ pub enum WeaponStatus {
 pub struct WeaponRecord {
     pub unit: UnitId,
     pub enabled: bool,
-    pub cooldown: u32,
+    /// The tick at which the weapon is ready to fire (design 6.8). It replaces `cooldown`, which
+    /// changed in every tick. The ticks left are `turts_rules::progress::cooldown_left`. The
+    /// server sends the record only when a field changes; it never sends `Cooling`, because the
+    /// client derives cooling from `ready_tick` and the tick of the last applied delta.
+    pub ready_tick: u32,
     pub damage: Result<u64, CommandRejectReason>,
     pub status: WeaponStatus,
+    /// The last target. A record never names a unit that the same message removes, and the
+    /// server resends a record that names a unit when that unit leaves (`export::weapon_state`).
     pub last_target: Option<UnitId>,
 }
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -335,7 +382,7 @@ pub struct ResearchRecord {
     pub completed: Vec<ContentRef>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 pub struct Snapshot {
     pub tick: u32,
     pub units: Vec<UnitSnapshot>,
@@ -348,8 +395,9 @@ pub struct Snapshot {
     pub healths: Vec<HealthRecord>,
     pub research: Vec<ResearchRecord>,
     pub unit_orders: Vec<UnitOrderRecord>,
+    pub records: SnapshotRecords,
 }
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 pub struct WorldDelta {
     pub tick: u32,
     pub base_tick: u32,
@@ -364,7 +412,11 @@ pub struct WorldDelta {
     pub weapons: Vec<WeaponRecord>,
     pub healths: Vec<HealthRecord>,
     pub research: Vec<ResearchRecord>,
+    /// The complete record of each unit whose record changed in this tick (design 6.8,
+    /// `unit_orders` as changes). The `Snapshot` keeps the full table. The client merges deltas
+    /// in chain order only.
     pub unit_orders: Vec<UnitOrderRecord>,
+    pub records: DeltaRecords,
 }
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ResyncRequest;

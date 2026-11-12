@@ -3,7 +3,8 @@
 use crate::SlotId;
 use crate::orders::apply::{clamp_target, unit_has_pending_move};
 use crate::orders::behaviours::queue::start_next_queued_order;
-use crate::orders::{Order, OrderFailure, UnitOrders};
+use crate::orders::writer::edit_unit_orders;
+use crate::orders::{Order, OrderFailure};
 use crate::world::MoveTarget;
 use bevy_ecs::prelude::World;
 use std::collections::BTreeMap;
@@ -61,8 +62,7 @@ pub(in crate::orders) fn run_unit_attack(
             .map_or(SlotId(0), |owner| owner.0);
         let tick = world.resource::<crate::world::Tick>().0;
         crate::economy::transaction::capture_unit_order_operation(world, unit_id, |world| {
-            let mut entity_mut = world.entity_mut(entity);
-            if let Some(mut orders) = entity_mut.get_mut::<UnitOrders>() {
+            edit_unit_orders(world, entity, |orders| {
                 orders.current = None;
                 if !fired {
                     orders.last_failure = Some(OrderFailure {
@@ -71,7 +71,8 @@ pub(in crate::orders) fn run_unit_attack(
                         tick,
                     });
                 }
-            }
+            });
+            let mut entity_mut = world.entity_mut(entity);
             entity_mut.remove::<MoveTarget>();
             entity_mut.remove::<crate::movement::MoveProgress>();
             entity_mut.remove::<crate::movement::PlainMoveProgress>();
@@ -104,14 +105,14 @@ pub(in crate::orders) fn run_unit_attack(
             .map_or(SlotId(0), |owner| owner.0);
         let tick = world.resource::<crate::world::Tick>().0;
         crate::economy::transaction::capture_unit_order_operation(world, unit_id, |world| {
-            if let Some(mut orders) = world.entity_mut(entity).get_mut::<UnitOrders>() {
+            edit_unit_orders(world, entity, |orders| {
                 orders.current = None;
                 orders.last_failure = Some(OrderFailure {
                     order: current.order.clone(),
                     reason: crate::command::RejectReason::OutOfRange,
                     tick,
                 });
-            }
+            });
             if !unit_has_pending_move(world, unit_id) {
                 start_next_queued_order(world, slot, entity, unit_id);
             }

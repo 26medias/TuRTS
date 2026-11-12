@@ -163,7 +163,7 @@ pub fn load_map(world: &mut World, origin: &PackageId, map: &MapDef) -> Result<(
             Position(spawn.pos),
         ));
         if order_capable {
-            entity.insert(crate::orders::UnitOrders::default());
+            crate::orders::writer::insert_default_unit_orders(&mut entity);
         }
     }
     Ok(())

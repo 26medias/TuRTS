@@ -10,6 +10,7 @@ use crate::orders::pending::{
     MovementDispatchState, PendingMovementOrders, PromotionHeaderIndex, dispatch_start_slot,
     insert_promoted_request, pending_live_member_count, record_dispatch_selection,
 };
+use crate::orders::writer::{clear_unit_orders, set_unit_orders};
 use crate::orders::{Order, OrderCommand, PendingMovementOrder, UnitOrders};
 use crate::world::MoveTarget;
 use bevy_ecs::prelude::{Resource, World};
@@ -406,14 +407,14 @@ pub(super) fn restore_plain_move_prior(
         if let Some(escape) = &prior.physical_escape {
             entity_mut.insert(escape.clone());
         }
-        let mut orders = prior.unit_orders.clone().unwrap_or_default();
-        // Replace cleared the old queue at acceptance; only later Appends survive.
-        orders.queue = suffix;
-        if prior.unit_orders.is_some() || !orders.queue.is_empty() {
-            entity_mut.insert(orders);
-        } else {
-            entity_mut.remove::<UnitOrders>();
-        }
+    }
+    let mut orders = prior.unit_orders.clone().unwrap_or_default();
+    // Replace cleared the old queue at acceptance; only later Appends survive.
+    orders.queue = suffix;
+    if prior.unit_orders.is_some() || !orders.queue.is_empty() {
+        set_unit_orders(world, entity, orders);
+    } else {
+        clear_unit_orders(world, entity);
     }
     if let Some(mut economy_orders) = world.get_resource_mut::<crate::economy::EconomyOrders>() {
         economy_orders.0.remove(&unit_id);
