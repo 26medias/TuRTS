@@ -17,6 +17,9 @@ const dimmed = (rgb) => rgb.map((channel) => Math.round(channel * OVERLAY_DIM));
 async function drive(io, params) {
     const row = params.row;
     if (row === "NOORD") {
+        // A keydown is the gesture that removes the "Click to play" overlay, which dims the
+        // notice (crates/turts_client_web/index.html:39-40); F9 has no binding (RUN130).
+        await io.key("F9");
         await io.wait(1500);
         await savePngWithBase64(io, "noorders-visible.png");
         return;
@@ -245,7 +248,8 @@ async function waitForAud1Rejoin(io, reloadStartedAt) {
         await io.wait(elapsed === 0 ? 250 : Math.min(countdownStartedAt === null ? 250 : 1000, 15000 - elapsed));
         const screenshot = Buffer.from(await io.screenshot());
         const image = decodePng(screenshot);
-        connected = findBodies(image, SLOT_RGB[0]).length > 0;
+        // After the reload the overlay waits for a new gesture and dims the scene (RUN130).
+        connected = findBodies(image, SLOT_RGB[0]).length > 0 || findBodies(image, dimmed(SLOT_RGB[0])).length > 0;
         if (countdownStartedAt === null && (connected || hasRejoinTextPixels(image))) {
             countdownStartedAt = Date.now();
             await savePngWithBase64(io, "aud1-rejoin-start.png", screenshot);
