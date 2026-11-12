@@ -38,6 +38,10 @@ async function drive(io, params) {
         await io.wait(150);
         return point;
     }
+    // The first join shows the "Click to play" overlay, which dims the scene until a gesture
+    // (client_shell.rs sync_focus_overlay, since 3d0cf2f). A keydown is the gesture
+    // (crates/turts_client_web/index.html:39-40); F9 has no binding. It is not an order step.
+    await io.key("F9");
     await io.wait(350);
     let image = await shot("before");
     if (row === "ORD5") {
