@@ -747,11 +747,12 @@ pub(crate) fn economy_changes(
     changes
 }
 fn job_view(job: ProductionJob) -> JobView {
+    let elapsed_ticks = crate::economy::production::job_elapsed_ticks(&job);
     JobView {
         id: job.id.0,
         recipe: job.recipe,
         stage: job.stage,
-        elapsed_ticks: job.elapsed_ticks,
+        elapsed_ticks,
         duration_ticks: job.duration_ticks,
         charged: job
             .charged
@@ -827,16 +828,16 @@ fn reservation_line_view(line: crate::economy::ledger::ReservationLine) -> Reser
     }
 }
 
-fn raw_queue_view((producer, jobs): (u32, Vec<ProductionJob>)) -> RawQueueAudit {
+pub(crate) fn raw_queue_view((producer, jobs): (u32, Vec<ProductionJob>)) -> RawQueueAudit {
     RawQueueAudit {
         producer,
         jobs: jobs
             .into_iter()
             .map(|job| RawJobAudit {
+                elapsed_ticks: crate::economy::production::job_elapsed_ticks(&job),
                 id: job.id.0,
                 recipe: job.recipe,
                 stage: job.stage,
-                elapsed_ticks: job.elapsed_ticks,
                 duration_ticks: job.duration_ticks,
                 charged: job.charged.into_iter().map(reservation_line_view).collect(),
                 reservation: job.reservation.map(|reservation| RawReservationAudit {
