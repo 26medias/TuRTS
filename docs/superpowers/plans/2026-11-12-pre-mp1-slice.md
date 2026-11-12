@@ -29,6 +29,11 @@ the stricter assertion rule of section 1a (21); the source counts count code onl
 (23). Root accepts refinements R10, R11 (with item 20), R12 (with item 22) and R13 (with item 17). The plan
 gate is passed for the tasks up to and including A2a. A2b1 gets a short re-check before its builder starts.
 
+**From the A1c re-check (2026-11-12, qa-lead; A1c merged with 0 High; report `docs/research/mp1/rereview-slice-a1c.md`).** These bind A2b1 (its first steps) and A1d:
+- A2b1: the sweep test `movement::ecs::tests::the_movement_system_writes_only_movement_state` does not reach the physical-escape branch of the write loop (`crates/turts_sim/src/movement/ecs.rs:113-115`): the reviewer's plant S2 (a unit in a physical escape is given to slot 1) stays green there and is red only by chance in `group_movement.rs:2230`. Add a blocked plain move to the sweep scenario and a count that asserts that each branch of the write loop runs; show S2 red in the sweep.
+- A1d: read `docs/research/mp1/a1c-handover.md` on the slice branch (the log-based accounting oracle cannot see a change of `bounds`, `resources`, `compiled_durations`, `unit_types`; the E8 reorder; the unused `bevy*` dependencies of `turts_audit` with their three `Cargo.lock` lines).
+- The parallel registry runner `target/mc-evidence/root-regate/parallel_refutations.py` still uses the headed wrapper v4 by default (`:42`) and passes no `--mode` (`:274`). Until it is changed, a headed registry run goes through a shim that calls `mc_headed_v6.sh --mode pre-merge`. Owner `qa-lead`.
+
 **From the A2a review (2026-11-12, qa-lead, six own faults; 1 High in the harness reach, in repair; report `docs/research/mp1/review-slice-a2a.md`).** These bind A2b1, A2b2, A2c, A4, A3 and REG:
 - The fast form `cargo test -p turts_sim --locked` runs 0 tests of `kernel_reference` and of `probe_flags` (the `test-probes` feature is off). Each of these tasks runs `cargo test -p turts_sim --locked --features test-probes` and the release form of `kernel_reference` that its test header names; the merge gate of the orchestrator runs both.
 - `reference.rs` calls live helpers. A task that edits a movement helper must first keep the reference independent (the A2a repair says how).
