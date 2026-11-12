@@ -552,6 +552,7 @@ const TEST_MODULE_FILES: &[&str] = &[
     "crates/turts_client/src/visuals/scene_tests.rs",
     "crates/turts_client/src/visuals/tests.rs",
     "crates/turts_client/src/widgets/tests.rs",
+    "crates/turts_sim/src/orders/tests.rs",
 ];
 /// The scan skips a listed file by path only. This check reads the parent file and requires an
 /// `ItemMod` named like the file stem, with no inline body and a `#[cfg(test)]` gate. Without it,

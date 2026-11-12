@@ -53,7 +53,8 @@ const BASELINE: &[(&str, u32, u32, u32)] = &[
     ("crates/turts_sim/src/grid.rs", 0, 0, 2),
     ("crates/turts_sim/src/map.rs", 0, 0, 1),
     ("crates/turts_sim/src/movement/spread.rs", 0, 0, 2),
-    ("crates/turts_sim/src/orders.rs", 0, 3, 1),
+    ("crates/turts_sim/src/orders/behaviours/attack.rs", 0, 0, 1),
+    ("crates/turts_sim/src/orders/run.rs", 0, 3, 0),
 ];
 
 fn repo() -> PathBuf {

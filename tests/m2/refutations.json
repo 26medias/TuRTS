@@ -628,7 +628,7 @@
         "replacement": "pub fn assign_gather(\n    world: &mut World,\n    slot: SlotId,\n    unit: u32,\n    node: NodeId,\n) -> Result<(), RejectReason> {\n    let entity = find_unit(world, unit).ok_or(RejectReason::UnknownUnit)?;\n    if false && world.get::<Owner>(entity).map(|owner| owner.0) != Some(slot) {"
       },
       {
-        "path": "crates/turts_sim/src/orders.rs",
+        "path": "crates/turts_sim/src/orders/apply.rs",
         "anchor": "        if owner != Some(slot) {\n            outcomes.refused.push((*unit_id, R::NotOwner));\n            continue;\n        }",
         "replacement": "        if command.behaviour != Behaviour::Gather && owner != Some(slot) {\n            outcomes.refused.push((*unit_id, R::NotOwner));\n            continue;\n        }"
       }
