@@ -14,11 +14,12 @@
 //                a change of a panel in the UI record (alert lines, tooltips and what changes by itself are left out).
 //                A change elsewhere on the page does not count. PASS only when every click gives a selection that
 //                holds the unit AND is seen (P1).
-//                Then, for the first unit of each content id, the order buttons of its selection are clicked one time
-//                each (P3): each needs a visible result within 1 s, a change of the panel or state, or a new notice.
 //                Then four more clicks (P4): an enemy unit (its panel shows), a resource node (a name shows), open
 //                ground after a selection (the selection clears), a right click on open ground with a unit selected
 //                (a notice, an order mark or a pixel mark within 1 s).
+//                Then, for the first unit of each content id, the order buttons of its selection are clicked one time
+//                each (P3; last, because Remove ends a unit): each needs a visible result within 1 s, a change of the
+//                panel or state, or a new notice.
 //   buttons      Watch 20 s with no input (F6). Then F8-start: the first visible button under the start overlay gets
 //                one click before any start click; a lost click is a finding of its own. Then the start click, and one
 //                click on each visible button (F8): the pointer rests 300 ms, then one left click.
@@ -317,9 +318,9 @@ async function firstClick(session, options) {
     };
     if (selected.size === 0) return record;
 
-    // P3: the order buttons of each selection. P4: an enemy, a node, open ground, a right click.
-    await orderPass(session, record, [...selected.values()]);
+    // P4 first: an enemy, a node, open ground, a right click. P3 last: its destructive orders (Remove) end a unit.
     await extraClicks(session, record, [...selected.values()][0]);
+    await orderPass(session, record, [...selected.values()]);
     return record;
 }
 
