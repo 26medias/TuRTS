@@ -209,6 +209,22 @@ fn start_reversed_server(port: u16) -> Proc {
     server
 }
 
+/// A server that sends three deltas in one fixed tick (one flush), `--burst-units`.
+fn start_burst_server(port: u16, burst_units: &str) -> Proc {
+    let mut cmd = Command::new(SERVER_BIN);
+    cmd.args([
+        "--ws",
+        &format!("127.0.0.1:{port}"),
+        "--units",
+        "1",
+        "--burst-units",
+        burst_units,
+    ]);
+    let mut server = Proc::spawn("server-burst", &mut cmd);
+    server.wait_line("spike_server listening", Duration::from_secs(10));
+    server
+}
+
 fn start_relay(listen: u16, target: u16, extra: &[&str], out: &Path) -> Proc {
     let _ = fs::remove_file(out);
     let script = workspace_root().join("tests/net/relay.py");
@@ -832,5 +848,86 @@ fn p7_with_relay_args(relay_args: &[&str]) {
         "RSS rise {} bytes > {} bytes",
         rss_peak.saturating_sub(rss_before),
         RSS_RISE_LIMIT_BYTES
+    );
+}
+
+/// P8: the order of deltas that wait in ONE server flush on `StateChannel`.
+///
+/// Fact pinned: lightyear 0.31.0 does not send the deltas of one flush in send order. With
+/// priority off (the default; this repo never sets a `PriorityConfig`), the sender sorts the
+/// candidates of a flush with `packing_order`: fragments first, then singles by ascending byte size
+/// (`lightyear_transport-0.31.0/src/packet/priority_manager.rs:97-157`; the candidates are
+/// collected singles before fragments in `channel/send.rs:379-410`). The client reads messages in
+/// arrival order, so a later, smaller delta can arrive before an earlier, larger one.
+/// A server that catches up after a stall runs several fixed ticks in one frame and puts several
+/// deltas in one flush; the client then sees a `base_tick` chain break without any lost delta.
+///
+/// The test sends 3 deltas in one tick: ticks T, T+1, T+2 of about 300, 100 and 2,000 bytes.
+/// It asserts the arrival order as it is on lightyear 0.31.0. If a library update keeps the send
+/// order, this test goes red: then the reorder window of `Replica::apply_delta` may be
+/// re-checked. The errata for the design and the spike notes are in
+/// `docs/research/mc-reorder-errata.md`.
+#[test]
+#[ignore]
+fn p8_one_flush_reorders_deltas_by_size() {
+    let dir = spike_dir();
+    let port = free_port();
+    let client_out = dir.join("p8_client.json");
+    let mut server = start_burst_server(port, "33,11,222");
+    let mut client = start_client(port, &["--run-secs", "5"], &client_out);
+    assert!(
+        client.wait_exit(Duration::from_secs(30)),
+        "client did not exit"
+    );
+    let lines: Vec<String> = server
+        .all_lines()
+        .into_iter()
+        .map(|l| l.text)
+        .filter(|t| t.starts_with("spike_server burst delta tick"))
+        .collect();
+    server.kill();
+    // "spike_server burst delta tick <tick> bytes <bytes>"
+    let sent: Vec<(u32, u64)> = lines
+        .iter()
+        .map(|t| {
+            let f: Vec<&str> = t.split_whitespace().collect();
+            (f[4].parse().expect("tick"), f[6].parse().expect("bytes"))
+        })
+        .collect();
+    assert_eq!(sent.len(), 3, "the server sent 3 burst deltas: {lines:?}");
+    assert!(
+        sent[0].1 > 250 && sent[0].1 < 400,
+        "first about 300 B: {sent:?}"
+    );
+    assert!(sent[1].1 < 150, "second about 100 B: {sent:?}");
+    assert!(
+        sent[2].1 > 1500,
+        "third about 2,000 B (a fragmented message): {sent:?}"
+    );
+    let burst_ticks: Vec<u32> = sent.iter().map(|s| s.0).collect();
+    let c = read_json(&client_out);
+    let arrived: Vec<u32> = c["delta_ticks"]
+        .as_array()
+        .expect("delta_ticks array")
+        .iter()
+        .map(|v| u32::try_from(v.as_u64().expect("tick")).expect("tick fits"))
+        .filter(|t| burst_ticks.contains(t))
+        .collect();
+    eprintln!("[p8] sent {sent:?} arrived {arrived:?}");
+    assert_eq!(
+        arrived.len(),
+        3,
+        "every burst delta arrives (TCP): {arrived:?}"
+    );
+    assert_ne!(
+        arrived, burst_ticks,
+        "the flush kept the send order: the reorder cause is not proven on this library"
+    );
+    // The order that lightyear 0.31.0 gives: the fragmented delta first, then the singles by size.
+    let (t300, t100, t2000) = (burst_ticks[0], burst_ticks[1], burst_ticks[2]);
+    assert_eq!(
+        arrived,
+        vec![t2000, t100, t300],
+        "arrival order of the burst"
     );
 }

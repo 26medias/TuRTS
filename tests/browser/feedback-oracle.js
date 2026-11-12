@@ -3,6 +3,7 @@
 
 const assert = require("node:assert/strict");
 const { decodePng, pixelAt } = require("./harness/png.js");
+const { findVolumeTracks, volumeClickPoint } = require("./volume-tracks.js");
 
 async function judge(view, params) {
     const row = params.row;
@@ -311,9 +312,12 @@ async function judgeAlr1(view, input, checkpoints, params) {
     assert(firstDrop && precedingSample && firstDrop.current < precedingSample.current
         && precedingSample.current >= baselineHealth && latestAtPing?.current < baselineHealth,
     "ALR1 ping observer follows an adjacent same-unit health drop after the pre-attack baseline and accepted attack");
-    const finalOwnHealth = world.healths?.find((entry) => entry.unit === ownUnit)?.current;
-    assert(Number.isFinite(finalOwnHealth) && finalOwnHealth < baselineHealth,
-        "ALR1 final capture retains the same surviving ping source at lower health than before the attack");
+    // The fixture unit dies about 5 s after its first damage; the last cooldown sample comes
+    // 4.1 to 6.3 s after the attack, by the screenshot speed (RUN130). The ping source must
+    // survive, at lower health, when the player clicks the alert.
+    const clickedOwnHealth = afterAlertClick.debug.replicated_world?.healths?.find((entry) => entry.unit === ownUnit)?.current;
+    assert(Number.isFinite(clickedOwnHealth) && clickedOwnHealth < baselineHealth,
+        "ALR1 the ping source survives at lower health than before the attack when the alert is clicked");
     assert((late.debug.audio.sink_observations || []).some((sample) =>
         sample.sound_id === "muster:muster_alert" && sample.category === "alerts"
             && sample.request_frame_index === pingFrame.frame_index),
@@ -343,7 +347,7 @@ function projectGround(matrix, position) {
     return point;
 }
 
-function whitePixelsInRect(image, rect, scale) {
+function whitePixelsInRect(image, rect, scale, limit = 220) {
     const left = Math.max(0, Math.floor(rect[0] / scale));
     const top = Math.max(0, Math.floor(rect[1] / scale));
     const right = Math.min(image.width, Math.ceil((rect[0] + rect[2]) / scale));
@@ -352,8 +356,8 @@ function whitePixelsInRect(image, rect, scale) {
     for (let y = top; y < bottom; y += 1) {
         for (let x = left; x < right; x += 1) {
             const offset = (y * image.width + x) * 4;
-            if (image.rgba[offset + 3] > 0 && image.rgba[offset] > 220
-                && image.rgba[offset + 1] > 220 && image.rgba[offset + 2] > 220) count += 1;
+            if (image.rgba[offset + 3] > 0 && image.rgba[offset] > limit
+                && image.rgba[offset + 1] > limit && image.rgba[offset + 2] > limit) count += 1;
         }
     }
     return count;
@@ -543,7 +547,11 @@ async function judgeAud1(view, input, checkpoints, final) {
         assert(frame.checkpoint.debug.rejoin?.stored_identity === true,
             "AUD1 rendered countdown belongs to its actual stored identity");
         const image = decodePng(Buffer.from((await view.serverFile(`${frame.name}.b64`)).trim(), "base64"));
-        assert(whitePixelsInRect(image, frame.rows[0].rect, Number(frame.checkpoint.scene.scale_factor) || 1) >= 8,
+        // After the reload the "Click to play" overlay (black at alpha 0.55) is over the countdown
+        // until the next gesture; it dims white to about 255 * 0.45^(1/2.2) (RUN130).
+        const underOverlay = (frame.checkpoint.debug.ui_snapshot || []).some((row) => row.id === "focus_overlay" && row.visible === true);
+        const glyphLimit = underOverlay ? Math.round(220 * 0.45 ** (1 / 2.2)) : 220;
+        assert(whitePixelsInRect(image, frame.rows[0].rect, Number(frame.checkpoint.scene.scale_factor) || 1, glyphLimit) >= 8,
             "AUD1 countdown has actual rendered glyphs within its computed visible shell rectangle");
     }
     if (countdownFrames.length >= 2) {
@@ -678,10 +686,9 @@ async function assertMenuSliderClicksWereCaptured(view, input, checkpoints, debu
     const menuOpenIndex = input.findLastIndex((entry, index) => index < saveIndex && entry.call === "key" && entry.args?.[0] === "F10");
     assert(menuOpenIndex >= 0, "AUD1 opens the existing settings menu with its real F10 key");
     const clicks = input.slice(menuOpenIndex + 1, saveIndex).filter((entry) => entry.call === "click");
-    const expected = [[831, 319], [794, 365], [757, 411], [720, 457]];
-    assert.equal(clicks.length, expected.length, "AUD1 physically uses the four visible volume sliders");
+    const values = [0.9, 0.8, 0.7, 0.6];
+    assert.equal(clicks.length, values.length, "AUD1 physically uses the four visible volume sliders");
     for (let index = 0; index < clicks.length; index += 1) {
-        assert.deepEqual(clicks[index].args.slice(0, 2), expected[index], "AUD1 slider click uses its visible track");
         const category = ["master", "voice", "alerts", "effects"][index];
         const beforeName = `aud1-volume-before-${category}.png`;
         const before = checkpointForSave(input, checkpoints, beforeName);
@@ -689,7 +696,12 @@ async function assertMenuSliderClicksWereCaptured(view, input, checkpoints, debu
         assert(beforeSave > menuOpenIndex && beforeSave < input.indexOf(clicks[index]),
             `AUD1 ${category} current menu pixels precede its physical click`);
         const image = decodePng(Buffer.from((await view.serverFile(`${beforeName}.b64`)).trim(), "base64"));
-        const x = expected[index][0], y = expected[index][1];
+        // The click point of the requested value on the track that this screenshot shows (RUN130).
+        const tracks = findVolumeTracks(image);
+        assert(tracks, `AUD1 ${category} screenshot before the click shows the four volume tracks`);
+        const point = volumeClickPoint(tracks[category], values[index]);
+        assert.deepEqual(clicks[index].args.slice(0, 2), [point.x, point.y], "AUD1 slider click uses its visible track");
+        const x = point.x, y = point.y;
         const offset = (y * image.width + x) * 4;
         assert(x >= 0 && y >= 0 && x < image.width && y < image.height && image.rgba[offset + 3] >= 245,
             `AUD1 ${category} physical click point is an actual opaque captured pixel`);

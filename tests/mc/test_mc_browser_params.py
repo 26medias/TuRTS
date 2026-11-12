@@ -65,6 +65,34 @@ class McBrowserParamsTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "startup_raf_probe must be a boolean"):
             validate_task16_plan(slot1)
 
+    def test_stored_client_settings_are_limited_to_slot1_with_a_valid_frame_limit_and_reason(self) -> None:
+        rows = pathlib.Path(__file__).resolve().parents[1] / "browser/rows"
+        slot1 = json.loads((rows / "SLOT1.json").read_text())
+        self.assertEqual(validate_task16_plan(slot1)["client_settings"]["frame_limit"], 20)
+        plan = slot1["stages"]["task16"]
+        for value in (5, 241, -1, "30", 30.0, True, None):
+            plan["client_settings"] = {"frame_limit": value, "reason": "three clients"}
+            with self.subTest(value=value), self.assertRaisesRegex(ValueError, "frame_limit must be 0 or 10 to 240"):
+                validate_task16_plan(slot1)
+        plan["client_settings"] = {"frame_limit": 30, "reason": " "}
+        with self.assertRaisesRegex(ValueError, "reason must be a nonempty text"):
+            validate_task16_plan(slot1)
+        plan["client_settings"] = {"frame_limit": 30}
+        with self.assertRaisesRegex(ValueError, "exactly frame_limit and reason"):
+            validate_task16_plan(slot1)
+        for name in sorted(path.name for path in rows.glob("*.json")):
+            row = json.loads((rows / name).read_text())
+            if row.get("row") == "SLOT1":
+                continue
+            stages = row.get("stages")
+            task16 = stages.get("task16") if isinstance(stages, dict) else None
+            with self.subTest(row=name):
+                self.assertFalse(isinstance(task16, dict) and "client_settings" in task16, "only SLOT1 stores client settings")
+            if isinstance(task16, dict) and row.get("row") in {"KM1", "KM2", "SEL4", "CAM2", "SH1", "PER1"}:
+                task16["client_settings"] = {"frame_limit": 30, "reason": "three clients"}
+                with self.subTest(row=name), self.assertRaisesRegex(ValueError, "limited to SLOT1|unknown fields"):
+                    validate_task16_plan(row)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -29,6 +29,11 @@ async function findScoutFromPixels(io, stage) {
 }
 
 async function drive(io) {
+    // The first join shows the "Click to play" overlay until a gesture (client_shell.rs
+    // sync_focus_overlay, since 3d0cf2f); it takes the first click. A keydown is also the gesture
+    // (crates/turts_client_web/index.html:39-40); F9 has no binding (RUN130).
+    await io.key("F9");
+    await io.wait(300);
     const initial = await findScoutFromPixels(io, "00-camera-start");
     await io.click(initial.x, initial.y, "left");
     await io.wait(100);

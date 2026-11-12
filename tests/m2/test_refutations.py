@@ -112,6 +112,7 @@ class RefutationRunnerTests(unittest.TestCase):
                 "E9-browser-unbounded-buffer",
                 "E9-browser-duplicate-outstanding",
                 "E9-browser-ignore-midtrace-rearm",
+                "E9-browser-convergence-owner-offset",
             ],
         )
         for case in browser_cases:
@@ -141,6 +142,23 @@ class RefutationRunnerTests(unittest.TestCase):
         )
         with self.assertRaisesRegex(ValueError, "no refutation cases selected"):
             refutations.select_cases([cases[0]], "ci-browser")
+
+    def test_shards_split_the_selection_into_disjoint_parts(self):
+        registry = json.loads((Path(__file__).with_name("refutations.json")).read_text())
+        for module, selected in (
+            (refutations, refutations.select_cases(registry, "ci-native")),
+            (m3_refutations, list(range(17))),
+        ):
+            parts = [module.shard_cases(selected, f"{index}/4") for index in range(1, 5)]
+            flat = [item for part in parts for item in part]
+            self.assertEqual(len(flat), len(selected))
+            self.assertEqual(sorted(map(id, flat)), sorted(map(id, selected)))
+            self.assertEqual(module.shard_cases(selected, "1/1"), selected)
+            for bad in ("0/4", "5/4", "1/0", "a/b", "1", "2/3/4"):
+                with self.assertRaisesRegex(ValueError, "--shard must be K/N"):
+                    module.shard_cases(selected, bad)
+            with self.assertRaisesRegex(ValueError, "selects no refutation case"):
+                module.shard_cases(selected[:1], "2/2")
 
     def test_source_copy_skips_node_modules_and_dist(self):
         with tempfile.TemporaryDirectory() as temp:

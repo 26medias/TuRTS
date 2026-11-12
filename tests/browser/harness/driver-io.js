@@ -7,6 +7,8 @@ const crypto = require("node:crypto");
 const { qualifyNavigationReceipt } = require("./navigation-receipt.js");
 const { waitForSync } = require("./wait-sync.js");
 
+// The longest wait for the page bridges after a reload that has scene checkpoints.
+const BRIDGES_READY_MS = 20000;
 const IO_KEYS = Object.freeze(["click", "drag", "key", "move", "wheel", "screenshot", "save", "wait", "reload", "use"]);
 
 function wallTime() { return Date.now(); }
@@ -305,10 +307,26 @@ function createDriverIo(pages, { outputDir, inputLog = [], initialCursor = { x: 
                     await page().waitForTimeout(150);
                 }
             }
+            if (afterScreenshot && !observeReloadLoad) {
+                // A screenshot of a page that has no bridge yet cannot get its scene checkpoint
+                // ("missing scene checkpoint bridge", RUN142 AUD1). The wait is in the harness, not
+                // in the driver, and it is bounded. A page that stays without bridges after the bound
+                // fails the reload with a text that names the fault (see below), so the red does not
+                // blame a later wait that already used its time on the dead page.
+                entry.bridges_ready_after_reload = await page().waitForFunction(() => {
+                    try {
+                        return typeof window.turts_scene === "function" && typeof window.turts_debug === "function" &&
+                            Boolean(window.turts_scene()) && Boolean(window.turts_debug());
+                    } catch { return false; }
+                }, null, { timeout: BRIDGES_READY_MS, polling: 100 }).then(() => true, () => false);
+            }
             const after = documentEpochs[state.selected] ?? 0;
             entry.document_epoch_after = after;
             if (!Number.isSafeInteger(before) || before < 1 || !Number.isSafeInteger(after) || after <= before) {
                 throw new Error(`reload did not advance the actual document epoch: ${before} -> ${after}`);
+            }
+            if (entry.bridges_ready_after_reload === false) {
+                throw new Error(`reload: page bridges absent after ${BRIDGES_READY_MS / 1000} s`);
             }
         }); },
         async use(n) {

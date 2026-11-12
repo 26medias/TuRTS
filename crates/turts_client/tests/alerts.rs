@@ -728,6 +728,7 @@ fn own_unit_destroyed_fires_after_a_long_fight_with_a_bounded_trace() {
         content: Some(content),
         config: Default::default(),
         match_start: None,
+        reorder_grace_override: None,
     };
     let mut app = feedback_app(state, acquired);
     app.update();

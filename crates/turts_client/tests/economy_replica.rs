@@ -27,6 +27,7 @@ fn replica(limit: usize) -> Replica {
         20,
         ReplicaConfig {
             max_buffered_batches: limit,
+            ..ReplicaConfig::default()
         },
     );
     replica.set_context(ReplicaContext::new(content(), 0));

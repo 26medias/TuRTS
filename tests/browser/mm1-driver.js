@@ -25,7 +25,10 @@ async function drive(io, params) {
     const screen = Object.fromEntries(Object.entries(local).map(([key, value]) => [key, point(...value)]));
 
     await io.use(2);
-    await io.wait(200);
+    // The first join shows the "Click to play" overlay, which dims the scene (and the ping colour)
+    // until a gesture. A keydown is the gesture; F9 has no binding (crates/turts_client_web/index.html:39-40).
+    await io.key("F9");
+    await io.wait(250);
     await capture(2, "mm1-window2-no-ping.png");
 
     await io.use(1);
@@ -44,10 +47,24 @@ async function drive(io, params) {
     const focusImage = await capture(1, "mm1-after-focus.png");
     const foreign = selectBody(findBodies(focusImage, 1), focusImage);
     let attackSkipped = !foreign;
+    let pingPoll = null;
+    let killPoll = null;
     if (foreign) {
         await io.click(foreign.x, foreign.y, "right");
-        await io.wait(11000);
+        // The trooper walks 3 units a second: the window 1 shot shows its approach.
+        await io.wait(2000);
         await capture(1, "mm1-window1-attack.png");
+        // The slot 1 window shows the ping once the dummy is damaged. The dummy dies a few seconds
+        // later, so the shot is taken when the ping pixels appear, not after a fixed wait.
+        await io.use(2);
+        pingPoll = await pollForPing(io, params, rect);
+        await capture(2, "mm1-window2-ping.png");
+        await io.use(1);
+        // The minimap right click later replaces the attack order. The kill comes about 14.7 s after the attack
+        // order (8 hits and the cooldowns), and the steps so far take 11 to 15 s, so in 12 of 15 saved clean runs the
+        // move came one or two hits before the kill and the run never ran the kill path (the oracle calls such a run
+        // void). The driver waits, from the pixels of window 1, until the body of the target dummy is gone.
+        killPoll = await pollForKill(io, foreign);
     } else {
         // The original stub leaves the enemy off-screen. Keep driving so the oracle records the
         // named physical camera red instead of stopping at a setup error.
@@ -64,16 +81,116 @@ async function drive(io, params) {
     await io.click(screen.right.x, screen.right.y, "right");
     await io.wait(500);
     await capture(1, "mm1-after-right.png");
+    // One capture only, 500 ms after the click. The replica of window 1 stood still for about 1.1 s after the
+    // kill of the target dummy (RUN142); that stall is repaired in the product (commit 50eb827), so a
+    // later capture would only hide it. The oracle bounds the replica lag at this capture.
     await io.move(Math.round(width / 2), Math.round(height / 2));
     await io.wheel(-20);
     await io.wait(200);
     await capture(1, "mm1-after-zoom.png");
 
-    await io.use(2);
-    await io.wait(200);
-    await capture(2, "mm1-window2-ping.png");
-    await io.save("mm1-driver-steps.json", Buffer.from(JSON.stringify({ rect, local, screen, pixel_targets: { own, foreign }, attack_skipped: attackSkipped, shots }, null, 2) + "\n"));
+    if (!foreign) {
+        await io.use(2);
+        await io.wait(200);
+        await capture(2, "mm1-window2-ping.png");
+    }
+    await io.save("mm1-driver-steps.json", Buffer.from(JSON.stringify({ rect, local, screen, pixel_targets: { own, foreign }, attack_skipped: attackSkipped, ping_poll: pingPoll, kill_poll: killPoll, shots }, null, 2) + "\n"));
     // The driver records only screenshot-derived coordinates and uses the public input harness.
+}
+
+// Poll window 2 for the ping colour inside the minimap. The first ping seen is the one for the
+// first unit that the attacker hits (the dummy next to the target, about 2 s before the target
+// ping). The target ping follows by the alert cooldown, and the target dies 6 s after that, so the
+// shot waits PING_SETTLE_MS after the first sighting. The wait ends the poll without an error
+// when no ping appears: the oracle names that fault from the shot.
+const PING_POLL_MS = 30000;
+const PING_POLL_MAX = 60;
+const PING_SETTLE_MS = 3500;
+const PING_MIN_PIXELS = 4;
+const PING_TOLERANCE = 28;
+
+async function pollForPing(io, params, rect) {
+    const colour = parseHex(params.ping_colour);
+    const started = Date.now();
+    const record = { seen: false, polls: 0, settle_ms: 0, pixels: 0 };
+    for (let poll = 0; poll < PING_POLL_MAX && Date.now() - started < PING_POLL_MS; poll += 1) {
+        const image = decodePng(Buffer.from(await io.screenshot()));
+        record.polls += 1;
+        record.pixels = countColour(image, rect, colour, PING_TOLERANCE);
+        if (record.pixels >= PING_MIN_PIXELS) {
+            record.seen = true;
+            record.seen_after_ms = Date.now() - started;
+            await io.wait(PING_SETTLE_MS);
+            record.settle_ms = PING_SETTLE_MS;
+            return record;
+        }
+        await io.wait(250);
+    }
+    return record;
+}
+
+// Wait in window 1 until the pixels of the slot 1 body at the target are gone (the dummy died). The poll takes
+// screenshots only, with no click and no save, so it changes no state. It ends without an error when the body never
+// goes: the oracle then names the run void from the server tick log.
+const KILL_POLL_MS = 30000;
+const KILL_POLL_MAX = 60;
+const KILL_POLL_GAP_MS = 500;
+// The box of the target also holds a neighbour's pixels: a saved headed run had 201 slot pixels in the box while the
+// target stood and 115 after it died (a ratio of 0.57), so a first version with a ratio of 0.1 never saw the kill and
+// waited the whole 30 s. The body is gone when the box falls below 0.7 of its first count.
+const KILL_BODY_SHARE = 0.7;
+// The dummies stand 4 to 5 pixels apart, so the box is the body box itself: with a margin of 4 or more the box takes
+// pixels of the next dummy (a saved shot: 197 pixels in the box, 210 with margin 4, 358 with margin 8).
+const KILL_BOX_MARGIN = 0;
+
+async function pollForKill(io, foreign) {
+    const record = { gone: false, polls: 0, start_pixels: null, pixels: null, waited_ms: 0 };
+    const started = Date.now();
+    for (let poll = 0; poll < KILL_POLL_MAX && Date.now() - started < KILL_POLL_MS; poll += 1) {
+        const image = decodePng(Buffer.from(await io.screenshot()));
+        record.polls += 1;
+        record.pixels = countSlotBody(image, foreign, 1);
+        if (record.start_pixels === null) record.start_pixels = record.pixels;
+        if (record.pixels < record.start_pixels * KILL_BODY_SHARE) {
+            record.gone = true;
+            break;
+        }
+        await io.wait(KILL_POLL_GAP_MS);
+    }
+    record.waited_ms = Date.now() - started;
+    return record;
+}
+
+// The pixels of the slot colour inside the box of a body (as findBodies measured it) plus a margin.
+function countSlotBody(image, body, slot) {
+    const color = SLOT_RGB[slot];
+    const tolerance = SLOT_TOLERANCE[slot];
+    let count = 0;
+    for (let y = Math.max(0, body.minY - KILL_BOX_MARGIN); y <= Math.min(image.height - 1, body.maxY + KILL_BOX_MARGIN); y += 1) {
+        for (let x = Math.max(0, body.minX - KILL_BOX_MARGIN); x <= Math.min(image.width - 1, body.maxX + KILL_BOX_MARGIN); x += 1) {
+            const pixel = pixelAt(image, x, y);
+            if (pixel && pixel[3] >= 245 && Math.hypot(pixel[0] - color[0], pixel[1] - color[1], pixel[2] - color[2]) <= tolerance) count += 1;
+        }
+    }
+    return count;
+}
+
+function countColour(image, rect, colour, tolerance) {
+    let count = 0;
+    for (let y = rect.y; y < rect.y + rect.size; y += 1) {
+        for (let x = rect.x; x < rect.x + rect.size; x += 1) {
+            const pixel = pixelAt(image, x, y);
+            if (pixel && pixel[3] >= 245 &&
+                Math.hypot(pixel[0] - colour[0], pixel[1] - colour[1], pixel[2] - colour[2]) <= tolerance) count += 1;
+        }
+    }
+    return count;
+}
+
+function parseHex(value) {
+    const match = /^#([0-9a-fA-F]{6})$/.exec(String(value));
+    if (!match) throw new Error(`MM1 ping_colour must be a #rrggbb value, got ${value}`);
+    return [0, 2, 4].map((offset) => parseInt(match[1].slice(offset, offset + 2), 16));
 }
 
 function findBodies(image, slot) {
@@ -150,4 +267,4 @@ function isHud(x, y, image) {
         (x > image.width - 220 && y > image.height - 220) || y > image.height - 40;
 }
 
-module.exports = { drive, findBodies, selectBody, selectOuterComponent };
+module.exports = { drive, findBodies, selectBody, selectOuterComponent, countColour, countSlotBody };

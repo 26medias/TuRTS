@@ -10,6 +10,8 @@ const { prepareSh1Lifecycle } = require("./sh1-lifecycle.js");
 const { createSceneCheckpoints } = require("./scene-checkpoints.js");
 const { waitForDebugRecord } = require("./wait-sync.js");
 const { planFor, runM2Fixture } = require("./m2-ingest.js");
+const { firstClientError, assertNoClientErrorBeforeClose } = require("./client-error.js");
+const { seedStoredClientSettings, clientSettingsSeed, assertStoredClientSettings } = require("./client-settings-seed.js");
 const { installContextMenuObserver } = require("./contextmenu-observer.js");
 const { installBoundedRafHold } = require("./bounded-raf.js");
 const { installDeviceAudit, collectDeviceAudit } = require("./device-audit-descriptor.js");
@@ -187,6 +189,9 @@ async function run(options) {
         if (slotFixture && windows !== 3) throw new Error("SLOT1 fixture requires exactly three simultaneous windows");
         const slotIds = slotFixture ? makeSlotFixtureIds() : null;
         const slotStartup = [];
+        // A stored player setting of the row (SLOT1: the frame limit), loaded by each client.
+        const settingsSeed = clientSettingsSeed(params.task16);
+        const storedSettings = [];
         for (let n = 0; n < windows; n += 1) {
             if (slotFixture && startupRafProbeEnabled && n === 2) {
                 await runSlot1StartupRafProbe({ pages, documentEpochs, outDir: options.outDir,
@@ -214,6 +219,7 @@ async function run(options) {
                 });
             }
             if (slotFixture) await installOneUseSessionSeed(context, slotIds[n]);
+            if (settingsSeed) await context.addInitScript(seedStoredClientSettings, settingsSeed);
             const page = await context.newPage();
             if (deviceAuditEnabled) await Promise.all(deviceAuditAttachTasks.splice(0));
             documentEpochs[n] = 0;
@@ -272,6 +278,10 @@ async function run(options) {
                 }
                 startup = { ...startup, window: n + 1, document_epoch: documentEpochs[n] };
                 slotStartup.push(startup);
+                if (settingsSeed) {
+                    storedSettings.push(await assertStoredClientSettings(page, settingsSeed, n + 1));
+                    await writePrivateJson(path.join(options.outDir, "stored-client-settings.json"), storedSettings);
+                }
                 await writePrivateJson(path.join(options.outDir, "slot1-startup-results.json"), slotStartup);
                 if (n < 2 && !(startup.phase.startsWith("Joined") && startup.last_frame && startup.cameras_3d === 1)) {
                     const outcome = oracle.judgeStartupOutcome({ row: "SLOT1", clause: "owners-stable", role: n === 0 ? "A" : "B", startup });
@@ -402,10 +412,8 @@ async function run(options) {
         }
         // The boot check (above) runs once; a client error later in the run also stops it, as the
         // legacy t7.js poll did at each read (MC task 21, M4). Checkpoints check it at each screenshot.
-        for (const [index, page] of pages.entries()) {
-            const clientError = await page.evaluate(() => window.turts_error || null);
-            if (clientError) throw new Error(`browser client failed in window ${index + 1}: ${clientError}`);
-        }
+        const clientError = await firstClientError(pages);
+        if (clientError) throw new Error(`browser client failed in window ${clientError.window}: ${clientError.error}`);
         await oracle.judge(view, params);
         console.log(`PASS ${path.basename(options.oraclePath)}`);
     } catch (error) {
@@ -1061,6 +1069,7 @@ async function runSlot1Fixture({ io, driver, params, pages, contexts, slotIds, d
     await waitForPrivateOwnerCheckpoint(outDir, capacityCapture.completed_wall_time_ms);
     await assertNoHeldModifiers(inputLog);
     if (auditDevicePage) await auditDevicePage(pages[2], 2);
+    await assertNoClientErrorBeforeClose(pages[2], 3);
     await pages[2].close();
 
     const opener = pages[0];
@@ -1109,6 +1118,7 @@ async function runSlot1Fixture({ io, driver, params, pages, contexts, slotIds, d
     await waitForPrivateOwnerCheckpoint(outDir, terminalCapture.completed_wall_time_ms);
     await assertNoHeldModifiers(inputLog);
     if (auditDevicePage) await auditDevicePage(copied, 2);
+    await assertNoClientErrorBeforeClose(copied, 3);
     await copied.close();
 
     await driver.drive(io, { ...params, fixture_phase: "reload-rejoin" }, {

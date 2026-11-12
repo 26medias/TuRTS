@@ -4,6 +4,18 @@
 const assert = require("node:assert/strict");
 const { decodePng, pixelAt } = require("./harness/png.js");
 const { unprojectGround } = require("./hud4-oracle.js");
+const { assertConnectionHeld, assertKillPathRan, assertNoResync, assertReplicaLag, readServerEvidence, replicaLag } = require("./checkpoint-lib.js");
+
+// The presentation delay of the client, in ticks (crates/turts_client/src/interp.rs:10,
+// `INTERP_DELAY_TICKS`; mm1-oracle.test.js reads that line, so a change there turns the test red).
+const INTERP_DELAY_TICKS = 1;
+// The resync check (assertNoResync) is the assertion that detects the kill stall of RUN142. The lag bound is a
+// second guard, at a value that the saved data separates. 36 saved MM1 runs without the repair of commit 50eb827
+// (and 8 with it, 44 in all), window 1, 375 captures: a replica that runs reads 0 to 3 ticks behind (lag 3 in 10 of
+// them); the 5 runs that the old oracle accepted with a stalled replica read 11 to 20 ticks behind. The bound is the
+// interpolation delay plus 5 = 6: above every clean capture (3) with 3 ticks of margin, below every stalled run (11).
+// The largest lag of the run is printed in the oracle output, so a drift toward the bound shows before it is red.
+const MAX_REPLICA_LAG_TICKS = INTERP_DELAY_TICKS + 5;
 
 async function judge(view, params) {
     const input = view.inputLog();
@@ -18,6 +30,12 @@ async function judge(view, params) {
     assert.deepEqual(params.map_size, [64, 48], "MM1 must use the actual authored 64 by 48 map dimensions");
 
     const checkpoints = JSON.parse(await view.serverFile("scene-checkpoints.json"));
+    const evidence = await readServerEvidence(view);
+    const tickIndex = evidence.index;
+    assertConnectionHeld(checkpoints, evidence, "MM1");
+    // The stall leaves a count in the replica: red whether or not a capture fell inside the stall.
+    assertNoResync(checkpoints, "MM1", evidence);
+    const window1Shots = [];
     const shot = async (name, window) => {
         const saveIndex = input.findIndex((entry) => entry.call === "save" && entry.args?.[0] === name);
         assert(saveIndex >= 0, `MM1 is missing actual screenshot ${name}`);
@@ -26,6 +44,7 @@ async function judge(view, params) {
         assert(screenshotIndex >= 0, `MM1 is missing screenshot input for ${name}`);
         const checkpoint = checkpoints.find((entry) => entry.input_call === screenshotIndex && entry.window === window);
         assert(checkpoint?.scene && checkpoint?.debug, `MM1 screenshot ${name} lacks its actual C84 checkpoint`);
+        if (window === 1) window1Shots.push({ name, checkpoint });
         return { checkpoint, image: decodePng(Buffer.from(await view.serverFile(`${name}.b64`), "base64")) };
     };
 
@@ -41,6 +60,17 @@ async function judge(view, params) {
     const afterRight = await shot("mm1-after-right.png", 1);
     const afterZoom = await shot("mm1-after-zoom.png", 1);
     const pingWindow = await shot("mm1-window2-ping.png", 2);
+    // The replica of window 1 runs at each capture. A later capture is no rescue: the one capture
+    // 500 ms after the right click must already show the replica at the server's pace.
+    const lags = window1Shots.map(({ name, checkpoint }) => ({ name, ...replicaLag(checkpoint, tickIndex, `MM1 ${name}`) }));
+    const largest = lags.reduce((best, entry) => (entry.lag > best.lag ? entry : best), lags[0]);
+    console.log(`MM1 replica lag: largest ${largest.lag} ticks at ${largest.name} (bound ${MAX_REPLICA_LAG_TICKS}); window 1 captures: ${lags.map((entry) => entry.lag).join(",")}`);
+    for (const { name, checkpoint } of window1Shots) assertReplicaLag(checkpoint, tickIndex, MAX_REPLICA_LAG_TICKS, `MM1 ${name}`);
+    // The run must have run the kill path: an enemy unit left the server before the after-right capture. Without a
+    // kill the two checks above had no stall to see (run wAYdrM of the re-check: the minimap right click came one hit
+    // before the kill and replaced the attack order).
+    const enemyIds = new Set((afterFocus.checkpoint.debug.replicated_world?.units || []).filter((unit) => unit.owner_slot === 1).map((unit) => unit.unit_id));
+    assertKillPathRan(enemyIds, evidence.removals, tickIndex, afterRight.checkpoint, "MM1");
 
     for (const { checkpoint } of [before, afterFocus, afterLeft, afterDrag, afterRight, afterZoom, noPing, pingWindow]) {
         assertMinimapRect(checkpoint.scene, expectedRect);
@@ -119,14 +149,26 @@ async function judge(view, params) {
     const alert = (pingWindow.checkpoint.debug.alert_pings || []).find((ping) =>
         ping.unit === targetId && ping.alert_id === "muster_unit_damaged");
     assert(alert && Number.isSafeInteger(alert.tick), "slot 1 must observe the real OwnUnitDamaged AlertPings event");
-    const damaged = pingWindow.checkpoint.debug.replicated_world?.healths?.find((health) => unitId(health.unit) === targetId);
-    assert(damaged && damaged.current < (publicUnits.get(targetId)?.max_health ?? 40),
-        "the slot 1 ping must belong to the actually damaged dummy health record");
     const target = publicUnits.get(targetId)?.pos;
     assert(Array.isArray(target) && Math.hypot(alert.x - target[0], alert.y - target[1]) < 1,
         "the alert ping world point must match the damaged dummy's replicated position");
     const pingLocal = [alert.x / params.map_size[0], 1 - alert.y / params.map_size[1]];
     const pingPixel = minimapPixel(pingLocal, expectedRect);
+    // The ping pixels come before the health record: a ping that is not drawn must give the pixel
+    // text, not the text of a dummy that died while the shot waited (RUN130, plant mm1-no-ping).
+    const pingColor = parseHex(params.ping_colour);
+    const noPingPixels = colorPixelsNear(noPing.image, pingPixel, 7, pingColor, 28);
+    const pingPixels = colorPixelsNear(pingWindow.image, pingPixel, 7, pingColor, 28);
+    assert(noPingPixels.length < 2, "no-ping screenshot control must have no configured ping-colour pixels at the target");
+    assert(pingPixels.length >= 4, "actual OwnUnitDamaged event must add configured ping-shape pixels at its minimap world point");
+    const pingBounds = boundsOf(pingPixels);
+    assert(pingBounds.width >= 2 && pingBounds.height >= 2 && pingBounds.width <= 15 && pingBounds.height <= 15,
+        "actual ping pixels must form a compact visible minimap ping shape at the alert world point");
+    assert(!nearColor(parseHex(params.slot_colours[1]), pingColor, 28),
+        "ping pixel threshold must distinguish slot 1 orange from the configured ping colour");
+    const damaged = pingWindow.checkpoint.debug.replicated_world?.healths?.find((health) => unitId(health.unit) === targetId);
+    assert(damaged && damaged.current < (publicUnits.get(targetId)?.max_health ?? 40),
+        "the slot 1 ping must belong to the actually damaged dummy health record");
     const causalFrames = pingWindow.checkpoint.debug.frames?.retained_input || [];
     const pingFrame = causalFrames.find((frame) => frame.replica_tick === alert.tick && frame.feedback?.alerts?.some((event) =>
         event.id === alert.alert_id && event.unit === targetId && event.position?.x === alert.x && event.position?.y === alert.y));
@@ -149,16 +191,6 @@ async function judge(view, params) {
     assert(firstDrop && priorSample && firstDrop.current < priorSample.current && priorSample.current >= baseline,
         "the qualifying post-stimulus health change must be a real adjacent decrease from the pre-stimulus health level");
     assert(damaged.current < baseline, "the observer's actual health record must remain below its qualified pre-stimulus baseline");
-    const pingColor = parseHex(params.ping_colour);
-    const noPingPixels = colorPixelsNear(noPing.image, pingPixel, 7, pingColor, 28);
-    const pingPixels = colorPixelsNear(pingWindow.image, pingPixel, 7, pingColor, 28);
-    assert(noPingPixels.length < 2, "no-ping screenshot control must have no configured ping-colour pixels at the target");
-    assert(pingPixels.length >= 4, "actual OwnUnitDamaged event must add configured ping-shape pixels at its minimap world point");
-    const pingBounds = boundsOf(pingPixels);
-    assert(pingBounds.width >= 2 && pingBounds.height >= 2 && pingBounds.width <= 15 && pingBounds.height <= 15,
-        "actual ping pixels must form a compact visible minimap ping shape at the alert world point");
-    assert(!nearColor(parseHex(params.slot_colours[1]), pingColor, 28),
-        "ping pixel threshold must distinguish slot 1 orange from the configured ping colour");
 }
 
 function assertMinimapRect(scene, expected) {
@@ -270,6 +302,11 @@ function assertCameraZoom(before, after) {
 
 function distance2(a, b) { return Math.hypot(a[0] - b[0], a[1] - b[1]); }
 
+// The emitted order, the server result and the replicated active order all come from the one capture
+// that the driver took after the click. The replica of that capture must have reached the tick at which
+// the server accepted the order (`result.tick`): a replica that is behind that tick cannot show the
+// order yet (RUN142: the replica stood still for 1.05 s after a kill; the repair is commit 50eb827).
+// A replica that stands still is red. There is no later capture to wait for.
 function assertOrderFromInput(debug, input, orderId, unit, target, message) {
     const sequence = input.event_seq?.at(-1);
     assert(Number.isSafeInteger(sequence), `${message}: missing physical pointer release sequence`);
@@ -285,6 +322,8 @@ function assertOrderFromInput(debug, input, orderId, unit, target, message) {
         entry.seq === emitted.seq && entry.unit === unit);
     assert.equal(result?.status, "accepted",
         `${message}: the server must accept the exact emitted sequence for this unit`);
+    assert(debug.replicated_world?.tick >= result.tick,
+        `${message}: the replica did not reach the server accept tick ${result.tick} (replica tick ${debug.replicated_world?.tick})`);
     const active = (debug.replicated_world?.unit_orders || []).find((entry) => entry.unit === unit);
     assert.equal(active?.current?.order, orderId,
         `${message}: the actual replicated unit order must still name the accepted order`);
@@ -450,4 +489,4 @@ function nearColor(pixel, color, tolerance) {
     return Math.hypot(pixel[0] - color[0], pixel[1] - color[1], pixel[2] - color[2]) <= tolerance;
 }
 
-module.exports = { judge };
+module.exports = { judge, assertOrderFromInput, MAX_REPLICA_LAG_TICKS, INTERP_DELAY_TICKS };

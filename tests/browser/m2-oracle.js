@@ -24,6 +24,9 @@ const {
 } = require("./m2-oracle-lib.js");
 const { visibleRingPixels } = require("./vis-full-oracle.js");
 const { validateTranslationReceipt } = require("./harness/m2-fixture.js");
+const { parseDurationMs, recipeFor, validateRecipeDuration } = require("./harness/m2-recipe.js");
+const fs = require("node:fs");
+const path = require("node:path");
 
 // mods/<package>/units/*.ron names; scripts/m2-browser.sh renames the two cedar units.
 const UNIT_NAMES = {
@@ -34,6 +37,30 @@ const UNIT_NAMES = {
 const PRODUCER = { base: "base:command_center", haul: "haul:depot", cedar: "cedar:depot", acme: "acme:scout" };
 const WORKER = { base: "base:harvester", haul: "haul:worker", cedar: "cedar:worker" };
 const OFFSET = { base: 18, haul: 18, cedar: 18, acme: 0 };
+// Public convergence has two profiles. The gate profile is the default. It gives the judgement
+// that was gated before MC repair 82b08db: it waits 10 s, and it compares the two windows only
+// at a tick that both windows report in the same poll (compare mode "same_poll"). The wide
+// profile is opt-in: an environment value TURTS_M2_CONVERGENCE_LIMIT_MS (a whole number of ms)
+// sets a hard limit; the wait then goes on past 10 s while both windows still advance their tick
+// (no new tick for 15 s ends it), up to that limit, and it compares at any tick that both
+// windows showed at any poll (compare mode "cross_poll"). Only the hosted software-render legs of
+// .github/workflows/ci.yml set the value: there the windows show about 1 frame per second (runs
+// ci-run134-m2-sw-gl-1 and -2) and seldom show one tick at one poll. A poll reads both windows.
+// Since hosted run 43214215645 no CI leg sets it: the windows share no tick on the software renderer
+// (0 shared ticks in 1651 polls, 180 s), so these cases are local-only (tests/m2/local-only.tsv).
+// Both profiles keep the first projection of each tick.
+const CONVERGENCE_ENV = "TURTS_M2_CONVERGENCE_LIMIT_MS";
+// The cap of the debug request of each window (design D 9, row DBG1): one build each 250 ms. A poll
+// of both profiles idles the windows for longer than the cap (waitForSharedTick); MC had 100 ms.
+const DEBUG_CAP_MS = 250;
+const CONVERGENCE_GATE = Object.freeze({ name: "gate", min_ms: 10000, stall_ms: 15000, limit_ms: 10000, poll_ms: DEBUG_CAP_MS + 20, cross_poll: false });
+
+function convergenceLimits(env = process.env) {
+    const value = env[CONVERGENCE_ENV];
+    if (value === undefined || value === "") return CONVERGENCE_GATE;
+    if (!/^[1-9][0-9]*$/.test(value)) throw new Error(`${CONVERGENCE_ENV} must be a whole number of ms above 0, saw ${JSON.stringify(value)}`);
+    return Object.freeze({ ...CONVERGENCE_GATE, name: "wide", limit_ms: Number(value), cross_poll: true });
+}
 
 function unitNear(debug, contentId, x, y) {
     return (debug.replicated_world?.units ?? []).find((unit) => unit.content_id === contentId && unit.owner_slot === 0 &&
@@ -152,33 +179,79 @@ async function judgeConvergence(view, at, joined, packageName) {
         const mesh = selected.scene.units.find((unit) => unit.unit_id === unitId);
         assertPickCircleClearOfHud(selected.scene, selected.debug, mesh);
     }
-    const shared = await sampleSharedTick(view);
-    if (shared) return shared;
-    assert.fail("public world projections differ between owners at a shared coherent tick");
+    const result = await waitForSharedTick(view, convergenceLimits());
+    // The time to agreement of every profile goes to the harness log (one machine-readable line).
+    console.log(`M2_CONVERGENCE ${JSON.stringify({ package: packageName, ...result })}`);
+    return result;
 }
 
-// Each window builds its debug state on a request, at most 4 times a second (design D 9, row DBG1;
-// `view.bridge` makes the request). Two reads one after the other leave the two builds one round
-// trip apart, and the 250 ms cap keeps that gap the same in every round, so a pair that straddles a
-// tick boundary (20 Hz) straddles it in every round and the ticks never meet. Idle the windows for
-// more than the cap, so that a request builds in the next frame, ask both windows at once, and
-// change the idle time in each round so that the pair does not fall on the same phase of the tick.
-// The pair must show one tick and one public projection (the M2 convergence claim, unchanged).
-const DEBUG_CAP_MS = 250;
-async function sampleSharedTick(view, { deadlineMs = 10000, now = Date.now, sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+// The judgement: at one tick that both windows show, the two public projections are equal.
+// The oracle keeps the first projection that each window shows at each tick. A window that shows
+// a wrong projection and then a right one at one tick stays wrong: only the first projection
+// counts, in every profile (the old loop compared the current projections, so it passed this).
+// limits.cross_poll false (gate): the windows are compared at a tick that both report in the
+// same poll. limits.cross_poll true (wide): at each tick that both showed, at any poll. The wait
+// ends at the limit of the profile (convergenceLimits). `unstable_ticks` counts the reads at
+// which a window showed, at a tick it had shown before, a projection other than the first one.
+// It is reported in the result and in the failure text, and it is not judged: it was 0 on the
+// one real GPU run that printed it (ci-run142-qaplant-conv-b, 1316 shared ticks), and a failure
+// rule needs data first.
+// The sampling (MP1, L0-DBG): each window builds its debug state on a request, at most 4 times a
+// second (design D 9, row DBG1; `view.bridge` makes the request). Two reads one after the other leave
+// the two builds one round trip apart, and the 250 ms cap keeps that gap the same in every round, so
+// a pair that straddles a tick boundary (20 Hz) straddles it in every round and the ticks never meet.
+// So each poll idles the windows for `limits.poll_ms` (the gate profile: more than the cap, so that
+// a request builds in the next frame), asks both windows at once, and adds a wait that changes in
+// each round so that the pair does not fall on the same phase of the tick. `now`, `sleep` and
+// `project` are test hooks (m2-oracle.test.js, a virtual clock).
+async function waitForSharedTick(view, limits = CONVERGENCE_GATE, { now = Date.now, sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
     project = (debug) => publicProjection({ debug }) } = {}) {
-    const deadline = now() + deadlineMs;
-    for (let round = 0; now() < deadline; round += 1) {
-        await sleep(DEBUG_CAP_MS + 20 + (round * 17) % 50);
-        const [debug0, debug1] = await Promise.all([view.bridge("turts_debug", 1), view.bridge("turts_debug", 2)]);
-        const world0 = debug0?.replicated_world;
-        const world1 = debug1?.replicated_world;
-        if (world0?.tick === world1?.tick && world0?.tick !== null && world0?.tick !== undefined &&
-            JSON.stringify(project(debug0)) === JSON.stringify(project(debug1))) {
-            return { tick: world0.tick };
+    const started = now();
+    const crossPoll = limits.cross_poll === true;
+    const seen = [new Map(), new Map()];
+    const compared = new Set();
+    const changes = [[], []];
+    const progress = { polls: 0, shared_ticks: 0, shared_tick_differs: 0, unstable_ticks: 0, last_advance_ms: [started, started] };
+    const report = () => ({ profile: limits.name ?? "custom", compare: crossPoll ? "cross_poll" : "same_poll", limit_ms: limits.limit_ms,
+        agreed_after_ms: now() - started, polls: progress.polls, shared_ticks: progress.shared_ticks,
+        shared_tick_differs: progress.shared_tick_differs, unstable_ticks: progress.unstable_ticks });
+    for (let round = 0; ; round += 1) {
+        const time = now();
+        const stalled = progress.last_advance_ms.some((advanced) => time - advanced > limits.stall_ms);
+        if (time - started >= limits.min_ms && (stalled || time - started >= limits.limit_ms)) break;
+        await sleep(limits.poll_ms + (round * 17) % 50);
+        const debugs = await Promise.all([view.bridge("turts_debug", 1), view.bridge("turts_debug", 2)]);
+        progress.polls += 1;
+        const fresh = new Set();
+        for (const [index, debug] of debugs.entries()) {
+            const tick = debug?.replicated_world?.tick;
+            if (!Number.isInteger(tick)) continue;
+            const projection = JSON.stringify(project(debug));
+            if (seen[index].has(tick)) {
+                if (seen[index].get(tick) !== projection) progress.unstable_ticks += 1;
+                continue;
+            }
+            seen[index].set(tick, projection);
+            progress.last_advance_ms[index] = now();
+            changes[index].push([now() - started, tick]);
+            fresh.add(tick);
+        }
+        const tick0 = debugs[0]?.replicated_world?.tick;
+        const tick1 = debugs[1]?.replicated_world?.tick;
+        const candidates = crossPoll ? [...fresh] : (Number.isInteger(tick0) && tick0 === tick1 ? [tick0] : []);
+        for (const tick of candidates) {
+            if (compared.has(tick) || !seen[0].has(tick) || !seen[1].has(tick)) continue;
+            compared.add(tick);
+            progress.shared_ticks += 1;
+            if (seen[0].get(tick) === seen[1].get(tick)) return { tick, ...report() };
+            progress.shared_tick_differs += 1;
         }
     }
-    return null;
+    const tail = (list) => JSON.stringify(list.slice(-8));
+    assert.fail(`public world projections differ between owners at a shared coherent tick (profile ${limits.name ?? "custom"}, ` +
+        `compare ${crossPoll ? "cross_poll" : "same_poll"}, limit ${limits.limit_ms} ms, ${now() - started} ms, ` +
+        `${progress.polls} polls, ${progress.shared_ticks} shared ticks, ${progress.shared_tick_differs} of them different, ` +
+        `${progress.unstable_ticks} unstable; [ms, tick] window 1 ${tail(changes[0])} window 2 ${tail(changes[1])})`);
 }
 
 function ingestOf(step) {
@@ -320,13 +393,52 @@ function credits(debug) {
 // Produce through the plain HUD: an enabled row of the recipe for the producer is under the
 // click, the server applies the order, and the job shows in the queue rows.
 // The first later snapshot (a checkpoint after the click, or a harness step) in which the server
-// applied one more order; m2.js waited 5 s for it.
+// applied one more order within APPLY_WINDOW_SECONDS of the click; m2.js waited 5 s for it.
+//
+// The latency is judged in server ticks, not in the wall time between two harness checkpoints. On the hosted
+// software renderer one checkpoint costs 5 to 6.6 s, so the old wall limit of 6000 ms failed runs 43242960493 and
+// 43264331478 although the server had applied the order 44 and 46 ticks (2.2 s and 2.3 s) after the pre-click
+// checkpoint. Both ticks are on the clock of the server: `applied_tick` of a CommandResult is the server tick that
+// applied the order (the server sends it, the client only relays it), and `replicated_world.tick` is the server
+// tick of the last world batch that the replica applied. The replica never runs ahead of the server, so the replica
+// tick of the pre-click checkpoint is at most the server tick at the click; a lagging replica makes the measured
+// latency LONGER than the true one. It can make a late application look late, never a late one look early.
+// The new result must also be applied at or after that tick, so a late result of an EARLIER command (which grows
+// the count too) does not count for the click. The rate is read from the run (`debug.tick_hz`), never written here.
+// The wall limit stays only as a far guard against a dead run: a checkpoint more than DEAD_RUN_WALL_MS after the
+// pre-click one is not the result of that click (observed hosted maximum 6.6 s; 60 s is 9 times that).
+const APPLY_WINDOW_SECONDS = 6;
+const DEAD_RUN_WALL_MS = 60000;
+
+function appliedWithinWindow(before, shot, appliedBefore) {
+    const results = (shot.debug?.command_results ?? []).filter((result) => Number.isInteger(result.applied_tick));
+    if (results.length <= appliedBefore) return false;
+    const rate = before.debug?.tick_hz;
+    assert(Number.isInteger(rate) && rate > 0, "the pre-click checkpoint has no tick_hz: the application latency cannot be judged in ticks");
+    const preTick = before.debug?.replicated_world?.tick;
+    assert(Number.isInteger(preTick), "the pre-click checkpoint has no replicated tick: the application latency cannot be judged in ticks");
+    const ticks = results.at(-1).applied_tick - preTick;
+    if (ticks < 0 || ticks > APPLY_WINDOW_SECONDS * rate) return false;
+    const wall = (shot.wall_time_ms ?? before.wall_time_ms ?? 0) - (before.wall_time_ms ?? 0);
+    return wall <= DEAD_RUN_WALL_MS;
+}
+
 function appliedAfter(checkpoints, click, extra = []) {
     const appliedBefore = appliedCommandCount(click.before);
-    const clickTime = click.before.wall_time_ms ?? 0;
     const later = [...checkpoints.filter((shot) => shot.window === 1 && shot.input_call > click.clickIndex)
         .sort((left, right) => left.input_call - right.input_call), ...extra];
-    return later.find((shot) => appliedCommandCount(shot) > appliedBefore && (shot.wall_time_ms ?? clickTime) - clickTime <= 6000) ?? null;
+    return later.find((shot) => appliedWithinWindow(click.before, shot, appliedBefore)) ?? null;
+}
+
+// The first checkpoint after a Cancel click that shows the refund: one more applied order within the same tick
+// bound, the job gone from the queue and from the Cancel rows, and the exact credits.
+function cancelRefundShot(checkpoints, cancel, producerId, jobId, expectedCredits) {
+    const appliedAtCancel = appliedCommandCount(cancel.before);
+    return checkpoints.filter((shot) => shot.window === 1 && shot.input_call > cancel.clickIndex)
+        .find((shot) => appliedWithinWindow(cancel.before, shot, appliedAtCancel) &&
+            !queueOf(shot.debug, producerId)?.jobs?.some((item) => item.id === jobId) &&
+            !cancelRows(shot.debug, producerId).some((row) => row.widget_action.job === jobId) &&
+            credits(shot.debug) === expectedCredits) ?? null;
 }
 
 function judgeProduce(input, checkpoints, label, producerId, recipe, message, extra = []) {
@@ -379,13 +491,7 @@ async function judgeEconomy(view, input, checkpoints, at, joined) {
     const refund = job.stage === "running" ? 50 : 100;
     const expected = before - 100 + refund;
     const cancel = judgeCancel(input, checkpoints, "m2-econ-cancel", producer.unit_id, second.jobId);
-    const appliedAtCancel = appliedCommandCount(cancel.before);
-    const later = checkpoints.filter((shot) => shot.window === 1 && shot.input_call > cancel.clickIndex &&
-        shot.wall_time_ms - cancel.before.wall_time_ms <= 6000);
-    const done = later.find((shot) => appliedCommandCount(shot) > appliedAtCancel &&
-        !queueOf(shot.debug, producer.unit_id)?.jobs?.some((item) => item.id === second.jobId) &&
-        !cancelRows(shot.debug, producer.unit_id).some((row) => row.widget_action.job === second.jobId) &&
-        credits(shot.debug) === expected);
+    const done = cancelRefundShot(checkpoints, cancel, producer.unit_id, second.jobId, expected);
     assert(done, `exact ${job.stage} refund should yield ${expected} Credits`);
     const harvester = at("m2-worker-selected");
     const selectClick = input.findIndex((entry, index) => index > at("m2-econ-cancelled").screenshotIndex && entry.call === "click" && entry.args?.[2] === "left");
@@ -528,6 +634,17 @@ async function judgeCase(view, params) {
     // The packed map copy is the source map moved by the declared offset (tests/m2/browser_fixture.py).
     validateTranslationReceipt(packageName, caseId, String(OFFSET[packageName]),
         JSON.parse(await view.serverFile("map-fixture-translation.json")));
+    // The packed recipe time (M2_RECIPE_DURATION_SCALE, tests/m2/recipe_duration.py): the true time
+    // comes from mods/, never from the receipt, and every job must show the packed duration. The
+    // economy cases check the jobs at the end, so that a plant fails for its own reason first (a
+    // missing button leaves no job in the world).
+    const recipe = recipeFor(caseId);
+    const sourceDurationMs = recipe
+        ? parseDurationMs(fs.readFileSync(path.join(__dirname, "..", "..", "mods", recipe.package, recipe.file), "utf8"), recipe.file)
+        : null;
+    const recipeReceipt = JSON.parse(await view.serverFile("recipe-duration.json"));
+    const checkRecipeDuration = () => validateRecipeDuration({ packageName, caseId, sourceDurationMs, checkpoints, receipt: recipeReceipt });
+    if (!recipe) checkRecipeDuration();
     const joined = at("m2-joined");
     assertJoined(joined, packageName);
     assertPublicProjectionSchema(joined);
@@ -535,7 +652,9 @@ async function judgeCase(view, params) {
         const record = JSON.parse(await view.serverFile("m2-ingest-private.json"));
         const records = await readAuditRecords(view.serverLines("economy-audit-private.jsonl"));
         if (caseId.endsWith("recovery")) return judgeRecovery(view, record, records, joined);
-        return judgeLoss(view, input, checkpoints, at, caseId.slice("E9-browser-base-loss-".length), record, records, joined);
+        const lossResult = await judgeLoss(view, input, checkpoints, at, caseId.slice("E9-browser-base-loss-".length), record, records, joined);
+        if (recipe) checkRecipeDuration();
+        return lossResult;
     }
     if (caseId.endsWith("-public-convergence")) return judgeConvergence(view, at, joined, packageName);
     await judgeSelection(view, at, joined, packageName);
@@ -547,6 +666,7 @@ async function judgeCase(view, params) {
         judgeProductionCancel(input, checkpoints, at, joined, packageName);
         judgeGather(input, checkpoints, at, joined, packageName);
     }
+    if (recipe) checkRecipeDuration();
     return null;
 }
 
@@ -562,4 +682,4 @@ async function judge(view, params) {
     }
 }
 
-module.exports = { judge, appliedAfter, assertPickCircleClearOfHud, cancelRows, hudClick, produceRow, sampleSharedTick, UNIT_NAMES };
+module.exports = { judge, appliedAfter, cancelRefundShot, assertPickCircleClearOfHud, cancelRows, hudClick, produceRow, waitForSharedTick, convergenceLimits, DEBUG_CAP_MS, UNIT_NAMES };

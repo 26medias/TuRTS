@@ -104,14 +104,15 @@ NOT TRACED unless an actual matching server event proves it.
 
 ## Persistence and native reference
 
-PER1 and `PER1-binding-corruption-proposal.json` are executable settings and
-binding corruption cases. A one-use initializer seeds only the exact declared
+`rows/PER1.json` and `rows/PER1-binding.json` are the two required PER1 episodes (ruling C334, design
+row PER1): the settings corruption case and the invalid binding case. Run both rows for PER1.
+They are executable settings and binding corruption cases. A one-use initializer seeds only the exact declared
 private fixture before product boot. It retains set/readback values, hashes,
 origin, URL, time origin and clocks. A read-only Storage audit calls the original
 method and records successful product operations separately from fixture seeds.
 The driver receives no storage interface. Both cases require real defaults,
 one deduplicated notice, actual namespace/isolation/pruning outcomes and
-contrasting notice pixels. The older proposal filename grants no waiver.
+contrasting notice pixels. The binding case was first named a proposal; that name granted no waiver.
 
 `scripts/per1_native_reference.py` discovers and launches the actual locked
 `persist` test executable in the assigned cache. It retains process PID, argv,
