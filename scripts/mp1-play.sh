@@ -126,13 +126,17 @@ mapfile -t ARGS < <(chrome_args "$PORT" "$PROFILE")
 "$CHROME_BIN" "${ARGS[@]}" "$URL" >"$PROFILE.chrome.log" 2>&1 &
 CHROME_PID=$!
 # Chrome writes the port that it listens on to <profile>/DevToolsActivePort.
-for _ in $(seq 1 100); do
+# A headed Chrome with the GPU flags can need more than 10 s on a busy host: wait up to 60 s.
+for _ in $(seq 1 600); do
     [[ -s "$PROFILE/DevToolsActivePort" ]] && break
     kill -0 "$CHROME_PID" 2>/dev/null || break
     sleep 0.1
 done
 if [[ "$(head -1 "$PROFILE/DevToolsActivePort" 2>/dev/null || true)" != "$PORT" ]]; then
     echo "mp1-play: Chrome did not listen on port $PORT (see $PROFILE.chrome.log)" >&2
+    # The cleanup removes the log: show its end now.
+    tail -n 20 "$PROFILE.chrome.log" >&2 2>/dev/null || true
+    kill -0 "$CHROME_PID" 2>/dev/null && echo "mp1-play: Chrome was still running after 60 s" >&2
     exit 1
 fi
 echo "URL: $URL"
