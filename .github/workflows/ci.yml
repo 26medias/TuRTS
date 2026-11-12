@@ -39,6 +39,9 @@ jobs:
         run: |
           python3 tests/m2/test_refutations.py
           python3 tests/m2/test_m2_browser_suite.py
+          python3 tests/m2/test_recipe_duration.py
+          python3 tests/m2/test_local_only.py
+          python3 tests/m2/local_only.py --check
       - name: Acceptance (M2 and M3 process tests, release, serial)
         run: bash scripts/acceptance.sh
       - name: Upload native and acceptance diagnostics
@@ -122,6 +125,24 @@ jobs:
   # the planted and the restored client again, so each case has its own job: in one job the eight
   # cases cannot fit the 360-minute limit of GitHub. The `m2` job checks that this matrix lists
   # every browser case of tests/m2/refutations.json.
+  #
+  # What hosted run 43214215645 showed (after the cargo fetch repair), and what the legs do about it:
+  # - Economy cases (base, haul, cedar; the refutation legs E9-browser-missing-button, -missing-output-mesh
+  #   and E2-browser-hardcoded-label use them). One screenshot costs about 3.3 s, and the steps between
+  #   Produce and Cancel took 8.1 s (base) and 9.6 s (cedar). The recipes last 5 s and 6 s, so the job was done
+  #   when the Cancel click came. The legs set M2_RECIPE_DURATION_SCALE=4: the packed copy gets a 4 times
+  #   longer recipe (20 s and 24 s; 2.5 times the longest measured step gap), `mods/` is unchanged, and the
+  #   oracle needs every job of the received world to have the packed duration (tests/m2/recipe_duration.py,
+  #   tests/browser/harness/m2-recipe.js). The local GPU run does not set it and keeps the true times.
+  #   The base case waits 15 shots (about 60 s hosted) for the first rifleman, so 20 s fits in that wait.
+  #   Whether these cases pass on the hosted runner is NOT TRACED until a run after this change.
+  # - Public-convergence cases (base, haul, acme, cedar; the refutation leg E9-browser-convergence-owner-offset
+  #   uses the base one). Each window shows a new tick only every 28 ticks and the two windows are 16 ticks out
+  #   of phase, so they share no tick (0 shared ticks in 1651 and 1656 polls, 180 s). A longer limit cannot
+  #   help. These cases need a real GPU. M2_LOCAL_ONLY_CASES lists them: the job prints one plain line for each
+  #   (M2_CASE_LOCAL_ONLY ...) and writes the same facts to the job summary, with the local gate command and the
+  #   place of its receipt. A case in that list needs a row in tests/m2/local-only.tsv; the `check` job fails
+  #   otherwise (tests/m2/local_only.py --check). The local gate runs them with the true GPU.
   browser:
     name: browser ${{ matrix.suite }} ${{ matrix.case }}
     runs-on: ubuntu-latest
@@ -154,10 +175,11 @@ jobs:
       M2_HEADLESS: "false"
       M2_CHROME_ARGS_JSON: '["--enable-gpu","--use-angle=gl","--enable-unsafe-webgpu","--ignore-gpu-blocklist"]'
       M2_IGNORE_DEFAULT_ARGS_JSON: '["--enable-unsafe-swiftshader"]'
-      # Opt-in wide limit of the M2 public-convergence wait (tests/browser/m2-oracle.js
-      # convergenceLimits). Without this value the oracle keeps its gate limit of 10 s. On the
-      # software renderer each window shows about 1 frame per second, so the hosted legs allow 180 s.
-      TURTS_M2_CONVERGENCE_LIMIT_MS: "180000"
+      # Economy cases only: 4 times the recipe time in the packed copy (see the comment above the job).
+      M2_RECIPE_DURATION_SCALE: "4"
+      # Cases that need a real GPU and are not run here (see the comment above the job). Each one needs
+      # a row in tests/m2/local-only.tsv. Keep this a plain quoted comma list.
+      M2_LOCAL_ONLY_CASES: "E9-browser-base-public-convergence,E9-browser-haul-public-convergence,E9-browser-acme-public-convergence,E9-browser-cedar-public-convergence,E9-browser-convergence-owner-offset"
       TURTS_REFUTATION_EVIDENCE_DIR: ${{ github.workspace }}/target/m3-evidence/t16-builder/refutations/browser
       TURTS_REFUTATION_BUILD_ROOT: ${{ github.workspace }}/target/m3-t16/refutations/browser-build
     steps:
@@ -200,7 +222,7 @@ jobs:
         working-directory: tests/browser
       - name: Browser projection and audit helper tests
         if: matrix.suite == 't7-m3'
-        run: node --test tests/browser/m2-projection.test.js tests/browser/m2-audit.test.js tests/browser/t7-oracle.test.js tests/browser/t7-driver.test.js tests/browser/m3-oracle.test.js tests/browser/pt1-oracle.test.js tests/browser/m2-oracle.test.js
+        run: node --test tests/browser/m2-projection.test.js tests/browser/m2-audit.test.js tests/browser/t7-oracle.test.js tests/browser/t7-driver.test.js tests/browser/m3-oracle.test.js tests/browser/pt1-oracle.test.js tests/browser/m2-oracle.test.js tests/browser/m2-recipe.test.js
       # The browser steps use the Chrome profile of the job env.
       - name: T7 browser join
         if: matrix.suite == 't7-m3'
