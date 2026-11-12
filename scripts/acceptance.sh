@@ -85,6 +85,7 @@ cargo build --release -p turts_server
 cargo build --release -p turts_client
 run_cargo_test unit_boot aggregate -p turts_server --test unit_boot -- --ignored --test-threads=1
 run_cargo_test hello aggregate -p turts_server --test hello -- --ignored --test-threads=1
+run_cargo_test connection_end aggregate -p turts_server --test connection_end -- --ignored --test-threads=1
 run_cargo_test acceptance aggregate -p turts_server --test acceptance -- --ignored --test-threads=1 "$@"
 t5_passes=$(grep -Ec '^test t5_convergence \.\.\. ok$' "$log_dir/acceptance.log" || true)
 if [[ "$t5_passes" == 1 ]]; then

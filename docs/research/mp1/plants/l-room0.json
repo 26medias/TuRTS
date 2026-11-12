@@ -1,0 +1,82 @@
+[
+  {
+    "row": "L-ROOM0",
+    "plant": "(a) remove the observer that writes the removal record: app.add_observer(session_diagnostics::on_session_removed) at stats.rs:105 [receipt: /home/julien/Projects/TuRTS/target/mc-evidence/mp1-lroom0-plant-a-red]",
+    "files": [
+      {
+        "file": "crates/turts_server/src/stats.rs",
+        "patch": "diff --git a/crates/turts_server/src/stats.rs b/crates/turts_server/src/stats.rs\nindex a4ff6a4..7a55dc0 100644\n--- a/crates/turts_server/src/stats.rs\n+++ b/crates/turts_server/src/stats.rs\n@@ -102,7 +102,6 @@ pub fn install(app: &mut App, cli: &Cli) -> Result<(), String> {\n     );\n     app.insert_resource(diagnostics);\n     app.add_observer(session_diagnostics::on_session_added);\n-    app.add_observer(session_diagnostics::on_session_removed);\n     app.insert_resource(TickTimer {\n         path: path.clone(),\n         started: Instant::now(),\n"
+      }
+    ],
+    "command": "cargo test --release --locked -p turts_server --test connection_end -- --ignored --test-threads=1 --nocapture",
+    "env": {},
+    "headed": false,
+    "expected_red": "assertion `left == right` failed: no removal record: the server wrote no `session_authority_removed` record after the client ended",
+    "exit": 101,
+    "commit": "8ccfa2d187284013c88b12c4c806ee2e39035846"
+  },
+  {
+    "row": "L-ROOM0",
+    "plant": "(b) the colour of a new seat is the seat index, not the lowest free palette index [receipt: /home/julien/Projects/TuRTS/target/mc-evidence/mp1-lroom0-plant-b-red]",
+    "files": [
+      {
+        "file": "crates/turts_server/src/room.rs",
+        "patch": "diff --git a/crates/turts_server/src/room.rs b/crates/turts_server/src/room.rs\nindex f3bc681..fca70a7 100644\n--- a/crates/turts_server/src/room.rs\n+++ b/crates/turts_server/src/room.rs\n@@ -297,7 +297,7 @@ impl SeatTable {\n             return Err(SeatError::ConnectionSeated);\n         }\n         let index = self.lowest_open_seat().ok_or(SeatError::NoOpenSeat)?;\n-        let colour = self.lowest_free_colour().ok_or(SeatError::NoFreeColour)?;\n+        let colour = index;\n         self.seats[usize::from(index)] = Some(Seat {\n             player_id,\n             connection: Some(connection),\n"
+      }
+    ],
+    "command": "cargo test -p turts_server --locked --bin turts_server room::",
+    "env": {},
+    "headed": false,
+    "expected_red": "test room::tests::the_lowest_free_colour_is_not_the_seat_index ... FAILED (left: Some(1), right: Some(0)); also room::tests::no_free_colour_refuses_the_seat",
+    "exit": 101,
+    "commit": "8ccfa2d187284013c88b12c4c806ee2e39035846"
+  },
+  {
+    "row": "L-ROOM0",
+    "plant": "(c) extra: a lobby seat is not released when its connection ends (SeatTable::release call removed from Room::connection_ended) [receipt: /home/julien/Projects/TuRTS/target/mc-evidence/mp1-lroom0-plant-c-red]",
+    "files": [
+      {
+        "file": "crates/turts_server/src/room.rs",
+        "patch": "diff --git a/crates/turts_server/src/room.rs b/crates/turts_server/src/room.rs\nindex f3bc681..92363f3 100644\n--- a/crates/turts_server/src/room.rs\n+++ b/crates/turts_server/src/room.rs\n@@ -545,7 +545,6 @@ impl Room {\n                 slot: SlotId(index),\n             };\n         }\n-        self.seats.release(index);\n         if let Some(state) = self.state.next(RoomStep::CountdownToLobby) {\n             self.state = state;\n         }\n"
+      }
+    ],
+    "command": "cargo test -p turts_server --locked --bin turts_server room::",
+    "env": {},
+    "headed": false,
+    "expected_red": "test room::tests::a_lobby_seat_is_released_when_its_connection_ends_and_only_then ... FAILED (6 of 35 tests fail)",
+    "exit": 101,
+    "commit": "8ccfa2d187284013c88b12c4c806ee2e39035846"
+  },
+  {
+    "row": "L-ROOM0",
+    "plant": "(d) extra: the start step claims seat i to slot 1-i [receipt: /home/julien/Projects/TuRTS/target/mc-evidence/mp1-lroom0-plant-d-red]",
+    "files": [
+      {
+        "file": "crates/turts_server/src/room.rs",
+        "patch": "diff --git a/crates/turts_server/src/room.rs b/crates/turts_server/src/room.rs\nindex f3bc681..2b7ee4a 100644\n--- a/crates/turts_server/src/room.rs\n+++ b/crates/turts_server/src/room.rs\n@@ -580,7 +580,7 @@ impl Room {\n             .map(|(index, seat)| {\n                 let seat = seat.as_ref().expect(\"all_seated checked the seat\");\n                 PlannedClaim {\n-                    slot: SlotId(index as u8),\n+                    slot: SlotId(1 - index as u8),\n                     player_id: seat.player_id,\n                     connection: seat.connection.expect(\"all_seated checked the connection\"),\n                     colour: seat.colour,\n"
+      }
+    ],
+    "command": "cargo test -p turts_server --locked --bin turts_server room::",
+    "env": {},
+    "headed": false,
+    "expected_red": "test room::tests::the_start_claims_seat_i_to_slot_i_in_index_order ... FAILED (left: [(SlotId(1), 300, ConnectionKey(3)), (SlotId(0), 200, ConnectionKey(2))])",
+    "exit": 101,
+    "commit": "8ccfa2d187284013c88b12c4c806ee2e39035846"
+  },
+  {
+    "row": "L-ROOM0",
+    "plant": "(e) review M1: leave_match records the leave in any state (the Ended check removed) [receipt: /home/julien/Projects/TuRTS/target/mc-evidence/mp1-lroom0-plant-e-red]",
+    "files": [
+      {
+        "file": "crates/turts_server/src/room.rs",
+        "patch": "diff --git a/crates/turts_server/src/room.rs b/crates/turts_server/src/room.rs\nindex df13161..4198f2e 100644\n--- a/crates/turts_server/src/room.rs\n+++ b/crates/turts_server/src/room.rs\n@@ -635,9 +635,6 @@ impl Room {\n     /// 6.7.7 step 6): the call returns `false` and changes nothing in any other state, and\n     /// when the id holds no claim.\n     pub fn leave_match(&mut self, player_id: u64) -> bool {\n-        if self.state != RoomState::Ended {\n-            return false;\n-        }\n         let Some(index) = self.seats.seat_of_player(player_id) else {\n             return false;\n         };\n"
+      }
+    ],
+    "command": "cargo test -p turts_server --locked --bin turts_server room::",
+    "env": {},
+    "headed": false,
+    "expected_red": "test room::tests::r8_leave_match_is_ignored_before_ended_and_the_owner_reconnects_in_ended ... FAILED; test room::tests::r7_no_path_releases_a_claim_after_the_start ... FAILED",
+    "exit": 101,
+    "commit": "4d7c6cb1c16d20f59db19304923296488ccad949"
+  }
+]

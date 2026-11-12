@@ -11,6 +11,7 @@ mod net;
 mod orderlog;
 mod orders;
 mod outbound;
+mod room;
 mod session;
 mod session_diagnostics;
 mod stats;
