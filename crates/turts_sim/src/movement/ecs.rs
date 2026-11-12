@@ -3,7 +3,9 @@
 //! The movement system may write only these fields (pre-MP1 slice, A1c repair; the replay
 //! validator checked this for each movement phase, and the ledger audit has no movement model):
 //! - the components `Position`, `MoveTarget`, `MoveProgress`, `PlainMoveProgress` (until A2b2)
-//!   and `PhysicalEscape`, and the resource `MovementPools`.
+//!   and `PhysicalEscape`, and the resource `MovementPools`;
+//! - `PendingMovementOrders::next_pool_id`, the id counter of the pools, one step for each
+//!   fallback pool of one that it adds to `MovementPools` (task A2b1; `fallback.rs`).
 //!
 //! It reads `UnitOrders` (for the resting set only), `UnitType`, `Owner`, `UnitId`, `MapBounds`,
 //! `SimClock` and `Time<Fixed>`. It writes nothing else: no order state, no owner, no map
@@ -11,8 +13,10 @@
 //! calls the system on the installed world and between ticks of two real scenarios (the Muster
 //! field, and a blocked plain move that ends in a physical escape) and compares the full audit
 //! state, so a write to any other audited field is red. The test also counts each arm of the
-//! write loop (insert and remove of each movement component) and fails if one arm never runs
-//! (the A1c re-check: plant S2 in the escape arm was green with the Muster scenario alone).
+//! write loop (insert and remove of each movement component, and the fallback pools) and fails if
+//! one arm never runs (the A1c re-check: plant S2 in the escape arm was green with the Muster
+//! scenario alone). Since task A2b1 no code makes a plain progress, so its insert arm is dead
+//! code until task A2b2 deletes it; the test requires that it never runs.
 //! Known gap: a write of a
 //! constant that already holds at every snapshot after tick 0 is not seen; the outcome tests of
 //! the orders and of the group movement hold those values. The writer scan (`turts_checks/tests/
@@ -23,7 +27,8 @@ use bevy_ecs::world::World;
 use bevy_math::Vec2;
 use bevy_time::{Fixed, Time};
 
-use super::frame::{MovementFrame, step_frame_preserving_resting};
+use super::fallback::assign_fallback_pools;
+use super::frame::{MovementFrame, MovementStep, step_frame_with_fallbacks};
 use super::plain::PlainMoveProgress;
 use super::{MoveProgress, MovementPools, PhysicalEscape};
 use crate::registry::UnitTypes;
@@ -91,9 +96,34 @@ pub(crate) fn integrate_movement(world: &mut World) {
                 .then_some(*unit_id)
         })
         .collect();
-    let outputs = step_frame_preserving_resting(&frame, delta, &preserve_resting_units);
+    let MovementStep {
+        mut outputs,
+        fallbacks,
+    } = step_frame_with_fallbacks(&frame, delta, &preserve_resting_units);
+    #[cfg(feature = "test-probes")]
+    let fallback_units: Vec<u32> = fallbacks.iter().map(|request| request.unit_id).collect();
+    // The fallback pools of one take their ids from the counter of the order pools, in unit-id
+    // order (task A2b1; `fallback.rs`). The resource is borrowed only when a fallback exists,
+    // so that a frame with no fallback leaves the change tick of the counter as it was.
+    let fallback_pools = if fallbacks.is_empty() {
+        Vec::new()
+    } else {
+        if !world.contains_resource::<crate::orders::PendingMovementOrders>() {
+            world.init_resource::<crate::orders::PendingMovementOrders>();
+        }
+        let mut pending = world.resource_mut::<crate::orders::PendingMovementOrders>();
+        assign_fallback_pools(&mut outputs, fallbacks, &mut pending.next_pool_id)
+    };
     #[cfg(feature = "test-probes")]
     super::probe::store_frame_flags(world, &outputs);
+    #[cfg(feature = "test-probes")]
+    {
+        let inputs: Vec<_> = units
+            .iter()
+            .map(|(unit_id, _, unit)| (*unit_id, unit.target))
+            .collect();
+        super::probe::record_fallback_trips(world, &inputs, &outputs, &fallback_units);
+    }
     for ((_, entity, _), output) in units.into_iter().zip(outputs) {
         let mut entity_mut = world.entity_mut(entity);
         if let Some(target) = output.target {
@@ -118,6 +148,12 @@ pub(crate) fn integrate_movement(world: &mut World) {
             entity_mut.insert(escape);
         } else {
             entity_mut.remove::<PhysicalEscape>();
+        }
+    }
+    if !fallback_pools.is_empty() {
+        let mut pools = world.resource_mut::<MovementPools>();
+        for pool in fallback_pools {
+            pools.0.insert(pool.pool_id, pool);
         }
     }
     let active_pools: std::collections::BTreeSet<_> = world
@@ -170,7 +206,51 @@ mod tests {
         for unit in object["economy"]["units"].as_array_mut().unwrap() {
             unit.as_object_mut().unwrap().remove("pos");
         }
+        // The pool id counter: `call` checks it apart (task A2b1). The audit state leaves out an
+        // empty `pending_movement_orders` (a counter of 0 is part of "empty"), so the default
+        // value stands in for it, and the counter is removed from both.
+        let mut pending = object.remove("pending_movement_orders").unwrap_or_else(|| {
+            serde_json::to_value(crate::orders::PendingMovementOrders::default()).unwrap()
+        });
+        pending.as_object_mut().unwrap().remove("next_pool_id");
+        object.insert("pending_movement_orders".into(), pending);
         state
+    }
+
+    /// Call the movement system one time. The pool id counter may grow only by the fallback
+    /// pools of one that the call adds: each new pool has a new id above the old counter, and the
+    /// unit that holds it has a fallback progress. Returns the count of those pools.
+    fn call(world: &mut bevy_ecs::world::World, label: &str, tick: u32) -> usize {
+        let next_before = world
+            .resource::<crate::orders::PendingMovementOrders>()
+            .next_pool_id;
+        integrate_movement(world);
+        let next_after = world
+            .resource::<crate::orders::PendingMovementOrders>()
+            .next_pool_id;
+        let new_pools: Vec<u64> = world
+            .resource::<crate::movement::MovementPools>()
+            .0
+            .keys()
+            .copied()
+            .filter(|pool_id| *pool_id > next_before)
+            .collect();
+        let fallback_pools = world
+            .iter_entities()
+            .filter_map(|entity| entity.get::<crate::movement::MoveProgress>())
+            .filter(|progress| progress.is_fallback() && progress.pool_id > next_before)
+            .count();
+        assert_eq!(
+            (next_after - next_before) as usize,
+            new_pools.len(),
+            "{label} tick {tick}: the pool id counter moved by more than the new pools {new_pools:?}"
+        );
+        assert_eq!(
+            fallback_pools,
+            new_pools.len(),
+            "{label} tick {tick}: a new pool {new_pools:?} is not the fallback pool of a unit"
+        );
+        new_pools.len()
     }
 
     /// How often each arm of the write loop of `integrate_movement` ran: for each movement
@@ -179,6 +259,8 @@ mod tests {
     /// when the insert arm ran, so the counts come from the components after each call.
     #[derive(Debug, Default)]
     struct WriteArms {
+        /// The fallback pools of one that a call added (task A2b1).
+        fallback_pools: usize,
         target_set: usize,
         target_removed: usize,
         progress_set: usize,
@@ -230,13 +312,16 @@ mod tests {
             }
         }
 
+        /// The arms that must run. The insert arm of the plain progress is not in the list: no
+        /// code makes a plain progress since task A2b1 (see `the_movement_system_writes_only_
+        /// movement_state`).
         fn arms(&self) -> [(&'static str, usize); 8] {
             [
+                ("fallback pool added", self.fallback_pools),
                 ("target set", self.target_set),
                 ("target removed", self.target_removed),
                 ("progress set", self.progress_set),
                 ("progress removed", self.progress_removed),
-                ("plain progress set", self.plain_set),
                 ("plain progress removed", self.plain_removed),
                 ("escape set", self.escape_set),
                 ("escape removed", self.escape_removed),
@@ -259,7 +344,7 @@ mod tests {
         // write of a constant (for example an owner) that the movement system makes in each
         // call is then seen as a change; between two ticks it would already be in the state.
         let installed = without_movement_state(app.world_mut());
-        integrate_movement(app.world_mut());
+        arms.fallback_pools += call(app.world_mut(), label, 0);
         arms.count(app.world_mut());
         assert_eq!(
             installed,
@@ -279,7 +364,7 @@ mod tests {
             app.update();
             let before_full = serde_json::to_value(crate::audit_state(app.world_mut())).unwrap();
             let before = without_movement_state(app.world_mut());
-            integrate_movement(app.world_mut());
+            arms.fallback_pools += call(app.world_mut(), label, tick);
             arms.count(app.world_mut());
             let after_full = serde_json::to_value(crate::audit_state(app.world_mut())).unwrap();
             let after = without_movement_state(app.world_mut());
@@ -465,5 +550,7 @@ mod tests {
                 "the arm {arm:?} of the write loop never ran: {arms:?}"
             );
         }
+        // No code makes a plain progress since task A2b1: its insert arm never runs.
+        assert_eq!(arms.plain_set, 0, "a plain progress was made: {arms:?}");
     }
 }

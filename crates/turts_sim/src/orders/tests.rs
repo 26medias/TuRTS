@@ -264,6 +264,8 @@ fn accepted_legacy_gather_clears_stale_movement_state_and_identity() {
             claim_count: 3,
 
             follow_origin: None,
+            gather_goal: None,
+            fallback: None,
         },
         crate::movement::PlainMoveProgress {
             original_point: Vec2::new(30.0, 30.0),
@@ -1974,6 +1976,8 @@ fn fresh_blocked_progress_precedes_active_move_in_export() {
             claim_count: 3,
 
             follow_origin: None,
+            gather_goal: None,
+            fallback: None,
         },
     ));
     app.world_mut().entity_mut(entity).insert(UnitOrders {
@@ -2391,6 +2395,8 @@ fn accepted_legacy_move_to_cancels_a_modern_plain_candidate() {
             best_distance: 1.0,
             claim_count: 0,
             follow_origin: None,
+            gather_goal: None,
+            fallback: None,
         },
         crate::movement::PhysicalEscape {
             target: Some(Vec2::new(9.0, 8.0)),

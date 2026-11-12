@@ -162,3 +162,114 @@ pub fn pending_movement_orders(world: &World) -> usize {
         .get_resource::<PendingMovementOrders>()
         .map_or(0, |pending| pending.pending_units.values().sum())
 }
+
+/// The fallback pools of one trip of one unit (pre-MP1 slice, task A2b1; gate 2 M1).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FallbackTrip {
+    /// The unit id.
+    pub unit: u32,
+    /// The number of the trip of this unit, from 1.
+    pub trip: u64,
+    /// The fallback pools that the movement step gave to the unit in this trip.
+    pub fallback_pools: u32,
+}
+
+/// Where each unit is in its trips, and the fallback pools of each trip (task A2b1). The
+/// movement system writes it after each frame; no simulation code reads it.
+#[derive(Resource, Debug, Default)]
+pub struct FallbackTripLog {
+    units: BTreeMap<u32, TripCursor>,
+    pools: BTreeMap<(u32, u64), u32>,
+}
+
+#[derive(Debug, Default)]
+struct TripCursor {
+    trip: u64,
+    /// The `MoveTarget` that the movement step left on the unit.
+    target_after_step: Option<bevy_math::Vec2>,
+    /// The gather leg of the unit at the last frame: the stage and the goal.
+    leg: Option<(bool, super::PlainGatherGoal)>,
+}
+
+/// The gather leg of a unit: `(true, node)` on the way to a node, `(false, receiver)` on the way
+/// to a receiver, `None` for any other stage or no gather order. The same source as the gather
+/// protocol of `orders/run.rs`.
+fn gather_leg(world: &World, unit: u32) -> Option<(bool, super::PlainGatherGoal)> {
+    use crate::economy::gather::GatherStage;
+    let order = world
+        .get_resource::<crate::economy::EconomyOrders>()?
+        .0
+        .get(&unit)?;
+    match order.stage {
+        GatherStage::MovingToNode => order
+            .deposit
+            .map(|node| (true, super::PlainGatherGoal::Node(node.0))),
+        GatherStage::MovingToReceiver => order
+            .receiver
+            .map(|receiver| (false, super::PlainGatherGoal::Receiver(receiver))),
+        _ => None,
+    }
+}
+
+/// Count the fallback pools of one frame by trip. `inputs` holds the unit id and the
+/// `MoveTarget` of each unit at the start of the frame; `fallback_units` the units that the step
+/// gave a pool of one. A unit stays in its trip while its gather leg is the same, or, with no
+/// gather leg, while its `MoveTarget` is the one that the movement step left on it. Any other
+/// change (a target that a writer other than the movement step sets, replaces or removes; a gather
+/// leg that starts, ends or changes) starts a new trip.
+pub(super) fn record_fallback_trips(
+    world: &mut World,
+    inputs: &[(u32, Option<bevy_math::Vec2>)],
+    outputs: &[MovementFrameOutput],
+    fallback_units: &[u32],
+) {
+    let legs: Vec<_> = inputs
+        .iter()
+        .map(|(unit, _)| gather_leg(world, *unit))
+        .collect();
+    if !world.contains_resource::<FallbackTripLog>() {
+        world.insert_resource(FallbackTripLog::default());
+    }
+    let mut log = world.resource_mut::<FallbackTripLog>();
+    for (((unit, target), leg), output) in inputs.iter().zip(legs).zip(outputs) {
+        debug_assert_eq!(*unit, output.unit_id);
+        let cursor = log.units.entry(*unit).or_default();
+        let same_trip = match leg {
+            Some(leg) => cursor.trip > 0 && cursor.leg == Some(leg),
+            None => {
+                cursor.trip > 0
+                    && cursor.leg.is_none()
+                    && target.is_some()
+                    && *target == cursor.target_after_step
+            }
+        };
+        if !same_trip {
+            cursor.trip += 1;
+        }
+        cursor.leg = leg;
+        cursor.target_after_step = output.target;
+        let trip = cursor.trip;
+        if fallback_units.contains(unit) {
+            *log.pools.entry((*unit, trip)).or_default() += 1;
+        }
+    }
+}
+
+/// The trips that made at least one fallback pool, in (unit, trip) order. A trip ends when the
+/// `MoveTarget` of its unit is removed or replaced by a writer other than the movement step, or
+/// when its gather leg ends (`record_fallback_trips`).
+pub fn fallback_trips(world: &World) -> Vec<FallbackTrip> {
+    world
+        .get_resource::<FallbackTripLog>()
+        .map(|log| {
+            log.pools
+                .iter()
+                .map(|(&(unit, trip), &fallback_pools)| FallbackTrip {
+                    unit,
+                    trip,
+                    fallback_pools,
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}

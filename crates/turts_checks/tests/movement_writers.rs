@@ -57,41 +57,43 @@ type Pin = (&'static str, &'static str, usize);
 const PINNED: &[(&str, &str, &[Pin])] = &[
     (
         "crates/turts_sim/src/movement/",
-        "the movement step and its state",
+        "the movement step and its state; the fallback pools of one (A2b1)",
         &[
+            ("construct", "MoveProgress", 1),
             ("construct", "MoveTarget", 1),
             ("construct", "MovementPool", 2),
             ("construct", "PlainMoveProgress", 1),
             ("construct", "Position", 1),
             ("method", "MoveProgress", 1),
             ("method", "MoveTarget", 1),
-            ("method", "MovementPools", 1),
+            ("method", "MovementPools", 2),
             ("method", "PlainMoveProgress", 1),
             ("method", "Position", 1),
         ],
     ),
     (
         "crates/turts_sim/src/orders/",
-        "order dispatch writes orders, targets, progress and pools",
+        "order dispatch writes orders, targets, progress and pools; the fallback protocol and the \
+         Blocked pool of one of a failed legacy envelope (A2b1)",
         &[
-            ("construct", "MoveProgress", 1),
+            ("construct", "MoveProgress", 2),
             ("construct", "MoveTarget", 9),
-            ("construct", "PlainMoveProgress", 1),
+            ("construct", "MovementPool", 1),
             ("construct", "UnitOrders", 11),
-            ("method", "MoveProgress", 20),
+            ("method", "MoveProgress", 25),
             ("method", "MoveTarget", 17),
-            ("method", "MovementPools", 1),
-            ("method", "PlainMoveProgress", 24),
+            ("method", "MovementPools", 2),
+            ("method", "PlainMoveProgress", 23),
             ("method", "UnitOrders", 23),
         ],
     ),
     (
         "crates/turts_sim/src/economy/gather.rs",
-        "a gather trip sets and clears its target and its progress",
+        "a gather trip sets and clears its target and tags its fallback pool (A2b1)",
         &[
             ("construct", "MoveTarget", 1),
+            ("method", "MoveProgress", 1),
             ("method", "MoveTarget", 6),
-            ("method", "PlainMoveProgress", 1),
         ],
     ),
     (
@@ -121,10 +123,11 @@ const PINNED: &[(&str, &str, &[Pin])] = &[
     ),
     (
         "crates/turts_sim/src/command.rs",
-        "the legacy Gather and MoveTo commands",
+        "the legacy Gather and MoveTo commands; a legacy MoveTo ends a fallback pool (A2b1)",
         &[
             ("construct", "MoveTarget", 1),
             ("construct", "UnitOrders", 1),
+            ("method", "MoveProgress", 1),
             ("method", "PlainMoveProgress", 1),
         ],
     ),

@@ -3,7 +3,8 @@
 use bevy_math::Vec2;
 use std::collections::BTreeMap;
 
-use super::plain::{PlainMoveProgress, make_plain_progress, step_plain_progress};
+use super::fallback::{FallbackRequest, fallback_pool};
+use super::plain::{PlainMoveProgress, step_plain_progress};
 use super::pool_index::{
     MovementPoolIndex, add_pool_slot_claim, refresh_nearby_pool_slot_clearances,
     remove_pool_slot_claim,
@@ -53,18 +54,39 @@ pub struct MovementFrameOutput {
     pub probe: super::probe::FrameFlags,
 }
 
-/// Deterministic movement kernel shared by the ECS adapter and economy-log replay.
+/// The result of one movement frame: one output for each unit, in unit-id order, and one
+/// fallback request for each unit that the step gave a pool of one (task A2b1; `fallback.rs`).
+/// The progress of such a unit names the pool id 0 until `assign_fallback_pools` gives the ids.
+#[derive(Debug, Clone, PartialEq)]
+pub struct MovementStep {
+    pub outputs: Vec<MovementFrameOutput>,
+    pub fallbacks: Vec<FallbackRequest>,
+}
+
+/// Deterministic movement kernel shared by the ECS adapter and the tests. It returns the outputs
+/// only: a fallback pool of one in them keeps the pool id 0 (see `step_frame_with_fallbacks`).
 pub fn step_frame(frame: &MovementFrame, dt: f32) -> Vec<MovementFrameOutput> {
     step_frame_preserving_resting(frame, dt, &std::collections::BTreeSet::new())
 }
 
 /// Move a frame while retaining resting slots for orders that still need their
-/// assigned destination after a temporary combat pause.
+/// assigned destination after a temporary combat pause. It returns the outputs only (see
+/// `step_frame_with_fallbacks`).
 pub fn step_frame_preserving_resting(
     frame: &MovementFrame,
     dt: f32,
     preserve_resting_units: &std::collections::BTreeSet<u32>,
 ) -> Vec<MovementFrameOutput> {
+    step_frame_with_fallbacks(frame, dt, preserve_resting_units).outputs
+}
+
+/// Move a frame, and return the fallback pools of one that the step made (task A2b1). The
+/// movement system gives them their ids (`assign_fallback_pools`).
+pub fn step_frame_with_fallbacks(
+    frame: &MovementFrame,
+    dt: f32,
+    preserve_resting_units: &std::collections::BTreeSet<u32>,
+) -> MovementStep {
     let mut units = frame.units.clone();
     units.sort_unstable_by_key(|unit| unit.unit_id);
     let mut points: Vec<_> = units
@@ -173,6 +195,7 @@ pub fn step_frame_preserving_resting(
             *counts.entry(key).or_default() += 1;
             counts
         });
+    let mut fallbacks = Vec::new();
 
     for index in 0..units.len() {
         if index > 0 {
@@ -201,11 +224,11 @@ pub fn step_frame_preserving_resting(
             );
             if !overlapping {
                 outputs[index].physical_escape = None;
-                if outputs[index]
-                    .progress
-                    .as_ref()
-                    .is_some_and(|progress| progress.activity == MovementActivity::Blocked)
-                {
+                // A `Blocked` fallback pool keeps `Blocked` until a new order or a new trip
+                // (design 9.17), as the plain progress did.
+                if outputs[index].progress.as_ref().is_some_and(|progress| {
+                    progress.activity == MovementActivity::Blocked && !progress.is_fallback()
+                }) {
                     let progress = outputs[index].progress.take().unwrap();
                     let key = (
                         progress.pool_id,
@@ -290,10 +313,9 @@ pub fn step_frame_preserving_resting(
                     target: Some(escape),
                 });
                 if !still_overlapping
-                    && outputs[index]
-                        .progress
-                        .as_ref()
-                        .is_some_and(|progress| progress.activity == MovementActivity::Blocked)
+                    && outputs[index].progress.as_ref().is_some_and(|progress| {
+                        progress.activity == MovementActivity::Blocked && !progress.is_fallback()
+                    })
                 {
                     let progress = outputs[index].progress.take().unwrap();
                     let key = (
@@ -354,6 +376,14 @@ pub fn step_frame_preserving_resting(
                 });
             if !occupied {
                 update_target_claims(&mut target_claims, unit.target, None);
+                if progress.is_fallback() {
+                    // A `Blocked` fallback pool keeps `Blocked` and its slot until a new order or
+                    // a new trip (design 9.17): it stops, as a `Blocked` plain progress with no
+                    // target did. The pool of an order clears its progress here.
+                    outputs[index].target = None;
+                    units[index].target = None;
+                    continue;
+                }
                 let old_key = (
                     progress.pool_id,
                     progress.slot.x.to_bits(),
@@ -554,13 +584,15 @@ pub fn step_frame_preserving_resting(
             );
             continue;
         }
-        let Some(target) = unit.target else { continue };
+        let Some(mut target) = unit.target else {
+            continue;
+        };
         // One step for a unit that moves to its target. A unit with a pool and a unit with no
         // pool pass the same phases in the same order: arrival, steering, projection, then the
         // end of the step. Three values have one float expression for a unit with a pool and
         // another for a unit with no pool; the presence of the pool selects the expression, so
         // that the output is bit-equal to the two branches that this step replaces (design 9.8).
-        let pooled = unit.progress.is_some();
+        let mut pooled = unit.progress.is_some();
         let mut progress = unit.progress.clone();
         #[cfg(feature = "test-probes")]
         {
@@ -578,53 +610,38 @@ pub fn step_frame_preserving_resting(
                                     < unit.radius + units[other_index].radius - 1.0e-5
                         });
             if target_occupied {
-                let progress = make_plain_progress(&unit, target, &plain_spread_context);
-                let mut plain_unit = unit.clone();
-                plain_unit.target = Some(progress.slot);
-                let output = step_plain_progress(
-                    frame.bounds,
-                    frame.tick_hz,
-                    max_radius,
-                    dt,
-                    index,
-                    &plain_unit,
-                    progress,
-                    &units,
-                    &points,
-                    &grid,
-                    &plain_spread_context,
-                );
-                outputs[index] = output.clone();
-                // The plain step replaced the whole output: put the phase calls back.
+                // Fallback: the goal is occupied, so the trip takes a pool of one with the spread
+                // code (design 9.11). A pool with no free slot is `Blocked`, and the unit stops.
+                // Else the unit steps to its slot in this frame as a unit with a pool, as the plain
+                // progress stepped in its first frame. Its pool has the id 0 until the movement
+                // system gives the ids (`fallback.rs`), so it is in no group in this frame.
+                let (pool, fallback) = fallback_pool(&unit, target, &plain_spread_context);
                 #[cfg(feature = "test-probes")]
                 {
-                    outputs[index].probe.phases.arrival = 1;
-                    outputs[index].probe.phases.fallback = 1;
+                    outputs[index].probe.phases.fallback += 1;
                 }
-                update_target_claims(&mut target_claims, unit.target, output.target);
-                units[index].position = output.position;
-                units[index].target = output.target;
-                units[index].plain_progress = output.plain_progress.clone();
-                points[index].position = output.position;
-                grid.move_point(index, unit.position, output.position);
-                refresh_nearby_pool_slot_clearances(
-                    unit.position,
-                    output.position,
-                    unit.radius,
-                    &slot_points,
-                    &slot_refs,
-                    &slot_grid,
-                    &mut pool_indexes,
-                    &units,
-                    &points,
-                    &grid,
-                    &assigned_slots,
-                    max_radius,
-                );
-                continue;
+                fallbacks.push(FallbackRequest {
+                    unit_id: unit.unit_id,
+                    pool,
+                });
+                if fallback.activity == MovementActivity::Blocked {
+                    update_target_claims(&mut target_claims, unit.target, None);
+                    outputs[index].target = None;
+                    outputs[index].progress = Some(fallback);
+                    units[index].target = None;
+                    units[index].progress = outputs[index].progress.clone();
+                    continue;
+                }
+                target = fallback.slot;
+                progress = Some(fallback);
+                pooled = true;
             }
         }
-        let pool_id = progress.as_ref().map(|state| state.pool_id);
+        // A pool id of 0 is a fallback pool of this frame with no id yet: it has no group.
+        let pool_id = progress
+            .as_ref()
+            .map(|state| state.pool_id)
+            .filter(|pool_id| *pool_id != 0);
         let pass_mode = progress.as_ref().is_some_and(|state| state.pass_mode);
         let mut movement_target = target;
         let mut failed_blocked = false;
@@ -900,22 +917,22 @@ pub fn step_frame_preserving_resting(
                 }
                 new_target = (!failed_blocked).then_some(movement_target);
             } else if separated || was_projected {
-                // Fallback of a unit with no pool: it was pushed or projected, so it carries
-                // a plain progress to its target.
+                // Fallback of a unit with no pool: it was pushed or projected and did not arrive,
+                // so the trip takes a pool of one with the spread code (design 9.11). The unit
+                // has moved in this frame; it moves to its slot from the next frame.
                 #[cfg(feature = "test-probes")]
                 {
                     outputs[index].probe.phases.fallback += 1;
                 }
-                let mut plain = make_plain_progress(&unit, target, &plain_spread_context);
-                plain.slot = movement_target;
-                plain.best_distance = unit.position.distance(movement_target);
-                let next_distance = position.distance(movement_target);
-                if next_distance < plain.best_distance - 0.01 * step_limit {
-                    plain.best_distance = next_distance;
-                } else {
-                    plain.stalled_ticks = 1;
-                }
-                outputs[index].plain_progress = Some(plain);
+                let (pool, mut fallback) = fallback_pool(&unit, target, &plain_spread_context);
+                fallback.best_distance = position.distance(fallback.slot);
+                new_target =
+                    (fallback.activity != MovementActivity::Blocked).then_some(fallback.slot);
+                progress = Some(fallback);
+                fallbacks.push(FallbackRequest {
+                    unit_id: unit.unit_id,
+                    pool,
+                });
             }
         }
         // An early arrival of a unit with no pool now updates `target_claims`; the old branch did
@@ -974,14 +991,29 @@ pub fn step_frame_preserving_resting(
         })
         .collect();
     for output in &mut outputs {
-        if output.progress.as_ref().is_some_and(|progress| {
-            progress.activity == MovementActivity::Resting
-                && !moving_pools.contains(&progress.pool_id)
-                && progress.follow_origin.is_none()
-                && !preserve_resting_units.contains(&output.unit_id)
-        }) {
+        let collect = output.progress.as_ref().is_some_and(|progress| {
+            if progress.is_fallback() {
+                // A fallback pool that rests: the step collects it only when it served no gather
+                // leg (design 9.19), took no spare and rests on the point of its trip, as the
+                // plain progress was dropped at its original point. Else it stays `Resting`, and
+                // the order phase ends it (`orders/run.rs`), or the follow order completes on it.
+                progress.activity == MovementActivity::Resting
+                    && progress.gather_goal.is_none()
+                    && progress.claim_count == 0
+                    && frame
+                        .pools
+                        .get(&progress.pool_id)
+                        .is_some_and(|pool| pool.point == progress.slot)
+            } else {
+                progress.activity == MovementActivity::Resting
+                    && !moving_pools.contains(&progress.pool_id)
+                    && progress.follow_origin.is_none()
+                    && !preserve_resting_units.contains(&output.unit_id)
+            }
+        });
+        if collect {
             output.progress = None;
         }
     }
-    outputs
+    MovementStep { outputs, fallbacks }
 }

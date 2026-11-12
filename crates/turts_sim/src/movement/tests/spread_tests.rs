@@ -95,6 +95,8 @@ fn active_group_progress_does_not_add_a_post_step_arrival_snap() {
                 claim_count: 0,
 
                 follow_origin: None,
+                gather_goal: None,
+                fallback: None,
             }),
             plain_progress: None,
             physical_escape: None,
@@ -136,6 +138,8 @@ fn contact_correction_does_not_add_a_post_step_arrival_snap() {
                 claim_count: 0,
 
                 follow_origin: None,
+                gather_goal: None,
+                fallback: None,
             }),
             None,
         ),
@@ -475,6 +479,8 @@ fn blocked_escape_chooses_nearest_free_point_when_old_pool_is_far_and_occupied()
                     claim_count: 3,
 
                     follow_origin: None,
+                    gather_goal: None,
+                    fallback: None,
                 }),
 
                 plain_progress: None,
@@ -556,6 +562,8 @@ fn no_spare_pool_blocks_on_the_first_other_group_stall_deadline() {
                     claim_count: 0,
 
                     follow_origin: None,
+                    gather_goal: None,
+                    fallback: None,
                 }),
 
                 plain_progress: None,
@@ -634,6 +642,8 @@ fn exhausted_claims_become_blocked_at_the_one_second_stall_deadline() {
                     claim_count: 3,
 
                     follow_origin: None,
+                    gather_goal: None,
+                    fallback: None,
                 }),
 
                 plain_progress: None,
@@ -658,6 +668,8 @@ fn exhausted_claims_become_blocked_at_the_one_second_stall_deadline() {
                     claim_count: 0,
 
                     follow_origin: None,
+                    gather_goal: None,
+                    fallback: None,
                 }),
 
                 plain_progress: None,
@@ -868,6 +880,8 @@ fn step_frame_rejects_fully_occupied_spares_without_pool_wide_stalled_scans() {
                 claim_count: 0,
 
                 follow_origin: None,
+                gather_goal: None,
+                fallback: None,
             }),
 
             plain_progress: None,
@@ -907,6 +921,8 @@ fn step_frame_rejects_fully_occupied_spares_without_pool_wide_stalled_scans() {
                 claim_count: 0,
 
                 follow_origin: None,
+                gather_goal: None,
+                fallback: None,
             }),
 
             plain_progress: None,

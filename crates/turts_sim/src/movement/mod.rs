@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 mod ecs;
+mod fallback;
 mod frame;
 mod plain;
 #[cfg(test)]
@@ -23,9 +24,10 @@ mod spread;
 mod spread_tests;
 
 pub(crate) use ecs::integrate_movement;
+pub use fallback::{FallbackRequest, assign_fallback_pools};
 pub use frame::{
-    MovementFrame, MovementFrameOutput, MovementFrameUnit, step_frame,
-    step_frame_preserving_resting,
+    MovementFrame, MovementFrameOutput, MovementFrameUnit, MovementStep, step_frame,
+    step_frame_preserving_resting, step_frame_with_fallbacks,
 };
 pub use plain::PlainMoveProgress;
 pub use spread::{SpreadContext, spread_destinations, spread_destinations_with_context};
@@ -65,6 +67,34 @@ pub struct MoveProgress {
     pub claim_count: u8,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub follow_origin: Option<FollowMoveOrigin>,
+    /// The gather leg that a fallback pool serves (pre-MP1 slice, task A2b1; design 9.19). The
+    /// gather writes it (`economy/gather.rs`, `set_target`), and the order phase clears the pool
+    /// when the gather is reached or its endpoint changes (`orders/run.rs`). The movement step
+    /// does not collect a fallback pool while it is `Some`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gather_goal: Option<PlainGatherGoal>,
+    /// `Some` for a pool of one that the movement step gives to a trip with no pool when its goal
+    /// is occupied or it is pushed off its line (the fallback), and for the `Blocked` pool of one
+    /// that a failed legacy envelope writes (task A2b1). It replaces the plain progress of the
+    /// old movement model. `None` for the pool of an order.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fallback: Option<MoveFallback>,
+}
+
+/// The state that only a fallback pool has (task A2b1).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MoveFallback {
+    /// The order phase recorded the `Blocked` result of this trip one time
+    /// (`orders/run.rs`), so it does not record it again. A `Blocked` fallback pool keeps
+    /// `Blocked` until a new order or a new trip (design 9.17).
+    pub failure_recorded: bool,
+}
+
+impl MoveProgress {
+    /// The pool is a fallback pool (see `MoveProgress::fallback`).
+    pub fn is_fallback(&self) -> bool {
+        self.fallback.is_some()
+    }
 }
 
 /// The live Unit target and per-actor legal goal used for initial spread.

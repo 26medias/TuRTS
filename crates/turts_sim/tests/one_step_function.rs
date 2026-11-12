@@ -345,11 +345,10 @@ mod scenario {
         eligible: bool,
     }
 
-    #[test]
-    fn each_moving_unit_passes_each_shared_phase_once() {
-        let mut fixture = muster();
-        let catalog = fixture.catalog.clone();
-        let app = &mut fixture.app;
+    /// The commands of the scenario, with the tick at which each one is queued: one unit of each
+    /// kind of mover that the design names (section 6, "One step function").
+    fn script(catalog: &turts_mod_api::ContentCatalog) -> Vec<(u32, Command)> {
+        let catalog = catalog.clone();
         let point = |x: f32, y: f32| OrderTargetSim::Point(Vec2::new(x, y));
         let mut seq = 0;
         let mut script: Vec<(u32, Command)> = Vec::new();
@@ -490,19 +489,32 @@ mod scenario {
                 },
             );
         }
+        script
+    }
+
+    /// Queue the commands of `script` that are due at `tick`.
+    fn queue_due(app: &mut bevy_app::App, script: &[(u32, Command)], tick: u32) {
+        for (at, command) in script {
+            if *at == tick {
+                app.world_mut()
+                    .resource_mut::<CommandQueue>()
+                    .0
+                    .push_back(command.clone());
+            }
+        }
+    }
+
+    #[test]
+    fn each_moving_unit_passes_each_shared_phase_once() {
+        let mut fixture = muster();
+        let script = script(&fixture.catalog);
+        let app = &mut fixture.app;
 
         // The ticks where each label had a unit in the free-movement step.
         let mut seen: BTreeMap<&str, u32> = BTreeMap::new();
         let mut totals = [0u32; 5];
         for tick in 1..=560u32 {
-            for (at, command) in &script {
-                if *at == tick {
-                    app.world_mut()
-                        .resource_mut::<CommandQueue>()
-                        .0
-                        .push_back(command.clone());
-                }
-            }
+            queue_due(app, &script, tick);
             let before: BTreeMap<u32, Before> = WATCHED
                 .iter()
                 .map(|&(id, _)| {
@@ -585,6 +597,37 @@ mod scenario {
                 "phase {phase} never ran in the scenario: {totals:?}"
             );
         }
+    }
+
+    /// No unit of the scenario of `each_moving_unit_passes_each_shared_phase_once` holds a
+    /// plain progress at the end of any tick (pre-MP1 slice, task A2b1; design 9.11): the obstacle
+    /// fallback gives a pool of one, so no code creates a plain progress. The scenario must still
+    /// reach the fallback: at least one unit holds a fallback pool at the end of some tick.
+    #[test]
+    fn no_plain_progress_is_created() {
+        let mut fixture = muster();
+        let script = script(&fixture.catalog);
+        let app = &mut fixture.app;
+        for tick in 1..=560u32 {
+            queue_due(app, &script, tick);
+            app.update();
+            let world = app.world();
+            let units: Vec<u32> = world
+                .iter_entities()
+                .filter_map(|entity| entity.get::<UnitId>().map(|id| id.0))
+                .collect();
+            for unit in units {
+                assert_ne!(
+                    probe::unit_state(world, unit),
+                    "plain",
+                    "unit {unit} tick {tick}: a plain progress was created"
+                );
+            }
+        }
+        assert!(
+            !probe::fallback_trips(app.world()).is_empty(),
+            "no unit of the scenario reached the obstacle fallback"
+        );
     }
 
     fn position_of(world: &bevy_ecs::world::World, unit: u32) -> Vec2 {

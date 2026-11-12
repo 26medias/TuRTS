@@ -532,12 +532,23 @@ pub fn world_view(world: &mut World) -> WorldView {
                         progress.activity == crate::movement::MovementActivity::Blocked
                     })
                 || entity.get::<crate::movement::PhysicalEscape>().is_some();
+            // A `Blocked` fallback pool of one whose failure the order phase recorded reads as
+            // the terminal plain progress did (task A2b1).
+            let terminal_fallback_blocked = entity
+                .get::<crate::movement::MoveProgress>()
+                .is_some_and(|progress| {
+                    progress.activity == crate::movement::MovementActivity::Blocked
+                        && progress
+                            .fallback
+                            .is_some_and(|fallback| fallback.failure_recorded)
+                });
             let fresh_blocked =
-                entity
+                (entity
                     .get::<crate::movement::MoveProgress>()
                     .is_some_and(|progress| {
                         progress.activity == crate::movement::MovementActivity::Blocked
                     })
+                    && !terminal_fallback_blocked)
                     || entity
                         .get::<crate::movement::PlainMoveProgress>()
                         .is_some_and(|progress| {
@@ -550,7 +561,8 @@ pub fn world_view(world: &mut World) -> WorldView {
                 .is_some_and(|progress| {
                     progress.activity == crate::movement::MovementActivity::Blocked
                         && progress.failure_recorded
-                });
+                })
+                || terminal_fallback_blocked;
             let physically_escaping = entity.get::<crate::movement::PhysicalEscape>().is_some();
             let active_gather = orders.0.get(&unit_id).is_some_and(|order| {
                 order.node.is_some() && order.stage != crate::economy::gather::GatherStage::Idle

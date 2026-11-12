@@ -492,6 +492,14 @@ fn apply_move_to_with_legacy_replace(
         }
         let mut movement = world.entity_mut(entity);
         movement.remove::<crate::movement::PlainMoveProgress>();
+        // A new legacy move is a new trip: it ends a fallback pool of one, as it ended the plain
+        // progress (task A2b1). The pool of an order is not touched here.
+        if movement
+            .get::<crate::movement::MoveProgress>()
+            .is_some_and(crate::movement::MoveProgress::is_fallback)
+        {
+            movement.remove::<crate::movement::MoveProgress>();
+        }
         movement.insert(MoveTarget(target));
     }
     for id in unit_ids {

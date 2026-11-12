@@ -52,11 +52,11 @@ pub(crate) fn run_orders(world: &mut World) {
     let engagement_grid = crate::grid::UniformGrid::new(&engagement_points, engagement_cell_size);
     for (&unit_id, &entity) in &unit_entities {
         let replacement_pending = unit_has_pending_move(world, unit_id);
+        // The fallback pool of one of a trip with no pool (task A2b1) takes the place of the
+        // plain progress in this protocol: the same reads, from the fallback `MoveProgress` and
+        // the point of its pool (the original point of the plain progress).
         let no_plain_move_state = world.entity(entity).get::<MoveTarget>().is_none()
-            && world
-                .entity(entity)
-                .get::<crate::movement::PlainMoveProgress>()
-                .is_none();
+            && fallback_progress(world, entity).is_none();
         let has_current_order = world
             .entity(entity)
             .get::<UnitOrders>()
@@ -64,10 +64,7 @@ pub(crate) fn run_orders(world: &mut World) {
         if no_plain_move_state && !has_current_order {
             forget_plain_move_identity(world, unit_id);
         }
-        let plain_progress = world
-            .entity(entity)
-            .get::<crate::movement::PlainMoveProgress>()
-            .cloned();
+        let plain_progress = fallback_progress(world, entity);
         let gather_stage = world
             .get_resource::<crate::economy::EconomyOrders>()
             .and_then(|orders| orders.0.get(&unit_id))
@@ -94,11 +91,14 @@ pub(crate) fn run_orders(world: &mut World) {
         );
         let gather_endpoint_changed = plain_progress
             .as_ref()
-            .filter(|progress| progress.activity != crate::movement::MovementActivity::Blocked)
-            .and_then(|progress| progress.gather_goal)
+            .filter(|(progress, _)| progress.activity != crate::movement::MovementActivity::Blocked)
+            .and_then(|(progress, _)| progress.gather_goal)
             .is_some_and(|previous| Some(previous) != gather_goal);
         if plain_progress.is_some() && (gather_reached || gather_endpoint_changed) {
             crate::economy::transaction::capture_unit_order_operation(world, unit_id, |world| {
+                world
+                    .entity_mut(entity)
+                    .remove::<crate::movement::MoveProgress>();
                 world
                     .entity_mut(entity)
                     .remove::<crate::movement::PlainMoveProgress>();
@@ -106,9 +106,9 @@ pub(crate) fn run_orders(world: &mut World) {
             });
             continue;
         }
-        let completed_plain_fallback = plain_progress.as_ref().is_some_and(|progress| {
+        let completed_plain_fallback = plain_progress.as_ref().is_some_and(|(progress, point)| {
             progress.activity == crate::movement::MovementActivity::Resting
-                && (progress.claim_count > 0 || progress.slot != progress.original_point)
+                && (progress.claim_count > 0 || Some(progress.slot) != *point)
         });
         let gather_still_approaching = matches!(
             gather_stage,
@@ -129,24 +129,29 @@ pub(crate) fn run_orders(world: &mut World) {
             crate::economy::transaction::capture_unit_order_operation(world, unit_id, |world| {
                 world
                     .entity_mut(entity)
+                    .remove::<crate::movement::MoveProgress>();
+                world
+                    .entity_mut(entity)
                     .remove::<crate::movement::PlainMoveProgress>();
                 forget_plain_move_identity(world, unit_id);
             });
         }
-        let plain_blocked = world
-            .entity(entity)
-            .get::<crate::movement::PlainMoveProgress>()
-            .is_some_and(|progress| {
-                (progress.activity == crate::movement::MovementActivity::Blocked
-                    && !progress.failure_recorded)
-                    || (completed_plain_fallback && gather_still_approaching)
-            });
+        let plain_blocked = fallback_progress(world, entity).is_some_and(|(progress, _)| {
+            (progress.activity == crate::movement::MovementActivity::Blocked
+                && progress
+                    .fallback
+                    .is_some_and(|fallback| !fallback.failure_recorded))
+                || (completed_plain_fallback && gather_still_approaching)
+        });
         if plain_blocked && gather_still_approaching {
             // M2 design 5: a gather order waits visibly if movement cannot reach range, and
             // the cycle never discards cargo. So a blocked trip of a gather cycle does not
             // fail and does not clear the cycle: it waits, then tries the approach again
             // (gather.rs, ruling O16 extension). The order keeps its own end rules.
             crate::economy::transaction::capture_unit_order_operation(world, unit_id, |world| {
+                world
+                    .entity_mut(entity)
+                    .remove::<crate::movement::MoveProgress>();
                 world
                     .entity_mut(entity)
                     .remove::<crate::movement::PlainMoveProgress>();
@@ -194,10 +199,13 @@ pub(crate) fn run_orders(world: &mut World) {
                 }
                 if let Some(mut progress) = world
                     .entity_mut(entity)
-                    .get_mut::<crate::movement::PlainMoveProgress>()
+                    .get_mut::<crate::movement::MoveProgress>()
+                    && progress.is_fallback()
                 {
                     progress.activity = crate::movement::MovementActivity::Blocked;
-                    progress.failure_recorded = true;
+                    progress.fallback = Some(crate::movement::MoveFallback {
+                        failure_recorded: true,
+                    });
                 }
                 clear_gather(world, unit_id);
                 forget_plain_move_identity(world, unit_id);
@@ -211,11 +219,13 @@ pub(crate) fn run_orders(world: &mut World) {
             .entity(entity)
             .get::<UnitOrders>()
             .and_then(|orders| orders.current.clone());
+        // The `Blocked` result of an order pool. A `Blocked` fallback pool is handled above.
         let blocked = world
             .entity(entity)
             .get::<crate::movement::MoveProgress>()
             .is_some_and(|progress| {
                 progress.activity == crate::movement::MovementActivity::Blocked
+                    && !progress.is_fallback()
                     && world.entity(entity).get::<MoveTarget>().is_none()
             });
         if let Some(current) = current.as_ref().filter(|_| blocked) {
@@ -412,6 +422,24 @@ pub(crate) fn run_orders(world: &mut World) {
     queue_unallocated_move_orders(world);
     dispatch_pending_movement(world);
     finish_movement_dispatch_tick(world);
+}
+
+/// The fallback pool of one of a unit (task A2b1): its `MoveProgress` and the point of its pool
+/// (`None` when the pool is not in `MovementPools`). `None` for a unit with no fallback pool.
+pub(super) fn fallback_progress(
+    world: &World,
+    entity: bevy_ecs::entity::Entity,
+) -> Option<(crate::movement::MoveProgress, Option<Vec2>)> {
+    let progress = world
+        .entity(entity)
+        .get::<crate::movement::MoveProgress>()
+        .filter(|progress| progress.is_fallback())?
+        .clone();
+    let point = world
+        .get_resource::<crate::movement::MovementPools>()
+        .and_then(|pools| pools.0.get(&progress.pool_id))
+        .map(|pool| pool.point);
+    Some((progress, point))
 }
 
 fn attack_point_has_target_in_range(

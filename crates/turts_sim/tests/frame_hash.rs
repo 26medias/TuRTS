@@ -121,6 +121,8 @@ fn start_frame(seed: u64) -> MovementFrame {
                     best_distance: position.distance(slot),
                     claim_count: 0,
                     follow_origin: None,
+                    gather_goal: None,
+                    fallback: None,
                 }),
                 plain_progress: None,
                 physical_escape: None,

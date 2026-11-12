@@ -473,22 +473,33 @@ fn unit_target_move_waits_for_cap_and_samples_live_target_at_activation() {
         .0 = Vec2::new(10.0, 115.0);
     app.update();
     let mover = app.world().entity(mover_entity);
+    // A2b1 (plan R13, section 1a, observation change): the fallback of the follow trip is a pool
+    // of one (`MoveProgress` with `fallback`), so "no pool of the order" reads a `MoveProgress`
+    // that is absent or a fallback, and the original point of the fallback is its pool point.
+    let fallback_point = mover
+        .get::<turts_sim::movement::MoveProgress>()
+        .filter(|progress| progress.is_fallback())
+        .and_then(|progress| {
+            app.world()
+                .resource::<turts_sim::movement::MovementPools>()
+                .0
+                .get(&progress.pool_id)
+                .map(|pool| pool.point)
+        });
     assert!(
-        mover.get::<turts_sim::movement::MoveProgress>().is_none(),
+        mover
+            .get::<turts_sim::movement::MoveProgress>()
+            .is_none_or(|progress| progress.is_fallback()),
         "a real follow-target change reopens direct following from the previous slot"
     );
     assert!(
-        mover
-            .get::<turts_sim::movement::PlainMoveProgress>()
-            .is_some_and(|progress| {
-                progress.original_point.distance(Vec2::new(10.0, 115.0)) <= 0.5001
-            })
+        fallback_point.is_some_and(|point| point.distance(Vec2::new(10.0, 115.0)) <= 0.5001)
             || mover
                 .get::<MoveTarget>()
                 .is_some_and(|target| target.0.distance(Vec2::new(10.0, 115.0)) <= 1.2),
         "the changed target receives a fresh legal approach or fallback rooted at its new goal: target={:?}, plain={:?}, pos={:?}",
         mover.get::<MoveTarget>(),
-        mover.get::<turts_sim::movement::PlainMoveProgress>(),
+        mover.get::<turts_sim::movement::MoveProgress>(),
         mover.get::<turts_sim::Position>()
     );
     assert!(
@@ -926,7 +937,7 @@ fn pending_replace_allows_prior_completion_without_advancing_append() {
         "the completed prior Move becomes idle during Pending: current={:?}, target={:?}, progress={:?}, pending={:?}",
         orders.current,
         mover.get::<MoveTarget>(),
-        mover.get::<turts_sim::movement::PlainMoveProgress>(),
+        mover.get::<turts_sim::movement::MoveProgress>(),
         app.world()
             .resource::<turts_sim::orders::PendingMovementOrders>()
     );
@@ -2072,18 +2083,23 @@ fn plain_singleton_blocked_by_a_full_width_post_reports_failure_by_gmu_deadline(
         target,
         orders
     );
+    // A2b1 (plan R13, section 1a, observation change): the fallback is a pool of one
+    // (`MoveProgress` with `fallback`); its spares are the pool slots after the primary slots.
+    let fallback = mover
+        .get::<turts_sim::movement::MoveProgress>()
+        .filter(|progress| progress.is_fallback());
     assert_eq!(
-        mover
-            .get::<turts_sim::movement::PlainMoveProgress>()
-            .map(|progress| progress.activity),
+        fallback.map(|progress| progress.activity),
         Some(turts_sim::movement::MovementActivity::Blocked),
         "the plain move must retain an observable Blocked activity after its target is removed"
     );
-    let progress = mover
-        .get::<turts_sim::movement::PlainMoveProgress>()
-        .unwrap();
+    let progress = fallback.unwrap();
+    let pool = &app
+        .world()
+        .resource::<turts_sim::movement::MovementPools>()
+        .0[&progress.pool_id];
     assert!(
-        progress.pool_slots.len() <= 6,
+        pool.slots.len().saturating_sub(pool.primary_count as usize) <= 6,
         "N=1 pool has at most six spares"
     );
     assert!(
@@ -2091,7 +2107,9 @@ fn plain_singleton_blocked_by_a_full_width_post_reports_failure_by_gmu_deadline(
         "plain fallback uses at most three claims"
     );
     assert!(
-        progress.failure_recorded,
+        progress
+            .fallback
+            .is_some_and(|fallback| fallback.failure_recorded),
         "Orders acknowledges Blocked once"
     );
     assert_eq!(
@@ -2189,8 +2207,10 @@ fn blocked_plain_move_escape_survives_queued_and_pre_ack_holds() {
             if mover.get::<turts_sim::movement::PhysicalEscape>().is_some() {
                 blocked_output_seen = true;
                 if replace_before_ack {
+                    // A2b1 (plan R13, section 1a, observation change): the fallback pool of one.
                     let progress = mover
-                        .get::<turts_sim::movement::PlainMoveProgress>()
+                        .get::<turts_sim::movement::MoveProgress>()
+                        .filter(|progress| progress.is_fallback())
                         .expect(
                             "the movement result is still present before Orders acknowledges it",
                         );
@@ -2198,7 +2218,11 @@ fn blocked_plain_move_escape_survives_queued_and_pre_ack_holds() {
                         progress.activity,
                         turts_sim::movement::MovementActivity::Blocked
                     );
-                    assert!(!progress.failure_recorded);
+                    assert!(
+                        !progress
+                            .fallback
+                            .is_some_and(|fallback| fallback.failure_recorded)
+                    );
                     send_hold(&mut app, 0, 1, QueueMode::Replace);
                 }
                 break;
@@ -2319,8 +2343,10 @@ fn unit_follow_move_completes_at_its_reached_legal_fallback() {
             .unwrap()
             .id();
         let prior_mover = app.world().entity(mover_entity);
+        // A2b1 (plan R13, section 1a, observation change): the fallback pool of one.
         let plain_resting = prior_mover
-            .get::<turts_sim::movement::PlainMoveProgress>()
+            .get::<turts_sim::movement::MoveProgress>()
+            .filter(|progress| progress.is_fallback())
             .is_some_and(|progress| {
                 progress.activity == turts_sim::movement::MovementActivity::Resting
                     && progress.slot == prior_mover.get::<turts_sim::Position>().unwrap().0
@@ -2380,7 +2406,8 @@ fn unit_follow_move_completes_at_its_reached_legal_fallback() {
             assert!(
                 app.world()
                     .entity(entity)
-                    .get::<turts_sim::movement::PlainMoveProgress>()
+                    .get::<turts_sim::movement::MoveProgress>()
+                    .filter(|progress| progress.is_fallback())
                     .is_none()
             );
             break;
@@ -2674,8 +2701,10 @@ fn moved_follow_target_reopens_motion_instead_of_consuming_old_fallback() {
             .unwrap()
             .id();
         let mover = app.world().entity(mover_entity);
+        // A2b1 (plan R13, section 1a, observation change): the fallback pool of one.
         let plain_resting = mover
-            .get::<turts_sim::movement::PlainMoveProgress>()
+            .get::<turts_sim::movement::MoveProgress>()
+            .filter(|progress| progress.is_fallback())
             .is_some_and(|progress| {
                 progress.activity == turts_sim::movement::MovementActivity::Resting
             });
@@ -2748,8 +2777,15 @@ fn moved_follow_target_reopens_motion_instead_of_consuming_old_fallback() {
     );
     assert!(
         mover
-            .get::<turts_sim::movement::PlainMoveProgress>()
-            .is_none_or(|progress| progress.original_point == Vec2::new(8.0, 11.0))
+            .get::<turts_sim::movement::MoveProgress>()
+            .filter(|progress| progress.is_fallback())
+            .is_none_or(|progress| {
+                app.world()
+                    .resource::<turts_sim::movement::MovementPools>()
+                    .0
+                    .get(&progress.pool_id)
+                    .is_some_and(|pool| pool.point == Vec2::new(8.0, 11.0))
+            })
     );
 }
 
@@ -2813,8 +2849,10 @@ fn idless_legacy_move_reports_blocked_without_inventing_an_order_id() {
             })
             .unwrap();
         (
+            // A2b1 (plan R13, section 1a, observation change): the fallback pool of one.
             mover
-                .get::<turts_sim::movement::PlainMoveProgress>()
+                .get::<turts_sim::movement::MoveProgress>()
+                .filter(|progress| progress.is_fallback())
                 .cloned()
                 .expect("idless movement retains its Blocked activity"),
             mover.get::<UnitOrders>().cloned(),
@@ -2824,7 +2862,11 @@ fn idless_legacy_move_reports_blocked_without_inventing_an_order_id() {
         progress.activity,
         turts_sim::movement::MovementActivity::Blocked
     );
-    assert!(progress.failure_recorded);
+    assert!(
+        progress
+            .fallback
+            .is_some_and(|fallback| fallback.failure_recorded)
+    );
     let mover_entity = app
         .world_mut()
         .iter_entities()
@@ -3018,13 +3060,18 @@ fn insufficient_primary_slots_block_the_whole_envelope_without_movement() {
             })
             .unwrap();
         assert_eq!(entity.get::<MoveTarget>(), None, "unit {id} has no target");
+        // A2b1 (plan R13, section 1a, observation change): the legacy failure leaves a `Blocked`
+        // fallback pool of one; "no allocated movement state" reads no pool of the envelope.
         assert_eq!(
-            entity.get::<turts_sim::movement::MoveProgress>(),
+            entity
+                .get::<turts_sim::movement::MoveProgress>()
+                .filter(|progress| !progress.is_fallback()),
             None,
             "unit {id} has no allocated movement state"
         );
         let plain = entity
-            .get::<turts_sim::movement::PlainMoveProgress>()
+            .get::<turts_sim::movement::MoveProgress>()
+            .filter(|progress| progress.is_fallback())
             .expect("legacy idless failure remains visible as blocked");
         assert_eq!(
             plain.activity,
@@ -3419,5 +3466,436 @@ fn repeated_group_inputs_produce_bit_identical_positions() {
         make(),
         make(),
         "same command stream produces bit-exact positions"
+    );
+}
+
+/// Gatherers that meet at one receiver (pre-MP1 slice, task A2b1; design section 6, "Blocked
+/// engine trip", and 9.11). A depot (the receiver) of radius 1 at (4, 10), a node of radius 1 at
+/// (30, 10), and workers of radius 0.5 with a speed of 4, a capacity of 10 and a gather and
+/// unload rate of 20 per second, in an 80 x 20 map. The receiver reach of a worker is
+/// 0.5 + 1 + 0.5 = 2 (worker radius, depot radius, interaction range).
+mod gatherers {
+    use std::collections::BTreeMap;
+
+    use turts_mod_api::{
+        Behaviour, ContentCatalog, ContentId, Footprint, MapDef, MapSize, NodePlacement, OrderDef,
+        Placement, ResolvedDropOff, ResolvedDropOffEffect, ResolvedDropOffRule, ResolvedGatherer,
+        ResolvedInventory, ResolvedNode, ResolvedUnit, ResourceDef, ResourceKind, SourceDef,
+        TargetKind, WorldPos,
+    };
+    use turts_sim::{
+        Command, CommandKind, GatherStage, NodeId, OrderTargetSim, Position, QueueMode, SlotId,
+        UnitId, Vec2, apply_command, headless_app, install_package, inventory_view, order_view,
+        orders::OrderCommand, stage_package,
+    };
+
+    pub const TICK_HZ: u16 = 20;
+    pub const DEPOT: u32 = 1;
+    pub const DEPOT_POS: Vec2 = Vec2::new(4.0, 10.0);
+    pub const DEPOT_RADIUS: f32 = 1.0;
+    pub const WORKER_RADIUS: f32 = 0.5;
+    pub const SPEED: f32 = 4.0;
+    pub const INTERACTION_RANGE: f32 = 0.5;
+    const NODE: NodeId = NodeId(1);
+    const NODE_POS: Vec2 = Vec2::new(30.0, 10.0);
+
+    fn id(local: &str) -> ContentId {
+        ContentId::parse(&format!("crowd:{local}")).unwrap()
+    }
+
+    fn unit(local: &str, radius: f32) -> ResolvedUnit {
+        ResolvedUnit {
+            id: id(local),
+            name: local.into(),
+            footprint: Footprint::Circle { radius },
+            movement: None,
+            inventory: None,
+            gatherer: None,
+            drop_off: None,
+            producer: None,
+            output_inventory: None,
+            extractor: None,
+            conveyor: None,
+            inserter: None,
+            machine: None,
+            research: None,
+            health: None,
+            weapon: None,
+            removal: None,
+        }
+    }
+
+    fn catalog() -> ContentCatalog {
+        let ore = id("ore");
+        let mut depot = unit("depot", DEPOT_RADIUS);
+        depot.inventory = Some(ResolvedInventory {
+            capacity: 100_000,
+            accepts: vec![ore.clone()],
+        });
+        depot.drop_off = Some(ResolvedDropOff {
+            rules: vec![ResolvedDropOffRule {
+                item: ore.clone(),
+                effect: ResolvedDropOffEffect::Store,
+            }],
+        });
+        let mut worker = unit("worker", WORKER_RADIUS);
+        worker.movement = Some(turts_mod_api::MovementDef { speed: SPEED });
+        worker.inventory = Some(ResolvedInventory {
+            capacity: 10,
+            accepts: vec![ore.clone()],
+        });
+        worker.gatherer = Some(ResolvedGatherer {
+            items: vec![ore.clone()],
+            gather_per_second: 20,
+            unload_per_second: 20,
+            interaction_range: INTERACTION_RANGE,
+        });
+        ContentCatalog {
+            resources: BTreeMap::from([(
+                ore.clone(),
+                ResourceDef {
+                    id: "ore".into(),
+                    name: "Ore".into(),
+                    unit_name: "ore".into(),
+                    kind: ResourceKind::Item,
+                },
+            )]),
+            units: BTreeMap::from([(id("depot"), depot), (id("worker"), worker)]),
+            nodes: BTreeMap::from([(
+                id("deposit"),
+                ResolvedNode {
+                    id: id("deposit"),
+                    name: "Deposit".into(),
+                    item: ore,
+                    radius: 1.0,
+                },
+            )]),
+            production: BTreeMap::new(),
+            recipes: BTreeMap::new(),
+            technologies: BTreeMap::new(),
+            orders: BTreeMap::from([(
+                id("gather"),
+                OrderDef {
+                    id: "gather".into(),
+                    name: "gather".into(),
+                    behaviour: Behaviour::Gather,
+                    target: TargetKind::Node,
+                    fire: None,
+                    engage: None,
+                    icon: String::new(),
+                    hotkey: String::new(),
+                    cursor: None,
+                    card: None,
+                    units: Vec::new(),
+                    description: String::new(),
+                },
+            )]),
+            order_queue_depths: BTreeMap::new(),
+            source_files: BTreeMap::new(),
+        }
+    }
+
+    fn placement(local: &str, at: Vec2) -> Placement {
+        Placement {
+            unit: format!("crowd:{local}"),
+            owner_slot: 0,
+            pos: WorldPos { x: at.x, y: at.y },
+            contents: Vec::new(),
+            facing: None,
+        }
+    }
+
+    /// The depot is unit 1; `workers[i]` is a worker with id `i + 2`. Each worker gets a Gather
+    /// order on the node.
+    pub fn app(node_stock: u64, workers: &[Vec2]) -> bevy_app::App {
+        let mut placements = vec![placement("depot", DEPOT_POS)];
+        placements.extend(workers.iter().map(|at| placement("worker", *at)));
+        let map = MapDef {
+            id: "strip".into(),
+            size: MapSize { x: 80.0, y: 20.0 },
+            placements,
+            nodes: vec![NodePlacement {
+                node: "crowd:deposit".into(),
+                pos: WorldPos {
+                    x: NODE_POS.x,
+                    y: NODE_POS.y,
+                },
+                remaining: node_stock,
+            }],
+            slot_economy: Vec::new(),
+            belts: Vec::new(),
+        };
+        let mut app = headless_app(TICK_HZ);
+        let staged = stage_package(
+            app.world(),
+            catalog(),
+            SourceDef {
+                file: "maps/strip.ron".into(),
+                value: map,
+            },
+            TICK_HZ,
+        )
+        .unwrap();
+        install_package(app.world_mut(), staged);
+        for (seq, unit_id) in (1..).zip(2..2 + workers.len() as u32) {
+            let command = Command {
+                slot: SlotId(0),
+                seq,
+                kind: CommandKind::Order(Box::new(OrderCommand {
+                    order: id("gather"),
+                    behaviour: Behaviour::Gather,
+                    target_kind: TargetKind::Node,
+                    policy: None,
+                    units: vec![unit_id],
+                    target: OrderTargetSim::Node(NODE),
+                    queue: QueueMode::Replace,
+                    group: 0,
+                    allowed_units: Vec::new(),
+                    queue_depth: 16,
+                })),
+            };
+            let result = apply_command(app.world_mut(), &command);
+            assert_eq!(result.units.accepted, vec![unit_id], "{result:?}");
+        }
+        app
+    }
+
+    pub fn position(app: &bevy_app::App, unit_id: u32) -> Vec2 {
+        app.world()
+            .iter_entities()
+            .find(|entity| entity.get::<UnitId>().is_some_and(|id| id.0 == unit_id))
+            .and_then(|entity| entity.get::<Position>().map(|position| position.0))
+            .unwrap()
+    }
+
+    pub fn stock(app: &bevy_app::App, unit_id: u32) -> u64 {
+        inventory_view(app.world(), SlotId(0), unit_id).map_or(0, |inventory| {
+            inventory.items.iter().map(|item| item.on_hand).sum()
+        })
+    }
+
+    pub fn stage(app: &bevy_app::App, unit_id: u32) -> GatherStage {
+        order_view(app.world(), SlotId(0), unit_id).unwrap().stage
+    }
+
+    /// Every pair of units (the workers and the depot) is at least the sum of the two radii
+    /// apart, less 1.0e-5 (the overlap tolerance of the movement step, `body_overlaps_position`).
+    pub fn assert_no_overlap(app: &bevy_app::App, workers: u32, tick: u32) {
+        let mut bodies = vec![(DEPOT, DEPOT_POS, DEPOT_RADIUS)];
+        bodies.extend((2..2 + workers).map(|id| (id, position(app, id), WORKER_RADIUS)));
+        for (index, &(a, pa, ra)) in bodies.iter().enumerate() {
+            for &(b, pb, rb) in &bodies[index + 1..] {
+                assert!(
+                    pa.distance(pb) >= ra + rb - 1.0e-5,
+                    "tick {tick}: the footprints of units {a} and {b} overlap: {pa:?} {pb:?}"
+                );
+            }
+        }
+    }
+
+    /// The approach point of a worker at `from` on the receiver ring (`gather.rs`
+    /// `approach_position`): the depot centre plus the reach along the line to the worker.
+    pub fn approach(from: Vec2) -> Vec2 {
+        let reach = WORKER_RADIUS + DEPOT_RADIUS + INTERACTION_RANGE;
+        DEPOT_POS + (from - DEPOT_POS).normalize() * reach
+    }
+}
+
+/// Two gatherers start their receiver leg in the same tick, toward approach points 0.1 apart
+/// (design section 6, "Blocked engine trip"). Each delivers, no footprints overlap at any tick,
+/// and each delivers within `2 x (distance / speed) + 5 s` of the start of its receiver leg,
+/// where `distance` is from its position at that start to its approach point. Two cases: full
+/// loads (node stock 1,000), and a delivery after the node empties (node stock 10: each worker
+/// holds 5 when the node empties; design `:158`, gate L2).
+#[test]
+fn two_gatherers_deliver_to_one_receiver_in_one_tick() {
+    use gatherers::*;
+    use std::collections::BTreeMap;
+    // Both workers start in reach of the node (distance 1.897 < 2), symmetric about its axis.
+    let workers = [Vec2::new(28.2, 9.4), Vec2::new(28.2, 10.6)];
+    for (case, node_stock, load) in [("full load", 1_000_u64, 10_u64), ("depletion", 10, 5)] {
+        let mut app = app(node_stock, &workers);
+        let mut leg_start: BTreeMap<u32, (u32, Vec2)> = BTreeMap::new();
+        let mut delivered: BTreeMap<u32, u32> = BTreeMap::new();
+        for tick in 1..=1_200_u32 {
+            app.update();
+            assert_no_overlap(&app, 2, tick);
+            for unit_id in [2, 3] {
+                if stage(&app, unit_id) == turts_sim::GatherStage::MovingToReceiver
+                    && stock(&app, unit_id) == load
+                {
+                    leg_start
+                        .entry(unit_id)
+                        .or_insert((tick, position(&app, unit_id)));
+                }
+                if leg_start.contains_key(&unit_id) && stock(&app, unit_id) < load {
+                    delivered.entry(unit_id).or_insert(tick);
+                }
+            }
+            if delivered.len() == 2 {
+                break;
+            }
+        }
+        for unit_id in [2, 3] {
+            let (start, from) = *leg_start
+                .get(&unit_id)
+                .unwrap_or_else(|| panic!("{case}: unit {unit_id} never started its receiver leg"));
+            let at = *delivered
+                .get(&unit_id)
+                .unwrap_or_else(|| panic!("{case}: unit {unit_id} never delivered"));
+            let distance = from.distance(approach(from));
+            let deadline = ((2.0 * distance / SPEED + 5.0) * f32::from(TICK_HZ)).ceil() as u32;
+            assert!(
+                at - start <= deadline,
+                "{case}: unit {unit_id} delivered {} ticks after its leg start, deadline {deadline} \
+                 (distance {distance})",
+                at - start
+            );
+        }
+        if case == "depletion" {
+            for _ in 0..200 {
+                app.update();
+            }
+            assert_eq!(
+                stock(&app, DEPOT),
+                10,
+                "{case}: both partial loads reach the depot"
+            );
+        }
+    }
+}
+
+/// The fallback of a trip that finds its goal occupied must not oscillate: a fallback pool that
+/// is collected and made again in one trip (gate 2 M1). The `test-probes` counter counts the
+/// fallback pools of each trip (`probe::fallback_trips`); a trip ends when the `MoveTarget` of
+/// its unit is removed or replaced by a writer other than the movement step, or when its gather
+/// leg ends. The deadline guard alone passes an oscillation that delivers in the end. Two
+/// scenarios: the two gatherers of `two_gatherers_deliver_to_one_receiver_in_one_tick`, and a
+/// crowd of 20 gatherers on one receiver. Each must make at least one fallback pool, else the
+/// guard proves nothing.
+#[cfg(feature = "test-probes")]
+#[test]
+fn each_trip_makes_at_most_one_fallback_pool() {
+    use gatherers::*;
+    let crowd: Vec<Vec2> = (0..20)
+        .map(|index| {
+            Vec2::new(
+                33.0 + 1.2 * (index % 5) as f32,
+                6.4 + 1.2 * (index / 5) as f32,
+            )
+        })
+        .collect();
+    for (case, workers, ticks) in [
+        (
+            "two gatherers",
+            vec![Vec2::new(28.2, 9.4), Vec2::new(28.2, 10.6)],
+            600_u32,
+        ),
+        ("crowd of 20", crowd, 1_200),
+    ] {
+        let mut app = app(1_000_000, &workers);
+        for _ in 0..ticks {
+            app.update();
+        }
+        let trips = turts_sim::movement::probe::fallback_trips(app.world());
+        let total: u32 = trips.iter().map(|trip| trip.fallback_pools).sum();
+        assert!(
+            total > 0,
+            "{case}: no fallback pool in the scenario, so the guard proves nothing"
+        );
+        for trip in &trips {
+            assert!(
+                trip.fallback_pools <= 1,
+                "{case}: unit {} trip {}: {} fallback pools",
+                trip.unit,
+                trip.trip,
+                trip.fallback_pools
+            );
+        }
+    }
+}
+
+/// The fallback pools of one take their ids from the counter of the order pools
+/// (`PendingMovementOrders::next_pool_id`), in unit-id order, after the step (task A2b1; plan
+/// "Pool-id source"). Unit 1 gets a group order (the order pool takes id 1 at its acceptance).
+/// In the same tick, units 3 and 2 get targets on the body of unit 4, so both take a fallback
+/// pool: unit 2 takes id 2 and unit 3 takes id 3, whatever order the targets were written in.
+/// A second counter would give an id that the order pool already has.
+#[test]
+fn fallback_pool_ids_come_from_the_order_counter_in_unit_id_order() {
+    let mut app = app_with_units(
+        &[(10.0, 10.0), (20.0, 20.0), (30.0, 20.0), (40.0, 40.0)],
+        &[],
+    );
+    send_order(
+        &mut app,
+        0,
+        vec![1],
+        Vec2::new(50.0, 50.0),
+        1,
+        QueueMode::Replace,
+    );
+    for unit_id in [3, 2] {
+        let entity = app
+            .world_mut()
+            .iter_entities()
+            .find(|entity| {
+                entity
+                    .get::<turts_sim::UnitId>()
+                    .is_some_and(|id| id.0 == unit_id)
+            })
+            .unwrap()
+            .id();
+        app.world_mut()
+            .entity_mut(entity)
+            .insert(MoveTarget(Vec2::new(40.0, 40.0)));
+    }
+    app.update();
+    let pool_of = |app: &bevy_app::App, unit_id: u32| {
+        app.world()
+            .iter_entities()
+            .find(|entity| {
+                entity
+                    .get::<turts_sim::UnitId>()
+                    .is_some_and(|id| id.0 == unit_id)
+            })
+            .and_then(|entity| entity.get::<turts_sim::movement::MoveProgress>().cloned())
+            .map(|progress| (progress.pool_id, progress.is_fallback()))
+    };
+    assert_eq!(
+        pool_of(&app, 1),
+        Some((1, false)),
+        "the order pool has id 1"
+    );
+    assert_eq!(
+        pool_of(&app, 2),
+        Some((2, true)),
+        "unit 2 takes the next id"
+    );
+    assert_eq!(
+        pool_of(&app, 3),
+        Some((3, true)),
+        "unit 3 takes the id after it"
+    );
+    assert_eq!(
+        app.world()
+            .resource::<turts_sim::orders::PendingMovementOrders>()
+            .next_pool_id,
+        3,
+        "the counter of the order pools counts the fallback pools"
+    );
+    let pools = &app
+        .world()
+        .resource::<turts_sim::movement::MovementPools>()
+        .0;
+    assert_eq!(pools.keys().copied().collect::<Vec<_>>(), vec![1, 2, 3]);
+    assert_eq!(
+        pools[&1].primary_count, 1,
+        "the order pool keeps its own pool"
+    );
+    assert_eq!(
+        pools[&2].point,
+        Vec2::new(40.0, 40.0),
+        "the fallback pool is rooted at the goal of its trip"
     );
 }

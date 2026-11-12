@@ -1166,19 +1166,40 @@ pub(super) fn dispatch_pending_movement(world: &mut World) {
                                 clear_gather(world, member.id);
                             } else if request.plain {
                                 clear_gather(world, member.id);
-                                world.entity_mut(entity).insert(
-                                    crate::movement::PlainMoveProgress {
-                                        original_point: request.point,
-                                        slot: member.position,
-                                        pool_slots: Vec::new(),
-                                        gather_goal: None,
-                                        activity: MovementActivity::Blocked,
-                                        stalled_ticks: 0,
-                                        best_distance: member.position.distance(request.point),
-                                        claim_count: 0,
-                                        failure_recorded: true,
+                                // The failed legacy envelope leaves a `Blocked` pool of one at the
+                                // unit (task A2b1, R10; it was a plain progress): no slot, no
+                                // spare, the failure already recorded. Its id comes from the
+                                // counter of the order pools, as for the movement fallback.
+                                let pool_id = {
+                                    let mut pending = world.resource_mut::<PendingMovementOrders>();
+                                    pending.next_pool_id = pending.next_pool_id.saturating_add(1);
+                                    pending.next_pool_id
+                                };
+                                world.resource_mut::<MovementPools>().0.insert(
+                                    pool_id,
+                                    crate::movement::MovementPool {
+                                        pool_id,
+                                        point: request.point,
+                                        spacing: 2.0 * member.radius + 0.1,
+                                        primary_count: 0,
+                                        slots: Vec::new(),
                                     },
                                 );
+                                world.entity_mut(entity).insert(MoveProgress {
+                                    pool_id,
+                                    slot: member.position,
+                                    activity: MovementActivity::Blocked,
+                                    pass_mode: false,
+                                    stalling_on_group: false,
+                                    stalled_ticks: 0,
+                                    best_distance: member.position.distance(request.point),
+                                    claim_count: 0,
+                                    follow_origin: None,
+                                    gather_goal: None,
+                                    fallback: Some(crate::movement::MoveFallback {
+                                        failure_recorded: true,
+                                    }),
+                                });
                             }
                             forget_plain_move_identity(world, member.id);
                         },
@@ -1275,6 +1296,8 @@ pub(super) fn dispatch_pending_movement(world: &mut World) {
                                 best_distance: member.position.distance(target),
                                 claim_count: 0,
                                 follow_origin,
+                                gather_goal: None,
+                                fallback: None,
                             });
                             if let Some(order) = order
                                 && let Some(mut orders) = entity_mut.get_mut::<UnitOrders>()

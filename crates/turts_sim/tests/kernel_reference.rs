@@ -30,6 +30,19 @@
 //! that field through its `Debug` text, which prints each f32 as the shortest text that reads
 //! back to the same bits (`-0.0` is distinct from `0.0`).
 //!
+//! Task A2b1 (design 9.18, binding; it replaces plan `:922`): the live kernel gives a pool of one
+//! where the reference copy gives a plain progress (the obstacle fallback). The live chain takes
+//! the pool ids from its own counter, as the movement system does (`assign_fallback_pools`). A
+//! seed is bit-equal on every tick before its first fallback. At the tick of the first fallback,
+//! the live fallback and the reference plain progress must start at the same unit, the units with
+//! a lower id are bit-equal, and the fallback unit itself, when it was pushed or projected (it
+//! stepped with no pool), has the same position, escape, `failed_blocked` and flags. From that
+//! tick on, the seed is not compared: after a fallback the unit has a pool, takes the pool
+//! expressions and the pool stall and spare logic, and the difference spreads to its neighbours
+//! in the chain. The guards of A2b1 prove those seeds (`group_movement.rs`,
+//! `one_step_function.rs`). The test lists each seed with a fallback and its first tick, and it
+//! fails if no random seed is free of a fallback.
+//!
 //! The exact release command that every later task of the slice (A2b1, A2b2, A4, A3) and the
 //! slice regression must run, until A3 has merged:
 //!
@@ -47,8 +60,8 @@ use turts_sim::Vec2;
 use turts_sim::movement::reference::reference_step_frame_preserving_resting;
 use turts_sim::movement::{
     FollowMoveOrigin, MoveProgress, MovementActivity, MovementFrame, MovementFrameOutput,
-    MovementFrameUnit, MovementInput, MovementPool, PhysicalEscape, step,
-    step_frame_preserving_resting,
+    MovementFrameUnit, MovementInput, MovementPool, MovementStep, PhysicalEscape,
+    assign_fallback_pools, step, step_frame_with_fallbacks,
 };
 
 /// The seeds of a release run. A debug build runs the first 16 (see `seeds`).
@@ -192,6 +205,8 @@ fn start_frame(seed: u64) -> (MovementFrame, BTreeSet<u32>) {
                 best_distance: position.distance(slot) + rng.range(0.0, 2.0),
                 claim_count: rng.below(3) as u8,
                 follow_origin: None,
+                gather_goal: None,
+                fallback: None,
             }),
             plain_progress: None,
             physical_escape: None,
@@ -364,12 +379,13 @@ fn free_unit(
     }
 }
 
-/// The next frame: the outputs become the inputs. An idle unit with no progress gets a new
-/// target now and then, as the synthetic units of `--synthetic-units` do.
+/// The next frame: the outputs become the inputs. With `retarget`, an idle unit with no progress
+/// gets a new target now and then, as the synthetic units of `--synthetic-units` do.
 fn next_frame(
     frame: &MovementFrame,
     outputs: &[MovementFrameOutput],
     rng: &mut Rng,
+    retarget: bool,
 ) -> MovementFrame {
     let mut next = frame.clone();
     next.units.sort_unstable_by_key(|unit| unit.unit_id);
@@ -380,7 +396,8 @@ fn next_frame(
         unit.progress = output.progress.clone();
         unit.plain_progress = output.plain_progress.clone();
         unit.physical_escape = output.physical_escape.clone();
-        if unit.speed.is_some()
+        if retarget
+            && unit.speed.is_some()
             && unit.target.is_none()
             && unit.progress.is_none()
             && unit.plain_progress.is_none()
@@ -492,7 +509,8 @@ struct Seen {
     follow: usize,
     blocked: usize,
     escape: usize,
-    plain: usize,
+    /// The fallback pools of one that the live kernel made (task A2b1).
+    fallback: usize,
     zero_sign_arrivals: usize,
     /// A step that ended exactly on the target after the projection and the clamp
     /// (`frame.rs` "Late arrival"), for a unit with a pool and for a unit with no pool.
@@ -547,9 +565,6 @@ impl Seen {
             }
             if unit.physical_escape.is_some() {
                 self.escape += 1;
-            }
-            if output.plain_progress.is_some() {
-                self.plain += 1;
             }
             let zero = |v: f32| v == 0.0;
             if output.target.is_none()
@@ -624,7 +639,7 @@ impl Seen {
         self.follow += other.follow;
         self.blocked += other.blocked;
         self.escape += other.escape;
-        self.plain += other.plain;
+        self.fallback += other.fallback;
         self.zero_sign_arrivals += other.zero_sign_arrivals;
         self.late_arrival_pooled += other.late_arrival_pooled;
         self.late_arrival_free += other.late_arrival_free;
@@ -675,6 +690,8 @@ fn with_pool(unit: &mut MovementFrameUnit, pools: &mut BTreeMap<u64, MovementPoo
         best_distance: unit.position.distance(slot),
         claim_count: 0,
         follow_origin: None,
+        gather_goal: None,
+        fallback: None,
     });
     pools.insert(
         1,
@@ -786,34 +803,151 @@ fn anchors() -> Vec<(&'static str, MovementFrame, fn(&Seen) -> usize)> {
     ]
 }
 
-/// Run one frame chain through both kernels and compare. Returns the unit frames compared.
+/// The frame of a seed with no unit that moves with no pool: the statics, the units with a pool,
+/// and the units in a physical escape that hold no target. A unit with no pool and a target makes
+/// the obstacle fallback, so most random seeds have a fallback within a few ticks (task A2b1).
+/// This chain keeps the pool, `Blocked`, resting, follow and escape units of the seed, with no new
+/// targets, so that the code that the two kernels share is compared on long chains.
+fn pooled_frame(frame: &MovementFrame) -> MovementFrame {
+    let mut pooled = frame.clone();
+    pooled.units.retain(|unit| {
+        unit.speed.is_none()
+            || unit.progress.is_some()
+            || (unit.physical_escape.is_some() && unit.target.is_none())
+    });
+    pooled
+}
+
+/// The pool ids of a chain start after the largest pool id of its first frame.
+fn first_free_pool_id(frame: &MovementFrame) -> u64 {
+    frame.pools.keys().copied().max().unwrap_or(0)
+}
+
+/// The fields of the fallback unit on the tick of its fallback that the old step and the new step
+/// compute with the same code: a unit that was pushed or projected with no pool has stepped
+/// before the fallback, so its position, escape, `failed_blocked` and flags are equal. Its
+/// target and its progress differ by design (a pool of one in place of a plain progress).
+fn pushed_fallback_difference(
+    new: &MovementFrameOutput,
+    old: &MovementFrameOutput,
+) -> Option<String> {
+    let mut fields: Vec<(&str, String, String)> = vec![
+        (
+            "position",
+            format!("{:?}", bits(new.position)),
+            format!("{:?}", bits(old.position)),
+        ),
+        (
+            "physical_escape",
+            format!(
+                "{:?}",
+                new.physical_escape.as_ref().map(|e| bits_of(e.target))
+            ),
+            format!(
+                "{:?}",
+                old.physical_escape.as_ref().map(|e| bits_of(e.target))
+            ),
+        ),
+        (
+            "failed_blocked",
+            new.failed_blocked.to_string(),
+            old.failed_blocked.to_string(),
+        ),
+        (
+            "probe.separated",
+            new.probe.separated.to_string(),
+            old.probe.separated.to_string(),
+        ),
+        (
+            "probe.was_projected",
+            format!("{:?}", new.probe.was_projected),
+            format!("{:?}", old.probe.was_projected),
+        ),
+    ];
+    fields
+        .drain(..)
+        .find(|(_, a, b)| a != b)
+        .map(|(name, a, b)| format!("field {name}: live {a} reference {b}"))
+}
+
+/// What one chain compared: the unit frames compared bit for bit, and the tick and the unit of
+/// the first fallback (`None` for a chain with no fallback).
+struct Chain {
+    compared: usize,
+    first_fallback: Option<(usize, u32)>,
+}
+
+/// Run one frame chain through both kernels and compare them by the rule of the file header.
 fn run_chain(
     label: &str,
     mut frame: MovementFrame,
     keep: &BTreeSet<u32>,
     ticks: usize,
     rng: &mut Rng,
+    retarget: bool,
     seen: &mut Seen,
-) -> usize {
+) -> Chain {
     let mut compared = 0;
+    let mut first_fallback = None;
+    let mut next_pool_id = first_free_pool_id(&frame);
     for tick in 0..ticks {
-        let live = step_frame_preserving_resting(&frame, DT, keep);
+        let MovementStep {
+            outputs: mut live,
+            fallbacks,
+        } = step_frame_with_fallbacks(&frame, DT, keep);
         let reference = reference_step_frame_preserving_resting(&frame, DT, keep);
         assert_eq!(
             live.len(),
             reference.len(),
             "{label} tick {tick}: the output count differs"
         );
-        for (new, old) in live.iter().zip(&reference) {
-            compared += 1;
-            if let Some(text) = difference(new, old) {
-                panic!("{label} tick {tick} unit {}: {text}", new.unit_id);
+        if first_fallback.is_none() {
+            // The first unit that the reference gave a new plain progress: its fallback.
+            let reference_first = frame
+                .units
+                .iter()
+                .zip(&reference)
+                .find(|(unit, old)| unit.plain_progress.is_none() && old.plain_progress.is_some())
+                .map(|(unit, _)| unit.unit_id);
+            let live_first = fallbacks.iter().map(|request| request.unit_id).min();
+            assert_eq!(
+                live_first, reference_first,
+                "{label} tick {tick}: the first live fallback pool and the first reference plain \
+                 progress are not at the same unit"
+            );
+            for (new, old) in live.iter().zip(&reference) {
+                let text = match live_first {
+                    Some(first) if new.unit_id > first => break,
+                    Some(first) if new.unit_id == first => {
+                        let pushed = new.probe.phases.steering == 1
+                            && new.probe.phases.stall == 0
+                            && new.target.is_some();
+                        if !pushed {
+                            break;
+                        }
+                        pushed_fallback_difference(new, old)
+                    }
+                    _ => difference(new, old),
+                };
+                compared += 1;
+                if let Some(text) = text {
+                    panic!("{label} tick {tick} unit {}: {text}", new.unit_id);
+                }
             }
+            first_fallback = live_first.map(|unit| (tick, unit));
         }
+        seen.fallback += fallbacks.len();
+        let pools = assign_fallback_pools(&mut live, fallbacks, &mut next_pool_id);
         seen.count(&frame, &live, keep);
-        frame = next_frame(&frame, &live, rng);
+        frame = next_frame(&frame, &live, rng, retarget);
+        frame
+            .pools
+            .extend(pools.into_iter().map(|pool| (pool.pool_id, pool)));
     }
-    compared
+    Chain {
+        compared,
+        first_fallback,
+    }
 }
 
 /// The run that later tasks (A2b1, A2b2, A4, A3 and the slice regression) must run, in release:
@@ -828,18 +962,52 @@ fn run_chain(
 fn kernel_matches_reference_bit_for_bit() {
     let mut seen = Seen::default();
     let mut compared = 0usize;
+    let mut fallback_seeds = Vec::new();
+    let mut fallback_pooled = Vec::new();
     for seed in 1..=seeds() {
         let (frame, keep) = start_frame(seed);
+        let pooled = pooled_frame(&frame);
         let mut rng = Rng::new(seed ^ 0xa5a5_5a5a);
-        compared += run_chain(
+        let chain = run_chain(
             &format!("seed {seed}"),
             frame,
             &keep,
             TICKS,
             &mut rng,
+            true,
             &mut seen,
         );
+        compared += chain.compared;
+        if let Some((tick, unit)) = chain.first_fallback {
+            fallback_seeds.push((seed, tick, unit));
+        }
+        let chain = run_chain(
+            &format!("seed {seed} pooled"),
+            pooled,
+            &keep,
+            TICKS,
+            &mut rng,
+            false,
+            &mut seen,
+        );
+        compared += chain.compared;
+        if let Some((tick, unit)) = chain.first_fallback {
+            fallback_pooled.push((seed, tick, unit));
+        }
     }
+    println!(
+        "\nkernel_reference: {} of {} seeds have a fallback (seed, first tick, unit): \
+         {fallback_seeds:?}; {} of {} pooled chains have a fallback: {fallback_pooled:?}",
+        fallback_seeds.len(),
+        seeds(),
+        fallback_pooled.len(),
+        seeds()
+    );
+    assert!(
+        fallback_seeds.len() + fallback_pooled.len() < 2 * seeds() as usize,
+        "every chain has a fallback, so no chain is compared on all its ticks: \
+         {fallback_seeds:?} {fallback_pooled:?}"
+    );
     // The anchor frames reach the branches that the random seeds do not. Each raises its own
     // count in its own run, so that a random seed cannot stand in for it.
     let anchors = anchors();
@@ -847,14 +1015,19 @@ fn kernel_matches_reference_bit_for_bit() {
     for (name, frame, raised) in anchors {
         let mut own = Seen::default();
         let mut rng = Rng::new(0x5eed);
-        compared += run_chain(
+        let chain = run_chain(
             &format!("anchor {name}"),
             frame,
             &BTreeSet::new(),
             ANCHOR_TICKS,
             &mut rng,
+            true,
             &mut own,
         );
+        compared += chain.compared;
+        if let Some((tick, unit)) = chain.first_fallback {
+            println!("anchor {name:?}: first fallback at tick {tick}, unit {unit}");
+        }
         assert!(
             raised(&own) > 0,
             "the anchor frame {name:?} did not reach its branch: {own:?}"
@@ -865,7 +1038,7 @@ fn kernel_matches_reference_bit_for_bit() {
     // Each kind of unit and each phase must be reached, else the comparison proves nothing.
     assert_eq!(
         seen.frames,
-        seeds() as usize * TICKS + anchor_count * ANCHOR_TICKS
+        2 * seeds() as usize * TICKS + anchor_count * ANCHOR_TICKS
     );
     for (name, n) in [
         ("no-progress moving", seen.no_progress_moving),
@@ -874,7 +1047,7 @@ fn kernel_matches_reference_bit_for_bit() {
         ("follow", seen.follow),
         ("blocked", seen.blocked),
         ("physical escape", seen.escape),
-        ("plain progress", seen.plain),
+        ("fallback pool", seen.fallback),
         ("zero-sign arrival", seen.zero_sign_arrivals),
         ("late arrival, pool", seen.late_arrival_pooled),
         ("late arrival, no pool", seen.late_arrival_free),

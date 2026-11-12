@@ -1416,15 +1416,22 @@ fn set_deposit(world: &mut World, unit: u32, deposit: NodeId) {
 }
 fn set_target(world: &mut World, unit: u32, target: Vec2, goal: crate::movement::PlainGatherGoal) {
     if let Some(entity) = find_unit(world, unit) {
-        if let Some(mut progress) = world.get_mut::<crate::movement::PlainMoveProgress>(entity) {
-            match progress.gather_goal {
-                None => {
+        // A fallback pool of one serves the leg that it started in: the first call tags it with
+        // the goal and keeps its slot (task A2b1, design 9.19). A changed goal sets the new
+        // target; the order phase then ends the pool (`orders/run.rs`).
+        let fallback_goal = world
+            .get::<crate::movement::MoveProgress>(entity)
+            .filter(|progress| progress.is_fallback())
+            .map(|progress| progress.gather_goal);
+        match fallback_goal {
+            Some(None) => {
+                if let Some(mut progress) = world.get_mut::<crate::movement::MoveProgress>(entity) {
                     progress.gather_goal = Some(goal);
-                    return;
                 }
-                Some(existing) if existing == goal => return,
-                Some(_) => {}
+                return;
             }
+            Some(Some(existing)) if existing == goal => return,
+            Some(Some(_)) | None => {}
         }
         if let Some(mut current) = world.get_mut::<MoveTarget>(entity) {
             current.0 = target;

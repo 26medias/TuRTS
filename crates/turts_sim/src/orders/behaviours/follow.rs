@@ -62,9 +62,12 @@ pub(in crate::orders) fn run_unit_follow_move(
         return;
     };
     let target_goal = clamp_target(world, target_position, unit_radius(world, entity));
+    // The pool of the follow order (a cohort), apart from a fallback pool of one of the follow
+    // trip (task A2b1), which takes the place of the plain progress below.
     let cohort_progress = world
         .entity(entity)
         .get::<crate::movement::MoveProgress>()
+        .filter(|progress| !progress.is_fallback())
         .cloned();
     let cohort_pool_goal = cohort_progress.as_ref().and_then(|progress| {
         world
@@ -88,15 +91,12 @@ pub(in crate::orders) fn run_unit_follow_move(
                 .get::<crate::movement::PhysicalEscape>()
                 .is_none()
     });
-    let plain_progress = world
-        .entity(entity)
-        .get::<crate::movement::PlainMoveProgress>()
-        .cloned();
+    let plain_progress = crate::orders::run::fallback_progress(world, entity);
     let same_goal_fallback = plain_progress
         .as_ref()
-        .is_some_and(|progress| progress.original_point == target_goal);
+        .is_some_and(|(_, point)| *point == Some(target_goal));
     let fallback_reached = same_goal_fallback
-        && plain_progress.as_ref().is_some_and(|progress| {
+        && plain_progress.as_ref().is_some_and(|(progress, _)| {
             progress.activity == crate::movement::MovementActivity::Resting
                 && progress.slot == current_position
                 && world.entity(entity).get::<MoveTarget>().is_none()
@@ -132,6 +132,9 @@ pub(in crate::orders) fn run_unit_follow_move(
                     .remove::<crate::movement::MoveProgress>();
             }
             if plain_progress.is_some() {
+                world
+                    .entity_mut(entity)
+                    .remove::<crate::movement::MoveProgress>();
                 world
                     .entity_mut(entity)
                     .remove::<crate::movement::PlainMoveProgress>();
