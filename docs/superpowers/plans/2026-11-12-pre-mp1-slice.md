@@ -45,6 +45,20 @@ gate is passed for the tasks up to and including A2a. A2b1 gets a short re-check
 - The A1a exit "E9 green five times in a row" moves to task D0p: one run in six was red at `economy.rs:2306` from the
   gather-at-depletion defect, whose repair is not in the slice base before D0p.
 
+**From the S3 review (2026-11-12, technical-director; S3 merged, 0 High).**
+
+- Task S3 Step 4(b): the named test `forty_units_rest_with_no_overlap_and_no_blocked` stays green under the named plant on
+  both builds. The test that goes red is `second_group_same_point` (`crates/turts_sim/tests/group_movement.rs:1181`), with
+  the plant `let push = Vec2::ZERO;` at `movement/frame.rs:835`. Later tasks that reuse this fault (A2a, A2b2, A4) name
+  that test.
+- Task S3 Step 2: the count regex is `grep -cE '^(pub(\([a-z]+\))? )?(fn|struct) '` (it gives 3 on `plain.rs`).
+- Stale `movement.rs:NNN` citations stay in comments (`crates/turts_sim/tests/gmu_same_point.rs:6`,
+  `crates/turts_server/tests/mc_orders.rs:578`, `tests/m3/README.md:110`, `tests/m3/refreeze_classify.py:78`) and in the
+  A1b amendment above (`movement.rs:293` is now in `movement/spread.rs`). The next task that edits each file corrects it.
+- `step_frame_preserving_resting` is one function at `movement/frame.rs:60-1078`. A2a and A4 work in `frame.rs` only;
+  Q1b adds `movement/probe.rs`. The use-cycles frame/plain, frame/search and frame/pool_index come from
+  `MovementFrameUnit` and `MovementFrameOutput` in `frame.rs`; A4 can move those types to `mod.rs` (optional).
+
 ## 0. Line numbers
 
 - All `path:line` in this plan are at `431c3ad` (TuRTS-mp1), or at the commit that the line names.
