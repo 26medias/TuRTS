@@ -66,6 +66,7 @@ async function run(url, wantGuide, mapPressFirst) {
         const context = await browser.newContext({ viewport: { width: 1280, height: 720 }, deviceScaleFactor: 1 });
         const page = await context.newPage();
         await page.goto(url);
+        await page.waitForFunction(() => typeof window.turts_debug === "function", null, { timeout: 60000 });
         const ready = await until(page, (debug) => typeof debug.phase === "string" && debug.phase.startsWith("Joined") &&
             (debug.ui_snapshot || []).some((row) => row.kind === "focus_overlay" && row.root_count === 1), 60000);
         if (ready.ms === null) throw new Error("the game did not join and show its start overlay in 60 s");

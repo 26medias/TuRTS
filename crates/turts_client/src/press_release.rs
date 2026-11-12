@@ -31,7 +31,7 @@ use bevy::{
     picking::{
         backend::HitData,
         events::{Pointer, PointerClick, PointerRelease},
-        hover::HoverMap,
+        hover::{HoverMap, PreviousHoverMap},
         pointer::{PointerAction, PointerButton, PointerId, PointerInput},
     },
     prelude::*,
@@ -140,6 +140,7 @@ fn node_hit(entity: Entity, position: Vec2, nodes: &UiNodes, cameras: &Query<&Ca
 pub fn click_in_one_frame(
     mut inputs: MessageReader<PointerInput>,
     hover: Res<HoverMap>,
+    previous: Res<PreviousHoverMap>,
     nodes: UiNodes,
     cameras: Query<&Camera>,
     buttons: Query<(), With<UiButton>>,
@@ -151,6 +152,15 @@ pub fn click_in_one_frame(
         };
         for (entity, hit) in hovered {
             let _: &HitData = hit;
+            // An entity that was hovered in the frame before got its click from Bevy already
+            // (`events.rs:1091`): a second one would act twice (a click with a hover frame and a
+            // press and release in one later frame is the usual case of a person).
+            if previous
+                .get(&click.pointer.id)
+                .is_some_and(|before| before.contains_key(entity))
+            {
+                continue;
+            }
             if !node_hit(*entity, click.press_at, &nodes, &cameras)
                 || !node_hit(*entity, click.release_at, &nodes, &cameras)
             {
@@ -356,6 +366,23 @@ mod tests {
         assert_eq!(count(&app, "activate"), 0);
         assert!(pressed(&app, a));
         assert_eq!(count(&app, "over"), 1, "Bevy sends the over event");
+    }
+
+    /// A button that was hovered in the frame before, and a press and a release in one frame: Bevy
+    /// clicks it itself, and the repair must not click it a second time (it would switch twice).
+    #[test]
+    fn a_button_that_was_hovered_before_is_clicked_once_by_bevy_not_twice() {
+        let (mut app, a, _) = app();
+        frame(&mut app, &[], &[a], &[(MOVE, ON_A)], true);
+        frame(
+            &mut app,
+            &[a],
+            &[a],
+            &[(PRESS, ON_A), (RELEASE, ON_A)],
+            true,
+        );
+        assert_eq!(count(&app, "activate"), 1, "one activation, not two");
+        assert!(!pressed(&app, a));
     }
 
     /// The old order stays right: with the repair in place, a press in one frame and a release in a
