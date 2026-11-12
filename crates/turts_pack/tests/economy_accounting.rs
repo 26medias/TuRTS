@@ -3116,3 +3116,91 @@ fn e6_gather_carry_and_refund_rounding_are_accounted_at_10_20_30_hz() {
         assert!(op.events.iter().any(|e| matches!(&e.kind, EconomyEventKind::ProductionCancelled { refunded, .. } if refunded.iter().any(|x| x.amount == 33))), "catalog refund ratio rounds 100 tokens to 33 at {hz} Hz");
     }
 }
+
+/// The shared accounting driver models the Orders-phase end of a protocol Gather order: the
+/// worker empties a 7-unit node (partial load), delivers it, and only then the order fails
+/// with node_depleted (MC design 5.3 with M2 design 5). Each operation passes the oracle.
+#[test]
+fn accounted_ticks_model_the_node_depleted_failure_after_delivery() {
+    let mut files = economy_files()
+        .into_iter()
+        .map(|(p, b)| (p, String::from_utf8(b).unwrap()))
+        .collect::<std::collections::BTreeMap<_, _>>();
+    let map = files.get_mut("maps/test.ron").unwrap();
+    let node_one = "(node: \"probe:stand\", pos: (x: 24.0, y: 8.0), remaining: 1000)";
+    assert_eq!(map.matches(node_one).count(), 1);
+    *map = map.replace(node_one, &node_one.replace("1000", "7"));
+    let mut app = scenario_with(files, 20);
+    trail(&mut app).enable();
+    let initial = audit_state(app.world_mut());
+    let catalog = app
+        .world()
+        .resource::<turts_sim::bootstrap::InstalledCatalog>()
+        .0
+        .clone();
+    let mut oracle = AccountingOracle::new(&initial, &catalog);
+    let command = Command {
+        slot: SlotId(0),
+        seq: 980,
+        kind: CommandKind::Order(Box::new(turts_sim::OrderCommand {
+            order: common::cid("probe:gather"),
+            behaviour: turts_mod_api::Behaviour::Gather,
+            target_kind: turts_mod_api::TargetKind::Node,
+            policy: None,
+            units: vec![3],
+            target: turts_sim::OrderTargetSim::Node(turts_sim::NodeId(1)),
+            queue: turts_sim::QueueMode::Replace,
+            group: 0,
+            allowed_units: Vec::new(),
+            queue_depth: 16,
+        })),
+    };
+    let result = apply_command(app.world_mut(), &command);
+    assert_eq!(result.units.accepted, vec![3], "{result:?}");
+    let after = audit_state(app.world_mut());
+    let op = trail(&mut app).drain_operations().pop().unwrap();
+    oracle
+        .observe(
+            &ExpectedOperation::Task4Order(command),
+            &initial,
+            &after,
+            &op.events,
+            Some(&result),
+        )
+        .unwrap();
+    let mut depletion_ticks = Vec::new();
+    for tick in 1..=600 {
+        let (operations, _) = advance_accounted_tick(&mut app, &mut oracle, tick);
+        if operations
+            .iter()
+            .any(|op| op.phase == turts_sim::economy::transaction::AuditPhase::Orders)
+        {
+            depletion_ticks.push(tick);
+        }
+    }
+    assert_eq!(
+        depletion_ticks.len(),
+        1,
+        "one modeled node_depleted operation: {depletion_ticks:?}"
+    );
+    assert_eq!(oracle.extraction, 7);
+    assert_eq!(
+        oracle.delivery, 7,
+        "the last load is delivered before the failure"
+    );
+    let state = audit_state(app.world_mut());
+    let worker = state
+        .unit_orders
+        .iter()
+        .find(|entry| entry.unit_id == 3)
+        .unwrap();
+    assert!(worker.orders.current.is_none());
+    assert_eq!(
+        worker
+            .orders
+            .last_failure
+            .as_ref()
+            .map(|failure| failure.reason),
+        Some(turts_sim::RejectReason::NodeDepleted)
+    );
+}

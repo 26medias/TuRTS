@@ -233,3 +233,7 @@ MC is active on this desktop. Task15 code at52ecf3c is accepted for integration:
 - [ ] MP1: optional Button `font` field in the mod API with a version table row; "Unbound" for a BuildMenu or CommandCard row with no key.
 - [ ] MP1: Controls menu groups, search and keyboard navigation.
 - [ ] MP1 (bevy-rendering-engineer): marks above the first alert row; alert row pitch 62 px against 31 px in hud.ron:89.
+
+## Follow-up from the CEO play attempt (2026-11-11)
+
+- [ ] MP1: when the browser gives no GPU adapter (WebGPU off, as in Chrome on Linux by default), the client must show a plain page that says what is missing and how to turn it on. Today it panics at bevy_render `render/mod.rs:308` ("Unable to find a GPU") with a console message only. Owner: web-platform-engineer with ux-designer.
