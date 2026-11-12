@@ -305,8 +305,9 @@ function createDriverIo(pages, { outputDir, inputLog = [], initialCursor = { x: 
             if (afterScreenshot && !observeReloadLoad) {
                 // A screenshot of a page that has no bridge yet cannot get its scene checkpoint
                 // ("missing scene checkpoint bridge", RUN142 AUD1). The wait is in the harness, not
-                // in the driver, and it is bounded. It never throws: a page that stays without bridges
-                // fails at its first checkpointed screenshot, as before.
+                // in the driver, and it is bounded. A page that stays without bridges after the bound
+                // fails the reload with a text that names the fault (see below), so the red does not
+                // blame a later wait that already used its time on the dead page.
                 entry.bridges_ready_after_reload = await page().waitForFunction(() => {
                     try {
                         return typeof window.turts_scene === "function" && typeof window.turts_debug === "function" &&
@@ -318,6 +319,9 @@ function createDriverIo(pages, { outputDir, inputLog = [], initialCursor = { x: 
             entry.document_epoch_after = after;
             if (!Number.isSafeInteger(before) || before < 1 || !Number.isSafeInteger(after) || after <= before) {
                 throw new Error(`reload did not advance the actual document epoch: ${before} -> ${after}`);
+            }
+            if (entry.bridges_ready_after_reload === false) {
+                throw new Error(`reload: page bridges absent after ${BRIDGES_READY_MS / 1000} s`);
             }
         }); },
         async use(n) {

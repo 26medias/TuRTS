@@ -3822,13 +3822,29 @@ fn e9_two_owners_late_join_and_output_lifecycle() {
     assert_raw_wire_owner_records(log, &raw1, 1, Some((owner0_output_tick, owner0_output_id)));
 }
 
+/// Recipe time of the replay-spawn-window subcase and the tick rate of its independent model.
+const SPAWN_WINDOW_RECIPE_MS: u64 = 600;
+const SPAWN_WINDOW_TICK_HZ: u64 = 20;
+/// The window in which the held resync response lets the spawn arrive (`--hold-resync-snapshots`).
+const SPAWN_WINDOW_HOLD_TICKS: u64 = 12;
+
 fn run_replay_spawn_window_subcase() {
     use turts_net_protocol::UnitSnapshot;
 
     let package_dir = support::test_dir("e9-replay-spawn-window");
     let production_path = support::mods_dir().join("base/production/rifleman.ron");
     let original = std::fs::read_to_string(&production_path).unwrap();
-    let short_recipe = original.replace("duration_ms: 5000", "duration_ms: 200");
+    // The recipe time of this subcase. The output must come AFTER the held resync Snapshot (`response_tick <
+    // output_tick`) and inside its 12-tick hold window (`spawn_tick <= response_tick + 12`), so it is a race
+    // between the request round trip and the recipe. With 200 ms (4 ticks) the answer, normally 1 tick after
+    // the order, had a slack of 2 ticks (100 ms); hosted run 43242960493 lost the race. 600 ms (12 ticks) is the
+    // longest time that keeps the second assertion true for every answer tick of 0 or more (the output comes the
+    // recipe's ticks after the order, and the window ends 12 ticks after the answer), and it widens the slack of the
+    // first one to 10 ticks (500 ms). Every expected tick below follows from this value.
+    let short_recipe = original.replace(
+        "duration_ms: 5000",
+        &format!("duration_ms: {SPAWN_WINDOW_RECIPE_MS}"),
+    );
     assert_ne!(
         short_recipe, original,
         "fixture shortens only public recipe time"
@@ -3840,12 +3856,14 @@ fn run_replay_spawn_window_subcase() {
         &package_dir,
     );
     let archive_bytes = std::fs::read(&package).unwrap();
-    let (initial, catalog) = independent_public_model_from_archive(&archive_bytes, 20);
+    let (initial, catalog) =
+        independent_public_model_from_archive(&archive_bytes, SPAWN_WINDOW_TICK_HZ as u16);
     let server = start_economy_server(&package, &package_dir);
     let trace = trace_file(&server, "base-replay-spawn-trace.json");
     let player_id = 36_001;
     let raw_path = server.dir.join("client-36-001-wire.jsonl");
     let raw_arg = raw_path.to_str().unwrap();
+    let hold_arg = SPAWN_WINDOW_HOLD_TICKS.to_string();
     let report = run_trace_client(
         &server,
         player_id,
@@ -3863,7 +3881,7 @@ fn run_replay_spawn_window_subcase() {
             "--reorder-grace-ticks",
             "0",
             "--hold-resync-snapshots",
-            "12",
+            &hold_arg,
             "--hold-resync-snapshot-count",
             "1",
             "--drop-world-changes",
@@ -3887,6 +3905,20 @@ fn run_replay_spawn_window_subcase() {
 
     let log = economy_log_path(&server);
     let (output_tick, output_id) = wait_for_owner_rifle_output(log);
+    let duration_ticks = SPAWN_WINDOW_RECIPE_MS * SPAWN_WINDOW_TICK_HZ / 1000;
+    let applied_tick = report["command_results"]
+        .as_array()
+        .and_then(|results| {
+            results
+                .iter()
+                .find_map(|result| result["applied_tick"].as_u64())
+        })
+        .expect("the Produce order was applied and reported");
+    assert_eq!(
+        u64::from(output_tick),
+        applied_tick + duration_ticks,
+        "the output comes exactly the packed recipe time after the order"
+    );
     let report_tick = assert_report_matches_own_audit_tick(log, &report);
     assert!(report_tick >= output_tick);
     let oracle = replay_public_log_with_model(
@@ -3954,7 +3986,7 @@ fn run_replay_spawn_window_subcase() {
     let spawn_tick = spawn_record["dto"]["tick"].as_u64().unwrap() as u32;
     assert_eq!(spawn_tick, output_tick);
     assert!(
-        spawn_tick <= response_tick + 12,
+        u64::from(spawn_tick) <= u64::from(response_tick) + SPAWN_WINDOW_HOLD_TICKS,
         "spawn arrives during the delayed response window"
     );
     assert!(
@@ -3962,7 +3994,7 @@ fn run_replay_spawn_window_subcase() {
             item["kind"] == "world_delta"
                 && item["dto"]["tick"]
                     .as_u64()
-                    .is_some_and(|tick| tick >= u64::from(response_tick + 12))
+                    .is_some_and(|tick| tick >= u64::from(response_tick) + SPAWN_WINDOW_HOLD_TICKS)
         }),
         "WorldDeltas arrive through the full 12-tick held-response window"
     );

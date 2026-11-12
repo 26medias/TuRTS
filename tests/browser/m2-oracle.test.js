@@ -3,7 +3,7 @@
 
 const assert = require("node:assert/strict");
 const { test } = require("node:test");
-const { appliedAfter, cancelRows, convergenceLimits, hudClick, produceRow, waitForSharedTick } = require("./m2-oracle.js");
+const { appliedAfter, cancelRefundShot, cancelRows, convergenceLimits, hudClick, produceRow, waitForSharedTick } = require("./m2-oracle.js");
 
 // Row shapes of a retained headed HUD2 run (target/mc-evidence/run94-hud2-headed-v3): list rows
 // are "<list>/<item>[<key>]" buttons with a typed widget_action; row children keep their ids.
@@ -28,13 +28,88 @@ test("a HUD click is the click after its button check, and the applied result mu
         { call: "click", args: [136, 204, "left"] },
         { call: "screenshot" },
     ];
-    const before = { input_call: 0, window: 1, wall_time_ms: 1000, debug: { command_results: [] } };
-    const after = { input_call: 3, window: 1, wall_time_ms: 1400, debug: { command_results: [{ seq: 1, applied_tick: 9, job_id: 4 }] } };
+    const before = { input_call: 0, window: 1, wall_time_ms: 1000, debug: { tick_hz: 20, replicated_world: { tick: 5 }, command_results: [] } };
+    const after = { input_call: 3, window: 1, wall_time_ms: 1400, debug: { tick_hz: 20, replicated_world: { tick: 12 }, command_results: [{ seq: 1, applied_tick: 9, job_id: 4 }] } };
     const click = hudClick(input, [before, after], "m2-econ-first");
     assert.deepEqual([click.x, click.y, click.clickIndex], [136, 204, 2]);
     assert.equal(appliedAfter([before, after], click), after);
-    assert.equal(appliedAfter([before, { ...after, wall_time_ms: 9000 }], click), null, "a result later than 6 s does not count");
     assert.throws(() => hudClick(input, [before, after], "m2-econ-second"), /did not check the HUD button/);
+});
+
+// Application latency is judged in server ticks (review of hosted runs 43242960493 and 43264331478: the wall
+// time between two harness checkpoints reached 6.3 s and 6.6 s on the software renderer while the server had
+// applied the order 44 and 46 ticks (2.2 s and 2.3 s) after the pre-click checkpoint).
+const clickInput = [
+    { call: "screenshot" },
+    { call: "save", args: ["m2-econ-first-button.json"] },
+    { call: "click", args: [136, 204, "left"] },
+    { call: "screenshot" },
+];
+const shotAt = (call, wall, tick, results = [], hz = 20) => ({ input_call: call, window: 1, wall_time_ms: wall,
+    debug: { tick_hz: hz, replicated_world: { tick }, command_results: results } });
+const applied = (tick, seq = 1) => ({ seq, applied_tick: tick, job_id: 4 });
+const clickOf = (before) => hudClick(clickInput, [before], "m2-econ-first");
+
+test("a slow checkpoint is fine when the server applied the order within 6 s of ticks", () => {
+    const before = shotAt(0, 20700, 557);
+    const slow = shotAt(3, 27300, 685, [applied(601)]);
+    assert.equal(appliedAfter([before, slow], clickOf(before)), slow, "6.6 s of wall time, 44 ticks of latency: the failing run of 43242960493");
+    const cedar = shotAt(3, 32700, 864, [applied(781)]);
+    const cedarBefore = shotAt(0, 26400, 735);
+    assert.equal(appliedAfter([cedarBefore, cedar], clickOf(cedarBefore)), cedar, "6.3 s of wall time, 46 ticks: the failing run of 43264331478");
+});
+
+test("the bound is 6 s of ticks, read from the run: 120 ticks at 20 Hz, 360 at 60 Hz; 130 ticks at 20 Hz is red", () => {
+    const before = shotAt(0, 1000, 500);
+    assert.equal(appliedAfter([before, shotAt(3, 1400, 700, [applied(620)])], clickOf(before))?.debug.command_results[0].applied_tick, 620, "exactly 120 ticks");
+    assert.equal(appliedAfter([before, shotAt(3, 1400, 700, [applied(630)])], clickOf(before)), null, "130 ticks at 20 Hz");
+    const fast = shotAt(0, 1000, 500, [], 60);
+    assert.notEqual(appliedAfter([fast, shotAt(3, 1400, 900, [applied(860)], 60)], clickOf(fast)), null, "360 ticks at 60 Hz");
+    assert.equal(appliedAfter([fast, shotAt(3, 1400, 900, [applied(861)], 60)], clickOf(fast)), null, "361 ticks at 60 Hz");
+});
+
+test("no application is red, and a count that did not grow is red", () => {
+    const before = shotAt(0, 1000, 500);
+    assert.equal(appliedAfter([before, shotAt(3, 1400, 540, [])], clickOf(before)), null);
+    const had = shotAt(0, 1000, 500, [applied(480, 1)]);
+    assert.equal(appliedAfter([had, shotAt(3, 1400, 540, [applied(480, 1)])], clickOf(had)), null);
+});
+
+test("a result of an earlier command (applied before the pre-click checkpoint tick) does not count for the click", () => {
+    const before = shotAt(0, 1000, 500);
+    assert.equal(appliedAfter([before, shotAt(3, 1400, 540, [applied(499)])], clickOf(before)), null);
+    assert.notEqual(appliedAfter([before, shotAt(3, 1400, 540, [applied(500)])], clickOf(before)), null);
+});
+
+test("a lagging replica cannot make a late application look early", () => {
+    // The pre-click checkpoint shows replica tick 100 while the server is at 300: the order is applied at 330.
+    // The measured latency is 230 ticks (more than the true 30), so it is red, never early.
+    const lagging = shotAt(0, 1000, 100);
+    assert.equal(appliedAfter([lagging, shotAt(3, 1400, 340, [applied(330)])], clickOf(lagging)), null);
+});
+
+test("a far wall-clock guard still catches a dead run: a checkpoint 60 s later does not count", () => {
+    const before = shotAt(0, 1000, 500);
+    assert.notEqual(appliedAfter([before, shotAt(3, 1000 + 60000, 600, [applied(560)])], clickOf(before)), null, "60 s is the limit, it is allowed");
+    assert.equal(appliedAfter([before, shotAt(3, 1000 + 60001, 600, [applied(560)])], clickOf(before)), null);
+});
+
+test("the tick rate and the pre-click tick must exist, or the check refuses to judge", () => {
+    const noRate = { ...shotAt(0, 1000, 500), debug: { replicated_world: { tick: 500 }, command_results: [] } };
+    assert.throws(() => appliedAfter([noRate, shotAt(3, 1400, 540, [applied(520)])], clickOf(noRate)), /tick_hz/);
+    const noTick = { ...shotAt(0, 1000, 500), debug: { tick_hz: 20, replicated_world: {}, command_results: [] } };
+    assert.throws(() => appliedAfter([noTick, shotAt(3, 1400, 540, [applied(520)])], clickOf(noTick)), /replicated tick/);
+});
+
+test("the Cancel refund window uses the same tick bound (cancelRefundShot)", () => {
+    const before = shotAt(0, 1000, 800, [applied(500, 1)]);
+    const refunded = (tick, appliedTick, wall) => ({ ...shotAt(3, wall, tick, [applied(500, 1), applied(appliedTick, 2)]),
+        debug: { tick_hz: 20, replicated_world: { tick, economy: { queues: [{ producer: 1, jobs: [] }], balances: [{ resource: "base:credits", on_hand: 350 }] } },
+            command_results: [applied(500, 1), applied(appliedTick, 2)], ui_snapshot: [] } });
+    const cancelClick = { clickIndex: 2, before };
+    assert.notEqual(cancelRefundShot([before, refunded(900, 840, 7700)], cancelClick, 1, 2, 350), null, "6.7 s of wall time, 40 ticks");
+    assert.equal(cancelRefundShot([before, refunded(1100, 930, 7700)], cancelClick, 1, 2, 350), null, "130 ticks late");
+    assert.equal(cancelRefundShot([before, refunded(900, 840, 7700)], cancelClick, 1, 2, 400), null, "the credits must still be exact");
 });
 
 const { drive } = require("./m2-driver.js");

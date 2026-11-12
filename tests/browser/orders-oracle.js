@@ -4,10 +4,19 @@
 const assert = require("node:assert/strict");
 const { decodePng, pixelAt } = require("./harness/png.js");
 const { unprojectGround } = require("./hud4-oracle.js");
+const { assertConnectionHeld, assertNoResync, readServerEvidence } = require("./checkpoint-lib.js");
 
 async function judge(view, params) {
     const input = view.inputLog();
     const checkpoints = JSON.parse(await view.serverFile("scene-checkpoints.json"));
+    // A run whose client lost its connection is red here, with its cause told from the evidence of the run (host
+    // fault or slow server tick), not at a later order check that shows a stale replica (run
+    // rereview-2df2393-hold-a: ORD4 red 2 of 2 at two different checks after stalls of 11 s and 18 s).
+    const evidence = await readServerEvidence(view);
+    assertConnectionHeld(checkpoints, evidence, params.row);
+    // ORD4 always kills its target (the accepted Attack runs until the target is removed). A replica that asked for a
+    // resync stalled after that kill (RUN142, repair 50eb827): red, with the first count and the nearest removal.
+    if (params.row === "ORD4") assertNoResync(checkpoints, "ORD4", evidence);
     const steps = JSON.parse(await view.serverFile(`${params.row.toLowerCase()}-driver-steps.json`));
     const context = makeContext(view, input, checkpoints, steps, params);
     const before = await context.shot("before");

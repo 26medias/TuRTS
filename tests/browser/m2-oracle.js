@@ -381,13 +381,52 @@ function credits(debug) {
 // Produce through the plain HUD: an enabled row of the recipe for the producer is under the
 // click, the server applies the order, and the job shows in the queue rows.
 // The first later snapshot (a checkpoint after the click, or a harness step) in which the server
-// applied one more order; m2.js waited 5 s for it.
+// applied one more order within APPLY_WINDOW_SECONDS of the click; m2.js waited 5 s for it.
+//
+// The latency is judged in server ticks, not in the wall time between two harness checkpoints. On the hosted
+// software renderer one checkpoint costs 5 to 6.6 s, so the old wall limit of 6000 ms failed runs 43242960493 and
+// 43264331478 although the server had applied the order 44 and 46 ticks (2.2 s and 2.3 s) after the pre-click
+// checkpoint. Both ticks are on the clock of the server: `applied_tick` of a CommandResult is the server tick that
+// applied the order (the server sends it, the client only relays it), and `replicated_world.tick` is the server
+// tick of the last world batch that the replica applied. The replica never runs ahead of the server, so the replica
+// tick of the pre-click checkpoint is at most the server tick at the click; a lagging replica makes the measured
+// latency LONGER than the true one. It can make a late application look late, never a late one look early.
+// The new result must also be applied at or after that tick, so a late result of an EARLIER command (which grows
+// the count too) does not count for the click. The rate is read from the run (`debug.tick_hz`), never written here.
+// The wall limit stays only as a far guard against a dead run: a checkpoint more than DEAD_RUN_WALL_MS after the
+// pre-click one is not the result of that click (observed hosted maximum 6.6 s; 60 s is 9 times that).
+const APPLY_WINDOW_SECONDS = 6;
+const DEAD_RUN_WALL_MS = 60000;
+
+function appliedWithinWindow(before, shot, appliedBefore) {
+    const results = (shot.debug?.command_results ?? []).filter((result) => Number.isInteger(result.applied_tick));
+    if (results.length <= appliedBefore) return false;
+    const rate = before.debug?.tick_hz;
+    assert(Number.isInteger(rate) && rate > 0, "the pre-click checkpoint has no tick_hz: the application latency cannot be judged in ticks");
+    const preTick = before.debug?.replicated_world?.tick;
+    assert(Number.isInteger(preTick), "the pre-click checkpoint has no replicated tick: the application latency cannot be judged in ticks");
+    const ticks = results.at(-1).applied_tick - preTick;
+    if (ticks < 0 || ticks > APPLY_WINDOW_SECONDS * rate) return false;
+    const wall = (shot.wall_time_ms ?? before.wall_time_ms ?? 0) - (before.wall_time_ms ?? 0);
+    return wall <= DEAD_RUN_WALL_MS;
+}
+
 function appliedAfter(checkpoints, click, extra = []) {
     const appliedBefore = appliedCommandCount(click.before);
-    const clickTime = click.before.wall_time_ms ?? 0;
     const later = [...checkpoints.filter((shot) => shot.window === 1 && shot.input_call > click.clickIndex)
         .sort((left, right) => left.input_call - right.input_call), ...extra];
-    return later.find((shot) => appliedCommandCount(shot) > appliedBefore && (shot.wall_time_ms ?? clickTime) - clickTime <= 6000) ?? null;
+    return later.find((shot) => appliedWithinWindow(click.before, shot, appliedBefore)) ?? null;
+}
+
+// The first checkpoint after a Cancel click that shows the refund: one more applied order within the same tick
+// bound, the job gone from the queue and from the Cancel rows, and the exact credits.
+function cancelRefundShot(checkpoints, cancel, producerId, jobId, expectedCredits) {
+    const appliedAtCancel = appliedCommandCount(cancel.before);
+    return checkpoints.filter((shot) => shot.window === 1 && shot.input_call > cancel.clickIndex)
+        .find((shot) => appliedWithinWindow(cancel.before, shot, appliedAtCancel) &&
+            !queueOf(shot.debug, producerId)?.jobs?.some((item) => item.id === jobId) &&
+            !cancelRows(shot.debug, producerId).some((row) => row.widget_action.job === jobId) &&
+            credits(shot.debug) === expectedCredits) ?? null;
 }
 
 function judgeProduce(input, checkpoints, label, producerId, recipe, message, extra = []) {
@@ -440,13 +479,7 @@ async function judgeEconomy(view, input, checkpoints, at, joined) {
     const refund = job.stage === "running" ? 50 : 100;
     const expected = before - 100 + refund;
     const cancel = judgeCancel(input, checkpoints, "m2-econ-cancel", producer.unit_id, second.jobId);
-    const appliedAtCancel = appliedCommandCount(cancel.before);
-    const later = checkpoints.filter((shot) => shot.window === 1 && shot.input_call > cancel.clickIndex &&
-        shot.wall_time_ms - cancel.before.wall_time_ms <= 6000);
-    const done = later.find((shot) => appliedCommandCount(shot) > appliedAtCancel &&
-        !queueOf(shot.debug, producer.unit_id)?.jobs?.some((item) => item.id === second.jobId) &&
-        !cancelRows(shot.debug, producer.unit_id).some((row) => row.widget_action.job === second.jobId) &&
-        credits(shot.debug) === expected);
+    const done = cancelRefundShot(checkpoints, cancel, producer.unit_id, second.jobId, expected);
     assert(done, `exact ${job.stage} refund should yield ${expected} Credits`);
     const harvester = at("m2-worker-selected");
     const selectClick = input.findIndex((entry, index) => index > at("m2-econ-cancelled").screenshotIndex && entry.call === "click" && entry.args?.[2] === "left");
@@ -637,4 +670,4 @@ async function judge(view, params) {
     }
 }
 
-module.exports = { judge, appliedAfter, assertPickCircleClearOfHud, cancelRows, hudClick, produceRow, waitForSharedTick, convergenceLimits, UNIT_NAMES };
+module.exports = { judge, appliedAfter, cancelRefundShot, assertPickCircleClearOfHud, cancelRows, hudClick, produceRow, waitForSharedTick, convergenceLimits, UNIT_NAMES };

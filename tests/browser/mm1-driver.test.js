@@ -57,6 +57,11 @@ const FOREIGN = [628, 345, 12, 24, [230, 159, 0]];
 const PING = [1180, 560, 3, 3, [255, 204, 0]];
 const WINDOW1 = png([OWN_COLUMN, FOREIGN]);
 const NO_PING = png([]);
+const NO_FOREIGN = png([OWN_COLUMN]);
+// The target dies but a neighbour stays in its box (half of the pixels), as in the saved run (201 pixels, then 115).
+const NEIGHBOUR_ONLY = png([OWN_COLUMN, [628, 357, 12, 12, [230, 159, 0]]]);
+// A body that is hit but stands: 80 % of the pixels.
+const STANDING = png([OWN_COLUMN, [628, 345, 12, 19, [230, 159, 0]]]);
 const WITH_PING = png([PING]);
 
 const PARAMS = {
@@ -64,7 +69,7 @@ const PARAMS = {
 };
 
 // A fake pair of windows. The window 2 shot number k shows the ping when k >= pingAtShot.
-function fakeIo(pingAtShot) {
+function fakeIo(pingAtShot, killAtShot = Infinity, afterKill = NO_FOREIGN) {
     const log = [];
     let current = 1;
     const shots = { 1: 0, 2: 0 };
@@ -81,7 +86,7 @@ function fakeIo(pingAtShot) {
         async screenshot() {
             const index = shots[current]; shots[current] += 1;
             log.push(`shot@w${current}#${index}`);
-            if (current === 1) return WINDOW1;
+            if (current === 1) return index >= killAtShot ? afterKill : WINDOW1;
             return index >= pingAtShot ? WITH_PING : NO_PING;
         },
         async save(name, bytes) { log.push(`save:${name}`); saved[name] = bytes; },
@@ -127,16 +132,56 @@ test("MM1 ends the ping poll without an error when no ping appears, and still sa
     assert.ok(!io.log.some((entry) => entry === "wait:3500"), "no settle wait without a sighting");
 });
 
-test("MM1 takes a bounded series of captures after the minimap right click, before the zoom (RUN142: the replica stands still after a kill)", async () => {
+test("MM1 takes one capture 500 ms after the minimap right click and none later before the zoom (the repaired replica stall must show)", async () => {
     const io = fakeIo(1);
     await drive(io, PARAMS);
     const rightClick = io.log.findLastIndex((entry) => /^click:.*,right$/.test(entry));
-    const saves = ["mm1-after-right.png", "mm1-after-right-2.png", "mm1-after-right-3.png", "mm1-after-right-4.png"].map((name) => io.log.indexOf(`save:${name}`));
-    assert.ok(rightClick >= 0 && saves[0] > rightClick, `the first capture follows the right click: ${saves}`);
-    assert.ok(saves.every((index, at) => index > 0 && (at === 0 || index > saves[at - 1])), `four captures in order: ${saves}`);
+    const capture = io.log.indexOf("save:mm1-after-right.png");
     const wheel = io.log.indexOf("wheel:-20");
-    assert.ok(saves[3] < wheel, "all captures after the right click come before the zoom");
-    assert.equal(io.log.slice(saves[0], saves[3]).filter((entry) => entry === "wait:700").length, 3, "700 ms between the captures");
+    assert.ok(rightClick >= 0 && capture > rightClick, `the capture follows the right click: ${capture}`);
+    assert.equal(io.log[rightClick + 1], "wait:500", "the capture waits 500 ms after the click");
+    const between = io.log.slice(rightClick, wheel);
+    assert.equal(between.filter((entry) => entry.startsWith("save:") && entry.endsWith(".png")).length, 1, `one capture between the click and the zoom: ${between}`);
+    assert.ok(!io.log.some((entry) => /^save:mm1-after-right-\d/.test(entry)), "no later capture after the right click");
+    assert.ok(!between.includes("wait:700"), "no 700 ms wait between captures");
     const steps = JSON.parse(Buffer.from(io.saved["mm1-driver-steps.json"]).toString("utf8"));
-    assert.deepEqual(steps.after_right_later, ["mm1-after-right-2.png", "mm1-after-right-3.png", "mm1-after-right-4.png"]);
+    assert.equal(steps.after_right_later, undefined, "the steps file lists no later capture");
+});
+
+test("MM1 waits in window 1, from the pixels, until the target dummy is gone before the minimap steps (the kill path must run)", async () => {
+    // Window 1 shots 0 to 4 are before, selected, before-focus, after-focus and attack. The body is gone at shot 7.
+    const io = fakeIo(1, 7);
+    await drive(io, PARAMS);
+    const steps = JSON.parse(Buffer.from(io.saved["mm1-driver-steps.json"]).toString("utf8"));
+    assert.equal(steps.kill_poll.gone, true);
+    assert.equal(steps.kill_poll.polls, 3, "shots 5 and 6 still show the body, shot 7 does not");
+    assert.ok(steps.kill_poll.start_pixels > 100 && steps.kill_poll.pixels < 10);
+    const poll = io.log.indexOf("shot@w1#5");
+    const gone = io.log.indexOf("shot@w1#7");
+    const leftClick = io.log.findIndex((entry, index) => index > gone && entry.startsWith("click:") && entry.endsWith(",left"));
+    assert.ok(poll > io.log.indexOf("save:mm1-window2-ping.png") && gone > poll && leftClick > gone, "the poll comes after the ping shot and before the left click");
+    assert.equal(io.log.slice(poll, gone).filter((entry) => entry === "wait:500").length, 2, "500 ms between polls");
+    assert.ok(!io.log.slice(poll, gone + 1).some((entry) => entry.startsWith("save:") || entry.startsWith("click:")), "the poll saves nothing and clicks nothing");
+});
+
+test("MM1 ends the kill poll at its bound with no error when the dummy never goes (the oracle names the void run)", async () => {
+    const io = fakeIo(1);
+    await drive(io, PARAMS);
+    const steps = JSON.parse(Buffer.from(io.saved["mm1-driver-steps.json"]).toString("utf8"));
+    assert.equal(steps.kill_poll.gone, false);
+    assert.equal(steps.kill_poll.polls, 60);
+    assert.ok(io.log.includes("save:mm1-after-zoom.png"), "the drive still ends");
+});
+
+test("MM1 sees the kill when a neighbour dummy stays in the box (ratio 0.5), and does not call a standing body gone (ratio 0.8)", async () => {
+    const neighbour = fakeIo(1, 6, NEIGHBOUR_ONLY);
+    await drive(neighbour, PARAMS);
+    const steps = JSON.parse(Buffer.from(neighbour.saved["mm1-driver-steps.json"]).toString("utf8"));
+    assert.equal(steps.kill_poll.gone, true);
+    assert.equal(steps.kill_poll.polls, 2);
+    const standing = fakeIo(1, 6, STANDING);
+    await drive(standing, PARAMS);
+    const kept = JSON.parse(Buffer.from(standing.saved["mm1-driver-steps.json"]).toString("utf8"));
+    assert.equal(kept.kill_poll.gone, false, "80 % of the pixels is a body that stands");
+    assert.equal(kept.kill_poll.polls, 60);
 });
