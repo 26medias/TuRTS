@@ -517,10 +517,16 @@ pub fn scan_rust(roots: &[PathBuf], c: &TokenCatalog) -> Result<Vec<Hit>, ScanEr
     });
     Ok(hits)
 }
+/// Test modules in their own file. The parent file declares each one with `#[cfg(test)] mod`,
+/// so the scan skips the file as it skips an inline `#[cfg(test)]` module.
+const TEST_MODULE_FILES: &[&str] = &[
+    "crates/turts_client/src/client_shell/tests.rs",
+];
 fn collect(p: &Path, out: &mut Vec<PathBuf>) -> Result<(), ScanError> {
     if p.is_file() {
         if p.extension().is_some_and(|x| x == "rs")
             && !p.components().any(|x| x.as_os_str() == "tests")
+            && !TEST_MODULE_FILES.iter().any(|file| p.ends_with(file))
         {
             out.push(p.into())
         }
