@@ -2,7 +2,7 @@
 //!
 //! `AuditState` (`views.rs`) is the in-process test snapshot. It keeps all its fields, because the
 //! frozen M2 stream compares the full `AuditState` before and after each operation. The economy
-//! log audit (`turts_audit`) reads only `LedgerAudit`, and the log will write only `LedgerAudit`
+//! log audit (`turts_audit`) reads only `LedgerAudit`, and the log sink writes only `LedgerAudit`
 //! (task A1c). So a new sim structure enters the log format only through an edit of this file.
 //!
 //! Each field has the name, the type and the serde form of the `AuditState` field that it copies,
