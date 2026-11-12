@@ -8,9 +8,15 @@
 // that record. It is not a row: it reads the debug bridge to find the buttons (it is an
 // instrument, not a driver).
 //
-// Pass 3 adds `--map-press-first`: before the click check, one frame with a press on the map and a
-// release over the sound switch (a box select that ends on a button inside one frame) must NOT
-// turn the sound on: a click needs a press and a release at the same button.
+// Pass 3 adds `--map-press-first`: before the click check, a press on the map and a release over the
+// sound switch (a box select that ends on a button; the page is slowed so that it can be one frame)
+// must NOT turn the sound on: a click needs a press and a release at the same button.
+// LIMIT (measured, pass 3): this check cannot go red in this browser. With the press hit test, the
+// distance rule and the drag rule all removed from the repair (the plant 7i of `sound-off.json`,
+// run `soundoff3-probe-plant7i-4`) the sound still stays off, so the browser does not give the
+// press-on-map, release-on-switch sequence in one frame the way the native test does. The proof of
+// that case is the native red tests of `press_release.rs`; this check only shows that the real build
+// does not act on it.
 //
 // Usage: node click-without-hover-probe.js <game url> [--guide-close] [--map-press-first]
 //   The url is the `URL:` line of `scripts/mc-browser.sh <package> --serve-only --prepared DIR`
