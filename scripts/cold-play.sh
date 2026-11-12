@@ -81,7 +81,8 @@ if [[ -n "$PREP" ]]; then
 else
     play_args=(--url "$URL_ARG")
 fi
-bash "$ROOT/scripts/mp1-play.sh" "${play_args[@]}" >"$PLAY_LOG" 2>&1 &
+# --silent: the Chrome gets --alsa-output-device=null and the silent environment (no sound on the desktop of the operator).
+bash "$ROOT/scripts/mp1-play.sh" "${play_args[@]}" --silent >"$PLAY_LOG" 2>&1 &
 PLAY_PID=$!
 URL="" PORT=""
 for _ in $(seq 1 600); do

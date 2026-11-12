@@ -94,3 +94,40 @@ test("silentEnv sets a pulse server that does not exist and a null ALSA device, 
         assert.ok(!SILENT_ARGS.some((arg) => /mute/.test(arg)), "no --mute-audio");
     } finally { fs.rmSync(folder, { recursive: true, force: true }); }
 });
+
+// ---- Shell scripts under scripts/ ---------------------------------------------------------------------
+
+// A script that starts a Chrome itself (`"$CHROME_BIN" "${ARGS[@]}"`, `google-chrome ... &`, `exec chromium`) must have the silent
+// form: the argument --alsa-output-device=null and the silent environment (a pulse server that does not exist and a null ALSA
+// configuration). The operator heard beeps from a Chrome that a script started with neither.
+function scriptProblems(source) {
+    const code = source.split("\n").filter((line) => !/^\s*#/.test(line)).join("\n");
+    const starts = /"\$CHROME_BIN"\s+"\$\{|\b(?:exec\s+)?(?:google-chrome|chromium)(?:-browser)?\s+--[a-z]/.test(code);
+    if (!starts) return [];
+    const problems = [];
+    if (!/--alsa-output-device=null/.test(code)) problems.push("starts a Chrome and never gives --alsa-output-device=null");
+    if (!/PULSE_SERVER=.?unix:\/nonexistent\//.test(code)) problems.push("starts a Chrome and never sets PULSE_SERVER to a server that does not exist");
+    if (!/pcm\.!default \{ type null \}/.test(code)) problems.push("starts a Chrome and never writes a null ALSA configuration");
+    return problems;
+}
+
+test("every script under scripts/ that starts a Chrome has the silent form; cold-play.sh asks for it", () => {
+    const dir = path.join(path.resolve(__dirname, "../../.."), "scripts");
+    const bad = fs.readdirSync(dir).filter((name) => name.endsWith(".sh"))
+        .flatMap((name) => scriptProblems(fs.readFileSync(path.join(dir, name), "utf8")).map((what) => `scripts/${name}: ${what}`));
+    assert.deepEqual(bad, []);
+    assert.match(fs.readFileSync(path.join(dir, "mp1-play.sh"), "utf8"), /"\$CHROME_BIN" "\$\{ARGS\[@\]\}"/, "the scan sees the Chrome start of mp1-play.sh");
+    const cold = fs.readFileSync(path.join(dir, "cold-play.sh"), "utf8").split("\n").filter((line) => !/^\s*#/.test(line)).join("\n");
+    assert.match(cold, /mp1-play\.sh" "\$\{play_args\[@\]\}" --silent/, "cold-play.sh starts the play script with --silent");
+});
+
+test("the script scan finds a Chrome start with no silent form, and passes one that has it", () => {
+    assert.equal(scriptProblems('"$CHROME_BIN" "${ARGS[@]}" "$URL" &').length, 3);
+    assert.equal(scriptProblems('google-chrome --headless "$@"').length, 3);
+    assert.equal(scriptProblems('exec chromium --no-sandbox').length, 3);
+    assert.deepEqual(scriptProblems('# "$CHROME_BIN" "${ARGS[@]}" in a comment\necho hello'), []);
+    assert.deepEqual(scriptProblems('CHROME_BIN=x; node run.js'), [], "a script that only names the binary does not start it");
+    const good = 'ARGS+=(--alsa-output-device=null)\nexport PULSE_SERVER="unix:/nonexistent/x"\nprintf \'pcm.!default { type null }\' > c\n"$CHROME_BIN" "${ARGS[@]}" "$URL" &';
+    assert.deepEqual(scriptProblems(good), []);
+    assert.equal(scriptProblems(good.replace("--alsa-output-device=null", "--other")).length, 1, "the argument alone is required");
+});

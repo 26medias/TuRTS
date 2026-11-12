@@ -563,6 +563,7 @@ function fakeRoot() {
     fs.copyFileSync(SCRIPT, path.join(root, "scripts/cold-play.sh"));
     fs.writeFileSync(path.join(root, "scripts/mp1-play.sh"), `#!/usr/bin/env bash
 echo $$ > '${path.join(root, "play.pid")}'
+echo "$*" > '${path.join(root, "play.args")}'
 echo "URL: http://127.0.0.1:1/?x=1"
 echo "DEBUG_PORT: 4321"
 exec sleep 60
@@ -577,6 +578,7 @@ test("the start script ends its game and Chrome with the session, refuses an old
     const marker = path.join(root, "play.pid");
     const run = spawnSync("bash", [path.join(root, "scripts/cold-play.sh"), "--session", path.join(root, "out"), "--url", "http://127.0.0.1:1/?x=1", "--limit-secs", "30", "--build", "b1"], { encoding: "utf8", timeout: 30000 });
     assert.equal(run.status, 0, run.stderr);
+    assert.match(fs.readFileSync(path.join(root, "play.args"), "utf8"), /--url http:\/\/127\.0\.0\.1:1\/\?x=1 --silent$/m, "cold-play.sh starts the play script in its silent form");
     assert.match(fs.readFileSync(path.join(root, "out/internal/session.log"), "utf8"), /args --port 4321 --session \S+out --url http:\/\/127\.0\.0\.1:1\/\?x=1 --limit-secs 30 --viewport 1280x720 --build b1/);
     const pid = Number(fs.readFileSync(marker, "utf8"));
     try { assert.throws(() => process.kill(pid, 0), "the play script is gone when the session ends"); } finally { try { process.kill(pid); } catch { /* gone */ } }
@@ -716,15 +718,19 @@ test("with a real Chrome: a click that the page takes changes the +200 ms pictur
     }
 });
 
-test("mp1-play.sh --url starts a Chrome that answers on the printed port, and ends it with the profile on TERM", { skip: !CHROME && "no Chrome binary" }, async () => {
-    // A headless Chrome stands in for the headed one: the start logic is the same.
-    const folder = tempDir("playreal");
+// Start `mp1-play.sh --url` with a shim for the Chrome binary. The shim writes what it was given (the pulse server, the ALSA
+// configuration and ALL its arguments) before it starts a headless Chrome. The environment of the script is `base` with no
+// sound variable and no lock marker, so what the shim sees is what the SCRIPT set. Returns what it saw and stops the script.
+async function playCase(extra, label) {
+    const folder = tempDir(label);
     const shim = path.join(folder, "chrome");
-    fs.writeFileSync(shim, `#!/bin/sh\necho "$PULSE_SERVER|$ALSA_CONFIG_PATH" > '${path.join(folder, "chrome-env.txt")}'\nexec '${CHROME}' --headless=new --disable-gpu --alsa-output-device=null "$@"\n`, { mode: 0o755 });
+    fs.writeFileSync(shim, `#!/bin/sh\necho "$PULSE_SERVER|$ALSA_CONFIG_PATH|$*" > '${path.join(folder, "chrome-env.txt")}'\nexec '${CHROME}' --headless=new --disable-gpu --alsa-output-device=null "$@"\n`, { mode: 0o755 });
     const server = http.createServer((_request, response) => { response.setHeader("content-type", "text/html"); response.end("<!doctype html><title>game</title>"); });
     await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
     const url = `http://127.0.0.1:${server.address().port}/?a=1`;
-    const play = spawn("bash", [path.join(REPO, "scripts/mp1-play.sh"), "--url", url], { env: silentEnv(folder, { ...process.env, CHROME_BIN: shim, TMPDIR: folder }), stdio: ["ignore", "pipe", "pipe"] });
+    const env = { ...process.env, CHROME_BIN: shim, TMPDIR: folder };
+    for (const name of ["PULSE_SERVER", "ALSA_CONFIG_PATH", "MC_LOCK_RUN"]) delete env[name];
+    const play = spawn("bash", [path.join(REPO, "scripts/mp1-play.sh"), "--url", url, ...extra], { env, stdio: ["ignore", "pipe", "pipe"] });
     let stdout = "";
     let stderr = "";
     play.stdout.on("data", (chunk) => { stdout += chunk; });
@@ -732,27 +738,56 @@ test("mp1-play.sh --url starts a Chrome that answers on the printed port, and en
     try {
         await until(() => /DEBUG_PORT: \d+/.test(stdout) && /PROFILE: /.test(stdout), `the start lines (stderr: ${stderr})`, 45000);
         const lines = Object.fromEntries(stdout.split("\n").filter(Boolean).map((line) => [line.slice(0, line.indexOf(":")), line.slice(line.indexOf(": ") + 2)]));
-        assert.equal(lines.URL, url);
         const version = await (await fetch(`http://127.0.0.1:${lines.DEBUG_PORT}/json/version`)).json();
-        assert.match(version.Browser, /Chrome/, "the printed port is the debugging port of the Chrome that was started");
-        // The Chrome that the script starts gets the environment of the test: no sound reaches the desktop (the shim wrote what it saw).
-        const seen = fs.readFileSync(path.join(folder, "chrome-env.txt"), "utf8").trim().split("|");
-        assert.equal(seen[0], "unix:/nonexistent/mc-tests-no-pulse");
-        assert.match(seen[1], /alsa-null\.conf$/);
-        assert.equal(fs.readFileSync(seen[1], "utf8"), "</usr/share/alsa/alsa.conf>\npcm.!default { type null }\n");
+        const [pulse, alsa, args] = fs.readFileSync(path.join(folder, "chrome-env.txt"), "utf8").trim().split("|");
+        const result = { url, lines, version, pulse, alsa, args, alsaText: alsa && fs.existsSync(alsa) ? fs.readFileSync(alsa, "utf8") : null, folder };
         assert.ok(fs.existsSync(lines.PROFILE), "the profile folder exists while Chrome runs");
-        assert.ok(lines.PROFILE.startsWith(folder), "a new profile folder, not a default one");
         play.kill("SIGTERM");
-        const code = await new Promise((resolve) => play.once("exit", resolve));
-        assert.equal(code, 143);
-        assert.equal(fs.existsSync(lines.PROFILE), false, "the profile folder is removed");
-        await assert.rejects(fetch(`http://127.0.0.1:${lines.DEBUG_PORT}/json/version`), "Chrome is gone");
+        result.code = await new Promise((resolve) => play.once("exit", resolve));
+        result.profileGone = !fs.existsSync(lines.PROFILE);
+        result.alsaGone = alsa ? !fs.existsSync(alsa) : null;
+        result.chromeGone = await fetch(`http://127.0.0.1:${lines.DEBUG_PORT}/json/version`).then(() => false, () => true);
+        return result;
     } finally {
-        // TERM first: the script ends its Chrome. KILL only if it does not end.
         if (play.exitCode === null) {
             play.kill("SIGTERM");
             await new Promise((resolve) => { const timer = setTimeout(() => { play.kill("SIGKILL"); resolve(); }, 10000); play.once("exit", () => { clearTimeout(timer); resolve(); }); });
         }
         server.close();
     }
+}
+
+test("mp1-play.sh --url starts a Chrome that answers on the printed port, SILENT by default (the argument and the environment), and ends it with the profile on TERM", { skip: !CHROME && "no Chrome binary", timeout: 120000 }, async () => {
+    // A headless Chrome stands in for the headed one: the start logic is the same.
+    const quiet = await playCase([], "playreal");
+    assert.equal(quiet.lines.URL, quiet.url);
+    assert.match(quiet.version.Browser, /Chrome/, "the printed port is the debugging port of the Chrome that was started");
+    assert.equal(quiet.lines.SOUND, "silent");
+    assert.match(quiet.args, /(?:^| )--alsa-output-device=null(?: |$)/, `the script gives the Chrome the argument: ${quiet.args}`);
+    assert.match(quiet.lines.CHROME_ARGS, /--alsa-output-device=null/, "the script prints the arguments that it gave");
+    assert.equal(quiet.pulse, "unix:/nonexistent/mc-tests-no-pulse", "the script sets the pulse server itself");
+    assert.match(quiet.alsa, /alsa-null\.conf$/);
+    assert.equal(quiet.alsaText, "</usr/share/alsa/alsa.conf>\npcm.!default { type null }\n");
+    assert.ok(quiet.lines.PROFILE.startsWith(quiet.folder), "a new profile folder, not a default one");
+    assert.equal(quiet.code, 143);
+    assert.ok(quiet.profileGone && quiet.alsaGone && quiet.chromeGone, "the profile, the null configuration and Chrome are gone");
+    const explicit = await playCase(["--silent"], "playsilent");
+    assert.match(explicit.args, /--alsa-output-device=null/);
+    assert.equal(explicit.pulse, "unix:/nonexistent/mc-tests-no-pulse");
+});
+
+test("mp1-play.sh --url --with-sound is the person form: no silent argument, no sound variable; --print-plan shows the form and the arguments", { skip: !CHROME && "no Chrome binary", timeout: 120000 }, async () => {
+    const person = await playCase(["--with-sound"], "playperson");
+    assert.equal(person.lines.SOUND, "person");
+    assert.doesNotMatch(person.args, /alsa-output-device/);
+    assert.equal(person.pulse, "", "the person form leaves the sound environment alone");
+    assert.equal(person.alsa, "");
+    const plan = (...extra) => Object.fromEntries(spawnSync("bash", [path.join(REPO, "scripts/mp1-play.sh"), "--print-plan", ...extra], { encoding: "utf8", env: { ...process.env, MC_LOCK_RUN: "", ...(extra.includes("--lock") ? { MC_LOCK_RUN: "x-1" } : {}) } })
+        .stdout.split("\n").filter(Boolean).map((line) => [line.slice(0, line.indexOf(":")), line.slice(line.indexOf(": ") + 2)]));
+    assert.equal(plan().SOUND, "person");
+    assert.doesNotMatch(plan().CHROME, /alsa-output-device/);
+    assert.equal(plan("--silent").SOUND, "silent");
+    assert.match(plan("--silent").CHROME, /--alsa-output-device=null/);
+    assert.equal(spawnSync("bash", [path.join(REPO, "scripts/mp1-play.sh"), "--print-plan"], { encoding: "utf8", env: { ...process.env, MC_LOCK_RUN: "wrapper-1" } }).stdout.match(/SOUND: (\w+)/)[1], "silent", "under the lock wrapper the default is silent");
+    assert.equal(plan("--with-sound").SOUND, "person");
 });

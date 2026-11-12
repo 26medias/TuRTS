@@ -9,6 +9,13 @@
 #                                                            another command serves; the cold-play tool uses this form)
 #   scripts/mp1-play.sh --print-plan                         print the free port and the Chrome command; start nothing
 #
+# Sound. The person form (a human at a real desktop) keeps the normal sound. The SILENT form starts the Chrome with the
+# argument --alsa-output-device=null AND an environment with PULSE_SERVER=unix:/nonexistent/mc-tests-no-pulse and a null
+# ALSA configuration: a test or a tool must never play sound on the desktop of the operator. Silent is the default when
+# this script runs under the lock wrapper (MC_LOCK_RUN is set), with --url (the tool form), or with --silent (which
+# scripts/cold-play.sh always passes). --with-sound forces the person form. The environment alone is not enough (a process
+# tree can lose it): the argument is always set in the silent form. No --mute-audio, no change of the system sound.
+#
 # --prepared builds nothing (scripts/mc-browser.sh --serve-only --prepared refuses with exit 66 when DIR
 # does not match the source; docs/qa/prepared-runs.md). The default package is mods/muster.
 #
@@ -25,8 +32,9 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PACKAGE=mods/muster
+SOUND=""
 usage() {
-    echo "usage: scripts/mp1-play.sh --prepare DIR [--package P] | --prepared DIR [--package P] | --url URL | --print-plan" >&2
+    echo "usage: scripts/mp1-play.sh --prepare DIR [--package P] | --prepared DIR [--package P] | --url URL | --print-plan  [--silent | --with-sound]" >&2
     exit 2
 }
 (($# >= 1)) || usage
@@ -41,6 +49,8 @@ fi
 while (($#)); do
     case "$1" in
         --package) (($# >= 2)) || usage; PACKAGE="$2"; shift 2 ;;
+        --silent) SOUND=silent; shift ;;
+        --with-sound) SOUND=person; shift ;;
         *) usage ;;
     esac
 done
@@ -58,6 +68,23 @@ chrome_args() {
     printf '%s\n' "--user-data-dir=$profile" "--remote-debugging-port=$port" \
         --enable-unsafe-webgpu --enable-features=Vulkan --use-angle=vulkan \
         --no-first-run --no-default-browser-check
+    # The silent form: the argument is required (the environment alone can be lost in a process tree).
+    [[ "$SOUND" != silent ]] || printf '%s\n' --alsa-output-device=null
+}
+
+# The sound form: --with-sound is the person form; --silent, --url and a run under the lock wrapper are silent.
+if [[ -z "$SOUND" ]]; then
+    if [[ -n "${MC_LOCK_RUN:-}" || "$mode" == --url ]]; then SOUND=silent; else SOUND=person; fi
+fi
+# The environment of a silent Chrome: no pulse server, and a null ALSA device. A null configuration is written next to the
+# profile when the caller has none.
+silent_env() {
+    export PULSE_SERVER="unix:/nonexistent/mc-tests-no-pulse"
+    if [[ -z "${ALSA_CONFIG_PATH:-}" || ! -f "${ALSA_CONFIG_PATH:-}" ]]; then
+        ALSA_NULL_CONF="$1.alsa-null.conf"
+        printf '</usr/share/alsa/alsa.conf>\npcm.!default { type null }\n' >"$ALSA_NULL_CONF"
+        export ALSA_CONFIG_PATH="$ALSA_NULL_CONF"
+    fi
 }
 
 if [[ "$mode" == --print-plan ]]; then
@@ -66,6 +93,7 @@ if [[ "$mode" == --print-plan ]]; then
     echo "URL: (the server is not started in --print-plan)"
     echo "DEBUG_PORT: $port"
     echo "PROFILE: $profile"
+    echo "SOUND: $SOUND"
     echo "CHROME: ${CHROME_BIN:-google-chrome} $(chrome_args "$port" "$profile" | tr '\n' ' ')<URL>"
     echo "CAPTURE: node tests/browser/mp1-capture.js $port"
     exit 0
@@ -100,7 +128,7 @@ cleanup() {
         rm -rf "$PROFILE" 2>/dev/null && break
         sleep 0.3
     done
-    rm -rf "$PROFILE" "$PROFILE.chrome.log" "$SERVE_LOG" 2>/dev/null || true
+    rm -rf "$PROFILE" "$PROFILE.chrome.log" "$PROFILE.alsa-null.conf" "$SERVE_LOG" 2>/dev/null || true
     exit "$rc"
 }
 trap cleanup EXIT
@@ -129,6 +157,7 @@ fi
 
 PORT="$(free_port)"
 mapfile -t ARGS < <(chrome_args "$PORT" "$PROFILE")
+if [[ "$SOUND" == silent ]]; then silent_env "$PROFILE"; fi
 "$CHROME_BIN" "${ARGS[@]}" "$URL" >"$PROFILE.chrome.log" 2>&1 &
 CHROME_PID=$!
 # Ask the port itself. Chrome writes <profile>/DevToolsActivePort only when the port is 0 (an ephemeral
@@ -153,6 +182,8 @@ if ! chrome_ready; then
     exit 1
 fi
 echo "URL: $URL"
+echo "SOUND: $SOUND"
+echo "CHROME_ARGS: ${ARGS[*]}"
 echo "DEBUG_PORT: $PORT"
 echo "PROFILE: $PROFILE"
 echo "CAPTURE: node tests/browser/mp1-capture.js $PORT"
