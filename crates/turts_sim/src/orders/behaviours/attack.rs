@@ -26,14 +26,17 @@ pub(super) fn attack_goal(
         .get(&id)?
         .weapon
         .as_ref()?;
-    let delta = target_position - actor;
-    (delta.length_squared() > weapon.range * weapon.range).then(|| {
-        clamp_target(
-            world,
-            target_position - delta.normalize_or_zero() * weapon.range,
-            unit.radius,
-        )
-    })
+    // One rule for "in range": the one that lets the weapon fire (`combat::within_weapon_range`).
+    // The approach ends at a point that passes the same rule (`combat::weapon_stand_off`).
+    (!crate::economy::combat::within_weapon_range(actor, target_position, weapon.range)).then(
+        || {
+            clamp_target(
+                world,
+                crate::economy::combat::weapon_stand_off(target_position, actor, weapon.range),
+                unit.radius,
+            )
+        },
+    )
 }
 
 pub(in crate::orders) fn run_unit_attack(
