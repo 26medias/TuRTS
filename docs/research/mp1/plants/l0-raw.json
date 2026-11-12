@@ -1,318 +1,333 @@
 [
-    {
-        "row": "VAL1 plant (2)",
-        "plant": "L0-RAW (a): the exports.orders row reads the parsed value (non-empty list) again; an explicit `orders: []` on ^0.2.2 packs",
-        "files": [
-            {
-                "file": "crates/turts_mod_runtime/src/version_table.rs",
-                "edit": {
-                    "old": "    raw(\n        \"exports.orders\",\n        \"0.2.3\",\n        RawGroup::Manifest,\n        &[\"exports\", \"orders\"],\n    ),\n",
-                    "new": "    VersionTableRow {\n        name: \"exports.orders\",\n        detect: Detect::Parsed(|manifest, _| !manifest.exports.orders.is_empty()),\n        since_api: \"0.2.3\",\n    },\n"
-                }
-            }
-        ],
-        "command": [
-            "cargo",
-            "test",
-            "-p",
-            "turts_mod_runtime",
-            "--locked",
-            "--test",
-            "raw_presence",
-            "--",
-            "--exact",
-            "explicit_empty_export_group_is_refused_below_its_api"
-        ],
-        "env": {},
-        "headed": false,
-        "expected_red": "the version table must refuse this package",
-        "exit": 101,
-        "expected_selected": "explicit_empty_export_group_is_refused_below_its_api",
-        "commit": "b6e7e566c4826e48ce954f3fd7132c87ec3d8082"
-    },
-    {
-        "row": "VAL1 plant (1)",
-        "plant": "L0-RAW (b1): the exports.input row is removed from VERSION_TABLE",
-        "files": [
-            {
-                "file": "crates/turts_mod_runtime/src/version_table.rs",
-                "edit": {
-                    "old": "    raw(\n        \"exports.input\",\n        \"0.2.3\",\n        RawGroup::Manifest,\n        &[\"exports\", \"input\"],\n    ),\n",
-                    "new": ""
-                }
-            }
-        ],
-        "command": [
-            "cargo",
-            "test",
-            "-p",
-            "turts_mod_runtime",
-            "--locked",
-            "--lib",
-            "--",
-            "--exact",
-            "version_table::tests::sc4_new_export_groups_require_api_0_2_3"
-        ],
-        "env": {},
-        "headed": false,
-        "expected_red": "input exports accepted engine_api ^0.2.2",
-        "exit": 101,
-        "expected_selected": "version_table::tests::sc4_new_export_groups_require_api_0_2_3",
-        "commit": "b6e7e566c4826e48ce954f3fd7132c87ec3d8082"
-    },
-    {
-        "row": "VAL1 plant (1)",
-        "plant": "L0-RAW (b2): the `weapon with movement` row (COMBO; parsed value) is removed from VERSION_TABLE",
-        "files": [
-            {
-                "file": "crates/turts_mod_runtime/src/version_table.rs",
-                "edit": {
-                    "old": "    VersionTableRow {\n        name: \"weapon with movement\",\n        detect: Detect::Parsed(mobile_weapon_present),\n        since_api: \"0.2.3\",\n    },\n",
-                    "new": ""
-                }
-            }
-        ],
-        "command": [
-            "cargo",
-            "test",
-            "-p",
-            "turts_mod_runtime",
-            "--locked",
-            "--test",
-            "content_m3",
-            "--",
-            "--exact",
-            "mobile_weapon_with_api_before_0_2_3_rejected"
-        ],
-        "env": {},
-        "headed": false,
-        "expected_red": "assertion `left == right` failed: server path, ^0.2.1\n  left: Ok(())\n right: Err(\"forge/manifest.ron: engine_api: `weapon with movement` needs engine api 0.2.3; `^0.2.1` admits 0.2.2\")",
-        "exit": 101,
-        "expected_selected": "mobile_weapon_with_api_before_0_2_3_rejected",
-        "commit": "b6e7e566c4826e48ce954f3fd7132c87ec3d8082"
-    },
-    {
-        "row": "VAL1 plant (2)",
-        "plant": "L0-RAW (c): the required field `dependencies` is detected by a key walk (RAW): every manifest writes it; so ^0.2.1 packages with `dependencies: {}` are refused",
-        "files": [
-            {
-                "file": "crates/turts_mod_runtime/src/version_table.rs",
-                "edit": {
-                    "old": "        detect: Detect::Parsed(has_dependencies),\n",
-                    "new": "        detect: Detect::Raw {\n            group: RawGroup::Manifest,\n            path: &[\"dependencies\"],\n        },\n"
-                }
-            }
-        ],
-        "command": [
-            "cargo",
-            "test",
-            "-p",
-            "turts_mod_runtime",
-            "--locked",
-            "--test",
-            "raw_presence",
-            "--",
-            "--exact",
-            "the_required_dependencies_field_is_detected_on_the_parsed_value"
-        ],
-        "env": {},
-        "headed": false,
-        "expected_red": "`dependencies: {}` is not a use of 0.2.2:",
-        "exit": 101,
-        "expected_selected": "the_required_dependencies_field_is_detected_on_the_parsed_value",
-        "commit": "b6e7e566c4826e48ce954f3fd7132c87ec3d8082"
-    },
-    {
-        "row": "VAL1 (review M1)",
-        "plant": "L0-RAW repair M1 (a): a path no longer looks through a list; `placements[].facing` cannot be written",
-        "files": [
-            {
-                "file": "crates/turts_mod_runtime/src/raw_presence.rs",
-                "patch": "diff --git a/crates/turts_mod_runtime/src/raw_presence.rs b/crates/turts_mod_runtime/src/raw_presence.rs\nindex 1463a72..b9d30d2 100644\n--- a/crates/turts_mod_runtime/src/raw_presence.rs\n+++ b/crates/turts_mod_runtime/src/raw_presence.rs\n@@ -118,7 +118,6 @@ fn has_path(value: &Value, path: &[&str]) -> bool {\n     };\n     match value {\n         Value::Option(Some(inner)) => has_path(inner, path),\n-        Value::Seq(items) => items.iter().any(|item| has_path(item, path)),\n         Value::Map(map) => map.iter().any(|(key, child)| {\n             matches!(key, Value::String(name) if name == first) && has_path(child, rest)\n         }),\n"
-            }
-        ],
-        "command": [
-            "cargo",
-            "test",
-            "-p",
-            "turts_mod_runtime",
-            "--locked",
-            "--lib",
-            "--",
-            "--exact",
-            "raw_presence::tests::a_path_looks_through_a_list_of_structs"
-        ],
-        "env": {},
-        "headed": false,
-        "expected_red": "assertion failed: has_path(&value, &[\"placements\", \"facing\"])",
-        "exit": 101,
-        "expected_selected": "raw_presence::tests::a_path_looks_through_a_list_of_structs",
-        "commit": "b6e7e566c4826e48ce954f3fd7132c87ec3d8082"
-    },
-    {
-        "row": "VAL1 (review M1)",
-        "plant": "L0-RAW repair M1 (b): the walk is a deep walk that looks at every level (reviewer plant P1)",
-        "files": [
-            {
-                "file": "crates/turts_mod_runtime/src/raw_presence.rs",
-                "patch": "diff --git a/crates/turts_mod_runtime/src/raw_presence.rs b/crates/turts_mod_runtime/src/raw_presence.rs\nindex 1463a72..9abb041 100644\n--- a/crates/turts_mod_runtime/src/raw_presence.rs\n+++ b/crates/turts_mod_runtime/src/raw_presence.rs\n@@ -120,7 +120,8 @@ fn has_path(value: &Value, path: &[&str]) -> bool {\n         Value::Option(Some(inner)) => has_path(inner, path),\n         Value::Seq(items) => items.iter().any(|item| has_path(item, path)),\n         Value::Map(map) => map.iter().any(|(key, child)| {\n-            matches!(key, Value::String(name) if name == first) && has_path(child, rest)\n+            (matches!(key, Value::String(name) if name == first) && has_path(child, rest))\n+                || has_path(child, path)\n         }),\n         _ => false,\n     }\n"
-            }
-        ],
-        "command": [
-            "cargo",
-            "test",
-            "-p",
-            "turts_mod_runtime",
-            "--locked",
-            "--lib",
-            "--",
-            "--exact",
-            "raw_presence::tests::a_field_inside_a_variant_is_not_a_root_path"
-        ],
-        "env": {},
-        "headed": false,
-        "expected_red": "assertion failed: !has_path(&value, &[\"font\"])",
-        "exit": 101,
-        "expected_selected": "raw_presence::tests::a_field_inside_a_variant_is_not_a_root_path",
-        "commit": "b6e7e566c4826e48ce954f3fd7132c87ec3d8082"
-    },
-    {
-        "row": "VAL1 (review M2)",
-        "plant": "L0-RAW repair M2: the `unit.weapon` row (API 0.2.1) is removed from VERSION_TABLE",
-        "files": [
-            {
-                "file": "crates/turts_mod_runtime/src/version_table.rs",
-                "patch": "diff --git a/crates/turts_mod_runtime/src/version_table.rs b/crates/turts_mod_runtime/src/version_table.rs\nindex 6a4498b..e2d35f2 100644\n--- a/crates/turts_mod_runtime/src/version_table.rs\n+++ b/crates/turts_mod_runtime/src/version_table.rs\n@@ -135,7 +135,6 @@ pub(crate) const VERSION_TABLE: &[VersionTableRow] = &[\n     unit_field(\"unit.machine\", &[\"machine\"]),\n     unit_field(\"unit.research\", &[\"research\"]),\n     unit_field(\"unit.health\", &[\"health\"]),\n-    unit_field(\"unit.weapon\", &[\"weapon\"]),\n     unit_field(\"unit.removal\", &[\"removal\"]),\n     raw(\"map.belts\", \"0.2.1\", RawGroup::Maps, &[\"belts\"]),\n     raw(\n"
-            }
-        ],
-        "command": [
-            "cargo",
-            "test",
-            "-p",
-            "turts_mod_runtime",
-            "--locked",
-            "--test",
-            "raw_presence",
-            "--",
-            "--exact",
-            "every_m3_field_written_empty_gets_the_table_text_and_the_file"
-        ],
-        "env": {},
-        "headed": false,
-        "expected_red": "the version table must refuse this package",
-        "exit": 101,
-        "expected_selected": "every_m3_field_written_empty_gets_the_table_text_and_the_file",
-        "commit": "b6e7e566c4826e48ce954f3fd7132c87ec3d8082"
-    },
-    {
-        "row": "VAL1 (review M3)",
-        "plant": "L0-RAW repair M3: `Written<T>` does not record that the key was written",
-        "files": [
-            {
-                "file": "crates/turts_mod_api/src/written.rs",
-                "patch": "diff --git a/crates/turts_mod_api/src/written.rs b/crates/turts_mod_api/src/written.rs\nindex 85decce..bf1aa9b 100644\n--- a/crates/turts_mod_api/src/written.rs\n+++ b/crates/turts_mod_api/src/written.rs\n@@ -44,7 +44,7 @@ impl<'de, T: Deserialize<'de>> Deserialize<'de> for Written<T> {\n     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {\n         T::deserialize(deserializer).map(|value| Self {\n             value,\n-            written: true,\n+            written: false,\n         })\n     }\n }\n"
-            }
-        ],
-        "command": [
-            "cargo",
-            "test",
-            "-p",
-            "turts_mod_api",
-            "--locked",
-            "--lib",
-            "--",
-            "--exact",
-            "written::tests::a_key_written_with_its_default_is_written"
-        ],
-        "env": {},
-        "headed": false,
-        "expected_red": "assertion failed: font.is_written()",
-        "exit": 101,
-        "expected_selected": "written::tests::a_key_written_with_its_default_is_written",
-        "commit": "b6e7e566c4826e48ce954f3fd7132c87ec3d8082"
-    },
-    {
-        "row": "VAL1 (review L4)",
-        "plant": "L0-RAW repair L4: the error does not name the file where a RAW field is written",
-        "files": [
-            {
-                "file": "crates/turts_mod_runtime/src/version_table.rs",
-                "patch": "diff --git a/crates/turts_mod_runtime/src/version_table.rs b/crates/turts_mod_runtime/src/version_table.rs\nindex 6a4498b..a3b2c24 100644\n--- a/crates/turts_mod_runtime/src/version_table.rs\n+++ b/crates/turts_mod_runtime/src/version_table.rs\n@@ -168,11 +168,8 @@ impl VersionTableRow {\n         match self.detect {\n             Detect::Raw { group, path } => {\n                 let file = raw.written(group, path)?;\n-                Some(if group == RawGroup::Manifest {\n-                    String::new()\n-                } else {\n-                    format!(\" (written in {file}: {})\", path.join(\".\"))\n-                })\n+                let _ = file;\n+                Some(String::new())\n             }\n             Detect::Parsed(present) => present(manifest, content?).then(String::new),\n         }\n"
-            }
-        ],
-        "command": [
-            "cargo",
-            "test",
-            "-p",
-            "turts_mod_runtime",
-            "--locked",
-            "--test",
-            "raw_presence",
-            "--",
-            "--exact",
-            "every_m3_field_written_empty_gets_the_table_text_and_the_file"
-        ],
-        "env": {},
-        "headed": false,
-        "expected_red": "assertion `left == right` failed: unit field output_inventory\n  left: \"zeta/manifest.ron: engine_api: `unit.output_inventory` needs engine api 0.2.1; `^0.2` admits 0.2.0\"\n right: \"zeta/manifest.ron: engine_api: `unit.output_inventory` needs engine api 0.2.1; `^0.2` admits 0.2.0 (written in units/turret.ron: output_inventory)\"",
-        "exit": 101,
-        "expected_selected": "every_m3_field_written_empty_gets_the_table_text_and_the_file",
-        "commit": "b6e7e566c4826e48ce954f3fd7132c87ec3d8082"
-    },
-    {
-        "row": "VAL1 (review L5)",
-        "plant": "L0-RAW repair L5: `turts-pack --help` has no version rule",
-        "files": [
-            {
-                "file": "crates/turts_pack/src/main.rs",
-                "patch": "diff --git a/crates/turts_pack/src/main.rs b/crates/turts_pack/src/main.rs\nindex 337e295..5465516 100644\n--- a/crates/turts_pack/src/main.rs\n+++ b/crates/turts_pack/src/main.rs\n@@ -30,9 +30,6 @@ client check it:\n     slot is a real slot, positions inside the map, exactly one map. An error message\n     gives the limit that the value broke.\n   - Every unit has exactly one visual. Every visual names a unit of the package.\n-  - The version rule: the manifest `engine_api` must exclude every engine API that lacks a\n-    feature the package writes; a field written empty (`orders: []`) counts; leave it out\n-    for an older API.\n \n On the first problem, turts-pack prints the package, the file, and the field to stderr,\n writes no archive, and exits with 2. On success it exits with 0.\";\n"
-            }
-        ],
-        "command": [
-            "cargo",
-            "test",
-            "-p",
-            "turts_pack",
-            "--locked",
-            "--test",
-            "cli",
-            "--",
-            "--exact",
-            "pack_cli_help_states_the_engine_api_rule"
-        ],
-        "env": {},
-        "headed": false,
-        "expected_red": "usage lacks ``engine_api` must exclude every engine API that lacks a feature the package writes`:",
-        "exit": 101,
-        "expected_selected": "pack_cli_help_states_the_engine_api_rule",
-        "commit": "b6e7e566c4826e48ce954f3fd7132c87ec3d8082"
-    },
-    {
-        "row": "VAL1 (review L7)",
-        "plant": "L0-RAW repair L7: the version table runs after the content checks",
-        "files": [
-            {
-                "file": "crates/turts_mod_runtime/src/archive.rs",
-                "patch": "diff --git a/crates/turts_mod_runtime/src/archive.rs b/crates/turts_mod_runtime/src/archive.rs\nindex 9c51bc8..0d805dc 100644\n--- a/crates/turts_mod_runtime/src/archive.rs\n+++ b/crates/turts_mod_runtime/src/archive.rs\n@@ -176,12 +176,6 @@ impl PackageArchive {\n             crate::version_table::raw_groups(crate::version_table::VERSION_TABLE),\n             |path| self.file(path),\n         )?;\n-        crate::version_table::check_version_table(\n-            &self.manifest,\n-            None,\n-            &raw,\n-            crate::version_table::VERSION_TABLE,\n-        )?;\n         let origin = self.id();\n         let resources = self\n             .resources()?\n"
-            }
-        ],
-        "command": [
-            "cargo",
-            "test",
-            "-p",
-            "turts_mod_runtime",
-            "--locked",
-            "--test",
-            "raw_presence",
-            "--",
-            "--exact",
-            "the_version_table_speaks_before_the_content_checks"
-        ],
-        "env": {},
-        "headed": false,
-        "expected_red": "assertion `left == right` failed\n  left: \"acme/orders/order_move.ron: icon: unknown image asset `icon_order_move`\"\n right: \"acme/manifest.ron: engine_api: `exports.orders` needs engine api 0.2.3; `^0.2.2` admits 0.2.2\"",
-        "exit": 101,
-        "expected_selected": "the_version_table_speaks_before_the_content_checks",
-        "commit": "b6e7e566c4826e48ce954f3fd7132c87ec3d8082"
-    }
+  {
+    "row": "VAL1 plant (2)",
+    "plant": "L0-RAW (a): the exports.orders row reads the parsed value (non-empty list) again; an explicit `orders: []` on ^0.2.2 packs",
+    "files": [
+      {
+        "file": "crates/turts_mod_runtime/src/version_table.rs",
+        "edit": {
+          "old": "    raw(\n        \"exports.orders\",\n        \"0.2.3\",\n        RawGroup::Manifest,\n        &[\"exports\", \"orders\"],\n    ),\n",
+          "new": "    VersionTableRow {\n        name: \"exports.orders\",\n        detect: Detect::Parsed(|manifest, _| !manifest.exports.orders.is_empty()),\n        since_api: \"0.2.3\",\n    },\n"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_mod_runtime",
+      "--locked",
+      "--test",
+      "raw_presence",
+      "--",
+      "--exact",
+      "explicit_empty_export_group_is_refused_below_its_api"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "the version table must refuse this package",
+    "exit": 101,
+    "expected_selected": "explicit_empty_export_group_is_refused_below_its_api",
+    "commit": "b6e7e566c4826e48ce954f3fd7132c87ec3d8082"
+  },
+  {
+    "row": "VAL1 plant (1)",
+    "plant": "L0-RAW (b1): the exports.input row is removed from VERSION_TABLE",
+    "files": [
+      {
+        "file": "crates/turts_mod_runtime/src/version_table.rs",
+        "edit": {
+          "old": "    raw(\n        \"exports.input\",\n        \"0.2.3\",\n        RawGroup::Manifest,\n        &[\"exports\", \"input\"],\n    ),\n",
+          "new": ""
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_mod_runtime",
+      "--locked",
+      "--lib",
+      "--",
+      "--exact",
+      "version_table::tests::sc4_new_export_groups_require_api_0_2_3"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "input exports accepted engine_api ^0.2.2",
+    "exit": 101,
+    "expected_selected": "version_table::tests::sc4_new_export_groups_require_api_0_2_3",
+    "commit": "b6e7e566c4826e48ce954f3fd7132c87ec3d8082"
+  },
+  {
+    "row": "VAL1 plant (1)",
+    "plant": "L0-RAW (b2): the `weapon with movement` row (COMBO; parsed value) is removed from VERSION_TABLE",
+    "files": [
+      {
+        "file": "crates/turts_mod_runtime/src/version_table.rs",
+        "edit": {
+          "old": "    VersionTableRow {\n        name: \"weapon with movement\",\n        detect: Detect::Parsed(mobile_weapon_present),\n        since_api: \"0.2.3\",\n    },\n",
+          "new": ""
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_mod_runtime",
+      "--locked",
+      "--test",
+      "content_m3",
+      "--",
+      "--exact",
+      "mobile_weapon_with_api_before_0_2_3_rejected"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "assertion `left == right` failed: server path, ^0.2.1\n  left: Ok(())\n right: Err(\"forge/manifest.ron: engine_api: `weapon with movement` needs engine api 0.2.3; `^0.2.1` admits 0.2.2\")",
+    "exit": 101,
+    "expected_selected": "mobile_weapon_with_api_before_0_2_3_rejected",
+    "commit": "b6e7e566c4826e48ce954f3fd7132c87ec3d8082"
+  },
+  {
+    "row": "VAL1 plant (2)",
+    "plant": "L0-RAW (c): the required field `dependencies` is detected by a key walk (RAW): every manifest writes it; so ^0.2.1 packages with `dependencies: {}` are refused",
+    "files": [
+      {
+        "file": "crates/turts_mod_runtime/src/version_table.rs",
+        "edit": {
+          "old": "        detect: Detect::Parsed(has_dependencies),\n",
+          "new": "        detect: Detect::Raw {\n            group: RawGroup::Manifest,\n            path: &[\"dependencies\"],\n        },\n"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_mod_runtime",
+      "--locked",
+      "--test",
+      "raw_presence",
+      "--",
+      "--exact",
+      "the_required_dependencies_field_is_detected_on_the_parsed_value"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "`dependencies: {}` is not a use of 0.2.2:",
+    "exit": 101,
+    "expected_selected": "the_required_dependencies_field_is_detected_on_the_parsed_value",
+    "commit": "b6e7e566c4826e48ce954f3fd7132c87ec3d8082"
+  },
+  {
+    "row": "VAL1 (review M1)",
+    "plant": "L0-RAW repair M1 (a): a path no longer looks through a list; `placements[].facing` cannot be written",
+    "files": [
+      {
+        "file": "crates/turts_mod_runtime/src/raw_presence.rs",
+        "edit": {
+          "old": "        Value::Seq(items) => items.iter().any(|item| has_path(item, path)),\n",
+          "new": ""
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_mod_runtime",
+      "--locked",
+      "--lib",
+      "--",
+      "--exact",
+      "raw_presence::tests::a_path_looks_through_a_list_of_structs"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "assertion failed: has_path(&value, &[\"placements\", \"facing\"])",
+    "exit": 101,
+    "expected_selected": "raw_presence::tests::a_path_looks_through_a_list_of_structs",
+    "commit": "4723ec1"
+  },
+  {
+    "row": "VAL1 (review M1)",
+    "plant": "L0-RAW repair M1 (b): the walk is a deep walk that looks at every level (reviewer plant P1)",
+    "files": [
+      {
+        "file": "crates/turts_mod_runtime/src/raw_presence.rs",
+        "edit": {
+          "old": "            matches!(key, Value::String(name) if name == first) && has_path(child, rest)\n",
+          "new": "            (matches!(key, Value::String(name) if name == first) && has_path(child, rest))\n                || has_path(child, path)\n"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_mod_runtime",
+      "--locked",
+      "--lib",
+      "--",
+      "--exact",
+      "raw_presence::tests::a_field_inside_a_variant_is_not_a_root_path"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "assertion failed: !has_path(&value, &[\"font\"])",
+    "exit": 101,
+    "expected_selected": "raw_presence::tests::a_field_inside_a_variant_is_not_a_root_path",
+    "commit": "4723ec1"
+  },
+  {
+    "row": "VAL1 (review M2)",
+    "plant": "L0-RAW repair M2: the `unit.weapon` row (API 0.2.1) is removed from VERSION_TABLE",
+    "files": [
+      {
+        "file": "crates/turts_mod_runtime/src/version_table.rs",
+        "patch": "diff --git a/crates/turts_mod_runtime/src/version_table.rs b/crates/turts_mod_runtime/src/version_table.rs\nindex 6a4498b..e2d35f2 100644\n--- a/crates/turts_mod_runtime/src/version_table.rs\n+++ b/crates/turts_mod_runtime/src/version_table.rs\n@@ -135,7 +135,6 @@ pub(crate) const VERSION_TABLE: &[VersionTableRow] = &[\n     unit_field(\"unit.machine\", &[\"machine\"]),\n     unit_field(\"unit.research\", &[\"research\"]),\n     unit_field(\"unit.health\", &[\"health\"]),\n-    unit_field(\"unit.weapon\", &[\"weapon\"]),\n     unit_field(\"unit.removal\", &[\"removal\"]),\n     raw(\"map.belts\", \"0.2.1\", RawGroup::Maps, &[\"belts\"]),\n     raw(\n"
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_mod_runtime",
+      "--locked",
+      "--test",
+      "raw_presence",
+      "--",
+      "--exact",
+      "every_m3_field_written_empty_gets_the_table_text_and_the_file"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "the version table must refuse this package",
+    "exit": 101,
+    "expected_selected": "every_m3_field_written_empty_gets_the_table_text_and_the_file",
+    "commit": "b6e7e566c4826e48ce954f3fd7132c87ec3d8082"
+  },
+  {
+    "row": "VAL1 (review M3)",
+    "plant": "L0-RAW repair M3: `Written<T>` does not record that the key was written",
+    "files": [
+      {
+        "file": "crates/turts_mod_api/src/written.rs",
+        "patch": "diff --git a/crates/turts_mod_api/src/written.rs b/crates/turts_mod_api/src/written.rs\nindex 85decce..bf1aa9b 100644\n--- a/crates/turts_mod_api/src/written.rs\n+++ b/crates/turts_mod_api/src/written.rs\n@@ -44,7 +44,7 @@ impl<'de, T: Deserialize<'de>> Deserialize<'de> for Written<T> {\n     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {\n         T::deserialize(deserializer).map(|value| Self {\n             value,\n-            written: true,\n+            written: false,\n         })\n     }\n }\n"
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_mod_api",
+      "--locked",
+      "--lib",
+      "--",
+      "--exact",
+      "written::tests::a_key_written_with_its_default_is_written"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "assertion failed: font.is_written()",
+    "exit": 101,
+    "expected_selected": "written::tests::a_key_written_with_its_default_is_written",
+    "commit": "b6e7e566c4826e48ce954f3fd7132c87ec3d8082"
+  },
+  {
+    "row": "VAL1 (review L4)",
+    "plant": "L0-RAW repair L4: the error does not name the file where a RAW field is written",
+    "files": [
+      {
+        "file": "crates/turts_mod_runtime/src/version_table.rs",
+        "edit": {
+          "old": "locate(&self.detect, manifest, content, raw, uses).map(|located| located.written_in())",
+          "new": "locate(&self.detect, manifest, content, raw, uses).map(|_| String::new())"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_mod_runtime",
+      "--locked",
+      "--test",
+      "raw_presence",
+      "--",
+      "--exact",
+      "every_m3_field_written_empty_gets_the_table_text_and_the_file"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "assertion `left == right` failed: unit field output_inventory\n  left: \"zeta/manifest.ron: engine_api: `unit.output_inventory` needs engine api 0.2.1; `^0.2` admits 0.2.0\"\n right: \"zeta/manifest.ron: engine_api: `unit.output_inventory` needs engine api 0.2.1; `^0.2` admits 0.2.0 (written in units/turret.ron: output_inventory)\"",
+    "exit": 101,
+    "expected_selected": "every_m3_field_written_empty_gets_the_table_text_and_the_file",
+    "commit": "4723ec1"
+  },
+  {
+    "row": "VAL1 (review L5)",
+    "plant": "L0-RAW repair L5: `turts-pack --help` has no version rule",
+    "files": [
+      {
+        "file": "crates/turts_pack/src/main.rs",
+        "edit": {
+          "old": "  - The version rule: the manifest `engine_api` must exclude every engine API that lacks a\n    feature the package writes; a field written empty (`orders: []`) counts; leave it out\n    for an older API.\n",
+          "new": ""
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_pack",
+      "--locked",
+      "--test",
+      "cli",
+      "--",
+      "--exact",
+      "pack_cli_help_states_the_engine_api_rule"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "usage lacks ``engine_api` must exclude every engine API that lacks a feature the package writes`:",
+    "exit": 101,
+    "expected_selected": "pack_cli_help_states_the_engine_api_rule",
+    "commit": "4723ec1"
+  },
+  {
+    "row": "VAL1 (review L7)",
+    "plant": "L0-RAW repair L7: the version table runs after the content checks",
+    "files": [
+      {
+        "file": "crates/turts_mod_runtime/src/archive.rs",
+        "edit": {
+          "old": "        crate::version_table::check_version_table(&self.manifest, None, &raw, &rows)?;\n        // A feature of the API that its lane has not built yet is refused here, after the",
+          "new": "        // A feature of the API that its lane has not built yet is refused here, after the"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_mod_runtime",
+      "--locked",
+      "--test",
+      "raw_presence",
+      "--",
+      "--exact",
+      "the_version_table_speaks_before_the_content_checks"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "assertion `left == right` failed\n  left: \"acme/orders/order_move.ron: icon: unknown image asset `icon_order_move`\"\n right: \"acme/manifest.ron: engine_api: `exports.orders` needs engine api 0.2.3; `^0.2.2` admits 0.2.2\"",
+    "exit": 101,
+    "expected_selected": "the_version_table_speaks_before_the_content_checks",
+    "commit": "4723ec1"
+  }
 ]
