@@ -1,0 +1,362 @@
+# pacing.py old
+=== old S1 hint follower, hauler gathers from tick 0 (D-F) (trip 36.1 s, first delivery 31.1 s, 332 credits/min per hauler)
+    31.2s +200 delivery, credits 1136
+    34.0s ps done, credits 1101
+    46.0s rifle done, credits 977
+    52.0s rifle done, credits 726
+    58.0s rifle done, credits 476
+    65.0s tur done, credits 301
+    67.3s +200 delivery, credits 501
+   103.4s +200 delivery, credits 200
+   108.5s tank done, credits 2
+   139.6s +200 delivery, credits 201
+   145.5s rifle done, credits 102
+   151.5s rifle done, credits 2
+   175.7s +200 delivery, credits 202
+  at 180s: credits 35, harvested 1000, free income 0
+  holds >= 2 s (start-end s): [(83, 103), (109, 140), (151, 176)]
+  longest hold (merged) 31.0 s; hold spans 3; "Not enough credits" sounds: rev3 rule 3, 7.9 rule 2 at [83, 151]
+=== old S4 power + second hauler (trip 36.1 s, first delivery 31.1 s, 332 credits/min per hauler)
+    31.2s +200 delivery, credits 752
+    34.0s ps done, credits 664
+    43.0s haul done, credits 302
+    49.0s rifle done, credits 202
+    55.0s rifle done, credits 102
+    67.3s +200 delivery, credits 200
+    74.2s +200 delivery, credits 227
+    83.2s tur done, credits 2
+   103.4s +200 delivery, credits 202
+   110.3s +200 delivery, credits 200
+   139.6s +200 delivery, credits 202
+   146.4s +200 delivery, credits 200
+   148.9s tank done, credits 103
+   175.7s +200 delivery, credits 202
+  at 180s: credits 35, harvested 1600, free income 0
+  holds >= 2 s (start-end s): [(64, 67), (100, 103), (115, 140), (163, 176)]
+  longest hold (merged) 24.2 s; hold spans 6; "Not enough credits" sounds: rev3 rule 6, 7.9 rule 2 at [64, 163]
+=== old S5 tank rush (trip 36.1 s, first delivery 31.1 s, 332 credits/min per hauler)
+    27.0s ps done, credits 456
+    31.2s +200 delivery, credits 491
+    33.5s tank done, credits 402
+    67.3s +200 delivery, credits 202
+   103.4s +200 delivery, credits 200
+   105.9s tank done, credits 103
+   139.6s +200 delivery, credits 202
+   175.7s +200 delivery, credits 200
+  at 180s: credits 33, harvested 1000, free income 0
+  holds >= 2 s (start-end s): [(44, 67), (73, 103), (108, 140), (145, 176)]
+  longest hold (merged) 31.1 s; hold spans 4; "Not enough credits" sounds: rev3 rule 4, 7.9 rule 1 at [44]
+=== old S7 Player path hint order (trip 36.1 s, first delivery 31.1 s, 332 credits/min per hauler)
+    26.0s rifle done, credits 877
+    31.2s +200 delivery, credits 989
+    32.0s ps done, credits 964
+    51.0s haul done, credits 178
+    67.3s +200 delivery, credits 200
+    82.2s +200 delivery, credits 200
+    83.4s rifle done, credits 150
+   103.4s +200 delivery, credits 200
+   105.7s tur done, credits 106
+   105.8s rifle done, credits 102
+   118.3s +200 delivery, credits 201
+   139.6s +200 delivery, credits 203
+   154.4s +200 delivery, credits 201
+   159.5s tank done, credits 3
+   175.7s +200 delivery, credits 200
+  at 180s: credits 128, harvested 1600, free income 0
+  holds >= 2 s (start-end s): [(58, 67), (72, 82), (87, 103), (108, 118), (123, 140), (145, 154), (160, 176)]
+  longest hold (merged) 16.4 s; hold spans 7; "Not enough credits" sounds: rev3 rule 7, 7.9 rule 1 at [58]
+=== old S8 greedy, overspends (trip 36.1 s, first delivery 31.1 s, 332 credits/min per hauler)
+    29.0s ps done, credits 437
+    31.2s +200 delivery, credits 494
+    35.0s tank done, credits 252
+    67.3s +200 delivery, credits 201
+   103.4s +200 delivery, credits 200
+   139.6s +200 delivery, credits 200
+   175.7s +200 delivery, credits 202
+   176.2s tur done, credits 174
+   211.8s +200 delivery, credits 202
+   213.5s tank done, credits 93
+   247.9s +200 delivery, credits 202
+   284.1s +200 delivery, credits 201
+  at 300s: credits 1, harvested 1600, free income 0
+  holds >= 2 s (start-end s): [(39, 67), (70, 103), (106, 140), (143, 176), (179, 212), (215, 248), (251, 284), (287, 300)]
+  longest hold (merged) 33.1 s; hold spans 8; "Not enough credits" sounds: rev3 rule 8, 7.9 rule 1 at [39]
+=== old L1 hauler lost at 90 s, new hauler queued at 95 s (trip 36.1 s, first delivery 31.1 s, 332 credits/min per hauler)
+    31.2s +200 delivery, credits 763
+    34.0s ps done, credits 676
+    41.0s tank done, credits 378
+    67.3s +200 delivery, credits 200
+    90.0s all haulers destroyed
+  at 420s: credits 0, harvested 400, free income 0
+  holds >= 2 s (start-end s): [(56, 67), (70, 420)]
+  longest hold (merged) 349.6 s; hold spans 2; "Not enough credits" sounds: rev3 rule 2, 7.9 rule 1 at [56]
+=== old L1b hauler lost at 90 s; cancel the tank and train a hauler at 95 s (trip 36.1 s, first delivery 31.1 s, 332 credits/min per hauler)
+    31.2s +200 delivery, credits 763
+    34.0s ps done, credits 676
+    41.0s tank done, credits 378
+    67.3s +200 delivery, credits 200
+    90.0s all haulers destroyed
+    95.0s cancel tank, refund 120, credits 120
+    95.7s tur done, credits 82
+  at 420s: credits 2, harvested 400, free income 0
+  holds >= 2 s (start-end s): [(56, 67), (70, 95), (98, 420)]
+  longest hold (merged) 322.4 s; hold spans 3; "Not enough credits" sounds: rev3 rule 3, 7.9 rule 1 at [56]
+=== old L2 floor: 0 credits, no hauler, a hauler queued at 0 s (trip 36.1 s, first delivery 31.1 s, 332 credits/min per hauler)
+  at 400s: credits 0, harvested 0, free income 0
+  holds >= 2 s (start-end s): [(0, 400)]
+  longest hold (merged) 400.0 s; hold spans 1; "Not enough credits" sounds: rev3 rule 1, 7.9 rule 1 at [0]
+# pacing.py new
+=== new S1 hint follower, hauler gathers from tick 0 (D-F) (trip 34.7 s, first delivery 29.7 s, 519 credits/min per hauler)
+    29.7s +300 delivery, credits 1343
+    34.0s ps done, credits 1302
+    47.0s rifle done, credits 1182
+    54.0s rifle done, credits 894
+    61.0s rifle done, credits 606
+    64.4s +300 delivery, credits 815
+    65.0s tur done, credits 798
+    90.0s tank done, credits 173
+    97.0s rifle done, credits 95
+    99.1s +300 delivery, credits 372
+   104.0s rifle done, credits 317
+   133.8s +300 delivery, credits 707
+   168.5s +300 delivery, credits 464
+   170.0s tank done, credits 415
+  at 180s: credits 445, harvested 1500, free income 540
+  holds >= 2 s (start-end s): []
+  longest hold (merged) 0.0 s; hold spans 0; "Not enough credits" sounds: rev3 rule 0, 7.9 rule 0 at []
+=== new S4 power + second hauler (trip 34.7 s, first delivery 29.7 s, 519 credits/min per hauler)
+    29.7s +300 delivery, credits 1048
+    34.0s ps done, credits 938
+    38.0s haul done, credits 814
+    47.0s rifle done, credits 742
+    54.0s rifle done, credits 664
+    64.4s +300 delivery, credits 864
+    67.7s +300 delivery, credits 1075
+    80.0s tur done, credits 742
+    99.1s +300 delivery, credits 1100
+   102.4s +300 delivery, credits 1326
+   120.0s tank done, credits 762
+   133.8s +300 delivery, credits 1104
+   137.1s +300 delivery, credits 1414
+   168.5s +300 delivery, credits 1511
+   171.8s +300 delivery, credits 1705
+   180.0s tank done, credits 1442
+  at 180s: credits 1442, harvested 2700, free income 540
+  holds >= 2 s (start-end s): []
+  longest hold (merged) 0.0 s; hold spans 0; "Not enough credits" sounds: rev3 rule 0, 7.9 rule 0 at []
+=== new S5 tank rush (trip 34.7 s, first delivery 29.7 s, 519 credits/min per hauler)
+    27.0s ps done, credits 581
+    29.7s +300 delivery, credits 794
+    35.5s tank done, credits 608
+    64.4s +300 delivery, credits 302
+    64.6s tank done, credits 295
+    99.1s +300 delivery, credits 300
+   107.7s tank done, credits 25
+   133.8s +300 delivery, credits 403
+   168.5s +300 delivery, credits 807
+  at 180s: credits 841, harvested 1500, free income 540
+  holds >= 2 s (start-end s): [(55, 64), (74, 99)]
+  longest hold (merged) 25.2 s; hold spans 2; "Not enough credits" sounds: rev3 rule 31, 7.9 rule 1 at [55]
+=== new S7 Player path hint order (trip 34.7 s, first delivery 29.7 s, 519 credits/min per hauler)
+    28.0s rifle done, credits 935
+    29.7s +300 delivery, credits 1219
+    32.0s ps done, credits 1166
+    46.0s haul done, credits 739
+    64.4s +300 delivery, credits 601
+    67.0s rifle done, credits 493
+    70.0s tur done, credits 371
+    74.0s rifle done, credits 325
+    75.7s +300 delivery, credits 607
+    98.7s tank done, credits 0
+    99.1s +300 delivery, credits 301
+   110.4s +300 delivery, credits 630
+   117.0s rifle done, credits 555
+   124.0s rifle done, credits 477
+   133.8s +300 delivery, credits 807
+   145.1s +300 delivery, credits 963
+   160.0s tank done, credits 485
+   168.5s +300 delivery, credits 811
+   179.8s +300 delivery, credits 900
+   180.0s launch done, credits 895
+  at 180s: credits 895, harvested 2700, free income 540
+  holds >= 2 s (start-end s): [(95, 99)]
+  longest hold (merged) 4.0 s; hold spans 1; "Not enough credits" sounds: rev3 rule 4, 7.9 rule 1 at [95]
+=== new S8 greedy, overspends (trip 34.7 s, first delivery 29.7 s, 519 credits/min per hauler)
+    29.0s ps done, credits 569
+    29.7s +300 delivery, credits 825
+    37.0s tank done, credits 372
+    64.4s +300 delivery, credits 302
+    68.3s tur done, credits 63
+    99.1s +300 delivery, credits 301
+   133.8s +300 delivery, credits 300
+   138.1s tank done, credits 33
+   168.5s +300 delivery, credits 302
+   168.9s tur done, credits 280
+   203.2s +300 delivery, credits 302
+   211.5s tank done, credits 36
+   237.9s +300 delivery, credits 300
+   272.6s +300 delivery, credits 301
+   277.8s tank done, credits 135
+  at 300s: credits 2, harvested 2400, free income 899
+  holds >= 2 s (start-end s): [(43, 64), (69, 99), (104, 134), (139, 168), (177, 203), (213, 238), (247, 273), (282, 300)]
+  longest hold (merged) 29.9 s; hold spans 8; "Not enough credits" sounds: rev3 rule 89, 7.9 rule 1 at [43]
+=== new L1 hauler lost at 90 s, new hauler queued at 95 s (trip 34.7 s, first delivery 29.7 s, 519 credits/min per hauler)
+    29.7s +300 delivery, credits 1034
+    34.0s ps done, credits 919
+    43.0s tank done, credits 540
+    60.0s tur done, credits 81
+    64.4s +300 delivery, credits 301
+    90.0s all haulers destroyed
+   166.1s tank done, credits 0
+   332.7s haul done, credits 0
+   362.4s +300 delivery, credits 389
+   397.1s +300 delivery, credits 793
+  at 420s: credits 861, harvested 1200, free income 1259
+  holds >= 2 s (start-end s): [(74, 333)]
+  longest hold (merged) 258.8 s; hold spans 2; "Not enough credits" sounds: rev3 rule 232, 7.9 rule 1 at [63]
+=== new L1b hauler lost at 90 s; cancel the tank and train a hauler at 95 s (trip 34.7 s, first delivery 29.7 s, 519 credits/min per hauler)
+    29.7s +300 delivery, credits 1034
+    34.0s ps done, credits 919
+    43.0s tank done, credits 540
+    60.0s tur done, credits 81
+    64.4s +300 delivery, credits 301
+    90.0s all haulers destroyed
+    95.0s cancel tank, refund 486, credits 486
+   110.1s haul done, credits 32
+   139.8s +300 delivery, credits 421
+   174.5s +300 delivery, credits 825
+   209.2s +300 delivery, credits 1229
+   243.9s +300 delivery, credits 1633
+   278.6s +300 delivery, credits 2037
+   313.3s +300 delivery, credits 2441
+   348.0s +300 delivery, credits 2846
+   382.7s +300 delivery, credits 3250
+   417.3s +300 delivery, credits 3653
+  at 420s: credits 3662, harvested 3300, free income 1259
+  holds >= 2 s (start-end s): [(74, 95)]
+  longest hold (merged) 21.2 s; hold spans 2; "Not enough credits" sounds: rev3 rule 22, 7.9 rule 1 at [63]
+=== new L2 floor: 0 credits, no hauler, a hauler queued at 0 s (trip 34.7 s, first delivery 29.7 s, 519 credits/min per hauler)
+   166.4s haul done, credits 0
+   196.1s +300 delivery, credits 389
+   230.8s +300 delivery, credits 793
+   265.5s +300 delivery, credits 1197
+   300.2s +300 delivery, credits 1601
+   334.9s +300 delivery, credits 2005
+   369.6s +300 delivery, credits 2409
+  at 400s: credits 2501, harvested 1800, free income 1199
+  holds >= 2 s (start-end s): [(0, 166)]
+  longest hold (merged) 166.3 s; hold spans 1; "Not enough credits" sounds: rev3 rule 300, 7.9 rule 1 at [0]
+# fights2.py old
+== old: one shooter, time to kill (s)
+  rifle  rifle   9.0 | launch   7.0 | tank 249.0 | haul 299.0 | tur 299.0 | ps 299.0 | cc 999.0
+  launch rifle  15.0 | launch  10.0 | tank  20.0 | haul  22.5 | tur  47.5 | ps  47.5 | cc 165.0
+  tank   rifle   6.0 | launch   4.0 | tank  24.0 | haul  28.0 | tur  28.0 | ps  28.0 | cc  98.0
+  tur    rifle   4.5 | launch   3.0 | tank  18.0 | haul  21.0 | tur  21.0 | ps  21.0 | cc  73.5
+== old: battles (attackers focus the turret first; defenders shoot the front unit)
+  tank                                     700 vs tur                        590 -> def in  18.0 s  att left []  def left [('tur', 200)]  cost ratio att/def 1.19
+  tank+tank                               1400 vs tur                        590 -> att in  14.0 s  att left [('tank', 100), ('tank', 500)]  def left []  cost ratio att/def 2.37
+  tank+rifle+rifle                         900 vs tur                        590 -> att in  28.0 s  att left [('tank', 60)]  def left []  cost ratio att/def 1.53
+  tank+rifle+rifle+rifle                  1000 vs tur                        590 -> att in  26.0 s  att left [('tank', 260)]  def left []  cost ratio att/def 1.69
+  tank+eng                                1000 vs tur                        590 -> def in  22.5 s  att left []  def left [('tur', 120)]  cost ratio att/def 1.69
+  launch+launch+launch+launch             1000 vs tur                        590 -> def in  16.5 s  att left []  def left [('tur', 60)]  cost ratio att/def 1.69
+  launch+launch+launch+launch+launch      1250 vs tur                        590 -> att in  10.0 s  att left [('launch', 60), ('launch', 90), ('launch', 90)]  def left []  cost ratio att/def 2.12
+  rifle+rifle+rifle+rifle+rifle+rifle      600 vs tur                        590 -> def in  34.5 s  att left []  def left [('tur', 360)]  cost ratio att/def 1.02
+  tank+tank                               1400 vs tur+eng                    890 -> att in  20.0 s  att left [('tank', 20), ('tank', 500)]  def left []  cost ratio att/def 1.57
+  tank+tank+tank                          2100 vs tur+eng                    890 -> att in  12.0 s  att left [('tank', 220), ('tank', 500), ('tank', 500)]  def left []  cost ratio att/def 2.36
+  tank+tank+rifle+rifle                   1600 vs tur+tur                   1180 -> def in  34.5 s  att left []  def left [('tur', 160)]  cost ratio att/def 1.36
+  tank+tank+tank                          2100 vs tur+tur                   1180 -> att in  24.0 s  att left [('tank', 140), ('tank', 500)]  def left []  cost ratio att/def 1.78
+  tank+tank+tank+rifle+rifle              2300 vs tur+tur                   1180 -> att in  18.0 s  att left [('tank', 100), ('tank', 500), ('tank', 500)]  def left []  cost ratio att/def 1.95
+  tank+tank                               1400 vs tur+rifle+rifle            790 -> att in  22.0 s  att left [('tank', 20), ('tank', 500)]  def left []  cost ratio att/def 1.77
+  tank+tank+launch                        1650 vs tur+rifle+rifle            790 -> att in  17.5 s  att left [('tank', 156), ('tank', 500), ('launch', 90)]  def left []  cost ratio att/def 2.09
+  rifle+rifle+rifle+rifle+rifle+rifle+rifle   700 vs tank                       700 -> def in  54.0 s  att left []  def left [('tank', 66)]  cost ratio att/def 1.00
+  rifle+rifle+rifle+rifle+rifle+rifle+rifle+rifle   800 vs tank                       700 -> att in  44.0 s  att left [('rifle', 60), ('rifle', 120), ('rifle', 120)]  def left []  cost ratio att/def 1.14
+  launch+launch+launch                     750 vs tank                       700 -> att in   7.5 s  att left [('launch', 60), ('launch', 90)]  def left []  cost ratio att/def 1.07
+  rifle+rifle+rifle+rifle+rifle            500 vs launch+launch              500 -> att in   3.0 s  att left [('rifle', 66), ('rifle', 120), ('rifle', 120), ('rifle', 120), ('rifle', 120)]  def left []  cost ratio att/def 1.00
+  tank                                     700 vs tank                       700 -> att in  24.0 s  att left [('tank', 20)]  def left []  cost ratio att/def 1.00
+  tank+tank                               1400 vs tank+eng                  1000 -> att in  18.0 s  att left [('tank', 220), ('tank', 500)]  def left []  cost ratio att/def 1.40
+  E against tur               : cheapest winning attack   800 (rifle+rifle+rifle+launch+launch) / defence   590 = 1.36
+  E against tur+tur           : cheapest winning attack  1350 (rifle+rifle+rifle+rifle+rifle+rifle+launch+launch+launch) / defence  1180 = 1.14
+  E against tur+rifle+rifle   : cheapest winning attack  1050 (tank+rifle+launch) / defence   790 = 1.33
+  E against tur+tur+eng       : cheapest winning attack  1550 (rifle+rifle+rifle+rifle+rifle+rifle+rifle+rifle+launch+launch+launch) / defence  1480 = 1.05
+# fights2.py new
+== new: one shooter, time to kill (s)
+  rifle  rifle   9.0 | launch   7.0 | tank 249.0 | haul 299.0 | tur 299.0 | ps 299.0 | cc 999.0
+  launch rifle  15.0 | launch  10.0 | tank  20.0 | haul  22.5 | tur  40.0 | ps  40.0 | cc 137.5
+  tank   rifle   6.0 | launch   4.0 | tank  24.0 | haul  28.0 | tur  22.0 | ps  22.0 | cc  78.0
+  tur    rifle   4.5 | launch   3.0 | tank  18.0 | haul  21.0 | tur  16.5 | ps  16.5 | cc  58.5
+== new: battles (attackers focus the turret first; defenders shoot the front unit)
+  tank                                     700 vs tur                        690 -> def in  18.0 s  att left []  def left [('tur', 100)]  cost ratio att/def 1.01
+  tank+tank                               1400 vs tur                        690 -> att in  10.0 s  att left [('tank', 220), ('tank', 500)]  def left []  cost ratio att/def 2.03
+  tank+rifle+rifle                         900 vs tur                        690 -> att in  22.0 s  att left [('tank', 220)]  def left []  cost ratio att/def 1.30
+  tank+rifle+rifle+rifle                  1000 vs tur                        690 -> att in  20.0 s  att left [('tank', 420)]  def left []  cost ratio att/def 1.45
+  tank+eng                                 950 vs tur                        690 -> att in  22.0 s  att left [('tank', 20)]  def left []  cost ratio att/def 1.38
+  launch+launch+launch+launch             1000 vs tur                        690 -> att in  12.5 s  att left [('launch', 90)]  def left []  cost ratio att/def 1.45
+  launch+launch+launch+launch+launch      1250 vs tur                        690 -> att in   7.5 s  att left [('launch', 30), ('launch', 90), ('launch', 90), ('launch', 90)]  def left []  cost ratio att/def 1.81
+  rifle+rifle+rifle+rifle+rifle+rifle      600 vs tur                        690 -> def in  34.5 s  att left []  def left [('tur', 360)]  cost ratio att/def 0.87
+  tank+tank                               1400 vs tur+eng                    940 -> att in  16.0 s  att left [('tank', 180), ('tank', 500)]  def left []  cost ratio att/def 1.49
+  tank+tank+tank                          2100 vs tur+eng                    940 -> att in  10.0 s  att left [('tank', 260), ('tank', 500), ('tank', 500)]  def left []  cost ratio att/def 2.23
+  tank+tank+rifle+rifle                   1600 vs tur+tur                   1380 -> att in  26.0 s  att left [('tank', 340)]  def left []  cost ratio att/def 1.16
+  tank+tank+tank                          2100 vs tur+tur                   1380 -> att in  16.0 s  att left [('tank', 420), ('tank', 500)]  def left []  cost ratio att/def 1.52
+  tank+tank+tank+rifle+rifle              2300 vs tur+tur                   1380 -> att in  14.0 s  att left [('tank', 260), ('tank', 500), ('tank', 500)]  def left []  cost ratio att/def 1.67
+  tank+tank                               1400 vs tur+rifle+rifle            890 -> att in  18.0 s  att left [('tank', 156), ('tank', 500)]  def left []  cost ratio att/def 1.57
+  tank+tank+launch                        1650 vs tur+rifle+rifle            890 -> att in  16.0 s  att left [('tank', 204), ('tank', 500), ('launch', 90)]  def left []  cost ratio att/def 1.85
+  rifle+rifle+rifle+rifle+rifle+rifle+rifle   700 vs tank                       700 -> def in  54.0 s  att left []  def left [('tank', 66)]  cost ratio att/def 1.00
+  rifle+rifle+rifle+rifle+rifle+rifle+rifle+rifle   800 vs tank                       700 -> att in  44.0 s  att left [('rifle', 60), ('rifle', 120), ('rifle', 120)]  def left []  cost ratio att/def 1.14
+  launch+launch+launch                     750 vs tank                       700 -> att in   7.5 s  att left [('launch', 60), ('launch', 90)]  def left []  cost ratio att/def 1.07
+  rifle+rifle+rifle+rifle+rifle            500 vs launch+launch              500 -> att in   3.0 s  att left [('rifle', 66), ('rifle', 120), ('rifle', 120), ('rifle', 120), ('rifle', 120)]  def left []  cost ratio att/def 1.00
+  tank                                     700 vs tank                       700 -> att in  24.0 s  att left [('tank', 20)]  def left []  cost ratio att/def 1.00
+  tank+tank                               1400 vs tank+eng                   950 -> att in  18.0 s  att left [('tank', 220), ('tank', 500)]  def left []  cost ratio att/def 1.47
+  E against tur               : cheapest winning attack   750 (rifle+rifle+rifle+rifle+rifle+launch) / defence   690 = 1.09
+  E against tur+tur           : cheapest winning attack  1250 (rifle+rifle+rifle+rifle+rifle+launch+launch+launch) / defence  1380 = 0.91
+  E against tur+rifle+rifle   : cheapest winning attack   950 (tank+launch) / defence   890 = 1.07
+  E against tur+tur+eng       : cheapest winning attack  1350 (rifle+rifle+rifle+rifle+rifle+rifle+launch+launch+launch) / defence  1630 = 0.83
+# match.py
+old trip main 36.1 s = 332 credits/min per hauler
+old trip side 44.9 s = 267 credits/min per hauler
+old trip centre 68.9 s = 174 credits/min per hauler
+old E=1.4  A careful   vs B careful   (B skill 1.00, B 3rd hauler after   0 s): no end in 40 min       ore gone at 27.6 min
+old E=1.4  A careful   vs B careful   (B skill 0.95, B 3rd hauler after   0 s): no end in 40 min       ore gone at 27.6 min
+old E=1.4  A careful   vs B careful   (B skill 0.90, B 3rd hauler after   0 s): A wins at 11.8 min     ore gone at not in 40 min
+old E=1.4  A careful   vs B careful   (B skill 0.80, B 3rd hauler after   0 s): A wins at 11.6 min     ore gone at not in 40 min
+old E=1.4  A careful   vs B careful   (B skill 1.00, B 3rd hauler after 120 s): B wins at 3.6 min      ore gone at not in 40 min
+old E=1.4  A careful   vs B turtle    (B skill 1.00, B 3rd hauler after   0 s): A wins at 16.9 min     ore gone at not in 40 min
+old E=1.4  A aggressor vs B careful   (B skill 1.00, B 3rd hauler after   0 s): B wins at 16.9 min     ore gone at not in 40 min
+old E=1.4  A aggressor vs B turtle    (B skill 1.00, B 3rd hauler after   0 s): A wins at 2.9 min      ore gone at not in 40 min
+old E=1.4  A turtle    vs B turtle    (B skill 0.90, B 3rd hauler after   0 s): no end in 40 min       ore gone at 36.6 min
+old E=1.8  A careful   vs B careful   (B skill 1.00, B 3rd hauler after   0 s): no end in 40 min       ore gone at 27.6 min
+old E=1.8  A careful   vs B careful   (B skill 0.95, B 3rd hauler after   0 s): no end in 40 min       ore gone at 27.6 min
+old E=1.8  A careful   vs B careful   (B skill 0.90, B 3rd hauler after   0 s): A wins at 14.0 min     ore gone at not in 40 min
+old E=1.8  A careful   vs B careful   (B skill 0.80, B 3rd hauler after   0 s): A wins at 13.2 min     ore gone at not in 40 min
+old E=1.8  A careful   vs B careful   (B skill 1.00, B 3rd hauler after 120 s): B wins at 3.6 min      ore gone at not in 40 min
+old E=1.8  A careful   vs B turtle    (B skill 1.00, B 3rd hauler after   0 s): A wins at 16.9 min     ore gone at not in 40 min
+old E=1.8  A aggressor vs B careful   (B skill 1.00, B 3rd hauler after   0 s): B wins at 16.9 min     ore gone at not in 40 min
+old E=1.8  A aggressor vs B turtle    (B skill 1.00, B 3rd hauler after   0 s): A wins at 2.9 min      ore gone at not in 40 min
+old E=1.8  A turtle    vs B turtle    (B skill 0.90, B 3rd hauler after   0 s): no end in 40 min       ore gone at 36.6 min
+new trip main 34.7 s = 519 credits/min per hauler
+new trip side 42.0 s = 429 credits/min per hauler
+new trip centre 62.0 s = 290 credits/min per hauler
+new E=1.1  A careful   vs B careful   (B skill 1.00, B 3rd hauler after   0 s): no end in 40 min       ore gone at 30.4 min
+new E=1.1  A careful   vs B careful   (B skill 0.95, B 3rd hauler after   0 s): no end in 40 min       ore gone at 30.4 min
+new E=1.1  A careful   vs B careful   (B skill 0.90, B 3rd hauler after   0 s): A wins at 11.4 min     ore gone at not in 40 min
+new E=1.1  A careful   vs B careful   (B skill 0.80, B 3rd hauler after   0 s): A wins at 11.3 min     ore gone at not in 40 min
+new E=1.1  A careful   vs B careful   (B skill 1.00, B 3rd hauler after 120 s): A wins at 5.8 min      ore gone at not in 40 min
+new E=1.1  A careful   vs B turtle    (B skill 1.00, B 3rd hauler after   0 s): A wins at 20.2 min     ore gone at not in 40 min
+new E=1.1  A aggressor vs B careful   (B skill 1.00, B 3rd hauler after   0 s): B wins at 20.2 min     ore gone at not in 40 min
+new E=1.1  A aggressor vs B turtle    (B skill 1.00, B 3rd hauler after   0 s): A wins at 3.5 min      ore gone at not in 40 min
+new E=1.1  A turtle    vs B turtle    (B skill 0.90, B 3rd hauler after   0 s): no end in 40 min       ore gone at not in 40 min
+new E=1.3  A careful   vs B careful   (B skill 1.00, B 3rd hauler after   0 s): no end in 40 min       ore gone at 30.4 min
+new E=1.3  A careful   vs B careful   (B skill 0.95, B 3rd hauler after   0 s): no end in 40 min       ore gone at 30.4 min
+new E=1.3  A careful   vs B careful   (B skill 0.90, B 3rd hauler after   0 s): A wins at 11.4 min     ore gone at not in 40 min
+new E=1.3  A careful   vs B careful   (B skill 0.80, B 3rd hauler after   0 s): A wins at 11.3 min     ore gone at not in 40 min
+new E=1.3  A careful   vs B careful   (B skill 1.00, B 3rd hauler after 120 s): A wins at 6.1 min      ore gone at not in 40 min
+new E=1.3  A careful   vs B turtle    (B skill 1.00, B 3rd hauler after   0 s): A wins at 20.2 min     ore gone at not in 40 min
+new E=1.3  A aggressor vs B careful   (B skill 1.00, B 3rd hauler after   0 s): B wins at 20.2 min     ore gone at not in 40 min
+new E=1.3  A aggressor vs B turtle    (B skill 1.00, B 3rd hauler after   0 s): A wins at 3.5 min      ore gone at not in 40 min
+new E=1.3  A turtle    vs B turtle    (B skill 0.90, B 3rd hauler after   0 s): no end in 40 min       ore gone at not in 40 min
+--- log: new E=1.3 careful vs careful, B skill 0.9
+      655s A wins the field fight at the haulers of B: 1 haulers lost; army of A left 5405
+      660s A wins the field fight at the haulers of B: 1 haulers lost; army of A left 6072
+      665s A breaks the base of B (army 6172 vs defence 2691, 3 turrets); CC falls in 22 s
+--- log: old E=1.8 careful vs careful, B skill 0.9
+      465s A wins the field fight at the haulers of B: 3 haulers lost; army of A left 785
+      805s A breaks the base of B (army 4235 vs defence 3186, 3 turrets); CC falls in 36 s
