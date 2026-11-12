@@ -607,10 +607,10 @@ fn production_completion_needs_output_evidence_and_does_not_treat_job_removal_as
     );
 }
 
-/// Row DBG1 and ALR2: the health trace keeps the newest 64 entries for each unit, and the alert
-/// `OwnUnitDestroyed` (`feedback.rs`, it reads the last entry of a unit that is gone) still fires
-/// after a long fight. The replica applies real deltas, so a trace that is pruned to nothing
-/// (plant a of `L0-DBG`) makes this test red.
+/// Row DBG1 and ALR2: the alert `OwnUnitDestroyed` (`feedback.rs`, it reads the last health trace
+/// entry of a unit that is gone) still fires after a long fight, with the trace bounded to 64
+/// entries (`replica_m3.rs` counts them). The replica applies real deltas, so a trace that is
+/// pruned to nothing (plant a of `L0-DBG`) makes this test red.
 #[test]
 fn own_unit_destroyed_fires_after_a_long_fight_with_a_bounded_trace() {
     use std::collections::HashMap;
@@ -620,9 +620,7 @@ fn own_unit_destroyed_fires_after_a_long_fight_with_a_bounded_trace() {
     use turts_client::acquire::{Acquired, PresentationContent};
     use turts_client::content::ClientContent;
     use turts_client::join::AcquiredPackages;
-    use turts_client::replica::{
-        DeltaOutcome, HEALTH_TRACE_WINDOW, Replica, ReplicaContext, SnapshotOutcome,
-    };
+    use turts_client::replica::{DeltaOutcome, Replica, ReplicaContext, SnapshotOutcome};
     use turts_mod_runtime::{archive::PackageArchive, pack::pack_dir};
     use turts_net_protocol::{
         EconomyChanges, EconomyState, Facing, HealthRecord, Pos, SlotId, Snapshot, UnitId,
@@ -737,11 +735,6 @@ fn own_unit_destroyed_fires_after_a_long_fight_with_a_bounded_trace() {
         }];
         assert_eq!(replica.apply_delta(&hit, now), DeltaOutcome::Applied);
     }
-    assert_eq!(
-        replica.health_trace[&9].len(),
-        HEALTH_TRACE_WINDOW,
-        "the trace of one unit keeps the newest {HEALTH_TRACE_WINDOW} entries"
-    );
     let mut killing = delta(305);
     killing.healths = vec![HealthRecord {
         unit: UnitId(9),
@@ -750,8 +743,6 @@ fn own_unit_destroyed_fires_after_a_long_fight_with_a_bounded_trace() {
     killing.removed = vec![UnitId(9)];
     assert_eq!(replica.apply_delta(&killing, now), DeltaOutcome::Applied);
     assert!(!replica.units.contains_key(&9));
-    assert_eq!(replica.health_trace[&9].len(), HEALTH_TRACE_WINDOW);
-    assert_eq!(replica.health_trace[&9].last().unwrap().current, 0);
 
     app.world_mut()
         .resource_mut::<ReplicaState>()

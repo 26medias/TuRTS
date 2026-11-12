@@ -811,6 +811,21 @@ fn health_trace_keeps_the_newest_64_entries_for_each_unit() {
         3,
         "a quiet unit keeps all its entries"
     );
+    // The killing hit stays the last entry: the alert OwnUnitDestroyed reads it (feedback.rs).
+    let mut killing = delta(305, 304);
+    killing.healths = vec![HealthRecord {
+        unit: UnitId(9),
+        current: 0,
+    }];
+    killing.removed = vec![UnitId(9)];
+    assert_eq!(replica.apply_delta(&killing, now), DeltaOutcome::Applied);
+    let trace = &replica.health_trace[&9];
+    assert_eq!(trace.len(), HEALTH_TRACE_WINDOW);
+    assert_eq!(
+        trace.last().unwrap().current,
+        0,
+        "the killing hit is the last entry"
+    );
 }
 
 #[test]
