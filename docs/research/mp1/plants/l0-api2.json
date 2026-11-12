@@ -1,0 +1,1763 @@
+[
+  {
+    "row": "VAL1",
+    "plant": "0: the validation column does nothing (the red state of step 1)",
+    "files": [
+      {
+        "file": "crates/turts_mod_runtime/src/archive.rs",
+        "edit": {
+          "old": "crate::mp1_validation::validate(self)",
+          "new": "Ok(())"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_mod_runtime",
+      "--locked",
+      "--test",
+      "val1",
+      "h14_hints",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "H14 hint ids are unique: the package passes, a refusal was expected",
+    "exit": 101,
+    "expected_selected": 1,
+    "commit": "a274957"
+  },
+  {
+    "row": "VAL1 plant (1)",
+    "plant": "a: the row `health without removal` is removed from VERSION_TABLE; the red package packs",
+    "files": [
+      {
+        "file": "crates/turts_mod_runtime/src/version_table.rs",
+        "edit": {
+          "old": "    variant_0_2_4(\"health without removal\"),\n",
+          "new": ""
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_mod_runtime",
+      "--locked",
+      "--test",
+      "content_m3",
+      "health_requires_removal",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "called `Result::unwrap_err()` on an `Ok` value",
+    "exit": 101,
+    "expected_selected": 1,
+    "commit": "a274957"
+  },
+  {
+    "row": "VAL1 plant (2)",
+    "plant": "a: presence is read from the parsed value; an explicit empty `orders: []` is absent",
+    "files": [
+      {
+        "file": "crates/turts_mod_runtime/src/raw_presence.rs",
+        "edit": {
+          "old": "    let Some((first, rest)) = path.split_first() else {\n        return true;\n    };\n",
+          "new": "    let Some((first, rest)) = path.split_first() else {\n        return !matches!(value, Value::Seq(items) if items.is_empty())\n            && !matches!(value, Value::Option(None));\n    };\n"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_mod_runtime",
+      "--locked",
+      "--lib",
+      "raw_presence::tests::a_key_with_an_empty_value_is_written",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "[\"orders\"]",
+    "exit": 101,
+    "expected_selected": 1,
+    "commit": "a274957"
+  },
+  {
+    "row": "VAL1 plant (6)",
+    "plant": "a: the bump is missing: 0.2.4 is not in RELEASED_ENGINE_APIS; the ^0.2.4 packages have an older edition",
+    "files": [
+      {
+        "file": "crates/turts_mod_api/src/lib.rs",
+        "edit": {
+          "old": "\"0.2.3\", \"0.2.4\"];",
+          "new": "\"0.2.3\"];"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_mod_runtime",
+      "--locked",
+      "--test",
+      "val1",
+      "u4_acquire",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "U4 range below the weapon range: the package passes, a refusal was expected",
+    "exit": 101,
+    "expected_selected": 1,
+    "commit": "a274957"
+  },
+  {
+    "row": "VAL1 (ED T2 to T4)",
+    "plant": "a: the column runs for an older edition too",
+    "files": [
+      {
+        "file": "crates/turts_mod_runtime/src/mp1_validation.rs",
+        "edit": {
+          "old": "pub(crate) fn validate(archive: &PackageArchive) -> Result<(), ModError> {\n    if !is_edition_0_2_4(&archive.manifest.engine_api) {",
+          "new": "pub(crate) fn validate(archive: &PackageArchive) -> Result<(), ModError> {\n    if false && !is_edition_0_2_4(&archive.manifest.engine_api) {"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_mod_runtime",
+      "--locked",
+      "--test",
+      "val1",
+      "the_column_does_not_run_for_the_edition_0_2_3",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "the edition 0.2.3 is not checked",
+    "exit": 101,
+    "expected_selected": 1,
+    "commit": "a274957"
+  },
+  {
+    "row": "VAL1 (ED T2 to T4)",
+    "plant": "b: the column runs for an older edition too (pack path: cedar at ^0.2.3 with a reasons typo)",
+    "files": [
+      {
+        "file": "crates/turts_mod_runtime/src/mp1_validation.rs",
+        "edit": {
+          "old": "pub(crate) fn validate(archive: &PackageArchive) -> Result<(), ModError> {\n    if !is_edition_0_2_4(&archive.manifest.engine_api) {",
+          "new": "pub(crate) fn validate(archive: &PackageArchive) -> Result<(), ModError> {\n    if false && !is_edition_0_2_4(&archive.manifest.engine_api) {"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_mod_runtime",
+      "--locked",
+      "--test",
+      "val1",
+      "t2_t3_t4_edition_pairs_and_the_control",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "T2 reasons at ^0.2.3",
+    "exit": 101,
+    "expected_selected": 1,
+    "commit": "a274957"
+  },
+  {
+    "row": "VAL1 T3",
+    "plant": "a: weapon damage 0 is accepted",
+    "files": [
+      {
+        "file": "crates/turts_mod_runtime/src/mp1_validation.rs",
+        "edit": {
+          "old": "if weapon.damage == 0",
+          "new": "if false && weapon.damage == 0"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_mod_runtime",
+      "--locked",
+      "--test",
+      "val1",
+      "u1_u2_u3_armour_and_weapon_fields",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "U3 weapon damage 0: the package passes, a refusal was expected",
+    "exit": 101,
+    "expected_selected": 1,
+    "commit": "a274957"
+  },
+  {
+    "row": "VAL1 U1",
+    "plant": "a: a unit with health needs no armour class",
+    "files": [
+      {
+        "file": "crates/turts_mod_runtime/src/mp1_validation.rs",
+        "edit": {
+          "old": "} else if has_table && unit.health.is_some()",
+          "new": "} else if false && has_table && unit.health.is_some()"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_mod_runtime",
+      "--locked",
+      "--test",
+      "val1",
+      "u1_u2_u3_armour_and_weapon_fields",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "U1 a unit with health needs an armour class: the package passes, a refusal was expected",
+    "exit": 101,
+    "expected_selected": 1,
+    "commit": "a274957"
+  },
+  {
+    "row": "VAL1 U4",
+    "plant": "a: an acquire range below the weapon range is accepted",
+    "files": [
+      {
+        "file": "crates/turts_mod_runtime/src/mp1_validation.rs",
+        "edit": {
+          "old": "if acquire.range < weapon.range",
+          "new": "if false && acquire.range < weapon.range"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_mod_runtime",
+      "--locked",
+      "--test",
+      "val1",
+      "u4_acquire",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "U4 range below the weapon range: the package passes, a refusal was expected",
+    "exit": 101,
+    "expected_selected": 1,
+    "commit": "a274957"
+  },
+  {
+    "row": "VAL1 U5",
+    "plant": "a: an amount of 0 is accepted",
+    "files": [
+      {
+        "file": "crates/turts_mod_runtime/src/mp1_validation.rs",
+        "edit": {
+          "old": "if entry.amount == 0",
+          "new": "if false && entry.amount == 0"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_mod_runtime",
+      "--locked",
+      "--test",
+      "val1",
+      "u5_provides_and_consumes",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "U5 amount 0: the package passes, a refusal was expected",
+    "exit": 101,
+    "expected_selected": 1,
+    "commit": "a274957"
+  },
+  {
+    "row": "VAL1 plant (3)",
+    "plant": "a: the reserved variant BlockStart is accepted",
+    "files": [
+      {
+        "file": "crates/turts_mod_runtime/src/mp1_validation.rs",
+        "edit": {
+          "old": "                ShortEffect::BlockStart => {\n                    return Err(self.fail(\n                        file,\n                        &effect,\n                        \"`BlockStart` is reserved for a later engine API\",\n                    ));\n                }\n",
+          "new": "                ShortEffect::BlockStart => {}\n"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_mod_runtime",
+      "--locked",
+      "--test",
+      "val1",
+      "u6_when_short",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "U6 BlockStart is reserved: the package passes, a refusal was expected",
+    "exit": 101,
+    "expected_selected": 1,
+    "commit": "a274957"
+  },
+  {
+    "row": "VAL1 K2 Q",
+    "plant": "a: a Q above 65,536 is accepted",
+    "files": [
+      {
+        "file": "crates/turts_mod_runtime/src/mp1_validation.rs",
+        "edit": {
+          "old": "if q > MAX_RATE_LCM",
+          "new": "if false && q > MAX_RATE_LCM"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_mod_runtime",
+      "--locked",
+      "--test",
+      "val1",
+      "u6_q_above_65536",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "U6 Q above 65,536: the package passes, a refusal was expected",
+    "exit": 101,
+    "expected_selected": 1,
+    "commit": "a274957"
+  },
+  {
+    "row": "VAL1 plant (3)",
+    "plant": "b: the reserved variant counts: Queued is accepted",
+    "files": [
+      {
+        "file": "crates/turts_mod_runtime/src/mp1_validation.rs",
+        "edit": {
+          "old": "                && counts == SupplyCounts::Queued\n",
+          "new": "                && counts == SupplyCounts::Queued\n                && false\n"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_mod_runtime",
+      "--locked",
+      "--test",
+      "val1",
+      "s1_supply_resource",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "S1 counts Queued is reserved: the package passes, a refusal was expected",
+    "exit": 101,
+    "expected_selected": 1,
+    "commit": "a274957"
+  },
+  {
+    "row": "VAL1 U7",
+    "plant": "a: an income period of 0 is accepted",
+    "files": [
+      {
+        "file": "crates/turts_mod_runtime/src/mp1_validation.rs",
+        "edit": {
+          "old": "if income.period_ms == 0",
+          "new": "if false && income.period_ms == 0"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_mod_runtime",
+      "--locked",
+      "--test",
+      "val1",
+      "u7_income",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "U7 period 0: the package passes, a refusal was expected",
+    "exit": 101,
+    "expected_selected": 1,
+    "commit": "a274957"
+  },
+  {
+    "row": "VAL1 M3",
+    "plant": "a: a map start order with a ground rally is accepted",
+    "files": [
+      {
+        "file": "crates/turts_mod_runtime/src/mp1_validation.rs",
+        "edit": {
+          "old": "if node_count.is_some() && start.ground_rally != turts_mod_api::GroundRally::Ignore",
+          "new": "if false && node_count.is_some() && start.ground_rally != turts_mod_api::GroundRally::Ignore"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_mod_runtime",
+      "--locked",
+      "--test",
+      "val1",
+      "u8_m3_start_orders",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "M3 a map unit has no rally: the package passes, a refusal was expected",
+    "exit": 101,
+    "expected_selected": 1,
+    "commit": "a274957"
+  },
+  {
+    "row": "VAL1 plant (3)",
+    "plant": "c: the reserved variant NeedsBuilder is accepted",
+    "files": [
+      {
+        "file": "crates/turts_mod_runtime/src/mp1_validation.rs",
+        "edit": {
+          "old": "        if let ConstructProgress::NeedsBuilder { .. } = constructor.progress {",
+          "new": "        if false && let ConstructProgress::NeedsBuilder { .. } = constructor.progress {"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_mod_runtime",
+      "--locked",
+      "--test",
+      "val1",
+      "k1_constructor",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "K1 NeedsBuilder is reserved: the package passes, a refusal was expected",
+    "exit": 101,
+    "expected_selected": 1,
+    "commit": "a274957"
+  },
+  {
+    "row": "VAL1 K2",
+    "plant": "a: a gap below the largest mobile diameter plus 0.2 is accepted",
+    "files": [
+      {
+        "file": "crates/turts_mod_runtime/src/mp1_validation.rs",
+        "edit": {
+          "old": "if placement.gap < least",
+          "new": "if false && placement.gap < least"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_mod_runtime",
+      "--locked",
+      "--test",
+      "val1",
+      "k2_k3_placement_and_build_area",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "K2 gap below the largest mobile diameter plus 0.2: the package passes, a refusal was expected",
+    "exit": 101,
+    "expected_selected": 1,
+    "commit": "a274957"
+  },
+  {
+    "row": "VAL1 K5",
+    "plant": "a: a destroyed ratio above 1 is accepted",
+    "files": [
+      {
+        "file": "crates/turts_mod_runtime/src/mp1_validation.rs",
+        "edit": {
+          "old": "        if value.numerator > value.denominator {",
+          "new": "        if false && value.numerator > value.denominator {"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_mod_runtime",
+      "--locked",
+      "--test",
+      "val1",
+      "k4_k5_k6_p1_production_and_match_rows",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "K5 destroyed numerator above the denominator: the package passes, a refusal was expected",
+    "exit": 101,
+    "expected_selected": 1,
+    "commit": "a274957"
+  },
+  {
+    "row": "VAL1 K6",
+    "plant": "a: a package with a constructor needs no open_sites_per_slot",
+    "files": [
+      {
+        "file": "crates/turts_mod_runtime/src/mp1_validation.rs",
+        "edit": {
+          "old": "            None if constructors => {",
+          "new": "            None if constructors && false => {"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_mod_runtime",
+      "--locked",
+      "--test",
+      "val1",
+      "k4_k5_k6_p1_production_and_match_rows",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "K6 a package with a constructor needs open_sites_per_slot: the package passes, a refusal was expected",
+    "exit": 101,
+    "expected_selected": 1,
+    "commit": "a274957"
+  },
+  {
+    "row": "VAL1 P1",
+    "plant": "a: ChargeOverTime on a technology is accepted",
+    "files": [
+      {
+        "file": "crates/turts_mod_runtime/src/mp1_validation.rs",
+        "edit": {
+          "old": "if technology.payment == PaymentPolicy::ChargeOverTime",
+          "new": "if false && technology.payment == PaymentPolicy::ChargeOverTime"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_mod_runtime",
+      "--locked",
+      "--test",
+      "val1",
+      "k4_k5_k6_p1_production_and_match_rows",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "P1 ChargeOverTime on a technology: the package passes, a refusal was expected",
+    "exit": 101,
+    "expected_selected": 1,
+    "commit": "a274957"
+  },
+  {
+    "row": "VAL1 K4",
+    "plant": "a: a building output needs no placement",
+    "files": [
+      {
+        "file": "crates/turts_mod_runtime/src/mp1_validation.rs",
+        "edit": {
+          "old": "Some(unit) if unit.placement.is_some() => {}",
+          "new": "Some(_) => {}"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_mod_runtime",
+      "--locked",
+      "--test",
+      "val1",
+      "k4_k5_k6_p1_production_and_match_rows",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "K4 a building output needs placement: the package passes, a refusal was expected",
+    "exit": 101,
+    "expected_selected": 1,
+    "commit": "a274957"
+  },
+  {
+    "row": "VAL1 O5",
+    "plant": "a: ContentAtPoint with another behaviour is accepted",
+    "files": [
+      {
+        "file": "crates/turts_mod_runtime/src/mp1_validation.rs",
+        "edit": {
+          "old": "if order.target == TargetKind::ContentAtPoint && order.behaviour != Behaviour::Construct",
+          "new": "if false && order.target == TargetKind::ContentAtPoint && order.behaviour != Behaviour::Construct"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_mod_runtime",
+      "--locked",
+      "--test",
+      "val1",
+      "o1_to_o10_orders_and_rules",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "O5 ContentAtPoint needs Construct: the package passes, a refusal was expected",
+    "exit": 101,
+    "expected_selected": 1,
+    "commit": "a274957"
+  },
+  {
+    "row": "VAL1 O9",
+    "plant": "a: a Surrender order with units is accepted",
+    "files": [
+      {
+        "file": "crates/turts_mod_runtime/src/mp1_validation.rs",
+        "edit": {
+          "old": "if order.behaviour == Behaviour::Surrender && !order.units.is_empty()",
+          "new": "if false && order.behaviour == Behaviour::Surrender && !order.units.is_empty()"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_mod_runtime",
+      "--locked",
+      "--test",
+      "val1",
+      "o1_to_o10_orders_and_rules",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "O9 a Surrender order lists no units: the package passes, a refusal was expected",
+    "exit": 101,
+    "expected_selected": 1,
+    "commit": "a274957"
+  },
+  {
+    "row": "VAL1 O6",
+    "plant": "a: OwnDamaged with another order is accepted",
+    "files": [
+      {
+        "file": "crates/turts_mod_runtime/src/mp1_validation.rs",
+        "edit": {
+          "old": "if entry.target == SmartTarget::OwnDamaged && order.behaviour != Behaviour::Repair",
+          "new": "if false && entry.target == SmartTarget::OwnDamaged && order.behaviour != Behaviour::Repair"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_mod_runtime",
+      "--locked",
+      "--test",
+      "val1",
+      "o1_to_o10_orders_and_rules",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "O6 OwnDamaged needs a Repair order: the package passes, a refusal was expected",
+    "exit": 101,
+    "expected_selected": 1,
+    "commit": "a274957"
+  },
+  {
+    "row": "VAL1 O6",
+    "plant": "b: Ground with needs Producer and another order is accepted",
+    "files": [
+      {
+        "file": "crates/turts_mod_runtime/src/mp1_validation.rs",
+        "edit": {
+          "old": "            && order.behaviour != Behaviour::SetRally\n",
+          "new": "            && order.behaviour != Behaviour::SetRally\n            && false\n"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_mod_runtime",
+      "--locked",
+      "--test",
+      "val1",
+      "o1_to_o10_orders_and_rules",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "O6 Ground with needs Producer needs a SetRally order: the package passes, a refusal was expected",
+    "exit": 101,
+    "expected_selected": 1,
+    "commit": "a274957"
+  },
+  {
+    "row": "VAL1 R1",
+    "plant": "a: a repair rate of 0 is accepted",
+    "files": [
+      {
+        "file": "crates/turts_mod_runtime/src/mp1_validation.rs",
+        "edit": {
+          "old": "if repairer.rate_per_second == 0",
+          "new": "if false && repairer.rate_per_second == 0"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_mod_runtime",
+      "--locked",
+      "--test",
+      "val1",
+      "r1_repairer",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "R1 rate_per_second 0: the package passes, a refusal was expected",
+    "exit": 101,
+    "expected_selected": 1,
+    "commit": "a274957"
+  },
+  {
+    "row": "VAL1 M2",
+    "plant": "a: a countdown above 30 is accepted",
+    "files": [
+      {
+        "file": "crates/turts_mod_runtime/src/mp1_validation.rs",
+        "edit": {
+          "old": "if countdown > 30",
+          "new": "if false && countdown > 30"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_mod_runtime",
+      "--locked",
+      "--test",
+      "val1",
+      "m1_m2_h15_the_match_file",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "M2 countdown_secs 0 to 30: the package passes, a refusal was expected",
+    "exit": 101,
+    "expected_selected": 1,
+    "commit": "a274957"
+  },
+  {
+    "row": "VAL1 H15",
+    "plant": "a: fewer colours than slots are accepted",
+    "files": [
+      {
+        "file": "crates/turts_mod_runtime/src/mp1_validation.rs",
+        "edit": {
+          "old": "if colours.len() < slots.len()",
+          "new": "if false && colours.len() < slots.len()"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_mod_runtime",
+      "--locked",
+      "--test",
+      "val1",
+      "m1_m2_h15_the_match_file",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "H15 one different colour for each player slot: the package passes, a refusal was expected",
+    "exit": 101,
+    "expected_selected": 1,
+    "commit": "a274957"
+  },
+  {
+    "row": "VAL1 M1",
+    "plant": "a: two DisconnectedFor clauses are accepted",
+    "files": [
+      {
+        "file": "crates/turts_mod_runtime/src/mp1_validation.rs",
+        "edit": {
+          "old": "if disconnects > 1",
+          "new": "if false && disconnects > 1"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_mod_runtime",
+      "--locked",
+      "--test",
+      "val1",
+      "m1_m2_h15_the_match_file",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "M1 DisconnectedFor at most once: the package passes, a refusal was expected",
+    "exit": 101,
+    "expected_selected": 1,
+    "commit": "a274957"
+  },
+  {
+    "row": "VAL1 plant (4)",
+    "plant": "a: the key check is off: an unknown reason key packs",
+    "files": [
+      {
+        "file": "crates/turts_mod_runtime/src/mp1_validation.rs",
+        "edit": {
+          "old": "            if !allowed.contains(&key.as_str()) {",
+          "new": "            if false && !allowed.contains(&key.as_str()) {"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_mod_runtime",
+      "--locked",
+      "--test",
+      "val1",
+      "h1_h2_h3_the_key_lists",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "H1 an unknown reason key: the package passes, a refusal was expected",
+    "exit": 101,
+    "expected_selected": 1,
+    "commit": "a274957"
+  },
+  {
+    "row": "VAL1 H6",
+    "plant": "a: State with an event trigger is accepted",
+    "files": [
+      {
+        "file": "crates/turts_mod_runtime/src/mp1_validation.rs",
+        "edit": {
+          "old": "if alert.kind == AlertKind::State && !is_state_trigger(&alert.trigger)",
+          "new": "if false && alert.kind == AlertKind::State && !is_state_trigger(&alert.trigger)"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_mod_runtime",
+      "--locked",
+      "--test",
+      "val1",
+      "h4_h5_h6_h17_h21_h22_alerts",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "H6 State needs a state trigger: the package passes, a refusal was expected",
+    "exit": 101,
+    "expected_selected": 1,
+    "commit": "a274957"
+  },
+  {
+    "row": "VAL1 H17",
+    "plant": "a: an unknown placeholder is accepted",
+    "files": [
+      {
+        "file": "crates/turts_mod_runtime/src/mp1_validation.rs",
+        "edit": {
+          "old": "if !position && !allowed.contains(&token)",
+          "new": "if false && !position && !allowed.contains(&token)"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_mod_runtime",
+      "--locked",
+      "--test",
+      "val1",
+      "h4_h5_h6_h17_h21_h22_alerts",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "H17 an unknown placeholder in an alert text: the package passes, a refusal was expected",
+    "exit": 101,
+    "expected_selected": 1,
+    "commit": "a274957"
+  },
+  {
+    "row": "VAL1 H21",
+    "plant": "a: QueueEmpty with another trigger is accepted",
+    "files": [
+      {
+        "file": "crates/turts_mod_runtime/src/mp1_validation.rs",
+        "edit": {
+          "old": "        if alert.sound_when == SoundWhen::QueueEmpty",
+          "new": "        if false\n            && alert.sound_when == SoundWhen::QueueEmpty"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_mod_runtime",
+      "--locked",
+      "--test",
+      "val1",
+      "h4_h5_h6_h17_h21_h22_alerts",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "H21 QueueEmpty needs ProductionComplete: the package passes, a refusal was expected",
+    "exit": 101,
+    "expected_selected": 1,
+    "commit": "a274957"
+  },
+  {
+    "row": "VAL1 H24",
+    "plant": "a: a unit_labels size outside 8 to 32 is accepted",
+    "files": [
+      {
+        "file": "crates/turts_mod_runtime/src/mp1_validation.rs",
+        "edit": {
+          "old": "            if !(8..=32).contains(&labels.size) {",
+          "new": "            if false && !(8..=32).contains(&labels.size) {"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_mod_runtime",
+      "--locked",
+      "--test",
+      "val1",
+      "h11_h24_world_styles",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "H24 unit_labels size 8 to 32: the package passes, a refusal was expected",
+    "exit": 101,
+    "expected_selected": 1,
+    "commit": "a274957"
+  },
+  {
+    "row": "VAL1 H14",
+    "plant": "a: a duplicate hint id is accepted",
+    "files": [
+      {
+        "file": "crates/turts_mod_runtime/src/mp1_validation.rs",
+        "edit": {
+          "old": "if !ids.insert(hint.id.as_str())",
+          "new": "if false && !ids.insert(hint.id.as_str())"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_mod_runtime",
+      "--locked",
+      "--test",
+      "val1",
+      "h14_hints",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "H14 hint ids are unique: the package passes, a refusal was expected",
+    "exit": 101,
+    "expected_selected": 1,
+    "commit": "a274957"
+  },
+  {
+    "row": "VAL1 H16",
+    "plant": "a: effects_voices above 64 is accepted",
+    "files": [
+      {
+        "file": "crates/turts_mod_runtime/src/mp1_validation.rs",
+        "edit": {
+          "old": "            && !(1..=64).contains(&voices)",
+          "new": "            && !(1..=64).contains(&voices)\n            && false"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_mod_runtime",
+      "--locked",
+      "--test",
+      "val1",
+      "h16_h18_h20_interface_fields",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "H16 effects_voices 1 to 64: the package passes, a refusal was expected",
+    "exit": 101,
+    "expected_selected": 1,
+    "commit": "a274957"
+  },
+  {
+    "row": "KEY1 (b)",
+    "plant": "a: two actions on one default key are accepted",
+    "files": [
+      {
+        "file": "crates/turts_mod_runtime/src/mp1_validation.rs",
+        "edit": {
+          "old": "                        && *other != action.name\n",
+          "new": "                        && *other != action.name\n                        && false\n"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_mod_runtime",
+      "--locked",
+      "--test",
+      "val1",
+      "key1_b_unique_default_keys",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "called `Result::unwrap_err()` on an `Ok` value",
+    "exit": 101,
+    "expected_selected": 1,
+    "commit": "a274957"
+  },
+  {
+    "row": "KEY1 (c)",
+    "plant": "a: a default on Ctrl and KeyT is accepted",
+    "files": [
+      {
+        "file": "crates/turts_mod_runtime/src/content_mc_validation.rs",
+        "edit": {
+          "old": "    if reserved {",
+          "new": "    if false && reserved {"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_mod_runtime",
+      "--locked",
+      "--test",
+      "val1",
+      "key1_c_reserved_browser_keys",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "called `Result::unwrap_err()` on an `Ok` value",
+    "exit": 101,
+    "expected_selected": 1,
+    "commit": "a274957"
+  },
+  {
+    "row": "VAL1 A1",
+    "plant": "a: a second damage table is accepted",
+    "files": [
+      {
+        "file": "crates/turts_mod_runtime/src/mp1_validation.rs",
+        "edit": {
+          "old": "if let [first, _, ..] = self.combat.as_slice()",
+          "new": "if false && let [first, _, ..] = self.combat.as_slice()"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_mod_runtime",
+      "--locked",
+      "--test",
+      "val1",
+      "a1_a2_the_export_groups",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "A1 two damage tables: the package passes, a refusal was expected",
+    "exit": 101,
+    "expected_selected": 1,
+    "commit": "a274957"
+  },
+  {
+    "row": "VAL1 A2",
+    "plant": "a: a second match file is accepted",
+    "files": [
+      {
+        "file": "crates/turts_mod_runtime/src/mp1_validation.rs",
+        "edit": {
+          "old": "if self.manifest_exports_match > 1",
+          "new": "if false && self.manifest_exports_match > 1"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_mod_runtime",
+      "--locked",
+      "--test",
+      "val1",
+      "a1_a2_the_export_groups",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "A2 two match files: the package passes, a refusal was expected",
+    "exit": 101,
+    "expected_selected": 1,
+    "commit": "a274957"
+  },
+  {
+    "row": "VAL1 C1",
+    "plant": "a: an empty damage_types is accepted",
+    "files": [
+      {
+        "file": "crates/turts_mod_runtime/src/mp1_validation.rs",
+        "edit": {
+          "old": "if list.is_empty()",
+          "new": "if false && list.is_empty()"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_mod_runtime",
+      "--locked",
+      "--test",
+      "val1",
+      "c1_c3_the_damage_table",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "right: \"val1/combat/damage.ron: damage_types: needs at least 1 entry\"",
+    "exit": 101,
+    "expected_selected": 1,
+    "commit": "a274957"
+  },
+  {
+    "row": "VAL1 C3",
+    "plant": "a: a missing cell for a pair is accepted",
+    "files": [
+      {
+        "file": "crates/turts_mod_runtime/src/mp1_validation.rs",
+        "edit": {
+          "old": "                    if !pairs.contains(&(damage.as_str(), armour.as_str())) {",
+          "new": "                    if false && !pairs.contains(&(damage.as_str(), armour.as_str())) {"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_mod_runtime",
+      "--locked",
+      "--test",
+      "val1",
+      "c1_c3_the_damage_table",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "C3 no cell for a pair: the package passes, a refusal was expected",
+    "exit": 101,
+    "expected_selected": 1,
+    "commit": "a274957"
+  },
+  {
+    "row": "VAL1 V3",
+    "plant": "a: a duplicate effect id is accepted",
+    "files": [
+      {
+        "file": "crates/turts_mod_runtime/src/mp1_validation.rs",
+        "edit": {
+          "old": "            if !effect_ids.insert(effect.id.as_str()) {",
+          "new": "            if !effect_ids.insert(effect.id.as_str()) && false {"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_mod_runtime",
+      "--locked",
+      "--test",
+      "val1",
+      "v3_v4_effects",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "V3 effect ids are unique: ()",
+    "exit": 101,
+    "expected_selected": 1,
+    "commit": "a274957"
+  },
+  {
+    "row": "VAL1 H23",
+    "plant": "a: leave_match is not an engine action",
+    "files": [
+      {
+        "file": "crates/turts_mod_runtime/src/content_mc_validation.rs",
+        "edit": {
+          "old": "            | \"leave_match\"\n",
+          "new": ""
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_mod_runtime",
+      "--locked",
+      "--test",
+      "val1",
+      "h23_leave_match_is_an_engine_action",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "unknown input action `leave_match`",
+    "exit": 101,
+    "expected_selected": 1,
+    "commit": "a274957"
+  },
+  {
+    "row": "VAL1 K4 lift",
+    "plant": "a: the rule \"output must be mobile\" applies to a building production",
+    "files": [
+      {
+        "file": "crates/turts_mod_runtime/src/content.rs",
+        "edit": {
+          "old": "        if !building && (output.movement.is_none() || output.producer.is_some()) {",
+          "new": "        if output.movement.is_none() || output.producer.is_some() {"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_mod_runtime",
+      "--locked",
+      "--test",
+      "val1",
+      "k4_a_building_production_may_have_a_static_output",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "output must be mobile and cannot be a producer",
+    "exit": 101,
+    "expected_selected": 1,
+    "commit": "a274957"
+  },
+  {
+    "row": "VAL1 K7",
+    "plant": "a: the M3 rule \"a unit with health requires removal\" is back",
+    "files": [
+      {
+        "file": "crates/turts_mod_runtime/src/content_m3_validation.rs",
+        "edit": {
+          "old": "        // Design 6.10 row K7 (lifted): a unit with `health` and no `removal` is the combination\n        // `health without removal` of the version table (API 0.2.4). The row refuses it for an\n        // older edition and `UNBUILT_FEATURES` holds it back until `L-DES` builds it.\n",
+          "new": "        if unit.health.is_some() && unit.removal.is_none() {\n            return Err(fail(\"health\", \"a unit with health requires removal\"));\n        }\n"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_mod_runtime",
+      "--locked",
+      "--lib",
+      "content_m3::validation::tests::the_two_lifted_m3_rules_are_gone",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "a unit with health requires removal",
+    "exit": 101,
+    "expected_selected": 1,
+    "commit": "a274957"
+  },
+  {
+    "row": "VAL1 K8",
+    "plant": "a: the M3 rule \"a unit with a queue cannot be removed\" is back",
+    "files": [
+      {
+        "file": "crates/turts_mod_runtime/src/content_m3_validation.rs",
+        "edit": {
+          "old": "        // Design 6.10 row K8 (lifted): a unit with a queue and `removal` is the combination\n        // `removal with a queue` of the version table (API 0.2.4); see row K7 above.\n",
+          "new": "        if unit.removal.is_some()\n            && (unit.producer.is_some() || unit.machine.is_some() || unit.research.is_some())\n        {\n            return Err(fail(\"removal\", \"a unit with a queue cannot be removed\"));\n        }\n"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_mod_runtime",
+      "--locked",
+      "--lib",
+      "content_m3::validation::tests::the_two_lifted_m3_rules_are_gone",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "a unit with a queue cannot be removed",
+    "exit": 101,
+    "expected_selected": 1,
+    "commit": "a274957"
+  },
+  {
+    "row": "L0-API1 review M1",
+    "plant": "a: the UNBUILT text names a plan task again",
+    "files": [
+      {
+        "file": "crates/turts_mod_runtime/src/unbuilt.rs",
+        "edit": {
+          "old": "                    \"`{}` is not built in this engine build; leave it out until an engine build supports it\",\n                    line.feature\n",
+          "new": "                    \"`{}` is not built in this engine build (task `{}`)\",\n                    line.feature, line.owner\n"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_mod_runtime",
+      "--locked",
+      "--lib",
+      "unbuilt::tests::every_raw_line_refuses_with_its_file_path_and_owner",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "is not built in this engine build (task `L-DMG`)",
+    "exit": 101,
+    "expected_selected": 1,
+    "commit": "a274957"
+  },
+  {
+    "row": "L0-API1 review M2",
+    "plant": "a: LineStyle writes `size` instead of `width`",
+    "files": [
+      {
+        "file": "crates/turts_mod_api/src/interface.rs",
+        "edit": {
+          "old": "    pub width: f32,\n",
+          "new": "    #[serde(rename = \"size\")]\n    pub width: f32,\n"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_mod_api",
+      "--locked",
+      "--test",
+      "api_0_2_4",
+      "h11_world_styles_in_the_some_form",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "interface: ",
+    "exit": 101,
+    "expected_selected": 1,
+    "commit": "a274957"
+  },
+  {
+    "row": "L0-API1 review M2",
+    "plant": "b: FloatTextStyle writes `size_px` instead of `size`",
+    "files": [
+      {
+        "file": "crates/turts_mod_api/src/interface.rs",
+        "edit": {
+          "old": "    pub size: u16,\n    #[serde(default)]\n    pub sound: Option<String>,\n}\n\n/// API 0.2.4, row H24 (erratum E22)",
+          "new": "    #[serde(rename = \"size_px\")]\n    pub size: u16,\n    #[serde(default)]\n    pub sound: Option<String>,\n}\n\n/// API 0.2.4, row H24 (erratum E22)"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_mod_api",
+      "--locked",
+      "--test",
+      "api_0_2_4",
+      "h11_world_styles_in_the_some_form",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "interface: ",
+    "exit": 101,
+    "expected_selected": 1,
+    "commit": "a274957"
+  },
+  {
+    "row": "L0-API1 review M3",
+    "plant": "a: `Sites` is a `Value` again",
+    "files": [
+      {
+        "file": "crates/turts_mod_api/src/interface.rs",
+        "edit": {
+          "old": "    Supply(ContentRef, SupplySide),\n    Connection,\n",
+          "new": "    Supply(ContentRef, SupplySide),\n    Sites,\n    Connection,\n"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_mod_api",
+      "--locked",
+      "--test",
+      "api_0_2_4",
+      "h7_the_four_list_names_are_not_values",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "the file parses, a refusal was expected",
+    "exit": 101,
+    "expected_selected": 1,
+    "commit": "a274957"
+  },
+  {
+    "row": "L0-API1 review L1",
+    "plant": "a: the client maps Ally to Same",
+    "files": [
+      {
+        "file": "crates/turts_client/src/relation.rs",
+        "edit": {
+          "old": "        SlotRelation::Ally => Relation::Ally,\n",
+          "new": "        SlotRelation::Ally => Relation::Same,\n"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_client",
+      "--locked",
+      "--lib",
+      "relation::tests::the_mapping_tells_ally_from_same_and_enemy_from_other_in_a_team_table",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "Ally an ally",
+    "exit": 101,
+    "expected_selected": 1,
+    "commit": "a274957"
+  },
+  {
+    "row": "L0-API1 review L1",
+    "plant": "b: the client maps Enemy to Other",
+    "files": [
+      {
+        "file": "crates/turts_client/src/relation.rs",
+        "edit": {
+          "old": "        SlotRelation::Enemy => Relation::Enemy,\n",
+          "new": "        SlotRelation::Enemy => Relation::Other,\n"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_client",
+      "--locked",
+      "--lib",
+      "relation::tests::the_mapping_tells_ally_from_same_and_enemy_from_other_in_a_team_table",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "Enemy an ally",
+    "exit": 101,
+    "expected_selected": 1,
+    "commit": "a274957"
+  },
+  {
+    "row": "L0-API1 review L2",
+    "plant": "a: the help does not list the UNBUILT refusal",
+    "files": [
+      {
+        "file": "crates/turts_pack/src/main.rs",
+        "edit": {
+          "old": "  - The unbuilt rule: a feature of the newest engine API that no engine build supports yet is\n    refused with `<package>/<file>: <field path>: `<feature>` is not built in this engine\n    build; leave it out until an engine build supports it`.\n",
+          "new": ""
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_pack",
+      "--locked",
+      "--test",
+      "cli",
+      "pack_cli_help_lists_the_unbuilt_refusal_and_the_edition_rule",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "usage lacks `",
+    "exit": 101,
+    "expected_selected": 1,
+    "commit": "a274957"
+  },
+  {
+    "row": "L0-API1 review L2",
+    "plant": "b: the help does not list the edition rule",
+    "files": [
+      {
+        "file": "crates/turts_pack/src/main.rs",
+        "edit": {
+          "old": "  - The edition rule: the edition of a package is the lowest engine API that its `engine_api`\n    requirement admits. A package of the edition 0.2.4 gets the checks of 0.2.4 (an unknown key\n    of `reasons`, `cursors` or `states`, a weapon `damage` of 0, and an unknown placeholder in\n    a text are refused). An older edition keeps the behaviour of its API.\n",
+          "new": ""
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_pack",
+      "--locked",
+      "--test",
+      "cli",
+      "pack_cli_help_lists_the_unbuilt_refusal_and_the_edition_rule",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "usage lacks `",
+    "exit": 101,
+    "expected_selected": 1,
+    "commit": "a274957"
+  },
+  {
+    "row": "L0-API1 review L3",
+    "plant": "a: world.float_text has no UNBUILT line",
+    "files": [
+      {
+        "file": "crates/turts_mod_runtime/src/unbuilt.rs",
+        "edit": {
+          "old": "    line(\"world.float_text\", \"L-FX-PRES\"),\n",
+          "new": ""
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_mod_runtime",
+      "--locked",
+      "--test",
+      "api_0_2_4",
+      "h11_world_float_text",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "world.float_text: the package packs, a refusal was expected",
+    "exit": 101,
+    "expected_selected": 1,
+    "commit": "a274957"
+  },
+  {
+    "row": "VAL1",
+    "plant": "b: the packer does not run the column (content ignores it): exit 2 becomes 0",
+    "files": [
+      {
+        "file": "crates/turts_mod_runtime/src/archive.rs",
+        "edit": {
+          "old": "        self.check_api_0_2_4()?;\n",
+          "new": ""
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_pack",
+      "--locked",
+      "--test",
+      "cli",
+      "pack_cli_refuses_a_value_of_the_validation_column_with_exit_2",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "Some(2)",
+    "exit": 101,
+    "expected_selected": 1,
+    "commit": "a274957"
+  }
+]
