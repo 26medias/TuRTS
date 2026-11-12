@@ -1425,7 +1425,8 @@ fn a_store_refusal_keeps_the_old_tick_and_asks_one_resync() {
     }];
     assert_eq!(
         replica.apply_delta(&bad, now),
-        DeltaOutcome::ResyncRequested
+        DeltaOutcome::ResyncRequested,
+        "a delta with a record that a store rule refuses asks for a resync"
     );
     assert_eq!(replica.last_applied_tick, Some(10));
     assert_eq!(replica.store().tick(), 10);
@@ -1477,7 +1478,8 @@ fn a_replayed_delta_refused_by_a_store_rule_changes_nothing() {
     eleven.records.supply = vec![supply(111, 40)];
     assert_eq!(
         replica.apply_snapshot(&eleven, now),
-        SnapshotOutcome::ResyncRequested { replayed: 0 }
+        SnapshotOutcome::ResyncRequested { replayed: 0 },
+        "a replayed delta that a store rule refuses fails the resync"
     );
     assert_eq!(replica.last_applied_tick, Some(10));
     assert_eq!(replica.store(), &before_store);
