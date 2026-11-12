@@ -397,16 +397,10 @@ fn job_step(job: &ProductionJob, rate: turts_rules::Ratio) -> u64 {
 }
 
 /// The progress of `job` in ticks, for the views: `elapsed_ticks` counts units of 1/Q tick, and
-/// `duration_ticks` counts ticks, so a view shows `floor(elapsed x duration / total)`. At Q = 1
-/// (`total == duration_ticks`) this is `elapsed_ticks` itself, so no number of a Q = 1 catalog
-/// changes. A job that has no total (0) shows its `elapsed_ticks`.
+/// `duration_ticks` counts ticks. At Q = 1 (`total == duration_ticks`) this is `elapsed_ticks`
+/// itself, so no number of a Q = 1 catalog changes.
 pub(crate) fn job_elapsed_ticks(job: &ProductionJob) -> u64 {
-    if job.total == 0 || job.total == job.duration_ticks {
-        return job.elapsed_ticks;
-    }
-    let ticks =
-        u128::from(job.elapsed_ticks) * u128::from(job.duration_ticks) / u128::from(job.total);
-    u64::try_from(ticks).unwrap_or(u64::MAX)
+    turts_rules::progress::base_ticks_done(job.elapsed_ticks, job.duration_ticks, job.total)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
