@@ -94,7 +94,13 @@ cleanup() {
     for pid in "$CHROME_PID" "$SERVE_PID"; do
         [[ -n "$pid" ]] && wait "$pid" 2>/dev/null || true
     done
-    rm -rf "$PROFILE" "$PROFILE.chrome.log" "$SERVE_LOG"
+    # Chrome's helper processes can still write into the profile for a moment after the main process
+    # ends ("Directory not empty"); a failed rm must not change the exit code (seen in 4 of 12 stops).
+    for _ in 1 2 3 4 5 6 7 8 9 10; do
+        rm -rf "$PROFILE" 2>/dev/null && break
+        sleep 0.3
+    done
+    rm -rf "$PROFILE" "$PROFILE.chrome.log" "$SERVE_LOG" 2>/dev/null || true
     exit "$rc"
 }
 trap cleanup EXIT

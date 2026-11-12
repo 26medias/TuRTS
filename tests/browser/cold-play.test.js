@@ -646,7 +646,11 @@ test("mp1-play.sh --url starts a Chrome that answers on the printed port, and en
         assert.equal(fs.existsSync(lines.PROFILE), false, "the profile folder is removed");
         await assert.rejects(fetch(`http://127.0.0.1:${lines.DEBUG_PORT}/json/version`), "Chrome is gone");
     } finally {
-        play.kill("SIGKILL");
+        // TERM first: the script ends its Chrome. KILL only if it does not end.
+        if (play.exitCode === null) {
+            play.kill("SIGTERM");
+            await new Promise((resolve) => { const timer = setTimeout(() => { play.kill("SIGKILL"); resolve(); }, 10000); play.once("exit", () => { clearTimeout(timer); resolve(); }); });
+        }
         server.close();
     }
 });
