@@ -16,9 +16,10 @@
 //   selectShows   false: a click selects but draws nothing
 //   selectsNothing true: a click draws the ring but selects nothing
 //   helpButton    true: a "Help" button that opens a "help_panel" widget; helpDead true: it does nothing
+//   hover         true: resting the pointer on the Help button shows a "help::tooltip" and a "help_glow" widget
 
 function fixtureGame(options = {}) {
-    const opts = { startOverlay: false, guide: null, guideWords: 12, alerts: 0, units: 3, selectShows: true, selectsNothing: false, helpButton: false, helpDead: false, ...options };
+    const opts = { startOverlay: false, guide: null, guideWords: 12, alerts: 0, units: 3, selectShows: true, selectsNothing: false, helpButton: false, helpDead: false, hover: false, ...options };
     return `<!doctype html><meta charset="utf-8"><title>fixture game</title>
 <body style="margin:0;background:#1c1f26;font:16px sans-serif;color:#fff;overflow:hidden">
 <style>
@@ -81,6 +82,8 @@ if (overlay) overlay.addEventListener("mousedown", () => overlay.remove());
 const guide = document.getElementById("guide");
 if (guide) document.getElementById("guide_close").addEventListener("mousedown", () => guide.remove());
 const help = document.getElementById("help");
+let hovered = false;
+if (help) { help.addEventListener("mouseenter", () => { hovered = OPTS.hover; }); help.addEventListener("mouseleave", () => { hovered = false; }); }
 if (help && !OPTS.helpDead) help.addEventListener("mousedown", () => { const panel = document.getElementById("help_panel"); panel.style.display = panel.style.display === "block" ? "none" : "block"; });
 const rect = (el) => { const r = el.getBoundingClientRect(); return [r.x, r.y, r.width, r.height]; };
 const present = (id) => !!document.getElementById(id) && document.body.contains(document.getElementById(id));
@@ -94,6 +97,7 @@ function widgets() {
     if (g && document.body.contains(g)) { w("guide", "widget", g); w("guide_copy", "widget", copy, { text: copy.textContent }); w("guide_close", "button", document.getElementById("guide_close"), { text: "Close" }); }
     document.querySelectorAll(".alert").forEach((el, k) => w("alert_rows/alert_line[" + k + "]", "button", el, { text: el.textContent }));
     if (help) { w("help", "button", help, { text: "Help" }); const p = document.getElementById("help_panel"); if (p.style.display === "block") w("help_panel", "widget", p, { text: "Help text" }); }
+    if (hovered) { list.push({ id: "help::tooltip", kind: "widget", rect: [1100, 52, 90, 20], visible: true, enabled: true, text: "Help tip" }); list.push({ id: "help_glow", kind: "widget", rect: [1096, 16, 88, 38], visible: true, enabled: true, text: null }); }
     const sp = document.getElementById("selection_panel");
     if (sp.style.display === "block") w("selection_panel", "widget", sp, { text: sp.textContent });
     return list;

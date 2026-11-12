@@ -112,6 +112,7 @@ test("wordCount, visibleButtons, ownUnitsOnScreen and normalisedUi", () => {
     assert.equal(ownUnitsOnScreen({ slot: 0, units: [] }, { width: 1280, height: 720 }, 60).length, 0);
     const before = normalisedUi([{ id: "x", visible: true, text: "a", rect: [1.2, 2, 3, 4] }, { id: "focus_overlay", kind: "focus_overlay", visible: true, rect: [0, 0, 9, 9] }]);
     assert.deepEqual(Object.keys(before), ["x"], "the start overlay is not part of the record that a click is judged by");
+    assert.deepEqual(Object.keys(normalisedUi([{ id: "b", visible: true, rect: [0, 0, 1, 1] }, { id: "b::tooltip", visible: true, text: "tip", rect: [0, 0, 1, 1] }])), ["b"], "a tooltip is hover feedback, not a click effect");
 });
 
 // ---- A real Chrome and the fixture pages -------------------------------------------------------------
@@ -312,7 +313,7 @@ test("buttons probe: a button that the start overlay covers loses its first clic
     assert.equal(lost.record.buttons[0].acted, false);
     assert.equal(lost.record.buttons[0].id, "help");
     const inputs = fs.readFileSync(path.join(lost.dir, "inputs.jsonl"), "utf8").trim().split("\n").map((line) => JSON.parse(line));
-    assert.deepEqual(inputs.map((input) => input.cmd), ["click"], "one click for one button, no start click first");
+    assert.deepEqual(inputs.map((input) => input.cmd), ["move", "click"], "the pointer rests on the button, then one click; no start click first");
     const acts = await probe("buttons", { ...GREEN, startOverlay: false, helpButton: true });
     assert.equal(acts.record.summary.verdict, "PASS", JSON.stringify(acts.record));
     assert.equal(acts.record.buttons[0].acted, true);
@@ -328,6 +329,15 @@ test("buttons probe: a start overlay that vanishes on the first click does not c
     const { record } = await probe("buttons", { ...GREEN, helpButton: true, helpDead: true });
     assert.equal(record.buttons[0].acted, false, "the overlay left, the button did nothing");
     assert.deepEqual(record.buttons[0].changed_ids, []);
+});
+
+test("buttons probe: what the pointer resting on a button shows (a tooltip, a glow) is not the click acting", { skip, timeout: 120000 }, async () => {
+    const { record } = await probe("buttons", { ...GREEN, startOverlay: false, helpButton: true, helpDead: true, hover: true });
+    assert.equal(record.buttons[0].acted, false, JSON.stringify(record.buttons[0]));
+    assert.deepEqual(record.buttons[0].changed_ids, []);
+    const live = await probe("buttons", { ...GREEN, startOverlay: false, helpButton: true, hover: true });
+    assert.equal(live.record.buttons[0].acted, true, "a button that acts is still seen to act");
+    assert.deepEqual(live.record.buttons[0].changed_ids, ["help_panel"]);
 });
 
 // ---- The verdict line ----------------------------------------------------------------------------------

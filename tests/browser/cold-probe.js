@@ -12,8 +12,9 @@
 //                other input. For each click it records the selection after the click and the pixel change at
 //                +200 ms in a box around the point and in the whole page. PASS only when every click gives a
 //                selection that holds the clicked unit AND a visible change (condition M1).
-//   buttons      No start click. One click on each button that the UI record shows as visible, one time, top to
-//                bottom. A button "acted" when the UI record changed (the start overlay left out) or the page
+//   buttons      No start click. For each button that the UI record shows as visible, top to bottom: the pointer
+//                moves onto it, rests 300 ms (its hover feedback, such as a tooltip, is not the click), and one
+//                left click follows. A button "acted" when the UI record changed (the start overlay left out) or the page
 //                changed. A button whose first click is lost (a layer takes it) is the failure sign F8.
 //
 // The probes read the bridges (turts_debug, turts_scene, turts_ui). This file is role `instrument`: nothing of
@@ -88,6 +89,8 @@ function normalisedUi(ui) {
     const record = {};
     for (const widget of ui) {
         if (widget.kind === "focus_overlay" || String(widget.id).startsWith("focus_overlay")) continue;
+        // A tooltip shows when the pointer rests on a control: hover feedback, not the effect of a click.
+        if (String(widget.id).endsWith("::tooltip")) continue;
         record[widget.id] = JSON.stringify([widget.visible, widget.enabled, widget.text ?? null, (widget.rect ?? []).map(Math.round)]);
     }
     return record;
@@ -218,7 +221,10 @@ async function buttons(session, options) {
         const button = world.ui.find((widget) => widget.id === listed.id);
         if (!button || !visibleButtons([button], viewport).length) { record.buttons.push({ n: number, id: listed.id, skipped: "not visible at its turn", acted: true }); continue; }
         const [x, y] = center(button.rect);
-        const before = normalisedUi(world.ui);
+        // The pointer rests on the button first, as a person's does: what the hover shows is not the click.
+        await session.handle({ cmd: "move", args: [String(x), String(y)] });
+        await session.sleep(300);
+        const before = normalisedUi((await session.readWorld()).ui);
         const a = await session.shot(`probe-${pad(number)}-a`, session.t());
         await session.sleep(200);
         const b = await session.shot(`probe-${pad(number)}-b`, session.t());
