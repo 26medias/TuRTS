@@ -12,6 +12,7 @@ test-probes = []
 
 [dependencies]
 turts_mod_api = { path = "../turts_mod_api" }
+turts_rules = { path = "../turts_rules" }
 bevy_app = { workspace = true }
 bevy_ecs = { workspace = true }
 bevy_time = { workspace = true }

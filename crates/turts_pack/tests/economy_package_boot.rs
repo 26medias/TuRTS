@@ -486,6 +486,9 @@ fn cedar_matches_the_public_ten_file_authoring_example() {
         interface: vec!["interface/hud.ron".into()],
         input: vec!["input/bindings.ron".into()],
         assets: vec!["assets/assets.ron".into()],
+        combat: Vec::new(),
+        match_files: Vec::new(),
+        visual_effects: Vec::new(),
     };
     assert_eq!(archive.manifest.exports, expected_exports);
     assert_eq!(
@@ -530,6 +533,7 @@ fn cedar_matches_the_public_ten_file_authoring_example() {
                     recipes: vec!["cedar:hire".into()],
                     queue_capacity: 5,
                     spawn_offsets: vec![WorldPos { x: 0.0, y: 4.0 }, WorldPos { x: 0.0, y: -4.0 },],
+                    when_short: Vec::new(),
                 }),
                 output_inventory: None,
                 extractor: None,
@@ -540,6 +544,16 @@ fn cedar_matches_the_public_ten_file_authoring_example() {
                 health: None,
                 weapon: None,
                 removal: None,
+                armour: None,
+                acquire: None,
+                provides: Vec::new(),
+                consumes: Vec::new(),
+                income: None,
+                spawn_order: None,
+                constructor: None,
+                placement: None,
+                build_area: None,
+                repairer: None,
             },
             UnitDef {
                 id: "worker".into(),
@@ -567,6 +581,16 @@ fn cedar_matches_the_public_ten_file_authoring_example() {
                 health: None,
                 weapon: None,
                 removal: None,
+                armour: None,
+                acquire: None,
+                provides: Vec::new(),
+                consumes: Vec::new(),
+                income: None,
+                spawn_order: None,
+                constructor: None,
+                placement: None,
+                build_area: None,
+                repairer: None,
             },
         ]
     );
@@ -615,7 +639,10 @@ fn cedar_matches_the_public_ten_file_authoring_example() {
                     numerator: 1,
                     denominator: 1
                 },
+                destroyed: turts_mod_api::RefundRatio::ZERO,
             },
+            card: None,
+            hotkey: None,
         }]
     );
     assert_eq!(
@@ -633,6 +660,8 @@ fn cedar_matches_the_public_ten_file_authoring_example() {
                     y: 3.0,
                     z: 2.0
                 },
+                effects: None,
+                model: None,
             },
             VisualDef {
                 target: VisualTarget::Unit("cedar:worker".into()),
@@ -640,6 +669,8 @@ fn cedar_matches_the_public_ten_file_authoring_example() {
                     radius: 0.3,
                     height: 1.6
                 },
+                effects: None,
+                model: None,
             },
             VisualDef {
                 target: VisualTarget::Node("cedar:grove".into()),
@@ -648,6 +679,8 @@ fn cedar_matches_the_public_ten_file_authoring_example() {
                     y: 1.4,
                     z: 0.7
                 },
+                effects: None,
+                model: None,
             },
         ]
     );
@@ -667,6 +700,7 @@ fn cedar_matches_the_public_ten_file_authoring_example() {
                     }],
 
                     facing: None,
+                    start_order: None,
                 },
                 Placement {
                     unit: "cedar:worker".into(),
@@ -675,6 +709,7 @@ fn cedar_matches_the_public_ten_file_authoring_example() {
                     contents: vec![],
 
                     facing: None,
+                    start_order: None,
                 },
                 Placement {
                     unit: "cedar:worker".into(),
@@ -683,6 +718,7 @@ fn cedar_matches_the_public_ten_file_authoring_example() {
                     contents: vec![],
 
                     facing: None,
+                    start_order: None,
                 },
                 Placement {
                     unit: "cedar:depot".into(),
@@ -694,6 +730,7 @@ fn cedar_matches_the_public_ten_file_authoring_example() {
                     }],
 
                     facing: None,
+                    start_order: None,
                 },
                 Placement {
                     unit: "cedar:worker".into(),
@@ -702,6 +739,7 @@ fn cedar_matches_the_public_ten_file_authoring_example() {
                     contents: vec![],
 
                     facing: None,
+                    start_order: None,
                 },
                 Placement {
                     unit: "cedar:worker".into(),
@@ -710,6 +748,7 @@ fn cedar_matches_the_public_ten_file_authoring_example() {
                     contents: vec![],
 
                     facing: None,
+                    start_order: None,
                 },
             ],
             nodes: vec![

@@ -574,6 +574,7 @@ mod tests {
                 pos: WorldPos { x: 8.0, y: 8.0 },
                 contents: Vec::new(),
                 facing: None,
+                start_order: None,
             }],
             nodes: Vec::new(),
             slot_economy: Vec::new(),

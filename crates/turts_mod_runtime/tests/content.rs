@@ -51,6 +51,16 @@ fn valid_worker() -> SourceDef<UnitDef> {
             health: None,
             weapon: None,
             removal: None,
+            armour: None,
+            acquire: None,
+            provides: Vec::new(),
+            consumes: Vec::new(),
+            income: None,
+            spawn_order: None,
+            constructor: None,
+            placement: None,
+            build_area: None,
+            repairer: None,
         },
     )
 }
@@ -170,11 +180,23 @@ fn public_validate_content_preserves_m3_unit_capabilities() {
                 targets: TargetFilter {
                     slots: SlotRelation::Other,
                 },
+                damage_type: None,
+                when_short: Vec::new(),
             }),
             removal: Some(RemovalDef {
                 by_command: false,
                 contents: ContentsPolicy::Destroy,
             }),
+            armour: None,
+            acquire: None,
+            provides: Vec::new(),
+            consumes: Vec::new(),
+            income: None,
+            spawn_order: None,
+            constructor: None,
+            placement: None,
+            build_area: None,
+            repairer: None,
         },
     );
     let catalog = validate_content(
@@ -291,6 +313,16 @@ fn duplicate_keys_and_cross_kind_ids_reject() {
                 health: None,
                 weapon: None,
                 removal: None,
+                armour: None,
+                acquire: None,
+                provides: Vec::new(),
+                consumes: Vec::new(),
+                income: None,
+                spawn_order: None,
+                constructor: None,
+                placement: None,
+                build_area: None,
+                repairer: None,
             },
         )],
         vec![resource("wood", ResourceKind::Item)],
@@ -373,6 +405,16 @@ fn capability_and_recipe_matrix() {
             health: None,
             weapon: None,
             removal: None,
+            armour: None,
+            acquire: None,
+            provides: Vec::new(),
+            consumes: Vec::new(),
+            income: None,
+            spawn_order: None,
+            constructor: None,
+            placement: None,
+            build_area: None,
+            repairer: None,
         },
     );
     assert!(validate(vec![static_unit.clone()], vec![spaced], vec![], vec![]).is_ok());
@@ -458,6 +500,7 @@ fn capability_and_recipe_matrix() {
         recipes: vec!["cedar:hire".into()],
         queue_capacity: 1,
         spawn_offsets: vec![turts_mod_api::schema::WorldPos { x: 0.0, y: 1.0 }],
+        when_short: Vec::new(),
     });
     let error = validate(
         vec![mobile_producer],
@@ -484,6 +527,7 @@ fn capability_and_recipe_matrix() {
             recipes: vec!["cedar:hire".into()],
             queue_capacity: 1,
             spawn_offsets: vec![turts_mod_api::schema::WorldPos { x: 0.0, y: 1.0 }],
+            when_short: Vec::new(),
         }),
         output_inventory: None,
         extractor: None,
@@ -494,6 +538,16 @@ fn capability_and_recipe_matrix() {
         health: None,
         weapon: None,
         removal: None,
+        armour: None,
+        acquire: None,
+        provides: Vec::new(),
+        consumes: Vec::new(),
+        income: None,
+        spawn_order: None,
+        constructor: None,
+        placement: None,
+        build_area: None,
+        repairer: None,
     };
     let worker = UnitDef {
         movement: Some(MovementDef { speed: 1.0 }),
@@ -520,7 +574,10 @@ fn capability_and_recipe_matrix() {
                 numerator: 1,
                 denominator: 1,
             },
+            destroyed: turts_mod_api::RefundRatio::ZERO,
         },
+        card: None,
+        hotkey: None,
     };
     let good_costs = vec![
         Cost {
@@ -591,6 +648,16 @@ fn capability_and_recipe_matrix() {
         health: None,
         weapon: None,
         removal: None,
+        armour: None,
+        acquire: None,
+        provides: Vec::new(),
+        consumes: Vec::new(),
+        income: None,
+        spawn_order: None,
+        constructor: None,
+        placement: None,
+        build_area: None,
+        repairer: None,
     };
     let error = validate(
         vec![source("units/worker.ron", static_worker)],
@@ -639,6 +706,7 @@ fn late_producer_cost_errors_keep_definition_file_and_both_indexes() {
             recipes: vec!["cedar:free".into(), "cedar:hire".into()],
             queue_capacity: 2,
             spawn_offsets: vec![turts_mod_api::schema::WorldPos { x: 0.0, y: 1.0 }],
+            when_short: Vec::new(),
         }),
         output_inventory: None,
         extractor: None,
@@ -649,6 +717,16 @@ fn late_producer_cost_errors_keep_definition_file_and_both_indexes() {
         health: None,
         weapon: None,
         removal: None,
+        armour: None,
+        acquire: None,
+        provides: Vec::new(),
+        consumes: Vec::new(),
+        income: None,
+        spawn_order: None,
+        constructor: None,
+        placement: None,
+        build_area: None,
+        repairer: None,
     };
     let worker = UnitDef {
         id: "worker".into(),
@@ -668,6 +746,16 @@ fn late_producer_cost_errors_keep_definition_file_and_both_indexes() {
         health: None,
         weapon: None,
         removal: None,
+        armour: None,
+        acquire: None,
+        provides: Vec::new(),
+        consumes: Vec::new(),
+        income: None,
+        spawn_order: None,
+        constructor: None,
+        placement: None,
+        build_area: None,
+        repairer: None,
     };
     let no_costs = |id: &str| ProductionDef {
         id: id.into(),
@@ -689,7 +777,10 @@ fn late_producer_cost_errors_keep_definition_file_and_both_indexes() {
                 numerator: 1,
                 denominator: 1,
             },
+            destroyed: turts_mod_api::RefundRatio::ZERO,
         },
+        card: None,
+        hotkey: None,
     };
     let mut bad_cost_recipe = no_costs("hire");
     bad_cost_recipe.costs.push(Cost {

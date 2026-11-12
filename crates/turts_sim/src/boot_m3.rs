@@ -1161,6 +1161,7 @@ mod tests {
                         numerator: 0,
                         denominator: 1,
                     },
+                    destroyed: turts_mod_api::RefundRatio::ZERO,
                 },
             },
         );

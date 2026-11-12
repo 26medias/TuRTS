@@ -1,0 +1,31 @@
+input=/tmp/claude-1000/-home-julien-Projects-TuRTS/bf418660-b272-4bb3-8628-8d9ef2677d1d/scratchpad/pres-probe/tank_bad.glb bytes=6628
+late_insert=false asset_path=tank.glb
+plugins=TaskPool,Asset,Transform,Mesh,WorldSerialization,Gltf pbr=false
+loaded_with_dependencies=true updates=1
+named_nodes=["hull", "muzzle", "tank", "turret"]
+named_materials=["body", "team"]
+n_nodes=4 n_meshes=2 n_materials=2 n_scenes=1
+node[0] name="tank" translation=Vec3(0.0, 0.0, 0.0) children=2 mesh=false
+node[1] name="hull" translation=Vec3(0.0, 0.0, 0.0) children=0 mesh=true
+    mesh "hull" primitive 0 tris=36 material_is_Option<Handle<GltfMaterial>>=true base_color=Some(Some(LinearRgba(LinearRgba { red: 0.45, green: 0.42, blue: 0.38, alpha: 1.0 })))
+    mesh "hull" primitive 1 tris=12 material_is_Option<Handle<GltfMaterial>>=true base_color=Some(Some(LinearRgba(LinearRgba { red: 1.0, green: 1.0, blue: 1.0, alpha: 1.0 })))
+node[2] name="turret" translation=Vec3(0.0, 0.4, 0.0) children=1 mesh=true
+    mesh "turret" primitive 0 tris=12 material_is_Option<Handle<GltfMaterial>>=true base_color=Some(Some(LinearRgba(LinearRgba { red: 1.0, green: 1.0, blue: 1.0, alpha: 1.0 })))
+    mesh "turret" primitive 1 tris=12 material_is_Option<Handle<GltfMaterial>>=true base_color=Some(Some(LinearRgba(LinearRgba { red: 0.45, green: 0.42, blue: 0.38, alpha: 1.0 })))
+node[3] name="muzzle" translation=Vec3(0.0, 0.12, 0.85) children=0 mesh=false
+triangles_total=72 (hull 36 + hull_team 12 + turret 24 = 72 expected)
+material body: gltf label=Material0 std label=Material0/std named_materials_has=true
+material team: gltf label=Material1 std label=Material1/std named_materials_has=true
+--- hierarchy of unit A after 4 updates (no pbr) ---
+60v0 name="" components=["GlobalTransform", "Transform", "TransformTreeChanged", "Visibility", "InheritedVisibility", "ViewVisibility", "WorldAssetRoot", "Children", "WorldInstance"]
+    62v0 name="Scene0" components=["GlobalTransform", "ChildOf", "Transform", "TransformTreeChanged", "Visibility", "InheritedVisibility", "ViewVisibility", "Children", "Name"]
+        64v0 name="tank" components=["GlobalTransform", "ChildOf", "Transform", "TransformTreeChanged", "Visibility", "InheritedVisibility", "ViewVisibility", "Children", "Name"]
+            65v0 name="hull" components=["GlobalTransform", "ChildOf", "Transform", "TransformTreeChanged", "Visibility", "InheritedVisibility", "ViewVisibility", "Children", "Name"]
+                67v0 name="hull.body" components=["GlobalTransform", "ChildOf", "Transform", "TransformTreeChanged", "Mesh3d", "Name", "Aabb", "GltfMeshName", "GltfMaterialName"]
+                68v0 name="hull.team" components=["GlobalTransform", "ChildOf", "Transform", "TransformTreeChanged", "Mesh3d", "Name", "Aabb", "GltfMeshName", "GltfMaterialName"]
+            66v0 name="turret" components=["GlobalTransform", "ChildOf", "Transform", "TransformTreeChanged", "Visibility", "InheritedVisibility", "ViewVisibility", "Children", "Name"]
+                69v0 name="turret.team" components=["GlobalTransform", "ChildOf", "Transform", "TransformTreeChanged", "Mesh3d", "Name", "Aabb", "GltfMeshName", "GltfMaterialName"]
+                70v0 name="turret.body" components=["GlobalTransform", "ChildOf", "Transform", "TransformTreeChanged", "Mesh3d", "Name", "Aabb", "GltfMeshName", "GltfMaterialName"]
+                63v0 name="muzzle" components=["GlobalTransform", "ChildOf", "Transform", "TransformTreeChanged", "Visibility", "InheritedVisibility", "ViewVisibility", "Name"]
+entities with GltfMaterialName+Mesh3d (two units)=8
+NOPBR: no StandardMaterial type in the app: no `Material{n}/std` asset exists

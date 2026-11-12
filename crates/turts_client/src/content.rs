@@ -33,6 +33,7 @@ impl Default for ClientContent {
             order_rules: OrderRulesDef {
                 queue_depth: turts_mod_api::DEFAULT_QUEUE_DEPTH,
                 smart: Vec::new(),
+                rally: None,
             },
             selection_priority: Vec::new(),
             camera: None,
@@ -60,6 +61,7 @@ impl ClientContent {
         let mut order_rules = OrderRulesDef {
             queue_depth: turts_mod_api::DEFAULT_QUEUE_DEPTH,
             smart: Vec::new(),
+            rally: None,
         };
         let mut selection_priority = Vec::new();
         let mut camera = None;

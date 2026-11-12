@@ -1,4 +1,4 @@
-use crate::{ContentRef, orders::Capability};
+use crate::{ContentRef, Written, orders::Capability};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
@@ -18,6 +18,27 @@ pub struct InterfaceDef {
     pub units: BTreeMap<ContentRef, UnitPresentation>,
     pub selection_priority: Vec<ContentRef>,
     pub guide: Vec<GuidePage>,
+    /// API 0.2.4, row H14: the hints of the player guide, in order.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub hints: Vec<HintDef>,
+    /// API 0.2.4, row H14: the line that shows when no hint holds.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hint_fallback: Option<String>,
+    /// API 0.2.4, row H18: the unit that is selected at the start.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub start_selection: Option<ContentRef>,
+    /// API 0.2.4, row H3: texts of the state keys (`STATE_KEYS`).
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub states: BTreeMap<String, String>,
+    /// API 0.2.4, row H16: the cap of effect sounds that play at one time.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub effects_voices: Option<u16>,
+    /// API 0.2.4, row H16: the distance at which an effect sound is silent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub audible_range: Option<f32>,
+    /// API 0.2.4, row H20: the least time between two alert sounds.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub alert_sound_gap_secs: Option<f32>,
 }
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -68,6 +89,14 @@ pub enum Primitive {
         label: Option<TextValue>,
         action: ButtonAction,
         hotkey_label: bool,
+        /// API 0.2.4, row H13. `Written` keeps the difference between an absent key and
+        /// `font: None`: an older engine refuses the key (design 6.10, "Version-table
+        /// detection"). The key is written back only when the file wrote it.
+        #[serde(default, skip_serializing_if = "Written::is_unwritten")]
+        font: Written<Option<String>>,
+        /// API 0.2.4, row H13.
+        #[serde(default, skip_serializing_if = "Written::is_unwritten")]
+        size: Written<Option<u16>>,
     },
     List {
         source: Source,
@@ -176,6 +205,39 @@ pub enum Value {
     Item(ItemField),
     Literal(String),
     Format(String, Vec<Value>),
+    /// API 0.2.4, row H7: the supply of a slot, provided or consumed.
+    Supply(ContentRef, SupplySide),
+    ConstructionQueue,
+    Sites,
+    Notices,
+    SelectionTypes,
+    Connection,
+    Outcome,
+    OutcomeReason,
+    MatchStats(StatField),
+    MatchClock,
+    Hint,
+}
+
+/// API 0.2.4, row H7.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub enum SupplySide {
+    Provided,
+    Consumed,
+}
+
+/// API 0.2.4, row H7: one count of the match statistics (design 6.7.9).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub enum StatField {
+    UnitsTrained,
+    UnitsLost,
+    UnitsDestroyed,
+    StructuresCompleted,
+    StructuresLost,
+    /// A `Balance` resource.
+    Gathered(ContentRef),
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -191,6 +253,10 @@ pub enum PrimaryField {
     Range,
     Ammo,
     Cooldown,
+    /// API 0.2.4, row H8.
+    Activity,
+    Cargo,
+    Armour,
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -210,6 +276,15 @@ pub enum ItemField {
     CancelAction,
     Title,
     Body,
+    /// API 0.2.4, row H9.
+    Role,
+    BuildTimeNow,
+    SupplyChange,
+    CausesShortage,
+    State,
+    Paid,
+    Refund,
+    Badge,
 }
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -224,6 +299,11 @@ pub enum Source {
     Alerts,
     Bindings,
     Guide,
+    /// API 0.2.4, row H7: the list sources.
+    ConstructionQueue,
+    Sites,
+    Notices,
+    SelectionTypes,
 }
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -237,6 +317,35 @@ pub enum Predicate {
     PrimaryHas(Capability),
     GuideOpen,
     Not(Box<Predicate>),
+    /// API 0.2.4, row H10.
+    ItemHas(ItemField),
+    PrimaryHasValue(PrimaryField),
+    SupplyShort(ContentRef),
+    MatchOver,
+    OutcomeIs(OutcomeKind),
+    /// The reason of the own slot (design 6.10 row H10).
+    OutcomeReasonIs(OutcomeReasonKind),
+    Placing,
+    HintShown,
+}
+
+/// API 0.2.4, row H10.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub enum OutcomeKind {
+    Victory,
+    Defeat,
+    Draw,
+}
+
+/// API 0.2.4, row H10.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub enum OutcomeReasonKind {
+    KeyUnitsLost,
+    Surrendered,
+    Disconnected,
+    OpponentsDefeated,
 }
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -353,6 +462,92 @@ pub struct WorldStyle {
     pub show_range: bool,
     pub tooltip: WorldTooltipStyle,
     pub health_bar: WorldHealthBarStyle,
+    /// API 0.2.4, row H11: the style of the placement ghost.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub placement: Option<PlacementStyle>,
+    /// API 0.2.4, row H11: the ring of the build area.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub build_area_ring: Option<LineStyle>,
+    /// API 0.2.4, row H11: the ring of the gap (it also draws the clearance ring of a node).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gap_ring: Option<LineStyle>,
+    /// API 0.2.4, row H11: the progress bar of a site.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub progress_bar: Option<BarStyle>,
+    /// API 0.2.4, row H11: the load bar of a gatherer.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cargo_bar: Option<BarStyle>,
+    /// API 0.2.4, row H11: the line to a rally point.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rally: Option<LineStyle>,
+    /// API 0.2.4, row H11: the floating text.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub float_text: Option<FloatTextStyle>,
+    /// API 0.2.4, row H24: name labels over units. `None`: no labels.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub unit_labels: Option<LabelStyle>,
+}
+
+/// API 0.2.4, row H11: the colours of the placement ghost. All three fields are required.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PlacementStyle {
+    pub valid: String,
+    pub invalid: String,
+    pub stripes: bool,
+}
+
+/// API 0.2.4, row H11: a ring or a line (a colour `#RRGGBB` and a width in pixels).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LineStyle {
+    pub colour: String,
+    pub width: f32,
+}
+
+/// API 0.2.4, row H11: a bar in the world; the fields follow `WorldHealthBarStyle`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BarStyle {
+    pub width: u16,
+    pub height: u16,
+    pub background: String,
+    pub fill: String,
+}
+
+/// API 0.2.4, row H11: floating text. `sound` is the id of a sound asset.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FloatTextStyle {
+    pub colour: String,
+    #[serde(default)]
+    pub font: Option<String>,
+    pub size: u16,
+    #[serde(default)]
+    pub sound: Option<String>,
+}
+
+/// API 0.2.4, row H24 (erratum E22): name labels over units. The label text is `UnitDef.name`.
+/// `show`, `colour` and `size` are required; `own_only` is false and `font` is `None` when
+/// absent.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LabelStyle {
+    pub show: LabelShow,
+    #[serde(default)]
+    pub own_only: bool,
+    pub colour: String,
+    #[serde(default)]
+    pub font: Option<String>,
+    pub size: u16,
+}
+
+/// API 0.2.4, row H24. There is no `Never`: `None` in `unit_labels` means no labels.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub enum LabelShow {
+    Always,
+    Selected,
 }
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -369,6 +564,9 @@ pub struct WorldHealthBarStyle {
     pub height: u16,
     pub background: String,
     pub health: String,
+    /// API 0.2.4, row H12: the bar is as wide as the footprint of the unit.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub scale_to_footprint: bool,
 }
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -381,7 +579,59 @@ pub struct AlertDef {
     pub cooldown: f32,
     pub priority: i16,
     pub coalesce_radius: f32,
+    /// API 0.2.4, row H5: the unit types that raise the alert. `[]`: all units.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub units: Vec<ContentRef>,
+    /// API 0.2.4, row H6.
+    #[serde(default, skip_serializing_if = "AlertKind::is_event")]
+    pub kind: AlertKind,
+    /// API 0.2.4, row H6: seconds that a `State` alert stays after its trigger ends.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub clear_after: Option<f32>,
+    /// API 0.2.4, row H17: a click on the alert selects its unit.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub select_on_click: bool,
+    /// API 0.2.4, row H22: the unit types that the camera goes to, in order.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub focus: Option<Vec<ContentRef>>,
+    /// API 0.2.4, row H21.
+    #[serde(default, skip_serializing_if = "SoundWhen::is_always")]
+    pub sound_when: SoundWhen,
 }
+
+/// API 0.2.4, row H6: does the alert come once (`Event`), or hold while its trigger holds
+/// (`State`)?
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub enum AlertKind {
+    #[default]
+    Event,
+    State,
+}
+
+impl AlertKind {
+    pub fn is_event(&self) -> bool {
+        *self == Self::Event
+    }
+}
+
+/// API 0.2.4, row H21.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub enum SoundWhen {
+    #[default]
+    Always,
+    /// Only with the trigger `ProductionComplete`: the sound plays when the producer queue is
+    /// empty after this completion.
+    QueueEmpty,
+}
+
+impl SoundWhen {
+    pub fn is_always(&self) -> bool {
+        *self == Self::Always
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub enum AlertTrigger {
@@ -396,6 +646,15 @@ pub enum AlertTrigger {
     OutOfAmmo,
     InserterWaiting(f32),
     GathererWaiting(f32),
+    /// API 0.2.4, row H4.
+    ConstructionComplete,
+    SupplyShort(ContentRef),
+    SupplyRestored(ContentRef),
+    InsufficientFunds(ContentRef),
+    SlotDisconnected,
+    SlotReconnected,
+    /// A gatherer that has no order, for at least the given seconds.
+    GathererIdle(f32),
 }
 impl AlertTrigger {
     pub fn waiting_seconds(&self) -> Option<f32> {
@@ -411,6 +670,9 @@ pub struct UnitPresentation {
     pub icon: Option<String>,
     pub portrait: Option<String>,
     pub responses: BTreeMap<String, Vec<String>>,
+    /// API 0.2.4, row H19: the role line of the info panel.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub role: Option<String>,
 }
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -420,4 +682,82 @@ pub struct GuidePage {
     pub body: String,
     #[serde(default)]
     pub widgets: Vec<Widget>,
+}
+
+/// API 0.2.4, row H14: one hint of the player guide. Every field is required.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct HintDef {
+    pub id: String,
+    pub kind: HintKind,
+    pub text: String,
+    pub starts: HintCondition,
+    pub done: HintCondition,
+}
+
+/// A `Step` is part of the path of a first match; a `Situation` shows when its condition holds.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub enum HintKind {
+    Step,
+    Situation,
+}
+
+/// API 0.2.4, row H14: the condition list of design 7.8.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub enum HintCondition {
+    MatchStarted,
+    OwnUnits {
+        units: Vec<ContentRef>,
+        state: OwnUnitState,
+        at_least: u16,
+    },
+    OwnJob {
+        production: ContentRef,
+    },
+    OwnRally {
+        unit: ContentRef,
+    },
+    OrderAccepted {
+        order: ContentRef,
+        target: HintTarget,
+    },
+    SupplyShort(ContentRef),
+    /// An own job has `held` true and `secs` have passed since its `held_since_tick`
+    /// (design 6.4, erratum E21).
+    JobOnHold {
+        secs: f32,
+    },
+    HintDone(String),
+    HintShownFor {
+        id: String,
+        secs: f32,
+    },
+    /// The selection holds at least one own unit of these types.
+    Selected {
+        units: Vec<ContentRef>,
+    },
+    /// The first step that is not done and whose start holds.
+    StepCurrent(String),
+    All(Vec<HintCondition>),
+    Any(Vec<HintCondition>),
+    Not(Box<HintCondition>),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub enum OwnUnitState {
+    Pending,
+    Site,
+    Complete,
+    Any,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub enum HintTarget {
+    Point,
+    Unit,
+    Any,
 }

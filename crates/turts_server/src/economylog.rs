@@ -278,6 +278,16 @@ mod tests {
                     health: None,
                     weapon: None,
                     removal: None,
+                    armour: None,
+                    acquire: None,
+                    provides: Vec::new(),
+                    consumes: Vec::new(),
+                    income: None,
+                    spawn_order: None,
+                    constructor: None,
+                    placement: None,
+                    build_area: None,
+                    repairer: None,
                 },
             )
             .unwrap();

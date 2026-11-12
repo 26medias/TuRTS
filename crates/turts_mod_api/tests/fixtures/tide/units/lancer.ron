@@ -1,0 +1,4 @@
+(id: "lancer", name: "Lancer", footprint: Circle(radius: 1.0), movement: Some((speed: 2.2)), inventory: None, gatherer: None, drop_off: None, producer: None,
+ health: Some((max: 400)), armour: Some((class: "tide:plating", flat: 2)),
+ weapon: Some((range: 6.0, cooldown_ms: 1500, damage: 40, ammo: None, targets: (slots: Enemy), damage_type: Some("tide:bolt"))),
+ acquire: Some((range: 7.0, leash: 5.0)))

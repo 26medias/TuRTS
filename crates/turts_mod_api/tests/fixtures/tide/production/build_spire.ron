@@ -1,0 +1,4 @@
+(id: "build_spire", name: "Spire", output_unit: "tide:spire", duration_ms: 14000,
+ costs: [(resource: "tide:pearls", amount: 550, source: SlotBalance)], payment: ChargeOverTime,
+ cancel_refunds: (queued: (numerator: 0, denominator: 1), running: (numerator: 1, denominator: 1), output_blocked: (numerator: 0, denominator: 1), destroyed: (numerator: 1, denominator: 4)),
+ hotkey: Some("key_spire"), card: Some((row: 0, column: 0)))

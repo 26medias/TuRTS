@@ -1,8 +1,23 @@
 #!/usr/bin/env bash
 # Browser WebGPU proof runner. No arguments runs all four public package fixtures.
+# Q-PREBUILD: `m2-browser.sh --prepare DIR` builds the server, the packer and the wasm client into DIR and
+# stops. `m2-browser.sh --prepared DIR [other options]` builds nothing: each case first checks DIR against
+# the source and refuses (exit 66) when it does not match (scripts/mc_prepare.py; the package is `mods`,
+# the whole folder, because each case packs its own copy of one package). The flag is passed to the
+# cases through M2_PREPARED. With no flag the script builds inside the run (CI), as before.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+M2_PREPARE_DIR=""
+if [[ "${1:-}" == --prepare ]]; then
+    (($# == 2)) || { echo "usage: scripts/m2-browser.sh --prepare DIR" >&2; exit 2; }
+    M2_PREPARE_DIR="$(realpath -m "$2")"
+    shift 2
+elif [[ "${1:-}" == --prepared ]]; then
+    (($# >= 2)) || { echo "--prepared requires a folder" >&2; exit 2; }
+    export M2_PREPARED="$(realpath -m "$2")"
+    shift 2
+fi
 EXPECTED_TARGET="$(realpath -m "${M2_CARGO_TARGET_DIR:-${CARGO_TARGET_DIR:-$ROOT/target}}")"
 SERVER_BIN="$EXPECTED_TARGET/release/turts_server"
 PACKER_BIN="$EXPECTED_TARGET/release/turts-pack"
@@ -14,6 +29,15 @@ PACKAGE="${M2_PACKAGE_NAME:-}"
 CASE_ID="${M2_CASE_ID:-}"
 ARTIFACT_ROOT="${M2_ARTIFACT_ROOT:-$ROOT/target/m2-browser/runs}"
 BUILD_JOBS="${M2_BUILD_JOBS:-2}"
+if [[ -n "${M2_PREPARED:-}" ]]; then
+    # The stale check comes first. Every case and the suite call it; none of them builds.
+    python3 -B "$ROOT/scripts/mc_prepare.py" check "$M2_PREPARED" --root "$ROOT" --package mods \
+        --need bin/turts_server --need bin/turts-pack --need dist/index.html || exit $?
+    SERVER_BIN="$M2_PREPARED/bin/turts_server"
+    PACKER_BIN="$M2_PREPARED/bin/turts-pack"
+    DIST="$M2_PREPARED/dist"
+    export M2_PREBUILT=1 M2_PREBUILT_LOGS="$M2_PREPARED/logs"
+fi
 # Build the server, the packer and the web client into LOGDIR. MC task 21 (M5): a suite or a
 # package run builds once and gives each case M2_PREBUILT=1 with the logs, so the 15 cases do
 # not build 15 times; each case still gets its own server.
@@ -35,6 +59,17 @@ build_once() {
     m2_build "$M2_PREBUILT_LOGS"
     export M2_PREBUILT=1 M2_PREBUILT_LOGS
 }
+if [[ -n "$M2_PREPARE_DIR" ]]; then
+    source "$ROOT/scripts/mc_prepare_lib.sh"
+    mc_prepare_begin "$M2_PREPARE_DIR" "$ROOT" mods
+    m2_build "$M2_PREPARE_DIR/logs"
+    mkdir -p "$M2_PREPARE_DIR/bin"
+    cp "$SERVER_BIN" "$PACKER_BIN" "$M2_PREPARE_DIR/bin/"
+    cp -a "$DIST" "$M2_PREPARE_DIR/dist"
+    python3 -B "$ROOT/scripts/mc_prepare.py" seal --root "$ROOT" --out "$M2_PREPARE_DIR" --package mods
+    echo "PREPARED: $M2_PREPARE_DIR"
+    exit 0
+fi
 if [[ $# -eq 1 && "$1" == "--list-cases" ]]; then
     printf '%s\n' \
         E9-browser-base-selection \

@@ -110,10 +110,10 @@ fn a_library_below_its_api_is_refused() {
     );
 }
 
-/// The released API of this tree stays 0.2.3 in this task (the bump is in L0-API1).
+/// The bump to 0.2.4 is in L0-API1 (this test said 0.2.3 in L0-RAW: an inversion).
 #[test]
-fn the_engine_api_version_is_unchanged() {
-    assert_eq!(ENGINE_API_VERSION, "0.2.3");
+fn the_engine_api_version_is_the_bumped_one() {
+    assert_eq!(ENGINE_API_VERSION, "0.2.4");
 }
 
 // ---- Review repairs (M2, L4, L7): one presence source, the file named, RAW rows first ----

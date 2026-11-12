@@ -1,0 +1,2 @@
+(start: AllSeatedReady(countdown_secs: 5), open_sites_per_slot: Some(2),
+ victory: Some(LastTeamStanding(defeat: [KeyUnitsLost(units: ["tide:dock"]), DisconnectedFor(secs: 90)])))

@@ -107,6 +107,7 @@ impl Default for TestWorld {
                         order: "forge:order_move".into(),
                     },
                 ],
+                rally: None,
             },
             orders: vec![
                 order("forge:order_move", Behaviour::Move, TargetKind::PointOrUnit),

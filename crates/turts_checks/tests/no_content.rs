@@ -95,6 +95,41 @@ fn derived_scan_rejects_all_plants_and_accepts_generic_field() {
     );
 }
 
+/// L0-API1: the armour schema has a field `flat` (design 6.10 row U1), and the package `base` has
+/// a map `flat`. The identifier is exempt, as `credit` and `base` are; a string literal is
+/// still a hit, so the exemption does not hide a content reference.
+#[test]
+fn flat_exemption_applies_only_to_identifiers() {
+    let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let catalog = derive_tokens(&repo.join("mods")).expect("all mod packages derive");
+    let root = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("flat_identifier_only");
+    let src = root.join("src");
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(&src).unwrap();
+    std::fs::write(
+        src.join("identifier.rs"),
+        "pub struct ArmourDef { pub flat: u64 } fn f(a: ArmourDef) -> u64 { a.flat }",
+    )
+    .unwrap();
+    std::fs::write(
+        src.join("literal.rs"),
+        "const A: &str = \"flat\"; const B: &str = \"base:flat\"; const C: &str = \"maps/flat.ron\";",
+    )
+    .unwrap();
+    let hits = scan_rust(&[src], &catalog).expect("fixture sources parse");
+    assert!(
+        !hits.iter().any(|hit| hit.source.ends_with("identifier.rs")),
+        "the field `flat` is exempt: {hits:#?}"
+    );
+    for token in ["flat", "base:flat", "maps/flat.ron"] {
+        assert!(
+            hits.iter()
+                .any(|hit| hit.source.ends_with("literal.rs") && hit.token == token),
+            "literal {token:?} must stay a hit: {hits:#?}"
+        );
+    }
+}
+
 #[test]
 fn credit_exemption_applies_only_to_identifiers() {
     let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");

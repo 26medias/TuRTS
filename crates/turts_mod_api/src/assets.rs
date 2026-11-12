@@ -7,6 +7,9 @@ pub struct AssetsDef {
     pub fonts: Vec<FileAsset>,
     pub sounds: Vec<FileAsset>,
     pub cursors: Vec<CursorAsset>,
+    /// API 0.2.4, row V1: glTF binary models (`id`, `path`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub models: Vec<FileAsset>,
 }
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]

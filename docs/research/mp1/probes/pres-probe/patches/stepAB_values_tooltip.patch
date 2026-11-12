@@ -1,0 +1,58 @@
+diff --git a/crates/turts_client/src/widgets/tooltip.rs b/crates/turts_client/src/widgets/tooltip.rs
+index 9fce5e1..efa76c3 100644
+--- a/crates/turts_client/src/widgets/tooltip.rs
++++ b/crates/turts_client/src/widgets/tooltip.rs
+@@ -93,15 +93,17 @@ pub fn update_tooltips(world: &mut World) {
+             && world
+                 .get::<InheritedVisibility>(owner)
+                 .is_none_or(|visibility| visibility.get());
+-        if let Some(mut current) = world.get_mut::<Text>(view) {
++        if let Some(mut current) = world.get_mut::<Text>(view)
++            && current.0 != text
++        {
+             current.0 = text;
+         }
+         if let Some(mut visibility) = world.get_mut::<Visibility>(view) {
+-            *visibility = if visible {
++            visibility.set_if_neq(if visible {
+                 Visibility::Visible
+             } else {
+                 Visibility::Hidden
+-            };
++            });
+         }
+         if visible {
+             clamp_to_viewport(world, owner, view);
+diff --git a/crates/turts_client/src/widgets/values.rs b/crates/turts_client/src/widgets/values.rs
+index 29949eb..38ae472 100644
+--- a/crates/turts_client/src/widgets/values.rs
++++ b/crates/turts_client/src/widgets/values.rs
+@@ -36,7 +36,7 @@ pub(super) fn refresh_bound_widgets(world: &mut World, context: &sources::Source
+             if let Some(child) = child
+                 && let Some(mut node) = world.get_mut::<Node>(child)
+             {
+-                *node = primitives::bar_fill_node(*direction, ratio);
++                node.set_if_neq(primitives::bar_fill_node(*direction, ratio));
+             }
+         }
+         let text = match &binding.primitive {
+@@ -62,7 +62,9 @@ pub(super) fn refresh_bound_widgets(world: &mut World, context: &sources::Source
+                     world.entity_mut(entity).remove::<Text>();
+                 }
+             } else if let Some(mut current) = world.get_mut::<Text>(entity) {
+-                current.0 = text;
++                if current.0 != text {
++                    current.0 = text;
++                }
+             } else {
+                 world.entity_mut(entity).insert(Text::new(text));
+             }
+@@ -121,7 +123,7 @@ pub(super) fn refresh_bound_widgets(world: &mut World, context: &sources::Source
+             .iter()
+             .all(|predicate| predicate_matches(predicate, context));
+         if let Some(mut current) = world.get_mut::<Visibility>(entity) {
+-            *current = widget_visibility(visible);
++            current.set_if_neq(widget_visibility(visible));
+         }
+     }
+ }

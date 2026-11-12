@@ -1,0 +1,4 @@
+(id: "train_diver", name: "Diver", output_unit: "tide:diver", duration_ms: 7000,
+ costs: [(resource: "tide:pearls", amount: 100, source: SlotBalance)], payment: ChargeOverTime,
+ cancel_refunds: (queued: (numerator: 1, denominator: 1), running: (numerator: 1, denominator: 1), output_blocked: (numerator: 1, denominator: 1)),
+ hotkey: Some("key_diver"))

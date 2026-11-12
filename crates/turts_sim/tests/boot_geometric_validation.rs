@@ -157,6 +157,7 @@ fn map(field: GeometricField, placed: bool) -> MapDef {
                 contents: vec![],
                 facing: matches!(field, GeometricField::Inserter)
                     .then_some(turts_mod_api::Facing::PosX),
+                start_order: None,
             }];
             if matches!(field, GeometricField::Inserter) {
                 placements.extend([
@@ -166,6 +167,7 @@ fn map(field: GeometricField, placed: bool) -> MapDef {
                         pos: WorldPos { x: 7.0, y: 8.0 },
                         contents: vec![],
                         facing: None,
+                        start_order: None,
                     },
                     Placement {
                         unit: "probe:destination".into(),
@@ -173,6 +175,7 @@ fn map(field: GeometricField, placed: bool) -> MapDef {
                         pos: WorldPos { x: 9.0, y: 8.0 },
                         contents: vec![],
                         facing: None,
+                        start_order: None,
                     },
                 ]);
             }

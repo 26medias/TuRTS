@@ -25,6 +25,7 @@ pub mod palette;
 pub mod persist;
 pub mod present;
 pub mod rejoin;
+mod relation;
 pub mod render;
 pub mod replica;
 mod scenario;

@@ -13,5 +13,8 @@ pub mod parse;
 pub mod resolve;
 pub mod visuals;
 
+mod edition;
 mod raw_presence;
+mod unbuilt;
+mod variants;
 mod version_table;

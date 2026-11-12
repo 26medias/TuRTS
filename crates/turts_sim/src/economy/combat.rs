@@ -309,11 +309,10 @@ fn choose_target(
             return None;
         }
         let owner = *candidates.owners.get(&id)?;
-        let relation_matches = match parameters.targets {
-            SlotRelation::Other => owner != parameters.owner,
-            SlotRelation::Same => owner == parameters.owner,
-            SlotRelation::Any => true,
-        };
+        // One rule for every relation (`turts_rules::relation`); the team of a slot is the slot
+        // itself until the match config gives teams.
+        let relation_matches =
+            crate::rules_adapter::holds_own_team(parameters.targets, parameters.owner, owner);
         if !relation_matches {
             return None;
         }
@@ -499,6 +498,7 @@ mod tests {
             pos: WorldPos { x, y },
             contents: vec![],
             facing: None,
+            start_order: None,
         }
     }
 
@@ -1613,6 +1613,7 @@ mod tests {
                             numerator: 1,
                             denominator: 1,
                         },
+                        destroyed: turts_mod_api::RefundRatio::ZERO,
                     },
                     effects: vec![turts_mod_api::ResolvedEffect::WeaponModifier {
                         unit: cid(WEAPON),
@@ -1683,6 +1684,7 @@ mod tests {
                     numerator: 1,
                     denominator: 2,
                 },
+                destroyed: turts_mod_api::RefundRatio::ZERO,
             },
             effects: vec![turts_mod_api::ResolvedEffect::WeaponModifier {
                 unit: cid(WEAPON),

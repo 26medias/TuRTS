@@ -228,9 +228,23 @@ pub(super) fn predicate_matches(
                 turts_mod_api::Capability::Gatherer => unit.gatherer.is_some(),
                 turts_mod_api::Capability::Producer => unit.producer.is_some(),
                 turts_mod_api::Capability::Research => unit.research.is_some(),
+                // API 0.2.4 (row O6): the resolved unit has no constructor or repairer yet.
+                turts_mod_api::Capability::Constructor | turts_mod_api::Capability::Repairer => {
+                    false
+                }
             }),
         Predicate::GuideOpen => context.guide_open,
         Predicate::Not(inner) => !predicate_matches(inner, context),
+        // API 0.2.4 (row H10): the predicates of `UI-HUD`, `UI-PLACE`, `UI-RESULT`, `UI-HINT`
+        // and `UI2-HUD`. Until then none holds (a widget behind one stays hidden).
+        Predicate::ItemHas(_)
+        | Predicate::PrimaryHasValue(_)
+        | Predicate::SupplyShort(_)
+        | Predicate::MatchOver
+        | Predicate::OutcomeIs(_)
+        | Predicate::OutcomeReasonIs(_)
+        | Predicate::Placing
+        | Predicate::HintShown => false,
     }
 }
 

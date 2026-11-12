@@ -157,6 +157,7 @@ fn placement(local: &str, at: Vec2) -> Placement {
         pos: WorldPos { x: at.x, y: at.y },
         contents: Vec::new(),
         facing: None,
+        start_order: None,
     }
 }
 

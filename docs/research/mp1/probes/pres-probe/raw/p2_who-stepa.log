@@ -1,0 +1,195 @@
+   Compiling turts_client v0.2.0 (/home/julien/Projects/TuRTS-mp1-pres-probe/crates/turts_client)
+    Finished `test` profile [unoptimized] target(s) in 1.67s
+     Running tests/hud_change_counter.rs (target/mc-mp1-pres-probe/debug/deps/hud_change_counter-52b60381c68594d0)
+
+running 2 tests
+test hud_update_time_600_frames ... ignored
+test static_replica_hud_changes_no_text_node_or_visibility_after_frame_two ... FRAME-5 changed id="command_rows/command[Action:{\"id\":\"forge:order_cancel\",\"kind\":\"order\"}]" Text=false Node=true Visibility=false
+FRAME-5 changed id="command_rows/command[Action:{\"id\":\"forge:order_disable\",\"kind\":\"order\"}]" Text=false Node=true Visibility=false
+FRAME-5 changed id="command_rows/command[Action:{\"id\":\"forge:order_enable\",\"kind\":\"order\"}]" Text=false Node=true Visibility=false
+FRAME-5 changed id="command_rows/command[Action:{\"id\":\"forge:order_research\",\"kind\":\"order\"}]" Text=false Node=true Visibility=false
+FRAME-5 changed id="guide.4.bindings" Text=false Node=false Visibility=false
+FRAME-5 changed id="guide_copy" Text=false Node=false Visibility=false
+FRAME-5 changed id="alert_heading" Text=false Node=false Visibility=false
+FRAME-5 changed id="command_heading" Text=false Node=false Visibility=false
+FRAME-5 changed id="queue_heading" Text=false Node=false Visibility=false
+FRAME-5 changed id="research_heading" Text=false Node=false Visibility=false
+FRAME-5 changed id="enemy_health" Text=false Node=false Visibility=false
+FRAME-5 changed id="enemy_name" Text=false Node=false Visibility=false
+FRAME-5 changed id="info_ammo" Text=false Node=false Visibility=false
+FRAME-5 changed id="info_range" Text=false Node=false Visibility=false
+FRAME-5 changed id="info_damage" Text=false Node=false Visibility=false
+FRAME-5 changed id="info_health" Text=false Node=false Visibility=false
+FRAME-5 changed id="info_inventory" Text=false Node=false Visibility=false
+FRAME-5 changed id="info_owner" Text=false Node=false Visibility=false
+FRAME-5 changed id="info_name" Text=false Node=false Visibility=false
+FRAME-5 changed id="selection_heading" Text=false Node=false Visibility=false
+FRAME-5 changed id="guide.4.controls_heading" Text=false Node=false Visibility=false
+FRAME-5 changed id="guide_close::tooltip" Text=true Node=false Visibility=true
+FRAME-5 changed id="research_entries/research_item[Action:{\"content_id\":\"forge:hardened_shells\",\"kind\":\"produce\",\"producer\":14}]::tooltip" Text=true Node=false Visibility=true
+FRAME-5 changed id="command_rows/command[Action:{\"id\":\"forge:order_cancel\",\"kind\":\"order\"}]::tooltip" Text=true Node=false Visibility=true
+FRAME-5 changed id="command_rows/command[Action:{\"id\":\"forge:order_disable\",\"kind\":\"order\"}]::tooltip" Text=true Node=false Visibility=true
+FRAME-5 changed id="command_rows/command[Action:{\"id\":\"forge:order_enable\",\"kind\":\"order\"}]::tooltip" Text=true Node=false Visibility=true
+FRAME-5 changed id="command_rows/command[Action:{\"id\":\"forge:order_research\",\"kind\":\"order\"}]::tooltip" Text=true Node=false Visibility=true
+FRAME-5 changed id="research_entries/research_item[Action:{\"content_id\":\"forge:hardened_shells\",\"kind\":\"produce\",\"producer\":14}]" Text=false Node=true Visibility=false
+FRAME-5 changed id="selection_units/unit_row[Action:{\"kind\":\"select\",\"unit\":14}]" Text=false Node=true Visibility=false
+FRAME-5 changed id="alert_rows" Text=false Node=false Visibility=false
+FRAME-5 changed id="queue_rows" Text=false Node=false Visibility=false
+FRAME-5 changed id="selection_panel" Text=false Node=false Visibility=false
+FRAME-5 changed id="info_panel" Text=false Node=false Visibility=false
+FRAME-5 changed id="enemy_health_panel" Text=false Node=false Visibility=false
+FRAME-5 changed id="research_panel" Text=false Node=false Visibility=false
+FRAME-5 changed id="production_queue_panel" Text=false Node=false Visibility=false
+FRAME-5 changed id="command_card" Text=false Node=false Visibility=false
+FRAME-5 changed id="control_groups" Text=false Node=false Visibility=false
+FRAME-5 changed id="alert_panel" Text=false Node=false Visibility=false
+FRAME-5 changed id="guide" Text=false Node=false Visibility=false
+FRAME-5 changed id="last_notice" Text=false Node=false Visibility=false
+FRAME-5 changed id="guide.4.bindings/binding[index:0]" Text=false Node=true Visibility=false
+FRAME-5 changed id="guide.4.bindings/binding[index:1]" Text=false Node=true Visibility=false
+FRAME-5 changed id="guide.4.bindings/binding[index:2]" Text=false Node=true Visibility=false
+FRAME-5 changed id="guide.4.bindings/binding[index:3]" Text=false Node=true Visibility=false
+FRAME-5 changed id="guide.4.bindings/binding[index:4]" Text=false Node=true Visibility=false
+FRAME-5 changed id="guide.4.bindings/binding[index:5]" Text=false Node=true Visibility=false
+FRAME-5 changed id="guide.4.bindings/binding[index:6]" Text=false Node=true Visibility=false
+FRAME-5 changed id="guide.4.bindings/binding[index:7]" Text=false Node=true Visibility=false
+FRAME-5 changed id="guide.4.bindings/binding[index:8]" Text=false Node=true Visibility=false
+FRAME-5 changed id="guide.4.bindings/binding[index:9]" Text=false Node=true Visibility=false
+FRAME-5 changed id="guide.4.bindings/binding[index:10]" Text=false Node=true Visibility=false
+FRAME-5 changed id="guide.4.bindings/binding[index:11]" Text=false Node=true Visibility=false
+FRAME-5 changed id="guide.4.bindings/binding[index:12]" Text=false Node=true Visibility=false
+FRAME-5 changed id="guide.4.bindings/binding[index:13]" Text=false Node=true Visibility=false
+FRAME-5 changed id="guide.4.bindings/binding[index:14]" Text=false Node=true Visibility=false
+FRAME-5 changed id="guide.4.bindings/binding[index:15]" Text=false Node=true Visibility=false
+FRAME-5 changed id="guide.4.bindings/binding[index:16]" Text=false Node=true Visibility=false
+FRAME-5 changed id="guide.4.bindings/binding[index:17]" Text=false Node=true Visibility=false
+FRAME-5 changed id="guide.4.bindings/binding[index:18]" Text=false Node=true Visibility=false
+FRAME-5 changed id="guide.4.bindings/binding[index:19]" Text=false Node=true Visibility=false
+FRAME-5 changed id="guide.4.bindings/binding[index:20]" Text=false Node=true Visibility=false
+FRAME-5 changed id="guide.4.bindings/binding[index:21]" Text=false Node=true Visibility=false
+FRAME-5 changed id="guide.4.bindings/binding[index:22]" Text=false Node=true Visibility=false
+FRAME-5 changed id="guide.4.bindings/binding[index:23]" Text=false Node=true Visibility=false
+FRAME-5 changed id="guide.4.bindings/binding[index:24]" Text=false Node=true Visibility=false
+FRAME-5 changed id="guide.4.bindings/binding[index:25]" Text=false Node=true Visibility=false
+FRAME-5 changed id="guide.4.bindings/binding[index:26]" Text=false Node=true Visibility=false
+FRAME-5 changed id="guide.4.bindings/binding[index:27]" Text=false Node=true Visibility=false
+FRAME-5 changed id="guide.4.bindings/binding[index:28]" Text=false Node=true Visibility=false
+FRAME-5 changed id="guide.4.bindings/binding[index:29]" Text=false Node=true Visibility=false
+FRAME-5 changed id="guide.4.bindings/binding[index:30]" Text=false Node=true Visibility=false
+FRAME-5 changed id="guide.4.bindings/binding[index:31]" Text=false Node=true Visibility=false
+FRAME-5 changed id="guide.4.bindings/binding[index:32]" Text=false Node=true Visibility=false
+FRAME-5 changed id="guide.4.bindings/binding[index:33]" Text=false Node=true Visibility=false
+FRAME-5 changed id="guide.4.bindings/binding[index:34]" Text=false Node=true Visibility=false
+FRAME-5 changed id="guide.4.bindings/binding[index:35]" Text=false Node=true Visibility=false
+FRAME-5 changed id="guide.4.bindings/binding[index:36]" Text=false Node=true Visibility=false
+FRAME-5 changed id="guide.4.bindings/binding[index:37]" Text=false Node=true Visibility=false
+FRAME-5 changed id="guide.4.bindings/binding[index:38]" Text=false Node=true Visibility=false
+FRAME-5 changed id="guide.4.bindings/binding[index:39]" Text=false Node=true Visibility=false
+FRAME-5 changed id="guide.4.bindings/binding[index:40]" Text=false Node=true Visibility=false
+FRAME-5 changed id="guide.4.bindings/binding[index:41]" Text=false Node=true Visibility=false
+FRAME-5 changed id="guide.4.bindings/binding[index:42]" Text=false Node=true Visibility=false
+FRAME-5 changed id="guide.4.bindings/binding[index:43]" Text=false Node=true Visibility=false
+FRAME-5 changed id="guide.4.bindings/binding[index:44]" Text=false Node=true Visibility=false
+FRAME-5 changed id="guide.4.bindings/binding[index:45]" Text=false Node=true Visibility=false
+FRAME-5 changed id="guide.4.bindings/binding[index:46]" Text=false Node=true Visibility=false
+FRAME-5 changed id="guide.4.bindings/binding[index:47]" Text=false Node=true Visibility=false
+FRAME-5 changed id="guide.4.bindings/binding[index:48]" Text=false Node=true Visibility=false
+FRAME-5 changed id="guide.4.bindings/binding[index:49]" Text=false Node=true Visibility=false
+FRAME-5 changed id="guide.4.bindings/binding[index:50]" Text=false Node=true Visibility=false
+FRAME-5 changed id="group_rows/group[index:0]" Text=false Node=true Visibility=false
+FRAME-5 changed id="group_rows/group[index:1]" Text=false Node=true Visibility=false
+FRAME-5 changed id="group_rows/group[index:2]" Text=false Node=true Visibility=false
+FRAME-5 changed id="group_rows/group[index:3]" Text=false Node=true Visibility=false
+FRAME-5 changed id="group_rows/group[index:4]" Text=false Node=true Visibility=false
+FRAME-5 changed id="group_rows/group[index:5]" Text=false Node=true Visibility=false
+FRAME-5 changed id="group_rows/group[index:6]" Text=false Node=true Visibility=false
+FRAME-5 changed id="group_rows/group[index:7]" Text=false Node=true Visibility=false
+FRAME-5 changed id="group_rows/group[index:8]" Text=false Node=true Visibility=false
+FRAME-5 changed id="group_rows" Text=false Node=false Visibility=false
+FRAME-5 changed id="command_rows" Text=false Node=false Visibility=false
+FRAME-5 changed id="research_entries" Text=false Node=false Visibility=false
+FRAME-5 changed id="selection_units" Text=false Node=false Visibility=false
+FRAME-5 changed id="guide_close" Text=false Node=false Visibility=false
+FRAME-5 changed id="guide_close_fill" Text=false Node=false Visibility=false
+FRAME-5 changed id="minimap" Text=false Node=false Visibility=false
+widget_entities(AuthoredWidgetId)=108 other_ui_entities(Node, no id)=0
+frame  w.Text w.Node w.Vis | o.Text o.Node o.Vis   (frame k = writes made in update k)
+    1      89    108   108 |      0      0     0
+    2       6     66     6 |      0      0     0
+    3       6     66     6 |      0      0     0
+    4       6     66     6 |      0      0     0
+    5       6     66     6 |      0      0     0
+    6       6     66     6 |      0      0     0
+    7       6     66     6 |      0      0     0
+    8       6     66     6 |      0      0     0
+    9       6     66     6 |      0      0     0
+   10       6     66     6 |      0      0     0
+   11       6     66     6 |      0      0     0
+   12       6     66     6 |      0      0     0
+   13       6     66     6 |      0      0     0
+   14       6     66     6 |      0      0     0
+   15       6     66     6 |      0      0     0
+   16       6     66     6 |      0      0     0
+   17       6     66     6 |      0      0     0
+   18       6     66     6 |      0      0     0
+   19       6     66     6 |      0      0     0
+   20       6     66     6 |      0      0     0
+   21       6     66     6 |      0      0     0
+   22       6     66     6 |      0      0     0
+   23       6     66     6 |      0      0     0
+   24       6     66     6 |      0      0     0
+   25       6     66     6 |      0      0     0
+   26       6     66     6 |      0      0     0
+   27       6     66     6 |      0      0     0
+   28       6     66     6 |      0      0     0
+   29       6     66     6 |      0      0     0
+   30       6     66     6 |      0      0     0
+   31       6     66     6 |      0      0     0
+   32       6     66     6 |      0      0     0
+   33       6     66     6 |      0      0     0
+   34       6     66     6 |      0      0     0
+   35       6     66     6 |      0      0     0
+   36       6     66     6 |      0      0     0
+   37       6     66     6 |      0      0     0
+   38       6     66     6 |      0      0     0
+   39       6     66     6 |      0      0     0
+   40       6     66     6 |      0      0     0
+   41       6     66     6 |      0      0     0
+   42       6     66     6 |      0      0     0
+   43       6     66     6 |      0      0     0
+   44       6     66     6 |      0      0     0
+   45       6     66     6 |      0      0     0
+   46       6     66     6 |      0      0     0
+   47       6     66     6 |      0      0     0
+   48       6     66     6 |      0      0     0
+   49       6     66     6 |      0      0     0
+   50       6     66     6 |      0      0     0
+   51       6     66     6 |      0      0     0
+   52       6     66     6 |      0      0     0
+   53       6     66     6 |      0      0     0
+   54       6     66     6 |      0      0     0
+   55       6     66     6 |      0      0     0
+   56       6     66     6 |      0      0     0
+   57       6     66     6 |      0      0     0
+   58       6     66     6 |      0      0     0
+   59       6     66     6 |      0      0     0
+   60       6     66     6 |      0      0     0
+frames 3..=60: 58 frames; with a widget change=58; with any change=58; total changed Text=348 Node=3828 Visibility=348
+
+thread 'static_replica_hud_changes_no_text_node_or_visibility_after_frame_two' (3722331) panicked at crates/turts_client/tests/hud_change_counter.rs:318:5:
+assertion `left == right` failed: a static replica must change no Text, Node or Visibility after frame 2
+  left: 58
+ right: 0
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+
+failures:
+
+failures:
+    static_replica_hud_changes_no_text_node_or_visibility_after_frame_two
+
+test result: FAILED. 0 passed; 1 failed; 1 ignored; 0 measured; 0 filtered out; finished in 1.25s
+
+error: test failed, to rerun pass `-p turts_client --test hud_change_counter`
+
+exit=101

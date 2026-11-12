@@ -1,0 +1,18 @@
+== tank
+glb_version=2
+external_uris=0 extensions_required=[]
+skins=0 animations=0 cameras=0 materials=2
+material_names=["body", "team"]
+node_names=["tank", "hull", "turret", "muzzle"]
+triangles=72 min_y=0.000 xz_radius=0.986 bytes=6628
+pivot_ok=true scale_ok=true tris_ok=true bytes_ok=true
+exit=0
+== tank_bad
+glb_version=2
+external_uris=0 extensions_required=[]
+skins=0 animations=0 cameras=0 materials=2
+material_names=["body", "team"]
+node_names=["tank", "hull", "turret", "muzzle"]
+triangles=72 min_y=-0.400 xz_radius=0.986 bytes=6628
+pivot_ok=false scale_ok=true tris_ok=true bytes_ok=true
+exit=0
