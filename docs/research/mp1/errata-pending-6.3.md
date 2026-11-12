@@ -253,3 +253,9 @@ Probe 2, the HUD change counter on today's tree (forge HUD, 108 widget entities,
 ## Toolchain pin (2026-11-12)
 
 - `rust-toolchain.toml` named the channel `stable`. On 2026-11-12 the hosted runner moved to rustc 1.100.0 and the MC hosted run 43288692044 went red in `check` (new clippy lint `needless_bool` at the pending-order queue code) and in the four `m2-native` shards (`economy_variants`). The MC branch now pins `channel = "1.99.1"`. The slice and MP1 branches still say `stable`: each takes the pin at its next merge by the orchestrator. Open task (owner `technical-director` for the date, a domain seat for the work): move to 1.100 on purpose: fix the lint, find the cause of the `economy_variants` failure on 1.100, run the full gates.
+
+## From the Q-COLD re-check (2026-11-12, `rereview-q-cold.md`); Q-COLD merged
+
+- Product condition for `UI-HUD` (row HUD5), from the probe on MP1 `muster`: within 1 frame of a click on an order button, the button shows a pressed state; within 1 s either the world, a panel or a notice changes, or, for an order that needs a target, the button stays marked active and the cursor shows the order's cursor until the target click or Esc. Today Stop, Hold and Attack change 0 pixels around the button; with the sound off by default a person gets no sign that the click registered.
+- Low, engine label format: an icon-only button with a key shows a leading space before the key (` [M]`).
+- Follow-up for the tool (owner `qa-lead`): the order probe accepts the armed state of a target order (button marked active and the order cursor); a build where the buttons probe finds no button AND the order probe finds no order button for any own unit type is a FAIL ("no on-screen control at all"); the checker's C4 text names P3, P4, P5 and F9b; the rebuild command in `docs/qa/cold-play.md` says "a new label each time".
