@@ -211,7 +211,6 @@ pub fn alert_state() -> (ReplicaState, AcquiredPackages) {
                 id: JobId(1),
                 recipe: "muster:test_recipe".into(),
                 stage: JobStage::Running,
-                elapsed_ticks: 1,
                 duration_ticks: 20,
                 charged: Vec::new(),
                 reserved: Vec::new(),

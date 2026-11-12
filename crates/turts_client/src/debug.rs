@@ -252,7 +252,7 @@ pub fn debug_json(world: &World) -> String {
                     "tick": replica.last_applied_tick,
                     "units": units,
                     "nodes": nodes,
-                    "economy": replica.economy,
+                    "economy": economy_json(replica),
                     "belts": replica.belts,
                     "inserters": replica.inserters,
                     "extractors": replica.extractors,
@@ -554,7 +554,7 @@ pub fn report_json(world: &World) -> Value {
             "tick": replica.last_applied_tick,
             "units": units,
             "nodes": replica.nodes.values().collect::<Vec<_>>(),
-            "economy": replica.economy,
+            "economy": economy_json(replica),
             "belts": replica.belts,
             "inserters": replica.inserters,
             "extractors": replica.extractors,
@@ -965,6 +965,25 @@ mod command_result_json_tests {
                 .is_none()
         );
     }
+}
+
+/// The economy of the replica for the debug state. Each job also gets `elapsed_ticks`, derived
+/// from its progress record at the last applied tick (`Replica::job_elapsed_ticks`): the wire
+/// `JobState` has no such field since protocol 5, and the browser oracles (`m2-audit.js`) read it.
+fn economy_json(replica: &Replica) -> Value {
+    let mut value = serde_json::to_value(&replica.economy).unwrap_or(Value::Null);
+    if let Some(queues) = value.get_mut("queues").and_then(Value::as_array_mut) {
+        for queue in queues {
+            let producer = queue["producer"].as_u64().unwrap_or(0) as u32;
+            if let Some(jobs) = queue.get_mut("jobs").and_then(Value::as_array_mut) {
+                for job in jobs {
+                    let id = job["id"].as_u64().unwrap_or(0);
+                    job["elapsed_ticks"] = json!(replica.job_elapsed_ticks(producer, id));
+                }
+            }
+        }
+    }
+    value
 }
 
 /// The weapon records of the replica for the debug state. Each record also gets `cooldown`, the

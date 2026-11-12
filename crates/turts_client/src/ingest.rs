@@ -1246,7 +1246,6 @@ mod world_change_tests {
             id: JobId(7),
             recipe: "base:train_rifleman".to_owned(),
             stage: JobStage::Queued,
-            elapsed_ticks: 0,
             duration_ticks: 100,
             charged: vec![Cost {
                 resource: "base:credits".to_owned(),
@@ -1345,7 +1344,6 @@ mod world_change_tests {
             id: JobId(8),
             recipe: "base:train_rifleman".to_owned(),
             stage: JobStage::Queued,
-            elapsed_ticks: 0,
             duration_ticks: 100,
             charged: vec![Cost {
                 resource: "base:credits".to_owned(),

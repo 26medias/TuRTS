@@ -343,7 +343,6 @@ fn rich_snapshot(tick: u32) -> Snapshot {
             id: JobId(44),
             recipe: "base:train_rifleman".to_string(),
             stage: JobStage::Running,
-            elapsed_ticks: 10,
             duration_ticks: 100,
             charged: vec![Cost {
                 resource: "base:credits".to_string(),
@@ -524,7 +523,6 @@ fn lost_extraction_conversion_charge_refund_and_spawn_converge_from_snapshot() {
             id: JobId(id),
             recipe: "base:train_rifleman".to_string(),
             stage,
-            elapsed_ticks: if stage == JobStage::Queued { 0 } else { 10 },
             duration_ticks: 100,
             charged: vec![Cost {
                 resource: "base:credits".to_string(),

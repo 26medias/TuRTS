@@ -374,7 +374,6 @@ mod payload_tests {
                         id: JobId(7),
                         recipe: "base:hire".into(),
                         stage: turts_net_protocol::JobStage::Running,
-                        elapsed_ticks: 1,
                         duration_ticks: 8,
                         charged: vec![],
                         reserved: vec![],

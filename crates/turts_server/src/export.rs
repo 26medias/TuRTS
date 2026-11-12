@@ -119,7 +119,13 @@ pub fn snapshot_for(view: &WorldView, slot: SlotId) -> wire::Snapshot {
             .collect(),
         // The site, job, queue, supply and match rows have no source in the view yet: their
         // writers (`L-CON1`, `L-PAY`, `L-PWR`, `L-MATCH-SIM`) add it.
-        records: wire::SnapshotRecords::default(),
+        records: wire::SnapshotRecords {
+            jobs: export_jobs::queue_job_records(
+                &owned_queues(&view.economy.queues, slot),
+                view.tick,
+            ),
+            ..Default::default()
+        },
     }
 }
 
@@ -213,7 +219,13 @@ pub fn delta_for(batch: &CommittedTick, view: &WorldView, slot: SlotId) -> wire:
         records: wire::DeltaRecords {
             sites_completed: export_sites::sites_completed(batch),
             sites: export_sites::site_progress(batch, slot),
-            jobs: export_jobs::job_progress(batch, slot),
+            jobs: export_jobs::queue_job_records(
+                &owned_queues(&batch.economy.queues, slot),
+                batch.tick,
+            )
+            .into_iter()
+            .chain(export_jobs::job_progress(batch, slot))
+            .collect(),
             construction_queues: export_sites::construction_queues(batch, slot),
             supply: export_supply::supply(batch, slot),
             orders_cleared: batch
@@ -307,6 +319,15 @@ fn order_state(order: &OrderView) -> wire::OrderState {
     }
 }
 
+/// The queues of one owner, as owned rows (a queue of a removed producer is not in the view).
+fn owned_queues(queues: &[QueueView], slot: SlotId) -> Vec<QueueView> {
+    queues
+        .iter()
+        .filter(|queue| queue.owner_slot == slot.0)
+        .cloned()
+        .collect()
+}
+
 fn queue_state(queue: &QueueView, enabled: bool) -> wire::QueueState {
     wire::QueueState {
         producer: messages::UnitId(queue.producer),
@@ -324,7 +345,6 @@ fn job_state(job: &JobView) -> wire::JobState {
             JobStage::Running => wire::JobStage::Running,
             JobStage::OutputBlocked => wire::JobStage::OutputBlocked,
         },
-        elapsed_ticks: job.elapsed_ticks,
         duration_ticks: job.duration_ticks,
         charged: job.charged.iter().map(cost).collect(),
         reserved: job.reserved.iter().map(cost).collect(),

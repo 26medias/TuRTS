@@ -228,7 +228,6 @@ fn two_slots_receive_only_own_economy_snapshot_and_delta_and_every_field_roundtr
                 id: wire::JobId(20),
                 recipe: "acme:worker".into(),
                 stage: wire::JobStage::Queued,
-                elapsed_ticks: 7,
                 duration_ticks: 11,
                 charged: vec![],
                 reserved: vec![turts_mod_api::Cost {
@@ -241,7 +240,6 @@ fn two_slots_receive_only_own_economy_snapshot_and_delta_and_every_field_roundtr
                 id: wire::JobId(21),
                 recipe: "acme:worker".into(),
                 stage: wire::JobStage::Running,
-                elapsed_ticks: 7,
                 duration_ticks: 11,
                 charged: vec![turts_mod_api::Cost {
                     source: CostSource::ProducerInventory,
@@ -254,7 +252,6 @@ fn two_slots_receive_only_own_economy_snapshot_and_delta_and_every_field_roundtr
                 id: wire::JobId(22),
                 recipe: "acme:worker".into(),
                 stage: wire::JobStage::OutputBlocked,
-                elapsed_ticks: 7,
                 duration_ticks: 11,
                 charged: vec![],
                 reserved: vec![]

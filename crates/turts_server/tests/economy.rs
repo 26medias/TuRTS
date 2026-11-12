@@ -1959,7 +1959,6 @@ fn owner_snapshot_from_audit(
                                 SimJobStage::Running => wire::JobStage::Running,
                                 SimJobStage::OutputBlocked => wire::JobStage::OutputBlocked,
                             },
-                            elapsed_ticks: job.elapsed_ticks,
                             duration_ticks: job.duration_ticks,
                             charged: job
                                 .charged

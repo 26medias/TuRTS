@@ -71,7 +71,6 @@ fn wire_v4_roundtrips_existing_fields_and_reasons() {
         id: JobId(12),
         recipe: "base:scout".into(),
         stage: JobStage::OutputBlocked,
-        elapsed_ticks: 17,
         duration_ticks: 29,
         charged: vec![turts_mod_api::Cost {
             resource: "base:ore".into(),

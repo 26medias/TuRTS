@@ -106,7 +106,6 @@ fn set_jobs(replica: &mut Replica, producer: u32, recipe: &str, job_ids: &[u64])
                     id: JobId(*id),
                     recipe: recipe.to_owned(),
                     stage: JobStage::Running,
-                    elapsed_ticks: 1,
                     duration_ticks: 20,
                     charged: Vec::new(),
                     reserved: Vec::new(),
@@ -758,15 +757,30 @@ fn held_cancel_button_keeps_identity_through_progress_and_retired_rows_are_prune
     let second = authored_button(&app, &second_action);
     press(&mut app, window, camera, first, 1.0);
 
-    app.world_mut()
-        .resource_mut::<ReplicaState>()
-        .replica
-        .as_mut()
-        .unwrap()
-        .economy
-        .queues[0]
-        .jobs[0]
-        .elapsed_ticks += 1;
+    {
+        // The job advances: protocol 5 carries the progress as a record.
+        let mut state = app.world_mut().resource_mut::<ReplicaState>();
+        let replica = state.replica.as_mut().unwrap();
+        let queue = &replica.economy.queues[0];
+        let (producer, job, total) = (
+            queue.producer.0,
+            queue.jobs[0].id.0,
+            queue.jobs[0].duration_ticks,
+        );
+        replica.job_progress.insert(
+            (producer, job),
+            turts_net_protocol::RateRecord {
+                done: 1,
+                total,
+                per_tick: 0,
+                at_tick: 0,
+                state: turts_net_protocol::RecordState::Running,
+                charged: vec![],
+                held: false,
+                held_since_tick: 0,
+            },
+        );
+    }
     app.update();
     assert_eq!(
         authored_button(&app, &first_action),

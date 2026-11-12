@@ -13,6 +13,7 @@ use turts_net_protocol::{
     InventoryPort, JobId, NodeId, NodeState, Pos, ResearchRecord, Snapshot, UnitId,
     UnitOrderRecord, UnitSnapshot, WeaponRecord, WorldDelta,
 };
+use turts_net_protocol::{JobProgress, RateRecord};
 
 use crate::{content::ClientContent, interp};
 
@@ -94,6 +95,7 @@ struct Candidate {
     healths: Vec<HealthRecord>,
     research: Vec<ResearchRecord>,
     unit_orders: HashMap<u32, UnitOrderRecord>,
+    job_progress: BTreeMap<(u32, u64), RateRecord>,
     health_trace: std::collections::BTreeMap<u32, Vec<HealthTraceEntry>>,
     tick: u32,
 }
@@ -120,6 +122,10 @@ pub struct Replica {
     pub research: Vec<ResearchRecord>,
     /// Owner-specific orders staged atomically with their unit snapshot and tick.
     pub unit_orders: HashMap<u32, UnitOrderRecord>,
+    /// The progress record of each job in `economy.queues`, by (producer, job). A record is
+    /// dropped when its producer's `QueueState` no longer holds the job, or when the producer is
+    /// removed. `L0-STORE` may move it to the side store of the 6.8 records.
+    pub job_progress: BTreeMap<(u32, u64), RateRecord>,
     /// The recent health changes of each unit: at most [`HEALTH_TRACE_WINDOW`] entries, the
     /// newest last (row DBG1). The alert `OwnUnitDestroyed` reads the last entry of a unit that
     /// is gone, so the window always keeps the newest entry.
@@ -159,6 +165,7 @@ impl Replica {
             healths: Vec::new(),
             research: Vec::new(),
             unit_orders: HashMap::new(),
+            job_progress: BTreeMap::new(),
             health_trace: std::collections::BTreeMap::new(),
             snapshot_tick: None,
             last_applied_tick: None,
@@ -418,11 +425,18 @@ impl Replica {
             healths: Vec::new(),
             research: snapshot.research.clone(),
             unit_orders: HashMap::new(),
+            job_progress: BTreeMap::new(),
             health_trace: self.health_trace.clone(),
             tick: snapshot.tick,
         };
         candidate.unit_orders =
             stage_unit_orders(context, &snapshot.unit_orders, &candidate.units)?;
+        candidate.job_progress = merge_job_progress(
+            BTreeMap::new(),
+            &snapshot.records.jobs,
+            &candidate.economy,
+            &HashSet::new(),
+        )?;
         if !valid_economy(
             context,
             &candidate.units,
@@ -448,6 +462,7 @@ impl Replica {
             healths: self.healths.clone(),
             research: self.research.clone(),
             unit_orders: self.unit_orders.clone(),
+            job_progress: self.job_progress.clone(),
             health_trace: self.health_trace.clone(),
             tick,
         }
@@ -538,6 +553,12 @@ impl Replica {
             &next.units,
             &removed,
         )?;
+        next.job_progress = merge_job_progress(
+            std::mem::take(&mut next.job_progress),
+            &delta.records.jobs,
+            &next.economy,
+            &removed,
+        )?;
         for id in &removed {
             next.units.remove(id);
             next.economy
@@ -576,6 +597,7 @@ impl Replica {
         self.healths = candidate.healths;
         self.research = candidate.research;
         self.unit_orders = candidate.unit_orders;
+        self.job_progress = candidate.job_progress;
         self.health_trace = candidate.health_trace;
         self.last_applied_tick = Some(candidate.tick);
         self.latest_receipt = Some(now);
@@ -594,6 +616,25 @@ impl Replica {
                 }
             }
         }
+    }
+
+    /// The elapsed ticks of a job at the tick of the last applied delta, from its progress record
+    /// (`turts_rules::progress::value_at`): never later than the last applied tick, so this is not
+    /// prediction. 0 when the replica holds no record of the job.
+    pub fn job_elapsed_ticks(&self, producer: u32, job: u64) -> u64 {
+        let Some(record) = self.job_progress.get(&(producer, job)) else {
+            return 0;
+        };
+        turts_rules::progress::value_at(
+            &turts_rules::progress::RateRecord {
+                done: record.done,
+                total: record.total,
+                per_tick: record.per_tick,
+                at_tick: record.at_tick,
+                stalled: false,
+            },
+            self.last_applied_tick.unwrap_or(0),
+        )
     }
 
     /// `None` before the first snapshot.
@@ -737,6 +778,33 @@ fn merge_unit_orders(
         table.remove(&unit.0);
     }
     table.extend(changed);
+    Some(table)
+}
+
+/// Merge the job progress records of a delta (or a Snapshot) into the table. A record names a job
+/// that the economy of this candidate holds, and a producer that the same message does not remove;
+/// a record of a job that the queues no longer hold is dropped (the job completed or was
+/// cancelled). `None` rejects the message.
+fn merge_job_progress(
+    mut table: BTreeMap<(u32, u64), RateRecord>,
+    records: &[JobProgress],
+    economy: &EconomyState,
+    removed: &HashSet<u32>,
+) -> Option<BTreeMap<(u32, u64), RateRecord>> {
+    let mut seen = HashSet::new();
+    for record in records {
+        let key = (record.producer.0, record.job.0);
+        if removed.contains(&key.0) || !seen.insert(key) {
+            return None;
+        }
+        table.insert(key, record.progress.clone());
+    }
+    table.retain(|(producer, job), _| {
+        !removed.contains(producer)
+            && economy.queues.iter().any(|queue| {
+                queue.producer.0 == *producer && queue.jobs.iter().any(|held| held.id.0 == *job)
+            })
+    });
     Some(table)
 }
 
@@ -1159,6 +1227,7 @@ fn validate_delta_m3(
         healths: vec![],
         research: vec![],
         unit_orders: HashMap::new(),
+        job_progress: BTreeMap::new(),
         health_trace: Default::default(),
         tick: delta.tick,
     };
