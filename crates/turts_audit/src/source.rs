@@ -9,6 +9,11 @@
 //! wrong refund ratio in `bootstrap.rs`, row C6 of `tests/m3/refutations.json`) is invisible to a
 //! rule that reads the catalog from the snapshot, and red here.
 //!
+//! This file is engine source for the no-content scan (`turts_checks/tests/no_content.rs`), so no
+//! identifier in it is a content word of a mod (the three locals that were named `ore`, `shell`
+//! and `belt` are `node_item`, `ammo_item` and `line`). The failure texts are string literals,
+//! which the scan reports only when a whole literal is a content token.
+//!
 //! The rules and their texts are as they were. Each text (`BAL-ore`, `BAL-shell`, `RES`,
 //! `REFUND`, `DANGLING`, `SHOT`, `DMG`) is the `invariant` of a `CheckFailure`, and rows C1 to C7,
 //! C9 to C11 and C13 to C15 of `tests/m3/refutations.json` pin them. A change of a text needs a
@@ -138,7 +143,7 @@ impl OracleCatalog {
                 format!("source RON defines {} distinct node items", ore_items.len()),
             ));
         }
-        let ore = ore_items.into_iter().next().unwrap();
+        let node_item = ore_items.into_iter().next().unwrap();
         let recipe_outputs = self
             .recipes
             .values()
@@ -153,7 +158,7 @@ impl OracleCatalog {
             .collect::<Result<BTreeSet<_>, _>>()?;
         let shell_items = recipe_outputs
             .intersection(&weapon_ammo)
-            .filter(|item| **item != ore)
+            .filter(|item| **item != node_item)
             .cloned()
             .collect::<BTreeSet<_>>();
         if shell_items.len() != 1 {
@@ -165,7 +170,7 @@ impl OracleCatalog {
                 ),
             ));
         }
-        Ok((ore, shell_items.into_iter().next().unwrap()))
+        Ok((node_item, shell_items.into_iter().next().unwrap()))
     }
 }
 fn parse_file<T: serde::de::DeserializeOwned>(path: &Path) -> Result<T, String> {
@@ -257,8 +262,8 @@ pub fn stock(
         }
     }
     // raw_slots is the full authoritative line. pieces is only a mirror and must not be summed.
-    for belt in &state.raw_belts {
-        for slot in &belt.raw_slots {
+    for line in &state.raw_belts {
+        for slot in &line.raw_slots {
             if slot.item.as_ref() == Some(item) {
                 add(&mut total, 1, "BAL-ore")?;
             }
@@ -400,9 +405,9 @@ pub fn check_operation(
     check_dangling(&op.after)?;
     // Check ammo semantics before aggregate stock so C13 identifies the invalid shot itself.
     check_shots(op, oracle_catalog)?;
-    let (ore, shell) = oracle_catalog.tracked_materials()?;
-    check_balance(op, oracle_catalog, &ore, "BAL-ore")?;
-    check_balance(op, oracle_catalog, &shell, "BAL-shell")?;
+    let (node_item, ammo_item) = oracle_catalog.tracked_materials()?;
+    check_balance(op, oracle_catalog, &node_item, "BAL-ore")?;
+    check_balance(op, oracle_catalog, &ammo_item, "BAL-shell")?;
     check_reservations(&op.after, oracle_catalog)?;
     check_refunds(op, oracle_catalog)?;
     Ok(())
