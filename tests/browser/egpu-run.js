@@ -153,6 +153,14 @@ async function run() {
             const joined = await waitJoined(page, label);
             windows.push({ n, page, label, slot: joined.slot, adapter: joined.render_adapter, start_state: joined, frames: [], origin: null, start_epoch: null, samples: [] });
         }
+        // The page shows "Click to play" until the first click (the audio gate; smoke run egpu-smoke-2 lost its
+        // first order to it). One click on a neutral point in each window, then a short settle. This click is part
+        // of setup: the frame record starts after it.
+        for (const w of windows) {
+            await w.page.bringToFront();
+            await w.page.mouse.click(VIEW.w / 2, VIEW.h / 2, { button: "left" });
+        }
+        await sleep(1500);
         // Setup is done. Reset the frame arrays and start the clock in both windows together.
         const startStates = await Promise.all(windows.map((w) => readState(w.page)));
         const initial = startStates.map((state) => state.units);
@@ -180,44 +188,66 @@ async function run() {
         result.sets = { foreign_ids: foreignIds, trooper_count: trooperIds.length, chosen_trooper: trooperId };
         const combat = [];
         result.combat = combat;
+        let lastTarget = null;
 
         const front = async (w) => { await w.page.bringToFront(); };
         async function focusWorld(w, wx, wy) {
             const p = minimapPoint(wx, wy);
             await w.page.mouse.click(p.x, p.y, { button: "left" });
-            await sleep(400);
+            await sleep(800);
         }
-        async function attackNext(second) {
+        // Read the scene until the unit's screen point stops moving (a camera pan or a walking unit), at most 6 reads.
+        async function settled(w, id) {
+            let previous = null;
+            let state = null;
+            for (let i = 0; i < 6; i += 1) {
+                state = await readState(w.page);
+                const unit = state.units.find((u) => u.id === id);
+                const point = unit?.screen ?? null;
+                if (point && previous && Math.hypot(point[0] - previous[0], point[1] - previous[1]) < 1.5) return { state, unit };
+                previous = point;
+                await sleep(200);
+            }
+            return { state, unit: state.units.find((u) => u.id === id) };
+        }
+        async function attackNext(second, reissue) {
             await front(attacker);
             let state = await readState(attacker.page);
             const alive = foreignIds.filter((id) => state.units.some((u) => u.id === id));
-            const entry = { second, foreign_alive_before: alive.length };
+            const entry = { second, step: reissue ? "attack_reissue" : "attack", foreign_alive_before: alive.length };
             if (alive.length === 0 || trooperId === null) { entry.outcome = alive.length === 0 ? "no foreign unit left" : "no trooper"; combat.push(entry); return; }
-            const targetId = alive[0];
-            let target = state.units.find((u) => u.id === targetId);
-            let me = state.units.find((u) => u.id === trooperId);
-            if (!reachable(me?.screen) && !reachable(target?.screen)) { await focusWorld(attacker, target.x, target.y); state = await readState(attacker.page); target = state.units.find((u) => u.id === targetId); me = state.units.find((u) => u.id === trooperId); }
-            if (reachable(me?.screen)) { await attacker.page.mouse.click(me.screen[0], me.screen[1], { button: "left" }); await sleep(120); }
+            const targetId = reissue && lastTarget !== null && alive.includes(lastTarget) ? lastTarget : alive[0];
+            if (reissue && targetId !== lastTarget) { entry.outcome = "last target already gone"; combat.push(entry); return; }
+            let { unit: target } = await settled(attacker, targetId);
+            const me = state.units.find((u) => u.id === trooperId);
+            if (reachable(me?.screen)) { await attacker.page.mouse.click(me.screen[0], me.screen[1], { button: "left" }); await sleep(150); }
             else entry.select_skipped = "trooper not on screen";
-            if (!reachable(target?.screen)) { await focusWorld(attacker, target.x, target.y); state = await readState(attacker.page); target = state.units.find((u) => u.id === targetId); }
+            if (!reachable(target?.screen)) {
+                await focusWorld(attacker, target.x, target.y);
+                ({ unit: target } = await settled(attacker, targetId));
+            }
             if (!reachable(target?.screen)) { entry.outcome = "target not reachable on screen"; combat.push(entry); return; }
+            entry.target_screen = target.screen.map((v) => Math.round(v)); entry.trooper_screen = me?.screen ? me.screen.map((v) => Math.round(v)) : null;
             await attacker.page.mouse.click(target.screen[0], target.screen[1], { button: "right" });
+            lastTarget = targetId;
             entry.target = targetId; entry.outcome = "attack ordered"; combat.push(entry);
         }
         async function moveDummy(second) {
             await front(mover);
             const state = await readState(mover.page);
-            const dummy = state.units.filter((u) => foreignIds.includes(u.id) && reachable(u.screen))[0];
-            const entry = { second, window: mover.n + 1 };
+            const entry = { second, step: "dummy_move", window: mover.n + 1 };
+            // A dummy that is not the attacker's target (the highest id first). The post (the last id) cannot move.
+            const candidates = foreignIds.slice(0, -1).reverse().filter((id) => id !== lastTarget && state.units.some((u) => u.id === id));
+            const dummy = candidates.map((id) => state.units.find((u) => u.id === id)).find((u) => reachable(u.screen));
             if (!dummy) {
-                const any = state.units.find((u) => foreignIds.includes(u.id));
+                const any = candidates.length ? state.units.find((u) => u.id === candidates[0]) : null;
                 if (any) await focusWorld(mover, any.x, any.y);
-                entry.outcome = any ? "camera focused on a target" : "no target of this slot left";
+                entry.outcome = any ? "camera focused on a target" : "no movable target of this slot left";
                 combat.push(entry); return;
             }
             await mover.page.mouse.click(dummy.screen[0], dummy.screen[1], { button: "left" });
-            await sleep(120);
-            const dx = (second / DUMMY_MOVE_EVERY_S) % 2 === 0 ? 70 : -70;
+            await sleep(150);
+            const dx = Math.floor(second / DUMMY_MOVE_EVERY_S) % 2 === 0 ? 70 : -70;
             const dest = [Math.min(Math.max(dummy.screen[0] + dx, 40), VIEW.w - 40), Math.min(Math.max(dummy.screen[1] + 40, 40), VIEW.h - 60)];
             await mover.page.mouse.click(dest[0], dest[1], { button: "right" });
             entry.outcome = "dummy move ordered"; entry.unit = dummy.id; combat.push(entry);
@@ -226,7 +256,7 @@ async function run() {
             for (const w of windows) {
                 await front(w);
                 await w.page.mouse.move(VIEW.w / 2, VIEW.h / 2);
-                await w.page.mouse.wheel(0, (second / ZOOM_EVERY_S) % 2 === 0 ? -240 : 240);
+                await w.page.mouse.wheel(0, Math.floor(second / ZOOM_EVERY_S) % 2 === 0 ? -120 : 120);
             }
         }
         async function drain() {
@@ -261,7 +291,10 @@ async function run() {
                 await drain(); await sample(second);
                 console.log(`EGPU_PROGRESS second=${second} frames=${windows.map((w) => w.frames.length).join(",")} foreign_alive=${windows[0].samples.at(-1)?.foreign_alive}`);
             }
-            if (second % ATTACK_EVERY_S === 1) await guarded("attack", attackNext);
+            // One new target about every 50 s (a dummy has 40 health, a trooper does 5 each second); the same
+            // order again 25 s later in case the first click missed. The package has 10 dummies and 1 post.
+            if (second % ATTACK_EVERY_S === 1) await guarded("attack", (sec) => attackNext(sec, false));
+            if (second % ATTACK_EVERY_S === 26) await guarded("attack_reissue", (sec) => attackNext(sec, true));
             if (second % DUMMY_MOVE_EVERY_S === 21) await guarded("dummy_move", moveDummy);
             if (second % ZOOM_EVERY_S === 11) await guarded("zoom", zoom);
         }
@@ -286,12 +319,32 @@ async function run() {
             });
             await fs.writeFile(path.join(outDir, `${w.label}-frame-times-ms.json`), JSON.stringify(w.frames.map((v) => Math.round(v * 100) / 100)));
         }
-        // Chrome GPU page, after the measured period (not counted).
+        // GPU facts, after the measured period (not counted): the WebGPU adapter info of each window and the text of chrome://gpu.
+        for (const [i, w] of windows.entries()) {
+            try {
+                result.windows[i].webgpu_adapter_info = await w.page.evaluate(async () => {
+                    const adapter = await navigator.gpu.requestAdapter();
+                    if (!adapter) return null;
+                    const info = adapter.info || {};
+                    return { vendor: info.vendor, architecture: info.architecture, device: info.device, description: info.description, driver: info.driver };
+                });
+            } catch (error) { result.windows[i].webgpu_adapter_info = { error: String(error?.message || error).slice(0, 200) }; }
+        }
         try {
             const gpu = await windows[0].page.context().newPage();
             await gpu.goto("chrome://gpu", { timeout: 15000 });
-            await sleep(3000);
-            await fs.writeFile(path.join(outDir, "chrome-gpu.txt"), await gpu.evaluate(() => document.body.innerText));
+            await sleep(4000);
+            const text = await gpu.evaluate(() => {
+                const parts = [];
+                const walk = (node) => {
+                    if (node.nodeType === Node.TEXT_NODE) { const t = node.textContent.trim(); if (t) parts.push(t); return; }
+                    if (node.shadowRoot) walk(node.shadowRoot);
+                    for (const child of node.childNodes) walk(child);
+                };
+                walk(document.documentElement);
+                return parts.join("\n");
+            });
+            await fs.writeFile(path.join(outDir, "chrome-gpu.txt"), text);
             await gpu.close();
         } catch (error) { result.chrome_gpu_error = String(error?.message || error).slice(0, 200); }
     } catch (error) {
