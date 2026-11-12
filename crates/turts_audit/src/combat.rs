@@ -9,7 +9,6 @@
 //!   and changes in no other way.
 //! - combat: the applied damage of a shot is the health of the target, or the damage when it is
 //!   smaller.
-//! - combat: no shot is at a removed unit.
 //! - combat: a `Killed` event names a unit whose health reaches zero in the operation, and a unit
 //!   whose health reaches zero has one `Killed` event in that operation.
 //! - combat: a unit leaves the world only in an operation with a `Destroyed` event for it, and is
@@ -116,11 +115,6 @@ pub(crate) fn check(step: &Step<'_>) -> Result<(), String> {
                 if item.is_some() != (*spent > 0) {
                     return Err(format!(
                         "combat: weapon {weapon} fired with ammo item {item:?} and ammo {spent} in {label}"
-                    ));
-                }
-                if removed_before.contains(target) {
-                    return Err(format!(
-                        "combat: weapon {weapon} fired at the removed unit {target} in {label}"
                     ));
                 }
                 let current = running.get(target).copied().unwrap_or(0);

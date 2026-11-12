@@ -62,13 +62,13 @@ impl Slots {
 
     pub(crate) fn check(&mut self, step: &Step<'_>) -> Result<(), String> {
         let label = step.label();
-        for (name, state) in [("start", step.before), ("end", step.after)] {
-            if state.claims != self.claims {
-                return Err(format!(
-                    "slots: the slot claims at the {name} of {label} are {:?}, the Claim records give {:?}",
-                    state.claims, self.claims
-                ));
-            }
+        // Each snapshot is the end of exactly one step. The start of a gap can be a snapshot from
+        // before a `Claim` record, so only the end is compared with the Claim records.
+        if step.after.claims != self.claims {
+            return Err(format!(
+                "slots: the slot claims at the end of {label} are {:?}, the Claim records give {:?}",
+                step.after.claims, self.claims
+            ));
         }
         let owners: BTreeMap<u32, u8> = step
             .before
@@ -106,4 +106,51 @@ pub(crate) fn check_admission(
         ));
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{EconomyLogRecord, validate_ledger};
+
+    fn initial() -> turts_sim::AuditState {
+        let mut app = turts_sim::headless_app(10);
+        turts_sim::audit_state(app.world_mut())
+    }
+
+    fn claim_then_tick(claimed: Option<u64>) -> Vec<EconomyLogRecord> {
+        let before = initial();
+        let mut state = before.clone();
+        state.economy.tick += 1;
+        state.claims[0] = claimed;
+        vec![
+            EconomyLogRecord::Initial(before.clone()),
+            EconomyLogRecord::Claim {
+                tick: 0,
+                player_id: 7,
+                slot: 0,
+            },
+            EconomyLogRecord::Tick {
+                tick: 1,
+                before,
+                state,
+                events: Vec::new(),
+            },
+        ]
+    }
+
+    /// A Claim record comes after the snapshot that the next step starts from (the E8 and E9
+    /// process logs). The snapshot after the Claim holds the claim.
+    #[test]
+    fn a_claim_between_snapshots_is_accepted() {
+        assert_eq!(validate_ledger(&claim_then_tick(Some(7))), Ok(()));
+    }
+
+    #[test]
+    fn a_snapshot_without_the_claim_is_rejected() {
+        let error = validate_ledger(&claim_then_tick(None)).unwrap_err();
+        assert!(
+            error.starts_with("slots: the slot claims at the end of the end of tick 1"),
+            "{error}"
+        );
+    }
 }

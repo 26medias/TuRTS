@@ -4,8 +4,8 @@
 //! - reservations: no account reserves more than it holds.
 //! - reservations: the reserved amount of each account equals the sum of the active claim lines
 //!   for that account, and each active claim line names an account that exists.
-//! - reservations: an active claim has a token equal to its job id, and names a queued job.
-//! - reservations: a job that has started has no active claim.
+//! - reservations: an active claim has a token equal to its job id, and names a queued job (so a
+//!   job that has started has no active claim).
 //! - reservations: a job holds a reservation token exactly when it has an active claim; the token
 //!   names the job and holds the claim lines.
 //! - reservations: a claim opens only in an operation with a `ProductionQueued` event for its job.
@@ -124,12 +124,6 @@ fn check_state(state: &LedgerAudit, label: &str) -> Result<(), String> {
     }
     for job in state.raw_queues.iter().flat_map(|queue| &queue.jobs) {
         let claim = active.get(&job.id);
-        if job.stage != JobStage::Queued && claim.is_some() {
-            return Err(format!(
-                "reservations: started job {} still has an active claim after {label}",
-                job.id
-            ));
-        }
         let token_matches = match (&job.reservation, claim) {
             (None, None) => true,
             (Some(token), Some((_, lines))) => token.job_id == job.id && token.lines == *lines,
