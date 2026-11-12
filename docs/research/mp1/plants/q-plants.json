@@ -1,0 +1,52 @@
+[
+    {
+        "row": "Q-PLANTS",
+        "plant": "exit-only",
+        "files": [
+            {
+                "file": "scripts/qa/mp1_plants.py",
+                "edit": {
+                    "old": "    if line is None:\n        raise PlantFail(",
+                    "new": "    if False:\n        raise PlantFail("
+                }
+            }
+        ],
+        "command": [
+            "python3",
+            "-B",
+            "-I",
+            "scripts/qa/mp1_plants.py",
+            "--self-test"
+        ],
+        "env": {},
+        "headed": false,
+        "expected_red": "SELFTEST FAIL exit_only_wrong_text_is_a_failure",
+        "exit": 1,
+        "commit": "d7d7e6d"
+    },
+    {
+        "row": "Q-PLANTS",
+        "plant": "no-restore",
+        "files": [
+            {
+                "file": "scripts/qa/mp1_plants.py",
+                "edit": {
+                    "old": "        restore(root, originals, use_git)\n        problems = check_restored(root, originals, use_git, tree_before)\n",
+                    "new": "        problems = []\n"
+                }
+            }
+        ],
+        "command": [
+            "python3",
+            "-B",
+            "-I",
+            "scripts/qa/mp1_plants.py",
+            "--self-test"
+        ],
+        "env": {},
+        "headed": false,
+        "expected_red": "SELFTEST FAIL sigint_restores_the_source: AssertionError: a.txt is not restored",
+        "exit": 1,
+        "commit": "d7d7e6d"
+    }
+]
