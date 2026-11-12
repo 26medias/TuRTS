@@ -28,7 +28,27 @@ sys.dont_write_bytecode = True
 SCHEMA = "mc-prepared-v1"
 STALE = 66  # exit code of a refused prepared folder; the wrapper uses 2, 3, 75 and 124
 # What the builds read. A change here can change a binary or the dist.
-BUILD_INPUTS = ["crates", "vendor", "Cargo.toml", "Cargo.lock", "rust-toolchain.toml", ".cargo"]
+SOURCE_ROOTS = ["crates", "vendor", "Cargo.toml", "Cargo.lock", "rust-toolchain.toml", ".cargo"]
+# What the prepare step RUNS or READS to make an artefact (Q-PREBUILD review, case c9: the KM1 record is
+# written by code in mc-browser.sh; the PER1 reference by per1_native_reference.py, which imports
+# hd1_reference.py). One edit of one of them gives exit 66 even when HEAD is the same.
+#   mc-browser.sh, t7.sh, m2-browser.sh, m3-browser.sh: the prepare branches and their heredocs
+#   mc-pixels.sh: the --prepare form calls mc-browser.sh
+#   mc_prepare.py, mc_prepare_lib.sh: this tool and the lock and begin step
+#   mc_browser_params.py: row checks that the prepare branch runs
+#   per1_native_reference.py, hd1_reference.py: the PER1 native reference (prepare) and its imports
+#   tests/browser/package.json and package-lock.json: what `npm ci` installs
+PREPARE_TIME_FILES = [
+    "scripts/mc-browser.sh", "scripts/mc-pixels.sh", "scripts/t7.sh", "scripts/m2-browser.sh", "scripts/m3-browser.sh",
+    "scripts/mc_prepare.py", "scripts/mc_prepare_lib.sh", "scripts/mc_browser_params.py",
+    "scripts/per1_native_reference.py", "scripts/hd1_reference.py",
+    "tests/browser/package.json", "tests/browser/package-lock.json",
+]
+BUILD_INPUTS = SOURCE_ROOTS + PREPARE_TIME_FILES
+# The build environment that can change an output. An unset variable is a value (None).
+ENV_NAMES = ["RUSTFLAGS", "CARGO_ENCODED_RUSTFLAGS"]
+ENV_PREFIX = "CARGO_PROFILE_"
+TOOLS = {"rustc": ("rustc", "--version"), "cargo": ("cargo", "--version"), "trunk": ("trunk", "--version")}
 # Files and folders of the prepared folder that `seal` hashes.
 ARTEFACT_ROOTS = ["bin", "dist", "pack", "native-reference", "effective-bindings.json", "km1-reserved-pack.json"]
 
@@ -116,12 +136,24 @@ def artefact_hashes(out):
         if path.is_dir():
             for current, dirs, files in os.walk(path):
                 dirs.sort()
+                for link in [d for d in dirs if (Path(current) / d).is_symlink()]:
+                    full = Path(current) / link  # a symlink to a folder is not followed: it is one entry
+                    found[full.relative_to(out).as_posix()] = digest_path(full)
                 for file in sorted(files):
                     full = Path(current) / file
                     found[full.relative_to(out).as_posix()] = digest_path(full)
         elif path.exists():
             found[name] = digest_path(path)
     return found
+
+
+def tool_versions():
+    return {name: tool_version(*argv) for name, argv in TOOLS.items()}
+
+
+def build_env(extra_names=()):
+    names = set(ENV_NAMES) | {name for name in os.environ if name.startswith(ENV_PREFIX)} | set(extra_names)
+    return {name: os.environ.get(name) for name in sorted(names)}
 
 
 def tool_version(*argv):
@@ -168,8 +200,8 @@ def cmd_seal(args):
         "package_sha256": now["package_sha256"],
         "row": row,
         "artefacts": artefacts,
-        "tools": {"rustc": tool_version("rustc", "--version"), "cargo": tool_version("cargo", "--version"),
-                  "trunk": tool_version("trunk", "--version")},
+        "tools": tool_versions(),
+        "build_env": build_env(),
         "cargo_target_dir": os.environ.get("CARGO_TARGET_DIR"),
     }
     (out / "manifest.json").write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
@@ -208,14 +240,25 @@ def stale_reasons(prepared, root, package, row_file, need):
         needs += row["needs"]
         if row["needs"] and (not manifest.get("row") or manifest["row"]["sha256"] != row["sha256"]):
             reasons.append(f"row {row['row']} needs artefacts that were made for another row file")
+    for name, now_version in tool_versions().items():
+        if manifest["tools"].get(name) != now_version:
+            reasons.append(f"tool {name} changed (prepared {manifest['tools'].get(name)!r}, now {now_version!r})")
+    prepared_env = manifest["build_env"]
+    for name, now_value in build_env(prepared_env).items():
+        if prepared_env.get(name) != now_value:
+            reasons.append(f"build environment differs ({name}: prepared {prepared_env.get(name)!r}, now {now_value!r})")
     artefacts = manifest["artefacts"]
     for rel in needs:
         if rel not in artefacts:
             reasons.append(f"artefact {rel} is not in the manifest")
+    present = artefact_hashes(prepared)
     for rel, expected in sorted(artefacts.items()):
-        actual = digest_path(Path(prepared) / rel)
-        if actual != expected:
+        if rel not in present:
+            reasons.append(f"artefact {rel} is missing")
+        elif present[rel] != expected:
             reasons.append(f"artefact {rel} changed after the prepare step")
+    for rel in sorted(set(present) - set(artefacts)):
+        reasons.append(f"unexpected file {rel} in the prepared folder (the prepare step did not make it)")
     return reasons
 
 

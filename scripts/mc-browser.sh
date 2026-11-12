@@ -120,16 +120,11 @@ if [[ -n "$PREPARED" ]]; then
 fi
 mkdir -p "$OUT_ROOT"
 if [[ -n "$PREPARE_DIR" ]]; then
-    if [[ -n "$(ls -A "$PREPARE_DIR" 2>/dev/null)" && ! -f "$PREPARE_DIR/manifest.json" && ! -f "$PREPARE_DIR/.begin.json" ]]; then
-        echo "--prepare: $PREPARE_DIR is not empty and is not a prepared folder" >&2
-        exit 2
-    fi
-    rm -rf "$PREPARE_DIR"
-    mkdir -p "$PREPARE_DIR"
+    source "$ROOT/scripts/mc_prepare_lib.sh"
+    mc_prepare_begin "$PREPARE_DIR" "$ROOT" "$PACKAGE" "$ROW_FILE"
     OUT="$(cd "$PREPARE_DIR" && pwd)"
     PREPARE_ARGS=(--root "$ROOT" --out "$OUT" --package "$PACKAGE")
     [[ -z "$ROW_FILE" ]] || PREPARE_ARGS+=(--row "$ROW_FILE")
-    python3 -B "$ROOT/scripts/mc_prepare.py" begin "${PREPARE_ARGS[@]}"
 else
     OUT="$(mktemp -d "$OUT_ROOT/run-$(date -u +%Y%m%dT%H%M%SZ)-XXXXXX")"
 fi

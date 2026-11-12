@@ -47,14 +47,9 @@ if [[ -n "$PREPARED" ]]; then
     cp -a "$PREPARED/pack/." "$OUT/pack/"
 else
     if [[ -n "$PREPARE_DIR" ]]; then
-        if [[ -n "$(ls -A "$PREPARE_DIR" 2>/dev/null)" && ! -f "$PREPARE_DIR/manifest.json" && ! -f "$PREPARE_DIR/.begin.json" ]]; then
-            echo "--prepare: $PREPARE_DIR is not empty and is not a prepared folder" >&2
-            exit 2
-        fi
-        rm -rf "$PREPARE_DIR"
-        mkdir -p "$PREPARE_DIR"
+        source "$ROOT/scripts/mc_prepare_lib.sh"
+        mc_prepare_begin "$PREPARE_DIR" "$ROOT" "$PACKAGE"
         OUT="$PREPARE_DIR"
-        python3 -B scripts/mc_prepare.py begin --root "$ROOT" --out "$OUT" --package "$PACKAGE"
     fi
     cargo build --release -p turts_server
     (cd crates/turts_client_web && trunk build --release)

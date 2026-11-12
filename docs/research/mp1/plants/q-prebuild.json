@@ -1,7 +1,7 @@
 [
   {
     "row": "Q-PREBUILD",
-    "plant": "p01: the stale check call is removed from mc-browser.sh (a prepared run never compares the folder with the source). Red tests: test_changed_artefact_is_refused, test_folder_without_manifest_is_refused, test_head_change_is_refused, test_new_untracked_source_file_is_refused, test_package_change_is_refused, test_pixels_stale_folder_stops_at_once_with_exit_66, test_prepared_for_another_package_is_refused, test_source_edit_after_prepare_is_refused",
+    "plant": "stale-check-removed",
     "files": [
       {
         "file": "scripts/mc-browser.sh",
@@ -11,16 +11,20 @@
         }
       }
     ],
-    "command": "python3 -B tests/qa/test_mc_prepare.py",
+    "command": [
+      "python3",
+      "-B",
+      "tests/qa/test_mc_prepare.py"
+    ],
     "env": {},
     "headed": false,
     "expected_red": "AssertionError: 1 != 66",
     "exit": 1,
-    "commit": "b7ec38f3e2da64c9f87bb4c54c0aa280a8273ccc"
+    "commit": "1e18d06ff5a4af1164a2f9765c649aeb0ad36df1"
   },
   {
     "row": "Q-PREBUILD",
-    "plant": "p02: the HEAD compare is removed from the stale check. Red tests: test_head_change_is_refused",
+    "plant": "head-compare-removed",
     "files": [
       {
         "file": "scripts/mc_prepare.py",
@@ -30,16 +34,20 @@
         }
       }
     ],
-    "command": "python3 -B tests/qa/test_mc_prepare.py",
+    "command": [
+      "python3",
+      "-B",
+      "tests/qa/test_mc_prepare.py"
+    ],
     "env": {},
     "headed": false,
     "expected_red": "AssertionError: a stale prepared run started its services: mc_prepare: OK",
     "exit": 1,
-    "commit": "b7ec38f3e2da64c9f87bb4c54c0aa280a8273ccc"
+    "commit": "1e18d06ff5a4af1164a2f9765c649aeb0ad36df1"
   },
   {
     "row": "Q-PREBUILD",
-    "plant": "p03: the build-source compare is removed from the stale check. Red tests: test_new_untracked_source_file_is_refused, test_pixels_stale_folder_stops_at_once_with_exit_66, test_source_edit_after_prepare_is_refused, test_t7_stale_folder_is_refused",
+    "plant": "source-compare-removed",
     "files": [
       {
         "file": "scripts/mc_prepare.py",
@@ -49,16 +57,20 @@
         }
       }
     ],
-    "command": "python3 -B tests/qa/test_mc_prepare.py",
+    "command": [
+      "python3",
+      "-B",
+      "tests/qa/test_mc_prepare.py"
+    ],
     "env": {},
     "headed": false,
     "expected_red": "AssertionError: a stale prepared run started its services: mc_prepare: OK",
     "exit": 1,
-    "commit": "b7ec38f3e2da64c9f87bb4c54c0aa280a8273ccc"
+    "commit": "1e18d06ff5a4af1164a2f9765c649aeb0ad36df1"
   },
   {
     "row": "Q-PREBUILD",
-    "plant": "p04: the package compare is removed from the stale check. Red tests: test_m2_stale_folder_is_refused_before_any_case, test_m3_stale_folder_is_refused, test_package_change_is_refused",
+    "plant": "package-compare-removed",
     "files": [
       {
         "file": "scripts/mc_prepare.py",
@@ -68,35 +80,43 @@
         }
       }
     ],
-    "command": "python3 -B tests/qa/test_mc_prepare.py",
+    "command": [
+      "python3",
+      "-B",
+      "tests/qa/test_mc_prepare.py"
+    ],
     "env": {},
     "headed": false,
     "expected_red": "AssertionError: 0 != 66 : mc_prepare: OK",
     "exit": 1,
-    "commit": "b7ec38f3e2da64c9f87bb4c54c0aa280a8273ccc"
+    "commit": "1e18d06ff5a4af1164a2f9765c649aeb0ad36df1"
   },
   {
     "row": "Q-PREBUILD",
-    "plant": "p05: the artefact digest compare is removed (a changed binary or dist passes). Red tests: test_changed_artefact_is_refused",
+    "plant": "artefact-digest-compare-removed",
     "files": [
       {
         "file": "scripts/mc_prepare.py",
         "edit": {
-          "old": "        if actual != expected:",
-          "new": "        if False:"
+          "old": "        elif present[rel] != expected:",
+          "new": "        elif False:"
         }
       }
     ],
-    "command": "python3 -B tests/qa/test_mc_prepare.py",
+    "command": [
+      "python3",
+      "-B",
+      "tests/qa/test_mc_prepare.py"
+    ],
     "env": {},
     "headed": false,
     "expected_red": "AssertionError: 1 != 66 : mc_prepare: OK",
     "exit": 1,
-    "commit": "b7ec38f3e2da64c9f87bb4c54c0aa280a8273ccc"
+    "commit": "1e18d06ff5a4af1164a2f9765c649aeb0ad36df1"
   },
   {
     "row": "Q-PREBUILD",
-    "plant": "p06: a prepared run builds anyway (the build branch no longer depends on --prepared). Red tests: test_pixels_prepare_then_prepared_run_builds_nothing, test_prepared_run_starts_no_cargo_and_no_trunk, test_prepared_run_uses_the_prepared_copies",
+    "plant": "prepared-run-builds-anyway",
     "files": [
       {
         "file": "scripts/mc-browser.sh",
@@ -106,16 +126,20 @@
         }
       }
     ],
-    "command": "python3 -B tests/qa/test_mc_prepare.py",
+    "command": [
+      "python3",
+      "-B",
+      "tests/qa/test_mc_prepare.py"
+    ],
     "env": {},
     "headed": false,
     "expected_red": "AssertionError: 1 != 0 : ROW X viewport=1280x720 run=1/2 windows=1",
     "exit": 1,
-    "commit": "b7ec38f3e2da64c9f87bb4c54c0aa280a8273ccc"
+    "commit": "1e18d06ff5a4af1164a2f9765c649aeb0ad36df1"
   },
   {
     "row": "Q-PREBUILD",
-    "plant": "p07: seal no longer compares the begin state (a source change during the build is sealed). Red tests: test_source_change_while_prepare_runs_makes_no_manifest",
+    "plant": "seal-without-begin-compare",
     "files": [
       {
         "file": "scripts/mc_prepare.py",
@@ -125,16 +149,20 @@
         }
       }
     ],
-    "command": "python3 -B tests/qa/test_mc_prepare.py",
+    "command": [
+      "python3",
+      "-B",
+      "tests/qa/test_mc_prepare.py"
+    ],
     "env": {},
     "headed": false,
     "expected_red": "AssertionError: 0 != 66 : mc_prepare: sealed",
     "exit": 1,
-    "commit": "b7ec38f3e2da64c9f87bb4c54c0aa280a8273ccc"
+    "commit": "1e18d06ff5a4af1164a2f9765c649aeb0ad36df1"
   },
   {
     "row": "Q-PREBUILD",
-    "plant": "p08: mc-pixels.sh no longer stops with exit 66 on a refusal. Red tests: test_pixels_stale_folder_stops_at_once_with_exit_66",
+    "plant": "pixels-stale-exit-not-propagated",
     "files": [
       {
         "file": "scripts/mc-pixels.sh",
@@ -144,16 +172,20 @@
         }
       }
     ],
-    "command": "python3 -B tests/qa/test_mc_prepare.py",
+    "command": [
+      "python3",
+      "-B",
+      "tests/qa/test_mc_prepare.py"
+    ],
     "env": {},
     "headed": false,
     "expected_red": "AssertionError: 1 != 66 : ROW X viewport=1280x720 run=1/2 windows=1",
     "exit": 1,
-    "commit": "b7ec38f3e2da64c9f87bb4c54c0aa280a8273ccc"
+    "commit": "1e18d06ff5a4af1164a2f9765c649aeb0ad36df1"
   },
   {
     "row": "Q-PREBUILD",
-    "plant": "p09: t7.sh ignores the refusal of the stale check. Red tests: test_t7_stale_folder_is_refused",
+    "plant": "t7-stale-check-ignored",
     "files": [
       {
         "file": "scripts/t7.sh",
@@ -163,54 +195,66 @@
         }
       }
     ],
-    "command": "python3 -B tests/qa/test_mc_prepare.py",
+    "command": [
+      "python3",
+      "-B",
+      "tests/qa/test_mc_prepare.py"
+    ],
     "env": {},
     "headed": false,
     "expected_red": "AssertionError: 0 != 66 : mc_prepare: STALE",
     "exit": 1,
-    "commit": "b7ec38f3e2da64c9f87bb4c54c0aa280a8273ccc"
+    "commit": "1e18d06ff5a4af1164a2f9765c649aeb0ad36df1"
   },
   {
     "row": "Q-PREBUILD",
-    "plant": "p10: --prepare empties a folder that is not a prepared folder (the guard is removed). Red tests: test_prepare_refuses_a_folder_that_is_not_a_prepared_folder",
+    "plant": "prepare-folder-guard-removed",
     "files": [
       {
-        "file": "scripts/mc-browser.sh",
+        "file": "scripts/mc_prepare_lib.sh",
         "edit": {
-          "old": "if [[ -n \"$(ls -A \"$PREPARE_DIR\" 2>/dev/null)\" && ! -f \"$PREPARE_DIR/manifest.json\" && ! -f \"$PREPARE_DIR/.begin.json\" ]]; then",
-          "new": "if false; then"
+          "old": "    if [[ -n \"$(ls -A \"$dir\" 2>/dev/null)\" && ! -f \"$dir/manifest.json\" && ! -f \"$dir/.begin.json\" ]]; then",
+          "new": "    if false; then"
         }
       }
     ],
-    "command": "python3 -B tests/qa/test_mc_prepare.py",
+    "command": [
+      "python3",
+      "-B",
+      "tests/qa/test_mc_prepare.py"
+    ],
     "env": {},
     "headed": false,
     "expected_red": "AssertionError: 0 != 2 : mc_prepare: sealed",
     "exit": 1,
-    "commit": "b7ec38f3e2da64c9f87bb4c54c0aa280a8273ccc"
+    "commit": "1e18d06ff5a4af1164a2f9765c649aeb0ad36df1"
   },
   {
     "row": "Q-PREBUILD",
-    "plant": "p11: the crates folder is not a build input of the source hash. Red tests: test_new_untracked_source_file_is_refused, test_pixels_stale_folder_stops_at_once_with_exit_66, test_source_change_while_prepare_runs_makes_no_manifest, test_source_edit_after_prepare_is_refused, test_t7_stale_folder_is_refused",
+    "plant": "crates-not-hashed",
     "files": [
       {
         "file": "scripts/mc_prepare.py",
         "edit": {
-          "old": "BUILD_INPUTS = [\"crates\", \"vendor\",",
-          "new": "BUILD_INPUTS = [\"vendor\","
+          "old": "SOURCE_ROOTS = [\"crates\", \"vendor\",",
+          "new": "SOURCE_ROOTS = [\"vendor\","
         }
       }
     ],
-    "command": "python3 -B tests/qa/test_mc_prepare.py",
+    "command": [
+      "python3",
+      "-B",
+      "tests/qa/test_mc_prepare.py"
+    ],
     "env": {},
     "headed": false,
     "expected_red": "AssertionError: a stale prepared run started its services: mc_prepare: OK",
     "exit": 1,
-    "commit": "b7ec38f3e2da64c9f87bb4c54c0aa280a8273ccc"
+    "commit": "1e18d06ff5a4af1164a2f9765c649aeb0ad36df1"
   },
   {
     "row": "Q-PREBUILD",
-    "plant": "p12: m3-browser.sh ignores the refusal of the stale check. Red tests: test_m3_stale_folder_is_refused",
+    "plant": "m3-stale-check-ignored",
     "files": [
       {
         "file": "scripts/m3-browser.sh",
@@ -220,16 +264,20 @@
         }
       }
     ],
-    "command": "python3 -B tests/qa/test_mc_prepare.py",
+    "command": [
+      "python3",
+      "-B",
+      "tests/qa/test_mc_prepare.py"
+    ],
     "env": {},
     "headed": false,
     "expected_red": "AssertionError: 0 != 66 : M3_BROWSER_EVIDENCE",
     "exit": 1,
-    "commit": "b7ec38f3e2da64c9f87bb4c54c0aa280a8273ccc"
+    "commit": "1e18d06ff5a4af1164a2f9765c649aeb0ad36df1"
   },
   {
     "row": "Q-PREBUILD",
-    "plant": "p13: m2-browser.sh ignores the refusal of the stale check. Red tests: test_m2_stale_folder_is_refused_before_any_case",
+    "plant": "m2-stale-check-ignored",
     "files": [
       {
         "file": "scripts/m2-browser.sh",
@@ -239,16 +287,20 @@
         }
       }
     ],
-    "command": "python3 -B tests/qa/test_mc_prepare.py",
+    "command": [
+      "python3",
+      "-B",
+      "tests/qa/test_mc_prepare.py"
+    ],
     "env": {},
     "headed": false,
     "expected_red": "AssertionError: 0 != 66 : E9-browser-base-selection",
     "exit": 1,
-    "commit": "b7ec38f3e2da64c9f87bb4c54c0aa280a8273ccc"
+    "commit": "1e18d06ff5a4af1164a2f9765c649aeb0ad36df1"
   },
   {
     "row": "Q-PREBUILD",
-    "plant": "p14: a prepared run starts the server binary of the cache, not the prepared copy. Red tests: test_prepared_run_uses_the_prepared_copies",
+    "plant": "target-server-binary-used",
     "files": [
       {
         "file": "scripts/mc-browser.sh",
@@ -258,16 +310,20 @@
         }
       }
     ],
-    "command": "python3 -B tests/qa/test_mc_prepare.py",
+    "command": [
+      "python3",
+      "-B",
+      "tests/qa/test_mc_prepare.py"
+    ],
     "env": {},
     "headed": false,
     "expected_red": "AssertionError: unexpectedly None : the prepared run did not reach the page: mc_prepare: OK",
     "exit": 1,
-    "commit": "b7ec38f3e2da64c9f87bb4c54c0aa280a8273ccc"
+    "commit": "1e18d06ff5a4af1164a2f9765c649aeb0ad36df1"
   },
   {
     "row": "Q-PREBUILD",
-    "plant": "p15: a prepared run serves the dist of the lane, not the prepared copy. Red tests: test_prepared_run_uses_the_prepared_copies",
+    "plant": "lane-dist-served",
     "files": [
       {
         "file": "scripts/mc-browser.sh",
@@ -277,16 +333,20 @@
         }
       }
     ],
-    "command": "python3 -B tests/qa/test_mc_prepare.py",
+    "command": [
+      "python3",
+      "-B",
+      "tests/qa/test_mc_prepare.py"
+    ],
     "env": {},
     "headed": false,
     "expected_red": "AssertionError: b'fake page' not found in b'<html>WRONG PAGE from the lane dist</html>",
     "exit": 1,
-    "commit": "b7ec38f3e2da64c9f87bb4c54c0aa280a8273ccc"
+    "commit": "1e18d06ff5a4af1164a2f9765c649aeb0ad36df1"
   },
   {
     "row": "Q-PREBUILD",
-    "plant": "p16: t7.sh prepared run still builds the oracle with cargo. Red tests: test_t7_prepare_then_prepared_run_builds_nothing",
+    "plant": "t7-oracle-built-by-cargo",
     "files": [
       {
         "file": "scripts/t7.sh",
@@ -296,11 +356,268 @@
         }
       }
     ],
-    "command": "python3 -B tests/qa/test_mc_prepare.py",
+    "command": [
+      "python3",
+      "-B",
+      "tests/qa/test_mc_prepare.py"
+    ],
     "env": {},
     "headed": false,
     "expected_red": "AssertionError: 99 != 0 : mc_prepare: OK",
     "exit": 1,
-    "commit": "b7ec38f3e2da64c9f87bb4c54c0aa280a8273ccc"
+    "commit": "1e18d06ff5a4af1164a2f9765c649aeb0ad36df1"
+  },
+  {
+    "row": "Q-PREBUILD",
+    "plant": "extra-artefact-file-accepted",
+    "files": [
+      {
+        "file": "scripts/mc_prepare.py",
+        "edit": {
+          "old": "    for rel in sorted(set(present) - set(artefacts)):",
+          "new": "    for rel in []:"
+        }
+      }
+    ],
+    "command": [
+      "python3",
+      "-B",
+      "tests/qa/test_mc_prepare.py"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "AssertionError: a stale prepared run started its services: mc_prepare: OK",
+    "exit": 1,
+    "commit": "1e18d06ff5a4af1164a2f9765c649aeb0ad36df1"
+  },
+  {
+    "row": "Q-PREBUILD",
+    "plant": "tool-versions-not-compared",
+    "files": [
+      {
+        "file": "scripts/mc_prepare.py",
+        "edit": {
+          "old": "        if manifest[\"tools\"].get(name) != now_version:",
+          "new": "        if False:"
+        }
+      }
+    ],
+    "command": [
+      "python3",
+      "-B",
+      "tests/qa/test_mc_prepare.py"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "AssertionError: a stale prepared run started its services: mc_prepare: OK",
+    "exit": 1,
+    "commit": "1e18d06ff5a4af1164a2f9765c649aeb0ad36df1"
+  },
+  {
+    "row": "Q-PREBUILD",
+    "plant": "build-environment-not-compared",
+    "files": [
+      {
+        "file": "scripts/mc_prepare.py",
+        "edit": {
+          "old": "        if prepared_env.get(name) != now_value:",
+          "new": "        if False:"
+        }
+      }
+    ],
+    "command": [
+      "python3",
+      "-B",
+      "tests/qa/test_mc_prepare.py"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "AssertionError: a stale prepared run started its services: mc_prepare: OK",
+    "exit": 1,
+    "commit": "1e18d06ff5a4af1164a2f9765c649aeb0ad36df1"
+  },
+  {
+    "row": "Q-PREBUILD",
+    "plant": "prepare-time-scripts-not-hashed",
+    "files": [
+      {
+        "file": "scripts/mc_prepare.py",
+        "edit": {
+          "old": "BUILD_INPUTS = SOURCE_ROOTS + PREPARE_TIME_FILES",
+          "new": "BUILD_INPUTS = SOURCE_ROOTS"
+        }
+      }
+    ],
+    "command": [
+      "python3",
+      "-B",
+      "tests/qa/test_mc_prepare.py"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "AssertionError: a stale prepared run started its services: mc_prepare: OK",
+    "exit": 1,
+    "commit": "1e18d06ff5a4af1164a2f9765c649aeb0ad36df1"
+  },
+  {
+    "row": "Q-PREBUILD",
+    "plant": "no-lock-on-prepare-folder",
+    "files": [
+      {
+        "file": "scripts/mc_prepare_lib.sh",
+        "edit": {
+          "old": "    flock -n \"$MC_PREPARE_LOCK_FD\" || {",
+          "new": "    true || {"
+        }
+      }
+    ],
+    "command": [
+      "python3",
+      "-B",
+      "tests/qa/test_mc_prepare.py"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "AssertionError: 1 != 2 : mc_prepare: seal without begin",
+    "exit": 1,
+    "commit": "1e18d06ff5a4af1164a2f9765c649aeb0ad36df1"
+  },
+  {
+    "row": "Q-PREBUILD",
+    "plant": "missing-artefact-accepted",
+    "files": [
+      {
+        "file": "scripts/mc_prepare.py",
+        "edit": {
+          "old": "        if rel not in present:",
+          "new": "        if False:"
+        }
+      }
+    ],
+    "command": [
+      "python3",
+      "-B",
+      "tests/qa/test_mc_prepare.py"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "AssertionError: 1 != 66 : Traceback (most recent call last):",
+    "exit": 1,
+    "commit": "1e18d06ff5a4af1164a2f9765c649aeb0ad36df1"
+  },
+  {
+    "row": "Q-PREBUILD",
+    "plant": "size-and-mtime-instead-of-content",
+    "files": [
+      {
+        "file": "scripts/mc_prepare.py",
+        "edit": {
+          "old": "        return sha256_bytes(path.read_bytes())",
+          "new": "        _st = path.stat()\n        return f\"{_st.st_size}:{_st.st_mtime_ns}\""
+        }
+      }
+    ],
+    "command": [
+      "python3",
+      "-B",
+      "tests/qa/test_mc_prepare.py"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "AssertionError: a stale prepared run started its services: mc_prepare: OK",
+    "exit": 1,
+    "commit": "1e18d06ff5a4af1164a2f9765c649aeb0ad36df1"
+  },
+  {
+    "row": "Q-PREBUILD",
+    "plant": "need-ignored",
+    "files": [
+      {
+        "file": "scripts/mc_prepare.py",
+        "edit": {
+          "old": "    needs = list(need)\n",
+          "new": "    needs = []\n"
+        }
+      }
+    ],
+    "command": [
+      "python3",
+      "-B",
+      "tests/qa/test_mc_prepare.py"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "AssertionError: 0 != 66 : mc_prepare: OK",
+    "exit": 1,
+    "commit": "1e18d06ff5a4af1164a2f9765c649aeb0ad36df1"
+  },
+  {
+    "row": "Q-PREBUILD",
+    "plant": "row-file-compare-off",
+    "files": [
+      {
+        "file": "scripts/mc_prepare.py",
+        "edit": {
+          "old": "manifest[\"row\"][\"sha256\"] != row[\"sha256\"]",
+          "new": "False"
+        }
+      }
+    ],
+    "command": [
+      "python3",
+      "-B",
+      "tests/qa/test_mc_prepare.py"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "AssertionError: a stale prepared run started its services: mc_prepare: OK",
+    "exit": 1,
+    "commit": "1e18d06ff5a4af1164a2f9765c649aeb0ad36df1"
+  },
+  {
+    "row": "Q-PREBUILD",
+    "plant": "lock-released-before-rm",
+    "files": [
+      {
+        "file": "scripts/mc_prepare_lib.sh",
+        "edit": {
+          "old": "    rm -rf \"$dir\"\n    mkdir -p \"$dir\"\n",
+          "new": "    rm -rf \"$dir\"\n    mkdir -p \"$dir\"\n    flock -u \"$MC_PREPARE_LOCK_FD\"\n"
+        }
+      }
+    ],
+    "command": [
+      "python3",
+      "-B",
+      "tests/qa/test_mc_prepare.py"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "AssertionError: 1 != 2 : mc_prepare: seal without begin",
+    "exit": 1,
+    "commit": "1e18d06ff5a4af1164a2f9765c649aeb0ad36df1"
+  },
+  {
+    "row": "Q-PREBUILD",
+    "plant": "dirty-flag-instead-of-source-hash",
+    "files": [
+      {
+        "file": "scripts/mc_prepare.py",
+        "edit": {
+          "old": "        \"source_sha256\": map_sha(inputs),",
+          "new": "        \"source_sha256\": str(bool(status.strip())),"
+        }
+      }
+    ],
+    "command": [
+      "python3",
+      "-B",
+      "tests/qa/test_mc_prepare.py"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "AssertionError: a stale prepared run started its services: mc_prepare: OK",
+    "exit": 1,
+    "commit": "1e18d06ff5a4af1164a2f9765c649aeb0ad36df1"
   }
 ]

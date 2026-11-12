@@ -27,7 +27,13 @@ from pathlib import Path
 
 sys.dont_write_bytecode = True
 REAL = Path(__file__).resolve().parents[2]
-SCRIPT_FILES = ["mc-browser.sh", "mc-pixels.sh", "t7.sh", "m3-browser.sh", "m2-browser.sh", "mc_prepare.py", "mc_browser_params.py"]
+SCRIPT_FILES = ["mc-browser.sh", "mc-pixels.sh", "t7.sh", "m3-browser.sh", "m2-browser.sh", "mc_prepare.py", "mc_browser_params.py",
+                "per1_native_reference.py", "hd1_reference.py"]
+OPTIONAL_SCRIPT_FILES = ["mc_prepare_lib.sh"]  # copied when the file exists (it comes with the prepare lock)
+# Every script that the prepare step runs or imports, and the browser package files that npm ci reads:
+# an edit of one of them after the prepare step must give exit 66.
+PREPARE_TIME_FILES = (["scripts/" + name for name in SCRIPT_FILES + OPTIONAL_SCRIPT_FILES]
+                                              + ["tests/browser/package.json", "tests/browser/package-lock.json"])
 STALE = 66
 
 SERVER_STUB = '''#!/usr/bin/env python3
@@ -40,7 +46,11 @@ class H(http.server.BaseHTTPRequestHandler):
     def log_message(self, *a): pass
 http.server.HTTPServer(("127.0.0.1", port), H).serve_forever()
 '''
+VERSION_PRELUDE = '''#!/usr/bin/env bash
+case "$1" in -V|--version) echo "{name} ${{FAKE_{upper}_VERSION:-1.0.0}}"; exit 0;; esac
+'''
 CARGO_OK = r'''#!/usr/bin/env bash
+case "$1" in -V|--version) echo "cargo ${FAKE_CARGO_VERSION:-1.0.0}"; exit 0;; esac
 echo "cargo $*" >> "$FAKE_LOG"
 [[ -z "${FAKE_MUTATE:-}" ]] || echo "// changed while the build ran" >> "$FAKE_MUTATE"
 case "$1" in
@@ -51,6 +61,7 @@ build)
     *" turts_pack "*) cp "$FAKE_STUBS/turts-pack" "$CARGO_TARGET_DIR/release/turts-pack" ;;
     esac ;;
 run)
+    case " $* " in *" --example "*) echo '{"keys":1}'; exit 0 ;; esac
     dir="${@: -1}"
     tar -cf "$dir.tar" -C "$(dirname "$dir")" "$(basename "$dir")"
     echo "$dir.tar $(sha256sum "$dir.tar" | cut -d' ' -f1)" ;;
@@ -63,6 +74,7 @@ esac
 exit 0
 '''
 TRUNK_OK = r'''#!/usr/bin/env bash
+case "$1" in -V|--version) echo "trunk ${FAKE_TRUNK_VERSION:-1.0.0}"; exit 0;; esac
 echo "trunk $*" >> "$FAKE_LOG"
 mkdir -p dist
 echo "<html>fake page</html>" > dist/index.html
@@ -75,7 +87,9 @@ tar -cf "$1.tar" -C "$(dirname "$1")" "$(basename "$1")"
 echo "$1.tar $(sha256sum "$1.tar" | cut -d' ' -f1)"
 '''
 NPM_OK = '#!/usr/bin/env bash\necho "npm $*" >> "$FAKE_LOG"\nexit 0\n'
-FAIL_SHIM = '#!/usr/bin/env bash\necho "{name} $*" >> "$FAKE_LOG"\nexit 99\n'
+# A version call is not a build: the failing shims answer it with no log line. Any other call is logged and fails.
+FAIL_SHIM = ('#!/usr/bin/env bash\ncase "$1" in -V|--version) echo "{name} ${{FAKE_{upper}_VERSION:-1.0.0}}"; exit 0;; esac\n'
+             'echo "{name} $*" >> "$FAKE_LOG"\nexit 99\n')
 # A fake `node`: a call of harness/run.js writes the diagnostics file that m3-browser.sh reads (run.js PAGE OUT ...).
 NODE_FAKE = '''#!/usr/bin/env bash
 echo "node $*" >> "$FAKE_NODE_LOG"
@@ -113,15 +127,18 @@ class Fake:
             "crates/turts_client_web/index.html": "<html></html>\n",
             "mods/pkg/pack.ron": "(id: \"pkg\")\n", "mods/pkg/units/a.ron": "(a: 1)\n",
             "mods/other/pack.ron": "(id: \"other\")\n", "mods/acme/pack.ron": "(id: \"acme\")\n", "mods/forge/pack.ron": "(id: \"forge\")\n",
-            "tests/browser/package.json": "{}\n", "tests/browser/harness/run.js": "// fake\n",
+            "tests/browser/package.json": "{}\n", "tests/browser/package-lock.json": "{}\n", "tests/browser/harness/run.js": "// fake\n",
             "tests/browser/t7-frames.js": "// fake\n", "tests/browser/d.js": "// d\n", "tests/browser/o.js": "// o\n",
             "tests/browser/rows/X.json": json.dumps({"row": "X", "package": "mods/pkg", "driver": "tests/browser/d.js",
                                                      "oracle": "tests/browser/o.js", "viewports": ["1280x720"]}),
+            "tests/browser/rows/E.json": json.dumps({"row": "E", "package": "mods/pkg", "driver": "tests/browser/d.js",
+                                                     "oracle": "tests/browser/o.js", "viewports": ["1280x720"],
+                                                     "effective_bindings": True}),
         }.items():
             (repo / rel).parent.mkdir(parents=True, exist_ok=True)
             (repo / rel).write_text(text)
         (repo / "scripts").mkdir()
-        for name in SCRIPT_FILES:
+        for name in SCRIPT_FILES + [n for n in OPTIONAL_SCRIPT_FILES if (REAL / "scripts" / n).exists()]:
             shutil.copy(REAL / "scripts" / name, repo / "scripts" / name)
         pkg = repo / "tests/browser/node_modules/playwright-core"
         pkg.mkdir(parents=True)
@@ -144,7 +161,9 @@ class Fake:
         write_exe(self.ok_bin / "brotli", BROTLI_OK)
         write_exe(self.ok_bin / "npm", NPM_OK)
         for name in ("cargo", "trunk", "brotli", "npm"):
-            write_exe(self.fail_bin / name, FAIL_SHIM.format(name=name))
+            write_exe(self.fail_bin / name, FAIL_SHIM.format(name=name, upper=name.upper()))
+        for directory in (self.ok_bin, self.fail_bin):  # rustc is only asked for its version
+            write_exe(directory / "rustc", VERSION_PRELUDE.format(name="rustc", upper="RUSTC") + "exit 99\n")
         write_exe(self.node_bin / "node", NODE_FAKE)
 
     def env(self, bin_dir, fake_node=False, **extra):
@@ -154,17 +173,21 @@ class Fake:
                    FAKE_STUBS=str(self.stubs), CARGO_TARGET_DIR=str(self.tmp / "target"), CHROME_BIN="/bin/true",
                    MC_BROWSER_OUT=str(self.tmp / "runs"), M3_T7_OUT=str(self.tmp / "t7run"),
                    M3_ARTIFACT_ROOT=str(self.tmp / "m3runs"), M2_ARTIFACT_ROOT=str(self.tmp / "m2runs"), M2_HEADLESS="true", PYTHONDONTWRITEBYTECODE="1")
-        env.update(extra)
+        for key, value in extra.items():
+            if value is None:
+                env.pop(key, None)
+            else:
+                env[key] = value
         return env
 
     def run(self, argv, bin_dir, fake_node=False, timeout=90, **extra):
         return subprocess.run(["bash", *argv], cwd=self.repo, env=self.env(bin_dir, fake_node, **extra), text=True,
                               stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=timeout)
 
-    def serve(self, argv, bin_dir):
+    def serve(self, argv, bin_dir, **extra):
         """Start a `--serve-only` run. Return (process, the lines read up to 'URL:', the page URL or None).
         With no URL the process has ended, or gave no line in 60 s (the caller must stop it)."""
-        proc = subprocess.Popen(["bash", *argv], cwd=self.repo, env=self.env(bin_dir), text=True, start_new_session=True,
+        proc = subprocess.Popen(["bash", *argv], cwd=self.repo, env=self.env(bin_dir, **extra), text=True, start_new_session=True,
                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         lines, deadline = [], time.time() + 60
         while time.time() < deadline:
@@ -192,8 +215,8 @@ class Fake:
         proc.stdout.close()
         proc.stderr.close()
 
-    def prepare(self, name="prep", extra=(), package="mods/pkg"):
-        done = self.run(["scripts/mc-browser.sh", package, "--prepare", str(self.tmp / name), *extra], self.ok_bin)
+    def prepare(self, name="prep", extra=(), package="mods/pkg", **env):
+        done = self.run(["scripts/mc-browser.sh", package, "--prepare", str(self.tmp / name), *extra], self.ok_bin, **env)
         assert done.returncode == 0, done.stdout + done.stderr
         self.log.unlink(missing_ok=True)
         return self.tmp / name
@@ -210,13 +233,14 @@ class PrepareTests(unittest.TestCase):
         self.fake = Fake()
         self.addCleanup(shutil.rmtree, self.fake.tmp, ignore_errors=True)
 
-    def served(self, prepared, package="mods/pkg"):
+    def served(self, prepared, package="mods/pkg", extra=(), **env):
         """A prepared `--serve-only` run with failing build shims. Return (proc, lines, url)."""
-        return self.fake.serve(["scripts/mc-browser.sh", package, "--prepared", str(prepared), "--serve-only"], self.fake.fail_bin)
+        return self.fake.serve(["scripts/mc-browser.sh", package, "--prepared", str(prepared), "--serve-only", *extra],
+                               self.fake.fail_bin, **env)
 
-    def refused(self, prepared, text, absent=(), package="mods/pkg"):
+    def refused(self, prepared, text, absent=(), package="mods/pkg", extra=(), **env):
         """A prepared run must stop with exit 66, print `text`, start no service and no build."""
-        proc, lines, url = self.served(prepared, package)
+        proc, lines, url = self.served(prepared, package, extra, **env)
         if url is not None:
             self.fake.stop(proc)
             self.fail("a stale prepared run started its services: " + "".join(lines))
@@ -433,6 +457,164 @@ class PrepareTests(unittest.TestCase):
         self.assertIn("package content differs (mods)", done.stderr)
         self.assertEqual(done.stdout, "")
         self.assertEqual(self.fake.tool_log(), "")
+
+    # ---- review repairs (Q-PREBUILD review): what the prepare step runs and reads is hashed ----
+
+    def edit(self, rel, text="\n# edited after prepare\n"):
+        with open(self.fake.repo / rel, "a") as handle:
+            handle.write(text)
+
+    def revert(self, rel):
+        sh(self.fake.repo, "git", "checkout", "--", rel)
+
+    def test_prepare_time_file_edit_after_prepare_is_refused(self):
+        """The KM1 record and the PER1 reference are made by scripts: an edit of one of them must stale the folder."""
+        prepared = self.fake.prepare()
+        for rel in PREPARE_TIME_FILES:
+            if not (self.fake.repo / rel).exists():
+                continue
+            with self.subTest(file=rel):
+                self.edit(rel, " " if rel.endswith(".json") else "\n# edited after prepare\n")  # a JSON file stays valid
+                self.refused(prepared, f"build source differs (1 file(s): {rel})")
+                self.revert(rel)
+        proc, lines, url = self.served(prepared)
+        self.fake.stop(proc)
+        self.assertIsNotNone(url, "the reverted tree must pass again: " + "".join(lines))
+
+    def test_tool_version_change_is_refused_and_names_the_tool(self):
+        prepared = self.fake.prepare()
+        for tool in ("rustc", "cargo", "trunk"):
+            with self.subTest(tool=tool):
+                self.refused(prepared, f"tool {tool} changed", **{f"FAKE_{tool.upper()}_VERSION": "2.0.0"})
+
+    def test_build_environment_change_is_refused(self):
+        cases = [("RUSTFLAGS", "-C opt-level=1"), ("CARGO_ENCODED_RUSTFLAGS", "-Cdebuginfo=2"),
+                 ("CARGO_PROFILE_RELEASE_LTO", "thin")]
+        for name, value in cases:
+            with self.subTest(name=name, case="set after prepare"):
+                prepared = self.fake.prepare(f"e-{name}", **{name: None})
+                self.refused(prepared, f"build environment differs ({name}:", **{name: value})
+        with self.subTest(case="set at prepare, unset at run"):
+            prepared = self.fake.prepare("e-unset", CARGO_PROFILE_RELEASE_OPT_LEVEL="1")
+            self.refused(prepared, "build environment differs (CARGO_PROFILE_RELEASE_OPT_LEVEL:", CARGO_PROFILE_RELEASE_OPT_LEVEL=None)
+        with self.subTest(case="same environment passes"):
+            prepared = self.fake.prepare("e-same", RUSTFLAGS="-C opt-level=1")
+            proc, lines, url = self.served(prepared, RUSTFLAGS="-C opt-level=1")
+            self.fake.stop(proc)
+            self.assertIsNotNone(url, "".join(lines))
+
+    def test_second_prepare_into_one_folder_is_refused(self):
+        slow = self.fake.tmp / "slowbin"
+        slow.mkdir()
+        write_exe(slow / "cargo", f'#!/usr/bin/env bash\ncase "$1" in -V|--version) exec {self.fake.ok_bin}/cargo "$@";; esac\nsleep 2\nexec {self.fake.ok_bin}/cargo "$@"\n')
+        env = self.fake.env(self.fake.ok_bin)
+        env["PATH"] = f"{slow}{os.pathsep}{env['PATH']}"
+        argv = ["bash", "scripts/mc-browser.sh", "mods/pkg", "--prepare", str(self.fake.tmp / "same")]
+        first = subprocess.Popen(argv, cwd=self.fake.repo, env=env, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        time.sleep(1.5)
+        second = subprocess.run(argv, cwd=self.fake.repo, env=env, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=60)
+        out_first = first.communicate(timeout=60)[0]
+        self.assertEqual(second.returncode, 2, second.stdout)
+        self.assertIn("another prepare step holds", second.stdout)
+        self.assertEqual(first.returncode, 0, out_first)
+        proc, lines, url = self.served(self.fake.tmp / "same")
+        self.fake.stop(proc)
+        self.assertIsNotNone(url, "the first prepare must still give a valid folder: " + "".join(lines))
+
+    def test_prepare_killed_half_way_leaves_a_refused_folder_and_a_free_lock(self):
+        slow = self.fake.tmp / "slowbin"
+        slow.mkdir()
+        write_exe(slow / "cargo", f'#!/usr/bin/env bash\ncase "$1" in -V|--version) exec {self.fake.ok_bin}/cargo "$@";; esac\nsleep 5\nexec {self.fake.ok_bin}/cargo "$@"\n')
+        env = self.fake.env(self.fake.ok_bin)
+        env["PATH"] = f"{slow}{os.pathsep}{env['PATH']}"
+        half = self.fake.tmp / "half"
+        proc = subprocess.Popen(["bash", "scripts/mc-browser.sh", "mods/pkg", "--prepare", str(half)], cwd=self.fake.repo, env=env,
+                                text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, start_new_session=True)
+        time.sleep(1.5)
+        os.killpg(proc.pid, signal.SIGKILL)
+        proc.communicate()
+        self.refused(half, "no manifest.json")
+        done = self.fake.run(["scripts/mc-browser.sh", "mods/pkg", "--prepare", str(half)], self.fake.ok_bin)
+        self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
+
+    def test_extra_file_in_an_artefact_root_is_refused(self):
+        prepared = self.fake.prepare()
+        for rel in ("dist/extra-probe.js", "bin/extra-tool", "pack/extra.tar", "dist/sub/deeper.js"):
+            with self.subTest(file=rel):
+                (prepared / rel).parent.mkdir(parents=True, exist_ok=True)
+                (prepared / rel).write_text("console.log(1)\n")
+                self.refused(prepared, f"unexpected file {rel}")
+                (prepared / rel).unlink()
+
+    def test_missing_artefact_is_refused(self):
+        prepared = self.fake.prepare()
+        (prepared / "dist/app.js").unlink()
+        self.refused(prepared, "artefact dist/app.js is missing")
+
+    def test_need_of_an_artefact_the_prepare_did_not_make_is_refused(self):
+        prepared = self.fake.prepare()
+        done = subprocess.run(["python3", "-B", "scripts/mc_prepare.py", "check", str(prepared), "--root", str(self.fake.repo),
+                               "--package", "mods/pkg", "--need", "bin/turts_server", "--need", "bin/never-made"],
+                              cwd=self.fake.repo, env=self.fake.env(self.fake.fail_bin, CARGO_PROFILE_DEV_DEBUG="0", CARGO_PROFILE_TEST_DEBUG="0"), text=True,
+                              stdout=subprocess.PIPE,
+                              stderr=subprocess.PIPE)
+        self.assertEqual(done.returncode, STALE, done.stdout + done.stderr)
+        self.assertEqual(done.stderr.count("STALE"), 1, "only the missing need may be the reason: " + done.stderr)
+        self.assertIn("artefact bin/never-made is not in the manifest", done.stderr)
+
+    def test_row_that_needs_artefacts_of_another_row_file_is_refused(self):
+        row = ["--params", "tests/browser/rows/E.json"]
+        prepared = self.fake.prepare("erow", extra=row)
+        self.assertIn("effective-bindings.json", json.loads((prepared / "manifest.json").read_text())["artefacts"])
+        proc, lines, url = self.served(prepared, extra=row)
+        self.fake.stop(proc)
+        self.assertIsNotNone(url, "the same row file must pass: " + "".join(lines))
+        self.edit("tests/browser/rows/E.json", " ")
+        self.refused(prepared, "row E needs artefacts that were made for another row file", extra=row)
+        self.revert("tests/browser/rows/E.json")
+        plain = self.fake.prepare("noerow")
+        self.refused(plain, "row E needs artefacts that were made for another row file", extra=row)
+
+    def test_same_bytes_written_back_pass(self):
+        prepared = self.fake.prepare()
+        main = self.fake.repo / "crates/turts_server/src/main.rs"
+        original = main.read_bytes()
+        main.write_bytes(original + b" ")
+        main.write_bytes(original)
+        proc, lines, url = self.served(prepared)
+        self.fake.stop(proc)
+        self.assertIsNotNone(url, "the same bytes must pass: " + "".join(lines))
+
+    def test_one_byte_changed_with_same_size_and_mtime_is_refused(self):
+        prepared = self.fake.prepare()
+        main = self.fake.repo / "crates/turts_server/src/main.rs"
+        before = main.stat()
+        data = bytearray(main.read_bytes())
+        data[data.index(b"m")] = ord("M")
+        main.write_bytes(bytes(data))
+        os.utime(main, ns=(before.st_atime_ns, before.st_mtime_ns))
+        after = main.stat()
+        self.assertEqual((before.st_size, before.st_mtime_ns), (after.st_size, after.st_mtime_ns))
+        self.refused(prepared, "build source differs (1 file(s): crates/turts_server/src/main.rs)")
+
+    def test_deleted_source_file_is_refused(self):
+        prepared = self.fake.prepare()
+        (self.fake.repo / "crates/turts_client_web/index.html").unlink()
+        self.refused(prepared, "build source differs (1 file(s): crates/turts_client_web/index.html)")
+
+    def test_dirty_state_prepared_passes_on_itself_and_is_refused_on_another_or_on_the_clean_tree(self):
+        main = "crates/turts_server/src/main.rs"
+        self.edit(main, "// dirty X\n")
+        prepared = self.fake.prepare()
+        self.assertTrue(json.loads((prepared / "manifest.json").read_text())["dirty"])
+        proc, lines, url = self.served(prepared)
+        self.fake.stop(proc)
+        self.assertIsNotNone(url, "dirty X on dirty X must pass: " + "".join(lines))
+        self.revert(main)
+        self.edit(main, "// dirty Y\n")
+        self.refused(prepared, f"build source differs (1 file(s): {main})")
+        self.revert(main)
+        self.refused(prepared, f"build source differs (1 file(s): {main})")
 
     def test_t7_default_form_still_builds_inside(self):
         done = self.fake.run(["scripts/t7.sh"], self.fake.ok_bin, fake_node=True)

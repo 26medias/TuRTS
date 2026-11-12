@@ -60,13 +60,8 @@ build_once() {
     export M2_PREBUILT=1 M2_PREBUILT_LOGS
 }
 if [[ -n "$M2_PREPARE_DIR" ]]; then
-    if [[ -n "$(ls -A "$M2_PREPARE_DIR" 2>/dev/null)" && ! -f "$M2_PREPARE_DIR/manifest.json" && ! -f "$M2_PREPARE_DIR/.begin.json" ]]; then
-        echo "--prepare: $M2_PREPARE_DIR is not empty and is not a prepared folder" >&2
-        exit 2
-    fi
-    rm -rf "$M2_PREPARE_DIR"
-    mkdir -p "$M2_PREPARE_DIR"
-    python3 -B "$ROOT/scripts/mc_prepare.py" begin --root "$ROOT" --out "$M2_PREPARE_DIR" --package mods
+    source "$ROOT/scripts/mc_prepare_lib.sh"
+    mc_prepare_begin "$M2_PREPARE_DIR" "$ROOT" mods
     m2_build "$M2_PREPARE_DIR/logs"
     mkdir -p "$M2_PREPARE_DIR/bin"
     cp "$SERVER_BIN" "$PACKER_BIN" "$M2_PREPARE_DIR/bin/"
