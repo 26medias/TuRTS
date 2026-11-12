@@ -1,0 +1,25 @@
+# runs, 2026-11-11, scratch copies made from /home/julien/Projects/TuRTS-mp1 at HEAD 8d6902c (HEAD is a29ce67 at the end of this run)
+a exit=0 secs=301
+-rwxrwxr-x 2 julien julien 66583563 Nov 11 21:35 /tmp/claude-1000/-home-julien-Projects-TuRTS/bf418660-b272-4bb3-8628-8d9ef2677d1d/scratchpad/mp1-render/target-a/wasm32-unknown-unknown/wasm-release/turts_client_web.wasm
+b exit=0 secs=301
+-rwxrwxr-x 2 julien julien 65132644 Nov 11 21:40 /tmp/claude-1000/-home-julien-Projects-TuRTS/bf418660-b272-4bb3-8628-8d9ef2677d1d/scratchpad/mp1-render/target-b/wasm32-unknown-unknown/wasm-release/turts_client_web.wasm
+== a
+/tmp/claude-1000/-home-julien-Projects-TuRTS/bf418660-b272-4bb3-8628-8d9ef2677d1d/scratchpad/mp1-render/target-a/wasm32-unknown-unknown/wasm-release/turts_client_web.wasm 66583563
+/tmp/claude-1000/-home-julien-Projects-TuRTS/bf418660-b272-4bb3-8628-8d9ef2677d1d/scratchpad/mp1-render/post-a/turts_client_web_bg.wasm 73206958
+/tmp/claude-1000/-home-julien-Projects-TuRTS/bf418660-b272-4bb3-8628-8d9ef2677d1d/scratchpad/mp1-render/post-a/opt.wasm 28440941
+/tmp/claude-1000/-home-julien-Projects-TuRTS/bf418660-b272-4bb3-8628-8d9ef2677d1d/scratchpad/mp1-render/post-a/opt.wasm.br 6092887
+== b
+/tmp/claude-1000/-home-julien-Projects-TuRTS/bf418660-b272-4bb3-8628-8d9ef2677d1d/scratchpad/mp1-render/target-b/wasm32-unknown-unknown/wasm-release/turts_client_web.wasm 65132644
+/tmp/claude-1000/-home-julien-Projects-TuRTS/bf418660-b272-4bb3-8628-8d9ef2677d1d/scratchpad/mp1-render/post-b/turts_client_web_bg.wasm 71745664
+/tmp/claude-1000/-home-julien-Projects-TuRTS/bf418660-b272-4bb3-8628-8d9ef2677d1d/scratchpad/mp1-render/post-b/opt.wasm 27694366
+/tmp/claude-1000/-home-julien-Projects-TuRTS/bf418660-b272-4bb3-8628-8d9ef2677d1d/scratchpad/mp1-render/post-b/opt.wasm.br 5941682
+variant b features:
+2 matches in 2F:
+
+[file] /.../turts_client/Cargo.toml (1):
+    14: bevy = { workspace = true, features = ["default_app", "default_platform", "sc...
+
+[file] /.../turts_client_web/Cargo.toml (1):
+    15: bevy = { workspace = true, features = ["default_app", "default_platform", "sc...
+
+probe: /tmp/claude-1000/-home-julien-Projects-TuRTS/bf418660-b272-4bb3-8628-8d9ef2677d1d/scratchpad/mp1-render/probe (src/main.rs, src/tank.glb from gen/make_glb.py)
