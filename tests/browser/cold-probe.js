@@ -180,8 +180,9 @@ async function firstClick(session, options) {
         const box = [x - BOX_HALF, y - BOX_HALF, BOX_HALF * 2, BOX_HALF * 2];
         const idle = changeStats(image(a), image(b), box);
         const change = changeStats(image(b), image(p200), box);
+        // A change in the box (a ring) or far from it (a panel with the unit's name). The idle noise of the 200 ms before is subtracted.
         const visible = change.box_changed >= Math.max(MIN_BOX_PIXELS, 3 * idle.box_changed)
-            || (change.page_share >= PAGE_SHARE && change.page_changed >= 3 * idle.page_changed + PAGE_MARGIN);
+            || change.page_changed >= 3 * idle.page_changed + PAGE_MARGIN;
         const selectionOk = after.selection.includes(unit.unit_id);
         record.clicks.push({
             n: number, unit_id: unit.unit_id, content_id: unit.content_id, point: [x, y], selection: after.selection, selection_ok: selectionOk,

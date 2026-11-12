@@ -453,6 +453,26 @@ class CheckerTest(unittest.TestCase):
             self.assertEqual(code, 2)
             self.assertIn("events.jsonl line 1 is not JSON", err)
 
+    def test_a_probe_is_not_judged_on_the_sounds_of_its_own_clicks_but_on_alerts_before_input(self):
+        folder = Folder().as_probe("first-click", PASS_CLICKS)
+        folder.sound["records"] = self.sounds([10000, 20000, 30000, 40000, 50000])
+        self.assertEqual(self.check(folder)[0], 0)
+        folder = Folder().as_probe("first-click", PASS_CLICKS)
+        folder.sound["records"] = self.sounds([500], "pkg:forge_alert", "alerts")
+        self.assertEqual(self.check(folder)[0], 1)
+
+    def test_a_session_with_no_input_has_no_input_log_and_that_is_not_e1b(self):
+        folder = Folder().as_probe("buttons", {"kind": "buttons", "buttons": [], "summary": {"verdict": "PASS", "buttons": 0, "failed": 0, "reason": "no visible button"}})
+        folder.timeline = [item for item in folder.timeline if item[1] not in ("input", "first_click") and not (item[1] == "shot" and item[2]["file"] != "0000-start.png")]
+        folder.ui = [{"label": "dummy"}]
+        with tempfile.TemporaryDirectory() as tmp:
+            directory = folder.write(Path(tmp) / "evidence")
+            (directory / "inputs.jsonl").unlink()
+            (directory / "ui-records.json").write_text(json.dumps({"records": []}))
+            code, out, err = run(directory)
+        self.assertNotIn("FAIL E1b", out)
+        self.assertIn("PASS E1b", out)
+
     def test_the_checker_never_prints_person_ready_as_a_result(self):
         code, out, _ = self.check(Folder())
         self.assertNotRegex(out, r"RESULT: PERSON-READY")

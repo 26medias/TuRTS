@@ -239,6 +239,8 @@ def check(folder, receipt=None, lock_check=True, report=None):
     inputs_path = folder / "inputs.jsonl"
     try:
         inputs_lines = [json.loads(line) for line in inputs_path.read_text(encoding="utf-8").splitlines()]
+    except FileNotFoundError:
+        inputs_lines = []  # a session with no input writes no file
     except (OSError, ValueError):
         inputs_lines = None
     input_events = by_kind.get("input", [])
@@ -362,7 +364,10 @@ def check(folder, receipt=None, lock_check=True, report=None):
             if seen[i + 3] - seen[i] <= 60000:
                 crowded.append(f"{sound_id}: 4 times from {seen[i] / 1000:.1f} s to {seen[i + 3] / 1000:.1f} s")
                 break
-    report.add("F5a", not crowded, f"no sound id more than 3 times in 60 s ({len(records)} sounds, {len(by_id)} ids)" + (f"; {crowded}" if crowded else ""))
+    if mode == "agent":  # the sounds of a probe are the sounds of its own scripted clicks
+        report.add("F5a", not crowded, f"no sound id more than 3 times in 60 s ({len(records)} sounds, {len(by_id)} ids)" + (f"; {crowded}" if crowded else ""))
+    else:
+        report.info("F5a", "not judged in a probe: its clicks make the sounds")
     first_input = min((e["t_start_ms"] for e in input_events if e["counts_as_input"]), default=float("inf"))
     early = [f"{r.get('sound_id')} at {r['first_seen_ms'] / 1000:.1f} s" for r in records
              if (r.get("category") == "alerts" or "alert" in str(r.get("sound_id")).lower()) and r["first_seen_ms"] < first_input]
