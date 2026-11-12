@@ -152,19 +152,33 @@ async function judgeConvergence(view, at, joined, packageName) {
         const mesh = selected.scene.units.find((unit) => unit.unit_id === unitId);
         assertPickCircleClearOfHud(selected.scene, selected.debug, mesh);
     }
-    const deadline = Date.now() + 10000;
-    while (Date.now() < deadline) {
-        const debug0 = await view.bridge("turts_debug", 1);
-        const debug1 = await view.bridge("turts_debug", 2);
+    const shared = await sampleSharedTick(view);
+    if (shared) return shared;
+    assert.fail("public world projections differ between owners at a shared coherent tick");
+}
+
+// Each window builds its debug state on a request, at most 4 times a second (design D 9, row DBG1;
+// `view.bridge` makes the request). Two reads one after the other leave the two builds one round
+// trip apart, and the 250 ms cap keeps that gap the same in every round, so a pair that straddles a
+// tick boundary (20 Hz) straddles it in every round and the ticks never meet. Idle the windows for
+// more than the cap, so that a request builds in the next frame, ask both windows at once, and
+// change the idle time in each round so that the pair does not fall on the same phase of the tick.
+// The pair must show one tick and one public projection (the M2 convergence claim, unchanged).
+const DEBUG_CAP_MS = 250;
+async function sampleSharedTick(view, { deadlineMs = 10000, now = Date.now, sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+    project = (debug) => publicProjection({ debug }) } = {}) {
+    const deadline = now() + deadlineMs;
+    for (let round = 0; now() < deadline; round += 1) {
+        await sleep(DEBUG_CAP_MS + 20 + (round * 17) % 50);
+        const [debug0, debug1] = await Promise.all([view.bridge("turts_debug", 1), view.bridge("turts_debug", 2)]);
         const world0 = debug0?.replicated_world;
         const world1 = debug1?.replicated_world;
         if (world0?.tick === world1?.tick && world0?.tick !== null && world0?.tick !== undefined &&
-            JSON.stringify(publicProjection({ debug: debug0 })) === JSON.stringify(publicProjection({ debug: debug1 }))) {
+            JSON.stringify(project(debug0)) === JSON.stringify(project(debug1))) {
             return { tick: world0.tick };
         }
-        await new Promise((resolve) => setTimeout(resolve, 50));
     }
-    assert.fail("public world projections differ between owners at a shared coherent tick");
+    return null;
 }
 
 function ingestOf(step) {
@@ -548,4 +562,4 @@ async function judge(view, params) {
     }
 }
 
-module.exports = { judge, appliedAfter, assertPickCircleClearOfHud, cancelRows, hudClick, produceRow, UNIT_NAMES };
+module.exports = { judge, appliedAfter, assertPickCircleClearOfHud, cancelRows, hudClick, produceRow, sampleSharedTick, UNIT_NAMES };
