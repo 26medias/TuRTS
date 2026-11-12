@@ -105,6 +105,7 @@ impl Plugin for SimPlugin {
             .init_resource::<crate::economy::transaction::AuditTrail>()
             .init_resource::<ChangedThisTick>()
             .init_resource::<CommittedTick>()
+            .init_resource::<crate::orders::writer::OrderChanges>()
             .init_resource::<CompletedWorld>()
             .init_resource::<PendingEconomyEvents>()
             .init_resource::<NextEventOrdinal>()
@@ -219,6 +220,7 @@ impl Plugin for SimPlugin {
                 FixedPostUpdate,
                 (
                     collect_changes,
+                    crate::orders::writer::collect_order_inputs,
                     publish_completed_tick,
                     crate::economy::transaction::finish_tick_audit,
                 )
@@ -302,6 +304,27 @@ fn publish_completed_tick(world: &mut World) {
     m3_changes
         .enabled
         .retain(|change| !removed.contains(&change.unit));
+    // The order records that changed (design 6.8). The previous completed world holds the
+    // records of the previous tick; the candidates come from the writer and the movement inputs.
+    let candidates = crate::orders::writer::take_candidates(
+        world,
+        spawned.iter().map(|state| state.unit_id),
+        economy_changes.orders.iter().map(|order| order.unit),
+    );
+    let order_list = crate::orders::writer::order_change_list(
+        &candidates,
+        &world.resource::<CompletedWorld>().0.unit_orders,
+        &completed.unit_orders,
+        &removed,
+    );
+    #[cfg(feature = "test-probes")]
+    crate::orders::writer::check_order_changes(
+        &order_list,
+        &world.resource::<CompletedWorld>().0.unit_orders,
+        &completed.unit_orders,
+        &removed,
+        &completed.units,
+    );
     let batch = CommittedTick {
         tick,
         spawned,
@@ -318,6 +341,9 @@ fn publish_completed_tick(world: &mut World) {
         research: m3_changes.research,
         enabled: m3_changes.enabled,
         events,
+        unit_orders: order_list.records,
+        orders_cleared: order_list.cleared,
+        ..Default::default()
     };
     world.insert_resource(batch);
     world.insert_resource(CompletedWorld(completed));

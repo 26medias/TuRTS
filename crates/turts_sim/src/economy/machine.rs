@@ -45,10 +45,9 @@ pub(crate) fn machine_ids(world: &World) -> BTreeSet<u32> {
 /// Advance each enabled machine by one fixed production tick.
 pub(crate) fn run_machines(world: &mut World) {
     for machine in machine_ids(world) {
-        if world
-            .get_resource::<Disabled>()
-            .is_some_and(|disabled| disabled.0.contains(&machine))
-        {
+        // The one predicate of the freeze (`production::FreezeFacts`).
+        let frozen = super::production::freeze_facts_in_world(world, machine).frozen();
+        if frozen {
             continue;
         }
         let Some((owner_slot, recipe_id, duration_ticks)) = machine_recipe(world, machine) else {
@@ -88,9 +87,18 @@ pub(crate) fn run_machines(world: &mut World) {
                 return Ok(());
             }
 
+            // The one function of the rate (`production::job_step_per_tick`): a machine reads no
+            // rate, so it passes the full rate (a frozen machine was skipped above).
+            let step = super::production::job_step_per_tick(
+                job.stage,
+                frozen,
+                super::power::full_rate(),
+                1,
+            )
+            .unwrap_or(0);
             let elapsed = job
                 .elapsed_ticks
-                .checked_add(1)
+                .checked_add(step)
                 .ok_or(RejectReason::ArithmeticOverflow)?
                 .min(job.duration_ticks);
             let mut updated = job.clone();

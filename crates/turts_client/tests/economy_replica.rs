@@ -37,6 +37,7 @@ fn snapshot(tick: u32) -> Snapshot {
     Snapshot {
         tick,
         units: vec![UnitSnapshot {
+            site: false,
             unit_id: UnitId(1),
             content_id: "base:command_center".to_string(),
             owner_slot: SlotId(0),
@@ -66,6 +67,7 @@ fn snapshot(tick: u32) -> Snapshot {
         healths: vec![],
         research: vec![],
         unit_orders: Vec::new(),
+        ..Default::default()
     }
 }
 
@@ -90,6 +92,7 @@ fn delta(tick: u32, base_tick: u32) -> WorldDelta {
         healths: vec![],
         research: vec![],
         unit_orders: Vec::new(),
+        ..Default::default()
     }
 }
 
@@ -147,6 +150,7 @@ fn non_finite_geometry_rejects_snapshot_and_delta_atomically() {
         },
 
         facing: None,
+        site: false,
     });
     assert_eq!(
         spawn_replica.apply_delta(&invalid_spawn, now),
@@ -316,6 +320,7 @@ fn rich_snapshot(tick: u32) -> Snapshot {
         owner_slot: SlotId(0),
         pos: Pos { x: 12.0, y: 8.0 },
         facing: None,
+        site: false,
     });
     state.economy.inventories.push(InventoryState {
         unit: UnitId(2),
@@ -338,7 +343,6 @@ fn rich_snapshot(tick: u32) -> Snapshot {
             id: JobId(44),
             recipe: "base:train_rifleman".to_string(),
             stage: JobStage::Running,
-            elapsed_ticks: 10,
             duration_ticks: 100,
             charged: vec![Cost {
                 resource: "base:credits".to_string(),
@@ -365,6 +369,7 @@ fn spawn_position_and_private_records_apply_atomically() {
         owner_slot: SlotId(0),
         pos: Pos { x: 12.0, y: 8.0 },
         facing: None,
+        site: false,
     });
     spawn.economy.inventories.push(InventoryState {
         unit: UnitId(2),
@@ -401,6 +406,7 @@ fn spawn_position_and_private_records_apply_atomically() {
         owner_slot: SlotId(0),
         pos: Pos { x: 9.0, y: 8.0 },
         facing: None,
+        site: false,
     });
     malformed.positions.push(UnitDelta {
         unit_id: UnitId(1),
@@ -517,7 +523,6 @@ fn lost_extraction_conversion_charge_refund_and_spawn_converge_from_snapshot() {
             id: JobId(id),
             recipe: "base:train_rifleman".to_string(),
             stage,
-            elapsed_ticks: if stage == JobStage::Queued { 0 } else { 10 },
             duration_ticks: 100,
             charged: vec![Cost {
                 resource: "base:credits".to_string(),
@@ -593,6 +598,7 @@ fn lost_extraction_conversion_charge_refund_and_spawn_converge_from_snapshot() {
         owner_slot: SlotId(0),
         pos: Pos { x: 8.0, y: 12.0 },
         facing: None,
+        site: false,
     });
     spawn.economy.queues[0].jobs.clear();
     let mut spawned = delta(11, 10);
@@ -744,4 +750,161 @@ fn lowering_live_buffer_cap_clears_oversized_tail_and_records_a_gap() {
     assert_eq!(replica.buffered_batches(), 0);
     assert_eq!(replica.buffer_overflows, 1);
     assert_eq!(replica.resync_span_ticks(), Some(4));
+}
+
+/// Protocol 5: the elapsed ticks of a job come from its progress record (design 6.8), at the tick
+/// of the last applied delta. The store drops the record when the queue no longer holds the job,
+/// and a record for a producer that the same delta removes is refused (ruling for `L0-STORE`).
+#[test]
+fn job_progress_derives_the_elapsed_ticks_and_follows_the_queue() {
+    let now = Instant::now();
+    let running = || turts_net_protocol::JobState {
+        id: JobId(44),
+        recipe: "base:train_rifleman".to_string(),
+        stage: JobStage::Running,
+        duration_ticks: 100,
+        charged: vec![Cost {
+            resource: "base:credits".to_string(),
+            amount: 100,
+            source: CostSource::SlotBalance,
+        }],
+        reserved: vec![],
+    };
+    let record = turts_net_protocol::JobProgress {
+        producer: UnitId(1),
+        job: JobId(44),
+        progress: turts_net_protocol::RateRecord {
+            done: 10,
+            total: 100,
+            per_tick: 1,
+            at_tick: 10,
+            state: turts_net_protocol::RecordState::Running,
+            charged: vec![],
+            held: false,
+            held_since_tick: 0,
+        },
+    };
+    let setup = || {
+        let mut replica = replica(3);
+        let mut initial = snapshot(10);
+        initial.economy.queues.push(QueueState {
+            producer: UnitId(1),
+            jobs: vec![running()],
+            enabled: true,
+        });
+        initial.records.jobs = vec![record.clone()];
+        assert_eq!(
+            replica.apply_snapshot(&initial, now),
+            SnapshotOutcome::Applied { replayed: 0 }
+        );
+        replica
+    };
+    let mut replica = setup();
+    assert_eq!(replica.job_elapsed_ticks(1, 44), 10);
+    // Three ticks later with no new record: the derived value is 13, never later than the tick.
+    assert_eq!(
+        replica.apply_delta(&delta(11, 10), now),
+        DeltaOutcome::Applied
+    );
+    assert_eq!(
+        replica.apply_delta(&delta(12, 11), now),
+        DeltaOutcome::Applied
+    );
+    assert_eq!(
+        replica.apply_delta(&delta(13, 12), now),
+        DeltaOutcome::Applied
+    );
+    assert_eq!(replica.job_elapsed_ticks(1, 44), 13);
+    // The job completes: the queue no longer holds it, and the record is dropped.
+    let mut done = delta(14, 13);
+    done.economy.queues.push(QueueState {
+        producer: UnitId(1),
+        jobs: vec![],
+        enabled: true,
+    });
+    assert_eq!(replica.apply_delta(&done, now), DeltaOutcome::Applied);
+    assert!(replica.job_progress.is_empty());
+    assert_eq!(replica.job_elapsed_ticks(1, 44), 0);
+    // A record for a producer that the same delta removes is refused.
+    let mut replica = setup();
+    let mut bad = delta(11, 10);
+    bad.removed = vec![UnitId(1)];
+    bad.records.jobs = vec![record.clone()];
+    assert_eq!(
+        replica.apply_delta(&bad, now),
+        DeltaOutcome::ResyncRequested
+    );
+    // The removal of the producer drops its record with the unit.
+    let mut replica = setup();
+    let mut gone = delta(11, 10);
+    gone.removed = vec![UnitId(1)];
+    assert_eq!(replica.apply_delta(&gone, now), DeltaOutcome::Applied);
+    assert!(replica.job_progress.is_empty());
+}
+
+/// Q = 2 values built by hand (no sim change): the record counts raw units of 1/Q tick, and the
+/// client derives ticks with `base_ticks_done(units, duration_ticks, total)`. A job of 100 ticks has
+/// `total` 200; at rate 1/2 a tick adds 1 unit, at full rate 2 units.
+#[test]
+fn job_progress_in_raw_units_of_one_over_q_derives_base_ticks() {
+    let now = Instant::now();
+    let setup = |per_tick: u64| {
+        let mut replica = replica(3);
+        let mut initial = snapshot(10);
+        initial.economy.queues.push(QueueState {
+            producer: UnitId(1),
+            jobs: vec![turts_net_protocol::JobState {
+                id: JobId(44),
+                recipe: "base:train_rifleman".to_string(),
+                stage: JobStage::Running,
+                duration_ticks: 100,
+                charged: vec![Cost {
+                    resource: "base:credits".to_string(),
+                    amount: 100,
+                    source: CostSource::SlotBalance,
+                }],
+                reserved: vec![],
+            }],
+            enabled: true,
+        });
+        initial.records.jobs = vec![turts_net_protocol::JobProgress {
+            producer: UnitId(1),
+            job: JobId(44),
+            progress: turts_net_protocol::RateRecord {
+                done: 0,
+                total: 200,
+                per_tick,
+                at_tick: 10,
+                state: turts_net_protocol::RecordState::Running,
+                charged: vec![],
+                held: false,
+                held_since_tick: 0,
+            },
+        }];
+        assert_eq!(
+            replica.apply_snapshot(&initial, now),
+            SnapshotOutcome::Applied { replayed: 0 }
+        );
+        replica
+    };
+    let run = |replica: &mut Replica, from: u32, to: u32| {
+        for tick in from..=to {
+            assert_eq!(
+                replica.apply_delta(&delta(tick, tick - 1), now),
+                DeltaOutcome::Applied
+            );
+        }
+    };
+    // Rate 1/2 at Q = 2: 1 unit a tick, so 50 ticks later 50 units = 25 ticks of base time.
+    let mut half = setup(1);
+    assert_eq!(half.job_elapsed_ticks(1, 44), 0);
+    run(&mut half, 11, 60);
+    assert_eq!(half.job_elapsed_ticks(1, 44), 25);
+    // Full rate at Q = 2: 2 units a tick, so 50 ticks later 100 units = 50 ticks.
+    let mut full = setup(2);
+    run(&mut full, 11, 60);
+    assert_eq!(full.job_elapsed_ticks(1, 44), 50);
+    // The record never runs past `total`: 200 units are 100 ticks.
+    run(&mut full, 61, 200);
+    assert_eq!(full.job_elapsed_ticks(1, 44), 100);
 }

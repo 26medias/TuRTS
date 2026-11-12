@@ -496,6 +496,7 @@ mod tests {
             }),
             content: Some(move_test_content()),
             config: Default::default(),
+            match_start: None,
         };
         let mut app = App::new();
         app.insert_resource(ClientOpts(options))

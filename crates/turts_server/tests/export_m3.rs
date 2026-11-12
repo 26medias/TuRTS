@@ -418,6 +418,9 @@ fn split_owner_belt_exports_only_authoritatively_owned_pieces() {
         facing: None,
         pos: Vec2::new(24.0, 8.0),
     });
+    // A `WorldView` is sorted by unit id (`turts_sim::world::snapshot`); the export reads it by
+    // binary search.
+    view.units.sort_by_key(|unit| unit.unit_id);
     let belt = &mut view.m3.raw_belts[0];
     belt.owner_slot = 0;
     belt.pieces.push(RawBeltPieceAudit {
@@ -448,6 +451,7 @@ fn delta_filters_belt_pieces_by_authoritative_owner() {
         facing: None,
         pos: Vec2::new(24.0, 8.0),
     });
+    view.units.sort_by_key(|unit| unit.unit_id);
     let mut belt = view
         .m3
         .raw_belts

@@ -179,7 +179,7 @@ pub fn alert_state() -> (ReplicaState, AcquiredPackages) {
     replica.weapons = vec![WeaponRecord {
         unit: UnitId(4),
         enabled: true,
-        cooldown: 0,
+        ready_tick: 0,
         damage: Ok(1),
         status: WeaponStatus::Ready,
         last_target: None,
@@ -211,7 +211,6 @@ pub fn alert_state() -> (ReplicaState, AcquiredPackages) {
                 id: JobId(1),
                 recipe: "muster:test_recipe".into(),
                 stage: JobStage::Running,
-                elapsed_ticks: 1,
                 duration_ticks: 20,
                 charged: Vec::new(),
                 reserved: Vec::new(),
@@ -229,6 +228,7 @@ pub fn alert_state() -> (ReplicaState, AcquiredPackages) {
         }),
         content: Some(content.clone()),
         config: Default::default(),
+        match_start: None,
     };
     let presentation = PresentationContent {
         interface: Some(interface()),

@@ -166,3 +166,68 @@ MC_JOBS=4 bash .../gate-runner/mc_headed_v6.sh --mode pre-merge --lane .../TuRTS
 ```
 
 Wrapper `mc_headed_v6.sh` sha256 `1d3a0000e37cd7d001827cb32843807c45c5824a71640cccc323c2d090ebb675` (checked). The run exited 0 (`VERDICT=PASS`), `source_unchanged: true`.
+
+## Order and weapon records on the wire, protocol 5 (L0-WIRE)
+
+Task `L0-WIRE`, 2026-11-12. Recorded, not judged: MP1 sets no byte limit here (spec 15). The figures
+come from the real sim (`headless_app`, package `muster`, 20 Hz) projected by `export::delta_for`,
+the function that the server calls for each slot. The sizes are postcard bytes, the encoding of the
+wire (`postcard` 1.1.3). They are the bytes of the named list inside one `WorldDelta`, not of the
+whole message. Tool: `cargo test --locked -p turts_server --test ordw1 -- --nocapture` (the
+`ORDW1-BYTES` lines). Machine: the local lane host (Intel Core i9-14900K), debug build; the byte
+counts do not depend on the build. Not the 4-vCPU target of D58.
+
+| Scenario | What the run printed |
+| --- | --- |
+| Idle: 702 idle units of slot 0 (200 spawned, the rest from the map), 100 ticks | `unit_orders`, `orders_cleared` and weapon records: 0 B in every delta (the first delta carries one weapon record for each unit, the status goes Ready to NoTarget once, and it is not counted). The full table is 702 records and 4,802 B: that is the `Snapshot` size, and the size of each delta before protocol 5. |
+| One `MoveTo` on one unit | 1 changed record at the accept tick (tick 1, 6 B) and 1 at the arrival tick (tick 41, 6 B). 0 records in the other ticks, 0 records for any other unit. |
+| 12 troopers that fire at the dummies for 100 ticks (3 kills) | 81 weapon records in 100 ticks, 627 B in all, 6 B for each tick on average; 95 of the 100 ticks carry 0 weapon bytes. No record repeats the previous record of its unit. |
+| `Fired{unit, target, weapon}` | 6 B with two unit ids below 16,384 and weapon index 200 (limit of ORDW1 case C: 8 B). The writer is empty in lane 0 (the sim has no `Fired` rows yet): this is the size of the shape. |
+
+What the figures do not show: the site, job, supply and match records (their sim rows are empty
+in lane 0, so they cost 0 B); a fight of 200 units in a long run (the 12-trooper case has 3
+kills only; ORDW1 case C with 200 riflemen is a row of `I-HEAD`); the bytes of the whole
+`WorldDelta` at the medium workload of D57 (NOT TRACED here: no run of the medium workload).
+
+## A running production job on the wire, before and after the repair (L0-WIRE repair, item 5)
+
+Test `a_running_job_costs_no_bytes_between_its_changes` (`crates/turts_server/tests/ordw1.rs`),
+package `base`, one Command Centre, 3 `train_rifleman` jobs of 100 ticks, 260 ticks, slot 0.
+Bytes are postcard bytes of `delta.economy.queues` plus `delta.records.jobs`. Recorded, not judged.
+
+| Case | Ticks with a queue or job record | Bytes in all | Bytes in a steady running tick |
+| --- | --- | --- | --- |
+| Before: the queue diff counts `elapsed_ticks` (plant `JOBQ1/(a)`; the wire shape is already the new one, so protocol 4 was a few bytes larger) | 260 of 260 | 29,557 | about 114 (one queue, one job record) |
+| After: `JobState` has no `elapsed_ticks`, and a queue is sent on a change of the job list or of a stage | 5 of 260 (ticks 1, 101, 102, 202, 203) | 477 | 0 |
+
+The reviewer measured 106 B in 200 of 200 deltas for one producer and 3 jobs (protocol 4, 57 % of
+the delta). One queue with its job record is 155 B as a `Snapshot` part.
+
+## Browser rows that read a changed field (headed before a stage-1 lane merges)
+
+From the repair review and a grep of `tests/browser` (not run in this task): the debug state keeps
+`weapons[].cooldown` and `economy.queues[].jobs[].elapsed_ticks` as derived values
+(`crates/turts_client/src/debug.rs`), so the oracles read the same names. The rows to run headed:
+T7 (protocol 5 in wasm), the MC orders rows (`orders-oracle.js:457-459`, `weapon.cooldown`),
+HUD2 (`hud2-oracle.js`, queue progress and `weapon.damage`), SEL1, MM1, PT1 driver checks,
+VIS-full, and the M2 browser oracle (`m2-audit.js`, `elapsed_ticks`).
+
+## Job progress while a producer is disabled and enabled (L0-WIRE repair 2)
+
+Test `base_producer_jobs_equal_the_sim_through_disable_enable_cancel`
+(`crates/turts_client/tests/job_progress_clients.rs`), package `base`, one Command Centre, 4
+`train_rifleman` jobs, disabled at tick 30, enabled at tick 90, a cancel at tick 120. Bytes are
+postcard bytes of `delta.economy.queues` plus `delta.records.jobs` (0 when both lists are empty).
+Recorded, not judged.
+
+| Tick or range | What the delta carries | Bytes |
+| --- | --- | --- |
+| 30 (the disable) | the queue (4 jobs) and the 4 job records, `per_tick` 0 | 205 |
+| 31 to 89 (disabled, a `Running` job frozen) | nothing | 0 |
+| 90 (the enable) | the queue and the 4 job records, `per_tick` 1 for the head | 205 |
+| 125 to 158 (a job running, no other change) | nothing | 0 |
+
+Before the repair, a disabled producer's job kept the wire rate 1, so the client value ran on
+(re-review: at tick 119 the sim held 58 and the client 100, 180 differences in 3,114
+comparisons). After: 0 differences in 3,123 comparisons (base) and 0 in 778 (forge, machines and
+research stations), for a continuous, a late-join and a lossy client.

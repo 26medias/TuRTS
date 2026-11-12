@@ -128,6 +128,7 @@ fn base_app(content: Option<crate::content::ClientContent>, welcome: bool) -> Ap
                 summary(16.0, 16.0),
             ],
             last_failure: None,
+            rally: None,
         },
     );
     replica.unit_orders.insert(
@@ -138,6 +139,7 @@ fn base_app(content: Option<crate::content::ClientContent>, welcome: bool) -> Ap
             current: Some(summary(1.0, 1.0)),
             queued: Vec::new(),
             last_failure: None,
+            rally: None,
         },
     );
     replica.unit_orders.insert(
@@ -148,6 +150,7 @@ fn base_app(content: Option<crate::content::ClientContent>, welcome: bool) -> Ap
             current: None,
             queued: Vec::new(),
             last_failure: None,
+            rally: None,
         },
     );
     let state = ReplicaState {
@@ -160,6 +163,7 @@ fn base_app(content: Option<crate::content::ClientContent>, welcome: bool) -> Ap
         }),
         content: content.or(Some(full.clone())),
         config: Default::default(),
+        match_start: None,
     };
     let acquired = Acquired {
         lockfile_hash: String::new(),

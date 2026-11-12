@@ -13,11 +13,11 @@ where
 }
 
 #[test]
-fn protocol_version_is_4_and_version_3_is_old() {
-    assert_eq!(NET_PROTOCOL_VERSION, 4);
+fn protocol_version_is_5_and_version_4_is_old() {
+    assert_eq!(NET_PROTOCOL_VERSION, 5);
     let old_hello = Hello {
         player_id: 17,
-        protocol_version: 3,
+        protocol_version: 4,
         lockfile_hash: "sha256:fixture".into(),
     };
     round_trip(old_hello);
@@ -31,6 +31,7 @@ fn postcard_roundtrip_every_new_record() {
         owner_slot: SlotId(0),
         facing: Some(Facing::PosX),
         pos: Pos { x: 8.0, y: 8.0 },
+        site: false,
     };
     let records = Snapshot {
         tick: 2,
@@ -72,7 +73,7 @@ fn postcard_roundtrip_every_new_record() {
             WeaponRecord {
                 unit: UnitId(8),
                 enabled: true,
-                cooldown: 1,
+                ready_tick: 1,
                 damage: Ok(9),
                 status: WeaponStatus::Cooling,
                 last_target: Some(UnitId(11)),
@@ -80,7 +81,7 @@ fn postcard_roundtrip_every_new_record() {
             WeaponRecord {
                 unit: UnitId(9),
                 enabled: true,
-                cooldown: 0,
+                ready_tick: 0,
                 damage: Err(CommandRejectReason::ArithmeticOverflow),
                 status: WeaponStatus::Ready,
                 last_target: None,
@@ -95,6 +96,7 @@ fn postcard_roundtrip_every_new_record() {
             completed: vec!["forge:hardened_shells".into()],
         }],
         unit_orders: Vec::new(),
+        ..Default::default()
     };
     round_trip(records.clone());
     round_trip(WorldDelta {
@@ -125,5 +127,6 @@ fn postcard_roundtrip_every_new_record() {
         healths: records.healths,
         research: records.research,
         unit_orders: Vec::new(),
+        ..Default::default()
     });
 }

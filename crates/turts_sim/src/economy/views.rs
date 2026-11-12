@@ -707,6 +707,32 @@ fn unit_order_summary(order: &crate::orders::Order) -> UnitOrderSummaryView {
 }
 
 /// Return absolute records that differ from the previous completed economy snapshot.
+/// The queues that changed, as the wire sees them. The elapsed ticks of a job advance in each
+/// tick while it runs, and the wire carries the progress as a rate record (`JobProgress`), so a
+/// queue whose only change is `elapsed_ticks` is not a change (design 6.8, "Records with a start
+/// tick and a rate"; MP1 review item 5). A new job, a stage, a cost or the job list is a change.
+fn queue_replacements(previous: &[QueueView], current: &[QueueView]) -> Vec<QueueView> {
+    let previous: std::collections::BTreeMap<_, _> = previous
+        .iter()
+        .map(|queue| (queue.producer, queue))
+        .collect();
+    let without_progress = |queue: &QueueView| {
+        let mut copy = queue.clone();
+        for job in &mut copy.jobs {
+            job.elapsed_ticks = 0;
+        }
+        copy
+    };
+    current
+        .iter()
+        .filter(|queue| match previous.get(&queue.producer) {
+            Some(old) => without_progress(old) != without_progress(queue),
+            None => true,
+        })
+        .cloned()
+        .collect()
+}
+
 pub(crate) fn economy_changes(
     previous: &EconomyStateView,
     current: &EconomyStateView,
@@ -736,7 +762,7 @@ pub(crate) fn economy_changes(
         }),
         inventories: replacements(&previous.inventories, &current.inventories, |v| v.unit),
         orders: replacements(&previous.orders, &current.orders, |v| v.unit),
-        queues: replacements(&previous.queues, &current.queues, |v| v.producer),
+        queues: queue_replacements(&previous.queues, &current.queues),
     };
     changes
         .balances

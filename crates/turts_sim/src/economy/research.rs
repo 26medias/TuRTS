@@ -259,10 +259,9 @@ pub(crate) fn cancel_research(
 pub(crate) fn run_research(world: &mut World) {
     let stations = research_stations(world);
     for (station, slot) in stations {
-        if world
-            .get_resource::<Disabled>()
-            .is_some_and(|disabled| disabled.0.contains(&station))
-        {
+        // The one predicate of the freeze (`production::FreezeFacts`).
+        let frozen = super::production::freeze_facts_in_world(world, station).frozen();
+        if frozen {
             continue;
         }
         let Some(job) = world
@@ -301,9 +300,18 @@ pub(crate) fn run_research(world: &mut World) {
                 )?;
                 return Ok(());
             }
+            // The one function of the rate (`production::job_step_per_tick`): a research station
+            // reads no rate (a frozen station was skipped above).
+            let step = super::production::job_step_per_tick(
+                head.stage,
+                frozen,
+                super::power::full_rate(),
+                1,
+            )
+            .unwrap_or(0);
             let elapsed = head
                 .elapsed_ticks
-                .checked_add(1)
+                .checked_add(step)
                 .ok_or(RejectReason::ArithmeticOverflow)?
                 .min(head.duration_ticks);
             if elapsed == head.duration_ticks {

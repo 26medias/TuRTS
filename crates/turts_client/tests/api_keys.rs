@@ -28,13 +28,27 @@ const NEW_WIRE_REASON_KEYS: [&str; 9] = [
 
 #[test]
 fn every_wire_reason_key_is_a_reason_key_in_wire_order() {
-    for (index, reason) in CommandRejectReason::ALL.iter().enumerate() {
+    // `ALL` holds the 37 keys of protocol 4 in their old order, then the 9 keys of protocol 5.
+    // `REASON_KEYS` puts the 3 client keys between the two groups (design 6.10), so the old
+    // keys match by index and the new keys match by name and order at the end of the list.
+    let (old_keys, new_keys) = CommandRejectReason::ALL.split_at(37);
+    for (index, reason) in old_keys.iter().enumerate() {
         assert_eq!(
             REASON_KEYS.get(index).copied(),
             Some(reason.as_str()),
             "wire key {index}"
         );
     }
+    let new_names: Vec<_> = new_keys.iter().map(|reason| reason.as_str()).collect();
+    assert_eq!(
+        new_names, NEW_WIRE_REASON_KEYS,
+        "the protocol 5 keys, in order"
+    );
+    assert_eq!(
+        &REASON_KEYS[REASON_KEYS.len() - NEW_WIRE_REASON_KEYS.len()..],
+        &NEW_WIRE_REASON_KEYS[..],
+        "the same 9 keys end the mod API list"
+    );
 }
 
 #[test]

@@ -20,7 +20,7 @@ where
 
 #[test]
 fn wire_v4_roundtrips_existing_fields_and_reasons() {
-    assert_eq!(NET_PROTOCOL_VERSION, 4);
+    assert_eq!(NET_PROTOCOL_VERSION, 5);
     round_trip(UnitId(4_000_000_000));
     round_trip(SlotId(255));
     round_trip(Pos { x: 1.5, y: -2.25 });
@@ -34,6 +34,7 @@ fn wire_v4_roundtrips_existing_fields_and_reasons() {
         tick: 99,
         tick_hz: 20,
         match_id: 0x1234,
+        start: Default::default(),
     });
     round_trip(JoinRejected {
         reason: "player already in match".into(),
@@ -44,6 +45,7 @@ fn wire_v4_roundtrips_existing_fields_and_reasons() {
         owner_slot: SlotId(0),
         pos: Pos { x: 10.0, y: 20.0 },
         facing: None,
+        site: false,
     };
     round_trip(unit.clone());
     let balance = BalanceState {
@@ -69,7 +71,6 @@ fn wire_v4_roundtrips_existing_fields_and_reasons() {
         id: JobId(12),
         recipe: "base:scout".into(),
         stage: JobStage::OutputBlocked,
-        elapsed_ticks: 17,
         duration_ticks: 29,
         charged: vec![turts_mod_api::Cost {
             resource: "base:ore".into(),
@@ -113,6 +114,7 @@ fn wire_v4_roundtrips_existing_fields_and_reasons() {
         healths: vec![],
         research: vec![],
         unit_orders: vec![],
+        ..Default::default()
     });
     round_trip(WorldDelta {
         tick: 8,
@@ -138,6 +140,7 @@ fn wire_v4_roundtrips_existing_fields_and_reasons() {
         healths: vec![],
         research: vec![],
         unit_orders: Vec::new(),
+        ..Default::default()
     });
     round_trip(PlayerCommand {
         seq: 12,

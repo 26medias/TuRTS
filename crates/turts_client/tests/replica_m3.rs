@@ -33,6 +33,7 @@ fn unit(id: u32, content_id: &str, owner: u8) -> UnitSnapshot {
             x: id as f32,
             y: 0.0,
         },
+        site: false,
     }
 }
 fn snapshot(tick: u32, units: Vec<UnitSnapshot>) -> Snapshot {
@@ -53,6 +54,7 @@ fn snapshot(tick: u32, units: Vec<UnitSnapshot>) -> Snapshot {
         healths: vec![],
         research: vec![],
         unit_orders: Vec::new(),
+        ..Default::default()
     }
 }
 fn delta(tick: u32, base_tick: u32) -> WorldDelta {
@@ -76,6 +78,7 @@ fn delta(tick: u32, base_tick: u32) -> WorldDelta {
         healths: vec![],
         research: vec![],
         unit_orders: Vec::new(),
+        ..Default::default()
     }
 }
 fn replica_with_content(acquired: ClientContent, slot: u8) -> Replica {
@@ -92,7 +95,6 @@ fn forge_machine_job(id: u64) -> JobState {
         id: JobId(id),
         recipe: "forge:make_shells".into(),
         stage: JobStage::Running,
-        elapsed_ticks: 3,
         duration_ticks: 40,
         charged: vec![Cost {
             resource: "forge:ore".into(),
@@ -125,7 +127,6 @@ fn forge_research_job(id: u64) -> JobState {
         id: JobId(id),
         recipe: "forge:hardened_shells".into(),
         stage: JobStage::Running,
-        elapsed_ticks: 3,
         duration_ticks: 200,
         charged: vec![Cost {
             resource: "forge:shell".into(),
@@ -208,7 +209,6 @@ fn repeated_machine_recipe_inputs_validate_aggregated_charges() {
             id: JobId(1),
             recipe: "forge:make_shells".into(),
             stage: JobStage::Running,
-            elapsed_ticks: 3,
             duration_ticks: 40,
             charged: vec![Cost {
                 resource: "forge:ore".into(),
@@ -285,7 +285,6 @@ fn active_forge_machine_recipe_cycle_queue_is_valid_in_snapshot() {
             id: JobId(1),
             recipe: "forge:make_shells".into(),
             stage: JobStage::Running,
-            elapsed_ticks: 3,
             duration_ticks: 40,
             charged: vec![Cost {
                 resource: "forge:ore".into(),
@@ -325,7 +324,6 @@ fn active_forge_research_job_queue_is_valid_in_snapshot() {
             id: JobId(1),
             recipe: "forge:hardened_shells".into(),
             stage: JobStage::Running,
-            elapsed_ticks: 3,
             duration_ticks: 200,
             charged: vec![Cost {
                 resource: "forge:shell".into(),
@@ -346,10 +344,28 @@ fn active_forge_research_job_queue_is_valid_in_snapshot() {
 
     let mut progress = delta(11, 10);
     let mut advanced_queue = initial.economy.queues[0].clone();
-    advanced_queue.jobs[0].elapsed_ticks = 4;
+    // Protocol 5: the progress of a job is its own record, not a field of `JobState`.
+    progress.records.jobs.push(turts_net_protocol::JobProgress {
+        producer: advanced_queue.producer,
+        job: advanced_queue.jobs[0].id,
+        progress: turts_net_protocol::RateRecord {
+            done: 4,
+            total: advanced_queue.jobs[0].duration_ticks,
+            per_tick: 1,
+            at_tick: 11,
+            state: turts_net_protocol::RecordState::Running,
+            charged: vec![],
+            held: false,
+            held_since_tick: 0,
+        },
+    });
     progress.economy.queues.push(advanced_queue.clone());
     assert_eq!(replica.apply_delta(&progress, now), DeltaOutcome::Applied);
     assert_eq!(replica.last_applied_tick, Some(11));
+    assert_eq!(
+        replica.job_elapsed_ticks(advanced_queue.producer.0, advanced_queue.jobs[0].id.0),
+        4
+    );
     assert_eq!(replica.economy.queues, vec![advanced_queue.clone()]);
 
     let queues_before_invalid_progress = replica.economy.queues.clone();
@@ -384,7 +400,6 @@ fn queued_forge_research_reservation_is_valid_in_snapshot() {
             id: JobId(2),
             recipe: "forge:hardened_shells".into(),
             stage: JobStage::Queued,
-            elapsed_ticks: 0,
             duration_ticks: 200,
             charged: vec![],
             reserved: vec![Cost {
@@ -551,7 +566,7 @@ fn replica_merges_new_records_through_one_helper() {
     initial.weapons = vec![WeaponRecord {
         unit: UnitId(5),
         enabled: true,
-        cooldown: 2,
+        ready_tick: 2,
         damage: Ok(10),
         status: WeaponStatus::Ready,
         last_target: Some(UnitId(6)),
@@ -583,7 +598,7 @@ fn replica_merges_new_records_through_one_helper() {
     update.weapons = vec![WeaponRecord {
         unit: UnitId(5),
         enabled: false,
-        cooldown: 2,
+        ready_tick: 2,
         damage: Err(turts_net_protocol::CommandRejectReason::MissingCapability),
         status: WeaponStatus::NoTarget,
         last_target: None,
@@ -655,7 +670,7 @@ fn removed_unit_clears_all_records() {
     initial.weapons.push(WeaponRecord {
         unit: UnitId(6),
         enabled: true,
-        cooldown: 0,
+        ready_tick: 0,
         damage: Ok(10),
         status: WeaponStatus::Ready,
         last_target: None,
@@ -863,7 +878,7 @@ fn late_join_replica_matches_server_view() {
     view.weapons = vec![WeaponRecord {
         unit: UnitId(4),
         enabled: true,
-        cooldown: 3,
+        ready_tick: 3,
         damage: Err(turts_net_protocol::CommandRejectReason::ArithmeticOverflow),
         status: WeaponStatus::Cooling,
         last_target: Some(UnitId(5)),

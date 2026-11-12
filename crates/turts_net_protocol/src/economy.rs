@@ -65,13 +65,17 @@ pub struct QueueState {
     pub jobs: Vec<JobState>,
 }
 
-/// Production progress and its committed and reserved costs.
+/// A production job and its committed and reserved costs. Protocol 5 carries no progress here:
+/// `elapsed_ticks` changed in each tick and put the whole `QueueState` into every delta while a job
+/// ran. The progress is the `JobProgress` record (`done`, `total`, `per_tick`, `at_tick`); the
+/// client derives the elapsed ticks from it with `turts_rules::progress::value_at`. `charged` stays
+/// here: it changes at a charge event only. A per-tick payment (`L-PAY`) rides `RateRecord.charged`,
+/// never this field.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct JobState {
     pub id: JobId,
     pub recipe: ContentRef,
     pub stage: JobStage,
-    pub elapsed_ticks: u64,
     pub duration_ticks: u64,
     pub charged: Vec<Cost>,
     pub reserved: Vec<Cost>,
@@ -134,7 +138,7 @@ impl GatherWaitReason {
 }
 
 /// The complete player-visible economy state in a snapshot.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct EconomyState {
     pub balances: Vec<BalanceState>,
     pub inventories: Vec<InventoryState>,
@@ -143,7 +147,7 @@ pub struct EconomyState {
 }
 
 /// Absolute replacements for economy records changed in a world delta.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct EconomyChanges {
     pub balances: Vec<BalanceState>,
     pub inventories: Vec<InventoryState>,

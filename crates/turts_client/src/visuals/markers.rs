@@ -20,6 +20,10 @@ pub(super) fn retained_marker(
             let pos = replica.nodes.get(node)?.pos;
             Vec2::new(pos.x, pos.y)
         }
+        OrderTarget::ContentAtPoint {
+            point: Pos { x, y },
+            ..
+        } => Vec2::new(*x, *y),
         OrderTarget::None | OrderTarget::Job(_) | OrderTarget::Content(_) => return None,
     };
     Some(RetainedMarker {

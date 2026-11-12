@@ -7,6 +7,7 @@ mod plain;
 mod run;
 #[cfg(test)]
 mod tests;
+pub mod writer;
 
 pub(crate) use apply::{apply_order, clear_replaced_movement, unit_order_capable};
 pub use pending::{MovementDispatchState, PendingMovementOrders};

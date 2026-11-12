@@ -231,6 +231,26 @@ fn changed_by_key<T: Clone + PartialEq, K: Ord>(
         .cloned()
         .collect()
 }
+/// The weapon rows that changed. The cooldown counts down by one in each tick, so a row whose
+/// only difference is that countdown is not a change: the wire record carries `ready_tick`
+/// (design 6.8, "Records with a start tick and a rate"), which a countdown leaves as it was.
+/// A row with another cooldown (a shot, a reset) is a change.
+fn changed_weapons(before: &[RawWeaponAudit], after: &[RawWeaponAudit]) -> Vec<RawWeaponAudit> {
+    let old: std::collections::BTreeMap<_, _> = before.iter().map(|row| (row.unit, row)).collect();
+    after
+        .iter()
+        .filter(|row| {
+            old.get(&row.unit).is_none_or(|previous| {
+                let countdown_only = RawWeaponAudit {
+                    cooldown: previous.cooldown.saturating_sub(1),
+                    ..(*previous).clone()
+                };
+                countdown_only != **row
+            })
+        })
+        .cloned()
+        .collect()
+}
 pub fn m3_changes(before: &M3AuditState, after: &M3AuditState) -> M3AuditChanges {
     let units: std::collections::BTreeSet<_> = before
         .disabled
@@ -258,7 +278,7 @@ pub fn m3_changes(before: &M3AuditState, after: &M3AuditState) -> M3AuditChanges
         belts: changed_by_key(&before.raw_belts, &after.raw_belts, |v| v.first_piece),
         inserters: changed_by_key(&before.raw_inserters, &after.raw_inserters, |v| v.unit),
         extractors: changed_by_key(&before.raw_extractors, &after.raw_extractors, |v| v.unit),
-        weapons: changed_by_key(&before.raw_weapons, &after.raw_weapons, |v| v.unit),
+        weapons: changed_weapons(&before.raw_weapons, &after.raw_weapons),
         healths: changed_by_key(&before.raw_healths, &after.raw_healths, |v| v.unit),
         research: changed_by_key(&before.research, &after.research, |v| {
             (v.slot, v.technology.clone())

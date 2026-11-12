@@ -296,11 +296,10 @@ pub(crate) fn run_production(world: &mut World) {
         if head_stage.is_none() {
             continue;
         }
-        // Preserve M2 worlds without M3 state, but freeze every disabled legacy producer.
-        if world
-            .get_resource::<super::research::Disabled>()
-            .is_some_and(|disabled| disabled.0.contains(&producer))
-        {
+        // Preserve M2 worlds without M3 state, but freeze every frozen legacy producer (a disabled
+        // one today). The one predicate of the freeze: `FreezeFacts::frozen`.
+        let frozen = freeze_facts_in_world(world, producer).frozen();
+        if frozen {
             continue;
         }
         let Some(owner_slot) = unit_entity(world, producer)
@@ -336,7 +335,7 @@ pub(crate) fn run_production(world: &mut World) {
                             Some((job.id.0, charged))
                         }
                         JobStage::Running => {
-                            let steps = job_step(job, rate);
+                            let steps = job_step(job, frozen, rate);
                             let elapsed = job
                                 .elapsed_ticks
                                 .checked_add(steps)
@@ -380,15 +379,85 @@ pub(crate) fn run_production(world: &mut World) {
     }
 }
 
+/// THE ONE FUNCTION of the rate that a queue job advances in one tick (MP1 review, repair 2): the
+/// sim advance steps (`run_production`, `run_machines`, `run_research`) and the wire (`JobProgress`
+/// through `view_job_per_tick`) both call it, so the wire rate is the rate that the sim applies.
+/// A job advances only while its stage is `Running` and its producer is not frozen (a disabled
+/// producer, machine or research station keeps the stage `Running` and does not advance). A job
+/// that waits (`Queued`: behind another job, or the tick in which it starts) or whose output is
+/// blocked (`OutputBlocked`) advances by 0. `None` when `rate` does not divide `q`.
+pub fn job_step_per_tick(
+    stage: JobStage,
+    frozen: bool,
+    rate: turts_rules::Ratio,
+    q: u64,
+) -> Option<u64> {
+    if frozen || stage != JobStage::Running {
+        return Some(0);
+    }
+    turts_rules::progress::rate_step(q, rate)
+}
+
+/// The facts that freeze a producer, a machine or a research station: the ONE place of the freeze
+/// rule. A frozen producer keeps the stage `Running` and does not advance. The sim skips it with
+/// `freeze_facts_in_world(..).frozen()` and the wire freezes it with `freeze_facts_in_view(..)
+/// .frozen()`: the same predicate. A new cause (`L-PWR`: no power; `L-PAY`: a held job) is a new
+/// field here. `frozen` destructures the struct and both builders list every field, so a cause that
+/// one builder or the predicate leaves out does not compile.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct FreezeFacts {
+    /// The producer is disabled (`SetEnabled`).
+    pub disabled: bool,
+}
+
+impl FreezeFacts {
+    /// True when the producer does not advance its jobs.
+    pub fn frozen(self) -> bool {
+        let Self { disabled } = self;
+        disabled
+    }
+}
+
+/// The freeze facts of `unit` in the world (the sim advance steps read this).
+pub(crate) fn freeze_facts_in_world(world: &World, unit: u32) -> FreezeFacts {
+    FreezeFacts {
+        disabled: world
+            .get_resource::<super::research::Disabled>()
+            .is_some_and(|disabled| disabled.0.contains(&unit)),
+    }
+}
+
+/// The freeze facts of `unit` in a view (the wire reads this).
+pub fn freeze_facts_in_view(view: &super::views::WorldView, unit: u32) -> FreezeFacts {
+    FreezeFacts {
+        disabled: view.m3.disabled.binary_search(&unit).is_ok(),
+    }
+}
+
+/// The progress per tick of a queue job as the view holds it (the wire reads this): the same
+/// function as the advance step, with the freeze facts of the view.
+///
+/// `L-PWR` MUST CHANGE THIS FUNCTION. It passes Q = 1 and the full rate, which is right only while
+/// no capability has a `when_short` rate (`power::rate_factor` is the stub `1/1`). Rule (repair
+/// follow-up, `RateRecord` doc): the wire `done`, `total` and `per_tick` count raw units of 1/Q
+/// tick, so the view must carry the raw progress, the Q and the rate of each producer, and this
+/// function must call `job_step_per_tick(stage, frozen, rate, q)` with them and write
+/// `per_tick` in raw units (Q = 2, 100 ticks, rate 1/2: `total` 200, `per_tick` 1). A machine and
+/// a research station read no rate: they call the function with the full rate.
+pub fn view_job_per_tick(view: &super::views::WorldView, producer: u32, stage: JobStage) -> u64 {
+    let frozen = freeze_facts_in_view(view, producer).frozen();
+    job_step_per_tick(stage, frozen, power::full_rate(), 1).unwrap_or(0)
+}
+
 /// The progress that `job` makes in one tick at `rate`: `Q x num / den` (design 6.4, "Progress in
 /// integers"). The Q of the job is `total / duration_ticks`, the Q of its queue time. Design 6.4
 /// makes Q the least common multiple of every `Rate` denominator of the catalog, and the packer
 /// refuses a catalog that breaks it. So a rate whose denominator does not divide the Q of a job
 /// is not an input error: it is a broken invariant of the catalog install (`L-PWR` sets Q there),
 /// and the engine stops with a message at once. A silent stall would hide it.
-fn job_step(job: &ProductionJob, rate: turts_rules::Ratio) -> u64 {
+fn job_step(job: &ProductionJob, frozen: bool, rate: turts_rules::Ratio) -> u64 {
     let q = job.total.checked_div(job.duration_ticks).unwrap_or(1);
-    turts_rules::progress::rate_step(q, rate).unwrap_or_else(|| {
+    job_step_per_tick(job.stage, frozen, rate, q).unwrap_or_else(|| {
         panic!(
             "the rate {}/{} does not divide Q = {q} of job {} (design 6.4: Q is the least common \
              multiple of every Rate denominator of the catalog)",
@@ -1120,5 +1189,56 @@ mod m3_disabled_legacy_producer_tests {
             crate::boot_m3::try_ms_to_ticks(u64::from(HOLD_CLEAR_MS), 20),
             Some(20)
         );
+    }
+}
+
+#[cfg(test)]
+mod rate_tests {
+    use super::*;
+    use crate::economy::power::full_rate;
+
+    /// The one function of the rate (repair 2 of L0-WIRE): every stalled condition gives 0, and
+    /// only a `Running` job of a producer that is not frozen advances. The wire reads the same
+    /// function (`view_job_per_tick`), so this table is also the table of the wire rate.
+    #[test]
+    fn only_a_running_job_of_a_producer_that_is_not_frozen_advances() {
+        let step = |stage, frozen| job_step_per_tick(stage, frozen, full_rate(), 1);
+        assert_eq!(step(JobStage::Running, false), Some(1));
+        assert_eq!(
+            step(JobStage::Running, true),
+            Some(0),
+            "a disabled producer"
+        );
+        assert_eq!(
+            step(JobStage::Queued, false),
+            Some(0),
+            "behind another job, or the start tick"
+        );
+        assert_eq!(step(JobStage::Queued, true), Some(0));
+        assert_eq!(
+            step(JobStage::OutputBlocked, false),
+            Some(0),
+            "the output is blocked"
+        );
+        assert_eq!(step(JobStage::OutputBlocked, true), Some(0));
+        // A rate that Q does not divide has no step (the advance step stops with a message).
+        let half = turts_rules::Ratio::new(1, 2).expect("a ratio");
+        assert_eq!(job_step_per_tick(JobStage::Running, false, half, 1), None);
+        assert_eq!(
+            job_step_per_tick(JobStage::Running, false, half, 2),
+            Some(1)
+        );
+    }
+
+    /// The view-level rate reads the disabled set of the view, as the advance step reads the
+    /// `Disabled` resource.
+    #[test]
+    fn the_view_rate_reads_the_disabled_set() {
+        let mut view = crate::economy::views::WorldView::default();
+        assert_eq!(view_job_per_tick(&view, 7, JobStage::Running), 1);
+        view.m3.disabled = vec![7];
+        assert_eq!(view_job_per_tick(&view, 7, JobStage::Running), 0);
+        assert_eq!(view_job_per_tick(&view, 8, JobStage::Running), 1);
+        assert_eq!(view_job_per_tick(&view, 8, JobStage::OutputBlocked), 0);
     }
 }

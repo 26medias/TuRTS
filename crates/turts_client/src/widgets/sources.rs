@@ -307,7 +307,15 @@ fn primary_value(field: PrimaryField, context: SourceContext<'_>) -> serde_json:
             .iter()
             .find(|weapon| weapon.unit.0 == *id)
             .map_or(serde_json::Value::Null, |weapon| {
-                serde_json::json!(weapon.cooldown as f64 / context.replica.tick_hz.max(1) as f64)
+                serde_json::json!(
+                    // `ready_tick` is a tick: the ticks left are counted at the tick of the
+                    // last applied delta, never later (design 6.8, no prediction).
+                    turts_rules::progress::cooldown_left(
+                        weapon.ready_tick,
+                        context.replica.last_applied_tick.unwrap_or(0),
+                    ) as f64
+                        / context.replica.tick_hz.max(1) as f64
+                )
             }),
         PrimaryField::Cooldown => serde_json::Value::Null,
         // API 0.2.4 (row H8): `UI2-HUD` reads these (stubs: null until it builds them).
@@ -615,6 +623,8 @@ fn production_queue(context: SourceContext<'_>) -> SourceData {
         .find(|queue| queue.producer.0 == selected)
     {
         for job in &queue.jobs {
+            // The elapsed ticks come from the progress record of the job (design 6.8).
+            let elapsed = context.replica.job_elapsed_ticks(selected, job.id.0);
             let mut item = ItemData::default();
             let name = job_name(context, &job.recipe);
             item.set(ItemField::Name, name);
@@ -623,13 +633,14 @@ fn production_queue(context: SourceContext<'_>) -> SourceData {
                 if job.duration_ticks == 0 {
                     1.0
                 } else {
-                    (job.elapsed_ticks as f64 / job.duration_ticks as f64).clamp(0.0, 1.0)
+                    // `elapsed` is at most `duration_ticks` (the derivation caps it), so no clamp.
+                    elapsed as f64 / job.duration_ticks as f64
                 },
             );
             if let Some(icon) = job_icon(context, &job.recipe) {
                 item.set(ItemField::Icon, icon);
             }
-            let ticks_left = job.duration_ticks.saturating_sub(job.elapsed_ticks);
+            let ticks_left = job.duration_ticks.saturating_sub(elapsed);
             item.set(
                 ItemField::RemainingSeconds,
                 ticks_left as f64 / context.replica.tick_hz.max(1) as f64,
@@ -2473,7 +2484,6 @@ mod tests {
                 id: JobId(55),
                 recipe: recipe_id.to_string(),
                 stage: JobStage::Queued,
-                elapsed_ticks: 120,
                 duration_ticks: 80,
                 charged: vec![],
                 reserved: vec![],
@@ -2526,11 +2536,26 @@ mod tests {
                 id: JobId(55),
                 recipe: recipe_id.to_string(),
                 stage: JobStage::Queued,
-                elapsed_ticks: 120,
                 duration_ticks: 80,
                 charged: vec![],
                 reserved: vec![],
             });
+        // The job ran past its duration: its progress record says 120 of 80 (design 6.8).
+        replica.job_progress.insert(
+            (6, 55),
+            turts_net_protocol::RateRecord {
+                // The job ran past its duration: the derived ticks never pass the duration
+                // (`value_at` caps at `total`, `base_ticks_done` scales by `duration / total`).
+                done: 120,
+                total: 80,
+                per_tick: 0,
+                at_tick: 0,
+                state: turts_net_protocol::RecordState::Running,
+                charged: vec![],
+                held: false,
+                held_since_tick: 0,
+            },
+        );
         let queued = read_source(
             &Source::ProductionQueue,
             context(
