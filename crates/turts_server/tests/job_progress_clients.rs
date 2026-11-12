@@ -361,3 +361,55 @@ fn forge_machine_and_research_jobs_equal_the_sim_through_disable_and_enable() {
         "JOBPROGRESS forge: {compared} comparisons, {frozen} of them with a frozen Running job"
     );
 }
+
+/// A real ordered attack through a kill (trooper 40 at dummy 46, the MM1 pair of
+/// `mc_kill_replica`): every delta of the export applies to a real `Replica` of the owner, with no
+/// resync. A delta that the replica rejects names a unit that the same delta removes, or breaks
+/// another rule of the replica; the process test sees it as a stall.
+#[test]
+fn an_ordered_attack_kill_stream_applies_to_the_owner_replica_without_a_rejection() {
+    use turts_client::replica::DeltaOutcome;
+    let archive = package("muster");
+    let mut app = headless_app(20);
+    turts_pack::load_package(app.world_mut(), &archive).unwrap();
+    initialize_completed_world(app.world_mut());
+    let view0 = completed_world(app.world()).clone();
+    let now = Instant::now();
+    let mut client = replica(&archive);
+    client.apply_snapshot(&export::snapshot_for(&view0, SlotId(0)), now);
+    app.world_mut()
+        .resource_mut::<CommandQueue>()
+        .0
+        .push_back(Command {
+            slot: SlotId(0),
+            seq: 1,
+            kind: CommandKind::Order(Box::new(turts_sim::OrderCommand {
+                order: turts_mod_api::ContentId::parse("muster:order_attack").unwrap(),
+                behaviour: turts_mod_api::Behaviour::Attack,
+                target_kind: turts_mod_api::TargetKind::Unit,
+                policy: None,
+                units: vec![40],
+                target: turts_sim::OrderTargetSim::Unit(46),
+                queue: turts_sim::QueueMode::Replace,
+                group: 0,
+                allowed_units: vec!["muster:trooper".into()],
+                queue_depth: 16,
+            })),
+        });
+    let mut killed = false;
+    for tick in 1..=900u32 {
+        app.update();
+        let batch = committed_tick(app.world()).clone();
+        let view = completed_world(app.world()).clone();
+        killed |= batch.removed.contains(&46);
+        let delta = export::delta_for(&batch, &view, SlotId(0));
+        assert_eq!(
+            client.apply_delta(&delta, now),
+            DeltaOutcome::Applied,
+            "tick {tick}: the owner replica rejects the delta (removed {:?}, weapons {:?})",
+            delta.removed,
+            delta.weapons
+        );
+    }
+    assert!(killed, "the attack kills the dummy");
+}
