@@ -246,19 +246,20 @@ class LocalGuardTests(unittest.TestCase):
         if script == "m2-browser.sh":
             with tempfile.TemporaryDirectory() as temporary:
                 return suite.run_default_suite(Path(temporary), env_extra, tuple(args))
-        env = {k: v for k, v in os.environ.items() if k not in ("GITHUB_ACTIONS", "M2_LOCAL_ONLY_CASES", "M2_RECIPE_DURATION_SCALE")}
+        env = {k: v for k, v in os.environ.items() if k not in ("GITHUB_ACTIONS", "M2_LOCAL_ONLY_CASES", "M2_RECIPE_DURATION_SCALE", "M2_RECIPE_DURATION_SCALE_CASES")}
         env.update(env_extra)
         return subprocess.run(["bash", str(ROOT / "scripts" / script), *args], cwd=ROOT, env=env, capture_output=True, text=True, timeout=120)
 
     def test_a_local_run_with_a_hosted_only_value_is_an_error_in_both_scripts(self):
         for script, args in (("m2-browser.sh", ["--case", "E9-browser-base-selection"]), ("m2-refutations.sh", ["--case", PLANT]), ("m2-browser.sh", [])):
-            for name, value in (("M2_LOCAL_ONLY_CASES", PLANT), ("M2_RECIPE_DURATION_SCALE", "4")):
+            for name, value in (("M2_LOCAL_ONLY_CASES", PLANT), ("M2_RECIPE_DURATION_SCALE", "4"), ("M2_RECIPE_DURATION_SCALE_CASES", "E9-browser-base-loss-refund=5")):
                 with self.subTest(script=script, name=name, args=args):
                     # The refutation script always gets the local-only list too, so that no old script can start a refutation build.
                     extra = {name: value} if script == "m2-browser.sh" else {name: value, "M2_LOCAL_ONLY_CASES": PLANT}
                     result = self.run_script(script, args, extra)
                     self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
                     self.assertIn("is set and GITHUB_ACTIONS is not 'true'", result.stderr)
+                    self.assertIn("M2_RECIPE_DURATION_SCALE_CASES", result.stderr)
                     self.assertIn("Unset them for a local gate run", result.stderr)
                     self.assertNotIn("M2_CASE_", result.stdout)
 

@@ -54,12 +54,12 @@ if [[ $# -eq 1 && "$1" == "--list-cases" ]]; then
         E9-browser-cedar-public-convergence
     exit 0
 fi
-# M2_LOCAL_ONLY_CASES and M2_RECIPE_DURATION_SCALE belong to the hosted job (ci.yml sets them, and the runner sets
+# M2_LOCAL_ONLY_CASES, M2_RECIPE_DURATION_SCALE and M2_RECIPE_DURATION_SCALE_CASES belong to the hosted job (ci.yml sets them, and the runner sets
 # GITHUB_ACTIONS=true). A local gate run must run every case with the true recipe times, so it refuses to start
 # when one of them is set: it would skip a case or change the package with no sign in the result.
-if [[ "${GITHUB_ACTIONS:-}" != "true" && ( -n "${M2_LOCAL_ONLY_CASES:-}" || -n "${M2_RECIPE_DURATION_SCALE:-}" ) ]]; then
-    echo "scripts/m2-browser.sh: M2_LOCAL_ONLY_CASES or M2_RECIPE_DURATION_SCALE is set and GITHUB_ACTIONS is not 'true'." >&2
-    echo "These two values are for the hosted job only. Unset them for a local gate run, which runs every case with the true recipe times." >&2
+if [[ "${GITHUB_ACTIONS:-}" != "true" && ( -n "${M2_LOCAL_ONLY_CASES:-}" || -n "${M2_RECIPE_DURATION_SCALE:-}" || -n "${M2_RECIPE_DURATION_SCALE_CASES:-}" ) ]]; then
+    echo "scripts/m2-browser.sh: M2_LOCAL_ONLY_CASES, M2_RECIPE_DURATION_SCALE or M2_RECIPE_DURATION_SCALE_CASES is set and GITHUB_ACTIONS is not 'true'." >&2
+    echo "These three values are for the hosted job only. Unset them for a local gate run, which runs every case with the true recipe times." >&2
     exit 2
 fi
 if [[ $# -eq 0 && -z "$PACKAGE" && -z "$CASE_ID" ]]; then
@@ -330,6 +330,7 @@ fi
 python3 "$ROOT/tests/m2/recipe_duration.py" \
     --source "$ROOT/mods/$PACKAGE" --packed "$ARTIFACT_DIR/pack/$PACKAGE" \
     --package "$PACKAGE" --case "$CASE_ID" --scale "${M2_RECIPE_DURATION_SCALE:-1}" \
+    --case-scales "${M2_RECIPE_DURATION_SCALE_CASES:-}" \
     --receipt "$ARTIFACT_DIR/recipe-duration.json" \
     > "$ARTIFACT_DIR/recipe-duration.log" 2>&1 || {
         cat "$ARTIFACT_DIR/recipe-duration.log" >&2

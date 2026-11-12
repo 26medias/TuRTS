@@ -67,11 +67,39 @@ test("cedar and haul: 6000 ms times 4 is 480 ticks at 20 Hz", () => {
 
 test("the true recipe times of mods/ and the recipe table agree with tests/m2/recipe_duration.py", () => {
     const python = fs.readFileSync(path.join(__dirname, "..", "m2", "recipe_duration.py"), "utf8");
-    const pairs = [...python.matchAll(/"(E9-browser-[a-z]+-economy)": \("([a-z]+)", "([a-z/._]+)"\)/g)];
-    assert.equal(pairs.length, 3);
+    const pairs = [...python.matchAll(/"(E9-browser-[a-z_-]+)": \("([a-z]+)", "([a-z/._]+)"\)/g)];
+    assert.equal(pairs.length, 4);
     assert.deepEqual(Object.fromEntries(pairs.map(([, id, pkg, file]) => [id, { package: pkg, file }])), RECIPE_FILES);
     for (const [id, { package: pkg, file }] of Object.entries(RECIPE_FILES)) {
         const ms = parseDurationMs(fs.readFileSync(path.join(ROOT, "mods", pkg, file), "utf8"), file);
         assert.equal(ms, pkg === "base" ? 5000 : 6000, id);
+    }
+});
+
+const REFUND = "E9-browser-base-loss-refund";
+const refundReceipt = (over = {}) => ({ package: "base", case_id: REFUND, scale_requested: 5, scale: 5, applied: true,
+    recipe_file: "production/rifleman.ron", source_duration_ms: 5000, packed_duration_ms: 25000, ...over });
+const checkRefund = (r, checkpoints) => validateRecipeDuration({ packageName: "base", caseId: REFUND, receipt: r, sourceDurationMs: 5000, checkpoints });
+
+test("loss-refund: scale 5 with a job of 500 ticks is accepted", () => {
+    assert.deepEqual(checkRefund(refundReceipt(), [shot([job(500)])]), { scale: 5, packed_duration_ms: 25000, jobs_checked: 1 });
+    const one = refundReceipt({ scale: 1, scale_requested: 1, applied: false, packed_duration_ms: 5000 });
+    assert.equal(checkRefund(one, [shot([job(100)])]).scale, 1);
+});
+
+test("loss-refund: a claimed scale with an unscaled pack is red, and the reverse is red", () => {
+    assert.throws(() => checkRefund(refundReceipt(), [shot([job(100)])]), /duration_ticks 100, the packed recipe needs 500/);
+    const unclaimed = refundReceipt({ scale: 1, scale_requested: 1, applied: false, packed_duration_ms: 5000 });
+    assert.throws(() => checkRefund(unclaimed, [shot([job(500)])]), /duration_ticks 500, the packed recipe needs 100/);
+    assert.throws(() => checkRefund(refundReceipt({ scale: 4, packed_duration_ms: 20000 }), [shot([job(500)])]), /needs 400/);
+});
+
+test("the other loss cases and the recovery case must keep the true times", () => {
+    for (const caseId of ["E9-browser-base-loss-conversion", "E9-browser-base-loss-charge", "E9-browser-base-loss-spawn",
+        "E9-browser-base-loss-final_change", "E9-browser-base-recovery"]) {
+        const none = { package: "base", case_id: caseId, scale_requested: 5, scale: 1, applied: false };
+        assert.equal(validateRecipeDuration({ packageName: "base", caseId, receipt: none, sourceDurationMs: null, checkpoints: [] }), null);
+        assert.throws(() => validateRecipeDuration({ packageName: "base", caseId, receipt: { ...none, scale: 5, applied: true },
+            sourceDurationMs: null, checkpoints: [] }), /true recipe times/, caseId);
     }
 });

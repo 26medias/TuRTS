@@ -93,5 +93,60 @@ class RecipeDurationTests(unittest.TestCase):
                 recipe.apply(ROOT / "mods" / "haul", packed, "haul", "E9-browser-base-economy", "4", receipt_path)
 
 
+REFUND = "E9-browser-base-loss-refund"
+OTHER_LOSS = ("E9-browser-base-loss-conversion", "E9-browser-base-loss-charge", "E9-browser-base-loss-spawn",
+              "E9-browser-base-loss-final_change", "E9-browser-base-recovery")
+
+
+class PerCaseScaleTests(unittest.TestCase):
+    """Hosted run 43228094477: the loss-refund job (5 s) ended before the queue shot and the Cancel click (13.5 s needed)."""
+
+    def pack_base(self, temporary):
+        packed = Path(temporary) / "pack" / "base"
+        shutil.copytree(ROOT / "mods" / "base", packed)
+        return packed, Path(temporary) / "receipt.json"
+
+    def test_the_per_case_factor_scales_the_refund_case_to_25_s_and_nothing_else_in_mods(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            packed, receipt_path = self.pack_base(temporary)
+            before = tree_hash(ROOT / "mods")
+            receipt = recipe.apply(ROOT / "mods" / "base", packed, "base", REFUND, "4", receipt_path, case_scales=f"{REFUND}=5")
+            self.assertEqual(tree_hash(ROOT / "mods"), before)
+            self.assertEqual((receipt["scale"], receipt["applied"], receipt["source_duration_ms"], receipt["packed_duration_ms"]),
+                             (5, True, 5000, 25000))
+            self.assertEqual(receipt["scale_source"], "case")
+            self.assertEqual(recipe.duration_ms((packed / "production" / "rifleman.ron").read_text(), "x"), 25000)
+            changed = [f.name for f in (ROOT / "mods" / "base").rglob("*") if f.is_file() and
+                       f.read_bytes() != (packed / f.relative_to(ROOT / "mods" / "base")).read_bytes()]
+            self.assertEqual(changed, ["rifleman.ron"])
+
+    def test_the_general_scale_alone_never_scales_the_refund_case_and_the_other_loss_cases_stay_true(self):
+        for case in (REFUND,) + OTHER_LOSS:
+            for case_scales in ("", f"{REFUND}=5"):
+                if case == REFUND and case_scales:
+                    continue
+                with self.subTest(case=case, case_scales=case_scales), tempfile.TemporaryDirectory() as temporary:
+                    packed, receipt_path = self.pack_base(temporary)
+                    receipt = recipe.apply(ROOT / "mods" / "base", packed, "base", case, "4", receipt_path, case_scales=case_scales)
+                    self.assertEqual((receipt["scale"], receipt["applied"]), (1, False))
+                    self.assertEqual(tree_hash(packed), tree_hash(ROOT / "mods" / "base"))
+
+    def test_the_per_case_list_does_not_change_the_economy_cases(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            packed, receipt_path = self.pack_base(temporary)
+            receipt = recipe.apply(ROOT / "mods" / "base", packed, "base", "E9-browser-base-economy", "4", receipt_path, case_scales=f"{REFUND}=5")
+            self.assertEqual((receipt["scale"], receipt["packed_duration_ms"], receipt["scale_source"]), (4, 20000, "general"))
+
+    def test_a_per_case_factor_for_any_other_case_or_a_bad_form_is_refused(self):
+        for bad in ("E9-browser-base-loss-spawn=5", "E9-browser-base-economy=5", f"{REFUND}=0", f"{REFUND}=11", f"{REFUND}=1.5", f"{REFUND}",
+                    f"{REFUND}=5,{REFUND}=6", "=5", f"{REFUND}=5,E9-browser-base-loss-charge=5", f"{REFUND}= 5"):
+            with self.subTest(bad=bad), tempfile.TemporaryDirectory() as temporary:
+                packed, receipt_path = self.pack_base(temporary)
+                with self.assertRaises(ValueError):
+                    recipe.apply(ROOT / "mods" / "base", packed, "base", REFUND, "4", receipt_path, case_scales=bad)
+                self.assertFalse(receipt_path.exists())
+                self.assertEqual(tree_hash(packed), tree_hash(ROOT / "mods" / "base"))
+
+
 if __name__ == "__main__":
     unittest.main()

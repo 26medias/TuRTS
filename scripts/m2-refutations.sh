@@ -6,10 +6,10 @@ if [[ "$#" != 2 || "$1" != "--case" ]]; then
     exit 2
 fi
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-# The two hosted-only values (see scripts/m2-browser.sh): a local run with one of them set is an error.
-if [[ "${GITHUB_ACTIONS:-}" != "true" && ( -n "${M2_LOCAL_ONLY_CASES:-}" || -n "${M2_RECIPE_DURATION_SCALE:-}" ) ]]; then
-    echo "scripts/m2-refutations.sh: M2_LOCAL_ONLY_CASES or M2_RECIPE_DURATION_SCALE is set and GITHUB_ACTIONS is not 'true'." >&2
-    echo "These two values are for the hosted job only. Unset them for a local gate run, which runs every case with the true recipe times." >&2
+# The three hosted-only values (see scripts/m2-browser.sh): a local run with one of them set is an error.
+if [[ "${GITHUB_ACTIONS:-}" != "true" && ( -n "${M2_LOCAL_ONLY_CASES:-}" || -n "${M2_RECIPE_DURATION_SCALE:-}" || -n "${M2_RECIPE_DURATION_SCALE_CASES:-}" ) ]]; then
+    echo "scripts/m2-refutations.sh: M2_LOCAL_ONLY_CASES, M2_RECIPE_DURATION_SCALE or M2_RECIPE_DURATION_SCALE_CASES is set and GITHUB_ACTIONS is not 'true'." >&2
+    echo "These three values are for the hosted job only. Unset them for a local gate run, which runs every case with the true recipe times." >&2
     exit 2
 fi
 # A case listed in M2_LOCAL_ONLY_CASES needs a real GPU and runs in the local gate. The job says so in
