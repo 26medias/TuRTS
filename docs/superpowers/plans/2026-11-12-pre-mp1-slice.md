@@ -29,6 +29,11 @@ the stricter assertion rule of section 1a (21); the source counts count code onl
 (23). Root accepts refinements R10, R11 (with item 20), R12 (with item 22) and R13 (with item 17). The plan
 gate is passed for the tasks up to and including A2a. A2b1 gets a short re-check before its builder starts.
 
+**From the A2a review (2026-11-12, qa-lead, six own faults; 1 High in the harness reach, in repair; report `docs/research/mp1/review-slice-a2a.md`).** These bind A2b1, A2b2, A2c, A4, A3 and REG:
+- The fast form `cargo test -p turts_sim --locked` runs 0 tests of `kernel_reference` and of `probe_flags` (the `test-probes` feature is off). Each of these tasks runs `cargo test -p turts_sim --locked --features test-probes` and the release form of `kernel_reference` that its test header names; the merge gate of the orchestrator runs both.
+- `reference.rs` calls live helpers. A task that edits a movement helper must first keep the reference independent (the A2a repair says how).
+- The `probe.rs` sha256 logged at plan `:80` (`aaa45aaa…`) is now `a0e861062cb9bebf7528dad354da1d5ef00bc108c05ec3e27dc7beb1b60a0295` after A2a; it changes again with the A2a repair. No checker pins it; the board log carries it.
+
 **From the A1b review (2026-11-12, qa-lead, five own faults; A1b merged with 0 High open; report `docs/research/mp1/review-slice-a1b.md`).** Task A1c must do these before it deletes the replay validator:
 - Ruling (orchestrator): add `pending_movement_orders` to `LedgerAudit` (`ledger_view.rs:38-46`); the sim names it audited command state (`orders/pending.rs:32`). A refused command that changes `next_pool_id` must be red in the ledger (the reviewer's probe F4 is the plant).
 - The movement-writers allow list (`crates/turts_checks/tests/movement_writers.rs:49-98`) pins the count of each (file, kind, type) entry, so a new writer in an allowed file is red (plant: a `get_mut::<Position>` write in `combat.rs`).
