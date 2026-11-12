@@ -502,7 +502,7 @@ fn the_rule_names_come_from_the_public_functions_of_turts_rules() {
         "value_at",
         "weapon_enabled",
         "rate_factor",
-        "steps_at_rate",
+        "rate_step",
     ] {
         assert!(names.contains(expected), "{expected} is not in {names:?}");
     }

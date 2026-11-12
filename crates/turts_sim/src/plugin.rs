@@ -76,6 +76,7 @@ impl Plugin for SimPlugin {
             .init_resource::<Tick>()
             .init_resource::<UnitTypes>()
             .init_resource::<crate::unit_index::UnitIndex>()
+            .init_resource::<crate::economy::power::RateQ>()
             .init_resource::<IdAllocators>()
             .init_resource::<EconomyLedger>()
             .init_resource::<crate::economy::conveyor::Conveyors>()

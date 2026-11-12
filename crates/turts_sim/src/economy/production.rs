@@ -296,13 +296,10 @@ pub(crate) fn run_production(world: &mut World) {
             continue;
         };
         if head_stage != Some(JobStage::OutputBlocked) {
-            // The whole units of progress of this tick: 1 at full rate (the stub of `power`).
-            let steps = turts_rules::progress::steps_at_rate(
-                world
-                    .get_resource::<crate::world::Tick>()
-                    .map_or(0, |tick| tick.0),
-                power::rate_factor(world, producer),
-            );
+            // The whole units of progress of this tick (design 6.4): `Q x num / den`, where Q is
+            // the unit of progress and the rate is the one of the `power` stub (1/1 at full rate).
+            let q = power::rate_q(world);
+            let steps = turts_rules::progress::rate_step(q, power::rate_factor(world, producer));
             let _ = transaction::transact(world, |tx| {
                 let mut queues = tx.queues();
                 let mut changed = false;
@@ -328,12 +325,19 @@ pub(crate) fn run_production(world: &mut World) {
                             Some((job.id.0, charged))
                         }
                         JobStage::Running => {
+                            // `elapsed_ticks` counts units of 1/Q tick; the job is done at
+                            // `duration_ticks x Q`. At Q = 1 these are ticks.
+                            let steps = steps.ok_or(RejectReason::ArithmeticOverflow)?;
+                            let total = job
+                                .duration_ticks
+                                .checked_mul(q)
+                                .ok_or(RejectReason::ArithmeticOverflow)?;
                             let elapsed = job
                                 .elapsed_ticks
                                 .checked_add(steps)
                                 .ok_or(RejectReason::ArithmeticOverflow)?;
-                            job.elapsed_ticks = elapsed.min(job.duration_ticks);
-                            if job.elapsed_ticks >= job.duration_ticks {
+                            job.elapsed_ticks = elapsed.min(total);
+                            if job.elapsed_ticks >= total {
                                 // Task 7 supplies output allocation; until then a completed head blocks FIFO.
                                 job.stage = JobStage::OutputBlocked;
                             }
@@ -804,26 +808,107 @@ mod m3_disabled_legacy_producer_tests {
             full.update();
         }
         assert_eq!(elapsed_of_job(&full), 10);
-        // Half rate: the same 10 ticks give 5 units, and each tick adds 0 or 1.
-        let mut half = producer_app(0, 100);
-        half.world_mut().insert_resource(PowerProbe {
-            weapon_enabled: true,
-            rate: Ratio::new(1, 2).unwrap(),
-        });
-        let mut previous = 0;
-        for _ in 0..10 {
-            half.update();
-            let now = elapsed_of_job(&half);
-            assert!(now - previous <= 1, "a tick added more than one unit");
-            previous = now;
+        // Half rate, with Q = 2 (the denominator of the one rate of the catalog): each tick adds
+        // 1 unit of 1/2 tick at 1/2 and 2 at full rate, so 10 ticks give 10 against 20.
+        for (rate, expected) in [(Ratio::new(1, 2).unwrap(), 10), (Ratio::ONE, 20)] {
+            let mut app = producer_app(0, 100);
+            app.world_mut()
+                .insert_resource(crate::economy::power::RateQ(2));
+            app.world_mut().insert_resource(PowerProbe {
+                weapon_enabled: true,
+                rate,
+            });
+            for _ in 0..10 {
+                app.update();
+            }
+            assert_eq!(
+                elapsed_of_job(&app),
+                expected,
+                "the job ignored the rate factor at {}/{}",
+                rate.numerator(),
+                rate.denominator()
+            );
         }
-        assert_eq!(elapsed_of_job(&half), 5, "the job ignored the rate factor");
         // No probe: the stub itself gives full rate, as the code did before the stub.
         let mut stub = producer_app(0, 100);
         for _ in 0..10 {
             stub.update();
         }
         assert_eq!(elapsed_of_job(&stub), 10);
+    }
+
+    /// The ticks that the head job of producer 7 takes to reach `OutputBlocked`, when the first
+    /// tick of the run is `first_tick` and `rate_at(n)` is the rate of the n-th tick of the run
+    /// (n from 1). `None` when it takes more than 500 ticks.
+    fn ticks_to_finish(
+        app: &mut bevy_app::App,
+        first_tick: u32,
+        rate_at: impl Fn(u32) -> turts_rules::Ratio,
+    ) -> Option<u32> {
+        use crate::economy::power::PowerProbe;
+        app.world_mut().resource_mut::<crate::world::Tick>().0 = first_tick - 1;
+        for n in 1..=500 {
+            app.world_mut().insert_resource(PowerProbe {
+                weapon_enabled: true,
+                rate: rate_at(n),
+            });
+            app.update();
+            let queues = app.world().resource::<ProductionQueues>();
+            if queues.0[&7][0].stage == JobStage::OutputBlocked {
+                return Some(n);
+            }
+        }
+        None
+    }
+
+    #[test]
+    fn a_job_at_a_low_rate_takes_duration_over_rate_ticks_at_every_start_phase() {
+        use crate::economy::power::RateQ;
+        use turts_rules::Ratio;
+        // Design 6.4: `total = duration x Q`, each tick adds `Q x num / den`. Rate 1/2 with
+        // duration 3 takes 6 ticks; rate 1/3 with duration 10 takes 30. The start phase (the
+        // tick number of the first tick of the job) must not change the count.
+        let half = Ratio::new(1, 2).unwrap();
+        for phase in 1..=2 {
+            let mut app = producer_app(0, 3);
+            app.world_mut().insert_resource(RateQ(2));
+            assert_eq!(
+                ticks_to_finish(&mut app, phase, |_| half),
+                Some(6),
+                "rate 1/2, duration 3, first tick {phase}"
+            );
+        }
+        let third = Ratio::new(1, 3).unwrap();
+        for phase in 1..=3 {
+            let mut app = producer_app(0, 10);
+            app.world_mut().insert_resource(RateQ(3));
+            assert_eq!(
+                ticks_to_finish(&mut app, phase, |_| third),
+                Some(30),
+                "rate 1/3, duration 10, first tick {phase}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_job_that_changes_rate_keeps_the_progress_it_made() {
+        use crate::economy::power::RateQ;
+        use turts_rules::Ratio;
+        // Duration 10 and Q = 2: total 20. Five ticks at 1/1 add 2 each (10), then 1/2 adds 1
+        // each: 10 more ticks. The whole job takes 15 ticks.
+        let half = Ratio::new(1, 2).unwrap();
+        for phase in 1..=2 {
+            let mut app = producer_app(0, 10);
+            app.world_mut().insert_resource(RateQ(2));
+            let ticks =
+                ticks_to_finish(&mut app, phase, |n| if n <= 5 { Ratio::ONE } else { half });
+            assert_eq!(ticks, Some(15), "first tick {phase}");
+            assert_eq!(
+                elapsed_of_job(&app),
+                20,
+                "the progress is in units of 1/Q tick"
+            );
+        }
     }
 
     #[test]

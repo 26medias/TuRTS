@@ -3,8 +3,7 @@
 use turts_rules::Ratio;
 use turts_rules::charge::{CancelCase, CancelRefunds, charged_at, refund};
 use turts_rules::progress::{
-    RateRecord, cooldown_left, is_complete, paid_at, rate_step, refund_at, steps_at_rate,
-    ticks_at_rate, value_at,
+    RateRecord, cooldown_left, is_complete, paid_at, rate_step, refund_at, ticks_at_rate, value_at,
 };
 
 mod common;
@@ -218,27 +217,4 @@ fn ticks_at_rate_agrees_with_running_the_job() {
             );
         }
     }
-}
-
-#[test]
-fn steps_at_rate_is_one_at_full_rate_and_a_floor_sum_below_it() {
-    // Full rate: 1 in every tick, tick 0 included.
-    for tick in [0, 1, 2, 1_000, u32::MAX] {
-        assert_eq!(steps_at_rate(tick, Ratio::ONE), 1, "tick {tick}");
-    }
-    // 1/2 and 1/3: each tick adds 0 or 1, and `n` ticks add `floor(n x num / den)`.
-    for (num, den) in [(1, 2), (1, 3), (2, 3), (7, 10)] {
-        let rate = Ratio::new(num, den).unwrap();
-        let mut sum = 0;
-        for tick in 1..=1_000_u32 {
-            let step = steps_at_rate(tick, rate);
-            assert!(step <= 1, "{num}/{den} tick {tick} gave {step}");
-            sum += step;
-            assert_eq!(sum, u64::from(tick) * num / den, "{num}/{den} after {tick}");
-        }
-    }
-    // Zero rate: never a step. Above 1/1: more than one step in some ticks.
-    assert_eq!(steps_at_rate(5, Ratio::ZERO), 0);
-    let double = Ratio::new(3, 2).unwrap();
-    assert_eq!((1..=10).map(|t| steps_at_rate(t, double)).sum::<u64>(), 15);
 }

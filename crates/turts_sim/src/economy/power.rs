@@ -44,6 +44,25 @@ pub(crate) fn rate_factor(world: &World, unit: u32) -> Ratio {
     turts_rules::supply::rate_factor(None, false)
 }
 
+/// Q, the unit of job progress (design 6.4, "Progress in integers"): the least common multiple of
+/// every `Rate` denominator in the catalog. A job has `total = duration_ticks x Q`, and a tick
+/// adds `rate_step(Q, rate)`, a whole number. It is 1 while no capability has a `when_short`
+/// `Rate` (every catalog today), so each tick adds 1 at full rate. `L-PWR` sets it at catalog
+/// install; the packer refuses a Q above 65,536.
+#[derive(bevy_ecs::prelude::Resource, Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct RateQ(pub(crate) u64);
+
+impl Default for RateQ {
+    fn default() -> Self {
+        Self(1)
+    }
+}
+
+/// The Q of this world (1 when the world has no `RateQ`).
+pub(crate) fn rate_q(world: &World) -> u64 {
+    world.get_resource::<RateQ>().map_or(1, |q| q.0)
+}
+
 /// Test hook: a world with this resource gets its answers from it, so a test can show that a
 /// call site reads the stub. It exists in test builds of this crate only.
 #[cfg(test)]

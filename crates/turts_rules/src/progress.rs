@@ -75,21 +75,6 @@ pub fn rate_step(q: u64, rate: Ratio) -> Option<u64> {
     u64::try_from(product / denominator).ok()
 }
 
-/// The whole steps that a counter takes in tick `tick` when it advances at `rate`:
-/// `floor(tick x num / den) - floor((tick - 1) x num / den)`. At 1/1 it is 1 in every tick; at
-/// 1/2 it is 0 or 1 and the sum over `n` ticks is `floor(n / 2)`; at a rate above 1/1 it can be
-/// above 1. The value depends on the tick only, so it keeps no state and two jobs at one rate
-/// move in step. Tick 0 is before the first step: a call at tick 0 counts as tick 1 (a test
-/// world that calls a system by hand before any tick).
-pub fn steps_at_rate(tick: u32, rate: Ratio) -> u64 {
-    let tick = u128::from(tick.max(1));
-    let numerator = u128::from(rate.numerator());
-    let denominator = u128::from(rate.denominator());
-    let now = tick * numerator / denominator;
-    let before = (tick - 1) * numerator / denominator;
-    saturate_u64(now - before)
-}
-
 /// Ticks left until `ready_tick` (a weapon record): 0 when ready.
 pub fn cooldown_left(ready_tick: u32, tick: u32) -> u32 {
     ready_tick.saturating_sub(tick)
