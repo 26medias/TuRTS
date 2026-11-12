@@ -105,6 +105,13 @@ async function judgeOrd3(ctx, params, own) {
         assertPoint(routeOrders.at(-1).emitted.target, clickWorld, `emitted waypoint ${i + 1} from actual minimap input pixel`);
     }
     const routeWorlds = routeOrders.map((entry) => targetPoint(entry.emitted.target));
+    const ticks = parseTickLog(await ctx.view.serverFile("server-tick.log"));
+    assertCompleteTicks(ticks, own.id);
+    const actorRows = ticks.filter((row) => row.unit === own.id);
+    // The authoritative tick log says when the unit lands at A. A screenshot read after that tick
+    // sees B as the current order. That is a host stall in the driver, not a queue fault.
+    assertReadBeforeLanding(actorRows, routeWorlds[0], routeQueued.checkpoint.debug.replicated_world?.tick,
+        "the route-queued checkpoint is read before the unit lands at A");
     const routed = unitOrder(routeQueued.checkpoint.debug, own.id);
     assert(routed?.current && routed.current.order === "muster:order_move", "first idle Append starts actual current Move A");
     assertPoint(routed.current.target, routeWorlds[0], "actual current A");
@@ -121,9 +128,6 @@ async function judgeOrd3(ctx, params, own) {
         && queuedPixels.total >= 12,
         "actual Gizmos waypoint lines render along each projected segment interior; the pre-queue PNG is negative");
 
-    const ticks = parseTickLog(await ctx.view.serverFile("server-tick.log"));
-    assertCompleteTicks(ticks, own.id);
-    const actorRows = ticks.filter((row) => row.unit === own.id);
     const aTick = actorRows.find((row) => close([row.x, row.y], routeWorlds[0], 0.001))?.tick;
     assert(Number.isSafeInteger(aTick), "authoritative tick log records exact landing at A");
     requireCompleteTickInterval(ticks, own.id, routeOrders[0].result.tick, aTick);
@@ -753,6 +757,17 @@ function whitePixelsInRect(image, rect, scale) {
     }
     return count;
 }
+// True when the tick of a checkpoint is before the first tick of the actor at a point.
+function readBeforeLanding(actorRows, point, checkpointTick) {
+    const landed = actorRows.find((row) => close([row.x, row.y], point, 0.001));
+    return !landed || checkpointTick < landed.tick;
+}
+function assertReadBeforeLanding(actorRows, point, checkpointTick, label) {
+    assert(Number.isSafeInteger(checkpointTick), `${label}: the checkpoint has a replica tick`);
+    const landed = actorRows.find((row) => close([row.x, row.y], point, 0.001));
+    assert(readBeforeLanding(actorRows, point, checkpointTick),
+        `${label}: the checkpoint tick ${checkpointTick} is after the landing tick ${landed.tick}`);
+}
 function parseTickLog(text) {
     return text.trim().split(/\r?\n/).filter(Boolean).map((line) => {
         const [tick, _wall, unit, x, y] = line.split(",").map(Number);
@@ -797,4 +812,4 @@ function distance(a, b) { return Math.hypot(a[0] - b[0], a[1] - b[1]); }
 function sub(a, b) { return [a[0] - b[0], a[1] - b[1]]; }
 function dot(a, b) { return a[0] * b[0] + a[1] * b[1]; }
 
-module.exports = { judge, __test: { assertEmissionsBelongToCommands, strictHealthDrops } };
+module.exports = { judge, __test: { assertEmissionsBelongToCommands, strictHealthDrops, readBeforeLanding, parseTickLog } };
