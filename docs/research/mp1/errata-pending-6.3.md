@@ -59,3 +59,23 @@ The orchestrator applies these in one pass when lane 0 exits. Each comes from an
 - `L-MATCH-SRV1`: the hook ruling of `docs/research/mp1/trace-connection-end.md`; assert a notice under 1 s after SIGKILL
   (the process test `connection_end.rs` has no lower bound and cannot tell the hook path from the timeout path).
 - Stage 2 (`L-LOBBY2-SRV`): a test for the `CountdownToLobby` edge of `room.rs` (a plant that removed it stayed green).
+
+## Note for every later visuals and effects task (from L0-SPLIT and its review, 2026-11-12)
+
+- A new visuals concern adds one file under `crates/turts_client/src/visuals/` and one call line in `draw_world_visuals`
+  after the last present concern call and before `update_health_fills` (the block `draw_queued_targets`,
+  `update_health_fills`, then `reconcile_visual_entities`), and writes into `desired` through `&mut DesiredVisuals`.
+  Several tasks add a call line in that same region: expect a textual conflict at the merge and keep the order.
+- A new retained entity type also adds: a despawn loop in the early-exit block of the caller, a `Query` parameter on the
+  system, a field in `VisualState` if it keeps state, and a reset in `sync_session`. `visuals.active = false;` stays
+  before the let-else.
+- Call pairs that must not swap: `sync_session` before the let-else; `resolve_hover` before `draw_hover_ring` and the
+  tooltip; `intake_markers` before `track_blocked`; `draw_order_markers` before `draw_blocked_marks`;
+  `collect_health_bars` before `update_health_fills`; every draw call before `reconcile_visual_entities`.
+- The scene record `visuals/scene_oracle.txt` is a record of behaviour. A task that changes behaviour re-records it with
+  the ignored test `bless_scene_fixture` and shows the diff of the record in its review. A task that adds a concern adds
+  a scene for it.
+- A new effect family adds a function in `core_adapter/effects.rs` and one match arm in `drive_core_adapter`.
+  `Effect::Marker` and `Effect::Sound` have no producer today, so no test reaches those two arms.
+- The fault registry case `E9-browser-debug-only-ui` now plants `visuals/rings.rs`. Its browser run is owed before the
+  merge of the first later task that edits `rings.rs`.
