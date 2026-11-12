@@ -510,7 +510,7 @@ raw_case!(
 raw_case!(
     h11_world_float_text,
     "world.float_text",
-    "",
+    "L-FX-PRES",
     HUD,
     "world.float_text",
     &[(

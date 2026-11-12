@@ -203,9 +203,14 @@ pub(crate) const UNBUILT_FEATURES: &[UnbuiltLine] = &[
     line("cursors.repair", "UI2-HUD"),
     line("cursors.rally", "UI2-HUD"),
     // L-FX-PRES: `exports.visual_effects` (A3), the visual `effects` with `fire` and `death`
-    // (V3, V4).
+    // (V3, V4), and `world.float_text` (H11). L3 of the review of `L0-API1`: no plan task reads the
+    // `float_text` style. Plan 5.3 gives only its `sound` to `FX2`, and the block of `L-FX-PRES`
+    // (plan "Task L-FX-PRES") renders the "+N" float (X14, R14) but names no style. So the line
+    // goes to `L-FX-PRES`, the task that draws the float, until the orchestrator gives the style to
+    // another task; the task that reads the style deletes the line.
     line("exports.visual_effects", "L-FX-PRES"),
     line("effects", "L-FX-PRES"),
+    line("world.float_text", "L-FX-PRES"),
     // FX2: `hit`, `hit_reduced`, `damaged` (V4), the effect `sound` (V3), the `world.float_text`
     // sound (H11), `effects_voices`, `audible_range` (H16).
     line("effects.hit", "FX2"),
@@ -338,7 +343,7 @@ mod tests {
             ("UI-RESULT", 8),
             ("UI2-RESULT", 1),
             ("UI2-HUD", 12),
-            ("L-FX-PRES", 2),
+            ("L-FX-PRES", 3),
             ("FX2", 7),
             ("UI2-MC", 2),
             ("PRES-MODELS", 2),
@@ -348,7 +353,7 @@ mod tests {
             *got.entry(line.owner).or_default() += 1;
         }
         assert_eq!(got, want);
-        assert_eq!(UNBUILT_FEATURES.len(), 120);
+        assert_eq!(UNBUILT_FEATURES.len(), 121);
     }
 
     /// Each row of 0.2.4 either has an `UNBUILT` line, or is in this list of the rows that the
@@ -365,8 +370,6 @@ mod tests {
         let want = BTreeSet::from([
             // H3: the `states` texts are data, read by nobody yet.
             "states",
-            // H11: `world.float_text` without a sound is plain data (plan 5.3 lists its `sound`).
-            "world.float_text",
             // L1: `Ally` and `Enemy` are served by `turts_rules::relation` in this task.
             "SlotRelation::Ally",
             "SlotRelation::Enemy",
@@ -432,7 +435,7 @@ mod tests {
             check_unbuilt(&manifest, None, &raw, UNBUILT_FEATURES, VERSION_TABLE)
                 .unwrap_or_else(|error| panic!("{}, absent: {error}", line.feature));
         }
-        assert_eq!(tested, 55, "the RAW lines");
+        assert_eq!(tested, 56, "the RAW lines");
         let _ = RawDocuments::default();
     }
 
