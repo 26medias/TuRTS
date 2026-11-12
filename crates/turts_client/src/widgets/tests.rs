@@ -39,6 +39,7 @@ fn authored_minimap_root_clips_marker_extents_to_its_widget_rect() {
         guide: &guide,
         guide_open: false,
         last_notice: None,
+        core: sources::CoreFeed::empty(),
     };
     let widget = Widget {
         id: "minimap".into(),
@@ -112,6 +113,7 @@ fn hidden_widget_ancestor_hides_child_and_removes_its_world_capture() {
         guide: &guide,
         guide_open: false,
         last_notice: None,
+        core: sources::CoreFeed::empty(),
     };
     let child = Widget {
         id: "guide.close".into(),
@@ -254,6 +256,7 @@ fn icon_only_hotkey_button_still_renders_effective_binding_and_tracks_hover() {
         guide: &[],
         guide_open: false,
         last_notice: None,
+        core: sources::CoreFeed::empty(),
     };
     let widget = Widget {
         id: "card/centre".into(),
@@ -355,6 +358,7 @@ fn dynamic_list_values_refresh_without_replacing_button_entities() {
         guide: &[],
         guide_open: false,
         last_notice: None,
+        core: sources::CoreFeed::empty(),
     };
     assert_eq!(
         text_value(
@@ -529,6 +533,7 @@ fn text_that_appears_after_an_empty_binding_keeps_authored_typography() {
         guide: &[],
         guide_open: false,
         last_notice: None,
+        core: sources::CoreFeed::empty(),
     };
     let text = Widget {
         id: "notice".into(),
@@ -708,6 +713,7 @@ fn grid_item_tooltips_inherit_context_and_template_tooltips_override_it() {
         guide: &[],
         guide_open: false,
         last_notice: None,
+        core: sources::CoreFeed::empty(),
     };
     let inherited = Value::Format(
         "{0} | {1} | {2} | {3}".into(),
@@ -886,6 +892,7 @@ fn disabled_authored_button_cannot_dispatch_an_action() {
         guide: &[],
         guide_open: false,
         last_notice: None,
+        core: sources::CoreFeed::empty(),
     };
     let item = sources::ItemData {
         fields: vec![(ItemField::Enabled, serde_json::json!(false))],
@@ -977,6 +984,7 @@ fn fit_text_and_image_use_real_asset_components_with_bevy_auto_sizing() {
         guide: &[],
         guide_open: false,
         last_notice: None,
+        core: sources::CoreFeed::empty(),
     };
     let fit = Size {
         w: turts_mod_api::Dimension::Fit,
@@ -1336,6 +1344,7 @@ fn bar_refresh_tracks_bound_progress_without_replacing_fill_entity() {
         guide: &[],
         guide_open: false,
         last_notice: None,
+        core: sources::CoreFeed::empty(),
     };
     let item = sources::ItemData {
         fields: vec![
@@ -1486,6 +1495,7 @@ fn button_labels_use_the_interface_tooltip_font() {
         guide: &[],
         guide_open: false,
         last_notice: None,
+        core: sources::CoreFeed::empty(),
     };
     let cases = [
         (
@@ -1613,6 +1623,7 @@ mod stub_contract {
             guide: &guide,
             guide_open: false,
             last_notice: None,
+            core: sources::CoreFeed::empty(),
         });
     }
 
@@ -1729,7 +1740,19 @@ mod stub_contract {
                 constructor: 1,
                 content: "test:building".into(),
             },
-            primitives::WidgetAction::FocusAlert,
+            primitives::WidgetAction::FocusAlert {
+                x: 3.0,
+                y: 4.0,
+                unit: Some(1),
+            },
+            primitives::WidgetAction::FocusAlert {
+                x: 3.0,
+                y: 4.0,
+                unit: None,
+            },
+            primitives::WidgetAction::Input {
+                name: "leave_match".into(),
+            },
         ] {
             let mut app = App::new();
             app.init_resource::<CoreInputQueue>();
@@ -1750,5 +1773,31 @@ mod stub_contract {
                 "{action:?} must queue no input until its owner builds it: {queued:?}"
             );
         }
+    }
+
+    /// Control: the guard of `leave_match` leaves every other engine action to the core.
+    #[test]
+    fn other_input_actions_still_reach_the_core() {
+        let mut app = App::new();
+        app.init_resource::<CoreInputQueue>();
+        app.init_resource::<ReplicaState>();
+        app.add_observer(activate_widget);
+        let button = app
+            .world_mut()
+            .spawn((
+                Button,
+                primitives::WidgetButtonAction(primitives::WidgetAction::Input {
+                    name: "zoom_in".into(),
+                }),
+                primitives::WidgetEnabled(true),
+            ))
+            .id();
+        app.world_mut().trigger(Activate { entity: button });
+        assert_eq!(
+            app.world().resource::<CoreInputQueue>().0,
+            vec![turts_interaction::InputEvent::UiAction {
+                name: "zoom_in".into()
+            }]
+        );
     }
 }

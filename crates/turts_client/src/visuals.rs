@@ -5,11 +5,13 @@
 //! units; owner colours come from the same palette material handles as the unit bodies.
 
 mod blocked;
+mod effects;
 mod health;
 mod hover;
 mod markers;
 mod materials;
 mod order_markers;
+mod placement;
 mod queued;
 mod rings;
 mod session;
@@ -100,6 +102,9 @@ struct VisualInputs<'w> {
     widget_assets: Option<Res<'w, crate::widgets::assets::WidgetAssets>>,
     visuals: ResMut<'w, VisualState>,
     markers_shown: ResMut<'w, MarkersShown>,
+    // One resource for each owner task of later visuals (L0-CORE): `placement::Feed`, `effects::Pool`.
+    placement_feed: Res<'w, placement::Feed>,
+    effects_pool: ResMut<'w, effects::Pool>,
 }
 
 #[derive(Component, Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -182,6 +187,8 @@ impl Plugin for VisualsPlugin {
         }
         app.insert_gizmo_config(OrderMarkerGizmoConfigGroup, order_marker_gizmo_config());
         app.add_plugins(MaterialPlugin::<RingOverlayMaterial>::default());
+        placement::register(app);
+        effects::register(app);
         app.init_resource::<VisualAssets>()
             .init_resource::<HealthDisplay>()
             .init_resource::<VisualState>()
@@ -319,6 +326,8 @@ fn draw_world_visuals(
         widget_assets,
         mut visuals,
         mut markers_shown,
+        placement_feed,
+        mut effects_pool,
     } = inputs;
     markers_shown.0.clear();
     sync_session(
@@ -439,6 +448,11 @@ fn draw_world_visuals(
         &presented_by_id,
         local_slot,
     );
+
+    // The concerns of the later tasks (L0-CORE): each draws into `desired`, after the last present
+    // concern and before `update_health_fills`.
+    placement::draw(&mut desired, &placement_feed);
+    effects::draw(&mut desired, &mut effects_pool);
 
     update_health_fills(&mut fills, &health_fractions);
     reconcile_visual_entities(

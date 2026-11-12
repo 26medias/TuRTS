@@ -100,22 +100,8 @@ pub(super) fn apply_shell_action(action: String, runtime: &mut CoreRuntime) {
     });
 }
 
-// The effect families that later tasks add (plan 3.4, L0-CORE). Each task adds its `Effect`
-// variant, one arm in `drive_core_adapter` that calls its function, and fills the function. Until
-// then the function records nothing, and no arm calls it.
-
-/// The effect family `Ghost` of `UI-PLACE` (design 7.2).
-#[allow(dead_code)] // the arm that calls it comes with `UI-PLACE`
-pub(super) fn apply_ghost(_runtime: &mut CoreRuntime) {}
-
-/// The effect family of the hint of `UI-HINT` (design 7.8).
-#[allow(dead_code)] // the arm that calls it comes with `UI-HINT`
-pub(super) fn apply_hint(_runtime: &mut CoreRuntime) {}
-
-/// The effect family of the alert focus of `UI-ALERT` (design 7.9, row H22).
-#[allow(dead_code)] // the arm that calls it comes with `UI-ALERT`
-pub(super) fn apply_alert(_runtime: &mut CoreRuntime) {}
-
-/// The effect family of the match result of `UI-RESULT` (design 7.6).
-#[allow(dead_code)] // the arm that calls it comes with `UI-RESULT`
-pub(super) fn apply_result(_runtime: &mut CoreRuntime) {}
+// One file for each effect family that a later task adds (plan 3.4, L0-CORE): the `Effect` variant
+// exists, and `drive_core_adapter` calls `<family>::apply` for it. The owner fills `apply` and the
+// family file only.
+pub(super) mod hint;
+pub(super) mod placement;

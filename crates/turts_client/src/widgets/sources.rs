@@ -67,6 +67,33 @@ pub struct SourceContext<'a> {
     pub guide: &'a [GuidePage],
     pub guide_open: bool,
     pub last_notice: Option<&'a str>,
+    /// The state of the interaction core that the sources read (one part for each owner task).
+    pub core: &'a CoreFeed,
+}
+
+/// What the interaction core gives to the sources: one part for each owner task, each type in the
+/// file of its owner (`place::Feed`, `hint::Feed`). Built from the core at the start of
+/// `sync_widget_tree`. L0-CORE wired it once; an owner edits its own part and its own `feed`.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct CoreFeed {
+    pub placement: place::Feed,
+    pub hint: hint::Feed,
+}
+
+impl CoreFeed {
+    /// The feed of a core (`None` before the core exists).
+    pub fn from_core(core: Option<&turts_interaction::Core>) -> Self {
+        Self {
+            placement: place::feed(core),
+            hint: hint::feed(core),
+        }
+    }
+
+    /// An empty feed, for a context that has no core.
+    pub fn empty() -> &'static CoreFeed {
+        static EMPTY: std::sync::LazyLock<CoreFeed> = std::sync::LazyLock::new(CoreFeed::default);
+        &EMPTY
+    }
 }
 
 /// Read one of the sources listed in design 8.4.
@@ -1342,6 +1369,7 @@ mod tests {
             guide,
             guide_open: false,
             last_notice: None,
+            core: CoreFeed::empty(),
         }
     }
 

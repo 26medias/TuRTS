@@ -38,8 +38,14 @@ pub enum WidgetAction {
         constructor: u32,
         content: String,
     },
-    /// API 0.2.4: the core action `FocusAlert` (`UI-ALERT`).
-    FocusAlert,
+    /// API 0.2.4: the core action `FocusAlert` (`UI-ALERT`): the camera target and the optional
+    /// unit that the click also selects (design 7.9). The engine fills it from the alert row; a
+    /// mod writes no such action (design 6.10 note [9]: the row has `action: Item(Action)`).
+    FocusAlert {
+        x: f32,
+        y: f32,
+        unit: Option<u32>,
+    },
 }
 
 #[derive(Component, Debug, Clone, PartialEq)]

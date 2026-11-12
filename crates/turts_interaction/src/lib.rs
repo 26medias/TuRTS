@@ -14,6 +14,16 @@ pub mod selection;
 pub mod smart;
 mod world_view;
 
+// The integration-test world, shared with the unit tests of the hooks (`hook_tests.rs`).
+#[cfg(test)]
+extern crate self as turts_interaction;
+#[cfg(test)]
+mod hook_tests;
+#[cfg(test)]
+#[allow(dead_code)]
+#[path = "../tests/common/mod.rs"]
+mod test_common;
+
 use bindings::{logical_modifier, physical_modifiers};
 use compose::{intended_units, send_explicit_units};
 use glam::Vec2;
@@ -50,6 +60,10 @@ pub struct Core {
     /// Bounded evidence of named actions that actually reached the Core dispatch branch.
     dispatch_records: Vec<NamedDispatch>,
     dispatch_records_truncated: usize,
+    /// The state of the tasks that add interaction state: each type is in the file of its owner.
+    placement: placement::State,
+    hints: hints::State,
+    alerts: alerts::State,
 }
 
 /// One named action observed at the interaction dispatch branch.
@@ -90,6 +104,9 @@ impl Core {
             camera_controller: camera::CameraController::default(),
             dispatch_records: Vec::new(),
             dispatch_records_truncated: 0,
+            placement: placement::State::default(),
+            hints: hints::State::default(),
+            alerts: alerts::State::default(),
         }
     }
 
@@ -161,6 +178,9 @@ impl Core {
         let mut ignored_wheel_inputs = Vec::new();
         let mut wheel_camera_actions = Vec::new();
         for (input_index, event) in events.iter().enumerate() {
+            if placement::intercept(self, input_index, event, world, view, now_ms, &mut effects) {
+                continue;
+            }
             match event {
                 InputEvent::UiCapture { allow_shell } => self.begin_ui_capture(*allow_shell),
                 InputEvent::KeyDown { code, mods } => {
@@ -231,6 +251,15 @@ impl Core {
                 }
                 InputEvent::Minimap { button, local } => {
                     self.on_minimap(button, local, world, view, now_ms, &mut effects);
+                }
+                InputEvent::Placement(input) => {
+                    placement::on_input(self, input, world, view, now_ms, &mut effects);
+                }
+                InputEvent::Hint(input) => {
+                    hints::on_input(self, input, world, view, now_ms, &mut effects);
+                }
+                InputEvent::Alert(input) => {
+                    alerts::on_input(self, input, world, view, now_ms, &mut effects);
                 }
             }
         }
@@ -978,6 +1007,12 @@ pub enum InputEvent {
         button: Button,
         local: [f32; 2],
     },
+    /// An input of the placement mode (`UI-PLACE`; the type is in `placement.rs`).
+    Placement(placement::Input),
+    /// An input of the hint engine (`UI-HINT`; the type is in `hints.rs`).
+    Hint(hints::Input),
+    /// The core action `FocusAlert` (`UI-ALERT`; the type is in `alerts.rs`).
+    Alert(alerts::Input),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -1056,4 +1091,8 @@ pub enum Effect {
     ShellAction {
         action: String,
     },
+    /// An effect of the placement mode (`UI-PLACE`; the type is in `placement.rs`).
+    Placement(placement::Output),
+    /// An effect of the hint engine (`UI-HINT`; the type is in `hints.rs`).
+    Hint(hints::Output),
 }

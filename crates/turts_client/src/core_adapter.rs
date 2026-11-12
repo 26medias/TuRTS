@@ -36,6 +36,7 @@ use crate::{
 };
 
 mod effects;
+mod facts;
 use effects::{
     apply_cursor, apply_marker, apply_notice, apply_send, apply_shell_action, apply_sound,
 };
@@ -275,6 +276,8 @@ struct FrameWorld {
     index: ContentIndex,
     producible: HashSet<(u32, String)>,
     jobs: HashSet<(u32, u64)>,
+    placement: turts_interaction::placement::Facts,
+    hints: turts_interaction::hints::Facts,
 }
 impl WorldView for FrameWorld {
     fn units(&self) -> &[UnitView] {
@@ -316,6 +319,12 @@ impl WorldView for FrameWorld {
             .get(content_id)
             .copied()
             .unwrap_or(usize::MAX)
+    }
+    fn placement_facts(&self) -> &turts_interaction::placement::Facts {
+        &self.placement
+    }
+    fn hint_facts(&self) -> &turts_interaction::hints::Facts {
+        &self.hints
     }
     fn can_gather(&self, unit: &UnitView, node: &NodeView) -> bool {
         self.index
@@ -555,6 +564,8 @@ fn frame_world(
         index,
         producible,
         jobs,
+        placement: facts::placement::build(replica, content),
+        hints: facts::hint::build(replica, content),
     })
 }
 
@@ -1065,6 +1076,8 @@ fn drive_core_adapter(
             Effect::ShellAction { action } => {
                 apply_shell_action(action, &mut runtime);
             }
+            Effect::Placement(output) => effects::placement::apply(output, &mut runtime),
+            Effect::Hint(output) => effects::hint::apply(output, &mut runtime),
             Effect::GroupsChanged | Effect::CameraChanged => {}
             Effect::Send(_) => {}
         }
