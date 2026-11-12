@@ -2533,10 +2533,29 @@ mod tests {
                 reserved: vec![],
             });
         // The job ran past its duration: its progress record says 120 of 80 (design 6.8).
-        replica.store_for_tests().seed_job_progress(
-            6,
-            55,
-            turts_net_protocol::RateRecord {
+        // The record reaches the store through a Snapshot, the one way in (no test seam writes the
+        // store). The Snapshot holds the producer and its queue of this test.
+        replica.set_context(crate::replica::ReplicaContext::new(content.clone(), 1));
+        let mut snapshot = turts_net_protocol::Snapshot {
+            tick: 2,
+            units: vec![turts_net_protocol::UnitSnapshot {
+                unit_id: UnitId(6),
+                content_id: "muster:producer".into(),
+                owner_slot: turts_net_protocol::SlotId(1),
+                facing: None,
+                pos: Pos { x: 0.0, y: 0.0 },
+                site: false,
+            }],
+            economy: turts_net_protocol::EconomyState {
+                queues: replica.economy.queues.clone(),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        snapshot.records.jobs = vec![turts_net_protocol::JobProgress {
+            producer: UnitId(6),
+            job: JobId(55),
+            progress: turts_net_protocol::RateRecord {
                 // The job ran past its duration: the derived ticks never pass the duration
                 // (`value_at` caps at `total`, `base_ticks_done` scales by `duration / total`).
                 done: 120,
@@ -2548,6 +2567,10 @@ mod tests {
                 held: false,
                 held_since_tick: 0,
             },
+        }];
+        assert_eq!(
+            replica.apply_snapshot(&snapshot, bevy::platform::time::Instant::now()),
+            crate::replica::SnapshotOutcome::Applied { replayed: 0 }
         );
         let queued = read_source(
             &Source::ProductionQueue,

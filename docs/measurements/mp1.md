@@ -264,6 +264,27 @@ The "before" run printed 244 and 736 clones at first: the two tests share one pr
 and ran in parallel. The figures above come from a run with `--test-threads=1` (600 and 200 clones, 2
 for each delta). After the move the test takes a lock, so the counter is not shared.
 
+**Two counters, not one.** The before figures come from a temporary counter on the job table at the two clone
+sites of the candidate (`candidate_at` and `stage_delta`); the after figures come from the clone counter of the
+store (`RecordStore::clone`). They count the same thing, a clone of the job progress table, but they are two
+instruments, and the before counter exists only in the run that produced it (not in the tree).
+
+**A second instrument (the independent review, `docs/research/mp1/review-l0-store.md:90-112`).** A counting global
+allocator in a scratch test (`zz_l0store_review_alloc.rs`), debug build, the `scale` world, 100 empty deltas, base
+`4553acc4` (the same Rust tree as the true base, `review-l0-store.md:11-13`) against head `fda534de`, 7 runs, host
+load 11 to 21. Recorded, not judged:
+
+| World | Build | Snapshot allocations / bytes | Per delta allocations / bytes | Per delta time, min (debug) |
+| --- | --- | --- | --- | --- |
+| 40 x 4 (160 records) | base | 1,619 / 338,254 | 2,163 / 443,548 | 0.358 ms |
+| 40 x 4 | head | 1,617 / 396,030 | 2,109 / 380,140 | 0.313 ms |
+| 400 x 4 (1,600 records) | base | 15,909 / 3,327,766 | 21,365 / 4,379,710 | 4.32 ms |
+| 400 x 4 | head | 15,802 / 3,780,550 | 20,835 / 3,757,806 | 2.92 ms |
+
+At 160 records the move saves 63,408 B for each delta (about 14 %), and a Snapshot costs 57,776 B more (about 17 %:
+the staged rows are built in `Vec`s and then collected into maps). The two candidate clones are about 86 % of the delta
+bytes after the move.
+
 What the move does not change: the candidate is still cloned twice for each applied delta (design D:2257
 keeps that cost in MP1; `docs/research/mp1/regate-performance.md:16` measured 0.029 ms at 400 units and
 0.363 ms at 5,000 units for one clone). A delta now costs the store the clones of its own changed

@@ -335,6 +335,35 @@ fn welcome_and_snapshot_in_one_frame_apply_both() {
     }
 }
 
+/// The replica takes the start tick of the match from `Welcome.start` (design 6.7.13), so the match
+/// clock counts from it with no argument (`L0-STORE` follow-up, finding 4).
+#[test]
+fn welcome_gives_the_replica_the_start_tick_of_the_match_clock() {
+    let mut rig = Rig::new();
+    rig.feed(Incoming::Welcome(Welcome {
+        slot_id: SlotId(0),
+        tick: 100,
+        tick_hz: 20,
+        match_id: 0,
+        start: turts_net_protocol::MatchStart {
+            start_tick: 7,
+            teams: vec![],
+            colours: vec![],
+        },
+    }));
+    rig.feed(snapshot(101));
+    let replica = rig
+        .state
+        .replica
+        .as_ref()
+        .expect("Welcome creates the replica");
+    assert_eq!(
+        replica.match_clock_ticks(),
+        94,
+        "the match clock counts from the start tick of Welcome"
+    );
+}
+
 #[test]
 fn valid_snapshot_covers_invalid_initial_snapshot_without_successor() {
     let mut rig = Rig::new();

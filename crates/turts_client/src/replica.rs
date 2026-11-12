@@ -126,6 +126,9 @@ pub struct Replica {
     /// The side store of the 6.8 records (`replica_store`): it commits with the candidate and is
     /// read through the getters below. It is not a field of the candidate.
     store: RecordStore,
+    /// `Welcome.start.start_tick` (design 6.7.13): the tick that `MatchClock` counts from. Set by
+    /// `on_welcome` through `set_match_start`; 0 until then.
+    start_tick: u32,
     /// The recent health changes of each unit: at most [`HEALTH_TRACE_WINDOW`] entries, the
     /// newest last (row DBG1). The alert `OwnUnitDestroyed` reads the last entry of a unit that
     /// is gone, so the window always keeps the newest entry.
@@ -166,6 +169,7 @@ impl Replica {
             research: Vec::new(),
             unit_orders: HashMap::new(),
             store: RecordStore::default(),
+            start_tick: 0,
             health_trace: std::collections::BTreeMap::new(),
             snapshot_tick: None,
             last_applied_tick: None,
@@ -180,6 +184,11 @@ impl Replica {
             gap_anchor: None,
             gap_seen: false,
         }
+    }
+
+    /// Take the start tick of the match from `Welcome.start.start_tick` (`ingest::on_welcome`).
+    pub fn set_match_start(&mut self, start_tick: u32) {
+        self.start_tick = start_tick;
     }
 
     pub fn set_context(&mut self, context: ReplicaContext) {
@@ -639,13 +648,6 @@ impl Replica {
         &self.store
     }
 
-    /// A test seam: the store, for a test that seeds a record with no message. Production code
-    /// never calls it.
-    #[doc(hidden)]
-    pub fn store_for_tests(&mut self) -> &mut RecordStore {
-        &mut self.store
-    }
-
     fn applied_tick(&self) -> u32 {
         self.last_applied_tick.unwrap_or(0)
     }
@@ -659,6 +661,19 @@ impl Replica {
             SupplySide::Provided => record.provided,
             SupplySide::Consumed => record.consumed,
         })
+    }
+
+    /// `Predicate::SupplyShort`, `AlertTrigger::SupplyShort` and the offline mark: true when the own
+    /// consumed amount of `resource` is above the provided amount (design 6.2, "Computation";
+    /// `turts_rules::supply::is_short`). False when the replica holds no record of the resource.
+    /// The one place that derives it: no reader compares the two sides itself.
+    pub fn supply_short(&self, resource: &str) -> bool {
+        let Some(slot) = self.context.as_ref().map(|context| context.slot) else {
+            return false;
+        };
+        self.store
+            .supply_record(slot, resource)
+            .is_some_and(|record| turts_rules::supply::is_short(record.provided, record.consumed))
     }
 
     /// `Source::ConstructionQueue`: the held orders of an own constructor.
@@ -800,10 +815,12 @@ impl Replica {
         self.own_outcome().map(|outcome| outcome.reason)
     }
 
-    /// `Value::MatchClock`: the ticks from `start_tick` (`Welcome.start.start_tick`) to the last
-    /// applied tick. 0 before the start.
-    pub fn match_clock_ticks(&self, start_tick: u32) -> u32 {
-        self.applied_tick().saturating_sub(start_tick)
+    /// `Value::MatchClock`: the ticks from the start tick of the match (`Welcome.start.start_tick`,
+    /// set by `set_match_start`) to the last applied tick. 0 before the start. The clock stops with no
+    /// store record: the server sends the `Snapshot` of the end tick and then no delta (design 6.7,
+    /// the Ended row), so the applied tick stops at the end tick.
+    pub fn match_clock_ticks(&self) -> u32 {
+        self.applied_tick().saturating_sub(self.start_tick)
     }
 
     /// `None` before the first snapshot.

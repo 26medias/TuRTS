@@ -210,6 +210,7 @@ fn the_getters_return_the_records_of_a_snapshot_and_a_delta() {
     let _guard = serial();
     let now = Instant::now();
     let mut replica = replica();
+    replica.set_match_start(4);
     applied(&mut replica, &snapshot(10));
 
     // The Snapshot.
@@ -231,7 +232,7 @@ fn the_getters_return_the_records_of_a_snapshot_and_a_delta() {
     assert_eq!(replica.own_outcome(), None);
     assert_eq!(replica.outcome(), None);
     assert_eq!(replica.outcome_reason(), None);
-    assert_eq!(replica.match_clock_ticks(4), 6);
+    assert_eq!(replica.match_clock_ticks(), 6);
 
     // One delta: ticks 11..=15 move the values, the outcome arrives.
     for tick in 11..=14 {
@@ -278,7 +279,7 @@ fn the_getters_return_the_records_of_a_snapshot_and_a_delta() {
     assert_eq!(replica.outcome(), Some(Outcome::Defeat));
     assert_eq!(replica.outcome_reason(), Some(OutcomeReason::KeyUnitsLost));
     assert_eq!(replica.match_state().connections.len(), 0);
-    assert_eq!(replica.match_clock_ticks(4), 11);
+    assert_eq!(replica.match_clock_ticks(), 11);
 
     // The item fields `Paid` and `Refund` go through `turts_rules::progress`: a job of cost 200 at
     // value 15 of 100 has paid 30; a running job refunds 1/2 of that.
@@ -1129,78 +1130,155 @@ impl Truth {
     }
 }
 
-/// Three clients: one follows every delta, one joins at a Snapshot, one loses a run of deltas and
-/// then gets an unrequested Snapshot. At every tick the store of each equals the store of the
-/// continuous client, and equals what the truth holds.
+/// The rows that the truth model says a client holds at `truth.tick`, compared with the getters
+/// one by one. The expected rows come straight from the model (units, sites, queues, supply, match
+/// state, jobs), not from `stage_snapshot_store`, so a fault in a helper that the Snapshot path
+/// and the delta path share still shows.
+fn assert_matches_truth(client: &Replica, truth: &Truth, label: &str) {
+    let tick = truth.tick;
+    assert_eq!(
+        client.last_applied_tick,
+        Some(tick),
+        "{label}: candidate tick"
+    );
+    assert_eq!(client.store().tick(), tick, "{label}: store tick");
+    let sites: Vec<u32> = truth
+        .units
+        .values()
+        .filter(|unit| unit.site)
+        .map(|unit| unit.unit_id.0)
+        .collect();
+    assert_eq!(
+        client.sites().collect::<Vec<_>>(),
+        sites,
+        "{label} at tick {tick}: the sites"
+    );
+    for id in [OWN, CONSTRUCTOR, ENEMY, SITE, ENEMY_SITE, 40] {
+        assert_eq!(
+            client.site_progress(id),
+            truth.sites.get(&id),
+            "{label} at tick {tick}: the site progress of unit {id}"
+        );
+        let want: &[HeldOrder] = truth.queues.get(&id).map_or(&[], Vec::as_slice);
+        assert_eq!(
+            client.construction_queue(id),
+            want,
+            "{label} at tick {tick}: the held orders of unit {id}"
+        );
+    }
+    assert_eq!(
+        client.supply(POWER, SupplySide::Provided),
+        truth.supply.as_ref().map(|record| record.provided),
+        "{label} at tick {tick}: supply provided"
+    );
+    assert_eq!(
+        client.supply(POWER, SupplySide::Consumed),
+        truth.supply.as_ref().map(|record| record.consumed),
+        "{label} at tick {tick}: supply consumed"
+    );
+    assert_eq!(
+        client.match_state(),
+        &truth.match_state,
+        "{label} at tick {tick}: the match state"
+    );
+    assert_eq!(
+        client.store().job_keys().collect::<Vec<_>>(),
+        truth
+            .jobs
+            .iter()
+            .map(|(id, _)| (OWN, *id))
+            .collect::<Vec<_>>(),
+        "{label} at tick {tick}: the job keys"
+    );
+    for (id, record) in &truth.jobs {
+        assert_eq!(
+            client.job_progress(OWN, *id),
+            Some(record),
+            "{label} at tick {tick}: the job record {id}"
+        );
+    }
+}
+
+/// Three clients: one follows every delta, one joins at a Snapshot, one loses a run of deltas, sees
+/// a later delta (a gap: it asks for a resync and buffers the next deltas), and then takes the
+/// Snapshot of an earlier tick with the retained deltas to replay. At every tick each active
+/// client holds the rows of the truth model, and the stores of the three are equal.
 #[test]
 fn a_late_join_and_a_lossy_client_end_with_the_store_of_a_continuous_client() {
     let _guard = serial();
     let now = Instant::now();
     let late = 22u32;
     let lost = 26u32..=31;
-    let resync_at = lost.end() + 1;
+    // Deltas of 32 to 35 reach the lossy client; the Snapshot of tick 33 answers its resync after
+    // the delta of 35: it replays 34 and 35 and skips 32 and 33 (not newer than the Snapshot).
+    let (gap_first, answer_tick, answer_after) = (32u32, 33u32, 35u32);
     let mut truth = Truth::new();
     let mut continuous = replica();
     let mut joined = replica();
     let mut lossy = replica();
     applied(&mut continuous, &truth.snapshot());
     applied(&mut lossy, &truth.snapshot());
+    let mut snapshots: BTreeMap<u32, Snapshot> = BTreeMap::new();
     let mut compared = 0;
+    let mut replayed_seen = false;
     for _ in 11..=50u32 {
         let step = truth.step();
         let tick = truth.tick;
-        let snapshot = truth.snapshot();
+        snapshots.insert(tick, truth.snapshot());
         assert_eq!(
             continuous.apply_delta(&step, now),
             DeltaOutcome::Applied,
             "tick {tick}"
         );
         if tick == late {
-            applied(&mut joined, &snapshot);
+            applied(&mut joined, &snapshots[&tick]);
         } else if tick > late {
-            assert_eq!(
-                joined.apply_delta(&step, now),
-                DeltaOutcome::Applied,
-                "tick {tick}"
-            );
+            assert_eq!(joined.apply_delta(&step, now), DeltaOutcome::Applied);
         }
-        if lost.contains(&tick) {
-            // The deltas are lost.
-        } else if tick == resync_at {
-            applied(&mut lossy, &snapshot);
+        let lossy_active = if lost.contains(&tick) {
+            // The deltas are lost: the client sees nothing.
+            false
+        } else if tick == gap_first {
+            // A later delta: the chain does not extend, so the client asks for a resync.
+            assert_eq!(lossy.apply_delta(&step, now), DeltaOutcome::ResyncRequested);
+            false
+        } else if tick > gap_first && tick <= answer_after {
+            assert_eq!(lossy.apply_delta(&step, now), DeltaOutcome::Buffered);
+            if tick == answer_after {
+                assert_eq!(lossy.buffered_batches(), 4, "deltas 32 to 35 are retained");
+                assert_eq!(
+                    lossy.apply_snapshot(&snapshots[&answer_tick], now),
+                    SnapshotOutcome::Applied { replayed: 2 },
+                    "the Snapshot of tick {answer_tick} replays the deltas 34 and 35"
+                );
+                replayed_seen = true;
+                true
+            } else {
+                false
+            }
         } else {
-            assert_eq!(
-                lossy.apply_delta(&step, now),
-                DeltaOutcome::Applied,
-                "tick {tick}"
-            );
-        }
-        // The continuous client holds what the truth holds: the store of a Snapshot of the truth.
-        let mut fresh = replica();
-        applied(&mut fresh, &snapshot);
+            assert_eq!(lossy.apply_delta(&step, now), DeltaOutcome::Applied);
+            true
+        };
         for (name, client, active) in [
             ("continuous", &continuous, true),
             ("late join", &joined, tick >= late),
-            ("lossy", &lossy, !lost.contains(&tick)),
+            ("lossy", &lossy, lossy_active),
         ] {
             if !active {
                 continue;
             }
             compared += 1;
-            assert_eq!(
-                client.last_applied_tick,
-                Some(tick),
-                "{name} at tick {tick}"
-            );
-            assert_eq!(client.store().tick(), tick, "{name} at tick {tick}");
+            assert_matches_truth(client, &truth, name);
             assert_eq!(
                 client.store(),
-                fresh.store(),
-                "{name} at tick {tick}: the store differs from the store of a Snapshot of the truth"
+                continuous.store(),
+                "{name} at tick {tick}: the store differs from the store of the continuous client"
             );
         }
     }
-    assert!(compared > 100, "compared {compared}");
+    assert!(replayed_seen, "the lossy client replayed a resync");
+    assert!(compared >= 100, "compared {compared}");
     // The script ended with these facts.
     assert_eq!(continuous.sites().count(), 0, "no site is left");
     assert_eq!(continuous.supply(POWER, SupplySide::Consumed), Some(130));
@@ -1211,4 +1289,285 @@ fn a_late_join_and_a_lossy_client_end_with_the_store_of_a_continuous_client() {
     );
     assert!(continuous.construction_queue(CONSTRUCTOR).is_empty());
     assert_eq!(continuous.store().job_keys().count(), 0);
+}
+
+/// The Snapshot path drops an empty construction record, as the delta path does: a Snapshot with an
+/// empty record and one without it give equal stores (review R5).
+#[test]
+fn a_snapshot_with_an_empty_construction_record_stores_no_entry() {
+    let _guard = serial();
+    let mut with_empty = replica();
+    let mut first = snapshot(10);
+    first.records.construction_queues = vec![ConstructionQueue {
+        constructor: UnitId(CONSTRUCTOR),
+        orders: vec![],
+    }];
+    applied(&mut with_empty, &first);
+    let mut without = replica();
+    let mut second = snapshot(10);
+    second.records.construction_queues = vec![];
+    applied(&mut without, &second);
+    assert_eq!(
+        with_empty.store(),
+        without.store(),
+        "the Snapshot kept an empty construction record"
+    );
+}
+
+/// A replayed delta is staged against the staged store of its Snapshot, not against the live
+/// store. The Snapshot of tick 11 brings a new own site (40) that the live store does not hold;
+/// the retained delta of tick 12 carries its progress record (review R3).
+#[test]
+fn a_replayed_delta_stages_against_the_store_of_its_snapshot() {
+    let _guard = serial();
+    let now = Instant::now();
+    let mut replica = replica();
+    applied(&mut replica, &snapshot(10));
+    let mut twelve = delta(12);
+    twelve.records.sites = vec![SiteProgress {
+        unit: UnitId(40),
+        progress: rate(4, 80, 2, 12),
+    }];
+    assert_eq!(
+        replica.apply_delta(&twelve, now),
+        DeltaOutcome::ResyncRequested
+    );
+    let mut eleven = snapshot(11);
+    eleven.units.push(unit(40, "command_center", 0, true));
+    eleven.records.sites.push(SiteProgress {
+        unit: UnitId(40),
+        progress: rate(2, 80, 2, 11),
+    });
+    assert_eq!(
+        replica.apply_snapshot(&eleven, now),
+        SnapshotOutcome::Applied { replayed: 1 },
+        "the replay is staged against the store of the Snapshot"
+    );
+    assert_eq!(replica.site_progress(40), Some(&rate(4, 80, 2, 12)));
+    assert!(replica.is_site(40));
+}
+
+/// A retained delta that is not newer than the Snapshot is skipped: it never writes the staged
+/// store (review F6). Delta 12 carries supply 112; the Snapshot of tick 13 carries 113.
+#[test]
+fn a_retained_delta_that_is_not_newer_than_the_snapshot_does_not_write_the_staged_store() {
+    let _guard = serial();
+    let now = Instant::now();
+    let mut replica = replica();
+    applied(&mut replica, &snapshot(10));
+    let mut twelve = delta(12);
+    twelve.records.supply = vec![supply(112, 40)];
+    assert_eq!(
+        replica.apply_delta(&twelve, now),
+        DeltaOutcome::ResyncRequested
+    );
+    let mut covering = snapshot(13);
+    covering.records.supply = vec![supply(113, 40)];
+    assert_eq!(
+        replica.apply_snapshot(&covering, now),
+        SnapshotOutcome::Applied { replayed: 0 }
+    );
+    assert_eq!(
+        replica.supply(POWER, SupplySide::Provided),
+        Some(113),
+        "a stale retained delta wrote the staged store"
+    );
+}
+
+/// No prediction (design D:1385-1386): while deltas wait in a resync, a value is evaluated at the
+/// last applied tick, never at a later observed tick (review R4).
+#[test]
+fn values_are_not_evaluated_past_the_applied_tick() {
+    let _guard = serial();
+    let now = Instant::now();
+    let mut replica = replica();
+    replica.set_match_start(4);
+    applied(&mut replica, &snapshot(10));
+    assert_eq!(
+        replica.apply_delta(&delta(12), now),
+        DeltaOutcome::ResyncRequested
+    );
+    for tick in 13..=20 {
+        assert_eq!(
+            replica.apply_delta(&delta(tick), now),
+            DeltaOutcome::Buffered
+        );
+    }
+    assert_eq!(replica.highest_observed_tick, Some(20));
+    let past = "a value is evaluated past the last applied tick";
+    assert_eq!(replica.site_value(SITE), Some(5), "{past}");
+    assert_eq!(replica.job_value(OWN, 44), Some(10), "{past}");
+    assert_eq!(replica.job_elapsed_ticks(OWN, 44), 10, "{past}");
+    assert_eq!(replica.site_paid(SITE, 100), Some(5), "{past}");
+    assert_eq!(replica.job_paid(OWN, 44, 100), Some(10), "{past}");
+    assert_eq!(replica.match_clock_ticks(), 6, "{past}");
+}
+
+/// A delta with a valid replica part (a position) and one record that only a store rule refuses:
+/// the replica stays at the old tick with its positions, the store stays, one resync is asked, and
+/// the later deltas are buffered (review R1).
+#[test]
+fn a_store_refusal_keeps_the_old_tick_and_asks_one_resync() {
+    let _guard = serial();
+    let now = Instant::now();
+    let mut replica = replica();
+    applied(&mut replica, &snapshot(10));
+    let before_store = replica.store().clone();
+    let before_pos = replica.units[&OWN].samples.back().unwrap().1;
+    let mut bad = delta(11);
+    bad.positions = vec![turts_net_protocol::UnitDelta {
+        unit_id: UnitId(OWN),
+        pos: Pos { x: 50.0, y: 8.0 },
+    }];
+    bad.records.sites = vec![SiteProgress {
+        unit: UnitId(CONSTRUCTOR),
+        progress: rate(1, 100, 1, 11),
+    }];
+    assert_eq!(
+        replica.apply_delta(&bad, now),
+        DeltaOutcome::ResyncRequested
+    );
+    assert_eq!(replica.last_applied_tick, Some(10));
+    assert_eq!(replica.store().tick(), 10);
+    assert_eq!(replica.store(), &before_store);
+    assert_eq!(
+        replica.units[&OWN].samples.back().unwrap(),
+        &(10, before_pos),
+        "the replica part moved"
+    );
+    assert_eq!(replica.apply_delta(&delta(12), now), DeltaOutcome::Buffered);
+    assert_eq!(replica.apply_delta(&delta(13), now), DeltaOutcome::Buffered);
+    let mut answer = snapshot(12);
+    answer.records.supply = vec![supply(112, 40)];
+    assert_eq!(
+        replica.apply_snapshot(&answer, now),
+        SnapshotOutcome::Applied { replayed: 1 }
+    );
+    assert_eq!(replica.store().tick(), 13);
+    assert_eq!(replica.supply(POWER, SupplySide::Provided), Some(112));
+    assert!(!replica.in_resync());
+}
+
+/// A resync whose second replayed delta is refused by a store rule, after the first replayed step
+/// changed the staged store: nothing changes and the retained deltas stay (review R2).
+#[test]
+fn a_replayed_delta_refused_by_a_store_rule_changes_nothing() {
+    let _guard = serial();
+    let now = Instant::now();
+    let mut replica = replica();
+    applied(&mut replica, &snapshot(10));
+    let before_store = replica.store().clone();
+    let mut twelve = delta(12);
+    twelve.records.supply = vec![supply(112, 40)];
+    twelve.records.construction_queues = vec![ConstructionQueue {
+        constructor: UnitId(CONSTRUCTOR),
+        orders: vec![],
+    }];
+    assert_eq!(
+        replica.apply_delta(&twelve, now),
+        DeltaOutcome::ResyncRequested
+    );
+    let mut thirteen = delta(13);
+    thirteen.records.supply = vec![SupplyRecord {
+        resource: "base:credits".to_string(),
+        ..supply(1, 1)
+    }];
+    assert_eq!(replica.apply_delta(&thirteen, now), DeltaOutcome::Buffered);
+    let mut eleven = snapshot(11);
+    eleven.records.supply = vec![supply(111, 40)];
+    assert_eq!(
+        replica.apply_snapshot(&eleven, now),
+        SnapshotOutcome::ResyncRequested { replayed: 0 }
+    );
+    assert_eq!(replica.last_applied_tick, Some(10));
+    assert_eq!(replica.store(), &before_store);
+    assert_eq!(replica.construction_queue(CONSTRUCTOR).len(), 2);
+    assert_eq!(replica.buffered_batches(), 2, "the retained deltas stay");
+}
+
+/// `MatchClock` counts from the start tick that the replica takes at `Welcome`, with no argument.
+/// The server sends the Snapshot of the end tick and no delta after it, so the clock stops at the
+/// end tick with no store record: it has the same value at the end tick and after it.
+#[test]
+fn the_match_clock_counts_from_the_start_tick_and_stops_at_the_end_tick() {
+    let _guard = serial();
+    let now = Instant::now();
+    let mut replica = replica();
+    // Before the first message and before the start: 0.
+    assert_eq!(replica.match_clock_ticks(), 0);
+    replica.set_match_start(4);
+    assert_eq!(replica.match_clock_ticks(), 0);
+    applied(&mut replica, &snapshot(10));
+    assert_eq!(
+        replica.match_clock_ticks(),
+        6,
+        "the match clock counts from the start tick"
+    );
+    for tick in 11..=19 {
+        assert_eq!(
+            replica.apply_delta(&delta(tick), now),
+            DeltaOutcome::Applied
+        );
+    }
+    assert_eq!(
+        replica.match_clock_ticks(),
+        15,
+        "the match clock counts from the start tick"
+    );
+    // The end tick: a delta with the outcome, then the Snapshot of the end tick (not newer).
+    let mut end = delta(20);
+    end.records.match_state = Some(MatchState {
+        connections: vec![],
+        outcomes: vec![
+            Some(outcome(
+                Outcome::Victory,
+                OutcomeReason::OpponentsDefeated,
+                20,
+            )),
+            Some(outcome(Outcome::Defeat, OutcomeReason::KeyUnitsLost, 20)),
+        ],
+    });
+    assert_eq!(replica.apply_delta(&end, now), DeltaOutcome::Applied);
+    assert_eq!(replica.match_clock_ticks(), 16, "at the end tick");
+    assert_eq!(
+        replica.apply_snapshot(&snapshot(20), now),
+        SnapshotOutcome::IgnoredStale
+    );
+    // After the end the server sends nothing newer; an old delta that arrives late is discarded.
+    assert_eq!(
+        replica.apply_delta(&delta(20), now),
+        DeltaOutcome::Discarded
+    );
+    assert_eq!(replica.match_clock_ticks(), 16, "after the end tick");
+    assert_eq!(replica.outcome(), Some(Outcome::Victory));
+    // A start tick above the applied tick gives 0 and never wraps.
+    replica.set_match_start(500);
+    assert_eq!(replica.match_clock_ticks(), 0);
+}
+
+/// `SupplyShort` has one getter: consumed above provided (design 6.2, "Computation"). Equal is not
+/// short; no record, an unknown resource and a replica with no context are not short.
+#[test]
+fn supply_short_is_consumed_above_provided_and_has_one_getter() {
+    let _guard = serial();
+    let now = Instant::now();
+    let mut replica = replica();
+    applied(&mut replica, &snapshot(10));
+    assert!(!replica.supply_short(POWER), "40 used of 100 made");
+    for (tick, provided, consumed, short) in [
+        (11, 100, 100, false),
+        (12, 100, 101, true),
+        (13, 150, 101, false),
+    ] {
+        let mut change = delta(tick);
+        change.records.supply = vec![supply(provided, consumed)];
+        assert_eq!(replica.apply_delta(&change, now), DeltaOutcome::Applied);
+        assert_eq!(
+            replica.supply_short(POWER),
+            short,
+            "{consumed} used of {provided} made"
+        );
+    }
+    assert!(!replica.supply_short("base:nothing"));
+    assert!(!Replica::new(20).supply_short(POWER));
 }

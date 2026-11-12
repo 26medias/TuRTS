@@ -398,6 +398,8 @@ fn on_welcome(hooks: &mut IngestHooks, state: &mut ReplicaState, welcome: &Welco
     if let Some(content) = state.content.clone() {
         replica.set_context(ReplicaContext::new(content, welcome.slot_id.0));
     }
+    // The match clock counts from the start tick of `Welcome` (design 6.7.13).
+    replica.set_match_start(welcome.start.start_tick);
     state.replica = Some(replica);
     state.match_start = Some(welcome.start.clone());
     state.welcome = Some(WelcomeInfo {

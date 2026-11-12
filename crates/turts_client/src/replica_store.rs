@@ -164,13 +164,6 @@ impl RecordStore {
         self.job_progress.len() + self.site_progress.len()
     }
 
-    /// A test seam: put a job progress record into the store with no check. Production code
-    /// never calls it (the store changes through the staged apply path only).
-    #[doc(hidden)]
-    pub fn seed_job_progress(&mut self, producer: u32, job: u64, record: RateRecord) {
-        self.job_progress.insert((producer, job), record);
-    }
-
     /// Apply a staged step in place. The step is already validated, so this cannot fail.
     pub(crate) fn apply(&mut self, step: StoreStep) {
         for unit in &step.removed {

@@ -37,7 +37,7 @@ use std::path::Path;
 
 use bevy::platform::time::Instant;
 use turts_client::content::ClientContent;
-use turts_client::replica::{Replica, ReplicaContext};
+use turts_client::replica::{DeltaOutcome, Replica, ReplicaContext, SnapshotOutcome};
 use turts_mod_runtime::archive::PackageArchive;
 use turts_mod_runtime::pack::pack_dir;
 use turts_net_protocol::{Snapshot, WorldDelta};
@@ -146,7 +146,9 @@ fn replica(archive: &PackageArchive) -> Replica {
 }
 
 /// Check the three clients at every tick. `late` is the tick of the Snapshot that the late client
-/// joins at; the lossy client loses the deltas `lost` and gets the Snapshot of the tick after.
+/// joins at; the lossy client loses the deltas `lost`, sees the delta after them (a gap: it asks for
+/// a resync and buffers the next three deltas), and then takes the Snapshot of the second tick after
+/// the loss with the retained deltas to replay (it replays 2 and skips 2).
 fn check(run: &Run, late: u32, lost: std::ops::RangeInclusive<u32>) -> (usize, usize) {
     let now = Instant::now();
     let mut continuous = replica(&run.archive);
@@ -154,7 +156,10 @@ fn check(run: &Run, late: u32, lost: std::ops::RangeInclusive<u32>) -> (usize, u
     let mut lossy = replica(&run.archive);
     continuous.apply_snapshot(&run.snapshot0, now);
     lossy.apply_snapshot(&run.snapshot0, now);
-    let resync_at = lost.end() + 1;
+    // The gap: the delta of `gap_first` does not extend the chain; the deltas up to `answer_after`
+    // are retained; the Snapshot of `answer_tick` answers, and the deltas after it replay.
+    let (gap_first, answer_tick, answer_after) = (lost.end() + 1, lost.end() + 2, lost.end() + 4);
+    let mut replayed_seen = false;
     let mut compared = 0;
     let mut frozen_compared = 0;
     for entry in &run.ticks {
@@ -165,17 +170,45 @@ fn check(run: &Run, late: u32, lost: std::ops::RangeInclusive<u32>) -> (usize, u
         } else if tick > late {
             joined.apply_delta(&entry.delta, now);
         }
-        if lost.contains(&tick) {
+        let lossy_active = if lost.contains(&tick) {
             // The deltas are lost.
-        } else if tick == resync_at {
-            lossy.apply_snapshot(&run.snapshots[&tick], now);
+            false
+        } else if tick == gap_first {
+            assert_eq!(
+                lossy.apply_delta(&entry.delta, now),
+                DeltaOutcome::ResyncRequested,
+                "tick {tick}: the lossy client sees a gap"
+            );
+            false
+        } else if tick > gap_first && tick <= answer_after {
+            assert_eq!(
+                lossy.apply_delta(&entry.delta, now),
+                DeltaOutcome::Buffered,
+                "tick {tick}"
+            );
+            if tick == answer_after {
+                assert_eq!(
+                    lossy.apply_snapshot(&run.snapshots[&answer_tick], now),
+                    SnapshotOutcome::Applied { replayed: 2 },
+                    "the Snapshot of tick {answer_tick} replays the retained deltas"
+                );
+                replayed_seen = true;
+                true
+            } else {
+                false
+            }
         } else {
-            lossy.apply_delta(&entry.delta, now);
-        }
+            assert_eq!(
+                lossy.apply_delta(&entry.delta, now),
+                DeltaOutcome::Applied,
+                "tick {tick}"
+            );
+            true
+        };
         for (name, client, active) in [
             ("continuous", &continuous, true),
             ("late join", &joined, tick >= late),
-            ("lossy", &lossy, !lost.contains(&tick)),
+            ("lossy", &lossy, lossy_active),
         ] {
             if !active {
                 continue;
@@ -214,6 +247,7 @@ fn check(run: &Run, late: u32, lost: std::ops::RangeInclusive<u32>) -> (usize, u
             }
         }
     }
+    assert!(replayed_seen, "the lossy client replayed a resync");
     (compared, frozen_compared)
 }
 
@@ -381,7 +415,6 @@ fn forge_machine_and_research_jobs_equal_the_sim_through_disable_and_enable() {
 /// another rule of the replica; the process test sees it as a stall.
 #[test]
 fn an_ordered_attack_kill_stream_applies_to_the_owner_replica_without_a_rejection() {
-    use turts_client::replica::DeltaOutcome;
     let archive = package("muster");
     let mut app = headless_app(20);
     turts_pack::load_package(app.world_mut(), &archive).unwrap();
