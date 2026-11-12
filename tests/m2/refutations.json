@@ -1414,5 +1414,88 @@
     "expected_failure": "pinned 0, found 1 at [\"crates/turts_sim/src/economy/combat.rs:",
     "restore_check": "sha256(source)==baseline and selected test is green",
     "plant_note": "A1c: a new Position write in an allowed file (combat.rs) changes a pinned count, so the writer scan is red. The ledger audit has no movement model; this scan holds the cover of the replay validator for a unit that moves with no order (A1b review, fault F2)."
+  },
+  {
+    "id": "A1c-order-conversion-allowed-units",
+    "plant_path": "crates/turts_server/src/orders.rs",
+    "anchor": "        group: order.group,\n        allowed_units: definition.units.clone(),\n",
+    "replacement": "        group: order.group,\n        allowed_units: Vec::new(),\n",
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_server",
+      "--test",
+      "mc_orders",
+      "queued_group_attack_spreads_and_strictly_replays",
+      "--",
+      "--exact",
+      "--nocapture"
+    ],
+    "expected_failure": "orders: order command 1 differs from its immutable catalog definition in allowed units",
+    "restore_check": "sha256(source)==baseline and selected test is green",
+    "plant_note": "A1c repair (review N10): the server drops the unit list of the order definition. The sim checks the unit list only when it is not empty. The ledger orders rule (turts_audit/src/orders.rs) finds it on the log; the conversion test to_sim_copies_every_field_of_the_order_definition (turts_server, orders.rs) finds it at the source."
+  },
+  {
+    "id": "A1c-order-conversion-queue-depth",
+    "plant_path": "crates/turts_server/src/orders.rs",
+    "anchor": "        allowed_units: definition.units.clone(),\n        queue_depth,\n    };\n",
+    "replacement": "        allowed_units: definition.units.clone(),\n        queue_depth: u8::MAX,\n    };\n",
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_server",
+      "--test",
+      "mc_orders",
+      "queued_group_attack_spreads_and_strictly_replays",
+      "--",
+      "--exact",
+      "--nocapture"
+    ],
+    "expected_failure": "orders: order command 1 differs from its immutable catalog definition in queue depth",
+    "restore_check": "sha256(source)==baseline and selected test is green",
+    "plant_note": "A1c repair (review N13): the server gives every order a queue depth of 255. Red in the ledger orders rule and in the conversion test."
+  },
+  {
+    "id": "A1c-movement-resting-set",
+    "plant_path": "crates/turts_sim/src/movement/ecs.rs",
+    "anchor": "                    order.behaviour == turts_mod_api::Behaviour::Attack\n",
+    "replacement": "                    order.behaviour == turts_mod_api::Behaviour::Move\n",
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_sim",
+      "--test",
+      "movement_resting",
+      "a_member_that_lands_after_a_point_attack_keeps_its_resting_progress",
+      "--",
+      "--exact",
+      "--nocapture"
+    ],
+    "expected_failure": "landed after an attack-move with no MoveProgress",
+    "restore_check": "sha256(source)==baseline and selected test is green",
+    "plant_note": "A1c repair (review N3): the resting set of the movement system is built for Move orders. The replay validator was red here; the outcome test movement_resting.rs holds it."
+  },
+  {
+    "id": "A1c-movement-writes-only-movement-state",
+    "plant_path": "crates/turts_sim/src/movement/ecs.rs",
+    "anchor": "        .map_or(Vec2::ZERO, |bounds| bounds.size);\n    let tick_hz = world\n",
+    "replacement": "        .map_or(Vec2::ZERO, |bounds| bounds.size);\n    if let Some(mut grown) = world.get_resource_mut::<crate::world::MapBounds>() {\n        grown.size.y += 1.0;\n    }\n    let tick_hz = world\n",
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_sim",
+      "--lib",
+      "the_movement_system_writes_only_movement_state",
+      "--",
+      "--exact",
+      "--nocapture"
+    ],
+    "expected_failure": "the movement system changed an audited field that is not movement state",
+    "restore_check": "sha256(source)==baseline and selected test is green",
+    "plant_note": "A1c repair (review N12 and the wider question): the movement system writes a field outside its list (the map bounds). The sweep test compares the full audit state around the system."
   }
 ]

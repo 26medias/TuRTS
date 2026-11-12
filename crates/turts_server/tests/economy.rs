@@ -54,6 +54,15 @@ fn economy_fixture_app_at(tick_hz: u16) -> bevy_app::App {
 /// package. `units` is rebuilt from `economy.units`, which holds the same rows. `movement_dispatch`
 /// is the default value, as in `template`. The test `full_state_rebuilds_the_audit_state` shows
 /// that the rebuild is exact on real states.
+///
+/// Blind spot (A1c review, finding 4; hand-over to A1d, `docs/research/mp1/a1c-handover.md`): the
+/// four immutable fields come from `template`, so the immutability rule of the oracle
+/// (`accounting.rs`, "immutable clock, bounds, catalog, durations, type registry, or resource
+/// presence changed") compares the template with itself on the log path. A change of `bounds`,
+/// `resources`, `compiled_durations` or `unit_types` inside a run is NOT seen by the log-based
+/// oracle tests. It is held by the in-process oracle (`turts_pack` accounting tests, which read
+/// `AuditState` from the trail) and by `full_state_rebuilds_the_audit_state`. The log is not
+/// widened for this.
 fn full_state(
     ledger: &turts_sim::LedgerAudit,
     template: &turts_sim::AuditState,
