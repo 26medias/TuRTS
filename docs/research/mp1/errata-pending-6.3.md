@@ -79,3 +79,15 @@ The orchestrator applies these in one pass when lane 0 exits. Each comes from an
   `Effect::Marker` and `Effect::Sound` have no producer today, so no test reaches those two arms.
 - The fault registry case `E9-browser-debug-only-ui` now plants `visuals/rings.rs`. Its browser run is owed before the
   merge of the first later task that edits `rings.rs`.
+
+## Binding notes from the L0-RAW re-check (mod-builder, 2026-11-12)
+
+- `L0-API1` (the first task that puts `turts_mod_api::Written<T>` on a schema field): `Written<T>` does not round-trip
+  (a missing key serialises as `None`, and parsing that text gives `written = true`), and its derived `PartialEq`
+  compares the flag. Add `is_unwritten()` and use `#[serde(default, skip_serializing_if = "Written::is_unwritten")]` on
+  each field; add a round-trip test; decide if equality ignores the flag.
+- `L0-API1`: the raw rows of the version table run before the parsed rows, so a package with two old-API features can
+  get its refusals in two steps (first a raw row, then a parsed row), and a parsed-row message names no file. Accepted for
+  now; the task makes a parsed-row message name its file where the value knows it.
+- Verified: no released package form changed from accept to refuse (old and new packer on unit, map and placement forms at
+  seven requirement forms; every exit code equal).
