@@ -56,6 +56,7 @@ pub(super) fn job_progress(batch: &CommittedTick, slot: SlotId) -> Vec<wire::Job
 pub(super) fn queue_job_records(
     queues: &[turts_sim::economy::views::QueueView],
     tick: u32,
+    view: &turts_sim::WorldView,
 ) -> Vec<wire::JobProgress> {
     use turts_sim::economy::production::JobStage;
     queues
@@ -67,7 +68,14 @@ pub(super) fn queue_job_records(
                 progress: wire::RateRecord {
                     done: job.elapsed_ticks,
                     total: job.duration_ticks,
-                    per_tick: u64::from(job.stage == JobStage::Running),
+                    // The rate that the sim applies: ONE function, called by the advance step of
+                    // the sim and here (`production::view_job_per_tick`). A disabled producer
+                    // keeps the stage `Running` and has rate 0.
+                    per_tick: turts_sim::economy::production::view_job_per_tick(
+                        view,
+                        queue.producer,
+                        job.stage,
+                    ),
                     at_tick: tick,
                     state: match job.stage {
                         JobStage::OutputBlocked => wire::RecordState::OutputBlocked,

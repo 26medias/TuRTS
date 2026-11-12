@@ -128,14 +128,25 @@ fn the_message_net_ids_are_equal_on_both_ends_and_the_five_follow_resync_request
     let s = net_names(&server);
     assert!(s.len() >= 15, "the registry holds the messages: {s:?}");
     assert_eq!(c, s, "the message net ids differ between the ends");
-    let tail: Vec<&str> = s
+    // The whole list of protocol messages, in net id order: a swap of any two (for example `Hello`
+    // and `Welcome`) changes the meaning of a message on the wire, and a client of protocol 4 would
+    // read a `Hello` as another message. Lightyear registers its own messages before ours.
+    let ours: Vec<&str> = s
         .iter()
+        .filter(|name| name.starts_with("turts_net_protocol::"))
         .map(|name| name.rsplit("::").next().unwrap())
-        .skip_while(|name| *name != "ResyncRequest")
         .collect();
     assert_eq!(
-        tail,
+        ours,
         [
+            "Hello",
+            "Welcome",
+            "JoinRejected",
+            "Snapshot",
+            "WorldDelta",
+            "PlayerCommand",
+            "CommandAck",
+            "OrderResult",
             "ResyncRequest",
             "LobbyState",
             "LobbyAction",
@@ -143,5 +154,15 @@ fn the_message_net_ids_are_equal_on_both_ends_and_the_five_follow_resync_request
             "MatchResult",
             "LeaveMatch"
         ]
+    );
+    let first = s
+        .iter()
+        .position(|name| name.starts_with("turts_net_protocol::"))
+        .unwrap();
+    assert!(
+        s[first..]
+            .iter()
+            .all(|name| name.starts_with("turts_net_protocol::")),
+        "our messages are contiguous after the ones of lightyear: {s:?}"
     );
 }

@@ -24,6 +24,9 @@ tower-http = { workspace = true }
 postcard = { workspace = true }
 
 [dev-dependencies]
+# The job progress test runs the real export against real `Replica` values (repair 2 of L0-WIRE).
+# A dev-dependency: the boundary rules read the normal and build edges only.
+turts_client = { path = "../turts_client" }
 lightyear = { workspace = true, features = ["client"] }
 turts_net_lightyear = { path = "../turts_net_lightyear", features = ["client"] }
 ureq = { workspace = true }

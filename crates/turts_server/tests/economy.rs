@@ -1839,8 +1839,61 @@ fn owner_unit_orders_from_audit(
         .collect()
 }
 
+/// The rate of each job at the tick of `state`, MEASURED from the audit of the sim: the change of
+/// `elapsed_ticks` from this tick to the next one. It does not read the stage or the disabled set,
+/// so it cannot copy the export rule. A job that is gone at the next tick completed (it advanced by
+/// 1 into its duration) or was cancelled (0); the audit arithmetic tells which. `None` for `next`
+/// (the last tick of a log) gives no rate: the caller masks the rates then.
+fn measured_job_rates(
+    state: &turts_sim::AuditState,
+    next: Option<&turts_sim::AuditState>,
+) -> Option<std::collections::BTreeMap<(u32, u64), u64>> {
+    let next = next?;
+    let mut rates = std::collections::BTreeMap::new();
+    for queue in &state.economy.economy.queues {
+        for job in &queue.jobs {
+            let later = next
+                .economy
+                .economy
+                .queues
+                .iter()
+                .filter(|q| q.producer == queue.producer)
+                .flat_map(|q| q.jobs.iter())
+                .find(|candidate| candidate.id == job.id);
+            let rate = match later {
+                Some(later) => later.elapsed_ticks.saturating_sub(job.elapsed_ticks),
+                None => u64::from(job.elapsed_ticks + 1 >= job.duration_ticks),
+            };
+            rates.insert((queue.producer, job.id), rate);
+        }
+    }
+    Some(rates)
+}
+
+/// The next audit tick, when the live log already holds it.
+fn next_audit_state(path: &std::path::Path, tick: u32) -> Option<turts_sim::AuditState> {
+    use turts_audit::EconomyLogRecord;
+    read_live_complete_tick_prefix(path)
+        .ok()?
+        .into_iter()
+        .find_map(|record| match record {
+            EconomyLogRecord::Tick {
+                tick: found, state, ..
+            } if found == tick + 1 => Some(state),
+            _ => None,
+        })
+}
+
+/// Set the job rates of both Snapshots to 0 when the rate could not be measured.
+fn mask_unmeasured_rates(snapshot: &mut turts_net_protocol::Snapshot) {
+    for job in &mut snapshot.records.jobs {
+        job.progress.per_tick = 0;
+    }
+}
+
 fn owner_snapshot_from_audit(
     state: &turts_sim::AuditState,
+    next: Option<&turts_sim::AuditState>,
     slot: u8,
 ) -> turts_net_protocol::Snapshot {
     use turts_mod_api::Cost;
@@ -1849,7 +1902,8 @@ fn owner_snapshot_from_audit(
     use turts_sim::economy::production::JobStage as SimJobStage;
 
     let world = &state.economy;
-    wire::Snapshot {
+    let rates = measured_job_rates(state, next);
+    let mut snapshot = wire::Snapshot {
         tick: world.tick,
         units: world
             .units
@@ -2001,13 +2055,18 @@ fn owner_snapshot_from_audit(
                 .iter()
                 .filter(|queue| queue.owner_slot == slot)
                 .flat_map(|queue| {
+                    let rates = &rates;
                     queue.jobs.iter().map(move |job| wire::JobProgress {
                         producer: wire::UnitId(queue.producer),
                         job: wire::JobId(job.id),
                         progress: wire::RateRecord {
                             done: job.elapsed_ticks,
                             total: job.duration_ticks,
-                            per_tick: u64::from(job.stage == SimJobStage::Running),
+                            per_tick: rates
+                                .as_ref()
+                                .and_then(|rates| rates.get(&(queue.producer, job.id)))
+                                .copied()
+                                .unwrap_or(0),
                             at_tick: world.tick,
                             state: match job.stage {
                                 SimJobStage::OutputBlocked => wire::RecordState::OutputBlocked,
@@ -2022,14 +2081,18 @@ fn owner_snapshot_from_audit(
                 .collect(),
             ..Default::default()
         },
+    };
+    if rates.is_none() {
+        mask_unmeasured_rates(&mut snapshot);
     }
+    snapshot
 }
 
 fn owner_report_projection_from_audit(
     state: &turts_sim::AuditState,
     slot: u8,
 ) -> serde_json::Value {
-    let snapshot = owner_snapshot_from_audit(state, slot);
+    let snapshot = owner_snapshot_from_audit(state, None, slot);
     assert!(
         state.raw_healths.is_empty(),
         "M2 audit has no raw health state; expected unit max_health must remain null"
@@ -2249,9 +2312,18 @@ fn assert_first_raw_snapshot_matches_owner(
                 } if *found == tick => Some(state),
                 _ => None,
             }) {
-                let actual: turts_net_protocol::Snapshot = serde_json::from_value(dto.clone())
+                let mut actual: turts_net_protocol::Snapshot = serde_json::from_value(dto.clone())
                     .expect("received Snapshot JSON decodes to its original typed DTO");
-                let expected = owner_snapshot_from_audit(state, slot);
+                let next = next_audit_state(log_path, tick);
+                if next.is_none() && started.elapsed() < Duration::from_secs(5) {
+                    // The rate of a job is measured from the next audit tick: wait for it.
+                    std::thread::sleep(Duration::from_millis(25));
+                    continue;
+                }
+                if next.is_none() {
+                    mask_unmeasured_rates(&mut actual);
+                }
+                let expected = owner_snapshot_from_audit(state, next.as_ref(), slot);
                 assert_eq!(
                     actual, expected,
                     "raw Snapshot DTO equals independent owner projection at tick {tick}"
@@ -2285,7 +2357,7 @@ fn assert_raw_wire_owner_records(
         let dto = &record["dto"];
         let tick = dto["tick"].as_u64().expect("raw DTO tick") as u32;
         let state = audit_state_at(log_path, tick);
-        let expected = owner_snapshot_from_audit(&state, slot);
+        let expected = owner_snapshot_from_audit(&state, None, slot);
         let expected = serde_json::to_value(expected).unwrap();
         let economy = &dto["economy"];
         for balance in economy["balances"].as_array().expect("balance DTO list") {
@@ -2314,9 +2386,13 @@ fn assert_raw_wire_owner_records(
             }
         }
         if kind == "snapshot" {
-            let actual: turts_net_protocol::Snapshot = serde_json::from_value(dto.clone())
+            let mut actual: turts_net_protocol::Snapshot = serde_json::from_value(dto.clone())
                 .expect("received Snapshot JSON decodes to its original typed DTO");
-            let expected_raw = owner_snapshot_from_audit(&state, slot);
+            let next = next_audit_state(log_path, tick);
+            if next.is_none() {
+                mask_unmeasured_rates(&mut actual);
+            }
+            let expected_raw = owner_snapshot_from_audit(&state, next.as_ref(), slot);
             assert_eq!(
                 actual, expected_raw,
                 "raw Snapshot DTO equals independent owner projection at tick {tick}"

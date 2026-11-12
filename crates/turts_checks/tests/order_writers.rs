@@ -325,7 +325,14 @@ impl<'ast> Visit<'ast> for WriterScan {
         let method = call.method.to_string();
         if matches!(
             method.as_str(),
-            "get_mut" | "remove" | "take" | "entry" | "query" | "query_filtered" | "try_insert"
+            "get_mut"
+                | "remove"
+                | "take"
+                | "entry"
+                | "query"
+                | "query_filtered"
+                | "try_insert"
+                | "modify_component"
         ) && self.turbofish_names_unit_orders(&method, &call.turbofish)
         {
             self.hit(format!("`{method}::<UnitOrders>()`"));
@@ -730,7 +737,11 @@ fn every_export_read_pattern_has_a_fixture_that_the_scan_finds() {
 /// The repair of L0-WIRE widened the scan: each added pattern has a fixture that must be red.
 #[test]
 fn the_widened_write_patterns_have_fixtures_that_the_scan_finds() {
-    let fixtures: [(&str, &str); 8] = [
+    let fixtures: [(&str, &str); 9] = [
+        (
+            "modify_component",
+            "fn f(world: &mut World, e: Entity) { let _ = world.modify_component::<UnitOrders, _>(e, |o| o.current = None); }",
+        ),
         (
             "a mutable query",
             "fn f(world: &mut World) { let mut q = world.query::<&mut UnitOrders>(); for mut o in q.iter_mut(world) { o.current = None; } }",

@@ -2535,8 +2535,10 @@ mod tests {
         replica.job_progress.insert(
             (6, 55),
             turts_net_protocol::RateRecord {
+                // The record says 120 of 200 while the job says 80 ticks: the progress is above 1
+                // and the display clamps it (the clamp in `production_queue` has this test).
                 done: 120,
-                total: 80,
+                total: 200,
                 per_tick: 0,
                 at_tick: 0,
                 state: turts_net_protocol::RecordState::Running,

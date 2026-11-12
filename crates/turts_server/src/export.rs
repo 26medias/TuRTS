@@ -126,6 +126,7 @@ pub fn snapshot_for(view: &WorldView, slot: SlotId) -> wire::Snapshot {
             jobs: export_jobs::queue_job_records(
                 &owned_queues(&view.economy.queues, slot),
                 view.tick,
+                view,
             ),
             ..Default::default()
         },
@@ -223,8 +224,9 @@ pub fn delta_for(batch: &CommittedTick, view: &WorldView, slot: SlotId) -> wire:
             sites_completed: export_sites::sites_completed(batch),
             sites: export_sites::site_progress(batch, slot),
             jobs: export_jobs::queue_job_records(
-                &owned_queues(&batch.economy.queues, slot),
+                &job_record_queues(batch, view, slot),
                 batch.tick,
+                view,
             )
             .into_iter()
             .chain(export_jobs::job_progress(batch, slot))
@@ -329,6 +331,30 @@ fn owned_queues(queues: &[QueueView], slot: SlotId) -> Vec<QueueView> {
         .filter(|queue| queue.owner_slot == slot.0)
         .cloned()
         .collect()
+}
+
+/// The queues whose job records go into the delta: the queues that the sim changed, and the queues
+/// of each producer whose enabled state changed in this tick (a disabled producer keeps its jobs
+/// `Running`, but the rate is 0 until it is enabled again, so the record must be written at both
+/// changes). The job rows come from the view for the second group.
+fn job_record_queues(batch: &CommittedTick, view: &WorldView, slot: SlotId) -> Vec<QueueView> {
+    let mut queues = owned_queues(&batch.economy.queues, slot);
+    for change in &batch.enabled {
+        if owner_of(view, change.unit) != Some(slot.0)
+            || queues.iter().any(|queue| queue.producer == change.unit)
+        {
+            continue;
+        }
+        if let Some(queue) = view
+            .economy
+            .queues
+            .iter()
+            .find(|queue| queue.producer == change.unit)
+        {
+            queues.push(queue.clone());
+        }
+    }
+    queues
 }
 
 fn queue_state(queue: &QueueView, enabled: bool) -> wire::QueueState {

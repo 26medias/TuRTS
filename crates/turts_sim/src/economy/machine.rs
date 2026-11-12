@@ -88,9 +88,19 @@ pub(crate) fn run_machines(world: &mut World) {
                 return Ok(());
             }
 
+            // The one function of the rate (`production::job_step_per_tick`): a machine reads no
+            // rate, so it passes the full rate, and the producer is not frozen here (the
+            // disabled machine was skipped above).
+            let step = super::production::job_step_per_tick(
+                job.stage,
+                false,
+                super::power::full_rate(),
+                1,
+            )
+            .unwrap_or(0);
             let elapsed = job
                 .elapsed_ticks
-                .checked_add(1)
+                .checked_add(step)
                 .ok_or(RejectReason::ArithmeticOverflow)?
                 .min(job.duration_ticks);
             let mut updated = job.clone();
