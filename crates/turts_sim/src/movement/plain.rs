@@ -50,6 +50,8 @@ pub(super) fn step_plain_progress(
         plain_progress: Some(progress.clone()),
         physical_escape: unit.physical_escape.clone(),
         failed_blocked: false,
+        #[cfg(feature = "test-probes")]
+        probe: super::probe::FrameFlags::default(),
     };
     let Some(speed) = unit.speed else {
         output.target = None;
@@ -150,6 +152,10 @@ pub(super) fn step_plain_progress(
             }
         }
     }
+    #[cfg(feature = "test-probes")]
+    {
+        output.probe.separated = separated;
+    }
     if !separated && distance > step_limit {
         velocity = step(
             &MovementInput {
@@ -165,6 +171,8 @@ pub(super) fn step_plain_progress(
         velocity = velocity.normalize() * step_limit;
     }
     let mut position = unit.position + velocity;
+    #[cfg(feature = "test-probes")]
+    let mut was_projected = false;
     for _ in 0..8 {
         let mut projected = false;
         for other_index in grid.within(
@@ -194,6 +202,10 @@ pub(super) fn step_plain_progress(
         if !projected {
             break;
         }
+        #[cfg(feature = "test-probes")]
+        {
+            was_projected = true;
+        }
     }
     position.x = position
         .x
@@ -201,6 +213,10 @@ pub(super) fn step_plain_progress(
     position.y = position
         .y
         .clamp(unit.radius, (bounds.y - unit.radius).max(unit.radius));
+    #[cfg(feature = "test-probes")]
+    {
+        output.probe.was_projected = Some(was_projected);
+    }
 
     let next_distance = position.distance(movement_target);
     if position == movement_target && !occupied(movement_target) {

@@ -22,12 +22,35 @@ forbid() { local c=$1 t=$2 m=$3; shift 3; local l; l=$(tree "$c" "$t" "$m"); for
 checked() { if [ -z "$RULE_MODE" ]; then echo "checked: $1"; fi; }
 nobevy() { local l b; l=$(tree "$1" "$2" "$3"); b=$(grep -m1 '^bevy' <<<"$l" || true); if [ -n "$b" ]; then echo "forbidden edge: $1 -> $b" >&2; exit 1; fi; checked "$1 $2: no bevy*"; }
 workspace() { local out rc=0 l; out=$(cargo tree --workspace -e normal --prefix none 2>"$TMPERR") || { rc=$?; out=$(cat "$TMPERR"); }; if [ "$rc" -ne 0 ]; then echo "cargo tree failed for workspace: $out" >&2; exit 1; fi; l=$(sed 's/ .*//' <<<"$out" | sort -u); for n in "$@"; do if names_has "$l" "$n"; then echo "forbidden edge: workspace -> $n" >&2; exit 1; fi; done; checked "workspace: no $*"; }
+# Feature leak (Q1b review follow-up, finding 2). The cargo feature `test-probes` of `turts_sim`
+# (the movement probes) is for tests only. The shipped host and client builds must not turn it
+# on. `probes_in CRATE EDGES` prints present, absent, or unreachable (the crate has no edge to
+# turts_sim, so `cargo tree -i turts_sim` matches no package). The edge kinds EDGES go to
+# `cargo tree -e`; the feature rows need `features` too.
+probes_in() {
+    local crate=$1 edges=$2 out rc=0 g=0
+    out=$(cargo tree -p "$crate" -e "$edges,features" -i turts_sim --locked 2>"$TMPERR") || rc=$?
+    if [ "$rc" -ne 0 ]; then
+        g=0; grep -q 'did not match any packages' "$TMPERR" || g=$?
+        if [ "$g" -eq 0 ]; then echo unreachable; return 0; fi
+        echo "cargo tree failed for $crate: $(cat "$TMPERR")" >&2; exit 1
+    fi
+    g=0; grep -qF 'turts_sim feature "test-probes"' <<<"$out" || g=$?
+    if [ "$g" -eq 2 ]; then echo "grep failed" >&2; exit 1; fi
+    if [ "$g" -eq 0 ]; then echo present; else echo absent; fi
+}
+noprobes() {
+    local state; state=$(probes_in "$1" "$2")
+    if [ "$state" = present ]; then echo "forbidden feature: test-probes in $1 (edges $2)" >&2; exit 1; fi
+    if [ "$state" != absent ] && [ "$state" != unreachable ]; then echo "probe check gave no answer for $1" >&2; exit 1; fi
+    checked "$1: no test-probes ($2 edges, $state)"
+}
 RULE_MODE=
 if [ $# -gt 0 ]; then
-    RULE_MODE=1 RULE= C= T=$HOST M= N=
-    while [ $# -gt 0 ]; do case $1 in --rule) RULE=$2;; --crate) C=$2;; --target) T=$2;; --manifest) M=$2;; --names) N=$2;; esac; shift 2; done
+    RULE_MODE=1 RULE= C= T=$HOST M= N= E=normal,build
+    while [ $# -gt 0 ]; do case $1 in --rule) RULE=$2;; --crate) C=$2;; --target) T=$2;; --manifest) M=$2;; --names) N=$2;; --edges) E=$2;; esac; shift 2; done
     IFS=, read -ra NA <<<"$N"
-    case $RULE in forbid) forbid "$C" "$T" "$M" "${NA[@]}";; no-bevy-prefix) nobevy "$C" "$T" "$M";; workspace) workspace "${NA[@]}";; esac
+    case $RULE in forbid) forbid "$C" "$T" "$M" "${NA[@]}";; no-bevy-prefix) nobevy "$C" "$T" "$M";; workspace) workspace "${NA[@]}";; no-probes) noprobes "$C" "$E";; esac
     echo "rule ok"; exit 0
 fi
 forbid turts_sim $HOST "" bevy_render bevy_winit bevy_pbr turts_mod_runtime
@@ -59,6 +82,15 @@ forbid turts_client_web wasm32-unknown-unknown "" turts_audit
 forbid turts_interaction $HOST "" turts_audit
 forbid turts_interaction wasm32-unknown-unknown "" turts_audit
 workspace lightyear_prediction bevy_replicon
+# The probe feature must not reach a shipped build (normal and build edges; the dev edge of
+# turts_pack and the test builds turn it on on purpose).
+noprobes turts_server normal,build
+noprobes turts_client normal,build
+noprobes turts_client_web normal,build
+# Self-check: the same grep must find the feature where it is on. turts_pack turns it on in its
+# dev-dependencies (the trace emitter needs it). When this line fails, the grep is blind.
+[ "$(probes_in turts_pack normal,build,dev)" = present ] || { echo "probe check not red: test-probes not found on the dev edge of turts_pack" >&2; exit 1; }
+checked "self-check: test-probes found on the dev edge of turts_pack"
 FIX=${BOUNDARY_FIXTURE_MANIFEST:-tests/boundary-fixture/Cargo.toml}
 PKG=${BOUNDARY_FIXTURE_PACKAGE:-turts_boundary_fixture}
 l=$(tree "$PKG" $HOST "$FIX")

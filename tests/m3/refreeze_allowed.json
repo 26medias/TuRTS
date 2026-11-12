@@ -1,0 +1,20 @@
+{
+  "schema": "turts-refreeze-allowed/4",
+  "package": "acme",
+  "note": "The differences of the acme trace that the design allows for the one re-freeze (design section 5 item 3, section 9 items 20 and 24; plan task Q1b, refinement R6). The single MoveTo of the scout (unit 1, m3_m2_stream.rs:263) goes through a pool of one. Evidence of the shape: a pooled single move of the scout (CommandKind::Order, group 7) on the Q1b build, compared with the base trace (format /4, a probe that stores the real was_projected in each of the three branches): the position bits, the target, the world pending count, was_projected and gather_stage are equal at all 400 ticks (was_projected is false on ticks 1 to 122 and null from the arrival tick 123, in both runs); activity, state and pools differ on ticks 1 to 122; order differs on ticks 1 to 123 (UnitOrders.current is Move at tick 123 and none at tick 124: the Orders phase that clears it runs before Movement); the added operations have phase Orders. The route change and the operation at tick 1 are the design's, NOT TRACED until the A2c run. A position field, the target, separated, was_projected, gather_stage, queue and last_failure are not allowed to change.",
+  "unit_fields": [
+    {"unit": 1, "field": "state", "ticks": [1, 122], "old": "none", "new": "pool"},
+    {"unit": 1, "field": "activity", "ticks": [1, 122], "old": "none", "new": "Moving"},
+    {"unit": 1, "field": "order", "ticks": [1, 123], "old": "none", "new": "Move:-"}
+  ],
+  "world_fields": [
+    {"field": "pools", "ticks": [1, 122], "old": 0, "new": 1}
+  ],
+  "operations": [
+    {"change": "added", "tick": 1, "index": 1, "unit": 1, "phase": "Orders", "events": [], "before_equals_after": false},
+    {"change": "added", "tick": 124, "index": 0, "unit": 1, "phase": "Orders", "events": [], "before_equals_after": false}
+  ],
+  "operation_fields": [
+    {"tick": 1, "index": 0, "field": "move_to_route", "old": "direct", "new": "envelope"}
+  ]
+}

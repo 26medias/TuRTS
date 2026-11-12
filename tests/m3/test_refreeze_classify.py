@@ -54,7 +54,7 @@ def flip_low_bit(bits):
 def header(package, units):
     return {
         "record": "header",
-        "format": "turts-refreeze-trace/2",
+        "format": "turts-refreeze-trace/4",
         "package": package,
         "emitter_sha256": EMITTER,
         "ticks": TICKS,
@@ -70,7 +70,8 @@ def world_record(package, tick, pools=0, pending=0):
 
 def unit_record(package, tick, unit, x, y, target=None, activity="none",
                 state="none", order="none", separated=False,
-                was_projected=False):
+                was_projected=False, queue=None, last_failure=None,
+                gather_stage="none"):
     return {
         "record": "unit",
         "package": package,
@@ -83,13 +84,17 @@ def unit_record(package, tick, unit, x, y, target=None, activity="none",
         "activity": activity,
         "state": state,
         "order": order,
+        "gather_stage": gather_stage,
+        "queue": [] if queue is None else queue,
+        "last_failure": last_failure,
         "separated": separated,
         "was_projected": was_projected,
     }
 
 
-def op_record(package, tick, op_id, unit, phase, events, before_equals_after):
-    return {
+def op_record(package, tick, op_id, unit, phase, events, before_equals_after,
+              move_to_route=None):
+    record = {
         "record": "op",
         "package": package,
         "tick": tick,
@@ -99,6 +104,9 @@ def op_record(package, tick, op_id, unit, phase, events, before_equals_after):
         "events": events,
         "before_equals_after": before_equals_after,
     }
+    if move_to_route is not None:
+        record["move_to_route"] = move_to_route
+    return record
 
 
 def event(tick, ordinal, kind, payload):
@@ -125,7 +133,8 @@ def economy_trace(package):
             package, tick, 1, x, 12.0,
             target=(30.0, 12.0) if moving else None,
             state="plain" if moving else "none",
-            order="Gather:to_node" if moving else "Gather:harvest"))
+            order="Gather:MovingToNode" if moving else "Gather:Gathering",
+            gather_stage="MovingToNode" if moving else "Gathering"))
         records.append(unit_record(package, tick, 2, 40.0, 40.0))
         if package == "haul" and tick >= 100:
             records.append(unit_record(package, tick, 3, 41.0, 40.0))
@@ -163,6 +172,10 @@ def scout_position(tick):
 
 
 def acme_trace(new):
+    """The old MoveTo resets UnitOrders to the default (orders.rs:633-638), so
+    the old trace has order none on every tick. The new run keeps the order
+    through the arrival tick, because the Orders phase that clears it runs
+    before Movement in the next tick (design 9.24a)."""
     units = [{"unit": SCOUT, "content_id": "acme:scout", "owner_slot": 0}]
     records = [header("acme", units)]
     op_id = 0
@@ -176,24 +189,29 @@ def acme_trace(new):
             target=(30.0, 30.0) if moving else None,
             activity="Moving" if new and moving else "none",
             state="pool" if new and moving else "none",
-            order="Move:-" if moving else "none"))
+            order="Move:-" if new and tick <= ARRIVAL else "none",
+            # Format /4: both branches store the real value, so the old and the
+            # new run read false while the scout moves and null from the
+            # arrival tick (a snap to the target runs no projection loop).
+            was_projected=False if moving else None))
         ops = []
         if tick == 1:
-            ops.append((SCOUT, "Command", [], False))
+            ops.append((SCOUT, "Command", [], False,
+                        "envelope" if new else "direct"))
             if new:
-                ops.append((SCOUT, "Orders", [], False))
+                ops.append((SCOUT, "Orders", [], False, None))
         if new and tick == ARRIVAL + 1:
-            ops.append((SCOUT, "PostMovementOrders", [], False))
-        for unit, phase, events, flag in ops:
+            ops.append((SCOUT, "PostMovementOrders", [], False, None))
+        for unit, phase, events, flag, route in ops:
             op_id += 1
             records.append(op_record("acme", tick, op_id, unit, phase,
-                                     events, flag))
+                                     events, flag, route))
     return records
 
 
 def clean_allowed():
     return {
-        "schema": "turts-refreeze-allowed/2",
+        "schema": "turts-refreeze-allowed/4",
         "package": "acme",
         "note": "synthetic list of the self-test",
         "unit_fields": [
@@ -201,6 +219,8 @@ def clean_allowed():
              "old": "none", "new": "Moving"},
             {"unit": SCOUT, "field": "state", "ticks": [1, ARRIVAL - 1],
              "old": "none", "new": "pool"},
+            {"unit": SCOUT, "field": "order", "ticks": [1, ARRIVAL],
+             "old": "none", "new": "Move:-"},
         ],
         "world_fields": [
             {"field": "pools", "ticks": [1, ARRIVAL - 1], "old": 0, "new": 1},
@@ -211,6 +231,10 @@ def clean_allowed():
             {"change": "added", "tick": ARRIVAL + 1, "index": 0,
              "unit": SCOUT, "phase": "PostMovementOrders", "events": [],
              "before_equals_after": False},
+        ],
+        "operation_fields": [
+            {"tick": 1, "index": 0, "field": "move_to_route",
+             "old": "direct", "new": "envelope"},
         ],
     }
 
@@ -269,6 +293,16 @@ class Case:
         self.old_dir_given = True
         self.g1_in_a2c = False
 
+    def to_counts(self):
+        """--counts mode: the counts of one run. The synthetic gather worker
+        has a plain progress (it exercises the P0 rules), so the clean counts
+        case turns it into no progress, as in the real stream."""
+        self.mode = "counts"
+        for records in self.new.values():
+            for record in records or []:
+                if record.get("state") == "plain":
+                    record["state"] = "none"
+
     def to_p0(self):
         """--p0 mode (A2a, A2b): the four packages, old against old."""
         self.mode = "p0"
@@ -301,6 +335,8 @@ class Case:
         (root / "fixture.json").write_bytes(fixture)
         (root / "allowed.json").write_text(json.dumps(self.allowed, indent=2))
         (root / "emitter.rs").write_bytes(self.emitter_bytes)
+        if self.mode == "counts":
+            return {"directory": paths["new"], "g1_in_a2c": self.g1_in_a2c}
         if self.mode == "p0":
             return {
                 "old_dir": paths["old"] if self.old_dir_given else None,
@@ -656,10 +692,173 @@ def plant_p0_mode_no_stream(case):
     case.p0_stream = False
 
 
+def plant_order_entry_after_arrival_listed(case):
+    # The order is still in the new trace on the tick after arrival, and the
+    # list says so: the span ends after the arrival tick (design 9.24a).
+    find(case.new["acme"], record="unit", tick=ARRIVAL + 1,
+         unit=SCOUT)["order"] = "Move:-"
+    spans = [e for e in case.allowed["unit_fields"] if e["field"] == "order"]
+    spans[0]["ticks"] = [1, ARRIVAL + 1]
+
+
+def plant_state_entry_straddles_arrival_listed(case):
+    # Reviewer plant (b) of the Q1a review round 2: the span begins before
+    # arrival and ends ON the arrival tick. The trace agrees, so only the
+    # check of the LAST tick can see it (a check of the first tick cannot).
+    record = find(case.new["acme"], record="unit", tick=ARRIVAL, unit=SCOUT)
+    record["state"] = "pool"
+    spans = [e for e in case.allowed["unit_fields"] if e["field"] == "state"]
+    spans[0]["ticks"] = [1, ARRIVAL]
+
+
+def plant_flag_entry_straddles_arrival_listed(case):
+    # The new run projects the scout on ticks 1 to ARRIVAL, and the list names
+    # the span [1, ARRIVAL]: it ends ON the arrival tick, which only the order
+    # followers may do.
+    for record in scout_units(case, 1, ARRIVAL):
+        record["was_projected"] = True
+    case.allowed["unit_fields"].append({
+        "unit": SCOUT, "field": "was_projected", "ticks": [1, ARRIVAL],
+        "old": False, "new": True})
+
+
+def plant_acme_last_failure_not_allowed(case):
+    find(case.new["acme"], record="unit", tick=50, unit=SCOUT)[
+        "last_failure"] = {"order": "acme:order_move", "reason": "blocked",
+                           "tick": 49}
+
+
+def plant_acme_queue_not_allowed(case):
+    find(case.new["acme"], record="unit", tick=30, unit=SCOUT)["queue"] = [
+        "Move"]
+
+
+def plant_base_last_failure(case):
+    find(case.new["base"], record="unit", tick=70, unit=1)["last_failure"] = {
+        "order": "base:gather", "reason": "blocked", "tick": 69}
+
+
+def plant_haul_was_projected_null(case):
+    find(case.new["haul"], record="unit", tick=60, unit=1)[
+        "was_projected"] = None
+
+
+def plant_haul_move_to_route(case):
+    find(case.new["haul"], record="op", tick=1)["move_to_route"] = "direct"
+
+
+def plant_route_unchanged_in_new(case):
+    # The new run still says "direct", but the list says "envelope".
+    find(case.new["acme"], record="op", op_id=1)["move_to_route"] = "direct"
+
+
+def plant_route_changed_not_listed(case):
+    case.allowed["operation_fields"] = []
+
+
+def plant_route_entry_wrong_old(case):
+    case.allowed["operation_fields"][0]["old"] = "per_unit"
+
+
+def plant_route_entry_other_field(case):
+    case.allowed["operation_fields"][0]["field"] = "phase"
+
+
+def plant_route_value_not_in_format(case):
+    find(case.new["acme"], record="op", op_id=1)["move_to_route"] = "shortcut"
+
+
+def plant_order_is_a_content_id(case):
+    find(case.new["acme"], record="unit", tick=40, unit=SCOUT)[
+        "order"] = "acme:order_move"
+
+
+def plant_order_kind_is_not_a_behaviour(case):
+    # A valid stage, but the kind is not a Behaviour name (a package name, as
+    # a content id would give it).
+    find(case.new["acme"], record="unit", tick=40, unit=SCOUT)[
+        "order"] = "acme:-"
+
+
+def plant_order_stage_with_brackets(case):
+    find(case.new["base"], record="unit", tick=10, unit=1)[
+        "order"] = "Gather:Waiting(NoDeposit)"
+
+
+def plant_unit_record_without_queue(case):
+    del find(case.new["base"], record="unit", tick=10, unit=1)["queue"]
+
+
+def plant_queue_holds_a_content_id(case):
+    find(case.new["base"], record="unit", tick=10, unit=1)["queue"] = [
+        "base:order_move"]
+
+
+def plant_was_projected_as_number(case):
+    find(case.new["base"], record="unit", tick=10, unit=1)["was_projected"] = 0
+
+
+def plant_last_failure_as_text(case):
+    find(case.new["base"], record="unit", tick=10, unit=1)[
+        "last_failure"] = "blocked"
+
+
+def plant_flip_gather_stage_haul(case):
+    # The legacy Gather leaves order at "none", so the stage is the only place
+    # where a change of the gather protocol (task A2b1) shows in the trace.
+    record = find(case.new["haul"], record="unit", tick=40, unit=1)
+    record["gather_stage"] = "Unloading"
+
+
+def plant_gather_stage_in_acme_not_allowed(case):
+    find(case.new["acme"], record="unit", tick=60, unit=SCOUT)[
+        "gather_stage"] = "Idle"
+
+
+def plant_gather_stage_with_brackets(case):
+    find(case.new["base"], record="unit", tick=10, unit=1)[
+        "gather_stage"] = "Waiting(NoDeposit)"
+
+
+def plant_gather_stage_is_a_behaviour_text(case):
+    find(case.new["base"], record="unit", tick=10, unit=1)[
+        "gather_stage"] = "Gather:Idle"
+
+
+def plant_unit_record_without_gather_stage(case):
+    del find(case.new["base"], record="unit", tick=10, unit=1)["gather_stage"]
+
+
+def plant_counts_plain_unit_tick(case):
+    case.to_counts()
+    find(case.new["cedar"], record="unit", tick=77, unit=1)["state"] = "plain"
+
+
+def plant_counts_separated_without_state(case):
+    case.to_counts()
+    find(case.new["haul"], record="unit", tick=88, unit=2)["separated"] = True
+
+
+def plant_counts_was_projected(case):
+    case.to_counts()
+    find(case.new["base"], record="unit", tick=99, unit=1)[
+        "was_projected"] = True
+
+
+def plant_counts_empty_trace(case):
+    case.to_counts()
+    case.new["acme"] = []
+
+
+def plant_counts_missing_trace(case):
+    case.to_counts()
+    case.new["cedar"] = None
+
+
 PLANTS = [
     # (name, expected failed check, text that the detail must hold, plant)
-    ("flipped position bit in base", "P0", "base: bytes differ",
-     plant_flip_position_bit_base),
+    ("flipped position bit in base", "P0",
+     "tick 200, unit 1, field x_bits", plant_flip_position_bit_base),
     ("flipped position bit in acme", "P1", "field y_bits",
      plant_flip_position_bit_acme),
     ("added Stored event", "P2", "haul tick 30",
@@ -698,12 +897,14 @@ PLANTS = [
      "field separated", plant_acme_field_not_allowed),
     ("flipped was_projected in acme", "P1", "field was_projected",
      plant_flip_was_projected_acme),
-    ("flipped was_projected in haul", "P0", "haul: bytes differ",
+    ("flipped was_projected in haul", "P0",
+     "tick 60, unit 1, field was_projected",
      plant_flip_was_projected_haul),
     ("base PlainMoveProgress ends one tick early", "P0",
-     "base: bytes differ", plant_base_state_plain_to_none),
+     "tick 79, unit 1, field state", plant_base_state_plain_to_none),
     ("base pending movement order count changed", "P0",
-     "base: bytes differ", plant_base_pending_orders),
+     "world record, tick 150, field pending_movement_orders",
+     plant_base_pending_orders),
     ("pool kept to tick 400, listed (c2)", "ALLOWED",
      "at or after the arrival tick", plant_pool_kept_to_400_listed),
     ("MoveTarget kept after arrival, listed (c3)", "ALLOWED",
@@ -746,6 +947,71 @@ PLANTS = [
      "haul tick 9", plant_p0_mode_wrong_op_capture),
     ("--p0 mode: no stream given", "STREAM-OLD", "no old stream given",
      plant_p0_mode_no_stream),
+    # Task Q1b: design 9.24 and the format /3.
+    ("order entry ends after the arrival tick, listed (a)", "ALLOWED",
+     "still there on the arrival tick", plant_order_entry_after_arrival_listed),
+    ("state entry straddles the arrival tick, listed (b)", "ALLOWED",
+     "at or after the arrival tick",
+     plant_state_entry_straddles_arrival_listed),
+    ("was_projected entry straddles the arrival tick, listed (b)", "ALLOWED",
+     "at or after the arrival tick",
+     plant_flag_entry_straddles_arrival_listed),
+    ("acme last_failure not in the allowed list", "P1",
+     "field last_failure", plant_acme_last_failure_not_allowed),
+    ("acme queue not in the allowed list", "P1", "field queue",
+     plant_acme_queue_not_allowed),
+    ("last_failure in base", "P0", "tick 70, unit 1, field last_failure",
+     plant_base_last_failure),
+    ("was_projected null instead of false in haul", "P0",
+     "tick 60, unit 1, field was_projected", plant_haul_was_projected_null),
+    ("move_to_route on a haul operation", "P0",
+     "op record, tick 1, op_id 1, field move_to_route",
+     plant_haul_move_to_route),
+    ("move_to_route still direct in the new run, list says envelope", "P1",
+     "operation difference", plant_route_unchanged_in_new),
+    ("move_to_route changed in the new run, not listed", "P1",
+     "operation difference", plant_route_changed_not_listed),
+    ("operation_fields entry with a wrong old value", "P1",
+     "does not occur", plant_route_entry_wrong_old),
+    ("operation_fields entry for another field", "ALLOWED",
+     "only move_to_route", plant_route_entry_other_field),
+    ("move_to_route value that the format does not name", "COUNTS-NEW",
+     "move_to_route", plant_route_value_not_in_format),
+    ("order written as a content id", "COUNTS-NEW", "behaviours",
+     plant_order_is_a_content_id),
+    ("order kind that is not a behaviour name", "COUNTS-NEW", "behaviours",
+     plant_order_kind_is_not_a_behaviour),
+    ("gather stage with brackets in order", "COUNTS-NEW", "behaviours",
+     plant_order_stage_with_brackets),
+    ("unit record without queue", "COUNTS-NEW", "unit keys",
+     plant_unit_record_without_queue),
+    ("queue that holds a content id", "COUNTS-NEW", "queue",
+     plant_queue_holds_a_content_id),
+    ("was_projected written as 0", "COUNTS-NEW", "was_projected",
+     plant_was_projected_as_number),
+    ("last_failure written as text", "COUNTS-NEW", "last_failure",
+     plant_last_failure_as_text),
+    # Q1b review follow-up: gather_stage (format /4) and the decoded P0 detail.
+    ("flipped gather_stage in haul (order stays none)", "P0",
+     "tick 40, unit 1, field gather_stage", plant_flip_gather_stage_haul),
+    ("gather_stage difference in acme not in the allowed list", "P1",
+     "field gather_stage", plant_gather_stage_in_acme_not_allowed),
+    ("gather_stage written with brackets", "COUNTS-NEW", "gather_stage",
+     plant_gather_stage_with_brackets),
+    ("gather_stage written as a behaviour text", "COUNTS-NEW",
+     "gather_stage", plant_gather_stage_is_a_behaviour_text),
+    ("unit record without gather_stage", "COUNTS-NEW", "unit keys",
+     plant_unit_record_without_gather_stage),
+    ("--counts: one unit-tick on a plain progress", "STOP", "plain 1",
+     plant_counts_plain_unit_tick),
+    ("--counts: separated with no movement state (b)", "STOP", "(b) 1",
+     plant_counts_separated_without_state),
+    ("--counts: was_projected true (c)", "STOP", "(c) 1",
+     plant_counts_was_projected),
+    ("--counts: empty trace", "COUNTS", "empty trace",
+     plant_counts_empty_trace),
+    ("--counts: no trace for one package", "COUNTS", "no trace given",
+     plant_counts_missing_trace),
 ]
 
 
@@ -758,6 +1024,8 @@ def classify(classifier, case):
             Path(args["stream"]).write_bytes(stream_bytes(frozen))
             args["old_sha256"] = hashlib.sha256(
                 stream_bytes(frozen)).hexdigest()
+        if case.mode == "counts":
+            return classifier.run_counts(**args)
         if case.mode == "p0":
             return classifier.run_p0(**args)
         return classifier.run_a2c(**args)
@@ -776,8 +1044,10 @@ def clean_cases():
             for record in records:
                 if record.get("record") == "unit":
                     record["edge_hit"] = False
+    counts = Case()
+    counts.to_counts()
     return [("after-fixture-commit", after), ("before-fixture-commit", before),
-            ("--p0", p0), ("--g1-in-a2c", g1)]
+            ("--p0", p0), ("--g1-in-a2c", g1), ("--counts", counts)]
 
 
 def run_plants(classifier):
@@ -809,6 +1079,55 @@ class RefreezeClassifierSelfTest(unittest.TestCase):
             with self.subTest(name):
                 report = classify(self.classifier, case)
                 self.assertTrue(report.passed, "\n".join(report.lines()))
+
+    def test_counts_report_gather_stage_counts(self):
+        # (e): the synthetic gather worker is in MovingToNode on 79 ticks and
+        # in Gathering on 321 ticks of each of the three gather packages.
+        case = Case()
+        case.to_counts()
+        report = classify(self.classifier, case)
+        details = {name: detail for name, _, detail in report.checks}
+        for package in ("BASE", "HAUL", "CEDAR"):
+            self.assertIn("(e) gather_stage unit-ticks Gathering 321, "
+                          "MovingToNode 79", details["COUNT-" + package])
+        self.assertIn("(e) gather_stage unit-ticks none",
+                      details["COUNT-ACME"])
+
+    def test_p0_detail_decodes_tick_unit_and_field(self):
+        case = Case()
+        case.to_p0()
+        find(case.new["cedar"], record="unit", tick=321, unit=2)[
+            "was_projected"] = True
+        report = classify(self.classifier, case)
+        self.assertIn("cedar: bytes differ (first at line ",
+                      report.failed()["P0"])
+        self.assertIn("unit record, tick 321, unit 2, field was_projected: "
+                      "false -> true", report.failed()["P0"])
+
+    def test_p0_detail_names_the_first_field_in_format_order(self):
+        # Two fields of one record differ: the detail names the first in the
+        # order of the format (position before gather_stage).
+        case = Case()
+        case.to_p0()
+        record = find(case.new["haul"], record="unit", tick=40, unit=1)
+        record["gather_stage"] = "Unloading"
+        record["x_bits"] = flip_low_bit(record["x_bits"])
+        report = classify(self.classifier, case)
+        self.assertIn("unit record, tick 40, unit 1, field x_bits",
+                      report.failed()["P0"])
+
+    def test_a_listed_gather_stage_difference_passes(self):
+        # gather_stage can be named in the allowed list (it is a P0 field, so a
+        # difference is red unless listed).
+        case = Case()
+        for tick in range(10, 21):
+            find(case.new["acme"], record="unit", tick=tick, unit=SCOUT)[
+                "gather_stage"] = "Idle"
+        case.allowed["unit_fields"].append({
+            "unit": SCOUT, "field": "gather_stage", "ticks": [10, 20],
+            "old": "none", "new": "Idle"})
+        report = classify(self.classifier, case)
+        self.assertTrue(report.passed, "\n".join(report.lines()))
 
     def test_synthetic_stream_bytes_match_fixture_format(self):
         fixture = REPO / "tests/m3/m2_operation_stream.json"
