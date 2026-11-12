@@ -20,9 +20,73 @@ use crate::join::{AcquiredPackages, JoinState, Phase};
 use crate::present::Presented;
 use crate::scenario::ScenarioState;
 
-/// The debug JSON, rebuilt each frame.
+/// The debug JSON of the last build. It is empty until the first request is served.
 #[derive(Resource, Default)]
 pub struct DebugState(pub String);
+
+/// The least time between two builds of the debug state: 4 builds each second (design D 9,
+/// row DBG1).
+pub const DEBUG_MIN_INTERVAL_SECS: f64 = 0.25;
+
+/// The gate of the debug state (design D 9, row DBG1). The client builds [`DebugState`] only
+/// when a harness has asked for it, at most [`DEBUG_MIN_INTERVAL_SECS`] apart, for the last
+/// presented frame. The browser bridge calls [`DebugRequest::request`] (through
+/// `window.turts_debug_request`); a native test calls it directly. The counter `builds` is
+/// part of the published record (`debug_builds`), so a test can count the builds.
+#[derive(Resource, Debug, Default)]
+pub struct DebugRequest {
+    /// The least interval of the requests that wait for a build, in seconds.
+    pending: Option<f64>,
+    /// The `Time<Real>` of the last build, when a clock exists.
+    last_build_secs: Option<f64>,
+    builds: u64,
+}
+
+impl DebugRequest {
+    /// Ask for one build of the debug state. `min_interval_secs` is the least time since the
+    /// last build; `None` gives [`DEBUG_MIN_INTERVAL_SECS`]. Only a test harness passes a lower
+    /// value (the SH1 phase capture asks for each frame).
+    pub fn request(&mut self, min_interval_secs: Option<f64>) {
+        let wanted = min_interval_secs
+            .filter(|secs| secs.is_finite())
+            .unwrap_or(DEBUG_MIN_INTERVAL_SECS)
+            .max(0.0);
+        self.pending = Some(self.pending.map_or(wanted, |pending| pending.min(wanted)));
+    }
+
+    /// How many times the client has built the debug state.
+    pub fn builds(&self) -> u64 {
+        self.builds
+    }
+
+    /// Whether a request waits for a build.
+    pub fn is_pending(&self) -> bool {
+        self.pending.is_some()
+    }
+
+    /// Whether a build is due now: a request waits and the interval has passed. With no clock
+    /// (a bare test world) a waiting request is always due.
+    fn is_due(&self, now_secs: Option<f64>) -> bool {
+        let Some(wanted) = self.pending else {
+            return false;
+        };
+        match (self.last_build_secs, now_secs) {
+            (Some(last), Some(now)) => now - last >= wanted,
+            _ => true,
+        }
+    }
+
+    fn mark_built(&mut self, now_secs: Option<f64>) {
+        self.builds += 1;
+        self.pending = None;
+        self.last_build_secs = now_secs;
+    }
+}
+
+/// The run condition of [`rebuild_debug_state`]: a request waits and the 4 Hz cap allows it.
+pub fn debug_build_due(request: Res<DebugRequest>, time: Option<Res<Time<Real>>>) -> bool {
+    request.is_due(time.map(|time| time.elapsed_secs_f64()))
+}
 
 /// The state of the client as JSON:
 /// `{ phase, units: [{ unit_id, content_id, pos: [x, y], shape }], last_frame }`.
@@ -297,6 +361,7 @@ pub fn debug_json(world: &World) -> String {
         })
         .unwrap_or(Value::Null);
     json!({
+        "debug_builds": world.get_resource::<DebugRequest>().map_or(0, DebugRequest::builds),
         "phase": phase,
         "rejoin": rejoin,
         "tick_hz": tick_hz,
@@ -437,8 +502,15 @@ fn command_result_json(result: &CommandResult) -> Value {
     }
 }
 
-/// `Last`: rebuild [`DebugState`].
+/// `Last`: rebuild [`DebugState`]. The app runs it only when [`debug_build_due`] says so. It
+/// counts the build first, so the record that it writes holds its own build number.
 pub fn rebuild_debug_state(world: &mut World) {
+    let now = world
+        .get_resource::<Time<Real>>()
+        .map(|time| time.elapsed_secs_f64());
+    if let Some(mut request) = world.get_resource_mut::<DebugRequest>() {
+        request.mark_built(now);
+    }
     let json = debug_json(world);
     world.resource_mut::<DebugState>().0 = json;
 }

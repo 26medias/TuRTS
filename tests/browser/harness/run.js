@@ -73,9 +73,13 @@ async function recordStartup(page, windowNumber, observations, waitForJoin) {
     observations.push({ window: windowNumber, wall_time_ms: Date.now(), keyboard_layout: keyboardLayout });
 }
 
-function loadObservation() {
+async function loadObservation() {
     let debug = null;
-    try { debug = typeof window.turts_debug === "function" ? JSON.parse(window.turts_debug()) : null; } catch { debug = null; }
+    // Ask for one record (design D 9, row DBG1); an older page publishes in each frame.
+    try {
+        debug = typeof window.turts_debug !== "function" ? null : JSON.parse(
+            await (window.turts_debug_request?.() ?? window.turts_debug()));
+    } catch { debug = null; }
     const rows = (debug?.ui_snapshot ?? []).filter((row) => String(row.id ?? "").startsWith("shell.load") || row.kind === "focus_overlay");
     return { phase: debug?.phase ?? null, rows };
 }
@@ -316,12 +320,14 @@ async function run(options) {
         const storageAudit = params.row === "SH1" ? sh1StorageAudit :
             (["KM1", "PER1", "SEL4", "PT1"].includes(params.row) ? [] : null);
         const storageInitialState = storageAudit ? await Promise.all(pages.map(async (page, index) => {
-            const snapshot = await page.evaluate(() => {
+            const snapshot = await page.evaluate(async () => {
                 const entries = (storage) => Object.fromEntries(Array.from({ length: storage.length }, (_, offset) => {
                     const key = storage.key(offset);
                     return [key, storage.getItem(key)];
                 }));
-                const debug = typeof window.turts_debug === "function" ? JSON.parse(window.turts_debug()) : null;
+                // Ask for one record (design D 9, row DBG1); an older page publishes in each frame.
+                const debug = typeof window.turts_debug !== "function" ? null : JSON.parse(
+                    await (window.turts_debug_request?.() ?? window.turts_debug()));
                 return { sessionStorage: entries(sessionStorage), localStorage: entries(localStorage), debug, document_url: document.URL, origin: location.origin, document_time_origin: performance.timeOrigin };
             });
             return { window: index + 1, document_epoch: documentEpochs[index] ?? 0, ...snapshot };
@@ -589,7 +595,14 @@ async function captureStartupFailurePages(pages, documentEpochs, outputDir, fail
         const record = { window: index + 1,
             document_epoch: Number.isSafeInteger(documentEpochs[index]) && documentEpochs[index] > 0 ? documentEpochs[index] : null };
         try {
-            record.page_state = await withTimeout(page.evaluate(() => {
+            record.page_state = await withTimeout(page.evaluate(async () => {
+                // The client builds the debug state only when asked (design D 9, row DBG1). Ask for
+                // one record, but never wait for more than 1.2 s: a failed page may run no frame. The
+                // record that the last request served is read then.
+                if (typeof window.turts_debug_request === "function") {
+                    await Promise.race([window.turts_debug_request().catch(() => null),
+                        new Promise((resolve) => setTimeout(resolve, 1200))]);
+                }
                 const bridge = (name) => {
                     if (typeof window[name] !== "function") return { status: "unavailable" };
                     try {
@@ -789,11 +802,12 @@ function installTask16StorageAudit({ fixture = null, targetOrigin = null, window
 }
 
 async function waitForJoinedRole(page) {
-    await page.waitForFunction(() => {
+    // Each poll asks for one record (design D 9, row DBG1) and waits for it; an older page publishes in each frame.
+    await page.waitForFunction(async () => {
         if (window.turts_error) return true;
         if (typeof window.turts_debug !== "function" || typeof window.turts_scene !== "function") return false;
         try {
-            const debug = JSON.parse(window.turts_debug());
+            const debug = JSON.parse(await (window.turts_debug_request?.() ?? window.turts_debug()));
             const scene = JSON.parse(window.turts_scene());
             return typeof debug.phase === "string" && debug.phase.startsWith("Joined") && Boolean(debug.last_frame) && scene.cameras_3d === 1;
         } catch { return false; }
@@ -801,11 +815,11 @@ async function waitForJoinedRole(page) {
 }
 
 async function waitForTask16Role(page, role) {
-    await page.waitForFunction((expectedRole) => {
+    await page.waitForFunction(async (expectedRole) => {
         if (window.turts_error) return true;
         if (typeof window.turts_debug !== "function" || typeof window.turts_scene !== "function") return false;
         try {
-            const debug = JSON.parse(window.turts_debug());
+            const debug = JSON.parse(await (window.turts_debug_request?.() ?? window.turts_debug()));
             const scene = JSON.parse(window.turts_scene());
             const terminal = typeof debug.phase === "string" && (debug.phase.startsWith("Failed") ||
                 (debug.phase.startsWith("Joined") && Boolean(debug.last_frame) && scene?.cameras_3d === 1));
@@ -813,9 +827,9 @@ async function waitForTask16Role(page, role) {
             return terminal || firstCopiedHello;
         } catch { return false; }
     }, role, { timeout: 30000 }).catch((error) => { throw new Error(`Task16 ${role} readiness failed: ${error.message}`); });
-    const status = await page.evaluate(() => {
+    const status = await page.evaluate(async () => {
         if (window.turts_error) return { error: window.turts_error };
-        const debug = JSON.parse(window.turts_debug());
+        const debug = JSON.parse(await (window.turts_debug_request?.() ?? window.turts_debug()));
         let scene = null;
         try { scene = JSON.parse(window.turts_scene()); } catch {}
         return { phase: debug.phase, player_id_decimal: debug.player_id_decimal ?? null, match_id_decimal: debug.match_id_decimal ?? null,
@@ -828,11 +842,11 @@ async function waitForTask16Role(page, role) {
 }
 
 async function readTask16StartupObservation(page) {
-    return page.evaluate(() => {
+    return page.evaluate(async () => {
         if (typeof window.turts_debug !== "function" || typeof window.turts_scene !== "function") {
             return { status: "NOT TRACED", reason: "actual typed debug/scene bridge unavailable" };
         }
-        const debug = JSON.parse(window.turts_debug());
+        const debug = JSON.parse(await (window.turts_debug_request?.() ?? window.turts_debug()));
         const scene = JSON.parse(window.turts_scene());
         const frames = [...(debug.frames?.recent || []), ...(debug.frames?.retained_input || [])];
         const frameIndices = frames.map((frame) => frame.frame_index).filter(Number.isSafeInteger);

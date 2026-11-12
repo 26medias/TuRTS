@@ -50,7 +50,9 @@ use crate::commands::{
     submit, submit_trace,
 };
 use crate::core_adapter::CoreAdapterPlugin;
-use crate::debug::{DebugState, exit_when_done, rebuild_debug_state};
+use crate::debug::{
+    DebugRequest, DebugState, debug_build_due, exit_when_done, rebuild_debug_state,
+};
 use crate::framelog::{FrameLog, write_frame_log};
 use crate::ingest::{
     CommandResults, IngestCounters, IngestHooks, ReceiptWitnesses, ReplicaState,
@@ -112,6 +114,7 @@ impl Plugin for ClientPlugin {
             .init_resource::<Acquisition>()
             .init_resource::<Presented>()
             .init_resource::<DebugState>()
+            .init_resource::<DebugRequest>()
             .init_resource::<PendingCommands>()
             .init_resource::<CommandSequence>()
             .init_resource::<CommandSendStatus>()
@@ -144,7 +147,11 @@ impl Plugin for ClientPlugin {
                 .chain()
                 .before(MessageSystems::Send),
         );
-        app.add_systems(Last, (rebuild_debug_state, exit_when_done).chain());
+        // Row DBG1: the debug state is built only for a request, at most 4 times each second.
+        app.add_systems(
+            Last,
+            (rebuild_debug_state.run_if(debug_build_due), exit_when_done).chain(),
+        );
         #[cfg(not(target_family = "wasm"))]
         if publish_live_view {
             app.add_systems(

@@ -51,6 +51,10 @@ pub enum SnapshotOutcome {
     Invalid,
 }
 
+/// How many health changes the replica keeps for each unit (design D 9, row DBG1). Without a
+/// window, the trace grows in each fight, and each delta clones it (`Replica::candidate`).
+pub const HEALTH_TRACE_WINDOW: usize = 64;
+
 /// Technical cap on retained batches while waiting for a reliable snapshot.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ReplicaConfig {
@@ -116,6 +120,9 @@ pub struct Replica {
     pub research: Vec<ResearchRecord>,
     /// Owner-specific orders staged atomically with their unit snapshot and tick.
     pub unit_orders: HashMap<u32, UnitOrderRecord>,
+    /// The recent health changes of each unit: at most [`HEALTH_TRACE_WINDOW`] entries, the
+    /// newest last (row DBG1). The alert `OwnUnitDestroyed` reads the last entry of a unit that
+    /// is gone, so the window always keeps the newest entry.
     pub health_trace: std::collections::BTreeMap<u32, Vec<HealthTraceEntry>>,
     pub snapshot_tick: Option<u32>,
     pub last_applied_tick: Option<u32>,
@@ -1188,6 +1195,9 @@ fn apply_health_records(
                 tick,
                 current: record.current,
             });
+            if history.len() > HEALTH_TRACE_WINDOW {
+                history.drain(..history.len() - HEALTH_TRACE_WINDOW);
+            }
         }
     }
     true

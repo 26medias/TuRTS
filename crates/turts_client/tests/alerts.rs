@@ -606,3 +606,168 @@ fn production_completion_needs_output_evidence_and_does_not_treat_job_removal_as
         "a removed production job with its catalog output unit is completion evidence"
     );
 }
+
+/// Row DBG1 and ALR2: the health trace keeps the newest 64 entries for each unit, and the alert
+/// `OwnUnitDestroyed` (`feedback.rs`, it reads the last entry of a unit that is gone) still fires
+/// after a long fight. The replica applies real deltas, so a trace that is pruned to nothing
+/// (plant a of `L0-DBG`) makes this test red.
+#[test]
+fn own_unit_destroyed_fires_after_a_long_fight_with_a_bounded_trace() {
+    use std::collections::HashMap;
+    use std::path::PathBuf;
+
+    use bevy::platform::time::Instant;
+    use turts_client::acquire::{Acquired, PresentationContent};
+    use turts_client::content::ClientContent;
+    use turts_client::join::AcquiredPackages;
+    use turts_client::replica::{
+        DeltaOutcome, HEALTH_TRACE_WINDOW, Replica, ReplicaContext, SnapshotOutcome,
+    };
+    use turts_mod_runtime::{archive::PackageArchive, pack::pack_dir};
+    use turts_net_protocol::{
+        EconomyChanges, EconomyState, Facing, HealthRecord, Pos, SlotId, Snapshot, UnitId,
+        UnitSnapshot, WorldDelta,
+    };
+
+    let base = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../mods/forge");
+    let archive =
+        PackageArchive::parse(&pack_dir(&base).expect("pack forge")).expect("parse forge");
+    let content = ClientContent::from_archives(&[archive]).expect("resolve forge");
+    let interface: turts_mod_api::InterfaceDef =
+        ron::from_str(&std::fs::read_to_string(base.join("interface/hud.ron")).expect("forge hud"))
+            .expect("forge hud parses");
+    assert!(
+        interface
+            .alerts
+            .iter()
+            .any(|rule| rule.trigger == turts_mod_api::AlertTrigger::OwnUnitDestroyed),
+        "the forge interface has an OwnUnitDestroyed rule"
+    );
+
+    let empty_economy = || EconomyState {
+        balances: vec![],
+        inventories: vec![],
+        orders: vec![],
+        queues: vec![],
+    };
+    let delta = |tick: u32| WorldDelta {
+        tick,
+        base_tick: tick - 1,
+        spawned: vec![],
+        removed: vec![],
+        positions: vec![],
+        nodes: vec![],
+        economy: EconomyChanges {
+            balances: vec![],
+            inventories: vec![],
+            orders: vec![],
+            queues: vec![],
+        },
+        belts: vec![],
+        inserters: vec![],
+        extractors: vec![],
+        weapons: vec![],
+        healths: vec![],
+        research: vec![],
+        unit_orders: vec![],
+    };
+    let now = Instant::now();
+    let mut replica = Replica::new(20);
+    replica.set_context(ReplicaContext::new(content.clone(), 0));
+    let initial = Snapshot {
+        tick: 4,
+        units: vec![UnitSnapshot {
+            unit_id: UnitId(9),
+            content_id: "forge:drone".into(),
+            owner_slot: SlotId(0),
+            facing: Some(Facing::PosX),
+            pos: Pos { x: 9.0, y: 0.0 },
+        }],
+        nodes: vec![],
+        economy: empty_economy(),
+        belts: vec![],
+        inserters: vec![],
+        extractors: vec![],
+        weapons: vec![],
+        healths: vec![HealthRecord {
+            unit: UnitId(9),
+            current: 100,
+        }],
+        research: vec![],
+        unit_orders: vec![],
+    };
+    assert_eq!(
+        replica.apply_snapshot(&initial, now),
+        SnapshotOutcome::Applied { replayed: 0 }
+    );
+
+    let acquired = AcquiredPackages(Acquired {
+        lockfile_hash: "test".into(),
+        verified_root_mod: None,
+        visuals: HashMap::new(),
+        map_size: (64.0, 48.0),
+        unit_names: HashMap::new(),
+        content: content.clone(),
+        presentation: PresentationContent {
+            interface: Some(interface),
+            interface_package: Some("forge".into()),
+            ..Default::default()
+        },
+    });
+    let state = ReplicaState {
+        replica: Some(replica.clone()),
+        welcome: Some(turts_client::ingest::WelcomeInfo {
+            slot: 0,
+            tick: 4,
+            tick_hz: 20,
+            match_id: 1,
+        }),
+        content: Some(content),
+        config: Default::default(),
+    };
+    let mut app = feedback_app(state, acquired);
+    app.update();
+
+    // 300 health changes of the own drone: each one differs from the one before.
+    for index in 0..300u32 {
+        let mut hit = delta(5 + index);
+        hit.healths = vec![HealthRecord {
+            unit: UnitId(9),
+            current: 1 + u64::from(index % 90),
+        }];
+        assert_eq!(replica.apply_delta(&hit, now), DeltaOutcome::Applied);
+    }
+    assert_eq!(
+        replica.health_trace[&9].len(),
+        HEALTH_TRACE_WINDOW,
+        "the trace of one unit keeps the newest {HEALTH_TRACE_WINDOW} entries"
+    );
+    let mut killing = delta(305);
+    killing.healths = vec![HealthRecord {
+        unit: UnitId(9),
+        current: 0,
+    }];
+    killing.removed = vec![UnitId(9)];
+    assert_eq!(replica.apply_delta(&killing, now), DeltaOutcome::Applied);
+    assert!(!replica.units.contains_key(&9));
+    assert_eq!(replica.health_trace[&9].len(), HEALTH_TRACE_WINDOW);
+    assert_eq!(replica.health_trace[&9].last().unwrap().current, 0);
+
+    app.world_mut()
+        .resource_mut::<ReplicaState>()
+        .replica
+        .replace(replica);
+    clear_feedback(&mut app);
+    app.update();
+    let ids: Vec<String> = app
+        .world()
+        .resource::<FrameFeedback>()
+        .alerts
+        .iter()
+        .filter_map(|alert| alert["id"].as_str().map(str::to_owned))
+        .collect();
+    assert!(
+        ids.contains(&"forge_unit_destroyed".to_owned()),
+        "OwnUnitDestroyed reads the last trace entry of the gone unit; alerts: {ids:?}"
+    );
+}

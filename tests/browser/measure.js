@@ -59,10 +59,11 @@ const percentile = (sorted, p) => sorted[Math.floor(p * (sorted.length - 1))];
     let actualUnits = null;
     while (Date.now() - startedAt < FIRST_FRAME_TIMEOUT_MS) {
         const ready = vis2
-            ? await page.evaluate(() => {
+            ? await page.evaluate(async () => {
                 if (typeof window.turts_debug !== "function" || typeof window.turts_scene !== "function") return null;
                 try {
-                    const debug = JSON.parse(window.turts_debug());
+                    // The client builds the debug state only when asked (design D 9, row DBG1).
+                    const debug = JSON.parse(await (window.turts_debug_request?.() ?? window.turts_debug()));
                     const scene = JSON.parse(window.turts_scene());
                     const worldCount = debug?.replicated_world?.units?.length ?? null;
                     const sceneCount = Array.isArray(scene?.units) ? scene.units.length : null;
@@ -71,7 +72,8 @@ const percentile = (sorted, p) => sorted[Math.floor(p * (sorted.length - 1))];
                     return null;
                 }
             }).catch(() => null)
-            : await page.evaluate(() => typeof window.turts_debug === "function" ? window.turts_debug() : "")
+            : await page.evaluate(async () => typeof window.turts_debug !== "function" ? ""
+                : await (window.turts_debug_request?.() ?? window.turts_debug()))
                 .then((text) => ({ ok: Boolean(text), units: null }))
                 .catch(() => ({ ok: false, units: null }));
         if (ready?.ok) {
@@ -128,15 +130,16 @@ const percentile = (sorted, p) => sorted[Math.floor(p * (sorted.length - 1))];
         }
         const intervals = await page.evaluate(() => window.__rafIntervals.slice(1));
         const sorted = intervals.slice().sort((a, b) => a - b);
-        const phase = await page.evaluate(() => {
-            const text = window.turts_debug();
+        const phase = await page.evaluate(async () => {
+            const text = await (window.turts_debug_request?.() ?? window.turts_debug());
             return text ? JSON.parse(text).phase : null;
         });
-        const vis2Measurements = vis2 ? await page.evaluate((start) => {
+        const vis2Measurements = vis2 ? await page.evaluate(async (start) => {
+            // Ask first: the GPU counters below are read after the wait, so they are of one moment.
+            const debug = JSON.parse(await (window.turts_debug_request?.() ?? window.turts_debug()));
             const current = window.__mcGpuMetrics;
             const currentTextureAcquisitions = current.currentTextureAcquisitions - start.currentTextureAcquisitions;
             const submittedDrawCalls = current.submittedDrawCalls - start.submittedDrawCalls;
-            const debug = JSON.parse(window.turts_debug());
             const scene = JSON.parse(window.turts_scene());
             return {
                 actualUnits: scene.units.length,
