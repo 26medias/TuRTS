@@ -24,6 +24,7 @@ NO_CLIENT = {"2026-10-29-qa0-instrument-design.md"}
 NOT_MILESTONE = {
     "2026-10-25-studio-agent-team-design.md",
     "2026-10-26-m2-authoring-example.md",
+    "2026-11-12-pre-mp1-slice-design.md",
 }
 ID = re.compile(r"^[A-Z]{2}[0-9]{2}$")
 RED = re.compile(r"^RED (R[1-9]) (.+?) (\S+): ")
