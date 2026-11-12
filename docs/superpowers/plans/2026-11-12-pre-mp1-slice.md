@@ -29,6 +29,22 @@ the stricter assertion rule of section 1a (21); the source counts count code onl
 (23). Root accepts refinements R10, R11 (with item 20), R12 (with item 22) and R13 (with item 17). The plan
 gate is passed for the tasks up to and including A2a. A2b1 gets a short re-check before its builder starts.
 
+**From the A1a review (2026-11-12, qa-lead, two rounds; A1a merged with 0 High open).** Task A1b must do these:
+
+- The destination check of `queued_group_attack_spreads…` (`crates/turts_server/tests/mc_orders.rs`, `first_logged_destinations`)
+  uses a radius of 1.2 and does not see a shift below about 0.6. Also assert that the nearest destination is the order
+  point (slot zero, `movement.rs:293`), after a check that slot zero is free in this fixture.
+- The message of "gives every member a destination" must say that the destination comes from `raw_units.move_target`
+  and that a change of the movement model (part A2) means an update of the helper, not a sim defect.
+- `assert_sink_record_order` (`crates/turts_server/tests/economy.rs`) must also assert that the boundaries and the
+  operations of a batch come before its `Tick`.
+- Weak checks after the validator goes (leads): `mc_orders.rs:634` (pursuit and range: a focus target hit from any
+  range stays green today, with the validator on or off); `economy.rs:299` and `:547` (`decoded_*`); `economy.rs:3425`,
+  `:3780`, `:3925` (`replay_public_log`, which validates at `:1998`).
+- `read_live_complete_tick_prefix` still calls `validate_records`. Task A1c removes that call and runs the A1a plants again.
+- The A1a exit "E9 green five times in a row" moves to task D0p: one run in six was red at `economy.rs:2306` from the
+  gather-at-depletion defect, whose repair is not in the slice base before D0p.
+
 ## 0. Line numbers
 
 - All `path:line` in this plan are at `431c3ad` (TuRTS-mp1), or at the commit that the line names.
