@@ -1,6 +1,8 @@
 mod common;
-use common::forge_support::{cid, forge_dir, loaded, package_fixture, step};
-use turts_audit::source::OracleCatalog;
+use common::{
+    conservation::OracleCatalog,
+    forge_support::{cid, forge_dir, loaded, package_fixture, step},
+};
 use turts_sim::{EconomyEventKind, audit_state};
 
 #[test]

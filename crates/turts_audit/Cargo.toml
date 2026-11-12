@@ -9,6 +9,5 @@ publish.workspace = true
 turts_sim = { path = "../turts_sim" }
 turts_net_protocol = { path = "../turts_net_protocol" }
 turts_mod_api = { path = "../turts_mod_api" }
-ron = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

@@ -8605,7 +8605,6 @@ dependencies = [
 name = "turts_audit"
 version = "0.2.0"
 dependencies = [
- "ron",
  "serde",
  "serde_json",
  "turts_mod_api",
@@ -8732,7 +8731,6 @@ dependencies = [
  "ron",
  "serde",
  "serde_json",
- "turts_audit",
  "turts_interaction",
  "turts_mod_api",
  "turts_mod_runtime",

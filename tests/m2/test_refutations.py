@@ -184,7 +184,10 @@ class RefutationRunnerTests(unittest.TestCase):
         }
         for case_id, text in expected.items():
             case = by_id[case_id]
-            self.assertEqual(case["plant_path"], "crates/turts_sim/src/economy/views.rs", case_id)
+            # The plant writes REAL world state (the resource itself), not the reporter in views.rs.
+            self.assertEqual(case["plant_path"], "crates/turts_sim/src/movement/ecs.rs", case_id)
+            self.assertNotIn("views.rs", json.dumps(case), case_id)
+            self.assertIn("world.", case["replacement"], case_id)
             self.assertEqual(
                 case["command"][:6],
                 ["cargo", "test", "-p", "turts_server", "--test", "economy"],

@@ -24,7 +24,6 @@ bevy_app = { workspace = true }
 bevy_math = { workspace = true }
 turts_interaction = { path = "../turts_interaction" }
 turts_net_protocol = { path = "../turts_net_protocol" }
-turts_audit = { path = "../turts_audit" }
 
 [[test]]
 name = "economy_accounting"

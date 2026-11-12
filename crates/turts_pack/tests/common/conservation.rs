@@ -1,37 +1,3 @@
-//! The source oracle: the one in-process ledger oracle of the tests (pre-MP1 slice, task A1d).
-//!
-//! It was `crates/turts_pack/tests/common/conservation.rs`, the seed of the domain files of this
-//! crate. It judges an `AuditState` and an `OperationAudit` against an `OracleCatalog`, which
-//! `OracleCatalog::parse` reads from the source RON of the package, never from the audit
-//! snapshot. That is the reason that these rules stay apart from `validate_ledger`: the ledger
-//! audit reads its catalog from the log (`LedgerAudit.catalog`), and the log comes from the code
-//! under test. A fault that changes the installed catalog and the state together (for example a
-//! wrong refund ratio in `bootstrap.rs`, row C6 of `tests/m3/refutations.json`) is invisible to a
-//! rule that reads the catalog from the snapshot, and red here.
-//!
-//! This file is engine source for the no-content scan (`turts_checks/tests/no_content.rs`), so no
-//! identifier in it is a content word of a mod (the three locals that were named `ore`, `shell`
-//! and `belt` are `node_item`, `ammo_item` and `line`). The failure texts are string literals,
-//! which the scan reports only when a whole literal is a content token.
-//!
-//! The rules and their texts are as they were. Each text (`BAL-ore`, `BAL-shell`, `RES`,
-//! `REFUND`, `DANGLING`, `SHOT`, `DMG`) is the `invariant` of a `CheckFailure`, and rows C1 to C7,
-//! C9 to C11 and C13 to C15 of `tests/m3/refutations.json` pin them. A change of a text needs a
-//! change of that registry, and A1d forbids it.
-//!
-//! Rules (the invariant of each, in the order that `check_operation` runs them):
-//! - `DANGLING`: a removed unit remains in no table and in no active claim line.
-//! - `SHOT`: a shot names the ammo item and the positive `per_shot` of its weapon in the source,
-//!   and debits that amount; the outputs of `ItemsProduced` and the charge of `ProductionStarted`
-//!   equal the recipe (or the technology cost) in the source, and move the stock by that amount.
-//! - `BAL-ore`, `BAL-shell`: the stock of each tracked item (the node item, and the item that is
-//!   a recipe output and a weapon ammo) changes by the sum of the events of the operation.
-//! - `RES`: the reservation ledger (active claims, token, queued job, reserved amounts, capacity).
-//! - `REFUND`: a cancel refunds each charge line times the source ratio of the job stage.
-//! - tick (`check_tick`): `DMG` (damage with the research done by the end of the tick, applied
-//!   damage, one `Killed` event, health continuity, no shot at a destroyed unit) and `SHOT` (one
-//!   `ProductionStarted` event for each job).
-
 use std::{
     collections::{BTreeMap, BTreeSet},
     fs,
@@ -143,7 +109,7 @@ impl OracleCatalog {
                 format!("source RON defines {} distinct node items", ore_items.len()),
             ));
         }
-        let node_item = ore_items.into_iter().next().unwrap();
+        let ore = ore_items.into_iter().next().unwrap();
         let recipe_outputs = self
             .recipes
             .values()
@@ -158,7 +124,7 @@ impl OracleCatalog {
             .collect::<Result<BTreeSet<_>, _>>()?;
         let shell_items = recipe_outputs
             .intersection(&weapon_ammo)
-            .filter(|item| **item != node_item)
+            .filter(|item| **item != ore)
             .cloned()
             .collect::<BTreeSet<_>>();
         if shell_items.len() != 1 {
@@ -170,7 +136,7 @@ impl OracleCatalog {
                 ),
             ));
         }
-        Ok((node_item, shell_items.into_iter().next().unwrap()))
+        Ok((ore, shell_items.into_iter().next().unwrap()))
     }
 }
 fn parse_file<T: serde::de::DeserializeOwned>(path: &Path) -> Result<T, String> {
@@ -207,6 +173,9 @@ impl OracleHistory {
     }
 }
 
+fn named<T>(name: &'static str, result: Result<T, String>) -> Result<T, CheckFailure> {
+    result.map_err(|e| CheckFailure::new(name, e))
+}
 fn add(total: &mut u128, amount: u64, check: &'static str) -> Result<(), CheckFailure> {
     *total = total
         .checked_add(u128::from(amount))
@@ -262,8 +231,8 @@ pub fn stock(
         }
     }
     // raw_slots is the full authoritative line. pieces is only a mirror and must not be summed.
-    for line in &state.raw_belts {
-        for slot in &line.raw_slots {
+    for belt in &state.raw_belts {
+        for slot in &belt.raw_slots {
             if slot.item.as_ref() == Some(item) {
                 add(&mut total, 1, "BAL-ore")?;
             }
@@ -405,9 +374,9 @@ pub fn check_operation(
     check_dangling(&op.after)?;
     // Check ammo semantics before aggregate stock so C13 identifies the invalid shot itself.
     check_shots(op, oracle_catalog)?;
-    let (node_item, ammo_item) = oracle_catalog.tracked_materials()?;
-    check_balance(op, oracle_catalog, &node_item, "BAL-ore")?;
-    check_balance(op, oracle_catalog, &ammo_item, "BAL-shell")?;
+    let (ore, shell) = oracle_catalog.tracked_materials()?;
+    check_balance(op, oracle_catalog, &ore, "BAL-ore")?;
+    check_balance(op, oracle_catalog, &shell, "BAL-shell")?;
     check_reservations(&op.after, oracle_catalog)?;
     check_refunds(op, oracle_catalog)?;
     Ok(())
