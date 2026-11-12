@@ -521,6 +521,7 @@ pub fn scan_rust(roots: &[PathBuf], c: &TokenCatalog) -> Result<Vec<Hit>, ScanEr
 /// so the scan skips the file as it skips an inline `#[cfg(test)]` module.
 const TEST_MODULE_FILES: &[&str] = &[
     "crates/turts_client/src/client_shell/tests.rs",
+    "crates/turts_client/src/core_adapter/adapter_tests.rs",
     "crates/turts_client/src/widgets/tests.rs",
 ];
 fn collect(p: &Path, out: &mut Vec<PathBuf>) -> Result<(), ScanError> {
