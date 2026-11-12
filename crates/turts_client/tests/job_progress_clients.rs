@@ -21,8 +21,15 @@
 //!   arrive they change `job_step_per_tick` (the rate) and the view, and this test is the one
 //!   that must stay green;
 //! - a machine with a missing input has no job, so it has no progress to derive.
+//!
+//! Where it lives: the test needs the real export (`turts_server/src/export.rs`, included by path)
+//! and the real `Replica`. A dev-dependency of `turts_server` on `turts_client` unified the bevy
+//! features of the server binary that the process tests start, and `mc_kill_replica` then lost
+//! deltas under load (2 runs in 12 failed, against 0 in 12 without the edge). So the test sits in
+//! the client crate, with dev-dependencies on `turts_sim` and `turts_pack`; the boundary rules read
+//! the normal and build edges only.
 
-#[path = "../src/export.rs"]
+#[path = "../../turts_server/src/export.rs"]
 mod export;
 
 use std::collections::BTreeMap;
@@ -65,7 +72,7 @@ fn package(name: &str) -> PackageArchive {
 fn run(
     name: &str,
     ticks: u32,
-    mut script: impl FnMut(&mut bevy_app::App, u32, &WorldView, &mut u32),
+    mut script: impl FnMut(&mut bevy::app::App, u32, &WorldView, &mut u32),
 ) -> Run {
     let archive = package(name);
     let mut app = headless_app(20);
@@ -119,7 +126,7 @@ fn run(
     }
 }
 
-fn push(app: &mut bevy_app::App, seq: &mut u32, kind: CommandKind) {
+fn push(app: &mut bevy::app::App, seq: &mut u32, kind: CommandKind) {
     *seq += 1;
     app.world_mut()
         .resource_mut::<CommandQueue>()

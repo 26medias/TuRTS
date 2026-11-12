@@ -104,3 +104,13 @@ the delta, and the Snapshot form reads the same function. Limit, for `L-PWR`: th
   (`replica.rs` job validation, `ingest.rs` charge feedback) to `RateRecord.charged`.
 - `Replica::job_progress` stays in the candidate. `L0-STORE` moves it into the side store and counts it
   in the store-clone counter.
+
+## 10. A dev-dependency can change the server binary that the process tests start (repair 2)
+
+The job progress test first sat in `turts_server/tests` with a dev-dependency of `turts_server` on
+`turts_client`. With that edge, `cargo test -p turts_server` rebuilt the server binary with the
+unified bevy features, and the process test `mc_kill_replica` lost deltas under load: 2 failed runs in
+12 (and 3 in 9 before), each with a "gap" in the client log; without the edge, 12 of 12 passed, and
+integration 54c39fdd passed 8 of 8. The test moved to `crates/turts_client/tests` (dev-dependencies on
+`turts_sim`, `turts_pack`, `postcard` there). Rule for the next test author: add no dev-dependency to
+`turts_server`, and check `mc_kill_replica` (12 runs) after any change of its dependency graph.

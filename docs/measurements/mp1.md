@@ -215,7 +215,7 @@ VIS-full, and the M2 browser oracle (`m2-audit.js`, `elapsed_ticks`).
 ## Job progress while a producer is disabled and enabled (L0-WIRE repair 2)
 
 Test `base_producer_jobs_equal_the_sim_through_disable_enable_cancel`
-(`crates/turts_server/tests/job_progress_clients.rs`), package `base`, one Command Centre, 4
+(`crates/turts_client/tests/job_progress_clients.rs`), package `base`, one Command Centre, 4
 `train_rifleman` jobs, disabled at tick 30, enabled at tick 90, a cancel at tick 120. Bytes are
 postcard bytes of `delta.economy.queues` plus `delta.records.jobs` (0 when both lists are empty).
 Recorded, not judged.

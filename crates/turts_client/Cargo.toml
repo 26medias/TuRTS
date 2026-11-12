@@ -19,6 +19,11 @@ serde_json = { workspace = true }
 
 [dev-dependencies]
 ron = { workspace = true }
+# The job progress test runs the real export and the real sim against real `Replica` values (see
+# `tests/job_progress_clients.rs`). Dev edges only: the boundary rules read normal and build edges.
+postcard = { workspace = true }
+turts_pack = { path = "../turts_pack" }
+turts_sim = { path = "../turts_sim" }
 
 [target.'cfg(not(target_family = "wasm"))'.dependencies]
 ureq = { workspace = true }
