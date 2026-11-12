@@ -172,3 +172,10 @@ Probe 2, the HUD change counter on today's tree (forge HUD, 108 widget entities,
 
 - The review failed with 1 High: the plan (:467) freezes `WidgetAction::FocusAlert` with no field, and design D:2059-2061 needs a camera target and, for some alerts, a unit to select. Orchestrator ruling: option (a), the client action is `FocusAlert { x, y, unit: Option<u32> }`; the mod-facing form of 6.10 stays as written. The plan text at :467 and :779 takes this in the next plan revision.
 - Ruled as lane-0 work, not later change requests: an empty `placement::intercept` call at the top of the event loop (GHO1 (d), D:2470), and an empty state, input and output type for each stage-1 owner in that owner's file.
+
+## From E-GPU (2026-11-12, branch `mp1/e-gpu` 466ed01; leads from the builder, review pending)
+
+- Verdict PASS: two headed clients on one GPU for 600 s, frame p50 33.3 ms and p95 50.1 ms in each window, 0 disconnects, lowest 5 s rate 14.0 fps.
+- No MC package gives two armed slots (only `mods/forge/units/turret.ron` and `mods/muster/units/trooper.ron` have a weapon). Plan step 1 of E-GPU assumed one.
+- **Product defect to assign (lead, root cause NOT TRACED):** an attack order from out of range stops the unit at 4.000025 from the target with range 4.0, and it never fires (`crates/turts_sim/src/orders/behaviours/attack.rs:30-34`, `economy/combat.rs:321`). Owner: `simulation-core-engineer`, after the L0-SIM repair merges (same files). It must be closed before `L-TGT`.
+- The hosted MM1 probe of plan step 2 cannot run: the workflow has no MM1 step. Frame times sit at about 30 fps; cause NOT TRACED (given to the frame pacing repair).
