@@ -16,7 +16,15 @@ Open a terminal and type:
 bash /home/julien/Projects/TuRTS-mc-play/play.sh forge
 ```
 
-Wait for a line that starts with `URL:`. Open that address in Chrome. Keep the terminal open; Ctrl+C stops the game.
+Wait for a line that starts with `URL:`. Keep the terminal open; Ctrl+C stops the game.
+
+Open that address in a Chrome window that has WebGPU turned on. On Linux, Chrome has WebGPU off by default, and the game then stops with "Unable to find a GPU" in the console. Type this in a second terminal, with the address from the `URL:` line:
+
+```
+google-chrome --user-data-dir=/tmp/turts-play-profile --enable-unsafe-webgpu --enable-features=Vulkan --use-angle=vulkan "PASTE THE URL HERE"
+```
+
+The `--user-data-dir` value makes a separate, empty Chrome profile for the play test, so your own Chrome does not change and the flags apply. For a second window, press Ctrl+N in that Chrome. If the error stays, open `chrome://gpu` there and give Root the "WebGPU" and "Vulkan" lines.
 
 - The first start after an update compiles for some minutes. Root made one full build on 2026-11-11 (about 25 minutes), so the next start is fast if the code did not change.
 - The address has new port numbers at each start. Always use the address of the current start.
