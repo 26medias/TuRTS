@@ -25,7 +25,7 @@
     "headed": false,
     "expected_red": "the default settings make no sound",
     "exit": 101,
-    "commit": "67a0bae5",
+    "commit": "53fac829",
     "expected_selected": "the_sound_is_off_by_default_and_a_stored_profile_with_no_flag_reads_as_off"
   },
   {
@@ -54,7 +54,7 @@
     "headed": false,
     "expected_red": "the stored flag turns the sound on",
     "exit": 101,
-    "commit": "67a0bae5",
+    "commit": "53fac829",
     "expected_selected": "a_stored_sound_on_flag_gives_sound_and_keeps_the_levels"
   },
   {
@@ -83,7 +83,7 @@
     "headed": false,
     "expected_red": "resets the audio settings to the defaults, as a bad level does",
     "exit": 101,
-    "commit": "67a0bae5",
+    "commit": "53fac829",
     "expected_selected": "an_invalid_stored_sound_flag_falls_back_like_an_invalid_level"
   },
   {
@@ -112,7 +112,7 @@
     "headed": false,
     "expected_red": "left: Bool(false)",
     "exit": 101,
-    "commit": "67a0bae5",
+    "commit": "53fac829",
     "expected_selected": "the_flag_is_written_into_the_audio_object_and_the_levels_and_other_fields_stay"
   },
   {
@@ -140,7 +140,7 @@
     "headed": false,
     "expected_red": "no sink starts while the sound is off",
     "exit": 101,
-    "commit": "67a0bae5",
+    "commit": "53fac829",
     "expected_selected": "audio::control_settings_persistence_contract::with_the_sound_off_no_player_starts_and_a_request_is_not_queued_for_later"
   },
   {
@@ -168,7 +168,7 @@
     "headed": false,
     "expected_red": "off removes the live player",
     "exit": 101,
-    "commit": "67a0bae5",
+    "commit": "53fac829",
     "expected_selected": "audio::control_settings_persistence_contract::turning_the_sound_off_stops_a_sound_that_is_playing"
   },
   {
@@ -196,7 +196,7 @@
     "headed": false,
     "expected_red": "assertion failed: !app.world().resource::<AudioFeed>().sound_on",
     "exit": 101,
-    "commit": "67a0bae5",
+    "commit": "53fac829",
     "expected_selected": "audio::control_settings_persistence_contract::the_debug_audio_state_shows_the_sound_flag"
   },
   {
@@ -224,7 +224,7 @@
     "headed": false,
     "expected_red": "the switch is saved",
     "exit": 101,
-    "commit": "67a0bae5",
+    "commit": "53fac829",
     "expected_selected": "audio::control_settings_persistence_contract::the_switch_is_saved_with_the_levels_and_survives_a_new_session"
   },
   {
@@ -252,7 +252,7 @@
     "headed": false,
     "expected_red": "the sound is off on purpose",
     "exit": 101,
-    "commit": "67a0bae5",
+    "commit": "53fac829",
     "expected_selected": "client_shell::tests::no_sound_notice_shows_while_the_player_keeps_the_sound_off"
   },
   {
@@ -280,7 +280,7 @@
     "headed": false,
     "expected_red": "the default says off, in words",
     "exit": 101,
-    "commit": "67a0bae5",
+    "commit": "53fac829",
     "expected_selected": "client_shell::tests::the_play_screen_has_one_sound_switch_that_says_off_by_default_and_one_click_turns_it_on"
   },
   {
@@ -290,8 +290,8 @@
       {
         "file": "crates/turts_client/src/client_shell/notices.rs",
         "edit": {
-          "old": "    if !joined {\n        for entity in &existing {",
-          "new": "    if false {\n        for entity in &existing {"
+          "old": "    if !joined || mod_places_one {",
+          "new": "    if false || mod_places_one {"
         }
       }
     ],
@@ -308,7 +308,7 @@
     "headed": false,
     "expected_red": "no switch before the join",
     "exit": 101,
-    "commit": "67a0bae5",
+    "commit": "53fac829",
     "expected_selected": "client_shell::tests::the_play_screen_switch_waits_for_the_join"
   },
   {
@@ -336,7 +336,7 @@
     "headed": false,
     "expected_red": "the sound switch never writes a level",
     "exit": 101,
-    "commit": "67a0bae5",
+    "commit": "53fac829",
     "expected_selected": "client_shell::tests::the_switch_keeps_the_four_levels_across_off_and_on"
   },
   {
@@ -360,7 +360,7 @@
     "headed": false,
     "expected_red": "on fill channel 1",
     "exit": 1,
-    "commit": "67a0bae5"
+    "commit": "53fac829"
   },
   {
     "row": "SOUND-OFF",
@@ -369,7 +369,7 @@
       {
         "file": "tests/browser/harness/sound-switch-pixels.js",
         "edit": {
-          "old": "    minimumFill: 0.55,",
+          "old": "    minimumFill: 0.12,",
           "new": "    minimumFill: 0,"
         }
       }
@@ -381,9 +381,9 @@
     ],
     "env": {},
     "headed": false,
-    "expected_red": "the corner pixels of a hollow outline are not a button",
+    "expected_red": "a 1 px outline is not a button",
     "exit": 1,
-    "commit": "67a0bae5"
+    "commit": "53fac829"
   },
   {
     "row": "SOUND-OFF",
@@ -406,7 +406,7 @@
     "headed": false,
     "expected_red": "expected: /inside the rectangle/",
     "exit": 1,
-    "commit": "67a0bae5"
+    "commit": "53fac829"
   },
   {
     "row": "SOUND-OFF",
@@ -429,7 +429,7 @@
     "headed": true,
     "expected_red": "SND1 no sink started while the switch was off",
     "exit": 1,
-    "commit": "67a0bae5"
+    "commit": "53fac829"
   },
   {
     "row": "SOUND-OFF",
@@ -452,6 +452,283 @@
     "headed": true,
     "expected_red": "ORD7 observes the matching real response sink",
     "exit": 1,
-    "commit": "67a0bae5"
+    "commit": "53fac829"
+  },
+  {
+    "row": "SOUND-OFF",
+    "plant": "8a-fallback-always",
+    "files": [
+      {
+        "file": "crates/turts_client/src/client_shell/notices.rs",
+        "edit": {
+          "old": ".is_some_and(|interface| interface.places_input_button(\"toggle_sound\"));",
+          "new": ".is_some_and(|_| false);"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_client",
+      "--locked",
+      "--lib",
+      "the_engine_draws_its_switch_only_when_the_interface_places_no_toggle_sound_button"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "its own switch is in its layout, the engine draws none",
+    "exit": 101,
+    "commit": "53fac829",
+    "expected_selected": "client_shell::tests::the_engine_draws_its_switch_only_when_the_interface_places_no_toggle_sound_button"
+  },
+  {
+    "row": "SOUND-OFF",
+    "plant": "8b-box-children-not-searched",
+    "files": [
+      {
+        "file": "crates/turts_mod_api/src/interface.rs",
+        "edit": {
+          "old": "                Primitive::Box { children, .. } => children.iter().any(|child| walk(child, name)),\n",
+          "new": "                Primitive::Box { .. } => false,\n"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_mod_api",
+      "--locked",
+      "--test",
+      "api_0_2_4",
+      "h25_sound_switch_names_and_the_placement_question"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "assertion failed: interface(Parts {",
+    "exit": 101,
+    "commit": "53fac829",
+    "expected_selected": "h25_sound_switch_names_and_the_placement_question"
+  },
+  {
+    "row": "SOUND-OFF",
+    "plant": "8c-version-row-missing",
+    "files": [
+      {
+        "file": "crates/turts_mod_runtime/src/version_table.rs",
+        "edit": {
+          "old": "    variant_0_2_4(\"Value::SoundState\"),\n",
+          "new": ""
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_mod_runtime",
+      "--locked",
+      "--test",
+      "val1",
+      "h25_the_sound_switch_names_need_api_0_2_4_and_pack_at_0_2_4"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "called `Result::unwrap_err()` on an `Ok` value",
+    "exit": 101,
+    "commit": "53fac829",
+    "expected_selected": "h25_the_sound_switch_names_need_api_0_2_4_and_pack_at_0_2_4"
+  },
+  {
+    "row": "SOUND-OFF",
+    "plant": "8d-no-hint",
+    "files": [
+      {
+        "file": "crates/turts_mod_runtime/src/content_mc_validation.rs",
+        "edit": {
+          "old": "        .map(|near| format!(\"; did you mean `{near}`?\"))\n        .unwrap_or_default();\n    error(\n        package,\n        file,\n        field,\n        format!(\"unknown input action",
+          "new": "        .map(|_| String::new())\n        .unwrap_or_default();\n    error(\n        package,\n        file,\n        field,\n        format!(\"unknown input action"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_mod_runtime",
+      "--locked",
+      "--test",
+      "val1",
+      "h25_the_sound_switch_names_need_api_0_2_4_and_pack_at_0_2_4"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "unknown input action `toggle_sond`",
+    "exit": 101,
+    "commit": "53fac829",
+    "expected_selected": "h25_the_sound_switch_names_need_api_0_2_4_and_pack_at_0_2_4"
+  },
+  {
+    "row": "SOUND-OFF",
+    "plant": "8e-toggle-does-nothing",
+    "files": [
+      {
+        "file": "crates/turts_client/src/widgets/activation.rs",
+        "edit": {
+          "old": "                volumes.sound_on = !volumes.sound_on;\n",
+          "new": ""
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_client",
+      "--locked",
+      "--lib",
+      "toggle_sound_button_flips_the_switch_and_its_words_and_predicate_follow_the_state"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "the button turns the sound on",
+    "exit": 101,
+    "commit": "53fac829",
+    "expected_selected": "widgets::tests::toggle_sound_button_flips_the_switch_and_its_words_and_predicate_follow_the_state"
+  },
+  {
+    "row": "SOUND-OFF",
+    "plant": "8f-words-inverted",
+    "files": [
+      {
+        "file": "crates/turts_client/src/widgets/sources.rs",
+        "edit": {
+          "old": "crate::volume_settings::sound_label(context.sound_on).to_owned()",
+          "new": "crate::volume_settings::sound_label(!context.sound_on).to_owned()"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_client",
+      "--locked",
+      "--lib",
+      "toggle_sound_button_flips_the_switch_and_its_words_and_predicate_follow_the_state"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "left: String(\"Sound: on\")",
+    "exit": 101,
+    "commit": "53fac829",
+    "expected_selected": "widgets::tests::toggle_sound_button_flips_the_switch_and_its_words_and_predicate_follow_the_state"
+  },
+  {
+    "row": "SOUND-OFF",
+    "plant": "8g-package-switch-removed",
+    "files": [
+      {
+        "file": "mods/acme/interface/hud.ron",
+        "edit": {
+          "old": "action: Input(\"toggle_sound\"), hotkey_label: false)),\n        ])),\n        (id: \"sound_switch_on\"",
+          "new": "action: Input(\"toggle_guide\"), hotkey_label: false)),\n        ])),\n        (id: \"sound_switch_on\""
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_mod_runtime",
+      "--locked",
+      "--test",
+      "val1",
+      "the_shipped_packages_place_the_sound_switch_and_pack_at_0_2_4"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "acme places a button with the action toggle_sound",
+    "exit": 101,
+    "commit": "53fac829",
+    "expected_selected": "the_shipped_packages_place_the_sound_switch_and_pack_at_0_2_4"
+  },
+  {
+    "row": "SOUND-OFF",
+    "plant": "9a-package-fill-drift",
+    "files": [
+      {
+        "file": "mods/forge/interface/hud.ron",
+        "edit": {
+          "old": "visible: [SoundOn], widget: Box(fill: Some(Colour(\"#1f6138\"))",
+          "new": "visible: [SoundOn], widget: Box(fill: Some(Colour(\"#1f6139\"))"
+        }
+      }
+    ],
+    "command": [
+      "node",
+      "--test",
+      "tests/browser/harness/sound-switch-pixels.test.js"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "forge sound_switch_on fill #1f6138",
+    "exit": 1,
+    "commit": "53fac829"
+  },
+  {
+    "row": "SOUND-OFF",
+    "plant": "7a-repair-does-nothing",
+    "files": [
+      {
+        "file": "crates/turts_client/src/press_release.rs",
+        "edit": {
+          "old": "                    before.entry(*entity).or_insert_with(|| hit.clone());\n",
+          "new": "                    let _ = (entity, hit);\n"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_client",
+      "--locked",
+      "--lib",
+      "a_press_and_release_with_no_earlier_hover_frame_activates_the_button"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "one activation",
+    "exit": 101,
+    "commit": "53fac829",
+    "expected_selected": "press_release::tests::a_press_and_release_with_no_earlier_hover_frame_activates_the_button"
+  },
+  {
+    "row": "SOUND-OFF",
+    "plant": "7b-headed-repair-not-registered",
+    "files": [
+      {
+        "file": "crates/turts_client/src/client_shell.rs",
+        "edit": {
+          "old": "                .before(bevy::picking::events::pointer_events)\n",
+          "new": "                .before(bevy::picking::events::pointer_events)\n                .run_if(|| false)\n"
+        }
+      }
+    ],
+    "command": [
+      "bash",
+      "scripts/click-without-hover.sh",
+      "--prepared",
+      "target/mc-mp1-sound-off/prep-plant7",
+      "--package",
+      "tests/browser/fixtures/feedback/muster"
+    ],
+    "env": {},
+    "headed": true,
+    "expected_red": "\"acted\":false",
+    "exit": 1,
+    "commit": "53fac829"
   }
 ]
