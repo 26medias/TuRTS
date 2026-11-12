@@ -268,10 +268,24 @@ async function run() {
             const before = healthOf(after, targetId);
             await attacker.page.mouse.click(target.screen[0], target.screen[1], { button: "right" });
             entry.target = targetId; entry.target_health_at_order = before;
-            await sleep(4000);
-            const later = await readState(attacker.page);
-            entry.target_health_4s_later = healthOf(later, targetId);
-            entry.target_in_scene_4s_later = later.units.some((u) => u.id === targetId);
+            // Wait for the kill (at most 25 s). A trooper that stays in range goes on firing at the other targets
+            // (egpu-smoke-4: 6 targets in 70 s), so after the kill the round walks it out of range. The next round
+            // is about 50 s later, one target for each round.
+            const fireStart = Date.now();
+            let gone = false;
+            while (Date.now() - fireStart < 25000) {
+                await sleep(500);
+                const later = await readState(attacker.page);
+                if (entry.target_health_4s_later === undefined && Date.now() - fireStart >= 4000) entry.target_health_4s_later = healthOf(later, targetId);
+                const h = healthOf(later, targetId);
+                if (!later.units.some((u) => u.id === targetId) || (h !== null && h <= 0)) { gone = true; break; }
+            }
+            entry.kill_after_s = gone ? Math.round((Date.now() - fireStart) / 100) / 10 : null;
+            const rest = await readState(attacker.page);
+            for (const factor of [1, 0.7, 0.5]) {
+                const retreat = projectGround(rest.clip, rest.win, target.x - 8 * factor, target.y - 5 * factor);
+                if (reachable(retreat)) { await attacker.page.mouse.click(retreat[0], retreat[1], { button: "right" }); entry.retreat_factor = factor; break; }
+            }
             entry.outcome = "attack ordered";
         }
         async function moveDummy(second) {
