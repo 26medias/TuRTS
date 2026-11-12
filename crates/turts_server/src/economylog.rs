@@ -243,9 +243,13 @@ mod tests {
     }
 
     /// The ledger audit has no movement model. It accepts the Orders-phase operation of a unit
-    /// order, and it reads the phase as a shape rule: a Command phase needs a command boundary
-    /// (the replay validator also rejected the phase `Other` here; that rule needed the model of
-    /// the movement step, and the movement tests and the writer scan hold it now).
+    /// order, and it reads the phase as a shape rule: a Command phase needs a command boundary.
+    /// The ledger accepts an Orders-phase operation that is relabeled `Other`: the phase of an
+    /// operation is set where the sim captures it (`economy/transaction.rs`,
+    /// `capture_unit_order_operation`), and the sim tests hold that label
+    /// (`orders/tests.rs` and `tests/orders.rs`: the phase of the captured unit-order
+    /// operations is `Orders`). The replay validator rejected the relabel because the relabeled
+    /// operation was not the movement phase that it modeled.
     #[test]
     fn ledger_accepts_an_orders_operation_before_movement() {
         use turts_mod_api::{Footprint, PackageId, UnitDef, UnitRegistry};
