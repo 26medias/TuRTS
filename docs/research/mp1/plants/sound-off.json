@@ -25,7 +25,7 @@
     "headed": false,
     "expected_red": "the default settings make no sound",
     "exit": 101,
-    "commit": "53fac829",
+    "commit": "815ef626",
     "expected_selected": "the_sound_is_off_by_default_and_a_stored_profile_with_no_flag_reads_as_off"
   },
   {
@@ -54,7 +54,7 @@
     "headed": false,
     "expected_red": "the stored flag turns the sound on",
     "exit": 101,
-    "commit": "53fac829",
+    "commit": "815ef626",
     "expected_selected": "a_stored_sound_on_flag_gives_sound_and_keeps_the_levels"
   },
   {
@@ -83,7 +83,7 @@
     "headed": false,
     "expected_red": "resets the audio settings to the defaults, as a bad level does",
     "exit": 101,
-    "commit": "53fac829",
+    "commit": "815ef626",
     "expected_selected": "an_invalid_stored_sound_flag_falls_back_like_an_invalid_level"
   },
   {
@@ -112,7 +112,7 @@
     "headed": false,
     "expected_red": "left: Bool(false)",
     "exit": 101,
-    "commit": "53fac829",
+    "commit": "815ef626",
     "expected_selected": "the_flag_is_written_into_the_audio_object_and_the_levels_and_other_fields_stay"
   },
   {
@@ -140,7 +140,7 @@
     "headed": false,
     "expected_red": "no sink starts while the sound is off",
     "exit": 101,
-    "commit": "53fac829",
+    "commit": "815ef626",
     "expected_selected": "audio::control_settings_persistence_contract::with_the_sound_off_no_player_starts_and_a_request_is_not_queued_for_later"
   },
   {
@@ -168,7 +168,7 @@
     "headed": false,
     "expected_red": "off removes the live player",
     "exit": 101,
-    "commit": "53fac829",
+    "commit": "815ef626",
     "expected_selected": "audio::control_settings_persistence_contract::turning_the_sound_off_stops_a_sound_that_is_playing"
   },
   {
@@ -196,7 +196,7 @@
     "headed": false,
     "expected_red": "assertion failed: !app.world().resource::<AudioFeed>().sound_on",
     "exit": 101,
-    "commit": "53fac829",
+    "commit": "815ef626",
     "expected_selected": "audio::control_settings_persistence_contract::the_debug_audio_state_shows_the_sound_flag"
   },
   {
@@ -224,7 +224,7 @@
     "headed": false,
     "expected_red": "the switch is saved",
     "exit": 101,
-    "commit": "53fac829",
+    "commit": "815ef626",
     "expected_selected": "audio::control_settings_persistence_contract::the_switch_is_saved_with_the_levels_and_survives_a_new_session"
   },
   {
@@ -252,7 +252,7 @@
     "headed": false,
     "expected_red": "the sound is off on purpose",
     "exit": 101,
-    "commit": "53fac829",
+    "commit": "815ef626",
     "expected_selected": "client_shell::tests::no_sound_notice_shows_while_the_player_keeps_the_sound_off"
   },
   {
@@ -280,7 +280,7 @@
     "headed": false,
     "expected_red": "the default says off, in words",
     "exit": 101,
-    "commit": "53fac829",
+    "commit": "815ef626",
     "expected_selected": "client_shell::tests::the_play_screen_has_one_sound_switch_that_says_off_by_default_and_one_click_turns_it_on"
   },
   {
@@ -308,7 +308,7 @@
     "headed": false,
     "expected_red": "no switch before the join",
     "exit": 101,
-    "commit": "53fac829",
+    "commit": "815ef626",
     "expected_selected": "client_shell::tests::the_play_screen_switch_waits_for_the_join"
   },
   {
@@ -336,7 +336,7 @@
     "headed": false,
     "expected_red": "the sound switch never writes a level",
     "exit": 101,
-    "commit": "53fac829",
+    "commit": "815ef626",
     "expected_selected": "client_shell::tests::the_switch_keeps_the_four_levels_across_off_and_on"
   },
   {
@@ -360,7 +360,7 @@
     "headed": false,
     "expected_red": "on fill channel 1",
     "exit": 1,
-    "commit": "53fac829"
+    "commit": "815ef626"
   },
   {
     "row": "SOUND-OFF",
@@ -383,7 +383,7 @@
     "headed": false,
     "expected_red": "a 1 px outline is not a button",
     "exit": 1,
-    "commit": "53fac829"
+    "commit": "815ef626"
   },
   {
     "row": "SOUND-OFF",
@@ -406,7 +406,7 @@
     "headed": false,
     "expected_red": "expected: /inside the rectangle/",
     "exit": 1,
-    "commit": "53fac829"
+    "commit": "815ef626"
   },
   {
     "row": "SOUND-OFF",
@@ -429,7 +429,7 @@
     "headed": true,
     "expected_red": "SND1 no sink started while the switch was off",
     "exit": 1,
-    "commit": "53fac829"
+    "commit": "815ef626"
   },
   {
     "row": "SOUND-OFF",
@@ -452,7 +452,7 @@
     "headed": true,
     "expected_red": "ORD7 observes the matching real response sink",
     "exit": 1,
-    "commit": "53fac829"
+    "commit": "815ef626"
   },
   {
     "row": "SOUND-OFF",
@@ -479,7 +479,7 @@
     "headed": false,
     "expected_red": "its own switch is in its layout, the engine draws none",
     "exit": 101,
-    "commit": "53fac829",
+    "commit": "815ef626",
     "expected_selected": "client_shell::tests::the_engine_draws_its_switch_only_when_the_interface_places_no_toggle_sound_button"
   },
   {
@@ -508,7 +508,7 @@
     "headed": false,
     "expected_red": "assertion failed: interface(Parts {",
     "exit": 101,
-    "commit": "53fac829",
+    "commit": "815ef626",
     "expected_selected": "h25_sound_switch_names_and_the_placement_question"
   },
   {
@@ -537,7 +537,7 @@
     "headed": false,
     "expected_red": "called `Result::unwrap_err()` on an `Ok` value",
     "exit": 101,
-    "commit": "53fac829",
+    "commit": "815ef626",
     "expected_selected": "h25_the_sound_switch_names_need_api_0_2_4_and_pack_at_0_2_4"
   },
   {
@@ -566,7 +566,7 @@
     "headed": false,
     "expected_red": "unknown input action `toggle_sond`",
     "exit": 101,
-    "commit": "53fac829",
+    "commit": "815ef626",
     "expected_selected": "h25_the_sound_switch_names_need_api_0_2_4_and_pack_at_0_2_4"
   },
   {
@@ -594,7 +594,7 @@
     "headed": false,
     "expected_red": "the button turns the sound on",
     "exit": 101,
-    "commit": "53fac829",
+    "commit": "815ef626",
     "expected_selected": "widgets::tests::toggle_sound_button_flips_the_switch_and_its_words_and_predicate_follow_the_state"
   },
   {
@@ -622,7 +622,7 @@
     "headed": false,
     "expected_red": "left: String(\"Sound: on\")",
     "exit": 101,
-    "commit": "53fac829",
+    "commit": "815ef626",
     "expected_selected": "widgets::tests::toggle_sound_button_flips_the_switch_and_its_words_and_predicate_follow_the_state"
   },
   {
@@ -631,10 +631,16 @@
     "files": [
       {
         "file": "mods/acme/interface/hud.ron",
-        "edit": {
-          "old": "action: Input(\"toggle_sound\"), hotkey_label: false)),\n        ])),\n        (id: \"sound_switch_on\"",
-          "new": "action: Input(\"toggle_guide\"), hotkey_label: false)),\n        ])),\n        (id: \"sound_switch_on\""
-        }
+        "edit": [
+          {
+            "old": "action: Input(\"toggle_sound\"), hotkey_label: false)),\n        ])),\n        (id: \"sound_switch_on\"",
+            "new": "action: Input(\"toggle_guide\"), hotkey_label: false)),\n        ])),\n        (id: \"sound_switch_on\""
+          },
+          {
+            "old": "id: \"sound_on_button\", at: Some((anchor: TopLeft, offset: (2.0, 2.0), pivot: None)), size: (w: Px(120.0), h: Px(24.0)), widget: Button(icon: None, label: Some(Bind(SoundState)), action: Input(\"toggle_sound\")",
+            "new": "id: \"sound_on_button\", at: Some((anchor: TopLeft, offset: (2.0, 2.0), pivot: None)), size: (w: Px(120.0), h: Px(24.0)), widget: Button(icon: None, label: Some(Bind(SoundState)), action: Input(\"toggle_guide\")"
+          }
+        ]
       }
     ],
     "command": [
@@ -651,7 +657,7 @@
     "headed": false,
     "expected_red": "acme places a button with the action toggle_sound",
     "exit": 101,
-    "commit": "53fac829",
+    "commit": "815ef626",
     "expected_selected": "the_shipped_packages_place_the_sound_switch_and_pack_at_0_2_4"
   },
   {
@@ -675,7 +681,7 @@
     "headed": false,
     "expected_red": "forge sound_switch_on fill #1f6138",
     "exit": 1,
-    "commit": "53fac829"
+    "commit": "815ef626"
   },
   {
     "row": "SOUND-OFF",
@@ -702,7 +708,7 @@
     "headed": false,
     "expected_red": "one activation",
     "exit": 101,
-    "commit": "53fac829",
+    "commit": "815ef626",
     "expected_selected": "press_release::tests::a_press_and_release_with_no_earlier_hover_frame_activates_the_button"
   },
   {
@@ -729,6 +735,6 @@
     "headed": true,
     "expected_red": "\"acted\":false",
     "exit": 1,
-    "commit": "53fac829"
+    "commit": "815ef626"
   }
 ]
